@@ -2463,21 +2463,21 @@ fluxct = False
 #CheckpointName
 checkname = "2DKHa1"
 #checkpoint last step
-save_final_state = True;
+save_final_state = False;
 #recover from last checkpoint
-recover_state = True;
+recover_state = False;
 
 #store_every
 store_every = 100;
 
 #save_hdf5
-save_hdf5 = True;
+save_hdf5 = False;
 
 cflr = 0.45
 
 delrhofac = 6
 
-Nsteps = 1e4;
+Nsteps = 1e3;
 params = {'x0': x0, 'x1': x1, 'nx': nx,'y0': y0, 'y1': y1, 'ny': ny, 'ng': ng, 'ici': ici, 'bci': bci, 'cflr': cflr, 'Nsteps': Nsteps, \
           'eosi': eosi, 'fluxi': fluxi, 'reconi': reconi, 'reconvari': reconvari, 'limi': limi, \
             'timestepi': timestepi, 'delrhofac': delrhofac, 'booldiff': booldiff, 'reli': reli,'ngi': ngi,'fluxct': fluxct, \
