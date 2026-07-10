@@ -1,0 +1,55 @@
+pyfluid.run_name = hydro_moving_wall_smush_2d
+pyfluid.output_dir = runs/current/hydro_moving_wall_smush_2d
+
+# Supported narrow moving-solid case: a single-level translating box piston
+# enters from outside the domain and only covers new fluid cells.
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 0 1
+
+amr.n_cell = 512 256
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 16
+
+pyfluid.physics = hydro
+pyfluid.max_step = 1200
+pyfluid.final_time = 0.75
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.4
+
+pyfluid.ic = uniform
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = pwc
+pyfluid.riemann = hllc
+pyfluid.timestep = euler
+pyfluid.bc = outflow
+pyfluid.bc_xlo = outflow
+pyfluid.bc_xhi = reflecting
+pyfluid.bc_ylo = periodic
+pyfluid.bc_yhi = periodic
+
+pyfluid.solid_geometry = boxes
+pyfluid.solid_motion = translate
+pyfluid.solid_wall_condition = slip
+pyfluid.solid_box_lo = -1.0 0.0
+pyfluid.solid_box_hi = 0.0 1.0
+pyfluid.solid_velocity_1 = 0.5
+pyfluid.solid_velocity_2 = 0.0
+
+pyfluid.diffusion = none
+pyfluid.subcycling = off
+
+pyfluid.scalar_int = 24
+pyfluid.plot_int = -1
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = none
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = -1

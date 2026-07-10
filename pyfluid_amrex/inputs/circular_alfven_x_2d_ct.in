@@ -1,0 +1,43 @@
+pyfluid.run_name = circular_alfven_x_2d_ct
+pyfluid.output_dir = runs/current/amrex_circular_alfven_x_2d_ct
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 1 1
+
+amr.n_cell = 128 32
+amr.max_level = 0
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+
+pyfluid.physics = mhd
+pyfluid.ct = on
+pyfluid.max_step = 10000
+pyfluid.final_time = 0.2
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.ic = circular_alfven_x
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.b1_0 = 1.0
+pyfluid.alfven_amplitude = 1.0e-3
+pyfluid.wave_number = 1.0
+
+pyfluid.recon = wenoz
+pyfluid.riemann = hlld
+pyfluid.timestep = rk4
+pyfluid.bc = periodic
+
+pyfluid.diffusion = explicit
+pyfluid.viscosity = 0.01
+pyfluid.resistivity = 0.01
+pyfluid.diffusion_cfl = 0.9
+pyfluid.diffusion_tolerance = 1.0e-10
+pyfluid.diffusion_max_iterations = 300
+pyfluid.diffusion_sor_omega = 1.5
+
+pyfluid.scalar_int = 8
+pyfluid.plot_int = 8
+pyfluid.checkpoint_int = -1

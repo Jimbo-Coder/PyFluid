@@ -1,0 +1,140 @@
+#pragma once
+
+#include <AMReX_REAL.H>
+
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "pyfluid_amrex/config.hpp"
+
+#ifdef AMREX_USE_HDF5
+#include <hdf5.h>
+#endif
+
+namespace pyfluid_amrex {
+
+using OutputMetadataEntry = std::pair<std::string, std::string>;
+using OutputMetadataEntries = std::vector<OutputMetadataEntry>;
+
+inline std::string output_metadata_real_string(amrex::Real value)
+{
+   std::ostringstream out;
+   out << std::setprecision(17) << value;
+   return out.str();
+}
+
+inline OutputMetadataEntries output_metadata_records(
+   std::string_view source,
+   RunConfig const& cfg,
+   int step,
+   amrex::Real time,
+   std::string_view kind = "",
+   int finest_level = -1,
+   std::string_view compression = "",
+   OutputMetadataEntries const& extras = {}
+)
+{
+   OutputMetadataEntries entries;
+   entries.emplace_back("source", std::string(source));
+   if (!kind.empty()) {
+      entries.emplace_back("kind", std::string(kind));
+   }
+   entries.emplace_back("step", std::to_string(step));
+   entries.emplace_back("time", output_metadata_real_string(time));
+   entries.emplace_back("output_dir", cfg.output_dir);
+   entries.emplace_back("run_name", cfg.run_name);
+   entries.emplace_back("physics", cfg.physics);
+   entries.emplace_back("eos", cfg.eos);
+   if (finest_level >= 0) {
+      entries.emplace_back("finest_level", std::to_string(finest_level));
+   }
+   if (!compression.empty()) {
+      entries.emplace_back("compression", std::string(compression));
+   }
+   for (auto const& [key, value] : extras) {
+      entries.emplace_back(key, value);
+   }
+   return entries;
+}
+
+inline void append_output_metadata(
+   std::ofstream& out,
+   std::string_view source,
+   RunConfig const& cfg,
+   int step,
+   amrex::Real time,
+   std::string_view kind = "",
+   int finest_level = -1,
+   std::string_view compression = "",
+   OutputMetadataEntries const& extras = {}
+)
+{
+   out << "# PyFluid output metadata\n";
+   for (auto const& [key, value] :
+        output_metadata_records(source, cfg, step, time, kind, finest_level, compression, extras)) {
+      out << "# " << key << "=" << value << "\n";
+   }
+}
+
+#ifdef AMREX_USE_HDF5
+inline bool write_output_metadata_hdf5_attributes(
+   std::string const& hdf5_path,
+   std::string_view source,
+   RunConfig const& cfg,
+   int step,
+   amrex::Real time,
+   std::string_view kind = "",
+   int finest_level = -1,
+   std::string_view compression = "",
+   OutputMetadataEntries const& extras = {}
+)
+{
+   const hid_t file_id = H5Fopen(hdf5_path.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
+   if (file_id < 0) {
+      return false;
+   }
+
+   const auto entries = output_metadata_records(source, cfg, step, time, kind, finest_level, compression, extras);
+   const hid_t attr_space = H5Screate(H5S_SCALAR);
+   if (attr_space < 0) {
+      H5Fclose(file_id);
+      return false;
+    }
+
+   for (auto const& [key, value] : entries) {
+      if (H5Aexists(file_id, key.c_str()) > 0) {
+         H5Adelete(file_id, key.c_str());
+      }
+      const hid_t attr_type = H5Tcopy(H5T_C_S1);
+      if (attr_type < 0) {
+         continue;
+      }
+      const std::string text = value;
+      H5Tset_size(attr_type, text.size() + 1);
+      H5Tset_strpad(attr_type, H5T_STR_NULLTERM);
+      const hid_t attr = H5Acreate2(
+         file_id,
+         key.c_str(),
+         attr_type,
+         attr_space,
+         H5P_DEFAULT,
+         H5P_DEFAULT
+      );
+      if (attr >= 0) {
+         H5Awrite(attr, attr_type, text.c_str());
+         H5Aclose(attr);
+      }
+      H5Tclose(attr_type);
+   }
+   H5Sclose(attr_space);
+   H5Fclose(file_id);
+   return true;
+}
+#endif
+
+} // namespace pyfluid_amrex

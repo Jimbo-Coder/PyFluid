@@ -1,0 +1,62 @@
+pyfluid.run_name = hydro_moving_circle_2d_amr
+pyfluid.output_dir = runs/current/hydro_moving_circle_2d_amr
+
+# Unsupported prototype: translating internal curved solids uncover cells behind
+# the obstacle and require swept-volume/cut-cell moving-boundary support.
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 0 0
+
+amr.n_cell = 64 64
+amr.max_level = 2
+amr.ref_ratio = 2 2
+amr.max_grid_size = 64
+amr.blocking_factor = 16
+amr.regrid_int = 4
+amr.grid_eff = 0.85
+amr.n_error_buf = 4 4
+amr.level_cell_budget_side = 512
+amr.total_cell_budget = 300000
+amr.tag_metric = auto
+amr.state_interp = protected
+amr.min_feature_length = 0.00390625
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.max_step = 64
+pyfluid.final_time = 0.16
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.4
+
+pyfluid.ic = uniform
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.v1_0 = 0.2
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = outflow
+
+pyfluid.solid_geometry = circle
+pyfluid.solid_motion = translate
+pyfluid.solid_wall_condition = slip
+pyfluid.solid_center_x = 0.38
+pyfluid.solid_center_y = 0.50
+pyfluid.solid_radius = 0.08
+pyfluid.solid_velocity_1 = 0.2
+pyfluid.solid_velocity_2 = 0.0
+
+pyfluid.diffusion = none
+pyfluid.subcycling = off
+
+pyfluid.scalar_int = 4
+pyfluid.plot_int = 8
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = solid_mask,solid_phi
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = 8

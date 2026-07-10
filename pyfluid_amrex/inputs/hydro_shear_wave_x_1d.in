@@ -1,0 +1,41 @@
+pyfluid.run_name = hydro_shear_wave_x_1d
+pyfluid.output_dir = runs/current/amrex_hydro_shear_wave_x_1d
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 1
+
+amr.n_cell = 256
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+pyfluid.physics = hydro
+pyfluid.max_step = 10000
+pyfluid.final_time = 0.2
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.ic = shear_wave_x
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 1.0e-3
+pyfluid.wave_number = 1.0
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = periodic
+
+pyfluid.diffusion = explicit
+pyfluid.viscosity = 0.01
+pyfluid.resistivity = 0.0
+pyfluid.diffusion_cfl = 0.9
+pyfluid.diffusion_tolerance = 1.0e-10
+pyfluid.diffusion_max_iterations = 300
+pyfluid.diffusion_sor_omega = 1.5
+
+pyfluid.scalar_int = 8
+pyfluid.plot_int = 8
+pyfluid.checkpoint_int = -1

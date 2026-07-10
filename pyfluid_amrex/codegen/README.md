@@ -1,0 +1,81 @@
+# PyFluid Kernel Code Generation
+
+This directory is reserved for generated physics kernels and the symbolic code
+that emits them. The production AMReX solver should call ordinary inline C++
+kernels; it should not depend on Python at runtime.
+
+## Direction
+
+Use a small repo-local SymPy generator for long algebraic kernels:
+
+- coordinate metrics and Jacobians;
+- multipatch local/global coordinate maps and patch-map Jacobians;
+- finite-volume metric factors and geometric source terms;
+- vector-calculus identities in coordinate/unit-vector bases;
+- shared algebraic Riemann flux formulas such as LLF/HLL component updates;
+- characteristic systems and eigenvalue/eigenvector formulas;
+- future GRMHD or mapped-coordinate source terms.
+
+The model is NRPy/EinsteinEngine/Kranc-like, but smaller:
+
+- equations are declared symbolically in Python;
+- common-subexpression elimination is applied during generation;
+- generated kernels use a small drop policy after CSE: hard-drop inlines only
+  expression-free temporaries by default, while soft-drop inlines cheap
+  single-use temporaries so repeated physics terms are still computed once;
+- emitted C++ has stable function signatures and lives under
+  `pyfluid_amrex/include/pyfluid_amrex/kernels_generated/`;
+- generated files are reviewed like source, not regenerated implicitly during a
+  normal build.
+
+## Rules
+
+- Generated kernels must be side-effect free pointwise functions.
+- AMR, MPI, FillPatch, refluxing, CT synchronization, output, and diagnostics
+  remain hand-written AMReX infrastructure.
+- Coordinate algebra, vector/tensor identities, finite-volume metric factors,
+  and long physical source/flux expressions should be generated when the
+  generated form is clearer or less error-prone than handwritten C++.
+- Short orchestration, branch selection, reconstruction, Riemann solver
+  dispatch, time integration, and AMReX data movement should stay handwritten
+  unless codegen removes real duplication without hiding the finite-volume
+  contract.
+- Generated code must not encode run-specific parameters except through
+  explicit function arguments.
+- Generated Cartesian flux, Riemann algebra, scalar operator, metric, vector,
+  and patch-map kernels are the production source of truth once they pass the
+  algebra, compile, validation, and performance gates. Keep separate
+  handwritten references only in validation code, not in the runtime path.
+
+## Coordinate Strategy
+
+The generator uses orthogonal coordinate frames with physical components in the
+local unit-vector basis. Cartesian kernels are emitted as direct specialized
+functions and stay free of runtime geometry branches. Cylindrical and spherical
+kernels should be emitted as separate coordinate-specialized functions that
+take metric/scale-factor terms as explicit arguments, so the eventual mapped
+coordinate solver can select the specialization at compile/config setup time
+instead of branching inside each cell update.
+
+## Workflow
+
+Generate explicitly before compiling generated kernels:
+
+```bash
+uv run python pyfluid_amrex/codegen/generate_kernels.py
+```
+
+or through CMake:
+
+```bash
+cmake --build build/pyfluid_amrex --target pyfluid_amrex_generate_kernels
+```
+
+The normal solver target depends on the generated headers that are wired into
+production, but Python codegen is still a build-time step only. Compile and
+algebra checks are separate:
+
+```bash
+uv run python pyfluid_amrex/tools/validate_codegen_flux.py
+cmake --build build/pyfluid_amrex --target pyfluid_amrex_codegen_check_2d
+```

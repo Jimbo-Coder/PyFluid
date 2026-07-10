@@ -1,0 +1,32 @@
+pyfluid.run_name = hydro_sine_1d
+pyfluid.output_dir = runs/current/amrex_hydro_sine_1d
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 1
+
+amr.n_cell = 256
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+pyfluid.max_step = 32
+pyfluid.ng = 1
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.ic = sin_wave
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 1.0e-3
+pyfluid.v1_0 = 0.2
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = pwc
+pyfluid.riemann = llf
+pyfluid.timestep = euler
+pyfluid.bc = periodic
+
+pyfluid.scalar_int = 1
+pyfluid.plot_int = -1

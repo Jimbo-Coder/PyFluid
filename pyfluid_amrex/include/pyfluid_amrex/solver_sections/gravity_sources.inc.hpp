@@ -1,0 +1,582 @@
+// Included inside pyfluid_amrex::AmrSolver private section.
+// Gravity field preparation, self-gravity energy bookkeeping, and generic source-stage hooks.
+
+   DensityTotal valid_density_total(LevelData const& data) const
+   {
+      DensityTotal total;
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         const amrex::Real cell_volume = cartesian_cell_volume(Geom(lev));
+         amrex::iMultiFab mask = valid_cell_mask(lev);
+         amrex::MultiFab reduction(data[lev]->boxArray(), data[lev]->DistributionMap(), 2, 0);
+         reduction.setVal(0.0);
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+         {
+         for (amrex::MFIter mfi(reduction, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            const amrex::Box& bx = mfi.tilebox();
+            const auto s = data[lev]->const_array(mfi);
+            const auto valid = mask.const_array(mfi);
+            const auto out = reduction.array(mfi);
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               if (valid(i, j, k, 0) == 0) {
+                  return;
+               }
+               out(i, j, k, 0) = s(i, j, k, RHO);
+               out(i, j, k, 1) = 1.0;
+            });
+         }
+         }
+         total.mass += reduction.sum(0) * cell_volume;
+         total.volume += reduction.sum(1) * cell_volume;
+      }
+      return total;
+   }
+
+   void solve_gravity_potential(LevelData const& input, bool fill_gradient)
+   {
+      if (!self_gravity_enabled(cfg_)) {
+         return;
+      }
+      const DensityTotal density = valid_density_total(input);
+      if (!(density.volume > 0.0) || !std::isfinite(density.mass)) {
+         amrex::Abort("gravity solve needs a finite positive valid volume");
+      }
+      const amrex::Real mean_density = density.mass / density.volume;
+      const int nlev = finestLevel() + 1;
+      amrex::Vector<amrex::Geometry> geom(nlev);
+      amrex::Vector<amrex::BoxArray> grids(nlev);
+      amrex::Vector<amrex::DistributionMapping> dmap(nlev);
+      amrex::Vector<std::unique_ptr<amrex::MultiFab>> rhs_storage(nlev);
+      amrex::Vector<amrex::MultiFab*> solution(nlev);
+      amrex::Vector<amrex::MultiFab const*> rhs(nlev);
+
+      for (int lev = 0; lev < nlev; ++lev) {
+         if (!gravity_phi_[lev]) {
+            amrex::Abort("gravity potential storage is missing on an active AMR level");
+         }
+         geom[lev] = Geom(lev);
+         grids[lev] = boxArray(lev);
+         dmap[lev] = DistributionMap(lev);
+         rhs_storage[lev] = std::make_unique<amrex::MultiFab>(grids[lev], dmap[lev], 1, 0);
+         amrex::iMultiFab mask = valid_cell_mask(lev);
+         fill_gravity_poisson_rhs(*rhs_storage[lev], *input[lev], mask, mean_density, cfg_);
+         solution[lev] = gravity_phi_[lev].get();
+         rhs[lev] = rhs_storage[lev].get();
+         if (fill_gradient) {
+            allocate_gravity_gradient(gravity_gradient_[lev], grids[lev], dmap[lev]);
+         }
+      }
+
+      amrex::Array<amrex::LinOpBCType, AMREX_SPACEDIM> lobc{};
+      amrex::Array<amrex::LinOpBCType, AMREX_SPACEDIM> hibc{};
+      const auto periodic = Geom(0).isPeriodicArray();
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         if (periodic[dir]) {
+            lobc[dir] = amrex::LinOpBCType::Periodic;
+            hibc[dir] = amrex::LinOpBCType::Periodic;
+         } else {
+            lobc[dir] = amrex::LinOpBCType::Neumann;
+            hibc[dir] = amrex::LinOpBCType::Neumann;
+         }
+      }
+      amrex::LPInfo info;
+      amrex::MLPoisson poisson(geom, grids, dmap, info);
+      poisson.setMaxOrder(cfg_.gravity_max_order);
+      poisson.setDomainBC(lobc, hibc);
+      for (int lev = 0; lev < nlev; ++lev) {
+         poisson.setLevelBC(lev, nullptr);
+      }
+
+      amrex::MLMG mlmg(poisson);
+      mlmg.setMaxIter(cfg_.gravity_max_iterations);
+      mlmg.setMaxFmgIter(cfg_.gravity_max_fmg_iterations);
+      mlmg.setVerbose(cfg_.gravity_verbose);
+      mlmg.setBottomVerbose(cfg_.gravity_verbose);
+      const amrex::Real residual = mlmg.solve(solution, rhs, cfg_.gravity_tolerance, 0.0);
+      if (!std::isfinite(residual)) {
+         amrex::Abort("gravity Poisson solve produced a non-finite residual");
+      }
+      for (int lev = 0; lev < nlev; ++lev) {
+         gravity_phi_[lev]->FillBoundary(Geom(lev).periodicity());
+      }
+      if (fill_gradient) {
+         amrex::Vector<amrex::Array<amrex::MultiFab*, AMREX_SPACEDIM>> grad_ptrs(nlev);
+         for (int lev = 0; lev < nlev; ++lev) {
+            grad_ptrs[lev] = gravity_gradient_ptrs(gravity_gradient_[lev]);
+         }
+         mlmg.getGradSolution(grad_ptrs);
+      }
+   }
+
+   void fill_fixed_gravity_fields_level(int lev)
+   {
+      if (!fixed_gravity_enabled(cfg_)) {
+         return;
+      }
+      if (!gravity_phi_[lev]) {
+         amrex::Abort("fixed gravity requested before gravity storage exists");
+      }
+      fill_fixed_gravity_potential_and_gradient(*gravity_phi_[lev], gravity_gradient_[lev], Geom(lev), cfg_);
+      gravity_phi_[lev]->FillBoundary(Geom(lev).periodicity());
+      gravity_fixed_cache_valid_[lev] = true;
+   }
+
+   void ensure_fixed_gravity_fields()
+   {
+      if (!fixed_gravity_enabled(cfg_)) {
+         return;
+      }
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         bool gradient_ready = true;
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            gradient_ready = gradient_ready && gravity_gradient_[lev][dir] != nullptr;
+         }
+         if (!gravity_fixed_cache_valid_[lev] || !gravity_phi_[lev] || !gradient_ready) {
+            fill_fixed_gravity_fields_level(lev);
+         }
+      }
+   }
+
+   void prepare_gravity_fields(LevelData const& input, bool fill_gradient)
+   {
+      if (!gravity_enabled(cfg_)) {
+         return;
+      }
+      if (self_gravity_enabled(cfg_)) {
+         solve_gravity_potential(input, fill_gradient);
+      } else {
+         static_cast<void>(input);
+         static_cast<void>(fill_gradient);
+         ensure_fixed_gravity_fields();
+      }
+   }
+
+   void reset_gravity_acceleration_offset()
+   {
+      for (auto& value : gravity_acceleration_offset_) {
+         value = 0.0;
+      }
+   }
+
+   void update_self_gravity_acceleration_offset(LevelData const& input)
+   {
+      reset_gravity_acceleration_offset();
+      if (!self_gravity_enabled(cfg_)) {
+         return;
+      }
+      std::array<amrex::Real, AMREX_SPACEDIM> force{};
+      amrex::Real mass = 0.0;
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         const amrex::Real cell_volume = cartesian_cell_volume(Geom(lev));
+         amrex::iMultiFab mask = valid_cell_mask(lev);
+         amrex::MultiFab reduction(input[lev]->boxArray(), input[lev]->DistributionMap(), AMREX_SPACEDIM + 1, 0);
+         reduction.setVal(0.0);
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+         {
+         for (amrex::MFIter mfi(reduction, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            const amrex::Box& bx = mfi.tilebox();
+            const auto s = input[lev]->const_array(mfi);
+            const auto valid = mask.const_array(mfi);
+            const auto gx = gravity_gradient_[lev][0]->const_array(mfi);
+#if (AMREX_SPACEDIM >= 2)
+            const auto gy = gravity_gradient_[lev][1]->const_array(mfi);
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const auto gz = gravity_gradient_[lev][2]->const_array(mfi);
+#endif
+            const auto out = reduction.array(mfi);
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               if (valid(i, j, k, 0) == 0) {
+                  return;
+               }
+               const amrex::Real rho = s(i, j, k, RHO);
+               const amrex::Real ax = -0.5 * (gx(i, j, k, 0) + gx(i + 1, j, k, 0));
+               out(i, j, k, 0) = rho;
+               out(i, j, k, 1) = rho * ax;
+#if (AMREX_SPACEDIM >= 2)
+               const amrex::Real ay = -0.5 * (gy(i, j, k, 0) + gy(i, j + 1, k, 0));
+               out(i, j, k, 2) = rho * ay;
+#endif
+#if (AMREX_SPACEDIM == 3)
+               const amrex::Real az = -0.5 * (gz(i, j, k, 0) + gz(i, j, k + 1, 0));
+               out(i, j, k, 3) = rho * az;
+#endif
+            });
+         }
+         }
+         mass += reduction.sum(0) * cell_volume;
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            force[dir] += reduction.sum(dir + 1) * cell_volume;
+         }
+      }
+      if (!(mass > 0.0) || !std::isfinite(mass)) {
+         amrex::Abort("self-gravity source offset needs a finite positive mass");
+      }
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         gravity_acceleration_offset_[dir] = force[dir] / mass;
+         if (!std::isfinite(gravity_acceleration_offset_[dir])) {
+            amrex::Abort("self-gravity source offset produced a non-finite acceleration");
+         }
+      }
+   }
+
+   bool conservative_self_gravity_energy_sync_enabled() const
+   {
+      return self_gravity_enabled(cfg_)
+         && cfg_.gravity_energy_sync == "residual"
+         && eos_method_ != EOSPolytrope;
+   }
+
+   amrex::Real self_gravity_density_offset(LevelData const& input) const
+   {
+      const DensityTotal density = valid_density_total(input);
+      if (!(density.volume > 0.0) || !std::isfinite(density.mass)) {
+         amrex::Abort("self-gravity energy sync needs a finite valid density total");
+      }
+      return density.mass / density.volume;
+   }
+
+   amrex::Real self_gravity_total_energy(LevelData const& data)
+   {
+      if (!conservative_self_gravity_energy_sync_enabled()) {
+         return 0.0;
+      }
+      prepare_gravity_fields(data, false);
+      const amrex::Real density_offset = self_gravity_density_offset(data);
+      amrex::Real total = 0.0;
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         const amrex::Real cell_volume = cartesian_cell_volume(Geom(lev));
+         amrex::iMultiFab mask = valid_cell_mask(lev);
+         amrex::MultiFab reduction(data[lev]->boxArray(), data[lev]->DistributionMap(), 2, 0);
+         reduction.setVal(0.0);
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+         {
+         for (amrex::MFIter mfi(reduction, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            const amrex::Box& bx = mfi.tilebox();
+            const auto s = data[lev]->const_array(mfi);
+            const auto valid = mask.const_array(mfi);
+            const auto phi = gravity_phi_[lev]->const_array(mfi);
+            const auto out = reduction.array(mfi);
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               if (valid(i, j, k, 0) == 0) {
+                  return;
+               }
+               out(i, j, k, 0) = s(i, j, k, ENERGY);
+               out(i, j, k, 1) = 0.5 * (s(i, j, k, RHO) - density_offset) * phi(i, j, k, 0);
+            });
+         }
+         }
+         total += (reduction.sum(0) + reduction.sum(1)) * cell_volume;
+      }
+      return total;
+   }
+
+   void add_uniform_valid_energy_density(LevelData& data, amrex::Real energy_delta)
+   {
+      if (energy_delta == 0.0) {
+         return;
+      }
+      const DensityTotal density = valid_density_total(data);
+      if (!(density.volume > 0.0) || !std::isfinite(density.volume)) {
+         amrex::Abort("self-gravity regrid energy sync needs a finite positive valid volume");
+      }
+      const amrex::Real correction_density = energy_delta / density.volume;
+      if (!std::isfinite(correction_density)) {
+         amrex::Abort("self-gravity regrid energy sync produced a non-finite correction");
+      }
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         amrex::iMultiFab mask = valid_cell_mask(lev);
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+         {
+         for (amrex::MFIter mfi(*data[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            const amrex::Box& bx = mfi.tilebox();
+            const auto s = data[lev]->array(mfi);
+            const auto valid = mask.const_array(mfi);
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               if (valid(i, j, k, 0) != 0) {
+                  s(i, j, k, ENERGY) += correction_density;
+               }
+            });
+         }
+         }
+      }
+   }
+
+   template <int EOSMethod>
+   void preserve_self_gravity_total_energy(amrex::Real target_total_energy)
+   {
+      if constexpr (EOSMethod == EOSPolytrope) {
+         static_cast<void>(target_total_energy);
+         return;
+      }
+      if (!conservative_self_gravity_energy_sync_enabled()) {
+         return;
+      }
+      const amrex::Real current_total_energy = self_gravity_total_energy(state_);
+      add_uniform_valid_energy_density(state_, target_total_energy - current_total_energy);
+   }
+
+   bool uses_athena_ssprk3_gravity_energy_correction() const
+   {
+      return uses_athena_gravity_energy_correction() && timestep_method_ == TimeSSPRK3;
+   }
+
+   bool uses_athena_gravity_energy_correction() const
+   {
+      return athena_gravity_coupling_enabled(cfg_);
+   }
+
+   void store_athena_ssprk3_start_gravity_range(int lev_begin, int lev_end)
+   {
+      if (!uses_athena_ssprk3_gravity_energy_correction()) {
+         return;
+      }
+      gravity_start_acceleration_offset_ = gravity_acceleration_offset_;
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            if (!gravity_start_gradient_[lev][dir] || !gravity_gradient_[lev][dir]) {
+               amrex::Abort("Athena SSPRK3 gravity correction is missing start-gradient storage");
+            }
+            amrex::MultiFab::Copy(*gravity_start_gradient_[lev][dir], *gravity_gradient_[lev][dir], 0, 0, 1, 0);
+         }
+      }
+   }
+
+   void store_athena_ssprk3_mass_flux_range(int stage, int lev_begin, int lev_end)
+   {
+      if (!uses_athena_ssprk3_gravity_energy_correction()) {
+         return;
+      }
+      if (stage < 0 || stage >= static_cast<int>(gravity_stage_mass_flux_.size())) {
+         amrex::Abort("invalid Athena SSPRK3 mass-flux stage");
+      }
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            if (!gravity_stage_mass_flux_[stage][lev][dir] || !fluxes_[lev][dir]) {
+               amrex::Abort("Athena SSPRK3 gravity correction is missing mass-flux storage");
+            }
+            amrex::MultiFab::Copy(*gravity_stage_mass_flux_[stage][lev][dir], *fluxes_[lev][dir], RHO, 0, 1, 0);
+         }
+      }
+   }
+
+   static amrex::Real athena_ssprk3_energy_time_factor(int stage, amrex::Real dt)
+   {
+      if (stage == 1) {
+         return 0.5 * dt;
+      }
+      return dt;
+   }
+
+   static amrex::Real athena_ssprk3_carried_energy_weight(int stage)
+   {
+      if (stage == 1) {
+         return 0.25;
+      }
+      if (stage == 2) {
+         return 2.0 / 3.0;
+      }
+      return 0.0;
+   }
+
+   void apply_athena_ssprk3_energy_release_range(
+      LevelData& data,
+      int stage,
+      amrex::Real dt,
+      int lev_begin,
+      int lev_end,
+      bool replace_previous_release = false
+   )
+   {
+      if (!uses_athena_ssprk3_gravity_energy_correction()) {
+         return;
+      }
+      const amrex::Real time_factor = athena_ssprk3_energy_time_factor(stage, dt);
+      const amrex::Real carried_weight = athena_ssprk3_carried_energy_weight(stage);
+      const auto start_accel = gravity_start_acceleration_offset_;
+      const auto accel = gravity_acceleration_offset_;
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (!gravity_stage_energy_release_[lev]) {
+            amrex::Abort("Athena SSPRK3 gravity correction is missing energy-release storage");
+         }
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            if (
+               !gravity_start_gradient_[lev][dir]
+               || !gravity_gradient_[lev][dir]
+               || !gravity_stage_mass_flux_[0][lev][dir]
+               || (stage >= 1 && !gravity_stage_mass_flux_[1][lev][dir])
+               || (stage >= 2 && !gravity_stage_mass_flux_[2][lev][dir])
+            ) {
+               amrex::Abort("Athena SSPRK3 gravity correction has incomplete stage storage");
+            }
+         }
+
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+         {
+         for (amrex::MFIter mfi(*data[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            const amrex::Box& bx = mfi.tilebox();
+            const auto state = data[lev]->array(mfi);
+            const auto previous = gravity_stage_energy_release_[lev]->array(mfi);
+            const auto f0x = gravity_stage_mass_flux_[0][lev][0]->const_array(mfi);
+            const auto g0x = gravity_start_gradient_[lev][0]->const_array(mfi);
+            const auto gx = gravity_gradient_[lev][0]->const_array(mfi);
+#if (AMREX_SPACEDIM >= 2)
+            const auto f0y = gravity_stage_mass_flux_[0][lev][1]->const_array(mfi);
+            const auto g0y = gravity_start_gradient_[lev][1]->const_array(mfi);
+            const auto gy = gravity_gradient_[lev][1]->const_array(mfi);
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const auto f0z = gravity_stage_mass_flux_[0][lev][2]->const_array(mfi);
+            const auto g0z = gravity_start_gradient_[lev][2]->const_array(mfi);
+            const auto gz = gravity_gradient_[lev][2]->const_array(mfi);
+#endif
+            const bool use_f1 = stage >= 1;
+            const bool use_f2 = stage >= 2;
+            const auto f1x = use_f1 ? gravity_stage_mass_flux_[1][lev][0]->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+            const auto f2x = use_f2 ? gravity_stage_mass_flux_[2][lev][0]->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+#if (AMREX_SPACEDIM >= 2)
+            const auto f1y = use_f1 ? gravity_stage_mass_flux_[1][lev][1]->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+            const auto f2y = use_f2 ? gravity_stage_mass_flux_[2][lev][1]->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const auto f1z = use_f1 ? gravity_stage_mass_flux_[1][lev][2]->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+            const auto f2z = use_f2 ? gravity_stage_mass_flux_[2][lev][2]->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+#endif
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               auto flux_combo = [=] AMREX_GPU_DEVICE(
+                  amrex::Array4<amrex::Real const> const& f0,
+                  amrex::Array4<amrex::Real const> const& f1,
+                  amrex::Array4<amrex::Real const> const& f2,
+                  int ii,
+                  int jj,
+                  int kk
+               ) noexcept -> amrex::Real {
+                  if (stage == 0) {
+                     return f0(ii, jj, kk, 0);
+                  }
+                  if (stage == 1) {
+                     return 0.5 * (f0(ii, jj, kk, 0) + f1(ii, jj, kk, 0));
+                  }
+                  return (f0(ii, jj, kk, 0) + f1(ii, jj, kk, 0) + 4.0 * f2(ii, jj, kk, 0)) / 6.0;
+               };
+               const amrex::Real fx_r = flux_combo(f0x, f1x, f2x, i + 1, j, k);
+               const amrex::Real fx_l = flux_combo(f0x, f1x, f2x, i, j, k);
+               const amrex::Real gx_offset = 0.5 * (start_accel[0] + accel[0]);
+               const amrex::Real gx_r = -0.5 * (g0x(i + 1, j, k, 0) + gx(i + 1, j, k, 0)) - gx_offset;
+               const amrex::Real gx_l = -0.5 * (g0x(i, j, k, 0) + gx(i, j, k, 0)) - gx_offset;
+               amrex::Real source = fx_r * gx_r + fx_l * gx_l;
+#if (AMREX_SPACEDIM >= 2)
+               const amrex::Real fy_r = flux_combo(f0y, f1y, f2y, i, j + 1, k);
+               const amrex::Real fy_l = flux_combo(f0y, f1y, f2y, i, j, k);
+               const amrex::Real gy_offset = 0.5 * (start_accel[1] + accel[1]);
+               const amrex::Real gy_r = -0.5 * (g0y(i, j + 1, k, 0) + gy(i, j + 1, k, 0)) - gy_offset;
+               const amrex::Real gy_l = -0.5 * (g0y(i, j, k, 0) + gy(i, j, k, 0)) - gy_offset;
+               source += fy_r * gy_r + fy_l * gy_l;
+#endif
+#if (AMREX_SPACEDIM == 3)
+               const amrex::Real fz_r = flux_combo(f0z, f1z, f2z, i, j, k + 1);
+               const amrex::Real fz_l = flux_combo(f0z, f1z, f2z, i, j, k);
+               const amrex::Real gz_offset = 0.5 * (start_accel[2] + accel[2]);
+               const amrex::Real gz_r = -0.5 * (g0z(i, j, k + 1, 0) + gz(i, j, k + 1, 0)) - gz_offset;
+               const amrex::Real gz_l = -0.5 * (g0z(i, j, k, 0) + gz(i, j, k, 0)) - gz_offset;
+               source += fz_r * gz_r + fz_l * gz_l;
+#endif
+               const amrex::Real release = time_factor * 0.5 * source;
+               const amrex::Real previous_weight = replace_previous_release ? 1.0 : carried_weight;
+               state(i, j, k, ENERGY) += release - previous_weight * previous(i, j, k, 0);
+               previous(i, j, k, 0) = release;
+            });
+         }
+         }
+      }
+   }
+
+   bool post_sync_athena_ssprk3_gravity_energy_release_needed() const
+   {
+      return uses_athena_ssprk3_gravity_energy_correction()
+         && finestLevel() > 0
+         && eos_method_ != EOSPolytrope;
+   }
+
+   void resync_athena_ssprk3_gravity_energy_after_average_down(amrex::Real dt)
+   {
+      if (!post_sync_athena_ssprk3_gravity_energy_release_needed() || dt == 0.0) {
+         return;
+      }
+      for (int fine_lev = finestLevel(); fine_lev > 0; --fine_lev) {
+         apply_gravity_energy_source_register_scaled(fine_lev, *state_[fine_lev - 1], -1.0);
+      }
+      prepare_gravity_fields(state_, true);
+      update_self_gravity_acceleration_offset(state_);
+      apply_athena_ssprk3_energy_release_range(state_, 2, dt, 0, finestLevel() + 1, true);
+      add_athena_ssprk3_gravity_energy_source_register(dt, 0, finestLevel() + 1);
+      for (int fine_lev = finestLevel(); fine_lev > 0; --fine_lev) {
+         apply_gravity_energy_source_register(fine_lev, *state_[fine_lev - 1]);
+      }
+   }
+
+   template <bool SubcyclingEnabled>
+   void prepare_stage_sources(LevelData& input, int lev_begin, int lev_end, amrex::Real rhs_time)
+   {
+      if (!gravity_enabled(cfg_)) {
+         return;
+      }
+      // Source fields are prepared at the same stage time as the RHS. Future
+      // source terms should follow this hook rather than solving or caching
+      // stage-dependent auxiliaries inside timestepping kernels.
+      const amrex::Real gravity_start = profile_begin();
+      if constexpr (SubcyclingEnabled) {
+         if (uses_subcycled_self_gravity_source_state()) {
+            fill_source_state_for_rhs(input, lev_begin, lev_end, rhs_time);
+            solve_gravity_potential(source_state_, true);
+            update_self_gravity_acceleration_offset(source_state_);
+            profile_end(ProfileStage::Sources, gravity_start);
+            return;
+         }
+      }
+      prepare_gravity_fields(input, true);
+      update_self_gravity_acceleration_offset(input);
+      profile_end(ProfileStage::Sources, gravity_start);
+   }
+
+   template <int NComp>
+   void apply_stage_sources_to_rhs(
+      int lev,
+      LevelData& input,
+      std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
+      bool use_solid_mask,
+      amrex::Real rhs_time
+   )
+   {
+      std::array<amrex::MultiFab const*, AMREX_SPACEDIM> gravity_gradient{};
+      std::array<amrex::MultiFab const*, AMREX_SPACEDIM> mass_fluxes{};
+      SourceStageContext source_context;
+      source_context.cfg = &cfg_;
+      source_context.geom = &Geom(lev);
+      source_context.time = rhs_time;
+      source_context.solid_mask = use_solid_mask ? solid_mask_[lev].get() : nullptr;
+      source_context.solid_valid_kind = use_solid_mask ? &solid_valid_kind_[lev] : nullptr;
+      if (gravity_enabled(cfg_)) {
+         // Grad phi is cached solver auxiliary storage. Phi itself belongs to
+         // the gravity solve; RHS source application only consumes the stage
+         // gradient and, for Athena coupling, the already-computed mass fluxes.
+         gravity_gradient = gravity_gradient_const_ptrs(gravity_gradient_[lev]);
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            mass_fluxes[dir] = fluxes[dir];
+         }
+         source_context.gravity_gradient = &gravity_gradient;
+         source_context.gravity_acceleration_offset = &gravity_acceleration_offset_;
+         source_context.mass_fluxes = &mass_fluxes;
+         source_context.suppress_athena_gravity_energy_source = suppress_athena_gravity_energy_source_;
+      }
+      apply_sources<NComp>(*rhs_[lev], *input[lev], source_context);
+   }

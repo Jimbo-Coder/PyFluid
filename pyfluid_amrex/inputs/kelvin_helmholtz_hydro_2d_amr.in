@@ -1,0 +1,65 @@
+pyfluid.run_name = kelvin_helmholtz_hydro_2d_amr
+pyfluid.output_dir = runs/current/kelvin_helmholtz_hydro_2d_amr
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 1 1
+
+amr.n_cell = 96 96
+amr.max_level = 4
+amr.ref_ratio = 2 2 2 2
+amr.max_grid_size = 64
+amr.blocking_factor = 16
+amr.regrid_int = 6
+amr.grid_eff = 0.85
+amr.n_error_buf = 8 8 8 8
+amr.level_cell_budget_side = 1024
+amr.total_cell_budget = 2000000
+amr.tag_metric = auto
+amr.state_interp = quartic-conservative
+amr.tag_threshold = 0.035
+amr.initial_refine = box
+amr.initial_refine_levels = 2
+amr.initial_refine_fixed_levels = 0
+amr.initial_refine_box_lo = 0.0 0.21 0.0 0.71
+amr.initial_refine_box_hi = 1.0 0.29 1.0 0.79
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.max_step = 100000
+pyfluid.final_time = 1.20
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.ic = kelvin_helmholtz
+pyfluid.rho0 = 1.5
+pyfluid.pressure0 = 2.5
+pyfluid.v1_0 = 0.50
+pyfluid.amplitude = 0.055
+pyfluid.bump_sigma = 0.022
+pyfluid.bump_x0 = 0.50
+pyfluid.bump_y0 = 0.50
+pyfluid.wave_number = 2.0
+pyfluid.kh_secondary_amplitude = 0.018
+pyfluid.kh_secondary_mode = 5.0
+pyfluid.kh_phase = 0.41
+pyfluid.kh_envelope_sigma = 0.0
+pyfluid.kh_density_amplitude = 0.3333333333333333
+
+pyfluid.recon = wenoz
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = periodic
+pyfluid.subcycling = on
+
+pyfluid.diffusion = none
+pyfluid.viscosity = 0.0
+pyfluid.resistivity = 0.0
+
+pyfluid.scalar_int = 4
+pyfluid.plot_int = 8
+pyfluid.checkpoint_int = 96
+pyfluid.aux_gfs = none
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = -1

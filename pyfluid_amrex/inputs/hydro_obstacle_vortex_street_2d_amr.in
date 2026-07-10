@@ -1,0 +1,73 @@
+pyfluid.run_name = hydro_obstacle_vortex_street_2d_amr
+pyfluid.output_dir = runs/current/hydro_obstacle_vortex_street_2d_amr
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 4.0 1.0
+geometry.is_periodic = 0 1
+
+amr.n_cell = 256 64
+amr.max_level = 4
+amr.ref_ratio = 2 2 2 2
+amr.max_grid_size = 64
+amr.blocking_factor = 16
+amr.regrid_int = 6
+amr.grid_eff = 0.85
+amr.n_error_buf = 4 4 4 4
+amr.level_cell_budget_side = 1536
+amr.total_cell_budget = 1800000
+amr.tag_metric = auto
+amr.state_interp = protected
+amr.initial_refine = box
+amr.initial_refine_levels = 1
+amr.initial_refine_fixed_levels = 0
+amr.initial_refine_box_lo = 0.55 0.34
+amr.initial_refine_box_hi = 1.70 0.66
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.max_step = 100000
+pyfluid.final_time = 12.0
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.4
+
+pyfluid.ic = pressure_bump
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 2.5
+pyfluid.v1_0 = 0.9
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.amplitude = 0.001
+pyfluid.bump_sigma = 0.04
+pyfluid.bump_x0 = 0.90
+pyfluid.bump_y0 = 0.57
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = outflow
+pyfluid.bc_xlo = inflow
+pyfluid.bc_xhi = outflow
+pyfluid.bc_ylo = periodic
+pyfluid.bc_yhi = periodic
+pyfluid.inflow_profile = uniform
+pyfluid.inflow_rho = 1.0
+pyfluid.inflow_pressure = 2.5
+pyfluid.inflow_v1 = 0.9
+pyfluid.inflow_v2 = 0.0
+pyfluid.inflow_v3 = 0.0
+
+pyfluid.solid_geometry = boxes
+pyfluid.solid_box_lo = 0.78 0.43
+pyfluid.solid_box_hi = 0.92 0.57
+
+pyfluid.diffusion = none
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = local_cfl
+
+pyfluid.scalar_int = 32
+pyfluid.plot_int = 32
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = solid_mask
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = 0

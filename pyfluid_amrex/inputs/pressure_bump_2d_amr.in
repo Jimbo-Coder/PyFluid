@@ -1,0 +1,39 @@
+pyfluid.run_name = pressure_bump_2d_amr
+pyfluid.output_dir = runs/current/pressure_bump_2d_amr
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 1 1
+
+amr.n_cell = 64 64
+amr.max_level = 2
+amr.ref_ratio = 2 2
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+
+pyfluid.max_step = 0
+pyfluid.ng = 1
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.ic = pressure_bump
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 1.0
+pyfluid.bump_sigma = 0.08
+pyfluid.bump_x0 = 0.5
+pyfluid.bump_y0 = 0.5
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+amr.tag_metric = auto
+
+pyfluid.recon = pwc
+pyfluid.riemann = llf
+pyfluid.timestep = euler
+pyfluid.bc = periodic
+pyfluid.subcycling = on
+
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 0

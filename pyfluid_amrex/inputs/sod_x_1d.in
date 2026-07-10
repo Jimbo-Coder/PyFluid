@@ -1,0 +1,38 @@
+pyfluid.run_name = sod_x_1d
+pyfluid.output_dir = runs/current/amrex_sod_x_1d
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 0
+
+amr.n_cell = 512
+amr.max_level = 0
+amr.max_grid_size = 128
+amr.blocking_factor = 8
+
+pyfluid.max_step = 10000
+pyfluid.final_time = 0.2
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.4
+
+pyfluid.ic = sod_x
+pyfluid.shock_x0 = 0.5
+pyfluid.rho_left = 1.0
+pyfluid.pressure_left = 1.0
+pyfluid.v1_left = 0.0
+pyfluid.v2_left = 0.0
+pyfluid.v3_left = 0.0
+pyfluid.rho_right = 0.125
+pyfluid.pressure_right = 0.1
+pyfluid.v1_right = 0.0
+pyfluid.v2_right = 0.0
+pyfluid.v3_right = 0.0
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = outflow
+
+pyfluid.scalar_int = 25
+pyfluid.plot_int = 10000

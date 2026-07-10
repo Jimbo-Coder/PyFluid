@@ -1,0 +1,359 @@
+// Included inside pyfluid_amrex::AmrSolver private section.
+// MultiFab RK stage algebra and fused update helpers.
+
+   template <int NComp>
+   void copy_plus_flux_divergence_range(
+      LevelData& out,
+      LevelData const& base,
+      amrex::Real scale,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (solid_active(lev) && !has_mhd_components<NComp>() && cfg_.solid_motion == "static") {
+            copy_plus_flux_divergence_components_masked<NComp>(
+               *out[lev],
+               *base[lev],
+               flux_ptrs(lev),
+               *solid_mask_[lev],
+               Geom(lev),
+               scale,
+               &solid_valid_kind_[lev]
+            );
+         } else {
+            copy_plus_flux_divergence_components<NComp>(*out[lev], *base[lev], flux_ptrs(lev), Geom(lev), scale);
+         }
+      }
+   }
+
+   template <int NComp>
+   void copy_two_plus_flux_divergence_range(
+      LevelData& out_a,
+      LevelData& out_b,
+      LevelData const& base,
+      amrex::Real scale_a,
+      amrex::Real scale_b,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (solid_active(lev) && !has_mhd_components<NComp>() && cfg_.solid_motion == "static") {
+            copy_two_plus_flux_divergence_components_masked<NComp>(
+               *out_a[lev],
+               *out_b[lev],
+               *base[lev],
+               flux_ptrs(lev),
+               *solid_mask_[lev],
+               Geom(lev),
+               scale_a,
+               scale_b,
+               &solid_valid_kind_[lev]
+            );
+         } else {
+            copy_two_plus_flux_divergence_components<NComp>(
+               *out_a[lev], *out_b[lev], *base[lev], flux_ptrs(lev), Geom(lev), scale_a, scale_b
+            );
+         }
+      }
+   }
+
+   template <int NComp>
+   void add_flux_divergence_and_copy_plus_flux_divergence_range(
+      LevelData& accumulator,
+      LevelData& scratch,
+      LevelData const& base,
+      amrex::Real accumulator_scale,
+      amrex::Real scratch_scale,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (solid_active(lev) && !has_mhd_components<NComp>() && cfg_.solid_motion == "static") {
+            add_flux_divergence_and_copy_plus_flux_divergence_components_masked<NComp>(
+               *accumulator[lev],
+               *scratch[lev],
+               *base[lev],
+               flux_ptrs(lev),
+               *solid_mask_[lev],
+               Geom(lev),
+               accumulator_scale,
+               scratch_scale,
+               &solid_valid_kind_[lev]
+            );
+         } else {
+            add_flux_divergence_and_copy_plus_flux_divergence_components<NComp>(
+               *accumulator[lev],
+               *scratch[lev],
+               *base[lev],
+               flux_ptrs(lev),
+               Geom(lev),
+               accumulator_scale,
+               scratch_scale
+            );
+         }
+      }
+   }
+
+   template <int NComp>
+   void linear_combination_plus_flux_divergence_range(
+      LevelData& out,
+      LevelData const& base,
+      LevelData const& input,
+      amrex::Real base_weight,
+      amrex::Real input_weight,
+      amrex::Real flux_scale,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (solid_active(lev) && !has_mhd_components<NComp>() && cfg_.solid_motion == "static") {
+            linear_combination_plus_flux_divergence_components_masked<NComp>(
+               *out[lev],
+               *base[lev],
+               *input[lev],
+               flux_ptrs(lev),
+               *solid_mask_[lev],
+               Geom(lev),
+               base_weight,
+               input_weight,
+               flux_scale,
+               &solid_valid_kind_[lev]
+            );
+         } else {
+            linear_combination_plus_flux_divergence_components<NComp>(
+               *out[lev],
+               *base[lev],
+               *input[lev],
+               flux_ptrs(lev),
+               Geom(lev),
+               base_weight,
+               input_weight,
+               flux_scale
+            );
+         }
+      }
+   }
+
+   template <int NComp>
+   void store_rk4_rhs_stage(int stage_index, int lev_begin, int lev_end)
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (!rk4_rhs_stage_[stage_index][lev]) {
+            amrex::Abort("RK4 subcycling requires allocated stage-RHS storage");
+         }
+         amrex::MultiFab::Copy(*rk4_rhs_stage_[stage_index][lev], *rhs_[lev], 0, 0, NComp, 0);
+      }
+   }
+
+   template <int NComp>
+   void copy_plus_scaled_range(LevelData& out, LevelData const& base, LevelData const& increment, amrex::Real scale, int lev_begin, int lev_end)
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (solid_active(lev) && !has_mhd_components<NComp>()) {
+            copy_plus_scaled_components_masked<NComp>(
+               *out[lev],
+               *base[lev],
+               *increment[lev],
+               *solid_mask_[lev],
+               scale,
+               &solid_valid_kind_[lev]
+            );
+         } else {
+            copy_plus_scaled_components<NComp>(*out[lev], *base[lev], *increment[lev], scale);
+         }
+      }
+   }
+
+   template <int NComp>
+   void copy_plus_scaled_all(LevelData& out, LevelData const& base, LevelData const& increment, amrex::Real scale)
+   {
+      copy_plus_scaled_range<NComp>(out, base, increment, scale, 0, finestLevel() + 1);
+   }
+
+   template <int NComp>
+   void add_scaled_range(LevelData& out, LevelData const& increment, amrex::Real scale, int lev_begin, int lev_end)
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (solid_active(lev) && !has_mhd_components<NComp>()) {
+            add_scaled_components_masked<NComp>(*out[lev], *increment[lev], *solid_mask_[lev], scale, &solid_valid_kind_[lev]);
+         } else {
+            add_scaled_components<NComp>(*out[lev], *increment[lev], scale);
+         }
+      }
+   }
+
+   template <int NComp>
+   void add_scaled_all(LevelData& out, LevelData const& increment, amrex::Real scale)
+   {
+      add_scaled_range<NComp>(out, increment, scale, 0, finestLevel() + 1);
+   }
+
+   template <int NComp>
+   void copy_two_plus_scaled_range(
+      LevelData& out_a,
+      LevelData& out_b,
+      LevelData const& base,
+      LevelData const& increment,
+      amrex::Real scale_a,
+      amrex::Real scale_b,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (solid_active(lev) && !has_mhd_components<NComp>()) {
+            copy_two_plus_scaled_components_masked<NComp>(
+               *out_a[lev],
+               *out_b[lev],
+               *base[lev],
+               *increment[lev],
+               *solid_mask_[lev],
+               scale_a,
+               scale_b,
+               &solid_valid_kind_[lev]
+            );
+         } else {
+            copy_two_plus_scaled_components<NComp>(*out_a[lev], *out_b[lev], *base[lev], *increment[lev], scale_a, scale_b);
+         }
+      }
+   }
+
+   template <int NComp>
+   void copy_two_plus_scaled_all(
+      LevelData& out_a,
+      LevelData& out_b,
+      LevelData const& base,
+      LevelData const& increment,
+      amrex::Real scale_a,
+      amrex::Real scale_b
+   )
+   {
+      copy_two_plus_scaled_range<NComp>(out_a, out_b, base, increment, scale_a, scale_b, 0, finestLevel() + 1);
+   }
+
+   template <int NComp>
+   void add_scaled_and_copy_plus_scaled_range(
+      LevelData& accumulator,
+      LevelData& scratch,
+      LevelData const& base,
+      LevelData const& increment,
+      amrex::Real accumulator_scale,
+      amrex::Real scratch_scale,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (solid_active(lev) && !has_mhd_components<NComp>()) {
+            add_scaled_and_copy_plus_scaled_components_masked<NComp>(
+               *accumulator[lev],
+               *scratch[lev],
+               *base[lev],
+               *increment[lev],
+               *solid_mask_[lev],
+               accumulator_scale,
+               scratch_scale,
+               &solid_valid_kind_[lev]
+            );
+         } else {
+            add_scaled_and_copy_plus_scaled_components<NComp>(
+               *accumulator[lev],
+               *scratch[lev],
+               *base[lev],
+               *increment[lev],
+               accumulator_scale,
+               scratch_scale
+            );
+         }
+      }
+   }
+
+   template <int NComp>
+   void add_scaled_and_copy_plus_scaled_all(
+      LevelData& accumulator,
+      LevelData& scratch,
+      LevelData const& base,
+      LevelData const& increment,
+      amrex::Real accumulator_scale,
+      amrex::Real scratch_scale
+   )
+   {
+      add_scaled_and_copy_plus_scaled_range<NComp>(
+         accumulator,
+         scratch,
+         base,
+         increment,
+         accumulator_scale,
+         scratch_scale,
+         0,
+         finestLevel() + 1
+      );
+   }
+
+   template <int NComp>
+   void linear_combination_plus_scaled_range(
+      LevelData& out,
+      LevelData const& base,
+      LevelData const& input,
+      LevelData const& increment,
+      amrex::Real base_weight,
+      amrex::Real input_weight,
+      amrex::Real increment_scale,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (solid_active(lev) && !has_mhd_components<NComp>()) {
+            linear_combination_plus_scaled_components_masked<NComp>(
+               *out[lev],
+               *base[lev],
+               *input[lev],
+               *increment[lev],
+               *solid_mask_[lev],
+               base_weight,
+               input_weight,
+               increment_scale,
+               &solid_valid_kind_[lev]
+            );
+         } else {
+            linear_combination_plus_scaled_components<NComp>(
+               *out[lev],
+               *base[lev],
+               *input[lev],
+               *increment[lev],
+               base_weight,
+               input_weight,
+               increment_scale
+            );
+         }
+      }
+   }
+
+   template <int NComp>
+   void linear_combination_plus_scaled_all(
+      LevelData& out,
+      LevelData const& base,
+      LevelData const& input,
+      LevelData const& increment,
+      amrex::Real base_weight,
+      amrex::Real input_weight,
+      amrex::Real increment_scale
+   )
+   {
+      linear_combination_plus_scaled_range<NComp>(
+         out,
+         base,
+         input,
+         increment,
+         base_weight,
+         input_weight,
+         increment_scale,
+         0,
+         finestLevel() + 1
+      );
+   }

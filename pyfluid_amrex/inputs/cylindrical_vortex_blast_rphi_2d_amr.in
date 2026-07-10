@@ -1,0 +1,81 @@
+pyfluid.run_name = cylindrical_vortex_blast_rphi_2d_amr
+
+mesh.coordinate = cylindrical
+mesh.axes = r phi
+mesh.patch_system = single
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.45 6.283185307179586
+geometry.is_periodic = 0 1
+geometry.coord_sys = 0
+
+amr.n_cell = 64 192
+amr.max_level = 5
+amr.ref_ratio = 2 2 2 2 2
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+amr.regrid_int = 4
+amr.grid_eff = 0.85
+amr.n_error_buf = 8 8 8 8 8
+amr.level_cell_budget_side = 2048
+amr.total_cell_budget = 3000000
+amr.tag_metric = auto
+amr.tag_threshold = 0.025
+amr.min_feature_length = 0.003
+amr.state_interp = quartic-conservative
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.ic = vortex_blast
+pyfluid.eos = ideal_gas
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 0.35
+pyfluid.amplitude = 2.8
+pyfluid.bump_sigma = 0.085
+pyfluid.bump_x0 = 0.0
+pyfluid.bump_y0 = 3.141592653589793
+pyfluid.bump_z0 = 0.0
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.kh_secondary_amplitude = 0.42
+pyfluid.kh_secondary_mode = 5.0
+pyfluid.kh_phase = 0.61
+pyfluid.kh_density_amplitude = 0.24
+
+pyfluid.passive_scalars = 1
+pyfluid.passive_profile = gaussian
+pyfluid.passive_background = 0.0
+pyfluid.passive_amplitude = 1.0
+pyfluid.passive_sigma = 0.13
+pyfluid.passive_x0 = 0.0
+pyfluid.passive_y0 = 3.141592653589793
+pyfluid.wave_number = 3.0
+
+pyfluid.max_step = 100000
+pyfluid.final_time = 1.20
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+pyfluid.physical_check_int = 1
+
+pyfluid.recon = wenoz
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = reflecting
+pyfluid.bc_xlo = origin
+pyfluid.bc_xhi = reflecting
+pyfluid.bc_ylo = periodic
+pyfluid.bc_yhi = periodic
+pyfluid.diffusion = none
+pyfluid.viscosity = 0.0
+pyfluid.gravity = none
+pyfluid.source = none
+pyfluid.subcycling = on
+
+pyfluid.scalar_int = 4
+pyfluid.plot_int = 3
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = none
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = -1

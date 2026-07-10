@@ -1,0 +1,55 @@
+pyfluid.run_name = mixed_thornburg04_pressure_bump_2d
+pyfluid.output_dir = runs/current/mixed_multipatch/mixed_thornburg04_pressure_bump_2d
+
+mesh.coordinate = cartesian
+mesh.axes = x y
+mesh.patch_system = mixed_thornburg04
+mesh.allow_experimental_mixed_shell = 1
+mesh.patch_inner_radius = 1.0
+mesh.patch_outer_radius = 4.0
+mesh.patch_central_cells = 16 16
+mesh.patch_angular_cells = 16
+mesh.patch_radial_cells = 12
+mesh.patch_outer_radial_cells = 12
+mesh.patch_pack_direction = 0
+mesh.patch_gap_cells = 0
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 80.0 16.0
+geometry.is_periodic = 0 0
+
+amr.n_cell = 80 16
+amr.max_level = 0
+amr.max_grid_size = 32
+amr.blocking_factor = 4
+
+pyfluid.max_step = 8
+pyfluid.ng = 1
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+pyfluid.physical_check_int = 1
+
+pyfluid.physics = hydro
+pyfluid.ic = pressure_bump
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 1.0e-3
+pyfluid.bump_sigma = 0.35
+pyfluid.bump_x0 = 0.0
+pyfluid.bump_y0 = 0.0
+pyfluid.bump_z0 = 0.0
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = pwc
+pyfluid.riemann = llf
+pyfluid.timestep = euler
+pyfluid.bc = reflecting
+pyfluid.diffusion = none
+pyfluid.gravity = none
+pyfluid.source = none
+pyfluid.subcycling = off
+
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 4

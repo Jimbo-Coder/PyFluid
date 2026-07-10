@@ -1,0 +1,45 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "full-release",
+      "displayName": "Full release",
+      "description": "Compile every PyFluid AMReX method branch.",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/../build/pyfluid_amrex",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "/opt/homebrew/bin/mpicxx",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../.deps/amrex-mpi-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi",
+        "AMReX_DIR": "${sourceDir}/../.deps/amrex-mpi-lsolvers-hdf5/lib/cmake/AMReX",
+        "HDF5_ROOT": "/opt/homebrew/opt/hdf5-mpi",
+        "PYFLUID_AMREX_NATIVE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "full-1d",
+      "configurePreset": "full-release",
+      "targets": ["pyfluid_amrex_1d"],
+      "jobs": 3
+    },
+    {
+      "name": "full-2d",
+      "configurePreset": "full-release",
+      "targets": ["pyfluid_amrex_2d", "pyfluid_amrex_compare_checkpoint_2d"],
+      "jobs": 3
+    },
+    {
+      "name": "full-3d",
+      "configurePreset": "full-release",
+      "targets": ["pyfluid_amrex_3d"],
+      "jobs": 3
+    }
+  ]
+}

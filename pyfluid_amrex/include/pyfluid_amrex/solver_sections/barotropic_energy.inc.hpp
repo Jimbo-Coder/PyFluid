@@ -1,0 +1,40 @@
+// Included inside pyfluid_amrex::AmrSolver private section.
+// Barotropic EOS energy reset helpers.
+
+   template <int NComp, int EOSMethod>
+   void reset_barotropic_energy_level(int lev)
+   {
+      if constexpr (EOSMethod == EOSPolytrope) {
+         const EOSParams eos = eos_params(cfg_);
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+         {
+         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            const amrex::Box& bx = mfi.tilebox();
+            const auto s = state_[lev]->array(mfi);
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               if constexpr (has_mhd_components<NComp>()) {
+                  MHDState cell = load_mhd_state(s, i, j, k);
+                  reset_barotropic_mhd_energy<EOSMethod>(cell, eos);
+                  s(i, j, k, ENERGY) = cell.energy;
+               } else {
+                  HydroState cell = load_hydro_state(s, i, j, k);
+                  reset_barotropic_hydro_energy<EOSMethod>(cell, eos);
+                  s(i, j, k, ENERGY) = cell.energy;
+               }
+            });
+         }
+         }
+      }
+   }
+
+   template <int NComp, int EOSMethod>
+   void reset_barotropic_energy_all_levels()
+   {
+      if constexpr (EOSMethod == EOSPolytrope) {
+         for (int lev = 0; lev <= finestLevel(); ++lev) {
+            reset_barotropic_energy_level<NComp, EOSMethod>(lev);
+         }
+      }
+   }

@@ -1,0 +1,61 @@
+pyfluid.run_name = hydro_tjunction_dynamic_amr_pulse_2d
+pyfluid.output_dir = runs/current/pressure_bump/hydro_tjunction_dynamic_amr_pulse_2d
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 1 1
+
+mesh.coordinate = cartesian
+mesh.patch_system = multi_homogeneous_cartesian
+# Three owned boxes: left half plus two right quadrants. This is a T-junction
+# in the base-grid decomposition, not four independent quadrants.
+mesh.patch_box_small = 0 0  32 0  32 32
+mesh.patch_box_big = 31 63  63 31  63 63
+
+amr.n_cell = 64 64
+amr.max_level = 10
+amr.ref_ratio = 2
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+amr.regrid_int = 4
+amr.grid_eff = 0.80
+amr.n_error_buf = 3
+amr.level_cell_budget_side = 1024
+amr.total_cell_budget = 700000
+amr.tag_metric = auto
+amr.tag_threshold = 0.08
+amr.min_feature_length = 0.0025
+amr.initial_refine = box
+amr.initial_refine_levels = 2
+amr.initial_refine_fixed_levels = 0
+amr.initial_refine_box_lo = 0.34 0.34
+amr.initial_refine_box_hi = 0.66 0.66
+amr.state_interp = quartic-conservative
+
+pyfluid.max_step = 100000
+pyfluid.final_time = 0.55
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.ic = pressure_bump
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 4.0
+pyfluid.bump_sigma = 0.055
+pyfluid.bump_x0 = 0.5
+pyfluid.bump_y0 = 0.5
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = periodic
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = local_cfl
+pyfluid.physical_check_int = 1
+
+pyfluid.scalar_int = 4
+pyfluid.plot_int = 4

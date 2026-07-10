@@ -1,0 +1,40 @@
+pyfluid.run_name = resistive_wave_x_2d_ct
+pyfluid.output_dir = runs/current/amrex_resistive_wave_x_2d_ct
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 1 1
+
+amr.n_cell = 64 64
+amr.max_level = 0
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+
+pyfluid.physics = mhd
+pyfluid.ct = on
+pyfluid.max_step = 8
+pyfluid.final_time = -1.0
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.ic = resistive_wave_x
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.alfven_amplitude = 1.0e-3
+pyfluid.wave_number = 1.0
+
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = rk4
+pyfluid.bc = periodic
+
+pyfluid.diffusion = explicit
+pyfluid.viscosity = 0.0
+pyfluid.resistivity = 0.01
+
+pyfluid.aux_gfs = j,e,divb
+pyfluid.aux_gf_compute_int = 8
+pyfluid.aux_gf_int = 8
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 8

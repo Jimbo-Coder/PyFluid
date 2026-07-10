@@ -1,0 +1,47 @@
+pyfluid.run_name = spherical_pressure_bump_rphi_2d
+
+mesh.coordinate = spherical
+mesh.axes = r phi
+mesh.patch_system = single
+
+geometry.prob_lo = 0.8 0.0
+geometry.prob_hi = 1.8 6.283185307179586
+geometry.is_periodic = 0 1
+geometry.coord_sys = 0
+
+amr.n_cell = 160 160
+amr.max_level = 0
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+
+pyfluid.max_step = 160
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+pyfluid.physical_check_int = 1
+
+pyfluid.physics = hydro
+pyfluid.ic = pressure_bump
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 0.35
+pyfluid.bump_sigma = 0.08
+pyfluid.bump_x0 = 1.3
+pyfluid.bump_y0 = 3.141592653589793
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = reflecting
+pyfluid.bc_ylo = periodic
+pyfluid.bc_yhi = periodic
+pyfluid.diffusion = none
+pyfluid.gravity = none
+pyfluid.source = none
+pyfluid.subcycling = off
+
+pyfluid.scalar_int = 4
+pyfluid.plot_int = 4

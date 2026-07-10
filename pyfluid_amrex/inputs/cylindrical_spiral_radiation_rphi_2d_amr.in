@@ -1,0 +1,77 @@
+pyfluid.run_name = cylindrical_spiral_radiation_rphi_2d_amr
+pyfluid.output_dir = runs/current/cylindrical_spiral_radiation/cylindrical_spiral_radiation_rphi_2d_amr
+
+mesh.coordinate = cylindrical
+mesh.axes = r phi
+mesh.patch_system = single
+
+geometry.prob_lo = 0.08 0.0
+geometry.prob_hi = 2.40 6.283185307179586
+geometry.is_periodic = 0 1
+geometry.coord_sys = 0
+
+amr.n_cell = 72 96
+amr.max_level = 6
+amr.ref_ratio = 2 2 2 2 2 2
+amr.max_refinement_ratio = 4
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+amr.regrid_int = 4
+amr.grid_eff = 0.85
+amr.n_error_buf = 8 8 8 8 8 8
+amr.level_cell_budget_side = 2048
+amr.total_cell_budget = 2500000
+amr.tag_metric = auto
+amr.refinement_tensor = auto
+amr.tag_threshold = 0.018
+amr.min_feature_length = 0.0
+amr.min_feature_length_1 = 0.004
+amr.min_feature_length_2 = 0.020
+amr.state_interp = quartic-conservative
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.ic = uniform
+pyfluid.eos = ideal_gas
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 0.04
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.source = rotating_ring_heating
+pyfluid.source_power = 8.0
+pyfluid.source_radius = 0.42
+pyfluid.source_radial_sigma = 0.035
+pyfluid.source_angular_sigma = 0.075
+pyfluid.source_omega = 8.0
+pyfluid.source_ramp_time = 0.18
+pyfluid.source_phase = 0.0
+pyfluid.source_azimuthal_mode = 2
+
+pyfluid.max_step = 200000
+pyfluid.final_time = 2.20
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+pyfluid.physical_check_int = 1
+
+pyfluid.recon = wenoz
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = outflow
+pyfluid.bc_xlo = outflow
+pyfluid.bc_xhi = outflow
+pyfluid.bc_ylo = periodic
+pyfluid.bc_yhi = periodic
+pyfluid.diffusion = none
+pyfluid.viscosity = 0.0
+pyfluid.gravity = none
+pyfluid.subcycling = off
+
+pyfluid.scalar_int = 4
+pyfluid.plot_int = 4
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = none
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = -1

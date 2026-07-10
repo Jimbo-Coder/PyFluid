@@ -1,0 +1,66 @@
+pyfluid.run_name = hydro_t_corridor_patch_union_2d_amr
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 3.0 2.0
+geometry.is_periodic = 0 0
+
+mesh.coordinate = cartesian
+mesh.patch_system = multi_homogeneous_cartesian
+mesh.patch_box_domain = union
+# Disjoint owned boxes forming the physical T/cross corridor domain.
+# No solid geometry is used; cells outside this union are outside the domain.
+mesh.patch_box_small = 0 48  96 0  128 48
+mesh.patch_box_big = 95 79  127 127  191 79
+
+amr.n_cell = 192 128
+amr.max_level = 10
+amr.ref_ratio = 2
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+amr.regrid_int = 4
+amr.grid_eff = 0.80
+amr.n_error_buf = 3
+amr.level_cell_budget_side = 2048
+amr.total_cell_budget = 900000
+amr.tag_metric = auto
+amr.tag_threshold = 0.08
+amr.min_feature_length = 0.004
+amr.initial_refine = box
+amr.initial_refine_levels = 2
+amr.initial_refine_fixed_levels = 0
+amr.initial_refine_box_lo = 0.10 0.70  1.40 0.05
+amr.initial_refine_box_hi = 1.90 1.30  2.10 1.95
+amr.state_interp = protected
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.max_step = 100000
+pyfluid.final_time = 0.75
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.4
+
+pyfluid.ic = pressure_bump
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 5.0
+pyfluid.bump_sigma = 0.075
+pyfluid.bump_x0 = 0.35
+pyfluid.bump_y0 = 1.0
+pyfluid.bump_z0 = 0.5
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = reflecting
+pyfluid.diffusion = none
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+pyfluid.physical_check_int = 1
+
+pyfluid.scalar_int = 4
+pyfluid.plot_int = 4
+pyfluid.checkpoint_int = -1

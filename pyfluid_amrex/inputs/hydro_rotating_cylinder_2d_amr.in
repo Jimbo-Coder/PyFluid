@@ -1,0 +1,68 @@
+pyfluid.run_name = hydro_rotating_cylinder_2d_amr
+pyfluid.output_dir = runs/current/hydro_rotating_cylinder_2d_amr
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 0 0
+
+amr.n_cell = 96 96
+amr.max_level = 2
+amr.ref_ratio = 2 2
+amr.max_grid_size = 48
+amr.blocking_factor = 8
+amr.regrid_int = 4
+amr.grid_eff = 0.85
+amr.n_error_buf = 3 3
+amr.level_cell_budget_side = 384
+amr.total_cell_budget = 250000
+amr.tag_metric = auto
+amr.state_interp = protected
+amr.min_feature_length = 0.00390625
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.ic = uniform
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.gamma = 1.4
+pyfluid.cfl = 0.9
+pyfluid.ng = 2
+pyfluid.max_step = 400
+pyfluid.final_time = 0.35
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+
+pyfluid.bc = reflecting
+pyfluid.bc_xlo = reflecting
+pyfluid.bc_xhi = reflecting
+pyfluid.bc_ylo = reflecting
+pyfluid.bc_yhi = reflecting
+
+pyfluid.solid_geometry = circle
+pyfluid.solid_motion = rotate
+pyfluid.solid_wall_condition = no_slip
+pyfluid.solid_center_x = 0.50
+pyfluid.solid_center_y = 0.50
+pyfluid.solid_radius = 0.12
+pyfluid.solid_angular_velocity_3 = 8.0
+
+pyfluid.diffusion = explicit
+pyfluid.viscosity = 5.0e-4
+pyfluid.diffusion_cfl = 0.9
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+
+pyfluid.scalar_int = 8
+pyfluid.plot_int = 32
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = solid_mask,solid_volume_fraction,solid_phi
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = 32
+pyfluid.profile = on
+pyfluid.profile_detail = basic

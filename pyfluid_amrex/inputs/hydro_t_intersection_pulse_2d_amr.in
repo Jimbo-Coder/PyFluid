@@ -1,0 +1,72 @@
+pyfluid.run_name = hydro_t_intersection_pulse_2d_amr
+pyfluid.output_dir = runs/current/hydro_t_intersection_pulse_2d_amr
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 3.0 2.0
+geometry.is_periodic = 0 0
+
+mesh.coordinate = cartesian
+mesh.patch_system = multi_homogeneous_cartesian
+mesh.patch_box_small = 0 0  96 0  96 64
+mesh.patch_box_big = 95 127  191 63  191 127
+
+amr.n_cell = 192 128
+amr.max_level = 8
+amr.ref_ratio = 2 2 2 2 2 2 2 2
+amr.max_grid_size = 64
+amr.blocking_factor = 16
+amr.regrid_int = 4
+amr.grid_eff = 0.85
+amr.n_error_buf = 4 4 4 4 4 4 4 4
+amr.level_cell_budget_side = 1536
+amr.total_cell_budget = 1200000
+amr.tag_metric = auto
+amr.state_interp = protected
+amr.min_feature_length = 0.006
+amr.solid_refine_band_cells = 2.0
+amr.initial_refine = box
+amr.initial_refine_levels = 2
+amr.initial_refine_fixed_levels = 0
+amr.initial_refine_box_lo = 0.10 0.78  1.40 0.05
+amr.initial_refine_box_hi = 1.86 1.22  1.90 1.95
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.max_step = 100000
+pyfluid.final_time = 0.75
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.4
+
+pyfluid.ic = pressure_bump
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 5.0
+pyfluid.bump_sigma = 0.075
+pyfluid.bump_x0 = 0.35
+pyfluid.bump_y0 = 1.0
+pyfluid.bump_z0 = 0.5
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = reflecting
+
+pyfluid.solid_geometry = boxes
+pyfluid.solid_box_lo = 0.00 0.00  0.00 1.16  1.84 0.00
+pyfluid.solid_box_hi = 1.50 0.84  1.50 2.00  3.00 2.00
+
+pyfluid.diffusion = none
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = local_cfl
+pyfluid.physical_check_int = 4
+
+pyfluid.scalar_int = 4
+pyfluid.plot_int = 4
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = solid_mask
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = 4

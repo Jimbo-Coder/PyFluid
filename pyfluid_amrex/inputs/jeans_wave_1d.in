@@ -1,0 +1,51 @@
+pyfluid.run_name = jeans_wave_1d
+pyfluid.output_dir = runs/current/jeans_wave_1d
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 1
+
+amr.n_cell = 256
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+pyfluid.max_step = 100000
+pyfluid.final_time = 0.1
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+pyfluid.eos = ideal_gas
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.ic = jeans_wave_x
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 1.0e-6
+pyfluid.wave_number = 1.0
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = wenoz
+pyfluid.riemann = hllc
+pyfluid.timestep = rk4
+pyfluid.bc = periodic
+
+pyfluid.diffusion = none
+pyfluid.source = none
+pyfluid.gravity = poisson
+pyfluid.gravity_constant = 1.0
+pyfluid.gravity_tolerance = 1.0e-12
+pyfluid.gravity_max_iterations = 200
+pyfluid.gravity_max_fmg_iterations = 20
+pyfluid.gravity_max_order = 2
+
+pyfluid.validation_policy = elliptic
+pyfluid.scalar_int = 8
+pyfluid.plot_int = 100000
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = none
+pyfluid.aux_gf_int = -1
+pyfluid.aux_gf_compute_int = -1
