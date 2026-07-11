@@ -11,9 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import os
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,8 +24,13 @@ sys.path.insert(0, str(ROOT / "pyfluid_amrex" / "tools"))
 
 from plot_amrex_slice import parse_plot_header, read_level_state  # noqa: E402
 from plotfile_reader import latest_plotfile
-from validation_common import mpi_prefix
-from validation_common import append_validation_history, repo_relative  # noqa: E402
+from validation_common import (  # noqa: E402
+   append_validation_history,
+   materialize_run_input,
+   parameters_from_assignments,
+   repo_relative,
+   run_mpi,
+)
 
 
 BUILD = ROOT / "build" / "pyfluid_amrex"
@@ -823,29 +826,25 @@ def write_input(pair: Pair, spec: RunSpec) -> tuple[Path, Path]:
    input_dir = INPUT_ROOT / pair.name
    input_dir.mkdir(parents=True, exist_ok=True)
    run_dir.mkdir(parents=True, exist_ok=True)
-   lines = (INPUTS / spec.base_input).read_text().splitlines()
-   lines.append("")
-   lines.append("# validate_dimensional_consistency.py overrides")
-   lines.append(f"pyfluid.run_name={pair.name}_{spec.label}")
-   lines.append(f"pyfluid.output_dir={repo_relative(run_dir)}")
-   lines.extend(spec.overrides)
    path = input_dir / f"{spec.label}.in"
-   path.write_text("\n".join(lines) + "\n")
+   materialize_run_input(
+      INPUTS / spec.base_input,
+      path,
+      parameters_from_assignments(
+         [
+            f"pyfluid.run_name={pair.name}_{spec.label}",
+            f"pyfluid.output_dir={repo_relative(run_dir)}",
+            *spec.overrides,
+         ]
+      ),
+      remove_parameters=("amr.ref_ratio",),
+   )
    return path, run_dir
 
 
 def run_spec(pair: Pair, spec: RunSpec, ranks: int) -> tuple[int, Path, str]:
    input_path, run_dir = write_input(pair, spec)
-   cmd = [*mpi_prefix(ranks), str(executable(spec.dim)), str(input_path)]
-   proc = subprocess.run(
-      cmd,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
-   )
+   proc = run_mpi(executable(spec.dim), [input_path], ranks=ranks)
    (run_dir / "run.log").write_text(proc.stdout)
    return proc.returncode, run_dir, "\n".join(proc.stdout.splitlines()[-8:])
 
@@ -979,21 +978,21 @@ def append_history(rows: list[dict[str, object]]) -> None:
    append_validation_history(
       HISTORY,
       [
-         {
-            "kind": "dimensional_consistency",
-            "case": row["case"],
-            "label": f"{row['reference']}_vs_{row['degenerate']}",
-            "status": row["status"],
-            "reason": row["reason"],
-            "ranks": row["ranks"],
-            "time": row["time_ref"],
-            "description": (
-               f"max_abs={float(row['max_abs_error']):.3e}; "
-               f"max_rel={float(row['max_rel_error']):.3e}; "
-               f"worst={row['worst_component']}"
-            ),
-         }
-         for row in rows
+            {
+               "kind": "dimensional_consistency",
+               "case": row["case"],
+               "label": f"{row['reference']}_vs_{row['degenerate']}",
+               "status": row["status"],
+               "reason": row["reason"],
+               "ranks": row["ranks"],
+               "time": row["time_ref"],
+               "description": (
+                  f"max_abs={float(row['max_abs_error']):.3e}; "
+                  f"max_rel={float(row['max_rel_error']):.3e}; "
+                  f"worst={row['worst_component']}"
+               ),
+            }
+            for row in rows
       ],
    )
 

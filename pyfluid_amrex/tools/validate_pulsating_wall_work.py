@@ -12,7 +12,15 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from validation_common import next_numbered_path, read_float_tsv, repo_relative, run_amrex, write_tsv
+from validation_common import (
+    materialize_run_input,
+    next_numbered_path,
+    parameters_from_assignments,
+    read_float_tsv,
+    repo_relative,
+    run_amrex,
+    write_tsv,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -113,7 +121,12 @@ def run_case(case: Case, args: argparse.Namespace) -> dict[str, object]:
         *COMMON_OVERRIDES,
         *case.overrides,
     ]
-    completed = run_amrex(dim=2, input_path=args.input, ranks=args.ranks, executable=args.executable, overrides=overrides)
+    input_path = materialize_run_input(
+        args.input,
+        run_dir / "run.in",
+        parameters_from_assignments(overrides),
+    )
+    completed = run_amrex(dim=2, input_path=input_path, ranks=args.ranks, executable=args.executable)
     scalar_path = run_dir / "scalars.tsv"
     rows = read_float_tsv(scalar_path, stop_on_incomplete=True) if scalar_path.exists() else []
     final = rows[-1] if rows else {}

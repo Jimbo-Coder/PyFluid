@@ -14,11 +14,10 @@ import math
 import os
 import re
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import materialize_run_input, parameters_from_assignments, run_mpi
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -174,51 +173,50 @@ def run_case(
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
 
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(run_dir)}",
-      f"amr.n_cell={n_cell[0]} {n_cell[1]}",
-      "amr.max_level=0",
-      "amr.max_grid_size=64",
-      "amr.blocking_factor=16",
-      "pyfluid.max_step=128",
-      "pyfluid.final_time=-1",
-      "pyfluid.cfl=0.9",
-      "pyfluid.rho0=1.4",
-      "pyfluid.pressure0=1.0",
-      "pyfluid.v1_0=0.0",
-      "pyfluid.v2_0=0.0",
-      "pyfluid.v3_0=0.0",
-      "pyfluid.bc=reflecting",
-      "pyfluid.bc_xlo=reflecting",
-      "pyfluid.bc_xhi=reflecting",
-      "pyfluid.bc_ylo=reflecting",
-      "pyfluid.bc_yhi=reflecting",
-      "pyfluid.recon=pwc",
-      "pyfluid.riemann=hllc",
-      "pyfluid.timestep=euler",
-      "pyfluid.solid_geometry=boxes",
-      f"pyfluid.solid_box_lo={flatten_boxes(case.box_lo)}",
-      f"pyfluid.solid_box_hi={flatten_boxes(case.box_hi)}",
-      "pyfluid.scalar_int=128",
-      "pyfluid.plot_int=-1",
-      "pyfluid.aux_gfs=none",
-      "pyfluid.aux_gf_int=-1",
-      "pyfluid.aux_gf_compute_int=-1",
-      "pyfluid.checkpoint_int=-1",
-      "pyfluid.profile=on",
-      "pyfluid.profile_detail=basic",
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   input_path = materialize_run_input(
+      input_file,
+      run_dir / "run.in",
+      parameters_from_assignments(
+         [
+            f"pyfluid.output_dir={repo_relative(run_dir)}",
+            f"amr.n_cell={n_cell[0]} {n_cell[1]}",
+            "amr.max_level=0",
+            "amr.max_grid_size=64",
+            "amr.blocking_factor=16",
+            "pyfluid.max_step=128",
+            "pyfluid.final_time=-1",
+            "pyfluid.cfl=0.9",
+            "pyfluid.rho0=1.4",
+            "pyfluid.pressure0=1.0",
+            "pyfluid.v1_0=0.0",
+            "pyfluid.v2_0=0.0",
+            "pyfluid.v3_0=0.0",
+            "pyfluid.bc=reflecting",
+            "pyfluid.bc_xlo=reflecting",
+            "pyfluid.bc_xhi=reflecting",
+            "pyfluid.bc_ylo=reflecting",
+            "pyfluid.bc_yhi=reflecting",
+            "pyfluid.recon=pwc",
+            "pyfluid.riemann=hllc",
+            "pyfluid.timestep=euler",
+            "pyfluid.solid_geometry=boxes",
+            f"pyfluid.solid_box_lo={flatten_boxes(case.box_lo)}",
+            f"pyfluid.solid_box_hi={flatten_boxes(case.box_hi)}",
+            "pyfluid.scalar_int=128",
+            "pyfluid.plot_int=-1",
+            "pyfluid.aux_gfs=none",
+            "pyfluid.aux_gf_int=-1",
+            "pyfluid.aux_gf_compute_int=-1",
+            "pyfluid.checkpoint_int=-1",
+            "pyfluid.profile=on",
+            "pyfluid.profile_detail=basic",
+         ]
+      ),
+   )
+   completed = run_mpi(
+      executable,
+      [input_path],
+      ranks=ranks,
    )
 
    average_match = AVERAGE_RE.search(completed.stdout)

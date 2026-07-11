@@ -607,6 +607,14 @@ inline void write_amr_level_header(
          out << "\tlatest_auto_dir" << (dir + 1) << "_tags_L" << lev;
       }
    }
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      for (int lev = 0; lev <= max_level; ++lev) {
+         out << "\tlatest_auto_dir" << (dir + 1) << "_mean_over_threshold_L" << lev;
+      }
+   }
+   for (int lev = 0; lev <= max_level; ++lev) {
+      out << "\trefinement_decision_L" << lev;
+   }
    out << '\n';
 }
 
@@ -630,7 +638,9 @@ inline void append_amr_level_row(
    std::vector<amrex::Real> const& level_max_box_aspects,
    std::array<std::vector<int>, AMREX_SPACEDIM> const& level_ref_ratios,
    std::vector<amrex::Long> const& auto_tagged_cells,
-   std::array<std::vector<amrex::Long>, AMREX_SPACEDIM> const& auto_direction_tagged_cells
+   std::array<std::vector<amrex::Long>, AMREX_SPACEDIM> const& auto_direction_tagged_cells,
+   std::array<std::vector<amrex::Real>, AMREX_SPACEDIM> const& auto_direction_strength,
+   std::vector<std::string> const& refinement_decisions
 )
 {
    const AmrLevelDiagnostics summary = summarize_amr_levels(
@@ -723,6 +733,20 @@ inline void append_amr_level_row(
          const amrex::Long tags = lev < static_cast<int>(dir_tags.size()) ? dir_tags[lev] : 0;
          out << '\t' << tags;
       }
+   }
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      for (int lev = 0; lev <= max_level; ++lev) {
+         const auto& dir_tags = auto_direction_tagged_cells[dir];
+         const auto& dir_strength = auto_direction_strength[dir];
+         const amrex::Long tags = lev < static_cast<int>(dir_tags.size()) ? dir_tags[lev] : 0;
+         const amrex::Real strength = lev < static_cast<int>(dir_strength.size()) ? dir_strength[lev] : 0.0;
+         out << '\t' << (tags > 0 ? strength / static_cast<amrex::Real>(tags) : 0.0);
+      }
+   }
+   for (int lev = 0; lev <= max_level; ++lev) {
+      out << '\t' << (lev < static_cast<int>(refinement_decisions.size())
+         ? refinement_decisions[lev]
+         : "inactive");
    }
    out << '\n';
 }

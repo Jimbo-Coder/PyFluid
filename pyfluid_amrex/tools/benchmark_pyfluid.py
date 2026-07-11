@@ -10,15 +10,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 import re
 import shutil
 import statistics
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import materialize_run_input, parameters_from_assignments, run_mpi
 from validation_common import append_performance_history as append_common_performance_history
 
 
@@ -200,20 +198,15 @@ def _run_case_once(case: PerfCase, root: Path, force: bool, label: str) -> dict[
    if force and run_dir.exists():
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
-   command = [
-      *mpi_prefix(case.ranks),
-      str(case.executable),
-      str(case.inputs),
-      f"pyfluid.output_dir={run_dir}",
-      *case.overrides,
-   ]
-   completed = subprocess.run(
-      command,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   input_path = materialize_run_input(
+      case.inputs,
+      run_dir / "run.in",
+      parameters_from_assignments([f"pyfluid.output_dir={run_dir}", *case.overrides]),
+   )
+   completed = run_mpi(
+      case.executable,
+      [input_path],
+      ranks=case.ranks,
    )
    match = AVERAGE_RE.search(completed.stdout)
    sim_match = SIM_TIME_RE.search(completed.stdout)

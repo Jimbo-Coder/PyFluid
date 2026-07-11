@@ -1,17 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import sympy as sp
 
-
-@dataclass(frozen=True)
-class StateKernel:
-   name: str
-   return_type: str
-   arguments: tuple[tuple[str, str], ...]
-   outputs: tuple[str, ...]
-   expressions: tuple[sp.Expr, ...]
+from .kernel_equations import StructKernel
 
 
 HYDRO_FIELDS = ("rho", "mom1", "mom2", "mom3", "energy")
@@ -22,7 +13,7 @@ def _state_symbols(prefix: str, fields: tuple[str, ...]) -> tuple[sp.Symbol, ...
    return tuple(sp.symbols(f"{prefix}.{field}") for field in fields)
 
 
-def _llf_kernel(name: str, return_type: str, fields: tuple[str, ...]) -> StateKernel:
+def _llf_kernel(name: str, return_type: str, fields: tuple[str, ...]) -> StructKernel:
    flux_l = _state_symbols("flux_l", fields)
    flux_r = _state_symbols("flux_r", fields)
    state_l = _state_symbols("state_l", fields)
@@ -32,7 +23,7 @@ def _llf_kernel(name: str, return_type: str, fields: tuple[str, ...]) -> StateKe
       sp.Rational(1, 2) * (fl + fr) - sp.Rational(1, 2) * wavespeed * (ur - ul)
       for fl, fr, ul, ur in zip(flux_l, flux_r, state_l, state_r, strict=True)
    )
-   return StateKernel(
+   return StructKernel(
       name=name,
       return_type=return_type,
       arguments=(
@@ -47,7 +38,7 @@ def _llf_kernel(name: str, return_type: str, fields: tuple[str, ...]) -> StateKe
    )
 
 
-def _hll_kernel(name: str, return_type: str, fields: tuple[str, ...]) -> StateKernel:
+def _hll_kernel(name: str, return_type: str, fields: tuple[str, ...]) -> StructKernel:
    flux_l = _state_symbols("flux_l", fields)
    flux_r = _state_symbols("flux_r", fields)
    state_l = _state_symbols("state_l", fields)
@@ -57,7 +48,7 @@ def _hll_kernel(name: str, return_type: str, fields: tuple[str, ...]) -> StateKe
       (s_right * fl - s_left * fr + s_left * s_right * (ur - ul)) / (s_right - s_left)
       for fl, fr, ul, ur in zip(flux_l, flux_r, state_l, state_r, strict=True)
    )
-   return StateKernel(
+   return StructKernel(
       name=name,
       return_type=return_type,
       arguments=(
@@ -73,7 +64,7 @@ def _hll_kernel(name: str, return_type: str, fields: tuple[str, ...]) -> StateKe
    )
 
 
-def riemann_flux_kernels() -> tuple[StateKernel, ...]:
+def riemann_flux_kernels() -> tuple[StructKernel, ...]:
    return (
       _llf_kernel("hydro_llf_flux", "HydroState", HYDRO_FIELDS),
       _hll_kernel("hydro_hll_flux", "HydroState", HYDRO_FIELDS),

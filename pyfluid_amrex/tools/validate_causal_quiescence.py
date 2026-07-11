@@ -12,6 +12,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from causal_validation import infer_localized_causal_model
 from plot_amrex_boxed_movie import (
    component_values,
    level_chunks,
@@ -35,6 +36,7 @@ FIELDS = [
    "max_rho_quiet",
    "max_pressure_quiet",
    "max_velocity_quiet",
+   "max_magnetic_quiet",
    "status",
 ]
 
@@ -58,6 +60,76 @@ def source_radial_bounds(params: dict[str, str], t: float, safety: float, width:
    return source_radius - causal_radius, source_radius + causal_radius
 
 
+def mesh_axes(params: dict[str, str], ndim: int) -> tuple[str, ...]:
+   axes = tuple(params.get("mesh.axes", "").replace(",", " ").split())
+   if axes:
+      return axes
+   coordinate = params.get("mesh.coordinate", "cartesian").strip().lower()
+   return {
+      "cartesian": ("x", "y", "z"),
+      "cylindrical": ("r", "phi", "z"),
+      "spherical": ("r", "theta", "phi"),
+   }.get(coordinate, ("x", "y", "z"))[:ndim]
+
+
+def physical_coordinates(
+   params: dict[str, str],
+   axes: tuple[str, ...],
+   mesh: list[np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+   shape = mesh[0].shape
+   coordinate = params.get("mesh.coordinate", "cartesian").strip().lower()
+   values = {
+      "x": np.zeros(shape),
+      "y": np.zeros(shape),
+      "z": np.zeros(shape),
+      "r": np.ones(shape),
+      "theta": np.full(shape, 0.5 * math.pi),
+      "phi": np.zeros(shape),
+   }
+   values.update({axis: mesh[direction] for direction, axis in enumerate(axes)})
+   if coordinate == "cylindrical":
+      return (
+         values["r"] * np.cos(values["phi"]),
+         values["r"] * np.sin(values["phi"]),
+         values["z"],
+      )
+   if coordinate == "spherical":
+      return (
+         values["r"] * np.sin(values["theta"]) * np.cos(values["phi"]),
+         values["r"] * np.sin(values["theta"]) * np.sin(values["phi"]),
+         values["r"] * np.cos(values["theta"]),
+      )
+   return values["x"], values["y"], values["z"]
+
+
+def pressure_bump_quiet_mask(
+   params: dict[str, str],
+   model,
+   mesh: list[np.ndarray],
+   time_value: float,
+   safety: float,
+) -> np.ndarray:
+   axes = mesh_axes(params, len(mesh))
+   if params.get("mesh.coordinate", "cartesian").strip().lower() == "cartesian":
+      problo = tuple(float(value) for value in params.get("geometry.prob_lo", "").split())
+      probhi = tuple(float(value) for value in params.get("geometry.prob_hi", "").split())
+      periodic = tuple(int(value) for value in params.get("geometry.is_periodic", "").split())
+      radius2 = np.zeros_like(mesh[0])
+      for direction in range(len(mesh)):
+         delta = np.abs(mesh[direction] - model.center[direction])
+         if direction < len(periodic) and periodic[direction] != 0:
+            extent = probhi[direction] - problo[direction]
+            delta = np.minimum(delta, extent - delta)
+         radius2 += delta**2
+      return radius2 > model.radius(time_value, safety=safety) ** 2
+   x, y, z = physical_coordinates(params, axes, mesh)
+   center_mesh = [np.full_like(mesh[0], model.center[direction]) for direction in range(len(mesh))]
+   cx, cy, cz = physical_coordinates(params, axes, center_mesh)
+   radius2 = (x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2
+   return radius2 > model.radius(time_value, safety=safety) ** 2
+
+
 def plotfile_quiet_row(
    plotfile: Path,
    params: dict[str, str],
@@ -67,8 +139,6 @@ def plotfile_quiet_row(
    tolerance: float,
 ) -> dict[str, object]:
    names, ndim, time_value = parse_plot_header(plotfile)
-   if ndim != 2:
-      raise SystemExit("causal quiescence currently supports 2D plotfiles")
    if "rho" not in names or "energy" not in names:
       raise SystemExit(f"{plotfile} is missing rho/energy components")
 
@@ -84,6 +154,7 @@ def plotfile_quiet_row(
    level_dx = parse_level_cell_sizes(plotfile)
    nlevels = level_count(plotfile)
    source_kind = params.get("pyfluid.source", "none").strip().lower()
+   causal_model = infer_localized_causal_model(params)
    if source_kind in ("", "none", "off"):
       inner, outer = -math.inf, math.inf
    else:
@@ -93,6 +164,7 @@ def plotfile_quiet_row(
    max_rho = 0.0
    max_pressure = 0.0
    max_velocity = 0.0
+   max_magnetic = 0.0
    for lev in range(nlevels):
       dx = level_dx[lev]
       for lo, hi, data in level_chunks(plotfile, lev, ndim):
@@ -102,26 +174,46 @@ def plotfile_quiet_row(
          v2 = component_values(data, names, "v2", gamma)
          v3 = component_values(data, names, "v3", gamma)
          shape = rho.shape
-         ii = np.arange(lo[0], hi[0] + 1, dtype=float)
-         radius = problo[0] + (ii + 0.5) * dx[0]
-         quiet = np.ones_like(radius, dtype=bool) if math.isinf(inner) else (radius < inner) | (radius > outer)
+         index_mesh = np.meshgrid(
+            *(np.arange(lo[direction], hi[direction] + 1, dtype=float) for direction in range(ndim)),
+            indexing="ij",
+         )
+         mesh = [problo[direction] + (index_mesh[direction] + 0.5) * dx[direction] for direction in range(ndim)]
+         if causal_model is not None:
+            quiet = pressure_bump_quiet_mask(params, causal_model, mesh, time_value, safety)
+         elif math.isinf(inner):
+            quiet = np.ones(shape, dtype=bool)
+         else:
+            radius = mesh[0]
+            quiet = (radius < inner) | (radius > outer)
          if not np.any(quiet):
             continue
-         mask = quiet[:, np.newaxis]
-         quiet_cells += int(np.count_nonzero(np.broadcast_to(mask, shape)))
-         max_rho = max(max_rho, float(np.nanmax(np.abs(rho[mask.repeat(shape[1], axis=1)] - rho0))))
+         quiet_cells += int(np.count_nonzero(quiet))
+         max_rho = max(max_rho, float(np.nanmax(np.abs(rho[quiet] - rho0))))
          max_pressure = max(
             max_pressure,
-            float(np.nanmax(np.abs(pressure[mask.repeat(shape[1], axis=1)] - pressure0))),
+            float(np.nanmax(np.abs(pressure[quiet] - pressure0))),
          )
          velocity_delta = np.sqrt(
             (v1 - velocity0[0]) ** 2
             + (v2 - velocity0[1]) ** 2
             + (v3 - velocity0[2]) ** 2
          )
-         max_velocity = max(max_velocity, float(np.nanmax(velocity_delta[mask.repeat(shape[1], axis=1)])))
+         max_velocity = max(max_velocity, float(np.nanmax(velocity_delta[quiet])))
+         if all(component in names for component in ("b1", "b2", "b3")):
+            magnetic_delta2 = np.zeros(shape)
+            for component in (1, 2, 3):
+               magnetic = component_values(data, names, f"b{component}", gamma)
+               magnetic0 = param_float(params, f"pyfluid.b{component}_0", 0.0)
+               magnetic_delta2 += (magnetic - magnetic0) ** 2
+            max_magnetic = max(max_magnetic, float(np.nanmax(np.sqrt(magnetic_delta2)[quiet])))
 
-   metric = max(max_rho / max(abs(rho0), 1.0), max_pressure / max(abs(pressure0), 1.0), max_velocity)
+   metric = max(
+      max_rho / max(abs(rho0), 1.0),
+      max_pressure / max(abs(pressure0), 1.0),
+      max_velocity,
+      max_magnetic,
+   )
    return {
       "step": plotfile_step(plotfile),
       "time": time_value,
@@ -131,7 +223,54 @@ def plotfile_quiet_row(
       "max_rho_quiet": max_rho,
       "max_pressure_quiet": max_pressure,
       "max_velocity_quiet": max_velocity,
-      "status": "PASS" if quiet_cells > 0 and metric <= tolerance else "FAIL",
+      "max_magnetic_quiet": max_magnetic,
+      "status": "N/A" if quiet_cells == 0 else ("PASS" if metric <= tolerance else "FAIL"),
+   }
+
+
+def physics_validation_row(
+   run_dir: Path,
+   params: dict[str, str],
+   *,
+   tolerance: float = 1.0e-7,
+   safety: float = 1.20,
+) -> dict[str, object] | None:
+   if infer_localized_causal_model(params) is None:
+      return None
+   plotfiles = sorted_plotfiles(run_dir)
+   if not plotfiles:
+      return None
+   rows = [
+      plotfile_quiet_row(
+         plotfile,
+         params,
+         safety=safety,
+         source_widths=4.0,
+         tolerance=tolerance,
+      )
+      for plotfile in plotfiles
+   ]
+   write_tsv(run_dir / "causal_quiescence.tsv", rows, FIELDS)
+   applicable = [row for row in rows if row["status"] != "N/A"]
+   if not applicable:
+      return None
+   value = max(
+      max(
+         float(row["max_rho_quiet"]) / max(abs(param_float(params, "pyfluid.rho0", 1.0)), 1.0),
+         float(row["max_pressure_quiet"]) / max(abs(param_float(params, "pyfluid.pressure0", 1.0)), 1.0),
+         float(row["max_velocity_quiet"]),
+         float(row["max_magnetic_quiet"]),
+      )
+      for row in applicable
+   )
+   return {
+      "hook": "causal_quiescence",
+      "status": "PASS" if value <= tolerance else "FAIL",
+      "reason": "" if value <= tolerance else f"causal exterior change={value:.3e} > {tolerance:.3e}",
+      "metric": "max_causal_exterior_change",
+      "value": value,
+      "tolerance": tolerance,
+      "run_dir": str(run_dir),
    }
 
 
@@ -142,6 +281,7 @@ def write_plot(path: Path, rows: list[dict[str, object]], title: str) -> None:
       ("max_rho_quiet", "rho"),
       ("max_pressure_quiet", "pressure"),
       ("max_velocity_quiet", "velocity"),
+      ("max_magnetic_quiet", "magnetic field"),
    ]:
       y = np.asarray([float(row[key]) for row in rows])
       ax.semilogy(t, np.maximum(y, 1.0e-300), marker="o", linewidth=2.0, label=label)
@@ -163,7 +303,12 @@ def main() -> None:
    parser.add_argument("--plot", type=Path)
    parser.add_argument("--safety", type=float, default=1.20)
    parser.add_argument("--source-widths", type=float, default=4.0)
-   parser.add_argument("--tolerance", type=float, default=1.0e-8)
+   parser.add_argument(
+      "--tolerance",
+      type=float,
+      default=1.0e-7,
+      help="Allowed exterior change; accounts for finite-stencil tails outside the continuum signal cone.",
+   )
    args = parser.parse_args()
 
    run_dir = args.run_dir.resolve()
@@ -185,10 +330,15 @@ def main() -> None:
    write_tsv(output, rows, FIELDS)
    if args.plot is not None:
       write_plot(args.plot, rows, f"{run_dir.name}: causal quiescence")
-   failures = [row for row in rows if row["status"] != "PASS"]
+   failures = [row for row in rows if row["status"] == "FAIL"]
    status = "PASS" if not failures else "FAIL"
    worst = max(
-      max(float(row["max_rho_quiet"]), float(row["max_pressure_quiet"]), float(row["max_velocity_quiet"]))
+      max(
+         float(row["max_rho_quiet"]),
+         float(row["max_pressure_quiet"]),
+         float(row["max_velocity_quiet"]),
+         float(row["max_magnetic_quiet"]),
+      )
       for row in rows
    )
    print(f"{status} causal_quiescence run={repo_relative(run_dir)} worst={worst:.3e} rows={len(rows)}")

@@ -6,15 +6,13 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import os
 import re
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import materialize_run_input, parameters_from_assignments, run_mpi
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -191,26 +189,25 @@ def run_case(case: Case, args: argparse.Namespace) -> dict[str, object]:
     if args.force and run_dir.exists():
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
-    command = [
-        *mpi_prefix(args.ranks),
-        str(args.executable),
-        str(args.input),
-        f"pyfluid.output_dir={repo_relative(run_dir)}",
-        *COMMON_OVERRIDES,
-        *(AMR_OVERRIDES if case.amr else SINGLE_OVERRIDES),
-        f"pyfluid.recon={case.recon}",
-        f"pyfluid.ng={case.ng}",
-        f"pyfluid.rho_right={case.rho_atmosphere:.17g}",
-        f"pyfluid.pressure_right={case.pressure_atmosphere:.17g}",
-    ]
-    completed = subprocess.run(
-        command,
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-        check=False,
+    input_path = materialize_run_input(
+        args.input,
+        run_dir / "run.in",
+        parameters_from_assignments(
+            [
+                f"pyfluid.output_dir={repo_relative(run_dir)}",
+                *COMMON_OVERRIDES,
+                *(AMR_OVERRIDES if case.amr else SINGLE_OVERRIDES),
+                f"pyfluid.recon={case.recon}",
+                f"pyfluid.ng={case.ng}",
+                f"pyfluid.rho_right={case.rho_atmosphere:.17g}",
+                f"pyfluid.pressure_right={case.pressure_atmosphere:.17g}",
+            ]
+        ),
+    )
+    completed = run_mpi(
+        args.executable,
+        [input_path],
+        ranks=args.ranks,
     )
     rows = read_rows(run_dir / "scalars.tsv") if (run_dir / "scalars.tsv").exists() else []
     final = rows[-1] if rows else {}

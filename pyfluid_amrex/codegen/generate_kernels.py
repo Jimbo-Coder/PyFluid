@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pyfluid_codegen.emit_cpp import (
    CsePolicy,
+   write_eos_header,
    write_flux_header,
    write_metric_header,
    write_operator_header,
@@ -22,6 +23,14 @@ DEFAULT_FLUX_HEADER = (
    / "pyfluid_amrex"
    / "kernels_generated"
    / "ideal_mhd_flux_cartesian.hpp"
+)
+DEFAULT_EOS_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "kernels_generated"
+   / "eos.hpp"
 )
 DEFAULT_OPERATOR_HEADER = (
    ROOT
@@ -67,7 +76,14 @@ DEFAULT_PATCH_MAP_HEADER = (
 
 def main() -> None:
    parser = argparse.ArgumentParser(description="Generate PyFluid AMReX C++ kernels.")
+   parser.add_argument(
+      "--family",
+      action="append",
+      choices=("eos", "flux", "operator", "riemann", "vector", "metric", "patch_map"),
+      help="generate only this kernel family; repeat as needed (default: all)",
+   )
    parser.add_argument("--flux-header", type=Path, default=DEFAULT_FLUX_HEADER)
+   parser.add_argument("--eos-header", type=Path, default=DEFAULT_EOS_HEADER)
    parser.add_argument("--operator-header", type=Path, default=DEFAULT_OPERATOR_HEADER)
    parser.add_argument("--riemann-header", type=Path, default=DEFAULT_RIEMANN_HEADER)
    parser.add_argument("--vector-header", type=Path, default=DEFAULT_VECTOR_HEADER)
@@ -77,18 +93,20 @@ def main() -> None:
    parser.add_argument("--soft-drop-ops", type=int, default=3)
    args = parser.parse_args()
    policy = CsePolicy(hard_drop_ops=args.hard_drop_ops, soft_drop_ops=args.soft_drop_ops)
-   write_flux_header(args.flux_header, policy)
-   write_operator_header(args.operator_header, policy)
-   write_riemann_header(args.riemann_header, policy)
-   write_vector_header(args.vector_header, policy)
-   write_metric_header(args.metric_header, policy)
-   write_patch_map_header(args.patch_map_header, policy)
-   print(args.flux_header)
-   print(args.operator_header)
-   print(args.riemann_header)
-   print(args.vector_header)
-   print(args.metric_header)
-   print(args.patch_map_header)
+   generators = {
+      "eos": (args.eos_header, write_eos_header),
+      "flux": (args.flux_header, write_flux_header),
+      "operator": (args.operator_header, write_operator_header),
+      "riemann": (args.riemann_header, write_riemann_header),
+      "vector": (args.vector_header, write_vector_header),
+      "metric": (args.metric_header, write_metric_header),
+      "patch_map": (args.patch_map_header, write_patch_map_header),
+   }
+   families = tuple(args.family) if args.family else tuple(generators)
+   for family in families:
+      output_path, writer = generators[family]
+      writer(output_path, policy)
+      print(output_path)
 
 
 if __name__ == "__main__":

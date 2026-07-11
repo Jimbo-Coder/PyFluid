@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CODEGEN = ROOT / "pyfluid_amrex" / "codegen"
 FLUX_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "ideal_mhd_flux_cartesian.hpp"
+EOS_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "eos.hpp"
 OPERATOR_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "scalar_ops.hpp"
 RIEMANN_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "riemann_ops.hpp"
 VECTOR_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "vector_ops.hpp"
@@ -18,12 +19,15 @@ METRIC_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_
 sys.path.insert(0, str(CODEGEN))
 
 from pyfluid_codegen.emit_cpp import (  # noqa: E402
+   render_eos_header,
    render_flux_header,
    render_metric_header,
    render_operator_header,
    render_riemann_header,
    render_vector_header,
 )
+from pyfluid_codegen.eos_equations import analytic_equations_of_state, eos_kernels  # noqa: E402
+from pyfluid_codegen.coordinates import orthogonal_frames  # noqa: E402
 from pyfluid_codegen.flux_equations import hydro_flux_equations, mhd_flux_equations  # noqa: E402
 from pyfluid_codegen.metric_equations import metric_kernels  # noqa: E402
 from pyfluid_codegen.operator_equations import (  # noqa: E402
@@ -35,6 +39,18 @@ from pyfluid_codegen.operator_equations import (  # noqa: E402
    laplacian_equation,
 )
 from pyfluid_codegen.riemann_equations import riemann_flux_kernels  # noqa: E402
+from pyfluid_codegen.physical_system import (  # noqa: E402
+   Hydrodynamics,
+   Magnetohydrodynamics,
+   NewtonianViscosity,
+)
+from pyfluid_codegen.tensor_algebra import (  # noqa: E402
+   OrthogonalOperators,
+   ScalarField,
+   Tensor,
+   Vector,
+   VectorField,
+)
 from pyfluid_codegen.vector_equations import vector_operator_kernels  # noqa: E402
 
 
@@ -95,6 +111,134 @@ def assert_close(actual: list[float], expected: list[float], label: str) -> None
       scale = max(1.0, abs(e))
       if not math.isfinite(a) or abs(a - e) > 1.0e-12 * scale:
          raise AssertionError(f"{label}[{index}] actual={a:.17e} expected={e:.17e}")
+
+
+def validate_symbolic_operator_contract() -> None:
+   vector = Vector(*sp.symbols("a1 a2 a3"))
+   gradient = Vector(*sp.symbols("df_dq1 df_dq2 df_dq3"))
+   derivatives = Tensor.from_rows(
+      (
+         sp.symbols("da1_dq1 da1_dq2 da1_dq3"),
+         sp.symbols("da2_dq1 da2_dq2 da2_dq3"),
+         sp.symbols("da3_dq1 da3_dq2 da3_dq3"),
+      )
+   )
+   hessian = Tensor.from_rows(
+      (
+         sp.symbols("d2f_dq1dq1 d2f_dq1dq2 d2f_dq1dq3"),
+         sp.symbols("d2f_dq2dq1 d2f_dq2dq2 d2f_dq2dq3"),
+         sp.symbols("d2f_dq3dq1 d2f_dq3dq2 d2f_dq3dq3"),
+      )
+   )
+   vector_field = VectorField(vector, derivatives, Vector(*sp.symbols("dt_a1 dt_a2 dt_a3")))
+   scalar_field = ScalarField(sp.Symbol("f"), gradient, hessian, sp.Symbol("dt_f"))
+   viscosity = sp.Symbol("mu")
+   for frame in orthogonal_frames():
+      operators = OrthogonalOperators(frame.scale_factors, frame.coordinates)
+      vector_gradient = operators.gradient(vector_field)
+      if not isinstance(vector_gradient, Tensor):
+         raise AssertionError(f"{frame.name} vector gradient did not produce a tensor")
+      if sp.simplify(operators.divergence(vector_field) - vector_gradient.trace()) != 0:
+         raise AssertionError(f"{frame.name} divergence does not match trace(grad)")
+      stress = NewtonianViscosity(viscosity).stress(vector_field, operators)
+      if stress != stress.transpose():
+         raise AssertionError(f"{frame.name} Newtonian stress is not symmetric")
+      if sp.simplify(stress.trace()) != 0:
+         raise AssertionError(f"{frame.name} Newtonian stress is not traceless")
+
+   cartesian = OrthogonalOperators(orthogonal_frames()[0].scale_factors, orthogonal_frames()[0].coordinates)
+   if cartesian.gradient(scalar_field) != gradient:
+      raise AssertionError("Cartesian scalar gradient changed its components")
+   expected_laplacian = sum(hessian.component(axis, axis) for axis in range(3))
+   if sp.simplify(cartesian.laplacian(scalar_field) - expected_laplacian) != 0:
+      raise AssertionError("Cartesian scalar Laplacian does not match the Hessian trace")
+   expected_curl = Vector(
+      derivatives.component(2, 1) - derivatives.component(1, 2),
+      derivatives.component(0, 2) - derivatives.component(2, 0),
+      derivatives.component(1, 0) - derivatives.component(0, 1),
+   )
+   if cartesian.curl(vector_field) != expected_curl:
+      raise AssertionError("Cartesian curl does not match the antisymmetric vector gradient")
+   if scalar_field.dt() != sp.Symbol("dt_f") or vector_field.dt() != Vector(*sp.symbols("dt_a1 dt_a2 dt_a3")):
+      raise AssertionError("field time derivatives changed their symbolic values")
+   vector4 = Vector(*sp.symbols("u0 u1 u2 u3"))
+   tensor4 = vector4.outer(vector4) + Tensor.identity(4)
+   if vector4.dimension != 4 or tensor4.shape != (4, 4):
+      raise AssertionError("rank-generic algebra does not support four-dimensional values")
+   if sp.simplify(tensor4.deviatoric().trace()) != 0:
+      raise AssertionError("four-dimensional deviatoric projection is not traceless")
+
+
+def validate_symbolic_eos_contract() -> None:
+   pressure = sp.Symbol("pressure", positive=True)
+   equations_of_state = analytic_equations_of_state()
+   for eos in equations_of_state:
+      sound_speed_squared = eos.sound_speed_squared()
+      if sp.simplify(sound_speed_squared - sp.diff(eos.pressure(), eos.density)) == 0:
+         if not eos.is_barotropic and sp.diff(eos.pressure(), eos.internal_energy_density) != 0:
+            raise AssertionError(f"{eos.name} lost its adiabatic energy contribution")
+      if eos.is_barotropic:
+         energy_density = eos.internal_energy_from_pressure(pressure)
+         specific_energy = energy_density / eos.density
+         if sp.simplify(
+            eos.density**2 * sp.diff(specific_energy, eos.density) - eos.pressure()
+         ) != 0:
+            raise AssertionError(f"{eos.name} violates the barotropic first-law identity")
+      else:
+         recovered_pressure = eos.pressure().subs(
+            eos.internal_energy_density,
+            eos.internal_energy_from_pressure(pressure),
+         )
+         if sp.simplify(recovered_pressure - pressure) != 0:
+            raise AssertionError(f"{eos.name} pressure/internal-energy closure is not invertible")
+   ideal_gas, polytrope, hybrid_polytrope = equations_of_state
+   if Hydrodynamics(ideal_gas).is_barotropic or not Hydrodynamics(polytrope).is_barotropic:
+      raise AssertionError("the physical system did not derive its barotropic capability from the EOS")
+   if Hydrodynamics(hybrid_polytrope).is_magnetized or not Magnetohydrodynamics(ideal_gas).is_magnetized:
+      raise AssertionError("the physical system did not derive its magnetized capability from its equations")
+
+
+def random_eos_values(rng: random.Random) -> dict[str, float]:
+   return {
+      "rho": rng.uniform(0.2, 5.0),
+      "internal_energy_density": rng.uniform(0.1, 20.0),
+      "pressure": rng.uniform(0.05, 5.0),
+      "gamma": rng.uniform(1.1, 2.1),
+      "polytropic_k": rng.uniform(0.1, 3.0),
+      "polytropic_gamma": rng.uniform(1.1, 2.1),
+      "thermal_gamma": rng.uniform(1.1, 2.1),
+   }
+
+
+def eos_reference(name: str, values: dict[str, float]) -> float:
+   rho = values["rho"]
+   internal = values["internal_energy_density"]
+   pressure = values["pressure"]
+   gamma = values["gamma"]
+   polytropic_k = values["polytropic_k"]
+   polytropic_gamma = values["polytropic_gamma"]
+   thermal_gamma = values["thermal_gamma"]
+   cold_pressure = polytropic_k * rho**polytropic_gamma
+   cold_energy = cold_pressure / (polytropic_gamma - 1.0)
+   references = {
+      "ideal_gas_pressure_from_density_energy": (gamma - 1.0) * internal,
+      "ideal_gas_internal_energy_density_from_pressure": pressure / (gamma - 1.0),
+      "ideal_gas_sound_speed_squared": gamma * pressure / rho,
+      "polytrope_cold_pressure": cold_pressure,
+      "polytrope_cold_energy_density": cold_energy,
+      "polytrope_sound_speed_squared": polytropic_gamma * cold_pressure / rho,
+      "hybrid_polytrope_pressure_from_density_energy": (
+         cold_pressure + (thermal_gamma - 1.0) * (internal - cold_energy)
+      ),
+      "hybrid_polytrope_internal_energy_density_from_pressure": (
+         cold_energy + (pressure - cold_pressure) / (thermal_gamma - 1.0)
+      ),
+      "hybrid_polytrope_sound_speed_squared": (
+         polytropic_gamma * cold_pressure
+         + thermal_gamma * (pressure - cold_pressure)
+      ) / rho,
+   }
+   return references[name]
 
 
 def random_state(rng: random.Random) -> dict[str, float]:
@@ -682,6 +826,8 @@ def metric_reference(name: str, values: dict[str, float]) -> float:
 def main() -> None:
    if not FLUX_HEADER.exists():
       raise SystemExit(f"missing generated header: {FLUX_HEADER}")
+   if not EOS_HEADER.exists():
+      raise SystemExit(f"missing generated header: {EOS_HEADER}")
    if not OPERATOR_HEADER.exists():
       raise SystemExit(f"missing generated header: {OPERATOR_HEADER}")
    if not RIEMANN_HEADER.exists():
@@ -694,6 +840,8 @@ def main() -> None:
    stored_flux = FLUX_HEADER.read_text(encoding="utf-8")
    if rendered_flux != stored_flux:
       raise SystemExit(f"generated header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+   if render_eos_header() != EOS_HEADER.read_text(encoding="utf-8"):
+      raise SystemExit(f"generated EOS header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
    rendered_operator = render_operator_header()
    stored_operator = OPERATOR_HEADER.read_text(encoding="utf-8")
    if rendered_operator != stored_operator:
@@ -710,10 +858,13 @@ def main() -> None:
    stored_metric = METRIC_HEADER.read_text(encoding="utf-8")
    if rendered_metric != stored_metric:
       raise SystemExit(f"generated metric header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+   validate_symbolic_operator_contract()
+   validate_symbolic_eos_contract()
    rng = random.Random(20260628)
    riemann_kernels = tuple(riemann_flux_kernels())
    vector_kernels = tuple(vector_operator_kernels())
    metric_kernels_cached = tuple(metric_kernels())
+   eos_kernels_cached = tuple(eos_kernels())
    for _ in range(128):
       values = random_state(rng)
       for direction in range(3):
@@ -767,7 +918,12 @@ def main() -> None:
          metric_actual = evaluate((kernel.expression,), metric_values)
          metric_expected = [metric_reference(kernel.name, metric_values)]
          assert_close(metric_actual, metric_expected, kernel.name)
-   print("PASS codegen_flux_riemann_operators_vector_ops_and_metrics")
+      eos_values = random_eos_values(rng)
+      for kernel in eos_kernels_cached:
+         eos_actual = evaluate((kernel.expression,), eos_values)
+         eos_expected = [eos_reference(kernel.name, eos_values)]
+         assert_close(eos_actual, eos_expected, kernel.name)
+   print("PASS codegen_flux_riemann_eos_operators_vector_ops_and_metrics")
 
 
 if __name__ == "__main__":

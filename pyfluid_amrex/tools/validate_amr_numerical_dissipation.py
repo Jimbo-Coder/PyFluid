@@ -6,12 +6,11 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import materialize_run_input, run_mpi
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,27 +33,27 @@ class SweepPoint:
 
 def parse_tsv(path: Path) -> list[dict[str, float]]:
     with path.open(newline="") as f:
-        return [{key: float(value) for key, value in row.items()} for row in csv.DictReader(f, delimiter="\t")]
+           return [{key: float(value) for key, value in row.items()} for row in csv.DictReader(f, delimiter="\t")]
 
 
 def fourier_amplitude_density(plotfile: Path, max_pixels: int) -> tuple[float, float]:
     image, _boxes, time_value, _ndim, _names, _xlim, _ylim = composite_slice(
-        plotfile,
-        "rho",
-        5.0 / 3.0,
-        2,
-        0.5,
-        False,
-        None,
-        max_pixels,
-        (0.0, 1.0),
-        (0.0, 1.0),
+           plotfile,
+           "rho",
+           5.0 / 3.0,
+           2,
+           0.5,
+           False,
+           None,
+           max_pixels,
+           (0.0, 1.0),
+           (0.0, 1.0),
     )
     if not np.all(np.isfinite(image)):
-        finite = np.isfinite(image)
-        if not np.any(finite):
-            raise ValueError(f"composite density has no finite values for {plotfile}")
-        image = np.where(finite, image, np.nanmean(image))
+           finite = np.isfinite(image)
+           if not np.any(finite):
+               raise ValueError(f"composite density has no finite values for {plotfile}")
+           image = np.where(finite, image, np.nanmean(image))
     ny, nx = image.shape
     x = (np.arange(nx, dtype=float) + 0.5) / nx
     y = (np.arange(ny, dtype=float) + 0.5) / ny
@@ -71,60 +70,53 @@ def active_finest_summary(output_dir: Path) -> dict[str, float]:
 
 def run_case(args: argparse.Namespace, point: SweepPoint) -> dict[str, float | str]:
     overrides = {
-        "pyfluid.output_dir": str(point.output_dir),
-        "pyfluid.max_step": "100000",
-        "pyfluid.final_time": f"{args.final_time:.17g}",
-        "pyfluid.ng": "2",
-        "pyfluid.cfl": "0.9",
-        "pyfluid.gamma": "1.6666666666666667",
-        "pyfluid.ic": "sin_wave",
-        "pyfluid.rho0": "1.0",
-        "pyfluid.pressure0": "1.0",
-        "pyfluid.amplitude": f"{args.amplitude:.17g}",
-        "pyfluid.v1_0": "0.2",
-        "pyfluid.v2_0": "-0.1",
-        "pyfluid.v3_0": "0.0",
-        "pyfluid.recon": args.recon,
-        "pyfluid.riemann": args.riemann,
-        "pyfluid.timestep": args.timestep,
-        "pyfluid.bc": "periodic",
-        "pyfluid.diffusion": "none",
-        "pyfluid.subcycling": "on",
-        "pyfluid.subcycling_steps": "spatial",
-        "pyfluid.plot_int": "100000",
-        "pyfluid.scalar_int": "8",
-        "pyfluid.checkpoint_int": "-1",
-        "pyfluid.aux_gfs": "none",
-        "pyfluid.aux_gf_int": "-1",
-        "pyfluid.aux_gf_compute_int": "-1",
-        "amr.n_cell": f"{args.base_n} {args.base_n}",
-        "amr.max_level": str(args.max_level),
-        "amr.ref_ratio": " ".join(["2"] * args.max_level),
-        "amr.max_grid_size": str(args.max_grid_size),
-        "amr.blocking_factor": str(args.blocking_factor),
-        "amr.regrid_int": "4",
-        "amr.grid_eff": "0.85",
-        "amr.n_error_buf": " ".join([str(args.error_buffer)] * args.max_level),
-        "amr.tag_metric": "auto",
-        "amr.tag_threshold": f"{args.tag_threshold:.17g}",
-        "amr.state_interp": "quartic",
-        "amr.min_feature_length": f"{point.min_feature_length:.17g}",
-        "amr.level_cell_budget_side": str(args.level_cell_budget_side),
-        "amr.total_cell_budget": str(args.total_cell_budget),
+           "pyfluid.output_dir": str(point.output_dir),
+           "pyfluid.max_step": "100000",
+           "pyfluid.final_time": f"{args.final_time:.17g}",
+           "pyfluid.ng": "2",
+           "pyfluid.cfl": "0.9",
+           "pyfluid.gamma": "1.6666666666666667",
+           "pyfluid.ic": "sin_wave",
+           "pyfluid.rho0": "1.0",
+           "pyfluid.pressure0": "1.0",
+           "pyfluid.amplitude": f"{args.amplitude:.17g}",
+           "pyfluid.v1_0": "0.2",
+           "pyfluid.v2_0": "-0.1",
+           "pyfluid.v3_0": "0.0",
+           "pyfluid.recon": args.recon,
+           "pyfluid.riemann": args.riemann,
+           "pyfluid.timestep": args.timestep,
+           "pyfluid.bc": "periodic",
+           "pyfluid.diffusion": "none",
+           "pyfluid.subcycling": "on",
+           "pyfluid.subcycling_steps": "spatial",
+           "pyfluid.plot_int": "100000",
+           "pyfluid.scalar_int": "8",
+           "pyfluid.checkpoint_int": "-1",
+           "pyfluid.aux_gfs": "none",
+           "pyfluid.aux_gf_int": "-1",
+           "pyfluid.aux_gf_compute_int": "-1",
+           "amr.n_cell": f"{args.base_n} {args.base_n}",
+           "amr.max_level": str(args.max_level),
+           "amr.ref_ratio": " ".join(["2"] * args.max_level),
+           "amr.max_grid_size": str(args.max_grid_size),
+           "amr.blocking_factor": str(args.blocking_factor),
+           "amr.regrid_int": "4",
+           "amr.grid_eff": "0.85",
+           "amr.n_error_buf": " ".join([str(args.error_buffer)] * args.max_level),
+           "amr.tag_metric": "auto",
+           "amr.tag_threshold": f"{args.tag_threshold:.17g}",
+           "amr.state_interp": "quartic",
+           "amr.min_feature_length": f"{point.min_feature_length:.17g}",
+           "amr.level_cell_budget_side": str(args.level_cell_budget_side),
+           "amr.total_cell_budget": str(args.total_cell_budget),
     }
-    command = [
-        "env",
-        "OMP_NUM_THREADS=1",
-        *mpi_prefix(args.ranks),
-        str(SOLVER),
-        str(INPUT),
-        *[f"{key}={value}" for key, value in overrides.items()],
-    ]
-    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False)
+    input_path = materialize_run_input(INPUT, point.output_dir / "run.in", overrides)
+    result = run_mpi(SOLVER, [input_path], ranks=args.ranks)
     if result.returncode != 0:
         raise RuntimeError(
             f"run failed for min_feature_length={point.min_feature_length:g}\n"
-            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            f"output:\n{result.stdout}"
         )
 
     levels = active_finest_summary(point.output_dir)

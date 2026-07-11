@@ -12,7 +12,9 @@ from pathlib import Path
 from validation_common import (
    append_validation_history,
    average_positive,
+   materialize_run_input,
    next_numbered_path,
+   parameters_from_assignments,
    parse_float,
    read_tsv,
    repo_relative,
@@ -70,7 +72,13 @@ def run_case(case: Case, args: argparse.Namespace) -> dict[str, object]:
       f"pyfluid.ct={case.ct}",
       *COMMON_OVERRIDES,
    ]
-   completed = run_amrex(dim=2, input_path=INPUT, ranks=args.ranks, executable=EXE, overrides=overrides)
+   input_path = materialize_run_input(
+      INPUT,
+      output_dir / "run.in",
+      parameters_from_assignments(overrides),
+      remove_parameters=("amr.ref_ratio",),
+   )
+   completed = run_amrex(dim=2, input_path=input_path, ranks=args.ranks, executable=EXE)
    (output_dir / "run.log").write_text(completed.stdout)
    if completed.returncode != 0:
       return {

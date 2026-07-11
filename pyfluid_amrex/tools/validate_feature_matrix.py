@@ -26,6 +26,7 @@ from validation_common import (
    WALL_POLICY,
    amrex_executable,
    append_validation_history as append_common_validation_history,
+   materialize_run_input,
    scalar_checks,
    scalar_validation_row,
    run_amrex,
@@ -50,6 +51,9 @@ class Case:
    overrides: dict[str, str] = field(default_factory=dict)
    ranks: int = 3
    checks: ScalarPolicy = CLOSED_POLICY
+   require_amr: bool = False
+   min_amr_level: int = 1
+   min_amr_headroom: int = 2
 
 
 COMMON_FAST = {
@@ -63,15 +67,26 @@ COMMON_FAST = {
    "pyfluid.aux_gf_compute_int": "-1",
 }
 
+AUTO_AMR_COVERAGE = {
+   "amr.n_cell": "24 24",
+   "amr.max_level": "8",
+   "amr.ref_ratio": "2 2",
+   "amr.max_grid_size": "24",
+   "amr.blocking_factor": "8",
+   "amr.regrid_int": "1",
+   "amr.tag_metric": "auto",
+   "amr.min_feature_length": "0.001",
+   "amr.total_cell_budget": "1000000",
+   "amr.initial_refine": "none",
+   "amr.initial_refine_levels": "0",
+   "amr.initial_refine_fixed_levels": "0",
+}
+
 SELF_GRAVITY_POLICY = scalar_checks("self_gravity")
 
 
 def case_output_dir(name: str) -> Path:
    return RUN_ROOT / name
-
-
-def read_input(path: Path) -> list[str]:
-   return path.read_text().splitlines()
 
 
 def write_case_input(case: Case, force: bool) -> Path:
@@ -86,15 +101,8 @@ def write_case_input(case: Case, force: bool) -> Path:
    values["pyfluid.output_dir"] = str(output_dir.relative_to(ROOT))
    values.update(case.overrides)
 
-   lines = read_input(INPUTS / case.base_input)
-   lines.append("")
-   lines.append("# validate_feature_matrix.py overrides")
-   for key, value in values.items():
-      lines.append(f"{key} = {value}")
-
    path = CASE_INPUTS / f"{case.name}.in"
-   path.write_text("\n".join(lines) + "\n")
-   return path
+   return materialize_run_input(INPUTS / case.base_input, path, values)
 
 
 def case_checks(case: Case) -> ScalarPolicy:
@@ -159,7 +167,7 @@ def run_case(case: Case, force: bool, timeout: int, ranks_override: int | None =
          "ranks": str(ranks),
       }
 
-   return scalar_validation_row(
+   row = scalar_validation_row(
       output_dir,
       case=case.name,
       input_file=input_path,
@@ -170,6 +178,22 @@ def run_case(case: Case, force: bool, timeout: int, ranks_override: int | None =
       base_input=case.base_input,
       kind="feature_matrix",
    )
+   if case.require_amr:
+      active_level = int(float(row.get("amr_active_finest_level", 0)))
+      headroom = int(float(row.get("amr_finest_headroom", 0)))
+      failures = []
+      if active_level < case.min_amr_level:
+         failures.append(
+            f"automatic AMR reached L{active_level}, expected at least L{case.min_amr_level}"
+         )
+      if headroom < case.min_amr_headroom:
+         failures.append(
+            f"automatic AMR retained {headroom} level(s) of headroom, expected at least {case.min_amr_headroom}"
+         )
+      if failures:
+         row["status"] = "FAIL"
+         row["reason"] = "; ".join(filter(None, (str(row.get("reason", "")), *failures)))
+   return row
 
 
 def hydro_method_cases() -> list[Case]:
@@ -558,6 +582,7 @@ def amr_cases() -> list[Case]:
          2,
          "pressure_bump_2d_amr.in",
          {
+            **AUTO_AMR_COVERAGE,
             "pyfluid.max_step": "2",
             "pyfluid.timestep": timestep,
             "pyfluid.recon": "pwl",
@@ -568,6 +593,7 @@ def amr_cases() -> list[Case]:
             "amr.state_interp": "quartic-conservative",
             "amr.regrid_int": "1",
          },
+         require_amr=True,
       ))
    for timestep in ["euler", "corrector", "midpoint", "ssprk3", "rk4"]:
       cases.append(Case(
@@ -575,6 +601,7 @@ def amr_cases() -> list[Case]:
          2,
          "kelvin_helmholtz_mhd_2d_single_sheet_amr_ct.in",
          {
+            **AUTO_AMR_COVERAGE,
             "pyfluid.max_step": "2",
             "pyfluid.timestep": timestep,
             "pyfluid.recon": "pwl",
@@ -585,12 +612,13 @@ def amr_cases() -> list[Case]:
             "pyfluid.resistivity": "0.0",
             "pyfluid.viscosity": "0.0",
             "pyfluid.plot_int": "-1",
-            "amr.max_level": "1",
             "amr.state_interp": "quartic-conservative",
             "amr.regrid_int": "1",
          },
+         require_amr=True,
       ))
    cases.append(Case("mhd_amr_ct_subcycling_explicit_resistive", 2, "kelvin_helmholtz_mhd_2d_single_sheet_amr_ct.in", {
+      **AUTO_AMR_COVERAGE,
       "pyfluid.max_step": "2",
       "pyfluid.timestep": "ssprk3",
       "pyfluid.recon": "pwl",
@@ -601,11 +629,56 @@ def amr_cases() -> list[Case]:
       "pyfluid.resistivity": "1.0e-4",
       "pyfluid.viscosity": "1.0e-4",
       "pyfluid.plot_int": "-1",
-      "amr.max_level": "1",
       "amr.state_interp": "quartic-conservative",
       "amr.regrid_int": "1",
-   }))
+   }, require_amr=True))
+   for diffusion_method in ("explicit", "implicit"):
+      cases.append(Case(
+         f"hydro_amr_subcycling_{diffusion_method}_diffusion",
+         2,
+         "pressure_bump_2d_amr.in",
+         {
+            **AUTO_AMR_COVERAGE,
+            "pyfluid.max_step": "2",
+            "pyfluid.timestep": "ssprk3",
+            "pyfluid.recon": "pwl",
+            "pyfluid.riemann": "hllc",
+            "pyfluid.ng": "2",
+            "pyfluid.subcycling": "on",
+            "pyfluid.diffusion": diffusion_method,
+            "pyfluid.viscosity": "1.0e-4",
+            **({
+               "pyfluid.diffusion_tolerance": "1.0e-12",
+               "pyfluid.diffusion_max_iterations": "500",
+            } if diffusion_method == "implicit" else {}),
+            "pyfluid.plot_int": "-1",
+         },
+         checks=DIFFUSIVE_POLICY,
+         require_amr=True,
+      ))
+   cases.append(Case(
+      "hydro_source_uniform_acceleration_amr",
+      2,
+      "hydro_sine_2d.in",
+      {
+         **AUTO_AMR_COVERAGE,
+         "pyfluid.max_step": "2",
+         "pyfluid.amplitude": "0.1",
+         "pyfluid.timestep": "ssprk3",
+         "pyfluid.recon": "pwl",
+         "pyfluid.riemann": "hllc",
+         "pyfluid.ng": "2",
+         "pyfluid.subcycling": "on",
+         "pyfluid.source": "uniform_acceleration",
+         "pyfluid.source_a1": "0.2",
+         "pyfluid.source_a2": "-0.15",
+         "pyfluid.source_a3": "0.0",
+      },
+      checks=DRIVEN_POLICY,
+      require_amr=True,
+   ))
    cases.append(Case("hydro_amr_subcycling_local_cfl_ssprk3", 2, "pressure_bump_2d_amr.in", {
+      **AUTO_AMR_COVERAGE,
       "pyfluid.max_step": "2",
       "pyfluid.timestep": "ssprk3",
       "pyfluid.recon": "pwl",
@@ -616,8 +689,9 @@ def amr_cases() -> list[Case]:
       "pyfluid.plot_int": "-1",
       "amr.state_interp": "quartic-conservative",
       "amr.regrid_int": "1",
-   }))
+   }, require_amr=True))
    cases.append(Case("hydro_amr_subcycling_local_cfl_rk4", 2, "pressure_bump_2d_amr.in", {
+      **AUTO_AMR_COVERAGE,
       "pyfluid.max_step": "2",
       "pyfluid.timestep": "rk4",
       "pyfluid.recon": "pwl",
@@ -628,8 +702,9 @@ def amr_cases() -> list[Case]:
       "pyfluid.plot_int": "-1",
       "amr.state_interp": "quartic-conservative",
       "amr.regrid_int": "1",
-   }))
+   }, require_amr=True))
    cases.append(Case("mhd_amr_ct_subcycling_local_cfl_ssprk3", 2, "kelvin_helmholtz_mhd_2d_single_sheet_amr_ct.in", {
+      **AUTO_AMR_COVERAGE,
       "pyfluid.max_step": "2",
       "pyfluid.timestep": "ssprk3",
       "pyfluid.recon": "pwl",
@@ -641,12 +716,27 @@ def amr_cases() -> list[Case]:
       "pyfluid.resistivity": "0.0",
       "pyfluid.viscosity": "0.0",
       "pyfluid.plot_int": "-1",
-      "amr.max_level": "1",
       "amr.state_interp": "quartic-conservative",
       "amr.regrid_int": "1",
-   }))
-   cases.append(Case("hydro_self_gravity_amr_subcycling", 2, "hydro_sine_2d.in", {
+   }, require_amr=True))
+   cases.append(Case("hydro_amr_implicit_diffusion_no_subcycling", 2, "pressure_bump_2d_amr.in", {
+      **AUTO_AMR_COVERAGE,
       "pyfluid.max_step": "2",
+      "pyfluid.timestep": "ssprk3",
+      "pyfluid.recon": "pwl",
+      "pyfluid.riemann": "hllc",
+      "pyfluid.ng": "2",
+      "pyfluid.subcycling": "off",
+      "pyfluid.diffusion": "implicit",
+      "pyfluid.viscosity": "1.0e-4",
+      "pyfluid.diffusion_tolerance": "1.0e-12",
+      "pyfluid.diffusion_max_iterations": "500",
+      "pyfluid.plot_int": "-1",
+   }, checks=DIFFUSIVE_POLICY, require_amr=True))
+   cases.append(Case("hydro_self_gravity_amr_subcycling", 2, "hydro_sine_2d.in", {
+      **AUTO_AMR_COVERAGE,
+      "pyfluid.max_step": "2",
+      "pyfluid.amplitude": "0.1",
       "pyfluid.timestep": "euler",
       "pyfluid.recon": "pwc",
       "pyfluid.riemann": "llf",
@@ -661,15 +751,7 @@ def amr_cases() -> list[Case]:
       "pyfluid.gravity_max_order": "2",
       "pyfluid.subcycling": "on",
       "pyfluid.subcycling_steps": "spatial",
-      "amr.max_level": "1",
-      "amr.ref_ratio": "2 2",
-      "amr.initial_refine": "box",
-      "amr.initial_refine_levels": "1",
-      "amr.initial_refine_fixed_levels": "1",
-      "amr.initial_refine_box_lo": "0.25 0.25",
-      "amr.initial_refine_box_hi": "0.75 0.75",
-      "amr.regrid_int": "-1",
-   }, checks=SELF_GRAVITY_POLICY))
+   }, checks=SELF_GRAVITY_POLICY, require_amr=True))
    cases.append(Case("hydro_self_gravity_amr_regrid_collapse", 3, "magnetized_collapse_3d_amr_ct.in", {
       "pyfluid.physics": "hydro",
       "pyfluid.ct": "off",
@@ -747,13 +829,13 @@ def amr_cases() -> list[Case]:
       "pyfluid.solid_box_lo": "0.0 0.0",
       "pyfluid.solid_box_hi": "1.0 0.5",
    })
-   cases.append(Case("hydro_obstacle_half_bottom", 2, "pressure_bump_2d_amr.in", bottom_half))
+   cases.append(Case("hydro_obstacle_half_bottom", 2, "hydro_sine_2d.in", bottom_half))
    left_half = dict(obstacle_half_base)
    left_half.update({
       "pyfluid.solid_box_lo": "0.0 0.0",
       "pyfluid.solid_box_hi": "0.5 1.0",
    })
-   cases.append(Case("hydro_obstacle_half_left", 2, "pressure_bump_2d_amr.in", left_half))
+   cases.append(Case("hydro_obstacle_half_left", 2, "hydro_sine_2d.in", left_half))
    cases.append(Case("hydro_moving_box_piston", 2, "hydro_moving_wall_smush_2d.in", {
       "amr.n_cell": "128 64",
       "amr.max_level": "0",
@@ -789,15 +871,10 @@ def amr_cases() -> list[Case]:
 
 def combo_cases() -> list[Case]:
    return [
-      Case("mhd_combo_alfven_amr_ct_subcycling_resistive_aux", 2, "circular_alfven_x_2d_ct.in", {
-         "amr.n_cell": "64 32",
-         "amr.max_level": "1",
-         "amr.ref_ratio": "2",
-         "amr.regrid_int": "1",
-         "amr.tag_metric": "auto",
-         "amr.tag_threshold": "0.01",
+      Case("mhd_combo_amr_ct_subcycling_resistive_aux", 2, "kelvin_helmholtz_mhd_2d_single_sheet_amr_ct.in", {
+         **AUTO_AMR_COVERAGE,
          "amr.state_interp": "quartic-conservative",
-         "pyfluid.max_step": "3",
+         "pyfluid.max_step": "2",
          "pyfluid.timestep": "ssprk3",
          "pyfluid.recon": "wenoz-char",
          "pyfluid.riemann": "hlld",
@@ -810,7 +887,7 @@ def combo_cases() -> list[Case]:
          "pyfluid.aux_gfs": "j,e",
          "pyfluid.aux_gf_compute_int": "1",
          "pyfluid.aux_gf_int": "-1",
-      }),
+      }, require_amr=True),
       Case("mhd_combo_3d_amr_ct_subcycling_resistive_aux", 3, "magnetic_blast_noise_3d_amr_ct.in", {
          "amr.n_cell": "16 16 16",
          "amr.max_level": "1",
@@ -845,9 +922,9 @@ def combo_cases() -> list[Case]:
          "pyfluid.aux_gf_int": "1",
       }),
       Case("hydro_combo_pulsating_circle_amr_subcycling", 2, "pulsating_circle_mach2_2d_amr.in", {
+         **AUTO_AMR_COVERAGE,
          "amr.n_cell": "48 48",
-         "amr.max_level": "1",
-         "amr.regrid_int": "1",
+         "amr.max_grid_size": "24",
          "pyfluid.max_step": "3",
          "pyfluid.final_time": "-1.0",
          "pyfluid.timestep": "ssprk3",
@@ -859,7 +936,7 @@ def combo_cases() -> list[Case]:
          "pyfluid.aux_gfs": "solid_mask,solid_volume_fraction,solid_swept_volume",
          "pyfluid.aux_gf_compute_int": "-1",
          "pyfluid.aux_gf_int": "1",
-      }),
+      }, require_amr=True),
    ]
 
 
@@ -958,6 +1035,9 @@ def write_summary(rows: list[dict[str, str]]) -> None:
       "avg_sim_time_per_s",
       "diffusion_residual",
       "diffusion_iterations",
+      "amr_active_finest_level",
+      "amr_finest_headroom",
+      "amr_total_budget_fraction",
       "run_dir",
    ]
    write_tsv(SUMMARY, rows, fields)

@@ -150,10 +150,13 @@ RHS assembly is stage-local and source-agnostic:
 - Features requiring conservative coarse-fine correction have an explicit AMR
   synchronization hook.
 
-Explicit viscosity is a conservative flux divergence. CT resistivity is an
-edge-EMF contribution. They use the same coordinate-general operators in every
-supported dimension and coordinate family. An implicit method is only supported
-when it uses the corresponding operator and has a validated AMR solve.
+Viscosity is a conservative flux divergence. Explicit and implicit updates use
+the same physical face-flux kernel; explicit updates apply that divergence
+directly, while implicit updates register the converged-time face flux without
+applying it twice. Both enter the AMR flux registers and reflux coarse-fine
+mismatches. CT resistivity is the corresponding edge-EMF contribution. These
+operators are coordinate-general across every supported dimension and
+coordinate family.
 
 CT uses face-centered magnetic fields and edge-centered EMFs. The matching
 face-divergence operator is the only divb diagnostic. Cell-centered B is
@@ -161,9 +164,19 @@ synchronized from faces for reconstruction and Riemann solves.
 
 ## Input, Output, And Diagnostics
 
-config.hpp defines defaults, parses inputs, and validates combinations.
-Inputs are reproducible configurations; run_case.py writes the resolved input
-to run.in.
+The configuration registry owns registered method and AMR defaults, parsing,
+accepted string options, descriptions, and restart mutability. `config.hpp`
+retains structural parsing and combination validation. Inputs are reproducible
+configurations; the C++ executable writes the canonical merged AMReX parameter
+table to `run.in` for wrapped and raw runs alike.
+
+The supported configuration path is compiled defaults plus one AMReX input
+file. Input values replace defaults. The production executable accepts exactly
+that one file; trailing parameter mutations are rejected. Normal launchers
+expose execution and reporting controls only, while validation tools generate a
+concrete input file before launch. Unused input keys always abort, so the
+accepted parameter surface remains explicit rather than accumulating
+compatibility aliases.
 
 Each run has one folder. The only field roots are:
 

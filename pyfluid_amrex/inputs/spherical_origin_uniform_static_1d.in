@@ -1,4 +1,5 @@
 pyfluid.run_name = spherical_origin_uniform_static_1d
+pyfluid.output_dir = runs/current/uniform/spherical_origin_uniform_static_1d
 
 mesh.coordinate = spherical
 mesh.patch_system = single

@@ -12,6 +12,7 @@ from validation_common import (
     ROOT,
     VALIDATION_HISTORY_FIELDS,
     append_validation_history,
+    materialize_run_input,
     read_tsv,
     repo_relative,
     run_amrex,
@@ -344,33 +345,22 @@ CASES = (
 )
 
 
-def args_from(values: dict[str, str]) -> list[str]:
-    return [f"{key}={value}" for key, value in values.items()]
-
-
-def read_amr_rows(run_dir: Path) -> list[dict[str, float]]:
+def read_amr_rows(run_dir: Path) -> list[dict[str, str]]:
     rows = read_tsv(run_dir / "amr_levels.tsv", require_complete=True)
     if not rows:
         raise RuntimeError(f"missing AMR rows in {run_dir / 'amr_levels.tsv'}")
-    return [{key: float(value) for key, value in row.items()} for row in rows]
+    return rows
 
 
-def read_initial_amr_row(run_dir: Path) -> dict[str, float]:
+def read_initial_amr_row(run_dir: Path) -> dict[str, str]:
     return read_amr_rows(run_dir)[0]
 
 
-def write_input(path: Path, params: dict[str, str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
-        for key in sorted(params):
-            f.write(f"{key} = {params[key]}\n")
-
-
-def finest_dx(row: dict[str, float], direction: int) -> float:
+def finest_dx(row: dict[str, str], direction: int) -> float:
     return float(row[f"finest_dx{direction}"])
 
 
-def direction_tags(row: dict[str, float], direction: int) -> float:
+def direction_tags(row: dict[str, str], direction: int) -> float:
     max_level = int(row["max_level"])
     values = [
         float(row.get(f"latest_auto_dir{direction}_tags_L{lev}", 0.0))
@@ -379,11 +369,11 @@ def direction_tags(row: dict[str, float], direction: int) -> float:
     return max(values)
 
 
-def ref_ratio(row: dict[str, float], direction: int, level: int) -> int:
+def ref_ratio(row: dict[str, str], direction: int, level: int) -> int:
     return int(row.get(f"ref_ratio{direction}_L{level}", 1.0))
 
 
-def check_tensor(case: TensorCase, row: dict[str, float]) -> tuple[str, str]:
+def check_tensor(case: TensorCase, row: dict[str, str]) -> tuple[str, str]:
     reasons: list[str] = []
     active_level = int(row["active_finest_level"])
     if active_level < 1:
@@ -422,12 +412,12 @@ def run_case(case: TensorCase, ranks: int, timeout: int | None) -> dict[str, obj
     values["pyfluid.run_name"] = case.name
     values["pyfluid.output_dir"] = repo_relative(run_dir)
 
-    input_path = ROOT / f"pyfluid_amrex/inputs/hydro_sine_{case.dim}d.in"
+    base_input = ROOT / f"pyfluid_amrex/inputs/hydro_sine_{case.dim}d.in"
+    resolved_input = materialize_run_input(base_input, run_dir / "run.in", values)
     result = run_amrex(
         dim=case.dim,
-        input_path=input_path,
+        input_path=resolved_input,
         ranks=ranks,
-        overrides=args_from(values),
         timeout=timeout,
     )
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -437,9 +427,6 @@ def run_case(case: TensorCase, ranks: int, timeout: int | None) -> dict[str, obj
         f.write(result.stdout)
         if result.stdout and not result.stdout.endswith("\n"):
             f.write("\n")
-    resolved_input = run_dir / "run.in"
-    write_input(resolved_input, values)
-
     row: dict[str, object]
     if result.returncode != 0:
         row = {
@@ -453,10 +440,12 @@ def run_case(case: TensorCase, ranks: int, timeout: int | None) -> dict[str, obj
             "dim": case.dim,
             "ranks": ranks,
             "run_dir": repo_relative(run_dir),
-            "input": repo_relative(input_path),
+            "input": repo_relative(base_input),
             "policy": OPEN_POLICY.name,
         }
         return row
+    if not resolved_input.exists():
+        raise RuntimeError(f"solver did not write canonical run configuration: {resolved_input}")
 
     row = scalar_validation_row(
         run_dir,
@@ -466,7 +455,7 @@ def run_case(case: TensorCase, ranks: int, timeout: int | None) -> dict[str, obj
         mhd=False,
         dim=case.dim,
         ranks=ranks,
-        base_input=repo_relative(input_path),
+        base_input=repo_relative(base_input),
         kind="amr",
     )
     row["returncode"] = result.returncode

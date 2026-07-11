@@ -1,4 +1,5 @@
 pyfluid.run_name = cylindrical_uniform_static_3d
+pyfluid.output_dir = runs/current/uniform/cylindrical_uniform_static_3d
 
 mesh.coordinate = cylindrical
 mesh.axes = r phi z

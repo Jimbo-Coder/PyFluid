@@ -7,7 +7,6 @@ import argparse
 import csv
 import math
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,8 +15,7 @@ import numpy as np
 
 from plotfile_reader import latest_plotfile as discover_latest_plotfile
 from plot_amrex_1d_profile import parse_plot_header, read_level0_state_1d
-from validation_common import mpi_prefix
-from validation_common import read_float_tsv
+from validation_common import materialize_run_input, read_float_tsv, run_mpi
 
 
 @dataclass(frozen=True)
@@ -148,30 +146,30 @@ def write_scan_plan(scan: list[ScanPoint], output: Path, args: argparse.Namespac
          )
 
 
-def evolution_command(args: argparse.Namespace, point: ScanPoint) -> list[str]:
-   command = [
-      *mpi_prefix(args.ranks),
-      str(args.executable),
-      str(args.input),
-      f"pyfluid.output_dir={point.run_dir}",
-      f"amr.n_cell={point.nx}",
-      f"pyfluid.eos={point.case.name}",
-      f"pyfluid.gamma={point.case.gamma:.17g}",
-      f"pyfluid.polytropic_k={point.case.polytropic_k:.17g}",
-      f"pyfluid.polytropic_gamma={point.case.polytropic_gamma:.17g}",
-      f"pyfluid.thermal_gamma={point.case.thermal_gamma:.17g}",
-      f"pyfluid.pressure0={point.case.pressure0:.17g}",
-      f"pyfluid.final_time={point.final_time:.17g}",
-      f"pyfluid.cfl={args.cfl:.17g}",
-      f"pyfluid.amplitude={args.amplitude:.17g}",
-      f"pyfluid.rho0={args.rho0:.17g}",
-      f"pyfluid.v1_0={args.v1_0:.17g}",
-      f"pyfluid.wave_number={args.wave_number:.17g}",
-      "pyfluid.scalar_int=8",
-      "pyfluid.plot_int=100000",
-      "pyfluid.checkpoint_int=-1",
-   ]
-   return command
+def evolution_input(args: argparse.Namespace, point: ScanPoint) -> Path:
+   return materialize_run_input(
+      args.input,
+      point.run_dir / "run.in",
+      {
+         "pyfluid.output_dir": str(point.run_dir),
+         "amr.n_cell": str(point.nx),
+         "pyfluid.eos": point.case.name,
+         "pyfluid.gamma": f"{point.case.gamma:.17g}",
+         "pyfluid.polytropic_k": f"{point.case.polytropic_k:.17g}",
+         "pyfluid.polytropic_gamma": f"{point.case.polytropic_gamma:.17g}",
+         "pyfluid.thermal_gamma": f"{point.case.thermal_gamma:.17g}",
+         "pyfluid.pressure0": f"{point.case.pressure0:.17g}",
+         "pyfluid.final_time": f"{point.final_time:.17g}",
+         "pyfluid.cfl": f"{args.cfl:.17g}",
+         "pyfluid.amplitude": f"{args.amplitude:.17g}",
+         "pyfluid.rho0": f"{args.rho0:.17g}",
+         "pyfluid.v1_0": f"{args.v1_0:.17g}",
+         "pyfluid.wave_number": f"{args.wave_number:.17g}",
+         "pyfluid.scalar_int": "8",
+         "pyfluid.plot_int": "100000",
+         "pyfluid.checkpoint_int": "-1",
+      },
+   )
 
 
 def run_evolution(args: argparse.Namespace, scan: list[ScanPoint]) -> None:
@@ -187,8 +185,9 @@ def run_evolution(args: argparse.Namespace, scan: list[ScanPoint]) -> None:
       point.run_dir.mkdir(parents=True, exist_ok=True)
       if (point.run_dir / "stateGF").exists():
          continue
-      command = evolution_command(args, point)
-      subprocess.run(command, check=True)
+      completed = run_mpi(args.executable, [evolution_input(args, point)], ranks=args.ranks)
+      if completed.returncode != 0:
+         raise RuntimeError(completed.stdout)
 
 
 def collect_result(args: argparse.Namespace, point: ScanPoint) -> dict[str, float | str | Path]:

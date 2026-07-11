@@ -5,18 +5,15 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import shutil
-import subprocess
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
 from validation_common import (
    DRIVEN_POLICY,
    append_validation_history,
    read_tsv,
+   run_mpi,
    scalar_validation_row,
    write_tsv,
 )
@@ -101,26 +98,9 @@ def run_case(case: UniformAccelerationCase, force: bool) -> tuple[Path, Path, in
    input_path = RUN_ROOT / "inputs" / f"{case.name}.in"
    input_path.parent.mkdir(parents=True, exist_ok=True)
    input_path.write_text(case_input(case, run_dir))
-   command = [
-      *mpi_prefix(case.ranks),
-      str(EXECUTABLE_2D),
-      str(input_path),
-   ]
-   env = dict(os.environ)
-   env.setdefault("OMP_NUM_THREADS", "1")
-   start = time.perf_counter()
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      env=env,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      check=False,
-   )
-   elapsed = time.perf_counter() - start
+   completed = run_mpi(EXECUTABLE_2D, [input_path], ranks=case.ranks)
    (run_dir / "run.log").write_text(completed.stdout)
-   return run_dir, input_path, completed.returncode, elapsed, completed.stdout
+   return run_dir, input_path, completed.returncode, completed.seconds, completed.stdout
 
 
 def analytic_errors(case: UniformAccelerationCase, run_dir: Path) -> dict[str, float]:
@@ -233,17 +213,17 @@ def main() -> int:
       SUMMARY,
       rows,
       [
-         "case",
-         "status",
-         "reason",
-         "time",
-         "mass_abs_error",
-         "momentum_abs_error",
-         "energy_abs_error",
-         "energy_rel_error",
-         "avg_mcells_per_s",
-         "avg_sim_time_per_s",
-         "log",
+            "case",
+            "status",
+            "reason",
+            "time",
+            "mass_abs_error",
+            "momentum_abs_error",
+            "energy_abs_error",
+            "energy_rel_error",
+            "avg_mcells_per_s",
+            "avg_sim_time_per_s",
+            "log",
       ],
    )
    append_validation_history(HISTORY, rows)

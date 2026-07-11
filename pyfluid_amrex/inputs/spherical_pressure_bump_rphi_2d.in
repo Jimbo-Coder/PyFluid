@@ -1,4 +1,5 @@
 pyfluid.run_name = spherical_pressure_bump_rphi_2d
+pyfluid.output_dir = runs/current/pressure_bump/spherical_pressure_bump_rphi_2d
 
 mesh.coordinate = spherical
 mesh.axes = r phi

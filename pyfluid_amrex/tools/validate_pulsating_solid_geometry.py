@@ -11,15 +11,12 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import os
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
-from validation_common import read_tsv
+from validation_common import materialize_run_input, parameters_from_assignments, read_tsv, run_mpi
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "pyfluid_amrex" / "tools"))
@@ -86,6 +83,24 @@ def repo_relative(path: Path) -> str:
    return str(path.resolve().relative_to(ROOT))
 
 
+def run_with_parameters(
+   executable: Path,
+   base_input: Path,
+   run_dir: Path,
+   assignments: list[str],
+   ranks: int,
+   *,
+   remove_parameters: tuple[str, ...] = (),
+):
+   input_path = materialize_run_input(
+      base_input,
+      run_dir / "run.in",
+      parameters_from_assignments(assignments),
+      remove_parameters=remove_parameters,
+   )
+   return run_mpi(executable, [input_path], ranks=ranks)
+
+
 def solid_integrals_from_aux_plotfile(plotfile: Path) -> dict[str, float]:
    names, ndim, _time = parse_plot_header(plotfile)
    state = read_level_state(plotfile, names, ndim, 0)
@@ -104,24 +119,19 @@ def run_output_case(case: Case, executable: Path, input_file: Path, run_root: Pa
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
    reference_time = -case.phase / (2.0 * math.pi * FREQUENCY) if FREQUENCY > 0.0 else 0.0
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(run_dir)}",
-      *BASE_OVERRIDES,
-      "pyfluid.max_step=0",
-      f"pyfluid.solid_radius_phase={case.phase:.17g}",
-      f"pyfluid.solid_swept_reference_time={reference_time:.17g}",
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   completed = run_with_parameters(
+      executable,
+      input_file,
+      run_dir,
+      [
+         f"pyfluid.output_dir={repo_relative(run_dir)}",
+         *BASE_OVERRIDES,
+         "pyfluid.max_step=0",
+         f"pyfluid.solid_radius_phase={case.phase:.17g}",
+         f"pyfluid.solid_swept_reference_time={reference_time:.17g}",
+      ],
+      ranks,
+      remove_parameters=("amr.ref_ratio",),
    )
    radius = RADIUS + AMPLITUDE * math.sin(case.phase)
    reference_radius = RADIUS + AMPLITUDE * math.sin(case.phase + 2.0 * math.pi * FREQUENCY * reference_time)
@@ -184,33 +194,28 @@ def run_evolution_case(executable: Path, input_file: Path, run_root: Path, ranks
    if force and run_dir.exists():
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(run_dir)}",
-      *BASE_OVERRIDES,
-      "pyfluid.max_step=20",
-      "pyfluid.scalar_int=1",
-      "pyfluid.plot_int=20",
-      "pyfluid.aux_gfs=solid_mask,solid_volume_fraction,solid_swept_volume",
-      "pyfluid.aux_gf_int=20",
-      "pyfluid.ng=2",
-      "pyfluid.recon=pwl",
-      "pyfluid.riemann=hllc",
-      "pyfluid.timestep=ssprk3",
-      "pyfluid.cfl=0.9",
-      "pyfluid.solid_radius_phase=0.0",
-      "pyfluid.solid_swept_reference_time=0.0",
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   completed = run_with_parameters(
+      executable,
+      input_file,
+      run_dir,
+      [
+         f"pyfluid.output_dir={repo_relative(run_dir)}",
+         *BASE_OVERRIDES,
+         "pyfluid.max_step=20",
+         "pyfluid.scalar_int=1",
+         "pyfluid.plot_int=20",
+         "pyfluid.aux_gfs=solid_mask,solid_volume_fraction,solid_swept_volume",
+         "pyfluid.aux_gf_int=20",
+         "pyfluid.ng=2",
+         "pyfluid.recon=pwl",
+         "pyfluid.riemann=hllc",
+         "pyfluid.timestep=ssprk3",
+         "pyfluid.cfl=0.9",
+         "pyfluid.solid_radius_phase=0.0",
+         "pyfluid.solid_swept_reference_time=0.0",
+      ],
+      ranks,
+      remove_parameters=("amr.ref_ratio",),
    )
    scalars = read_last_scalar_row(run_dir)
    mass_rel_drift = float(scalars.get("mass_rel_drift", "nan"))
@@ -261,45 +266,39 @@ def run_amr_evolution_case(executable: Path, input_file: Path, run_root: Path, r
    if force and run_dir.exists():
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(run_dir)}",
-      *BASE_OVERRIDES,
-      "amr.max_level=2",
-      "amr.ref_ratio=2 2",
-      "amr.regrid_int=4",
-      "amr.grid_eff=0.8",
-      "amr.n_error_buf=3 3",
-      "amr.tag_metric=none",
-      "amr.solid_refine_band_cells=2.0",
-      "amr.solid_curvature_error=2.0e-5",
-      "amr.level_cell_budget_side=384",
-      "amr.total_cell_budget=250000",
-      "amr.state_interp=conservative",
-      "pyfluid.max_step=48",
-      "pyfluid.scalar_int=4",
-      "pyfluid.plot_int=48",
-      "pyfluid.aux_gfs=solid_mask,solid_volume_fraction,solid_swept_volume",
-      "pyfluid.aux_gf_int=48",
-      "pyfluid.ng=2",
-      "pyfluid.recon=pwl",
-      "pyfluid.riemann=hllc",
-      "pyfluid.timestep=ssprk3",
-      "pyfluid.cfl=0.9",
-      "pyfluid.subcycling=off",
-      "pyfluid.solid_radius_phase=0.0",
-      "pyfluid.solid_swept_reference_time=0.0",
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   completed = run_with_parameters(
+      executable,
+      input_file,
+      run_dir,
+      [
+         f"pyfluid.output_dir={repo_relative(run_dir)}",
+         *BASE_OVERRIDES,
+         "amr.max_level=2",
+         "amr.ref_ratio=2 2",
+         "amr.regrid_int=4",
+         "amr.grid_eff=0.8",
+         "amr.n_error_buf=3 3",
+         "amr.tag_metric=none",
+         "amr.solid_refine_band_cells=2.0",
+         "amr.solid_curvature_error=2.0e-5",
+         "amr.level_cell_budget_side=384",
+         "amr.total_cell_budget=250000",
+         "amr.state_interp=conservative",
+         "pyfluid.max_step=48",
+         "pyfluid.scalar_int=4",
+         "pyfluid.plot_int=48",
+         "pyfluid.aux_gfs=solid_mask,solid_volume_fraction,solid_swept_volume",
+         "pyfluid.aux_gf_int=48",
+         "pyfluid.ng=2",
+         "pyfluid.recon=pwl",
+         "pyfluid.riemann=hllc",
+         "pyfluid.timestep=ssprk3",
+         "pyfluid.cfl=0.9",
+         "pyfluid.subcycling=off",
+         "pyfluid.solid_radius_phase=0.0",
+         "pyfluid.solid_swept_reference_time=0.0",
+      ],
+      ranks,
    )
    scalars = read_last_scalar_row(run_dir)
    mass_rel_drift = float(scalars.get("mass_rel_drift", "nan"))
@@ -349,45 +348,39 @@ def run_amr_subcycling_case(executable: Path, input_file: Path, run_root: Path, 
    if force and run_dir.exists():
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(run_dir)}",
-      *BASE_OVERRIDES,
-      "amr.max_level=2",
-      "amr.ref_ratio=2 2",
-      "amr.regrid_int=4",
-      "amr.grid_eff=0.8",
-      "amr.n_error_buf=3 3",
-      "amr.tag_metric=none",
-      "amr.solid_refine_band_cells=2.0",
-      "amr.solid_curvature_error=2.0e-5",
-      "amr.level_cell_budget_side=384",
-      "amr.total_cell_budget=250000",
-      "amr.state_interp=protected",
-      "pyfluid.max_step=48",
-      "pyfluid.scalar_int=4",
-      "pyfluid.plot_int=48",
-      "pyfluid.aux_gfs=solid_mask,solid_volume_fraction,solid_swept_volume",
-      "pyfluid.aux_gf_int=48",
-      "pyfluid.ng=2",
-      "pyfluid.recon=pwl",
-      "pyfluid.riemann=hllc",
-      "pyfluid.timestep=ssprk3",
-      "pyfluid.cfl=0.9",
-      "pyfluid.subcycling=on",
-      "pyfluid.solid_radius_phase=0.0",
-      "pyfluid.solid_swept_reference_time=0.0",
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   completed = run_with_parameters(
+      executable,
+      input_file,
+      run_dir,
+      [
+         f"pyfluid.output_dir={repo_relative(run_dir)}",
+         *BASE_OVERRIDES,
+         "amr.max_level=2",
+         "amr.ref_ratio=2 2",
+         "amr.regrid_int=4",
+         "amr.grid_eff=0.8",
+         "amr.n_error_buf=3 3",
+         "amr.tag_metric=none",
+         "amr.solid_refine_band_cells=2.0",
+         "amr.solid_curvature_error=2.0e-5",
+         "amr.level_cell_budget_side=384",
+         "amr.total_cell_budget=250000",
+         "amr.state_interp=protected",
+         "pyfluid.max_step=48",
+         "pyfluid.scalar_int=4",
+         "pyfluid.plot_int=48",
+         "pyfluid.aux_gfs=solid_mask,solid_volume_fraction,solid_swept_volume",
+         "pyfluid.aux_gf_int=48",
+         "pyfluid.ng=2",
+         "pyfluid.recon=pwl",
+         "pyfluid.riemann=hllc",
+         "pyfluid.timestep=ssprk3",
+         "pyfluid.cfl=0.9",
+         "pyfluid.subcycling=on",
+         "pyfluid.solid_radius_phase=0.0",
+         "pyfluid.solid_swept_reference_time=0.0",
+      ],
+      ranks,
    )
    scalars = read_last_scalar_row(run_dir)
    mass_rel_drift = float(scalars.get("mass_rel_drift", "nan"))

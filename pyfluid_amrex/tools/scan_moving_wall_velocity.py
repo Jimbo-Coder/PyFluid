@@ -6,13 +6,11 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import os
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import materialize_run_input, parameters_from_assignments, run_mpi
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -95,24 +93,23 @@ def run_case(
       shutil.rmtree(case_dir)
    case_dir.mkdir(parents=True, exist_ok=True)
    final_time = displacement / velocity
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(case_dir)}",
-      *BASE_OVERRIDES,
-      f"pyfluid.solid_velocity_1={velocity:.17g}",
-      f"pyfluid.final_time={final_time:.17g}",
-      "pyfluid.max_step=5000",
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   input_path = materialize_run_input(
+      input_file,
+      case_dir / "run.in",
+      parameters_from_assignments(
+         [
+            f"pyfluid.output_dir={repo_relative(case_dir)}",
+            *BASE_OVERRIDES,
+            f"pyfluid.solid_velocity_1={velocity:.17g}",
+            f"pyfluid.final_time={final_time:.17g}",
+            "pyfluid.max_step=5000",
+         ]
+      ),
+   )
+   completed = run_mpi(
+      executable,
+      [input_path],
+      ranks=ranks,
    )
    average_match = AVERAGE_RE.search(completed.stdout)
    sim_time_match = SIM_TIME_RE.search(completed.stdout)

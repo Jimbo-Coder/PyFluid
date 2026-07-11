@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -23,7 +24,14 @@ import numpy as np
 
 from plot_amrex_slice import full_shape, level_chunks, level_count, parse_plot_bounds, parse_plot_header
 from plotfile_reader import latest_plotfile
-from validation_common import ROOT, read_key_values, read_tsv, scalar_validation_row
+from validation_common import (
+   ROOT,
+   materialize_run_input,
+   parameters_from_assignments,
+   read_key_values,
+   read_tsv,
+   scalar_validation_row,
+)
 
 
 RUN_CASE = ROOT / "pyfluid_amrex/tools/run_case.py"
@@ -55,18 +63,29 @@ class CompositeState:
 
 def run_case(name: str, overrides: list[str], ranks: int, timeout: int | None, policy: str) -> Path:
    run_dir = OUT_ROOT / name
+   if run_dir.exists():
+      shutil.rmtree(run_dir)
+   input_path = materialize_run_input(
+      BASE_INPUT,
+      run_dir / "run.in",
+      parameters_from_assignments(
+         [
+            *overrides,
+            f"pyfluid.output_dir={run_dir.relative_to(ROOT)}",
+            f"pyfluid.run_name={name}",
+         ]
+      ),
+   )
    command = [
       sys.executable,
       str(RUN_CASE),
-      str(BASE_INPUT),
+      str(input_path),
       "--ranks",
       str(ranks),
+      "--keep-existing",
       "--skip-plots",
       "--policy",
       policy,
-      *overrides,
-      f"pyfluid.output_dir={run_dir.relative_to(ROOT)}",
-      f"pyfluid.run_name={name}",
    ]
    completed = subprocess.run(command, cwd=ROOT, text=True, check=False, timeout=timeout)
    if completed.returncode != 0:

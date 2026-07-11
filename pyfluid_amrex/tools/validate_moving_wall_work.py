@@ -10,7 +10,15 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from validation_common import next_numbered_path, read_float_tsv, repo_relative, run_amrex, write_tsv
+from validation_common import (
+    materialize_run_input,
+    next_numbered_path,
+    parameters_from_assignments,
+    read_float_tsv,
+    repo_relative,
+    run_amrex,
+    write_tsv,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,7 +76,12 @@ def run_case(args: argparse.Namespace):
         "pyfluid.aux_gf_compute_int=-1",
         "pyfluid.aux_gf_int=-1",
     ]
-    return run_amrex(dim=2, input_path=args.input, ranks=args.ranks, executable=args.executable, overrides=overrides)
+    input_path = materialize_run_input(
+        args.input,
+        args.output_dir / "run.in",
+        parameters_from_assignments(overrides),
+    )
+    return run_amrex(dim=2, input_path=input_path, ranks=args.ranks, executable=args.executable)
 
 
 def make_plot(rows: list[dict[str, float]], output: Path, title: str) -> None:

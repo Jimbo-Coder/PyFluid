@@ -79,6 +79,13 @@ def print_row(row: dict[str, object], plot_paths: Sequence[Path]) -> None:
    passive_drift = parse_float(row.get("passive_mass_rel_drift"))
    if passive_drift == passive_drift and passive_drift > 0.0:
       passive_note = f" passive={passive_drift:.3e}"
+   causal_note = ""
+   causal_contact = parse_float(row.get("causal_boundary_contact_time"))
+   if causal_contact == causal_contact:
+      causal_note = (
+         f" causal_precontact={int(parse_float(row.get('causal_precontact_rows'), 0.0))}"
+         f"@t<{causal_contact:.3e}"
+      )
    print(
       f"{row['status']} {row['case']}: policy={row['policy']} "
       f"mass={parse_float(row.get('mass_rel_drift')):.3e} "
@@ -86,7 +93,8 @@ def print_row(row: dict[str, object], plot_paths: Sequence[Path]) -> None:
       f"mom={parse_float(row.get('momentum_abs_drift')):.3e} "
       f"divb={parse_float(row.get('divb_l1'), 0.0):.3e} "
       f"Mcells/s={parse_float(row.get('avg_mcells_per_s')):.3e} "
-      f"sim_time/s={parse_float(row.get('avg_sim_time_per_s')):.3e}{amr_note}{passive_note}{reason} "
+      f"sim_time/s={parse_float(row.get('avg_sim_time_per_s')):.3e}"
+      f"{amr_note}{passive_note}{causal_note}{reason} "
       f"plots={plots}"
    )
 

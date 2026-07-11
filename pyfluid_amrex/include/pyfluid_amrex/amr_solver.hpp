@@ -135,6 +135,9 @@ public:
       for (auto& dir_counts : latest_auto_direction_tagged_cells_) {
          dir_counts.resize(nlev, 0);
       }
+      for (auto& dir_strength : latest_auto_direction_strength_) {
+         dir_strength.resize(nlev, 0.0);
+      }
       rk4_stage_cache_stage_.resize(nlev, -1);
       rk4_stage_cache_fine_start_.resize(nlev, 0.0);
       rk4_stage_cache_time_.resize(nlev, 0.0);
@@ -501,6 +504,7 @@ private:
    amrex::Vector<amrex::Real> level_dts_;
    std::vector<amrex::Long> latest_auto_tagged_cells_;
    std::array<std::vector<amrex::Long>, AMREX_SPACEDIM> latest_auto_direction_tagged_cells_;
+   std::array<std::vector<amrex::Real>, AMREX_SPACEDIM> latest_auto_direction_strength_;
    amrex::Vector<int> rk4_stage_cache_stage_;
    amrex::Vector<amrex::Real> rk4_stage_cache_fine_start_;
    amrex::Vector<amrex::Real> rk4_stage_cache_time_;

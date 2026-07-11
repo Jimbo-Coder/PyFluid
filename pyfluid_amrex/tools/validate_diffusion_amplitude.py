@@ -5,9 +5,7 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,16 +17,17 @@ from plot_amrex_1d_profile import read_level0_state_1d
 from plot_amrex_slice import parse_plot_header as parse_plot_header_nd
 from plot_amrex_slice import read_level_state
 from plotfile_reader import sorted_plotfiles
-from validation_common import mpi_prefix
 from validation_common import (
    DIFFUSIVE_POLICY,
    ROOT,
    append_validation_history,
    average_positive,
    check_scalars,
+   materialize_run_input,
    parse_float,
    read_scalar_rows,
    repo_relative,
+   run_mpi,
    write_tsv,
 )
 from pyfluid.exact_solutions import diffusion_wave_amplitude_exact
@@ -261,41 +260,38 @@ def collect_amplitudes(case: DiffusionCase, run_dir: Path, args: argparse.Namesp
    return rows
 
 
-def evolution_command(case: DiffusionCase, run_dir: Path, args: argparse.Namespace) -> list[str]:
+def evolution_input(case: DiffusionCase, run_dir: Path, args: argparse.Namespace) -> Path:
    viscosity = args.viscosity if case.use_viscosity else 0.0
    resistivity = args.resistivity if case.use_resistivity else 0.0
-   command = [
-      *mpi_prefix(args.ranks),
-      str(executable(case.dim)),
-      str(case.input_file),
-      f"pyfluid.output_dir={run_dir}",
-      f"pyfluid.diffusion={case.method}",
-      f"pyfluid.cfl={args.cfl:.17g}",
-      f"pyfluid.final_time={args.final_time:.17g}",
-      f"pyfluid.max_step={args.max_step}",
-      f"pyfluid.rho0={args.rho0:.17g}",
-      f"pyfluid.b1_0={args.b1_0:.17g}",
-      f"pyfluid.amplitude={args.amplitude:.17g}",
-      f"pyfluid.alfven_amplitude={args.amplitude:.17g}",
-      f"pyfluid.wave_number={args.wave_number:.17g}",
-      f"pyfluid.viscosity={viscosity:.17g}",
-      f"pyfluid.resistivity={resistivity:.17g}",
-      f"pyfluid.diffusion_cfl={args.diffusion_cfl:.17g}",
-      f"pyfluid.diffusion_tolerance={args.diffusion_tolerance:.17g}",
-      f"pyfluid.diffusion_max_iterations={args.diffusion_max_iterations}",
-      f"pyfluid.diffusion_sor_omega={args.diffusion_sor_omega:.17g}",
-      f"pyfluid.scalar_int={args.scalar_int}",
-      f"pyfluid.plot_int={args.plot_int}",
-      "pyfluid.checkpoint_int=-1",
-      "pyfluid.aux_gfs=none",
-      "pyfluid.aux_gf_compute_int=-1",
-      "pyfluid.aux_gf_int=-1",
-   ]
+   parameters = {
+      "pyfluid.output_dir": str(run_dir),
+      "pyfluid.diffusion": case.method,
+      "pyfluid.cfl": f"{args.cfl:.17g}",
+      "pyfluid.final_time": f"{args.final_time:.17g}",
+      "pyfluid.max_step": str(args.max_step),
+      "pyfluid.rho0": f"{args.rho0:.17g}",
+      "pyfluid.b1_0": f"{args.b1_0:.17g}",
+      "pyfluid.amplitude": f"{args.amplitude:.17g}",
+      "pyfluid.alfven_amplitude": f"{args.amplitude:.17g}",
+      "pyfluid.wave_number": f"{args.wave_number:.17g}",
+      "pyfluid.viscosity": f"{viscosity:.17g}",
+      "pyfluid.resistivity": f"{resistivity:.17g}",
+      "pyfluid.diffusion_cfl": f"{args.diffusion_cfl:.17g}",
+      "pyfluid.diffusion_tolerance": f"{args.diffusion_tolerance:.17g}",
+      "pyfluid.diffusion_max_iterations": str(args.diffusion_max_iterations),
+      "pyfluid.diffusion_sor_omega": f"{args.diffusion_sor_omega:.17g}",
+      "pyfluid.scalar_int": str(args.scalar_int),
+      "pyfluid.plot_int": str(args.plot_int),
+      "pyfluid.checkpoint_int": "-1",
+      "pyfluid.aux_gfs": "none",
+      "pyfluid.aux_gf_compute_int": "-1",
+      "pyfluid.aux_gf_int": "-1",
+   }
    if case.dim == 1:
-      command.append(f"amr.n_cell={args.hydro_nx}")
+      parameters["amr.n_cell"] = str(args.hydro_nx)
    else:
-      command.append(f"amr.n_cell={args.mhd_nx} {args.mhd_ny}")
-   return command
+      parameters["amr.n_cell"] = f"{args.mhd_nx} {args.mhd_ny}"
+   return materialize_run_input(case.input_file, run_dir / "run.in", parameters)
 
 
 def run_case(case: DiffusionCase, args: argparse.Namespace) -> tuple[list[dict[str, object]], dict[str, object]]:
@@ -304,17 +300,10 @@ def run_case(case: DiffusionCase, args: argparse.Namespace) -> tuple[list[dict[s
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
    if not (run_dir / "stateGF").exists():
-      command = evolution_command(case, run_dir, args)
-      env = dict(os.environ)
-      env.setdefault("OMP_NUM_THREADS", "1")
-      completed = subprocess.run(
-         command,
-         cwd=ROOT,
-         env=env,
-         text=True,
-         stdout=subprocess.PIPE,
-         stderr=subprocess.STDOUT,
-         check=False,
+      completed = run_mpi(
+         executable(case.dim),
+         [evolution_input(case, run_dir, args)],
+         ranks=args.ranks,
       )
       (run_dir / "run.log").write_text(completed.stdout)
       if completed.returncode != 0:

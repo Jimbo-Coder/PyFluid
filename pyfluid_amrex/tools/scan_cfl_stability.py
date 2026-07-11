@@ -6,9 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import os
 import shutil
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,8 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from validation_common import mpi_prefix
-from validation_common import append_validation_history
+from validation_common import append_validation_history, run_mpi
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -546,17 +543,11 @@ def run_case(case: ScanCase, cfl: float, run_root: Path, ranks: int, timeout: in
          "status": "FAIL",
          "reason": f"missing executable {exe.relative_to(ROOT)}",
       }
-   env = dict(os.environ)
-   env.setdefault("OMP_NUM_THREADS", "1")
-   proc = subprocess.run(
-      [*mpi_prefix(ranks), str(exe), str(input_path)],
-      cwd=ROOT,
-      env=env,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
+   proc = run_mpi(
+      exe,
+      [input_path],
+      ranks=ranks,
       timeout=timeout,
-      check=False,
    )
    rows = scalar_rows(output_dir)
    ok = proc.returncode == 0 and rows_are_finite(rows)

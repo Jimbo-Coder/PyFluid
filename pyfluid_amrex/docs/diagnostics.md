@@ -67,6 +67,8 @@ total_budget_fraction
 peak_level_budget_fraction
 cells_L*
 steps_L*
+latest_auto_dir*_mean_over_threshold_L*
+refinement_decision_L*
 ```
 
 Rules:
@@ -74,8 +76,22 @@ Rules:
 - `touches_max_level = 1` means the run may be limited by `amr.max_level`
   rather than the refinement metric.
 - Budget fractions near `1` mean the hierarchy is resource-limited.
+- `latest_auto_dir*_mean_over_threshold_L*` reports directional tagging demand
+  normalized by `amr.tag_threshold`; values above one requested refinement.
+- `refinement_decision_L*` summarizes each active level as `smooth`, `refined`,
+  `physical_length_guard`, `max_level_guard`, or `tagged_no_fine_level`.
+  `tagging_off` and `inactive` are explicit rather than inferred from zeros.
+- Cell budgets are safety checks that abort when exceeded; they are not
+  mislabeled as graceful refinement decisions.
 - Healthy production AMR should usually have positive headroom and budget
   fractions safely below `1`, unless a deliberate stress test says otherwise.
+- The expected terminal decision on every active finest region is `smooth`.
+  `physical_length_guard`, `max_level_guard`, a radial guard, or a cell-budget
+  abort is a resource-limited result and must not be reported as converged AMR.
+- Representative feature-matrix AMR cases fail unless refinement activates and
+  retains at least two levels of headroom. Uniform cases remain explicit
+  controls for convergence, dimensional equivalence, CFL scans, and benchmarks;
+  they do not count as AMR feature coverage.
 - `pyfluid_amrex/tools/plot_amrex_amr_levels.py` turns this TSV into the
   standard AMR/subcycling diagnostic plot.
 
@@ -152,11 +168,12 @@ uv run python pyfluid_amrex/tools/run_case.py pyfluid_amrex/inputs/hydro_sine_2d
 ```
 
 It runs the AMReX executable, overwrites the configured run directory by
-default, writes `run.log` and resolved `run.in`, then calls the generic report
-and lightweight physics hooks. The default run directory is
-`runs/current/<ic_name>/<run_name>/`; explicit `pyfluid.output_dir` or
-`--output-dir` overrides that. Raw `mpirun` is still useful for low-level
-debugging, but it intentionally bypasses automatic post-run validation.
+default, writes `run.log`, then calls the generic report and lightweight
+physics hooks. The executable itself writes canonical `run.in`. The default run directory is
+`runs/current/<ic_name>/<run_name>/`; each checked-in input sets its explicit
+`pyfluid.output_dir`. The runner has no output-directory or simulation-parameter
+override path. A raw executable launch still accepts exactly one input file;
+using raw `mpirun` only bypasses automatic post-run validation.
 
 For already completed runs, use the shared report command:
 
@@ -169,6 +186,18 @@ writes a TSV row, and generates the scalar report plot in the run directory.
 Level-2 state/aux GF snapshot plots are opt-in with `--gf-plots`. Report plots
 overwrite stable filenames by default; use `--numbered-plots` only for ad-hoc
 comparisons or UI cache workarounds.
+
+The open-boundary policy is not globally permissive for recognized localized
+pressure perturbations. Before the numerical signal cone can reach an outflow
+or diode boundary, mass, energy, and momentum must satisfy the closed-run
+budget at `1e-12` on a uniform grid or `1e-11` on a multilevel hierarchy. The
+report records the estimated contact time and number of
+pre-contact samples. When state output exists, the lightweight physics hooks
+also write `causal_quiescence.tsv` and check that density, pressure, velocity,
+and magnetic field remain unchanged outside the cone. Gaussian bumps use an
+eight-sigma numerical support because they are not mathematically compact;
+finite-stencil exterior tails are checked at `1e-7`. Closed localized runs use
+the same spatial hook while retaining their normal all-time conservation gate.
 
 Ordinary runs should follow this lifecycle:
 

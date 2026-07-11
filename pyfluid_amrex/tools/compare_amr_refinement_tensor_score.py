@@ -8,7 +8,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import ROOT, read_tsv, repo_relative, run_amrex, write_tsv
+from validation_common import ROOT, materialize_run_input, read_tsv, repo_relative, run_amrex, write_tsv
 
 
 RUN_ROOT = ROOT / "runs/current/amr_refinement_tensor_score"
@@ -116,10 +116,6 @@ FIELDS = (
     "ref_ratio2",
     "reason",
 )
-
-
-def args_from(values: dict[str, str]) -> list[str]:
-    return [f"{key}={value}" for key, value in values.items()]
 
 
 def read_amr_rows(run_dir: Path) -> list[dict[str, str]]:
@@ -258,11 +254,15 @@ def run_case(
             "pyfluid.wave_mode_2": f"{case.wave_modes[1]:.17g}",
         }
     )
+    input_path = materialize_run_input(
+        ROOT / "pyfluid_amrex/inputs/hydro_sine_2d.in",
+        run_dir / "run.in",
+        values,
+    )
     result = run_amrex(
         dim=2,
-        input_path=ROOT / "pyfluid_amrex/inputs/hydro_sine_2d.in",
+        input_path=input_path,
         ranks=ranks,
-        overrides=args_from(values),
         timeout=timeout,
     )
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -272,9 +272,6 @@ def run_case(
         f.write(result.stdout)
         if result.stdout and not result.stdout.endswith("\n"):
             f.write("\n")
-    with (run_dir / "run.in").open("w") as f:
-        for key in sorted(values):
-            f.write(f"{key} = {values[key]}\n")
     if result.returncode != 0:
         return {
             "case": case.name,
@@ -285,6 +282,8 @@ def run_case(
             "run_dir": repo_relative(run_dir),
             "reason": " | ".join(result.stdout.splitlines()[-6:]),
         }
+    if not (run_dir / "run.in").exists():
+        raise RuntimeError(f"solver did not write canonical run configuration: {run_dir / 'run.in'}")
     return score_row(case, branch, run_dir, result.seconds)
 
 

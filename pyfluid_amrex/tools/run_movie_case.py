@@ -13,18 +13,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from validation_common import ROOT, read_key_values
 
-ROOT = Path(__file__).resolve().parents[2]
 RUN_CASE = ROOT / "pyfluid_amrex/tools/run_case.py"
 MOVIE = ROOT / "pyfluid_amrex/tools/plot_amrex_boxed_movie.py"
-
-
-def key_value(overrides: list[str], key: str) -> str | None:
-    prefix = f"{key}="
-    for item in reversed(overrides):
-        if item.startswith(prefix):
-            return item[len(prefix) :]
-    return None
 
 
 def run_command(command: list[str]) -> None:
@@ -47,7 +39,6 @@ def append_report(run_dir: Path, rows: list[tuple[str, str]]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
-    parser.add_argument("overrides", nargs="*", help="AMReX key=value overrides passed to run_case.py")
     parser.add_argument("--ranks", type=int, default=3)
     parser.add_argument("--components", default="pressure", help="Comma-separated components to render")
     parser.add_argument("--title", default="", help="Movie title; default is a compact run/config title")
@@ -62,26 +53,27 @@ def main() -> int:
     parser.add_argument("--nobox-only", action="store_true")
     args = parser.parse_args()
 
-    run_name = key_value(args.overrides, "pyfluid.run_name")
-    output_dir_value = key_value(args.overrides, "pyfluid.output_dir")
-    if output_dir_value is None:
-        raise SystemExit("run_movie_case.py requires pyfluid.output_dir=<run_dir>")
+    input_path = args.input if args.input.is_absolute() else ROOT / args.input
+    parameters = read_key_values(input_path)
+    try:
+        run_name = parameters["pyfluid.run_name"]
+        output_dir_value = parameters["pyfluid.output_dir"]
+    except KeyError as exc:
+        raise SystemExit(f"movie input must define {exc.args[0]}") from exc
     run_dir = ROOT / output_dir_value
     plot_dir = run_dir / "stateGF"
 
     run_command([
         sys.executable,
         str(RUN_CASE),
-        str(args.input),
+        str(input_path),
         "--ranks",
         str(args.ranks),
-        *args.overrides,
     ])
 
     title = args.title
     if not title:
-        label = run_name or run_dir.name
-        title = f"{label} AMR movie"
+        title = f"{run_name} AMR movie"
 
     rendered: list[tuple[str, str]] = []
     components = [item.strip() for item in args.components.split(",") if item.strip()]

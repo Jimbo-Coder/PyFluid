@@ -5,15 +5,19 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
-from validation_common import append_performance_history, write_tsv
+from validation_common import (
+   append_performance_history,
+   materialize_run_input,
+   parameters_from_assignments,
+   run_mpi,
+   write_tsv,
+)
 from plotfile_reader import latest_plotfile
 
 
@@ -156,22 +160,21 @@ def run_case(case: SubcyclingCase, args: argparse.Namespace) -> dict[str, object
    if args.force and output_dir.exists():
       shutil.rmtree(output_dir)
    output_dir.mkdir(parents=True, exist_ok=True)
-   command = [
-      *mpi_prefix(args.ranks),
-      str(EXE),
-      str(run_input(args)),
-      f"pyfluid.output_dir={repo_relative(output_dir)}",
-      *common_overrides(args),
-      *case.overrides,
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   input_path = materialize_run_input(
+      run_input(args),
+      output_dir / "run.in",
+      parameters_from_assignments(
+         [
+            f"pyfluid.output_dir={repo_relative(output_dir)}",
+            *common_overrides(args),
+            *case.overrides,
+         ]
+      ),
+   )
+   completed = run_mpi(
+      EXE,
+      [input_path],
+      ranks=args.ranks,
    )
    (output_dir / "run.log").write_text(completed.stdout)
    if completed.returncode != 0:

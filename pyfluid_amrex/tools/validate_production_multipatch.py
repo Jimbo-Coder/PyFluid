@@ -14,7 +14,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plot_amrex_boxed_movie import composite_slice  # noqa: E402
 from plotfile_reader import latest_plotfile  # noqa: E402
-from run_case import merged_params, write_resolved_input, write_run_log  # noqa: E402
+from run_case import write_run_log  # noqa: E402
 from validation_common import (  # noqa: E402
    CLOSED_POLICY,
    DIFFUSIVE_POLICY,
@@ -22,6 +22,8 @@ from validation_common import (  # noqa: E402
    VALIDATION_HISTORY_FIELDS,
    WALL_POLICY,
    append_validation_history,
+   materialize_run_input,
+   parameters_from_assignments,
    parse_float,
    read_tsv,
    repo_relative,
@@ -59,6 +61,7 @@ def run_case(
    timeout: int | None,
    checks=CLOSED_POLICY,
    mhd: bool = False,
+   remove_parameters: tuple[str, ...] = (),
    description: str = "production hydro AMR Cartesian multipatch run",
 ) -> tuple[Path, dict[str, object]]:
    run_dir = RUN_ROOT / name
@@ -68,17 +71,19 @@ def run_case(
       f"pyfluid.run_name={name}",
       f"pyfluid.output_dir={repo_relative(run_dir)}",
    ]
+   input_copy = materialize_run_input(
+      input_path,
+      run_dir / "run.in",
+      parameters_from_assignments(full_overrides),
+      remove_parameters=remove_parameters,
+   )
    result = run_amrex(
       dim=dim,
-      input_path=input_path,
+      input_path=input_copy,
       ranks=ranks,
-      overrides=full_overrides,
       timeout=timeout,
    )
    write_run_log(run_dir, result.command, result.stdout, result.seconds)
-   params = merged_params(input_path, full_overrides)
-   input_copy = run_dir / "run.in"
-   write_resolved_input(input_copy, params)
    if result.returncode != 0:
       tail = "\n".join(result.stdout.strip().splitlines()[-10:])
       return run_dir, {
@@ -98,6 +103,8 @@ def run_case(
          "log": repo_relative(run_dir / "run.log"),
          "description": description,
       }
+   if not input_copy.exists():
+      raise RuntimeError(f"solver did not write canonical run configuration: {input_copy}")
    row = scalar_validation_row(
       run_dir,
       case=name,
@@ -274,6 +281,7 @@ def patch_union_corridor_rows(args: argparse.Namespace) -> list[dict[str, object
       ranks=args.ranks,
       timeout=args.timeout,
       checks=WALL_POLICY,
+      remove_parameters=("amr.ref_ratio",),
       description=(
          "2D Cartesian patch-union corridor without AMR; catches internal "
          "patch-union wall flux conservation regressions"

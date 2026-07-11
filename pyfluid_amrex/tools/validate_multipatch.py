@@ -9,8 +9,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from validation_common import mpi_prefix
-from validation_common import ROOT, append_validation_history, write_tsv
+from validation_common import ROOT, append_validation_history, run_mpi, write_tsv
 
 
 RUN_ROOT = ROOT / "runs/current/multipatch"
@@ -52,8 +51,12 @@ def run_checks(dims: list[int], ranks: int) -> list[dict[str, object]]:
    for dim in dims:
       executable = ROOT / "build" / "pyfluid_amrex" / f"pyfluid_amrex_multipatch_check_{dim}d"
       log_path = LOG_DIR / f"multipatch_check_{dim}d.log"
-      command = [str(executable)] if ranks == 1 else [*mpi_prefix(ranks), str(executable)]
-      returncode, seconds, tail = run_command(command, log_path)
+      completed = run_mpi(executable, ranks=ranks)
+      log_path.parent.mkdir(parents=True, exist_ok=True)
+      log_path.write_text(completed.stdout)
+      returncode = completed.returncode
+      seconds = completed.seconds
+      tail = "\n".join(completed.stdout.strip().splitlines()[-8:])
       status = "pass" if returncode == 0 else "fail"
       rows.append(
          {

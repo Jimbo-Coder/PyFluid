@@ -12,7 +12,7 @@ from validation_common import (
    CLOSED_POLICY,
    VALIDATION_HISTORY_FIELDS,
    append_validation_history,
-   read_key_values,
+   materialize_run_input,
    read_tsv,
    repo_relative,
    run_amrex,
@@ -93,19 +93,6 @@ CASES = (
 )
 
 
-def overrides_as_args(values: dict[str, str]) -> list[str]:
-   return [f"{key}={value}" for key, value in values.items()]
-
-
-def write_resolved_input(path: Path, values: dict[str, str]) -> None:
-   params = read_key_values(INPUT)
-   params.update(values)
-   path.parent.mkdir(parents=True, exist_ok=True)
-   with path.open("w") as f:
-      for key in sorted(params):
-         f.write(f"{key} = {params[key]}\n")
-
-
 def final_level_summary(run_dir: Path) -> dict[str, float]:
    rows = read_tsv(run_dir / "amr_levels.tsv", require_complete=True)
    if not rows:
@@ -127,12 +114,12 @@ def run_case(case: TagCase, ranks: int, timeout: int | None) -> dict[str, object
       "pyfluid.run_name": case.name,
       "pyfluid.output_dir": repo_relative(run_dir),
    })
+   run_input = materialize_run_input(INPUT, run_dir / "run.in", values)
 
    result = run_amrex(
       dim=2,
-      input_path=INPUT,
+      input_path=run_input,
       ranks=ranks,
-      overrides=overrides_as_args(values),
       timeout=timeout,
    )
    run_dir.mkdir(parents=True, exist_ok=True)
@@ -142,9 +129,6 @@ def run_case(case: TagCase, ranks: int, timeout: int | None) -> dict[str, object
       f.write(result.stdout)
       if result.stdout and not result.stdout.endswith("\n"):
          f.write("\n")
-   run_input = run_dir / "run.in"
-   write_resolved_input(run_input, values)
-
    if result.returncode != 0:
       tail = " | ".join(result.stdout.splitlines()[-6:])
       return {
@@ -161,6 +145,8 @@ def run_case(case: TagCase, ranks: int, timeout: int | None) -> dict[str, object
          "ranks": ranks,
          "run_dir": repo_relative(run_dir),
       }
+   if not run_input.exists():
+      raise RuntimeError(f"solver did not write canonical run configuration: {run_input}")
 
    row = scalar_validation_row(
       run_dir,

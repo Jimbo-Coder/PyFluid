@@ -5,9 +5,7 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,8 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from pyfluid.exact_solutions import sod_conserved_integrals, sod_exact_solution  # noqa: E402
 from plotfile_reader import latest_plotfile as discover_latest_plotfile
 from plot_amrex_1d_profile import parse_plot_header, read_level0_state_1d  # noqa: E402
-from validation_common import mpi_prefix
-from validation_common import append_validation_history, next_numbered_path, read_scalar_rows, write_tsv  # noqa: E402
+from validation_common import append_validation_history, next_numbered_path, read_scalar_rows, run_mpi, write_tsv  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -158,17 +155,11 @@ def write_case_input(case: SodCase, args: argparse.Namespace) -> tuple[Path, Pat
 
 def run_solver(case: SodCase, args: argparse.Namespace) -> tuple[int, str, Path]:
    input_path, run_dir = write_case_input(case, args)
-   env = dict(os.environ)
-   env.setdefault("OMP_NUM_THREADS", "1")
-   completed = subprocess.run(
-      [*mpi_prefix(args.ranks), str(EXECUTABLE), str(input_path)],
-      cwd=ROOT,
-      env=env,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
+   completed = run_mpi(
+      EXECUTABLE,
+      [input_path],
+      ranks=args.ranks,
       timeout=args.timeout,
-      check=False,
    )
    return completed.returncode, completed.stdout, run_dir
 

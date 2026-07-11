@@ -17,6 +17,7 @@
 
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/build_options.hpp"
+#include "pyfluid_amrex/config_registry.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/mesh_limits.hpp"
 #include "pyfluid_amrex/mesh_geometry.hpp"
@@ -26,12 +27,14 @@
 namespace pyfluid_amrex {
 
 struct RunConfig {
+   RunConfig();
+
    int ng = 1;
    int max_step = 32;
    amrex::Real final_time = -1.0;
    amrex::Real cfl = 0.9;
    amrex::Real gamma = 5.0 / 3.0;
-   std::string eos = "ideal_gas";
+   std::string eos;
    amrex::Real polytropic_k = 1.0;
    amrex::Real polytropic_gamma = 5.0 / 3.0;
    amrex::Real thermal_gamma = 5.0 / 3.0;
@@ -40,6 +43,7 @@ struct RunConfig {
 
    std::string run_name = "amrex_hydro_sine";
    std::string output_dir = "runs/current/amrex_hydro_sine";
+   std::string validation_policy = "";
    int scalar_int = 1;
    int plot_int = -1;
    std::string plotfile_format = "hdf5";
@@ -88,8 +92,8 @@ struct RunConfig {
    bool mesh_allow_experimental_mixed_shell = false;
    std::string mesh_metric_divergence = "auto";
 
-   std::string physics = "hydro";
-   std::string ct = "off";
+   std::string physics;
+   std::string ct;
    std::string ic = "sin_wave";
    int passive_scalars = 0;
    std::string passive_profile = "none";
@@ -159,11 +163,11 @@ struct RunConfig {
    amrex::Real rotor_density = 10.0;
    amrex::Real rotor_omega = 20.0;
 
-   std::string recon = "pwc";
+   std::string recon;
    std::string recon_fine = "";
    int recon_fine_start_level = -1;
-   std::string riemann = "llf";
-   std::string timestep = "euler";
+   std::string riemann;
+   std::string timestep;
    std::string bc = "periodic";
    std::string bc_xlo = "";
    std::string bc_xhi = "";
@@ -191,7 +195,7 @@ struct RunConfig {
    amrex::Real inflow_center_y = 0.5;
    amrex::Real inflow_center_z = 0.5;
    amrex::Real inflow_radius = 0.08;
-   std::string diffusion = "none";
+   std::string diffusion;
    amrex::Real viscosity = 0.0;
    amrex::Real resistivity = 0.0;
    amrex::Real diffusion_cfl = 0.9;
@@ -227,8 +231,8 @@ struct RunConfig {
    int gravity_max_fmg_iterations = 20;
    int gravity_max_order = 2;
    int gravity_verbose = 0;
-   std::string subcycling = "off";
-   std::string subcycling_steps = "spatial";
+   std::string subcycling;
+   std::string subcycling_steps;
    std::string solid_geometry = "off";
    std::string solid_motion = "static";
    std::string solid_wall_condition = "slip";
@@ -254,35 +258,35 @@ struct RunConfig {
    amrex::Real solid_wedge_x0 = 0.35;
    amrex::Real solid_wedge_y0 = 0.15;
    amrex::Real solid_wedge_angle_deg = 10.0;
-   std::string tag_metric = "none";
-   std::string refinement_tensor = "fixed";
-   std::string state_interp = "quartic-conservative";
-   std::string metric_regrid = "auto";
-   amrex::Real tag_threshold = 0.35;
+   std::string tag_metric;
+   std::string refinement_tensor;
+   std::string state_interp;
+   std::string metric_regrid;
+   amrex::Real tag_threshold;
    bool tag_threshold_set = false;
-   int max_refinement_ratio = 4;
-   amrex::Real min_feature_length = 0.0;
+   int max_refinement_ratio;
+   amrex::Real min_feature_length;
    bool min_feature_length_set = false;
-   amrex::Real min_feature_length_1 = std::numeric_limits<amrex::Real>::quiet_NaN();
+   amrex::Real min_feature_length_1;
    bool min_feature_length_1_set = false;
-   amrex::Real min_feature_length_2 = std::numeric_limits<amrex::Real>::quiet_NaN();
+   amrex::Real min_feature_length_2;
    bool min_feature_length_2_set = false;
-   amrex::Real min_feature_length_3 = std::numeric_limits<amrex::Real>::quiet_NaN();
+   amrex::Real min_feature_length_3;
    bool min_feature_length_3_set = false;
-   amrex::Real min_refine_radius = 0.0;
-   amrex::Real solid_refine_band_cells = 1.5;
-   amrex::Real solid_curvature_error = 0.0;
-   std::string initial_refine = "none";
-   int initial_refine_levels = 0;
-   int initial_refine_fixed_levels = 0;
+   amrex::Real min_refine_radius;
+   amrex::Real solid_refine_band_cells;
+   amrex::Real solid_curvature_error;
+   std::string initial_refine;
+   int initial_refine_levels;
+   int initial_refine_fixed_levels;
    int initial_refine_box_count = 0;
    std::array<amrex::Real, MaxInitialRefineBoxValues> initial_refine_box_lo{};
    std::array<amrex::Real, MaxInitialRefineBoxValues> initial_refine_box_hi{};
-   int amr_max_level = 0;
-   int regrid_int = -1;
-   amrex::Long level_cell_budget = 0;
-   int level_cell_budget_side = 0;
-   amrex::Long total_cell_budget = 0;
+   int amr_max_level;
+   int regrid_int;
+   amrex::Long level_cell_budget;
+   int level_cell_budget_side;
+   amrex::Long total_cell_budget;
 };
 
 struct DiffusionStats {
@@ -347,6 +351,17 @@ static constexpr std::array<std::string_view, 7> BoundaryOptions{{
 }};
 static constexpr std::array<std::string_view, 3> InflowProfileOptions{{"uniform", "gaussian_beam", "uniform_beam"}};
 static constexpr std::array<std::string_view, 2> ScalarOutputModeOptions{{"stream", "final"}};
+static constexpr std::array<std::string_view, 9> ValidationPolicyOptions{{
+   "closed",
+   "open",
+   "open_mhd",
+   "driven",
+   "wall",
+   "diffusive",
+   "diffusive_wall",
+   "smoke",
+   "elliptic",
+}};
 static constexpr std::array<std::string_view, 3> SourceOptions{{"none", "uniform_acceleration", "rotating_ring_heating"}};
 static constexpr std::array<std::string_view, 3> GravityOptions{{"none", "poisson", "fixed"}};
 static constexpr std::array<std::string_view, 2> GravityCouplingOptions{{"athena", "source"}};
@@ -359,7 +374,7 @@ static constexpr std::array<std::string_view, 4> SolidMotionOptions{{"static", "
 static constexpr std::array<std::string_view, 2> SolidWallConditionOptions{{"slip", "no_slip"}};
 static constexpr std::array<std::string_view, 3> MeshPatchBoxOwnershipOptions{{"exact", "owner_first", "owner_last"}};
 
-inline amrex::Real amr_default_auto_tag_threshold(int max_level);
+inline amrex::Real amr_default_auto_tag_threshold();
 static constexpr std::array<std::string_view, 2> MeshPatchBoxDomainOptions{{"rectangular", "union"}};
 static constexpr std::array<std::string_view, 2> AMRTagMetricOptions{{"none", "auto"}};
 static constexpr std::array<std::string_view, 2> AMRRefinementTensorOptions{{"fixed", "auto"}};
@@ -616,12 +631,12 @@ inline RunConfig read_config()
 {
    RunConfig cfg;
    amrex::ParmParse pp("pyfluid");
+   query_registered_method_parameters(pp, cfg);
    pp.query("ng", cfg.ng);
    pp.query("max_step", cfg.max_step);
    pp.query("final_time", cfg.final_time);
    pp.query("cfl", cfg.cfl);
    pp.query("gamma", cfg.gamma);
-   pp.query("eos", cfg.eos);
    pp.query("polytropic_k", cfg.polytropic_k);
    pp.query("polytropic_gamma", cfg.polytropic_gamma);
    pp.query("thermal_gamma", cfg.thermal_gamma);
@@ -629,6 +644,7 @@ inline RunConfig read_config()
    pp.query("pressure_floor", cfg.pressure_floor);
    pp.query("run_name", cfg.run_name);
    pp.query("output_dir", cfg.output_dir);
+   pp.query("validation_policy", cfg.validation_policy);
    pp.query("scalar_int", cfg.scalar_int);
    pp.query("scalar_output_mode", cfg.scalar_output_mode);
    pp.query("plot_int", cfg.plot_int);
@@ -738,8 +754,6 @@ inline RunConfig read_config()
       );
    }
    validate_mesh_geometry_for_current_solver(mesh_coordinate, mesh_patch_system);
-   pp.query("physics", cfg.physics);
-   pp.query("ct", cfg.ct);
    pp.query("ic", cfg.ic);
    pp.query("passive_scalars", cfg.passive_scalars);
    pp.query("passive_profile", cfg.passive_profile);
@@ -808,11 +822,8 @@ inline RunConfig read_config()
    pp.query("rotor_transition_radius", cfg.rotor_transition_radius);
    pp.query("rotor_density", cfg.rotor_density);
    pp.query("rotor_omega", cfg.rotor_omega);
-   pp.query("recon", cfg.recon);
    pp.query("recon_fine", cfg.recon_fine);
    pp.query("recon_fine_start_level", cfg.recon_fine_start_level);
-   pp.query("riemann", cfg.riemann);
-   pp.query("timestep", cfg.timestep);
    pp.query("bc", cfg.bc);
    pp.query("bc_xlo", cfg.bc_xlo);
    pp.query("bc_xhi", cfg.bc_xhi);
@@ -840,7 +851,6 @@ inline RunConfig read_config()
    pp.query("inflow_center_y", cfg.inflow_center_y);
    pp.query("inflow_center_z", cfg.inflow_center_z);
    pp.query("inflow_radius", cfg.inflow_radius);
-   pp.query("diffusion", cfg.diffusion);
    pp.query("viscosity", cfg.viscosity);
    pp.query("resistivity", cfg.resistivity);
    pp.query("diffusion_cfl", cfg.diffusion_cfl);
@@ -876,8 +886,6 @@ inline RunConfig read_config()
    pp.query("gravity_max_fmg_iterations", cfg.gravity_max_fmg_iterations);
    pp.query("gravity_max_order", cfg.gravity_max_order);
    pp.query("gravity_verbose", cfg.gravity_verbose);
-   pp.query("subcycling", cfg.subcycling);
-   pp.query("subcycling_steps", cfg.subcycling_steps);
    pp.query("solid_geometry", cfg.solid_geometry);
    pp.query("solid_motion", cfg.solid_motion);
    pp.query("solid_wall_condition", cfg.solid_wall_condition);
@@ -922,32 +930,7 @@ inline RunConfig read_config()
       }
    }
    amrex::ParmParse amr_pp("amr");
-   amr_pp.query("tag_metric", cfg.tag_metric);
-   amr_pp.query("refinement_tensor", cfg.refinement_tensor);
-   amr_pp.query("state_interp", cfg.state_interp);
-   amr_pp.query("metric_regrid", cfg.metric_regrid);
-   if (amr_pp.query("tag_threshold", cfg.tag_threshold)) {
-      cfg.tag_threshold_set = true;
-   }
-   amr_pp.query("max_refinement_ratio", cfg.max_refinement_ratio);
-   if (amr_pp.query("min_feature_length", cfg.min_feature_length)) {
-      cfg.min_feature_length_set = true;
-   }
-   if (amr_pp.query("min_feature_length_1", cfg.min_feature_length_1)) {
-      cfg.min_feature_length_1_set = true;
-   }
-   if (amr_pp.query("min_feature_length_2", cfg.min_feature_length_2)) {
-      cfg.min_feature_length_2_set = true;
-   }
-   if (amr_pp.query("min_feature_length_3", cfg.min_feature_length_3)) {
-      cfg.min_feature_length_3_set = true;
-   }
-   amr_pp.query("min_refine_radius", cfg.min_refine_radius);
-   amr_pp.query("solid_refine_band_cells", cfg.solid_refine_band_cells);
-   amr_pp.query("solid_curvature_error", cfg.solid_curvature_error);
-   amr_pp.query("initial_refine", cfg.initial_refine);
-   amr_pp.query("initial_refine_levels", cfg.initial_refine_levels);
-   amr_pp.query("initial_refine_fixed_levels", cfg.initial_refine_fixed_levels);
+   query_registered_amr_parameters(amr_pp, cfg);
    std::vector<amrex::Real> initial_refine_box_lo;
    std::vector<amrex::Real> initial_refine_box_hi;
    amr_pp.queryarr("initial_refine_box_lo", initial_refine_box_lo);
@@ -969,13 +952,8 @@ inline RunConfig read_config()
          cfg.initial_refine_box_hi[n] = initial_refine_box_hi[n];
       }
    }
-   amr_pp.query("max_level", cfg.amr_max_level);
-   amr_pp.query("regrid_int", cfg.regrid_int);
-   amr_pp.query("level_cell_budget", cfg.level_cell_budget);
-   amr_pp.query("level_cell_budget_side", cfg.level_cell_budget_side);
-   amr_pp.query("total_cell_budget", cfg.total_cell_budget);
    if (cfg.tag_metric == "auto" && !cfg.tag_threshold_set) {
-      cfg.tag_threshold = amr_default_auto_tag_threshold(cfg.amr_max_level);
+      cfg.tag_threshold = amr_default_auto_tag_threshold();
    }
    if (cfg.level_cell_budget_side > 0) {
       amrex::Long derived_cells = 1;
@@ -987,6 +965,7 @@ inline RunConfig read_config()
       }
       cfg.level_cell_budget = derived_cells;
    }
+   sync_registered_amr_parameters(amr_pp, cfg);
    return cfg;
 }
 
@@ -1047,13 +1026,9 @@ inline amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> configured_min_feature_lengt
    return values;
 }
 
-inline amrex::Real amr_default_auto_tag_threshold(int max_level)
+inline amrex::Real amr_default_auto_tag_threshold()
 {
-   constexpr amrex::Real max_auto_tag_threshold = 0.08;
-   constexpr amrex::Real min_auto_tag_threshold = 0.01;
-   const int reductions = std::max(max_level - 4, 0) / 2;
-   const amrex::Real scaled_threshold = max_auto_tag_threshold / (1 << reductions);
-   return std::max(min_auto_tag_threshold, scaled_threshold);
+   return 0.08;
 }
 
 inline amrex::Real amr_default_auto_min_feature_scale(int max_level)
@@ -1192,7 +1167,7 @@ inline MeshRuntimeLayout mesh_runtime_layout(RunConfig const& cfg)
 
 inline void validate_config(RunConfig const& cfg)
 {
-   require_supported_option(cfg.eos, EOSOptions, "pyfluid.eos");
+   validate_registered_parameters(cfg);
    if (cfg.gamma <= 1.0) {
       amrex::Abort("pyfluid.gamma must be greater than 1");
    }
@@ -1208,7 +1183,6 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.rho_floor <= 0.0 || cfg.pressure_floor <= 0.0) {
       amrex::Abort("pyfluid.rho_floor and pyfluid.pressure_floor must be positive");
    }
-   require_supported_option(cfg.physics, PhysicsOptions, "pyfluid.physics");
    if (cfg.passive_scalars < 0 || cfg.passive_scalars > MaxPassiveScalars) {
       amrex::Abort("pyfluid.passive_scalars currently supports 0 or 1");
    }
@@ -1223,7 +1197,6 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.physical_check_int < 0) {
       amrex::Abort("pyfluid.physical_check_int must be non-negative; 0 disables accepted-state physical checks");
    }
-   require_supported_option(cfg.ct, CTOptions, "pyfluid.ct");
    if (cfg.ct == "on" && cfg.physics != "mhd") {
       amrex::Abort("pyfluid.ct = on requires pyfluid.physics = mhd");
    }
@@ -1486,21 +1459,18 @@ inline void validate_config(RunConfig const& cfg)
       amrex::Abort("magnetic_blast_noise requires the 3D AMReX executable");
    }
 #endif
-   require_supported_option(cfg.recon, ReconOptions, "pyfluid.recon");
    if (!cfg.recon_fine.empty() && !valid_recon_name(cfg.recon_fine)) {
       amrex::Abort("pyfluid.recon_fine supports " + supported_option_names(ReconOptions));
    }
    if (!cfg.recon_fine.empty() && cfg.recon_fine_start_level < 0) {
       amrex::Abort("pyfluid.recon_fine_start_level must be nonnegative when pyfluid.recon_fine is set");
    }
-   require_supported_option(cfg.riemann, RiemannOptions, "pyfluid.riemann");
    if (cfg.physics == "mhd" && cfg.riemann == "hllc") {
       amrex::Abort("pyfluid.riemann = hllc is hydro-only; use llf, hll, hlle, or hlld for MHD");
    }
    if (cfg.physics == "hydro" && cfg.riemann == "hlld") {
       amrex::Abort("pyfluid.riemann = hlld is MHD-only; use llf, hll, hlle, or hllc for hydro");
    }
-   require_supported_option(cfg.timestep, TimestepOptions, "pyfluid.timestep");
    if (!valid_bc_name(cfg.bc)) {
       amrex::Abort("pyfluid.bc supports " + supported_option_names(BoundaryOptions));
    }
@@ -1520,7 +1490,6 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.inflow_radius <= 0.0) {
       amrex::Abort("pyfluid.inflow_radius must be positive");
    }
-   require_supported_option(cfg.diffusion, DiffusionOptions, "pyfluid.diffusion");
    if (cfg.viscosity < 0.0) {
       amrex::Abort("pyfluid.viscosity must be non-negative");
    }
@@ -1624,8 +1593,6 @@ inline void validate_config(RunConfig const& cfg)
          amrex::Abort("pyfluid.gravity_verbose must be non-negative");
       }
    }
-   require_supported_option(cfg.subcycling, SubcyclingOptions, "pyfluid.subcycling");
-   require_supported_option(cfg.subcycling_steps, SubcyclingStepOptions, "pyfluid.subcycling_steps");
    require_supported_option(cfg.solid_geometry, SolidGeometryOptions, "pyfluid.solid_geometry");
    require_supported_option(cfg.solid_motion, SolidMotionOptions, "pyfluid.solid_motion");
    require_supported_option(cfg.solid_wall_condition, SolidWallConditionOptions, "pyfluid.solid_wall_condition");
@@ -1726,10 +1693,6 @@ inline void validate_config(RunConfig const& cfg)
          }
       }
    }
-   require_supported_option(cfg.tag_metric, AMRTagMetricOptions, "amr.tag_metric");
-   require_supported_option(cfg.refinement_tensor, AMRRefinementTensorOptions, "amr.refinement_tensor");
-   require_supported_option(cfg.state_interp, AMRStateInterpOptions, "amr.state_interp");
-   require_supported_option(cfg.metric_regrid, MetricRegridOptions, "amr.metric_regrid");
    require_supported_option(cfg.mesh_metric_divergence, MetricRegridOptions, "mesh.metric_divergence");
    if (cfg.tag_threshold <= 0.0) {
       amrex::Abort("amr.tag_threshold must be positive");
@@ -1787,7 +1750,6 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.solid_curvature_error < 0.0) {
       amrex::Abort("amr.solid_curvature_error must be non-negative; 0 disables the curvature cutoff");
    }
-   require_supported_option(cfg.initial_refine, InitialRefineOptions, "amr.initial_refine");
    if (cfg.initial_refine_levels < 0) {
       amrex::Abort("amr.initial_refine_levels must be non-negative; 0 disables initial AMR box seeding");
    }
@@ -1895,6 +1857,9 @@ inline void validate_config(RunConfig const& cfg)
       amrex::Abort("pyfluid.scalar_int must be -1, 0, or a positive integer");
    }
    require_supported_option(cfg.scalar_output_mode, ScalarOutputModeOptions, "pyfluid.scalar_output_mode");
+   if (!cfg.validation_policy.empty()) {
+      require_supported_option(cfg.validation_policy, ValidationPolicyOptions, "pyfluid.validation_policy");
+   }
    if (cfg.aux_gf_int < -1) {
       amrex::Abort("pyfluid.aux_gf_int must be -1, 0, or a positive integer");
    }

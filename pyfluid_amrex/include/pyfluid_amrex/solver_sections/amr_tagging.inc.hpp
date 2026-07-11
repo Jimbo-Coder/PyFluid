@@ -10,6 +10,11 @@
                dir_counts[lev] = 0;
             }
          }
+         for (auto& dir_strength : latest_auto_direction_strength_) {
+            if (lev < static_cast<int>(dir_strength.size())) {
+               dir_strength[lev] = 0.0;
+            }
+         }
       }
       tags.setVal(amrex::TagBox::CLEAR);
       if (!state_[lev]) {
@@ -46,7 +51,10 @@
       if (cfg_.tag_metric == "none" && !initial_refine_time && !fixed_initial_refine && !solid_tagging && !tag_solid_phi_band) {
          return;
       }
-      apply_boundary(*state_[lev], Geom(lev));
+      // Error indicators use neighboring cells, including across coarse-fine
+      // patch boundaries. Use the normal hierarchy FillPatch contract so AMR
+      // never tags stale fine-level ghosts and refines its own box edges.
+      fill_level_boundaries<false>(state_, lev, time);
 
       const bool mhd = is_mhd(cfg_);
       const amrex::Real lohner_threshold = cfg_.tag_threshold;
@@ -165,6 +173,7 @@
          latest_auto_tagged_cells_[lev] = demand.tagged_cells;
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
             latest_auto_direction_tagged_cells_[dir][lev] = demand.direction_tags[dir];
+            latest_auto_direction_strength_[dir][lev] = demand.direction_strength[dir];
          }
       }
    }

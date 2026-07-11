@@ -10,12 +10,14 @@ from .coordinates import (
    cylindrical_frame,
    spherical_frame,
 )
-from .operator_equations import ScalarKernel
-from .tensor_algebra import (
-   Vector3,
-   _as_vector,
+from .kernel_equations import ScalarKernel
+from .physical_system import (
    orthogonal_mhd_stress_curvature_sources,
    orthogonal_velocity_curvature_sources,
+)
+from .tensor_algebra import (
+   OrthogonalOperators,
+   Vector,
 )
 
 
@@ -119,13 +121,12 @@ def _finite_volume_specs() -> tuple[FiniteVolumeSpec, ...]:
 def _orthonormal_velocity_curvature_sources(
    frame: OrthogonalFrame,
    density: sp.Expr,
-   velocities: Vector3,
+   velocities: Vector,
 ) -> tuple[sp.Expr, sp.Expr, sp.Expr]:
    return tuple(
       sp.trigsimp(sp.simplify(source))
       for source in orthogonal_velocity_curvature_sources(
-         frame.scale_factors,
-         frame.coordinates,
+         OrthogonalOperators(frame.scale_factors, frame.coordinates),
          density,
          velocities,
       )
@@ -135,14 +136,13 @@ def _orthonormal_velocity_curvature_sources(
 def _orthogonal_mhd_stress_curvature_sources(
    frame: OrthogonalFrame,
    density: sp.Expr,
-   velocities: Vector3,
-   magnetic: Vector3,
+   velocities: Vector,
+   magnetic: Vector,
 ) -> tuple[sp.Expr, sp.Expr, sp.Expr]:
    return tuple(
       sp.trigsimp(sp.simplify(source))
       for source in orthogonal_mhd_stress_curvature_sources(
-         frame.scale_factors,
-         frame.coordinates,
+         OrthogonalOperators(frame.scale_factors, frame.coordinates),
          density,
          velocities,
          magnetic,
@@ -182,12 +182,12 @@ def velocity_curvature_source_kernels() -> tuple[ScalarKernel, ...]:
    cylindrical_frame_sources = _orthonormal_velocity_curvature_sources(
       cyl_frame,
       s["rho"],
-      _as_vector((s["vr"], s["vphi"], s["vz"])),
+      Vector(s["vr"], s["vphi"], s["vz"]),
    )
    spherical_frame_sources = _orthonormal_velocity_curvature_sources(
       sph_frame,
       s["rho"],
-      _as_vector((s["vr"], s["vtheta"], s["vphi"])),
+      Vector(s["vr"], s["vtheta"], s["vphi"]),
    )
    component_names: tuple[str, str, str] = ("mom1", "mom2", "mom3")
    return (
@@ -218,13 +218,13 @@ def mhd_stress_curvature_source_kernels() -> tuple[ScalarKernel, ...]:
    br = s["br"]
    bphi = s["bphi"]
    bz = s["bz"]
-   v_cyl = _as_vector((vr, vphi, vz))
-   b_cyl = _as_vector((br, bphi, bz))
+   v_cyl = Vector(vr, vphi, vz)
+   b_cyl = Vector(br, bphi, bz)
    cylindrical_stress_sources = _orthogonal_mhd_stress_curvature_sources(
       cyl_frame, s["rho"], v_cyl, b_cyl
    )
-   v_sph = _as_vector((s["vr"], s["vtheta"], s["vphi"]))
-   b_sph = _as_vector((s["br"], s["btheta"], s["bphi"]))
+   v_sph = Vector(s["vr"], s["vtheta"], s["vphi"])
+   b_sph = Vector(s["br"], s["btheta"], s["bphi"])
    spherical_stress_sources = _orthogonal_mhd_stress_curvature_sources(
       sph_frame, s["rho"], v_sph, b_sph
    )

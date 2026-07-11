@@ -1097,7 +1097,6 @@ def run_case(case: CurvilinearCase, ranks: int, force: bool, timeout: int) -> di
    result = run_amrex(dim=case.dim, input_path=input_path, ranks=run_ranks, timeout=run_timeout)
    run_dir = RUN_ROOT / case.name
    (run_dir / "run.log").write_text(result.stdout)
-   (run_dir / "run.in").write_text(input_path.read_text())
 
    if case.expect_failure:
       if result.returncode != 0 and case.expect_failure in result.stdout:
@@ -1125,6 +1124,8 @@ def run_case(case: CurvilinearCase, ranks: int, force: bool, timeout: int) -> di
    if result.returncode != 0:
       tail = " | ".join(result.stdout.splitlines()[-8:])
       return failure_row(case, f"returncode={result.returncode}: {tail}", ranks)
+   if not (run_dir / "run.in").exists():
+      raise RuntimeError(f"solver did not write canonical run configuration: {run_dir / 'run.in'}")
 
    row = scalar_validation_row(
       run_dir,

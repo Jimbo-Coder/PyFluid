@@ -13,6 +13,8 @@ from pathlib import Path
 from validation_common import (
    ROOT,
    append_validation_history,
+   materialize_run_input,
+   parameters_from_assignments,
    repo_relative,
    scalar_validation_row,
    write_tsv,
@@ -337,13 +339,23 @@ def run_case(case: CurvilinearGeometryCase, ranks: int) -> subprocess.CompletedP
    env = dict(os.environ)
    env.setdefault("UV_CACHE_DIR", str(ROOT / ".uv-cache"))
    env.setdefault("MPLCONFIGDIR", str(ROOT / ".matplotlib"))
+   input_path = materialize_run_input(
+      case.input_path,
+      case.run_dir / "run.in",
+      parameters_from_assignments(
+         [
+            *case.overrides,
+            f"pyfluid.output_dir={repo_relative(case.run_dir)}",
+         ]
+      ),
+   )
    command = [
       sys.executable,
       str(ROOT / "pyfluid_amrex/tools/run_case.py"),
-      str(case.input_path),
-      *case.overrides,
+      str(input_path),
       "--ranks",
       str(ranks),
+      "--keep-existing",
       "--skip-plots",
    ]
    return subprocess.run(

@@ -5,10 +5,9 @@ from __future__ import annotations
 
 import argparse
 import math
-import subprocess
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import materialize_run_input, run_mpi
 
 import matplotlib
 matplotlib.use("Agg")
@@ -65,13 +64,18 @@ def run_solver(executable: Path, input_file: Path, output_dir: Path, ranks: int,
       import shutil
 
       shutil.rmtree(output_dir)
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(output_dir)}",
-   ]
-   subprocess.run(command, cwd=ROOT, check=True)
+   input_path = materialize_run_input(
+      input_file,
+      output_dir / "run.in",
+      {"pyfluid.output_dir": str(repo_relative(output_dir))},
+   )
+   completed = run_mpi(
+      executable,
+      [input_path],
+      ranks=ranks,
+   )
+   if completed.returncode != 0:
+      raise RuntimeError(completed.stdout)
 
 
 def measure_shock_angle(

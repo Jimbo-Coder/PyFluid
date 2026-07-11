@@ -961,7 +961,7 @@ inline void sync_implicit_viscous_energy(
 }
 
 template <int NComp, bool DiffuseMomentum>
-inline void fill_explicit_diffusion_fluxes(
+inline void fill_viscous_fluxes(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab const& state,
    amrex::Geometry const& geom,
@@ -1307,6 +1307,12 @@ inline DiffusionStats apply_viscosity_diffusion_impl(
    }
 
    apply_diffusion_boundary(state, geom, cfg);
+   if constexpr (DiffusionMethod == DiffusionImplicit) {
+      // The level state has already been FillPatched by the hierarchy. Preserve
+      // those coarse-fine ghost values as fixed boundary data for the solve;
+      // FillBoundary alone can only refresh same-level and physical ghosts.
+      amrex::MultiFab::Copy(scratch, state, 0, 0, NComp, state.nGrow());
+   }
    explicit_diffusion_update_kernel<NComp, DiffuseMomentum>(scratch, state, geom, dt, cfg);
    apply_diffusion_boundary(scratch, geom, cfg);
 

@@ -10,6 +10,7 @@ from validation_common import (
     ROOT,
     VALIDATION_HISTORY_FIELDS,
     append_validation_history,
+    materialize_run_input,
     repo_relative,
     run_amrex,
     scalar_validation_row,
@@ -62,17 +63,6 @@ COMMON_OVERRIDES = {
 }
 
 
-def args_from(values: dict[str, str]) -> list[str]:
-    return [f"{key}={value}" for key, value in values.items()]
-
-
-def write_input(path: Path, params: dict[str, str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w") as f:
-        for key in sorted(params):
-            f.write(f"{key} = {params[key]}\n")
-
-
 def plotfiles(run_dir: Path) -> list[Path]:
     plot_dir = run_dir / "stateGF"
     files = sorted_plotfiles(run_dir)
@@ -120,13 +110,11 @@ def dynamic_regrid_reason(run_dir: Path, min_shift: float) -> tuple[str, str]:
 def run_case(ranks: int, timeout: int | None, min_shift: float) -> dict[str, object]:
     run_dir = RUN_ROOT / "density_cloud"
     run_dir.mkdir(parents=True, exist_ok=True)
-    input_file = run_dir / "run.in"
-    write_input(input_file, COMMON_OVERRIDES)
+    input_file = materialize_run_input(BASE_INPUT, run_dir / "run.in", COMMON_OVERRIDES)
     result = run_amrex(
         dim=2,
-        input_path=BASE_INPUT,
+        input_path=input_file,
         ranks=ranks,
-        overrides=args_from(COMMON_OVERRIDES),
         timeout=timeout,
     )
     log_path = run_dir / "run.log"
@@ -210,3 +198,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+    materialize_run_input,

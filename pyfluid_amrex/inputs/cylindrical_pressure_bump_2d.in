@@ -1,4 +1,5 @@
 pyfluid.run_name = cylindrical_pressure_bump_2d
+pyfluid.output_dir = runs/current/pressure_bump/cylindrical_pressure_bump_2d
 
 mesh.coordinate = cylindrical
 mesh.axes = r z

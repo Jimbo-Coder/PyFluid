@@ -12,14 +12,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 import re
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import materialize_run_input, parameters_from_assignments, run_mpi
 from validation_common import append_performance_history as append_common_performance_history
 
 
@@ -102,28 +100,27 @@ def run_once(
 ) -> dict[str, object]:
    run_dir = run_root / case.name / f"rank{ranks}_rep{repeat}"
    run_dir.mkdir(parents=True, exist_ok=True)
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(run_dir)}",
-      *case.overrides,
-      "pyfluid.scalar_int=-1",
-      "pyfluid.plot_int=-1",
-      "pyfluid.checkpoint_int=-1",
-      "pyfluid.aux_gfs=none",
-      "pyfluid.aux_gf_int=-1",
-      "pyfluid.aux_gf_compute_int=-1",
-      "pyfluid.profile=off",
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   input_path = materialize_run_input(
+      input_file,
+      run_dir / "run.in",
+      parameters_from_assignments(
+         [
+            f"pyfluid.output_dir={repo_relative(run_dir)}",
+            *case.overrides,
+            "pyfluid.scalar_int=-1",
+            "pyfluid.plot_int=-1",
+            "pyfluid.checkpoint_int=-1",
+            "pyfluid.aux_gfs=none",
+            "pyfluid.aux_gf_int=-1",
+            "pyfluid.aux_gf_compute_int=-1",
+            "pyfluid.profile=off",
+         ]
+      ),
+   )
+   completed = run_mpi(
+      executable,
+      [input_path],
+      ranks=ranks,
    )
    average_match = AVERAGE_RE.search(completed.stdout)
    layout_average_match = LAYOUT_AVERAGE_RE.search(completed.stdout)

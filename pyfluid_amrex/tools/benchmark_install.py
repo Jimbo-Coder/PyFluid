@@ -10,12 +10,10 @@ from __future__ import annotations
 import argparse
 import csv
 import os
-import subprocess
 import tempfile
-import time
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import materialize_run_input, run_mpi
 
 
 DEFAULT_EXE = Path("/private/tmp/amrex-omp-test/install_test_2d")
@@ -38,32 +36,30 @@ def run_case(exe: Path, inputs: Path, ranks: int, threads: int, nx: int, ny: int
    env.setdefault("OMP_PLACES", "cores")
    env.setdefault("AMREX_CUDA_ERROR_CAPTURE_THIS", "0")
    with tempfile.TemporaryDirectory(prefix=f"amrex_np{ranks}_t{threads}_", dir="/private/tmp") as tmpdir:
-      cmd = [
-         *mpi_prefix(ranks),
-         str(exe),
-         str(inputs),
-         f"max_step={steps}",
-         f"amr.n_cell={nx} {ny} 8",
-         "amr.max_level=0",
-         "amr.max_grid_size=32",
-         "amr.blocking_factor_x=8",
-         "amr.blocking_factor_y=8",
-         "amr.plot_int=-1",
-         "amr.chk_int=-1",
-         "amr.v=0",
-         "adv.do_reflux=0",
-      ]
-      start = time.perf_counter()
-      completed = subprocess.run(
-         cmd,
-         cwd=tmpdir,
-         env=env,
-         text=True,
-         stdout=subprocess.PIPE,
-         stderr=subprocess.STDOUT,
-         check=False,
+      input_path = materialize_run_input(
+         inputs,
+         Path(tmpdir) / "run.in",
+         {
+            "max_step": str(steps),
+            "amr.n_cell": f"{nx} {ny} 8",
+            "amr.max_level": "0",
+            "amr.max_grid_size": "32",
+            "amr.blocking_factor_x": "8",
+            "amr.blocking_factor_y": "8",
+            "amr.plot_int": "-1",
+            "amr.chk_int": "-1",
+            "amr.v": "0",
+            "adv.do_reflux": "0",
+         },
       )
-      elapsed = time.perf_counter() - start
+      completed = run_mpi(
+         exe,
+         [input_path],
+         ranks=ranks,
+         cwd=tmpdir,
+         extra_env=env,
+      )
+      elapsed = completed.seconds
 
    cell_updates = float(nx * ny * steps)
    return {

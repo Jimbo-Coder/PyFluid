@@ -12,7 +12,9 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
+
+from causal_validation import infer_localized_causal_model, rows_before_boundary_contact
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,8 +56,8 @@ def amrex_executable(dim: int) -> Path:
    return BUILD / f"pyfluid_amrex_{dim}d"
 
 
-def mpi_prefix(ranks: int = 3) -> list[str]:
-   """Return the canonical local MPI launcher prefix."""
+def _mpi_prefix(ranks: int) -> list[str]:
+   """Return the canonical launcher prefix; callers execute through ``run_mpi``."""
    if ranks < 1:
       raise ValueError(f"MPI rank count must be positive, got {ranks}")
    return [] if ranks == 1 else ["mpirun", "-np", str(ranks)]
@@ -69,7 +71,7 @@ def mpi_command(
 ) -> list[str]:
    """Build the canonical local MPI command used by all AMReX tools."""
    program = [str(executable), *(str(argument) for argument in arguments)]
-   return [*mpi_prefix(ranks), *program]
+   return [*_mpi_prefix(ranks), *program]
 
 
 def run_mpi(
@@ -169,18 +171,50 @@ def run_amrex(
    input_path: Path,
    ranks: int = 3,
    executable: Path | None = None,
-   overrides: Sequence[str] = (),
    timeout: int | None = None,
    extra_env: dict[str, str] | None = None,
 ) -> AmrexRunResult:
    executable_path = executable if executable is not None else amrex_executable(dim)
    return run_mpi(
       executable_path,
-      [input_path, *overrides],
+      [input_path],
       ranks=ranks,
       timeout=timeout,
       extra_env=extra_env,
    )
+
+
+def materialize_run_input(
+   base_input: Path,
+   output_path: Path,
+   parameters: Mapping[str, str],
+   *,
+   remove_parameters: Sequence[str] = (),
+) -> Path:
+   """Write one concrete AMReX input file for a generated validation case."""
+   values = read_key_values(base_input)
+   values.update(parameters)
+   for name in remove_parameters:
+      values.pop(name, None)
+   output_path.parent.mkdir(parents=True, exist_ok=True)
+   with output_path.open("w") as stream:
+      for key in sorted(values):
+         stream.write(f"{key} = {values[key]}\n")
+   return output_path
+
+
+def parameters_from_assignments(assignments: Sequence[str]) -> dict[str, str]:
+   """Convert test-case ``key=value`` declarations before writing a parfile."""
+   parameters: dict[str, str] = {}
+   for assignment in assignments:
+      if "=" not in assignment:
+         raise ValueError(f"invalid test parameter declaration: {assignment!r}")
+      key, value = assignment.split("=", 1)
+      key = key.strip()
+      if not key:
+         raise ValueError(f"empty test parameter name: {assignment!r}")
+      parameters[key] = value.strip()
+   return parameters
 
 
 def scalar_checks(
@@ -303,6 +337,11 @@ VALIDATION_HISTORY_FIELDS = [
    "passive_mass_rel_drift",
    "momentum_abs_drift",
    "divb_l1",
+   "causal_boundary_contact_time",
+   "causal_precontact_rows",
+   "causal_mass_rel_drift",
+   "causal_energy_rel_drift",
+   "causal_momentum_abs_drift",
    "avg_mcells_per_s",
    "avg_sim_time_per_s",
    "amr_active_finest_level",
@@ -514,7 +553,7 @@ def enabled_number(value: str | None) -> bool:
 
 
 def explicit_scalar_policy(params: dict[str, str]) -> ScalarPolicy | None:
-   policy_name = params.get("pyfluid.validation_policy") or params.get("validation.policy")
+   policy_name = params.get("pyfluid.validation_policy")
    if not policy_name:
       return None
    policy_name = policy_name.strip().lower()
@@ -659,6 +698,54 @@ def check_scalar_rows(rows: list[dict[str, str]], policy: ScalarPolicy, *, mhd: 
    )
 
 
+def check_causal_precontact_scalars(
+   rows: list[dict[str, str]],
+   params: dict[str, str],
+   policy: ScalarPolicy,
+) -> tuple[list[str], dict[str, object]]:
+   metrics: dict[str, object] = {
+      "causal_boundary_contact_time": math.nan,
+      "causal_precontact_rows": 0,
+      "causal_mass_rel_drift": math.nan,
+      "causal_energy_rel_drift": math.nan,
+      "causal_momentum_abs_drift": math.nan,
+   }
+   if policy.name not in (OPEN_POLICY.name, OPEN_MHD_POLICY.name):
+      return [], metrics
+
+   model = infer_localized_causal_model(params)
+   if model is None or not math.isfinite(model.boundary_contact_time):
+      return [], metrics
+
+   precontact = rows_before_boundary_contact(rows, model)
+   evolved = [row for row in precontact if parse_float(row.get("time"), 0.0) > 0.0]
+   metrics.update({
+      "causal_boundary_contact_time": model.boundary_contact_time,
+      "causal_precontact_rows": len(evolved),
+      "causal_mass_rel_drift": max_abs_column(precontact, "mass_rel_drift"),
+      "causal_energy_rel_drift": max_abs_column(precontact, "energy_rel_drift"),
+      "causal_momentum_abs_drift": momentum_abs_drift(precontact),
+   })
+   if not evolved:
+      return [], metrics
+
+   max_level = int(parse_float(params.get("amr.max_level"), 0.0))
+   tolerance = 1.0e-11 if max_level > 0 else 1.0e-12
+   failures = check_scalars(
+      precontact,
+      mass=True,
+      energy=True,
+      momentum=True,
+      divb=False,
+      floors=False,
+      performance=False,
+      mass_tol=tolerance,
+      energy_tol=tolerance,
+      momentum_tol=tolerance,
+   )
+   return [f"before causal boundary contact: {failure}" for failure in failures], metrics
+
+
 def scalar_validation_row(
    run_dir: Path,
    *,
@@ -690,6 +777,10 @@ def scalar_validation_row(
 
    mhd_enabled = infer_mhd_run(params, summary, rows) if mhd is None else mhd
    failures = check_scalar_rows(rows, scalar_policy, mhd=mhd_enabled)
+   causal_failures, causal_metrics = check_causal_precontact_scalars(rows, params, scalar_policy)
+   failures.extend(causal_failures)
+   if math.isfinite(parse_float(causal_metrics["causal_boundary_contact_time"])):
+      policy_reason += "; closed scalar budgets enforced before causal boundary contact"
    final = rows[-1] if rows else {}
    return {
       "kind": kind,
@@ -713,6 +804,7 @@ def scalar_validation_row(
       "passive_mass_rel_drift": max_abs_column(rows, "passive_mass_rel_drift"),
       "momentum_abs_drift": momentum_abs_drift(rows),
       "divb_l1": max_abs_column(rows, "divb_l1") if mhd_enabled else 0.0,
+      **causal_metrics,
       "avg_mcells_per_s": average_positive(rows, "mcells_per_s"),
       "avg_sim_time_per_s": average_positive(rows, "sim_time_per_s"),
       "amr_active_finest_level": final.get("amr_active_finest_level", ""),

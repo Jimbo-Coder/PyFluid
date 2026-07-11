@@ -37,11 +37,13 @@ from plot_amrex_boxed_movie import (  # noqa: E402
 )
 from plot_amrex_slice import parse_plot_header  # noqa: E402
 from plotfile_reader import latest_plotfile  # noqa: E402
-from run_case import merged_params, write_resolved_input, write_run_log  # noqa: E402
+from run_case import write_run_log  # noqa: E402
 from validation_common import (  # noqa: E402
    CLOSED_POLICY,
    ROOT,
    check_scalars,
+   materialize_run_input,
+   parameters_from_assignments,
    read_scalar_rows,
    repo_relative,
    run_amrex,
@@ -87,11 +89,13 @@ def run_case(name: str, overrides: list[str], *, ranks: int, timeout: int | None
       f"pyfluid.run_name={name}",
       f"pyfluid.output_dir={repo_relative(run_dir)}",
    ]
-   result = run_amrex(dim=2, input_path=BASE_INPUT, ranks=ranks, overrides=full_overrides, timeout=timeout)
+   input_copy = materialize_run_input(
+      BASE_INPUT,
+      run_dir / "run.in",
+      parameters_from_assignments(full_overrides),
+   )
+   result = run_amrex(dim=2, input_path=input_copy, ranks=ranks, timeout=timeout)
    write_run_log(run_dir, result.command, result.stdout, result.seconds)
-   params = merged_params(BASE_INPUT, full_overrides)
-   input_copy = run_dir / "run.in"
-   write_resolved_input(input_copy, params)
    if result.returncode != 0:
       tail = "\n".join(result.stdout.strip().splitlines()[-10:])
       return run_dir, {
@@ -101,6 +105,8 @@ def run_case(name: str, overrides: list[str], *, ranks: int, timeout: int | None
          "run_dir": repo_relative(run_dir),
          "seconds": result.seconds,
       }
+   if not input_copy.exists():
+      raise RuntimeError(f"solver did not write canonical run configuration: {input_copy}")
 
    row = scalar_validation_row(
       run_dir,

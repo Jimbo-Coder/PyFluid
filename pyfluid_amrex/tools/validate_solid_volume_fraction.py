@@ -12,14 +12,12 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import os
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import materialize_run_input, parameters_from_assignments, run_mpi
 from typing import Any
 
 
@@ -109,23 +107,17 @@ def run_case(case: Case, executable: Path, input_file: Path, run_root: Path, ran
    if force and run_dir.exists():
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(run_dir)}",
-      *BASE_OVERRIDES,
-      f"pyfluid.solid_volume_fraction_samples_per_dim={case.samples_per_dim}",
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   input_path = materialize_run_input(
+      input_file,
+      run_dir / "run.in",
+      parameters_from_assignments([
+         f"pyfluid.output_dir={repo_relative(run_dir)}",
+         *BASE_OVERRIDES,
+         f"pyfluid.solid_volume_fraction_samples_per_dim={case.samples_per_dim}",
+      ]),
+      remove_parameters=("amr.ref_ratio",),
    )
+   completed = run_mpi(executable, [input_path], ranks=ranks)
    plotfiles = sorted_aux_plotfiles(run_dir)
    solid_areas = solid_areas_from_aux_plotfile(plotfiles[-1]) if plotfiles else {
       "solid_area": math.nan,

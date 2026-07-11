@@ -24,14 +24,18 @@ uv run python pyfluid_amrex/tools/run_case.py \
 ```
 
 `run_case.py` infers the executable dimension, uses three MPI ranks by default,
-replaces the selected run directory, writes `run.in` and `run.log`, validates
+replaces the selected run directory, writes `run.log`, validates
 the scalar budget, and generates the scalar report. Add `--gf-plots` only when
 a state or auxiliary snapshot is wanted. Raw `mpirun` is for focused low-level
-debugging because it bypasses automatic reporting.
+debugging because it bypasses automatic reporting. The C++ executable always
+writes the canonical merged AMReX parameter table to `<run_dir>/run.in`, so
+raw and wrapped runs retain the same configuration record.
 
-Every input file is a complete run configuration. Its effective copy is saved
-as `<run_dir>/run.in`. C++ defaults and accepted option values live in
-[`config.hpp`](include/pyfluid_amrex/config.hpp); grid-function names,
+Every input file is a complete run configuration and explicitly names its run
+and output directory. Supported input values replace registered C++ defaults;
+there is no second launcher-level simulation-parameter interface. Registered method and AMR defaults live in
+[`config.cpp`](src/config.cpp); structural parsing and combination validation
+live in [`config.hpp`](include/pyfluid_amrex/config.hpp). Grid-function names,
 components, centering, and output roles live in
 [`fields.hpp`](include/pyfluid_amrex/fields.hpp).
 
@@ -78,9 +82,22 @@ back to a different method.
 - Normal runs use `pyfluid.cfl = 0.9`, `pyfluid.physical_check_int = 0`, and
   three MPI ranks. New setups use `pyfluid.physical_check_int = 1` until their
   scalar and physics checks pass.
+- `pyfluid.run_name` and `pyfluid.output_dir` are explicit in every checked-in
+  run input. `run_case.py` does not infer, alias, or override simulation
+  parameters.
+- The production executable accepts exactly one input file. Trailing
+  `key=value` command-line mutations are unsupported.
+- `amrex.abort_on_unused_inputs = 1` is mandatory, so misspelled or
+  unsupported input keys fail instead of being silently ignored.
 - AMR should stop because the physics metric is smooth enough. `max_level`,
   `min_feature_length`, and cell budgets are safety limits, not physics knobs.
-  Passive scalars never tag AMR.
+  The default automatic tag threshold is independent of `max_level`. Passive
+  scalars never tag AMR. A production-style run starts from a deliberately
+  coarse base grid and lets the metric create and move resolution. Reaching a
+  safety limit means the run is under-resolved or the metric is misconfigured;
+  it is not a successful refinement result. On available hardware, production
+  setups commonly allow roughly 10-15 levels as headroom while cell budgets
+  remain the hard memory guard; the flow metric should select far fewer levels.
 
 ## Output Contract
 

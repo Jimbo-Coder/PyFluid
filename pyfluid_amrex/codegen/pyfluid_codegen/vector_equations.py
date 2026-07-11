@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import sympy as sp
 
-from .operator_equations import ScalarKernel
+from .discretization import FiniteVolumeDivergence
+from .kernel_equations import ScalarKernel
+from .physical_system import NewtonianViscosity
 from .tensor_algebra import (
-   Tensor3x3,
-   Vector3,
-   _as_vector,
+   OrthogonalOperators,
+   Tensor,
+   Vector,
+   VectorField,
    replace_coordinates,
-   orthogonal_connection_source_terms,
-   orthogonal_newtonian_stress_tensor,
 )
 from .coordinates import OrthogonalFrame, cartesian_frame, cylindrical_frame, spherical_frame
 
@@ -54,21 +55,41 @@ def _pairwise_difference_kernels(
 
 
 def cartesian_curl_kernels() -> tuple[ScalarKernel, ...]:
-   return _pairwise_difference_kernels(
+   s = vector_symbols()
+   derivatives = Tensor.from_rows(
       (
-         ("curl_x_cartesian", "daz_dq2", "day_dq3", None),
-         ("curl_y_cartesian", "dax_dq3", "daz_dq1", None),
-         ("curl_z_cartesian", "day_dq1", "dax_dq2", None),
+         (s["dax_dq1"], s["dax_dq2"], s["dax_dq3"]),
+         (s["day_dq1"], s["day_dq2"], s["day_dq3"]),
+         (s["daz_dq1"], s["daz_dq2"], s["daz_dq3"]),
       )
    )
+   frame = cartesian_frame()
+   field = VectorField(Vector.zero(3), derivatives)
+   curl = OrthogonalOperators(frame.scale_factors, frame.coordinates).curl(field)
+   specs = (
+      ("curl_x_cartesian", ("daz_dq2", "day_dq3"), curl.component(0)),
+      ("curl_y_cartesian", ("dax_dq3", "daz_dq1"), curl.component(1)),
+      ("curl_z_cartesian", ("day_dq1", "dax_dq2"), curl.component(2)),
+   )
+   return tuple(ScalarKernel(name=name, arguments=arguments, expression=expression) for name, arguments, expression in specs)
 
 
 def cartesian_divergence_kernel() -> ScalarKernel:
    s = vector_symbols()
+   derivatives = Tensor.from_rows(
+      (
+         (s["dax_dq1"], sp.Integer(0), sp.Integer(0)),
+         (sp.Integer(0), s["day_dq2"], sp.Integer(0)),
+         (sp.Integer(0), sp.Integer(0), s["daz_dq3"]),
+      )
+   )
+   frame = cartesian_frame()
    return ScalarKernel(
       name="divergence_cartesian",
       arguments=("dax_dq1", "day_dq2", "daz_dq3"),
-      expression=s["dax_dq1"] + s["day_dq2"] + s["daz_dq3"],
+      expression=OrthogonalOperators(frame.scale_factors, frame.coordinates).divergence(
+         VectorField(Vector.zero(3), derivatives)
+      ),
    )
 
 
@@ -100,17 +121,17 @@ def _finite_volume_divergence_kernel(dimensions: int) -> ScalarKernel:
    axes = ("x", "y", "z")
    if dimensions not in (1, 2, 3):
       raise ValueError("dimensions must be 1, 2, or 3")
-   expression = sp.Integer(0)
    arguments: list[str] = []
+   face_fluxes: list[tuple[sp.Expr, sp.Expr]] = []
    for axis in axes[:dimensions]:
       arguments.append(f"flux_{axis}_hi")
       arguments.append(f"flux_{axis}_lo")
-      expression += q[f"flux_{axis}_hi"] - q[f"flux_{axis}_lo"]
+      face_fluxes.append((q[f"flux_{axis}_hi"], q[f"flux_{axis}_lo"]))
    arguments.append("volume")
    return ScalarKernel(
       name=f"finite_volume_divergence_{dimensions}d",
       arguments=tuple(arguments),
-      expression=expression / q["volume"],
+      expression=FiniteVolumeDivergence(tuple(face_fluxes), q["volume"]).value(),
    )
 
 
@@ -127,31 +148,31 @@ def _orthogonal_frame_runtime_coordinates(
 
 def ideal_emf_kernels() -> tuple[ScalarKernel, ...]:
    s = vector_symbols()
-   velocity = _as_vector((s["vx"], s["vy"], s["vz"]))
-   magnetic = _as_vector((s["bx"], s["by"], s["bz"]))
+   velocity = Vector(s["vx"], s["vy"], s["vz"])
+   magnetic = Vector(s["bx"], s["by"], s["bz"])
    emf = magnetic.cross(velocity)
    return (
       ScalarKernel(
          name="ideal_emf_x",
          arguments=("vy", "vz", "by", "bz"),
-         expression=emf.x,
+         expression=emf.component(0),
       ),
       ScalarKernel(
          name="ideal_emf_y",
          arguments=("vz", "vx", "bz", "bx"),
-         expression=emf.y,
+         expression=emf.component(1),
       ),
       ScalarKernel(
          name="ideal_emf_z",
          arguments=("vx", "vy", "bx", "by"),
-         expression=emf.z,
+         expression=emf.component(2),
       ),
    )
 
 
 def electromagnetic_scalar_kernels() -> tuple[ScalarKernel, ...]:
    s = vector_symbols()
-   magnetic = _as_vector((s["bx"], s["by"], s["bz"]))
+   magnetic = Vector(s["bx"], s["by"], s["bz"])
    return (
       ScalarKernel(
          name="resistive_emf",
@@ -244,15 +265,9 @@ def _viscous_stress_components(
    derivatives: tuple[tuple[sp.Symbol, sp.Symbol, sp.Symbol], ...],
    mu: sp.Symbol,
 ) -> tuple[tuple[sp.Expr, sp.Expr, sp.Expr], ...]:
-   velocity_vector = _as_vector(velocities)
-   derivative_tensor = Tensor3x3.from_rows(derivatives)
-   return orthogonal_newtonian_stress_tensor(
-      scale_factors,
-      coordinates,
-      velocity_vector,
-      derivative_tensor,
-      mu,
-   ).as_rows()
+   velocity_field = VectorField(Vector(*velocities), Tensor.from_rows(derivatives))
+   operators = OrthogonalOperators(scale_factors, coordinates)
+   return NewtonianViscosity(mu).stress(velocity_field, operators).as_rows()
 
 
 def viscous_stress_kernels() -> tuple[ScalarKernel, ...]:
@@ -316,7 +331,7 @@ def viscous_stress_kernels() -> tuple[ScalarKernel, ...]:
 def _tensor_divergence_connection_sources(
    scale_factors: tuple[sp.Expr, sp.Expr, sp.Expr],
    coordinates: tuple[sp.Symbol, sp.Symbol, sp.Symbol],
-   tensor: Tensor3x3,
+   tensor: Tensor,
 ) -> tuple[sp.Expr, sp.Expr, sp.Expr]:
    """Connection terms missing from FV divergence of orthonormal tensor fluxes.
 
@@ -324,15 +339,15 @@ def _tensor_divergence_connection_sources(
    1/(h1 h2 h3) d_qj[(h1 h2 h3 / h_j) T_ji].  Physical vector components
    also need the basis-derivative terms below.
    """
-   return orthogonal_connection_source_terms(scale_factors, coordinates, tensor)
+   return OrthogonalOperators(scale_factors, coordinates).tensor_divergence_connection(tensor).as_tuple()
 
 
 def tensor_divergence_connection_kernels() -> tuple[ScalarKernel, ...]:
    s = vector_symbols()
-   tensor = Tensor3x3(
-      _as_vector((s["t11"], s["t12"], s["t13"])),
-      _as_vector((s["t21"], s["t22"], s["t23"])),
-      _as_vector((s["t31"], s["t32"], s["t33"])),
+   tensor = Tensor(
+      Vector(s["t11"], s["t12"], s["t13"]),
+      Vector(s["t21"], s["t22"], s["t23"]),
+      Vector(s["t31"], s["t32"], s["t33"]),
    )
    runtime_coordinates = (s["q1"], s["q2"], s["q3"])
    kernels: list[ScalarKernel] = []

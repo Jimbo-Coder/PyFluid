@@ -12,14 +12,11 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
-from validation_common import read_tsv
+from validation_common import materialize_run_input, parameters_from_assignments, read_tsv, run_mpi
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_EXE = ROOT / "build" / "pyfluid_amrex" / "pyfluid_amrex_2d"
@@ -113,25 +110,18 @@ def run_case(case: Case, executable: Path, input_file: Path, run_root: Path, ran
    if force and run_dir.exists():
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(run_dir)}",
-      *BASE_OVERRIDES,
-      *case.geometry_overrides,
-      f"amr.solid_refine_band_cells={case.band_cells:.17g}",
-      f"amr.solid_curvature_error={case.curvature_error:.17g}",
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   input_path = materialize_run_input(
+      input_file,
+      run_dir / "run.in",
+      parameters_from_assignments([
+         f"pyfluid.output_dir={repo_relative(run_dir)}",
+         *BASE_OVERRIDES,
+         *case.geometry_overrides,
+         f"amr.solid_refine_band_cells={case.band_cells:.17g}",
+         f"amr.solid_curvature_error={case.curvature_error:.17g}",
+      ]),
    )
+   completed = run_mpi(executable, [input_path], ranks=ranks)
    amr = read_last_tsv_row(run_dir / "amr_levels.tsv") if (run_dir / "amr_levels.tsv").exists() else {}
    scalars = read_last_tsv_row(run_dir / "scalars.tsv") if (run_dir / "scalars.tsv").exists() else {}
    finest = int(float(amr.get("active_finest_level", "-1")))

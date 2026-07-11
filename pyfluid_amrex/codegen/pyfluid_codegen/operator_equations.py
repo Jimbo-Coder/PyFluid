@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import sympy as sp
 
-
-@dataclass(frozen=True)
-class ScalarKernel:
-   name: str
-   arguments: tuple[str, ...]
-   expression: sp.Expr
+from .coordinates import cartesian_frame
+from .discretization import CenteredDiffusionStencil
+from .kernel_equations import ScalarKernel
+from .tensor_algebra import OrthogonalOperators, ScalarField, Tensor, Vector
 
 
 def scalar_symbols() -> dict[str, sp.Symbol]:
@@ -21,13 +17,42 @@ def scalar_symbols() -> dict[str, sp.Symbol]:
    return {name: symbol for name, symbol in zip(names.split(), sp.symbols(names), strict=True)}
 
 
+def _cartesian_stencil(
+   dim: int,
+   symbols: dict[str, sp.Symbol],
+   coefficients: tuple[str, str, str],
+) -> CenteredDiffusionStencil:
+   if dim not in (1, 2, 3):
+      raise ValueError("dimensions must be 1, 2, or 3")
+   neighbor_names = (("xm", "xp"), ("ym", "yp"), ("zm", "zp"))
+   return CenteredDiffusionStencil(
+      center=symbols["center"],
+      neighbors=tuple(
+         (symbols[lower], symbols[upper]) for lower, upper in neighbor_names[:dim]
+      ),
+      coefficients=tuple(symbols[name] for name in coefficients[:dim]),
+   )
+
+
 def laplacian_equation(dim: int) -> ScalarKernel:
    s = scalar_symbols()
-   expression = (s["xm"] - 2 * s["center"] + s["xp"]) * s["inv_dx2"]
-   if dim >= 2:
-      expression += (s["ym"] - 2 * s["center"] + s["yp"]) * s["inv_dy2"]
-   if dim == 3:
-      expression += (s["zm"] - 2 * s["center"] + s["zp"]) * s["inv_dz2"]
+   stencil = _cartesian_stencil(dim, s, ("inv_dx2", "inv_dy2", "inv_dz2"))
+   active_second_derivatives = tuple(
+      coefficient * (lower - 2 * s["center"] + upper)
+      for (lower, upper), coefficient in zip(
+         stencil.neighbors,
+         stencil.coefficients,
+         strict=True,
+      )
+   )
+   second_derivatives = active_second_derivatives + (sp.Integer(0),) * (3 - dim)
+   hessian = Tensor.from_rows(tuple(
+      tuple(second_derivatives[row] if row == col else sp.Integer(0) for col in range(3))
+      for row in range(3)
+   ))
+   field = ScalarField(s["center"], Vector.zero(3), hessian)
+   frame = cartesian_frame()
+   expression = OrthogonalOperators(frame.scale_factors, frame.coordinates).laplacian(field)
    return ScalarKernel(
       name=f"laplacian_cartesian_{dim}d",
       arguments=("center", "xm", "xp", "ym", "yp", "zm", "zp", "inv_dx2", "inv_dy2", "inv_dz2"),
@@ -37,32 +62,21 @@ def laplacian_equation(dim: int) -> ScalarKernel:
 
 def implicit_relaxed_equation(dim: int) -> ScalarKernel:
    s = scalar_symbols()
-   numerator = s["base"] + s["cx"] * (s["xm"] + s["xp"])
-   denom = 1 + 2 * s["cx"]
-   if dim >= 2:
-      numerator += s["cy"] * (s["ym"] + s["yp"])
-      denom += 2 * s["cy"]
-   if dim == 3:
-      numerator += s["cz"] * (s["zm"] + s["zp"])
-      denom += 2 * s["cz"]
+   stencil = _cartesian_stencil(dim, s, ("cx", "cy", "cz"))
    return ScalarKernel(
       name=f"implicit_relaxed_cartesian_{dim}d",
       arguments=("base", "xm", "xp", "ym", "yp", "zm", "zp", "cx", "cy", "cz"),
-      expression=numerator / denom,
+      expression=stencil.implicit_relaxed(s["base"]),
    )
 
 
 def implicit_residual_equation(dim: int) -> ScalarKernel:
    s = scalar_symbols()
-   expression = s["center"] - s["base"] + s["cx"] * (2 * s["center"] - s["xm"] - s["xp"])
-   if dim >= 2:
-      expression += s["cy"] * (2 * s["center"] - s["ym"] - s["yp"])
-   if dim == 3:
-      expression += s["cz"] * (2 * s["center"] - s["zm"] - s["zp"])
+   stencil = _cartesian_stencil(dim, s, ("cx", "cy", "cz"))
    return ScalarKernel(
       name=f"implicit_residual_cartesian_{dim}d",
       arguments=("base", "center", "xm", "xp", "ym", "yp", "zm", "zp", "cx", "cy", "cz"),
-      expression=expression,
+      expression=stencil.implicit_residual(s["base"]),
    )
 
 

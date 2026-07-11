@@ -5,11 +5,8 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import shutil
-import subprocess
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,8 +15,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plot_amrex_1d_profile import parse_plot_header, read_level0_state_1d  # noqa: E402
 from plotfile_reader import latest_plotfile  # noqa: E402
-from validation_common import mpi_prefix
-from validation_common import append_validation_history, read_tsv, scalar_checks, scalar_validation_row, write_tsv  # noqa: E402
+from validation_common import append_validation_history, read_tsv, run_mpi, scalar_checks, scalar_validation_row, write_tsv  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -150,29 +146,9 @@ def run_case(case: GravityCase, force: bool) -> tuple[Path, Path, int, float, st
    input_path = RUN_ROOT / "inputs" / f"{case.name}.in"
    input_path.parent.mkdir(parents=True, exist_ok=True)
    input_path.write_text(case_input(case, run_dir))
-   if case.ranks == 1:
-      command = [str(EXECUTABLE_1D), str(input_path)]
-   else:
-      command = [
-         *mpi_prefix(case.ranks),
-         str(EXECUTABLE_1D),
-         str(input_path),
-      ]
-   env = dict(os.environ)
-   env.setdefault("OMP_NUM_THREADS", "1")
-   start = time.perf_counter()
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      env=env,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      check=False,
-   )
-   elapsed = time.perf_counter() - start
+   completed = run_mpi(EXECUTABLE_1D, [input_path], ranks=case.ranks)
    (run_dir / "run.log").write_text(completed.stdout)
-   return run_dir, input_path, completed.returncode, elapsed, completed.stdout
+   return run_dir, input_path, completed.returncode, completed.seconds, completed.stdout
 
 
 def latest_aux_plotfile(run_dir: Path) -> Path:
@@ -651,32 +627,32 @@ def main() -> int:
       SUMMARY,
       rows,
       [
-         "case",
-         "status",
-         "bc",
-         "reason",
-         "returncode",
-         "seconds",
-         "phi_rel_l2",
-         "phi_abs_linf",
-         "grad_phi_rel_l2",
-         "grad_phi_abs_linf",
-         "fixed_phi_abs_linf",
-         "fixed_grad_phi_abs_linf",
-         "gravity_potential_energy_abs_error",
-         "gravity_total_energy_closure",
-         "gravity_total_energy_rel_drift",
-         "mass_rel_drift",
-         "energy_rel_drift",
-         "hse_max_mach",
-         "hse_max_abs_vx",
-         "hse_rho_rel_l2",
-         "hse_pressure_rel_l2",
-         "profile_time",
-         "plot",
-         "phi_num_l2",
-         "phi_exact_l2",
-         "phi_finite_fraction",
+            "case",
+            "status",
+            "bc",
+            "reason",
+            "returncode",
+            "seconds",
+            "phi_rel_l2",
+            "phi_abs_linf",
+            "grad_phi_rel_l2",
+            "grad_phi_abs_linf",
+            "fixed_phi_abs_linf",
+            "fixed_grad_phi_abs_linf",
+            "gravity_potential_energy_abs_error",
+            "gravity_total_energy_closure",
+            "gravity_total_energy_rel_drift",
+            "mass_rel_drift",
+            "energy_rel_drift",
+            "hse_max_mach",
+            "hse_max_abs_vx",
+            "hse_rho_rel_l2",
+            "hse_pressure_rel_l2",
+            "profile_time",
+            "plot",
+            "phi_num_l2",
+            "phi_exact_l2",
+            "phi_finite_fraction",
       ],
    )
    append_validation_history(HISTORY, rows)

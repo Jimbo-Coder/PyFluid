@@ -5,9 +5,7 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,12 +17,14 @@ sys.path.insert(0, str(ROOT / "pyfluid_amrex" / "tools"))
 
 from plot_amrex_boxed_movie import composite_slice  # noqa: E402
 from plotfile_reader import latest_plotfile  # noqa: E402
-from validation_common import mpi_prefix
 from validation_common import (  # noqa: E402
    OPEN_POLICY,
    append_validation_history,
+   materialize_run_input,
+   parameters_from_assignments,
    read_scalar_rows,
    repo_relative,
+   run_mpi,
    scalar_validation_row,
    write_tsv,
 )
@@ -173,20 +173,24 @@ def write_input(spec: RunSpec) -> Path:
    input_dir = INPUT_ROOT
    input_dir.mkdir(parents=True, exist_ok=True)
    output_dir.mkdir(parents=True, exist_ok=True)
-   lines = BASE_INPUT.read_text().splitlines()
-   lines.append("")
-   lines.append("# validate_brio_wu_reference.py overrides")
-   lines.append(f"pyfluid.run_name=brio_wu_{spec.name}")
-   lines.append(f"pyfluid.output_dir={repo_relative(output_dir)}")
-   lines.extend(COMMON)
-   lines.extend(direction_overrides(spec.direction))
-   lines.extend(state_overrides())
-   lines.append(f"amr.n_cell={spec.n_cell[0]} {spec.n_cell[1]}")
-   lines.append(f"amr.max_level={spec.max_level}")
-   lines.append(f"amr.tag_threshold={spec.tag_threshold:.17g}")
    path = input_dir / f"{spec.name}.in"
-   path.write_text("\n".join(lines) + "\n")
-   return path
+   return materialize_run_input(
+      BASE_INPUT,
+      path,
+      parameters_from_assignments(
+         [
+            f"pyfluid.run_name=brio_wu_{spec.name}",
+            f"pyfluid.output_dir={repo_relative(output_dir)}",
+            *COMMON,
+            *direction_overrides(spec.direction),
+            *state_overrides(),
+            f"amr.n_cell={spec.n_cell[0]} {spec.n_cell[1]}",
+            f"amr.max_level={spec.max_level}",
+            f"amr.tag_threshold={spec.tag_threshold:.17g}",
+         ]
+      ),
+      remove_parameters=("amr.ref_ratio",) if spec.max_level == 0 else (),
+   )
 
 
 def run_spec(spec: RunSpec, ranks: int, force: bool, timeout: int) -> tuple[int, Path, Path, str]:
@@ -200,16 +204,11 @@ def run_spec(spec: RunSpec, ranks: int, force: bool, timeout: int) -> tuple[int,
          return 0, output_dir, input_path, ""
       except FileNotFoundError:
          pass
-   command = [*mpi_prefix(ranks), str(EXE), str(input_path)]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
+   completed = run_mpi(
+      EXE,
+      [input_path],
+      ranks=ranks,
       timeout=timeout,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
    )
    output_dir.mkdir(parents=True, exist_ok=True)
    (output_dir / "run.log").write_text(completed.stdout)

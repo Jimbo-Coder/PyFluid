@@ -59,6 +59,7 @@ endif()
 
 set(PYFLUID_AMREX_SOURCES
    src/main.cpp
+   src/config.cpp
    src/amr_solver_average.cpp
    src/amr_solver_auxiliary.cpp
    src/amr_solver_debug.cpp
@@ -79,6 +80,7 @@ set(PYFLUID_AMREX_SOURCES
 set(PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES
    src/checkpoint.cpp
    src/compare_checkpoint.cpp
+   src/config.cpp
    src/fields.cpp
 )
 
@@ -94,6 +96,9 @@ find_program(PYFLUID_UV_EXECUTABLE uv)
 if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_FLUX_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/ideal_mhd_flux_cartesian.hpp
+   )
+   set(PYFLUID_AMREX_GENERATED_EOS_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/eos.hpp
    )
    set(PYFLUID_AMREX_GENERATED_OPERATOR_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/scalar_ops.hpp
@@ -111,40 +116,77 @@ if(PYFLUID_UV_EXECUTABLE)
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/patch_maps.hpp
    )
    set(PYFLUID_AMREX_CODEGEN_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_kernels.py)
+   set(PYFLUID_AMREX_CODEGEN_STAMP ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_codegen.stamp)
+   set(PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP
+      ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_patch_map_codegen.stamp
+   )
    add_custom_command(
-      OUTPUT
+      OUTPUT ${PYFLUID_AMREX_CODEGEN_STAMP}
+      BYPRODUCTS
          ${PYFLUID_AMREX_GENERATED_FLUX_HEADER}
+         ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
-         ${PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER}
       COMMAND ${CMAKE_COMMAND} -E env
          UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
          ${PYFLUID_UV_EXECUTABLE} run python
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+         --family eos
+         --family flux
+         --family operator
+         --family riemann
+         --family vector
+         --family metric
          --flux-header ${PYFLUID_AMREX_GENERATED_FLUX_HEADER}
+         --eos-header ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          --operator-header ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
          --riemann-header ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          --vector-header ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          --metric-header ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
-         --patch-map-header ${PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER}
+      COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/discretization.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/flux_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/kernel_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/metric_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/operator_equations.py
-         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/patch_map_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/physical_system.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/riemann_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_algebra.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/vector_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/coordinates.py
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
       COMMENT "Generating PyFluid AMReX physics kernels"
       VERBATIM
    )
-   add_custom_target(pyfluid_amrex_generate_kernels DEPENDS ${PYFLUID_AMREX_GENERATED_FLUX_HEADER} ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER} ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER} ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER} ${PYFLUID_AMREX_GENERATED_METRIC_HEADER} ${PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER})
+   add_custom_command(
+      OUTPUT ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
+      BYPRODUCTS ${PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER}
+      COMMAND ${CMAKE_COMMAND} -E env
+         UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
+         ${PYFLUID_UV_EXECUTABLE} run python
+         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+         --family patch_map
+         --patch-map-header ${PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER}
+      COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
+      DEPENDS
+         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/patch_map_equations.py
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
+      COMMENT "Generating PyFluid AMReX patch-map kernels"
+      VERBATIM
+   )
+   add_custom_target(
+      pyfluid_amrex_generate_kernels
+      DEPENDS ${PYFLUID_AMREX_CODEGEN_STAMP} ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
+   )
 else()
    message(WARNING "uv not found; pyfluid_amrex_generate_kernels target will not be available")
 endif()

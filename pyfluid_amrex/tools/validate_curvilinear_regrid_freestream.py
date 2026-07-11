@@ -13,6 +13,7 @@ from validation_common import (
    CLOSED_POLICY,
    ROOT,
    append_validation_history,
+   materialize_run_input,
    repo_relative,
    run_amrex,
    scalar_validation_row,
@@ -99,17 +100,6 @@ OVERRIDES = {
 }
 
 
-def override_args(values: dict[str, str]) -> list[str]:
-   return [f"{key}={value}" for key, value in values.items()]
-
-
-def write_resolved_input(path: Path, values: dict[str, str]) -> None:
-   path.parent.mkdir(parents=True, exist_ok=True)
-   with path.open("w") as f:
-      for key in sorted(values):
-         f.write(f"{key} = {values[key]}\n")
-
-
 def run_quiet_check(run_dir: Path, tolerance: float) -> tuple[int, str, float]:
    command = [
       sys.executable,
@@ -162,17 +152,18 @@ def main() -> int:
    run_dir = ROOT / OVERRIDES["pyfluid.output_dir"]
    if args.force and run_dir.exists():
       shutil.rmtree(run_dir)
+   input_path = materialize_run_input(INPUT, run_dir / "run.in", OVERRIDES)
 
    result = run_amrex(
       dim=2,
-      input_path=INPUT,
+      input_path=input_path,
       ranks=args.ranks,
-      overrides=override_args(OVERRIDES),
       timeout=args.timeout,
    )
    run_dir.mkdir(parents=True, exist_ok=True)
    (run_dir / "run.log").write_text(result.stdout)
-   write_resolved_input(run_dir / "run.in", OVERRIDES)
+   if result.returncode == 0 and not (run_dir / "run.in").exists():
+      raise RuntimeError(f"solver did not write canonical run configuration: {run_dir / 'run.in'}")
 
    row = scalar_validation_row(
       run_dir,

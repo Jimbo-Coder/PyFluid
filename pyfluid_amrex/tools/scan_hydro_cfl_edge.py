@@ -6,12 +6,10 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import os
 import shutil
-import subprocess
 from pathlib import Path
 
-from validation_common import mpi_prefix
+from validation_common import run_mpi
 
 import matplotlib
 
@@ -251,17 +249,11 @@ def run_case(
       args.force,
    )
    exe = BUILD / "pyfluid_amrex_1d"
-   env = dict(os.environ)
-   env.setdefault("OMP_NUM_THREADS", "1")
-   proc = subprocess.run(
-      [*mpi_prefix(args.ranks), str(exe), str(input_path)],
-      cwd=ROOT,
-      env=env,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
+   proc = run_mpi(
+      exe,
+      [input_path],
+      ranks=args.ranks,
       timeout=args.timeout,
-      check=False,
    )
    last = scalar_last(output_dir)
    plotfile = latest_plotfile(output_dir)

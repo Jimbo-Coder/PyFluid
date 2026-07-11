@@ -12,15 +12,18 @@ from __future__ import annotations
 import argparse
 import csv
 import math
-import os
 import re
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import mpi_prefix
-from validation_common import read_float_tsv, read_tsv
+from validation_common import (
+   materialize_run_input,
+   parameters_from_assignments,
+   read_float_tsv,
+   read_tsv,
+   run_mpi,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -165,23 +168,16 @@ def run_case(case: Case, executable: Path, input_file: Path, output_root: Path, 
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
 
-   command = [
-      *mpi_prefix(ranks),
-      str(executable),
-      str(input_file),
-      f"pyfluid.output_dir={repo_relative(run_dir)}",
-      *BASE_OVERRIDES,
-      *case.overrides,
-   ]
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      env={**os.environ, "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1")},
-      check=False,
+   input_path = materialize_run_input(
+      input_file,
+      run_dir / "run.in",
+      parameters_from_assignments([
+         f"pyfluid.output_dir={repo_relative(run_dir)}",
+         *BASE_OVERRIDES,
+         *case.overrides,
+      ]),
    )
+   completed = run_mpi(executable, [input_path], ranks=ranks)
 
    average_match = AVERAGE_RE.search(completed.stdout)
    sim_time_match = SIM_TIME_RE.search(completed.stdout)

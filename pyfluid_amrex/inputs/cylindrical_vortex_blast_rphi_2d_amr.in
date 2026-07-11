@@ -1,4 +1,5 @@
 pyfluid.run_name = cylindrical_vortex_blast_rphi_2d_amr
+pyfluid.output_dir = runs/current/vortex_blast/cylindrical_vortex_blast_rphi_2d_amr
 
 mesh.coordinate = cylindrical
 mesh.axes = r phi

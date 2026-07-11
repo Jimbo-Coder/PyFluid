@@ -167,6 +167,7 @@
       std::ofstream amr_level_file;
       if (amrex::ParallelDescriptor::IOProcessor()) {
          std::filesystem::create_directories(cfg_.output_dir);
+         write_run_parameter_file((std::filesystem::path(cfg_.output_dir) / "run.in").string());
          scalar_file.open(std::filesystem::path(cfg_.output_dir) / "scalars.tsv", std::ios::out | std::ios::trunc);
          write_scalar_header(scalar_file, cfg_, start_step, time);
          amr_level_file.open(std::filesystem::path(cfg_.output_dir) / "amr_levels.tsv", std::ios::out | std::ios::trunc);

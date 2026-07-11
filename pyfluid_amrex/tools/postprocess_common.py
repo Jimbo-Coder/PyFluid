@@ -78,8 +78,12 @@ def physics_validation_rows(run_dir: Path, *, input_file: Path | None = None) ->
    # This is level-3 postprocessing. Scalar validation always runs, while the
    # spatial pressure-bump checks only apply when the run actually wrote state.
    if params.get("pyfluid.ic", "") == "pressure_bump" and latest_plotfile(run_dir) is not None:
+      from validate_causal_quiescence import physics_validation_row as causal_quiescence_row
       from validate_explosion_isotropy import NotApplicable, validation_rows as explosion_isotropy_rows
 
+      causal_row = causal_quiescence_row(run_dir, params)
+      if causal_row is not None:
+         out.append(causal_row)
       try:
          out.extend(explosion_isotropy_rows(run_dir, input_file=found_input))
       except NotApplicable:

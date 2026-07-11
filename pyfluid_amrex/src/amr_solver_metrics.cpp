@@ -346,6 +346,44 @@ void AmrSolver::append_current_amr_level_row(std::ofstream& out, int step, amrex
       }
       level_max_box_aspects[lev] = max_aspect;
    }
+   std::vector<amrex::Long> auto_tagged_cells(maxLevel() + 1, 0);
+   std::array<std::vector<amrex::Long>, AMREX_SPACEDIM> auto_direction_tagged_cells;
+   std::array<std::vector<amrex::Real>, AMREX_SPACEDIM> auto_direction_strength;
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      auto_direction_tagged_cells[dir].assign(maxLevel() + 1, 0);
+      auto_direction_strength[dir].assign(maxLevel() + 1, 0.0);
+   }
+   std::vector<std::string> refinement_decisions(maxLevel() + 1, "inactive");
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      if (!state_[lev]) {
+         continue;
+      }
+      if (lev < static_cast<int>(latest_auto_tagged_cells_.size())) {
+         auto_tagged_cells[lev] = latest_auto_tagged_cells_[lev];
+      }
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         if (lev < static_cast<int>(latest_auto_direction_tagged_cells_[dir].size())) {
+            auto_direction_tagged_cells[dir][lev] = latest_auto_direction_tagged_cells_[dir][lev];
+         }
+         if (lev < static_cast<int>(latest_auto_direction_strength_[dir].size())) {
+            auto_direction_strength[dir][lev] = latest_auto_direction_strength_[dir][lev];
+         }
+      }
+
+      if (cfg_.tag_metric == "none") {
+         refinement_decisions[lev] = "tagging_off";
+      } else if (auto_refinement_resolved_at_level(lev)) {
+         refinement_decisions[lev] = "physical_length_guard";
+      } else if (auto_tagged_cells[lev] == 0) {
+         refinement_decisions[lev] = "smooth";
+      } else if (lev == maxLevel()) {
+         refinement_decisions[lev] = "max_level_guard";
+      } else if (lev < finestLevel() && state_[lev + 1]) {
+         refinement_decisions[lev] = "refined";
+      } else {
+         refinement_decisions[lev] = "tagged_no_fine_level";
+      }
+   }
    append_amr_level_row(
       out,
       step,
@@ -365,8 +403,10 @@ void AmrSolver::append_current_amr_level_row(std::ofstream& out, int step, amrex
       level_box_counts,
       level_max_box_aspects,
       level_ref_ratios,
-      latest_auto_tagged_cells_,
-      latest_auto_direction_tagged_cells_
+      auto_tagged_cells,
+      auto_direction_tagged_cells,
+      auto_direction_strength,
+      refinement_decisions
    );
 }
 

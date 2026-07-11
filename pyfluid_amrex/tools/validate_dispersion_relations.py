@@ -5,11 +5,8 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import shutil
-import subprocess
 import sys
-import time
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -28,13 +25,13 @@ from pyfluid.dispersion import (  # noqa: E402
    linear_wave_x_exact,
    sound_speed_ideal_gas,
 )
-from validation_common import mpi_prefix
 from validation_common import (  # noqa: E402
    CLOSED_POLICY,
    append_validation_history,
    average_positive,
    max_abs_column,
    read_scalar_rows,
+   run_mpi,
    scalar_checks,
    scalar_validation_row,
    write_tsv,
@@ -295,22 +292,9 @@ def run_case(case: DispersionCase, args: argparse.Namespace) -> tuple[Path, Path
    input_path = RUN_ROOT / "inputs" / f"{case.name}.in"
    input_path.parent.mkdir(parents=True, exist_ok=True)
    input_path.write_text(case_input(case, run_dir, args))
-   command = [*mpi_prefix(args.ranks), str(EXECUTABLE_1D), str(input_path)]
-   env = dict(os.environ)
-   env.setdefault("OMP_NUM_THREADS", "1")
-   start = time.perf_counter()
-   completed = subprocess.run(
-      command,
-      cwd=ROOT,
-      env=env,
-      text=True,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.STDOUT,
-      check=False,
-   )
-   elapsed = time.perf_counter() - start
+   completed = run_mpi(EXECUTABLE_1D, [input_path], ranks=args.ranks)
    (run_dir / "run.log").write_text(completed.stdout)
-   return run_dir, input_path, completed.returncode, elapsed, completed.stdout
+   return run_dir, input_path, completed.returncode, completed.seconds, completed.stdout
 
 
 def primitive_from_state(case: DispersionCase, names: list[str], state: np.ndarray) -> dict[str, np.ndarray]:
@@ -644,8 +628,8 @@ def plot_results(results: list[dict[str, object]], output: Path, args: argparse.
       ax.plot(mode, analytic, color=color, linewidth=2.6 if is_jeans else 2.2, alpha=0.42, label=label)
       rows = sorted(
          [
-            row for row in results
-            if row["base_case"] == base_case and (rate_filter is None or row["rate_name"] == rate_filter)
+               row for row in results
+               if row["base_case"] == base_case and (rate_filter is None or row["rate_name"] == rate_filter)
          ],
          key=lambda row: float(row["mode_number"]),
       )

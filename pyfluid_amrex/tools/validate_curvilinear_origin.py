@@ -24,6 +24,7 @@ from validation_common import (
    ROOT,
    ScalarPolicy,
    append_validation_history,
+   materialize_run_input,
    repo_relative,
    run_amrex,
    scalar_validation_row,
@@ -182,20 +183,19 @@ def write_case_input(case: OriginCase, force: bool) -> Path:
    run_dir.mkdir(parents=True, exist_ok=True)
    CASE_INPUTS.mkdir(parents=True, exist_ok=True)
 
-   lines = BASE_INPUT.read_text().splitlines()
    values = {
       "pyfluid.run_name": case.name,
       "pyfluid.output_dir": repo_relative(run_dir),
       **case.overrides,
    }
-   lines.append("")
-   lines.append("# validate_curvilinear_origin.py overrides")
-   for key, value in values.items():
-      lines.append(f"{key} = {value}")
-
    path = CASE_INPUTS / f"{case.name}.in"
-   path.write_text("\n".join(lines) + "\n")
-   return path
+   remove_parameters = ("amr.ref_ratio",) if case.overrides.get("amr.max_level") == "0" else ()
+   return materialize_run_input(
+      BASE_INPUT,
+      path,
+      values,
+      remove_parameters=remove_parameters,
+   )
 
 
 def failure_row(case: OriginCase, reason: str, ranks: int) -> dict[str, object]:
@@ -389,9 +389,7 @@ def run_transmission_case(case: OriginCase, ranks: int, force: bool, timeout: in
    cart_result = run_amrex(dim=2, input_path=cart_input, ranks=ranks, timeout=timeout)
    cyl_result = run_amrex(dim=2, input_path=cyl_input, ranks=ranks, timeout=timeout)
    (cart_run / "run.log").write_text(cart_result.stdout)
-   (cart_run / "run.in").write_text(cart_input.read_text())
    (cyl_run / "run.log").write_text(cyl_result.stdout)
-   (cyl_run / "run.in").write_text(cyl_input.read_text())
 
    if cart_result.returncode != 0:
       tail = " | ".join(cart_result.stdout.splitlines()[-8:])
@@ -399,6 +397,9 @@ def run_transmission_case(case: OriginCase, ranks: int, force: bool, timeout: in
    if cyl_result.returncode != 0:
       tail = " | ".join(cyl_result.stdout.splitlines()[-8:])
       return failure_row(case, f"cylindrical returncode={cyl_result.returncode}: {tail}", ranks)
+   for completed_run in (cart_run, cyl_run):
+      if not (completed_run / "run.in").exists():
+         raise RuntimeError(f"solver did not write canonical run configuration: {completed_run / 'run.in'}")
 
    cart_scalar = scalar_validation_row(
       cart_run,
@@ -494,11 +495,12 @@ def run_case(case: OriginCase, ranks: int, force: bool, timeout: int) -> dict[st
    result = run_amrex(dim=2, input_path=input_path, ranks=ranks, timeout=timeout)
    run_dir = RUN_ROOT / case.name
    (run_dir / "run.log").write_text(result.stdout)
-   (run_dir / "run.in").write_text(input_path.read_text())
 
    if result.returncode != 0:
       tail = " | ".join(result.stdout.splitlines()[-8:])
       return failure_row(case, f"returncode={result.returncode}: {tail}", ranks)
+   if not (run_dir / "run.in").exists():
+      raise RuntimeError(f"solver did not write canonical run configuration: {run_dir / 'run.in'}")
 
    row = scalar_validation_row(
       run_dir,

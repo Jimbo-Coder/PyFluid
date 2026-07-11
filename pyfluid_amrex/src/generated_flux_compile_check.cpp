@@ -1,5 +1,6 @@
 #include <AMReX.H>
 
+#include "pyfluid_amrex/kernels_generated/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/scalar_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/coordinate_metrics.hpp"
@@ -461,6 +462,22 @@ int main()
    }
    if (!close_enough(pyfluid_amrex::generated::plasma_beta_from_pressure(4.0, 1.0e-300, 1.0, 2.0, 1.0), 4.0 / 3.0)) {
       std::cerr << "generated plasma beta mismatch\n";
+      return 1;
+   }
+   if (!close_enough(pyfluid_amrex::generated::ideal_gas_pressure_from_density_energy(3.0, 5.0 / 3.0), 2.0)) {
+      std::cerr << "generated ideal-gas pressure mismatch\n";
+      return 1;
+   }
+   if (!close_enough(pyfluid_amrex::generated::ideal_gas_internal_energy_density_from_pressure(2.0, 5.0 / 3.0), 3.0)) {
+      std::cerr << "generated ideal-gas energy mismatch\n";
+      return 1;
+   }
+   if (!close_enough(pyfluid_amrex::generated::polytrope_cold_pressure(2.0, 0.5, 2.0), 2.0)) {
+      std::cerr << "generated polytropic pressure mismatch\n";
+      return 1;
+   }
+   if (!close_enough(pyfluid_amrex::generated::hybrid_polytrope_pressure_from_density_energy(2.0, 4.0, 0.5, 2.0, 1.5), 3.0)) {
+      std::cerr << "generated hybrid-polytrope pressure mismatch\n";
       return 1;
    }
    if (!close_enough(pyfluid_amrex::generated::cartesian_cell_volume(2.0, 3.0, 4.0), 24.0)) {
