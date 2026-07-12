@@ -712,7 +712,7 @@ def physical_multipatch_tiles(
         patches = build_visual_patches(params, ndim, refinement)
         for lo, hi, data in level_chunks(plotfile, lev, ndim):
             values = component_values(data, names, component, gamma)
-            if subtract_constant is not None:
+            if component != "schlieren" and subtract_constant is not None:
                 values = values - subtract_constant
             if log10:
                 values = np.log10(np.maximum(values, 1.0e-14))
@@ -852,7 +852,7 @@ def regular_mapped_tiles(
             plane = slice_to_xy(values, lo, hi, z_level)
             if plane is None:
                 continue
-            if log10:
+            if component != "schlieren" and log10:
                 plane = np.log10(np.maximum(plane, 1.0e-14))
             append_regular_tiles(tiles, lo, hi, plane.T, lev, level_shape, problo, probhi, view)
         if lev > 0 or show_base_boxes:
@@ -1067,6 +1067,15 @@ def component_values(
         if vx.shape[0] < 2 or vx.shape[1] < 2:
             return np.zeros_like(vx)
         return np.gradient(vy, dx, axis=0, edge_order=1) - np.gradient(vx, dy, axis=1, edge_order=1)
+    if component == "schlieren" and "rho" in names:
+        rho = data[names.index("rho")]
+        if rho.ndim < 2 or rho.shape[0] < 2 or rho.shape[1] < 2:
+            return np.zeros_like(rho)
+        dx = 1.0 if cell_size is None else cell_size[0]
+        dy = 1.0 if cell_size is None else cell_size[1]
+        grad1 = np.gradient(rho, dx, axis=0, edge_order=1)
+        grad2 = np.gradient(rho, dy, axis=1, edge_order=1)
+        return np.sqrt(grad1 * grad1 + grad2 * grad2)
     if component == "pressure":
         rho = data[names.index("rho")]
         kinetic = 0.5 * (
@@ -1263,6 +1272,7 @@ def composite_slice(
     canvas_ny, canvas_nx = canvas_shape(xlim, ylim, max_pixels)
 
     image = np.full((canvas_ny, canvas_nx), np.nan)
+    stored_component = "rho" if component == "schlieren" else component
 
     for lev in range(nlevels):
         chunks = level_chunks(plotfile, lev, ndim)
@@ -1270,7 +1280,7 @@ def composite_slice(
         cell_size = tuple((probhi[d] - problo[d]) / level_shape[d] for d in range(ndim))
         z_level = 0 if ndim == 2 else min(max(int(z_fraction * level_shape[2]), 0), level_shape[2] - 1)
         for lo, hi, data in chunks:
-            values = component_values(data, names, component, gamma, cell_size)
+            values = component_values(data, names, stored_component, gamma, cell_size)
             if subtract_constant is not None:
                 values = values - subtract_constant
             plane = slice_to_xy(values, lo, hi, z_level)
@@ -1292,6 +1302,16 @@ def composite_slice(
             xlo, xhi = crop_pixel_extent(ix0, ix1 - 1, level_shape[0], (problo[0], probhi[0]), xlim, canvas_nx)
             ylo, yhi = crop_pixel_extent(iy0, iy1 - 1, level_shape[1], (problo[1], probhi[1]), ylim, canvas_ny)
             image[ylo:yhi, xlo:xhi] = resize_nearest(subplane, yhi - ylo, xhi - xlo)
+
+    if component == "schlieren":
+        pixel_dx = (xlim[1] - xlim[0]) / canvas_nx
+        pixel_dy = (ylim[1] - ylim[0]) / canvas_ny
+        grad_y, grad_x = np.gradient(image, pixel_dy, pixel_dx, edge_order=1)
+        image = np.sqrt(grad_x * grad_x + grad_y * grad_y)
+        if subtract_constant is not None:
+            image -= subtract_constant
+        if log10:
+            image = np.log10(np.maximum(image, 1.0e-14))
 
     boxes: list[tuple[int, float, float, float, float]] = []
     first_box_level = 0 if show_base_boxes else 1
@@ -1447,6 +1467,27 @@ def render_frame(
                     zorder=10,
                 )
             )
+    if run_params.get("pyfluid.boundary_profile", "").strip().lower() == "double_mach_reflection":
+        wall_start = float(run_params.get("pyfluid.shock_x0", 1.0 / 6.0))
+        wall_y = float(run_params.get("geometry.prob_lo", "0.0 0.0").split()[1])
+        ax.plot(
+            [wall_start, plot_xlim[1]],
+            [wall_y, wall_y],
+            color="#f5f5f5",
+            linewidth=3.0,
+            solid_capstyle="butt",
+            zorder=12,
+        )
+        ax.plot(
+            wall_start,
+            wall_y,
+            marker="^",
+            markersize=7,
+            markerfacecolor="#f5f5f5",
+            markeredgecolor="#151515",
+            markeredgewidth=0.7,
+            zorder=13,
+        )
     wrapped = "\n".join(textwrap.wrap(title, width=56))
     slice_text = f"z={z_fraction:.2f}, " if ndim == 3 else ""
     ax.set_title(f"{wrapped}\n{label}, {slice_text}t={time_value:.4f}, step={plotfile_step(plotfile)}", fontsize=12)
@@ -1641,7 +1682,7 @@ def main() -> None:
         )
 
     if args.gif is not None:
-        gif_path = args.gif if args.gif.is_absolute() else args.output_dir / args.gif
+        gif_path = args.gif
         gif_path.parent.mkdir(parents=True, exist_ok=True)
         frames = [Image.open(path).convert("P", palette=Image.Palette.ADAPTIVE) for path in frame_paths]
         try:

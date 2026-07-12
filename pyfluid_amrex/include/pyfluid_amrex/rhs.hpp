@@ -196,7 +196,18 @@ inline void fill_hydro_flux_direction(
             lk = k - 1;
          }
 #endif
-         value = hydro_riemann_flux<ReconMethod, RiemannMethod, Direction, EOSMethod>(p, li, lj, lk, ri, rj, rk, eos);
+         if (mesh_layout_spans_physical_space(mesh_coordinate, mesh_axes)) {
+            const MeshFaceMetric metric = mesh_physical_face_metric(
+               Direction, mesh_coordinate, mesh_axes, problo, dx, i, j, k
+            );
+            value = hydro_riemann_flux_normal<ReconMethod, RiemannMethod, Direction, EOSMethod>(
+               p, li, lj, lk, ri, rj, rk, eos, metric.unit_normal
+            );
+         } else {
+            value = hydro_riemann_flux<ReconMethod, RiemannMethod, Direction, EOSMethod>(
+               p, li, lj, lk, ri, rj, rk, eos
+            );
+         }
          store_hydro_flux(f, i, j, k, value);
          store_passive_fluxes<NComp, ReconMethod, Direction>(f, p, i, j, k, li, lj, lk, ri, rj, rk, value.rho);
       });

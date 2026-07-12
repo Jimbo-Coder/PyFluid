@@ -2,6 +2,8 @@ This repo is a Newtonian HD/MHD solver. The AMReX/C++ path is the production
 implementation. Python/JAX and Python/Numba are reference/baseline paths unless
 the user explicitly asks to work on them.
 
+Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.md`.
+
 ## Code Priorities
 
 - Keep solver logic importable from modules; scripts should call shared code.
@@ -12,6 +14,7 @@ the user explicitly asks to work on them.
 - Favor clear module boundaries: options/configs, initial data, reconstruction, Riemann solvers, RHS, timestepping, diffusion, diagnostics, plotting.
 - Do not maintain separate physics implementations for different dimensions. Define coordinate-independent physics once, generate coordinate/dimension-specific kernels from that source where practical, and treat lower-dimensional runs as projections of the same operator. Dimension-specific branches are acceptable only for AMReX storage/centering/topology or a clearly documented unsupported feature.
 - Keep AMReX AMR on the standard finite-volume contract: FillPatch/prolongation for ghosts/new fine data, flux-register reflux for coarse-fine conservation, average-down/restriction for covered coarse cells, and edge-EMF reflux plus face average-down for CT MHD.
+- Use one explicitly selected coarse-fine state interpolater for level creation, regridding, FillPatch, subcycling, and repair seeds. Do not override it by coordinate system, refinement ratio, or subcycling mode, and do not repair nonfinite transfer output. Reject genuinely unsupported designs before evolution; record and fix bugs in intended combinations rather than temporarily prohibiting them.
 - For Cartesian multipatch, production finite-volume evolution uses unique owned cells. Patch overlap is only patch context for ghost/interpolation work until a conservative duplicated-overlap/overset reconciliation method is implemented and validated.
 
 ## Style

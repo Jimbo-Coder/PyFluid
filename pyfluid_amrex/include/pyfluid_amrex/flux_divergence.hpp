@@ -293,6 +293,83 @@ inline void compute_rhs_from_fluxes_mesh_divergence(
 }
 
 template <int NComp>
+inline void compute_rhs_from_physical_fluxes_metric(
+   amrex::MultiFab& rhs,
+   std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
+   amrex::Geometry const& geom,
+   int coordinate,
+   MeshAxes const& axes
+)
+{
+   const auto problo = geom.ProbLoArray();
+   const auto dx = geom.CellSizeArray();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   {
+   for (amrex::MFIter mfi(rhs, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const auto flux0 = fluxes[0]->const_array(mfi);
+#if (AMREX_SPACEDIM >= 2)
+      const auto flux1 = fluxes[1]->const_array(mfi);
+#endif
+#if (AMREX_SPACEDIM == 3)
+      const auto flux2 = fluxes[2]->const_array(mfi);
+#endif
+      const auto output = rhs.array(mfi);
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const amrex::Real volume = mesh_cell_volume_scale(coordinate, axes, problo, dx, i, j, k);
+         const MeshFaceMetric face0_lo = mesh_physical_face_metric(0, coordinate, axes, problo, dx, i, j, k);
+         const MeshFaceMetric face0_hi = mesh_physical_face_metric(0, coordinate, axes, problo, dx, i + 1, j, k);
+#if (AMREX_SPACEDIM >= 2)
+         const MeshFaceMetric face1_lo = mesh_physical_face_metric(1, coordinate, axes, problo, dx, i, j, k);
+         const MeshFaceMetric face1_hi = mesh_physical_face_metric(1, coordinate, axes, problo, dx, i, j + 1, k);
+#endif
+#if (AMREX_SPACEDIM == 3)
+         const MeshFaceMetric face2_lo = mesh_physical_face_metric(2, coordinate, axes, problo, dx, i, j, k);
+         const MeshFaceMetric face2_hi = mesh_physical_face_metric(2, coordinate, axes, problo, dx, i, j, k + 1);
+#endif
+         amrex::Real divergence[MaxStateComponents]{};
+         for (int component = 0; component < NComp; ++component) {
+            amrex::Real value = -(
+               face0_hi.area * flux0(i + 1, j, k, component)
+               - face0_lo.area * flux0(i, j, k, component)
+            ) / volume;
+#if (AMREX_SPACEDIM >= 2)
+            value -= (
+               face1_hi.area * flux1(i, j + 1, k, component)
+               - face1_lo.area * flux1(i, j, k, component)
+            ) / volume;
+#endif
+#if (AMREX_SPACEDIM == 3)
+            value -= (
+               face2_hi.area * flux2(i, j, k + 1, component)
+               - face2_lo.area * flux2(i, j, k, component)
+            ) / volume;
+#endif
+            divergence[component] = value;
+         }
+         const auto q = mesh_coordinate_triplet_at_location(
+            coordinate, axes, problo, dx, i, j, k, false, false, false
+         );
+         const StateVector3 local_momentum = cartesian_vector_to_mesh_basis(
+            coordinate,
+            axes,
+            q,
+            {divergence[MOM1], divergence[MOM2], divergence[MOM3]}
+         );
+         divergence[MOM1] = local_momentum.x;
+         divergence[MOM2] = local_momentum.y;
+         divergence[MOM3] = local_momentum.z;
+         for (int component = 0; component < NComp; ++component) {
+            output(i, j, k, component) = divergence[component];
+         }
+      });
+   }
+   }
+}
+
+template <int NComp>
 inline void compute_rhs_from_fluxes_metric(
    amrex::MultiFab& rhs,
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,

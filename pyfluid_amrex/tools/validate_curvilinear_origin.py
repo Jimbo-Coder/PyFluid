@@ -126,7 +126,6 @@ def origin_cases(level: str) -> list[OriginCase]:
       overrides={
          **COMMON,
          "amr.max_level": "1",
-         "amr.refinement_tensor": "fixed",
          "amr.ref_ratio": "2 2 2 2 2 2",
          "pyfluid.subcycling": "on",
          "pyfluid.recon": "wenoz",
@@ -163,7 +162,6 @@ def origin_cases(level: str) -> list[OriginCase]:
          overrides={
             **COMMON,
             "amr.max_level": "3",
-            "amr.refinement_tensor": "fixed",
             "amr.ref_ratio": "2 2 2 2 2 2",
             "pyfluid.subcycling": "on",
             "pyfluid.recon": "wenoz",
@@ -231,7 +229,6 @@ def transmission_common_values(run_name: str, run_dir: Path) -> dict[str, str]:
       "amr.max_grid_size": "64",
       "amr.blocking_factor": "8",
       "amr.tag_metric": "none",
-      "amr.refinement_tensor": "fixed",
       "pyfluid.physics": "hydro",
       "pyfluid.ct": "off",
       "pyfluid.ic": "cartesian_advection",

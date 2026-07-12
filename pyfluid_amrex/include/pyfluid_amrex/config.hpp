@@ -112,6 +112,7 @@ struct RunConfig {
    amrex::Real pressure0 = 1.0;
    amrex::Real amplitude = 1.0e-3;
    amrex::Real bump_sigma = 0.08;
+   amrex::Real acoustic_transverse_sigma = 0.2;
    amrex::Real bump_x0 = 0.5;
    amrex::Real bump_y0 = 0.5;
    amrex::Real bump_z0 = 0.5;
@@ -123,6 +124,7 @@ struct RunConfig {
    amrex::Real shock_nx = 1.0;
    amrex::Real shock_ny = 0.0;
    amrex::Real shock_nz = 0.0;
+   amrex::Real shock_speed = 0.0;
    amrex::Real rho_left = 1.0;
    amrex::Real pressure_left = 1.0;
    amrex::Real v1_left = 0.0;
@@ -175,6 +177,7 @@ struct RunConfig {
    std::string bc_yhi = "";
    std::string bc_zlo = "";
    std::string bc_zhi = "";
+   std::string boundary_profile = "none";
    std::string inflow_profile = "uniform";
    amrex::Real inflow_rho = 1.0;
    amrex::Real inflow_pressure = 1.0;
@@ -208,8 +211,7 @@ struct RunConfig {
    amrex::Real source_a3 = 0.0;
    amrex::Real source_power = 0.0;
    amrex::Real source_radius = 0.5;
-   amrex::Real source_radial_sigma = 0.05;
-   amrex::Real source_angular_sigma = 0.08;
+   amrex::Real source_sigma = 0.05;
    amrex::Real source_omega = 0.0;
    amrex::Real source_ramp_time = 0.0;
    amrex::Real source_phase = 0.0;
@@ -259,12 +261,9 @@ struct RunConfig {
    amrex::Real solid_wedge_y0 = 0.15;
    amrex::Real solid_wedge_angle_deg = 10.0;
    std::string tag_metric;
-   std::string refinement_tensor;
    std::string state_interp;
-   std::string metric_regrid;
    amrex::Real tag_threshold;
    bool tag_threshold_set = false;
-   int max_refinement_ratio;
    amrex::Real min_feature_length;
    bool min_feature_length_set = false;
    amrex::Real min_feature_length_1;
@@ -284,6 +283,7 @@ struct RunConfig {
    std::array<amrex::Real, MaxInitialRefineBoxValues> initial_refine_box_hi{};
    int amr_max_level;
    int regrid_int;
+   std::string regrid_mode;
    amrex::Long level_cell_budget;
    int level_cell_budget_side;
    amrex::Long total_cell_budget;
@@ -340,7 +340,7 @@ static constexpr std::array<std::string_view, 2> PlotfileFormatOptions{{"amrex",
 static constexpr std::array<std::string_view, 5> PassiveProfileOptions{{"none", "uniform", "gaussian", "sin_wave", "step_x"}};
 static constexpr std::array<std::string_view, 2> ProfileOptions{{"on", "off"}};
 static constexpr std::array<std::string_view, 2> ProfileDetailOptions{{"basic", "flux"}};
-static constexpr std::array<std::string_view, 7> BoundaryOptions{{
+static constexpr std::array<std::string_view, 8> BoundaryOptions{{
    "periodic",
    "outflow",
    "reflecting",
@@ -348,7 +348,9 @@ static constexpr std::array<std::string_view, 7> BoundaryOptions{{
    "inflow",
    "diode",
    "origin",
+   "analytic",
 }};
+static constexpr std::array<std::string_view, 2> BoundaryProfileOptions{{"none", "double_mach_reflection"}};
 static constexpr std::array<std::string_view, 3> InflowProfileOptions{{"uniform", "gaussian_beam", "uniform_beam"}};
 static constexpr std::array<std::string_view, 2> ScalarOutputModeOptions{{"stream", "final"}};
 static constexpr std::array<std::string_view, 9> ValidationPolicyOptions{{
@@ -362,7 +364,7 @@ static constexpr std::array<std::string_view, 9> ValidationPolicyOptions{{
    "smoke",
    "elliptic",
 }};
-static constexpr std::array<std::string_view, 3> SourceOptions{{"none", "uniform_acceleration", "rotating_ring_heating"}};
+static constexpr std::array<std::string_view, 3> SourceOptions{{"none", "uniform_acceleration", "rotating_compact_heating"}};
 static constexpr std::array<std::string_view, 3> GravityOptions{{"none", "poisson", "fixed"}};
 static constexpr std::array<std::string_view, 2> GravityCouplingOptions{{"athena", "source"}};
 static constexpr std::array<std::string_view, 2> GravityEnergySyncOptions{{"off", "residual"}};
@@ -377,7 +379,7 @@ static constexpr std::array<std::string_view, 3> MeshPatchBoxOwnershipOptions{{"
 inline amrex::Real amr_default_auto_tag_threshold();
 static constexpr std::array<std::string_view, 2> MeshPatchBoxDomainOptions{{"rectangular", "union"}};
 static constexpr std::array<std::string_view, 2> AMRTagMetricOptions{{"none", "auto"}};
-static constexpr std::array<std::string_view, 2> AMRRefinementTensorOptions{{"fixed", "auto"}};
+static constexpr std::array<std::string_view, 2> AMRRegridModeOptions{{"synchronized", "aligned"}};
 static constexpr std::array<std::string_view, 5> AMRStateInterpOptions{{
    "conservative",
    "protected",
@@ -404,12 +406,13 @@ static constexpr std::array<std::string_view, 7> MHDWaveFamilyOptions{{
    "slow_minus",
    "entropy",
 }};
-static constexpr std::array<std::string_view, 22> InitialDataOptions{{
+static constexpr std::array<std::string_view, 24> InitialDataOptions{{
    "sin_wave",
    "uniform",
    "cartesian_advection",
    "linear_wave_x",
    "acoustic_wave_x",
+   "acoustic_packet_x",
    "jeans_wave_x",
    "shear_wave_x",
    "pressure_bump",
@@ -420,6 +423,7 @@ static constexpr std::array<std::string_view, 22> InitialDataOptions{{
    "sod_x",
    "sod_plane",
    "sod_periodic_plane",
+   "double_mach_reflection",
    "circular_alfven_x",
    "resistive_wave_x",
    "magnetic_tube_z",
@@ -772,6 +776,7 @@ inline RunConfig read_config()
    pp.query("pressure0", cfg.pressure0);
    pp.query("amplitude", cfg.amplitude);
    pp.query("bump_sigma", cfg.bump_sigma);
+   pp.query("acoustic_transverse_sigma", cfg.acoustic_transverse_sigma);
    pp.query("bump_x0", cfg.bump_x0);
    pp.query("bump_y0", cfg.bump_y0);
    pp.query("bump_z0", cfg.bump_z0);
@@ -783,6 +788,7 @@ inline RunConfig read_config()
    pp.query("shock_nx", cfg.shock_nx);
    pp.query("shock_ny", cfg.shock_ny);
    pp.query("shock_nz", cfg.shock_nz);
+   pp.query("shock_speed", cfg.shock_speed);
    pp.query("rho_left", cfg.rho_left);
    pp.query("pressure_left", cfg.pressure_left);
    pp.query("v1_left", cfg.v1_left);
@@ -831,6 +837,7 @@ inline RunConfig read_config()
    pp.query("bc_yhi", cfg.bc_yhi);
    pp.query("bc_zlo", cfg.bc_zlo);
    pp.query("bc_zhi", cfg.bc_zhi);
+   pp.query("boundary_profile", cfg.boundary_profile);
    pp.query("inflow_profile", cfg.inflow_profile);
    pp.query("inflow_rho", cfg.inflow_rho);
    pp.query("inflow_pressure", cfg.inflow_pressure);
@@ -863,8 +870,7 @@ inline RunConfig read_config()
    pp.query("source_a3", cfg.source_a3);
    pp.query("source_power", cfg.source_power);
    pp.query("source_radius", cfg.source_radius);
-   pp.query("source_radial_sigma", cfg.source_radial_sigma);
-   pp.query("source_angular_sigma", cfg.source_angular_sigma);
+   pp.query("source_sigma", cfg.source_sigma);
    pp.query("source_omega", cfg.source_omega);
    pp.query("source_ramp_time", cfg.source_ramp_time);
    pp.query("source_phase", cfg.source_phase);
@@ -1047,7 +1053,8 @@ enum class BoundaryKind {
    Symmetry,
    Inflow,
    Diode,
-   Origin
+   Origin,
+   Analytic
 };
 
 inline std::string side_bc_name(RunConfig const& cfg, int dir, bool high_side)
@@ -1092,6 +1099,9 @@ inline BoundaryKind boundary_kind_from_name(std::string const& value)
    }
    if (value == "origin") {
       return BoundaryKind::Origin;
+   }
+   if (value == "analytic") {
+      return BoundaryKind::Analytic;
    }
    amrex::Abort("unsupported boundary condition: " + value);
    return BoundaryKind::Outflow;
@@ -1401,6 +1411,20 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.physics == "mhd" && cfg.ic == "acoustic_wave_x") {
       amrex::Abort("acoustic_wave_x is hydro-only; use a magnetosonic-wave IC for MHD EOS validation");
    }
+   if (cfg.ic == "acoustic_packet_x") {
+      if (cfg.physics != "hydro") {
+         amrex::Abort("acoustic_packet_x is hydro-only");
+      }
+      if (cfg.bump_sigma <= 0.0) {
+         amrex::Abort("acoustic_packet_x requires positive pyfluid.bump_sigma");
+      }
+      if (cfg.acoustic_transverse_sigma < 0.0) {
+         amrex::Abort("acoustic_packet_x requires non-negative pyfluid.acoustic_transverse_sigma; zero selects a planar packet");
+      }
+      if (cfg.v1_0 != 0.0 || cfg.v2_0 != 0.0 || cfg.v3_0 != 0.0) {
+         amrex::Abort("acoustic_packet_x currently requires zero background velocity");
+      }
+   }
    if (cfg.ic == "linear_wave_x") {
       if (cfg.physics == "hydro" && !valid_hydro_wave_family(cfg.wave_family)) {
          amrex::Abort("hydro linear_wave_x supports wave_family " + supported_option_names(HydroWaveFamilyOptions));
@@ -1480,6 +1504,44 @@ inline void validate_config(RunConfig const& cfg)
          amrex::Abort("side-specific pyfluid.bc_* supports " + supported_option_names(BoundaryOptions));
       }
    }
+   require_supported_option(cfg.boundary_profile, BoundaryProfileOptions, "pyfluid.boundary_profile");
+   bool has_analytic_boundary = false;
+   for (std::string const& side_bc : {cfg.bc_xlo, cfg.bc_xhi, cfg.bc_ylo, cfg.bc_yhi, cfg.bc_zlo, cfg.bc_zhi}) {
+      has_analytic_boundary = has_analytic_boundary || trim_copy(side_bc) == "analytic";
+   }
+   has_analytic_boundary = has_analytic_boundary || cfg.bc == "analytic";
+   if (has_analytic_boundary && cfg.boundary_profile == "none") {
+      amrex::Abort("analytic boundary conditions require pyfluid.boundary_profile");
+   }
+   if (!has_analytic_boundary && cfg.boundary_profile != "none") {
+      amrex::Abort("pyfluid.boundary_profile requires at least one analytic boundary");
+   }
+   if (cfg.boundary_profile == "double_mach_reflection") {
+#if (AMREX_SPACEDIM != 2)
+      amrex::Abort("double_mach_reflection requires the 2D AMReX executable");
+#endif
+      if (cfg.mesh_coordinate != "cartesian" || cfg.physics != "hydro") {
+         amrex::Abort("double_mach_reflection requires Cartesian hydro");
+      }
+      if (cfg.ic != "double_mach_reflection") {
+         amrex::Abort("double_mach_reflection boundary profile requires the matching initial condition");
+      }
+      if (
+         side_boundary_kind(cfg, 0, false) != BoundaryKind::Analytic
+         || side_boundary_kind(cfg, 0, true) != BoundaryKind::Outflow
+         || side_boundary_kind(cfg, 1, false) != BoundaryKind::Analytic
+         || side_boundary_kind(cfg, 1, true) != BoundaryKind::Analytic
+      ) {
+         amrex::Abort(
+            "double_mach_reflection requires analytic xlo/ylo/yhi boundaries and outflow xhi"
+         );
+      }
+      if (cfg.shock_speed <= 0.0) {
+         amrex::Abort("double_mach_reflection requires positive pyfluid.shock_speed");
+      }
+   } else if (cfg.ic == "double_mach_reflection") {
+      amrex::Abort("double_mach_reflection initial data requires its analytic boundary profile");
+   }
    if (cfg.inflow_rho <= 0.0 || cfg.inflow_pressure <= 0.0) {
       amrex::Abort("pyfluid.inflow_rho and pyfluid.inflow_pressure must be positive");
    }
@@ -1523,28 +1585,29 @@ inline void validate_config(RunConfig const& cfg)
       }
    }
    require_supported_option(cfg.source, SourceOptions, "pyfluid.source");
-   if (cfg.source == "rotating_ring_heating") {
+   if (cfg.source == "rotating_compact_heating") {
 #if (AMREX_SPACEDIM < 2)
-      amrex::Abort("pyfluid.source = rotating_ring_heating requires a 2D or 3D executable");
+      amrex::Abort("pyfluid.source = rotating_compact_heating requires a 2D or 3D executable");
 #endif
       const int coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
       const MeshAxes axes = mesh_axes_layout(cfg);
-      if ((coordinate != MeshCylindrical && coordinate != MeshSpherical)
-         || !mesh_has_axis(axes, MeshAxisR)
-         || !mesh_has_axis(axes, MeshAxisPhi)) {
-         amrex::Abort("pyfluid.source = rotating_ring_heating requires cylindrical or spherical mesh axes containing r and phi");
+      const bool cartesian_plane = coordinate == MeshCartesian
+         && mesh_has_axis(axes, MeshAxisX)
+         && mesh_has_axis(axes, MeshAxisY);
+      const bool angular_plane = (coordinate == MeshCylindrical || coordinate == MeshSpherical)
+         && mesh_has_axis(axes, MeshAxisR)
+         && mesh_has_axis(axes, MeshAxisPhi);
+      if (!cartesian_plane && !angular_plane) {
+         amrex::Abort("pyfluid.source = rotating_compact_heating requires an x-y or r-phi plane");
       }
       if (cfg.source_power <= 0.0) {
-         amrex::Abort("pyfluid.source = rotating_ring_heating requires positive pyfluid.source_power");
+         amrex::Abort("pyfluid.source = rotating_compact_heating requires positive pyfluid.source_power");
       }
       if (cfg.source_radius <= 0.0) {
          amrex::Abort("pyfluid.source_radius must be positive");
       }
-      if (cfg.source_radial_sigma <= 0.0) {
-         amrex::Abort("pyfluid.source_radial_sigma must be positive");
-      }
-      if (cfg.source_angular_sigma <= 0.0) {
-         amrex::Abort("pyfluid.source_angular_sigma must be positive");
+      if (cfg.source_sigma <= 0.0) {
+         amrex::Abort("pyfluid.source_sigma must be positive");
       }
       if (cfg.source_ramp_time < 0.0) {
          amrex::Abort("pyfluid.source_ramp_time must be non-negative");
@@ -1696,38 +1759,6 @@ inline void validate_config(RunConfig const& cfg)
    require_supported_option(cfg.mesh_metric_divergence, MetricRegridOptions, "mesh.metric_divergence");
    if (cfg.tag_threshold <= 0.0) {
       amrex::Abort("amr.tag_threshold must be positive");
-   }
-   if (cfg.max_refinement_ratio < 2) {
-      amrex::Abort("amr.max_refinement_ratio must be at least 2");
-   }
-   if (cfg.refinement_tensor == "auto") {
-      if (cfg.tag_metric != "auto") {
-         amrex::Abort("amr.refinement_tensor = auto requires amr.tag_metric = auto");
-      }
-      if (cfg.subcycling == "on") {
-         amrex::Abort("amr.refinement_tensor = auto currently requires pyfluid.subcycling = off");
-      }
-      if (cfg.mesh_patch_system != "single") {
-         amrex::Abort("amr.refinement_tensor = auto currently supports mesh.patch_system = single");
-      }
-      if (cfg.physics != "hydro") {
-         amrex::Abort("amr.refinement_tensor = auto currently supports pyfluid.physics = hydro");
-      }
-      if (cfg.ct != "off") {
-         amrex::Abort("amr.refinement_tensor = auto currently requires pyfluid.ct = off");
-      }
-      if (cfg.diffusion != "none") {
-         amrex::Abort("amr.refinement_tensor = auto currently requires pyfluid.diffusion = none");
-      }
-      if (cfg.gravity != "none") {
-         amrex::Abort("amr.refinement_tensor = auto currently requires pyfluid.gravity = none");
-      }
-      if (cfg.solid_geometry != "off") {
-         amrex::Abort("amr.refinement_tensor = auto currently requires pyfluid.solid_geometry = off");
-      }
-      if (!cfg.restart_file.empty()) {
-         amrex::Abort("amr.refinement_tensor = auto restart support needs checkpointed refinement tensors first");
-      }
    }
    if (cfg.min_feature_length < 0.0) {
       amrex::Abort("amr.min_feature_length must be non-negative; 0 disables the physical-length cutoff");

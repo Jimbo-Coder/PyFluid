@@ -183,6 +183,26 @@ amrex::GpuArray<amrex::Real, 3> mesh_coordinate_triplet_at_location(
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::GpuArray<amrex::Real, 3> mesh_coordinate_triplet_to_cartesian(
+   int coordinate,
+   amrex::GpuArray<amrex::Real, 3> const& q
+) noexcept
+{
+   if (coordinate == MeshCylindrical) {
+      return {q[0] * std::cos(q[1]), q[0] * std::sin(q[1]), q[2]};
+   }
+   if (coordinate == MeshSpherical) {
+      const amrex::Real sin_theta = std::sin(q[1]);
+      return {
+         q[0] * sin_theta * std::cos(q[2]),
+         q[0] * sin_theta * std::sin(q[2]),
+         q[0] * std::cos(q[1]),
+      };
+   }
+   return q;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real mesh_width_for_axis(
    MeshAxes const& axes,
    int target_axis,

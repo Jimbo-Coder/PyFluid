@@ -595,6 +595,24 @@ def amr_cases() -> list[Case]:
          },
          require_amr=True,
       ))
+   cases.append(Case(
+      "hydro_amr_subcycling_aligned_regrid",
+      2,
+      "pressure_bump_2d_amr.in",
+      {
+         **AUTO_AMR_COVERAGE,
+         "amr.regrid_mode": "aligned",
+         "amr.regrid_int": "8",
+         "pyfluid.max_step": "2",
+         "pyfluid.timestep": "ssprk3",
+         "pyfluid.recon": "pwl",
+         "pyfluid.riemann": "hllc",
+         "pyfluid.ng": "2",
+         "pyfluid.subcycling": "on",
+         "amr.state_interp": "quartic-conservative",
+      },
+      require_amr=True,
+   ))
    for timestep in ["euler", "corrector", "midpoint", "ssprk3", "rk4"]:
       cases.append(Case(
          f"mhd_amr_ct_subcycling_{timestep}",
@@ -617,6 +635,27 @@ def amr_cases() -> list[Case]:
          },
          require_amr=True,
       ))
+   cases.append(Case(
+      "mhd_amr_ct_subcycling_aligned_regrid",
+      2,
+      "kelvin_helmholtz_mhd_2d_single_sheet_amr_ct.in",
+      {
+         **AUTO_AMR_COVERAGE,
+         "amr.regrid_mode": "aligned",
+         "amr.regrid_int": "16",
+         "pyfluid.max_step": "2",
+         "pyfluid.timestep": "ssprk3",
+         "pyfluid.recon": "pwl",
+         "pyfluid.riemann": "hlld",
+         "pyfluid.ng": "2",
+         "pyfluid.subcycling": "on",
+         "pyfluid.diffusion": "none",
+         "pyfluid.resistivity": "0.0",
+         "pyfluid.viscosity": "0.0",
+         "amr.state_interp": "quartic-conservative",
+      },
+      require_amr=True,
+   ))
    cases.append(Case("mhd_amr_ct_subcycling_explicit_resistive", 2, "kelvin_helmholtz_mhd_2d_single_sheet_amr_ct.in", {
       **AUTO_AMR_COVERAGE,
       "pyfluid.max_step": "2",
@@ -656,6 +695,29 @@ def amr_cases() -> list[Case]:
          checks=DIFFUSIVE_POLICY,
          require_amr=True,
       ))
+   cases.append(Case(
+      "hydro_amr_subcycling_aligned_implicit_diffusion",
+      2,
+      "pressure_bump_2d_amr.in",
+      {
+         **AUTO_AMR_COVERAGE,
+         "amr.regrid_mode": "aligned",
+         "amr.regrid_int": "8",
+         "pyfluid.max_step": "2",
+         "pyfluid.timestep": "ssprk3",
+         "pyfluid.recon": "pwl",
+         "pyfluid.riemann": "hllc",
+         "pyfluid.ng": "2",
+         "pyfluid.subcycling": "on",
+         "pyfluid.diffusion": "implicit",
+         "pyfluid.viscosity": "1.0e-4",
+         "pyfluid.diffusion_tolerance": "1.0e-12",
+         "pyfluid.diffusion_max_iterations": "500",
+         "pyfluid.plot_int": "-1",
+      },
+      checks=DIFFUSIVE_POLICY,
+      require_amr=True,
+   ))
    cases.append(Case(
       "hydro_source_uniform_acceleration_amr",
       2,

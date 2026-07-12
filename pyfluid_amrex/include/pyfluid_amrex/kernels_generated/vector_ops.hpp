@@ -9,6 +9,8 @@
 
 namespace pyfluid_amrex::generated {
 
+using namespace amrex::literals;
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real curl_x_cartesian(amrex::Real daz_dq2, amrex::Real day_dq3) noexcept
 {
@@ -60,7 +62,7 @@ amrex::Real divergence_orthogonal(amrex::Real inv_volume_scale, amrex::Real d_h2
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cartesian_viscous_stress_11(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   return -2.0/3.0*mu*(-2*dv1_dq1 + dv2_dq2 + dv3_dq3);
+   return -2.0_rt/3.0_rt*mu*(-2*dv1_dq1 + dv2_dq2 + dv3_dq3);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -84,7 +86,7 @@ amrex::Real cartesian_viscous_stress_21(amrex::Real mu, amrex::Real q1, amrex::R
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cartesian_viscous_stress_22(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   return -2.0/3.0*mu*(dv1_dq1 - 2*dv2_dq2 + dv3_dq3);
+   return -2.0_rt/3.0_rt*mu*(dv1_dq1 - 2*dv2_dq2 + dv3_dq3);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -108,20 +110,20 @@ amrex::Real cartesian_viscous_stress_32(amrex::Real mu, amrex::Real q1, amrex::R
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cartesian_viscous_stress_33(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   return -2.0/3.0*mu*(dv1_dq1 + dv2_dq2 - 2*dv3_dq3);
+   return -2.0_rt/3.0_rt*mu*(dv1_dq1 + dv2_dq2 - 2*dv3_dq3);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_viscous_stress_11(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(q1);
-   return -2.0/3.0*mu*(-2*dv1_dq1 + dv2_dq2*tmp0 + dv3_dq3 + tmp0*v1);
+   const amrex::Real tmp0 = 1.0_rt/(q1);
+   return -2.0_rt/3.0_rt*mu*(-2*dv1_dq1 + dv2_dq2*tmp0 + dv3_dq3 + tmp0*v1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_viscous_stress_12(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(q1);
+   const amrex::Real tmp0 = 1.0_rt/(q1);
    return mu*(dv1_dq2*tmp0 + dv2_dq1 - tmp0*v2);
 }
 
@@ -134,16 +136,16 @@ amrex::Real cylindrical_viscous_stress_13(amrex::Real mu, amrex::Real q1, amrex:
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_viscous_stress_21(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(q1);
+   const amrex::Real tmp0 = 1.0_rt/(q1);
    return mu*(dv1_dq2*tmp0 + dv2_dq1 - tmp0*v2);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_viscous_stress_22(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(q1);
-   const amrex::Real tmp1 = (1.0/3.0)*tmp0;
-   return -2*mu*((1.0/3.0)*dv1_dq1 + dv2_dq2*tmp1 + (1.0/3.0)*dv3_dq3 - tmp0*(dv2_dq2 + v1) + tmp1*v1);
+   const amrex::Real tmp0 = 1.0_rt/(q1);
+   const amrex::Real tmp1 = (1.0_rt/3.0_rt)*tmp0;
+   return -2*mu*((1.0_rt/3.0_rt)*dv1_dq1 + dv2_dq2*tmp1 + (1.0_rt/3.0_rt)*dv3_dq3 - tmp0*(dv2_dq2 + v1) + tmp1*v1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -167,41 +169,41 @@ amrex::Real cylindrical_viscous_stress_32(amrex::Real mu, amrex::Real q1, amrex:
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_viscous_stress_33(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(q1);
-   return -2.0/3.0*mu*(dv1_dq1 + dv2_dq2*tmp0 - 2*dv3_dq3 + tmp0*v1);
+   const amrex::Real tmp0 = 1.0_rt/(q1);
+   return -2.0_rt/3.0_rt*mu*(dv1_dq1 + dv2_dq2*tmp0 - 2*dv3_dq3 + tmp0*v1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_viscous_stress_11(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   return 2*mu*(dv1_dq1 - 1.0/3.0*(dv1_dq1*q1 + dv2_dq2 + dv3_dq3/std::sin(q2) + 2*v1 + v2/std::tan(q2))/q1);
+   return 2*mu*(dv1_dq1 - 1.0_rt/3.0_rt*(dv1_dq1*q1 + dv2_dq2 + dv3_dq3/std::sin(q2) + 2*v1 + v2/std::tan(q2))/q1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_viscous_stress_12(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(q1);
+   const amrex::Real tmp0 = 1.0_rt/(q1);
    return mu*(dv1_dq2*tmp0 + dv2_dq1 - tmp0*v2);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_viscous_stress_13(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(q1);
+   const amrex::Real tmp0 = 1.0_rt/(q1);
    return mu*(dv1_dq3*tmp0/std::sin(q2) + dv3_dq1 - tmp0*v3);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_viscous_stress_21(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(q1);
+   const amrex::Real tmp0 = 1.0_rt/(q1);
    return mu*(dv1_dq2*tmp0 + dv2_dq1 - tmp0*v2);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_viscous_stress_22(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   return (2.0/3.0)*mu*(-dv1_dq1*q1 + 2*dv2_dq2 - dv3_dq3/std::sin(q2) + v1 - v2/std::tan(q2))/q1;
+   return (2.0_rt/3.0_rt)*mu*(-dv1_dq1*q1 + 2*dv2_dq2 - dv3_dq3/std::sin(q2) + v1 - v2/std::tan(q2))/q1;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -213,7 +215,7 @@ amrex::Real spherical_viscous_stress_23(amrex::Real mu, amrex::Real q1, amrex::R
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_viscous_stress_31(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(q1);
+   const amrex::Real tmp0 = 1.0_rt/(q1);
    return mu*(dv1_dq3*tmp0/std::sin(q2) + dv3_dq1 - tmp0*v3);
 }
 
@@ -226,7 +228,7 @@ amrex::Real spherical_viscous_stress_32(amrex::Real mu, amrex::Real q1, amrex::R
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_viscous_stress_33(amrex::Real mu, amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real v1, amrex::Real v2, amrex::Real v3, amrex::Real dv1_dq1, amrex::Real dv1_dq2, amrex::Real dv1_dq3, amrex::Real dv2_dq1, amrex::Real dv2_dq2, amrex::Real dv2_dq3, amrex::Real dv3_dq1, amrex::Real dv3_dq2, amrex::Real dv3_dq3) noexcept
 {
-   return (2.0/3.0)*mu*(-dv1_dq1*q1 - dv2_dq2 + 2*dv3_dq3/std::sin(q2) + v1 + 2*v2/std::tan(q2))/q1;
+   return (2.0_rt/3.0_rt)*mu*(-dv1_dq1*q1 - dv2_dq2 + 2*dv3_dq3/std::sin(q2) + v1 + 2*v2/std::tan(q2))/q1;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -322,13 +324,13 @@ amrex::Real resistive_emf_scaled_gradient(amrex::Real eta, amrex::Real h_tangent
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real magnetic_energy_density_from_components(amrex::Real bx, amrex::Real by, amrex::Real bz) noexcept
 {
-   return (1.0/2.0)*(((bx)*(bx)) + ((by)*(by)) + ((bz)*(bz)));
+   return (1.0_rt/2.0_rt)*(((bx)*(bx)) + ((by)*(by)) + ((bz)*(bz)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real plasma_beta_from_pressure(amrex::Real pressure, amrex::Real floor, amrex::Real bx, amrex::Real by, amrex::Real bz) noexcept
 {
-   return pressure/((floor) > ((1.0/2.0)*(((bx)*(bx)) + ((by)*(by)) + ((bz)*(bz)))) ? (floor) : ((1.0/2.0)*(((bx)*(bx)) + ((by)*(by)) + ((bz)*(bz)))));
+   return pressure/((floor) > ((1.0_rt/2.0_rt)*(((bx)*(bx)) + ((by)*(by)) + ((bz)*(bz)))) ? (floor) : ((1.0_rt/2.0_rt)*(((bx)*(bx)) + ((by)*(by)) + ((bz)*(bz)))));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

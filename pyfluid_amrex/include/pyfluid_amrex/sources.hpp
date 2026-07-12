@@ -11,6 +11,7 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/coordinate_locations.hpp"
 #include "pyfluid_amrex/gravity.hpp"
+#include "pyfluid_amrex/initial_data/sampling.hpp"
 #include "pyfluid_amrex/rhs.hpp"
 #include "pyfluid_amrex/state.hpp"
 
@@ -27,17 +28,9 @@ inline bool uniform_acceleration_enabled(RunConfig const& cfg)
       && (std::abs(cfg.source_a1) > 0.0 || std::abs(cfg.source_a2) > 0.0 || std::abs(cfg.source_a3) > 0.0);
 }
 
-inline bool rotating_ring_heating_enabled(RunConfig const& cfg)
+inline bool rotating_compact_heating_enabled(RunConfig const& cfg)
 {
-   return cfg.source == "rotating_ring_heating" && cfg.source_power > 0.0;
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real wrapped_angle_delta(amrex::Real angle, amrex::Real center) noexcept
-{
-   amrex::Real delta = angle - center;
-   delta -= PyFluidTwoPi * std::floor((delta + 0.5 * PyFluidTwoPi) / PyFluidTwoPi);
-   return delta;
+   return cfg.source == "rotating_compact_heating" && cfg.source_power > 0.0;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -51,7 +44,24 @@ amrex::Real smooth_ramp(amrex::Real time, amrex::Real ramp_time) noexcept
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real rotating_ring_heating_rate(
+amrex::Real compact_gaussian(amrex::Real squared_distance_in_sigmas) noexcept
+{
+   constexpr amrex::Real taper_start = 6.25;
+   constexpr amrex::Real support_end = 9.0;
+   if (squared_distance_in_sigmas >= support_end) {
+      return 0.0;
+   }
+   const amrex::Real gaussian = std::exp(-0.5 * squared_distance_in_sigmas);
+   if (squared_distance_in_sigmas <= taper_start) {
+      return gaussian;
+   }
+   const amrex::Real x = (support_end - squared_distance_in_sigmas) / (support_end - taper_start);
+   return gaussian * x * x * (3.0 - 2.0 * x);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real rotating_compact_heating_rate(
+   int mesh_coordinate,
    MeshAxes const& mesh_axes,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
@@ -61,29 +71,27 @@ amrex::Real rotating_ring_heating_rate(
    amrex::Real time,
    amrex::Real source_power,
    amrex::Real source_radius,
-   amrex::Real inv_radial_sigma2,
-   amrex::Real inv_angular_sigma2,
+   amrex::Real inv_sigma2,
    amrex::Real angular_speed,
    amrex::Real phase0,
    int mode,
    amrex::Real envelope
 ) noexcept
 {
-   const amrex::Real radius = runtime_coordinate_for_axis(
-      mesh_axes, MeshAxisR, problo, dx, i, j, k, false, false, false
+   const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
+      mesh_coordinate, mesh_axes, problo, dx, i, j, k
    );
-   const amrex::Real phi = runtime_coordinate_for_axis(
-      mesh_axes, MeshAxisPhi, problo, dx, i, j, k, false, false, false
-   );
-   const amrex::Real radial_arg = (radius - source_radius) * (radius - source_radius) * inv_radial_sigma2;
-   amrex::Real angular_shape = 0.0;
+   amrex::Real shape = 0.0;
    for (int n = 0; n < mode; ++n) {
-      const amrex::Real center =
+      const amrex::Real phase =
          phase0 + angular_speed * time + PyFluidTwoPi * static_cast<amrex::Real>(n) / static_cast<amrex::Real>(mode);
-      const amrex::Real delta = wrapped_angle_delta(phi, center);
-      angular_shape += std::exp(-0.5 * delta * delta * inv_angular_sigma2);
+      const amrex::Real center_x = source_radius * std::cos(phase);
+      const amrex::Real center_y = source_radius * std::sin(phase);
+      const amrex::Real delta_x = sample.physical.q1 - center_x;
+      const amrex::Real delta_y = sample.physical.q2 - center_y;
+      shape += compact_gaussian((delta_x * delta_x + delta_y * delta_y) * inv_sigma2);
    }
-   return source_power * envelope * std::exp(-0.5 * radial_arg) * angular_shape;
+   return source_power * envelope * shape;
 }
 
 struct SourceStageContext {
@@ -190,7 +198,7 @@ inline void apply_uniform_acceleration_source(
 }
 
 template <int NComp>
-inline void apply_rotating_ring_heating_source(
+inline void apply_rotating_compact_heating_source(
    amrex::MultiFab& rhs,
    RunConfig const& cfg,
    amrex::Geometry const& geom,
@@ -199,7 +207,7 @@ inline void apply_rotating_ring_heating_source(
    amrex::Vector<int> const* solid_valid_kind = nullptr
 )
 {
-   if (!rotating_ring_heating_enabled(cfg)) {
+   if (!rotating_compact_heating_enabled(cfg)) {
       return;
    }
 
@@ -209,8 +217,7 @@ inline void apply_rotating_ring_heating_source(
    const auto dx = geom.CellSizeArray();
    const amrex::Real source_power = cfg.source_power;
    const amrex::Real source_radius = cfg.source_radius;
-   const amrex::Real inv_radial_sigma2 = 1.0 / (cfg.source_radial_sigma * cfg.source_radial_sigma);
-   const amrex::Real inv_angular_sigma2 = 1.0 / (cfg.source_angular_sigma * cfg.source_angular_sigma);
+   const amrex::Real inv_sigma2 = 1.0 / (cfg.source_sigma * cfg.source_sigma);
    const amrex::Real angular_speed = cfg.source_omega;
    const amrex::Real phase0 = cfg.source_phase;
    const int mode = cfg.source_azimuthal_mode;
@@ -225,7 +232,8 @@ inline void apply_rotating_ring_heating_source(
       const auto r = rhs.array(mfi);
       if (solid_mask == nullptr) {
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            r(i, j, k, ENERGY) += rotating_ring_heating_rate(
+            r(i, j, k, ENERGY) += rotating_compact_heating_rate(
+               mesh_coordinate,
                mesh_axes,
                problo,
                dx,
@@ -235,8 +243,7 @@ inline void apply_rotating_ring_heating_source(
                time,
                source_power,
                source_radius,
-               inv_radial_sigma2,
-               inv_angular_sigma2,
+               inv_sigma2,
                angular_speed,
                phase0,
                mode,
@@ -252,7 +259,8 @@ inline void apply_rotating_ring_heating_source(
       }
       if (kind == MaskKindZero) {
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            r(i, j, k, ENERGY) += rotating_ring_heating_rate(
+            r(i, j, k, ENERGY) += rotating_compact_heating_rate(
+               mesh_coordinate,
                mesh_axes,
                problo,
                dx,
@@ -262,8 +270,7 @@ inline void apply_rotating_ring_heating_source(
                time,
                source_power,
                source_radius,
-               inv_radial_sigma2,
-               inv_angular_sigma2,
+               inv_sigma2,
                angular_speed,
                phase0,
                mode,
@@ -278,7 +285,8 @@ inline void apply_rotating_ring_heating_source(
          if (solid(i, j, k, 0) != 0) {
             return;
          }
-         r(i, j, k, ENERGY) += rotating_ring_heating_rate(
+         r(i, j, k, ENERGY) += rotating_compact_heating_rate(
+            mesh_coordinate,
             mesh_axes,
             problo,
             dx,
@@ -288,8 +296,7 @@ inline void apply_rotating_ring_heating_source(
             time,
             source_power,
             source_radius,
-            inv_radial_sigma2,
-            inv_angular_sigma2,
+            inv_sigma2,
             angular_speed,
             phase0,
             mode,
@@ -318,11 +325,11 @@ inline void apply_sources(
    }
    if (cfg.source == "uniform_acceleration") {
       apply_uniform_acceleration_source<NComp>(rhs, state, cfg, context.solid_mask, context.solid_valid_kind);
-   } else if (cfg.source == "rotating_ring_heating") {
+   } else if (cfg.source == "rotating_compact_heating") {
       if (context.geom == nullptr) {
-         amrex::Abort("rotating ring heating source is missing geometry");
+         amrex::Abort("rotating compact heating source is missing geometry");
       }
-      apply_rotating_ring_heating_source<NComp>(
+      apply_rotating_compact_heating_source<NComp>(
          rhs,
          cfg,
          *context.geom,

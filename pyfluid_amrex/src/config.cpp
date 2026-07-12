@@ -30,9 +30,8 @@ enum class StringOptionSet {
    Subcycling,
    SubcyclingSteps,
    AMRTagMetric,
-   AMRRefinementTensor,
+   AMRRegridMode,
    AMRStateInterp,
-   AMRMetricRegrid,
    AMRInitialRefine,
 };
 
@@ -76,15 +75,13 @@ constexpr std::array<RegisteredStringParameter, 9> MethodParameters{{
     RestartPolicy::Mutable, "Rule used to choose fine-level substeps."},
 }};
 
-constexpr std::array<RegisteredStringParameter, 5> AMRStringParameters{{
+constexpr std::array<RegisteredStringParameter, 4> AMRStringParameters{{
    {"tag_metric", &RunConfig::tag_metric, "none", StringOptionSet::AMRTagMetric, RestartPolicy::Mutable,
     "State-based AMR tagging metric."},
-   {"refinement_tensor", &RunConfig::refinement_tensor, "fixed", StringOptionSet::AMRRefinementTensor,
-    RestartPolicy::Immutable, "Fixed or experimental automatic directional refinement ratios."},
+   {"regrid_mode", &RunConfig::regrid_mode, "synchronized", StringOptionSet::AMRRegridMode,
+    RestartPolicy::Mutable, "Synchronization cadence for rebuilding AMR descendants."},
    {"state_interp", &RunConfig::state_interp, "quartic-conservative", StringOptionSet::AMRStateInterp,
     RestartPolicy::Mutable, "Conservative state interpolation used for new fine data."},
-   {"metric_regrid", &RunConfig::metric_regrid, "auto", StringOptionSet::AMRMetricRegrid,
-    RestartPolicy::Mutable, "Metric cache refresh policy during regridding."},
    {"initial_refine", &RunConfig::initial_refine, "none", StringOptionSet::AMRInitialRefine,
     RestartPolicy::Mutable, "Optional initial refinement region."},
 }};
@@ -108,9 +105,7 @@ constexpr std::array<RegisteredScalarParameter<amrex::Real>, 8> AMRRealParameter
     "Solid-geometry curvature tolerance."},
 }};
 
-constexpr std::array<RegisteredScalarParameter<int>, 6> AMRIntParameters{{
-   {"max_refinement_ratio", &RunConfig::max_refinement_ratio, 4, RestartPolicy::Mutable,
-    "Largest directional ratio selected by automatic refinement."},
+constexpr std::array<RegisteredScalarParameter<int>, 5> AMRIntParameters{{
    {"initial_refine_levels", &RunConfig::initial_refine_levels, 0, RestartPolicy::Mutable,
     "Maximum initial refinement depth."},
    {"initial_refine_fixed_levels", &RunConfig::initial_refine_fixed_levels, 0, RestartPolicy::Mutable,
@@ -179,14 +174,11 @@ void validate_registered_option(
    case StringOptionSet::AMRTagMetric:
       require_registered_option(parameter, value, AMRTagMetricOptions, group);
       return;
-   case StringOptionSet::AMRRefinementTensor:
-      require_registered_option(parameter, value, AMRRefinementTensorOptions, group);
+   case StringOptionSet::AMRRegridMode:
+      require_registered_option(parameter, value, AMRRegridModeOptions, group);
       return;
    case StringOptionSet::AMRStateInterp:
       require_registered_option(parameter, value, AMRStateInterpOptions, group);
-      return;
-   case StringOptionSet::AMRMetricRegrid:
-      require_registered_option(parameter, value, MetricRegridOptions, group);
       return;
    case StringOptionSet::AMRInitialRefine:
       require_registered_option(parameter, value, InitialRefineOptions, group);

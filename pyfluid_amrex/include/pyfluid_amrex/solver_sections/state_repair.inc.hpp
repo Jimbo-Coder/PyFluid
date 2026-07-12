@@ -33,8 +33,7 @@
          bcs,
          0
       );
-      fill_nonfinite_physical_state_boundary(seed, Geom(lev));
-      apply_post_fillpatch_state_boundary(seed, Geom(lev));
+      apply_post_fillpatch_state_boundary(seed, Geom(lev), time);
    }
 
    void repair_nonpositive_hydro_fluid_cells_level(int lev)

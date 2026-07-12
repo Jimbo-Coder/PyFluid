@@ -51,6 +51,10 @@
 
       level_times_[lev] = time + dt;
       level_steps_[lev] += 1;
+      if (cfg_.regrid_mode == "aligned" && cfg_.regrid_int > 0 && lev == finestLevel()) {
+         ++aligned_regrid_ticks_;
+         aligned_regrid_due_ = aligned_regrid_ticks_ % cfg_.regrid_int == 0;
+      }
       refresh_solid_geometry_level(lev, level_times_[lev], true);
 
       if constexpr (DiffusionMethod != DiffusionNone) {
@@ -131,6 +135,13 @@
             reset_barotropic_energy_level<NComp, EOSMethod>(lev);
          }
          profile_end(ProfileStage::AverageDown, stage_start);
+      }
+
+      if (should_regrid_aligned_descendants(lev)) {
+         const amrex::Real stage_start = profile_begin();
+         regrid_hierarchy<true>(level_times_[lev], level_steps_[lev], lev);
+         aligned_regrid_due_ = false;
+         profile_end(ProfileStage::Regrid, stage_start);
       }
 
       return diffusion;

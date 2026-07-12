@@ -103,6 +103,23 @@ def plot_scalar_report(
       ax.semilogy(t, positive([row["diffusion_residual"] for row in rows]), label="diffusion residual", linewidth=2.0, **markers)
    if has_wall and "energy_minus_wall_work" in rows[0]:
       ax.semilogy(t, positive([row["energy_minus_wall_work"] for row in rows]), label="E - E0 - work", linewidth=2.0, **markers)
+   if "external_budget_valid" in rows[0] and any(row["external_budget_valid"] > 0.5 for row in rows):
+      ax.semilogy(
+         t,
+         positive([row["external_mass_rel_error"] for row in rows]),
+         label="mass ledger",
+         linewidth=2.0,
+         **markers,
+      )
+      ax.semilogy(
+         t,
+         positive([row["external_energy_rel_error"] for row in rows]),
+         label="energy ledger",
+         linewidth=2.0,
+         linestyle=":",
+         zorder=5,
+         **markers,
+      )
    if not ax.lines:
       ax.plot(t, np.zeros_like(t), label="no active constraint residual", linewidth=2.0, **markers)
    ax.set_title("Constraint / Residual")

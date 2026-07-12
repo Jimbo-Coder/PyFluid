@@ -23,6 +23,12 @@ class CsePolicy:
 
 
 class PyFluidCxxPrinter(C99CodePrinter):
+   def _print_Float(self, expr: sp.Float) -> str:
+      return f"{super()._print_Float(expr)}_rt"
+
+   def _print_Rational(self, expr: sp.Rational) -> str:
+      return f"{expr.p}.0_rt/{expr.q}.0_rt"
+
    def _print_Max(self, expr: sp.Max) -> str:
       args = [self._print(arg) for arg in expr.args]
       value = args[0]
@@ -44,13 +50,13 @@ class PyFluidCxxPrinter(C99CodePrinter):
          return f"(({base})*({base})*({base}))"
       if expr.exp == -1:
          base = self._print(expr.base)
-         return f"1.0/({base})"
+         return f"1.0_rt/({base})"
       if expr.exp == -2:
          base = self._print(expr.base)
-         return f"1.0/(({base})*({base}))"
+         return f"1.0_rt/(({base})*({base}))"
       if expr.exp == -3:
          base = self._print(expr.base)
-         return f"1.0/(({base})*({base})*({base}))"
+         return f"1.0_rt/(({base})*({base})*({base}))"
       return super()._print_Pow(expr)
 
    def _print_sin(self, expr: sp.Function) -> str:
@@ -206,6 +212,8 @@ def render_flux_header(policy: CsePolicy = CsePolicy()) -> str:
          "",
          "namespace pyfluid_amrex::generated {",
          "",
+         "using namespace amrex::literals;",
+         "",
          body,
          "",
          "} // namespace pyfluid_amrex::generated",
@@ -228,6 +236,8 @@ def render_eos_header(policy: CsePolicy = CsePolicy()) -> str:
          "",
          "namespace pyfluid_amrex::generated {",
          "",
+         "using namespace amrex::literals;",
+         "",
          body,
          "",
          "} // namespace pyfluid_amrex::generated",
@@ -248,6 +258,8 @@ def render_riemann_header(policy: CsePolicy = CsePolicy()) -> str:
          '#include "pyfluid_amrex/state.hpp"',
          "",
          "namespace pyfluid_amrex::generated {",
+         "",
+         "using namespace amrex::literals;",
          "",
          body,
          "",
@@ -291,6 +303,8 @@ def render_operator_header(policy: CsePolicy = CsePolicy()) -> str:
          "",
          "namespace pyfluid_amrex::generated {",
          "",
+         "using namespace amrex::literals;",
+         "",
          body,
          "",
          "} // namespace pyfluid_amrex::generated",
@@ -315,6 +329,8 @@ def render_vector_header(policy: CsePolicy = CsePolicy()) -> str:
          "",
          "namespace pyfluid_amrex::generated {",
          "",
+         "using namespace amrex::literals;",
+         "",
          body,
          "",
          "} // namespace pyfluid_amrex::generated",
@@ -337,6 +353,8 @@ def render_metric_header(policy: CsePolicy = CsePolicy()) -> str:
          "#include <cmath>",
          "",
          "namespace pyfluid_amrex::generated {",
+         "",
+         "using namespace amrex::literals;",
          "",
          body,
          "",
@@ -361,6 +379,8 @@ def render_patch_map_header(policy: CsePolicy = CsePolicy()) -> str:
          "#include <cmath>",
          "",
          "namespace pyfluid_amrex::generated {",
+         "",
+         "using namespace amrex::literals;",
          "",
          "struct PatchPoint {",
          "   amrex::Real q1;",

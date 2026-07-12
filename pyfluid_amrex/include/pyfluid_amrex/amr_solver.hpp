@@ -50,6 +50,7 @@
 #include "pyfluid_amrex/solid_fields.hpp"
 #include "pyfluid_amrex/sources.hpp"
 #include "pyfluid_amrex/state.hpp"
+#include "pyfluid_amrex/state_interpolation.hpp"
 
 namespace pyfluid_amrex {
 
@@ -63,6 +64,12 @@ public:
       physics_system_ = physics_system_kind(cfg_);
       state_component_count_ = state_component_count(cfg_);
       mesh_layout_ = mesh_runtime_layout(cfg_);
+      state_interpolater_.configure(
+         selected_state_interpolater(),
+         mesh_layout_.coordinate,
+         mesh_layout_.axes,
+         !mhd_enabled()
+      );
       recon_method_ = recon_method_code(cfg_);
       recon_fine_method_ = cfg_.recon_fine.empty()
          ? recon_method_
@@ -167,7 +174,18 @@ private:
       amrex::Real volume = 0.0;
    };
 
-   struct DirectionalRefinementDemand {
+   struct MassEnergy {
+      amrex::Real mass = 0.0;
+      amrex::Real energy = 0.0;
+   };
+
+   struct ConservationLedger {
+      MassEnergy reference;
+      MassEnergy boundary_change;
+      MassEnergy source_change;
+   };
+
+   struct DirectionalTagStatistics {
       amrex::Long tagged_cells = 0;
       std::array<amrex::Long, AMREX_SPACEDIM> direction_tags{};
       std::array<amrex::Real, AMREX_SPACEDIM> direction_strength{};
@@ -236,18 +254,11 @@ private:
    // Private AmrSolver interface implemented out-of-line in src/*.cpp.
    void validate_amr_refinement_ratios() const;
    void validate_active_hierarchy_for_evolution() const;
-   bool automatic_refinement_tensor() const;
-   DirectionalRefinementDemand measure_directional_refinement_demand(
+   DirectionalTagStatistics measure_directional_tag_statistics(
       int lev,
       amrex::Real time,
       bool refresh_boundaries
    );
-   amrex::IntVect refinement_ratio_from_demand(DirectionalRefinementDemand const& demand) const;
-   amrex::IntVect desired_refinement_ratio(int coarse_lev, amrex::Real time);
-   bool set_refinement_ratio(int coarse_lev, amrex::IntVect ratio);
-   void rebuild_geometries_from_level(int coarse_lev);
-   void initialize_hierarchy_from_scratch(amrex::Real time);
-   void regrid_adaptive_tensor(int lbase, amrex::Real time, bool initial = false);
    int temporal_ref_ratio(int coarse_lev) const;
    int level_time_factor(int lev) const;
    bool local_cfl_subcycling() const;
@@ -334,13 +345,18 @@ private:
    void average_down_state();
    void average_down_state_level(int fine_lev);
    void average_down_state_level_weighted_hydro(int fine_lev);
+   void project_metric_conservative_prolongation(
+      int fine_lev,
+      amrex::MultiFab const& coarse_state,
+      amrex::MultiFab& fine_state
+   ) const;
    void average_down_face_b();
    void average_down_face_b_level(int fine_lev);
    void average_down_face_b_level_metric(int fine_lev);
    void apply_all_face_b_boundaries();
    void sync_all_cell_b_from_faces(LevelData& data, bool preserve_pressure);
 
-   void define_flux_registers();
+   void define_flux_registers(int first_fine_level = 1);
    void reset_flux_registers();
    void reset_edge_flux_registers();
    void reset_flux_register(int fine_lev);
@@ -352,7 +368,7 @@ private:
    void write_current_aux_gfs(int step, amrex::Real time);
    std::string checkpoint_dir() const;
    void load_checkpoint(std::string const& checkpoint_name, amrex::Real& time, amrex::Real& dt);
-   void apply_boundary(amrex::MultiFab& state, amrex::Geometry const& geom) const;
+   void apply_boundary(amrex::MultiFab& state, amrex::Geometry const& geom, amrex::Real time) const;
    void initialize_ct_fields(int lev, amrex::Real time);
    FaceMagneticField const* face_b_ptr(int lev) const;
    std::vector<FaceMagneticField> const* checkpoint_face_b() const;
@@ -424,6 +440,7 @@ private:
 #include "pyfluid_amrex/solver_sections/solid_conservation.inc.hpp"
 #include "pyfluid_amrex/solver_sections/state_repair.inc.hpp"
 #include "pyfluid_amrex/solver_sections/debug_contracts.inc.hpp"
+#include "pyfluid_amrex/solver_sections/external_conservation.inc.hpp"
 #include "pyfluid_amrex/solver_sections/diagnostics.inc.hpp"
 #include "pyfluid_amrex/solver_sections/timestep_control.inc.hpp"
 #include "pyfluid_amrex/solver_sections/rhs_assembly.inc.hpp"
@@ -447,6 +464,7 @@ private:
    bool moving_wall_work_enabled_ = false;
    bool suppress_athena_gravity_energy_source_ = false;
    BoundaryData boundary_data_{};
+   mutable MeshBasisStateInterpolater state_interpolater_{};
    amrex::Vector<amrex::BCRec> state_fillpatch_bcs_;
    amrex::Array<amrex::Vector<amrex::BCRec>, AMREX_SPACEDIM> face_fillpatch_bcs_;
    StateFillPatchFunc state_fillpatch_func_;
@@ -457,6 +475,7 @@ private:
    amrex::Real wall_work_reference_energy_ = 0.0;
    amrex::Real cumulative_wall_work_ = 0.0;
    amrex::Real latest_wall_power_ = 0.0;
+   ConservationLedger conservation_ledger_;
    std::vector<std::unique_ptr<amrex::MultiFab>> state_;
    std::vector<std::unique_ptr<amrex::MultiFab>> old_state_;
    std::vector<std::unique_ptr<amrex::MultiFab>> source_state_;
@@ -499,6 +518,8 @@ private:
    std::vector<std::unique_ptr<CtEdgeFluxRegister>> edge_flux_registers_;
 #endif
    amrex::Vector<int> level_steps_;
+   amrex::Long aligned_regrid_ticks_ = 0;
+   bool aligned_regrid_due_ = false;
    amrex::Vector<amrex::Real> level_times_;
    amrex::Vector<amrex::Real> level_old_times_;
    amrex::Vector<amrex::Real> level_dts_;

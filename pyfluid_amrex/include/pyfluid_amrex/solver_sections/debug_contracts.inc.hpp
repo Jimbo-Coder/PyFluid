@@ -8,6 +8,13 @@
    void debug_poison_leveldata(LevelData& data, int lev_begin, int lev_end) const;
    void debug_poison_fluxes(int lev) const;
    void debug_check_mfab_finite(amrex::MultiFab const& mf, int ncomp, amrex::IntVect const& ngrow, char const* context) const;
+
+   void debug_check_reconstruction_input(
+      amrex::MultiFab const& state,
+      int lev,
+      amrex::Real time,
+      char const* context
+   ) const;
    void debug_check_valid_cell_finite(
       amrex::MultiFab const& mf,
       amrex::iMultiFab const& valid_mask,

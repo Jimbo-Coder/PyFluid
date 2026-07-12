@@ -8,6 +8,8 @@
 
 namespace pyfluid_amrex::generated {
 
+using namespace amrex::literals;
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real ideal_gas_pressure_from_density_energy(amrex::Real internal_energy_density, amrex::Real gamma) noexcept
 {

@@ -54,7 +54,7 @@ def source_radial_bounds(params: dict[str, str], t: float, safety: float, width:
    rho0 = param_float(params, "pyfluid.rho0", 1.0)
    pressure0 = param_float(params, "pyfluid.pressure0", 1.0)
    source_radius = param_float(params, "pyfluid.source_radius", 0.0)
-   source_sigma = param_float(params, "pyfluid.source_radial_sigma", 0.0)
+   source_sigma = param_float(params, "pyfluid.source_sigma", 0.0)
    sound_speed = math.sqrt(max(gamma * pressure0 / max(rho0, 1.0e-300), 0.0))
    causal_radius = safety * sound_speed * t + width * source_sigma
    return source_radius - causal_radius, source_radius + causal_radius
@@ -103,6 +103,55 @@ def physical_coordinates(
    return values["x"], values["y"], values["z"]
 
 
+def mesh_velocity_to_cartesian(
+   params: dict[str, str],
+   axes: tuple[str, ...],
+   mesh: list[np.ndarray],
+   velocity: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+   """Convert runtime-direction velocity components to physical Cartesian."""
+   coordinate = params.get("mesh.coordinate", "cartesian").strip().lower()
+   shape = mesh[0].shape
+   values = {
+      "x": np.zeros(shape),
+      "y": np.zeros(shape),
+      "z": np.zeros(shape),
+      "r": np.zeros(shape),
+      "theta": np.zeros(shape),
+      "phi": np.zeros(shape),
+   }
+   values.update({axis: velocity[direction] for direction, axis in enumerate(axes)})
+   coordinates = {
+      "r": np.ones(shape),
+      "theta": np.full(shape, 0.5 * math.pi),
+      "phi": np.zeros(shape),
+   }
+   coordinates.update({axis: mesh[direction] for direction, axis in enumerate(axes)})
+   if coordinate == "cylindrical":
+      cosine = np.cos(coordinates["phi"])
+      sine = np.sin(coordinates["phi"])
+      return (
+         values["r"] * cosine - values["phi"] * sine,
+         values["r"] * sine + values["phi"] * cosine,
+         values["z"],
+      )
+   if coordinate == "spherical":
+      sin_theta = np.sin(coordinates["theta"])
+      cos_theta = np.cos(coordinates["theta"])
+      sin_phi = np.sin(coordinates["phi"])
+      cos_phi = np.cos(coordinates["phi"])
+      return (
+         values["r"] * sin_theta * cos_phi
+         + values["theta"] * cos_theta * cos_phi
+         - values["phi"] * sin_phi,
+         values["r"] * sin_theta * sin_phi
+         + values["theta"] * cos_theta * sin_phi
+         + values["phi"] * cos_phi,
+         values["r"] * cos_theta - values["theta"] * sin_theta,
+      )
+   return values["x"], values["y"], values["z"]
+
+
 def pressure_bump_quiet_mask(
    params: dict[str, str],
    model,
@@ -145,7 +194,7 @@ def plotfile_quiet_row(
    gamma = param_float(params, "pyfluid.gamma", 5.0 / 3.0)
    rho0 = param_float(params, "pyfluid.rho0", 1.0)
    pressure0 = param_float(params, "pyfluid.pressure0", 1.0)
-   velocity0 = np.asarray([
+   configured_velocity = np.asarray([
       param_float(params, "pyfluid.v1_0", 0.0),
       param_float(params, "pyfluid.v2_0", 0.0),
       param_float(params, "pyfluid.v3_0", 0.0),
@@ -179,6 +228,7 @@ def plotfile_quiet_row(
             indexing="ij",
          )
          mesh = [problo[direction] + (index_mesh[direction] + 0.5) * dx[direction] for direction in range(ndim)]
+         axes = mesh_axes(params, ndim)
          if causal_model is not None:
             quiet = pressure_bump_quiet_mask(params, causal_model, mesh, time_value, safety)
          elif math.isinf(inner):
@@ -194,11 +244,18 @@ def plotfile_quiet_row(
             max_pressure,
             float(np.nanmax(np.abs(pressure[quiet] - pressure0))),
          )
-         velocity_delta = np.sqrt(
-            (v1 - velocity0[0]) ** 2
-            + (v2 - velocity0[1]) ** 2
-            + (v3 - velocity0[2]) ** 2
-         )
+         vx, vy, vz = mesh_velocity_to_cartesian(params, axes, mesh, (v1, v2, v3))
+         ic = params.get("pyfluid.ic", "").strip().lower()
+         if ic in ("density_cloud", "acoustic_packet_x"):
+            vx0, vy0, vz0 = (
+               np.full(shape, configured_velocity[0]),
+               np.full(shape, configured_velocity[1]),
+               np.full(shape, configured_velocity[2]),
+            )
+         else:
+            reference = tuple(np.full(shape, value) for value in configured_velocity)
+            vx0, vy0, vz0 = mesh_velocity_to_cartesian(params, axes, mesh, reference)
+         velocity_delta = np.sqrt((vx - vx0) ** 2 + (vy - vy0) ** 2 + (vz - vz0) ** 2)
          max_velocity = max(max_velocity, float(np.nanmax(velocity_delta[quiet])))
          if all(component in names for component in ("b1", "b2", "b3")):
             magnetic_delta2 = np.zeros(shape)

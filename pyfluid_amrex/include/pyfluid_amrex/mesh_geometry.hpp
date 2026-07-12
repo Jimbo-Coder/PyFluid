@@ -307,7 +307,8 @@ MeshAxes mesh_default_axes_layout(int coordinate) noexcept
    return axes;
 }
 
-inline bool mesh_axes_equal(MeshAxes const& axes, int a0, int a1 = MeshAxisInvalid, int a2 = MeshAxisInvalid)
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool mesh_axes_equal(MeshAxes const& axes, int a0, int a1 = MeshAxisInvalid, int a2 = MeshAxisInvalid) noexcept
 {
    if (mesh_axis(axes, 0) != a0) {
       return false;
@@ -327,6 +328,25 @@ inline bool mesh_axes_equal(MeshAxes const& axes, int a0, int a1 = MeshAxisInval
    amrex::ignore_unused(a2);
 #endif
    return true;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool mesh_layout_spans_physical_space(int coordinate, MeshAxes const& axes) noexcept
+{
+#if (AMREX_SPACEDIM == 2)
+   return coordinate == MeshCylindrical && mesh_axes_equal(axes, MeshAxisR, MeshAxisPhi);
+#elif (AMREX_SPACEDIM == 3)
+   return (
+      coordinate == MeshCylindrical
+      && mesh_axes_equal(axes, MeshAxisR, MeshAxisPhi, MeshAxisZ)
+   ) || (
+      coordinate == MeshSpherical
+      && mesh_axes_equal(axes, MeshAxisR, MeshAxisTheta, MeshAxisPhi)
+   );
+#else
+   amrex::ignore_unused(coordinate, axes);
+   return false;
+#endif
 }
 
 inline MeshAxes mesh_axes_layout(int coordinate, std::string const& axes)

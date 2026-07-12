@@ -129,6 +129,20 @@ AMR uses the standard finite-volume contract:
 These are different operations. Do not replace reflux with average-down, or
 treat interpolation as a conservation correction.
 
+Coarse-fine state transfer has one method contract. `amr.state_interp` selects
+the spatial interpolater used for new levels, remade levels, ordinary
+FillPatch, subcycled FillPatch, and coarse-state repair seeds. Coordinate
+family, configured refinement ratio, and subcycling must not silently replace it with a
+different algorithm. A supported interpolater must accept the complete active
+`IntVect` refinement ratio and preserve the appropriate cell measure; reject
+an unsupported combination before allocating levels. Newly allocated and
+ghost state must be completely initialized by that contract and the physical
+boundary operator. Nonfinite values are errors, not input to a neighbor-copy
+repair. Linear and quartic conservative interpolation preserve closed-system
+totals when adaptive boxes move. Conservative quartic interpolation is the
+higher-order production default; non-conservative
+quadratic and quartic interpolation remain explicit experimental choices.
+
 The production AMR tagger follows HD/MHD physical state structure with physical
 gradients and cell sizes. Passive scalars never drive tags. max_level,
 min_feature_length, and cell budgets are safety limits; the flow metric should

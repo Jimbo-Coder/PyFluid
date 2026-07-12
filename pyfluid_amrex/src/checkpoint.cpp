@@ -440,6 +440,7 @@ void write_checkpoint(
    std::vector<FaceMagneticField> const* face_b,
    amrex::Real reference_mass,
    amrex::Real reference_energy,
+   amrex::Long aligned_regrid_ticks,
    std::string const& checkpoint_compression
 )
 {
@@ -500,6 +501,7 @@ void write_checkpoint(
          header << "\n";
       }
       header << reference_mass << " " << reference_energy << "\n";
+      header << aligned_regrid_ticks << "\n";
       write_checkpoint_metadata(
          checkpoint_name,
          step,
@@ -589,6 +591,12 @@ CheckpointHeader read_checkpoint_header(std::string const& checkpoint_name)
       chk.box_arrays[lev].readFrom(header);
    }
    header >> chk.reference_mass >> chk.reference_energy;
+   if (!(header >> chk.aligned_regrid_ticks)) {
+      // Checkpoints predating aligned regridding cannot have an interrupted
+      // aligned cadence; starting that newly selected mode at tick zero is exact.
+      header.clear();
+      chk.aligned_regrid_ticks = 0;
+   }
    if (!header.good()) {
       amrex::Abort("checkpoint Header is incomplete: " + header_name);
    }

@@ -107,6 +107,74 @@ void AmrSolver::debug_check_mfab_finite(
    amrex::Abort(text.c_str());
 }
 
+void AmrSolver::debug_check_reconstruction_input(
+   amrex::MultiFab const& state,
+   int lev,
+   amrex::Real time,
+   char const* context
+) const
+{
+   if (!cfg_.debug_check_finite) {
+      return;
+   }
+   debug_check_mfab_finite(state, num_state_components(), state.nGrowVect(), context);
+   const amrex::Real min_rho = state.min(RHO, state.nGrow());
+   if (min_rho > 0.0) {
+      return;
+   }
+   int first_i = std::numeric_limits<int>::min();
+   int first_j = std::numeric_limits<int>::min();
+   int first_k = std::numeric_limits<int>::min();
+   amrex::Real first_rho = std::numeric_limits<amrex::Real>::quiet_NaN();
+   std::array<amrex::Real, MaxStateComponents> first_state{};
+   first_state.fill(std::numeric_limits<amrex::Real>::quiet_NaN());
+   for (amrex::MFIter mfi(state); mfi.isValid() && !std::isfinite(first_rho); ++mfi) {
+      amrex::Box bx = amrex::grow(mfi.validbox(), state.nGrowVect());
+      bx &= mfi.fabbox();
+      const auto values = state.const_array(mfi);
+      for (amrex::BoxIterator bit(bx); bit.ok(); ++bit) {
+         const amrex::IntVect cell = bit();
+         const int i = cell[0];
+#if (AMREX_SPACEDIM >= 2)
+         const int j = cell[1];
+#else
+         const int j = 0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+         const int k = cell[2];
+#else
+         const int k = 0;
+#endif
+         const amrex::Real rho = values(i, j, k, RHO);
+         if (rho <= 0.0) {
+            first_i = i;
+            first_j = j;
+            first_k = k;
+            first_rho = rho;
+            for (int component = 0; component < num_state_components(); ++component) {
+               first_state[component] = values(i, j, k, component);
+            }
+            break;
+         }
+      }
+   }
+   std::ostringstream message;
+   message << "Reconstruction input contract failed in " << context
+           << " at time " << time << " on level " << lev
+           << ": minimum ghost-inclusive density=" << min_rho
+           << " first_local_bad=(" << first_i << "," << first_j << "," << first_k
+           << ") first_local_state=[";
+   for (int component = 0; component < num_state_components(); ++component) {
+      if (component != 0) {
+         message << ",";
+      }
+      message << first_state[component];
+   }
+   message << "].";
+   const std::string text = message.str();
+   amrex::Abort(text.c_str());
+}
+
 void AmrSolver::debug_check_valid_cell_finite(
    amrex::MultiFab const& mf,
    amrex::iMultiFab const& valid_mask,

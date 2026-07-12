@@ -18,6 +18,7 @@
             : PatchGridSystem{};
          const PatchLayout patch_layout = use_mapped_patches ? production_patch_layout_for_level(lev) : PatchLayout{};
          amrex::Real stage_start = profile_begin();
+         debug_check_reconstruction_input(*input[lev], lev, rhs_time, "RHS reconstruction input");
          debug_poison_mfab(*primitive_[lev]);
          if (use_solid_mask) {
             fill_primitive_cache_masked<NComp, EOSMethod>(
@@ -33,6 +34,13 @@
          profile_end(ProfileStage::PrimitiveCache, stage_start);
          if (!use_solid_mask) {
             debug_check_mfab_finite(*primitive_[lev], NComp, primitive_[lev]->nGrowVect(), "primitive cache");
+         }
+         const bool physical_vector_flux = !has_mhd_components<NComp>()
+            && mesh_layout_spans_physical_space(mesh_coordinate_kind(), active_mesh_axes());
+         if (physical_vector_flux) {
+            transform_primitive_vectors<NComp>(
+               *primitive_[lev], Geom(lev), mesh_coordinate_kind(), active_mesh_axes(), true
+            );
          }
          stage_start = profile_begin();
          debug_poison_fluxes(lev);
@@ -132,10 +140,16 @@
             }
          }
          profile_end(ProfileStage::Flux, stage_start);
+         if (physical_vector_flux) {
+            transform_primitive_vectors<NComp>(
+               *primitive_[lev], Geom(lev), mesh_coordinate_kind(), active_mesh_axes(), false
+            );
+         }
          if (patch_union_domain_enabled() && !has_mhd_components<NComp>()) {
             apply_patch_union_hydro_wall_fluxes<NComp>(fluxes, *primitive_[lev], Geom(lev), patch_union_domain_boxes(lev));
          }
          debug_check_fluxes(lev, use_solid_mask, "flux fill");
+         accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
          if (use_solid_mask && moving_wall_work_enabled_ && reflux_weight != 0.0) {
             amrex::iMultiFab valid_mask = valid_cell_mask(lev);
             const amrex::Real wall_power = solid_wall_energy_power_cutcell(
@@ -174,6 +188,10 @@
                patch_grid_system,
                patch_layout
             );
+         } else if (physical_vector_flux) {
+            compute_rhs_from_physical_fluxes_metric<NComp>(
+               *rhs_[lev], fluxes, Geom(lev), mesh_coordinate_kind(), active_mesh_axes()
+            );
          } else if (mesh_is_curvilinear()) {
             compute_rhs_from_fluxes_metric<NComp>(
                *rhs_[lev],
@@ -196,9 +214,11 @@
          }
          profile_end(ProfileStage::Divergence, stage_start);
          if (sources_enabled(cfg_)) {
+            const MassEnergy source_before = local_rhs_mass_energy_integral(lev);
             stage_start = profile_begin();
             apply_stage_sources_to_rhs<NComp>(lev, input, fluxes, use_solid_mask, rhs_time);
             profile_end(ProfileStage::Sources, stage_start);
+            accumulate_source_change(source_before, local_rhs_mass_energy_integral(lev), reflux_weight);
          }
          debug_check_rhs_level(lev, "RHS assembly");
          stage_start = profile_begin();
@@ -247,6 +267,7 @@
          const int recon_method = recon_method_for_level(lev);
          const bool use_solid_mask = solid_active(lev) && !has_mhd_components<NComp>() && cfg_.solid_motion == "static";
          amrex::Real stage_start = profile_begin();
+         debug_check_reconstruction_input(*input[lev], lev, rhs_time, "direct-flux reconstruction input");
          debug_poison_mfab(*primitive_[lev]);
          if (use_solid_mask) {
             fill_primitive_cache_masked<NComp, EOSMethod>(
@@ -352,6 +373,7 @@
             apply_patch_union_hydro_wall_fluxes<NComp>(fluxes, *primitive_[lev], Geom(lev), patch_union_domain_boxes(lev));
          }
          debug_check_fluxes(lev, use_solid_mask, "direct flux stage");
+         accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
 
          stage_start = profile_begin();
          add_fluxes_to_registers(lev, reflux_weight);

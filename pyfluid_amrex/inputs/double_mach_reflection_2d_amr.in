@@ -1,0 +1,75 @@
+pyfluid.run_name = double_mach_reflection_2d_amr
+pyfluid.output_dir = runs/current/double_mach_reflection_2d_amr
+pyfluid.validation_policy = open
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 4.0 1.0
+geometry.is_periodic = 0 0
+
+amr.n_cell = 128 32
+amr.max_level = 5
+amr.ref_ratio = 2 2 2 2 2
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+amr.regrid_int = 4
+amr.grid_eff = 0.85
+amr.n_error_buf = 4 4 4 4 4
+amr.level_cell_budget_side = 2048
+amr.total_cell_budget = 2000000
+amr.tag_metric = auto
+amr.state_interp = protected
+amr.tag_threshold = 0.10
+amr.min_feature_length = 0.000001
+amr.initial_refine = none
+amr.initial_refine_levels = 0
+amr.initial_refine_fixed_levels = 0
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.max_step = 100000
+pyfluid.final_time = 0.2
+pyfluid.ng = 2
+pyfluid.cfl = 0.4
+pyfluid.gamma = 1.4
+
+pyfluid.ic = double_mach_reflection
+pyfluid.shock_x0 = 0.16666666666666667
+pyfluid.shock_y0 = 0.0
+pyfluid.shock_z0 = 0.0
+pyfluid.shock_nx = 0.86602540378443865
+pyfluid.shock_ny = -0.5
+pyfluid.shock_nz = 0.0
+pyfluid.shock_speed = 10.0
+pyfluid.rho_left = 8.0
+pyfluid.pressure_left = 116.5
+pyfluid.v1_left = 7.144709581221619
+pyfluid.v2_left = -4.125
+pyfluid.v3_left = 0.0
+pyfluid.rho_right = 1.4
+pyfluid.pressure_right = 1.0
+pyfluid.v1_right = 0.0
+pyfluid.v2_right = 0.0
+pyfluid.v3_right = 0.0
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = outflow
+pyfluid.bc_xlo = analytic
+pyfluid.bc_xhi = outflow
+pyfluid.bc_ylo = analytic
+pyfluid.bc_yhi = analytic
+pyfluid.boundary_profile = double_mach_reflection
+pyfluid.subcycling = on
+
+pyfluid.diffusion = none
+pyfluid.viscosity = 0.0
+pyfluid.resistivity = 0.0
+
+pyfluid.scalar_int = 8
+pyfluid.plot_int = 24
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = none
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = -1
+pyfluid.physical_check_int = 1

@@ -98,7 +98,7 @@ def main() -> int:
                 "--output-dir",
                 str(run_dir),
                 "--gif",
-                gif_name,
+                str(run_dir / gif_name),
                 "--component",
                 component,
                 "--title",

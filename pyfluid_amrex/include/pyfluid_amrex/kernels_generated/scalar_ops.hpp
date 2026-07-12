@@ -6,6 +6,8 @@
 
 namespace pyfluid_amrex::generated {
 
+using namespace amrex::literals;
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real explicit_diffusion_update(amrex::Real center, amrex::Real coeff_dt, amrex::Real lap) noexcept
 {

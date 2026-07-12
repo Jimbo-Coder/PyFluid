@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 from pathlib import Path
 
 import matplotlib
@@ -12,18 +11,19 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from validation_common import read_tsv
+
 
 def read_rows(path: Path) -> list[dict[str, float]]:
     rows: list[dict[str, float]] = []
-    with path.open(newline="") as f:
-        reader = csv.DictReader(f, delimiter="\t")
-        for row in reader:
-            if any(value is None or value == "" for value in row.values()):
-                continue
+    for row in read_tsv(path, require_complete=True):
+        numeric_row: dict[str, float] = {}
+        for key, value in row.items():
             try:
-                rows.append({key: float(value) for key, value in row.items()})
+                numeric_row[key] = float(value)
             except ValueError:
                 continue
+        rows.append(numeric_row)
     return rows
 
 

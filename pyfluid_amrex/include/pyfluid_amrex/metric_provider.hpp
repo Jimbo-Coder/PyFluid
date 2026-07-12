@@ -664,6 +664,238 @@ amrex::Real vector_component_for_axis(
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+StateVector3 mesh_basis_vector_to_cartesian(
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::GpuArray<amrex::Real, 3> const& q,
+   StateVector3 const& vector
+) noexcept
+{
+   if (coordinate == MeshCylindrical) {
+      const amrex::Real vr = vector_component_for_axis(coordinate, axes, MeshAxisR, vector.x, vector.y, vector.z);
+      const amrex::Real vphi = vector_component_for_axis(coordinate, axes, MeshAxisPhi, vector.x, vector.y, vector.z);
+      const amrex::Real vz = vector_component_for_axis(coordinate, axes, MeshAxisZ, vector.x, vector.y, vector.z);
+      const amrex::Real cos_phi = std::cos(q[1]);
+      const amrex::Real sin_phi = std::sin(q[1]);
+      return {vr * cos_phi - vphi * sin_phi, vr * sin_phi + vphi * cos_phi, vz};
+   }
+   if (coordinate == MeshSpherical) {
+      const amrex::Real vr = vector_component_for_axis(coordinate, axes, MeshAxisR, vector.x, vector.y, vector.z);
+      const amrex::Real vtheta = vector_component_for_axis(coordinate, axes, MeshAxisTheta, vector.x, vector.y, vector.z);
+      const amrex::Real vphi = vector_component_for_axis(coordinate, axes, MeshAxisPhi, vector.x, vector.y, vector.z);
+      const amrex::Real sin_theta = std::sin(q[1]);
+      const amrex::Real cos_theta = std::cos(q[1]);
+      const amrex::Real sin_phi = std::sin(q[2]);
+      const amrex::Real cos_phi = std::cos(q[2]);
+      return {
+         vr * sin_theta * cos_phi + vtheta * cos_theta * cos_phi - vphi * sin_phi,
+         vr * sin_theta * sin_phi + vtheta * cos_theta * sin_phi + vphi * cos_phi,
+         vr * cos_theta - vtheta * sin_theta,
+      };
+   }
+   return {
+      vector_component_for_axis(coordinate, axes, MeshAxisX, vector.x, vector.y, vector.z),
+      vector_component_for_axis(coordinate, axes, MeshAxisY, vector.x, vector.y, vector.z),
+      vector_component_for_axis(coordinate, axes, MeshAxisZ, vector.x, vector.y, vector.z),
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+StateVector3 cartesian_vector_to_mesh_basis(
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::GpuArray<amrex::Real, 3> const& q,
+   StateVector3 const& vector
+) noexcept
+{
+   StateVector3 canonical{};
+   if (coordinate == MeshCylindrical) {
+      const amrex::Real cos_phi = std::cos(q[1]);
+      const amrex::Real sin_phi = std::sin(q[1]);
+      canonical = {
+         vector.x * cos_phi + vector.y * sin_phi,
+         -vector.x * sin_phi + vector.y * cos_phi,
+         vector.z,
+      };
+   } else if (coordinate == MeshSpherical) {
+      const amrex::Real sin_theta = std::sin(q[1]);
+      const amrex::Real cos_theta = std::cos(q[1]);
+      const amrex::Real sin_phi = std::sin(q[2]);
+      const amrex::Real cos_phi = std::cos(q[2]);
+      canonical = {
+         vector.x * sin_theta * cos_phi + vector.y * sin_theta * sin_phi + vector.z * cos_theta,
+         vector.x * cos_theta * cos_phi + vector.y * cos_theta * sin_phi - vector.z * sin_theta,
+         -vector.x * sin_phi + vector.y * cos_phi,
+      };
+   } else {
+      canonical = vector;
+   }
+
+   const amrex::GpuArray<int, 3> canonical_axes = mesh_canonical_vector_axes(coordinate);
+   StateVector3 mesh{};
+   for (int component = 0; component < 3; ++component) {
+      const int axis = mesh_vector_axis_for_component(coordinate, axes, component);
+      amrex::Real value = 0.0;
+      for (int canonical_component = 0; canonical_component < 3; ++canonical_component) {
+         if (canonical_axes[canonical_component] == axis) {
+            value = canonical_component == 0
+               ? canonical.x
+               : (canonical_component == 1 ? canonical.y : canonical.z);
+            break;
+         }
+      }
+      if (component == 0) {
+         mesh.x = value;
+      } else if (component == 1) {
+         mesh.y = value;
+      } else {
+         mesh.z = value;
+      }
+   }
+   return mesh;
+}
+
+struct MeshFaceMetric {
+   StateVector3 unit_normal{};
+   amrex::Real area = 0.0;
+};
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real vector_norm(StateVector3 const& vector) noexcept
+{
+   return std::sqrt(vector.squared_norm());
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+StateVector3 normalized_vector(StateVector3 const& vector) noexcept
+{
+   const amrex::Real magnitude = vector_norm(vector);
+   return magnitude > 0.0 ? vector / magnitude : StateVector3{};
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+StateVector3 aligned_vector(StateVector3 vector, StateVector3 const& direction) noexcept
+{
+   return vector.dot(direction) < 0.0 ? -vector : vector;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+StateVector3 mesh_coordinate_basis_vector(
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::GpuArray<amrex::Real, 3> const& q,
+   int dir
+) noexcept
+{
+   StateVector3 mesh{};
+   if (dir == 0) {
+      mesh.x = 1.0;
+   }
+#if (AMREX_SPACEDIM >= 2)
+   else if (dir == 1) {
+      mesh.y = 1.0;
+   }
+#endif
+#if (AMREX_SPACEDIM == 3)
+   else {
+      mesh.z = 1.0;
+   }
+#endif
+   return mesh_basis_vector_to_cartesian(coordinate, axes, q, mesh);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void shift_mesh_coordinate(
+   amrex::GpuArray<amrex::Real, 3>& q,
+   int coordinate,
+   MeshAxes const& axes,
+   int dir,
+   amrex::Real offset
+) noexcept
+{
+   const int axis = mesh_axis(axes, dir);
+   const int component = mesh_canonical_axis_index(coordinate, axis);
+   if (component >= 0) {
+      q[component] += offset;
+   }
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+MeshFaceMetric mesh_physical_face_metric(
+   int dir,
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
+   int i,
+   int j,
+   int k
+) noexcept
+{
+   const auto face_q = mesh_coordinate_triplet_at_location(
+      coordinate,
+      axes,
+      problo,
+      dx,
+      i,
+      j,
+      k,
+      dir == 0,
+      dir == 1,
+      dir == 2
+   );
+   const StateVector3 desired_normal = mesh_coordinate_basis_vector(coordinate, axes, face_q, dir);
+#if (AMREX_SPACEDIM == 1)
+   return {normalized_vector(desired_normal), mesh_face_area_scale(dir, coordinate, axes, problo, dx, i, j, k)};
+#elif (AMREX_SPACEDIM == 2)
+   const int tangent_dir = dir == 0 ? 1 : 0;
+   auto lo_q = face_q;
+   auto hi_q = face_q;
+   shift_mesh_coordinate(lo_q, coordinate, axes, tangent_dir, -0.5 * dx[tangent_dir]);
+   shift_mesh_coordinate(hi_q, coordinate, axes, tangent_dir, 0.5 * dx[tangent_dir]);
+   const auto lo = mesh_coordinate_triplet_to_cartesian(coordinate, lo_q);
+   const auto hi = mesh_coordinate_triplet_to_cartesian(coordinate, hi_q);
+   const StateVector3 edge{hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]};
+   const StateVector3 surface_normal = normalized_vector(desired_normal.cross(edge));
+   const StateVector3 area_vector = aligned_vector(edge.cross(surface_normal), desired_normal);
+   return {normalized_vector(area_vector), vector_norm(area_vector)};
+#else
+   int tangent0 = 1;
+   int tangent1 = 2;
+   if (dir == 1) {
+      tangent0 = 2;
+      tangent1 = 0;
+   } else if (dir == 2) {
+      tangent0 = 0;
+      tangent1 = 1;
+   }
+   auto q00 = face_q;
+   auto q10 = face_q;
+   auto q11 = face_q;
+   auto q01 = face_q;
+   shift_mesh_coordinate(q00, coordinate, axes, tangent0, -0.5 * dx[tangent0]);
+   shift_mesh_coordinate(q00, coordinate, axes, tangent1, -0.5 * dx[tangent1]);
+   shift_mesh_coordinate(q10, coordinate, axes, tangent0, 0.5 * dx[tangent0]);
+   shift_mesh_coordinate(q10, coordinate, axes, tangent1, -0.5 * dx[tangent1]);
+   shift_mesh_coordinate(q11, coordinate, axes, tangent0, 0.5 * dx[tangent0]);
+   shift_mesh_coordinate(q11, coordinate, axes, tangent1, 0.5 * dx[tangent1]);
+   shift_mesh_coordinate(q01, coordinate, axes, tangent0, -0.5 * dx[tangent0]);
+   shift_mesh_coordinate(q01, coordinate, axes, tangent1, 0.5 * dx[tangent1]);
+   const auto p00 = mesh_coordinate_triplet_to_cartesian(coordinate, q00);
+   const auto p10 = mesh_coordinate_triplet_to_cartesian(coordinate, q10);
+   const auto p11 = mesh_coordinate_triplet_to_cartesian(coordinate, q11);
+   const auto p01 = mesh_coordinate_triplet_to_cartesian(coordinate, q01);
+   const StateVector3 edge10{p10[0] - p00[0], p10[1] - p00[1], p10[2] - p00[2]};
+   const StateVector3 edge11{p11[0] - p00[0], p11[1] - p00[1], p11[2] - p00[2]};
+   const StateVector3 edge01{p01[0] - p00[0], p01[1] - p00[1], p01[2] - p00[2]};
+   const StateVector3 area_vector = aligned_vector(
+      (edge10.cross(edge11) + edge11.cross(edge01)) * 0.5, desired_normal
+   );
+   return {normalized_vector(area_vector), vector_norm(area_vector)};
+#endif
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real curvilinear_momentum_curvature_source(
    int coordinate,
    MeshAxes const& axes,

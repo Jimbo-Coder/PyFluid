@@ -168,12 +168,12 @@
          && !auto_refinement_resolved
          && lev < static_cast<int>(latest_auto_tagged_cells_.size())
       ) {
-         const DirectionalRefinementDemand demand =
-            measure_directional_refinement_demand(lev, time, false);
-         latest_auto_tagged_cells_[lev] = demand.tagged_cells;
+         const DirectionalTagStatistics statistics =
+            measure_directional_tag_statistics(lev, time, false);
+         latest_auto_tagged_cells_[lev] = statistics.tagged_cells;
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-            latest_auto_direction_tagged_cells_[dir][lev] = demand.direction_tags[dir];
-            latest_auto_direction_strength_[dir][lev] = demand.direction_strength[dir];
+            latest_auto_direction_tagged_cells_[dir][lev] = statistics.direction_tags[dir];
+            latest_auto_direction_strength_[dir][lev] = statistics.direction_strength[dir];
          }
       }
    }

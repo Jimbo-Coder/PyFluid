@@ -238,6 +238,37 @@
          1.0
       );
       d.wall_work_rel_error = amrex::Math::abs(d.energy_minus_wall_work) / work_scale;
+      d.external_budget_valid = external_conservation_budget_supported() ? 1 : 0;
+      if (d.external_budget_valid) {
+         d.boundary_mass_change = conservation_ledger_.boundary_change.mass;
+         d.boundary_energy_change = conservation_ledger_.boundary_change.energy;
+         d.source_mass_change = conservation_ledger_.source_change.mass;
+         d.source_energy_change = conservation_ledger_.source_change.energy;
+         amrex::ParallelDescriptor::ReduceRealSum(d.boundary_mass_change);
+         amrex::ParallelDescriptor::ReduceRealSum(d.boundary_energy_change);
+         amrex::ParallelDescriptor::ReduceRealSum(d.source_mass_change);
+         amrex::ParallelDescriptor::ReduceRealSum(d.source_energy_change);
+         d.boundary_mass_change *= symmetry_factor;
+         d.boundary_energy_change *= symmetry_factor;
+         d.source_mass_change *= symmetry_factor;
+         d.source_energy_change *= symmetry_factor;
+         d.external_mass_change = d.boundary_mass_change + d.source_mass_change;
+         d.external_energy_change = d.boundary_energy_change + d.source_energy_change + d.wall_work;
+         const amrex::Real measured_mass_change = d.mass - conservation_ledger_.reference.mass;
+         const amrex::Real measured_energy_change = d.energy - conservation_ledger_.reference.energy;
+         d.external_mass_residual = measured_mass_change - d.external_mass_change;
+         d.external_energy_residual = measured_energy_change - d.external_energy_change;
+         const amrex::Real mass_scale = amrex::max(
+            amrex::max(amrex::Math::abs(measured_mass_change), amrex::Math::abs(d.external_mass_change)),
+            1.0
+         );
+         const amrex::Real energy_scale = amrex::max(
+            amrex::max(amrex::Math::abs(measured_energy_change), amrex::Math::abs(d.external_energy_change)),
+            1.0
+         );
+         d.external_mass_rel_error = amrex::Math::abs(d.external_mass_residual) / mass_scale;
+         d.external_energy_rel_error = amrex::Math::abs(d.external_energy_residual) / energy_scale;
+      }
       d.diffusion_residual = diffusion.residual;
       d.diffusion_iterations = diffusion.iterations;
       const AmrLevelDiagnostics amr = current_amr_level_diagnostics();

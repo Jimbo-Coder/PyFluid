@@ -1,0 +1,70 @@
+pyfluid.run_name = cylindrical_origin_acoustic_pulse_rphi_2d_amr
+pyfluid.output_dir = runs/current/curvilinear_origin/cylindrical_origin_acoustic_pulse_rphi_2d_amr
+pyfluid.validation_policy = wall
+
+mesh.coordinate = cylindrical
+mesh.axes = r phi
+mesh.patch_system = single
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 0.8 6.283185307179586
+geometry.is_periodic = 0 1
+geometry.coord_sys = 0
+
+amr.n_cell = 16 16
+amr.max_level = 10
+amr.ref_ratio = 2 2 2 2 2 2 2 2 2 2
+amr.max_grid_size = 32
+amr.blocking_factor = 4
+amr.regrid_int = 2
+amr.grid_eff = 0.85
+amr.n_error_buf = 2 2 2 2 2 2 2 2 2 2
+amr.level_cell_budget_side = 1024
+amr.total_cell_budget = 1200000
+amr.tag_metric = auto
+amr.tag_threshold = 0.15
+amr.min_feature_length = 0.00001
+amr.state_interp = protected
+
+pyfluid.physics = hydro
+pyfluid.ct = off
+pyfluid.ic = acoustic_packet_x
+pyfluid.eos = ideal_gas
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 0.01
+pyfluid.bump_sigma = 0.07
+pyfluid.acoustic_transverse_sigma = 0.14
+pyfluid.bump_x0 = -0.28
+pyfluid.bump_y0 = 0.0
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.max_step = 200000
+pyfluid.final_time = 0.26
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+pyfluid.physical_check_int = 1
+
+pyfluid.recon = pwl
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = reflecting
+pyfluid.bc_xlo = origin
+pyfluid.bc_xhi = reflecting
+pyfluid.bc_ylo = periodic
+pyfluid.bc_yhi = periodic
+pyfluid.diffusion = none
+pyfluid.viscosity = 0.0
+pyfluid.gravity = none
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+
+pyfluid.scalar_int = 16
+pyfluid.plot_int = 16
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = none
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = -1

@@ -186,6 +186,8 @@
       const bool zero_ct_magnetic_fluxes = ct_enabled(cfg_);
       const int coordinate = mesh_coordinate_kind();
       const MeshAxes axes = active_mesh_axes();
+      const bool use_physical_vector_flux = !mhd_enabled()
+         && mesh_layout_spans_physical_space(coordinate, axes);
       const auto problo = Geom(lev).ProbLoArray();
       const auto dx = Geom(lev).CellSizeArray();
       const auto domain = Geom(lev).Domain();
@@ -216,7 +218,11 @@
                ? 1.0
                : (
                   use_curvilinear
-                     ? curvilinear_face_area_scale(dir, coordinate, axes, problo, dx, i, j, k)
+                     ? (
+                        use_physical_vector_flux
+                           ? mesh_physical_face_metric(dir, coordinate, axes, problo, dx, i, j, k).area
+                           : curvilinear_face_area_scale(dir, coordinate, axes, problo, dx, i, j, k)
+                     )
                      : cartesian_area
                );
             amrex::Real open = use_cutcell ? aperture(i, j, k, 0) : 1.0;
@@ -446,10 +452,57 @@
       }
    }
 
+   void reflux_level_to_destination(int fine_lev, amrex::MultiFab& destination)
+   {
+      const int coordinate = mesh_coordinate_kind();
+      const MeshAxes axes = active_mesh_axes();
+      if (mhd_enabled() || !mesh_layout_spans_physical_space(coordinate, axes)) {
+         flux_registers_[fine_lev]->Reflux(destination, 0, 0, num_state_components());
+         return;
+      }
+
+      const int coarse_lev = fine_lev - 1;
+      const int ncomp = num_state_components();
+      amrex::MultiFab correction(destination.boxArray(), destination.DistributionMap(), ncomp, 0);
+      correction.setVal(0.0);
+      flux_registers_[fine_lev]->Reflux(correction, 0, 0, ncomp);
+      const auto problo = Geom(coarse_lev).ProbLoArray();
+      const auto dx = Geom(coarse_lev).CellSizeArray();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      {
+      for (amrex::MFIter mfi(destination, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         const amrex::Box& box = mfi.tilebox();
+         const auto state = destination.array(mfi);
+         const auto delta = correction.const_array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            for (int component = 0; component < ncomp; ++component) {
+               if (component < MOM1 || component > MOM3) {
+                  state(i, j, k, component) += delta(i, j, k, component);
+               }
+            }
+            const auto q = mesh_coordinate_triplet_at_location(
+               coordinate, axes, problo, dx, i, j, k, false, false, false
+            );
+            const StateVector3 local_momentum = cartesian_vector_to_mesh_basis(
+               coordinate,
+               axes,
+               q,
+               {delta(i, j, k, MOM1), delta(i, j, k, MOM2), delta(i, j, k, MOM3)}
+            );
+            state(i, j, k, MOM1) += local_momentum.x;
+            state(i, j, k, MOM2) += local_momentum.y;
+            state(i, j, k, MOM3) += local_momentum.z;
+         });
+      }
+      }
+   }
+
    void reflux_level_to_next(int fine_lev)
    {
       if (fine_lev > 0 && fine_lev <= finestLevel() && flux_registers_[fine_lev]) {
-         flux_registers_[fine_lev]->Reflux(*next_[fine_lev - 1], 0, 0, num_state_components());
+         reflux_level_to_destination(fine_lev, *next_[fine_lev - 1]);
          apply_gravity_energy_source_register(fine_lev, *next_[fine_lev - 1]);
       }
    }
@@ -457,7 +510,7 @@
    void reflux_level_to_state(int fine_lev)
    {
       if (fine_lev > 0 && fine_lev <= finestLevel() && flux_registers_[fine_lev]) {
-         flux_registers_[fine_lev]->Reflux(*state_[fine_lev - 1], 0, 0, num_state_components());
+         reflux_level_to_destination(fine_lev, *state_[fine_lev - 1]);
          apply_gravity_energy_source_register(fine_lev, *state_[fine_lev - 1]);
       }
    }

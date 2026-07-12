@@ -116,7 +116,7 @@ void AmrSolver::load_checkpoint(std::string const& checkpoint_name, amrex::Real&
          lev,
          checkpoint_state_field_name()
       );
-      apply_boundary(*state_[lev], Geom(lev));
+      apply_boundary(*state_[lev], Geom(lev), checkpoint.time[lev]);
       set_level_time_state(lev, checkpoint.time[lev], checkpoint.dt[lev]);
       copy_level_state_to_old(lev);
       if (ct_enabled(cfg_)) {
@@ -141,11 +141,13 @@ void AmrSolver::load_checkpoint(std::string const& checkpoint_name, amrex::Real&
    dt = checkpoint.dt[0];
    checkpoint_reference_mass_ = checkpoint.reference_mass;
    checkpoint_reference_energy_ = checkpoint.reference_energy;
+   aligned_regrid_ticks_ = checkpoint.aligned_regrid_ticks;
+   aligned_regrid_due_ = false;
 }
 
-void AmrSolver::apply_boundary(amrex::MultiFab& state, amrex::Geometry const& geom) const
+void AmrSolver::apply_boundary(amrex::MultiFab& state, amrex::Geometry const& geom, amrex::Real time) const
 {
-   apply_configured_state_boundary(state, geom, boundary_data_);
+   apply_configured_state_boundary(state, geom, boundary_data_, time);
    if (patch_union_domain_enabled()) {
       int lev = -1;
       for (int level = 0; level <= finestLevel(); ++level) {
@@ -166,7 +168,7 @@ void AmrSolver::initialize_ct_fields(int lev, amrex::Real time)
    if (!ct_enabled(cfg_)) {
       return;
    }
-   apply_boundary(*state_[lev], Geom(lev));
+   apply_boundary(*state_[lev], Geom(lev), time);
    const bool preserve_pressure = cfg_.ic == "magnetic_blast_noise";
    if (cfg_.ic == "magnetic_blast_noise") {
       initialize_magnetic_blast_noise_face_b(face_b_[lev], Geom(lev), cfg_);
@@ -179,7 +181,7 @@ void AmrSolver::initialize_ct_fields(int lev, amrex::Real time)
    }
    apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
    sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), preserve_pressure);
-   apply_boundary(*state_[lev], Geom(lev));
+   apply_boundary(*state_[lev], Geom(lev), time);
 }
 
 FaceMagneticField const* AmrSolver::face_b_ptr(int lev) const

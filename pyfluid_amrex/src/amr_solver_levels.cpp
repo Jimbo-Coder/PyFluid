@@ -2,23 +2,18 @@
 
 namespace pyfluid_amrex {
 
-void AmrSolver::define_flux_registers()
+void AmrSolver::define_flux_registers(int first_fine_level)
 {
-   for (auto& reg : flux_registers_) {
-      reg.reset();
-   }
-   for (auto& reg : gravity_energy_source_register_) {
-      reg.reset();
-   }
-   for (auto& volume : coarse_reflux_volume_) {
-      volume.reset();
-   }
+   first_fine_level = std::max(first_fine_level, 1);
+   for (int lev = first_fine_level; lev < static_cast<int>(flux_registers_.size()); ++lev) {
+      flux_registers_[lev].reset();
+      gravity_energy_source_register_[lev].reset();
+      coarse_reflux_volume_[lev].reset();
 #if (AMREX_SPACEDIM >= 2)
-   for (auto& reg : edge_flux_registers_) {
-      reg.reset();
-   }
+      edge_flux_registers_[lev].reset();
 #endif
-   for (int lev = 1; lev <= finestLevel(); ++lev) {
+   }
+   for (int lev = first_fine_level; lev <= finestLevel(); ++lev) {
       flux_registers_[lev] = std::make_unique<amrex::YAFluxRegister>(
          boxArray(lev),
          boxArray(lev - 1),

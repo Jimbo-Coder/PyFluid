@@ -142,7 +142,7 @@
       amrex::Real time = 0.0;
       amrex::Real dt = 0.0;
       if (cfg_.restart_file.empty()) {
-         initialize_hierarchy_from_scratch(0.0);
+         InitFromScratch(0.0);
          clip_multipatch_initial_hierarchy(0.0);
       } else {
          load_checkpoint(cfg_.restart_file, time, dt);
@@ -187,6 +187,11 @@
       bool wrote_scalars = false;
       cumulative_wall_work_ = 0.0;
       latest_wall_power_ = 0.0;
+      conservation_ledger_ = {};
+      if (cfg_.restart_file.empty()) {
+         aligned_regrid_ticks_ = 0;
+      }
+      aligned_regrid_due_ = false;
       const TemporalCadence scalar_cadence{TemporalCadenceUnit::Steps, cfg_.scalar_int};
       const TemporalCadence plot_cadence{TemporalCadenceUnit::Steps, cfg_.plot_int};
       const TemporalCadence aux_cadence{TemporalCadenceUnit::Steps, cfg_.aux_gf_int};
@@ -195,8 +200,13 @@
       auto initial = compute_current_scalars<EOSMethod>(start_step, time, dt, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, {});
       validate_scalar_health(initial);
       wall_work_reference_energy_ = initial.energy;
+      conservation_ledger_.reference = {initial.mass, initial.energy};
       initial.energy_minus_wall_work = 0.0;
       initial.wall_work_rel_error = 0.0;
+      initial.external_mass_residual = 0.0;
+      initial.external_energy_residual = 0.0;
+      initial.external_mass_rel_error = 0.0;
+      initial.external_energy_rel_error = 0.0;
       RunConfig checkpoint_cfg = cfg_;
       if (!cfg_.checkpoint_dir.empty()) {
          checkpoint_cfg.output_dir = cfg_.checkpoint_dir;
@@ -242,6 +252,7 @@
             checkpoint_face_b(),
             mass0,
             energy0,
+            aligned_regrid_ticks_,
             cfg_.checkpoint_compression
          );
       }
@@ -364,7 +375,7 @@
          const bool write_scalars = scalar_cadence.should_record(step, reached_run_end);
          const bool emit_scalars = stream_scalars ? write_scalars : reached_final_time;
          const bool write_aux_gfs = aux_cadence.should_record(step, reached_run_end);
-         const bool will_regrid = should_regrid<SubcyclingEnabled>(step, reached_final_time);
+         const bool will_regrid = should_regrid(step, reached_final_time);
 
          if (will_regrid) {
             const amrex::Real pre_regrid_self_gravity_total_energy =
@@ -461,6 +472,7 @@
                checkpoint_face_b(),
                mass0,
                energy0,
+               aligned_regrid_ticks_,
                cfg_.checkpoint_compression
             );
             profile_end(ProfileStage::Output, output_start);

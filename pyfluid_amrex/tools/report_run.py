@@ -31,7 +31,7 @@ from validation_common import (
 )
 
 
-DEFAULT_SUMMARY = ROOT / "runs/current/run_report.tsv"
+MULTIRUN_SUMMARY = ROOT / "runs/current/run_report.tsv"
 
 
 def parse_component_list(value: str) -> list[str]:
@@ -86,6 +86,12 @@ def print_row(row: dict[str, object], plot_paths: Sequence[Path]) -> None:
          f" causal_precontact={int(parse_float(row.get('causal_precontact_rows'), 0.0))}"
          f"@t<{causal_contact:.3e}"
       )
+   ledger_note = ""
+   if parse_float(row.get("external_budget_valid"), 0.0) > 0.5:
+      ledger_note = (
+         f" ledger(m={parse_float(row.get('external_mass_rel_error')):.3e},"
+         f"E={parse_float(row.get('external_energy_rel_error')):.3e})"
+      )
    print(
       f"{row['status']} {row['case']}: policy={row['policy']} "
       f"mass={parse_float(row.get('mass_rel_drift')):.3e} "
@@ -94,7 +100,7 @@ def print_row(row: dict[str, object], plot_paths: Sequence[Path]) -> None:
       f"divb={parse_float(row.get('divb_l1'), 0.0):.3e} "
       f"Mcells/s={parse_float(row.get('avg_mcells_per_s')):.3e} "
       f"sim_time/s={parse_float(row.get('avg_sim_time_per_s')):.3e}"
-      f"{amr_note}{passive_note}{causal_note}{reason} "
+      f"{amr_note}{passive_note}{causal_note}{ledger_note}{reason} "
       f"plots={plots}"
    )
 
@@ -178,7 +184,7 @@ def main() -> int:
    parser.add_argument("--input", type=Path, help="Input file for a single run.")
    parser.add_argument("--policy", choices=["auto", *SCALAR_POLICIES.keys()], default="auto")
    parser.add_argument("--mhd", choices=("auto", "yes", "no"), default="auto")
-   parser.add_argument("--output", type=Path, default=DEFAULT_SUMMARY)
+   parser.add_argument("--output", type=Path)
    parser.add_argument("--plot-dir", type=Path, help="Plot output directory. Defaults to <run_dir>.")
    parser.add_argument("--skip-plots", action="store_true")
    parser.add_argument("--gf-plots", action="store_true", help="Also generate level-2 state/aux GF snapshot plots from plotfiles.")
@@ -204,7 +210,10 @@ def main() -> int:
       failed = failed or row["status"] != "PASS"
       print_row(row, plots)
 
-   output = args.output if args.output.is_absolute() else ROOT / args.output
+   if args.output is None:
+      output = args.run_dir[0].resolve() / "report.tsv" if len(args.run_dir) == 1 else MULTIRUN_SUMMARY
+   else:
+      output = args.output if args.output.is_absolute() else ROOT / args.output
    fields = [
       *VALIDATION_HISTORY_FIELDS,
       "run_dir",

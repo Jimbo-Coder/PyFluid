@@ -405,9 +405,10 @@ amrex::Real mhd_fast_speed_from_components(
    const amrex::Real inv_rho = 1.0 / rho;
    const amrex::Real b2 = (bn * bn + bt1 * bt1 + bt2 * bt2) * inv_rho;
    const amrex::Real bn2 = bn * bn * inv_rho;
-   const amrex::Real discriminant = amrex::max((a2 + b2) * (a2 + b2) - 4.0 * a2 * bn2, 0.0);
-   const amrex::Real cf2 = 0.5 * (a2 + b2 + std::sqrt(discriminant));
-   return std::sqrt(amrex::max(cf2, 0.0));
+   const amrex::Real discriminant =
+      amrex::max((a2 + b2) * (a2 + b2) - amrex::Real(4.0) * a2 * bn2, amrex::Real(0.0));
+   const amrex::Real cf2 = amrex::Real(0.5) * (a2 + b2 + std::sqrt(discriminant));
+   return std::sqrt(amrex::max(cf2, amrex::Real(0.0)));
 }
 
 template <int EOSMethod>

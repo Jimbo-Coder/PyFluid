@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
+
+import numpy as np
 
 from validation_common import (
     ROOT,
@@ -18,7 +21,13 @@ from validation_common import (
 )
 
 from plot_amr_hierarchy import plotfile_level_boxes
-from plotfile_reader import sorted_plotfiles
+from plotfile_reader import (
+    latest_plotfile,
+    parse_plot_bounds,
+    parse_plot_header,
+    read_level_state,
+    sorted_plotfiles,
+)
 
 
 RUN_ROOT = ROOT / "runs/current/amr_dynamic_regrid"
@@ -28,8 +37,6 @@ BASE_INPUT = ROOT / "pyfluid_amrex/inputs/hydro_sine_2d.in"
 
 
 COMMON_OVERRIDES = {
-    "pyfluid.run_name": "amr_dynamic_density_cloud",
-    "pyfluid.output_dir": str(RUN_ROOT / "density_cloud"),
     "pyfluid.ic": "density_cloud",
     "pyfluid.rho0": "1.0",
     "pyfluid.pressure0": "1.0",
@@ -46,11 +53,8 @@ COMMON_OVERRIDES = {
     "pyfluid.timestep": "ssprk3",
     "pyfluid.ng": "2",
     "pyfluid.cfl": "0.9",
-    "pyfluid.max_step": "80",
     "pyfluid.final_time": "-1",
     "pyfluid.subcycling": "off",
-    "pyfluid.scalar_int": "8",
-    "pyfluid.plot_int": "8",
     "pyfluid.checkpoint_int": "-1",
     "pyfluid.physical_check_int": "1",
     "amr.n_cell": "64 64",
@@ -107,10 +111,50 @@ def dynamic_regrid_reason(run_dir: Path, min_shift: float) -> tuple[str, str]:
     )
 
 
-def run_case(ranks: int, timeout: int | None, min_shift: float) -> dict[str, object]:
-    run_dir = RUN_ROOT / "density_cloud"
+def density_l2_error(run_dir: Path) -> float:
+    plotfile = latest_plotfile(run_dir, require=True)
+    names, ndim, time_value = parse_plot_header(plotfile)
+    if ndim != 2:
+        raise RuntimeError(f"expected 2D density-cloud output, got {ndim}D")
+    state = read_level_state(plotfile, names, ndim, 0)
+    problo, probhi = parse_plot_bounds(plotfile)
+    nx, ny = state.shape[1:]
+    x = problo[0] + (np.arange(nx) + 0.5) * (probhi[0] - problo[0]) / nx
+    y = problo[1] + (np.arange(ny) + 0.5) * (probhi[1] - problo[1]) / ny
+    xx, yy = np.meshgrid(x, y, indexing="ij")
+    center_x = (0.25 + 2.0 * time_value - problo[0]) % (probhi[0] - problo[0]) + problo[0]
+    center_y = 0.5
+    dx = (xx - center_x + 0.5 * (probhi[0] - problo[0])) % (probhi[0] - problo[0]) - 0.5 * (probhi[0] - problo[0])
+    dy = (yy - center_y + 0.5 * (probhi[1] - problo[1])) % (probhi[1] - problo[1]) - 0.5 * (probhi[1] - problo[1])
+    exact = 1.0 + 0.25 * np.exp(-0.5 * (dx * dx + dy * dy) / (0.035 * 0.035))
+    error = state[names.index("rho")] - exact
+    return math.sqrt(float(np.mean(error * error)))
+
+
+def run_case(
+    ranks: int,
+    timeout: int | None,
+    min_shift: float,
+    state_interp: str,
+    max_step: int,
+) -> dict[str, object]:
+    method_label = state_interp.replace("-", "_")
+    run_name = f"amr_dynamic_density_cloud_{method_label}"
+    run_dir = RUN_ROOT / method_label
     run_dir.mkdir(parents=True, exist_ok=True)
-    input_file = materialize_run_input(BASE_INPUT, run_dir / "run.in", COMMON_OVERRIDES)
+    input_file = materialize_run_input(
+        BASE_INPUT,
+        run_dir / "run.in",
+        {
+            **COMMON_OVERRIDES,
+            "pyfluid.run_name": run_name,
+            "pyfluid.output_dir": str(run_dir),
+            "amr.state_interp": state_interp,
+            "pyfluid.max_step": str(max_step),
+            "pyfluid.scalar_int": str(max(1, max_step // 10)),
+            "pyfluid.plot_int": str(max(1, max_step // 10)),
+        },
+    )
     result = run_amrex(
         dim=2,
         input_path=input_file,
@@ -125,8 +169,8 @@ def run_case(ranks: int, timeout: int | None, min_shift: float) -> dict[str, obj
             "kind": "amr",
             "suite": "amr_dynamic_regrid",
             "step": "density_cloud",
-            "case": "amr_dynamic_density_cloud",
-            "label": "amr_dynamic_density_cloud",
+            "case": run_name,
+            "label": run_name,
             "status": "FAIL",
             "reason": "AMReX run failed",
             "returncode": result.returncode,
@@ -143,7 +187,7 @@ def run_case(ranks: int, timeout: int | None, min_shift: float) -> dict[str, obj
 
     scalar_row = scalar_validation_row(
         run_dir=run_dir,
-        case="amr_dynamic_density_cloud",
+        case=run_name,
         input_file=input_file,
         checks="closed",
         dim=2,
@@ -155,6 +199,9 @@ def run_case(ranks: int, timeout: int | None, min_shift: float) -> dict[str, obj
     reason = str(scalar_row["reason"])
     if status == "PASS":
         status, reason = dynamic_regrid_reason(run_dir, min_shift)
+    rho_l2 = density_l2_error(run_dir) if status == "PASS" else math.nan
+    if status == "PASS":
+        reason += f"; rho_l2={rho_l2:.6e}"
 
     row = {
         **scalar_row,
@@ -165,6 +212,8 @@ def run_case(ranks: int, timeout: int | None, min_shift: float) -> dict[str, obj
         "kind": "amr",
         "suite": "amr_dynamic_regrid",
         "step": "density_cloud",
+        "state_interp": state_interp,
+        "rho_l2_error": rho_l2,
         "log": repo_relative(log_path),
         "tail": " | ".join(result.stdout.splitlines()[-6:]),
     }
@@ -176,6 +225,12 @@ def main() -> int:
     parser.add_argument("--ranks", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--min-shift", type=float, default=0.12)
+    parser.add_argument("--max-step", type=int, default=80)
+    parser.add_argument(
+        "--state-interp",
+        choices=("conservative", "protected", "quartic-conservative"),
+        default="quartic-conservative",
+    )
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
@@ -185,7 +240,7 @@ def main() -> int:
         shutil.rmtree(RUN_ROOT)
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
 
-    row = run_case(args.ranks, args.timeout, args.min_shift)
+    row = run_case(args.ranks, args.timeout, args.min_shift, args.state_interp, args.max_step)
     write_tsv(SUMMARY, [row], VALIDATION_HISTORY_FIELDS)
     append_validation_history(HISTORY, [row])
     print(

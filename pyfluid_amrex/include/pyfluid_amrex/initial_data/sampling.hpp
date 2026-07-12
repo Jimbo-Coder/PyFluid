@@ -40,46 +40,18 @@ PatchCoordinate mesh_coordinate_to_physical_point(
    PatchCoordinate const& mesh
 ) noexcept
 {
-   if (mesh_coordinate == MeshCartesian) {
-      PatchCoordinate physical{};
-      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-         const int axis = mesh_axis(axes, dir);
-         const amrex::Real value = patch_coordinate_component(mesh, dir);
-         if (axis == MeshAxisX) {
-            physical.q1 = value;
-         } else if (axis == MeshAxisY) {
-            physical.q2 = value;
-         } else if (axis == MeshAxisZ) {
-            physical.q3 = value;
-         }
-      }
-      return physical;
-   }
-
-   if (mesh_coordinate == MeshCylindrical) {
-      const amrex::Real radius = initial_data_coordinate_for_axis(axes, mesh, MeshAxisR, 1.0);
-      const amrex::Real phi = initial_data_coordinate_for_axis(axes, mesh, MeshAxisPhi, 0.0);
-      const amrex::Real axial = initial_data_coordinate_for_axis(axes, mesh, MeshAxisZ, 0.0);
-      return {radius * std::cos(phi), radius * std::sin(phi), axial};
-   }
-
-   if (mesh_coordinate == MeshSpherical) {
-      const amrex::Real radius = initial_data_coordinate_for_axis(axes, mesh, MeshAxisR, 1.0);
-      const amrex::Real theta = initial_data_coordinate_for_axis(
+   amrex::GpuArray<amrex::Real, 3> q{};
+   const amrex::GpuArray<int, 3> canonical_axes = mesh_canonical_vector_axes(mesh_coordinate);
+   for (int component = 0; component < 3; ++component) {
+      q[component] = initial_data_coordinate_for_axis(
          axes,
          mesh,
-         MeshAxisTheta,
-         0.5 * 3.141592653589793238462643383279502884
+         canonical_axes[component],
+         mesh_default_coordinate_for_axis(canonical_axes[component])
       );
-      const amrex::Real phi = initial_data_coordinate_for_axis(axes, mesh, MeshAxisPhi, 0.0);
-      return {
-         radius * std::sin(theta) * std::cos(phi),
-         radius * std::sin(theta) * std::sin(phi),
-         radius * std::cos(theta),
-      };
    }
-
-   return mesh;
+   const auto physical = mesh_coordinate_triplet_to_cartesian(mesh_coordinate, q);
+   return {physical[0], physical[1], physical[2]};
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

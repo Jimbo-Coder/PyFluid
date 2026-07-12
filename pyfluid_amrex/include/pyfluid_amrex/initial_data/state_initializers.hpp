@@ -505,6 +505,81 @@ inline void initialize_acoustic_wave_x(amrex::MultiFab& state, amrex::Geometry c
    }
 }
 
+inline void initialize_acoustic_packet_x(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
+{
+   const auto problo = geom.ProbLoArray();
+   const auto dx = geom.CellSizeArray();
+   const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
+   const MeshAxes mesh_axes = mesh_axes_layout(cfg);
+   const EOSParams eos = eos_params(cfg);
+   const int eos_method = eos_method_code(cfg);
+   const amrex::Real rho0 = cfg.rho0;
+   const amrex::Real pressure0 = base_pressure_runtime(eos_method, rho0, cfg.pressure0, eos);
+   const amrex::Real sound_speed = sound_speed_from_primitive_runtime(eos_method, rho0, pressure0, eos);
+   const amrex::Real sound_speed2 = sound_speed * sound_speed;
+   const amrex::Real amplitude = cfg.amplitude;
+   const amrex::Real center_x = cfg.bump_x0;
+   const amrex::Real center_y = cfg.bump_y0;
+   const amrex::Real center_z = cfg.bump_z0;
+   const amrex::Real inv_sigma2 = 1.0 / (cfg.bump_sigma * cfg.bump_sigma);
+   const amrex::Real inv_transverse_sigma2 = cfg.acoustic_transverse_sigma > 0.0
+      ? 1.0 / (cfg.acoustic_transverse_sigma * cfg.acoustic_transverse_sigma)
+      : 0.0;
+
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   {
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const auto arr = state.array(mfi);
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
+            mesh_coordinate,
+            mesh_axes,
+            problo,
+            dx,
+            i,
+            j,
+            k
+         );
+         const amrex::Real delta_x = sample.physical.q1 - center_x;
+         amrex::Real transverse_distance2 = 0.0;
+#if (AMREX_SPACEDIM >= 2)
+         const amrex::Real delta_y = sample.physical.q2 - center_y;
+         transverse_distance2 += delta_y * delta_y;
+#endif
+#if (AMREX_SPACEDIM == 3)
+         const amrex::Real delta_z = sample.physical.q3 - center_z;
+         transverse_distance2 += delta_z * delta_z;
+#endif
+         const amrex::Real density_perturbation = amplitude * std::exp(
+            -0.5 * (delta_x * delta_x * inv_sigma2 + transverse_distance2 * inv_transverse_sigma2)
+         );
+         const amrex::Real rho = rho0 + density_perturbation;
+         const amrex::Real pressure = pressure0 + sound_speed2 * density_perturbation;
+         const amrex::Real velocity_x = sound_speed * density_perturbation / rho0;
+         const PatchCoordinate velocity = cartesian_velocity_to_mesh_basis(
+            mesh_coordinate,
+            mesh_axes,
+            sample.mesh,
+            velocity_x,
+            0.0,
+            0.0
+         );
+         const amrex::Real v1 = velocity.q1;
+         const amrex::Real v2 = velocity.q2;
+         const amrex::Real v3 = velocity.q3;
+         arr(i, j, k, RHO) = rho;
+         arr(i, j, k, MOM1) = rho * v1;
+         arr(i, j, k, MOM2) = rho * v2;
+         arr(i, j, k, MOM3) = rho * v3;
+         arr(i, j, k, ENERGY) = total_hydro_energy_runtime(eos_method, rho, v1, v2, v3, pressure, eos);
+      });
+   }
+   }
+}
+
 inline void initialize_jeans_wave_x(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
 {
    const auto problo = geom.ProbLoArray();
@@ -1191,6 +1266,15 @@ inline void initialize_sod_x(amrex::MultiFab& state, amrex::Geometry const& geom
    initialize_sod_plane(state, geom, cfg);
 }
 
+inline void initialize_double_mach_reflection(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg
+)
+{
+   initialize_sod_plane(state, geom, cfg);
+}
+
 inline void initialize_sod_plane_face_b(FaceMagneticField& face_b, amrex::Geometry const& geom, RunConfig const& cfg)
 {
    const auto problo = geom.ProbLoArray();
@@ -1866,6 +1950,8 @@ inline void initialize_state(amrex::MultiFab& state, amrex::Geometry const& geom
       initialize_magnetic_blast_noise(state, geom, cfg);
    } else if (cfg.ic == "sod_x" || cfg.ic == "sod_plane" || cfg.ic == "sod_periodic_plane") {
       initialize_sod_plane(state, geom, cfg);
+   } else if (cfg.ic == "double_mach_reflection") {
+      initialize_double_mach_reflection(state, geom, cfg);
    } else if (cfg.ic == "pressure_bump") {
       initialize_pressure_bump(state, geom, cfg);
    } else if (cfg.ic == "vortex_blast") {
@@ -1878,6 +1964,8 @@ inline void initialize_state(amrex::MultiFab& state, amrex::Geometry const& geom
       initialize_hydro_beam(state, geom, cfg);
    } else if (cfg.ic == "acoustic_wave_x") {
       initialize_acoustic_wave_x(state, geom, cfg);
+   } else if (cfg.ic == "acoustic_packet_x") {
+      initialize_acoustic_packet_x(state, geom, cfg);
    } else if (cfg.ic == "jeans_wave_x") {
       initialize_jeans_wave_x(state, geom, cfg);
    } else if (cfg.ic == "shear_wave_x") {

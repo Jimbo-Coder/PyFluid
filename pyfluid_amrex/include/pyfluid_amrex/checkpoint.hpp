@@ -20,6 +20,7 @@ struct CheckpointHeader {
    int state_components = 0;
    amrex::Real reference_mass = std::numeric_limits<amrex::Real>::quiet_NaN();
    amrex::Real reference_energy = std::numeric_limits<amrex::Real>::quiet_NaN();
+   amrex::Long aligned_regrid_ticks = 0;
    amrex::Vector<int> level_steps;
    amrex::Vector<amrex::Real> dt;
    amrex::Vector<amrex::Real> time;
@@ -40,6 +41,7 @@ void write_checkpoint(
    std::vector<FaceMagneticField> const* face_b = nullptr,
    amrex::Real reference_mass = std::numeric_limits<amrex::Real>::quiet_NaN(),
    amrex::Real reference_energy = std::numeric_limits<amrex::Real>::quiet_NaN(),
+   amrex::Long aligned_regrid_ticks = 0,
    std::string const& checkpoint_compression = "best"
 );
 

@@ -8,6 +8,8 @@
 
 namespace pyfluid_amrex::generated {
 
+using namespace amrex::literals;
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cartesian_cell_volume(amrex::Real dx, amrex::Real dy, amrex::Real dz) noexcept
 {
@@ -125,7 +127,7 @@ amrex::Real spherical_volume_scale(amrex::Real r, amrex::Real theta, amrex::Real
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_radial_shell_volume_scale(amrex::Real rlo, amrex::Real rhi) noexcept
 {
-   return (1.0/2.0)*(((rhi)*(rhi)) - ((rlo)*(rlo)));
+   return (1.0_rt/2.0_rt)*(((rhi)*(rhi)) - ((rlo)*(rlo)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -143,7 +145,7 @@ amrex::Real cylindrical_radial_pressure_source_factor(amrex::Real rlo, amrex::Re
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_radial_shell_volume_scale(amrex::Real rlo, amrex::Real rhi) noexcept
 {
-   return (1.0/3.0)*(((rhi)*(rhi)*(rhi)) - ((rlo)*(rlo)*(rlo)));
+   return (1.0_rt/3.0_rt)*(((rhi)*(rhi)*(rhi)) - ((rlo)*(rlo)*(rlo)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -167,7 +169,7 @@ amrex::Real spherical_polar_weight(amrex::Real theta_lo, amrex::Real theta_hi) n
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_rz_cell_volume_scale(amrex::Real rlo, amrex::Real rhi, amrex::Real z_width) noexcept
 {
-   return (1.0/2.0)*z_width*(((rhi)*(rhi)) - ((rlo)*(rlo)));
+   return (1.0_rt/2.0_rt)*z_width*(((rhi)*(rhi)) - ((rlo)*(rlo)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -185,7 +187,7 @@ amrex::Real cylindrical_rz_radial_pressure_source_factor(amrex::Real rlo, amrex:
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_rz_axial_face_area_scale(amrex::Real rlo, amrex::Real rhi) noexcept
 {
-   return (1.0/2.0)*(((rhi)*(rhi)) - ((rlo)*(rlo)));
+   return (1.0_rt/2.0_rt)*(((rhi)*(rhi)) - ((rlo)*(rlo)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -195,7 +197,7 @@ amrex::Real spherical_rtheta_cell_volume_scale(amrex::Real rlo, amrex::Real rhi,
    const amrex::Real tmp1 = ((rhi)*(rhi)*(rhi));
    const amrex::Real tmp2 = std::cos(theta_lo);
    const amrex::Real tmp3 = ((rlo)*(rlo)*(rlo));
-   return -1.0/3.0*tmp0*tmp1 + (1.0/3.0)*tmp0*tmp3 + (1.0/3.0)*tmp1*tmp2 - 1.0/3.0*tmp2*tmp3;
+   return -1.0_rt/3.0_rt*tmp0*tmp1 + (1.0_rt/3.0_rt)*tmp0*tmp3 + (1.0_rt/3.0_rt)*tmp1*tmp2 - 1.0_rt/3.0_rt*tmp2*tmp3;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -213,7 +215,7 @@ amrex::Real spherical_rtheta_radial_pressure_source_factor(amrex::Real rlo, amre
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_rtheta_theta_face_area_scale(amrex::Real rlo, amrex::Real rhi, amrex::Real theta) noexcept
 {
-   return (1.0/2.0)*(((rhi)*(rhi)) - ((rlo)*(rlo)))*std::sin(theta);
+   return (1.0_rt/2.0_rt)*(((rhi)*(rhi)) - ((rlo)*(rlo)))*std::sin(theta);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -223,13 +225,13 @@ amrex::Real spherical_rtheta_theta_pressure_source_factor(amrex::Real rlo, amrex
    const amrex::Real tmp1 = ((rhi)*(rhi)*(rhi));
    const amrex::Real tmp2 = std::cos(theta_lo);
    const amrex::Real tmp3 = ((rlo)*(rlo)*(rlo));
-   return -3.0/2.0*(((rhi)*(rhi)) - ((rlo)*(rlo)))*(std::sin(theta_hi) - std::sin(theta_lo))/(tmp0*tmp1 - tmp0*tmp3 - tmp1*tmp2 + tmp2*tmp3);
+   return -3.0_rt/2.0_rt*(((rhi)*(rhi)) - ((rlo)*(rlo)))*(std::sin(theta_hi) - std::sin(theta_lo))/(tmp0*tmp1 - tmp0*tmp3 - tmp1*tmp2 + tmp2*tmp3);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_rphi_cell_volume_scale(amrex::Real rlo, amrex::Real rhi, amrex::Real theta, amrex::Real phi_width) noexcept
 {
-   return (1.0/3.0)*phi_width*(((rhi)*(rhi)*(rhi)) - ((rlo)*(rlo)*(rlo)))*std::sin(theta);
+   return (1.0_rt/3.0_rt)*phi_width*(((rhi)*(rhi)*(rhi)) - ((rlo)*(rlo)*(rlo)))*std::sin(theta);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -247,7 +249,7 @@ amrex::Real spherical_rphi_radial_pressure_source_factor(amrex::Real rlo, amrex:
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_rphi_azimuthal_face_area_scale(amrex::Real rlo, amrex::Real rhi) noexcept
 {
-   return (1.0/2.0)*(((rhi)*(rhi)) - ((rlo)*(rlo)));
+   return (1.0_rt/2.0_rt)*(((rhi)*(rhi)) - ((rlo)*(rlo)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -295,7 +297,7 @@ amrex::Real spherical_thetaphi_azimuthal_face_area_scale(amrex::Real r, amrex::R
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_rphiz_cell_volume_scale(amrex::Real rlo, amrex::Real rhi, amrex::Real z_width, amrex::Real phi_width) noexcept
 {
-   return (1.0/2.0)*phi_width*z_width*(((rhi)*(rhi)) - ((rlo)*(rlo)));
+   return (1.0_rt/2.0_rt)*phi_width*z_width*(((rhi)*(rhi)) - ((rlo)*(rlo)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -319,7 +321,7 @@ amrex::Real cylindrical_rphiz_azimuthal_face_area_scale(amrex::Real rlo, amrex::
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_rphiz_axial_face_area_scale(amrex::Real rlo, amrex::Real rhi, amrex::Real phi_width) noexcept
 {
-   return (1.0/2.0)*phi_width*(((rhi)*(rhi)) - ((rlo)*(rlo)));
+   return (1.0_rt/2.0_rt)*phi_width*(((rhi)*(rhi)) - ((rlo)*(rlo)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -329,7 +331,7 @@ amrex::Real spherical_rthetaphi_cell_volume_scale(amrex::Real rlo, amrex::Real r
    const amrex::Real tmp1 = ((rhi)*(rhi)*(rhi));
    const amrex::Real tmp2 = std::cos(theta_lo);
    const amrex::Real tmp3 = ((rlo)*(rlo)*(rlo));
-   return -1.0/3.0*phi_width*(tmp0*tmp1 - tmp0*tmp3 - tmp1*tmp2 + tmp2*tmp3);
+   return -1.0_rt/3.0_rt*phi_width*(tmp0*tmp1 - tmp0*tmp3 - tmp1*tmp2 + tmp2*tmp3);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -347,7 +349,7 @@ amrex::Real spherical_rthetaphi_radial_pressure_source_factor(amrex::Real rlo, a
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_rthetaphi_theta_face_area_scale(amrex::Real rlo, amrex::Real rhi, amrex::Real theta, amrex::Real phi_width) noexcept
 {
-   return (1.0/2.0)*phi_width*(((rhi)*(rhi)) - ((rlo)*(rlo)))*std::sin(theta);
+   return (1.0_rt/2.0_rt)*phi_width*(((rhi)*(rhi)) - ((rlo)*(rlo)))*std::sin(theta);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -357,13 +359,13 @@ amrex::Real spherical_rthetaphi_theta_pressure_source_factor(amrex::Real rlo, am
    const amrex::Real tmp1 = ((rhi)*(rhi)*(rhi));
    const amrex::Real tmp2 = std::cos(theta_lo);
    const amrex::Real tmp3 = ((rlo)*(rlo)*(rlo));
-   return -3.0/2.0*(((rhi)*(rhi)) - ((rlo)*(rlo)))*(std::sin(theta_hi) - std::sin(theta_lo))/(tmp0*tmp1 - tmp0*tmp3 - tmp1*tmp2 + tmp2*tmp3);
+   return -3.0_rt/2.0_rt*(((rhi)*(rhi)) - ((rlo)*(rlo)))*(std::sin(theta_hi) - std::sin(theta_lo))/(tmp0*tmp1 - tmp0*tmp3 - tmp1*tmp2 + tmp2*tmp3);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_rthetaphi_azimuthal_face_area_scale(amrex::Real rlo, amrex::Real rhi, amrex::Real theta_lo, amrex::Real theta_hi) noexcept
 {
-   return (1.0/2.0)*(((rhi)*(rhi)) - ((rlo)*(rlo)))*(theta_hi - theta_lo);
+   return (1.0_rt/2.0_rt)*(((rhi)*(rhi)) - ((rlo)*(rlo)))*(theta_hi - theta_lo);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

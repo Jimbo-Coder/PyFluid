@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import re
 import shutil
 import subprocess
@@ -15,6 +14,7 @@ from validation_common import (
    append_performance_history,
    materialize_run_input,
    parameters_from_assignments,
+   read_tsv,
    run_mpi,
    write_tsv,
 )
@@ -25,7 +25,9 @@ ROOT = Path(__file__).resolve().parents[2]
 EXE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_2d"
 DEFAULT_INPUT = ROOT / "pyfluid_amrex/inputs/kelvin_helmholtz_mhd_2d_movie_ct.in"
 DEEP_AUTO_INPUT = ROOT / "pyfluid_amrex/inputs/kelvin_helmholtz_mhd_2d_single_sheet_amr_ct.in"
+CURVILINEAR_INPUT = ROOT / "pyfluid_amrex/inputs/cylindrical_origin_acoustic_pulse_rphi_2d_amr.in"
 RUN_ROOT = ROOT / "runs/current/subcycling_benefit"
+CURVILINEAR_RUN_ROOT = ROOT / "runs/current/curvilinear_subcycling_equivalence"
 PLOT_ROOT = ROOT / "plots/current/scans"
 RESULTS = RUN_ROOT / "subcycling_benefit.tsv"
 PERFORMANCE_HISTORY = ROOT / "runs/current/performance_history.tsv"
@@ -97,6 +99,31 @@ DEEP_AUTO_OVERRIDES = (
    "amr.tag_threshold=0.035",
 )
 
+CURVILINEAR_OVERRIDES = (
+   "pyfluid.final_time=0.08",
+   "pyfluid.max_step=100000",
+   "pyfluid.bump_x0=-0.04",
+   "pyfluid.bump_y0=0.0",
+   "pyfluid.scalar_int=8",
+   "pyfluid.plot_int=100000",
+   "pyfluid.checkpoint_int=-1",
+   "pyfluid.bc=reflecting",
+   "pyfluid.bc_xlo=origin",
+   "pyfluid.bc_xhi=reflecting",
+   "amr.n_cell=16 16",
+   "amr.max_level=1",
+   "amr.ref_ratio=2",
+   "amr.blocking_factor=4",
+   "amr.max_grid_size=32",
+   "amr.regrid_int=100000",
+   "amr.tag_metric=none",
+   "amr.initial_refine=box",
+   "amr.initial_refine_levels=1",
+   "amr.initial_refine_fixed_levels=1",
+   "amr.initial_refine_box_lo=0.0 0.0",
+   "amr.initial_refine_box_hi=0.8 6.283185307179586",
+)
+
 
 def repo_relative(path: Path) -> str:
    return str(path.resolve().relative_to(ROOT))
@@ -110,8 +137,7 @@ def parse_float(text: str) -> float:
 
 
 def read_last_tsv_row(path: Path) -> dict[str, str]:
-   with path.open(newline="") as f:
-      rows = list(csv.DictReader(f, delimiter="\t"))
+   rows = read_tsv(path)
    if not rows:
       raise RuntimeError(f"{path} has no data rows")
    return rows[-1]
@@ -122,18 +148,26 @@ def step_count(row: dict[str, str], level: int) -> float:
 
 
 def run_input(args: argparse.Namespace) -> Path:
+   if args.curvilinear_equivalence:
+      return CURVILINEAR_INPUT
    return DEEP_AUTO_INPUT if args.deep_auto_amr else DEFAULT_INPUT
 
 
 def run_root(args: argparse.Namespace) -> Path:
+   if args.curvilinear_equivalence:
+      return CURVILINEAR_RUN_ROOT
    return RUN_ROOT / "deep_auto" if args.deep_auto_amr else RUN_ROOT
 
 
 def results_path(args: argparse.Namespace) -> Path:
+   if args.curvilinear_equivalence:
+      return CURVILINEAR_RUN_ROOT / "curvilinear_subcycling_equivalence.tsv"
    return run_root(args) / "subcycling_benefit.tsv" if args.deep_auto_amr else RESULTS
 
 
 def common_overrides(args: argparse.Namespace) -> tuple[str, ...]:
+   if args.curvilinear_equivalence:
+      return CURVILINEAR_OVERRIDES
    return DEEP_AUTO_OVERRIDES if args.deep_auto_amr else COMMON_OVERRIDES
 
 
@@ -146,10 +180,14 @@ def candidate_case_name(args: argparse.Namespace) -> str:
 
 
 def plot_stem(args: argparse.Namespace) -> str:
+   if args.curvilinear_equivalence:
+      return "cylindrical_acoustic_subcycling"
    return "kh_mhd_deep_auto_subcycling" if args.deep_auto_amr else "kh_mhd_subcycling"
 
 
 def run_label(args: argparse.Namespace) -> str:
+   if args.curvilinear_equivalence:
+      return "Cylindrical acoustic packet fixed-AMR subcycling equivalence, PWL/HLLC/SSPRK3, CFL=0.9"
    if args.deep_auto_amr:
       return "KH MHD auto-AMR deep subcycling benefit, WENO-Z/HLLD/SSPRK3/CT, CFL=0.9"
    return "KH MHD AMR subcycling benefit, WENO-Z/HLLD/SSPRK3/CT, CFL=0.9"
@@ -222,9 +260,9 @@ def compare_component(
    component: str,
    output: Path,
    title: str,
+   coordinate_limits: tuple[tuple[float, float], tuple[float, float]] | None = None,
 ) -> dict[str, float]:
-   completed = subprocess.run(
-      [
+   command = [
          "uv",
          "run",
          "python",
@@ -239,7 +277,12 @@ def compare_component(
          repo_relative(output),
          "--title",
          title,
-      ],
+   ]
+   if coordinate_limits is not None:
+      xlim, ylim = coordinate_limits
+      command.extend(("--xlim", str(xlim[0]), str(xlim[1]), "--ylim", str(ylim[0]), str(ylim[1])))
+   completed = subprocess.run(
+      command,
       cwd=ROOT,
       text=True,
       stdout=subprocess.PIPE,
@@ -286,19 +329,26 @@ def main() -> int:
       action="store_true",
       help="Use the slower pure-auto AMR probe that reaches many refinement levels.",
    )
+   parser.add_argument(
+      "--curvilinear-equivalence",
+      action="store_true",
+      help="Run a short fixed-hierarchy cylindrical subcycling on/off GF comparison.",
+   )
    parser.add_argument("--min-speedup", type=float)
    parser.add_argument("--max-pressure-l2", type=float)
    parser.add_argument("--max-rho-l2", type=float)
    parser.add_argument("--min-active-finest-level", type=int)
    args = parser.parse_args()
+   if args.deep_auto_amr and args.curvilinear_equivalence:
+      parser.error("--deep-auto-amr and --curvilinear-equivalence are mutually exclusive")
    if args.min_speedup is None:
-      args.min_speedup = 1.20 if args.deep_auto_amr else 1.10
+      args.min_speedup = 0.0 if args.curvilinear_equivalence else (1.20 if args.deep_auto_amr else 1.10)
    if args.max_pressure_l2 is None:
-      args.max_pressure_l2 = 1.0e-4 if args.deep_auto_amr else 5.0e-4
+      args.max_pressure_l2 = 2.0e-5 if args.curvilinear_equivalence else (1.0e-4 if args.deep_auto_amr else 5.0e-4)
    if args.max_rho_l2 is None:
-      args.max_rho_l2 = 1.0e-4 if args.deep_auto_amr else 5.0e-4
+      args.max_rho_l2 = 2.0e-5 if args.curvilinear_equivalence else (1.0e-4 if args.deep_auto_amr else 5.0e-4)
    if args.min_active_finest_level is None:
-      args.min_active_finest_level = 6 if args.deep_auto_amr else 3
+      args.min_active_finest_level = 1 if args.curvilinear_equivalence else (6 if args.deep_auto_amr else 3)
 
    rows = [run_case(case, args) for case in subcycling_cases(args)]
    by_case = {str(row["case"]): row for row in rows}
@@ -308,6 +358,7 @@ def main() -> int:
 
    comparison_output = PLOT_ROOT / "kh_mhd_subcycling_vs_nosub_001.png"
    comparison = {}
+   coordinate_limits = ((0.0, 0.8), (0.0, 2.0 * 3.141592653589793)) if args.curvilinear_equivalence else None
    for component in ("pressure", "rho"):
       comparison.update(
          compare_component(
@@ -316,6 +367,7 @@ def main() -> int:
             component,
             comparison_output.with_name(f"{plot_stem(args)}_{candidate_name}_vs_nosub_{component}_001.png"),
             f"{run_label(args)}: {candidate_name} subcycling vs no subcycling",
+            coordinate_limits,
          )
       )
 
@@ -331,7 +383,7 @@ def main() -> int:
       failures.append(f"subcycling fine/coarse steps={candidate['fine_per_coarse_steps']:.3g} too small")
    if candidate_name != "spatial" and float(candidate["fine_per_coarse_steps"]) <= 1.1:
       failures.append(f"subcycling fine/coarse steps={candidate['fine_per_coarse_steps']:.3g} too small")
-   if speedup < args.min_speedup:
+   if args.min_speedup > 0.0 and speedup < args.min_speedup:
       failures.append(f"speedup={speedup:.3g}<{args.min_speedup:.3g}")
    if comparison["pressure_rel_l2"] > args.max_pressure_l2:
       failures.append(f"pressure_rel_l2={comparison['pressure_rel_l2']:.3e}>{args.max_pressure_l2:.3e}")
@@ -339,7 +391,11 @@ def main() -> int:
       failures.append(f"rho_rel_l2={comparison['rho_rel_l2']:.3e}>{args.max_rho_l2:.3e}")
 
    summary = {
-      "case": "subcycling_deep_auto_benefit" if args.deep_auto_amr else "subcycling_benefit",
+      "case": (
+         "curvilinear_subcycling_equivalence"
+         if args.curvilinear_equivalence
+         else ("subcycling_deep_auto_benefit" if args.deep_auto_amr else "subcycling_benefit")
+      ),
       "label": run_label(args),
       "status": "PASS" if not failures else "FAIL",
       "ranks": args.ranks,
@@ -392,12 +448,12 @@ def main() -> int:
    ]
    results = results_path(args)
    write_tsv(results, rows, fields)
-   append_performance_history(PERFORMANCE_HISTORY, [{"kind": "subcycling_benefit", **summary}])
+   append_performance_history(PERFORMANCE_HISTORY, [{"kind": str(summary["case"]), **summary}])
    plot_path = PLOT_ROOT / f"{plot_stem(args)}_benefit_001.png"
    write_plot(rows, plot_path, run_label(args))
 
    print(
-      f"{summary['status']} subcycling_benefit: speedup={speedup:.3f}, "
+      f"{summary['status']} {summary['case']}: speedup={speedup:.3f}, "
       f"pressure_l2={comparison['pressure_rel_l2']:.3e}, "
       f"rho_l2={comparison['rho_rel_l2']:.3e}, "
       f"mode={candidate_name}, "

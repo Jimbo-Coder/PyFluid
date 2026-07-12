@@ -337,6 +337,9 @@ VALIDATION_HISTORY_FIELDS = [
    "passive_mass_rel_drift",
    "momentum_abs_drift",
    "divb_l1",
+   "external_budget_valid",
+   "external_mass_rel_error",
+   "external_energy_rel_error",
    "causal_boundary_contact_time",
    "causal_precontact_rows",
    "causal_mass_rel_drift",
@@ -682,7 +685,7 @@ def check_scalars(
 
 
 def check_scalar_rows(rows: list[dict[str, str]], policy: ScalarPolicy, *, mhd: bool) -> list[str]:
-   return check_scalars(
+   failures = check_scalars(
       rows,
       mhd=mhd,
       mass=policy.mass_tol is not None,
@@ -696,6 +699,28 @@ def check_scalar_rows(rows: list[dict[str, str]], policy: ScalarPolicy, *, mhd: 
       momentum_tol=policy.momentum_tol or 1.0e-8,
       divb_tol=policy.divb_tol or 1.0e-10,
    )
+   failures.extend(check_external_conservation(rows))
+   return failures
+
+
+def check_external_conservation(
+   rows: list[dict[str, str]],
+   *,
+   tolerance: float = 1.0e-10,
+) -> list[str]:
+   """Check the solver's discrete physical-boundary/source conservation ledger."""
+   if not rows or "external_budget_valid" not in rows[0]:
+      return []
+   valid_rows = [row for row in rows if parse_float(row.get("external_budget_valid"), 0.0) > 0.5]
+   if not valid_rows:
+      return []
+
+   failures: list[str] = []
+   for column in ("external_mass_rel_error", "external_energy_rel_error"):
+      error = max_abs_column(valid_rows, column)
+      if not math.isfinite(error) or error > tolerance:
+         failures.append(f"{column}={error:.3e} > {tolerance:.3e}")
+   return failures
 
 
 def check_causal_precontact_scalars(
@@ -731,11 +756,18 @@ def check_causal_precontact_scalars(
 
    max_level = int(parse_float(params.get("amr.max_level"), 0.0))
    tolerance = 1.0e-11 if max_level > 0 else 1.0e-12
+   # Curvilinear equations evolve local orthonormal momentum components with
+   # geometric source terms. Runtime diagnostics report their physical
+   # Cartesian integral, but that integral is not a telescoping finite-volume
+   # invariant of this formulation and therefore converges rather than
+   # remaining at roundoff. Keep reporting it; reserve the roundoff gate for
+   # Cartesian conservative momentum.
+   check_momentum = params.get("mesh.coordinate", "cartesian") == "cartesian"
    failures = check_scalars(
       precontact,
       mass=True,
       energy=True,
-      momentum=True,
+      momentum=check_momentum,
       divb=False,
       floors=False,
       performance=False,
@@ -804,6 +836,9 @@ def scalar_validation_row(
       "passive_mass_rel_drift": max_abs_column(rows, "passive_mass_rel_drift"),
       "momentum_abs_drift": momentum_abs_drift(rows),
       "divb_l1": max_abs_column(rows, "divb_l1") if mhd_enabled else 0.0,
+      "external_budget_valid": int(parse_float(final.get("external_budget_valid"), 0.0) > 0.5),
+      "external_mass_rel_error": max_abs_column(rows, "external_mass_rel_error"),
+      "external_energy_rel_error": max_abs_column(rows, "external_energy_rel_error"),
       **causal_metrics,
       "avg_mcells_per_s": average_positive(rows, "mcells_per_s"),
       "avg_sim_time_per_s": average_positive(rows, "sim_time_per_s"),

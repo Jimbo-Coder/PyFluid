@@ -18,41 +18,17 @@ bool refinement_ratio_is_anisotropic(amrex::IntVect const& ratio)
    return false;
 }
 
-bool refinement_ratio_equal(amrex::IntVect const& a, amrex::IntVect const& b)
-{
-   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      if (a[dir] != b[dir]) {
-         return false;
-      }
-   }
-   return true;
-}
-
-int refinement_ratio_product(amrex::IntVect const& ratio)
-{
-   int product = 1;
-   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      product *= ratio[dir];
-   }
-   return product;
-}
-
 } // namespace
 
-bool AmrSolver::automatic_refinement_tensor() const
-{
-   return cfg_.refinement_tensor == "auto";
-}
-
-AmrSolver::DirectionalRefinementDemand AmrSolver::measure_directional_refinement_demand(
+AmrSolver::DirectionalTagStatistics AmrSolver::measure_directional_tag_statistics(
    int lev,
    amrex::Real time,
    bool refresh_boundaries
 )
 {
-   DirectionalRefinementDemand demand;
+   DirectionalTagStatistics statistics;
    if (!state_[lev]) {
-      return demand;
+      return statistics;
    }
 
    if (refresh_boundaries) {
@@ -135,181 +111,10 @@ AmrSolver::DirectionalRefinementDemand AmrSolver::measure_directional_refinement
       amrex::ParallelDescriptor::ReduceRealSum(local_direction_strength[dir]);
    }
 
-   demand.tagged_cells = local_tagged_cells;
-   demand.direction_tags = local_direction_tags;
-   demand.direction_strength = local_direction_strength;
-   return demand;
-}
-
-amrex::IntVect AmrSolver::refinement_ratio_from_demand(DirectionalRefinementDemand const& demand) const
-{
-   amrex::IntVect ratio(1);
-   if (demand.tagged_cells == 0) {
-      return ratio;
-   }
-
-   const int max_ratio = cfg_.max_refinement_ratio;
-   constexpr int target_volume_ratio = 1 << AMREX_SPACEDIM;
-   std::array<int, AMREX_SPACEDIM> requested_ratio{};
-   std::array<amrex::Real, AMREX_SPACEDIM> mean_over_threshold{};
-   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      if (demand.direction_tags[dir] <= 0 || demand.direction_strength[dir] <= 0.0) {
-         requested_ratio[dir] = 1;
-         continue;
-      }
-      mean_over_threshold[dir] =
-         demand.direction_strength[dir] / static_cast<amrex::Real>(demand.direction_tags[dir]);
-      requested_ratio[dir] = std::min(
-         max_ratio,
-         std::max(2, static_cast<int>(std::ceil(mean_over_threshold[dir])))
-      );
-   }
-
-   int product = 1;
-   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      if (requested_ratio[dir] > 1) {
-         ratio[dir] = 2;
-         product *= 2;
-      }
-   }
-
-   while (product < target_volume_ratio) {
-      int best_dir = -1;
-      amrex::Real best_demand = 0.0;
-      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-         if (ratio[dir] >= requested_ratio[dir]) {
-            continue;
-         }
-         const int next_product = (product / ratio[dir]) * (ratio[dir] + 1);
-         if (next_product > target_volume_ratio) {
-            continue;
-         }
-         if (best_dir < 0 || mean_over_threshold[dir] > best_demand) {
-            best_dir = dir;
-            best_demand = mean_over_threshold[dir];
-         }
-      }
-      if (best_dir < 0) {
-         break;
-      }
-      product = (product / ratio[best_dir]) * (ratio[best_dir] + 1);
-      ratio[best_dir] += 1;
-   }
-   if (refinement_ratio_product(ratio) > target_volume_ratio) {
-      amrex::Abort("automatic AMR selected an excessive refinement-ratio tensor");
-   }
-   return ratio;
-}
-
-amrex::IntVect AmrSolver::desired_refinement_ratio(int coarse_lev, amrex::Real time)
-{
-   if (!automatic_refinement_tensor() || coarse_lev >= maxLevel() || !state_[coarse_lev]) {
-      return refRatio(coarse_lev);
-   }
-   if (cfg_.tag_metric != "auto" || auto_refinement_resolved_at_level(coarse_lev)) {
-      return refRatio(coarse_lev);
-   }
-
-   const DirectionalRefinementDemand demand =
-      measure_directional_refinement_demand(coarse_lev, time, true);
-   if (demand.tagged_cells == 0) {
-      return refRatio(coarse_lev);
-   }
-   return refinement_ratio_from_demand(demand);
-}
-
-bool AmrSolver::set_refinement_ratio(int coarse_lev, amrex::IntVect ratio)
-{
-   if (coarse_lev < 0 || coarse_lev >= maxLevel()) {
-      return false;
-   }
-   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      if (ratio[dir] < 1) {
-         amrex::Abort("automatic AMR selected an invalid refinement ratio");
-      }
-   }
-   if (refinement_ratio_equal(ref_ratio[coarse_lev], ratio)) {
-      return false;
-   }
-   ref_ratio[coarse_lev] = ratio;
-   return true;
-}
-
-void AmrSolver::rebuild_geometries_from_level(int coarse_lev)
-{
-   const int first_fine = std::max(1, coarse_lev + 1);
-   for (int lev = first_fine; lev <= maxLevel(); ++lev) {
-      SetGeometry(lev, amrex::refine(Geom(lev - 1), refRatio(lev - 1)));
-   }
-}
-
-void AmrSolver::initialize_hierarchy_from_scratch(amrex::Real time)
-{
-   if (!automatic_refinement_tensor()) {
-      InitFromScratch(time);
-      return;
-   }
-
-   amrex::BoxArray base_grids = MakeBaseGrids();
-   const amrex::DistributionMapping base_dmap = MakeDistributionMap(0, base_grids);
-   MakeNewLevelFromScratch(0, time, base_grids, base_dmap);
-   SetFinestLevel(0);
-
-   while (finestLevel() < maxLevel()) {
-      const int coarse_lev = finestLevel();
-      set_refinement_ratio(coarse_lev, desired_refinement_ratio(coarse_lev, time));
-      rebuild_geometries_from_level(coarse_lev);
-      const int old_finest = finestLevel();
-      regrid(coarse_lev, time, true);
-      if (finestLevel() == old_finest) {
-         break;
-      }
-   }
-}
-
-void AmrSolver::regrid_adaptive_tensor(int lbase, amrex::Real time, bool initial)
-{
-   if (!automatic_refinement_tensor()) {
-      regrid(lbase, time, initial);
-      return;
-   }
-
-   int rebuild_from = -1;
-   amrex::IntVect replacement_ratio(1);
-   for (int coarse_lev = lbase; coarse_lev < finestLevel(); ++coarse_lev) {
-      const amrex::IntVect desired = desired_refinement_ratio(coarse_lev, time);
-      if (!refinement_ratio_equal(desired, refRatio(coarse_lev))) {
-         rebuild_from = coarse_lev;
-         replacement_ratio = desired;
-         break;
-      }
-   }
-
-   if (rebuild_from >= 0) {
-      average_down_state();
-      for (int lev = finestLevel(); lev > rebuild_from; --lev) {
-         ClearLevel(lev);
-         ClearBoxArray(lev);
-         ClearDistributionMap(lev);
-      }
-      SetFinestLevel(rebuild_from);
-      set_refinement_ratio(rebuild_from, replacement_ratio);
-      rebuild_geometries_from_level(rebuild_from);
-   }
-
-   const int regrid_base = rebuild_from >= 0 ? rebuild_from : lbase;
-   regrid(regrid_base, time, initial);
-
-   while (finestLevel() < maxLevel()) {
-      const int coarse_lev = finestLevel();
-      set_refinement_ratio(coarse_lev, desired_refinement_ratio(coarse_lev, time));
-      rebuild_geometries_from_level(coarse_lev);
-      const int old_finest = finestLevel();
-      regrid(coarse_lev, time, initial);
-      if (finestLevel() == old_finest) {
-         break;
-      }
-   }
+   statistics.tagged_cells = local_tagged_cells;
+   statistics.direction_tags = local_direction_tags;
+   statistics.direction_strength = local_direction_strength;
+   return statistics;
 }
 
 void AmrSolver::validate_amr_refinement_ratios() const
@@ -322,16 +127,26 @@ void AmrSolver::validate_amr_refinement_ratios() const
             amrex::Abort("amr.ref_ratio values must be positive");
          }
       }
+      if (cfg_.state_interp == "quartic-conservative") {
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            if (ratio[dir] != 2) {
+               amrex::Abort("amr.state_interp = quartic-conservative requires amr.ref_ratio = 2 in every direction");
+            }
+         }
+      }
       has_anisotropic_ratio = has_anisotropic_ratio || refinement_ratio_is_anisotropic(ratio);
    }
+
+#if (AMREX_SPACEDIM == 1)
+   if (cfg_.state_interp == "protected") {
+      amrex::Abort("amr.state_interp = protected is supported only in 2D and 3D");
+   }
+#endif
 
    if (!has_anisotropic_ratio) {
       return;
    }
 
-   if (cfg_.subcycling == "on") {
-      amrex::Abort("anisotropic amr.ref_ratio currently requires pyfluid.subcycling = off");
-   }
    if (cfg_.mesh_patch_system != "single") {
       amrex::Abort("anisotropic amr.ref_ratio is currently supported only for mesh.patch_system = single");
    }
@@ -391,16 +206,14 @@ void AmrSolver::validate_active_hierarchy_for_evolution() const
 int AmrSolver::temporal_ref_ratio(int coarse_lev) const
 {
    const amrex::IntVect ratio = refRatio(coarse_lev);
-   const int value = ratio[0];
-   if (value < 1) {
-      amrex::Abort("AMR temporal refinement ratio must be positive");
-   }
-   for (int dir = 1; dir < AMREX_SPACEDIM; ++dir) {
-      if (ratio[dir] != value) {
-         amrex::Abort("pyfluid.subcycling = on requires isotropic AMR ref_ratio");
+   int temporal_ratio = 1;
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      if (ratio[dir] < 1) {
+         amrex::Abort("AMR temporal refinement ratio must be positive");
       }
+      temporal_ratio = std::max(temporal_ratio, ratio[dir]);
    }
-   return value;
+   return temporal_ratio;
 }
 
 int AmrSolver::level_time_factor(int lev) const

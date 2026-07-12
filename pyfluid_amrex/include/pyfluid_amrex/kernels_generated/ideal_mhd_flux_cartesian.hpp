@@ -6,10 +6,12 @@
 
 namespace pyfluid_amrex::generated {
 
+using namespace amrex::literals;
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 HydroState hydro_flux_orthonormal_dir0(const HydroState& state, amrex::Real pressure) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(state.rho);
+   const amrex::Real tmp0 = 1.0_rt/(state.rho);
    const amrex::Real tmp1 = state.mom1*tmp0;
    return {
       state.mom1,
@@ -23,7 +25,7 @@ HydroState hydro_flux_orthonormal_dir0(const HydroState& state, amrex::Real pres
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 HydroState hydro_flux_orthonormal_dir1(const HydroState& state, amrex::Real pressure) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(state.rho);
+   const amrex::Real tmp0 = 1.0_rt/(state.rho);
    const amrex::Real tmp1 = state.mom2*tmp0;
    return {
       state.mom2,
@@ -37,7 +39,7 @@ HydroState hydro_flux_orthonormal_dir1(const HydroState& state, amrex::Real pres
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 HydroState hydro_flux_orthonormal_dir2(const HydroState& state, amrex::Real pressure) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(state.rho);
+   const amrex::Real tmp0 = 1.0_rt/(state.rho);
    const amrex::Real tmp1 = state.mom3*tmp0;
    return {
       state.mom3,
@@ -54,13 +56,13 @@ MHDState mhd_flux_orthonormal_dir0(const MHDState& state, amrex::Real pressure) 
    const amrex::Real tmp0 = ((state.b1)*(state.b1));
    const amrex::Real tmp1 = ((state.b2)*(state.b2));
    const amrex::Real tmp2 = ((state.b3)*(state.b3));
-   const amrex::Real tmp3 = 1.0/(state.rho);
+   const amrex::Real tmp3 = 1.0_rt/(state.rho);
    return {
       state.mom1,
-      pressure + ((state.mom1)*(state.mom1))*tmp3 - 1.0/2.0*tmp0 + (1.0/2.0)*tmp1 + (1.0/2.0)*tmp2,
+      pressure + ((state.mom1)*(state.mom1))*tmp3 - 1.0_rt/2.0_rt*tmp0 + (1.0_rt/2.0_rt)*tmp1 + (1.0_rt/2.0_rt)*tmp2,
       -state.b1*state.b2 + state.mom1*state.mom2*tmp3,
       -state.b1*state.b3 + state.mom1*state.mom3*tmp3,
-      tmp3*(-state.b1*(state.b1*state.mom1 + state.b2*state.mom2 + state.b3*state.mom3) + (1.0/2.0)*state.mom1*(2*pressure + 2*state.energy + tmp0 + tmp1 + tmp2)),
+      tmp3*(-state.b1*(state.b1*state.mom1 + state.b2*state.mom2 + state.b3*state.mom3) + (1.0_rt/2.0_rt)*state.mom1*(2*pressure + 2*state.energy + tmp0 + tmp1 + tmp2)),
       0,
       tmp3*(-state.b1*state.mom2 + state.b2*state.mom1),
       tmp3*(-state.b1*state.mom3 + state.b3*state.mom1)
@@ -70,16 +72,16 @@ MHDState mhd_flux_orthonormal_dir0(const MHDState& state, amrex::Real pressure) 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 MHDState mhd_flux_orthonormal_dir1(const MHDState& state, amrex::Real pressure) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(state.rho);
+   const amrex::Real tmp0 = 1.0_rt/(state.rho);
    const amrex::Real tmp1 = ((state.b1)*(state.b1));
    const amrex::Real tmp2 = ((state.b2)*(state.b2));
    const amrex::Real tmp3 = ((state.b3)*(state.b3));
    return {
       state.mom2,
       -state.b1*state.b2 + state.mom1*state.mom2*tmp0,
-      pressure + ((state.mom2)*(state.mom2))*tmp0 + (1.0/2.0)*tmp1 - 1.0/2.0*tmp2 + (1.0/2.0)*tmp3,
+      pressure + ((state.mom2)*(state.mom2))*tmp0 + (1.0_rt/2.0_rt)*tmp1 - 1.0_rt/2.0_rt*tmp2 + (1.0_rt/2.0_rt)*tmp3,
       -state.b2*state.b3 + state.mom2*state.mom3*tmp0,
-      tmp0*(-state.b2*(state.b1*state.mom1 + state.b2*state.mom2 + state.b3*state.mom3) + (1.0/2.0)*state.mom2*(2*pressure + 2*state.energy + tmp1 + tmp2 + tmp3)),
+      tmp0*(-state.b2*(state.b1*state.mom1 + state.b2*state.mom2 + state.b3*state.mom3) + (1.0_rt/2.0_rt)*state.mom2*(2*pressure + 2*state.energy + tmp1 + tmp2 + tmp3)),
       tmp0*(state.b1*state.mom2 - state.b2*state.mom1),
       0,
       tmp0*(-state.b2*state.mom3 + state.b3*state.mom2)
@@ -89,7 +91,7 @@ MHDState mhd_flux_orthonormal_dir1(const MHDState& state, amrex::Real pressure) 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 MHDState mhd_flux_orthonormal_dir2(const MHDState& state, amrex::Real pressure) noexcept
 {
-   const amrex::Real tmp0 = 1.0/(state.rho);
+   const amrex::Real tmp0 = 1.0_rt/(state.rho);
    const amrex::Real tmp1 = ((state.b1)*(state.b1));
    const amrex::Real tmp2 = ((state.b2)*(state.b2));
    const amrex::Real tmp3 = ((state.b3)*(state.b3));
@@ -97,8 +99,8 @@ MHDState mhd_flux_orthonormal_dir2(const MHDState& state, amrex::Real pressure) 
       state.mom3,
       -state.b1*state.b3 + state.mom1*state.mom3*tmp0,
       -state.b2*state.b3 + state.mom2*state.mom3*tmp0,
-      pressure + ((state.mom3)*(state.mom3))*tmp0 + (1.0/2.0)*tmp1 + (1.0/2.0)*tmp2 - 1.0/2.0*tmp3,
-      tmp0*(-state.b3*(state.b1*state.mom1 + state.b2*state.mom2 + state.b3*state.mom3) + (1.0/2.0)*state.mom3*(2*pressure + 2*state.energy + tmp1 + tmp2 + tmp3)),
+      pressure + ((state.mom3)*(state.mom3))*tmp0 + (1.0_rt/2.0_rt)*tmp1 + (1.0_rt/2.0_rt)*tmp2 - 1.0_rt/2.0_rt*tmp3,
+      tmp0*(-state.b3*(state.b1*state.mom1 + state.b2*state.mom2 + state.b3*state.mom3) + (1.0_rt/2.0_rt)*state.mom3*(2*pressure + 2*state.energy + tmp1 + tmp2 + tmp3)),
       tmp0*(state.b1*state.mom3 - state.b3*state.mom1),
       tmp0*(state.b2*state.mom3 - state.b3*state.mom2),
       0

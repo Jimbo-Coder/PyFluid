@@ -79,6 +79,24 @@ struct BoundaryData {
    amrex::Real inflow_center_y = 0.5;
    amrex::Real inflow_center_z = 0.5;
    amrex::Real inflow_radius = 0.08;
+   int analytic_profile = 0;
+   amrex::Real shock_x0 = 0.5;
+   amrex::Real shock_y0 = 0.5;
+   amrex::Real shock_z0 = 0.5;
+   amrex::Real shock_n1 = 1.0;
+   amrex::Real shock_n2 = 0.0;
+   amrex::Real shock_n3 = 0.0;
+   amrex::Real shock_speed = 0.0;
+   amrex::Real rho_left = 1.0;
+   amrex::Real pressure_left = 1.0;
+   amrex::Real v1_left = 0.0;
+   amrex::Real v2_left = 0.0;
+   amrex::Real v3_left = 0.0;
+   amrex::Real rho_right = 1.0;
+   amrex::Real pressure_right = 1.0;
+   amrex::Real v1_right = 0.0;
+   amrex::Real v2_right = 0.0;
+   amrex::Real v3_right = 0.0;
    int mhd = 0;
 };
 
@@ -132,6 +150,24 @@ inline BoundaryData make_boundary_data(RunConfig const& cfg)
    data.inflow_center_y = cfg.inflow_center_y;
    data.inflow_center_z = cfg.inflow_center_z;
    data.inflow_radius = cfg.inflow_radius;
+   data.analytic_profile = cfg.boundary_profile == "double_mach_reflection" ? 1 : 0;
+   data.shock_x0 = cfg.shock_x0;
+   data.shock_y0 = cfg.shock_y0;
+   data.shock_z0 = cfg.shock_z0;
+   data.shock_n1 = cfg.shock_nx;
+   data.shock_n2 = cfg.shock_ny;
+   data.shock_n3 = cfg.shock_nz;
+   data.shock_speed = cfg.shock_speed;
+   data.rho_left = cfg.rho_left;
+   data.pressure_left = cfg.pressure_left;
+   data.v1_left = cfg.v1_left;
+   data.v2_left = cfg.v2_left;
+   data.v3_left = cfg.v3_left;
+   data.rho_right = cfg.rho_right;
+   data.pressure_right = cfg.pressure_right;
+   data.v1_right = cfg.v1_right;
+   data.v2_right = cfg.v2_right;
+   data.v3_right = cfg.v3_right;
    data.mhd = is_mhd(cfg) ? 1 : 0;
    return data;
 }
@@ -208,6 +244,9 @@ inline int amrex_state_bc_type(BoundaryKind kind, int component, int dir, bool m
    if (kind == BoundaryKind::Inflow) {
       return amrex::BCType::ext_dir;
    }
+   if (kind == BoundaryKind::Analytic) {
+      return amrex::BCType::ext_dir;
+   }
    if (kind == BoundaryKind::Outflow || kind == BoundaryKind::Diode) {
       return amrex::BCType::foextrap;
    }
@@ -253,6 +292,9 @@ inline int amrex_face_b_bc_type(BoundaryKind kind, int face_dir, int boundary_di
       return amrex::BCType::int_dir;
    }
    if (kind == BoundaryKind::Inflow) {
+      return amrex::BCType::ext_dir;
+   }
+   if (kind == BoundaryKind::Analytic) {
       return amrex::BCType::ext_dir;
    }
    if (kind == BoundaryKind::Outflow || kind == BoundaryKind::Diode) {
@@ -320,6 +362,121 @@ amrex::Real boundary_profile_state_component(
       return by;
    }
    return bz;
+}
+
+enum AnalyticBoundaryAction {
+   AnalyticBoundaryCopy = 0,
+   AnalyticBoundaryLeftState = 1,
+   AnalyticBoundaryRightState = 2,
+   AnalyticBoundaryReflect = 3,
+};
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool planar_shock_left_state(
+   BoundaryData const& bc,
+   amrex::Real x,
+   amrex::Real y,
+   amrex::Real z,
+   amrex::Real time
+) noexcept
+{
+   const amrex::Real signed_distance = bc.shock_n1 * (x - bc.shock_x0)
+      + bc.shock_n2 * (y - bc.shock_y0)
+      + bc.shock_n3 * (z - bc.shock_z0)
+      - bc.shock_speed * time;
+   return signed_distance < 0.0;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real analytic_shock_state_component(
+   BoundaryData const& bc,
+   int component,
+   bool left_state
+) noexcept
+{
+   return boundary_profile_state_component(
+      bc,
+      component,
+      left_state ? bc.rho_left : bc.rho_right,
+      left_state ? bc.pressure_left : bc.pressure_right,
+      left_state ? bc.v1_left : bc.v1_right,
+      left_state ? bc.v2_left : bc.v2_right,
+      left_state ? bc.v3_left : bc.v3_right,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+   );
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int analytic_boundary_action(
+   BoundaryData const& bc,
+   int side,
+   amrex::Real x,
+   amrex::Real y,
+   amrex::Real z,
+   amrex::Real time
+) noexcept
+{
+   if (bc.analytic_profile != 1) {
+      return AnalyticBoundaryCopy;
+   }
+   if (side == 0) {
+      return AnalyticBoundaryLeftState;
+   }
+#if (AMREX_SPACEDIM >= 2)
+   if (side == 2) {
+      return x < bc.shock_x0 ? AnalyticBoundaryLeftState : AnalyticBoundaryReflect;
+   }
+   if (side == 3) {
+      return planar_shock_left_state(bc, x, y, z, time)
+         ? AnalyticBoundaryLeftState
+         : AnalyticBoundaryRightState;
+   }
+#else
+   amrex::ignore_unused(x, y, z, time);
+#endif
+   return AnalyticBoundaryCopy;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int cell_analytic_boundary_side(
+   BoundaryData const& bc,
+   amrex::Box const& domain,
+   int i,
+   int j,
+   int k
+) noexcept
+{
+   const int analytic = static_cast<int>(BoundaryKind::Analytic);
+   if (i < domain.smallEnd(0) && bc.lo_kind[0] == analytic) {
+      return 0;
+   }
+   if (i > domain.bigEnd(0) && bc.hi_kind[0] == analytic) {
+      return 1;
+   }
+#if (AMREX_SPACEDIM >= 2)
+   if (j < domain.smallEnd(1) && bc.lo_kind[1] == analytic) {
+      return 2;
+   }
+   if (j > domain.bigEnd(1) && bc.hi_kind[1] == analytic) {
+      return 3;
+   }
+#else
+   amrex::ignore_unused(j);
+#endif
+#if (AMREX_SPACEDIM == 3)
+   if (k < domain.smallEnd(2) && bc.lo_kind[2] == analytic) {
+      return 4;
+   }
+   if (k > domain.bigEnd(2) && bc.hi_kind[2] == analytic) {
+      return 5;
+   }
+#else
+   amrex::ignore_unused(k);
+#endif
+   return -1;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -577,7 +734,7 @@ struct StateFillPatchBoundary {
       int dcomp,
       int numcomp,
       amrex::GeometryData const& geom,
-      amrex::Real,
+      amrex::Real time,
       amrex::BCRec const*,
       int,
       int orig_comp
@@ -596,7 +753,8 @@ struct StateFillPatchBoundary {
       const int k = 0;
 #endif
       const int boundary_dir = cell_inflow_boundary_dir(bc, domain, i, j, k);
-      if (boundary_dir < 0) {
+      const int analytic_side = cell_analytic_boundary_side(bc, domain, i, j, k);
+      if (boundary_dir < 0 && analytic_side < 0) {
          return;
       }
       const amrex::Real x = geom.ProbLo(0) + (static_cast<amrex::Real>(i) + 0.5) * geom.CellSize(0);
@@ -610,6 +768,51 @@ struct StateFillPatchBoundary {
 #else
       const amrex::Real z = 0.0;
 #endif
+      if (analytic_side >= 0) {
+         const int action = analytic_boundary_action(bc, analytic_side, x, y, z, time);
+         const int normal_dir = analytic_side / 2;
+         int ii = clamp_index(i, domain.smallEnd(0), domain.bigEnd(0));
+#if (AMREX_SPACEDIM >= 2)
+         int jj = clamp_index(j, domain.smallEnd(1), domain.bigEnd(1));
+#else
+         const int jj = 0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+         int kk = clamp_index(k, domain.smallEnd(2), domain.bigEnd(2));
+#else
+         const int kk = 0;
+#endif
+         if (action == AnalyticBoundaryReflect) {
+            if (normal_dir == 0) {
+               ii = mirrored_index(i, domain.smallEnd(0), domain.bigEnd(0));
+            }
+#if (AMREX_SPACEDIM >= 2)
+            if (normal_dir == 1) {
+               jj = mirrored_index(j, domain.smallEnd(1), domain.bigEnd(1));
+            }
+#endif
+#if (AMREX_SPACEDIM == 3)
+            if (normal_dir == 2) {
+               kk = mirrored_index(k, domain.smallEnd(2), domain.bigEnd(2));
+            }
+#endif
+         }
+         for (int n = dcomp; n < dcomp + numcomp; ++n) {
+            const int component = orig_comp + n - dcomp;
+            if (action == AnalyticBoundaryLeftState || action == AnalyticBoundaryRightState) {
+               dest(i, j, k, n) = analytic_shock_state_component(
+                  bc, component, action == AnalyticBoundaryLeftState
+               );
+            } else {
+               amrex::Real value = dest(ii, jj, kk, n);
+               if (action == AnalyticBoundaryReflect && component == MOM1 + normal_dir) {
+                  value = -value;
+               }
+               dest(i, j, k, n) = value;
+            }
+         }
+         return;
+      }
       for (int n = dcomp; n < dcomp + numcomp; ++n) {
          const int component = orig_comp + n - dcomp;
          dest(i, j, k, n) = inflow_state_component(bc, component, boundary_dir, x, y, z);
@@ -660,7 +863,8 @@ template <int NComp>
 inline void apply_state_boundary(
    amrex::MultiFab& state,
    amrex::Geometry const& geom,
-   BoundaryData const& bc
+   BoundaryData const& bc,
+   amrex::Real time = 0.0
 )
 {
    state.FillBoundary(geom.periodicity());
@@ -687,6 +891,7 @@ inline void apply_state_boundary(
    const int reflecting_bc = static_cast<int>(BoundaryKind::Reflecting);
    const int symmetry_bc = static_cast<int>(BoundaryKind::Symmetry);
    const int inflow_bc = static_cast<int>(BoundaryKind::Inflow);
+   const int analytic_bc = static_cast<int>(BoundaryKind::Analytic);
    const int diode_bc = static_cast<int>(BoundaryKind::Diode);
    const int origin_bc = static_cast<int>(BoundaryKind::Origin);
    const auto problo = geom.ProbLoArray();
@@ -765,6 +970,27 @@ inline void apply_state_boundary(
 #endif
             ;
 
+         int analytic_side = -1;
+         if (xlo && xlo_bc == analytic_bc) {
+            analytic_side = 0;
+         } else if (xhi && xhi_bc == analytic_bc) {
+            analytic_side = 1;
+         }
+#if (AMREX_SPACEDIM >= 2)
+         else if (ylo && ylo_bc == analytic_bc) {
+            analytic_side = 2;
+         } else if (yhi && yhi_bc == analytic_bc) {
+            analytic_side = 3;
+         }
+#endif
+#if (AMREX_SPACEDIM == 3)
+         else if (zlo && zlo_bc == analytic_bc) {
+            analytic_side = 4;
+         } else if (zhi && zhi_bc == analytic_bc) {
+            analytic_side = 5;
+         }
+#endif
+
          int ii = is_periodic[0] ? i : (x_reflect ? mirrored_index(i, lo.x, hi.x) : clamp_index(i, lo.x, hi.x));
 #if (AMREX_SPACEDIM >= 2)
          int jj = is_periodic[1] ? j : (y_reflect ? mirrored_index(j, lo.y, hi.y) : clamp_index(j, lo.y, hi.y));
@@ -807,10 +1033,53 @@ inline void apply_state_boundary(
                }
             }
          }
-         if (!fixed_inflow) {
+         bool fixed_analytic = false;
+         int analytic_action = AnalyticBoundaryCopy;
+         int analytic_normal_dir = -1;
+         if (analytic_side >= 0) {
+            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+#if (AMREX_SPACEDIM >= 2)
+            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+#else
+            const amrex::Real y = 0.0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+#else
+            const amrex::Real z = 0.0;
+#endif
+            analytic_action = analytic_boundary_action(bc, analytic_side, x, y, z, time);
+            analytic_normal_dir = analytic_side / 2;
+            if (analytic_action == AnalyticBoundaryLeftState || analytic_action == AnalyticBoundaryRightState) {
+               for (int q = 0; q < NComp; ++q) {
+                  s(i, j, k, q) = analytic_shock_state_component(
+                     bc, q, analytic_action == AnalyticBoundaryLeftState
+                  );
+               }
+               fixed_analytic = true;
+            } else if (analytic_action == AnalyticBoundaryReflect) {
+               if (analytic_normal_dir == 0) {
+                  ii = mirrored_index(i, lo.x, hi.x);
+               }
+#if (AMREX_SPACEDIM >= 2)
+               if (analytic_normal_dir == 1) {
+                  jj = mirrored_index(j, lo.y, hi.y);
+               }
+#endif
+#if (AMREX_SPACEDIM == 3)
+               if (analytic_normal_dir == 2) {
+                  kk = mirrored_index(k, lo.z, hi.z);
+               }
+#endif
+            }
+         }
+         if (!fixed_inflow && !fixed_analytic) {
             for (int q = 0; q < NComp; ++q) {
                s(i, j, k, q) = s(ii, jj, kk, q);
             }
+         }
+         if (analytic_action == AnalyticBoundaryReflect && analytic_normal_dir >= 0) {
+            s(i, j, k, MOM1 + analytic_normal_dir) = -s(i, j, k, MOM1 + analytic_normal_dir);
          }
          if (x_origin) {
             for (int q = 0; q < NComp; ++q) {
@@ -1193,23 +1462,24 @@ inline void apply_patch_union_reflecting_boundary(
 inline void apply_configured_state_boundary(
    amrex::MultiFab& state,
    amrex::Geometry const& geom,
-   BoundaryData const& bc
+   BoundaryData const& bc,
+   amrex::Real time = 0.0
 )
 {
    const int ncomp = state.nComp();
    if (bc.mhd != 0) {
       if (ncomp == NVAR_MHD + 1) {
-         apply_state_boundary<NVAR_MHD + 1>(state, geom, bc);
+         apply_state_boundary<NVAR_MHD + 1>(state, geom, bc, time);
       } else if (ncomp == NVAR_MHD) {
-         apply_state_boundary<NVAR_MHD>(state, geom, bc);
+         apply_state_boundary<NVAR_MHD>(state, geom, bc, time);
       } else {
          amrex::Abort("MHD state component count does not match pyfluid.passive_scalars");
       }
    } else {
       if (ncomp == NVAR_HYDRO + 1) {
-         apply_state_boundary<NVAR_HYDRO + 1>(state, geom, bc);
+         apply_state_boundary<NVAR_HYDRO + 1>(state, geom, bc, time);
       } else if (ncomp == NVAR_HYDRO) {
-         apply_state_boundary<NVAR_HYDRO>(state, geom, bc);
+         apply_state_boundary<NVAR_HYDRO>(state, geom, bc, time);
       } else {
          amrex::Abort("hydro state component count does not match pyfluid.passive_scalars");
       }
@@ -1220,10 +1490,11 @@ inline void apply_configured_state_boundary(
 inline void apply_configured_state_boundary(
    amrex::MultiFab& state,
    amrex::Geometry const& geom,
-   RunConfig const& cfg
+   RunConfig const& cfg,
+   amrex::Real time = 0.0
 )
 {
-   apply_configured_state_boundary(state, geom, make_boundary_data(cfg));
+   apply_configured_state_boundary(state, geom, make_boundary_data(cfg), time);
 }
 
 } // namespace pyfluid_amrex

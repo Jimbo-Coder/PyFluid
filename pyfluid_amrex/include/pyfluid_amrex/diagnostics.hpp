@@ -47,6 +47,17 @@ struct ScalarDiagnostics {
    amrex::Real wall_power = 0.0;
    amrex::Real energy_minus_wall_work = 0.0;
    amrex::Real wall_work_rel_error = 0.0;
+   int external_budget_valid = 1;
+   amrex::Real boundary_mass_change = 0.0;
+   amrex::Real boundary_energy_change = 0.0;
+   amrex::Real source_mass_change = 0.0;
+   amrex::Real source_energy_change = 0.0;
+   amrex::Real external_mass_change = 0.0;
+   amrex::Real external_energy_change = 0.0;
+   amrex::Real external_mass_residual = 0.0;
+   amrex::Real external_energy_residual = 0.0;
+   amrex::Real external_mass_rel_error = 0.0;
+   amrex::Real external_energy_rel_error = 0.0;
    amrex::Real mass_rel_drift = 0.0;
    amrex::Real energy_rel_drift = 0.0;
    amrex::Real min_rho = 0.0;
@@ -74,7 +85,7 @@ struct ScalarDiagnostics {
    amrex::Real cfl_limiter_q3 = 0.0;
 };
 
-inline constexpr std::array<std::string_view, 45> ScalarDiagnosticColumns = {{
+inline constexpr std::array<std::string_view, 56> ScalarDiagnosticColumns = {{
    "step",
    "time",
    "dt",
@@ -95,6 +106,17 @@ inline constexpr std::array<std::string_view, 45> ScalarDiagnosticColumns = {{
    "wall_power",
    "energy_minus_wall_work",
    "wall_work_rel_error",
+   "external_budget_valid",
+   "boundary_mass_change",
+   "boundary_energy_change",
+   "source_mass_change",
+   "source_energy_change",
+   "external_mass_change",
+   "external_energy_change",
+   "external_mass_residual",
+   "external_energy_residual",
+   "external_mass_rel_error",
+   "external_energy_rel_error",
    "mass_rel_drift",
    "energy_rel_drift",
    "min_rho",
@@ -303,7 +325,12 @@ inline void fill_scalar_reduction_fields(
             const amrex::Real cell_measure = mesh_cell_volume_for_reduction(mesh_coordinate, mesh_axes, problo, dx, i, j, k);
             const amrex::Real weight = valid ? cell_measure * (use_volume_fraction ? vf(i, j, k, 0) : 1.0) : 0.0;
             const bool active = valid && weight > 0.0;
-            const StateVector3 momentum = load_momentum_vector3(s, i, j, k);
+            const auto q = mesh_coordinate_triplet_at_location(
+               mesh_coordinate, mesh_axes, problo, dx, i, j, k, false, false, false
+            );
+            const StateVector3 momentum = mesh_basis_vector_to_cartesian(
+               mesh_coordinate, mesh_axes, q, load_momentum_vector3(s, i, j, k)
+            );
             out(i, j, k, ScalarReductionMass) = active ? weight * s(i, j, k, RHO) : 0.0;
             out(i, j, k, ScalarReductionMom1) = active ? weight * momentum.x : 0.0;
             out(i, j, k, ScalarReductionMom2) = active ? weight * momentum.y : 0.0;
@@ -314,18 +341,8 @@ inline void fill_scalar_reduction_fields(
             out(i, j, k, ScalarReductionMagneticEnergy) =
                active ? weight * magnetic_energy_density(load_magnetic_vector3(s, i, j, k)) : 0.0;
             out(i, j, k, ScalarReductionDivB) = active ? weight * div(i, j, k, 0) : 0.0;
-            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
-#if (AMREX_SPACEDIM >= 2)
-            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
-#else
-            const amrex::Real y = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
-#else
-            const amrex::Real z = 0.0;
-#endif
-            const StateVector3 radius = {x, y, z};
+            const auto physical = mesh_coordinate_triplet_to_cartesian(mesh_coordinate, q);
+            const StateVector3 radius = {physical[0], physical[1], physical[2]};
             const StateVector3 angular_momentum = cross_product(radius, momentum);
             out(i, j, k, ScalarReductionAngularMom1) =
                active ? weight * angular_momentum.x : 0.0;
@@ -345,7 +362,12 @@ inline void fill_scalar_reduction_fields(
             const amrex::Real cell_measure = mesh_cell_volume_for_reduction(mesh_coordinate, mesh_axes, problo, dx, i, j, k);
             const amrex::Real weight = valid ? cell_measure * (use_volume_fraction ? vf(i, j, k, 0) : 1.0) : 0.0;
             const bool active = valid && weight > 0.0;
-            const StateVector3 momentum = load_momentum_vector3(s, i, j, k);
+            const auto q = mesh_coordinate_triplet_at_location(
+               mesh_coordinate, mesh_axes, problo, dx, i, j, k, false, false, false
+            );
+            const StateVector3 momentum = mesh_basis_vector_to_cartesian(
+               mesh_coordinate, mesh_axes, q, load_momentum_vector3(s, i, j, k)
+            );
             out(i, j, k, ScalarReductionMass) = active ? weight * s(i, j, k, RHO) : 0.0;
             out(i, j, k, ScalarReductionMom1) = active ? weight * momentum.x : 0.0;
             out(i, j, k, ScalarReductionMom2) = active ? weight * momentum.y : 0.0;
@@ -355,18 +377,8 @@ inline void fill_scalar_reduction_fields(
             out(i, j, k, ScalarReductionMinPressure) = active ? p(i, j, k, 0) : invalid_min;
             out(i, j, k, ScalarReductionMagneticEnergy) = 0.0;
             out(i, j, k, ScalarReductionDivB) = 0.0;
-            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
-#if (AMREX_SPACEDIM >= 2)
-            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
-#else
-            const amrex::Real y = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 3)
-            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
-#else
-            const amrex::Real z = 0.0;
-#endif
-            const StateVector3 radius = {x, y, z};
+            const auto physical = mesh_coordinate_triplet_to_cartesian(mesh_coordinate, q);
+            const StateVector3 radius = {physical[0], physical[1], physical[2]};
             const StateVector3 angular_momentum = cross_product(radius, momentum);
             out(i, j, k, ScalarReductionAngularMom1) =
                active ? weight * angular_momentum.x : 0.0;
@@ -528,6 +540,17 @@ inline void append_scalar_row(std::ofstream& out, ScalarDiagnostics const& d)
       d.wall_power,
       d.energy_minus_wall_work,
       d.wall_work_rel_error,
+      d.external_budget_valid,
+      d.boundary_mass_change,
+      d.boundary_energy_change,
+      d.source_mass_change,
+      d.source_energy_change,
+      d.external_mass_change,
+      d.external_energy_change,
+      d.external_mass_residual,
+      d.external_energy_residual,
+      d.external_mass_rel_error,
+      d.external_energy_rel_error,
       d.mass_rel_drift,
       d.energy_rel_drift,
       d.min_rho,
