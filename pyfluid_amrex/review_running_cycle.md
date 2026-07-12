@@ -793,7 +793,7 @@ I will always continue from the last cycle marked as `in_progress`.
 - Clarify whether production AMR combines curvature tagging with an independent regrid-error estimate. [DONE]
   - Production `amr.tag_metric=auto` uses the metric-aware normalized Lohner curvature indicator over the selected hydro/MHD state fields. Regrid cadence only determines when tags are reevaluated and the hierarchy rebuilt; `grid_eff`, `n_error_buf`, proper nesting, and budgets shape or constrain the result. No independent Richardson/truncation-error estimator currently contributes to tags. [DONE]
 
-## Cycle 77 [in progress]
-- Freeze the current production AMReX state with a scoped commit and a maintained validation/performance baseline snapshot. [WIP]
-  - Keep JAX/Numba/reference-path changes unstaged; commit only `AGENTS.md` and the coherent `pyfluid_amrex` production changes. [WIP]
-  - Capture passing production validation gates and the standard performance benchmark under a dated baseline label. [PENDING]
+## Cycle 77 [completed]
+- Freeze the current production AMReX state with a scoped commit and a maintained validation/performance baseline snapshot. [DONE]
+  - Keep JAX/Numba/reference-path changes unstaged; commit only `AGENTS.md` and the coherent `pyfluid_amrex` production changes as `1053014` (`Harden AMReX transfers and conservation validation`). [DONE]
+  - Capture 14 passing production validation gates and the standard performance benchmark under `runs/baselines/20260712_024631_amr_transfer_conservation_20260712/`. The snapshot is tied to `1053014`; the canonical 3-rank result is `109.11 Mcells/s`, `0.2538` simulation-time/real-time, and 0.993 of its frozen performance baseline. All four tracked benchmark cases pass. [DONE]
