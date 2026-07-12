@@ -802,3 +802,8 @@ I will always continue from the last cycle marked as `in_progress`.
 - Add the validated double-Mach-reflection result to the canonical compact finished-run collection. [DONE]
   - Curate boxed, linear-density, and honest log-density movies plus scalar/AMR plots under `runs/final_done/media/double_mach_reflection/`. [DONE]
   - Preserve compact configuration, logs, scalar/AMR TSVs, report, and profile under `runs/final_done/compact_runs/double_mach_reflection_2d_amr/` without copying raw HDF5 state snapshots. [DONE]
+
+## Cycle 79 [completed]
+- Keep curated DMR output self-describing and consistent with the one-run/one-folder output convention. [DONE]
+  - Use the solver-authored canonical `run.in` as simulation metadata; do not create a per-run prose descriptor. [DONE]
+  - Consolidate DMR movies, plots, logs, configuration, and TSV reports under `runs/final_done/double_mach_reflection_2d_amr/` instead of separate media and compact-run trees. [DONE]
