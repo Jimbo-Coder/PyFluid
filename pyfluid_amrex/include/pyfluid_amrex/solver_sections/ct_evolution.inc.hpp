@@ -30,7 +30,7 @@
          return stats;
       }
       if constexpr (DiffusionMethod == DiffusionImplicit) {
-         amrex::Abort("implicit resistive MHD is disabled; use pyfluid.diffusion=explicit");
+         return stats;
       } else if constexpr (DiffusionMethod == DiffusionExplicit) {
          apply_diffusion_boundary(*state_[lev], Geom(lev), cfg_);
          amrex::MultiFab::Copy(*scratch_[lev], *state_[lev], 0, 0, num_state_components(), 0);
@@ -86,7 +86,19 @@
          sync_cell_b_from_faces(*next_[lev], face_b_[lev], Geom(lev), false);
          return combined;
       }
-      amrex::Abort("implicit resistive MHD is disabled; use pyfluid.diffusion=explicit");
+#if (AMREX_SPACEDIM >= 2)
+      combined = combine_diffusion_stats(
+         combined,
+         advance_ct_resistive_magnetic_field_implicit(
+            face_b_[lev], edge_e_[lev], *next_[lev], Geom(lev), dt, cfg_
+         )
+      );
+      add_edge_electric_to_registers(lev, dt);
+#else
+      amrex::Abort("implicit resistive CT requires a 2D or 3D executable");
+#endif
+      apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
+      sync_cell_b_from_faces(*next_[lev], face_b_[lev], Geom(lev), false);
       return combined;
    }
 
@@ -96,12 +108,9 @@
       DiffusionStats combined;
       if constexpr (DiffusionMethod == DiffusionImplicit) {
          for (int lev = 0; lev <= finestLevel(); ++lev) {
-            combined = combine_diffusion_stats(combined, advance_ct_ideal_level(lev, dt));
+            combined = combine_diffusion_stats(combined, advance_ct_level<DiffusionMethod>(lev, dt));
          }
          reflux_edge_flux_registers_to_face_b();
-         if (resistivity_enabled(cfg_)) {
-            amrex::Abort("implicit resistive MHD is disabled; use pyfluid.diffusion=explicit");
-         }
          for (int lev = 0; lev <= finestLevel(); ++lev) {
             sync_cell_b_from_faces(*next_[lev], face_b_[lev], Geom(lev), false);
          }

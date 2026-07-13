@@ -1,6 +1,7 @@
 #include <AMReX.H>
 
 #include "pyfluid_amrex/kernels_generated/eos.hpp"
+#include "pyfluid_amrex/kernels_generated/characteristic_transforms.hpp"
 #include "pyfluid_amrex/kernels_generated/scalar_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/coordinate_metrics.hpp"

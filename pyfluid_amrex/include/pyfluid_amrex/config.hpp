@@ -218,7 +218,6 @@ struct RunConfig {
    int source_azimuthal_mode = 2;
    std::string gravity = "none";
    std::string gravity_coupling = "athena";
-   std::string gravity_energy_sync = "off";
    std::string gravity_fixed_potential = "uniform_acceleration";
    amrex::Real gravity_constant = 1.0;
    amrex::Real gravity_a1 = 0.0;
@@ -367,7 +366,6 @@ static constexpr std::array<std::string_view, 9> ValidationPolicyOptions{{
 static constexpr std::array<std::string_view, 3> SourceOptions{{"none", "uniform_acceleration", "rotating_compact_heating"}};
 static constexpr std::array<std::string_view, 3> GravityOptions{{"none", "poisson", "fixed"}};
 static constexpr std::array<std::string_view, 2> GravityCouplingOptions{{"athena", "source"}};
-static constexpr std::array<std::string_view, 2> GravityEnergySyncOptions{{"off", "residual"}};
 static constexpr std::array<std::string_view, 2> GravityFixedPotentialOptions{{"uniform_acceleration", "harmonic"}};
 static constexpr std::array<std::string_view, 2> SubcyclingOptions{{"off", "on"}};
 static constexpr std::array<std::string_view, 2> SubcyclingStepOptions{{"spatial", "local_cfl"}};
@@ -877,7 +875,6 @@ inline RunConfig read_config()
    pp.query("source_azimuthal_mode", cfg.source_azimuthal_mode);
    pp.query("gravity", cfg.gravity);
    pp.query("gravity_coupling", cfg.gravity_coupling);
-   pp.query("gravity_energy_sync", cfg.gravity_energy_sync);
    pp.query("gravity_fixed_potential", cfg.gravity_fixed_potential);
    pp.query("gravity_constant", cfg.gravity_constant);
    pp.query("gravity_a1", cfg.gravity_a1);
@@ -1565,7 +1562,17 @@ inline void validate_config(RunConfig const& cfg)
       amrex::Abort("resistive MHD requires pyfluid.ct = on");
    }
    if (cfg.diffusion == "implicit" && cfg.physics == "mhd" && cfg.resistivity > 0.0) {
-      amrex::Abort("implicit resistive MHD is disabled; use pyfluid.diffusion = explicit");
+      if (mesh_coordinate_code(cfg.mesh_coordinate) != MeshCartesian) {
+         amrex::Abort("implicit resistive MHD requires Cartesian coordinates because AMReX MLCurlCurl is Cartesian-only");
+      }
+      if (cfg.amr_max_level != 0) {
+         amrex::Abort("implicit resistive MHD requires amr.max_level = 0 because AMReX MLCurlCurl is single-level");
+      }
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         if (side_bc_name(cfg, dir, false) != "periodic" || side_bc_name(cfg, dir, true) != "periodic") {
+            amrex::Abort("implicit resistive MHD currently requires periodic boundaries in every active direction");
+         }
+      }
    }
    if (cfg.diffusion != "none" && cfg.viscosity == 0.0 && cfg.resistivity == 0.0) {
       amrex::Abort("pyfluid.diffusion requires positive viscosity and/or resistivity");
@@ -1621,7 +1628,6 @@ inline void validate_config(RunConfig const& cfg)
    }
    require_supported_option(cfg.gravity, GravityOptions, "pyfluid.gravity");
    require_supported_option(cfg.gravity_coupling, GravityCouplingOptions, "pyfluid.gravity_coupling");
-   require_supported_option(cfg.gravity_energy_sync, GravityEnergySyncOptions, "pyfluid.gravity_energy_sync");
    if (cfg.gravity_constant < 0.0) {
       amrex::Abort("pyfluid.gravity_constant must be non-negative");
    }

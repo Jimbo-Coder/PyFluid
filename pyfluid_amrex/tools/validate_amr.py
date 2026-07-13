@@ -70,12 +70,13 @@ class RestartCheck:
     checkpoint_step: int
     final_step: int
     tolerance: str
-    title: str
     overrides: dict[str, str]
 
 
 PRESSURE_INPUT = ROOT / "pyfluid_amrex/inputs/pressure_bump_2d_amr.in"
 KH_INPUT = ROOT / "pyfluid_amrex/inputs/kelvin_helmholtz_mhd_2d_movie_ct.in"
+HYDRO_SINE_INPUT = ROOT / "pyfluid_amrex/inputs/hydro_sine_2d.in"
+RESISTIVE_WAVE_INPUT = ROOT / "pyfluid_amrex/inputs/resistive_wave_x_2d_ct.in"
 PRESSURE_PLOTS = ROOT / "plots/current/IC/pressure_bump"
 KH_PLOTS = ROOT / "plots/current/IC/kelvin_helmholtz_mhd"
 
@@ -455,7 +456,7 @@ IMPROVEMENT_CHECKS = [
 
 RESTART_CHECKS = [
     RestartCheck(
-        name="pressure_subcycling",
+        name="pressure_aligned_subcycling",
         suite="pressure",
         input_file=PRESSURE_INPUT,
         full_output_dir=ROOT / "runs/current/pressure_bump2d_amr_restart_full_001",
@@ -463,12 +464,12 @@ RESTART_CHECKS = [
         checkpoint_step=3,
         final_step=6,
         tolerance="1e-12",
-        title="Pressure bump 2D AMR restart check, WENO-Z/HLLC/RK4/subcycling, CFL=0.9",
         overrides={
             "amr.max_level": "2",
             "amr.n_cell": "64 64",
             "amr.ref_ratio": "2 2",
-            "amr.regrid_int": "2",
+            "amr.regrid_mode": "aligned",
+            "amr.regrid_int": "7",
             "amr.n_error_buf": "8 8",
             "amr.tag_threshold": "0.03",
             "amr.state_interp": "quartic",
@@ -492,7 +493,6 @@ RESTART_CHECKS = [
         checkpoint_step=2,
         final_step=4,
         tolerance="1e-10",
-        title="KH MHD 2D AMR restart check, WENO-Z/HLLD/RK4/CT, explicit eta=nu=1.5e-4, CFL=0.9",
         overrides={
             "pyfluid.max_step": "4",
             "pyfluid.final_time": "-1",
@@ -519,7 +519,6 @@ RESTART_CHECKS = [
         checkpoint_step=2,
         final_step=4,
         tolerance="1e-10",
-        title="KH MHD 2D AMR restart check, WENO-Z/HLLD/RK4/CT/no-subcycling, explicit eta=nu=1.5e-4, CFL=0.9",
         overrides={
             "pyfluid.max_step": "4",
             "pyfluid.final_time": "-1",
@@ -536,6 +535,90 @@ RESTART_CHECKS = [
             "amr.level_cell_budget_side": "512",
             "amr.total_cell_budget": "300000",
             "amr.regrid_int": "2",
+        },
+    ),
+    RestartCheck(
+        name="implicit_resistive_ct",
+        suite="elliptic",
+        input_file=RESISTIVE_WAVE_INPUT,
+        full_output_dir=ROOT / "runs/current/resistive_ct_implicit_restart_full_001",
+        restart_output_dir=ROOT / "runs/current/resistive_ct_implicit_restart_from2_001",
+        checkpoint_step=2,
+        final_step=4,
+        tolerance="1e-12",
+        overrides={
+            "pyfluid.max_step": "4",
+            "pyfluid.final_time": "-1",
+            "pyfluid.diffusion": "implicit",
+            "pyfluid.diffusion_tolerance": "1e-12",
+            "pyfluid.diffusion_max_iterations": "500",
+            "pyfluid.scalar_int": "1",
+            "pyfluid.plot_int": "2",
+            "pyfluid.checkpoint_int": "2",
+            "pyfluid.aux_gfs": "none",
+            "pyfluid.aux_gf_compute_int": "-1",
+            "pyfluid.aux_gf_int": "-1",
+            "amr.max_level": "0",
+        },
+    ),
+    RestartCheck(
+        name="self_gravity_deep_amr_subcycling",
+        suite="elliptic",
+        input_file=HYDRO_SINE_INPUT,
+        full_output_dir=ROOT / "runs/current/self_gravity_deep_restart_full_001",
+        restart_output_dir=ROOT / "runs/current/self_gravity_deep_restart_from2_001",
+        checkpoint_step=2,
+        final_step=4,
+        tolerance="1e-12",
+        overrides={
+            "geometry.is_periodic": "1 1",
+            "amr.n_cell": "16 16",
+            "amr.max_level": "10",
+            "amr.ref_ratio": "2 2 2 2 2 2 2 2 2 2",
+            "amr.max_grid_size": "16",
+            "amr.blocking_factor": "8",
+            "amr.regrid_mode": "aligned",
+            "amr.regrid_int": "2",
+            "amr.n_error_buf": "4 4",
+            "amr.tag_metric": "lohner",
+            "amr.tag_threshold": "0.12",
+            "amr.state_interp": "quartic-conservative",
+            "amr.initial_refine": "box",
+            "amr.initial_refine_levels": "3",
+            "amr.initial_refine_fixed_levels": "0",
+            "amr.initial_refine_box_lo": "0.25 0.25",
+            "amr.initial_refine_box_hi": "0.75 0.75",
+            "amr.total_cell_budget": "1000000",
+            "amr.min_feature_length": "0.0005",
+            "pyfluid.ic": "density_cloud",
+            "pyfluid.rho0": "1.0",
+            "pyfluid.pressure0": "0.08",
+            "pyfluid.amplitude": "4.0",
+            "pyfluid.bump_sigma": "0.105",
+            "pyfluid.bump_x0": "0.5",
+            "pyfluid.bump_y0": "0.5",
+            "pyfluid.v1_0": "0.0",
+            "pyfluid.v2_0": "0.0",
+            "pyfluid.v3_0": "0.0",
+            "pyfluid.max_step": "4",
+            "pyfluid.final_time": "-1",
+            "pyfluid.timestep": "ssprk3",
+            "pyfluid.recon": "pwc",
+            "pyfluid.riemann": "llf",
+            "pyfluid.ng": "1",
+            "pyfluid.subcycling": "on",
+            "pyfluid.subcycling_steps": "local_cfl",
+            "pyfluid.gravity": "poisson",
+            "pyfluid.gravity_coupling": "athena",
+            "pyfluid.gravity_constant": "1.0",
+            "pyfluid.gravity_tolerance": "1e-10",
+            "pyfluid.gravity_max_iterations": "200",
+            "pyfluid.gravity_max_fmg_iterations": "20",
+            "pyfluid.gravity_max_order": "2",
+            "pyfluid.physical_check_int": "1",
+            "pyfluid.scalar_int": "1",
+            "pyfluid.plot_int": "2",
+            "pyfluid.checkpoint_int": "2",
         },
     ),
 ]
@@ -795,31 +878,12 @@ def run_restart_check(check: RestartCheck, force: bool) -> dict[str, str]:
             key, value = token.split("=", 1)
             row[key] = value
 
-    plot_root = KH_PLOTS if check.suite == "kh" else PRESSURE_PLOTS
-    run_tool(
-        [
-               "uv",
-               "run",
-               "python",
-               "pyfluid_amrex/tools/compare_amrex_plotfiles.py",
-               "--reference",
-               rel(check.full_output_dir / "stateGF" / f"stateGF{check.final_step:05d}"),
-               "--candidate",
-               rel(check.restart_output_dir / "stateGF" / f"stateGF{check.final_step:05d}"),
-               "--component",
-               "pressure",
-               "--output",
-               rel(plot_root / f"{check.name}_restart_pressure_001.png"),
-               "--title",
-               check.title,
-           ]
-    )
     return row
 
 
 def selected_suites(value: str) -> set[str]:
     if value == "all":
-           return {"pressure", "kh"}
+           return {"pressure", "kh", "elliptic"}
     return {value}
 
 
@@ -834,7 +898,7 @@ def write_summary(rows: list[dict[str, str]]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--suite", choices=["pressure", "kh", "all"], default="all")
+    parser.add_argument("--suite", choices=["pressure", "kh", "elliptic", "all"], default="all")
     parser.add_argument("--case", choices=[case.name for case in CASES], action="append")
     parser.add_argument("--force", action="store_true", help="rerun cases even if plotfiles already exist")
     parser.add_argument("--restart-checks", action="store_true", help="also run checkpoint/restart comparisons")

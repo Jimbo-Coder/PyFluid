@@ -18,6 +18,7 @@
          cfg_.final_time > 0.0 && level_times_[lev] >= cfg_.final_time;
       return cfg_.regrid_mode == "aligned"
          && cfg_.subcycling == "on"
+         && !self_gravity_enabled(cfg_)
          && aligned_regrid_due_
          && lev < maxLevel()
          && (lev == 0 || !nearly_equal_time(level_times_[lev - 1], level_times_[lev]))

@@ -223,106 +223,6 @@
       }
    }
 
-   bool conservative_self_gravity_energy_sync_enabled() const
-   {
-      return self_gravity_enabled(cfg_)
-         && cfg_.gravity_energy_sync == "residual"
-         && eos_method_ != EOSPolytrope;
-   }
-
-   amrex::Real self_gravity_density_offset(LevelData const& input) const
-   {
-      const DensityTotal density = valid_density_total(input);
-      if (!(density.volume > 0.0) || !std::isfinite(density.mass)) {
-         amrex::Abort("self-gravity energy sync needs a finite valid density total");
-      }
-      return density.mass / density.volume;
-   }
-
-   amrex::Real self_gravity_total_energy(LevelData const& data)
-   {
-      if (!conservative_self_gravity_energy_sync_enabled()) {
-         return 0.0;
-      }
-      prepare_gravity_fields(data, false);
-      const amrex::Real density_offset = self_gravity_density_offset(data);
-      amrex::Real total = 0.0;
-      for (int lev = 0; lev <= finestLevel(); ++lev) {
-         const amrex::Real cell_volume = cartesian_cell_volume(Geom(lev));
-         amrex::iMultiFab mask = valid_cell_mask(lev);
-         amrex::MultiFab reduction(data[lev]->boxArray(), data[lev]->DistributionMap(), 2, 0);
-         reduction.setVal(0.0);
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-         {
-         for (amrex::MFIter mfi(reduction, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-            const amrex::Box& bx = mfi.tilebox();
-            const auto s = data[lev]->const_array(mfi);
-            const auto valid = mask.const_array(mfi);
-            const auto phi = gravity_phi_[lev]->const_array(mfi);
-            const auto out = reduction.array(mfi);
-            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               if (valid(i, j, k, 0) == 0) {
-                  return;
-               }
-               out(i, j, k, 0) = s(i, j, k, ENERGY);
-               out(i, j, k, 1) = 0.5 * (s(i, j, k, RHO) - density_offset) * phi(i, j, k, 0);
-            });
-         }
-         }
-         total += (reduction.sum(0) + reduction.sum(1)) * cell_volume;
-      }
-      return total;
-   }
-
-   void add_uniform_valid_energy_density(LevelData& data, amrex::Real energy_delta)
-   {
-      if (energy_delta == 0.0) {
-         return;
-      }
-      const DensityTotal density = valid_density_total(data);
-      if (!(density.volume > 0.0) || !std::isfinite(density.volume)) {
-         amrex::Abort("self-gravity regrid energy sync needs a finite positive valid volume");
-      }
-      const amrex::Real correction_density = energy_delta / density.volume;
-      if (!std::isfinite(correction_density)) {
-         amrex::Abort("self-gravity regrid energy sync produced a non-finite correction");
-      }
-      for (int lev = 0; lev <= finestLevel(); ++lev) {
-         amrex::iMultiFab mask = valid_cell_mask(lev);
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-         {
-         for (amrex::MFIter mfi(*data[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-            const amrex::Box& bx = mfi.tilebox();
-            const auto s = data[lev]->array(mfi);
-            const auto valid = mask.const_array(mfi);
-            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               if (valid(i, j, k, 0) != 0) {
-                  s(i, j, k, ENERGY) += correction_density;
-               }
-            });
-         }
-         }
-      }
-   }
-
-   template <int EOSMethod>
-   void preserve_self_gravity_total_energy(amrex::Real target_total_energy)
-   {
-      if constexpr (EOSMethod == EOSPolytrope) {
-         static_cast<void>(target_total_energy);
-         return;
-      }
-      if (!conservative_self_gravity_energy_sync_enabled()) {
-         return;
-      }
-      const amrex::Real current_total_energy = self_gravity_total_energy(state_);
-      add_uniform_valid_energy_density(state_, target_total_energy - current_total_energy);
-   }
-
    bool uses_athena_ssprk3_gravity_energy_correction() const
    {
       return uses_athena_gravity_energy_correction() && timestep_method_ == TimeSSPRK3;
@@ -497,30 +397,6 @@
             });
          }
          }
-      }
-   }
-
-   bool post_sync_athena_ssprk3_gravity_energy_release_needed() const
-   {
-      return uses_athena_ssprk3_gravity_energy_correction()
-         && finestLevel() > 0
-         && eos_method_ != EOSPolytrope;
-   }
-
-   void resync_athena_ssprk3_gravity_energy_after_average_down(amrex::Real dt)
-   {
-      if (!post_sync_athena_ssprk3_gravity_energy_release_needed() || dt == 0.0) {
-         return;
-      }
-      for (int fine_lev = finestLevel(); fine_lev > 0; --fine_lev) {
-         apply_gravity_energy_source_register_scaled(fine_lev, *state_[fine_lev - 1], -1.0);
-      }
-      prepare_gravity_fields(state_, true);
-      update_self_gravity_acceleration_offset(state_);
-      apply_athena_ssprk3_energy_release_range(state_, 2, dt, 0, finestLevel() + 1, true);
-      add_athena_ssprk3_gravity_energy_source_register(dt, 0, finestLevel() + 1);
-      for (int fine_lev = finestLevel(); fine_lev > 0; --fine_lev) {
-         apply_gravity_energy_source_register(fine_lev, *state_[fine_lev - 1]);
       }
    }
 

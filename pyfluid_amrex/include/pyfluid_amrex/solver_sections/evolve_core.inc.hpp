@@ -279,8 +279,6 @@
             dt = amrex::min(dt, cfg_.final_time - time);
          }
          validate_timestep(dt, step, time);
-         const amrex::Real step_start_self_gravity_total_energy =
-            conservative_self_gravity_energy_sync_enabled() ? self_gravity_total_energy(state_) : 0.0;
          DiffusionStats diffusion;
          amrex::Real active_cell_updates_this_step = 0.0;
          amrex::Real layout_cell_updates_this_step = 0.0;
@@ -350,8 +348,6 @@
                }
             }
             reset_barotropic_energy_all_levels<NComp, EOSMethod>();
-            resync_athena_ssprk3_gravity_energy_after_average_down(dt);
-            reset_barotropic_energy_all_levels<NComp, EOSMethod>();
             profile_end(ProfileStage::AverageDown, stage_start);
             time += dt;
             for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -369,7 +365,6 @@
             profile_end(ProfileStage::AverageDown, stage_start);
             current_step = step;
          }
-         preserve_self_gravity_total_energy<EOSMethod>(step_start_self_gravity_total_energy);
          total_active_cell_updates += active_cell_updates_this_step;
          total_layout_cell_updates += layout_cell_updates_this_step;
          const bool reached_final_time = has_final_time && time >= cfg_.final_time;
@@ -380,8 +375,6 @@
          const bool will_regrid = should_regrid(step, reached_final_time);
 
          if (will_regrid) {
-            const amrex::Real pre_regrid_self_gravity_total_energy =
-               conservative_self_gravity_energy_sync_enabled() ? self_gravity_total_energy(state_) : 0.0;
             const amrex::Real regrid_start = profile_begin();
             const bool hierarchy_changed = regrid_hierarchy<SubcyclingEnabled>(time, step);
             if (cfg_.regrid_mode == "aligned" && cfg_.subcycling == "on") {
@@ -389,7 +382,6 @@
             }
             if (hierarchy_changed) {
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
-               preserve_self_gravity_total_energy<EOSMethod>(pre_regrid_self_gravity_total_energy);
             }
             profile_end(ProfileStage::Regrid, regrid_start);
          }
@@ -543,8 +535,6 @@
                         << " gravity=" << cfg_.gravity
                         << (gravity_enabled(cfg_) ? " gravity_coupling=" : "")
                         << (gravity_enabled(cfg_) ? cfg_.gravity_coupling : "")
-                        << (gravity_enabled(cfg_) ? " gravity_energy_sync=" : "")
-                        << (gravity_enabled(cfg_) ? cfg_.gravity_energy_sync : "")
                         << (cfg_.min_feature_length > 0.0 ? " amr_min_feature_length=" : "")
                         << (cfg_.min_feature_length > 0.0 ? std::to_string(cfg_.min_feature_length) : "")
                         << (is_mhd(cfg_) ? " ct=" : "")

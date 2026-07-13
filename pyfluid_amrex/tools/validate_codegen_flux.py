@@ -16,9 +16,13 @@ OPERATOR_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernel
 RIEMANN_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "riemann_ops.hpp"
 VECTOR_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "vector_ops.hpp"
 METRIC_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "coordinate_metrics.hpp"
+CHARACTERISTIC_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "characteristic_transforms.hpp"
+)
 sys.path.insert(0, str(CODEGEN))
 
 from pyfluid_codegen.emit_cpp import (  # noqa: E402
+   render_characteristic_header,
    render_eos_header,
    render_flux_header,
    render_metric_header,
@@ -26,6 +30,7 @@ from pyfluid_codegen.emit_cpp import (  # noqa: E402
    render_riemann_header,
    render_vector_header,
 )
+from pyfluid_codegen.characteristic_equations import characteristic_kernels  # noqa: E402
 from pyfluid_codegen.eos_equations import analytic_equations_of_state, eos_kernels  # noqa: E402
 from pyfluid_codegen.coordinates import orthogonal_frames  # noqa: E402
 from pyfluid_codegen.flux_equations import hydro_flux_equations, mhd_flux_equations  # noqa: E402
@@ -300,6 +305,129 @@ def random_riemann_values(rng: random.Random) -> dict[str, float]:
       values[f"{prefix}.b2"] = rng.uniform(-3.0, 3.0)
       values[f"{prefix}.b3"] = rng.uniform(-3.0, 3.0)
    return values
+
+
+def random_characteristic_values(rng: random.Random) -> dict[str, float]:
+   rho = rng.uniform(0.2, 5.0)
+   sound_speed = rng.uniform(0.2, 3.0)
+   alpha_angle = rng.uniform(0.0, 0.5 * math.pi)
+   beta_angle = rng.uniform(-math.pi, math.pi)
+   alpha_f = math.cos(alpha_angle)
+   alpha_s = math.sin(alpha_angle)
+   beta_t1 = math.cos(beta_angle)
+   beta_t2 = math.sin(beta_angle)
+   fast_speed = rng.uniform(sound_speed, 4.0 * sound_speed)
+   slow_speed = rng.uniform(0.05 * sound_speed, sound_speed)
+   return {
+      "rho_ref": rho,
+      "sound_speed": sound_speed,
+      "primitive.rho": rng.uniform(0.2, 5.0),
+      "primitive.vn": rng.uniform(-3.0, 3.0),
+      "primitive.vt1": rng.uniform(-3.0, 3.0),
+      "primitive.vt2": rng.uniform(-3.0, 3.0),
+      "primitive.pressure": rng.uniform(0.05, 8.0),
+      "primitive.bt1": rng.uniform(-3.0, 3.0),
+      "primitive.bt2": rng.uniform(-3.0, 3.0),
+      "basis.rho": rho,
+      "basis.sqrt_rho": math.sqrt(rho),
+      "basis.sound_speed": sound_speed,
+      "basis.fast_speed": fast_speed,
+      "basis.slow_speed": slow_speed,
+      "basis.alpha_f": alpha_f,
+      "basis.alpha_s": alpha_s,
+      "basis.beta_t1": beta_t1,
+      "basis.beta_t2": beta_t2,
+      "basis.normal_sign": -1.0 if rng.random() < 0.5 else 1.0,
+      "basis.velocity_denom": (
+         alpha_f * alpha_f * fast_speed * fast_speed
+         + alpha_s * alpha_s * slow_speed * slow_speed
+      ),
+   }
+
+
+def characteristic_projection_reference(name: str, values: dict[str, float]) -> list[float]:
+   rho = values["primitive.rho"]
+   vn = values["primitive.vn"]
+   vt1 = values["primitive.vt1"]
+   vt2 = values["primitive.vt2"]
+   pressure = values["primitive.pressure"]
+   sound_speed = values["sound_speed"] if name.startswith("hydro_") else values["basis.sound_speed"]
+   inv_sound2 = 1.0 / (sound_speed * sound_speed)
+   if name == "hydro_characteristics":
+      rho_ref = values["rho_ref"]
+      return [
+         rho - pressure * inv_sound2,
+         vt1,
+         vt2,
+         0.5 * (pressure * inv_sound2 - rho_ref * vn / sound_speed),
+         0.5 * (pressure * inv_sound2 + rho_ref * vn / sound_speed),
+      ]
+
+   alpha_f = values["basis.alpha_f"]
+   alpha_s = values["basis.alpha_s"]
+   beta_t1 = values["basis.beta_t1"]
+   beta_t2 = values["basis.beta_t2"]
+   sqrt_rho = values["basis.sqrt_rho"]
+   basis_rho = values["basis.rho"]
+   normal_sign = values["basis.normal_sign"]
+   fast_speed = values["basis.fast_speed"]
+   slow_speed = values["basis.slow_speed"]
+   velocity_denom = values["basis.velocity_denom"]
+   bt1 = values["primitive.bt1"]
+   bt2 = values["primitive.bt2"]
+   compressive = pressure * inv_sound2 / basis_rho
+   b_parallel = (beta_t1 * bt1 + beta_t2 * bt2) / (sound_speed * sqrt_rho)
+   fast_sum = alpha_f * compressive + alpha_s * b_parallel
+   slow_sum = alpha_s * compressive - alpha_f * b_parallel
+   v_parallel = normal_sign * (beta_t1 * vt1 + beta_t2 * vt2)
+   fast_diff = (alpha_f * fast_speed * vn - alpha_s * slow_speed * v_parallel) / velocity_denom
+   slow_diff = (alpha_s * slow_speed * vn + alpha_f * fast_speed * v_parallel) / velocity_denom
+   alfven_sum = (beta_t2 * bt1 - beta_t1 * bt2) / sqrt_rho
+   alfven_diff = normal_sign * (beta_t2 * vt1 - beta_t1 * vt2)
+   return [
+      0.5 * (fast_sum - fast_diff),
+      0.5 * (alfven_sum + alfven_diff),
+      0.5 * (slow_sum - slow_diff),
+      rho - pressure * inv_sound2,
+      0.5 * (slow_sum + slow_diff),
+      0.5 * (alfven_sum - alfven_diff),
+      0.5 * (fast_sum + fast_diff),
+   ]
+
+
+def validate_characteristic_round_trip(rng: random.Random) -> None:
+   kernels = {kernel.name: kernel for kernel in characteristic_kernels()}
+   for _ in range(128):
+      values = random_characteristic_values(rng)
+      for projection_name, recovery_name, primitive_fields in (
+         (
+            "hydro_characteristics",
+            "hydro_normal_primitive_from_characteristics",
+            ("rho", "vn", "vt1", "vt2", "pressure"),
+         ),
+         (
+            "mhd_characteristics",
+            "mhd_reduced_from_characteristics",
+            ("rho", "vn", "vt1", "vt2", "pressure", "bt1", "bt2"),
+         ),
+      ):
+         projection = kernels[projection_name]
+         projected = evaluate(projection.expressions, values)
+         assert_close(
+            projected,
+            characteristic_projection_reference(projection_name, values),
+            projection_name,
+         )
+         recovery_values = dict(values)
+         recovery_values.update(
+            {
+               f"waves.{field}": value
+               for field, value in zip(projection.outputs, projected, strict=True)
+            }
+         )
+         recovered = evaluate(kernels[recovery_name].expressions, recovery_values)
+         expected = [values[f"primitive.{field}"] for field in primitive_fields]
+         assert_close(recovered, expected, f"{projection_name} round trip")
 
 
 def riemann_reference(name: str, output: str, values: dict[str, float]) -> float:
@@ -836,6 +964,8 @@ def main() -> None:
       raise SystemExit(f"missing generated header: {VECTOR_HEADER}")
    if not METRIC_HEADER.exists():
       raise SystemExit(f"missing generated header: {METRIC_HEADER}")
+   if not CHARACTERISTIC_HEADER.exists():
+      raise SystemExit(f"missing generated header: {CHARACTERISTIC_HEADER}")
    rendered_flux = render_flux_header()
    stored_flux = FLUX_HEADER.read_text(encoding="utf-8")
    if rendered_flux != stored_flux:
@@ -858,9 +988,14 @@ def main() -> None:
    stored_metric = METRIC_HEADER.read_text(encoding="utf-8")
    if rendered_metric != stored_metric:
       raise SystemExit(f"generated metric header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+   rendered_characteristic = render_characteristic_header()
+   stored_characteristic = CHARACTERISTIC_HEADER.read_text(encoding="utf-8")
+   if rendered_characteristic != stored_characteristic:
+      raise SystemExit(f"generated characteristic header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
    validate_symbolic_operator_contract()
    validate_symbolic_eos_contract()
    rng = random.Random(20260628)
+   validate_characteristic_round_trip(rng)
    riemann_kernels = tuple(riemann_flux_kernels())
    vector_kernels = tuple(vector_operator_kernels())
    metric_kernels_cached = tuple(metric_kernels())
@@ -923,7 +1058,7 @@ def main() -> None:
          eos_actual = evaluate((kernel.expression,), eos_values)
          eos_expected = [eos_reference(kernel.name, eos_values)]
          assert_close(eos_actual, eos_expected, kernel.name)
-   print("PASS codegen_flux_riemann_eos_operators_vector_ops_and_metrics")
+   print("PASS codegen_flux_riemann_eos_characteristics_operators_vector_ops_and_metrics")
 
 
 if __name__ == "__main__":

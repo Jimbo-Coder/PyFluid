@@ -123,7 +123,12 @@
       const amrex::Real fine_dt_allowed =
          adaptive_dt_for_level<NComp, EOSMethod, DiffusionMethod>(coarse_lev + 1);
       if (!std::isfinite(fine_dt_allowed) || fine_dt_allowed <= 0.0) {
-         amrex::Abort("local-CFL subcycling found a non-positive fine-level timestep");
+         amrex::Abort(
+            "local-CFL subcycling found an invalid timestep for fine level "
+            + std::to_string(coarse_lev + 1)
+            + ": allowed_dt=" + std::to_string(fine_dt_allowed)
+            + " coarse_dt=" + std::to_string(coarse_dt)
+         );
       }
       const amrex::Real raw_count = coarse_dt / fine_dt_allowed;
       const amrex::Real eps =

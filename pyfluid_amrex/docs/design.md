@@ -19,8 +19,8 @@ make a path supported.
 | AMR subcycling | Production for validated Cartesian cases |
 | CT with explicit resistivity | Production for validated Cartesian cases |
 | Hydro implicit viscosity | Available; use its focused validation |
-| 2D periodic implicit CT resistivity | Available; use its focused validation |
-| 3D multilevel implicit CT resistivity | Unsupported: needs a composite edge solve |
+| Cartesian periodic implicit CT resistivity | Available in 2D/3D on one AMR level; use its focused validation |
+| Multilevel or curvilinear implicit CT resistivity | Unsupported by the AMReX 25.11 `MLCurlCurl` backend |
 | Homogeneous Cartesian multipatch | Hydro-only finite-volume path; use multipatch gate |
 | Cylindrical/spherical single patch | Coordinate-general kernel path; validate the exact method combination |
 | Mixed Cartesian-curvilinear shell layouts | Geometry/maps and sampling only; seam evolution is experimental |
@@ -169,12 +169,24 @@ the same physical face-flux kernel; explicit updates apply that divergence
 directly, while implicit updates register the converged-time face flux without
 applying it twice. Both enter the AMR flux registers and reflux coarse-fine
 mismatches. CT resistivity is the corresponding edge-EMF contribution. These
-operators are coordinate-general across every supported dimension and
-coordinate family.
+explicit operators are generated from the same coordinate-independent physics
+across every supported dimension and coordinate family. The implicit CT update
+uses the same generated resistive EMF and CT curl update, but its linear solve
+is limited to one-level Cartesian 2D/3D by AMReX 25.11 `MLCurlCurl`.
 
 CT uses face-centered magnetic fields and edge-centered EMFs. The matching
 face-divergence operator is the only divb diagnostic. Cell-centered B is
 synchronized from faces for reconstruction and Riemann solves.
+
+Fixed gravity is a stage-local source with cached potential/acceleration data.
+Periodic self-gravity solves the multilevel Poisson problem at synchronized
+hierarchy times and uses the Athena-style conservative source coupling. On a
+fixed single-level hierarchy its total fluid-plus-potential energy closes to
+roundoff. Regridding changes the discrete gravitational energy and is therefore
+validated as a convergent hierarchy-transfer error, not hidden by a global
+energy correction. Self-gravity with time subcycling is experimental until it
+shows both convergent agreement with a matched non-subcycled hierarchy and a
+useful simulation-time throughput gain.
 
 ## Input, Output, And Diagnostics
 

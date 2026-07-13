@@ -6,7 +6,9 @@
 
 #include <cmath>
 
+#include "pyfluid_amrex/characteristics.hpp"
 #include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/kernels_generated/characteristic_transforms.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
 #include "pyfluid_amrex/state.hpp"
 
@@ -37,47 +39,6 @@ struct MHDPrimitiveFaceStates {
 struct ScalarFaceValues {
    amrex::Real left = 0.0;
    amrex::Real right = 0.0;
-};
-
-struct HydroCharacteristics {
-   amrex::Real entropy = 0.0;
-   amrex::Real shear1 = 0.0;
-   amrex::Real shear2 = 0.0;
-   amrex::Real sound_minus = 0.0;
-   amrex::Real sound_plus = 0.0;
-};
-
-struct MHDReducedPrimitive {
-   amrex::Real rho = 0.0;
-   amrex::Real vn = 0.0;
-   amrex::Real vt1 = 0.0;
-   amrex::Real vt2 = 0.0;
-   amrex::Real pressure = 0.0;
-   amrex::Real bt1 = 0.0;
-   amrex::Real bt2 = 0.0;
-};
-
-struct MHDCharacteristics {
-   amrex::Real fast_minus = 0.0;
-   amrex::Real alfven_minus = 0.0;
-   amrex::Real slow_minus = 0.0;
-   amrex::Real entropy = 0.0;
-   amrex::Real slow_plus = 0.0;
-   amrex::Real alfven_plus = 0.0;
-   amrex::Real fast_plus = 0.0;
-};
-
-struct MHDCharacteristicBasis {
-   amrex::Real rho = 0.0;
-   amrex::Real sqrt_rho = 0.0;
-   amrex::Real sound_speed = 0.0;
-   amrex::Real fast_speed = 0.0;
-   amrex::Real slow_speed = 0.0;
-   amrex::Real alpha_f = 0.0;
-   amrex::Real alpha_s = 0.0;
-   amrex::Real beta_t1 = 0.0;
-   amrex::Real beta_t2 = 0.0;
-   amrex::Real normal_sign = 1.0;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -548,15 +509,17 @@ HydroCharacteristics hydro_characteristics(
    amrex::Real sound_speed
 ) noexcept
 {
-   const amrex::Real inv_sound2 = 1.0 / (sound_speed * sound_speed);
-   const amrex::Real vn = hydro_normal_velocity<Direction>(q);
-   return {
-      q.rho - q.pressure * inv_sound2,
-      hydro_tangent1_velocity<Direction>(q),
-      hydro_tangent2_velocity<Direction>(q),
-      0.5 * (q.pressure * inv_sound2 - rho_ref * vn / sound_speed),
-      0.5 * (q.pressure * inv_sound2 + rho_ref * vn / sound_speed),
-   };
+   return generated::hydro_characteristics(
+      {
+         q.rho,
+         hydro_normal_velocity<Direction>(q),
+         hydro_tangent1_velocity<Direction>(q),
+         hydro_tangent2_velocity<Direction>(q),
+         q.pressure,
+      },
+      rho_ref,
+      sound_speed
+   );
 }
 
 template <int Direction>
@@ -567,10 +530,15 @@ HydroPrimitive hydro_primitive_from_characteristics(
    amrex::Real sound_speed
 ) noexcept
 {
-   const amrex::Real rho = w.entropy + w.sound_minus + w.sound_plus;
-   const amrex::Real vn = sound_speed * (w.sound_plus - w.sound_minus) / rho_ref;
-   const amrex::Real pressure = sound_speed * sound_speed * (w.sound_minus + w.sound_plus);
-   return hydro_primitive_from_normal<Direction>(rho, vn, w.shear1, w.shear2, pressure);
+   const HydroNormalPrimitive primitive =
+      generated::hydro_normal_primitive_from_characteristics(w, rho_ref, sound_speed);
+   return hydro_primitive_from_normal<Direction>(
+      primitive.rho,
+      primitive.vn,
+      primitive.vt1,
+      primitive.vt2,
+      primitive.pressure
+   );
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -674,6 +642,10 @@ MHDCharacteristicBasis mhd_characteristic_basis(
       alpha_f = std::sqrt(amrex::max((sound2 - slow2) / denom, 0.0));
       alpha_s = std::sqrt(amrex::max((fast2 - sound2) / denom, 0.0));
    }
+   amrex::Real velocity_denom = alpha_f * alpha_f * fast2 + alpha_s * alpha_s * slow2;
+   if (velocity_denom <= 1.0e-14) {
+      velocity_denom = sound2;
+   }
 
    return {
       rho_ref,
@@ -686,49 +658,14 @@ MHDCharacteristicBasis mhd_characteristic_basis(
       beta_t1,
       beta_t2,
       b_normal < 0.0 ? -1.0 : 1.0,
+      velocity_denom,
    };
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 MHDCharacteristics mhd_characteristics(MHDReducedPrimitive const& q, MHDCharacteristicBasis const& basis) noexcept
 {
-   const amrex::Real inv_sound2 = 1.0 / (basis.sound_speed * basis.sound_speed);
-   const amrex::Real compressive = q.pressure * inv_sound2 / basis.rho;
-   const amrex::Real b_parallel = (
-      basis.beta_t1 * q.bt1 + basis.beta_t2 * q.bt2
-   ) / (basis.sound_speed * basis.sqrt_rho);
-   const amrex::Real fast_sum = basis.alpha_f * compressive + basis.alpha_s * b_parallel;
-   const amrex::Real slow_sum = basis.alpha_s * compressive - basis.alpha_f * b_parallel;
-
-   amrex::Real denom = (
-      basis.alpha_f * basis.alpha_f * basis.fast_speed * basis.fast_speed
-      + basis.alpha_s * basis.alpha_s * basis.slow_speed * basis.slow_speed
-   );
-   if (denom <= 1.0e-14) {
-      denom = basis.sound_speed * basis.sound_speed;
-   }
-
-   const amrex::Real v_parallel = basis.normal_sign * (basis.beta_t1 * q.vt1 + basis.beta_t2 * q.vt2);
-   const amrex::Real fast_diff = (
-      basis.alpha_f * basis.fast_speed * q.vn
-      - basis.alpha_s * basis.slow_speed * v_parallel
-   ) / denom;
-   const amrex::Real slow_diff = (
-      basis.alpha_s * basis.slow_speed * q.vn
-      + basis.alpha_f * basis.fast_speed * v_parallel
-   ) / denom;
-   const amrex::Real alfven_sum = (basis.beta_t2 * q.bt1 - basis.beta_t1 * q.bt2) / basis.sqrt_rho;
-   const amrex::Real alfven_diff = basis.normal_sign * (basis.beta_t2 * q.vt1 - basis.beta_t1 * q.vt2);
-
-   return {
-      0.5 * (fast_sum - fast_diff),
-      0.5 * (alfven_sum + alfven_diff),
-      0.5 * (slow_sum - slow_diff),
-      q.rho - q.pressure * inv_sound2,
-      0.5 * (slow_sum + slow_diff),
-      0.5 * (alfven_sum - alfven_diff),
-      0.5 * (fast_sum + fast_diff),
-   };
+   return generated::mhd_characteristics(q, basis);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -737,39 +674,7 @@ MHDReducedPrimitive mhd_reduced_from_characteristics(
    MHDCharacteristicBasis const& basis
 ) noexcept
 {
-   const amrex::Real fast_sum = w.fast_minus + w.fast_plus;
-   const amrex::Real fast_diff = w.fast_plus - w.fast_minus;
-   const amrex::Real slow_sum = w.slow_minus + w.slow_plus;
-   const amrex::Real slow_diff = w.slow_plus - w.slow_minus;
-   const amrex::Real alfven_sum = w.alfven_minus + w.alfven_plus;
-   const amrex::Real alfven_diff = w.alfven_minus - w.alfven_plus;
-   const amrex::Real sound2 = basis.sound_speed * basis.sound_speed;
-
-   return {
-      basis.alpha_f * basis.rho * fast_sum + basis.alpha_s * basis.rho * slow_sum + w.entropy,
-      basis.alpha_f * basis.fast_speed * fast_diff + basis.alpha_s * basis.slow_speed * slow_diff,
-      basis.normal_sign * (
-         -basis.alpha_s * basis.slow_speed * basis.beta_t1 * fast_diff
-         + basis.alpha_f * basis.fast_speed * basis.beta_t1 * slow_diff
-         + basis.beta_t2 * alfven_diff
-      ),
-      basis.normal_sign * (
-         -basis.alpha_s * basis.slow_speed * basis.beta_t2 * fast_diff
-         + basis.alpha_f * basis.fast_speed * basis.beta_t2 * slow_diff
-         - basis.beta_t1 * alfven_diff
-      ),
-      basis.alpha_f * basis.rho * sound2 * fast_sum + basis.alpha_s * basis.rho * sound2 * slow_sum,
-      (
-         basis.alpha_s * basis.sound_speed * basis.sqrt_rho * basis.beta_t1 * fast_sum
-         - basis.alpha_f * basis.sound_speed * basis.sqrt_rho * basis.beta_t1 * slow_sum
-         + basis.beta_t2 * basis.sqrt_rho * alfven_sum
-      ),
-      (
-         basis.alpha_s * basis.sound_speed * basis.sqrt_rho * basis.beta_t2 * fast_sum
-         - basis.alpha_f * basis.sound_speed * basis.sqrt_rho * basis.beta_t2 * slow_sum
-         - basis.beta_t1 * basis.sqrt_rho * alfven_sum
-      ),
-   };
+   return generated::mhd_reduced_from_characteristics(w, basis);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

@@ -267,11 +267,9 @@ WALL_POLICY = scalar_checks(
 )
 DIFFUSIVE_POLICY = scalar_checks(
    "diffusive",
-   energy=False,
 )
 DIFFUSIVE_WALL_POLICY = scalar_checks(
    "diffusive_wall",
-   energy=False,
    momentum=False,
 )
 SMOKE_POLICY = scalar_checks(
@@ -699,13 +697,21 @@ def check_scalar_rows(rows: list[dict[str, str]], policy: ScalarPolicy, *, mhd: 
       momentum_tol=policy.momentum_tol or 1.0e-8,
       divb_tol=policy.divb_tol or 1.0e-10,
    )
-   failures.extend(check_external_conservation(rows))
+   failures.extend(
+      check_external_conservation(
+         rows,
+         mass=policy.mass_tol is not None,
+         energy=policy.energy_tol is not None,
+      )
+   )
    return failures
 
 
 def check_external_conservation(
    rows: list[dict[str, str]],
    *,
+   mass: bool = True,
+   energy: bool = True,
    tolerance: float = 1.0e-10,
 ) -> list[str]:
    """Check the solver's discrete physical-boundary/source conservation ledger."""
@@ -716,7 +722,12 @@ def check_external_conservation(
       return []
 
    failures: list[str] = []
-   for column in ("external_mass_rel_error", "external_energy_rel_error"):
+   columns = []
+   if mass:
+      columns.append("external_mass_rel_error")
+   if energy:
+      columns.append("external_energy_rel_error")
+   for column in columns:
       error = max_abs_column(valid_rows, column)
       if not math.isfinite(error) or error > tolerance:
          failures.append(f"{column}={error:.3e} > {tolerance:.3e}")

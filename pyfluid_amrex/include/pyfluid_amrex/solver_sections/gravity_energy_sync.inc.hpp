@@ -67,8 +67,10 @@
    void accumulate_athena_ssprk3_gravity_energy_source_register_dir(
       int fine_lev,
       int dir,
-      amrex::MultiFab const& fine_average_source,
-      amrex::Real dt
+      amrex::MultiFab const* fine_average_source,
+      amrex::Real dt,
+      bool include_coarse,
+      bool include_fine
    )
    {
       const int coarse_lev = fine_lev - 1;
@@ -92,7 +94,9 @@
          const amrex::Box& bx = mfi.tilebox();
          const auto reg = reg_mf.array(mfi);
          const auto covered = grown_mask.const_array(mfi);
-         const auto avg = fine_average_source.const_array(mfi);
+         const auto avg = include_fine
+            ? fine_average_source->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{};
          const auto f0 = gravity_stage_mass_flux_[0][coarse_lev][dir]->const_array(mfi);
          const auto f1 = gravity_stage_mass_flux_[1][coarse_lev][dir]->const_array(mfi);
          const auto f2 = gravity_stage_mass_flux_[2][coarse_lev][dir]->const_array(mfi);
@@ -102,39 +106,41 @@
             if (covered(i, j, k, 0) == 0) {
                return;
             }
-            auto coarse_source = [=] AMREX_GPU_DEVICE(int ii, int jj, int kk) noexcept -> amrex::Real {
+            auto face_correction = [=] AMREX_GPU_DEVICE(int ii, int jj, int kk) noexcept -> amrex::Real {
                const amrex::Real mass_flux = (
                   f0(ii, jj, kk, 0) + f1(ii, jj, kk, 0) + 4.0 * f2(ii, jj, kk, 0)
                ) / 6.0;
                const amrex::Real acceleration = -0.5 * (g0(ii, jj, kk, 0) + g(ii, jj, kk, 0)) - accel_offset;
-               return 0.5 * mass_flux * acceleration;
+               const amrex::Real coarse_source = 0.5 * mass_flux * acceleration;
+               const amrex::Real fine_source = include_fine ? avg(ii, jj, kk, 0) : 0.0;
+               return fine_source - (include_coarse ? coarse_source : 0.0);
             };
             amrex::Real correction = 0.0;
             if (dir == 0) {
                if (i > lo[0] && covered(i - 1, j, k, 0) == 0) {
-                  correction += avg(i, j, k, 0) - coarse_source(i, j, k);
+                  correction += face_correction(i, j, k);
                }
                if (i < hi[0] && covered(i + 1, j, k, 0) == 0) {
-                  correction += avg(i + 1, j, k, 0) - coarse_source(i + 1, j, k);
+                  correction += face_correction(i + 1, j, k);
                }
             }
 #if (AMREX_SPACEDIM >= 2)
             if (dir == 1) {
                if (j > lo[1] && covered(i, j - 1, k, 0) == 0) {
-                  correction += avg(i, j, k, 0) - coarse_source(i, j, k);
+                  correction += face_correction(i, j, k);
                }
                if (j < hi[1] && covered(i, j + 1, k, 0) == 0) {
-                  correction += avg(i, j + 1, k, 0) - coarse_source(i, j + 1, k);
+                  correction += face_correction(i, j + 1, k);
                }
             }
 #endif
 #if (AMREX_SPACEDIM == 3)
             if (dir == 2) {
                if (k > lo[2] && covered(i, j, k - 1, 0) == 0) {
-                  correction += avg(i, j, k, 0) - coarse_source(i, j, k);
+                  correction += face_correction(i, j, k);
                }
                if (k < hi[2] && covered(i, j, k + 1, 0) == 0) {
-                  correction += avg(i, j, k + 1, 0) - coarse_source(i, j, k + 1);
+                  correction += face_correction(i, j, k + 1);
                }
             }
 #endif
@@ -155,42 +161,47 @@
       }
       for (int fine_lev = 1; fine_lev <= finestLevel(); ++fine_lev) {
          const int coarse_lev = fine_lev - 1;
-         if (coarse_lev < lev_begin || fine_lev >= lev_end) {
+         const bool include_coarse = coarse_lev >= lev_begin && coarse_lev < lev_end;
+         const bool include_fine = fine_lev >= lev_begin && fine_lev < lev_end;
+         if (!include_coarse && !include_fine) {
             continue;
          }
          if (!gravity_energy_source_register_[fine_lev]) {
             continue;
          }
-         gravity_energy_source_register_[fine_lev]->setVal(0.0);
          std::array<std::unique_ptr<amrex::MultiFab>, AMREX_SPACEDIM> fine_source;
          std::array<std::unique_ptr<amrex::MultiFab>, AMREX_SPACEDIM> fine_average_source;
-         amrex::Array<amrex::MultiFab const*, AMREX_SPACEDIM> fine_ptrs;
-         amrex::Array<amrex::MultiFab*, AMREX_SPACEDIM> average_ptrs;
-         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-            fine_source[dir] = std::make_unique<amrex::MultiFab>(
-               gravity_stage_mass_flux_[2][fine_lev][dir]->boxArray(),
-               gravity_stage_mass_flux_[2][fine_lev][dir]->DistributionMap(),
-               1,
-               0
-            );
-            fine_average_source[dir] = std::make_unique<amrex::MultiFab>(
-               gravity_stage_mass_flux_[2][coarse_lev][dir]->boxArray(),
-               gravity_stage_mass_flux_[2][coarse_lev][dir]->DistributionMap(),
-               1,
-               0
-            );
-            fill_athena_ssprk3_gravity_face_energy_source(fine_lev, dir, *fine_source[dir]);
-            fine_average_source[dir]->setVal(0.0);
-            fine_ptrs[dir] = fine_source[dir].get();
-            average_ptrs[dir] = fine_average_source[dir].get();
+         if (include_fine) {
+            amrex::Array<amrex::MultiFab const*, AMREX_SPACEDIM> fine_ptrs;
+            amrex::Array<amrex::MultiFab*, AMREX_SPACEDIM> average_ptrs;
+            for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+               fine_source[dir] = std::make_unique<amrex::MultiFab>(
+                  gravity_stage_mass_flux_[2][fine_lev][dir]->boxArray(),
+                  gravity_stage_mass_flux_[2][fine_lev][dir]->DistributionMap(),
+                  1,
+                  0
+               );
+               fine_average_source[dir] = std::make_unique<amrex::MultiFab>(
+                  gravity_stage_mass_flux_[2][coarse_lev][dir]->boxArray(),
+                  gravity_stage_mass_flux_[2][coarse_lev][dir]->DistributionMap(),
+                  1,
+                  0
+               );
+               fill_athena_ssprk3_gravity_face_energy_source(fine_lev, dir, *fine_source[dir]);
+               fine_average_source[dir]->setVal(0.0);
+               fine_ptrs[dir] = fine_source[dir].get();
+               average_ptrs[dir] = fine_average_source[dir].get();
+            }
+            amrex::average_down_faces(fine_ptrs, average_ptrs, refRatio(coarse_lev), 0);
          }
-         amrex::average_down_faces(fine_ptrs, average_ptrs, refRatio(coarse_lev), 0);
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
             accumulate_athena_ssprk3_gravity_energy_source_register_dir(
                fine_lev,
                dir,
-               *fine_average_source[dir],
-               dt
+               include_fine ? fine_average_source[dir].get() : nullptr,
+               dt,
+               include_coarse,
+               include_fine
             );
          }
       }

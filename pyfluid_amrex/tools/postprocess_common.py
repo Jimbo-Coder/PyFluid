@@ -42,6 +42,67 @@ def passfail(value: float, tolerance: float) -> str:
    return "PASS" if math.isfinite(value) and value <= tolerance else "FAIL"
 
 
+def double_mach_reflection_budget_errors(
+   rows: list[dict[str, str]],
+) -> tuple[float, float]:
+   """Compare global changes with the analytic DMR boundary integral."""
+   if not rows:
+      return math.nan, math.nan
+
+   initial = rows[0]
+   final = rows[-1]
+   initial_time = parse_float(initial.get("time"))
+   time_value = parse_float(final.get("time"))
+   elapsed_time = time_value - initial_time
+   rho_post = 8.0
+   pressure_post = 116.5
+   velocity_1_post = 7.144709581221619
+   velocity_2_post = -4.125
+   shock_intersection_speed = 20.0 / math.sqrt(3.0)
+   top_minus_bottom_length_at_zero = 1.0 / math.sqrt(3.0)
+   domain_width = 4.0
+   reflecting_segment_width = 1.0 / 6.0
+   maximum_top_minus_bottom_length = domain_width - reflecting_segment_width
+   saturation_time = (
+      maximum_top_minus_bottom_length - top_minus_bottom_length_at_zero
+   ) / shock_intersection_speed
+   if time_value > saturation_time:
+      # The shock has reached the outflow boundary. Its outgoing flux is
+      # solution-dependent, so only the runtime finite-volume ledger remains
+      # an exact global budget beyond this point.
+      return math.nan, math.nan
+   def integrated_boundary_factor_through(time: float) -> float:
+      growing_time = min(time, saturation_time)
+      return (
+         top_minus_bottom_length_at_zero * growing_time
+         + 0.5 * shock_intersection_speed * growing_time * growing_time
+         + maximum_top_minus_bottom_length * max(time - saturation_time, 0.0)
+      )
+
+   integrated_boundary_factor = (
+      integrated_boundary_factor_through(time_value)
+      - integrated_boundary_factor_through(initial_time)
+   )
+   expected_mass_change = (
+      rho_post * velocity_1_post * elapsed_time
+      - rho_post * velocity_2_post * integrated_boundary_factor
+   )
+   energy_post = (
+      pressure_post / (1.4 - 1.0)
+      + 0.5 * rho_post * (velocity_1_post**2 + velocity_2_post**2)
+   )
+   enthalpy_density_post = energy_post + pressure_post
+   expected_energy_change = (
+      enthalpy_density_post * velocity_1_post * elapsed_time
+      - enthalpy_density_post * velocity_2_post * integrated_boundary_factor
+   )
+   measured_mass_change = parse_float(final.get("mass")) - parse_float(initial.get("mass"))
+   measured_energy_change = parse_float(final.get("energy")) - parse_float(initial.get("energy"))
+   mass_error = abs(measured_mass_change - expected_mass_change) / max(abs(expected_mass_change), 1.0e-30)
+   energy_error = abs(measured_energy_change - expected_energy_change) / max(abs(expected_energy_change), 1.0e-30)
+   return mass_error, energy_error
+
+
 def physics_validation_rows(run_dir: Path, *, input_file: Path | None = None) -> list[dict[str, object]]:
    run_dir = run_dir.resolve()
    rows = read_scalar_rows(run_dir)
@@ -74,6 +135,26 @@ def physics_validation_rows(run_dir: Path, *, input_file: Path | None = None) ->
          "tolerance": tol,
          "run_dir": str(run_dir),
       })
+
+   if params.get("pyfluid.boundary_profile", "") == "double_mach_reflection":
+      tolerance = param_float(params, "pyfluid.validation_dmr_budget_tol", 1.0e-2)
+      mass_error, energy_error = double_mach_reflection_budget_errors(rows)
+      for metric, value in (
+         ("analytic_mass_budget_relative_error", mass_error),
+         ("analytic_energy_budget_relative_error", energy_error),
+      ):
+         if not math.isfinite(value):
+            continue
+         status = passfail(value, tolerance)
+         out.append({
+            "hook": "double_mach_reflection_budget",
+            "status": status,
+            "reason": "" if status == "PASS" else f"{metric}={value:.3e} > {tolerance:.3e}",
+            "metric": metric,
+            "value": value,
+            "tolerance": tolerance,
+            "run_dir": str(run_dir),
+         })
 
    # This is level-3 postprocessing. Scalar validation always runs, while the
    # spatial pressure-bump checks only apply when the run actually wrote state.

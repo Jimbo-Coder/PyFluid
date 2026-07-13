@@ -73,6 +73,7 @@ coordinate manipulation:
 - ideal-gas, barotropic-polytrope, and hybrid-polytrope closures, inverse
   internal-energy relations, and adiabatic sound speeds;
 - LLF and HLL state-combination formulas;
+- HD and MHD characteristic projection/recovery transforms;
 - orthogonal-coordinate metric factors and geometric momentum sources;
 - Newtonian viscous stress and tensor-divergence connection terms;
 - curl, divergence, ideal/resistive EMF, and CT face-flux updates;
@@ -82,9 +83,10 @@ The generator represents a conservation equation as
 `d_t U_A + div(F_A) = S_A`, where scalar/vector conserved quantities determine
 the rank of their coordinate-independent flux. Hydro and MHD are compositions
 of those equations rather than separate direction-expanded formulas. It does
-not yet emit an arbitrary complete solver: characteristic wave estimates,
-HLLC/HLLD fan logic, reconstruction, time integration, AMR/reflux operations,
-and staggered AMReX data assembly remain numerical or topology modules.
+not yet emit an arbitrary complete solver: characteristic basis and wave
+estimates, HLLC/HLLD fan logic, reconstruction, time integration, AMR/reflux
+operations, and staggered AMReX data assembly remain numerical or topology
+modules.
 
 ## Coordinate Strategy
 

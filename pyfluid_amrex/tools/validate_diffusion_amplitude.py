@@ -99,11 +99,53 @@ CASES = [
       ct=True,
    ),
    DiffusionCase(
+      name="mhd_resistivity_implicit_ct",
+      label="MHD implicit resistivity CT",
+      dim=2,
+      input_file=ROOT / "pyfluid_amrex/inputs/resistive_wave_x_2d_ct.in",
+      method="implicit",
+      physics="mhd",
+      coefficient_name="eta_m",
+      amplitude_kind="mhd_resistive",
+      use_viscosity=False,
+      use_resistivity=True,
+      mhd=True,
+      ct=True,
+   ),
+   DiffusionCase(
+      name="mhd_resistivity_implicit_ct_3d",
+      label="MHD implicit resistivity CT 3D",
+      dim=3,
+      input_file=ROOT / "pyfluid_amrex/inputs/resistive_wave_x_3d_ct.in",
+      method="implicit",
+      physics="mhd",
+      coefficient_name="eta_m",
+      amplitude_kind="mhd_resistive",
+      use_viscosity=False,
+      use_resistivity=True,
+      mhd=True,
+      ct=True,
+   ),
+   DiffusionCase(
       name="mhd_alfven_combined_explicit_ct",
       label="MHD explicit viscosity+resistivity CT",
       dim=2,
       input_file=ROOT / "pyfluid_amrex/inputs/circular_alfven_x_2d_ct.in",
       method="explicit",
+      physics="mhd",
+      coefficient_name="0.5*(nu+eta_m)",
+      amplitude_kind="mhd_alfven_combined",
+      use_viscosity=True,
+      use_resistivity=True,
+      mhd=True,
+      ct=True,
+   ),
+   DiffusionCase(
+      name="mhd_alfven_combined_implicit_ct",
+      label="MHD implicit viscosity+resistivity CT",
+      dim=2,
+      input_file=ROOT / "pyfluid_amrex/inputs/circular_alfven_x_2d_ct.in",
+      method="implicit",
       physics="mhd",
       coefficient_name="0.5*(nu+eta_m)",
       amplitude_kind="mhd_alfven_combined",
@@ -154,13 +196,13 @@ def hydro_shear_amplitude(plotfile: Path, wave_number: float, xlo: float, xhi: f
 
 def mhd_resistive_amplitude(plotfile: Path, wave_number: float, xlo: float, xhi: float) -> tuple[float, float]:
    names, ndim, time_value = parse_plot_header_nd(plotfile)
-   if ndim != 2:
-      raise ValueError(f"MHD resistive amplitude validator expects a 2D plotfile, got ndim={ndim}")
+   if ndim not in (2, 3):
+      raise ValueError(f"MHD resistive amplitude validator expects a 2D or 3D plotfile, got ndim={ndim}")
    state = read_level_state(plotfile, names, ndim, 0)
    index = {name: idx for idx, name in enumerate(names)}
    by = state[index["b2"]]
    bz = state[index["b3"]]
-   x = centered_x(by.shape[0], xlo, xhi)[:, None]
+   x = centered_x(by.shape[0], xlo, xhi).reshape((by.shape[0],) + (1,) * (by.ndim - 1))
    kx = 2.0 * np.pi * wave_number * x
    by_coeff = 2.0 * float(np.mean(by * np.sin(kx)))
    bz_coeff = 2.0 * float(np.mean(bz * np.cos(kx)))
@@ -289,8 +331,10 @@ def evolution_input(case: DiffusionCase, run_dir: Path, args: argparse.Namespace
    }
    if case.dim == 1:
       parameters["amr.n_cell"] = str(args.hydro_nx)
-   else:
+   elif case.dim == 2:
       parameters["amr.n_cell"] = f"{args.mhd_nx} {args.mhd_ny}"
+   else:
+      parameters["amr.n_cell"] = f"{args.mhd_nx} {args.mhd_ny} {args.mhd_nz}"
    return materialize_run_input(case.input_file, run_dir / "run.in", parameters)
 
 
@@ -311,7 +355,7 @@ def run_case(case: DiffusionCase, args: argparse.Namespace) -> tuple[list[dict[s
 
    amplitude_rows = collect_amplitudes(case, run_dir, args)
    scalar_rows = read_scalar_rows(run_dir)
-   scalar_failures = check_scalars(scalar_rows, mhd=case.mhd, energy=False)
+   scalar_failures = check_scalars(scalar_rows, mhd=case.mhd)
    max_rel = max(float(row["relative_error"]) for row in amplitude_rows)
    if max_rel > args.rel_tol:
       scalar_failures.append(f"max amplitude relative error {max_rel:.3e} > {args.rel_tol:.3e}")
@@ -417,6 +461,7 @@ def parse_args() -> argparse.Namespace:
    parser.add_argument("--hydro-nx", type=int, default=256)
    parser.add_argument("--mhd-nx", type=int, default=96)
    parser.add_argument("--mhd-ny", type=int, default=24)
+   parser.add_argument("--mhd-nz", type=int, default=8)
    parser.add_argument("--rho0", type=float, default=1.0)
    parser.add_argument("--b1_0", type=float, default=1.0)
    parser.add_argument("--amplitude", type=float, default=1.0e-3)

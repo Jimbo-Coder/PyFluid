@@ -29,7 +29,7 @@ pyfluid.physics = hydro
 pyfluid.ct = off
 pyfluid.max_step = 100000
 pyfluid.final_time = 0.2
-pyfluid.ng = 2
+pyfluid.ng = 3
 pyfluid.cfl = 0.4
 pyfluid.gamma = 1.4
 
@@ -52,7 +52,7 @@ pyfluid.v1_right = 0.0
 pyfluid.v2_right = 0.0
 pyfluid.v3_right = 0.0
 
-pyfluid.recon = pwl
+pyfluid.recon = wenoz-char
 pyfluid.riemann = hllc
 pyfluid.timestep = ssprk3
 pyfluid.bc = outflow

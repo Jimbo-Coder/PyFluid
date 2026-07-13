@@ -1,7 +1,10 @@
 #include "pyfluid_amrex/amr_solver.hpp"
 
+#include <AMReX_FillPatchUtil.H>
+
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace pyfluid_amrex {
 
@@ -164,6 +167,34 @@ void AmrSolver::validate_amr_refinement_ratios() const
    }
    if (cfg_.solid_geometry != "off") {
       amrex::Abort("anisotropic amr.ref_ratio is currently supported only with pyfluid.solid_geometry = off");
+   }
+}
+
+void AmrSolver::validate_state_interpolation_nesting() const
+{
+   for (int fine_lev = 2; fine_lev <= maxLevel(); ++fine_lev) {
+      const amrex::IntVect ratio = refRatio(fine_lev - 1);
+      const amrex::IntVect blocking_factor = blockingFactor(fine_lev);
+      if (amrex::ProperlyNested(
+             ratio,
+             blocking_factor,
+             cfg_.ng,
+             amrex::IndexType::TheCellType(),
+             selected_state_interpolater()
+          )) {
+         continue;
+      }
+
+      std::ostringstream message;
+      message
+         << "AMR hierarchy is not properly nested for amr.state_interp=" << cfg_.state_interp
+         << ", pyfluid.ng=" << cfg_.ng
+         << ", amr.ref_ratio=" << ratio
+         << ", and amr.blocking_factor=" << blocking_factor
+         << " at level " << fine_lev
+         << ". Increase amr.blocking_factor; an invalid interpolation footprint can corrupt "
+            "coarse-fine ghost data on deep hierarchies.";
+      amrex::Abort(message.str());
    }
 }
 

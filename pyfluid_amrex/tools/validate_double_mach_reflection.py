@@ -10,8 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
-from plot_amrex_boxed_movie import composite_slice
+from amr_plot_data import HierarchySlice
+from postprocess_common import double_mach_reflection_budget_errors
 from plotfile_reader import (
    latest_plotfile,
    level_index_boxes,
@@ -42,6 +47,10 @@ class Case:
    n_cell: str
    max_level: int
    subcycling: str
+   recon: str = "pwl"
+   ng: int = 2
+   recon_fine: str = ""
+   recon_fine_start_level: int = -1
 
 
 QUICK_CASES = (
@@ -56,6 +65,14 @@ REFERENCE_CASES = (
    Case("fine_reference", "512 128", 0, "off"),
 )
 
+RECONSTRUCTION_CASES = (
+   Case("recon_pwl", "64 16", 2, "on", "pwl", 2),
+   Case("recon_wenoz", "64 16", 2, "on", "wenoz", 3),
+   Case("recon_pwl_char_hybrid", "64 16", 2, "on", "pwl", 3, "wenoz-char", 2),
+   Case("recon_wenoz_char", "64 16", 2, "on", "wenoz-char", 3),
+   Case("recon_fine_reference", "512 128", 0, "off", "wenoz-char", 3),
+)
+
 
 def run_case(case: Case, ranks: int, force: bool, final_time: float) -> dict[str, object]:
    run_dir = RUN_ROOT / case.name
@@ -68,27 +85,38 @@ def run_case(case: Case, ranks: int, force: bool, final_time: float) -> dict[str
    else:
       ratios = "2"
       buffers = "2"
+   overrides = {
+      "pyfluid.run_name": f"double_mach_reflection_{case.name}",
+      "pyfluid.output_dir": str(run_dir),
+      "pyfluid.final_time": f"{final_time:.17g}",
+      "pyfluid.max_step": "100000",
+      "pyfluid.scalar_int": "1",
+      "pyfluid.plot_int": "16",
+      "pyfluid.checkpoint_int": "-1",
+      "pyfluid.subcycling": case.subcycling,
+      "pyfluid.recon": case.recon,
+      "pyfluid.ng": str(case.ng),
+      "amr.n_cell": case.n_cell,
+      "amr.max_level": str(case.max_level),
+      "amr.ref_ratio": ratios,
+      "amr.n_error_buf": buffers,
+      "amr.max_grid_size": "32",
+      "amr.blocking_factor": "8",
+      "amr.total_cell_budget": "400000",
+   }
+   if case.recon_fine:
+      overrides["pyfluid.recon_fine"] = case.recon_fine
+      overrides["pyfluid.recon_fine_start_level"] = str(case.recon_fine_start_level)
+   remove_parameters = []
+   if case.max_level == 0:
+      remove_parameters.append("amr.ref_ratio")
+   if not case.recon_fine:
+      remove_parameters.extend(("pyfluid.recon_fine", "pyfluid.recon_fine_start_level"))
    input_file = materialize_run_input(
       BASE_INPUT,
       run_dir / "run.in",
-      {
-         "pyfluid.run_name": f"double_mach_reflection_{case.name}",
-         "pyfluid.output_dir": str(run_dir),
-         "pyfluid.final_time": f"{final_time:.17g}",
-         "pyfluid.max_step": "100000",
-         "pyfluid.scalar_int": "1",
-         "pyfluid.plot_int": "16",
-         "pyfluid.checkpoint_int": "-1",
-         "pyfluid.subcycling": case.subcycling,
-         "amr.n_cell": case.n_cell,
-         "amr.max_level": str(case.max_level),
-         "amr.ref_ratio": ratios,
-         "amr.n_error_buf": buffers,
-         "amr.max_grid_size": "32",
-         "amr.blocking_factor": "8",
-         "amr.total_cell_budget": "400000",
-      },
-      remove_parameters=("amr.ref_ratio",) if case.max_level == 0 else (),
+      overrides,
+      remove_parameters=tuple(remove_parameters),
    )
    result = run_amrex(dim=2, input_path=input_file, ranks=ranks, timeout=600)
    log_path = run_dir / "run.log"
@@ -121,47 +149,16 @@ def run_case(case: Case, ranks: int, force: bool, final_time: float) -> dict[str
    mass_budget_error = math.nan
    energy_budget_error = math.nan
    if scalar_rows:
-      initial_mass = parse_float(scalar_rows[0].get("mass"))
-      final_mass = parse_float(scalar_rows[-1].get("mass"))
-      initial_energy = parse_float(scalar_rows[0].get("energy"))
-      final_energy = parse_float(scalar_rows[-1].get("energy"))
-      time_value = parse_float(scalar_rows[-1].get("time"))
-      rho_post = 8.0
-      pressure_post = 116.5
-      u_post = 7.144709581221619
-      v_post = -4.125
-      shock_intersection_speed = 20.0 / math.sqrt(3.0)
-      top_minus_bottom_length_at_zero = 1.0 / math.sqrt(3.0)
-      integrated_boundary_factor = (
-         top_minus_bottom_length_at_zero * time_value
-         + 0.5 * shock_intersection_speed * time_value * time_value
-      )
-      expected_mass_change = (
-         rho_post * u_post * time_value
-         - rho_post * v_post * integrated_boundary_factor
-      )
-      energy_post = (
-         pressure_post / (1.4 - 1.0)
-         + 0.5 * rho_post * (u_post * u_post + v_post * v_post)
-      )
-      enthalpy_density_post = energy_post + pressure_post
-      expected_energy_change = (
-         enthalpy_density_post * u_post * time_value
-         - enthalpy_density_post * v_post * integrated_boundary_factor
-      )
-      measured_mass_change = final_mass - initial_mass
-      measured_energy_change = final_energy - initial_energy
-      mass_budget_error = abs(measured_mass_change - expected_mass_change) / max(abs(expected_mass_change), 1.0e-30)
-      energy_budget_error = abs(measured_energy_change - expected_energy_change) / max(abs(expected_energy_change), 1.0e-30)
-      if mass_budget_error > 0.05:
+      mass_budget_error, energy_budget_error = double_mach_reflection_budget_errors(scalar_rows)
+      if mass_budget_error > 0.01:
          scalar_row["status"] = "FAIL"
          scalar_row["reason"] = (
-            f"DMR mass-budget relative error {mass_budget_error:.3e} exceeds 5e-2"
+            f"DMR mass-budget relative error {mass_budget_error:.3e} exceeds 1e-2"
          )
-      if energy_budget_error > 0.05:
+      if energy_budget_error > 0.01:
          scalar_row["status"] = "FAIL"
          scalar_row["reason"] = (
-            f"DMR energy-budget relative error {energy_budget_error:.3e} exceeds 5e-2"
+            f"DMR energy-budget relative error {energy_budget_error:.3e} exceeds 1e-2"
          )
    scalar_row.update({
       "suite": "double_mach_reflection",
@@ -175,12 +172,22 @@ def run_case(case: Case, ranks: int, force: bool, final_time: float) -> dict[str
       "energy_budget_relative_error": energy_budget_error,
    })
    if case.max_level > 0 and result.returncode == 0:
-      front_level = incident_shock_finest_level(latest_plotfile(run_dir, require=True))
+      final_plotfile = latest_plotfile(run_dir, require=True)
+      front_level = incident_shock_finest_level(final_plotfile)
       scalar_row["incident_shock_finest_level"] = front_level
       if front_level < case.max_level:
          scalar_row["status"] = "FAIL"
          scalar_row["reason"] = (
             f"incident shock is covered only through L{front_level}; expected L{case.max_level}"
+         )
+      finest_view_error, crop_view_error = hierarchy_view_errors(final_plotfile)
+      scalar_row["hierarchy_finest_view_max_error"] = finest_view_error
+      scalar_row["hierarchy_crop_view_max_error"] = crop_view_error
+      if max(finest_view_error, crop_view_error) > 1.0e-13:
+         scalar_row["status"] = "FAIL"
+         scalar_row["reason"] = (
+            "hierarchy renderer changed native finest data or cropped sampling: "
+            f"finest={finest_view_error:.3e}, crop={crop_view_error:.3e}"
          )
    return scalar_row
 
@@ -204,21 +211,65 @@ def incident_shock_finest_level(plotfile: Path) -> int:
    return finest
 
 
-def sampled_field(run_dir: Path, component: str) -> np.ndarray:
-   plotfile = latest_plotfile(run_dir, require=True)
-   image, _boxes, _time, _ndim, _names, _xlim, _ylim = composite_slice(
+def hierarchy_view_errors(plotfile: Path) -> tuple[float, float]:
+   view = HierarchySlice(plotfile, "rho", 1.4)
+   tiles = list(view.tiles())
+   tile_levels = {tile.level for tile in tiles}
+   expected_levels = set(range(view.num_levels))
+   if tile_levels != expected_levels:
+      raise ValueError(
+         f"hierarchy view exposed levels {sorted(tile_levels)}, expected {sorted(expected_levels)}"
+      )
+
+   finest_shape = view.level_shapes[-1]
+   full = view.uniform(finest_shape[0], method="nearest")
+   finest_error = 0.0
+   for tile in tiles:
+      if tile.level != view.num_levels - 1:
+         continue
+      rendered = full.values[tile.lo[1] : tile.hi[1] + 1, tile.lo[0] : tile.hi[0] + 1]
+      finest_error = max(finest_error, float(np.max(np.abs(rendered - tile.values))))
+
+   crop_index_lo = finest_shape[0] // 4
+   crop_index_hi = 3 * finest_shape[0] // 4
+   crop_lo = view.xlim[0] + (view.xlim[1] - view.xlim[0]) * crop_index_lo / finest_shape[0]
+   crop_hi = view.xlim[0] + (view.xlim[1] - view.xlim[0]) * crop_index_hi / finest_shape[0]
+   crop = HierarchySlice(
       plotfile,
-      component,
+      "rho",
       1.4,
-      2,
-      0.5,
-      False,
-      None,
-      512,
-      (0.0, 4.0),
-      (0.0, 1.0),
-   )
-   return image
+      xlim=(crop_lo, crop_hi),
+      ylim=view.ylim,
+   ).uniform(max(crop_index_hi - crop_index_lo, finest_shape[1]), method="nearest")
+   expected_crop = full.values[:, crop_index_lo:crop_index_hi]
+   if crop.values.shape != expected_crop.shape:
+      raise ValueError(
+         f"cropped hierarchy shape {crop.values.shape} does not match expected {expected_crop.shape}"
+      )
+   crop_error = float(np.max(np.abs(crop.values - expected_crop)))
+
+   for method in ("linear", "average"):
+      sampled = view.uniform(257, method=method).values
+      if not np.all(np.isfinite(sampled)):
+         raise ValueError(f"{method} hierarchy view contains nonfinite pixels")
+   return finest_error, crop_error
+
+
+def sampled_field(
+   run_dir: Path,
+   component: str,
+   *,
+   max_pixels: int | None = None,
+) -> np.ndarray:
+   plotfile = latest_plotfile(run_dir, require=True)
+   view = HierarchySlice(plotfile, component, 1.4)
+   target_pixels = max_pixels or view.level_shapes[-1][view.dim0]
+   return view.uniform(target_pixels, method="average").values
+
+
+def finest_x_resolution(run_dir: Path) -> int:
+   plotfile = latest_plotfile(run_dir, require=True)
+   return parse_level_shapes(plotfile)[-1][0]
 
 
 def relative_l1(candidate: np.ndarray, reference: np.ndarray) -> float:
@@ -229,15 +280,40 @@ def relative_l1(candidate: np.ndarray, reference: np.ndarray) -> float:
    return float(np.mean(np.abs(candidate[valid] - reference[valid]))) / scale
 
 
+def relative_l2(candidate: np.ndarray, reference: np.ndarray) -> float:
+   valid = np.isfinite(candidate) & np.isfinite(reference)
+   if not np.any(valid):
+      return math.inf
+   numerator = float(np.sqrt(np.mean((candidate[valid] - reference[valid]) ** 2)))
+   denominator = max(float(np.sqrt(np.mean(reference[valid] ** 2))), 1.0e-30)
+   return numerator / denominator
+
+
+def gradient_magnitude(field: np.ndarray) -> np.ndarray:
+   dy = 1.0 / field.shape[0]
+   dx = 4.0 / field.shape[1]
+   grad_y, grad_x = np.gradient(field, dy, dx, edge_order=1)
+   return np.sqrt(grad_x * grad_x + grad_y * grad_y)
+
+
+def checkerboard_error(candidate: np.ndarray, reference: np.ndarray) -> float:
+   error = candidate - reference
+   mixed_difference = error[1:, 1:] - error[:-1, 1:] - error[1:, :-1] + error[:-1, :-1]
+   scale = max(float(np.mean(np.abs(reference))), 1.0e-30)
+   return float(np.mean(np.abs(mixed_difference))) / scale
+
+
 def add_reference_metrics(rows: list[dict[str, object]]) -> list[str]:
    failures: list[str] = []
    by_name = {str(row["case"]): row for row in rows}
    fields = ("rho", "pressure")
-   references = {field: sampled_field(RUN_ROOT / "fine_reference", field) for field in fields}
    errors: dict[tuple[str, str], float] = {}
    for name in ("coarse_uniform", "amr_single_rate", "amr_subcycling", "equivalent_uniform"):
+      target_pixels = finest_x_resolution(RUN_ROOT / name)
       for field in fields:
-         error = relative_l1(sampled_field(RUN_ROOT / name, field), references[field])
+         candidate = sampled_field(RUN_ROOT / name, field, max_pixels=target_pixels)
+         reference = sampled_field(RUN_ROOT / "fine_reference", field, max_pixels=target_pixels)
+         error = relative_l1(candidate, reference)
          errors[(name, field)] = error
          by_name[name][f"{field}_relative_l1"] = error
 
@@ -275,20 +351,143 @@ def add_reference_metrics(rows: list[dict[str, object]]) -> list[str]:
    return failures
 
 
+def plot_reconstruction_comparison(
+   images: dict[str, np.ndarray],
+   reference: np.ndarray,
+   output: Path,
+) -> None:
+   methods = ("recon_pwl", "recon_wenoz", "recon_pwl_char_hybrid", "recon_wenoz_char")
+   labels = ("PWL", "WENO-Z component", "PWL -> characteristic WENO-Z", "WENO-Z characteristic")
+   errors = [np.abs(images[name] - reference) for name in methods]
+   positive_errors = np.concatenate([error[error > 0.0] for error in errors])
+   error_min = max(float(np.percentile(positive_errors, 1.0)), 1.0e-12)
+   error_max = max(float(np.percentile(positive_errors, 99.5)), 10.0 * error_min)
+
+   output.parent.mkdir(parents=True, exist_ok=True)
+   fig, axes = plt.subplots(2, 4, figsize=(19, 6.8), constrained_layout=True)
+   figure_image = None
+   error_image = None
+   for column, (name, label, error) in enumerate(zip(methods, labels, errors, strict=True)):
+      figure_image = axes[0, column].imshow(
+         images[name],
+         origin="lower",
+         extent=(0.0, 4.0, 0.0, 1.0),
+         aspect="auto",
+         interpolation="none",
+         vmin=float(np.nanpercentile(reference, 0.5)),
+         vmax=float(np.nanpercentile(reference, 99.5)),
+         cmap="viridis",
+      )
+      axes[0, column].set_title(label)
+      error_image = axes[1, column].imshow(
+         np.maximum(error, error_min),
+         origin="lower",
+         extent=(0.0, 4.0, 0.0, 1.0),
+         aspect="auto",
+         interpolation="none",
+         norm=LogNorm(vmin=error_min, vmax=error_max),
+         cmap="magma",
+      )
+      axes[1, column].set_title("absolute density error")
+      axes[1, column].set_xlabel("x")
+      axes[0, column].set_ylabel("y")
+      axes[1, column].set_ylabel("y")
+   ny, nx = reference.shape
+   fig.suptitle(
+      f"Double Mach reflection: matched AMR reconstruction comparison "
+      f"({nx}x{ny} finite-volume cell averages)"
+   )
+   fig.colorbar(figure_image, ax=axes[0, :], label="density", shrink=0.85)
+   fig.colorbar(error_image, ax=axes[1, :], label="absolute error", shrink=0.85)
+   fig.savefig(output, dpi=180)
+   plt.close(fig)
+
+
+def add_reconstruction_metrics(rows: list[dict[str, object]]) -> tuple[list[str], float, float]:
+   failures: list[str] = []
+   by_name = {str(row["case"]): row for row in rows}
+   method_names = ("recon_pwl", "recon_wenoz", "recon_pwl_char_hybrid", "recon_wenoz_char")
+   reference_dir = RUN_ROOT / "recon_fine_reference"
+   target_pixels = min(finest_x_resolution(RUN_ROOT / name) for name in method_names)
+   reference_fields = {
+      field: sampled_field(reference_dir, field, max_pixels=target_pixels)
+      for field in ("rho", "pressure", "v1", "v2")
+   }
+   candidate_fields = {
+      name: {
+         field: sampled_field(RUN_ROOT / name, field, max_pixels=target_pixels)
+         for field in reference_fields
+      }
+      for name in method_names
+   }
+   reference_vorticity = (
+      np.gradient(reference_fields["v2"], 4.0 / reference_fields["v2"].shape[1], axis=1)
+      - np.gradient(reference_fields["v1"], 1.0 / reference_fields["v1"].shape[0], axis=0)
+   )
+   aggregate: dict[str, list[float]] = {name: [] for name in method_names}
+   for name in method_names:
+      row = by_name[name]
+      for field in ("rho", "pressure"):
+         candidate = candidate_fields[name][field]
+         reference = reference_fields[field]
+         l1 = relative_l1(candidate, reference)
+         l2 = relative_l2(candidate, reference)
+         gradient_l1 = relative_l1(gradient_magnitude(candidate), gradient_magnitude(reference))
+         row[f"{field}_relative_l1"] = l1
+         row[f"{field}_relative_l2"] = l2
+         row[f"{field}_gradient_relative_l1"] = gradient_l1
+         aggregate[name].extend((l1, l2, gradient_l1))
+      candidate_vorticity = (
+         np.gradient(candidate_fields[name]["v2"], 4.0 / reference_fields["v2"].shape[1], axis=1)
+         - np.gradient(candidate_fields[name]["v1"], 1.0 / reference_fields["v1"].shape[0], axis=0)
+      )
+      vorticity_error = relative_l1(candidate_vorticity, reference_vorticity)
+      row["vorticity_relative_l1"] = vorticity_error
+      row["rho_checkerboard_error"] = checkerboard_error(
+         candidate_fields[name]["rho"], reference_fields["rho"]
+      )
+      aggregate[name].append(vorticity_error)
+
+   component_score = float(np.mean(aggregate["recon_wenoz"]))
+   characteristic_score = float(np.mean(aggregate["recon_wenoz_char"]))
+   hybrid_score = float(np.mean(aggregate["recon_pwl_char_hybrid"]))
+   characteristic_ratio = characteristic_score / max(component_score, 1.0e-30)
+   hybrid_ratio = hybrid_score / max(component_score, 1.0e-30)
+   by_name["recon_wenoz_char"]["aggregate_error_vs_component"] = characteristic_ratio
+   by_name["recon_pwl_char_hybrid"]["aggregate_error_vs_component"] = hybrid_ratio
+   plot_reconstruction_comparison(
+      {name: candidate_fields[name]["rho"] for name in method_names},
+      reference_fields["rho"],
+      RUN_ROOT / "reconstruction_comparison.png",
+   )
+   return failures, characteristic_ratio, hybrid_ratio
+
+
 def main() -> None:
    parser = argparse.ArgumentParser()
-   parser.add_argument("--level", choices=("quick", "reference"), default="quick")
+   parser.add_argument("--level", choices=("quick", "reference", "reconstruction"), default="quick")
    parser.add_argument("--ranks", type=int, default=3)
    parser.add_argument("--force", action="store_true")
    parser.add_argument("--final-time", type=float)
    args = parser.parse_args()
 
-   cases = QUICK_CASES if args.level == "quick" else REFERENCE_CASES
-   final_time = args.final_time if args.final_time is not None else (0.03 if args.level == "quick" else 0.01)
+   if args.level == "quick":
+      cases = QUICK_CASES
+   elif args.level == "reference":
+      cases = REFERENCE_CASES
+   else:
+      cases = RECONSTRUCTION_CASES
+   default_final_time = {"quick": 0.03, "reference": 0.01, "reconstruction": 0.03}[args.level]
+   final_time = args.final_time if args.final_time is not None else default_final_time
    rows = [run_case(case, args.ranks, args.force, final_time) for case in cases]
    failures = [f"{row['case']}: {row['reason']}" for row in rows if row["status"] != "PASS"]
    if args.level == "reference" and not failures:
       failures.extend(add_reference_metrics(rows))
+   characteristic_ratio = math.nan
+   hybrid_ratio = math.nan
+   if args.level == "reconstruction" and not failures:
+      reconstruction_failures, characteristic_ratio, hybrid_ratio = add_reconstruction_metrics(rows)
+      failures.extend(reconstruction_failures)
    if failures:
       for row in rows:
          if row["status"] == "PASS":
@@ -296,7 +495,12 @@ def main() -> None:
             row["reason"] = "; ".join(failures)
 
    fields = sorted({key for row in rows for key in row})
-   write_tsv(SUMMARY, rows, fields)
+   summary_path = {
+      "quick": SUMMARY,
+      "reference": RUN_ROOT / "reference_summary.tsv",
+      "reconstruction": RUN_ROOT / "reconstruction_summary.tsv",
+   }[args.level]
+   write_tsv(summary_path, rows, fields)
    for row in rows:
       print(
          f"{row['case']}: {row['status']} t={row.get('time', '')} "
@@ -306,7 +510,13 @@ def main() -> None:
       )
    if failures:
       raise SystemExit("FAIL: " + "; ".join(failures))
-   print(f"PASS: {repo_relative(SUMMARY)}")
+   if args.level == "reconstruction":
+      decision = "material improvement" if characteristic_ratio <= 0.9 else "no material improvement"
+      print(
+         f"characteristic/component aggregate error ratio={characteristic_ratio:.4f}: {decision}"
+      )
+      print(f"level-hybrid/component aggregate error ratio={hybrid_ratio:.4f}")
+   print(f"PASS: {repo_relative(summary_path)}")
 
 
 if __name__ == "__main__":

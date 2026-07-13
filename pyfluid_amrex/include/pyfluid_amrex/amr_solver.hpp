@@ -35,6 +35,7 @@
 #include "pyfluid_amrex/amr_indicator.hpp"
 #include "pyfluid_amrex/diagnostics.hpp"
 #include "pyfluid_amrex/diffusion.hpp"
+#include "pyfluid_amrex/implicit_resistivity.hpp"
 #include "pyfluid_amrex/solid_geometry.hpp"
 #include "pyfluid_amrex/gravity.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
@@ -70,6 +71,7 @@ public:
          mesh_layout_.axes,
          !mhd_enabled()
       );
+      validate_state_interpolation_nesting();
       recon_method_ = recon_method_code(cfg_);
       recon_fine_method_ = cfg_.recon_fine.empty()
          ? recon_method_
@@ -206,6 +208,11 @@ private:
       return state_component_count_;
    }
 
+   int recon_method_for_level(int lev) const
+   {
+      return lev >= cfg_.recon_fine_start_level ? recon_fine_method_ : recon_method_;
+   }
+
    int mesh_coordinate_kind() const
    {
       return mesh_layout_.coordinate;
@@ -253,6 +260,7 @@ private:
 
    // Private AmrSolver interface implemented out-of-line in src/*.cpp.
    void validate_amr_refinement_ratios() const;
+   void validate_state_interpolation_nesting() const;
    void validate_active_hierarchy_for_evolution() const;
    DirectionalTagStatistics measure_directional_tag_statistics(
       int lev,

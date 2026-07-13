@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pyfluid_codegen.emit_cpp import (
    CsePolicy,
+   write_characteristic_header,
    write_eos_header,
    write_flux_header,
    write_metric_header,
@@ -48,6 +49,14 @@ DEFAULT_RIEMANN_HEADER = (
    / "kernels_generated"
    / "riemann_ops.hpp"
 )
+DEFAULT_CHARACTERISTIC_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "kernels_generated"
+   / "characteristic_transforms.hpp"
+)
 DEFAULT_VECTOR_HEADER = (
    ROOT
    / "pyfluid_amrex"
@@ -79,13 +88,14 @@ def main() -> None:
    parser.add_argument(
       "--family",
       action="append",
-      choices=("eos", "flux", "operator", "riemann", "vector", "metric", "patch_map"),
+      choices=("characteristic", "eos", "flux", "operator", "riemann", "vector", "metric", "patch_map"),
       help="generate only this kernel family; repeat as needed (default: all)",
    )
    parser.add_argument("--flux-header", type=Path, default=DEFAULT_FLUX_HEADER)
    parser.add_argument("--eos-header", type=Path, default=DEFAULT_EOS_HEADER)
    parser.add_argument("--operator-header", type=Path, default=DEFAULT_OPERATOR_HEADER)
    parser.add_argument("--riemann-header", type=Path, default=DEFAULT_RIEMANN_HEADER)
+   parser.add_argument("--characteristic-header", type=Path, default=DEFAULT_CHARACTERISTIC_HEADER)
    parser.add_argument("--vector-header", type=Path, default=DEFAULT_VECTOR_HEADER)
    parser.add_argument("--metric-header", type=Path, default=DEFAULT_METRIC_HEADER)
    parser.add_argument("--patch-map-header", type=Path, default=DEFAULT_PATCH_MAP_HEADER)
@@ -94,6 +104,7 @@ def main() -> None:
    args = parser.parse_args()
    policy = CsePolicy(hard_drop_ops=args.hard_drop_ops, soft_drop_ops=args.soft_drop_ops)
    generators = {
+      "characteristic": (args.characteristic_header, write_characteristic_header),
       "eos": (args.eos_header, write_eos_header),
       "flux": (args.flux_header, write_flux_header),
       "operator": (args.operator_header, write_operator_header),

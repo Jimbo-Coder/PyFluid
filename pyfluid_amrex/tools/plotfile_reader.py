@@ -428,7 +428,24 @@ def _reshape_chunk(flat_data: np.ndarray, ndim: int, shape: tuple[int, ...]) -> 
    return flat_data.reshape((flat_data.shape[0], shape[2], shape[1], shape[0])).transpose(0, 3, 2, 1)
 
 
-def _read_hdf5_level_chunks(plotfile: Path, level: int, ndim: int, ncomp: int):
+def _box_intersects(
+   lo: tuple[int, ...],
+   hi: tuple[int, ...],
+   index_bounds: tuple[tuple[int, ...], tuple[int, ...]] | None,
+) -> bool:
+   if index_bounds is None:
+      return True
+   bounds_lo, bounds_hi = index_bounds
+   return all(hi[dim] >= bounds_lo[dim] and lo[dim] <= bounds_hi[dim] for dim in range(len(lo)))
+
+
+def _read_hdf5_level_chunks(
+   plotfile: Path,
+   level: int,
+   ndim: int,
+   ncomp: int,
+   index_bounds: tuple[tuple[int, ...], tuple[int, ...]] | None = None,
+):
    if h5py is None:
       raise RuntimeError("h5py not installed; cannot read AMReX HDF5 plotfiles")
    axis = "ijk"[:ndim]
@@ -437,19 +454,21 @@ def _read_hdf5_level_chunks(plotfile: Path, level: int, ndim: int, ncomp: int):
       level_group = f[f"level_{level}"]
       boxes = level_group["boxes"][()]
       offsets = level_group["data:offsets=0"][()]
-      raw_data = level_group["data:datatype=0"][()]
-   for ibox in range(len(boxes)):
-      lo = tuple(int(boxes[ibox][f"lo_{axis[d]}"]) for d in range(ndim))
-      hi = tuple(int(boxes[ibox][f"hi_{axis[d]}"]) for d in range(ndim))
-      start = int(offsets[ibox])
-      stop = int(offsets[ibox + 1])
-      piece = raw_data[start:stop]
-      piece_size = int(np.prod([hi[d] - lo[d] + 1 for d in range(ndim)]))
-      expected = piece_size * ncomp
-      if len(piece) != expected:
-         raise ValueError(f"unexpected HDF5 chunk size for box {ibox}: got {len(piece)}, expected {expected}")
-      shape = tuple(hi[d] - lo[d] + 1 for d in range(ndim))
-      chunks.append((lo, hi, _reshape_chunk(piece.reshape((ncomp, piece_size)), ndim, shape)))
+      dataset = level_group["data:datatype=0"]
+      for ibox in range(len(boxes)):
+         lo = tuple(int(boxes[ibox][f"lo_{axis[d]}"]) for d in range(ndim))
+         hi = tuple(int(boxes[ibox][f"hi_{axis[d]}"]) for d in range(ndim))
+         if not _box_intersects(lo, hi, index_bounds):
+            continue
+         start = int(offsets[ibox])
+         stop = int(offsets[ibox + 1])
+         piece = dataset[start:stop]
+         piece_size = int(np.prod([hi[d] - lo[d] + 1 for d in range(ndim)]))
+         expected = piece_size * ncomp
+         if len(piece) != expected:
+            raise ValueError(f"unexpected HDF5 chunk size for box {ibox}: got {len(piece)}, expected {expected}")
+         shape = tuple(hi[d] - lo[d] + 1 for d in range(ndim))
+         chunks.append((lo, hi, _reshape_chunk(piece.reshape((ncomp, piece_size)), ndim, shape)))
    return chunks
 
 
@@ -458,18 +477,20 @@ def level_chunks(
    level: int,
    ndim: int,
    names: list[str] | None = None,
+   index_bounds: tuple[tuple[int, ...], tuple[int, ...]] | None = None,
 ):
    resolved, kind, _ = _resolve_plotfile(plotfile)
    if kind == "amrex":
       entries = parse_fab_index(resolved / f"Level_{level}" / "Cell_H")
-      return [read_fab(path, offset, ndim) for path, offset in entries]
+      chunks = [read_fab(path, offset, ndim) for path, offset in entries]
+      return [chunk for chunk in chunks if _box_intersects(chunk[0], chunk[1], index_bounds)]
    if h5py is None:
       raise RuntimeError("h5py not installed; cannot read AMReX HDF5 plotfiles")
    if names is None:
       ncomp = int(_read_hdf5_attrs(resolved)[0].__len__())
    else:
       ncomp = len(names)
-   return _read_hdf5_level_chunks(resolved, level, ndim, ncomp)
+   return _read_hdf5_level_chunks(resolved, level, ndim, ncomp, index_bounds)
 
 
 def level_index_boxes(plotfile: Path, level: int, ndim: int) -> list[tuple[tuple[int, ...], tuple[int, ...]]]:

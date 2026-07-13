@@ -15,6 +15,11 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
+
+from amr_plot_data import compare_hierarchy_slices
+from plotfile_reader import latest_plotfile, level_count, parse_plot_header, read_level_state
+
 from validation_common import (
    CLOSED_POLICY,
    DIFFUSIVE_POLICY,
@@ -56,6 +61,11 @@ class Case:
    min_amr_level: int = 1
    min_amr_headroom: int = 2
    min_regrid_noops: int = 0
+   expected_uniform_state: dict[str, float] = field(default_factory=dict)
+   uniform_tolerance: float = 0.0
+   comparison_reference: str | None = None
+   comparison_components: tuple[str, ...] = ()
+   comparison_rel_l2_tolerance: float = 0.0
 
 
 COMMON_FAST = {
@@ -84,7 +94,28 @@ AUTO_AMR_COVERAGE = {
    "amr.initial_refine_fixed_levels": "0",
 }
 
-SELF_GRAVITY_POLICY = scalar_checks("self_gravity")
+DEEP_AMR_COVERAGE = {
+   "amr.n_cell": "16 16",
+   "amr.max_level": "8",
+   "amr.ref_ratio": "2 2 2 2 2 2 2 2",
+   "amr.max_grid_size": "32",
+   "amr.blocking_factor": "8",
+   "amr.regrid_mode": "synchronized",
+   "amr.regrid_int": "1",
+   "amr.state_interp": "conservative",
+   "amr.tag_metric": "lohner",
+   "amr.min_feature_length": "0.0005",
+   "amr.total_cell_budget": "1000000",
+   "amr.initial_refine": "box",
+   "amr.initial_refine_levels": "3",
+   "amr.initial_refine_fixed_levels": "0",
+   "amr.initial_refine_box_lo": "0.30 0.30",
+   "amr.initial_refine_box_hi": "0.70 0.70",
+}
+
+SELF_GRAVITY_POLICY = scalar_checks("self_gravity", energy_tol=1.0e-10)
+SELF_GRAVITY_AMR_POLICY = scalar_checks("self_gravity_amr", energy_tol=2.0e-6)
+BAROTROPIC_DIFFUSIVE_POLICY = scalar_checks("barotropic_diffusive", energy=False)
 
 
 def case_output_dir(name: str) -> Path:
@@ -120,6 +151,8 @@ def case_checks(case: Case) -> ScalarPolicy:
          return DIFFUSIVE_WALL_POLICY
       return WALL_POLICY
    if any(marker in name for marker in ("diffusion", "resistivity", "resistive")):
+      if case.overrides.get("pyfluid.eos") == "polytrope":
+         return BAROTROPIC_DIFFUSIVE_POLICY
       return DIFFUSIVE_POLICY
    if any(marker in name for marker in ("moving_box", "rotating_cylinder", "pulsating_circle")):
       return DRIVEN_POLICY
@@ -207,6 +240,27 @@ def run_case(case: Case, force: bool, timeout: int, ranks_override: int | None =
       if noops < case.min_regrid_noops:
          row["status"] = "FAIL"
          failure = f"AMR recorded {noops} no-op regrids, expected at least {case.min_regrid_noops}"
+         row["reason"] = "; ".join(filter(None, (str(row.get("reason", "")), failure)))
+   if case.expected_uniform_state:
+      plotfile = latest_plotfile(output_dir / "stateGF", require=True)
+      names, ndim, _time = parse_plot_header(plotfile)
+      name_to_component = {name: component for component, name in enumerate(names)}
+      max_error = 0.0
+      for lev in range(level_count(plotfile)):
+         state = read_level_state(plotfile, names, ndim, lev)
+         for name, expected in case.expected_uniform_state.items():
+            component = name_to_component[name]
+            max_error = max(
+               max_error,
+               float(np.nanmax(np.abs(state[component] - expected))),
+            )
+      row["uniform_state_max_error"] = f"{max_error:.17g}"
+      if max_error > case.uniform_tolerance:
+         row["status"] = "FAIL"
+         failure = (
+            f"uniform-state error {max_error:.3e} exceeds "
+            f"{case.uniform_tolerance:.3e} across the AMR hierarchy"
+         )
          row["reason"] = "; ".join(filter(None, (str(row.get("reason", "")), failure)))
    return row
 
@@ -367,6 +421,35 @@ def eos_cases() -> list[Case]:
          "pyfluid.riemann": "hlld",
          "pyfluid.ng": "2",
       }),
+      Case("mhd_eos_polytrope_implicit_resistive_ct", 2, "resistive_wave_x_2d_ct.in", {
+         "pyfluid.eos": "polytrope",
+         "pyfluid.polytropic_k": "1.0",
+         "pyfluid.polytropic_gamma": "1.6666666666666667",
+         "pyfluid.diffusion": "implicit",
+         "pyfluid.resistivity": "1.0e-3",
+         "pyfluid.viscosity": "0.0",
+         "pyfluid.timestep": "ssprk3",
+         "pyfluid.recon": "wenoz-char",
+         "pyfluid.riemann": "hlld",
+         "pyfluid.ng": "3",
+         "pyfluid.diffusion_tolerance": "1.0e-10",
+         "pyfluid.diffusion_max_iterations": "300",
+      }),
+      Case("mhd_eos_hybrid_polytrope_implicit_resistive_ct", 2, "resistive_wave_x_2d_ct.in", {
+         "pyfluid.eos": "hybrid_polytrope",
+         "pyfluid.polytropic_k": "0.2",
+         "pyfluid.polytropic_gamma": "1.6666666666666667",
+         "pyfluid.thermal_gamma": "1.6666666666666667",
+         "pyfluid.diffusion": "implicit",
+         "pyfluid.resistivity": "1.0e-3",
+         "pyfluid.viscosity": "0.0",
+         "pyfluid.timestep": "ssprk3",
+         "pyfluid.recon": "wenoz-char",
+         "pyfluid.riemann": "hlld",
+         "pyfluid.ng": "3",
+         "pyfluid.diffusion_tolerance": "1.0e-10",
+         "pyfluid.diffusion_max_iterations": "300",
+      }),
    ]
 
 
@@ -471,6 +554,17 @@ def diffusion_cases() -> list[Case]:
          "pyfluid.riemann": "hlld",
          "pyfluid.timestep": "ssprk3",
          "pyfluid.ng": "2",
+      }),
+      Case("mhd_resistivity_implicit_ct", 2, "resistive_wave_x_2d_ct.in", {
+         "pyfluid.diffusion": "implicit",
+         "pyfluid.resistivity": "1.0e-3",
+         "pyfluid.viscosity": "0.0",
+         "pyfluid.recon": "pwl",
+         "pyfluid.riemann": "hlld",
+         "pyfluid.timestep": "ssprk3",
+         "pyfluid.ng": "2",
+         "pyfluid.diffusion_tolerance": "1.0e-10",
+         "pyfluid.diffusion_max_iterations": "300",
       }),
       Case("mhd_curvilinear_ct_explicit_cylindrical_rz", 2, "resistive_wave_x_2d_ct.in", {
          "mesh.coordinate": "cylindrical",
@@ -664,6 +758,55 @@ def amr_cases() -> list[Case]:
       min_amr_headroom=1,
       min_regrid_noops=1,
    ))
+   cases.append(Case(
+      "hydro_amr_subcycling_aligned_deep_l7",
+      2,
+      "hydro_sine_2d.in",
+      {
+         "geometry.is_periodic": "1 1",
+         "amr.n_cell": "16 16",
+         "amr.max_level": "9",
+         "amr.ref_ratio": "2 2 2 2 2 2 2 2 2",
+         "amr.max_grid_size": "16",
+         "amr.blocking_factor": "8",
+         "amr.regrid_mode": "aligned",
+         "amr.regrid_int": "17",
+         "amr.tag_metric": "none",
+         "amr.initial_refine": "box",
+         "amr.initial_refine_levels": "7",
+         "amr.initial_refine_fixed_levels": "7",
+         "amr.initial_refine_box_lo": "0.45 0.45",
+         "amr.initial_refine_box_hi": "0.55 0.55",
+         "pyfluid.ic": "uniform",
+         "pyfluid.rho0": "1.0",
+         "pyfluid.pressure0": "1.0",
+         "pyfluid.v1_0": "0.0",
+         "pyfluid.v2_0": "0.0",
+         "pyfluid.v3_0": "0.0",
+         "pyfluid.max_step": "2",
+         "pyfluid.final_time": "-1",
+         "pyfluid.timestep": "euler",
+         "pyfluid.recon": "pwc",
+         "pyfluid.riemann": "llf",
+         "pyfluid.ng": "1",
+         "pyfluid.subcycling": "on",
+         "pyfluid.subcycling_steps": "local_cfl",
+         "pyfluid.plot_int": "2",
+         "pyfluid.checkpoint_int": "-1",
+      },
+      require_amr=True,
+      min_amr_level=7,
+      min_amr_headroom=2,
+      min_regrid_noops=1,
+      expected_uniform_state={
+         "rho": 1.0,
+         "mom1": 0.0,
+         "mom2": 0.0,
+         "mom3": 0.0,
+         "energy": 1.5,
+      },
+      uniform_tolerance=5.0e-15,
+   ))
    for timestep in ["euler", "corrector", "midpoint", "ssprk3", "rk4"]:
       cases.append(Case(
          f"mhd_amr_ct_subcycling_{timestep}",
@@ -708,8 +851,8 @@ def amr_cases() -> list[Case]:
       require_amr=True,
    ))
    cases.append(Case("mhd_amr_ct_subcycling_explicit_resistive", 2, "kelvin_helmholtz_mhd_2d_single_sheet_amr_ct.in", {
-      **AUTO_AMR_COVERAGE,
-      "pyfluid.max_step": "2",
+      **DEEP_AMR_COVERAGE,
+      "pyfluid.max_step": "3",
       "pyfluid.timestep": "ssprk3",
       "pyfluid.recon": "pwl",
       "pyfluid.riemann": "hlld",
@@ -719,17 +862,15 @@ def amr_cases() -> list[Case]:
       "pyfluid.resistivity": "1.0e-4",
       "pyfluid.viscosity": "1.0e-4",
       "pyfluid.plot_int": "-1",
-      "amr.state_interp": "quartic-conservative",
-      "amr.regrid_int": "1",
-   }, require_amr=True))
+   }, require_amr=True, min_amr_level=3, min_amr_headroom=2))
    for diffusion_method in ("explicit", "implicit"):
       cases.append(Case(
          f"hydro_amr_subcycling_{diffusion_method}_diffusion",
          2,
          "pressure_bump_2d_amr.in",
          {
-            **AUTO_AMR_COVERAGE,
-            "pyfluid.max_step": "2",
+            **DEEP_AMR_COVERAGE,
+            "pyfluid.max_step": "3",
             "pyfluid.timestep": "ssprk3",
             "pyfluid.recon": "pwl",
             "pyfluid.riemann": "hllc",
@@ -745,6 +886,8 @@ def amr_cases() -> list[Case]:
          },
          checks=DIFFUSIVE_POLICY,
          require_amr=True,
+         min_amr_level=3,
+         min_amr_headroom=2,
       ))
    cases.append(Case(
       "hydro_amr_subcycling_aligned_implicit_diffusion",
@@ -872,47 +1015,74 @@ def amr_cases() -> list[Case]:
       "pyfluid.diffusion_max_iterations": "500",
       "pyfluid.plot_int": "-1",
    }, checks=DIFFUSIVE_POLICY, require_amr=True))
-   cases.append(Case("hydro_self_gravity_amr_subcycling", 2, "hydro_sine_2d.in", {
-      **AUTO_AMR_COVERAGE,
-      "pyfluid.max_step": "2",
+   self_gravity_common = {
+      "pyfluid.max_step": "100",
       "pyfluid.amplitude": "0.1",
-      "pyfluid.timestep": "euler",
+      "pyfluid.timestep": "ssprk3",
       "pyfluid.recon": "pwc",
       "pyfluid.riemann": "llf",
       "pyfluid.ng": "1",
       "pyfluid.gravity": "poisson",
       "pyfluid.gravity_coupling": "athena",
-      "pyfluid.gravity_energy_sync": "residual",
       "pyfluid.gravity_constant": "1.0",
-      "pyfluid.gravity_tolerance": "1.0e-12",
+      "pyfluid.gravity_tolerance": "1.0e-10",
       "pyfluid.gravity_max_iterations": "200",
       "pyfluid.gravity_max_fmg_iterations": "20",
       "pyfluid.gravity_max_order": "2",
-      "pyfluid.subcycling": "on",
-      "pyfluid.subcycling_steps": "spatial",
-   }, checks=SELF_GRAVITY_POLICY, require_amr=True))
-   cases.append(Case("hydro_self_gravity_amr_regrid_collapse", 3, "magnetized_collapse_3d_amr_ct.in", {
-      "pyfluid.physics": "hydro",
-      "pyfluid.ct": "off",
-      "pyfluid.max_step": "8",
-      "pyfluid.timestep": "euler",
-      "pyfluid.recon": "pwc",
-      "pyfluid.riemann": "llf",
-      "pyfluid.ng": "3",
-      "pyfluid.diffusion": "none",
-      "pyfluid.resistivity": "0.0",
-      "pyfluid.viscosity": "0.0",
-      "pyfluid.b1_0": "0.0",
-      "pyfluid.b2_0": "0.0",
-      "pyfluid.b3_0": "0.0",
-      "pyfluid.gravity": "poisson",
-      "pyfluid.gravity_coupling": "athena",
-      "pyfluid.gravity_energy_sync": "residual",
-      "pyfluid.gravity_tolerance": "1.0e-10",
-      "pyfluid.gravity_max_iterations": "250",
-      "amr.max_level": "2",
-      "amr.regrid_int": "2",
+   }
+   cases.append(Case("hydro_self_gravity_uniform_ssprk3", 2, "hydro_sine_2d.in", {
+      **self_gravity_common,
+      "amr.max_level": "0",
+      "pyfluid.subcycling": "off",
    }, checks=SELF_GRAVITY_POLICY))
+   self_gravity_collapse = {
+      **self_gravity_common,
+      "geometry.is_periodic": "1 1",
+      "pyfluid.ic": "density_cloud",
+      "pyfluid.rho0": "1.0",
+      "pyfluid.pressure0": "0.08",
+      "pyfluid.amplitude": "4.0",
+      "pyfluid.bump_sigma": "0.105",
+      "pyfluid.bump_x0": "0.5",
+      "pyfluid.bump_y0": "0.5",
+      "pyfluid.v1_0": "0.0",
+      "pyfluid.v2_0": "0.0",
+      "pyfluid.v3_0": "0.0",
+      "pyfluid.final_time": "-1.0",
+      "pyfluid.max_step": "100",
+      "pyfluid.scalar_int": "1",
+      "pyfluid.physical_check_int": "1",
+   }
+   deep_self_gravity_amr = {
+      **self_gravity_collapse,
+      **DEEP_AMR_COVERAGE,
+      "amr.regrid_int": "2",
+      "pyfluid.final_time": "0.02",
+      "pyfluid.plot_int": "1",
+   }
+   cases.append(Case("hydro_self_gravity_collapse_uniform", 2, "hydro_sine_2d.in", {
+      **self_gravity_collapse,
+      "amr.n_cell": "256 256",
+      "amr.max_level": "0",
+      "pyfluid.subcycling": "off",
+   }, checks=SELF_GRAVITY_POLICY))
+   cases.append(Case("hydro_self_gravity_amr_no_subcycling", 2, "hydro_sine_2d.in", {
+      **deep_self_gravity_amr,
+      "pyfluid.subcycling": "off",
+   }, checks=SELF_GRAVITY_AMR_POLICY, require_amr=True, min_amr_level=3, min_amr_headroom=2))
+   cases.append(Case("hydro_self_gravity_amr_subcycling", 2, "hydro_sine_2d.in", {
+      **deep_self_gravity_amr,
+      "pyfluid.subcycling": "on",
+      "pyfluid.subcycling_steps": "local_cfl",
+   },
+      checks=SELF_GRAVITY_AMR_POLICY,
+      require_amr=True,
+      min_amr_level=3,
+      min_amr_headroom=2,
+      comparison_reference="hydro_self_gravity_amr_no_subcycling",
+      comparison_components=("rho", "pressure"),
+      comparison_rel_l2_tolerance=1.0e-3,
+   ))
    cases.append(Case("hydro_obstacle_forward_step", 2, "forward_step_hydro_2d_obstacle.in", {
       "pyfluid.max_step": "2",
       "pyfluid.scalar_int": "1",
@@ -1135,7 +1305,53 @@ def select_cases(suites: list[str] | None, only: list[str] | None) -> list[Case]
       for suite in suites:
          cases.extend(by_suite[suite])
 
-   return select_named_cases(cases, only, known_cases=all_cases())
+   selected = select_named_cases(cases, only, known_cases=all_cases())
+   known = {case.name: case for case in all_cases()}
+   selected_names = {case.name for case in selected}
+   for case in tuple(selected):
+      if case.comparison_reference is not None:
+         selected_names.add(case.comparison_reference)
+   return [case for case in all_cases() if case.name in selected_names and case.name in known]
+
+
+def apply_hierarchy_comparisons(rows: list[dict[str, str]], cases: list[Case]) -> None:
+   rows_by_name = {row["case"]: row for row in rows}
+   for case in cases:
+      if case.comparison_reference is None:
+         continue
+      row = rows_by_name[case.name]
+      reference_row = rows_by_name.get(case.comparison_reference)
+      if reference_row is None:
+         row["status"] = "FAIL"
+         row["reason"] = f"missing comparison reference {case.comparison_reference}"
+         continue
+      if reference_row["status"] != "PASS" or row["status"] != "PASS":
+         continue
+      try:
+         reference_plotfile = latest_plotfile(case_output_dir(case.comparison_reference) / "stateGF", require=True)
+         candidate_plotfile = latest_plotfile(case_output_dir(case.name) / "stateGF", require=True)
+         comparisons = compare_hierarchy_slices(
+            reference_plotfile,
+            candidate_plotfile,
+            case.comparison_components,
+         )
+      except (FileNotFoundError, RuntimeError, ValueError) as exc:
+         row["status"] = "FAIL"
+         row["reason"] = f"hierarchy comparison failed: {exc}"
+         continue
+      max_relative_l2 = max((item.relative_l2 for item in comparisons), default=0.0)
+      row["comparison_reference"] = case.comparison_reference
+      row["comparison_max_rel_l2"] = f"{max_relative_l2:.17g}"
+      row["comparison_metrics"] = "; ".join(
+         f"{item.component}:L1={item.relative_l1:.3e},L2={item.relative_l2:.3e},Linf={item.relative_linf:.3e}"
+         for item in comparisons
+      )
+      if max_relative_l2 > case.comparison_rel_l2_tolerance:
+         row["status"] = "FAIL"
+         row["reason"] = (
+            f"hierarchy relative L2 {max_relative_l2:.3e} exceeds "
+            f"{case.comparison_rel_l2_tolerance:.3e}"
+         )
 
 
 def failure_row(case: Case, reason: str, ranks_override: int | None = None) -> dict[str, str]:
@@ -1177,6 +1393,10 @@ def write_summary(rows: list[dict[str, str]]) -> None:
       "amr_active_finest_level",
       "amr_finest_headroom",
       "amr_total_budget_fraction",
+      "uniform_state_max_error",
+      "comparison_reference",
+      "comparison_max_rel_l2",
+      "comparison_metrics",
       "run_dir",
    ]
    write_tsv(SUMMARY, rows, fields)
@@ -1224,6 +1444,8 @@ def main() -> int:
       print(f"   {row['status']}: {row.get('reason', '')[:160]}", flush=True)
       write_summary(rows)
 
+   apply_hierarchy_comparisons(rows, cases)
+   write_summary(rows)
    append_feature_history(rows)
    failed = [row for row in rows if row["status"] != "PASS"]
    print(f"\nsummary: {len(rows) - len(failed)} passed, {len(failed)} failed")

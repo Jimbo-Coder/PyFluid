@@ -88,6 +88,20 @@ STEPS = [
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_feature_matrix.py", "--force"),
    ),
    GateStep(
+      name="deep_aligned_subcycling_l7",
+      kind="amr",
+      levels=("standard",),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_feature_matrix.py",
+         "--force",
+         "--only",
+         "hydro_amr_subcycling_aligned_deep_l7",
+      ),
+   ),
+   GateStep(
       name="obstacle_mask_performance",
       kind="feature",
       levels=("full",),

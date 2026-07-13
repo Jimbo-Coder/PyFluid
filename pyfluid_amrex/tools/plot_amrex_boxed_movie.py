@@ -22,6 +22,7 @@ import numpy as np
 from matplotlib.patches import Circle, Rectangle
 from PIL import Image
 
+from amr_plot_data import HierarchySlice, component_values as _component_values
 from plotfile_reader import (
    parse_fab_index,
    parse_level_shapes,
@@ -832,35 +833,42 @@ def regular_mapped_tiles(
     show_base_boxes: bool,
     view: str,
 ) -> tuple[list[PlotTile], list[BoxOutline], float, int]:
-    names, ndim, time_value = parse_plot_header(plotfile)
-    if ndim < 2:
-        raise ValueError("boxed movie requires a 2D or 3D plotfile")
-    problo, probhi = parse_plot_bounds(plotfile)
-    nlevels = level_count(plotfile)
-    level_shapes = parse_level_shapes(plotfile)
+    _ = ref_ratio
+    hierarchy = HierarchySlice(
+        plotfile,
+        component,
+        gamma,
+        slice_axis="z",
+        slice_fraction=z_fraction,
+    )
+    problo, probhi = hierarchy.problo, hierarchy.probhi
     tiles: list[PlotTile] = []
     boxes: list[BoxOutline] = []
-    for lev in range(nlevels):
-        chunks = level_chunks(plotfile, lev, ndim)
-        level_shape = level_shapes[lev]
-        cell_size = tuple((probhi[d] - problo[d]) / level_shape[d] for d in range(ndim))
-        z_level = 0 if ndim == 2 else min(max(int(z_fraction * level_shape[2]), 0), level_shape[2] - 1)
-        for lo, hi, data in chunks:
-            values = component_values(data, names, component, gamma, cell_size)
-            if subtract_constant is not None:
-                values = values - subtract_constant
-            plane = slice_to_xy(values, lo, hi, z_level)
-            if plane is None:
-                continue
-            if component != "schlieren" and log10:
-                plane = np.log10(np.maximum(plane, 1.0e-14))
-            append_regular_tiles(tiles, lo, hi, plane.T, lev, level_shape, problo, probhi, view)
-        if lev > 0 or show_base_boxes:
-            for lo, hi, _data in chunks:
-                if ndim == 3 and (z_level < lo[2] or z_level > hi[2]):
-                    continue
-                boxes.append(BoxOutline(lev, regular_box_outline(lo, hi, level_shape, problo, probhi, view)))
-    return tiles, boxes, time_value, ndim
+    for tile in hierarchy.tiles():
+        values = tile.values
+        if subtract_constant is not None:
+            values = values - subtract_constant
+        if component != "schlieren" and log10:
+            values = np.log10(np.maximum(values, 1.0e-14))
+        append_regular_tiles(
+            tiles,
+            tile.lo,
+            tile.hi,
+            values,
+            tile.level,
+            tile.level_shape,
+            problo,
+            probhi,
+            view,
+        )
+        if tile.level > 0 or show_base_boxes:
+            boxes.append(
+                BoxOutline(
+                    tile.level,
+                    regular_box_outline(tile.lo, tile.hi, tile.level_shape, problo, probhi, view),
+                )
+            )
+    return tiles, boxes, hierarchy.time, hierarchy.ndim
 
 
 def mapped_view_tiles(
@@ -1034,72 +1042,7 @@ def component_values(
     gamma: float,
     cell_size: tuple[float, ...] | None = None,
 ) -> np.ndarray:
-    if component in names:
-        return data[names.index(component)]
-    if component == "dye" and "rho" in names and "dye_mass" in names:
-        return data[names.index("dye_mass")] / data[names.index("rho")]
-    velocity_names = {
-        "v1": "mom1",
-        "v2": "mom2",
-        "v3": "mom3",
-    }
-    if component in velocity_names and "rho" in names and velocity_names[component] in names:
-        return data[names.index(velocity_names[component])] / data[names.index("rho")]
-    if component == "velocity_mag" and all(name in names for name in ["rho", "mom1", "mom2", "mom3"]):
-        rho = data[names.index("rho")]
-        return np.sqrt(
-            data[names.index("mom1")] ** 2
-            + data[names.index("mom2")] ** 2
-            + data[names.index("mom3")] ** 2
-        ) / rho
-    if component == "vorticity3" and all(name in names for name in ["rho", "mom1", "mom2"]):
-        if data.ndim < 3:
-            raise ValueError("vorticity3 requires at least 2D data")
-        rho = data[names.index("rho")]
-        vx = data[names.index("mom1")] / rho
-        vy = data[names.index("mom2")] / rho
-        if cell_size is None:
-            dx = 1.0
-            dy = 1.0
-        else:
-            dx = cell_size[0]
-            dy = cell_size[1]
-        if vx.shape[0] < 2 or vx.shape[1] < 2:
-            return np.zeros_like(vx)
-        return np.gradient(vy, dx, axis=0, edge_order=1) - np.gradient(vx, dy, axis=1, edge_order=1)
-    if component == "schlieren" and "rho" in names:
-        rho = data[names.index("rho")]
-        if rho.ndim < 2 or rho.shape[0] < 2 or rho.shape[1] < 2:
-            return np.zeros_like(rho)
-        dx = 1.0 if cell_size is None else cell_size[0]
-        dy = 1.0 if cell_size is None else cell_size[1]
-        grad1 = np.gradient(rho, dx, axis=0, edge_order=1)
-        grad2 = np.gradient(rho, dy, axis=1, edge_order=1)
-        return np.sqrt(grad1 * grad1 + grad2 * grad2)
-    if component == "pressure":
-        rho = data[names.index("rho")]
-        kinetic = 0.5 * (
-            data[names.index("mom1")] ** 2
-            + data[names.index("mom2")] ** 2
-            + data[names.index("mom3")] ** 2
-        ) / rho
-        magnetic = np.zeros_like(rho)
-        if all(name in names for name in ["b1", "b2", "b3"]):
-            magnetic = 0.5 * (
-                data[names.index("b1")] ** 2
-                + data[names.index("b2")] ** 2
-                + data[names.index("b3")] ** 2
-            )
-        return (data[names.index("energy")] - kinetic - magnetic) * (gamma - 1.0)
-    if component.endswith("_mag"):
-        prefix = component.removesuffix("_mag")
-        vector_names = [f"{prefix}1", f"{prefix}2", f"{prefix}3"]
-        if all(name in names for name in vector_names):
-            values = np.zeros_like(data[names.index(vector_names[0])])
-            for name in vector_names:
-                values += data[names.index(name)] ** 2
-            return np.sqrt(values)
-    raise ValueError(f"{component} not found; available components: {', '.join(names)}")
+    return _component_values(data, names, component, gamma, cell_size)
 
 
 def slice_to_xy(values: np.ndarray, lo: tuple[int, ...], hi: tuple[int, ...], slice_index: int) -> np.ndarray | None:
@@ -1275,50 +1218,28 @@ def composite_slice(
     xlim: tuple[float, float] = (0.0, 1.0),
     ylim: tuple[float, float] = (0.0, 1.0),
     show_base_boxes: bool = False,
+    method: str = "nearest",
 ):
-    names, ndim, time_value = parse_plot_header(plotfile)
-    if ndim < 2:
-        raise ValueError("boxed movie requires a 2D or 3D plotfile")
-    problo, probhi = parse_plot_bounds(plotfile)
-    nlevels = level_count(plotfile)
-    level_shapes = parse_level_shapes(plotfile)
-    canvas_ny, canvas_nx = canvas_shape(xlim, ylim, max_pixels)
-
-    image = np.full((canvas_ny, canvas_nx), np.nan)
+    _ = ref_ratio
     stored_component = "rho" if component == "schlieren" else component
-
-    for lev in range(nlevels):
-        chunks = level_chunks(plotfile, lev, ndim)
-        level_shape = level_shapes[lev]
-        cell_size = tuple((probhi[d] - problo[d]) / level_shape[d] for d in range(ndim))
-        z_level = 0 if ndim == 2 else min(max(int(z_fraction * level_shape[2]), 0), level_shape[2] - 1)
-        for lo, hi, data in chunks:
-            values = component_values(data, names, stored_component, gamma, cell_size)
-            if subtract_constant is not None:
-                values = values - subtract_constant
-            plane = slice_to_xy(values, lo, hi, z_level)
-            if plane is None:
-                continue
-            if log10:
-                plane = np.log10(np.maximum(plane, 1.0e-14))
-            xfrac0 = (xlim[0] - problo[0]) / (probhi[0] - problo[0])
-            xfrac1 = (xlim[1] - problo[0]) / (probhi[0] - problo[0])
-            yfrac0 = (ylim[0] - problo[1]) / (probhi[1] - problo[1])
-            yfrac1 = (ylim[1] - problo[1]) / (probhi[1] - problo[1])
-            ix0 = max(lo[0], int(np.floor(xfrac0 * level_shape[0])))
-            ix1 = min(hi[0] + 1, int(np.ceil(xfrac1 * level_shape[0])))
-            iy0 = max(lo[1], int(np.floor(yfrac0 * level_shape[1])))
-            iy1 = min(hi[1] + 1, int(np.ceil(yfrac1 * level_shape[1])))
-            if ix0 >= ix1 or iy0 >= iy1:
-                continue
-            subplane = plane.T[iy0 - lo[1] : iy1 - lo[1], ix0 - lo[0] : ix1 - lo[0]]
-            xlo, xhi = crop_pixel_extent(ix0, ix1 - 1, level_shape[0], (problo[0], probhi[0]), xlim, canvas_nx)
-            ylo, yhi = crop_pixel_extent(iy0, iy1 - 1, level_shape[1], (problo[1], probhi[1]), ylim, canvas_ny)
-            image[ylo:yhi, xlo:xhi] = resize_nearest(subplane, yhi - ylo, xhi - xlo)
+    result = HierarchySlice(
+        plotfile,
+        stored_component,
+        gamma,
+        slice_axis="z",
+        slice_fraction=z_fraction,
+        xlim=xlim,
+        ylim=ylim,
+    ).uniform(max_pixels, method=method)
+    image = result.values
+    if subtract_constant is not None:
+        image = image - subtract_constant
+    if component != "schlieren" and log10:
+        image = np.log10(np.maximum(image, 1.0e-14))
 
     if component == "schlieren":
-        pixel_dx = (xlim[1] - xlim[0]) / canvas_nx
-        pixel_dy = (ylim[1] - ylim[0]) / canvas_ny
+        pixel_dx = (xlim[1] - xlim[0]) / image.shape[1]
+        pixel_dy = (ylim[1] - ylim[0]) / image.shape[0]
         grad_y, grad_x = np.gradient(image, pixel_dy, pixel_dx, edge_order=1)
         image = np.sqrt(grad_x * grad_x + grad_y * grad_y)
         if subtract_constant is not None:
@@ -1326,31 +1247,33 @@ def composite_slice(
         if log10:
             image = np.log10(np.maximum(image, 1.0e-14))
 
-    boxes: list[tuple[int, float, float, float, float]] = []
-    first_box_level = 0 if show_base_boxes else 1
-    for lev in range(first_box_level, nlevels):
-        level_shape = level_shapes[lev]
-        z_level = 0 if ndim == 2 else min(max(int(z_fraction * level_shape[2]), 0), level_shape[2] - 1)
-        for lo, hi, _data in level_chunks(plotfile, lev, ndim):
-            if ndim == 3 and (z_level < lo[2] or z_level > hi[2]):
+    boxes = list(result.boxes)
+    if show_base_boxes:
+        base = HierarchySlice(
+            plotfile,
+            stored_component,
+            gamma,
+            slice_axis="z",
+            slice_fraction=z_fraction,
+            xlim=xlim,
+            ylim=ylim,
+        )
+        domain_x = (base.problo[0], base.probhi[0])
+        domain_y = (base.problo[1], base.probhi[1])
+        for tile in base.tiles():
+            if tile.level != 0:
                 continue
-            xlo = problo[0] + lo[0] * (probhi[0] - problo[0]) / level_shape[0]
-            xhi = problo[0] + (hi[0] + 1) * (probhi[0] - problo[0]) / level_shape[0]
-            ylo = problo[1] + lo[1] * (probhi[1] - problo[1]) / level_shape[1]
-            yhi = problo[1] + (hi[1] + 1) * (probhi[1] - problo[1]) / level_shape[1]
-            if xhi <= xlim[0] or xlo >= xlim[1] or yhi <= ylim[0] or ylo >= ylim[1]:
-                continue
+            level_x, level_y = tile.level_shape
             boxes.append(
                 (
-                    lev,
-                    max(xlo, xlim[0]),
-                    min(xhi, xlim[1]),
-                    max(ylo, ylim[0]),
-                    min(yhi, ylim[1]),
+                    0,
+                    domain_x[0] + tile.lo[0] * (domain_x[1] - domain_x[0]) / level_x,
+                    domain_x[0] + (tile.hi[0] + 1) * (domain_x[1] - domain_x[0]) / level_x,
+                    domain_y[0] + tile.lo[1] * (domain_y[1] - domain_y[0]) / level_y,
+                    domain_y[0] + (tile.hi[1] + 1) * (domain_y[1] - domain_y[0]) / level_y,
                 )
             )
-
-    return image, boxes, time_value, ndim, names, xlim, ylim
+    return image, boxes, result.time, result.ndim, list(result.names), xlim, ylim
 
 
 def render_frame(

@@ -161,6 +161,15 @@ Python postprocessing reads `scalars.tsv` and optional AMReX plotfiles after the
 run. Plots, exact overlays, and movies should not be required during the solver
 step.
 
+All 2D snapshots, movie frames, and analysis samplers use
+`tools/amr_plot_data.py` as the hierarchy source of truth. Native tile rendering
+is the default for movies: it draws original cells in coarse-to-fine order and
+does not invent resolution. Uniform views are explicit presentation products;
+they may use nearest-neighbor, linear, or area-weighted tile sampling, with the
+finest available level taking precedence. HDF5 crop requests read only boxes
+that intersect the requested physical region. Do not use an interpolated
+uniform view as a replacement for native data in conservation diagnostics.
+
 For ordinary ad-hoc runs, prefer the shared run wrapper:
 
 ```bash

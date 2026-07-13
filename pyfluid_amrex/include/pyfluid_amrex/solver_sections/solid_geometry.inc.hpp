@@ -249,14 +249,6 @@
       }
    }
 
-   int recon_method_for_level(int lev) const
-   {
-      if (!cfg_.recon_fine.empty() && lev >= cfg_.recon_fine_start_level) {
-         return recon_fine_method_;
-      }
-      return recon_method_;
-   }
-
    void refresh_solid_activity(int lev)
    {
       solid_active_[lev] = solid_mask_[lev] != nullptr && solid_mask_[lev]->max(0) != 0;

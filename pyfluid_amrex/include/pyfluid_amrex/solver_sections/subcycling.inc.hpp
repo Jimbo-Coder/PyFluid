@@ -32,11 +32,7 @@
 
       if constexpr (CTEnabled) {
          stage_start = profile_begin();
-         if constexpr (DiffusionMethod == DiffusionImplicit) {
-            diffusion = combine_diffusion_stats(diffusion, advance_ct_ideal_level(lev, dt));
-         } else {
-            diffusion = combine_diffusion_stats(diffusion, advance_ct_level<DiffusionMethod>(lev, dt));
-         }
+         diffusion = combine_diffusion_stats(diffusion, advance_ct_level<DiffusionMethod>(lev, dt));
          profile_end(ProfileStage::CT, stage_start);
       }
 
@@ -160,10 +156,5 @@
          active_cell_updates,
          layout_cell_updates
       );
-      if constexpr (TimeMethod == TimeSSPRK3) {
-         const amrex::Real stage_start = profile_begin();
-         resync_athena_ssprk3_gravity_energy_after_average_down(dt);
-         profile_end(ProfileStage::Sources, stage_start);
-      }
       return diffusion;
    }

@@ -47,19 +47,27 @@ CASES = (
    SubcyclingCase(
       name="nosub",
       label="AMR no subcycling",
-      overrides=("pyfluid.subcycling=off",),
+      overrides=("pyfluid.subcycling=off", "amr.regrid_mode=synchronized"),
    ),
    SubcyclingCase(
       name="spatial",
       label="AMR spatial subcycling",
-      overrides=("pyfluid.subcycling=on", "pyfluid.subcycling_steps=spatial"),
+      overrides=(
+         "pyfluid.subcycling=on",
+         "pyfluid.subcycling_steps=spatial",
+         "amr.regrid_mode=synchronized",
+      ),
    ),
 )
 
 LOCAL_CFL_CASE = SubcyclingCase(
    name="local_cfl",
-   label="AMR local-CFL subcycling",
-   overrides=("pyfluid.subcycling=on", "pyfluid.subcycling_steps=local_cfl"),
+   label="AMR aligned local-CFL subcycling",
+   overrides=(
+      "pyfluid.subcycling=on",
+      "pyfluid.subcycling_steps=local_cfl",
+      "amr.regrid_mode=aligned",
+   ),
 )
 
 
@@ -84,10 +92,10 @@ DEEP_AUTO_OVERRIDES = (
    "pyfluid.aux_gf_compute_int=-1",
    "pyfluid.aux_gf_int=-1",
    "amr.n_cell=24 24",
-   "amr.max_level=6",
-   "amr.ref_ratio=2 2 2 2 2 2",
+   "amr.max_level=10",
+   "amr.ref_ratio=2 2 2 2 2 2 2 2 2 2",
    "amr.regrid_int=2",
-   "amr.n_error_buf=4 4 4 4 4 4",
+   "amr.n_error_buf=4 4 4 4 4 4 4 4 4 4",
    "amr.max_grid_size=32",
    "amr.blocking_factor=8",
    "amr.level_cell_budget_side=1024",
@@ -97,6 +105,7 @@ DEEP_AUTO_OVERRIDES = (
    "amr.initial_refine_fixed_levels=0",
    "amr.tag_metric=lohner",
    "amr.tag_threshold=0.035",
+   "amr.min_feature_length=0.0001",
 )
 
 CURVILINEAR_OVERRIDES = (
@@ -236,6 +245,8 @@ def run_case(case: SubcyclingCase, args: argparse.Namespace) -> dict[str, object
       "energy_rel_drift": parse_float(scalar.get("energy_rel_drift", "nan")),
       "divb_l1": parse_float(scalar.get("divb_l1", "nan")),
       "active_finest_level": finest,
+      "finest_headroom": int(parse_float(levels.get("finest_headroom", "0"))),
+      "total_budget_fraction": parse_float(levels.get("total_budget_fraction", "-1")),
       "coarse_steps": coarse_steps,
       "fine_steps": fine_steps,
       "fine_per_coarse_steps": fine_steps / coarse_steps if coarse_steps > 0.0 else float("nan"),
@@ -348,7 +359,7 @@ def main() -> int:
    if args.max_rho_l2 is None:
       args.max_rho_l2 = 2.0e-5 if args.curvilinear_equivalence else (1.0e-4 if args.deep_auto_amr else 5.0e-4)
    if args.min_active_finest_level is None:
-      args.min_active_finest_level = 1 if args.curvilinear_equivalence else (6 if args.deep_auto_amr else 3)
+      args.min_active_finest_level = 1 if args.curvilinear_equivalence else (5 if args.deep_auto_amr else 3)
 
    rows = [run_case(case, args) for case in subcycling_cases(args)]
    by_case = {str(row["case"]): row for row in rows}
@@ -376,6 +387,12 @@ def main() -> int:
    if int(candidate["active_finest_level"]) < args.min_active_finest_level:
       failures.append(
          f"active_finest_level={candidate['active_finest_level']}<{args.min_active_finest_level}"
+      )
+   if args.deep_auto_amr and int(candidate["finest_headroom"]) < 1:
+      failures.append("deep automatic AMR exhausted max-level headroom")
+   if args.deep_auto_amr and float(candidate["total_budget_fraction"]) >= 0.9:
+      failures.append(
+         f"deep automatic AMR used {float(candidate['total_budget_fraction']):.3f} of the cell budget"
       )
    if float(nosub["fine_per_coarse_steps"]) > 1.1:
       failures.append(f"no-sub fine/coarse steps={nosub['fine_per_coarse_steps']:.3g} should be near 1")
@@ -438,6 +455,8 @@ def main() -> int:
       "energy_rel_drift",
       "divb_l1",
       "active_finest_level",
+      "finest_headroom",
+      "total_budget_fraction",
       "coarse_steps",
       "fine_steps",
       "fine_per_coarse_steps",

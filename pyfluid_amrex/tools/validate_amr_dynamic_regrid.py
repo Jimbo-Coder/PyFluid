@@ -34,6 +34,8 @@ RUN_ROOT = ROOT / "runs/current/amr_dynamic_regrid"
 SUMMARY = RUN_ROOT / "summary.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
 BASE_INPUT = ROOT / "pyfluid_amrex/inputs/hydro_sine_2d.in"
+CLOUD_SIGMA = 0.035
+MIN_ALIGNED_THROUGHPUT_RATIO = 0.90
 
 
 COMMON_OVERRIDES = {
@@ -41,7 +43,7 @@ COMMON_OVERRIDES = {
     "pyfluid.rho0": "1.0",
     "pyfluid.pressure0": "1.0",
     "pyfluid.amplitude": "0.25",
-    "pyfluid.bump_sigma": "0.035",
+    "pyfluid.bump_sigma": f"{CLOUD_SIGMA:.17g}",
     "pyfluid.bump_x0": "0.25",
     "pyfluid.bump_y0": "0.5",
     "pyfluid.v1_0": "2.0",
@@ -58,12 +60,13 @@ COMMON_OVERRIDES = {
     "pyfluid.checkpoint_int": "-1",
     "pyfluid.physical_check_int": "1",
     "amr.n_cell": "64 64",
-    "amr.max_level": "1",
-    "amr.ref_ratio": "2",
+    "amr.max_level": "2",
+    "amr.ref_ratio": "2 2",
     "amr.max_grid_size": "32",
     "amr.blocking_factor": "8",
     "amr.regrid_int": "4",
     "amr.tag_metric": "lohner",
+    "amr.min_feature_length": "0.001",
 }
 
 
@@ -92,23 +95,27 @@ def level_centroid_x(plotfile: Path, level: int) -> float:
 
 def dynamic_regrid_reason(run_dir: Path, min_shift: float) -> tuple[str, str]:
     files = plotfiles(run_dir)
-    first = level_centroid_x(files[0], 1)
-    middle = level_centroid_x(files[len(files) // 2], 1)
-    last = level_centroid_x(files[-1], 1)
-    shift = last - first
-    if shift < min_shift:
-        return (
-            "FAIL",
-            f"level-1 box centroid moved {shift:.6g}, expected >= {min_shift:.6g} "
-            f"(first={first:.6g}, middle={middle:.6g}, last={last:.6g})",
-        )
-    if abs(middle - first) < 1.0e-12 and abs(last - middle) < 1.0e-12:
-        return "FAIL", "level-1 AMR box centroid was exactly unchanged across plotfiles"
-    return (
-        "PASS",
-        f"level-1 box centroid moved from {first:.6g} to {last:.6g} "
-        f"(middle={middle:.6g})",
-    )
+    level_counts = [
+        max((box.level for box in plotfile_level_boxes(path, 2)), default=0)
+        for path in files
+    ]
+    finest_common_level = min(level_counts)
+    if finest_common_level < 2:
+        return "FAIL", f"moving-cloud hierarchy reached only L{finest_common_level}; expected at least L2"
+
+    movements = []
+    failures = []
+    for level in range(1, finest_common_level + 1):
+        first = level_centroid_x(files[0], level)
+        middle = level_centroid_x(files[len(files) // 2], level)
+        last = level_centroid_x(files[-1], level)
+        shift = last - first
+        movements.append(f"L{level} {first:.6g}->{last:.6g} (mid={middle:.6g})")
+        if shift < min_shift:
+            failures.append(f"L{level} centroid shift {shift:.6g} < {min_shift:.6g}")
+        if abs(middle - first) < 1.0e-12 and abs(last - middle) < 1.0e-12:
+            failures.append(f"L{level} centroid was exactly unchanged")
+    return ("FAIL" if failures else "PASS", "; ".join([*failures, *movements]))
 
 
 def density_l2_error(run_dir: Path) -> float:
@@ -126,7 +133,7 @@ def density_l2_error(run_dir: Path) -> float:
     center_y = 0.5
     dx = (xx - center_x + 0.5 * (probhi[0] - problo[0])) % (probhi[0] - problo[0]) - 0.5 * (probhi[0] - problo[0])
     dy = (yy - center_y + 0.5 * (probhi[1] - problo[1])) % (probhi[1] - problo[1]) - 0.5 * (probhi[1] - problo[1])
-    exact = 1.0 + 0.25 * np.exp(-0.5 * (dx * dx + dy * dy) / (0.035 * 0.035))
+    exact = 1.0 + 0.25 * np.exp(-0.5 * (dx * dx + dy * dy) / (CLOUD_SIGMA * CLOUD_SIGMA))
     error = state[names.index("rho")] - exact
     return math.sqrt(float(np.mean(error * error)))
 
@@ -155,8 +162,8 @@ def run_case(
             "pyfluid.subcycling": "on" if regrid_mode == "aligned" else "off",
             "pyfluid.subcycling_steps": "local_cfl",
             "pyfluid.max_step": str(max_step),
-            "pyfluid.scalar_int": str(max(1, max_step // 10)),
-            "pyfluid.plot_int": str(max(1, max_step // 10)),
+            "pyfluid.scalar_int": str(min(8, max(1, max_step // 10))),
+            "pyfluid.plot_int": str(min(8, max(1, max_step // 10))),
         },
     )
     result = run_amrex(
@@ -216,6 +223,7 @@ def run_case(
         "kind": "amr",
         "suite": "amr_dynamic_regrid",
         "step": "density_cloud",
+        "regrid_mode": regrid_mode,
         "state_interp": state_interp,
         "rho_l2_error": rho_l2,
         "log": repo_relative(log_path),
@@ -229,7 +237,7 @@ def main() -> int:
     parser.add_argument("--ranks", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--min-shift", type=float, default=0.12)
-    parser.add_argument("--max-step", type=int, default=80)
+    parser.add_argument("--max-step", type=int, default=200)
     parser.add_argument(
         "--state-interp",
         choices=("conservative", "protected", "quartic-conservative"),
@@ -248,7 +256,38 @@ def main() -> int:
         run_case(args.ranks, args.timeout, args.min_shift, args.state_interp, args.max_step, mode)
         for mode in ("synchronized", "aligned")
     ]
-    write_tsv(SUMMARY, rows, VALIDATION_HISTORY_FIELDS)
+    by_mode = {str(row["regrid_mode"]): row for row in rows}
+    synchronized = by_mode["synchronized"]
+    aligned = by_mode["aligned"]
+    synchronized_error = float(synchronized["rho_l2_error"])
+    aligned_error = float(aligned["rho_l2_error"])
+    accuracy_ratio = aligned_error / synchronized_error if synchronized_error > 0.0 else math.nan
+    speedup = float(aligned["avg_sim_time_per_s"]) / float(synchronized["avg_sim_time_per_s"])
+    aligned["aligned_accuracy_ratio"] = accuracy_ratio
+    aligned["aligned_sim_time_speedup"] = speedup
+    comparison_failures = []
+    if not math.isfinite(accuracy_ratio) or accuracy_ratio > 1.05:
+        comparison_failures.append(f"aligned/synchronized rho L2 ratio {accuracy_ratio:.3f} > 1.05")
+    if speedup < MIN_ALIGNED_THROUGHPUT_RATIO:
+        comparison_failures.append(
+            f"aligned simulation-time throughput ratio {speedup:.3f}x < {MIN_ALIGNED_THROUGHPUT_RATIO:.2f}x"
+        )
+    if comparison_failures:
+        aligned["status"] = "FAIL"
+        aligned["reason"] = "; ".join([str(aligned.get("reason", "")), *comparison_failures])
+
+    write_tsv(
+        SUMMARY,
+        rows,
+        [
+            *VALIDATION_HISTORY_FIELDS,
+            "regrid_mode",
+            "state_interp",
+            "rho_l2_error",
+            "aligned_accuracy_ratio",
+            "aligned_sim_time_speedup",
+        ],
+    )
     append_validation_history(HISTORY, rows)
     for row in rows:
         print(
@@ -256,9 +295,9 @@ def main() -> int:
             f"Mcells/s={float(row['avg_mcells_per_s']):.3g} "
             f"sim_time/s={float(row['avg_sim_time_per_s']):.3g}"
         )
+    print(f"aligned comparison: rho_L2={accuracy_ratio:.6f}x sim_time/s={speedup:.3f}x")
     return 0 if all(row["status"] == "PASS" for row in rows) else 1
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-    materialize_run_input,

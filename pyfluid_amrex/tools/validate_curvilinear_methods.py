@@ -811,7 +811,7 @@ def method_cases(level: str) -> list[CurvilinearCase]:
       branch="expected_reject",
       dim=2,
       mhd=True,
-      expect_failure="implicit resistive MHD is disabled",
+      expect_failure="implicit resistive MHD requires Cartesian coordinates",
       overrides={
          **COMMON_MHD_CT_STATIC,
          "pyfluid.diffusion": "implicit",

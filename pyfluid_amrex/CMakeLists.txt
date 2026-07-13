@@ -73,6 +73,7 @@ set(PYFLUID_AMREX_SOURCES
    src/checkpoint.cpp
    src/ct_edge_flux_register.cpp
    src/fields.cpp
+   src/implicit_resistivity.cpp
    src/profiling.cpp
    src/solver.cpp
 )
@@ -106,6 +107,9 @@ if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_RIEMANN_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/riemann_ops.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/characteristic_transforms.hpp
+   )
    set(PYFLUID_AMREX_GENERATED_VECTOR_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/vector_ops.hpp
    )
@@ -127,6 +131,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
+         ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
       COMMAND ${CMAKE_COMMAND} -E env
@@ -137,18 +142,21 @@ if(PYFLUID_UV_EXECUTABLE)
          --family flux
          --family operator
          --family riemann
+         --family characteristic
          --family vector
          --family metric
          --flux-header ${PYFLUID_AMREX_GENERATED_FLUX_HEADER}
          --eos-header ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          --operator-header ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
          --riemann-header ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
+         --characteristic-header ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          --vector-header ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          --metric-header ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
       COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/characteristic_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/discretization.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py
