@@ -24,11 +24,11 @@ from PIL import Image
 
 from amr_plot_data import HierarchySlice, component_values as _component_values
 from plotfile_reader import (
+   component_plotfile_timeline,
    parse_fab_index,
    parse_level_shapes,
    parse_plot_bounds,
    parse_plot_header,
-   plotfile_timeline,
    plotfile_step as _plotfile_step,
    read_fab,
 )
@@ -1498,9 +1498,9 @@ def main() -> None:
     if args.target_frames is not None and args.frame_stride != 1:
         raise ValueError("--target-frames and --frame-stride are mutually exclusive")
 
-    timeline = plotfile_timeline(
+    timeline = component_plotfile_timeline(
         args.plot_dir,
-        prefix="stateGF",
+        args.component,
         require=True,
         frame_stride=args.frame_stride,
         target_frames=args.target_frames or 0,

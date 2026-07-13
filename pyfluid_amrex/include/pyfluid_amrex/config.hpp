@@ -404,7 +404,7 @@ static constexpr std::array<std::string_view, 7> MHDWaveFamilyOptions{{
    "slow_minus",
    "entropy",
 }};
-static constexpr std::array<std::string_view, 24> InitialDataOptions{{
+static constexpr std::array<std::string_view, 25> InitialDataOptions{{
    "sin_wave",
    "uniform",
    "cartesian_advection",
@@ -429,6 +429,7 @@ static constexpr std::array<std::string_view, 24> InitialDataOptions{{
    "kelvin_helmholtz",
    "kelvin_helmholtz_mhd",
    "magnetic_blast_noise",
+   "resistive_current_sheet",
 }};
 
 template <std::size_t N>
@@ -1467,9 +1468,37 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.physics == "hydro" && cfg.ic == "magnetic_blast_noise") {
       amrex::Abort("magnetic_blast_noise requires pyfluid.physics = mhd");
    }
+   if (cfg.ic == "resistive_current_sheet") {
+      if (cfg.physics != "mhd" || cfg.ct != "on") {
+         amrex::Abort("resistive_current_sheet requires pyfluid.physics = mhd and pyfluid.ct = on");
+      }
+      if (mesh_coordinate_code(cfg.mesh_coordinate) != MeshCartesian) {
+         amrex::Abort("resistive_current_sheet requires Cartesian coordinates");
+      }
+      const MeshAxes axes = mesh_axes_layout(cfg);
+      if (mesh_axis(axes, 0) != MeshAxisX || mesh_axis(axes, 1) != MeshAxisY) {
+         amrex::Abort("resistive_current_sheet requires active axes x y or x y z");
+      }
+      if (cfg.bump_sigma <= 0.0 || cfg.wave_number <= 0.0 || cfg.alfven_amplitude < 0.0) {
+         amrex::Abort(
+            "resistive_current_sheet requires positive bump_sigma/wave_number and non-negative alfven_amplitude"
+         );
+      }
+      if (cfg.b1_0 == 0.0) {
+         amrex::Abort("resistive_current_sheet requires nonzero pyfluid.b1_0");
+      }
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         if (side_bc_name(cfg, dir, false) != "periodic" || side_bc_name(cfg, dir, true) != "periodic") {
+            amrex::Abort("resistive_current_sheet requires periodic boundaries in every active direction");
+         }
+      }
+   }
 #if (AMREX_SPACEDIM == 1)
    if (cfg.ic == "kelvin_helmholtz" || cfg.ic == "kelvin_helmholtz_mhd") {
       amrex::Abort("Kelvin-Helmholtz initial data requires the 2D or 3D AMReX executable");
+   }
+   if (cfg.ic == "resistive_current_sheet") {
+      amrex::Abort("resistive_current_sheet requires the 2D or 3D AMReX executable");
    }
    if (cfg.ic == "hydro_beam") {
       amrex::Abort("hydro_beam requires the 2D or 3D AMReX executable");

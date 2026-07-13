@@ -4,6 +4,7 @@
 #include <AMReX_MultiFab.H>
 #include <AMReX_GpuLaunch.H>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -1784,6 +1785,184 @@ inline void initialize_kelvin_helmholtz_mhd(amrex::MultiFab& state, amrex::Geome
    initialize_kelvin_helmholtz_impl<true>(state, geom, cfg, "kelvin_helmholtz_mhd");
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real current_sheet_base_b1(
+   amrex::Real y,
+   amrex::Real sheet_y1,
+   amrex::Real sheet_y2,
+   amrex::Real thickness,
+   amrex::Real field_strength
+) noexcept
+{
+   return field_strength
+      * (std::tanh((y - sheet_y1) / thickness) - std::tanh((y - sheet_y2) / thickness) - 1.0);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real current_sheet_vector_potential(
+   amrex::Real x,
+   amrex::Real y,
+   amrex::Real x_lo,
+   amrex::Real y_lo,
+   amrex::Real sheet_y1,
+   amrex::Real sheet_y2,
+   amrex::Real thickness,
+   amrex::Real field_strength,
+   amrex::Real perturbation_potential,
+   amrex::Real k1,
+   amrex::Real k2
+) noexcept
+{
+   const amrex::Real base = field_strength
+      * (thickness * std::log(std::cosh((y - sheet_y1) / thickness))
+         - thickness * std::log(std::cosh((y - sheet_y2) / thickness)) - (y - y_lo));
+   const amrex::Real perturbation = perturbation_potential * std::cos(k1 * (x - x_lo))
+      * std::sin(k2 * (y - y_lo));
+   return base + perturbation;
+}
+
+inline void initialize_resistive_current_sheet(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg
+)
+{
+#if (AMREX_SPACEDIM == 1)
+   (void)state;
+   (void)geom;
+   (void)cfg;
+   amrex::Abort("resistive_current_sheet requires the 2D or 3D AMReX executable");
+#else
+   const auto problo = geom.ProbLoArray();
+   const auto probhi = geom.ProbHiArray();
+   const auto dx = geom.CellSizeArray();
+   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real length1 = probhi[0] - problo[0];
+   const amrex::Real length2 = probhi[1] - problo[1];
+   const amrex::Real sheet_y1 = problo[1] + 0.25 * length2;
+   const amrex::Real sheet_y2 = problo[1] + 0.75 * length2;
+   const amrex::Real thickness = cfg.bump_sigma;
+   const amrex::Real field_strength = cfg.b1_0;
+   const amrex::Real guide_field = cfg.b3_0;
+   const amrex::Real k1 = two_pi * cfg.wave_number / length1;
+   const amrex::Real k2 = two_pi / length2;
+   const amrex::Real perturbation_potential = cfg.alfven_amplitude / std::max(k1, k2);
+   const amrex::Real rho0 = cfg.rho0;
+   const amrex::Real pressure0 = cfg.pressure0;
+   const amrex::Real v1 = cfg.v1_0;
+   const amrex::Real v2 = cfg.v2_0;
+   const amrex::Real v3 = cfg.v3_0;
+   const EOSParams eos = eos_params(cfg);
+   const int eos_method = eos_method_code(cfg);
+
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   {
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const auto arr = state.array(mfi);
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+         const amrex::Real base_b1 = current_sheet_base_b1(y, sheet_y1, sheet_y2, thickness, field_strength);
+         const amrex::Real b1 = base_b1
+            + perturbation_potential * k2 * std::cos(k1 * (x - problo[0])) * std::cos(k2 * (y - problo[1]));
+         const amrex::Real b2 = perturbation_potential * k1 * std::sin(k1 * (x - problo[0]))
+            * std::sin(k2 * (y - problo[1]));
+         const amrex::Real pressure = pressure0 + 0.5 * (field_strength * field_strength - base_b1 * base_b1);
+         arr(i, j, k, RHO) = rho0;
+         arr(i, j, k, MOM1) = rho0 * v1;
+         arr(i, j, k, MOM2) = rho0 * v2;
+         arr(i, j, k, MOM3) = rho0 * v3;
+         arr(i, j, k, ENERGY) =
+            total_mhd_energy_runtime(eos_method, rho0, v1, v2, v3, pressure, b1, b2, guide_field, eos);
+         arr(i, j, k, B1) = b1;
+         arr(i, j, k, B2) = b2;
+         arr(i, j, k, B3) = guide_field;
+      });
+   }
+   }
+#endif
+}
+
+inline void initialize_resistive_current_sheet_face_b(
+   FaceMagneticField& face_b,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg
+)
+{
+#if (AMREX_SPACEDIM == 1)
+   (void)face_b;
+   (void)geom;
+   (void)cfg;
+   amrex::Abort("resistive_current_sheet face initialization requires the 2D or 3D AMReX executable");
+#else
+   const auto problo = geom.ProbLoArray();
+   const auto probhi = geom.ProbHiArray();
+   const auto dx = geom.CellSizeArray();
+   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real length1 = probhi[0] - problo[0];
+   const amrex::Real length2 = probhi[1] - problo[1];
+   const amrex::Real sheet_y1 = problo[1] + 0.25 * length2;
+   const amrex::Real sheet_y2 = problo[1] + 0.75 * length2;
+   const amrex::Real thickness = cfg.bump_sigma;
+   const amrex::Real field_strength = cfg.b1_0;
+   const amrex::Real k1 = two_pi * cfg.wave_number / length1;
+   const amrex::Real k2 = two_pi / length2;
+   const amrex::Real perturbation_potential = cfg.alfven_amplitude / std::max(k1, k2);
+
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      amrex::MultiFab& face = *face_b.b[dir];
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      {
+      for (amrex::MFIter mfi(face, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         const amrex::Box& bx = mfi.tilebox();
+         const auto f = face.array(mfi);
+         const int d = dir;
+         const amrex::Real guide_field = cfg.b3_0;
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            if (d == 0) {
+               const amrex::Real x = problo[0] + static_cast<amrex::Real>(i) * dx[0];
+               const amrex::Real y_lo = problo[1] + static_cast<amrex::Real>(j) * dx[1];
+               const amrex::Real az_lo = current_sheet_vector_potential(
+                  x, y_lo, problo[0], problo[1], sheet_y1, sheet_y2, thickness,
+                  field_strength, perturbation_potential, k1, k2
+               );
+               const amrex::Real az_hi = current_sheet_vector_potential(
+                  x, y_lo + dx[1], problo[0], problo[1], sheet_y1, sheet_y2, thickness,
+                  field_strength, perturbation_potential, k1, k2
+               );
+               f(i, j, k, 0) = (az_hi - az_lo) / dx[1];
+            } else if (d == 1) {
+               const amrex::Real x_lo = problo[0] + static_cast<amrex::Real>(i) * dx[0];
+               const amrex::Real y = problo[1] + static_cast<amrex::Real>(j) * dx[1];
+               const amrex::Real az_lo = current_sheet_vector_potential(
+                  x_lo, y, problo[0], problo[1], sheet_y1, sheet_y2, thickness,
+                  field_strength, perturbation_potential, k1, k2
+               );
+               const amrex::Real az_hi = current_sheet_vector_potential(
+                  x_lo + dx[0], y, problo[0], problo[1], sheet_y1, sheet_y2, thickness,
+                  field_strength, perturbation_potential, k1, k2
+               );
+               f(i, j, k, 0) = -(az_hi - az_lo) / dx[0];
+            }
+#if (AMREX_SPACEDIM == 3)
+            else {
+               f(i, j, k, 0) = guide_field;
+            }
+#else
+            amrex::ignore_unused(guide_field);
+#endif
+         });
+      }
+      }
+   }
+#endif
+}
+
 inline void initialize_magnetic_blast_noise(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
 {
 #if (AMREX_SPACEDIM != 3)
@@ -1948,6 +2127,8 @@ inline void initialize_state(amrex::MultiFab& state, amrex::Geometry const& geom
       initialize_kelvin_helmholtz_mhd(state, geom, cfg);
    } else if (cfg.ic == "magnetic_blast_noise") {
       initialize_magnetic_blast_noise(state, geom, cfg);
+   } else if (cfg.ic == "resistive_current_sheet") {
+      initialize_resistive_current_sheet(state, geom, cfg);
    } else if (cfg.ic == "sod_x" || cfg.ic == "sod_plane" || cfg.ic == "sod_periodic_plane") {
       initialize_sod_plane(state, geom, cfg);
    } else if (cfg.ic == "double_mach_reflection") {

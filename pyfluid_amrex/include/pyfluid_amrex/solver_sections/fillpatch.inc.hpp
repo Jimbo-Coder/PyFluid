@@ -75,7 +75,7 @@
             average_down_face_b_level(fine_lev);
          }
          for (int lev = lbase; lev <= finestLevel(); ++lev) {
-            sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), true);
+            sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), false);
          }
       }
       if (whole_hierarchy) {
@@ -939,7 +939,7 @@
          return;
       }
       fill_new_face_b_from_coarse(lev, time);
-      sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), true);
+      sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), time == 0.0);
       apply_boundary(*state_[lev], Geom(lev), time);
    }
 
@@ -949,6 +949,6 @@
          return;
       }
       fill_remade_face_b(lev, time, old_face_b);
-      sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), true);
+      sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), time == 0.0);
       apply_boundary(*state_[lev], Geom(lev), time);
    }

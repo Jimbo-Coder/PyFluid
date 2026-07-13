@@ -172,18 +172,24 @@ void AmrSolver::initialize_ct_fields(int lev, amrex::Real time)
       return;
    }
    apply_boundary(*state_[lev], Geom(lev), time);
-   const bool preserve_pressure = cfg_.ic == "magnetic_blast_noise";
-   if (cfg_.ic == "magnetic_blast_noise") {
+   bool initialized_analytic_face_b = false;
+   if (cfg_.ic == "magnetic_blast_noise" && time == 0.0) {
       initialize_magnetic_blast_noise_face_b(face_b_[lev], Geom(lev), cfg_);
+      initialized_analytic_face_b = true;
+   } else if (cfg_.ic == "resistive_current_sheet" && time == 0.0) {
+      initialize_resistive_current_sheet_face_b(face_b_[lev], Geom(lev), cfg_);
+      initialized_analytic_face_b = true;
    } else if ((cfg_.ic == "kelvin_helmholtz_mhd" || cfg_.ic == "density_cloud") && time == 0.0) {
       fill_uniform_face_b(face_b_[lev], cfg_.b1_0, cfg_.b2_0, cfg_.b3_0);
+      initialized_analytic_face_b = true;
    } else if ((cfg_.ic == "sod_x" || cfg_.ic == "sod_plane" || cfg_.ic == "sod_periodic_plane") && time == 0.0) {
       initialize_sod_plane_face_b(face_b_[lev], Geom(lev), cfg_);
+      initialized_analytic_face_b = true;
    } else {
       fill_face_b_from_cell_b(face_b_[lev], *state_[lev]);
    }
    apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
-   sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), preserve_pressure);
+   sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), initialized_analytic_face_b);
    apply_boundary(*state_[lev], Geom(lev), time);
 }
 

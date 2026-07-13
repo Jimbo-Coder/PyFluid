@@ -1175,6 +1175,32 @@ def amr_cases() -> list[Case]:
       "pyfluid.aux_gf_int": "-1",
       "pyfluid.aux_gf_compute_int": "-1",
    }))
+   cases.append(Case(
+      "mhd_current_sheet_amr_ct_explicit_resistive",
+      2,
+      "resistive_current_sheet_2d_amr_ct.in",
+      {
+         **AUTO_AMR_COVERAGE,
+         "amr.total_cell_budget": "2000000",
+         "amr.regrid_int": "16",
+         "amr.state_interp": "quartic-conservative",
+         "pyfluid.max_step": "3",
+         "pyfluid.final_time": "-1",
+         "pyfluid.bump_sigma": "0.05",
+         "pyfluid.alfven_amplitude": "0.01",
+         "pyfluid.recon": "pwl",
+         "pyfluid.ng": "2",
+         "pyfluid.plot_int": "-1",
+         "pyfluid.checkpoint_int": "-1",
+         "pyfluid.aux_gfs": "j,e",
+         "pyfluid.aux_gf_compute_int": "1",
+         "pyfluid.aux_gf_int": "-1",
+      },
+      checks=DIFFUSIVE_POLICY,
+      require_amr=True,
+      min_amr_level=3,
+      min_amr_headroom=2,
+   ))
    return cases
 
 

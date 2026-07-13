@@ -29,7 +29,12 @@ PLOTFILE_ROOTS = frozenset(("stateGF", "auxGF"))
 
 
 def plotfile_step(path: Path) -> int:
-   match = PLOTFILE_STEP_RE.search(_ensure_path(path).name)
+   resolved_path = _ensure_path(path)
+   if resolved_path.suffix in {".h5", ".hdf5"} and resolved_path.is_file():
+      metadata = read_output_metadata(resolved_path)
+      if "step" in metadata:
+         return int(metadata["step"])
+   match = PLOTFILE_STEP_RE.search(resolved_path.name)
    if not match:
       raise ValueError(f"could not parse step from {path}")
    return int(match.group(1))
@@ -212,6 +217,63 @@ def plotfile_timeline(
    if max_frames <= 0 or len(samples) <= max_frames:
       return samples
    return samples[-max_frames:]
+
+
+def component_plotfile_timeline(
+   output_dir: Path,
+   component: str,
+   *,
+   require: bool = False,
+   frame_stride: int = 1,
+   target_frames: int = 0,
+   max_frames: int = 0,
+) -> list[PlotfileSample]:
+   """Return the unique plotfile series that owns ``component``.
+
+   A grid function may be cell-, face-, or edge-centered, so its filename
+   series is an output-schema detail rather than a plotting choice. Search the
+   requested canonical output root and identify the series from component
+   metadata.
+   """
+   directory = _ensure_path(output_dir)
+   roots = [directory]
+   if directory.name not in PLOTFILE_ROOTS:
+      roots = [directory / root for root in sorted(PLOTFILE_ROOTS)]
+
+   samples_by_step: dict[int, PlotfileSample] = {}
+   for root in roots:
+      if not root.is_dir():
+         continue
+      for path in root.iterdir():
+         is_native = path.is_dir() and (path / "Header").is_file()
+         is_hdf5 = path.is_file() and path.suffix in {".h5", ".hdf5"}
+         if not (is_native or is_hdf5):
+            continue
+         names, _ndim, time_value = parse_plot_header(path)
+         if component not in names:
+            continue
+         step = plotfile_step(path)
+         if step in samples_by_step:
+            other = samples_by_step[step].path
+            raise ValueError(
+               f"component {component!r} occurs in multiple plotfiles at step {step}: "
+               f"{other} and {path}"
+            )
+         samples_by_step[step] = PlotfileSample(step, time_value, path)
+
+   samples = [samples_by_step[step] for step in sorted(samples_by_step)]
+   if not samples and require:
+      raise FileNotFoundError(f"no plotfiles containing component {component!r} under {directory}")
+   if frame_stride < 1:
+      raise ValueError("frame_stride must be >= 1")
+   if target_frames > 0 and max_frames > 0:
+      raise ValueError("target_frames and max_frames cannot both be set")
+   samples = _select_timeline_stride(samples, frame_stride=frame_stride)
+   if target_frames > 0:
+      samples = _select_timeline_target_frames(samples, target_frames=target_frames)
+   if max_frames > 0 and len(samples) > max_frames:
+      return samples[-max_frames:]
+   return samples
 
 
 def read_checkpoint_metadata(checkpoint_name: Path) -> dict[str, str]:
