@@ -53,7 +53,7 @@ COMMON_OVERRIDES = {
     "pyfluid.timestep": "ssprk3",
     "pyfluid.ng": "2",
     "pyfluid.cfl": "0.9",
-    "pyfluid.final_time": "-1",
+    "pyfluid.final_time": "0.12",
     "pyfluid.subcycling": "off",
     "pyfluid.checkpoint_int": "-1",
     "pyfluid.physical_check_int": "1",
@@ -137,10 +137,11 @@ def run_case(
     min_shift: float,
     state_interp: str,
     max_step: int,
+    regrid_mode: str,
 ) -> dict[str, object]:
     method_label = state_interp.replace("-", "_")
-    run_name = f"amr_dynamic_density_cloud_{method_label}"
-    run_dir = RUN_ROOT / method_label
+    run_name = f"amr_dynamic_density_cloud_{regrid_mode}_{method_label}"
+    run_dir = RUN_ROOT / regrid_mode / method_label
     run_dir.mkdir(parents=True, exist_ok=True)
     input_file = materialize_run_input(
         BASE_INPUT,
@@ -150,6 +151,9 @@ def run_case(
             "pyfluid.run_name": run_name,
             "pyfluid.output_dir": str(run_dir),
             "amr.state_interp": state_interp,
+            "amr.regrid_mode": regrid_mode,
+            "pyfluid.subcycling": "on" if regrid_mode == "aligned" else "off",
+            "pyfluid.subcycling_steps": "local_cfl",
             "pyfluid.max_step": str(max_step),
             "pyfluid.scalar_int": str(max(1, max_step // 10)),
             "pyfluid.plot_int": str(max(1, max_step // 10)),
@@ -240,15 +244,19 @@ def main() -> int:
         shutil.rmtree(RUN_ROOT)
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
 
-    row = run_case(args.ranks, args.timeout, args.min_shift, args.state_interp, args.max_step)
-    write_tsv(SUMMARY, [row], VALIDATION_HISTORY_FIELDS)
-    append_validation_history(HISTORY, [row])
-    print(
-        f"{row['status']} amr_dynamic_regrid: {row['reason']} "
-        f"Mcells/s={float(row['avg_mcells_per_s']):.3g} "
-        f"sim_time/s={float(row['avg_sim_time_per_s']):.3g}"
-    )
-    return 0 if row["status"] == "PASS" else 1
+    rows = [
+        run_case(args.ranks, args.timeout, args.min_shift, args.state_interp, args.max_step, mode)
+        for mode in ("synchronized", "aligned")
+    ]
+    write_tsv(SUMMARY, rows, VALIDATION_HISTORY_FIELDS)
+    append_validation_history(HISTORY, rows)
+    for row in rows:
+        print(
+            f"{row['status']} amr_dynamic_regrid {row['case']}: {row['reason']} "
+            f"Mcells/s={float(row['avg_mcells_per_s']):.3g} "
+            f"sim_time/s={float(row['avg_sim_time_per_s']):.3g}"
+        )
+    return 0 if all(row["status"] == "PASS" for row in rows) else 1
 
 
 if __name__ == "__main__":

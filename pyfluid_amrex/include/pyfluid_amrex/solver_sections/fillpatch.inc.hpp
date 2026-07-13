@@ -3,12 +3,13 @@
 
    bool should_regrid(int base_step, bool reached_final_time) const
    {
-      return cfg_.regrid_int > 0
-         && maxLevel() > 0
-         && (cfg_.regrid_mode == "synchronized" || cfg_.subcycling != "on")
-         && base_step % cfg_.regrid_int == 0
-         && base_step != cfg_.max_step
-         && !reached_final_time;
+      if (cfg_.regrid_int <= 0 || maxLevel() <= 0 || base_step == cfg_.max_step || reached_final_time) {
+         return false;
+      }
+      if (cfg_.regrid_mode == "aligned" && cfg_.subcycling == "on") {
+         return aligned_regrid_ticks_ - aligned_base_regrid_tick_ >= cfg_.regrid_int;
+      }
+      return base_step % cfg_.regrid_int == 0;
    }
 
    bool should_regrid_aligned_descendants(int lev) const

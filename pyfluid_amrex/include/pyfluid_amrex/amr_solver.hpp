@@ -522,6 +522,7 @@ private:
 #endif
    amrex::Vector<int> level_steps_;
    amrex::Long aligned_regrid_ticks_ = 0;
+   amrex::Long aligned_base_regrid_tick_ = 0;
    bool aligned_regrid_due_ = false;
    bool tracking_regrid_changes_ = false;
    int regrid_first_modified_level_ = std::numeric_limits<int>::max();

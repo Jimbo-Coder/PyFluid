@@ -142,6 +142,9 @@ void AmrSolver::load_checkpoint(std::string const& checkpoint_name, amrex::Real&
    checkpoint_reference_mass_ = checkpoint.reference_mass;
    checkpoint_reference_energy_ = checkpoint.reference_energy;
    aligned_regrid_ticks_ = checkpoint.aligned_regrid_ticks;
+   aligned_base_regrid_tick_ = checkpoint.aligned_base_regrid_tick >= 0
+      ? checkpoint.aligned_base_regrid_tick
+      : aligned_regrid_ticks_ - aligned_regrid_ticks_ % std::max(cfg_.regrid_int, 1);
    aligned_regrid_due_ = false;
 }
 

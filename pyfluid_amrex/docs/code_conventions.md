@@ -67,6 +67,14 @@ decisions.
   registers, resetting clocks or caches, averaging down, or refreshing state.
   Changed-hierarchy maintenance starts at the first modified interface and
   covers only the synchronization chain affected by that change.
+- Aligned subcycling may rebuild synchronized descendants between coarse
+  steps, but it must also consume the same finest-step cadence at level-zero
+  synchronization points. Descendant attempts must never prevent periodic
+  whole-hierarchy tagging from discovering newly separated coarse features.
+- Keep the measured adaptive Lohner/Richardson policy in
+  `adaptive_richardson.md`. It remains a semiproduction design until a generic
+  reversible hierarchy advance exists; do not substitute an offline shadow-run
+  harness for a runtime estimator.
 
 ## Conservation Accounting
 

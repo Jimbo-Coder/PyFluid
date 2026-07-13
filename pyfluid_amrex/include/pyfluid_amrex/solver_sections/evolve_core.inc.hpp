@@ -190,6 +190,7 @@
       conservation_ledger_ = {};
       if (cfg_.restart_file.empty()) {
          aligned_regrid_ticks_ = 0;
+         aligned_base_regrid_tick_ = 0;
       }
       aligned_regrid_due_ = false;
       const TemporalCadence scalar_cadence{TemporalCadenceUnit::Steps, cfg_.scalar_int};
@@ -253,6 +254,7 @@
             mass0,
             energy0,
             aligned_regrid_ticks_,
+            aligned_base_regrid_tick_,
             cfg_.checkpoint_compression
          );
       }
@@ -382,6 +384,9 @@
                conservative_self_gravity_energy_sync_enabled() ? self_gravity_total_energy(state_) : 0.0;
             const amrex::Real regrid_start = profile_begin();
             const bool hierarchy_changed = regrid_hierarchy<SubcyclingEnabled>(time, step);
+            if (cfg_.regrid_mode == "aligned" && cfg_.subcycling == "on") {
+               aligned_base_regrid_tick_ = aligned_regrid_ticks_;
+            }
             if (hierarchy_changed) {
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
                preserve_self_gravity_total_energy<EOSMethod>(pre_regrid_self_gravity_total_energy);
@@ -475,6 +480,7 @@
                mass0,
                energy0,
                aligned_regrid_ticks_,
+               aligned_base_regrid_tick_,
                cfg_.checkpoint_compression
             );
             profile_end(ProfileStage::Output, output_start);

@@ -1166,12 +1166,12 @@ def sample_plotfile_values(
     log10: bool,
     subtract_constant: float | None,
     max_samples_per_chunk: int,
-) -> list[np.ndarray]:
+) -> list[tuple[np.ndarray, np.ndarray]]:
     names, ndim, _time_value = parse_plot_header(plotfile)
     nlevels = level_count(plotfile)
     level_shapes = parse_level_shapes(plotfile)
     problo, probhi = parse_plot_bounds(plotfile)
-    samples: list[np.ndarray] = []
+    samples: list[tuple[np.ndarray, np.ndarray]] = []
     for lev in range(nlevels):
         level_shape = level_shapes[lev]
         cell_size = tuple((probhi[d] - problo[d]) / level_shape[d] for d in range(ndim))
@@ -1189,8 +1189,20 @@ def sample_plotfile_values(
             if finite.size == 0:
                 continue
             stride = max(1, int(np.ceil(finite.size / max_samples_per_chunk)))
-            samples.append(finite[::stride])
+            sampled = finite[::stride]
+            represented_measure = stride * cell_size[0] * cell_size[1]
+            samples.append((sampled, np.full(sampled.shape, represented_measure)))
     return samples
+
+
+def weighted_percentile(values: np.ndarray, weights: np.ndarray, percentile: float) -> float:
+    if values.size == 0 or values.shape != weights.shape:
+        raise ValueError("weighted percentile requires equally shaped nonempty values and weights")
+    order = np.argsort(values)
+    sorted_values = values[order]
+    cumulative_weights = np.cumsum(weights[order])
+    target = np.clip(percentile, 0.0, 100.0) * cumulative_weights[-1] / 100.0
+    return float(sorted_values[min(np.searchsorted(cumulative_weights, target, side="left"), values.size - 1)])
 
 
 def percentile_limits(
@@ -1204,7 +1216,7 @@ def percentile_limits(
     symmetric_limits: bool,
     max_samples_per_chunk: int,
 ) -> tuple[float, float]:
-    samples: list[np.ndarray] = []
+    samples: list[tuple[np.ndarray, np.ndarray]] = []
     for path in plotfiles:
         samples.extend(
             sample_plotfile_values(
@@ -1220,12 +1232,13 @@ def percentile_limits(
         )
     if not samples:
         raise ValueError(f"no finite values found for {component}")
-    finite = np.concatenate(samples)
+    finite = np.concatenate([values for values, _weights in samples])
+    weights = np.concatenate([sample_weights for _values, sample_weights in samples])
     if finite.size < 3:
         raise ValueError(f"not enough finite values to determine limits for {component}")
 
-    vmin = float(np.percentile(finite, 2.0))
-    vmax = float(np.percentile(finite, 98.0))
+    vmin = weighted_percentile(finite, weights, 2.0)
+    vmax = weighted_percentile(finite, weights, 98.0)
     if not np.isfinite(vmin) or not np.isfinite(vmax):
         raise ValueError(f"non-finite sample values for {component}")
     if vmin == vmax:
@@ -1235,8 +1248,8 @@ def percentile_limits(
             return vmin, vmax
 
     linear_span = vmax - vmin
-    centered = float(np.median(finite))
-    centered_half_span = float(np.percentile(np.abs(finite - centered), 90.0))
+    centered = weighted_percentile(finite, weights, 50.0)
+    centered_half_span = weighted_percentile(np.abs(finite - centered), weights, 90.0)
     if centered_half_span > 0.0 and centered_half_span * 2.0 < linear_span:
         vmin = centered - centered_half_span
         vmax = centered + centered_half_span

@@ -21,6 +21,7 @@ struct CheckpointHeader {
    amrex::Real reference_mass = std::numeric_limits<amrex::Real>::quiet_NaN();
    amrex::Real reference_energy = std::numeric_limits<amrex::Real>::quiet_NaN();
    amrex::Long aligned_regrid_ticks = 0;
+   amrex::Long aligned_base_regrid_tick = -1;
    amrex::Vector<int> level_steps;
    amrex::Vector<amrex::Real> dt;
    amrex::Vector<amrex::Real> time;
@@ -42,6 +43,7 @@ void write_checkpoint(
    amrex::Real reference_mass = std::numeric_limits<amrex::Real>::quiet_NaN(),
    amrex::Real reference_energy = std::numeric_limits<amrex::Real>::quiet_NaN(),
    amrex::Long aligned_regrid_ticks = 0,
+   amrex::Long aligned_base_regrid_tick = 0,
    std::string const& checkpoint_compression = "best"
 );
 

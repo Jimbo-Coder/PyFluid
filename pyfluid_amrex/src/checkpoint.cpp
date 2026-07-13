@@ -441,6 +441,7 @@ void write_checkpoint(
    amrex::Real reference_mass,
    amrex::Real reference_energy,
    amrex::Long aligned_regrid_ticks,
+   amrex::Long aligned_base_regrid_tick,
    std::string const& checkpoint_compression
 )
 {
@@ -502,6 +503,7 @@ void write_checkpoint(
       }
       header << reference_mass << " " << reference_energy << "\n";
       header << aligned_regrid_ticks << "\n";
+      header << aligned_base_regrid_tick << "\n";
       write_checkpoint_metadata(
          checkpoint_name,
          step,
@@ -596,6 +598,13 @@ CheckpointHeader read_checkpoint_header(std::string const& checkpoint_name)
       // aligned cadence; starting that newly selected mode at tick zero is exact.
       header.clear();
       chk.aligned_regrid_ticks = 0;
+   }
+   if (!(header >> chk.aligned_base_regrid_tick)) {
+      // Older aligned checkpoints did not distinguish descendant and
+      // whole-hierarchy cadence consumption. The solver derives a compatible
+      // base tick from the selected restart interval.
+      header.clear();
+      chk.aligned_base_regrid_tick = -1;
    }
    if (!header.good()) {
       amrex::Abort("checkpoint Header is incomplete: " + header_name);
