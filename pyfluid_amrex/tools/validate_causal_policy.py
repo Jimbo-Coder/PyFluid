@@ -45,7 +45,7 @@ def main() -> int:
       "amr.max_level": "8",
       "amr.ref_ratio": "2 2",
       "amr.regrid_int": "1",
-      "amr.tag_metric": "auto",
+      "amr.tag_metric": "lohner",
       "amr.min_feature_length": "0.001",
       "amr.total_cell_budget": "1000000",
       "pyfluid.validation_policy": "open",

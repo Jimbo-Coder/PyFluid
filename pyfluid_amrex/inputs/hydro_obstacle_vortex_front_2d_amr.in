@@ -7,6 +7,7 @@ geometry.is_periodic = 0 1
 
 amr.n_cell = 192 48
 amr.max_level = 3
+amr.regrid_mode = synchronized
 amr.ref_ratio = 2 2 2
 amr.max_grid_size = 64
 amr.blocking_factor = 16
@@ -15,7 +16,7 @@ amr.grid_eff = 0.85
 amr.n_error_buf = 4 4 4
 amr.level_cell_budget_side = 768
 amr.total_cell_budget = 650000
-amr.tag_metric = auto
+amr.tag_metric = lohner
 amr.state_interp = protected
 amr.initial_refine = box
 amr.initial_refine_levels = 1

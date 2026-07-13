@@ -69,16 +69,16 @@ constexpr std::array<RegisteredStringParameter, 9> MethodParameters{{
     "Explicit time integration method."},
    {"diffusion", &RunConfig::diffusion, "none", StringOptionSet::Diffusion, RestartPolicy::Mutable,
     "Diffusion integration method."},
-   {"subcycling", &RunConfig::subcycling, "off", StringOptionSet::Subcycling, RestartPolicy::Mutable,
+   {"subcycling", &RunConfig::subcycling, "on", StringOptionSet::Subcycling, RestartPolicy::Mutable,
     "AMR level time subcycling."},
-   {"subcycling_steps", &RunConfig::subcycling_steps, "spatial", StringOptionSet::SubcyclingSteps,
+   {"subcycling_steps", &RunConfig::subcycling_steps, "local_cfl", StringOptionSet::SubcyclingSteps,
     RestartPolicy::Mutable, "Rule used to choose fine-level substeps."},
 }};
 
 constexpr std::array<RegisteredStringParameter, 4> AMRStringParameters{{
    {"tag_metric", &RunConfig::tag_metric, "none", StringOptionSet::AMRTagMetric, RestartPolicy::Mutable,
     "State-based AMR tagging metric."},
-   {"regrid_mode", &RunConfig::regrid_mode, "synchronized", StringOptionSet::AMRRegridMode,
+   {"regrid_mode", &RunConfig::regrid_mode, "aligned", StringOptionSet::AMRRegridMode,
     RestartPolicy::Mutable, "Synchronization cadence for rebuilding AMR descendants."},
    {"state_interp", &RunConfig::state_interp, "quartic-conservative", StringOptionSet::AMRStateInterp,
     RestartPolicy::Mutable, "Conservative state interpolation used for new fine data."},

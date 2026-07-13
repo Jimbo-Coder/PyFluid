@@ -42,7 +42,7 @@ COMMON_OVERRIDES = {
    "amr.max_level": "2",
    "amr.ref_ratio": "2 2",
    "amr.regrid_int": "1",
-   "amr.tag_metric": "auto",
+   "amr.tag_metric": "lohner",
    "amr.tag_threshold": "0.02",
    "amr.initial_refine": "none",
    "amr.max_grid_size": "32",

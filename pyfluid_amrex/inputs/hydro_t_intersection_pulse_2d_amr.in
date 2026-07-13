@@ -12,6 +12,7 @@ mesh.patch_box_big = 95 127  191 63  191 127
 
 amr.n_cell = 192 128
 amr.max_level = 8
+amr.regrid_mode = synchronized
 amr.ref_ratio = 2 2 2 2 2 2 2 2
 amr.max_grid_size = 64
 amr.blocking_factor = 16
@@ -20,7 +21,7 @@ amr.grid_eff = 0.85
 amr.n_error_buf = 4 4 4 4 4 4 4 4
 amr.level_cell_budget_side = 1536
 amr.total_cell_budget = 1200000
-amr.tag_metric = auto
+amr.tag_metric = lohner
 amr.state_interp = protected
 amr.min_feature_length = 0.006
 amr.solid_refine_band_cells = 2.0

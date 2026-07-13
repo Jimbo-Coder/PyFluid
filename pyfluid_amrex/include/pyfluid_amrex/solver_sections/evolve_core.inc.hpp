@@ -381,9 +381,11 @@
             const amrex::Real pre_regrid_self_gravity_total_energy =
                conservative_self_gravity_energy_sync_enabled() ? self_gravity_total_energy(state_) : 0.0;
             const amrex::Real regrid_start = profile_begin();
-            regrid_hierarchy<SubcyclingEnabled>(time, step);
-            reset_barotropic_energy_all_levels<NComp, EOSMethod>();
-            preserve_self_gravity_total_energy<EOSMethod>(pre_regrid_self_gravity_total_energy);
+            const bool hierarchy_changed = regrid_hierarchy<SubcyclingEnabled>(time, step);
+            if (hierarchy_changed) {
+               reset_barotropic_energy_all_levels<NComp, EOSMethod>();
+               preserve_self_gravity_total_energy<EOSMethod>(pre_regrid_self_gravity_total_energy);
+            }
             profile_end(ProfileStage::Regrid, regrid_start);
          }
 
@@ -548,6 +550,9 @@
                         << " average=" << average_mcells_s << " Mcells/s"
                         << " layout_average=" << average_layout_mcells_s << " layout_Mcells/s"
                         << " sim_time_per_s=" << average_sim_time_s << "\n";
+         amrex::Print() << "AMR regrid attempts=" << regrid_attempt_count_
+                        << " noops=" << regrid_noop_count_
+                        << " modified_levels=" << regrid_modified_level_count_ << "\n";
       }
    }
 

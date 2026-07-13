@@ -9,6 +9,7 @@ under runs/current so failures are reproducible without guessing CLI overrides.
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -54,6 +55,7 @@ class Case:
    require_amr: bool = False
    min_amr_level: int = 1
    min_amr_headroom: int = 2
+   min_regrid_noops: int = 0
 
 
 COMMON_FAST = {
@@ -74,7 +76,7 @@ AUTO_AMR_COVERAGE = {
    "amr.max_grid_size": "24",
    "amr.blocking_factor": "8",
    "amr.regrid_int": "1",
-   "amr.tag_metric": "auto",
+   "amr.tag_metric": "lohner",
    "amr.min_feature_length": "0.001",
    "amr.total_cell_budget": "1000000",
    "amr.initial_refine": "none",
@@ -193,6 +195,19 @@ def run_case(case: Case, force: bool, timeout: int, ranks_override: int | None =
       if failures:
          row["status"] = "FAIL"
          row["reason"] = "; ".join(filter(None, (str(row.get("reason", "")), *failures)))
+   if case.min_regrid_noops > 0:
+      match = re.search(
+         r"AMR regrid attempts=(\d+) noops=(\d+) modified_levels=(\d+)",
+         proc.stdout,
+      )
+      noops = int(match.group(2)) if match else 0
+      row["regrid_attempts"] = match.group(1) if match else "0"
+      row["regrid_noops"] = str(noops)
+      row["regrid_modified_levels"] = match.group(3) if match else "0"
+      if noops < case.min_regrid_noops:
+         row["status"] = "FAIL"
+         failure = f"AMR recorded {noops} no-op regrids, expected at least {case.min_regrid_noops}"
+         row["reason"] = "; ".join(filter(None, (str(row.get("reason", "")), failure)))
    return row
 
 
@@ -613,6 +628,42 @@ def amr_cases() -> list[Case]:
       },
       require_amr=True,
    ))
+   cases.append(Case(
+      "hydro_amr_aligned_noop_contract",
+      2,
+      "pressure_bump_2d_amr.in",
+      {
+         "geometry.is_periodic": "1 1",
+         "amr.n_cell": "32 32",
+         "amr.max_level": "2",
+         "amr.ref_ratio": "2 2",
+         "amr.max_grid_size": "32",
+         "amr.blocking_factor": "8",
+         "amr.regrid_mode": "aligned",
+         "amr.regrid_int": "1",
+         "amr.tag_metric": "none",
+         "amr.initial_refine": "box",
+         "amr.initial_refine_levels": "2",
+         "amr.initial_refine_fixed_levels": "1",
+         "amr.initial_refine_box_lo": "0.25 0.25",
+         "amr.initial_refine_box_hi": "0.75 0.75",
+         "pyfluid.ic": "uniform",
+         "pyfluid.rho0": "1.0",
+         "pyfluid.pressure0": "1.0",
+         "pyfluid.v1_0": "0.0",
+         "pyfluid.v2_0": "0.0",
+         "pyfluid.v3_0": "0.0",
+         "pyfluid.max_step": "4",
+         "pyfluid.timestep": "euler",
+         "pyfluid.recon": "pwc",
+         "pyfluid.riemann": "llf",
+         "pyfluid.ng": "1",
+         "pyfluid.subcycling": "on",
+      },
+      require_amr=True,
+      min_amr_headroom=1,
+      min_regrid_noops=1,
+   ))
    for timestep in ["euler", "corrector", "midpoint", "ssprk3", "rk4"]:
       cases.append(Case(
          f"mhd_amr_ct_subcycling_{timestep}",
@@ -765,6 +816,32 @@ def amr_cases() -> list[Case]:
       "amr.state_interp": "quartic-conservative",
       "amr.regrid_int": "1",
    }, require_amr=True))
+   cases.append(Case("hydro_sod_deep_amr_subcycling_local_cfl", 1, "sod_x_1d.in", {
+      "pyfluid.max_step": "100000",
+      "pyfluid.final_time": "0.016",
+      "pyfluid.cfl": "0.9",
+      "pyfluid.physical_check_int": "1",
+      "pyfluid.timestep": "ssprk3",
+      "pyfluid.recon": "pwl",
+      "pyfluid.riemann": "hllc",
+      "pyfluid.ng": "2",
+      "pyfluid.subcycling": "on",
+      "pyfluid.subcycling_steps": "local_cfl",
+      "pyfluid.plot_int": "-1",
+      "amr.n_cell": "128",
+      "amr.max_level": "4",
+      "amr.ref_ratio": "2 2 2 2",
+      "amr.max_grid_size": "128",
+      "amr.blocking_factor": "8",
+      "amr.regrid_int": "100000",
+      "amr.tag_metric": "none",
+      "amr.initial_refine": "box",
+      "amr.initial_refine_levels": "4",
+      "amr.initial_refine_fixed_levels": "4",
+      "amr.initial_refine_box_lo": "0.0",
+      "amr.initial_refine_box_hi": "1.0",
+      "amr.state_interp": "quartic-conservative",
+   }, checks=scalar_checks("sod_deep_local_cfl", momentum=False)))
    cases.append(Case("mhd_amr_ct_subcycling_local_cfl_ssprk3", 2, "kelvin_helmholtz_mhd_2d_single_sheet_amr_ct.in", {
       **AUTO_AMR_COVERAGE,
       "pyfluid.max_step": "2",

@@ -31,14 +31,14 @@
    }
 
    template <bool SubcyclingEnabled>
-   void regrid_hierarchy(amrex::Real time, int step, int requested_lbase = 0)
+   bool regrid_hierarchy(amrex::Real time, int step, int requested_lbase = 0)
    {
       int lbase = std::max(requested_lbase, 0);
       if (cfg_.initial_refine_fixed_levels > 0) {
          lbase = std::max(lbase, std::min(cfg_.initial_refine_fixed_levels, finestLevel()));
       }
       if (lbase >= maxLevel()) {
-         return;
+         return false;
       }
 
       const bool whole_hierarchy = lbase == 0;
@@ -48,21 +48,15 @@
       if (preserve_hydro_solid_totals) {
          pre_regrid_totals = hydro_valid_conserved_totals();
       }
-      for (int lev = lbase; lev <= finestLevel(); ++lev) {
-         fill_level_boundaries<SubcyclingEnabled>(state_, lev, time);
-      }
-      if (ct_enabled(cfg_)) {
-         for (int lev = lbase; lev <= finestLevel(); ++lev) {
-            apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
-         }
-      }
-      for (int lev = lbase; lev <= finestLevel(); ++lev) {
-         invalidate_rk4_stage_cache(lev);
-      }
+      begin_regrid_change_tracking();
       regrid(lbase, time, false);
+      if (!finish_regrid_change_tracking()) {
+         return false;
+      }
       enforce_cell_budget("regridding AMR hierarchy");
-      define_flux_registers(lbase + 1);
-      for (int lev = lbase + 1; lev <= finestLevel(); ++lev) {
+      const int first_modified_level = regrid_first_modified_level_;
+      define_flux_registers(first_modified_level);
+      for (int lev = std::max(lbase + 1, first_modified_level); lev <= finestLevel(); ++lev) {
          const int relative_time_factor = level_time_factor(lev) / level_time_factor(lbase);
          level_steps_[lev] = SubcyclingEnabled ? step * relative_time_factor : step;
          level_times_[lev] = time;
@@ -106,6 +100,7 @@
       for (int lev = lbase; lev <= finestLevel(); ++lev) {
          invalidate_rk4_stage_cache(lev);
       }
+      return true;
    }
 
    int state_fillpatch_bc_type(int component, int dir, bool high_side) const

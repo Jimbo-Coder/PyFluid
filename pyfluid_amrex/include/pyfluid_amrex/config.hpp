@@ -376,9 +376,9 @@ static constexpr std::array<std::string_view, 4> SolidMotionOptions{{"static", "
 static constexpr std::array<std::string_view, 2> SolidWallConditionOptions{{"slip", "no_slip"}};
 static constexpr std::array<std::string_view, 3> MeshPatchBoxOwnershipOptions{{"exact", "owner_first", "owner_last"}};
 
-inline amrex::Real amr_default_auto_tag_threshold();
+inline amrex::Real amr_default_lohner_tag_threshold();
 static constexpr std::array<std::string_view, 2> MeshPatchBoxDomainOptions{{"rectangular", "union"}};
-static constexpr std::array<std::string_view, 2> AMRTagMetricOptions{{"none", "auto"}};
+static constexpr std::array<std::string_view, 2> AMRTagMetricOptions{{"none", "lohner"}};
 static constexpr std::array<std::string_view, 2> AMRRegridModeOptions{{"synchronized", "aligned"}};
 static constexpr std::array<std::string_view, 5> AMRStateInterpOptions{{
    "conservative",
@@ -958,8 +958,8 @@ inline RunConfig read_config()
          cfg.initial_refine_box_hi[n] = initial_refine_box_hi[n];
       }
    }
-   if (cfg.tag_metric == "auto" && !cfg.tag_threshold_set) {
-      cfg.tag_threshold = amr_default_auto_tag_threshold();
+   if (cfg.tag_metric == "lohner" && !cfg.tag_threshold_set) {
+      cfg.tag_threshold = amr_default_lohner_tag_threshold();
    }
    if (cfg.level_cell_budget_side > 0) {
       amrex::Long derived_cells = 1;
@@ -1032,7 +1032,7 @@ inline amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> configured_min_feature_lengt
    return values;
 }
 
-inline amrex::Real amr_default_auto_tag_threshold()
+inline amrex::Real amr_default_lohner_tag_threshold()
 {
    return 0.08;
 }

@@ -104,7 +104,7 @@ def run_case(args: argparse.Namespace, point: SweepPoint) -> dict[str, float | s
            "amr.regrid_int": "4",
            "amr.grid_eff": "0.85",
            "amr.n_error_buf": " ".join([str(args.error_buffer)] * args.max_level),
-           "amr.tag_metric": "auto",
+           "amr.tag_metric": "lohner",
            "amr.tag_threshold": f"{args.tag_threshold:.17g}",
            "amr.state_interp": "quartic",
            "amr.min_feature_length": f"{point.min_feature_length:.17g}",

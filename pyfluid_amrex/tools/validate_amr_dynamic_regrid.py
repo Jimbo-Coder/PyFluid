@@ -63,7 +63,7 @@ COMMON_OVERRIDES = {
     "amr.max_grid_size": "32",
     "amr.blocking_factor": "8",
     "amr.regrid_int": "4",
-    "amr.tag_metric": "auto",
+    "amr.tag_metric": "lohner",
 }
 
 

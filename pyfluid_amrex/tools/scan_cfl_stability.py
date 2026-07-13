@@ -130,7 +130,7 @@ def subcycling_cases() -> list[ScanCase]:
       "amr.max_level": "2",
       "amr.ref_ratio": "2 2",
       "amr.regrid_int": "2",
-      "amr.tag_metric": "auto",
+      "amr.tag_metric": "lohner",
       "amr.state_interp": "quartic-conservative",
       "pyfluid.max_step": "32",
       "pyfluid.final_time": "-1.0",
@@ -204,7 +204,7 @@ def amr_metric_cases() -> list[ScanCase]:
          "amr_metrics",
          2,
          "pressure_bump_2d_amr.in",
-         {**common, "amr.tag_metric": "auto", "amr.tag_threshold": "0.03"},
+         {**common, "amr.tag_metric": "lohner", "amr.tag_threshold": "0.03"},
          "default jack-of-all-trades AMR metric",
       ),
       ScanCase(
@@ -213,7 +213,7 @@ def amr_metric_cases() -> list[ScanCase]:
          "amr_metrics",
          2,
          "pressure_bump_2d_amr.in",
-         {**common, "amr.tag_metric": "auto", "amr.tag_threshold": "0.01"},
+         {**common, "amr.tag_metric": "lohner", "amr.tag_threshold": "0.01"},
          "tighter auto metric threshold to catch refinement-driven stability issues",
       ),
    ]

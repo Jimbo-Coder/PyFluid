@@ -61,7 +61,7 @@ OVERRIDES = {
    "pyfluid.bc_yhi": "periodic",
    "amr.n_cell": "32 64",
    "amr.max_level": "4",
-   "amr.tag_metric": "auto",
+   "amr.tag_metric": "lohner",
    "amr.tag_threshold": "0.08",
    "amr.initial_refine": "box",
    "amr.initial_refine_levels": "3",

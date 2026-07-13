@@ -141,7 +141,7 @@ amrex::Real AmrSolver::active_finest_cell_width() const
 amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> AmrSolver::min_feature_lengths() const
 {
    auto lengths = configured_min_feature_lengths(cfg_);
-   if (cfg_.tag_metric != "auto" || cfg_.amr_max_level <= 1) {
+   if (cfg_.tag_metric != "lohner" || cfg_.amr_max_level <= 1) {
       return lengths;
    }
    const auto base_widths = level_cell_widths(0);

@@ -62,6 +62,11 @@ decisions.
   on the current finest level, then rebuilds from the lowest level whose
   descendants are synchronized. These cadences have different units; compare
   them at similar measured regrid counts, not by assigning the same interval.
+- AMReX level callbacks are the source of truth for whether a scheduled regrid
+  changed the hierarchy. An unchanged attempt must return before rebuilding
+  registers, resetting clocks or caches, averaging down, or refreshing state.
+  Changed-hierarchy maintenance starts at the first modified interface and
+  covers only the synchronization chain affected by that change.
 
 ## Conservation Accounting
 

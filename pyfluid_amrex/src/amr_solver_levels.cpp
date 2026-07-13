@@ -304,6 +304,7 @@ void AmrSolver::MakeNewLevelFromCoarse(
    amrex::DistributionMapping const& dm
 )
 {
+   mark_regrid_level_modified(lev);
    const amrex::BoxArray level_ba = owned_level_box_array(lev, ba);
    const amrex::DistributionMapping work_dm =
       owned_level_distribution_mapping(lev, ba, level_ba, dm, time);
@@ -327,6 +328,7 @@ void AmrSolver::RemakeLevel(
    amrex::DistributionMapping const& dm
 )
 {
+   mark_regrid_level_modified(lev);
    std::unique_ptr<amrex::MultiFab> old_state = std::move(state_[lev]);
    FaceMagneticField old_face_b;
    if (ct_enabled(cfg_)) {
@@ -346,6 +348,7 @@ void AmrSolver::RemakeLevel(
 
 void AmrSolver::ClearLevel(int lev)
 {
+   mark_regrid_level_modified(lev);
    state_[lev].reset();
    old_state_[lev].reset();
    source_state_[lev].reset();
@@ -407,6 +410,36 @@ void AmrSolver::ClearLevel(int lev)
    level_old_times_[lev] = 0.0;
    level_dts_[lev] = 0.0;
    invalidate_rk4_stage_cache(lev);
+}
+
+void AmrSolver::begin_regrid_change_tracking()
+{
+   tracking_regrid_changes_ = true;
+   regrid_first_modified_level_ = std::numeric_limits<int>::max();
+   regrid_last_modified_level_ = -1;
+   ++regrid_attempt_count_;
+}
+
+void AmrSolver::mark_regrid_level_modified(int lev)
+{
+   if (!tracking_regrid_changes_) {
+      return;
+   }
+   regrid_first_modified_level_ = std::min(regrid_first_modified_level_, lev);
+   regrid_last_modified_level_ = std::max(regrid_last_modified_level_, lev);
+}
+
+bool AmrSolver::finish_regrid_change_tracking()
+{
+   tracking_regrid_changes_ = false;
+   const bool modified = regrid_last_modified_level_ >= regrid_first_modified_level_;
+   if (modified) {
+      regrid_modified_level_count_ +=
+         static_cast<amrex::Long>(regrid_last_modified_level_ - regrid_first_modified_level_ + 1);
+   } else {
+      ++regrid_noop_count_;
+   }
+   return modified;
 }
 
 } // namespace pyfluid_amrex

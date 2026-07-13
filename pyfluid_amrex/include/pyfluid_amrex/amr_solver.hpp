@@ -315,6 +315,9 @@ private:
       amrex::DistributionMapping const& dm
    ) override;
    void ClearLevel(int lev) override;
+   void begin_regrid_change_tracking();
+   void mark_regrid_level_modified(int lev);
+   bool finish_regrid_change_tracking();
    void regrid(int lbase, amrex::Real time, bool initial = false) override;
    void PostProcessBaseGrids(amrex::BoxArray& box_array) const override;
    amrex::BoxArray clip_to_patch_union_domain(int lev, amrex::BoxArray const& box_array) const;
@@ -520,6 +523,12 @@ private:
    amrex::Vector<int> level_steps_;
    amrex::Long aligned_regrid_ticks_ = 0;
    bool aligned_regrid_due_ = false;
+   bool tracking_regrid_changes_ = false;
+   int regrid_first_modified_level_ = std::numeric_limits<int>::max();
+   int regrid_last_modified_level_ = -1;
+   amrex::Long regrid_attempt_count_ = 0;
+   amrex::Long regrid_noop_count_ = 0;
+   amrex::Long regrid_modified_level_count_ = 0;
    amrex::Vector<amrex::Real> level_times_;
    amrex::Vector<amrex::Real> level_old_times_;
    amrex::Vector<amrex::Real> level_dts_;

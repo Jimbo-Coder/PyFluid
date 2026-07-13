@@ -95,7 +95,7 @@ DEEP_AUTO_OVERRIDES = (
    "amr.initial_refine=none",
    "amr.initial_refine_levels=0",
    "amr.initial_refine_fixed_levels=0",
-   "amr.tag_metric=auto",
+   "amr.tag_metric=lohner",
    "amr.tag_threshold=0.035",
 )
 
