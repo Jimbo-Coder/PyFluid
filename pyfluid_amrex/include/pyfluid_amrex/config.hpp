@@ -404,7 +404,7 @@ static constexpr std::array<std::string_view, 7> MHDWaveFamilyOptions{{
    "slow_minus",
    "entropy",
 }};
-static constexpr std::array<std::string_view, 25> InitialDataOptions{{
+static constexpr std::array<std::string_view, 26> InitialDataOptions{{
    "sin_wave",
    "uniform",
    "cartesian_advection",
@@ -428,6 +428,7 @@ static constexpr std::array<std::string_view, 25> InitialDataOptions{{
    "mhd_rotor",
    "kelvin_helmholtz",
    "kelvin_helmholtz_mhd",
+   "orszag_tang",
    "magnetic_blast_noise",
    "resistive_current_sheet",
 }};
@@ -1462,6 +1463,9 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.physics == "hydro" && cfg.ic == "kelvin_helmholtz_mhd") {
       amrex::Abort("kelvin_helmholtz_mhd requires pyfluid.physics = mhd");
    }
+   if (cfg.physics == "hydro" && cfg.ic == "orszag_tang") {
+      amrex::Abort("orszag_tang requires pyfluid.physics = mhd");
+   }
    if (cfg.physics == "mhd" && cfg.ic == "kelvin_helmholtz") {
       amrex::Abort("kelvin_helmholtz is hydro-only; use kelvin_helmholtz_mhd for magnetized KH");
    }
@@ -1493,12 +1497,32 @@ inline void validate_config(RunConfig const& cfg)
          }
       }
    }
+   if (cfg.ic == "orszag_tang") {
+      if (mesh_coordinate_code(cfg.mesh_coordinate) != MeshCartesian) {
+         amrex::Abort("orszag_tang requires Cartesian coordinates");
+      }
+      const MeshAxes axes = mesh_axes_layout(cfg);
+      if (mesh_axis(axes, 0) != MeshAxisX || mesh_axis(axes, 1) != MeshAxisY) {
+         amrex::Abort("orszag_tang requires active axes x y or x y z");
+      }
+      if (cfg.wave_number <= 0.0 || cfg.amplitude <= 0.0 || cfg.b1_0 == 0.0) {
+         amrex::Abort("orszag_tang requires positive wave_number/amplitude and nonzero b1_0");
+      }
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         if (side_bc_name(cfg, dir, false) != "periodic" || side_bc_name(cfg, dir, true) != "periodic") {
+            amrex::Abort("orszag_tang requires periodic boundaries in every active direction");
+         }
+      }
+   }
 #if (AMREX_SPACEDIM == 1)
    if (cfg.ic == "kelvin_helmholtz" || cfg.ic == "kelvin_helmholtz_mhd") {
       amrex::Abort("Kelvin-Helmholtz initial data requires the 2D or 3D AMReX executable");
    }
    if (cfg.ic == "resistive_current_sheet") {
       amrex::Abort("resistive_current_sheet requires the 2D or 3D AMReX executable");
+   }
+   if (cfg.ic == "orszag_tang") {
+      amrex::Abort("orszag_tang requires the 2D or 3D AMReX executable");
    }
    if (cfg.ic == "hydro_beam") {
       amrex::Abort("hydro_beam requires the 2D or 3D AMReX executable");

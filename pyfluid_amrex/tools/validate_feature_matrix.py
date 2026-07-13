@@ -373,6 +373,17 @@ def mhd_method_cases() -> list[Case]:
          "pyfluid.passive_amplitude": "0.25",
       },
    ))
+   cases.append(Case(
+      "mhd_orszag_tang_wenoz_char_hlld_ct",
+      2,
+      "orszag_tang_2d_capstone_ct.in",
+      {
+         "amr.n_cell": "32 32",
+         "pyfluid.diffusion": "none",
+         "pyfluid.viscosity": "0.0",
+         "pyfluid.resistivity": "0.0",
+      },
+   ))
    return cases
 
 

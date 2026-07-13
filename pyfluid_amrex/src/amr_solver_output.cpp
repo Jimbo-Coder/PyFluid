@@ -179,6 +179,9 @@ void AmrSolver::initialize_ct_fields(int lev, amrex::Real time)
    } else if (cfg_.ic == "resistive_current_sheet" && time == 0.0) {
       initialize_resistive_current_sheet_face_b(face_b_[lev], Geom(lev), cfg_);
       initialized_analytic_face_b = true;
+   } else if (cfg_.ic == "orszag_tang" && time == 0.0) {
+      initialize_orszag_tang_face_b(face_b_[lev], Geom(lev), cfg_);
+      initialized_analytic_face_b = true;
    } else if ((cfg_.ic == "kelvin_helmholtz_mhd" || cfg_.ic == "density_cloud") && time == 0.0) {
       fill_uniform_face_b(face_b_[lev], cfg_.b1_0, cfg_.b2_0, cfg_.b3_0);
       initialized_analytic_face_b = true;

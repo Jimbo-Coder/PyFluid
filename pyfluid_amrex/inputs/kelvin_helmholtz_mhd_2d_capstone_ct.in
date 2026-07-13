@@ -1,0 +1,66 @@
+pyfluid.run_name = kelvin_helmholtz_mhd_2d_capstone_ct
+pyfluid.output_dir = runs/current/kelvin_helmholtz_mhd_2d_capstone_ct
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 1 0
+
+amr.n_cell = 32 32
+amr.max_level = 12
+amr.ref_ratio = 2 2
+amr.max_grid_size = 64
+amr.blocking_factor = 16
+amr.regrid_int = 8
+amr.grid_eff = 0.80
+amr.n_error_buf = 4 4
+amr.level_cell_budget_side = 1536
+amr.total_cell_budget = 4000000
+amr.tag_metric = lohner
+
+pyfluid.physics = mhd
+pyfluid.ct = on
+pyfluid.ic = kelvin_helmholtz_mhd
+pyfluid.eos = ideal_gas
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 0.25
+pyfluid.v1_0 = 0.70
+pyfluid.amplitude = 0.12
+pyfluid.bump_sigma = 0.03
+pyfluid.bump_x0 = 0.50
+pyfluid.bump_y0 = 0.50
+pyfluid.wave_number = 1.0
+pyfluid.kh_secondary_amplitude = 0.055
+pyfluid.kh_secondary_mode = 3.0
+pyfluid.kh_phase = 0.41
+pyfluid.kh_envelope_sigma = 0.095
+pyfluid.b1_0 = 0.05
+pyfluid.b2_0 = 0.0
+pyfluid.b3_0 = 0.50
+
+pyfluid.recon = wenoz-char
+pyfluid.riemann = hlld
+pyfluid.timestep = ssprk3
+pyfluid.cfl = 0.9
+pyfluid.ng = 3
+pyfluid.subcycling = on
+pyfluid.diffusion = explicit
+pyfluid.viscosity = 0.0001
+pyfluid.resistivity = 0.0001
+
+pyfluid.bc = outflow
+pyfluid.bc_xlo = periodic
+pyfluid.bc_xhi = periodic
+pyfluid.bc_ylo = outflow
+pyfluid.bc_yhi = outflow
+
+pyfluid.final_time = 1.2
+pyfluid.max_step = 10000
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 2
+pyfluid.checkpoint_int = 128
+pyfluid.aux_gfs = j,e,divb,magnetic_energy
+pyfluid.aux_gf_compute_int = 1
+pyfluid.aux_gf_int = 2

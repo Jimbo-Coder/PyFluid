@@ -22,7 +22,11 @@ import numpy as np
 from matplotlib.patches import Circle, Rectangle
 from PIL import Image
 
-from amr_plot_data import HierarchySlice, component_values as _component_values
+from amr_plot_data import (
+    HierarchySlice,
+    component_timeline_anchor,
+    component_values as _component_values,
+)
 from plotfile_reader import (
    component_plotfile_timeline,
    parse_fab_index,
@@ -1500,7 +1504,7 @@ def main() -> None:
 
     timeline = component_plotfile_timeline(
         args.plot_dir,
-        args.component,
+        component_timeline_anchor(args.component),
         require=True,
         frame_stride=args.frame_stride,
         target_frames=args.target_frames or 0,

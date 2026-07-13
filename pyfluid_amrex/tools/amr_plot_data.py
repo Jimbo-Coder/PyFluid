@@ -50,6 +50,19 @@ class HierarchyComparison:
    relative_linf: float
 
 
+def component_timeline_anchor(component: str) -> str:
+   """Return one stored component from the plotfile series needed by a view."""
+   if component.startswith("abs_"):
+      return component_timeline_anchor(component.removeprefix("abs_"))
+   if component in {"dye", "velocity_mag", "vorticity3", "current3", "schlieren", "pressure"}:
+      return "rho"
+   if component in {"v1", "v2", "v3"}:
+      return "rho"
+   if component.endswith("_mag"):
+      return f"{component.removesuffix('_mag')}1"
+   return component
+
+
 def canvas_shape(
    xlim: tuple[float, float],
    ylim: tuple[float, float],
@@ -105,6 +118,9 @@ def component_values(
    gamma: float,
    cell_size: tuple[float, ...] | None = None,
 ) -> np.ndarray:
+   if component.startswith("abs_"):
+      source_component = component.removeprefix("abs_")
+      return np.abs(component_values(data, names, source_component, gamma, cell_size))
    if component in names:
       return data[names.index(component)]
    if component == "dye" and "rho" in names and "dye_mass" in names:
@@ -126,6 +142,16 @@ def component_values(
       dx1 = 1.0 if cell_size is None else cell_size[0]
       dx2 = 1.0 if cell_size is None else cell_size[1]
       return np.gradient(v2, dx1, axis=0, edge_order=1) - np.gradient(v1, dx2, axis=1, edge_order=1)
+   if component == "current3" and all(name in names for name in ("b1", "b2")):
+      if data.ndim < 3:
+         raise ValueError("current3 requires at least 2D data")
+      b1 = data[names.index("b1")]
+      b2 = data[names.index("b2")]
+      if b1.shape[0] < 2 or b1.shape[1] < 2:
+         return np.zeros_like(b1)
+      dx1 = 1.0 if cell_size is None else cell_size[0]
+      dx2 = 1.0 if cell_size is None else cell_size[1]
+      return np.gradient(b2, dx1, axis=0, edge_order=1) - np.gradient(b1, dx2, axis=1, edge_order=1)
    if component == "schlieren" and "rho" in names:
       rho = data[names.index("rho")]
       if rho.ndim < 2 or rho.shape[0] < 2 or rho.shape[1] < 2:

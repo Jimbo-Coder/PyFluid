@@ -1786,6 +1786,143 @@ inline void initialize_kelvin_helmholtz_mhd(amrex::MultiFab& state, amrex::Geome
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real orszag_tang_vector_potential(
+   amrex::Real x,
+   amrex::Real y,
+   amrex::Real x_lo,
+   amrex::Real y_lo,
+   amrex::Real magnetic_amplitude,
+   amrex::Real kx,
+   amrex::Real ky
+) noexcept
+{
+   return magnetic_amplitude * (
+      std::cos(ky * (y - y_lo)) / ky
+      + std::cos(2.0 * kx * (x - x_lo)) / (2.0 * kx)
+   );
+}
+
+inline void initialize_orszag_tang(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg
+)
+{
+#if (AMREX_SPACEDIM == 1)
+   (void)state;
+   (void)geom;
+   (void)cfg;
+   amrex::Abort("orszag_tang requires the 2D or 3D AMReX executable");
+#else
+   const auto problo = geom.ProbLoArray();
+   const auto probhi = geom.ProbHiArray();
+   const auto dx = geom.CellSizeArray();
+   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real kx = two_pi * cfg.wave_number / (probhi[0] - problo[0]);
+   const amrex::Real ky = two_pi * cfg.wave_number / (probhi[1] - problo[1]);
+   const amrex::Real velocity_amplitude = cfg.amplitude;
+   const amrex::Real magnetic_amplitude = cfg.b1_0;
+   const amrex::Real guide_field = cfg.b3_0;
+   const amrex::Real rho0 = cfg.rho0;
+   const amrex::Real pressure0 = cfg.pressure0;
+   const EOSParams eos = eos_params(cfg);
+   const int eos_method = eos_method_code(cfg);
+
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   {
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const auto arr = state.array(mfi);
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+         const amrex::Real phase_x = kx * (x - problo[0]);
+         const amrex::Real phase_y = ky * (y - problo[1]);
+         const amrex::Real v1 = -velocity_amplitude * std::sin(phase_y);
+         const amrex::Real v2 = velocity_amplitude * std::sin(phase_x);
+         const amrex::Real v3 = 0.0;
+         const amrex::Real b1 = -magnetic_amplitude * std::sin(phase_y);
+         const amrex::Real b2 = magnetic_amplitude * std::sin(2.0 * phase_x);
+         arr(i, j, k, RHO) = rho0;
+         arr(i, j, k, MOM1) = rho0 * v1;
+         arr(i, j, k, MOM2) = rho0 * v2;
+         arr(i, j, k, MOM3) = 0.0;
+         arr(i, j, k, ENERGY) =
+            total_mhd_energy_runtime(eos_method, rho0, v1, v2, v3, pressure0, b1, b2, guide_field, eos);
+         arr(i, j, k, B1) = b1;
+         arr(i, j, k, B2) = b2;
+         arr(i, j, k, B3) = guide_field;
+      });
+   }
+   }
+#endif
+}
+
+inline void initialize_orszag_tang_face_b(
+   FaceMagneticField& face_b,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg
+)
+{
+#if (AMREX_SPACEDIM == 1)
+   (void)face_b;
+   (void)geom;
+   (void)cfg;
+   amrex::Abort("orszag_tang face initialization requires the 2D or 3D AMReX executable");
+#else
+   const auto problo = geom.ProbLoArray();
+   const auto probhi = geom.ProbHiArray();
+   const auto dx = geom.CellSizeArray();
+   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real kx = two_pi * cfg.wave_number / (probhi[0] - problo[0]);
+   const amrex::Real ky = two_pi * cfg.wave_number / (probhi[1] - problo[1]);
+   const amrex::Real magnetic_amplitude = cfg.b1_0;
+
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      amrex::MultiFab& face = *face_b.b[dir];
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      {
+      for (amrex::MFIter mfi(face, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         const amrex::Box& bx = mfi.tilebox();
+         const auto field = face.array(mfi);
+         const int direction = dir;
+         const amrex::Real guide_field = cfg.b3_0;
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            if (direction == 0) {
+               const amrex::Real x = problo[0] + static_cast<amrex::Real>(i) * dx[0];
+               const amrex::Real y_lo = problo[1] + static_cast<amrex::Real>(j) * dx[1];
+               const amrex::Real az_lo = orszag_tang_vector_potential(
+                  x, y_lo, problo[0], problo[1], magnetic_amplitude, kx, ky
+               );
+               const amrex::Real az_hi = orszag_tang_vector_potential(
+                  x, y_lo + dx[1], problo[0], problo[1], magnetic_amplitude, kx, ky
+               );
+               field(i, j, k) = (az_hi - az_lo) / dx[1];
+            } else if (direction == 1) {
+               const amrex::Real x_lo = problo[0] + static_cast<amrex::Real>(i) * dx[0];
+               const amrex::Real y = problo[1] + static_cast<amrex::Real>(j) * dx[1];
+               const amrex::Real az_lo = orszag_tang_vector_potential(
+                  x_lo, y, problo[0], problo[1], magnetic_amplitude, kx, ky
+               );
+               const amrex::Real az_hi = orszag_tang_vector_potential(
+                  x_lo + dx[0], y, problo[0], problo[1], magnetic_amplitude, kx, ky
+               );
+               field(i, j, k) = -(az_hi - az_lo) / dx[0];
+            } else {
+               field(i, j, k) = guide_field;
+            }
+         });
+      }
+      }
+   }
+#endif
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real current_sheet_base_b1(
    amrex::Real y,
    amrex::Real sheet_y1,
@@ -2125,6 +2262,8 @@ inline void initialize_state(amrex::MultiFab& state, amrex::Geometry const& geom
       initialize_kelvin_helmholtz(state, geom, cfg);
    } else if (cfg.ic == "kelvin_helmholtz_mhd") {
       initialize_kelvin_helmholtz_mhd(state, geom, cfg);
+   } else if (cfg.ic == "orszag_tang") {
+      initialize_orszag_tang(state, geom, cfg);
    } else if (cfg.ic == "magnetic_blast_noise") {
       initialize_magnetic_blast_noise(state, geom, cfg);
    } else if (cfg.ic == "resistive_current_sheet") {

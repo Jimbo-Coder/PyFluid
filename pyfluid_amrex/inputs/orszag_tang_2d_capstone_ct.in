@@ -1,0 +1,39 @@
+pyfluid.run_name = orszag_tang_2d_capstone_ct
+pyfluid.output_dir = runs/current/orszag_tang_2d_capstone_ct
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 1.0 1.0
+geometry.is_periodic = 1 1
+
+amr.n_cell = 512 512
+amr.max_level = 0
+
+pyfluid.physics = mhd
+pyfluid.ct = on
+pyfluid.ic = orszag_tang
+pyfluid.eos = ideal_gas
+pyfluid.gamma = 1.6666666666666667
+pyfluid.rho0 = 0.22104853207207686
+pyfluid.pressure0 = 0.13262911924324611
+pyfluid.amplitude = 1.0
+pyfluid.b1_0 = 0.28209479177387814
+pyfluid.b3_0 = 0.0
+pyfluid.wave_number = 1.0
+
+pyfluid.recon = wenoz-char
+pyfluid.riemann = hlld
+pyfluid.timestep = ssprk3
+pyfluid.cfl = 0.5
+pyfluid.ng = 3
+pyfluid.subcycling = off
+pyfluid.diffusion = explicit
+pyfluid.viscosity = 0.0001
+pyfluid.resistivity = 0.0001
+pyfluid.bc = periodic
+
+pyfluid.final_time = 1.0
+pyfluid.max_step = 10000
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 4
+pyfluid.plot_int = 45
+pyfluid.checkpoint_int = 512
