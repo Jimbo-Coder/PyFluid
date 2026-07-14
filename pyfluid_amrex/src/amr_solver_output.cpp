@@ -137,6 +137,18 @@ void AmrSolver::load_checkpoint(std::string const& checkpoint_name, amrex::Real&
       ClearLevel(lev);
       level_steps_[lev] = 0;
    }
+   if (ct_enabled(cfg_)) {
+      fill_all_level_boundaries<true>(state_, checkpoint.time[0]);
+      for (int lev = 0; lev <= checkpoint.finest_level; ++lev) {
+         FaceMagneticField checkpoint_face_b = std::move(face_b_[lev]);
+         allocate_face_magnetic_field(
+            face_b_[lev], checkpoint.box_arrays[lev], DistributionMap(lev), cfg_.ng
+         );
+         fill_remade_face_b(lev, checkpoint.time[lev], checkpoint_face_b);
+         sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), false);
+         copy_level_state_to_old(lev);
+      }
+   }
    time = checkpoint.time[0];
    dt = checkpoint.dt[0];
    checkpoint_reference_mass_ = checkpoint.reference_mass;
@@ -178,6 +190,9 @@ void AmrSolver::initialize_ct_fields(int lev, amrex::Real time)
       initialized_analytic_face_b = true;
    } else if (cfg_.ic == "resistive_current_sheet" && time == 0.0) {
       initialize_resistive_current_sheet_face_b(face_b_[lev], Geom(lev), cfg_);
+      initialized_analytic_face_b = true;
+   } else if (cfg_.ic == "reconnecting_shear_layer" && time == 0.0) {
+      initialize_reconnecting_shear_layer_face_b(face_b_[lev], Geom(lev), cfg_);
       initialized_analytic_face_b = true;
    } else if (cfg_.ic == "orszag_tang" && time == 0.0) {
       initialize_orszag_tang_face_b(face_b_[lev], Geom(lev), cfg_);

@@ -2100,6 +2100,205 @@ inline void initialize_resistive_current_sheet_face_b(
 #endif
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real reconnecting_shear_vector_potential(
+   amrex::Real x,
+   amrex::Real y,
+   amrex::Real x_lo,
+   amrex::Real sheet_y,
+   amrex::Real sheet_thickness,
+   amrex::Real perturbation_width,
+   amrex::Real field_strength,
+   amrex::Real magnetic_perturbation,
+   amrex::Real primary_wave_number,
+   amrex::Real secondary_wave_number,
+   amrex::Real secondary_phase
+) noexcept
+{
+   const amrex::Real y_offset = y - sheet_y;
+   const amrex::Real envelope = std::exp(
+      -0.5 * y_offset * y_offset / (perturbation_width * perturbation_width)
+   );
+   const amrex::Real primary_phase = primary_wave_number * (x - x_lo);
+   const amrex::Real secondary_phase_value = secondary_wave_number * (x - x_lo) + secondary_phase;
+   const amrex::Real perturbation = magnetic_perturbation * envelope * (
+      std::cos(primary_phase) / primary_wave_number
+      + 0.5 * std::cos(secondary_phase_value) / secondary_wave_number
+   );
+   return field_strength * sheet_thickness * std::log(std::cosh(y_offset / sheet_thickness))
+      + perturbation;
+}
+
+inline void initialize_reconnecting_shear_layer(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg
+)
+{
+#if (AMREX_SPACEDIM == 1)
+   (void)state;
+   (void)geom;
+   (void)cfg;
+   amrex::Abort("reconnecting_shear_layer requires the 2D or 3D AMReX executable");
+#else
+   const auto problo = geom.ProbLoArray();
+   const auto probhi = geom.ProbHiArray();
+   const auto dx = geom.CellSizeArray();
+   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real length1 = probhi[0] - problo[0];
+   const amrex::Real sheet_y = cfg.bump_y0;
+   const amrex::Real sheet_thickness = cfg.bump_sigma;
+   const amrex::Real perturbation_width = amrex::max(cfg.kh_envelope_sigma, 2.0 * sheet_thickness);
+   const amrex::Real field_strength = cfg.b1_0;
+   const amrex::Real guide_field = cfg.b3_0;
+   const amrex::Real shear_speed = cfg.v1_0;
+   const amrex::Real primary_wave_number = two_pi * cfg.wave_number / length1;
+   const amrex::Real secondary_wave_number = two_pi * cfg.kh_secondary_mode / length1;
+   const amrex::Real secondary_phase = cfg.kh_phase;
+   const amrex::Real velocity_perturbation = cfg.amplitude;
+   const amrex::Real secondary_velocity_perturbation = cfg.kh_secondary_amplitude;
+   const amrex::Real magnetic_perturbation = cfg.alfven_amplitude;
+   const amrex::Real rho0 = cfg.rho0;
+   const amrex::Real pressure0 = cfg.pressure0;
+   const EOSParams eos = eos_params(cfg);
+   const int eos_method = eos_method_code(cfg);
+
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   {
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const auto arr = state.array(mfi);
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+         const amrex::Real y_offset = y - sheet_y;
+         const amrex::Real envelope = std::exp(
+            -0.5 * y_offset * y_offset / (perturbation_width * perturbation_width)
+         );
+         const amrex::Real envelope_derivative = -y_offset * envelope
+            / (perturbation_width * perturbation_width);
+         const amrex::Real primary_phase = primary_wave_number * (x - problo[0]);
+         const amrex::Real secondary_phase_value = secondary_wave_number * (x - problo[0]) + secondary_phase;
+         const amrex::Real velocity_stream_derivative_y = envelope_derivative * (
+            velocity_perturbation * std::cos(primary_phase) / primary_wave_number
+            + secondary_velocity_perturbation * std::cos(secondary_phase_value) / secondary_wave_number
+         );
+         const amrex::Real v1 = shear_speed * std::tanh(y_offset / sheet_thickness)
+            + velocity_stream_derivative_y;
+         const amrex::Real v2 = envelope * (
+            velocity_perturbation * std::sin(primary_phase)
+            + secondary_velocity_perturbation * std::sin(secondary_phase_value)
+         );
+         const amrex::Real base_b1 = field_strength * std::tanh(y_offset / sheet_thickness);
+         const amrex::Real magnetic_stream = magnetic_perturbation * (
+            std::cos(primary_phase) / primary_wave_number
+            + 0.5 * std::cos(secondary_phase_value) / secondary_wave_number
+         );
+         const amrex::Real b1 = base_b1 + envelope_derivative * magnetic_stream;
+         const amrex::Real b2 = magnetic_perturbation * envelope * (
+            std::sin(primary_phase) + 0.5 * std::sin(secondary_phase_value)
+         );
+         const amrex::Real pressure = pressure0
+            + 0.5 * (field_strength * field_strength - base_b1 * base_b1);
+         arr(i, j, k, RHO) = rho0;
+         arr(i, j, k, MOM1) = rho0 * v1;
+         arr(i, j, k, MOM2) = rho0 * v2;
+         arr(i, j, k, MOM3) = 0.0;
+         arr(i, j, k, ENERGY) = total_mhd_energy_runtime(
+            eos_method, rho0, v1, v2, 0.0, pressure, b1, b2, guide_field, eos
+         );
+         arr(i, j, k, B1) = b1;
+         arr(i, j, k, B2) = b2;
+         arr(i, j, k, B3) = guide_field;
+      });
+   }
+   }
+#endif
+}
+
+inline void initialize_reconnecting_shear_layer_face_b(
+   FaceMagneticField& face_b,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg
+)
+{
+#if (AMREX_SPACEDIM == 1)
+   (void)face_b;
+   (void)geom;
+   (void)cfg;
+   amrex::Abort("reconnecting_shear_layer face initialization requires the 2D or 3D AMReX executable");
+#else
+   const auto problo = geom.ProbLoArray();
+   const auto probhi = geom.ProbHiArray();
+   const auto dx = geom.CellSizeArray();
+   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real length1 = probhi[0] - problo[0];
+   const amrex::Real sheet_y = cfg.bump_y0;
+   const amrex::Real sheet_thickness = cfg.bump_sigma;
+   const amrex::Real perturbation_width = amrex::max(cfg.kh_envelope_sigma, 2.0 * sheet_thickness);
+   const amrex::Real field_strength = cfg.b1_0;
+   const amrex::Real guide_field = cfg.b3_0;
+   const amrex::Real magnetic_perturbation = cfg.alfven_amplitude;
+   const amrex::Real primary_wave_number = two_pi * cfg.wave_number / length1;
+   const amrex::Real secondary_wave_number = two_pi * cfg.kh_secondary_mode / length1;
+   const amrex::Real secondary_phase = cfg.kh_phase;
+
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      amrex::MultiFab& face = *face_b.b[dir];
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      {
+      for (amrex::MFIter mfi(face, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         const amrex::Box& bx = mfi.tilebox();
+         const auto field = face.array(mfi);
+         const int direction = dir;
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            if (direction == 0) {
+               const amrex::Real x = problo[0] + static_cast<amrex::Real>(i) * dx[0];
+               const amrex::Real y_lo = problo[1] + static_cast<amrex::Real>(j) * dx[1];
+               const amrex::Real potential_lo = reconnecting_shear_vector_potential(
+                  x, y_lo, problo[0], sheet_y, sheet_thickness, perturbation_width,
+                  field_strength, magnetic_perturbation, primary_wave_number,
+                  secondary_wave_number, secondary_phase
+               );
+               const amrex::Real potential_hi = reconnecting_shear_vector_potential(
+                  x, y_lo + dx[1], problo[0], sheet_y, sheet_thickness, perturbation_width,
+                  field_strength, magnetic_perturbation, primary_wave_number,
+                  secondary_wave_number, secondary_phase
+               );
+               field(i, j, k, 0) = (potential_hi - potential_lo) / dx[1];
+            } else if (direction == 1) {
+               const amrex::Real x_lo = problo[0] + static_cast<amrex::Real>(i) * dx[0];
+               const amrex::Real y = problo[1] + static_cast<amrex::Real>(j) * dx[1];
+               const amrex::Real potential_lo = reconnecting_shear_vector_potential(
+                  x_lo, y, problo[0], sheet_y, sheet_thickness, perturbation_width,
+                  field_strength, magnetic_perturbation, primary_wave_number,
+                  secondary_wave_number, secondary_phase
+               );
+               const amrex::Real potential_hi = reconnecting_shear_vector_potential(
+                  x_lo + dx[0], y, problo[0], sheet_y, sheet_thickness, perturbation_width,
+                  field_strength, magnetic_perturbation, primary_wave_number,
+                  secondary_wave_number, secondary_phase
+               );
+               field(i, j, k, 0) = -(potential_hi - potential_lo) / dx[0];
+            }
+#if (AMREX_SPACEDIM == 3)
+            else {
+               field(i, j, k, 0) = guide_field;
+            }
+#else
+            amrex::ignore_unused(guide_field);
+#endif
+         });
+      }
+      }
+   }
+#endif
+}
+
 inline void initialize_magnetic_blast_noise(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
 {
 #if (AMREX_SPACEDIM != 3)
@@ -2268,6 +2467,8 @@ inline void initialize_state(amrex::MultiFab& state, amrex::Geometry const& geom
       initialize_magnetic_blast_noise(state, geom, cfg);
    } else if (cfg.ic == "resistive_current_sheet") {
       initialize_resistive_current_sheet(state, geom, cfg);
+   } else if (cfg.ic == "reconnecting_shear_layer") {
+      initialize_reconnecting_shear_layer(state, geom, cfg);
    } else if (cfg.ic == "sod_x" || cfg.ic == "sod_plane" || cfg.ic == "sod_periodic_plane") {
       initialize_sod_plane(state, geom, cfg);
    } else if (cfg.ic == "double_mach_reflection") {

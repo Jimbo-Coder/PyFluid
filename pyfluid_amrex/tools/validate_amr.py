@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -502,12 +503,15 @@ RESTART_CHECKS = [
             "pyfluid.aux_gfs": "none",
             "pyfluid.aux_gf_compute_int": "-1",
             "pyfluid.aux_gf_int": "-1",
-            "amr.max_level": "2",
-            "amr.initial_refine_levels": "2",
+            "pyfluid.diffusion": "explicit",
+            "pyfluid.viscosity": "0.0",
+            "pyfluid.resistivity": "1e-4",
+            "amr.max_level": "3",
+            "amr.initial_refine_levels": "3",
             "amr.initial_refine_fixed_levels": "1",
             "amr.level_cell_budget_side": "512",
-            "amr.total_cell_budget": "300000",
-            "amr.regrid_int": "2",
+            "amr.total_cell_budget": "600000",
+            "amr.regrid_int": "8",
         },
     ),
     RestartCheck(
@@ -690,6 +694,8 @@ def run_solver(input_file: Path, output_dir: Path, overrides: dict[str, str]) ->
 
 def run_case(case: Case, force: bool) -> Path:
    plot_dir = case.output_dir
+   if force and plot_dir.exists():
+      shutil.rmtree(plot_dir)
    existing = discover_latest_plotfile(plot_dir, "stateGF")
    if existing is None or force:
       run_solver(case.input_file, case.output_dir, case.overrides)
@@ -842,6 +848,10 @@ def run_improvement_check(check: ImprovementCheck, rows: list[dict[str, str]]) -
 
 
 def run_restart_check(check: RestartCheck, force: bool) -> dict[str, str]:
+    if force:
+        for output_dir in (check.full_output_dir, check.restart_output_dir):
+            if output_dir.exists():
+                shutil.rmtree(output_dir)
     full_checkpoint = checkpoint_path(check.full_output_dir, check.final_step)
     restart_checkpoint = checkpoint_path(check.restart_output_dir, check.final_step)
     if force or not full_checkpoint.exists():
@@ -902,6 +912,12 @@ def main() -> None:
     parser.add_argument("--case", choices=[case.name for case in CASES], action="append")
     parser.add_argument("--force", action="store_true", help="rerun cases even if plotfiles already exist")
     parser.add_argument("--restart-checks", action="store_true", help="also run checkpoint/restart comparisons")
+    parser.add_argument(
+        "--restart-case",
+        choices=[check.name for check in RESTART_CHECKS],
+        action="append",
+        help="run only the selected checkpoint/restart comparison (implies --restart-checks)",
+    )
     args = parser.parse_args()
 
     suites = selected_suites(args.suite)
@@ -961,9 +977,9 @@ def main() -> None:
                continue
            rows.append(run_improvement_check(check, rows))
 
-    if args.restart_checks:
+    if args.restart_checks or args.restart_case:
            for check in RESTART_CHECKS:
-               if check.suite in suites:
+               if check.suite in suites and (args.restart_case is None or check.name in args.restart_case):
                    rows.append(run_restart_check(check, args.force))
 
     write_summary(rows)

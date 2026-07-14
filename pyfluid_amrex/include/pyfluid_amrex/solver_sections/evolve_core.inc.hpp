@@ -165,13 +165,55 @@
 
       std::ofstream scalar_file;
       std::ofstream amr_level_file;
+      const std::filesystem::path scalar_path = std::filesystem::path(cfg_.output_dir) / "scalars.tsv";
+      const std::filesystem::path amr_level_path = std::filesystem::path(cfg_.output_dir) / "amr_levels.tsv";
+      const auto history_last_step = [](std::filesystem::path const& path) -> std::optional<int> {
+         if (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) == 0) {
+            return std::nullopt;
+         }
+         std::ifstream stream(path);
+         std::string line;
+         std::optional<int> last_step;
+         while (std::getline(stream, line)) {
+            if (line.empty() || line.front() == '#') {
+               continue;
+            }
+            std::istringstream row(line);
+            int row_step = -1;
+            if (row >> row_step) {
+               last_step = row_step;
+            }
+         }
+         return last_step;
+      };
+      const std::optional<int> scalar_history_step = history_last_step(scalar_path);
+      const std::optional<int> amr_history_step = history_last_step(amr_level_path);
+      if (!cfg_.restart_file.empty() && scalar_history_step.has_value() != amr_history_step.has_value()) {
+         amrex::Abort("restart output contains incomplete scalar/AMR history");
+      }
+      if (!cfg_.restart_file.empty() && scalar_history_step.has_value()
+          && *scalar_history_step != *amr_history_step) {
+         amrex::Abort("restart scalar and AMR histories end at different steps");
+      }
+      if (!cfg_.restart_file.empty() && scalar_history_step.has_value()
+          && *scalar_history_step > start_step) {
+         amrex::Abort("restart output history extends beyond the checkpoint step");
+      }
+      const bool append_restart_history =
+         !cfg_.restart_file.empty() && scalar_history_step.has_value() && amr_history_step.has_value();
+      const bool append_restart_initial =
+         append_restart_history && *scalar_history_step < start_step;
       if (amrex::ParallelDescriptor::IOProcessor()) {
          std::filesystem::create_directories(cfg_.output_dir);
          write_run_parameter_file((std::filesystem::path(cfg_.output_dir) / "run.in").string());
-         scalar_file.open(std::filesystem::path(cfg_.output_dir) / "scalars.tsv", std::ios::out | std::ios::trunc);
-         write_scalar_header(scalar_file, cfg_, start_step, time);
-         amr_level_file.open(std::filesystem::path(cfg_.output_dir) / "amr_levels.tsv", std::ios::out | std::ios::trunc);
-         write_amr_level_header(amr_level_file, maxLevel(), cfg_, start_step, time);
+         const std::ios::openmode history_mode = std::ios::out
+            | (append_restart_history ? std::ios::app : std::ios::trunc);
+         scalar_file.open(scalar_path, history_mode);
+         amr_level_file.open(amr_level_path, history_mode);
+         if (!append_restart_history) {
+            write_scalar_header(scalar_file, cfg_, start_step, time);
+            write_amr_level_header(amr_level_file, maxLevel(), cfg_, start_step, time);
+         }
       }
 
       if (cfg_.max_step < start_step) {
@@ -223,7 +265,7 @@
       initial.gravity_total_energy_rel_drift = 0.0;
       initial.passive_mass_rel_drift = 0.0;
       if (amrex::ParallelDescriptor::IOProcessor()) {
-         if (stream_scalars) {
+         if (stream_scalars && (!append_restart_history || append_restart_initial)) {
             append_scalar_row(scalar_file, initial);
             append_current_amr_level_row(amr_level_file, start_step, time);
             wrote_scalars = true;

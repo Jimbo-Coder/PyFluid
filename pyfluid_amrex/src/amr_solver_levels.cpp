@@ -289,10 +289,10 @@ void AmrSolver::MakeNewLevelFromScratch(
    allocate_level(lev, level_ba, work_dm, time);
    set_level_time_state(lev, time, 0.0);
    initialize_state(*state_[lev], Geom(lev), cfg_);
-   if (ct_enabled(cfg_) && lev > 0) {
-      initialize_ct_fields_from_coarse(lev, time);
-   } else {
+   if (time == 0.0) {
       initialize_ct_fields(lev, time);
+   } else {
+      initialize_ct_fields_from_coarse(lev, time);
    }
    copy_level_state_to_old(lev);
 }
@@ -317,7 +317,11 @@ void AmrSolver::MakeNewLevelFromCoarse(
    } else {
       fill_new_level_from_coarse_state(lev, time);
    }
-   initialize_ct_fields_from_coarse(lev, time);
+   if (time == 0.0) {
+      initialize_ct_fields(lev, time);
+   } else {
+      initialize_ct_fields_from_coarse(lev, time);
+   }
    copy_level_state_to_old(lev);
 }
 

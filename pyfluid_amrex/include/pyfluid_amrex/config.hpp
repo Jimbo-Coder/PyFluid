@@ -404,7 +404,7 @@ static constexpr std::array<std::string_view, 7> MHDWaveFamilyOptions{{
    "slow_minus",
    "entropy",
 }};
-static constexpr std::array<std::string_view, 26> InitialDataOptions{{
+static constexpr std::array<std::string_view, 27> InitialDataOptions{{
    "sin_wave",
    "uniform",
    "cartesian_advection",
@@ -431,6 +431,7 @@ static constexpr std::array<std::string_view, 26> InitialDataOptions{{
    "orszag_tang",
    "magnetic_blast_noise",
    "resistive_current_sheet",
+   "reconnecting_shear_layer",
 }};
 
 template <std::size_t N>
@@ -1472,28 +1473,40 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.physics == "hydro" && cfg.ic == "magnetic_blast_noise") {
       amrex::Abort("magnetic_blast_noise requires pyfluid.physics = mhd");
    }
-   if (cfg.ic == "resistive_current_sheet") {
+   if (cfg.ic == "resistive_current_sheet" || cfg.ic == "reconnecting_shear_layer") {
       if (cfg.physics != "mhd" || cfg.ct != "on") {
-         amrex::Abort("resistive_current_sheet requires pyfluid.physics = mhd and pyfluid.ct = on");
+         amrex::Abort(cfg.ic + " requires pyfluid.physics = mhd and pyfluid.ct = on");
       }
       if (mesh_coordinate_code(cfg.mesh_coordinate) != MeshCartesian) {
-         amrex::Abort("resistive_current_sheet requires Cartesian coordinates");
+         amrex::Abort(cfg.ic + " requires Cartesian coordinates");
       }
       const MeshAxes axes = mesh_axes_layout(cfg);
       if (mesh_axis(axes, 0) != MeshAxisX || mesh_axis(axes, 1) != MeshAxisY) {
-         amrex::Abort("resistive_current_sheet requires active axes x y or x y z");
+         amrex::Abort(cfg.ic + " requires active axes x y or x y z");
       }
       if (cfg.bump_sigma <= 0.0 || cfg.wave_number <= 0.0 || cfg.alfven_amplitude < 0.0) {
          amrex::Abort(
-            "resistive_current_sheet requires positive bump_sigma/wave_number and non-negative alfven_amplitude"
+            cfg.ic + " requires positive bump_sigma/wave_number and non-negative alfven_amplitude"
          );
       }
       if (cfg.b1_0 == 0.0) {
-         amrex::Abort("resistive_current_sheet requires nonzero pyfluid.b1_0");
+         amrex::Abort(cfg.ic + " requires nonzero pyfluid.b1_0");
       }
-      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-         if (side_bc_name(cfg, dir, false) != "periodic" || side_bc_name(cfg, dir, true) != "periodic") {
-            amrex::Abort("resistive_current_sheet requires periodic boundaries in every active direction");
+      if (cfg.ic == "resistive_current_sheet") {
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            if (side_bc_name(cfg, dir, false) != "periodic" || side_bc_name(cfg, dir, true) != "periodic") {
+               amrex::Abort("resistive_current_sheet requires periodic boundaries in every active direction");
+            }
+         }
+      } else {
+         if (cfg.kh_secondary_mode <= 0.0) {
+            amrex::Abort("reconnecting_shear_layer requires pyfluid.kh_secondary_mode > 0");
+         }
+         if (side_bc_name(cfg, 0, false) != "periodic" || side_bc_name(cfg, 0, true) != "periodic") {
+            amrex::Abort("reconnecting_shear_layer requires periodic boundaries along x");
+         }
+         if (side_bc_name(cfg, 1, false) == "periodic" || side_bc_name(cfg, 1, true) == "periodic") {
+            amrex::Abort("reconnecting_shear_layer requires non-periodic boundaries normal to the sheet");
          }
       }
    }
@@ -1518,8 +1531,8 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.ic == "kelvin_helmholtz" || cfg.ic == "kelvin_helmholtz_mhd") {
       amrex::Abort("Kelvin-Helmholtz initial data requires the 2D or 3D AMReX executable");
    }
-   if (cfg.ic == "resistive_current_sheet") {
-      amrex::Abort("resistive_current_sheet requires the 2D or 3D AMReX executable");
+   if (cfg.ic == "resistive_current_sheet" || cfg.ic == "reconnecting_shear_layer") {
+      amrex::Abort(cfg.ic + " requires the 2D or 3D AMReX executable");
    }
    if (cfg.ic == "orszag_tang") {
       amrex::Abort("orszag_tang requires the 2D or 3D AMReX executable");

@@ -23,6 +23,7 @@
 #include <iomanip>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <vector>
 
