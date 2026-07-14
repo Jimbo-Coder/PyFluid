@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render AMReX slice frames with AMR boxes and optionally assemble a GIF.
+"""Render AMReX slice frames with AMR boxes and an optional MP4 movie.
 
 Angular plots with a radial axis are drawn in physical geometry: r-phi as an
 annulus and r-theta as a meridional plane. Angular-only or z-phi slices stay as
@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import shutil
+import subprocess
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,14 +22,16 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle, Rectangle
-from PIL import Image
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from amr_plot_data import (
     HierarchySlice,
     component_timeline_anchor,
     component_values as _component_values,
 )
+from plot_labels import field_label
 from plotfile_reader import (
+   PLOTFILE_ROOTS,
    component_plotfile_timeline,
    parse_fab_index,
    parse_level_shapes,
@@ -67,6 +71,10 @@ def parse_key_value_file(path: Path | None) -> dict[str, str]:
             key, value = line.split("=", 1)
             params[key.strip()] = value.strip()
     return params
+
+
+def run_output_root(plot_dir: Path) -> Path:
+    return plot_dir.parent if plot_dir.name in PLOTFILE_ROOTS else plot_dir
 
 
 def param_ints(params: dict[str, str], key: str, default: tuple[int, ...]) -> tuple[int, ...]:
@@ -370,6 +378,63 @@ def draw_tile_pcolormesh(
         antialiased=False,
         rasterized=True,
     )
+
+
+def field_colormap(component: str, log10: bool, subtract_constant: float | None):
+    if (component == "vorticity3" or subtract_constant is not None) and not log10:
+        return plt.get_cmap("coolwarm").copy()
+    return plt.get_cmap("magma" if log10 else "viridis").copy()
+
+
+def initial_normalization(
+    component: str,
+    log10: bool,
+    subtract_constant: float | None,
+    run_params: dict[str, str],
+) -> tuple[float, str | None]:
+    if log10 or subtract_constant is not None:
+        return 1.0, None
+    parameter = {"rho": "pyfluid.rho0", "pressure": "pyfluid.pressure0"}.get(component)
+    if parameter is None or parameter not in run_params:
+        return 1.0, None
+    reference = float(run_params[parameter])
+    if not np.isfinite(reference) or abs(reference) <= 1.0e-30:
+        return 1.0, None
+    return reference, component
+
+
+def figure_size_for_bounds(
+    xlim: tuple[float, float],
+    ylim: tuple[float, float],
+) -> tuple[float, float]:
+    physical_aspect = (xlim[1] - xlim[0]) / (ylim[1] - ylim[0])
+    axes_height = 4.3
+    axes_width = np.clip(axes_height * physical_aspect, 4.3, 9.6)
+    return float(axes_width + 1.25), axes_height + 1.05
+
+
+def write_mp4(frame_paths: list[Path], output: Path, duration_ms: int) -> None:
+    frames_per_second = 1000.0 / duration_ms
+    process = subprocess.Popen(
+        [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "image2pipe", "-vcodec", "png",
+            "-framerate", f"{frames_per_second:.8g}", "-i", "pipe:0",
+            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            str(output),
+        ],
+        stdin=subprocess.PIPE,
+    )
+    if process.stdin is None:
+        raise RuntimeError("failed to open the ffmpeg input pipe")
+    for path in frame_paths:
+        with path.open("rb") as frame_file:
+            shutil.copyfileobj(frame_file, process.stdin)
+    process.stdin.close()
+    if process.wait() != 0:
+        raise RuntimeError(f"ffmpeg failed while writing {output}")
 
 
 def patch_face_map_name(system: str, axis: int, sign: int) -> str:
@@ -1112,6 +1177,7 @@ def sample_plotfile_values(
     z_fraction: float,
     log10: bool,
     subtract_constant: float | None,
+    normalization_scale: float,
     max_samples_per_chunk: int,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
     names, ndim, _time_value = parse_plot_header(plotfile)
@@ -1127,6 +1193,7 @@ def sample_plotfile_values(
             values = component_values(data, names, component, gamma, cell_size)
             if subtract_constant is not None:
                 values = values - subtract_constant
+            values = values / normalization_scale
             plane = slice_to_xy(values, lo, hi, z_level)
             if plane is None:
                 continue
@@ -1138,7 +1205,11 @@ def sample_plotfile_values(
             stride = max(1, int(np.ceil(finite.size / max_samples_per_chunk)))
             sampled = finite[::stride]
             represented_measure = stride * cell_size[0] * cell_size[1]
-            samples.append((sampled, np.full(sampled.shape, represented_measure)))
+            sample_weights = np.full(sampled.shape, represented_measure)
+            if stride > 1:
+                sampled = np.concatenate((sampled, (finite.min(), finite.max())))
+                sample_weights = np.concatenate((sample_weights, (0.0, 0.0)))
+            samples.append((sampled, sample_weights))
     return samples
 
 
@@ -1160,6 +1231,7 @@ def percentile_limits(
     z_fraction: float,
     log10: bool,
     subtract_constant: float | None,
+    normalization_scale: float,
     symmetric_limits: bool,
     max_samples_per_chunk: int,
 ) -> tuple[float, float]:
@@ -1174,6 +1246,7 @@ def percentile_limits(
                 z_fraction,
                 log10,
                 subtract_constant,
+                normalization_scale,
                 max_samples_per_chunk,
             )
         )
@@ -1184,8 +1257,9 @@ def percentile_limits(
     if finite.size < 3:
         raise ValueError(f"not enough finite values to determine limits for {component}")
 
-    vmin = weighted_percentile(finite, weights, 2.0)
-    vmax = weighted_percentile(finite, weights, 98.0)
+    lower_percentile = 5.0 if log10 else 0.1
+    vmin = weighted_percentile(finite, weights, lower_percentile)
+    vmax = weighted_percentile(finite, weights, 99.99)
     if not np.isfinite(vmin) or not np.isfinite(vmax):
         raise ValueError(f"non-finite sample values for {component}")
     if vmin == vmax:
@@ -1194,19 +1268,17 @@ def percentile_limits(
         if vmin == vmax:
             return vmin, vmax
 
-    linear_span = vmax - vmin
-    centered = weighted_percentile(finite, weights, 50.0)
-    centered_half_span = weighted_percentile(np.abs(finite - centered), weights, 90.0)
-    if centered_half_span > 0.0 and centered_half_span * 2.0 < linear_span:
-        vmin = centered - centered_half_span
-        vmax = centered + centered_half_span
-    elif centered_half_span > 0.0 and centered_half_span <= max(abs(centered), 1.0) * 0.4:
-        vmin = centered - centered_half_span
-        vmax = centered + centered_half_span
     if symmetric_limits or component == "vorticity3":
-        vmax_abs = max(abs(vmin), abs(vmax), 1.0e-30)
+        vmax_abs = weighted_percentile(np.abs(finite), weights, 99.99)
+        vmax_abs = max(vmax_abs, 1.0e-30)
         vmin = -vmax_abs
         vmax = vmax_abs
+    else:
+        span = max(vmax - vmin, 1.0e-30)
+        sampled_min = float(finite.min())
+        sampled_max = float(finite.max())
+        vmin = sampled_min if sampled_min >= vmin - 0.05 * span else vmin - 0.01 * span
+        vmax = sampled_max if sampled_max <= vmax + 0.05 * span else vmax + 0.02 * span
     return vmin, vmax
 
 
@@ -1290,9 +1362,10 @@ def render_frame(
     z_fraction: float,
     log10: bool,
     subtract_constant: float | None,
+    normalization_scale: float,
+    component_label: str,
     vmin: float,
     vmax: float,
-    max_pixels: int,
     box_levels: set[int] | None,
     box_alpha: float,
     box_linewidth: float,
@@ -1313,14 +1386,9 @@ def render_frame(
     run_params: dict[str, str],
 ) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(7.2, 6.2), constrained_layout=True)
-    label = f"log10 {component}" if log10 else component
-    if subtract_constant is not None:
-        label = f"{component} - {subtract_constant:g}"
-    if (component == "vorticity3" or subtract_constant is not None) and not log10:
-        cmap = plt.get_cmap("coolwarm").copy()
-    else:
-        cmap = plt.get_cmap("magma" if log10 else "viridis").copy()
+    fig, ax = plt.subplots(figsize=figure_size_for_bounds(xlim, ylim))
+    label = component_label
+    cmap = field_colormap(component, log10, subtract_constant)
     cmap.set_bad(solid_facecolor if solid_geometries or mask_plotfile is not None else "#151515")
     tiles, physical_boxes, time_value, ndim = mapped_view_tiles(
         plotfile,
@@ -1336,6 +1404,8 @@ def render_frame(
     )
     if not tiles:
         raise ValueError(f"no mapped tiles produced for {plotfile}")
+    if normalization_scale != 1.0:
+        tiles = [PlotTile(tile.level, tile.edge_x, tile.edge_y, tile.values / normalization_scale) for tile in tiles]
     im = None
     for tile in tiles:
         im = draw_tile_pcolormesh(ax, tile, cmap=cmap, vmin=vmin, vmax=vmax)
@@ -1428,7 +1498,8 @@ def render_frame(
             markeredgewidth=0.7,
             zorder=13,
         )
-    wrapped = "\n".join(textwrap.wrap(title, width=56))
+    title_width = max(40, int(fig.get_figwidth() * 8.0))
+    wrapped = "\n".join(textwrap.wrap(title, width=title_width))
     slice_text = f"z={z_fraction:.2f}, " if ndim == 3 else ""
     ax.set_title(f"{wrapped}\n{label}, {slice_text}t={time_value:.4f}, step={plotfile_step(plotfile)}", fontsize=12)
     ax.set_xlabel(xlabel)
@@ -1436,8 +1507,9 @@ def render_frame(
     ax.set_aspect("equal")
     ax.set_xlim(plot_xlim)
     ax.set_ylim(plot_ylim)
-    fig.colorbar(im, ax=ax, label=label)
-    fig.savefig(output, dpi=170)
+    colorbar_axis = make_axes_locatable(ax).append_axes("right", size="3.5%", pad=0.09)
+    fig.colorbar(im, cax=colorbar_axis, label=label)
+    fig.savefig(output, dpi=200, bbox_inches="tight", pad_inches=0.06)
     plt.close(fig)
     return output
 
@@ -1446,7 +1518,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plot-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--gif", type=Path)
+    parser.add_argument("--mp4", type=Path)
     parser.add_argument("--component", default="j_mag")
     parser.add_argument("--title", default="AMReX boxed slice")
     parser.add_argument("--gamma", type=float, default=5.0 / 3.0)
@@ -1460,8 +1532,7 @@ def main() -> None:
     parser.add_argument("--duration-ms", type=int, default=220)
     parser.add_argument("--frame-stride", type=int, default=1)
     parser.add_argument("--target-frames", type=int, help="Select this many frames uniformly across the available plotfiles.")
-    parser.add_argument("--keep-frames", action="store_true", help="Keep per-frame PNGs after writing a GIF.")
-    parser.add_argument("--max-pixels", type=int, default=1400)
+    parser.add_argument("--keep-frames", action="store_true", help="Keep the full-resolution RGB PNG master frames.")
     parser.add_argument("--max-samples-per-chunk", type=int, default=4096)
     parser.add_argument("--box-levels", help="Comma-separated AMR levels to outline; default outlines all refined levels.")
     parser.add_argument("--box-alpha", type=float, default=0.95)
@@ -1513,6 +1584,22 @@ def main() -> None:
     if not plotfiles:
         raise ValueError(f"no plotfiles found in {args.plot_dir}")
 
+    run_root = run_output_root(args.plot_dir)
+    input_path = args.input if args.input is not None else run_root / "run.in"
+    run_params = parse_key_value_file(input_path)
+    normalization_scale, normalization_reference = initial_normalization(
+        args.component,
+        args.log10,
+        args.subtract_constant,
+        run_params,
+    )
+    component_label = field_label(
+        args.component,
+        log10=args.log10,
+        normalization_reference=normalization_reference,
+        subtract_constant=args.subtract_constant,
+    )
+
     if args.vmin is not None or args.vmax is not None:
         if args.vmin is None or args.vmax is None:
             raise ValueError("--vmin and --vmax must be supplied together")
@@ -1528,13 +1615,12 @@ def main() -> None:
             args.z_fraction,
             args.log10,
             args.subtract_constant,
+            normalization_scale,
             args.symmetric_limits,
             args.max_samples_per_chunk,
         )
 
     box_levels = parse_box_levels(args.box_levels)
-    input_path = args.input if args.input is not None else args.plot_dir.parent / "run.in"
-    run_params = parse_key_value_file(input_path)
     curvilinear_view = default_curvilinear_view(run_params) if args.curvilinear_view == "auto" else args.curvilinear_view
     default_xlabel, default_ylabel = default_axis_labels(run_params, curvilinear_view)
     xlabel = args.xlabel if args.xlabel is not None else default_xlabel
@@ -1571,7 +1657,7 @@ def main() -> None:
     mask_plot_dir = args.mask_plot_dir
     mask_plotfiles = load_mask_plotfiles(mask_plot_dir, args.mask_component, required=mask_plot_dir is not None)
     if args.mask_plotfile is None and mask_plot_dir is None:
-        aux_plot_dir = args.plot_dir.parent / "auxGF"
+        aux_plot_dir = run_root / "auxGF"
         mask_plotfiles = load_mask_plotfiles(aux_plot_dir, args.mask_component, required=False)
     frame_tag = "nobox" if args.hide_boxes else "boxes"
     if args.show_base_boxes and not args.hide_boxes:
@@ -1597,9 +1683,10 @@ def main() -> None:
                 args.z_fraction,
                 args.log10,
                 args.subtract_constant,
+                normalization_scale,
+                component_label,
                 vmin,
                 vmax,
-                args.max_pixels,
                 box_levels,
                 args.box_alpha,
                 args.box_linewidth,
@@ -1621,18 +1708,12 @@ def main() -> None:
             )
         )
 
-    if args.gif is not None:
-        gif_path = args.gif
-        gif_path.parent.mkdir(parents=True, exist_ok=True)
-        frames = [Image.open(path).convert("P", palette=Image.Palette.ADAPTIVE) for path in frame_paths]
-        try:
-            frames[0].save(gif_path, save_all=True, append_images=frames[1:], duration=args.duration_ms, loop=0)
-        finally:
-            for frame in frames:
-                frame.close()
-        if not args.keep_frames:
-            for path in frame_paths:
-                path.unlink(missing_ok=True)
+    if args.mp4 is not None:
+        args.mp4.parent.mkdir(parents=True, exist_ok=True)
+        write_mp4(frame_paths, args.mp4, args.duration_ms)
+    if not args.keep_frames and args.mp4 is not None:
+        for path in frame_paths:
+            path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

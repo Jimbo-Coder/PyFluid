@@ -12,6 +12,7 @@ import numpy as np
 from matplotlib.patches import Rectangle
 
 from amr_plot_data import HierarchySlice, component_values, plot_dimensions
+from plot_labels import field_label
 from plotfile_reader import (
    full_shape,
    level_chunks,
@@ -77,7 +78,7 @@ def parse_limits(values: list[float] | None, default: tuple[float, float]) -> tu
 
 
 def select_component(state: np.ndarray, names: list[str], component: str, gamma: float) -> tuple[np.ndarray, str]:
-    return component_values(state, names, component, gamma), component
+    return component_values(state, names, component, gamma), field_label(component)
 
 
 def main() -> None:
@@ -115,7 +116,7 @@ def main() -> None:
     xlim = parse_limits(args.xlim, (problo[dim0], probhi[dim0]))
     ylim = parse_limits(args.ylim, (problo[dim1], probhi[dim1]))
     xlabel, ylabel = axis_labels(ndim, args.slice_axis)
-    component_label = args.component
+    component_label = field_label(args.component)
 
     composite_slice_fraction = args.slice_fraction
     if args.level is None:

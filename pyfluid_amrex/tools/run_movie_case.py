@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one AMReX case and render standard movie outputs.
+"""Run one AMReX case and render standard MP4 outputs.
 
 This is intentionally a thin wrapper around the existing run/report and movie
 tools so movie workflows stay one-command and run-local.
@@ -48,7 +48,6 @@ def main() -> int:
     parser.add_argument("--box-linewidth", type=float, default=0.5)
     parser.add_argument("--target-frames", type=int, default=120)
     parser.add_argument("--duration-ms", type=int, default=70)
-    parser.add_argument("--max-pixels", type=int, default=900)
     parser.add_argument("--boxes-only", action="store_true")
     parser.add_argument("--nobox-only", action="store_true")
     args = parser.parse_args()
@@ -61,8 +60,6 @@ def main() -> int:
     except KeyError as exc:
         raise SystemExit(f"movie input must define {exc.args[0]}") from exc
     run_dir = ROOT / output_dir_value
-    plot_dir = run_dir / "stateGF"
-
     run_command([
         sys.executable,
         str(RUN_CASE),
@@ -89,31 +86,31 @@ def main() -> int:
             variants.append(("boxes", box_args))
 
         for tag, variant_args in variants:
-            gif_name = f"{run_dir.name}_{component}_{tag}.gif"
+            mp4_name = f"{run_dir.name}_{component}_{tag}.mp4"
             run_command([
                 sys.executable,
                 str(MOVIE),
                 "--plot-dir",
-                str(plot_dir),
+                str(run_dir),
                 "--output-dir",
                 str(run_dir),
-                "--gif",
-                str(run_dir / gif_name),
+                "--mp4",
+                str(run_dir / mp4_name),
                 "--component",
                 component,
                 "--title",
                 title,
+                "--input",
+                str(run_dir / "run.in"),
                 "--curvilinear-view",
                 args.curvilinear_view,
                 "--duration-ms",
                 str(args.duration_ms),
                 "--target-frames",
                 str(args.target_frames),
-                "--max-pixels",
-                str(args.max_pixels),
                 *variant_args,
             ])
-            rendered.append((f"{component}_{tag}", str(run_dir / gif_name)))
+            rendered.append((f"{component}_{tag}", str(run_dir / mp4_name)))
 
     append_report(run_dir, [("run_dir", str(run_dir)), *rendered])
     print(f"PASS movie_case run_dir={run_dir}")
