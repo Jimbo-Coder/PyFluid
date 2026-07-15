@@ -1,12 +1,43 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // RHS/flux-stage assembly for conservative updates.
 
+   template <int NComp, int EOSMethod>
+   void fill_stage_primitive_cache(
+      amrex::MultiFab& primitive,
+      const amrex::MultiFab& state,
+      int lev,
+      bool use_solid_mask,
+      amrex::Real time
+   )
+   {
+      if (physics_system_ == PhysicalSystem::RHD) {
+         fill_rhd_primitive_cache(
+            primitive, state, eos_params(cfg_), Geom(lev), fixed_spacetime_parameters(cfg_), time
+         );
+      } else if (physics_system_ == PhysicalSystem::RMHD) {
+         fill_rmhd_primitive_cache(
+            primitive, state, eos_params(cfg_), Geom(lev), fixed_spacetime_parameters(cfg_), time
+         );
+      } else if (use_solid_mask) {
+         fill_primitive_cache_masked<NComp, EOSMethod>(
+            primitive,
+            state,
+            *primitive_needed_mask_[lev],
+            eos_params(cfg_),
+            &primitive_needed_kind_[lev]
+         );
+      } else {
+         fill_primitive_cache<NComp, EOSMethod>(primitive, state, eos_params(cfg_));
+      }
+   }
+
    template <int NComp, int EOSMethod, bool SubcyclingEnabled = false>
    void compute_rhs_range(LevelData& input, amrex::Real reflux_weight, int lev_begin, int lev_end, amrex::Real rhs_time)
    {
       prepare_stage_sources<SubcyclingEnabled>(input, lev_begin, lev_end, rhs_time);
       amrex::Real rhs_wall_power = 0.0;
       bool rhs_has_wall_power = false;
+      const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg_);
       for (int lev = lev_begin; lev < lev_end; ++lev) {
          const auto fluxes = flux_ptrs(lev);
          const bool use_solid_mask = solid_active(lev) && !has_mhd_components<NComp>();
@@ -20,22 +51,15 @@
          amrex::Real stage_start = profile_begin();
          debug_check_reconstruction_input(*input[lev], lev, rhs_time, "RHS reconstruction input");
          debug_poison_mfab(*primitive_[lev]);
-         if (use_solid_mask) {
-            fill_primitive_cache_masked<NComp, EOSMethod>(
-               *primitive_[lev],
-               *input[lev],
-               *primitive_needed_mask_[lev],
-               eos_params(cfg_),
-               &primitive_needed_kind_[lev]
-            );
-         } else {
-            fill_primitive_cache<NComp, EOSMethod>(*primitive_[lev], *input[lev], eos_params(cfg_));
-         }
+         fill_stage_primitive_cache<NComp, EOSMethod>(
+            *primitive_[lev], *input[lev], lev, use_solid_mask, rhs_time
+         );
          profile_end(ProfileStage::PrimitiveCache, stage_start);
          if (!use_solid_mask) {
             debug_check_mfab_finite(*primitive_[lev], NComp, primitive_[lev]->nGrowVect(), "primitive cache");
          }
-         const bool physical_vector_flux = !has_mhd_components<NComp>()
+         const bool physical_vector_flux = !physical_system_is_relativistic(physics_system_)
+            && !has_mhd_components<NComp>()
             && mesh_layout_spans_physical_space(mesh_coordinate_kind(), active_mesh_axes());
          if (physical_vector_flux) {
             transform_primitive_vectors<NComp>(
@@ -220,6 +244,21 @@
             profile_end(ProfileStage::Sources, stage_start);
             accumulate_source_change(source_before, local_rhs_mass_energy_integral(lev), reflux_weight);
          }
+         if (physics_system_ == PhysicalSystem::RHD) {
+            stage_start = profile_begin();
+            add_fixed_spacetime_sources<PhysicalSystem::RHD>(
+               *rhs_[lev], *primitive_[lev], Geom(lev), spacetime,
+               eos_params(cfg_), rhs_time
+            );
+            profile_end(ProfileStage::Sources, stage_start);
+         } else if (physics_system_ == PhysicalSystem::RMHD) {
+            stage_start = profile_begin();
+            add_fixed_spacetime_sources<PhysicalSystem::RMHD>(
+               *rhs_[lev], *primitive_[lev], Geom(lev), spacetime,
+               eos_params(cfg_), rhs_time
+            );
+            profile_end(ProfileStage::Sources, stage_start);
+         }
          debug_check_rhs_level(lev, "RHS assembly");
          stage_start = profile_begin();
          add_fluxes_to_registers(lev, reflux_weight);
@@ -251,6 +290,10 @@
       if (sources_enabled(cfg_)) {
          return false;
       }
+      if (physical_system_is_relativistic(physics_system_)
+          && has_fixed_spacetime_sources(fixed_spacetime_parameters(cfg_))) {
+         return false;
+      }
       for (int lev = lev_begin; lev < lev_end; ++lev) {
          if (solid_active(lev) && (has_mhd_components<NComp>() || cfg_.solid_motion != "static")) {
             return false;
@@ -269,17 +312,9 @@
          amrex::Real stage_start = profile_begin();
          debug_check_reconstruction_input(*input[lev], lev, rhs_time, "direct-flux reconstruction input");
          debug_poison_mfab(*primitive_[lev]);
-         if (use_solid_mask) {
-            fill_primitive_cache_masked<NComp, EOSMethod>(
-               *primitive_[lev],
-               *input[lev],
-               *primitive_needed_mask_[lev],
-               eos_params(cfg_),
-               &primitive_needed_kind_[lev]
-            );
-         } else {
-            fill_primitive_cache<NComp, EOSMethod>(*primitive_[lev], *input[lev], eos_params(cfg_));
-         }
+         fill_stage_primitive_cache<NComp, EOSMethod>(
+            *primitive_[lev], *input[lev], lev, use_solid_mask, rhs_time
+         );
          profile_end(ProfileStage::PrimitiveCache, stage_start);
          if (!use_solid_mask) {
             debug_check_mfab_finite(*primitive_[lev], NComp, primitive_[lev]->nGrowVect(), "primitive cache");

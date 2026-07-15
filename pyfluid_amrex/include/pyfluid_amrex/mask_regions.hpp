@@ -29,7 +29,7 @@ inline amrex::Box clipped_to_domain(amrex::Box region, amrex::Box const& domain)
 
 inline int reconstruction_solid_mask_radius(int recon_method)
 {
-   if (recon_method == ReconWENOZ || recon_method == ReconWENOZChar) {
+   if (is_five_point_reconstruction(recon_method)) {
       return 2;
    }
    if (recon_method == ReconPWL) {

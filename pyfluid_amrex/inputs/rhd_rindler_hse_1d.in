@@ -1,0 +1,37 @@
+pyfluid.run_name = rhd_rindler_hse_1d
+pyfluid.output_dir = runs/current/rhd_rindler_hse/rhd_rindler_hse_1d
+
+geometry.prob_lo = -0.5
+geometry.prob_hi = 0.5
+geometry.is_periodic = 0
+
+amr.n_cell = 64
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+spacetime.evolution = fixed
+spacetime.fixed_metric = rindler
+spacetime.acceleration1 = 0.1
+spacetime.origin1 = 0.0
+
+pyfluid.physics = rhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = fixed_metric_hse
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.final_time = 0.1
+pyfluid.max_step = 10000
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.bc = reflecting
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 10000
+pyfluid.checkpoint_int = -1

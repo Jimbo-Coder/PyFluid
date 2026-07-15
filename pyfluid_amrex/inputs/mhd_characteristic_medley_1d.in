@@ -1,0 +1,43 @@
+pyfluid.run_name = mhd_characteristic_medley_1d
+pyfluid.output_dir = runs/current/mhd_characteristic_medley/mhd_characteristic_medley_1d
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 1
+
+amr.n_cell = 256
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+pyfluid.final_time = 0.15
+pyfluid.max_step = 100000
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.physics = mhd
+pyfluid.ct = off
+pyfluid.eos = ideal_gas
+pyfluid.ic = mhd_characteristic_medley
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 0.025
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.b1_0 = 0.75
+pyfluid.b2_0 = 1.0
+pyfluid.b3_0 = 0.5
+
+pyfluid.recon = wenoz
+pyfluid.riemann = hlld
+pyfluid.timestep = rk4
+pyfluid.bc = periodic
+
+pyfluid.scalar_int = 32
+pyfluid.plot_int = 100000
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = none
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = -1

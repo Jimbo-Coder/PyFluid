@@ -21,6 +21,8 @@
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
+#include "pyfluid_amrex/rhd_c2p.hpp"
+#include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/state.hpp"
 #include "pyfluid_amrex/output_metadata.hpp"
 
@@ -269,6 +271,40 @@ inline void fill_pressure(amrex::MultiFab& pressure, amrex::MultiFab const& stat
          }
       });
    }
+   }
+}
+
+inline void fill_relativistic_pressure(
+   amrex::MultiFab& pressure,
+   const amrex::MultiFab& state,
+   const EOSParams& eos,
+   PhysicalSystem system
+)
+{
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.tilebox();
+      const auto conserved = state.const_array(mfi);
+      const auto output = pressure.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         if (system == PhysicalSystem::RMHD) {
+            const RMHDRecoveryResult recovered = recover_srmhd(
+               load_rmhd_conserved(conserved, i, j, k), eos.gamma
+            );
+            output(i, j, k, 0) = recovered.succeeded()
+               ? recovered.primitive.pressure
+               : std::numeric_limits<amrex::Real>::quiet_NaN();
+         } else {
+            const RHDRecoveryResult recovered = recover_srhd_palenzuela_1d(
+               load_rhd_conserved(conserved, i, j, k), eos.gamma
+            );
+            output(i, j, k, 0) = recovered.attempt.status == C2PStatus::Success
+               ? recovered.primitive.pressure
+               : std::numeric_limits<amrex::Real>::quiet_NaN();
+         }
+      });
    }
 }
 

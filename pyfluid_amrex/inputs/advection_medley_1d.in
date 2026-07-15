@@ -1,0 +1,38 @@
+pyfluid.run_name = advection_medley_1d
+pyfluid.output_dir = runs/current/advection_medley/advection_medley_1d
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 1
+
+amr.n_cell = 256
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+pyfluid.final_time = 2.0
+pyfluid.max_step = 100000
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.physics = hydro
+pyfluid.ic = advection_medley
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 0.5
+pyfluid.v1_0 = 1.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+
+pyfluid.recon = wenoz
+pyfluid.riemann = hllc
+pyfluid.timestep = ssprk3
+pyfluid.bc = periodic
+
+pyfluid.scalar_int = 64
+pyfluid.plot_int = 100000
+pyfluid.checkpoint_int = -1
+pyfluid.aux_gfs = none
+pyfluid.aux_gf_compute_int = -1
+pyfluid.aux_gf_int = -1

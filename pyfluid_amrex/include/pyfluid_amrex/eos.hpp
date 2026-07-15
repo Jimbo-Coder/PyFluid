@@ -546,6 +546,22 @@ amrex::Real sound_speed_from_primitive_runtime(
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real fluid_sound_speed_from_primitive_runtime(
+   PhysicalSystem system,
+   int eos_method,
+   amrex::Real rho,
+   amrex::Real pressure,
+   EOSParams const& eos
+) noexcept
+{
+   if (physical_system_is_relativistic(system)) {
+      const amrex::Real eps = pressure / ((eos.gamma - 1.0) * rho);
+      return std::sqrt(generated::relativistic_ideal_gas_sound_speed_squared(eps, eos.gamma));
+   }
+   return sound_speed_from_primitive_runtime(eos_method, rho, pressure, eos);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real base_pressure_runtime(
    int eos_method,
    amrex::Real rho,

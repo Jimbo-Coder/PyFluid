@@ -1,8 +1,8 @@
-#include "pyfluid_amrex/amr_solver.hpp"
+#include "pyfluid_amrex/amr_solver_base.hpp"
 
 namespace pyfluid_amrex {
 
-void AmrSolver::define_flux_registers(int first_fine_level)
+void AmrSolverBase::define_flux_registers(int first_fine_level)
 {
    first_fine_level = std::max(first_fine_level, 1);
    for (int lev = first_fine_level; lev < static_cast<int>(flux_registers_.size()); ++lev) {
@@ -51,14 +51,14 @@ void AmrSolver::define_flux_registers(int first_fine_level)
    }
 }
 
-void AmrSolver::reset_flux_registers()
+void AmrSolverBase::reset_flux_registers()
 {
    for (int lev = 1; lev <= finestLevel(); ++lev) {
       reset_flux_register(lev);
    }
 }
 
-void AmrSolver::reset_edge_flux_registers()
+void AmrSolverBase::reset_edge_flux_registers()
 {
 #if (AMREX_SPACEDIM >= 2)
    for (int lev = 1; lev <= finestLevel(); ++lev) {
@@ -69,7 +69,7 @@ void AmrSolver::reset_edge_flux_registers()
 #endif
 }
 
-void AmrSolver::reset_flux_register(int fine_lev)
+void AmrSolverBase::reset_flux_register(int fine_lev)
 {
    if (fine_lev > 0 && fine_lev <= finestLevel() && flux_registers_[fine_lev]) {
       flux_registers_[fine_lev]->reset();
@@ -88,7 +88,7 @@ void AmrSolver::reset_flux_register(int fine_lev)
 #endif
 }
 
-void AmrSolver::allocate_level(
+void AmrSolverBase::allocate_level(
    int lev,
    amrex::BoxArray const& ba,
    amrex::DistributionMapping const& dm,
@@ -179,7 +179,7 @@ void AmrSolver::allocate_level(
    }
 }
 
-amrex::Long AmrSolver::active_cell_count_in_box(int lev, amrex::Box const& box, amrex::Real time) const
+amrex::Long AmrSolverBase::active_cell_count_in_box(int lev, amrex::Box const& box, amrex::Real time) const
 {
    if (!solid_geometry_enabled(cfg_)) {
       return box.numPts();
@@ -231,7 +231,7 @@ amrex::Long AmrSolver::active_cell_count_in_box(int lev, amrex::Box const& box, 
    return active;
 }
 
-amrex::DistributionMapping AmrSolver::obstacle_weighted_distribution_mapping(
+amrex::DistributionMapping AmrSolverBase::obstacle_weighted_distribution_mapping(
    int lev,
    amrex::BoxArray const& ba,
    amrex::DistributionMapping const& base_dm,
@@ -249,7 +249,7 @@ amrex::DistributionMapping AmrSolver::obstacle_weighted_distribution_mapping(
    return amrex::DistributionMapping::makeKnapSack(costs);
 }
 
-amrex::BoxArray AmrSolver::owned_level_box_array(int lev, amrex::BoxArray const& ba) const
+amrex::BoxArray AmrSolverBase::owned_level_box_array(int lev, amrex::BoxArray const& ba) const
 {
    if (!production_multipatch_enabled()) {
       return ba;
@@ -261,7 +261,7 @@ amrex::BoxArray AmrSolver::owned_level_box_array(int lev, amrex::BoxArray const&
    return owned_ba;
 }
 
-amrex::DistributionMapping AmrSolver::owned_level_distribution_mapping(
+amrex::DistributionMapping AmrSolverBase::owned_level_distribution_mapping(
    int lev,
    amrex::BoxArray const& original_ba,
    amrex::BoxArray const& owned_ba,
@@ -274,7 +274,7 @@ amrex::DistributionMapping AmrSolver::owned_level_distribution_mapping(
    return obstacle_weighted_distribution_mapping(lev, owned_ba, level_dm, time);
 }
 
-void AmrSolver::MakeNewLevelFromScratch(
+void AmrSolverBase::MakeNewLevelFromScratch(
    int lev,
    amrex::Real time,
    amrex::BoxArray const& ba,
@@ -297,7 +297,7 @@ void AmrSolver::MakeNewLevelFromScratch(
    copy_level_state_to_old(lev);
 }
 
-void AmrSolver::MakeNewLevelFromCoarse(
+void AmrSolverBase::MakeNewLevelFromCoarse(
    int lev,
    amrex::Real time,
    amrex::BoxArray const& ba,
@@ -325,7 +325,7 @@ void AmrSolver::MakeNewLevelFromCoarse(
    copy_level_state_to_old(lev);
 }
 
-void AmrSolver::RemakeLevel(
+void AmrSolverBase::RemakeLevel(
    int lev,
    amrex::Real time,
    amrex::BoxArray const& ba,
@@ -350,7 +350,7 @@ void AmrSolver::RemakeLevel(
    copy_level_state_to_old(lev);
 }
 
-void AmrSolver::ClearLevel(int lev)
+void AmrSolverBase::ClearLevel(int lev)
 {
    mark_regrid_level_modified(lev);
    state_[lev].reset();
@@ -416,7 +416,7 @@ void AmrSolver::ClearLevel(int lev)
    invalidate_rk4_stage_cache(lev);
 }
 
-void AmrSolver::begin_regrid_change_tracking()
+void AmrSolverBase::begin_regrid_change_tracking()
 {
    tracking_regrid_changes_ = true;
    regrid_first_modified_level_ = std::numeric_limits<int>::max();
@@ -424,7 +424,7 @@ void AmrSolver::begin_regrid_change_tracking()
    ++regrid_attempt_count_;
 }
 
-void AmrSolver::mark_regrid_level_modified(int lev)
+void AmrSolverBase::mark_regrid_level_modified(int lev)
 {
    if (!tracking_regrid_changes_) {
       return;
@@ -433,7 +433,7 @@ void AmrSolver::mark_regrid_level_modified(int lev)
    regrid_last_modified_level_ = std::max(regrid_last_modified_level_, lev);
 }
 
-bool AmrSolver::finish_regrid_change_tracking()
+bool AmrSolverBase::finish_regrid_change_tracking()
 {
    tracking_regrid_changes_ = false;
    const bool modified = regrid_last_modified_level_ >= regrid_first_modified_level_;

@@ -1,8 +1,8 @@
-#include "pyfluid_amrex/amr_solver.hpp"
+#include "pyfluid_amrex/amr_solver_base.hpp"
 
 namespace pyfluid_amrex {
 
-amrex::Long AmrSolver::cell_count() const
+amrex::Long AmrSolverBase::cell_count() const
 {
    amrex::Long cells = 0;
    for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -13,7 +13,7 @@ amrex::Long AmrSolver::cell_count() const
    return cells;
 }
 
-amrex::Long AmrSolver::active_cell_count_level(int lev) const
+amrex::Long AmrSolverBase::active_cell_count_level(int lev) const
 {
    if (!state_[lev] || !solid_active(lev)) {
       return state_[lev] ? boxArray(lev).numPts() : 0;
@@ -62,7 +62,7 @@ amrex::Long AmrSolver::active_cell_count_level(int lev) const
    return static_cast<amrex::Long>(std::llround(local_active));
 }
 
-amrex::Long AmrSolver::active_cell_count() const
+amrex::Long AmrSolverBase::active_cell_count() const
 {
    if (!solid_geometry_enabled(cfg_)) {
       return cell_count();
@@ -74,7 +74,7 @@ amrex::Long AmrSolver::active_cell_count() const
    return cells;
 }
 
-std::vector<amrex::Long> AmrSolver::level_cell_counts() const
+std::vector<amrex::Long> AmrSolverBase::level_cell_counts() const
 {
    std::vector<amrex::Long> cells(maxLevel() + 1, 0);
    for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -85,7 +85,7 @@ std::vector<amrex::Long> AmrSolver::level_cell_counts() const
    return cells;
 }
 
-std::array<amrex::Real, AMREX_SPACEDIM> AmrSolver::level_cell_widths(int lev) const
+std::array<amrex::Real, AMREX_SPACEDIM> AmrSolverBase::level_cell_widths(int lev) const
 {
    const auto dx = Geom(lev).CellSizeArray();
    const int coordinate = mesh_coordinate_kind();
@@ -123,7 +123,7 @@ std::array<amrex::Real, AMREX_SPACEDIM> AmrSolver::level_cell_widths(int lev) co
    return widths;
 }
 
-amrex::Real AmrSolver::level_cell_width(int lev) const
+amrex::Real AmrSolverBase::level_cell_width(int lev) const
 {
    const auto widths = level_cell_widths(lev);
    amrex::Real width = 0.0;
@@ -133,12 +133,12 @@ amrex::Real AmrSolver::level_cell_width(int lev) const
    return width;
 }
 
-amrex::Real AmrSolver::active_finest_cell_width() const
+amrex::Real AmrSolverBase::active_finest_cell_width() const
 {
    return level_cell_width(finestLevel());
 }
 
-amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> AmrSolver::min_feature_lengths() const
+amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> AmrSolverBase::min_feature_lengths() const
 {
    auto lengths = configured_min_feature_lengths(cfg_);
    if (cfg_.tag_metric != "lohner" || cfg_.amr_max_level <= 1) {
@@ -159,7 +159,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> AmrSolver::min_feature_lengths() co
    return lengths;
 }
 
-amrex::Real AmrSolver::min_feature_length() const
+amrex::Real AmrSolverBase::min_feature_length() const
 {
    const auto lengths = min_feature_lengths();
    amrex::Real summary = -1.0;
@@ -169,7 +169,7 @@ amrex::Real AmrSolver::min_feature_length() const
    return summary;
 }
 
-bool AmrSolver::auto_refinement_resolved_at_level(int lev) const
+bool AmrSolverBase::auto_refinement_resolved_at_level(int lev) const
 {
    const auto widths = level_cell_widths(lev);
    const auto lengths = min_feature_lengths();
@@ -186,7 +186,7 @@ bool AmrSolver::auto_refinement_resolved_at_level(int lev) const
    return any_cutoff_enabled;
 }
 
-AmrLevelDiagnostics AmrSolver::current_amr_level_diagnostics() const
+AmrLevelDiagnostics AmrSolverBase::current_amr_level_diagnostics() const
 {
    return summarize_amr_levels(
       level_cell_counts(),
@@ -196,7 +196,7 @@ AmrLevelDiagnostics AmrSolver::current_amr_level_diagnostics() const
    );
 }
 
-void AmrSolver::validate_timestep(amrex::Real dt, int step, amrex::Real time) const
+void AmrSolverBase::validate_timestep(amrex::Real dt, int step, amrex::Real time) const
 {
    if (std::isfinite(dt) && dt > 0.0) {
       return;
@@ -210,7 +210,7 @@ void AmrSolver::validate_timestep(amrex::Real dt, int step, amrex::Real time) co
    amrex::Abort(text.c_str());
 }
 
-void AmrSolver::validate_scalar_health(ScalarDiagnostics const& d) const
+void AmrSolverBase::validate_scalar_health(ScalarDiagnostics const& d) const
 {
    if (
       std::isfinite(d.mass)
@@ -233,7 +233,7 @@ void AmrSolver::validate_scalar_health(ScalarDiagnostics const& d) const
    amrex::Abort(text.c_str());
 }
 
-void AmrSolver::enforce_level_cell_budget(int lev, amrex::Long cells, char const* context) const
+void AmrSolverBase::enforce_level_cell_budget(int lev, amrex::Long cells, char const* context) const
 {
    if (cfg_.level_cell_budget <= 0 || cells <= cfg_.level_cell_budget) {
       return;
@@ -249,7 +249,7 @@ void AmrSolver::enforce_level_cell_budget(int lev, amrex::Long cells, char const
    amrex::Abort(text.c_str());
 }
 
-amrex::Long AmrSolver::projected_cell_count(int replacement_lev, amrex::Long replacement_cells) const
+amrex::Long AmrSolverBase::projected_cell_count(int replacement_lev, amrex::Long replacement_cells) const
 {
    amrex::Long cells = replacement_cells;
    for (int lev = 0; lev < static_cast<int>(state_.size()); ++lev) {
@@ -260,7 +260,7 @@ amrex::Long AmrSolver::projected_cell_count(int replacement_lev, amrex::Long rep
    return cells;
 }
 
-void AmrSolver::enforce_total_cell_budget(amrex::Long cells, char const* context) const
+void AmrSolverBase::enforce_total_cell_budget(amrex::Long cells, char const* context) const
 {
    if (cfg_.total_cell_budget <= 0 || cells <= cfg_.total_cell_budget) {
       return;
@@ -275,13 +275,13 @@ void AmrSolver::enforce_total_cell_budget(amrex::Long cells, char const* context
    amrex::Abort(text.c_str());
 }
 
-void AmrSolver::enforce_projected_cell_budget(int lev, amrex::Long cells, char const* context) const
+void AmrSolverBase::enforce_projected_cell_budget(int lev, amrex::Long cells, char const* context) const
 {
    enforce_level_cell_budget(lev, cells, context);
    enforce_total_cell_budget(projected_cell_count(lev, cells), context);
 }
 
-void AmrSolver::enforce_cell_budget(char const* context) const
+void AmrSolverBase::enforce_cell_budget(char const* context) const
 {
    if (cfg_.level_cell_budget <= 0 && cfg_.total_cell_budget <= 0) {
       return;
@@ -294,7 +294,7 @@ void AmrSolver::enforce_cell_budget(char const* context) const
    enforce_total_cell_budget(cell_count(), context);
 }
 
-void AmrSolver::append_current_amr_level_row(std::ofstream& out, int step, amrex::Real time) const
+void AmrSolverBase::append_current_amr_level_row(std::ofstream& out, int step, amrex::Real time) const
 {
    const auto finest_dx_by_dir = level_cell_widths(finestLevel());
    const auto min_feature_lengths_by_dir = min_feature_lengths();

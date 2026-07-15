@@ -1,15 +1,15 @@
-#include "pyfluid_amrex/amr_solver.hpp"
+#include "pyfluid_amrex/amr_solver_base.hpp"
 
 #include <AMReX_BoxIterator.H>
 
 namespace pyfluid_amrex {
 
-bool AmrSolver::debug_contracts_enabled() const
+bool AmrSolverBase::debug_contracts_enabled() const
 {
    return cfg_.debug_poison || cfg_.debug_check_finite || cfg_.debug_check_physical || cfg_.physical_check_int > 0;
 }
 
-bool AmrSolver::accepted_physical_check_due(int step, bool force) const
+bool AmrSolverBase::accepted_physical_check_due(int step, bool force) const
 {
    if (cfg_.debug_check_physical || force) {
       return true;
@@ -20,7 +20,7 @@ bool AmrSolver::accepted_physical_check_due(int step, bool force) const
    return step % cfg_.physical_check_int == 0;
 }
 
-void AmrSolver::debug_poison_mfab(amrex::MultiFab& mf) const
+void AmrSolverBase::debug_poison_mfab(amrex::MultiFab& mf) const
 {
    if (!cfg_.debug_poison) {
       return;
@@ -28,7 +28,7 @@ void AmrSolver::debug_poison_mfab(amrex::MultiFab& mf) const
    mf.setVal(std::numeric_limits<amrex::Real>::quiet_NaN());
 }
 
-void AmrSolver::debug_poison_leveldata(LevelData& data, int lev_begin, int lev_end) const
+void AmrSolverBase::debug_poison_leveldata(LevelData& data, int lev_begin, int lev_end) const
 {
    if (!cfg_.debug_poison) {
       return;
@@ -40,7 +40,7 @@ void AmrSolver::debug_poison_leveldata(LevelData& data, int lev_begin, int lev_e
    }
 }
 
-void AmrSolver::debug_poison_fluxes(int lev) const
+void AmrSolverBase::debug_poison_fluxes(int lev) const
 {
    if (!cfg_.debug_poison) {
       return;
@@ -52,7 +52,7 @@ void AmrSolver::debug_poison_fluxes(int lev) const
    }
 }
 
-void AmrSolver::debug_check_mfab_finite(
+void AmrSolverBase::debug_check_mfab_finite(
    amrex::MultiFab const& mf,
    int ncomp,
    amrex::IntVect const& ngrow,
@@ -107,7 +107,7 @@ void AmrSolver::debug_check_mfab_finite(
    amrex::Abort(text.c_str());
 }
 
-void AmrSolver::debug_check_reconstruction_input(
+void AmrSolverBase::debug_check_reconstruction_input(
    amrex::MultiFab const& state,
    int lev,
    amrex::Real time,
@@ -175,7 +175,7 @@ void AmrSolver::debug_check_reconstruction_input(
    amrex::Abort(text.c_str());
 }
 
-void AmrSolver::debug_check_valid_cell_finite(
+void AmrSolverBase::debug_check_valid_cell_finite(
    amrex::MultiFab const& mf,
    amrex::iMultiFab const& valid_mask,
    int ncomp,
@@ -225,7 +225,7 @@ void AmrSolver::debug_check_valid_cell_finite(
    amrex::Abort(text.c_str());
 }
 
-void AmrSolver::abort_bad_physical_state(
+void AmrSolverBase::abort_bad_physical_state(
    char const* context,
    int step,
    amrex::Real time,
@@ -256,7 +256,7 @@ void AmrSolver::abort_bad_physical_state(
    amrex::Abort(text.c_str());
 }
 
-void AmrSolver::debug_check_rhs_level(int lev, char const* context) const
+void AmrSolverBase::debug_check_rhs_level(int lev, char const* context) const
 {
    if (!cfg_.debug_check_finite || !rhs_[lev]) {
       return;
@@ -265,7 +265,7 @@ void AmrSolver::debug_check_rhs_level(int lev, char const* context) const
    debug_check_valid_cell_finite(*rhs_[lev], mask, num_state_components(), context, lev);
 }
 
-void AmrSolver::debug_check_fluxes(int lev, bool solid_masked, char const* context) const
+void AmrSolverBase::debug_check_fluxes(int lev, bool solid_masked, char const* context) const
 {
    if (!cfg_.debug_check_finite || solid_masked) {
       return;

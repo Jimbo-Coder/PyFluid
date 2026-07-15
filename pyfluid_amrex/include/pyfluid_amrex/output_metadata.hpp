@@ -49,6 +49,15 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("output_dir", cfg.output_dir);
    entries.emplace_back("run_name", cfg.run_name);
    entries.emplace_back("physics", cfg.physics);
+   entries.emplace_back("spacetime_evolution", cfg.spacetime_evolution);
+   entries.emplace_back("spacetime_fixed_metric", cfg.spacetime_fixed_metric);
+   entries.emplace_back("spacetime_acceleration1", output_metadata_real_string(cfg.spacetime_acceleration1));
+   entries.emplace_back("spacetime_acceleration2", output_metadata_real_string(cfg.spacetime_acceleration2));
+   entries.emplace_back("spacetime_acceleration3", output_metadata_real_string(cfg.spacetime_acceleration3));
+   entries.emplace_back("spacetime_origin1", output_metadata_real_string(cfg.spacetime_origin1));
+   entries.emplace_back("spacetime_origin2", output_metadata_real_string(cfg.spacetime_origin2));
+   entries.emplace_back("spacetime_origin3", output_metadata_real_string(cfg.spacetime_origin3));
+   entries.emplace_back("spacetime_mass", output_metadata_real_string(cfg.spacetime_mass));
    entries.emplace_back("eos", cfg.eos);
    if (finest_level >= 0) {
       entries.emplace_back("finest_level", std::to_string(finest_level));

@@ -12,14 +12,171 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/diffusion.hpp"
 #include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/patch_grid.hpp"
 #include "pyfluid_amrex/patch_layout_builder.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
+#include "pyfluid_amrex/rhd_c2p.hpp"
+#include "pyfluid_amrex/rmhd_c2p.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real rhd_signal_frequency_cell(
+   amrex::Array4<amrex::Real const> const& state,
+   int i,
+   int j,
+   int k,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
+   EOSParams const& eos,
+   const SpacetimeMetric& metric
+) noexcept
+{
+   const RHDConserved conserved{
+      state(i, j, k, RHO),
+      state(i, j, k, MOM1),
+      state(i, j, k, MOM2),
+      state(i, j, k, MOM3),
+      state(i, j, k, ENERGY),
+   };
+   const RHDRecoveryResult recovered = recover_srhd_palenzuela_1d(
+      conserved, metric, eos.gamma
+   );
+   if (recovered.attempt.status != C2PStatus::Success) {
+      return std::numeric_limits<amrex::Real>::infinity();
+   }
+   const RHDPrimitive& primitive = recovered.primitive;
+   const RHDWaveSpeeds speed1 = generated::srhd_wave_speeds<0>(
+      primitive, metric, eos.gamma
+   );
+   amrex::Real frequency = amrex::max(
+      amrex::Math::abs(speed1.minus), amrex::Math::abs(speed1.plus)
+   ) / dx[0];
+#if (AMREX_SPACEDIM >= 2)
+   const RHDWaveSpeeds speed2 = generated::srhd_wave_speeds<1>(
+      primitive, metric, eos.gamma
+   );
+   frequency += amrex::max(
+      amrex::Math::abs(speed2.minus), amrex::Math::abs(speed2.plus)
+   ) / dx[1];
+#endif
+#if (AMREX_SPACEDIM == 3)
+   const RHDWaveSpeeds speed3 = generated::srhd_wave_speeds<2>(
+      primitive, metric, eos.gamma
+   );
+   frequency += amrex::max(
+      amrex::Math::abs(speed3.minus), amrex::Math::abs(speed3.plus)
+   ) / dx[2];
+#endif
+   return frequency;
+}
+
+inline void fill_rhd_signal_frequency(
+   amrex::MultiFab& frequency,
+   const amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   EOSParams const& eos,
+   const FixedSpacetimeParameters& spacetime,
+   amrex::Real time
+)
+{
+   const auto dx = geom.CellSizeArray();
+   const auto lower = geom.ProbLoArray();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.tilebox();
+      const auto conserved = state.const_array(mfi);
+      const auto cell_frequency = frequency.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const FixedSpacetimeGeometry local_geometry =
+            fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
+               spacetime, lower, dx, i, j, k, time
+            );
+         cell_frequency(i, j, k, 0) = rhd_signal_frequency_cell(
+            conserved, i, j, k, dx, eos, local_geometry.metric
+         );
+      });
+   }
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real rmhd_signal_frequency_cell(
+   amrex::Array4<amrex::Real const> const& state,
+   int i,
+   int j,
+   int k,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
+   EOSParams const& eos,
+   const SpacetimeMetric& metric
+) noexcept
+{
+   const RMHDRecoveryResult recovered = recover_srmhd(
+      load_rmhd_conserved(state, i, j, k), metric, eos.gamma
+   );
+   if (!recovered.succeeded()) {
+      return std::numeric_limits<amrex::Real>::infinity();
+   }
+   const RMHDPrimitive& primitive = recovered.primitive;
+   const RMHDWaveSpeeds speed1 = generated::srmhd_wave_speeds<0>(
+      primitive, metric, eos.gamma
+   );
+   amrex::Real frequency = amrex::max(
+      amrex::Math::abs(speed1.minus), amrex::Math::abs(speed1.plus)
+   ) / dx[0];
+#if (AMREX_SPACEDIM >= 2)
+   const RMHDWaveSpeeds speed2 = generated::srmhd_wave_speeds<1>(
+      primitive, metric, eos.gamma
+   );
+   frequency += amrex::max(
+      amrex::Math::abs(speed2.minus), amrex::Math::abs(speed2.plus)
+   ) / dx[1];
+#endif
+#if (AMREX_SPACEDIM == 3)
+   const RMHDWaveSpeeds speed3 = generated::srmhd_wave_speeds<2>(
+      primitive, metric, eos.gamma
+   );
+   frequency += amrex::max(
+      amrex::Math::abs(speed3.minus), amrex::Math::abs(speed3.plus)
+   ) / dx[2];
+#endif
+   return frequency;
+}
+
+inline void fill_rmhd_signal_frequency(
+   amrex::MultiFab& frequency,
+   const amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   EOSParams const& eos,
+   const FixedSpacetimeParameters& spacetime,
+   amrex::Real time
+)
+{
+   const auto dx = geom.CellSizeArray();
+   const auto lower = geom.ProbLoArray();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.tilebox();
+      const auto conserved = state.const_array(mfi);
+      const auto cell_frequency = frequency.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const FixedSpacetimeGeometry local_geometry =
+            fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
+               spacetime, lower, dx, i, j, k, time
+            );
+         cell_frequency(i, j, k, 0) = rmhd_signal_frequency_cell(
+            conserved, i, j, k, dx, eos, local_geometry.metric
+         );
+      });
+   }
+}
 
 template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -625,10 +782,24 @@ inline amrex::Real max_hydro_cutcell_signal_frequency_masked(
 }
 
 template <int NComp, int EOSMethod, int DiffusionMethod>
-inline amrex::Real adaptive_dt(amrex::MultiFab& frequency, amrex::MultiFab const& state, amrex::Geometry const& geom, RunConfig const& cfg)
+inline amrex::Real adaptive_dt(
+   amrex::MultiFab& frequency,
+   amrex::MultiFab const& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg,
+   amrex::Real time
+)
 {
    const EOSParams eos = eos_params(cfg);
-   if constexpr (has_mhd_components<NComp>()) {
+   if (physical_system(cfg) == PhysicalSystem::RHD) {
+      fill_rhd_signal_frequency(
+         frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
+      );
+   } else if (physical_system(cfg) == PhysicalSystem::RMHD) {
+      fill_rmhd_signal_frequency(
+         frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
+      );
+   } else if constexpr (has_mhd_components<NComp>()) {
       fill_mhd_signal_frequency<EOSMethod>(frequency, state, geom, cfg, eos);
    } else {
       fill_signal_frequency<EOSMethod>(frequency, state, geom, cfg, eos);

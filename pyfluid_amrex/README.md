@@ -1,7 +1,8 @@
 # PyFluid AMReX
 
-This is PyFluid's production Newtonian HD/MHD backend. Python/JAX and Numba
-remain reference baselines. AMReX owns parallel mesh management, AMR, MPI,
+This is PyFluid's production Newtonian HD/MHD backend and its developing
+relativistic-fluid backend. Python/JAX and Numba remain reference baselines.
+AMReX owns parallel mesh management, AMR, MPI,
 plotfiles, and checkpoints; PyFluid owns the physical state, numerical methods,
 diagnostics, and validation.
 
@@ -31,6 +32,10 @@ debugging because it bypasses automatic reporting. The C++ executable always
 writes the canonical merged AMReX parameter table to `<run_dir>/run.in`, so
 raw and wrapped runs retain the same configuration record.
 
+Portable build, MPI-launcher, and scheduler settings live in machine profiles;
+see [`docs/machines.md`](docs/machines.md). They wrap the same `run_case.py`
+contract and never add a second simulation-parameter interface.
+
 Every input file is a complete run configuration and explicitly names its run
 and output directory. Supported input values replace registered C++ defaults;
 there is no second launcher-level simulation-parameter interface. Registered method and AMR defaults live in
@@ -43,7 +48,7 @@ components, centering, and output roles live in
 
 The regular production path is single-patch Cartesian HD or MHD in native 1D,
 2D, or 3D. It provides hydro-only state allocation for hydro runs, primitive
-PWC/PWL/WENO-Z reconstruction, LLF/HLL/HLLE/HLLC/HLLD Riemann solvers,
+PWC/PWL/WENO-Z/MP5/TENO5 reconstruction, LLF/HLL/HLLE/HLLC/HLLD Riemann solvers,
 Euler/midpoint/SSPRK3/RK4 time integration, adaptive CFL stepping, AMR,
 reflux/average-down, checkpoint/restart, and optional AMR subcycling.
 
@@ -55,6 +60,15 @@ implicit CT resistivity is rejected until a composite edge solve exists.
 
 These paths remain explicitly experimental or limited:
 
+- Fixed-spacetime ideal-gas RHD/RMHD: generated Valencia P2C/flux/signal-speed
+  kernels, component reconstruction, LLF/HLL/HLLE, all timesteppers, AMR,
+  subcycling, CT, output, and restart are wired and covered by
+  `validate_rhd.py`, `validate_rmhd.py`, and `validate_fixed_spacetime.py`.
+  RMHD uses an ordered, validated RePrimAnd/Palenzuela1D C2P policy and
+  generated local causal wave-speed bounds. Fixed Minkowski, Rindler, and
+  isotropic-Schwarzschild metrics plus generated Valencia geometric sources
+  are wired. Evolved spacetime, relativistic diffusion/resistivity,
+  passives/composition, and solids are not yet wired.
 - Cylindrical and spherical single-patch coordinates: validate the exact
   coordinate/method combination before treating it as a production result.
 - Homogeneous Cartesian multipatch: hydro finite-volume ownership and AMR are
@@ -142,6 +156,24 @@ uv run python pyfluid_amrex/tools/validate_amrex_suite.py --level standard
 
 # performance comparison after a hot-path change
 uv run python pyfluid_amrex/tools/benchmark_pyfluid.py
+
+# deep-AMR/subcycling rank scaling for production WENO-Z paths
+uv run python pyfluid_amrex/tools/benchmark_rank_scaling.py --suite production
+
+# exact periodic reconstruction medley
+uv run python pyfluid_amrex/tools/validate_advection_medley.py --force
+
+# coupled acoustic/contact reconstruction medley
+uv run python pyfluid_amrex/tools/validate_characteristic_medley.py --force
+
+# mixed fast/Alfven/slow/contact ideal-MHD medley, including AMR/subcycling
+uv run python pyfluid_amrex/tools/validate_mhd_characteristic_medley.py --force --include-amr
+
+# fixed Rindler/Schwarzschild RHD/RMHD, AMR/subcycling, CT, and restart
+uv run python pyfluid_amrex/tools/validate_fixed_spacetime.py --level standard --force --ranks 3
+
+# smooth fifth-order reconstruction convergence
+uv run python pyfluid_amrex/tools/validate_reconstruction_convergence.py --force
 ```
 
 The suite writes compact TSV history under `runs/current/`; ordinary temporary

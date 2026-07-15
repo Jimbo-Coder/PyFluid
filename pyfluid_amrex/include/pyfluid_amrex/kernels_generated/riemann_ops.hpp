@@ -66,4 +66,62 @@ MHDState mhd_hll_flux(const MHDState& flux_l, const MHDState& flux_r, const MHDS
    };
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RHDConserved rhd_llf_flux(const RHDConserved& flux_l, const RHDConserved& flux_r, const RHDConserved& state_l, const RHDConserved& state_r, amrex::Real wavespeed) noexcept
+{
+   return {
+      (1.0_rt/2.0_rt)*(flux_l.dens + flux_r.dens + wavespeed*(state_l.dens - state_r.dens)),
+      (1.0_rt/2.0_rt)*(flux_l.mom1 + flux_r.mom1 + wavespeed*(state_l.mom1 - state_r.mom1)),
+      (1.0_rt/2.0_rt)*(flux_l.mom2 + flux_r.mom2 + wavespeed*(state_l.mom2 - state_r.mom2)),
+      (1.0_rt/2.0_rt)*(flux_l.mom3 + flux_r.mom3 + wavespeed*(state_l.mom3 - state_r.mom3)),
+      (1.0_rt/2.0_rt)*(flux_l.tau + flux_r.tau + wavespeed*(state_l.tau - state_r.tau))
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RHDConserved rhd_hll_flux(const RHDConserved& flux_l, const RHDConserved& flux_r, const RHDConserved& state_l, const RHDConserved& state_r, amrex::Real s_left, amrex::Real s_right) noexcept
+{
+   const amrex::Real tmp0 = 1.0_rt/(s_left - s_right);
+   const amrex::Real tmp1 = s_left*s_right;
+   return {
+      tmp0*(-flux_l.dens*s_right + flux_r.dens*s_left + tmp1*(state_l.dens - state_r.dens)),
+      tmp0*(-flux_l.mom1*s_right + flux_r.mom1*s_left + tmp1*(state_l.mom1 - state_r.mom1)),
+      tmp0*(-flux_l.mom2*s_right + flux_r.mom2*s_left + tmp1*(state_l.mom2 - state_r.mom2)),
+      tmp0*(-flux_l.mom3*s_right + flux_r.mom3*s_left + tmp1*(state_l.mom3 - state_r.mom3)),
+      tmp0*(-flux_l.tau*s_right + flux_r.tau*s_left + tmp1*(state_l.tau - state_r.tau))
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDConserved rmhd_llf_flux(const RMHDConserved& flux_l, const RMHDConserved& flux_r, const RMHDConserved& state_l, const RMHDConserved& state_r, amrex::Real wavespeed) noexcept
+{
+   return {
+      (1.0_rt/2.0_rt)*(flux_l.dens + flux_r.dens + wavespeed*(state_l.dens - state_r.dens)),
+      (1.0_rt/2.0_rt)*(flux_l.mom1 + flux_r.mom1 + wavespeed*(state_l.mom1 - state_r.mom1)),
+      (1.0_rt/2.0_rt)*(flux_l.mom2 + flux_r.mom2 + wavespeed*(state_l.mom2 - state_r.mom2)),
+      (1.0_rt/2.0_rt)*(flux_l.mom3 + flux_r.mom3 + wavespeed*(state_l.mom3 - state_r.mom3)),
+      (1.0_rt/2.0_rt)*(flux_l.tau + flux_r.tau + wavespeed*(state_l.tau - state_r.tau)),
+      (1.0_rt/2.0_rt)*(flux_l.b1 + flux_r.b1 + wavespeed*(state_l.b1 - state_r.b1)),
+      (1.0_rt/2.0_rt)*(flux_l.b2 + flux_r.b2 + wavespeed*(state_l.b2 - state_r.b2)),
+      (1.0_rt/2.0_rt)*(flux_l.b3 + flux_r.b3 + wavespeed*(state_l.b3 - state_r.b3))
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDConserved rmhd_hll_flux(const RMHDConserved& flux_l, const RMHDConserved& flux_r, const RMHDConserved& state_l, const RMHDConserved& state_r, amrex::Real s_left, amrex::Real s_right) noexcept
+{
+   const amrex::Real tmp0 = 1.0_rt/(s_left - s_right);
+   const amrex::Real tmp1 = s_left*s_right;
+   return {
+      tmp0*(-flux_l.dens*s_right + flux_r.dens*s_left + tmp1*(state_l.dens - state_r.dens)),
+      tmp0*(-flux_l.mom1*s_right + flux_r.mom1*s_left + tmp1*(state_l.mom1 - state_r.mom1)),
+      tmp0*(-flux_l.mom2*s_right + flux_r.mom2*s_left + tmp1*(state_l.mom2 - state_r.mom2)),
+      tmp0*(-flux_l.mom3*s_right + flux_r.mom3*s_left + tmp1*(state_l.mom3 - state_r.mom3)),
+      tmp0*(-flux_l.tau*s_right + flux_r.tau*s_left + tmp1*(state_l.tau - state_r.tau)),
+      tmp0*(-flux_l.b1*s_right + flux_r.b1*s_left + tmp1*(state_l.b1 - state_r.b1)),
+      tmp0*(-flux_l.b2*s_right + flux_r.b2*s_left + tmp1*(state_l.b2 - state_r.b2)),
+      tmp0*(-flux_l.b3*s_right + flux_r.b3*s_left + tmp1*(state_l.b3 - state_r.b3))
+   };
+}
+
 } // namespace pyfluid_amrex::generated

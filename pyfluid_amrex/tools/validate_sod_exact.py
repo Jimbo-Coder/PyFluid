@@ -31,6 +31,7 @@ RUN_ROOT = ROOT / "runs" / "current" / "sod_exact_validation"
 PLOT_DIR = ROOT / "plots" / "current" / "IC" / "sod_x"
 HISTORY = ROOT / "runs" / "current" / "validation_history.tsv"
 RIEMANN_CHOICES = ("llf", "hll", "hlle", "hllc")
+RECON_CHOICES = ("pwc", "pwl", "wenoz", "wenoz-char", "mp5", "mp5-char", "teno5", "teno5-char")
 LADDER_RIEMANN_MIN_IMPROVEMENT = 1.25
 LADDER_PWL_MIN_IMPROVEMENT = 2.0
 LADDER_WENOZ_MAX_REGRESSION = 1.10
@@ -123,7 +124,9 @@ def write_case_input(case: SodCase, args: argparse.Namespace) -> tuple[Path, Pat
    input_dir = args.run_root / "inputs"
    input_dir.mkdir(parents=True, exist_ok=True)
 
-   ng = 3 if case.recon.startswith("wenoz") else (2 if case.recon == "pwl" else 1)
+   ng = 3 if case.recon in {
+      "wenoz", "wenoz-char", "mp5", "mp5-char", "teno5", "teno5-char"
+   } else (2 if case.recon == "pwl" else 1)
    overrides = {
       "pyfluid.run_name": case.name,
       "pyfluid.output_dir": str(run_dir.relative_to(ROOT)),
@@ -430,7 +433,7 @@ def append_history(rows: list[dict[str, object]]) -> None:
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--riemann", default="hllc", help="Comma-separated Riemann solvers or all")
-   parser.add_argument("--recon", default="pwl")
+   parser.add_argument("--recon", default="pwl", help="Comma-separated reconstruction methods or all")
    parser.add_argument("--timestep", default="ssprk3")
    parser.add_argument("--nx", type=int, default=512)
    parser.add_argument("--final-time", type=float, default=0.2)
@@ -464,7 +467,11 @@ def main() -> int:
    if args.method_ladder:
       cases = [SodCase(point.riemann, point.recon, point.timestep, args.nx, args.final_time, args.cfl) for point in LADDER_POINTS]
    else:
-      cases = [SodCase(riemann, args.recon, args.timestep, args.nx, args.final_time, args.cfl) for riemann in parse_list(args.riemann, RIEMANN_CHOICES)]
+      cases = [
+         SodCase(riemann, recon, args.timestep, args.nx, args.final_time, args.cfl)
+         for recon in parse_list(args.recon, RECON_CHOICES)
+         for riemann in parse_list(args.riemann, RIEMANN_CHOICES)
+      ]
 
    rows: list[dict[str, object]] = []
    for case in cases:

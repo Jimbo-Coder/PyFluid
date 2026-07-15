@@ -1,5 +1,6 @@
 #pragma once
 
+#include <AMReX_GpuQualifiers.H>
 #include <AMReX_REAL.H>
 
 namespace pyfluid_amrex {
@@ -18,6 +19,15 @@ struct HydroCharacteristics {
    amrex::Real shear2 = 0.0;
    amrex::Real sound_minus = 0.0;
    amrex::Real sound_plus = 0.0;
+};
+
+struct HydroCharacteristicBasis {
+   amrex::Real rho = 0.0;
+   amrex::Real inv_rho = 0.0;
+   amrex::Real sound_speed = 0.0;
+   amrex::Real sound2 = 0.0;
+   amrex::Real inv_sound_speed = 0.0;
+   amrex::Real inv_sound2 = 0.0;
 };
 
 struct MHDReducedPrimitive {
@@ -42,8 +52,13 @@ struct MHDCharacteristics {
 
 struct MHDCharacteristicBasis {
    amrex::Real rho = 0.0;
+   amrex::Real inv_rho = 0.0;
    amrex::Real sqrt_rho = 0.0;
+   amrex::Real inv_sqrt_rho = 0.0;
    amrex::Real sound_speed = 0.0;
+   amrex::Real inv_sound_speed = 0.0;
+   amrex::Real sound2 = 0.0;
+   amrex::Real inv_sound2 = 0.0;
    amrex::Real fast_speed = 0.0;
    amrex::Real slow_speed = 0.0;
    amrex::Real alpha_f = 0.0;
@@ -52,6 +67,7 @@ struct MHDCharacteristicBasis {
    amrex::Real beta_t2 = 0.0;
    amrex::Real normal_sign = 1.0;
    amrex::Real velocity_denom = 0.0;
+   amrex::Real inv_velocity_denom = 0.0;
 };
 
 } // namespace pyfluid_amrex

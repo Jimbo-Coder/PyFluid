@@ -278,7 +278,7 @@ inline void write_plotfile(
       state,
       (plot_dir / "stateGF").string(),
       geom,
-      state_grid_field_names(mhd, passive_scalars),
+      state_grid_field_names(physical_system(cfg), passive_scalars),
       time,
       step,
       cfg,
@@ -526,25 +526,25 @@ inline void fill_aux_gf_output(
       }
       case AuxGridField::MachNumber: {
          amrex::MultiFab mach(state.boxArray(), state.DistributionMap(), 1, 0);
-         fill_mach_number_output(mach, state, cfg);
+         fill_mach_number_output(mach, state, geom, time, cfg);
          copy_matching_aux_components(output, mach, info, centering, dst);
          break;
       }
       case AuxGridField::PlasmaBeta: {
          amrex::MultiFab plasma_beta(state.boxArray(), state.DistributionMap(), 1, 0);
-         fill_plasma_beta_output(plasma_beta, state, cfg);
+         fill_plasma_beta_output(plasma_beta, state, geom, time, cfg);
          copy_matching_aux_components(output, plasma_beta, info, centering, dst);
          break;
       }
       case AuxGridField::EntropyProxy: {
          amrex::MultiFab entropy(state.boxArray(), state.DistributionMap(), 1, 0);
-         fill_entropy_proxy_output(entropy, state, cfg);
+         fill_entropy_proxy_output(entropy, state, geom, time, cfg);
          copy_matching_aux_components(output, entropy, info, centering, dst);
          break;
       }
       case AuxGridField::AmrTagMetric: {
          amrex::MultiFab tag_metric(state.boxArray(), state.DistributionMap(), 1, 0);
-         fill_amr_tag_metric_output(tag_metric, state, geom, cfg);
+         fill_amr_tag_metric_output(tag_metric, state, geom, time, cfg);
          copy_matching_aux_components(output, tag_metric, info, centering, dst);
          break;
       }
@@ -784,7 +784,7 @@ inline void write_multilevel_plotfile(
       level_steps,
       ref_ratio,
       (plot_dir / "stateGF").string(),
-      state_grid_field_names(mhd, passive_scalars),
+      state_grid_field_names(physical_system(cfg), passive_scalars),
       time,
       step,
       cfg,

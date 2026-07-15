@@ -1,0 +1,25 @@
+name = "local"
+mpi_launcher = ["mpirun", "-np", "{ranks}"]
+direct_one_rank = true
+default_ranks = 3
+environment = { OMP_NUM_THREADS = "1" }
+
+[run]
+work_dir = "{root}"
+
+[build]
+source_dir = "{root}/pyfluid_amrex"
+build_dir = "{root}/build/pyfluid_amrex"
+jobs = 3
+cmake_args = [
+  "-DCMAKE_BUILD_TYPE=Release",
+  "-DCMAKE_CXX_COMPILER=/opt/homebrew/bin/mpicxx",
+  "-DCMAKE_PREFIX_PATH={root}/.deps/amrex-mpi-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi",
+  "-DAMReX_DIR={root}/.deps/amrex-mpi-lsolvers-hdf5/lib/cmake/AMReX",
+  "-DHDF5_ROOT=/opt/homebrew/opt/hdf5-mpi",
+  "-DPYFLUID_AMREX_NATIVE=ON",
+]
+
+[submit]
+command = []
+header = ["#!/bin/sh"]

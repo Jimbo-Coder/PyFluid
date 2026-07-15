@@ -1,4 +1,4 @@
-#include "pyfluid_amrex/amr_solver.hpp"
+#include "pyfluid_amrex/amr_solver_base.hpp"
 #include "pyfluid_amrex/multipatch.hpp"
 #include "pyfluid_amrex/patch_domain.hpp"
 #include "pyfluid_amrex/patch_grid.hpp"
@@ -116,7 +116,7 @@ void print_box_array(char const* label, int lev, amrex::BoxArray const& box_arra
 
 } // namespace
 
-amrex::IntVect AmrSolver::patch_union_refinement_to_level(int lev) const
+amrex::IntVect AmrSolverBase::patch_union_refinement_to_level(int lev) const
 {
    amrex::IntVect refinement(AMREX_D_DECL(1, 1, 1));
    for (int coarse_lev = 0; coarse_lev < lev; ++coarse_lev) {
@@ -125,17 +125,17 @@ amrex::IntVect AmrSolver::patch_union_refinement_to_level(int lev) const
    return refinement;
 }
 
-PatchDomainBoxes AmrSolver::patch_union_domain_boxes(int lev) const
+PatchDomainBoxes AmrSolverBase::patch_union_domain_boxes(int lev) const
 {
    return make_patch_domain_boxes(cfg_, patch_union_refinement_to_level(lev));
 }
 
-PatchGridSystem AmrSolver::production_patch_grid_system() const
+PatchGridSystem AmrSolverBase::production_patch_grid_system() const
 {
    return production_patch_grid_system_for_level(0);
 }
 
-PatchGridSystem AmrSolver::production_patch_grid_system_for_level(int lev) const
+PatchGridSystem AmrSolverBase::production_patch_grid_system_for_level(int lev) const
 {
    if (!mixed_patch_system_enabled()) {
       amrex::Abort("production_patch_grid_system is only defined for mixed patch systems");
@@ -143,7 +143,7 @@ PatchGridSystem AmrSolver::production_patch_grid_system_for_level(int lev) const
    return configured_mixed_patch_grid_system(cfg_, patch_union_refinement_to_level(lev));
 }
 
-PatchLayout AmrSolver::production_patch_layout(amrex::Box const& domain) const
+PatchLayout AmrSolverBase::production_patch_layout(amrex::Box const& domain) const
 {
    if (mesh_patch_system_kind() == MeshPatchHomogeneousCartesian) {
       CartesianMultipatchLayout layout;
@@ -184,7 +184,7 @@ PatchLayout AmrSolver::production_patch_layout(amrex::Box const& domain) const
    return layout;
 }
 
-PatchLayout AmrSolver::production_patch_layout_for_level(int lev) const
+PatchLayout AmrSolverBase::production_patch_layout_for_level(int lev) const
 {
    if (mixed_patch_system_enabled()) {
       const amrex::IntVect refinement = patch_union_refinement_to_level(lev);
@@ -203,7 +203,7 @@ PatchLayout AmrSolver::production_patch_layout_for_level(int lev) const
    return production_patch_layout(Geom(lev).Domain());
 }
 
-void AmrSolver::PostProcessBaseGrids(amrex::BoxArray& box_array) const
+void AmrSolverBase::PostProcessBaseGrids(amrex::BoxArray& box_array) const
 {
    if (!production_multipatch_enabled()) {
       return;
@@ -222,7 +222,7 @@ void AmrSolver::PostProcessBaseGrids(amrex::BoxArray& box_array) const
 #endif
 }
 
-amrex::BoxArray AmrSolver::clip_to_patch_union_domain(int lev, amrex::BoxArray const& box_array) const
+amrex::BoxArray AmrSolverBase::clip_to_patch_union_domain(int lev, amrex::BoxArray const& box_array) const
 {
    if (!patch_union_domain_enabled() || box_array.empty()) {
       return box_array;
@@ -253,7 +253,7 @@ amrex::BoxArray AmrSolver::clip_to_patch_union_domain(int lev, amrex::BoxArray c
    return result;
 }
 
-amrex::BoxArray AmrSolver::clip_to_mixed_patch_domain(int lev, amrex::BoxArray const& box_array) const
+amrex::BoxArray AmrSolverBase::clip_to_mixed_patch_domain(int lev, amrex::BoxArray const& box_array) const
 {
    if (!mixed_patch_system_enabled() || box_array.empty()) {
       return box_array;
@@ -318,7 +318,7 @@ amrex::BoxArray AmrSolver::clip_to_mixed_patch_domain(int lev, amrex::BoxArray c
    return amrex::BoxArray(result_list);
 }
 
-amrex::BoxArray AmrSolver::clip_to_active_multipatch_domain(
+amrex::BoxArray AmrSolverBase::clip_to_active_multipatch_domain(
    int lev,
    amrex::BoxArray const& box_array
 ) const
@@ -328,7 +328,7 @@ amrex::BoxArray AmrSolver::clip_to_active_multipatch_domain(
    return clipped;
 }
 
-void AmrSolver::clip_multipatch_initial_hierarchy(amrex::Real time)
+void AmrSolverBase::clip_multipatch_initial_hierarchy(amrex::Real time)
 {
    if (!patch_union_domain_enabled() && !mixed_patch_system_enabled()) {
       return;
@@ -359,7 +359,7 @@ void AmrSolver::clip_multipatch_initial_hierarchy(amrex::Real time)
    finest_level = new_finest;
 }
 
-void AmrSolver::regrid(int lbase, amrex::Real time, bool initial)
+void AmrSolverBase::regrid(int lbase, amrex::Real time, bool initial)
 {
    if (!patch_union_domain_enabled() && !mixed_patch_system_enabled()) {
       amrex::AmrCore::regrid(lbase, time, initial);

@@ -99,6 +99,7 @@ def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("input", type=Path)
    parser.add_argument("--ranks", type=int, default=3)
+   parser.add_argument("--machine", help="Machine profile name or TOML path; defaults to local or PYFLUID_MACHINE.")
    parser.add_argument("--keep-existing", action="store_true", help="Do not clean the output directory before running.")
    parser.add_argument("--timeout", type=int)
    parser.add_argument("--policy", choices=("auto", *SCALAR_POLICIES.keys()), default="auto")
@@ -126,6 +127,7 @@ def main() -> int:
       input_path=input_path,
       ranks=args.ranks,
       timeout=args.timeout,
+      machine=args.machine,
    )
    write_run_log(run_dir, result.command, result.stdout, result.seconds)
    resolved_input = run_dir / "run.in"

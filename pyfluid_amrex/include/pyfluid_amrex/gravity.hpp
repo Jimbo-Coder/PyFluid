@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/rhs.hpp"
+#include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {

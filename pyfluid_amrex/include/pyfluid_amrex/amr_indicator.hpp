@@ -289,14 +289,14 @@ amrex::Real metric_aware_indicator(
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_from_state(
-   amrex::Array4<amrex::Real const> const& state,
+amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_from_primitive(
+   amrex::Array4<amrex::Real const> const& primitive,
    int i,
    int j,
    int k,
    EOSParams const& eos,
    int eos_method,
-   bool mhd,
+   PhysicalSystem system,
    int coordinate,
    MeshAxes const& axes,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
@@ -306,43 +306,44 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_fro
 ) noexcept
 {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators{};
+   const bool mhd = system == PhysicalSystem::MHD;
    if (!amr_cell_allows_radial_refinement(coordinate, axes, problo, dx, i, j, k, min_refine_radius)) {
       return indicators;
    }
    const auto pressure_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
-      return pressure_from_array_runtime(eos_method, state, ia, ja, ka, eos, mhd);
+      return primitive(ia, ja, ka, ENERGY);
    };
    const auto rho_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
-      return state(ia, ja, ka, RHO);
+      return primitive(ia, ja, ka, RHO);
    };
    const auto vx_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
       return state_vector_cartesian_component(
-         state, ia, ja, ka, coordinate, axes, problo, dx, MOM1, true, 0
+         primitive, ia, ja, ka, coordinate, axes, problo, dx, MOM1, false, 0
       );
    };
    const auto vy_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
       return state_vector_cartesian_component(
-         state, ia, ja, ka, coordinate, axes, problo, dx, MOM1, true, 1
+         primitive, ia, ja, ka, coordinate, axes, problo, dx, MOM1, false, 1
       );
    };
    const auto vz_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
       return state_vector_cartesian_component(
-         state, ia, ja, ka, coordinate, axes, problo, dx, MOM1, true, 2
+         primitive, ia, ja, ka, coordinate, axes, problo, dx, MOM1, false, 2
       );
    };
    const auto b1_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
       return state_vector_cartesian_component(
-         state, ia, ja, ka, coordinate, axes, problo, dx, B1, false, 0
+         primitive, ia, ja, ka, coordinate, axes, problo, dx, B1, false, 0
       );
    };
    const auto b2_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
       return state_vector_cartesian_component(
-         state, ia, ja, ka, coordinate, axes, problo, dx, B1, false, 1
+         primitive, ia, ja, ka, coordinate, axes, problo, dx, B1, false, 1
       );
    };
    const auto b3_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
       return state_vector_cartesian_component(
-         state, ia, ja, ka, coordinate, axes, problo, dx, B1, false, 2
+         primitive, ia, ja, ka, coordinate, axes, problo, dx, B1, false, 2
       );
    };
 
@@ -359,7 +360,9 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_fro
       const amrex::Real b3_0 = b3_at(i, j, k);
       b2 = 2.0 * magnetic_energy_density(StateVector3{b1_0, b2_0, b3_0});
    }
-   const amrex::Real cs0 = sound_speed_from_primitive_runtime(eos_method, rho0, p0, eos);
+   const amrex::Real cs0 = fluid_sound_speed_from_primitive_runtime(
+      system, eos_method, rho0, p0, eos
+   );
    const amrex::Real signal_scale = amrex::max(vmag + std::sqrt(cs0 * cs0 + b2 / rho0), 1.0e-50);
 
    accumulate_metric_aware_directional_indicator(
@@ -405,14 +408,14 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_fro
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real auto_amr_indicator_from_state(
-   amrex::Array4<amrex::Real const> const& state,
+amrex::Real auto_amr_indicator_from_primitive(
+   amrex::Array4<amrex::Real const> const& primitive,
    int i,
    int j,
    int k,
    EOSParams const& eos,
    int eos_method,
-   bool mhd,
+   PhysicalSystem system,
    int coordinate,
    MeshAxes const& axes,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
@@ -422,14 +425,14 @@ amrex::Real auto_amr_indicator_from_state(
 ) noexcept
 {
    const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators =
-      auto_amr_directional_indicators_from_state(
-         state,
+      auto_amr_directional_indicators_from_primitive(
+         primitive,
          i,
          j,
          k,
          eos,
          eos_method,
-         mhd,
+         system,
          coordinate,
          axes,
          problo,

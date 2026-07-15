@@ -77,7 +77,10 @@ coordinate manipulation:
 - orthogonal-coordinate metric factors and geometric momentum sources;
 - Newtonian viscous stress and tensor-divergence connection terms;
 - curl, divergence, ideal/resistive EMF, and CT face-flux updates;
-- local/global patch maps and their Jacobians.
+- local/global patch maps and their Jacobians;
+- densitized Valencia RHD/RMHD primitive-to-conserved variables, directional
+  conservative fluxes, local causal wave bounds, and ideal-energy C2P
+  residual/reconstruction kernels for a runtime 3+1 spatial metric.
 
 The generator represents a conservation equation as
 `d_t U_A + div(F_A) = S_A`, where scalar/vector conserved quantities determine
@@ -126,6 +129,48 @@ Build new physics through the same staged symbolic path:
 This separation supports reusable coordinate-independent equations without
 making symbolic field objects responsible for grid allocation, centering,
 boundary conditions, or time storage.
+
+## Relativistic MHD Extension Boundary
+
+RMHD should extend this symbolic layer through the 3+1 Valencia equations,
+not through direction-expanded handwritten kernels. The first RMHD change
+must introduce indexed objects together with a generated equation that uses
+them; do not add speculative `Vector4` or rank-four containers without a
+production consumer.
+
+The indexed layer distinguishes spatial from spacetime indices and records
+variance. Checked `Vector3`, `Vector4`, `Tensor3`, and `Tensor4` objects provide
+contraction, metric raising/lowering, tensor products, and 3+1 projections
+using runtime metric fields (`alpha`, `beta^i`, `gamma_ij`, `gamma^ij`, and
+`sqrt_gamma`). Invalid variance and dimension combinations fail during
+generation. These are symbolic generation-time objects, not runtime AMReX
+containers: generated C++ receives flat scalar structs so index abstraction
+adds no cell-kernel overhead. AMReX remains responsible for metric storage,
+centering, ghost validity, and update cadence.
+
+Generate the following pointwise algebra from one high-level physical system:
+
+- primitive-to-conserved and conserved residual/Jacobian expressions;
+- four-velocity, magnetic four-vector, stress-energy tensor, and their 3+1
+  projections;
+- Valencia fluxes and metric-derivative source terms;
+- induction/EMF expressions used by the existing staggered CT infrastructure;
+- EOS-dependent closure pieces and characteristic speed estimates.
+
+Keep nonlinear root-iteration control, admissibility/repair policy,
+reconstruction, Riemann-fan branch selection, time integration, AMR, and CT
+topology handwritten. The generator may emit residuals and analytic Jacobians
+for primitive recovery, but it must not own the iteration or failure policy.
+
+The fixed-spacetime vertical slice emits RHD/RMHD primitive-to-conserved,
+directional flux, causal wave-speed, C2P residual/reconstruction, stress-energy,
+and Valencia metric-source kernels from the indexed systems. The C++ runtime
+owns bracketed iteration and the ordered recovery policy. Minkowski, Rindler,
+and isotropic-Schwarzschild providers use the same generated fluid kernels.
+Algebraic identities, analytic derivatives, two-sided round trips, zero-field
+reduction, rotational covariance, equilibria, evolution, AMR/CT/subcycling,
+and restart are validation gates. Evolved spacetime changes metric ownership
+and scheduling, not the relativistic fluid equations.
 
 ## Workflow
 

@@ -51,6 +51,80 @@ The backend has three layers.
 Keep these boundaries. A new physics feature should not invent another output
 writer, scalar format, AMR hierarchy, or source-stage loop.
 
+## Public Interfaces And Compilation
+
+The executable-facing solver API is intentionally small. `solver.hpp` owns the
+top-level run entry point and `amr_solver.hpp` exposes only the AMR run
+function. The concrete `AmrSolver` class is private backend machinery in
+`amr_solver_internal.hpp`; code outside the AMR implementation must not include
+that header or depend on its storage layout. `AmrSolverBase` owns the hierarchy,
+state storage, FillPatch, reflux, restriction, output, diagnostics, and restart
+lifecycle. The private derived solver owns per-stage RHS, reconstruction,
+Riemann, diffusion, CT, and time-integration template instantiations. A narrow
+set of hierarchy-repair and gravity-diagnostic hooks connects the two; those
+hooks run only during hierarchy changes or diagnostics, never inside cell
+kernels.
+
+The CMake source groups express ownership rather than pretending that a static
+library automatically reduces template rebuilds:
+
+- driver: executable and stable run entry points;
+- AMR: hierarchy ownership, evolution orchestration, and synchronization;
+- runtime: configuration, fields, checkpoints, profiling, and compiled support
+  objects.
+
+Reconstruction, Riemann, EOS, and cell-flux kernels remain inline templates
+where AMReX CPU/GPU lambdas require their definitions. Moving those headers into
+nominal libraries would not isolate rebuilds and could prevent device inlining.
+The useful compiled boundary is a physical-system kernel bundle: runtime
+dispatch selects a fully specialized bundle outside cell loops, and that bundle
+calls the shared numerical algorithms.
+
+Compiler dependency files verify the boundary: in each 1D/2D/3D executable,
+`amr_solver_driver.cpp` is the only current AMR source that includes
+`reconstruction.hpp`. Thus an equation or reconstruction edit rebuilds the
+evolution shard, not hierarchy, output, checkpoint, metric, or multipatch
+sources. A shared numerical-interface edit still correctly rebuilds every
+consumer.
+
+Every physical system, including future RHD and RMHD, must supply one coherent
+bundle with:
+
+1. a conserved/primitive state layout and field requirements;
+2. primitive-to-conserved and conserved-to-primitive operations;
+3. directional physical fluxes and maximum signal speeds;
+4. optional characteristic transforms used by shared reconstruction;
+5. source, parabolic, and CT hooks that are absent unless the system requires
+   them.
+
+AMR, reconstruction policies, Riemann fan selection, time integrators,
+diagnostics, output, and checkpointing consume this contract. They are not
+reimplemented per physical system. System identity must be explicit in this
+contract; future code must not infer RHD, MHD, or RMHD solely from the number
+of state components.
+
+`PhysicalSystem` is the single stable identifier: `HD`, `MHD`, `RHD`, and
+`RMHD`. Its capability table states whether the fluid is relativistic,
+magnetized, owns a spacetime sector, and supports CT. Component layouts remain
+separate traits because an identifier is not a state-vector size.
+
+Evolution scheduling is sector based. All four systems have a fluid sector.
+RHD and RMHD additionally have a spacetime sector. `SpacetimeEvolution` is
+`none`, `fixed`, or `evolved`: Newtonian systems require `none`, relativistic
+systems require `fixed` or `evolved`. A fixed metric/Cowling run
+uses the relativistic fluid bundle with the spacetime sector frozen; a dynamical
+spacetime run schedules both sectors. Magnetism augments the fluid sector and
+does not become a third independently scheduled sector. Fluid kernels consume
+one metric-provider interface whether its fields are fixed or evolved, allowing
+a future multirate driver to advance fluid and spacetime on different clocks.
+
+Once the first generated Valencia kernels exercise this interface, CMake may
+compile one specialization shard per physical system. Then changing RMHD
+equations rebuilds the RMHD shard, while changing a genuinely shared
+reconstruction algorithm correctly rebuilds every system that instantiates it.
+Do not add virtual calls inside cell loops or duplicate the AMR driver to obtain
+compile isolation.
+
 ## State And Grid Functions
 
 fields.hpp is the sole schema for grid functions. It owns field name,
@@ -234,6 +308,18 @@ When adding vector/tensor physics:
 Reconstruction and Riemann solvers stay handwritten numerical algorithms unless
 generation clearly reduces a real algebraic risk.
 
+For RHD/RMHD, the first generated consumer establishes the indexed symbolic
+API. Add spatial/spacetime index variance, metric contraction, and 3+1
+projection only as required by that consumer; do not predeclare unused tensor
+ranks. The intended first vertical slice is generated Valencia primitive and
+conserved variables, both conversion directions, one directional flux, and its
+numeric validation. This slice defines the physical-system bundle before the
+full source and characteristic algebra is added.
+
+The detailed implementation order, reference codes, C2P policy, sector
+scheduling contract, and validation ladder are maintained in
+`docs/grmhd_development.md`.
+
 ## Extension Checklist
 
 Before declaring a new feature complete:
@@ -249,3 +335,10 @@ Before declaring a new feature complete:
 Do not introduce another fallback implementation merely to keep an unsupported
 combination running. Reject it clearly until it has one correct implementation
 and a test.
+
+During active feature development, do not add short-lived startup guards or
+fallbacks merely to hide an incomplete WIP branch. Record its status in the
+running cycle and support matrix, keep building the intended implementation,
+and test each usable vertical slice. Permanent configuration rejection is for a
+design that is genuinely unsupported, not for code expected to be completed in
+the next development steps.

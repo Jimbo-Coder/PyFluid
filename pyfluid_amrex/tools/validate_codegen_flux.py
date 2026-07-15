@@ -19,6 +19,9 @@ METRIC_HEADER = ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_
 CHARACTERISTIC_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "characteristic_transforms.hpp"
 )
+RELATIVISTIC_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "relativistic_fluid.hpp"
+)
 sys.path.insert(0, str(CODEGEN))
 
 from pyfluid_codegen.emit_cpp import (  # noqa: E402
@@ -27,6 +30,7 @@ from pyfluid_codegen.emit_cpp import (  # noqa: E402
    render_flux_header,
    render_metric_header,
    render_operator_header,
+   render_relativistic_header,
    render_riemann_header,
    render_vector_header,
 )
@@ -44,16 +48,21 @@ from pyfluid_codegen.operator_equations import (  # noqa: E402
    laplacian_equation,
 )
 from pyfluid_codegen.riemann_equations import riemann_flux_kernels  # noqa: E402
+from pyfluid_codegen.relativistic_equations import relativistic_kernels  # noqa: E402
 from pyfluid_codegen.physical_system import (  # noqa: E402
    Hydrodynamics,
    Magnetohydrodynamics,
    NewtonianViscosity,
 )
 from pyfluid_codegen.tensor_algebra import (  # noqa: E402
+   IndexPosition,
+   IndexedTensor,
+   MetricTensor,
    OrthogonalOperators,
    ScalarField,
    Tensor,
    Vector,
+   Vector4,
    VectorField,
 )
 from pyfluid_codegen.vector_equations import vector_operator_kernels  # noqa: E402
@@ -111,11 +120,624 @@ def evaluate(expressions, values: dict[str, float]) -> list[float]:
    return [float(expr.subs(substitutions)) for expr in expressions]
 
 
+def compile_evaluator(expressions):
+   symbols = sorted(
+      {symbol for expression in expressions for symbol in expression.free_symbols},
+      key=str,
+   )
+   function = sp.lambdify(symbols, expressions, modules="math", cse=True)
+
+   def evaluate_compiled(values: dict[str, float]) -> list[float]:
+      return [float(value) for value in function(*(values[str(symbol)] for symbol in symbols))]
+
+   return evaluate_compiled
+
+
 def assert_close(actual: list[float], expected: list[float], label: str) -> None:
    for index, (a, e) in enumerate(zip(actual, expected, strict=True)):
       scale = max(1.0, abs(e))
       if not math.isfinite(a) or abs(a - e) > 1.0e-12 * scale:
          raise AssertionError(f"{label}[{index}] actual={a:.17e} expected={e:.17e}")
+
+
+def invert_symmetric_3x3(matrix: list[list[float]]) -> tuple[list[list[float]], float]:
+   a, b, c = matrix[0]
+   _, d, e = matrix[1]
+   _, _, f = matrix[2]
+   cofactor11 = d * f - e * e
+   cofactor12 = c * e - b * f
+   cofactor13 = b * e - c * d
+   cofactor22 = a * f - c * c
+   cofactor23 = b * c - a * e
+   cofactor33 = a * d - b * b
+   determinant = a * cofactor11 + b * cofactor12 + c * cofactor13
+   inverse = [
+      [cofactor11 / determinant, cofactor12 / determinant, cofactor13 / determinant],
+      [cofactor12 / determinant, cofactor22 / determinant, cofactor23 / determinant],
+      [cofactor13 / determinant, cofactor23 / determinant, cofactor33 / determinant],
+   ]
+   return inverse, determinant
+
+
+def random_relativistic_values(rng: random.Random) -> dict[str, float]:
+   lower = [
+      [rng.uniform(0.7, 1.4), 0.0, 0.0],
+      [rng.uniform(-0.25, 0.25), rng.uniform(0.7, 1.4), 0.0],
+      [rng.uniform(-0.25, 0.25), rng.uniform(-0.25, 0.25), rng.uniform(0.7, 1.4)],
+   ]
+   gamma = [[sum(lower[i][k] * lower[j][k] for k in range(3)) for j in range(3)] for i in range(3)]
+   inverse, determinant = invert_symmetric_3x3(gamma)
+   velocity = [rng.uniform(-0.45, 0.45) for _ in range(3)]
+   velocity_squared = sum(gamma[i][j] * velocity[i] * velocity[j] for i in range(3) for j in range(3))
+   if velocity_squared >= 0.75:
+      scale = math.sqrt(0.65 / velocity_squared)
+      velocity = [scale * value for value in velocity]
+   values = {
+      "primitive.rho": rng.uniform(0.1, 8.0),
+      "primitive.eps": rng.uniform(0.0, 2.0),
+      "primitive.pressure": rng.uniform(0.01, 4.0),
+      "primitive.v1": velocity[0],
+      "primitive.v2": velocity[1],
+      "primitive.v3": velocity[2],
+      "primitive.b1": rng.uniform(-2.0, 2.0),
+      "primitive.b2": rng.uniform(-2.0, 2.0),
+      "primitive.b3": rng.uniform(-2.0, 2.0),
+      "gamma": 5.0 / 3.0,
+      "metric.lapse": rng.uniform(0.3, 1.4),
+      "metric.shift1": rng.uniform(-0.3, 0.3),
+      "metric.shift2": rng.uniform(-0.3, 0.3),
+      "metric.shift3": rng.uniform(-0.3, 0.3),
+      "metric.sqrt_det_gamma": math.sqrt(determinant),
+   }
+   for i in range(3):
+      for j in range(i, 3):
+         values[f"metric.gamma{i + 1}{j + 1}"] = gamma[i][j]
+         values[f"metric.inv_gamma{i + 1}{j + 1}"] = inverse[i][j]
+   for direction in range(1, 4):
+      values[f"derivatives.d{direction}_lapse"] = rng.uniform(-0.2, 0.2)
+      for component in range(1, 4):
+         values[f"derivatives.d{direction}_shift{component}"] = rng.uniform(-0.2, 0.2)
+      for first in range(1, 4):
+         for second in range(first, 4):
+            values[f"derivatives.d{direction}_gamma{first}{second}"] = rng.uniform(-0.2, 0.2)
+   for first in range(1, 4):
+      for second in range(first, 4):
+         values[f"derivatives.extrinsic{first}{second}"] = rng.uniform(-0.2, 0.2)
+   return values
+
+
+def relativistic_wave_speed_reference(
+   velocity: list[float],
+   characteristic_speed_squared: float,
+   direction: int,
+) -> list[float]:
+   velocity_squared = sum(component * component for component in velocity)
+   normal_velocity = velocity[direction]
+   radicand = (1.0 - velocity_squared) * (
+      1.0
+      - velocity_squared * characteristic_speed_squared
+      - normal_velocity**2 * (1.0 - characteristic_speed_squared)
+   )
+   denominator = 1.0 - velocity_squared * characteristic_speed_squared
+   common = normal_velocity * (1.0 - characteristic_speed_squared)
+   spread = math.sqrt(characteristic_speed_squared * max(0.0, radicand))
+   return [(common - spread) / denominator, (common + spread) / denominator]
+
+
+def srhd_wave_speed_reference(values: dict[str, float], direction: int) -> list[float]:
+   gamma = values["gamma"]
+   eps = values["primitive.eps"]
+   pressure = (gamma - 1.0) * values["primitive.rho"] * eps
+   enthalpy = 1.0 + eps + pressure / values["primitive.rho"]
+   sound_speed_squared = gamma * pressure / (values["primitive.rho"] * enthalpy)
+   velocity = [values[f"primitive.v{component + 1}"] for component in range(3)]
+   return relativistic_wave_speed_reference(velocity, sound_speed_squared, direction)
+
+
+def relativistic_reference(values: dict[str, float]) -> tuple[list[float], list[list[float]]]:
+   rho = values["primitive.rho"]
+   eps = values["primitive.eps"]
+   pressure = values["primitive.pressure"]
+   velocity = [values[f"primitive.v{i + 1}"] for i in range(3)]
+   gamma = [[values[f"metric.gamma{min(i, j) + 1}{max(i, j) + 1}"] for j in range(3)] for i in range(3)]
+   covariant_velocity = [sum(gamma[i][j] * velocity[j] for j in range(3)) for i in range(3)]
+   velocity_squared = sum(velocity[i] * covariant_velocity[i] for i in range(3))
+   lorentz_factor = 1.0 / math.sqrt(1.0 - velocity_squared)
+   enthalpy = 1.0 + eps + pressure / rho
+   sqrt_det_gamma = values["metric.sqrt_det_gamma"]
+   dens = sqrt_det_gamma * rho * lorentz_factor
+   momentum = [
+      sqrt_det_gamma * rho * enthalpy * lorentz_factor**2 * component
+      for component in covariant_velocity
+   ]
+   tau = sqrt_det_gamma * (rho * enthalpy * lorentz_factor**2 - pressure - rho * lorentz_factor)
+   conserved = [dens, *momentum, tau]
+   lapse = values["metric.lapse"]
+   transport = [lapse * velocity[i] - values[f"metric.shift{i + 1}"] for i in range(3)]
+   pressure_transport = lapse * sqrt_det_gamma * pressure
+   fluxes = []
+   for direction in range(3):
+      fluxes.append([
+         dens * transport[direction],
+         *(momentum[component] * transport[direction] + (pressure_transport if component == direction else 0.0)
+           for component in range(3)),
+         tau * transport[direction] + pressure_transport * velocity[direction],
+      ])
+   return conserved, fluxes
+
+
+def relativistic_mhd_reference(
+   values: dict[str, float],
+) -> tuple[list[float], list[list[float]]]:
+   rho = values["primitive.rho"]
+   eps = values["primitive.eps"]
+   pressure = values["primitive.pressure"]
+   velocity = [values[f"primitive.v{i + 1}"] for i in range(3)]
+   magnetic = [values[f"primitive.b{i + 1}"] for i in range(3)]
+   metric = [[values[f"metric.gamma{min(i, j) + 1}{max(i, j) + 1}"] for j in range(3)] for i in range(3)]
+   velocity_covariant = [sum(metric[i][j] * velocity[j] for j in range(3)) for i in range(3)]
+   magnetic_covariant = [sum(metric[i][j] * magnetic[j] for j in range(3)) for i in range(3)]
+   velocity_squared = sum(velocity[i] * velocity_covariant[i] for i in range(3))
+   magnetic_squared = sum(magnetic[i] * magnetic_covariant[i] for i in range(3))
+   magnetic_velocity = sum(magnetic[i] * velocity_covariant[i] for i in range(3))
+   lorentz_factor = 1.0 / math.sqrt(1.0 - velocity_squared)
+   alpha_b0 = lorentz_factor * magnetic_velocity
+   comoving_covariant = [
+      magnetic_covariant[i] / lorentz_factor + alpha_b0 * velocity_covariant[i]
+      for i in range(3)
+   ]
+   comoving_squared = (magnetic_squared + alpha_b0**2) / lorentz_factor**2
+   enthalpy = 1.0 + eps + pressure / rho
+   sqrt_det_gamma = values["metric.sqrt_det_gamma"]
+   dens = sqrt_det_gamma * rho * lorentz_factor
+   fluid_enthalpy = sqrt_det_gamma * rho * enthalpy * lorentz_factor**2
+   total_enthalpy = fluid_enthalpy + sqrt_det_gamma * (
+      magnetic_squared + alpha_b0**2
+   )
+   momentum = [
+      total_enthalpy * velocity_covariant[i]
+      - sqrt_det_gamma * alpha_b0 * comoving_covariant[i]
+      for i in range(3)
+   ]
+   total_pressure = pressure + 0.5 * comoving_squared
+   tau = fluid_enthalpy - dens + sqrt_det_gamma * (
+      magnetic_squared - total_pressure
+   )
+   densitized_magnetic = [sqrt_det_gamma * component for component in magnetic]
+   conserved = [dens, *momentum, tau, *densitized_magnetic]
+   lapse = values["metric.lapse"]
+   transport = [lapse * velocity[i] - values[f"metric.shift{i + 1}"] for i in range(3)]
+   fluxes = []
+   for direction in range(3):
+      momentum_flux = [
+         momentum[component] * transport[direction]
+         + lapse
+         * sqrt_det_gamma
+         * (
+            (total_pressure if component == direction else 0.0)
+            - comoving_covariant[component] * magnetic[direction] / lorentz_factor
+         )
+         for component in range(3)
+      ]
+      energy_flux = (
+         tau * transport[direction]
+         + lapse
+         * sqrt_det_gamma
+         * (
+            total_pressure * velocity[direction]
+            - alpha_b0 * magnetic[direction] / lorentz_factor
+         )
+      )
+      magnetic_flux = [
+         densitized_magnetic[component] * transport[direction]
+         - transport[component] * densitized_magnetic[direction]
+         for component in range(3)
+      ]
+      fluxes.append([
+         dens * transport[direction],
+         *momentum_flux,
+         energy_flux,
+         *magnetic_flux,
+      ])
+   return conserved, fluxes
+
+
+def relativistic_stress_energy_reference(
+   values: dict[str, float],
+   magnetized: bool,
+) -> list[float]:
+   rho = values["primitive.rho"]
+   eps = values["primitive.eps"]
+   pressure = values["primitive.pressure"]
+   lapse = values["metric.lapse"]
+   shift = [values[f"metric.shift{i + 1}"] for i in range(3)]
+   velocity = [values[f"primitive.v{i + 1}"] for i in range(3)]
+   gamma_covariant = [
+      [values[f"metric.gamma{min(i, j) + 1}{max(i, j) + 1}"] for j in range(3)]
+      for i in range(3)
+   ]
+   gamma_contravariant = [
+      [
+         values[f"metric.inv_gamma{min(i, j) + 1}{max(i, j) + 1}"]
+         for j in range(3)
+      ]
+      for i in range(3)
+   ]
+   velocity_covariant = [
+      sum(gamma_covariant[i][j] * velocity[j] for j in range(3))
+      for i in range(3)
+   ]
+   velocity_squared = sum(
+      velocity[i] * velocity_covariant[i] for i in range(3)
+   )
+   lorentz_factor = 1.0 / math.sqrt(1.0 - velocity_squared)
+   four_velocity = [
+      lorentz_factor / lapse,
+      *(
+         lorentz_factor * (velocity[i] - shift[i] / lapse)
+         for i in range(3)
+      ),
+   ]
+   inverse_lapse_squared = 1.0 / lapse**2
+   spacetime_inverse = [
+      [-inverse_lapse_squared, *(value * inverse_lapse_squared for value in shift)],
+      *[
+         [
+            shift[i] * inverse_lapse_squared,
+            *(
+               gamma_contravariant[i][j]
+               - shift[i] * shift[j] * inverse_lapse_squared
+               for j in range(3)
+            ),
+         ]
+         for i in range(3)
+      ],
+   ]
+   specific_enthalpy = 1.0 + eps + pressure / rho
+   comoving_magnetic = [0.0] * 4
+   comoving_magnetic_squared = 0.0
+   if magnetized:
+      magnetic = [values[f"primitive.b{i + 1}"] for i in range(3)]
+      magnetic_covariant = [
+         sum(gamma_covariant[i][j] * magnetic[j] for j in range(3))
+         for i in range(3)
+      ]
+      alpha_b0 = lorentz_factor * sum(
+         magnetic[i] * velocity_covariant[i] for i in range(3)
+      )
+      comoving_magnetic = [
+         alpha_b0 / lapse,
+         *(
+            magnetic[i] / lorentz_factor
+            + alpha_b0 * (velocity[i] - shift[i] / lapse)
+            for i in range(3)
+         ),
+      ]
+      comoving_magnetic_squared = (
+         sum(magnetic[i] * magnetic_covariant[i] for i in range(3))
+         + alpha_b0**2
+      ) / lorentz_factor**2
+   total_enthalpy = rho * specific_enthalpy + comoving_magnetic_squared
+   total_pressure = pressure + 0.5 * comoving_magnetic_squared
+   tensor = [
+      [
+         total_enthalpy * four_velocity[i] * four_velocity[j]
+         + total_pressure * spacetime_inverse[i][j]
+         - comoving_magnetic[i] * comoving_magnetic[j]
+         for j in range(4)
+      ]
+      for i in range(4)
+   ]
+   return [
+      tensor[0][0],
+      tensor[0][1],
+      tensor[0][2],
+      tensor[0][3],
+      tensor[1][1],
+      tensor[1][2],
+      tensor[1][3],
+      tensor[2][2],
+      tensor[2][3],
+      tensor[3][3],
+   ]
+
+
+def geometric_source_reference(
+   values: dict[str, float],
+   magnetized: bool,
+) -> list[float]:
+   conserved = (
+      relativistic_mhd_reference(values)[0]
+      if magnetized
+      else relativistic_reference(values)[0]
+   )
+   packed_stress = relativistic_stress_energy_reference(values, magnetized)
+   stress = [
+      [packed_stress[0], packed_stress[1], packed_stress[2], packed_stress[3]],
+      [packed_stress[1], packed_stress[4], packed_stress[5], packed_stress[6]],
+      [packed_stress[2], packed_stress[5], packed_stress[7], packed_stress[8]],
+      [packed_stress[3], packed_stress[6], packed_stress[8], packed_stress[9]],
+   ]
+   shift = [values[f"metric.shift{component + 1}"] for component in range(3)]
+   spatial_stress = [
+      [
+         stress[first + 1][second + 1]
+         + shift[first] * stress[0][second + 1]
+         + shift[second] * stress[first + 1][0]
+         + shift[first] * shift[second] * stress[0][0]
+         for second in range(3)
+      ]
+      for first in range(3)
+   ]
+   sqrt_det = values["metric.sqrt_det_gamma"]
+   momentum_covariant = [value / sqrt_det for value in conserved[1:4]]
+   inverse_metric = [
+      [
+         values[f"metric.inv_gamma{min(first, second) + 1}{max(first, second) + 1}"]
+         for second in range(3)
+      ]
+      for first in range(3)
+   ]
+   momentum_contravariant = [
+      sum(inverse_metric[first][second] * momentum_covariant[second] for second in range(3))
+      for first in range(3)
+   ]
+   eulerian_energy = (conserved[0] + conserved[4]) / sqrt_det
+   momentum_source = []
+   for direction in range(3):
+      shift_term = sum(
+         momentum_covariant[component]
+         * values[f"derivatives.d{direction + 1}_shift{component + 1}"]
+         for component in range(3)
+      )
+      metric_term = sum(
+         spatial_stress[first][second]
+         * values[
+            f"derivatives.d{direction + 1}_gamma{min(first, second) + 1}{max(first, second) + 1}"
+         ]
+         for first in range(3)
+         for second in range(3)
+      )
+      momentum_source.append(
+         sqrt_det
+         * (
+            -eulerian_energy * values[f"derivatives.d{direction + 1}_lapse"]
+            + shift_term
+            + 0.5 * values["metric.lapse"] * metric_term
+         )
+      )
+   extrinsic_term = sum(
+      spatial_stress[first][second]
+      * values[f"derivatives.extrinsic{min(first, second) + 1}{max(first, second) + 1}"]
+      for first in range(3)
+      for second in range(3)
+   )
+   lapse_term = sum(
+      momentum_contravariant[direction]
+      * values[f"derivatives.d{direction + 1}_lapse"]
+      for direction in range(3)
+   )
+   source = [
+      0.0,
+      *momentum_source,
+      sqrt_det * (values["metric.lapse"] * extrinsic_term - lapse_term),
+   ]
+   return source + ([0.0, 0.0, 0.0] if magnetized else [])
+
+
+def srmhd_wave_speed_reference(values: dict[str, float], direction: int) -> list[float]:
+   gamma = values["gamma"]
+   rho = values["primitive.rho"]
+   eps = values["primitive.eps"]
+   pressure = (gamma - 1.0) * rho * eps
+   enthalpy = 1.0 + eps + pressure / rho
+   velocity = [values[f"primitive.v{i + 1}"] for i in range(3)]
+   magnetic = [values[f"primitive.b{i + 1}"] for i in range(3)]
+   velocity_squared = sum(component * component for component in velocity)
+   lorentz_factor_squared = 1.0 / (1.0 - velocity_squared)
+   magnetic_squared = sum(component * component for component in magnetic)
+   magnetic_velocity = sum(magnetic[i] * velocity[i] for i in range(3))
+   comoving_squared = magnetic_squared / lorentz_factor_squared + magnetic_velocity**2
+   sound_squared = gamma * pressure / (rho * enthalpy)
+   alfven_squared = comoving_squared / (rho * enthalpy + comoving_squared)
+   fast_squared = sound_squared + alfven_squared - sound_squared * alfven_squared
+   return relativistic_wave_speed_reference(velocity, fast_squared, direction)
+
+
+def validate_relativistic_contract(rng: random.Random) -> None:
+   kernels = {kernel.name: kernel for kernel in relativistic_kernels()}
+   evaluated_kernel_names = {
+      "rhd_primitive_to_conserved",
+      "rhd_stress_energy",
+      "rhd_geometric_source",
+      "rmhd_primitive_to_conserved",
+      "rmhd_stress_energy",
+      "rmhd_geometric_source",
+      *(f"rhd_flux_dir{direction}" for direction in range(3)),
+      *(f"rmhd_flux_dir{direction}" for direction in range(3)),
+      *(f"srhd_wave_speeds_dir{direction}" for direction in range(3)),
+      *(f"srmhd_wave_speeds_dir{direction}" for direction in range(3)),
+   }
+   evaluators = {
+      name: compile_evaluator(kernels[name].expressions)
+      for name in evaluated_kernel_names
+   }
+   for _ in range(96):
+      values = random_relativistic_values(rng)
+      expected_conserved, expected_fluxes = relativistic_reference(values)
+      assert_close(
+         evaluators["rhd_primitive_to_conserved"](values),
+         expected_conserved,
+         "RHD p2c",
+      )
+      expected_rmhd, expected_rmhd_fluxes = relativistic_mhd_reference(values)
+      assert_close(
+         evaluators["rmhd_primitive_to_conserved"](values),
+         expected_rmhd,
+         "RMHD p2c",
+      )
+      assert_close(
+         evaluators["rhd_stress_energy"](values),
+         relativistic_stress_energy_reference(values, False),
+         "RHD stress-energy",
+      )
+      assert_close(
+         evaluators["rmhd_stress_energy"](values),
+         relativistic_stress_energy_reference(values, True),
+         "RMHD stress-energy",
+      )
+      assert_close(
+         evaluators["rhd_geometric_source"](values),
+         geometric_source_reference(values, False),
+         "RHD geometric source",
+      )
+      assert_close(
+         evaluators["rmhd_geometric_source"](values),
+         geometric_source_reference(values, True),
+         "RMHD geometric source",
+      )
+      for direction in range(3):
+         assert_close(
+            evaluators[f"rhd_flux_dir{direction}"](values),
+            expected_fluxes[direction],
+            f"RHD flux dir={direction}",
+         )
+         assert_close(
+            evaluators[f"rmhd_flux_dir{direction}"](values),
+            expected_rmhd_fluxes[direction],
+            f"RMHD flux dir={direction}",
+         )
+         minkowski_values = dict(values)
+         minkowski_values["metric.lapse"] = 1.0
+         minkowski_values["metric.shift1"] = 0.0
+         minkowski_values["metric.shift2"] = 0.0
+         minkowski_values["metric.shift3"] = 0.0
+         minkowski_values["metric.sqrt_det_gamma"] = 1.0
+         for i in range(3):
+            for j in range(i, 3):
+               minkowski_values[f"metric.gamma{i + 1}{j + 1}"] = 1.0 if i == j else 0.0
+               minkowski_values[f"metric.inv_gamma{i + 1}{j + 1}"] = (
+                  1.0 if i == j else 0.0
+               )
+         velocity_squared = sum(minkowski_values[f"primitive.v{i + 1}"] ** 2 for i in range(3))
+         if velocity_squared >= 0.95:
+            velocity_scale = math.sqrt(0.8 / velocity_squared)
+            for i in range(3):
+               minkowski_values[f"primitive.v{i + 1}"] *= velocity_scale
+         assert_close(
+            evaluators[f"srhd_wave_speeds_dir{direction}"](minkowski_values),
+            srhd_wave_speed_reference(minkowski_values, direction),
+            f"SRHD wave speeds dir={direction}",
+         )
+         assert_close(
+            evaluators[f"srmhd_wave_speeds_dir{direction}"](minkowski_values),
+            srmhd_wave_speed_reference(minkowski_values, direction),
+            f"SRMHD wave speeds dir={direction}",
+         )
+
+      zero_field = dict(values)
+      zero_field.update({"primitive.b1": 0.0, "primitive.b2": 0.0, "primitive.b3": 0.0})
+      assert_close(
+         evaluators["rmhd_primitive_to_conserved"](zero_field)[:5],
+         evaluators["rhd_primitive_to_conserved"](zero_field),
+         "RMHD zero-field conserved reduction",
+      )
+      assert_close(
+         evaluators["rmhd_stress_energy"](zero_field),
+         evaluators["rhd_stress_energy"](zero_field),
+         "RMHD zero-field stress-energy reduction",
+      )
+      for direction in range(3):
+         assert_close(
+            evaluators[f"rmhd_flux_dir{direction}"](zero_field)[:5],
+            evaluators[f"rhd_flux_dir{direction}"](zero_field),
+            f"RMHD zero-field flux reduction dir={direction}",
+         )
+
+      cyclic = (1, 2, 0)
+      rotated_values = dict(minkowski_values)
+      for field in ("v", "b"):
+         for component, source in enumerate(cyclic, start=1):
+            rotated_values[f"primitive.{field}{component}"] = (
+               minkowski_values[f"primitive.{field}{source + 1}"]
+            )
+      original_conserved = evaluators["rmhd_primitive_to_conserved"](
+         minkowski_values
+      )
+      rotated_conserved = evaluators["rmhd_primitive_to_conserved"](
+         rotated_values
+      )
+      expected_rotated_conserved = [
+         original_conserved[0],
+         *(original_conserved[1 + source] for source in cyclic),
+         original_conserved[4],
+         *(original_conserved[5 + source] for source in cyclic),
+      ]
+      assert_close(
+         rotated_conserved,
+         expected_rotated_conserved,
+         "RMHD cyclic conserved covariance",
+      )
+      original_flux = evaluators["rmhd_flux_dir1"](minkowski_values)
+      rotated_flux = evaluators["rmhd_flux_dir0"](rotated_values)
+      expected_rotated_flux = [
+         original_flux[0],
+         *(original_flux[1 + source] for source in cyclic),
+         original_flux[4],
+         *(original_flux[5 + source] for source in cyclic),
+      ]
+      assert_close(
+         rotated_flux,
+         expected_rotated_flux,
+         "RMHD cyclic flux covariance",
+      )
+
+      gamma = [[values[f"metric.gamma{min(i, j) + 1}{max(i, j) + 1}"] for j in range(3)] for i in range(3)]
+      inverse = [[values[f"metric.inv_gamma{min(i, j) + 1}{max(i, j) + 1}"] for j in range(3)] for i in range(3)]
+      identity_error = max(
+         abs(sum(gamma[i][k] * inverse[k][j] for k in range(3)) - (1.0 if i == j else 0.0))
+         for i in range(3)
+         for j in range(3)
+      )
+      if identity_error > 2.0e-12:
+         raise AssertionError(f"RHD metric inverse residual={identity_error:.3e}")
+
+   base_velocity = (0.31, -0.17, 0.09)
+   newtonian_values = random_relativistic_values(rng)
+   errors = []
+   for scale in (1.0e-2, 5.0e-3):
+      values = dict(newtonian_values)
+      values.update({
+         "metric.lapse": 1.0,
+         "metric.shift1": 0.0,
+         "metric.shift2": 0.0,
+         "metric.shift3": 0.0,
+         "metric.gamma11": 1.0,
+         "metric.gamma12": 0.0,
+         "metric.gamma13": 0.0,
+         "metric.gamma22": 1.0,
+         "metric.gamma23": 0.0,
+         "metric.gamma33": 1.0,
+         "metric.inv_gamma11": 1.0,
+         "metric.inv_gamma12": 0.0,
+         "metric.inv_gamma13": 0.0,
+         "metric.inv_gamma22": 1.0,
+         "metric.inv_gamma23": 0.0,
+         "metric.inv_gamma33": 1.0,
+         "metric.sqrt_det_gamma": 1.0,
+         "primitive.eps": 0.7 * scale**2,
+         "primitive.pressure": values["primitive.rho"] * 0.2 * scale**2,
+         "primitive.v1": scale * base_velocity[0],
+         "primitive.v2": scale * base_velocity[1],
+         "primitive.v3": scale * base_velocity[2],
+      })
+      actual = evaluators["rhd_primitive_to_conserved"](values)
+      rho = values["primitive.rho"]
+      kinetic = 0.5 * rho * sum(component**2 for component in base_velocity) * scale**2
+      newtonian_energy = rho * values["primitive.eps"] + kinetic
+      errors.append(abs(actual[4] - newtonian_energy))
+   if not errors[1] < 0.07 * errors[0]:
+      raise AssertionError(f"RHD Newtonian-limit error did not converge at fourth order: {errors}")
 
 
 def validate_symbolic_operator_contract() -> None:
@@ -166,11 +788,22 @@ def validate_symbolic_operator_contract() -> None:
       raise AssertionError("Cartesian curl does not match the antisymmetric vector gradient")
    if scalar_field.dt() != sp.Symbol("dt_f") or vector_field.dt() != Vector(*sp.symbols("dt_a1 dt_a2 dt_a3")):
       raise AssertionError("field time derivatives changed their symbolic values")
-   vector4 = Vector(*sp.symbols("u0 u1 u2 u3"))
-   tensor4 = vector4.outer(vector4) + Tensor.identity(4)
+   vector4 = Vector4(
+      *sp.symbols("u0 u1 u2 u3"), position=IndexPosition.CONTRAVARIANT
+   )
+   metric4 = MetricTensor(Tensor.identity(4), Tensor.identity(4))
+   covector4 = vector4.lower_index(metric4)
+   tensor4 = vector4.outer(covector4)
    if vector4.dimension != 4 or tensor4.shape != (4, 4):
       raise AssertionError("rank-generic algebra does not support four-dimensional values")
-   if sp.simplify(tensor4.deviatoric().trace()) != 0:
+   if vector4.contract(covector4) != sum(value**2 for value in vector4.as_tuple()):
+      raise AssertionError("indexed vector contraction failed")
+   if tensor4.trace() != vector4.contract(covector4):
+      raise AssertionError("mixed-index tensor trace failed")
+   raised_tensor4 = tensor4.raise_index(metric4, 1)
+   if not isinstance(raised_tensor4, IndexedTensor):
+      raise AssertionError("indexed tensor raise operation failed")
+   if sp.simplify(Tensor.identity(4).deviatoric().trace()) != 0:
       raise AssertionError("four-dimensional deviatoric projection is not traceless")
 
 
@@ -207,6 +840,7 @@ def random_eos_values(rng: random.Random) -> dict[str, float]:
    return {
       "rho": rng.uniform(0.2, 5.0),
       "internal_energy_density": rng.uniform(0.1, 20.0),
+      "specific_internal_energy": rng.uniform(0.01, 20.0),
       "pressure": rng.uniform(0.05, 5.0),
       "gamma": rng.uniform(1.1, 2.1),
       "polytropic_k": rng.uniform(0.1, 3.0),
@@ -218,6 +852,7 @@ def random_eos_values(rng: random.Random) -> dict[str, float]:
 def eos_reference(name: str, values: dict[str, float]) -> float:
    rho = values["rho"]
    internal = values["internal_energy_density"]
+   specific_internal = values["specific_internal_energy"]
    pressure = values["pressure"]
    gamma = values["gamma"]
    polytropic_k = values["polytropic_k"]
@@ -242,6 +877,14 @@ def eos_reference(name: str, values: dict[str, float]) -> float:
          polytropic_gamma * cold_pressure
          + thermal_gamma * (pressure - cold_pressure)
       ) / rho,
+      "relativistic_ideal_gas_pressure": (
+         (gamma - 1.0) * rho * specific_internal
+      ),
+      "relativistic_ideal_gas_specific_enthalpy": 1.0 + gamma * specific_internal,
+      "relativistic_ideal_gas_sound_speed_squared": (
+         gamma * (gamma - 1.0) * specific_internal
+         / (1.0 + gamma * specific_internal)
+      ),
    }
    return references[name]
 
@@ -301,6 +944,8 @@ def random_riemann_values(rng: random.Random) -> dict[str, float]:
       values[f"{prefix}.mom2"] = rng.uniform(-5.0, 5.0)
       values[f"{prefix}.mom3"] = rng.uniform(-5.0, 5.0)
       values[f"{prefix}.energy"] = rng.uniform(0.1, 20.0)
+      values[f"{prefix}.dens"] = rng.uniform(0.1, 10.0)
+      values[f"{prefix}.tau"] = rng.uniform(0.1, 20.0)
       values[f"{prefix}.b1"] = rng.uniform(-3.0, 3.0)
       values[f"{prefix}.b2"] = rng.uniform(-3.0, 3.0)
       values[f"{prefix}.b3"] = rng.uniform(-3.0, 3.0)
@@ -318,9 +963,14 @@ def random_characteristic_values(rng: random.Random) -> dict[str, float]:
    beta_t2 = math.sin(beta_angle)
    fast_speed = rng.uniform(sound_speed, 4.0 * sound_speed)
    slow_speed = rng.uniform(0.05 * sound_speed, sound_speed)
-   return {
+   values = {
       "rho_ref": rho,
       "sound_speed": sound_speed,
+      "basis.inv_rho": 1.0 / rho,
+      "basis.inv_sqrt_rho": 1.0 / math.sqrt(rho),
+      "basis.inv_sound_speed": 1.0 / sound_speed,
+      "basis.sound2": sound_speed * sound_speed,
+      "basis.inv_sound2": 1.0 / (sound_speed * sound_speed),
       "primitive.rho": rng.uniform(0.2, 5.0),
       "primitive.vn": rng.uniform(-3.0, 3.0),
       "primitive.vt1": rng.uniform(-3.0, 3.0),
@@ -343,6 +993,8 @@ def random_characteristic_values(rng: random.Random) -> dict[str, float]:
          + alpha_s * alpha_s * slow_speed * slow_speed
       ),
    }
+   values["basis.inv_velocity_denom"] = 1.0 / values["basis.velocity_denom"]
+   return values
 
 
 def characteristic_projection_reference(name: str, values: dict[str, float]) -> list[float]:
@@ -966,6 +1618,8 @@ def main() -> None:
       raise SystemExit(f"missing generated header: {METRIC_HEADER}")
    if not CHARACTERISTIC_HEADER.exists():
       raise SystemExit(f"missing generated header: {CHARACTERISTIC_HEADER}")
+   if not RELATIVISTIC_HEADER.exists():
+      raise SystemExit(f"missing generated header: {RELATIVISTIC_HEADER}")
    rendered_flux = render_flux_header()
    stored_flux = FLUX_HEADER.read_text(encoding="utf-8")
    if rendered_flux != stored_flux:
@@ -992,9 +1646,14 @@ def main() -> None:
    stored_characteristic = CHARACTERISTIC_HEADER.read_text(encoding="utf-8")
    if rendered_characteristic != stored_characteristic:
       raise SystemExit(f"generated characteristic header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+   rendered_relativistic = render_relativistic_header()
+   stored_relativistic = RELATIVISTIC_HEADER.read_text(encoding="utf-8")
+   if rendered_relativistic != stored_relativistic:
+      raise SystemExit(f"generated relativistic header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
    validate_symbolic_operator_contract()
    validate_symbolic_eos_contract()
    rng = random.Random(20260628)
+   validate_relativistic_contract(rng)
    validate_characteristic_round_trip(rng)
    riemann_kernels = tuple(riemann_flux_kernels())
    vector_kernels = tuple(vector_operator_kernels())
@@ -1058,7 +1717,7 @@ def main() -> None:
          eos_actual = evaluate((kernel.expression,), eos_values)
          eos_expected = [eos_reference(kernel.name, eos_values)]
          assert_close(eos_actual, eos_expected, kernel.name)
-   print("PASS codegen_flux_riemann_eos_characteristics_operators_vector_ops_and_metrics")
+   print("PASS codegen_flux_riemann_eos_characteristics_relativistic_operators_vector_ops_and_metrics")
 
 
 if __name__ == "__main__":

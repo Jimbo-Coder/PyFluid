@@ -19,9 +19,11 @@
 #include "pyfluid_amrex/build_options.hpp"
 #include "pyfluid_amrex/config_registry.hpp"
 #include "pyfluid_amrex/fields.hpp"
+#include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/mesh_limits.hpp"
 #include "pyfluid_amrex/mesh_geometry.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
+#include "pyfluid_amrex/physical_system.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
@@ -93,6 +95,15 @@ struct RunConfig {
    std::string mesh_metric_divergence = "auto";
 
    std::string physics;
+   std::string spacetime_evolution = "none";
+   std::string spacetime_fixed_metric = "minkowski";
+   amrex::Real spacetime_acceleration1 = 0.0;
+   amrex::Real spacetime_acceleration2 = 0.0;
+   amrex::Real spacetime_acceleration3 = 0.0;
+   amrex::Real spacetime_origin1 = 0.0;
+   amrex::Real spacetime_origin2 = 0.0;
+   amrex::Real spacetime_origin3 = 0.0;
+   amrex::Real spacetime_mass = 1.0;
    std::string ct;
    std::string ic = "sin_wave";
    int passive_scalars = 0;
@@ -306,11 +317,15 @@ static constexpr std::array<NamedOptionCode, 5> RiemannOptions{{
    {"hlld", RiemannHLLD},
 }};
 
-static constexpr std::array<NamedOptionCode, 4> ReconOptions{{
+static constexpr std::array<NamedOptionCode, 8> ReconOptions{{
    {"pwc", ReconPWC},
    {"pwl", ReconPWL},
    {"wenoz", ReconWENOZ},
    {"wenoz-char", ReconWENOZChar},
+   {"mp5", ReconMP5},
+   {"mp5-char", ReconMP5Char},
+   {"teno5", ReconTENO5},
+   {"teno5-char", ReconTENO5Char},
 }};
 
 static constexpr std::array<NamedOptionCode, 5> TimestepOptions{{
@@ -333,7 +348,11 @@ static constexpr std::array<NamedOptionCode, 3> EOSOptions{{
    {"hybrid_polytrope", EOSHybridPolytrope},
 }};
 
-static constexpr std::array<std::string_view, 2> PhysicsOptions{{"hydro", "mhd"}};
+static constexpr std::array<std::string_view, 4> PhysicsOptions{{"hydro", "mhd", "rhd", "rmhd"}};
+static constexpr std::array<std::string_view, 3> SpacetimeEvolutionOptions{{"none", "fixed", "evolved"}};
+static constexpr std::array<std::string_view, 3> FixedSpacetimeMetricOptions{{
+   "minkowski", "rindler", "schwarzschild_isotropic",
+}};
 static constexpr std::array<std::string_view, 2> CTOptions{{"off", "on"}};
 static constexpr std::array<std::string_view, 2> PlotfileFormatOptions{{"amrex", "hdf5"}};
 static constexpr std::array<std::string_view, 5> PassiveProfileOptions{{"none", "uniform", "gaussian", "sin_wave", "step_x"}};
@@ -404,8 +423,11 @@ static constexpr std::array<std::string_view, 7> MHDWaveFamilyOptions{{
    "slow_minus",
    "entropy",
 }};
-static constexpr std::array<std::string_view, 27> InitialDataOptions{{
+static constexpr std::array<std::string_view, 31> InitialDataOptions{{
    "sin_wave",
+   "advection_medley",
+   "characteristic_medley",
+   "mhd_characteristic_medley",
    "uniform",
    "cartesian_advection",
    "linear_wave_x",
@@ -417,6 +439,7 @@ static constexpr std::array<std::string_view, 27> InitialDataOptions{{
    "vortex_blast",
    "density_cloud",
    "hse_polytrope_x",
+   "fixed_metric_hse",
    "hydro_beam",
    "sod_x",
    "sod_plane",
@@ -669,6 +692,16 @@ inline RunConfig read_config()
    pp.query("debug_poison", cfg.debug_poison);
    pp.query("debug_check_finite", cfg.debug_check_finite);
    pp.query("debug_check_physical", cfg.debug_check_physical);
+   amrex::ParmParse spacetime_pp("spacetime");
+   spacetime_pp.queryAdd("evolution", cfg.spacetime_evolution);
+   spacetime_pp.queryAdd("fixed_metric", cfg.spacetime_fixed_metric);
+   spacetime_pp.queryAdd("acceleration1", cfg.spacetime_acceleration1);
+   spacetime_pp.queryAdd("acceleration2", cfg.spacetime_acceleration2);
+   spacetime_pp.queryAdd("acceleration3", cfg.spacetime_acceleration3);
+   spacetime_pp.queryAdd("origin1", cfg.spacetime_origin1);
+   spacetime_pp.queryAdd("origin2", cfg.spacetime_origin2);
+   spacetime_pp.queryAdd("origin3", cfg.spacetime_origin3);
+   spacetime_pp.queryAdd("mass", cfg.spacetime_mass);
    amrex::ParmParse mesh_pp("mesh");
    mesh_pp.query("coordinate", cfg.mesh_coordinate);
    std::vector<std::string> mesh_axis_values;
@@ -1175,9 +1208,62 @@ inline MeshRuntimeLayout mesh_runtime_layout(RunConfig const& cfg)
    };
 }
 
+inline PhysicalSystem physical_system(RunConfig const& cfg)
+{
+   if (cfg.physics == "mhd") {
+      return PhysicalSystem::MHD;
+   }
+   if (cfg.physics == "rhd") {
+      return PhysicalSystem::RHD;
+   }
+   if (cfg.physics == "rmhd") {
+      return PhysicalSystem::RMHD;
+   }
+   return PhysicalSystem::HD;
+}
+
+inline SpacetimeEvolution spacetime_evolution_mode(RunConfig const& cfg)
+{
+   if (cfg.spacetime_evolution == "fixed") {
+      return SpacetimeEvolution::Fixed;
+   }
+   if (cfg.spacetime_evolution == "evolved") {
+      return SpacetimeEvolution::Evolved;
+   }
+   return SpacetimeEvolution::None;
+}
+
+inline FixedSpacetimeParameters fixed_spacetime_parameters(RunConfig const& cfg)
+{
+   return {
+      cfg.spacetime_fixed_metric == "rindler"
+         ? FixedSpacetimeMetric::Rindler
+         : (cfg.spacetime_fixed_metric == "schwarzschild_isotropic"
+            ? FixedSpacetimeMetric::SchwarzschildIsotropic
+            : FixedSpacetimeMetric::Minkowski),
+      cfg.spacetime_acceleration1,
+      cfg.spacetime_acceleration2,
+      cfg.spacetime_acceleration3,
+      cfg.spacetime_origin1,
+      cfg.spacetime_origin2,
+      cfg.spacetime_origin3,
+      cfg.spacetime_mass,
+   };
+}
+
 inline void validate_config(RunConfig const& cfg)
 {
    validate_registered_parameters(cfg);
+   require_supported_option(
+      cfg.spacetime_evolution,
+      SpacetimeEvolutionOptions,
+      "spacetime.evolution"
+   );
+   require_supported_option(
+      cfg.spacetime_fixed_metric,
+      FixedSpacetimeMetricOptions,
+      "spacetime.fixed_metric"
+   );
    if (cfg.gamma <= 1.0) {
       amrex::Abort("pyfluid.gamma must be greater than 1");
    }
@@ -1207,8 +1293,53 @@ inline void validate_config(RunConfig const& cfg)
    if (cfg.physical_check_int < 0) {
       amrex::Abort("pyfluid.physical_check_int must be non-negative; 0 disables accepted-state physical checks");
    }
-   if (cfg.ct == "on" && cfg.physics != "mhd") {
-      amrex::Abort("pyfluid.ct = on requires pyfluid.physics = mhd");
+   const PhysicalSystem selected_system = physical_system(cfg);
+   if (!physical_system_is_relativistic(selected_system)
+       && cfg.spacetime_fixed_metric != "minkowski") {
+      amrex::Abort("spacetime.fixed_metric applies only to RHD/RMHD");
+   }
+   if (cfg.ct == "on" && !physical_system_supports_ct(selected_system)) {
+      amrex::Abort("pyfluid.ct = on requires a magnetic physical system");
+   }
+   if (!valid_spacetime_evolution(selected_system, spacetime_evolution_mode(cfg))) {
+      amrex::Abort(
+         "invalid pyfluid.physics/spacetime.evolution combination: Newtonian hydro/MHD use none; "
+         "RHD/RMHD use fixed or evolved"
+      );
+   }
+   if (physical_system_is_relativistic(selected_system)) {
+      if (cfg.spacetime_evolution != "fixed") {
+         amrex::Abort("ideal relativistic-fluid runtime evolution currently requires spacetime.evolution = fixed");
+      }
+      if (cfg.eos != "ideal_gas") {
+         amrex::Abort("ideal relativistic-fluid runtime evolution currently requires pyfluid.eos = ideal_gas");
+      }
+      if (cfg.passive_scalars != 0 || cfg.diffusion != "none"
+          || cfg.source != "none" || cfg.gravity != "none" || cfg.solid_geometry != "off") {
+         amrex::Abort(
+            "ideal relativistic-fluid runtime evolution currently supports no passive scalars, diffusion, "
+            "Newtonian sources/gravity, or solid geometry"
+         );
+      }
+      if (cfg.mesh_coordinate != "cartesian" || cfg.mesh_patch_system != "single") {
+         amrex::Abort("ideal relativistic-fluid runtime evolution currently supports a single Cartesian patch");
+      }
+      if (cfg.recon == "wenoz-char" || cfg.recon == "mp5-char" || cfg.recon == "teno5-char"
+          || cfg.recon_fine == "wenoz-char" || cfg.recon_fine == "mp5-char"
+          || cfg.recon_fine == "teno5-char") {
+         amrex::Abort("relativistic characteristic reconstruction is not implemented; select a component method");
+      }
+      if (cfg.riemann != "llf" && cfg.riemann != "hll" && cfg.riemann != "hlle") {
+         amrex::Abort("ideal relativistic-fluid runtime evolution supports pyfluid.riemann = llf, hll, or hlle");
+      }
+      if (cfg.ic != "uniform" && cfg.ic != "sin_wave" && cfg.ic != "sod_x"
+          && cfg.ic != "sod_plane" && cfg.ic != "sod_periodic_plane"
+          && cfg.ic != "fixed_metric_hse") {
+         amrex::Abort("ideal relativistic-fluid runtime evolution currently supports uniform, sin_wave, Sod, and fixed-metric HSE initial data");
+      }
+      if (cfg.ic == "fixed_metric_hse" && cfg.spacetime_fixed_metric == "minkowski") {
+         amrex::Abort("pyfluid.ic = fixed_metric_hse requires a non-Minkowski fixed metric");
+      }
    }
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(mesh_coordinate, cfg.mesh_axes);
@@ -1396,6 +1527,39 @@ inline void validate_config(RunConfig const& cfg)
       }
    }
    require_supported_option(cfg.ic, InitialDataOptions, "pyfluid.ic");
+   if (cfg.ic == "advection_medley") {
+      if (cfg.physics != "hydro" || mesh_coordinate != MeshCartesian
+          || AMREX_SPACEDIM != 1 || mesh_axis(mesh_axes, 0) != MeshAxisX) {
+         amrex::Abort("advection_medley requires 1D Cartesian x hydro");
+      }
+      if (cfg.rho0 <= 0.0 || cfg.pressure0 <= 0.0 || cfg.amplitude <= 0.0) {
+         amrex::Abort("advection_medley requires positive rho0, pressure0, and amplitude");
+      }
+   }
+   if (cfg.ic == "characteristic_medley") {
+      if (cfg.physics != "hydro" || cfg.eos != "ideal_gas" || mesh_coordinate != MeshCartesian
+          || AMREX_SPACEDIM != 1 || mesh_axis(mesh_axes, 0) != MeshAxisX) {
+         amrex::Abort("characteristic_medley requires 1D Cartesian x ideal-gas hydro");
+      }
+      if (cfg.rho0 <= 0.0 || cfg.pressure0 <= 0.0 || cfg.amplitude <= 0.0 || cfg.v1_0 != 0.0) {
+         amrex::Abort("characteristic_medley requires positive rho0, pressure0, and amplitude with v1_0 = 0");
+      }
+   }
+   if (cfg.ic == "mhd_characteristic_medley") {
+      if (cfg.physics != "mhd" || cfg.eos != "ideal_gas" || mesh_coordinate != MeshCartesian
+          || AMREX_SPACEDIM != 1 || mesh_axis(mesh_axes, 0) != MeshAxisX) {
+         amrex::Abort("mhd_characteristic_medley requires 1D Cartesian x ideal-gas MHD");
+      }
+      const amrex::Real transverse_b2 = cfg.b2_0 * cfg.b2_0 + cfg.b3_0 * cfg.b3_0;
+      if (cfg.rho0 <= 0.0 || cfg.pressure0 <= 0.0 || cfg.amplitude <= 0.0
+          || cfg.v1_0 != 0.0 || cfg.v2_0 != 0.0 || cfg.v3_0 != 0.0
+          || cfg.b1_0 == 0.0 || transverse_b2 == 0.0) {
+         amrex::Abort(
+            "mhd_characteristic_medley requires positive rho0/pressure0/amplitude, zero background velocity, "
+            "and nonzero normal and transverse magnetic fields"
+         );
+      }
+   }
    if (cfg.ic == "sod_plane" || cfg.ic == "sod_periodic_plane") {
       amrex::Real shock_normal2 = cfg.shock_nx * cfg.shock_nx;
 #if (AMREX_SPACEDIM >= 2)
@@ -1919,14 +2083,16 @@ inline void validate_config(RunConfig const& cfg)
       amrex::Abort("pyfluid.ng must be at least 1 for PWC/LLF");
    }
    const bool uses_pwl = cfg.recon == "pwl" || cfg.recon_fine == "pwl";
-   const bool uses_wenoz =
-      cfg.recon == "wenoz" || cfg.recon == "wenoz-char"
-      || cfg.recon_fine == "wenoz" || cfg.recon_fine == "wenoz-char";
+   const bool uses_five_point =
+      is_five_point_reconstruction(recon_method_code(cfg))
+      || (!cfg.recon_fine.empty()
+          && is_five_point_reconstruction(
+             recon_method_code_from_name(cfg.recon_fine, "pyfluid.recon_fine")));
    if (uses_pwl && cfg.ng < 2) {
       amrex::Abort("pyfluid.ng must be at least 2 for PWL reconstruction");
    }
-   if (uses_wenoz && cfg.ng < 3) {
-      amrex::Abort("pyfluid.ng must be at least 3 for WENO-Z reconstruction");
+   if (uses_five_point && cfg.ng < 3) {
+      amrex::Abort("pyfluid.ng must be at least 3 for fifth-order reconstruction");
    }
    if (cfg.max_step < 0) {
       amrex::Abort("pyfluid.max_step must be non-negative");
@@ -1985,8 +2151,9 @@ inline void validate_config(RunConfig const& cfg)
       if (AMREX_SPACEDIM < field_info.min_dimension) {
          amrex::Abort("pyfluid.aux_gfs = " + name + " requires a higher-dimensional AMReX build");
       }
-      if (field_info.requires_mhd && cfg.physics != "mhd") {
-         amrex::Abort("pyfluid.aux_gfs = " + name + " requires pyfluid.physics = mhd");
+      if (field_info.requires_mhd
+          && !physical_system_has_magnetic_field(physical_system(cfg))) {
+         amrex::Abort("pyfluid.aux_gfs = " + name + " requires a magnetic physical system");
       }
       if (field_info.requires_solid_geometry && cfg.solid_geometry == "off") {
          amrex::Abort("solid geometry auxiliary grid functions require pyfluid.solid_geometry != off");
@@ -2006,14 +2173,9 @@ inline void validate_config(RunConfig const& cfg)
    }
 }
 
-inline PhysicsSystemKind physics_system_kind(RunConfig const& cfg)
-{
-   return cfg.physics == "mhd" ? PhysicsSystemKind::MHD : PhysicsSystemKind::Hydro;
-}
-
 inline bool is_mhd(RunConfig const& cfg)
 {
-   return physics_system_has_magnetic_field(physics_system_kind(cfg));
+   return physical_system_has_magnetic_field(physical_system(cfg));
 }
 
 inline bool viscosity_enabled(RunConfig const& cfg)
@@ -2048,7 +2210,7 @@ inline bool fixed_gravity_enabled(RunConfig const& cfg)
 
 inline int state_component_count(RunConfig const& cfg)
 {
-   return base_component_count(physics_system_kind(cfg)) + cfg.passive_scalars;
+   return base_component_count(physical_system(cfg)) + cfg.passive_scalars;
 }
 
 } // namespace pyfluid_amrex

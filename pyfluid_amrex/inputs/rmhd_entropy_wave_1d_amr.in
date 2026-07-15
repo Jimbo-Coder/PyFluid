@@ -1,0 +1,52 @@
+pyfluid.run_name = rmhd_entropy_wave_1d_amr
+pyfluid.output_dir = runs/current/rmhd_entropy_wave/rmhd_entropy_wave_1d_amr
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 1
+
+amr.n_cell = 16
+amr.max_level = 8
+amr.ref_ratio = 2 2 2 2 2 2 2 2
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+amr.regrid_mode = aligned
+amr.regrid_int = 2
+amr.tag_metric = lohner
+amr.min_feature_length = 0.00001
+amr.total_cell_budget = 1000000
+amr.state_interp = conservative
+
+spacetime.evolution = fixed
+
+pyfluid.physics = rmhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = sin_wave
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 0.1
+pyfluid.wave_number = 1.0
+pyfluid.v1_0 = 0.3
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.b1_0 = 0.75
+pyfluid.b2_0 = 0.0
+pyfluid.b3_0 = 0.0
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.final_time = 0.2
+pyfluid.max_step = 10000
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.bc = periodic
+pyfluid.ct = off
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = local_cfl
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 8
+pyfluid.plot_int = 10000
+pyfluid.checkpoint_int = -1

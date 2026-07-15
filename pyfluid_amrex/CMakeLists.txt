@@ -38,6 +38,10 @@ option(PYFLUID_AMREX_ENABLE_RECON_PWC "Compile piecewise-constant reconstruction
 option(PYFLUID_AMREX_ENABLE_RECON_PWL "Compile piecewise-linear reconstruction." ON)
 option(PYFLUID_AMREX_ENABLE_RECON_WENOZ "Compile component WENO-Z reconstruction." ON)
 option(PYFLUID_AMREX_ENABLE_RECON_WENOZ_CHAR "Compile characteristic WENO-Z reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_MP5 "Compile component MP5 reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_MP5_CHAR "Compile characteristic MP5 reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_TENO5 "Compile component TENO5 reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_TENO5_CHAR "Compile characteristic TENO5 reconstruction." ON)
 option(PYFLUID_AMREX_ENABLE_RIEMANN_LLF "Compile LLF Riemann solver." ON)
 option(PYFLUID_AMREX_ENABLE_RIEMANN_HLL "Compile HLL Riemann solver." ON)
 option(PYFLUID_AMREX_ENABLE_RIEMANN_HLLE "Compile HLLE Riemann solver." ON)
@@ -57,9 +61,13 @@ if(PYFLUID_AMREX_NATIVE)
    check_cxx_compiler_flag("-mcpu=native" PYFLUID_AMREX_HAS_MCPU_NATIVE)
 endif()
 
-set(PYFLUID_AMREX_SOURCES
+set(PYFLUID_AMREX_DRIVER_SOURCES
    src/main.cpp
-   src/config.cpp
+   src/amr_solver_driver.cpp
+   src/solver.cpp
+)
+
+set(PYFLUID_AMREX_AMR_SOURCES
    src/amr_solver_average.cpp
    src/amr_solver_auxiliary.cpp
    src/amr_solver_debug.cpp
@@ -70,12 +78,21 @@ set(PYFLUID_AMREX_SOURCES
    src/amr_solver_multipatch.cpp
    src/amr_solver_output.cpp
    src/amr_solver_valid_cells.cpp
+)
+
+set(PYFLUID_AMREX_RUNTIME_SOURCES
    src/checkpoint.cpp
+   src/config.cpp
    src/ct_edge_flux_register.cpp
    src/fields.cpp
    src/implicit_resistivity.cpp
    src/profiling.cpp
-   src/solver.cpp
+)
+
+set(PYFLUID_AMREX_SOURCES
+   ${PYFLUID_AMREX_DRIVER_SOURCES}
+   ${PYFLUID_AMREX_AMR_SOURCES}
+   ${PYFLUID_AMREX_RUNTIME_SOURCES}
 )
 
 set(PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES
@@ -87,6 +104,10 @@ set(PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES
 
 set(PYFLUID_AMREX_CODEGEN_CHECK_SOURCES
    src/generated_flux_compile_check.cpp
+)
+
+set(PYFLUID_AMREX_C2P_BENCHMARK_SOURCES
+   src/c2p_benchmark.cpp
 )
 
 set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
@@ -119,6 +140,9 @@ if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/patch_maps.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/relativistic_fluid.hpp
+   )
    set(PYFLUID_AMREX_CODEGEN_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_kernels.py)
    set(PYFLUID_AMREX_CODEGEN_STAMP ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_codegen.stamp)
    set(PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP
@@ -134,6 +158,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
+         ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
       COMMAND ${CMAKE_COMMAND} -E env
          UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
          ${PYFLUID_UV_EXECUTABLE} run python
@@ -145,6 +170,7 @@ if(PYFLUID_UV_EXECUTABLE)
          --family characteristic
          --family vector
          --family metric
+         --family relativistic
          --flux-header ${PYFLUID_AMREX_GENERATED_FLUX_HEADER}
          --eos-header ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          --operator-header ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
@@ -152,6 +178,7 @@ if(PYFLUID_UV_EXECUTABLE)
          --characteristic-header ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          --vector-header ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          --metric-header ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
+         --relativistic-header ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
       COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
@@ -166,6 +193,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/operator_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/physical_system.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/riemann_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/relativistic_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_algebra.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/vector_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/coordinates.py
@@ -207,6 +235,10 @@ set(PYFLUID_AMREX_BUILD_FEATURES
    PYFLUID_AMREX_ENABLE_RECON_PWL
    PYFLUID_AMREX_ENABLE_RECON_WENOZ
    PYFLUID_AMREX_ENABLE_RECON_WENOZ_CHAR
+   PYFLUID_AMREX_ENABLE_RECON_MP5
+   PYFLUID_AMREX_ENABLE_RECON_MP5_CHAR
+   PYFLUID_AMREX_ENABLE_RECON_TENO5
+   PYFLUID_AMREX_ENABLE_RECON_TENO5_CHAR
    PYFLUID_AMREX_ENABLE_RIEMANN_LLF
    PYFLUID_AMREX_ENABLE_RIEMANN_HLL
    PYFLUID_AMREX_ENABLE_RIEMANN_HLLE
@@ -258,6 +290,14 @@ foreach(dim 1 2 3)
       pyfluid_amrex_configure_target(pyfluid_amrex_codegen_check_${dim}d ${dim})
       if(TARGET pyfluid_amrex_generate_kernels)
          add_dependencies(pyfluid_amrex_codegen_check_${dim}d pyfluid_amrex_generate_kernels)
+      endif()
+
+      if(dim EQUAL 1)
+         add_executable(pyfluid_amrex_c2p_benchmark EXCLUDE_FROM_ALL ${PYFLUID_AMREX_C2P_BENCHMARK_SOURCES})
+         pyfluid_amrex_configure_target(pyfluid_amrex_c2p_benchmark ${dim})
+         if(TARGET pyfluid_amrex_generate_kernels)
+            add_dependencies(pyfluid_amrex_c2p_benchmark pyfluid_amrex_generate_kernels)
+         endif()
       endif()
 
       if(dim GREATER 1)

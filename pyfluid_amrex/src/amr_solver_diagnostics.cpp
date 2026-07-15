@@ -1,8 +1,8 @@
-#include "pyfluid_amrex/amr_solver.hpp"
+#include "pyfluid_amrex/amr_solver_base.hpp"
 
 namespace pyfluid_amrex {
 
-bool AmrSolver::symmetry_axis_active(int dir) const
+bool AmrSolverBase::symmetry_axis_active(int dir) const
 {
    if (dir == 0) {
       return side_boundary_kind(cfg_, 0, false) == BoundaryKind::Symmetry
@@ -23,7 +23,7 @@ bool AmrSolver::symmetry_axis_active(int dir) const
    return false;
 }
 
-amrex::Real AmrSolver::symmetry_volume_factor() const
+amrex::Real AmrSolverBase::symmetry_volume_factor() const
 {
    amrex::Real factor = 1.0;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
@@ -34,12 +34,12 @@ amrex::Real AmrSolver::symmetry_volume_factor() const
    return factor;
 }
 
-amrex::Real AmrSolver::symmetry_momentum_factor(int dir, amrex::Real volume_factor) const
+amrex::Real AmrSolverBase::symmetry_momentum_factor(int dir, amrex::Real volume_factor) const
 {
    return symmetry_axis_active(dir) ? 0.0 : volume_factor;
 }
 
-amrex::Real AmrSolver::symmetry_angular_momentum_factor(int dir, amrex::Real volume_factor) const
+amrex::Real AmrSolverBase::symmetry_angular_momentum_factor(int dir, amrex::Real volume_factor) const
 {
    for (int axis = 0; axis < AMREX_SPACEDIM; ++axis) {
       if (symmetry_axis_active(axis) && axis != dir) {

@@ -9,23 +9,24 @@ def hydro_characteristic_kernels() -> tuple[StructKernel, StructKernel]:
    rho, vn, vt1, vt2, pressure = sp.symbols(
       "primitive.rho primitive.vn primitive.vt1 primitive.vt2 primitive.pressure"
    )
-   rho_ref, sound_speed = sp.symbols("rho_ref sound_speed")
-   inv_sound2 = 1 / sound_speed**2
+   rho_ref, inv_rho, sound_speed, sound2, inv_sound_speed, inv_sound2 = sp.symbols(
+      "basis.rho basis.inv_rho basis.sound_speed basis.sound2 "
+      "basis.inv_sound_speed basis.inv_sound2"
+   )
    projection = StructKernel(
       name="hydro_characteristics",
       return_type="HydroCharacteristics",
       arguments=(
          ("const HydroNormalPrimitive&", "primitive"),
-         ("amrex::Real", "rho_ref"),
-         ("amrex::Real", "sound_speed"),
+         ("const HydroCharacteristicBasis&", "basis"),
       ),
       outputs=("entropy", "shear1", "shear2", "sound_minus", "sound_plus"),
       expressions=(
          rho - pressure * inv_sound2,
          vt1,
          vt2,
-         sp.Rational(1, 2) * (pressure * inv_sound2 - rho_ref * vn / sound_speed),
-         sp.Rational(1, 2) * (pressure * inv_sound2 + rho_ref * vn / sound_speed),
+         sp.Rational(1, 2) * (pressure * inv_sound2 - rho_ref * vn * inv_sound_speed),
+         sp.Rational(1, 2) * (pressure * inv_sound2 + rho_ref * vn * inv_sound_speed),
       ),
    )
 
@@ -37,16 +38,15 @@ def hydro_characteristic_kernels() -> tuple[StructKernel, StructKernel]:
       return_type="HydroNormalPrimitive",
       arguments=(
          ("const HydroCharacteristics&", "waves"),
-         ("amrex::Real", "rho_ref"),
-         ("amrex::Real", "sound_speed"),
+         ("const HydroCharacteristicBasis&", "basis"),
       ),
       outputs=("rho", "vn", "vt1", "vt2", "pressure"),
       expressions=(
          entropy + sound_minus + sound_plus,
-         sound_speed * (sound_plus - sound_minus) / rho_ref,
+         sound_speed * (sound_plus - sound_minus) * inv_rho,
          shear1,
          shear2,
-         sound_speed**2 * (sound_minus + sound_plus),
+         sound2 * (sound_minus + sound_plus),
       ),
    )
    return projection, recovery
@@ -57,26 +57,30 @@ def mhd_characteristic_kernels() -> tuple[StructKernel, StructKernel]:
       "primitive.rho primitive.vn primitive.vt1 primitive.vt2 "
       "primitive.pressure primitive.bt1 primitive.bt2"
    )
-   basis_rho, sqrt_rho, sound_speed, fast_speed, slow_speed = sp.symbols(
-      "basis.rho basis.sqrt_rho basis.sound_speed basis.fast_speed basis.slow_speed"
+   basis_rho, inv_rho, sqrt_rho, inv_sqrt_rho = sp.symbols(
+      "basis.rho basis.inv_rho basis.sqrt_rho basis.inv_sqrt_rho"
    )
-   alpha_f, alpha_s, beta_t1, beta_t2, normal_sign, velocity_denom = sp.symbols(
+   sound_speed, inv_sound_speed, sound2, inv_sound2, fast_speed, slow_speed = sp.symbols(
+      "basis.sound_speed basis.inv_sound_speed basis.sound2 basis.inv_sound2 "
+      "basis.fast_speed basis.slow_speed"
+   )
+   alpha_f, alpha_s, beta_t1, beta_t2, normal_sign = sp.symbols(
       "basis.alpha_f basis.alpha_s basis.beta_t1 basis.beta_t2 "
-      "basis.normal_sign basis.velocity_denom"
+      "basis.normal_sign"
    )
-   inv_sound2 = 1 / sound_speed**2
-   compressive = pressure * inv_sound2 / basis_rho
-   b_parallel = (beta_t1 * bt1 + beta_t2 * bt2) / (sound_speed * sqrt_rho)
+   inv_velocity_denom = sp.Symbol("basis.inv_velocity_denom")
+   compressive = pressure * inv_sound2 * inv_rho
+   b_parallel = (beta_t1 * bt1 + beta_t2 * bt2) * inv_sound_speed * inv_sqrt_rho
    fast_sum = alpha_f * compressive + alpha_s * b_parallel
    slow_sum = alpha_s * compressive - alpha_f * b_parallel
    v_parallel = normal_sign * (beta_t1 * vt1 + beta_t2 * vt2)
    fast_diff = (
       alpha_f * fast_speed * vn - alpha_s * slow_speed * v_parallel
-   ) / velocity_denom
+   ) * inv_velocity_denom
    slow_diff = (
       alpha_s * slow_speed * vn + alpha_f * fast_speed * v_parallel
-   ) / velocity_denom
-   alfven_sum = (beta_t2 * bt1 - beta_t1 * bt2) / sqrt_rho
+   ) * inv_velocity_denom
+   alfven_sum = (beta_t2 * bt1 - beta_t1 * bt2) * inv_sqrt_rho
    alfven_diff = normal_sign * (beta_t2 * vt1 - beta_t1 * vt2)
    projection = StructKernel(
       name="mhd_characteristics",
@@ -117,7 +121,6 @@ def mhd_characteristic_kernels() -> tuple[StructKernel, StructKernel]:
    slow_diff = slow_plus - slow_minus
    alfven_sum = alfven_minus + alfven_plus
    alfven_diff = alfven_minus - alfven_plus
-   sound2 = sound_speed**2
    recovery = StructKernel(
       name="mhd_reduced_from_characteristics",
       return_type="MHDReducedPrimitive",

@@ -1,0 +1,39 @@
+pyfluid.run_name = rhd_entropy_wave_1d
+pyfluid.output_dir = runs/current/rhd_entropy_wave/rhd_entropy_wave_1d
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 1
+
+amr.n_cell = 128
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+spacetime.evolution = fixed
+
+pyfluid.physics = rhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = sin_wave
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.amplitude = 0.1
+pyfluid.wave_number = 1.0
+pyfluid.v1_0 = 0.3
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.final_time = 1.0
+pyfluid.max_step = 10000
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.bc = periodic
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 16
+pyfluid.plot_int = 10000
+pyfluid.checkpoint_int = -1

@@ -1,0 +1,19 @@
+@header@
+
+set -eu
+
+cd @work_dir@
+@environment@
+
+run_dir=@run_dir@
+mkdir -p "$run_dir"
+run_log="$run_dir/run.log"
+
+echo "PyFluid run directory: $run_dir"
+{
+   echo "command: @command@"
+   echo "host: $(hostname)"
+   echo "start: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+   @command@
+   echo "stop: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+} >"$run_log" 2>&1

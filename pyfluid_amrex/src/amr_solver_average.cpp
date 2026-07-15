@@ -1,8 +1,8 @@
-#include "pyfluid_amrex/amr_solver.hpp"
+#include "pyfluid_amrex/amr_solver_base.hpp"
 
 namespace pyfluid_amrex {
 
-void AmrSolver::project_metric_conservative_prolongation(
+void AmrSolverBase::project_metric_conservative_prolongation(
    int fine_lev,
    amrex::MultiFab const& coarse_state,
    amrex::MultiFab& fine_state
@@ -213,14 +213,14 @@ void AmrSolver::project_metric_conservative_prolongation(
    }
 }
 
-void AmrSolver::average_down_state()
+void AmrSolverBase::average_down_state()
 {
    for (int lev = finestLevel(); lev > 0; --lev) {
       average_down_state_level(lev);
    }
 }
 
-void AmrSolver::average_down_state_level(int fine_lev)
+void AmrSolverBase::average_down_state_level(int fine_lev)
 {
    if (fine_lev <= 0 || fine_lev > finestLevel()) {
       return;
@@ -244,7 +244,7 @@ void AmrSolver::average_down_state_level(int fine_lev)
    );
 }
 
-void AmrSolver::average_down_state_level_weighted_hydro(int fine_lev)
+void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
 {
    if (fine_lev <= 0 || fine_lev > finestLevel()) {
       return;
@@ -414,7 +414,7 @@ void AmrSolver::average_down_state_level_weighted_hydro(int fine_lev)
    }
 }
 
-void AmrSolver::average_down_face_b()
+void AmrSolverBase::average_down_face_b()
 {
    if (!ct_enabled(cfg_)) {
       return;
@@ -425,7 +425,7 @@ void AmrSolver::average_down_face_b()
    }
 }
 
-void AmrSolver::average_down_face_b_level(int fine_lev)
+void AmrSolverBase::average_down_face_b_level(int fine_lev)
 {
    if (!ct_enabled(cfg_) || fine_lev <= 0 || fine_lev > finestLevel()) {
       return;
@@ -445,7 +445,7 @@ void AmrSolver::average_down_face_b_level(int fine_lev)
    apply_face_b_boundary(face_b_[fine_lev - 1], Geom(fine_lev - 1), boundary_data_);
 }
 
-void AmrSolver::average_down_face_b_level_metric(int fine_lev)
+void AmrSolverBase::average_down_face_b_level_metric(int fine_lev)
 {
    if (!ct_enabled(cfg_) || fine_lev <= 0 || fine_lev > finestLevel()) {
       return;
@@ -551,14 +551,14 @@ void AmrSolver::average_down_face_b_level_metric(int fine_lev)
    apply_face_b_boundary(face_b_[coarse_lev], Geom(coarse_lev), boundary_data_);
 }
 
-void AmrSolver::apply_all_face_b_boundaries()
+void AmrSolverBase::apply_all_face_b_boundaries()
 {
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
    }
 }
 
-void AmrSolver::sync_all_cell_b_from_faces(AmrSolver::LevelData& data, bool preserve_pressure)
+void AmrSolverBase::sync_all_cell_b_from_faces(AmrSolverBase::LevelData& data, bool preserve_pressure)
 {
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       sync_cell_b_from_faces(*data[lev], face_b_[lev], Geom(lev), preserve_pressure);

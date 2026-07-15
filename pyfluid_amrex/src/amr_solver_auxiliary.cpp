@@ -1,8 +1,8 @@
-#include "pyfluid_amrex/amr_solver.hpp"
+#include "pyfluid_amrex/amr_solver_base.hpp"
 
 namespace pyfluid_amrex {
 
-EdgeElectricField const* AmrSolver::edge_current_density_ptr(int lev) const
+EdgeElectricField const* AmrSolverBase::edge_current_density_ptr(int lev) const
 {
    if (!edge_current_[lev].e[0]) {
       return nullptr;
@@ -10,7 +10,7 @@ EdgeElectricField const* AmrSolver::edge_current_density_ptr(int lev) const
    return &edge_current_[lev];
 }
 
-EdgeElectricField const* AmrSolver::edge_electric_field_ptr(int lev) const
+EdgeElectricField const* AmrSolverBase::edge_electric_field_ptr(int lev) const
 {
    if (!edge_e_[lev].e[0]) {
       return nullptr;
@@ -18,7 +18,7 @@ EdgeElectricField const* AmrSolver::edge_electric_field_ptr(int lev) const
    return &edge_e_[lev];
 }
 
-amrex::MultiFab const* AmrSolver::gravity_phi_ptr(int lev) const
+amrex::MultiFab const* AmrSolverBase::gravity_phi_ptr(int lev) const
 {
    if (!gravity_phi_[lev]) {
       return nullptr;
@@ -26,7 +26,7 @@ amrex::MultiFab const* AmrSolver::gravity_phi_ptr(int lev) const
    return gravity_phi_[lev].get();
 }
 
-bool AmrSolver::mhd_edge_aux_requested() const
+bool AmrSolverBase::mhd_edge_aux_requested() const
 {
    return is_mhd(cfg_)
       && (
@@ -35,7 +35,7 @@ bool AmrSolver::mhd_edge_aux_requested() const
       );
 }
 
-bool AmrSolver::cached_edge_current_density_requested() const
+bool AmrSolverBase::cached_edge_current_density_requested() const
 {
    return mhd_edge_aux_requested()
       && cfg_.aux_gf_compute_int >= 0
@@ -45,24 +45,24 @@ bool AmrSolver::cached_edge_current_density_requested() const
       );
 }
 
-bool AmrSolver::cached_edge_electric_field_requested() const
+bool AmrSolverBase::cached_edge_electric_field_requested() const
 {
    return mhd_edge_aux_requested()
       && cfg_.aux_gf_compute_int >= 0
       && aux_gfs_contains(cfg_, AuxGridField::ElectricField);
 }
 
-bool AmrSolver::needs_edge_current_density() const
+bool AmrSolverBase::needs_edge_current_density() const
 {
    return cached_edge_current_density_requested();
 }
 
-bool AmrSolver::needs_edge_electric_field() const
+bool AmrSolverBase::needs_edge_electric_field() const
 {
    return ct_enabled(cfg_) || cached_edge_electric_field_requested();
 }
 
-bool AmrSolver::should_refresh_mhd_aux_fields(int step, bool write_aux_gfs) const
+bool AmrSolverBase::should_refresh_mhd_aux_fields(int step, bool write_aux_gfs) const
 {
    (void)write_aux_gfs;
    if (!is_mhd(cfg_)) {
@@ -74,7 +74,7 @@ bool AmrSolver::should_refresh_mhd_aux_fields(int step, bool write_aux_gfs) cons
    return false;
 }
 
-bool AmrSolver::should_refresh_initial_mhd_aux_fields() const
+bool AmrSolverBase::should_refresh_initial_mhd_aux_fields() const
 {
    if (!mhd_edge_aux_requested()) {
       return false;
@@ -82,7 +82,7 @@ bool AmrSolver::should_refresh_initial_mhd_aux_fields() const
    return cfg_.aux_gf_compute_int == 0 || cfg_.aux_gf_int == 0;
 }
 
-void AmrSolver::refresh_mhd_aux_fields_for_output(int lev)
+void AmrSolverBase::refresh_mhd_aux_fields_for_output(int lev)
 {
    if (edge_current_[lev].e[0]) {
       if (ct_enabled(cfg_)) {
@@ -99,7 +99,7 @@ void AmrSolver::refresh_mhd_aux_fields_for_output(int lev)
    }
 }
 
-void AmrSolver::refresh_all_mhd_aux_fields_for_output()
+void AmrSolverBase::refresh_all_mhd_aux_fields_for_output()
 {
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       refresh_mhd_aux_fields_for_output(lev);

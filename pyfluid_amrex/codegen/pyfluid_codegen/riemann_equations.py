@@ -7,6 +7,8 @@ from .kernel_equations import StructKernel
 
 HYDRO_FIELDS = ("rho", "mom1", "mom2", "mom3", "energy")
 MHD_FIELDS = HYDRO_FIELDS + ("b1", "b2", "b3")
+RHD_FIELDS = ("dens", "mom1", "mom2", "mom3", "tau")
+RMHD_FIELDS = RHD_FIELDS + ("b1", "b2", "b3")
 
 
 def _state_symbols(prefix: str, fields: tuple[str, ...]) -> tuple[sp.Symbol, ...]:
@@ -70,4 +72,8 @@ def riemann_flux_kernels() -> tuple[StructKernel, ...]:
       _hll_kernel("hydro_hll_flux", "HydroState", HYDRO_FIELDS),
       _llf_kernel("mhd_llf_flux", "MHDState", MHD_FIELDS),
       _hll_kernel("mhd_hll_flux", "MHDState", MHD_FIELDS),
+      _llf_kernel("rhd_llf_flux", "RHDConserved", RHD_FIELDS),
+      _hll_kernel("rhd_hll_flux", "RHDConserved", RHD_FIELDS),
+      _llf_kernel("rmhd_llf_flux", "RMHDConserved", RMHD_FIELDS),
+      _hll_kernel("rmhd_hll_flux", "RMHDConserved", RMHD_FIELDS),
    )

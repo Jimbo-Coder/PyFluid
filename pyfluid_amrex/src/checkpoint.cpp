@@ -29,7 +29,7 @@ namespace {
 
 constexpr const char* CheckpointLevelPrefix = "Level_";
 constexpr const char* CheckpointHeaderName = "Header";
-constexpr int CheckpointSchemaVersion = 1;
+constexpr int CheckpointSchemaVersion = 2;
 
 using CheckpointMetadata = std::map<std::string, std::string>;
 
@@ -192,6 +192,15 @@ bool checkpoint_metadata_is_complete(CheckpointMetadata const& metadata)
       "checkpoint_periodicity",
       "checkpoint_refinement_ratios",
       "physics",
+      "spacetime_evolution",
+      "spacetime_fixed_metric",
+      "spacetime_acceleration1",
+      "spacetime_acceleration2",
+      "spacetime_acceleration3",
+      "spacetime_origin1",
+      "spacetime_origin2",
+      "spacetime_origin3",
+      "spacetime_mass",
       "eos",
       "checkpoint_ct",
       "checkpoint_passive_scalars",
@@ -649,6 +658,43 @@ void validate_checkpoint_compatibility(
       refinement_ratios_string(refinement_ratios, finest_level)
    );
    require_metadata(checkpoint_name, metadata, "physics", cfg.physics);
+   require_metadata(
+      checkpoint_name,
+      metadata,
+      "spacetime_evolution",
+      cfg.spacetime_evolution
+   );
+   require_metadata(
+      checkpoint_name, metadata, "spacetime_fixed_metric", cfg.spacetime_fixed_metric
+   );
+   require_metadata(
+      checkpoint_name, metadata, "spacetime_acceleration1",
+      output_metadata_real_string(cfg.spacetime_acceleration1)
+   );
+   require_metadata(
+      checkpoint_name, metadata, "spacetime_acceleration2",
+      output_metadata_real_string(cfg.spacetime_acceleration2)
+   );
+   require_metadata(
+      checkpoint_name, metadata, "spacetime_acceleration3",
+      output_metadata_real_string(cfg.spacetime_acceleration3)
+   );
+   require_metadata(
+      checkpoint_name, metadata, "spacetime_origin1",
+      output_metadata_real_string(cfg.spacetime_origin1)
+   );
+   require_metadata(
+      checkpoint_name, metadata, "spacetime_origin2",
+      output_metadata_real_string(cfg.spacetime_origin2)
+   );
+   require_metadata(
+      checkpoint_name, metadata, "spacetime_origin3",
+      output_metadata_real_string(cfg.spacetime_origin3)
+   );
+   require_metadata(
+      checkpoint_name, metadata, "spacetime_mass",
+      output_metadata_real_string(cfg.spacetime_mass)
+   );
    require_metadata(checkpoint_name, metadata, "eos", cfg.eos);
    require_metadata(checkpoint_name, metadata, "checkpoint_ct", cfg.ct);
    require_metadata_int(checkpoint_name, metadata, "checkpoint_passive_scalars", cfg.passive_scalars);

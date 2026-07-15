@@ -2,6 +2,10 @@
 
 #include <AMReX_Array4.H>
 #include <AMReX_REAL.H>
+
+#include "pyfluid_amrex/physical_system.hpp"
+#include "pyfluid_amrex/relativistic_state.hpp"
+
 namespace pyfluid_amrex {
 
 enum Conserved {
@@ -20,10 +24,77 @@ enum Conserved {
 static constexpr int MaxPassiveScalars = 1;
 static constexpr int MaxStateComponents = NVAR_MHD + MaxPassiveScalars;
 
-enum class PhysicsSystemKind : int {
-   Hydro = 0,
-   MHD = 1,
-};
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RHDConserved load_rhd_conserved(
+   amrex::Array4<amrex::Real const> const& state,
+   int i,
+   int j,
+   int k
+) noexcept
+{
+   return {
+      state(i, j, k, RHO),
+      state(i, j, k, MOM1),
+      state(i, j, k, MOM2),
+      state(i, j, k, MOM3),
+      state(i, j, k, ENERGY),
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void store_rhd_conserved(
+   amrex::Array4<amrex::Real> const& state,
+   int i,
+   int j,
+   int k,
+   const RHDConserved& value
+) noexcept
+{
+   state(i, j, k, RHO) = value.dens;
+   state(i, j, k, MOM1) = value.mom1;
+   state(i, j, k, MOM2) = value.mom2;
+   state(i, j, k, MOM3) = value.mom3;
+   state(i, j, k, ENERGY) = value.tau;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDConserved load_rmhd_conserved(
+   amrex::Array4<amrex::Real const> const& state,
+   int i,
+   int j,
+   int k
+) noexcept
+{
+   return {
+      state(i, j, k, RHO),
+      state(i, j, k, MOM1),
+      state(i, j, k, MOM2),
+      state(i, j, k, MOM3),
+      state(i, j, k, ENERGY),
+      state(i, j, k, B1),
+      state(i, j, k, B2),
+      state(i, j, k, B3),
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void store_rmhd_conserved(
+   amrex::Array4<amrex::Real> const& state,
+   int i,
+   int j,
+   int k,
+   const RMHDConserved& value
+) noexcept
+{
+   state(i, j, k, RHO) = value.dens;
+   state(i, j, k, MOM1) = value.mom1;
+   state(i, j, k, MOM2) = value.mom2;
+   state(i, j, k, MOM3) = value.mom3;
+   state(i, j, k, ENERGY) = value.tau;
+   state(i, j, k, B1) = value.b1;
+   state(i, j, k, B2) = value.b2;
+   state(i, j, k, B3) = value.b3;
+}
 
 struct Vector3 {
    amrex::Real x = 0.0;
@@ -161,31 +232,33 @@ struct HydroPrimitive;
 struct MHDState;
 struct MHDPrimitive;
 
-struct PhysicsSystemTraits {
-   PhysicsSystemKind kind = PhysicsSystemKind::Hydro;
+struct PhysicalStateLayout {
+   PhysicalSystem system = PhysicalSystem::HD;
    int base_components = NVAR_HYDRO;
-   bool has_magnetic_field = false;
-   bool supports_ct = false;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-constexpr PhysicsSystemTraits physics_system_traits(PhysicsSystemKind kind) noexcept
+constexpr PhysicalStateLayout physical_state_layout(PhysicalSystem system) noexcept
 {
-   return kind == PhysicsSystemKind::MHD
-      ? PhysicsSystemTraits{PhysicsSystemKind::MHD, NVAR_MHD, true, true}
-      : PhysicsSystemTraits{PhysicsSystemKind::Hydro, NVAR_HYDRO, false, false};
+   if (system == PhysicalSystem::MHD) {
+      return {PhysicalSystem::MHD, NVAR_MHD};
+   }
+   if (system == PhysicalSystem::HD) {
+      return {PhysicalSystem::HD, NVAR_HYDRO};
+   }
+   if (system == PhysicalSystem::RHD) {
+      return {PhysicalSystem::RHD, NVAR_HYDRO};
+   }
+   if (system == PhysicalSystem::RMHD) {
+      return {PhysicalSystem::RMHD, NVAR_MHD};
+   }
+   return {system, 0};
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-constexpr bool physics_system_has_magnetic_field(PhysicsSystemKind kind) noexcept
+constexpr int base_component_count(PhysicalSystem system) noexcept
 {
-   return physics_system_traits(kind).has_magnetic_field;
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-constexpr int base_component_count(PhysicsSystemKind kind) noexcept
-{
-   return physics_system_traits(kind).base_components;
+   return physical_state_layout(system).base_components;
 }
 
 template <int NComp>

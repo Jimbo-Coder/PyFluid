@@ -1,8 +1,8 @@
-#include "pyfluid_amrex/amr_solver.hpp"
+#include "pyfluid_amrex/amr_solver_base.hpp"
 
 namespace pyfluid_amrex {
 
-amrex::iMultiFab AmrSolver::valid_cell_mask(int lev) const
+amrex::iMultiFab AmrSolverBase::valid_cell_mask(int lev) const
 {
    amrex::iMultiFab mask(
       state_[lev]->boxArray(),
@@ -26,7 +26,7 @@ amrex::iMultiFab AmrSolver::valid_cell_mask(int lev) const
    return mask;
 }
 
-AmrSolver::HydroConservedTotals AmrSolver::hydro_valid_conserved_totals() const
+AmrSolverBase::HydroConservedTotals AmrSolverBase::hydro_valid_conserved_totals() const
 {
    HydroConservedTotals totals;
    for (int lev = 0; lev <= finestLevel(); ++lev) {

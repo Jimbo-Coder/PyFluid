@@ -87,6 +87,17 @@ constexpr std::array<StateGridFieldInfo, NVAR_MHD> state_grid_fields = {{
    {"b3", B3, GFC::Cell, Sym::Vector3, true},
 }};
 
+constexpr std::array<StateGridFieldInfo, NVAR_MHD> relativistic_state_grid_fields = {{
+   {"dens", RHO, GFC::Cell, Sym::Scalar, false},
+   {"mom1", MOM1, GFC::Cell, Sym::Vector1, false},
+   {"mom2", MOM2, GFC::Cell, Sym::Vector2, false},
+   {"mom3", MOM3, GFC::Cell, Sym::Vector3, false},
+   {"tau", ENERGY, GFC::Cell, Sym::Scalar, false},
+   {"b1", B1, GFC::Cell, Sym::Vector1, true},
+   {"b2", B2, GFC::Cell, Sym::Vector2, true},
+   {"b3", B3, GFC::Cell, Sym::Vector3, true},
+}};
+
 constexpr FieldTable aux_grid_fields = {{
    aux_field(
       AuxGridField::CurrentDensity,
@@ -413,14 +424,25 @@ std::string supported_aux_grid_field_names()
    return out.str();
 }
 
-amrex::Vector<std::string> state_grid_field_names(bool mhd, int passive_scalars)
+amrex::Vector<std::string> state_grid_field_names(PhysicalSystem system, int passive_scalars)
 {
    amrex::Vector<std::string> names;
-   for (StateGridFieldInfo const& info : state_grid_fields) {
-      if (info.requires_mhd && !mhd) {
-         continue;
+   if (physical_system_is_relativistic(system)) {
+      const bool magnetized = physical_system_has_magnetic_field(system);
+      for (StateGridFieldInfo const& info : relativistic_state_grid_fields) {
+         if (info.requires_mhd && !magnetized) {
+            continue;
+         }
+         names.push_back(info.name);
       }
-      names.push_back(info.name);
+   } else {
+      const bool magnetized = physical_system_has_magnetic_field(system);
+      for (StateGridFieldInfo const& info : state_grid_fields) {
+         if (info.requires_mhd && !magnetized) {
+            continue;
+         }
+         names.push_back(info.name);
+      }
    }
    for (int n = 0; n < passive_scalars; ++n) {
       names.push_back(n == 0 ? "dye_mass" : "dye_mass_" + std::to_string(n));

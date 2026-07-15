@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections.abc import Iterable
+from enum import Enum
 
 import sympy as sp
 
@@ -233,6 +234,332 @@ class Tensor:
    def minus(self, other: Tensor) -> Tensor:
       self._require_same_shape(other)
       return Tensor(*(left - right for left, right in zip(self.rows, other.rows, strict=True)))
+
+
+@dataclass(frozen=True)
+class MetricTensor:
+   """Covariant and contravariant forms of one nondegenerate metric."""
+
+   covariant: Tensor
+   contravariant: Tensor
+
+   def __post_init__(self) -> None:
+      covariant_shape = self.covariant.shape
+      if covariant_shape[0] != covariant_shape[1]:
+         raise ValueError("a metric must be square")
+      if self.contravariant.shape != covariant_shape:
+         raise ValueError("covariant and contravariant metric shapes differ")
+
+   @property
+   def dimension(self) -> int:
+      return self.covariant.shape[0]
+
+   def lower(self, vector: Vector) -> Vector:
+      return self.covariant.contract_with(vector)
+
+   def raise_covector(self, covector: Vector) -> Vector:
+      return self.contravariant.contract_with(covector)
+
+   def norm_squared(self, vector: Vector) -> sp.Expr:
+      return vector.dot(self.lower(vector))
+
+   def inverse_identity_residual(self) -> Tensor:
+      dimension = self.dimension
+      product = Tensor.from_rows(tuple(
+         tuple(
+            sum(
+               self.covariant.component(row, contracted)
+               * self.contravariant.component(contracted, column)
+               for contracted in range(dimension)
+            )
+            for column in range(dimension)
+         )
+         for row in range(dimension)
+      ))
+      return product - Tensor.identity(dimension)
+
+   def indexed_covariant(self) -> IndexedTensor:
+      return IndexedTensor(
+         self.covariant,
+         (IndexPosition.COVARIANT, IndexPosition.COVARIANT),
+      )
+
+   def indexed_contravariant(self) -> IndexedTensor:
+      return IndexedTensor(
+         self.contravariant,
+         (IndexPosition.CONTRAVARIANT, IndexPosition.CONTRAVARIANT),
+      )
+
+
+class IndexPosition(Enum):
+   COVARIANT = "down"
+   CONTRAVARIANT = "up"
+
+   @property
+   def opposite(self) -> IndexPosition:
+      return (
+         IndexPosition.CONTRAVARIANT
+         if self is IndexPosition.COVARIANT
+         else IndexPosition.COVARIANT
+      )
+
+
+@dataclass(frozen=True)
+class IndexedVector:
+   """A vector with an explicit covariant or contravariant index."""
+
+   values: Vector
+   position: IndexPosition
+
+   @property
+   def dimension(self) -> int:
+      return self.values.dimension
+
+   def component(self, index: int) -> sp.Expr:
+      return self.values.component(index)
+
+   def as_tuple(self) -> tuple[sp.Expr, ...]:
+      return self.values.as_tuple()
+
+   def __add__(self, other: IndexedVector) -> IndexedVector:
+      if self.position is not other.position:
+         raise ValueError("vector addition requires equal index positions")
+      return IndexedVector(self.values + other.values, self.position)
+
+   def __sub__(self, other: IndexedVector) -> IndexedVector:
+      if self.position is not other.position:
+         raise ValueError("vector subtraction requires equal index positions")
+      return IndexedVector(self.values - other.values, self.position)
+
+   def __neg__(self) -> IndexedVector:
+      return IndexedVector(-self.values, self.position)
+
+   def __mul__(self, scalar: sp.Expr | int | float) -> IndexedVector:
+      return IndexedVector(self.values * scalar, self.position)
+
+   def __rmul__(self, scalar: sp.Expr | int | float) -> IndexedVector:
+      return self * scalar
+
+   def __truediv__(self, scalar: sp.Expr | int | float) -> IndexedVector:
+      return IndexedVector(self.values / scalar, self.position)
+
+   def raise_index(self, metric: MetricTensor) -> IndexedVector:
+      if self.position is not IndexPosition.COVARIANT:
+         raise ValueError("only a covariant vector index can be raised")
+      if self.dimension != metric.dimension:
+         raise ValueError("vector and metric dimensions differ")
+      return IndexedVector(
+         metric.raise_covector(self.values), IndexPosition.CONTRAVARIANT
+      )
+
+   def lower_index(self, metric: MetricTensor) -> IndexedVector:
+      if self.position is not IndexPosition.CONTRAVARIANT:
+         raise ValueError("only a contravariant vector index can be lowered")
+      if self.dimension != metric.dimension:
+         raise ValueError("vector and metric dimensions differ")
+      return IndexedVector(metric.lower(self.values), IndexPosition.COVARIANT)
+
+   def contract(self, other: IndexedVector) -> sp.Expr:
+      if self.dimension != other.dimension:
+         raise ValueError("vector dimensions differ")
+      if self.position is other.position:
+         raise ValueError("vector contraction requires one up and one down index")
+      return self.values.dot(other.values)
+
+   def outer(self, other: IndexedVector) -> IndexedTensor:
+      return IndexedTensor(
+         self.values.outer(other.values), (self.position, other.position)
+      )
+
+
+@dataclass(frozen=True)
+class IndexedTensor:
+   """A rank-two tensor with one position recorded for each index."""
+
+   values: Tensor
+   positions: tuple[IndexPosition, IndexPosition]
+
+   def __post_init__(self) -> None:
+      if len(self.positions) != 2:
+         raise ValueError("a rank-two tensor requires two index positions")
+
+   @property
+   def shape(self) -> tuple[int, int]:
+      return self.values.shape
+
+   def component(self, first: int, second: int) -> sp.Expr:
+      return self.values.component(first, second)
+
+   def as_rows(self) -> tuple[tuple[sp.Expr, ...], ...]:
+      return self.values.as_rows()
+
+   def __add__(self, other: IndexedTensor) -> IndexedTensor:
+      if self.positions != other.positions:
+         raise ValueError("tensor addition requires equal index positions")
+      return IndexedTensor(self.values + other.values, self.positions)
+
+   def __sub__(self, other: IndexedTensor) -> IndexedTensor:
+      if self.positions != other.positions:
+         raise ValueError("tensor subtraction requires equal index positions")
+      return IndexedTensor(self.values - other.values, self.positions)
+
+   def __neg__(self) -> IndexedTensor:
+      return IndexedTensor(-self.values, self.positions)
+
+   def __mul__(self, scalar: sp.Expr | int | float) -> IndexedTensor:
+      return IndexedTensor(self.values * scalar, self.positions)
+
+   def __rmul__(self, scalar: sp.Expr | int | float) -> IndexedTensor:
+      return self * scalar
+
+   def __truediv__(self, scalar: sp.Expr | int | float) -> IndexedTensor:
+      return IndexedTensor(self.values / scalar, self.positions)
+
+   def raise_index(self, metric: MetricTensor, index: int) -> IndexedTensor:
+      return self._move_index(metric, index, IndexPosition.CONTRAVARIANT)
+
+   def lower_index(self, metric: MetricTensor, index: int) -> IndexedTensor:
+      return self._move_index(metric, index, IndexPosition.COVARIANT)
+
+   def _move_index(
+      self,
+      metric: MetricTensor,
+      index: int,
+      target: IndexPosition,
+   ) -> IndexedTensor:
+      if index not in (0, 1):
+         raise ValueError("rank-two tensor index must be 0 or 1")
+      if self.positions[index] is target:
+         raise ValueError("tensor index already has the requested position")
+      if self.shape != (metric.dimension, metric.dimension):
+         raise ValueError("tensor and metric dimensions differ")
+      transform = (
+         metric.contravariant
+         if target is IndexPosition.CONTRAVARIANT
+         else metric.covariant
+      )
+      dimension = metric.dimension
+      if index == 0:
+         moved = Tensor.from_rows(tuple(
+            tuple(
+               sum(
+                  transform.component(row, contracted)
+                  * self.values.component(contracted, column)
+                  for contracted in range(dimension)
+               )
+               for column in range(dimension)
+            )
+            for row in range(dimension)
+         ))
+      else:
+         moved = Tensor.from_rows(tuple(
+            tuple(
+               sum(
+                  transform.component(column, contracted)
+                  * self.values.component(row, contracted)
+                  for contracted in range(dimension)
+               )
+               for column in range(dimension)
+            )
+            for row in range(dimension)
+         ))
+      positions = list(self.positions)
+      positions[index] = target
+      return IndexedTensor(moved, tuple(positions))
+
+   def contract_vector(self, vector: IndexedVector, index: int) -> IndexedVector:
+      if index not in (0, 1):
+         raise ValueError("rank-two tensor index must be 0 or 1")
+      if self.positions[index] is vector.position:
+         raise ValueError("contraction requires opposite index positions")
+      if self.shape[index] != vector.dimension:
+         raise ValueError("tensor and vector dimensions differ")
+      dimension = vector.dimension
+      remaining = 1 - index
+      if index == 0:
+         values = Vector(*(
+            sum(
+               self.values.component(contracted, component)
+               * vector.component(contracted)
+               for contracted in range(dimension)
+            )
+            for component in range(self.shape[1])
+         ))
+      else:
+         values = Vector(*(
+            sum(
+               self.values.component(component, contracted)
+               * vector.component(contracted)
+               for contracted in range(dimension)
+            )
+            for component in range(self.shape[0])
+         ))
+      return IndexedVector(values, self.positions[remaining])
+
+   def trace(self) -> sp.Expr:
+      if self.shape[0] != self.shape[1]:
+         raise ValueError("trace requires a square tensor")
+      if self.positions[0] is self.positions[1]:
+         raise ValueError("an invariant trace requires one up and one down index")
+      return self.values.trace()
+
+   def double_contract(self, other: IndexedTensor) -> sp.Expr:
+      if self.shape != other.shape:
+         raise ValueError("tensor shapes differ")
+      if any(
+         left is right
+         for left, right in zip(self.positions, other.positions, strict=True)
+      ):
+         raise ValueError(
+            "full tensor contraction requires opposite positions for each index"
+         )
+      return self.values.double_contract(other.values)
+
+
+class Vector3(IndexedVector):
+   def __init__(
+      self,
+      *components: sp.Expr | int | float,
+      position: IndexPosition,
+   ) -> None:
+      if len(components) != 3:
+         raise ValueError("Vector3 requires exactly three components")
+      super().__init__(Vector(*components), position)
+
+
+class Vector4(IndexedVector):
+   def __init__(
+      self,
+      *components: sp.Expr | int | float,
+      position: IndexPosition,
+   ) -> None:
+      if len(components) != 4:
+         raise ValueError("Vector4 requires exactly four components")
+      super().__init__(Vector(*components), position)
+
+
+class Tensor3(IndexedTensor):
+   def __init__(
+      self,
+      rows: tuple[tuple[sp.Expr | int | float, ...], ...],
+      positions: tuple[IndexPosition, IndexPosition],
+   ) -> None:
+      values = Tensor.from_rows(rows)
+      if values.shape != (3, 3):
+         raise ValueError("Tensor3 requires a 3x3 component array")
+      super().__init__(values, positions)
+
+
+class Tensor4(IndexedTensor):
+   def __init__(
+      self,
+      rows: tuple[tuple[sp.Expr | int | float, ...], ...],
+      positions: tuple[IndexPosition, IndexPosition],
+   ) -> None:
+      values = Tensor.from_rows(rows)
+      if values.shape != (4, 4):
+         raise ValueError("Tensor4 requires a 4x4 component array")
+      super().__init__(values, positions)
 
 
 @dataclass(frozen=True)

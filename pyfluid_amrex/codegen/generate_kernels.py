@@ -11,6 +11,7 @@ from pyfluid_codegen.emit_cpp import (
    write_metric_header,
    write_operator_header,
    write_patch_map_header,
+   write_relativistic_header,
    write_riemann_header,
    write_vector_header,
 )
@@ -81,6 +82,14 @@ DEFAULT_PATCH_MAP_HEADER = (
    / "kernels_generated"
    / "patch_maps.hpp"
 )
+DEFAULT_RELATIVISTIC_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "kernels_generated"
+   / "relativistic_fluid.hpp"
+)
 
 
 def main() -> None:
@@ -88,7 +97,7 @@ def main() -> None:
    parser.add_argument(
       "--family",
       action="append",
-      choices=("characteristic", "eos", "flux", "operator", "riemann", "vector", "metric", "patch_map"),
+      choices=("characteristic", "eos", "flux", "operator", "relativistic", "riemann", "vector", "metric", "patch_map"),
       help="generate only this kernel family; repeat as needed (default: all)",
    )
    parser.add_argument("--flux-header", type=Path, default=DEFAULT_FLUX_HEADER)
@@ -99,6 +108,7 @@ def main() -> None:
    parser.add_argument("--vector-header", type=Path, default=DEFAULT_VECTOR_HEADER)
    parser.add_argument("--metric-header", type=Path, default=DEFAULT_METRIC_HEADER)
    parser.add_argument("--patch-map-header", type=Path, default=DEFAULT_PATCH_MAP_HEADER)
+   parser.add_argument("--relativistic-header", type=Path, default=DEFAULT_RELATIVISTIC_HEADER)
    parser.add_argument("--hard-drop-ops", type=int, default=0)
    parser.add_argument("--soft-drop-ops", type=int, default=3)
    args = parser.parse_args()
@@ -112,6 +122,7 @@ def main() -> None:
       "vector": (args.vector_header, write_vector_header),
       "metric": (args.metric_header, write_metric_header),
       "patch_map": (args.patch_map_header, write_patch_map_header),
+      "relativistic": (args.relativistic_header, write_relativistic_header),
    }
    families = tuple(args.family) if args.family else tuple(generators)
    for family in families:

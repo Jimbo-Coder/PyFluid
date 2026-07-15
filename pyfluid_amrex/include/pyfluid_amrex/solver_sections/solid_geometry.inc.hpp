@@ -496,8 +496,7 @@
    refresh_solid_geometry_all_levels(time, remap_moving_solid);
 
    if (preserve_totals) {
-      repair_nonpositive_hydro_fluid_cells_all_levels();
-      apply_hydro_valid_conserved_total_correction(pre_refresh_totals);
+      repair_after_hierarchy_change(pre_refresh_totals);
       if (finestLevel() > 0) {
          average_down_state();
       }

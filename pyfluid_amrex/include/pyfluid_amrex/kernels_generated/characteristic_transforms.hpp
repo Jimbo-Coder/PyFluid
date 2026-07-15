@@ -9,61 +9,55 @@ namespace pyfluid_amrex::generated {
 using namespace amrex::literals;
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-HydroCharacteristics hydro_characteristics(const HydroNormalPrimitive& primitive, amrex::Real rho_ref, amrex::Real sound_speed) noexcept
+HydroCharacteristics hydro_characteristics(const HydroNormalPrimitive& primitive, const HydroCharacteristicBasis& basis) noexcept
 {
-   const amrex::Real tmp0 = primitive.vn*rho_ref;
-   const amrex::Real tmp1 = 1.0_rt/(sound_speed);
-   const amrex::Real tmp2 = primitive.pressure*tmp1;
-   const amrex::Real tmp3 = (1.0_rt/2.0_rt)*tmp1;
+   const amrex::Real tmp0 = basis.inv_sound2*primitive.pressure;
+   const amrex::Real tmp1 = basis.inv_sound_speed*basis.rho*primitive.vn;
    return {
-      -primitive.pressure/((sound_speed)*(sound_speed)) + primitive.rho,
+      primitive.rho - tmp0,
       primitive.vt1,
       primitive.vt2,
-      tmp3*(-tmp0 + tmp2),
-      tmp3*(tmp0 + tmp2)
+      (1.0_rt/2.0_rt)*tmp0 - 1.0_rt/2.0_rt*tmp1,
+      (1.0_rt/2.0_rt)*tmp0 + (1.0_rt/2.0_rt)*tmp1
    };
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-HydroNormalPrimitive hydro_normal_primitive_from_characteristics(const HydroCharacteristics& waves, amrex::Real rho_ref, amrex::Real sound_speed) noexcept
+HydroNormalPrimitive hydro_normal_primitive_from_characteristics(const HydroCharacteristics& waves, const HydroCharacteristicBasis& basis) noexcept
 {
    const amrex::Real tmp0 = waves.sound_minus + waves.sound_plus;
    return {
       tmp0 + waves.entropy,
-      -sound_speed*(waves.sound_minus - waves.sound_plus)/rho_ref,
+      -basis.inv_rho*basis.sound_speed*(waves.sound_minus - waves.sound_plus),
       waves.shear1,
       waves.shear2,
-      ((sound_speed)*(sound_speed))*tmp0
+      basis.sound2*tmp0
    };
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 MHDCharacteristics mhd_characteristics(const MHDReducedPrimitive& primitive, const MHDCharacteristicBasis& basis) noexcept
 {
-   const amrex::Real tmp0 = 1.0_rt/(basis.velocity_denom);
-   const amrex::Real tmp1 = basis.alpha_f*basis.fast_speed;
-   const amrex::Real tmp2 = basis.alpha_s*basis.slow_speed;
-   const amrex::Real tmp3 = basis.normal_sign*(basis.beta_t1*primitive.vt1 + basis.beta_t2*primitive.vt2);
-   const amrex::Real tmp4 = tmp0*(primitive.vn*tmp1 - tmp2*tmp3);
-   const amrex::Real tmp5 = 1.0_rt/(basis.rho);
-   const amrex::Real tmp6 = 1.0_rt/((basis.sound_speed)*(basis.sound_speed));
-   const amrex::Real tmp7 = primitive.pressure*tmp6;
-   const amrex::Real tmp8 = tmp5*tmp7;
-   const amrex::Real tmp9 = 1.0_rt/(basis.sqrt_rho);
-   const amrex::Real tmp10 = tmp9*(basis.beta_t1*primitive.bt1 + basis.beta_t2*primitive.bt2)/basis.sound_speed;
-   const amrex::Real tmp11 = basis.alpha_f*tmp8 + basis.alpha_s*tmp10;
-   const amrex::Real tmp12 = basis.normal_sign*(basis.beta_t1*primitive.vt2 - basis.beta_t2*primitive.vt1);
-   const amrex::Real tmp13 = tmp9*(basis.beta_t1*primitive.bt2 - basis.beta_t2*primitive.bt1);
-   const amrex::Real tmp14 = basis.alpha_f*tmp10;
-   const amrex::Real tmp15 = tmp0*(primitive.vn*tmp2 + tmp1*tmp3);
+   const amrex::Real tmp0 = basis.alpha_f*basis.fast_speed;
+   const amrex::Real tmp1 = basis.alpha_s*basis.slow_speed;
+   const amrex::Real tmp2 = basis.normal_sign*(basis.beta_t1*primitive.vt1 + basis.beta_t2*primitive.vt2);
+   const amrex::Real tmp3 = basis.inv_velocity_denom*(primitive.vn*tmp0 - tmp1*tmp2);
+   const amrex::Real tmp4 = basis.inv_sound2*primitive.pressure;
+   const amrex::Real tmp5 = basis.inv_rho*tmp4;
+   const amrex::Real tmp6 = basis.inv_sound_speed*basis.inv_sqrt_rho*(basis.beta_t1*primitive.bt1 + basis.beta_t2*primitive.bt2);
+   const amrex::Real tmp7 = basis.alpha_f*tmp5 + basis.alpha_s*tmp6;
+   const amrex::Real tmp8 = basis.inv_sqrt_rho*(basis.beta_t1*primitive.bt2 - basis.beta_t2*primitive.bt1);
+   const amrex::Real tmp9 = basis.beta_t1*primitive.vt2 - basis.beta_t2*primitive.vt1;
+   const amrex::Real tmp10 = basis.alpha_f*tmp6;
+   const amrex::Real tmp11 = basis.inv_velocity_denom*(primitive.vn*tmp1 + tmp0*tmp2);
    return {
-      (1.0_rt/2.0_rt)*tmp11 - 1.0_rt/2.0_rt*tmp4,
-      -1.0_rt/2.0_rt*tmp12 - 1.0_rt/2.0_rt*tmp13,
-      (1.0_rt/2.0_rt)*basis.alpha_s*primitive.pressure*tmp5*tmp6 - 1.0_rt/2.0_rt*tmp14 - 1.0_rt/2.0_rt*tmp15,
-      primitive.rho - tmp7,
-      (1.0_rt/2.0_rt)*basis.alpha_s*tmp8 - 1.0_rt/2.0_rt*tmp14 + (1.0_rt/2.0_rt)*tmp15,
-      (1.0_rt/2.0_rt)*tmp12 - 1.0_rt/2.0_rt*tmp13,
-      (1.0_rt/2.0_rt)*tmp11 + (1.0_rt/2.0_rt)*tmp4
+      -1.0_rt/2.0_rt*tmp3 + (1.0_rt/2.0_rt)*tmp7,
+      -1.0_rt/2.0_rt*basis.normal_sign*tmp9 - 1.0_rt/2.0_rt*tmp8,
+      (1.0_rt/2.0_rt)*basis.alpha_s*basis.inv_rho*basis.inv_sound2*primitive.pressure - 1.0_rt/2.0_rt*tmp10 - 1.0_rt/2.0_rt*tmp11,
+      primitive.rho - tmp4,
+      (1.0_rt/2.0_rt)*basis.alpha_s*tmp5 - 1.0_rt/2.0_rt*tmp10 + (1.0_rt/2.0_rt)*tmp11,
+      (1.0_rt/2.0_rt)*basis.normal_sign*tmp9 - 1.0_rt/2.0_rt*tmp8,
+      (1.0_rt/2.0_rt)*tmp3 + (1.0_rt/2.0_rt)*tmp7
    };
 }
 
@@ -89,7 +83,7 @@ MHDReducedPrimitive mhd_reduced_from_characteristics(const MHDCharacteristics& w
       -tmp4*tmp5 - tmp6*tmp7,
       basis.normal_sign*(-basis.beta_t1*tmp10 + basis.beta_t1*tmp9 + basis.beta_t2*tmp8),
       -basis.normal_sign*(basis.beta_t1*tmp8 + basis.beta_t2*tmp10 - basis.beta_t2*tmp9),
-      basis.rho*((basis.sound_speed)*(basis.sound_speed))*(tmp1 + tmp3),
+      basis.rho*basis.sound2*(tmp1 + tmp3),
       basis.sqrt_rho*(basis.alpha_s*tmp0*tmp12 + basis.beta_t2*tmp11 - tmp12*tmp13),
       basis.sqrt_rho*(basis.alpha_s*basis.beta_t2*basis.sound_speed*tmp0 - basis.beta_t1*tmp11 - basis.beta_t2*basis.sound_speed*tmp13)
    };

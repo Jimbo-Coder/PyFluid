@@ -39,13 +39,17 @@
                } else {
                   dt = amrex::min(
                      dt,
-                     adaptive_dt<NComp, EOSMethod, DiffusionMethod>(*frequency_[lev], *state_[lev], Geom(lev), cfg_)
+                     adaptive_dt<NComp, EOSMethod, DiffusionMethod>(
+                        *frequency_[lev], *state_[lev], Geom(lev), cfg_, level_times_[lev]
+                     )
                   );
                }
             } else {
                dt = amrex::min(
                   dt,
-                  adaptive_dt<NComp, EOSMethod, DiffusionMethod>(*frequency_[lev], *state_[lev], Geom(lev), cfg_)
+                  adaptive_dt<NComp, EOSMethod, DiffusionMethod>(
+                     *frequency_[lev], *state_[lev], Geom(lev), cfg_, level_times_[lev]
+                  )
                );
             }
          }
@@ -90,7 +94,9 @@
          }
       }
       return amrex::min(
-         adaptive_dt<NComp, EOSMethod, DiffusionMethod>(*frequency_[lev], *state_[lev], Geom(lev), cfg_),
+         adaptive_dt<NComp, EOSMethod, DiffusionMethod>(
+            *frequency_[lev], *state_[lev], Geom(lev), cfg_, level_times_[lev]
+         ),
          solid_geometry_motion_dt(lev)
       );
    }

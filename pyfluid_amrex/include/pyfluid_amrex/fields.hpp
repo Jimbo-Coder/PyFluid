@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "pyfluid_amrex/mesh_geometry.hpp"
+#include "pyfluid_amrex/physical_system.hpp"
 
 namespace pyfluid_amrex {
 
@@ -104,7 +105,7 @@ AuxGridFieldInfo aux_grid_field_info(AuxGridField field);
 StateGridFieldInfo state_grid_field_info(int component);
 int state_grid_field_origin_parity(int coordinate, MeshAxes const& axes, int component);
 std::string supported_aux_grid_field_names();
-amrex::Vector<std::string> state_grid_field_names(bool mhd, int passive_scalars);
+amrex::Vector<std::string> state_grid_field_names(PhysicalSystem system, int passive_scalars);
 std::vector<std::string> aux_grid_field_output_names(AuxGridField field);
 std::string checkpoint_state_field_name();
 std::string checkpoint_face_b_field_name(int direction);

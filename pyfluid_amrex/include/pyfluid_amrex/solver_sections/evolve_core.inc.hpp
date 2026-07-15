@@ -3,6 +3,26 @@
 
    void dispatch_evolve()
    {
+      if (physics_system_ == PhysicalSystem::RMHD) {
+#if PYFLUID_AMREX_ENABLE_MHD
+         if (ct_enabled(cfg_)) {
+#if PYFLUID_AMREX_ENABLE_CT
+            dispatch_evolve_timestep<NVAR_MHD, true, EOSIdealGas>();
+#else
+            abort_disabled_build_feature("CT", "on");
+#endif
+         } else {
+            dispatch_evolve_timestep<NVAR_MHD, false, EOSIdealGas>();
+         }
+#else
+         abort_disabled_build_feature("physics", "rmhd");
+#endif
+         return;
+      }
+      if (physics_system_ == PhysicalSystem::RHD) {
+         dispatch_evolve_timestep<NVAR_HYDRO, false, EOSIdealGas>();
+         return;
+      }
       if (is_mhd(cfg_)) {
 #if PYFLUID_AMREX_ENABLE_MHD
          if (ct_enabled(cfg_)) {

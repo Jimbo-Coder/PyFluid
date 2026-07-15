@@ -6,7 +6,7 @@
 
 #include <cmath>
 
-#include "pyfluid_amrex/characteristics.hpp"
+#include "pyfluid_amrex/characteristic_basis.hpp"
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/characteristic_transforms.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
@@ -15,6 +15,10 @@
 namespace pyfluid_amrex {
 
 constexpr amrex::Real WENO_Z_EPS = 1.0e-8;
+constexpr amrex::Real TENO5_EPS = 1.0e-40;
+constexpr amrex::Real TENO5_CUTOFF = 1.0e-5;
+constexpr amrex::Real MP5_ALPHA = 4.0;
+constexpr amrex::Real MP5_EPS = 1.0e-12;
 
 struct HydroFaceStates {
    HydroState left;
@@ -48,6 +52,18 @@ amrex::Real minmod(amrex::Real a, amrex::Real b) noexcept
       return 0.0;
    }
    return a > 0.0 ? amrex::min(a, b) : amrex::max(a, b);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real minmod4(amrex::Real a, amrex::Real b, amrex::Real c, amrex::Real d) noexcept
+{
+   if (a > 0.0 && b > 0.0 && c > 0.0 && d > 0.0) {
+      return amrex::min(amrex::min(a, b), amrex::min(c, d));
+   }
+   if (a < 0.0 && b < 0.0 && c < 0.0 && d < 0.0) {
+      return amrex::max(amrex::max(a, b), amrex::max(c, d));
+   }
+   return 0.0;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -381,9 +397,105 @@ amrex::Real weno_z_right(amrex::Real vm, amrex::Real v0, amrex::Real vp, amrex::
    return weno_z_left(vppp, vpp, vp, v0, vm);
 }
 
-template <int Direction, int Component>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-ScalarFaceValues weno_z_primitive_component_face_values(
+amrex::Real teno5_left(amrex::Real vmm, amrex::Real vm, amrex::Real v0, amrex::Real vp, amrex::Real vpp) noexcept
+{
+   const amrex::Real d0 = vmm - 2.0 * vm + v0;
+   const amrex::Real e0 = vmm - 4.0 * vm + 3.0 * v0;
+   const amrex::Real d1 = vm - 2.0 * v0 + vp;
+   const amrex::Real e1 = vm - vp;
+   const amrex::Real d2 = v0 - 2.0 * vp + vpp;
+   const amrex::Real e2 = 3.0 * v0 - 4.0 * vp + vpp;
+   const amrex::Real beta0 = (13.0 / 12.0) * d0 * d0 + 0.25 * e0 * e0;
+   const amrex::Real beta1 = (13.0 / 12.0) * d1 * d1 + 0.25 * e1 * e1;
+   const amrex::Real beta2 = (13.0 / 12.0) * d2 * d2 + 0.25 * e2 * e2;
+   const amrex::Real tau5 = amrex::Math::abs(beta0 - beta2);
+   const amrex::Real r0 = 1.0 + tau5 / (beta0 + TENO5_EPS);
+   const amrex::Real r1 = 1.0 + tau5 / (beta1 + TENO5_EPS);
+   const amrex::Real r2 = 1.0 + tau5 / (beta2 + TENO5_EPS);
+   const amrex::Real g0 = r0 * r0 * r0 * r0 * r0 * r0;
+   const amrex::Real g1 = r1 * r1 * r1 * r1 * r1 * r1;
+   const amrex::Real g2 = r2 * r2 * r2 * r2 * r2 * r2;
+   const amrex::Real inv_gamma = 1.0 / (g0 + g1 + g2);
+   const amrex::Real a0 = (g0 * inv_gamma >= TENO5_CUTOFF) ? 0.1 : 0.0;
+   const amrex::Real a1 = (g1 * inv_gamma >= TENO5_CUTOFF) ? 0.6 : 0.0;
+   const amrex::Real a2 = (g2 * inv_gamma >= TENO5_CUTOFF) ? 0.3 : 0.0;
+   const amrex::Real inv_alpha = 1.0 / (a0 + a1 + a2);
+   const amrex::Real p0 = (2.0 * vmm - 7.0 * vm + 11.0 * v0) / 6.0;
+   const amrex::Real p1 = (-vm + 5.0 * v0 + 2.0 * vp) / 6.0;
+   const amrex::Real p2 = (2.0 * v0 + 5.0 * vp - vpp) / 6.0;
+   return (a0 * p0 + a1 * p1 + a2 * p2) * inv_alpha;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real mp5_left(amrex::Real vmm, amrex::Real vm, amrex::Real v0, amrex::Real vp, amrex::Real vpp) noexcept
+{
+   const amrex::Real unlimited = (2.0 * vmm - 13.0 * vm + 47.0 * v0 + 27.0 * vp - 3.0 * vpp) / 60.0;
+   const amrex::Real monotone = v0 + minmod(vp - v0, MP5_ALPHA * (v0 - vm));
+   const amrex::Real scale = amrex::max(
+      amrex::max(amrex::Math::abs(vmm), amrex::Math::abs(vm)),
+      amrex::max(amrex::Math::abs(v0), amrex::max(amrex::Math::abs(vp), amrex::Math::abs(vpp)))
+   );
+   if ((unlimited - v0) * (unlimited - monotone) <= MP5_EPS * amrex::max(1.0, scale * scale)) {
+      return unlimited;
+   }
+
+   const amrex::Real dm = vmm - 2.0 * vm + v0;
+   const amrex::Real d0 = vm - 2.0 * v0 + vp;
+   const amrex::Real dp = v0 - 2.0 * vp + vpp;
+   const amrex::Real d_m4_left = minmod4(4.0 * dm - d0, 4.0 * d0 - dm, dm, d0);
+   const amrex::Real d_m4_right = minmod4(4.0 * d0 - dp, 4.0 * dp - d0, d0, dp);
+   const amrex::Real upper_limit = v0 + MP5_ALPHA * (v0 - vm);
+   const amrex::Real average = 0.5 * (v0 + vp);
+   const amrex::Real median = average - 0.5 * d_m4_right;
+   const amrex::Real large_curvature = v0 + 0.5 * (v0 - vm) + (4.0 / 3.0) * d_m4_left;
+   const amrex::Real lower_bound = amrex::max(
+      amrex::min(amrex::min(v0, vp), median),
+      amrex::min(amrex::min(v0, upper_limit), large_curvature)
+   );
+   const amrex::Real upper_bound = amrex::min(
+      amrex::max(amrex::max(v0, vp), median),
+      amrex::max(amrex::max(v0, upper_limit), large_curvature)
+   );
+   return unlimited + minmod(lower_bound - unlimited, upper_bound - unlimited);
+}
+
+template <int ReconMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real reconstruct_left(
+   amrex::Real vmm,
+   amrex::Real vm,
+   amrex::Real v0,
+   amrex::Real vp,
+   amrex::Real vpp
+) noexcept
+{
+   static_assert(is_five_point_reconstruction(ReconMethod));
+   if constexpr (ReconMethod == ReconMP5 || ReconMethod == ReconMP5Char) {
+      return mp5_left(vmm, vm, v0, vp, vpp);
+   } else if constexpr (ReconMethod == ReconTENO5 || ReconMethod == ReconTENO5Char) {
+      return teno5_left(vmm, vm, v0, vp, vpp);
+   } else {
+      return weno_z_left(vmm, vm, v0, vp, vpp);
+   }
+}
+
+template <int ReconMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real reconstruct_right(
+   amrex::Real vm,
+   amrex::Real v0,
+   amrex::Real vp,
+   amrex::Real vpp,
+   amrex::Real vppp
+) noexcept
+{
+   return reconstruct_left<ReconMethod>(vppp, vpp, vp, v0, vm);
+}
+
+template <int ReconMethod, int Direction, int Component>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+ScalarFaceValues five_point_primitive_component_face_values(
    amrex::Array4<amrex::Real const> const& state,
    int i,
    int j,
@@ -397,8 +509,8 @@ ScalarFaceValues weno_z_primitive_component_face_values(
    const amrex::Real vpp = primitive_component_neighbor<Direction, Component>(state, i, j, k, 2);
    const amrex::Real vppp = primitive_component_neighbor<Direction, Component>(state, i, j, k, 3);
    return {
-      weno_z_left(vmm, vm, v0, vp, vpp),
-      weno_z_right(vm, v0, vp, vpp, vppp),
+      reconstruct_left<ReconMethod>(vmm, vm, v0, vp, vpp),
+      reconstruct_right<ReconMethod>(vm, v0, vp, vpp, vppp),
    };
 }
 
@@ -438,11 +550,11 @@ ScalarFaceValues primitive_component_face_values(
 {
    if constexpr (ReconMethod == ReconPWL) {
       return pwl_primitive_component_face_values<Direction, Component>(state, il, jl, kl, ir, jr, kr);
-   } else if constexpr (ReconMethod == ReconWENOZ || ReconMethod == ReconWENOZChar) {
+   } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
       static_cast<void>(ir);
       static_cast<void>(jr);
       static_cast<void>(kr);
-      return weno_z_primitive_component_face_values<Direction, Component>(state, il, jl, kl);
+      return five_point_primitive_component_face_values<ReconMethod, Direction, Component>(state, il, jl, kl);
    } else {
       return {
          state(il, jl, kl, Component),
@@ -451,62 +563,59 @@ ScalarFaceValues primitive_component_face_values(
    }
 }
 
+template <int ReconMethod, int Component>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real weno_z_left_component(
+amrex::Real reconstruct_left_component(
    HydroCharacteristics const& qmm,
    HydroCharacteristics const& qm,
    HydroCharacteristics const& q0,
    HydroCharacteristics const& qp,
-   HydroCharacteristics const& qpp,
-   int component
+   HydroCharacteristics const& qpp
 ) noexcept
 {
-   if (component == 0) {
-      return weno_z_left(qmm.entropy, qm.entropy, q0.entropy, qp.entropy, qpp.entropy);
+   static_assert(Component >= 0 && Component < 5);
+   if constexpr (Component == 0) {
+      return reconstruct_left<ReconMethod>(qmm.entropy, qm.entropy, q0.entropy, qp.entropy, qpp.entropy);
+   } else if constexpr (Component == 1) {
+      return reconstruct_left<ReconMethod>(qmm.shear1, qm.shear1, q0.shear1, qp.shear1, qpp.shear1);
+   } else if constexpr (Component == 2) {
+      return reconstruct_left<ReconMethod>(qmm.shear2, qm.shear2, q0.shear2, qp.shear2, qpp.shear2);
+   } else if constexpr (Component == 3) {
+      return reconstruct_left<ReconMethod>(qmm.sound_minus, qm.sound_minus, q0.sound_minus, qp.sound_minus, qpp.sound_minus);
+   } else {
+      return reconstruct_left<ReconMethod>(qmm.sound_plus, qm.sound_plus, q0.sound_plus, qp.sound_plus, qpp.sound_plus);
    }
-   if (component == 1) {
-      return weno_z_left(qmm.shear1, qm.shear1, q0.shear1, qp.shear1, qpp.shear1);
-   }
-   if (component == 2) {
-      return weno_z_left(qmm.shear2, qm.shear2, q0.shear2, qp.shear2, qpp.shear2);
-   }
-   if (component == 3) {
-      return weno_z_left(qmm.sound_minus, qm.sound_minus, q0.sound_minus, qp.sound_minus, qpp.sound_minus);
-   }
-   return weno_z_left(qmm.sound_plus, qm.sound_plus, q0.sound_plus, qp.sound_plus, qpp.sound_plus);
 }
 
+template <int ReconMethod, int Component>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real weno_z_right_component(
+amrex::Real reconstruct_right_component(
    HydroCharacteristics const& qm,
    HydroCharacteristics const& q0,
    HydroCharacteristics const& qp,
    HydroCharacteristics const& qpp,
-   HydroCharacteristics const& qppp,
-   int component
+   HydroCharacteristics const& qppp
 ) noexcept
 {
-   if (component == 0) {
-      return weno_z_right(qm.entropy, q0.entropy, qp.entropy, qpp.entropy, qppp.entropy);
+   static_assert(Component >= 0 && Component < 5);
+   if constexpr (Component == 0) {
+      return reconstruct_right<ReconMethod>(qm.entropy, q0.entropy, qp.entropy, qpp.entropy, qppp.entropy);
+   } else if constexpr (Component == 1) {
+      return reconstruct_right<ReconMethod>(qm.shear1, q0.shear1, qp.shear1, qpp.shear1, qppp.shear1);
+   } else if constexpr (Component == 2) {
+      return reconstruct_right<ReconMethod>(qm.shear2, q0.shear2, qp.shear2, qpp.shear2, qppp.shear2);
+   } else if constexpr (Component == 3) {
+      return reconstruct_right<ReconMethod>(qm.sound_minus, q0.sound_minus, qp.sound_minus, qpp.sound_minus, qppp.sound_minus);
+   } else {
+      return reconstruct_right<ReconMethod>(qm.sound_plus, q0.sound_plus, qp.sound_plus, qpp.sound_plus, qppp.sound_plus);
    }
-   if (component == 1) {
-      return weno_z_right(qm.shear1, q0.shear1, qp.shear1, qpp.shear1, qppp.shear1);
-   }
-   if (component == 2) {
-      return weno_z_right(qm.shear2, q0.shear2, qp.shear2, qpp.shear2, qppp.shear2);
-   }
-   if (component == 3) {
-      return weno_z_right(qm.sound_minus, q0.sound_minus, qp.sound_minus, qpp.sound_minus, qppp.sound_minus);
-   }
-   return weno_z_right(qm.sound_plus, q0.sound_plus, qp.sound_plus, qpp.sound_plus, qppp.sound_plus);
 }
 
 template <int Direction>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 HydroCharacteristics hydro_characteristics(
    HydroPrimitive const& q,
-   amrex::Real rho_ref,
-   amrex::Real sound_speed
+   HydroCharacteristicBasis const& basis
 ) noexcept
 {
    return generated::hydro_characteristics(
@@ -517,8 +626,7 @@ HydroCharacteristics hydro_characteristics(
          hydro_tangent2_velocity<Direction>(q),
          q.pressure,
       },
-      rho_ref,
-      sound_speed
+      basis
    );
 }
 
@@ -526,12 +634,11 @@ template <int Direction>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 HydroPrimitive hydro_primitive_from_characteristics(
    HydroCharacteristics const& w,
-   amrex::Real rho_ref,
-   amrex::Real sound_speed
+   HydroCharacteristicBasis const& basis
 ) noexcept
 {
    const HydroNormalPrimitive primitive =
-      generated::hydro_normal_primitive_from_characteristics(w, rho_ref, sound_speed);
+      generated::hydro_normal_primitive_from_characteristics(w, basis);
    return hydro_primitive_from_normal<Direction>(
       primitive.rho,
       primitive.vn,
@@ -541,125 +648,60 @@ HydroPrimitive hydro_primitive_from_characteristics(
    );
 }
 
+template <int ReconMethod, int Component>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real weno_z_left_component(
+amrex::Real reconstruct_left_component(
    MHDCharacteristics const& qmm,
    MHDCharacteristics const& qm,
    MHDCharacteristics const& q0,
    MHDCharacteristics const& qp,
-   MHDCharacteristics const& qpp,
-   int component
+   MHDCharacteristics const& qpp
 ) noexcept
 {
-   if (component == 0) {
-      return weno_z_left(qmm.fast_minus, qm.fast_minus, q0.fast_minus, qp.fast_minus, qpp.fast_minus);
+   static_assert(Component >= 0 && Component < 7);
+   if constexpr (Component == 0) {
+      return reconstruct_left<ReconMethod>(qmm.fast_minus, qm.fast_minus, q0.fast_minus, qp.fast_minus, qpp.fast_minus);
+   } else if constexpr (Component == 1) {
+      return reconstruct_left<ReconMethod>(qmm.alfven_minus, qm.alfven_minus, q0.alfven_minus, qp.alfven_minus, qpp.alfven_minus);
+   } else if constexpr (Component == 2) {
+      return reconstruct_left<ReconMethod>(qmm.slow_minus, qm.slow_minus, q0.slow_minus, qp.slow_minus, qpp.slow_minus);
+   } else if constexpr (Component == 3) {
+      return reconstruct_left<ReconMethod>(qmm.entropy, qm.entropy, q0.entropy, qp.entropy, qpp.entropy);
+   } else if constexpr (Component == 4) {
+      return reconstruct_left<ReconMethod>(qmm.slow_plus, qm.slow_plus, q0.slow_plus, qp.slow_plus, qpp.slow_plus);
+   } else if constexpr (Component == 5) {
+      return reconstruct_left<ReconMethod>(qmm.alfven_plus, qm.alfven_plus, q0.alfven_plus, qp.alfven_plus, qpp.alfven_plus);
+   } else {
+      return reconstruct_left<ReconMethod>(qmm.fast_plus, qm.fast_plus, q0.fast_plus, qp.fast_plus, qpp.fast_plus);
    }
-   if (component == 1) {
-      return weno_z_left(qmm.alfven_minus, qm.alfven_minus, q0.alfven_minus, qp.alfven_minus, qpp.alfven_minus);
-   }
-   if (component == 2) {
-      return weno_z_left(qmm.slow_minus, qm.slow_minus, q0.slow_minus, qp.slow_minus, qpp.slow_minus);
-   }
-   if (component == 3) {
-      return weno_z_left(qmm.entropy, qm.entropy, q0.entropy, qp.entropy, qpp.entropy);
-   }
-   if (component == 4) {
-      return weno_z_left(qmm.slow_plus, qm.slow_plus, q0.slow_plus, qp.slow_plus, qpp.slow_plus);
-   }
-   if (component == 5) {
-      return weno_z_left(qmm.alfven_plus, qm.alfven_plus, q0.alfven_plus, qp.alfven_plus, qpp.alfven_plus);
-   }
-   return weno_z_left(qmm.fast_plus, qm.fast_plus, q0.fast_plus, qp.fast_plus, qpp.fast_plus);
 }
 
+template <int ReconMethod, int Component>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real weno_z_right_component(
+amrex::Real reconstruct_right_component(
    MHDCharacteristics const& qm,
    MHDCharacteristics const& q0,
    MHDCharacteristics const& qp,
    MHDCharacteristics const& qpp,
-   MHDCharacteristics const& qppp,
-   int component
+   MHDCharacteristics const& qppp
 ) noexcept
 {
-   if (component == 0) {
-      return weno_z_right(qm.fast_minus, q0.fast_minus, qp.fast_minus, qpp.fast_minus, qppp.fast_minus);
+   static_assert(Component >= 0 && Component < 7);
+   if constexpr (Component == 0) {
+      return reconstruct_right<ReconMethod>(qm.fast_minus, q0.fast_minus, qp.fast_minus, qpp.fast_minus, qppp.fast_minus);
+   } else if constexpr (Component == 1) {
+      return reconstruct_right<ReconMethod>(qm.alfven_minus, q0.alfven_minus, qp.alfven_minus, qpp.alfven_minus, qppp.alfven_minus);
+   } else if constexpr (Component == 2) {
+      return reconstruct_right<ReconMethod>(qm.slow_minus, q0.slow_minus, qp.slow_minus, qpp.slow_minus, qppp.slow_minus);
+   } else if constexpr (Component == 3) {
+      return reconstruct_right<ReconMethod>(qm.entropy, q0.entropy, qp.entropy, qpp.entropy, qppp.entropy);
+   } else if constexpr (Component == 4) {
+      return reconstruct_right<ReconMethod>(qm.slow_plus, q0.slow_plus, qp.slow_plus, qpp.slow_plus, qppp.slow_plus);
+   } else if constexpr (Component == 5) {
+      return reconstruct_right<ReconMethod>(qm.alfven_plus, q0.alfven_plus, qp.alfven_plus, qpp.alfven_plus, qppp.alfven_plus);
+   } else {
+      return reconstruct_right<ReconMethod>(qm.fast_plus, q0.fast_plus, qp.fast_plus, qpp.fast_plus, qppp.fast_plus);
    }
-   if (component == 1) {
-      return weno_z_right(qm.alfven_minus, q0.alfven_minus, qp.alfven_minus, qpp.alfven_minus, qppp.alfven_minus);
-   }
-   if (component == 2) {
-      return weno_z_right(qm.slow_minus, q0.slow_minus, qp.slow_minus, qpp.slow_minus, qppp.slow_minus);
-   }
-   if (component == 3) {
-      return weno_z_right(qm.entropy, q0.entropy, qp.entropy, qpp.entropy, qppp.entropy);
-   }
-   if (component == 4) {
-      return weno_z_right(qm.slow_plus, q0.slow_plus, qp.slow_plus, qpp.slow_plus, qppp.slow_plus);
-   }
-   if (component == 5) {
-      return weno_z_right(qm.alfven_plus, q0.alfven_plus, qp.alfven_plus, qpp.alfven_plus, qppp.alfven_plus);
-   }
-   return weno_z_right(qm.fast_plus, q0.fast_plus, qp.fast_plus, qpp.fast_plus, qppp.fast_plus);
-}
-
-template <int EOSMethod>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-MHDCharacteristicBasis mhd_characteristic_basis(
-   amrex::Real rho_ref,
-   amrex::Real pressure_ref,
-   amrex::Real b_normal,
-   amrex::Real b_tangent1,
-   amrex::Real b_tangent2,
-   EOSParams const& eos
-) noexcept
-{
-   const amrex::Real sound_speed = sound_speed_from_primitive<EOSMethod>(rho_ref, pressure_ref, eos);
-   const amrex::Real sound2 = sound_speed * sound_speed;
-   const amrex::Real b2 = (b_normal * b_normal + b_tangent1 * b_tangent1 + b_tangent2 * b_tangent2) / rho_ref;
-   const amrex::Real ca2 = b_normal * b_normal / rho_ref;
-   amrex::Real discr = (sound2 + b2) * (sound2 + b2) - 4.0 * sound2 * ca2;
-   if (discr < 0.0 && discr > -1.0e-14) {
-      discr = 0.0;
-   }
-   discr = amrex::max(discr, 0.0);
-   const amrex::Real root = std::sqrt(discr);
-   const amrex::Real fast2 = amrex::max(0.5 * (sound2 + b2 + root), 0.0);
-   const amrex::Real slow2 = amrex::max(0.5 * (sound2 + b2 - root), 0.0);
-   const amrex::Real b_perp = std::sqrt(b_tangent1 * b_tangent1 + b_tangent2 * b_tangent2);
-
-   amrex::Real beta_t1 = 1.0 / std::sqrt(2.0);
-   amrex::Real beta_t2 = beta_t1;
-   if (b_perp > 1.0e-14) {
-      beta_t1 = b_tangent1 / b_perp;
-      beta_t2 = b_tangent2 / b_perp;
-   }
-
-   amrex::Real alpha_f = 1.0;
-   amrex::Real alpha_s = 0.0;
-   const amrex::Real denom = fast2 - slow2;
-   if (denom > 1.0e-14) {
-      alpha_f = std::sqrt(amrex::max((sound2 - slow2) / denom, 0.0));
-      alpha_s = std::sqrt(amrex::max((fast2 - sound2) / denom, 0.0));
-   }
-   amrex::Real velocity_denom = alpha_f * alpha_f * fast2 + alpha_s * alpha_s * slow2;
-   if (velocity_denom <= 1.0e-14) {
-      velocity_denom = sound2;
-   }
-
-   return {
-      rho_ref,
-      std::sqrt(rho_ref),
-      sound_speed,
-      std::sqrt(fast2),
-      std::sqrt(slow2),
-      alpha_f,
-      alpha_s,
-      beta_t1,
-      beta_t2,
-      b_normal < 0.0 ? -1.0 : 1.0,
-      velocity_denom,
-   };
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -754,9 +796,9 @@ HydroFaceStates hydro_pwl_face_states(
    return {conserved_from_primitive<EOSMethod>(face.left, eos), conserved_from_primitive<EOSMethod>(face.right, eos)};
 }
 
-template <int Direction>
+template <int ReconMethod, int Direction>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-HydroPrimitiveFaceStates hydro_wenoz_primitive_face_states(
+HydroPrimitiveFaceStates hydro_five_point_primitive_face_states(
    amrex::Array4<amrex::Real const> const& state,
    int il,
    int jl,
@@ -771,20 +813,20 @@ HydroPrimitiveFaceStates hydro_wenoz_primitive_face_states(
    static_cast<void>(jr);
    static_cast<void>(kr);
    static_cast<void>(eos);
-   const ScalarFaceValues rho = weno_z_primitive_component_face_values<Direction, RHO>(state, il, jl, kl);
-   const ScalarFaceValues vx = weno_z_primitive_component_face_values<Direction, MOM1>(state, il, jl, kl);
-   const ScalarFaceValues vy = weno_z_primitive_component_face_values<Direction, MOM2>(state, il, jl, kl);
-   const ScalarFaceValues vz = weno_z_primitive_component_face_values<Direction, MOM3>(state, il, jl, kl);
-   const ScalarFaceValues pressure = weno_z_primitive_component_face_values<Direction, ENERGY>(state, il, jl, kl);
+   const ScalarFaceValues rho = five_point_primitive_component_face_values<ReconMethod, Direction, RHO>(state, il, jl, kl);
+   const ScalarFaceValues vx = five_point_primitive_component_face_values<ReconMethod, Direction, MOM1>(state, il, jl, kl);
+   const ScalarFaceValues vy = five_point_primitive_component_face_values<ReconMethod, Direction, MOM2>(state, il, jl, kl);
+   const ScalarFaceValues vz = five_point_primitive_component_face_values<ReconMethod, Direction, MOM3>(state, il, jl, kl);
+   const ScalarFaceValues pressure = five_point_primitive_component_face_values<ReconMethod, Direction, ENERGY>(state, il, jl, kl);
    return {
       {rho.left, vx.left, vy.left, vz.left, pressure.left},
       {rho.right, vx.right, vy.right, vz.right, pressure.right},
    };
 }
 
-template <int Direction, int EOSMethod>
+template <int ReconMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-HydroFaceStates hydro_wenoz_face_states(
+HydroFaceStates hydro_five_point_face_states(
    amrex::Array4<amrex::Real const> const& state,
    int il,
    int jl,
@@ -795,13 +837,13 @@ HydroFaceStates hydro_wenoz_face_states(
    EOSParams const& eos
 ) noexcept
 {
-   const HydroPrimitiveFaceStates face = hydro_wenoz_primitive_face_states<Direction>(state, il, jl, kl, ir, jr, kr, eos);
+   const HydroPrimitiveFaceStates face = hydro_five_point_primitive_face_states<ReconMethod, Direction>(state, il, jl, kl, ir, jr, kr, eos);
    return {conserved_from_primitive<EOSMethod>(face.left, eos), conserved_from_primitive<EOSMethod>(face.right, eos)};
 }
 
-template <int Direction, int EOSMethod>
+template <int ReconMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-HydroPrimitiveFaceStates hydro_wenoz_char_primitive_face_states(
+HydroPrimitiveFaceStates hydro_five_point_char_primitive_face_states(
    amrex::Array4<amrex::Real const> const& state,
    int il,
    int jl,
@@ -822,36 +864,46 @@ HydroPrimitiveFaceStates hydro_wenoz_char_primitive_face_states(
    const amrex::Real rho_ref = 0.5 * (q2.rho + q3.rho);
    const amrex::Real pressure_ref = 0.5 * (q2.pressure + q3.pressure);
    const amrex::Real sound_speed = sound_speed_from_primitive<EOSMethod>(rho_ref, pressure_ref, eos);
-   const HydroCharacteristics c0 = hydro_characteristics<Direction>(q0, rho_ref, sound_speed);
-   const HydroCharacteristics c1 = hydro_characteristics<Direction>(q1, rho_ref, sound_speed);
-   const HydroCharacteristics c2 = hydro_characteristics<Direction>(q2, rho_ref, sound_speed);
-   const HydroCharacteristics c3 = hydro_characteristics<Direction>(q3, rho_ref, sound_speed);
-   const HydroCharacteristics c4 = hydro_characteristics<Direction>(q4, rho_ref, sound_speed);
-   const HydroCharacteristics c5 = hydro_characteristics<Direction>(q5, rho_ref, sound_speed);
+   const amrex::Real inv_rho = 1.0 / rho_ref;
+   const amrex::Real inv_sound_speed = 1.0 / sound_speed;
+   const HydroCharacteristicBasis basis{
+      rho_ref,
+      inv_rho,
+      sound_speed,
+      sound_speed * sound_speed,
+      inv_sound_speed,
+      inv_sound_speed * inv_sound_speed,
+   };
+   const HydroCharacteristics c0 = hydro_characteristics<Direction>(q0, basis);
+   const HydroCharacteristics c1 = hydro_characteristics<Direction>(q1, basis);
+   const HydroCharacteristics c2 = hydro_characteristics<Direction>(q2, basis);
+   const HydroCharacteristics c3 = hydro_characteristics<Direction>(q3, basis);
+   const HydroCharacteristics c4 = hydro_characteristics<Direction>(q4, basis);
+   const HydroCharacteristics c5 = hydro_characteristics<Direction>(q5, basis);
    const HydroCharacteristics wl{
-      weno_z_left_component(c0, c1, c2, c3, c4, 0),
-      weno_z_left_component(c0, c1, c2, c3, c4, 1),
-      weno_z_left_component(c0, c1, c2, c3, c4, 2),
-      weno_z_left_component(c0, c1, c2, c3, c4, 3),
-      weno_z_left_component(c0, c1, c2, c3, c4, 4),
+      reconstruct_left_component<ReconMethod, 0>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 1>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 2>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 3>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 4>(c0, c1, c2, c3, c4),
    };
    const HydroCharacteristics wr{
-      weno_z_right_component(c1, c2, c3, c4, c5, 0),
-      weno_z_right_component(c1, c2, c3, c4, c5, 1),
-      weno_z_right_component(c1, c2, c3, c4, c5, 2),
-      weno_z_right_component(c1, c2, c3, c4, c5, 3),
-      weno_z_right_component(c1, c2, c3, c4, c5, 4),
+      reconstruct_right_component<ReconMethod, 0>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 1>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 2>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 3>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 4>(c1, c2, c3, c4, c5),
    };
 
    return {
-      hydro_primitive_from_characteristics<Direction>(wl, rho_ref, sound_speed),
-      hydro_primitive_from_characteristics<Direction>(wr, rho_ref, sound_speed),
+      hydro_primitive_from_characteristics<Direction>(wl, basis),
+      hydro_primitive_from_characteristics<Direction>(wr, basis),
    };
 }
 
-template <int Direction, int EOSMethod>
+template <int ReconMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-HydroFaceStates hydro_wenoz_char_face_states(
+HydroFaceStates hydro_five_point_char_face_states(
    amrex::Array4<amrex::Real const> const& state,
    int il,
    int jl,
@@ -862,7 +914,7 @@ HydroFaceStates hydro_wenoz_char_face_states(
    EOSParams const& eos
 ) noexcept
 {
-   const HydroPrimitiveFaceStates face = hydro_wenoz_char_primitive_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
+   const HydroPrimitiveFaceStates face = hydro_five_point_char_primitive_face_states<ReconMethod, Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
    return {conserved_from_primitive<EOSMethod>(face.left, eos), conserved_from_primitive<EOSMethod>(face.right, eos)};
 }
 
@@ -906,9 +958,9 @@ MHDFaceStates mhd_pwl_face_states(
    return {conserved_from_primitive<EOSMethod>(face.left, eos), conserved_from_primitive<EOSMethod>(face.right, eos)};
 }
 
-template <int Direction>
+template <int ReconMethod, int Direction>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-MHDPrimitiveFaceStates mhd_wenoz_primitive_face_states(
+MHDPrimitiveFaceStates mhd_five_point_primitive_face_states(
    amrex::Array4<amrex::Real const> const& state,
    int il,
    int jl,
@@ -923,23 +975,23 @@ MHDPrimitiveFaceStates mhd_wenoz_primitive_face_states(
    static_cast<void>(jr);
    static_cast<void>(kr);
    static_cast<void>(eos);
-   const ScalarFaceValues rho = weno_z_primitive_component_face_values<Direction, RHO>(state, il, jl, kl);
-   const ScalarFaceValues vx = weno_z_primitive_component_face_values<Direction, MOM1>(state, il, jl, kl);
-   const ScalarFaceValues vy = weno_z_primitive_component_face_values<Direction, MOM2>(state, il, jl, kl);
-   const ScalarFaceValues vz = weno_z_primitive_component_face_values<Direction, MOM3>(state, il, jl, kl);
-   const ScalarFaceValues pressure = weno_z_primitive_component_face_values<Direction, ENERGY>(state, il, jl, kl);
-   const ScalarFaceValues bx = weno_z_primitive_component_face_values<Direction, B1>(state, il, jl, kl);
-   const ScalarFaceValues by = weno_z_primitive_component_face_values<Direction, B2>(state, il, jl, kl);
-   const ScalarFaceValues bz = weno_z_primitive_component_face_values<Direction, B3>(state, il, jl, kl);
+   const ScalarFaceValues rho = five_point_primitive_component_face_values<ReconMethod, Direction, RHO>(state, il, jl, kl);
+   const ScalarFaceValues vx = five_point_primitive_component_face_values<ReconMethod, Direction, MOM1>(state, il, jl, kl);
+   const ScalarFaceValues vy = five_point_primitive_component_face_values<ReconMethod, Direction, MOM2>(state, il, jl, kl);
+   const ScalarFaceValues vz = five_point_primitive_component_face_values<ReconMethod, Direction, MOM3>(state, il, jl, kl);
+   const ScalarFaceValues pressure = five_point_primitive_component_face_values<ReconMethod, Direction, ENERGY>(state, il, jl, kl);
+   const ScalarFaceValues bx = five_point_primitive_component_face_values<ReconMethod, Direction, B1>(state, il, jl, kl);
+   const ScalarFaceValues by = five_point_primitive_component_face_values<ReconMethod, Direction, B2>(state, il, jl, kl);
+   const ScalarFaceValues bz = five_point_primitive_component_face_values<ReconMethod, Direction, B3>(state, il, jl, kl);
    return {
       {rho.left, vx.left, vy.left, vz.left, pressure.left, bx.left, by.left, bz.left},
       {rho.right, vx.right, vy.right, vz.right, pressure.right, bx.right, by.right, bz.right},
    };
 }
 
-template <int Direction, int EOSMethod>
+template <int ReconMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-MHDFaceStates mhd_wenoz_face_states(
+MHDFaceStates mhd_five_point_face_states(
    amrex::Array4<amrex::Real const> const& state,
    int il,
    int jl,
@@ -950,13 +1002,13 @@ MHDFaceStates mhd_wenoz_face_states(
    EOSParams const& eos
 ) noexcept
 {
-   const MHDPrimitiveFaceStates face = mhd_wenoz_primitive_face_states<Direction>(state, il, jl, kl, ir, jr, kr, eos);
+   const MHDPrimitiveFaceStates face = mhd_five_point_primitive_face_states<ReconMethod, Direction>(state, il, jl, kl, ir, jr, kr, eos);
    return {conserved_from_primitive<EOSMethod>(face.left, eos), conserved_from_primitive<EOSMethod>(face.right, eos)};
 }
 
-template <int Direction, int EOSMethod>
+template <int ReconMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-MHDPrimitiveFaceStates mhd_wenoz_char_primitive_face_states(
+MHDPrimitiveFaceStates mhd_five_point_char_primitive_face_states(
    amrex::Array4<amrex::Real const> const& state,
    int il,
    int jl,
@@ -981,14 +1033,14 @@ MHDPrimitiveFaceStates mhd_wenoz_char_primitive_face_states(
    const MHDReducedPrimitive r4 = mhd_reduced_primitive<Direction>(q4);
    const MHDReducedPrimitive r5 = mhd_reduced_primitive<Direction>(q5);
 
-   const amrex::Real b_normal_left = weno_z_left(
+   const amrex::Real b_normal_left = reconstruct_left<ReconMethod>(
       mhd_normal_b<Direction>(q0),
       mhd_normal_b<Direction>(q1),
       mhd_normal_b<Direction>(q2),
       mhd_normal_b<Direction>(q3),
       mhd_normal_b<Direction>(q4)
    );
-   const amrex::Real b_normal_right = weno_z_right(
+   const amrex::Real b_normal_right = reconstruct_right<ReconMethod>(
       mhd_normal_b<Direction>(q1),
       mhd_normal_b<Direction>(q2),
       mhd_normal_b<Direction>(q3),
@@ -1012,22 +1064,22 @@ MHDPrimitiveFaceStates mhd_wenoz_char_primitive_face_states(
    const MHDCharacteristics c4 = mhd_characteristics(r4, basis);
    const MHDCharacteristics c5 = mhd_characteristics(r5, basis);
    const MHDCharacteristics wl{
-      weno_z_left_component(c0, c1, c2, c3, c4, 0),
-      weno_z_left_component(c0, c1, c2, c3, c4, 1),
-      weno_z_left_component(c0, c1, c2, c3, c4, 2),
-      weno_z_left_component(c0, c1, c2, c3, c4, 3),
-      weno_z_left_component(c0, c1, c2, c3, c4, 4),
-      weno_z_left_component(c0, c1, c2, c3, c4, 5),
-      weno_z_left_component(c0, c1, c2, c3, c4, 6),
+      reconstruct_left_component<ReconMethod, 0>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 1>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 2>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 3>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 4>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 5>(c0, c1, c2, c3, c4),
+      reconstruct_left_component<ReconMethod, 6>(c0, c1, c2, c3, c4),
    };
    const MHDCharacteristics wr{
-      weno_z_right_component(c1, c2, c3, c4, c5, 0),
-      weno_z_right_component(c1, c2, c3, c4, c5, 1),
-      weno_z_right_component(c1, c2, c3, c4, c5, 2),
-      weno_z_right_component(c1, c2, c3, c4, c5, 3),
-      weno_z_right_component(c1, c2, c3, c4, c5, 4),
-      weno_z_right_component(c1, c2, c3, c4, c5, 5),
-      weno_z_right_component(c1, c2, c3, c4, c5, 6),
+      reconstruct_right_component<ReconMethod, 0>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 1>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 2>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 3>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 4>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 5>(c1, c2, c3, c4, c5),
+      reconstruct_right_component<ReconMethod, 6>(c1, c2, c3, c4, c5),
    };
 
    return {
@@ -1036,9 +1088,9 @@ MHDPrimitiveFaceStates mhd_wenoz_char_primitive_face_states(
    };
 }
 
-template <int Direction, int EOSMethod>
+template <int ReconMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-MHDFaceStates mhd_wenoz_char_face_states(
+MHDFaceStates mhd_five_point_char_face_states(
    amrex::Array4<amrex::Real const> const& state,
    int il,
    int jl,
@@ -1049,7 +1101,7 @@ MHDFaceStates mhd_wenoz_char_face_states(
    EOSParams const& eos
 ) noexcept
 {
-   const MHDPrimitiveFaceStates face = mhd_wenoz_char_primitive_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
+   const MHDPrimitiveFaceStates face = mhd_five_point_char_primitive_face_states<ReconMethod, Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
    return {conserved_from_primitive<EOSMethod>(face.left, eos), conserved_from_primitive<EOSMethod>(face.right, eos)};
 }
 
@@ -1069,10 +1121,10 @@ HydroPrimitiveFaceStates hydro_primitive_face_states(
    HydroPrimitiveFaceStates face;
    if constexpr (ReconMethod == ReconPWL) {
       face = hydro_pwl_primitive_face_states<Direction>(state, il, jl, kl, ir, jr, kr, eos);
-   } else if constexpr (ReconMethod == ReconWENOZChar) {
-      face = hydro_wenoz_char_primitive_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
-   } else if constexpr (ReconMethod == ReconWENOZ) {
-      face = hydro_wenoz_primitive_face_states<Direction>(state, il, jl, kl, ir, jr, kr, eos);
+   } else if constexpr (is_characteristic_reconstruction(ReconMethod)) {
+      face = hydro_five_point_char_primitive_face_states<ReconMethod, Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
+   } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
+      face = hydro_five_point_primitive_face_states<ReconMethod, Direction>(state, il, jl, kl, ir, jr, kr, eos);
    } else {
       face = {primitive_at(state, il, jl, kl, eos), primitive_at(state, ir, jr, kr, eos)};
    }
@@ -1099,10 +1151,10 @@ HydroFaceStates hydro_face_states(
 {
    if constexpr (ReconMethod == ReconPWL) {
       return hydro_pwl_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
-   } else if constexpr (ReconMethod == ReconWENOZChar) {
-      return hydro_wenoz_char_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
-   } else if constexpr (ReconMethod == ReconWENOZ) {
-      return hydro_wenoz_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
+   } else if constexpr (is_characteristic_reconstruction(ReconMethod)) {
+      return hydro_five_point_char_face_states<ReconMethod, Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
+   } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
+      return hydro_five_point_face_states<ReconMethod, Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
    } else {
       return {
          conserved_from_primitive<EOSMethod>(primitive_at(state, il, jl, kl, eos), eos),
@@ -1127,10 +1179,10 @@ MHDPrimitiveFaceStates mhd_primitive_face_states(
    MHDPrimitiveFaceStates face;
    if constexpr (ReconMethod == ReconPWL) {
       face = mhd_pwl_primitive_face_states<Direction>(state, il, jl, kl, ir, jr, kr, eos);
-   } else if constexpr (ReconMethod == ReconWENOZChar) {
-      face = mhd_wenoz_char_primitive_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
-   } else if constexpr (ReconMethod == ReconWENOZ) {
-      face = mhd_wenoz_primitive_face_states<Direction>(state, il, jl, kl, ir, jr, kr, eos);
+   } else if constexpr (is_characteristic_reconstruction(ReconMethod)) {
+      face = mhd_five_point_char_primitive_face_states<ReconMethod, Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
+   } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
+      face = mhd_five_point_primitive_face_states<ReconMethod, Direction>(state, il, jl, kl, ir, jr, kr, eos);
    } else {
       face = {mhd_primitive_at(state, il, jl, kl, eos), mhd_primitive_at(state, ir, jr, kr, eos)};
    }
@@ -1157,10 +1209,10 @@ MHDFaceStates mhd_face_states(
 {
    if constexpr (ReconMethod == ReconPWL) {
       return mhd_pwl_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
-   } else if constexpr (ReconMethod == ReconWENOZChar) {
-      return mhd_wenoz_char_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
-   } else if constexpr (ReconMethod == ReconWENOZ) {
-      return mhd_wenoz_face_states<Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
+   } else if constexpr (is_characteristic_reconstruction(ReconMethod)) {
+      return mhd_five_point_char_face_states<ReconMethod, Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
+   } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
+      return mhd_five_point_face_states<ReconMethod, Direction, EOSMethod>(state, il, jl, kl, ir, jr, kr, eos);
    } else {
       return {
          conserved_from_primitive<EOSMethod>(mhd_primitive_at(state, il, jl, kl, eos), eos),

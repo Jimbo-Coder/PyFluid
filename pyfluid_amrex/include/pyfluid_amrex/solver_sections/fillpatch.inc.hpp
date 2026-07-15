@@ -87,8 +87,7 @@
          enforce_solid_mask_nesting_from_fine();
       }
       if (preserve_hydro_solid_totals) {
-         repair_nonpositive_hydro_fluid_cells_all_levels();
-         apply_hydro_valid_conserved_total_correction(pre_regrid_totals);
+         repair_after_hierarchy_change(pre_regrid_totals);
          if (finestLevel() > 0) {
             average_down_state();
          }
@@ -179,6 +178,10 @@
 
    bool compute_post_fillpatch_state_boundary_needed() const
    {
+      if (physical_system_is_relativistic(physics_system_)
+          && cfg_.spacetime_fixed_metric != "minkowski") {
+         return true;
+      }
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
          if (
             side_boundary_kind(cfg_, dir, false) == BoundaryKind::Diode

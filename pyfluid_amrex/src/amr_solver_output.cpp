@@ -1,9 +1,10 @@
-#include "pyfluid_amrex/amr_solver.hpp"
+#include "pyfluid_amrex/amr_solver_base.hpp"
 #include "pyfluid_amrex/fields.hpp"
+#include "pyfluid_amrex/relativistic_boundary.hpp"
 
 namespace pyfluid_amrex {
 
-void AmrSolver::write_current_state_plotfile(int step, amrex::Real time) const
+void AmrSolverBase::write_current_state_plotfile(int step, amrex::Real time) const
 {
    if (finestLevel() == 0) {
       write_plotfile(*state_[0], Geom(0), cfg_.output_dir, step, time, is_mhd(cfg_), cfg_.passive_scalars, cfg_);
@@ -24,7 +25,7 @@ void AmrSolver::write_current_state_plotfile(int step, amrex::Real time) const
    }
 }
 
-void AmrSolver::write_current_aux_gfs(int step, amrex::Real time)
+void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
 {
    if (!aux_gfs_enabled(cfg_)) {
       return;
@@ -78,7 +79,7 @@ void AmrSolver::write_current_aux_gfs(int step, amrex::Real time)
    }
 }
 
-std::string AmrSolver::checkpoint_dir() const
+std::string AmrSolverBase::checkpoint_dir() const
 {
    if (!cfg_.checkpoint_dir.empty()) {
       return cfg_.checkpoint_dir;
@@ -86,7 +87,7 @@ std::string AmrSolver::checkpoint_dir() const
    return (std::filesystem::path(cfg_.output_dir) / "checkpoints").string();
 }
 
-void AmrSolver::load_checkpoint(std::string const& checkpoint_name, amrex::Real& time, amrex::Real& dt)
+void AmrSolverBase::load_checkpoint(std::string const& checkpoint_name, amrex::Real& time, amrex::Real& dt)
 {
    const CheckpointHeader checkpoint = read_checkpoint_header(checkpoint_name);
    if (checkpoint.finest_level > maxLevel()) {
@@ -160,9 +161,28 @@ void AmrSolver::load_checkpoint(std::string const& checkpoint_name, amrex::Real&
    aligned_regrid_due_ = false;
 }
 
-void AmrSolver::apply_boundary(amrex::MultiFab& state, amrex::Geometry const& geom, amrex::Real time) const
+void AmrSolverBase::apply_boundary(amrex::MultiFab& state, amrex::Geometry const& geom, amrex::Real time) const
 {
    apply_configured_state_boundary(state, geom, boundary_data_, time);
+   if (physics_system_ == PhysicalSystem::RHD) {
+      apply_fixed_metric_state_boundary<PhysicalSystem::RHD>(
+         state,
+         geom,
+         boundary_data_,
+         fixed_spacetime_parameters(cfg_),
+         eos_params(cfg_),
+         time
+      );
+   } else if (physics_system_ == PhysicalSystem::RMHD) {
+      apply_fixed_metric_state_boundary<PhysicalSystem::RMHD>(
+         state,
+         geom,
+         boundary_data_,
+         fixed_spacetime_parameters(cfg_),
+         eos_params(cfg_),
+         time
+      );
+   }
    if (patch_union_domain_enabled()) {
       int lev = -1;
       for (int level = 0; level <= finestLevel(); ++level) {
@@ -178,7 +198,7 @@ void AmrSolver::apply_boundary(amrex::MultiFab& state, amrex::Geometry const& ge
    }
 }
 
-void AmrSolver::initialize_ct_fields(int lev, amrex::Real time)
+void AmrSolverBase::initialize_ct_fields(int lev, amrex::Real time)
 {
    if (!ct_enabled(cfg_)) {
       return;
@@ -211,7 +231,7 @@ void AmrSolver::initialize_ct_fields(int lev, amrex::Real time)
    apply_boundary(*state_[lev], Geom(lev), time);
 }
 
-FaceMagneticField const* AmrSolver::face_b_ptr(int lev) const
+FaceMagneticField const* AmrSolverBase::face_b_ptr(int lev) const
 {
    if (!ct_enabled(cfg_)) {
       return nullptr;
@@ -219,7 +239,7 @@ FaceMagneticField const* AmrSolver::face_b_ptr(int lev) const
    return &face_b_[lev];
 }
 
-std::vector<FaceMagneticField> const* AmrSolver::checkpoint_face_b() const
+std::vector<FaceMagneticField> const* AmrSolverBase::checkpoint_face_b() const
 {
    if (!ct_enabled(cfg_)) {
       return nullptr;

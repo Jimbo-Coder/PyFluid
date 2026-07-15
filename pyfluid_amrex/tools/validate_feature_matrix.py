@@ -47,6 +47,16 @@ RUN_ROOT = ROOT / "runs" / "current" / "amrex_feature_matrix"
 CASE_INPUTS = RUN_ROOT / "inputs"
 SUMMARY = RUN_ROOT / "feature_matrix.tsv"
 HISTORY = ROOT / "runs" / "current" / "validation_history.tsv"
+RECONSTRUCTION_METHODS = (
+   ("pwc", "1"),
+   ("pwl", "2"),
+   ("wenoz", "3"),
+   ("wenoz-char", "3"),
+   ("mp5", "3"),
+   ("mp5-char", "3"),
+   ("teno5", "3"),
+   ("teno5-char", "3"),
+)
 
 
 @dataclass(frozen=True)
@@ -274,7 +284,7 @@ def hydro_method_cases() -> list[Case]:
          "hydro_sine_2d.in",
          {"pyfluid.timestep": timestep, "pyfluid.recon": "pwl", "pyfluid.riemann": "hllc", "pyfluid.ng": "2"},
       ))
-   for recon, ng in [("pwc", "1"), ("pwl", "2"), ("wenoz", "3"), ("wenoz-char", "3")]:
+   for recon, ng in RECONSTRUCTION_METHODS:
       cases.append(Case(
          f"hydro_recon_{recon.replace('-', '_')}",
          2,
@@ -325,7 +335,7 @@ def mhd_method_cases() -> list[Case]:
             "pyfluid.resistivity": "0.0",
          },
       ))
-   for recon, ng in [("pwc", "1"), ("pwl", "2"), ("wenoz", "3"), ("wenoz-char", "3")]:
+   for recon, ng in RECONSTRUCTION_METHODS:
       cases.append(Case(
          f"mhd_recon_{recon.replace('-', '_')}",
          2,

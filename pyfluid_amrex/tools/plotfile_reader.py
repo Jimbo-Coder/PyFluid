@@ -608,6 +608,40 @@ def read_level0_state_1d(plotfile: Path, names: list[str]) -> np.ndarray:
    return read_level_state(plotfile, names, 1, 0)
 
 
+def read_composite_state_1d(
+   plotfile: Path,
+   names: list[str],
+   target_level: int | None = None,
+) -> np.ndarray:
+   """Sample the owned 1D AMR hierarchy on one uniform target level.
+
+   Coarse cell averages are repeated onto the target mesh, then overwritten by
+   progressively finer owned cells. This is an honest piecewise-constant view,
+   not an interpolation or smoothing operation.
+   """
+   nlevels = level_count(plotfile)
+   selected_level = nlevels - 1 if target_level is None else target_level
+   if not 0 <= selected_level < nlevels:
+      raise ValueError(f"target level {selected_level} not in range [0, {nlevels - 1}]")
+   level_shapes = parse_level_shapes(plotfile)
+   target_cells = level_shapes[selected_level][0]
+   composite = np.full((len(names), target_cells), np.nan, dtype=float)
+   for level in range(selected_level + 1):
+      level_cells = level_shapes[level][0]
+      if target_cells % level_cells != 0:
+         raise ValueError(
+            f"target level has {target_cells} cells, not an integer multiple of level {level} ({level_cells})"
+         )
+      repeat = target_cells // level_cells
+      for lo, hi, data in level_chunks(plotfile, level, 1, names=names):
+         start = lo[0] * repeat
+         stop = (hi[0] + 1) * repeat
+         composite[:, start:stop] = np.repeat(data, repeat, axis=1)
+   if not np.isfinite(composite).all():
+      raise ValueError(f"AMR hierarchy does not cover the complete 1D target mesh: {plotfile}")
+   return composite
+
+
 def read_fab_1d(plotfile: Path, offset: int) -> tuple[int, int, np.ndarray]:
    path = _ensure_path(plotfile)
    if path.suffix in {".h5", ".hdf5"}:

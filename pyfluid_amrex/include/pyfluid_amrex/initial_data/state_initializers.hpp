@@ -9,12 +9,15 @@
 #include <string>
 
 #include "pyfluid_amrex/boundary.hpp"
+#include "pyfluid_amrex/characteristic_basis.hpp"
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/initial_data/common.hpp"
 #include "pyfluid_amrex/initial_data/passive_scalars.hpp"
+#include "pyfluid_amrex/initial_data/rhd.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
+#include "pyfluid_amrex/kernels_generated/characteristic_transforms.hpp"
 #include "pyfluid_amrex/patch_grid_config.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -294,6 +297,199 @@ inline void initialize_sine_wave(amrex::MultiFab& state, amrex::Geometry const& 
          } else {
             arr(i, j, k, ENERGY) = total_hydro_energy_runtime(eos_method, rho, v1_0, v2_0, v3_0, pressure0, eos);
          }
+      });
+   }
+   }
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real reconstruction_medley_profile(amrex::Real phase) noexcept
+{
+   phase -= std::floor(phase);
+   const int segment = amrex::min(static_cast<int>(4.0 * phase), 3);
+   const amrex::Real local = 4.0 * phase - static_cast<amrex::Real>(segment);
+   if (segment == 0) {
+      const amrex::Real sine = std::sin(3.141592653589793238462643383279502884 * local);
+      return sine * sine;
+   }
+   if (segment == 1) {
+      return local >= 0.2 && local <= 0.8 ? 1.0 : 0.0;
+   }
+   if (segment == 2) {
+      return 1.0 - std::abs(2.0 * local - 1.0);
+   }
+
+   constexpr amrex::Real sigma = 0.12;
+   const amrex::Real z = (local - 0.5) / sigma;
+   const amrex::Real edge = std::exp(-0.5 * (0.5 / sigma) * (0.5 / sigma));
+   return amrex::max((std::exp(-0.5 * z * z) - edge) / (1.0 - edge), 0.0);
+}
+
+inline void initialize_advection_medley(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
+{
+   const auto problo = geom.ProbLoArray();
+   const auto probhi = geom.ProbHiArray();
+   const auto dx = geom.CellSizeArray();
+   const amrex::Real domain_length = probhi[0] - problo[0];
+   const amrex::Real rho0 = cfg.rho0;
+   const amrex::Real pressure0 = cfg.pressure0;
+   const amrex::Real amplitude = cfg.amplitude;
+   const amrex::Real velocity = cfg.v1_0;
+   const EOSParams eos = eos_params(cfg);
+   const int eos_method = eos_method_code(cfg);
+
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   {
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const auto arr = state.array(mfi);
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         amrex::ignore_unused(j, k);
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real rho = rho0 + amplitude * reconstruction_medley_profile((x - problo[0]) / domain_length);
+         arr(i, j, k, RHO) = rho;
+         arr(i, j, k, MOM1) = rho * velocity;
+         arr(i, j, k, MOM2) = 0.0;
+         arr(i, j, k, MOM3) = 0.0;
+         arr(i, j, k, ENERGY) = total_hydro_energy_runtime(
+            eos_method,
+            rho,
+            velocity,
+            0.0,
+            0.0,
+            pressure0,
+            eos
+         );
+      });
+   }
+   }
+}
+
+inline void initialize_characteristic_medley(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
+{
+   const auto problo = geom.ProbLoArray();
+   const auto probhi = geom.ProbHiArray();
+   const auto dx = geom.CellSizeArray();
+   const amrex::Real domain_length = probhi[0] - problo[0];
+   const amrex::Real rho0 = cfg.rho0;
+   const amrex::Real pressure0 = cfg.pressure0;
+   const amrex::Real amplitude = cfg.amplitude;
+   const EOSParams eos = eos_params(cfg);
+   const int eos_method = eos_method_code(cfg);
+   const amrex::Real sound_speed = sound_speed_from_primitive_runtime(eos_method, rho0, pressure0, eos);
+   const amrex::Real sound2 = sound_speed * sound_speed;
+
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   {
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const auto arr = state.array(mfi);
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         amrex::ignore_unused(j, k);
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real phase = (x - problo[0]) / domain_length;
+         const amrex::Real sound_minus = amplitude * reconstruction_medley_profile(phase);
+         const amrex::Real entropy = amplitude * reconstruction_medley_profile(phase + 1.0 / 3.0);
+         const amrex::Real sound_plus = amplitude * reconstruction_medley_profile(phase + 2.0 / 3.0);
+         const amrex::Real rho = rho0 + sound_minus + entropy + sound_plus;
+         const amrex::Real velocity = sound_speed * (sound_plus - sound_minus) / rho0;
+         const amrex::Real pressure = pressure0 + sound2 * (sound_minus + sound_plus);
+         arr(i, j, k, RHO) = rho;
+         arr(i, j, k, MOM1) = rho * velocity;
+         arr(i, j, k, MOM2) = 0.0;
+         arr(i, j, k, MOM3) = 0.0;
+         arr(i, j, k, ENERGY) = total_hydro_energy_runtime(
+            eos_method,
+            rho,
+            velocity,
+            0.0,
+            0.0,
+            pressure,
+            eos
+         );
+      });
+   }
+   }
+}
+
+inline void initialize_mhd_characteristic_medley(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg
+)
+{
+   const auto problo = geom.ProbLoArray();
+   const auto probhi = geom.ProbHiArray();
+   const auto dx = geom.CellSizeArray();
+   const amrex::Real domain_length = probhi[0] - problo[0];
+   const amrex::Real rho0 = cfg.rho0;
+   const amrex::Real pressure0 = cfg.pressure0;
+   const amrex::Real amplitude = cfg.amplitude;
+   const amrex::Real b1_0 = cfg.b1_0;
+   const amrex::Real b2_0 = cfg.b2_0;
+   const amrex::Real b3_0 = cfg.b3_0;
+   const EOSParams eos = eos_params(cfg);
+   const MHDCharacteristicBasis basis = mhd_characteristic_basis<EOSIdealGas>(
+      rho0,
+      pressure0,
+      b1_0,
+      b2_0,
+      b3_0,
+      eos
+   );
+
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   {
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const auto arr = state.array(mfi);
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         amrex::ignore_unused(j, k);
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real phase = (x - problo[0]) / domain_length;
+         const amrex::Real phase_step = 1.0 / 7.0;
+         const MHDCharacteristics waves{
+            amplitude * reconstruction_medley_profile(phase),
+            amplitude * reconstruction_medley_profile(phase + phase_step),
+            amplitude * reconstruction_medley_profile(phase + 2.0 * phase_step),
+            amplitude * reconstruction_medley_profile(phase + 3.0 * phase_step),
+            amplitude * reconstruction_medley_profile(phase + 4.0 * phase_step),
+            amplitude * reconstruction_medley_profile(phase + 5.0 * phase_step),
+            amplitude * reconstruction_medley_profile(phase + 6.0 * phase_step),
+         };
+         const MHDReducedPrimitive perturbation =
+            generated::mhd_reduced_from_characteristics(waves, basis);
+         const amrex::Real rho = rho0 + perturbation.rho;
+         const amrex::Real v1 = perturbation.vn;
+         const amrex::Real v2 = perturbation.vt1;
+         const amrex::Real v3 = perturbation.vt2;
+         const amrex::Real pressure = pressure0 + perturbation.pressure;
+         const amrex::Real b2 = b2_0 + perturbation.bt1;
+         const amrex::Real b3 = b3_0 + perturbation.bt2;
+         arr(i, j, k, RHO) = rho;
+         arr(i, j, k, MOM1) = rho * v1;
+         arr(i, j, k, MOM2) = rho * v2;
+         arr(i, j, k, MOM3) = rho * v3;
+         arr(i, j, k, ENERGY) = total_mhd_energy<EOSIdealGas>(
+            rho,
+            v1,
+            v2,
+            v3,
+            pressure,
+            b1_0,
+            b2,
+            b3,
+            eos
+         );
+         arr(i, j, k, B1) = b1_0;
+         arr(i, j, k, B2) = b2;
+         arr(i, j, k, B3) = b3;
       });
    }
    }
@@ -2443,8 +2639,19 @@ inline void initialize_magnetic_blast_noise_face_b(FaceMagneticField& face_b, am
 
 inline void initialize_state(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
 {
+   if (physical_system_is_relativistic(physical_system(cfg))) {
+      initialize_relativistic_state(state, geom, cfg);
+      apply_configured_state_boundary(state, geom, cfg);
+      return;
+   }
    if (cfg.ic == "uniform") {
       initialize_uniform(state, cfg);
+   } else if (cfg.ic == "advection_medley") {
+      initialize_advection_medley(state, geom, cfg);
+   } else if (cfg.ic == "characteristic_medley") {
+      initialize_characteristic_medley(state, geom, cfg);
+   } else if (cfg.ic == "mhd_characteristic_medley") {
+      initialize_mhd_characteristic_medley(state, geom, cfg);
    } else if (cfg.ic == "cartesian_advection") {
       initialize_cartesian_advection(state, geom, cfg);
    } else if (cfg.ic == "linear_wave_x") {

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from causal_validation import infer_localized_causal_model, rows_before_boundary_contact
+from machine_common import MachineProfile, load_machine, mpi_prefix
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,11 +57,9 @@ def amrex_executable(dim: int) -> Path:
    return BUILD / f"pyfluid_amrex_{dim}d"
 
 
-def _mpi_prefix(ranks: int) -> list[str]:
+def _mpi_prefix(ranks: int, machine: str | Path | MachineProfile | None = None) -> list[str]:
    """Return the canonical launcher prefix; callers execute through ``run_mpi``."""
-   if ranks < 1:
-      raise ValueError(f"MPI rank count must be positive, got {ranks}")
-   return [] if ranks == 1 else ["mpirun", "-np", str(ranks)]
+   return mpi_prefix(ranks, machine)
 
 
 def mpi_command(
@@ -68,10 +67,11 @@ def mpi_command(
    arguments: Sequence[str | Path] = (),
    *,
    ranks: int = 3,
+   machine: str | Path | MachineProfile | None = None,
 ) -> list[str]:
    """Build the canonical local MPI command used by all AMReX tools."""
    program = [str(executable), *(str(argument) for argument in arguments)]
-   return [*_mpi_prefix(ranks), *program]
+   return [*_mpi_prefix(ranks, machine), *program]
 
 
 def run_mpi(
@@ -82,11 +82,14 @@ def run_mpi(
    timeout: int | None = None,
    extra_env: dict[str, str] | None = None,
    cwd: Path = ROOT,
+   machine: str | Path | MachineProfile | None = None,
 ) -> AmrexRunResult:
    """Run one local MPI program with the repository's standard process contract."""
-   command = mpi_command(executable, arguments, ranks=ranks)
+   profile = load_machine(machine)
+   command = mpi_command(executable, arguments, ranks=ranks, machine=profile)
    env = dict(os.environ)
-   env.setdefault("OMP_NUM_THREADS", "1")
+   for name, value in profile.environment.items():
+      env.setdefault(name, value)
    if extra_env:
       env.update(extra_env)
    start = time.perf_counter()
@@ -173,6 +176,7 @@ def run_amrex(
    executable: Path | None = None,
    timeout: int | None = None,
    extra_env: dict[str, str] | None = None,
+   machine: str | Path | MachineProfile | None = None,
 ) -> AmrexRunResult:
    executable_path = executable if executable is not None else amrex_executable(dim)
    return run_mpi(
@@ -181,6 +185,7 @@ def run_amrex(
       ranks=ranks,
       timeout=timeout,
       extra_env=extra_env,
+      machine=machine,
    )
 
 

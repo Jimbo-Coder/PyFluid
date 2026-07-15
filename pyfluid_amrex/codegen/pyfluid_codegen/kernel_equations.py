@@ -8,7 +8,7 @@ import sympy as sp
 @dataclass(frozen=True)
 class ScalarKernel:
    name: str
-   arguments: tuple[str, ...]
+   arguments: tuple[str | tuple[str, str], ...]
    expression: sp.Expr
 
 
@@ -19,4 +19,3 @@ class StructKernel:
    arguments: tuple[tuple[str, str], ...]
    outputs: tuple[str, ...]
    expressions: tuple[sp.Expr, ...]
-

@@ -206,7 +206,7 @@ inline bool mapped_patch_reconstruction_stencil_valid(
    int side
 )
 {
-   if constexpr (ReconMethod == ReconWENOZ || ReconMethod == ReconWENOZChar) {
+   if constexpr (is_five_point_reconstruction(ReconMethod)) {
       amrex::IntVect anchor_cell = local_cell;
       if (side < 0) {
          anchor_cell[dir] -= 1;
@@ -247,7 +247,8 @@ inline HydroPrimitive mapped_patch_source_hydro_primitive_at_offset(
    };
 }
 
-inline ScalarFaceValues mapped_patch_wenoz_component_face_values(
+template <int ReconMethod>
+inline ScalarFaceValues mapped_patch_five_point_component_face_values(
    MappedPatchSourceTable const& table,
    PatchGridSystem const& grid_system,
    int patch_id,
@@ -269,8 +270,8 @@ inline ScalarFaceValues mapped_patch_wenoz_component_face_values(
    const amrex::Real vppp =
       mapped_patch_source_component_at_offset(table, grid_system, patch_id, local_cell, dir, 3, component);
    return {
-      weno_z_left(vmm, vm, v0, vp, vpp),
-      weno_z_right(vm, v0, vp, vpp, vppp),
+      reconstruct_left<ReconMethod>(vmm, vm, v0, vp, vpp),
+      reconstruct_right<ReconMethod>(vm, v0, vp, vpp, vppp),
    };
 }
 
@@ -294,21 +295,21 @@ inline HydroPrimitive mapped_patch_reconstructed_hydro_primitive(
       const HydroPrimitive qp =
          mapped_patch_source_hydro_primitive_at_offset(table, grid_system, patch_id, inside_local_cell, dir, 1);
       face = pwl_hydro_primitive(qm, center, qp, static_cast<amrex::Real>(side));
-   } else if constexpr (ReconMethod == ReconWENOZ || ReconMethod == ReconWENOZChar) {
+   } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
       amrex::IntVect anchor_cell = inside_local_cell;
       if (side < 0) {
          anchor_cell[dir] -= 1;
       }
       const ScalarFaceValues rho =
-         mapped_patch_wenoz_component_face_values(table, grid_system, patch_id, anchor_cell, dir, RHO);
+         mapped_patch_five_point_component_face_values<ReconMethod>(table, grid_system, patch_id, anchor_cell, dir, RHO);
       const ScalarFaceValues v1 =
-         mapped_patch_wenoz_component_face_values(table, grid_system, patch_id, anchor_cell, dir, MOM1);
+         mapped_patch_five_point_component_face_values<ReconMethod>(table, grid_system, patch_id, anchor_cell, dir, MOM1);
       const ScalarFaceValues v2 =
-         mapped_patch_wenoz_component_face_values(table, grid_system, patch_id, anchor_cell, dir, MOM2);
+         mapped_patch_five_point_component_face_values<ReconMethod>(table, grid_system, patch_id, anchor_cell, dir, MOM2);
       const ScalarFaceValues v3 =
-         mapped_patch_wenoz_component_face_values(table, grid_system, patch_id, anchor_cell, dir, MOM3);
+         mapped_patch_five_point_component_face_values<ReconMethod>(table, grid_system, patch_id, anchor_cell, dir, MOM3);
       const ScalarFaceValues pressure =
-         mapped_patch_wenoz_component_face_values(table, grid_system, patch_id, anchor_cell, dir, ENERGY);
+         mapped_patch_five_point_component_face_values<ReconMethod>(table, grid_system, patch_id, anchor_cell, dir, ENERGY);
       if (side > 0) {
          face = {rho.left, v1.left, v2.left, v3.left, pressure.left};
       } else {
@@ -339,13 +340,13 @@ inline amrex::Real mapped_patch_reconstructed_scalar(
       const amrex::Real qp =
          mapped_patch_source_component_at_offset(table, grid_system, patch_id, inside_local_cell, dir, 1, component);
       return center + 0.5 * static_cast<amrex::Real>(side) * mc_slope(qm, center, qp);
-   } else if constexpr (ReconMethod == ReconWENOZ || ReconMethod == ReconWENOZChar) {
+   } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
       amrex::IntVect anchor_cell = inside_local_cell;
       if (side < 0) {
          anchor_cell[dir] -= 1;
       }
       const ScalarFaceValues value =
-         mapped_patch_wenoz_component_face_values(table, grid_system, patch_id, anchor_cell, dir, component);
+         mapped_patch_five_point_component_face_values<ReconMethod>(table, grid_system, patch_id, anchor_cell, dir, component);
       return side > 0 ? value.left : value.right;
    }
    return center;

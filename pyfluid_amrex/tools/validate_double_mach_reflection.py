@@ -70,6 +70,10 @@ RECONSTRUCTION_CASES = (
    Case("recon_wenoz", "64 16", 2, "on", "wenoz", 3),
    Case("recon_pwl_char_hybrid", "64 16", 2, "on", "pwl", 3, "wenoz-char", 2),
    Case("recon_wenoz_char", "64 16", 2, "on", "wenoz-char", 3),
+   Case("recon_mp5", "64 16", 2, "on", "mp5", 3),
+   Case("recon_mp5_char", "64 16", 2, "on", "mp5-char", 3),
+   Case("recon_teno5", "64 16", 2, "on", "teno5", 3),
+   Case("recon_teno5_char", "64 16", 2, "on", "teno5-char", 3),
    Case("recon_fine_reference", "512 128", 0, "off", "wenoz-char", 3),
 )
 
@@ -356,8 +360,8 @@ def plot_reconstruction_comparison(
    reference: np.ndarray,
    output: Path,
 ) -> None:
-   methods = ("recon_pwl", "recon_wenoz", "recon_pwl_char_hybrid", "recon_wenoz_char")
-   labels = ("PWL", "WENO-Z component", "PWL -> characteristic WENO-Z", "WENO-Z characteristic")
+   methods = ("recon_wenoz", "recon_wenoz_char", "recon_mp5", "recon_teno5_char")
+   labels = ("WENO-Z component", "WENO-Z characteristic", "MP5 component", "TENO5 characteristic")
    errors = [np.abs(images[name] - reference) for name in methods]
    positive_errors = np.concatenate([error[error > 0.0] for error in errors])
    error_min = max(float(np.percentile(positive_errors, 1.0)), 1.0e-12)
@@ -406,7 +410,16 @@ def plot_reconstruction_comparison(
 def add_reconstruction_metrics(rows: list[dict[str, object]]) -> tuple[list[str], float, float]:
    failures: list[str] = []
    by_name = {str(row["case"]): row for row in rows}
-   method_names = ("recon_pwl", "recon_wenoz", "recon_pwl_char_hybrid", "recon_wenoz_char")
+   method_names = (
+      "recon_pwl",
+      "recon_wenoz",
+      "recon_pwl_char_hybrid",
+      "recon_wenoz_char",
+      "recon_mp5",
+      "recon_mp5_char",
+      "recon_teno5",
+      "recon_teno5_char",
+   )
    reference_dir = RUN_ROOT / "recon_fine_reference"
    target_pixels = min(finest_x_resolution(RUN_ROOT / name) for name in method_names)
    reference_fields = {
@@ -455,6 +468,10 @@ def add_reconstruction_metrics(rows: list[dict[str, object]]) -> tuple[list[str]
    hybrid_ratio = hybrid_score / max(component_score, 1.0e-30)
    by_name["recon_wenoz_char"]["aggregate_error_vs_component"] = characteristic_ratio
    by_name["recon_pwl_char_hybrid"]["aggregate_error_vs_component"] = hybrid_ratio
+   for name in ("recon_mp5", "recon_mp5_char", "recon_teno5", "recon_teno5_char"):
+      by_name[name]["aggregate_error_vs_wenoz_component"] = (
+         float(np.mean(aggregate[name])) / max(component_score, 1.0e-30)
+      )
    plot_reconstruction_comparison(
       {name: candidate_fields[name]["rho"] for name in method_names},
       reference_fields["rho"],

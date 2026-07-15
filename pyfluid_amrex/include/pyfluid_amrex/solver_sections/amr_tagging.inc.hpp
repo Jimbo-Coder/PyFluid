@@ -56,12 +56,16 @@
       // never tags stale fine-level ghosts and refines its own box edges.
       fill_level_boundaries<false>(state_, lev, time);
 
-      const bool mhd = is_mhd(cfg_);
       const amrex::Real lohner_threshold = cfg_.tag_threshold;
       const auto amr_min_feature_lengths = min_feature_lengths();
       const amrex::Real min_refine_radius = cfg_.min_refine_radius;
       const EOSParams eos = eos_params(cfg_);
       const int eos_method = eos_method_code(cfg_);
+      const PhysicalSystem physics_system = physics_system_;
+      fill_base_primitive_cache_runtime(
+         *primitive_[lev], *state_[lev], eos, eos_method, physics_system,
+         Geom(lev), fixed_spacetime_parameters(cfg_), time
+      );
       const char tagval = amrex::TagBox::SET;
       const int initial_refine_levels = std::min(maxLevel(), cfg_.initial_refine_levels);
       const int fixed_initial_refine_levels = std::min(maxLevel(), cfg_.initial_refine_fixed_levels);
@@ -87,7 +91,7 @@
       {
       for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
          const amrex::Box& bx = mfi.tilebox();
-         const auto s = state_[lev]->const_array(mfi);
+         const auto primitive = primitive_[lev]->const_array(mfi);
          const auto tag = tags.array(mfi);
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             if (initial_box_refine) {
@@ -140,14 +144,14 @@
                return;
             }
             const amrex::Real indicator =
-               auto_amr_indicator_from_state(
-                  s,
+               auto_amr_indicator_from_primitive(
+                  primitive,
                   i,
                   j,
                   k,
                   eos,
                   eos_method,
-                  mhd,
+                  physics_system,
                   coordinate,
                   axes,
                   problo,

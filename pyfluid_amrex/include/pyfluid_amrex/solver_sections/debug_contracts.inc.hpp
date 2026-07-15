@@ -65,9 +65,29 @@
                      continue;
                   }
                   ++active_count;
-                  const amrex::Real rho = state(i, j, k, RHO);
+                  amrex::Real rho = state(i, j, k, RHO);
                   amrex::Real pressure = 0.0;
-                  if constexpr (has_mhd_components<NComp>()) {
+                  if (physics_system_ == PhysicalSystem::RMHD) {
+                     const RMHDRecoveryResult recovered = recover_srmhd(
+                        load_rmhd_conserved(state, i, j, k), eos.gamma
+                     );
+                     rho = recovered.attempt.status == C2PStatus::Success
+                        ? recovered.primitive.rho
+                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                     pressure = recovered.attempt.status == C2PStatus::Success
+                        ? recovered.primitive.pressure
+                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                  } else if (physics_system_ == PhysicalSystem::RHD) {
+                     const RHDRecoveryResult recovered = recover_srhd_palenzuela_1d(
+                        load_rhd_conserved(state, i, j, k), eos.gamma
+                     );
+                     rho = recovered.attempt.status == C2PStatus::Success
+                        ? recovered.primitive.rho
+                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                     pressure = recovered.attempt.status == C2PStatus::Success
+                        ? recovered.primitive.pressure
+                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                  } else if constexpr (has_mhd_components<NComp>()) {
                      pressure = pressure_from_conserved<EOSMethod>(load_mhd_state(state, i, j, k), eos);
                   } else {
                      pressure = pressure_from_state<EOSMethod>(state, i, j, k, eos);
@@ -108,9 +128,29 @@
                   if (valid(i, j, k, 0) == 0) {
                      continue;
                   }
-                  const amrex::Real rho = state(i, j, k, RHO);
+                  amrex::Real rho = state(i, j, k, RHO);
                   amrex::Real pressure = 0.0;
-                  if constexpr (has_mhd_components<NComp>()) {
+                  if (physics_system_ == PhysicalSystem::RMHD) {
+                     const RMHDRecoveryResult recovered = recover_srmhd(
+                        load_rmhd_conserved(state, i, j, k), eos.gamma
+                     );
+                     rho = recovered.attempt.status == C2PStatus::Success
+                        ? recovered.primitive.rho
+                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                     pressure = recovered.attempt.status == C2PStatus::Success
+                        ? recovered.primitive.pressure
+                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                  } else if (physics_system_ == PhysicalSystem::RHD) {
+                     const RHDRecoveryResult recovered = recover_srhd_palenzuela_1d(
+                        load_rhd_conserved(state, i, j, k), eos.gamma
+                     );
+                     rho = recovered.attempt.status == C2PStatus::Success
+                        ? recovered.primitive.rho
+                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                     pressure = recovered.attempt.status == C2PStatus::Success
+                        ? recovered.primitive.pressure
+                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                  } else if constexpr (has_mhd_components<NComp>()) {
                      pressure = pressure_from_conserved<EOSMethod>(load_mhd_state(state, i, j, k), eos);
                   } else {
                      pressure = pressure_from_state<EOSMethod>(state, i, j, k, eos);

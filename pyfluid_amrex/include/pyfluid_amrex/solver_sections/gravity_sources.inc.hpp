@@ -1,7 +1,7 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // Gravity field preparation, self-gravity energy bookkeeping, and generic source-stage hooks.
 
-   DensityTotal valid_density_total(LevelData const& data) const
+   DensityTotal valid_density_total(LevelData const& data) const override
    {
       DensityTotal total;
       for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -138,7 +138,7 @@
       }
    }
 
-   void prepare_gravity_fields(LevelData const& input, bool fill_gradient)
+   void prepare_gravity_fields(LevelData const& input, bool fill_gradient) override
    {
       if (!gravity_enabled(cfg_)) {
          return;
@@ -223,12 +223,12 @@
       }
    }
 
-   bool uses_athena_ssprk3_gravity_energy_correction() const
+   bool uses_athena_ssprk3_gravity_energy_correction() const override
    {
       return uses_athena_gravity_energy_correction() && timestep_method_ == TimeSSPRK3;
    }
 
-   bool uses_athena_gravity_energy_correction() const
+   bool uses_athena_gravity_energy_correction() const override
    {
       return athena_gravity_coupling_enabled(cfg_);
    }

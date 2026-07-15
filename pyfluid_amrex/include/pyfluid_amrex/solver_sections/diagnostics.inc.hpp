@@ -133,7 +133,11 @@
       const int coordinate = mesh_coordinate_kind();
       const MeshAxes axes = active_mesh_axes();
       for (int lev = 0; lev <= finestLevel(); ++lev) {
-         if (is_mhd(cfg_)) {
+         if (physical_system_is_relativistic(physics_system_)) {
+            fill_relativistic_pressure(
+               *pressure_[lev], *state_[lev], eos_params(cfg_), physics_system_
+            );
+         } else if (is_mhd(cfg_)) {
             fill_pressure<true, EOSMethod>(*pressure_[lev], *state_[lev], eos_params(cfg_));
          } else {
             fill_pressure<false, EOSMethod>(*pressure_[lev], *state_[lev], eos_params(cfg_));

@@ -7,13 +7,22 @@
 #include "pyfluid_amrex/kernels_generated/coordinate_metrics.hpp"
 #include "pyfluid_amrex/kernels_generated/ideal_mhd_flux_cartesian.hpp"
 #include "pyfluid_amrex/kernels_generated/patch_maps.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
 #include "pyfluid_amrex/kernels_generated/riemann_ops.hpp"
+#include "pyfluid_amrex/c2p_policy.hpp"
+#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
+#include "pyfluid_amrex/physical_system.hpp"
+#include "pyfluid_amrex/rhd_c2p.hpp"
+#include "pyfluid_amrex/rhd_system.hpp"
+#include "pyfluid_amrex/rmhd_c2p.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 namespace {
 
@@ -103,6 +112,729 @@ bool compare_mhd(pyfluid_amrex::MHDState const& actual, pyfluid_amrex::MHDState 
       && close_enough(actual.b1, expected.b1)
       && close_enough(actual.b2, expected.b2)
       && close_enough(actual.b3, expected.b3);
+}
+
+template <std::size_t N>
+amrex::Real scaled_max_error(
+   std::array<amrex::Real, N> const& actual,
+   std::array<amrex::Real, N> const& expected
+)
+{
+   amrex::Real error = 0.0;
+   for (std::size_t component = 0; component < N; ++component) {
+      const amrex::Real scale = std::max({
+         amrex::Real{1.0},
+         std::abs(actual[component]),
+         std::abs(expected[component]),
+      });
+      error = std::max(error, std::abs(actual[component] - expected[component]) / scale);
+   }
+   return error;
+}
+
+std::array<amrex::Real, 5> components(pyfluid_amrex::HydroPrimitive const& state)
+{
+   return {state.rho, state.v1, state.v2, state.v3, state.pressure};
+}
+
+std::array<amrex::Real, 5> components(pyfluid_amrex::HydroState const& state)
+{
+   return {state.rho, state.mom1, state.mom2, state.mom3, state.energy};
+}
+
+std::array<amrex::Real, 8> components(pyfluid_amrex::MHDPrimitive const& state)
+{
+   return {state.rho, state.v1, state.v2, state.v3, state.pressure, state.b1, state.b2, state.b3};
+}
+
+std::array<amrex::Real, 8> components(pyfluid_amrex::MHDState const& state)
+{
+   return {state.rho, state.mom1, state.mom2, state.mom3, state.energy, state.b1, state.b2, state.b3};
+}
+
+std::array<amrex::Real, 6> components(pyfluid_amrex::RHDPrimitive const& state)
+{
+   return {state.rho, state.eps, state.pressure, state.v1, state.v2, state.v3};
+}
+
+std::array<amrex::Real, 5> components(pyfluid_amrex::RHDConserved const& state)
+{
+   return {state.dens, state.mom1, state.mom2, state.mom3, state.tau};
+}
+
+std::array<amrex::Real, 9> components(pyfluid_amrex::RMHDPrimitive const& state)
+{
+   return {
+      state.rho,
+      state.eps,
+      state.pressure,
+      state.v1,
+      state.v2,
+      state.v3,
+      state.b1,
+      state.b2,
+      state.b3,
+   };
+}
+
+std::array<amrex::Real, 8> components(pyfluid_amrex::RMHDConserved const& state)
+{
+   return {
+      state.dens,
+      state.mom1,
+      state.mom2,
+      state.mom3,
+      state.tau,
+      state.b1,
+      state.b2,
+      state.b3,
+   };
+}
+
+template <int EOSMethod>
+bool check_newtonian_round_trip(
+   pyfluid_amrex::HydroPrimitive primitive,
+   pyfluid_amrex::MHDPrimitive mhd_primitive,
+   pyfluid_amrex::EOSParams const& eos
+)
+{
+   if constexpr (EOSMethod == pyfluid_amrex::EOSPolytrope) {
+      primitive.pressure = pyfluid_amrex::eos_cold_pressure<EOSMethod>(primitive.rho, eos);
+      mhd_primitive.pressure = pyfluid_amrex::eos_cold_pressure<EOSMethod>(mhd_primitive.rho, eos);
+   }
+
+   const auto conserved = pyfluid_amrex::conserved_from_primitive<EOSMethod>(primitive, eos);
+   const auto recovered_primitive = pyfluid_amrex::primitive_from_conserved<EOSMethod>(conserved, eos);
+   const auto conserved_round_trip =
+      pyfluid_amrex::conserved_from_primitive<EOSMethod>(recovered_primitive, eos);
+
+   const auto mhd_conserved = pyfluid_amrex::conserved_from_primitive<EOSMethod>(mhd_primitive, eos);
+   const auto recovered_mhd_primitive =
+      pyfluid_amrex::primitive_from_conserved<EOSMethod>(mhd_conserved, eos);
+   const auto mhd_conserved_round_trip =
+      pyfluid_amrex::conserved_from_primitive<EOSMethod>(recovered_mhd_primitive, eos);
+
+   auto independent_conserved = conserved;
+   auto independent_mhd_conserved = mhd_conserved;
+   if constexpr (EOSMethod != pyfluid_amrex::EOSPolytrope) {
+      independent_conserved.mom1 *= -0.81;
+      independent_conserved.mom2 += 0.23 * independent_conserved.rho;
+      independent_conserved.energy += 0.37 * std::max(amrex::Real{1.0}, independent_conserved.rho);
+      independent_mhd_conserved.mom1 *= -0.81;
+      independent_mhd_conserved.mom2 += 0.23 * independent_mhd_conserved.rho;
+      independent_mhd_conserved.energy += 0.37 * std::max(amrex::Real{1.0}, independent_mhd_conserved.rho);
+   }
+   const auto primitive_from_independent =
+      pyfluid_amrex::primitive_from_conserved<EOSMethod>(independent_conserved, eos);
+   const auto independent_conserved_round_trip =
+      pyfluid_amrex::conserved_from_primitive<EOSMethod>(primitive_from_independent, eos);
+   const auto mhd_primitive_from_independent =
+      pyfluid_amrex::primitive_from_conserved<EOSMethod>(independent_mhd_conserved, eos);
+   const auto independent_mhd_conserved_round_trip =
+      pyfluid_amrex::conserved_from_primitive<EOSMethod>(mhd_primitive_from_independent, eos);
+
+   constexpr amrex::Real tolerance = 256.0 * std::numeric_limits<amrex::Real>::epsilon();
+   const std::array<amrex::Real, 6> errors{
+      scaled_max_error(components(recovered_primitive), components(primitive)),
+      scaled_max_error(components(conserved_round_trip), components(conserved)),
+      scaled_max_error(components(recovered_mhd_primitive), components(mhd_primitive)),
+      scaled_max_error(components(mhd_conserved_round_trip), components(mhd_conserved)),
+      scaled_max_error(components(independent_conserved_round_trip), components(independent_conserved)),
+      scaled_max_error(components(independent_mhd_conserved_round_trip), components(independent_mhd_conserved)),
+   };
+   if (*std::max_element(errors.begin(), errors.end()) > tolerance) {
+      std::cerr << "Newtonian round-trip residuals EOS=" << EOSMethod;
+      for (amrex::Real const error : errors) {
+         std::cerr << ' ' << error;
+      }
+      std::cerr << '\n';
+      return false;
+   }
+   return true;
+}
+
+bool validate_newtonian_round_trips()
+{
+   pyfluid_amrex::EOSParams eos{};
+   eos.gamma = 1.4;
+   eos.polytropic_k = 0.73;
+   eos.polytropic_gamma = 1.65;
+   eos.thermal_gamma = 1.37;
+   const std::array<pyfluid_amrex::HydroPrimitive, 5> hydro_corpus{{
+      {0.071, 2.3, -0.47, 0.19, 0.013},
+      {0.82, -1.7, 0.93, -0.31, 4.6},
+      {1.0, 0.0, 0.0, 0.0, 0.41},
+      {7.4, 0.017, -3.2, 1.1, 13.0},
+      {19.0, -0.004, 0.007, -0.009, 0.26},
+   }};
+   const std::array<pyfluid_amrex::MHDPrimitive, 5> mhd_corpus{{
+      {0.071, 2.3, -0.47, 0.19, 0.013, 4.0, -0.07, 0.8},
+      {0.82, -1.7, 0.93, -0.31, 4.6, -2.1, 3.7, -0.4},
+      {1.0, 0.0, 0.0, 0.0, 0.41, 0.0, 0.0, 0.0},
+      {7.4, 0.017, -3.2, 1.1, 13.0, 0.003, -8.0, 2.5},
+      {19.0, -0.004, 0.007, -0.009, 0.26, 15.0, 0.2, -0.5},
+   }};
+   for (std::size_t sample = 0; sample < hydro_corpus.size(); ++sample) {
+      if (!check_newtonian_round_trip<pyfluid_amrex::EOSIdealGas>(
+             hydro_corpus[sample], mhd_corpus[sample], eos
+          )
+          || !check_newtonian_round_trip<pyfluid_amrex::EOSPolytrope>(
+             hydro_corpus[sample], mhd_corpus[sample], eos
+          )
+          || !check_newtonian_round_trip<pyfluid_amrex::EOSHybridPolytrope>(
+             hydro_corpus[sample], mhd_corpus[sample], eos
+          )) {
+         std::cerr << "Newtonian primitive/conserved round trip failed for sample=" << sample << "\n";
+         return false;
+      }
+   }
+   return true;
+}
+
+bool validate_srhd_round_trips()
+{
+   constexpr amrex::Real gamma = 1.4;
+   constexpr amrex::Real tolerance = 2.0e-11;
+   const pyfluid_amrex::SpacetimeMetric minkowski{};
+   std::array<pyfluid_amrex::RHDPrimitive, 7> primitive_corpus{{
+      {1.0e-3, 1.0e-4, 0.0, 0.0, 0.0, 0.0},
+      {0.071, 0.23, 0.0, 0.31, -0.17, 0.09},
+      {0.82, 4.7, 0.0, -0.71, 0.23, -0.11},
+      {1.0, 0.7, 0.0, 0.0, 0.0, 0.0},
+      {7.4, 0.017, 0.0, 0.82, -0.31, 0.18},
+      {19.0, 13.0, 0.0, -0.91, 0.21, -0.07},
+      {0.3, 2.1, 0.0, 0.965, 0.08, -0.03},
+   }};
+
+   amrex::Real worst_primitive_error = 0.0;
+   amrex::Real worst_conserved_error = 0.0;
+   for (std::size_t sample = 0; sample < primitive_corpus.size(); ++sample) {
+      auto primitive = primitive_corpus[sample];
+      primitive.pressure = pyfluid_amrex::generated::relativistic_ideal_gas_pressure(
+         primitive.rho,
+         primitive.eps,
+         gamma
+      );
+      const auto conserved =
+         pyfluid_amrex::generated::rhd_primitive_to_conserved(primitive, minkowski);
+      const auto recovered = pyfluid_amrex::recover_srhd_palenzuela_1d(
+         conserved,
+         gamma
+      );
+      if (!recovered.attempt.succeeded()) {
+         std::cerr << "SRHD primitive round trip failed sample=" << sample
+                   << " status=" << static_cast<int>(recovered.attempt.status)
+                   << " residual=" << recovered.attempt.residual << '\n';
+         return false;
+      }
+      const auto conserved_round_trip =
+         pyfluid_amrex::generated::rhd_primitive_to_conserved(
+            recovered.primitive,
+            minkowski
+         );
+      worst_primitive_error = std::max(
+         worst_primitive_error,
+         scaled_max_error(components(recovered.primitive), components(primitive))
+      );
+      worst_conserved_error = std::max(
+         worst_conserved_error,
+         scaled_max_error(components(conserved_round_trip), components(conserved))
+      );
+
+      auto independent_conserved = conserved;
+      independent_conserved.mom1 *= -0.83;
+      independent_conserved.mom2 += 0.07 * independent_conserved.dens;
+      independent_conserved.mom3 *= 0.91;
+      independent_conserved.tau += 0.19 * (
+         independent_conserved.dens + independent_conserved.tau
+      );
+      const auto independent_recovered =
+         pyfluid_amrex::recover_srhd_palenzuela_1d(independent_conserved, gamma);
+      if (!independent_recovered.attempt.succeeded()) {
+         std::cerr << "SRHD conserved round trip failed sample=" << sample
+                   << " status=" << static_cast<int>(independent_recovered.attempt.status)
+                   << " residual=" << independent_recovered.attempt.residual << '\n';
+         return false;
+      }
+      const auto independent_round_trip =
+         pyfluid_amrex::generated::rhd_primitive_to_conserved(
+            independent_recovered.primitive,
+            minkowski
+         );
+      worst_conserved_error = std::max(
+         worst_conserved_error,
+         scaled_max_error(
+            components(independent_round_trip),
+            components(independent_conserved)
+         )
+      );
+
+      const amrex::Real velocity_squared = primitive.v1 * primitive.v1
+         + primitive.v2 * primitive.v2 + primitive.v3 * primitive.v3;
+      const amrex::Real lorentz_factor = 1.0 / std::sqrt(1.0 - velocity_squared);
+      const amrex::Real x = (1.0 + gamma * primitive.eps) * lorentz_factor;
+      const amrex::Real step = 1.0e-6 * std::max(amrex::Real{1.0}, x);
+      const amrex::Real finite_difference = (
+         pyfluid_amrex::srhd_palenzuela_residual(conserved, x + step, gamma)
+         - pyfluid_amrex::srhd_palenzuela_residual(conserved, x - step, gamma)
+      ) / (2.0 * step);
+      const amrex::Real analytic =
+         pyfluid_amrex::srhd_palenzuela_residual_derivative(conserved, x, gamma);
+      if (!std::isfinite(analytic)
+          || std::abs(analytic - finite_difference)
+             > 2.0e-6 * std::max(amrex::Real{1.0}, std::abs(finite_difference))) {
+         std::cerr << "SRHD generated residual derivative mismatch sample=" << sample
+                   << " analytic=" << analytic
+                   << " finite_difference=" << finite_difference << '\n';
+         return false;
+      }
+   }
+
+   pyfluid_amrex::SpacetimeMetric curved_metric{};
+   curved_metric.lapse = 0.83;
+   curved_metric.shift1 = 0.07;
+   curved_metric.shift2 = -0.03;
+   curved_metric.shift3 = 0.02;
+   curved_metric.gamma12 = 0.1;
+   curved_metric.inv_gamma11 = 1.0 / 0.99;
+   curved_metric.inv_gamma12 = -0.1 / 0.99;
+   curved_metric.inv_gamma22 = 1.0 / 0.99;
+   curved_metric.sqrt_det_gamma = std::sqrt(0.99);
+   for (std::size_t sample = 0; sample < primitive_corpus.size(); ++sample) {
+      auto primitive = primitive_corpus[sample];
+      primitive.pressure = pyfluid_amrex::generated::relativistic_ideal_gas_pressure(
+         primitive.rho, primitive.eps, gamma
+      );
+      const auto conserved = pyfluid_amrex::generated::rhd_primitive_to_conserved(
+         primitive, curved_metric
+      );
+      const auto recovered = pyfluid_amrex::recover_srhd_palenzuela_1d(
+         conserved, curved_metric, gamma
+      );
+      if (!recovered.attempt.succeeded()) {
+         std::cerr << "Curved RHD recovery failed sample=" << sample
+                   << " status=" << static_cast<int>(recovered.attempt.status)
+                   << " residual=" << recovered.attempt.residual << '\n';
+         return false;
+      }
+      const auto conserved_round_trip =
+         pyfluid_amrex::generated::rhd_primitive_to_conserved(
+            recovered.primitive, curved_metric
+         );
+      worst_primitive_error = std::max(
+         worst_primitive_error,
+         scaled_max_error(components(recovered.primitive), components(primitive))
+      );
+      worst_conserved_error = std::max(
+         worst_conserved_error,
+         scaled_max_error(components(conserved_round_trip), components(conserved))
+      );
+   }
+
+   if (worst_primitive_error > tolerance || worst_conserved_error > tolerance) {
+      std::cerr << "SRHD round-trip residuals primitive=" << worst_primitive_error
+                << " conserved=" << worst_conserved_error << '\n';
+      return false;
+   }
+   return true;
+}
+
+bool validate_fixed_spacetime_provider()
+{
+   using pyfluid_amrex::FixedSpacetimeMetric;
+   using pyfluid_amrex::FixedSpacetimeParameters;
+   using pyfluid_amrex::fixed_spacetime_geometry;
+
+   const FixedSpacetimeParameters rindler{
+      FixedSpacetimeMetric::Rindler,
+      0.11,
+      -0.07,
+      0.03,
+      0.2,
+      -0.1,
+      0.4,
+      1.0,
+   };
+   const auto rindler_geometry = fixed_spacetime_geometry(
+      rindler, 0.8, -0.4, 0.6, 0.0
+   );
+   const amrex::Real expected_lapse = 1.0
+      + rindler.acceleration1 * (0.8 - rindler.origin1)
+      + rindler.acceleration2 * (-0.4 - rindler.origin2)
+      + rindler.acceleration3 * (0.6 - rindler.origin3);
+   if (!close_enough(rindler_geometry.metric.lapse, expected_lapse)
+       || !close_enough(
+          rindler_geometry.derivatives.d1_lapse, rindler.acceleration1
+       )
+       || !close_enough(
+          rindler_geometry.derivatives.d2_lapse, rindler.acceleration2
+       )
+       || !close_enough(
+          rindler_geometry.derivatives.d3_lapse, rindler.acceleration3
+       )) {
+      std::cerr << "Rindler fixed-spacetime provider mismatch\n";
+      return false;
+   }
+
+   pyfluid_amrex::RHDPrimitive rest{1.0, 0.5, 0.2, 0.0, 0.0, 0.0};
+   pyfluid_amrex::SpacetimeMetricDerivatives acceleration{};
+   acceleration.d1_lapse = 0.1;
+   const auto source = pyfluid_amrex::generated::rhd_geometric_source(
+      rest, pyfluid_amrex::minkowski_spacetime_metric(), acceleration
+   );
+   const amrex::Real eulerian_energy = rest.rho * (1.0 + rest.eps);
+   if (!close_enough(source.dens, 0.0)
+       || !close_enough(source.mom1, -0.1 * eulerian_energy)
+       || !close_enough(source.mom2, 0.0)
+       || !close_enough(source.mom3, 0.0)
+       || !close_enough(source.tau, 0.0)) {
+      std::cerr << "Rindler geometric source mismatch\n";
+      return false;
+   }
+
+   const FixedSpacetimeParameters schwarzschild{
+      FixedSpacetimeMetric::SchwarzschildIsotropic,
+      0.0,
+      0.0,
+      0.0,
+      -0.3,
+      0.2,
+      -0.1,
+      0.4,
+   };
+   constexpr amrex::Real position1 = 1.7;
+   constexpr amrex::Real position2 = 0.6;
+   constexpr amrex::Real position3 = -0.25;
+   const auto schwarzschild_geometry = fixed_spacetime_geometry(
+      schwarzschild, position1, position2, position3, 0.0
+   );
+   const auto& metric = schwarzschild_geometry.metric;
+   if (!close_enough(metric.gamma11 * metric.inv_gamma11, 1.0)
+       || !close_enough(metric.gamma22 * metric.inv_gamma22, 1.0)
+       || !close_enough(metric.gamma33 * metric.inv_gamma33, 1.0)
+       || !close_enough(
+          metric.sqrt_det_gamma * metric.sqrt_det_gamma,
+          metric.gamma11 * metric.gamma22 * metric.gamma33
+       )) {
+      std::cerr << "isotropic-Schwarzschild metric identity mismatch\n";
+      return false;
+   }
+   constexpr amrex::Real step = 1.0e-6;
+   const auto plus = fixed_spacetime_geometry(
+      schwarzschild, position1 + step, position2, position3, 0.0
+   );
+   const auto minus = fixed_spacetime_geometry(
+      schwarzschild, position1 - step, position2, position3, 0.0
+   );
+   const amrex::Real lapse_derivative = (
+      plus.metric.lapse - minus.metric.lapse
+   ) / (2.0 * step);
+   const amrex::Real gamma_derivative = (
+      plus.metric.gamma11 - minus.metric.gamma11
+   ) / (2.0 * step);
+   if (std::abs(lapse_derivative - schwarzschild_geometry.derivatives.d1_lapse)
+          > 2.0e-9
+       || std::abs(gamma_derivative - schwarzschild_geometry.derivatives.d1_gamma11)
+          > 2.0e-9) {
+      std::cerr << "isotropic-Schwarzschild metric derivative mismatch\n";
+      return false;
+   }
+   return true;
+}
+
+bool validate_srmhd_round_trips()
+{
+   constexpr amrex::Real gamma = 1.4;
+   constexpr amrex::Real tolerance = 5.0e-10;
+   const pyfluid_amrex::SpacetimeMetric minkowski{};
+   std::array<pyfluid_amrex::RMHDPrimitive, 8> primitive_corpus{{
+      {1.0e-3, 1.0e-4, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+      {0.071, 0.23, 0.0, 0.31, -0.17, 0.09, 0.04, -0.02, 0.01},
+      {0.82, 4.7, 0.0, -0.71, 0.23, -0.11, -2.1, 3.7, -0.4},
+      {1.0, 0.7, 0.0, 0.0, 0.0, 0.0, 8.0, -3.0, 1.5},
+      {7.4, 0.017, 0.0, 0.82, -0.31, 0.18, 0.003, -8.0, 2.5},
+      {19.0, 13.0, 0.0, -0.91, 0.21, -0.07, 15.0, 0.2, -0.5},
+      {0.3, 2.1, 0.0, 0.965, 0.08, -0.03, 0.9, -1.4, 0.7},
+      {2.7, 0.08, 0.0, -0.44, -0.51, 0.37, -9.0, 4.0, 6.0},
+   }};
+
+   amrex::Real worst_primitive_error = 0.0;
+   amrex::Real worst_conserved_error = 0.0;
+   for (std::size_t sample = 0; sample < primitive_corpus.size(); ++sample) {
+      auto primitive = primitive_corpus[sample];
+      primitive.pressure = pyfluid_amrex::generated::relativistic_ideal_gas_pressure(
+         primitive.rho,
+         primitive.eps,
+         gamma
+      );
+      const auto conserved =
+         pyfluid_amrex::generated::rmhd_primitive_to_conserved(primitive, minkowski);
+      const auto recovered = pyfluid_amrex::recover_srmhd_palenzuela_1d<true>(
+         conserved,
+         gamma
+      );
+      if (!recovered.attempt.succeeded()) {
+         std::cerr << "SRMHD primitive round trip failed sample=" << sample
+                   << " status=" << static_cast<int>(recovered.attempt.status)
+                   << " residual=" << recovered.attempt.residual << '\n';
+         return false;
+      }
+      const auto conserved_round_trip =
+         pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+            recovered.primitive,
+            minkowski
+         );
+      worst_primitive_error = std::max(
+         worst_primitive_error,
+         scaled_max_error(components(recovered.primitive), components(primitive))
+      );
+      worst_conserved_error = std::max(
+         worst_conserved_error,
+         scaled_max_error(components(conserved_round_trip), components(conserved))
+      );
+      const amrex::Real velocity_squared = primitive.v1 * primitive.v1
+         + primitive.v2 * primitive.v2 + primitive.v3 * primitive.v3;
+      const amrex::Real lorentz_factor = 1.0 / std::sqrt(1.0 - velocity_squared);
+      const pyfluid_amrex::RMHDEntropyInput entropy{
+         lorentz_factor * primitive.pressure
+            / std::pow(primitive.rho, gamma - 1.0),
+      };
+      const auto default_policy = pyfluid_amrex::recover_srmhd<true>(
+         conserved, gamma
+      );
+      if (!default_policy.succeeded()
+          || default_policy.attempt.method != pyfluid_amrex::C2PMethod::RePrimAnd
+          || default_policy.attempt_count != 1) {
+         std::cerr << "SRMHD default policy ordering failed sample=" << sample
+                   << '\n';
+         return false;
+      }
+      const std::array independent_methods{
+         pyfluid_amrex::recover_srmhd_reprimand<true>(conserved, gamma),
+         pyfluid_amrex::recover_srmhd_noble_2d<true>(
+            conserved, primitive, gamma
+         ),
+         pyfluid_amrex::recover_srmhd<true>(conserved, primitive, gamma),
+         pyfluid_amrex::recover_srmhd_palenzuela_1d_entropy<true>(
+            conserved, entropy, gamma
+         ),
+         pyfluid_amrex::recover_srmhd_noble_1d_entropy<true>(
+            conserved, primitive, entropy, gamma
+         ),
+         default_policy,
+      };
+      for (const auto& method_recovery : independent_methods) {
+         if (!method_recovery.succeeded()) {
+            std::cerr << "SRMHD alternate recovery failed sample=" << sample
+                      << " method=" << static_cast<int>(method_recovery.attempt.method)
+                      << " status=" << static_cast<int>(method_recovery.attempt.status)
+                      << " residual=" << method_recovery.attempt.residual << '\n';
+            return false;
+         }
+         const auto method_round_trip =
+            pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+               method_recovery.primitive,
+               minkowski
+            );
+         worst_primitive_error = std::max(
+            worst_primitive_error,
+            scaled_max_error(
+               components(method_recovery.primitive), components(primitive)
+            )
+         );
+         worst_conserved_error = std::max(
+            worst_conserved_error,
+            scaled_max_error(components(method_round_trip), components(conserved))
+         );
+      }
+
+      auto independent_conserved = conserved;
+      independent_conserved.mom1 *= 0.997;
+      independent_conserved.mom2 += 0.001 * independent_conserved.dens;
+      independent_conserved.mom3 *= 1.002;
+      independent_conserved.tau += 0.003 * (
+         independent_conserved.dens + independent_conserved.tau
+      );
+      const auto independent_recovered =
+         pyfluid_amrex::recover_srmhd_palenzuela_1d<true>(
+            independent_conserved, gamma
+         );
+      if (!independent_recovered.attempt.succeeded()) {
+         std::cerr << "SRMHD conserved round trip failed sample=" << sample
+                   << " status=" << static_cast<int>(independent_recovered.attempt.status)
+                   << " residual=" << independent_recovered.attempt.residual << '\n';
+         return false;
+      }
+      const auto independent_round_trip =
+         pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+            independent_recovered.primitive,
+            minkowski
+         );
+      worst_conserved_error = std::max(
+         worst_conserved_error,
+         scaled_max_error(
+            components(independent_round_trip),
+            components(independent_conserved)
+         )
+      );
+      const auto independent_reprimand =
+         pyfluid_amrex::recover_srmhd_reprimand<true>(
+            independent_conserved, gamma
+         );
+      const auto independent_policy =
+         pyfluid_amrex::recover_srmhd<true>(independent_conserved, gamma);
+      for (const auto& method_recovery : std::array{
+              independent_reprimand,
+              independent_policy,
+           }) {
+         if (!method_recovery.succeeded()) {
+            std::cerr << "SRMHD alternate conserved recovery failed sample=" << sample
+                      << " method=" << static_cast<int>(method_recovery.attempt.method)
+                      << " status=" << static_cast<int>(method_recovery.attempt.status)
+                      << " residual=" << method_recovery.attempt.residual << '\n';
+            return false;
+         }
+         const auto method_round_trip =
+            pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+               method_recovery.primitive,
+               minkowski
+            );
+         worst_conserved_error = std::max(
+            worst_conserved_error,
+            scaled_max_error(
+               components(method_round_trip), components(independent_conserved)
+            )
+         );
+      }
+
+      const amrex::Real x = (1.0 + gamma * primitive.eps) * lorentz_factor;
+      const amrex::Real step = 1.0e-6 * std::max(amrex::Real{1.0}, x);
+      const amrex::Real finite_difference = (
+         pyfluid_amrex::srmhd_palenzuela_residual(conserved, x + step, gamma)
+         - pyfluid_amrex::srmhd_palenzuela_residual(conserved, x - step, gamma)
+      ) / (2.0 * step);
+      const amrex::Real analytic =
+         pyfluid_amrex::srmhd_palenzuela_residual_derivative(conserved, x, gamma);
+      if (!std::isfinite(analytic)
+          || std::abs(analytic - finite_difference)
+             > 3.0e-6 * std::max(amrex::Real{1.0}, std::abs(finite_difference))) {
+         std::cerr << "SRMHD generated residual derivative mismatch sample=" << sample
+                   << " analytic=" << analytic
+                   << " finite_difference=" << finite_difference << '\n';
+         return false;
+      }
+
+      constexpr pyfluid_amrex::ColdPolytropeEquationOfState cold_eos{
+         0.2, 1.8,
+      };
+      auto cold_primitive = primitive;
+      cold_primitive.pressure = cold_eos.polytropic_k * std::pow(
+         cold_primitive.rho, cold_eos.polytropic_gamma
+      );
+      cold_primitive.eps = cold_primitive.pressure / (
+         cold_primitive.rho * (cold_eos.polytropic_gamma - 1.0)
+      );
+      const auto cold_conserved =
+         pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+            cold_primitive, minkowski
+         );
+      const auto cold_recovered = pyfluid_amrex::recover_srmhd_font_1d<true>(
+         cold_conserved, cold_eos
+      );
+      if (!cold_recovered.succeeded()) {
+         std::cerr << "SRMHD cold recovery failed sample=" << sample
+                   << " status=" << static_cast<int>(cold_recovered.attempt.status)
+                   << " residual=" << cold_recovered.attempt.residual << '\n';
+         return false;
+      }
+      worst_primitive_error = std::max(
+         worst_primitive_error,
+         scaled_max_error(
+            components(cold_recovered.primitive), components(cold_primitive)
+         )
+      );
+   }
+
+   pyfluid_amrex::SpacetimeMetric curved_metric{};
+   curved_metric.lapse = 0.83;
+   curved_metric.shift1 = 0.07;
+   curved_metric.shift2 = -0.03;
+   curved_metric.shift3 = 0.02;
+   curved_metric.gamma12 = 0.1;
+   curved_metric.inv_gamma11 = 1.0 / 0.99;
+   curved_metric.inv_gamma12 = -0.1 / 0.99;
+   curved_metric.inv_gamma22 = 1.0 / 0.99;
+   curved_metric.sqrt_det_gamma = std::sqrt(0.99);
+   for (std::size_t sample = 0; sample < primitive_corpus.size(); ++sample) {
+      auto primitive = primitive_corpus[sample];
+      primitive.pressure = pyfluid_amrex::generated::relativistic_ideal_gas_pressure(
+         primitive.rho, primitive.eps, gamma
+      );
+      const auto conserved =
+         pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+            primitive, curved_metric
+         );
+      const amrex::Real velocity_squared =
+         pyfluid_amrex::rmhd_velocity_squared(primitive, curved_metric);
+      const amrex::Real lorentz_factor = 1.0 / std::sqrt(
+         1.0 - velocity_squared
+      );
+      const pyfluid_amrex::RMHDEntropyInput entropy{
+         curved_metric.sqrt_det_gamma * lorentz_factor * primitive.pressure
+            / std::pow(primitive.rho, gamma - 1.0),
+      };
+      const std::array recoveries{
+         pyfluid_amrex::recover_srmhd_palenzuela_1d<true>(
+            conserved, curved_metric, gamma
+         ),
+         pyfluid_amrex::recover_srmhd_reprimand<true>(
+            conserved, curved_metric, gamma
+         ),
+         pyfluid_amrex::recover_srmhd_noble_2d<true>(
+            conserved, curved_metric, primitive, gamma
+         ),
+         pyfluid_amrex::recover_srmhd_palenzuela_1d_entropy<true>(
+            conserved, curved_metric, entropy, gamma
+         ),
+         pyfluid_amrex::recover_srmhd_noble_1d_entropy<true>(
+            conserved, curved_metric, primitive, entropy, gamma
+         ),
+         pyfluid_amrex::recover_srmhd<true>(conserved, curved_metric, gamma),
+      };
+      for (const auto& recovered : recoveries) {
+         if (!recovered.succeeded()) {
+            std::cerr << "Curved RMHD recovery failed sample=" << sample
+                      << " method=" << static_cast<int>(recovered.attempt.method)
+                      << " status=" << static_cast<int>(recovered.attempt.status)
+                      << " residual=" << recovered.attempt.residual << '\n';
+            return false;
+         }
+         const auto conserved_round_trip =
+            pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+               recovered.primitive, curved_metric
+            );
+         worst_primitive_error = std::max(
+            worst_primitive_error,
+            scaled_max_error(
+               components(recovered.primitive), components(primitive)
+            )
+         );
+         worst_conserved_error = std::max(
+            worst_conserved_error,
+            scaled_max_error(
+               components(conserved_round_trip), components(conserved)
+            )
+         );
+      }
+   }
+
+   if (worst_primitive_error > tolerance || worst_conserved_error > tolerance) {
+      std::cerr << "SRMHD round-trip residuals primitive=" << worst_primitive_error
+                << " conserved=" << worst_conserved_error << '\n';
+      return false;
+   }
+
+   return true;
 }
 
 pyfluid_amrex::HydroState hydro_llf_reference(
@@ -263,6 +995,105 @@ amrex::Real residual_reference(
 
 int main()
 {
+   if (!validate_newtonian_round_trips()
+       || !validate_srhd_round_trips()
+       || !validate_srmhd_round_trips()
+       || !validate_fixed_spacetime_provider()) {
+      return 1;
+   }
+   static_assert(pyfluid_amrex::valid_spacetime_evolution(
+      pyfluid_amrex::PhysicalSystem::HD,
+      pyfluid_amrex::SpacetimeEvolution::None
+   ));
+   static_assert(pyfluid_amrex::valid_spacetime_evolution(
+      pyfluid_amrex::PhysicalSystem::RHD,
+      pyfluid_amrex::SpacetimeEvolution::Fixed
+   ));
+   static_assert(!pyfluid_amrex::valid_spacetime_evolution(
+      pyfluid_amrex::PhysicalSystem::RHD,
+      pyfluid_amrex::SpacetimeEvolution::None
+   ));
+   static_assert(pyfluid_amrex::ideal_rmhd_c2p_policy[0]
+                 == pyfluid_amrex::C2PMethod::RePrimAnd);
+   static_assert(pyfluid_amrex::ideal_rmhd_c2p_policy[1]
+                 == pyfluid_amrex::C2PMethod::Palenzuela1D);
+   static_assert(pyfluid_amrex::c2p_method_capabilities(
+      pyfluid_amrex::C2PMethod::RePrimAnd
+   ).implemented);
+   static_assert(pyfluid_amrex::c2p_method_capabilities(
+      pyfluid_amrex::C2PMethod::Noble2D
+   ).requires_seed);
+   static_assert(pyfluid_amrex::c2p_method_capabilities(
+      pyfluid_amrex::C2PMethod::Palenzuela1DEntropy
+   ).requires_entropy);
+   static_assert(pyfluid_amrex::c2p_method_capabilities(
+      pyfluid_amrex::C2PMethod::Font1D
+   ).requires_cold_equation_of_state);
+   {
+      const pyfluid_amrex::RHDPrimitive primitive{1.3, 0.2, 0.4, 0.2, -0.1, 0.05};
+      const pyfluid_amrex::SpacetimeMetric metric{};
+      const amrex::Real velocity_squared =
+         primitive.v1 * primitive.v1 + primitive.v2 * primitive.v2 + primitive.v3 * primitive.v3;
+      const amrex::Real lorentz_factor = 1.0 / std::sqrt(1.0 - velocity_squared);
+      const amrex::Real enthalpy = 1.0 + primitive.eps + primitive.pressure / primitive.rho;
+      const pyfluid_amrex::RHDConserved expected{
+         primitive.rho * lorentz_factor,
+         primitive.rho * enthalpy * lorentz_factor * lorentz_factor * primitive.v1,
+         primitive.rho * enthalpy * lorentz_factor * lorentz_factor * primitive.v2,
+         primitive.rho * enthalpy * lorentz_factor * lorentz_factor * primitive.v3,
+         primitive.rho * enthalpy * lorentz_factor * lorentz_factor
+            - primitive.pressure - primitive.rho * lorentz_factor,
+      };
+      const auto conserved = pyfluid_amrex::generated::rhd_primitive_to_conserved(primitive, metric);
+      if (!close_enough(conserved.dens, expected.dens)
+          || !close_enough(conserved.mom1, expected.mom1)
+          || !close_enough(conserved.mom2, expected.mom2)
+          || !close_enough(conserved.mom3, expected.mom3)
+          || !close_enough(conserved.tau, expected.tau)) {
+         std::cerr << "generated RHD primitive-to-conserved mismatch\n";
+         return 1;
+      }
+      const auto flux1 = pyfluid_amrex::generated::rhd_flux<0>(primitive, metric);
+      const auto flux2 = pyfluid_amrex::generated::rhd_flux<1>(primitive, metric);
+      const auto flux3 = pyfluid_amrex::generated::rhd_flux<2>(primitive, metric);
+      if (!close_enough(flux1.dens, expected.dens * primitive.v1)
+          || !close_enough(flux1.mom1, expected.mom1 * primitive.v1 + primitive.pressure)
+          || !close_enough(flux2.mom2, expected.mom2 * primitive.v2 + primitive.pressure)
+          || !close_enough(flux3.tau, expected.tau * primitive.v3 + primitive.pressure * primitive.v3)) {
+         std::cerr << "generated RHD directional flux mismatch\n";
+         return 1;
+      }
+      const pyfluid_amrex::RHDWaveSpeeds speeds =
+         pyfluid_amrex::generated::srhd_wave_speeds<0>(
+            primitive, metric, 5.0 / 3.0
+         );
+      if (!std::isfinite(speeds.minus) || !std::isfinite(speeds.plus)
+          || speeds.minus > speeds.plus || speeds.minus < -1.0 || speeds.plus > 1.0) {
+         std::cerr << "generated SRHD wave-speed bounds mismatch\n";
+         return 1;
+      }
+      const pyfluid_amrex::EOSParams eos{};
+      const pyfluid_amrex::RHDPrimitive consistent{
+         1.3,
+         0.2,
+         (eos.gamma - 1.0) * 1.3 * 0.2,
+         0.2,
+         -0.1,
+         0.05,
+      };
+      const auto physical_flux = pyfluid_amrex::generated::rhd_flux<0>(consistent, metric);
+      const auto hll_flux = pyfluid_amrex::rhd_hll_flux<0>(
+         consistent, consistent, eos, metric
+      );
+      if (!close_enough(hll_flux.dens, physical_flux.dens)
+          || !close_enough(hll_flux.mom1, physical_flux.mom1)
+          || !close_enough(hll_flux.mom2, physical_flux.mom2)
+          || !close_enough(hll_flux.mom3, physical_flux.mom3)
+          || !close_enough(hll_flux.tau, physical_flux.tau)) {
+         std::cerr << "SRHD HLL consistency mismatch\n";
+         return 1;
+      }
+   }
    const std::array<pyfluid_amrex::HydroState, 4> hydro_states{{
       {1.2, 0.3, -0.2, 0.1, 2.5},
       {0.7, -1.4, 0.5, 0.25, 5.0},
@@ -563,7 +1394,9 @@ int main()
       const amrex::Real tan_q1 = std::tan(0.2);
       const amrex::Real tan_q2 = std::tan(-0.1);
       const amrex::Real denom2 = 1.0 + tan_q1 * tan_q1 + tan_q2 * tan_q2;
-      const amrex::Real primary = -2.0 / std::sqrt(denom2);
+      const amrex::Real radial_fraction = (2.0 - radial_inner) / (radial_outer - radial_inner);
+      const amrex::Real blend = 1.0 - radial_fraction + radial_fraction / std::sqrt(denom2);
+      const amrex::Real primary = -2.0 * blend;
       if (
          !close_enough(point.q1, 0.3 + primary)
          || !close_enough(point.q2, -0.2 + primary * tan_q2)
