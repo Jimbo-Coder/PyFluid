@@ -112,6 +112,11 @@ def latest_spacetime_plotfile(run_dir: Path) -> Path | None:
    return files[-1] if files else None
 
 
+def latest_fluid_plotfile(run_dir: Path) -> Path | None:
+   files = list((run_dir / "stateGF").glob("stateGF*.h5"))
+   return max(files, key=plotfile_step) if files else None
+
+
 def run_case(
    name: str,
    overrides: dict[str, str],
@@ -203,6 +208,103 @@ def validate_minkowski(
       })
       scalars.append(scalar)
    return results, scalars
+
+
+def validate_initial_data_group_policies(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   run_dir, scalar = run_case(
+      "initial_data_neutral_groups",
+      {
+         "amr.n_cell": "16",
+         "amr.max_grid_size": "16",
+         "spacetime.initial_data": "gauge_wave",
+         "initial_data.magnetic": "none",
+         "initial_data.spacetime": "flat",
+         "initial_data.lapse": "one",
+         "initial_data.shift": "zero",
+         "pyfluid.final_time": "-1",
+         "pyfluid.max_step": "1",
+         "pyfluid.plot_int": "1",
+         "pyfluid.checkpoint_int": "-1",
+         "pyfluid.scalar_int": "1",
+      },
+      args,
+   )
+   names, _time, state = spacetime_state(run_dir)
+   error = float(np.max(np.abs(state - minkowski_reference(names, state.shape[1:]))))
+   tolerance = 64.0 * np.finfo(float).eps
+   if error > tolerance:
+      raise RuntimeError(
+         f"initial-data neutral group overrides failed: state={error:.3e}"
+      )
+   rhd_plotfile = latest_fluid_plotfile(run_dir)
+   if rhd_plotfile is None:
+      raise RuntimeError("RHD initial-data policy case did not write fluid state")
+   rhd_names, _rhd_dim, _rhd_time = parse_plot_header(rhd_plotfile)
+   if any(name in rhd_names for name in ("b1", "b2", "b3")):
+      raise RuntimeError("RHD unexpectedly allocated magnetic state")
+
+   rmhd_dir, rmhd_scalar = run_dimension_case(
+      "initial_data_zero_magnetic_rmhd",
+      INPUT,
+      {
+         "amr.n_cell": "16",
+         "amr.max_grid_size": "16",
+         "spacetime.matter_coupling": "vacuum",
+         "spacetime.initial_data": "minkowski",
+         "spacetime.lapse_gauge": "frozen",
+         "spacetime.shift_gauge": "frozen",
+         "initial_data.magnetic": "zero",
+         "pyfluid.physics": "rmhd",
+         "pyfluid.eos": "ideal_gas",
+         "pyfluid.ic": "uniform",
+         "pyfluid.b1_0": "0.3",
+         "pyfluid.b2_0": "-0.2",
+         "pyfluid.b3_0": "0.1",
+         "pyfluid.timestep": "euler",
+         "pyfluid.final_time": "-1",
+         "pyfluid.max_step": "1",
+         "pyfluid.plot_int": "1",
+         "pyfluid.checkpoint_int": "-1",
+         "pyfluid.scalar_int": "1",
+      },
+      args,
+      dim=1,
+      checks=CLOSED_POLICY,
+      mhd=True,
+      kind="feature",
+   )
+   rmhd_plotfile = latest_fluid_plotfile(rmhd_dir)
+   if rmhd_plotfile is None:
+      raise RuntimeError("RMHD initial-data policy case did not write fluid state")
+   rmhd_names, rmhd_dim, _rmhd_time = parse_plot_header(rmhd_plotfile)
+   rmhd_state = read_level_state(rmhd_plotfile, rmhd_names, rmhd_dim, 0)
+   magnetic_error = max(
+      float(np.max(np.abs(rmhd_state[rmhd_names.index(name)])))
+      for name in ("b1", "b2", "b3")
+   )
+   if magnetic_error != 0.0:
+      raise RuntimeError(
+         f"RMHD zero-magnetic initial-data policy failed: {magnetic_error:.3e}"
+      )
+   return [{
+      "kind": "feature",
+      "case": "initial_data_neutral_groups",
+      "status": "PASS",
+      "metric": "state_linf",
+      "value": error,
+      "constraint_linf": final_constraint_max(run_dir),
+      "run_dir": repo_relative(run_dir),
+   }, {
+      "kind": "feature",
+      "case": "initial_data_zero_magnetic_rmhd",
+      "status": "PASS",
+      "metric": "magnetic_linf",
+      "value": magnetic_error,
+      "constraint_linf": final_constraint_max(rmhd_dir),
+      "run_dir": repo_relative(rmhd_dir),
+   }], [scalar, rmhd_scalar]
 
 
 def gauge_wave_lapse_error(run_dir: Path, amplitude: float, wave_number: float) -> float:
@@ -834,8 +936,8 @@ def validate_tov_initial_data(
          "pyfluid.polytropic_density_breaks": "6.0e-4",
          "pyfluid.polytropic_segment_gammas": "2.5",
          "pyfluid.final_time": "-1",
-         "pyfluid.max_step": "0",
-         "pyfluid.plot_int": "1",
+         "pyfluid.max_step": "2",
+         "pyfluid.plot_int": "2",
          "pyfluid.checkpoint_int": "-1",
          "pyfluid.scalar_int": "1",
       },
@@ -844,11 +946,26 @@ def validate_tov_initial_data(
       checks=SMOKE_POLICY,
       mhd=False,
    )
-   piecewise_final = read_scalar_rows(piecewise_dir)[-1]
+   piecewise_rows = read_scalar_rows(piecewise_dir)
+   piecewise_initial = piecewise_rows[0]
+   piecewise_final = piecewise_rows[-1]
    piecewise_h_l2 = abs(float(piecewise_final["z4c_hamiltonian_l2"]))
    piecewise_h_linf = abs(float(piecewise_final["z4c_hamiltonian_linf"]))
-   if not math.isfinite(piecewise_h_l2) or not math.isfinite(piecewise_h_linf):
-      raise RuntimeError("piecewise-polytrope TOV produced nonfinite constraints")
+   piecewise_initial_h_l2 = abs(float(piecewise_initial["z4c_hamiltonian_l2"]))
+   piecewise_mass_drift = max(
+      abs(float(row["mass_rel_drift"])) for row in piecewise_rows
+   )
+   if (
+      not math.isfinite(piecewise_h_l2)
+      or not math.isfinite(piecewise_h_linf)
+      or piecewise_mass_drift > 1.0e-8
+      or piecewise_h_l2 > 2.0 * piecewise_initial_h_l2
+   ):
+      raise RuntimeError(
+         "evolved piecewise-polytrope TOV failed: "
+         f"mass drift={piecewise_mass_drift:.3e}, "
+         f"Hamiltonian L2={piecewise_initial_h_l2:.3e}->{piecewise_h_l2:.3e}"
+      )
    results.append({
       "kind": "feature",
       "case": "tov_piecewise_polytrope_n24",
@@ -879,6 +996,7 @@ def main() -> int:
    scalars: list[dict[str, object]] = []
    for validator in (
       validate_minkowski,
+      validate_initial_data_group_policies,
       validate_gauge_wave_convergence,
       validate_linear_wave_convergence,
       validate_robust_stability,

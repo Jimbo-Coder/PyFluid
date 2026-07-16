@@ -25,6 +25,37 @@ it supplies immutable lapse, shift, spatial metric, inverse metric, determinant,
 and derivatives. In dynamical mode the spacetime sector evolves the same fields.
 The relativistic fluid kernels do not distinguish those ownership modes.
 
+## EOS And Initial-Data Ownership
+
+The selected EOS is one immutable run property consumed by initialization,
+P2C/C2P, fluxes, sources, boundaries, diagnostics, and every RK stage. HD, MHD,
+and RHD support `ideal_gas`, `polytrope`, and `hybrid_polytrope`. RMHD currently
+supports `ideal_gas` only because its maintained RePrimAnd/Palenzuela recovery
+residuals are generated for that closure; unsupported RMHD EOS choices are
+rejected before allocation rather than silently using another EOS.
+
+An initial-data provider normally supplies one self-consistent fluid and
+spacetime solution in physical coordinates. The fluid group is mandatory for
+every physical system. Storage is selected by `pyfluid.physics` and
+`spacetime.evolution`, never by an initialization fallback: RHD allocates no
+magnetic state, RMHD allocates magnetic state, and only evolved spacetime
+allocates the Z4c state.
+
+Active optional groups may select provider data or one mathematically valid
+neutral value:
+
+| Parameter | Values | Neutral value |
+| --- | --- | --- |
+| `initial_data.magnetic` | `id`, `zero`, `none` | zero magnetic vector |
+| `initial_data.spacetime` | `id`, `flat`, `none` | flat geometry and curvature |
+| `initial_data.lapse` | `id`, `one`, `none` | unit lapse |
+| `initial_data.shift` | `id`, `zero`, `none` | zero shift |
+
+`none` is valid only when the selected physical system does not allocate that
+group. The defaults are `id`, preserving a provider's coupled solution. Gauge
+choices remain independent runtime evolution policies; they do not rewrite the
+initial data.
+
 ## Reference Implementations
 
 - [Einstein Toolkit AsterX](https://github.com/EinsteinToolkit/AsterX) is the
@@ -223,6 +254,20 @@ Build the implementation through executable vertical slices:
 7. Coupled RHD, then RMHD, with synchronized sectors.
 8. Multirate sector evolution only after synchronized coupling converges and
    conserves as expected.
+
+The first production GR/RHD problem ladder is:
+
+1. Long-lived stable TOV in Cowling mode, then with evolved spacetime; compare
+   baryon mass, central-density oscillations, radial-mode frequency, and
+   convergent Hamiltonian/momentum constraints.
+2. Vacuum Schwarzschild/puncture evolution to validate black-hole gauge and
+   boundary behavior independently of fluid recovery.
+3. Stationary Michel/Bondi accretion on a fixed Schwarzschild background,
+   using its analytic transonic solution to validate curved-spacetime GRHD
+   fluxes, sources, and boundaries.
+4. Unstable-star migration or collapse only after the stable-star and
+   stationary-accretion gates pass. Expensive GRMHD tests follow after the RHD
+   hot path is profiled and optimized.
 
 WIP slices remain executable and are tracked in `review_running_cycle.md` and
 the support matrix. Do not add temporary fallbacks or startup prohibitions to

@@ -20,7 +20,7 @@
          return;
       }
       if (physics_system_ == PhysicalSystem::RHD) {
-         dispatch_evolve_timestep<NVAR_HYDRO, false, EOSIdealGas>();
+         dispatch_evolve_eos<NVAR_HYDRO, false>();
          return;
       }
       if (is_mhd(cfg_)) {

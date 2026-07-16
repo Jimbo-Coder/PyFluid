@@ -91,6 +91,7 @@ inline void initialize_relativistic_state_method(
    validate_fixed_spacetime_domain(spacetime, geom);
    const PhysicalSystem system = physical_system(cfg);
    const bool magnetized = physical_system_has_magnetic_field(system);
+   const bool initialize_magnetic_from_id = cfg.initial_data_magnetic == "id";
    const bool uniform = cfg.ic == "uniform";
    const bool sine_wave = cfg.ic == "sin_wave";
    const bool fixed_metric_hse = cfg.ic == "fixed_metric_hse";
@@ -234,6 +235,11 @@ inline void initialize_relativistic_state_method(
          rho = amrex::max(rho, params.rho_floor);
          pressure = amrex::max(pressure, params.pressure_floor);
          if (magnetized) {
+            if (!initialize_magnetic_from_id) {
+               b1 = 0.0;
+               b2 = 0.0;
+               b3 = 0.0;
+            }
             const RMHDPrimitive primitive{
                rho,
                relativistic_specific_internal_energy_from_pressure<EOSIdealGas>(

@@ -2642,6 +2642,35 @@ inline void initialize_magnetic_blast_noise_face_b(FaceMagneticField& face_b, am
 #endif
 }
 
+inline void apply_newtonian_magnetic_initial_data_policy(
+   amrex::MultiFab& state,
+   RunConfig const& cfg
+)
+{
+   if (!physical_system_has_magnetic_field(physical_system(cfg))
+       || cfg.initial_data_magnetic != "zero") {
+      return;
+   }
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto values = state.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const amrex::Real magnetic_energy = 0.5 * (
+            values(i, j, k, B1) * values(i, j, k, B1)
+            + values(i, j, k, B2) * values(i, j, k, B2)
+            + values(i, j, k, B3) * values(i, j, k, B3)
+         );
+         values(i, j, k, ENERGY) -= magnetic_energy;
+         values(i, j, k, B1) = 0.0;
+         values(i, j, k, B2) = 0.0;
+         values(i, j, k, B3) = 0.0;
+      });
+   }
+}
+
 inline void initialize_state(
    amrex::MultiFab& state,
    amrex::Geometry const& geom,
@@ -2711,6 +2740,7 @@ inline void initialize_state(
    } else {
       initialize_sine_wave(state, geom, cfg);
    }
+   apply_newtonian_magnetic_initial_data_policy(state, cfg);
    initialize_passive_scalars(state, geom, cfg);
    apply_configured_state_boundary(state, geom, cfg);
 }

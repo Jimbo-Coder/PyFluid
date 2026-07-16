@@ -246,7 +246,10 @@ void AmrSolverBase::initialize_ct_fields(int lev, amrex::Real time)
    fill_level_boundaries(fluid_state_.state(), lev, time);
    apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
    bool initialized_analytic_face_b = false;
-   if (cfg_.ic == "magnetic_blast_noise" && time == 0.0) {
+   if (cfg_.initial_data_magnetic == "zero" && time == 0.0) {
+      fill_uniform_face_b(face_b_[lev], 0.0, 0.0, 0.0);
+      initialized_analytic_face_b = true;
+   } else if (cfg_.ic == "magnetic_blast_noise" && time == 0.0) {
       initialize_magnetic_blast_noise_face_b(face_b_[lev], Geom(lev), cfg_);
       initialized_analytic_face_b = true;
    } else if (cfg_.ic == "resistive_current_sheet" && time == 0.0) {

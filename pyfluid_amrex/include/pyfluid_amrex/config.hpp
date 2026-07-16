@@ -101,6 +101,10 @@ struct RunConfig {
    std::string spacetime_matter_coupling = "coupled";
    std::string spacetime_fixed_metric = "minkowski";
    std::string spacetime_initial_data = "minkowski";
+   std::string initial_data_magnetic = "id";
+   std::string initial_data_spacetime = "id";
+   std::string initial_data_lapse = "id";
+   std::string initial_data_shift = "id";
    std::string spacetime_lapse_gauge = "frozen";
    std::string spacetime_shift_gauge = "frozen";
    amrex::Real spacetime_amplitude = 1.0e-8;
@@ -369,6 +373,18 @@ static constexpr std::array<std::string_view, 3> SpacetimeEvolutionOptions{{"non
 static constexpr std::array<std::string_view, 2> SpacetimeMatterCouplingOptions{{"coupled", "vacuum"}};
 static constexpr std::array<std::string_view, 4> SpacetimeInitialDataOptions{{
    "minkowski", "gauge_wave", "linear_wave", "robust_stability"
+}};
+static constexpr std::array<std::string_view, 3> MagneticInitialDataOptions{{
+   "id", "zero", "none"
+}};
+static constexpr std::array<std::string_view, 3> SpacetimeGroupInitialDataOptions{{
+   "id", "flat", "none"
+}};
+static constexpr std::array<std::string_view, 3> LapseInitialDataOptions{{
+   "id", "one", "none"
+}};
+static constexpr std::array<std::string_view, 3> ShiftInitialDataOptions{{
+   "id", "zero", "none"
 }};
 static constexpr std::array<std::string_view, 4> Z4cLapseGaugeOptions{{
    "frozen", "harmonic", "one_plus_log", "slow_start"
@@ -744,6 +760,11 @@ inline RunConfig read_config()
    spacetime_pp.queryAdd("matter_coupling", cfg.spacetime_matter_coupling);
    spacetime_pp.queryAdd("fixed_metric", cfg.spacetime_fixed_metric);
    spacetime_pp.queryAdd("initial_data", cfg.spacetime_initial_data);
+   amrex::ParmParse initial_data_pp("initial_data");
+   initial_data_pp.queryAdd("magnetic", cfg.initial_data_magnetic);
+   initial_data_pp.queryAdd("spacetime", cfg.initial_data_spacetime);
+   initial_data_pp.queryAdd("lapse", cfg.initial_data_lapse);
+   initial_data_pp.queryAdd("shift", cfg.initial_data_shift);
    spacetime_pp.queryAdd("lapse_gauge", cfg.spacetime_lapse_gauge);
    spacetime_pp.queryAdd("shift_gauge", cfg.spacetime_shift_gauge);
    spacetime_pp.queryAdd("amplitude", cfg.spacetime_amplitude);
@@ -1342,6 +1363,26 @@ inline void validate_config(RunConfig const& cfg)
       "spacetime.initial_data"
    );
    require_supported_option(
+      cfg.initial_data_magnetic,
+      MagneticInitialDataOptions,
+      "initial_data.magnetic"
+   );
+   require_supported_option(
+      cfg.initial_data_spacetime,
+      SpacetimeGroupInitialDataOptions,
+      "initial_data.spacetime"
+   );
+   require_supported_option(
+      cfg.initial_data_lapse,
+      LapseInitialDataOptions,
+      "initial_data.lapse"
+   );
+   require_supported_option(
+      cfg.initial_data_shift,
+      ShiftInitialDataOptions,
+      "initial_data.shift"
+   );
+   require_supported_option(
       cfg.spacetime_lapse_gauge,
       Z4cLapseGaugeOptions,
       "spacetime.lapse_gauge"
@@ -1407,6 +1448,22 @@ inline void validate_config(RunConfig const& cfg)
       amrex::Abort("pyfluid.physical_check_int must be non-negative; 0 disables accepted-state physical checks");
    }
    const PhysicalSystem selected_system = physical_system(cfg);
+   if (physical_system_has_magnetic_field(selected_system)
+       && cfg.initial_data_magnetic == "none") {
+      amrex::Abort(
+         "initial_data.magnetic = none requires a non-magnetized physical system; "
+         "use zero to initialize an allocated magnetic field to zero"
+      );
+   }
+   if (cfg.spacetime_evolution == "evolved"
+       && (cfg.initial_data_spacetime == "none"
+           || cfg.initial_data_lapse == "none"
+           || cfg.initial_data_shift == "none")) {
+      amrex::Abort(
+         "evolved spacetime requires initial_data.spacetime, lapse, and shift storage; "
+         "select id or the group-specific neutral value"
+      );
+   }
    if (!physical_system_is_relativistic(selected_system)
        && cfg.spacetime_fixed_metric != "minkowski") {
       amrex::Abort("spacetime.fixed_metric applies only to RHD/RMHD");

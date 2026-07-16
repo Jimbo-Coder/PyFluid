@@ -195,6 +195,12 @@ void initialize_z4c_state(
    const Z4cInitialDataParameters parameters = z4c_initial_data_parameters(cfg);
    const auto lower = geometry.ProbLoArray();
    const auto spacing = geometry.CellSizeArray();
+   const bool use_spacetime_id = cfg.initial_data_spacetime == "id";
+   const bool use_flat_spacetime = cfg.initial_data_spacetime == "flat";
+   const bool use_lapse_id = cfg.initial_data_lapse == "id";
+   const bool use_unit_lapse = cfg.initial_data_lapse == "one";
+   const bool use_shift_id = cfg.initial_data_shift == "id";
+   const bool use_zero_shift = cfg.initial_data_shift == "zero";
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -230,9 +236,34 @@ void initialize_z4c_state(
                phase, parameters.amplitude, constants::two_pi * parameters.wave_number
             );
          }
+         if (use_flat_spacetime) {
+            const amrex::Real provider_lapse = point.lapse;
+            const amrex::Real provider_shift1 = point.shift1;
+            const amrex::Real provider_shift2 = point.shift2;
+            const amrex::Real provider_shift3 = point.shift3;
+            point = Z4cState{};
+            point.lapse = provider_lapse;
+            point.shift1 = provider_shift1;
+            point.shift2 = provider_shift2;
+            point.shift3 = provider_shift3;
+         }
+         if (use_unit_lapse) {
+            point.lapse = 1.0;
+         }
+         if (use_zero_shift) {
+            point.shift1 = 0.0;
+            point.shift2 = 0.0;
+            point.shift3 = 0.0;
+         }
          store_z4c_state(output, i, j, k, point);
          if (parameters.kind == Z4cInitialData::RobustStability) {
             for (int component = 0; component < Z4C_NUM_COMPONENTS; ++component) {
+               const bool initialize_component = component < Z4C_LAPSE
+                  ? use_spacetime_id
+                  : (component == Z4C_LAPSE ? use_lapse_id : use_shift_id);
+               if (!initialize_component) {
+                  continue;
+               }
                output(i, j, k, component) += parameters.amplitude
                   * signed_noise(i, j, k, component);
             }

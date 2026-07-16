@@ -68,6 +68,10 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("spacetime_matter_coupling", cfg.spacetime_matter_coupling);
    entries.emplace_back("spacetime_fixed_metric", cfg.spacetime_fixed_metric);
    entries.emplace_back("spacetime_initial_data", cfg.spacetime_initial_data);
+   entries.emplace_back("initial_data_magnetic", cfg.initial_data_magnetic);
+   entries.emplace_back("initial_data_spacetime", cfg.initial_data_spacetime);
+   entries.emplace_back("initial_data_lapse", cfg.initial_data_lapse);
+   entries.emplace_back("initial_data_shift", cfg.initial_data_shift);
    entries.emplace_back("spacetime_lapse_gauge", cfg.spacetime_lapse_gauge);
    entries.emplace_back("spacetime_shift_gauge", cfg.spacetime_shift_gauge);
    entries.emplace_back("spacetime_amplitude", output_metadata_real_string(cfg.spacetime_amplitude));
