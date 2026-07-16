@@ -234,8 +234,8 @@ void AmrSolverBase::average_down_state_level(int fine_lev)
       return;
    }
    amrex::average_down(
-      *state_[fine_lev],
-      *state_[fine_lev - 1],
+      *fluid_state_.state()[fine_lev],
+      *fluid_state_.state()[fine_lev - 1],
       Geom(fine_lev),
       Geom(fine_lev - 1),
       0,
@@ -269,11 +269,11 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
    const PatchLayout patch_layout = use_mapped_patches
       ? production_patch_layout_for_level(fine_lev)
       : PatchLayout{};
-   amrex::BoxArray crse_fine_ba = state_[fine_lev]->boxArray();
+   amrex::BoxArray crse_fine_ba = fluid_state_.state()[fine_lev]->boxArray();
    crse_fine_ba.coarsen(ratio);
    amrex::MultiFab crse_from_fine(
       crse_fine_ba,
-      state_[fine_lev]->DistributionMap(),
+      fluid_state_.state()[fine_lev]->DistributionMap(),
       ncomp + 1,
       0
    );
@@ -292,7 +292,7 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
          ? patch_grid_descriptor_for_layout_patch(patch_grid_system, layout_patch)
          : PatchGridDescriptor{};
       const auto coarse = crse_from_fine.array(mfi);
-      const auto fine = state_[fine_lev]->const_array(mfi);
+      const auto fine = fluid_state_.state()[fine_lev]->const_array(mfi);
       const auto solid = use_solid_mask ? solid_mask_[fine_lev]->const_array(mfi) : amrex::Array4<int const>{};
       const auto vf = use_volume_fraction
          ? solid_volume_fraction_[fine_lev]->const_array(mfi)
@@ -364,8 +364,8 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
    }
 
    amrex::MultiFab overlay(
-      state_[fine_lev - 1]->boxArray(),
-      state_[fine_lev - 1]->DistributionMap(),
+      fluid_state_.state()[fine_lev - 1]->boxArray(),
+      fluid_state_.state()[fine_lev - 1]->DistributionMap(),
       ncomp + 1,
       0
    );
@@ -385,9 +385,9 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    {
-   for (amrex::MFIter mfi(*state_[fine_lev - 1], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+   for (amrex::MFIter mfi(*fluid_state_.state()[fine_lev - 1], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
-      const auto coarse = state_[fine_lev - 1]->array(mfi);
+      const auto coarse = fluid_state_.state()[fine_lev - 1]->array(mfi);
       const auto avg = overlay.const_array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          if (avg(i, j, k, ncomp) <= 0.0) {

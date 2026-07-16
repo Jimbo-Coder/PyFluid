@@ -26,11 +26,11 @@
 #pragma omp parallel reduction(+:mass,energy) if (amrex::Gpu::notInLaunchRegion())
 #endif
       {
-      for (amrex::MFIter mfi(*rhs_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(*fluid_state_.rhs()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
          const amrex::Box& bx = mfi.tilebox();
          const auto lo = amrex::lbound(bx);
          const auto hi = amrex::ubound(bx);
-         const auto rhs = rhs_[lev]->const_array(mfi);
+         const auto rhs = fluid_state_.rhs()[lev]->const_array(mfi);
          const auto valid = valid_mask.const_array(mfi);
          const auto volume_fraction = use_solid_volume
             ? solid_volume_fraction_[lev]->const_array(mfi)
@@ -98,7 +98,7 @@
 #pragma omp parallel reduction(+:mass_rate,energy_rate) if (amrex::Gpu::notInLaunchRegion())
 #endif
             {
-            for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
                amrex::Box bx = mfi.tilebox() & domain;
                if (cell_index < bx.smallEnd(dir) || cell_index > bx.bigEnd(dir)) {
                   continue;

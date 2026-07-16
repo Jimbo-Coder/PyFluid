@@ -1,9 +1,12 @@
 #include <AMReX.H>
 
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/kernels_generated/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/characteristic_transforms.hpp"
+#include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/scalar_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
+#include "pyfluid_amrex/kernels_generated/z4c.hpp"
 #include "pyfluid_amrex/kernels_generated/coordinate_metrics.hpp"
 #include "pyfluid_amrex/kernels_generated/ideal_mhd_flux_cartesian.hpp"
 #include "pyfluid_amrex/kernels_generated/patch_maps.hpp"
@@ -17,6 +20,7 @@
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rhd_system.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
+#include "pyfluid_amrex/z4c_pointwise.hpp"
 
 #include <algorithm>
 #include <array>
@@ -25,6 +29,102 @@
 #include <limits>
 
 namespace {
+
+struct PolynomialGrid {
+   AMREX_GPU_HOST_DEVICE
+   amrex::Real operator()(int i, int j, int k, int component) const noexcept
+   {
+      const amrex::Real x = static_cast<amrex::Real>(i);
+      const amrex::Real y = static_cast<amrex::Real>(j);
+      const amrex::Real z = static_cast<amrex::Real>(k);
+      return x * x * x * x + 2.0 * x * y + 3.0 * y * y + z + component;
+   }
+};
+
+bool close_enough(amrex::Real actual, amrex::Real expected);
+
+template <int Degree>
+struct CenteringPolynomialGrid {
+   AMREX_GPU_HOST_DEVICE
+   static amrex::Real power(amrex::Real value) noexcept
+   {
+      amrex::Real result = 1.0;
+      for (int exponent = 0; exponent < Degree; ++exponent) result *= value;
+      return result;
+   }
+
+   AMREX_GPU_HOST_DEVICE
+   amrex::Real operator()(int i, int j, int k, int component) const noexcept
+   {
+      return power(static_cast<amrex::Real>(i))
+         + 2.0 * power(static_cast<amrex::Real>(j))
+         + 3.0 * power(static_cast<amrex::Real>(k))
+         + component;
+   }
+};
+
+template <int Order, int Dim>
+bool check_centering_transfer()
+{
+   const CenteringPolynomialGrid<Order - 1> field{};
+   constexpr int i = 2;
+   constexpr int j = -1;
+   constexpr int k = 3;
+   constexpr int component = 0;
+   auto expected = [&](amrex::Real offset) {
+      amrex::Real value = CenteringPolynomialGrid<Order - 1>::power(i + offset);
+      if constexpr (Dim >= 2) {
+         value += 2.0 * CenteringPolynomialGrid<Order - 1>::power(j + offset);
+      } else {
+         value += 2.0 * CenteringPolynomialGrid<Order - 1>::power(j);
+      }
+      if constexpr (Dim >= 3) {
+         value += 3.0 * CenteringPolynomialGrid<Order - 1>::power(k + offset);
+      } else {
+         value += 3.0 * CenteringPolynomialGrid<Order - 1>::power(k);
+      }
+      return value;
+   };
+   const amrex::Real vertex_value = pyfluid_amrex::generated::cell_to_vertex<Order, Dim>(
+      field, i, j, k, component
+   );
+   const amrex::Real cell_value = pyfluid_amrex::generated::vertex_to_cell<Order, Dim>(
+      field, i, j, k, component
+   );
+   return close_enough(vertex_value, expected(-0.5))
+      && close_enough(cell_value, expected(0.5));
+}
+
+struct ComponentGrid {
+   AMREX_GPU_HOST_DEVICE
+   amrex::Real operator()(int, int, int, int component) const noexcept
+   {
+      return 0.5 + static_cast<amrex::Real>(component);
+   }
+};
+
+struct MinkowskiZ4cGrid {
+   AMREX_GPU_HOST_DEVICE
+   amrex::Real operator()(int, int, int, int component) const noexcept
+   {
+      return component == pyfluid_amrex::Z4C_CHI
+            || component == pyfluid_amrex::Z4C_GAMMA_TILDE11
+            || component == pyfluid_amrex::Z4C_GAMMA_TILDE22
+            || component == pyfluid_amrex::Z4C_GAMMA_TILDE33
+            || component == pyfluid_amrex::Z4C_LAPSE
+         ? 1.0
+         : 0.0;
+   }
+};
+
+struct MutableComponentGrid {
+   mutable std::array<amrex::Real, pyfluid_amrex::Z4C_NUM_COMPONENTS> values{};
+
+   amrex::Real& operator()(int, int, int, int component) const noexcept
+   {
+      return values[component];
+   }
+};
 
 pyfluid_amrex::HydroState hydro_flux_reference(
    pyfluid_amrex::HydroState const& state,
@@ -91,6 +191,277 @@ bool close_enough(amrex::Real actual, amrex::Real expected)
 {
    const amrex::Real scale = std::max<amrex::Real>(1.0, std::abs(expected));
    return std::isfinite(actual) && std::abs(actual - expected) <= 8.0e-15 * scale;
+}
+
+std::array<amrex::Real, pyfluid_amrex::Z4C_NUM_COMPONENTS> z4c_state_components(
+   pyfluid_amrex::Z4cState const& state
+)
+{
+   return {
+      state.chi,
+      state.gamma_tilde11,
+      state.gamma_tilde12,
+      state.gamma_tilde13,
+      state.gamma_tilde22,
+      state.gamma_tilde23,
+      state.gamma_tilde33,
+      state.k_hat,
+      state.a_tilde11,
+      state.a_tilde12,
+      state.a_tilde13,
+      state.a_tilde22,
+      state.a_tilde23,
+      state.a_tilde33,
+      state.gamma_tilde1,
+      state.gamma_tilde2,
+      state.gamma_tilde3,
+      state.theta,
+      state.lapse,
+      state.shift1,
+      state.shift2,
+      state.shift3,
+   };
+}
+
+bool validate_z4c_pointwise_bridge()
+{
+   const auto loaded = pyfluid_amrex::load_z4c_state(ComponentGrid{}, 3, -2, 1);
+   const auto loaded_components = z4c_state_components(loaded);
+   for (int component = 0; component < pyfluid_amrex::Z4C_NUM_COMPONENTS; ++component) {
+      if (!close_enough(loaded_components[component], 0.5 + component)) {
+         std::cerr << "Z4c pointwise state mapping mismatch at component "
+                   << component << '\n';
+         return false;
+      }
+   }
+
+   constexpr int i = 2;
+   constexpr int j = -1;
+   constexpr int k = 3;
+   const std::array<amrex::Real, 3> inv_spacing = {1.0, 1.0, 1.0};
+   pyfluid_amrex::Z4cState advection_state{};
+   advection_state.shift1 = 0.7;
+   advection_state.shift2 = -0.4;
+   advection_state.shift3 = 0.2;
+   const auto derivatives =
+      pyfluid_amrex::gather_z4c_spatial_derivatives<4, AMREX_SPACEDIM>(
+         PolynomialGrid{}, i, j, k, inv_spacing, advection_state
+      );
+   const auto grid_constraints =
+      pyfluid_amrex::evaluate_vacuum_z4c_constraints_at<4, AMREX_SPACEDIM>(
+         MinkowskiZ4cGrid{}, i, j, k, inv_spacing
+      );
+   const amrex::Real flat_constraints[] = {
+      grid_constraints.theta,
+      grid_constraints.z_tilde1,
+      grid_constraints.z_tilde2,
+      grid_constraints.z_tilde3,
+      grid_constraints.hamiltonian,
+      grid_constraints.momentum1,
+      grid_constraints.momentum2,
+      grid_constraints.momentum3,
+      grid_constraints.log_conformal_determinant,
+      grid_constraints.trace_a_tilde,
+   };
+   for (const amrex::Real value : flat_constraints) {
+      if (!close_enough(value, 0.0)) {
+         std::cerr << "Z4c grid-level Minkowski constraint mismatch\n";
+         return false;
+      }
+   }
+   const auto flat_rhs = pyfluid_amrex::evaluate_vacuum_z4c_rhs_at<
+      4,
+      AMREX_SPACEDIM,
+      pyfluid_amrex::Z4cLapseGauge::OnePlusLog,
+      pyfluid_amrex::Z4cShiftGauge::GammaDriver
+   >(
+      MinkowskiZ4cGrid{},
+      i,
+      j,
+      k,
+      inv_spacing,
+      0.25,
+      pyfluid_amrex::Z4cEvolutionParameters{}
+   );
+   const amrex::Real flat_rhs_values[] = {
+      flat_rhs.geometry.chi,
+      flat_rhs.geometry.gamma_tilde11,
+      flat_rhs.geometry.gamma_tilde12,
+      flat_rhs.geometry.gamma_tilde13,
+      flat_rhs.geometry.gamma_tilde22,
+      flat_rhs.geometry.gamma_tilde23,
+      flat_rhs.geometry.gamma_tilde33,
+      flat_rhs.geometry.k_hat,
+      flat_rhs.geometry.a_tilde11,
+      flat_rhs.geometry.a_tilde12,
+      flat_rhs.geometry.a_tilde13,
+      flat_rhs.geometry.a_tilde22,
+      flat_rhs.geometry.a_tilde23,
+      flat_rhs.geometry.a_tilde33,
+      flat_rhs.geometry.gamma_tilde1,
+      flat_rhs.geometry.gamma_tilde2,
+      flat_rhs.geometry.gamma_tilde3,
+      flat_rhs.geometry.theta,
+      flat_rhs.lapse,
+      flat_rhs.shift.shift1,
+      flat_rhs.shift.shift2,
+      flat_rhs.shift.shift3,
+   };
+   for (const amrex::Real value : flat_rhs_values) {
+      if (!close_enough(value, 0.0)) {
+         std::cerr << "Z4c grid-level Minkowski RHS mismatch\n";
+         return false;
+      }
+   }
+   const amrex::Real expected_first[3] = {
+      4.0 * i * i * i + 2.0 * j,
+      2.0 * i + 6.0 * j,
+      1.0,
+   };
+   const amrex::Real expected_second[3] = {12.0 * i * i, 6.0, 0.0};
+   for (int direction = 0; direction < 3; ++direction) {
+      const amrex::Real expected = direction < AMREX_SPACEDIM
+         ? expected_first[direction]
+         : 0.0;
+      const amrex::Real expected_dd = direction < AMREX_SPACEDIM
+         ? expected_second[direction]
+         : 0.0;
+      const amrex::Real first_values[] = {
+         derivatives.d_chi[direction],
+         derivatives.advection_chi[direction],
+         derivatives.d_k_hat[direction],
+         derivatives.advection_k_hat[direction],
+         derivatives.d_theta[direction],
+         derivatives.advection_theta[direction],
+         derivatives.d_lapse[direction],
+         derivatives.advection_lapse[direction],
+      };
+      for (const amrex::Real value : first_values) {
+         if (std::abs(value - expected) > 2.0e-12) {
+            std::cerr << "Z4c pointwise scalar derivative mismatch in direction "
+                      << direction << '\n';
+            return false;
+         }
+      }
+      if (std::abs(derivatives.dd_chi[direction][direction] - expected_dd) > 2.0e-12
+          || std::abs(derivatives.dd_lapse[direction][direction] - expected_dd)
+             > 2.0e-12) {
+         std::cerr << "Z4c pointwise scalar second derivative mismatch in direction "
+                   << direction << '\n';
+         return false;
+      }
+      for (int component = 0; component < 6; ++component) {
+         const amrex::Real tensor_values[] = {
+            derivatives.d_gamma_tilde[direction][component],
+            derivatives.advection_gamma_tilde[direction][component],
+            derivatives.d_a_tilde[direction][component],
+            derivatives.advection_a_tilde[direction][component],
+         };
+         for (const amrex::Real value : tensor_values) {
+            if (std::abs(value - expected) > 2.0e-12) {
+               std::cerr << "Z4c pointwise tensor derivative mismatch\n";
+               return false;
+            }
+         }
+         if (std::abs(
+                derivatives.dd_gamma_tilde[direction][direction][component]
+                - expected_dd
+             ) > 2.0e-12) {
+            std::cerr << "Z4c pointwise tensor second derivative mismatch\n";
+            return false;
+         }
+      }
+      for (int component = 0; component < 3; ++component) {
+         const amrex::Real vector_values[] = {
+            derivatives.d_gamma_tilde_vector[direction][component],
+            derivatives.advection_gamma_tilde_vector[direction][component],
+            derivatives.d_shift[direction][component],
+            derivatives.advection_shift[direction][component],
+         };
+         for (const amrex::Real value : vector_values) {
+            if (std::abs(value - expected) > 2.0e-12) {
+               std::cerr << "Z4c pointwise vector derivative mismatch\n";
+               return false;
+            }
+         }
+         if (std::abs(
+                derivatives.dd_shift[direction][direction][component] - expected_dd
+             ) > 2.0e-12) {
+            std::cerr << "Z4c pointwise vector second derivative mismatch\n";
+            return false;
+         }
+      }
+   }
+
+   for (int first = 0; first < 3; ++first) {
+      for (int second = 0; second < 3; ++second) {
+         if (first == second) {
+            continue;
+         }
+         const amrex::Real expected = first < AMREX_SPACEDIM
+               && second < AMREX_SPACEDIM
+            ? ((first == 0 && second == 1) || (first == 1 && second == 0)
+                  ? 2.0
+                  : 0.0)
+            : 0.0;
+         if (std::abs(derivatives.dd_chi[first][second] - expected) > 2.0e-12
+             || std::abs(derivatives.dd_lapse[first][second] - expected)
+                > 2.0e-12) {
+            std::cerr << "Z4c pointwise mixed scalar derivative mismatch\n";
+            return false;
+         }
+         for (int component = 0; component < 6; ++component) {
+            if (std::abs(
+                   derivatives.dd_gamma_tilde[first][second][component] - expected
+                ) > 2.0e-12) {
+               std::cerr << "Z4c pointwise mixed tensor derivative mismatch\n";
+               return false;
+            }
+         }
+         for (int component = 0; component < 3; ++component) {
+            if (std::abs(derivatives.dd_shift[first][second][component] - expected)
+                > 2.0e-12) {
+               std::cerr << "Z4c pointwise mixed vector derivative mismatch\n";
+               return false;
+            }
+         }
+      }
+   }
+
+   pyfluid_amrex::Z4cGeometricRhs geometric_rhs{};
+   geometric_rhs.chi = 1.0;
+   geometric_rhs.gamma_tilde11 = 2.0;
+   geometric_rhs.gamma_tilde12 = 3.0;
+   geometric_rhs.gamma_tilde13 = 4.0;
+   geometric_rhs.gamma_tilde22 = 5.0;
+   geometric_rhs.gamma_tilde23 = 6.0;
+   geometric_rhs.gamma_tilde33 = 7.0;
+   geometric_rhs.k_hat = 8.0;
+   geometric_rhs.a_tilde11 = 9.0;
+   geometric_rhs.a_tilde12 = 10.0;
+   geometric_rhs.a_tilde13 = 11.0;
+   geometric_rhs.a_tilde22 = 12.0;
+   geometric_rhs.a_tilde23 = 13.0;
+   geometric_rhs.a_tilde33 = 14.0;
+   geometric_rhs.gamma_tilde1 = 15.0;
+   geometric_rhs.gamma_tilde2 = 16.0;
+   geometric_rhs.gamma_tilde3 = 17.0;
+   geometric_rhs.theta = 18.0;
+   const pyfluid_amrex::Z4cRhs z4c_rhs{
+      geometric_rhs,
+      19.0,
+      pyfluid_amrex::Z4cShiftRhs{20.0, 21.0, 22.0},
+   };
+   MutableComponentGrid stored{};
+   pyfluid_amrex::store_z4c_rhs(stored, 0, 0, 0, z4c_rhs);
+   for (int component = 0; component < pyfluid_amrex::Z4C_NUM_COMPONENTS; ++component) {
+      if (!close_enough(stored.values[component], component + 1.0)) {
+         std::cerr << "Z4c pointwise RHS mapping mismatch at component "
+                   << component << '\n';
+         return false;
+      }
+   }
+   return true;
 }
 
 bool compare_hydro(pyfluid_amrex::HydroState const& actual, pyfluid_amrex::HydroState const& expected)
@@ -257,8 +628,8 @@ bool validate_newtonian_round_trips()
 {
    pyfluid_amrex::EOSParams eos{};
    eos.gamma = 1.4;
-   eos.polytropic_k = 0.73;
-   eos.polytropic_gamma = 1.65;
+   eos.segment_k[0] = 0.73;
+   eos.segment_gamma[0] = 1.65;
    eos.thermal_gamma = 1.37;
    const std::array<pyfluid_amrex::HydroPrimitive, 5> hydro_corpus{{
       {0.071, 2.3, -0.47, 0.19, 0.013},
@@ -285,6 +656,99 @@ bool validate_newtonian_round_trips()
              hydro_corpus[sample], mhd_corpus[sample], eos
           )) {
          std::cerr << "Newtonian primitive/conserved round trip failed for sample=" << sample << "\n";
+         return false;
+      }
+   }
+   return true;
+}
+
+bool validate_piecewise_polytrope()
+{
+   pyfluid_amrex::EOSParams eos{};
+   eos.thermal_gamma = 1.6;
+   eos.polytrope_segments = 2;
+   eos.segment_k[0] = 0.5;
+   eos.segment_gamma[0] = 2.0;
+   eos.segment_density_break[0] = 2.0;
+   eos.segment_gamma[1] = 1.5;
+   eos.segment_k[1] = eos.segment_k[0] * std::pow(
+      eos.segment_density_break[0],
+      eos.segment_gamma[0] - eos.segment_gamma[1]
+   );
+   eos.segment_energy_offset[1] =
+      eos.segment_k[0] * std::pow(
+         eos.segment_density_break[0], eos.segment_gamma[0] - 1.0
+      ) / (eos.segment_gamma[0] - 1.0)
+      - eos.segment_k[1] * std::pow(
+         eos.segment_density_break[0], eos.segment_gamma[1] - 1.0
+      ) / (eos.segment_gamma[1] - 1.0);
+
+   const amrex::Real below = eos.segment_density_break[0] * (1.0 - 1.0e-10);
+   const amrex::Real above = eos.segment_density_break[0] * (1.0 + 1.0e-10);
+   const amrex::Real pressure_below =
+      pyfluid_amrex::eos_cold_pressure<pyfluid_amrex::EOSPolytrope>(below, eos);
+   const amrex::Real pressure_above =
+      pyfluid_amrex::eos_cold_pressure<pyfluid_amrex::EOSPolytrope>(above, eos);
+   const amrex::Real energy_below =
+      pyfluid_amrex::eos_cold_energy_density<pyfluid_amrex::EOSPolytrope>(below, eos);
+   const amrex::Real energy_above =
+      pyfluid_amrex::eos_cold_energy_density<pyfluid_amrex::EOSPolytrope>(above, eos);
+   if (std::abs(pressure_below - pressure_above)
+          > 1.0e-9 * std::max(amrex::Real{1.0}, std::abs(pressure_below))
+       || std::abs(energy_below - energy_above)
+          > 1.0e-9 * std::max(amrex::Real{1.0}, std::abs(energy_below))) {
+      std::cerr << "piecewise-polytrope continuity mismatch\n";
+      return false;
+   }
+
+   for (amrex::Real const rho : {0.5, 1.5, 2.5, 8.0}) {
+      const amrex::Real cold_energy =
+         pyfluid_amrex::eos_cold_energy_density<pyfluid_amrex::EOSHybridPolytrope>(rho, eos);
+      const amrex::Real thermal_energy = 0.17 * rho;
+      const amrex::Real pressure =
+         pyfluid_amrex::eos_pressure_from_density_energy<pyfluid_amrex::EOSHybridPolytrope>(
+            rho, cold_energy + thermal_energy, eos
+         );
+      const amrex::Real recovered_energy =
+         pyfluid_amrex::eos_internal_energy_density_from_pressure<pyfluid_amrex::EOSHybridPolytrope>(
+            rho, pressure, eos
+         );
+      if (std::abs(recovered_energy - cold_energy - thermal_energy)
+          > 1.0e-13 * std::max(
+             amrex::Real{1.0}, std::abs(cold_energy + thermal_energy)
+          )) {
+         std::cerr << "piecewise hybrid-EOS pressure/energy inverse mismatch\n";
+         return false;
+      }
+
+      const pyfluid_amrex::RHDPrimitive primitive{
+         rho,
+         (cold_energy + thermal_energy) / rho,
+         pressure,
+         0.21,
+         -0.08,
+         0.04,
+      };
+      const pyfluid_amrex::RHDConserved conserved =
+         pyfluid_amrex::generated::rhd_primitive_to_conserved(
+            primitive, pyfluid_amrex::minkowski_spacetime_metric()
+         );
+      const auto recovered = pyfluid_amrex::recover_rhd<
+         pyfluid_amrex::EOSHybridPolytrope
+      >(conserved, pyfluid_amrex::minkowski_spacetime_metric(), eos);
+      const auto c2p_close = [](amrex::Real actual, amrex::Real expected) {
+         return std::isfinite(actual)
+            && std::abs(actual - expected)
+               <= 2.0e-10 * std::max(amrex::Real{1.0}, std::abs(expected));
+      };
+      if (recovered.attempt.status != pyfluid_amrex::C2PStatus::Success
+          || !c2p_close(recovered.primitive.rho, primitive.rho)
+          || !c2p_close(recovered.primitive.eps, primitive.eps)
+          || !c2p_close(recovered.primitive.pressure, primitive.pressure)
+          || !c2p_close(recovered.primitive.v1, primitive.v1)
+          || !c2p_close(recovered.primitive.v2, primitive.v2)
+          || !c2p_close(recovered.primitive.v3, primitive.v3)) {
+         std::cerr << "piecewise hybrid-EOS RHD round-trip mismatch\n";
          return false;
       }
    }
@@ -991,14 +1455,474 @@ amrex::Real residual_reference(
    return value;
 }
 
+bool validate_z4c_constraints()
+{
+   using pyfluid_amrex::Z4cSpatialDerivatives;
+   using pyfluid_amrex::Z4cState;
+
+   const Z4cState minkowski{};
+   const Z4cSpatialDerivatives zero_derivatives{};
+   Z4cState unprojected = minkowski;
+   unprojected.chi = 0.8;
+   unprojected.gamma_tilde11 = 2.0;
+   unprojected.gamma_tilde22 = 3.0;
+   unprojected.gamma_tilde33 = 4.0;
+   unprojected.a_tilde11 = 0.3;
+   unprojected.a_tilde22 = -0.1;
+   unprojected.a_tilde33 = 0.2;
+   const Z4cState projected =
+      pyfluid_amrex::generated::z4c_project_algebraic_constraints(unprojected);
+   const auto projected_metric =
+      pyfluid_amrex::generated::z4c_conformal_metric(projected);
+   const auto projected_constraints =
+      pyfluid_amrex::generated::evaluate_vacuum_z4c_constraints(
+         projected, zero_derivatives
+      );
+   if (!close_enough(projected_metric.determinant, 1.0)
+       || !close_enough(projected_constraints.trace_a_tilde, 0.0)
+       || !close_enough(
+          projected.gamma_tilde11 / projected.chi,
+          unprojected.gamma_tilde11 / unprojected.chi
+       )) {
+      std::cerr << "generated Z4c algebraic projection mismatch\n";
+      return 1;
+   }
+   const auto flat = pyfluid_amrex::generated::evaluate_vacuum_z4c_constraints(
+      minkowski, zero_derivatives
+   );
+   if (!close_enough(flat.theta, 0.0)
+       || !close_enough(flat.z_tilde1, 0.0)
+       || !close_enough(flat.z_tilde2, 0.0)
+       || !close_enough(flat.z_tilde3, 0.0)
+       || !close_enough(flat.hamiltonian, 0.0)
+       || !close_enough(flat.momentum1, 0.0)
+       || !close_enough(flat.momentum2, 0.0)
+       || !close_enough(flat.momentum3, 0.0)
+       || !close_enough(flat.log_conformal_determinant, 0.0)
+       || !close_enough(flat.trace_a_tilde, 0.0)) {
+      std::cerr << "generated Z4c Minkowski constraints are nonzero\n";
+      return false;
+   }
+   const auto flat_metric = pyfluid_amrex::generated::z4c_conformal_metric(minkowski);
+   const auto flat_spacetime_metric =
+      pyfluid_amrex::generated::z4c_spacetime_metric(minkowski);
+   const auto flat_spacetime_derivatives =
+      pyfluid_amrex::generated::z4c_spacetime_metric_derivatives(
+         minkowski, zero_derivatives
+      );
+   if (!close_enough(flat_spacetime_metric.lapse, 1.0)
+       || !close_enough(flat_spacetime_metric.gamma11, 1.0)
+       || !close_enough(flat_spacetime_metric.gamma22, 1.0)
+       || !close_enough(flat_spacetime_metric.gamma33, 1.0)
+       || !close_enough(flat_spacetime_metric.inv_gamma11, 1.0)
+       || !close_enough(flat_spacetime_metric.sqrt_det_gamma, 1.0)
+       || !close_enough(flat_spacetime_derivatives.d1_lapse, 0.0)
+       || !close_enough(flat_spacetime_derivatives.d1_gamma11, 0.0)
+       || !close_enough(flat_spacetime_derivatives.extrinsic11, 0.0)) {
+      std::cerr << "generated Z4c-to-Valencia Minkowski bridge mismatch\n";
+      return false;
+   }
+   Z4cState bridge_state = projected;
+   bridge_state.k_hat = 0.21;
+   bridge_state.theta = -0.015;
+   Z4cSpatialDerivatives bridge_derivatives{};
+   bridge_derivatives.d_chi[0] = 0.07;
+   bridge_derivatives.d_gamma_tilde[0][0] = -0.03;
+   bridge_derivatives.d_lapse[0] = 0.02;
+   bridge_derivatives.d_shift[0][1] = -0.04;
+   const auto bridge_metric =
+      pyfluid_amrex::generated::z4c_spacetime_metric(bridge_state);
+   const auto bridge_metric_derivatives =
+      pyfluid_amrex::generated::z4c_spacetime_metric_derivatives(
+         bridge_state, bridge_derivatives
+      );
+   const amrex::Real expected_d1_gamma11 =
+      bridge_derivatives.d_gamma_tilde[0][0] / bridge_state.chi
+      - bridge_state.gamma_tilde11 * bridge_derivatives.d_chi[0]
+         / (bridge_state.chi * bridge_state.chi);
+   const amrex::Real total_curvature =
+      bridge_state.k_hat + 2.0 * bridge_state.theta;
+   const amrex::Real expected_extrinsic11 =
+      bridge_state.a_tilde11 / bridge_state.chi
+      + bridge_metric.gamma11 * total_curvature / 3.0;
+   if (!close_enough(bridge_metric.gamma11, projected_metric.gamma11)
+       || !close_enough(bridge_metric.inv_gamma23, projected_metric.inv_gamma23)
+       || !close_enough(
+          bridge_metric.sqrt_det_gamma, projected_metric.sqrt_det_gamma
+       )
+       || !close_enough(bridge_metric_derivatives.d1_lapse, 0.02)
+       || !close_enough(bridge_metric_derivatives.d1_shift2, -0.04)
+       || !close_enough(
+          bridge_metric_derivatives.d1_gamma11, expected_d1_gamma11
+       )
+       || !close_enough(
+          bridge_metric_derivatives.extrinsic11, expected_extrinsic11
+       )) {
+      std::cerr << "generated Z4c-to-Valencia metric bridge mismatch\n";
+      return false;
+   }
+   const auto flat_connections = pyfluid_amrex::generated::z4c_connections(
+      minkowski, zero_derivatives, flat_metric
+   );
+   const auto flat_diagnostic_geometry =
+      pyfluid_amrex::generated::z4c_diagnostic_geometry(
+         minkowski, zero_derivatives, flat_metric, flat_connections
+      );
+   if (!close_enough(flat_diagnostic_geometry.ricci_scalar, 0.0)) {
+      std::cerr << "generated Z4c Minkowski diagnostic geometry is nonzero\n";
+      return false;
+   }
+   const auto flat_evolution_geometry = pyfluid_amrex::generated::z4c_evolution_geometry(
+      minkowski, zero_derivatives, flat_metric, flat_connections
+   );
+   const auto flat_rhs = pyfluid_amrex::generated::z4c_geometric_rhs(
+      minkowski,
+      zero_derivatives,
+      flat_metric,
+      flat_connections,
+      flat_evolution_geometry,
+      pyfluid_amrex::vacuum_z4c_matter(),
+      0.02,
+      0.0
+   );
+   const std::array<amrex::Real, 18> flat_rhs_components = {
+      flat_rhs.chi,
+      flat_rhs.gamma_tilde11,
+      flat_rhs.gamma_tilde12,
+      flat_rhs.gamma_tilde13,
+      flat_rhs.gamma_tilde22,
+      flat_rhs.gamma_tilde23,
+      flat_rhs.gamma_tilde33,
+      flat_rhs.k_hat,
+      flat_rhs.a_tilde11,
+      flat_rhs.a_tilde12,
+      flat_rhs.a_tilde13,
+      flat_rhs.a_tilde22,
+      flat_rhs.a_tilde23,
+      flat_rhs.a_tilde33,
+      flat_rhs.gamma_tilde1,
+      flat_rhs.gamma_tilde2,
+      flat_rhs.gamma_tilde3,
+      flat_rhs.theta,
+   };
+   for (const amrex::Real value : flat_rhs_components) {
+      if (!close_enough(value, 0.0)) {
+         std::cerr << "generated Z4c Minkowski RHS is nonzero\n";
+         return false;
+      }
+   }
+   if (!close_enough(
+          pyfluid_amrex::generated::z4c_harmonic_lapse_rhs(minkowski, zero_derivatives),
+          0.0
+       )
+       || !close_enough(
+          pyfluid_amrex::generated::z4c_one_plus_log_lapse_rhs(minkowski, zero_derivatives),
+          0.0
+       )) {
+      std::cerr << "generated Z4c Minkowski lapse RHS is nonzero\n";
+      return false;
+   }
+   const auto flat_shift_rhs = pyfluid_amrex::generated::z4c_gamma_driver_shift_rhs(
+      minkowski, zero_derivatives, 1.0, 0.5
+   );
+   if (!close_enough(flat_shift_rhs.shift1, 0.0)
+       || !close_enough(flat_shift_rhs.shift2, 0.0)
+       || !close_enough(flat_shift_rhs.shift3, 0.0)) {
+      std::cerr << "generated Z4c Minkowski shift RHS is nonzero\n";
+      return false;
+   }
+
+   // gamma_ij = psi^4 delta_ij has R = -8 psi^-5 Laplacian(psi).
+   constexpr amrex::Real curvature = 0.03;
+   constexpr amrex::Real x = 0.11;
+   constexpr amrex::Real y = -0.07;
+   constexpr amrex::Real z = 0.05;
+   const amrex::Real radius_squared = x * x + y * y + z * z;
+   const amrex::Real psi = 1.0 + curvature * radius_squared;
+   Z4cState conformally_flat{};
+   conformally_flat.chi = std::pow(psi, -4.0);
+   Z4cSpatialDerivatives derivatives{};
+   const amrex::Real d_psi[3] = {
+      2.0 * curvature * x,
+      2.0 * curvature * y,
+      2.0 * curvature * z,
+   };
+   for (int first = 0; first < 3; ++first) {
+      derivatives.d_chi[first] = -4.0 * std::pow(psi, -5.0) * d_psi[first];
+      for (int second = 0; second < 3; ++second) {
+         const amrex::Real dd_psi = first == second ? 2.0 * curvature : 0.0;
+         derivatives.dd_chi[first][second] =
+            20.0 * std::pow(psi, -6.0) * d_psi[first] * d_psi[second]
+            - 4.0 * std::pow(psi, -5.0) * dd_psi;
+      }
+   }
+   const auto curved = pyfluid_amrex::generated::evaluate_vacuum_z4c_constraints(
+      conformally_flat, derivatives
+   );
+   const auto curved_metric = pyfluid_amrex::generated::z4c_conformal_metric(
+      conformally_flat
+   );
+   const auto curved_connections = pyfluid_amrex::generated::z4c_connections(
+      conformally_flat, derivatives, curved_metric
+   );
+   const auto curved_diagnostic_geometry =
+      pyfluid_amrex::generated::z4c_diagnostic_geometry(
+         conformally_flat, derivatives, curved_metric, curved_connections
+      );
+   const auto curved_evolution_geometry = pyfluid_amrex::generated::z4c_evolution_geometry(
+      conformally_flat, derivatives, curved_metric, curved_connections
+   );
+   const amrex::Real expected_ricci = -48.0 * curvature * std::pow(psi, -5.0);
+   if (std::abs(curved.hamiltonian - expected_ricci) > 2.0e-13
+       || std::abs(curved_diagnostic_geometry.ricci_scalar - expected_ricci) > 2.0e-13
+       || std::abs(curved_evolution_geometry.ricci_scalar - expected_ricci) > 2.0e-13
+       || !close_enough(curved.log_conformal_determinant, 0.0)
+       || !close_enough(curved.trace_a_tilde, 0.0)) {
+      std::cerr << "generated Z4c conformally-flat curvature mismatch: "
+                << curved.hamiltonian << " != " << expected_ricci << '\n';
+      return false;
+   }
+
+   // det(gamma_tilde)=1 with gamma_tilde=diag(exp(2 f), exp(-2 f), 1)
+   // and f=a*x exercises the evolved-Gamma form of the conformal Ricci tensor.
+   constexpr amrex::Real slope = 0.17;
+   constexpr amrex::Real f_value = 0.04;
+   const amrex::Real exp_two_f = std::exp(2.0 * f_value);
+   const amrex::Real exp_minus_two_f = std::exp(-2.0 * f_value);
+   Z4cState anisotropic{};
+   anisotropic.gamma_tilde11 = exp_two_f;
+   anisotropic.gamma_tilde22 = exp_minus_two_f;
+   anisotropic.gamma_tilde1 = 2.0 * slope * exp_minus_two_f;
+   Z4cSpatialDerivatives anisotropic_derivatives{};
+   anisotropic_derivatives.d_gamma_tilde[0][0] = 2.0 * slope * exp_two_f;
+   anisotropic_derivatives.d_gamma_tilde[0][3] = -2.0 * slope * exp_minus_two_f;
+   anisotropic_derivatives.dd_gamma_tilde[0][0][0] =
+      4.0 * slope * slope * exp_two_f;
+   anisotropic_derivatives.dd_gamma_tilde[0][0][3] =
+      4.0 * slope * slope * exp_minus_two_f;
+   anisotropic_derivatives.d_gamma_tilde_vector[0][0] =
+      -4.0 * slope * slope * exp_minus_two_f;
+   const auto anisotropic_metric = pyfluid_amrex::generated::z4c_conformal_metric(
+      anisotropic
+   );
+   const auto anisotropic_connections = pyfluid_amrex::generated::z4c_connections(
+      anisotropic, anisotropic_derivatives, anisotropic_metric
+   );
+   const auto anisotropic_diagnostic_geometry =
+      pyfluid_amrex::generated::z4c_diagnostic_geometry(
+         anisotropic,
+         anisotropic_derivatives,
+         anisotropic_metric,
+         anisotropic_connections
+      );
+   const auto anisotropic_evolution_geometry =
+      pyfluid_amrex::generated::z4c_evolution_geometry(
+         anisotropic,
+         anisotropic_derivatives,
+         anisotropic_metric,
+         anisotropic_connections
+      );
+   const std::array<amrex::Real, 7> diagnostic_ricci = {
+      anisotropic_diagnostic_geometry.ricci11,
+      anisotropic_diagnostic_geometry.ricci12,
+      anisotropic_diagnostic_geometry.ricci13,
+      anisotropic_diagnostic_geometry.ricci22,
+      anisotropic_diagnostic_geometry.ricci23,
+      anisotropic_diagnostic_geometry.ricci33,
+      anisotropic_diagnostic_geometry.ricci_scalar,
+   };
+   const std::array<amrex::Real, 7> evolution_ricci = {
+      anisotropic_evolution_geometry.ricci11,
+      anisotropic_evolution_geometry.ricci12,
+      anisotropic_evolution_geometry.ricci13,
+      anisotropic_evolution_geometry.ricci22,
+      anisotropic_evolution_geometry.ricci23,
+      anisotropic_evolution_geometry.ricci33,
+      anisotropic_evolution_geometry.ricci_scalar,
+   };
+   for (std::size_t component = 0; component < diagnostic_ricci.size(); ++component) {
+      if (std::abs(diagnostic_ricci[component] - evolution_ricci[component]) > 3.0e-13) {
+         std::cerr << "generated Z4c evolved-Gamma Ricci mismatch\n";
+         return false;
+      }
+   }
+   const auto anisotropic_constraints =
+      pyfluid_amrex::generated::evaluate_vacuum_z4c_constraints(
+         anisotropic, anisotropic_derivatives
+      );
+   if (std::abs(anisotropic_constraints.z_tilde1) > 2.0e-15
+       || std::abs(anisotropic_constraints.z_tilde2) > 2.0e-15
+       || std::abs(anisotropic_constraints.z_tilde3) > 2.0e-15) {
+      std::cerr << "generated Z4c evolved-Gamma constraint mismatch\n";
+      return false;
+   }
+
+   pyfluid_amrex::Z4cMatter matter{};
+   matter.rho = 0.02;
+   matter.momentum1 = 0.003;
+   matter.momentum2 = -0.004;
+   matter.momentum3 = 0.005;
+   matter.stress11 = 0.011;
+   matter.stress12 = -0.002;
+   matter.stress13 = 0.004;
+   matter.stress22 = 0.017;
+   matter.stress23 = -0.003;
+   matter.stress33 = 0.023;
+   const auto sourced = pyfluid_amrex::generated::evaluate_z4c_constraints(
+      minkowski, zero_derivatives, matter
+   );
+   if (!close_enough(sourced.hamiltonian, -16.0 * pyfluid_amrex::constants::pi * matter.rho)
+       || !close_enough(sourced.momentum1, -8.0 * pyfluid_amrex::constants::pi * matter.momentum1)
+       || !close_enough(sourced.momentum2, -8.0 * pyfluid_amrex::constants::pi * matter.momentum2)
+       || !close_enough(sourced.momentum3, -8.0 * pyfluid_amrex::constants::pi * matter.momentum3)) {
+      std::cerr << "generated Z4c matter constraints mismatch\n";
+      return false;
+   }
+
+   const auto sourced_rhs = pyfluid_amrex::generated::z4c_geometric_rhs(
+      minkowski,
+      zero_derivatives,
+      flat_metric,
+      flat_connections,
+      flat_evolution_geometry,
+      matter,
+      0.0,
+      0.0
+   );
+   const amrex::Real stress_trace = matter.stress11 + matter.stress22 + matter.stress33;
+   if (!close_enough(sourced_rhs.k_hat, 4.0 * pyfluid_amrex::constants::pi * (matter.rho + stress_trace))
+       || !close_enough(
+          sourced_rhs.a_tilde11,
+          -8.0 * pyfluid_amrex::constants::pi * (matter.stress11 - stress_trace / 3.0)
+       )
+       || !close_enough(sourced_rhs.a_tilde12, -8.0 * pyfluid_amrex::constants::pi * matter.stress12)
+       || !close_enough(sourced_rhs.a_tilde13, -8.0 * pyfluid_amrex::constants::pi * matter.stress13)
+       || !close_enough(
+          sourced_rhs.a_tilde22,
+          -8.0 * pyfluid_amrex::constants::pi * (matter.stress22 - stress_trace / 3.0)
+       )
+       || !close_enough(sourced_rhs.a_tilde23, -8.0 * pyfluid_amrex::constants::pi * matter.stress23)
+       || !close_enough(
+          sourced_rhs.a_tilde33,
+          -8.0 * pyfluid_amrex::constants::pi * (matter.stress33 - stress_trace / 3.0)
+       )
+       || !close_enough(sourced_rhs.gamma_tilde1, -16.0 * pyfluid_amrex::constants::pi * matter.momentum1)
+       || !close_enough(sourced_rhs.gamma_tilde2, -16.0 * pyfluid_amrex::constants::pi * matter.momentum2)
+       || !close_enough(sourced_rhs.gamma_tilde3, -16.0 * pyfluid_amrex::constants::pi * matter.momentum3)
+       || !close_enough(sourced_rhs.theta, -8.0 * pyfluid_amrex::constants::pi * matter.rho)) {
+      std::cerr << "generated Z4c matter RHS mismatch\n";
+      return false;
+   }
+
+   Z4cState gauge_state{};
+   gauge_state.k_hat = 0.2;
+   gauge_state.lapse = 0.8;
+   gauge_state.shift1 = 0.1;
+   gauge_state.shift2 = -0.2;
+   gauge_state.shift3 = 0.3;
+   gauge_state.gamma_tilde1 = 0.04;
+   gauge_state.gamma_tilde2 = -0.03;
+   gauge_state.gamma_tilde3 = 0.02;
+   Z4cSpatialDerivatives gauge_derivatives{};
+   gauge_derivatives.advection_lapse[0] = 0.05;
+   gauge_derivatives.advection_lapse[1] = -0.04;
+   gauge_derivatives.advection_lapse[2] = 0.02;
+   for (int direction = 0; direction < 3; ++direction) {
+      for (int component = 0; component < 3; ++component) {
+         gauge_derivatives.advection_shift[direction][component] =
+            0.01 * static_cast<amrex::Real>(1 + 3 * direction + component);
+      }
+   }
+   const amrex::Real lapse_advection =
+      gauge_state.shift1 * gauge_derivatives.advection_lapse[0]
+      + gauge_state.shift2 * gauge_derivatives.advection_lapse[1]
+      + gauge_state.shift3 * gauge_derivatives.advection_lapse[2];
+   if (!close_enough(
+          pyfluid_amrex::generated::z4c_harmonic_lapse_rhs(
+             gauge_state, gauge_derivatives
+          ),
+          -gauge_state.lapse * gauge_state.lapse * gauge_state.k_hat + lapse_advection
+       )
+       || !close_enough(
+          pyfluid_amrex::generated::z4c_one_plus_log_lapse_rhs(
+             gauge_state, gauge_derivatives
+          ),
+          -2.0 * gauge_state.lapse * gauge_state.k_hat + lapse_advection
+       )) {
+      std::cerr << "generated Z4c lapse gauge mismatch\n";
+      return false;
+   }
+   constexpr amrex::Real gauge_time = 0.7;
+   constexpr amrex::Real slow_start_strength = 0.6;
+   constexpr amrex::Real slow_start_width = 2.5;
+   const amrex::Real conformal_weight = std::sqrt(gauge_state.chi);
+   const amrex::Real expected_slow_start =
+      -2.0 * gauge_state.lapse * gauge_state.k_hat + lapse_advection
+      - conformal_weight * slow_start_strength
+         * std::exp(
+            -gauge_time * gauge_time
+            / (2.0 * slow_start_width * slow_start_width)
+         )
+         * (gauge_state.lapse - conformal_weight);
+   if (!close_enough(
+          pyfluid_amrex::generated::z4c_slow_start_lapse_rhs(
+             gauge_state,
+             gauge_derivatives,
+             gauge_time,
+             slow_start_strength,
+             slow_start_width
+          ),
+          expected_slow_start
+       )) {
+      std::cerr << "generated Z4c slow-start lapse mismatch\n";
+      return false;
+   }
+   constexpr amrex::Real shift_mu = 0.75;
+   constexpr amrex::Real shift_eta = 0.12;
+   const auto shift_rhs = pyfluid_amrex::generated::z4c_gamma_driver_shift_rhs(
+      gauge_state, gauge_derivatives, shift_mu, shift_eta
+   );
+   const amrex::Real shift[3] = {
+      gauge_state.shift1,
+      gauge_state.shift2,
+      gauge_state.shift3,
+   };
+   const amrex::Real gamma_tilde[3] = {
+      gauge_state.gamma_tilde1,
+      gauge_state.gamma_tilde2,
+      gauge_state.gamma_tilde3,
+   };
+   const amrex::Real actual_shift_rhs[3] = {
+      shift_rhs.shift1,
+      shift_rhs.shift2,
+      shift_rhs.shift3,
+   };
+   for (int component = 0; component < 3; ++component) {
+      amrex::Real expected = gauge_state.lapse * gauge_state.lapse
+         * shift_mu * gamma_tilde[component] - shift_eta * shift[component];
+      for (int direction = 0; direction < 3; ++direction) {
+         expected += shift[direction]
+            * gauge_derivatives.advection_shift[direction][component];
+      }
+      if (!close_enough(actual_shift_rhs[component], expected)) {
+         std::cerr << "generated Z4c shift gauge mismatch\n";
+         return false;
+      }
+   }
+   return true;
+}
+
 } // namespace
 
 int main()
 {
    if (!validate_newtonian_round_trips()
+       || !validate_piecewise_polytrope()
        || !validate_srhd_round_trips()
        || !validate_srmhd_round_trips()
-       || !validate_fixed_spacetime_provider()) {
+       || !validate_fixed_spacetime_provider()
+       || !validate_z4c_pointwise_bridge()
+       || !validate_z4c_constraints()) {
       return 1;
    }
    static_assert(pyfluid_amrex::valid_spacetime_evolution(
@@ -1053,6 +1977,68 @@ int main()
          std::cerr << "generated RHD primitive-to-conserved mismatch\n";
          return 1;
       }
+      const auto matter = pyfluid_amrex::generated::rhd_eulerian_matter(
+         primitive, metric
+      );
+      const amrex::Real eulerian_energy =
+         primitive.rho * enthalpy * lorentz_factor * lorentz_factor
+         - primitive.pressure;
+      const amrex::Real inertia =
+         primitive.rho * enthalpy * lorentz_factor * lorentz_factor;
+      if (!close_enough(matter.rho, eulerian_energy)
+          || !close_enough(matter.momentum1, inertia * primitive.v1)
+          || !close_enough(matter.momentum2, inertia * primitive.v2)
+          || !close_enough(matter.momentum3, inertia * primitive.v3)
+          || !close_enough(
+             matter.stress11,
+             inertia * primitive.v1 * primitive.v1 + primitive.pressure
+          )
+          || !close_enough(
+             matter.stress12, inertia * primitive.v1 * primitive.v2
+          )
+          || !close_enough(
+             matter.stress13, inertia * primitive.v1 * primitive.v3
+          )
+          || !close_enough(
+             matter.stress22,
+             inertia * primitive.v2 * primitive.v2 + primitive.pressure
+          )
+          || !close_enough(
+             matter.stress23, inertia * primitive.v2 * primitive.v3
+          )
+          || !close_enough(
+             matter.stress33,
+             inertia * primitive.v3 * primitive.v3 + primitive.pressure
+          )) {
+         std::cerr << "generated RHD Eulerian-matter projection mismatch\n";
+         return 1;
+      }
+      const pyfluid_amrex::RMHDPrimitive zero_field{
+         primitive.rho,
+         primitive.eps,
+         primitive.pressure,
+         primitive.v1,
+         primitive.v2,
+         primitive.v3,
+         0.0,
+         0.0,
+         0.0,
+      };
+      const auto magnetic_matter =
+         pyfluid_amrex::generated::rmhd_eulerian_matter(zero_field, metric);
+      if (!close_enough(magnetic_matter.rho, matter.rho)
+          || !close_enough(magnetic_matter.momentum1, matter.momentum1)
+          || !close_enough(magnetic_matter.momentum2, matter.momentum2)
+          || !close_enough(magnetic_matter.momentum3, matter.momentum3)
+          || !close_enough(magnetic_matter.stress11, matter.stress11)
+          || !close_enough(magnetic_matter.stress12, matter.stress12)
+          || !close_enough(magnetic_matter.stress13, matter.stress13)
+          || !close_enough(magnetic_matter.stress22, matter.stress22)
+          || !close_enough(magnetic_matter.stress23, matter.stress23)
+          || !close_enough(magnetic_matter.stress33, matter.stress33)) {
+         std::cerr << "generated RMHD zero-field matter reduction mismatch\n";
+         return 1;
+      }
       const auto flux1 = pyfluid_amrex::generated::rhd_flux<0>(primitive, metric);
       const auto flux2 = pyfluid_amrex::generated::rhd_flux<1>(primitive, metric);
       const auto flux3 = pyfluid_amrex::generated::rhd_flux<2>(primitive, metric);
@@ -1064,8 +2050,12 @@ int main()
          return 1;
       }
       const pyfluid_amrex::RHDWaveSpeeds speeds =
-         pyfluid_amrex::generated::srhd_wave_speeds<0>(
-            primitive, metric, 5.0 / 3.0
+         pyfluid_amrex::generated::rhd_wave_speeds<0>(
+            primitive,
+            metric,
+            pyfluid_amrex::generated::relativistic_ideal_gas_sound_speed_squared(
+               primitive.eps, 5.0 / 3.0
+            )
          );
       if (!std::isfinite(speeds.minus) || !std::isfinite(speeds.plus)
           || speeds.minus > speeds.plus || speeds.minus < -1.0 || speeds.plus > 1.0) {
@@ -1082,7 +2072,7 @@ int main()
          0.05,
       };
       const auto physical_flux = pyfluid_amrex::generated::rhd_flux<0>(consistent, metric);
-      const auto hll_flux = pyfluid_amrex::rhd_hll_flux<0>(
+      const auto hll_flux = pyfluid_amrex::rhd_hll_flux<0, pyfluid_amrex::EOSIdealGas>(
          consistent, consistent, eos, metric
       );
       if (!close_enough(hll_flux.dens, physical_flux.dens)
@@ -1239,6 +2229,63 @@ int main()
          return 1;
       }
    }
+   {
+      const PolynomialGrid field{};
+      constexpr int i = 2;
+      constexpr int j = -1;
+      constexpr int k = 3;
+      constexpr int component = 0;
+      const amrex::Real dx = pyfluid_amrex::generated::centered_first<4, 0>(
+         field, i, j, k, component, 1.0
+      );
+      const amrex::Real dxx = pyfluid_amrex::generated::centered_second<4, 0>(
+         field, i, j, k, component, 1.0
+      );
+      const amrex::Real dxy = pyfluid_amrex::generated::centered_mixed<4, 0, 1>(
+         field, i, j, k, component, 1.0
+      );
+      const amrex::Real upwind = pyfluid_amrex::generated::upwind_first<4, 0>(
+         field, i, j, k, component, 0.7, 1.0
+      );
+      const amrex::Real ko = pyfluid_amrex::generated::kreiss_oliger<4, 0>(
+         field, i, j, k, component, 1.0
+      );
+      if (!close_enough(dx, 4.0 * i * i * i + 2.0 * j)
+          || !close_enough(dxx, 12.0 * i * i)
+          || !close_enough(dxy, 2.0)
+          || !close_enough(upwind, 4.0 * i * i * i + 2.0 * j)
+          || !close_enough(ko, 0.0)) {
+         std::cerr << "generated differential-operator mismatch\n";
+         return 1;
+      }
+      const amrex::Real face = pyfluid_amrex::generated::cell_to_face<0>(
+         field, i, j, k, component
+      );
+      const amrex::Real expected_face = 0.5 * (
+         field(i - 1, j, k, component) + field(i, j, k, component)
+      );
+      if (!close_enough(face, expected_face)) {
+         std::cerr << "generated centering-transfer mismatch\n";
+         return 1;
+      }
+      const bool centering_transfers_pass =
+         check_centering_transfer<2, 1>()
+         && check_centering_transfer<2, 2>()
+         && check_centering_transfer<2, 3>()
+         && check_centering_transfer<4, 1>()
+         && check_centering_transfer<4, 2>()
+         && check_centering_transfer<4, 3>()
+         && check_centering_transfer<6, 1>()
+         && check_centering_transfer<6, 2>()
+         && check_centering_transfer<6, 3>()
+         && check_centering_transfer<8, 1>()
+         && check_centering_transfer<8, 2>()
+         && check_centering_transfer<8, 3>();
+      if (!centering_transfers_pass) {
+         std::cerr << "generated high-order centering-transfer mismatch\n";
+         return 1;
+      }
+   }
    const amrex::Real update = pyfluid_amrex::generated::explicit_diffusion_update(1.25, 0.125, -3.0);
    if (!close_enough(update, 1.25 + 0.125 * -3.0)) {
       std::cerr << "generated explicit diffusion update mismatch\n";
@@ -1308,7 +2355,7 @@ int main()
       std::cerr << "generated polytropic pressure mismatch\n";
       return 1;
    }
-   if (!close_enough(pyfluid_amrex::generated::hybrid_polytrope_pressure_from_density_energy(2.0, 4.0, 0.5, 2.0, 1.5), 3.0)) {
+   if (!close_enough(pyfluid_amrex::generated::hybrid_polytrope_pressure_from_density_energy(2.0, 4.0, 0.5, 2.0, 1.5, 0.0), 3.0)) {
       std::cerr << "generated hybrid-polytrope pressure mismatch\n";
       return 1;
    }

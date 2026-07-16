@@ -53,6 +53,35 @@ The relativistic fluid kernels do not distinguish those ownership modes.
 References define equations and validation targets. PyFluid keeps its own
 single AMReX ownership, field-schema, code-generation, and validation contracts.
 
+### Local coupled-evolution reference snapshot
+
+The matter-coupling design was checked against these local ETK revisions:
+
+- AsterX `7e70efa181cec5936be375ae8e7c146aaa3d7085`, especially
+  `AsterX/AsterX/schedule.ccl` and `AsterX/AsterX/src/tmunu.cxx`;
+- CarpetX `375f6dbd85ca7d19680229bf75e41b3be7046239`, especially
+  `CarpetX/ODESolvers/src/odesolvers_solve.cxx`,
+  `CarpetX/ODESolvers/src/odesolvers_solve_subcycling.cxx`, and
+  `CarpetX/TmunuBaseX/schedule.ccl`;
+- SpacetimeX `e89fe1d3ee47adaf881f051c502fac61e4a4c0f9`, especially
+  `SpacetimeX/Z4c/schedule.ccl` and `SpacetimeX/Z4c/src/z4c_vars.hxx`.
+
+ETK's `ODESolvers` owns one stage loop for all evolved groups. Its stage
+post-processing recovers AsterX primitives, clears and rebuilds the
+vertex-centered `TmunuBaseX` fields, and then evaluates the fluid and Z4c RHS
+groups from that common stage state. `TmunuBaseX` is a useful multi-thorn
+aggregation interface, but it is not an additional evolved sector. Z4c
+projects the covariant tensor into the standard Eulerian energy, momentum, and
+spatial-stress sources.
+
+PyFluid follows the same numerical contract without adopting the Cactus
+aggregation storage. The generated RHD/RMHD bundle directly forms the
+Eulerian projections from the recovered cell-centered stage state and the
+stage metric, then the common centering operator transfers those stage-local
+sources to Z4c vertices. Optional output of a covariant stress-energy tensor
+must reuse the same generated definition; it must not introduce a second
+matter-coupling path.
+
 ## Generated Relativistic Fluid Bundle
 
 The symbolic source uses indexed 3+1 objects with explicit variance and checked
@@ -163,6 +192,22 @@ state and advance fluid and spacetime on different clocks without changing
 physics kernels. Cowling evolution is the same interface with no spacetime
 advance.
 
+All explicit methods use the existing shared RK coefficient tables and stage
+algebra. A coupled GRHD/GRMHD stage constructs every active sector at one stage
+time, fills its ghosts, builds the cell/vertex coupling views, evaluates every
+active RHS, and applies one common stage update. There are no fluid-specific
+and spacetime-specific copies of Euler, SSPRK3, or RK4.
+
+AMR level subcycling and physics-sector multirate evolution are separate
+policies over this same stage interface. A slower spacetime cadence cannot be
+implemented by skipping ordinary-RK spacetime stages while feeding stale
+metric or matter data to the fluid. A production multirate policy must provide
+the metric at every requested fluid stage time and accumulate a
+time-consistent matter source for the spacetime macro-step. Regridding,
+checkpointing, and synchronized output occur only when both sector clocks and
+the affected AMR levels align. The fully coupled cadence-one method is the
+reference against which every slower cadence is converged and timed.
+
 ## Vertical Validation
 
 Build the implementation through executable vertical slices:
@@ -223,11 +268,43 @@ On the controlled RMHD entropy benchmark, whose maximum characteristic speed is
 `6.5%` because it avoids a C2P speed pass. The measured break-even is about
 `0.80c`; local bounds win below it and remain the robust general policy.
 
-The next implementation boundary is evolved spacetime. The same read-only
-stage-time metric interface can receive Cottonmouth-like generated metric
-fields without duplicating the RHD/RMHD system. Fixed-spacetime validation is:
+Current evolved-spacetime status:
+
+- vacuum Z4c, coupled RHD, and coupled RMHD use the same generated Z4c RHS and
+  the same sector-aware Euler, corrector, midpoint, SSPRK3, and RK4 stage
+  algebra. Frozen/Cowling and cadence-one coupled evolution are supported;
+  physics-sector multirate evolution remains deliberately unimplemented;
+- Eulerian matter projections and Valencia metric/source views are rebuilt
+  from the common stage state. Deep four-level AMR/subcycling restart is exact
+  within `1e-12` for coupled RHD, and a weak coupled RMHD four-level smoke
+  conserves baryon mass to roundoff;
+- vertex-centered spacetime FillPatch and level construction use one
+  fourth-order tensor-product nodal interpolater. This reduced the maintained
+  smooth gauge-wave AMR error by roughly two orders of magnitude relative to
+  AMReX's bilinear nodal interpolater without the severe 3D cost of a tested
+  sixth-order alternative;
+- the internal TOV provider solves a one-dimensional areal-radius problem,
+  transforms it to isotropic radius, and samples the same physical-coordinate
+  view into both fluid and spacetime fields on every AMR level. Single and
+  piecewise cold polytropes are supported, with optional hybrid thermal
+  pressure for evolution;
+- the 3D TOV Hamiltonian L2 norm decreases from `5.99e-5` at N=24 to
+  `2.19e-5` at N=48, with surface-limited observed orders of 1.33 and 1.55. A
+  short two-level coupled TOV evolution preserves baryon mass to about
+  `1e-11`; its AMR constraint norm remains a tracked interface/surface
+  validation rather than a claim of long-term stellar equilibrium.
+
+The current initial-data implementation is an internal analytic/radial-table
+TOV provider. The physical-coordinate sampling boundary is intended to accept
+later COCAL/KEH or other grid data, but no arbitrary-coordinate external-grid
+reader or physics-aware interpolation has yet been implemented. Rotating-star,
+black-hole, and binary initial data therefore remain future work.
+
+Validation commands are:
 
 ```bash
 uv run python pyfluid_amrex/tools/validate_fixed_spacetime.py \
+  --level standard --force --ranks 3
+uv run python pyfluid_amrex/tools/validate_z4c.py \
   --level standard --force --ranks 3
 ```

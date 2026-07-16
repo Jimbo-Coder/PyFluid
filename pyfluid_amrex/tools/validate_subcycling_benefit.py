@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import shutil
 import subprocess
@@ -369,7 +370,7 @@ def main() -> int:
 
    comparison_output = PLOT_ROOT / "kh_mhd_subcycling_vs_nosub_001.png"
    comparison = {}
-   coordinate_limits = ((0.0, 0.8), (0.0, 2.0 * 3.141592653589793)) if args.curvilinear_equivalence else None
+   coordinate_limits = ((0.0, 0.8), (0.0, 2.0 * math.pi)) if args.curvilinear_equivalence else None
    for component in ("pressure", "rho"):
       comparison.update(
          compare_component(

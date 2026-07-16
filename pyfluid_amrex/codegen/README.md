@@ -64,6 +64,22 @@ they are opt-in generation experiments rather than production defaults.
   algebra, compile, validation, and performance gates. Keep separate
   handwritten references only in validation code, not in the runtime path.
 
+## Maintainer Workflow
+
+Work at the highest validated layer. Change the symbolic equation, indexed
+tensor operation, EOS, or differential policy; regenerate; then inspect the
+generated diff and run the algebra/compiled/runtime gates. Do not manually
+re-expand a generated physical system into runtime C++ to review or repair it.
+Generated headers may be large because they are build artifacts, but the
+high-level source, emitter, and validation corpus must remain small enough to
+reason about without expanding the full equations in maintainer context.
+
+AMReX stage scheduling is compiled separately from the template-heavy fluid
+driver. It selects generated pointwise policies and moves sector-owned data; it
+must not reproduce tensor geometry, constraints, gauges, sources, or RHS
+expressions. A generated Z4c change should rebuild the spacetime module, not
+reinstantiate the fluid evolution driver.
+
 ## Current Boundary
 
 The generator owns pointwise algebra that benefits from symbolic tensor and
@@ -171,6 +187,53 @@ Algebraic identities, analytic derivatives, two-sided round trips, zero-field
 reduction, rotational covariance, equilibria, evolution, AMR/CT/subcycling,
 and restart are validation gates. Evolved spacetime changes metric ownership
 and scheduling, not the relativistic fluid equations.
+
+## Z4c Extension Boundary
+
+Z4c uses full field values rather than perturbations. Minkowski data are
+`chi=alpha=1`, `gamma_tilde_ij=delta_ij`, with every other component zero.
+The high-level equations independently implement the published Z4c system;
+Cottonmouth and SpacetimeX are architecture and cross-check references, not
+production source copied into this generator.
+
+The generated pointwise API is intentionally reusable:
+
+1. `z4c_conformal_metric` derives physical and inverse metrics.
+2. `z4c_connections` computes the conformal and physical connections needed by
+   every evolution RHS.
+3. `z4c_diagnostic_geometry` independently computes the true Ricci tensor only
+   when constraints or diagnostics request it.
+4. `evaluate_z4c_constraints` computes Hamiltonian, momentum, Z, Theta, and
+   algebraic constraints from the same state/derivative inputs used by initial
+   data validation and postprocessing.
+5. `z4c_evolution_geometry` uses the evolved contracted connection in the Z4c
+   Ricci expression. It is kept distinct from diagnostic geometry because they
+   agree only when the Gamma constraint is satisfied.
+6. `z4c_geometric_rhs` consumes the reusable geometry objects plus explicit
+   Eulerian matter projections. Vacuum passes the zero-valued matter object.
+7. `evaluate_z4c_rhs<LapseGauge, ShiftGauge>` is the complete side-effect-free
+   evolution entry point. Gauge choices are compile-time policies, so adding
+   supported gauges does not add a per-point runtime switch.
+
+`evaluate_z4c_constraints_at<Order, Dim>` is the AMReX-grid entry point. It
+loads the canonical nodal state, gathers centered geometric derivatives and
+shift-upwind advection derivatives through the shared generated operator
+contract, then calls `evaluate_z4c_constraints`. Initial-data checks, runtime
+diagnostics, and postprocessing adapters should use that entry point rather
+than assemble their own component or stencil maps.
+`evaluate_z4c_rhs_at<Order, Dim, LapseGauge, ShiftGauge>` applies the same
+loading and derivative contract to the full evolution RHS.
+
+Gauge RHS kernels are separate policies: harmonic, 1+log, slow-start 1+log,
+and Gamma-driver shift. Frozen gauge means a zero RHS selected by runtime
+orchestration; it does not need a duplicate generated equation. Slow-start
+parameters and stage time are explicit arguments.
+
+These functions remain side-effect free. Vertex storage, AMR synchronization,
+algebraic-constraint projection, boundary conditions, and time integration
+belong to the common runtime infrastructure. The primary
+equation references are arXiv:1212.2901 for Z4c and arXiv:2404.01137 for the
+slow-start lapse modification.
 
 ## Workflow
 

@@ -9,7 +9,7 @@
       }
       const int ncomp = num_state_components();
       const amrex::Real time = level_times_[lev];
-      fill_level_boundaries(state_, lev - 1, level_times_[lev - 1]);
+      fill_level_boundaries(fluid_state_.state(), lev - 1, level_times_[lev - 1]);
       auto const& bcs = fillpatch_bcs();
       const StateFillPatchFunc& boundary_func = state_fillpatch_func();
       StateFillPatchPhysBC coarse_bc(Geom(lev - 1), bcs, boundary_func);
@@ -18,7 +18,7 @@
          seed,
          seed.nGrowVect(),
          time,
-         *state_[lev - 1],
+         *fluid_state_.state()[lev - 1],
          0,
          0,
          ncomp,
@@ -47,17 +47,17 @@
       constexpr int repair_grow = SolidMotionSearchRadius;
       constexpr int max_repair_sweeps = 64;
       amrex::MultiFab source(
-         state_[lev]->boxArray(),
-         state_[lev]->DistributionMap(),
+         fluid_state_.state()[lev]->boxArray(),
+         fluid_state_.state()[lev]->DistributionMap(),
          ncomp,
          amrex::IntVect(repair_grow)
       );
-      amrex::MultiFab repair_counts(state_[lev]->boxArray(), state_[lev]->DistributionMap(), 2, 0);
+      amrex::MultiFab repair_counts(fluid_state_.state()[lev]->boxArray(), fluid_state_.state()[lev]->DistributionMap(), 2, 0);
       std::unique_ptr<amrex::MultiFab> coarse_seed;
       if (lev > 0) {
          coarse_seed = std::make_unique<amrex::MultiFab>(
-            state_[lev]->boxArray(),
-            state_[lev]->DistributionMap(),
+            fluid_state_.state()[lev]->boxArray(),
+            fluid_state_.state()[lev]->DistributionMap(),
             ncomp,
             0
          );
@@ -65,9 +65,9 @@
       }
 
       for (int sweep = 0; sweep < max_repair_sweeps; ++sweep) {
-         state_[lev]->FillBoundary(Geom(lev).periodicity());
+         fluid_state_.state()[lev]->FillBoundary(Geom(lev).periodicity());
          source.ParallelCopy(
-            *state_[lev],
+            *fluid_state_.state()[lev],
             0,
             0,
             ncomp,
@@ -80,14 +80,14 @@
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
          {
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& bx = mfi.tilebox();
             const amrex::Box& fabbox = source[mfi].box();
             const auto flo = amrex::lbound(fabbox);
             const auto fhi = amrex::ubound(fabbox);
             const auto lo = amrex::lbound(bx);
             const auto hi = amrex::ubound(bx);
-            const auto dst = state_[lev]->array(mfi);
+            const auto dst = fluid_state_.state()[lev]->array(mfi);
             const auto src = source.const_array(mfi);
             const auto solid = solid_mask_[lev]->const_array(mfi);
             const auto counts = repair_counts.array(mfi);
@@ -221,7 +221,7 @@
 
          const amrex::Real bad = repair_counts.sum(0);
          if (bad <= 0.0) {
-            state_[lev]->FillBoundary(Geom(lev).periodicity());
+            fluid_state_.state()[lev]->FillBoundary(Geom(lev).periodicity());
             return;
          }
          const amrex::Real repaired = repair_counts.sum(1);
@@ -234,7 +234,7 @@
             const std::string text = message.str();
             amrex::Abort(text.c_str());
          }
-         state_[lev]->FillBoundary(Geom(lev).periodicity());
+         fluid_state_.state()[lev]->FillBoundary(Geom(lev).periodicity());
       }
       std::ostringstream message;
       message << "AMR solid regrid repair on level " << lev
@@ -261,17 +261,17 @@
       constexpr int repair_grow = SolidMotionSearchRadius;
       constexpr int max_extension_sweeps = 16;
       amrex::MultiFab source(
-         state_[lev]->boxArray(),
-         state_[lev]->DistributionMap(),
+         fluid_state_.state()[lev]->boxArray(),
+         fluid_state_.state()[lev]->DistributionMap(),
          ncomp,
          amrex::IntVect(repair_grow)
       );
-      amrex::MultiFab counts(state_[lev]->boxArray(), state_[lev]->DistributionMap(), 2, 0);
+      amrex::MultiFab counts(fluid_state_.state()[lev]->boxArray(), fluid_state_.state()[lev]->DistributionMap(), 2, 0);
       std::unique_ptr<amrex::MultiFab> coarse_seed;
       if (lev > 0) {
          coarse_seed = std::make_unique<amrex::MultiFab>(
-            state_[lev]->boxArray(),
-            state_[lev]->DistributionMap(),
+            fluid_state_.state()[lev]->boxArray(),
+            fluid_state_.state()[lev]->DistributionMap(),
             ncomp,
             0
          );
@@ -279,9 +279,9 @@
       }
 
       for (int sweep = 0; sweep < max_extension_sweeps; ++sweep) {
-         state_[lev]->FillBoundary(Geom(lev).periodicity());
+         fluid_state_.state()[lev]->FillBoundary(Geom(lev).periodicity());
          source.ParallelCopy(
-            *state_[lev],
+            *fluid_state_.state()[lev],
             0,
             0,
             ncomp,
@@ -294,14 +294,14 @@
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
          {
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& bx = mfi.tilebox();
             const amrex::Box& fabbox = source[mfi].box();
             const auto flo = amrex::lbound(fabbox);
             const auto fhi = amrex::ubound(fabbox);
             const auto lo = amrex::lbound(bx);
             const auto hi = amrex::ubound(bx);
-            const auto dst = state_[lev]->array(mfi);
+            const auto dst = fluid_state_.state()[lev]->array(mfi);
             const auto src = source.const_array(mfi);
             const auto solid = solid_mask_[lev]->const_array(mfi);
             const auto needed = primitive_needed_mask_[lev]->const_array(mfi);
@@ -436,7 +436,7 @@
          }
          const amrex::Real bad = counts.sum(0);
          if (bad <= 0.0) {
-            state_[lev]->FillBoundary(Geom(lev).periodicity());
+            fluid_state_.state()[lev]->FillBoundary(Geom(lev).periodicity());
             return;
          }
          const amrex::Real filled = counts.sum(1);

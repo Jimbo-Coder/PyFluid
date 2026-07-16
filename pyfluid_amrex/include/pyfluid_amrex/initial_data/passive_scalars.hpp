@@ -8,6 +8,7 @@
 #include <string>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
 #include "pyfluid_amrex/state.hpp"
 
@@ -61,7 +62,7 @@ amrex::Real passive_profile_value(
       return background + amplitude * std::exp(-0.5 * r2 / (sigma * sigma));
    }
    if (profile == ProfileSinWave) {
-      const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+      const amrex::Real two_pi = constants::two_pi;
       amrex::Real phase = 0.0;
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
          phase += passive_phase_coordinate(

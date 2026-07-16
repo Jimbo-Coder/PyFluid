@@ -146,6 +146,9 @@ def analytic_equations_of_state() -> tuple[AnalyticEquationOfState, ...]:
       "gamma polytropic_k polytropic_gamma thermal_gamma",
       positive=True,
    )
+   cold_specific_energy_offset = sp.Symbol(
+      "cold_specific_energy_offset", real=True
+   )
 
    ideal_gas = AnalyticEquationOfState(
       name="ideal_gas",
@@ -156,13 +159,16 @@ def analytic_equations_of_state() -> tuple[AnalyticEquationOfState, ...]:
    )
 
    cold_pressure = polytropic_k * rho**polytropic_gamma
-   cold_energy = cold_pressure / (polytropic_gamma - 1)
+   cold_energy = (
+      rho * cold_specific_energy_offset
+      + cold_pressure / (polytropic_gamma - 1)
+   )
    polytrope = AnalyticEquationOfState(
       name="polytrope",
       density=rho,
       internal_energy_density=internal_energy_density,
       pressure_expression=cold_pressure,
-      parameters=(polytropic_k, polytropic_gamma),
+      parameters=(polytropic_k, polytropic_gamma, cold_specific_energy_offset),
       barotropic_energy_density=cold_energy,
    )
    hybrid_polytrope = AnalyticEquationOfState(
@@ -173,7 +179,12 @@ def analytic_equations_of_state() -> tuple[AnalyticEquationOfState, ...]:
          cold_pressure
          + (thermal_gamma - 1) * (internal_energy_density - cold_energy)
       ),
-      parameters=(polytropic_k, polytropic_gamma, thermal_gamma),
+      parameters=(
+         polytropic_k,
+         polytropic_gamma,
+         thermal_gamma,
+         cold_specific_energy_offset,
+      ),
    )
    return ideal_gas, polytrope, hybrid_polytrope
 
@@ -189,37 +200,41 @@ def eos_kernels() -> tuple[ScalarKernel, ...]:
       for equation_of_state in analytic_equations_of_state()
       for kernel in equation_of_state.kernels(pressure)
    )
-   ideal_gas = ideal_gas_equation_of_state()
    specific_internal_energy = sp.Symbol("specific_internal_energy", nonnegative=True)
-   relativistic_expressions = (
-      (
-         "relativistic_ideal_gas_pressure",
-         ideal_gas.pressure_from_specific_internal_energy(specific_internal_energy),
-      ),
-      (
-         "relativistic_ideal_gas_specific_enthalpy",
-         ideal_gas.relativistic_specific_enthalpy(specific_internal_energy),
-      ),
-      (
-         "relativistic_ideal_gas_sound_speed_squared",
-         ideal_gas.relativistic_sound_speed_squared(specific_internal_energy),
-      ),
-   )
-   argument_order = (
-      ideal_gas.density,
-      specific_internal_energy,
-      *ideal_gas.parameters,
-   )
    relativistic_kernels = tuple(
       ScalarKernel(
-         name=name,
+         name=f"relativistic_{equation_of_state.name}_{operation}",
          arguments=tuple(
             str(symbol)
-            for symbol in argument_order
+            for symbol in (
+               equation_of_state.density,
+               specific_internal_energy,
+               *equation_of_state.parameters,
+            )
             if symbol in expression.free_symbols
          ),
          expression=expression,
       )
-      for name, expression in relativistic_expressions
+      for equation_of_state in analytic_equations_of_state()
+      for operation, expression in (
+         (
+            "pressure",
+            equation_of_state.pressure_from_specific_internal_energy(
+               specific_internal_energy
+            ),
+         ),
+         (
+            "specific_enthalpy",
+            equation_of_state.relativistic_specific_enthalpy(
+               specific_internal_energy
+            ),
+         ),
+         (
+            "sound_speed_squared",
+            equation_of_state.relativistic_sound_speed_squared(
+               specific_internal_energy
+            ),
+         ),
+      )
    )
    return newtonian_kernels + relativistic_kernels

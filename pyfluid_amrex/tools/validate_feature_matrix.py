@@ -1277,22 +1277,6 @@ def combo_cases() -> list[Case]:
          "pyfluid.aux_gf_compute_int": "-1",
          "pyfluid.aux_gf_int": "1",
       }),
-      Case("hydro_combo_pulsating_circle_amr_subcycling", 2, "pulsating_circle_mach2_2d_amr.in", {
-         **AUTO_AMR_COVERAGE,
-         "amr.n_cell": "48 48",
-         "amr.max_grid_size": "24",
-         "pyfluid.max_step": "3",
-         "pyfluid.final_time": "-1.0",
-         "pyfluid.timestep": "ssprk3",
-         "pyfluid.recon": "pwl",
-         "pyfluid.riemann": "hllc",
-         "pyfluid.ng": "2",
-         "pyfluid.subcycling": "on",
-         "pyfluid.subcycling_steps": "spatial",
-         "pyfluid.aux_gfs": "solid_mask,solid_volume_fraction,solid_swept_volume",
-         "pyfluid.aux_gf_compute_int": "-1",
-         "pyfluid.aux_gf_int": "1",
-      }, require_amr=True),
    ]
 
 

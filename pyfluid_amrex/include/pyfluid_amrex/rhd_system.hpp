@@ -6,6 +6,7 @@
 #include "pyfluid_amrex/kernels_generated/riemann_ops.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
 #include "pyfluid_amrex/reconstruction.hpp"
+#include "pyfluid_amrex/z4c_pointwise.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 #include <AMReX_GpuLaunch.H>
@@ -20,6 +21,7 @@ struct RHDPrimitiveFaceStates {
    RHDPrimitive right;
 };
 
+template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDPrimitive rhd_primitive_at(
    amrex::Array4<amrex::Real const> const& primitive,
@@ -33,7 +35,7 @@ RHDPrimitive rhd_primitive_at(
    const amrex::Real pressure = primitive(i, j, k, ENERGY);
    return {
       rho,
-      pressure / ((eos.gamma - 1.0) * rho),
+      relativistic_specific_internal_energy_from_pressure<EOSMethod>(rho, pressure, eos),
       pressure,
       primitive(i, j, k, MOM1),
       primitive(i, j, k, MOM2),
@@ -86,6 +88,7 @@ amrex::Real causal_limiter_theta(
    );
 }
 
+template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDPrimitive admissibility_limit_rhd_primitive(
    RHDPrimitive face,
@@ -105,11 +108,13 @@ RHDPrimitive admissibility_limit_rhd_primitive(
    face.v1 = center.v1 + theta * (face.v1 - center.v1);
    face.v2 = center.v2 + theta * (face.v2 - center.v2);
    face.v3 = center.v3 + theta * (face.v3 - center.v3);
-   face.eps = face.pressure / ((eos.gamma - 1.0) * face.rho);
+   face.eps = relativistic_specific_internal_energy_from_pressure<EOSMethod>(
+      face.rho, face.pressure, eos
+   );
    return face;
 }
 
-template <int ReconMethod, int Direction>
+template <int ReconMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDPrimitiveFaceStates rhd_primitive_face_states(
    amrex::Array4<amrex::Real const> const& primitive,
@@ -142,22 +147,22 @@ RHDPrimitiveFaceStates rhd_primitive_face_states(
       {rho.left, 0.0, pressure.left, v1.left, v2.left, v3.left},
       {rho.right, 0.0, pressure.right, v1.right, v2.right, v3.right},
    };
-   face.left = admissibility_limit_rhd_primitive(
+   face.left = admissibility_limit_rhd_primitive<EOSMethod>(
       face.left,
-      rhd_primitive_at(primitive, il, jl, kl, eos),
+      rhd_primitive_at<EOSMethod>(primitive, il, jl, kl, eos),
       eos,
       metric
    );
-   face.right = admissibility_limit_rhd_primitive(
+   face.right = admissibility_limit_rhd_primitive<EOSMethod>(
       face.right,
-      rhd_primitive_at(primitive, ir, jr, kr, eos),
+      rhd_primitive_at<EOSMethod>(primitive, ir, jr, kr, eos),
       eos,
       metric
    );
    return face;
 }
 
-template <int Direction>
+template <int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDConserved rhd_hll_flux(
    const RHDPrimitive& primitive_l,
@@ -170,11 +175,13 @@ RHDConserved rhd_hll_flux(
    const RHDConserved state_r = generated::rhd_primitive_to_conserved(primitive_r, metric);
    const RHDConserved flux_l = generated::rhd_flux<Direction>(primitive_l, metric);
    const RHDConserved flux_r = generated::rhd_flux<Direction>(primitive_r, metric);
-   const RHDWaveSpeeds speed_l = generated::srhd_wave_speeds<Direction>(
-      primitive_l, metric, eos.gamma
+   const RHDWaveSpeeds speed_l = generated::rhd_wave_speeds<Direction>(
+      primitive_l, metric,
+      relativistic_sound_speed_squared<EOSMethod>(primitive_l.rho, primitive_l.eps, eos)
    );
-   const RHDWaveSpeeds speed_r = generated::srhd_wave_speeds<Direction>(
-      primitive_r, metric, eos.gamma
+   const RHDWaveSpeeds speed_r = generated::rhd_wave_speeds<Direction>(
+      primitive_r, metric,
+      relativistic_sound_speed_squared<EOSMethod>(primitive_r.rho, primitive_r.eps, eos)
    );
    const amrex::Real speed_minus = amrex::min(0.0, amrex::min(speed_l.minus, speed_r.minus));
    const amrex::Real speed_plus = amrex::max(0.0, amrex::max(speed_l.plus, speed_r.plus));
@@ -189,7 +196,7 @@ RHDConserved rhd_hll_flux(
    );
 }
 
-template <int Direction>
+template <int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDConserved rhd_llf_flux(
    const RHDPrimitive& primitive_l,
@@ -202,11 +209,13 @@ RHDConserved rhd_llf_flux(
    const RHDConserved state_r = generated::rhd_primitive_to_conserved(primitive_r, metric);
    const RHDConserved flux_l = generated::rhd_flux<Direction>(primitive_l, metric);
    const RHDConserved flux_r = generated::rhd_flux<Direction>(primitive_r, metric);
-   const RHDWaveSpeeds speed_l = generated::srhd_wave_speeds<Direction>(
-      primitive_l, metric, eos.gamma
+   const RHDWaveSpeeds speed_l = generated::rhd_wave_speeds<Direction>(
+      primitive_l, metric,
+      relativistic_sound_speed_squared<EOSMethod>(primitive_l.rho, primitive_l.eps, eos)
    );
-   const RHDWaveSpeeds speed_r = generated::srhd_wave_speeds<Direction>(
-      primitive_r, metric, eos.gamma
+   const RHDWaveSpeeds speed_r = generated::rhd_wave_speeds<Direction>(
+      primitive_r, metric,
+      relativistic_sound_speed_squared<EOSMethod>(primitive_r.rho, primitive_r.eps, eos)
    );
    const amrex::Real wavespeed = amrex::max(
       amrex::max(amrex::Math::abs(speed_l.minus), amrex::Math::abs(speed_l.plus)),
@@ -215,7 +224,7 @@ RHDConserved rhd_llf_flux(
    return generated::rhd_llf_flux(flux_l, flux_r, state_l, state_r, wavespeed);
 }
 
-template <int ReconMethod, int RiemannMethod, int Direction>
+template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDConserved rhd_riemann_flux(
    amrex::Array4<amrex::Real const> const& primitive,
@@ -229,20 +238,20 @@ RHDConserved rhd_riemann_flux(
    const SpacetimeMetric& metric
 ) noexcept
 {
-   const RHDPrimitiveFaceStates face = rhd_primitive_face_states<ReconMethod, Direction>(
+   const RHDPrimitiveFaceStates face = rhd_primitive_face_states<ReconMethod, Direction, EOSMethod>(
       primitive, il, jl, kl, ir, jr, kr, eos, metric
    );
    if constexpr (RiemannMethod == RiemannLLF) {
-      return rhd_llf_flux<Direction>(face.left, face.right, eos, metric);
+      return rhd_llf_flux<Direction, EOSMethod>(face.left, face.right, eos, metric);
    } else if constexpr (RiemannMethod == RiemannHLL || RiemannMethod == RiemannHLLE) {
-      return rhd_hll_flux<Direction>(face.left, face.right, eos, metric);
+      return rhd_hll_flux<Direction, EOSMethod>(face.left, face.right, eos, metric);
    } else {
       AMREX_ASSERT_WITH_MESSAGE(false, "unsupported RHD Riemann solver reached a device kernel");
       return {};
    }
 }
 
-template <int ReconMethod, int RiemannMethod, int Direction>
+template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
 inline void fill_rhd_flux_direction(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    const amrex::MultiFab& primitive,
@@ -283,7 +292,7 @@ inline void fill_rhd_flux_direction(
             fixed_spacetime_geometry_at_face<Direction, AMREX_SPACEDIM>(
                spacetime, lower, spacing, i, j, k, time
             );
-         const RHDConserved value = rhd_riemann_flux<ReconMethod, RiemannMethod, Direction>(
+         const RHDConserved value = rhd_riemann_flux<ReconMethod, RiemannMethod, Direction, EOSMethod>(
             cached, il, jl, kl, i, j, k, eos, face_geometry.metric
          );
          store_rhd_conserved(face_flux, i, j, k, value);
@@ -291,7 +300,56 @@ inline void fill_rhd_flux_direction(
    }
 }
 
-template <int ReconMethod, int Direction>
+template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
+inline void fill_rhd_flux_direction(
+   std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
+   const amrex::MultiFab& primitive,
+   const EOSParams& eos,
+   const amrex::MultiFab& cell_spacetime
+)
+{
+   amrex::MultiFab& flux = *fluxes[Direction];
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.tilebox();
+      const auto cached = primitive.const_array(mfi);
+      const auto spacetime = cell_spacetime.const_array(mfi);
+      const auto face_flux = flux.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         int il = i;
+         int jl = j;
+         int kl = k;
+         if constexpr (Direction == 0) {
+            --il;
+         }
+#if (AMREX_SPACEDIM >= 2)
+         else if constexpr (Direction == 1) {
+            --jl;
+         }
+#endif
+#if (AMREX_SPACEDIM == 3)
+         else {
+            --kl;
+         }
+#endif
+         const SpacetimeMetric metric = evolved_spacetime_metric_at_face<
+            4,
+            Direction
+         >(spacetime, i, j, k);
+         const RHDConserved value = rhd_riemann_flux<
+            ReconMethod,
+            RiemannMethod,
+            Direction,
+            EOSMethod
+         >(cached, il, jl, kl, i, j, k, eos, metric);
+         store_rhd_conserved(face_flux, i, j, k, value);
+      });
+   }
+}
+
+template <int ReconMethod, int Direction, int EOSMethod>
 inline void fill_rhd_flux_direction_runtime(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    const amrex::MultiFab& primitive,
@@ -304,18 +362,48 @@ inline void fill_rhd_flux_direction_runtime(
 {
    switch (riemann_method) {
    case RiemannLLF:
-      fill_rhd_flux_direction<ReconMethod, RiemannLLF, Direction>(
+      fill_rhd_flux_direction<ReconMethod, RiemannLLF, Direction, EOSMethod>(
          fluxes, primitive, eos, geometry, spacetime, time
       );
       return;
    case RiemannHLL:
-      fill_rhd_flux_direction<ReconMethod, RiemannHLL, Direction>(
+      fill_rhd_flux_direction<ReconMethod, RiemannHLL, Direction, EOSMethod>(
          fluxes, primitive, eos, geometry, spacetime, time
       );
       return;
    case RiemannHLLE:
-      fill_rhd_flux_direction<ReconMethod, RiemannHLLE, Direction>(
+      fill_rhd_flux_direction<ReconMethod, RiemannHLLE, Direction, EOSMethod>(
          fluxes, primitive, eos, geometry, spacetime, time
+      );
+      return;
+   default:
+      amrex::Abort("RHD supports LLF, HLL, and HLLE Riemann solvers");
+   }
+}
+
+template <int ReconMethod, int Direction, int EOSMethod>
+inline void fill_rhd_flux_direction_runtime(
+   std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
+   const amrex::MultiFab& primitive,
+   const EOSParams& eos,
+   int riemann_method,
+   const amrex::MultiFab& cell_spacetime
+)
+{
+   switch (riemann_method) {
+   case RiemannLLF:
+      fill_rhd_flux_direction<ReconMethod, RiemannLLF, Direction, EOSMethod>(
+         fluxes, primitive, eos, cell_spacetime
+      );
+      return;
+   case RiemannHLL:
+      fill_rhd_flux_direction<ReconMethod, RiemannHLL, Direction, EOSMethod>(
+         fluxes, primitive, eos, cell_spacetime
+      );
+      return;
+   case RiemannHLLE:
+      fill_rhd_flux_direction<ReconMethod, RiemannHLLE, Direction, EOSMethod>(
+         fluxes, primitive, eos, cell_spacetime
       );
       return;
    default:

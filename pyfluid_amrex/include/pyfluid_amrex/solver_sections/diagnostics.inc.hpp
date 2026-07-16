@@ -120,9 +120,9 @@
       amrex::Real gravity_density_offset = 0.0;
       amrex::Real gravity_energy_factor = 0.0;
       if (gravity_enabled(cfg_)) {
-         prepare_gravity_fields(state_, false);
+         prepare_gravity_fields(fluid_state_.state(), false);
          if (self_gravity_enabled(cfg_)) {
-            const DensityTotal density = valid_density_total(state_);
+            const DensityTotal density = valid_density_total(fluid_state_.state());
             gravity_density_offset = density.volume > 0.0 ? density.mass / density.volume : 0.0;
             gravity_energy_factor = 0.5;
          } else {
@@ -134,22 +134,21 @@
       const MeshAxes axes = active_mesh_axes();
       for (int lev = 0; lev <= finestLevel(); ++lev) {
          if (physical_system_is_relativistic(physics_system_)) {
-            fill_relativistic_pressure(
-               *pressure_[lev], *state_[lev], eos_params(cfg_), physics_system_
-            );
+            fill_level_primitive_cache(lev, time);
+            fill_pressure_from_primitive(*pressure_[lev], *primitive_[lev]);
          } else if (is_mhd(cfg_)) {
-            fill_pressure<true, EOSMethod>(*pressure_[lev], *state_[lev], eos_params(cfg_));
+            fill_pressure<true, EOSMethod>(*pressure_[lev], *fluid_state_.state()[lev], eos_params(cfg_));
          } else {
-            fill_pressure<false, EOSMethod>(*pressure_[lev], *state_[lev], eos_params(cfg_));
+            fill_pressure<false, EOSMethod>(*pressure_[lev], *fluid_state_.state()[lev], eos_params(cfg_));
          }
          amrex::iMultiFab mask = valid_cell_mask(lev);
-         amrex::MultiFab reduction(state_[lev]->boxArray(), state_[lev]->DistributionMap(), ScalarReductionNComp, 0);
+         amrex::MultiFab reduction(fluid_state_.state()[lev]->boxArray(), fluid_state_.state()[lev]->DistributionMap(), ScalarReductionNComp, 0);
          amrex::MultiFab const* gravity_phi = gravity_enabled(cfg_) ? gravity_phi_[lev].get() : nullptr;
          const int passive_component = cfg_.passive_scalars > 0 ? passive_component_begin(is_mhd(cfg_)) : -1;
          if (mixed_patch_system_enabled() && !is_mhd(cfg_)) {
             fill_scalar_reduction_fields_mapped_hydro(
                reduction,
-               *state_[lev],
+               *fluid_state_.state()[lev],
                *pressure_[lev],
                mask,
                production_patch_grid_system_for_level(lev),
@@ -162,7 +161,7 @@
          } else if (is_mhd(cfg_)) {
             fill_scalar_reduction_fields<true>(
                reduction,
-               *state_[lev],
+               *fluid_state_.state()[lev],
                *pressure_[lev],
                mask,
                Geom(lev),
@@ -178,7 +177,7 @@
          } else {
             fill_scalar_reduction_fields<false>(
                reduction,
-               *state_[lev],
+               *fluid_state_.state()[lev],
                *pressure_[lev],
                mask,
                Geom(lev),
@@ -197,7 +196,7 @@
          d.mom2 += reduction.sum(ScalarReductionMom2);
          d.mom3 += reduction.sum(ScalarReductionMom3);
          d.energy += reduction.sum(ScalarReductionEnergy);
-         const auto [rho_min, pressure_min] = valid_min_rho_pressure(*state_[lev], *pressure_[lev], mask);
+         const auto [rho_min, pressure_min] = valid_min_rho_pressure(*fluid_state_.state()[lev], *pressure_[lev], mask);
          d.min_rho = amrex::min(d.min_rho, rho_min);
          d.min_pressure = amrex::min(d.min_pressure, pressure_min);
          d.magnetic_energy += reduction.sum(ScalarReductionMagneticEnergy);
@@ -287,6 +286,21 @@
       d.sim_time_per_s = sim_time_per_s;
       if (cfg_.cfl_limiter_diagnostics) {
          set_cfl_limiter_diagnostics(d, current_cfl_limiter_location());
+      }
+      if (spacetime_state_.active()) {
+         if (spacetime_matter_is_coupled(cfg_)) {
+            fill_spacetime_matter_range(0, finestLevel() + 1);
+         }
+         const SpacetimeConstraintDiagnostics constraints =
+            this->compute_spacetime_constraint_diagnostics(time);
+         d.z4c_hamiltonian_linf = constraints.hamiltonian_linf;
+         d.z4c_hamiltonian_l2 = constraints.hamiltonian_l2;
+         d.z4c_momentum_linf = constraints.momentum_linf;
+         d.z4c_z_linf = constraints.z_linf;
+         d.z4c_theta_linf = constraints.theta_linf;
+         d.z4c_log_conformal_determinant_linf =
+            constraints.log_conformal_determinant_linf;
+         d.z4c_trace_a_tilde_linf = constraints.trace_a_tilde_linf;
       }
       return d;
    }

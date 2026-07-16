@@ -127,6 +127,22 @@ int main(int argc, char* argv[])
          amrex::Print() << "state component count differs: "
                         << header_a.state_components << " vs " << header_b.state_components << "\n";
       }
+      if (header_a.fields.size() != header_b.fields.size()) {
+         metadata_ok = false;
+         amrex::Print() << "checkpoint field inventory size differs\n";
+      } else {
+         for (std::size_t field_index = 0; field_index < header_a.fields.size(); ++field_index) {
+            auto const& field_a = header_a.fields[field_index];
+            auto const& field_b = header_b.fields[field_index];
+            if (field_a.name != field_b.name
+                || field_a.num_components != field_b.num_components
+                || field_a.index_type != field_b.index_type) {
+               metadata_ok = false;
+               amrex::Print() << "checkpoint field inventory differs at index "
+                              << field_index << "\n";
+            }
+         }
+      }
 
       const int finest = std::min(header_a.finest_level, header_b.finest_level);
       if (header_a.level_steps.size() != header_b.level_steps.size() ||
@@ -173,49 +189,38 @@ int main(int argc, char* argv[])
 
       FieldDiff total;
       for (int lev = 0; lev <= finest; ++lev) {
-         const FieldDiff state = compare_multifab(
-            checkpoint_a,
-            checkpoint_b,
-            lev,
-            pyfluid_amrex::checkpoint_state_field_name(),
-            header_a.box_arrays[lev],
-            header_a.state_components
-         );
-         total.max_abs = std::max(total.max_abs, state.max_abs);
-         total.l1 += state.l1;
-         amrex::Print() << "level " << lev << " state max_abs=" << state.max_abs
-                        << " l1=" << state.l1 << "\n";
-
-         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-            const std::string field = pyfluid_amrex::checkpoint_face_b_field_name(dir);
-            const bool exists_a = pyfluid_amrex::checkpoint_field_exists(checkpoint_a, field);
-            const bool exists_b = pyfluid_amrex::checkpoint_field_exists(checkpoint_b, field);
+         for (pyfluid_amrex::CheckpointFieldInfo const& field : header_a.fields) {
+            const bool exists_a = pyfluid_amrex::checkpoint_field_exists(
+               checkpoint_a, field.name
+            );
+            const bool exists_b = pyfluid_amrex::checkpoint_field_exists(
+               checkpoint_b, field.name
+            );
             if (exists_a != exists_b) {
                metadata_ok = false;
-               amrex::Print() << "level " << lev << " " << field
+               amrex::Print() << "level " << lev << " " << field.name
                               << " exists in only one checkpoint\n";
                continue;
             }
             if (!exists_a) {
                continue;
             }
-
-            const amrex::BoxArray face_boxes = amrex::convert(
-               header_a.box_arrays[lev],
-               amrex::IntVect::TheDimensionVector(dir)
+            const amrex::BoxArray field_boxes = amrex::convert(
+               header_a.box_arrays[lev], field.index_type
             );
-            const FieldDiff face = compare_multifab(
+            const FieldDiff difference = compare_multifab(
                checkpoint_a,
                checkpoint_b,
                lev,
-               field,
-               face_boxes,
-               1
+               field.name,
+               field_boxes,
+               field.num_components
             );
-            total.max_abs = std::max(total.max_abs, face.max_abs);
-            total.l1 += face.l1;
-            amrex::Print() << "level " << lev << " " << field
-                           << " max_abs=" << face.max_abs << " l1=" << face.l1 << "\n";
+            total.max_abs = std::max(total.max_abs, difference.max_abs);
+            total.l1 += difference.l1;
+            amrex::Print() << "level " << lev << " " << field.name
+                           << " max_abs=" << difference.max_abs
+                           << " l1=" << difference.l1 << "\n";
          }
       }
 

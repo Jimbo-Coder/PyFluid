@@ -23,6 +23,57 @@ bool refinement_ratio_is_anisotropic(amrex::IntVect const& ratio)
 
 } // namespace
 
+void AmrSolverBase::fill_level_primitive_cache(int lev, amrex::Real time)
+{
+   const EOSParams eos = eos_params(cfg_);
+   if (spacetime_matter_is_coupled(cfg_)) {
+      prepare_spacetime_coupling_range(
+         spacetime_state_.state(), lev, lev + 1, time, -1.0, 0
+      );
+      if (physics_system_ == PhysicalSystem::RHD) {
+         const int eos_method = eos_method_code(cfg_);
+         if (eos_method == EOSPolytrope) {
+            fill_rhd_primitive_cache<EOSPolytrope>(
+               *primitive_[lev], *fluid_state_.state()[lev], eos,
+               *spacetime_coupling_.cell_spacetime()[lev]
+            );
+         } else if (eos_method == EOSHybridPolytrope) {
+            fill_rhd_primitive_cache<EOSHybridPolytrope>(
+               *primitive_[lev], *fluid_state_.state()[lev], eos,
+               *spacetime_coupling_.cell_spacetime()[lev]
+            );
+         } else {
+            fill_rhd_primitive_cache<EOSIdealGas>(
+               *primitive_[lev], *fluid_state_.state()[lev], eos,
+               *spacetime_coupling_.cell_spacetime()[lev]
+            );
+         }
+         return;
+      }
+      if (physics_system_ == PhysicalSystem::RMHD) {
+         fill_rmhd_primitive_cache(
+            *primitive_[lev],
+            *fluid_state_.state()[lev],
+            eos,
+            *spacetime_coupling_.cell_spacetime()[lev]
+         );
+         return;
+      }
+      amrex::Abort("coupled evolved-spacetime AMR tagging requires RHD or RMHD");
+   }
+
+   fill_base_primitive_cache_runtime(
+      *primitive_[lev],
+      *fluid_state_.state()[lev],
+      eos,
+      eos_method_code(cfg_),
+      physics_system_,
+      Geom(lev),
+      fixed_spacetime_parameters(cfg_),
+      time
+   );
+}
+
 AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_statistics(
    int lev,
    amrex::Real time,
@@ -30,12 +81,12 @@ AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_s
 )
 {
    DirectionalTagStatistics statistics;
-   if (!state_[lev]) {
+   if (!fluid_state_.state()[lev]) {
       return statistics;
    }
 
    if (refresh_boundaries) {
-      fill_level_boundaries<false>(state_, lev, time);
+      fill_level_boundaries<false>(fluid_state_.state(), lev, time);
    }
 
    const amrex::Real threshold = cfg_.tag_threshold;
@@ -47,15 +98,12 @@ AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_s
    const auto problo = Geom(lev).ProbLoArray();
    const auto dx = Geom(lev).CellSizeArray();
    const amrex::Real min_refine_radius = cfg_.min_refine_radius;
-   fill_base_primitive_cache_runtime(
-      *primitive_[lev], *state_[lev], eos, eos_method, physics_system_,
-      Geom(lev), fixed_spacetime_parameters(cfg_), time
-   );
+   fill_level_primitive_cache(lev, time);
 
    amrex::Long local_tagged_cells = 0;
    std::array<amrex::Long, AMREX_SPACEDIM> local_direction_tags{};
    std::array<amrex::Real, AMREX_SPACEDIM> local_direction_strength{};
-   for (amrex::MFIter mfi(*state_[lev]); mfi.isValid(); ++mfi) {
+   for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.validbox();
       const auto primitive = primitive_[lev]->const_array(mfi);
       const auto lo = bx.smallEnd();
@@ -286,17 +334,8 @@ void AmrSolverBase::set_level_time_state(int lev, amrex::Real time, amrex::Real 
 
 void AmrSolverBase::copy_level_state_to_old(int lev)
 {
-   if (!old_state_[lev] || !state_[lev]) {
-      return;
-   }
-   amrex::MultiFab::Copy(
-      *old_state_[lev],
-      *state_[lev],
-      0,
-      0,
-      num_state_components(),
-      state_[lev]->nGrowVect()
-   );
+   fluid_state_.copy_state_to_old(lev);
+   spacetime_state_.copy_state_to_old(lev);
 }
 
 bool AmrSolverBase::uses_subcycled_self_gravity_source_state() const
@@ -306,15 +345,15 @@ bool AmrSolverBase::uses_subcycled_self_gravity_source_state() const
 
 void AmrSolverBase::copy_source_state_level(int lev, amrex::MultiFab const& src)
 {
-   if (!source_state_[lev]) {
+   if (!fluid_state_.source_state()[lev]) {
       amrex::Abort("subcycled self-gravity source-state storage is missing on an active AMR level");
    }
-   amrex::MultiFab::Copy(*source_state_[lev], src, 0, 0, num_state_components(), 0);
+   amrex::MultiFab::Copy(*fluid_state_.source_state()[lev], src, 0, 0, num_state_components(), 0);
 }
 
 void AmrSolverBase::interpolate_source_state_level(int lev, amrex::Real alpha)
 {
-   if (!source_state_[lev] || !old_state_[lev] || !state_[lev]) {
+   if (!fluid_state_.source_state()[lev] || !fluid_state_.old_state()[lev] || !fluid_state_.state()[lev]) {
       amrex::Abort("subcycled self-gravity source-state interpolation is missing level storage");
    }
    alpha = amrex::min(amrex::max(alpha, 0.0), 1.0);
@@ -324,11 +363,11 @@ void AmrSolverBase::interpolate_source_state_level(int lev, amrex::Real alpha)
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    {
-   for (amrex::MFIter mfi(*source_state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+   for (amrex::MFIter mfi(*fluid_state_.source_state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
-      const auto out = source_state_[lev]->array(mfi);
-      const auto old = old_state_[lev]->const_array(mfi);
-      const auto current = state_[lev]->const_array(mfi);
+      const auto out = fluid_state_.source_state()[lev]->array(mfi);
+      const auto old = fluid_state_.old_state()[lev]->const_array(mfi);
+      const auto current = fluid_state_.state()[lev]->const_array(mfi);
       amrex::ParallelFor(bx, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
          out(i, j, k, n) = old_weight * old(i, j, k, n) + alpha * current(i, j, k, n);
       });
@@ -338,7 +377,7 @@ void AmrSolverBase::interpolate_source_state_level(int lev, amrex::Real alpha)
 
 void AmrSolverBase::fill_source_state_level_from_level_time(int lev, amrex::Real time)
 {
-   if (old_state_[lev] && state_[lev] && level_times_[lev] > level_old_times_[lev]) {
+   if (fluid_state_.old_state()[lev] && fluid_state_.state()[lev] && level_times_[lev] > level_old_times_[lev]) {
       const amrex::Real scale = amrex::max(
          1.0,
          amrex::max(amrex::Math::abs(level_old_times_[lev]), amrex::Math::abs(level_times_[lev]))
@@ -350,11 +389,11 @@ void AmrSolverBase::fill_source_state_level_from_level_time(int lev, amrex::Real
          return;
       }
    }
-   if (old_state_[lev] && nearly_equal_time(time, level_old_times_[lev])) {
-      copy_source_state_level(lev, *old_state_[lev]);
+   if (fluid_state_.old_state()[lev] && nearly_equal_time(time, level_old_times_[lev])) {
+      copy_source_state_level(lev, *fluid_state_.old_state()[lev]);
       return;
    }
-   copy_source_state_level(lev, *state_[lev]);
+   copy_source_state_level(lev, *fluid_state_.state()[lev]);
 }
 
 void AmrSolverBase::fill_source_state_for_rhs(AmrSolverBase::LevelData& input, int lev_begin, int lev_end, amrex::Real rhs_time)
@@ -377,14 +416,13 @@ bool AmrSolverBase::nearly_equal_time(amrex::Real a, amrex::Real b)
 
 void AmrSolverBase::invalidate_rk4_stage_cache(int lev)
 {
-   if (lev >= 0 && lev < static_cast<int>(rk4_stage_cache_stage_.size())) {
-      rk4_stage_cache_stage_[lev] = -1;
-   }
+   fluid_state_.invalidate_rk4_stage_cache(lev);
+   spacetime_state_.invalidate_rk4_stage_cache(lev);
 }
 
 void AmrSolverBase::invalidate_rk4_stage_caches()
 {
-   for (int lev = 0; lev < static_cast<int>(rk4_stage_cache_stage_.size()); ++lev) {
+   for (int lev = 0; lev <= maxLevel(); ++lev) {
       invalidate_rk4_stage_cache(lev);
    }
 }

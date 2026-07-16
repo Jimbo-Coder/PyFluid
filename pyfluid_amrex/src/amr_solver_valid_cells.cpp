@@ -5,14 +5,14 @@ namespace pyfluid_amrex {
 amrex::iMultiFab AmrSolverBase::valid_cell_mask(int lev) const
 {
    amrex::iMultiFab mask(
-      state_[lev]->boxArray(),
-      state_[lev]->DistributionMap(),
+      fluid_state_.state()[lev]->boxArray(),
+      fluid_state_.state()[lev]->DistributionMap(),
       1,
       0
    );
    if (lev < finestLevel()) {
       mask = amrex::makeFineMask(
-         *state_[lev],
+         *fluid_state_.state()[lev],
          boxArray(lev + 1),
          refRatio(lev),
          Geom(lev).periodicity(),
@@ -32,7 +32,7 @@ AmrSolverBase::HydroConservedTotals AmrSolverBase::hydro_valid_conserved_totals(
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       const amrex::Real cell_volume = cartesian_cell_volume(Geom(lev));
       amrex::iMultiFab mask = valid_cell_mask(lev);
-      amrex::MultiFab reduction(state_[lev]->boxArray(), state_[lev]->DistributionMap(), NVAR_HYDRO + 1, 0);
+      amrex::MultiFab reduction(fluid_state_.state()[lev]->boxArray(), fluid_state_.state()[lev]->DistributionMap(), NVAR_HYDRO + 1, 0);
       reduction.setVal(0.0);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -40,7 +40,7 @@ AmrSolverBase::HydroConservedTotals AmrSolverBase::hydro_valid_conserved_totals(
       {
       for (amrex::MFIter mfi(reduction, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
          const amrex::Box& bx = mfi.tilebox();
-         const auto s = state_[lev]->const_array(mfi);
+         const auto s = fluid_state_.state()[lev]->const_array(mfi);
          const auto valid = mask.const_array(mfi);
          const bool use_volume_fraction = solid_active(lev) && solid_volume_fraction_[lev] != nullptr;
          const auto vf = use_volume_fraction ? solid_volume_fraction_[lev]->const_array(mfi) : amrex::Array4<amrex::Real const>{};

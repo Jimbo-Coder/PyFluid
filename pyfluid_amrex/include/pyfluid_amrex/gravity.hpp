@@ -14,6 +14,8 @@
 #include <vector>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/constants.hpp"
+#include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/state.hpp"
 
@@ -23,8 +25,7 @@ using GravityGradient = std::array<std::unique_ptr<amrex::MultiFab>, AMREX_SPACE
 
 inline amrex::Real gravity_poisson_factor(RunConfig const& cfg)
 {
-   constexpr amrex::Real pi = 3.141592653589793238462643383279502884;
-   return 4.0 * pi * cfg.gravity_constant;
+   return constants::four_pi * cfg.gravity_constant;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -202,12 +203,12 @@ inline void fill_cell_centered_gravity_gradient(
          const auto grad_z = gravity_gradient[2]->const_array(mfi);
 #endif
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            out(i, j, k, 0) = 0.5 * (grad_x(i, j, k, 0) + grad_x(i + 1, j, k, 0));
+            out(i, j, k, 0) = generated::face_to_cell<0>(grad_x, i, j, k, 0);
 #if (AMREX_SPACEDIM >= 2)
-            out(i, j, k, 1) = 0.5 * (grad_y(i, j, k, 0) + grad_y(i, j + 1, k, 0));
+            out(i, j, k, 1) = generated::face_to_cell<1>(grad_y, i, j, k, 0);
 #endif
 #if (AMREX_SPACEDIM == 3)
-            out(i, j, k, 2) = 0.5 * (grad_z(i, j, k, 0) + grad_z(i, j, k + 1, 0));
+            out(i, j, k, 2) = generated::face_to_cell<2>(grad_z, i, j, k, 0);
 #endif
          });
       }
@@ -259,14 +260,14 @@ void add_gravity_source_cell(
    int k
 ) noexcept
 {
-   const amrex::Real gx = -0.5 * (grad_x(i, j, k, 0) + grad_x(i + 1, j, k, 0)) - acceleration_offset[0];
+   const amrex::Real gx = -generated::face_to_cell<0>(grad_x, i, j, k, 0) - acceleration_offset[0];
 #if (AMREX_SPACEDIM >= 2)
-   const amrex::Real gy = -0.5 * (grad_y(i, j, k, 0) + grad_y(i, j + 1, k, 0)) - acceleration_offset[1];
+   const amrex::Real gy = -generated::face_to_cell<1>(grad_y, i, j, k, 0) - acceleration_offset[1];
 #else
    constexpr amrex::Real gy = 0.0;
 #endif
 #if (AMREX_SPACEDIM == 3)
-   const amrex::Real gz = -0.5 * (grad_z(i, j, k, 0) + grad_z(i, j, k + 1, 0)) - acceleration_offset[2];
+   const amrex::Real gz = -generated::face_to_cell<2>(grad_z, i, j, k, 0) - acceleration_offset[2];
 #else
    constexpr amrex::Real gz = 0.0;
 #endif

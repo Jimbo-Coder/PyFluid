@@ -7,6 +7,7 @@
 
 #include <cmath>
 
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/coordinate_locations.hpp"
 #include "pyfluid_amrex/kernels_generated/coordinate_metrics.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -86,7 +87,7 @@ amrex::Real cylindrical_radial_shell_volume_scale(amrex::Real rlo, amrex::Real r
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cylindrical_radial_shell_volume(amrex::Real rlo, amrex::Real rhi) noexcept
 {
-   return PyFluidTwoPi * cylindrical_radial_shell_volume_scale(rlo, rhi);
+   return constants::two_pi * cylindrical_radial_shell_volume_scale(rlo, rhi);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -104,7 +105,7 @@ amrex::Real spherical_radial_shell_volume_scale(amrex::Real rlo, amrex::Real rhi
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_radial_shell_volume(amrex::Real rlo, amrex::Real rhi) noexcept
 {
-   return PyFluidFourPi * spherical_radial_shell_volume_scale(rlo, rhi);
+   return constants::four_pi * spherical_radial_shell_volume_scale(rlo, rhi);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -202,7 +203,7 @@ amrex::Real curvilinear_cell_volume_scale(
    amrex::ignore_unused(k);
    if (coordinate == MeshSpherical) {
       if (mesh_axis(axes, 1) == MeshAxisPhi) {
-         return generated::spherical_rphi_cell_volume_scale(radius.lo, radius.hi, PyFluidHalfPi, dx[1]);
+         return generated::spherical_rphi_cell_volume_scale(radius.lo, radius.hi, constants::half_pi, dx[1]);
       }
       const MeshAxisCellBounds theta = runtime_axis_cell_bounds(axes, MeshAxisTheta, problo, dx, i, j, k);
       return generated::spherical_rtheta_cell_volume_scale(radius.lo, radius.hi, theta.lo, theta.hi);
@@ -299,7 +300,7 @@ amrex::Real curvilinear_face_area_scale(
       amrex::ignore_unused(k);
       if (coordinate == MeshSpherical) {
          if (mesh_axis(axes, 1) == MeshAxisPhi) {
-            return generated::spherical_rphi_radial_face_area_scale(r, PyFluidHalfPi, dx[1]);
+            return generated::spherical_rphi_radial_face_area_scale(r, constants::half_pi, dx[1]);
          }
          const MeshAxisCellBounds theta = runtime_axis_cell_bounds(axes, MeshAxisTheta, problo, dx, i, j, k);
          return generated::spherical_rtheta_radial_face_area_scale(r, theta.lo, theta.hi);
@@ -1057,7 +1058,7 @@ amrex::Real mesh_cell_volume_for_reduction(
       if (mesh_axis(axes, 1) == MeshAxisPhi) {
          return generated::cylindrical_rphiz_cell_volume_scale(radius.lo, radius.hi, 1.0, dx[1]);
       }
-      return PyFluidTwoPi * cylindrical_radial_shell_volume_scale(radius.lo, radius.hi) * dx[1];
+      return constants::two_pi * cylindrical_radial_shell_volume_scale(radius.lo, radius.hi) * dx[1];
    }
    if (coordinate == MeshSpherical) {
       if (!mesh_has_axis(axes, MeshAxisR)) {
@@ -1065,10 +1066,10 @@ amrex::Real mesh_cell_volume_for_reduction(
       }
       const MeshAxisCellBounds radius = runtime_axis_cell_bounds(axes, MeshAxisR, problo, dx, i, j, k);
       if (mesh_axis(axes, 1) == MeshAxisPhi) {
-         return generated::spherical_rphi_cell_volume_scale(radius.lo, radius.hi, PyFluidHalfPi, dx[1]);
+         return generated::spherical_rphi_cell_volume_scale(radius.lo, radius.hi, constants::half_pi, dx[1]);
       }
       const MeshAxisCellBounds theta = runtime_axis_cell_bounds(axes, MeshAxisTheta, problo, dx, i, j, k);
-      return PyFluidTwoPi * spherical_radial_shell_volume_scale(radius.lo, radius.hi)
+      return constants::two_pi * spherical_radial_shell_volume_scale(radius.lo, radius.hi)
          * spherical_polar_weight(theta.lo, theta.hi);
    }
 #else

@@ -5,6 +5,7 @@
 #include <AMReX_REAL.H>
 
 #include <cmath>
+#include <array>
 
 #include "pyfluid_amrex/kernels_generated/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
@@ -13,14 +14,41 @@
 
 namespace pyfluid_amrex {
 
+inline constexpr int MaxPolytropeSegments = 8;
+
 struct EOSParams {
    amrex::Real gamma = 5.0 / 3.0;
-   amrex::Real polytropic_k = 1.0;
-   amrex::Real polytropic_gamma = 5.0 / 3.0;
    amrex::Real thermal_gamma = 5.0 / 3.0;
    amrex::Real rho_floor = 1.0e-12;
    amrex::Real pressure_floor = 1.0e-12;
+   int polytrope_segments = 1;
+   std::array<amrex::Real, MaxPolytropeSegments> segment_k{{1.0}};
+   std::array<amrex::Real, MaxPolytropeSegments> segment_gamma{{5.0 / 3.0}};
+   std::array<amrex::Real, MaxPolytropeSegments> segment_energy_offset{};
+   std::array<amrex::Real, MaxPolytropeSegments - 1> segment_density_break{};
 };
+
+struct PolytropeSegment {
+   amrex::Real k;
+   amrex::Real gamma;
+   amrex::Real energy_offset;
+};
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+PolytropeSegment polytrope_segment(amrex::Real rho, EOSParams const& eos) noexcept
+{
+   int segment = 0;
+   for (int boundary = 0; boundary < eos.polytrope_segments - 1; ++boundary) {
+      if (rho >= eos.segment_density_break[boundary]) {
+         segment = boundary + 1;
+      }
+   }
+   return {
+      eos.segment_k[segment],
+      eos.segment_gamma[segment],
+      eos.segment_energy_offset[segment],
+   };
+}
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real kinetic_energy_density(amrex::Real rho, StateVector3 const& velocity) noexcept
@@ -50,10 +78,11 @@ amrex::Real eos_cold_pressure(amrex::Real rho, EOSParams const& eos) noexcept
       static_cast<void>(eos);
       return 0.0;
    } else {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
       return generated::polytrope_cold_pressure(
          rho,
-         eos.polytropic_k,
-         eos.polytropic_gamma
+         segment.k,
+         segment.gamma
       );
    }
 }
@@ -67,10 +96,12 @@ amrex::Real eos_cold_energy_density(amrex::Real rho, EOSParams const& eos) noexc
       static_cast<void>(eos);
       return 0.0;
    } else {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
       return generated::polytrope_cold_energy_density(
          rho,
-         eos.polytropic_k,
-         eos.polytropic_gamma
+         segment.k,
+         segment.gamma,
+         segment.energy_offset
       );
    }
 }
@@ -87,12 +118,14 @@ amrex::Real eos_internal_energy_density_from_pressure(
       static_cast<void>(pressure);
       return eos_cold_energy_density<EOSMethod>(rho, eos);
    } else if constexpr (EOSMethod == EOSHybridPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
       return generated::hybrid_polytrope_internal_energy_density_from_pressure(
          rho,
          pressure,
-         eos.polytropic_k,
-         eos.polytropic_gamma,
-         eos.thermal_gamma
+         segment.k,
+         segment.gamma,
+         eos.thermal_gamma,
+         segment.energy_offset
       );
    } else {
       static_cast<void>(rho);
@@ -115,12 +148,14 @@ amrex::Real eos_pressure_from_density_energy(
       static_cast<void>(internal_energy_density);
       return eos_cold_pressure<EOSMethod>(rho, eos);
    } else if constexpr (EOSMethod == EOSHybridPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
       return generated::hybrid_polytrope_pressure_from_density_energy(
          rho,
          internal_energy_density,
-         eos.polytropic_k,
-         eos.polytropic_gamma,
-         eos.thermal_gamma
+         segment.k,
+         segment.gamma,
+         eos.thermal_gamma,
+         segment.energy_offset
       );
    } else {
       return generated::ideal_gas_pressure_from_density_energy(
@@ -152,17 +187,19 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real eos_sound_speed_from_primitive(amrex::Real rho, amrex::Real pressure, EOSParams const& eos) noexcept
 {
    if constexpr (EOSMethod == EOSPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
       return std::sqrt(generated::polytrope_sound_speed_squared(
          rho,
-         eos.polytropic_k,
-         eos.polytropic_gamma
+         segment.k,
+         segment.gamma
       ));
    } else if constexpr (EOSMethod == EOSHybridPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
       return std::sqrt(generated::hybrid_polytrope_sound_speed_squared(
          rho,
          pressure,
-         eos.polytropic_k,
-         eos.polytropic_gamma,
+         segment.k,
+         segment.gamma,
          eos.thermal_gamma
       ));
    } else {
@@ -171,6 +208,115 @@ amrex::Real eos_sound_speed_from_primitive(amrex::Real rho, amrex::Real pressure
          pressure,
          eos.gamma
       ));
+   }
+}
+
+template <int EOSMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real relativistic_specific_internal_energy_from_pressure(
+   amrex::Real rho,
+   amrex::Real pressure,
+   EOSParams const& eos
+) noexcept
+{
+   return eos_internal_energy_density_from_pressure<EOSMethod>(rho, pressure, eos) / rho;
+}
+
+template <int EOSMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real relativistic_pressure(
+   amrex::Real rho,
+   amrex::Real specific_internal_energy,
+   EOSParams const& eos
+) noexcept
+{
+   if constexpr (EOSMethod == EOSPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
+      return generated::relativistic_polytrope_pressure(
+         rho,
+         segment.k,
+         segment.gamma
+      );
+   } else if constexpr (EOSMethod == EOSHybridPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
+      return generated::relativistic_hybrid_polytrope_pressure(
+         rho,
+         specific_internal_energy,
+         segment.k,
+         segment.gamma,
+         eos.thermal_gamma,
+         segment.energy_offset
+      );
+   } else {
+      return generated::relativistic_ideal_gas_pressure(
+         rho, specific_internal_energy, eos.gamma
+      );
+   }
+}
+
+template <int EOSMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real relativistic_specific_enthalpy(
+   amrex::Real rho,
+   amrex::Real specific_internal_energy,
+   EOSParams const& eos
+) noexcept
+{
+   if constexpr (EOSMethod == EOSPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
+      return generated::relativistic_polytrope_specific_enthalpy(
+         rho,
+         specific_internal_energy,
+         segment.k,
+         segment.gamma
+      );
+   } else if constexpr (EOSMethod == EOSHybridPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
+      return generated::relativistic_hybrid_polytrope_specific_enthalpy(
+         rho,
+         specific_internal_energy,
+         segment.k,
+         segment.gamma,
+         eos.thermal_gamma,
+         segment.energy_offset
+      );
+   } else {
+      return generated::relativistic_ideal_gas_specific_enthalpy(
+         specific_internal_energy, eos.gamma
+      );
+   }
+}
+
+template <int EOSMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real relativistic_sound_speed_squared(
+   amrex::Real rho,
+   amrex::Real specific_internal_energy,
+   EOSParams const& eos
+) noexcept
+{
+   if constexpr (EOSMethod == EOSPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
+      return generated::relativistic_polytrope_sound_speed_squared(
+         rho,
+         specific_internal_energy,
+         segment.k,
+         segment.gamma
+      );
+   } else if constexpr (EOSMethod == EOSHybridPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
+      return generated::relativistic_hybrid_polytrope_sound_speed_squared(
+         rho,
+         specific_internal_energy,
+         segment.k,
+         segment.gamma,
+         eos.thermal_gamma,
+         segment.energy_offset
+      );
+   } else {
+      return generated::relativistic_ideal_gas_sound_speed_squared(
+         specific_internal_energy, eos.gamma
+      );
    }
 }
 
@@ -555,8 +701,22 @@ amrex::Real fluid_sound_speed_from_primitive_runtime(
 ) noexcept
 {
    if (physical_system_is_relativistic(system)) {
-      const amrex::Real eps = pressure / ((eos.gamma - 1.0) * rho);
-      return std::sqrt(generated::relativistic_ideal_gas_sound_speed_squared(eps, eos.gamma));
+      if (eos_method == EOSPolytrope) {
+         const amrex::Real eps = relativistic_specific_internal_energy_from_pressure<
+            EOSPolytrope
+         >(rho, pressure, eos);
+         return std::sqrt(relativistic_sound_speed_squared<EOSPolytrope>(rho, eps, eos));
+      }
+      if (eos_method == EOSHybridPolytrope) {
+         const amrex::Real eps = relativistic_specific_internal_energy_from_pressure<
+            EOSHybridPolytrope
+         >(rho, pressure, eos);
+         return std::sqrt(relativistic_sound_speed_squared<EOSHybridPolytrope>(rho, eps, eos));
+      }
+      const amrex::Real eps = relativistic_specific_internal_energy_from_pressure<
+         EOSIdealGas
+      >(rho, pressure, eos);
+      return std::sqrt(relativistic_sound_speed_squared<EOSIdealGas>(rho, eps, eos));
    }
    return sound_speed_from_primitive_runtime(eos_method, rho, pressure, eos);
 }

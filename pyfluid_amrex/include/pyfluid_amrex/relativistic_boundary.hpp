@@ -10,6 +10,7 @@
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/state.hpp"
+#include "pyfluid_amrex/z4c_pointwise.hpp"
 
 namespace pyfluid_amrex {
 
@@ -20,19 +21,44 @@ bool metric_boundary_reflects(int kind) noexcept
       || kind == static_cast<int>(BoundaryKind::Symmetry);
 }
 
-template <PhysicalSystem System>
-inline void apply_fixed_metric_state_boundary(
+struct FixedSpacetimeCellMetricAccessor {
+   FixedSpacetimeParameters spacetime;
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> lower;
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacing;
+   amrex::Real time = 0.0;
+
+   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+   SpacetimeMetric operator()(int i, int j, int k) const noexcept
+   {
+      return fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
+         spacetime, lower, spacing, i, j, k, time
+      ).metric;
+   }
+};
+
+struct EvolvedSpacetimeCellMetricAccessor {
+   amrex::Array4<amrex::Real const> spacetime;
+
+   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+   SpacetimeMetric operator()(int i, int j, int k) const noexcept
+   {
+      return generated::z4c_spacetime_metric(
+         load_z4c_state(spacetime, i, j, k)
+      );
+   }
+};
+
+template <PhysicalSystem System, int EOSMethod, typename MetricAccessorFactory>
+inline void apply_metric_state_boundary(
    amrex::MultiFab& state,
    const amrex::Geometry& geometry,
    const BoundaryData& boundary,
-   const FixedSpacetimeParameters& spacetime,
    const EOSParams& eos,
-   amrex::Real time
+   MetricAccessorFactory&& metric_accessor_factory
 )
 {
    static_assert(System == PhysicalSystem::RHD || System == PhysicalSystem::RMHD);
-   if (spacetime.metric == FixedSpacetimeMetric::Minkowski
-       || boundary_data_all_periodic(boundary)) {
+   if (boundary_data_all_periodic(boundary)) {
       return;
    }
 
@@ -55,6 +81,7 @@ inline void apply_fixed_metric_state_boundary(
       const amrex::BoxList ghost_boxes = amrex::boxDiff(grown, domain);
       const auto values = state.array(mfi);
       const auto source_values = state.const_array(mfi);
+      const auto metric_at = metric_accessor_factory(mfi);
       for (const amrex::Box& box : ghost_boxes) {
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const bool xlo = !periodic[0] && i < lo.x;
@@ -111,14 +138,10 @@ inline void apply_fixed_metric_state_boundary(
 #else
             const int source_k = 0;
 #endif
-            const FixedSpacetimeGeometry source_geometry =
-               fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
-                  spacetime, lower, spacing, source_i, source_j, source_k, time
-               );
-            const FixedSpacetimeGeometry ghost_geometry =
-               fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
-                  spacetime, lower, spacing, i, j, k, time
-               );
+            const SpacetimeMetric source_metric = metric_at(
+               source_i, source_j, source_k
+            );
+            const SpacetimeMetric ghost_metric = metric_at(i, j, k);
             const int inflow_direction = cell_inflow_boundary_dir(
                boundary, domain, i, j, k
             );
@@ -160,17 +183,19 @@ inline void apply_fixed_metric_state_boundary(
                if (inflow_direction >= 0) {
                   primitive = {
                      inflow_rho,
-                     inflow_pressure / ((eos.gamma - 1.0) * inflow_rho),
+                     relativistic_specific_internal_energy_from_pressure<EOSMethod>(
+                        inflow_rho, inflow_pressure, eos
+                     ),
                      inflow_pressure,
                      inflow_v1,
                      inflow_v2,
                      inflow_v3,
                   };
                } else {
-                  primitive = recover_srhd_palenzuela_1d(
+                  primitive = recover_rhd<EOSMethod>(
                      load_rhd_conserved(source_values, source_i, source_j, source_k),
-                     source_geometry.metric,
-                     eos.gamma
+                     source_metric,
+                     eos
                   ).primitive;
                }
                if (x_reflect) primitive.v1 = -primitive.v1;
@@ -194,7 +219,7 @@ inline void apply_fixed_metric_state_boundary(
                   j,
                   k,
                   generated::rhd_primitive_to_conserved(
-                     primitive, ghost_geometry.metric
+                     primitive, ghost_metric
                   )
                );
             } else {
@@ -223,7 +248,7 @@ inline void apply_fixed_metric_state_boundary(
                } else {
                   primitive = recover_srmhd(
                      load_rmhd_conserved(source_values, source_i, source_j, source_k),
-                     source_geometry.metric,
+                     source_metric,
                      eos.gamma
                   ).primitive;
                }
@@ -260,13 +285,63 @@ inline void apply_fixed_metric_state_boundary(
                   j,
                   k,
                   generated::rmhd_primitive_to_conserved(
-                     primitive, ghost_geometry.metric
+                     primitive, ghost_metric
                   )
                );
             }
          });
       }
    }
+}
+
+template <PhysicalSystem System, int EOSMethod>
+inline void apply_fixed_metric_state_boundary(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geometry,
+   BoundaryData const& boundary,
+   FixedSpacetimeParameters const& spacetime,
+   EOSParams const& eos,
+   amrex::Real time
+)
+{
+   if (spacetime.metric == FixedSpacetimeMetric::Minkowski) {
+      return;
+   }
+   const auto lower = geometry.ProbLoArray();
+   const auto spacing = geometry.CellSizeArray();
+   apply_metric_state_boundary<System, EOSMethod>(
+      state,
+      geometry,
+      boundary,
+      eos,
+      [=](amrex::MFIter const&) {
+         return FixedSpacetimeCellMetricAccessor{
+            spacetime, lower, spacing, time
+         };
+      }
+   );
+}
+
+template <PhysicalSystem System, int EOSMethod>
+inline void apply_evolved_metric_state_boundary(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geometry,
+   BoundaryData const& boundary,
+   EOSParams const& eos,
+   amrex::MultiFab const& cell_spacetime
+)
+{
+   apply_metric_state_boundary<System, EOSMethod>(
+      state,
+      geometry,
+      boundary,
+      eos,
+      [&](amrex::MFIter const& mfi) {
+         return EvolvedSpacetimeCellMetricAccessor{
+            cell_spacetime.const_array(mfi)
+         };
+      }
+   );
 }
 
 } // namespace pyfluid_amrex

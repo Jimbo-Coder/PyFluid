@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/coordinate_locations.hpp"
 #include "pyfluid_amrex/gravity.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
@@ -84,7 +85,7 @@ amrex::Real rotating_compact_heating_rate(
    amrex::Real shape = 0.0;
    for (int n = 0; n < mode; ++n) {
       const amrex::Real phase =
-         phase0 + angular_speed * time + PyFluidTwoPi * static_cast<amrex::Real>(n) / static_cast<amrex::Real>(mode);
+         phase0 + angular_speed * time + constants::two_pi * static_cast<amrex::Real>(n) / static_cast<amrex::Real>(mode);
       const amrex::Real center_x = source_radius * std::cos(phase);
       const amrex::Real center_y = source_radius * std::sin(phase);
       const amrex::Real delta_x = sample.physical.q1 - center_x;

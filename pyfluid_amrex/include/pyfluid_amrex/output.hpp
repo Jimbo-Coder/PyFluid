@@ -286,75 +286,10 @@ inline void write_plotfile(
    );
 }
 
-inline std::array<GridFieldCentering, 7> aux_output_centerings()
-{
-   return {
-      GridFieldCentering::Cell,
-      GridFieldCentering::Face1,
-      GridFieldCentering::Face2,
-      GridFieldCentering::Face3,
-      GridFieldCentering::Edge1,
-      GridFieldCentering::Edge2,
-      GridFieldCentering::Edge3,
-   };
-}
-
-inline amrex::IndexType grid_field_index_type(GridFieldCentering centering)
-{
-   if (centering == GridFieldCentering::Cell) {
-      return amrex::IndexType(amrex::IntVect(AMREX_D_DECL(0, 0, 0)));
-   }
-   if (centering == GridFieldCentering::Face1) {
-      return amrex::IndexType(amrex::IntVect::TheDimensionVector(0));
-   }
-#if (AMREX_SPACEDIM >= 2)
-   if (centering == GridFieldCentering::Face2) {
-      return amrex::IndexType(amrex::IntVect::TheDimensionVector(1));
-   }
-#endif
-#if (AMREX_SPACEDIM == 3)
-   if (centering == GridFieldCentering::Face3) {
-      return amrex::IndexType(amrex::IntVect::TheDimensionVector(2));
-   }
-#endif
-   if (centering == GridFieldCentering::Edge1) {
-      return edge_index_type(0);
-   }
-   if (centering == GridFieldCentering::Edge2) {
-      return edge_index_type(1);
-   }
-   if (centering == GridFieldCentering::Edge3) {
-      return edge_index_type(2);
-   }
-   amrex::Abort("unsupported grid-field centering for output");
-   return amrex::IndexType(amrex::IntVect(AMREX_D_DECL(0, 0, 0)));
-}
-
-inline std::string aux_plotfile_stem_suffix(GridFieldCentering centering)
-{
-   switch (centering) {
-   case GridFieldCentering::Cell:
-      return "";
-   case GridFieldCentering::Face1:
-      return "_face1";
-   case GridFieldCentering::Face2:
-      return "_face2";
-   case GridFieldCentering::Face3:
-      return "_face3";
-   case GridFieldCentering::Edge1:
-      return "_edge1";
-   case GridFieldCentering::Edge2:
-      return "_edge2";
-   case GridFieldCentering::Edge3:
-      return "_edge3";
-   }
-   return "_unknown";
-}
-
 inline bool aux_field_has_centering(AuxGridFieldInfo const& info, GridFieldCentering centering)
 {
-   for (int component = 0; component < info.components; ++component) {
-      if (info.centerings[component] == centering) {
+   for (GridFieldComponentInfo const& component : info.components) {
+      if (component.centering == centering) {
          return true;
       }
    }
@@ -367,10 +302,9 @@ inline amrex::Vector<std::string> aux_output_names(RunConfig const& cfg, GridFie
    for (std::string const& name : aux_gf_names(cfg)) {
       const AuxGridField field = aux_grid_field_from_name(name);
       const AuxGridFieldInfo info = aux_grid_field_info(field);
-      const auto component_names = aux_grid_field_output_names(field);
-      for (int component = 0; component < info.components; ++component) {
-         if (info.centerings[component] == centering) {
-            output_names.push_back(component_names[component]);
+      for (GridFieldComponentInfo const& component : info.components) {
+         if (component.centering == centering) {
+            output_names.emplace_back(component.name);
          }
       }
    }
@@ -382,8 +316,8 @@ inline int aux_output_component_count(RunConfig const& cfg, GridFieldCentering c
    int ncomp = 0;
    for (std::string const& name : aux_gf_names(cfg)) {
       const AuxGridFieldInfo info = aux_grid_field_info(aux_grid_field_from_name(name));
-      for (int component = 0; component < info.components; ++component) {
-         if (info.centerings[component] == centering) {
+      for (GridFieldComponentInfo const& component : info.components) {
+         if (component.centering == centering) {
             ++ncomp;
          }
       }
@@ -399,8 +333,8 @@ inline void copy_matching_aux_components(
    int& dst
 )
 {
-   for (int component = 0; component < info.components; ++component) {
-      if (info.centerings[component] == centering) {
+   for (int component = 0; component < static_cast<int>(info.components.size()); ++component) {
+      if (info.components[component].centering == centering) {
          amrex::MultiFab::Copy(output, source, component, dst, 1, 0);
          ++dst;
       }
@@ -471,8 +405,8 @@ inline void fill_aux_gf_output(
       switch (field) {
       case AuxGridField::CurrentDensity: {
          const EdgeElectricField& edge_j = edge_current_for_output();
-         for (int component = 0; component < info.components; ++component) {
-            if (info.centerings[component] == centering) {
+         for (int component = 0; component < static_cast<int>(info.components.size()); ++component) {
+            if (info.components[component].centering == centering) {
                if (!edge_j.e[component]) {
                   amrex::Abort("requested edge current-density output component is unavailable");
                }
@@ -484,8 +418,8 @@ inline void fill_aux_gf_output(
       }
       case AuxGridField::ElectricField: {
          const EdgeElectricField& edge_e = edge_electric_for_output();
-         for (int component = 0; component < info.components; ++component) {
-            if (info.centerings[component] == centering) {
+         for (int component = 0; component < static_cast<int>(info.components.size()); ++component) {
+            if (info.components[component].centering == centering) {
                if (!edge_e.e[component]) {
                   amrex::Abort("requested edge electric-field output component is unavailable");
                }
@@ -639,7 +573,7 @@ inline void write_aux_gf_plotfile(
 
    const std::filesystem::path plot_dir = std::filesystem::path(cfg.output_dir) / "auxGF";
    std::filesystem::create_directories(plot_dir);
-   for (GridFieldCentering centering : aux_output_centerings()) {
+   for (GridFieldCentering centering : grid_field_centerings()) {
       const int ncomp = aux_output_component_count(cfg, centering);
       if (ncomp == 0) {
          continue;
@@ -663,7 +597,7 @@ inline void write_aux_gf_plotfile(
          centering
       );
 
-      const std::string stem = (plot_dir / ("auxGF" + aux_plotfile_stem_suffix(centering))).string();
+      const std::string stem = (plot_dir / ("auxGF" + grid_field_stem_suffix(centering))).string();
       write_output_gf(
          output,
          stem,
@@ -703,7 +637,7 @@ inline void write_multilevel_aux_gf_plotfile(
 
    const std::filesystem::path plot_dir = std::filesystem::path(cfg.output_dir) / "auxGF";
    std::filesystem::create_directories(plot_dir);
-   for (GridFieldCentering centering : aux_output_centerings()) {
+   for (GridFieldCentering centering : grid_field_centerings()) {
       const int ncomp = aux_output_component_count(cfg, centering);
       if (ncomp == 0) {
          continue;
@@ -744,7 +678,7 @@ inline void write_multilevel_aux_gf_plotfile(
          levels[lev] = output[lev].get();
       }
 
-   const std::string stem = (plot_dir / ("auxGF" + aux_plotfile_stem_suffix(centering))).string();
+   const std::string stem = (plot_dir / ("auxGF" + grid_field_stem_suffix(centering))).string();
    write_output_gf(
       finest_level,
       output,

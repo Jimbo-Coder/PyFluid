@@ -2,6 +2,7 @@
 
 #include <AMReX_BoxArray.H>
 #include <AMReX_Geometry.H>
+#include <AMReX_IndexType.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_Vector.H>
 
@@ -15,6 +16,12 @@
 
 namespace pyfluid_amrex {
 
+struct CheckpointFieldInfo {
+   std::string name;
+   int num_components = 0;
+   amrex::IndexType index_type;
+};
+
 struct CheckpointHeader {
    int finest_level = 0;
    int state_components = 0;
@@ -26,6 +33,12 @@ struct CheckpointHeader {
    amrex::Vector<amrex::Real> dt;
    amrex::Vector<amrex::Real> time;
    amrex::Vector<amrex::BoxArray> box_arrays;
+   std::vector<CheckpointFieldInfo> fields;
+};
+
+struct CheckpointFieldSet {
+   std::string name;
+   std::vector<std::unique_ptr<amrex::MultiFab>> const* levels = nullptr;
 };
 
 void write_checkpoint(
@@ -40,6 +53,7 @@ void write_checkpoint(
    int step,
    RunConfig const& cfg = RunConfig{},
    std::vector<FaceMagneticField> const* face_b = nullptr,
+   std::vector<CheckpointFieldSet> const& extra_fields = {},
    amrex::Real reference_mass = std::numeric_limits<amrex::Real>::quiet_NaN(),
    amrex::Real reference_energy = std::numeric_limits<amrex::Real>::quiet_NaN(),
    amrex::Long aligned_regrid_ticks = 0,

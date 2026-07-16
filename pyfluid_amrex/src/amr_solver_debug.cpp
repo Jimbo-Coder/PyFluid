@@ -258,11 +258,11 @@ void AmrSolverBase::abort_bad_physical_state(
 
 void AmrSolverBase::debug_check_rhs_level(int lev, char const* context) const
 {
-   if (!cfg_.debug_check_finite || !rhs_[lev]) {
+   if (!cfg_.debug_check_finite || !fluid_state_.rhs()[lev]) {
       return;
    }
    amrex::iMultiFab mask = valid_cell_mask(lev);
-   debug_check_valid_cell_finite(*rhs_[lev], mask, num_state_components(), context, lev);
+   debug_check_valid_cell_finite(*fluid_state_.rhs()[lev], mask, num_state_components(), context, lev);
 }
 
 void AmrSolverBase::debug_check_fluxes(int lev, bool solid_masked, char const* context) const

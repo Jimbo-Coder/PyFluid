@@ -28,8 +28,8 @@ void AmrSolverBase::define_flux_registers(int first_fine_level)
       prepare_weighted_flux_register(lev);
       if (gravity_energy_source_register_needed(lev)) {
          gravity_energy_source_register_[lev] = std::make_unique<amrex::MultiFab>(
-            state_[lev - 1]->boxArray(),
-            state_[lev - 1]->DistributionMap(),
+            fluid_state_.state()[lev - 1]->boxArray(),
+            fluid_state_.state()[lev - 1]->DistributionMap(),
             1,
             0
          );
@@ -98,20 +98,19 @@ void AmrSolverBase::allocate_level(
    invalidate_rk4_stage_cache(lev);
    enforce_projected_cell_budget(lev, ba.numPts(), "allocating AMR level");
    const int ncomp = num_state_components();
-   state_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, ncomp, cfg_.ng);
-   old_state_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, ncomp, cfg_.ng);
-   if (uses_subcycled_self_gravity_source_state()) {
-      source_state_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, ncomp, cfg_.ng);
+   fluid_state_.allocate_level(
+      lev,
+      ba,
+      dm,
+      uses_subcycled_self_gravity_source_state(),
+      needs_rk4_subcycling_stage_data()
+   );
+   if (spacetime_state_.active()) {
+      spacetime_state_.allocate_level(
+         lev, ba, dm, false, needs_rk4_subcycling_stage_data()
+      );
+      spacetime_coupling_.allocate_level(lev, ba, dm);
    }
-   if (needs_rk4_subcycling_stage_data()) {
-      rk4_coarse_stage_state_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, ncomp, cfg_.ng);
-      for (auto& stage : rk4_rhs_stage_) {
-         stage[lev] = std::make_unique<amrex::MultiFab>(ba, dm, ncomp, 0);
-      }
-   }
-   next_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, ncomp, cfg_.ng);
-   scratch_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, ncomp, cfg_.ng);
-   rhs_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, ncomp, 0);
    primitive_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, ncomp, cfg_.ng);
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       const amrex::BoxArray flux_ba = amrex::convert(ba, amrex::IntVect::TheDimensionVector(dir));
@@ -288,7 +287,10 @@ void AmrSolverBase::MakeNewLevelFromScratch(
    SetDistributionMap(lev, work_dm);
    allocate_level(lev, level_ba, work_dm, time);
    set_level_time_state(lev, time, 0.0);
-   initialize_state(*state_[lev], Geom(lev), cfg_);
+   initialize_state(
+      *fluid_state_.state()[lev], Geom(lev), cfg_, tov_initial_data_.view()
+   );
+   initialize_spacetime_level(lev, time);
    if (time == 0.0) {
       initialize_ct_fields(lev, time);
    } else {
@@ -313,10 +315,13 @@ void AmrSolverBase::MakeNewLevelFromCoarse(
    allocate_level(lev, level_ba, work_dm, time);
    set_level_time_state(lev, time, 0.0);
    if (time == 0.0) {
-      initialize_state(*state_[lev], Geom(lev), cfg_);
+      initialize_state(
+         *fluid_state_.state()[lev], Geom(lev), cfg_, tov_initial_data_.view()
+      );
    } else {
       fill_new_level_from_coarse_state(lev, time);
    }
+   fill_new_spacetime_level_from_coarse(lev, time);
    if (time == 0.0) {
       initialize_ct_fields(lev, time);
    } else {
@@ -333,7 +338,11 @@ void AmrSolverBase::RemakeLevel(
 )
 {
    mark_regrid_level_modified(lev);
-   std::unique_ptr<amrex::MultiFab> old_state = std::move(state_[lev]);
+   std::unique_ptr<amrex::MultiFab> old_state = std::move(fluid_state_.state()[lev]);
+   std::unique_ptr<amrex::MultiFab> old_spacetime;
+   if (spacetime_state_.active()) {
+      old_spacetime = std::move(spacetime_state_.state()[lev]);
+   }
    FaceMagneticField old_face_b;
    if (ct_enabled(cfg_)) {
       old_face_b = std::move(face_b_[lev]);
@@ -346,6 +355,9 @@ void AmrSolverBase::RemakeLevel(
    allocate_level(lev, level_ba, work_dm, time);
    set_level_time_state(lev, time, 0.0);
    fill_remade_level_state(lev, time, *old_state);
+   if (old_spacetime) {
+      fill_remade_spacetime_level(lev, time, *old_spacetime);
+   }
    initialize_remade_ct_fields(lev, time, old_face_b);
    copy_level_state_to_old(lev);
 }
@@ -353,16 +365,9 @@ void AmrSolverBase::RemakeLevel(
 void AmrSolverBase::ClearLevel(int lev)
 {
    mark_regrid_level_modified(lev);
-   state_[lev].reset();
-   old_state_[lev].reset();
-   source_state_[lev].reset();
-   rk4_coarse_stage_state_[lev].reset();
-   for (auto& stage : rk4_rhs_stage_) {
-      stage[lev].reset();
-   }
-   next_[lev].reset();
-   scratch_[lev].reset();
-   rhs_[lev].reset();
+   fluid_state_.clear_level(lev);
+   spacetime_state_.clear_level(lev);
+   spacetime_coupling_.clear_level(lev);
    primitive_[lev].reset();
    for (auto& flux : fluxes_[lev]) {
       flux.reset();

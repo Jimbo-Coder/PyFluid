@@ -22,9 +22,11 @@
 #include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
 #include "pyfluid_amrex/state.hpp"
+#include "pyfluid_amrex/z4c_pointwise.hpp"
 
 namespace pyfluid_amrex {
 
+template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real rhd_signal_frequency_cell(
    amrex::Array4<amrex::Real const> const& state,
@@ -43,30 +45,33 @@ amrex::Real rhd_signal_frequency_cell(
       state(i, j, k, MOM3),
       state(i, j, k, ENERGY),
    };
-   const RHDRecoveryResult recovered = recover_srhd_palenzuela_1d(
-      conserved, metric, eos.gamma
+   const RHDRecoveryResult recovered = recover_rhd<EOSMethod>(
+      conserved, metric, eos
    );
    if (recovered.attempt.status != C2PStatus::Success) {
       return std::numeric_limits<amrex::Real>::infinity();
    }
    const RHDPrimitive& primitive = recovered.primitive;
-   const RHDWaveSpeeds speed1 = generated::srhd_wave_speeds<0>(
-      primitive, metric, eos.gamma
+   const amrex::Real sound_speed_squared = relativistic_sound_speed_squared<EOSMethod>(
+      primitive.rho, primitive.eps, eos
+   );
+   const RHDWaveSpeeds speed1 = generated::rhd_wave_speeds<0>(
+      primitive, metric, sound_speed_squared
    );
    amrex::Real frequency = amrex::max(
       amrex::Math::abs(speed1.minus), amrex::Math::abs(speed1.plus)
    ) / dx[0];
 #if (AMREX_SPACEDIM >= 2)
-   const RHDWaveSpeeds speed2 = generated::srhd_wave_speeds<1>(
-      primitive, metric, eos.gamma
+   const RHDWaveSpeeds speed2 = generated::rhd_wave_speeds<1>(
+      primitive, metric, sound_speed_squared
    );
    frequency += amrex::max(
       amrex::Math::abs(speed2.minus), amrex::Math::abs(speed2.plus)
    ) / dx[1];
 #endif
 #if (AMREX_SPACEDIM == 3)
-   const RHDWaveSpeeds speed3 = generated::srhd_wave_speeds<2>(
-      primitive, metric, eos.gamma
+   const RHDWaveSpeeds speed3 = generated::rhd_wave_speeds<2>(
+      primitive, metric, sound_speed_squared
    );
    frequency += amrex::max(
       amrex::Math::abs(speed3.minus), amrex::Math::abs(speed3.plus)
@@ -75,6 +80,7 @@ amrex::Real rhd_signal_frequency_cell(
    return frequency;
 }
 
+template <int EOSMethod>
 inline void fill_rhd_signal_frequency(
    amrex::MultiFab& frequency,
    const amrex::MultiFab& state,
@@ -98,8 +104,40 @@ inline void fill_rhd_signal_frequency(
             fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
                spacetime, lower, dx, i, j, k, time
             );
-         cell_frequency(i, j, k, 0) = rhd_signal_frequency_cell(
+         cell_frequency(i, j, k, 0) = rhd_signal_frequency_cell<EOSMethod>(
             conserved, i, j, k, dx, eos, local_geometry.metric
+         );
+      });
+   }
+}
+
+template <int EOSMethod>
+inline void fill_rhd_signal_frequency(
+   amrex::MultiFab& frequency,
+   amrex::MultiFab const& state,
+   amrex::Geometry const& geom,
+   EOSParams const& eos,
+   amrex::MultiFab const& cell_spacetime
+)
+{
+   const auto dx = geom.CellSizeArray();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.tilebox();
+      const auto conserved = state.const_array(mfi);
+      const auto spacetime = cell_spacetime.const_array(mfi);
+      const auto cell_frequency = frequency.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         cell_frequency(i, j, k, 0) = rhd_signal_frequency_cell<EOSMethod>(
+            conserved,
+            i,
+            j,
+            k,
+            dx,
+            eos,
+            generated::z4c_spacetime_metric(load_z4c_state(spacetime, i, j, k))
          );
       });
    }
@@ -173,6 +211,37 @@ inline void fill_rmhd_signal_frequency(
             );
          cell_frequency(i, j, k, 0) = rmhd_signal_frequency_cell(
             conserved, i, j, k, dx, eos, local_geometry.metric
+         );
+      });
+   }
+}
+
+inline void fill_rmhd_signal_frequency(
+   amrex::MultiFab& frequency,
+   amrex::MultiFab const& state,
+   amrex::Geometry const& geom,
+   EOSParams const& eos,
+   amrex::MultiFab const& cell_spacetime
+)
+{
+   const auto dx = geom.CellSizeArray();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.tilebox();
+      const auto conserved = state.const_array(mfi);
+      const auto spacetime = cell_spacetime.const_array(mfi);
+      const auto cell_frequency = frequency.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         cell_frequency(i, j, k, 0) = rmhd_signal_frequency_cell(
+            conserved,
+            i,
+            j,
+            k,
+            dx,
+            eos,
+            generated::z4c_spacetime_metric(load_z4c_state(spacetime, i, j, k))
          );
       });
    }
@@ -787,18 +856,27 @@ inline amrex::Real adaptive_dt(
    amrex::MultiFab const& state,
    amrex::Geometry const& geom,
    RunConfig const& cfg,
-   amrex::Real time
+   amrex::Real time,
+   amrex::MultiFab const* evolved_spacetime = nullptr
 )
 {
    const EOSParams eos = eos_params(cfg);
    if (physical_system(cfg) == PhysicalSystem::RHD) {
-      fill_rhd_signal_frequency(
-         frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
-      );
+      if (evolved_spacetime != nullptr) {
+         fill_rhd_signal_frequency<EOSMethod>(frequency, state, geom, eos, *evolved_spacetime);
+      } else {
+         fill_rhd_signal_frequency<EOSMethod>(
+            frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
+         );
+      }
    } else if (physical_system(cfg) == PhysicalSystem::RMHD) {
-      fill_rmhd_signal_frequency(
-         frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
-      );
+      if (evolved_spacetime != nullptr) {
+         fill_rmhd_signal_frequency(frequency, state, geom, eos, *evolved_spacetime);
+      } else {
+         fill_rmhd_signal_frequency(
+            frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
+         );
+      }
    } else if constexpr (has_mhd_components<NComp>()) {
       fill_mhd_signal_frequency<EOSMethod>(frequency, state, geom, cfg, eos);
    } else {

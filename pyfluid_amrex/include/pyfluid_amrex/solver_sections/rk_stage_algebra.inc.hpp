@@ -141,12 +141,8 @@
    template <int NComp>
    void store_rk4_rhs_stage(int stage_index, int lev_begin, int lev_end)
    {
-      for (int lev = lev_begin; lev < lev_end; ++lev) {
-         if (!rk4_rhs_stage_[stage_index][lev]) {
-            amrex::Abort("RK4 subcycling requires allocated stage-RHS storage");
-         }
-         amrex::MultiFab::Copy(*rk4_rhs_stage_[stage_index][lev], *rhs_[lev], 0, 0, NComp, 0);
-      }
+      static_assert(NComp > 0);
+      fluid_state_.store_rk4_rhs_stage(stage_index, lev_begin, lev_end);
    }
 
    template <int NComp>
@@ -356,4 +352,210 @@
          0,
          finestLevel() + 1
       );
+   }
+
+   template <int NComp>
+   void evolution_copy_plus_scaled_range(
+      EvolutionStageSlot output_slot,
+      EvolutionStageSlot base_slot,
+      amrex::Real scale,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      copy_plus_scaled_range<NComp>(
+         fluid_state_.stage(output_slot),
+         fluid_state_.stage(base_slot),
+         fluid_state_.rhs(),
+         scale,
+         lev_begin,
+         lev_end
+      );
+      if (spacetime_state_.active()) {
+         spacetime_state_.linear_combination(
+            spacetime_state_.stage(output_slot),
+            1.0,
+            spacetime_state_.stage(base_slot),
+            scale,
+            spacetime_state_.rhs(),
+            lev_begin,
+            lev_end
+         );
+      }
+   }
+
+   template <int NComp>
+   void evolution_linear_combination_plus_scaled_range(
+      EvolutionStageSlot output_slot,
+      EvolutionStageSlot base_slot,
+      EvolutionStageSlot input_slot,
+      amrex::Real base_weight,
+      amrex::Real input_weight,
+      amrex::Real increment_scale,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      linear_combination_plus_scaled_range<NComp>(
+         fluid_state_.stage(output_slot),
+         fluid_state_.stage(base_slot),
+         fluid_state_.stage(input_slot),
+         fluid_state_.rhs(),
+         base_weight,
+         input_weight,
+         increment_scale,
+         lev_begin,
+         lev_end
+      );
+      if (spacetime_state_.active()) {
+         spacetime_state_.linear_combination(
+            spacetime_state_.stage(output_slot),
+            base_weight,
+            spacetime_state_.stage(base_slot),
+            input_weight,
+            spacetime_state_.stage(input_slot),
+            lev_begin,
+            lev_end
+         );
+         spacetime_state_.add_scaled(
+            spacetime_state_.stage(output_slot),
+            increment_scale,
+            spacetime_state_.rhs(),
+            lev_begin,
+            lev_end
+         );
+      }
+   }
+
+   template <int NComp>
+   void evolution_copy_two_plus_scaled_range(
+      EvolutionStageSlot output_a_slot,
+      EvolutionStageSlot output_b_slot,
+      EvolutionStageSlot base_slot,
+      amrex::Real scale_a,
+      amrex::Real scale_b,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      copy_two_plus_scaled_range<NComp>(
+         fluid_state_.stage(output_a_slot),
+         fluid_state_.stage(output_b_slot),
+         fluid_state_.stage(base_slot),
+         fluid_state_.rhs(),
+         scale_a,
+         scale_b,
+         lev_begin,
+         lev_end
+      );
+      if (spacetime_state_.active()) {
+         spacetime_state_.linear_combination(
+            spacetime_state_.stage(output_a_slot),
+            1.0,
+            spacetime_state_.stage(base_slot),
+            scale_a,
+            spacetime_state_.rhs(),
+            lev_begin,
+            lev_end
+         );
+         spacetime_state_.linear_combination(
+            spacetime_state_.stage(output_b_slot),
+            1.0,
+            spacetime_state_.stage(base_slot),
+            scale_b,
+            spacetime_state_.rhs(),
+            lev_begin,
+            lev_end
+         );
+      }
+   }
+
+   template <int NComp>
+   void evolution_add_scaled_and_copy_plus_scaled_range(
+      EvolutionStageSlot accumulator_slot,
+      EvolutionStageSlot scratch_slot,
+      EvolutionStageSlot base_slot,
+      amrex::Real accumulator_scale,
+      amrex::Real scratch_scale,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      add_scaled_and_copy_plus_scaled_range<NComp>(
+         fluid_state_.stage(accumulator_slot),
+         fluid_state_.stage(scratch_slot),
+         fluid_state_.stage(base_slot),
+         fluid_state_.rhs(),
+         accumulator_scale,
+         scratch_scale,
+         lev_begin,
+         lev_end
+      );
+      if (spacetime_state_.active()) {
+         spacetime_state_.add_scaled(
+            spacetime_state_.stage(accumulator_slot),
+            accumulator_scale,
+            spacetime_state_.rhs(),
+            lev_begin,
+            lev_end
+         );
+         spacetime_state_.linear_combination(
+            spacetime_state_.stage(scratch_slot),
+            1.0,
+            spacetime_state_.stage(base_slot),
+            scratch_scale,
+            spacetime_state_.rhs(),
+            lev_begin,
+            lev_end
+         );
+      }
+   }
+
+   template <int NComp>
+   void evolution_add_scaled_range(
+      EvolutionStageSlot output_slot,
+      amrex::Real scale,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      add_scaled_range<NComp>(
+         fluid_state_.stage(output_slot),
+         fluid_state_.rhs(),
+         scale,
+         lev_begin,
+         lev_end
+      );
+      if (spacetime_state_.active()) {
+         spacetime_state_.add_scaled(
+            spacetime_state_.stage(output_slot),
+            scale,
+            spacetime_state_.rhs(),
+            lev_begin,
+            lev_end
+         );
+      }
+   }
+
+   void evolution_copy_range(
+      EvolutionStageSlot output_slot,
+      EvolutionStageSlot input_slot,
+      int lev_begin,
+      int lev_end
+   )
+   {
+      fluid_state_.copy(
+         fluid_state_.stage(output_slot),
+         fluid_state_.stage(input_slot),
+         lev_begin,
+         lev_end
+      );
+      if (spacetime_state_.active()) {
+         spacetime_state_.copy(
+            spacetime_state_.stage(output_slot),
+            spacetime_state_.stage(input_slot),
+            lev_begin,
+            lev_end
+         );
+      }
    }

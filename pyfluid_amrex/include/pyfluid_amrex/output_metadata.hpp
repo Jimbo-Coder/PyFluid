@@ -28,6 +28,21 @@ inline std::string output_metadata_real_string(amrex::Real value)
    return out.str();
 }
 
+inline std::string output_metadata_real_vector_string(
+   std::vector<amrex::Real> const& values
+)
+{
+   std::ostringstream out;
+   out << std::setprecision(17);
+   for (std::size_t index = 0; index < values.size(); ++index) {
+      if (index != 0) {
+         out << ' ';
+      }
+      out << values[index];
+   }
+   return out.str();
+}
+
 inline OutputMetadataEntries output_metadata_records(
    std::string_view source,
    RunConfig const& cfg,
@@ -50,7 +65,18 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("run_name", cfg.run_name);
    entries.emplace_back("physics", cfg.physics);
    entries.emplace_back("spacetime_evolution", cfg.spacetime_evolution);
+   entries.emplace_back("spacetime_matter_coupling", cfg.spacetime_matter_coupling);
    entries.emplace_back("spacetime_fixed_metric", cfg.spacetime_fixed_metric);
+   entries.emplace_back("spacetime_initial_data", cfg.spacetime_initial_data);
+   entries.emplace_back("spacetime_lapse_gauge", cfg.spacetime_lapse_gauge);
+   entries.emplace_back("spacetime_shift_gauge", cfg.spacetime_shift_gauge);
+   entries.emplace_back("spacetime_amplitude", output_metadata_real_string(cfg.spacetime_amplitude));
+   entries.emplace_back("spacetime_wave_number", output_metadata_real_string(cfg.spacetime_wave_number));
+   entries.emplace_back("spacetime_kappa1", output_metadata_real_string(cfg.spacetime_kappa1));
+   entries.emplace_back("spacetime_kappa2", output_metadata_real_string(cfg.spacetime_kappa2));
+   entries.emplace_back("spacetime_shift_eta", output_metadata_real_string(cfg.spacetime_shift_eta));
+   entries.emplace_back("spacetime_slow_start_time", output_metadata_real_string(cfg.spacetime_slow_start_time));
+   entries.emplace_back("spacetime_ko_dissipation", output_metadata_real_string(cfg.spacetime_ko_dissipation));
    entries.emplace_back("spacetime_acceleration1", output_metadata_real_string(cfg.spacetime_acceleration1));
    entries.emplace_back("spacetime_acceleration2", output_metadata_real_string(cfg.spacetime_acceleration2));
    entries.emplace_back("spacetime_acceleration3", output_metadata_real_string(cfg.spacetime_acceleration3));
@@ -58,7 +84,21 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("spacetime_origin2", output_metadata_real_string(cfg.spacetime_origin2));
    entries.emplace_back("spacetime_origin3", output_metadata_real_string(cfg.spacetime_origin3));
    entries.emplace_back("spacetime_mass", output_metadata_real_string(cfg.spacetime_mass));
+   entries.emplace_back("tov_central_density", output_metadata_real_string(cfg.tov_central_density));
+   entries.emplace_back("tov_radial_step", output_metadata_real_string(cfg.tov_radial_step));
+   entries.emplace_back("tov_radial_points", std::to_string(cfg.tov_radial_points));
    entries.emplace_back("eos", cfg.eos);
+   entries.emplace_back("polytropic_k", output_metadata_real_string(cfg.polytropic_k));
+   entries.emplace_back("polytropic_gamma", output_metadata_real_string(cfg.polytropic_gamma));
+   entries.emplace_back(
+      "polytropic_density_breaks",
+      output_metadata_real_vector_string(cfg.polytropic_density_breaks)
+   );
+   entries.emplace_back(
+      "polytropic_segment_gammas",
+      output_metadata_real_vector_string(cfg.polytropic_segment_gammas)
+   );
+   entries.emplace_back("thermal_gamma", output_metadata_real_string(cfg.thermal_gamma));
    if (finest_level >= 0) {
       entries.emplace_back("finest_level", std::to_string(finest_level));
    }

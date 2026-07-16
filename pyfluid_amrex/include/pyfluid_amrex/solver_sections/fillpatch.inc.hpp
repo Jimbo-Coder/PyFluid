@@ -69,13 +69,14 @@
       }
       for (int fine_lev = finestLevel(); fine_lev > lbase; --fine_lev) {
          average_down_state_level(fine_lev);
+         average_down_spacetime_level(fine_lev);
       }
       if (ct_enabled(cfg_)) {
          for (int fine_lev = finestLevel(); fine_lev > lbase; --fine_lev) {
             average_down_face_b_level(fine_lev);
          }
          for (int lev = lbase; lev <= finestLevel(); ++lev) {
-            sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), false);
+            sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), false);
          }
       }
       if (whole_hierarchy) {
@@ -93,7 +94,8 @@
          }
       }
       for (int lev = lbase; lev <= finestLevel(); ++lev) {
-         fill_level_boundaries<SubcyclingEnabled>(state_, lev, time);
+         fill_level_boundaries<SubcyclingEnabled>(fluid_state_.state(), lev, time);
+         fill_spacetime_level_boundaries(spacetime_state_.state(), lev, time);
       }
       for (int lev = lbase + 1; lev <= finestLevel(); ++lev) {
          copy_level_state_to_old(lev);
@@ -341,10 +343,10 @@
             hierarchy_data[source_lev] = coarse_data;
             hierarchy_times[source_lev] = coarse_time;
          } else if (coarse_time_interval_contains(source_lev, time)) {
-            hierarchy_data[source_lev] = {old_state_[source_lev].get(), state_[source_lev].get()};
+            hierarchy_data[source_lev] = {fluid_state_.old_state()[source_lev].get(), fluid_state_.state()[source_lev].get()};
             hierarchy_times[source_lev] = {level_old_times_[source_lev], level_times_[source_lev]};
          } else {
-            hierarchy_data[source_lev] = {state_[source_lev].get()};
+            hierarchy_data[source_lev] = {fluid_state_.state()[source_lev].get()};
             hierarchy_times[source_lev] = {level_times_[source_lev]};
          }
       }
@@ -477,22 +479,24 @@
    void fill_new_level_from_coarse_state(int lev, amrex::Real time)
    {
       if (lev == 0) {
-         initialize_state(*state_[lev], Geom(lev), cfg_);
-         apply_boundary(*state_[lev], Geom(lev), time);
-         fill_mixed_patch_state_ghosts(*state_[lev], lev);
+         initialize_state(
+            *fluid_state_.state()[lev], Geom(lev), cfg_, tov_initial_data_.view()
+         );
+         apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
+         fill_mixed_patch_state_ghosts(*fluid_state_.state()[lev], lev);
          return;
       }
 
-      fill_level_boundaries(state_, lev - 1, time);
+      fill_level_boundaries(fluid_state_.state(), lev - 1, time);
       auto const& bcs = fillpatch_bcs();
       const StateFillPatchFunc& boundary_func = state_fillpatch_func();
       StateFillPatchPhysBC coarse_bc(Geom(lev - 1), bcs, boundary_func);
       StateFillPatchPhysBC fine_bc(Geom(lev), bcs, boundary_func);
       amrex::InterpFromCoarseLevel(
-         *state_[lev],
-         state_[lev]->nGrowVect(),
+         *fluid_state_.state()[lev],
+         fluid_state_.state()[lev]->nGrowVect(),
          time,
-         *state_[lev - 1],
+         *fluid_state_.state()[lev - 1],
          0,
          0,
          num_state_components(),
@@ -507,29 +511,29 @@
          bcs,
          0
       );
-      project_metric_conservative_prolongation(lev, *state_[lev - 1], *state_[lev]);
-      apply_post_fillpatch_state_boundary(*state_[lev], Geom(lev), time);
-      amrex::Vector<amrex::MultiFab*> origin_coarse_data(1, state_[lev - 1].get());
-      amrex::Vector<amrex::MultiFab*> origin_fine_data(1, state_[lev].get());
+      project_metric_conservative_prolongation(lev, *fluid_state_.state()[lev - 1], *fluid_state_.state()[lev]);
+      apply_post_fillpatch_state_boundary(*fluid_state_.state()[lev], Geom(lev), time);
+      amrex::Vector<amrex::MultiFab*> origin_coarse_data(1, fluid_state_.state()[lev - 1].get());
+      amrex::Vector<amrex::MultiFab*> origin_fine_data(1, fluid_state_.state()[lev].get());
       amrex::Vector<amrex::Real> origin_time(1, time);
       complete_radial_origin_boundary(
-         state_, lev, time, origin_coarse_data, origin_time, origin_fine_data, origin_time
+         fluid_state_.state(), lev, time, origin_coarse_data, origin_time, origin_fine_data, origin_time
       );
-      fill_mixed_patch_state_ghosts(*state_[lev], lev);
+      fill_mixed_patch_state_ghosts(*fluid_state_.state()[lev], lev);
    }
 
    void fill_remade_level_state(int lev, amrex::Real time, amrex::MultiFab& old_state)
    {
       if (lev == 0) {
-         state_[lev]->ParallelCopy(old_state, 0, 0, num_state_components(), 0, 0);
-         apply_boundary(*state_[lev], Geom(lev), time);
-         fill_mixed_patch_state_ghosts(*state_[lev], lev);
+         fluid_state_.state()[lev]->ParallelCopy(old_state, 0, 0, num_state_components(), 0, 0);
+         apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
+         fill_mixed_patch_state_ghosts(*fluid_state_.state()[lev], lev);
          return;
       }
 
-      fill_level_boundaries(state_, lev - 1, time);
+      fill_level_boundaries(fluid_state_.state(), lev - 1, time);
       apply_boundary(old_state, Geom(lev), time);
-      amrex::Vector<amrex::MultiFab*> coarse_data(1, state_[lev - 1].get());
+      amrex::Vector<amrex::MultiFab*> coarse_data(1, fluid_state_.state()[lev - 1].get());
       amrex::Vector<amrex::MultiFab*> fine_data(1, &old_state);
       amrex::Vector<amrex::Real> coarse_time(1, time);
       amrex::Vector<amrex::Real> fine_time(1, time);
@@ -538,8 +542,8 @@
       StateFillPatchPhysBC coarse_bc(Geom(lev - 1), bcs, boundary_func);
       StateFillPatchPhysBC fine_bc(Geom(lev), bcs, boundary_func);
       amrex::FillPatchTwoLevels(
-         *state_[lev],
-         state_[lev]->nGrowVect(),
+         *fluid_state_.state()[lev],
+         fluid_state_.state()[lev]->nGrowVect(),
          time,
          coarse_data,
          coarse_time,
@@ -559,21 +563,21 @@
          bcs,
          0
       );
-      project_metric_conservative_prolongation(lev, *state_[lev - 1], *state_[lev]);
-      apply_post_fillpatch_state_boundary(*state_[lev], Geom(lev), time);
-      amrex::Vector<amrex::MultiFab*> origin_fine_data(1, state_[lev].get());
+      project_metric_conservative_prolongation(lev, *fluid_state_.state()[lev - 1], *fluid_state_.state()[lev]);
+      apply_post_fillpatch_state_boundary(*fluid_state_.state()[lev], Geom(lev), time);
+      amrex::Vector<amrex::MultiFab*> origin_fine_data(1, fluid_state_.state()[lev].get());
       amrex::Vector<amrex::Real> origin_fine_time(1, time);
       complete_radial_origin_boundary(
-         state_, lev, time, coarse_data, coarse_time, origin_fine_data, origin_fine_time
+         fluid_state_.state(), lev, time, coarse_data, coarse_time, origin_fine_data, origin_fine_time
       );
-      fill_mixed_patch_state_ghosts(*state_[lev], lev);
+      fill_mixed_patch_state_ghosts(*fluid_state_.state()[lev], lev);
    }
 
    bool coarse_time_interval_contains(int coarse_lev, amrex::Real time) const
    {
       const amrex::Real old_time = level_old_times_[coarse_lev];
       const amrex::Real new_time = level_times_[coarse_lev];
-      if (!(new_time > old_time) || !old_state_[coarse_lev]) {
+      if (!(new_time > old_time) || !fluid_state_.old_state()[coarse_lev]) {
          return false;
       }
       const amrex::Real scale = amrex::max(1.0, amrex::max(amrex::Math::abs(old_time), amrex::Math::abs(new_time)));
@@ -588,15 +592,7 @@
 
    bool rk4_stage_data_ready(int coarse_lev) const
    {
-      if (!rk4_coarse_stage_state_[coarse_lev] || !old_state_[coarse_lev]) {
-         return false;
-      }
-      for (auto const& stage : rk4_rhs_stage_) {
-         if (!stage[coarse_lev]) {
-            return false;
-         }
-      }
-      return level_dts_[coarse_lev] > 0.0;
+      return fluid_state_.rk4_stage_data_ready(coarse_lev, level_dts_[coarse_lev]);
    }
 
    void fill_rk4_coarse_stage_state(int coarse_lev, amrex::Real fine_step_start, int rk_stage)
@@ -604,82 +600,15 @@
       if (!rk4_stage_data_ready(coarse_lev)) {
          amrex::Abort("RK4 subcycling boundary fill requires stored coarse RK stages");
       }
-      const amrex::Real dtc = level_dts_[coarse_lev];
-      if (
-         rk4_stage_cache_stage_[coarse_lev] == rk_stage
-         && nearly_equal_time(rk4_stage_cache_fine_start_[coarse_lev], fine_step_start)
-         && nearly_equal_time(rk4_stage_cache_time_[coarse_lev], level_times_[coarse_lev])
-         && nearly_equal_time(rk4_stage_cache_dt_[coarse_lev], dtc)
-      ) {
-         return;
-      }
-
-      amrex::Real xsi = (fine_step_start - level_old_times_[coarse_lev]) / dtc;
-      xsi = amrex::min(amrex::max(xsi, 0.0), 1.0);
-      const amrex::Real r = level_dts_[coarse_lev + 1] / dtc;
-
-      const amrex::Real xsi2 = xsi * xsi;
-      const amrex::Real xsi3 = xsi2 * xsi;
-      const amrex::Real b1 = xsi - 1.5 * xsi2 + (2.0 / 3.0) * xsi3;
-      const amrex::Real b2 = xsi2 - (2.0 / 3.0) * xsi3;
-      const amrex::Real b3 = b2;
-      const amrex::Real b4 = -0.5 * xsi2 + (2.0 / 3.0) * xsi3;
-      const amrex::Real c1 = 1.0 - 3.0 * xsi + 2.0 * xsi2;
-      const amrex::Real c2 = 2.0 * xsi - 2.0 * xsi2;
-      const amrex::Real c3 = c2;
-      const amrex::Real c4 = -xsi + 2.0 * xsi2;
-      const amrex::Real d1 = -3.0 + 4.0 * xsi;
-      const amrex::Real d2 = 2.0 - 4.0 * xsi;
-      const amrex::Real d3 = d2;
-      const amrex::Real d4 = -1.0 + 4.0 * xsi;
-      constexpr amrex::Real e1 = 4.0;
-      constexpr amrex::Real e2 = -4.0;
-      constexpr amrex::Real e3 = -4.0;
-      constexpr amrex::Real e4 = 4.0;
-      const int ncomp = num_state_components();
-
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-      {
-      for (amrex::MFIter mfi(*rk4_coarse_stage_state_[coarse_lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-         const amrex::Box& bx = mfi.tilebox();
-         const auto out = rk4_coarse_stage_state_[coarse_lev]->array(mfi);
-         const auto u0 = old_state_[coarse_lev]->const_array(mfi);
-         const auto k1 = rk4_rhs_stage_[0][coarse_lev]->const_array(mfi);
-         const auto k2 = rk4_rhs_stage_[1][coarse_lev]->const_array(mfi);
-         const auto k3 = rk4_rhs_stage_[2][coarse_lev]->const_array(mfi);
-         const auto k4 = rk4_rhs_stage_[3][coarse_lev]->const_array(mfi);
-         amrex::ParallelFor(bx, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-            const amrex::Real kk1 = k1(i, j, k, n);
-            const amrex::Real kk2 = k2(i, j, k, n);
-            const amrex::Real kk3 = k3(i, j, k, n);
-            const amrex::Real kk4 = k4(i, j, k, n);
-            const amrex::Real uu = b1 * kk1 + b2 * kk2 + b3 * kk3 + b4 * kk4;
-            amrex::Real value = u0(i, j, k, n) + dtc * uu;
-            if (rk_stage == 2) {
-               const amrex::Real ut = c1 * kk1 + c2 * kk2 + c3 * kk3 + c4 * kk4;
-               value = u0(i, j, k, n) + dtc * (uu + 0.5 * r * ut);
-            } else if (rk_stage == 3 || rk_stage == 4) {
-               const amrex::Real ut = c1 * kk1 + c2 * kk2 + c3 * kk3 + c4 * kk4;
-               const amrex::Real utt = d1 * kk1 + d2 * kk2 + d3 * kk3 + d4 * kk4;
-               const amrex::Real uttt = e1 * kk1 + e2 * kk2 + e3 * kk3 + e4 * kk4;
-               const amrex::Real r2 = r * r;
-               const amrex::Real r3 = r2 * r;
-               const amrex::Real at = (rk_stage == 3) ? 0.5 * r : r;
-               const amrex::Real att = (rk_stage == 3) ? 0.25 * r2 : 0.5 * r2;
-               const amrex::Real attt = (rk_stage == 3) ? 0.0625 * r3 : 0.125 * r3;
-               const amrex::Real ak = (rk_stage == 3) ? -4.0 : 4.0;
-               value = u0(i, j, k, n) + dtc * (uu + at * ut + att * utt + attt * (uttt + ak * (kk3 - kk2)));
-            }
-            out(i, j, k, n) = value;
-         });
-      }
-      }
-      rk4_stage_cache_stage_[coarse_lev] = rk_stage;
-      rk4_stage_cache_fine_start_[coarse_lev] = fine_step_start;
-      rk4_stage_cache_time_[coarse_lev] = level_times_[coarse_lev];
-      rk4_stage_cache_dt_[coarse_lev] = dtc;
+      fluid_state_.fill_rk4_dense_state(
+         coarse_lev,
+         fine_step_start,
+         rk_stage,
+         level_old_times_[coarse_lev],
+         level_times_[coarse_lev],
+         level_dts_[coarse_lev],
+         level_dts_[coarse_lev + 1]
+      );
    }
 
       template <bool SubcyclingEnabled = false>
@@ -696,11 +625,11 @@
       if constexpr (SubcyclingEnabled) {
          if (rk_stage > 0 && rk4_stage_data_ready(lev - 1)) {
             fill_rk4_coarse_stage_state(lev - 1, fine_step_start, rk_stage);
-            coarse_data.push_back(rk4_coarse_stage_state_[lev - 1].get());
+            coarse_data.push_back(fluid_state_.rk4_coarse_stage_state()[lev - 1].get());
             coarse_time.push_back(time);
          } else if (coarse_time_interval_contains(lev - 1, time)) {
-            coarse_data.push_back(old_state_[lev - 1].get());
-            coarse_data.push_back(state_[lev - 1].get());
+            coarse_data.push_back(fluid_state_.old_state()[lev - 1].get());
+            coarse_data.push_back(fluid_state_.state()[lev - 1].get());
             coarse_time.push_back(level_old_times_[lev - 1]);
             coarse_time.push_back(level_times_[lev - 1]);
             time = clamp_to_coarse_time_interval(lev - 1, time);
@@ -773,8 +702,8 @@
       if (!ct_enabled(cfg_)) {
          return;
       }
-      apply_boundary(*state_[lev], Geom(lev), time);
-      fill_face_b_from_cell_b(face_b_[lev], *state_[lev]);
+      apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
+      fill_face_b_from_cell_b(face_b_[lev], *fluid_state_.state()[lev]);
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
       if (lev == 0) {
          return;
@@ -830,7 +759,7 @@
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
 #else
       (void)time;
-      fill_face_b_from_cell_b(face_b_[lev], *state_[lev]);
+      fill_face_b_from_cell_b(face_b_[lev], *fluid_state_.state()[lev]);
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
 #endif
    }
@@ -840,8 +769,8 @@
       if (!ct_enabled(cfg_)) {
          return;
       }
-      apply_boundary(*state_[lev], Geom(lev), time);
-      fill_face_b_from_cell_b(face_b_[lev], *state_[lev]);
+      apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
+      fill_face_b_from_cell_b(face_b_[lev], *fluid_state_.state()[lev]);
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
       if (lev == 0 && old_face_b.b[0]) {
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
@@ -927,7 +856,7 @@
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
 #else
       (void)time;
-      fill_face_b_from_cell_b(face_b_[lev], *state_[lev]);
+      fill_face_b_from_cell_b(face_b_[lev], *fluid_state_.state()[lev]);
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
 #endif
    }
@@ -942,8 +871,8 @@
          return;
       }
       fill_new_face_b_from_coarse(lev, time);
-      sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), time == 0.0);
-      apply_boundary(*state_[lev], Geom(lev), time);
+      sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), time == 0.0);
+      apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
    }
 
    void initialize_remade_ct_fields(int lev, amrex::Real time, FaceMagneticField& old_face_b)
@@ -952,6 +881,6 @@
          return;
       }
       fill_remade_face_b(lev, time, old_face_b);
-      sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), time == 0.0);
-      apply_boundary(*state_[lev], Geom(lev), time);
+      sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), time == 0.0);
+      apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
    }

@@ -5,14 +5,17 @@
    void reset_barotropic_energy_level(int lev)
    {
       if constexpr (EOSMethod == EOSPolytrope) {
+         if (physical_system_is_relativistic(physics_system_)) {
+            return;
+         }
          const EOSParams eos = eos_params(cfg_);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
          {
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& bx = mfi.tilebox();
-            const auto s = state_[lev]->array(mfi);
+            const auto s = fluid_state_.state()[lev]->array(mfi);
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                if constexpr (has_mhd_components<NComp>()) {
                   MHDState cell = load_mhd_state(s, i, j, k);

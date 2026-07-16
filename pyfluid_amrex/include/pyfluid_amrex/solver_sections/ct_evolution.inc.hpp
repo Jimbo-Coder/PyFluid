@@ -13,11 +13,11 @@
          enforce_edge_electric_boundary(edge_e_[lev], Geom(lev), boundary_data_);
          apply_edge_electric_curl(face_b_[lev], edge_e_[lev], Geom(lev), dt, cfg_);
       } else {
-         advance_ct_magnetic_field(face_b_[lev], edge_e_[lev], *state_[lev], Geom(lev), dt, 0.0, cfg_);
+         advance_ct_magnetic_field(face_b_[lev], edge_e_[lev], *fluid_state_.state()[lev], Geom(lev), dt, 0.0, cfg_);
       }
       add_edge_electric_to_registers(lev, dt);
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
-      sync_cell_b_from_faces(*next_[lev], face_b_[lev], Geom(lev), false);
+      sync_cell_b_from_faces(*fluid_state_.next()[lev], face_b_[lev], Geom(lev), false);
       return {};
    }
 
@@ -32,15 +32,15 @@
       if constexpr (DiffusionMethod == DiffusionImplicit) {
          return stats;
       } else if constexpr (DiffusionMethod == DiffusionExplicit) {
-         apply_diffusion_boundary(*state_[lev], Geom(lev), cfg_);
-         amrex::MultiFab::Copy(*scratch_[lev], *state_[lev], 0, 0, num_state_components(), 0);
-         explicit_ct_inactive_magnetic_resistivity_update(*scratch_[lev], *state_[lev], Geom(lev), cfg_, dt);
-         apply_diffusion_boundary(*scratch_[lev], Geom(lev), cfg_);
+         apply_diffusion_boundary(*fluid_state_.state()[lev], Geom(lev), cfg_);
+         amrex::MultiFab::Copy(*fluid_state_.scratch()[lev], *fluid_state_.state()[lev], 0, 0, num_state_components(), 0);
+         explicit_ct_inactive_magnetic_resistivity_update(*fluid_state_.scratch()[lev], *fluid_state_.state()[lev], Geom(lev), cfg_, dt);
+         apply_diffusion_boundary(*fluid_state_.scratch()[lev], Geom(lev), cfg_);
          for (int inactive_component = AMREX_SPACEDIM; inactive_component < 3; ++inactive_component) {
             const int state_component = B1 + inactive_component;
-            amrex::MultiFab::Copy(*state_[lev], *scratch_[lev], state_component, state_component, 1, 0);
+            amrex::MultiFab::Copy(*fluid_state_.state()[lev], *fluid_state_.scratch()[lev], state_component, state_component, 1, 0);
          }
-         apply_diffusion_boundary(*state_[lev], Geom(lev), cfg_);
+         apply_diffusion_boundary(*fluid_state_.state()[lev], Geom(lev), cfg_);
       }
 #else
       (void)lev;
@@ -83,14 +83,14 @@
          advance_ct_resistive_magnetic_field_from_faces(face_b_[lev], edge_e_[lev], Geom(lev), dt, cfg_.resistivity, cfg_);
          add_edge_electric_to_registers(lev, dt);
          apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
-         sync_cell_b_from_faces(*next_[lev], face_b_[lev], Geom(lev), false);
+         sync_cell_b_from_faces(*fluid_state_.next()[lev], face_b_[lev], Geom(lev), false);
          return combined;
       }
 #if (AMREX_SPACEDIM >= 2)
       combined = combine_diffusion_stats(
          combined,
          advance_ct_resistive_magnetic_field_implicit(
-            face_b_[lev], edge_e_[lev], *next_[lev], Geom(lev), dt, cfg_
+            face_b_[lev], edge_e_[lev], *fluid_state_.next()[lev], Geom(lev), dt, cfg_
          )
       );
       add_edge_electric_to_registers(lev, dt);
@@ -98,7 +98,7 @@
       amrex::Abort("implicit resistive CT requires a 2D or 3D executable");
 #endif
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
-      sync_cell_b_from_faces(*next_[lev], face_b_[lev], Geom(lev), false);
+      sync_cell_b_from_faces(*fluid_state_.next()[lev], face_b_[lev], Geom(lev), false);
       return combined;
    }
 
@@ -112,7 +112,7 @@
          }
          reflux_edge_flux_registers_to_face_b();
          for (int lev = 0; lev <= finestLevel(); ++lev) {
-            sync_cell_b_from_faces(*next_[lev], face_b_[lev], Geom(lev), false);
+            sync_cell_b_from_faces(*fluid_state_.next()[lev], face_b_[lev], Geom(lev), false);
          }
          return combined;
       }

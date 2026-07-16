@@ -7,6 +7,8 @@
 #include <array>
 #include <memory>
 
+#include "pyfluid_amrex/fields.hpp"
+
 namespace pyfluid_amrex {
 
 struct FaceMagneticField {
@@ -43,29 +45,6 @@ inline void allocate_face_magnetic_field_like(FaceMagneticField& dst, FaceMagnet
    }
 }
 
-inline amrex::IndexType edge_index_type(int component)
-{
-   amrex::IntVect type(AMREX_D_DECL(0, 0, 0));
-#if (AMREX_SPACEDIM == 2)
-   if (component == 0) {
-      type = amrex::IntVect(AMREX_D_DECL(0, 1, 0));
-   } else if (component == 1) {
-      type = amrex::IntVect(AMREX_D_DECL(1, 0, 0));
-   } else {
-      type = amrex::IntVect(AMREX_D_DECL(1, 1, 0));
-   }
-#elif (AMREX_SPACEDIM == 3)
-   if (component == 0) {
-      type = amrex::IntVect(AMREX_D_DECL(0, 1, 1));
-   } else if (component == 1) {
-      type = amrex::IntVect(AMREX_D_DECL(1, 0, 1));
-   } else {
-      type = amrex::IntVect(AMREX_D_DECL(1, 1, 0));
-   }
-#endif
-   return amrex::IndexType(type);
-}
-
 inline void allocate_edge_electric_field(
    EdgeElectricField& edge_e,
    amrex::BoxArray const& ba,
@@ -74,7 +53,12 @@ inline void allocate_edge_electric_field(
 {
 #if (AMREX_SPACEDIM == 2 || AMREX_SPACEDIM == 3)
    for (int component = 0; component < 3; ++component) {
-      edge_e.e[component] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, edge_index_type(component)), dm, 1, 0);
+      edge_e.e[component] = std::make_unique<amrex::MultiFab>(
+         amrex::convert(ba, grid_field_index_type(edge_grid_field_centering(component))),
+         dm,
+         1,
+         0
+      );
    }
 #else
    (void)edge_e;

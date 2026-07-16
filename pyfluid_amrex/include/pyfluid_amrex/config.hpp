@@ -39,6 +39,8 @@ struct RunConfig {
    std::string eos;
    amrex::Real polytropic_k = 1.0;
    amrex::Real polytropic_gamma = 5.0 / 3.0;
+   std::vector<amrex::Real> polytropic_density_breaks;
+   std::vector<amrex::Real> polytropic_segment_gammas;
    amrex::Real thermal_gamma = 5.0 / 3.0;
    amrex::Real rho_floor = 1.0e-12;
    amrex::Real pressure_floor = 1.0e-12;
@@ -96,7 +98,18 @@ struct RunConfig {
 
    std::string physics;
    std::string spacetime_evolution = "none";
+   std::string spacetime_matter_coupling = "coupled";
    std::string spacetime_fixed_metric = "minkowski";
+   std::string spacetime_initial_data = "minkowski";
+   std::string spacetime_lapse_gauge = "frozen";
+   std::string spacetime_shift_gauge = "frozen";
+   amrex::Real spacetime_amplitude = 1.0e-8;
+   amrex::Real spacetime_wave_number = 1.0;
+   amrex::Real spacetime_kappa1 = 0.02;
+   amrex::Real spacetime_kappa2 = 0.0;
+   amrex::Real spacetime_shift_eta = 2.0;
+   amrex::Real spacetime_slow_start_time = 10.0;
+   amrex::Real spacetime_ko_dissipation = 0.1;
    amrex::Real spacetime_acceleration1 = 0.0;
    amrex::Real spacetime_acceleration2 = 0.0;
    amrex::Real spacetime_acceleration3 = 0.0;
@@ -104,6 +117,9 @@ struct RunConfig {
    amrex::Real spacetime_origin2 = 0.0;
    amrex::Real spacetime_origin3 = 0.0;
    amrex::Real spacetime_mass = 1.0;
+   amrex::Real tov_central_density = 1.28e-3;
+   amrex::Real tov_radial_step = 1.0e-3;
+   int tov_radial_points = 32768;
    std::string ct;
    std::string ic = "sin_wave";
    int passive_scalars = 0;
@@ -350,6 +366,16 @@ static constexpr std::array<NamedOptionCode, 3> EOSOptions{{
 
 static constexpr std::array<std::string_view, 4> PhysicsOptions{{"hydro", "mhd", "rhd", "rmhd"}};
 static constexpr std::array<std::string_view, 3> SpacetimeEvolutionOptions{{"none", "fixed", "evolved"}};
+static constexpr std::array<std::string_view, 2> SpacetimeMatterCouplingOptions{{"coupled", "vacuum"}};
+static constexpr std::array<std::string_view, 4> SpacetimeInitialDataOptions{{
+   "minkowski", "gauge_wave", "linear_wave", "robust_stability"
+}};
+static constexpr std::array<std::string_view, 4> Z4cLapseGaugeOptions{{
+   "frozen", "harmonic", "one_plus_log", "slow_start"
+}};
+static constexpr std::array<std::string_view, 2> Z4cShiftGaugeOptions{{
+   "frozen", "gamma_driver"
+}};
 static constexpr std::array<std::string_view, 3> FixedSpacetimeMetricOptions{{
    "minkowski", "rindler", "schwarzschild_isotropic",
 }};
@@ -423,7 +449,7 @@ static constexpr std::array<std::string_view, 7> MHDWaveFamilyOptions{{
    "slow_minus",
    "entropy",
 }};
-static constexpr std::array<std::string_view, 31> InitialDataOptions{{
+static constexpr std::array<std::string_view, 32> InitialDataOptions{{
    "sin_wave",
    "advection_medley",
    "characteristic_medley",
@@ -440,6 +466,7 @@ static constexpr std::array<std::string_view, 31> InitialDataOptions{{
    "density_cloud",
    "hse_polytrope_x",
    "fixed_metric_hse",
+   "tov",
    "hydro_beam",
    "sod_x",
    "sod_plane",
@@ -584,14 +611,32 @@ inline int eos_method_code(RunConfig const& cfg)
 
 inline EOSParams eos_params(RunConfig const& cfg)
 {
-   return {
-      cfg.gamma,
-      cfg.polytropic_k,
-      cfg.polytropic_gamma,
-      cfg.thermal_gamma,
-      cfg.rho_floor,
-      cfg.pressure_floor,
-   };
+   EOSParams eos{};
+   eos.gamma = cfg.gamma;
+   eos.thermal_gamma = cfg.thermal_gamma;
+   eos.rho_floor = cfg.rho_floor;
+   eos.pressure_floor = cfg.pressure_floor;
+   eos.polytrope_segments = 1 + static_cast<int>(cfg.polytropic_density_breaks.size());
+   eos.segment_k[0] = cfg.polytropic_k;
+   eos.segment_gamma[0] = cfg.polytropic_gamma;
+   for (int segment = 1; segment < eos.polytrope_segments; ++segment) {
+      const amrex::Real density_break = cfg.polytropic_density_breaks[segment - 1];
+      const amrex::Real previous_gamma = eos.segment_gamma[segment - 1];
+      const amrex::Real gamma = cfg.polytropic_segment_gammas[segment - 1];
+      const amrex::Real previous_k = eos.segment_k[segment - 1];
+      const amrex::Real k = previous_k * std::pow(
+         density_break, previous_gamma - gamma
+      );
+      eos.segment_density_break[segment - 1] = density_break;
+      eos.segment_gamma[segment] = gamma;
+      eos.segment_k[segment] = k;
+      eos.segment_energy_offset[segment] =
+         eos.segment_energy_offset[segment - 1]
+         + previous_k * std::pow(density_break, previous_gamma - 1.0)
+            / (previous_gamma - 1.0)
+         - k * std::pow(density_break, gamma - 1.0) / (gamma - 1.0);
+   }
+   return eos;
 }
 
 inline bool valid_plotfile_format(std::string const& value)
@@ -667,6 +712,8 @@ inline RunConfig read_config()
    pp.query("gamma", cfg.gamma);
    pp.query("polytropic_k", cfg.polytropic_k);
    pp.query("polytropic_gamma", cfg.polytropic_gamma);
+   pp.queryarr("polytropic_density_breaks", cfg.polytropic_density_breaks);
+   pp.queryarr("polytropic_segment_gammas", cfg.polytropic_segment_gammas);
    pp.query("thermal_gamma", cfg.thermal_gamma);
    pp.query("rho_floor", cfg.rho_floor);
    pp.query("pressure_floor", cfg.pressure_floor);
@@ -694,7 +741,18 @@ inline RunConfig read_config()
    pp.query("debug_check_physical", cfg.debug_check_physical);
    amrex::ParmParse spacetime_pp("spacetime");
    spacetime_pp.queryAdd("evolution", cfg.spacetime_evolution);
+   spacetime_pp.queryAdd("matter_coupling", cfg.spacetime_matter_coupling);
    spacetime_pp.queryAdd("fixed_metric", cfg.spacetime_fixed_metric);
+   spacetime_pp.queryAdd("initial_data", cfg.spacetime_initial_data);
+   spacetime_pp.queryAdd("lapse_gauge", cfg.spacetime_lapse_gauge);
+   spacetime_pp.queryAdd("shift_gauge", cfg.spacetime_shift_gauge);
+   spacetime_pp.queryAdd("amplitude", cfg.spacetime_amplitude);
+   spacetime_pp.queryAdd("wave_number", cfg.spacetime_wave_number);
+   spacetime_pp.queryAdd("kappa1", cfg.spacetime_kappa1);
+   spacetime_pp.queryAdd("kappa2", cfg.spacetime_kappa2);
+   spacetime_pp.queryAdd("shift_eta", cfg.spacetime_shift_eta);
+   spacetime_pp.queryAdd("slow_start_time", cfg.spacetime_slow_start_time);
+   spacetime_pp.queryAdd("ko_dissipation", cfg.spacetime_ko_dissipation);
    spacetime_pp.queryAdd("acceleration1", cfg.spacetime_acceleration1);
    spacetime_pp.queryAdd("acceleration2", cfg.spacetime_acceleration2);
    spacetime_pp.queryAdd("acceleration3", cfg.spacetime_acceleration3);
@@ -808,6 +866,9 @@ inline RunConfig read_config()
    pp.query("inflow_background_passive_value", cfg.inflow_background_passive_value);
    pp.query("rho0", cfg.rho0);
    pp.query("pressure0", cfg.pressure0);
+   pp.query("tov_central_density", cfg.tov_central_density);
+   pp.query("tov_radial_step", cfg.tov_radial_step);
+   pp.query("tov_radial_points", cfg.tov_radial_points);
    pp.query("amplitude", cfg.amplitude);
    pp.query("bump_sigma", cfg.bump_sigma);
    pp.query("acoustic_transverse_sigma", cfg.acoustic_transverse_sigma);
@@ -1233,6 +1294,12 @@ inline SpacetimeEvolution spacetime_evolution_mode(RunConfig const& cfg)
    return SpacetimeEvolution::None;
 }
 
+inline bool spacetime_matter_is_coupled(RunConfig const& cfg) noexcept
+{
+   return cfg.spacetime_evolution == "evolved"
+      && cfg.spacetime_matter_coupling == "coupled";
+}
+
 inline FixedSpacetimeParameters fixed_spacetime_parameters(RunConfig const& cfg)
 {
    return {
@@ -1260,9 +1327,29 @@ inline void validate_config(RunConfig const& cfg)
       "spacetime.evolution"
    );
    require_supported_option(
+      cfg.spacetime_matter_coupling,
+      SpacetimeMatterCouplingOptions,
+      "spacetime.matter_coupling"
+   );
+   require_supported_option(
       cfg.spacetime_fixed_metric,
       FixedSpacetimeMetricOptions,
       "spacetime.fixed_metric"
+   );
+   require_supported_option(
+      cfg.spacetime_initial_data,
+      SpacetimeInitialDataOptions,
+      "spacetime.initial_data"
+   );
+   require_supported_option(
+      cfg.spacetime_lapse_gauge,
+      Z4cLapseGaugeOptions,
+      "spacetime.lapse_gauge"
+   );
+   require_supported_option(
+      cfg.spacetime_shift_gauge,
+      Z4cShiftGaugeOptions,
+      "spacetime.shift_gauge"
    );
    if (cfg.gamma <= 1.0) {
       amrex::Abort("pyfluid.gamma must be greater than 1");
@@ -1272,6 +1359,32 @@ inline void validate_config(RunConfig const& cfg)
    }
    if (cfg.polytropic_gamma <= 1.0) {
       amrex::Abort("pyfluid.polytropic_gamma must be greater than 1");
+   }
+   if (cfg.polytropic_density_breaks.size()
+       != cfg.polytropic_segment_gammas.size()) {
+      amrex::Abort(
+         "pyfluid.polytropic_density_breaks and polytropic_segment_gammas "
+         "must have equal lengths"
+      );
+   }
+   if (cfg.polytropic_density_breaks.size()
+       >= static_cast<std::size_t>(MaxPolytropeSegments)) {
+      amrex::Abort("piecewise polytropes support at most 8 density segments");
+   }
+   for (std::size_t segment = 0; segment < cfg.polytropic_density_breaks.size(); ++segment) {
+      if (!(cfg.polytropic_density_breaks[segment] > 0.0)
+          || (segment > 0
+              && !(cfg.polytropic_density_breaks[segment]
+                   > cfg.polytropic_density_breaks[segment - 1]))) {
+         amrex::Abort(
+            "pyfluid.polytropic_density_breaks must be positive and strictly increasing"
+         );
+      }
+      if (!(cfg.polytropic_segment_gammas[segment] > 1.0)) {
+         amrex::Abort(
+            "pyfluid.polytropic_segment_gammas entries must be greater than 1"
+         );
+      }
    }
    if (cfg.thermal_gamma <= 1.0) {
       amrex::Abort("pyfluid.thermal_gamma must be greater than 1");
@@ -1308,21 +1421,18 @@ inline void validate_config(RunConfig const& cfg)
       );
    }
    if (physical_system_is_relativistic(selected_system)) {
-      if (cfg.spacetime_evolution != "fixed") {
-         amrex::Abort("ideal relativistic-fluid runtime evolution currently requires spacetime.evolution = fixed");
-      }
-      if (cfg.eos != "ideal_gas") {
-         amrex::Abort("ideal relativistic-fluid runtime evolution currently requires pyfluid.eos = ideal_gas");
+      if (selected_system == PhysicalSystem::RMHD && cfg.eos != "ideal_gas") {
+         amrex::Abort("RMHD runtime evolution currently requires pyfluid.eos = ideal_gas");
       }
       if (cfg.passive_scalars != 0 || cfg.diffusion != "none"
           || cfg.source != "none" || cfg.gravity != "none" || cfg.solid_geometry != "off") {
          amrex::Abort(
-            "ideal relativistic-fluid runtime evolution currently supports no passive scalars, diffusion, "
+            "relativistic-fluid runtime evolution currently supports no passive scalars, diffusion, "
             "Newtonian sources/gravity, or solid geometry"
          );
       }
       if (cfg.mesh_coordinate != "cartesian" || cfg.mesh_patch_system != "single") {
-         amrex::Abort("ideal relativistic-fluid runtime evolution currently supports a single Cartesian patch");
+         amrex::Abort("relativistic-fluid runtime evolution currently supports a single Cartesian patch");
       }
       if (cfg.recon == "wenoz-char" || cfg.recon == "mp5-char" || cfg.recon == "teno5-char"
           || cfg.recon_fine == "wenoz-char" || cfg.recon_fine == "mp5-char"
@@ -1330,15 +1440,56 @@ inline void validate_config(RunConfig const& cfg)
          amrex::Abort("relativistic characteristic reconstruction is not implemented; select a component method");
       }
       if (cfg.riemann != "llf" && cfg.riemann != "hll" && cfg.riemann != "hlle") {
-         amrex::Abort("ideal relativistic-fluid runtime evolution supports pyfluid.riemann = llf, hll, or hlle");
+         amrex::Abort("relativistic-fluid runtime evolution supports pyfluid.riemann = llf, hll, or hlle");
+      }
+      if (cfg.ic == "fixed_metric_hse" && cfg.eos != "ideal_gas") {
+         amrex::Abort("fixed_metric_hse currently requires pyfluid.eos = ideal_gas");
       }
       if (cfg.ic != "uniform" && cfg.ic != "sin_wave" && cfg.ic != "sod_x"
           && cfg.ic != "sod_plane" && cfg.ic != "sod_periodic_plane"
-          && cfg.ic != "fixed_metric_hse") {
-         amrex::Abort("ideal relativistic-fluid runtime evolution currently supports uniform, sin_wave, Sod, and fixed-metric HSE initial data");
+          && cfg.ic != "fixed_metric_hse" && cfg.ic != "tov") {
+         amrex::Abort("relativistic-fluid runtime evolution supports uniform, sin_wave, Sod, fixed-metric HSE, and TOV initial data");
       }
       if (cfg.ic == "fixed_metric_hse" && cfg.spacetime_fixed_metric == "minkowski") {
          amrex::Abort("pyfluid.ic = fixed_metric_hse requires a non-Minkowski fixed metric");
+      }
+      if (cfg.ic == "tov") {
+         if (selected_system != PhysicalSystem::RHD
+             || cfg.spacetime_evolution != "evolved"
+             || (cfg.eos != "polytrope" && cfg.eos != "hybrid_polytrope")) {
+            amrex::Abort(
+               "pyfluid.ic = tov requires RHD, evolved spacetime, and a polytrope or hybrid_polytrope EOS"
+            );
+         }
+         if (!(cfg.tov_central_density > cfg.rho_floor)
+             || !(cfg.tov_radial_step > 0.0) || cfg.tov_radial_points < 16) {
+            amrex::Abort(
+               "TOV initial data requires central_density > rho_floor, radial_step > 0, and radial_points >= 16"
+            );
+         }
+      }
+      if (cfg.spacetime_evolution == "evolved") {
+         if (cfg.ng < 2) {
+            amrex::Abort(
+               "spacetime.evolution = evolved requires pyfluid.ng >= 2 for fourth-order cell/vertex coupling"
+            );
+         }
+         if (cfg.spacetime_fixed_metric != "minkowski") {
+            amrex::Abort("spacetime.fixed_metric must be minkowski when spacetime.evolution = evolved");
+         }
+         if (cfg.spacetime_amplitude < 0.0 || cfg.spacetime_wave_number <= 0.0) {
+            amrex::Abort("evolved spacetime amplitude must be non-negative and wave_number positive");
+         }
+         if (cfg.spacetime_slow_start_time <= 0.0) {
+            amrex::Abort("spacetime.slow_start_time must be positive");
+         }
+         if (cfg.spacetime_ko_dissipation < 0.0) {
+            amrex::Abort("spacetime.ko_dissipation must be nonnegative");
+         }
+      } else if (cfg.spacetime_matter_coupling != "coupled") {
+         amrex::Abort(
+            "spacetime.matter_coupling = vacuum is only meaningful for evolved spacetime"
+         );
       }
    }
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);

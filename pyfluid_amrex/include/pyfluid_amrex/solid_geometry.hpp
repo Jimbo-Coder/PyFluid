@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/constants.hpp"
 
 namespace pyfluid_amrex {
 
@@ -134,7 +135,7 @@ struct SolidGeometryEvaluator {
          return circle_radius;
       }
       const amrex::Real phase = circle_radius_phase
-         + 2.0 * static_cast<amrex::Real>(3.141592653589793238462643383279502884L)
+         + constants::two_pi
          * circle_radius_frequency
          * query_time;
       return circle_radius + circle_radius_amplitude * circle_radius_envelope(query_time) * std::sin(phase);
@@ -147,7 +148,7 @@ struct SolidGeometryEvaluator {
          return 0.0;
       }
       const amrex::Real omega =
-         2.0 * static_cast<amrex::Real>(3.141592653589793238462643383279502884L)
+         constants::two_pi
          * circle_radius_frequency;
       const amrex::Real phase = circle_radius_phase + omega * query_time;
       const amrex::Real envelope = circle_radius_envelope(query_time);
@@ -517,8 +518,7 @@ inline SolidGeometryEvaluator solid_geometry_evaluator(RunConfig const& cfg, amr
    }
    p.wedge_x0 = cfg.solid_wedge_x0;
    p.wedge_y0 = cfg.solid_wedge_y0;
-   p.wedge_slope =
-      std::tan(cfg.solid_wedge_angle_deg * static_cast<amrex::Real>(3.141592653589793238462643383279502884L) / 180.0);
+   p.wedge_slope = std::tan(cfg.solid_wedge_angle_deg * constants::radians_per_degree);
    p.circle_center[0] = cfg.solid_center_x;
    p.circle_center[1] = cfg.solid_center_y;
    p.circle_center[2] = cfg.solid_center_z;

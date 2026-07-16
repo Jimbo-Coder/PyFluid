@@ -40,11 +40,78 @@ decisions.
   one shared implementation. Initial data, evolution, and diagnostics reuse it.
 - Generated kernels come from one high-level equation source. Do not retain a
   handwritten production duplicate after equivalence is established.
+- C++ mathematical constants live in `constants.hpp`; generated kernels and
+  handwritten code consume those typed values. Python tooling uses `math` or
+  NumPy constants. Numeric input files remain serialized numeric data.
+- Review complex systems through their high-level symbolic source, generated
+  diff, and validation corpus. Do not consume maintainer context by manually
+  expanding generated equations to compare them component by component.
+- Keep generated pointwise physics out of the template-heavy fluid driver.
+  Compiled sector orchestration may select policies and move AMReX data, but it
+  must not duplicate physical equations.
+
+## Evolution Sectors And Grid Fields
+
+- Fluid and spacetime are first-class evolution sectors on one AMR hierarchy.
+  Fluid conserved state is cell-centered. Evolved Z4c state is vertex-centered.
+  Neither sector is an auxiliary field of the other.
+- An evolution sector owns its accepted, previous, next, scratch, RHS, and
+  time-integrator stage storage. Only accepted state is physical/checkpoint
+  data; RHS and stage arrays are solver work storage, not auxiliary GFs.
+- Fixed spacetime is a read-only metric provider, not an evolved field set.
+  Evolved spacetime is the complete mandatory Z4c field set. Constraints,
+  cached derivatives, and optional output quantities remain derived scratch or
+  diagnostic fields and must not be checkpointed as evolved state.
+- Z4c stores full values, not Minkowski-subtracted perturbations. Derive
+  conformal/physical geometry once through the generated pointwise evaluator.
+  Evolution, initial-data checks, and postprocessing diagnostics call the same
+  generated constraint function; they must not carry separate Hamiltonian,
+  momentum, Z, Theta, or algebraic-constraint formulas.
+- Grid-level Z4c consumers use the shared pointwise bridge for component
+  loading and derivatives. Geometric derivatives are centered; shift
+  advection uses the common shifted-upwind derivative. Component maps and
+  stencil assembly must not be repeated in initial data, evolution, or output.
+- Runtime orchestration selects generated lapse and shift policies outside the
+  point loop. The complete generated Z4c RHS is one compile-time-policy entry
+  point; do not reproduce its geometry/gauge assembly in the timestepper.
+- Keep metric-derived Ricci used for constraints distinct from the Z4c
+  evolution Ricci that contains the evolved contracted connection. Equality of
+  those two is a validation identity on the Gamma-constraint surface, not a
+  reason to alias their implementations.
+- Matter enters Z4c through explicit Eulerian projections. Vacuum supplies a
+  zero-valued projection object; do not generate or maintain a second vacuum
+  RHS implementation.
+- Dynamical matter coupling is one strongly coupled method-of-lines stage, not
+  a fluid step followed by a spacetime step. At each RK stage, recover the
+  cell-centered relativistic fluid state in the current metric, generate the
+  stress-energy tensor and Eulerian matter projections, transfer those
+  projections directly to vertices, and evaluate the existing generated Z4c
+  RHS. Transfer the stage metric and required derivatives directly to cells
+  once for the generated Valencia flux/source RHS.
+- Metric views, stress-energy projections, and centering transfers are
+  stage-local coupling scratch. They are neither evolved fields nor checkpoint
+  data. Fluid conserved state is refluxed; vertex-centered spacetime state is
+  restricted/synchronized through its nodal AMR contract and is not refluxed.
+- Subcycling supplies both sectors at the requested stage time through the
+  shared evolution-sector coarse-time interpolation. Regridding and
+  checkpointing occur only at synchronized sector times.
+- Every solver-created AMR level samples the same initial-data provider for all
+  active sectors. Level-zero, initial fine-level, restart, and regrid code must
+  not call a provider-free initializer when provider data are active.
+- Initial data are sampled in physical coordinates. Analytic providers and
+  external grid-data providers share this sampling boundary; provider-specific
+  interpolation does not belong in the fluid or spacetime evolution kernels.
+- Value type, centering, symmetry, ghost width, checkpoint ownership, and
+  output ownership come from the field schema. Do not maintain a second list of
+  spacetime variables in evolution, checkpoint, or plotting code.
 
 ## AMR
 
 - Level creation, level remake, FillPatch, subcycled FillPatch, and repair seeds
   use the same selected coarse-fine transfer contract.
+- Vertex-centered spacetime state uses the project fourth-order nodal transfer
+  for level creation, remake, and FillPatch. AMReX's bilinear nodal transfer is
+  insufficient for the fourth-order Z4c spatial operator.
 - Reflux, average-down, prolongation, and physical boundary filling are distinct
   operations and must not substitute for one another.
 - Automatic AMR is successful when the physical metric stops refinement with

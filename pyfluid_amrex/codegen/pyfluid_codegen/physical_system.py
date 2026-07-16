@@ -280,6 +280,50 @@ class ValenciaSource:
    energy: sp.Expr
 
 
+@dataclass(frozen=True)
+class EulerianMatterProjection:
+   energy: sp.Expr
+   momentum: Vector
+   stress: Tensor3
+
+
+def eulerian_matter_projection(
+   stress_energy: Tensor4,
+   metric: ValenciaMetric,
+) -> EulerianMatterProjection:
+   """Project contravariant T^{mu nu} onto the Eulerian 3+1 frame."""
+   if stress_energy.positions != (
+      IndexPosition.CONTRAVARIANT,
+      IndexPosition.CONTRAVARIANT,
+   ):
+      raise ValueError("Eulerian matter projection requires contravariant stress energy")
+   spacetime_metric = metric.spacetime_metric()
+   stress_covariant = stress_energy.lower_index(
+      spacetime_metric, 0
+   ).lower_index(spacetime_metric, 1)
+   energy = metric.lapse**2 * stress_energy.component(0, 0)
+   momentum = Vector3(*(
+      metric.lapse
+      * sum(
+         spacetime_metric.covariant.component(direction + 1, component)
+         * stress_energy.component(component, 0)
+         for component in range(4)
+      )
+      for direction in range(3)
+   ), position=IndexPosition.COVARIANT)
+   stress = Tensor3(
+      tuple(
+         tuple(
+            stress_covariant.component(first + 1, second + 1)
+            for second in range(3)
+         )
+         for first in range(3)
+      ),
+      (IndexPosition.COVARIANT, IndexPosition.COVARIANT),
+   )
+   return EulerianMatterProjection(energy=energy, momentum=momentum, stress=stress)
+
+
 def valencia_geometric_source(
    conserved: ValenciaConserved | ValenciaMHDConserved,
    stress_energy: Tensor4,

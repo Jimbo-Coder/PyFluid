@@ -48,15 +48,19 @@
       amrex::Real min_rho = std::numeric_limits<amrex::Real>::max();
       amrex::Real min_pressure = std::numeric_limits<amrex::Real>::max();
       const EOSParams eos = eos_params(cfg_);
+      if (physical_system_is_relativistic(physics_system_)) {
+         fill_level_primitive_cache(lev, time);
+      }
 #ifdef AMREX_USE_OMP
 #pragma omp parallel reduction(+:active_count,bad_count) reduction(min:min_rho,min_pressure) if (amrex::Gpu::notInLaunchRegion())
 #endif
       {
-      for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
          const amrex::Box& bx = mfi.tilebox();
          const auto lo = amrex::lbound(bx);
          const auto hi = amrex::ubound(bx);
-         const auto state = state_[lev]->const_array(mfi);
+         const auto state = fluid_state_.state()[lev]->const_array(mfi);
+         const auto primitive = primitive_[lev]->const_array(mfi);
          const auto valid = mask.const_array(mfi);
          for (int k = lo.z; k <= hi.z; ++k) {
             for (int j = lo.y; j <= hi.y; ++j) {
@@ -67,26 +71,9 @@
                   ++active_count;
                   amrex::Real rho = state(i, j, k, RHO);
                   amrex::Real pressure = 0.0;
-                  if (physics_system_ == PhysicalSystem::RMHD) {
-                     const RMHDRecoveryResult recovered = recover_srmhd(
-                        load_rmhd_conserved(state, i, j, k), eos.gamma
-                     );
-                     rho = recovered.attempt.status == C2PStatus::Success
-                        ? recovered.primitive.rho
-                        : std::numeric_limits<amrex::Real>::quiet_NaN();
-                     pressure = recovered.attempt.status == C2PStatus::Success
-                        ? recovered.primitive.pressure
-                        : std::numeric_limits<amrex::Real>::quiet_NaN();
-                  } else if (physics_system_ == PhysicalSystem::RHD) {
-                     const RHDRecoveryResult recovered = recover_srhd_palenzuela_1d(
-                        load_rhd_conserved(state, i, j, k), eos.gamma
-                     );
-                     rho = recovered.attempt.status == C2PStatus::Success
-                        ? recovered.primitive.rho
-                        : std::numeric_limits<amrex::Real>::quiet_NaN();
-                     pressure = recovered.attempt.status == C2PStatus::Success
-                        ? recovered.primitive.pressure
-                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                  if (physical_system_is_relativistic(physics_system_)) {
+                     rho = primitive(i, j, k, RHO);
+                     pressure = primitive(i, j, k, ENERGY);
                   } else if constexpr (has_mhd_components<NComp>()) {
                      pressure = pressure_from_conserved<EOSMethod>(load_mhd_state(state, i, j, k), eos);
                   } else {
@@ -116,11 +103,12 @@
       int first_bad_k = std::numeric_limits<int>::min();
       amrex::Real first_bad_rho = std::numeric_limits<amrex::Real>::quiet_NaN();
       amrex::Real first_bad_pressure = std::numeric_limits<amrex::Real>::quiet_NaN();
-      for (amrex::MFIter mfi(*state_[lev]); mfi.isValid() && first_bad_i == std::numeric_limits<int>::min(); ++mfi) {
+      for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid() && first_bad_i == std::numeric_limits<int>::min(); ++mfi) {
          const amrex::Box& bx = mfi.validbox();
          const auto lo = amrex::lbound(bx);
          const auto hi = amrex::ubound(bx);
-         const auto state = state_[lev]->const_array(mfi);
+         const auto state = fluid_state_.state()[lev]->const_array(mfi);
+         const auto primitive = primitive_[lev]->const_array(mfi);
          const auto valid = mask.const_array(mfi);
          for (int k = lo.z; k <= hi.z && first_bad_i == std::numeric_limits<int>::min(); ++k) {
             for (int j = lo.y; j <= hi.y && first_bad_i == std::numeric_limits<int>::min(); ++j) {
@@ -130,26 +118,9 @@
                   }
                   amrex::Real rho = state(i, j, k, RHO);
                   amrex::Real pressure = 0.0;
-                  if (physics_system_ == PhysicalSystem::RMHD) {
-                     const RMHDRecoveryResult recovered = recover_srmhd(
-                        load_rmhd_conserved(state, i, j, k), eos.gamma
-                     );
-                     rho = recovered.attempt.status == C2PStatus::Success
-                        ? recovered.primitive.rho
-                        : std::numeric_limits<amrex::Real>::quiet_NaN();
-                     pressure = recovered.attempt.status == C2PStatus::Success
-                        ? recovered.primitive.pressure
-                        : std::numeric_limits<amrex::Real>::quiet_NaN();
-                  } else if (physics_system_ == PhysicalSystem::RHD) {
-                     const RHDRecoveryResult recovered = recover_srhd_palenzuela_1d(
-                        load_rhd_conserved(state, i, j, k), eos.gamma
-                     );
-                     rho = recovered.attempt.status == C2PStatus::Success
-                        ? recovered.primitive.rho
-                        : std::numeric_limits<amrex::Real>::quiet_NaN();
-                     pressure = recovered.attempt.status == C2PStatus::Success
-                        ? recovered.primitive.pressure
-                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                  if (physical_system_is_relativistic(physics_system_)) {
+                     rho = primitive(i, j, k, RHO);
+                     pressure = primitive(i, j, k, ENERGY);
                   } else if constexpr (has_mhd_components<NComp>()) {
                      pressure = pressure_from_conserved<EOSMethod>(load_mhd_state(state, i, j, k), eos);
                   } else {
@@ -196,12 +167,12 @@
       if (!cfg_.debug_check_finite && !check_physical) {
          return;
       }
-      if (!state_[lev]) {
+      if (!fluid_state_.state()[lev]) {
          return;
       }
       if (cfg_.debug_check_finite) {
          amrex::iMultiFab mask = valid_cell_mask(lev);
-         debug_check_valid_cell_finite(*state_[lev], mask, NComp, context, lev);
+         debug_check_valid_cell_finite(*fluid_state_.state()[lev], mask, NComp, context, lev);
       }
       if (check_physical) {
          check_active_cell_physical_state<NComp, EOSMethod>(lev, context, step, time);

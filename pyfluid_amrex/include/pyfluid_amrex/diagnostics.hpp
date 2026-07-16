@@ -85,9 +85,26 @@ struct ScalarDiagnostics {
    amrex::Real cfl_limiter_q1 = 0.0;
    amrex::Real cfl_limiter_q2 = 0.0;
    amrex::Real cfl_limiter_q3 = 0.0;
+   amrex::Real z4c_hamiltonian_linf = 0.0;
+   amrex::Real z4c_hamiltonian_l2 = 0.0;
+   amrex::Real z4c_momentum_linf = 0.0;
+   amrex::Real z4c_z_linf = 0.0;
+   amrex::Real z4c_theta_linf = 0.0;
+   amrex::Real z4c_log_conformal_determinant_linf = 0.0;
+   amrex::Real z4c_trace_a_tilde_linf = 0.0;
 };
 
-inline constexpr std::array<std::string_view, 56> ScalarDiagnosticColumns = {{
+struct SpacetimeConstraintDiagnostics {
+   amrex::Real hamiltonian_linf = 0.0;
+   amrex::Real hamiltonian_l2 = 0.0;
+   amrex::Real momentum_linf = 0.0;
+   amrex::Real z_linf = 0.0;
+   amrex::Real theta_linf = 0.0;
+   amrex::Real log_conformal_determinant_linf = 0.0;
+   amrex::Real trace_a_tilde_linf = 0.0;
+};
+
+inline constexpr std::array<std::string_view, 63> ScalarDiagnosticColumns = {{
    "step",
    "time",
    "dt",
@@ -144,6 +161,13 @@ inline constexpr std::array<std::string_view, 56> ScalarDiagnosticColumns = {{
    "cfl_limiter_q1",
    "cfl_limiter_q2",
    "cfl_limiter_q3",
+   "z4c_hamiltonian_linf",
+   "z4c_hamiltonian_l2",
+   "z4c_momentum_linf",
+   "z4c_z_linf",
+   "z4c_theta_linf",
+   "z4c_log_conformal_determinant_linf",
+   "z4c_trace_a_tilde_linf",
 }};
 
 template <std::size_t N>
@@ -274,36 +298,20 @@ inline void fill_pressure(amrex::MultiFab& pressure, amrex::MultiFab const& stat
    }
 }
 
-inline void fill_relativistic_pressure(
+inline void fill_pressure_from_primitive(
    amrex::MultiFab& pressure,
-   const amrex::MultiFab& state,
-   const EOSParams& eos,
-   PhysicalSystem system
+   const amrex::MultiFab& primitive
 )
 {
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
-   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+   for (amrex::MFIter mfi(primitive, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& box = mfi.tilebox();
-      const auto conserved = state.const_array(mfi);
+      const auto cached = primitive.const_array(mfi);
       const auto output = pressure.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         if (system == PhysicalSystem::RMHD) {
-            const RMHDRecoveryResult recovered = recover_srmhd(
-               load_rmhd_conserved(conserved, i, j, k), eos.gamma
-            );
-            output(i, j, k, 0) = recovered.succeeded()
-               ? recovered.primitive.pressure
-               : std::numeric_limits<amrex::Real>::quiet_NaN();
-         } else {
-            const RHDRecoveryResult recovered = recover_srhd_palenzuela_1d(
-               load_rhd_conserved(conserved, i, j, k), eos.gamma
-            );
-            output(i, j, k, 0) = recovered.attempt.status == C2PStatus::Success
-               ? recovered.primitive.pressure
-               : std::numeric_limits<amrex::Real>::quiet_NaN();
-         }
+         output(i, j, k, 0) = cached(i, j, k, ENERGY);
       });
    }
 }
@@ -611,7 +619,14 @@ inline void append_scalar_row(std::ofstream& out, ScalarDiagnostics const& d)
       d.cfl_limiter_k,
       d.cfl_limiter_q1,
       d.cfl_limiter_q2,
-      d.cfl_limiter_q3
+      d.cfl_limiter_q3,
+      d.z4c_hamiltonian_linf,
+      d.z4c_hamiltonian_l2,
+      d.z4c_momentum_linf,
+      d.z4c_z_linf,
+      d.z4c_theta_linf,
+      d.z4c_log_conformal_determinant_linf,
+      d.z4c_trace_a_tilde_linf
    );
 }
 

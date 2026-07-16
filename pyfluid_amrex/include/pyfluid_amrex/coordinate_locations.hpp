@@ -3,16 +3,10 @@
 #include <AMReX_GpuQualifiers.H>
 #include <AMReX_REAL.H>
 
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/mesh_geometry.hpp"
 
 namespace pyfluid_amrex {
-
-static constexpr amrex::Real PyFluidFourPi =
-   static_cast<amrex::Real>(12.5663706143591729538505735331180115367886775975);
-static constexpr amrex::Real PyFluidTwoPi =
-   static_cast<amrex::Real>(6.28318530717958647692528676655900576839433879875);
-static constexpr amrex::Real PyFluidHalfPi =
-   static_cast<amrex::Real>(1.57079632679489661923132169163975144209858469969);
 
 struct MeshAxisCellBounds {
    amrex::Real lo = 0.0;
@@ -48,7 +42,7 @@ amrex::Real mesh_default_coordinate_for_axis(int axis) noexcept
       return 1.0;
    }
    if (axis == MeshAxisTheta) {
-      return PyFluidHalfPi;
+      return constants::half_pi;
    }
    return 0.0;
 }

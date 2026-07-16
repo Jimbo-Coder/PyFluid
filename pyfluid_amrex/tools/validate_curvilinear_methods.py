@@ -9,6 +9,7 @@ Riemann solvers, AMR refluxing/subcycling, viscosity, and resistivity paths.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import shutil
 import sys
@@ -79,14 +80,14 @@ SPHERICAL_BUMP = {
    **COMMON_DYNAMIC,
    "pyfluid.bump_x0": "1.5",
    "pyfluid.bump_y0": "1.5707963267948966",
-   "pyfluid.bump_z0": "3.141592653589793",
+   "pyfluid.bump_z0": f"{math.pi:.17g}",
 }
 
 CYLINDRICAL_BUMP = {
    **COMMON_DYNAMIC,
    "pyfluid.bump_x0": "1.5",
    "pyfluid.bump_y0": "0.0",
-   "pyfluid.bump_z0": "3.141592653589793",
+   "pyfluid.bump_z0": f"{math.pi:.17g}",
 }
 
 COMMON_STATIC_DIFFUSION = {
@@ -341,7 +342,7 @@ def method_cases(level: str) -> list[CurvilinearCase]:
          "pyfluid.bc_yhi": "reflecting",
          "amr.n_cell": "32 32",
          "amr.max_grid_size": "16",
-         "pyfluid.bump_x0": "3.141592653589793",
+         "pyfluid.bump_x0": f"{math.pi:.17g}",
          "pyfluid.bump_y0": "0.0",
          "pyfluid.timestep": "rk4",
          "pyfluid.recon": "wenoz",
@@ -369,7 +370,7 @@ def method_cases(level: str) -> list[CurvilinearCase]:
          "amr.n_cell": "32 32",
          "amr.max_grid_size": "16",
          "pyfluid.bump_x0": "1.5707963267948966",
-         "pyfluid.bump_y0": "3.141592653589793",
+         "pyfluid.bump_y0": f"{math.pi:.17g}",
          "pyfluid.timestep": "rk4",
          "pyfluid.recon": "wenoz",
          "pyfluid.riemann": "hllc",
@@ -772,7 +773,7 @@ def method_cases(level: str) -> list[CurvilinearCase]:
          "pyfluid.amplitude": "0.03",
          "pyfluid.bump_x0": "1.5",
          "pyfluid.bump_y0": "1.5707963267948966",
-         "pyfluid.bump_z0": "3.141592653589793",
+         "pyfluid.bump_z0": f"{math.pi:.17g}",
          "pyfluid.max_step": "4",
          "pyfluid.b1_0": "0.0",
          "pyfluid.b2_0": "0.0",
@@ -791,7 +792,7 @@ def method_cases(level: str) -> list[CurvilinearCase]:
          "pyfluid.ic": "pressure_bump",
          "pyfluid.amplitude": "0.04",
          "pyfluid.bump_x0": "1.5",
-         "pyfluid.bump_y0": "3.141592653589793",
+         "pyfluid.bump_y0": f"{math.pi:.17g}",
          "pyfluid.bump_z0": "0.0",
          "pyfluid.max_step": "4",
          "pyfluid.b1_0": "0.0",
@@ -889,7 +890,7 @@ def method_cases(level: str) -> list[CurvilinearCase]:
          "pyfluid.amplitude": "0.05",
          "pyfluid.bump_x0": "1.5",
          "pyfluid.bump_y0": "0.0",
-         "pyfluid.bump_z0": "3.141592653589793",
+         "pyfluid.bump_z0": f"{math.pi:.17g}",
          "pyfluid.max_step": "6",
          "pyfluid.b1_0": "0.0",
          "pyfluid.b2_0": "0.03",
@@ -1002,7 +1003,7 @@ def method_cases(level: str) -> list[CurvilinearCase]:
             "pyfluid.amplitude": "0.05",
             "pyfluid.bump_x0": "1.5",
             "pyfluid.bump_y0": "0.0",
-            "pyfluid.bump_z0": "3.141592653589793",
+            "pyfluid.bump_z0": f"{math.pi:.17g}",
             "pyfluid.max_step": "6",
             "pyfluid.b1_0": "0.0",
             "pyfluid.b2_0": "0.03",

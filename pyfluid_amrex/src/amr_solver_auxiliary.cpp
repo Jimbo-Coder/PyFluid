@@ -88,14 +88,14 @@ void AmrSolverBase::refresh_mhd_aux_fields_for_output(int lev)
       if (ct_enabled(cfg_)) {
          fill_edge_current_density_from_faces(edge_current_[lev], face_b_[lev], Geom(lev), cfg_);
       } else {
-         fill_edge_current_density_from_cells(edge_current_[lev], *state_[lev], Geom(lev));
+         fill_edge_current_density_from_cells(edge_current_[lev], *fluid_state_.state()[lev], Geom(lev));
       }
       enforce_edge_electric_periodicity(edge_current_[lev], Geom(lev));
    }
    if (cached_edge_electric_field_requested() || (ct_enabled(cfg_) && aux_gfs_contains(cfg_, AuxGridField::ElectricField))) {
       EdgeElectricField const* edge_j = edge_current_[lev].e[0] ? &edge_current_[lev] : nullptr;
       FaceMagneticField const* face_b = ct_enabled(cfg_) ? &face_b_[lev] : nullptr;
-      fill_edge_electric_field_for_output(edge_e_[lev], *state_[lev], face_b, edge_j, Geom(lev), cfg_.resistivity, cfg_);
+      fill_edge_electric_field_for_output(edge_e_[lev], *fluid_state_.state()[lev], face_b, edge_j, Geom(lev), cfg_.resistivity, cfg_);
    }
 }
 

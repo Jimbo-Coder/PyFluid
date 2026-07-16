@@ -302,7 +302,7 @@ def transmission_inputs(case: OriginCase, force: bool) -> tuple[Path, Path, Path
       "pyfluid.bc_xlo": "origin",
       "pyfluid.bc_xhi": "outflow",
       "pyfluid.passive_x0": "0.18",
-      "pyfluid.passive_y0": "3.141592653589793",
+      "pyfluid.passive_y0": f"{np.pi:.17g}",
    })
    return cart_input, cyl_input, cart_run, cyl_run
 

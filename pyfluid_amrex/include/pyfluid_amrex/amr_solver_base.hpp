@@ -32,12 +32,14 @@
 #include "pyfluid_amrex/checkpoint.hpp"
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/ct_fields.hpp"
+#include "pyfluid_amrex/evolution_sector_storage.hpp"
 #include "pyfluid_amrex/ct_edge_flux_register.hpp"
 #include "pyfluid_amrex/amr_indicator.hpp"
 #include "pyfluid_amrex/diagnostics.hpp"
 #include "pyfluid_amrex/solid_geometry.hpp"
 #include "pyfluid_amrex/gravity.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
+#include "pyfluid_amrex/initial_data/tov.hpp"
 #include "pyfluid_amrex/mapped_patch_fill.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/multipatch.hpp"
@@ -50,19 +52,36 @@
 #include "pyfluid_amrex/solid_conservation.hpp"
 #include "pyfluid_amrex/state.hpp"
 #include "pyfluid_amrex/state_interpolation.hpp"
+#include "pyfluid_amrex/spacetime_fields.hpp"
+#include "pyfluid_amrex/spacetime_coupling_storage.hpp"
+#include "pyfluid_amrex/z4c_runtime.hpp"
 
 namespace pyfluid_amrex {
 
 class AmrSolverBase : public amrex::AmrCore {
 public:
    explicit AmrSolverBase(RunConfig cfg)
-      : cfg_(std::move(cfg))
+      : cfg_(std::move(cfg)), tov_initial_data_(cfg_)
    {
       validate_config(cfg_);
       validate_amr_refinement_ratios();
       physics_system_ = physical_system(cfg_);
-      state_component_count_ = state_component_count(cfg_);
       mesh_layout_ = mesh_runtime_layout(cfg_);
+      const int nlev = maxLevel() + 1;
+      fluid_state_.configure(
+         fluid_state_grid_fields(physics_system_, cfg_.passive_scalars), nlev, cfg_.ng
+      );
+      if (has_evolution_sector(
+             evolution_sectors(physics_system_, spacetime_evolution_mode(cfg_)),
+             EvolutionSector::Spacetime
+          )) {
+         spacetime_state_.configure(
+            z4c_state_grid_fields(), nlev, std::max(3, cfg_.ng + 2)
+         );
+         spacetime_coupling_.configure(nlev, cfg_.ng);
+         spacetime_fillpatch_bcs_ = z4c_boundary_records(cfg_, Geom(0));
+         spacetime_fillpatch_func_ = SpacetimeFillPatchFunc(Z4cFillPatchBoundary{});
+      }
       state_interpolater_.configure(
          selected_state_interpolater(),
          mesh_layout_.coordinate,
@@ -88,14 +107,6 @@ public:
          face_fillpatch_func_[dir] = FaceFillPatchFunc(FaceBFillPatchBoundary{boundary_data_, dir});
       }
       post_fillpatch_state_boundary_needed_ = compute_post_fillpatch_state_boundary_needed();
-      const int nlev = maxLevel() + 1;
-      state_.resize(nlev);
-      old_state_.resize(nlev);
-      source_state_.resize(nlev);
-      rk4_coarse_stage_state_.resize(nlev);
-      next_.resize(nlev);
-      scratch_.resize(nlev);
-      rhs_.resize(nlev);
       primitive_.resize(nlev);
       fluxes_.resize(nlev);
 #if (AMREX_SPACEDIM >= 2)
@@ -131,9 +142,6 @@ public:
 #if (AMREX_SPACEDIM >= 2)
       edge_flux_registers_.resize(nlev);
 #endif
-      for (auto& stage : rk4_rhs_stage_) {
-         stage.resize(nlev);
-      }
       level_steps_.resize(nlev, 0);
       level_times_.resize(nlev, 0.0);
       level_old_times_.resize(nlev, 0.0);
@@ -145,10 +153,6 @@ public:
       for (auto& dir_strength : latest_auto_direction_strength_) {
          dir_strength.resize(nlev, 0.0);
       }
-      rk4_stage_cache_stage_.resize(nlev, -1);
-      rk4_stage_cache_fine_start_.resize(nlev, 0.0);
-      rk4_stage_cache_time_.resize(nlev, 0.0);
-      rk4_stage_cache_dt_.resize(nlev, 0.0);
    }
 
 protected:
@@ -156,8 +160,10 @@ protected:
    using StateFillPatchPhysBC = amrex::PhysBCFunct<StateFillPatchFunc>;
    using FaceFillPatchFunc = amrex::GpuBndryFuncFab<FaceBFillPatchBoundary>;
    using FaceFillPatchPhysBC = amrex::PhysBCFunct<FaceFillPatchFunc>;
+   using SpacetimeFillPatchFunc = amrex::GpuBndryFuncFab<Z4cFillPatchBoundary>;
+   using SpacetimeFillPatchPhysBC = amrex::PhysBCFunct<SpacetimeFillPatchFunc>;
 
-   using LevelData = std::vector<std::unique_ptr<amrex::MultiFab>>;
+   using LevelData = EvolutionSectorStorage::LevelData;
 
    struct HydroConservedTotals {
       std::array<amrex::Real, NVAR_HYDRO> value{};
@@ -198,7 +204,7 @@ protected:
 
    int num_state_components() const
    {
-      return state_component_count_;
+      return fluid_state_.num_components();
    }
 
    int recon_method_for_level(int lev) const
@@ -345,6 +351,7 @@ protected:
    amrex::Real active_finest_cell_width() const;
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> min_feature_lengths() const;
    amrex::Real min_feature_length() const;
+   void fill_level_primitive_cache(int lev, amrex::Real time);
    bool auto_refinement_resolved_at_level(int lev) const;
    AmrLevelDiagnostics current_amr_level_diagnostics() const;
    void validate_timestep(amrex::Real dt, int step, amrex::Real time) const;
@@ -367,6 +374,74 @@ protected:
    void average_down_face_b();
    void average_down_face_b_level(int fine_lev);
    void average_down_face_b_level_metric(int fine_lev);
+   void average_down_spacetime();
+   void average_down_spacetime_level(int fine_lev);
+   void initialize_spacetime_level(int lev, amrex::Real time);
+   void fill_new_spacetime_level_from_coarse(int lev, amrex::Real time);
+   void fill_remade_spacetime_level(
+      int lev,
+      amrex::Real time,
+      amrex::MultiFab& old_state
+   );
+   void fill_spacetime_level_boundaries(
+      LevelData& data,
+      int lev,
+      amrex::Real time,
+      bool synchronous_levels = false,
+      amrex::Real fine_step_start = -1.0,
+      int rk_stage = 0
+   );
+   void fill_all_spacetime_boundaries(LevelData& data, amrex::Real time);
+   static void project_spacetime_state(amrex::MultiFab& state);
+   static void project_spacetime_state_range(
+      LevelData& state,
+      int lev_begin,
+      int lev_end
+   );
+   void prepare_spacetime_coupling_range(
+      LevelData& state,
+      int lev_begin,
+      int lev_end,
+      amrex::Real stage_time,
+      amrex::Real fine_step_start,
+      int rk_stage
+   );
+   void apply_evolved_spacetime_fluid_boundaries_range(
+      LevelData& state,
+      int lev_begin,
+      int lev_end
+   );
+   void fill_spacetime_matter_range(int lev_begin, int lev_end);
+   void add_spacetime_ko_dissipation(amrex::MultiFab const& state, int lev);
+   template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
+   void compute_spacetime_rhs_level(
+      LevelData& input,
+      int lev,
+      amrex::Real stage_time
+   );
+   template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
+   void compute_spacetime_rhs_gauge_range(
+      LevelData& input,
+      int lev_begin,
+      int lev_end,
+      amrex::Real stage_time
+   );
+   void compute_spacetime_rhs_range(
+      LevelData& input,
+      int lev_begin,
+      int lev_end,
+      amrex::Real stage_time
+   );
+   template <Z4cLapseGauge LapseGauge>
+   void dispatch_spacetime_rhs_shift_gauge(
+      LevelData& input,
+      int lev_begin,
+      int lev_end,
+      amrex::Real stage_time
+   );
+   SpacetimeConstraintDiagnostics compute_spacetime_constraint_diagnostics(
+      amrex::Real time
+   );
    void apply_all_face_b_boundaries();
    void sync_all_cell_b_from_faces(LevelData& data, bool preserve_pressure);
 
@@ -446,8 +521,8 @@ protected:
 #include "pyfluid_amrex/solver_sections/diagnostics.inc.hpp"
 
    RunConfig cfg_;
+   TovInitialData tov_initial_data_;
    PhysicalSystem physics_system_ = PhysicalSystem::HD;
-   int state_component_count_ = NVAR_HYDRO;
    MeshRuntimeLayout mesh_layout_{};
    int recon_method_ = ReconPWC;
    int recon_fine_method_ = ReconPWC;
@@ -464,6 +539,8 @@ protected:
    amrex::Array<amrex::Vector<amrex::BCRec>, AMREX_SPACEDIM> face_fillpatch_bcs_;
    StateFillPatchFunc state_fillpatch_func_;
    amrex::Array<FaceFillPatchFunc, AMREX_SPACEDIM> face_fillpatch_func_;
+   amrex::Vector<amrex::BCRec> spacetime_fillpatch_bcs_;
+   SpacetimeFillPatchFunc spacetime_fillpatch_func_;
    bool post_fillpatch_state_boundary_needed_ = false;
    amrex::Real checkpoint_reference_mass_ = std::numeric_limits<amrex::Real>::quiet_NaN();
    amrex::Real checkpoint_reference_energy_ = std::numeric_limits<amrex::Real>::quiet_NaN();
@@ -471,15 +548,10 @@ protected:
    amrex::Real cumulative_wall_work_ = 0.0;
    amrex::Real latest_wall_power_ = 0.0;
    ConservationLedger conservation_ledger_;
-   std::vector<std::unique_ptr<amrex::MultiFab>> state_;
-   std::vector<std::unique_ptr<amrex::MultiFab>> old_state_;
-   std::vector<std::unique_ptr<amrex::MultiFab>> source_state_;
-   std::vector<std::unique_ptr<amrex::MultiFab>> rk4_coarse_stage_state_;
-   std::vector<std::unique_ptr<amrex::MultiFab>> next_;
-   std::vector<std::unique_ptr<amrex::MultiFab>> scratch_;
-   std::vector<std::unique_ptr<amrex::MultiFab>> rhs_;
+   EvolutionSectorStorage fluid_state_;
+   EvolutionSectorStorage spacetime_state_;
+   SpacetimeCouplingStorage spacetime_coupling_;
    std::vector<std::unique_ptr<amrex::MultiFab>> primitive_;
-   std::array<std::vector<std::unique_ptr<amrex::MultiFab>>, 4> rk4_rhs_stage_;
    std::vector<std::array<std::unique_ptr<amrex::MultiFab>, AMREX_SPACEDIM>> fluxes_;
 #if (AMREX_SPACEDIM >= 2)
    std::vector<std::array<std::unique_ptr<amrex::iMultiFab>, AMREX_SPACEDIM>> flux_owner_masks_;
@@ -528,10 +600,6 @@ protected:
    std::vector<amrex::Long> latest_auto_tagged_cells_;
    std::array<std::vector<amrex::Long>, AMREX_SPACEDIM> latest_auto_direction_tagged_cells_;
    std::array<std::vector<amrex::Real>, AMREX_SPACEDIM> latest_auto_direction_strength_;
-   amrex::Vector<int> rk4_stage_cache_stage_;
-   amrex::Vector<amrex::Real> rk4_stage_cache_fine_start_;
-   amrex::Vector<amrex::Real> rk4_stage_cache_time_;
-   amrex::Vector<amrex::Real> rk4_stage_cache_dt_;
 };
 
 } // namespace pyfluid_amrex

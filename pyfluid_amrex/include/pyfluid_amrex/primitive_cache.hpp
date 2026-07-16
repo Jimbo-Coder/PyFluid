@@ -10,10 +10,12 @@
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
+#include "pyfluid_amrex/z4c_pointwise.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
 
+template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void store_rhd_primitive_cache_cell(
    amrex::Array4<amrex::Real const> const& state,
@@ -25,8 +27,8 @@ void store_rhd_primitive_cache_cell(
    const SpacetimeMetric& metric
 ) noexcept
 {
-   const RHDRecoveryResult recovered = recover_srhd_palenzuela_1d(
-      load_rhd_conserved(state, i, j, k), metric, eos.gamma
+   const RHDRecoveryResult recovered = recover_rhd<EOSMethod>(
+      load_rhd_conserved(state, i, j, k), metric, eos
    );
    const amrex::Real invalid = std::numeric_limits<amrex::Real>::quiet_NaN();
    const RHDPrimitive& value = recovered.primitive;
@@ -38,6 +40,7 @@ void store_rhd_primitive_cache_cell(
    primitive(i, j, k, ENERGY) = success ? value.pressure : invalid;
 }
 
+template <int EOSMethod>
 inline void fill_rhd_primitive_cache(
    amrex::MultiFab& primitive,
    const amrex::MultiFab& state,
@@ -61,8 +64,38 @@ inline void fill_rhd_primitive_cache(
             fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
                spacetime, lower, spacing, i, j, k, time
             );
-         store_rhd_primitive_cache_cell(
+         store_rhd_primitive_cache_cell<EOSMethod>(
             conserved, cached, i, j, k, eos, local_geometry.metric
+         );
+      });
+   }
+}
+
+template <int EOSMethod>
+inline void fill_rhd_primitive_cache(
+   amrex::MultiFab& primitive,
+   const amrex::MultiFab& state,
+   const EOSParams& eos,
+   const amrex::MultiFab& cell_spacetime
+)
+{
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(primitive, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.growntilebox();
+      const auto conserved = state.const_array(mfi);
+      const auto cached = primitive.array(mfi);
+      const auto spacetime = cell_spacetime.const_array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         store_rhd_primitive_cache_cell<EOSMethod>(
+            conserved,
+            cached,
+            i,
+            j,
+            k,
+            eos,
+            generated::z4c_spacetime_metric(load_z4c_state(spacetime, i, j, k))
          );
       });
    }
@@ -120,6 +153,35 @@ inline void fill_rmhd_primitive_cache(
             );
          store_rmhd_primitive_cache_cell(
             conserved, cached, i, j, k, eos, local_geometry.metric
+         );
+      });
+   }
+}
+
+inline void fill_rmhd_primitive_cache(
+   amrex::MultiFab& primitive,
+   const amrex::MultiFab& state,
+   const EOSParams& eos,
+   const amrex::MultiFab& cell_spacetime
+)
+{
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(primitive, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.growntilebox();
+      const auto conserved = state.const_array(mfi);
+      const auto cached = primitive.array(mfi);
+      const auto spacetime = cell_spacetime.const_array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         store_rmhd_primitive_cache_cell(
+            conserved,
+            cached,
+            i,
+            j,
+            k,
+            eos,
+            generated::z4c_spacetime_metric(load_z4c_state(spacetime, i, j, k))
          );
       });
    }
@@ -190,8 +252,17 @@ inline void fill_base_primitive_cache_runtime(
 )
 {
    if (system == PhysicalSystem::RHD) {
-      fill_rhd_primitive_cache(primitive, state, eos, geometry, spacetime, time);
-      return;
+      switch (eos_method) {
+      case EOSPolytrope:
+         fill_rhd_primitive_cache<EOSPolytrope>(primitive, state, eos, geometry, spacetime, time);
+         return;
+      case EOSHybridPolytrope:
+         fill_rhd_primitive_cache<EOSHybridPolytrope>(primitive, state, eos, geometry, spacetime, time);
+         return;
+      default:
+         fill_rhd_primitive_cache<EOSIdealGas>(primitive, state, eos, geometry, spacetime, time);
+         return;
+      }
    }
    if (system == PhysicalSystem::RMHD) {
       fill_rmhd_primitive_cache(primitive, state, eos, geometry, spacetime, time);

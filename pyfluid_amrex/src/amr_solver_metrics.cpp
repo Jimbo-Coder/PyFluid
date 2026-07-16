@@ -6,7 +6,7 @@ amrex::Long AmrSolverBase::cell_count() const
 {
    amrex::Long cells = 0;
    for (int lev = 0; lev <= finestLevel(); ++lev) {
-      if (state_[lev]) {
+      if (fluid_state_.state()[lev]) {
          cells += boxArray(lev).numPts();
       }
    }
@@ -15,11 +15,11 @@ amrex::Long AmrSolverBase::cell_count() const
 
 amrex::Long AmrSolverBase::active_cell_count_level(int lev) const
 {
-   if (!state_[lev] || !solid_active(lev)) {
-      return state_[lev] ? boxArray(lev).numPts() : 0;
+   if (!fluid_state_.state()[lev] || !solid_active(lev)) {
+      return fluid_state_.state()[lev] ? boxArray(lev).numPts() : 0;
    }
    amrex::Real local_active = 0.0;
-   for (amrex::MFIter mfi(*state_[lev]); mfi.isValid(); ++mfi) {
+   for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.validbox();
       const int kind = cached_mask_kind(&solid_valid_kind_[lev], mfi, *solid_mask_[lev], bx);
       if (kind == MaskKindZero) {
@@ -78,7 +78,7 @@ std::vector<amrex::Long> AmrSolverBase::level_cell_counts() const
 {
    std::vector<amrex::Long> cells(maxLevel() + 1, 0);
    for (int lev = 0; lev <= finestLevel(); ++lev) {
-      if (state_[lev]) {
+      if (fluid_state_.state()[lev]) {
          cells[lev] = boxArray(lev).numPts();
       }
    }
@@ -252,8 +252,8 @@ void AmrSolverBase::enforce_level_cell_budget(int lev, amrex::Long cells, char c
 amrex::Long AmrSolverBase::projected_cell_count(int replacement_lev, amrex::Long replacement_cells) const
 {
    amrex::Long cells = replacement_cells;
-   for (int lev = 0; lev < static_cast<int>(state_.size()); ++lev) {
-      if (lev != replacement_lev && state_[lev]) {
+   for (int lev = 0; lev < static_cast<int>(fluid_state_.state().size()); ++lev) {
+      if (lev != replacement_lev && fluid_state_.state()[lev]) {
          cells += boxArray(lev).numPts();
       }
    }
@@ -287,7 +287,7 @@ void AmrSolverBase::enforce_cell_budget(char const* context) const
       return;
    }
    for (int lev = 0; lev <= finestLevel(); ++lev) {
-      if (state_[lev]) {
+      if (fluid_state_.state()[lev]) {
          enforce_level_cell_budget(lev, boxArray(lev).numPts(), context);
       }
    }
@@ -322,7 +322,7 @@ void AmrSolverBase::append_current_amr_level_row(std::ofstream& out, int step, a
       }
    }
    for (int lev = 0; lev <= finestLevel(); ++lev) {
-      if (!state_[lev]) {
+      if (!fluid_state_.state()[lev]) {
          continue;
       }
       const amrex::BoxArray& boxes = boxArray(lev);
@@ -355,7 +355,7 @@ void AmrSolverBase::append_current_amr_level_row(std::ofstream& out, int step, a
    }
    std::vector<std::string> refinement_decisions(maxLevel() + 1, "inactive");
    for (int lev = 0; lev <= finestLevel(); ++lev) {
-      if (!state_[lev]) {
+      if (!fluid_state_.state()[lev]) {
          continue;
       }
       if (lev < static_cast<int>(latest_auto_tagged_cells_.size())) {
@@ -378,7 +378,7 @@ void AmrSolverBase::append_current_amr_level_row(std::ofstream& out, int step, a
          refinement_decisions[lev] = "smooth";
       } else if (lev == maxLevel()) {
          refinement_decisions[lev] = "max_level_guard";
-      } else if (lev < finestLevel() && state_[lev + 1]) {
+      } else if (lev < finestLevel() && fluid_state_.state()[lev + 1]) {
          refinement_decisions[lev] = "refined";
       } else {
          refinement_decisions[lev] = "tagged_no_fine_level";

@@ -12,14 +12,14 @@
    amrex::iMultiFab coarse_fine_cell_mask(int lev) const
    {
       amrex::iMultiFab mask(
-         state_[lev]->boxArray(),
-         state_[lev]->DistributionMap(),
+         fluid_state_.state()[lev]->boxArray(),
+         fluid_state_.state()[lev]->DistributionMap(),
          1,
          0
       );
       if (lev < finestLevel()) {
          mask = amrex::makeFineMask(
-            *state_[lev],
+            *fluid_state_.state()[lev],
             boxArray(lev + 1),
             refRatio(lev),
             Geom(lev).periodicity(),

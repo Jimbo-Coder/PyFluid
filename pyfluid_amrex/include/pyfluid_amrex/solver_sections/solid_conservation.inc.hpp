@@ -12,16 +12,16 @@
       const int eos_method = eos_method_code(cfg_);
       for (int lev = 0; lev <= finestLevel(); ++lev) {
          amrex::iMultiFab mask = valid_cell_mask(lev);
-         amrex::MultiFab bad(state_[lev]->boxArray(), state_[lev]->DistributionMap(), 1, 0);
+         amrex::MultiFab bad(fluid_state_.state()[lev]->boxArray(), fluid_state_.state()[lev]->DistributionMap(), 1, 0);
          bad.setVal(0.0);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
          {
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& bx = mfi.tilebox();
             const auto valid = mask.const_array(mfi);
-            const auto s = state_[lev]->const_array(mfi);
+            const auto s = fluid_state_.state()[lev]->const_array(mfi);
             const auto out = bad.array(mfi);
             const auto correction = density_delta;
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -67,10 +67,10 @@
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
          {
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& bx = mfi.tilebox();
             const auto valid = mask.const_array(mfi);
-            const auto s = state_[lev]->array(mfi);
+            const auto s = fluid_state_.state()[lev]->array(mfi);
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                if (valid(i, j, k, 0) == 0) {
                   return;
@@ -92,10 +92,10 @@
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
          {
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& bx = mfi.tilebox();
             const auto valid = mask.const_array(mfi);
-            const auto s = state_[lev]->array(mfi);
+            const auto s = fluid_state_.state()[lev]->array(mfi);
             const auto correction = density_delta;
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                if (valid(i, j, k, 0) == 0) {
@@ -117,16 +117,16 @@
       }
       for (int lev = 0; lev <= finestLevel(); ++lev) {
          amrex::iMultiFab mask = valid_cell_mask(lev);
-         amrex::MultiFab bad(state_[lev]->boxArray(), state_[lev]->DistributionMap(), 1, 0);
+         amrex::MultiFab bad(fluid_state_.state()[lev]->boxArray(), fluid_state_.state()[lev]->DistributionMap(), 1, 0);
          bad.setVal(0.0);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
          {
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& bx = mfi.tilebox();
             const auto valid = mask.const_array(mfi);
-            const auto s = state_[lev]->const_array(mfi);
+            const auto s = fluid_state_.state()[lev]->const_array(mfi);
             const auto out = bad.array(mfi);
             const amrex::Real delta = density_delta;
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -153,10 +153,10 @@
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
          {
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& bx = mfi.tilebox();
             const auto valid = mask.const_array(mfi);
-            const auto s = state_[lev]->array(mfi);
+            const auto s = fluid_state_.state()[lev]->array(mfi);
             const amrex::Real delta = density_delta;
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                if (valid(i, j, k, 0) == 0) {

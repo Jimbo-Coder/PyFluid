@@ -5,6 +5,7 @@
 #include "pyfluid_amrex/kernels_generated/riemann_ops.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
 #include "pyfluid_amrex/reconstruction.hpp"
+#include "pyfluid_amrex/z4c_pointwise.hpp"
 #include "pyfluid_amrex/rhd_system.hpp"
 #include "pyfluid_amrex/state.hpp"
 
@@ -50,7 +51,7 @@ RMHDPrimitive admissibility_limit_rmhd_primitive(
    const SpacetimeMetric& metric
 ) noexcept
 {
-   const RHDPrimitive limited = admissibility_limit_rhd_primitive(
+   const RHDPrimitive limited = admissibility_limit_rhd_primitive<EOSIdealGas>(
       {face.rho, face.eps, face.pressure, face.v1, face.v2, face.v3},
       {center.rho, center.eps, center.pressure, center.v1, center.v2, center.v3},
       eos,
@@ -296,6 +297,54 @@ inline void fill_rmhd_flux_direction(
    }
 }
 
+template <int ReconMethod, int RiemannMethod, int Direction>
+inline void fill_rmhd_flux_direction(
+   std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
+   const amrex::MultiFab& primitive,
+   const EOSParams& eos,
+   const amrex::MultiFab& cell_spacetime
+)
+{
+   amrex::MultiFab& flux = *fluxes[Direction];
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.tilebox();
+      const auto cached = primitive.const_array(mfi);
+      const auto spacetime = cell_spacetime.const_array(mfi);
+      const auto face_flux = flux.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         int il = i;
+         int jl = j;
+         int kl = k;
+         if constexpr (Direction == 0) {
+            --il;
+         }
+#if (AMREX_SPACEDIM >= 2)
+         else if constexpr (Direction == 1) {
+            --jl;
+         }
+#endif
+#if (AMREX_SPACEDIM == 3)
+         else {
+            --kl;
+         }
+#endif
+         const SpacetimeMetric metric = evolved_spacetime_metric_at_face<
+            4,
+            Direction
+         >(spacetime, i, j, k);
+         const RMHDConserved value = rmhd_riemann_flux<
+            ReconMethod,
+            RiemannMethod,
+            Direction
+         >(cached, il, jl, kl, i, j, k, eos, metric);
+         store_rmhd_conserved(face_flux, i, j, k, value);
+      });
+   }
+}
+
 template <int ReconMethod, int Direction>
 inline void fill_rmhd_flux_direction_runtime(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
@@ -321,6 +370,36 @@ inline void fill_rmhd_flux_direction_runtime(
    case RiemannHLLE:
       fill_rmhd_flux_direction<ReconMethod, RiemannHLLE, Direction>(
          fluxes, primitive, eos, geometry, spacetime, time
+      );
+      return;
+   default:
+      amrex::Abort("RMHD supports LLF, HLL, and HLLE Riemann solvers");
+   }
+}
+
+template <int ReconMethod, int Direction>
+inline void fill_rmhd_flux_direction_runtime(
+   std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
+   const amrex::MultiFab& primitive,
+   const EOSParams& eos,
+   int riemann_method,
+   const amrex::MultiFab& cell_spacetime
+)
+{
+   switch (riemann_method) {
+   case RiemannLLF:
+      fill_rmhd_flux_direction<ReconMethod, RiemannLLF, Direction>(
+         fluxes, primitive, eos, cell_spacetime
+      );
+      return;
+   case RiemannHLL:
+      fill_rmhd_flux_direction<ReconMethod, RiemannHLL, Direction>(
+         fluxes, primitive, eos, cell_spacetime
+      );
+      return;
+   case RiemannHLLE:
+      fill_rmhd_flux_direction<ReconMethod, RiemannHLLE, Direction>(
+         fluxes, primitive, eos, cell_spacetime
       );
       return;
    default:

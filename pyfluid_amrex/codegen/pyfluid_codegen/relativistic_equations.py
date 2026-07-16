@@ -13,6 +13,7 @@ from .physical_system import (
    ValenciaMetric,
    ValenciaMetricDerivatives,
    ValenciaPrimitive,
+   eulerian_matter_projection,
    valencia_geometric_source,
 )
 from .tensor_algebra import (
@@ -366,6 +367,65 @@ def rmhd_stress_energy_kernel() -> StructKernel:
    )
 
 
+def _eulerian_matter_kernel(
+   name: str,
+   primitive_type: str,
+   stress_energy: Tensor,
+   metric: ValenciaMetric,
+) -> StructKernel:
+   matter = eulerian_matter_projection(stress_energy, metric)
+   return StructKernel(
+      name=name,
+      return_type="EulerianMatter",
+      arguments=(
+         (f"const {primitive_type}&", "primitive"),
+         ("const SpacetimeMetric&", "metric"),
+      ),
+      outputs=(
+         "rho",
+         "momentum1",
+         "momentum2",
+         "momentum3",
+         "stress11",
+         "stress12",
+         "stress13",
+         "stress22",
+         "stress23",
+         "stress33",
+      ),
+      expressions=(
+         matter.energy,
+         *matter.momentum.as_tuple(),
+         matter.stress.component(0, 0),
+         matter.stress.component(0, 1),
+         matter.stress.component(0, 2),
+         matter.stress.component(1, 1),
+         matter.stress.component(1, 2),
+         matter.stress.component(2, 2),
+      ),
+   )
+
+
+def rhd_eulerian_matter_kernel() -> StructKernel:
+   primitive, metric = _symbols()
+   return _eulerian_matter_kernel(
+      "rhd_eulerian_matter",
+      "RHDPrimitive",
+      ValenciaHydrodynamics().stress_energy(primitive, metric),
+      metric,
+   )
+
+
+def rmhd_eulerian_matter_kernel() -> StructKernel:
+   primitive, metric = _rmhd_symbols()
+   return _eulerian_matter_kernel(
+      "rmhd_eulerian_matter",
+      "RMHDPrimitive",
+      ValenciaMagnetohydrodynamics().stress_energy(primitive, metric),
+      metric,
+   )
+
+
 def rhd_geometric_source_kernel() -> StructKernel:
    primitive, metric = _symbols()
    system = ValenciaHydrodynamics()
@@ -447,24 +507,17 @@ def srhd_wave_speed_kernel(direction: int) -> StructKernel:
    if direction < 0 or direction >= 3:
       raise ValueError("SRHD wave-speed direction must be in [0, 3)")
    primitive, metric = _symbols()
-   gamma = sp.Symbol("gamma", positive=True)
-   ideal_gas = ideal_gas_equation_of_state()
-   sound_speed_squared = ideal_gas.relativistic_sound_speed_squared(
-      primitive.specific_internal_energy
-   ).subs({
-      ideal_gas.density: primitive.density,
-      ideal_gas.parameters[0]: gamma,
-   })
+   sound_speed_squared = sp.Symbol("sound_speed_squared", nonnegative=True)
    minus, plus = _relativistic_wave_speeds(
       primitive.velocity, sound_speed_squared, direction, metric
    )
    return StructKernel(
-      name=f"srhd_wave_speeds_dir{direction}",
+      name=f"rhd_wave_speeds_dir{direction}",
       return_type="RHDWaveSpeeds",
       arguments=(
          ("const RHDPrimitive&", "primitive"),
          ("const SpacetimeMetric&", "metric"),
-         ("amrex::Real", "gamma"),
+         ("amrex::Real", "sound_speed_squared"),
       ),
       outputs=("minus", "plus"),
       expressions=(minus, plus),
@@ -1077,6 +1130,7 @@ def relativistic_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
       rhd_primitive_to_conserved_kernel(),
       rhd_recovery_state_kernel(),
       rhd_stress_energy_kernel(),
+      rhd_eulerian_matter_kernel(),
       rhd_geometric_source_kernel(),
       *(rhd_flux_kernel(direction) for direction in range(3)),
       *(srhd_wave_speed_kernel(direction) for direction in range(3)),
@@ -1084,6 +1138,7 @@ def relativistic_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
       rmhd_primitive_to_conserved_kernel(),
       rmhd_recovery_state_kernel(),
       rmhd_stress_energy_kernel(),
+      rmhd_eulerian_matter_kernel(),
       rmhd_geometric_source_kernel(),
       *(rmhd_flux_kernel(direction) for direction in range(3)),
       *(srmhd_wave_speed_kernel(direction) for direction in range(3)),

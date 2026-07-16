@@ -17,7 +17,7 @@
          }
       }
       tags.setVal(amrex::TagBox::CLEAR);
-      if (!state_[lev]) {
+      if (!fluid_state_.state()[lev]) {
          return;
       }
 
@@ -54,7 +54,7 @@
       // Error indicators use neighboring cells, including across coarse-fine
       // patch boundaries. Use the normal hierarchy FillPatch contract so AMR
       // never tags stale fine-level ghosts and refines its own box edges.
-      fill_level_boundaries<false>(state_, lev, time);
+      fill_level_boundaries<false>(fluid_state_.state(), lev, time);
 
       const amrex::Real lohner_threshold = cfg_.tag_threshold;
       const auto amr_min_feature_lengths = min_feature_lengths();
@@ -62,10 +62,7 @@
       const EOSParams eos = eos_params(cfg_);
       const int eos_method = eos_method_code(cfg_);
       const PhysicalSystem physics_system = physics_system_;
-      fill_base_primitive_cache_runtime(
-         *primitive_[lev], *state_[lev], eos, eos_method, physics_system,
-         Geom(lev), fixed_spacetime_parameters(cfg_), time
-      );
+      fill_level_primitive_cache(lev, time);
       const char tagval = amrex::TagBox::SET;
       const int initial_refine_levels = std::min(maxLevel(), cfg_.initial_refine_levels);
       const int fixed_initial_refine_levels = std::min(maxLevel(), cfg_.initial_refine_fixed_levels);
@@ -89,7 +86,7 @@
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
       {
-      for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
          const amrex::Box& bx = mfi.tilebox();
          const auto primitive = primitive_[lev]->const_array(mfi);
          const auto tag = tags.array(mfi);

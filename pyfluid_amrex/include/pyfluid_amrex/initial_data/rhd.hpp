@@ -7,7 +7,9 @@
 #include <cmath>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
+#include "pyfluid_amrex/initial_data/tov.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -47,28 +49,38 @@ struct RelativisticInitialDataParameters {
    amrex::Real b1_right;
    amrex::Real b2_right;
    amrex::Real b3_right;
-   amrex::Real gamma;
+   EOSParams eos;
    amrex::Real rho_floor;
    amrex::Real pressure_floor;
 };
 
+template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RHDPrimitive ideal_gas_rhd_primitive(
+RHDPrimitive rhd_primitive_from_pressure(
    amrex::Real rho,
    amrex::Real pressure,
    amrex::Real v1,
    amrex::Real v2,
    amrex::Real v3,
-   amrex::Real gamma
+   EOSParams const& eos
 ) noexcept
 {
-   return {rho, pressure / ((gamma - 1.0) * rho), pressure, v1, v2, v3};
+   return {
+      rho,
+      relativistic_specific_internal_energy_from_pressure<EOSMethod>(rho, pressure, eos),
+      pressure,
+      v1,
+      v2,
+      v3,
+   };
 }
 
-inline void initialize_relativistic_state(
+template <int EOSMethod>
+inline void initialize_relativistic_state_method(
    amrex::MultiFab& state,
    amrex::Geometry const& geom,
-   RunConfig const& cfg
+   RunConfig const& cfg,
+   TovInitialDataView const& tov_initial_data
 )
 {
    const auto problo = geom.ProbLoArray();
@@ -82,8 +94,9 @@ inline void initialize_relativistic_state(
    const bool uniform = cfg.ic == "uniform";
    const bool sine_wave = cfg.ic == "sin_wave";
    const bool fixed_metric_hse = cfg.ic == "fixed_metric_hse";
+   const bool tov = cfg.ic == "tov";
    const bool periodic_plane = cfg.ic == "sod_periodic_plane";
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
    const RelativisticInitialDataParameters params{
       cfg.rho0,
       cfg.pressure0,
@@ -117,7 +130,7 @@ inline void initialize_relativistic_state(
       std::isfinite(cfg.b1_right) ? cfg.b1_right : cfg.b1_0,
       std::isfinite(cfg.b2_right) ? cfg.b2_right : cfg.b2_0,
       std::isfinite(cfg.b3_right) ? cfg.b3_right : cfg.b3_0,
-      cfg.gamma,
+      eos_params(cfg),
       cfg.rho_floor,
       cfg.pressure_floor,
    };
@@ -147,6 +160,7 @@ inline void initialize_relativistic_state(
             AMREX_SPACEDIM == 3 ? sample.physical.q3 : 0.0,
             0.0
          );
+         SpacetimeMetric local_metric = local_geometry.metric;
          amrex::Real rho = params.rho0;
          amrex::Real pressure = params.pressure0;
          amrex::Real v1 = params.v1_0;
@@ -156,18 +170,35 @@ inline void initialize_relativistic_state(
          amrex::Real b2 = params.b2_0;
          amrex::Real b3 = params.b3_0;
 
-         if (fixed_metric_hse) {
+         if (tov) {
+            const amrex::Real radius = std::sqrt(
+               sample.physical.q1 * sample.physical.q1
+#if (AMREX_SPACEDIM >= 2)
+               + sample.physical.q2 * sample.physical.q2
+#endif
+#if (AMREX_SPACEDIM == 3)
+               + sample.physical.q3 * sample.physical.q3
+#endif
+            );
+            const TovSample tov_sample = tov_initial_data.sample(radius);
+            rho = amrex::max(tov_sample.rho, params.rho_floor);
+            pressure = amrex::max(tov_sample.pressure, params.pressure_floor);
+            v1 = 0.0;
+            v2 = 0.0;
+            v3 = 0.0;
+            local_metric = tov_spacetime_metric(tov_sample);
+         } else if (fixed_metric_hse) {
             const amrex::Real reference_enthalpy = 1.0
-               + params.gamma * params.pressure0
-               / ((params.gamma - 1.0) * params.rho0);
+               + params.eos.gamma * params.pressure0
+               / ((params.eos.gamma - 1.0) * params.rho0);
             const amrex::Real enthalpy = reference_enthalpy * reference_lapse
                / local_geometry.metric.lapse;
             const amrex::Real thermodynamic_ratio = (enthalpy - 1.0)
                / (reference_enthalpy - 1.0);
             rho = params.rho0 * std::pow(
-               thermodynamic_ratio, 1.0 / (params.gamma - 1.0)
+               thermodynamic_ratio, 1.0 / (params.eos.gamma - 1.0)
             );
-            pressure = params.pressure0 * std::pow(rho / params.rho0, params.gamma);
+            pressure = params.pressure0 * std::pow(rho / params.rho0, params.eos.gamma);
             v1 = 0.0;
             v2 = 0.0;
             v3 = 0.0;
@@ -205,7 +236,9 @@ inline void initialize_relativistic_state(
          if (magnetized) {
             const RMHDPrimitive primitive{
                rho,
-               pressure / ((params.gamma - 1.0) * rho),
+               relativistic_specific_internal_energy_from_pressure<EOSIdealGas>(
+                  rho, pressure, params.eos
+               ),
                pressure,
                v1,
                v2,
@@ -220,12 +253,12 @@ inline void initialize_relativistic_state(
                j,
                k,
                generated::rmhd_primitive_to_conserved(
-                  primitive, local_geometry.metric
+                  primitive, local_metric
                )
             );
          } else {
-            const RHDPrimitive primitive = ideal_gas_rhd_primitive(
-               rho, pressure, v1, v2, v3, params.gamma
+            const RHDPrimitive primitive = rhd_primitive_from_pressure<EOSMethod>(
+               rho, pressure, v1, v2, v3, params.eos
             );
             store_rhd_conserved(
                conserved,
@@ -233,11 +266,32 @@ inline void initialize_relativistic_state(
                j,
                k,
                generated::rhd_primitive_to_conserved(
-                  primitive, local_geometry.metric
+                  primitive, local_metric
                )
             );
          }
       });
+   }
+}
+
+inline void initialize_relativistic_state(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg,
+   TovInitialDataView const& tov_initial_data = {}
+)
+{
+   if (physical_system(cfg) == PhysicalSystem::RMHD) {
+      initialize_relativistic_state_method<EOSIdealGas>(state, geom, cfg, tov_initial_data);
+      return;
+   }
+   const int eos_method = eos_method_code(cfg);
+   if (eos_method == EOSPolytrope) {
+      initialize_relativistic_state_method<EOSPolytrope>(state, geom, cfg, tov_initial_data);
+   } else if (eos_method == EOSHybridPolytrope) {
+      initialize_relativistic_state_method<EOSHybridPolytrope>(state, geom, cfg, tov_initial_data);
+   } else {
+      initialize_relativistic_state_method<EOSIdealGas>(state, geom, cfg, tov_initial_data);
    }
 }
 

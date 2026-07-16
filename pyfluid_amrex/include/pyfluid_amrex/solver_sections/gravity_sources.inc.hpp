@@ -413,8 +413,8 @@
       if constexpr (SubcyclingEnabled) {
          if (uses_subcycled_self_gravity_source_state()) {
             fill_source_state_for_rhs(input, lev_begin, lev_end, rhs_time);
-            solve_gravity_potential(source_state_, true);
-            update_self_gravity_acceleration_offset(source_state_);
+            solve_gravity_potential(fluid_state_.source_state(), true);
+            update_self_gravity_acceleration_offset(fluid_state_.source_state());
             profile_end(ProfileStage::Sources, gravity_start);
             return;
          }
@@ -454,5 +454,5 @@
          source_context.mass_fluxes = &mass_fluxes;
          source_context.suppress_athena_gravity_energy_source = suppress_athena_gravity_energy_source_;
       }
-      apply_sources<NComp>(*rhs_[lev], *input[lev], source_context);
+      apply_sources<NComp>(*fluid_state_.rhs()[lev], *input[lev], source_context);
    }

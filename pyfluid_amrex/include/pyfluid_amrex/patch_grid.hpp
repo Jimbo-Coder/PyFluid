@@ -4,6 +4,7 @@
 #include <AMReX_IntVect.H>
 #include <AMReX_REAL.H>
 
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/patch_maps.hpp"
 
 namespace pyfluid_amrex {
@@ -276,7 +277,6 @@ inline PatchGridSystem make_thornburg04_patch_grid_system(
    PatchCartesianAxes active_axes = default_patch_cartesian_axes()
 )
 {
-   constexpr amrex::Real pi = 3.141592653589793238462643383279502884;
    PatchGridSystem grid_system;
    grid_system.map_system = make_thornburg04_patch_map_system(inner_radius, outer_radius, origin, active_axes);
    append_patch_grid(
@@ -295,8 +295,8 @@ inline PatchGridSystem make_thornburg04_patch_grid_system(
          grid_system,
          patch_id,
          map,
-         make_patch_coordinate(-0.25 * pi, -0.25 * pi, inner_radius),
-         make_patch_coordinate(0.25 * pi, 0.25 * pi, outer_radius),
+         make_patch_coordinate(-0.25 * constants::pi, -0.25 * constants::pi, inner_radius),
+         make_patch_coordinate(0.25 * constants::pi, 0.25 * constants::pi, outer_radius),
          spherical_shell_local_axes(map, active_axes),
          cells
       );
@@ -313,7 +313,6 @@ inline PatchGridSystem make_thornburg13_patch_grid_system(
    PatchCartesianAxes active_axes = default_patch_cartesian_axes()
 )
 {
-   constexpr amrex::Real pi = 3.141592653589793238462643383279502884;
    PatchGridSystem grid_system;
    grid_system.map_system = make_thornburg13_patch_map_system(inner_radius, medium_radius, outer_radius, origin, active_axes);
    append_patch_grid(
@@ -333,13 +332,13 @@ inline PatchGridSystem make_thornburg13_patch_grid_system(
          patch_id,
          map,
          make_patch_coordinate(
-            -0.25 * pi,
-            -0.25 * pi,
+            -0.25 * constants::pi,
+            -0.25 * constants::pi,
             outer_patch ? medium_radius : inner_radius
          ),
          make_patch_coordinate(
-            0.25 * pi,
-            0.25 * pi,
+            0.25 * constants::pi,
+            0.25 * constants::pi,
             outer_patch ? outer_radius : medium_radius
          ),
          spherical_shell_local_axes(map, active_axes),
@@ -361,7 +360,6 @@ inline PatchGridSystem make_cylindrical5_patch_grid_system(
 )
 {
    validate_cylindrical_patch_cartesian_axes(active_axes);
-   constexpr amrex::Real pi = 3.141592653589793238462643383279502884;
    PatchGridSystem grid_system;
    grid_system.map_system = make_cylindrical5_patch_map_system(inner_radius, outer_radius, origin, active_axes);
    append_patch_grid(
@@ -384,8 +382,8 @@ inline PatchGridSystem make_cylindrical5_patch_grid_system(
          grid_system,
          patch_id,
          grid_system.map_system.maps[patch_id],
-         make_patch_coordinate(-0.25 * pi, resolution.axial_lo, inner_radius),
-         make_patch_coordinate(0.25 * pi, resolution.axial_hi, outer_radius),
+         make_patch_coordinate(-0.25 * constants::pi, resolution.axial_lo, inner_radius),
+         make_patch_coordinate(0.25 * constants::pi, resolution.axial_hi, outer_radius),
          local_axes,
          cells
       );
@@ -403,7 +401,6 @@ inline PatchGridSystem make_cylindrical9_patch_grid_system(
 )
 {
    validate_cylindrical_patch_cartesian_axes(active_axes);
-   constexpr amrex::Real pi = 3.141592653589793238462643383279502884;
    PatchGridSystem grid_system;
    grid_system.map_system = make_cylindrical9_patch_map_system(inner_radius, medium_radius, outer_radius, origin, active_axes);
    append_patch_grid(
@@ -423,12 +420,12 @@ inline PatchGridSystem make_cylindrical9_patch_grid_system(
          patch_id,
          grid_system.map_system.maps[patch_id],
          make_patch_coordinate(
-            -0.25 * pi,
+            -0.25 * constants::pi,
             resolution.axial_lo,
             outer_patch ? medium_radius : inner_radius
          ),
          make_patch_coordinate(
-            0.25 * pi,
+            0.25 * constants::pi,
             resolution.axial_hi,
             outer_patch ? outer_radius : medium_radius
          ),

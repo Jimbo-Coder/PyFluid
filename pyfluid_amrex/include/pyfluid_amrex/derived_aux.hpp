@@ -159,7 +159,7 @@ amrex::Real entropy_proxy_gamma(int eos_method, EOSParams const& eos) noexcept
    if (eos_method == EOSIdealGas) {
       return eos.gamma;
    }
-   return eos.polytropic_gamma;
+   return eos.segment_gamma[0];
 }
 
 inline void fill_entropy_proxy_output(

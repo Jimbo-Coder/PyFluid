@@ -13,6 +13,7 @@
 #include "pyfluid_amrex/ct_diagnostics.hpp"
 #include "pyfluid_amrex/ct_fields.hpp"
 #include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/scalar_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
@@ -661,11 +662,11 @@ amrex::Real cell_current_x(
 {
    amrex::Real dbz_dy = 0.0;
 #if (AMREX_SPACEDIM >= 2)
-   dbz_dy = (s(i, j + 1, k, B3) - s(i, j - 1, k, B3)) / (2.0 * dx[1]);
+   dbz_dy = generated::centered_first<2, 1>(s, i, j, k, B3, 1.0 / dx[1]);
 #endif
    amrex::Real dby_dz = 0.0;
 #if (AMREX_SPACEDIM == 3)
-   dby_dz = (s(i, j, k + 1, B2) - s(i, j, k - 1, B2)) / (2.0 * dx[2]);
+   dby_dz = generated::centered_first<2, 2>(s, i, j, k, B2, 1.0 / dx[2]);
 #endif
    return generated::curl_x_cartesian(dbz_dy, dby_dz);
 }
@@ -681,9 +682,9 @@ amrex::Real cell_current_y(
 {
    amrex::Real dbx_dz = 0.0;
 #if (AMREX_SPACEDIM == 3)
-   dbx_dz = (s(i, j, k + 1, B1) - s(i, j, k - 1, B1)) / (2.0 * dx[2]);
+   dbx_dz = generated::centered_first<2, 2>(s, i, j, k, B1, 1.0 / dx[2]);
 #endif
-   const amrex::Real dbz_dx = (s(i + 1, j, k, B3) - s(i - 1, j, k, B3)) / (2.0 * dx[0]);
+   const amrex::Real dbz_dx = generated::centered_first<2, 0>(s, i, j, k, B3, 1.0 / dx[0]);
    return generated::curl_y_cartesian(dbx_dz, dbz_dx);
 }
 
@@ -696,10 +697,10 @@ amrex::Real cell_current_z(
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx
 ) noexcept
 {
-   const amrex::Real dby_dx = (s(i + 1, j, k, B2) - s(i - 1, j, k, B2)) / (2.0 * dx[0]);
+   const amrex::Real dby_dx = generated::centered_first<2, 0>(s, i, j, k, B2, 1.0 / dx[0]);
    amrex::Real dbx_dy = 0.0;
 #if (AMREX_SPACEDIM >= 2)
-   dbx_dy = (s(i, j + 1, k, B1) - s(i, j - 1, k, B1)) / (2.0 * dx[1]);
+   dbx_dy = generated::centered_first<2, 1>(s, i, j, k, B1, 1.0 / dx[1]);
 #endif
    return generated::curl_z_cartesian(dby_dx, dbx_dy);
 }
@@ -1906,7 +1907,8 @@ inline void enforce_edge_electric_origin_boundary(
       }
 
       amrex::MultiFab& edge_component = *edge_e.e[component];
-      const amrex::Box edge_domain = amrex::convert(geom.Domain(), edge_index_type(component));
+      const auto centering = edge_grid_field_centering(component);
+      const amrex::Box edge_domain = amrex::convert(geom.Domain(), grid_field_index_type(centering));
       const int origin_index = edge_domain.smallEnd(radial_dir);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())

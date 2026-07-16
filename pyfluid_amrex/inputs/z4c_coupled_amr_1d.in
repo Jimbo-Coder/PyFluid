@@ -1,0 +1,54 @@
+pyfluid.run_name = z4c_coupled_amr_1d
+pyfluid.output_dir = runs/current/z4c/z4c_coupled_amr_1d
+pyfluid.validation_policy = smoke
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 1
+
+amr.n_cell = 16
+amr.max_level = 3
+amr.ref_ratio = 2 2 2
+amr.max_grid_size = 16
+amr.blocking_factor = 8
+amr.tag_metric = none
+amr.initial_refine = box
+amr.initial_refine_levels = 3
+amr.initial_refine_fixed_levels = 3
+amr.initial_refine_box_lo = 0.25
+amr.initial_refine_box_hi = 0.75
+
+spacetime.evolution = evolved
+spacetime.matter_coupling = coupled
+spacetime.initial_data = minkowski
+spacetime.lapse_gauge = one_plus_log
+spacetime.shift_gauge = frozen
+spacetime.ko_dissipation = 0.0
+
+pyfluid.physics = rhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = sin_wave
+pyfluid.rho0 = 1.0e-8
+pyfluid.pressure0 = 1.0e-10
+pyfluid.amplitude = 0.01
+pyfluid.wave_number = 1.0
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.final_time = -1
+pyfluid.max_step = 2
+pyfluid.ng = 3
+pyfluid.cfl = 0.25
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+pyfluid.bc = periodic
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 2
+pyfluid.checkpoint_int = 1

@@ -91,6 +91,33 @@ struct StressEnergyTensor {
    amrex::Real t33 = 0.0;
 };
 
+struct EulerianMatter {
+   amrex::Real rho = 0.0;
+   amrex::Real momentum1 = 0.0;
+   amrex::Real momentum2 = 0.0;
+   amrex::Real momentum3 = 0.0;
+   amrex::Real stress11 = 0.0;
+   amrex::Real stress12 = 0.0;
+   amrex::Real stress13 = 0.0;
+   amrex::Real stress22 = 0.0;
+   amrex::Real stress23 = 0.0;
+   amrex::Real stress33 = 0.0;
+};
+
+enum EulerianMatterComponent : int {
+   EULERIAN_MATTER_RHO = 0,
+   EULERIAN_MATTER_MOMENTUM1,
+   EULERIAN_MATTER_MOMENTUM2,
+   EULERIAN_MATTER_MOMENTUM3,
+   EULERIAN_MATTER_STRESS11,
+   EULERIAN_MATTER_STRESS12,
+   EULERIAN_MATTER_STRESS13,
+   EULERIAN_MATTER_STRESS22,
+   EULERIAN_MATTER_STRESS23,
+   EULERIAN_MATTER_STRESS33,
+   EULERIAN_MATTER_NUM_COMPONENTS,
+};
+
 struct SpacetimeMetric {
    amrex::Real lapse = 1.0;
    amrex::Real shift1 = 0.0;

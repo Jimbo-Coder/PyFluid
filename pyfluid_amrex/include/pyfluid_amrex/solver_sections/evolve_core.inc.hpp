@@ -172,14 +172,16 @@
       define_flux_registers();
       enforce_solid_mask_nesting_from_fine();
       average_down_state();
+      average_down_spacetime();
          if constexpr (CTEnabled) {
             if (finestLevel() > 0) {
                average_down_face_b();
-               sync_all_cell_b_from_faces(state_, false);
+               sync_all_cell_b_from_faces(fluid_state_.state(), false);
             }
          }
       reset_barotropic_energy_all_levels<NComp, EOSMethod>();
-      fill_all_level_boundaries<SubcyclingEnabled>(state_, time);
+      fill_all_level_boundaries<SubcyclingEnabled>(fluid_state_.state(), time);
+      fill_all_spacetime_boundaries(spacetime_state_.state(), time);
       const int start_step = level_steps_[0];
       debug_check_state_all_levels<NComp, EOSMethod>("initial accepted state", start_step, time, true);
 
@@ -274,6 +276,12 @@
       if (!cfg_.checkpoint_dir.empty()) {
          checkpoint_cfg.output_dir = cfg_.checkpoint_dir;
       }
+      std::vector<CheckpointFieldSet> checkpoint_extra_fields;
+      if (spacetime_state_.active()) {
+         checkpoint_extra_fields.push_back(
+            {spacetime_state_.field_set().name, &spacetime_state_.state()}
+         );
+      }
       const bool has_checkpoint_reference =
          std::isfinite(checkpoint_reference_mass_) && std::isfinite(checkpoint_reference_energy_);
       const amrex::Real mass0 = has_checkpoint_reference ? checkpoint_reference_mass_ : initial.mass;
@@ -302,7 +310,7 @@
       }
       if (checkpoint_cadence.should_record_initial()) {
          write_checkpoint(
-            state_,
+            fluid_state_.state(),
             level_steps_,
             level_times_,
             level_dts_,
@@ -313,6 +321,7 @@
             start_step,
             checkpoint_cfg,
             checkpoint_face_b(),
+            checkpoint_extra_fields,
             mass0,
             energy0,
             aligned_regrid_ticks_,
@@ -403,10 +412,11 @@
             layout_cell_updates_this_step = static_cast<amrex::Real>(layout_cells_this_step);
             stage_start = profile_begin();
             average_down_state();
+            average_down_spacetime();
             if constexpr (CTEnabled) {
                if (finestLevel() > 0) {
                   average_down_face_b();
-                  sync_all_cell_b_from_faces(state_, false);
+                  sync_all_cell_b_from_faces(fluid_state_.state(), false);
                }
             }
             reset_barotropic_energy_all_levels<NComp, EOSMethod>();
@@ -450,7 +460,7 @@
 
          if (!will_regrid && needs_fresh_state_boundaries_after_step(write_scalars, write_aux_gfs)) {
             stage_start = profile_begin();
-            fill_all_level_boundaries<SubcyclingEnabled>(state_, time);
+            fill_all_level_boundaries<SubcyclingEnabled>(fluid_state_.state(), time);
             profile_end(ProfileStage::BoundaryFill, stage_start);
          }
          if constexpr (!has_mhd_components<NComp>()) {
@@ -520,7 +530,7 @@
          if (checkpoint_cadence.should_record(step, reached_run_end)) {
             const amrex::Real output_start = profile_begin();
             write_checkpoint(
-               state_,
+               fluid_state_.state(),
                level_steps_,
                level_times_,
                level_dts_,
@@ -531,6 +541,7 @@
                step,
                checkpoint_cfg,
                checkpoint_face_b(),
+               checkpoint_extra_fields,
                mass0,
                energy0,
                aligned_regrid_ticks_,

@@ -29,7 +29,8 @@ namespace {
 
 constexpr const char* CheckpointLevelPrefix = "Level_";
 constexpr const char* CheckpointHeaderName = "Header";
-constexpr int CheckpointSchemaVersion = 2;
+constexpr const char* CheckpointHeaderLabel = "PyFluid AMReX checkpoint v4";
+constexpr int CheckpointSchemaVersion = 6;
 
 using CheckpointMetadata = std::map<std::string, std::string>;
 
@@ -193,6 +194,7 @@ bool checkpoint_metadata_is_complete(CheckpointMetadata const& metadata)
       "checkpoint_refinement_ratios",
       "physics",
       "spacetime_evolution",
+      "spacetime_matter_coupling",
       "spacetime_fixed_metric",
       "spacetime_acceleration1",
       "spacetime_acceleration2",
@@ -261,6 +263,10 @@ void write_checkpoint_metadata(
    out << "# checkpoint_gamma=" << output_metadata_real_string(cfg.gamma) << "\n";
    out << "# checkpoint_polytropic_k=" << output_metadata_real_string(cfg.polytropic_k) << "\n";
    out << "# checkpoint_polytropic_gamma=" << output_metadata_real_string(cfg.polytropic_gamma) << "\n";
+   out << "# checkpoint_polytropic_density_breaks="
+       << output_metadata_real_vector_string(cfg.polytropic_density_breaks) << "\n";
+   out << "# checkpoint_polytropic_segment_gammas="
+       << output_metadata_real_vector_string(cfg.polytropic_segment_gammas) << "\n";
    out << "# checkpoint_thermal_gamma=" << output_metadata_real_string(cfg.thermal_gamma) << "\n";
    out << "# checkpoint_timestep=" << cfg.timestep << "\n";
    out << "# checkpoint_recon=" << cfg.recon << "\n";
@@ -307,6 +313,30 @@ void write_checkpoint_field(
       compression,
       "PyFluidCheckpointHDF5-v1"
    );
+}
+
+CheckpointFieldInfo checkpoint_field_info(
+   std::string const& name,
+   amrex::MultiFab const& field
+)
+{
+   return {name, field.nComp(), field.ixType()};
+}
+
+void validate_checkpoint_field_levels(
+   CheckpointFieldInfo const& info,
+   amrex::Vector<amrex::MultiFab const*> const& fields
+)
+{
+   for (amrex::MultiFab const* field : fields) {
+      if (field == nullptr || field->nComp() != info.num_components
+          || field->ixType() != info.index_type) {
+         amrex::Abort(
+            "checkpoint field set '" + info.name
+            + "' has inconsistent component or centering metadata"
+         );
+      }
+   }
 }
 
 [[noreturn]] void checkpoint_hdf5_error(std::string const& message, std::string const& path)
@@ -447,6 +477,7 @@ void write_checkpoint(
    int step,
    RunConfig const& cfg,
    std::vector<FaceMagneticField> const* face_b,
+   std::vector<CheckpointFieldSet> const& extra_fields,
    amrex::Real reference_mass,
    amrex::Real reference_energy,
    amrex::Long aligned_regrid_ticks,
@@ -467,6 +498,12 @@ void write_checkpoint(
    if (face_b != nullptr && face_b->size() < nlevels) {
       amrex::Abort("checkpoint face-centered magnetic state does not cover every active AMR level");
    }
+   for (CheckpointFieldSet const& field_set : extra_fields) {
+      if (field_set.name.empty() || field_set.levels == nullptr
+          || field_set.levels->size() < nlevels) {
+         amrex::Abort("checkpoint extra field set does not cover every active AMR level");
+      }
+   }
 
    const amrex::Real base_time = level_times[0];
    const amrex::Real sync_tol =
@@ -477,6 +514,32 @@ void write_checkpoint(
       }
    }
    const int state_components = state.empty() ? state_component_count(cfg) : state[0]->nComp();
+
+   std::vector<CheckpointFieldInfo> checkpoint_fields;
+   checkpoint_fields.push_back(
+      checkpoint_field_info(checkpoint_state_field_name(), *state[0])
+   );
+   if (face_b != nullptr) {
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         checkpoint_fields.push_back(checkpoint_field_info(
+            checkpoint_face_b_field_name(dir), *face_b->at(0).b[dir]
+         ));
+      }
+   }
+   for (CheckpointFieldSet const& field_set : extra_fields) {
+      checkpoint_fields.push_back(
+         checkpoint_field_info(field_set.name, *field_set.levels->at(0))
+      );
+   }
+   for (std::size_t left = 0; left < checkpoint_fields.size(); ++left) {
+      for (std::size_t right = left + 1; right < checkpoint_fields.size(); ++right) {
+         if (checkpoint_fields[left].name == checkpoint_fields[right].name) {
+            amrex::Abort(
+               "checkpoint field name is not unique: " + checkpoint_fields[left].name
+            );
+         }
+      }
+   }
 
    amrex::PreBuildDirectorHierarchy(checkpoint_name, std::string(CheckpointLevelPrefix), nlevels, true);
 
@@ -491,7 +554,7 @@ void write_checkpoint(
          amrex::FileOpenFailed(header_name);
       }
       header.precision(17);
-      header << "PyFluid AMReX checkpoint\n";
+      header << CheckpointHeaderLabel << "\n";
       header << finest_level << "\n";
       header << state_components << "\n";
       for (int lev = 0; lev <= finest_level; ++lev) {
@@ -508,6 +571,14 @@ void write_checkpoint(
       header << "\n";
       for (int lev = 0; lev <= finest_level; ++lev) {
          state[lev]->boxArray().writeOn(header);
+         header << "\n";
+      }
+      header << checkpoint_fields.size() << "\n";
+      for (CheckpointFieldInfo const& field : checkpoint_fields) {
+         header << field.name << " " << field.num_components;
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            header << " " << field.index_type.nodeCentered(dir);
+         }
          header << "\n";
       }
       header << reference_mass << " " << reference_energy << "\n";
@@ -531,6 +602,7 @@ void write_checkpoint(
    for (int lev = 0; lev < nlevels; ++lev) {
       state_fields[lev] = state[lev].get();
    }
+   validate_checkpoint_field_levels(checkpoint_fields[0], state_fields);
    write_checkpoint_field(
       state_fields,
       geometry,
@@ -549,6 +621,7 @@ void write_checkpoint(
          for (int lev = 0; lev < nlevels; ++lev) {
             face_fields[lev] = (*face_b)[lev].b[dir].get();
          }
+         validate_checkpoint_field_levels(checkpoint_fields[1 + dir], face_fields);
          write_checkpoint_field(
             face_fields,
             geometry,
@@ -562,6 +635,27 @@ void write_checkpoint(
          );
       }
    }
+   for (std::size_t extra_index = 0; extra_index < extra_fields.size(); ++extra_index) {
+      CheckpointFieldSet const& field_set = extra_fields[extra_index];
+      amrex::Vector<amrex::MultiFab const*> fields(nlevels);
+      for (int lev = 0; lev < nlevels; ++lev) {
+         fields[lev] = field_set.levels->at(lev).get();
+      }
+      const std::size_t field_index = 1 + (face_b == nullptr ? 0 : AMREX_SPACEDIM)
+         + extra_index;
+      validate_checkpoint_field_levels(checkpoint_fields[field_index], fields);
+      write_checkpoint_field(
+         fields,
+         geometry,
+         level_steps,
+         refinement_ratios,
+         finest_level,
+         base_time,
+         checkpoint_name,
+         field_set.name,
+         compression
+      );
+   }
 }
 
 CheckpointHeader read_checkpoint_header(std::string const& checkpoint_name)
@@ -574,7 +668,7 @@ CheckpointHeader read_checkpoint_header(std::string const& checkpoint_name)
 
    std::string label;
    std::getline(header, label);
-   if (label != "PyFluid AMReX checkpoint") {
+   if (label != CheckpointHeaderLabel) {
       amrex::Abort("unsupported checkpoint format: " + header_name);
    }
 
@@ -601,20 +695,28 @@ CheckpointHeader read_checkpoint_header(std::string const& checkpoint_name)
    for (int lev = 0; lev < nlevels; ++lev) {
       chk.box_arrays[lev].readFrom(header);
    }
+   int num_fields = 0;
+   header >> num_fields;
+   if (num_fields <= 0) {
+      amrex::Abort("checkpoint Header has no evolved fields: " + header_name);
+   }
+   chk.fields.reserve(num_fields);
+   for (int field_index = 0; field_index < num_fields; ++field_index) {
+      CheckpointFieldInfo field;
+      amrex::IntVect nodal(AMREX_D_DECL(0, 0, 0));
+      header >> field.name >> field.num_components;
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         header >> nodal[dir];
+      }
+      if (field.name.empty() || field.num_components <= 0) {
+         amrex::Abort("checkpoint Header has invalid field metadata: " + header_name);
+      }
+      field.index_type = amrex::IndexType(nodal);
+      chk.fields.push_back(std::move(field));
+   }
    header >> chk.reference_mass >> chk.reference_energy;
-   if (!(header >> chk.aligned_regrid_ticks)) {
-      // Checkpoints predating aligned regridding cannot have an interrupted
-      // aligned cadence; starting that newly selected mode at tick zero is exact.
-      header.clear();
-      chk.aligned_regrid_ticks = 0;
-   }
-   if (!(header >> chk.aligned_base_regrid_tick)) {
-      // Older aligned checkpoints did not distinguish descendant and
-      // whole-hierarchy cadence consumption. The solver derives a compatible
-      // base tick from the selected restart interval.
-      header.clear();
-      chk.aligned_base_regrid_tick = -1;
-   }
+   header >> chk.aligned_regrid_ticks;
+   header >> chk.aligned_base_regrid_tick;
    if (!header.good()) {
       amrex::Abort("checkpoint Header is incomplete: " + header_name);
    }
@@ -663,6 +765,12 @@ void validate_checkpoint_compatibility(
       metadata,
       "spacetime_evolution",
       cfg.spacetime_evolution
+   );
+   require_metadata(
+      checkpoint_name,
+      metadata,
+      "spacetime_matter_coupling",
+      cfg.spacetime_matter_coupling
    );
    require_metadata(
       checkpoint_name, metadata, "spacetime_fixed_metric", cfg.spacetime_fixed_metric
@@ -714,6 +822,18 @@ void validate_checkpoint_compatibility(
          "checkpoint_polytropic_gamma",
          output_metadata_real_string(cfg.polytropic_gamma)
       );
+      require_metadata(
+         checkpoint_name,
+         metadata,
+         "checkpoint_polytropic_density_breaks",
+         output_metadata_real_vector_string(cfg.polytropic_density_breaks)
+      );
+      require_metadata(
+         checkpoint_name,
+         metadata,
+         "checkpoint_polytropic_segment_gammas",
+         output_metadata_real_vector_string(cfg.polytropic_segment_gammas)
+      );
    } else if (cfg.eos == "hybrid_polytrope") {
       require_metadata(
          checkpoint_name,
@@ -726,6 +846,18 @@ void validate_checkpoint_compatibility(
          metadata,
          "checkpoint_polytropic_gamma",
          output_metadata_real_string(cfg.polytropic_gamma)
+      );
+      require_metadata(
+         checkpoint_name,
+         metadata,
+         "checkpoint_polytropic_density_breaks",
+         output_metadata_real_vector_string(cfg.polytropic_density_breaks)
+      );
+      require_metadata(
+         checkpoint_name,
+         metadata,
+         "checkpoint_polytropic_segment_gammas",
+         output_metadata_real_vector_string(cfg.polytropic_segment_gammas)
       );
       require_metadata(
          checkpoint_name,

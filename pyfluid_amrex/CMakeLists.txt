@@ -77,6 +77,8 @@ set(PYFLUID_AMREX_AMR_SOURCES
    src/amr_solver_metrics.cpp
    src/amr_solver_multipatch.cpp
    src/amr_solver_output.cpp
+   src/amr_solver_spacetime.cpp
+   src/amr_solver_spacetime_evolution.cpp
    src/amr_solver_valid_cells.cpp
 )
 
@@ -84,9 +86,15 @@ set(PYFLUID_AMREX_RUNTIME_SOURCES
    src/checkpoint.cpp
    src/config.cpp
    src/ct_edge_flux_register.cpp
+   src/evolution_sector_storage.cpp
    src/fields.cpp
    src/implicit_resistivity.cpp
+   src/nodal_interpolater.cpp
    src/profiling.cpp
+   src/spacetime_fields.cpp
+   src/spacetime_coupling_storage.cpp
+   src/tov_initial_data.cpp
+   src/z4c_runtime.cpp
 )
 
 set(PYFLUID_AMREX_SOURCES
@@ -125,6 +133,9 @@ if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_OPERATOR_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/scalar_ops.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_DIFFERENTIAL_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/differential_ops.hpp
+   )
    set(PYFLUID_AMREX_GENERATED_RIEMANN_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/riemann_ops.hpp
    )
@@ -143,6 +154,9 @@ if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/relativistic_fluid.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_Z4C_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/z4c.hpp
+   )
    set(PYFLUID_AMREX_CODEGEN_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_kernels.py)
    set(PYFLUID_AMREX_CODEGEN_STAMP ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_codegen.stamp)
    set(PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP
@@ -154,11 +168,13 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_FLUX_HEADER}
          ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
+         ${PYFLUID_AMREX_GENERATED_DIFFERENTIAL_HEADER}
          ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
          ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
+         ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
       COMMAND ${CMAKE_COMMAND} -E env
          UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
          ${PYFLUID_UV_EXECUTABLE} run python
@@ -166,24 +182,29 @@ if(PYFLUID_UV_EXECUTABLE)
          --family eos
          --family flux
          --family operator
+         --family differential
          --family riemann
          --family characteristic
          --family vector
          --family metric
          --family relativistic
+         --family z4c
          --flux-header ${PYFLUID_AMREX_GENERATED_FLUX_HEADER}
          --eos-header ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          --operator-header ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
+         --differential-header ${PYFLUID_AMREX_GENERATED_DIFFERENTIAL_HEADER}
          --riemann-header ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          --characteristic-header ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          --vector-header ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          --metric-header ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
          --relativistic-header ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
+         --z4c-header ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
       COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/characteristic_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/differential_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/discretization.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py
@@ -196,6 +217,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/relativistic_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_algebra.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/vector_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/z4c_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/coordinates.py
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
       COMMENT "Generating PyFluid AMReX physics kernels"

@@ -1,0 +1,43 @@
+pyfluid.run_name = z4c_coupled_uniform_1d
+pyfluid.output_dir = runs/current/z4c/z4c_coupled_uniform_1d
+pyfluid.validation_policy = smoke
+
+geometry.prob_lo = 0.0
+geometry.prob_hi = 1.0
+geometry.is_periodic = 0
+
+amr.n_cell = 32
+amr.max_level = 0
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+
+spacetime.evolution = evolved
+spacetime.matter_coupling = coupled
+spacetime.initial_data = minkowski
+spacetime.lapse_gauge = one_plus_log
+spacetime.shift_gauge = frozen
+spacetime.ko_dissipation = 0.0
+
+pyfluid.physics = rhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = uniform
+pyfluid.rho0 = 1.0e-8
+pyfluid.pressure0 = 1.0e-10
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.final_time = -1
+pyfluid.max_step = 2
+pyfluid.ng = 3
+pyfluid.cfl = 0.5
+pyfluid.recon = pwc
+pyfluid.riemann = hll
+pyfluid.timestep = rk4
+pyfluid.bc = outflow
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 1
+pyfluid.checkpoint_int = -1

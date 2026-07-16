@@ -11,6 +11,7 @@
 #include "pyfluid_amrex/boundary.hpp"
 #include "pyfluid_amrex/characteristic_basis.hpp"
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/initial_data/common.hpp"
@@ -115,7 +116,7 @@ PatchCoordinate cartesian_velocity_to_mesh_basis(
          axes,
          mesh,
          MeshAxisTheta,
-         0.5 * 3.141592653589793238462643383279502884
+         constants::half_pi
       );
       const amrex::Real phi = initial_data_coordinate_for_axis(axes, mesh, MeshAxisPhi, 0.0);
       const amrex::Real ctheta = std::cos(theta);
@@ -246,7 +247,7 @@ inline void initialize_sine_wave(amrex::MultiFab& state, amrex::Geometry const& 
    const auto dx = geom.CellSizeArray();
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -309,7 +310,7 @@ amrex::Real reconstruction_medley_profile(amrex::Real phase) noexcept
    const int segment = amrex::min(static_cast<int>(4.0 * phase), 3);
    const amrex::Real local = 4.0 * phase - static_cast<amrex::Real>(segment);
    if (segment == 0) {
-      const amrex::Real sine = std::sin(3.141592653589793238462643383279502884 * local);
+      const amrex::Real sine = std::sin(constants::pi * local);
       return sine * sine;
    }
    if (segment == 1) {
@@ -501,7 +502,7 @@ inline void initialize_linear_wave_x(amrex::MultiFab& state, amrex::Geometry con
    const auto dx = geom.CellSizeArray();
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
    const bool mhd = state.nComp() >= NVAR_MHD;
    const EOSParams eos = eos_params(cfg);
    const int eos_method = eos_method_code(cfg);
@@ -655,7 +656,7 @@ inline void initialize_acoustic_wave_x(amrex::MultiFab& state, amrex::Geometry c
    const auto dx = geom.CellSizeArray();
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -783,8 +784,7 @@ inline void initialize_jeans_wave_x(amrex::MultiFab& state, amrex::Geometry cons
    const auto dx = geom.CellSizeArray();
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
-   const amrex::Real pi = 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -802,7 +802,8 @@ inline void initialize_jeans_wave_x(amrex::MultiFab& state, amrex::Geometry cons
       const amrex::Real pressure0 = base_pressure_runtime(eos_method, rho0, pressure_input, eos);
       const amrex::Real cs0 = sound_speed_from_primitive_runtime(eos_method, rho0, pressure0, eos);
       const amrex::Real kx = two_pi * wave_number;
-      const amrex::Real omega2 = cs0 * cs0 * kx * kx - 4.0 * pi * cfg.gravity_constant * rho0;
+      const amrex::Real omega2 =
+         cs0 * cs0 * kx * kx - 4.0 * constants::pi * cfg.gravity_constant * rho0;
       const bool stable = omega2 >= 0.0;
       const amrex::Real rate = stable ? std::sqrt(omega2) : std::sqrt(-omega2);
 
@@ -840,7 +841,7 @@ inline void initialize_shear_wave_x(amrex::MultiFab& state, amrex::Geometry cons
    const auto dx = geom.CellSizeArray();
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -1224,10 +1225,12 @@ inline void initialize_hse_polytrope_x(amrex::MultiFab& state, amrex::Geometry c
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
    const EOSParams eos = eos_params(cfg);
    const int eos_method = eos_method_code(cfg);
-   const amrex::Real hse_gamma = eos_method == EOSIdealGas ? eos.gamma : eos.polytropic_gamma;
+   const amrex::Real hse_gamma = eos_method == EOSIdealGas
+      ? eos.gamma
+      : eos.segment_gamma[0];
    const amrex::Real hse_k = eos_method == EOSIdealGas
       ? cfg.pressure0 / std::pow(cfg.rho0, hse_gamma)
-      : eos.polytropic_k;
+      : eos.segment_k[0];
    const amrex::Real rho_power0 = std::pow(cfg.rho0, hse_gamma - 1.0);
    const amrex::Real slope = (hse_gamma - 1.0) * cfg.gravity_a1 / (hse_gamma * hse_k);
    const amrex::Real x0 = cfg.bump_x0;
@@ -1401,7 +1404,7 @@ inline void initialize_sod_plane(amrex::MultiFab& state, amrex::Geometry const& 
       const amrex::Real b2_right = std::isfinite(cfg.b2_right) ? cfg.b2_right : b2_0;
       const amrex::Real b3_right = std::isfinite(cfg.b3_right) ? cfg.b3_right : b3_0;
       const bool periodic_plane = cfg.ic == "sod_periodic_plane";
-      const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+      const amrex::Real two_pi = constants::two_pi;
       const EOSParams eos = eos_params(cfg);
       const int eos_method = eos_method_code(cfg);
       const bool mhd = state.nComp() >= NVAR_MHD;
@@ -1504,7 +1507,7 @@ inline void initialize_sod_plane_face_b(FaceMagneticField& face_b, amrex::Geomet
          const amrex::Real b2_right = std::isfinite(cfg.b2_right) ? cfg.b2_right : b2_0;
          const amrex::Real b3_right = std::isfinite(cfg.b3_right) ? cfg.b3_right : b3_0;
          const bool periodic_plane = cfg.ic == "sod_periodic_plane";
-         const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+         const amrex::Real two_pi = constants::two_pi;
          const int face_dir = dir;
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const InitialDataSamplePoint sample = face_center_initial_data_sample_point(
@@ -1559,7 +1562,7 @@ inline void initialize_circular_alfven_x(amrex::MultiFab& state, amrex::Geometry
    const auto dx = geom.CellSizeArray();
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -1613,7 +1616,7 @@ inline void initialize_resistive_wave_x(amrex::MultiFab& state, amrex::Geometry 
    const auto dx = geom.CellSizeArray();
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -1830,7 +1833,7 @@ inline void initialize_kelvin_helmholtz_impl(
 #if (AMREX_SPACEDIM == 3)
    const bool z_periodic = periodic[2];
 #endif
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -1853,6 +1856,7 @@ inline void initialize_kelvin_helmholtz_impl(
       const amrex::Real density_amplitude = cfg.kh_density_amplitude;
       const bool stream_perturbation = cfg.kh_perturbation == "stream";
       const bool vortex_perturbation = cfg.kh_perturbation == "vortex";
+      const amrex::Real gaussian_derivative_normalization = std::exp(0.5);
       const amrex::Real envelope_x0 = cfg.bump_x0;
       const amrex::Real sheet_y0 = cfg.bump_y0;
       const amrex::Real envelope_z0 = cfg.bump_z0;
@@ -1923,7 +1927,8 @@ inline void initialize_kelvin_helmholtz_impl(
             const amrex::Real vortex = std::exp(-0.5 * (
                (xdist * xdist) / (sx * sx) + (ydist * ydist) / (sy * sy)
             ));
-            const amrex::Real stream = perturbation * sx * 1.6487212707001281468 * vortex;
+            const amrex::Real stream =
+               perturbation * sx * gaussian_derivative_normalization * vortex;
             vx += -stream * ydist / (sy * sy);
             vy = stream * xdist / (sx * sx);
          } else if (stream_perturbation) {
@@ -2013,7 +2018,7 @@ inline void initialize_orszag_tang(
    const auto problo = geom.ProbLoArray();
    const auto probhi = geom.ProbHiArray();
    const auto dx = geom.CellSizeArray();
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
    const amrex::Real kx = two_pi * cfg.wave_number / (probhi[0] - problo[0]);
    const amrex::Real ky = two_pi * cfg.wave_number / (probhi[1] - problo[1]);
    const amrex::Real velocity_amplitude = cfg.amplitude;
@@ -2071,7 +2076,7 @@ inline void initialize_orszag_tang_face_b(
    const auto problo = geom.ProbLoArray();
    const auto probhi = geom.ProbHiArray();
    const auto dx = geom.CellSizeArray();
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
    const amrex::Real kx = two_pi * cfg.wave_number / (probhi[0] - problo[0]);
    const amrex::Real ky = two_pi * cfg.wave_number / (probhi[1] - problo[1]);
    const amrex::Real magnetic_amplitude = cfg.b1_0;
@@ -2169,7 +2174,7 @@ inline void initialize_resistive_current_sheet(
    const auto problo = geom.ProbLoArray();
    const auto probhi = geom.ProbHiArray();
    const auto dx = geom.CellSizeArray();
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
    const amrex::Real length1 = probhi[0] - problo[0];
    const amrex::Real length2 = probhi[1] - problo[1];
    const amrex::Real sheet_y1 = problo[1] + 0.25 * length2;
@@ -2234,7 +2239,7 @@ inline void initialize_resistive_current_sheet_face_b(
    const auto problo = geom.ProbLoArray();
    const auto probhi = geom.ProbHiArray();
    const auto dx = geom.CellSizeArray();
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
    const amrex::Real length1 = probhi[0] - problo[0];
    const amrex::Real length2 = probhi[1] - problo[1];
    const amrex::Real sheet_y1 = problo[1] + 0.25 * length2;
@@ -2340,7 +2345,7 @@ inline void initialize_reconnecting_shear_layer(
    const auto problo = geom.ProbLoArray();
    const auto probhi = geom.ProbHiArray();
    const auto dx = geom.CellSizeArray();
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
    const amrex::Real length1 = probhi[0] - problo[0];
    const amrex::Real sheet_y = cfg.bump_y0;
    const amrex::Real sheet_thickness = cfg.bump_sigma;
@@ -2429,7 +2434,7 @@ inline void initialize_reconnecting_shear_layer_face_b(
    const auto problo = geom.ProbLoArray();
    const auto probhi = geom.ProbHiArray();
    const auto dx = geom.CellSizeArray();
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
    const amrex::Real length1 = probhi[0] - problo[0];
    const amrex::Real sheet_y = cfg.bump_y0;
    const amrex::Real sheet_thickness = cfg.bump_sigma;
@@ -2509,7 +2514,7 @@ inline void initialize_magnetic_blast_noise(amrex::MultiFab& state, amrex::Geome
    const auto periodic = geom.isPeriodicArray();
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -2578,7 +2583,7 @@ inline void initialize_magnetic_blast_noise_face_b(FaceMagneticField& face_b, am
 #else
    const auto problo = geom.ProbLoArray();
    const auto dx = geom.CellSizeArray();
-   const amrex::Real two_pi = 2.0 * 3.141592653589793238462643383279502884;
+   const amrex::Real two_pi = constants::two_pi;
    const amrex::Real b1_0 = cfg.b1_0;
    const amrex::Real b2_0 = cfg.b2_0;
    const amrex::Real b3_0 = cfg.b3_0;
@@ -2637,10 +2642,15 @@ inline void initialize_magnetic_blast_noise_face_b(FaceMagneticField& face_b, am
 #endif
 }
 
-inline void initialize_state(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
+inline void initialize_state(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg,
+   TovInitialDataView const& tov_initial_data = {}
+)
 {
    if (physical_system_is_relativistic(physical_system(cfg))) {
-      initialize_relativistic_state(state, geom, cfg);
+      initialize_relativistic_state(state, geom, cfg, tov_initial_data);
       apply_configured_state_boundary(state, geom, cfg);
       return;
    }

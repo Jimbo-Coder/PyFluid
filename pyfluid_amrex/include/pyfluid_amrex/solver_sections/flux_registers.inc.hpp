@@ -94,11 +94,11 @@
       bool needs_fill = false;
       if (
          !coarse_reflux_volume_[fine_lev]
-         || !coarse_reflux_volume_[fine_lev]->boxArray().CellEqual(state_[coarse_lev]->boxArray())
+         || !coarse_reflux_volume_[fine_lev]->boxArray().CellEqual(fluid_state_.state()[coarse_lev]->boxArray())
       ) {
          coarse_reflux_volume_[fine_lev] = std::make_unique<amrex::MultiFab>(
-            state_[coarse_lev]->boxArray(),
-            state_[coarse_lev]->DistributionMap(),
+            fluid_state_.state()[coarse_lev]->boxArray(),
+            fluid_state_.state()[coarse_lev]->DistributionMap(),
             1,
             0
          );
@@ -292,7 +292,7 @@
       }
       if (lev < finestLevel() && flux_registers_[lev + 1]) {
          const bool weighted_register = prepare_weighted_flux_register(lev + 1);
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             if (weighted_register) {
                std::array<amrex::FArrayBox, AMREX_SPACEDIM> weighted;
                flux_registers_[lev + 1]->CrseAdd(
@@ -309,7 +309,7 @@
       }
       if (lev > 0 && flux_registers_[lev]) {
          const bool weighted_register = prepare_weighted_flux_register(lev);
-         for (amrex::MFIter mfi(*state_[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             if (weighted_register) {
                std::array<amrex::FArrayBox, AMREX_SPACEDIM> weighted;
                flux_registers_[lev]->FineAdd(
@@ -390,14 +390,14 @@
       }
 #if (AMREX_SPACEDIM == 2)
       if (lev < finestLevel() && edge_flux_registers_[lev + 1]) {
-         for (amrex::MFIter mfi(*state_[lev]); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
             amrex::FArrayBox edge_line;
             fill_edge_line_integral_fab(lev, 2, (*edge_e_[lev].e[2])[mfi], edge_line);
             edge_flux_registers_[lev + 1]->CrseAdd(mfi, edge_line, dt);
          }
       }
       if (lev > 0 && edge_flux_registers_[lev]) {
-         for (amrex::MFIter mfi(*state_[lev]); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
             amrex::FArrayBox edge_line;
             fill_edge_line_integral_fab(lev, 2, (*edge_e_[lev].e[2])[mfi], edge_line);
             edge_flux_registers_[lev]->FineAdd(mfi, edge_line, dt);
@@ -405,13 +405,13 @@
       }
 #elif (AMREX_SPACEDIM == 3)
       if (lev < finestLevel() && edge_flux_registers_[lev + 1]) {
-         for (amrex::MFIter mfi(*state_[lev]); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
             amrex::Array<amrex::FArrayBox, 3> edge_line;
             edge_flux_registers_[lev + 1]->CrseAdd(mfi, edge_line_integral_fabs(lev, mfi, edge_line), dt);
          }
       }
       if (lev > 0 && edge_flux_registers_[lev]) {
-         for (amrex::MFIter mfi(*state_[lev]); mfi.isValid(); ++mfi) {
+         for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
             amrex::Array<amrex::FArrayBox, 3> edge_line;
             edge_flux_registers_[lev]->FineAdd(mfi, edge_line_integral_fabs(lev, mfi, edge_line), dt);
          }
@@ -502,15 +502,15 @@
    void reflux_level_to_next(int fine_lev)
    {
       if (fine_lev > 0 && fine_lev <= finestLevel() && flux_registers_[fine_lev]) {
-         reflux_level_to_destination(fine_lev, *next_[fine_lev - 1]);
-         apply_gravity_energy_source_register(fine_lev, *next_[fine_lev - 1]);
+         reflux_level_to_destination(fine_lev, *fluid_state_.next()[fine_lev - 1]);
+         apply_gravity_energy_source_register(fine_lev, *fluid_state_.next()[fine_lev - 1]);
       }
    }
 
    void reflux_level_to_state(int fine_lev)
    {
       if (fine_lev > 0 && fine_lev <= finestLevel() && flux_registers_[fine_lev]) {
-         reflux_level_to_destination(fine_lev, *state_[fine_lev - 1]);
-         apply_gravity_energy_source_register(fine_lev, *state_[fine_lev - 1]);
+         reflux_level_to_destination(fine_lev, *fluid_state_.state()[fine_lev - 1]);
+         apply_gravity_energy_source_register(fine_lev, *fluid_state_.state()[fine_lev - 1]);
       }
    }

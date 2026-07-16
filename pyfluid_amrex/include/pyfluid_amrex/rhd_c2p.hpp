@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pyfluid_amrex/c2p_policy.hpp"
+#include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 
@@ -177,6 +178,150 @@ RHDRecoveryResult recover_srhd_palenzuela_1d(
    result.attempt.status = C2PStatus::DidNotConverge;
    result.attempt.residual = amrex::Math::abs(x_residual);
    return result;
+}
+
+template <int EOSMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RHDRecoveryResult recover_rhd(
+   const RHDConserved& conserved,
+   const SpacetimeMetric& metric,
+   const EOSParams& eos,
+   const C2PRecoveryOptions& options = {}
+) noexcept
+{
+   if constexpr (EOSMethod == EOSIdealGas) {
+      return recover_srhd_palenzuela_1d(conserved, metric, eos.gamma, options);
+   } else {
+      RHDRecoveryResult result{};
+      result.attempt.method = C2PMethod::Palenzuela1D;
+      const RHDRecoveryState recovery = generated::rhd_recovery_state(
+         conserved, metric
+      );
+      if (!finite_rhd_conserved(conserved) || !(recovery.dens > 0.0)
+          || !amrex::Math::isfinite(recovery.momentum_squared)
+          || !(recovery.dens + recovery.tau > 0.0)) {
+         result.attempt.status = C2PStatus::InvalidConservedState;
+         return result;
+      }
+
+      const amrex::Real q = recovery.tau / recovery.dens;
+      const amrex::Real momentum_ratio_squared = recovery.momentum_squared
+         / (recovery.dens * recovery.dens);
+      const amrex::Real margin =
+         64.0 * std::numeric_limits<amrex::Real>::epsilon();
+      amrex::Real lower = amrex::max(
+         1.0 + q,
+         std::sqrt(momentum_ratio_squared) * (1.0 + margin)
+      );
+      lower = amrex::max(lower, 1.0 + margin);
+
+      const auto residual = [=] AMREX_GPU_HOST_DEVICE(amrex::Real x) noexcept {
+         const amrex::Real velocity_squared = momentum_ratio_squared / (x * x);
+         if (!(velocity_squared >= 0.0) || !(velocity_squared < 1.0)) {
+            return std::numeric_limits<amrex::Real>::quiet_NaN();
+         }
+         const amrex::Real inverse_lorentz = std::sqrt(1.0 - velocity_squared);
+         const amrex::Real rho = recovery.dens * inverse_lorentz;
+         const amrex::Real pressure_from_energy = recovery.dens * (x - 1.0 - q);
+         const amrex::Real eps = x * inverse_lorentz - 1.0
+            - pressure_from_energy / rho;
+         return (
+            relativistic_pressure<EOSMethod>(rho, eps, eos)
+            - pressure_from_energy
+         ) / recovery.dens;
+      };
+
+      amrex::Real lower_residual = residual(lower);
+      amrex::Real upper = amrex::max(2.0 * lower, lower + 1.0);
+      amrex::Real upper_residual = residual(upper);
+      for (int expansion = 0;
+           expansion < 64
+              && amrex::Math::isfinite(lower_residual)
+              && amrex::Math::isfinite(upper_residual)
+              && lower_residual * upper_residual > 0.0;
+           ++expansion) {
+         upper *= 2.0;
+         upper_residual = residual(upper);
+      }
+      if (!amrex::Math::isfinite(lower_residual)
+          || !amrex::Math::isfinite(upper_residual)) {
+         result.attempt.status = C2PStatus::NonfiniteResidual;
+         return result;
+      }
+      if (lower_residual * upper_residual > 0.0) {
+         result.attempt.status = C2PStatus::NoBracket;
+         return result;
+      }
+
+      amrex::Real x = 0.5 * (lower + upper);
+      amrex::Real x_residual = residual(x);
+      for (int iteration = 1; iteration <= options.max_iterations; ++iteration) {
+         result.attempt.iterations = iteration;
+         if (!amrex::Math::isfinite(x_residual)) {
+            result.attempt.status = C2PStatus::NonfiniteResidual;
+            return result;
+         }
+         const amrex::Real tolerance = options.absolute_tolerance
+            + options.relative_tolerance * amrex::max(1.0, amrex::Math::abs(x));
+         if (amrex::Math::abs(x_residual) <= tolerance
+             || upper - lower <= tolerance) {
+            const amrex::Real velocity_squared = momentum_ratio_squared / (x * x);
+            const amrex::Real inverse_lorentz = std::sqrt(1.0 - velocity_squared);
+            const amrex::Real rho = recovery.dens * inverse_lorentz;
+            const amrex::Real pressure = recovery.dens * (x - 1.0 - q);
+            result.primitive = {
+               rho,
+               x * inverse_lorentz - 1.0 - pressure / rho,
+               pressure,
+               recovery.mom1 / (recovery.dens * x),
+               recovery.mom2 / (recovery.dens * x),
+               recovery.mom3 / (recovery.dens * x),
+            };
+            result.attempt.residual = amrex::Math::abs(x_residual);
+            result.attempt.status = admissible_rhd_primitive(result.primitive, metric)
+               ? C2PStatus::Success
+               : C2PStatus::UnphysicalPrimitiveState;
+            return result;
+         }
+         if ((lower_residual <= 0.0 && x_residual >= 0.0)
+             || (lower_residual >= 0.0 && x_residual <= 0.0)) {
+            upper = x;
+            upper_residual = x_residual;
+         } else {
+            lower = x;
+            lower_residual = x_residual;
+         }
+         const amrex::Real denominator = upper_residual - lower_residual;
+         const amrex::Real secant = denominator != 0.0
+            ? upper - upper_residual * (upper - lower) / denominator
+            : 0.5 * (lower + upper);
+         x = secant > lower && secant < upper
+            ? secant
+            : 0.5 * (lower + upper);
+         x_residual = residual(x);
+      }
+      result.attempt.status = C2PStatus::DidNotConverge;
+      result.attempt.residual = amrex::Math::abs(x_residual);
+      return result;
+   }
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RHDRecoveryResult recover_rhd_runtime(
+   int eos_method,
+   const RHDConserved& conserved,
+   const SpacetimeMetric& metric,
+   const EOSParams& eos,
+   const C2PRecoveryOptions& options = {}
+) noexcept
+{
+   if (eos_method == EOSPolytrope) {
+      return recover_rhd<EOSPolytrope>(conserved, metric, eos, options);
+   }
+   if (eos_method == EOSHybridPolytrope) {
+      return recover_rhd<EOSHybridPolytrope>(conserved, metric, eos, options);
+   }
+   return recover_rhd<EOSIdealGas>(conserved, metric, eos, options);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

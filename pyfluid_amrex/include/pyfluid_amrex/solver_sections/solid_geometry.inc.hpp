@@ -20,9 +20,9 @@
          return;
       }
 
-      solid_valid_kind_[lev].assign(state_[lev]->boxArray().size(), MaskKindMixed);
+      solid_valid_kind_[lev].assign(fluid_state_.state()[lev]->boxArray().size(), MaskKindMixed);
       primitive_needed_kind_[lev].assign(primitive_needed_mask_[lev]->boxArray().size(), MaskKindMixed);
-      for (amrex::MFIter mfi(*state_[lev]); mfi.isValid(); ++mfi) {
+      for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
          solid_valid_kind_[lev][mfi.index()] = classify_mask_region(*solid_mask_[lev], mfi, mfi.validbox());
       }
       for (amrex::MFIter mfi(*primitive_needed_mask_[lev]); mfi.isValid(); ++mfi) {
@@ -261,7 +261,7 @@
    }
    if (cfg_.solid_motion == "pulse") {
       const amrex::Real omega =
-         2.0 * static_cast<amrex::Real>(3.141592653589793238462643383279502884L)
+         constants::two_pi
          * cfg_.solid_radius_frequency;
       amrex::Real max_rate = omega;
       if (cfg_.solid_radius_ramp_time > 0.0) {
@@ -402,7 +402,7 @@
       amrex::Real old_time = solid_mask_time_[lev];
       std::unique_ptr<amrex::iMultiFab> old_mask;
       std::unique_ptr<amrex::MultiFab> old_volume_fraction;
-      if (remap_moving_solid && solid_geometry_changes_cell_mask(cfg_) && state_[lev]) {
+      if (remap_moving_solid && solid_geometry_changes_cell_mask(cfg_) && fluid_state_.state()[lev]) {
          old_time = solid_mask_time_[lev];
          old_mask = std::make_unique<amrex::iMultiFab>(
             solid_mask_[lev]->boxArray(),
@@ -444,12 +444,12 @@
    fill_solid_mask(*solid_mask_[lev], Geom(lev), cfg_, time);
    refresh_solid_discrete_geometry_level(lev, time);
       solid_mask_time_[lev] = time;
-      if (old_mask && state_[lev]) {
-         state_[lev]->FillBoundary(Geom(lev).periodicity());
-         conservative_translate_box_mask_update(*state_[lev], *old_mask, *solid_mask_[lev], cfg_);
+      if (old_mask && fluid_state_.state()[lev]) {
+         fluid_state_.state()[lev]->FillBoundary(Geom(lev).periodicity());
+         conservative_translate_box_mask_update(*fluid_state_.state()[lev], *old_mask, *solid_mask_[lev], cfg_);
          if (old_volume_fraction && solid_volume_fraction_[lev]) {
             conservative_pulse_solid_volume_fraction_update(
-               *state_[lev],
+               *fluid_state_.state()[lev],
                *old_volume_fraction,
                *solid_volume_fraction_[lev],
                Geom(lev),
@@ -526,7 +526,7 @@
          old_times[lev] = solid_mask_time_[lev];
          refreshed[lev] = 1;
          any_refreshed = true;
-         if (remap_moving_solid && state_[lev]) {
+         if (remap_moving_solid && fluid_state_.state()[lev]) {
             old_masks[lev] = std::make_unique<amrex::iMultiFab>(
                solid_mask_[lev]->boxArray(),
                solid_mask_[lev]->DistributionMap(),
@@ -572,11 +572,11 @@
             continue;
          }
          refresh_solid_discrete_geometry_level(lev, time);
-         if (refreshed[lev] != 0 && old_masks[lev] && state_[lev]) {
-            state_[lev]->FillBoundary(Geom(lev).periodicity());
+         if (refreshed[lev] != 0 && old_masks[lev] && fluid_state_.state()[lev]) {
+            fluid_state_.state()[lev]->FillBoundary(Geom(lev).periodicity());
             if (old_volume_fractions[lev] && solid_volume_fraction_[lev]) {
                conservative_pulse_solid_volume_fraction_update(
-                  *state_[lev],
+                  *fluid_state_.state()[lev],
                   *old_volume_fractions[lev],
                   *solid_volume_fraction_[lev],
                   Geom(lev),

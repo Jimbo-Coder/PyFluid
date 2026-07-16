@@ -22,6 +22,9 @@ CHARACTERISTIC_HEADER = (
 RELATIVISTIC_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "relativistic_fluid.hpp"
 )
+Z4C_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "z4c.hpp"
+)
 sys.path.insert(0, str(CODEGEN))
 
 from pyfluid_codegen.emit_cpp import (  # noqa: E402
@@ -33,6 +36,7 @@ from pyfluid_codegen.emit_cpp import (  # noqa: E402
    render_relativistic_header,
    render_riemann_header,
    render_vector_header,
+   render_z4c_header,
 )
 from pyfluid_codegen.characteristic_equations import characteristic_kernels  # noqa: E402
 from pyfluid_codegen.eos_equations import analytic_equations_of_state, eos_kernels  # noqa: E402
@@ -555,7 +559,7 @@ def validate_relativistic_contract(rng: random.Random) -> None:
       "rmhd_geometric_source",
       *(f"rhd_flux_dir{direction}" for direction in range(3)),
       *(f"rmhd_flux_dir{direction}" for direction in range(3)),
-      *(f"srhd_wave_speeds_dir{direction}" for direction in range(3)),
+      *(f"rhd_wave_speeds_dir{direction}" for direction in range(3)),
       *(f"srmhd_wave_speeds_dir{direction}" for direction in range(3)),
    }
    evaluators = {
@@ -624,8 +628,16 @@ def validate_relativistic_contract(rng: random.Random) -> None:
             velocity_scale = math.sqrt(0.8 / velocity_squared)
             for i in range(3):
                minkowski_values[f"primitive.v{i + 1}"] *= velocity_scale
+         rho = minkowski_values["primitive.rho"]
+         eps = minkowski_values["primitive.eps"]
+         gamma = minkowski_values["gamma"]
+         pressure = (gamma - 1.0) * rho * eps
+         specific_enthalpy = 1.0 + eps + pressure / rho
+         minkowski_values["sound_speed_squared"] = (
+            gamma * pressure / (rho * specific_enthalpy)
+         )
          assert_close(
-            evaluators[f"srhd_wave_speeds_dir{direction}"](minkowski_values),
+            evaluators[f"rhd_wave_speeds_dir{direction}"](minkowski_values),
             srhd_wave_speed_reference(minkowski_values, direction),
             f"SRHD wave speeds dir={direction}",
          )
@@ -846,6 +858,7 @@ def random_eos_values(rng: random.Random) -> dict[str, float]:
       "polytropic_k": rng.uniform(0.1, 3.0),
       "polytropic_gamma": rng.uniform(1.1, 2.1),
       "thermal_gamma": rng.uniform(1.1, 2.1),
+      "cold_specific_energy_offset": rng.uniform(0.0, 0.2),
    }
 
 
@@ -858,8 +871,19 @@ def eos_reference(name: str, values: dict[str, float]) -> float:
    polytropic_k = values["polytropic_k"]
    polytropic_gamma = values["polytropic_gamma"]
    thermal_gamma = values["thermal_gamma"]
+   cold_specific_energy_offset = values["cold_specific_energy_offset"]
    cold_pressure = polytropic_k * rho**polytropic_gamma
-   cold_energy = cold_pressure / (polytropic_gamma - 1.0)
+   cold_energy = (
+      cold_specific_energy_offset * rho
+      + cold_pressure / (polytropic_gamma - 1.0)
+   )
+   cold_specific_energy = cold_energy / rho
+   hybrid_pressure = cold_pressure + (thermal_gamma - 1.0) * (
+      internal - cold_energy
+   )
+   relativistic_hybrid_pressure = cold_pressure + (thermal_gamma - 1.0) * rho * (
+      specific_internal - cold_specific_energy
+   )
    references = {
       "ideal_gas_pressure_from_density_energy": (gamma - 1.0) * internal,
       "ideal_gas_internal_energy_density_from_pressure": pressure / (gamma - 1.0),
@@ -868,7 +892,7 @@ def eos_reference(name: str, values: dict[str, float]) -> float:
       "polytrope_cold_energy_density": cold_energy,
       "polytrope_sound_speed_squared": polytropic_gamma * cold_pressure / rho,
       "hybrid_polytrope_pressure_from_density_energy": (
-         cold_pressure + (thermal_gamma - 1.0) * (internal - cold_energy)
+         hybrid_pressure
       ),
       "hybrid_polytrope_internal_energy_density_from_pressure": (
          cold_energy + (pressure - cold_pressure) / (thermal_gamma - 1.0)
@@ -884,6 +908,24 @@ def eos_reference(name: str, values: dict[str, float]) -> float:
       "relativistic_ideal_gas_sound_speed_squared": (
          gamma * (gamma - 1.0) * specific_internal
          / (1.0 + gamma * specific_internal)
+      ),
+      "relativistic_polytrope_pressure": cold_pressure,
+      "relativistic_polytrope_specific_enthalpy": (
+         1.0 + specific_internal + cold_pressure / rho
+      ),
+      "relativistic_polytrope_sound_speed_squared": (
+         polytropic_gamma * cold_pressure
+         / (rho * (1.0 + specific_internal) + cold_pressure)
+      ),
+      "relativistic_hybrid_polytrope_pressure": relativistic_hybrid_pressure,
+      "relativistic_hybrid_polytrope_specific_enthalpy": (
+         1.0 + specific_internal + relativistic_hybrid_pressure / rho
+      ),
+      "relativistic_hybrid_polytrope_sound_speed_squared": (
+         polytropic_gamma * cold_pressure
+         + thermal_gamma * (relativistic_hybrid_pressure - cold_pressure)
+      ) / (
+         rho * (1.0 + specific_internal) + relativistic_hybrid_pressure
       ),
    }
    return references[name]
@@ -1620,6 +1662,8 @@ def main() -> None:
       raise SystemExit(f"missing generated header: {CHARACTERISTIC_HEADER}")
    if not RELATIVISTIC_HEADER.exists():
       raise SystemExit(f"missing generated header: {RELATIVISTIC_HEADER}")
+   if not Z4C_HEADER.exists():
+      raise SystemExit(f"missing generated header: {Z4C_HEADER}")
    rendered_flux = render_flux_header()
    stored_flux = FLUX_HEADER.read_text(encoding="utf-8")
    if rendered_flux != stored_flux:
@@ -1650,6 +1694,8 @@ def main() -> None:
    stored_relativistic = RELATIVISTIC_HEADER.read_text(encoding="utf-8")
    if rendered_relativistic != stored_relativistic:
       raise SystemExit(f"generated relativistic header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+   if render_z4c_header() != Z4C_HEADER.read_text(encoding="utf-8"):
+      raise SystemExit(f"generated Z4c header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
    validate_symbolic_operator_contract()
    validate_symbolic_eos_contract()
    rng = random.Random(20260628)

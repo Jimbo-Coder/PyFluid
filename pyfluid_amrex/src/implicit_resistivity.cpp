@@ -39,7 +39,10 @@ DiffusionStats solve_implicit_resistive_edge_emf(
    fill_ct_resistive_emf_from_face_b(edge_e, face_b, geom, cfg.resistivity, cfg);
    enforce_edge_electric_boundary(edge_e, geom, cfg);
    for (int component = 0; component < 3; ++component) {
-      const amrex::BoxArray edge_boxes = amrex::convert(cell_boxes, edge_index_type(component));
+      const amrex::BoxArray edge_boxes = amrex::convert(
+         cell_boxes,
+         grid_field_index_type(edge_grid_field_centering(component))
+      );
       solution[component].define(edge_boxes, distribution, 1, 1);
       rhs[component].define(edge_boxes, distribution, 1, 0);
       amrex::MultiFab::Copy(rhs[component], *edge_e.e[component], 0, 0, 1, 0);

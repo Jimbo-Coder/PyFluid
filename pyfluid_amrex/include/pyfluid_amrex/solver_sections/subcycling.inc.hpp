@@ -14,15 +14,15 @@
       if constexpr (CTEnabled) {
          const amrex::Real stage_start = profile_begin();
          apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
-         sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), false);
+         sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), false);
          profile_end(ProfileStage::CT, stage_start);
       }
 
       amrex::Real stage_start = profile_begin();
       if constexpr (TimeMethod == TimeRK4) {
-         fill_level_boundaries<true>(state_, lev, time, time, 1);
+         fill_level_boundaries<true>(fluid_state_.state(), lev, time, time, 1);
       } else {
-         fill_level_boundaries<true>(state_, lev, time);
+         fill_level_boundaries<true>(fluid_state_.state(), lev, time);
       }
       profile_end(ProfileStage::BoundaryFill, stage_start);
       copy_level_state_to_old(lev);
@@ -103,7 +103,7 @@
 
       if (lev < finestLevel()) {
          const amrex::Real boundary_start = profile_begin();
-         fill_level_boundaries<true>(state_, lev, level_times_[lev]);
+         fill_level_boundaries<true>(fluid_state_.state(), lev, level_times_[lev]);
          profile_end(ProfileStage::BoundaryFill, boundary_start);
 
          const int substeps = subcycle_step_count<NComp, EOSMethod, DiffusionMethod>(lev, dt);
@@ -123,11 +123,12 @@
          const amrex::Real stage_start = profile_begin();
          reflux_level_to_state(lev + 1);
          average_down_state_level(lev + 1);
+         average_down_spacetime_level(lev + 1);
          reset_barotropic_energy_level<NComp, EOSMethod>(lev);
          if constexpr (CTEnabled) {
             reflux_edge_flux_register_to_face_b(lev + 1);
             average_down_face_b_level(lev + 1);
-            sync_cell_b_from_faces(*state_[lev], face_b_[lev], Geom(lev), false);
+            sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), false);
             reset_barotropic_energy_level<NComp, EOSMethod>(lev);
          }
          profile_end(ProfileStage::AverageDown, stage_start);

@@ -12,6 +12,7 @@
 #include <string>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/patch_domain.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -203,8 +204,8 @@ inline void validate_origin_boundary_geometry(BoundaryData const& bc, amrex::Geo
          amrex::Abort("radial origin boundary with active phi requires an even number of phi cells");
       }
       const amrex::Real width = probhi[phi_dir] - problo[phi_dir];
-      const amrex::Real two_pi = static_cast<amrex::Real>(6.28318530717958647692528676655900576839433879875);
-      if (std::abs(width - two_pi) > static_cast<amrex::Real>(1.0e-12) * two_pi) {
+      if (std::abs(width - constants::two_pi)
+          > static_cast<amrex::Real>(1.0e-12) * constants::two_pi) {
          amrex::Abort("radial origin boundary with active phi requires a full 2*pi phi domain");
       }
    }

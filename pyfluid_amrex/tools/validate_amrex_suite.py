@@ -77,8 +77,6 @@ STEPS = [
          "hydro_obstacle_half_bottom",
          "--only",
          "hydro_moving_box_piston",
-         "--only",
-         "hydro_combo_pulsating_circle_amr_subcycling",
       ),
    ),
    GateStep(

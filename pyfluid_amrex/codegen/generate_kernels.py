@@ -6,6 +6,7 @@ from pathlib import Path
 from pyfluid_codegen.emit_cpp import (
    CsePolicy,
    write_characteristic_header,
+   write_differential_header,
    write_eos_header,
    write_flux_header,
    write_metric_header,
@@ -14,6 +15,7 @@ from pyfluid_codegen.emit_cpp import (
    write_relativistic_header,
    write_riemann_header,
    write_vector_header,
+   write_z4c_header,
 )
 
 
@@ -41,6 +43,14 @@ DEFAULT_OPERATOR_HEADER = (
    / "pyfluid_amrex"
    / "kernels_generated"
    / "scalar_ops.hpp"
+)
+DEFAULT_DIFFERENTIAL_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "kernels_generated"
+   / "differential_ops.hpp"
 )
 DEFAULT_RIEMANN_HEADER = (
    ROOT
@@ -90,6 +100,14 @@ DEFAULT_RELATIVISTIC_HEADER = (
    / "kernels_generated"
    / "relativistic_fluid.hpp"
 )
+DEFAULT_Z4C_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "kernels_generated"
+   / "z4c.hpp"
+)
 
 
 def main() -> None:
@@ -97,24 +115,27 @@ def main() -> None:
    parser.add_argument(
       "--family",
       action="append",
-      choices=("characteristic", "eos", "flux", "operator", "relativistic", "riemann", "vector", "metric", "patch_map"),
+      choices=("characteristic", "differential", "eos", "flux", "operator", "relativistic", "riemann", "vector", "metric", "patch_map", "z4c"),
       help="generate only this kernel family; repeat as needed (default: all)",
    )
    parser.add_argument("--flux-header", type=Path, default=DEFAULT_FLUX_HEADER)
    parser.add_argument("--eos-header", type=Path, default=DEFAULT_EOS_HEADER)
    parser.add_argument("--operator-header", type=Path, default=DEFAULT_OPERATOR_HEADER)
+   parser.add_argument("--differential-header", type=Path, default=DEFAULT_DIFFERENTIAL_HEADER)
    parser.add_argument("--riemann-header", type=Path, default=DEFAULT_RIEMANN_HEADER)
    parser.add_argument("--characteristic-header", type=Path, default=DEFAULT_CHARACTERISTIC_HEADER)
    parser.add_argument("--vector-header", type=Path, default=DEFAULT_VECTOR_HEADER)
    parser.add_argument("--metric-header", type=Path, default=DEFAULT_METRIC_HEADER)
    parser.add_argument("--patch-map-header", type=Path, default=DEFAULT_PATCH_MAP_HEADER)
    parser.add_argument("--relativistic-header", type=Path, default=DEFAULT_RELATIVISTIC_HEADER)
+   parser.add_argument("--z4c-header", type=Path, default=DEFAULT_Z4C_HEADER)
    parser.add_argument("--hard-drop-ops", type=int, default=0)
    parser.add_argument("--soft-drop-ops", type=int, default=3)
    args = parser.parse_args()
    policy = CsePolicy(hard_drop_ops=args.hard_drop_ops, soft_drop_ops=args.soft_drop_ops)
    generators = {
       "characteristic": (args.characteristic_header, write_characteristic_header),
+      "differential": (args.differential_header, write_differential_header),
       "eos": (args.eos_header, write_eos_header),
       "flux": (args.flux_header, write_flux_header),
       "operator": (args.operator_header, write_operator_header),
@@ -123,6 +144,7 @@ def main() -> None:
       "metric": (args.metric_header, write_metric_header),
       "patch_map": (args.patch_map_header, write_patch_map_header),
       "relativistic": (args.relativistic_header, write_relativistic_header),
+      "z4c": (args.z4c_header, write_z4c_header),
    }
    families = tuple(args.family) if args.family else tuple(generators)
    for family in families:
