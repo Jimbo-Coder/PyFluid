@@ -51,6 +51,22 @@ The backend has three layers.
 Keep these boundaries. A new physics feature should not invent another output
 writer, scalar format, AMR hierarchy, or source-stage loop.
 
+## EOS And Code Units
+
+HD, MHD, and RHD use the same generated ideal-gas, cold-polytrope, and hybrid
+thermal-polytrope closures. A polytropic run may contain up to eight density
+segments. The input supplies the first `K`, every density break, and each later
+adiabatic index; the solver derives later `K` values and internal-energy
+offsets so pressure and cold specific energy remain continuous.
+
+EOS inputs are code-unit quantities. In `P = K rho^Gamma`, each
+`pyfluid.polytropic_density_breaks` entry has the same code units as `rho`, and
+`pyfluid.polytropic_k` has units `P_unit / rho_unit^Gamma`. Consequently a
+change of density or pressure unit requires transforming both the breaks and
+the leading `K`; the dimensionless adiabatic indices do not change. Relativistic
+runs additionally use `c = G = 1`. PyFluid does not silently convert a
+dimensional EOS table or infer its unit system.
+
 ## Public Interfaces And Compilation
 
 The executable-facing solver API is intentionally small. `solver.hpp` owns the

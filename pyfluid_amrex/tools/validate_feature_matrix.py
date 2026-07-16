@@ -21,6 +21,9 @@ from amr_plot_data import compare_hierarchy_slices
 from plotfile_reader import latest_plotfile, level_count, parse_plot_header, read_level_state
 
 from validation_common import (
+   BAROTROPIC_DIFFUSIVE_POLICY,
+   BAROTROPIC_POLICY,
+   BAROTROPIC_WALL_POLICY,
    CLOSED_POLICY,
    DIFFUSIVE_POLICY,
    DIFFUSIVE_WALL_POLICY,
@@ -125,7 +128,6 @@ DEEP_AMR_COVERAGE = {
 
 SELF_GRAVITY_POLICY = scalar_checks("self_gravity", energy_tol=1.0e-10)
 SELF_GRAVITY_AMR_POLICY = scalar_checks("self_gravity_amr", energy_tol=2.0e-6)
-BAROTROPIC_DIFFUSIVE_POLICY = scalar_checks("barotropic_diffusive", energy=False)
 
 
 def case_output_dir(name: str) -> Path:
@@ -150,6 +152,7 @@ def write_case_input(case: Case, force: bool) -> Path:
 
 def case_checks(case: Case) -> ScalarPolicy:
    name = case.name
+   is_barotropic = case.overrides.get("pyfluid.eos") == "polytrope"
    if any(marker in name for marker in ("_bc_outflow", "_bc_diode", "inflow_mixed")):
       if case_is_mhd(case):
          return OPEN_MHD_POLICY
@@ -158,16 +161,22 @@ def case_checks(case: Case) -> ScalarPolicy:
       return OPEN_POLICY
    if "reflecting" in name:
       if any(marker in name for marker in ("diffusion", "resistivity", "resistive")):
+         if is_barotropic:
+            return BAROTROPIC_WALL_POLICY
          return DIFFUSIVE_WALL_POLICY
+      if is_barotropic:
+         return BAROTROPIC_WALL_POLICY
       return WALL_POLICY
    if any(marker in name for marker in ("diffusion", "resistivity", "resistive")):
-      if case.overrides.get("pyfluid.eos") == "polytrope":
+      if is_barotropic:
          return BAROTROPIC_DIFFUSIVE_POLICY
       return DIFFUSIVE_POLICY
    if any(marker in name for marker in ("moving_box", "rotating_cylinder", "pulsating_circle")):
       return DRIVEN_POLICY
    if name.endswith("_smoke"):
       return SMOKE_POLICY
+   if is_barotropic:
+      return BAROTROPIC_POLICY
    return case.checks
 
 
@@ -403,6 +412,9 @@ def eos_cases() -> list[Case]:
          "pyfluid.eos": "polytrope",
          "pyfluid.polytropic_k": "1.0",
          "pyfluid.polytropic_gamma": "1.6666666666666667",
+         "pyfluid.polytropic_density_breaks": "1.0",
+         "pyfluid.polytropic_segment_gammas": "1.4",
+         "pyfluid.amplitude": "0.2",
          "pyfluid.timestep": "ssprk3",
          "pyfluid.recon": "pwl",
          "pyfluid.riemann": "hllc",
@@ -412,16 +424,26 @@ def eos_cases() -> list[Case]:
          "pyfluid.eos": "hybrid_polytrope",
          "pyfluid.polytropic_k": "0.2",
          "pyfluid.polytropic_gamma": "1.6666666666666667",
+         "pyfluid.polytropic_density_breaks": "1.0",
+         "pyfluid.polytropic_segment_gammas": "1.4",
          "pyfluid.thermal_gamma": "1.6666666666666667",
+         "pyfluid.amplitude": "0.2",
          "pyfluid.timestep": "ssprk3",
          "pyfluid.recon": "pwl",
          "pyfluid.riemann": "hllc",
          "pyfluid.ng": "2",
       }),
-      Case("mhd_eos_polytrope_wenoz_char_hlld_ct", 2, "resistive_wave_x_2d_ct.in", {
+      Case("mhd_eos_polytrope_wenoz_char_hlld_ct", 2, "hydro_sine_2d.in", {
+         "pyfluid.physics": "mhd",
+         "pyfluid.ct": "on",
          "pyfluid.eos": "polytrope",
          "pyfluid.polytropic_k": "1.0",
          "pyfluid.polytropic_gamma": "1.6666666666666667",
+         "pyfluid.polytropic_density_breaks": "1.0",
+         "pyfluid.polytropic_segment_gammas": "1.4",
+         "pyfluid.amplitude": "0.2",
+         "pyfluid.b1_0": "0.2",
+         "pyfluid.b2_0": "0.1",
          "pyfluid.diffusion": "none",
          "pyfluid.resistivity": "0.0",
          "pyfluid.timestep": "rk4",
@@ -433,6 +455,8 @@ def eos_cases() -> list[Case]:
          "pyfluid.eos": "hybrid_polytrope",
          "pyfluid.polytropic_k": "0.2",
          "pyfluid.polytropic_gamma": "1.6666666666666667",
+         "pyfluid.polytropic_density_breaks": "0.9",
+         "pyfluid.polytropic_segment_gammas": "1.4",
          "pyfluid.thermal_gamma": "1.6666666666666667",
          "pyfluid.diffusion": "explicit",
          "pyfluid.resistivity": "1.0e-3",
@@ -446,6 +470,8 @@ def eos_cases() -> list[Case]:
          "pyfluid.eos": "polytrope",
          "pyfluid.polytropic_k": "1.0",
          "pyfluid.polytropic_gamma": "1.6666666666666667",
+         "pyfluid.polytropic_density_breaks": "0.9",
+         "pyfluid.polytropic_segment_gammas": "1.4",
          "pyfluid.diffusion": "implicit",
          "pyfluid.resistivity": "1.0e-3",
          "pyfluid.viscosity": "0.0",
@@ -460,6 +486,8 @@ def eos_cases() -> list[Case]:
          "pyfluid.eos": "hybrid_polytrope",
          "pyfluid.polytropic_k": "0.2",
          "pyfluid.polytropic_gamma": "1.6666666666666667",
+         "pyfluid.polytropic_density_breaks": "0.9",
+         "pyfluid.polytropic_segment_gammas": "1.4",
          "pyfluid.thermal_gamma": "1.6666666666666667",
          "pyfluid.diffusion": "implicit",
          "pyfluid.resistivity": "1.0e-3",

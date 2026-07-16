@@ -289,6 +289,19 @@ ELLIPTIC_POLICY = scalar_checks(
    "elliptic",
    performance=False,
 )
+BAROTROPIC_POLICY = scalar_checks(
+   "barotropic",
+   energy=False,
+)
+BAROTROPIC_DIFFUSIVE_POLICY = scalar_checks(
+   "barotropic_diffusive",
+   energy=False,
+)
+BAROTROPIC_WALL_POLICY = scalar_checks(
+   "barotropic_wall",
+   energy=False,
+   momentum=False,
+)
 
 SCALAR_POLICIES = {
    policy.name: policy
@@ -594,16 +607,27 @@ def infer_scalar_policy(
    if abs(wall_work) > 0.0:
       return DRIVEN_POLICY, "nonzero wall work"
 
+   eos = params.get("pyfluid.eos", summary.get("eos", "")).strip().lower()
+   is_barotropic = eos == "polytrope"
    diffusion = params.get("pyfluid.diffusion", summary.get("diffusion", "")).strip().lower()
    viscosity = params.get("pyfluid.viscosity", summary.get("viscosity"))
    resistivity = params.get("pyfluid.resistivity", summary.get("resistivity"))
    if diffusion not in ("", "none", "off") or enabled_number(viscosity) or enabled_number(resistivity):
+      if is_barotropic:
+         if has_reflecting_wall:
+            return BAROTROPIC_WALL_POLICY, "barotropic EOS with diffusion and reflecting wall"
+         return BAROTROPIC_DIFFUSIVE_POLICY, "barotropic EOS with diffusion/resistivity"
       if has_reflecting_wall:
          return DIFFUSIVE_WALL_POLICY, "diffusion/resistivity with reflecting wall"
       return DIFFUSIVE_POLICY, "diffusion/resistivity enabled"
 
    if has_reflecting_wall:
+      if is_barotropic:
+         return BAROTROPIC_WALL_POLICY, "barotropic EOS with reflecting wall"
       return WALL_POLICY, "reflecting wall"
+
+   if is_barotropic:
+      return BAROTROPIC_POLICY, "barotropic EOS"
 
    return CLOSED_POLICY, "closed/default"
 
