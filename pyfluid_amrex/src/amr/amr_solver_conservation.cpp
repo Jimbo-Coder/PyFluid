@@ -1,3 +1,7 @@
+#include "pyfluid_amrex/amr_solver_base.hpp"
+
+namespace pyfluid_amrex {
+
 bool AmrSolverBase::external_conservation_budget_supported() const
 {
    // Gravity has a separate fluid-plus-potential energy synchronization
@@ -155,3 +159,5 @@ void AmrSolverBase::accumulate_source_change(MassEnergy const& before, MassEnerg
    conservation_ledger_.source_change.mass += weight * (after.mass - before.mass);
    conservation_ledger_.source_change.energy += weight * (after.energy - before.energy);
 }
+
+} // namespace pyfluid_amrex

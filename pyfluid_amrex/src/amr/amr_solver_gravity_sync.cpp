@@ -1,3 +1,7 @@
+#include "pyfluid_amrex/amr_solver_base.hpp"
+
+namespace pyfluid_amrex {
+
 bool AmrSolverBase::gravity_energy_source_register_needed(int fine_lev) const
 {
    return fine_lev > 0 && fine_lev <= finestLevel() && uses_athena_ssprk3_gravity_energy_correction() &&
@@ -182,3 +186,5 @@ void AmrSolverBase::apply_gravity_energy_source_register_scaled(int fine_lev, am
       }
    }
 }
+
+} // namespace pyfluid_amrex

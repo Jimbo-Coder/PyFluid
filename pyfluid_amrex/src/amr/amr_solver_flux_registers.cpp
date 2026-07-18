@@ -1,3 +1,9 @@
+#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "pyfluid_amrex/ct.hpp"
+#include "pyfluid_amrex/patch_metrics.hpp"
+
+namespace pyfluid_amrex {
+
 std::array<amrex::MultiFab*, AMREX_SPACEDIM> AmrSolverBase::flux_ptrs(int lev)
 {
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> ptrs;
@@ -439,3 +445,5 @@ void AmrSolverBase::reflux_level_to_state(int fine_lev)
       apply_gravity_energy_source_register(fine_lev, *fluid_state_.state()[fine_lev - 1]);
    }
 }
+
+} // namespace pyfluid_amrex

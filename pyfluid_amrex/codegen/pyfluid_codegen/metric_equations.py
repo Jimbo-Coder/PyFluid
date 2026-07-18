@@ -10,6 +10,7 @@ from .coordinates import (
    cylindrical_frame,
    spherical_frame,
 )
+from .field_catalog import MOMENTUM_COMPONENT_NAMES
 from .kernel_equations import ScalarKernel
 from .physical_system import (
    orthogonal_mhd_stress_curvature_sources,
@@ -189,7 +190,7 @@ def velocity_curvature_source_kernels() -> tuple[ScalarKernel, ...]:
       s["rho"],
       Vector(s["vr"], s["vtheta"], s["vphi"]),
    )
-   component_names: tuple[str, str, str] = ("mom1", "mom2", "mom3")
+   component_names: tuple[str, str, str] = MOMENTUM_COMPONENT_NAMES
    return (
       *_curvature_kernels(
          cyl_frame,
@@ -228,7 +229,7 @@ def mhd_stress_curvature_source_kernels() -> tuple[ScalarKernel, ...]:
    spherical_stress_sources = _orthogonal_mhd_stress_curvature_sources(
       sph_frame, s["rho"], v_sph, b_sph
    )
-   component_names: tuple[str, str, str] = ("mom1", "mom2", "mom3")
+   component_names: tuple[str, str, str] = MOMENTUM_COMPONENT_NAMES
    return (
       *_curvature_kernels(
          cyl_frame,

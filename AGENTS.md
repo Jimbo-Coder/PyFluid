@@ -31,7 +31,7 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
 - Lower-dimensional `mesh.axes` values must preserve the canonical order. Supported finite-volume layouts are ordered subsets of the canonical 3D order: Cartesian `x`, `y`, `z`, `x y`, `x z`, `y z`, `x y z`; cylindrical `r`, `phi`, `z`, `r phi`, `r z`, `phi z`, `r phi z`; and spherical `r`, `theta`, `phi`, `r theta`, `r phi`, `theta phi`, `r theta phi`.
 - Conserved vector components are runtime-direction components, not permanent physical-axis names. Use `MOM1/MOM2/MOM3`, `B1/B2/B3`, `mom1/mom2/mom3`, and `b1/b2/b3`; interpret them through `mesh.axes`.
 - Run parameters for vector quantities use `1/2/3` suffixes such as `v1_0`, `b2_left`, `inflow_v3`, `source_a1`, and `solid_velocity_2`. Do not add new solver-state or user-facing vector names with `x/y/z` suffixes.
-- Define AMReX grid functions once in `pyfluid_amrex/include/pyfluid_amrex/fields.hpp` and `pyfluid_amrex/src/fields.cpp`: name, component names, role, requirements, and centering. Output writers and plotting tools should consume that schema, not duplicate GF names or infer centerings locally.
+- Define AMReX grid functions once in `pyfluid_amrex/codegen/pyfluid_codegen/field_catalog.py`: name, mathematical label, tensor shape, components, role, requirements, and centering. Generated C++ descriptors, output writers, diagnostics, and plotting tools consume that schema; do not duplicate GF names, component IDs, labels, or centerings locally.
 
 ## Numerical Work
 

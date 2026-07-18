@@ -136,13 +136,20 @@ inline BoundaryData make_boundary_data(RunConfig const& cfg)
    data.inflow_background_b2 = cfg.inflow_background_b2;
    data.inflow_background_b3 = cfg.inflow_background_b3;
    data.passive_scalars = cfg.passive_scalars;
+   const PhysicalSystem system = physical_system(cfg);
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       data.origin_lo[dir] = data.lo_kind[dir] == static_cast<int>(BoundaryKind::Origin) ? 1 : 0;
       for (int component = 0; component < MaxStateComponents; ++component) {
          const int offset = dir * MaxStateComponents + component;
          data.origin_state_parity[offset] =
             data.origin_lo[dir] != 0
-            ? state_grid_field_origin_parity(data.mesh_coordinate, data.mesh_axes, component)
+            ? state_grid_field_origin_parity(
+                 data.mesh_coordinate,
+                 data.mesh_axes,
+                 system,
+                 data.passive_scalars,
+                 component
+              )
             : 1;
       }
    }
@@ -169,7 +176,7 @@ inline BoundaryData make_boundary_data(RunConfig const& cfg)
    data.v1_right = cfg.v1_right;
    data.v2_right = cfg.v2_right;
    data.v3_right = cfg.v3_right;
-   data.mhd = is_mhd(cfg) ? 1 : 0;
+   data.mhd = physical_system_has_magnetic_field(system) ? 1 : 0;
    return data;
 }
 

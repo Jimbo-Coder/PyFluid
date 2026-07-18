@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from pyfluid_codegen.emit_catalog import write_catalog
 from pyfluid_codegen.emit_cpp import (
    CsePolicy,
    write_characteristic_header,
@@ -117,6 +118,33 @@ DEFAULT_INITIAL_DATA_HEADER = (
    / "kernels_generated"
    / "initial_data.hpp"
 )
+DEFAULT_FIELD_IDS_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "generated"
+   / "field_ids.hpp"
+)
+DEFAULT_FIELD_CATALOG_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "generated"
+   / "field_catalog.hpp"
+)
+DEFAULT_DIAGNOSTIC_CATALOG_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "generated"
+   / "diagnostic_catalog.hpp"
+)
+DEFAULT_EQUATION_MARKDOWN = ROOT / "pyfluid_amrex" / "docs" / "equations.md"
+DEFAULT_EQUATION_LATEX = ROOT / "pyfluid_amrex" / "docs" / "equations.tex"
+DEFAULT_FIELD_CATALOG_JSON = ROOT / "pyfluid_amrex" / "generated" / "field_catalog.json"
 
 
 def main() -> None:
@@ -124,7 +152,7 @@ def main() -> None:
    parser.add_argument(
       "--family",
       action="append",
-      choices=("characteristic", "differential", "eos", "flux", "initial_data", "operator", "relativistic", "riemann", "vector", "metric", "patch_map", "z4c"),
+      choices=("catalog", "characteristic", "differential", "eos", "flux", "initial_data", "operator", "relativistic", "riemann", "vector", "metric", "patch_map", "z4c"),
       help="generate only this kernel family; repeat as needed (default: all)",
    )
    parser.add_argument("--flux-header", type=Path, default=DEFAULT_FLUX_HEADER)
@@ -139,6 +167,12 @@ def main() -> None:
    parser.add_argument("--relativistic-header", type=Path, default=DEFAULT_RELATIVISTIC_HEADER)
    parser.add_argument("--z4c-header", type=Path, default=DEFAULT_Z4C_HEADER)
    parser.add_argument("--initial-data-header", type=Path, default=DEFAULT_INITIAL_DATA_HEADER)
+   parser.add_argument("--field-ids-header", type=Path, default=DEFAULT_FIELD_IDS_HEADER)
+   parser.add_argument("--field-catalog-header", type=Path, default=DEFAULT_FIELD_CATALOG_HEADER)
+   parser.add_argument("--diagnostic-catalog-header", type=Path, default=DEFAULT_DIAGNOSTIC_CATALOG_HEADER)
+   parser.add_argument("--field-catalog-json", type=Path, default=DEFAULT_FIELD_CATALOG_JSON)
+   parser.add_argument("--equation-markdown", type=Path, default=DEFAULT_EQUATION_MARKDOWN)
+   parser.add_argument("--equation-latex", type=Path, default=DEFAULT_EQUATION_LATEX)
    parser.add_argument("--hard-drop-ops", type=int, default=0)
    parser.add_argument("--soft-drop-ops", type=int, default=3)
    args = parser.parse_args()
@@ -157,8 +191,24 @@ def main() -> None:
       "relativistic": (args.relativistic_header, write_relativistic_header),
       "z4c": (args.z4c_header, write_z4c_header),
    }
-   families = tuple(args.family) if args.family else tuple(generators)
+   families = tuple(args.family) if args.family else ("catalog", *generators)
    for family in families:
+      if family == "catalog":
+         write_catalog(
+            args.field_ids_header,
+            args.field_catalog_header,
+            args.diagnostic_catalog_header,
+            args.field_catalog_json,
+            args.equation_markdown,
+            args.equation_latex,
+         )
+         print(args.field_ids_header)
+         print(args.field_catalog_header)
+         print(args.diagnostic_catalog_header)
+         print(args.field_catalog_json)
+         print(args.equation_markdown)
+         print(args.equation_latex)
+         continue
       output_path, writer = generators[family]
       writer(output_path, policy)
       print(output_path)

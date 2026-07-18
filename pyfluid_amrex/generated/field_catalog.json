@@ -1,0 +1,1264 @@
+{
+  "component_labels": {
+    "a_tilde11": "\\tilde{A}_{11}",
+    "a_tilde12": "\\tilde{A}_{12}",
+    "a_tilde13": "\\tilde{A}_{13}",
+    "a_tilde22": "\\tilde{A}_{22}",
+    "a_tilde23": "\\tilde{A}_{23}",
+    "a_tilde33": "\\tilde{A}_{33}",
+    "amr_tag_metric": "\\eta_{\\rm AMR}",
+    "b1": "B_{1}",
+    "b2": "B_{2}",
+    "b3": "B_{3}",
+    "chi": "\\chi",
+    "dens": "D",
+    "divb": "\\nabla_i B^i",
+    "dye_mass": "\\rho C",
+    "e1": "E_{1}",
+    "e2": "E_{2}",
+    "e3": "E_{3}",
+    "energy": "E",
+    "entropy": "K",
+    "face_b1": "B_{1}",
+    "face_b2": "B_{2}",
+    "face_b3": "B_{3}",
+    "gamma_tilde1": "\\tilde{\\Gamma}_{1}",
+    "gamma_tilde11": "\\tilde{\\gamma}_{11}",
+    "gamma_tilde12": "\\tilde{\\gamma}_{12}",
+    "gamma_tilde13": "\\tilde{\\gamma}_{13}",
+    "gamma_tilde2": "\\tilde{\\Gamma}_{2}",
+    "gamma_tilde22": "\\tilde{\\gamma}_{22}",
+    "gamma_tilde23": "\\tilde{\\gamma}_{23}",
+    "gamma_tilde3": "\\tilde{\\Gamma}_{3}",
+    "gamma_tilde33": "\\tilde{\\gamma}_{33}",
+    "grad_phi1": "\\nabla\\Phi_{1}",
+    "grad_phi2": "\\nabla\\Phi_{2}",
+    "grad_phi3": "\\nabla\\Phi_{3}",
+    "j1": "J_{1}",
+    "j2": "J_{2}",
+    "j3": "J_{3}",
+    "k_hat": "\\hat{K}",
+    "lapse": "\\alpha",
+    "mach": "\\mathcal{M}",
+    "magnetic_energy": "B^2/2",
+    "mom1": "m_{1}",
+    "mom2": "m_{2}",
+    "mom3": "m_{3}",
+    "phi": "\\Phi",
+    "plasma_beta": "\\beta_{\\rm plasma}",
+    "rho": "\\rho",
+    "shift1": "\\beta_{1}",
+    "shift2": "\\beta_{2}",
+    "shift3": "\\beta_{3}",
+    "solid_aperture1": "\\alpha_{1}",
+    "solid_aperture2": "\\alpha_{2}",
+    "solid_aperture3": "\\alpha_{3}",
+    "solid_mask": "M_{\\rm solid}",
+    "solid_phi": "\\phi_{\\rm solid}",
+    "solid_swept_volume": "\\Delta V_{\\rm solid}",
+    "solid_volume_fraction": "\\kappa_{\\rm fluid}",
+    "tau": "\\tau",
+    "theta": "\\Theta",
+    "vorticity1": "\\omega_{1}",
+    "vorticity2": "\\omega_{2}",
+    "vorticity3": "\\omega_{3}"
+  },
+  "diagnostics": [
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{step}",
+      "name": "step"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{time}",
+      "name": "time"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{dt}",
+      "name": "dt"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "M",
+      "name": "mass"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "P_1",
+      "name": "mom1"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "P_2",
+      "name": "mom2"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "P_3",
+      "name": "mom3"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{angular\\_mom1}",
+      "name": "angular_mom1"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{angular\\_mom2}",
+      "name": "angular_mom2"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{angular\\_mom3}",
+      "name": "angular_mom3"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "E",
+      "name": "energy"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{gravity\\_potential\\_energy}",
+      "name": "gravity_potential_energy"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{gravity\\_total\\_energy}",
+      "name": "gravity_total_energy"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{gravity\\_total\\_energy\\_rel\\_drift}",
+      "name": "gravity_total_energy_rel_drift"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{passive\\_mass}",
+      "name": "passive_mass"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{passive\\_mass\\_rel\\_drift}",
+      "name": "passive_mass_rel_drift"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{wall\\_work}",
+      "name": "wall_work"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{wall\\_power}",
+      "name": "wall_power"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{energy\\_minus\\_wall\\_work}",
+      "name": "energy_minus_wall_work"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{wall\\_work\\_rel\\_error}",
+      "name": "wall_work_rel_error"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{external\\_budget\\_valid}",
+      "name": "external_budget_valid"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{boundary\\_mass\\_change}",
+      "name": "boundary_mass_change"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{boundary\\_energy\\_change}",
+      "name": "boundary_energy_change"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{source\\_mass\\_change}",
+      "name": "source_mass_change"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{source\\_energy\\_change}",
+      "name": "source_energy_change"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{external\\_mass\\_change}",
+      "name": "external_mass_change"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{external\\_energy\\_change}",
+      "name": "external_energy_change"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{external\\_mass\\_residual}",
+      "name": "external_mass_residual"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{external\\_energy\\_residual}",
+      "name": "external_energy_residual"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{external\\_mass\\_rel\\_error}",
+      "name": "external_mass_rel_error"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{external\\_energy\\_rel\\_error}",
+      "name": "external_energy_rel_error"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\Delta M/M_0",
+      "name": "mass_rel_drift"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\Delta E/E_0",
+      "name": "energy_rel_drift"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{min\\_rho}",
+      "name": "min_rho"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{max\\_rho}",
+      "name": "max_rho"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{max\\_rho\\_rel\\_change}",
+      "name": "max_rho_rel_change"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{min\\_pressure}",
+      "name": "min_pressure"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "E_B",
+      "name": "magnetic_energy"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\|\\nabla_i B^i\\|_1",
+      "name": "divb_l1"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{diffusion\\_residual}",
+      "name": "diffusion_residual"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{diffusion\\_iterations}",
+      "name": "diffusion_iterations"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{amr\\_total\\_cells}",
+      "name": "amr_total_cells"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{amr\\_active\\_finest\\_level}",
+      "name": "amr_active_finest_level"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{amr\\_finest\\_headroom}",
+      "name": "amr_finest_headroom"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{amr\\_touches\\_max\\_level}",
+      "name": "amr_touches_max_level"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{amr\\_total\\_budget\\_fraction}",
+      "name": "amr_total_budget_fraction"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{amr\\_peak\\_level\\_budget\\_fraction}",
+      "name": "amr_peak_level_budget_fraction"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "10^6\\,\\mathrm{cells}/\\mathrm{s}",
+      "name": "mcells_per_s"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{layout\\_mcells\\_per\\_s}",
+      "name": "layout_mcells_per_s"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\Delta t_{\\rm sim}/\\Delta t_{\\rm wall}",
+      "name": "sim_time_per_s"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{cfl\\_limiter\\_frequency}",
+      "name": "cfl_limiter_frequency"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{cfl\\_limiter\\_level}",
+      "name": "cfl_limiter_level"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{cfl\\_limiter\\_i}",
+      "name": "cfl_limiter_i"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{cfl\\_limiter\\_j}",
+      "name": "cfl_limiter_j"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{cfl\\_limiter\\_k}",
+      "name": "cfl_limiter_k"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{cfl\\_limiter\\_q1}",
+      "name": "cfl_limiter_q1"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{cfl\\_limiter\\_q2}",
+      "name": "cfl_limiter_q2"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{cfl\\_limiter\\_q3}",
+      "name": "cfl_limiter_q3"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{z4c\\_hamiltonian\\_linf}",
+      "name": "z4c_hamiltonian_linf"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{z4c\\_hamiltonian\\_l2}",
+      "name": "z4c_hamiltonian_l2"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{z4c\\_momentum\\_linf}",
+      "name": "z4c_momentum_linf"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{z4c\\_z\\_linf}",
+      "name": "z4c_z_linf"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{z4c\\_theta\\_linf}",
+      "name": "z4c_theta_linf"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{z4c\\_log\\_conformal\\_determinant\\_linf}",
+      "name": "z4c_log_conformal_determinant_linf"
+    },
+    {
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "label": "\\mathrm{z4c\\_trace\\_a\\_tilde\\_linf}",
+      "name": "z4c_trace_a_tilde_linf"
+    },
+    {
+      "dependencies": [
+        "rho",
+        "momentum",
+        "energy"
+      ],
+      "evaluation": "postprocess",
+      "label": "P",
+      "name": "pressure"
+    },
+    {
+      "dependencies": [
+        "rho",
+        "momentum"
+      ],
+      "evaluation": "postprocess",
+      "label": "|v|",
+      "name": "velocity_mag"
+    },
+    {
+      "dependencies": [
+        "rho"
+      ],
+      "evaluation": "postprocess",
+      "label": "|\\nabla\\rho|",
+      "name": "schlieren"
+    },
+    {
+      "dependencies": [
+        "j1",
+        "j2",
+        "j3"
+      ],
+      "evaluation": "postprocess",
+      "label": "|J|",
+      "name": "j_mag"
+    },
+    {
+      "dependencies": [
+        "e1",
+        "e2",
+        "e3"
+      ],
+      "evaluation": "postprocess",
+      "label": "|E|",
+      "name": "e_mag"
+    },
+    {
+      "dependencies": [
+        "vorticity1",
+        "vorticity2",
+        "vorticity3"
+      ],
+      "evaluation": "postprocess",
+      "label": "|\\omega|",
+      "name": "vorticity_mag"
+    }
+  ],
+  "fields": [
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\rho",
+          "name": "rho",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\rho",
+      "name": "rho",
+      "role": "EvolvedState",
+      "sector": "Fluid",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "m_{1}",
+          "name": "mom1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Cell",
+          "label": "m_{2}",
+          "name": "mom2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Cell",
+          "label": "m_{3}",
+          "name": "mom3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "m_i",
+      "name": "momentum",
+      "role": "EvolvedState",
+      "sector": "Fluid",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "E",
+          "name": "energy",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "E",
+      "name": "energy",
+      "role": "EvolvedState",
+      "sector": "Fluid",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "D",
+          "name": "dens",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "D",
+      "name": "dens",
+      "role": "EvolvedState",
+      "sector": "Fluid",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\tau",
+          "name": "tau",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\tau",
+      "name": "tau",
+      "role": "EvolvedState",
+      "sector": "Fluid",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "B_{1}",
+          "name": "b1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Cell",
+          "label": "B_{2}",
+          "name": "b2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Cell",
+          "label": "B_{3}",
+          "name": "b3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "B^i",
+      "name": "magnetic_field",
+      "role": "EvolvedState",
+      "sector": "Fluid",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Face1",
+          "label": "B_{1}",
+          "name": "face_b1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Face2",
+          "label": "B_{2}",
+          "name": "face_b2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Face3",
+          "label": "B_{3}",
+          "name": "face_b3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "AuxiliaryState",
+      "label": "B^i",
+      "name": "ct_magnetic_field",
+      "role": "EvolutionAuxiliary",
+      "sector": "Fluid",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\rho C",
+          "name": "dye_mass",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "NonBackreactingExtra",
+      "label": "\\rho C",
+      "name": "passive_scalar",
+      "role": "EvolvedState",
+      "sector": "Fluid",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\chi",
+          "name": "chi",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\chi",
+      "name": "chi",
+      "role": "EvolvedState",
+      "sector": "Spacetime",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{\\gamma}_{11}",
+          "name": "gamma_tilde11",
+          "symmetry": "Tensor11"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{\\gamma}_{12}",
+          "name": "gamma_tilde12",
+          "symmetry": "Tensor12"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{\\gamma}_{13}",
+          "name": "gamma_tilde13",
+          "symmetry": "Tensor13"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{\\gamma}_{22}",
+          "name": "gamma_tilde22",
+          "symmetry": "Tensor22"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{\\gamma}_{23}",
+          "name": "gamma_tilde23",
+          "symmetry": "Tensor23"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{\\gamma}_{33}",
+          "name": "gamma_tilde33",
+          "symmetry": "Tensor33"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\tilde{\\gamma}_{ij}",
+      "name": "gamma_tilde",
+      "role": "EvolvedState",
+      "sector": "Spacetime",
+      "value_kind": "SymmetricTensor3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\hat{K}",
+          "name": "k_hat",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\hat{K}",
+      "name": "k_hat",
+      "role": "EvolvedState",
+      "sector": "Spacetime",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{A}_{11}",
+          "name": "a_tilde11",
+          "symmetry": "Tensor11"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{A}_{12}",
+          "name": "a_tilde12",
+          "symmetry": "Tensor12"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{A}_{13}",
+          "name": "a_tilde13",
+          "symmetry": "Tensor13"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{A}_{22}",
+          "name": "a_tilde22",
+          "symmetry": "Tensor22"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{A}_{23}",
+          "name": "a_tilde23",
+          "symmetry": "Tensor23"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{A}_{33}",
+          "name": "a_tilde33",
+          "symmetry": "Tensor33"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\tilde{A}_{ij}",
+      "name": "a_tilde",
+      "role": "EvolvedState",
+      "sector": "Spacetime",
+      "value_kind": "SymmetricTensor3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{\\Gamma}_{1}",
+          "name": "gamma_tilde1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{\\Gamma}_{2}",
+          "name": "gamma_tilde2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\tilde{\\Gamma}_{3}",
+          "name": "gamma_tilde3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\tilde{\\Gamma}^{i}",
+      "name": "gamma_tilde_vector",
+      "role": "EvolvedState",
+      "sector": "Spacetime",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\Theta",
+          "name": "theta",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\Theta",
+      "name": "theta",
+      "role": "EvolvedState",
+      "sector": "Spacetime",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\alpha",
+          "name": "lapse",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\alpha",
+      "name": "lapse",
+      "role": "EvolvedState",
+      "sector": "Spacetime",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\beta_{1}",
+          "name": "shift1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\beta_{2}",
+          "name": "shift2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\beta_{3}",
+          "name": "shift3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "MainState",
+      "label": "\\beta^{i}",
+      "name": "shift",
+      "role": "EvolvedState",
+      "sector": "Spacetime",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Edge1",
+          "label": "J_{1}",
+          "name": "j1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Edge2",
+          "label": "J_{2}",
+          "name": "j2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Edge3",
+          "label": "J_{3}",
+          "name": "j3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "MixedAuxiliary",
+      "evolution_kind": "AuxiliaryState",
+      "label": "J^i",
+      "name": "j",
+      "role": "CachedDerivative",
+      "sector": "None",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Edge1",
+          "label": "E_{1}",
+          "name": "e1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Edge2",
+          "label": "E_{2}",
+          "name": "e2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Edge3",
+          "label": "E_{3}",
+          "name": "e3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "MixedAuxiliary",
+      "evolution_kind": "AuxiliaryState",
+      "label": "E^i",
+      "name": "e",
+      "role": "CachedDerivative",
+      "sector": "None",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\nabla_i B^i",
+          "name": "divb",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "\\nabla_i B^i",
+      "name": "divb",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "B^2/2",
+          "name": "magnetic_energy",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "B^2/2",
+      "name": "magnetic_energy",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\omega_{1}",
+          "name": "vorticity1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Cell",
+          "label": "\\omega_{2}",
+          "name": "vorticity2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Cell",
+          "label": "\\omega_{3}",
+          "name": "vorticity3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "\\omega^i",
+      "name": "vorticity",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\mathcal{M}",
+          "name": "mach",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "\\mathcal{M}",
+      "name": "mach",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\beta_{\\rm plasma}",
+          "name": "plasma_beta",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "\\beta_{\\rm plasma}",
+      "name": "plasma_beta",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "K",
+          "name": "entropy",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "K",
+      "name": "entropy",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\eta_{\\rm AMR}",
+          "name": "amr_tag_metric",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "\\eta_{\\rm AMR}",
+      "name": "amr_tag_metric",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "M_{\\rm solid}",
+          "name": "solid_mask",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "AuxiliaryState",
+      "label": "M_{\\rm solid}",
+      "name": "solid_mask",
+      "role": "EvolutionAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\kappa_{\\rm fluid}",
+          "name": "solid_volume_fraction",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "AuxiliaryState",
+      "label": "\\kappa_{\\rm fluid}",
+      "name": "solid_volume_fraction",
+      "role": "EvolutionAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Face1",
+          "label": "\\alpha_{1}",
+          "name": "solid_aperture1",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "AuxiliaryState",
+      "label": "\\alpha_{1}",
+      "name": "solid_aperture1",
+      "role": "EvolutionAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Face2",
+          "label": "\\alpha_{2}",
+          "name": "solid_aperture2",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "AuxiliaryState",
+      "label": "\\alpha_{2}",
+      "name": "solid_aperture2",
+      "role": "EvolutionAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Face3",
+          "label": "\\alpha_{3}",
+          "name": "solid_aperture3",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "AuxiliaryState",
+      "label": "\\alpha_{3}",
+      "name": "solid_aperture3",
+      "role": "EvolutionAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\Delta V_{\\rm solid}",
+          "name": "solid_swept_volume",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "\\Delta V_{\\rm solid}",
+      "name": "solid_swept_volume",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\phi_{\\rm solid}",
+          "name": "solid_phi",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "\\phi_{\\rm solid}",
+      "name": "solid_phi",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\Phi",
+          "name": "phi",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "AuxiliaryState",
+      "label": "\\Phi",
+      "name": "phi",
+      "role": "EvolutionAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\nabla\\Phi_{1}",
+          "name": "grad_phi1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Cell",
+          "label": "\\nabla\\Phi_{2}",
+          "name": "grad_phi2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Cell",
+          "label": "\\nabla\\Phi_{3}",
+          "name": "grad_phi3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "AuxiliaryState",
+      "label": "\\nabla_i\\Phi",
+      "name": "grad_phi",
+      "role": "CachedDerivative",
+      "sector": "None",
+      "value_kind": "Vector3"
+    }
+  ],
+  "schema_version": 1
+}

@@ -3,23 +3,11 @@
 #include <AMReX_Array4.H>
 #include <AMReX_REAL.H>
 
+#include "pyfluid_amrex/generated/field_ids.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 
 namespace pyfluid_amrex {
-
-enum Conserved {
-   RHO = 0,
-   MOM1 = 1,
-   MOM2 = 2,
-   MOM3 = 3,
-   ENERGY = 4,
-   NVAR_HYDRO = 5,
-   B1 = 5,
-   B2 = 6,
-   B3 = 7,
-   NVAR_MHD = 8,
-};
 
 static constexpr int MaxPassiveScalars = 1;
 static constexpr int MaxStateComponents = NVAR_MHD + MaxPassiveScalars;

@@ -11,8 +11,10 @@ Each run writes one tab-separated scalar file:
 runs/current/<ic_name>/<run_name>/scalars.tsv
 ```
 
-The first row is the exact runtime header written from
-`ScalarDiagnosticColumns` in `diagnostics.hpp`. It includes compact columns for:
+The first row is the exact runtime header generated from
+`codegen/pyfluid_codegen/diagnostic_catalog.py`. The generated C++ view is
+`generated/diagnostic_catalog.hpp`; plotting and reports read the matching
+generated JSON metadata. The fixed schema includes compact columns for:
 
 - step, time, and dt;
 - conserved totals and relative drifts;
@@ -164,6 +166,20 @@ the same `mpirun -np N` contract as `run_case.py`.
 Python postprocessing reads `scalars.tsv` and optional AMReX plotfiles after the
 run. Plots, exact overlays, and movies should not be required during the solver
 step.
+
+Every diagnostic has one declared evaluation mode in
+`codegen/pyfluid_codegen/diagnostic_catalog.py`:
+
+- `runtime_reduction`: an MPI reduction written by the solver to `scalars.tsv`;
+- `field_output`: a stored or requested GF written through the canonical field
+  schema;
+- `postprocess`: a derived quantity computed from named GF dependencies after
+  the run.
+
+Do not recompute runtime conservation totals from plot data, and do not add a
+second plotting-only name or label table. A diagnostic that can be evaluated
+either from live storage or at output time remains one field descriptor with a
+mixed diagnostic kind; the storage choice is not a second field.
 
 All 2D snapshots, movie frames, and analysis samplers use
 `tools/amr_plot_data.py` as the hierarchy source of truth. Native tile rendering

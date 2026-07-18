@@ -62,10 +62,9 @@ if(PYFLUID_AMREX_NATIVE)
 endif()
 
 set(PYFLUID_AMREX_DRIVER_SOURCES
-   src/main.cpp
-   src/amr_solver_driver.cpp
-   src/evolution_kernel_bundle.cpp
-   src/solver.cpp
+   src/driver/main.cpp
+   src/amr/amr_solver_driver.cpp
+   src/driver/evolution_kernel_bundle.cpp
 )
 
 set(PYFLUID_AMREX_KERNEL_BUNDLE_SOURCES
@@ -90,32 +89,32 @@ if(PYFLUID_AMREX_ENABLE_MHD)
 endif()
 
 set(PYFLUID_AMREX_AMR_SOURCES
-   src/amr_solver_average.cpp
-   src/amr_solver_auxiliary.cpp
-   src/amr_solver_conservation.cpp
-   src/amr_solver_debug.cpp
-   src/amr_solver_diagnostics.cpp
-   src/amr_solver_fillpatch.cpp
-   src/amr_solver_flux_registers.cpp
-   src/amr_solver_gravity_sync.cpp
-   src/amr_solver_solid.cpp
-   src/amr_solver_hierarchy.cpp
-   src/amr_solver_levels.cpp
-   src/amr_solver_metrics.cpp
-   src/amr_solver_multipatch.cpp
-   src/amr_solver_output.cpp
-   src/amr_solver_spacetime.cpp
-   src/amr_solver_spacetime_evolution.cpp
-   src/amr_solver_valid_cells.cpp
+   src/amr/amr_solver_average.cpp
+   src/amr/amr_solver_auxiliary.cpp
+   src/amr/amr_solver_conservation.cpp
+   src/amr/amr_solver_debug.cpp
+   src/amr/amr_solver_diagnostics.cpp
+   src/amr/amr_solver_fillpatch.cpp
+   src/amr/amr_solver_flux_registers.cpp
+   src/amr/amr_solver_gravity_sync.cpp
+   src/amr/amr_solver_solid.cpp
+   src/amr/amr_solver_hierarchy.cpp
+   src/amr/amr_solver_levels.cpp
+   src/amr/amr_solver_metrics.cpp
+   src/amr/amr_solver_multipatch.cpp
+   src/amr/amr_solver_output.cpp
+   src/amr/amr_solver_spacetime.cpp
+   src/amr/amr_solver_spacetime_evolution.cpp
+   src/amr/amr_solver_valid_cells.cpp
 )
 
 set(PYFLUID_AMREX_RUNTIME_SOURCES
-   src/checkpoint.cpp
-   src/config.cpp
-   src/ct_edge_flux_register.cpp
-   src/evolution_sector_storage.cpp
-   src/fields.cpp
-   src/flux_factory.cpp
+   src/framework/checkpoint.cpp
+   src/framework/config.cpp
+   src/numerics/ct_edge_flux_register.cpp
+   src/framework/evolution_sector_storage.cpp
+   src/framework/fields.cpp
+   src/numerics/flux_factory.cpp
    src/flux_kernels/mp5.cpp
    src/flux_kernels/mp5_char.cpp
    src/flux_kernels/pwc.cpp
@@ -124,23 +123,22 @@ set(PYFLUID_AMREX_RUNTIME_SOURCES
    src/flux_kernels/teno5_char.cpp
    src/flux_kernels/wenoz.cpp
    src/flux_kernels/wenoz_char.cpp
-   src/implicit_resistivity.cpp
-   src/initial_data_centering.cpp
-   src/initial_data_ctt.cpp
-   src/initial_data_elliptic.cpp
-   src/initial_data_materialization.cpp
-   src/initial_data_provider.cpp
-   src/initial_data_rhd.cpp
-   src/initial_data_state.cpp
-   src/nodal_interpolater.cpp
-   src/primitive_cache_factory.cpp
-   src/profiling.cpp
-   src/relativistic_source_factory.cpp
-   src/signal_speed_factory.cpp
-   src/spacetime_fields.cpp
-   src/spacetime_coupling_storage.cpp
-   src/tov_initial_data.cpp
-   src/z4c_runtime.cpp
+   src/numerics/implicit_resistivity.cpp
+   src/initial_data/initial_data_centering.cpp
+   src/initial_data/initial_data_ctt.cpp
+   src/initial_data/initial_data_elliptic.cpp
+   src/initial_data/initial_data_materialization.cpp
+   src/initial_data/initial_data_provider.cpp
+   src/initial_data/initial_data_rhd.cpp
+   src/initial_data/initial_data_state.cpp
+   src/numerics/nodal_interpolater.cpp
+   src/relativity/primitive_cache_factory.cpp
+   src/framework/profiling.cpp
+   src/relativity/relativistic_source_factory.cpp
+   src/relativity/signal_speed_factory.cpp
+   src/relativity/spacetime_coupling_storage.cpp
+   src/initial_data/tov_initial_data.cpp
+   src/relativity/z4c_runtime.cpp
 )
 
 set(PYFLUID_AMREX_SOURCES
@@ -151,32 +149,32 @@ set(PYFLUID_AMREX_SOURCES
 )
 
 set(PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES
-   src/checkpoint.cpp
-   src/compare_checkpoint.cpp
-   src/config.cpp
-   src/fields.cpp
+   src/framework/checkpoint.cpp
+   tools/cpp/compare_checkpoint.cpp
+   src/framework/config.cpp
+   src/framework/fields.cpp
 )
 
 set(PYFLUID_AMREX_CODEGEN_CHECK_SOURCES
-   src/generated_flux_compile_check.cpp
+   tests/generated_flux_compile_check.cpp
 )
 
 set(PYFLUID_AMREX_C2P_BENCHMARK_SOURCES
-   src/c2p_benchmark.cpp
+   benchmarks/c2p_benchmark.cpp
 )
 
 set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
-   src/multipatch_check.cpp
+   tests/multipatch_check.cpp
 )
 
 set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
-   src/config.cpp
-   src/initial_data_centering.cpp
-   src/initial_data_ctt.cpp
-   src/initial_data_elliptic.cpp
-   src/initial_data_elliptic_check.cpp
-   src/nodal_interpolater.cpp
-   src/tov_initial_data.cpp
+   src/framework/config.cpp
+   src/initial_data/initial_data_centering.cpp
+   src/initial_data/initial_data_ctt.cpp
+   src/initial_data/initial_data_elliptic.cpp
+   tests/initial_data_elliptic_check.cpp
+   src/numerics/nodal_interpolater.cpp
+   src/initial_data/tov_initial_data.cpp
 )
 
 find_program(PYFLUID_UV_EXECUTABLE uv)
@@ -230,6 +228,24 @@ if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_INITIAL_DATA_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/initial_data.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/field_ids.hpp
+   )
+   set(PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/field_catalog.hpp
+   )
+   set(PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/diagnostic_catalog.hpp
+   )
+   set(PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN
+      ${CMAKE_CURRENT_SOURCE_DIR}/docs/equations.md
+   )
+   set(PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON
+      ${CMAKE_CURRENT_SOURCE_DIR}/generated/field_catalog.json
+   )
+   set(PYFLUID_AMREX_GENERATED_EQUATION_LATEX
+      ${CMAKE_CURRENT_SOURCE_DIR}/docs/equations.tex
+   )
    set(PYFLUID_AMREX_CODEGEN_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_kernels.py)
    set(PYFLUID_AMREX_CODEGEN_STAMP ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_codegen.stamp)
    set(PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP
@@ -253,10 +269,17 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADERS}
          ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
          ${PYFLUID_AMREX_GENERATED_Z4C_HEADERS}
+         ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
+         ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
+         ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
+         ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
+         ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
+         ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
       COMMAND ${CMAKE_COMMAND} -E env
          UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
          ${PYFLUID_UV_EXECUTABLE} run python
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+         --family catalog
          --family eos
          --family flux
          --family operator
@@ -277,6 +300,12 @@ if(PYFLUID_UV_EXECUTABLE)
          --metric-header ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
          --relativistic-header ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
          --z4c-header ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
+         --field-ids-header ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
+         --field-catalog-header ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
+         --diagnostic-catalog-header ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
+         --field-catalog-json ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
+         --equation-markdown ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
+         --equation-latex ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
       COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
@@ -286,7 +315,11 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/discretization.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/diagnostic_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/equation_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/flux_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/kernel_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/metric_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/operator_equations.py

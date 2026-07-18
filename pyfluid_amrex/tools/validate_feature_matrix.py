@@ -1354,7 +1354,7 @@ def combo_cases() -> list[Case]:
          "pyfluid.resistivity": "1.0e-3",
          "pyfluid.aux_gfs": "j,e",
          "pyfluid.aux_gf_compute_int": "1",
-         "pyfluid.aux_gf_int": "-1",
+         "pyfluid.aux_gf_int": "1",
       }, require_amr=True),
       Case("mhd_combo_3d_amr_ct_subcycling_resistive_aux", 3, "magnetic_blast_noise_3d_amr_ct.in", {
          "amr.n_cell": "16 16 16",

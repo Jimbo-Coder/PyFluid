@@ -36,6 +36,12 @@ class GateStep:
 
 STEPS = [
    GateStep(
+      name="architecture",
+      kind="feature",
+      levels=("quick", "standard", "full"),
+      command=("uv", "run", "python", "pyfluid_amrex/tools/check_architecture.py"),
+   ),
+   GateStep(
       name="quick_feature_matrix",
       kind="feature",
       levels=("quick", "standard", "full"),

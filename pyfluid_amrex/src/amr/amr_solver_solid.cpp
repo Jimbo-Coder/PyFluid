@@ -1,3 +1,8 @@
+#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "pyfluid_amrex/solid_conservation.hpp"
+
+namespace pyfluid_amrex {
+
 void AmrSolverBase::clear_solid_mask_kind_tables(int lev)
 {
    if (lev < 0 || lev >= static_cast<int>(solid_valid_kind_.size())) {
@@ -512,3 +517,5 @@ amrex::iMultiFab const* AmrSolverBase::active_solid_mask_ptr(int lev) const
 {
    return solid_active(lev) ? solid_mask_[lev].get() : nullptr;
 }
+
+} // namespace pyfluid_amrex

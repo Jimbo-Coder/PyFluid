@@ -2,8 +2,8 @@
 
 #include <iostream>
 
+#include "pyfluid_amrex/amr_solver.hpp"
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/solver.hpp"
 
 int main(int argc, char* argv[])
 {
@@ -20,7 +20,7 @@ int main(int argc, char* argv[])
          amrex::Abort("amrex.abort_on_unused_inputs must remain enabled");
       }
       const pyfluid_amrex::RunConfig cfg = pyfluid_amrex::read_config();
-      pyfluid_amrex::run_solver(cfg);
+      pyfluid_amrex::run_amr_solver(cfg);
    }
    amrex::Finalize();
    return 0;

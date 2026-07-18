@@ -39,7 +39,7 @@ contract and never add a second simulation-parameter interface.
 Every input file is a complete run configuration and explicitly names its run
 and output directory. Supported input values replace registered C++ defaults;
 there is no second launcher-level simulation-parameter interface. Registered method and AMR defaults live in
-[`config.cpp`](src/config.cpp); structural parsing and combination validation
+[`config.cpp`](src/framework/config.cpp); structural parsing and combination validation
 live in [`config.hpp`](include/pyfluid_amrex/config.hpp). Grid-function names,
 components, centering, and output roles live in
 [`fields.hpp`](include/pyfluid_amrex/fields.hpp).

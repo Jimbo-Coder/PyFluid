@@ -2,28 +2,22 @@
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 
-_SCALAR_SYMBOLS = {
-    "rho": r"\rho",
-    "pressure": "P",
-    "energy": "E",
+_FIELD_CATALOG = Path(__file__).resolve().parents[1] / "generated" / "field_catalog.json"
+with _FIELD_CATALOG.open() as catalog_file:
+    _CATALOG = json.load(catalog_file)
+
+_FIELD_SYMBOLS = _CATALOG["component_labels"]
+_DIAGNOSTIC_SYMBOLS = {
+    diagnostic["name"]: diagnostic["label"]
+    for diagnostic in _CATALOG["diagnostics"]
+}
+_DERIVED_SYMBOLS = {
     "dye": "C",
-    "dye_mass": r"\rho C",
-    "divb": r"\nabla\!\cdot\!\mathbf{B}",
-    "magnetic_energy": r"E_B",
-    "mach": r"\mathcal{M}",
-    "plasma_beta": r"\beta",
-    "entropy": "K",
-    "amr_tag_metric": r"\eta_{\mathrm{AMR}}",
-    "phi": r"\Phi",
-    "solid_mask": r"\chi_s",
-    "solid_volume_fraction": r"f_s",
-    "solid_swept_volume": r"\Delta V_s",
-    "solid_phi": r"\phi_s",
-    "schlieren": r"\left|\nabla\rho\right|",
-    "velocity_mag": r"\left|\mathbf{v}\right|",
 }
 
 _VECTOR_PREFIXES = {
@@ -47,8 +41,12 @@ def component_math(component: str) -> str:
         prefix = component.removesuffix("_mag")
         symbol = _VECTOR_PREFIXES.get(prefix, rf"\mathrm{{{prefix.replace('_', r'\_')}}}")
         return rf"\left| \mathbf{{{symbol}}} \right|"
-    if component in _SCALAR_SYMBOLS:
-        return _SCALAR_SYMBOLS[component]
+    if component in _FIELD_SYMBOLS:
+        return _FIELD_SYMBOLS[component]
+    if component in _DIAGNOSTIC_SYMBOLS:
+        return _DIAGNOSTIC_SYMBOLS[component]
+    if component in _DERIVED_SYMBOLS:
+        return _DERIVED_SYMBOLS[component]
     match = re.fullmatch(r"([a-z_]+)([123])", component)
     if match:
         prefix, direction = match.groups()

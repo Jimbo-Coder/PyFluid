@@ -5,6 +5,10 @@ from dataclasses import dataclass
 import sympy as sp
 
 from .eos_equations import ideal_gas_equation_of_state
+from .field_catalog import (
+   RELATIVISTIC_HYDRO_COMPONENT_NAMES,
+   RELATIVISTIC_MHD_COMPONENT_NAMES,
+)
 from .kernel_equations import ScalarKernel, StructKernel
 from .physical_system import (
    ValenciaHydrodynamics,
@@ -183,14 +187,7 @@ def rmhd_recovery_state_kernel() -> StructKernel:
          ("const SpacetimeMetric&", "metric"),
       ),
       outputs=(
-         "dens",
-         "mom1",
-         "mom2",
-         "mom3",
-         "tau",
-         "b1",
-         "b2",
-         "b3",
+         *RELATIVISTIC_MHD_COMPONENT_NAMES,
          "momentum_squared",
          "magnetic_squared",
          "magnetic_momentum",
@@ -227,7 +224,7 @@ def rhd_recovery_state_kernel() -> StructKernel:
          ("const RHDConserved&", "conserved"),
          ("const SpacetimeMetric&", "metric"),
       ),
-      outputs=("dens", "mom1", "mom2", "mom3", "tau", "momentum_squared"),
+      outputs=(*RELATIVISTIC_HYDRO_COMPONENT_NAMES, "momentum_squared"),
       expressions=(
          sp.Symbol("conserved.dens") * inverse_sqrt_det,
          *momentum_contravariant.as_tuple(),
@@ -244,7 +241,7 @@ def rhd_primitive_to_conserved_kernel() -> StructKernel:
       name="rhd_primitive_to_conserved",
       return_type="RHDConserved",
       arguments=(("const RHDPrimitive&", "primitive"), ("const SpacetimeMetric&", "metric")),
-      outputs=("dens", "mom1", "mom2", "mom3", "tau"),
+      outputs=RELATIVISTIC_HYDRO_COMPONENT_NAMES,
       expressions=(
          conserved.density,
          *conserved.momentum.as_tuple(),
@@ -267,7 +264,7 @@ def rhd_flux_kernel(direction: int) -> StructKernel:
       name=f"rhd_flux_dir{direction}",
       return_type="RHDConserved",
       arguments=(("const RHDPrimitive&", "primitive"), ("const SpacetimeMetric&", "metric")),
-      outputs=("dens", "mom1", "mom2", "mom3", "tau"),
+      outputs=RELATIVISTIC_HYDRO_COMPONENT_NAMES,
       expressions=(density_flux, *momentum_flux.as_tuple(), energy_flux),
    )
 
@@ -281,7 +278,7 @@ def rmhd_primitive_to_conserved_kernel() -> StructKernel:
       name="rmhd_primitive_to_conserved",
       return_type="RMHDConserved",
       arguments=(("const RMHDPrimitive&", "primitive"), ("const SpacetimeMetric&", "metric")),
-      outputs=("dens", "mom1", "mom2", "mom3", "tau", "b1", "b2", "b3"),
+      outputs=RELATIVISTIC_MHD_COMPONENT_NAMES,
       expressions=(
          conserved.density,
          *conserved.momentum.as_tuple(),
@@ -324,7 +321,7 @@ def rmhd_flux_kernel(direction: int) -> StructKernel:
       name=f"rmhd_flux_dir{direction}",
       return_type="RMHDConserved",
       arguments=(("const RMHDPrimitive&", "primitive"), ("const SpacetimeMetric&", "metric")),
-      outputs=("dens", "mom1", "mom2", "mom3", "tau", "b1", "b2", "b3"),
+      outputs=RELATIVISTIC_MHD_COMPONENT_NAMES,
       expressions=(
          density_flux,
          *momentum_flux.as_tuple(),
@@ -458,7 +455,7 @@ def rhd_geometric_source_kernel() -> StructKernel:
          ("const SpacetimeMetric&", "metric"),
          ("const SpacetimeMetricDerivatives&", "derivatives"),
       ),
-      outputs=("dens", "mom1", "mom2", "mom3", "tau"),
+      outputs=RELATIVISTIC_HYDRO_COMPONENT_NAMES,
       expressions=(sp.Integer(0), *source.momentum.as_tuple(), source.energy),
    )
 
@@ -481,7 +478,7 @@ def rmhd_geometric_source_kernel() -> StructKernel:
          ("const SpacetimeMetric&", "metric"),
          ("const SpacetimeMetricDerivatives&", "derivatives"),
       ),
-      outputs=("dens", "mom1", "mom2", "mom3", "tau", "b1", "b2", "b3"),
+      outputs=RELATIVISTIC_MHD_COMPONENT_NAMES,
       expressions=(
          sp.Integer(0),
          *source.momentum.as_tuple(),

@@ -9,6 +9,7 @@
 
 #include "pyfluid_amrex/mesh_geometry.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
+#include "pyfluid_amrex/generated/field_ids.hpp"
 
 namespace pyfluid_amrex {
 
@@ -21,28 +22,6 @@ enum class GridFieldCentering {
    Edge1,
    Edge2,
    Edge3,
-};
-
-enum class AuxGridField {
-   CurrentDensity,
-   ElectricField,
-   DivB,
-   MagneticEnergy,
-   Vorticity,
-   MachNumber,
-   PlasmaBeta,
-   EntropyProxy,
-   AmrTagMetric,
-   SolidMask,
-   SolidVolumeFraction,
-   SolidAperture1,
-   SolidAperture2,
-   SolidAperture3,
-   SolidSweptVolume,
-   SolidPhi,
-   GravityPotential,
-   GravityGradient,
-   Unknown,
 };
 
 enum class FieldRole {
@@ -90,12 +69,14 @@ enum class GridFieldValueKind {
 
 struct GridFieldComponentInfo {
    std::string name{};
+   std::string label{};
    GridFieldCentering centering = GridFieldCentering::Cell;
    GridFieldSymmetryKind symmetry = GridFieldSymmetryKind::Scalar;
 };
 
 struct GridFieldInfo {
    std::string name{};
+   std::string label{};
    GridFieldValueKind value_kind = GridFieldValueKind::Scalar;
    std::vector<GridFieldComponentInfo> components{};
    FieldRole role = FieldRole::EvolvedState;
@@ -107,6 +88,7 @@ struct GridFieldInfo {
 
 struct GridFieldSetInfo {
    std::string name{};
+   std::string label{};
    EvolutionSector sector = EvolutionSector::None;
    std::vector<GridFieldInfo> fields{};
 };
@@ -114,6 +96,7 @@ struct GridFieldSetInfo {
 struct AuxGridFieldInfo {
    AuxGridField field = AuxGridField::Unknown;
    std::string name{};
+   std::string label{};
    std::vector<GridFieldComponentInfo> components{};
    FieldRole role = FieldRole::OutputOnlyAuxiliary;
    DiagnosticFieldKind diagnostic_kind = DiagnosticFieldKind::PureAuxiliary;
@@ -126,6 +109,7 @@ struct AuxGridFieldInfo {
 
 struct StateGridFieldInfo {
    std::string name{};
+   std::string label{};
    int component = -1;
    GridFieldCentering centering = GridFieldCentering::Cell;
    GridFieldSymmetryKind symmetry = GridFieldSymmetryKind::Scalar;
@@ -139,11 +123,22 @@ GridFieldCentering face_grid_field_centering(int direction);
 GridFieldCentering edge_grid_field_centering(int component);
 amrex::IndexType grid_field_index_type(GridFieldCentering centering);
 std::string grid_field_stem_suffix(GridFieldCentering centering);
-StateGridFieldInfo state_grid_field_info(int component);
-int state_grid_field_origin_parity(int coordinate, MeshAxes const& axes, int component);
+StateGridFieldInfo state_grid_field_info(
+   PhysicalSystem system,
+   int passive_scalars,
+   int component
+);
+int state_grid_field_origin_parity(
+   int coordinate,
+   MeshAxes const& axes,
+   PhysicalSystem system,
+   int passive_scalars,
+   int component
+);
 std::string supported_aux_grid_field_names();
 amrex::Vector<std::string> state_grid_field_names(PhysicalSystem system, int passive_scalars);
 GridFieldSetInfo fluid_state_grid_fields(PhysicalSystem system, int passive_scalars);
+GridFieldInfo const& ct_magnetic_grid_field();
 std::vector<std::string> aux_grid_field_output_names(AuxGridField field);
 std::string checkpoint_state_field_name();
 std::string checkpoint_face_b_field_name(int direction);

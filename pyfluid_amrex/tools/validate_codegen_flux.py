@@ -30,8 +30,28 @@ Z4C_HEADER_DIR = Z4C_HEADER.parent / "z4c"
 INITIAL_DATA_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "initial_data.hpp"
 )
+FIELD_IDS_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated" / "field_ids.hpp"
+)
+FIELD_CATALOG_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated" / "field_catalog.hpp"
+)
+DIAGNOSTIC_CATALOG_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated" / "diagnostic_catalog.hpp"
+)
+FIELD_CATALOG_JSON = ROOT / "pyfluid_amrex" / "generated" / "field_catalog.json"
+EQUATION_MARKDOWN = ROOT / "pyfluid_amrex" / "docs" / "equations.md"
+EQUATION_LATEX = ROOT / "pyfluid_amrex" / "docs" / "equations.tex"
 sys.path.insert(0, str(CODEGEN))
 
+from pyfluid_codegen.emit_catalog import (  # noqa: E402
+   render_equation_latex,
+   render_equation_markdown,
+   render_diagnostic_catalog_header,
+   render_field_catalog_header,
+   render_field_catalog_json,
+   render_field_ids_header,
+)
 from pyfluid_codegen.emit_cpp import (  # noqa: E402
    render_characteristic_header,
    render_eos_header,
@@ -1674,6 +1694,17 @@ def main() -> None:
       raise SystemExit(f"missing generated header: {Z4C_HEADER}")
    if not INITIAL_DATA_HEADER.exists():
       raise SystemExit(f"missing generated header: {INITIAL_DATA_HEADER}")
+   catalog_artifacts = {
+      FIELD_IDS_HEADER: render_field_ids_header(),
+      FIELD_CATALOG_HEADER: render_field_catalog_header(),
+      DIAGNOSTIC_CATALOG_HEADER: render_diagnostic_catalog_header(),
+      FIELD_CATALOG_JSON: render_field_catalog_json(),
+      EQUATION_MARKDOWN: render_equation_markdown(),
+      EQUATION_LATEX: render_equation_latex(),
+   }
+   for path, rendered in catalog_artifacts.items():
+      if not path.exists() or path.read_text(encoding="utf-8") != rendered:
+         raise SystemExit(f"generated catalog artifact is stale: {path}")
    rendered_flux = render_flux_header()
    stored_flux = FLUX_HEADER.read_text(encoding="utf-8")
    if rendered_flux != stored_flux:

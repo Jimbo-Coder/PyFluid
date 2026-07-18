@@ -26,8 +26,12 @@ inline void allocate_face_magnetic_field(
    int ng
 )
 {
+   GridFieldInfo const& field = ct_magnetic_grid_field();
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      const amrex::BoxArray face_ba = amrex::convert(ba, amrex::IntVect::TheDimensionVector(dir));
+      const amrex::BoxArray face_ba = amrex::convert(
+         ba,
+         grid_field_index_type(field.components[dir].centering)
+      );
       face_b.b[dir] = std::make_unique<amrex::MultiFab>(face_ba, dm, 1, ng);
    }
 }

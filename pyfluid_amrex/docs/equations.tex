@@ -1,0 +1,48 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath,amssymb,booktabs,longtable,geometry}
+\geometry{margin=1in}
+\title{PyFluid Equation and Field Catalog}
+\date{}
+\begin{document}
+\maketitle
+Generated from the executable symbolic catalog. Do not edit directly.
+\section{Newtonian Hydrodynamics}
+Conservative ideal-fluid equations with an equation-of-state closure.
+\subsection*{hd.mass: Mass}
+\[
+\partial_t \rho + \nabla\cdot\left(\begin{pmatrix}m_{1} \\ m_{2} \\ m_{3}\end{pmatrix}\right) = 0.
+\]
+\subsection*{hd.momentum: Momentum}
+\[
+\partial_t m_i + \nabla\cdot\left(\begin{pmatrix}P + \frac{m_{1}^{2}}{\rho} & \frac{m_{1} m_{2}}{\rho} & \frac{m_{1} m_{3}}{\rho} \\ \frac{m_{1} m_{2}}{\rho} & P + \frac{m_{2}^{2}}{\rho} & \frac{m_{2} m_{3}}{\rho} \\ \frac{m_{1} m_{3}}{\rho} & \frac{m_{2} m_{3}}{\rho} & P + \frac{m_{3}^{2}}{\rho}\end{pmatrix}\right) = \begin{pmatrix}0 \\ 0 \\ 0\end{pmatrix}.
+\]
+\subsection*{hd.energy: Energy}
+\[
+\partial_t E + \nabla\cdot\left(\begin{pmatrix}\frac{m_{1} \left(E + P\right)}{\rho} \\ \frac{m_{2} \left(E + P\right)}{\rho} \\ \frac{m_{3} \left(E + P\right)}{\rho}\end{pmatrix}\right) = 0.
+\]
+\section{Newtonian Ideal Magnetohydrodynamics}
+Conservative ideal-MHD equations with cell-centered magnetic state and optional constrained transport.
+\subsection*{mhd.mass: Mass}
+\[
+\partial_t \rho + \nabla\cdot\left(\begin{pmatrix}m_{1} \\ m_{2} \\ m_{3}\end{pmatrix}\right) = 0.
+\]
+\subsection*{mhd.momentum: Momentum}
+\[
+\partial_t m_i + \nabla\cdot\left(\begin{pmatrix}- \frac{B_{1}^{2}}{2} + \frac{B_{2}^{2}}{2} + \frac{B_{3}^{2}}{2} + P + \frac{m_{1}^{2}}{\rho} & - B_{1} B_{2} + \frac{m_{1} m_{2}}{\rho} & - B_{1} B_{3} + \frac{m_{1} m_{3}}{\rho} \\ - B_{1} B_{2} + \frac{m_{1} m_{2}}{\rho} & \frac{B_{1}^{2}}{2} - \frac{B_{2}^{2}}{2} + \frac{B_{3}^{2}}{2} + P + \frac{m_{2}^{2}}{\rho} & - B_{2} B_{3} + \frac{m_{2} m_{3}}{\rho} \\ - B_{1} B_{3} + \frac{m_{1} m_{3}}{\rho} & - B_{2} B_{3} + \frac{m_{2} m_{3}}{\rho} & \frac{B_{1}^{2}}{2} + \frac{B_{2}^{2}}{2} - \frac{B_{3}^{2}}{2} + P + \frac{m_{3}^{2}}{\rho}\end{pmatrix}\right) = \begin{pmatrix}0 \\ 0 \\ 0\end{pmatrix}.
+\]
+\subsection*{mhd.energy: Energy}
+\[
+\partial_t E + \nabla\cdot\left(\begin{pmatrix}- B_{1} \left(\frac{B_{1} m_{1}}{\rho} + \frac{B_{2} m_{2}}{\rho} + \frac{B_{3} m_{3}}{\rho}\right) + \frac{m_{1} \left(\frac{B_{1}^{2}}{2} + \frac{B_{2}^{2}}{2} + \frac{B_{3}^{2}}{2} + E + P\right)}{\rho} \\ - B_{2} \left(\frac{B_{1} m_{1}}{\rho} + \frac{B_{2} m_{2}}{\rho} + \frac{B_{3} m_{3}}{\rho}\right) + \frac{m_{2} \left(\frac{B_{1}^{2}}{2} + \frac{B_{2}^{2}}{2} + \frac{B_{3}^{2}}{2} + E + P\right)}{\rho} \\ - B_{3} \left(\frac{B_{1} m_{1}}{\rho} + \frac{B_{2} m_{2}}{\rho} + \frac{B_{3} m_{3}}{\rho}\right) + \frac{m_{3} \left(\frac{B_{1}^{2}}{2} + \frac{B_{2}^{2}}{2} + \frac{B_{3}^{2}}{2} + E + P\right)}{\rho}\end{pmatrix}\right) = 0.
+\]
+\subsection*{mhd.induction: Induction}
+\[
+\partial_t B^i + \nabla\cdot\left(\begin{pmatrix}0 & \frac{B_{1} m_{2}}{\rho} - \frac{B_{2} m_{1}}{\rho} & \frac{B_{1} m_{3}}{\rho} - \frac{B_{3} m_{1}}{\rho} \\ - \frac{B_{1} m_{2}}{\rho} + \frac{B_{2} m_{1}}{\rho} & 0 & \frac{B_{2} m_{3}}{\rho} - \frac{B_{3} m_{2}}{\rho} \\ - \frac{B_{1} m_{3}}{\rho} + \frac{B_{3} m_{1}}{\rho} & - \frac{B_{2} m_{3}}{\rho} + \frac{B_{3} m_{2}}{\rho} & 0\end{pmatrix}\right) = \begin{pmatrix}0 \\ 0 \\ 0\end{pmatrix}.
+\]
+\section{Equations of State}
+\subsection*{eos.ideal_gas: Ideal Gas}
+\[P=internal_{energy density} \left(\gamma - 1\right),\qquad u(P,\rho)=\frac{P}{\gamma - 1},\qquad c_s^2=\frac{P \gamma}{\rho}.\]
+\subsection*{eos.polytrope: Polytrope}
+\[P=polytropic_{k} \rho^{polytropic_{\gamma}},\qquad u(P,\rho)=\frac{cold_{specific energy offset} \rho \left(polytropic_{\gamma} - 1\right) + polytropic_{k} \rho^{polytropic_{\gamma}}}{polytropic_{\gamma} - 1},\qquad c_s^2=polytropic_{\gamma} polytropic_{k} \rho^{polytropic_{\gamma} - 1}.\]
+\subsection*{eos.hybrid_polytrope: Hybrid Polytrope}
+\[P=\frac{polytropic_{k} \rho^{polytropic_{\gamma}} \left(polytropic_{\gamma} - 1\right) - \left(thermal_{\gamma} - 1\right) \left(polytropic_{k} \rho^{polytropic_{\gamma}} + \left(polytropic_{\gamma} - 1\right) \left(cold_{specific energy offset} \rho - internal_{energy density}\right)\right)}{polytropic_{\gamma} - 1},\qquad u(P,\rho)=\frac{P polytropic_{\gamma} - P + cold_{specific energy offset} polytropic_{\gamma} \rho thermal_{\gamma} - cold_{specific energy offset} polytropic_{\gamma} \rho - cold_{specific energy offset} \rho thermal_{\gamma} + cold_{specific energy offset} \rho - polytropic_{\gamma} polytropic_{k} \rho^{polytropic_{\gamma}} + polytropic_{k} \rho^{polytropic_{\gamma}} thermal_{\gamma}}{polytropic_{\gamma} thermal_{\gamma} - polytropic_{\gamma} - thermal_{\gamma} + 1},\qquad c_s^2=\frac{P thermal_{\gamma} + polytropic_{\gamma} polytropic_{k} \rho^{polytropic_{\gamma}} - polytropic_{k} \rho^{polytropic_{\gamma}} thermal_{\gamma}}{\rho}.\]
+\end{document}

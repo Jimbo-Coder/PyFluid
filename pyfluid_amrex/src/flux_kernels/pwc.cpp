@@ -1,4 +1,4 @@
-#include "../flux_factory_internal.hpp"
+#include "../numerics/flux_factory_internal.hpp"
 
 namespace pyfluid_amrex::flux_factory_entries {
 void pwc(FluxLaunch const& launch)

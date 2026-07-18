@@ -1,3 +1,12 @@
+#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "pyfluid_amrex/ct.hpp"
+#include "pyfluid_amrex/initial_data.hpp"
+#include "pyfluid_amrex/mapped_patch_fill.hpp"
+
+#include <AMReX_FillPatchUtil.H>
+
+namespace pyfluid_amrex {
+
 bool AmrSolverBase::should_regrid(int base_step, bool reached_final_time) const
 {
    if (cfg_.regrid_int <= 0 || maxLevel() <= 0 || base_step == cfg_.max_step || reached_final_time) {
@@ -592,3 +601,5 @@ void AmrSolverBase::initialize_remade_ct_fields(int lev, amrex::Real time, FaceM
    apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
    refresh_stored_spacetime_fluid_boundary(lev, time);
 }
+
+} // namespace pyfluid_amrex

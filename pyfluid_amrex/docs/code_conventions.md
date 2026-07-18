@@ -34,8 +34,14 @@ decisions.
 
 - Register each runtime option once. The input file selects supported values;
   runners do not mutate simulation parameters.
-- Define each grid function once in the field schema. Evolution, checkpointing,
-  output, diagnostics, and plotting consume that schema.
+- Define each grid function once in `codegen/pyfluid_codegen/field_catalog.py`.
+  Evolution, checkpointing, output, diagnostics, plotting, and equation
+  generation consume its generated C++/JSON views. Do not add a handwritten
+  component ID, centering table, output label, or spacetime field list.
+- Define runtime reductions and postprocessed diagnostics once in
+  `codegen/pyfluid_codegen/diagnostic_catalog.py`. Runtime code owns discrete
+  conservation reductions; postprocessing owns analytic comparisons and
+  derived views of output GFs.
 - Coordinate transforms, metric factors, and vector/tensor operations each have
   one shared implementation. Initial data, evolution, and diagnostics reuse it.
 - Generated kernels come from one high-level equation source. Do not retain a

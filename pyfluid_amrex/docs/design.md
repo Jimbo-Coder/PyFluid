@@ -69,9 +69,9 @@ dimensional EOS table or infer its unit system.
 
 ## Public Interfaces And Compilation
 
-The executable-facing solver API is intentionally small. `solver.hpp` owns the
-top-level run entry point and `amr_solver.hpp` exposes only the AMR run
-function. The concrete `AmrSolver` class is private backend machinery in
+The executable-facing solver API is intentionally small: `amr_solver.hpp`
+exposes the AMR run function directly. The concrete `AmrSolver` class is
+private backend machinery in
 `amr_solver_internal.hpp`; code outside the AMR implementation must not include
 that header or depend on its storage layout. `AmrSolverBase` owns the hierarchy,
 state storage, FillPatch, reflux, restriction, output, diagnostics, and restart
@@ -81,15 +81,21 @@ set of hierarchy-repair and gravity-diagnostic hooks connects the two; those
 hooks run only during hierarchy changes or diagnostics, never inside cell
 kernels.
 
-The CMake source groups express ownership rather than pretending that a static
-library automatically reduces template rebuilds:
+The source tree and CMake groups express the same ownership rather than
+pretending that a static library automatically reduces template rebuilds:
 
-- driver: executable and stable run entry points;
-- kernel bundles: explicit ownership of unique state-layout/CT/EOS
+- `src/driver/`: executable and stable run entry points;
+- `src/framework/`: configuration, canonical fields, checkpoints, sector
+  storage, and profiling;
+- `src/amr/`: hierarchy lifecycle, synchronization, diagnostics reductions,
+  and output orchestration;
+- `src/numerics/`: compiled reconstruction/flux dispatch, centering transfer,
+  CT registers, and implicit operators;
+- `src/initial_data/`: providers, materialization, elliptic solves, and TOV;
+- `src/relativity/`: C2P/cache dispatch, metric coupling, and Z4c runtime;
+- `src/kernel_bundles/`: explicit ownership of unique state-layout/CT/EOS
   specializations;
-- AMR: hierarchy ownership, evolution orchestration, and synchronization;
-- runtime: configuration, fields, checkpoints, profiling, and compiled support
-  objects.
+- `tests/`, `benchmarks/`, and `tools/cpp/`: non-production executables.
 
 The local full-release preset uses `ccache` as a compiler launcher. This is a
 machine-level acceleration and does not change generated source, compiler
@@ -170,9 +176,27 @@ duplicate the AMR driver to obtain compile isolation.
 
 ## State And Grid Functions
 
-fields.hpp is the sole schema for grid functions. It owns field name,
-components, centering, diagnostic kind, evolution role, and requirements.
-Writers and plotting tools consume that schema.
+`codegen/pyfluid_codegen/field_catalog.py` is the sole schema for grid
+functions. It owns field and component names, mathematical labels, tensor
+shape, centering, symmetry, diagnostic kind, evolution role, requirements,
+checkpoint ownership, and output ownership. The generator emits public C++
+component IDs, runtime descriptors, plotting JSON, and the field tables in the
+equation reference. `fields.hpp` defines only the C++ descriptor types and
+AMReX-facing query API. Evolution, checkpointing, output, diagnostics, and
+plotting consume generated views of the same catalog.
+
+`codegen/pyfluid_codegen/diagnostic_catalog.py` distinguishes runtime scalar
+reductions from field-output and postprocessed quantities. Runtime reductions
+are written to `scalars.tsv`; postprocessing reads those values and requested
+GF data rather than maintaining another physical reduction implementation.
+Diagnostic names and labels are generated into C++ and JSON. Adding a plotted
+GF label or scalar column in an independent plotting table is not allowed.
+
+`codegen/pyfluid_codegen/equation_catalog.py` indexes the high-level physical
+systems built by `physical_system.py`. The same symbolic conservation laws and
+EOS objects feed optimized C++ emission and the generated
+`docs/equations.md`/`docs/equations.tex` reference. Generated component
+expansions are review artifacts, not separately maintained equations.
 
 The physical state has three evolution roles:
 
