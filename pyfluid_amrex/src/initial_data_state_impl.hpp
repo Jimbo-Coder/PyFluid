@@ -1475,7 +1475,7 @@ inline void initialize_double_mach_reflection(
    initialize_sod_plane(state, geom, cfg);
 }
 
-inline void initialize_sod_plane_face_b(FaceMagneticField& face_b, amrex::Geometry const& geom, RunConfig const& cfg)
+inline void initialize_sod_plane_face_b_impl(FaceMagneticField& face_b, amrex::Geometry const& geom, RunConfig const& cfg)
 {
    const auto problo = geom.ProbLoArray();
    const auto dx = geom.CellSizeArray();
@@ -2061,7 +2061,7 @@ inline void initialize_orszag_tang(
 #endif
 }
 
-inline void initialize_orszag_tang_face_b(
+inline void initialize_orszag_tang_face_b_impl(
    FaceMagneticField& face_b,
    amrex::Geometry const& geom,
    RunConfig const& cfg
@@ -2224,7 +2224,7 @@ inline void initialize_resistive_current_sheet(
 #endif
 }
 
-inline void initialize_resistive_current_sheet_face_b(
+inline void initialize_resistive_current_sheet_face_b_impl(
    FaceMagneticField& face_b,
    amrex::Geometry const& geom,
    RunConfig const& cfg
@@ -2419,7 +2419,7 @@ inline void initialize_reconnecting_shear_layer(
 #endif
 }
 
-inline void initialize_reconnecting_shear_layer_face_b(
+inline void initialize_reconnecting_shear_layer_face_b_impl(
    FaceMagneticField& face_b,
    amrex::Geometry const& geom,
    RunConfig const& cfg
@@ -2573,7 +2573,7 @@ inline void initialize_magnetic_blast_noise(amrex::MultiFab& state, amrex::Geome
 #endif
 }
 
-inline void initialize_magnetic_blast_noise_face_b(FaceMagneticField& face_b, amrex::Geometry const& geom, RunConfig const& cfg)
+inline void initialize_magnetic_blast_noise_face_b_impl(FaceMagneticField& face_b, amrex::Geometry const& geom, RunConfig const& cfg)
 {
 #if (AMREX_SPACEDIM != 3)
    (void)face_b;
@@ -2671,18 +2671,12 @@ inline void apply_newtonian_magnetic_initial_data_policy(
    }
 }
 
-inline void initialize_state(
+inline void initialize_newtonian_state(
    amrex::MultiFab& state,
    amrex::Geometry const& geom,
-   RunConfig const& cfg,
-   TovInitialDataView const& tov_initial_data = {}
+   RunConfig const& cfg
 )
 {
-   if (physical_system_is_relativistic(physical_system(cfg))) {
-      initialize_relativistic_state(state, geom, cfg, tov_initial_data);
-      apply_configured_state_boundary(state, geom, cfg);
-      return;
-   }
    if (cfg.ic == "uniform") {
       initialize_uniform(state, cfg);
    } else if (cfg.ic == "advection_medley") {
@@ -2743,6 +2737,38 @@ inline void initialize_state(
    apply_newtonian_magnetic_initial_data_policy(state, cfg);
    initialize_passive_scalars(state, geom, cfg);
    apply_configured_state_boundary(state, geom, cfg);
+}
+
+inline void initialize_state_impl(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg,
+   RelativisticInitialDataView const& initial_data = {}
+)
+{
+   if (!physical_system_is_relativistic(physical_system(cfg))) {
+      initialize_newtonian_state(state, geom, cfg);
+      return;
+   }
+
+   if (initial_data.has_fluid() || cfg.ic == "fixed_metric_hse") {
+      initialize_relativistic_state(state, geom, cfg, initial_data);
+   } else {
+      const int newtonian_components = physical_system_has_magnetic_field(
+         physical_system(cfg)
+      ) ? NVAR_MHD : NVAR_HYDRO;
+      amrex::MultiFab newtonian_state(
+         state.boxArray(),
+         state.DistributionMap(),
+         newtonian_components,
+         state.nGrow()
+      );
+      initialize_newtonian_state(newtonian_state, geom, cfg);
+      convert_newtonian_initial_state_to_relativistic(
+         state, newtonian_state, geom, cfg, initial_data
+      );
+      apply_configured_state_boundary(state, geom, cfg);
+   }
 }
 
 } // namespace pyfluid_amrex

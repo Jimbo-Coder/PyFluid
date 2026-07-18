@@ -1,94 +1,23 @@
 #include "pyfluid_amrex/amr_solver_base.hpp"
+#include "pyfluid_amrex/initial_data.hpp"
 
 #include <AMReX_Math.H>
+#include <AMReX_MultiFabUtil.H>
 
 #include <cmath>
 
 #include "pyfluid_amrex/spacetime_coupling.hpp"
+#include "pyfluid_amrex/initial_data/materialization.hpp"
+#include "pyfluid_amrex/nodal_fill.hpp"
 #include "pyfluid_amrex/nodal_interpolater.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/z4c_constraint_pointwise.hpp"
 
 namespace pyfluid_amrex {
-
-namespace {
 
 amrex::MFInterpolater* spacetime_interpolater()
 {
    return fourth_order_nodal_interpolater();
 }
-
-template <typename PhysicalBoundary>
-void fill_nodal_two_levels(
-   amrex::MultiFab& destination,
-   amrex::IntVect const& num_ghost,
-   amrex::Real time,
-   amrex::Vector<amrex::MultiFab*> const& coarse_data,
-   amrex::Vector<amrex::Real> const& coarse_times,
-   amrex::Vector<amrex::MultiFab*> const& fine_data,
-   amrex::Vector<amrex::Real> const& fine_times,
-   amrex::Geometry const& coarse_geometry,
-   amrex::Geometry const& fine_geometry,
-   PhysicalBoundary& coarse_bc,
-   PhysicalBoundary& fine_bc,
-   amrex::IntVect const& refinement_ratio,
-   amrex::Vector<amrex::BCRec> const& boundary_conditions,
-   int num_components
-)
-{
-   amrex::MultiFab coarse_at_time(
-      coarse_data.front()->boxArray(),
-      coarse_data.front()->DistributionMap(),
-      num_components,
-      0
-   );
-   amrex::FillPatchSingleLevel(
-      coarse_at_time,
-      amrex::IntVect(0),
-      time,
-      coarse_data,
-      coarse_times,
-      0,
-      0,
-      num_components,
-      coarse_geometry,
-      coarse_bc,
-      0
-   );
-   amrex::InterpFromCoarseLevel(
-      destination,
-      num_ghost,
-      time,
-      coarse_at_time,
-      0,
-      0,
-      num_components,
-      coarse_geometry,
-      fine_geometry,
-      coarse_bc,
-      0,
-      fine_bc,
-      0,
-      refinement_ratio,
-      spacetime_interpolater(),
-      boundary_conditions,
-      0
-   );
-   amrex::FillPatchSingleLevel(
-      destination,
-      num_ghost,
-      time,
-      fine_data,
-      fine_times,
-      0,
-      0,
-      num_components,
-      fine_geometry,
-      fine_bc,
-      0
-   );
-}
-
-} // namespace
 
 void AmrSolverBase::fill_spacetime_level_boundaries(
    LevelData& data,
@@ -126,7 +55,10 @@ void AmrSolverBase::fill_spacetime_level_boundaries(
 
    amrex::Vector<amrex::MultiFab*> coarse_data;
    amrex::Vector<amrex::Real> coarse_time;
-   if (synchronous_levels) {
+   if (!spacetime_state_.evolves()) {
+      coarse_data.push_back(data[lev - 1].get());
+      coarse_time.push_back(time);
+   } else if (synchronous_levels) {
       coarse_data.push_back(data[lev - 1].get());
       coarse_time.push_back(time);
    } else if (
@@ -193,11 +125,100 @@ void AmrSolverBase::initialize_spacetime_level(int lev, amrex::Real time)
    }
    initialize_z4c_state(
       *spacetime_state_.state()[lev], Geom(lev), cfg_, time,
-      tov_initial_data_.view()
+      initial_data_provider_.view()
    );
+   spacetime_coupling_.invalidate_cell_spacetime(lev);
    fill_spacetime_level_boundaries(spacetime_state_.state(), lev, time);
    complete_z4c_contracted_connections(*spacetime_state_.state()[lev], Geom(lev));
    fill_spacetime_level_boundaries(spacetime_state_.state(), lev, time);
+}
+
+void AmrSolverBase::materialize_constraint_solved_initial_data()
+{
+   const bool uses_constraint_solve = cfg_.spacetime_initial_data == "ctt"
+      || cfg_.spacetime_initial_data == "xcts";
+   if (!uses_constraint_solve
+       || !initial_data_provider_.view().fields.spacetime_from_id) {
+      return;
+   }
+   if (!spacetime_state_.active()) {
+      amrex::Abort(
+         "constraint-solved initial data requires stored fixed or evolved spacetime"
+      );
+   }
+
+   InitialDataEllipticHierarchy hierarchy;
+   amrex::Vector<amrex::MultiFab*> fluid;
+   amrex::Vector<amrex::MultiFab const*> primitive;
+   amrex::Vector<amrex::MultiFab*> spacetime;
+   amrex::Vector<amrex::MultiFab*> cell_spacetime;
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      hierarchy.geometry.push_back(Geom(lev));
+      hierarchy.grids.push_back(boxArray(lev));
+      hierarchy.distribution.push_back(DistributionMap(lev));
+      if (initial_data_provider_.view().has_fluid()) {
+         initialize_relativistic_primitive_cache_from_provider(
+            *primitive_[lev], Geom(lev), cfg_, initial_data_provider_.view()
+         );
+      } else {
+         fill_level_primitive_cache(lev, 0.0);
+      }
+      fluid.push_back(fluid_state_.state()[lev].get());
+      primitive.push_back(primitive_[lev].get());
+      spacetime.push_back(spacetime_state_.state()[lev].get());
+      cell_spacetime.push_back(spacetime_coupling_.cell_spacetime()[lev].get());
+      if (lev < finestLevel()) {
+         hierarchy.refinement_ratio.push_back(refRatio(lev));
+      }
+   }
+   hierarchy.cell_interpolater = state_interpolater();
+
+   const ConformalConstraintFormulation formulation =
+      cfg_.spacetime_initial_data == "xcts"
+      ? ConformalConstraintFormulation::xcts
+      : ConformalConstraintFormulation::ctt;
+   const ConformalMaterializationResult result = materialize_conformal_initial_data(
+      hierarchy,
+      fluid,
+      primitive,
+      spacetime,
+      cell_spacetime,
+      physics_system_,
+      eos_method_,
+      eos_params(cfg_),
+      initial_data_provider_.view().fields,
+      formulation
+   );
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      amrex::Print()
+         << cfg_.spacetime_initial_data
+         << " initial data: matter_iterations=" << result.matter_iterations
+         << " relative_matter_update=" << result.relative_matter_update
+         << " coupled_iterations=" << result.constraints.coupled_iterations
+         << " hamiltonian_residual=" << result.constraints.hamiltonian_residual
+         << " lapse_residual=" << result.constraints.lapse_residual
+         << " momentum_residual=" << result.constraints.momentum_residual << '\n';
+   }
+
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      spacetime_coupling_.invalidate_cell_spacetime(lev);
+   }
+   fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0);
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      complete_z4c_contracted_connections(
+         *spacetime_state_.state()[lev], Geom(lev)
+      );
+   }
+   fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0);
+   prepare_spacetime_coupling_range(
+      spacetime_state_.state(), 0, finestLevel() + 1, 0.0, -1.0, 0
+   );
+   apply_stored_spacetime_fluid_boundaries_range(
+      fluid_state_.state(), 0, finestLevel() + 1
+   );
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      copy_level_state_to_old(lev);
+   }
 }
 
 void AmrSolverBase::fill_new_spacetime_level_from_coarse(int lev, amrex::Real time)
@@ -205,7 +226,7 @@ void AmrSolverBase::fill_new_spacetime_level_from_coarse(int lev, amrex::Real ti
    if (!spacetime_state_.active()) {
       return;
    }
-   if (lev == 0 || time == 0.0) {
+   if (!spacetime_state_.evolves() || lev == 0 || time == 0.0) {
       initialize_spacetime_level(lev, time);
       return;
    }
@@ -244,6 +265,10 @@ void AmrSolverBase::fill_remade_spacetime_level(
 )
 {
    if (!spacetime_state_.active()) {
+      return;
+   }
+   if (!spacetime_state_.evolves()) {
+      initialize_spacetime_level(lev, time);
       return;
    }
    if (lev == 0) {
@@ -292,8 +317,9 @@ void AmrSolverBase::fill_remade_spacetime_level(
 
 void AmrSolverBase::average_down_spacetime_level(int fine_lev)
 {
-   if (spacetime_state_.active()) {
+   if (spacetime_state_.evolves()) {
       spacetime_state_.average_down_level(fine_lev, refRatio(fine_lev - 1));
+      spacetime_coupling_.invalidate_cell_spacetime(fine_lev - 1);
    }
 }
 
@@ -313,10 +339,31 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
    }
 
    fill_all_spacetime_boundaries(spacetime_state_.state(), time);
+   amrex::Real hamiltonian_squared_integral = 0.0;
+   amrex::Real composite_volume = 0.0;
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       amrex::MultiFab const& state = *spacetime_state_.state()[lev];
+      amrex::iMultiFab valid(state.boxArray(), state.DistributionMap(), 1, 0);
+      if (lev < finestLevel()) {
+         const amrex::BoxArray fine_nodes = amrex::convert(
+            boxArray(lev + 1), amrex::IntVect::TheNodeVector()
+         );
+         valid = amrex::makeFineMask(
+            state,
+            fine_nodes,
+            refRatio(lev),
+            Geom(lev).periodicity(),
+            1,
+            0
+         );
+      } else {
+         valid.setVal(1);
+      }
+      const std::unique_ptr<amrex::iMultiFab> owner = state.OwnerMask(
+         Geom(lev).periodicity()
+      );
       amrex::MultiFab norms(
-         state.boxArray(), state.DistributionMap(), 6, 0
+         state.boxArray(), state.DistributionMap(), 7, 0
       );
       norms.setVal(0.0);
       const amrex::Box nodal_domain = amrex::convert(
@@ -353,9 +400,15 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
          }
          const auto input = state.const_array(mfi);
          const auto output = norms.array(mfi);
-         const bool matter_coupled = spacetime_matter_is_coupled(cfg_);
+         const auto valid_points = valid.const_array(mfi);
+         const auto owned_points = owner->const_array(mfi);
+         const bool matter_coupled = spacetime_includes_matter(cfg_);
          const auto matter = spacetime_coupling_.vertex_matter()[lev]->const_array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            if (valid_points(i, j, k, 0) == 0
+                || owned_points(i, j, k, 0) == 0) {
+               return;
+            }
             const Z4cMatter point_matter = matter_coupled
                ? load_eulerian_matter(matter, i, j, k)
                : vacuum_z4c_matter();
@@ -372,18 +425,17 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
                c.log_conformal_determinant
             );
             output(i, j, k, 5) = amrex::Math::abs(c.trace_a_tilde);
+            output(i, j, k, 6) = 1.0;
          });
       }
       diagnostics.hamiltonian_linf = amrex::max(
          diagnostics.hamiltonian_linf, norms.norm0(0, 0, false)
       );
-      const amrex::Long point_count = state.boxArray().numPts();
-      if (point_count > 0) {
-         diagnostics.hamiltonian_l2 = amrex::max(
-            diagnostics.hamiltonian_l2,
-            norms.norm2(0) / std::sqrt(static_cast<amrex::Real>(point_count))
-         );
-      }
+      const amrex::Real level_volume = cartesian_cell_volume(Geom(lev));
+      const amrex::Real level_hamiltonian_norm = norms.norm2(0);
+      hamiltonian_squared_integral += level_volume
+         * level_hamiltonian_norm * level_hamiltonian_norm;
+      composite_volume += level_volume * norms.sum(6);
       diagnostics.momentum_linf = amrex::max(
          diagnostics.momentum_linf, std::sqrt(norms.norm0(1, 0, false))
       );
@@ -399,6 +451,11 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
       );
       diagnostics.trace_a_tilde_linf = amrex::max(
          diagnostics.trace_a_tilde_linf, norms.norm0(5, 0, false)
+      );
+   }
+   if (composite_volume > 0.0) {
+      diagnostics.hamiltonian_l2 = std::sqrt(
+         hamiltonian_squared_integral / composite_volume
       );
    }
    return diagnostics;

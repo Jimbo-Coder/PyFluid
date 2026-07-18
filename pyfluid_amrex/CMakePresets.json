@@ -15,6 +15,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_CXX_COMPILER": "/opt/homebrew/bin/mpicxx",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "/opt/homebrew/bin/cmake;-E;env;CCACHE_DIR=${sourceDir}/../.ccache/pyfluid_amrex;CCACHE_BASEDIR=${sourceDir}/..;CCACHE_COMPILERTYPE=clang;/opt/homebrew/bin/ccache",
         "CMAKE_PREFIX_PATH": "${sourceDir}/../.deps/amrex-mpi-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi",
         "AMReX_DIR": "${sourceDir}/../.deps/amrex-mpi-lsolvers-hdf5/lib/cmake/AMReX",
         "HDF5_ROOT": "/opt/homebrew/opt/hdf5-mpi",

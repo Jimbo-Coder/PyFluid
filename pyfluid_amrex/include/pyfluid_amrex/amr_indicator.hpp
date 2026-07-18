@@ -8,10 +8,51 @@
 
 #include "pyfluid_amrex/coordinate_locations.hpp"
 #include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
+#include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
+#include "pyfluid_amrex/relativistic_state.hpp"
 #include "pyfluid_amrex/state.hpp"
+#include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
+
+struct AmrSpacetimeMetricView {
+   amrex::Array4<amrex::Real const> state{};
+   bool stored = false;
+
+   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+   SpacetimeMetric at(int i, int j, int k) const noexcept
+   {
+      return stored
+         ? generated::z4c_spacetime_metric(load_z4c_state(state, i, j, k))
+         : minkowski_spacetime_metric();
+   }
+};
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDPrimitive rmhd_primitive_from_amr_cache(
+   amrex::Array4<amrex::Real const> const& primitive,
+   int i,
+   int j,
+   int k,
+   EOSParams const& eos
+) noexcept
+{
+   const amrex::Real rho = primitive(i, j, k, RHO);
+   const amrex::Real pressure = primitive(i, j, k, ENERGY);
+   return {
+      rho,
+      pressure / ((eos.gamma - 1.0) * rho),
+      pressure,
+      primitive(i, j, k, MOM1),
+      primitive(i, j, k, MOM2),
+      primitive(i, j, k, MOM3),
+      primitive(i, j, k, B1),
+      primitive(i, j, k, B2),
+      primitive(i, j, k, B3),
+   };
+}
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real mesh_vector_component_for_axis(
@@ -302,11 +343,13 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_fro
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& min_feature_lengths,
-   amrex::Real min_refine_radius
+   amrex::Real min_refine_radius,
+   AmrSpacetimeMetricView const& spacetime = {}
 ) noexcept
 {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators{};
-   const bool mhd = system == PhysicalSystem::MHD;
+   const bool newtonian_mhd = system == PhysicalSystem::MHD;
+   const bool rmhd = system == PhysicalSystem::RMHD;
    if (!amr_cell_allows_radial_refinement(coordinate, axes, problo, dx, i, j, k, min_refine_radius)) {
       return indicators;
    }
@@ -354,7 +397,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_fro
    const amrex::Real v3_0 = vz_at(i, j, k);
    const amrex::Real vmag = std::sqrt(squared_norm(StateVector3{v1_0, v2_0, v3_0}));
    amrex::Real b2 = 0.0;
-   if (mhd) {
+   if (newtonian_mhd) {
       const amrex::Real b1_0 = b1_at(i, j, k);
       const amrex::Real b2_0 = b2_at(i, j, k);
       const amrex::Real b3_0 = b3_at(i, j, k);
@@ -381,7 +424,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_fro
       indicators, vz_at, i, j, k, signal_scale, coordinate, axes, problo, dx, min_feature_lengths
    );
 
-   if (mhd) {
+   if (newtonian_mhd) {
       const auto magnetic_pressure_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
          const amrex::Real local_b1 = b1_at(ia, ja, ka);
          const amrex::Real local_b2 = b2_at(ia, ja, ka);
@@ -404,6 +447,66 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_fro
       );
    }
 
+   if (rmhd) {
+      const auto magnetic_pressure_at = [=] AMREX_GPU_HOST_DEVICE(
+         int ia, int ja, int ka
+      ) noexcept {
+         const RMHDPrimitive local = rmhd_primitive_from_amr_cache(
+            primitive, ia, ja, ka, eos
+         );
+         return 0.5 * generated::rmhd_comoving_magnetic_squared(
+            local, spacetime.at(ia, ja, ka)
+         );
+      };
+      const auto magnetization_at = [=] AMREX_GPU_HOST_DEVICE(
+         int ia, int ja, int ka
+      ) noexcept {
+         const RMHDPrimitive local = rmhd_primitive_from_amr_cache(
+            primitive, ia, ja, ka, eos
+         );
+         const amrex::Real magnetic_squared =
+            generated::rmhd_comoving_magnetic_squared(
+               local, spacetime.at(ia, ja, ka)
+            );
+         const amrex::Real specific_enthalpy =
+            1.0 + local.eps + local.pressure / local.rho;
+         return magnetic_squared
+            / amrex::max(local.rho * specific_enthalpy, 1.0e-300);
+      };
+      const amrex::Real magnetic_pressure_scale = amrex::max(
+         magnetic_pressure_at(i, j, k), p0
+      );
+      const amrex::Real magnetization_scale = amrex::max(
+         magnetization_at(i, j, k), 1.0
+      );
+      accumulate_metric_aware_directional_indicator(
+         indicators,
+         magnetic_pressure_at,
+         i,
+         j,
+         k,
+         magnetic_pressure_scale,
+         coordinate,
+         axes,
+         problo,
+         dx,
+         min_feature_lengths
+      );
+      accumulate_metric_aware_directional_indicator(
+         indicators,
+         magnetization_at,
+         i,
+         j,
+         k,
+         magnetization_scale,
+         coordinate,
+         axes,
+         problo,
+         dx,
+         min_feature_lengths
+      );
+   }
+
    return indicators;
 }
 
@@ -421,7 +524,8 @@ amrex::Real auto_amr_indicator_from_primitive(
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& min_feature_lengths,
-   amrex::Real min_refine_radius
+   amrex::Real min_refine_radius,
+   AmrSpacetimeMetricView const& spacetime = {}
 ) noexcept
 {
    const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators =
@@ -438,7 +542,8 @@ amrex::Real auto_amr_indicator_from_primitive(
          problo,
          dx,
          min_feature_lengths,
-         min_refine_radius
+         min_refine_radius,
+         spacetime
       );
    amrex::Real indicator = indicators[0];
 #if (AMREX_SPACEDIM >= 2)

@@ -47,6 +47,7 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
 - Validate changes with small reproducible runs before long simulations.
 - `pyfluid.physical_check_int=0` is the normal production default. Use `pyfluid.physical_check_int=1` for development, validation, or new run setups so accepted states fail immediately when rho/pressure become nonphysical. For deeper AMReX debugging, enable `pyfluid.debug_poison=1`, `pyfluid.debug_check_finite=1`, and/or `pyfluid.debug_check_physical=1` on small runs.
 - After performance-sensitive AMReX changes, run `uv run python pyfluid_amrex/tools/benchmark_pyfluid.py`; use `--allow-warn` only when intentionally collecting current numbers despite a regression.
+- Track compile-sensitive changes with `uv run python pyfluid_amrex/tools/benchmark_compile.py --target <target> --label <label>`. Record cold compiles and cache-hit rebuilds separately; do not present a cache hit as clean-build performance. Use an individual kernel object target while iterating and `pyfluid_amrex_production` at integration points.
 - Do not claim broad correctness without scalar diagnostics, conservation checks, and a relevant analytic or high-resolution comparison.
 
 ## Validation

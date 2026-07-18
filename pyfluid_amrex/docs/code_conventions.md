@@ -40,6 +40,16 @@ decisions.
   one shared implementation. Initial data, evolution, and diagnostics reuse it.
 - Generated kernels come from one high-level equation source. Do not retain a
   handwritten production duplicate after equivalence is established.
+- Header-only code is reserved for small value types and pointwise CPU/GPU
+  kernels whose inlining is part of the numerical implementation. Put host
+  orchestration, runtime policy selection, AMR launches, diagnostics, and
+  other substantial implementation in independently compiled `.cpp` owners
+  behind declaration-only public headers.
+- Emit large generated systems by stable equation responsibility. Relativistic
+  core conversion, flux/wave speed, sources, and C2P recovery are separate
+  generated groups; Z4c geometry, constraints, gauge, and evolution are
+  separate groups. Umbrella headers are aggregate checks only. Production
+  modules include the exact generated groups they own.
 - C++ mathematical constants live in `constants.hpp`; generated kernels and
   handwritten code consume those typed values. Python tooling uses `math` or
   NumPy constants. Numeric input files remain serialized numeric data.
@@ -49,6 +59,23 @@ decisions.
 - Keep generated pointwise physics out of the template-heavy fluid driver.
   Compiled sector orchestration may select policies and move AMReX data, but it
   must not duplicate physical equations.
+- Own evolution template instantiations by their compile-time signature, not by
+  nominal physical-system names. The bundle key is component count, CT
+  topology, and EOS dispatch policy; systems that share that key share the
+  compiled bundle. Add a bundle only when a new signature is genuinely needed.
+- Runtime method selection belongs in a declaration-only compiled factory.
+  Select once on the host, then call an already specialized AMReX launch;
+  never move reconstruction, Riemann, EOS, C2P, signal-speed, or AMR-policy
+  branching into a cell loop.
+- Keep fused operations fused at their numerical boundary. Reconstruction and
+  the Riemann solve share reconstructed face states, so their production
+  ownership is one flux-kernel registry rather than two materialized stages.
+  Formula headers remain method-local so changing MP5, TENO-5, or WENO-Z does
+  not invalidate unrelated methods.
+- Public factory headers contain request types and declarations. Heavy kernel
+  headers and template dispatch live in private implementation owners. Do not
+  restore umbrella solver headers to broadly included class interfaces merely
+  to make a transitive include available.
 
 ## Evolution Sectors And Grid Fields
 
@@ -101,6 +128,34 @@ decisions.
 - Initial data are sampled in physical coordinates. Analytic providers and
   external grid-data providers share this sampling boundary; provider-specific
   interpolation does not belong in the fluid or spacetime evolution kernels.
+- Initial-data elliptic/nonlinear solvers own no evolution state. They produce
+  analytic or sampled provider data on the canonical field schema; evolution
+  must not depend on a particular TOV, XCTS, KEH, or external-data backend.
+- Solve each coupled initial-data problem once on its natural canonical
+  centering. The initial-data hierarchy adapter materializes the centering
+  declared by each evolution GF through the one generated order-2/4/6/8
+  topology transfer, then applies the AMR synchronization contract for that
+  target topology. Do not solve independent cell-, vertex-, face-, or
+  edge-centered copies of the same constraints.
+- Relativistic coupled initial data use one staggered hierarchy matching the
+  evolution schema: finite-volume fluid unknowns are cell-centered,
+  Z4c/CTT/CTTK/XCTS spacetime unknowns are vertex-centered, and CT magnetic
+  unknowns are face-centered. Inter-centering matter and metric views used
+  inside the coupled equations are shared stage-local operators; there is no
+  final initial-data-to-evolution remap of a solved field.
+- Cell/vertex/face/edge conversions are source and destination masks supplied
+  to one tensor-product operator, not separately maintained `c2v`, `v2c`,
+  `c2f`, or `v2f` kernels. Analytic providers may bypass interpolation only by
+  evaluating the same canonical field exactly at the requested target points.
+- Elliptic physical boundaries use one coefficient-field contract,
+  `A f + B d_d f = C`, where `d_d` is the increasing-coordinate derivative.
+  Periodicity remains a geometry property. Dirichlet and Neumann data are
+  coefficient choices, not separate caller interfaces.
+- Centered asymptotic fields `f = f_inf + amplitude/r^p` use the standard
+  amplitude-independent Robin condition `p(f-f_inf) + r d_r f = 0`. On a
+  Cartesian face this is represented through the same coefficient contract;
+  do not sample an exact finite-radius solution or add a formulation-specific
+  boundary path.
 - Value type, centering, symmetry, ghost width, checkpoint ownership, and
   output ownership come from the field schema. Do not maintain a second list of
   spacetime variables in evolution, checkpoint, or plotting code.

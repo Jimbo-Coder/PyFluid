@@ -12,6 +12,7 @@ import numpy as np
 
 from plotfile_reader import (
    latest_checkpoint,
+   level_chunks,
    level_count,
    parse_level_cell_sizes,
    parse_plot_bounds,
@@ -21,6 +22,7 @@ from plotfile_reader import (
 )
 from validation_common import (
    CLOSED_POLICY,
+   DYNAMIC_SPACETIME_POLICY,
    ROOT,
    SMOKE_POLICY,
    append_validation_history,
@@ -36,6 +38,9 @@ from validation_common import (
 
 INPUT = ROOT / "pyfluid_amrex/inputs/z4c_gauge_wave_1d.in"
 TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_coupled_amr_3d.in"
+XCTS_TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_xcts_3d.in"
+TOV_COWLING_INPUT = ROOT / "pyfluid_amrex/inputs/tov_cowling_amr_1d.in"
+CTT_INPUT = ROOT / "pyfluid_amrex/inputs/rhd_ctt_density_cloud_3d.in"
 RUN_ROOT = ROOT / "runs/current/z4c_validation"
 RESULTS = RUN_ROOT / "z4c_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
@@ -121,6 +126,8 @@ def run_case(
    name: str,
    overrides: dict[str, str],
    args: argparse.Namespace,
+   *,
+   checks=DYNAMIC_SPACETIME_POLICY,
 ) -> tuple[Path, dict[str, object]]:
    return run_dimension_case(
       name,
@@ -128,7 +135,7 @@ def run_case(
       overrides,
       args,
       dim=1,
-      checks=CLOSED_POLICY,
+      checks=checks,
       mhd=False,
    )
 
@@ -187,6 +194,7 @@ def validate_minkowski(
             "pyfluid.scalar_int": "1",
          },
          args,
+         checks=CLOSED_POLICY,
       )
       names, _time, state = spacetime_state(run_dir)
       error = float(np.max(np.abs(state - minkowski_reference(names, state.shape[1:]))))
@@ -230,6 +238,7 @@ def validate_initial_data_group_policies(
          "pyfluid.scalar_int": "1",
       },
       args,
+      checks=CLOSED_POLICY,
    )
    names, _time, state = spacetime_state(run_dir)
    error = float(np.max(np.abs(state - minkowski_reference(names, state.shape[1:]))))
@@ -553,16 +562,19 @@ def validate_robust_stability(
    return results, scalars
 
 
-def compare_spacetime_outputs(left_dir: Path, right_dir: Path) -> float:
-   left_file = latest_spacetime_plotfile(left_dir)
-   right_file = latest_spacetime_plotfile(right_dir)
-   if left_file is None or right_file is None:
-      raise RuntimeError("missing spacetime output for comparison")
+def compare_spacetime_files(
+   left_file: Path,
+   right_file: Path,
+   *,
+   require_same_time: bool = True,
+) -> float:
    left_names, left_dim, left_time = parse_plot_header(left_file)
    right_names, right_dim, right_time = parse_plot_header(right_file)
    if left_names != right_names or left_dim != right_dim:
       raise RuntimeError("spacetime comparison changed field layout")
-   if not math.isclose(left_time, right_time, rel_tol=0.0, abs_tol=1.0e-14):
+   if require_same_time and not math.isclose(
+      left_time, right_time, rel_tol=0.0, abs_tol=1.0e-14
+   ):
       raise RuntimeError("spacetime comparison did not reach the same time")
    if level_count(left_file) != level_count(right_file):
       raise RuntimeError("spacetime comparison changed hierarchy depth")
@@ -576,6 +588,132 @@ def compare_spacetime_outputs(left_dir: Path, right_dir: Path) -> float:
       scale = np.maximum(1.0, np.maximum(np.abs(left[common]), np.abs(right[common])))
       maximum = max(maximum, float(np.max(np.abs(left[common] - right[common]) / scale)))
    return maximum
+
+
+def compare_spacetime_outputs(left_dir: Path, right_dir: Path) -> float:
+   left_file = latest_spacetime_plotfile(left_dir)
+   right_file = latest_spacetime_plotfile(right_dir)
+   if left_file is None or right_file is None:
+      raise RuntimeError("missing spacetime output for comparison")
+   return compare_spacetime_files(left_file, right_file)
+
+
+def validate_tov_cowling(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   full_dir, full_scalar = run_dimension_case(
+      "tov_cowling_amr_1d",
+      TOV_COWLING_INPUT,
+      {"pyfluid.plot_int": "2"},
+      args,
+      dim=1,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   rows = read_scalar_rows(full_dir)
+   plotfiles = spacetime_plotfiles(full_dir)
+   levels = level_count(plotfiles[-1]) if plotfiles else 0
+   max_rho_change = max(abs(float(row["max_rho_rel_change"])) for row in rows)
+   if len(plotfiles) < 2:
+      raise RuntimeError("Cowling TOV did not write two spacetime snapshots")
+   fixed_metric_change = compare_spacetime_files(
+      plotfiles[0], plotfiles[-1], require_same_time=False
+   )
+   if levels != 4 or max_rho_change > 5.0e-4 or fixed_metric_change > 1.0e-13:
+      raise RuntimeError(
+         "Cowling TOV failed: "
+         f"levels={levels}, max-rho change={max_rho_change:.3e}, "
+         f"fixed-metric change={fixed_metric_change:.3e}"
+      )
+
+   restart_source = full_dir / "checkpoints/chk00002"
+   restart_dir, restart_scalar = run_dimension_case(
+      "tov_cowling_amr_1d_restart_from2",
+      TOV_COWLING_INPUT,
+      {
+         "pyfluid.plot_int": "2",
+         "pyfluid.restart_file": repo_relative(restart_source),
+      },
+      args,
+      dim=1,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="restart",
+   )
+   full_checkpoint = latest_checkpoint(full_dir)
+   restart_checkpoint = latest_checkpoint(restart_dir)
+   if full_checkpoint is None or restart_checkpoint is None:
+      raise RuntimeError("Cowling TOV restart validation is missing a checkpoint")
+   compared = run_mpi(
+      CHECKPOINT_COMPARE,
+      [full_checkpoint, restart_checkpoint, "1e-12"],
+      ranks=args.ranks,
+      timeout=args.timeout,
+   )
+   if compared.returncode != 0:
+      raise RuntimeError(compared.stdout)
+
+   coupled_dir, coupled_scalar = run_dimension_case(
+      "tov_evolved_amr_1d_control",
+      TOV_COWLING_INPUT,
+      {
+         "spacetime.evolution": "evolved",
+         "pyfluid.plot_int": "2",
+         "pyfluid.checkpoint_int": "-1",
+      },
+      args,
+      dim=1,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   coupled_rows = read_scalar_rows(coupled_dir)
+   coupled_max_rho_change = max(
+      abs(float(row["max_rho_rel_change"])) for row in coupled_rows
+   )
+   if (
+      not math.isfinite(coupled_max_rho_change)
+      or coupled_max_rho_change > 2.0e-3
+      or max_rho_change > 0.1 * coupled_max_rho_change
+   ):
+      raise RuntimeError(
+         "evolved TOV control failed: "
+         f"max-rho change={coupled_max_rho_change:.3e}"
+      )
+
+   return [
+      {
+         "kind": "feature",
+         "case": "tov_cowling_amr_1d",
+         "status": "PASS",
+         "metric": "max_rho_rel_change",
+         "value": max_rho_change,
+         "constraint_linf": final_constraint_max(full_dir),
+         "fixed_metric_change": fixed_metric_change,
+         "levels": levels,
+         "run_dir": repo_relative(full_dir),
+      },
+      {
+         "kind": "restart",
+         "case": "tov_cowling_amr_1d_restart",
+         "status": "PASS",
+         "metric": "checkpoint_compare",
+         "value": "exact_within_1e-12",
+         "levels": levels,
+         "run_dir": repo_relative(restart_dir),
+      },
+      {
+         "kind": "feature",
+         "case": "tov_evolved_amr_1d_control",
+         "status": "PASS",
+         "metric": "max_rho_rel_change",
+         "value": coupled_max_rho_change,
+         "constraint_linf": final_constraint_max(coupled_dir),
+         "levels": level_count(latest_spacetime_plotfile(coupled_dir)),
+         "run_dir": repo_relative(coupled_dir),
+      },
+   ], [full_scalar, restart_scalar, coupled_scalar]
 
 
 def multilevel_parameters(*, subcycling: bool) -> dict[str, str]:
@@ -981,9 +1119,272 @@ def validate_tov_initial_data(
    return results, scalars
 
 
+def validate_xcts_initial_data(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   run_dir, scalar = run_dimension_case(
+      "tov_xcts_3d",
+      XCTS_TOV_INPUT,
+      {},
+      args,
+      dim=3,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   rows = read_scalar_rows(run_dir)
+   final = rows[-1]
+   h_l2 = abs(float(final["z4c_hamiltonian_l2"]))
+   h_linf = abs(float(final["z4c_hamiltonian_linf"]))
+   momentum_linf = abs(float(final["z4c_momentum_linf"]))
+   run_log = (run_dir / "run.log").read_text()
+   if (
+      not math.isfinite(h_l2)
+      or not math.isfinite(h_linf)
+      or not math.isfinite(momentum_linf)
+      or "xcts initial data:" not in run_log
+   ):
+      raise RuntimeError(
+         "staggered TOV XCTS materialization failed: "
+         f"Hamiltonian L2={h_l2:.3e}, Linf={h_linf:.3e}, "
+         f"momentum Linf={momentum_linf:.3e}"
+      )
+   return [{
+      "kind": "feature",
+      "case": "tov_xcts_3d",
+      "status": "PASS",
+      "metric": "hamiltonian_l2",
+      "value": h_l2,
+      "constraint_linf": max(h_linf, momentum_linf),
+      "hamiltonian_l2": h_l2,
+      "hamiltonian_linf": h_linf,
+      "momentum_linf": momentum_linf,
+      "run_dir": repo_relative(run_dir),
+   }], [scalar]
+
+
+def validate_ctt_initial_data(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   resolutions = (16, 24, 32)
+   results: list[dict[str, object]] = []
+   scalars: list[dict[str, object]] = []
+   uniform_l2: dict[int, float] = {}
+   uniform_runs: dict[int, Path] = {}
+   previous_cells: int | None = None
+   previous_l2: float | None = None
+
+   for cells in resolutions:
+      name = f"ctt_density_cloud_n{cells}"
+      run_dir, scalar = run_dimension_case(
+         name,
+         CTT_INPUT,
+         {
+            "amr.n_cell": f"{cells} {cells} {cells}",
+            "amr.max_level": "0",
+            "amr.max_grid_size": str(min(cells, 16)),
+            "amr.tag_metric": "none",
+            "pyfluid.max_step": "0",
+            "pyfluid.plot_int": "0",
+         },
+         args,
+         dim=3,
+         checks=SMOKE_POLICY,
+         mhd=False,
+      )
+      final = read_scalar_rows(run_dir)[-1]
+      h_l2 = abs(float(final["z4c_hamiltonian_l2"]))
+      h_linf = abs(float(final["z4c_hamiltonian_linf"]))
+      if not math.isfinite(h_l2) or not math.isfinite(h_linf):
+         raise RuntimeError(f"compact CTT N={cells} produced nonfinite constraints")
+      order: float | str = ""
+      if previous_cells is not None and previous_l2 is not None:
+         order = math.log(previous_l2 / h_l2) / math.log(cells / previous_cells)
+      uniform_l2[cells] = h_l2
+      uniform_runs[cells] = run_dir
+      results.append({
+         "kind": "convergence",
+         "case": name,
+         "status": "PASS",
+         "metric": "hamiltonian_l2",
+         "value": h_l2,
+         "order": order,
+         "constraint_linf": h_linf,
+         "hamiltonian_l2": h_l2,
+         "hamiltonian_linf": h_linf,
+         "levels": 1,
+         "run_dir": repo_relative(run_dir),
+      })
+      scalars.append(scalar)
+      previous_cells = cells
+      previous_l2 = h_l2
+
+   overall_order = math.log(uniform_l2[resolutions[0]] / uniform_l2[resolutions[-1]]) \
+      / math.log(resolutions[-1] / resolutions[0])
+   if any(
+      uniform_l2[cells] >= uniform_l2[resolutions[index - 1]]
+      for index, cells in enumerate(resolutions[1:], start=1)
+   ) or overall_order < 1.0:
+      raise RuntimeError(
+         "compact CTT Hamiltonian constraint did not converge: "
+         + ", ".join(
+            f"N={cells}: {uniform_l2[cells]:.3e}" for cells in resolutions
+         )
+      )
+
+   packet_dir, packet_scalar = run_dimension_case(
+      "ctt_acoustic_packet_n12",
+      CTT_INPUT,
+      {
+         "amr.n_cell": "12 12 12",
+         "amr.max_level": "0",
+         "amr.max_grid_size": "6",
+         "amr.tag_metric": "none",
+         "pyfluid.ic": "acoustic_packet_x",
+         "pyfluid.rho0": "1.0e-5",
+         "pyfluid.pressure0": "1.0e-7",
+         "pyfluid.amplitude": "1.0e-7",
+         "pyfluid.bump_sigma": "0.75",
+         "pyfluid.acoustic_transverse_sigma": "0.75",
+         "pyfluid.max_step": "0",
+         "pyfluid.plot_int": "0",
+      },
+      args,
+      dim=3,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   packet_final = read_scalar_rows(packet_dir)[-1]
+   packet_h_l2 = abs(float(packet_final["z4c_hamiltonian_l2"]))
+   packet_momentum = abs(float(packet_final["z4c_momentum_linf"]))
+   if not math.isfinite(packet_h_l2) or not math.isfinite(packet_momentum):
+      raise RuntimeError("compact CTT acoustic packet produced nonfinite constraints")
+   results.append({
+      "kind": "feature",
+      "case": "ctt_acoustic_packet_n12",
+      "status": "PASS",
+      "metric": "hamiltonian_l2",
+      "value": packet_h_l2,
+      "constraint_linf": max(
+         abs(float(packet_final["z4c_hamiltonian_linf"])),
+         packet_momentum,
+      ),
+      "hamiltonian_l2": packet_h_l2,
+      "hamiltonian_linf": abs(float(packet_final["z4c_hamiltonian_linf"])),
+      "momentum_linf": packet_momentum,
+      "levels": 1,
+      "run_dir": repo_relative(packet_dir),
+   })
+   scalars.append(packet_scalar)
+
+   amr_dir, amr_scalar = run_dimension_case(
+      "ctt_density_cloud_amr",
+      CTT_INPUT,
+      {
+         "amr.n_cell": "16 16 16",
+         "amr.max_level": "1",
+         "amr.ref_ratio": "2",
+         "amr.max_grid_size": "16",
+         "amr.tag_metric": "none",
+         "amr.initial_refine": "box",
+         "amr.initial_refine_levels": "1",
+         "amr.initial_refine_fixed_levels": "1",
+         "amr.initial_refine_box_lo": "-1.5 -1.5 -1.5",
+         "amr.initial_refine_box_hi": "1.5 1.5 1.5",
+         "pyfluid.max_step": "0",
+         "pyfluid.plot_int": "0",
+      },
+      args,
+      dim=3,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   amr_final = read_scalar_rows(amr_dir)[-1]
+   amr_l2 = abs(float(amr_final["z4c_hamiltonian_l2"]))
+   amr_linf = abs(float(amr_final["z4c_hamiltonian_linf"]))
+   amr_plotfile = latest_spacetime_plotfile(amr_dir)
+   coarse_plotfile = latest_spacetime_plotfile(uniform_runs[16])
+   reference_plotfile = latest_spacetime_plotfile(uniform_runs[32])
+   if amr_plotfile is None or coarse_plotfile is None or reference_plotfile is None:
+      raise RuntimeError("compact CTT AMR comparison is missing initial state output")
+   amr_names, amr_dim, _amr_time = parse_plot_header(amr_plotfile)
+   coarse_names, coarse_dim, _coarse_time = parse_plot_header(coarse_plotfile)
+   reference_names, reference_dim, _reference_time = parse_plot_header(
+      reference_plotfile
+   )
+   if (
+      amr_names != coarse_names
+      or amr_names != reference_names
+      or amr_dim != 3
+      or coarse_dim != 3
+      or reference_dim != 3
+      or level_count(amr_plotfile) != 2
+   ):
+      raise RuntimeError("compact CTT AMR comparison changed its field/layout contract")
+   chi_component = amr_names.index("chi")
+   reference_state = read_level_state(reference_plotfile, reference_names, 3, 0)
+   coarse_state = read_level_state(coarse_plotfile, coarse_names, 3, 0)
+   fine_errors: list[float] = []
+   coarse_errors: list[float] = []
+   visited: set[tuple[int, int, int]] = set()
+   for lo, hi, data in level_chunks(amr_plotfile, 1, 3, names=amr_names):
+      for i in range(lo[0], hi[0] + 1):
+         for j in range(lo[1], hi[1] + 1):
+            for k in range(lo[2], hi[2] + 1):
+               point = (i, j, k)
+               if point in visited or any(index % 2 != 0 for index in point):
+                  continue
+               visited.add(point)
+               reference = reference_state[(chi_component, *point)]
+               fine_errors.append(
+                  data[chi_component, i - lo[0], j - lo[1], k - lo[2]]
+                  - reference
+               )
+               coarse_errors.append(
+                  coarse_state[chi_component, i // 2, j // 2, k // 2]
+                  - reference
+               )
+   if not fine_errors:
+      raise RuntimeError("compact CTT AMR comparison found no shared sample points")
+   fine_solution_l2 = float(np.sqrt(np.mean(np.square(fine_errors))))
+   coarse_solution_l2 = float(np.sqrt(np.mean(np.square(coarse_errors))))
+   solution_ratio = fine_solution_l2 / coarse_solution_l2
+   constraint_ratio = amr_l2 / uniform_l2[16]
+   if (
+      not math.isfinite(amr_l2)
+      or not math.isfinite(solution_ratio)
+      or solution_ratio >= 0.75
+      or constraint_ratio >= 4.0
+   ):
+      raise RuntimeError(
+         "compact CTT AMR handoff failed: "
+         f"solution ratio={solution_ratio:.3e}, "
+         f"constraint ratio={constraint_ratio:.3e}"
+      )
+   results.append({
+      "kind": "feature",
+      "case": "ctt_density_cloud_amr",
+      "status": "PASS",
+      "metric": "hamiltonian_l2",
+      "value": amr_l2,
+      "constraint_linf": amr_linf,
+      "hamiltonian_l2": amr_l2,
+      "hamiltonian_linf": amr_linf,
+      "amr_solution_ratio": solution_ratio,
+      "amr_constraint_ratio": constraint_ratio,
+      "levels": 2,
+      "run_dir": repo_relative(amr_dir),
+   })
+   scalars.append(amr_scalar)
+   return results, scalars
+
+
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--level", choices=("quick", "standard"), default="standard")
+   parser.add_argument("--only", choices=("all", "ctt", "xcts"), default="all")
    parser.add_argument("--ranks", type=int, default=1)
    parser.add_argument("--timeout", type=float, default=180.0)
    parser.add_argument("--force", action="store_true")
@@ -994,22 +1395,31 @@ def main() -> int:
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
    results: list[dict[str, object]] = []
    scalars: list[dict[str, object]] = []
-   for validator in (
-      validate_minkowski,
-      validate_initial_data_group_policies,
-      validate_gauge_wave_convergence,
-      validate_linear_wave_convergence,
-      validate_robust_stability,
-      validate_amr_subcycling_restart,
-   ):
+   quick_validators = (
+      (validate_ctt_initial_data,)
+      if args.only == "ctt"
+      else (validate_xcts_initial_data,)
+      if args.only == "xcts"
+      else (
+         validate_minkowski,
+         validate_initial_data_group_policies,
+         validate_gauge_wave_convergence,
+         validate_linear_wave_convergence,
+         validate_robust_stability,
+         validate_amr_subcycling_restart,
+      )
+   )
+   for validator in quick_validators:
       validator_results, validator_scalars = validator(args)
       results.extend(validator_results)
       scalars.extend(validator_scalars)
-   if args.level == "standard":
+   if args.level == "standard" and args.only == "all":
       for validator in (
          validate_coupled_amr_restart,
          validate_coupled_rmhd_smoke,
+         validate_tov_cowling,
          validate_tov_initial_data,
+         validate_xcts_initial_data,
       ):
          validator_results, validator_scalars = validator(args)
          results.extend(validator_results)
@@ -1025,7 +1435,10 @@ def main() -> int:
       "constraint_linf",
       "hamiltonian_l2",
       "hamiltonian_linf",
+      "momentum_linf",
+      "amr_solution_ratio",
       "amr_constraint_ratio",
+      "fixed_metric_change",
       "analytic_error_subcycled",
       "analytic_error_single_rate",
       "levels",

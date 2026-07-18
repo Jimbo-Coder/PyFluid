@@ -371,7 +371,7 @@
          lev_begin,
          lev_end
       );
-      if (spacetime_state_.active()) {
+      if (spacetime_state_.evolves()) {
          spacetime_state_.linear_combination(
             spacetime_state_.stage(output_slot),
             1.0,
@@ -407,7 +407,7 @@
          lev_begin,
          lev_end
       );
-      if (spacetime_state_.active()) {
+      if (spacetime_state_.evolves()) {
          spacetime_state_.linear_combination(
             spacetime_state_.stage(output_slot),
             base_weight,
@@ -448,7 +448,7 @@
          lev_begin,
          lev_end
       );
-      if (spacetime_state_.active()) {
+      if (spacetime_state_.evolves()) {
          spacetime_state_.linear_combination(
             spacetime_state_.stage(output_a_slot),
             1.0,
@@ -491,7 +491,7 @@
          lev_begin,
          lev_end
       );
-      if (spacetime_state_.active()) {
+      if (spacetime_state_.evolves()) {
          spacetime_state_.add_scaled(
             spacetime_state_.stage(accumulator_slot),
             accumulator_scale,
@@ -526,7 +526,7 @@
          lev_begin,
          lev_end
       );
-      if (spacetime_state_.active()) {
+      if (spacetime_state_.evolves()) {
          spacetime_state_.add_scaled(
             spacetime_state_.stage(output_slot),
             scale,
@@ -550,7 +550,7 @@
          lev_begin,
          lev_end
       );
-      if (spacetime_state_.active()) {
+      if (spacetime_state_.evolves()) {
          spacetime_state_.copy(
             spacetime_state_.stage(output_slot),
             spacetime_state_.stage(input_slot),

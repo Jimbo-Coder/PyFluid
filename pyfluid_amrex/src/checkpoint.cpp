@@ -30,7 +30,7 @@ namespace {
 constexpr const char* CheckpointLevelPrefix = "Level_";
 constexpr const char* CheckpointHeaderName = "Header";
 constexpr const char* CheckpointHeaderLabel = "PyFluid AMReX checkpoint v4";
-constexpr int CheckpointSchemaVersion = 6;
+constexpr int CheckpointSchemaVersion = 7;
 
 using CheckpointMetadata = std::map<std::string, std::string>;
 
@@ -480,6 +480,7 @@ void write_checkpoint(
    std::vector<CheckpointFieldSet> const& extra_fields,
    amrex::Real reference_mass,
    amrex::Real reference_energy,
+   amrex::Real reference_max_rho,
    amrex::Long aligned_regrid_ticks,
    amrex::Long aligned_base_regrid_tick,
    std::string const& checkpoint_compression
@@ -581,7 +582,8 @@ void write_checkpoint(
          }
          header << "\n";
       }
-      header << reference_mass << " " << reference_energy << "\n";
+      header << reference_mass << " " << reference_energy << " "
+             << reference_max_rho << "\n";
       header << aligned_regrid_ticks << "\n";
       header << aligned_base_regrid_tick << "\n";
       write_checkpoint_metadata(
@@ -714,7 +716,7 @@ CheckpointHeader read_checkpoint_header(std::string const& checkpoint_name)
       field.index_type = amrex::IndexType(nodal);
       chk.fields.push_back(std::move(field));
    }
-   header >> chk.reference_mass >> chk.reference_energy;
+   header >> chk.reference_mass >> chk.reference_energy >> chk.reference_max_rho;
    header >> chk.aligned_regrid_ticks;
    header >> chk.aligned_base_regrid_tick;
    if (!header.good()) {

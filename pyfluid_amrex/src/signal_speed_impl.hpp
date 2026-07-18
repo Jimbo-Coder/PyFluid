@@ -20,9 +20,10 @@
 #include "pyfluid_amrex/patch_metrics.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
-#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/flux.hpp"
+#include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/state.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
 
@@ -857,21 +858,21 @@ inline amrex::Real adaptive_dt(
    amrex::Geometry const& geom,
    RunConfig const& cfg,
    amrex::Real time,
-   amrex::MultiFab const* evolved_spacetime = nullptr
+   amrex::MultiFab const* stored_spacetime = nullptr
 )
 {
    const EOSParams eos = eos_params(cfg);
    if (physical_system(cfg) == PhysicalSystem::RHD) {
-      if (evolved_spacetime != nullptr) {
-         fill_rhd_signal_frequency<EOSMethod>(frequency, state, geom, eos, *evolved_spacetime);
+      if (stored_spacetime != nullptr) {
+         fill_rhd_signal_frequency<EOSMethod>(frequency, state, geom, eos, *stored_spacetime);
       } else {
          fill_rhd_signal_frequency<EOSMethod>(
             frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
          );
       }
    } else if (physical_system(cfg) == PhysicalSystem::RMHD) {
-      if (evolved_spacetime != nullptr) {
-         fill_rmhd_signal_frequency(frequency, state, geom, eos, *evolved_spacetime);
+      if (stored_spacetime != nullptr) {
+         fill_rmhd_signal_frequency(frequency, state, geom, eos, *stored_spacetime);
       } else {
          fill_rmhd_signal_frequency(
             frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time

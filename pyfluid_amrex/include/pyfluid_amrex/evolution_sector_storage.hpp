@@ -28,10 +28,12 @@ public:
    void configure(
       GridFieldSetInfo const& field_set,
       int num_levels,
-      int state_ghost_width = -1
+      int state_ghost_width = -1,
+      bool evolves = true
    );
 
    bool active() const noexcept;
+   bool evolves() const noexcept;
    EvolutionSector sector() const noexcept;
    GridFieldCentering centering() const noexcept;
    int num_components() const noexcept;
@@ -130,6 +132,7 @@ private:
    int num_components_ = 0;
    int ghost_width_ = 0;
    bool active_ = false;
+   bool evolves_ = false;
 
    LevelData state_;
    LevelData old_state_;

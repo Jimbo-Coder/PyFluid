@@ -64,14 +64,41 @@ endif()
 set(PYFLUID_AMREX_DRIVER_SOURCES
    src/main.cpp
    src/amr_solver_driver.cpp
+   src/evolution_kernel_bundle.cpp
    src/solver.cpp
 )
+
+set(PYFLUID_AMREX_KERNEL_BUNDLE_SOURCES
+   src/kernel_bundles/hydro.cpp
+)
+if(PYFLUID_AMREX_ENABLE_HYDRO)
+   list(APPEND PYFLUID_AMREX_KERNEL_BUNDLE_SOURCES
+      src/kernel_bundles/hydro_passive.cpp
+   )
+endif()
+if(PYFLUID_AMREX_ENABLE_MHD)
+   list(APPEND PYFLUID_AMREX_KERNEL_BUNDLE_SOURCES
+      src/kernel_bundles/mhd.cpp
+      src/kernel_bundles/mhd_passive.cpp
+   )
+   if(PYFLUID_AMREX_ENABLE_CT)
+      list(APPEND PYFLUID_AMREX_KERNEL_BUNDLE_SOURCES
+         src/kernel_bundles/mhd_ct.cpp
+         src/kernel_bundles/mhd_passive_ct.cpp
+      )
+   endif()
+endif()
 
 set(PYFLUID_AMREX_AMR_SOURCES
    src/amr_solver_average.cpp
    src/amr_solver_auxiliary.cpp
+   src/amr_solver_conservation.cpp
    src/amr_solver_debug.cpp
    src/amr_solver_diagnostics.cpp
+   src/amr_solver_fillpatch.cpp
+   src/amr_solver_flux_registers.cpp
+   src/amr_solver_gravity_sync.cpp
+   src/amr_solver_solid.cpp
    src/amr_solver_hierarchy.cpp
    src/amr_solver_levels.cpp
    src/amr_solver_metrics.cpp
@@ -88,9 +115,28 @@ set(PYFLUID_AMREX_RUNTIME_SOURCES
    src/ct_edge_flux_register.cpp
    src/evolution_sector_storage.cpp
    src/fields.cpp
+   src/flux_factory.cpp
+   src/flux_kernels/mp5.cpp
+   src/flux_kernels/mp5_char.cpp
+   src/flux_kernels/pwc.cpp
+   src/flux_kernels/pwl.cpp
+   src/flux_kernels/teno5.cpp
+   src/flux_kernels/teno5_char.cpp
+   src/flux_kernels/wenoz.cpp
+   src/flux_kernels/wenoz_char.cpp
    src/implicit_resistivity.cpp
+   src/initial_data_centering.cpp
+   src/initial_data_ctt.cpp
+   src/initial_data_elliptic.cpp
+   src/initial_data_materialization.cpp
+   src/initial_data_provider.cpp
+   src/initial_data_rhd.cpp
+   src/initial_data_state.cpp
    src/nodal_interpolater.cpp
+   src/primitive_cache_factory.cpp
    src/profiling.cpp
+   src/relativistic_source_factory.cpp
+   src/signal_speed_factory.cpp
    src/spacetime_fields.cpp
    src/spacetime_coupling_storage.cpp
    src/tov_initial_data.cpp
@@ -99,6 +145,7 @@ set(PYFLUID_AMREX_RUNTIME_SOURCES
 
 set(PYFLUID_AMREX_SOURCES
    ${PYFLUID_AMREX_DRIVER_SOURCES}
+   ${PYFLUID_AMREX_KERNEL_BUNDLE_SOURCES}
    ${PYFLUID_AMREX_AMR_SOURCES}
    ${PYFLUID_AMREX_RUNTIME_SOURCES}
 )
@@ -120,6 +167,16 @@ set(PYFLUID_AMREX_C2P_BENCHMARK_SOURCES
 
 set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
    src/multipatch_check.cpp
+)
+
+set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
+   src/config.cpp
+   src/initial_data_centering.cpp
+   src/initial_data_ctt.cpp
+   src/initial_data_elliptic.cpp
+   src/initial_data_elliptic_check.cpp
+   src/nodal_interpolater.cpp
+   src/tov_initial_data.cpp
 )
 
 find_program(PYFLUID_UV_EXECUTABLE uv)
@@ -154,11 +211,30 @@ if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/relativistic_fluid.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADERS
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/relativistic/core.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/relativistic/flux.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/relativistic/sources.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/relativistic/c2p_rhd.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/relativistic/c2p_rmhd.hpp
+   )
    set(PYFLUID_AMREX_GENERATED_Z4C_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/z4c.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_Z4C_HEADERS
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/z4c/geometry.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/z4c/constraints.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/z4c/gauge.hpp
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/z4c/evolution.hpp
+   )
+   set(PYFLUID_AMREX_GENERATED_INITIAL_DATA_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/initial_data.hpp
+   )
    set(PYFLUID_AMREX_CODEGEN_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_kernels.py)
    set(PYFLUID_AMREX_CODEGEN_STAMP ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_codegen.stamp)
+   set(PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP
+      ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_initial_data_codegen.stamp
+   )
    set(PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP
       ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_patch_map_codegen.stamp
    )
@@ -174,7 +250,9 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
          ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
+         ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADERS}
          ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
+         ${PYFLUID_AMREX_GENERATED_Z4C_HEADERS}
       COMMAND ${CMAKE_COMMAND} -E env
          UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
          ${PYFLUID_UV_EXECUTABLE} run python
@@ -224,6 +302,26 @@ if(PYFLUID_UV_EXECUTABLE)
       VERBATIM
    )
    add_custom_command(
+      OUTPUT ${PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP}
+      BYPRODUCTS ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_HEADER}
+      COMMAND ${CMAKE_COMMAND} -E env
+         UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
+         ${PYFLUID_UV_EXECUTABLE} run python
+         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+         --family initial_data
+         --initial-data-header ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_HEADER}
+      COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP}
+      DEPENDS
+         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/initial_data_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/kernel_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_algebra.py
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
+      COMMENT "Generating PyFluid AMReX initial-data kernels"
+      VERBATIM
+   )
+   add_custom_command(
       OUTPUT ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
       BYPRODUCTS ${PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER}
       COMMAND ${CMAKE_COMMAND} -E env
@@ -243,7 +341,10 @@ if(PYFLUID_UV_EXECUTABLE)
    )
    add_custom_target(
       pyfluid_amrex_generate_kernels
-      DEPENDS ${PYFLUID_AMREX_CODEGEN_STAMP} ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
+      DEPENDS
+         ${PYFLUID_AMREX_CODEGEN_STAMP}
+         ${PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP}
+         ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
    )
 else()
    message(WARNING "uv not found; pyfluid_amrex_generate_kernels target will not be available")
@@ -297,6 +398,7 @@ endfunction()
 foreach(dim 1 2 3)
    if(TARGET AMReX::amrex_${dim}d)
       add_executable(pyfluid_amrex_${dim}d ${PYFLUID_AMREX_SOURCES})
+      list(APPEND PYFLUID_AMREX_PRODUCTION_TARGETS pyfluid_amrex_${dim}d)
       pyfluid_amrex_configure_target(pyfluid_amrex_${dim}d ${dim})
       if(TARGET pyfluid_amrex_generate_kernels)
          add_dependencies(pyfluid_amrex_${dim}d pyfluid_amrex_generate_kernels)
@@ -312,6 +414,19 @@ foreach(dim 1 2 3)
       pyfluid_amrex_configure_target(pyfluid_amrex_codegen_check_${dim}d ${dim})
       if(TARGET pyfluid_amrex_generate_kernels)
          add_dependencies(pyfluid_amrex_codegen_check_${dim}d pyfluid_amrex_generate_kernels)
+      endif()
+
+      add_executable(
+         pyfluid_amrex_initial_data_elliptic_check_${dim}d
+         EXCLUDE_FROM_ALL
+         ${PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES}
+      )
+      pyfluid_amrex_configure_target(pyfluid_amrex_initial_data_elliptic_check_${dim}d ${dim})
+      if(TARGET pyfluid_amrex_generate_kernels)
+         add_dependencies(
+            pyfluid_amrex_initial_data_elliptic_check_${dim}d
+            pyfluid_amrex_generate_kernels
+         )
       endif()
 
       if(dim EQUAL 1)
@@ -331,3 +446,8 @@ foreach(dim 1 2 3)
       endif()
    endif()
 endforeach()
+
+if(PYFLUID_AMREX_PRODUCTION_TARGETS)
+   add_custom_target(pyfluid_amrex_production)
+   add_dependencies(pyfluid_amrex_production ${PYFLUID_AMREX_PRODUCTION_TARGETS})
+endif()

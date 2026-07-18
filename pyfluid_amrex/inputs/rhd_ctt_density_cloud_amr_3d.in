@@ -1,0 +1,62 @@
+pyfluid.run_name = rhd_ctt_density_cloud_amr_3d
+pyfluid.output_dir = runs/current/rhd_ctt/rhd_ctt_density_cloud_amr_3d
+pyfluid.validation_policy = smoke
+
+geometry.prob_lo = -4.0 -4.0 -4.0
+geometry.prob_hi = 4.0 4.0 4.0
+geometry.is_periodic = 0 0 0
+
+amr.n_cell = 8 8 8
+amr.max_level = 1
+amr.ref_ratio = 2
+amr.max_grid_size = 8
+amr.blocking_factor = 4
+amr.tag_metric = none
+amr.initial_refine = box
+amr.initial_refine_levels = 1
+amr.initial_refine_fixed_levels = 1
+amr.initial_refine_box_lo = -2.0 -2.0 -2.0
+amr.initial_refine_box_hi = 2.0 2.0 2.0
+amr.state_interp = protected
+
+spacetime.evolution = evolved
+spacetime.matter_coupling = coupled
+spacetime.initial_data = ctt
+spacetime.lapse_gauge = frozen
+spacetime.shift_gauge = frozen
+spacetime.ko_dissipation = 0.0
+
+initial_data.spacetime = id
+initial_data.lapse = id
+initial_data.shift = id
+
+pyfluid.physics = rhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = density_cloud
+pyfluid.rho0 = 1.0e-10
+pyfluid.pressure0 = 1.0e-8
+pyfluid.amplitude = 1.0e-4
+pyfluid.bump_sigma = 0.75
+pyfluid.bump_x0 = 0.0
+pyfluid.bump_y0 = 0.0
+pyfluid.bump_z0 = 0.0
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.final_time = -1
+pyfluid.max_step = 0
+pyfluid.ng = 3
+pyfluid.cfl = 0.25
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+pyfluid.bc = outflow
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 1
+pyfluid.checkpoint_int = -1

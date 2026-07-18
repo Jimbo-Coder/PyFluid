@@ -490,6 +490,21 @@ class ValenciaHydrodynamics:
 class ValenciaMagnetohydrodynamics:
    """Ideal Valencia RMHD using Eulerian velocity and magnetic field."""
 
+   def comoving_magnetic_squared(
+      self,
+      primitive: ValenciaMHDPrimitive,
+      metric: ValenciaMetric,
+   ) -> sp.Expr:
+      velocity_covariant = metric.spatial_metric.lower(primitive.velocity)
+      velocity_squared = primitive.velocity.dot(velocity_covariant)
+      lorentz_factor_squared = 1 / (1 - velocity_squared)
+      magnetic_squared = metric.spatial_metric.norm_squared(primitive.magnetic)
+      alpha_b0_squared = (
+         lorentz_factor_squared
+         * primitive.magnetic.dot(velocity_covariant) ** 2
+      )
+      return (magnetic_squared + alpha_b0_squared) / lorentz_factor_squared
+
    def primitive_to_conserved(
       self,
       primitive: ValenciaMHDPrimitive,
@@ -506,9 +521,7 @@ class ValenciaMagnetohydrodynamics:
          magnetic_covariant / lorentz_factor
          + alpha_b0 * velocity_covariant
       )
-      comoving_magnetic_squared = (
-         magnetic_squared + alpha_b0**2
-      ) / lorentz_factor**2
+      comoving_magnetic_squared = self.comoving_magnetic_squared(primitive, metric)
       specific_enthalpy = (
          1
          + primitive.specific_internal_energy
@@ -581,9 +594,7 @@ class ValenciaMagnetohydrodynamics:
       alpha_b0 = sp.sqrt(lorentz_factor_squared) * primitive.magnetic.dot(
          velocity_covariant
       )
-      comoving_magnetic_squared = (
-         primitive.magnetic.dot(magnetic_covariant) + alpha_b0**2
-      ) / lorentz_factor_squared
+      comoving_magnetic_squared = self.comoving_magnetic_squared(primitive, metric)
       specific_enthalpy = (
          1
          + primitive.specific_internal_energy
@@ -617,9 +628,7 @@ class ValenciaMagnetohydrodynamics:
          magnetic_covariant / lorentz_factor
          + alpha_b0 * velocity_covariant
       )
-      comoving_magnetic_squared = (
-         primitive.magnetic.dot(magnetic_covariant) + alpha_b0**2
-      ) / lorentz_factor**2
+      comoving_magnetic_squared = self.comoving_magnetic_squared(primitive, metric)
       total_pressure = primitive.pressure + comoving_magnetic_squared / 2
       transport_velocity = metric.lapse * primitive.velocity - metric.shift
       dimension = primitive.velocity.dimension

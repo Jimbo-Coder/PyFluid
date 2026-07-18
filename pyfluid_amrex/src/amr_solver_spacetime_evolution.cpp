@@ -1,8 +1,9 @@
 #include "pyfluid_amrex/amr_solver_base.hpp"
 
+#include "pyfluid_amrex/centering_transfer.hpp"
 #include "pyfluid_amrex/relativistic_boundary.hpp"
 #include "pyfluid_amrex/spacetime_coupling.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/z4c_evolution_pointwise.hpp"
 
 namespace pyfluid_amrex {
 
@@ -50,7 +51,24 @@ void AmrSolverBase::prepare_spacetime_coupling_range(
 {
    const bool synchronous_levels = lev_end - lev_begin > 1;
    for (int lev = lev_begin; lev < lev_end; ++lev) {
-      project_spacetime_state(*state[lev]);
+      if (!spacetime_state_.evolves()
+          && spacetime_coupling_.cell_spacetime_valid(lev)) {
+         continue;
+      }
+      if (!spacetime_state_.evolves()) {
+         initialize_z4c_cell_state(
+            *spacetime_coupling_.cell_spacetime()[lev],
+            Geom(lev),
+            cfg_,
+            stage_time,
+            initial_data_provider_.view()
+         );
+         spacetime_coupling_.mark_cell_spacetime_valid(lev);
+         continue;
+      }
+      if (spacetime_state_.evolves()) {
+         project_spacetime_state(*state[lev]);
+      }
       fill_spacetime_level_boundaries(
          state,
          lev,
@@ -59,42 +77,43 @@ void AmrSolverBase::prepare_spacetime_coupling_range(
          fine_step_start,
          rk_stage
       );
-      transfer_z4c_vertex_to_cell<4, AMREX_SPACEDIM>(
-         *spacetime_coupling_.cell_spacetime()[lev], *state[lev]
+      transfer_grid_field_centering<4, AMREX_SPACEDIM>(
+         *spacetime_coupling_.cell_spacetime()[lev], *state[lev], true
       );
+      spacetime_coupling_.mark_cell_spacetime_valid(lev);
    }
 }
 
-void AmrSolverBase::apply_evolved_spacetime_fluid_boundaries_range(
+void AmrSolverBase::apply_stored_spacetime_fluid_boundaries_range(
    LevelData& state,
    int lev_begin,
    int lev_end
 )
 {
-   if (!spacetime_matter_is_coupled(cfg_)) {
+   if (!spacetime_state_.active()) {
       return;
    }
    for (int lev = lev_begin; lev < lev_end; ++lev) {
       if (physics_system_ == PhysicalSystem::RHD) {
          const int eos_method = eos_method_code(cfg_);
          if (eos_method == EOSPolytrope) {
-            apply_evolved_metric_state_boundary<PhysicalSystem::RHD, EOSPolytrope>(
+            apply_stored_metric_state_boundary<PhysicalSystem::RHD, EOSPolytrope>(
                *state[lev], Geom(lev), boundary_data_, eos_params(cfg_),
                *spacetime_coupling_.cell_spacetime()[lev]
             );
          } else if (eos_method == EOSHybridPolytrope) {
-            apply_evolved_metric_state_boundary<PhysicalSystem::RHD, EOSHybridPolytrope>(
+            apply_stored_metric_state_boundary<PhysicalSystem::RHD, EOSHybridPolytrope>(
                *state[lev], Geom(lev), boundary_data_, eos_params(cfg_),
                *spacetime_coupling_.cell_spacetime()[lev]
             );
          } else {
-            apply_evolved_metric_state_boundary<PhysicalSystem::RHD, EOSIdealGas>(
+            apply_stored_metric_state_boundary<PhysicalSystem::RHD, EOSIdealGas>(
                *state[lev], Geom(lev), boundary_data_, eos_params(cfg_),
                *spacetime_coupling_.cell_spacetime()[lev]
             );
          }
       } else if (physics_system_ == PhysicalSystem::RMHD) {
-         apply_evolved_metric_state_boundary<PhysicalSystem::RMHD, EOSIdealGas>(
+         apply_stored_metric_state_boundary<PhysicalSystem::RMHD, EOSIdealGas>(
             *state[lev],
             Geom(lev),
             boundary_data_,
@@ -105,11 +124,27 @@ void AmrSolverBase::apply_evolved_spacetime_fluid_boundaries_range(
    }
 }
 
+void AmrSolverBase::refresh_stored_spacetime_fluid_boundary(
+   int lev,
+   amrex::Real time
+)
+{
+   if (!spacetime_state_.active()) {
+      return;
+   }
+   prepare_spacetime_coupling_range(
+      spacetime_state_.state(), lev, lev + 1, time, -1.0, 0
+   );
+   apply_stored_spacetime_fluid_boundaries_range(
+      fluid_state_.state(), lev, lev + 1
+   );
+}
+
 void AmrSolverBase::fill_spacetime_matter_range(int lev_begin, int lev_end)
 {
    for (int lev = lev_begin; lev < lev_end; ++lev) {
       amrex::MultiFab& vertex_matter = *spacetime_coupling_.vertex_matter()[lev];
-      if (!spacetime_matter_is_coupled(cfg_)) {
+      if (!spacetime_includes_matter(cfg_)) {
          vertex_matter.setVal(0.0);
          continue;
       }
@@ -142,7 +177,7 @@ void AmrSolverBase::fill_spacetime_matter_range(int lev_begin, int lev_end)
       } else {
          amrex::Abort("evolved spacetime matter coupling requires RHD or RMHD");
       }
-      transfer_matter_cell_to_vertex<4, AMREX_SPACEDIM>(
+      transfer_grid_field_centering<4, AMREX_SPACEDIM>(
          vertex_matter, cell_matter
       );
    }

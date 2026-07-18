@@ -4,12 +4,11 @@
 #include <AMReX_MultiFab.H>
 
 #include "pyfluid_amrex/eos.hpp"
-#include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
-#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/sources.hpp"
+#include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
-#include "pyfluid_amrex/rhd_system.hpp"
-#include "pyfluid_amrex/rmhd_system.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/relativistic_primitive.hpp"
+#include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
 
@@ -58,32 +57,6 @@ EulerianMatter load_eulerian_matter(
    };
 }
 
-template <int Order, int Dim>
-inline void transfer_z4c_vertex_to_cell(
-   amrex::MultiFab& cell_state,
-   amrex::MultiFab const& vertex_state
-)
-{
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-   for (amrex::MFIter mfi(cell_state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box box = mfi.growntilebox();
-      const auto source = vertex_state.const_array(mfi);
-      const auto destination = cell_state.array(mfi);
-      amrex::ParallelFor(
-         box,
-         static_cast<int>(Z4C_NUM_COMPONENTS),
-         [=] AMREX_GPU_DEVICE(int i, int j, int k, int component) noexcept {
-            destination(i, j, k, component) = generated::vertex_to_cell<
-               Order,
-               Dim
-            >(source, i, j, k, component);
-         }
-      );
-   }
-}
-
 template <PhysicalSystem System, int EOSMethod>
 inline void fill_eulerian_matter_cells(
    amrex::MultiFab& cell_matter,
@@ -127,32 +100,6 @@ inline void fill_eulerian_matter_cells(
             );
          }
       });
-   }
-}
-
-template <int Order, int Dim>
-inline void transfer_matter_cell_to_vertex(
-   amrex::MultiFab& vertex_matter,
-   amrex::MultiFab const& cell_matter
-)
-{
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-   for (amrex::MFIter mfi(vertex_matter, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box box = mfi.tilebox();
-      const auto source = cell_matter.const_array(mfi);
-      const auto destination = vertex_matter.array(mfi);
-      amrex::ParallelFor(
-         box,
-         static_cast<int>(EULERIAN_MATTER_NUM_COMPONENTS),
-         [=] AMREX_GPU_DEVICE(int i, int j, int k, int component) noexcept {
-            destination(i, j, k, component) = generated::cell_to_vertex<
-               Order,
-               Dim
-            >(source, i, j, k, component);
-         }
-      );
    }
 }
 

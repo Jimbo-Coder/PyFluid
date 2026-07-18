@@ -11,7 +11,8 @@ namespace pyfluid_amrex {
 void EvolutionSectorStorage::configure(
    GridFieldSetInfo const& field_set,
    int num_levels,
-   int state_ghost_width
+   int state_ghost_width,
+   bool evolves
 )
 {
    if (field_set.sector == EvolutionSector::None || field_set.fields.empty()) {
@@ -51,6 +52,7 @@ void EvolutionSectorStorage::configure(
    num_components_ = component_count;
    ghost_width_ = state_ghost_width >= 0 ? state_ghost_width : descriptor_ghost_width;
    active_ = true;
+   evolves_ = evolves;
 
    state_.resize(num_levels);
    old_state_.resize(num_levels);
@@ -71,6 +73,11 @@ void EvolutionSectorStorage::configure(
 bool EvolutionSectorStorage::active() const noexcept
 {
    return active_;
+}
+
+bool EvolutionSectorStorage::evolves() const noexcept
+{
+   return evolves_;
 }
 
 EvolutionSector EvolutionSectorStorage::sector() const noexcept
@@ -102,6 +109,9 @@ EvolutionSectorStorage::LevelData& EvolutionSectorStorage::stage(
    EvolutionStageSlot slot
 ) noexcept
 {
+   if (!evolves_) {
+      return state_;
+   }
    switch (slot) {
    case EvolutionStageSlot::State:
       return state_;
@@ -118,6 +128,9 @@ EvolutionSectorStorage::LevelData const& EvolutionSectorStorage::stage(
    EvolutionStageSlot slot
 ) const noexcept
 {
+   if (!evolves_) {
+      return state_;
+   }
    switch (slot) {
    case EvolutionStageSlot::State:
       return state_;
@@ -144,7 +157,21 @@ void EvolutionSectorStorage::allocate_level(
 
    amrex::BoxArray boxes = amrex::convert(cell_boxes, grid_field_index_type(centering_));
    state_[level] = std::make_unique<amrex::MultiFab>(boxes, distribution, num_components_, ghost_width_);
-   old_state_[level] = std::make_unique<amrex::MultiFab>(boxes, distribution, num_components_, ghost_width_);
+   if (!evolves_) {
+      old_state_[level].reset();
+      source_state_[level].reset();
+      rk4_coarse_stage_state_[level].reset();
+      next_[level].reset();
+      scratch_[level].reset();
+      rhs_[level].reset();
+      for (LevelData& stage : rk4_rhs_stages_) {
+         stage[level].reset();
+      }
+      return;
+   }
+   old_state_[level] = std::make_unique<amrex::MultiFab>(
+      boxes, distribution, num_components_, ghost_width_
+   );
    next_[level] = std::make_unique<amrex::MultiFab>(boxes, distribution, num_components_, ghost_width_);
    scratch_[level] = std::make_unique<amrex::MultiFab>(boxes, distribution, num_components_, ghost_width_);
    rhs_[level] = std::make_unique<amrex::MultiFab>(boxes, distribution, num_components_, 0);

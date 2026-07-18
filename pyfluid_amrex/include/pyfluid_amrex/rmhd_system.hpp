@@ -1,11 +1,12 @@
 #pragma once
 
 #include "pyfluid_amrex/eos.hpp"
-#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/flux.hpp"
 #include "pyfluid_amrex/kernels_generated/riemann_ops.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
-#include "pyfluid_amrex/reconstruction.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/reconstruction/scalar.hpp"
+#include "pyfluid_amrex/relativistic_primitive.hpp"
 #include "pyfluid_amrex/rhd_system.hpp"
 #include "pyfluid_amrex/state.hpp"
 
@@ -18,30 +19,6 @@ struct RMHDPrimitiveFaceStates {
    RMHDPrimitive left;
    RMHDPrimitive right;
 };
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RMHDPrimitive rmhd_primitive_at(
-   amrex::Array4<amrex::Real const> const& primitive,
-   int i,
-   int j,
-   int k,
-   const EOSParams& eos
-) noexcept
-{
-   const amrex::Real rho = primitive(i, j, k, RHO);
-   const amrex::Real pressure = primitive(i, j, k, ENERGY);
-   return {
-      rho,
-      pressure / ((eos.gamma - 1.0) * rho),
-      pressure,
-      primitive(i, j, k, MOM1),
-      primitive(i, j, k, MOM2),
-      primitive(i, j, k, MOM3),
-      primitive(i, j, k, B1),
-      primitive(i, j, k, B2),
-      primitive(i, j, k, B3),
-   };
-}
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDPrimitive admissibility_limit_rmhd_primitive(
@@ -331,7 +308,7 @@ inline void fill_rmhd_flux_direction(
             --kl;
          }
 #endif
-         const SpacetimeMetric metric = evolved_spacetime_metric_at_face<
+         const SpacetimeMetric metric = stored_spacetime_metric_at_face<
             4,
             Direction
          >(spacetime, i, j, k);

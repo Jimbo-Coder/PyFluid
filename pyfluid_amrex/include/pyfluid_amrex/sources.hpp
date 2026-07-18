@@ -13,7 +13,7 @@
 #include "pyfluid_amrex/coordinate_locations.hpp"
 #include "pyfluid_amrex/gravity.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
-#include "pyfluid_amrex/rhs.hpp"
+#include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {

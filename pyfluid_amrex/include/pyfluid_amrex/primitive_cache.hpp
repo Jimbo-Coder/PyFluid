@@ -8,12 +8,41 @@
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
+#include "pyfluid_amrex/relativistic_atmosphere.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/z4c_state_access.hpp"
 #include "pyfluid_amrex/state.hpp"
 
+#include <type_traits>
+
 namespace pyfluid_amrex {
+
+template <int EOSMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void store_rhd_primitive_cache_cell(
+   amrex::Array4<amrex::Real> const& state,
+   amrex::Array4<amrex::Real> const& primitive,
+   int i,
+   int j,
+   int k,
+   const EOSParams& eos,
+   const SpacetimeMetric& metric
+) noexcept
+{
+   const RHDRecoveryResult recovered =
+      recover_relativistic_primitive_with_atmosphere<PhysicalSystem::RHD, EOSMethod>(
+         state, i, j, k, eos, metric
+      );
+   const amrex::Real invalid = std::numeric_limits<amrex::Real>::quiet_NaN();
+   const RHDPrimitive& value = recovered.primitive;
+   const bool success = recovered.attempt.status == C2PStatus::Success;
+   primitive(i, j, k, RHO) = success ? value.rho : invalid;
+   primitive(i, j, k, MOM1) = success ? value.v1 : invalid;
+   primitive(i, j, k, MOM2) = success ? value.v2 : invalid;
+   primitive(i, j, k, MOM3) = success ? value.v3 : invalid;
+   primitive(i, j, k, ENERGY) = success ? value.pressure : invalid;
+}
 
 template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -40,10 +69,10 @@ void store_rhd_primitive_cache_cell(
    primitive(i, j, k, ENERGY) = success ? value.pressure : invalid;
 }
 
-template <int EOSMethod>
+template <int EOSMethod, typename StateMultiFab>
 inline void fill_rhd_primitive_cache(
    amrex::MultiFab& primitive,
-   const amrex::MultiFab& state,
+   StateMultiFab& state,
    const EOSParams& eos,
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
@@ -57,7 +86,13 @@ inline void fill_rhd_primitive_cache(
 #endif
    for (amrex::MFIter mfi(primitive, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& box = mfi.growntilebox();
-      const auto conserved = state.const_array(mfi);
+      const auto conserved = [&]() {
+         if constexpr (std::is_const_v<StateMultiFab>) {
+            return state.const_array(mfi);
+         } else {
+            return state.array(mfi);
+         }
+      }();
       const auto cached = primitive.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const FixedSpacetimeGeometry local_geometry =
@@ -71,10 +106,10 @@ inline void fill_rhd_primitive_cache(
    }
 }
 
-template <int EOSMethod>
+template <int EOSMethod, typename StateMultiFab>
 inline void fill_rhd_primitive_cache(
    amrex::MultiFab& primitive,
-   const amrex::MultiFab& state,
+   StateMultiFab& state,
    const EOSParams& eos,
    const amrex::MultiFab& cell_spacetime
 )
@@ -84,7 +119,13 @@ inline void fill_rhd_primitive_cache(
 #endif
    for (amrex::MFIter mfi(primitive, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& box = mfi.growntilebox();
-      const auto conserved = state.const_array(mfi);
+      const auto conserved = [&]() {
+         if constexpr (std::is_const_v<StateMultiFab>) {
+            return state.const_array(mfi);
+         } else {
+            return state.array(mfi);
+         }
+      }();
       const auto cached = primitive.array(mfi);
       const auto spacetime = cell_spacetime.const_array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -99,6 +140,34 @@ inline void fill_rhd_primitive_cache(
          );
       });
    }
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void store_rmhd_primitive_cache_cell(
+   amrex::Array4<amrex::Real> const& state,
+   amrex::Array4<amrex::Real> const& primitive,
+   int i,
+   int j,
+   int k,
+   const EOSParams& eos,
+   const SpacetimeMetric& metric
+) noexcept
+{
+   const RMHDRecoveryResult recovered =
+      recover_relativistic_primitive_with_atmosphere<PhysicalSystem::RMHD, EOSIdealGas>(
+         state, i, j, k, eos, metric
+      );
+   const amrex::Real invalid = std::numeric_limits<amrex::Real>::quiet_NaN();
+   const RMHDPrimitive& value = recovered.primitive;
+   const bool success = recovered.succeeded();
+   primitive(i, j, k, RHO) = success ? value.rho : invalid;
+   primitive(i, j, k, MOM1) = success ? value.v1 : invalid;
+   primitive(i, j, k, MOM2) = success ? value.v2 : invalid;
+   primitive(i, j, k, MOM3) = success ? value.v3 : invalid;
+   primitive(i, j, k, ENERGY) = success ? value.pressure : invalid;
+   primitive(i, j, k, B1) = success ? value.b1 : invalid;
+   primitive(i, j, k, B2) = success ? value.b2 : invalid;
+   primitive(i, j, k, B3) = success ? value.b3 : invalid;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -128,9 +197,10 @@ void store_rmhd_primitive_cache_cell(
    primitive(i, j, k, B3) = success ? value.b3 : invalid;
 }
 
+template <typename StateMultiFab>
 inline void fill_rmhd_primitive_cache(
    amrex::MultiFab& primitive,
-   const amrex::MultiFab& state,
+   StateMultiFab& state,
    const EOSParams& eos,
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
@@ -144,7 +214,13 @@ inline void fill_rmhd_primitive_cache(
 #endif
    for (amrex::MFIter mfi(primitive, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& box = mfi.growntilebox();
-      const auto conserved = state.const_array(mfi);
+      const auto conserved = [&]() {
+         if constexpr (std::is_const_v<StateMultiFab>) {
+            return state.const_array(mfi);
+         } else {
+            return state.array(mfi);
+         }
+      }();
       const auto cached = primitive.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const FixedSpacetimeGeometry local_geometry =
@@ -158,9 +234,10 @@ inline void fill_rmhd_primitive_cache(
    }
 }
 
+template <typename StateMultiFab>
 inline void fill_rmhd_primitive_cache(
    amrex::MultiFab& primitive,
-   const amrex::MultiFab& state,
+   StateMultiFab& state,
    const EOSParams& eos,
    const amrex::MultiFab& cell_spacetime
 )
@@ -170,7 +247,13 @@ inline void fill_rmhd_primitive_cache(
 #endif
    for (amrex::MFIter mfi(primitive, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& box = mfi.growntilebox();
-      const auto conserved = state.const_array(mfi);
+      const auto conserved = [&]() {
+         if constexpr (std::is_const_v<StateMultiFab>) {
+            return state.const_array(mfi);
+         } else {
+            return state.array(mfi);
+         }
+      }();
       const auto cached = primitive.array(mfi);
       const auto spacetime = cell_spacetime.const_array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -240,9 +323,10 @@ inline void fill_primitive_cache(amrex::MultiFab& primitive, amrex::MultiFab con
    }
 }
 
+template <typename StateMultiFab>
 inline void fill_base_primitive_cache_runtime(
    amrex::MultiFab& primitive,
-   const amrex::MultiFab& state,
+   StateMultiFab& state,
    const EOSParams& eos,
    int eos_method,
    PhysicalSystem system,
@@ -293,52 +377,6 @@ inline void fill_base_primitive_cache_runtime(
       return;
    default:
       amrex::Abort("invalid EOS method in primitive-cache dispatch");
-   }
-}
-
-template <int NComp>
-inline void transform_primitive_vectors(
-   amrex::MultiFab& primitive,
-   amrex::Geometry const& geometry,
-   int coordinate,
-   MeshAxes const& axes,
-   bool to_cartesian
-)
-{
-   if (coordinate == MeshCartesian) {
-      return;
-   }
-   const auto problo = geometry.ProbLoArray();
-   const auto dx = geometry.CellSizeArray();
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-   {
-   for (amrex::MFIter mfi(primitive); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.fabbox();
-      const auto values = primitive.array(mfi);
-      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const auto q = mesh_coordinate_triplet_at_location(
-            coordinate, axes, problo, dx, i, j, k, false, false, false
-         );
-         StateVector3 velocity{values(i, j, k, MOM1), values(i, j, k, MOM2), values(i, j, k, MOM3)};
-         velocity = to_cartesian
-            ? mesh_basis_vector_to_cartesian(coordinate, axes, q, velocity)
-            : cartesian_vector_to_mesh_basis(coordinate, axes, q, velocity);
-         values(i, j, k, MOM1) = velocity.x;
-         values(i, j, k, MOM2) = velocity.y;
-         values(i, j, k, MOM3) = velocity.z;
-         if constexpr (has_mhd_components<NComp>()) {
-            StateVector3 magnetic{values(i, j, k, B1), values(i, j, k, B2), values(i, j, k, B3)};
-            magnetic = to_cartesian
-               ? mesh_basis_vector_to_cartesian(coordinate, axes, q, magnetic)
-               : cartesian_vector_to_mesh_basis(coordinate, axes, q, magnetic);
-            values(i, j, k, B1) = magnetic.x;
-            values(i, j, k, B2) = magnetic.y;
-            values(i, j, k, B3) = magnetic.z;
-         }
-      });
-   }
    }
 }
 

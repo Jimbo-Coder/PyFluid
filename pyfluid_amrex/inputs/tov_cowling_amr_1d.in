@@ -1,0 +1,50 @@
+pyfluid.run_name = tov_cowling_amr_1d
+pyfluid.output_dir = runs/current/tov/tov_cowling_amr_1d
+pyfluid.validation_policy = smoke
+
+geometry.prob_lo = -20.0
+geometry.prob_hi = 20.0
+geometry.is_periodic = 0
+
+amr.n_cell = 128
+amr.max_level = 3
+amr.ref_ratio = 2 2 2
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+amr.tag_metric = none
+amr.initial_refine = box
+amr.initial_refine_levels = 3
+amr.initial_refine_fixed_levels = 3
+amr.initial_refine_box_lo = -12.0
+amr.initial_refine_box_hi = 12.0
+
+spacetime.evolution = fixed
+spacetime.matter_coupling = coupled
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.polytropic_k = 100.0
+pyfluid.polytropic_gamma = 2.0
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = tov
+pyfluid.tov_central_density = 1.28e-3
+pyfluid.tov_radial_step = 0.002
+pyfluid.tov_radial_points = 16384
+pyfluid.rho_floor = 1.0e-10
+pyfluid.pressure_floor = 1.0e-14
+
+pyfluid.final_time = -1
+pyfluid.max_step = 4
+pyfluid.ng = 3
+pyfluid.cfl = 0.25
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+pyfluid.bc = outflow
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 4
+pyfluid.checkpoint_int = 2

@@ -1002,7 +1002,7 @@ def z4c_gamma_driver_shift_rhs_kernel() -> StructKernel:
    )
 
 
-def z4c_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+def z4c_geometry_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
    return (
       z4c_conformal_metric_kernel(),
       z4c_spacetime_metric_kernel(),
@@ -1010,11 +1010,39 @@ def z4c_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
       z4c_algebraic_projection_kernel(),
       z4c_connections_kernel(),
       z4c_diagnostic_geometry_kernel(),
-      z4c_constraints_kernel(),
       z4c_evolution_geometry_kernel(),
-      z4c_geometric_rhs_kernel(),
+   )
+
+
+def z4c_constraint_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+   return (z4c_constraints_kernel(),)
+
+
+def z4c_evolution_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+   return (z4c_geometric_rhs_kernel(),)
+
+
+def z4c_gauge_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+   return (
       z4c_harmonic_lapse_rhs_kernel(),
       z4c_one_plus_log_lapse_rhs_kernel(),
       z4c_slow_start_lapse_rhs_kernel(),
       z4c_gamma_driver_shift_rhs_kernel(),
+   )
+
+
+def z4c_kernel_groups() -> dict[str, tuple[ScalarKernel | StructKernel, ...]]:
+   return {
+      "geometry": z4c_geometry_kernels(),
+      "constraints": z4c_constraint_kernels(),
+      "gauge": z4c_gauge_kernels(),
+      "evolution": z4c_evolution_kernels(),
+   }
+
+
+def z4c_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+   return tuple(
+      kernel
+      for kernels in z4c_kernel_groups().values()
+      for kernel in kernels
    )

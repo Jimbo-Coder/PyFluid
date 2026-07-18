@@ -14,12 +14,10 @@
 #include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/patch_domain.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
-#include "pyfluid_amrex/primitive_cache.hpp"
 #include "pyfluid_amrex/riemann.hpp"
 #include "pyfluid_amrex/rhd_system.hpp"
 #include "pyfluid_amrex/rmhd_system.hpp"
 #include "pyfluid_amrex/mapped_patch_interfaces.hpp"
-#include "pyfluid_amrex/signal_speed.hpp"
 #include "pyfluid_amrex/solid_geometry.hpp"
 #include "pyfluid_amrex/solid_wall_power.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -275,81 +273,6 @@ inline void fill_hydro_flux_direction_mapped(
       });
    }
    }
-}
-
-template <int NComp, int Direction>
-inline void apply_patch_union_hydro_wall_flux_direction(
-   std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
-   amrex::MultiFab const& primitive,
-   amrex::Geometry const& geom,
-   PatchDomainBoxes const& patch_domain
-)
-{
-   amrex::MultiFab& flux = *fluxes[Direction];
-   const amrex::Box domain = geom.Domain();
-   const auto domain_lo = amrex::lbound(domain);
-   const auto domain_hi = amrex::ubound(domain);
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-   {
-   for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
-      const auto p = primitive.const_array(mfi);
-      const auto f = flux.array(mfi);
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const PatchDomainFace face = patch_domain_face(
-            patch_domain,
-            domain_lo,
-            domain_hi,
-            Direction,
-            i,
-            j,
-            k
-         );
-         if (!patch_domain_face_is_wall(face)) {
-            return;
-         }
-
-         const int fi = face.left_inside_patch_domain ? face.li : face.ri;
-         const int fj = face.left_inside_patch_domain ? face.lj : face.rj;
-         const int fk = face.left_inside_patch_domain ? face.lk : face.rk;
-         for (int q = 0; q < NComp; ++q) {
-            f(i, j, k, q) = 0.0;
-         }
-         if constexpr (Direction == 0) {
-            f(i, j, k, MOM1) = p(fi, fj, fk, ENERGY);
-         }
-#if (AMREX_SPACEDIM >= 2)
-         else if constexpr (Direction == 1) {
-            f(i, j, k, MOM2) = p(fi, fj, fk, ENERGY);
-         }
-#endif
-#if (AMREX_SPACEDIM == 3)
-         else {
-            f(i, j, k, MOM3) = p(fi, fj, fk, ENERGY);
-         }
-#endif
-      });
-   }
-   }
-}
-
-template <int NComp>
-inline void apply_patch_union_hydro_wall_fluxes(
-   std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
-   amrex::MultiFab const& primitive,
-   amrex::Geometry const& geom,
-   PatchDomainBoxes const& patch_domain
-)
-{
-   apply_patch_union_hydro_wall_flux_direction<NComp, 0>(fluxes, primitive, geom, patch_domain);
-#if (AMREX_SPACEDIM >= 2)
-   apply_patch_union_hydro_wall_flux_direction<NComp, 1>(fluxes, primitive, geom, patch_domain);
-#endif
-#if (AMREX_SPACEDIM == 3)
-   apply_patch_union_hydro_wall_flux_direction<NComp, 2>(fluxes, primitive, geom, patch_domain);
-#endif
 }
 
 template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
@@ -1071,15 +994,15 @@ inline void fill_flux_direction_for_riemann(
    amrex::Real time = 0.0,
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* layout = nullptr,
-   amrex::MultiFab const* evolved_spacetime = nullptr
+   amrex::MultiFab const* stored_spacetime = nullptr
 )
 {
    const EOSParams eos = eos_params(cfg);
    if (physical_system(cfg) == PhysicalSystem::RMHD) {
       AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RMHD fluxes require level geometry");
-      if (evolved_spacetime != nullptr) {
+      if (stored_spacetime != nullptr) {
          fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
-            fluxes, primitive, eos, riemann_method, *evolved_spacetime
+            fluxes, primitive, eos, riemann_method, *stored_spacetime
          );
       } else {
          fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
@@ -1091,9 +1014,9 @@ inline void fill_flux_direction_for_riemann(
    }
    if (physical_system(cfg) == PhysicalSystem::RHD) {
       AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RHD fluxes require level geometry");
-      if (evolved_spacetime != nullptr) {
+      if (stored_spacetime != nullptr) {
          fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
-            fluxes, primitive, eos, riemann_method, *evolved_spacetime
+            fluxes, primitive, eos, riemann_method, *stored_spacetime
          );
       } else {
          fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
@@ -1289,14 +1212,14 @@ inline void fill_flux_direction_runtime(
    amrex::Real time = 0.0,
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* layout = nullptr,
-   amrex::MultiFab const* evolved_spacetime = nullptr
+   amrex::MultiFab const* stored_spacetime = nullptr
 )
 {
    switch (recon_method) {
    case ReconTENO5Char:
 #if PYFLUID_AMREX_ENABLE_RECON_TENO5_CHAR
 	      fill_flux_direction_for_riemann<NComp, ReconTENO5Char, Direction, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, evolved_spacetime
+	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, stored_spacetime
 	      );
       return;
 #else
@@ -1306,7 +1229,7 @@ inline void fill_flux_direction_runtime(
    case ReconTENO5:
 #if PYFLUID_AMREX_ENABLE_RECON_TENO5
 	      fill_flux_direction_for_riemann<NComp, ReconTENO5, Direction, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, evolved_spacetime
+	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, stored_spacetime
 	      );
       return;
 #else
@@ -1316,7 +1239,7 @@ inline void fill_flux_direction_runtime(
    case ReconMP5Char:
 #if PYFLUID_AMREX_ENABLE_RECON_MP5_CHAR
 	      fill_flux_direction_for_riemann<NComp, ReconMP5Char, Direction, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, evolved_spacetime
+	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, stored_spacetime
 	      );
       return;
 #else
@@ -1326,7 +1249,7 @@ inline void fill_flux_direction_runtime(
    case ReconMP5:
 #if PYFLUID_AMREX_ENABLE_RECON_MP5
 	      fill_flux_direction_for_riemann<NComp, ReconMP5, Direction, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, evolved_spacetime
+	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, stored_spacetime
 	      );
       return;
 #else
@@ -1336,7 +1259,7 @@ inline void fill_flux_direction_runtime(
    case ReconWENOZ:
 #if PYFLUID_AMREX_ENABLE_RECON_WENOZ
 	      fill_flux_direction_for_riemann<NComp, ReconWENOZ, Direction, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, evolved_spacetime
+	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, stored_spacetime
 	      );
       return;
 #else
@@ -1346,7 +1269,7 @@ inline void fill_flux_direction_runtime(
    case ReconWENOZChar:
 #if PYFLUID_AMREX_ENABLE_RECON_WENOZ_CHAR
 	      fill_flux_direction_for_riemann<NComp, ReconWENOZChar, Direction, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, evolved_spacetime
+	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, stored_spacetime
 	      );
       return;
 #else
@@ -1356,7 +1279,7 @@ inline void fill_flux_direction_runtime(
    case ReconPWL:
 #if PYFLUID_AMREX_ENABLE_RECON_PWL
 	      fill_flux_direction_for_riemann<NComp, ReconPWL, Direction, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, evolved_spacetime
+	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, stored_spacetime
 	      );
       return;
 #else
@@ -1366,7 +1289,7 @@ inline void fill_flux_direction_runtime(
    case ReconPWC:
 #if PYFLUID_AMREX_ENABLE_RECON_PWC
 	      fill_flux_direction_for_riemann<NComp, ReconPWC, Direction, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, evolved_spacetime
+	         fluxes, primitive, cfg, riemann_method, solid_mask, geom, solid_flux_kind, time, grid_system, layout, stored_spacetime
 	      );
       return;
 #else

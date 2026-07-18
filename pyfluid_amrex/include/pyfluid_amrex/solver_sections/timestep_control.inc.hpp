@@ -3,7 +3,7 @@
 
    amrex::Real spacetime_dt_for_level(int lev)
    {
-      if (!spacetime_state_.active()) {
+      if (!spacetime_state_.evolves()) {
          return std::numeric_limits<amrex::Real>::max();
       }
       amrex::Real gauge_speed = 1.0;
@@ -15,42 +15,12 @@
       if (z4c_shift_gauge(cfg_) == Z4cShiftGauge::GammaDriver) {
          gauge_speed = amrex::max(gauge_speed, 2.0);
       }
-      const auto spacing = Geom(lev).CellSizeArray();
       amrex::MultiFab const& cell_spacetime =
          *spacetime_coupling_.cell_spacetime()[lev];
       amrex::MultiFab& frequency = *frequency_[lev];
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-      for (amrex::MFIter mfi(frequency, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-         const amrex::Box box = mfi.tilebox();
-         const auto spacetime = cell_spacetime.const_array(mfi);
-         const auto output = frequency.array(mfi);
-         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const SpacetimeMetric metric = generated::z4c_spacetime_metric(
-               load_z4c_state(spacetime, i, j, k)
-            );
-            amrex::Real value = (
-               amrex::Math::abs(metric.shift1)
-               + gauge_speed * metric.lapse * std::sqrt(metric.inv_gamma11)
-            ) / spacing[0];
-#if (AMREX_SPACEDIM >= 2)
-            value += (
-               amrex::Math::abs(metric.shift2)
-               + gauge_speed * metric.lapse * std::sqrt(metric.inv_gamma22)
-            ) / spacing[1];
-#endif
-#if (AMREX_SPACEDIM == 3)
-            value += (
-               amrex::Math::abs(metric.shift3)
-               + gauge_speed * metric.lapse * std::sqrt(metric.inv_gamma33)
-            ) / spacing[2];
-#endif
-            output(i, j, k, 0) = value;
-         });
-      }
-      const amrex::Real max_frequency = frequency.max(0);
-      return cfg_.cfl / max_frequency;
+      return compute_spacetime_dt(
+         frequency, cell_spacetime, Geom(lev), cfg_.cfl, gauge_speed
+      );
    }
 
    template <int NComp, int EOSMethod, int DiffusionMethod>
@@ -69,7 +39,15 @@
    template <int NComp, int EOSMethod, int DiffusionMethod>
    amrex::Real adaptive_dt_for_level(int lev)
    {
-      amrex::MultiFab const* evolved_spacetime = nullptr;
+      const SignalSpeedLaunch signal_launch{
+         *frequency_[lev],
+         *fluid_state_.state()[lev],
+         cfg_,
+         NComp,
+         EOSMethod,
+         DiffusionMethod,
+      };
+      amrex::MultiFab const* stored_spacetime = nullptr;
       if (spacetime_state_.active()) {
          prepare_spacetime_coupling_range(
             spacetime_state_.state(),
@@ -79,9 +57,7 @@
             -1.0,
             0
          );
-         if (spacetime_matter_is_coupled(cfg_)) {
-            evolved_spacetime = spacetime_coupling_.cell_spacetime()[lev].get();
-         }
+         stored_spacetime = spacetime_coupling_.cell_spacetime()[lev].get();
       }
       const amrex::Real spacetime_dt = spacetime_dt_for_level(lev);
       if (solid_active(lev) && !has_mhd_components<NComp>()) {
@@ -89,14 +65,12 @@
          return amrex::min(
             spacetime_dt,
             amrex::min(
-               adaptive_dt_cutcell_masked<NComp, EOSMethod, DiffusionMethod>(
-                  *frequency_[lev],
-                  *fluid_state_.state()[lev],
+               compute_cutcell_adaptive_dt(
+                  signal_launch,
                   *solid_mask_[lev],
                   *solid_volume_fraction_[lev],
                   solid_apertures,
                   Geom(lev),
-                  cfg_,
                   &solid_valid_kind_[lev]
                ),
                solid_geometry_motion_dt(lev)
@@ -110,10 +84,8 @@
             return amrex::min(
                spacetime_dt,
                amrex::min(
-                  adaptive_dt_mapped_hydro<NComp, EOSMethod, DiffusionMethod>(
-                     *frequency_[lev],
-                     *fluid_state_.state()[lev],
-                     cfg_,
+                  compute_mapped_hydro_adaptive_dt(
+                     signal_launch,
                      patch_grid_system,
                      patch_layout
                   ),
@@ -125,9 +97,8 @@
       return amrex::min(
          spacetime_dt,
          amrex::min(
-            adaptive_dt<NComp, EOSMethod, DiffusionMethod>(
-               *frequency_[lev], *fluid_state_.state()[lev], Geom(lev), cfg_,
-               level_times_[lev], evolved_spacetime
+            compute_adaptive_dt(
+               signal_launch, Geom(lev), level_times_[lev], stored_spacetime
             ),
             solid_geometry_motion_dt(lev)
          )

@@ -1,62 +1,33 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // Top-level branch dispatch and the main synchronized/subcycled evolution loop.
 
-   void dispatch_evolve()
-   {
-      if (physics_system_ == PhysicalSystem::RMHD) {
-#if PYFLUID_AMREX_ENABLE_MHD
-         if (ct_enabled(cfg_)) {
-#if PYFLUID_AMREX_ENABLE_CT
-            dispatch_evolve_timestep<NVAR_MHD, true, EOSIdealGas>();
-#else
-            abort_disabled_build_feature("CT", "on");
-#endif
-         } else {
-            dispatch_evolve_timestep<NVAR_MHD, false, EOSIdealGas>();
-         }
-#else
-         abort_disabled_build_feature("physics", "rmhd");
-#endif
-         return;
-      }
-      if (physics_system_ == PhysicalSystem::RHD) {
-         dispatch_evolve_eos<NVAR_HYDRO, false>();
-         return;
-      }
-      if (is_mhd(cfg_)) {
-#if PYFLUID_AMREX_ENABLE_MHD
-         if (ct_enabled(cfg_)) {
-#if PYFLUID_AMREX_ENABLE_CT
-            if (cfg_.passive_scalars == 1) {
-               dispatch_evolve_eos<NVAR_MHD + 1, true>();
-            } else {
-               dispatch_evolve_eos<NVAR_MHD, true>();
-            }
-#else
-            abort_disabled_build_feature("CT", "on");
-#endif
-         } else {
-            if (cfg_.passive_scalars == 1) {
-               dispatch_evolve_eos<NVAR_MHD + 1, false>();
-            } else {
-               dispatch_evolve_eos<NVAR_MHD, false>();
-            }
-         }
-#else
-         abort_disabled_build_feature("physics", "mhd");
-#endif
-      } else {
-#if PYFLUID_AMREX_ENABLE_HYDRO
-         if (cfg_.passive_scalars == 1) {
-            dispatch_evolve_eos<NVAR_HYDRO + 1, false>();
-         } else {
-            dispatch_evolve_eos<NVAR_HYDRO, false>();
-         }
-#else
-         abort_disabled_build_feature("physics", "hydro");
-#endif
-      }
-   }
+   using EvolutionTimestepFunction = amrex::Real (AmrSolver::*)();
+   using SingleRateAdvanceFunction = bool (AmrSolver::*)(amrex::Real, amrex::Real);
+   using CtAdvanceFunction = DiffusionStats (AmrSolver::*)(amrex::Real);
+   using DiffusionAdvanceFunction = DiffusionStats (
+      AmrSolver::*)(amrex::Real, amrex::Real, RunConfig const&
+   );
+   using SubcycledAdvanceFunction = DiffusionStats (
+      AmrSolver::*)(amrex::Real, amrex::Real&, amrex::Real&
+   );
+   using EvolutionBoundaryFillFunction = void (
+      AmrSolver::*)(LevelData&, amrex::Real
+   );
+   using EvolutionRegridFunction = bool (
+      AmrSolver::*)(amrex::Real, int, int
+   );
+
+   struct EvolutionOperations {
+      bool subcycling = false;
+      EvolutionTimestepFunction compute_timestep = nullptr;
+      SingleRateAdvanceFunction advance_single_rate = nullptr;
+      CtAdvanceFunction advance_ct = nullptr;
+      DiffusionAdvanceFunction advance_diffusion = nullptr;
+      CtAdvanceFunction advance_inactive_ct_resistivity = nullptr;
+      SubcycledAdvanceFunction advance_subcycled = nullptr;
+      EvolutionBoundaryFillFunction fill_boundaries = nullptr;
+      EvolutionRegridFunction regrid = nullptr;
+   };
 
    template <int NComp, bool CTEnabled>
    void dispatch_evolve_eos()
@@ -135,17 +106,69 @@
    {
       if (cfg_.subcycling == "on" && maxLevel() > 0) {
 #if PYFLUID_AMREX_ENABLE_SUBCYCLING_ON
-         evolve_impl<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod, true>();
+         evolve_impl<NComp, CTEnabled, EOSMethod>(
+            make_evolution_operations<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod, true>()
+         );
 #else
          abort_disabled_build_feature("subcycling", "on");
 #endif
       } else {
 #if PYFLUID_AMREX_ENABLE_SUBCYCLING_OFF
-         evolve_impl<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod, false>();
+         evolve_impl<NComp, CTEnabled, EOSMethod>(
+            make_evolution_operations<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod, false>()
+         );
 #else
          abort_disabled_build_feature("subcycling", "off");
 #endif
       }
+   }
+
+   template <int NComp, int EOSMethod, int DiffusionMethod, bool SubcyclingEnabled>
+   amrex::Real compute_evolution_timestep()
+   {
+      if constexpr (SubcyclingEnabled) {
+         return adaptive_base_dt_for_subcycling<NComp, EOSMethod, DiffusionMethod>();
+      }
+      return adaptive_dt_all_levels<NComp, EOSMethod, DiffusionMethod>();
+   }
+
+   template <
+      int NComp,
+      bool CTEnabled,
+      int TimeMethod,
+      int DiffusionMethod,
+      int EOSMethod,
+      bool SubcyclingEnabled
+   >
+   EvolutionOperations make_evolution_operations()
+   {
+      EvolutionOperations operations;
+      operations.subcycling = SubcyclingEnabled;
+      operations.compute_timestep =
+         &AmrSolver::compute_evolution_timestep<NComp, EOSMethod, DiffusionMethod, SubcyclingEnabled>;
+      operations.fill_boundaries = &AmrSolver::fill_all_level_boundaries<SubcyclingEnabled>;
+      operations.regrid = &AmrSolver::regrid_hierarchy<SubcyclingEnabled>;
+      if constexpr (SubcyclingEnabled) {
+         operations.advance_subcycled = &AmrSolver::advance_subcycled_hierarchy<
+            NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod
+         >;
+      } else {
+         operations.advance_single_rate = &AmrSolver::advance_all_levels<
+            NComp, TimeMethod, EOSMethod, !CTEnabled
+         >;
+         if constexpr (CTEnabled) {
+            operations.advance_ct = &AmrSolver::advance_ct_all_levels<DiffusionMethod>;
+         }
+         if constexpr (DiffusionMethod != DiffusionNone) {
+            operations.advance_diffusion =
+               &AmrSolver::apply_diffusion_all_levels<DiffusionMethod, NComp>;
+            if constexpr (CTEnabled) {
+               operations.advance_inactive_ct_resistivity =
+                  &AmrSolver::advance_ct_inactive_magnetic_resistivity_all_levels<DiffusionMethod>;
+            }
+         }
+      }
+      return operations;
    }
 
    void abort_disabled_build_feature(char const* kind, char const* name) const
@@ -156,14 +179,18 @@
       );
    }
 
-   template <int NComp, bool CTEnabled, int TimeMethod, int DiffusionMethod, int EOSMethod, bool SubcyclingEnabled>
-   void evolve_impl()
+   template <int NComp, bool CTEnabled, int EOSMethod>
+#if defined(__GNUC__) || defined(__clang__)
+   __attribute__((noinline))
+#endif
+   void evolve_impl(EvolutionOperations const& operations)
    {
       amrex::Real time = 0.0;
       amrex::Real dt = 0.0;
       if (cfg_.restart_file.empty()) {
          InitFromScratch(0.0);
          clip_multipatch_initial_hierarchy(0.0);
+         materialize_constraint_solved_initial_data();
       } else {
          load_checkpoint(cfg_.restart_file, time, dt);
       }
@@ -173,17 +200,17 @@
       enforce_solid_mask_nesting_from_fine();
       average_down_state();
       average_down_spacetime();
-         if constexpr (CTEnabled) {
-            if (finestLevel() > 0) {
-               average_down_face_b();
-               sync_all_cell_b_from_faces(fluid_state_.state(), false);
-            }
+      if constexpr (CTEnabled) {
+         if (finestLevel() > 0) {
+            average_down_face_b();
+            sync_all_cell_b_from_faces(fluid_state_.state(), false);
          }
+      }
       reset_barotropic_energy_all_levels<NComp, EOSMethod>();
-      fill_all_level_boundaries<SubcyclingEnabled>(fluid_state_.state(), time);
+      (this->*operations.fill_boundaries)(fluid_state_.state(), time);
       fill_all_spacetime_boundaries(spacetime_state_.state(), time);
       const int start_step = level_steps_[0];
-      debug_check_state_all_levels<NComp, EOSMethod>("initial accepted state", start_step, time, true);
+      debug_check_state_all_levels("initial accepted state", start_step, time, true);
 
       std::ofstream scalar_file;
       std::ofstream amr_level_file;
@@ -262,7 +289,11 @@
       const TemporalCadence aux_cadence{TemporalCadenceUnit::Steps, cfg_.aux_gf_int};
       const TemporalCadence checkpoint_cadence{TemporalCadenceUnit::Steps, cfg_.checkpoint_int};
 
-      auto initial = compute_current_scalars<EOSMethod>(start_step, time, dt, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, {});
+      auto initial = compute_current_scalars(
+         start_step, time, dt, 1.0, 1.0, 1.0, 1.0,
+         std::numeric_limits<amrex::Real>::quiet_NaN(), 0.0, 0.0, 0.0, {},
+         EOSMethod
+      );
       validate_scalar_health(initial);
       wall_work_reference_energy_ = initial.energy;
       conservation_ledger_.reference = {initial.mass, initial.energy};
@@ -288,6 +319,10 @@
       const amrex::Real energy0 = has_checkpoint_reference ? checkpoint_reference_energy_ : initial.energy;
       const amrex::Real gravity_total_energy0 = initial.gravity_total_energy;
       const amrex::Real passive_mass0 = initial.passive_mass;
+      const amrex::Real max_rho0 = std::isfinite(checkpoint_reference_max_rho_)
+         ? checkpoint_reference_max_rho_
+         : initial.max_rho;
+      initial.max_rho_rel_change = (initial.max_rho - max_rho0) / max_rho0;
       initial.mass_rel_drift = amrex::Math::abs(initial.mass - mass0) / amrex::max(amrex::Math::abs(mass0), 1.0);
       initial.energy_rel_drift = amrex::Math::abs(initial.energy - energy0) / amrex::max(amrex::Math::abs(energy0), 1.0);
       initial.gravity_total_energy_rel_drift = 0.0;
@@ -324,6 +359,7 @@
             checkpoint_extra_fields,
             mass0,
             energy0,
+            max_rho0,
             aligned_regrid_ticks_,
             aligned_base_regrid_tick_,
             cfg_.checkpoint_compression
@@ -340,11 +376,7 @@
          }
          refresh_solid_geometry_all_levels(time, true);
          amrex::Real stage_start = profile_begin();
-         if constexpr (SubcyclingEnabled) {
-            dt = adaptive_base_dt_for_subcycling<NComp, EOSMethod, DiffusionMethod>();
-         } else {
-            dt = adaptive_dt_all_levels<NComp, EOSMethod, DiffusionMethod>();
-         }
+         dt = (this->*operations.compute_timestep)();
          profile_end(ProfileStage::Timestep, stage_start);
          if (has_final_time) {
             dt = amrex::min(dt, cfg_.final_time - time);
@@ -353,8 +385,8 @@
          DiffusionStats diffusion;
          amrex::Real active_cell_updates_this_step = 0.0;
          amrex::Real layout_cell_updates_this_step = 0.0;
-         if constexpr (SubcyclingEnabled) {
-            diffusion = advance_subcycled_hierarchy<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod>(
+         if (operations.subcycling) {
+            diffusion = (this->*operations.advance_subcycled)(
                dt,
                active_cell_updates_this_step,
                layout_cell_updates_this_step
@@ -371,10 +403,14 @@
          } else {
             const amrex::Long layout_cells_this_step = cell_count();
             const amrex::Long active_cells_this_step = active_cell_count();
-            const bool next_state_needs_copy = advance_all_levels<NComp, TimeMethod, EOSMethod, !CTEnabled>(time, dt);
+            const bool next_state_needs_copy =
+               (this->*operations.advance_single_rate)(time, dt);
             if constexpr (CTEnabled) {
                stage_start = profile_begin();
-               diffusion = combine_diffusion_stats(diffusion, advance_ct_all_levels<DiffusionMethod>(dt));
+               diffusion = combine_diffusion_stats(
+                  diffusion,
+                  (this->*operations.advance_ct)(dt)
+               );
                profile_end(ProfileStage::CT, stage_start);
             }
             if (next_state_needs_copy) {
@@ -387,13 +423,13 @@
             } else {
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
             }
-            if constexpr (DiffusionMethod != DiffusionNone) {
+            if (operations.advance_diffusion != nullptr) {
                RunConfig viscosity_cfg = viscosity_diffusion_config();
                if (viscosity_enabled(viscosity_cfg)) {
                   stage_start = profile_begin();
                   diffusion = combine_diffusion_stats(
                      diffusion,
-                     apply_diffusion_all_levels<DiffusionMethod, NComp>(time + dt, dt, viscosity_cfg)
+                     (this->*operations.advance_diffusion)(time + dt, dt, viscosity_cfg)
                   );
                   reset_barotropic_energy_all_levels<NComp, EOSMethod>();
                   profile_end(ProfileStage::Diffusion, stage_start);
@@ -402,7 +438,7 @@
                   stage_start = profile_begin();
                   diffusion = combine_diffusion_stats(
                      diffusion,
-                     advance_ct_inactive_magnetic_resistivity_all_levels<DiffusionMethod>(dt)
+                     (this->*operations.advance_inactive_ct_resistivity)(dt)
                   );
                   reset_barotropic_energy_all_levels<NComp, EOSMethod>();
                   profile_end(ProfileStage::Diffusion, stage_start);
@@ -448,7 +484,7 @@
 
          if (will_regrid) {
             const amrex::Real regrid_start = profile_begin();
-            const bool hierarchy_changed = regrid_hierarchy<SubcyclingEnabled>(time, step);
+            const bool hierarchy_changed = (this->*operations.regrid)(time, step, 0);
             if (cfg_.regrid_mode == "aligned" && cfg_.subcycling == "on") {
                aligned_base_regrid_tick_ = aligned_regrid_ticks_;
             }
@@ -460,7 +496,7 @@
 
          if (!will_regrid && needs_fresh_state_boundaries_after_step(write_scalars, write_aux_gfs)) {
             stage_start = profile_begin();
-            fill_all_level_boundaries<SubcyclingEnabled>(fluid_state_.state(), time);
+            (this->*operations.fill_boundaries)(fluid_state_.state(), time);
             profile_end(ProfileStage::BoundaryFill, stage_start);
          }
          if constexpr (!has_mhd_components<NComp>()) {
@@ -470,7 +506,7 @@
          }
          if (cfg_.debug_check_finite || accepted_physical_check_due(current_step, false)) {
             const amrex::Real check_start = profile_begin();
-            debug_check_state_all_levels<NComp, EOSMethod>("post-step accepted state", current_step, time);
+            debug_check_state_all_levels("post-step accepted state", current_step, time);
             profile_end(ProfileStage::Diagnostics, check_start);
          }
          if (should_refresh_mhd_aux_fields(step, write_aux_gfs)) {
@@ -491,7 +527,7 @@
                ? (time - last_scalar_sim_time) / elapsed
                : 0.0;
             const amrex::Real diagnostics_start = profile_begin();
-            const auto scalars = compute_current_scalars<EOSMethod>(
+            const auto scalars = compute_current_scalars(
                step,
                time,
                dt,
@@ -499,10 +535,12 @@
                energy0,
                gravity_total_energy0,
                passive_mass0,
+               max_rho0,
                mcells_per_s,
                layout_mcells_per_s,
                sim_time_per_s,
-               diffusion
+               diffusion,
+               EOSMethod
             );
             profile_end(ProfileStage::Diagnostics, diagnostics_start);
             validate_scalar_health(scalars);
@@ -544,6 +582,7 @@
                checkpoint_extra_fields,
                mass0,
                energy0,
+               max_rho0,
                aligned_regrid_ticks_,
                aligned_base_regrid_tick_,
                cfg_.checkpoint_compression
@@ -559,7 +598,7 @@
       write_profile_detail_file(max_elapsed_wall);
       if (amrex::ParallelDescriptor::IOProcessor()) {
          if (!stream_scalars) {
-            const auto scalars = compute_current_scalars<EOSMethod>(
+            const auto scalars = compute_current_scalars(
                current_step,
                time,
                dt,
@@ -567,10 +606,12 @@
                energy0,
                gravity_total_energy0,
                passive_mass0,
+               max_rho0,
                0.0,
                0.0,
                0.0,
-               {}
+               {},
+               EOSMethod
             );
             validate_scalar_health(scalars);
          if (!wrote_scalars) {

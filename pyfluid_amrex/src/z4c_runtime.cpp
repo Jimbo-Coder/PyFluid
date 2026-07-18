@@ -9,7 +9,7 @@
 
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/z4c_derivatives.hpp"
 
 namespace pyfluid_amrex {
 
@@ -184,49 +184,44 @@ amrex::Vector<amrex::BCRec> z4c_boundary_records(
    return records;
 }
 
-void initialize_z4c_state(
+namespace {
+
+void initialize_z4c_state_at_offset(
    amrex::MultiFab& state,
    amrex::Geometry const& geometry,
    RunConfig const& cfg,
    amrex::Real time,
-   TovInitialDataView const& tov_initial_data
+   RelativisticInitialDataView const& initial_data,
+   amrex::Real coordinate_offset,
+   bool fill_ghosts
 )
 {
    const Z4cInitialDataParameters parameters = z4c_initial_data_parameters(cfg);
    const auto lower = geometry.ProbLoArray();
    const auto spacing = geometry.CellSizeArray();
-   const bool use_spacetime_id = cfg.initial_data_spacetime == "id";
-   const bool use_flat_spacetime = cfg.initial_data_spacetime == "flat";
-   const bool use_lapse_id = cfg.initial_data_lapse == "id";
-   const bool use_unit_lapse = cfg.initial_data_lapse == "one";
-   const bool use_shift_id = cfg.initial_data_shift == "id";
-   const bool use_zero_shift = cfg.initial_data_shift == "zero";
+   const InitialDataFieldSelection fields = initial_data.fields;
 #ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion() && !fill_ghosts)
 #endif
-   for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box box = mfi.tilebox();
+   for (amrex::MFIter mfi(
+           state, fill_ghosts ? false : amrex::TilingIfNotGPU()
+        ); mfi.isValid(); ++mfi) {
+      const amrex::Box box = fill_ghosts ? mfi.fabbox() : mfi.tilebox();
       const auto output = state.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real x = lower[0] + static_cast<amrex::Real>(i) * spacing[0];
+         const amrex::Real x = lower[0]
+            + (static_cast<amrex::Real>(i) + coordinate_offset) * spacing[0];
          const amrex::Real phase = constants::two_pi
             * parameters.wave_number * (x - time);
          Z4cState point;
-         if (tov_initial_data.active()) {
+         if (initial_data.has_spacetime()) {
             const amrex::Real y = AMREX_SPACEDIM >= 2
-               ? lower[1] + static_cast<amrex::Real>(j) * spacing[1]
+               ? lower[1] + (static_cast<amrex::Real>(j) + coordinate_offset) * spacing[1]
                : 0.0;
             const amrex::Real z = AMREX_SPACEDIM == 3
-               ? lower[2] + static_cast<amrex::Real>(k) * spacing[2]
+               ? lower[2] + (static_cast<amrex::Real>(k) + coordinate_offset) * spacing[2]
                : 0.0;
-            const TovSample sample = tov_initial_data.sample(
-               std::sqrt(x * x + y * y + z * z)
-            );
-            point.chi = 1.0 / (
-               sample.conformal_factor * sample.conformal_factor
-               * sample.conformal_factor * sample.conformal_factor
-            );
-            point.lapse = sample.lapse;
+            point = initial_data.sample({x, y, z}).spacetime;
          } else if (parameters.kind == Z4cInitialData::GaugeWave) {
             point = gauge_wave_state(
                phase, parameters.amplitude, constants::two_pi * parameters.wave_number
@@ -236,7 +231,7 @@ void initialize_z4c_state(
                phase, parameters.amplitude, constants::two_pi * parameters.wave_number
             );
          }
-         if (use_flat_spacetime) {
+         if (fields.flat_spacetime) {
             const amrex::Real provider_lapse = point.lapse;
             const amrex::Real provider_shift1 = point.shift1;
             const amrex::Real provider_shift2 = point.shift2;
@@ -247,10 +242,10 @@ void initialize_z4c_state(
             point.shift2 = provider_shift2;
             point.shift3 = provider_shift3;
          }
-         if (use_unit_lapse) {
+         if (fields.unit_lapse) {
             point.lapse = 1.0;
          }
-         if (use_zero_shift) {
+         if (fields.zero_shift) {
             point.shift1 = 0.0;
             point.shift2 = 0.0;
             point.shift3 = 0.0;
@@ -259,8 +254,10 @@ void initialize_z4c_state(
          if (parameters.kind == Z4cInitialData::RobustStability) {
             for (int component = 0; component < Z4C_NUM_COMPONENTS; ++component) {
                const bool initialize_component = component < Z4C_LAPSE
-                  ? use_spacetime_id
-                  : (component == Z4C_LAPSE ? use_lapse_id : use_shift_id);
+                  ? fields.spacetime_from_id
+                  : (component == Z4C_LAPSE
+                        ? fields.lapse_from_id
+                        : fields.shift_from_id);
                if (!initialize_component) {
                   continue;
                }
@@ -270,6 +267,34 @@ void initialize_z4c_state(
          }
       });
    }
+}
+
+} // namespace
+
+void initialize_z4c_state(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geometry,
+   RunConfig const& cfg,
+   amrex::Real time,
+   RelativisticInitialDataView const& initial_data
+)
+{
+   initialize_z4c_state_at_offset(
+      state, geometry, cfg, time, initial_data, 0.0, false
+   );
+}
+
+void initialize_z4c_cell_state(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geometry,
+   RunConfig const& cfg,
+   amrex::Real time,
+   RelativisticInitialDataView const& initial_data
+)
+{
+   initialize_z4c_state_at_offset(
+      state, geometry, cfg, time, initial_data, 0.5, true
+   );
 }
 
 void complete_z4c_contracted_connections(

@@ -85,26 +85,47 @@ The CMake source groups express ownership rather than pretending that a static
 library automatically reduces template rebuilds:
 
 - driver: executable and stable run entry points;
+- kernel bundles: explicit ownership of unique state-layout/CT/EOS
+  specializations;
 - AMR: hierarchy ownership, evolution orchestration, and synchronization;
 - runtime: configuration, fields, checkpoints, profiling, and compiled support
   objects.
 
+The local full-release preset uses `ccache` as a compiler launcher. This is a
+machine-level acceleration and does not change generated source, compiler
+flags, linked code, or supported methods. Time representative builds with
+`tools/benchmark_compile.py`; it records the target, parallelism, elapsed time,
+cache deltas, revision, and dirty state in `runs/current/compile_history.tsv`
+with a bounded recent mirror. Cold compile time and cache-hit time are distinct
+metrics and must not be compared as if they measured the same operation.
+
 Reconstruction, Riemann, EOS, and cell-flux kernels remain inline templates
 where AMReX CPU/GPU lambdas require their definitions. Moving those headers into
 nominal libraries would not isolate rebuilds and could prevent device inlining.
-The useful compiled boundary is a physical-system kernel bundle: runtime
-dispatch selects a fully specialized bundle outside cell loops, and that bundle
-calls the shared numerical algorithms.
+The useful compiled boundary is an evolution-kernel bundle. Its key contains
+only properties that change template instantiation: component count, CT
+topology, and EOS dispatch policy. Runtime dispatch selects a fully specialized
+bundle outside cell loops, and that bundle calls the shared numerical
+algorithms. Physical systems with the same compile-time signature reuse one
+bundle; system identity remains explicit runtime data and is never inferred
+from component count.
 
-Compiler dependency files verify the boundary: in each 1D/2D/3D executable,
-`amr_solver_driver.cpp` is the only current AMR source that includes
-`reconstruction.hpp`. Thus an equation or reconstruction edit rebuilds the
-evolution shard, not hierarchy, output, checkpoint, metric, or multipatch
-sources. A shared numerical-interface edit still correctly rebuilds every
-consumer.
+The evolution lifecycle follows the same boundary. It is compiled once per
+state/EOS/CT bundle and receives one immutable operation table selected before
+the time loop. Timestep, RK, diffusion, CT, subcycling, FillPatch, and regrid
+entries point directly to the existing specialized member templates. Indirect
+selection therefore occurs only at stage or coarse-step boundaries, never
+inside AMReX cell loops, and output/diagnostic/regrid orchestration is not
+instantiated for every runtime method combination.
 
-Every physical system, including future RHD and RMHD, must supply one coherent
-bundle with:
+Compiler dependency files verify the boundary: only the lightweight driver and
+the sources under `src/kernel_bundles/` include the complete derived solver.
+Thus an equation or reconstruction edit rebuilds kernel owners, not hierarchy,
+output, checkpoint, metric, or multipatch sources. A shared
+numerical-interface edit still correctly rebuilds every consumer.
+
+Every physical system, including future systems, must supply one coherent
+physics contract with:
 
 1. a conserved/primitive state layout and field requirements;
 2. primitive-to-conserved and conserved-to-primitive operations;
@@ -125,21 +146,27 @@ magnetized, owns a spacetime sector, and supports CT. Component layouts remain
 separate traits because an identifier is not a state-vector size.
 
 Evolution scheduling is sector based. All four systems have a fluid sector.
-RHD and RMHD additionally have a spacetime sector. `SpacetimeEvolution` is
+RHD and RMHD additionally consume a spacetime metric. `SpacetimeEvolution` is
 `none`, `fixed`, or `evolved`: Newtonian systems require `none`, relativistic
 systems require `fixed` or `evolved`. A fixed metric/Cowling run
-uses the relativistic fluid bundle with the spacetime sector frozen; a dynamical
-spacetime run schedules both sectors. Magnetism augments the fluid sector and
+uses the relativistic fluid bundle with one immutable canonical metric field
+set materialized from an analytic or sampled initial-data provider; a
+dynamical spacetime run schedules both sectors. Fixed analytic data are
+resampled exactly on hierarchy changes and allocate no evolution time levels.
+Magnetism augments the fluid sector and
 does not become a third independently scheduled sector. Fluid kernels consume
 one metric-provider interface whether its fields are fixed or evolved, allowing
 a future multirate driver to advance fluid and spacetime on different clocks.
+For evolved spacetime, matter coupling is independent of storage/evolution
+ownership: `coupled` feeds fluid stress-energy to Z4c, while `vacuum` evolves
+Z4c without fluid backreaction. Neither changes the meaning of fixed/Cowling.
 
-Once the first generated Valencia kernels exercise this interface, CMake may
-compile one specialization shard per physical system. Then changing RMHD
-equations rebuilds the RMHD shard, while changing a genuinely shared
-reconstruction algorithm correctly rebuilds every system that instantiates it.
-Do not add virtual calls inside cell loops or duplicate the AMR driver to obtain
-compile isolation.
+When a new system needs a compile-time signature not already present, add one
+kernel owner and one registry entry. If its signature matches an existing
+bundle, reuse that entry rather than compiling a nominally system-specific
+copy. Changing a genuinely shared reconstruction algorithm correctly rebuilds
+every bundle that instantiates it. Do not add virtual calls inside cell loops or
+duplicate the AMR driver to obtain compile isolation.
 
 ## State And Grid Functions
 

@@ -266,6 +266,11 @@ DRIVEN_POLICY = scalar_checks(
    energy=False,
    momentum=False,
 )
+DYNAMIC_SPACETIME_POLICY = scalar_checks(
+   "dynamic_spacetime",
+   energy=False,
+   momentum=False,
+)
 WALL_POLICY = scalar_checks(
    "wall",
    momentum=False,
@@ -310,6 +315,7 @@ SCALAR_POLICIES = {
       OPEN_POLICY,
       OPEN_MHD_POLICY,
       DRIVEN_POLICY,
+      DYNAMIC_SPACETIME_POLICY,
       WALL_POLICY,
       DIFFUSIVE_POLICY,
       DIFFUSIVE_WALL_POLICY,
@@ -606,6 +612,9 @@ def infer_scalar_policy(
       return DRIVEN_POLICY, "moving/driven solid"
    if abs(wall_work) > 0.0:
       return DRIVEN_POLICY, "nonzero wall work"
+
+   if params.get("spacetime.evolution", "none").strip().lower() == "evolved":
+      return DYNAMIC_SPACETIME_POLICY, "fluid evolution in a time-dependent spacetime"
 
    eos = params.get("pyfluid.eos", summary.get("eos", "")).strip().lower()
    is_barotropic = eos == "polytrope"

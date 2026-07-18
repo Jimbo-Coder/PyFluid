@@ -5,12 +5,13 @@
 
 #include "pyfluid_amrex/boundary.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
-#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
+#include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/state.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
 
@@ -36,7 +37,7 @@ struct FixedSpacetimeCellMetricAccessor {
    }
 };
 
-struct EvolvedSpacetimeCellMetricAccessor {
+struct StoredSpacetimeCellMetricAccessor {
    amrex::Array4<amrex::Real const> spacetime;
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -323,7 +324,7 @@ inline void apply_fixed_metric_state_boundary(
 }
 
 template <PhysicalSystem System, int EOSMethod>
-inline void apply_evolved_metric_state_boundary(
+inline void apply_stored_metric_state_boundary(
    amrex::MultiFab& state,
    amrex::Geometry const& geometry,
    BoundaryData const& boundary,
@@ -337,7 +338,7 @@ inline void apply_evolved_metric_state_boundary(
       boundary,
       eos,
       [&](amrex::MFIter const& mfi) {
-         return EvolvedSpacetimeCellMetricAccessor{
+         return StoredSpacetimeCellMetricAccessor{
             cell_spacetime.const_array(mfi)
          };
       }

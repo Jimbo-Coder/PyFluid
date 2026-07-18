@@ -1,23 +1,24 @@
 #include "pyfluid_amrex/amr_solver_base.hpp"
+#include "diagnostics_impl.hpp"
 
 namespace pyfluid_amrex {
 
 bool AmrSolverBase::symmetry_axis_active(int dir) const
 {
    if (dir == 0) {
-      return side_boundary_kind(cfg_, 0, false) == BoundaryKind::Symmetry
-         || side_boundary_kind(cfg_, 0, true) == BoundaryKind::Symmetry;
+      return side_boundary_kind(cfg_, 0, false) == BoundaryKind::Symmetry ||
+             side_boundary_kind(cfg_, 0, true) == BoundaryKind::Symmetry;
    }
 #if (AMREX_SPACEDIM >= 2)
    if (dir == 1) {
-      return side_boundary_kind(cfg_, 1, false) == BoundaryKind::Symmetry
-         || side_boundary_kind(cfg_, 1, true) == BoundaryKind::Symmetry;
+      return side_boundary_kind(cfg_, 1, false) == BoundaryKind::Symmetry ||
+             side_boundary_kind(cfg_, 1, true) == BoundaryKind::Symmetry;
    }
 #endif
 #if (AMREX_SPACEDIM == 3)
    if (dir == 2) {
-      return side_boundary_kind(cfg_, 2, false) == BoundaryKind::Symmetry
-         || side_boundary_kind(cfg_, 2, true) == BoundaryKind::Symmetry;
+      return side_boundary_kind(cfg_, 2, false) == BoundaryKind::Symmetry ||
+             side_boundary_kind(cfg_, 2, true) == BoundaryKind::Symmetry;
    }
 #endif
    return false;
@@ -48,5 +49,7 @@ amrex::Real AmrSolverBase::symmetry_angular_momentum_factor(int dir, amrex::Real
    }
    return volume_factor;
 }
+
+#include "amr_solver_diagnostics_impl.hpp"
 
 } // namespace pyfluid_amrex

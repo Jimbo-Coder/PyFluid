@@ -77,7 +77,7 @@
 
       if (cfg_.debug_check_finite || accepted_physical_check_due(level_steps_[lev], false)) {
          stage_start = profile_begin();
-         debug_check_state_level<NComp, EOSMethod>(lev, "post-subcycle accepted state", level_steps_[lev], level_times_[lev]);
+         debug_check_state_level(lev, "post-subcycle accepted state", level_steps_[lev], level_times_[lev]);
          profile_end(ProfileStage::Diagnostics, stage_start);
       }
 

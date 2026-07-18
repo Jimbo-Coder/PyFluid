@@ -10,15 +10,10 @@
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/characteristic_transforms.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
+#include "pyfluid_amrex/reconstruction/scalar.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
-
-constexpr amrex::Real WENO_Z_EPS = 1.0e-8;
-constexpr amrex::Real TENO5_EPS = 1.0e-40;
-constexpr amrex::Real TENO5_CUTOFF = 1.0e-5;
-constexpr amrex::Real MP5_ALPHA = 4.0;
-constexpr amrex::Real MP5_EPS = 1.0e-12;
 
 struct HydroFaceStates {
    HydroState left;
@@ -39,40 +34,6 @@ struct MHDPrimitiveFaceStates {
    MHDPrimitive left;
    MHDPrimitive right;
 };
-
-struct ScalarFaceValues {
-   amrex::Real left = 0.0;
-   amrex::Real right = 0.0;
-};
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real minmod(amrex::Real a, amrex::Real b) noexcept
-{
-   if (a * b <= 0.0) {
-      return 0.0;
-   }
-   return a > 0.0 ? amrex::min(a, b) : amrex::max(a, b);
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real minmod4(amrex::Real a, amrex::Real b, amrex::Real c, amrex::Real d) noexcept
-{
-   if (a > 0.0 && b > 0.0 && c > 0.0 && d > 0.0) {
-      return amrex::min(amrex::min(a, b), amrex::min(c, d));
-   }
-   if (a < 0.0 && b < 0.0 && c < 0.0 && d < 0.0) {
-      return amrex::max(amrex::max(a, b), amrex::max(c, d));
-   }
-   return 0.0;
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real mc_slope(amrex::Real qm, amrex::Real q0, amrex::Real qp) noexcept
-{
-   const amrex::Real centered = 0.5 * (qp - qm);
-   const amrex::Real limited = minmod(2.0 * (q0 - qm), 2.0 * (qp - q0));
-   return minmod(centered, limited);
-}
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 HydroPrimitive primitive_at(
@@ -158,22 +119,6 @@ MHDPrimitive mhd_primitive_neighbor(
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real positivity_limiter_theta(amrex::Real face, amrex::Real center, amrex::Real floor) noexcept
-{
-   if (face >= floor) {
-      return 1.0;
-   }
-   if (!amrex::Math::isfinite(face) || !amrex::Math::isfinite(center) || center <= floor) {
-      return 0.0;
-   }
-   const amrex::Real denom = center - face;
-   if (denom <= 0.0) {
-      return 0.0;
-   }
-   return amrex::max(0.0, amrex::min(1.0, (center - floor) / denom));
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 HydroPrimitive positivity_limit_hydro_primitive(
    HydroPrimitive face,
    HydroPrimitive const& center,
@@ -249,27 +194,6 @@ MHDPrimitiveFaceStates positivity_limit_mhd_face_states(
       positivity_limit_mhd_primitive(face.left, left_center, eos),
       positivity_limit_mhd_primitive(face.right, right_center, eos),
    };
-}
-
-template <int Direction, int Component>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real primitive_component_neighbor(
-   amrex::Array4<amrex::Real const> const& state,
-   int i,
-   int j,
-   int k,
-   int offset
-) noexcept
-{
-   if constexpr (Direction == 0) {
-      return state(i + offset, j, k, Component);
-   }
-#if (AMREX_SPACEDIM >= 2)
-   else if constexpr (Direction == 1) {
-      return state(i, j + offset, k, Component);
-   }
-#endif
-   return state(i, j, k + offset, Component);
 }
 
 template <int Direction>
@@ -362,204 +286,6 @@ MHDPrimitive mhd_primitive_from_reduced(MHDReducedPrimitive const& q, amrex::Rea
       return {q.rho, q.vt1, q.vn, q.vt2, q.pressure, q.bt1, bn, q.bt2};
    } else {
       return {q.rho, q.vt1, q.vt2, q.vn, q.pressure, q.bt1, q.bt2, bn};
-   }
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real weno_z_left(amrex::Real vmm, amrex::Real vm, amrex::Real v0, amrex::Real vp, amrex::Real vpp) noexcept
-{
-   const amrex::Real d0 = vmm - 2.0 * vm + v0;
-   const amrex::Real e0 = vmm - 4.0 * vm + 3.0 * v0;
-   const amrex::Real d1 = vm - 2.0 * v0 + vp;
-   const amrex::Real e1 = vm - vp;
-   const amrex::Real d2 = v0 - 2.0 * vp + vpp;
-   const amrex::Real e2 = 3.0 * v0 - 4.0 * vp + vpp;
-   const amrex::Real beta0 = (13.0 / 12.0) * d0 * d0 + 0.25 * e0 * e0;
-   const amrex::Real beta1 = (13.0 / 12.0) * d1 * d1 + 0.25 * e1 * e1;
-   const amrex::Real beta2 = (13.0 / 12.0) * d2 * d2 + 0.25 * e2 * e2;
-   const amrex::Real tau5 = amrex::Math::abs(beta0 - beta2);
-   const amrex::Real r0 = tau5 / (WENO_Z_EPS + beta0);
-   const amrex::Real r1 = tau5 / (WENO_Z_EPS + beta1);
-   const amrex::Real r2 = tau5 / (WENO_Z_EPS + beta2);
-   const amrex::Real a0 = 0.1 * (1.0 + r0 * r0);
-   const amrex::Real a1 = 0.6 * (1.0 + r1 * r1);
-   const amrex::Real a2 = 0.3 * (1.0 + r2 * r2);
-   const amrex::Real inv = 1.0 / (a0 + a1 + a2);
-   const amrex::Real p0 = (2.0 * vmm - 7.0 * vm + 11.0 * v0) / 6.0;
-   const amrex::Real p1 = (-vm + 5.0 * v0 + 2.0 * vp) / 6.0;
-   const amrex::Real p2 = (2.0 * v0 + 5.0 * vp - vpp) / 6.0;
-   return (a0 * p0 + a1 * p1 + a2 * p2) * inv;
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real weno_z_right(amrex::Real vm, amrex::Real v0, amrex::Real vp, amrex::Real vpp, amrex::Real vppp) noexcept
-{
-   return weno_z_left(vppp, vpp, vp, v0, vm);
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real teno5_left(amrex::Real vmm, amrex::Real vm, amrex::Real v0, amrex::Real vp, amrex::Real vpp) noexcept
-{
-   const amrex::Real d0 = vmm - 2.0 * vm + v0;
-   const amrex::Real e0 = vmm - 4.0 * vm + 3.0 * v0;
-   const amrex::Real d1 = vm - 2.0 * v0 + vp;
-   const amrex::Real e1 = vm - vp;
-   const amrex::Real d2 = v0 - 2.0 * vp + vpp;
-   const amrex::Real e2 = 3.0 * v0 - 4.0 * vp + vpp;
-   const amrex::Real beta0 = (13.0 / 12.0) * d0 * d0 + 0.25 * e0 * e0;
-   const amrex::Real beta1 = (13.0 / 12.0) * d1 * d1 + 0.25 * e1 * e1;
-   const amrex::Real beta2 = (13.0 / 12.0) * d2 * d2 + 0.25 * e2 * e2;
-   const amrex::Real tau5 = amrex::Math::abs(beta0 - beta2);
-   const amrex::Real r0 = 1.0 + tau5 / (beta0 + TENO5_EPS);
-   const amrex::Real r1 = 1.0 + tau5 / (beta1 + TENO5_EPS);
-   const amrex::Real r2 = 1.0 + tau5 / (beta2 + TENO5_EPS);
-   const amrex::Real g0 = r0 * r0 * r0 * r0 * r0 * r0;
-   const amrex::Real g1 = r1 * r1 * r1 * r1 * r1 * r1;
-   const amrex::Real g2 = r2 * r2 * r2 * r2 * r2 * r2;
-   const amrex::Real inv_gamma = 1.0 / (g0 + g1 + g2);
-   const amrex::Real a0 = (g0 * inv_gamma >= TENO5_CUTOFF) ? 0.1 : 0.0;
-   const amrex::Real a1 = (g1 * inv_gamma >= TENO5_CUTOFF) ? 0.6 : 0.0;
-   const amrex::Real a2 = (g2 * inv_gamma >= TENO5_CUTOFF) ? 0.3 : 0.0;
-   const amrex::Real inv_alpha = 1.0 / (a0 + a1 + a2);
-   const amrex::Real p0 = (2.0 * vmm - 7.0 * vm + 11.0 * v0) / 6.0;
-   const amrex::Real p1 = (-vm + 5.0 * v0 + 2.0 * vp) / 6.0;
-   const amrex::Real p2 = (2.0 * v0 + 5.0 * vp - vpp) / 6.0;
-   return (a0 * p0 + a1 * p1 + a2 * p2) * inv_alpha;
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real mp5_left(amrex::Real vmm, amrex::Real vm, amrex::Real v0, amrex::Real vp, amrex::Real vpp) noexcept
-{
-   const amrex::Real unlimited = (2.0 * vmm - 13.0 * vm + 47.0 * v0 + 27.0 * vp - 3.0 * vpp) / 60.0;
-   const amrex::Real monotone = v0 + minmod(vp - v0, MP5_ALPHA * (v0 - vm));
-   const amrex::Real scale = amrex::max(
-      amrex::max(amrex::Math::abs(vmm), amrex::Math::abs(vm)),
-      amrex::max(amrex::Math::abs(v0), amrex::max(amrex::Math::abs(vp), amrex::Math::abs(vpp)))
-   );
-   if ((unlimited - v0) * (unlimited - monotone) <= MP5_EPS * amrex::max(1.0, scale * scale)) {
-      return unlimited;
-   }
-
-   const amrex::Real dm = vmm - 2.0 * vm + v0;
-   const amrex::Real d0 = vm - 2.0 * v0 + vp;
-   const amrex::Real dp = v0 - 2.0 * vp + vpp;
-   const amrex::Real d_m4_left = minmod4(4.0 * dm - d0, 4.0 * d0 - dm, dm, d0);
-   const amrex::Real d_m4_right = minmod4(4.0 * d0 - dp, 4.0 * dp - d0, d0, dp);
-   const amrex::Real upper_limit = v0 + MP5_ALPHA * (v0 - vm);
-   const amrex::Real average = 0.5 * (v0 + vp);
-   const amrex::Real median = average - 0.5 * d_m4_right;
-   const amrex::Real large_curvature = v0 + 0.5 * (v0 - vm) + (4.0 / 3.0) * d_m4_left;
-   const amrex::Real lower_bound = amrex::max(
-      amrex::min(amrex::min(v0, vp), median),
-      amrex::min(amrex::min(v0, upper_limit), large_curvature)
-   );
-   const amrex::Real upper_bound = amrex::min(
-      amrex::max(amrex::max(v0, vp), median),
-      amrex::max(amrex::max(v0, upper_limit), large_curvature)
-   );
-   return unlimited + minmod(lower_bound - unlimited, upper_bound - unlimited);
-}
-
-template <int ReconMethod>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real reconstruct_left(
-   amrex::Real vmm,
-   amrex::Real vm,
-   amrex::Real v0,
-   amrex::Real vp,
-   amrex::Real vpp
-) noexcept
-{
-   static_assert(is_five_point_reconstruction(ReconMethod));
-   if constexpr (ReconMethod == ReconMP5 || ReconMethod == ReconMP5Char) {
-      return mp5_left(vmm, vm, v0, vp, vpp);
-   } else if constexpr (ReconMethod == ReconTENO5 || ReconMethod == ReconTENO5Char) {
-      return teno5_left(vmm, vm, v0, vp, vpp);
-   } else {
-      return weno_z_left(vmm, vm, v0, vp, vpp);
-   }
-}
-
-template <int ReconMethod>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real reconstruct_right(
-   amrex::Real vm,
-   amrex::Real v0,
-   amrex::Real vp,
-   amrex::Real vpp,
-   amrex::Real vppp
-) noexcept
-{
-   return reconstruct_left<ReconMethod>(vppp, vpp, vp, v0, vm);
-}
-
-template <int ReconMethod, int Direction, int Component>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-ScalarFaceValues five_point_primitive_component_face_values(
-   amrex::Array4<amrex::Real const> const& state,
-   int i,
-   int j,
-   int k
-) noexcept
-{
-   const amrex::Real vmm = primitive_component_neighbor<Direction, Component>(state, i, j, k, -2);
-   const amrex::Real vm = primitive_component_neighbor<Direction, Component>(state, i, j, k, -1);
-   const amrex::Real v0 = primitive_component_neighbor<Direction, Component>(state, i, j, k, 0);
-   const amrex::Real vp = primitive_component_neighbor<Direction, Component>(state, i, j, k, 1);
-   const amrex::Real vpp = primitive_component_neighbor<Direction, Component>(state, i, j, k, 2);
-   const amrex::Real vppp = primitive_component_neighbor<Direction, Component>(state, i, j, k, 3);
-   return {
-      reconstruct_left<ReconMethod>(vmm, vm, v0, vp, vpp),
-      reconstruct_right<ReconMethod>(vm, v0, vp, vpp, vppp),
-   };
-}
-
-template <int Direction, int Component>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-ScalarFaceValues pwl_primitive_component_face_values(
-   amrex::Array4<amrex::Real const> const& state,
-   int il,
-   int jl,
-   int kl,
-   int ir,
-   int jr,
-   int kr
-) noexcept
-{
-   const amrex::Real qlm = primitive_component_neighbor<Direction, Component>(state, il, jl, kl, -1);
-   const amrex::Real ql = state(il, jl, kl, Component);
-   const amrex::Real qr = state(ir, jr, kr, Component);
-   const amrex::Real qrp = primitive_component_neighbor<Direction, Component>(state, ir, jr, kr, 1);
-   return {
-      ql + 0.5 * mc_slope(qlm, ql, qr),
-      qr - 0.5 * mc_slope(ql, qr, qrp),
-   };
-}
-
-template <int ReconMethod, int Direction, int Component>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-ScalarFaceValues primitive_component_face_values(
-   amrex::Array4<amrex::Real const> const& state,
-   int il,
-   int jl,
-   int kl,
-   int ir,
-   int jr,
-   int kr
-) noexcept
-{
-   if constexpr (ReconMethod == ReconPWL) {
-      return pwl_primitive_component_face_values<Direction, Component>(state, il, jl, kl, ir, jr, kr);
-   } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
-      static_cast<void>(ir);
-      static_cast<void>(jr);
-      static_cast<void>(kr);
-      return five_point_primitive_component_face_values<ReconMethod, Direction, Component>(state, il, jl, kl);
-   } else {
-      return {
-         state(il, jl, kl, Component),
-         state(ir, jr, kr, Component),
-      };
    }
 }
 

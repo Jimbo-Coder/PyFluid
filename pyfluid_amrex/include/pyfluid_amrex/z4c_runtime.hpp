@@ -7,7 +7,7 @@
 #include <AMReX_Vector.H>
 
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/initial_data/tov.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/z4c_state.hpp"
 
 namespace pyfluid_amrex {
@@ -39,7 +39,15 @@ void initialize_z4c_state(
    amrex::Geometry const& geometry,
    RunConfig const& cfg,
    amrex::Real time,
-   TovInitialDataView const& tov_initial_data = {}
+   RelativisticInitialDataView const& initial_data = {}
+);
+
+void initialize_z4c_cell_state(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geometry,
+   RunConfig const& cfg,
+   amrex::Real time,
+   RelativisticInitialDataView const& initial_data
 );
 
 void complete_z4c_contracted_connections(

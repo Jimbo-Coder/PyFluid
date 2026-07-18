@@ -2,7 +2,8 @@
 
 #include "pyfluid_amrex/c2p_policy.hpp"
 #include "pyfluid_amrex/eos.hpp"
-#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/c2p_rhd.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 
 #include <AMReX_Math.H>

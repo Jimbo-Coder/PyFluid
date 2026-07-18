@@ -20,6 +20,9 @@ public:
       amrex::DistributionMapping const& distribution
    );
    void clear_level(int level);
+   bool cell_spacetime_valid(int level) const noexcept;
+   void mark_cell_spacetime_valid(int level) noexcept;
+   void invalidate_cell_spacetime(int level) noexcept;
 
    bool active() const noexcept { return active_; }
    int cell_ghost_width() const noexcept { return cell_ghost_width_; }
@@ -36,6 +39,7 @@ private:
    LevelData cell_spacetime_;
    LevelData cell_matter_;
    LevelData vertex_matter_;
+   std::vector<unsigned char> cell_spacetime_valid_;
 };
 
 } // namespace pyfluid_amrex

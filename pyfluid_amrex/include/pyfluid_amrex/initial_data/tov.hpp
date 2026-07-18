@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/relativistic_state.hpp"
 
 namespace pyfluid_amrex {
 
@@ -80,34 +79,6 @@ struct TovInitialDataView {
       };
    }
 };
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-SpacetimeMetric tov_spacetime_metric(TovSample const& sample) noexcept
-{
-   const amrex::Real psi2 = sample.conformal_factor * sample.conformal_factor;
-   const amrex::Real psi4 = psi2 * psi2;
-   const amrex::Real inverse_psi4 = 1.0 / psi4;
-   return {
-      sample.lapse,
-      0.0,
-      0.0,
-      0.0,
-      psi4,
-      0.0,
-      0.0,
-      psi4,
-      0.0,
-      psi4,
-      inverse_psi4,
-      0.0,
-      0.0,
-      inverse_psi4,
-      0.0,
-      inverse_psi4,
-      sample.conformal_factor * sample.conformal_factor * sample.conformal_factor
-         * sample.conformal_factor * sample.conformal_factor * sample.conformal_factor,
-   };
-}
 
 class TovInitialData {
 public:

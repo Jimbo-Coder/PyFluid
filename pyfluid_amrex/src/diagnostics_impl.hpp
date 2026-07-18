@@ -18,93 +18,16 @@
 
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/ct.hpp"
+#include "pyfluid_amrex/diagnostics_types.hpp"
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
-#include "pyfluid_amrex/rhd_c2p.hpp"
-#include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/state.hpp"
 #include "pyfluid_amrex/output_metadata.hpp"
 
 namespace pyfluid_amrex {
 
-struct ScalarDiagnostics {
-   int step = 0;
-   amrex::Real time = 0.0;
-   amrex::Real dt = 0.0;
-   amrex::Real mass = 0.0;
-   amrex::Real mom1 = 0.0;
-   amrex::Real mom2 = 0.0;
-   amrex::Real mom3 = 0.0;
-   amrex::Real angular_mom1 = 0.0;
-   amrex::Real angular_mom2 = 0.0;
-   amrex::Real angular_mom3 = 0.0;
-   amrex::Real energy = 0.0;
-   amrex::Real gravity_potential_energy = 0.0;
-   amrex::Real gravity_total_energy = 0.0;
-   amrex::Real gravity_total_energy_rel_drift = 0.0;
-   amrex::Real passive_mass = 0.0;
-   amrex::Real passive_mass_rel_drift = 0.0;
-   amrex::Real wall_work = 0.0;
-   amrex::Real wall_power = 0.0;
-   amrex::Real energy_minus_wall_work = 0.0;
-   amrex::Real wall_work_rel_error = 0.0;
-   int external_budget_valid = 1;
-   amrex::Real boundary_mass_change = 0.0;
-   amrex::Real boundary_energy_change = 0.0;
-   amrex::Real source_mass_change = 0.0;
-   amrex::Real source_energy_change = 0.0;
-   amrex::Real external_mass_change = 0.0;
-   amrex::Real external_energy_change = 0.0;
-   amrex::Real external_mass_residual = 0.0;
-   amrex::Real external_energy_residual = 0.0;
-   amrex::Real external_mass_rel_error = 0.0;
-   amrex::Real external_energy_rel_error = 0.0;
-   amrex::Real mass_rel_drift = 0.0;
-   amrex::Real energy_rel_drift = 0.0;
-   amrex::Real min_rho = 0.0;
-   amrex::Real min_pressure = 0.0;
-   amrex::Real magnetic_energy = 0.0;
-   amrex::Real divb_l1 = 0.0;
-   amrex::Real diffusion_residual = 0.0;
-   int diffusion_iterations = 0;
-   amrex::Long amr_total_cells = 0;
-   int amr_active_finest_level = 0;
-   int amr_finest_headroom = 0;
-   int amr_touches_max_level = 0;
-   amrex::Real amr_total_budget_fraction = -1.0;
-   amrex::Real amr_peak_level_budget_fraction = -1.0;
-   amrex::Real mcells_per_s = 0.0;
-   amrex::Real layout_mcells_per_s = 0.0;
-   amrex::Real sim_time_per_s = 0.0;
-   amrex::Real cfl_limiter_frequency = 0.0;
-   int cfl_limiter_level = -1;
-   int cfl_limiter_i = 0;
-   int cfl_limiter_j = 0;
-   int cfl_limiter_k = 0;
-   amrex::Real cfl_limiter_q1 = 0.0;
-   amrex::Real cfl_limiter_q2 = 0.0;
-   amrex::Real cfl_limiter_q3 = 0.0;
-   amrex::Real z4c_hamiltonian_linf = 0.0;
-   amrex::Real z4c_hamiltonian_l2 = 0.0;
-   amrex::Real z4c_momentum_linf = 0.0;
-   amrex::Real z4c_z_linf = 0.0;
-   amrex::Real z4c_theta_linf = 0.0;
-   amrex::Real z4c_log_conformal_determinant_linf = 0.0;
-   amrex::Real z4c_trace_a_tilde_linf = 0.0;
-};
-
-struct SpacetimeConstraintDiagnostics {
-   amrex::Real hamiltonian_linf = 0.0;
-   amrex::Real hamiltonian_l2 = 0.0;
-   amrex::Real momentum_linf = 0.0;
-   amrex::Real z_linf = 0.0;
-   amrex::Real theta_linf = 0.0;
-   amrex::Real log_conformal_determinant_linf = 0.0;
-   amrex::Real trace_a_tilde_linf = 0.0;
-};
-
-inline constexpr std::array<std::string_view, 63> ScalarDiagnosticColumns = {{
+inline constexpr std::array<std::string_view, 65> ScalarDiagnosticColumns = {{
    "step",
    "time",
    "dt",
@@ -139,6 +62,8 @@ inline constexpr std::array<std::string_view, 63> ScalarDiagnosticColumns = {{
    "mass_rel_drift",
    "energy_rel_drift",
    "min_rho",
+   "max_rho",
+   "max_rho_rel_change",
    "min_pressure",
    "magnetic_energy",
    "divb_l1",
@@ -191,27 +116,6 @@ inline void write_tsv_row_checked(std::ofstream& out, Values const&... values)
    out << '\n';
 }
 
-struct AmrLevelDiagnostics {
-   amrex::Long total_cells = 0;
-   int active_finest_level = 0;
-   int max_level = 0;
-   int finest_headroom = 0;
-   int touches_max_level = 0;
-   amrex::Real total_budget_fraction = -1.0;
-   amrex::Real peak_level_budget_fraction = -1.0;
-};
-
-struct CflLimiterLocation {
-   amrex::Real frequency = 0.0;
-   int level = -1;
-   int i = 0;
-   int j = 0;
-   int k = 0;
-   amrex::Real q1 = 0.0;
-   amrex::Real q2 = 0.0;
-   amrex::Real q3 = 0.0;
-};
-
 inline void set_cfl_limiter_diagnostics(ScalarDiagnostics& d, CflLimiterLocation const& limiter)
 {
    d.cfl_limiter_frequency = limiter.frequency;
@@ -245,7 +149,7 @@ enum ScalarReductionComponent {
 static constexpr int ScalarReductionMinComponentCount =
    ScalarReductionMinPressure - ScalarReductionMinRho + 1;
 
-inline AmrLevelDiagnostics summarize_amr_levels(
+AmrLevelDiagnostics summarize_amr_levels(
    std::vector<amrex::Long> const& level_cells,
    int max_level,
    amrex::Long total_cell_budget,
@@ -514,21 +418,28 @@ inline void fill_scalar_reduction_fields_mapped_hydro(
    }
 }
 
-inline std::pair<amrex::Real, amrex::Real> valid_min_rho_pressure(
-   amrex::MultiFab const& state,
+struct DensityPressureExtrema {
+   amrex::Real min_rho = 0.0;
+   amrex::Real max_rho = 0.0;
+   amrex::Real min_pressure = 0.0;
+};
+
+inline DensityPressureExtrema valid_density_pressure_extrema(
+   amrex::MultiFab const& density,
    amrex::MultiFab const& pressure,
    amrex::iMultiFab const& valid_mask
 )
 {
    const amrex::Real invalid_min = std::numeric_limits<amrex::Real>::max();
    amrex::Real rho_min = invalid_min;
+   amrex::Real rho_max = -std::numeric_limits<amrex::Real>::max();
    amrex::Real pressure_min = invalid_min;
    long valid_count = 0;
-   for (amrex::MFIter mfi(state); mfi.isValid(); ++mfi) {
+   for (amrex::MFIter mfi(density); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.validbox();
       const auto lo = amrex::lbound(bx);
       const auto hi = amrex::ubound(bx);
-      const auto s = state.const_array(mfi);
+      const auto rho = density.const_array(mfi);
       const auto p = pressure.const_array(mfi);
       const auto mask = valid_mask.const_array(mfi);
       for (int k = lo.z; k <= hi.z; ++k) {
@@ -537,7 +448,8 @@ inline std::pair<amrex::Real, amrex::Real> valid_min_rho_pressure(
                if (mask(i, j, k, 0) == 0) {
                   continue;
                }
-               rho_min = std::min(rho_min, s(i, j, k, RHO));
+               rho_min = std::min(rho_min, rho(i, j, k, RHO));
+               rho_max = std::max(rho_max, rho(i, j, k, RHO));
                pressure_min = std::min(pressure_min, p(i, j, k, 0));
                ++valid_count;
             }
@@ -546,20 +458,22 @@ inline std::pair<amrex::Real, amrex::Real> valid_min_rho_pressure(
    }
    if (valid_count == 0) {
       rho_min = invalid_min;
+      rho_max = -invalid_min;
       pressure_min = invalid_min;
    }
    amrex::ParallelDescriptor::ReduceRealMin(rho_min);
+   amrex::ParallelDescriptor::ReduceRealMax(rho_max);
    amrex::ParallelDescriptor::ReduceRealMin(pressure_min);
-   return {rho_min, pressure_min};
+   return {rho_min, rho_max, pressure_min};
 }
 
-inline void write_scalar_header(std::ofstream& out, RunConfig const& cfg, int step, amrex::Real time)
+void write_scalar_header(std::ofstream& out, RunConfig const& cfg, int step, amrex::Real time)
 {
    append_output_metadata(out, "scalars", cfg, step, time);
    write_tsv_header(out, ScalarDiagnosticColumns);
 }
 
-inline void append_scalar_row(std::ofstream& out, ScalarDiagnostics const& d)
+void append_scalar_row(std::ofstream& out, ScalarDiagnostics const& d)
 {
    out << std::setprecision(17);
    write_tsv_row_checked<ScalarDiagnosticColumns.size()>(
@@ -598,6 +512,8 @@ inline void append_scalar_row(std::ofstream& out, ScalarDiagnostics const& d)
       d.mass_rel_drift,
       d.energy_rel_drift,
       d.min_rho,
+      d.max_rho,
+      d.max_rho_rel_change,
       d.min_pressure,
       d.magnetic_energy,
       d.divb_l1,
@@ -630,7 +546,45 @@ inline void append_scalar_row(std::ofstream& out, ScalarDiagnostics const& d)
    );
 }
 
-inline void write_amr_level_header(
+inline void fill_pressure_runtime(
+   amrex::MultiFab& pressure,
+   amrex::MultiFab const& state,
+   EOSParams const& eos,
+   bool mhd,
+   int eos_method
+)
+{
+   if (mhd) {
+      switch (eos_method) {
+      case EOSIdealGas:
+         fill_pressure<true, EOSIdealGas>(pressure, state, eos);
+         return;
+      case EOSPolytrope:
+         fill_pressure<true, EOSPolytrope>(pressure, state, eos);
+         return;
+      case EOSHybridPolytrope:
+         fill_pressure<true, EOSHybridPolytrope>(pressure, state, eos);
+         return;
+      default:
+         amrex::Abort("invalid EOS method in diagnostic pressure dispatch");
+      }
+   }
+   switch (eos_method) {
+   case EOSIdealGas:
+      fill_pressure<false, EOSIdealGas>(pressure, state, eos);
+      return;
+   case EOSPolytrope:
+      fill_pressure<false, EOSPolytrope>(pressure, state, eos);
+      return;
+   case EOSHybridPolytrope:
+      fill_pressure<false, EOSHybridPolytrope>(pressure, state, eos);
+      return;
+   default:
+      amrex::Abort("invalid EOS method in diagnostic pressure dispatch");
+   }
+}
+
+void write_amr_level_header(
    std::ofstream& out,
    int max_level,
    RunConfig const& cfg,
@@ -692,7 +646,7 @@ inline void write_amr_level_header(
    out << '\n';
 }
 
-inline void append_amr_level_row(
+void append_amr_level_row(
    std::ofstream& out,
    int step,
    amrex::Real time,

@@ -172,35 +172,76 @@ amrex::Real centering_transfer_weight(int ordinal) noexcept
    return weights[ordinal];
 }
 
-template <int Order, int Dim, bool CellToVertex, typename Array>
+template <int Order>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real centering_transfer(Array const& field, int i, int j, int k, int component) noexcept
+int centering_transfer_count(int source_mask, int destination_mask, int direction) noexcept
+{
+   return ((source_mask ^ destination_mask) & (1 << direction)) != 0 ? Order : 1;
+}
+
+template <int Order>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int centering_transfer_offset(int source_mask, int destination_mask, int direction, int ordinal) noexcept
+{
+   if (((source_mask ^ destination_mask) & (1 << direction)) == 0) return 0;
+   const bool source_is_nodal = (source_mask & (1 << direction)) != 0;
+   return (source_is_nodal ? 1 - Order / 2 : -Order / 2) + ordinal;
+}
+
+template <int Order>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real centering_transfer_axis_weight(int source_mask, int destination_mask, int direction, int ordinal) noexcept
+{
+   return ((source_mask ^ destination_mask) & (1 << direction)) != 0
+      ? centering_transfer_weight<Order>(ordinal)
+      : 1.0_rt;
+}
+
+template <int Order, int Dim, typename Array>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real topology_centering_transfer(Array const& field, int i, int j, int k, int component, int source_mask, int destination_mask) noexcept
 {
    static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);
    static_assert(Dim >= 1 && Dim <= 3);
-   constexpr int first_offset = CellToVertex ? -Order / 2 : 1 - Order / 2;
+   source_mask &= (1 << Dim) - 1;
+   destination_mask &= (1 << Dim) - 1;
    amrex::Real result = 0.0_rt;
-   for (int ordinal1 = 0; ordinal1 < Order; ++ordinal1) {
-      const int offset1 = first_offset + ordinal1;
-      const amrex::Real weight1 = centering_transfer_weight<Order>(ordinal1);
+   const int count1 = centering_transfer_count<Order>(source_mask, destination_mask, 0);
+   for (int ordinal1 = 0; ordinal1 < count1; ++ordinal1) {
+      const int offset1 = centering_transfer_offset<Order>(source_mask, destination_mask, 0, ordinal1);
+      const amrex::Real weight1 = centering_transfer_axis_weight<Order>(source_mask, destination_mask, 0, ordinal1);
       if constexpr (Dim == 1) {
          result += weight1 * field(i + offset1, j, k, component);
       } else {
-         for (int ordinal2 = 0; ordinal2 < Order; ++ordinal2) {
-            const int offset2 = first_offset + ordinal2;
-            const amrex::Real weight12 = weight1 * centering_transfer_weight<Order>(ordinal2);
+         const int count2 = centering_transfer_count<Order>(source_mask, destination_mask, 1);
+         for (int ordinal2 = 0; ordinal2 < count2; ++ordinal2) {
+            const int offset2 = centering_transfer_offset<Order>(source_mask, destination_mask, 1, ordinal2);
+            const amrex::Real weight12 = weight1 * centering_transfer_axis_weight<Order>(source_mask, destination_mask, 1, ordinal2);
             if constexpr (Dim == 2) {
                result += weight12 * field(i + offset1, j + offset2, k, component);
             } else {
-               for (int ordinal3 = 0; ordinal3 < Order; ++ordinal3) {
-                  const int offset3 = first_offset + ordinal3;
-                  result += weight12 * centering_transfer_weight<Order>(ordinal3) * field(i + offset1, j + offset2, k + offset3, component);
+               const int count3 = centering_transfer_count<Order>(source_mask, destination_mask, 2);
+               for (int ordinal3 = 0; ordinal3 < count3; ++ordinal3) {
+                  const int offset3 = centering_transfer_offset<Order>(source_mask, destination_mask, 2, ordinal3);
+                  result += weight12 * centering_transfer_axis_weight<Order>(source_mask, destination_mask, 2, ordinal3) * field(i + offset1, j + offset2, k + offset3, component);
                }
             }
          }
       }
    }
    return result;
+}
+
+template <int Order, int Dim, bool CellToVertex, typename Array>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real centering_transfer(Array const& field, int i, int j, int k, int component) noexcept
+{
+   constexpr int vertex_mask = (1 << Dim) - 1;
+   constexpr int source_mask = CellToVertex ? 0 : vertex_mask;
+   constexpr int destination_mask = CellToVertex ? vertex_mask : 0;
+   return topology_centering_transfer<Order, Dim>(
+      field, i, j, k, component, source_mask, destination_mask
+   );
 }
 
 template <int Order, int Direction, bool CellToFace, typename Array>

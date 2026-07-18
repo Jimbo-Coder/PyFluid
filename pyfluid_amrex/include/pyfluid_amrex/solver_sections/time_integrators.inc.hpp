@@ -156,6 +156,9 @@
             }
             profile_end(ProfileStage::Divergence, stage_start);
          }
+         project_relativistic_atmosphere_range<EOSMethod>(
+            final_state, lev_begin, lev_end, time + dt
+         );
          return !FinalInPlace;
       }
 
@@ -330,7 +333,7 @@
          );
          if constexpr (SubcyclingEnabled) {
             store_rk4_rhs_stage<NComp>(0, lev_begin, lev_end);
-            if (spacetime_state_.active()) {
+            if (spacetime_state_.evolves()) {
                spacetime_state_.store_rk4_rhs_stage(0, lev_begin, lev_end);
             }
          }
@@ -360,7 +363,7 @@
          );
          if constexpr (SubcyclingEnabled) {
             store_rk4_rhs_stage<NComp>(1, lev_begin, lev_end);
-            if (spacetime_state_.active()) {
+            if (spacetime_state_.evolves()) {
                spacetime_state_.store_rk4_rhs_stage(1, lev_begin, lev_end);
             }
          }
@@ -390,7 +393,7 @@
          );
          if constexpr (SubcyclingEnabled) {
             store_rk4_rhs_stage<NComp>(2, lev_begin, lev_end);
-            if (spacetime_state_.active()) {
+            if (spacetime_state_.evolves()) {
                spacetime_state_.store_rk4_rhs_stage(2, lev_begin, lev_end);
             }
          }
@@ -420,7 +423,7 @@
          );
          if constexpr (SubcyclingEnabled) {
             store_rk4_rhs_stage<NComp>(3, lev_begin, lev_end);
-            if (spacetime_state_.active()) {
+            if (spacetime_state_.evolves()) {
                spacetime_state_.store_rk4_rhs_stage(3, lev_begin, lev_end);
             }
          }
@@ -430,7 +433,7 @@
          );
          profile_end(ProfileStage::Update, stage_start);
       }
-      if (spacetime_state_.active()) {
+      if (spacetime_state_.evolves()) {
          project_spacetime_state_range(
             spacetime_state_.next(), lev_begin, lev_end
          );
@@ -438,6 +441,14 @@
             spacetime_state_.copy_next_to_state(lev);
          }
       }
+      if (spacetime_state_.active()) {
+         prepare_spacetime_coupling_range(
+            spacetime_state_.state(), lev_begin, lev_end, time + dt, -1.0, 0
+         );
+      }
+      project_relativistic_atmosphere_range<EOSMethod>(
+         fluid_state_.next(), lev_begin, lev_end, time + dt
+      );
       return true;
    }
 

@@ -1,0 +1,47 @@
+#pragma once
+
+#include <AMReX_MultiFab.H>
+#include <AMReX_Vector.H>
+
+#include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/initial_data/ctt.hpp"
+#include "pyfluid_amrex/initial_data/elliptic.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
+#include "pyfluid_amrex/physical_system.hpp"
+
+namespace pyfluid_amrex {
+
+enum class ConformalConstraintFormulation {
+   ctt,
+   xcts,
+};
+
+struct ConformalConstraintSummary {
+   int coupled_iterations = 0;
+   amrex::Real relative_update = 0.0;
+   amrex::Real hamiltonian_residual = 0.0;
+   amrex::Real lapse_residual = 0.0;
+   amrex::Real momentum_residual = 0.0;
+   bool converged = false;
+};
+
+struct ConformalMaterializationResult {
+   int matter_iterations = 0;
+   amrex::Real relative_matter_update = 0.0;
+   ConformalConstraintSummary constraints{};
+};
+
+ConformalMaterializationResult materialize_conformal_initial_data(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& fluid_state,
+   amrex::Vector<amrex::MultiFab const*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab*> const& spacetime_state,
+   amrex::Vector<amrex::MultiFab*> const& cell_spacetime,
+   PhysicalSystem system,
+   int eos_method,
+   EOSParams const& eos,
+   InitialDataFieldSelection const& fields,
+   ConformalConstraintFormulation formulation
+);
+
+} // namespace pyfluid_amrex

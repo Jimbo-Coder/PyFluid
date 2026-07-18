@@ -1,0 +1,10 @@
+#include "pyfluid_amrex/reconstruction/mp5.hpp"
+
+#include "../flux_factory_internal.hpp"
+
+namespace pyfluid_amrex::flux_factory_entries {
+void mp5(FluxLaunch const& launch)
+{
+   flux_factory_detail::dispatch_layout<ReconMP5>(launch);
+}
+} // namespace pyfluid_amrex::flux_factory_entries

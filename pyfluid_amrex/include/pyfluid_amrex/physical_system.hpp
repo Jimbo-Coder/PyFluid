@@ -88,13 +88,18 @@ constexpr bool valid_spacetime_evolution(
    return spacetime_evolution == SpacetimeEvolution::None;
 }
 
+constexpr bool spacetime_evolves(SpacetimeEvolution spacetime_evolution) noexcept
+{
+   return spacetime_evolution == SpacetimeEvolution::Evolved;
+}
+
 constexpr EvolutionSector evolution_sectors(
    PhysicalSystem system,
    SpacetimeEvolution spacetime_evolution
 ) noexcept
 {
    EvolutionSector sectors = EvolutionSector::Fluid;
-   if (spacetime_evolution == SpacetimeEvolution::Evolved
+   if (spacetime_evolves(spacetime_evolution)
        && physical_system_has_spacetime_sector(system)) {
       sectors = sectors | EvolutionSector::Spacetime;
    }

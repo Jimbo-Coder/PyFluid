@@ -1,5 +1,8 @@
 #include "pyfluid_amrex/amr_solver_base.hpp"
 
+#include "pyfluid_amrex/amr_indicator.hpp"
+#include "pyfluid_amrex/primitive_cache_factory.hpp"
+
 #include <AMReX_FillPatchUtil.H>
 
 #include <algorithm>
@@ -25,53 +28,28 @@ bool refinement_ratio_is_anisotropic(amrex::IntVect const& ratio)
 
 void AmrSolverBase::fill_level_primitive_cache(int lev, amrex::Real time)
 {
-   const EOSParams eos = eos_params(cfg_);
-   if (spacetime_matter_is_coupled(cfg_)) {
+   if (spacetime_state_.active()) {
       prepare_spacetime_coupling_range(
          spacetime_state_.state(), lev, lev + 1, time, -1.0, 0
       );
-      if (physics_system_ == PhysicalSystem::RHD) {
-         const int eos_method = eos_method_code(cfg_);
-         if (eos_method == EOSPolytrope) {
-            fill_rhd_primitive_cache<EOSPolytrope>(
-               *primitive_[lev], *fluid_state_.state()[lev], eos,
-               *spacetime_coupling_.cell_spacetime()[lev]
-            );
-         } else if (eos_method == EOSHybridPolytrope) {
-            fill_rhd_primitive_cache<EOSHybridPolytrope>(
-               *primitive_[lev], *fluid_state_.state()[lev], eos,
-               *spacetime_coupling_.cell_spacetime()[lev]
-            );
-         } else {
-            fill_rhd_primitive_cache<EOSIdealGas>(
-               *primitive_[lev], *fluid_state_.state()[lev], eos,
-               *spacetime_coupling_.cell_spacetime()[lev]
-            );
-         }
-         return;
-      }
-      if (physics_system_ == PhysicalSystem::RMHD) {
-         fill_rmhd_primitive_cache(
-            *primitive_[lev],
-            *fluid_state_.state()[lev],
-            eos,
-            *spacetime_coupling_.cell_spacetime()[lev]
-         );
-         return;
-      }
-      amrex::Abort("coupled evolved-spacetime AMR tagging requires RHD or RMHD");
    }
-
-   fill_base_primitive_cache_runtime(
+   const bool relativistic = physical_system_is_relativistic(physics_system_);
+   fill_primitive_cache(PrimitiveCacheLaunch{
       *primitive_[lev],
       *fluid_state_.state()[lev],
-      eos,
-      eos_method_code(cfg_),
+      eos_params(cfg_),
       physics_system_,
-      Geom(lev),
+      eos_method_code(cfg_),
+      fluid_state_.state()[lev]->nComp(),
+      relativistic && spacetime_state_.active()
+         ? spacetime_coupling_.cell_spacetime()[lev].get()
+         : nullptr,
+      nullptr,
+      nullptr,
+      &Geom(lev),
       fixed_spacetime_parameters(cfg_),
-      time
-   );
+      time,
+   });
 }
 
 AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_statistics(
@@ -106,6 +84,13 @@ AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_s
    for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.validbox();
       const auto primitive = primitive_[lev]->const_array(mfi);
+      const bool stored_spacetime = spacetime_state_.active();
+      const AmrSpacetimeMetricView spacetime{
+         stored_spacetime
+            ? spacetime_coupling_.cell_spacetime()[lev]->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{},
+         stored_spacetime,
+      };
       const auto lo = bx.smallEnd();
       const auto hi = bx.bigEnd();
 #if (AMREX_SPACEDIM == 1)
@@ -141,7 +126,8 @@ AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_s
                      problo,
                      dx,
                      amr_min_feature_lengths,
-                     min_refine_radius
+                     min_refine_radius,
+                     spacetime
                   );
                bool tagged = false;
                for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {

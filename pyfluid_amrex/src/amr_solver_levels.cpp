@@ -1,4 +1,6 @@
 #include "pyfluid_amrex/amr_solver_base.hpp"
+#include "pyfluid_amrex/ct.hpp"
+#include "pyfluid_amrex/initial_data.hpp"
 
 namespace pyfluid_amrex {
 
@@ -288,9 +290,10 @@ void AmrSolverBase::MakeNewLevelFromScratch(
    allocate_level(lev, level_ba, work_dm, time);
    set_level_time_state(lev, time, 0.0);
    initialize_state(
-      *fluid_state_.state()[lev], Geom(lev), cfg_, tov_initial_data_.view()
+      *fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_.view()
    );
    initialize_spacetime_level(lev, time);
+   refresh_stored_spacetime_fluid_boundary(lev, time);
    if (time == 0.0) {
       initialize_ct_fields(lev, time);
    } else {
@@ -316,12 +319,13 @@ void AmrSolverBase::MakeNewLevelFromCoarse(
    set_level_time_state(lev, time, 0.0);
    if (time == 0.0) {
       initialize_state(
-         *fluid_state_.state()[lev], Geom(lev), cfg_, tov_initial_data_.view()
+         *fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_.view()
       );
    } else {
       fill_new_level_from_coarse_state(lev, time);
    }
    fill_new_spacetime_level_from_coarse(lev, time);
+   refresh_stored_spacetime_fluid_boundary(lev, time);
    if (time == 0.0) {
       initialize_ct_fields(lev, time);
    } else {
@@ -358,6 +362,7 @@ void AmrSolverBase::RemakeLevel(
    if (old_spacetime) {
       fill_remade_spacetime_level(lev, time, *old_spacetime);
    }
+   refresh_stored_spacetime_fluid_boundary(lev, time);
    initialize_remade_ct_fields(lev, time, old_face_b);
    copy_level_state_to_old(lev);
 }

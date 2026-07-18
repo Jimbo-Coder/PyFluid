@@ -291,6 +291,20 @@ def rmhd_primitive_to_conserved_kernel() -> StructKernel:
    )
 
 
+def rmhd_comoving_magnetic_squared_kernel() -> ScalarKernel:
+   primitive, metric = _rmhd_symbols()
+   return ScalarKernel(
+      name="rmhd_comoving_magnetic_squared",
+      arguments=(
+         ("const RMHDPrimitive&", "primitive"),
+         ("const SpacetimeMetric&", "metric"),
+      ),
+      expression=ValenciaMagnetohydrodynamics().comoving_magnetic_squared(
+         primitive, metric
+      ),
+   )
+
+
 def rmhd_flux_kernel(direction: int) -> StructKernel:
    if direction < 0 or direction >= 3:
       raise ValueError("RMHD flux direction must be in [0, 3)")
@@ -1125,26 +1139,63 @@ def srmhd_reprimand_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
    )
 
 
-def relativistic_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+def relativistic_core_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
    return (
       rhd_primitive_to_conserved_kernel(),
       rhd_recovery_state_kernel(),
+      rmhd_primitive_to_conserved_kernel(),
+      rmhd_comoving_magnetic_squared_kernel(),
+      rmhd_recovery_state_kernel(),
+   )
+
+
+def relativistic_flux_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+   return (
+      *(rhd_flux_kernel(direction) for direction in range(3)),
+      *(srhd_wave_speed_kernel(direction) for direction in range(3)),
+      *(rmhd_flux_kernel(direction) for direction in range(3)),
+      *(srmhd_wave_speed_kernel(direction) for direction in range(3)),
+   )
+
+
+def relativistic_source_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+   return (
       rhd_stress_energy_kernel(),
       rhd_eulerian_matter_kernel(),
       rhd_geometric_source_kernel(),
-      *(rhd_flux_kernel(direction) for direction in range(3)),
-      *(srhd_wave_speed_kernel(direction) for direction in range(3)),
-      *srhd_palenzuela_kernels(),
-      rmhd_primitive_to_conserved_kernel(),
-      rmhd_recovery_state_kernel(),
       rmhd_stress_energy_kernel(),
       rmhd_eulerian_matter_kernel(),
       rmhd_geometric_source_kernel(),
-      *(rmhd_flux_kernel(direction) for direction in range(3)),
-      *(srmhd_wave_speed_kernel(direction) for direction in range(3)),
+   )
+
+
+def rhd_c2p_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+   return srhd_palenzuela_kernels()
+
+
+def rmhd_c2p_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+   return (
       *srmhd_palenzuela_kernels(),
       *srmhd_entropy_kernels(),
       *srmhd_cold_kernels(),
       *srmhd_noble_2d_kernels(),
       *srmhd_reprimand_kernels(),
+   )
+
+
+def relativistic_kernel_groups() -> dict[str, tuple[ScalarKernel | StructKernel, ...]]:
+   return {
+      "core": relativistic_core_kernels(),
+      "flux": relativistic_flux_kernels(),
+      "sources": relativistic_source_kernels(),
+      "c2p_rhd": rhd_c2p_kernels(),
+      "c2p_rmhd": rmhd_c2p_kernels(),
+   }
+
+
+def relativistic_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
+   return tuple(
+      kernel
+      for kernels in relativistic_kernel_groups().values()
+      for kernel in kernels
    )

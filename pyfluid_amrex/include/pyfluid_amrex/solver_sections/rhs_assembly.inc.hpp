@@ -1,46 +1,60 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // RHS/flux-stage assembly for conservative updates.
 
+   template <int EOSMethod>
+   void project_relativistic_atmosphere_range(
+      LevelData& state,
+      int lev_begin,
+      int lev_end,
+      amrex::Real time,
+      int ghost_cells = 0
+   )
+   {
+      if (!physical_system_is_relativistic(physics_system_)) {
+         return;
+      }
+      const EOSParams eos = eos_params(cfg_);
+      AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+         spacetime_state_.active(),
+         "relativistic atmosphere projection requires canonical spacetime fields"
+      );
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         apply_relativistic_atmosphere(
+            *state[lev],
+            *spacetime_coupling_.cell_spacetime()[lev],
+            physics_system_,
+            EOSMethod,
+            eos,
+            ghost_cells
+         );
+      }
+   }
+
    template <int NComp, int EOSMethod>
    void fill_stage_primitive_cache(
       amrex::MultiFab& primitive,
-      const amrex::MultiFab& state,
+      amrex::MultiFab& state,
       int lev,
       bool use_solid_mask,
       amrex::Real time
    )
    {
-      if (physics_system_ == PhysicalSystem::RHD) {
-         if (spacetime_matter_is_coupled(cfg_)) {
-            fill_rhd_primitive_cache<EOSMethod>(
-               primitive, state, eos_params(cfg_), *spacetime_coupling_.cell_spacetime()[lev]
-            );
-         } else {
-            fill_rhd_primitive_cache<EOSMethod>(
-               primitive, state, eos_params(cfg_), Geom(lev), fixed_spacetime_parameters(cfg_), time
-            );
-         }
-      } else if (physics_system_ == PhysicalSystem::RMHD) {
-         if (spacetime_matter_is_coupled(cfg_)) {
-            fill_rmhd_primitive_cache(
-               primitive, state, eos_params(cfg_), *spacetime_coupling_.cell_spacetime()[lev]
-            );
-         } else {
-            fill_rmhd_primitive_cache(
-               primitive, state, eos_params(cfg_), Geom(lev), fixed_spacetime_parameters(cfg_), time
-            );
-         }
-      } else if (use_solid_mask) {
-         fill_primitive_cache_masked<NComp, EOSMethod>(
-            primitive,
-            state,
-            *primitive_needed_mask_[lev],
-            eos_params(cfg_),
-            &primitive_needed_kind_[lev]
-         );
-      } else {
-         fill_primitive_cache<NComp, EOSMethod>(primitive, state, eos_params(cfg_));
-      }
+      const bool relativistic = physical_system_is_relativistic(physics_system_);
+      AMREX_ALWAYS_ASSERT(!relativistic || spacetime_state_.active());
+      fill_primitive_cache(PrimitiveCacheLaunch{
+         primitive,
+         state,
+         eos_params(cfg_),
+         physics_system_,
+         EOSMethod,
+         NComp,
+         relativistic ? spacetime_coupling_.cell_spacetime()[lev].get() : nullptr,
+         use_solid_mask ? primitive_needed_mask_[lev].get() : nullptr,
+         use_solid_mask ? &primitive_needed_kind_[lev] : nullptr,
+         &Geom(lev),
+         fixed_spacetime_parameters(cfg_),
+         time,
+      });
    }
 
    template <int NComp, int EOSMethod, bool SubcyclingEnabled = false>
@@ -49,7 +63,6 @@
       prepare_stage_sources<SubcyclingEnabled>(input, lev_begin, lev_end, rhs_time);
       amrex::Real rhs_wall_power = 0.0;
       bool rhs_has_wall_power = false;
-      const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg_);
       for (int lev = lev_begin; lev < lev_end; ++lev) {
          const auto fluxes = flux_ptrs(lev);
          const bool use_solid_mask = solid_active(lev) && !has_mhd_components<NComp>();
@@ -60,7 +73,7 @@
             ? production_patch_grid_system_for_level(lev)
             : PatchGridSystem{};
          const PatchLayout patch_layout = use_mapped_patches ? production_patch_layout_for_level(lev) : PatchLayout{};
-         amrex::MultiFab const* evolved_spacetime = spacetime_matter_is_coupled(cfg_)
+         amrex::MultiFab const* stored_spacetime = spacetime_state_.active()
             ? spacetime_coupling_.cell_spacetime()[lev].get()
             : nullptr;
          amrex::Real stage_start = profile_begin();
@@ -83,10 +96,10 @@
          }
          stage_start = profile_begin();
          debug_poison_fluxes(lev);
-         if ((flux_profile_detail_enabled() || evolved_spacetime != nullptr) && !use_mapped_patches) {
+         if ((flux_profile_detail_enabled() || stored_spacetime != nullptr) && !use_mapped_patches) {
             amrex::Real detail_start = profile_begin();
             if (use_solid_mask) {
-               fill_flux_direction_runtime<NComp, 0, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 0, EOSMethod, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -98,16 +111,16 @@
                   rhs_time
                );
             } else {
-               fill_flux_direction_runtime<NComp, 0, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 0, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, evolved_spacetime
+                  rhs_time, nullptr, nullptr, stored_spacetime
                );
             }
             profile_detail_end(ProfileDetailStage::FluxX, detail_start);
 #if (AMREX_SPACEDIM >= 2)
             detail_start = profile_begin();
             if (use_solid_mask) {
-               fill_flux_direction_runtime<NComp, 1, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 1, EOSMethod, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -119,9 +132,9 @@
                   rhs_time
                );
             } else {
-               fill_flux_direction_runtime<NComp, 1, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 1, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, evolved_spacetime
+                  rhs_time, nullptr, nullptr, stored_spacetime
                );
             }
             profile_detail_end(ProfileDetailStage::FluxY, detail_start);
@@ -129,7 +142,7 @@
 #if (AMREX_SPACEDIM == 3)
             detail_start = profile_begin();
             if (use_solid_mask) {
-               fill_flux_direction_runtime<NComp, 2, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 2, EOSMethod, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -141,16 +154,16 @@
                   rhs_time
                );
             } else {
-               fill_flux_direction_runtime<NComp, 2, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 2, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, evolved_spacetime
+                  rhs_time, nullptr, nullptr, stored_spacetime
                );
             }
             profile_detail_end(ProfileDetailStage::FluxZ, detail_start);
 #endif
          } else {
             if (use_mapped_patches) {
-               fill_fluxes_runtime<NComp, EOSMethod, false, true>(
+               launch_fluxes_runtime<NComp, EOSMethod, false, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -164,7 +177,7 @@
                   &patch_layout
                );
             } else if (use_solid_mask) {
-               fill_fluxes_runtime<NComp, EOSMethod, true>(
+               launch_fluxes_runtime<NComp, EOSMethod, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -176,7 +189,7 @@
                   rhs_time
                );
             } else {
-               fill_fluxes_runtime<NComp, EOSMethod>(
+               launch_fluxes_runtime<NComp, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
                );
             }
@@ -262,33 +275,20 @@
             profile_end(ProfileStage::Sources, stage_start);
             accumulate_source_change(source_before, local_rhs_mass_energy_integral(lev), reflux_weight);
          }
-         if (physics_system_ == PhysicalSystem::RHD) {
+         if (physical_system_is_relativistic(physics_system_)) {
             stage_start = profile_begin();
-            if (evolved_spacetime != nullptr) {
-               add_evolved_spacetime_sources<PhysicalSystem::RHD, EOSMethod>(
-                  *fluid_state_.rhs()[lev], *primitive_[lev], *evolved_spacetime,
-                  Geom(lev), eos_params(cfg_)
-               );
-            } else {
-               add_fixed_spacetime_sources<PhysicalSystem::RHD, EOSMethod>(
-                  *fluid_state_.rhs()[lev], *primitive_[lev], Geom(lev), spacetime,
-                  eos_params(cfg_), rhs_time
-               );
-            }
-            profile_end(ProfileStage::Sources, stage_start);
-         } else if (physics_system_ == PhysicalSystem::RMHD) {
-            stage_start = profile_begin();
-            if (evolved_spacetime != nullptr) {
-               add_evolved_spacetime_sources<PhysicalSystem::RMHD, EOSMethod>(
-                  *fluid_state_.rhs()[lev], *primitive_[lev], *evolved_spacetime,
-                  Geom(lev), eos_params(cfg_)
-               );
-            } else {
-               add_fixed_spacetime_sources<PhysicalSystem::RMHD, EOSMethod>(
-                  *fluid_state_.rhs()[lev], *primitive_[lev], Geom(lev), spacetime,
-                  eos_params(cfg_), rhs_time
-               );
-            }
+            AMREX_ALWAYS_ASSERT(stored_spacetime != nullptr);
+            add_relativistic_sources(RelativisticSourceLaunch{
+               *fluid_state_.rhs()[lev],
+               *primitive_[lev],
+               Geom(lev),
+               eos_params(cfg_),
+               physics_system_,
+               EOSMethod,
+               stored_spacetime,
+               fixed_spacetime_parameters(cfg_),
+               rhs_time,
+            });
             profile_end(ProfileStage::Sources, stage_start);
          }
          debug_check_rhs_level(lev, "RHS assembly");
@@ -321,7 +321,9 @@
             fine_step_start,
             rk_stage
          );
-         apply_evolved_spacetime_fluid_boundaries_range(
+      }
+      if (spacetime_state_.active()) {
+         apply_stored_spacetime_fluid_boundaries_range(
             fluid_state_.stage(input_slot), lev_begin, lev_end
          );
       }
@@ -332,7 +334,7 @@
          lev_end,
          stage_time
       );
-      if (spacetime_state_.active()) {
+      if (spacetime_state_.evolves()) {
          fill_spacetime_matter_range(lev_begin, lev_end);
          compute_spacetime_rhs_range(
             spacetime_state_.stage(input_slot),
@@ -362,10 +364,6 @@
          return false;
       }
       if (sources_enabled(cfg_)) {
-         return false;
-      }
-      if (physical_system_is_relativistic(physics_system_)
-          && has_fixed_spacetime_sources(fixed_spacetime_parameters(cfg_))) {
          return false;
       }
       if (spacetime_state_.active()) {
@@ -402,7 +400,7 @@
          if (flux_profile_detail_enabled()) {
             amrex::Real detail_start = profile_begin();
             if (use_solid_mask) {
-               fill_flux_direction_runtime<NComp, 0, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 0, EOSMethod, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -414,7 +412,7 @@
                   rhs_time
                );
             } else {
-               fill_flux_direction_runtime<NComp, 0, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 0, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
                );
             }
@@ -422,7 +420,7 @@
 #if (AMREX_SPACEDIM >= 2)
             detail_start = profile_begin();
             if (use_solid_mask) {
-               fill_flux_direction_runtime<NComp, 1, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 1, EOSMethod, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -434,7 +432,7 @@
                   rhs_time
                );
             } else {
-               fill_flux_direction_runtime<NComp, 1, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 1, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
                );
             }
@@ -443,7 +441,7 @@
 #if (AMREX_SPACEDIM == 3)
             detail_start = profile_begin();
             if (use_solid_mask) {
-               fill_flux_direction_runtime<NComp, 2, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 2, EOSMethod, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -455,7 +453,7 @@
                   rhs_time
                );
             } else {
-               fill_flux_direction_runtime<NComp, 2, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 2, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
                );
             }
@@ -463,7 +461,7 @@
 #endif
          } else {
             if (use_solid_mask) {
-               fill_fluxes_runtime<NComp, EOSMethod, true>(
+               launch_fluxes_runtime<NComp, EOSMethod, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -475,7 +473,7 @@
                   rhs_time
                );
             } else {
-               fill_fluxes_runtime<NComp, EOSMethod>(
+               launch_fluxes_runtime<NComp, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
                );
             }

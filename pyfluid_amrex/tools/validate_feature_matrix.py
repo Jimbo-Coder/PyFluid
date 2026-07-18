@@ -734,6 +734,90 @@ def diffusion_cases() -> list[Case]:
 
 def amr_cases() -> list[Case]:
    cases = []
+   relativistic_kh_common = {
+      "pyfluid.max_step": "64",
+      "pyfluid.final_time": "0.02",
+      "pyfluid.plot_int": "1",
+      "pyfluid.scalar_int": "1",
+      "pyfluid.aux_gfs": "none",
+      "pyfluid.aux_gf_compute_int": "-1",
+      "pyfluid.aux_gf_int": "-1",
+   }
+   cases.append(Case(
+      "rhd_kh_amr_no_subcycling",
+      2,
+      "rhd_kelvin_helmholtz_2d_amr.in",
+      {
+         **relativistic_kh_common,
+         "pyfluid.subcycling": "off",
+      },
+      require_amr=True,
+      min_amr_level=2,
+   ))
+   cases.append(Case(
+      "rhd_kh_amr_subcycling",
+      2,
+      "rhd_kelvin_helmholtz_2d_amr.in",
+      {
+         **relativistic_kh_common,
+         "pyfluid.subcycling": "on",
+         "pyfluid.subcycling_steps": "local_cfl",
+      },
+      require_amr=True,
+      min_amr_level=2,
+      comparison_reference="rhd_kh_amr_no_subcycling",
+      comparison_components=("dens", "mom1", "mom2", "mom3", "tau"),
+      comparison_rel_l2_tolerance=2.0e-4,
+   ))
+   cases.append(Case(
+      "rmhd_invariant_magnetic_amr",
+      1,
+      "rmhd_entropy_wave_1d.in",
+      {
+         "amr.n_cell": "16",
+         "amr.max_level": "2",
+         "amr.ref_ratio": "2 2",
+         "amr.max_grid_size": "32",
+         "amr.blocking_factor": "8",
+         "amr.regrid_int": "1",
+         "amr.tag_metric": "lohner",
+         "amr.min_feature_length": "1.0e-5",
+         "amr.total_cell_budget": "100000",
+         "pyfluid.ic": "sod_periodic_plane",
+         "pyfluid.shock_x0": "0.5",
+         "pyfluid.shock_nx": "1.0",
+         "pyfluid.rho_left": "1.0",
+         "pyfluid.rho_right": "1.0",
+         "pyfluid.pressure_left": "1.0",
+         "pyfluid.pressure_right": "1.0",
+         "pyfluid.v1_left": "0.0",
+         "pyfluid.v1_right": "0.0",
+         "pyfluid.v2_left": "0.0",
+         "pyfluid.v2_right": "0.0",
+         "pyfluid.v3_left": "0.0",
+         "pyfluid.v3_right": "0.0",
+         "pyfluid.b1_left": "0.2",
+         "pyfluid.b1_right": "0.2",
+         "pyfluid.b2_left": "0.05",
+         "pyfluid.b2_right": "1.0",
+         "pyfluid.b3_left": "0.0",
+         "pyfluid.b3_right": "0.0",
+         "pyfluid.ct": "off",
+         "pyfluid.max_step": "0",
+         "pyfluid.final_time": "-1",
+         "pyfluid.plot_int": "1",
+         "pyfluid.scalar_int": "1",
+         "pyfluid.aux_gfs": "none",
+         "pyfluid.aux_gf_compute_int": "-1",
+         "pyfluid.aux_gf_int": "-1",
+      },
+      checks=SMOKE_POLICY,
+      require_amr=True,
+      min_amr_level=2,
+      # This isolated sensor check uses a true magnetic discontinuity, so the
+      # configured level is deliberately the stopping condition.
+      min_amr_headroom=0,
+   ))
    for timestep in ["euler", "corrector", "midpoint", "ssprk3", "rk4"]:
       cases.append(Case(
          f"hydro_amr_subcycling_{timestep}",

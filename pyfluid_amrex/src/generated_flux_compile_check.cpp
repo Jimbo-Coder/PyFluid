@@ -19,6 +19,9 @@
 #include "pyfluid_amrex/physical_system.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rhd_system.hpp"
+#include "pyfluid_amrex/reconstruction/mp5.hpp"
+#include "pyfluid_amrex/reconstruction/teno5.hpp"
+#include "pyfluid_amrex/reconstruction/wenoz.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/z4c_pointwise.hpp"
 
@@ -93,6 +96,51 @@ bool check_centering_transfer()
    );
    return close_enough(vertex_value, expected(-0.5))
       && close_enough(cell_value, expected(0.5));
+}
+
+template <int Order, int Dim>
+bool check_topology_centering_transfer()
+{
+   const CenteringPolynomialGrid<Order - 1> field{};
+   constexpr int i = 2;
+   constexpr int j = -1;
+   constexpr int k = 3;
+   constexpr int component = 0;
+   constexpr int num_centerings = 1 << Dim;
+   for (int source_mask = 0; source_mask < num_centerings; ++source_mask) {
+      for (int destination_mask = 0;
+           destination_mask < num_centerings;
+           ++destination_mask) {
+         const auto offset = [=](int direction) {
+            const bool source_is_nodal = (source_mask & (1 << direction)) != 0;
+            const bool destination_is_nodal =
+               (destination_mask & (1 << direction)) != 0;
+            if (source_is_nodal == destination_is_nodal) return 0.0;
+            return source_is_nodal ? 0.5 : -0.5;
+         };
+         amrex::Real expected = CenteringPolynomialGrid<Order - 1>::power(
+            i + offset(0)
+         );
+         expected += 2.0 * CenteringPolynomialGrid<Order - 1>::power(
+            j + (Dim >= 2 ? offset(1) : 0.0)
+         );
+         expected += 3.0 * CenteringPolynomialGrid<Order - 1>::power(
+            k + (Dim >= 3 ? offset(2) : 0.0)
+         );
+         const amrex::Real actual =
+            pyfluid_amrex::generated::topology_centering_transfer<Order, Dim>(
+               field,
+               i,
+               j,
+               k,
+               component,
+               source_mask,
+               destination_mask
+            );
+         if (!close_enough(actual, expected)) return false;
+      }
+   }
+   return true;
 }
 
 struct ComponentGrid {
@@ -2280,7 +2328,19 @@ int main()
          && check_centering_transfer<6, 3>()
          && check_centering_transfer<8, 1>()
          && check_centering_transfer<8, 2>()
-         && check_centering_transfer<8, 3>();
+         && check_centering_transfer<8, 3>()
+         && check_topology_centering_transfer<2, 1>()
+         && check_topology_centering_transfer<2, 2>()
+         && check_topology_centering_transfer<2, 3>()
+         && check_topology_centering_transfer<4, 1>()
+         && check_topology_centering_transfer<4, 2>()
+         && check_topology_centering_transfer<4, 3>()
+         && check_topology_centering_transfer<6, 1>()
+         && check_topology_centering_transfer<6, 2>()
+         && check_topology_centering_transfer<6, 3>()
+         && check_topology_centering_transfer<8, 1>()
+         && check_topology_centering_transfer<8, 2>()
+         && check_topology_centering_transfer<8, 3>();
       if (!centering_transfers_pass) {
          std::cerr << "generated high-order centering-transfer mismatch\n";
          return 1;

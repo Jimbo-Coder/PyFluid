@@ -22,8 +22,13 @@ CHARACTERISTIC_HEADER = (
 RELATIVISTIC_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "relativistic_fluid.hpp"
 )
+RELATIVISTIC_HEADER_DIR = RELATIVISTIC_HEADER.parent / "relativistic"
 Z4C_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "z4c.hpp"
+)
+Z4C_HEADER_DIR = Z4C_HEADER.parent / "z4c"
+INITIAL_DATA_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "initial_data.hpp"
 )
 sys.path.insert(0, str(CODEGEN))
 
@@ -31,12 +36,15 @@ from pyfluid_codegen.emit_cpp import (  # noqa: E402
    render_characteristic_header,
    render_eos_header,
    render_flux_header,
+   render_initial_data_header,
    render_metric_header,
    render_operator_header,
    render_relativistic_header,
+   render_relativistic_headers,
    render_riemann_header,
    render_vector_header,
    render_z4c_header,
+   render_z4c_headers,
 )
 from pyfluid_codegen.characteristic_equations import characteristic_kernels  # noqa: E402
 from pyfluid_codegen.eos_equations import analytic_equations_of_state, eos_kernels  # noqa: E402
@@ -1664,6 +1672,8 @@ def main() -> None:
       raise SystemExit(f"missing generated header: {RELATIVISTIC_HEADER}")
    if not Z4C_HEADER.exists():
       raise SystemExit(f"missing generated header: {Z4C_HEADER}")
+   if not INITIAL_DATA_HEADER.exists():
+      raise SystemExit(f"missing generated header: {INITIAL_DATA_HEADER}")
    rendered_flux = render_flux_header()
    stored_flux = FLUX_HEADER.read_text(encoding="utf-8")
    if rendered_flux != stored_flux:
@@ -1694,8 +1704,20 @@ def main() -> None:
    stored_relativistic = RELATIVISTIC_HEADER.read_text(encoding="utf-8")
    if rendered_relativistic != stored_relativistic:
       raise SystemExit(f"generated relativistic header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+   for name, rendered in render_relativistic_headers().items():
+      path = RELATIVISTIC_HEADER_DIR / f"{name}.hpp"
+      if not path.exists() or rendered != path.read_text(encoding="utf-8"):
+         raise SystemExit(f"generated relativistic group is stale: {path}")
    if render_z4c_header() != Z4C_HEADER.read_text(encoding="utf-8"):
       raise SystemExit(f"generated Z4c header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+   for name, rendered in render_z4c_headers().items():
+      path = Z4C_HEADER_DIR / f"{name}.hpp"
+      if not path.exists() or rendered != path.read_text(encoding="utf-8"):
+         raise SystemExit(f"generated Z4c group is stale: {path}")
+   if render_initial_data_header() != INITIAL_DATA_HEADER.read_text(encoding="utf-8"):
+      raise SystemExit(
+         f"generated initial-data header is stale: rerun {CODEGEN / 'generate_kernels.py'}"
+      )
    validate_symbolic_operator_contract()
    validate_symbolic_eos_contract()
    rng = random.Random(20260628)

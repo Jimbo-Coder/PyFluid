@@ -10,10 +10,35 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
-#include "pyfluid_amrex/primitive_cache.hpp"
+#include "pyfluid_amrex/primitive_cache_factory.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+inline void fill_aux_primitive_cache(
+   amrex::MultiFab& primitive,
+   amrex::MultiFab const& state,
+   amrex::Geometry const& geometry,
+   amrex::Real time,
+   RunConfig const& cfg,
+   amrex::MultiFab const* cell_spacetime = nullptr
+)
+{
+   fill_primitive_cache(PrimitiveCacheLaunch{
+      primitive,
+      state,
+      eos_params(cfg),
+      physical_system(cfg),
+      eos_method_code(cfg),
+      state.nComp(),
+      cell_spacetime,
+      nullptr,
+      nullptr,
+      &geometry,
+      fixed_spacetime_parameters(cfg),
+      time,
+   });
+}
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real velocity_component(
@@ -85,10 +110,7 @@ inline void fill_mach_number_output(
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
    );
-   fill_base_primitive_cache_runtime(
-      primitive, state, eos, eos_method, system,
-      geometry, fixed_spacetime_parameters(cfg), time
-   );
+   fill_aux_primitive_cache(primitive, state, geometry, time, cfg);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -122,16 +144,10 @@ inline void fill_plasma_beta_output(
    RunConfig const& cfg
 )
 {
-   const EOSParams eos = eos_params(cfg);
-   const int eos_method = eos_method_code(cfg);
-   const PhysicalSystem system = physical_system(cfg);
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
    );
-   fill_base_primitive_cache_runtime(
-      primitive, state, eos, eos_method, system,
-      geometry, fixed_spacetime_parameters(cfg), time
-   );
+   fill_aux_primitive_cache(primitive, state, geometry, time, cfg);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -172,14 +188,10 @@ inline void fill_entropy_proxy_output(
 {
    const EOSParams eos = eos_params(cfg);
    const int eos_method = eos_method_code(cfg);
-   const PhysicalSystem system = physical_system(cfg);
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
    );
-   fill_base_primitive_cache_runtime(
-      primitive, state, eos, eos_method, system,
-      geometry, fixed_spacetime_parameters(cfg), time
-   );
+   fill_aux_primitive_cache(primitive, state, geometry, time, cfg);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -200,6 +212,7 @@ inline void fill_entropy_proxy_output(
 inline void fill_amr_tag_metric_output(
    amrex::MultiFab& metric,
    amrex::MultiFab const& state,
+   amrex::MultiFab const* spacetime_state,
    amrex::Geometry const& geom,
    amrex::Real time,
    RunConfig const& cfg
@@ -211,10 +224,10 @@ inline void fill_amr_tag_metric_output(
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
    );
-   fill_base_primitive_cache_runtime(
-      primitive, state, eos, eos_method, system,
-      geom, fixed_spacetime_parameters(cfg), time
-   );
+   if (physical_system_is_relativistic(system) && spacetime_state == nullptr) {
+      amrex::Abort("relativistic AMR-metric output requires canonical spacetime state");
+   }
+   fill_aux_primitive_cache(primitive, state, geom, time, cfg, spacetime_state);
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
    const auto problo = geom.ProbLoArray();
@@ -229,6 +242,12 @@ inline void fill_amr_tag_metric_output(
       const amrex::Box& bx = mfi.tilebox();
       const auto values = primitive.const_array(mfi);
       const auto out = metric.array(mfi);
+      const AmrSpacetimeMetricView spacetime{
+         spacetime_state != nullptr
+            ? spacetime_state->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{},
+         spacetime_state != nullptr,
+      };
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          out(i, j, k, 0) = auto_amr_indicator_from_primitive(
             values,
@@ -243,7 +262,8 @@ inline void fill_amr_tag_metric_output(
             problo,
             dx,
             min_feature_lengths,
-            min_refine_radius
+            min_refine_radius,
+            spacetime
          );
       });
    }

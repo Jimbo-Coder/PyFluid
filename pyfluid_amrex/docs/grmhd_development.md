@@ -20,10 +20,18 @@ format, or checkpoint path.
 `none`; relativistic `RHD/RMHD` require `fixed` or `evolved`. Fixed Minkowski is
 special-relativistic HD/MHD, fixed curved geometry is Cowling evolution, and
 evolved geometry schedules the spacetime sector. The metric provider is present
-for both relativistic systems. In Cowling mode
-it supplies immutable lapse, shift, spatial metric, inverse metric, determinant,
-and derivatives. In dynamical mode the spacetime sector evolves the same fields.
+for both relativistic systems. In Cowling mode it supplies immutable lapse,
+shift, spatial metric, inverse metric, determinant, and derivatives. Analytic
+and sampled fixed metrics both materialize one canonical immutable Z4c state on
+the AMR hierarchy. Analytic data are resampled exactly when a level is created
+or remade; sampled providers use their interpolation policy there. Fixed
+spacetime allocates no old, stage, RHS, or dense-output state and receives no
+spacetime update. In dynamical mode the spacetime sector evolves the same
+canonical fields.
 The relativistic fluid kernels do not distinguish those ownership modes.
+`spacetime.matter_coupling = vacuum` is the orthogonal evolved-spacetime
+control: gravity evolves without fluid backreaction while the fluid still
+responds to the metric. It is not a second Cowling/fixed branch.
 
 ## EOS And Initial-Data Ownership
 
@@ -35,11 +43,13 @@ residuals are generated for that closure; unsupported RMHD EOS choices are
 rejected before allocation rather than silently using another EOS.
 
 An initial-data provider normally supplies one self-consistent fluid and
-spacetime solution in physical coordinates. The fluid group is mandatory for
-every physical system. Storage is selected by `pyfluid.physics` and
-`spacetime.evolution`, never by an initialization fallback: RHD allocates no
-magnetic state, RMHD allocates magnetic state, and only evolved spacetime
-allocates the Z4c state.
+spacetime solution in physical coordinates. A provider advertises those groups
+independently so analytic fixed metrics need not fabricate fluid data. The fluid
+group is mandatory for every physical system. Storage is selected by
+`pyfluid.physics` and `spacetime.evolution`, never by an initialization fallback:
+RHD allocates no magnetic state and RMHD allocates magnetic state. Evolved
+spacetime owns Z4c stage/RHS storage; fixed spacetime owns only the immutable
+canonical Z4c state needed for coupling, AMR, output, and restart.
 
 Active optional groups may select provider data or one mathematically valid
 neutral value:
@@ -55,6 +65,14 @@ neutral value:
 group. The defaults are `id`, preserving a provider's coupled solution. Gauge
 choices remain independent runtime evolution policies; they do not rewrite the
 initial data.
+
+Constraint and equilibrium solvers produce one canonical solution on their
+natural layout. The field schema determines the evolution centering of every
+component, and one generated order-2/4/6/8 topology operator converts between
+cell, vertex, face, and edge layouts. The hierarchy adapter then performs the
+topology-appropriate coarse-fine synchronization. This keeps staggering at the
+initial-data/evolution boundary instead of coupling CTT, XCTS, TOV, or future
+KEH solvers to AMReX evolution storage.
 
 ## Reference Implementations
 
@@ -80,6 +98,14 @@ initial data.
   Kastaun, is an additional modern C++ primitive-recovery and EOS reference.
   The local checkout is
   `/Users/mrizzo/phys_research/ETK_CarpetX/CactusX/repos/RePrimAnd`.
+- [Aurrekoetxea, Clough, and Lim, "CTTK: A new method to solve the initial
+  data constraints in numerical relativity"](https://arxiv.org/abs/2207.03125)
+  is the reference for the CTTK alternative to conventional CTT. It chooses
+  the conformal factor, obtains the spatially varying mean curvature
+  algebraically from the Hamiltonian constraint, and iterates that result
+  with a conformal-vector momentum solve. Its Chombo multigrid implementation
+  and AMR convergence tests are useful validation references, but the paper
+  does not prescribe cell- versus vertex-centered storage.
 
 References define equations and validation targets. PyFluid keeps its own
 single AMReX ownership, field-schema, code-generation, and validation contracts.
@@ -172,9 +198,12 @@ repair are separate contracts:
   recovered primitive state;
 - the ordered C2P policy tries numerical recovery methods without silently
   changing the conserved state;
-- exhaustion of every C2P method means the conserved state is invalid for the
-  selected EOS. Validation aborts with diagnostics. Any future production
-  repair/floor policy is explicit, counted, and outside the C2P solver.
+- after each relativistic RK stage, a successfully recovered primitive below
+  the configured density or pressure floor is projected to the explicit
+  atmosphere state before the next RHS evaluation. Magnetic fields are retained
+  by RMHD atmosphere projection. C2P exhaustion, nonfinite data, and invalid
+  states above the atmosphere floor still abort with diagnostics; the atmosphere
+  policy does not turn arbitrary recovery failure into a fallback solution.
 
 For composition-dependent EOSs, `Y_e` is an evolved conserved composition
 field. Temperature is recovered primitive/cache data rather than an independent
@@ -297,6 +326,11 @@ Current fixed-spacetime status:
   checkpoint restart, a variable-determinant Schwarzschild control exercises
   RMHD, and a two-dimensional Rindler AMR+CT+subcycling control preserves
   magnetic divergence.
+- fixed TOV data use that same Cowling mode. A four-level
+  SSPRK3/subcycling control changes the stored metric by only `2.3e-16`, changes
+  maximum density by `2.4e-6` over four coarse steps, and restarts exactly within
+  `1e-12`. The corresponding evolved-spacetime control changes maximum density
+  by about `9.3e-4` over its shorter CFL-limited interval.
 
 ## Signal-Speed Policy
 
@@ -339,11 +373,64 @@ Current evolved-spacetime status:
   `1e-11`; its AMR constraint norm remains a tracked interface/surface
   validation rather than a claim of long-term stellar equilibrium.
 
-The current initial-data implementation is an internal analytic/radial-table
-TOV provider. The physical-coordinate sampling boundary is intended to accept
-later COCAL/KEH or other grid data, but no arbitrary-coordinate external-grid
-reader or physics-aware interpolation has yet been implemented. Rotating-star,
-black-hole, and binary initial data therefore remain future work.
+Initial-data construction and evolution meet only at the physical-coordinate
+provider and canonical field schema. `initial_data/elliptic.hpp` is the first
+solver-side service: it accepts an AMR hierarchy plus solution/RHS views and
+performs composite AMReX MLMG scalar or conformal-vector solves without owning
+evolution state. Physical boundaries use coefficient fields in the single
+coordinate-derivative form `A f + B d_d f = C`; periodicity comes from the
+hierarchy geometry. The scalar operator supports general spatially varying
+Robin data. Coefficient-defined Dirichlet data are lowered to AMReX's native
+form for both operators; genuine Robin data for `MLTensorOp` are rejected
+because its tensor cross-term boundary fill does not consistently implement
+Robin conditions. Generated multilevel controls cover a general scalar Robin
+problem, the nonlinear time-symmetric CTT Hamiltonian equation, the CTT
+momentum operator, and recovery of isotropic TOV conformal data. Centered fields
+with `f = f_inf + amplitude/r^p` use the standard amplitude-independent
+condition `p(f-f_inf) + r d_r f = 0`; the TOV conformal correction uses its
+`p=1`, `f_inf=0` instance rather than sampled finite-radius boundary data.
+Later XCTS residuals, Jacobian actions, and nonlinear iteration belong in this
+same initial-data layer; evolution continues to consume only the resulting
+provider.
+
+CTTK is a formulation option inside this same layer, not another
+materialization path. It is particularly relevant when the requested physical
+matter profile should remain fixed: conventional conformal rescaling can make
+the physical source reconstructed after the solve differ from the source that
+was specified. CTTK instead fixes the conformal factor and solves algebraically
+for a spatially varying mean curvature, then iterates the momentum solve; its
+hybrid form retains an elliptic conformal-factor correction for non-matter
+sources such as Bowen-York data. This does not replace CTT/XCTS generally:
+pure CTTK requires a nonnegative algebraic Hamiltonian radicand, couples the
+Hamiltonian and momentum sectors even for zero initial momentum density, and
+does not by itself construct quasiequilibrium lapse and shift.
+
+The paper does not resolve the centering choice. PyFluid keeps finite-volume
+fluid state as cell averages and never solves a duplicate vertex-centered
+hydro system. The production target is instead one staggered solve on the
+evolution hierarchy: CTT, CTTK, and XCTS spacetime unknowns live directly on
+Z4c vertices, while fluid state remains on cells and CT magnetic state remains
+on faces. Matter-to-vertex and metric-to-cell projections are stage-local
+coupling views, not a post-solve initial-data remap. The current cell-centered
+CTT solve plus schema-driven transfer remains a validation control until the
+native nodal solve matches its AMR and boundary coverage, after which it is
+removed rather than retained as a second production implementation.
+
+AMReX provides a composite `MLNodeLaplacian` for the scalar nodal equations.
+The conformal vector Laplacian is lowered to scalar nodal Poisson equations
+through its Helmholtz-style decomposition, generated from the same high-level
+momentum operator. The initial-data backend must supply the same public
+`A f + B d_d f = C` boundary contract to nodal and cell operators; homogeneous
+Dirichlet substitution is a validation control, not a replacement for the
+asymptotic Robin condition.
+
+Small analytic or elliptic problems may execute in process. Expensive
+KEH/COCAL, black-hole, or binary solves may execute as separate programs and
+write an initial-data artifact, but must materialize through the same provider
+boundary. The current physical provider backends are fixed analytic spacetime
+and the internal radial-table TOV solution. No arbitrary-coordinate external
+grid reader, nonlinear XCTS solve, or physics-aware interpolation is yet
+implemented, so rotating-star, black-hole, and binary data remain future work.
 
 Validation commands are:
 

@@ -1,4 +1,6 @@
 #include "pyfluid_amrex/amr_solver_base.hpp"
+#include "pyfluid_amrex/ct.hpp"
+#include "pyfluid_amrex/patch_metrics.hpp"
 
 namespace pyfluid_amrex {
 

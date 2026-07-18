@@ -5,10 +5,10 @@
 #include <AMReX_MultiFab.H>
 
 #include "pyfluid_amrex/fixed_spacetime.hpp"
-#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
-#include "pyfluid_amrex/rhd_system.hpp"
-#include "pyfluid_amrex/rmhd_system.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/sources.hpp"
+#include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
+#include "pyfluid_amrex/relativistic_primitive.hpp"
+#include "pyfluid_amrex/z4c_derivatives.hpp"
 
 namespace pyfluid_amrex {
 
@@ -71,7 +71,7 @@ inline void add_fixed_spacetime_sources(
 }
 
 template <PhysicalSystem System, int EOSMethod, int Order = 4>
-inline void add_evolved_spacetime_sources(
+inline void add_stored_spacetime_sources(
    amrex::MultiFab& rhs,
    amrex::MultiFab const& primitive,
    amrex::MultiFab const& cell_spacetime,

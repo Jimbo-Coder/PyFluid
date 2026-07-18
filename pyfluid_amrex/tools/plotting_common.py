@@ -129,6 +129,8 @@ def plot_scalar_report(
    ax = axs[1, 0]
    if "min_rho" in rows[0]:
       ax.plot(t, [row["min_rho"] for row in rows], label="min rho", linewidth=2.0, **markers)
+   if "max_rho" in rows[0]:
+      ax.plot(t, [row["max_rho"] for row in rows], label="max rho", linewidth=2.0, **markers)
    if "min_pressure" in rows[0]:
       ax.plot(t, [row["min_pressure"] for row in rows], label="min P", linewidth=2.0, **markers)
    ax.set_title("Floors")

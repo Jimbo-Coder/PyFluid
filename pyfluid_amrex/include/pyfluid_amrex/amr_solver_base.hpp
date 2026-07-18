@@ -29,31 +29,24 @@
 
 #include "pyfluid_amrex/boundary.hpp"
 #include "pyfluid_amrex/build_options.hpp"
-#include "pyfluid_amrex/checkpoint.hpp"
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/ct_fields.hpp"
 #include "pyfluid_amrex/evolution_sector_storage.hpp"
 #include "pyfluid_amrex/ct_edge_flux_register.hpp"
-#include "pyfluid_amrex/amr_indicator.hpp"
-#include "pyfluid_amrex/diagnostics.hpp"
+#include "pyfluid_amrex/diagnostics_types.hpp"
 #include "pyfluid_amrex/solid_geometry.hpp"
 #include "pyfluid_amrex/gravity.hpp"
-#include "pyfluid_amrex/initial_data.hpp"
-#include "pyfluid_amrex/initial_data/tov.hpp"
-#include "pyfluid_amrex/mapped_patch_fill.hpp"
-#include "pyfluid_amrex/metric_provider.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/multipatch.hpp"
-#include "pyfluid_amrex/output.hpp"
 #include "pyfluid_amrex/patch_grid.hpp"
 #include "pyfluid_amrex/patch_layout_builder.hpp"
 #include "pyfluid_amrex/profiling.hpp"
-#include "pyfluid_amrex/primitive_cache.hpp"
 #include "pyfluid_amrex/solid_fields.hpp"
-#include "pyfluid_amrex/solid_conservation.hpp"
 #include "pyfluid_amrex/state.hpp"
 #include "pyfluid_amrex/state_interpolation.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 #include "pyfluid_amrex/spacetime_coupling_storage.hpp"
+#include "pyfluid_amrex/temporal_cadence.hpp"
 #include "pyfluid_amrex/z4c_runtime.hpp"
 
 namespace pyfluid_amrex {
@@ -61,7 +54,7 @@ namespace pyfluid_amrex {
 class AmrSolverBase : public amrex::AmrCore {
 public:
    explicit AmrSolverBase(RunConfig cfg)
-      : cfg_(std::move(cfg)), tov_initial_data_(cfg_)
+      : cfg_(std::move(cfg)), initial_data_provider_(cfg_)
    {
       validate_config(cfg_);
       validate_amr_refinement_ratios();
@@ -71,14 +64,12 @@ public:
       fluid_state_.configure(
          fluid_state_grid_fields(physics_system_, cfg_.passive_scalars), nlev, cfg_.ng
       );
-      if (has_evolution_sector(
-             evolution_sectors(physics_system_, spacetime_evolution_mode(cfg_)),
-             EvolutionSector::Spacetime
-          )) {
+      if (spacetime_stores_state(cfg_)) {
          spacetime_state_.configure(
-            z4c_state_grid_fields(), nlev, std::max(3, cfg_.ng + 2)
+            z4c_state_grid_fields(), nlev, std::max(3, cfg_.ng + 2),
+            spacetime_evolves(cfg_)
          );
-         spacetime_coupling_.configure(nlev, cfg_.ng);
+         spacetime_coupling_.configure(nlev, std::max(2, cfg_.ng));
          spacetime_fillpatch_bcs_ = z4c_boundary_records(cfg_, Geom(0));
          spacetime_fillpatch_func_ = SpacetimeFillPatchFunc(Z4cFillPatchBoundary{});
       }
@@ -354,6 +345,29 @@ protected:
    void fill_level_primitive_cache(int lev, amrex::Real time);
    bool auto_refinement_resolved_at_level(int lev) const;
    AmrLevelDiagnostics current_amr_level_diagnostics() const;
+   bool symmetry_axis_active(int dir) const;
+   amrex::Real symmetry_volume_factor() const;
+   amrex::Real symmetry_momentum_factor(int dir, amrex::Real volume_factor) const;
+   amrex::Real symmetry_angular_momentum_factor(
+      int dir,
+      amrex::Real volume_factor
+   ) const;
+   CflLimiterLocation current_cfl_limiter_location() const;
+   ScalarDiagnostics compute_current_scalars(
+      int step,
+      amrex::Real time,
+      amrex::Real dt,
+      amrex::Real mass0,
+      amrex::Real energy0,
+      amrex::Real gravity_total_energy0,
+      amrex::Real passive_mass0,
+      amrex::Real max_rho0,
+      amrex::Real mcells_per_s,
+      amrex::Real layout_mcells_per_s,
+      amrex::Real sim_time_per_s,
+      DiffusionStats diffusion,
+      int eos_method
+   );
    void validate_timestep(amrex::Real dt, int step, amrex::Real time) const;
    void validate_scalar_health(ScalarDiagnostics const& d) const;
    void enforce_level_cell_budget(int lev, amrex::Long cells, char const* context) const;
@@ -376,7 +390,37 @@ protected:
    void average_down_face_b_level_metric(int fine_lev);
    void average_down_spacetime();
    void average_down_spacetime_level(int fine_lev);
+   bool gravity_energy_source_register_needed(int fine_lev) const;
+   amrex::iMultiFab coarse_fine_cell_mask(int lev) const;
+   void fill_athena_ssprk3_gravity_face_energy_source(
+      int lev,
+      int dir,
+      amrex::MultiFab& out
+   ) const;
+   void accumulate_athena_ssprk3_gravity_energy_source_register_dir(
+      int fine_lev,
+      int dir,
+      amrex::MultiFab const* fine_average_source,
+      amrex::Real dt,
+      bool include_coarse,
+      bool include_fine
+   );
+   void add_athena_ssprk3_gravity_energy_source_register(
+      amrex::Real dt,
+      int lev_begin,
+      int lev_end
+   );
+   void apply_gravity_energy_source_register(
+      int fine_lev,
+      amrex::MultiFab& coarse_state
+   );
+   void apply_gravity_energy_source_register_scaled(
+      int fine_lev,
+      amrex::MultiFab& coarse_state,
+      amrex::Real scale
+   );
    void initialize_spacetime_level(int lev, amrex::Real time);
+   void materialize_constraint_solved_initial_data();
    void fill_new_spacetime_level_from_coarse(int lev, amrex::Real time);
    void fill_remade_spacetime_level(
       int lev,
@@ -406,11 +450,12 @@ protected:
       amrex::Real fine_step_start,
       int rk_stage
    );
-   void apply_evolved_spacetime_fluid_boundaries_range(
+   void apply_stored_spacetime_fluid_boundaries_range(
       LevelData& state,
       int lev_begin,
       int lev_end
    );
+   void refresh_stored_spacetime_fluid_boundary(int lev, amrex::Real time);
    void fill_spacetime_matter_range(int lev_begin, int lev_end);
    void add_spacetime_ko_dissipation(amrex::MultiFab const& state, int lev);
    template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
@@ -449,9 +494,116 @@ protected:
    void reset_flux_registers();
    void reset_edge_flux_registers();
    void reset_flux_register(int fine_lev);
+   std::array<amrex::MultiFab*, AMREX_SPACEDIM> flux_ptrs(int lev);
+#if (AMREX_SPACEDIM >= 2)
+   std::array<amrex::iMultiFab const*, AMREX_SPACEDIM> flux_owner_mask_ptrs(
+      int lev
+   ) const;
+#endif
+   std::array<amrex::FArrayBox const*, AMREX_SPACEDIM> flux_fabs(
+      int lev,
+      amrex::MFIter const& mfi
+   ) const;
+   amrex::Real cell_volume(int lev) const;
+   amrex::Real face_area(int lev, int dir) const;
+   bool cutcell_flux_register_needed(int fine_lev) const;
+   bool curvilinear_flux_register_needed(int fine_lev) const;
+   bool patch_union_flux_register_needed(int fine_lev) const;
+   bool mapped_patch_flux_register_needed(int fine_lev) const;
+   bool weighted_flux_register_needed(int fine_lev) const;
+   void fill_coarse_reflux_volume(int fine_lev);
+   bool prepare_weighted_flux_register(int fine_lev);
+   void fill_area_weighted_flux_fabs(
+      int lev,
+      amrex::MFIter const& mfi,
+      std::array<amrex::FArrayBox, AMREX_SPACEDIM>& weighted
+   ) const;
+   std::array<amrex::FArrayBox const*, AMREX_SPACEDIM> area_weighted_flux_fabs(
+      int lev,
+      amrex::MFIter const& mfi,
+      std::array<amrex::FArrayBox, AMREX_SPACEDIM>& weighted
+   ) const;
+   void add_fluxes_to_registers(int lev, amrex::Real weight);
+#if (AMREX_SPACEDIM == 3)
+   amrex::Array<amrex::FArrayBox const*, 3> edge_electric_fabs(
+      int lev,
+      amrex::MFIter const& mfi
+   ) const;
+#endif
+   void fill_edge_line_integral_fab(
+      int lev,
+      int component,
+      amrex::FArrayBox const& edge_electric,
+      amrex::FArrayBox& edge_line_integral
+   ) const;
+#if (AMREX_SPACEDIM == 3)
+   amrex::Array<amrex::FArrayBox const*, 3> edge_line_integral_fabs(
+      int lev,
+      amrex::MFIter const& mfi,
+      amrex::Array<amrex::FArrayBox, 3>& edge_line
+   ) const;
+#endif
+   void add_edge_electric_to_registers(int lev, amrex::Real dt);
+   void reflux_edge_flux_registers_to_face_b();
+   void reflux_edge_flux_register_to_face_b(int fine_lev);
+   void reflux_next_levels();
+   void reflux_level_to_destination(
+      int fine_lev,
+      amrex::MultiFab& destination
+   );
+   void reflux_level_to_next(int fine_lev);
+   void reflux_level_to_state(int fine_lev);
+
+   void clear_solid_mask_kind_tables(int lev);
+   void build_solid_mask_kind_tables(int lev);
+   void average_down_solid_volume_fraction_from_fine(int fine_lev);
+   void average_down_solid_aperture_from_fine(int fine_lev, int direction);
+   void enforce_solid_mask_nesting_from_fine();
+   void refresh_solid_activity(int lev);
+   amrex::Real solid_geometry_max_speed() const;
+   amrex::Real solid_geometry_motion_dt(int lev) const;
+   bool solid_mask_refresh_needed(int lev, amrex::Real time) const;
+   void allocate_solid_apertures_level(int lev);
+   void fill_solid_apertures_level(int lev, amrex::Real time);
+   void refresh_solid_discrete_geometry_level(int lev, amrex::Real time);
+   std::array<amrex::MultiFab const*, AMREX_SPACEDIM> solid_aperture_ptrs(
+      int lev
+   ) const;
+   void refresh_solid_geometry_level(
+      int lev,
+      amrex::Real time,
+      bool remap_moving_solid
+   );
+   void refresh_solid_geometry_all_levels(
+      amrex::Real time,
+      bool remap_moving_solid
+   );
+   bool refresh_solid_geometry_synced(
+      amrex::Real time,
+      bool remap_moving_solid,
+      bool preserve_hydro_totals
+   );
+   void refresh_pulse_solid_geometry_all_levels(
+      amrex::Real time,
+      bool remap_moving_solid
+   );
+   bool solid_active(int lev) const;
+   amrex::iMultiFab const* active_solid_mask_ptr(int lev) const;
 
    amrex::iMultiFab valid_cell_mask(int lev) const;
    HydroConservedTotals hydro_valid_conserved_totals() const;
+   bool external_conservation_budget_supported() const;
+   MassEnergy local_rhs_mass_energy_integral(int lev) const;
+   void accumulate_physical_boundary_flux(
+      int lev,
+      std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
+      amrex::Real weight
+   );
+   void accumulate_source_change(
+      MassEnergy const& before,
+      MassEnergy const& after,
+      amrex::Real weight
+   );
 
    void write_current_state_plotfile(int step, amrex::Real time) const;
    void write_current_aux_gfs(int step, amrex::Real time);
@@ -513,15 +665,10 @@ protected:
    // Shared AMR infrastructure used by every physical-system evolution bundle.
 #include "pyfluid_amrex/solver_sections/amr_tagging.inc.hpp"
 #include "pyfluid_amrex/solver_sections/fillpatch.inc.hpp"
-#include "pyfluid_amrex/solver_sections/gravity_energy_sync.inc.hpp"
-#include "pyfluid_amrex/solver_sections/flux_registers.inc.hpp"
-#include "pyfluid_amrex/solver_sections/solid_geometry.inc.hpp"
 #include "pyfluid_amrex/solver_sections/debug_contracts.inc.hpp"
-#include "pyfluid_amrex/solver_sections/external_conservation.inc.hpp"
-#include "pyfluid_amrex/solver_sections/diagnostics.inc.hpp"
 
    RunConfig cfg_;
-   TovInitialData tov_initial_data_;
+   RelativisticInitialDataProvider initial_data_provider_;
    PhysicalSystem physics_system_ = PhysicalSystem::HD;
    MeshRuntimeLayout mesh_layout_{};
    int recon_method_ = ReconPWC;
@@ -544,6 +691,7 @@ protected:
    bool post_fillpatch_state_boundary_needed_ = false;
    amrex::Real checkpoint_reference_mass_ = std::numeric_limits<amrex::Real>::quiet_NaN();
    amrex::Real checkpoint_reference_energy_ = std::numeric_limits<amrex::Real>::quiet_NaN();
+   amrex::Real checkpoint_reference_max_rho_ = std::numeric_limits<amrex::Real>::quiet_NaN();
    amrex::Real wall_work_reference_energy_ = 0.0;
    amrex::Real cumulative_wall_work_ = 0.0;
    amrex::Real latest_wall_power_ = 0.0;

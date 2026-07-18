@@ -4,137 +4,32 @@
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_MultiFab.H>
 
-#include <cmath>
-
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/constants.hpp"
-#include "pyfluid_amrex/initial_data/sampling.hpp"
-#include "pyfluid_amrex/initial_data/tov.hpp"
-#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
+#include "pyfluid_amrex/initial_data/fluid.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
 
-struct RelativisticInitialDataParameters {
-   amrex::Real rho0;
-   amrex::Real pressure0;
-   amrex::Real amplitude;
-   amrex::Real wave_number;
-   amrex::Real v1_0;
-   amrex::Real v2_0;
-   amrex::Real v3_0;
-   amrex::Real b1_0;
-   amrex::Real b2_0;
-   amrex::Real b3_0;
-   amrex::Real shock_x0;
-   amrex::Real shock_y0;
-   amrex::Real shock_z0;
-   amrex::Real shock_nx;
-   amrex::Real shock_ny;
-   amrex::Real shock_nz;
-   amrex::Real rho_left;
-   amrex::Real pressure_left;
-   amrex::Real v1_left;
-   amrex::Real v2_left;
-   amrex::Real v3_left;
-   amrex::Real b1_left;
-   amrex::Real b2_left;
-   amrex::Real b3_left;
-   amrex::Real rho_right;
-   amrex::Real pressure_right;
-   amrex::Real v1_right;
-   amrex::Real v2_right;
-   amrex::Real v3_right;
-   amrex::Real b1_right;
-   amrex::Real b2_right;
-   amrex::Real b3_right;
-   EOSParams eos;
-   amrex::Real rho_floor;
-   amrex::Real pressure_floor;
-};
-
-template <int EOSMethod>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RHDPrimitive rhd_primitive_from_pressure(
-   amrex::Real rho,
-   amrex::Real pressure,
-   amrex::Real v1,
-   amrex::Real v2,
-   amrex::Real v3,
-   EOSParams const& eos
-) noexcept
-{
-   return {
-      rho,
-      relativistic_specific_internal_energy_from_pressure<EOSMethod>(rho, pressure, eos),
-      pressure,
-      v1,
-      v2,
-      v3,
-   };
-}
-
 template <int EOSMethod>
 inline void initialize_relativistic_state_method(
    amrex::MultiFab& state,
-   amrex::Geometry const& geom,
+   amrex::Geometry const& geometry,
    RunConfig const& cfg,
-   TovInitialDataView const& tov_initial_data
+   RelativisticInitialDataView const& initial_data
 )
 {
-   const auto problo = geom.ProbLoArray();
-   const auto probhi = geom.ProbHiArray();
-   const auto dx = geom.CellSizeArray();
+   const auto problo = geometry.ProbLoArray();
+   const auto probhi = geometry.ProbHiArray();
+   const auto dx = geometry.CellSizeArray();
    const MeshAxes axes = mesh_axes_layout(cfg);
    const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
-   validate_fixed_spacetime_domain(spacetime, geom);
+   validate_fixed_spacetime_domain(spacetime, geometry);
    const PhysicalSystem system = physical_system(cfg);
    const bool magnetized = physical_system_has_magnetic_field(system);
-   const bool initialize_magnetic_from_id = cfg.initial_data_magnetic == "id";
-   const bool uniform = cfg.ic == "uniform";
-   const bool sine_wave = cfg.ic == "sin_wave";
-   const bool fixed_metric_hse = cfg.ic == "fixed_metric_hse";
-   const bool tov = cfg.ic == "tov";
-   const bool periodic_plane = cfg.ic == "sod_periodic_plane";
-   const amrex::Real two_pi = constants::two_pi;
-   const RelativisticInitialDataParameters params{
-      cfg.rho0,
-      cfg.pressure0,
-      cfg.amplitude,
-      cfg.wave_number,
-      cfg.v1_0,
-      cfg.v2_0,
-      cfg.v3_0,
-      cfg.b1_0,
-      cfg.b2_0,
-      cfg.b3_0,
-      cfg.shock_x0,
-      cfg.shock_y0,
-      cfg.shock_z0,
-      cfg.shock_nx,
-      cfg.shock_ny,
-      cfg.shock_nz,
-      cfg.rho_left,
-      cfg.pressure_left,
-      cfg.v1_left,
-      cfg.v2_left,
-      cfg.v3_left,
-      std::isfinite(cfg.b1_left) ? cfg.b1_left : cfg.b1_0,
-      std::isfinite(cfg.b2_left) ? cfg.b2_left : cfg.b2_0,
-      std::isfinite(cfg.b3_left) ? cfg.b3_left : cfg.b3_0,
-      cfg.rho_right,
-      cfg.pressure_right,
-      cfg.v1_right,
-      cfg.v2_right,
-      cfg.v3_right,
-      std::isfinite(cfg.b1_right) ? cfg.b1_right : cfg.b1_0,
-      std::isfinite(cfg.b2_right) ? cfg.b2_right : cfg.b2_0,
-      std::isfinite(cfg.b3_right) ? cfg.b3_right : cfg.b3_0,
-      eos_params(cfg),
-      cfg.rho_floor,
-      cfg.pressure_floor,
-   };
+   const bool initialize_magnetic_from_id = initial_data.fields.magnetic_from_id;
+   const FluidInitialDataParameters parameters = fluid_initial_data_parameters(cfg);
    const FixedSpacetimeGeometry reference_geometry = fixed_spacetime_geometry(
       spacetime,
       0.5 * (problo[0] + probhi[0]),
@@ -142,7 +37,13 @@ inline void initialize_relativistic_state_method(
       AMREX_SPACEDIM == 3 ? 0.5 * (problo[2] + probhi[2]) : 0.0,
       0.0
    );
-   const amrex::Real reference_lapse = reference_geometry.metric.lapse;
+   const FluidInitialDataContext context{
+      problo,
+      probhi,
+      dx,
+      AMREX_SPACEDIM >= 2 && geometry.isPeriodic(1),
+      reference_geometry.metric.lapse,
+   };
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -161,119 +62,40 @@ inline void initialize_relativistic_state_method(
             AMREX_SPACEDIM == 3 ? sample.physical.q3 : 0.0,
             0.0
          );
-         SpacetimeMetric local_metric = local_geometry.metric;
-         amrex::Real rho = params.rho0;
-         amrex::Real pressure = params.pressure0;
-         amrex::Real v1 = params.v1_0;
-         amrex::Real v2 = params.v2_0;
-         amrex::Real v3 = params.v3_0;
-         amrex::Real b1 = params.b1_0;
-         amrex::Real b2 = params.b2_0;
-         amrex::Real b3 = params.b3_0;
-
-         if (tov) {
-            const amrex::Real radius = std::sqrt(
-               sample.physical.q1 * sample.physical.q1
-#if (AMREX_SPACEDIM >= 2)
-               + sample.physical.q2 * sample.physical.q2
-#endif
-#if (AMREX_SPACEDIM == 3)
-               + sample.physical.q3 * sample.physical.q3
-#endif
-            );
-            const TovSample tov_sample = tov_initial_data.sample(radius);
-            rho = amrex::max(tov_sample.rho, params.rho_floor);
-            pressure = amrex::max(tov_sample.pressure, params.pressure_floor);
-            v1 = 0.0;
-            v2 = 0.0;
-            v3 = 0.0;
-            local_metric = tov_spacetime_metric(tov_sample);
-         } else if (fixed_metric_hse) {
-            const amrex::Real reference_enthalpy = 1.0
-               + params.eos.gamma * params.pressure0
-               / ((params.eos.gamma - 1.0) * params.rho0);
-            const amrex::Real enthalpy = reference_enthalpy * reference_lapse
-               / local_geometry.metric.lapse;
-            const amrex::Real thermodynamic_ratio = (enthalpy - 1.0)
-               / (reference_enthalpy - 1.0);
-            rho = params.rho0 * std::pow(
-               thermodynamic_ratio, 1.0 / (params.eos.gamma - 1.0)
-            );
-            pressure = params.pressure0 * std::pow(rho / params.rho0, params.eos.gamma);
-            v1 = 0.0;
-            v2 = 0.0;
-            v3 = 0.0;
-         } else if (sine_wave) {
-            const amrex::Real length = probhi[0] - problo[0];
-            const amrex::Real phase = two_pi * params.wave_number
-               * (sample.physical.q1 - problo[0]) / length;
-            rho *= 1.0 + params.amplitude * std::sin(phase);
-         } else if (!uniform) {
-            const amrex::Real y = AMREX_SPACEDIM >= 2
-               ? sample.physical.q2
-               : params.shock_y0;
-            const amrex::Real z = AMREX_SPACEDIM == 3
-               ? sample.physical.q3
-               : params.shock_z0;
-            const amrex::Real signed_distance =
-               params.shock_nx * (sample.physical.q1 - params.shock_x0)
-               + params.shock_ny * (y - params.shock_y0)
-               + params.shock_nz * (z - params.shock_z0);
-            const bool left = periodic_plane
-               ? std::sin(two_pi * signed_distance) < 0.0
-               : signed_distance < 0.0;
-            rho = left ? params.rho_left : params.rho_right;
-            pressure = left ? params.pressure_left : params.pressure_right;
-            v1 = left ? params.v1_left : params.v1_right;
-            v2 = left ? params.v2_left : params.v2_right;
-            v3 = left ? params.v3_left : params.v3_right;
-            b1 = left ? params.b1_left : params.b1_right;
-            b2 = left ? params.b2_left : params.b2_right;
-            b3 = left ? params.b3_left : params.b3_right;
+         FluidPrimitiveSample point = sample_fluid_initial_data<EOSMethod>(
+            parameters, context, sample, local_geometry, initial_data
+         );
+         if (!initialize_magnetic_from_id) {
+            point.b1 = 0.0;
+            point.b2 = 0.0;
+            point.b3 = 0.0;
          }
-
-         rho = amrex::max(rho, params.rho_floor);
-         pressure = amrex::max(pressure, params.pressure_floor);
          if (magnetized) {
-            if (!initialize_magnetic_from_id) {
-               b1 = 0.0;
-               b2 = 0.0;
-               b3 = 0.0;
-            }
             const RMHDPrimitive primitive{
-               rho,
-               relativistic_specific_internal_energy_from_pressure<EOSIdealGas>(
-                  rho, pressure, params.eos
-               ),
-               pressure,
-               v1,
-               v2,
-               v3,
-               b1,
-               b2,
-               b3,
+               point.fluid.rho,
+               point.fluid.eps,
+               point.fluid.pressure,
+               point.fluid.v1,
+               point.fluid.v2,
+               point.fluid.v3,
+               point.b1,
+               point.b2,
+               point.b3,
             };
             store_rmhd_conserved(
                conserved,
                i,
                j,
                k,
-               generated::rmhd_primitive_to_conserved(
-                  primitive, local_metric
-               )
+               generated::rmhd_primitive_to_conserved(primitive, point.metric)
             );
          } else {
-            const RHDPrimitive primitive = rhd_primitive_from_pressure<EOSMethod>(
-               rho, pressure, v1, v2, v3, params.eos
-            );
             store_rhd_conserved(
                conserved,
                i,
                j,
                k,
-               generated::rhd_primitive_to_conserved(
-                  primitive, local_metric
-               )
+               generated::rhd_primitive_to_conserved(point.fluid, point.metric)
             );
          }
       });
@@ -282,22 +104,138 @@ inline void initialize_relativistic_state_method(
 
 inline void initialize_relativistic_state(
    amrex::MultiFab& state,
-   amrex::Geometry const& geom,
+   amrex::Geometry const& geometry,
    RunConfig const& cfg,
-   TovInitialDataView const& tov_initial_data = {}
+   RelativisticInitialDataView const& initial_data = {}
 )
 {
    if (physical_system(cfg) == PhysicalSystem::RMHD) {
-      initialize_relativistic_state_method<EOSIdealGas>(state, geom, cfg, tov_initial_data);
+      initialize_relativistic_state_method<EOSIdealGas>(
+         state, geometry, cfg, initial_data
+      );
       return;
    }
    const int eos_method = eos_method_code(cfg);
    if (eos_method == EOSPolytrope) {
-      initialize_relativistic_state_method<EOSPolytrope>(state, geom, cfg, tov_initial_data);
+      initialize_relativistic_state_method<EOSPolytrope>(
+         state, geometry, cfg, initial_data
+      );
    } else if (eos_method == EOSHybridPolytrope) {
-      initialize_relativistic_state_method<EOSHybridPolytrope>(state, geom, cfg, tov_initial_data);
+      initialize_relativistic_state_method<EOSHybridPolytrope>(
+         state, geometry, cfg, initial_data
+      );
    } else {
-      initialize_relativistic_state_method<EOSIdealGas>(state, geom, cfg, tov_initial_data);
+      initialize_relativistic_state_method<EOSIdealGas>(
+         state, geometry, cfg, initial_data
+      );
+   }
+}
+
+template <int EOSMethod>
+inline void convert_newtonian_initial_state_to_relativistic_method(
+   amrex::MultiFab& relativistic_state,
+   amrex::MultiFab const& newtonian_state,
+   amrex::Geometry const& geometry,
+   RunConfig const& cfg,
+   RelativisticInitialDataView const& initial_data
+)
+{
+   const auto lower = geometry.ProbLoArray();
+   const auto spacing = geometry.CellSizeArray();
+   const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
+   const EOSParams eos = eos_params(cfg);
+   const bool magnetized = physical_system(cfg) == PhysicalSystem::RMHD;
+   const bool magnetic_from_id = initial_data.fields.magnetic_from_id;
+
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(
+           relativistic_state, amrex::TilingIfNotGPU()
+        ); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto source = newtonian_state.const_array(mfi);
+      const auto destination = relativistic_state.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const FixedSpacetimeGeometry geometry_at_cell =
+            fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
+               spacetime, lower, spacing, i, j, k, 0.0
+            );
+         if (magnetized) {
+            const MHDPrimitive primitive = primitive_from_conserved<EOSMethod>(
+               load_mhd_state(source, i, j, k), eos
+            );
+            const RMHDPrimitive relativistic_primitive{
+               primitive.rho,
+               eos_internal_energy_density_from_pressure<EOSMethod>(
+                  primitive.rho, primitive.pressure, eos
+               ) / primitive.rho,
+               primitive.pressure,
+               primitive.v1,
+               primitive.v2,
+               primitive.v3,
+               magnetic_from_id ? primitive.b1 : 0.0,
+               magnetic_from_id ? primitive.b2 : 0.0,
+               magnetic_from_id ? primitive.b3 : 0.0,
+            };
+            store_rmhd_conserved(
+               destination,
+               i,
+               j,
+               k,
+               generated::rmhd_primitive_to_conserved(
+                  relativistic_primitive, geometry_at_cell.metric
+               )
+            );
+         } else {
+            const HydroPrimitive primitive = primitive_from_conserved<EOSMethod>(
+               load_hydro_state(source, i, j, k), eos
+            );
+            const RHDPrimitive relativistic_primitive{
+               primitive.rho,
+               eos_internal_energy_density_from_pressure<EOSMethod>(
+                  primitive.rho, primitive.pressure, eos
+               ) / primitive.rho,
+               primitive.pressure,
+               primitive.v1,
+               primitive.v2,
+               primitive.v3,
+            };
+            store_rhd_conserved(
+               destination,
+               i,
+               j,
+               k,
+               generated::rhd_primitive_to_conserved(
+                  relativistic_primitive, geometry_at_cell.metric
+               )
+            );
+         }
+      });
+   }
+}
+
+inline void convert_newtonian_initial_state_to_relativistic(
+   amrex::MultiFab& relativistic_state,
+   amrex::MultiFab const& newtonian_state,
+   amrex::Geometry const& geometry,
+   RunConfig const& cfg,
+   RelativisticInitialDataView const& initial_data
+)
+{
+   const int eos_method = eos_method_code(cfg);
+   if (eos_method == EOSPolytrope) {
+      convert_newtonian_initial_state_to_relativistic_method<EOSPolytrope>(
+         relativistic_state, newtonian_state, geometry, cfg, initial_data
+      );
+   } else if (eos_method == EOSHybridPolytrope) {
+      convert_newtonian_initial_state_to_relativistic_method<EOSHybridPolytrope>(
+         relativistic_state, newtonian_state, geometry, cfg, initial_data
+      );
+   } else {
+      convert_newtonian_initial_state_to_relativistic_method<EOSIdealGas>(
+         relativistic_state, newtonian_state, geometry, cfg, initial_data
+      );
    }
 }
 

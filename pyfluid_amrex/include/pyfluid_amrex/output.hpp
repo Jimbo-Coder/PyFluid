@@ -27,31 +27,9 @@
 #include "pyfluid_amrex/output_metadata.hpp"
 #include "pyfluid_amrex/state.hpp"
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/temporal_cadence.hpp"
 
 namespace pyfluid_amrex {
-
-enum class TemporalCadenceUnit {
-   Steps,
-   Disabled,
-};
-
-struct TemporalCadence {
-   TemporalCadenceUnit unit = TemporalCadenceUnit::Disabled;
-   int interval = -1;
-
-   constexpr bool should_record(int step, bool reached_final) const noexcept
-   {
-      return unit == TemporalCadenceUnit::Steps
-         && interval > 0
-         && step > 0
-         && (step % interval == 0 || reached_final);
-   }
-
-   constexpr bool should_record_initial() const noexcept
-   {
-      return unit == TemporalCadenceUnit::Steps && interval == 0;
-   }
-};
 
 inline void append_plotfile_metadata_on_io_rank(
    std::string const& plotfile_stem,
@@ -344,6 +322,7 @@ inline void copy_matching_aux_components(
 inline void fill_aux_gf_output(
    amrex::MultiFab& output,
    amrex::MultiFab const& state,
+   amrex::MultiFab const* spacetime_state,
    FaceMagneticField const* face_b,
    EdgeElectricField const* edge_current,
    EdgeElectricField const* edge_electric,
@@ -478,7 +457,7 @@ inline void fill_aux_gf_output(
       }
       case AuxGridField::AmrTagMetric: {
          amrex::MultiFab tag_metric(state.boxArray(), state.DistributionMap(), 1, 0);
-         fill_amr_tag_metric_output(tag_metric, state, geom, time, cfg);
+         fill_amr_tag_metric_output(tag_metric, state, spacetime_state, geom, time, cfg);
          copy_matching_aux_components(output, tag_metric, info, centering, dst);
          break;
       }
@@ -552,6 +531,7 @@ inline void fill_aux_gf_output(
 
 inline void write_aux_gf_plotfile(
    amrex::MultiFab const& state,
+   amrex::MultiFab const* spacetime_state,
    FaceMagneticField const* face_b,
    EdgeElectricField const* edge_current,
    EdgeElectricField const* edge_electric,
@@ -583,6 +563,7 @@ inline void write_aux_gf_plotfile(
       fill_aux_gf_output(
          output,
          state,
+         spacetime_state,
          face_b,
          edge_current,
          edge_electric,
@@ -613,6 +594,7 @@ inline void write_aux_gf_plotfile(
 
 inline void write_multilevel_aux_gf_plotfile(
    std::vector<std::unique_ptr<amrex::MultiFab>> const& state,
+   std::vector<std::unique_ptr<amrex::MultiFab>> const& spacetime_state,
    std::vector<FaceMagneticField> const& face_b,
    std::vector<EdgeElectricField> const& edge_current,
    std::vector<EdgeElectricField> const& edge_electric,
@@ -662,6 +644,7 @@ inline void write_multilevel_aux_gf_plotfile(
          fill_aux_gf_output(
             *output[lev],
             *state[lev],
+            spacetime_state.empty() ? nullptr : spacetime_state[lev].get(),
             face_b_ptr,
             edge_current_ptr,
             edge_electric_ptr,

@@ -9,6 +9,7 @@ from pyfluid_codegen.emit_cpp import (
    write_differential_header,
    write_eos_header,
    write_flux_header,
+   write_initial_data_header,
    write_metric_header,
    write_operator_header,
    write_patch_map_header,
@@ -108,6 +109,14 @@ DEFAULT_Z4C_HEADER = (
    / "kernels_generated"
    / "z4c.hpp"
 )
+DEFAULT_INITIAL_DATA_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "kernels_generated"
+   / "initial_data.hpp"
+)
 
 
 def main() -> None:
@@ -115,7 +124,7 @@ def main() -> None:
    parser.add_argument(
       "--family",
       action="append",
-      choices=("characteristic", "differential", "eos", "flux", "operator", "relativistic", "riemann", "vector", "metric", "patch_map", "z4c"),
+      choices=("characteristic", "differential", "eos", "flux", "initial_data", "operator", "relativistic", "riemann", "vector", "metric", "patch_map", "z4c"),
       help="generate only this kernel family; repeat as needed (default: all)",
    )
    parser.add_argument("--flux-header", type=Path, default=DEFAULT_FLUX_HEADER)
@@ -129,6 +138,7 @@ def main() -> None:
    parser.add_argument("--patch-map-header", type=Path, default=DEFAULT_PATCH_MAP_HEADER)
    parser.add_argument("--relativistic-header", type=Path, default=DEFAULT_RELATIVISTIC_HEADER)
    parser.add_argument("--z4c-header", type=Path, default=DEFAULT_Z4C_HEADER)
+   parser.add_argument("--initial-data-header", type=Path, default=DEFAULT_INITIAL_DATA_HEADER)
    parser.add_argument("--hard-drop-ops", type=int, default=0)
    parser.add_argument("--soft-drop-ops", type=int, default=3)
    args = parser.parse_args()
@@ -138,6 +148,7 @@ def main() -> None:
       "differential": (args.differential_header, write_differential_header),
       "eos": (args.eos_header, write_eos_header),
       "flux": (args.flux_header, write_flux_header),
+      "initial_data": (args.initial_data_header, write_initial_data_header),
       "operator": (args.operator_header, write_operator_header),
       "riemann": (args.riemann_header, write_riemann_header),
       "vector": (args.vector_header, write_vector_header),

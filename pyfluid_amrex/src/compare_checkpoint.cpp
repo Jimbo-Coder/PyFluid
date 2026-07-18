@@ -156,22 +156,31 @@ int main(int argc, char* argv[])
       amrex::Real max_time_diff = max_vector_difference(header_a.time, header_b.time);
       amrex::Real reference_mass_diff = 0.0;
       amrex::Real reference_energy_diff = 0.0;
+      amrex::Real reference_max_rho_diff = 0.0;
       const bool has_reference_a =
-         std::isfinite(header_a.reference_mass) && std::isfinite(header_a.reference_energy);
+         std::isfinite(header_a.reference_mass)
+         && std::isfinite(header_a.reference_energy)
+         && std::isfinite(header_a.reference_max_rho);
       const bool has_reference_b =
-         std::isfinite(header_b.reference_mass) && std::isfinite(header_b.reference_energy);
+         std::isfinite(header_b.reference_mass)
+         && std::isfinite(header_b.reference_energy)
+         && std::isfinite(header_b.reference_max_rho);
       if (has_reference_a != has_reference_b) {
          metadata_ok = false;
          amrex::Print() << "checkpoint scalar references exist in only one checkpoint\n";
       } else if (has_reference_a) {
          reference_mass_diff = std::abs(header_a.reference_mass - header_b.reference_mass);
          reference_energy_diff = std::abs(header_a.reference_energy - header_b.reference_energy);
+         reference_max_rho_diff = std::abs(
+            header_a.reference_max_rho - header_b.reference_max_rho
+         );
       }
       if (!fields_only &&
           (!nearly_equal(max_dt_diff, 0.0, tolerance) ||
            !nearly_equal(max_time_diff, 0.0, tolerance) ||
            !nearly_equal(reference_mass_diff, 0.0, tolerance) ||
-           !nearly_equal(reference_energy_diff, 0.0, tolerance))) {
+           !nearly_equal(reference_energy_diff, 0.0, tolerance) ||
+           !nearly_equal(reference_max_rho_diff, 0.0, tolerance))) {
          metadata_ok = false;
       }
 
@@ -228,6 +237,7 @@ int main(int argc, char* argv[])
                      << " max_time_diff=" << max_time_diff
                      << " reference_mass_diff=" << reference_mass_diff
                      << " reference_energy_diff=" << reference_energy_diff
+                     << " reference_max_rho_diff=" << reference_max_rho_diff
                      << " max_field_abs=" << total.max_abs
                      << " total_l1=" << total.l1
                      << " tolerance=" << tolerance

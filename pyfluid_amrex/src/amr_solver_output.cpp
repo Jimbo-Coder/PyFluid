@@ -1,6 +1,8 @@
 #include "pyfluid_amrex/amr_solver_base.hpp"
+#include "pyfluid_amrex/checkpoint.hpp"
 #include "pyfluid_amrex/fields.hpp"
-#include "pyfluid_amrex/relativistic_boundary.hpp"
+#include "pyfluid_amrex/initial_data.hpp"
+#include "pyfluid_amrex/output.hpp"
 
 namespace pyfluid_amrex {
 
@@ -60,6 +62,9 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
       const auto gravity_gradient = gravity_gradient_const_ptrs(gravity_gradient_[0]);
       write_aux_gf_plotfile(
          *fluid_state_.state()[0],
+         spacetime_state_.active()
+            ? spacetime_coupling_.cell_spacetime()[0].get()
+            : nullptr,
          face_b_ptr(0),
          edge_current_density_ptr(0),
          edge_electric_field_ptr(0),
@@ -77,6 +82,7 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
    } else {
       write_multilevel_aux_gf_plotfile(
          fluid_state_.state(),
+         spacetime_coupling_.cell_spacetime(),
          face_b_,
          edge_current_,
          edge_e_,
@@ -152,6 +158,7 @@ void AmrSolverBase::load_checkpoint(std::string const& checkpoint_name, amrex::R
          );
       }
       apply_boundary(*fluid_state_.state()[lev], Geom(lev), checkpoint.time[lev]);
+      refresh_stored_spacetime_fluid_boundary(lev, checkpoint.time[lev]);
       set_level_time_state(lev, checkpoint.time[lev], checkpoint.dt[lev]);
       copy_level_state_to_old(lev);
       if (ct_enabled(cfg_)) {
@@ -188,6 +195,7 @@ void AmrSolverBase::load_checkpoint(std::string const& checkpoint_name, amrex::R
    dt = checkpoint.dt[0];
    checkpoint_reference_mass_ = checkpoint.reference_mass;
    checkpoint_reference_energy_ = checkpoint.reference_energy;
+   checkpoint_reference_max_rho_ = checkpoint.reference_max_rho;
    aligned_regrid_ticks_ = checkpoint.aligned_regrid_ticks;
    aligned_base_regrid_tick_ = checkpoint.aligned_base_regrid_tick >= 0
       ? checkpoint.aligned_base_regrid_tick
@@ -198,31 +206,6 @@ void AmrSolverBase::load_checkpoint(std::string const& checkpoint_name, amrex::R
 void AmrSolverBase::apply_boundary(amrex::MultiFab& state, amrex::Geometry const& geom, amrex::Real time) const
 {
    apply_configured_state_boundary(state, geom, boundary_data_, time);
-   if (physics_system_ == PhysicalSystem::RHD) {
-      const int eos_method = eos_method_code(cfg_);
-      if (eos_method == EOSPolytrope) {
-         apply_fixed_metric_state_boundary<PhysicalSystem::RHD, EOSPolytrope>(
-            state, geom, boundary_data_, fixed_spacetime_parameters(cfg_), eos_params(cfg_), time
-         );
-      } else if (eos_method == EOSHybridPolytrope) {
-         apply_fixed_metric_state_boundary<PhysicalSystem::RHD, EOSHybridPolytrope>(
-            state, geom, boundary_data_, fixed_spacetime_parameters(cfg_), eos_params(cfg_), time
-         );
-      } else {
-         apply_fixed_metric_state_boundary<PhysicalSystem::RHD, EOSIdealGas>(
-            state, geom, boundary_data_, fixed_spacetime_parameters(cfg_), eos_params(cfg_), time
-         );
-      }
-   } else if (physics_system_ == PhysicalSystem::RMHD) {
-      apply_fixed_metric_state_boundary<PhysicalSystem::RMHD, EOSIdealGas>(
-         state,
-         geom,
-         boundary_data_,
-         fixed_spacetime_parameters(cfg_),
-         eos_params(cfg_),
-         time
-      );
-   }
    if (patch_union_domain_enabled()) {
       int lev = -1;
       for (int level = 0; level <= finestLevel(); ++level) {
@@ -245,6 +228,7 @@ void AmrSolverBase::initialize_ct_fields(int lev, amrex::Real time)
    }
    fill_level_boundaries(fluid_state_.state(), lev, time);
    apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
+   refresh_stored_spacetime_fluid_boundary(lev, time);
    bool initialized_analytic_face_b = false;
    if (cfg_.initial_data_magnetic == "zero" && time == 0.0) {
       fill_uniform_face_b(face_b_[lev], 0.0, 0.0, 0.0);
@@ -273,6 +257,7 @@ void AmrSolverBase::initialize_ct_fields(int lev, amrex::Real time)
    apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
    sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), initialized_analytic_face_b);
    apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
+   refresh_stored_spacetime_fluid_boundary(lev, time);
 }
 
 FaceMagneticField const* AmrSolverBase::face_b_ptr(int lev) const

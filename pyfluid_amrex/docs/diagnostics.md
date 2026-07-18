@@ -38,6 +38,10 @@ Rules:
 - `passive_mass` and `passive_mass_rel_drift` are active when
   `pyfluid.passive_scalars > 0`; passive tracers are conserved quantities in
   closed, non-diffusive domains.
+- `max_rho` is the maximum primitive rest-mass density for RHD/RMHD and the
+  maximum conserved density for Newtonian HD/MHD. `max_rho_rel_change` measures
+  it against the initial or checkpoint-persisted reference, making stellar
+  equilibrium drift and oscillation amplitude visible without postprocessing.
 - `sim_time_per_s` is average simulation time advanced per wall-clock second
   since the previous diagnostic sample. This is the main cost metric for
   comparing AMR/subcycling/diffusion choices at fixed physical target time.

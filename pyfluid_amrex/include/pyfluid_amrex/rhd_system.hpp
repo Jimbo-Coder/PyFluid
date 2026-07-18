@@ -2,11 +2,13 @@
 
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
-#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/flux.hpp"
 #include "pyfluid_amrex/kernels_generated/riemann_ops.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
-#include "pyfluid_amrex/reconstruction.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/reconstruction/scalar.hpp"
+#include "pyfluid_amrex/relativistic_primitive.hpp"
+#include "pyfluid_amrex/z4c_state_access.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 #include <AMReX_GpuLaunch.H>
@@ -20,28 +22,6 @@ struct RHDPrimitiveFaceStates {
    RHDPrimitive left;
    RHDPrimitive right;
 };
-
-template <int EOSMethod>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RHDPrimitive rhd_primitive_at(
-   amrex::Array4<amrex::Real const> const& primitive,
-   int i,
-   int j,
-   int k,
-   const EOSParams& eos
-) noexcept
-{
-   const amrex::Real rho = primitive(i, j, k, RHO);
-   const amrex::Real pressure = primitive(i, j, k, ENERGY);
-   return {
-      rho,
-      relativistic_specific_internal_energy_from_pressure<EOSMethod>(rho, pressure, eos),
-      pressure,
-      primitive(i, j, k, MOM1),
-      primitive(i, j, k, MOM2),
-      primitive(i, j, k, MOM3),
-   };
-}
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real causal_limiter_theta(
@@ -334,7 +314,7 @@ inline void fill_rhd_flux_direction(
             --kl;
          }
 #endif
-         const SpacetimeMetric metric = evolved_spacetime_metric_at_face<
+         const SpacetimeMetric metric = stored_spacetime_metric_at_face<
             4,
             Direction
          >(spacetime, i, j, k);

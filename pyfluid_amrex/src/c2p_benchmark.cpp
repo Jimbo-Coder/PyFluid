@@ -1,5 +1,6 @@
 #include "pyfluid_amrex/kernels_generated/eos.hpp"
-#include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
+#include "pyfluid_amrex/kernels_generated/relativistic/c2p_rmhd.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
 
 #include <AMReX_REAL.H>
