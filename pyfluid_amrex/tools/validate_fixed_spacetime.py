@@ -348,6 +348,7 @@ def run_curved_rmhd_control(
          "pyfluid.run_name": name,
          "pyfluid.output_dir": repo_relative(run_dir),
          "pyfluid.physics": "rmhd",
+         "pyfluid.ic": "uniform",
          "pyfluid.b1_0": "0.0",
          "pyfluid.b2_0": "0.03",
          "pyfluid.b3_0": "0.0",

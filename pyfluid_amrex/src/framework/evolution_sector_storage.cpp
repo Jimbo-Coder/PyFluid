@@ -24,13 +24,11 @@ void EvolutionSectorStorage::configure(
 
    bool found_component = false;
    GridFieldCentering common_centering = GridFieldCentering::Cell;
-   int descriptor_ghost_width = 0;
    int component_count = 0;
    for (GridFieldInfo const& field : field_set.fields) {
       if (field.role != FieldRole::EvolvedState) {
          amrex::Abort("an evolved sector field set may contain only evolved state fields");
       }
-      descriptor_ghost_width = std::max(descriptor_ghost_width, field.ghost_width);
       for (GridFieldComponentInfo const& component : field.components) {
          if (!found_component) {
             common_centering = component.centering;
@@ -50,7 +48,9 @@ void EvolutionSectorStorage::configure(
    field_set_ = field_set;
    centering_ = common_centering;
    num_components_ = component_count;
-   ghost_width_ = state_ghost_width >= 0 ? state_ghost_width : descriptor_ghost_width;
+   ghost_width_ = state_ghost_width >= 0
+      ? state_ghost_width
+      : grid_field_ghost_width(field_set);
    active_ = true;
    evolves_ = evolves;
 

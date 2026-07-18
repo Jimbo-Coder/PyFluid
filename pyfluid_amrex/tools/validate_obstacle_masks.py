@@ -17,7 +17,12 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from validation_common import materialize_run_input, parameters_from_assignments, run_mpi
+from validation_common import (
+   materialize_run_input,
+   parameters_from_assignments,
+   read_float_tsv,
+   run_mpi,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -112,11 +117,10 @@ def flatten_boxes(boxes: tuple[tuple[float, float], ...]) -> str:
 
 
 def read_last_scalar(path: Path) -> dict[str, float]:
-   with path.open(newline="") as f:
-      rows = list(csv.DictReader(f, delimiter="\t"))
+   rows = read_float_tsv(path)
    if not rows:
       raise RuntimeError(f"{path} is empty")
-   return {key: float(value) for key, value in rows[-1].items()}
+   return rows[-1]
 
 
 def read_profile_summary(run_dir: Path) -> dict[str, float | str]:

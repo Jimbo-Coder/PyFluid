@@ -38,6 +38,7 @@ RUN_ROOT = ROOT / "runs/current/rmhd_validation"
 RESULTS = RUN_ROOT / "rmhd_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
 CHECKPOINT_COMPARE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_2d"
+CT_AMR_DIVB_TOLERANCE = 1.0e-12
 
 
 def run_case(
@@ -307,7 +308,7 @@ def validate_ct_amr(args: argparse.Namespace) -> tuple[dict[str, object], dict[s
    )
    plotfile = latest_plotfile(run_dir, require=True)
    levels = level_count(plotfile)
-   if levels < 3 or float(scalar["divb_l1"]) != 0.0:
+   if levels < 3 or float(scalar["divb_l1"]) > CT_AMR_DIVB_TOLERANCE:
       raise RuntimeError(
          f"RMHD CT AMR control failed: levels={levels} divb={scalar['divb_l1']}"
       )

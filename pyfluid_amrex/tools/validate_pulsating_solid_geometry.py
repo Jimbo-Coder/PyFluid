@@ -20,8 +20,7 @@ from validation_common import materialize_run_input, parameters_from_assignments
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "pyfluid_amrex" / "tools"))
-from plot_amrex_slice import parse_plot_header, read_level_state  # noqa: E402
-from plotfile_reader import plotfile_at_step  # noqa: E402
+from plotfile_reader import plotfile_at_step, read_aux_field  # noqa: E402
 
 
 DEFAULT_EXE = ROOT / "build" / "pyfluid_amrex" / "pyfluid_amrex_2d"
@@ -102,10 +101,10 @@ def run_with_parameters(
 
 
 def solid_integrals_from_aux_plotfile(plotfile: Path) -> dict[str, float]:
-   names, ndim, _time = parse_plot_header(plotfile)
-   state = read_level_state(plotfile, names, ndim, 0)
-   volume_fraction = state[names.index("solid_volume_fraction")]
-   swept_volume = state[names.index("solid_swept_volume")]
+   volume_fraction, _ = read_aux_field(
+      plotfile.parent, "solid_volume_fraction", step=0
+   )
+   swept_volume, _ = read_aux_field(plotfile.parent, "solid_swept_volume", step=0)
    inv_cells = 1.0 / float(N_CELL * N_CELL)
    return {
       "solid_area": float((1.0 - volume_fraction).sum() * inv_cells),

@@ -583,6 +583,28 @@ def read_level_state(plotfile: Path, names: list[str], ndim: int, level: int) ->
    return state
 
 
+def read_aux_field(
+   directory: Path,
+   field_name: str,
+   *,
+   step: int | None = None,
+   level: int = 0,
+) -> tuple[np.ndarray, int]:
+   """Read an auxiliary field without assuming its AMReX centering."""
+   for plotfile in sorted_aux_plotfiles(directory):
+      if step is not None and plotfile_step(plotfile) != step:
+         continue
+      names, ndim, _time = parse_plot_header(plotfile)
+      if field_name not in names:
+         continue
+      state = read_level_state(plotfile, names, ndim, level)
+      return state[names.index(field_name)], ndim
+   step_suffix = "" if step is None else f" at step {step}"
+   raise ValueError(
+      f"could not find auxiliary field {field_name}{step_suffix} under {directory}"
+   )
+
+
 def _allocate_state(
    chunks: list[tuple[tuple[int, ...], tuple[int, ...], np.ndarray]],
    ndim: int,

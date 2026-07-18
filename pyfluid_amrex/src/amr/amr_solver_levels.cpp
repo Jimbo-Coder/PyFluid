@@ -2,7 +2,118 @@
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
 
+#include <limits>
+#include <utility>
+
 namespace pyfluid_amrex {
+
+AmrSolverBase::AmrSolverBase(RunConfig cfg)
+   : cfg_(std::move(cfg)), initial_data_provider_(cfg_)
+{
+   validate_config(cfg_);
+   validate_amr_refinement_ratios();
+   physics_system_ = physical_system(cfg_);
+   mesh_layout_ = mesh_runtime_layout(cfg_);
+   const int num_levels = maxLevel() + 1;
+   fluid_state_.configure(
+      fluid_state_grid_fields(physics_system_, cfg_.passive_scalars),
+      num_levels,
+      cfg_.ng
+   );
+   if (spacetime_stores_state(cfg_)) {
+      GridFieldSetInfo const& spacetime_fields = z4c_state_grid_fields();
+      const int spacetime_stencil_width = grid_field_ghost_width(spacetime_fields);
+      spacetime_state_.configure(
+         spacetime_fields,
+         num_levels,
+         std::max(spacetime_stencil_width, cfg_.ng + 2),
+         spacetime_evolves(cfg_)
+      );
+      spacetime_coupling_.configure(
+         num_levels,
+         std::max(spacetime_stencil_width, cfg_.ng)
+      );
+      spacetime_fillpatch_bcs_ = z4c_boundary_records(cfg_, Geom(0));
+      spacetime_fillpatch_func_ = SpacetimeFillPatchFunc(Z4cFillPatchBoundary{});
+   }
+   state_interpolater_.configure(
+      selected_state_interpolater(),
+      mesh_layout_.coordinate,
+      mesh_layout_.axes,
+      !mhd_enabled()
+   );
+   validate_state_interpolation_nesting();
+   recon_method_ = recon_method_code(cfg_);
+   recon_fine_method_ = cfg_.recon_fine.empty()
+      ? recon_method_
+      : recon_method_code_from_name(cfg_.recon_fine, "pyfluid.recon_fine");
+   riemann_method_ = riemann_method_code(cfg_);
+   timestep_method_ = timestep_method_code(cfg_);
+   diffusion_method_ = diffusion_method_code(cfg_);
+   eos_method_ = eos_method_code(cfg_);
+   profile_.configure(cfg_.profile, cfg_.profile_detail);
+   moving_wall_work_enabled_ = cfg_.solid_motion == "translate"
+      || cfg_.solid_motion == "pulse";
+   boundary_data_ = make_boundary_data(cfg_);
+   state_fillpatch_bcs_ = make_state_fillpatch_bcs();
+   face_fillpatch_bcs_ = make_face_fillpatch_bcs();
+   state_fillpatch_func_ = StateFillPatchFunc(StateFillPatchBoundary{boundary_data_});
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      face_fillpatch_func_[direction] = FaceFillPatchFunc(
+         FaceBFillPatchBoundary{boundary_data_, direction}
+      );
+   }
+   post_fillpatch_state_boundary_needed_ = compute_post_fillpatch_state_boundary_needed();
+   primitive_.resize(num_levels);
+   fluxes_.resize(num_levels);
+#if (AMREX_SPACEDIM >= 2)
+   flux_owner_masks_.resize(num_levels);
+#endif
+   flux_registers_.resize(num_levels);
+   gravity_energy_source_register_.resize(num_levels);
+   coarse_reflux_volume_.resize(num_levels);
+   frequency_.resize(num_levels);
+   pressure_.resize(num_levels);
+   solid_mask_.resize(num_levels);
+   solid_volume_fraction_.resize(num_levels);
+   for (auto& aperture : solid_aperture_) {
+      aperture.resize(num_levels);
+   }
+   primitive_needed_mask_.resize(num_levels);
+   solid_valid_kind_.resize(num_levels);
+   primitive_needed_kind_.resize(num_levels);
+   solid_flux_kind_.resize(num_levels);
+   solid_active_.resize(num_levels, false);
+   solid_mask_time_.resize(
+      num_levels,
+      std::numeric_limits<amrex::Real>::quiet_NaN()
+   );
+   gravity_phi_.resize(num_levels);
+   gravity_gradient_.resize(num_levels);
+   gravity_start_gradient_.resize(num_levels);
+   gravity_stage_energy_release_.resize(num_levels);
+   for (auto& stage_flux : gravity_stage_mass_flux_) {
+      stage_flux.resize(num_levels);
+   }
+   gravity_fixed_cache_valid_.resize(num_levels, false);
+   face_b_.resize(num_levels);
+   edge_e_.resize(num_levels);
+   edge_current_.resize(num_levels);
+#if (AMREX_SPACEDIM >= 2)
+   edge_flux_registers_.resize(num_levels);
+#endif
+   level_steps_.resize(num_levels, 0);
+   level_times_.resize(num_levels, 0.0);
+   level_old_times_.resize(num_levels, 0.0);
+   level_dts_.resize(num_levels, 0.0);
+   latest_auto_tagged_cells_.resize(num_levels, 0);
+   for (auto& direction_counts : latest_auto_direction_tagged_cells_) {
+      direction_counts.resize(num_levels, 0);
+   }
+   for (auto& direction_strength : latest_auto_direction_strength_) {
+      direction_strength.resize(num_levels, 0.0);
+   }
+}
 
 void AmrSolverBase::define_flux_registers(int first_fine_level)
 {

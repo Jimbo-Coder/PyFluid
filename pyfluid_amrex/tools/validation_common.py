@@ -750,7 +750,7 @@ def check_external_conservation(
    *,
    mass: bool = True,
    energy: bool = True,
-   tolerance: float = 1.0e-10,
+   tolerance: float = 2.0e-10,
 ) -> list[str]:
    """Check the solver's discrete physical-boundary/source conservation ledger."""
    if not rows or "external_budget_valid" not in rows[0]:

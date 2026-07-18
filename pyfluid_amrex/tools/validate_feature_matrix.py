@@ -1314,6 +1314,8 @@ def amr_cases() -> list[Case]:
       "resistive_current_sheet_2d_amr_ct.in",
       {
          **AUTO_AMR_COVERAGE,
+         "amr.level_cell_budget": "2000000",
+         "amr.level_cell_budget_side": "0",
          "amr.total_cell_budget": "2000000",
          "amr.regrid_int": "16",
          "amr.state_interp": "quartic-conservative",

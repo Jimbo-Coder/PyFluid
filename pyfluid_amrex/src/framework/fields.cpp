@@ -6,6 +6,7 @@
 #include <AMReX.H>
 #include <AMReX_IntVect.H>
 
+#include <algorithm>
 #include <sstream>
 
 namespace pyfluid_amrex {
@@ -290,6 +291,15 @@ int grid_field_component_count(GridFieldSetInfo const& set)
       count += static_cast<int>(field.components.size());
    }
    return count;
+}
+
+int grid_field_ghost_width(GridFieldSetInfo const& set)
+{
+   int ghost_width = 0;
+   for (GridFieldInfo const& field : set.fields) {
+      ghost_width = std::max(ghost_width, field.ghost_width);
+   }
+   return ghost_width;
 }
 
 amrex::Vector<std::string> grid_field_component_names(GridFieldSetInfo const& set)

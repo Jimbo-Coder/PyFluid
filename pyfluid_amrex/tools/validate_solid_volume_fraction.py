@@ -18,13 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from validation_common import materialize_run_input, parameters_from_assignments, run_mpi
-from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "pyfluid_amrex" / "tools"))
-from plot_amrex_slice import parse_plot_header, read_level_state  # noqa: E402
-from plotfile_reader import sorted_aux_plotfiles  # noqa: E402
+from plotfile_reader import read_aux_field, sorted_aux_plotfiles  # noqa: E402
 
 
 DEFAULT_EXE = ROOT / "build" / "pyfluid_amrex" / "pyfluid_amrex_2d"
@@ -75,16 +73,6 @@ BASE_OVERRIDES = (
 
 def repo_relative(path: Path) -> str:
    return str(path.resolve().relative_to(ROOT))
-
-
-def read_aux_field(aux_dir: Path, field_name: str) -> tuple[Any, int]:
-   for plotfile in sorted_aux_plotfiles(aux_dir):
-      names, ndim, _time = parse_plot_header(plotfile)
-      if field_name not in names:
-         continue
-      state = read_level_state(plotfile, names, ndim, 0)
-      return state[names.index(field_name)], ndim
-   raise ValueError(f"could not find auxiliary field {field_name} under {aux_dir}")
 
 
 def solid_areas_from_aux_plotfile(plotfile: Path) -> dict[str, float]:
