@@ -13,7 +13,8 @@
 #include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
 #include "pyfluid_amrex/kernels_generated/riemann_ops.hpp"
 #include "pyfluid_amrex/c2p_policy.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
+#include "pyfluid_amrex/eos/presets.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
@@ -798,6 +799,78 @@ bool validate_piecewise_polytrope()
           || !c2p_close(recovered.primitive.v2, primitive.v2)
           || !c2p_close(recovered.primitive.v3, primitive.v3)) {
          std::cerr << "piecewise hybrid-EOS RHD round-trip mismatch\n";
+         return false;
+      }
+   }
+   return true;
+}
+
+bool validate_read_piecewise_polytropes()
+{
+   using pyfluid_amrex::eos::PiecewisePolytropePreset;
+   constexpr std::array<PiecewisePolytropePreset, 4> presets{{
+      PiecewisePolytropePreset::sly,
+      PiecewisePolytropePreset::apr4,
+      PiecewisePolytropePreset::h4,
+      PiecewisePolytropePreset::ms1,
+   }};
+   for (PiecewisePolytropePreset preset : presets) {
+      const pyfluid_amrex::EOSParams eos =
+         pyfluid_amrex::eos::make_read_piecewise_polytrope(
+            preset, 1.8, 1.0e-12, 1.0e-14
+         );
+      if (eos.polytrope_segments != 7) {
+         std::cerr << "Read piecewise-polytrope preset does not have seven segments\n";
+         return false;
+      }
+      for (int boundary = 0; boundary < eos.polytrope_segments - 1; ++boundary) {
+         const amrex::Real rho = eos.segment_density_break[boundary];
+         if (!(rho > 0.0)
+             || (boundary > 0
+                 && !(rho > eos.segment_density_break[boundary - 1]))) {
+            std::cerr << "Read piecewise-polytrope density breaks are not ordered\n";
+            return false;
+         }
+         const amrex::Real lower_pressure = eos.segment_k[boundary]
+            * std::pow(rho, eos.segment_gamma[boundary]);
+         const amrex::Real upper_pressure = eos.segment_k[boundary + 1]
+            * std::pow(rho, eos.segment_gamma[boundary + 1]);
+         const amrex::Real lower_energy =
+            eos.segment_energy_offset[boundary] * rho
+            + lower_pressure / (eos.segment_gamma[boundary] - 1.0);
+         const amrex::Real upper_energy =
+            eos.segment_energy_offset[boundary + 1] * rho
+            + upper_pressure / (eos.segment_gamma[boundary + 1] - 1.0);
+         const amrex::Real pressure_scale = std::max(
+            amrex::Real(1.0e-30), std::abs(lower_pressure)
+         );
+         const amrex::Real energy_scale = std::max(
+            amrex::Real(1.0e-30), std::abs(lower_energy)
+         );
+         if (std::abs(upper_pressure - lower_pressure) > 2.0e-13 * pressure_scale
+             || std::abs(upper_energy - lower_energy) > 2.0e-13 * energy_scale) {
+            std::cerr << "Read piecewise-polytrope continuity mismatch\n";
+            return false;
+         }
+      }
+      const amrex::Real stellar_density = 1.0e-3;
+      const amrex::Real pressure =
+         pyfluid_amrex::eos_cold_pressure<pyfluid_amrex::EOSPolytrope>(
+            stellar_density, eos
+         );
+      const amrex::Real sound_speed_squared =
+         pyfluid_amrex::relativistic_sound_speed_squared<
+            pyfluid_amrex::EOSPolytrope
+         >(
+            stellar_density,
+            pyfluid_amrex::eos_cold_energy_density<
+               pyfluid_amrex::EOSPolytrope
+            >(stellar_density, eos) / stellar_density,
+            eos
+         );
+      if (!(pressure > 0.0) || !std::isfinite(sound_speed_squared)
+          || !(sound_speed_squared > 0.0)) {
+         std::cerr << "Read piecewise-polytrope stellar state is invalid\n";
          return false;
       }
    }
@@ -1967,6 +2040,7 @@ int main()
 {
    if (!validate_newtonian_round_trips()
        || !validate_piecewise_polytrope()
+       || !validate_read_piecewise_polytropes()
        || !validate_srhd_round_trips()
        || !validate_srmhd_round_trips()
        || !validate_fixed_spacetime_provider()

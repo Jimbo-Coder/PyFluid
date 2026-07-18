@@ -6,7 +6,7 @@
 #include <cmath>
 
 #include "pyfluid_amrex/characteristics.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 
 namespace pyfluid_amrex {
 

@@ -9,6 +9,7 @@
 #include <string>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/flux_divergence.hpp"
 #include "pyfluid_amrex/flux_update.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"

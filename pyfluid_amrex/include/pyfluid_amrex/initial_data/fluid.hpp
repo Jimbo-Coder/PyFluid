@@ -7,7 +7,8 @@
 
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/constants.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
@@ -264,14 +265,22 @@ FluidPrimitiveSample sample_fluid_initial_data(
       b3 = left ? parameters.b3_left : parameters.b3_right;
    }
 
+   const bool state_was_floored = rho < parameters.rho_floor
+      || pressure < parameters.pressure_floor;
    rho = amrex::max(rho, parameters.rho_floor);
    pressure = amrex::max(pressure, parameters.pressure_floor);
-   if (parameters.kind != FluidInitialDataKind::Provider
-       && parameters.kind != FluidInitialDataKind::FixedMetricHse) {
-      specific_internal_energy =
-         relativistic_specific_internal_energy_from_pressure<EOSMethod>(
+   const bool recompute_thermodynamics = state_was_floored
+      || (parameters.kind != FluidInitialDataKind::Provider
+          && parameters.kind != FluidInitialDataKind::FixedMetricHse);
+   if (recompute_thermodynamics) {
+      const amrex::Real internal_energy_density =
+         eos_internal_energy_density_from_pressure<EOSMethod>(
             rho, pressure, parameters.eos
          );
+      specific_internal_energy = internal_energy_density / rho;
+      pressure = eos_pressure_from_density_energy<EOSMethod>(
+         rho, internal_energy_density, parameters.eos
+      );
    }
    return {
       {rho, specific_internal_energy, pressure, v1, v2, v3},

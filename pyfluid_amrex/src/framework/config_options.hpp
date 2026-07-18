@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/eos/presets.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
 
 namespace pyfluid_amrex::config_options {
@@ -49,13 +50,15 @@ static constexpr std::array<NamedOptionCode, 3> EOSOptions{{
    {"hybrid_polytrope", EOSHybridPolytrope},
 }};
 
+inline constexpr auto EOSPresetOptions = eos::PiecewisePolytropePresetNames;
+
 static constexpr std::array<std::string_view, 4> PhysicsOptions{{"hydro", "mhd", "rhd", "rmhd"}};
 static constexpr std::array<std::string_view, 3> SpacetimeEvolutionOptions{{
    "none", "fixed", "evolved"
 }};
 static constexpr std::array<std::string_view, 2> SpacetimeMatterCouplingOptions{{"coupled", "vacuum"}};
-static constexpr std::array<std::string_view, 6> SpacetimeInitialDataOptions{{
-   "minkowski", "gauge_wave", "linear_wave", "robust_stability", "ctt", "xcts"
+static constexpr std::array<std::string_view, 7> SpacetimeInitialDataOptions{{
+   "minkowski", "gauge_wave", "linear_wave", "robust_stability", "ctt", "cttk", "xcts"
 }};
 static constexpr std::array<std::string_view, 3> MagneticInitialDataOptions{{
    "id", "zero", "none"

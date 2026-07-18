@@ -7,7 +7,7 @@
 
 #include <cmath>
 
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/ideal_mhd_flux_cartesian.hpp"
 #include "pyfluid_amrex/kernels_generated/riemann_ops.hpp"
 #include "pyfluid_amrex/method_codes.hpp"

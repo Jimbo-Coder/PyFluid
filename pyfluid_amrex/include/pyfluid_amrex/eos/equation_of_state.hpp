@@ -5,7 +5,7 @@
 #include <AMReX_REAL.H>
 
 #include <cmath>
-#include "pyfluid_amrex/eos_types.hpp"
+#include "pyfluid_amrex/eos/types.hpp"
 #include "pyfluid_amrex/kernels_generated/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
 #include "pyfluid_amrex/method_codes.hpp"

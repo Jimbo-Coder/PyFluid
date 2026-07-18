@@ -34,6 +34,7 @@
 #include "pyfluid_amrex/evolution_sector_storage.hpp"
 #include "pyfluid_amrex/ct_edge_flux_register.hpp"
 #include "pyfluid_amrex/diagnostics_types.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/solid_geometry.hpp"
 #include "pyfluid_amrex/gravity.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"

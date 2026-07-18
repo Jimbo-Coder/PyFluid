@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import re
 import shutil
 from pathlib import Path
 
@@ -38,7 +39,7 @@ from validation_common import (
 
 INPUT = ROOT / "pyfluid_amrex/inputs/z4c_gauge_wave_1d.in"
 TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_coupled_amr_3d.in"
-XCTS_TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_xcts_3d.in"
+CONFORMAL_TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_xcts_3d.in"
 TOV_COWLING_INPUT = ROOT / "pyfluid_amrex/inputs/tov_cowling_amr_1d.in"
 CTT_INPUT = ROOT / "pyfluid_amrex/inputs/rhd_ctt_density_cloud_3d.in"
 RUN_ROOT = ROOT / "runs/current/z4c_validation"
@@ -716,6 +717,56 @@ def validate_tov_cowling(
    ], [full_scalar, restart_scalar, coupled_scalar]
 
 
+def validate_realistic_eos_tov(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   run_dir, scalar = run_dimension_case(
+      "tov_sly_1d",
+      TOV_COWLING_INPUT,
+      {
+         "amr.n_cell": "64",
+         "amr.max_level": "3",
+         "amr.max_grid_size": "64",
+         "amr.tag_metric": "none",
+         "amr.initial_refine_levels": "0",
+         "amr.initial_refine_fixed_levels": "0",
+         "pyfluid.eos_preset": "sly",
+         "pyfluid.max_step": "0",
+         "pyfluid.plot_int": "1",
+         "pyfluid.checkpoint_int": "-1",
+      },
+      args,
+      dim=1,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   run_log = (run_dir / "run.log").read_text()
+   match = re.search(
+      r"TOV initial data: M=([0-9.eE+-]+) R_areal=([0-9.eE+-]+)", run_log
+   )
+   if match is None:
+      raise RuntimeError("SLy TOV did not report its stellar mass and radius")
+   mass = float(match.group(1))
+   radius = float(match.group(2))
+   if (
+      not math.isfinite(mass)
+      or not math.isfinite(radius)
+      or mass <= 0.0
+      or radius <= 0.0
+   ):
+      raise RuntimeError(f"SLy TOV is not physical: M={mass}, R={radius}")
+   return [{
+      "kind": "feature",
+      "case": "tov_sly_1d",
+      "status": "PASS",
+      "metric": "stellar_mass",
+      "value": mass,
+      "stellar_radius": radius,
+      "run_dir": repo_relative(run_dir),
+   }], [scalar]
+
+
 def multilevel_parameters(*, subcycling: bool) -> dict[str, str]:
    return {
       "amr.n_cell": "16",
@@ -1119,48 +1170,77 @@ def validate_tov_initial_data(
    return results, scalars
 
 
-def validate_xcts_initial_data(
+def validate_conformal_tov_initial_data(
    args: argparse.Namespace,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-   run_dir, scalar = run_dimension_case(
-      "tov_xcts_3d",
-      XCTS_TOV_INPUT,
-      {},
-      args,
-      dim=3,
-      checks=SMOKE_POLICY,
-      mhd=False,
-      kind="feature",
-   )
-   rows = read_scalar_rows(run_dir)
-   final = rows[-1]
-   h_l2 = abs(float(final["z4c_hamiltonian_l2"]))
-   h_linf = abs(float(final["z4c_hamiltonian_linf"]))
-   momentum_linf = abs(float(final["z4c_momentum_linf"]))
-   run_log = (run_dir / "run.log").read_text()
-   if (
-      not math.isfinite(h_l2)
-      or not math.isfinite(h_linf)
-      or not math.isfinite(momentum_linf)
-      or "xcts initial data:" not in run_log
-   ):
-      raise RuntimeError(
-         "staggered TOV XCTS materialization failed: "
-         f"Hamiltonian L2={h_l2:.3e}, Linf={h_linf:.3e}, "
-         f"momentum Linf={momentum_linf:.3e}"
+   results: list[dict[str, object]] = []
+   scalars: list[dict[str, object]] = []
+   for formulation in ("ctt", "cttk", "xcts"):
+      name = f"tov_{formulation}_3d"
+      run_dir, scalar = run_dimension_case(
+         name,
+         CONFORMAL_TOV_INPUT,
+         {"spacetime.initial_data": formulation},
+         args,
+         dim=3,
+         checks=SMOKE_POLICY,
+         mhd=False,
+         kind="feature",
       )
-   return [{
-      "kind": "feature",
-      "case": "tov_xcts_3d",
-      "status": "PASS",
-      "metric": "hamiltonian_l2",
-      "value": h_l2,
-      "constraint_linf": max(h_linf, momentum_linf),
-      "hamiltonian_l2": h_l2,
-      "hamiltonian_linf": h_linf,
-      "momentum_linf": momentum_linf,
-      "run_dir": repo_relative(run_dir),
-   }], [scalar]
+      final = read_scalar_rows(run_dir)[-1]
+      h_l2 = abs(float(final["z4c_hamiltonian_l2"]))
+      h_linf = abs(float(final["z4c_hamiltonian_linf"]))
+      momentum_linf = abs(float(final["z4c_momentum_linf"]))
+      run_log = (run_dir / "run.log").read_text()
+      solve_match = re.search(
+         rf"{formulation} initial data: matter_iterations=([0-9]+) "
+         r"relative_matter_update=([0-9.eE+-]+) coupled_iterations=([0-9]+) "
+         r"hamiltonian_residual=([0-9.eE+-]+) "
+         r"lapse_residual=([0-9.eE+-]+) momentum_residual=([0-9.eE+-]+)",
+         run_log,
+      )
+      elliptic_hamiltonian = math.inf
+      elliptic_lapse = math.inf
+      elliptic_momentum = math.inf
+      relative_matter_update = math.inf
+      if solve_match is not None:
+         relative_matter_update = abs(float(solve_match.group(2)))
+         elliptic_hamiltonian = abs(float(solve_match.group(4)))
+         elliptic_lapse = abs(float(solve_match.group(5)))
+         elliptic_momentum = abs(float(solve_match.group(6)))
+      if (
+         not math.isfinite(h_l2)
+         or not math.isfinite(h_linf)
+         or not math.isfinite(momentum_linf)
+         or solve_match is None
+         or relative_matter_update > 1.0e-9
+         or max(elliptic_hamiltonian, elliptic_lapse, elliptic_momentum) > 1.0e-10
+      ):
+         raise RuntimeError(
+            f"staggered TOV {formulation.upper()} materialization failed: "
+            f"Hamiltonian L2={h_l2:.3e}, Linf={h_linf:.3e}, "
+            f"momentum Linf={momentum_linf:.3e}, "
+            f"elliptic residuals=({elliptic_hamiltonian:.3e}, "
+            f"{elliptic_lapse:.3e}, {elliptic_momentum:.3e})"
+         )
+      results.append({
+         "kind": "feature",
+         "case": name,
+         "status": "PASS",
+         "metric": "hamiltonian_l2",
+         "value": h_l2,
+         "constraint_linf": max(h_linf, momentum_linf),
+         "hamiltonian_l2": h_l2,
+         "hamiltonian_linf": h_linf,
+         "momentum_linf": momentum_linf,
+         "relative_matter_update": relative_matter_update,
+         "elliptic_hamiltonian_residual": elliptic_hamiltonian,
+         "elliptic_lapse_residual": elliptic_lapse,
+         "elliptic_momentum_residual": elliptic_momentum,
+         "run_dir": repo_relative(run_dir),
+      })
+      scalars.append(scalar)
+   return results, scalars
 
 
 def validate_ctt_initial_data(
@@ -1384,7 +1464,11 @@ def validate_ctt_initial_data(
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--level", choices=("quick", "standard"), default="standard")
-   parser.add_argument("--only", choices=("all", "ctt", "xcts"), default="all")
+   parser.add_argument(
+      "--only",
+      choices=("all", "ctt", "conformal_tov", "realistic_eos"),
+      default="all",
+   )
    parser.add_argument("--ranks", type=int, default=1)
    parser.add_argument("--timeout", type=float, default=180.0)
    parser.add_argument("--force", action="store_true")
@@ -1398,8 +1482,10 @@ def main() -> int:
    quick_validators = (
       (validate_ctt_initial_data,)
       if args.only == "ctt"
-      else (validate_xcts_initial_data,)
-      if args.only == "xcts"
+      else (validate_conformal_tov_initial_data,)
+      if args.only == "conformal_tov"
+      else (validate_realistic_eos_tov,)
+      if args.only == "realistic_eos"
       else (
          validate_minkowski,
          validate_initial_data_group_policies,
@@ -1418,8 +1504,9 @@ def main() -> int:
          validate_coupled_amr_restart,
          validate_coupled_rmhd_smoke,
          validate_tov_cowling,
+         validate_realistic_eos_tov,
          validate_tov_initial_data,
-         validate_xcts_initial_data,
+         validate_conformal_tov_initial_data,
       ):
          validator_results, validator_scalars = validator(args)
          results.extend(validator_results)
@@ -1433,6 +1520,10 @@ def main() -> int:
       "value",
       "order",
       "constraint_linf",
+      "relative_matter_update",
+      "elliptic_hamiltonian_residual",
+      "elliptic_lapse_residual",
+      "elliptic_momentum_residual",
       "hamiltonian_l2",
       "hamiltonian_linf",
       "momentum_linf",
@@ -1442,6 +1533,7 @@ def main() -> int:
       "analytic_error_subcycled",
       "analytic_error_single_rate",
       "levels",
+      "stellar_radius",
       "run_dir",
    ]
    write_tsv(RESULTS, results, fields)

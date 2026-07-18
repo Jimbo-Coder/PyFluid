@@ -3,7 +3,7 @@
 #include <AMReX_Array4.H>
 #include <AMReX_REAL.H>
 
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 #include "pyfluid_amrex/state.hpp"
 

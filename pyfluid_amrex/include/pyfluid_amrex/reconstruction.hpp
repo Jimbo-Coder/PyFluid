@@ -7,7 +7,7 @@
 #include <cmath>
 
 #include "pyfluid_amrex/characteristic_basis.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/characteristic_transforms.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
 #include "pyfluid_amrex/reconstruction/scalar.hpp"

@@ -117,6 +117,11 @@ set(PYFLUID_AMREX_FRAMEWORK_SOURCES
    src/framework/profiling.cpp
 )
 
+set(PYFLUID_AMREX_EOS_SOURCES
+   src/eos/eos_config.cpp
+   src/eos/presets.cpp
+)
+
 set(PYFLUID_AMREX_NUMERICS_SOURCES
    src/numerics/ct_edge_flux_register.cpp
    src/numerics/flux_factory.cpp
@@ -159,6 +164,7 @@ set(PYFLUID_AMREX_SOURCES
    ${PYFLUID_AMREX_KERNEL_BUNDLE_SOURCES}
    ${PYFLUID_AMREX_AMR_SOURCES}
    ${PYFLUID_AMREX_FRAMEWORK_SOURCES}
+   ${PYFLUID_AMREX_EOS_SOURCES}
    ${PYFLUID_AMREX_NUMERICS_SOURCES}
    ${PYFLUID_AMREX_FLUX_KERNEL_SOURCES}
    ${PYFLUID_AMREX_INITIAL_DATA_SOURCES}
@@ -170,10 +176,13 @@ set(PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES
    tools/cpp/compare_checkpoint.cpp
    src/framework/config.cpp
    src/framework/config_runtime.cpp
+   src/eos/eos_config.cpp
+   src/eos/presets.cpp
    src/framework/fields.cpp
 )
 
 set(PYFLUID_AMREX_CODEGEN_CHECK_SOURCES
+   src/eos/presets.cpp
    tests/generated_flux_compile_check.cpp
 )
 
@@ -188,6 +197,9 @@ set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
 set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
    src/framework/config.cpp
    src/framework/config_runtime.cpp
+   src/framework/fields.cpp
+   src/eos/eos_config.cpp
+   src/eos/presets.cpp
    src/initial_data/initial_data_centering.cpp
    src/initial_data/initial_data_ctt.cpp
    src/initial_data/initial_data_elliptic.cpp

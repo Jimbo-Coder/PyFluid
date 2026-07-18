@@ -18,7 +18,7 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/diagnostics_types.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/generated/diagnostic_catalog.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"

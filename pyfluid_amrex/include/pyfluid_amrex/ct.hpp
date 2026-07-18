@@ -12,7 +12,7 @@
 #include "pyfluid_amrex/config.hpp"
 #include "numerics/ct_diagnostics.hpp"
 #include "pyfluid_amrex/ct_fields.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/scalar_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"

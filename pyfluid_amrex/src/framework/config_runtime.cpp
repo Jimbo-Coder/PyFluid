@@ -3,7 +3,6 @@
 #include <AMReX.H>
 
 #include <cctype>
-#include <cmath>
 #include <sstream>
 
 #include "framework/config_options.hpp"
@@ -63,36 +62,6 @@ int diffusion_method_code(RunConfig const& cfg)
 int eos_method_code(RunConfig const& cfg)
 {
    return config_options::option_code(cfg.eos, config_options::EOSOptions, "pyfluid.eos");
-}
-
-EOSParams eos_params(RunConfig const& cfg)
-{
-   EOSParams eos{};
-   eos.gamma = cfg.gamma;
-   eos.thermal_gamma = cfg.thermal_gamma;
-   eos.rho_floor = cfg.rho_floor;
-   eos.pressure_floor = cfg.pressure_floor;
-   eos.polytrope_segments = 1 + static_cast<int>(cfg.polytropic_density_breaks.size());
-   eos.segment_k[0] = cfg.polytropic_k;
-   eos.segment_gamma[0] = cfg.polytropic_gamma;
-   for (int segment = 1; segment < eos.polytrope_segments; ++segment) {
-      const amrex::Real density_break = cfg.polytropic_density_breaks[segment - 1];
-      const amrex::Real previous_gamma = eos.segment_gamma[segment - 1];
-      const amrex::Real gamma = cfg.polytropic_segment_gammas[segment - 1];
-      const amrex::Real previous_k = eos.segment_k[segment - 1];
-      const amrex::Real k = previous_k * std::pow(
-         density_break, previous_gamma - gamma
-      );
-      eos.segment_density_break[segment - 1] = density_break;
-      eos.segment_gamma[segment] = gamma;
-      eos.segment_k[segment] = k;
-      eos.segment_energy_offset[segment] =
-         eos.segment_energy_offset[segment - 1]
-         + previous_k * std::pow(density_break, previous_gamma - 1.0)
-            / (previous_gamma - 1.0)
-         - k * std::pow(density_break, gamma - 1.0) / (gamma - 1.0);
-   }
-   return eos;
 }
 
 bool valid_plotfile_compression(std::string const& value)

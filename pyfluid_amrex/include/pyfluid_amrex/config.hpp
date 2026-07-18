@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "pyfluid_amrex/build_options.hpp"
-#include "pyfluid_amrex/eos_types.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/fixed_spacetime_types.hpp"
 #include "pyfluid_amrex/mesh_limits.hpp"
@@ -27,6 +26,7 @@ struct RunConfig {
    amrex::Real cfl = 0.9;
    amrex::Real gamma = 5.0 / 3.0;
    std::string eos;
+   std::string eos_preset;
    amrex::Real polytropic_k = 1.0;
    amrex::Real polytropic_gamma = 5.0 / 3.0;
    std::vector<amrex::Real> polytropic_density_breaks;
@@ -326,8 +326,6 @@ int recon_method_code(RunConfig const& cfg);
 int timestep_method_code(RunConfig const& cfg);
 int diffusion_method_code(RunConfig const& cfg);
 int eos_method_code(RunConfig const& cfg);
-
-EOSParams eos_params(RunConfig const& cfg);
 bool valid_plotfile_compression(std::string const& value);
 std::string resolved_plotfile_compression(std::string const& value);
 

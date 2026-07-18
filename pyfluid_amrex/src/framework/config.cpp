@@ -27,6 +27,7 @@ enum class RestartPolicy {
 
 enum class StringOptionSet {
    EOS,
+   EOSPreset,
    Physics,
    CT,
    Reconstruction,
@@ -60,9 +61,11 @@ struct RegisteredScalarParameter {
    bool RunConfig::* explicit_flag = nullptr;
 };
 
-constexpr std::array<RegisteredStringParameter, 9> MethodParameters{{
+constexpr std::array<RegisteredStringParameter, 10> MethodParameters{{
    {"eos", &RunConfig::eos, "ideal_gas", StringOptionSet::EOS, RestartPolicy::Immutable,
     "Equation of state closure."},
+   {"eos_preset", &RunConfig::eos_preset, "custom", StringOptionSet::EOSPreset,
+    RestartPolicy::Immutable, "Named piecewise-polytrope parameters in G=c=M_sun=1 units."},
    {"physics", &RunConfig::physics, "hydro", StringOptionSet::Physics, RestartPolicy::Immutable,
     "Evolved hydrodynamic or magnetohydrodynamic state."},
    {"ct", &RunConfig::ct, "off", StringOptionSet::CT, RestartPolicy::Immutable,
@@ -152,6 +155,9 @@ void validate_registered_option(
    switch (parameter.option_set) {
    case StringOptionSet::EOS:
       require_registered_option(parameter, value, EOSOptions, group);
+      return;
+   case StringOptionSet::EOSPreset:
+      require_registered_option(parameter, value, EOSPresetOptions, group);
       return;
    case StringOptionSet::Physics:
       require_registered_option(parameter, value, PhysicsOptions, group);
@@ -803,6 +809,13 @@ void validate_config(RunConfig const& cfg)
    }
    if (cfg.thermal_gamma <= 1.0) {
       amrex::Abort("pyfluid.thermal_gamma must be greater than 1");
+   }
+   if (cfg.eos_preset != "custom"
+       && cfg.eos != "polytrope"
+       && cfg.eos != "hybrid_polytrope") {
+      amrex::Abort(
+         "pyfluid.eos_preset requires pyfluid.eos = polytrope or hybrid_polytrope"
+      );
    }
    if (cfg.rho_floor <= 0.0 || cfg.pressure_floor <= 0.0) {
       amrex::Abort("pyfluid.rho_floor and pyfluid.pressure_floor must be positive");

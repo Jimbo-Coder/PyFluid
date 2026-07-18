@@ -7,7 +7,7 @@
 #include <cmath>
 
 #include "pyfluid_amrex/coordinate_locations.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"

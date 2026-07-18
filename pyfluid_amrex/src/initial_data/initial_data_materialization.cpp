@@ -142,12 +142,14 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> previous_conformal(num_levels);
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> previous_vector(num_levels);
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> previous_lapse(num_levels);
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> previous_curvature(num_levels);
    amrex::Vector<amrex::MultiFab*> conformal_factor(num_levels);
    amrex::Vector<amrex::MultiFab*> vector_potential(num_levels);
    amrex::Vector<amrex::MultiFab*> xcts_shift(num_levels);
    amrex::Vector<amrex::MultiFab*> lapse_times_conformal_factor(num_levels);
    amrex::Vector<amrex::MultiFab const*> lapse_conformal_view(num_levels);
    amrex::Vector<amrex::MultiFab const*> shift_view(num_levels);
+   amrex::Vector<amrex::MultiFab*> mean_curvature_mutable(num_levels);
    amrex::Vector<amrex::MultiFab const*> mean_curvature(num_levels);
    amrex::Vector<amrex::MultiFab*> conformal_extrinsic(num_levels);
    amrex::Vector<amrex::MultiFab const*> conformal_factor_const(num_levels);
@@ -229,6 +231,9 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       previous_lapse[level] = std::make_unique<amrex::MultiFab>(
          vertex_grids, hierarchy.distribution[level], 1, 0
       );
+      previous_curvature[level] = std::make_unique<amrex::MultiFab>(
+         vertex_grids, hierarchy.distribution[level], 1, 0
+      );
       conformal_storage[level]->setVal(1.0);
       vector_storage[level]->setVal(0.0);
       lapse_conformal_storage[level]->setVal(1.0);
@@ -239,12 +244,13 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       vector_potential[level] = vector_storage[level].get();
       xcts_shift[level] = vector_storage[level].get();
       lapse_times_conformal_factor[level] = lapse_conformal_storage[level].get();
-      lapse_conformal_view[level] = formulation == ConformalConstraintFormulation::ctt
+      lapse_conformal_view[level] = formulation != ConformalConstraintFormulation::xcts
          ? conformal_storage[level].get()
          : lapse_conformal_storage[level].get();
-      shift_view[level] = formulation == ConformalConstraintFormulation::ctt
+      shift_view[level] = formulation != ConformalConstraintFormulation::xcts
          ? shift_storage[level].get()
          : vector_storage[level].get();
+      mean_curvature_mutable[level] = curvature_storage[level].get();
       mean_curvature[level] = curvature_storage[level].get();
       conformal_extrinsic[level] = extrinsic_storage[level].get();
       conformal_factor_const[level] = conformal_storage[level].get();
@@ -305,6 +311,11 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    xcts_options.relative_update_tolerance = options.relative_update_tolerance;
    xcts_options.relaxation = options.relaxation;
    xcts_options.linear = options.linear;
+   CttkOptions cttk_options;
+   cttk_options.max_coupled_iterations = options.max_coupled_iterations;
+   cttk_options.relative_update_tolerance = options.relative_update_tolerance;
+   cttk_options.relaxation = options.relaxation;
+   cttk_options.linear = options.linear;
 
    ConformalMaterializationResult result;
    constexpr int max_matter_iterations = 12;
@@ -347,6 +358,11 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             1,
             0
          );
+         if (formulation == ConformalConstraintFormulation::cttk) {
+            amrex::MultiFab::Copy(
+               *previous_curvature[level], *curvature_storage[level], 0, 0, 1, 0
+            );
+         }
          for (amrex::MFIter mfi(
                  *energy_storage[level], amrex::TilingIfNotGPU()
               ); mfi.isValid(); ++mfi) {
@@ -462,6 +478,27 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             constraints.momentum_residual,
             constraints.converged,
          };
+      } else if (formulation == ConformalConstraintFormulation::cttk) {
+         const CttkResult constraints = solve_cttk_hybrid_constraints(
+            hierarchy,
+            conformal_factor,
+            mean_curvature_mutable,
+            vector_potential,
+            conformal_extrinsic,
+            energy_density,
+            momentum_density,
+            conformal_boundary,
+            vector_boundary,
+            cttk_options
+         );
+         result.constraints = {
+            constraints.coupled_iterations,
+            constraints.relative_update,
+            constraints.hamiltonian_residual,
+            0.0,
+            constraints.momentum_residual,
+            constraints.converged,
+         };
       } else {
          const XctsResult constraints = solve_xcts_constraints(
             hierarchy,
@@ -527,6 +564,16 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             );
             solution_norm = std::max(
                solution_norm, lapse_conformal_storage[level]->norm0(0, 0, false)
+            );
+         } else if (formulation == ConformalConstraintFormulation::cttk) {
+            amrex::MultiFab::Subtract(
+               *previous_curvature[level], *curvature_storage[level], 0, 0, 1, 0
+            );
+            update_norm = std::max(
+               update_norm, previous_curvature[level]->norm0(0, 0, false)
+            );
+            solution_norm = std::max(
+               solution_norm, curvature_storage[level]->norm0(0, 0, false)
             );
          }
       }

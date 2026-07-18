@@ -3,7 +3,7 @@
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_MultiFab.H>
 
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/sources.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/physical_system.hpp"

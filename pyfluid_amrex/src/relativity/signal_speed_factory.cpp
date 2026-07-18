@@ -1,6 +1,5 @@
 #include "pyfluid_amrex/signal_speed_factory.hpp"
 
-#include "pyfluid_amrex/config.hpp"
 #include <AMReX_Geometry.H>
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_iMultiFab.H>
@@ -12,7 +11,8 @@
 
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/diffusion.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"

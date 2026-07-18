@@ -136,6 +136,7 @@ void AmrSolverBase::initialize_spacetime_level(int lev, amrex::Real time)
 void AmrSolverBase::materialize_constraint_solved_initial_data()
 {
    const bool uses_constraint_solve = cfg_.spacetime_initial_data == "ctt"
+      || cfg_.spacetime_initial_data == "cttk"
       || cfg_.spacetime_initial_data == "xcts";
    if (!uses_constraint_solve
        || !initial_data_provider_.view().fields.spacetime_from_id) {
@@ -173,10 +174,13 @@ void AmrSolverBase::materialize_constraint_solved_initial_data()
    }
    hierarchy.cell_interpolater = state_interpolater();
 
-   const ConformalConstraintFormulation formulation =
-      cfg_.spacetime_initial_data == "xcts"
-      ? ConformalConstraintFormulation::xcts
-      : ConformalConstraintFormulation::ctt;
+   ConformalConstraintFormulation formulation =
+      ConformalConstraintFormulation::ctt;
+   if (cfg_.spacetime_initial_data == "cttk") {
+      formulation = ConformalConstraintFormulation::cttk;
+   } else if (cfg_.spacetime_initial_data == "xcts") {
+      formulation = ConformalConstraintFormulation::xcts;
+   }
    const ConformalMaterializationResult result = materialize_conformal_initial_data(
       hierarchy,
       fluid,

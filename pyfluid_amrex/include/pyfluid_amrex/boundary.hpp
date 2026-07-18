@@ -13,7 +13,8 @@
 
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/constants.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/patch_domain.hpp"
 #include "pyfluid_amrex/state.hpp"
 

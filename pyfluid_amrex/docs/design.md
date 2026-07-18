@@ -59,13 +59,23 @@ segments. The input supplies the first `K`, every density break, and each later
 adiabatic index; the solver derives later `K` values and internal-energy
 offsets so pressure and cold specific energy remain continuous.
 
-EOS inputs are code-unit quantities. In `P = K rho^Gamma`, each
+Custom EOS inputs are code-unit quantities. In `P = K rho^Gamma`, each
 `pyfluid.polytropic_density_breaks` entry has the same code units as `rho`, and
 `pyfluid.polytropic_k` has units `P_unit / rho_unit^Gamma`. Consequently a
 change of density or pressure unit requires transforming both the breaks and
 the leading `K`; the dimensionless adiabatic indices do not change. Relativistic
-runs additionally use `c = G = 1`. PyFluid does not silently convert a
-dimensional EOS table or infer its unit system.
+runs additionally use `c = G = 1`.
+
+`pyfluid.eos_preset` selects a named cold piecewise-polytrope fit. `custom`
+uses the run-supplied code-unit segments. `sly`, `apr4`, `h4`, and `ms1` use
+the common crust and three-piece core fits from
+[Read et al. (2009)](https://arxiv.org/abs/0812.2163); the EoS
+module explicitly converts the published CGS coefficients into
+`G = c = M_sun = 1` once during configuration. Named presets and custom
+segments produce the same immutable `EOSParams` value consumed by all runtime
+kernels, so there is no preset-specific evolution branch. Future tabulated
+EoS support belongs behind this same module boundary and must declare its unit
+system explicitly.
 
 ## Public Interfaces And Compilation
 

@@ -86,7 +86,7 @@ def main() -> None:
     leaked_config_implementations = [
         include
         for include in (
-            '"pyfluid_amrex/eos.hpp"',
+            '"pyfluid_amrex/eos/equation_of_state.hpp"',
             '"pyfluid_amrex/fixed_spacetime.hpp"',
         )
         if include in public_config_text
@@ -141,7 +141,7 @@ def main() -> None:
         "enum Conserved": GENERATED_FIELD_IDS,
         "enum Z4cComponent": GENERATED_FIELD_IDS,
         "enum class AuxGridField": GENERATED_FIELD_IDS,
-        "struct EOSParams": INCLUDE_ROOT / "eos_types.hpp",
+        "struct EOSParams": INCLUDE_ROOT / "eos" / "types.hpp",
         "struct FixedSpacetimeParameters": INCLUDE_ROOT / "fixed_spacetime_types.hpp",
     }
     for declaration, owners in declarations.items():

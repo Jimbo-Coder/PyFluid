@@ -5,6 +5,7 @@
 #include <AMReX_MultiFab.H>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/initial_data/fluid.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"

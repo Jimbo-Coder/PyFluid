@@ -8,7 +8,7 @@
 
 #include "pyfluid_amrex/amr_indicator.hpp"
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
 #include "pyfluid_amrex/primitive_cache_factory.hpp"
 #include "pyfluid_amrex/state.hpp"

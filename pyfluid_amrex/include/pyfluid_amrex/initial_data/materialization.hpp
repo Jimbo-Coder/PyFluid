@@ -4,6 +4,7 @@
 #include <AMReX_Vector.H>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/eos/types.hpp"
 #include "pyfluid_amrex/initial_data/ctt.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
@@ -13,6 +14,7 @@ namespace pyfluid_amrex {
 
 enum class ConformalConstraintFormulation {
    ctt,
+   cttk,
    xcts,
 };
 

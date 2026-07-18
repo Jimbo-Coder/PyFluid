@@ -3,7 +3,7 @@
 #include <AMReX_MultiFab.H>
 #include <AMReX_iMultiFab.H>
 
-#include "pyfluid_amrex/eos.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
 

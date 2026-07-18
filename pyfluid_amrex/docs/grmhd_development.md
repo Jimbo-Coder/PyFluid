@@ -42,6 +42,13 @@ supports `ideal_gas` only because its maintained RePrimAnd/Palenzuela recovery
 residuals are generated for that closure; unsupported RMHD EOS choices are
 rejected before allocation rather than silently using another EOS.
 
+Analytic EoS ownership is under `include/pyfluid_amrex/eos/` and `src/eos/`.
+Custom polytropic segments and the named Read-fit presets (`sly`, `apr4`, `h4`,
+and `ms1`) are assembled there into the same continuous runtime representation.
+The eventual finite-temperature tabulated-EoS implementation belongs in this
+module; it must not introduce a second dispatch path in initial data, C2P, or
+evolution kernels.
+
 An initial-data provider normally supplies one self-consistent fluid and
 spacetime solution in physical coordinates. A provider advertises those groups
 independently so analytic fixed metrics need not fabricate fluid data. The fluid
@@ -389,9 +396,9 @@ momentum operator, and recovery of isotropic TOV conformal data. Centered fields
 with `f = f_inf + amplitude/r^p` use the standard amplitude-independent
 condition `p(f-f_inf) + r d_r f = 0`; the TOV conformal correction uses its
 `p=1`, `f_inf=0` instance rather than sampled finite-radius boundary data.
-Later XCTS residuals, Jacobian actions, and nonlinear iteration belong in this
-same initial-data layer; evolution continues to consume only the resulting
-provider.
+CTT, hybrid CTTK, and XCTS residuals, Jacobian actions, and nonlinear
+iterations all live in this initial-data layer; evolution consumes only the
+materialized canonical fields.
 
 CTTK is a formulation option inside this same layer, not another
 materialization path. It is particularly relevant when the requested physical
@@ -429,8 +436,9 @@ KEH/COCAL, black-hole, or binary solves may execute as separate programs and
 write an initial-data artifact, but must materialize through the same provider
 boundary. The current physical provider backends are fixed analytic spacetime
 and the internal radial-table TOV solution. No arbitrary-coordinate external
-grid reader, nonlinear XCTS solve, or physics-aware interpolation is yet
-implemented, so rotating-star, black-hole, and binary data remain future work.
+grid reader, rotating-fluid equilibrium solve, black-hole solve, or
+physics-aware interpolation is yet implemented, so rotating-star, black-hole,
+and binary data remain future work.
 
 Validation commands are:
 
