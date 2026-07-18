@@ -1,5 +1,8 @@
 #include "pyfluid_amrex/config.hpp"
 
+#include <AMReX_ParmParse.H>
+#include "framework/config_options.hpp"
+
 #include <AMReX.H>
 
 #include <array>
@@ -11,7 +14,10 @@
 #include <string>
 #include <string_view>
 
+#include "pyfluid_amrex/state.hpp"
+
 namespace pyfluid_amrex {
+using namespace config_options;
 namespace {
 
 enum class RestartPolicy {

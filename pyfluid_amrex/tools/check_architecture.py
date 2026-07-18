@@ -66,6 +66,37 @@ def main() -> None:
             + relative_paths(private_implementation_leaks)
         )
 
+    public_config = INCLUDE_ROOT / "config.hpp"
+    public_config_text = public_config.read_text()
+    leaked_config_catalogs = [
+        token
+        for token in ("RiemannOptions", "InitialDataOptions", "NamedOptionCode")
+        if token in public_config_text
+    ]
+    if leaked_config_catalogs:
+        errors.append(
+            "host-only option catalogs must remain private in src/framework/: "
+            + ", ".join(leaked_config_catalogs)
+        )
+    if "inline " in public_config_text:
+        errors.append(
+            "public config.hpp must declare configuration contracts, not own "
+            "host-side implementations"
+        )
+    leaked_config_implementations = [
+        include
+        for include in (
+            '"pyfluid_amrex/eos.hpp"',
+            '"pyfluid_amrex/fixed_spacetime.hpp"',
+        )
+        if include in public_config_text
+    ]
+    if leaked_config_implementations:
+        errors.append(
+            "public config.hpp must depend on stable type schemas, not pointwise "
+            "physics implementations: " + ", ".join(leaked_config_implementations)
+        )
+
     misplaced_programs = [
         path
         for path in SOURCE_ROOT.rglob("*.cpp")
@@ -97,6 +128,8 @@ def main() -> None:
         "enum Conserved": [],
         "enum Z4cComponent": [],
         "enum class AuxGridField": [],
+        "struct EOSParams": [],
+        "struct FixedSpacetimeParameters": [],
     }
     for path in INCLUDE_ROOT.rglob("*.hpp"):
         text = path.read_text()
@@ -104,10 +137,19 @@ def main() -> None:
             if declaration in text:
                 declarations[declaration].append(path)
 
+    declaration_owners = {
+        "enum Conserved": GENERATED_FIELD_IDS,
+        "enum Z4cComponent": GENERATED_FIELD_IDS,
+        "enum class AuxGridField": GENERATED_FIELD_IDS,
+        "struct EOSParams": INCLUDE_ROOT / "eos_types.hpp",
+        "struct FixedSpacetimeParameters": INCLUDE_ROOT / "fixed_spacetime_types.hpp",
+    }
     for declaration, owners in declarations.items():
-        if owners != [GENERATED_FIELD_IDS]:
+        expected_owner = declaration_owners[declaration]
+        if owners != [expected_owner]:
             errors.append(
-                f"{declaration!r} must be owned only by generated/field_ids.hpp; "
+                f"{declaration!r} must be owned only by "
+                f"{expected_owner.relative_to(INCLUDE_ROOT)}; "
                 f"found: {relative_paths(owners) if owners else 'none'}"
             )
 

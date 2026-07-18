@@ -108,13 +108,23 @@ set(PYFLUID_AMREX_AMR_SOURCES
    src/amr/amr_solver_valid_cells.cpp
 )
 
-set(PYFLUID_AMREX_RUNTIME_SOURCES
+set(PYFLUID_AMREX_FRAMEWORK_SOURCES
    src/framework/checkpoint.cpp
    src/framework/config.cpp
-   src/numerics/ct_edge_flux_register.cpp
+   src/framework/config_runtime.cpp
    src/framework/evolution_sector_storage.cpp
    src/framework/fields.cpp
+   src/framework/profiling.cpp
+)
+
+set(PYFLUID_AMREX_NUMERICS_SOURCES
+   src/numerics/ct_edge_flux_register.cpp
    src/numerics/flux_factory.cpp
+   src/numerics/implicit_resistivity.cpp
+   src/numerics/nodal_interpolater.cpp
+)
+
+set(PYFLUID_AMREX_FLUX_KERNEL_SOURCES
    src/flux_kernels/mp5.cpp
    src/flux_kernels/mp5_char.cpp
    src/flux_kernels/pwc.cpp
@@ -123,7 +133,9 @@ set(PYFLUID_AMREX_RUNTIME_SOURCES
    src/flux_kernels/teno5_char.cpp
    src/flux_kernels/wenoz.cpp
    src/flux_kernels/wenoz_char.cpp
-   src/numerics/implicit_resistivity.cpp
+)
+
+set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
    src/initial_data/initial_data_centering.cpp
    src/initial_data/initial_data_ctt.cpp
    src/initial_data/initial_data_elliptic.cpp
@@ -131,13 +143,14 @@ set(PYFLUID_AMREX_RUNTIME_SOURCES
    src/initial_data/initial_data_provider.cpp
    src/initial_data/initial_data_rhd.cpp
    src/initial_data/initial_data_state.cpp
-   src/numerics/nodal_interpolater.cpp
+   src/initial_data/tov_initial_data.cpp
+)
+
+set(PYFLUID_AMREX_RELATIVITY_SOURCES
    src/relativity/primitive_cache_factory.cpp
-   src/framework/profiling.cpp
    src/relativity/relativistic_source_factory.cpp
    src/relativity/signal_speed_factory.cpp
    src/relativity/spacetime_coupling_storage.cpp
-   src/initial_data/tov_initial_data.cpp
    src/relativity/z4c_runtime.cpp
 )
 
@@ -145,13 +158,18 @@ set(PYFLUID_AMREX_SOURCES
    ${PYFLUID_AMREX_DRIVER_SOURCES}
    ${PYFLUID_AMREX_KERNEL_BUNDLE_SOURCES}
    ${PYFLUID_AMREX_AMR_SOURCES}
-   ${PYFLUID_AMREX_RUNTIME_SOURCES}
+   ${PYFLUID_AMREX_FRAMEWORK_SOURCES}
+   ${PYFLUID_AMREX_NUMERICS_SOURCES}
+   ${PYFLUID_AMREX_FLUX_KERNEL_SOURCES}
+   ${PYFLUID_AMREX_INITIAL_DATA_SOURCES}
+   ${PYFLUID_AMREX_RELATIVITY_SOURCES}
 )
 
 set(PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES
    src/framework/checkpoint.cpp
    tools/cpp/compare_checkpoint.cpp
    src/framework/config.cpp
+   src/framework/config_runtime.cpp
    src/framework/fields.cpp
 )
 
@@ -169,6 +187,7 @@ set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
 
 set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
    src/framework/config.cpp
+   src/framework/config_runtime.cpp
    src/initial_data/initial_data_centering.cpp
    src/initial_data/initial_data_ctt.cpp
    src/initial_data/initial_data_elliptic.cpp

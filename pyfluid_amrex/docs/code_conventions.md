@@ -34,6 +34,11 @@ decisions.
 
 - Register each runtime option once. The input file selects supported values;
   runners do not mutate simulation parameters.
+- `config.hpp` owns the canonical `RunConfig`, stable configuration value
+  types, and declarations only. Supported-value catalogs, parsing,
+  validation, and derived host policy live under `src/framework/`; do not
+  inline them into the public contract or import pointwise physics headers
+  merely to expose a configuration data type.
 - Define each grid function once in `codegen/pyfluid_codegen/field_catalog.py`.
   Evolution, checkpointing, output, diagnostics, plotting, and equation
   generation consume its generated C++/JSON views. Do not add a handwritten
