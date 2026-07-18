@@ -1,4 +1,4 @@
-#include "pyfluid_amrex/amr_solver_internal.hpp"
+#include "amr/amr_solver_internal.hpp"
 
 namespace pyfluid_amrex::evolution_kernel_bundles {
 

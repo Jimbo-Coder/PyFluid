@@ -1,4 +1,4 @@
-#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "amr/amr_solver_base.hpp"
 
 #include "pyfluid_amrex/amr_indicator.hpp"
 #include "pyfluid_amrex/primitive_cache_factory.hpp"

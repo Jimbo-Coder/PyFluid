@@ -76,13 +76,13 @@
          amrex::MultiFab const* stored_spacetime = spacetime_state_.active()
             ? spacetime_coupling_.cell_spacetime()[lev].get()
             : nullptr;
-         amrex::Real stage_start = profile_begin();
+         amrex::Real stage_start = profile_.begin();
          debug_check_reconstruction_input(*input[lev], lev, rhs_time, "RHS reconstruction input");
          debug_poison_mfab(*primitive_[lev]);
          fill_stage_primitive_cache<NComp, EOSMethod>(
             *primitive_[lev], *input[lev], lev, use_solid_mask, rhs_time
          );
-         profile_end(ProfileStage::PrimitiveCache, stage_start);
+         profile_.end(ProfileStage::PrimitiveCache, stage_start);
          if (!use_solid_mask) {
             debug_check_mfab_finite(*primitive_[lev], NComp, primitive_[lev]->nGrowVect(), "primitive cache");
          }
@@ -94,10 +94,10 @@
                *primitive_[lev], Geom(lev), mesh_coordinate_kind(), active_mesh_axes(), true
             );
          }
-         stage_start = profile_begin();
+         stage_start = profile_.begin();
          debug_poison_fluxes(lev);
-         if ((flux_profile_detail_enabled() || stored_spacetime != nullptr) && !use_mapped_patches) {
-            amrex::Real detail_start = profile_begin();
+         if ((profile_.flux_detail_enabled() || stored_spacetime != nullptr) && !use_mapped_patches) {
+            amrex::Real detail_start = profile_.begin();
             if (use_solid_mask) {
                launch_flux_direction_runtime<NComp, 0, EOSMethod, true>(
                   fluxes,
@@ -116,9 +116,9 @@
                   rhs_time, nullptr, nullptr, stored_spacetime
                );
             }
-            profile_detail_end(ProfileDetailStage::FluxX, detail_start);
+            profile_.detail_end(ProfileDetailStage::FluxX, detail_start);
 #if (AMREX_SPACEDIM >= 2)
-            detail_start = profile_begin();
+            detail_start = profile_.begin();
             if (use_solid_mask) {
                launch_flux_direction_runtime<NComp, 1, EOSMethod, true>(
                   fluxes,
@@ -137,10 +137,10 @@
                   rhs_time, nullptr, nullptr, stored_spacetime
                );
             }
-            profile_detail_end(ProfileDetailStage::FluxY, detail_start);
+            profile_.detail_end(ProfileDetailStage::FluxY, detail_start);
 #endif
 #if (AMREX_SPACEDIM == 3)
-            detail_start = profile_begin();
+            detail_start = profile_.begin();
             if (use_solid_mask) {
                launch_flux_direction_runtime<NComp, 2, EOSMethod, true>(
                   fluxes,
@@ -159,7 +159,7 @@
                   rhs_time, nullptr, nullptr, stored_spacetime
                );
             }
-            profile_detail_end(ProfileDetailStage::FluxZ, detail_start);
+            profile_.detail_end(ProfileDetailStage::FluxZ, detail_start);
 #endif
          } else {
             if (use_mapped_patches) {
@@ -194,7 +194,7 @@
                );
             }
          }
-         profile_end(ProfileStage::Flux, stage_start);
+         profile_.end(ProfileStage::Flux, stage_start);
          if (physical_vector_flux) {
             transform_primitive_vectors<NComp>(
                *primitive_[lev], Geom(lev), mesh_coordinate_kind(), active_mesh_axes(), false
@@ -220,7 +220,7 @@
             rhs_has_wall_power = true;
             cumulative_wall_work_ += reflux_weight * wall_power;
          }
-         stage_start = profile_begin();
+         stage_start = profile_.begin();
          if (fluid_state_.rhs()[lev]) {
             debug_poison_mfab(*fluid_state_.rhs()[lev]);
          }
@@ -267,16 +267,16 @@
          } else {
             compute_rhs_from_fluxes<NComp>(*fluid_state_.rhs()[lev], fluxes, Geom(lev));
          }
-         profile_end(ProfileStage::Divergence, stage_start);
+         profile_.end(ProfileStage::Divergence, stage_start);
          if (sources_enabled(cfg_)) {
             const MassEnergy source_before = local_rhs_mass_energy_integral(lev);
-            stage_start = profile_begin();
+            stage_start = profile_.begin();
             apply_stage_sources_to_rhs<NComp>(lev, input, fluxes, use_solid_mask, rhs_time);
-            profile_end(ProfileStage::Sources, stage_start);
+            profile_.end(ProfileStage::Sources, stage_start);
             accumulate_source_change(source_before, local_rhs_mass_energy_integral(lev), reflux_weight);
          }
          if (physical_system_is_relativistic(physics_system_)) {
-            stage_start = profile_begin();
+            stage_start = profile_.begin();
             AMREX_ALWAYS_ASSERT(stored_spacetime != nullptr);
             add_relativistic_sources(RelativisticSourceLaunch{
                *fluid_state_.rhs()[lev],
@@ -289,12 +289,12 @@
                fixed_spacetime_parameters(cfg_),
                rhs_time,
             });
-            profile_end(ProfileStage::Sources, stage_start);
+            profile_.end(ProfileStage::Sources, stage_start);
          }
          debug_check_rhs_level(lev, "RHS assembly");
-         stage_start = profile_begin();
+         stage_start = profile_.begin();
          add_fluxes_to_registers(lev, reflux_weight);
-         profile_end(ProfileStage::FluxRegister, stage_start);
+         profile_.end(ProfileStage::FluxRegister, stage_start);
       }
       if (rhs_has_wall_power) {
          latest_wall_power_ = rhs_wall_power;
@@ -384,21 +384,21 @@
          const auto fluxes = flux_ptrs(lev);
          const int recon_method = recon_method_for_level(lev);
          const bool use_solid_mask = solid_active(lev) && !has_mhd_components<NComp>() && cfg_.solid_motion == "static";
-         amrex::Real stage_start = profile_begin();
+         amrex::Real stage_start = profile_.begin();
          debug_check_reconstruction_input(*input[lev], lev, rhs_time, "direct-flux reconstruction input");
          debug_poison_mfab(*primitive_[lev]);
          fill_stage_primitive_cache<NComp, EOSMethod>(
             *primitive_[lev], *input[lev], lev, use_solid_mask, rhs_time
          );
-         profile_end(ProfileStage::PrimitiveCache, stage_start);
+         profile_.end(ProfileStage::PrimitiveCache, stage_start);
          if (!use_solid_mask) {
             debug_check_mfab_finite(*primitive_[lev], NComp, primitive_[lev]->nGrowVect(), "primitive cache");
          }
 
-         stage_start = profile_begin();
+         stage_start = profile_.begin();
          debug_poison_fluxes(lev);
-         if (flux_profile_detail_enabled()) {
-            amrex::Real detail_start = profile_begin();
+         if (profile_.flux_detail_enabled()) {
+            amrex::Real detail_start = profile_.begin();
             if (use_solid_mask) {
                launch_flux_direction_runtime<NComp, 0, EOSMethod, true>(
                   fluxes,
@@ -416,9 +416,9 @@
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
                );
             }
-            profile_detail_end(ProfileDetailStage::FluxX, detail_start);
+            profile_.detail_end(ProfileDetailStage::FluxX, detail_start);
 #if (AMREX_SPACEDIM >= 2)
-            detail_start = profile_begin();
+            detail_start = profile_.begin();
             if (use_solid_mask) {
                launch_flux_direction_runtime<NComp, 1, EOSMethod, true>(
                   fluxes,
@@ -436,10 +436,10 @@
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
                );
             }
-            profile_detail_end(ProfileDetailStage::FluxY, detail_start);
+            profile_.detail_end(ProfileDetailStage::FluxY, detail_start);
 #endif
 #if (AMREX_SPACEDIM == 3)
-            detail_start = profile_begin();
+            detail_start = profile_.begin();
             if (use_solid_mask) {
                launch_flux_direction_runtime<NComp, 2, EOSMethod, true>(
                   fluxes,
@@ -457,7 +457,7 @@
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
                );
             }
-            profile_detail_end(ProfileDetailStage::FluxZ, detail_start);
+            profile_.detail_end(ProfileDetailStage::FluxZ, detail_start);
 #endif
          } else {
             if (use_solid_mask) {
@@ -478,15 +478,15 @@
                );
             }
          }
-         profile_end(ProfileStage::Flux, stage_start);
+         profile_.end(ProfileStage::Flux, stage_start);
          if (patch_union_domain_enabled() && !has_mhd_components<NComp>()) {
             apply_patch_union_hydro_wall_fluxes<NComp>(fluxes, *primitive_[lev], Geom(lev), patch_union_domain_boxes(lev));
          }
          debug_check_fluxes(lev, use_solid_mask, "direct flux stage");
          accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
 
-         stage_start = profile_begin();
+         stage_start = profile_.begin();
          add_fluxes_to_registers(lev, reflux_weight);
-         profile_end(ProfileStage::FluxRegister, stage_start);
+         profile_.end(ProfileStage::FluxRegister, stage_start);
       }
    }

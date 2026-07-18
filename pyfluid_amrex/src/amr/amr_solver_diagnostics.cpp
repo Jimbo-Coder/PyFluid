@@ -1,4 +1,4 @@
-#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "amr/amr_solver_base.hpp"
 #include <AMReX_Geometry.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_ParallelDescriptor.H>

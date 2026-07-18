@@ -1,8 +1,8 @@
-#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "amr/amr_solver_base.hpp"
 #include "pyfluid_amrex/checkpoint.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
-#include "pyfluid_amrex/output.hpp"
+#include "amr/output.hpp"
 
 namespace pyfluid_amrex {
 

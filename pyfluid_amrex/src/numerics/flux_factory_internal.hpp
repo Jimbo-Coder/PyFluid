@@ -3,7 +3,7 @@
 #include "pyfluid_amrex/flux_factory.hpp"
 
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/rhs.hpp"
+#include "numerics/rhs.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex::flux_factory_detail {

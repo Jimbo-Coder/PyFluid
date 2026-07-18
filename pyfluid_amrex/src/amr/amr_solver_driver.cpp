@@ -1,6 +1,6 @@
 #include "pyfluid_amrex/amr_solver.hpp"
 
-#include "pyfluid_amrex/amr_solver_internal.hpp"
+#include "amr/amr_solver_internal.hpp"
 
 namespace pyfluid_amrex {
 

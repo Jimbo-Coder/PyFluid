@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "amr/amr_solver_base.hpp"
 #include "pyfluid_amrex/checkpoint.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/diffusion.hpp"
@@ -11,13 +11,13 @@
 #include "pyfluid_amrex/flux_divergence.hpp"
 #include "pyfluid_amrex/flux_update.hpp"
 #include "pyfluid_amrex/implicit_resistivity.hpp"
-#include "pyfluid_amrex/patch_wall_flux.hpp"
-#include "pyfluid_amrex/primitive_vector_transform.hpp"
+#include "numerics/patch_wall_flux.hpp"
+#include "numerics/primitive_vector_transform.hpp"
 #include "pyfluid_amrex/primitive_cache_factory.hpp"
 #include "pyfluid_amrex/relativistic_source_factory.hpp"
 #include "pyfluid_amrex/signal_speed_factory.hpp"
 #include "pyfluid_amrex/solid_wall_power.hpp"
-#include "pyfluid_amrex/sources.hpp"
+#include "numerics/sources.hpp"
 #include "pyfluid_amrex/state_update.hpp"
 
 namespace pyfluid_amrex {
@@ -56,18 +56,18 @@ private:
 
    // Physical-system evolution templates. Kernel-bundle translation units own
    // their unique instantiations; AMR infrastructure sources include the base.
-#include "pyfluid_amrex/solver_sections/evolve_core.inc.hpp"
-#include "pyfluid_amrex/solver_sections/ct_evolution.inc.hpp"
-#include "pyfluid_amrex/solver_sections/gravity_sources.inc.hpp"
-#include "pyfluid_amrex/solver_sections/solid_conservation.inc.hpp"
-#include "pyfluid_amrex/solver_sections/state_repair.inc.hpp"
-#include "pyfluid_amrex/solver_sections/timestep_control.inc.hpp"
-#include "pyfluid_amrex/solver_sections/rhs_assembly.inc.hpp"
-#include "pyfluid_amrex/solver_sections/rk_stage_algebra.inc.hpp"
-#include "pyfluid_amrex/solver_sections/time_integrators.inc.hpp"
-#include "pyfluid_amrex/solver_sections/barotropic_energy.inc.hpp"
-#include "pyfluid_amrex/solver_sections/subcycling.inc.hpp"
-#include "pyfluid_amrex/solver_sections/diffusion.inc.hpp"
+#include "amr/solver_sections/evolve_core.inc.hpp"
+#include "amr/solver_sections/ct_evolution.inc.hpp"
+#include "amr/solver_sections/gravity_sources.inc.hpp"
+#include "amr/solver_sections/solid_conservation.inc.hpp"
+#include "amr/solver_sections/state_repair.inc.hpp"
+#include "amr/solver_sections/timestep_control.inc.hpp"
+#include "amr/solver_sections/rhs_assembly.inc.hpp"
+#include "amr/solver_sections/rk_stage_algebra.inc.hpp"
+#include "amr/solver_sections/time_integrators.inc.hpp"
+#include "amr/solver_sections/barotropic_energy.inc.hpp"
+#include "amr/solver_sections/subcycling.inc.hpp"
+#include "amr/solver_sections/diffusion.inc.hpp"
 };
 
 } // namespace pyfluid_amrex

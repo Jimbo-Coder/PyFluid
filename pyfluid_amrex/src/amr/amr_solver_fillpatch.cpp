@@ -1,4 +1,4 @@
-#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "amr/amr_solver_base.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
 #include "pyfluid_amrex/mapped_patch_fill.hpp"

@@ -70,10 +70,10 @@ dimensional EOS table or infer its unit system.
 ## Public Interfaces And Compilation
 
 The executable-facing solver API is intentionally small: `amr_solver.hpp`
-exposes the AMR run function directly. The concrete `AmrSolver` class is
-private backend machinery in
-`amr_solver_internal.hpp`; code outside the AMR implementation must not include
-that header or depend on its storage layout. `AmrSolverBase` owns the hierarchy,
+exposes the AMR run function directly. The concrete `AmrSolver` class and its
+base are private backend machinery under `src/amr/`; code outside the AMR
+implementation must not include those headers or depend on their storage
+layout. `AmrSolverBase` owns the hierarchy,
 state storage, FillPatch, reflux, restriction, output, diagnostics, and restart
 lifecycle. The private derived solver owns per-stage RHS, reconstruction,
 Riemann, diffusion, CT, and time-integration template instantiations. A narrow

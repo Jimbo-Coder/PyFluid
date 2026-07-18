@@ -12,35 +12,35 @@
       refresh_solid_geometry_level(lev, time, true);
 
       if constexpr (CTEnabled) {
-         const amrex::Real stage_start = profile_begin();
+         const amrex::Real stage_start = profile_.begin();
          apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
          sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), false);
-         profile_end(ProfileStage::CT, stage_start);
+         profile_.end(ProfileStage::CT, stage_start);
       }
 
-      amrex::Real stage_start = profile_begin();
+      amrex::Real stage_start = profile_.begin();
       if constexpr (TimeMethod == TimeRK4) {
          fill_level_boundaries<true>(fluid_state_.state(), lev, time, time, 1);
       } else {
          fill_level_boundaries<true>(fluid_state_.state(), lev, time);
       }
-      profile_end(ProfileStage::BoundaryFill, stage_start);
+      profile_.end(ProfileStage::BoundaryFill, stage_start);
       copy_level_state_to_old(lev);
 
       const bool next_state_needs_copy =
          advance_level_range<NComp, TimeMethod, EOSMethod, true, true, !CTEnabled>(time, dt, lev, lev + 1);
 
       if constexpr (CTEnabled) {
-         stage_start = profile_begin();
+         stage_start = profile_.begin();
          diffusion = combine_diffusion_stats(diffusion, advance_ct_level<DiffusionMethod>(lev, dt));
-         profile_end(ProfileStage::CT, stage_start);
+         profile_.end(ProfileStage::CT, stage_start);
       }
 
       if (next_state_needs_copy) {
-         stage_start = profile_begin();
+         stage_start = profile_.begin();
          copy_next_to_state_level<NComp>(lev);
          reset_barotropic_energy_level<NComp, EOSMethod>(lev);
-         profile_end(ProfileStage::Update, stage_start);
+         profile_.end(ProfileStage::Update, stage_start);
       } else {
          reset_barotropic_energy_level<NComp, EOSMethod>(lev);
       }
@@ -56,29 +56,29 @@
       if constexpr (DiffusionMethod != DiffusionNone) {
          RunConfig viscosity_cfg = viscosity_diffusion_config();
          if (viscosity_enabled(viscosity_cfg)) {
-            stage_start = profile_begin();
+            stage_start = profile_.begin();
             diffusion = combine_diffusion_stats(
                diffusion,
                apply_diffusion_level<DiffusionMethod, NComp>(lev, level_times_[lev], dt, viscosity_cfg)
             );
             reset_barotropic_energy_level<NComp, EOSMethod>(lev);
-            profile_end(ProfileStage::Diffusion, stage_start);
+            profile_.end(ProfileStage::Diffusion, stage_start);
          }
          if constexpr (CTEnabled) {
-            stage_start = profile_begin();
+            stage_start = profile_.begin();
             diffusion = combine_diffusion_stats(
                diffusion,
                advance_ct_inactive_magnetic_resistivity_level<DiffusionMethod>(lev, dt)
             );
             reset_barotropic_energy_level<NComp, EOSMethod>(lev);
-            profile_end(ProfileStage::Diffusion, stage_start);
+            profile_.end(ProfileStage::Diffusion, stage_start);
          }
       }
 
       if (cfg_.debug_check_finite || accepted_physical_check_due(level_steps_[lev], false)) {
-         stage_start = profile_begin();
+         stage_start = profile_.begin();
          debug_check_state_level(lev, "post-subcycle accepted state", level_steps_[lev], level_times_[lev]);
-         profile_end(ProfileStage::Diagnostics, stage_start);
+         profile_.end(ProfileStage::Diagnostics, stage_start);
       }
 
       return diffusion;
@@ -102,9 +102,9 @@
          advance_one_level_subcycle_step<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod>(lev, dt);
 
       if (lev < finestLevel()) {
-         const amrex::Real boundary_start = profile_begin();
+         const amrex::Real boundary_start = profile_.begin();
          fill_level_boundaries<true>(fluid_state_.state(), lev, level_times_[lev]);
-         profile_end(ProfileStage::BoundaryFill, boundary_start);
+         profile_.end(ProfileStage::BoundaryFill, boundary_start);
 
          const int substeps = subcycle_step_count<NComp, EOSMethod, DiffusionMethod>(lev, dt);
          const amrex::Real fine_dt = dt / static_cast<amrex::Real>(substeps);
@@ -120,7 +120,7 @@
             );
          }
 
-         const amrex::Real stage_start = profile_begin();
+         const amrex::Real stage_start = profile_.begin();
          reflux_level_to_state(lev + 1);
          average_down_state_level(lev + 1);
          average_down_spacetime_level(lev + 1);
@@ -131,14 +131,14 @@
             sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), false);
             reset_barotropic_energy_level<NComp, EOSMethod>(lev);
          }
-         profile_end(ProfileStage::AverageDown, stage_start);
+         profile_.end(ProfileStage::AverageDown, stage_start);
       }
 
       if (should_regrid_aligned_descendants(lev)) {
-         const amrex::Real stage_start = profile_begin();
+         const amrex::Real stage_start = profile_.begin();
          regrid_hierarchy<true>(level_times_[lev], level_steps_[lev], lev);
          aligned_regrid_due_ = false;
-         profile_end(ProfileStage::Regrid, stage_start);
+         profile_.end(ProfileStage::Regrid, stage_start);
       }
 
       return diffusion;

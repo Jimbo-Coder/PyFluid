@@ -1,4 +1,4 @@
-#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "amr/amr_solver_base.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
 
 #include <AMReX_Math.H>

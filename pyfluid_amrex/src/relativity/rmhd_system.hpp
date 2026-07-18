@@ -7,7 +7,7 @@
 #include "pyfluid_amrex/method_codes.hpp"
 #include "pyfluid_amrex/reconstruction/scalar.hpp"
 #include "pyfluid_amrex/relativistic_primitive.hpp"
-#include "pyfluid_amrex/rhd_system.hpp"
+#include "relativity/rhd_system.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 #include <AMReX_GpuLaunch.H>

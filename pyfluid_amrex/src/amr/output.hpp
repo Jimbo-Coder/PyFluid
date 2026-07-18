@@ -20,7 +20,7 @@
 #include <vector>
 
 #include "pyfluid_amrex/ct.hpp"
-#include "pyfluid_amrex/derived_aux.hpp"
+#include "amr/derived_aux.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/solid_fields.hpp"
 #include "pyfluid_amrex/gravity.hpp"

@@ -43,7 +43,7 @@
 #include "pyfluid_amrex/profiling.hpp"
 #include "pyfluid_amrex/solid_fields.hpp"
 #include "pyfluid_amrex/state.hpp"
-#include "pyfluid_amrex/state_interpolation.hpp"
+#include "amr/state_interpolation.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 #include "pyfluid_amrex/spacetime_coupling_storage.hpp"
 #include "pyfluid_amrex/temporal_cadence.hpp"
@@ -627,45 +627,10 @@ protected:
    void refresh_mhd_aux_fields_for_output(int lev);
    void refresh_all_mhd_aux_fields_for_output();
 
-   bool profile_enabled() const
-   {
-      return profile_.enabled();
-   }
-
-   bool flux_profile_detail_enabled() const
-   {
-      return profile_.flux_detail_enabled();
-   }
-
-   amrex::Real profile_begin() const
-   {
-      return profile_.begin();
-   }
-
-   void profile_end(ProfileStage stage, amrex::Real start)
-   {
-      profile_.end(stage, start);
-   }
-
-   void profile_detail_end(ProfileDetailStage stage, amrex::Real start)
-   {
-      profile_.detail_end(stage, start);
-   }
-
-   void write_profile_file(amrex::Real elapsed_wall)
-   {
-      profile_.write(std::filesystem::path(cfg_.output_dir), elapsed_wall);
-   }
-
-   void write_profile_detail_file(amrex::Real elapsed_wall)
-   {
-      profile_.write_detail(std::filesystem::path(cfg_.output_dir), elapsed_wall);
-   }
-
    // Shared AMR infrastructure used by every physical-system evolution bundle.
-#include "pyfluid_amrex/solver_sections/amr_tagging.inc.hpp"
-#include "pyfluid_amrex/solver_sections/fillpatch.inc.hpp"
-#include "pyfluid_amrex/solver_sections/debug_contracts.inc.hpp"
+   void ErrorEst(int lev, amrex::TagBoxArray& tags, amrex::Real time, int ngrow) override;
+#include "amr/solver_sections/fillpatch.inc.hpp"
+#include "amr/solver_sections/debug_contracts.inc.hpp"
 
    RunConfig cfg_;
    RelativisticInitialDataProvider initial_data_provider_;

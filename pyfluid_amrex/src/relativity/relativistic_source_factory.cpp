@@ -1,6 +1,6 @@
 #include "pyfluid_amrex/relativistic_source_factory.hpp"
 
-#include "pyfluid_amrex/relativistic_sources.hpp"
+#include "relativity/relativistic_sources.hpp"
 
 namespace pyfluid_amrex {
 namespace {

@@ -413,7 +413,7 @@ set(PYFLUID_AMREX_BUILD_FEATURES
 )
 
 function(pyfluid_amrex_configure_target target dim)
-   target_include_directories(${target} PRIVATE include)
+   target_include_directories(${target} PRIVATE include src)
    target_link_libraries(${target} PRIVATE AMReX::amrex_${dim}d)
    target_compile_features(${target} PRIVATE cxx_std_20)
    foreach(feature ${PYFLUID_AMREX_BUILD_FEATURES})

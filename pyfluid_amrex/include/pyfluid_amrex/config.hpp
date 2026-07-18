@@ -17,7 +17,6 @@
 
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/build_options.hpp"
-#include "pyfluid_amrex/config_registry.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/mesh_limits.hpp"
@@ -811,6 +810,7 @@ inline std::string resolved_plotfile_compression(std::string const& value)
 }
 
 RunConfig read_config();
+void write_run_parameter_file(std::string const& path);
 
 
 inline std::string trim_copy(std::string value)

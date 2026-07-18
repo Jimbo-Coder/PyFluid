@@ -246,12 +246,7 @@ void sync_scalars(
 
 } // namespace
 
-RunConfig::RunConfig()
-{
-   initialize_registered_parameters(*this);
-}
-
-void initialize_registered_parameters(RunConfig& cfg)
+static void initialize_registered_parameters(RunConfig& cfg)
 {
    for (RegisteredStringParameter const& parameter : MethodParameters) {
       cfg.*(parameter.member) = parameter.default_value;
@@ -264,14 +259,19 @@ void initialize_registered_parameters(RunConfig& cfg)
    initialize_scalars(cfg, AMRLongParameters);
 }
 
-void query_registered_method_parameters(amrex::ParmParse& pp, RunConfig& cfg)
+RunConfig::RunConfig()
+{
+   initialize_registered_parameters(*this);
+}
+
+static void query_registered_method_parameters(amrex::ParmParse& pp, RunConfig& cfg)
 {
    for (RegisteredStringParameter const& parameter : MethodParameters) {
       pp.queryAdd(parameter.key, cfg.*(parameter.member));
    }
 }
 
-void query_registered_amr_parameters(amrex::ParmParse& pp, RunConfig& cfg)
+static void query_registered_amr_parameters(amrex::ParmParse& pp, RunConfig& cfg)
 {
    for (RegisteredStringParameter const& parameter : AMRStringParameters) {
       pp.queryAdd(parameter.key, cfg.*(parameter.member));
@@ -281,7 +281,7 @@ void query_registered_amr_parameters(amrex::ParmParse& pp, RunConfig& cfg)
    query_scalars(pp, cfg, AMRLongParameters);
 }
 
-void sync_registered_amr_parameters(amrex::ParmParse& pp, RunConfig const& cfg)
+static void sync_registered_amr_parameters(amrex::ParmParse& pp, RunConfig const& cfg)
 {
    for (RegisteredStringParameter const& parameter : AMRStringParameters) {
       pp.add(parameter.key, cfg.*(parameter.member));
@@ -291,7 +291,7 @@ void sync_registered_amr_parameters(amrex::ParmParse& pp, RunConfig const& cfg)
    sync_scalars(pp, cfg, AMRLongParameters);
 }
 
-void validate_registered_parameters(RunConfig const& cfg)
+static void validate_registered_parameters(RunConfig const& cfg)
 {
    for (RegisteredStringParameter const& parameter : MethodParameters) {
       validate_registered_option(parameter, cfg.*(parameter.member), "pyfluid");

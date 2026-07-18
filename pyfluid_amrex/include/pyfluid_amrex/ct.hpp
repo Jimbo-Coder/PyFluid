@@ -10,7 +10,7 @@
 
 #include "pyfluid_amrex/boundary.hpp"
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/ct_diagnostics.hpp"
+#include "numerics/ct_diagnostics.hpp"
 #include "pyfluid_amrex/ct_fields.hpp"
 #include "pyfluid_amrex/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"

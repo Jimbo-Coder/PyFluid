@@ -8,7 +8,7 @@
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
-#include "pyfluid_amrex/relativistic_atmosphere.hpp"
+#include "relativity/relativistic_atmosphere.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/z4c_state_access.hpp"

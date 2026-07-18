@@ -409,19 +409,19 @@
       // Source fields are prepared at the same stage time as the RHS. Future
       // source terms should follow this hook rather than solving or caching
       // stage-dependent auxiliaries inside timestepping kernels.
-      const amrex::Real gravity_start = profile_begin();
+      const amrex::Real gravity_start = profile_.begin();
       if constexpr (SubcyclingEnabled) {
          if (uses_subcycled_self_gravity_source_state()) {
             fill_source_state_for_rhs(input, lev_begin, lev_end, rhs_time);
             solve_gravity_potential(fluid_state_.source_state(), true);
             update_self_gravity_acceleration_offset(fluid_state_.source_state());
-            profile_end(ProfileStage::Sources, gravity_start);
+            profile_.end(ProfileStage::Sources, gravity_start);
             return;
          }
       }
       prepare_gravity_fields(input, true);
       update_self_gravity_acceleration_offset(input);
-      profile_end(ProfileStage::Sources, gravity_start);
+      profile_.end(ProfileStage::Sources, gravity_start);
    }
 
    template <int NComp>

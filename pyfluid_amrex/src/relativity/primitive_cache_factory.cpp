@@ -1,6 +1,6 @@
 #include "pyfluid_amrex/primitive_cache_factory.hpp"
 
-#include "pyfluid_amrex/primitive_cache.hpp"
+#include "relativity/primitive_cache.hpp"
 #include "pyfluid_amrex/relativistic_boundary.hpp"
 
 namespace pyfluid_amrex {

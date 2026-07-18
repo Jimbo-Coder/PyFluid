@@ -36,6 +36,36 @@ def main() -> None:
             + relative_paths(implementation_headers)
         )
 
+    private_implementation_leaks = [
+        path
+        for path in (
+            INCLUDE_ROOT / "amr_solver_base.hpp",
+            INCLUDE_ROOT / "amr_solver_internal.hpp",
+            INCLUDE_ROOT / "solver_sections",
+            INCLUDE_ROOT / "output.hpp",
+            INCLUDE_ROOT / "derived_aux.hpp",
+            INCLUDE_ROOT / "solid_conservation.hpp",
+            INCLUDE_ROOT / "state_interpolation.hpp",
+            INCLUDE_ROOT / "sources.hpp",
+            INCLUDE_ROOT / "patch_wall_flux.hpp",
+            INCLUDE_ROOT / "primitive_vector_transform.hpp",
+            INCLUDE_ROOT / "rhs.hpp",
+            INCLUDE_ROOT / "mapped_patch_interfaces.hpp",
+            INCLUDE_ROOT / "ct_diagnostics.hpp",
+            INCLUDE_ROOT / "rhd_system.hpp",
+            INCLUDE_ROOT / "rmhd_system.hpp",
+            INCLUDE_ROOT / "primitive_cache.hpp",
+            INCLUDE_ROOT / "relativistic_atmosphere.hpp",
+            INCLUDE_ROOT / "relativistic_sources.hpp",
+        )
+        if path.exists()
+    ]
+    if private_implementation_leaks:
+        errors.append(
+            "backend implementation headers must remain under their src/ owner: "
+            + relative_paths(private_implementation_leaks)
+        )
+
     misplaced_programs = [
         path
         for path in SOURCE_ROOT.rglob("*.cpp")

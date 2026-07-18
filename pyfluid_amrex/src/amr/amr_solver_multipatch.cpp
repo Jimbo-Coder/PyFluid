@@ -1,4 +1,4 @@
-#include "pyfluid_amrex/amr_solver_base.hpp"
+#include "amr/amr_solver_base.hpp"
 #include "pyfluid_amrex/multipatch.hpp"
 #include "pyfluid_amrex/patch_domain.hpp"
 #include "pyfluid_amrex/patch_grid.hpp"

@@ -18,12 +18,13 @@
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
-#include "pyfluid_amrex/rhd_system.hpp"
+#include "relativity/rhd_system.hpp"
 #include "pyfluid_amrex/reconstruction/mp5.hpp"
 #include "pyfluid_amrex/reconstruction/teno5.hpp"
 #include "pyfluid_amrex/reconstruction/wenoz.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
-#include "pyfluid_amrex/z4c_pointwise.hpp"
+#include "pyfluid_amrex/z4c_constraint_pointwise.hpp"
+#include "pyfluid_amrex/z4c_evolution_pointwise.hpp"
 
 #include <algorithm>
 #include <array>

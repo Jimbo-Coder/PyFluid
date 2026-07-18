@@ -1,5 +1,5 @@
-#include "pyfluid_amrex/amr_solver_base.hpp"
-#include "pyfluid_amrex/solid_conservation.hpp"
+#include "amr/amr_solver_base.hpp"
+#include "amr/solid_conservation.hpp"
 
 namespace pyfluid_amrex {
 

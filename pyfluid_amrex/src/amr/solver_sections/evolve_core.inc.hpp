@@ -375,9 +375,9 @@
             break;
          }
          refresh_solid_geometry_all_levels(time, true);
-         amrex::Real stage_start = profile_begin();
+         amrex::Real stage_start = profile_.begin();
          dt = (this->*operations.compute_timestep)();
-         profile_end(ProfileStage::Timestep, stage_start);
+         profile_.end(ProfileStage::Timestep, stage_start);
          if (has_final_time) {
             dt = amrex::min(dt, cfg_.final_time - time);
          }
@@ -393,60 +393,60 @@
             );
             time = level_times_[0];
             current_step = level_steps_[0];
-            stage_start = profile_begin();
+            stage_start = profile_.begin();
             const bool refreshed_solid =
                refresh_solid_geometry_synced(time, true, !has_mhd_components<NComp>() && !is_mhd(cfg_));
             if (refreshed_solid) {
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
             }
-            profile_end(ProfileStage::AverageDown, stage_start);
+            profile_.end(ProfileStage::AverageDown, stage_start);
          } else {
             const amrex::Long layout_cells_this_step = cell_count();
             const amrex::Long active_cells_this_step = active_cell_count();
             const bool next_state_needs_copy =
                (this->*operations.advance_single_rate)(time, dt);
             if constexpr (CTEnabled) {
-               stage_start = profile_begin();
+               stage_start = profile_.begin();
                diffusion = combine_diffusion_stats(
                   diffusion,
                   (this->*operations.advance_ct)(dt)
                );
-               profile_end(ProfileStage::CT, stage_start);
+               profile_.end(ProfileStage::CT, stage_start);
             }
             if (next_state_needs_copy) {
-               stage_start = profile_begin();
+               stage_start = profile_.begin();
                for (int lev = 0; lev <= finestLevel(); ++lev) {
                   copy_next_to_state_level<NComp>(lev);
                }
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
-               profile_end(ProfileStage::Update, stage_start);
+               profile_.end(ProfileStage::Update, stage_start);
             } else {
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
             }
             if (operations.advance_diffusion != nullptr) {
                RunConfig viscosity_cfg = viscosity_diffusion_config();
                if (viscosity_enabled(viscosity_cfg)) {
-                  stage_start = profile_begin();
+                  stage_start = profile_.begin();
                   diffusion = combine_diffusion_stats(
                      diffusion,
                      (this->*operations.advance_diffusion)(time + dt, dt, viscosity_cfg)
                   );
                   reset_barotropic_energy_all_levels<NComp, EOSMethod>();
-                  profile_end(ProfileStage::Diffusion, stage_start);
+                  profile_.end(ProfileStage::Diffusion, stage_start);
                }
                if constexpr (CTEnabled) {
-                  stage_start = profile_begin();
+                  stage_start = profile_.begin();
                   diffusion = combine_diffusion_stats(
                      diffusion,
                      (this->*operations.advance_inactive_ct_resistivity)(dt)
                   );
                   reset_barotropic_energy_all_levels<NComp, EOSMethod>();
-                  profile_end(ProfileStage::Diffusion, stage_start);
+                  profile_.end(ProfileStage::Diffusion, stage_start);
                }
             }
             active_cell_updates_this_step = static_cast<amrex::Real>(active_cells_this_step);
             layout_cell_updates_this_step = static_cast<amrex::Real>(layout_cells_this_step);
-            stage_start = profile_begin();
+            stage_start = profile_.begin();
             average_down_state();
             average_down_spacetime();
             if constexpr (CTEnabled) {
@@ -456,7 +456,7 @@
                }
             }
             reset_barotropic_energy_all_levels<NComp, EOSMethod>();
-            profile_end(ProfileStage::AverageDown, stage_start);
+            profile_.end(ProfileStage::AverageDown, stage_start);
             time += dt;
             for (int lev = 0; lev <= finestLevel(); ++lev) {
                level_steps_[lev] = step;
@@ -464,13 +464,13 @@
                level_old_times_[lev] = time;
                level_dts_[lev] = dt;
             }
-            stage_start = profile_begin();
+            stage_start = profile_.begin();
             const bool refreshed_solid =
                refresh_solid_geometry_synced(time, true, !has_mhd_components<NComp>() && !is_mhd(cfg_));
             if (refreshed_solid) {
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
             }
-            profile_end(ProfileStage::AverageDown, stage_start);
+            profile_.end(ProfileStage::AverageDown, stage_start);
             current_step = step;
          }
          total_active_cell_updates += active_cell_updates_this_step;
@@ -483,7 +483,7 @@
          const bool will_regrid = should_regrid(step, reached_final_time);
 
          if (will_regrid) {
-            const amrex::Real regrid_start = profile_begin();
+            const amrex::Real regrid_start = profile_.begin();
             const bool hierarchy_changed = (this->*operations.regrid)(time, step, 0);
             if (cfg_.regrid_mode == "aligned" && cfg_.subcycling == "on") {
                aligned_base_regrid_tick_ = aligned_regrid_ticks_;
@@ -491,13 +491,13 @@
             if (hierarchy_changed) {
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
             }
-            profile_end(ProfileStage::Regrid, regrid_start);
+            profile_.end(ProfileStage::Regrid, regrid_start);
          }
 
          if (!will_regrid && needs_fresh_state_boundaries_after_step(write_scalars, write_aux_gfs)) {
-            stage_start = profile_begin();
+            stage_start = profile_.begin();
             (this->*operations.fill_boundaries)(fluid_state_.state(), time);
-            profile_end(ProfileStage::BoundaryFill, stage_start);
+            profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          if constexpr (!has_mhd_components<NComp>()) {
             if (project_closed_hydro_solid_amr_mass(mass0)) {
@@ -505,14 +505,14 @@
             }
          }
          if (cfg_.debug_check_finite || accepted_physical_check_due(current_step, false)) {
-            const amrex::Real check_start = profile_begin();
+            const amrex::Real check_start = profile_.begin();
             debug_check_state_all_levels("post-step accepted state", current_step, time);
-            profile_end(ProfileStage::Diagnostics, check_start);
+            profile_.end(ProfileStage::Diagnostics, check_start);
          }
          if (should_refresh_mhd_aux_fields(step, write_aux_gfs)) {
-            const amrex::Real aux_start = profile_begin();
+            const amrex::Real aux_start = profile_.begin();
             refresh_all_mhd_aux_fields_for_output();
-            profile_end(ProfileStage::Diagnostics, aux_start);
+            profile_.end(ProfileStage::Diagnostics, aux_start);
          }
          if (emit_scalars) {
             const amrex::Real now = amrex::second();
@@ -526,7 +526,7 @@
             const amrex::Real sim_time_per_s = elapsed > 0.0
                ? (time - last_scalar_sim_time) / elapsed
                : 0.0;
-            const amrex::Real diagnostics_start = profile_begin();
+            const amrex::Real diagnostics_start = profile_.begin();
             const auto scalars = compute_current_scalars(
                step,
                time,
@@ -542,7 +542,7 @@
                diffusion,
                EOSMethod
             );
-            profile_end(ProfileStage::Diagnostics, diagnostics_start);
+            profile_.end(ProfileStage::Diagnostics, diagnostics_start);
             validate_scalar_health(scalars);
             if (amrex::ParallelDescriptor::IOProcessor()) {
                append_scalar_row(scalar_file, scalars);
@@ -556,17 +556,17 @@
          }
 
          if (plot_cadence.should_record(step, reached_run_end)) {
-            const amrex::Real output_start = profile_begin();
+            const amrex::Real output_start = profile_.begin();
             write_current_state_plotfile(step, time);
-            profile_end(ProfileStage::Output, output_start);
+            profile_.end(ProfileStage::Output, output_start);
          }
          if (write_aux_gfs) {
-            const amrex::Real output_start = profile_begin();
+            const amrex::Real output_start = profile_.begin();
             write_current_aux_gfs(step, time);
-            profile_end(ProfileStage::Output, output_start);
+            profile_.end(ProfileStage::Output, output_start);
          }
          if (checkpoint_cadence.should_record(step, reached_run_end)) {
-            const amrex::Real output_start = profile_begin();
+            const amrex::Real output_start = profile_.begin();
             write_checkpoint(
                fluid_state_.state(),
                level_steps_,
@@ -587,15 +587,16 @@
                aligned_base_regrid_tick_,
                cfg_.checkpoint_compression
             );
-            profile_end(ProfileStage::Output, output_start);
+            profile_.end(ProfileStage::Output, output_start);
          }
       }
 
       const amrex::Real elapsed_wall = amrex::second() - start_wall;
       amrex::Real max_elapsed_wall = elapsed_wall;
       amrex::ParallelDescriptor::ReduceRealMax(max_elapsed_wall, amrex::ParallelDescriptor::IOProcessorNumber());
-      write_profile_file(max_elapsed_wall);
-      write_profile_detail_file(max_elapsed_wall);
+      const std::filesystem::path output_dir(cfg_.output_dir);
+      profile_.write(output_dir, max_elapsed_wall);
+      profile_.write_detail(output_dir, max_elapsed_wall);
       if (amrex::ParallelDescriptor::IOProcessor()) {
          if (!stream_scalars) {
             const auto scalars = compute_current_scalars(
