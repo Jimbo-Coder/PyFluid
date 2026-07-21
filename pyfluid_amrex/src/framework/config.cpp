@@ -16,6 +16,7 @@
 
 #include "pyfluid_amrex/state.hpp"
 #include "pyfluid_amrex/fields.hpp"
+#include "pyfluid_amrex/generated/method_catalog.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 
 namespace pyfluid_amrex {
@@ -423,6 +424,21 @@ RunConfig read_config()
       "atmosphere_transition_radius", cfg.initial_data_atmosphere_transition_radius
    );
    initial_data_pp.queryAdd("atmosphere_power", cfg.initial_data_atmosphere_power);
+   initial_data_pp.queryAdd("rotation_law", cfg.initial_data_rotation_law);
+   initial_data_pp.queryAdd("angular_velocity", cfg.initial_data_angular_velocity);
+   initial_data_pp.queryAdd("rotation_axis1", cfg.initial_data_rotation_axis1);
+   initial_data_pp.queryAdd("rotation_axis2", cfg.initial_data_rotation_axis2);
+   initial_data_pp.queryAdd("rotation_axis3", cfg.initial_data_rotation_axis3);
+   initial_data_pp.queryAdd("rotation_center1", cfg.initial_data_rotation_center1);
+   initial_data_pp.queryAdd("rotation_center2", cfg.initial_data_rotation_center2);
+   initial_data_pp.queryAdd("rotation_center3", cfg.initial_data_rotation_center3);
+   initial_data_pp.queryAdd("matter_relaxation", cfg.initial_data_matter_relaxation);
+   initial_data_pp.queryAdd(
+      "matter_relative_tolerance", cfg.initial_data_matter_relative_tolerance
+   );
+   initial_data_pp.queryAdd(
+      "matter_max_iterations", cfg.initial_data_matter_max_iterations
+   );
    spacetime_pp.queryAdd("lapse_gauge", cfg.spacetime_lapse_gauge);
    spacetime_pp.queryAdd("shift_gauge", cfg.spacetime_shift_gauge);
    spacetime_pp.queryAdd("amplitude", cfg.spacetime_amplitude);
@@ -797,6 +813,16 @@ void validate_config(RunConfig const& cfg)
       InitialAtmosphereOptions,
       "initial_data.atmosphere"
    );
+   bool rotation_law_supported = false;
+   for (RotationLawInfo const& law : RotationLawCatalog) {
+      rotation_law_supported = rotation_law_supported
+         || law.name == cfg.initial_data_rotation_law;
+   }
+   if (!rotation_law_supported) {
+      amrex::Abort(
+         "initial_data.rotation_law is not present in schema/methods.toml"
+      );
+   }
    require_supported_option(
       cfg.spacetime_lapse_gauge,
       Z4cLapseGaugeOptions,
@@ -881,6 +907,26 @@ void validate_config(RunConfig const& cfg)
          "and a positive atmosphere_transition_radius, or -1 for the TOV-derived radius"
       );
    }
+   const amrex::Real rotation_axis_norm_squared =
+      cfg.initial_data_rotation_axis1 * cfg.initial_data_rotation_axis1
+      + cfg.initial_data_rotation_axis2 * cfg.initial_data_rotation_axis2
+      + cfg.initial_data_rotation_axis3 * cfg.initial_data_rotation_axis3;
+   if (!std::isfinite(cfg.initial_data_angular_velocity)
+       || !(rotation_axis_norm_squared > 0.0)
+       || !std::isfinite(rotation_axis_norm_squared)
+       || !std::isfinite(cfg.initial_data_rotation_center1)
+       || !std::isfinite(cfg.initial_data_rotation_center2)
+       || !std::isfinite(cfg.initial_data_rotation_center3)
+       || !(cfg.initial_data_matter_relaxation > 0.0)
+       || !(cfg.initial_data_matter_relaxation <= 1.0)
+       || !(cfg.initial_data_matter_relative_tolerance > 0.0)
+       || cfg.initial_data_matter_max_iterations < 2) {
+      amrex::Abort(
+         "rotating initial data requires finite angular velocity/center, a "
+         "nonzero finite axis, 0 < matter_relaxation <= 1, positive "
+         "matter_relative_tolerance, and matter_max_iterations >= 2"
+      );
+   }
    if (cfg.passive_scalars < 0 || cfg.passive_scalars > MaxPassiveScalars) {
       amrex::Abort("pyfluid.passive_scalars currently supports 0 or 1");
    }
@@ -962,12 +1008,12 @@ void validate_config(RunConfig const& cfg)
       if (cfg.ic == "fixed_metric_hse" && cfg.spacetime_fixed_metric == "minkowski") {
          amrex::Abort("pyfluid.ic = fixed_metric_hse requires a non-Minkowski fixed metric");
       }
-      if (cfg.ic == "tov") {
+      if (cfg.ic == "tov" || cfg.ic == "rotating_star") {
          if (selected_system != PhysicalSystem::RHD
              || !spacetime_stores_state(cfg)
              || (cfg.eos != "polytrope" && cfg.eos != "hybrid_polytrope")) {
             amrex::Abort(
-               "pyfluid.ic = tov requires RHD, fixed or evolved spacetime, and a polytrope or hybrid_polytrope EOS"
+               "TOV/rotating-star initial data require RHD, fixed or evolved spacetime, and a polytrope or hybrid_polytrope EOS"
             );
          }
          if (!(cfg.tov_central_density > cfg.rho_floor)
@@ -978,6 +1024,22 @@ void validate_config(RunConfig const& cfg)
                "TOV initial data requires central_density > rho_floor, positive solve tolerances, and max_steps >= 16"
             );
          }
+      }
+      if (cfg.ic == "rotating_star"
+          && cfg.initial_data_angular_velocity != 0.0
+          && cfg.spacetime_initial_data != "xcts") {
+         amrex::Abort(
+            "nonzero-spin rotating_star currently requires "
+            "spacetime.initial_data = xcts; the shared matter law can feed "
+            "CTT/CTTK, but those branches do not yet close stationarity"
+         );
+      }
+      if (cfg.ic == "rotating_star"
+          && cfg.initial_data_angular_velocity != 0.0
+          && AMREX_SPACEDIM != 3) {
+         amrex::Abort(
+            "nonzero-spin rotating_star currently requires the 3D executable"
+         );
       }
       if (spacetime_evolves(cfg) && cfg.spacetime_fixed_metric != "minkowski") {
          amrex::Abort("spacetime.fixed_metric applies to fixed spacetime only");

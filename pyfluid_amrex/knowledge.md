@@ -7,11 +7,10 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-21, branch `main`, for the integration state recorded
-in Cycle 202. That state was assembled from the extensive AMReX, Z4c,
-relativistic initial-data, diagnostic, validation, and documentation work based
-on `d78a0acc6a27`; use the eventual Cycle 202 commit rather than that older base
-when reproducing the baseline.
+Last reconciled: 2026-07-21, branch `main`, through the local Cycle 206
+rotating-star checkpoint. Use the commit containing this snapshot plus the
+exact Cycle 206 evidence rather than inferring it from the earlier Cycle 202
+baseline.
 
 ## Production Boundary
 
@@ -40,6 +39,11 @@ when reproducing the baseline.
   then exposes immutable models and derived views. Generated IDs, descriptors,
   labels, centerings, output, and plotting views consume that validated model.
   See `docs/catalog_schema.md`.
+- Rotation-law identity is data-only in `schema/methods.toml`; the strict
+  `method_catalog.py` loader emits the generated C++ enum/descriptors. Uniform
+  rotation is the first implemented family. Its Euler integral remains a
+  generated equation and its hierarchy update remains compiled science code,
+  not TOML expression text.
 - Requested state and auxiliary GF snapshots normally share one resolved GF
   output cadence: an omitted auxiliary write interval inherits
   `pyfluid.plot_int`, and
@@ -74,6 +78,12 @@ when reproducing the baseline.
   is reserved for small value types and pointwise CPU/GPU kernels whose
   inlining is part of the numerical implementation. Runtime selection happens
   once on the host, outside cell loops.
+- The RHD invariant-domain flux limiter treats the low-order LLF update as its
+  safe reference and retains ten percent of that candidate's conserved
+  admissibility margin. Do not reduce this to a roundoff-only margin: coupled
+  RK evolution evaluates the candidate with the input stage metric and accepts
+  it with the advanced metric. The maintained stellar surface control is
+  PWL/HLL/SSPRK3 at CFL `0.9`, not a lowered-CFL workaround.
 
 ## Current Validation Boundary
 
@@ -103,6 +113,14 @@ The latest recorded evidence is not one monolithic green result:
   roughly 90-second exhaustive multipatch executable is preserved in full and
   was not rerun by standard. Consult the end of Cycle 202 for the post-commit
   compile and runtime baseline rather than inferring those from this gate.
+- Cycle 206 adds the first uniform-rotation XCTS matter/constraint continuation
+  and the rotation-law TOML catalog. Generated/architecture checks, all
+  production dimensions, the focused elliptic/CTT/TOV executable, exact
+  zero-spin scalar equivalence, one N=24 `Omega=0.001` initialization, three
+  PWL/HLL evolved-spacetime steps at CFL `0.9`, the focused RHD KH AMR pair, and
+  all 42 standard gates pass. This is short finite-state evidence only: no
+  long-term stability, rotating sequence, convergence, AMR rotation,
+  full/stability suite, or fresh broad runtime-performance result was recorded.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -114,20 +132,51 @@ performance, and MPI-rank evidence into one claim.
   remains roughly constant under the recorded refinement. This is an exposed
   second-order multilevel-elliptic/fourth-order pointwise-diagnostic mismatch,
   not a completed high-order coarse-fine derivative closure.
-- Rotating relativistic equilibrium/RNS matter data are not implemented. Do
-  not imitate rotation by adding azimuthal velocity to spherical TOV data.
+- The first self-contained rotating-star path is implemented for 3D uniform
+  rotation, a cold polytropic/hybrid-polytropic EoS, and XCTS. It continues a
+  direct TOV seed with one generated relativistic Euler first integral and a
+  coupled under-relaxed matter/constraint iteration; zero angular velocity
+  bypasses that update and retains the exact TOV control. The first executed
+  nonzero gate is only a small-spin uniform-grid initialization plus three
+  evolved-spacetime steps, not an RNS sequence, mass-shedding result,
+  convergence study, or long-term stability claim. The current
+  central-enthalpy closure assumes the minimum helical
+  effective potential identifies a spheroidal center; add explicit
+  topology/surface control before high-spin, toroidal, or off-center families.
+  CTT and CTTK must reuse this matter layer, but still need a validated
+  stationarity-compatible free-data closure before being labeled equilibrium.
+  COCAL, RNS/FUKA, AthenaK, and ETK solutions are comparison baselines only.
+  The zero-spin limit of each equilibrium branch must match the same-EoS TOV
+  solution, including point fields, masses, radius, vanishing shift/extrinsic
+  curvature/angular momentum, and evolution. The current deliberately nonzero-
+  mean-curvature CTTK control is a different slice and is excluded from that
+  equivalence unless its free data are changed to the equilibrium endpoint.
+- Native CompOSE/tabulated EoS support is not implemented. Add a cold,
+  beta-equilibrated one-dimensional barotrope first and use the same loaded,
+  unit-checked table for direct TOV, rotating-star initial data, C2P/P2C,
+  signal speeds, atmosphere closure, and evolution. A cold-plus-thermal
+  extension is a bounded next step; a general finite-temperature
+  `(n_b,T,Y_e)` table also requires composition evolution and a larger
+  inversion/validity contract and should not be conflated with the first stage.
+  Importing selected CompOSE/TEOS table data is permitted; importing another
+  code's TOV/RNS/BNS solution for production initialization is not.
 - Fixed-spacetime and evolved curvilinear relativistic evolution remain
-  pending. Evolved curvilinear Z4c requires a generated reference-metric
+  pending but are explicitly deprioritized. Evolved curvilinear Z4c requires a generated reference-metric
   formulation, parity/origin regularity, nodal AMR transfer, and matching
   boundaries; it is not a Jacobian-only change.
 - The radiation pipeline has surface interpolation, Weyl/Psi4 generation,
   multipoles, restart-aware histories, and postprocessing controls. Honest
   extraction-radius convergence toward null infinity still needs a compact
   isolated radiative source and multiple physical radii.
-- Generic spherical accretion, fluid/EM energy-flux, and magnetic-flux
-  diagnostics remain pending. Flat/power-law initial atmospheres and the shared
-  allocation-free physical-coordinate geometry provider are implemented; the
-  continuity log records their focused validation boundary.
+- Diagnostic infrastructure is already shared: generated catalog/integrands,
+  composite-AMR volume reductions, spherical hierarchy interpolation,
+  parametric-surface quadrature, and general multipole/Fourier reduction. The
+  remaining additions are specific quantities: spherical mass-accretion rate,
+  separated fluid and electromagnetic energy fluxes, magnetic flux, and C2P
+  fallback/failure plus atmosphere-injection counters. The existing catalog
+  already includes total finite-radius matter energy flux and atmosphere volume
+  fraction. Flat/power-law initial atmospheres and the allocation-free physical
+  geometry provider are implemented.
 
 ## AthenaK Reference Boundary
 

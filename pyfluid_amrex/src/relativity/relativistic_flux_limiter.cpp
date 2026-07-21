@@ -72,8 +72,22 @@ amrex::Real admissibility_floor(
       amrex::Math::abs(energy),
       amrex::max(amrex::Math::abs(recovery.dens), momentum)
    );
-   return 256.0 * std::numeric_limits<amrex::Real>::epsilon()
+   const amrex::Real roundoff_floor =
+      256.0 * std::numeric_limits<amrex::Real>::epsilon()
       * amrex::max(scale, std::numeric_limits<amrex::Real>::min());
+   // The low-order LLF candidate is the invariant-domain reference.  Retain a
+   // finite fraction of its margin instead of accepting a high-order state at
+   // roundoff distance from the boundary.  Coupled GR advances the metric in
+   // the same RK stage, so a merely machine-positive margin under the input
+   // metric can become nonrecoverable under the accepted metric.
+   constexpr amrex::Real retained_low_order_margin = 0.1;
+   const amrex::Real low_order_margin = energy - std::sqrt(
+      recovery.dens * recovery.dens + momentum * momentum
+   );
+   return amrex::max(
+      roundoff_floor,
+      retained_low_order_margin * amrex::max(low_order_margin, amrex::Real(0.0))
+   );
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

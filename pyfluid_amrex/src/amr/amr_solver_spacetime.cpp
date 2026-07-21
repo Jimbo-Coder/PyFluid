@@ -148,7 +148,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data()
 
    InitialDataEllipticHierarchy hierarchy;
    amrex::Vector<amrex::MultiFab*> fluid;
-   amrex::Vector<amrex::MultiFab const*> primitive;
+   amrex::Vector<amrex::MultiFab*> primitive;
    amrex::Vector<amrex::MultiFab*> spacetime;
    amrex::Vector<amrex::MultiFab*> cell_spacetime;
    for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -189,7 +189,8 @@ void AmrSolverBase::materialize_constraint_solved_initial_data()
       eos_method_,
       eos_params(cfg_),
       initial_data_provider_.view().fields,
-      formulation
+      formulation,
+      rotating_star_parameters(cfg_, initial_data_provider_.view())
    );
    if (amrex::ParallelDescriptor::IOProcessor()) {
       amrex::Print()
@@ -200,6 +201,15 @@ void AmrSolverBase::materialize_constraint_solved_initial_data()
          << " hamiltonian_residual=" << result.constraints.hamiltonian_residual
          << " lapse_residual=" << result.constraints.lapse_residual
          << " momentum_residual=" << result.constraints.momentum_residual << '\n';
+      if (cfg_.ic == "rotating_star") {
+         amrex::Print()
+            << "rotating star: omega=" << cfg_.initial_data_angular_velocity
+            << " maximum_density=" << result.rotating_star.maximum_density
+            << " maximum_velocity=" << result.rotating_star.maximum_velocity
+            << " injection_energy=" << result.rotating_star.injection_energy
+            << " boundary_density_excess="
+            << result.rotating_star.boundary_density_excess << '\n';
+      }
    }
 
    for (int lev = 0; lev <= finestLevel(); ++lev) {

@@ -101,7 +101,7 @@ inline FluidInitialDataParameters fluid_initial_data_parameters(
       kind = FluidInitialDataKind::PeriodicShockPlane;
    } else if (cfg.ic == "fixed_metric_hse") {
       kind = FluidInitialDataKind::FixedMetricHse;
-   } else if (cfg.ic == "tov") {
+   } else if (cfg.ic == "tov" || cfg.ic == "rotating_star") {
       kind = FluidInitialDataKind::Provider;
    }
    FluidInitialDataParameters parameters;

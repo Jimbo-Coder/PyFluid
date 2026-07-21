@@ -177,6 +177,25 @@ def xcts_kernels() -> tuple[ScalarKernel, ...]:
    )
 
 
+def rotating_star_kernels() -> tuple[ScalarKernel, ...]:
+   injection_energy, lapse = sp.symbols(
+      "injection_energy lapse", positive=True
+   )
+   velocity_squared = sp.Symbol("velocity_squared", nonnegative=True)
+   log_specific_enthalpy = (
+      sp.log(injection_energy)
+      - sp.log(lapse)
+      - sp.Rational(1, 2) * sp.log(1 - velocity_squared)
+   )
+   return (
+      ScalarKernel(
+         name="uniform_rotation_log_specific_enthalpy",
+         arguments=("injection_energy", "lapse", "velocity_squared"),
+         expression=log_specific_enthalpy,
+      ),
+   )
+
+
 def ctt_momentum_kernels() -> tuple[ScalarKernel, ...]:
    conformal_factor, momentum_density, mean_curvature_gradient = sp.symbols(
       "conformal_factor momentum_density mean_curvature_gradient", real=True
@@ -514,6 +533,7 @@ def initial_data_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
    return (
       *ctt_conformal_geometry_kernels(),
       *xcts_kernels(),
+      *rotating_star_kernels(),
       *ctt_momentum_kernels(),
       *cttk_kernels(),
       *ctt_canonical_state_kernels(),

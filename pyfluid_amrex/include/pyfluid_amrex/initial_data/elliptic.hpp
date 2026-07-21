@@ -27,7 +27,9 @@ struct InitialDataEllipticHierarchy {
 };
 
 struct InitialDataEllipticOptions {
-   int max_order = 4;
+   // AMReX uses this only for coarse-fine boundary interpolation.
+   // The cell-centered and nodal interior operators remain second order.
+   int boundary_interpolation_order = 4;
    int max_iterations = 200;
    int max_fmg_iterations = 0;
    int verbose = 0;

@@ -1,0 +1,64 @@
+pyfluid.run_name = rotating_star_xcts_3d
+pyfluid.output_dir = runs/current/rotating_star/rotating_star_xcts_3d
+pyfluid.validation_policy = dynamic_spacetime
+
+geometry.prob_lo = -16.0 -16.0 -16.0
+geometry.prob_hi = 16.0 16.0 16.0
+geometry.is_periodic = 0 0 0
+
+amr.n_cell = 24 24 24
+amr.max_level = 0
+amr.max_grid_size = 16
+amr.blocking_factor = 8
+
+spacetime.evolution = evolved
+spacetime.matter_coupling = coupled
+spacetime.initial_data = xcts
+spacetime.lapse_gauge = frozen
+spacetime.shift_gauge = frozen
+spacetime.ko_dissipation = 0.0
+
+initial_data.spacetime = id
+initial_data.lapse = id
+initial_data.shift = id
+initial_data.rotation_law = uniform
+initial_data.angular_velocity = 0.001
+initial_data.rotation_axis1 = 0.0
+initial_data.rotation_axis2 = 0.0
+initial_data.rotation_axis3 = 1.0
+initial_data.matter_relaxation = 0.2
+initial_data.matter_relative_tolerance = 1.0e-5
+initial_data.matter_max_iterations = 24
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.polytropic_k = 100.0
+pyfluid.polytropic_gamma = 2.0
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = rotating_star
+pyfluid.tov_central_density = 1.28e-3
+pyfluid.tov_absolute_tolerance = 1.0e-12
+pyfluid.tov_relative_tolerance = 1.0e-10
+pyfluid.tov_max_steps = 100000
+initial_data.atmosphere = power_law
+initial_data.atmosphere_density = 1.0e-10
+initial_data.atmosphere_pressure = 1.0e-14
+initial_data.atmosphere_power = 4.0
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.final_time = -1
+pyfluid.max_step = 3
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+pyfluid.bc = outflow
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 1
+pyfluid.checkpoint_int = -1

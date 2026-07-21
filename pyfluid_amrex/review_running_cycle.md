@@ -1732,3 +1732,206 @@ I will always continue from the last cycle marked as `in_progress`.
   - Review AthenaK source and tests for concrete patterns PyFluid can adapt without duplicating analytic gates or importing incompatible ownership. Its flux owners explicitly instantiate Riemann solvers but select uniform reconstruction in the Kokkos kernel; its numerical-relativity task graph composes optional work once at startup; and its build selects one problem generator. These explain additive compile behavior and offer benchmark/design references, but a device branch, second scheduler, or feature-reduced production binary is not adopted without measurement. AthenaK's three current Z4c test modules are narrower than PyFluid's existing gate, so no duplicate analytic test was added. Knowledge, references, and backlog now route the exact source owners. [DONE]
   - Run focused output/restart checks, restored quick, broader integration gates, all-dimension compile, and runtime/compile benchmarks in proportion to the accumulated change set. The final all-dimension production build, architecture, generated physics, inherited-output case, explicit cached-only case, `2.64 s` quick gate, and all 42 standard gates pass. The standard gate includes production multipatch, radiation, dimensional/rank consistency, relativistic, curvilinear, AMR, analytic/reference, EoS, and diffusion coverage; its generated executable check is the dominant `129.87 s` stage. Python syntax compilation and `git diff --check` pass. The post-commit production cache-hit build is `0.57 s` with zero compiler invocations; this is not a cold-build measurement. [DONE]
   - Commit the validated intended tree as `e5e0574` (`Integrate AMReX GR infrastructure and validation`) and capture `runs/baselines/20260721_150242_pre_gr_stabilized` from that clean commit. The archived standard gate passes 42/42. The four three-/four-rank performance cases pass at `108.27`, `125.40`, `5.969`, and `0.1824` Mcells/s, or `0.985`, `0.915`, `0.937`, and `0.960` of the frozen clean baseline. No push was performed. [DONE]
+
+## Cycle 203 [completed]
+- Refine the post-TOV roadmap around tabulated EoS, rotating-star construction,
+  existing diagnostics infrastructure, and genuinely deferred work. [DONE]
+  - The initial proposal to import COCAL RNS data as a production provider was
+    rejected by the user in Cycle 204. External stationary solutions remain
+    baseline comparisons only; PyFluid will solve its own equilibrium. [DONE]
+  - CTT, CTTK, and XCTS remain alternative choices of constraint variables and
+    free data. Cycle 204 selects an in-house common rotating-fluid model with
+    rotating XCTS as the first stationary construction rather than an imported
+    full solution. [DONE]
+  - Narrow Cycle 186: the catalog, generated GR integrands, composite volume
+    reducer, spherical surface/interpolation service, and multipole/Fourier
+    reducer already exist. Missing work is limited to mass-accretion, separated
+    fluid/EM energy flux, magnetic flux, and explicit C2P/atmosphere algorithm
+    counters. The generic geometry/reduction framework must not be duplicated. [DONE]
+  - The Weyl/Psi4 algebra, harmonics, injected modes, stationary control, and a
+    nonzero evolved wave are already validated. The remaining radiation check is
+    retarded-time alignment and `r Psi4` convergence over several extraction
+    radii for an isolated outgoing source; AthenaK's multi-radius output is a
+    useful feature reference, not a different Weyl algorithm. [DONE]
+  - Deprioritize curvilinear relativistic evolution. Retain the partial-AMR CTT
+    result as a visible coarse-fine accuracy limitation, not an unfixed
+    nonfinite/elliptic-solve bug: the matter handoff is repaired and the global
+    solution converges, while a second-order multilevel solve and fourth-order
+    pointwise constraint stencil leave a nonconvergent normalized interface
+    band. Revisit only through a shared higher-order transfer/derivative or
+    discrete-operator-consistent diagnostic, never a CTT-specific mask. [DONE]
+  - Keep compilation policy empirical: preserve compile-time specialization
+    only for required storage/topology or demonstrated runtime benefit; remove
+    specialization that inflates broad rebuild/code size without measurable
+    performance. Current cache-hit iteration is fast, so no speculative dispatch
+    rewrite precedes physics work. [DONE]
+  - Preferred sequence, superseded only in its former import mechanism by Cycle
+    204: finish TOV edges; add a cold beta-equilibrated CompOSE table shared by
+    initial data and evolution; construct and validate PyFluid's own uniform and
+    differential rotating-star sequences; proceed to BNS, then BH/BBH. [DONE]
+
+## Cycle 204 [completed]
+- Make self-contained relativistic initial-data construction an explicit project
+  boundary: external solutions are comparisons, not production inputs. [DONE]
+  - PyFluid must solve its own TOV, rotating-star, BNS, BH, and BBH initial data
+    as those capabilities are added. COCAL, RNS/FUKA, AthenaK, ETK, and similar
+    codes may supply matched baselines and convergence comparisons only. [DONE]
+  - Selected CompOSE/TEOS tables may be imported as physical EoS data, with
+    provenance, unit conversion, range checks, interpolation validation, and
+    checkpoint compatibility recorded. The same table implementation must serve
+    initial data and evolution. [DONE]
+  - Build one formulation-independent rotating-fluid layer: enthalpy/Euler first
+    integral, surface condition, uniform rotation, KEH/j-constant differential
+    rotation, and later additional laws. Couple it first to the existing XCTS
+    nonlinear infrastructure so lapse, shift, conformal geometry, and matter are
+    solved together. CTT and CTTK reuse the same matter/rotation definitions as
+    explicitly different constraint formulations; they are not separate fluid
+    implementations. [DONE]
+  - Validate the zero-spin endpoint against the direct TOV solver at matched EoS
+    and central density before continuing a sequence in angular velocity or
+    angular momentum. Require pointwise matter/geometry agreement, global masses
+    and radius, vanishing angular momentum/deformation, constraints, and short
+    evolution stability. [DONE]
+  - Use external RNS/COCAL solutions only after the internal zero-spin and
+    self-convergence gates pass, then compare uniform-rotation sequences,
+    mass-shedding behavior, and differential-rotation families without tuning
+    PyFluid to reproduce one external discretization. [DONE]
+
+## Cycle 205 [completed]
+- Clarify whether CTT and CTTK can construct rotating-neutron-star data rather
+  than implying that rotating equilibrium is exclusive to XCTS. [DONE]
+  - CTT, CTTK, and XCTS can all solve the Einstein constraints with rotating
+    matter and nonzero momentum/extrinsic-curvature sources. The formulation
+    choice does not prohibit rotation. [DONE]
+  - Distinguish a rotating constraint solution from a stationary fluid star.
+    An RNS equilibrium additionally requires the relativistic Euler first
+    integral, a rotation law and surface solve, and gravitational free data or
+    time-vector conditions consistent with stationarity. Satisfying only the
+    Hamiltonian and momentum constraints does not guarantee that the star will
+    avoid an initial readjustment. [DONE]
+  - A CTT backend can be coupled to the shared fluid-equilibrium iteration and
+    can provide a conformally flat, commonly maximal-slicing rotating-star
+    branch. It does not solve a lapse, so stationarity information not fixed by
+    the constraints must be supplied consistently rather than inferred from a
+    unit-lapse materialization. [DONE]
+  - CTTK can likewise carry rotating matter, but PyFluid's current hybrid CTTK
+    option algebraically selects spatially varying nonzero mean curvature from
+    the matter source. That option intentionally does not reproduce the
+    time-symmetric TOV solution at zero spin and therefore is not a stationary
+    RNS construction by default. Label it equilibrium only after adding and
+    validating stationarity-compatible free data; a maximal `K=0` endpoint
+    would instead approach the CTT family. [DONE]
+  - Keep XCTS first because its coupled conformal-factor, lapse, and shift solve
+    makes quasiequilibrium conditions the most direct initial implementation,
+    not because CTT or CTTK are incapable of rotation. Implement the Euler and
+    rotation-law layer once, then expose formulation backends without separate
+    fluid algorithms. [DONE]
+  - This clarification changes durable documentation only. No solver source,
+    compilation, MPI launch, or numerical validation was performed. [DONE]
+
+## Cycle 206 [completed]
+- Implement PyFluid's first self-contained rotating-neutron-star equilibrium
+  path without importing an external solution or requiring a KEH solver. [DONE]
+  - Preserve direct TOV as the spherical seed and exact zero-spin control. Add
+    a data-only, human-readable rotation-law catalog and generate the C++ method
+    identity/descriptor view from it rather than declaring method names in both
+    Python and C++. `schema/methods.toml` now declares the uniform law;
+    `method_catalog.py` strictly validates it and generation emits
+    `generated/method_catalog.hpp`. [DONE]
+  - Implement one shared relativistic Euler first-integral update for circular
+    barotropic flow. Couple uniform rotation first to the existing outer
+    matter/constraint iteration. The generated kernel evaluates
+    `ln h = ln C - ln alpha - 1/2 ln(1-v^2)` and the hierarchy update forms
+    `v^i=(Omega phi^i+beta^i)/alpha`, retains the requested central enthalpy,
+    under-relaxes matter, rebuilds stress-energy, and rejects superluminal flow
+    or matter at the physical boundary. [DONE]
+  - Use XCTS for the first nonzero-spin stationary construction because its
+    lapse and shift are solved consistently. Keep the rotation-law and matter
+    update formulation-independent, but reject an equilibrium label for CTT or
+    the current CTTK free-data branch until their additional stationarity
+    closure is implemented. Configuration also rejects nonzero rotation outside
+    the 3D executable, a cold polytropic/hybrid-polytropic EoS, or XCTS. [DONE]
+  - Add strict configuration checks, generated-kernel/catalog consistency,
+    zero-spin TOV equivalence, a small nonzero-spin solve, and proportional
+    compile/runtime validation. Record any convergence or surface-closure
+    limitation honestly. [DONE]
+    - `UV_CACHE_DIR=.uv-cache uv run python
+      pyfluid_amrex/tools/validate_codegen_flux.py` passed, including exact
+      regeneration of the new catalog and Euler kernel. [DONE]
+    - `UV_CACHE_DIR=.uv-cache uv run python
+      pyfluid_amrex/tools/check_architecture.py` passed. [DONE]
+    - The 3D `pyfluid_amrex_initial_data_elliptic_check_3d` target built and its
+      one-rank MPI execution passed the generated uniform-rotation identity at
+      `6.94e-17`, then completed the existing nodal/cell Poisson, CTT, CTTK,
+      TOV-CTT, and TOV-XCTS controls. [DONE]
+    - The final cache-warm integration build of `pyfluid_amrex_1d`, `_2d`,
+      `_3d`, and the focused elliptic target completed successfully. Its tool
+      wall time was about nine seconds; this is not a cold-compile benchmark.
+      [DONE]
+    - `benchmark_compile.py --target pyfluid_amrex_production --label
+      rotating_star_catalog_cache_warm` recorded a fully up-to-date no-op in
+      `0.47 s` with zero cache hits and zero misses. This measures build-system
+      no-op overhead only, not a cold or cache-restored compile. [DONE]
+    - The new opt-in `validate_z4c.py --only rotating_star --ranks 3 --force`
+      gate passed two checks. The zero-spin `rotating_star` and `tov` paths had
+      maximum normalized scalar difference exactly `0.0`. At `Omega=0.001`,
+      the N=24 uniform-grid XCTS solve reached coupled update `7.6944e-6`,
+      elliptic residual maximum `6.5725e-13`, `vmax=0.0248711`, axial matter
+      angular momentum `0.0486005`, and zero boundary density excess. The
+      retained PWL/HLL/SSPRK3 run then completed three evolved-spacetime steps
+      at the production CFL `0.9` through `t=1.34284`: rest-mass drift was
+      `8.5237e-10`, maximum-density change `1.0509e-2`, final axial angular
+      momentum `0.0486915`, Hamiltonian L2 `1.9716e-4`, Hamiltonian Linf
+      `4.5593e-3`, and momentum Linf `5.8298e-4`. The source artifact is
+      `runs/current/z4c_validation/z4c_validation.tsv`. [DONE]
+    - The first PWL/HLL evolution probe exposed nonrecoverable surface cells at
+      step 3 even at CFL `0.2`, and at step 1 at CFL `0.9`. PWC/HLL completed
+      three steps at CFL `0.9`, isolating the defect to high-order surface
+      admissibility rather than timestep selection. The generic RHD
+      invariant-domain flux limiter had allowed high-order candidates only a
+      roundoff-sized margin under the input stage metric; the coupled RK stage
+      then accepted them under the evolved metric. It now retains ten percent
+      of the safe low-order LLF candidate's margin. The exact PWL/CFL-0.9 case
+      then completed without nonfinite cells. [DONE]
+    - Python already defined the appropriate `dynamic_spacetime` scalar policy,
+      but the C++ accepted-name list omitted it. The list now accepts the same
+      policy name, so evolved spacetime checks enforce rest mass and physical
+      states without incorrectly demanding conservation of fluid energy alone.
+      [DONE]
+    - Both existing `rhd_kh_amr_no_subcycling` and
+      `rhd_kh_amr_subcycling` feature cases pass after the generic limiter
+      change. `validate_amrex_suite.py --level quick` again passed architecture
+      and the quick feature matrix in `2.47 s`. The subsequent standard suite
+      passed all 42 gates, including RHD/RMHD matrices, rank reproducibility,
+      code generation, dimensional/curvilinear, AMR, multipatch, analytic, and
+      reference controls. No full/stability suite or broad runtime-performance
+      benchmark was run for this physics addition. [DONE]
+    - Exploratory N=16 solves failed in the nodal Robin Schur solve after the
+      first matter update, and a fixed injection-energy iteration depleted the
+      star. The retained N=24 path instead updates injection energy to preserve
+      central enthalpy. The three-step evolution is a short finite-state control,
+      not long-term stability, a self-convergent spin sequence, deformation,
+      mass shedding, differential rotation, or AMR rotating equilibrium. [DONE]
+    - The central-enthalpy closure currently identifies the stellar center with
+      the minimum helical effective potential. This is a deliberate small-spin
+      spheroidal assumption; high-spin, toroidal, off-center, and mass-shedding
+      families need explicit topology/surface controls before validation.
+      [DONE]
+  - Audit the requested fourth-order general elliptic solve. AMReX
+    `MLLinOp::setMaxOrder(4)` explicitly controls coarse/fine interpolation,
+    while `MLABecLap_3D_K.H::mlabeclap_adotx` remains the nearest-neighbor
+    second-order interior stencil. Rename the internal option to
+    `boundary_interpolation_order` and document the distinction. [DONE]
+    - A true fourth-order general solver was not faked with an interior-only
+      stencil. It requires matched scalar, nodal, and conformal-vector
+      operators, two ghost layers, fourth-order Dirichlet/Robin closures, and
+      AMR restriction/prolongation/coarse-fine consistency. A staged
+      fourth-order defect-correction operator using MLMG as the second-order
+      preconditioner remains a plausible next numerical project after a
+      uniform-grid manufactured-solution prototype. [DONE]
+  - Keep tabulated CompOSE/TEOS support as the next physics stage; do not mix a
+    new table interpolation/inversion contract into the first rotating
+    polytrope implementation. No TEOS source was changed in this cycle. [DONE]
+  - Create one local checkpoint commit containing the catalog, rotating-star,
+    limiter, validation, and continuity changes after the final gates. Nothing
+    was pushed. [DONE]

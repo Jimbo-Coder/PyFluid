@@ -1,7 +1,9 @@
 # Declarative Catalog Schema
 
 Status: the field stage is implemented. `schema/fields.toml` is authoritative
-for GF declarations; diagnostics and methods remain later staged migrations.
+for GF declarations. The method stage has begun narrowly with rotation-law
+identity in `schema/methods.toml`; diagnostics and the remaining method
+families remain later staged migrations.
 
 ## Purpose
 
@@ -80,9 +82,14 @@ resolve exactly once.
 
 `methods.toml` owns supported runtime method names, stable codes, build-option
 names, broad capability requirements, and implementation entry identifiers.
-Factories consume generated descriptors. Coupled numerical compatibility and
-physical validation remain explicit code when they cannot be represented as a
-simple declarative requirement.
+Its first implemented family is `rotation_law`: the strict loader emits the C++
+enum and descriptors consumed by configuration and the rotating-star factory.
+The relativistic Euler integral and nonlinear iteration remain generated/C++
+science code. Future method families should migrate independently rather than
+turning this first catalog into an unvalidated omnibus registry. Factories
+consume generated descriptors. Coupled numerical compatibility and physical
+validation remain explicit code when they cannot be represented as a simple
+declarative requirement.
 
 Configuration parameters may receive a similar catalog later, but only after a
 source audit separates simple name/type/default metadata from coupled parsing
@@ -98,8 +105,11 @@ compatibility rules into an opaque schema language.
    views without declaration tuples.
 4. Strengthen architecture checks so new production GF strings or descriptors
    outside generated views fail.
-5. Repeat independently for diagnostics and methods only after the field
-   migration and its focused output/checkpoint/evolution gates pass.
+5. The first independent method slice, rotation-law identity, now lives in
+   `schema/methods.toml`; extend it only with a matching implementation and
+   focused configuration/equation test.
+6. Repeat independently for diagnostics and other method families after their
+   ownership and validation boundary is clear.
 
 Every migration stage must preserve catalog ordering, component IDs, centerings,
 checkpoint metadata, output names, and numerical behavior. A format migration

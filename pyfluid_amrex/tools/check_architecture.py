@@ -159,6 +159,7 @@ def main() -> None:
         ROOT / "docs" / "equations.tex",
         INCLUDE_ROOT / "generated" / "field_catalog.hpp",
         INCLUDE_ROOT / "generated" / "diagnostic_catalog.hpp",
+        INCLUDE_ROOT / "generated" / "method_catalog.hpp",
     )
     missing = [path for path in required_catalog_outputs if not path.is_file()]
     if missing:

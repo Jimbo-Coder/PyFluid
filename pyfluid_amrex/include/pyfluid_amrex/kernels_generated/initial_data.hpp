@@ -77,6 +77,12 @@ amrex::Real xcts_lapse_from_conformal_unknowns(amrex::Real conformal_factor, amr
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real uniform_rotation_log_specific_enthalpy(amrex::Real injection_energy, amrex::Real lapse, amrex::Real velocity_squared) noexcept
+{
+   return log(injection_energy) - log(lapse) - 1.0_rt/2.0_rt*log(1 - velocity_squared);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real conformal_momentum_source(amrex::Real conformal_factor, amrex::Real momentum_density, amrex::Real mean_curvature_gradient) noexcept
 {
    return 2*pow(conformal_factor, 6)*(4*pyfluid_amrex::constants::pi*pow(conformal_factor, 4)*momentum_density + (1.0_rt/3.0_rt)*mean_curvature_gradient);

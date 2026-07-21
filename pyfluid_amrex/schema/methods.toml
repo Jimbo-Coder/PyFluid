@@ -1,0 +1,11 @@
+schema_version = 1
+
+# Rotation laws are ordered by their stable generated C++ code.  The catalog
+# declares identity and required user parameters; the Euler integral and
+# numerical iteration remain generated/C++ science code.
+[[rotation_law]]
+name = "uniform"
+cpp_id = "Uniform"
+label = "Uniform angular velocity"
+description = "Circular flow with one constant angular velocity."
+parameters = ["angular_velocity"]

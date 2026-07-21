@@ -152,6 +152,7 @@ set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
    src/initial_data/initial_data_provider.cpp
    src/initial_data/initial_data_rhd.cpp
    src/initial_data/initial_data_state.cpp
+   src/initial_data/rotating_star_initial_data.cpp
    src/initial_data/tov_initial_data.cpp
 )
 
@@ -293,6 +294,9 @@ if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/diagnostic_catalog.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/method_catalog.hpp
+   )
    set(PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN
       ${CMAKE_CURRENT_SOURCE_DIR}/docs/equations.md
    )
@@ -329,6 +333,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
          ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
          ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
+         ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
          ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
          ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
          ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
@@ -362,6 +367,7 @@ if(PYFLUID_UV_EXECUTABLE)
          --field-ids-header ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
          --field-catalog-header ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
          --diagnostic-catalog-header ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
+         --method-catalog-header ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
          --field-catalog-json ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
          --equation-markdown ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
          --equation-latex ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
@@ -381,6 +387,8 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/flux_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/method_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/methods.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/kernel_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/metric_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/operator_equations.py

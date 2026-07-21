@@ -102,7 +102,7 @@ static constexpr std::array<std::string_view, 8> BoundaryOptions{{
 static constexpr std::array<std::string_view, 2> BoundaryProfileOptions{{"none", "double_mach_reflection"}};
 static constexpr std::array<std::string_view, 3> InflowProfileOptions{{"uniform", "gaussian_beam", "uniform_beam"}};
 static constexpr std::array<std::string_view, 2> ScalarOutputModeOptions{{"stream", "final"}};
-static constexpr std::array<std::string_view, 9> ValidationPolicyOptions{{
+static constexpr std::array<std::string_view, 10> ValidationPolicyOptions{{
    "closed",
    "open",
    "open_mhd",
@@ -112,6 +112,7 @@ static constexpr std::array<std::string_view, 9> ValidationPolicyOptions{{
    "diffusive_wall",
    "smoke",
    "elliptic",
+   "dynamic_spacetime",
 }};
 static constexpr std::array<std::string_view, 3> SourceOptions{{"none", "uniform_acceleration", "rotating_compact_heating"}};
 static constexpr std::array<std::string_view, 3> GravityOptions{{"none", "poisson", "fixed"}};
@@ -193,7 +194,7 @@ static constexpr PhysicalSystemSet AllFluidSystems = HydroSystems | PhysicalSyst
 // This is the single source of truth for IC/system compatibility. A Newtonian
 // profile admitted for RHD/RMHD is converted through primitive variables; that
 // does not make its Newtonian analytic evolution an exact relativistic test.
-static constexpr std::array<InitialDataOption, 32> InitialDataOptions{{
+static constexpr std::array<InitialDataOption, 33> InitialDataOptions{{
    {"sin_wave", AllFluidSystems},
    {"advection_medley", HydroSystems},
    {"characteristic_medley", HydroSystems},
@@ -211,6 +212,7 @@ static constexpr std::array<InitialDataOption, 32> InitialDataOptions{{
    {"hse_polytrope_x", physical_system_set(PhysicalSystem::HD)},
    {"fixed_metric_hse", physical_system_set(PhysicalSystem::RHD)},
    {"tov", physical_system_set(PhysicalSystem::RHD)},
+   {"rotating_star", physical_system_set(PhysicalSystem::RHD)},
    {"hydro_beam", HydroSystems},
    {"sod_x", AllFluidSystems},
    {"sod_plane", AllFluidSystems},

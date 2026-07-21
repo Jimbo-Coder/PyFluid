@@ -126,6 +126,79 @@ constraint diagnostic uses fourth-order pointwise derivatives. Uniform-grid
 or interior convergence must not be used to hide that interface truncation
 layer.
 
+`InitialDataEllipticOptions::boundary_interpolation_order=4` requests AMReX's
+fourth-order interpolation at coarse/fine boundaries. It does not
+change the cell-centered or nodal interior Laplacian, which remains second
+order. A genuinely fourth-order general initial-data solver requires a
+fourth-order scalar and conformal-vector operator, two-layer ghost data,
+matching Dirichlet/Robin closures, and AMR restriction/prolongation/interface
+consistency. An interior-only fourth-order stencil would remain globally
+second order when a second-order boundary or coarse/fine layer dominates.
+
+## Uniformly Rotating Stars
+
+`pyfluid.ic = rotating_star` continues the direct TOV seed through a
+coupled matter/XCTS iteration. The shared circular-flow update uses
+
+```text
+v^i = (Omega (axis x (x - center))^i + beta^i) / alpha
+ln h = ln C - ln alpha - 1/2 ln(1 - gamma_ij v^i v^j)
+```
+
+for uniform angular velocity. Rotation-law identity and required parameters
+are declared once in `schema/methods.toml`; the Euler integral is a generated
+kernel and the AMReX hierarchy update is owned by
+`src/initial_data/rotating_star_initial_data.cpp`. The iteration updates the
+injection energy to retain the requested central enthalpy, under-relaxes the
+matter variables, rebuilds stress-energy, and resolves XCTS lapse, shift, and
+conformal geometry. It rejects non-timelike helical flow and matter touching a
+physical boundary.
+
+The current input controls are:
+
+```text
+initial_data.rotation_law = uniform
+initial_data.angular_velocity
+initial_data.rotation_axis1/2/3
+initial_data.rotation_center1/2/3
+initial_data.matter_relaxation
+initial_data.matter_relative_tolerance
+initial_data.matter_max_iterations
+```
+
+The opt-in focused gate is intentionally outside quick/standard because the
+three nonlinear 3D controls are comparatively slow:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run python pyfluid_amrex/tools/validate_z4c.py \
+  --only rotating_star --ranks 3 --force
+```
+
+Zero angular velocity deliberately bypasses the matter continuation, retaining
+the direct TOV path as the exact control. The first executed nonzero control is
+a 3D, cold hybrid-polytrope, uniform-grid XCTS initialization at
+`Omega=0.001`, followed by three PWL/HLL/SSPRK3 evolved-spacetime steps at CFL
+`0.9`. This is a finite-state smoke, not yet a converged rotation sequence or a
+long-term stability result. Only uniform rotation and XCTS are accepted as
+stationary rotating-star configurations. The shared matter layer can later
+serve CTT/CTTK, but those formulations still need a validated stationarity
+closure before receiving the equilibrium label.
+
+The short-evolution gate also protects the generic RHD invariant-domain flux
+limiter. A high-order candidate must retain a finite fraction of its safe
+low-order LLF candidate's admissibility margin; a roundoff-sized margin is not
+sufficient when the coupled RK stage advances the spacetime metric. The gate
+uses the normal production CFL `0.9`. Lowering CFL is not an accepted substitute
+for reconstruction/admissibility correctness.
+
+The present fixed-central-enthalpy update identifies the stellar center with
+the minimum helical effective potential. That is appropriate for the current
+small-spin spheroidal continuation. High-spin, toroidal, off-center, or
+mass-shedding sequences require an explicit topology/surface control instead
+of silently reusing this assumption. Differential rotation likewise requires
+its own catalog entry and generated first integral; KEH is not required for
+the uniform-law branch.
+
 ## Evolution Status
 
 The focused three-dimensional two-level matrix evolves the same star in
@@ -138,5 +211,5 @@ the boundary ledger rather than mislabeled as conservation error.
 This is a self-consistent **unmagnetized** star. Adding a magnetic field to a
 TOV profile produces RMHD initial data but not magnetohydrostatic equilibrium.
 A self-consistent magnetized star requires a rotating/magnetized equilibrium
-matter solve coupled to the constraint equations (the planned RNS/KEH/XCTS
-layer); it is not part of the current TOV contract.
+matter solve coupled to the constraint equations; it is not supplied by the
+current unmagnetized uniform-rotation XCTS path.

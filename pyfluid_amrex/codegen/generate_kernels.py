@@ -151,6 +151,14 @@ DEFAULT_DIAGNOSTIC_CATALOG_HEADER = (
    / "generated"
    / "diagnostic_catalog.hpp"
 )
+DEFAULT_METHOD_CATALOG_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "generated"
+   / "method_catalog.hpp"
+)
 DEFAULT_EQUATION_MARKDOWN = ROOT / "pyfluid_amrex" / "docs" / "equations.md"
 DEFAULT_EQUATION_LATEX = ROOT / "pyfluid_amrex" / "docs" / "equations.tex"
 DEFAULT_FIELD_CATALOG_JSON = ROOT / "pyfluid_amrex" / "generated" / "field_catalog.json"
@@ -180,6 +188,7 @@ def main() -> None:
    parser.add_argument("--field-ids-header", type=Path, default=DEFAULT_FIELD_IDS_HEADER)
    parser.add_argument("--field-catalog-header", type=Path, default=DEFAULT_FIELD_CATALOG_HEADER)
    parser.add_argument("--diagnostic-catalog-header", type=Path, default=DEFAULT_DIAGNOSTIC_CATALOG_HEADER)
+   parser.add_argument("--method-catalog-header", type=Path, default=DEFAULT_METHOD_CATALOG_HEADER)
    parser.add_argument("--field-catalog-json", type=Path, default=DEFAULT_FIELD_CATALOG_JSON)
    parser.add_argument("--equation-markdown", type=Path, default=DEFAULT_EQUATION_MARKDOWN)
    parser.add_argument("--equation-latex", type=Path, default=DEFAULT_EQUATION_LATEX)
@@ -209,6 +218,7 @@ def main() -> None:
             args.field_ids_header,
             args.field_catalog_header,
             args.diagnostic_catalog_header,
+            args.method_catalog_header,
             args.field_catalog_json,
             args.equation_markdown,
             args.equation_latex,
@@ -216,6 +226,7 @@ def main() -> None:
          print(args.field_ids_header)
          print(args.field_catalog_header)
          print(args.diagnostic_catalog_header)
+         print(args.method_catalog_header)
          print(args.field_catalog_json)
          print(args.equation_markdown)
          print(args.equation_latex)

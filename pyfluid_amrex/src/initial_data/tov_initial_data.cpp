@@ -549,7 +549,7 @@ void write_tov_sequence(
 
 TovInitialData::TovInitialData(RunConfig const& cfg)
 {
-   if (cfg.ic != "tov") {
+   if (cfg.ic != "tov" && cfg.ic != "rotating_star") {
       return;
    }
    const EOSParams eos = eos_params(cfg);
@@ -565,6 +565,7 @@ TovInitialData::TovInitialData(RunConfig const& cfg)
    TovObservables const& observables = solution_.observables();
    gravitational_mass_ = observables.gravitational_mass;
    surface_radius_ = observables.isotropic_radius;
+   injection_energy_ = observables.injection_energy;
    host_samples_.reserve(solution_.profile().size());
    for (TovProfilePoint const& point : solution_.profile()) {
       host_samples_.push_back({
@@ -602,6 +603,7 @@ TovInitialDataView TovInitialData::view() const noexcept
       static_cast<int>(device_samples_.size()),
       gravitational_mass_,
       surface_radius_,
+      injection_energy_,
    };
 }
 

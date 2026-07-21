@@ -96,7 +96,7 @@ int validate_elliptic_solve(
       amrex::Abort("initial-data hierarchy requires a cell interpolater");
    }
    if (
-      options.max_order < 2
+      options.boundary_interpolation_order < 2
       || options.max_iterations <= 0
       || !(options.relative_tolerance > 0.0)
       || options.absolute_tolerance < 0.0
@@ -1495,7 +1495,7 @@ InitialDataEllipticResult solve_initial_data_poisson(
       hierarchy.distribution,
       info
    );
-   poisson.setMaxOrder(options.max_order);
+   poisson.setMaxOrder(options.boundary_interpolation_order);
    poisson.setScalars(0.0, -1.0);
    const LoweredBoundaryConditions lowered = lower_boundary_conditions(
       hierarchy, boundary
@@ -1551,7 +1551,7 @@ InitialDataEllipticResult solve_initial_data_conformal_vector_laplacian(
       hierarchy.distribution,
       info
    );
-   vector_laplacian.setMaxOrder(options.max_order);
+   vector_laplacian.setMaxOrder(options.boundary_interpolation_order);
    vector_laplacian.setScalars(0.0, 1.0);
    const LoweredBoundaryConditions lowered = lower_boundary_conditions(
       hierarchy, boundary

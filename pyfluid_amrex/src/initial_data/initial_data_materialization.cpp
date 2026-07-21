@@ -124,12 +124,13 @@ template <PhysicalSystem System, int EOSMethod>
 ConformalMaterializationResult materialize_conformal_initial_data_method(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& fluid_state,
-   amrex::Vector<amrex::MultiFab const*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab*> const& primitive_state,
    amrex::Vector<amrex::MultiFab*> const& spacetime_state,
    amrex::Vector<amrex::MultiFab*> const& cell_spacetime,
    EOSParams const& eos,
    InitialDataFieldSelection const& fields,
-   ConformalConstraintFormulation formulation
+   ConformalConstraintFormulation formulation,
+   RotatingStarParameters const& rotating_star
 )
 {
    static_assert(System == PhysicalSystem::RHD || System == PhysicalSystem::RMHD);
@@ -161,6 +162,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> previous_vector(num_levels);
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> previous_lapse(num_levels);
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> previous_curvature(num_levels);
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> previous_primitive(num_levels);
    amrex::Vector<amrex::MultiFab*> conformal_factor(num_levels);
    amrex::Vector<amrex::MultiFab*> vector_potential(num_levels);
    amrex::Vector<amrex::MultiFab*> xcts_shift(num_levels);
@@ -252,6 +254,12 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       previous_curvature[level] = std::make_unique<amrex::MultiFab>(
          vertex_grids, hierarchy.distribution[level], 1, 0
       );
+      previous_primitive[level] = std::make_unique<amrex::MultiFab>(
+         hierarchy.grids[level],
+         hierarchy.distribution[level],
+         primitive_state[level]->nComp(),
+         0
+      );
       conformal_storage[level]->setVal(1.0);
       vector_storage[level]->setVal(0.0);
       lapse_conformal_storage[level]->setVal(1.0);
@@ -323,7 +331,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    options.max_coupled_iterations = max_constraint_iterations;
    options.relative_update_tolerance = 1.0e-10;
    options.relaxation = 0.5;
-   options.linear.max_order = 4;
+   options.linear.boundary_interpolation_order = 4;
    options.linear.relative_tolerance = 1.0e-12;
    XctsOptions xcts_options;
    xcts_options.max_coupled_iterations = options.max_coupled_iterations;
@@ -337,8 +345,14 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    cttk_options.linear = options.linear;
 
    ConformalMaterializationResult result;
-   constexpr int max_matter_iterations = 12;
-   constexpr amrex::Real matter_tolerance = 1.0e-9;
+   const bool update_rotating_matter = rotating_star.active
+      && rotating_star.angular_velocity != 0.0;
+   const int max_matter_iterations = update_rotating_matter
+      ? rotating_star.max_iterations
+      : 12;
+   const amrex::Real matter_tolerance = update_rotating_matter
+      ? rotating_star.relative_tolerance
+      : 1.0e-9;
    for (int matter_iteration = 1;
         matter_iteration <= max_matter_iterations;
         ++matter_iteration) {
@@ -352,6 +366,42 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          spacetime_state,
          cell_spacetime
       );
+      for (int level = 0; level < num_levels; ++level) {
+         amrex::MultiFab::Copy(
+            *previous_primitive[level],
+            *primitive_state[level],
+            0,
+            0,
+            primitive_state[level]->nComp(),
+            0
+         );
+      }
+      // The conformal unknowns start from flat space.  Preserve the spherical
+      // seed through the first constraint solve so the Euler update sees the
+      // star's lapse and shift rather than erasing it in the flat seed metric.
+      if (update_rotating_matter && matter_iteration > 1) {
+         amrex::Vector<amrex::MultiFab const*> cell_spacetime_const(num_levels);
+         for (int level = 0; level < num_levels; ++level) {
+            cell_spacetime_const[level] = cell_spacetime[level];
+         }
+         result.rotating_star = update_rotating_star_primitives(
+            hierarchy,
+            primitive_state,
+            cell_spacetime_const,
+            EOSMethod,
+            eos,
+            rotating_star
+         );
+         if (amrex::ParallelDescriptor::IOProcessor()) {
+            amrex::Print()
+               << "rotating matter iteration=" << matter_iteration
+               << " maximum_density=" << result.rotating_star.maximum_density
+               << " maximum_velocity=" << result.rotating_star.maximum_velocity
+               << " injection_energy=" << result.rotating_star.injection_energy
+               << " boundary_density_excess="
+               << result.rotating_star.boundary_density_excess << '\n';
+         }
+      }
       for (int level = 0; level < num_levels; ++level) {
          if (primitive_state[level]->contains_nan(
                 0, primitive_state[level]->nComp(), 0
@@ -560,6 +610,26 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       amrex::Real solution_norm = 0.0;
       for (int level = 0; level < num_levels; ++level) {
          amrex::MultiFab::Subtract(
+            *previous_primitive[level],
+            *primitive_state[level],
+            0,
+            0,
+            primitive_state[level]->nComp(),
+            0
+         );
+         for (int component = 0;
+              component < primitive_state[level]->nComp();
+              ++component) {
+            update_norm = std::max(
+               update_norm,
+               previous_primitive[level]->norm0(component, 0, false)
+            );
+            solution_norm = std::max(
+               solution_norm,
+               primitive_state[level]->norm0(component, 0, false)
+            );
+         }
+         amrex::MultiFab::Subtract(
             *previous_conformal[level], *conformal_storage[level], 0, 0, 1, 0
          );
          update_norm = std::max(
@@ -609,6 +679,11 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       result.matter_iterations = matter_iteration;
       result.relative_matter_update = update_norm
          / std::max(amrex::Real(1.0), solution_norm);
+      if (update_rotating_matter && amrex::ParallelDescriptor::IOProcessor()) {
+         amrex::Print()
+            << "rotating coupled update iteration=" << matter_iteration
+            << " relative_update=" << result.relative_matter_update << '\n';
+      }
       if (result.relative_matter_update <= matter_tolerance) {
          break;
       }
@@ -671,20 +746,22 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
 ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& fluid_state,
-   amrex::Vector<amrex::MultiFab const*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab*> const& primitive_state,
    amrex::Vector<amrex::MultiFab*> const& spacetime_state,
    amrex::Vector<amrex::MultiFab*> const& cell_spacetime,
    PhysicalSystem system,
    int eos_method,
    EOSParams const& eos,
    InitialDataFieldSelection const& fields,
-   ConformalConstraintFormulation formulation
+   ConformalConstraintFormulation formulation,
+   RotatingStarParameters const& rotating_star
 )
 {
 #if (AMREX_SPACEDIM != 3)
    amrex::ignore_unused(
       hierarchy, fluid_state, primitive_state, spacetime_state,
-      cell_spacetime, system, eos_method, eos, fields, formulation
+      cell_spacetime, system, eos_method, eos, fields, formulation,
+      rotating_star
    );
    amrex::Abort("conformal constraint initial data requires the 3D executable");
    return {};
@@ -695,7 +772,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          EOSIdealGas
       >(
          hierarchy, fluid_state, primitive_state, spacetime_state,
-         cell_spacetime, eos, fields, formulation
+         cell_spacetime, eos, fields, formulation, rotating_star
       );
    }
    if (system != PhysicalSystem::RHD) {
@@ -707,7 +784,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          EOSPolytrope
       >(
          hierarchy, fluid_state, primitive_state, spacetime_state,
-         cell_spacetime, eos, fields, formulation
+         cell_spacetime, eos, fields, formulation, rotating_star
       );
    }
    if (eos_method == EOSHybridPolytrope) {
@@ -716,7 +793,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          EOSHybridPolytrope
       >(
          hierarchy, fluid_state, primitive_state, spacetime_state,
-         cell_spacetime, eos, fields, formulation
+         cell_spacetime, eos, fields, formulation, rotating_star
       );
    }
    return materialize_conformal_initial_data_method<
@@ -724,7 +801,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       EOSIdealGas
    >(
       hierarchy, fluid_state, primitive_state, spacetime_state,
-      cell_spacetime, eos, fields, formulation
+      cell_spacetime, eos, fields, formulation, rotating_star
    );
 #endif
 }

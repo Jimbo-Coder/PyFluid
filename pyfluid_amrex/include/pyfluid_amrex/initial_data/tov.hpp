@@ -96,6 +96,7 @@ struct TovInitialDataView {
    int sample_count = 0;
    amrex::Real gravitational_mass = 0.0;
    amrex::Real surface_radius = 0.0;
+   amrex::Real injection_energy = 1.0;
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    bool active() const noexcept
@@ -167,6 +168,7 @@ private:
    amrex::Gpu::DeviceVector<TovSample> device_samples_;
    amrex::Real gravitational_mass_ = 0.0;
    amrex::Real surface_radius_ = 0.0;
+   amrex::Real injection_energy_ = 1.0;
 };
 
 } // namespace pyfluid_amrex

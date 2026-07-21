@@ -42,6 +42,7 @@ INPUT = ROOT / "pyfluid_amrex/inputs/z4c_gauge_wave_1d.in"
 TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_coupled_amr_3d.in"
 TOV_OCTANT_INPUT = ROOT / "pyfluid_amrex/inputs/tov_cowling_octant_amr_3d.in"
 CONFORMAL_TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_xcts_3d.in"
+ROTATING_STAR_INPUT = ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_3d.in"
 TOV_COWLING_INPUT = ROOT / "pyfluid_amrex/inputs/tov_cowling_amr_1d.in"
 CTT_INPUT = ROOT / "pyfluid_amrex/inputs/rhd_ctt_density_cloud_3d.in"
 RUN_ROOT = ROOT / "runs/current/z4c_validation"
@@ -1545,6 +1546,154 @@ def validate_conformal_tov_initial_data(
    return results, scalars
 
 
+def validate_rotating_star_initial_data(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   common = {
+      "amr.max_level": "0",
+      "pyfluid.scalar_diagnostics": "standard",
+   }
+   zero_spin_common = {**common, "pyfluid.max_step": "0"}
+   tov_dir, tov_scalar = run_dimension_case(
+      "rotating_star_zero_spin_tov_control",
+      ROTATING_STAR_INPUT,
+      {
+         **zero_spin_common,
+         "pyfluid.ic": "tov",
+         "initial_data.angular_velocity": "0.0",
+      },
+      args,
+      dim=3,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="analytic",
+   )
+   zero_dir, zero_scalar = run_dimension_case(
+      "rotating_star_zero_spin",
+      ROTATING_STAR_INPUT,
+      {**zero_spin_common, "initial_data.angular_velocity": "0.0"},
+      args,
+      dim=3,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="analytic",
+   )
+   zero_tov = read_scalar_rows(tov_dir)[-1]
+   zero_rotating = read_scalar_rows(zero_dir)[-1]
+   equivalence_columns = (
+      "mass", "mom1", "mom2", "mom3",
+      "angular_mom1", "angular_mom2", "angular_mom3", "energy",
+      "min_rho", "max_rho", "min_pressure", "min_lapse",
+      "max_lorentz_factor", "z4c_hamiltonian_l2",
+      "z4c_hamiltonian_linf", "z4c_momentum_linf",
+   )
+   zero_spin_error = max(
+      abs(float(zero_rotating[name]) - float(zero_tov[name]))
+      / max(abs(float(zero_tov[name])), 1.0)
+      for name in equivalence_columns
+   )
+   if zero_spin_error > 1.0e-13:
+      raise RuntimeError(
+         "zero-spin rotating_star does not reproduce its direct TOV control: "
+         f"maximum normalized scalar error={zero_spin_error:.3e}"
+      )
+
+   rotating_dir, rotating_scalar = run_dimension_case(
+      "rotating_star_uniform_small_spin",
+      ROTATING_STAR_INPUT,
+      common,
+      args,
+      dim=3,
+      checks=DYNAMIC_SPACETIME_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   rotating = read_scalar_rows(rotating_dir)[-1]
+   run_log = (rotating_dir / "run.log").read_text()
+   solve_match = re.search(
+      r"xcts initial data: matter_iterations=([0-9]+) "
+      r"relative_matter_update=([0-9.eE+-]+) coupled_iterations=([0-9]+) "
+      r"hamiltonian_residual=([0-9.eE+-]+) "
+      r"lapse_residual=([0-9.eE+-]+) momentum_residual=([0-9.eE+-]+)",
+      run_log,
+   )
+   rotation_match = re.search(
+      r"rotating star: omega=([0-9.eE+-]+) "
+      r"maximum_density=([0-9.eE+-]+) "
+      r"maximum_velocity=([0-9.eE+-]+) "
+      r"injection_energy=([0-9.eE+-]+) "
+      r"boundary_density_excess=([0-9.eE+-]+)",
+      run_log,
+   )
+   if solve_match is None or rotation_match is None:
+      raise RuntimeError("rotating-star run did not report its coupled solve")
+   relative_update = abs(float(solve_match.group(2)))
+   elliptic_residual = max(abs(float(solve_match.group(index))) for index in (4, 5, 6))
+   maximum_velocity = float(rotation_match.group(3))
+   boundary_density_excess = float(rotation_match.group(5))
+   angular_momentum3 = float(rotating["angular_mom3"])
+   transverse_momentum = max(
+      abs(float(rotating[name]))
+      for name in ("mom1", "mom2", "mom3", "angular_mom1", "angular_mom2")
+   )
+   hamiltonian_l2 = abs(float(rotating["z4c_hamiltonian_l2"]))
+   hamiltonian_linf = abs(float(rotating["z4c_hamiltonian_linf"]))
+   momentum_linf = abs(float(rotating["z4c_momentum_linf"]))
+   rest_mass_drift = abs(float(rotating["mass_rel_drift"]))
+   max_rho_relative_change = abs(float(rotating["max_rho_rel_change"]))
+   if (
+      relative_update > 1.0e-5
+      or elliptic_residual > 1.0e-10
+      or maximum_velocity <= 0.0
+      or angular_momentum3 <= 0.0
+      or transverse_momentum > 1.0e-10
+      or boundary_density_excess != 0.0
+      or not all(math.isfinite(value) for value in (
+         hamiltonian_l2, hamiltonian_linf, momentum_linf,
+      ))
+      or hamiltonian_l2 > 1.0e-3
+      or max(hamiltonian_linf, momentum_linf) > 1.0e-2
+   ):
+      raise RuntimeError(
+         "uniform rotating-star initialization failed: "
+         f"relative update={relative_update:.3e}, "
+         f"elliptic residual={elliptic_residual:.3e}, "
+         f"vmax={maximum_velocity:.3e}, J3={angular_momentum3:.3e}, "
+         f"transverse momentum={transverse_momentum:.3e}, "
+         f"boundary excess={boundary_density_excess:.3e}, "
+         f"constraints=({hamiltonian_l2:.3e}, {hamiltonian_linf:.3e}, "
+         f"{momentum_linf:.3e})"
+      )
+   return ([
+      {
+         "kind": "analytic",
+         "case": "rotating_star_zero_spin_tov_equivalence",
+         "status": "PASS",
+         "metric": "zero_spin_relative_error",
+         "value": zero_spin_error,
+         "zero_spin_relative_error": zero_spin_error,
+         "run_dir": repo_relative(zero_dir),
+      },
+      {
+         "kind": "feature",
+         "case": "rotating_star_uniform_small_spin",
+         "status": "PASS",
+         "metric": "relative_matter_update",
+         "value": relative_update,
+         "relative_matter_update": relative_update,
+         "elliptic_residual": elliptic_residual,
+         "maximum_velocity": maximum_velocity,
+         "angular_momentum3": angular_momentum3,
+         "hamiltonian_l2": hamiltonian_l2,
+         "hamiltonian_linf": hamiltonian_linf,
+         "momentum_linf": momentum_linf,
+         "rest_mass_drift": rest_mass_drift,
+         "max_rho_relative_change": max_rho_relative_change,
+         "run_dir": repo_relative(rotating_dir),
+      },
+   ], [tov_scalar, zero_scalar, rotating_scalar])
+
+
 def validate_adm_mass_convergence(
    args: argparse.Namespace,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -1917,7 +2066,10 @@ def main() -> int:
    parser.add_argument("--level", choices=("quick", "standard"), default="standard")
    parser.add_argument(
       "--only",
-      choices=("all", "ctt", "conformal_tov", "realistic_eos", "tov_evolution"),
+      choices=(
+         "all", "ctt", "conformal_tov", "realistic_eos", "rotating_star",
+         "tov_evolution",
+      ),
       default="all",
    )
    parser.add_argument("--formulation", choices=("ctt", "cttk", "xcts"))
@@ -1943,6 +2095,8 @@ def main() -> int:
       if args.only == "conformal_tov"
       else (validate_realistic_eos_tov,)
       if args.only == "realistic_eos"
+      else (validate_rotating_star_initial_data,)
+      if args.only == "rotating_star"
       else (validate_tov_evolution,)
       if args.only == "tov_evolution"
       else (
@@ -1980,6 +2134,10 @@ def main() -> int:
       "order",
       "constraint_linf",
       "relative_matter_update",
+      "zero_spin_relative_error",
+      "elliptic_residual",
+      "maximum_velocity",
+      "angular_momentum3",
       "elliptic_hamiltonian_residual",
       "elliptic_lapse_residual",
       "elliptic_momentum_residual",

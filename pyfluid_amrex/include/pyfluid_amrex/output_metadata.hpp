@@ -109,6 +109,17 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("tov_absolute_tolerance", output_metadata_real_string(cfg.tov_absolute_tolerance));
    entries.emplace_back("tov_relative_tolerance", output_metadata_real_string(cfg.tov_relative_tolerance));
    entries.emplace_back("tov_max_steps", std::to_string(cfg.tov_max_steps));
+   entries.emplace_back("initial_data_rotation_law", cfg.initial_data_rotation_law);
+   entries.emplace_back("initial_data_angular_velocity", output_metadata_real_string(cfg.initial_data_angular_velocity));
+   entries.emplace_back("initial_data_rotation_axis1", output_metadata_real_string(cfg.initial_data_rotation_axis1));
+   entries.emplace_back("initial_data_rotation_axis2", output_metadata_real_string(cfg.initial_data_rotation_axis2));
+   entries.emplace_back("initial_data_rotation_axis3", output_metadata_real_string(cfg.initial_data_rotation_axis3));
+   entries.emplace_back("initial_data_rotation_center1", output_metadata_real_string(cfg.initial_data_rotation_center1));
+   entries.emplace_back("initial_data_rotation_center2", output_metadata_real_string(cfg.initial_data_rotation_center2));
+   entries.emplace_back("initial_data_rotation_center3", output_metadata_real_string(cfg.initial_data_rotation_center3));
+   entries.emplace_back("initial_data_matter_relaxation", output_metadata_real_string(cfg.initial_data_matter_relaxation));
+   entries.emplace_back("initial_data_matter_relative_tolerance", output_metadata_real_string(cfg.initial_data_matter_relative_tolerance));
+   entries.emplace_back("initial_data_matter_max_iterations", std::to_string(cfg.initial_data_matter_max_iterations));
    entries.emplace_back("eos", cfg.eos);
    entries.emplace_back("polytropic_k", output_metadata_real_string(cfg.polytropic_k));
    entries.emplace_back("polytropic_gamma", output_metadata_real_string(cfg.polytropic_gamma));

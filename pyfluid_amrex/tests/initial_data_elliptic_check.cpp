@@ -19,6 +19,7 @@
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/eos/presets.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
+#include "pyfluid_amrex/initial_data/rotating_star.hpp"
 #include "pyfluid_amrex/initial_data/tov.hpp"
 #include "pyfluid_amrex/kernels_generated/initial_data.hpp"
 
@@ -550,6 +551,61 @@ bool validate_tov_solution()
       && komar_error < 1.0e-8;
 }
 
+bool validate_uniform_rotation_first_integral()
+{
+   pyfluid_amrex::RotatingStarParameters parameters;
+   parameters.active = true;
+   parameters.angular_velocity = 0.02;
+   parameters.rotation_axis = {0.0, 0.0, 1.0};
+   parameters.rotation_center = {0.5, -0.5, 0.25};
+   parameters.injection_energy = 0.84;
+   pyfluid_amrex::SpacetimeMetric metric;
+   metric.lapse = 0.8;
+   metric.shift1 = 0.01;
+   metric.shift2 = -0.02;
+   metric.shift3 = 0.005;
+   metric.gamma11 = 1.2;
+   metric.gamma12 = 0.03;
+   metric.gamma13 = -0.01;
+   metric.gamma22 = 1.1;
+   metric.gamma23 = 0.02;
+   metric.gamma33 = 0.9;
+   const pyfluid_amrex::PatchCoordinate physical{2.5, 0.5, -0.75};
+   const pyfluid_amrex::RotatingStarPoint point =
+      pyfluid_amrex::uniform_rotation_point(parameters, physical, metric);
+   const amrex::Real expected_v1 = (-0.02 + metric.shift1) / metric.lapse;
+   const amrex::Real expected_v2 = (0.04 + metric.shift2) / metric.lapse;
+   const amrex::Real expected_v3 = metric.shift3 / metric.lapse;
+   const amrex::Real expected_velocity_squared =
+      pyfluid_amrex::spatial_vector_norm_squared(
+         expected_v1, expected_v2, expected_v3, metric
+      );
+   const amrex::Real expected_log_enthalpy = std::log(
+      parameters.injection_energy / metric.lapse
+   ) - 0.5 * std::log(1.0 - expected_velocity_squared);
+   const amrex::Real error = std::max({
+      std::abs(point.v1 - expected_v1),
+      std::abs(point.v2 - expected_v2),
+      std::abs(point.v3 - expected_v3),
+      std::abs(point.velocity_squared - expected_velocity_squared),
+      std::abs(point.log_specific_enthalpy - expected_log_enthalpy),
+   });
+   bool catalog_valid = false;
+   for (pyfluid_amrex::RotationLawInfo const& law
+        : pyfluid_amrex::RotationLawCatalog) {
+      catalog_valid = catalog_valid
+         || (law.id == pyfluid_amrex::RotationLaw::Uniform
+             && law.name == "uniform");
+   }
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "uniform_rotation_first_integral error=" << error
+                << " timelike=" << point.timelike
+                << " catalog_valid=" << catalog_valid << '\n';
+   }
+   return point.timelike && catalog_valid && error < 1.0e-14;
+}
+
 #if (AMREX_SPACEDIM == 3)
 bool validate_tov_ctt()
 {
@@ -893,6 +949,9 @@ int main(int argc, char* argv[])
    int return_code = 0;
    {
       if (!validate_tov_solution()) {
+         return_code = 1;
+      }
+      if (!validate_uniform_rotation_first_integral()) {
          return_code = 1;
       }
       constexpr int coarse_cells = 32;
