@@ -33,7 +33,9 @@ void initialize_relativistic_primitive_cache_from_provider_method(
       AMREX_SPACEDIM >= 2 && geometry.isPeriodic(1),
       reference_geometry.metric.lapse,
    };
-   const FluidInitialDataParameters parameters = fluid_initial_data_parameters(cfg);
+   const FluidInitialDataParameters parameters = fluid_initial_data_parameters(
+      cfg, initial_data
+   );
    const bool magnetized = physical_system_has_magnetic_field(physical_system(cfg));
    primitive.setVal(0.0);
 #ifdef AMREX_USE_OMP

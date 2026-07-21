@@ -10,6 +10,7 @@
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
+#include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
@@ -64,9 +65,8 @@ struct FluidInitialDataParameters {
    amrex::Real b1_right = 0.0;
    amrex::Real b2_right = 0.0;
    amrex::Real b3_right = 0.0;
+   InitialAtmosphereParameters atmosphere{};
    EOSParams eos{};
-   amrex::Real rho_floor = 1.0e-12;
-   amrex::Real pressure_floor = 1.0e-12;
 };
 
 struct FluidInitialDataContext {
@@ -85,7 +85,10 @@ struct FluidPrimitiveSample {
    SpacetimeMetric metric{};
 };
 
-inline FluidInitialDataParameters fluid_initial_data_parameters(RunConfig const& cfg)
+inline FluidInitialDataParameters fluid_initial_data_parameters(
+   RunConfig const& cfg,
+   RelativisticInitialDataView const& provider
+)
 {
    FluidInitialDataKind kind = FluidInitialDataKind::ShockPlane;
    if (cfg.ic == "uniform") {
@@ -101,47 +104,46 @@ inline FluidInitialDataParameters fluid_initial_data_parameters(RunConfig const&
    } else if (cfg.ic == "tov") {
       kind = FluidInitialDataKind::Provider;
    }
-   return {
-      kind,
-      cfg.rho0,
-      cfg.pressure0,
-      cfg.amplitude,
-      cfg.wave_number,
-      cfg.bump_sigma,
-      cfg.bump_y0,
-      cfg.kh_density_amplitude,
-      cfg.v1_0,
-      cfg.v2_0,
-      cfg.v3_0,
-      cfg.b1_0,
-      cfg.b2_0,
-      cfg.b3_0,
-      cfg.shock_x0,
-      cfg.shock_y0,
-      cfg.shock_z0,
-      cfg.shock_nx,
-      cfg.shock_ny,
-      cfg.shock_nz,
-      cfg.rho_left,
-      cfg.pressure_left,
-      cfg.v1_left,
-      cfg.v2_left,
-      cfg.v3_left,
-      std::isfinite(cfg.b1_left) ? cfg.b1_left : cfg.b1_0,
-      std::isfinite(cfg.b2_left) ? cfg.b2_left : cfg.b2_0,
-      std::isfinite(cfg.b3_left) ? cfg.b3_left : cfg.b3_0,
-      cfg.rho_right,
-      cfg.pressure_right,
-      cfg.v1_right,
-      cfg.v2_right,
-      cfg.v3_right,
-      std::isfinite(cfg.b1_right) ? cfg.b1_right : cfg.b1_0,
-      std::isfinite(cfg.b2_right) ? cfg.b2_right : cfg.b2_0,
-      std::isfinite(cfg.b3_right) ? cfg.b3_right : cfg.b3_0,
-      eos_params(cfg),
-      cfg.rho_floor,
-      cfg.pressure_floor,
-   };
+   FluidInitialDataParameters parameters;
+   parameters.kind = kind;
+   parameters.rho0 = cfg.rho0;
+   parameters.pressure0 = cfg.pressure0;
+   parameters.amplitude = cfg.amplitude;
+   parameters.wave_number = cfg.wave_number;
+   parameters.layer_width = cfg.bump_sigma;
+   parameters.sheet_center = cfg.bump_y0;
+   parameters.density_amplitude = cfg.kh_density_amplitude;
+   parameters.v1_0 = cfg.v1_0;
+   parameters.v2_0 = cfg.v2_0;
+   parameters.v3_0 = cfg.v3_0;
+   parameters.b1_0 = cfg.b1_0;
+   parameters.b2_0 = cfg.b2_0;
+   parameters.b3_0 = cfg.b3_0;
+   parameters.shock_x0 = cfg.shock_x0;
+   parameters.shock_y0 = cfg.shock_y0;
+   parameters.shock_z0 = cfg.shock_z0;
+   parameters.shock_n1 = cfg.shock_nx;
+   parameters.shock_n2 = cfg.shock_ny;
+   parameters.shock_n3 = cfg.shock_nz;
+   parameters.rho_left = cfg.rho_left;
+   parameters.pressure_left = cfg.pressure_left;
+   parameters.v1_left = cfg.v1_left;
+   parameters.v2_left = cfg.v2_left;
+   parameters.v3_left = cfg.v3_left;
+   parameters.b1_left = std::isfinite(cfg.b1_left) ? cfg.b1_left : cfg.b1_0;
+   parameters.b2_left = std::isfinite(cfg.b2_left) ? cfg.b2_left : cfg.b2_0;
+   parameters.b3_left = std::isfinite(cfg.b3_left) ? cfg.b3_left : cfg.b3_0;
+   parameters.rho_right = cfg.rho_right;
+   parameters.pressure_right = cfg.pressure_right;
+   parameters.v1_right = cfg.v1_right;
+   parameters.v2_right = cfg.v2_right;
+   parameters.v3_right = cfg.v3_right;
+   parameters.b1_right = std::isfinite(cfg.b1_right) ? cfg.b1_right : cfg.b1_0;
+   parameters.b2_right = std::isfinite(cfg.b2_right) ? cfg.b2_right : cfg.b2_0;
+   parameters.b3_right = std::isfinite(cfg.b3_right) ? cfg.b3_right : cfg.b3_0;
+   parameters.eos = eos_params(cfg);
+   parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
+   return parameters;
 }
 
 template <int EOSMethod>
@@ -265,14 +267,35 @@ FluidPrimitiveSample sample_fluid_initial_data(
       b3 = left ? parameters.b3_left : parameters.b3_right;
    }
 
-   const bool state_was_floored = rho < parameters.rho_floor
-      || pressure < parameters.pressure_floor;
-   rho = amrex::max(rho, parameters.rho_floor);
-   pressure = amrex::max(pressure, parameters.pressure_floor);
-   const bool recompute_thermodynamics = state_was_floored
+   const EOSThermodynamicState atmosphere = initial_atmosphere_state<EOSMethod>(
+      parameters.atmosphere, sample
+   );
+   const bool apply_atmosphere = rho < atmosphere.rho;
+   if (apply_atmosphere) {
+      rho = atmosphere.rho;
+      pressure = atmosphere.pressure;
+      specific_internal_energy = atmosphere.specific_internal_energy;
+      v1 = 0.0;
+      v2 = 0.0;
+      v3 = 0.0;
+   }
+
+   const bool state_was_floored = rho < parameters.eos.rho_floor
+      || pressure < parameters.eos.pressure_floor
+      || pressure < eos_cold_pressure<EOSMethod>(
+         amrex::max(rho, parameters.eos.rho_floor), parameters.eos
+      );
+   const bool recompute_thermodynamics = !apply_atmosphere && (state_was_floored
       || (parameters.kind != FluidInitialDataKind::Provider
-          && parameters.kind != FluidInitialDataKind::FixedMetricHse);
-   if (recompute_thermodynamics) {
+          && parameters.kind != FluidInitialDataKind::FixedMetricHse));
+   if (state_was_floored) {
+      const EOSThermodynamicState floor_state = eos_project_to_floors<EOSMethod>(
+         rho, pressure, parameters.eos
+      );
+      rho = floor_state.rho;
+      specific_internal_energy = floor_state.specific_internal_energy;
+      pressure = floor_state.pressure;
+   } else if (recompute_thermodynamics) {
       const amrex::Real internal_energy_density =
          eos_internal_energy_density_from_pressure<EOSMethod>(
             rho, pressure, parameters.eos

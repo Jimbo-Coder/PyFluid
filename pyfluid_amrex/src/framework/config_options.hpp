@@ -72,6 +72,9 @@ static constexpr std::array<std::string_view, 3> LapseInitialDataOptions{{
 static constexpr std::array<std::string_view, 3> ShiftInitialDataOptions{{
    "id", "zero", "none"
 }};
+static constexpr std::array<std::string_view, 2> InitialAtmosphereOptions{{
+   "flat", "power_law"
+}};
 static constexpr std::array<std::string_view, 4> Z4cLapseGaugeOptions{{
    "frozen", "harmonic", "one_plus_log", "slow_start"
 }};
@@ -125,8 +128,8 @@ static constexpr std::array<std::string_view, 2> MeshPatchBoxDomainOptions{{"rec
 static constexpr std::array<std::string_view, 2> AMRTagMetricOptions{{"none", "lohner"}};
 static constexpr std::array<std::string_view, 2> AMRRegridModeOptions{{"synchronized", "aligned"}};
 static constexpr std::array<std::string_view, 5> AMRStateInterpOptions{{
-   "conservative",
-   "protected",
+   "component-conservative",
+   "coupled-conservative",
    "quadratic",
    "quartic",
    "quartic-conservative",

@@ -45,4 +45,65 @@ Conservative ideal-MHD equations with cell-centered magnetic state and optional 
 \[P=polytropic_{k} \rho^{polytropic_{\gamma}},\qquad u(P,\rho)=\frac{cold_{specific energy offset} \rho \left(polytropic_{\gamma} - 1\right) + polytropic_{k} \rho^{polytropic_{\gamma}}}{polytropic_{\gamma} - 1},\qquad c_s^2=polytropic_{\gamma} polytropic_{k} \rho^{polytropic_{\gamma} - 1}.\]
 \subsection*{eos.hybrid_polytrope: Hybrid Polytrope}
 \[P=\frac{polytropic_{k} \rho^{polytropic_{\gamma}} \left(polytropic_{\gamma} - 1\right) - \left(thermal_{\gamma} - 1\right) \left(polytropic_{k} \rho^{polytropic_{\gamma}} + \left(polytropic_{\gamma} - 1\right) \left(cold_{specific energy offset} \rho - internal_{energy density}\right)\right)}{polytropic_{\gamma} - 1},\qquad u(P,\rho)=\frac{P polytropic_{\gamma} - P + cold_{specific energy offset} polytropic_{\gamma} \rho thermal_{\gamma} - cold_{specific energy offset} polytropic_{\gamma} \rho - cold_{specific energy offset} \rho thermal_{\gamma} + cold_{specific energy offset} \rho - polytropic_{\gamma} polytropic_{k} \rho^{polytropic_{\gamma}} + polytropic_{k} \rho^{polytropic_{\gamma}} thermal_{\gamma}}{polytropic_{\gamma} thermal_{\gamma} - polytropic_{\gamma} - thermal_{\gamma} + 1},\qquad c_s^2=\frac{P thermal_{\gamma} + polytropic_{\gamma} polytropic_{k} \rho^{polytropic_{\gamma}} - polytropic_{k} \rho^{polytropic_{\gamma}} thermal_{\gamma}}{\rho}.\]
+\section{Diagnostic Integrands}
+\subsection*{Total rest mass}
+\[
+M_0 = \int_\Omega D\,d^3x
+\]
+\subsection*{ADM mass surface integral}
+\[
+M_{\rm ADM}^{S}=\frac{1}{16\pi}\oint_{\partial\Omega}\sqrt{\gamma}\,\gamma^{ij}\gamma^{kl}(\partial_j\gamma_{ik}-\partial_k\gamma_{ij})\,dS_l
+\]
+\subsection*{Constraint-assisted ADM mass volume integral}
+\[
+M_{\rm ADM}^{V}=\int_\Omega\sqrt{\gamma}\left[\rho+\frac{1}{16\pi}\left(K_{ij}K^{ij}-K^2-\mathcal G\right)\right]d^3x,\qquad\mathcal G=\gamma^{ij}\left(\Gamma^k{}_{i\ell}\Gamma^\ell{}_{jk}-\Gamma^k{}_{ij}\Gamma^\ell{}_{k\ell}\right)
+\]
+\subsection*{ADM linear momentum surface integral}
+\[
+P_i^{S}=\frac{1}{8\pi}\oint_{\partial\Omega}\sqrt{\gamma}(K^l{}_i-\delta^l{}_iK)\,dS_l
+\]
+\subsection*{Constraint-assisted ADM linear momentum volume integral}
+\[
+P_a^{V}=\int_\Omega\sqrt{\gamma}\left[S_i\xi_a^i+\frac{1}{16\pi}(K^{ij}-\gamma^{ij}K)\mathcal L_{\xi_a}\gamma_{ij}\right]d^3x,\qquad \xi_a^i=\delta_a^i
+\]
+\subsection*{ADM angular momentum surface integral}
+\[
+J_i^{S}=\frac{1}{8\pi}\oint_{\partial\Omega}\sqrt{\gamma}(K^l{}_k-\delta^l{}_kK)\phi_i^k\,dS_l,\qquad\phi_i^k=\epsilon_{ijk}x^j
+\]
+\subsection*{Constraint-assisted ADM angular momentum volume integral}
+\[
+J_a^{V}=\int_\Omega\sqrt{\gamma}\left[S_i\phi_a^i+\frac{1}{16\pi}(K^{ij}-\gamma^{ij}K)\mathcal L_{\phi_a}\gamma_{ij}\right]d^3x,\qquad \phi_a^i=\epsilon_{aji}x^j
+\]
+\subsection*{Proper matter-energy volume integral}
+\[
+M_{\rm proper}^{V}=\int_\Omega\sqrt{\gamma}\,E\,d^3x
+\]
+\subsection*{Komar mass surface integral}
+\[
+M_{\rm K}^{S}=\frac{1}{4\pi}\oint_{\partial\Omega}\left(D^i\alpha-K^i{}_j\beta^j\right)dS_i
+\]
+\subsection*{Stationary Komar mass volume integral}
+\[
+M_{\rm K}^{V}=\int_\Omega\sqrt{\gamma}\left[\alpha(E+S)-2\beta^iS_i\right]d^3x,\qquadS=\gamma^{ij}S_{ij}
+\]
+\subsection*{Hamiltonian constraint norms}
+\[
+\|\mathcal H\|_2=\sqrt{V^{-1}\int_\Omega\mathcal H^2dV},\qquad\|\mathcal H\|_\infty=\max_\Omega|\mathcal H|
+\]
+\subsection*{Relativistic magnetofluid invariants}
+\[
+b^2=b^\mu b_\mu,\qquad \sigma_h=\frac{b^2}{\rho h},\qquad\beta_{\rm plasma}=\frac{2P}{b^2},\qquad W=(1-v_iv^i)^{-1/2}
+\]
+\subsection*{Eulerian electromagnetic energy}
+\[
+E_{\rm EM}=\int_\Omega\sqrt{\gamma}\,n_\mu n_\nu\left(T_{\rm RMHD}^{\mu\nu}-T_{\rm RHD}^{\mu\nu}\right)d^3x
+\]
+\subsection*{Electric and magnetic Weyl radiation}
+\[
+E_{ij}=\left[R_{ij}+KK_{ij}-K_{ik}K^k{}_j-4\pi\left(S_{ij}+\gamma_{ij}(E-S)\right)\right]^{\rm TF},\qquadB_{ij}=\left[\epsilon_i{}^{kl}D_kK_{lj}\right]^{\rm STF},\qquad\Psi_4=(E_{ij}-iB_{ij})\bar m^i\bar m^j
+\]
+\subsection*{Finite-radius matter energy flux}
+\[
+\mathcal F_{\rm matter}=\oint \alpha\sqrt{\gamma}\,J^i_{(t)}dS_i,\qquadJ^i_{(t)}=-E\beta^i+\alpha S^i+\frac{\beta^i}{\alpha}S_j\beta^j-S^i{}_j\beta^j
+\]
 \end{document}

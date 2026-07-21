@@ -63,453 +63,2089 @@
     "vorticity2": "\\omega_{2}",
     "vorticity3": "\\omega_{3}"
   },
+  "diagnostic_groups": {
+    "amr": [
+      "amr_total_cells",
+      "amr_active_finest_level",
+      "amr_finest_headroom",
+      "amr_touches_max_level",
+      "amr_total_budget_fraction",
+      "amr_peak_level_budget_fraction"
+    ],
+    "cfl": [
+      "cfl_limiter_frequency",
+      "cfl_limiter_level",
+      "cfl_limiter_i",
+      "cfl_limiter_j",
+      "cfl_limiter_k",
+      "cfl_limiter_q1",
+      "cfl_limiter_q2",
+      "cfl_limiter_q3"
+    ],
+    "conservation": [
+      "mass",
+      "mom1",
+      "mom2",
+      "mom3",
+      "angular_mom1",
+      "angular_mom2",
+      "angular_mom3",
+      "energy",
+      "mass_rel_drift",
+      "energy_rel_drift"
+    ],
+    "constraints": [
+      "z4c_hamiltonian_linf",
+      "z4c_hamiltonian_l2",
+      "z4c_hamiltonian_interior_linf",
+      "z4c_hamiltonian_interior_l2",
+      "z4c_hamiltonian_cf_linf",
+      "z4c_hamiltonian_cf_l2",
+      "z4c_momentum_linf",
+      "z4c_z_linf",
+      "z4c_theta_linf",
+      "z4c_log_conformal_determinant_linf",
+      "z4c_trace_a_tilde_linf"
+    ],
+    "coordinates": [
+      "step",
+      "time",
+      "dt"
+    ],
+    "diffusion": [
+      "diffusion_residual",
+      "diffusion_iterations"
+    ],
+    "global_gr": [
+      "adm_mass_surface",
+      "adm_mass_volume",
+      "proper_mass_volume",
+      "komar_mass_surface",
+      "komar_mass_volume",
+      "binding_energy_volume",
+      "adm_momentum1_surface",
+      "adm_momentum2_surface",
+      "adm_momentum3_surface",
+      "adm_momentum1_volume",
+      "adm_momentum2_volume",
+      "adm_momentum3_volume",
+      "adm_angular_momentum1_surface",
+      "adm_angular_momentum2_surface",
+      "adm_angular_momentum3_surface",
+      "adm_angular_momentum1_volume",
+      "adm_angular_momentum2_volume",
+      "adm_angular_momentum3_volume"
+    ],
+    "gravity": [
+      "gravity_potential_energy",
+      "gravity_total_energy",
+      "gravity_total_energy_rel_drift"
+    ],
+    "ledger": [
+      "wall_work",
+      "wall_power",
+      "energy_minus_wall_work",
+      "wall_work_rel_error",
+      "external_budget_valid",
+      "boundary_mass_change",
+      "boundary_energy_change",
+      "source_mass_change",
+      "source_energy_change",
+      "external_mass_change",
+      "external_energy_change",
+      "external_mass_residual",
+      "external_energy_residual",
+      "external_mass_rel_error",
+      "external_energy_rel_error"
+    ],
+    "mhd": [
+      "newtonian_magnetic_energy",
+      "divb_l1",
+      "divb_l2",
+      "divb_linf"
+    ],
+    "passive": [
+      "passive_mass",
+      "passive_mass_rel_drift"
+    ],
+    "performance": [
+      "mcells_per_s",
+      "layout_mcells_per_s",
+      "sim_time_per_s"
+    ],
+    "radiation": [
+      "extraction_radius",
+      "matter_energy_flux",
+      "psi4_l2"
+    ],
+    "relativistic": [
+      "max_lorentz_factor",
+      "relativistic_atmosphere_volume_fraction"
+    ],
+    "rmhd": [
+      "rmhd_electromagnetic_energy",
+      "rmhd_max_b_squared",
+      "rmhd_max_enthalpy_magnetization",
+      "rmhd_min_plasma_beta"
+    ],
+    "standard": [
+      "step",
+      "time",
+      "dt",
+      "mass",
+      "mom1",
+      "mom2",
+      "mom3",
+      "angular_mom1",
+      "angular_mom2",
+      "angular_mom3",
+      "energy",
+      "gravity_potential_energy",
+      "gravity_total_energy",
+      "gravity_total_energy_rel_drift",
+      "passive_mass",
+      "passive_mass_rel_drift",
+      "wall_work",
+      "wall_power",
+      "energy_minus_wall_work",
+      "wall_work_rel_error",
+      "external_budget_valid",
+      "boundary_mass_change",
+      "boundary_energy_change",
+      "source_mass_change",
+      "source_energy_change",
+      "external_mass_change",
+      "external_energy_change",
+      "external_mass_residual",
+      "external_energy_residual",
+      "external_mass_rel_error",
+      "external_energy_rel_error",
+      "mass_rel_drift",
+      "energy_rel_drift",
+      "min_rho",
+      "max_rho",
+      "max_rho_rel_change",
+      "min_pressure",
+      "min_lapse",
+      "newtonian_magnetic_energy",
+      "rmhd_electromagnetic_energy",
+      "rmhd_max_b_squared",
+      "rmhd_max_enthalpy_magnetization",
+      "rmhd_min_plasma_beta",
+      "max_lorentz_factor",
+      "relativistic_atmosphere_volume_fraction",
+      "divb_l1",
+      "divb_l2",
+      "divb_linf",
+      "diffusion_residual",
+      "diffusion_iterations",
+      "amr_total_cells",
+      "amr_active_finest_level",
+      "amr_finest_headroom",
+      "amr_touches_max_level",
+      "amr_total_budget_fraction",
+      "amr_peak_level_budget_fraction",
+      "mcells_per_s",
+      "layout_mcells_per_s",
+      "sim_time_per_s",
+      "cfl_limiter_frequency",
+      "cfl_limiter_level",
+      "cfl_limiter_i",
+      "cfl_limiter_j",
+      "cfl_limiter_k",
+      "cfl_limiter_q1",
+      "cfl_limiter_q2",
+      "cfl_limiter_q3",
+      "z4c_hamiltonian_linf",
+      "z4c_hamiltonian_l2",
+      "z4c_hamiltonian_interior_linf",
+      "z4c_hamiltonian_interior_l2",
+      "z4c_hamiltonian_cf_linf",
+      "z4c_hamiltonian_cf_l2",
+      "z4c_momentum_linf",
+      "z4c_z_linf",
+      "z4c_theta_linf",
+      "z4c_log_conformal_determinant_linf",
+      "z4c_trace_a_tilde_linf"
+    ],
+    "state_bounds": [
+      "min_rho",
+      "max_rho",
+      "max_rho_rel_change",
+      "min_pressure",
+      "min_lapse"
+    ]
+  },
   "diagnostics": [
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{step}",
-      "name": "step"
+      "family": "step",
+      "groups": [
+        "coordinates"
+      ],
+      "label": "n",
+      "name": "step",
+      "operation": "coordinate",
+      "requirements": [],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{time}",
-      "name": "time"
+      "family": "time",
+      "groups": [
+        "coordinates"
+      ],
+      "label": "t",
+      "name": "time",
+      "operation": "coordinate",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{dt}",
-      "name": "dt"
+      "family": "dt",
+      "groups": [
+        "coordinates"
+      ],
+      "label": "\\Delta t",
+      "name": "dt",
+      "operation": "coordinate",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
-      "dependencies": [],
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "rho"
+      ],
       "evaluation": "runtime_reduction",
-      "label": "M",
-      "name": "mass"
+      "family": "mass",
+      "groups": [
+        "conservation"
+      ],
+      "label": "M_0",
+      "name": "mass",
+      "operation": "volume_integral",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
-      "dependencies": [],
+      "component_count": 3,
+      "component_index": 0,
+      "dependencies": [
+        "momentum"
+      ],
       "evaluation": "runtime_reduction",
+      "family": "conserved_momentum",
+      "groups": [
+        "conservation"
+      ],
       "label": "P_1",
-      "name": "mom1"
+      "name": "mom1",
+      "operation": "volume_integral",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "vector"
     },
     {
-      "dependencies": [],
+      "component_count": 3,
+      "component_index": 1,
+      "dependencies": [
+        "momentum"
+      ],
       "evaluation": "runtime_reduction",
+      "family": "conserved_momentum",
+      "groups": [
+        "conservation"
+      ],
       "label": "P_2",
-      "name": "mom2"
+      "name": "mom2",
+      "operation": "volume_integral",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "vector"
     },
     {
-      "dependencies": [],
+      "component_count": 3,
+      "component_index": 2,
+      "dependencies": [
+        "momentum"
+      ],
       "evaluation": "runtime_reduction",
+      "family": "conserved_momentum",
+      "groups": [
+        "conservation"
+      ],
       "label": "P_3",
-      "name": "mom3"
+      "name": "mom3",
+      "operation": "volume_integral",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "vector"
     },
     {
-      "dependencies": [],
+      "component_count": 3,
+      "component_index": 0,
+      "dependencies": [
+        "momentum"
+      ],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{angular\\_mom1}",
-      "name": "angular_mom1"
+      "family": "coordinate_angular_momentum",
+      "groups": [
+        "conservation"
+      ],
+      "label": "J_1",
+      "name": "angular_mom1",
+      "operation": "volume_integral",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "vector"
     },
     {
-      "dependencies": [],
+      "component_count": 3,
+      "component_index": 1,
+      "dependencies": [
+        "momentum"
+      ],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{angular\\_mom2}",
-      "name": "angular_mom2"
+      "family": "coordinate_angular_momentum",
+      "groups": [
+        "conservation"
+      ],
+      "label": "J_2",
+      "name": "angular_mom2",
+      "operation": "volume_integral",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "vector"
     },
     {
-      "dependencies": [],
+      "component_count": 3,
+      "component_index": 2,
+      "dependencies": [
+        "momentum"
+      ],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{angular\\_mom3}",
-      "name": "angular_mom3"
+      "family": "coordinate_angular_momentum",
+      "groups": [
+        "conservation"
+      ],
+      "label": "J_3",
+      "name": "angular_mom3",
+      "operation": "volume_integral",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "vector"
     },
     {
-      "dependencies": [],
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "energy"
+      ],
       "evaluation": "runtime_reduction",
+      "family": "energy",
+      "groups": [
+        "conservation"
+      ],
       "label": "E",
-      "name": "energy"
+      "name": "energy",
+      "operation": "volume_integral",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{gravity\\_potential\\_energy}",
-      "name": "gravity_potential_energy"
+      "family": "gravity_potential_energy",
+      "groups": [
+        "gravity"
+      ],
+      "label": "E_{\\rm grav}",
+      "name": "gravity_potential_energy",
+      "operation": "volume_integral",
+      "requirements": [
+        "gravity"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{gravity\\_total\\_energy}",
-      "name": "gravity_total_energy"
+      "family": "gravity_total_energy",
+      "groups": [
+        "gravity"
+      ],
+      "label": "E_{\\rm total}",
+      "name": "gravity_total_energy",
+      "operation": "derived",
+      "requirements": [
+        "gravity"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{gravity\\_total\\_energy\\_rel\\_drift}",
-      "name": "gravity_total_energy_rel_drift"
+      "family": "gravity_total_energy_rel_drift",
+      "groups": [
+        "gravity"
+      ],
+      "label": "\\Delta E_{\\rm total}/E_{\\rm total,0}",
+      "name": "gravity_total_energy_rel_drift",
+      "operation": "derived",
+      "requirements": [
+        "gravity"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{passive\\_mass}",
-      "name": "passive_mass"
+      "family": "passive_mass",
+      "groups": [
+        "passive"
+      ],
+      "label": "M_{\\rm passive}",
+      "name": "passive_mass",
+      "operation": "volume_integral",
+      "requirements": [
+        "passive"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{passive\\_mass\\_rel\\_drift}",
-      "name": "passive_mass_rel_drift"
+      "family": "passive_mass_rel_drift",
+      "groups": [
+        "passive"
+      ],
+      "label": "\\Delta M_{\\rm passive}/M_{\\rm passive,0}",
+      "name": "passive_mass_rel_drift",
+      "operation": "derived",
+      "requirements": [
+        "passive"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{wall\\_work}",
-      "name": "wall_work"
+      "family": "wall_work",
+      "groups": [
+        "ledger"
+      ],
+      "label": "W_{\\rm wall}",
+      "name": "wall_work",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{wall\\_power}",
-      "name": "wall_power"
+      "family": "wall_power",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\dot W_{\\rm wall}",
+      "name": "wall_power",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{energy\\_minus\\_wall\\_work}",
-      "name": "energy_minus_wall_work"
+      "family": "energy_minus_wall_work",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\Delta E-W_{\\rm wall}",
+      "name": "energy_minus_wall_work",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{wall\\_work\\_rel\\_error}",
-      "name": "wall_work_rel_error"
+      "family": "wall_work_rel_error",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\epsilon_{W}",
+      "name": "wall_work_rel_error",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{external\\_budget\\_valid}",
-      "name": "external_budget_valid"
+      "family": "external_budget_valid",
+      "groups": [
+        "ledger"
+      ],
+      "label": "b_{\\rm ext}",
+      "name": "external_budget_valid",
+      "operation": "counter",
+      "requirements": [],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{boundary\\_mass\\_change}",
-      "name": "boundary_mass_change"
+      "family": "boundary_mass_change",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\Delta M_{\\partial\\Omega}",
+      "name": "boundary_mass_change",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{boundary\\_energy\\_change}",
-      "name": "boundary_energy_change"
+      "family": "boundary_energy_change",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\Delta E_{\\partial\\Omega}",
+      "name": "boundary_energy_change",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{source\\_mass\\_change}",
-      "name": "source_mass_change"
+      "family": "source_mass_change",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\Delta M_{S}",
+      "name": "source_mass_change",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{source\\_energy\\_change}",
-      "name": "source_energy_change"
+      "family": "source_energy_change",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\Delta E_{S}",
+      "name": "source_energy_change",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{external\\_mass\\_change}",
-      "name": "external_mass_change"
+      "family": "external_mass_change",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\Delta M_{\\rm ext}",
+      "name": "external_mass_change",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{external\\_energy\\_change}",
-      "name": "external_energy_change"
+      "family": "external_energy_change",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\Delta E_{\\rm ext}",
+      "name": "external_energy_change",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{external\\_mass\\_residual}",
-      "name": "external_mass_residual"
+      "family": "external_mass_residual",
+      "groups": [
+        "ledger"
+      ],
+      "label": "R_M",
+      "name": "external_mass_residual",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{external\\_energy\\_residual}",
-      "name": "external_energy_residual"
+      "family": "external_energy_residual",
+      "groups": [
+        "ledger"
+      ],
+      "label": "R_E",
+      "name": "external_energy_residual",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{external\\_mass\\_rel\\_error}",
-      "name": "external_mass_rel_error"
+      "family": "external_mass_rel_error",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\epsilon_M",
+      "name": "external_mass_rel_error",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{external\\_energy\\_rel\\_error}",
-      "name": "external_energy_rel_error"
+      "family": "external_energy_rel_error",
+      "groups": [
+        "ledger"
+      ],
+      "label": "\\epsilon_E",
+      "name": "external_energy_rel_error",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
+      "family": "mass_rel_drift",
+      "groups": [
+        "conservation"
+      ],
       "label": "\\Delta M/M_0",
-      "name": "mass_rel_drift"
+      "name": "mass_rel_drift",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
+      "family": "energy_rel_drift",
+      "groups": [
+        "conservation"
+      ],
       "label": "\\Delta E/E_0",
-      "name": "energy_rel_drift"
+      "name": "energy_rel_drift",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
-      "dependencies": [],
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "rho"
+      ],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{min\\_rho}",
-      "name": "min_rho"
+      "family": "min_rho",
+      "groups": [
+        "state_bounds"
+      ],
+      "label": "\\min\\rho",
+      "name": "min_rho",
+      "operation": "minimum",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
-      "dependencies": [],
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "rho"
+      ],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{max\\_rho}",
-      "name": "max_rho"
+      "family": "max_rho",
+      "groups": [
+        "state_bounds"
+      ],
+      "label": "\\max\\rho",
+      "name": "max_rho",
+      "operation": "maximum",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{max\\_rho\\_rel\\_change}",
-      "name": "max_rho_rel_change"
+      "family": "max_rho_rel_change",
+      "groups": [
+        "state_bounds"
+      ],
+      "label": "\\Delta\\rho_{\\max}/\\rho_{\\max,0}",
+      "name": "max_rho_rel_change",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
-      "dependencies": [],
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "pressure"
+      ],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{min\\_pressure}",
-      "name": "min_pressure"
+      "family": "min_pressure",
+      "groups": [
+        "state_bounds"
+      ],
+      "label": "\\min P",
+      "name": "min_pressure",
+      "operation": "minimum",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "E_B",
-      "name": "magnetic_energy"
+      "family": "min_lapse",
+      "groups": [
+        "state_bounds"
+      ],
+      "label": "\\min\\alpha",
+      "name": "min_lapse",
+      "operation": "minimum",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
+      "family": "newtonian_magnetic_energy",
+      "groups": [
+        "mhd"
+      ],
+      "label": "E_B^{\\rm NR}",
+      "name": "newtonian_magnetic_energy",
+      "operation": "volume_integral",
+      "requirements": [
+        "newtonian_mhd"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "rmhd_electromagnetic_energy",
+      "groups": [
+        "rmhd"
+      ],
+      "label": "E_{\\rm EM}",
+      "name": "rmhd_electromagnetic_energy",
+      "operation": "volume_integral",
+      "requirements": [
+        "rmhd"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "rmhd_max_b_squared",
+      "groups": [
+        "rmhd"
+      ],
+      "label": "\\max b^2",
+      "name": "rmhd_max_b_squared",
+      "operation": "maximum",
+      "requirements": [
+        "rmhd"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "rmhd_max_enthalpy_magnetization",
+      "groups": [
+        "rmhd"
+      ],
+      "label": "\\max[b^2/(\\rho h)]",
+      "name": "rmhd_max_enthalpy_magnetization",
+      "operation": "maximum",
+      "requirements": [
+        "rmhd"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "rmhd_min_plasma_beta",
+      "groups": [
+        "rmhd"
+      ],
+      "label": "\\min(2P/b^2)",
+      "name": "rmhd_min_plasma_beta",
+      "operation": "minimum",
+      "requirements": [
+        "rmhd"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "max_lorentz_factor",
+      "groups": [
+        "relativistic"
+      ],
+      "label": "\\max W",
+      "name": "max_lorentz_factor",
+      "operation": "maximum",
+      "requirements": [
+        "relativistic"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "relativistic_atmosphere_volume_fraction",
+      "groups": [
+        "relativistic"
+      ],
+      "label": "V_{\\rm atm}/V",
+      "name": "relativistic_atmosphere_volume_fraction",
+      "operation": "derived",
+      "requirements": [
+        "relativistic"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "divb_l1",
+      "groups": [
+        "mhd"
+      ],
       "label": "\\|\\nabla_i B^i\\|_1",
-      "name": "divb_l1"
+      "name": "divb_l1",
+      "operation": "l1_norm",
+      "requirements": [
+        "mhd"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{diffusion\\_residual}",
-      "name": "diffusion_residual"
+      "family": "divb_l2",
+      "groups": [
+        "mhd"
+      ],
+      "label": "\\|\\nabla_i B^i\\|_2",
+      "name": "divb_l2",
+      "operation": "l2_norm",
+      "requirements": [
+        "mhd"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{diffusion\\_iterations}",
-      "name": "diffusion_iterations"
+      "family": "divb_linf",
+      "groups": [
+        "mhd"
+      ],
+      "label": "\\|\\nabla_i B^i\\|_\\infty",
+      "name": "divb_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "mhd"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{amr\\_total\\_cells}",
-      "name": "amr_total_cells"
+      "family": "diffusion_residual",
+      "groups": [
+        "diffusion"
+      ],
+      "label": "R_{\\rm diff}",
+      "name": "diffusion_residual",
+      "operation": "derived",
+      "requirements": [
+        "diffusion"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{amr\\_active\\_finest\\_level}",
-      "name": "amr_active_finest_level"
+      "family": "diffusion_iterations",
+      "groups": [
+        "diffusion"
+      ],
+      "label": "N_{\\rm diff}",
+      "name": "diffusion_iterations",
+      "operation": "counter",
+      "requirements": [
+        "diffusion"
+      ],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{amr\\_finest\\_headroom}",
-      "name": "amr_finest_headroom"
+      "family": "amr_total_cells",
+      "groups": [
+        "amr"
+      ],
+      "label": "N_{\\rm cells}",
+      "name": "amr_total_cells",
+      "operation": "counter",
+      "requirements": [],
+      "storage": "long",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{amr\\_touches\\_max\\_level}",
-      "name": "amr_touches_max_level"
+      "family": "amr_active_finest_level",
+      "groups": [
+        "amr"
+      ],
+      "label": "L_{\\rm active}",
+      "name": "amr_active_finest_level",
+      "operation": "counter",
+      "requirements": [],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{amr\\_total\\_budget\\_fraction}",
-      "name": "amr_total_budget_fraction"
+      "family": "amr_finest_headroom",
+      "groups": [
+        "amr"
+      ],
+      "label": "L_{\\max}-L_{\\rm active}",
+      "name": "amr_finest_headroom",
+      "operation": "counter",
+      "requirements": [],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{amr\\_peak\\_level\\_budget\\_fraction}",
-      "name": "amr_peak_level_budget_fraction"
+      "family": "amr_touches_max_level",
+      "groups": [
+        "amr"
+      ],
+      "label": "b_{L_{\\max}}",
+      "name": "amr_touches_max_level",
+      "operation": "counter",
+      "requirements": [],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
+      "family": "amr_total_budget_fraction",
+      "groups": [
+        "amr"
+      ],
+      "label": "f_{\\rm AMR}",
+      "name": "amr_total_budget_fraction",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "amr_peak_level_budget_fraction",
+      "groups": [
+        "amr"
+      ],
+      "label": "f_{\\rm AMR,peak}",
+      "name": "amr_peak_level_budget_fraction",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "mcells_per_s",
+      "groups": [
+        "performance"
+      ],
       "label": "10^6\\,\\mathrm{cells}/\\mathrm{s}",
-      "name": "mcells_per_s"
+      "name": "mcells_per_s",
+      "operation": "performance",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{layout\\_mcells\\_per\\_s}",
-      "name": "layout_mcells_per_s"
+      "family": "layout_mcells_per_s",
+      "groups": [
+        "performance"
+      ],
+      "label": "10^6\\,\\mathrm{layout\\ cells}/\\mathrm{s}",
+      "name": "layout_mcells_per_s",
+      "operation": "performance",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
+      "family": "sim_time_per_s",
+      "groups": [
+        "performance"
+      ],
       "label": "\\Delta t_{\\rm sim}/\\Delta t_{\\rm wall}",
-      "name": "sim_time_per_s"
+      "name": "sim_time_per_s",
+      "operation": "performance",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{cfl\\_limiter\\_frequency}",
-      "name": "cfl_limiter_frequency"
+      "family": "cfl_limiter_frequency",
+      "groups": [
+        "cfl"
+      ],
+      "label": "\\lambda_{\\rm CFL}",
+      "name": "cfl_limiter_frequency",
+      "operation": "maximum",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{cfl\\_limiter\\_level}",
-      "name": "cfl_limiter_level"
+      "family": "cfl_limiter_level",
+      "groups": [
+        "cfl"
+      ],
+      "label": "L_{\\rm CFL}",
+      "name": "cfl_limiter_level",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{cfl\\_limiter\\_i}",
-      "name": "cfl_limiter_i"
+      "family": "cfl_limiter_i",
+      "groups": [
+        "cfl"
+      ],
+      "label": "i_{\\rm CFL}",
+      "name": "cfl_limiter_i",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{cfl\\_limiter\\_j}",
-      "name": "cfl_limiter_j"
+      "family": "cfl_limiter_j",
+      "groups": [
+        "cfl"
+      ],
+      "label": "j_{\\rm CFL}",
+      "name": "cfl_limiter_j",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{cfl\\_limiter\\_k}",
-      "name": "cfl_limiter_k"
+      "family": "cfl_limiter_k",
+      "groups": [
+        "cfl"
+      ],
+      "label": "k_{\\rm CFL}",
+      "name": "cfl_limiter_k",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "integer",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{cfl\\_limiter\\_q1}",
-      "name": "cfl_limiter_q1"
+      "family": "cfl_limiter_q1",
+      "groups": [
+        "cfl"
+      ],
+      "label": "q^1_{\\rm CFL}",
+      "name": "cfl_limiter_q1",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{cfl\\_limiter\\_q2}",
-      "name": "cfl_limiter_q2"
+      "family": "cfl_limiter_q2",
+      "groups": [
+        "cfl"
+      ],
+      "label": "q^2_{\\rm CFL}",
+      "name": "cfl_limiter_q2",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{cfl\\_limiter\\_q3}",
-      "name": "cfl_limiter_q3"
+      "family": "cfl_limiter_q3",
+      "groups": [
+        "cfl"
+      ],
+      "label": "q^3_{\\rm CFL}",
+      "name": "cfl_limiter_q3",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_linf",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\mathcal H\\|_\\infty",
+      "name": "z4c_hamiltonian_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_l2",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\mathcal H\\|_2",
+      "name": "z4c_hamiltonian_l2",
+      "operation": "l2_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_interior_linf",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\mathcal H\\|_{\\infty,\\mathrm{interior}}",
+      "name": "z4c_hamiltonian_interior_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_interior_l2",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\mathcal H\\|_{2,\\mathrm{interior}}",
+      "name": "z4c_hamiltonian_interior_l2",
+      "operation": "l2_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_cf_linf",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\mathcal H\\|_{\\infty,\\mathrm{CF}}",
+      "name": "z4c_hamiltonian_cf_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_cf_l2",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\mathcal H\\|_{2,\\mathrm{CF}}",
+      "name": "z4c_hamiltonian_cf_l2",
+      "operation": "l2_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_momentum_linf",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\mathcal M_i\\|_\\infty",
+      "name": "z4c_momentum_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_z_linf",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|Z_i\\|_\\infty",
+      "name": "z4c_z_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_theta_linf",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\Theta\\|_\\infty",
+      "name": "z4c_theta_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_log_conformal_determinant_linf",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\ln\\det\\tilde\\gamma\\|_\\infty",
+      "name": "z4c_log_conformal_determinant_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_trace_a_tilde_linf",
+      "groups": [
+        "constraints"
+      ],
+      "label": "\\|\\mathrm{tr}\\tilde A\\|_\\infty",
+      "name": "z4c_trace_a_tilde_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_mass_surface",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "M_{\\rm ADM}^{S}",
+      "name": "adm_mass_surface",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_mass_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "M_{\\rm ADM}^{V}",
+      "name": "adm_mass_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "proper_mass_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "M_{\\rm proper}^{V}",
+      "name": "proper_mass_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "komar_mass_surface",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "M_{\\rm K}^{S}",
+      "name": "komar_mass_surface",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "komar_mass_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "M_{\\rm K}^{V}",
+      "name": "komar_mass_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "mass",
+        "adm_mass_volume"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "binding_energy_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "E_{\\rm bind}^{V}",
+      "name": "binding_energy_volume",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 3,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_momentum_surface",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "P_{\\rm ADM,1}^{S}",
+      "name": "adm_momentum1_surface",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 1,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_momentum_surface",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "P_{\\rm ADM,2}^{S}",
+      "name": "adm_momentum2_surface",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 2,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_momentum_surface",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "P_{\\rm ADM,3}^{S}",
+      "name": "adm_momentum3_surface",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_momentum_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "P_{\\rm ADM,1}^{V}",
+      "name": "adm_momentum1_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 1,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_momentum_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "P_{\\rm ADM,2}^{V}",
+      "name": "adm_momentum2_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 2,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_momentum_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "P_{\\rm ADM,3}^{V}",
+      "name": "adm_momentum3_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_angular_momentum_surface",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "J_{\\rm ADM,1}^{S}",
+      "name": "adm_angular_momentum1_surface",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 1,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_angular_momentum_surface",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "J_{\\rm ADM,2}^{S}",
+      "name": "adm_angular_momentum2_surface",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 2,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_angular_momentum_surface",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "J_{\\rm ADM,3}^{S}",
+      "name": "adm_angular_momentum3_surface",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_angular_momentum_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "J_{\\rm ADM,1}^{V}",
+      "name": "adm_angular_momentum1_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 1,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_angular_momentum_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "J_{\\rm ADM,2}^{V}",
+      "name": "adm_angular_momentum2_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 2,
+      "dependencies": [
+        "z4c_physical_geometry"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "adm_angular_momentum_volume",
+      "groups": [
+        "global_gr"
+      ],
+      "label": "J_{\\rm ADM,3}^{V}",
+      "name": "adm_angular_momentum3_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{z4c\\_hamiltonian\\_linf}",
-      "name": "z4c_hamiltonian_linf"
+      "family": "extraction_radius",
+      "groups": [
+        "radiation"
+      ],
+      "label": "r_{\\rm ext}",
+      "name": "extraction_radius",
+      "operation": "coordinate",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{z4c\\_hamiltonian\\_l2}",
-      "name": "z4c_hamiltonian_l2"
+      "family": "matter_energy_flux",
+      "groups": [
+        "radiation"
+      ],
+      "label": "\\dot E_{\\rm matter}^{S}",
+      "name": "matter_energy_flux",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [],
       "evaluation": "runtime_reduction",
-      "label": "\\mathrm{z4c\\_momentum\\_linf}",
-      "name": "z4c_momentum_linf"
+      "family": "psi4_l2",
+      "groups": [
+        "radiation"
+      ],
+      "label": "\\|\\Psi_4\\|_{2,S}",
+      "name": "psi4_l2",
+      "operation": "l2_norm",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
-      "dependencies": [],
-      "evaluation": "runtime_reduction",
-      "label": "\\mathrm{z4c\\_z\\_linf}",
-      "name": "z4c_z_linf"
-    },
-    {
-      "dependencies": [],
-      "evaluation": "runtime_reduction",
-      "label": "\\mathrm{z4c\\_theta\\_linf}",
-      "name": "z4c_theta_linf"
-    },
-    {
-      "dependencies": [],
-      "evaluation": "runtime_reduction",
-      "label": "\\mathrm{z4c\\_log\\_conformal\\_determinant\\_linf}",
-      "name": "z4c_log_conformal_determinant_linf"
-    },
-    {
-      "dependencies": [],
-      "evaluation": "runtime_reduction",
-      "label": "\\mathrm{z4c\\_trace\\_a\\_tilde\\_linf}",
-      "name": "z4c_trace_a_tilde_linf"
-    },
-    {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [
         "rho",
         "momentum",
         "energy"
       ],
       "evaluation": "postprocess",
+      "family": "pressure",
+      "groups": [],
       "label": "P",
-      "name": "pressure"
+      "name": "pressure",
+      "operation": "field",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [
         "rho",
         "momentum"
       ],
       "evaluation": "postprocess",
+      "family": "velocity_mag",
+      "groups": [],
       "label": "|v|",
-      "name": "velocity_mag"
+      "name": "velocity_mag",
+      "operation": "field",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [
         "rho"
       ],
       "evaluation": "postprocess",
+      "family": "schlieren",
+      "groups": [],
       "label": "|\\nabla\\rho|",
-      "name": "schlieren"
+      "name": "schlieren",
+      "operation": "field",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [
         "j1",
         "j2",
         "j3"
       ],
       "evaluation": "postprocess",
+      "family": "j_mag",
+      "groups": [],
       "label": "|J|",
-      "name": "j_mag"
+      "name": "j_mag",
+      "operation": "field",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [
         "e1",
         "e2",
         "e3"
       ],
       "evaluation": "postprocess",
+      "family": "e_mag",
+      "groups": [],
       "label": "|E|",
-      "name": "e_mag"
+      "name": "e_mag",
+      "operation": "field",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     },
     {
+      "component_count": 1,
+      "component_index": 0,
       "dependencies": [
         "vorticity1",
         "vorticity2",
         "vorticity3"
       ],
       "evaluation": "postprocess",
+      "family": "vorticity_mag",
+      "groups": [],
       "label": "|\\omega|",
-      "name": "vorticity_mag"
+      "name": "vorticity_mag",
+      "operation": "field",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
     }
   ],
   "fields": [

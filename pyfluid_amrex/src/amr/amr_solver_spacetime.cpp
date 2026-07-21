@@ -7,17 +7,15 @@
 #include <cmath>
 
 #include "pyfluid_amrex/spacetime_coupling.hpp"
+#include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/initial_data/materialization.hpp"
+#include "pyfluid_amrex/kernels_generated/diagnostics.hpp"
 #include "pyfluid_amrex/nodal_fill.hpp"
 #include "pyfluid_amrex/nodal_interpolater.hpp"
+#include "pyfluid_amrex/surface_geometry.hpp"
 #include "pyfluid_amrex/z4c_constraint_pointwise.hpp"
 
 namespace pyfluid_amrex {
-
-amrex::MFInterpolater* spacetime_interpolater()
-{
-   return fourth_order_nodal_interpolater();
-}
 
 void AmrSolverBase::fill_spacetime_level_boundaries(
    LevelData& data,
@@ -256,7 +254,7 @@ void AmrSolverBase::fill_new_spacetime_level_from_coarse(int lev, amrex::Real ti
       fine_bc,
       0,
       refRatio(lev - 1),
-      spacetime_interpolater(),
+      nodal_interpolater(),
       spacetime_fillpatch_bcs_,
       0
    );
@@ -345,6 +343,10 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
    fill_all_spacetime_boundaries(spacetime_state_.state(), time);
    amrex::Real hamiltonian_squared_integral = 0.0;
    amrex::Real composite_volume = 0.0;
+   amrex::Real interior_hamiltonian_squared_integral = 0.0;
+   amrex::Real interior_volume = 0.0;
+   amrex::Real cf_hamiltonian_squared_integral = 0.0;
+   amrex::Real cf_volume = 0.0;
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       amrex::MultiFab const& state = *spacetime_state_.state()[lev];
       amrex::iMultiFab valid(state.boxArray(), state.DistributionMap(), 1, 0);
@@ -366,8 +368,14 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
       const std::unique_ptr<amrex::iMultiFab> owner = state.OwnerMask(
          Geom(lev).periodicity()
       );
+      amrex::iMultiFab stencil_valid(
+         state.boxArray(), state.DistributionMap(), 1, 2
+      );
+      stencil_valid.setVal(0);
+      stencil_valid.ParallelCopy(valid, 0, 0, 1, 0, 0);
+      stencil_valid.FillBoundary(Geom(lev).periodicity());
       amrex::MultiFab norms(
-         state.boxArray(), state.DistributionMap(), 7, 0
+         state.boxArray(), state.DistributionMap(), 11, 0
       );
       norms.setVal(0.0);
       const amrex::Box nodal_domain = amrex::convert(
@@ -405,6 +413,7 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
          const auto input = state.const_array(mfi);
          const auto output = norms.array(mfi);
          const auto valid_points = valid.const_array(mfi);
+         const auto same_level_points = stencil_valid.const_array(mfi);
          const auto owned_points = owner->const_array(mfi);
          const bool matter_coupled = spacetime_includes_matter(cfg_);
          const auto matter = spacetime_coupling_.vertex_matter()[lev]->const_array(mfi);
@@ -416,9 +425,25 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
             const Z4cMatter point_matter = matter_coupled
                ? load_eulerian_matter(matter, i, j, k)
                : vacuum_z4c_matter();
-            const Z4cConstraints c = evaluate_z4c_constraints_at<4, AMREX_SPACEDIM>(
-               input, i, j, k, inv_spacing, point_matter
-            );
+            bool same_level_stencil = true;
+            for (int offset = 1; offset <= 2; ++offset) {
+               same_level_stencil = same_level_stencil
+                  && same_level_points(i - offset, j, k, 0) != 0
+                  && same_level_points(i + offset, j, k, 0) != 0;
+#if (AMREX_SPACEDIM >= 2)
+               same_level_stencil = same_level_stencil
+                  && same_level_points(i, j - offset, k, 0) != 0
+                  && same_level_points(i, j + offset, k, 0) != 0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+               same_level_stencil = same_level_stencil
+                  && same_level_points(i, j, k - offset, 0) != 0
+                  && same_level_points(i, j, k + offset, 0) != 0;
+#endif
+            }
+            const Z4cConstraints c = evaluate_z4c_constraints_at<
+               4, AMREX_SPACEDIM
+            >(input, i, j, k, inv_spacing, point_matter);
             output(i, j, k, 0) = amrex::Math::abs(c.hamiltonian);
             output(i, j, k, 1) = c.momentum1 * c.momentum1
                + c.momentum2 * c.momentum2 + c.momentum3 * c.momentum3;
@@ -430,6 +455,10 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
             );
             output(i, j, k, 5) = amrex::Math::abs(c.trace_a_tilde);
             output(i, j, k, 6) = 1.0;
+            const int value_component = same_level_stencil ? 7 : 9;
+            const int weight_component = same_level_stencil ? 8 : 10;
+            output(i, j, k, value_component) = amrex::Math::abs(c.hamiltonian);
+            output(i, j, k, weight_component) = 1.0;
          });
       }
       diagnostics.hamiltonian_linf = amrex::max(
@@ -440,6 +469,20 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
       hamiltonian_squared_integral += level_volume
          * level_hamiltonian_norm * level_hamiltonian_norm;
       composite_volume += level_volume * norms.sum(6);
+      diagnostics.hamiltonian_interior_linf = amrex::max(
+         diagnostics.hamiltonian_interior_linf, norms.norm0(7, 0, false)
+      );
+      const amrex::Real level_interior_norm = norms.norm2(7);
+      interior_hamiltonian_squared_integral += level_volume
+         * level_interior_norm * level_interior_norm;
+      interior_volume += level_volume * norms.sum(8);
+      diagnostics.hamiltonian_cf_linf = amrex::max(
+         diagnostics.hamiltonian_cf_linf, norms.norm0(9, 0, false)
+      );
+      const amrex::Real level_cf_norm = norms.norm2(9);
+      cf_hamiltonian_squared_integral += level_volume
+         * level_cf_norm * level_cf_norm;
+      cf_volume += level_volume * norms.sum(10);
       diagnostics.momentum_linf = amrex::max(
          diagnostics.momentum_linf, std::sqrt(norms.norm0(1, 0, false))
       );
@@ -462,6 +505,313 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
          hamiltonian_squared_integral / composite_volume
       );
    }
+   if (interior_volume > 0.0) {
+      diagnostics.hamiltonian_interior_l2 = std::sqrt(
+         interior_hamiltonian_squared_integral / interior_volume
+      );
+   }
+   if (cf_volume > 0.0) {
+      diagnostics.hamiltonian_cf_l2 = std::sqrt(
+         cf_hamiltonian_squared_integral / cf_volume
+      );
+   }
+   return diagnostics;
+}
+
+SpacetimeGlobalDiagnostics
+AmrSolverBase::compute_spacetime_global_diagnostics(
+   amrex::Real time,
+   bool surface_requested,
+   bool volume_requested
+)
+{
+   SpacetimeGlobalDiagnostics diagnostics;
+   if (!spacetime_state_.active()) {
+      return diagnostics;
+   }
+#if (AMREX_SPACEDIM != 3)
+   amrex::Abort("global_gr diagnostics currently require a three-dimensional spacetime hierarchy");
+#else
+   if (mesh_coordinate_kind() != MeshCartesian || mixed_patch_system_enabled()) {
+      amrex::Abort("global_gr diagnostics currently require a single Cartesian patch");
+   }
+   for (int direction = 0; direction < 3; ++direction) {
+      if (Geom(0).isPeriodic(direction)) {
+         amrex::Abort("global_gr diagnostics require nonperiodic asymptotic boundaries");
+      }
+   }
+
+   fill_all_spacetime_boundaries(spacetime_state_.state(), time);
+   enum IntegralComponent : int {
+      AdmMassVolume = 0,
+      AdmMomentum1Volume,
+      AdmMomentum2Volume,
+      AdmMomentum3Volume,
+      AdmAngularMomentum1Volume,
+      AdmAngularMomentum2Volume,
+      AdmAngularMomentum3Volume,
+      ProperMassVolume,
+      KomarMassVolume,
+      Count,
+   };
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      amrex::MultiFab const& state = *spacetime_state_.state()[lev];
+      if (!volume_requested) {
+         continue;
+      }
+      amrex::iMultiFab valid(state.boxArray(), state.DistributionMap(), 1, 0);
+      if (lev < finestLevel()) {
+         const amrex::BoxArray fine_nodes = amrex::convert(
+            boxArray(lev + 1), amrex::IntVect::TheNodeVector()
+         );
+         valid = amrex::makeFineMask(
+            state, fine_nodes, refRatio(lev), Geom(lev).periodicity(), 1, 0
+         );
+      } else {
+         valid.setVal(1);
+      }
+      const std::unique_ptr<amrex::iMultiFab> owner = state.OwnerMask(
+         Geom(lev).periodicity()
+      );
+      amrex::MultiFab integrals(
+         state.boxArray(), state.DistributionMap(), IntegralComponent::Count, 0
+      );
+      integrals.setVal(0.0);
+      const amrex::Box nodal_domain = amrex::convert(
+         Geom(lev).Domain(), amrex::IntVect::TheNodeVector()
+      );
+      const auto spacing = Geom(lev).CellSizeArray();
+      const auto lower = Geom(lev).ProbLoArray();
+      const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
+         1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
+      }};
+      const amrex::GpuArray<int, 3> domain_lower{{
+         nodal_domain.smallEnd(0),
+         nodal_domain.smallEnd(1),
+         nodal_domain.smallEnd(2),
+      }};
+      const amrex::GpuArray<int, 3> domain_upper{{
+         nodal_domain.bigEnd(0),
+         nodal_domain.bigEnd(1),
+         nodal_domain.bigEnd(2),
+      }};
+      const amrex::Real cell_volume = spacing[0] * spacing[1] * spacing[2];
+      const bool matter_coupled = spacetime_includes_matter(cfg_);
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto input = state.const_array(mfi);
+         const auto output = integrals.array(mfi);
+         const auto valid_points = valid.const_array(mfi);
+         const auto owned_points = owner->const_array(mfi);
+         const auto matter = spacetime_coupling_.vertex_matter()[lev]->const_array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            if (valid_points(i, j, k, 0) == 0 || owned_points(i, j, k, 0) == 0) {
+               return;
+            }
+
+            const int indices[3] = {i, j, k};
+            const Z4cSpatialDerivatives derivatives =
+               gather_z4c_geometry_derivatives<4, 3>(
+                  input,
+                  i,
+                  j,
+                  k,
+                  inv_spacing,
+                  domain_lower,
+                  domain_upper
+               );
+            const Z4cState point_state = load_z4c_state(input, i, j, k);
+            const Vector3 position{
+               lower[0] + static_cast<amrex::Real>(i - nodal_domain.smallEnd(0)) * spacing[0],
+               lower[1] + static_cast<amrex::Real>(j - nodal_domain.smallEnd(1)) * spacing[1],
+               lower[2] + static_cast<amrex::Real>(k - nodal_domain.smallEnd(2)) * spacing[2],
+            };
+            const Z4cMatter point_matter = matter_coupled
+               ? load_eulerian_matter(matter, i, j, k)
+               : vacuum_z4c_matter();
+            const AdmVolumeIntegrands point_volume =
+               generated::adm_constraint_volume_integrands(
+                  point_state, derivatives, point_matter, position
+               );
+            amrex::Real volume_weight = cell_volume;
+            for (int direction = 0; direction < 3; ++direction) {
+               if (indices[direction] == nodal_domain.smallEnd(direction)
+                   || indices[direction] == nodal_domain.bigEnd(direction)) {
+                  volume_weight *= 0.5;
+               }
+            }
+            output(i, j, k, IntegralComponent::AdmMassVolume) =
+               volume_weight * point_volume.mass;
+            output(i, j, k, IntegralComponent::AdmMomentum1Volume) =
+               volume_weight * point_volume.linear_momentum1;
+            output(i, j, k, IntegralComponent::AdmMomentum2Volume) =
+               volume_weight * point_volume.linear_momentum2;
+            output(i, j, k, IntegralComponent::AdmMomentum3Volume) =
+               volume_weight * point_volume.linear_momentum3;
+            output(i, j, k, IntegralComponent::AdmAngularMomentum1Volume) =
+               volume_weight * point_volume.angular_momentum1;
+            output(i, j, k, IntegralComponent::AdmAngularMomentum2Volume) =
+               volume_weight * point_volume.angular_momentum2;
+            output(i, j, k, IntegralComponent::AdmAngularMomentum3Volume) =
+               volume_weight * point_volume.angular_momentum3;
+            output(i, j, k, IntegralComponent::ProperMassVolume) =
+               volume_weight * point_volume.proper_mass;
+            output(i, j, k, IntegralComponent::KomarMassVolume) =
+               volume_weight * point_volume.komar_mass;
+         });
+      }
+      diagnostics.adm_mass_volume += integrals.sum(IntegralComponent::AdmMassVolume);
+      diagnostics.adm_momentum_volume[0] += integrals.sum(IntegralComponent::AdmMomentum1Volume);
+      diagnostics.adm_momentum_volume[1] += integrals.sum(IntegralComponent::AdmMomentum2Volume);
+      diagnostics.adm_momentum_volume[2] += integrals.sum(IntegralComponent::AdmMomentum3Volume);
+      diagnostics.adm_angular_momentum_volume[0] +=
+         integrals.sum(IntegralComponent::AdmAngularMomentum1Volume);
+      diagnostics.adm_angular_momentum_volume[1] +=
+         integrals.sum(IntegralComponent::AdmAngularMomentum2Volume);
+      diagnostics.adm_angular_momentum_volume[2] +=
+         integrals.sum(IntegralComponent::AdmAngularMomentum3Volume);
+      diagnostics.proper_mass_volume += integrals.sum(IntegralComponent::ProperMassVolume);
+      diagnostics.komar_mass_volume += integrals.sum(IntegralComponent::KomarMassVolume);
+   }
+   if (volume_requested) {
+      const amrex::Real volume_factor = symmetry_volume_factor();
+      diagnostics.adm_mass_volume *= volume_factor;
+      diagnostics.proper_mass_volume *= volume_factor;
+      diagnostics.komar_mass_volume *= volume_factor;
+      for (int axis = 0; axis < 3; ++axis) {
+         diagnostics.adm_momentum_volume[axis] *= symmetry_momentum_factor(
+            axis, volume_factor
+         );
+         diagnostics.adm_angular_momentum_volume[axis] *=
+            symmetry_angular_momentum_factor(axis, volume_factor);
+      }
+   }
+   if (surface_requested) {
+      if (symmetry_volume_factor() != 1.0) {
+         amrex::Abort(
+            "spherical GR surface diagnostics do not yet reconstruct omitted symmetry sectors"
+         );
+      }
+      enum SurfaceFluxComponent : int {
+         AdmMassFlux1 = 0,
+         AdmMassFlux2,
+         AdmMassFlux3,
+         KomarMassFlux1,
+         KomarMassFlux2,
+         KomarMassFlux3,
+         AdmMomentumFlux11,
+         AdmMomentumFlux12,
+         AdmMomentumFlux13,
+         AdmMomentumFlux21,
+         AdmMomentumFlux22,
+         AdmMomentumFlux23,
+         AdmMomentumFlux31,
+         AdmMomentumFlux32,
+         AdmMomentumFlux33,
+         AdmAngularMomentumFlux11,
+         AdmAngularMomentumFlux12,
+         AdmAngularMomentumFlux13,
+         AdmAngularMomentumFlux21,
+         AdmAngularMomentumFlux22,
+         AdmAngularMomentumFlux23,
+         AdmAngularMomentumFlux31,
+         AdmAngularMomentumFlux32,
+         AdmAngularMomentumFlux33,
+         SurfaceFluxCount,
+      };
+      LevelData surface_flux_hierarchy(finestLevel() + 1);
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         amrex::MultiFab const& state = *spacetime_state_.state()[lev];
+         auto flux = std::make_unique<amrex::MultiFab>(
+            state.boxArray(), state.DistributionMap(), SurfaceFluxCount, 1
+         );
+         flux->setVal(0.0);
+         const amrex::Box nodal_domain = amrex::convert(
+            Geom(lev).Domain(), amrex::IntVect::TheNodeVector()
+         );
+         const auto spacing = Geom(lev).CellSizeArray();
+         const auto lower = Geom(lev).ProbLoArray();
+         const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
+            1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
+         }};
+         const amrex::GpuArray<int, 3> domain_lower{{
+            nodal_domain.smallEnd(0),
+            nodal_domain.smallEnd(1),
+            nodal_domain.smallEnd(2),
+         }};
+         const amrex::GpuArray<int, 3> domain_upper{{
+            nodal_domain.bigEnd(0),
+            nodal_domain.bigEnd(1),
+            nodal_domain.bigEnd(2),
+         }};
+         for (amrex::MFIter mfi(state, false); mfi.isValid(); ++mfi) {
+            const amrex::Box box = mfi.validbox();
+            const auto input = state.const_array(mfi);
+            const auto output = flux->array(mfi);
+            amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               const Z4cSpatialDerivatives derivatives =
+                  gather_z4c_geometry_derivatives<4, 3>(
+                     input, i, j, k, inv_spacing, domain_lower, domain_upper
+                  );
+               const Z4cState point_state = load_z4c_state(input, i, j, k);
+               const Vector3 position{
+                  lower[0] + static_cast<amrex::Real>(i - nodal_domain.smallEnd(0)) * spacing[0],
+                  lower[1] + static_cast<amrex::Real>(j - nodal_domain.smallEnd(1)) * spacing[1],
+                  lower[2] + static_cast<amrex::Real>(k - nodal_domain.smallEnd(2)) * spacing[2],
+               };
+               const AdmFluxIntegrands point_flux = generated::adm_flux_integrands(
+                  point_state, derivatives, position
+               );
+               output(i, j, k, AdmMassFlux1) = point_flux.mass1;
+               output(i, j, k, AdmMassFlux2) = point_flux.mass2;
+               output(i, j, k, AdmMassFlux3) = point_flux.mass3;
+               output(i, j, k, KomarMassFlux1) = point_flux.komar_mass1;
+               output(i, j, k, KomarMassFlux2) = point_flux.komar_mass2;
+               output(i, j, k, KomarMassFlux3) = point_flux.komar_mass3;
+               output(i, j, k, AdmMomentumFlux11) = point_flux.linear_momentum11;
+               output(i, j, k, AdmMomentumFlux12) = point_flux.linear_momentum12;
+               output(i, j, k, AdmMomentumFlux13) = point_flux.linear_momentum13;
+               output(i, j, k, AdmMomentumFlux21) = point_flux.linear_momentum21;
+               output(i, j, k, AdmMomentumFlux22) = point_flux.linear_momentum22;
+               output(i, j, k, AdmMomentumFlux23) = point_flux.linear_momentum23;
+               output(i, j, k, AdmMomentumFlux31) = point_flux.linear_momentum31;
+               output(i, j, k, AdmMomentumFlux32) = point_flux.linear_momentum32;
+               output(i, j, k, AdmMomentumFlux33) = point_flux.linear_momentum33;
+               output(i, j, k, AdmAngularMomentumFlux11) = point_flux.angular_momentum11;
+               output(i, j, k, AdmAngularMomentumFlux12) = point_flux.angular_momentum12;
+               output(i, j, k, AdmAngularMomentumFlux13) = point_flux.angular_momentum13;
+               output(i, j, k, AdmAngularMomentumFlux21) = point_flux.angular_momentum21;
+               output(i, j, k, AdmAngularMomentumFlux22) = point_flux.angular_momentum22;
+               output(i, j, k, AdmAngularMomentumFlux23) = point_flux.angular_momentum23;
+               output(i, j, k, AdmAngularMomentumFlux31) = point_flux.angular_momentum31;
+               output(i, j, k, AdmAngularMomentumFlux32) = point_flux.angular_momentum32;
+               output(i, j, k, AdmAngularMomentumFlux33) = point_flux.angular_momentum33;
+            });
+         }
+         flux->FillBoundary(Geom(lev).periodicity());
+         surface_flux_hierarchy[lev] = std::move(flux);
+      }
+
+      const ParametricSurface surface = diagnostic_extraction_surface();
+      const HierarchyInterpolationPlan plan =
+         diagnostic_surface_interpolation_plan(surface);
+      const std::vector<amrex::Real> flux = plan.interpolate(
+         surface_flux_hierarchy, 0, SurfaceFluxCount
+      );
+      const std::vector<amrex::Real> integrals = surface.integrate_normal_fluxes(
+         flux, SurfaceFluxCount / 3
+      );
+      diagnostics.adm_mass_surface = integrals[0];
+      diagnostics.komar_mass_surface = integrals[1];
+      for (int axis = 0; axis < 3; ++axis) {
+         diagnostics.adm_momentum_surface[axis] = integrals[2 + axis];
+         diagnostics.adm_angular_momentum_surface[axis] = integrals[5 + axis];
+      }
+   }
+#endif
    return diagnostics;
 }
 

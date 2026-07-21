@@ -37,6 +37,7 @@
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/solid_geometry.hpp"
 #include "pyfluid_amrex/gravity.hpp"
+#include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/multipatch.hpp"
 #include "pyfluid_amrex/patch_grid.hpp"
@@ -51,6 +52,11 @@
 #include "pyfluid_amrex/z4c_runtime.hpp"
 
 namespace pyfluid_amrex {
+
+class HierarchyInterpolationPlan;
+class ParametricSurface;
+struct MultipoleDiagnostics;
+struct RadiationDiagnostics;
 
 class AmrSolverBase : public amrex::AmrCore {
 public:
@@ -276,7 +282,8 @@ protected:
       amrex::Real layout_mcells_per_s,
       amrex::Real sim_time_per_s,
       DiffusionStats diffusion,
-      int eos_method
+      int eos_method,
+      ScalarDiagnosticSelection const& selection
    );
    void validate_timestep(amrex::Real dt, int step, amrex::Real time) const;
    void validate_scalar_health(ScalarDiagnostics const& d) const;
@@ -397,6 +404,18 @@ protected:
    SpacetimeConstraintDiagnostics compute_spacetime_constraint_diagnostics(
       amrex::Real time
    );
+   SpacetimeGlobalDiagnostics compute_spacetime_global_diagnostics(
+      amrex::Real time,
+      bool surface_requested,
+      bool volume_requested
+   );
+   ParametricSurface diagnostic_extraction_surface() const;
+   HierarchyInterpolationPlan diagnostic_surface_interpolation_plan(
+      ParametricSurface const& surface,
+      amrex::IndexType centering = amrex::IndexType::TheNodeType()
+   ) const;
+   RadiationDiagnostics compute_spacetime_radiation_diagnostics(amrex::Real time);
+   MultipoleDiagnostics compute_azimuthal_surface_modes(amrex::Real time);
    void apply_all_face_b_boundaries();
    void sync_all_cell_b_from_faces(LevelData& data, bool preserve_pressure);
 
@@ -533,7 +552,7 @@ protected:
    bool needs_edge_current_density() const;
    bool needs_edge_electric_field() const;
    bool should_refresh_mhd_aux_fields(int step, bool write_aux_gfs) const;
-   bool should_refresh_initial_mhd_aux_fields() const;
+   bool should_refresh_initial_mhd_aux_fields(bool write_aux_gfs) const;
    void refresh_mhd_aux_fields_for_output(int lev);
    void refresh_all_mhd_aux_fields_for_output();
 
@@ -544,6 +563,7 @@ protected:
 
    RunConfig cfg_;
    RelativisticInitialDataProvider initial_data_provider_;
+   EOSThermodynamicState recovery_atmosphere_{};
    PhysicalSystem physics_system_ = PhysicalSystem::HD;
    MeshRuntimeLayout mesh_layout_{};
    int recon_method_ = ReconPWC;

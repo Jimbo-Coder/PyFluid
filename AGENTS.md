@@ -31,7 +31,7 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
 - Lower-dimensional `mesh.axes` values must preserve the canonical order. Supported finite-volume layouts are ordered subsets of the canonical 3D order: Cartesian `x`, `y`, `z`, `x y`, `x z`, `y z`, `x y z`; cylindrical `r`, `phi`, `z`, `r phi`, `r z`, `phi z`, `r phi z`; and spherical `r`, `theta`, `phi`, `r theta`, `r phi`, `theta phi`, `r theta phi`.
 - Conserved vector components are runtime-direction components, not permanent physical-axis names. Use `MOM1/MOM2/MOM3`, `B1/B2/B3`, `mom1/mom2/mom3`, and `b1/b2/b3`; interpret them through `mesh.axes`.
 - Run parameters for vector quantities use `1/2/3` suffixes such as `v1_0`, `b2_left`, `inflow_v3`, `source_a1`, and `solid_velocity_2`. Do not add new solver-state or user-facing vector names with `x/y/z` suffixes.
-- Define AMReX grid functions once in `pyfluid_amrex/codegen/pyfluid_codegen/field_catalog.py`: name, mathematical label, tensor shape, components, role, requirements, and centering. Generated C++ descriptors, output writers, diagnostics, and plotting tools consume that schema; do not duplicate GF names, component IDs, labels, or centerings locally.
+- Define AMReX grid functions once in `pyfluid_amrex/schema/fields.toml`: name, mathematical label, tensor shape, components, role, requirements, and centering. `field_catalog.py` is the strict loader/model/validator, not a second declaration source. Generated C++ descriptors, output writers, diagnostics, and plotting tools consume that schema; do not duplicate GF names, component IDs, labels, or centerings locally.
 
 ## Numerical Work
 
@@ -94,4 +94,17 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
 
 ## Continuity
 
-- Keep active AMReX work in `pyfluid_amrex/review_running_cycle.md`. Append one cycle per user request, use explicit `PENDING`/`WIP`/`DONE` states, and read the file tail before resuming after any interruption or compaction.
+- After a context reset, read `pyfluid_amrex/knowledge.md`,
+  `pyfluid_amrex/references.md`, and the tail of
+  `pyfluid_amrex/review_running_cycle.md` before changing AMReX. Treat the
+  knowledge file as a maintained snapshot: current source and newer continuity
+  cycles win when they disagree.
+- Keep active AMReX work in `pyfluid_amrex/review_running_cycle.md`. Append one
+  cycle per user request, use explicit `PENDING`/`WIP`/`DONE` states, and read
+  the file tail before resuming after any interruption or compaction.
+- Put source-checked external review findings in
+  `pyfluid_amrex/review_backlog.md`. Raw review prose is provenance, not an
+  accepted implementation plan; mark stale or rejected claims explicitly.
+- Update `pyfluid_amrex/knowledge.md` only for durable ownership rules,
+  validation boundaries, and open limitations. Keep exact commands, failures,
+  measurements, and historical detail in the continuity cycle and run logs.

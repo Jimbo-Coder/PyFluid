@@ -240,7 +240,7 @@ def main() -> int:
     parser.add_argument("--max-step", type=int, default=200)
     parser.add_argument(
         "--state-interp",
-        choices=("conservative", "protected", "quartic-conservative"),
+        choices=("component-conservative", "coupled-conservative", "quartic-conservative"),
         default="quartic-conservative",
     )
     parser.add_argument("--force", action="store_true")

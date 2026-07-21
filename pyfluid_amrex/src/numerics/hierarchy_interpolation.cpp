@@ -1,0 +1,257 @@
+#include "pyfluid_amrex/hierarchy_interpolation.hpp"
+
+#include <AMReX_Gpu.H>
+#include <AMReX_GpuLaunch.H>
+#include <AMReX_ParallelDescriptor.H>
+
+#include <cmath>
+#include <limits>
+#include <map>
+#include <stdexcept>
+#include <utility>
+
+#include "pyfluid_amrex/coordinate_locations.hpp"
+
+namespace pyfluid_amrex {
+namespace {
+
+struct DeviceInterpolationPoint {
+   int output = 0;
+   int i = 0;
+   int j = 0;
+   int k = 0;
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fraction{};
+};
+
+amrex::Real wrap_periodic_coordinate(
+   amrex::Real coordinate,
+   amrex::Real lower,
+   amrex::Real upper
+)
+{
+   const amrex::Real period = upper - lower;
+   if (!(period > 0.0)) {
+      throw std::invalid_argument("periodic interpolation coordinate has non-positive extent");
+   }
+   coordinate = lower + std::fmod(coordinate - lower, period);
+   if (coordinate < lower) {
+      coordinate += period;
+   }
+   return coordinate;
+}
+
+} // namespace
+
+HierarchyInterpolationPlan::HierarchyInterpolationPlan(
+   std::vector<amrex::GpuArray<amrex::Real, 3>> physical_points,
+   int coordinate_kind,
+   MeshAxes axes,
+   std::vector<amrex::Geometry> const& geometry,
+   std::vector<amrex::BoxArray> const& grids,
+   std::vector<amrex::DistributionMapping> const& distribution,
+   amrex::IndexType centering
+)
+{
+   if (geometry.empty() || geometry.size() != grids.size()
+       || geometry.size() != distribution.size()) {
+      throw std::invalid_argument("interpolation hierarchy metadata must have one entry per AMR level");
+   }
+   points_.reserve(physical_points.size());
+   for (auto const& physical_point : physical_points) {
+      const auto mesh_triplet = cartesian_to_mesh_coordinate_triplet(
+         coordinate_kind, physical_point
+      );
+      auto runtime_coordinates = mesh_triplet_to_runtime_coordinates(
+         coordinate_kind, axes, mesh_triplet
+      );
+      Point point;
+      for (int level = static_cast<int>(geometry.size()) - 1; level >= 0; --level) {
+         const amrex::Geometry& level_geometry = geometry[level];
+         const auto lower = level_geometry.ProbLoArray();
+         const auto upper = level_geometry.ProbHiArray();
+         const auto spacing = level_geometry.CellSizeArray();
+         const amrex::Box centered_domain = amrex::convert(
+            level_geometry.Domain(), centering
+         );
+         amrex::IntVect anchor;
+         amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fraction{};
+         bool inside = true;
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            amrex::Real coordinate = runtime_coordinates[direction];
+            if (level_geometry.isPeriodic(direction)) {
+               coordinate = wrap_periodic_coordinate(
+                  coordinate, lower[direction], upper[direction]
+               );
+            }
+            const amrex::Real centering_offset = centering.nodeCentered(direction)
+               ? 0.0
+               : 0.5;
+            const amrex::Real continuous_index =
+               centered_domain.smallEnd(direction)
+               + (coordinate - lower[direction]) / spacing[direction]
+               - centering_offset;
+            int lower_index = static_cast<int>(std::floor(continuous_index));
+            amrex::Real local_fraction = continuous_index - lower_index;
+            if (lower_index < centered_domain.smallEnd(direction)
+                || lower_index + 1 > centered_domain.bigEnd(direction)) {
+               const amrex::Real index_tolerance =
+                  32.0 * std::numeric_limits<amrex::Real>::epsilon();
+               if (lower_index == centered_domain.smallEnd(direction) - 1
+                   && std::abs(1.0 - local_fraction) < index_tolerance) {
+                  lower_index = centered_domain.smallEnd(direction);
+                  local_fraction = 0.0;
+               } else if (lower_index == centered_domain.bigEnd(direction)
+                          && std::abs(local_fraction) < index_tolerance) {
+                  --lower_index;
+                  local_fraction = 1.0;
+               } else {
+                  inside = false;
+                  break;
+               }
+            }
+            anchor[direction] = lower_index;
+            fraction[direction] = local_fraction;
+         }
+         if (!inside) {
+            continue;
+         }
+         const amrex::BoxArray centered_grids = amrex::convert(grids[level], centering);
+         amrex::Box interpolation_cell(anchor, anchor + amrex::IntVect::TheUnitVector());
+         const amrex::BoxArray uncovered = amrex::complementIn(
+            interpolation_cell, centered_grids
+         );
+         const bool stencil_covered = uncovered.empty();
+         if (!stencil_covered) {
+            continue;
+         }
+         for (int box = 0; box < centered_grids.size(); ++box) {
+            if (centered_grids[box].contains(anchor)) {
+               point.level = level;
+               point.box = box;
+               point.owner = distribution[level][box];
+               point.anchor = anchor;
+               point.fraction = fraction;
+               break;
+            }
+         }
+         if (point.level >= 0) {
+            break;
+         }
+      }
+      if (point.level < 0) {
+         throw std::out_of_range(
+            "surface interpolation point is outside the AMR hierarchy: x=("
+            + std::to_string(physical_point[0]) + ","
+            + std::to_string(physical_point[1]) + ","
+            + std::to_string(physical_point[2]) + ") q=("
+            + std::to_string(runtime_coordinates[0])
+#if (AMREX_SPACEDIM >= 2)
+            + "," + std::to_string(runtime_coordinates[1])
+#endif
+#if (AMREX_SPACEDIM == 3)
+            + "," + std::to_string(runtime_coordinates[2])
+#endif
+            + ")"
+         );
+      }
+      points_.push_back(point);
+   }
+}
+
+std::vector<amrex::Real> HierarchyInterpolationPlan::interpolate(
+   std::vector<std::unique_ptr<amrex::MultiFab>> const& hierarchy,
+   int first_component,
+   int num_components
+) const
+{
+   if (num_components <= 0 || first_component < 0) {
+      throw std::invalid_argument("interpolation component range must be non-empty");
+   }
+   std::vector<amrex::Real> host_values(points_.size() * num_components, 0.0);
+   amrex::Gpu::DeviceVector<amrex::Real> device_values(host_values.size(), 0.0);
+   amrex::Real* values = device_values.data();
+   const int rank = amrex::ParallelDescriptor::MyProc();
+   std::map<std::pair<int, int>, std::vector<DeviceInterpolationPoint>> groups;
+   for (std::size_t point_index = 0; point_index < points_.size(); ++point_index) {
+      Point const& point = points_[point_index];
+      if (point.owner != rank) {
+         continue;
+      }
+      groups[{point.level, point.box}].push_back({
+         static_cast<int>(point_index),
+         point.anchor[0],
+#if (AMREX_SPACEDIM >= 2)
+         point.anchor[1],
+#else
+         0,
+#endif
+#if (AMREX_SPACEDIM == 3)
+         point.anchor[2],
+#else
+         0,
+#endif
+         point.fraction,
+      });
+   }
+   for (auto const& [location, host_points] : groups) {
+      const int level = location.first;
+      const int box = location.second;
+      if (level >= static_cast<int>(hierarchy.size()) || hierarchy[level] == nullptr
+          || first_component + num_components > hierarchy[level]->nComp()) {
+         throw std::out_of_range("interpolation component range is absent from the selected hierarchy level");
+      }
+      amrex::Gpu::DeviceVector<DeviceInterpolationPoint> device_points(host_points.size());
+      amrex::Gpu::copy(
+         amrex::Gpu::hostToDevice,
+         host_points.begin(),
+         host_points.end(),
+         device_points.begin()
+      );
+      DeviceInterpolationPoint const* interpolation_points = device_points.data();
+      const auto field = hierarchy[level]->const_array(box);
+      const amrex::Long work = static_cast<amrex::Long>(host_points.size()) * num_components;
+      amrex::ParallelFor(work, [=] AMREX_GPU_DEVICE(amrex::Long work_index) noexcept {
+         const int component = static_cast<int>(work_index % num_components);
+         const int local_point = static_cast<int>(work_index / num_components);
+         const DeviceInterpolationPoint point = interpolation_points[local_point];
+         const amrex::Real wx[2] = {1.0 - point.fraction[0], point.fraction[0]};
+#if (AMREX_SPACEDIM >= 2)
+         const amrex::Real wy[2] = {1.0 - point.fraction[1], point.fraction[1]};
+#else
+         const amrex::Real wy[2] = {1.0, 0.0};
+#endif
+#if (AMREX_SPACEDIM == 3)
+         const amrex::Real wz[2] = {1.0 - point.fraction[2], point.fraction[2]};
+#else
+         const amrex::Real wz[2] = {1.0, 0.0};
+#endif
+         amrex::Real value = 0.0;
+         for (int dk = 0; dk < (AMREX_SPACEDIM == 3 ? 2 : 1); ++dk) {
+            for (int dj = 0; dj < (AMREX_SPACEDIM >= 2 ? 2 : 1); ++dj) {
+               for (int di = 0; di < 2; ++di) {
+                  value += wx[di] * wy[dj] * wz[dk]
+                     * field(
+                        point.i + di,
+                        point.j + dj,
+                        point.k + dk,
+                        first_component + component
+                     );
+               }
+            }
+         }
+         values[point.output * num_components + component] = value;
+      });
+   }
+   amrex::Gpu::copy(
+      amrex::Gpu::deviceToHost,
+      device_values.begin(),
+      device_values.end(),
+      host_values.begin()
+   );
+   amrex::ParallelDescriptor::ReduceRealSum(
+      host_values.data(), static_cast<int>(host_values.size())
+   );
+   return host_values;
+}
+
+} // namespace pyfluid_amrex

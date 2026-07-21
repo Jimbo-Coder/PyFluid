@@ -128,6 +128,9 @@ runs/current/<ic_name>/<run_name>/
   checkpoints/chk00000/
   report.tsv
   <run_name>_scalars.png
+  multipoles.tsv                # complex radiation or matter mode coefficients
+  radiation_modes_postprocess.tsv
+  radiation_balance.tsv
 ```
 
 `stateGF/` and `auxGF/` are the only plotfile roots. Compressed parallel HDF5 is
@@ -136,6 +139,9 @@ the default; native AMReX plotfiles remain available with
 runtime reductions; Python postprocessing reads them and does not replace them
 with a second total calculation. See [`docs/diagnostics.md`](docs/diagnostics.md)
 for the field and scalar contract.
+
+Relativistic stellar solutions and direct EoS sequence generation are
+documented in [`docs/tov.md`](docs/tov.md).
 
 Checkpoints use readable text `Header`/`Header.meta` files plus losslessly
 compressed multilevel HDF5 field files. Restart requires the current metadata
@@ -197,6 +203,11 @@ specialized physical checks are thin scripts that consume the same run folder.
 - [`inputs/`](inputs): reproducible named configurations.
 - [`tools/`](tools): shared run, report, benchmark, validation, plotting, and
   comparison commands.
+- [`knowledge.md`](knowledge.md): compact current ownership, validation, and
+  open-limitation snapshot for continuity across context resets.
+- [`references.md`](references.md): task-to-source and validation router.
+- [`review_backlog.md`](review_backlog.md): source-checked external review
+  findings that are ready, deferred, stale, or rejected.
 - [`docs/design.md`](docs/design.md): developer architecture and limitations.
 - [`docs/install.md`](docs/install.md): local AMReX build notes.
 

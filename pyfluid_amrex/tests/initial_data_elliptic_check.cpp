@@ -17,6 +17,7 @@
 
 #include "pyfluid_amrex/initial_data/ctt.hpp"
 #include "pyfluid_amrex/constants.hpp"
+#include "pyfluid_amrex/eos/presets.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/initial_data/tov.hpp"
 #include "pyfluid_amrex/kernels_generated/initial_data.hpp"
@@ -432,6 +433,123 @@ bool validate_nodal_poisson(
    return max_error < 5.0e-3;
 }
 
+bool validate_tov_solution()
+{
+   pyfluid_amrex::EOSParams eos;
+   eos.polytrope_segments = 1;
+   eos.segment_k[0] = 100.0;
+   eos.segment_gamma[0] = 2.0;
+   const pyfluid_amrex::TovSolution reference(
+      eos,
+      {
+         1.28e-3,
+         1.0e-13,
+         1.0e-11,
+         100000,
+      }
+   );
+   const pyfluid_amrex::TovSolution relaxed(
+      eos,
+      {
+         1.28e-3,
+         1.0e-10,
+         1.0e-8,
+         100000,
+      }
+   );
+   const pyfluid_amrex::TovObservables& values = reference.observables();
+   const pyfluid_amrex::TovObservables& relaxed_values = relaxed.observables();
+   const amrex::Real mass_tolerance_error = std::abs(
+      relaxed_values.gravitational_mass - values.gravitational_mass
+   ) / values.gravitational_mass;
+   const amrex::Real radius_tolerance_error = std::abs(
+      relaxed_values.areal_radius - values.areal_radius
+   ) / values.areal_radius;
+   const amrex::Real komar_error = std::abs(
+      values.komar_mass - values.gravitational_mass
+   ) / values.gravitational_mass;
+   bool monotone_profile = !reference.profile().empty();
+   for (std::size_t point = 1; point < reference.profile().size(); ++point) {
+      pyfluid_amrex::TovProfilePoint const& previous = reference.profile()[point - 1];
+      pyfluid_amrex::TovProfilePoint const& current = reference.profile()[point];
+      monotone_profile = monotone_profile
+         && current.areal_radius > previous.areal_radius
+         && current.isotropic_radius > previous.isotropic_radius
+         && current.enclosed_gravitational_mass >= previous.enclosed_gravitational_mass
+         && current.enclosed_baryonic_mass >= previous.enclosed_baryonic_mass;
+   }
+   pyfluid_amrex::TovProfilePoint const& surface = reference.profile().back();
+   const bool physical =
+      values.gravitational_mass > 0.0
+      && values.proper_mass > values.baryonic_mass
+      && values.baryonic_mass > values.gravitational_mass
+      && values.binding_energy > 0.0
+      && values.compactness > 0.0
+      && values.compactness < 0.5
+      && values.surface_redshift > 0.0
+      && values.tidal_observables_available
+      && values.love_number_k2 > 0.0
+      && values.tidal_deformability > 0.0
+      && surface.log_specific_enthalpy == 0.0
+      && surface.rho == 0.0
+      && surface.pressure == 0.0;
+   const std::vector<pyfluid_amrex::TovSolution> sequence =
+      pyfluid_amrex::solve_tov_sequence(eos, {8.0e-4, 1.0e-3, 1.28e-3});
+   const bool sequence_increases = sequence.size() == 3
+      && sequence[0].observables().gravitational_mass
+         < sequence[1].observables().gravitational_mass
+      && sequence[1].observables().gravitational_mass
+         < sequence[2].observables().gravitational_mass;
+   bool named_eos_sequences_are_physical = true;
+   for (char const* preset_name : {"sly", "apr4", "h4", "ms1"}) {
+      const pyfluid_amrex::EOSParams preset_eos =
+         pyfluid_amrex::eos::make_read_piecewise_polytrope(
+            pyfluid_amrex::eos::piecewise_polytrope_preset(preset_name),
+            2.0,
+            1.0e-10,
+            1.0e-14
+         );
+      const std::vector<pyfluid_amrex::TovSolution> preset_sequence =
+         pyfluid_amrex::solve_tov_sequence(
+            preset_eos, {8.0e-4, 1.5e-3, 3.0e-3}
+         );
+      for (pyfluid_amrex::TovSolution const& solution : preset_sequence) {
+         pyfluid_amrex::TovObservables const& observable =
+            solution.observables();
+         named_eos_sequences_are_physical = named_eos_sequences_are_physical
+            && std::isfinite(observable.gravitational_mass)
+            && std::isfinite(observable.areal_radius)
+            && std::isfinite(observable.tidal_deformability)
+            && observable.gravitational_mass > 0.0
+            && observable.areal_radius > 2.0 * observable.gravitational_mass
+            && observable.baryonic_mass > observable.gravitational_mass
+            && observable.tidal_deformability > 0.0
+            && std::abs(observable.komar_mass - observable.gravitational_mass)
+               < 1.0e-7 * observable.gravitational_mass;
+      }
+   }
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "tov_solution M=" << values.gravitational_mass
+                << " Mb=" << values.baryonic_mass
+                << " Mp=" << values.proper_mass
+                << " Mkomar=" << values.komar_mass
+                << " R=" << values.areal_radius
+                << " k2=" << values.love_number_k2
+                << " Lambda=" << values.tidal_deformability
+                << " tolerance_errors=(" << mass_tolerance_error
+                << ", " << radius_tolerance_error << ")"
+                << " komar_error=" << komar_error << '\n';
+   }
+   return physical
+      && monotone_profile
+      && sequence_increases
+      && named_eos_sequences_are_physical
+      && mass_tolerance_error < 1.0e-7
+      && radius_tolerance_error < 1.0e-7
+      && komar_error < 1.0e-8;
+}
+
 #if (AMREX_SPACEDIM == 3)
 bool validate_tov_ctt()
 {
@@ -479,8 +597,9 @@ bool validate_tov_ctt()
    config.thermal_gamma = 2.0;
    config.rho_floor = 1.0e-10;
    config.tov_central_density = 1.28e-3;
-   config.tov_radial_step = 0.002;
-   config.tov_radial_points = 16384;
+   config.tov_absolute_tolerance = 1.0e-12;
+   config.tov_relative_tolerance = 1.0e-10;
+   config.tov_max_steps = 100000;
    const pyfluid_amrex::TovInitialData tov(config);
    const pyfluid_amrex::TovInitialDataView tov_view = tov.view();
 
@@ -773,6 +892,9 @@ int main(int argc, char* argv[])
    amrex::Initialize(argc, argv);
    int return_code = 0;
    {
+      if (!validate_tov_solution()) {
+         return_code = 1;
+      }
       constexpr int coarse_cells = 32;
       const amrex::IntVect coarse_lo(AMREX_D_DECL(0, 0, 0));
       const amrex::IntVect coarse_hi(AMREX_D_DECL(

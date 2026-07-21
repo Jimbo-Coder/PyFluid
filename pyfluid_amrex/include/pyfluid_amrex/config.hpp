@@ -39,11 +39,20 @@ struct RunConfig {
    std::string output_dir = "runs/current/amrex_hydro_sine";
    std::string validation_policy = "";
    int scalar_int = 1;
+   std::string scalar_diagnostics = "standard";
    int plot_int = -1;
    std::string plotfile_format = "hdf5";
    std::string plotfile_compression = "best";
    std::string checkpoint_compression = "best";
    bool cfl_limiter_diagnostics = false;
+   amrex::Real diagnostic_surface_radius = -1.0;
+   amrex::Real diagnostic_surface_center1 = 0.0;
+   amrex::Real diagnostic_surface_center2 = 0.0;
+   amrex::Real diagnostic_surface_center3 = 0.0;
+   int diagnostic_surface_polar_points = 24;
+   int diagnostic_multipole_l_max = 0;
+   std::string diagnostic_azimuthal_mode_fields = "none";
+   int diagnostic_azimuthal_mode_m_max = 4;
    std::string scalar_output_mode = "stream";
    int aux_gf_compute_int = -1;
    int aux_gf_int = -1;
@@ -95,6 +104,11 @@ struct RunConfig {
    std::string initial_data_spacetime = "id";
    std::string initial_data_lapse = "id";
    std::string initial_data_shift = "id";
+   std::string initial_data_atmosphere = "flat";
+   amrex::Real initial_data_atmosphere_density = -1.0;
+   amrex::Real initial_data_atmosphere_pressure = -1.0;
+   amrex::Real initial_data_atmosphere_transition_radius = -1.0;
+   amrex::Real initial_data_atmosphere_power = 4.0;
    std::string spacetime_lapse_gauge = "frozen";
    std::string spacetime_shift_gauge = "frozen";
    amrex::Real spacetime_amplitude = 1.0e-8;
@@ -112,8 +126,9 @@ struct RunConfig {
    amrex::Real spacetime_origin3 = 0.0;
    amrex::Real spacetime_mass = 1.0;
    amrex::Real tov_central_density = 1.28e-3;
-   amrex::Real tov_radial_step = 1.0e-3;
-   int tov_radial_points = 32768;
+   amrex::Real tov_absolute_tolerance = 1.0e-12;
+   amrex::Real tov_relative_tolerance = 1.0e-10;
+   int tov_max_steps = 100000;
    std::string ct;
    std::string ic = "sin_wave";
    int passive_scalars = 0;
@@ -309,6 +324,7 @@ struct RunConfig {
    amrex::Long total_cell_budget;
 };
 
+
 struct DiffusionStats {
    amrex::Real residual = 0.0;
    int iterations = 0;
@@ -335,6 +351,7 @@ void write_run_parameter_file(std::string const& path);
 
 std::string trim_copy(std::string value);
 std::vector<std::string> aux_gf_names(RunConfig const& cfg);
+std::vector<std::string> azimuthal_mode_field_names(RunConfig const& cfg);
 bool aux_gfs_enabled(RunConfig const& cfg);
 bool aux_gfs_contains(RunConfig const& cfg, AuxGridField target);
 amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> configured_min_feature_lengths(

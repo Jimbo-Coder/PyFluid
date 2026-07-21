@@ -9,8 +9,10 @@ Submitted jobs use the shared `machines/run.sh.in` template and execute the AMRe
 binary directly. Compute nodes therefore need only the compiled executable, MPI,
 the input file, and its runtime libraries; they do not need Python or `uv`.
 
-The checked-in `machines/local.toml` reproduces the Mac mini build. Select it by
-name or rely on the default:
+The checked-in `machines/local.toml` reproduces the Mac mini build. Its launcher
+disables Open MPI rank binding so macOS can place ranks on Apple performance
+cores; Open MPI 5's default logical-core binding substantially reduces
+throughput on this machine. Select it by name or rely on the default:
 
 ```bash
 uv run python pyfluid_amrex/tools/pyfluid_machine.py show

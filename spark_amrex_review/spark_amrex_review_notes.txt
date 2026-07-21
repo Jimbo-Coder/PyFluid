@@ -1,0 +1,193 @@
+AMRex review notes (read-only)
+Scope: pyfluid_amrex production/C++ and codegen files under `src`, `include`, and `codegen`.
+
+Quick pattern: preserve behavior, reduce duplication, improve readability, easier extension.
+
+CMake / build wiring
+- pyfluid_amrex/CMakeLists.txt: replace repeated hard-coded source lists with a small helper macro or list file generated from directories to avoid drift between object targets and install lists.
+- pyfluid_amrex/CMakeLists.txt: consolidate repeated codegen `add_custom_command` blocks into a parameterized macro (name, family, sources, outputs) to remove duplicated logic and reduce future regressions when adding new kernel families.
+- pyfluid_amrex/CMakeLists.txt: centralize compile definition propagation (`-D` flags) via option lists instead of repeated `target_compile_definitions` calls.
+- pyfluid_amrex/CMakeLists.txt: prefer `set_property` + generator expressions for output folders rather than per-file list churn.
+
+Configuration parsing and validation
+- pyfluid_amrex/src/framework/config.cpp: convert the large `read_config`/`query` mapping section to a schema table so type/limits/defaults are declarative; this shortens the current long repetitive pattern and enforces consistency.
+- pyfluid_amrex/src/framework/config.cpp: extract repeated string-option validation (`hydro/mhd`, reconstruction types, Riemann names) to helper validators returning `{value, status}`; this lowers branching depth and keeps policy centralized.
+- pyfluid_amrex/src/framework/config.cpp: replace manual “if empty/invalid/duplicate” checks with a small reusable validation utility for required/optional keys.
+- pyfluid_amrex/src/framework/config_runtime.cpp: create one generic method-to-runtime-param converter instead of parallel parsing branches.
+- pyfluid_amrex/src/framework/config_runtime.cpp: extract mesh/axis compatibility checks into reusable predicates (active axes/order/canonical order) to avoid copy-paste of similar guard logic.
+- pyfluid_amrex/include/pyfluid_amrex/build_options.hpp + code paths: introduce one map from option key -> capability guard helper; avoid scattering compile-time feature branches.
+
+Driver / options dispatch
+- pyfluid_amrex/src/driver/main.cpp: move CLI/log bootstrap and config load into smaller functions so main orchestration remains at policy level.
+- pyfluid_amrex/src/driver/evolution_kernel_bundle.cpp: replace repeated branch-by-feature dispatch with a factory registry (string->callable) for cleaner extension when adding new kernel bundles.
+- pyfluid_amrex/src/driver/evolution_kernel_bundle.cpp: group solver setup steps into an ordered `std::array` of init lambdas to make execution sequence explicit and testable.
+
+AMR solver structure
+- pyfluid_amrex/src/amr/amr_solver_base.hpp: split monolithic class responsibilities (state ownership, options wiring, geometry setup, diagnostics) via helper types/private structs to preserve API while simplifying inspection.
+- pyfluid_amrex/src/amr/amr_solver_internal.hpp: factor out repeated `if/else` blocks that map compile-feature combinations into one policy table.
+- pyfluid_amrex/src/amr/amr_solver_driver.cpp: create a single “run policy” assembly step that records derived settings once (CFL, method, AMR mode) before branching on hydro/MHD.
+- pyfluid_amrex/src/amr/amr_solver_driver.cpp: unify repeated diagnostics/report timing blocks into helper methods for consistency between normal/ restart/low-memory paths.
+- pyfluid_amrex/src/amr/amr_solver_diagnostics.cpp: move string/label formatting and output field ordering into constants to avoid divergence between scalars and logs.
+- pyfluid_amrex/src/amr/amr_solver_average.cpp: deduplicate averaging/restriction loops by extracting common loops with policy functors over component lists.
+
+Boundary and indexing
+- pyfluid_amrex/include/pyfluid_amrex/boundary.hpp: collapse dimension-specialized boundary checks into table-driven metadata (`axis`, `side`, `coord family`) for one source of truth.
+- pyfluid_amrex/include/pyfluid_amrex/boundary.hpp: unify `cell_touches_*` and `face_touches_*` by composing a generic edge/corner predicate helper.
+- pyfluid_amrex/include/pyfluid_amrex/boundary.hpp: replace repeated temporary booleans with small inline predicate functions to reduce accidental mismatch between boundary families.
+
+Numerics dispatch and kernels
+- pyfluid_amrex/include/pyfluid_amrex/flux_factory.hpp: shorten factory dispatch by collecting solver constructors in a registration array keyed by compile/runtime capability.
+- pyfluid_amrex/src/numerics/flux_factory.cpp: avoid duplicated hydro/mhd switch chains by introducing `dispatch_variant` helpers and consistent fallback behavior for unsupported combinations.
+- pyfluid_amrex/src/numerics/flux_factory_internal.hpp: collapse repeated Riemann-constructor boilerplate into one templated helper taking compile-time tags.
+- pyfluid_amrex/include/pyfluid_amrex/riemann.hpp: isolate solver metadata (stencil, entropy behavior, positivity expectations) from heavy include logic to shorten compile units.
+- pyfluid_amrex/src/numerics/rhs.hpp: extract common axis/neighbor index machinery used across updates into one small helper module (direction, neighbor cell indices, min/max clamps).
+- pyfluid_amrex/src/numerics/rhs.hpp: reduce hydro/MHD/CT divergence by sharing a common “variable view” layer over component strides and offsets.
+- pyfluid_amrex/include/pyfluid_amrex/state.hpp: centralize hydro/mhd component fill/load boilerplate with `constexpr` component descriptors to simplify future state extension.
+
+Initial data and setup
+- pyfluid_amrex/src/initial_data/initial_data_state.cpp: consolidate repetitive state-zeroing and EOS-branching in initializers via per-IC builder lambdas returning structured state payload.
+- pyfluid_amrex/src/initial_data/initial_data_state.cpp: split long initializer loops from physics-specific transforms (e.g., rotate/tilt/probe) so common setup is visibly shared.
+- pyfluid_amrex/src/initial_data/initial_data_elliptic.cpp: factor repeated solve-grid setup and boundary seeding patterns into shared helper routines.
+- pyfluid_amrex/src/initial_data/initial_data_ctt.cpp: extract common metric/field initialization for readability and reduce accidental mismatch across CTT variant branches.
+
+Code generation
+- pyfluid_amrex/codegen/generate_kernels.py: replace ad-hoc path assembly with small functions returning canonicalized path objects; avoids subtle path bugs and simplifies testing of generated paths.
+- pyfluid_amrex/codegen/generate_kernels.py: encode kernel-family metadata in one declarative list instead of repeated per-family conditionals.
+- pyfluid_amrex/codegen/pyfluid_codegen/emit_cpp.py: simplify emitted type aliases and common boilerplate by small helper generators with explicit templates.
+
+Small correctness-oriented refactors
+- pyfluid_amrex/include/pyfluid_amrex/amr_solver.hpp: add explicit non-copy/non-move comment contracts for mutable simulation handles to make ownership rules obvious.
+- pyfluid_amrex/src/amr/amr_solver_base.hpp/cpp: prefer `absl::Status`-style helper returns (or equivalent explicit boolean+message helpers) where validation has multiple failure paths, reducing silent fall-through.
+- pyfluid_amrex/src/framework/config_runtime.cpp: normalize error messages for unsupported combinations to include source config field names consistently.
+- pyfluid_amrex/src/driver/evolution_kernel_bundle.cpp / rhs.hpp: add invariant assertions only at debug boundaries (`debug_poison` / debug checks) to avoid release overhead while preserving diagnostics.
+
+Potential risk/maintenance debt (non-functional)
+- pyfluid_amrex/src/amr/amr_solver_average.cpp: long inline calculations can benefit from named intermediate variables; this avoids accidental physics-sign mistakes during edits.
+- codegen artifacts (`include/pyfluid_amrex/generated_*`) referenced broadly should stay source-of-truth generated; avoid hand-editing generated blocks and use thin shims only.
+- pyfluid_amrex/CMakeLists.txt + codegen scripts: add a small CI lint that validates generated header timestamps are in sync with generator inputs to prevent stale-kernel build surprises.
+
+The above list is intended as low-risk simplification work; all items preserve current behavior by design and can be staged behind existing unit/integration patterns.
+
+Follow-up review pass (deeper)
+
+High-confidence, low-risk refactors (same behavior)
+- src/amr/amr_solver_fillpatch.cpp: `complete_radial_origin_boundary`
+  - Extract the radial/phi coordinate remap into a small helper (`remap_origin_ghost_coordinates` + `apply_periodic_phi_shift`).
+  - Keeps `FillPatch...` sampling, mirrored index, and parity logic readable and unit-testable.
+- src/amr/amr_solver_fillpatch.cpp: `fill_new_level_from_coarse_state` / `fill_remade_level_state`
+  - Collapse duplicated coarse/fine BC/fill block into one helper taking source vectors and `old_state` optional.
+  - Improves consistency between “fresh” and “remade” paths.
+- src/amr/amr_solver_levels.cpp + include/pyfluid_amrex/amr_indicator.hpp: dimension-special loops with preprocessor branches
+  - Introduce a small `iterate_cells` helper (or macro) used for `#if`-guarded coordinate loops.
+  - Reduces repeated `jlo/jhi/klo/khi` scaffolding across AMR diagnostics/indicators.
+- include/pyfluid_amrex/flux_update.hpp: all `*_flux_divergence*` kernels
+  - Factor the RHS finite-difference body into one local inline `rhs_at(i,j,k,q)` helper; then only scaling/output target differs by function.
+  - Low-risk reduction of ~6× near-identical nested loops.
+
+Medium priority, correctness/readability improvements
+- src/initial_data/initial_data_elliptic.cpp: `coordinate_to_normal_b`, `dirichlet_values`, `set_nodal_dirichlet_values`, `compute_nodal_robin_residual`
+  - Unify physical-boundary detection and boundary neighbor offset into one helper path to avoid boundary-direction drift.
+  - Example: `neighbor_or_self_on_boundary(physical_dim, is_low, boundary index)`.
+- src/initial_data/initial_data_elliptic.cpp: `compute_nodal_robin_residual`
+  - `add_face` lambda and `candidate_count` logic can be generic across dimensions with a small direction policy object.
+  - Keeps formula in one place while retaining in-kernel performance.
+- src/initial_data/initial_data_ctt.cpp: 3D-only template helpers (`fill_conformal_extrinsic_curvature` and `solve_conformal_momentum...`)
+  - Pull repeated `inv_spacing` array construction and finite-difference direction branches into shared utility lambda aliases.
+  - Also makes it easier to add/adjust dim-specific behavior later.
+- src/relativity/signal_speed_factory.cpp: `dispatch_layout` and `compute_mapped_hydro_adaptive_dt`
+  - Build `compute_cutcell_adaptive_dt`/`compute_mapped_hydro_adaptive_dt` on same internal `dispatch_layout` helper for uniform policy behavior.
+  - Avoids subtle divergence in future when a new `num_components` path is added.
+- src/relativity/signal_speed_factory.cpp: `max_*_signal_frequency_masked` and `max_hydro_cutcell...`
+  - Replace manual `MaskKind*` branching loops with a templated masked-reduction helper that accepts a per-cell frequency callable.
+  - Keeps numerical kernel unchanged and lowers duplication.
+
+Smaller style/maintainability nudges
+- include/pyfluid_amrex/reconstruction.hpp and include/pyfluid_amrex/amr_indicator.hpp:
+  - Group coordinate-direction accessors by role (`normal`, `tangent1`, `tangent2`) into named lookup tables.
+  - More self-documenting than long if/else direction chains.
+- src/initial_data/initial_data_state.cpp and related initial-data providers:
+  - Add named “state initializer blocks” for common tasks (primitive reset, geometry injection, EOS pressure path).
+  - This avoids cross-file divergence where each IC reimplements same setup steps.
+- pyfluid_amrex/CMakeLists.txt:
+  - Keep one authoritative macro list for generated headers and source families; generate output/dependency sections deterministically from that list.
+  - Easier to detect missing files and prevents accidental omission when adding kernel families.
+
+Additional review wave (extended pass)
+- pyfluid_amrex/src/amr/amr_solver_levels.cpp: replace dimension-branching loops used in active-cell counting (`active_cell_count_level`, `active_cell_count_in_box`) with a tiny runtime-index iterator helper so 1D/2D/3D behavior is generated from axis counts, not duplicate #if blocks.
+- pyfluid_amrex/src/amr/amr_solver_levels.cpp: make `allocate_level` and `ClearLevel` symmetric via a compact field-table cleanup/allocate helper (solid, gravity, spacetime, CT branches) to reduce branch drift when optional subsystems change.
+- pyfluid_amrex/src/amr/amr_solver_levels.cpp: `obstacle_weighted_distribution_mapping` does a full box loop for every level; extract `active_cell_count_in_box` into a shared lambda and precompute per-level timing-independent geometry bounds once (small alloc map optimization helper).
+- pyfluid_amrex/src/amr/amr_solver_levels.cpp: `make level boundary` logic in `apply_boundary` scans levels each call to find matching domain; cache level-by-domain lookup during solver init for O(1) retrieval.
+- pyfluid_amrex/src/amr/amr_solver_fillpatch.cpp: collapse `should_regrid_aligned_descendants` and `compute_post_fillpatch_state_boundary_needed` into predicate helpers to avoid duplicated boundary-condition checks scattered across callers.
+- pyfluid_amrex/src/amr/amr_solver_fillpatch.cpp: in `complete_radial_origin_boundary`, factor mirror/reflection index math (`mirrored_index`, axis shifts) into a per-axis helper to avoid repetitive `if (dir==X)` branches.
+- pyfluid_amrex/src/amr/amr_solver_average.cpp: `project_metric_conservative_prolongation` and `average_down_state_level_weighted_hydro` share nearly identical “gather fine stencil + weighted sum + vector transform” structure; extract a common kernel generator keyed by flags (`use_solid`, `use_curvilinear`, `transform_vectors`).
+- pyfluid_amrex/src/amr/amr_solver_average.cpp: replace duplicated `rx/ry/rz` derivations and weighted loop nests with one `for_each_fine_stencil` helper that accepts coordinate metric/weight callback and target-accumulation callback.
+- pyfluid_amrex/src/amr/output.hpp: `aux_output_component_count` and `aux_output_names` now traverse `aux_gf_names` with similar filters; refactor to one pass that returns `(names, count)`.
+- pyfluid_amrex/src/amr/output.hpp: `fill_aux_gf_output` has one switch branch per field with repeated local MF creation/copy logic; move per-field logic into small policy functions (`compute_divb`, `compute_vorticity`, etc.) to shrink switch and reduce copy/paste risk.
+- pyfluid_amrex/src/amr/output.hpp: use a shared `write_aux_gf_plotfile` helper between single/multi-level to build stem, iterate centerings, and allocate output MFs once; currently identical loops are duplicated.
+- pyfluid_amrex/src/amr/output.hpp: collapse repeated HDF5/non-HDF5 error handling in metadata/plotfile helper (`write_output_gf` + `append_plotfile_metadata`) into one small RAII wrapper for less surface area.
+- pyfluid_amrex/src/amr/amr_solver_output.cpp: IC-specific CT initialization (`initialize_ct_fields`) is long explicit chain; convert to an IC->initializer dispatch table keyed by string and `time==0.0` guard, with fallback to face-based fill.
+- pyfluid_amrex/src/amr/amr_solver_output.cpp: `load_checkpoint` has repeated level loops for state, spacetime, face B, and post-load rewire; split into `restore_level_fields(level)` + `rebind_ct_state(level)` helpers.
+- pyfluid_amrex/src/amr/amr_solver_output.cpp: `write_current_state_plotfile` and `write_current_aux_gfs` can use a common dispatcher for single vs multilevel plotting; avoid duplicating output-dir/metadata wiring.
+- pyfluid_amrex/src/amr/amr_solver_conservation.cpp: boundary-flux accumulation computes area/valid-mask loop in two nested side/dir branches; extract `(face_sign, shifted_i/j/k)` helpers per direction to simplify and reduce coordinate typo risk.
+- pyfluid_amrex/src/amr/amr_solver_conservation.cpp: reuse a single reduction helper for RHS integrals and boundary integrals to keep source-term accounting (volume × valid × optional solid fraction) consistent.
+- pyfluid_amrex/src/relativity/signal_speed_factory.cpp: duplicate fixed-spacetime and evolving-spacetime overloads (hydro/rhd/rmhd) can be collapsed with a metric accessor abstraction to eliminate near-identical loops.
+- pyfluid_amrex/src/relativity/signal_speed_factory.cpp: reduce 1D/2D/3D direction repetition in wave-speed sum with a compact constexpr direction loop array and generic `for_direction` helper.
+- pyfluid_amrex/src/relativity/relativistic_flux_limiter.cpp: `admissibility_limit_rhd_primitive` and `amissibility`-style RMHD limiter are parallel; isolate shared limiter behavior into a trait + shared `apply_limiter` template.
+- pyfluid_amrex/src/numerics/nodal_interpolater.cpp: the axis-specific cubic interpolation setup is highly repetitive; build `(count, first_index, weights)` from one small dimension loop and a dimension iterator helper for easier readability and fewer mistakes.
+- pyfluid_amrex/src/initial_data/initial_data_materialization.cpp: massive per-level storage arrays and matching `*_level` pointer assignments are boilerplate-prone; replace with a descriptor-driven `MaterializationStorage` struct that allocates and exposes all pointers from one place.
+- pyfluid_amrex/src/initial_data/initial_data_materialization.cpp: replace repeated validation blocks (`contains_nan` on several fields, repeated `setVal`) with reusable check/fill lambdas with label strings to avoid silent divergence between RHD/RMHD paths.
+- pyfluid_amrex/src/initial_data/initial_data_materialization.cpp: boundary record creation for extrapolating fields and repeated ghost-fill calls can be centralized in `materialize_sources_and_fill_ghosts()` to keep convergence/error logic consistent.
+- pyfluid_amrex/src/relativity/z4c_runtime.cpp: `initialize_z4c_state_at_offset` contains repeated coordinate calculations and repeated field fallback logic; move coordinate tuple extraction and final-point post-processing (flat/lapse/shift overrides) into helpers for readability.
+
+Additional review wave (extended pass)
+- time_integrators.inc.hpp: each integrator branch (`TimeSSPRK3`, `TimeRK4`, direct/indirect paths) repeats `fill -> compute_rhs -> update` scaffolding plus optional gravity-suppression toggles; this is a natural candidate for a compact stage-operator helper to reduce copy-paste risk and make per-method changes local.
+- time_integrators.inc.hpp: ATHENA SSRK3 gravity hooks (`store_athena_ssprk3_start_gravity_range`, `store_...mass_flux_range`, `add_...register`) are toggled by multiple booleans at stage boundaries; move these into a small RAII/Scope guard that restores previous suppression state and centralizes sequence ordering.
+- time_integrators.inc.hpp: direct-mode and RHS-mode paths duplicate `fill_level_boundaries_range` + `compute_rhs_range` + `project_relativistic_atmosphere_range` behavior; a shared stage-driver callback would cut branch complexity and make new methods less error-prone.
+- rk_stage_algebra.inc.hpp: nine small range helpers repeat the same solid-mask branch and per-level loop; a generic masked-union wrapper (`for_each_level_with_mask`) would remove repeated control flow and keep fused update kernels easier to audit.
+- rhs_assembly.inc.hpp: `compute_rhs_range` repeatedly materializes local references and flags (`use_solid_mask`, `use_mapped_patches`, `stored_spacetime`) before branching; these can be wrapped in an immutable `rhs_execution_context` struct so the logic is declared once and passed to helper routines.
+- rhs_assembly.inc.hpp: flux construction branches (`profile_.flux_detail_enabled`, mapped patches, solid-mask) are largely mechanical and can be collapsed into a single templated dispatch helper to avoid direction-specific drift and simplify future flux-method changes.
+- state_repair.inc.hpp: `repair_nonpositive_hydro_fluid_cells_level` and `extend_hydro_state_into_needed_solid_cells_level` share the same nested neighborhood-search kernel structure; a single neighbor-search primitive + injectable copy kernel would improve readability and reduce copy errors.
+- state_repair.inc.hpp: `repair_nonpositive...` and `extend...` use duplicated donor-validity and pressure checks; factor into one `is_hydro_state_valid_cell` helper for both seed-based and neighbor-based repair flows.
+- timestep_control.inc.hpp: guard chain (`cfg_.mesh_metric_divergence`, curvilinear, mixed patches, sources, active spacetime, and solid motion constraints) is stable; extract into `can_apply_subcycling/substep` predicates and keep this logic discoverable by name.
+- subcycling.inc.hpp: `advance_one_level_subcycle_step` has tightly coupled diagnostics + operation calls; wrap the tail operations (`diffusion` + `reset_barotropic_energy`) into a `run_if_enabled` helper to avoid repeated sequencing checks when adding new operators.
+- ct_evolution.inc.hpp: in `advance_ct_level`, the `DiffusionNone` and resistivity disabled paths are early returns already; a tiny dispatch table keyed by `(ct enabled, diffusion method, dim)` would keep behavior explicit and makes implicit/explicit additions lower-risk.
+- amr_solver_base.hpp: `fill_level_boundaries` and `fill_level_boundaries_range` currently accept mutable `time` and mutate it under subcycling branches; this is subtle and can surprise callers, so passing a clamped/interpolated time by value to helper overloads would be clearer.
+- amr_solver_base.hpp (hierarchy functions): `fill_source_state_level_from_level_time`/`nearly_equal_time` + `interpolate` path is correct but dense; one `resolve_source_time_policy` helper would isolate temporal policy and make behavior easier to validate when changing tolerance rules.
+- amr_solver_valid_cells.cpp: both conservation accounting functions always allocate a full-reduction `reduction` field; if only totals are needed, a direct `amrex::MultiFab` temporary with fewer components and conditional volume-fraction support can reduce memory churn during frequent diagnostics.
+- amr_solver_spacetime_evolution.cpp: `compute_spacetime_rhs_*` repeatedly constructs identical spacing and dispatch ladders; consider reusing a small `z4c_rhs_launch` helper (gauge/lapse pair + spacetime view) before the 2D/3D dimension conditionals.
+- amr_solver_solid.cpp: nested loops in mask propagation (`average_down_solid_aperture_from_fine`, `enforce_solid_mask_nesting_from_fine`) can be reduced via helper routines that make child-aggregation direction-aware, minimizing duplicate dimension-specific loops.
+
+AMR pass continuation (2026-07-20 follow-up)
+- `src/amr/amr_solver_auxiliary.cpp`: remove the unused `write_aux_gfs` parameter from `should_refresh_mhd_aux_fields()` (currently suppressed via `(void)`). This is dead API surface and a small readability win.
+- `src/amr/amr_solver_output.cpp::apply_boundary`: avoid the O(nlevels) domain-to-level search on every call by precomputing a level index for each known domain at init (`level_for_domain_`). This keeps behavior while simplifying and reducing repeated control flow.
+- `src/amr/amr_solver_output.cpp::initialize_ct_fields`: long IC/time equality chain for B-field setup is a prime candidate for a local dispatch table (`ic_name -> initializer`) plus a single `if (time == 0)` guard. Keeps existing IC semantics and reduces branching risk.
+- `src/amr/amr_solver_output.cpp::load_checkpoint`: split restoration into small helpers (`restore_fluid_level`, `restore_spacetime_level`, `restore_face_b_level`) and call a single checkpoint-level loop. Current behavior is preserved while shrinking branch interactions and improving local invariants.
+- `src/amr/amr_solver_multipatch.cpp`: `configured_patch_counts()` accepts partially zeroed arrays as configured and then delegates to validator; validate completeness (`all/none`) at parse time and keep this as a dedicated config-policy check. This removes one implicit behavior path and improves diagnosability.
+- `src/amr/output.hpp`: factor the single-level vs multilevel aux/state helpers (`write_output_gf`, `write_aux_gf_plotfile`, `write_multilevel_aux_gf_plotfile`, `append_plotfile_metadata`) into a common “level-count-aware writer” helper to remove duplicated setup loops.
+- `src/amr/output.hpp`: combine `aux_output_names()` and `aux_output_component_count()` into one traversal that returns `{names, count}` for a given centering (single pass + less repeated filtering of `aux_gf_names`).
+- `src/amr/output.hpp::append_plotfile_metadata_on_io_rank`: when HDF5 metadata write fails and `.meta` write also fails, return path is silent; add one explicit `Append` guard/abort or warning path with `plotfile_stem` to avoid silent metadata loss.
+- `src/amr/state_interpolation.hpp`: in `transform_state_vectors`, vector-component detection is currently done per-cell per-component; pre-split into scalar and vector slices once (`if/else` by `num_components` + component span) to simplify the kernel and avoid repeated bounds logic in every point loop.
+- `src/amr/solid_conservation.hpp`: helper routines like `count_mask_transition`, `count_translated_box_receivers`, and `conservative_translate_box_mask_update` share axis/signed-shift mechanics; extracting a tiny axis-shift helper reduces repeated boundary checks and makes the translated-box path easier to validate.
+- `src/amr/amr_solver_spacetime.cpp`: `fill_spacetime_level_boundaries` has four temporal branch paths that differ only in source vector choice; extract a resolver that returns `(coarse_data, coarse_time, use_rk4)` to make subcycling/rk-path selection explicit and testable.
+- `src/amr/amr_solver_conservation.cpp`: `accumulate_boundary_change`/`accumulate_physical_boundary_flux`-style loops can share a single direction helper (`face_shift_for_direction(dir, side, i,j,k)`) and a `face_area_multiplier` helper to preserve calculation but remove repeated directional branching.
+
+Further AMR review notes (continuation, levels + hierarchy)
+- `src/amr/amr_solver_levels.cpp`:
+  - `active_cell_count_in_box()` computes coordinates and evaluates solid geometry point-by-point for every candidate box each remap. For repeated `obstacle_weighted_distribution_mapping` calls at identical geometry/time, caching per-box active counts (or caching geometry evaluators/weights) would avoid duplicated CPU work while preserving weights.
+  - `MakeNewLevelFromScratch`, `MakeNewLevelFromCoarse`, and `RemakeLevel` all repeat the same `time==0` CT initialization pattern plus old-state refill paths; add an initialization/rebind helper to keep AMR lifecycle behavior aligned and reduce branching drift.
+  - `allocate_level()` and `ClearLevel()` are large symmetric cleanup/allocate blocks that can be mirrored through a compact “field descriptor” table (state, spacetime, gravity, CT, mask/fabric fields) with required-state predicates.
+- `src/amr/amr_solver_levels.cpp::obstacle_weighted_distribution_mapping()`:
+  - Guarding with `NProcs() <= 1` is a useful fast path, but the `max(1, active)` fallback means empty-fluid boxes still get weight 1. Consider factoring a `static_assert`/contract that zero-weight boxes are impossible, and documenting this fallback for load balancing clarity.
+- `src/amr/amr_solver_base.hpp` (constructor/prototype side): if behavior changes often across compile-time dims/patch systems, grouping constructor init by subsystem (`configure_optional_subsystems()`), then using table-driven resets, can reduce hidden coupling between optional capabilities.
+- `src/amr/amr_solver_diagnostics.cpp` and `src/amr/amr_solver_base.cpp` (from earlier pass): several loops still repeat `#if AMREX_SPACEDIM` `jlo/jhi/klo/khi` scaffolding; a tiny `for_each_index_in_box` helper (runtime or constexpr dimension policy) is consistently reusable and easier to maintain than manual branching.
+- `src/amr/amr_solver_conservation.cpp` + `src/amr/amr_solver_valid_cells.cpp` (earlier pass): both do reductions that can be expressed as one generic reduction utility with callbacks (component/valid-mask weighting), making future “add diagnostic channel” edits easier and keeping weighting conventions consistent.
+- `src/amr/amr_solver_flux_registers.cpp` (continuation): centralize the weighted-flux/volume selection booleans (`cutcell`, `curvilinear`, `mapped`, `patch_union`) into a lightweight `enum class FluxRegisterMode` and use one resolver lambda per mode; this avoids repeating the same predicate set in three independent functions.
+Additional final review pass (gravity/timestepping sections)
+- pyfluid_amrex/src/amr/solver_sections/gravity_sources.inc.hpp: `solve_gravity_potential` and `prepare_gravity_fields` rebuild temporary geometry/rhs vectors (`geom`, `grids`, `dmap`, `rhs_storage`, `solution`, `rhs`) each call; introduce a tiny local `GravitySolveBuffers` helper (or RAII scratch struct) to make this explicit and keep lifetime handling centralized without changing numerics.
+- pyfluid_amrex/src/amr/solver_sections/gravity_sources.inc.hpp: `update_self_gravity_acceleration_offset` performs the same shape of reduction in all branches (`AMREX_SPACEDIM` blocks only change component count); add a `for_dimension` helper for centroided flux accumulation so `rho`, `ax/ay/az` contributions stay parallel and easier to extend to future dimensionality changes.
+- pyfluid_amrex/src/amr/solver_sections/gravity_sources.inc.hpp: `prepare_stage_sources` currently has separate `SubcyclingEnabled` branch and an early-return path when subcycling+self-gravity-source-state is active; factor this into one explicit policy switch to make stage source ownership clearer when adding new subcycling combinations.
+- pyfluid_amrex/src/amr/solver_sections/gravity_sources.inc.hpp: `apply_athena_ssprk3_energy_release_range` defines `flux_combo` lambda with repeated face/gravity math inside each call; pull it into a small `athena_flux_combo(stage, ...)` helper to reduce duplication and ensure consistency across dimensions.
+- pyfluid_amrex/src/amr/solver_sections/time_integrators.inc.hpp: ATHENA SSPRK3 branches are correct but stage-local source-prep/release/store calls are tightly coupled to integrator control flow; wrapping those in a tiny stage hook sequence object can reduce duplicate ordering risk if/when another SSPRK family is added.
+- pyfluid_amrex/src/amr/solver_sections/state_repair.inc.hpp: both hydro repair kernels allocate/zero `repair_counts` and return `bad`/`filled` reductions; extract a small “post-pass check and abort” helper to keep failure diagnostics consistent and reduce duplicate MPI-independent abort message boilerplate.
+- pyfluid_amrex/src/amr/solver_sections/rk_stage_algebra.inc.hpp: the seven per-level algebra helpers repeatedly branch on `solid_active(...) && !has_mhd_components<NComp>()`; wrap this branch in one local wrapper (`dispatch_range_with_masked_op`) to make operation choice explicit and avoid branch drift in future fused-update additions.
+- pyfluid_amrex/src/amr/solver_sections/diffusion.inc.hpp: `apply_diffusion_all_levels` and `apply_diffusion_level` repeat `use_solid_mask`/boundary/reflux steps; a compact solver-operator context struct (flags + fluxes + geometry + solid references) would make mode combinations easier to audit.

@@ -36,7 +36,7 @@ void store_rhd_primitive_cache_cell(
       );
    const amrex::Real invalid = std::numeric_limits<amrex::Real>::quiet_NaN();
    const RHDPrimitive& value = recovered.primitive;
-   const bool success = recovered.attempt.status == C2PStatus::Success;
+   const bool success = recovered.attempt.succeeded();
    primitive(i, j, k, RHO) = success ? value.rho : invalid;
    primitive(i, j, k, MOM1) = success ? value.v1 : invalid;
    primitive(i, j, k, MOM2) = success ? value.v2 : invalid;
@@ -61,7 +61,7 @@ void store_rhd_primitive_cache_cell(
    );
    const amrex::Real invalid = std::numeric_limits<amrex::Real>::quiet_NaN();
    const RHDPrimitive& value = recovered.primitive;
-   const bool success = recovered.attempt.status == C2PStatus::Success;
+   const bool success = recovered.attempt.succeeded();
    primitive(i, j, k, RHO) = success ? value.rho : invalid;
    primitive(i, j, k, MOM1) = success ? value.v1 : invalid;
    primitive(i, j, k, MOM2) = success ? value.v2 : invalid;

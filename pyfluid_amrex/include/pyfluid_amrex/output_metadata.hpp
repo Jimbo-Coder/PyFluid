@@ -72,6 +72,23 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("initial_data_spacetime", cfg.initial_data_spacetime);
    entries.emplace_back("initial_data_lapse", cfg.initial_data_lapse);
    entries.emplace_back("initial_data_shift", cfg.initial_data_shift);
+   entries.emplace_back("initial_data_atmosphere", cfg.initial_data_atmosphere);
+   entries.emplace_back(
+      "initial_data_atmosphere_density",
+      output_metadata_real_string(cfg.initial_data_atmosphere_density)
+   );
+   entries.emplace_back(
+      "initial_data_atmosphere_pressure",
+      output_metadata_real_string(cfg.initial_data_atmosphere_pressure)
+   );
+   entries.emplace_back(
+      "initial_data_atmosphere_transition_radius",
+      output_metadata_real_string(cfg.initial_data_atmosphere_transition_radius)
+   );
+   entries.emplace_back(
+      "initial_data_atmosphere_power",
+      output_metadata_real_string(cfg.initial_data_atmosphere_power)
+   );
    entries.emplace_back("spacetime_lapse_gauge", cfg.spacetime_lapse_gauge);
    entries.emplace_back("spacetime_shift_gauge", cfg.spacetime_shift_gauge);
    entries.emplace_back("spacetime_amplitude", output_metadata_real_string(cfg.spacetime_amplitude));
@@ -89,8 +106,9 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("spacetime_origin3", output_metadata_real_string(cfg.spacetime_origin3));
    entries.emplace_back("spacetime_mass", output_metadata_real_string(cfg.spacetime_mass));
    entries.emplace_back("tov_central_density", output_metadata_real_string(cfg.tov_central_density));
-   entries.emplace_back("tov_radial_step", output_metadata_real_string(cfg.tov_radial_step));
-   entries.emplace_back("tov_radial_points", std::to_string(cfg.tov_radial_points));
+   entries.emplace_back("tov_absolute_tolerance", output_metadata_real_string(cfg.tov_absolute_tolerance));
+   entries.emplace_back("tov_relative_tolerance", output_metadata_real_string(cfg.tov_relative_tolerance));
+   entries.emplace_back("tov_max_steps", std::to_string(cfg.tov_max_steps));
    entries.emplace_back("eos", cfg.eos);
    entries.emplace_back("polytropic_k", output_metadata_real_string(cfg.polytropic_k));
    entries.emplace_back("polytropic_gamma", output_metadata_real_string(cfg.polytropic_gamma));

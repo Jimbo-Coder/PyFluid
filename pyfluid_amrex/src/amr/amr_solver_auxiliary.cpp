@@ -65,22 +65,22 @@ bool AmrSolverBase::needs_edge_electric_field() const
 
 bool AmrSolverBase::should_refresh_mhd_aux_fields(int step, bool write_aux_gfs) const
 {
-   (void)write_aux_gfs;
-   if (!is_mhd(cfg_)) {
+   if (!is_mhd(cfg_) || write_aux_gfs) {
       return false;
    }
-   if (cfg_.aux_gf_compute_int > 0 && step % cfg_.aux_gf_compute_int == 0 && mhd_edge_aux_requested()) {
+   const int compute_interval = cfg_.aux_gf_compute_int;
+   if (compute_interval > 0 && step % compute_interval == 0 && mhd_edge_aux_requested()) {
       return true;
    }
    return false;
 }
 
-bool AmrSolverBase::should_refresh_initial_mhd_aux_fields() const
+bool AmrSolverBase::should_refresh_initial_mhd_aux_fields(bool write_aux_gfs) const
 {
-   if (!mhd_edge_aux_requested()) {
+   if (!mhd_edge_aux_requested() || write_aux_gfs) {
       return false;
    }
-   return cfg_.aux_gf_compute_int == 0 || cfg_.aux_gf_int == 0;
+   return cfg_.aux_gf_compute_int == 0;
 }
 
 void AmrSolverBase::refresh_mhd_aux_fields_for_output(int lev)

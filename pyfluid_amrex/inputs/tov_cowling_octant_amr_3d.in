@@ -1,0 +1,57 @@
+pyfluid.run_name = tov_cowling_octant_amr_3d
+pyfluid.output_dir = runs/current/tov/tov_cowling_octant_amr_3d
+pyfluid.validation_policy = smoke
+
+geometry.prob_lo = 0.0 0.0 0.0
+geometry.prob_hi = 16.0 16.0 16.0
+geometry.is_periodic = 0 0 0
+
+amr.n_cell = 16 16 16
+amr.max_level = 2
+amr.ref_ratio = 2 2
+amr.max_grid_size = 16
+amr.blocking_factor = 8
+amr.tag_metric = lohner
+
+spacetime.evolution = fixed
+spacetime.matter_coupling = coupled
+spacetime.initial_data = minkowski
+spacetime.lapse_gauge = frozen
+spacetime.shift_gauge = frozen
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.polytropic_k = 100.0
+pyfluid.polytropic_gamma = 2.0
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = tov
+pyfluid.tov_central_density = 1.28e-3
+pyfluid.tov_absolute_tolerance = 1.0e-12
+pyfluid.tov_relative_tolerance = 1.0e-10
+pyfluid.tov_max_steps = 100000
+initial_data.atmosphere = power_law
+initial_data.atmosphere_density = 1.0e-10
+initial_data.atmosphere_pressure = 1.0e-14
+initial_data.atmosphere_power = 4.0
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.final_time = -1
+pyfluid.max_step = 2
+pyfluid.ng = 3
+pyfluid.cfl = 0.2
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+pyfluid.bc = outflow
+pyfluid.bc_xlo = symmetry
+pyfluid.bc_ylo = symmetry
+pyfluid.bc_zlo = symmetry
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.scalar_diagnostics = standard,adm_mass_volume,proper_mass_volume,komar_mass_volume,adm_momentum_volume,adm_angular_momentum_volume
+pyfluid.plot_int = 1
+pyfluid.checkpoint_int = -1

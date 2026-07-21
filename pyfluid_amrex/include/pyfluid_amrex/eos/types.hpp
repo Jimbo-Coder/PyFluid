@@ -20,4 +20,10 @@ struct EOSParams {
    std::array<amrex::Real, MaxPolytropeSegments - 1> segment_density_break{};
 };
 
+struct EOSThermodynamicState {
+   amrex::Real rho;
+   amrex::Real specific_internal_energy;
+   amrex::Real pressure;
+};
+
 } // namespace pyfluid_amrex

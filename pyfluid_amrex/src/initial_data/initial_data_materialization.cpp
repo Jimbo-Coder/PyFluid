@@ -21,6 +21,21 @@ namespace pyfluid_amrex {
 
 namespace {
 
+char const* conformal_constraint_formulation_name(
+   ConformalConstraintFormulation formulation
+) noexcept
+{
+   switch (formulation) {
+   case ConformalConstraintFormulation::ctt:
+      return "ctt";
+   case ConformalConstraintFormulation::cttk:
+      return "cttk";
+   case ConformalConstraintFormulation::xcts:
+      return "xcts";
+   }
+   return "unknown";
+}
+
 amrex::Vector<amrex::BCRec> extrapolating_boundary_records(
    InitialDataEllipticHierarchy const& hierarchy,
    int num_components
@@ -96,7 +111,10 @@ void materialize_conformal_geometry(
    fill_initial_data_ghosts(hierarchy, spacetime_state, boundary);
    for (int level = 0; level < num_levels; ++level) {
       transfer_grid_field_centering(
-         *cell_spacetime[level], *spacetime_state[level], 2
+         *cell_spacetime[level],
+         *spacetime_state[level],
+         hierarchy.geometry[level],
+         2
       );
    }
    fill_initial_data_ghosts(hierarchy, cell_spacetime, boundary);
@@ -300,8 +318,9 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       InitialDataEllipticCentering::vertex
    );
 
+   constexpr int max_constraint_iterations = 100;
    CttOptions options;
-   options.max_coupled_iterations = 80;
+   options.max_coupled_iterations = max_constraint_iterations;
    options.relative_update_tolerance = 1.0e-10;
    options.relaxation = 0.5;
    options.linear.max_order = 4;
@@ -524,6 +543,16 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          };
       }
       if (!result.constraints.converged) {
+         amrex::Print()
+            << conformal_constraint_formulation_name(formulation)
+            << " initial-data solve failed: iterations="
+            << result.constraints.coupled_iterations
+            << " relative_update=" << result.constraints.relative_update
+            << " hamiltonian_residual="
+            << result.constraints.hamiltonian_residual
+            << " lapse_residual=" << result.constraints.lapse_residual
+            << " momentum_residual=" << result.constraints.momentum_residual
+            << '\n';
          amrex::Abort("conformal constraint initial-data solve did not converge");
       }
 

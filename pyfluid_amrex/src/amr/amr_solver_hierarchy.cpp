@@ -177,12 +177,6 @@ void AmrSolverBase::validate_amr_refinement_ratios() const
       has_anisotropic_ratio = has_anisotropic_ratio || refinement_ratio_is_anisotropic(ratio);
    }
 
-#if (AMREX_SPACEDIM == 1)
-   if (cfg_.state_interp == "protected") {
-      amrex::Abort("amr.state_interp = protected is supported only in 2D and 3D");
-   }
-#endif
-
    if (!has_anisotropic_ratio) {
       return;
    }

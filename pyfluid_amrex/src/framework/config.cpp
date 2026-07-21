@@ -15,6 +15,8 @@
 #include <string_view>
 
 #include "pyfluid_amrex/state.hpp"
+#include "pyfluid_amrex/fields.hpp"
+#include "pyfluid_amrex/spacetime_fields.hpp"
 
 namespace pyfluid_amrex {
 using namespace config_options;
@@ -89,7 +91,7 @@ constexpr std::array<RegisteredStringParameter, 4> AMRStringParameters{{
     "State-based AMR tagging metric."},
    {"regrid_mode", &RunConfig::regrid_mode, "aligned", StringOptionSet::AMRRegridMode,
     RestartPolicy::Mutable, "Synchronization cadence for rebuilding AMR descendants."},
-   {"state_interp", &RunConfig::state_interp, "quartic-conservative", StringOptionSet::AMRStateInterp,
+   {"state_interp", &RunConfig::state_interp, "coupled-conservative", StringOptionSet::AMRStateInterp,
     RestartPolicy::Mutable, "Conservative state interpolation used for new fine data."},
    {"initial_refine", &RunConfig::initial_refine, "none", StringOptionSet::AMRInitialRefine,
     RestartPolicy::Mutable, "Optional initial refinement region."},
@@ -98,7 +100,8 @@ constexpr std::array<RegisteredStringParameter, 4> AMRStringParameters{{
 constexpr std::array<RegisteredScalarParameter<amrex::Real>, 8> AMRRealParameters{{
    {"tag_threshold", &RunConfig::tag_threshold, 0.35, RestartPolicy::Mutable,
     "Dimensionless state-curvature threshold.", &RunConfig::tag_threshold_set},
-   {"min_feature_length", &RunConfig::min_feature_length, 0.0, RestartPolicy::Mutable,
+   {"min_feature_length", &RunConfig::min_feature_length, std::numeric_limits<amrex::Real>::quiet_NaN(),
+    RestartPolicy::Mutable,
     "Global physical resolution guard.", &RunConfig::min_feature_length_set},
    {"min_feature_length_1", &RunConfig::min_feature_length_1, std::numeric_limits<amrex::Real>::quiet_NaN(),
     RestartPolicy::Mutable, "Direction-1 physical resolution guard.", &RunConfig::min_feature_length_1_set},
@@ -366,15 +369,34 @@ RunConfig read_config()
    pp.query("output_dir", cfg.output_dir);
    pp.query("validation_policy", cfg.validation_policy);
    pp.query("scalar_int", cfg.scalar_int);
+   pp.query("scalar_diagnostics", cfg.scalar_diagnostics);
    pp.query("scalar_output_mode", cfg.scalar_output_mode);
    pp.query("plot_int", cfg.plot_int);
    pp.query("plotfile_format", cfg.plotfile_format);
    pp.query("plotfile_compression", cfg.plotfile_compression);
    pp.query("checkpoint_compression", cfg.checkpoint_compression);
    pp.query("cfl_limiter_diagnostics", cfg.cfl_limiter_diagnostics);
-   pp.query("aux_gf_compute_int", cfg.aux_gf_compute_int);
-   pp.query("aux_gf_int", cfg.aux_gf_int);
+   amrex::ParmParse diagnostics_pp("diagnostics");
+   diagnostics_pp.queryAdd("surface_radius", cfg.diagnostic_surface_radius);
+   diagnostics_pp.queryAdd("surface_center1", cfg.diagnostic_surface_center1);
+   diagnostics_pp.queryAdd("surface_center2", cfg.diagnostic_surface_center2);
+   diagnostics_pp.queryAdd("surface_center3", cfg.diagnostic_surface_center3);
+   diagnostics_pp.queryAdd("surface_polar_points", cfg.diagnostic_surface_polar_points);
+   diagnostics_pp.queryAdd("multipole_l_max", cfg.diagnostic_multipole_l_max);
+   diagnostics_pp.queryAdd("azimuthal_mode_fields", cfg.diagnostic_azimuthal_mode_fields);
+   diagnostics_pp.queryAdd("azimuthal_mode_m_max", cfg.diagnostic_azimuthal_mode_m_max);
    pp.query("aux_gfs", cfg.aux_gfs);
+   const bool aux_compute_interval_set =
+      pp.query("aux_gf_compute_int", cfg.aux_gf_compute_int);
+   const bool aux_output_interval_set = pp.query("aux_gf_int", cfg.aux_gf_int);
+   if (!aux_gf_names(cfg).empty()) {
+      if (!aux_output_interval_set) {
+         cfg.aux_gf_int = cfg.plot_int;
+      }
+      if (!aux_compute_interval_set) {
+         cfg.aux_gf_compute_int = cfg.aux_gf_int;
+      }
+   }
    pp.query("checkpoint_int", cfg.checkpoint_int);
    pp.query("checkpoint_dir", cfg.checkpoint_dir);
    pp.query("restart_file", cfg.restart_file);
@@ -394,6 +416,13 @@ RunConfig read_config()
    initial_data_pp.queryAdd("spacetime", cfg.initial_data_spacetime);
    initial_data_pp.queryAdd("lapse", cfg.initial_data_lapse);
    initial_data_pp.queryAdd("shift", cfg.initial_data_shift);
+   initial_data_pp.queryAdd("atmosphere", cfg.initial_data_atmosphere);
+   initial_data_pp.queryAdd("atmosphere_density", cfg.initial_data_atmosphere_density);
+   initial_data_pp.queryAdd("atmosphere_pressure", cfg.initial_data_atmosphere_pressure);
+   initial_data_pp.queryAdd(
+      "atmosphere_transition_radius", cfg.initial_data_atmosphere_transition_radius
+   );
+   initial_data_pp.queryAdd("atmosphere_power", cfg.initial_data_atmosphere_power);
    spacetime_pp.queryAdd("lapse_gauge", cfg.spacetime_lapse_gauge);
    spacetime_pp.queryAdd("shift_gauge", cfg.spacetime_shift_gauge);
    spacetime_pp.queryAdd("amplitude", cfg.spacetime_amplitude);
@@ -517,8 +546,9 @@ RunConfig read_config()
    pp.query("rho0", cfg.rho0);
    pp.query("pressure0", cfg.pressure0);
    pp.query("tov_central_density", cfg.tov_central_density);
-   pp.query("tov_radial_step", cfg.tov_radial_step);
-   pp.query("tov_radial_points", cfg.tov_radial_points);
+   pp.query("tov_absolute_tolerance", cfg.tov_absolute_tolerance);
+   pp.query("tov_relative_tolerance", cfg.tov_relative_tolerance);
+   pp.query("tov_max_steps", cfg.tov_max_steps);
    pp.query("amplitude", cfg.amplitude);
    pp.query("bump_sigma", cfg.bump_sigma);
    pp.query("acoustic_transverse_sigma", cfg.acoustic_transverse_sigma);
@@ -763,6 +793,11 @@ void validate_config(RunConfig const& cfg)
       "initial_data.shift"
    );
    require_supported_option(
+      cfg.initial_data_atmosphere,
+      InitialAtmosphereOptions,
+      "initial_data.atmosphere"
+   );
+   require_supported_option(
       cfg.spacetime_lapse_gauge,
       Z4cLapseGaugeOptions,
       "spacetime.lapse_gauge"
@@ -819,6 +854,32 @@ void validate_config(RunConfig const& cfg)
    }
    if (cfg.rho_floor <= 0.0 || cfg.pressure_floor <= 0.0) {
       amrex::Abort("pyfluid.rho_floor and pyfluid.pressure_floor must be positive");
+   }
+   if (!((cfg.initial_data_atmosphere_density > 0.0)
+         || cfg.initial_data_atmosphere_density == -1.0)
+       || !((cfg.initial_data_atmosphere_pressure > 0.0)
+            || cfg.initial_data_atmosphere_pressure == -1.0)) {
+      amrex::Abort(
+         "initial_data.atmosphere_density and atmosphere_pressure must be positive, "
+         "or -1 to inherit the runtime C2P floors"
+      );
+   }
+   if ((cfg.initial_data_atmosphere_density > 0.0
+        && cfg.initial_data_atmosphere_density < cfg.rho_floor)
+       || (cfg.initial_data_atmosphere_pressure > 0.0
+           && cfg.initial_data_atmosphere_pressure < cfg.pressure_floor)) {
+      amrex::Abort(
+         "the initial atmosphere state must not be below the runtime C2P floors"
+      );
+   }
+   if (cfg.initial_data_atmosphere == "power_law"
+       && (!(cfg.initial_data_atmosphere_power > 3.0)
+           || !((cfg.initial_data_atmosphere_transition_radius > 0.0)
+                || cfg.initial_data_atmosphere_transition_radius == -1.0))) {
+      amrex::Abort(
+         "power-law initial atmosphere requires atmosphere_power > 3 for finite 3D mass "
+         "and a positive atmosphere_transition_radius, or -1 for the TOV-derived radius"
+      );
    }
    if (cfg.passive_scalars < 0 || cfg.passive_scalars > MaxPassiveScalars) {
       amrex::Abort("pyfluid.passive_scalars currently supports 0 or 1");
@@ -910,9 +971,11 @@ void validate_config(RunConfig const& cfg)
             );
          }
          if (!(cfg.tov_central_density > cfg.rho_floor)
-             || !(cfg.tov_radial_step > 0.0) || cfg.tov_radial_points < 16) {
+             || !(cfg.tov_absolute_tolerance > 0.0)
+             || !(cfg.tov_relative_tolerance > 0.0)
+             || cfg.tov_max_steps < 16) {
             amrex::Abort(
-               "TOV initial data requires central_density > rho_floor, radial_step > 0, and radial_points >= 16"
+               "TOV initial data requires central_density > rho_floor, positive solve tolerances, and max_steps >= 16"
             );
          }
       }
@@ -1680,6 +1743,34 @@ void validate_config(RunConfig const& cfg)
 #endif
    if (cfg.scalar_int < -1) {
       amrex::Abort("pyfluid.scalar_int must be -1, 0, or a positive integer");
+   }
+   if (cfg.diagnostic_surface_radius == 0.0) {
+      amrex::Abort("diagnostics.surface_radius must be positive or negative for an automatic inscribed sphere");
+   }
+   if (cfg.diagnostic_surface_polar_points < 2) {
+      amrex::Abort("diagnostics.surface_polar_points must be at least 2");
+   }
+   if (cfg.diagnostic_multipole_l_max < 0 || cfg.diagnostic_multipole_l_max == 1
+       || cfg.diagnostic_multipole_l_max > 16) {
+      amrex::Abort("diagnostics.multipole_l_max must be 0 (disabled) or between 2 and 16");
+   }
+   if (cfg.diagnostic_azimuthal_mode_m_max < 0
+       || cfg.diagnostic_azimuthal_mode_m_max > 64) {
+      amrex::Abort("diagnostics.azimuthal_mode_m_max must be between 0 and 64");
+   }
+   for (std::string const& field : azimuthal_mode_field_names(cfg)) {
+      const bool primitive = field == "rho" || field == "pressure";
+      const bool fluid_scalar = scalar_grid_field_component(
+         fluid_state_grid_fields(physical_system(cfg), cfg.passive_scalars), field
+      ) >= 0;
+      const bool spacetime_scalar = spacetime_stores_state(cfg)
+         && scalar_grid_field_component(z4c_state_grid_fields(), field) >= 0;
+      if (!primitive && !fluid_scalar && !spacetime_scalar) {
+         amrex::Abort(
+            "diagnostics.azimuthal_mode_fields contains unsupported scalar field '"
+            + field + "'"
+         );
+      }
    }
    require_supported_option(cfg.scalar_output_mode, ScalarOutputModeOptions, "pyfluid.scalar_output_mode");
    if (!cfg.validation_policy.empty()) {

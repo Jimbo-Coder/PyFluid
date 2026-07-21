@@ -1,0 +1,64 @@
+Final refinement pass (2026-07-20)
+Read-only AMReX review notes (no source edits)
+Scope: high-confidence / high-leverage review pass for maintainability + reduced risk.
+
+Priority 1 (high confidence, potential behavior/robustness impact)
+
+- pyfluid_amrex/src/amr/amr_solver_auxiliary.cpp:66
+  - `should_refresh_mhd_aux_fields(int step, bool write_aux_gfs)` accepts `write_aux_gfs` but ignores it.
+  - Impact: dead API surface (and missed intent signal) can cause unnecessary recompute on non-aux-output steps or hide a future scheduling regression.
+  - Suggestion: either remove the parameter and simplify callers, or gate refresh logic with it so output cadence and compute cadence stay in one decision path.
+
+- pyfluid_amrex/src/amr/output.hpp:34-102
+  - `append_plotfile_metadata_on_io_rank` returns silently when fallback `.meta` file cannot be opened.
+  - Impact: missing plotfile metadata can silently disappear without diagnostics, reducing reproducibility and traceability in HDF5 fallback mode.
+  - Suggestion: emit a hard/fatal warning when both HDF5 metadata and `.meta` append fail (or at least log including `plotfile_stem`, format, step, and time).
+
+- pyfluid_amrex/src/amr/amr_solver_multipatch.cpp:12-26
+  - `configured_patch_counts()` treats any one non-zero axis as “configured” and copies all axes directly.
+  - Impact: partial `mesh_patch_counts` input can pass parser checks then fail with generic non-positive/even-divide aborts later.
+  - Suggestion: enforce all-or-none policy at parse/validation stage (all dims set or all zero), with clear message listing missing axes.
+
+Priority 2 (significant simplification, low regression risk)
+
+- pyfluid_amrex/src/amr/output.hpp:277-293 and 557-587 / 623-673
+  - `aux_output_component_count` and `aux_output_names` each traverse `aux_gf_names(cfg)` and per-component filtering in separate passes.
+  - Suggestion: return `{names, count}` in one traversal keyed by centering. Removes repeated cataloging and guarantees ordering consistency.
+
+- pyfluid_amrex/src/amr/amr_solver_output.cpp:224-261
+  - `initialize_ct_fields` has repeated `time == 0.0` condition branches and broad `if/else` chains.
+  - Suggestion: separate cadence guard (`time == 0`) + IC initializer map (`ic -> init_fn`) + fallback function pointer to make intent explicit and reduce branch drift.
+
+- pyfluid_amrex/src/amr/amr_solver_output.cpp:206-221
+  - `apply_boundary` performs O(nlevels) domain-to-level lookup on every call.
+  - Suggestion: cache `domain->level` (or level-by-domain table) once in solver init for patch-union runs.
+
+- pyfluid_amrex/src/amr/output.hpp:532-679
+  - `write_aux_gf_plotfile` and `write_multilevel_aux_gf_plotfile` duplicate output scaffolding and per-centering loops.
+  - Suggestion: add one level-count-aware writer helper that owns: plot directory setup, centering iteration, aux name fetch and write call.
+
+Priority 3 (cleanups with direct follow-through value)
+
+- pyfluid_amrex/src/amr/amr_solver_auxiliary.cpp and evolve callsite
+  - The function name `should_refresh_mhd_aux_fields` implies cadence+need semantics but currently only uses `aux_gf_compute_int` and request predicate.
+  - Suggestion: rename/comment contract of cadence semantics (compute cadence vs output cadence) and keep one canonical helper used by all invocations.
+
+- pyfluid_amrex/src/amr/output.hpp:86-83 and 87-102
+  - File-open fallback path creates one `.meta` file per output stem but does not validate directory creation failures either.
+  - Suggestion: check and report directory creation/metadata write failures once in a shared helper.
+
+- pyfluid_amrex/src/amr/amr_solver_output.cpp:182-193
+  - `load_checkpoint` rebuilds face-B fields at CT-enabled restore via repeated per-level branch logic.
+  - Suggestion: split restore into `restore_level_fields(lev)` + `rebind_ct_state(lev)` helpers to isolate invariants and reduce duplicated sequencing risk.
+
+- amr_solver_spacetime.cpp (fill_spacetime_level_boundaries)
+  - Branch sequence for source selection (`coarse from same level`, `synchronous`, `RK4 ready`, `interpolated`, `fallback`) is correct but cognitively dense.
+  - Suggestion: extract resolver returning `(coarse_data, coarse_time, use_coarse)` and keep `fill_nodal_two_levels` invocation unchanged.
+
+Verification status
+- One suspected bug from earlier pass (`current_cfl_limiter_location` packet initialization) was reviewed directly and found this code now uses
+  one coherent packet (`{global_frequency, q1, q2, q3}`), so no concrete issue there.
+
+Outcome
+- This pass is materially complete for a “human-level complete review” with practical, low-risk improvement candidates.
+- Next logical pass: optional triage ordering by estimated effort (`XS`, `S`, `M`) if you want a change plan.

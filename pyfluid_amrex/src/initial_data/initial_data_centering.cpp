@@ -126,7 +126,10 @@ void materialize_initial_data_vertices(
          );
       }
       transfer_grid_field_centering(
-         *vertex_fields[level], *source_fields[level], transfer_order
+         *vertex_fields[level],
+         *source_fields[level],
+         hierarchy.geometry[level],
+         transfer_order
       );
    }
    for (int level = num_levels - 1; level > 0; --level) {

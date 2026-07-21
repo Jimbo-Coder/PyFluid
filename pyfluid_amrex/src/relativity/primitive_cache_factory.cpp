@@ -62,12 +62,14 @@ void project_atmosphere(
    amrex::MultiFab& conserved,
    amrex::MultiFab const& cell_spacetime,
    EOSParams const& eos,
+   EOSThermodynamicState const& atmosphere,
    int ghost_cells
 )
 {
    project_relativistic_atmosphere<System, EosMethod>(
       conserved,
       eos,
+      atmosphere,
       [&](amrex::MFIter const& mfi) {
          return StoredSpacetimeCellMetricAccessor{
             cell_spacetime.const_array(mfi)
@@ -158,12 +160,17 @@ void apply_relativistic_atmosphere(
    PhysicalSystem physical_system,
    int eos_method,
    EOSParams const& eos,
+   EOSThermodynamicState const& atmosphere,
    int ghost_cells
 )
 {
    if (physical_system == PhysicalSystem::RMHD) {
       project_atmosphere<PhysicalSystem::RMHD, EOSIdealGas>(
-         conserved, cell_spacetime, eos, ghost_cells
+         conserved,
+         cell_spacetime,
+         eos,
+         atmosphere,
+         ghost_cells
       );
       return;
    }
@@ -173,17 +180,29 @@ void apply_relativistic_atmosphere(
    switch (eos_method) {
    case EOSPolytrope:
       project_atmosphere<PhysicalSystem::RHD, EOSPolytrope>(
-         conserved, cell_spacetime, eos, ghost_cells
+         conserved,
+         cell_spacetime,
+         eos,
+         atmosphere,
+         ghost_cells
       );
       return;
    case EOSHybridPolytrope:
       project_atmosphere<PhysicalSystem::RHD, EOSHybridPolytrope>(
-         conserved, cell_spacetime, eos, ghost_cells
+         conserved,
+         cell_spacetime,
+         eos,
+         atmosphere,
+         ghost_cells
       );
       return;
    case EOSIdealGas:
       project_atmosphere<PhysicalSystem::RHD, EOSIdealGas>(
-         conserved, cell_spacetime, eos, ghost_cells
+         conserved,
+         cell_spacetime,
+         eos,
+         atmosphere,
+         ghost_cells
       );
       return;
    default:

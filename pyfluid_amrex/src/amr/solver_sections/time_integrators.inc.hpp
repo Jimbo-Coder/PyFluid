@@ -157,7 +157,7 @@
             profile_.end(ProfileStage::Divergence, stage_start);
          }
          project_relativistic_atmosphere_range<EOSMethod>(
-            final_state, lev_begin, lev_end, time + dt
+            final_state, lev_begin, lev_end
          );
          return !FinalInPlace;
       }
@@ -170,7 +170,7 @@
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, dt, lev_begin, lev_end, time
+            EvolutionStageSlot::State, dt, lev_begin, lev_end, time, dt
          );
          stage_start = profile_.begin();
          evolution_copy_plus_scaled_range<NComp>(
@@ -185,7 +185,7 @@
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, 0.5 * dt, lev_begin, lev_end, time
+            EvolutionStageSlot::State, 0.5 * dt, lev_begin, lev_end, time, dt
          );
          stage_start = profile_.begin();
          evolution_copy_plus_scaled_range<NComp>(
@@ -197,7 +197,8 @@
          fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt);
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Scratch, 0.5 * dt, lev_begin, lev_end, time + dt
+            EvolutionStageSlot::Scratch, 0.5 * dt, lev_begin, lev_end,
+            time + dt, dt
          );
          stage_start = profile_.begin();
          evolution_linear_combination_plus_scaled_range<NComp>(
@@ -219,7 +220,8 @@
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, 0.0, lev_begin, lev_end, time
+            EvolutionStageSlot::State, 0.0, lev_begin, lev_end, time,
+            0.5 * dt
          );
          stage_start = profile_.begin();
          evolution_copy_plus_scaled_range<NComp>(
@@ -231,7 +233,8 @@
          fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + 0.5 * dt);
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Scratch, dt, lev_begin, lev_end, time + 0.5 * dt
+            EvolutionStageSlot::Scratch, dt, lev_begin, lev_end,
+            time + 0.5 * dt, dt
          );
          stage_start = profile_.begin();
          evolution_copy_plus_scaled_range<NComp>(
@@ -249,7 +252,7 @@
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, dt / 6.0, lev_begin, lev_end, time
+            EvolutionStageSlot::State, dt / 6.0, lev_begin, lev_end, time, dt
          );
          if (athena_ssprk3_gravity) {
             store_athena_ssprk3_start_gravity_range(lev_begin, lev_end);
@@ -269,7 +272,8 @@
          fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt);
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Scratch, dt / 6.0, lev_begin, lev_end, time + dt
+            EvolutionStageSlot::Scratch, dt / 6.0, lev_begin, lev_end,
+            time + dt, dt
          );
          if (athena_ssprk3_gravity) {
             store_athena_ssprk3_mass_flux_range(1, lev_begin, lev_end);
@@ -295,7 +299,8 @@
          fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.next(), lev_begin, lev_end, time + 0.5 * dt);
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Next, 2.0 * dt / 3.0, lev_begin, lev_end, time + 0.5 * dt
+            EvolutionStageSlot::Next, 2.0 * dt / 3.0, lev_begin, lev_end,
+            time + 0.5 * dt, dt
          );
          if (athena_ssprk3_gravity) {
             store_athena_ssprk3_mass_flux_range(2, lev_begin, lev_end);
@@ -329,7 +334,8 @@
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, dt / 6.0, lev_begin, lev_end, time, time, 1
+            EvolutionStageSlot::State, dt / 6.0, lev_begin, lev_end,
+            time, 0.5 * dt, time, 1
          );
          if constexpr (SubcyclingEnabled) {
             store_rk4_rhs_stage<NComp>(0, lev_begin, lev_end);
@@ -358,6 +364,7 @@
             lev_begin,
             lev_end,
             time + 0.5 * dt,
+            0.5 * dt,
             time,
             2
          );
@@ -388,6 +395,7 @@
             lev_begin,
             lev_end,
             time + 0.5 * dt,
+            dt,
             time,
             3
          );
@@ -418,6 +426,7 @@
             lev_begin,
             lev_end,
             time + dt,
+            dt,
             time,
             4
          );
@@ -446,8 +455,12 @@
             spacetime_state_.state(), lev_begin, lev_end, time + dt, -1.0, 0
          );
       }
+      debug_check_relativistic_stage_range(
+         fluid_state_.next(), lev_begin, lev_end,
+         "relativistic accepted candidate before atmosphere", time + dt
+      );
       project_relativistic_atmosphere_range<EOSMethod>(
-         fluid_state_.next(), lev_begin, lev_end, time + dt
+         fluid_state_.next(), lev_begin, lev_end
       );
       return true;
    }

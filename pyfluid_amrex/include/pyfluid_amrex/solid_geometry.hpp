@@ -10,6 +10,7 @@
 
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/constants.hpp"
+#include "pyfluid_amrex/physical_geometry.hpp"
 
 namespace pyfluid_amrex {
 
@@ -210,7 +211,7 @@ struct SolidGeometryEvaluator {
       const amrex::Real dz = 0.0;
       (void)z;
 #endif
-      return std::sqrt(dx * dx + dy * dy + dz * dz) - circle_radius_at(query_time);
+      return cartesian_radius(dx, dy, dz) - circle_radius_at(query_time);
    }
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -221,7 +222,7 @@ struct SolidGeometryEvaluator {
       if (x < shifted_x0) {
          const amrex::Real dx = shifted_x0 - x;
          const amrex::Real dy = y < shifted_y0 ? shifted_y0 - y : 0.0;
-         return std::sqrt(dx * dx + dy * dy);
+         return cartesian_cylindrical_radius(dx, dy);
       }
       const amrex::Real wall_y = shifted_y0 + wedge_slope * (x - shifted_x0);
       return (y - wall_y) / std::sqrt(1.0 + wedge_slope * wedge_slope);
@@ -354,7 +355,7 @@ struct SolidGeometryEvaluator {
 #else
          const amrex::Real rz = 0.0;
 #endif
-         const amrex::Real radius = std::sqrt(rx * rx + ry * ry + rz * rz);
+         const amrex::Real radius = cartesian_radius(rx, ry, rz);
          if (radius <= 0.0) {
             return 0.0;
          }

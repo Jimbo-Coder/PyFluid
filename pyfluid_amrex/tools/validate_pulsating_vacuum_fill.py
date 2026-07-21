@@ -70,7 +70,7 @@ CASES = (
             "amr.solid_curvature_error=0.0005",
             "amr.level_cell_budget_side=384",
             "amr.total_cell_budget=250000",
-            "amr.state_interp=conservative",
+            "amr.state_interp=component-conservative",
         ),
         step_limit=4000,
         mass_tol=1.0e-11,

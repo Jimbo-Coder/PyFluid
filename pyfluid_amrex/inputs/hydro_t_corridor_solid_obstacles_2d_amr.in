@@ -28,7 +28,7 @@ amr.initial_refine_levels = 2
 amr.initial_refine_fixed_levels = 0
 amr.initial_refine_box_lo = 0.10 0.70  1.40 0.05
 amr.initial_refine_box_hi = 1.90 1.30  2.10 1.95
-amr.state_interp = protected
+amr.state_interp = coupled-conservative
 
 pyfluid.physics = hydro
 pyfluid.ct = off

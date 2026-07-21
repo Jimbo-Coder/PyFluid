@@ -1,0 +1,77 @@
+AMReX final-pass review notes (human-level, no code changes)
+Repository: /Users/mrizzo/phys_research/PyFluid
+Date: 2026-07-20
+
+Goal: preserve behavior, reduce duplication, improve readability, and keep runtime semantics unchanged.
+
+High confidence, high impact (do first)
+- src/framework/config.cpp
+  - Many config keys are parsed and validated through repetitive if/else checks. Use a small schema table (key, type, default, validator) plus one validation dispatcher to avoid drift between defaulting and checks.
+  - Benefit: fewer branch mistakes, easier review of new options, lower regression risk.
+- src/initial_data/initial_data_state.cpp
+  - The IC dispatch tree has repeated hydro/MHD and axis-conversion patterns. Introduce per-IC builder helpers and one shared state-materialization path (primitive reset, EOS-dependent energy, optional B-fields).
+  - Benefit: smaller, more maintainable IC addition path.
+- src/numerics/flux_factory.cpp
+  - Factory selection for Riemann/reconstruction combos is mostly table-like; replace long nested conditionals with compile/runtime capability descriptors.
+  - Benefit: clearer unsupported-combo diagnostics and easier extension.
+- src/numerics/hierarchy_interpolation.cpp
+  - Interpolation loops are readable but verbose with repeated level+direction wrappers. Factor common interpolation envelope + per-level hooks.
+  - Benefit: shorter code and easier correctness reasoning.
+- src/numerics/ct_edge_flux_register.cpp
+  - 2D/3D path shares most logic with only directional and area differences. Consolidate via a small directional helper.
+  - Benefit: reduces chance of missed axis updates.
+- tools/validation_common.py
+  - Several validation wrappers re-implement command-option shaping. Centralize command assembly into one tiny builder to keep CLI behavior consistent.
+  - Benefit: less duplicated MPI/reporting surface.
+
+Medium confidence, medium impact
+- src/framework/config_runtime.cpp
+  - Axis/mesh compatibility checks are duplicated in adjacent spots. Convert to one reusable predicate function (canonical axes + dimensionality checks) and call once per path.
+- src/initial_data/initial_data_materialization.cpp
+  - Storage allocation/pointer wiring is mechanical and repeated per-field tier. Move to descriptor-driven storage struct.
+- src/initial_data/initial_data_provider.cpp
+  - Registration-like string matching for provider names is manual; use a map from name->factory for deterministic lookup.
+- src/framework/fields.cpp
+  - Switches for centerings/roles are standard but can benefit from compact descriptor tables (kind, centering, components).
+- src/amr/output.hpp
+  - `aux_output_names()` and `aux_output_component_count()` traverse same list with similar filters. Return names+count in one pass.
+- src/numerics/nodal_interpolater.cpp
+  - Axis-dependent setup repeated; derive neighbor weights and starting indices from one dimension helper.
+- src/relativity/relativistic_source_factory.cpp
+  - Source-term factory paths mirror one another; use shared metadata/selector table and a single unsupported-message format.
+
+Lower risk/cleanup pass
+- include/pyfluid_amrex/physical_system.hpp
+  - Reduce repeated local type aliases by extracting one or two small local helper structs for variable metadata.
+- include/pyfluid_amrex/mesh_geometry.hpp / fields.hpp
+  - Keep constructor defaults and centering constants in small internal helpers; reduce repeated inline calculations.
+- src/framework/checkpoint.cpp
+  - Error messages for missing fields and size mismatch are strong; move repeated format fragments to helpers.
+- src/numerics/patch_wall_flux.hpp
+  - Boundary-flux directional conditions can use one `shift_for_face(dir, side)` helper.
+- src/relativity/relativistic_sources.hpp
+  - Keep source operator list and metadata grouped by conserved variable family.
+- run_case.py / report_run.py / validate_* tools
+  - Shared command-vector construction and log/report options can be composed from one small helper function per tool.
+
+Specific correctness-preserving simplifications to avoid subtle regressions
+- src/numerics/flux_factory_internal.hpp
+  - Preserve abort conditions, but avoid duplicated constructor boilerplate by one templated helper with compile-time capability tags.
+- src/amr/amr_solver_levels.cpp
+  - `allocate_level` / `ClearLevel` symmetry is good; make optional-feature setup/teardown table-driven to avoid missing branches when enabling/disabling solid/gravity/CT.
+- src/amr/amr_solver_output.cpp
+  - `load_checkpoint` and `write_current_*` currently duplicate level loops for similarly shaped operations; extract helper loops while keeping order identical.
+- src/amr/solver_sections/state_repair.inc.hpp
+  - Neighbor-search + validity checks repeat across repair routines. Extract validity predicate helper once.
+- src/amr/solver_sections/time_integrators.inc.hpp / rk_stage_algebra.inc.hpp
+  - Several stage hooks are deterministic and duplicated per method; wrap as compact stage drivers to make future integrator additions low-risk.
+
+Suggested refactor style policy across files above
+- Prefer declarative metadata tables where a branch is selecting implementation from config/model/feature axes.
+- Keep one error format helper for unsupported-feature diagnostics.
+- Keep existing runtime/compile-time feature behavior unchanged; avoid “smart defaults” changes.
+
+If you want, I can now:
+1) convert this into a compact “fix order” roadmap (week/day priorities),
+2) produce a one-page triage list by file count and expected effort,
+3) or produce a second pass focused only on the top 10 riskier edits.

@@ -15,7 +15,7 @@ amr.regrid_mode = aligned
 amr.regrid_int = 4
 amr.n_error_buf = 4 4 4 4 4 4 4 4
 amr.tag_metric = lohner
-amr.state_interp = protected
+amr.state_interp = coupled-conservative
 amr.min_feature_length = 1.0e-5
 amr.total_cell_budget = 500000
 

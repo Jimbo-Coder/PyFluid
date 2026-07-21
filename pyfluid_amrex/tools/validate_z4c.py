@@ -28,6 +28,7 @@ from validation_common import (
    SMOKE_POLICY,
    append_validation_history,
    materialize_run_input,
+   read_key_values,
    read_scalar_rows,
    repo_relative,
    run_amrex,
@@ -39,6 +40,7 @@ from validation_common import (
 
 INPUT = ROOT / "pyfluid_amrex/inputs/z4c_gauge_wave_1d.in"
 TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_coupled_amr_3d.in"
+TOV_OCTANT_INPUT = ROOT / "pyfluid_amrex/inputs/tov_cowling_octant_amr_3d.in"
 CONFORMAL_TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_xcts_3d.in"
 TOV_COWLING_INPUT = ROOT / "pyfluid_amrex/inputs/tov_cowling_amr_1d.in"
 CTT_INPUT = ROOT / "pyfluid_amrex/inputs/rhd_ctt_density_cloud_3d.in"
@@ -55,6 +57,21 @@ CONSTRAINT_COLUMNS = (
    "z4c_trace_a_tilde_linf",
 )
 
+TOV_OBSERVABLE_PATTERN = re.compile(
+   r"TOV initial data: M=(?P<mass>[0-9.eE+-]+) "
+   r"Mb=(?P<baryonic_mass>[0-9.eE+-]+) "
+   r"Mp=(?P<proper_mass>[0-9.eE+-]+) "
+   r"Mkomar=(?P<komar_mass>[0-9.eE+-]+) "
+   r"R_areal=(?P<areal_radius>[0-9.eE+-]+)"
+)
+
+
+def parse_tov_observables(run_log: str) -> dict[str, float]:
+   match = TOV_OBSERVABLE_PATTERN.search(run_log)
+   if match is None:
+      raise RuntimeError("run did not report the complete TOV observable set")
+   return {name: float(value) for name, value in match.groupdict().items()}
+
 
 def run_dimension_case(
    name: str,
@@ -66,6 +83,7 @@ def run_dimension_case(
    checks: object,
    mhd: bool,
    kind: str = "analytic",
+   remove_parameters: tuple[str, ...] = (),
 ) -> tuple[Path, dict[str, object]]:
    run_dir = RUN_ROOT / name
    if args.force and run_dir.exists():
@@ -82,6 +100,7 @@ def run_dimension_case(
          "pyfluid.aux_gf_int": "-1",
          **overrides,
       },
+      remove_parameters=remove_parameters,
    )
    if args.force or latest_spacetime_plotfile(run_dir) is None:
       completed = run_amrex(
@@ -742,13 +761,9 @@ def validate_realistic_eos_tov(
       kind="feature",
    )
    run_log = (run_dir / "run.log").read_text()
-   match = re.search(
-      r"TOV initial data: M=([0-9.eE+-]+) R_areal=([0-9.eE+-]+)", run_log
-   )
-   if match is None:
-      raise RuntimeError("SLy TOV did not report its stellar mass and radius")
-   mass = float(match.group(1))
-   radius = float(match.group(2))
+   observables = parse_tov_observables(run_log)
+   mass = observables["mass"]
+   radius = observables["areal_radius"]
    if (
       not math.isfinite(mass)
       or not math.isfinite(radius)
@@ -996,6 +1011,209 @@ def validate_coupled_rmhd_smoke(
    }], [scalar]
 
 
+def maximum_relative_change(
+   rows: list[dict[str, str]],
+   field: str,
+) -> float:
+   values = np.asarray([float(row[field]) for row in rows])
+   if not np.all(np.isfinite(values)):
+      return math.inf
+   scale = max(abs(float(values[0])), np.finfo(float).tiny)
+   return float(np.max(np.abs(values - values[0])) / scale)
+
+
+def validate_tov_evolution(
+   args: argparse.Namespace,
+   uniform_coarse_h_l2: float | None = None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   results: list[dict[str, object]] = []
+   scalars: list[dict[str, object]] = []
+   full_cowling_initial: dict[str, str] | None = None
+   common_overrides = {
+      "pyfluid.max_step": "4",
+      "pyfluid.plot_int": "2",
+      "pyfluid.checkpoint_int": "-1",
+      "pyfluid.scalar_int": "1",
+      "pyfluid.scalar_diagnostics": "standard,global_gr",
+      "pyfluid.debug_check_finite": "1",
+      "pyfluid.debug_check_physical": "1",
+   }
+
+   for evolution in ("fixed", "evolved"):
+      name = f"tov_{'cowling' if evolution == 'fixed' else 'coupled'}_amr_3d"
+      run_dir, scalar = run_dimension_case(
+         name,
+         TOV_INPUT,
+         {
+            **common_overrides,
+            "spacetime.evolution": evolution,
+         },
+         args,
+         dim=3,
+         checks=SMOKE_POLICY,
+         mhd=False,
+         kind="feature",
+      )
+      rows = read_scalar_rows(run_dir)
+      source_parameters = read_key_values(TOV_INPUT)
+      canonical_parameters = read_key_values(run_dir / "run.in")
+      if (
+         "amr.min_feature_length" not in source_parameters
+         and "amr.min_feature_length" in canonical_parameters
+      ):
+         raise RuntimeError(
+            f"{name} canonical input converted the unset auto AMR length guard "
+            "into an explicit value"
+         )
+      if evolution == "fixed":
+         full_cowling_initial = rows[0]
+      plotfiles = spacetime_plotfiles(run_dir)
+      if len(plotfiles) < 2:
+         raise RuntimeError(f"{name} did not write initial and final spacetime states")
+      levels = level_count(plotfiles[-1])
+      rest_mass_drift = max(abs(float(row["mass_rel_drift"])) for row in rows)
+      external_mass_error = max(
+         abs(float(row["external_mass_rel_error"])) for row in rows
+      )
+      max_rho_change = max(abs(float(row["max_rho_rel_change"])) for row in rows)
+      adm_surface_change = maximum_relative_change(rows, "adm_mass_surface")
+      adm_volume_change = maximum_relative_change(rows, "adm_mass_volume")
+      initial_h_l2 = abs(float(rows[0]["z4c_hamiltonian_l2"]))
+      final_h_l2 = abs(float(rows[-1]["z4c_hamiltonian_l2"]))
+      fixed_metric_change = (
+         compare_spacetime_files(plotfiles[0], plotfiles[-1], require_same_time=False)
+         if evolution == "fixed"
+         else math.nan
+      )
+      amr_constraint_ratio = (
+         initial_h_l2 / uniform_coarse_h_l2
+         if uniform_coarse_h_l2 is not None
+         else math.nan
+      )
+      if (
+         levels < 2
+         or rest_mass_drift > 1.0e-8
+         or external_mass_error > 1.0e-12
+         or max_rho_change > 1.0e-2
+         or adm_volume_change > 1.0e-3
+         or final_h_l2 > max(4.0 * initial_h_l2, 1.0e-4)
+         or (evolution == "fixed" and adm_surface_change > 1.0e-13)
+         or (evolution == "fixed" and fixed_metric_change > 1.0e-13)
+         or (
+            uniform_coarse_h_l2 is not None
+            and amr_constraint_ratio > 32.0
+         )
+      ):
+         raise RuntimeError(
+            f"{name} failed: levels={levels}, rest-mass drift={rest_mass_drift:.3e}, "
+            f"external mass error={external_mass_error:.3e}, "
+            f"max-rho change={max_rho_change:.3e}, ADM changes="
+            f"({adm_surface_change:.3e}, {adm_volume_change:.3e}), "
+            f"Hamiltonian L2={initial_h_l2:.3e}->{final_h_l2:.3e}, "
+            f"fixed-metric change={fixed_metric_change:.3e}"
+         )
+      results.append({
+         "kind": "feature",
+         "case": name,
+         "status": "PASS",
+         "metric": "rest_mass_drift",
+         "value": rest_mass_drift,
+         "rest_mass_drift": rest_mass_drift,
+         "external_mass_relative_error": external_mass_error,
+         "max_rho_relative_change": max_rho_change,
+         "adm_mass_surface": float(rows[-1]["adm_mass_surface"]),
+         "adm_mass_volume": float(rows[-1]["adm_mass_volume"]),
+         "adm_mass_surface_relative_change": adm_surface_change,
+         "adm_mass_volume_relative_change": adm_volume_change,
+         "constraint_linf": final_constraint_max(run_dir),
+         "hamiltonian_l2": final_h_l2,
+         "hamiltonian_linf": abs(float(rows[-1]["z4c_hamiltonian_linf"])),
+         "amr_constraint_ratio": amr_constraint_ratio,
+         "fixed_metric_change": fixed_metric_change,
+         "levels": levels,
+         "run_dir": repo_relative(run_dir),
+      })
+      scalars.append(scalar)
+
+   if full_cowling_initial is None:
+      raise RuntimeError("full-domain Cowling reference was not produced")
+   octant_dir, octant_scalar = run_dimension_case(
+      "tov_cowling_octant_amr_3d",
+      TOV_OCTANT_INPUT,
+      {
+         **common_overrides,
+         "pyfluid.scalar_diagnostics": (
+            "standard,adm_mass_volume,proper_mass_volume,komar_mass_volume,"
+            "adm_momentum_volume,adm_angular_momentum_volume"
+         ),
+      },
+      args,
+      dim=3,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   octant_rows = read_scalar_rows(octant_dir)
+   octant_initial = octant_rows[0]
+   octant_levels = level_count(spacetime_plotfiles(octant_dir)[-1])
+   scalar_charges = (
+      "mass",
+      "adm_mass_volume",
+      "proper_mass_volume",
+      "komar_mass_volume",
+   )
+   charge_errors = {
+      field: abs(float(octant_initial[field]) - float(full_cowling_initial[field]))
+      / max(abs(float(full_cowling_initial[field])), np.finfo(float).tiny)
+      for field in scalar_charges
+   }
+   odd_charge_fields = tuple(
+      f"adm_{kind}{axis}_volume"
+      for kind in ("momentum", "angular_momentum")
+      for axis in (1, 2, 3)
+   )
+   odd_charge_max = max(abs(float(octant_initial[field])) for field in odd_charge_fields)
+   rest_mass_drift = max(abs(float(row["mass_rel_drift"])) for row in octant_rows)
+   external_mass_error = max(
+      abs(float(row["external_mass_rel_error"])) for row in octant_rows
+   )
+   max_rho_change = max(abs(float(row["max_rho_rel_change"])) for row in octant_rows)
+   maximum_charge_error = max(charge_errors.values())
+   if (
+      octant_levels < 2
+      or maximum_charge_error > 5.0e-4
+      or odd_charge_max > 1.0e-12
+      or rest_mass_drift > 1.0e-8
+      or external_mass_error > 1.0e-12
+      or max_rho_change > 1.0e-2
+   ):
+      raise RuntimeError(
+         "octant TOV symmetry failed: "
+         f"levels={octant_levels}, charge errors={charge_errors}, "
+         f"odd charge={odd_charge_max:.3e}, rest-mass drift={rest_mass_drift:.3e}, "
+         f"external mass error={external_mass_error:.3e}, "
+         f"max-rho change={max_rho_change:.3e}"
+      )
+   results.append({
+      "kind": "feature",
+      "case": "tov_cowling_octant_amr_3d",
+      "status": "PASS",
+      "metric": "full_octant_volume_charge_error",
+      "value": maximum_charge_error,
+      "rest_mass_drift": rest_mass_drift,
+      "external_mass_relative_error": external_mass_error,
+      "max_rho_relative_change": max_rho_change,
+      "adm_mass_volume": float(octant_rows[-1]["adm_mass_volume"]),
+      "constraint_linf": final_constraint_max(octant_dir),
+      "hamiltonian_l2": abs(float(octant_rows[-1]["z4c_hamiltonian_l2"])),
+      "hamiltonian_linf": abs(float(octant_rows[-1]["z4c_hamiltonian_linf"])),
+      "levels": octant_levels,
+      "run_dir": repo_relative(octant_dir),
+   })
+   scalars.append(octant_scalar)
+   return results, scalars
+
+
 def validate_tov_initial_data(
    args: argparse.Namespace,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -1067,52 +1285,12 @@ def validate_tov_initial_data(
          )
       )
 
-   run_dir, scalar = run_dimension_case(
-      "tov_coupled_amr_3d",
-      TOV_INPUT,
-      {},
-      args,
-      dim=3,
-      checks=SMOKE_POLICY,
-      mhd=False,
-      kind="feature",
-   )
-   rows = read_scalar_rows(run_dir)
-   plotfile = latest_spacetime_plotfile(run_dir)
-   if plotfile is None:
-      raise RuntimeError("coupled TOV run did not write spacetime state")
-   levels = level_count(plotfile)
-   mass_drift = max(abs(float(row["mass_rel_drift"])) for row in rows)
-   initial_h_l2 = abs(float(rows[0]["z4c_hamiltonian_l2"]))
-   final_h_l2 = abs(float(rows[-1]["z4c_hamiltonian_l2"]))
    uniform_coarse_h_l2 = float(results[0]["hamiltonian_l2"])
-   amr_constraint_ratio = initial_h_l2 / uniform_coarse_h_l2
-   if (
-      levels < 2
-      or mass_drift > 1.0e-8
-      or final_h_l2 > 2.0 * initial_h_l2
-      or amr_constraint_ratio > 32.0
-   ):
-      raise RuntimeError(
-         "coupled TOV AMR smoke failed: "
-         f"levels={levels}, mass drift={mass_drift:.3e}, "
-         f"Hamiltonian L2={initial_h_l2:.3e}->{final_h_l2:.3e}, "
-         f"AMR/uniform ratio={amr_constraint_ratio:.3e}"
-      )
-   results.append({
-      "kind": "feature",
-      "case": "tov_coupled_amr_3d",
-      "status": "PASS",
-      "metric": "hamiltonian_l2_growth",
-      "value": final_h_l2 / max(initial_h_l2, np.finfo(float).tiny),
-      "constraint_linf": final_constraint_max(run_dir),
-      "hamiltonian_l2": final_h_l2,
-      "hamiltonian_linf": abs(float(rows[-1]["z4c_hamiltonian_linf"])),
-      "amr_constraint_ratio": amr_constraint_ratio,
-      "levels": levels,
-      "run_dir": repo_relative(run_dir),
-   })
-   scalars.append(scalar)
+   evolution_results, evolution_scalars = validate_tov_evolution(
+      args, uniform_coarse_h_l2
+   )
+   results.extend(evolution_results)
+   scalars.extend(evolution_scalars)
 
    piecewise_dir, piecewise_scalar = run_dimension_case(
       "tov_piecewise_polytrope_n24",
@@ -1175,12 +1353,23 @@ def validate_conformal_tov_initial_data(
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
    results: list[dict[str, object]] = []
    scalars: list[dict[str, object]] = []
-   for formulation in ("ctt", "cttk", "xcts"):
+   formulations = (
+      (args.formulation,)
+      if args.formulation is not None
+      else ("ctt", "cttk", "xcts")
+   )
+   for formulation in formulations:
       name = f"tov_{formulation}_3d"
+      global_gr_enabled = True
       run_dir, scalar = run_dimension_case(
          name,
          CONFORMAL_TOV_INPUT,
-         {"spacetime.initial_data": formulation},
+         {
+            "spacetime.initial_data": formulation,
+            "pyfluid.scalar_diagnostics": (
+               "standard,global_gr" if global_gr_enabled else "standard"
+            ),
+         },
          args,
          dim=3,
          checks=SMOKE_POLICY,
@@ -1203,11 +1392,65 @@ def validate_conformal_tov_initial_data(
       elliptic_lapse = math.inf
       elliptic_momentum = math.inf
       relative_matter_update = math.inf
+      tov_observables = parse_tov_observables(run_log)
       if solve_match is not None:
          relative_matter_update = abs(float(solve_match.group(2)))
          elliptic_hamiltonian = abs(float(solve_match.group(4)))
          elliptic_lapse = abs(float(solve_match.group(5)))
          elliptic_momentum = abs(float(solve_match.group(6)))
+      adm_mass_surface = math.nan
+      adm_mass_volume = math.nan
+      adm_surface_volume_relative_error = math.nan
+      adm_reference_relative_error = math.nan
+      adm_angular_momentum_max = math.nan
+      adm_momentum_max = math.nan
+      proper_mass_relative_error = math.nan
+      baryonic_mass_relative_error = math.nan
+      binding_energy_mass_normalized_error = math.nan
+      komar_volume_relative_error = math.nan
+      komar_surface_volume_relative_error = math.nan
+      if global_gr_enabled:
+         adm_mass_surface = float(final["adm_mass_surface"])
+         adm_mass_volume = float(final["adm_mass_volume"])
+         adm_surface_volume_relative_error = abs(
+            adm_mass_surface - adm_mass_volume
+         ) / max(abs(adm_mass_surface), abs(adm_mass_volume), 1.0e-30)
+         tov_mass = tov_observables["mass"]
+         adm_reference_relative_error = abs(adm_mass_volume - tov_mass) / max(
+            abs(tov_mass), 1.0e-30
+         )
+         adm_angular_momentum_max = max(
+            abs(float(final[f"adm_angular_momentum{axis}_{form}"]))
+            for axis in (1, 2, 3)
+            for form in ("surface", "volume")
+         )
+         adm_momentum_max = max(
+            abs(float(final[f"adm_momentum{axis}_{form}"]))
+            for axis in (1, 2, 3)
+            for form in ("surface", "volume")
+         )
+         proper_mass = float(final["proper_mass_volume"])
+         baryonic_mass = float(final["mass"])
+         binding_energy = float(final["binding_energy_volume"])
+         reference_binding_energy = tov_observables["baryonic_mass"] - tov_mass
+         proper_mass_relative_error = abs(
+            proper_mass - tov_observables["proper_mass"]
+         ) / max(abs(tov_observables["proper_mass"]), 1.0e-30)
+         baryonic_mass_relative_error = abs(
+            baryonic_mass - tov_observables["baryonic_mass"]
+         ) / max(abs(tov_observables["baryonic_mass"]), 1.0e-30)
+         binding_energy_mass_normalized_error = abs(
+            binding_energy - reference_binding_energy
+         ) / max(abs(tov_mass), 1.0e-30)
+         if formulation == "xcts":
+            komar_surface = float(final["komar_mass_surface"])
+            komar_volume = float(final["komar_mass_volume"])
+            komar_volume_relative_error = abs(
+               komar_volume - tov_observables["komar_mass"]
+            ) / max(abs(tov_observables["komar_mass"]), 1.0e-30)
+            komar_surface_volume_relative_error = abs(
+               komar_surface - komar_volume
+            ) / max(abs(komar_surface), abs(komar_volume), 1.0e-30)
       if (
          not math.isfinite(h_l2)
          or not math.isfinite(h_linf)
@@ -1215,13 +1458,55 @@ def validate_conformal_tov_initial_data(
          or solve_match is None
          or relative_matter_update > 1.0e-9
          or max(elliptic_hamiltonian, elliptic_lapse, elliptic_momentum) > 1.0e-10
+         or (
+            global_gr_enabled
+            and (
+               not math.isfinite(adm_mass_surface)
+               or not math.isfinite(adm_mass_volume)
+               or adm_surface_volume_relative_error > 1.0e-2
+               or adm_angular_momentum_max > 1.0e-10
+               or adm_momentum_max > 1.0e-10
+               or not all(math.isfinite(value) for value in (
+                  adm_reference_relative_error,
+                  proper_mass_relative_error,
+                  baryonic_mass_relative_error,
+                  binding_energy_mass_normalized_error,
+               ))
+               or (
+                  formulation != "cttk"
+                  and (
+                     adm_reference_relative_error > 6.0e-2
+                     or proper_mass_relative_error > 3.0e-2
+                     or baryonic_mass_relative_error > 3.0e-2
+                     or binding_energy_mass_normalized_error > 5.0e-2
+                  )
+               )
+               or (
+                  formulation == "xcts"
+                  and (
+                     komar_volume_relative_error > 6.0e-2
+                     or komar_surface_volume_relative_error > 2.0e-2
+                  )
+               )
+            )
+         )
       ):
          raise RuntimeError(
             f"staggered TOV {formulation.upper()} materialization failed: "
             f"Hamiltonian L2={h_l2:.3e}, Linf={h_linf:.3e}, "
             f"momentum Linf={momentum_linf:.3e}, "
             f"elliptic residuals=({elliptic_hamiltonian:.3e}, "
-            f"{elliptic_lapse:.3e}, {elliptic_momentum:.3e})"
+            f"{elliptic_lapse:.3e}, {elliptic_momentum:.3e}), "
+            f"ADM surface/volume=({adm_mass_surface:.8g}, "
+            f"{adm_mass_volume:.8g}), errors=({adm_surface_volume_relative_error:.3e}, "
+            f"{adm_reference_relative_error:.3e}), "
+            f"proper/baryon/binding errors=({proper_mass_relative_error:.3e}, "
+            f"{baryonic_mass_relative_error:.3e}, "
+            f"{binding_energy_mass_normalized_error:.3e}), "
+            f"Komar errors=({komar_volume_relative_error:.3e}, "
+            f"{komar_surface_volume_relative_error:.3e}), "
+            f"|P_ADM|max={adm_momentum_max:.3e}, "
+            f"|J_ADM|max={adm_angular_momentum_max:.3e}"
          )
       results.append({
          "kind": "feature",
@@ -1237,9 +1522,105 @@ def validate_conformal_tov_initial_data(
          "elliptic_hamiltonian_residual": elliptic_hamiltonian,
          "elliptic_lapse_residual": elliptic_lapse,
          "elliptic_momentum_residual": elliptic_momentum,
+         "adm_mass_surface": adm_mass_surface,
+         "adm_mass_volume": adm_mass_volume,
+         "adm_surface_volume_relative_error": adm_surface_volume_relative_error,
+         "adm_reference_relative_error": adm_reference_relative_error,
+         "adm_angular_momentum_max": adm_angular_momentum_max,
+         "adm_momentum_max": adm_momentum_max,
+         "proper_mass_relative_error": proper_mass_relative_error,
+         "baryonic_mass_relative_error": baryonic_mass_relative_error,
+         "binding_energy_mass_normalized_error": binding_energy_mass_normalized_error,
+         "komar_volume_relative_error": komar_volume_relative_error,
+         "komar_surface_volume_relative_error": komar_surface_volume_relative_error,
          "run_dir": repo_relative(run_dir),
       })
       scalars.append(scalar)
+   if args.adm_convergence:
+      convergence_results, convergence_scalars = validate_adm_mass_convergence(
+         args
+      )
+      results.extend(convergence_results)
+      scalars.extend(convergence_scalars)
+   return results, scalars
+
+
+def validate_adm_mass_convergence(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   results: list[dict[str, object]] = []
+   scalars: list[dict[str, object]] = []
+   reference_errors: list[float] = []
+   surface_volume_errors: list[float] = []
+   for base_cells in (16, 24, 32):
+      name = f"tov_ctt_adm_n{base_cells}"
+      run_dir, scalar = run_dimension_case(
+         name,
+         CONFORMAL_TOV_INPUT,
+         {
+            "amr.n_cell": f"{base_cells} {base_cells} {base_cells}",
+            "amr.max_level": "0",
+            "amr.initial_refine": "none",
+            "spacetime.initial_data": "ctt",
+            "pyfluid.scalar_diagnostics": "standard,global_gr",
+         },
+         args,
+         dim=3,
+         checks=SMOKE_POLICY,
+         mhd=False,
+         kind="analytic",
+         remove_parameters=("amr.ref_ratio",),
+      )
+      final = read_scalar_rows(run_dir)[-1]
+      run_log = (run_dir / "run.log").read_text()
+      tov_mass = parse_tov_observables(run_log)["mass"]
+      surface_mass = float(final["adm_mass_surface"])
+      volume_mass = float(final["adm_mass_volume"])
+      surface_volume_error = abs(surface_mass - volume_mass) / max(
+         abs(surface_mass), abs(volume_mass), 1.0e-30
+      )
+      reference_error = abs(volume_mass - tov_mass) / max(abs(tov_mass), 1.0e-30)
+      if (
+         not math.isfinite(surface_mass)
+         or not math.isfinite(volume_mass)
+         or surface_volume_error > 2.0e-2
+      ):
+         raise RuntimeError(
+            f"ADM mass quadratures disagree at n={base_cells}: "
+            f"surface={surface_mass:.8g}, volume={volume_mass:.8g}, "
+            f"relative error={surface_volume_error:.3e}"
+         )
+      reference_errors.append(reference_error)
+      surface_volume_errors.append(surface_volume_error)
+      results.append({
+         "kind": "analytic",
+         "case": name,
+         "status": "PASS",
+         "metric": "adm_reference_relative_error",
+         "value": reference_error,
+         "adm_mass_surface": surface_mass,
+         "adm_mass_volume": volume_mass,
+         "hierarchy": "uniform",
+         "adm_surface_volume_relative_error": surface_volume_error,
+         "adm_reference_relative_error": reference_error,
+         "run_dir": repo_relative(run_dir),
+      })
+      scalars.append(scalar)
+   if reference_errors[-1] >= 3.0e-2:
+      raise RuntimeError(
+         "constraint-assisted ADM mass is not plausible against the TOV mass: "
+         + ", ".join(f"{error:.3e}" for error in reference_errors)
+      )
+   if not all(
+      finer < coarser
+      for coarser, finer in zip(
+         surface_volume_errors, surface_volume_errors[1:]
+      )
+   ):
+      raise RuntimeError(
+         "ADM surface-volume disagreement does not decrease with resolution: "
+         + ", ".join(f"{error:.3e}" for error in surface_volume_errors)
+      )
    return results, scalars
 
 
@@ -1358,32 +1739,45 @@ def validate_ctt_initial_data(
    })
    scalars.append(packet_scalar)
 
-   amr_dir, amr_scalar = run_dimension_case(
-      "ctt_density_cloud_amr",
-      CTT_INPUT,
-      {
-         "amr.n_cell": "16 16 16",
-         "amr.max_level": "1",
-         "amr.ref_ratio": "2",
-         "amr.max_grid_size": "16",
-         "amr.tag_metric": "none",
-         "amr.initial_refine": "box",
-         "amr.initial_refine_levels": "1",
-         "amr.initial_refine_fixed_levels": "1",
-         "amr.initial_refine_box_lo": "-1.5 -1.5 -1.5",
-         "amr.initial_refine_box_hi": "1.5 1.5 1.5",
-         "pyfluid.max_step": "0",
-         "pyfluid.plot_int": "0",
-      },
-      args,
-      dim=3,
-      checks=SMOKE_POLICY,
-      mhd=False,
-      kind="feature",
-   )
-   amr_final = read_scalar_rows(amr_dir)[-1]
+   partial_amr_runs: dict[int, tuple[Path, dict[str, object], dict[str, str]]] = {}
+   for cells in (16, 32):
+      run_dir, scalar = run_dimension_case(
+         f"ctt_density_cloud_amr_n{cells}",
+         CTT_INPUT,
+         {
+            "amr.n_cell": f"{cells} {cells} {cells}",
+            "amr.max_level": "1",
+            "amr.ref_ratio": "2",
+            "amr.max_grid_size": "16",
+            "amr.tag_metric": "none",
+            "amr.initial_refine": "box",
+            "amr.initial_refine_levels": "1",
+            "amr.initial_refine_fixed_levels": "1",
+            "amr.initial_refine_box_lo": "-1.5 -1.5 -1.5",
+            "amr.initial_refine_box_hi": "1.5 1.5 1.5",
+            "pyfluid.max_step": "0",
+            "pyfluid.plot_int": "0",
+         },
+         args,
+         dim=3,
+         checks=SMOKE_POLICY,
+         mhd=False,
+         kind="feature",
+      )
+      partial_amr_runs[cells] = (run_dir, scalar, read_scalar_rows(run_dir)[-1])
+
+   amr_dir, amr_scalar, amr_final = partial_amr_runs[16]
    amr_l2 = abs(float(amr_final["z4c_hamiltonian_l2"]))
    amr_linf = abs(float(amr_final["z4c_hamiltonian_linf"]))
+   amr_interior_l2 = abs(float(amr_final["z4c_hamiltonian_interior_l2"]))
+   amr_cf_l2 = abs(float(amr_final["z4c_hamiltonian_cf_l2"]))
+   amr_cf_linf = abs(float(amr_final["z4c_hamiltonian_cf_linf"]))
+   refined_amr_dir, refined_amr_scalar, refined_amr_final = partial_amr_runs[32]
+   refined_amr_l2 = abs(float(refined_amr_final["z4c_hamiltonian_l2"]))
+   refined_amr_interior_l2 = abs(
+      float(refined_amr_final["z4c_hamiltonian_interior_l2"])
+   )
+   refined_amr_cf_l2 = abs(float(refined_amr_final["z4c_hamiltonian_cf_l2"]))
    amr_plotfile = latest_spacetime_plotfile(amr_dir)
    coarse_plotfile = latest_spacetime_plotfile(uniform_runs[16])
    reference_plotfile = latest_spacetime_plotfile(uniform_runs[32])
@@ -1406,58 +1800,115 @@ def validate_ctt_initial_data(
    chi_component = amr_names.index("chi")
    reference_state = read_level_state(reference_plotfile, reference_names, 3, 0)
    coarse_state = read_level_state(coarse_plotfile, coarse_names, 3, 0)
-   fine_errors: list[float] = []
-   coarse_errors: list[float] = []
-   visited: set[tuple[int, int, int]] = set()
+   fine_values: dict[tuple[int, int, int], float] = {}
    for lo, hi, data in level_chunks(amr_plotfile, 1, 3, names=amr_names):
       for i in range(lo[0], hi[0] + 1):
          for j in range(lo[1], hi[1] + 1):
             for k in range(lo[2], hi[2] + 1):
                point = (i, j, k)
-               if point in visited or any(index % 2 != 0 for index in point):
-                  continue
-               visited.add(point)
-               reference = reference_state[(chi_component, *point)]
-               fine_errors.append(
+               fine_values[point] = float(
                   data[chi_component, i - lo[0], j - lo[1], k - lo[2]]
-                  - reference
                )
-               coarse_errors.append(
-                  coarse_state[chi_component, i // 2, j // 2, k // 2]
-                  - reference
-               )
+
+   fine_errors: list[float] = []
+   coarse_errors: list[float] = []
+   for point, fine_value in fine_values.items():
+      if all(index % 2 == 0 for index in point):
+         continue
+      # Exclude the two-point fourth-order coarse-fine stencil buffer from
+      # this local-accuracy comparison. The interface contribution remains
+      # visible in the dedicated Hamiltonian CF diagnostics.
+      if not all(
+         tuple(
+            coordinate + (offset if axis == direction else 0)
+            for axis, coordinate in enumerate(point)
+         ) in fine_values
+         for direction in range(3)
+         for offset in (-2, 2)
+      ):
+         continue
+      reference = reference_state[(chi_component, *point)]
+      coarse_value = 0.0
+      for di in (0, 1):
+         wi = 1.0 - 0.5 * (point[0] % 2) if di == 0 else 0.5 * (point[0] % 2)
+         for dj in (0, 1):
+            wj = 1.0 - 0.5 * (point[1] % 2) if dj == 0 else 0.5 * (point[1] % 2)
+            for dk in (0, 1):
+               wk = 1.0 - 0.5 * (point[2] % 2) if dk == 0 else 0.5 * (point[2] % 2)
+               coarse_value += wi * wj * wk * coarse_state[
+                  (
+                     chi_component,
+                     point[0] // 2 + di,
+                     point[1] // 2 + dj,
+                     point[2] // 2 + dk,
+                  )
+               ]
+      fine_errors.append(fine_value - reference)
+      coarse_errors.append(coarse_value - reference)
    if not fine_errors:
       raise RuntimeError("compact CTT AMR comparison found no shared sample points")
    fine_solution_l2 = float(np.sqrt(np.mean(np.square(fine_errors))))
    coarse_solution_l2 = float(np.sqrt(np.mean(np.square(coarse_errors))))
    solution_ratio = fine_solution_l2 / coarse_solution_l2
-   constraint_ratio = amr_l2 / uniform_l2[16]
+   constraint_ratio = amr_interior_l2 / uniform_l2[16]
    if (
       not math.isfinite(amr_l2)
+      or not math.isfinite(amr_interior_l2)
+      or not math.isfinite(amr_cf_l2)
+      or not math.isfinite(refined_amr_l2)
+      or not math.isfinite(refined_amr_interior_l2)
+      or not math.isfinite(refined_amr_cf_l2)
       or not math.isfinite(solution_ratio)
       or solution_ratio >= 0.75
       or constraint_ratio >= 4.0
+      or refined_amr_l2 >= 0.75 * amr_l2
+      or refined_amr_interior_l2 >= 0.75 * amr_interior_l2
    ):
       raise RuntimeError(
          "compact CTT AMR handoff failed: "
          f"solution ratio={solution_ratio:.3e}, "
-         f"constraint ratio={constraint_ratio:.3e}"
+         f"constraint ratio={constraint_ratio:.3e}, "
+         f"composite convergence ratio={refined_amr_l2 / amr_l2:.3e}, "
+         f"interior convergence ratio={refined_amr_interior_l2 / amr_interior_l2:.3e}"
       )
    results.append({
       "kind": "feature",
-      "case": "ctt_density_cloud_amr",
+      "case": "ctt_density_cloud_amr_n16",
       "status": "PASS",
       "metric": "hamiltonian_l2",
       "value": amr_l2,
       "constraint_linf": amr_linf,
       "hamiltonian_l2": amr_l2,
       "hamiltonian_linf": amr_linf,
+      "hamiltonian_interior_l2": amr_interior_l2,
+      "hamiltonian_cf_l2": amr_cf_l2,
+      "hamiltonian_cf_linf": amr_cf_linf,
       "amr_solution_ratio": solution_ratio,
       "amr_constraint_ratio": constraint_ratio,
       "levels": 2,
       "run_dir": repo_relative(amr_dir),
    })
    scalars.append(amr_scalar)
+   results.append({
+      "kind": "convergence",
+      "case": "ctt_density_cloud_amr_n32",
+      "status": "PASS",
+      "metric": "hamiltonian_l2",
+      "value": refined_amr_l2,
+      "order": math.log(amr_l2 / refined_amr_l2) / math.log(2.0),
+      "constraint_linf": abs(float(refined_amr_final["z4c_hamiltonian_linf"])),
+      "hamiltonian_l2": refined_amr_l2,
+      "hamiltonian_linf": abs(float(refined_amr_final["z4c_hamiltonian_linf"])),
+      "hamiltonian_interior_l2": refined_amr_interior_l2,
+      "hamiltonian_cf_l2": refined_amr_cf_l2,
+      "hamiltonian_cf_linf": abs(
+         float(refined_amr_final["z4c_hamiltonian_cf_linf"])
+      ),
+      "amr_cf_convergence_ratio": refined_amr_cf_l2 / amr_cf_l2,
+      "levels": 2,
+      "run_dir": repo_relative(refined_amr_dir),
+   })
+   scalars.append(refined_amr_scalar)
    return results, scalars
 
 
@@ -1466,11 +1917,17 @@ def main() -> int:
    parser.add_argument("--level", choices=("quick", "standard"), default="standard")
    parser.add_argument(
       "--only",
-      choices=("all", "ctt", "conformal_tov", "realistic_eos"),
+      choices=("all", "ctt", "conformal_tov", "realistic_eos", "tov_evolution"),
       default="all",
    )
+   parser.add_argument("--formulation", choices=("ctt", "cttk", "xcts"))
+   parser.add_argument(
+      "--adm-convergence",
+      action="store_true",
+      help="run the opt-in three-resolution CTT ADM mass convergence check",
+   )
    parser.add_argument("--ranks", type=int, default=1)
-   parser.add_argument("--timeout", type=float, default=180.0)
+   parser.add_argument("--timeout", type=float, default=240.0)
    parser.add_argument("--force", action="store_true")
    args = parser.parse_args()
 
@@ -1486,6 +1943,8 @@ def main() -> int:
       if args.only == "conformal_tov"
       else (validate_realistic_eos_tov,)
       if args.only == "realistic_eos"
+      else (validate_tov_evolution,)
+      if args.only == "tov_evolution"
       else (
          validate_minkowski,
          validate_initial_data_group_policies,
@@ -1527,9 +1986,25 @@ def main() -> int:
       "hamiltonian_l2",
       "hamiltonian_linf",
       "momentum_linf",
+      "adm_mass_surface",
+      "adm_mass_volume",
+      "adm_mass_surface_relative_change",
+      "adm_mass_volume_relative_change",
+      "adm_surface_volume_relative_error",
+      "adm_reference_relative_error",
+      "adm_momentum_max",
+      "adm_angular_momentum_max",
+      "proper_mass_relative_error",
+      "baryonic_mass_relative_error",
+      "binding_energy_mass_normalized_error",
+      "komar_volume_relative_error",
+      "komar_surface_volume_relative_error",
       "amr_solution_ratio",
       "amr_constraint_ratio",
       "fixed_metric_change",
+      "rest_mass_drift",
+      "external_mass_relative_error",
+      "max_rho_relative_change",
       "analytic_error_subcycled",
       "analytic_error_single_rate",
       "levels",

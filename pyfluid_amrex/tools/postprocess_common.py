@@ -14,6 +14,7 @@ from validation_common import (
    parse_float,
    read_key_values,
    read_scalar_rows,
+   read_tsv,
    write_tsv,
 )
 
@@ -109,6 +110,31 @@ def physics_validation_rows(run_dir: Path, *, input_file: Path | None = None) ->
    found_input = find_input_file(run_dir, input_file)
    params = read_key_values(found_input)
    out: list[dict[str, object]] = []
+
+   multipole_path = run_dir / "multipoles.tsv"
+   multipole_rows = read_tsv(multipole_path, require_complete=True) if multipole_path.exists() else []
+   has_psi4 = any(row.get("field") == "psi4" for row in multipole_rows)
+   if has_psi4:
+      try:
+         from postprocess_radiation import postprocess as postprocess_radiation
+
+         postprocess_radiation(run_dir)
+         status = "PASS"
+         reason = ""
+         value = 0.0
+      except (KeyError, OSError, ValueError) as error:
+         status = "FAIL"
+         reason = str(error)
+         value = 1.0
+      out.append({
+         "hook": "radiation_postprocess",
+         "status": status,
+         "reason": reason,
+         "metric": "invalid_runtime_history",
+         "value": value,
+         "tolerance": 0.0,
+         "run_dir": str(run_dir),
+      })
 
    if active_column(rows, "wall_work") and "wall_work_rel_error" in (rows[0] if rows else {}):
       tol = param_float(params, "pyfluid.validation_wall_work_tol", 1.0e-5)

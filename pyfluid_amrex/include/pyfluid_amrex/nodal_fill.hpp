@@ -86,7 +86,7 @@ void fill_nodal_two_levels(
       fine_bc,
       0,
       refinement_ratio,
-      fourth_order_nodal_interpolater(),
+      nodal_interpolater(),
       boundary_conditions,
       0
    );

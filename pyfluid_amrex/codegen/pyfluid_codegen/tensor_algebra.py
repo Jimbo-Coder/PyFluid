@@ -19,6 +19,19 @@ def _unit_match(index: int, axis: int, dimension: int) -> int:
    return 1 if axis == index else 0
 
 
+def symmetric_tensor3_symbols(prefix: str) -> sp.Matrix:
+   """Return a symmetric 3-tensor using canonical 11,12,13,22,23,33 names."""
+   components = {
+      (first, second): sp.Symbol(f"{prefix}{first + 1}{second + 1}")
+      for first, second in ((0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2))
+   }
+   return sp.Matrix(
+      3,
+      3,
+      lambda row, column: components[tuple(sorted((row, column)))],
+   )
+
+
 @dataclass(frozen=True, init=False)
 class Vector:
    """Immutable algebraic vector whose dimension is carried by its values."""

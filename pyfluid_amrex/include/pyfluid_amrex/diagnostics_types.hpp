@@ -10,86 +10,116 @@
 #include <string>
 #include <vector>
 
+#include "pyfluid_amrex/generated/diagnostic_catalog.hpp"
+
 namespace pyfluid_amrex {
 
 struct RunConfig;
 
-struct ScalarDiagnostics {
-   int step = 0;
-   amrex::Real time = 0.0;
-   amrex::Real dt = 0.0;
+struct ConservedDiagnosticIntegrands {
    amrex::Real mass = 0.0;
-   amrex::Real mom1 = 0.0;
-   amrex::Real mom2 = 0.0;
-   amrex::Real mom3 = 0.0;
-   amrex::Real angular_mom1 = 0.0;
-   amrex::Real angular_mom2 = 0.0;
-   amrex::Real angular_mom3 = 0.0;
+   amrex::Real momentum1 = 0.0;
+   amrex::Real momentum2 = 0.0;
+   amrex::Real momentum3 = 0.0;
    amrex::Real energy = 0.0;
-   amrex::Real gravity_potential_energy = 0.0;
-   amrex::Real gravity_total_energy = 0.0;
-   amrex::Real gravity_total_energy_rel_drift = 0.0;
-   amrex::Real passive_mass = 0.0;
-   amrex::Real passive_mass_rel_drift = 0.0;
-   amrex::Real wall_work = 0.0;
-   amrex::Real wall_power = 0.0;
-   amrex::Real energy_minus_wall_work = 0.0;
-   amrex::Real wall_work_rel_error = 0.0;
-   int external_budget_valid = 1;
-   amrex::Real boundary_mass_change = 0.0;
-   amrex::Real boundary_energy_change = 0.0;
-   amrex::Real source_mass_change = 0.0;
-   amrex::Real source_energy_change = 0.0;
-   amrex::Real external_mass_change = 0.0;
-   amrex::Real external_energy_change = 0.0;
-   amrex::Real external_mass_residual = 0.0;
-   amrex::Real external_energy_residual = 0.0;
-   amrex::Real external_mass_rel_error = 0.0;
-   amrex::Real external_energy_rel_error = 0.0;
-   amrex::Real mass_rel_drift = 0.0;
-   amrex::Real energy_rel_drift = 0.0;
-   amrex::Real min_rho = 0.0;
-   amrex::Real max_rho = 0.0;
-   amrex::Real max_rho_rel_change = 0.0;
-   amrex::Real min_pressure = 0.0;
+   amrex::Real angular_momentum1 = 0.0;
+   amrex::Real angular_momentum2 = 0.0;
+   amrex::Real angular_momentum3 = 0.0;
    amrex::Real magnetic_energy = 0.0;
-   amrex::Real divb_l1 = 0.0;
-   amrex::Real diffusion_residual = 0.0;
-   int diffusion_iterations = 0;
-   amrex::Long amr_total_cells = 0;
-   int amr_active_finest_level = 0;
-   int amr_finest_headroom = 0;
-   int amr_touches_max_level = 0;
-   amrex::Real amr_total_budget_fraction = -1.0;
-   amrex::Real amr_peak_level_budget_fraction = -1.0;
-   amrex::Real mcells_per_s = 0.0;
-   amrex::Real layout_mcells_per_s = 0.0;
-   amrex::Real sim_time_per_s = 0.0;
-   amrex::Real cfl_limiter_frequency = 0.0;
-   int cfl_limiter_level = -1;
-   int cfl_limiter_i = 0;
-   int cfl_limiter_j = 0;
-   int cfl_limiter_k = 0;
-   amrex::Real cfl_limiter_q1 = 0.0;
-   amrex::Real cfl_limiter_q2 = 0.0;
-   amrex::Real cfl_limiter_q3 = 0.0;
-   amrex::Real z4c_hamiltonian_linf = 0.0;
-   amrex::Real z4c_hamiltonian_l2 = 0.0;
-   amrex::Real z4c_momentum_linf = 0.0;
-   amrex::Real z4c_z_linf = 0.0;
-   amrex::Real z4c_theta_linf = 0.0;
-   amrex::Real z4c_log_conformal_determinant_linf = 0.0;
-   amrex::Real z4c_trace_a_tilde_linf = 0.0;
+   amrex::Real gravity_potential_energy = 0.0;
+   amrex::Real passive_mass = 0.0;
+   amrex::Real divb = 0.0;
+};
+
+struct AdmFluxIntegrands {
+   amrex::Real mass1 = 0.0;
+   amrex::Real mass2 = 0.0;
+   amrex::Real mass3 = 0.0;
+   amrex::Real komar_mass1 = 0.0;
+   amrex::Real komar_mass2 = 0.0;
+   amrex::Real komar_mass3 = 0.0;
+   amrex::Real linear_momentum11 = 0.0;
+   amrex::Real linear_momentum12 = 0.0;
+   amrex::Real linear_momentum13 = 0.0;
+   amrex::Real linear_momentum21 = 0.0;
+   amrex::Real linear_momentum22 = 0.0;
+   amrex::Real linear_momentum23 = 0.0;
+   amrex::Real linear_momentum31 = 0.0;
+   amrex::Real linear_momentum32 = 0.0;
+   amrex::Real linear_momentum33 = 0.0;
+   amrex::Real angular_momentum11 = 0.0;
+   amrex::Real angular_momentum12 = 0.0;
+   amrex::Real angular_momentum13 = 0.0;
+   amrex::Real angular_momentum21 = 0.0;
+   amrex::Real angular_momentum22 = 0.0;
+   amrex::Real angular_momentum23 = 0.0;
+   amrex::Real angular_momentum31 = 0.0;
+   amrex::Real angular_momentum32 = 0.0;
+   amrex::Real angular_momentum33 = 0.0;
+};
+
+struct AdmVolumeIntegrands {
+   amrex::Real mass = 0.0;
+   amrex::Real proper_mass = 0.0;
+   amrex::Real komar_mass = 0.0;
+   amrex::Real linear_momentum1 = 0.0;
+   amrex::Real linear_momentum2 = 0.0;
+   amrex::Real linear_momentum3 = 0.0;
+   amrex::Real angular_momentum1 = 0.0;
+   amrex::Real angular_momentum2 = 0.0;
+   amrex::Real angular_momentum3 = 0.0;
+};
+
+struct WeylRadiationIntegrands {
+   amrex::Real electric11 = 0.0;
+   amrex::Real electric12 = 0.0;
+   amrex::Real electric13 = 0.0;
+   amrex::Real electric22 = 0.0;
+   amrex::Real electric23 = 0.0;
+   amrex::Real electric33 = 0.0;
+   amrex::Real magnetic11 = 0.0;
+   amrex::Real magnetic12 = 0.0;
+   amrex::Real magnetic13 = 0.0;
+   amrex::Real magnetic22 = 0.0;
+   amrex::Real magnetic23 = 0.0;
+   amrex::Real magnetic33 = 0.0;
+};
+
+struct Psi4Integrands {
+   amrex::Real psi4_real = 0.0;
+   amrex::Real psi4_imaginary = 0.0;
+};
+
+struct MatterEnergyFluxIntegrands {
+   amrex::Real flux1 = 0.0;
+   amrex::Real flux2 = 0.0;
+   amrex::Real flux3 = 0.0;
 };
 
 struct SpacetimeConstraintDiagnostics {
    amrex::Real hamiltonian_linf = 0.0;
    amrex::Real hamiltonian_l2 = 0.0;
+   amrex::Real hamiltonian_interior_linf = 0.0;
+   amrex::Real hamiltonian_interior_l2 = 0.0;
+   amrex::Real hamiltonian_cf_linf = 0.0;
+   amrex::Real hamiltonian_cf_l2 = 0.0;
    amrex::Real momentum_linf = 0.0;
    amrex::Real z_linf = 0.0;
    amrex::Real theta_linf = 0.0;
    amrex::Real log_conformal_determinant_linf = 0.0;
    amrex::Real trace_a_tilde_linf = 0.0;
+};
+
+struct SpacetimeGlobalDiagnostics {
+   amrex::Real adm_mass_surface = 0.0;
+   amrex::Real adm_mass_volume = 0.0;
+   amrex::Real proper_mass_volume = 0.0;
+   amrex::Real komar_mass_surface = 0.0;
+   amrex::Real komar_mass_volume = 0.0;
+   amrex::GpuArray<amrex::Real, 3> adm_momentum_surface{};
+   amrex::GpuArray<amrex::Real, 3> adm_momentum_volume{};
+   amrex::GpuArray<amrex::Real, 3> adm_angular_momentum_surface{};
+   amrex::GpuArray<amrex::Real, 3> adm_angular_momentum_volume{};
 };
 
 struct AmrLevelDiagnostics {
@@ -113,11 +143,49 @@ struct CflLimiterLocation {
    amrex::Real q3 = 0.0;
 };
 
+struct ScalarDiagnosticSelection {
+   std::array<bool, static_cast<std::size_t>(ScalarDiagnosticId::Count)> enabled{};
+
+   bool contains(ScalarDiagnosticId id) const noexcept
+   {
+      return enabled[static_cast<std::size_t>(id)];
+   }
+
+   bool contains_any(ScalarDiagnosticGroup group) const noexcept
+   {
+      auto const& members = ScalarDiagnosticGroups[static_cast<std::size_t>(group)].members;
+      for (std::size_t index = 0; index < enabled.size(); ++index) {
+         if (enabled[index] && members[index]) {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   void enable_group(ScalarDiagnosticGroup group) noexcept
+   {
+      auto const& members = ScalarDiagnosticGroups[static_cast<std::size_t>(group)].members;
+      for (std::size_t index = 0; index < enabled.size(); ++index) {
+         enabled[index] = enabled[index] || members[index];
+      }
+   }
+
+   std::size_t size() const noexcept;
+};
+
+ScalarDiagnosticSelection scalar_diagnostic_selection(std::string const& selectors);
+void apply_scalar_diagnostic_requirements(
+   ScalarDiagnosticSelection& selection,
+   RunConfig const& config
+);
+
 AmrLevelDiagnostics summarize_amr_levels(std::vector<amrex::Long> const& level_cells, int max_level,
                                          amrex::Long total_cell_budget, amrex::Long level_cell_budget);
 
-void write_scalar_header(std::ofstream& out, RunConfig const& config, int step, amrex::Real time);
-void append_scalar_row(std::ofstream& out, ScalarDiagnostics const& diagnostics);
+void write_scalar_header(std::ofstream& out, RunConfig const& config, int step, amrex::Real time,
+                         ScalarDiagnosticSelection const& selection);
+void append_scalar_row(std::ofstream& out, ScalarDiagnostics const& diagnostics,
+                       ScalarDiagnosticSelection const& selection);
 
 void write_amr_level_header(std::ofstream& out, int max_level, RunConfig const& config, int step, amrex::Real time);
 void append_amr_level_row(std::ofstream& out, int step, amrex::Real time, std::vector<amrex::Long> const& level_cells,

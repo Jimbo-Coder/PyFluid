@@ -26,7 +26,8 @@ void fill_direction(FluxLaunch const& launch)
          launch.time,
          nullptr,
          nullptr,
-         launch.cell_spacetime
+         launch.cell_spacetime,
+         launch.atmosphere
       );
       return;
    case FluxTopology::SolidWall:
@@ -66,7 +67,10 @@ void fill_all_directions(FluxLaunch const& launch)
          nullptr,
          launch.geometry,
          nullptr,
-         launch.time
+         launch.time,
+         nullptr,
+         nullptr,
+         launch.atmosphere
       );
       return;
    case FluxTopology::SolidWall:
@@ -83,7 +87,10 @@ void fill_all_directions(FluxLaunch const& launch)
             launch.solid_mask,
             launch.geometry,
             launch.solid_flux_kinds,
-            launch.time
+            launch.time,
+            nullptr,
+            nullptr,
+            launch.atmosphere
          );
       }
       return;

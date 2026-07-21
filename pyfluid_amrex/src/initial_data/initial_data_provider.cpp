@@ -1,6 +1,40 @@
 #include "pyfluid_amrex/initial_data/provider.hpp"
 
+#include "pyfluid_amrex/eos/config.hpp"
+#include "pyfluid_amrex/initial_data/atmosphere.hpp"
+
 namespace pyfluid_amrex {
+
+InitialAtmosphereParameters initial_atmosphere_parameters(
+   RunConfig const& cfg,
+   RelativisticInitialDataView const& provider
+)
+{
+   InitialAtmosphereParameters atmosphere;
+   atmosphere.eos = eos_params(cfg);
+   atmosphere.profile = cfg.initial_data_atmosphere == "power_law"
+      ? InitialAtmosphereProfile::PowerLaw
+      : InitialAtmosphereProfile::Flat;
+   atmosphere.density = cfg.initial_data_atmosphere_density > 0.0
+      ? cfg.initial_data_atmosphere_density
+      : atmosphere.eos.rho_floor;
+   atmosphere.pressure = cfg.initial_data_atmosphere_pressure > 0.0
+      ? cfg.initial_data_atmosphere_pressure
+      : atmosphere.eos.pressure_floor;
+   atmosphere.transition_radius =
+      cfg.initial_data_atmosphere_transition_radius > 0.0
+      ? cfg.initial_data_atmosphere_transition_radius
+      : 4.0 * provider.tov.surface_radius;
+   atmosphere.power = cfg.initial_data_atmosphere_power;
+   if (atmosphere.profile == InitialAtmosphereProfile::PowerLaw
+       && !(atmosphere.transition_radius > 0.0)) {
+      amrex::Abort(
+         "power-law initial atmosphere requires an explicit transition radius "
+         "unless a TOV provider supplies its surface radius"
+      );
+   }
+   return atmosphere;
+}
 
 InitialDataFieldSelection initial_data_field_selection(RunConfig const& cfg)
 {

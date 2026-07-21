@@ -17,6 +17,7 @@
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
+#include "pyfluid_amrex/physical_geometry.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
@@ -36,7 +37,7 @@ amrex::Real fixed_gravity_potential(RunConfig const& cfg, amrex::Real x, amrex::
       const amrex::Real dx = x - cfg.gravity_center_x;
       const amrex::Real dy = y - cfg.gravity_center_y;
       const amrex::Real dz = z - cfg.gravity_center_z;
-      return 0.5 * omega2 * (dx * dx + dy * dy + dz * dz);
+      return 0.5 * omega2 * cartesian_radius_squared(dx, dy, dz);
    }
    return -(cfg.gravity_a1 * x + cfg.gravity_a2 * y + cfg.gravity_a3 * z);
 }

@@ -94,6 +94,14 @@ EulerianMatter rhd_eulerian_matter(const RHDPrimitive& primitive, const Spacetim
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RelativisticFluidDiagnosticIntegrands rhd_diagnostic_integrands(const RHDPrimitive& primitive, const SpacetimeMetric& metric) noexcept
+{
+   return {
+      pow(-primitive.v1*(metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3) - primitive.v2*(metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3) - primitive.v3*(metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3) + 1, -1.0_rt/2.0_rt)
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDConserved rhd_geometric_source(const RHDPrimitive& primitive, const SpacetimeMetric& metric, const SpacetimeMetricDerivatives& derivatives) noexcept
 {
    const amrex::Real tmp0 = primitive.eps + primitive.pressure/primitive.rho + 1;
@@ -273,6 +281,34 @@ EulerianMatter rmhd_eulerian_matter(const RMHDPrimitive& primitive, const Spacet
       -1.0_rt/2.0_rt*metric.gamma12*tmp67 - 1.0_rt/2.0_rt*metric.gamma22*tmp69 - 1.0_rt/2.0_rt*metric.gamma23*tmp70 - 1.0_rt/2.0_rt*tmp38*tmp66,
       -1.0_rt/2.0_rt*metric.gamma13*tmp67 - 1.0_rt/2.0_rt*metric.gamma23*tmp69 - 1.0_rt/2.0_rt*metric.gamma33*tmp70 - 1.0_rt/2.0_rt*tmp44*tmp66,
       -1.0_rt/2.0_rt*metric.gamma13*(metric.gamma13*tmp52 + metric.gamma23*tmp55 + metric.gamma33*tmp57 + tmp24*tmp44) - 1.0_rt/2.0_rt*metric.gamma23*(metric.gamma13*tmp55 + metric.gamma23*tmp60 + metric.gamma33*tmp61 + tmp31*tmp44) - 1.0_rt/2.0_rt*metric.gamma33*(metric.gamma33*tmp63 + tmp35*tmp44 + tmp58 + tmp68) - 1.0_rt/2.0_rt*tmp44*(tmp45 + tmp46 + tmp47 + tmp48)
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDDiagnosticIntegrands rmhd_diagnostic_integrands(const RMHDPrimitive& primitive, const SpacetimeMetric& metric) noexcept
+{
+   const amrex::Real tmp0 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
+   const amrex::Real tmp1 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
+   const amrex::Real tmp2 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
+   const amrex::Real tmp3 = primitive.v1*tmp0 + primitive.v2*tmp1 + primitive.v3*tmp2 - 1;
+   const amrex::Real tmp4 = -tmp3;
+   const amrex::Real tmp5 = 1.0_rt/(tmp4);
+   const amrex::Real tmp6 = 1.0_rt/(primitive.rho);
+   const amrex::Real tmp7 = primitive.eps + primitive.pressure*tmp6 + 1;
+   const amrex::Real tmp8 = primitive.rho*tmp7;
+   const amrex::Real tmp9 = ((primitive.b1*tmp0 + primitive.b2*tmp1 + primitive.b3*tmp2)*(primitive.b1*tmp0 + primitive.b2*tmp1 + primitive.b3*tmp2));
+   const amrex::Real tmp10 = tmp5*tmp9;
+   const amrex::Real tmp11 = primitive.b1*(metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3) + primitive.b2*(metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3) + primitive.b3*(metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3);
+   const amrex::Real tmp12 = tmp4*(tmp10 + tmp11);
+   const amrex::Real tmp13 = 1.0_rt/(tmp3);
+   const amrex::Real tmp14 = tmp11 - tmp13*tmp9;
+   const amrex::Real tmp15 = tmp14*tmp3;
+   return {
+      -metric.sqrt_det_gamma*(tmp10 + (1.0_rt/2.0_rt)*tmp12 + tmp5*tmp8 - tmp5*(tmp12 + tmp8)),
+      -tmp15,
+      -tmp15*tmp6/tmp7,
+      -2*primitive.pressure*tmp13/tmp14,
+      pow(tmp4, -1.0_rt/2.0_rt)
    };
 }
 

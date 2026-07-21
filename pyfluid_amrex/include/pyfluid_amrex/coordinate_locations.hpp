@@ -5,6 +5,7 @@
 
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/mesh_geometry.hpp"
+#include "pyfluid_amrex/physical_geometry.hpp"
 
 namespace pyfluid_amrex {
 
@@ -194,6 +195,54 @@ amrex::GpuArray<amrex::Real, 3> mesh_coordinate_triplet_to_cartesian(
       };
    }
    return q;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::GpuArray<amrex::Real, 3> cartesian_to_mesh_coordinate_triplet(
+   int coordinate,
+   amrex::GpuArray<amrex::Real, 3> const& x
+) noexcept
+{
+   if (coordinate == MeshCylindrical) {
+      amrex::Real phi = std::atan2(x[1], x[0]);
+      if (phi < 0.0) {
+         phi += constants::two_pi;
+      }
+      return {cartesian_cylindrical_radius(x[0], x[1]), phi, x[2]};
+   }
+   if (coordinate == MeshSpherical) {
+      const amrex::Real radius = cartesian_radius(x[0], x[1], x[2]);
+      amrex::Real phi = std::atan2(x[1], x[0]);
+      if (phi < 0.0) {
+         phi += constants::two_pi;
+      }
+      const amrex::Real theta = radius > 0.0
+         ? std::acos(amrex::max(-1.0, amrex::min(1.0, x[2] / radius)))
+         : 0.0;
+      return {radius, theta, phi};
+   }
+   return x;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> mesh_triplet_to_runtime_coordinates(
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::GpuArray<amrex::Real, 3> const& q
+) noexcept
+{
+   const auto canonical_axes = mesh_canonical_vector_axes(coordinate);
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> runtime{};
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      const int axis = mesh_axis(axes, dir);
+      for (int component = 0; component < 3; ++component) {
+         if (axis == canonical_axes[component]) {
+            runtime[dir] = q[component];
+            break;
+         }
+      }
+   }
+   return runtime;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

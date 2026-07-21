@@ -70,7 +70,7 @@ inline void fill_eulerian_matter_cells(
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    for (amrex::MFIter mfi(cell_matter, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box box = mfi.growntilebox();
+      const amrex::Box box = mfi.tilebox();
       const auto primitive_array = primitive.const_array(mfi);
       const auto spacetime_array = cell_spacetime.const_array(mfi);
       const auto matter_array = cell_matter.array(mfi);

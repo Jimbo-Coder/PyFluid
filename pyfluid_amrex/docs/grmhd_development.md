@@ -58,6 +58,14 @@ RHD allocates no magnetic state and RMHD allocates magnetic state. Evolved
 spacetime owns Z4c stage/RHS storage; fixed spacetime owns only the immutable
 canonical Z4c state needed for coupling, AMR, output, and restart.
 
+Newtonian analytic profiles may be reused as shapes for explicit fixed-Minkowski
+RHD/RMHD tests after the relativistic provider performs the selected EoS and
+P2C conversion. They are not constraint-consistent coupled-GR initial data.
+Selecting evolved spacetime therefore requires a provider that supplies a
+self-consistent fluid and spacetime solution, such as TOV plus CTT/CTTK/XCTS;
+the runtime never silently combines a Newtonian profile with flat or unrelated
+spacetime data.
+
 Active optional groups may select provider data or one mathematically valid
 neutral value:
 
@@ -116,6 +124,36 @@ KEH solvers to AMReX evolution storage.
 
 References define equations and validation targets. PyFluid keeps its own
 single AMReX ownership, field-schema, code-generation, and validation contracts.
+
+## AMR Indicators
+
+The production automatic indicator has two semantic aggregates, not one tagger
+per evolved component:
+
+1. a scale-free fluid indicator combining thermodynamic, velocity, and, for
+   magnetic systems, magnetic-pressure/magnetization structure;
+2. a scale-free spacetime indicator formed from the normalized second
+   difference of the conformal-geometry perturbation `chi - 1`.
+
+The directional maximum of those aggregates feeds the existing AMR hierarchy.
+This follows the one-error-GF model used by CarpetX/AsterX while keeping the
+physics choice in PyFluid's generated field-aware policy. Adding a spacetime
+field must not silently make every new component an AMR driver.
+
+## Curvilinear Relativity Boundary
+
+Fixed-spacetime RHD/RMHD can share the existing generated Valencia equations,
+coordinate metric provider, mapped face measures, and geometric source
+generation. This is the first curvilinear relativistic target.
+
+Evolved Z4c in cylindrical or spherical coordinates is not obtained by adding
+Jacobian factors to the Cartesian kernels. The current formulation uses
+Cartesian partial derivatives and the Cartesian conformal-determinant
+condition. A robust extension requires one reference-metric Z4c formulation,
+generated tensor-basis terms, parity/origin regularization, and matching nodal
+AMR transfer and boundary contracts. The coordinate-independent symbolic Z4c
+source remains the proper starting point, but a Cartesian-kernel substitution
+is not a valid implementation.
 
 ### Local coupled-evolution reference snapshot
 
@@ -200,17 +238,31 @@ Initial atmosphere, evolved-state admissibility, C2P fallback, and failed-state
 repair are separate contracts:
 
 - initial atmosphere is a configured ambient density/thermodynamic floor added
-  by initial-data construction before P2C;
+  by initial-data construction before P2C. CTT, CTTK, and XCTS build their
+  matter sources from this same floored primitive state, so the constraint
+  solve and the state handed to evolution contain identical atmosphere matter;
 - admissibility validates every accepted evolved conserved state and every
   recovered primitive state;
 - the ordered C2P policy tries numerical recovery methods without silently
   changing the conserved state;
-- after each relativistic RK stage, a successfully recovered primitive below
-  the configured density or pressure floor is projected to the explicit
-  atmosphere state before the next RHS evaluation. Magnetic fields are retained
-  by RMHD atmosphere projection. C2P exhaustion, nonfinite data, and invalid
-  states above the atmosphere floor still abort with diagnostics; the atmosphere
-  policy does not turn arbitrary recovery failure into a fallback solution.
+- before each relativistic RK-stage RHS, a successfully recovered primitive
+  below the configured density floor is projected to the explicit recovery
+  state. The pressure floor closes that state through the EoS but does not
+  reset conserved density or momentum on its own. Magnetic fields are retained
+  by RMHD atmosphere projection. C2P exhaustion and nonfinite states remain
+  fatal rather than being silently replaced.
+
+Initial-data flooring and runtime atmosphere projection use the same EoS
+thermodynamic closure, but they are distinct numerical policies. Initial data
+constructs the ambient state; runtime projection repairs an evolved state that
+falls outside the admissible C2P range and is not a second background
+superposition. A healthy stellar evolution should apply runtime repair rarely
+after initialization. Radially graded initial atmospheres therefore require a
+separate initial profile and a compatible, lower recovery floor; an ID-only
+profile that the next C2P pass overwrites is not supported. A true zero-density
+vacuum is a separate formulation because the Valencia C2P map is singular at
+zero rest-mass density; setting the configured floors to zero does not create a
+supported vacuum evolution.
 
 For composition-dependent EOSs, `Y_e` is an evolved conserved composition
 field. Temperature is recovered primitive/cache data rather than an independent
@@ -333,11 +385,16 @@ Current fixed-spacetime status:
   checkpoint restart, a variable-determinant Schwarzschild control exercises
   RMHD, and a two-dimensional Rindler AMR+CT+subcycling control preserves
   magnetic divergence.
-- fixed TOV data use that same Cowling mode. A four-level
-  SSPRK3/subcycling control changes the stored metric by only `2.3e-16`, changes
-  maximum density by `2.4e-6` over four coarse steps, and restarts exactly within
-  `1e-12`. The corresponding evolved-spacetime control changes maximum density
-  by about `9.3e-4` over its shorter CFL-limited interval.
+- fixed TOV data use that same Cowling mode. The maintained two-level
+  SSPRK3/subcycling matrix keeps the stored metric fixed to roundoff, limits the
+  four-step maximum-density change to about `5.3e-3`, and closes the finite-box
+  rest-mass ledger at `4e-15`. The corresponding evolved-spacetime control
+  changes maximum density by about `1.2e-3`, keeps Hamiltonian L2 below `1e-4`,
+  and closes the rest-mass ledger to roundoff.
+- the TOV contract is unmagnetized equilibrium. An imposed field is useful for
+  RMHD stress tests but is not a self-consistent magnetized star; that requires
+  the future rotating/magnetized equilibrium provider coupled to the constraint
+  solver.
 
 ## Signal-Speed Policy
 
@@ -369,11 +426,12 @@ Current evolved-spacetime status:
   smooth gauge-wave AMR error by roughly two orders of magnitude relative to
   AMReX's bilinear nodal interpolater without the severe 3D cost of a tested
   sixth-order alternative;
-- the internal TOV provider solves a one-dimensional areal-radius problem,
-  transforms it to isotropic radius, and samples the same physical-coordinate
-  view into both fluid and spacetime fields on every AMR level. Single and
-  piecewise cold polytropes are supported, with optional hybrid thermal
-  pressure for evolution;
+- the internal `TovSolution` integrates the one-dimensional stellar equations
+  adaptively in log specific enthalpy, reaches the exact zero-pressure surface,
+  transforms to isotropic radius, and samples the same physical-coordinate
+  profile into fluid and spacetime fields on every AMR level. The same module
+  directly produces EoS sequences and standard stellar observables without an
+  evolution; see `docs/tov.md`;
 - the 3D TOV Hamiltonian L2 norm decreases from `5.99e-5` at N=24 to
   `2.19e-5` at N=48, with surface-limited observed orders of 1.33 and 1.55. A
   short two-level coupled TOV evolution preserves baryon mass to about

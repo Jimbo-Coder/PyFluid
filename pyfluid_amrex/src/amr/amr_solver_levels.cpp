@@ -8,7 +8,11 @@
 namespace pyfluid_amrex {
 
 AmrSolverBase::AmrSolverBase(RunConfig cfg)
-   : cfg_(std::move(cfg)), initial_data_provider_(cfg_)
+   : cfg_(std::move(cfg)),
+     initial_data_provider_(cfg_),
+     recovery_atmosphere_(recovery_atmosphere_state(
+        eos_method_code(cfg_), eos_params(cfg_)
+     ))
 {
    validate_config(cfg_);
    validate_amr_refinement_ratios();

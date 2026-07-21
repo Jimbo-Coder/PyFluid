@@ -21,6 +21,11 @@ decisions.
 
 - Do not copy neighboring values over NaNs, clamp an invalid result into a
   passing test, or add a fallback merely to keep evolution running.
+- Every relativistic evolution runs the shared startup preflight after initial
+  data, AMR synchronization, centering transfer, and boundary filling. The
+  preflight reads conserved state without repair and verifies both
+  `P2C(C2P(U))` and a second `C2P` idempotence pass on every active cell before
+  iteration zero. Initial-data providers must not carry private substitutes.
 - Development failures belong in `review_running_cycle.md` with the failing
   command and evidence. Fix the underlying implementation; do not add a
   temporary startup prohibition for a branch currently being repaired.
@@ -39,14 +44,33 @@ decisions.
   validation, and derived host policy live under `src/framework/`; do not
   inline them into the public contract or import pointwise physics headers
   merely to expose a configuration data type.
-- Define each grid function once in `codegen/pyfluid_codegen/field_catalog.py`.
-  Evolution, checkpointing, output, diagnostics, plotting, and equation
-  generation consume its generated C++/JSON views. Do not add a handwritten
-  component ID, centering table, output label, or spacetime field list.
+- Define each grid function once in data-only `schema/fields.toml`, consumed by
+  the strict `codegen/pyfluid_codegen/field_catalog.py` loader/model. Evolution,
+  checkpointing, output, diagnostics, plotting, and equation generation consume
+  generated C++/JSON views. Do not add a handwritten component ID, centering
+  table, output label, or spacetime field list.
+- Keep critical identity/metadata catalogs declarative and versioned. Python
+  owns strict loading, validation, tensor/component expansion, symbolic
+  mathematics, and artifact emission rather than being the only declaration
+  text. Any named field that is evolved, retained between operations,
+  user-selectable, output-visible, or checkpoint eligible is a GF and must have
+  a generated ID and descriptor before C++ can request it.
+  Locally named RHS, RK-stage, elliptic-residual, and transfer work arrays are
+  temporary storage rather than GFs and do not enter the catalog.
+- Parse user field names through the generated catalog and pass generated field
+  IDs/descriptors thereafter. Field allocation, lookup, checkpoint, output,
+  and plotting must not accept a second raw-string registry. A handwritten fill
+  implementation may switch exhaustively on the generated ID, but it must not
+  define identity, components, labels, centering, or ownership again.
 - Define runtime reductions and postprocessed diagnostics once in
   `codegen/pyfluid_codegen/diagnostic_catalog.py`. Runtime code owns discrete
   conservation reductions; postprocessing owns analytic comparisons and
   derived views of output GFs.
+- Migrate declarative diagnostic identity/group metadata and supported-method
+  metadata to separate TOML catalogs only through byte-equivalent staged
+  conversions. Keep symbolic integrands, algorithms, coupled compatibility
+  checks, and physical validation in Python/C++; do not encode them as opaque
+  expression strings or invent a general schema language.
 - Coordinate transforms, metric factors, and vector/tensor operations each have
   one shared implementation. Initial data, evolution, and diagnostics reuse it.
 - Generated kernels come from one high-level equation source. Do not retain a
@@ -75,9 +99,13 @@ decisions.
   topology, and EOS dispatch policy; systems that share that key share the
   compiled bundle. Add a bundle only when a new signature is genuinely needed.
 - Runtime method selection belongs in a declaration-only compiled factory.
-  Select once on the host, then call an already specialized AMReX launch;
-  never move reconstruction, Riemann, EOS, C2P, signal-speed, or AMR-policy
-  branching into a cell loop.
+  Build and validate one immutable operation plan on the host. Do not form the
+  Cartesian template product of independent run parameters: adding one method
+  should have approximately additive compile/code-size cost. Keep a choice
+  compile-time only when storage/topology requires it or a focused benchmark
+  establishes a material hot-path benefit. Uniform runtime choices belong at
+  the coarsest practical launch, tile, or row boundary; do not add divergent or
+  repeated policy discovery inside a cell loop.
 - Keep fused operations fused at their numerical boundary. Reconstruction and
   the Riemann solve share reconstructed face states, so their production
   ownership is one flux-kernel registry rather than two materialized stages.

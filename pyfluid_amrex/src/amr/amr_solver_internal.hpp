@@ -14,6 +14,8 @@
 #include "numerics/patch_wall_flux.hpp"
 #include "numerics/primitive_vector_transform.hpp"
 #include "pyfluid_amrex/primitive_cache_factory.hpp"
+#include "pyfluid_amrex/radiation.hpp"
+#include "pyfluid_amrex/relativistic_flux_limiter.hpp"
 #include "pyfluid_amrex/relativistic_source_factory.hpp"
 #include "pyfluid_amrex/signal_speed_factory.hpp"
 #include "pyfluid_amrex/solid_wall_power.hpp"

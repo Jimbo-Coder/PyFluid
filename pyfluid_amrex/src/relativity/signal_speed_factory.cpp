@@ -50,7 +50,7 @@ amrex::Real rhd_signal_frequency_cell(
    const RHDRecoveryResult recovered = recover_rhd<EOSMethod>(
       conserved, metric, eos
    );
-   if (recovered.attempt.status != C2PStatus::Success) {
+   if (!recovered.attempt.succeeded()) {
       return std::numeric_limits<amrex::Real>::infinity();
    }
    const RHDPrimitive& primitive = recovered.primitive;

@@ -20,7 +20,7 @@ amr.n_error_buf = 4 4
 amr.level_cell_budget_side = 512
 amr.total_cell_budget = 300000
 amr.tag_metric = lohner
-amr.state_interp = protected
+amr.state_interp = coupled-conservative
 amr.min_feature_length = 0.00390625
 
 pyfluid.physics = hydro

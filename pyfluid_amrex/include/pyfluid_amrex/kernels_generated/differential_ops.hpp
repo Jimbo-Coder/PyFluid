@@ -57,6 +57,58 @@ amrex::Real centered_first(Array const& field, int i, int j, int k, int componen
 
 template <int Order, int Direction, typename Array>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real domain_first(Array const& field, int i, int j, int k, int component, int coordinate_index, int domain_lower, int domain_upper, amrex::Real inv_spacing) noexcept
+{
+   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);
+   if constexpr (Order == 2) {
+      if (coordinate_index - domain_lower < Order / 2) {
+         return inv_spacing * ((-3.0_rt/2.0_rt) * sample_direction<Direction>(field, i, j, k, component, 0) + 2.0_rt * sample_direction<Direction>(field, i, j, k, component, 1) + (-1.0_rt/2.0_rt) * sample_direction<Direction>(field, i, j, k, component, 2));
+      }
+      if (domain_upper - coordinate_index < Order / 2) {
+         return inv_spacing * ((1.0_rt/2.0_rt) * sample_direction<Direction>(field, i, j, k, component, -2) - 2.0_rt * sample_direction<Direction>(field, i, j, k, component, -1) + (3.0_rt/2.0_rt) * sample_direction<Direction>(field, i, j, k, component, 0));
+      }
+      return centered_first<Order, Direction>(
+         field, i, j, k, component, inv_spacing
+      );
+   }
+   else if constexpr (Order == 4) {
+      if (coordinate_index - domain_lower < Order / 2) {
+         return inv_spacing * ((-25.0_rt/12.0_rt) * sample_direction<Direction>(field, i, j, k, component, 0) + 4.0_rt * sample_direction<Direction>(field, i, j, k, component, 1) - 3.0_rt * sample_direction<Direction>(field, i, j, k, component, 2) + (4.0_rt/3.0_rt) * sample_direction<Direction>(field, i, j, k, component, 3) + (-1.0_rt/4.0_rt) * sample_direction<Direction>(field, i, j, k, component, 4));
+      }
+      if (domain_upper - coordinate_index < Order / 2) {
+         return inv_spacing * ((1.0_rt/4.0_rt) * sample_direction<Direction>(field, i, j, k, component, -4) + (-4.0_rt/3.0_rt) * sample_direction<Direction>(field, i, j, k, component, -3) + 3.0_rt * sample_direction<Direction>(field, i, j, k, component, -2) - 4.0_rt * sample_direction<Direction>(field, i, j, k, component, -1) + (25.0_rt/12.0_rt) * sample_direction<Direction>(field, i, j, k, component, 0));
+      }
+      return centered_first<Order, Direction>(
+         field, i, j, k, component, inv_spacing
+      );
+   }
+   else if constexpr (Order == 6) {
+      if (coordinate_index - domain_lower < Order / 2) {
+         return inv_spacing * ((-49.0_rt/20.0_rt) * sample_direction<Direction>(field, i, j, k, component, 0) + 6.0_rt * sample_direction<Direction>(field, i, j, k, component, 1) + (-15.0_rt/2.0_rt) * sample_direction<Direction>(field, i, j, k, component, 2) + (20.0_rt/3.0_rt) * sample_direction<Direction>(field, i, j, k, component, 3) + (-15.0_rt/4.0_rt) * sample_direction<Direction>(field, i, j, k, component, 4) + (6.0_rt/5.0_rt) * sample_direction<Direction>(field, i, j, k, component, 5) + (-1.0_rt/6.0_rt) * sample_direction<Direction>(field, i, j, k, component, 6));
+      }
+      if (domain_upper - coordinate_index < Order / 2) {
+         return inv_spacing * ((1.0_rt/6.0_rt) * sample_direction<Direction>(field, i, j, k, component, -6) + (-6.0_rt/5.0_rt) * sample_direction<Direction>(field, i, j, k, component, -5) + (15.0_rt/4.0_rt) * sample_direction<Direction>(field, i, j, k, component, -4) + (-20.0_rt/3.0_rt) * sample_direction<Direction>(field, i, j, k, component, -3) + (15.0_rt/2.0_rt) * sample_direction<Direction>(field, i, j, k, component, -2) - 6.0_rt * sample_direction<Direction>(field, i, j, k, component, -1) + (49.0_rt/20.0_rt) * sample_direction<Direction>(field, i, j, k, component, 0));
+      }
+      return centered_first<Order, Direction>(
+         field, i, j, k, component, inv_spacing
+      );
+   }
+   else if constexpr (Order == 8) {
+      if (coordinate_index - domain_lower < Order / 2) {
+         return inv_spacing * ((-761.0_rt/280.0_rt) * sample_direction<Direction>(field, i, j, k, component, 0) + 8.0_rt * sample_direction<Direction>(field, i, j, k, component, 1) - 14.0_rt * sample_direction<Direction>(field, i, j, k, component, 2) + (56.0_rt/3.0_rt) * sample_direction<Direction>(field, i, j, k, component, 3) + (-35.0_rt/2.0_rt) * sample_direction<Direction>(field, i, j, k, component, 4) + (56.0_rt/5.0_rt) * sample_direction<Direction>(field, i, j, k, component, 5) + (-14.0_rt/3.0_rt) * sample_direction<Direction>(field, i, j, k, component, 6) + (8.0_rt/7.0_rt) * sample_direction<Direction>(field, i, j, k, component, 7) + (-1.0_rt/8.0_rt) * sample_direction<Direction>(field, i, j, k, component, 8));
+      }
+      if (domain_upper - coordinate_index < Order / 2) {
+         return inv_spacing * ((1.0_rt/8.0_rt) * sample_direction<Direction>(field, i, j, k, component, -8) + (-8.0_rt/7.0_rt) * sample_direction<Direction>(field, i, j, k, component, -7) + (14.0_rt/3.0_rt) * sample_direction<Direction>(field, i, j, k, component, -6) + (-56.0_rt/5.0_rt) * sample_direction<Direction>(field, i, j, k, component, -5) + (35.0_rt/2.0_rt) * sample_direction<Direction>(field, i, j, k, component, -4) + (-56.0_rt/3.0_rt) * sample_direction<Direction>(field, i, j, k, component, -3) + 14.0_rt * sample_direction<Direction>(field, i, j, k, component, -2) - 8.0_rt * sample_direction<Direction>(field, i, j, k, component, -1) + (761.0_rt/280.0_rt) * sample_direction<Direction>(field, i, j, k, component, 0));
+      }
+      return centered_first<Order, Direction>(
+         field, i, j, k, component, inv_spacing
+      );
+   }
+   return 0.0_rt;
+}
+
+template <int Order, int Direction, typename Array>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real centered_second(Array const& field, int i, int j, int k, int component, amrex::Real inv_spacing_squared) noexcept
 {
    static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);
@@ -224,6 +276,73 @@ amrex::Real topology_centering_transfer(Array const& field, int i, int j, int k,
                for (int ordinal3 = 0; ordinal3 < count3; ++ordinal3) {
                   const int offset3 = centering_transfer_offset<Order>(source_mask, destination_mask, 2, ordinal3);
                   result += weight12 * centering_transfer_axis_weight<Order>(source_mask, destination_mask, 2, ordinal3) * field(i + offset1, j + offset2, k + offset3, component);
+               }
+            }
+         }
+      }
+   }
+   return result;
+}
+
+template <int Order>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+int bounded_centering_transfer_first_offset(int source_mask, int destination_mask, int direction, int destination_index, int source_lo, int source_hi) noexcept
+{
+   if (((source_mask ^ destination_mask) & (1 << direction)) == 0) return 0;
+   const int centered_offset = centering_transfer_offset<Order>(source_mask, destination_mask, direction, 0);
+   const int first_index = amrex::max(source_lo, amrex::min(destination_index + centered_offset, source_hi - Order + 1));
+   return first_index - destination_index;
+}
+
+template <int Order>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real bounded_centering_transfer_axis_weight(int source_mask, int destination_mask, int direction, int first_offset, int ordinal) noexcept
+{
+   if (((source_mask ^ destination_mask) & (1 << direction)) == 0) return 1.0_rt;
+   const amrex::Real source_offset = (source_mask & (1 << direction)) != 0 ? 0.0_rt : 0.5_rt;
+   const amrex::Real destination_offset = (destination_mask & (1 << direction)) != 0 ? 0.0_rt : 0.5_rt;
+   const amrex::Real target = destination_offset - source_offset;
+   const amrex::Real sample = static_cast<amrex::Real>(first_offset + ordinal);
+   amrex::Real weight = 1.0_rt;
+   for (int other = 0; other < Order; ++other) {
+      if (other == ordinal) continue;
+      const amrex::Real other_sample = static_cast<amrex::Real>(first_offset + other);
+      weight *= (target - other_sample) / (sample - other_sample);
+   }
+   return weight;
+}
+
+template <int Order, int Dim, typename Array>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real bounded_topology_centering_transfer(Array const& field, int i, int j, int k, int component, int source_mask, int destination_mask, amrex::GpuArray<int, 3> const& source_lo, amrex::GpuArray<int, 3> const& source_hi) noexcept
+{
+   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);
+   static_assert(Dim >= 1 && Dim <= 3);
+   source_mask &= (1 << Dim) - 1;
+   destination_mask &= (1 << Dim) - 1;
+   const int destination_index[3] = {i, j, k};
+   const int count1 = centering_transfer_count<Order>(source_mask, destination_mask, 0);
+   const int first1 = bounded_centering_transfer_first_offset<Order>(source_mask, destination_mask, 0, destination_index[0], source_lo[0], source_hi[0]);
+   amrex::Real result = 0.0_rt;
+   for (int ordinal1 = 0; ordinal1 < count1; ++ordinal1) {
+      const int offset1 = first1 + ordinal1;
+      const amrex::Real weight1 = bounded_centering_transfer_axis_weight<Order>(source_mask, destination_mask, 0, first1, ordinal1);
+      if constexpr (Dim == 1) {
+         result += weight1 * field(i + offset1, j, k, component);
+      } else {
+         const int count2 = centering_transfer_count<Order>(source_mask, destination_mask, 1);
+         const int first2 = bounded_centering_transfer_first_offset<Order>(source_mask, destination_mask, 1, destination_index[1], source_lo[1], source_hi[1]);
+         for (int ordinal2 = 0; ordinal2 < count2; ++ordinal2) {
+            const int offset2 = first2 + ordinal2;
+            const amrex::Real weight12 = weight1 * bounded_centering_transfer_axis_weight<Order>(source_mask, destination_mask, 1, first2, ordinal2);
+            if constexpr (Dim == 2) {
+               result += weight12 * field(i + offset1, j + offset2, k, component);
+            } else {
+               const int count3 = centering_transfer_count<Order>(source_mask, destination_mask, 2);
+               const int first3 = bounded_centering_transfer_first_offset<Order>(source_mask, destination_mask, 2, destination_index[2], source_lo[2], source_hi[2]);
+               for (int ordinal3 = 0; ordinal3 < count3; ++ordinal3) {
+                  const int offset3 = first3 + ordinal3;
+                  result += weight12 * bounded_centering_transfer_axis_weight<Order>(source_mask, destination_mask, 2, first3, ordinal3) * field(i + offset1, j + offset2, k + offset3, component);
                }
             }
          }

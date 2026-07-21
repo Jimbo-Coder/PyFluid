@@ -290,9 +290,25 @@ an unsupported combination before allocating levels. Newly allocated and
 ghost state must be completely initialized by that contract and the physical
 boundary operator. Nonfinite values are errors, not input to a neighbor-copy
 repair. Linear and quartic conservative interpolation preserve closed-system
-totals when adaptive boxes move. Conservative quartic interpolation is the
-higher-order production default; non-conservative
-quadratic and quartic interpolation remain explicit experimental choices.
+totals when adaptive boxes move. Coupled linear conservative interpolation is
+the robust production default: one limiter is shared by the full conserved
+state so coarse-time interpolation does not independently break component
+relations at contacts, stellar surfaces, or atmosphere interfaces. AMReX's
+full protected conservative interpolater supplies this contract in 2D/3D; its
+shared-limiter base kernel supplies the 1D contract because AMReX does not
+implement the protection pass in 1D. This is isolated in the interpolater
+selector. The component-limited linear method is an explicit alternative.
+Conservative quartic interpolation is a smooth-data choice and is not
+positivity preserving. Non-conservative quadratic and quartic interpolation
+remain explicit experimental choices.
+
+RHD additionally applies one source-aware conservative flux limiter to the
+complete forward-Euler candidate at each RK stage. It blends each shared face
+between the selected high-order flux and PWC LLF only as much as required to
+preserve positive densitized rest mass and the Valencia admissibility margin.
+The final blended face flux is the single value consumed by the RHS, physical
+boundary ledger, and reflux registers. Accepted-state atmosphere projection is
+not used as a replacement for this conservation step.
 
 The production AMR tagger follows HD/MHD physical state structure with physical
 gradients and cell sizes. Passive scalars never drive tags. max_level,

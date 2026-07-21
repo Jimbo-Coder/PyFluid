@@ -34,7 +34,8 @@
       int first_bad_j,
       int first_bad_k,
       amrex::Real first_bad_rho,
-      amrex::Real first_bad_pressure
+      amrex::Real first_bad_pressure,
+      std::array<amrex::Real, NVAR_HYDRO> const& first_bad_conserved
    ) const;
    void debug_check_rhs_level(int lev, char const* context) const;
    void debug_check_fluxes(int lev, bool solid_masked, char const* context) const;
@@ -65,3 +66,11 @@
       amrex::Real time,
       bool force_physical_check = false
    );
+   void debug_check_relativistic_stage_range(
+      LevelData const& state,
+      int lev_begin,
+      int lev_end,
+      char const* context,
+      amrex::Real time
+   );
+   void run_evolution_preflight(amrex::Real time);

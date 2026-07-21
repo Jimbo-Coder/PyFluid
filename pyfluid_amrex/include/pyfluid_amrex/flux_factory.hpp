@@ -6,6 +6,8 @@
 
 #include <array>
 
+#include "pyfluid_amrex/eos/types.hpp"
+
 namespace pyfluid_amrex {
 
 struct PatchGridSystem;
@@ -36,6 +38,7 @@ struct FluxLaunch {
    PatchGridSystem const* grid_system = nullptr;
    PatchLayout const* patch_layout = nullptr;
    amrex::MultiFab const* cell_spacetime = nullptr;
+   EOSThermodynamicState const* atmosphere = nullptr;
 };
 
 void fill_fluxes(FluxLaunch const& launch);
@@ -52,7 +55,8 @@ inline void launch_fluxes_runtime(
    amrex::Array<amrex::Vector<int>, AMREX_SPACEDIM> const* solid_flux_kinds = nullptr,
    amrex::Real time = 0.0,
    PatchGridSystem const* grid_system = nullptr,
-   PatchLayout const* patch_layout = nullptr
+   PatchLayout const* patch_layout = nullptr,
+   EOSThermodynamicState const* atmosphere = nullptr
 )
 {
    constexpr FluxTopology topology = MappedPatches
@@ -76,6 +80,7 @@ inline void launch_fluxes_runtime(
       grid_system,
       patch_layout,
       nullptr,
+      atmosphere,
    });
 }
 
@@ -98,7 +103,8 @@ inline void launch_flux_direction_runtime(
    amrex::Real time = 0.0,
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* patch_layout = nullptr,
-   amrex::MultiFab const* cell_spacetime = nullptr
+   amrex::MultiFab const* cell_spacetime = nullptr,
+   EOSThermodynamicState const* atmosphere = nullptr
 )
 {
    constexpr FluxTopology topology = MappedPatches
@@ -122,6 +128,7 @@ inline void launch_flux_direction_runtime(
       grid_system,
       patch_layout,
       cell_spacetime,
+      atmosphere,
    });
 }
 

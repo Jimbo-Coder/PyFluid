@@ -34,6 +34,15 @@ class GateStep:
    levels: tuple[str, ...] = ("standard", "full")
 
 
+def feature_matrix_command(*cases: str) -> tuple[str, ...]:
+   command = (
+      "uv", "run", "python", "pyfluid_amrex/tools/validate_feature_matrix.py", "--force",
+   )
+   return command + tuple(
+      argument for case in cases for argument in ("--only", case)
+   )
+
+
 STEPS = [
    GateStep(
       name="architecture",
@@ -44,44 +53,32 @@ STEPS = [
    GateStep(
       name="quick_feature_matrix",
       kind="feature",
-      levels=("quick", "standard", "full"),
-      command=(
-         "uv",
-         "run",
-         "python",
-         "pyfluid_amrex/tools/validate_feature_matrix.py",
-         "--force",
-         "--only",
+      levels=("quick",),
+      command=feature_matrix_command(
          "hydro_timestep_ssprk3",
-         "--only",
-         "hydro_amr_subcycling_ssprk3",
-         "--only",
-         "mhd_timestep_ssprk3",
-         "--only",
          "mhd_amr_ct_subcycling_ssprk3",
-         "--only",
+      ),
+   ),
+   GateStep(
+      name="standard_feature_matrix",
+      kind="feature",
+      levels=("standard",),
+      command=feature_matrix_command(
+         "hydro_timestep_ssprk3",
+         "hydro_amr_subcycling_ssprk3",
+         "mhd_timestep_ssprk3",
+         "mhd_amr_ct_subcycling_ssprk3",
          "hydro_passive_dye_advection",
-         "--only",
          "mhd_passive_dye_ct",
-         "--only",
          "hydro_diffusion_explicit",
-         "--only",
          "hydro_amr_subcycling_explicit_diffusion",
-         "--only",
          "hydro_amr_subcycling_implicit_diffusion",
-         "--only",
          "mhd_resistivity_explicit_ct",
-         "--only",
          "mhd_amr_ct_subcycling_explicit_resistive",
-         "--only",
          "hydro_source_uniform_acceleration_amr",
-         "--only",
          "hydro_self_gravity_amr_subcycling",
-         "--only",
          "mhd_combo_amr_ct_subcycling_resistive_aux",
-         "--only",
          "hydro_obstacle_half_bottom",
-         "--only",
          "hydro_moving_box_piston",
       ),
    ),
@@ -108,7 +105,7 @@ STEPS = [
    GateStep(
       name="rhd_quick",
       kind="analytic",
-      levels=("quick",),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -140,7 +137,7 @@ STEPS = [
    GateStep(
       name="rmhd_quick",
       kind="analytic",
-      levels=("quick",),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -172,7 +169,7 @@ STEPS = [
    GateStep(
       name="fixed_spacetime_quick",
       kind="analytic",
-      levels=("quick",),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -222,19 +219,19 @@ STEPS = [
    GateStep(
       name="ct_divb_compare",
       kind="feature",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_ct_divb.py", "--force", "--skip-plot"),
    ),
    GateStep(
       name="amr_global_tagging",
       kind="amr",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_amr_global_tagging.py", "--force"),
    ),
    GateStep(
       name="amr_dynamic_regrid",
       kind="amr",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -270,19 +267,19 @@ STEPS = [
    GateStep(
       name="multipatch_cartesian",
       kind="feature",
-      levels=("quick", "standard", "full"),
+      levels=("full",),
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_multipatch.py", "--ranks", "3"),
    ),
    GateStep(
       name="production_multipatch_hydro_amr",
       kind="feature",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_production_multipatch.py", "--ranks", "3", "--force"),
    ),
    GateStep(
       name="mixed_patch_crawl",
       kind="feature",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_mixed_patch_crawl.py", "--ranks", "1", "--force"),
    ),
    GateStep(
@@ -320,7 +317,7 @@ STEPS = [
    GateStep(
       name="quick_dimensional_consistency",
       kind="feature",
-      levels=("quick",),
+      levels=("standard",),
       command=(
          "uv",
          "run",
@@ -362,15 +359,24 @@ STEPS = [
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_codegen_flux.py"),
    ),
    GateStep(
+      name="radiation",
+      kind="feature",
+      levels=("standard", "full"),
+      command=(
+         "uv", "run", "python", "pyfluid_amrex/tools/validate_radiation.py",
+         "--force", "--ranks", "3",
+      ),
+   ),
+   GateStep(
       name="curvilinear_geometry",
       kind="feature",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_curvilinear_geometry.py", "--force", "--ranks", "3"),
    ),
    GateStep(
       name="curvilinear_methods_cylindrical",
       kind="feature",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -390,7 +396,7 @@ STEPS = [
    GateStep(
       name="curvilinear_methods_spherical",
       kind="feature",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -410,7 +416,7 @@ STEPS = [
    GateStep(
       name="curvilinear_origin",
       kind="feature",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -426,7 +432,7 @@ STEPS = [
    GateStep(
       name="curvilinear_subcycling_equivalence",
       kind="amr",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -473,7 +479,7 @@ STEPS = [
    GateStep(
       name="curvilinear_regrid_freestream",
       kind="amr",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -487,7 +493,7 @@ STEPS = [
    GateStep(
       name="sod_exact",
       kind="analytic",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=(
          "uv",
          "run",
@@ -503,13 +509,13 @@ STEPS = [
    GateStep(
       name="source_uniform_acceleration",
       kind="analytic",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_sources.py", "--force"),
    ),
    GateStep(
       name="gravity",
       kind="analytic",
-      levels=("quick", "standard", "full"),
+      levels=("standard", "full"),
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_gravity.py", "--force"),
    ),
    GateStep(

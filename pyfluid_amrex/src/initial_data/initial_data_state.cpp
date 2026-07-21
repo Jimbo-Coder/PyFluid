@@ -22,6 +22,7 @@
 #include "pyfluid_amrex/kernels_generated/characteristic_transforms.hpp"
 #include "pyfluid_amrex/patch_grid_config.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
+#include "pyfluid_amrex/physical_geometry.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
@@ -1092,8 +1093,10 @@ inline void initialize_vortex_blast(amrex::MultiFab& state, amrex::Geometry cons
 #else
          const amrex::Real dz_phys = 0.0;
 #endif
-         const amrex::Real r2 = dx_phys * dx_phys + dy_phys * dy_phys + dz_phys * dz_phys;
-         const amrex::Real radius = std::sqrt(dx_phys * dx_phys + dy_phys * dy_phys + 1.0e-300);
+         const amrex::Real r2 = cartesian_radius_squared(dx_phys, dy_phys, dz_phys);
+         const amrex::Real radius = std::sqrt(
+            cartesian_cylindrical_radius_squared(dx_phys, dy_phys) + 1.0e-300
+         );
          const amrex::Real angle = std::atan2(dy_phys, dx_phys);
          const amrex::Real shape = std::exp(-0.5 * r2 / sigma2);
          const amrex::Real center_regularity = 1.0 - std::exp(-0.5 * r2 / sigma2);
@@ -1774,7 +1777,7 @@ inline void initialize_mhd_rotor(amrex::MultiFab& state, amrex::Geometry const& 
          const amrex::Real y = sample.physical.q2;
          const amrex::Real rx = x - x0;
          const amrex::Real ry = y - y0;
-         const amrex::Real radius = std::sqrt(rx * rx + ry * ry);
+         const amrex::Real radius = cartesian_cylindrical_radius(rx, ry);
          amrex::Real rotor_fraction = 0.0;
          if (radius <= r0) {
             rotor_fraction = 1.0;
@@ -2555,7 +2558,7 @@ inline void initialize_magnetic_blast_noise(amrex::MultiFab& state, amrex::Geome
          const amrex::Real rx = coordinate_delta(x, x0, problo[0], probhi[0], periodic[0] != 0);
          const amrex::Real ry = coordinate_delta(y, y0, problo[1], probhi[1], periodic[1] != 0);
          const amrex::Real rz = coordinate_delta(z, z0, problo[2], probhi[2], periodic[2] != 0);
-         const amrex::Real r2 = rx * rx + ry * ry + rz * rz;
+         const amrex::Real r2 = cartesian_radius_squared(rx, ry, rz);
          const amrex::Real pressure = pressure0 + blast_amplitude * std::exp(-0.5 * r2 / sigma2);
          const amrex::Real bx_cell = b1_0 + magnetic_blast_noise_bx(x, y, z, a0, k1);
          const amrex::Real by_cell = b2_0 + magnetic_blast_noise_by(x, y, z, a0, k1);

@@ -21,6 +21,7 @@ from plot_amrex_slice import (
    select_component,
 )
 from plotfile_reader import latest_plotfile, plotfile_step
+from plot_labels import component_math, diagnostic_family_components
 from validation_common import next_numbered_path, parse_float, read_tsv
 
 
@@ -69,7 +70,11 @@ def plot_scalar_report(
    has_gravity = has_activity(rows, "gravity_potential_energy")
    energy_key = "gravity_total_energy" if has_gravity and "gravity_total_energy" in rows[0] else "energy"
    energy_label = "total energy" if energy_key == "gravity_total_energy" else "energy"
-   has_mhd = has_activity(rows, "magnetic_energy") or has_activity(rows, "divb_l1")
+   has_mhd = (
+      has_activity(rows, "newtonian_magnetic_energy")
+      or has_activity(rows, "rmhd_electromagnetic_energy")
+      or has_activity(rows, "divb_l1")
+   )
    has_diffusion = has_activity(rows, "diffusion_residual") or has_activity(rows, "diffusion_iterations")
    has_wall = has_activity(rows, "wall_work") or has_activity(rows, "wall_power")
    has_amr = "amr_active_finest_level" in rows[0]
@@ -89,9 +94,15 @@ def plot_scalar_report(
    ax.legend()
 
    ax = axs[0, 1]
-   for key, label in (("mom1", "mom1"), ("mom2", "mom2"), ("mom3", "mom3")):
+   for key in diagnostic_family_components("conserved_momentum"):
       if key in rows[0]:
-         ax.plot(t, [row[key] for row in rows], label=label, linewidth=2.0, **markers)
+         ax.plot(
+            t,
+            [row[key] for row in rows],
+            label=f"${component_math(key)}$",
+            linewidth=2.0,
+            **markers,
+         )
    ax.set_title("Total Momentum")
    ax.set_xlabel("time")
    ax.legend()
@@ -158,8 +169,22 @@ def plot_scalar_report(
    ax = axs[1, 2]
    if has_gravity and "gravity_total_energy_rel_drift" in rows[0]:
       ax.semilogy(t, positive([row["gravity_total_energy_rel_drift"] for row in rows]), label="gravity total drift", linewidth=2.0, **markers)
-   if has_mhd and "magnetic_energy" in rows[0]:
-      ax.plot(t, [row["magnetic_energy"] for row in rows], label="magnetic energy", linewidth=2.0, **markers)
+   if has_mhd and "newtonian_magnetic_energy" in rows[0]:
+      ax.plot(
+         t,
+         [row["newtonian_magnetic_energy"] for row in rows],
+         label="Newtonian magnetic energy",
+         linewidth=2.0,
+         **markers,
+      )
+   if has_mhd and "rmhd_electromagnetic_energy" in rows[0]:
+      ax.plot(
+         t,
+         [row["rmhd_electromagnetic_energy"] for row in rows],
+         label="Eulerian electromagnetic energy",
+         linewidth=2.0,
+         **markers,
+      )
    if has_diffusion and "diffusion_iterations" in rows[0]:
       ax.plot(t, [row["diffusion_iterations"] for row in rows], label="diffusion sweeps", linewidth=2.0, **markers)
    if has_wall and "wall_work" in rows[0]:

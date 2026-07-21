@@ -30,6 +30,9 @@ Z4C_HEADER_DIR = Z4C_HEADER.parent / "z4c"
 INITIAL_DATA_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "initial_data.hpp"
 )
+DIAGNOSTIC_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "kernels_generated" / "diagnostics.hpp"
+)
 FIELD_IDS_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated" / "field_ids.hpp"
 )
@@ -54,6 +57,7 @@ from pyfluid_codegen.emit_catalog import (  # noqa: E402
 )
 from pyfluid_codegen.emit_cpp import (  # noqa: E402
    render_characteristic_header,
+   render_diagnostic_header,
    render_eos_header,
    render_flux_header,
    render_initial_data_header,
@@ -1748,6 +1752,10 @@ def main() -> None:
    if render_initial_data_header() != INITIAL_DATA_HEADER.read_text(encoding="utf-8"):
       raise SystemExit(
          f"generated initial-data header is stale: rerun {CODEGEN / 'generate_kernels.py'}"
+      )
+   if render_diagnostic_header() != DIAGNOSTIC_HEADER.read_text(encoding="utf-8"):
+      raise SystemExit(
+         f"generated diagnostic header is stale: rerun {CODEGEN / 'generate_kernels.py'}"
       )
    validate_symbolic_operator_contract()
    validate_symbolic_eos_contract()

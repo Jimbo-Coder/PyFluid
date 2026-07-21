@@ -104,6 +104,18 @@ struct EulerianMatter {
    amrex::Real stress33 = 0.0;
 };
 
+struct RelativisticFluidDiagnosticIntegrands {
+   amrex::Real lorentz_factor = 1.0;
+};
+
+struct RMHDDiagnosticIntegrands {
+   amrex::Real electromagnetic_energy = 0.0;
+   amrex::Real b_squared = 0.0;
+   amrex::Real enthalpy_magnetization = 0.0;
+   amrex::Real plasma_beta = 0.0;
+   amrex::Real lorentz_factor = 1.0;
+};
+
 enum EulerianMatterComponent : int {
    EULERIAN_MATTER_RHO = 0,
    EULERIAN_MATTER_MOMENTUM1,

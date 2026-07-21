@@ -29,6 +29,20 @@ bool finite_rhd_conserved(const RHDConserved& conserved) noexcept
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real rhd_conserved_admissibility_margin(
+   const RHDConserved& conserved,
+   const SpacetimeMetric& metric
+) noexcept
+{
+   const RHDRecoveryState recovery = generated::rhd_recovery_state(
+      conserved, metric
+   );
+   return recovery.dens + recovery.tau - std::sqrt(
+      recovery.dens * recovery.dens + recovery.momentum_squared
+   );
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool admissible_rhd_primitive(
    const RHDPrimitive& primitive,
    const SpacetimeMetric& metric

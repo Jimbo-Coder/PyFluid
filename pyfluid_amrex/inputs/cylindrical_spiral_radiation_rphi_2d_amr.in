@@ -25,7 +25,7 @@ amr.total_cell_budget = 2000000
 amr.tag_metric = lohner
 amr.tag_threshold = 0.30
 amr.min_feature_length = 0.00001
-amr.state_interp = protected
+amr.state_interp = coupled-conservative
 
 pyfluid.physics = hydro
 pyfluid.ct = off

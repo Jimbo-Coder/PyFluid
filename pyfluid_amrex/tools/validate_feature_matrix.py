@@ -79,6 +79,8 @@ class Case:
    comparison_reference: str | None = None
    comparison_components: tuple[str, ...] = ()
    comparison_rel_l2_tolerance: float = 0.0
+   remove_parameters: tuple[str, ...] = ()
+   expected_aux_layout: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
 
 COMMON_FAST = {
@@ -115,7 +117,7 @@ DEEP_AMR_COVERAGE = {
    "amr.blocking_factor": "8",
    "amr.regrid_mode": "synchronized",
    "amr.regrid_int": "1",
-   "amr.state_interp": "conservative",
+   "amr.state_interp": "component-conservative",
    "amr.tag_metric": "lohner",
    "amr.min_feature_length": "0.0005",
    "amr.total_cell_budget": "1000000",
@@ -147,7 +149,12 @@ def write_case_input(case: Case, force: bool) -> Path:
    values.update(case.overrides)
 
    path = CASE_INPUTS / f"{case.name}.in"
-   return materialize_run_input(INPUTS / case.base_input, path, values)
+   return materialize_run_input(
+      INPUTS / case.base_input,
+      path,
+      values,
+      remove_parameters=case.remove_parameters,
+   )
 
 
 def case_checks(case: Case) -> ScalarPolicy:
@@ -279,6 +286,20 @@ def run_case(case: Case, force: bool, timeout: int, ranks_override: int | None =
          failure = (
             f"uniform-state error {max_error:.3e} exceeds "
             f"{case.uniform_tolerance:.3e} across the AMR hierarchy"
+         )
+         row["reason"] = "; ".join(filter(None, (str(row.get("reason", "")), failure)))
+   for stem, expected_names in case.expected_aux_layout:
+      candidates = sorted((output_dir / "auxGF").glob(f"{stem}[0-9]*"))
+      if not candidates:
+         row["status"] = "FAIL"
+         failure = f"missing inherited-cadence auxiliary output for {stem}"
+         row["reason"] = "; ".join(filter(None, (str(row.get("reason", "")), failure)))
+         continue
+      names, _ndim, _time = parse_plot_header(candidates[-1])
+      if tuple(names) != expected_names:
+         row["status"] = "FAIL"
+         failure = (
+            f"auxiliary layout {stem} has {tuple(names)}, expected {expected_names}"
          )
          row["reason"] = "; ".join(filter(None, (str(row.get("reason", "")), failure)))
    return row
@@ -1355,9 +1376,16 @@ def combo_cases() -> list[Case]:
          "pyfluid.viscosity": "1.0e-3",
          "pyfluid.resistivity": "1.0e-3",
          "pyfluid.aux_gfs": "j,e",
-         "pyfluid.aux_gf_compute_int": "1",
-         "pyfluid.aux_gf_int": "1",
-      }, require_amr=True),
+         "pyfluid.plot_int": "1",
+      },
+      require_amr=True,
+      remove_parameters=("pyfluid.aux_gf_compute_int", "pyfluid.aux_gf_int"),
+      expected_aux_layout=(
+         ("auxGF_edge1", ("j1", "e1")),
+         ("auxGF_edge2", ("j2", "e2")),
+         ("auxGF_edge3", ("j3", "e3")),
+      ),
+   ),
       Case("mhd_combo_3d_amr_ct_subcycling_resistive_aux", 3, "magnetic_blast_noise_3d_amr_ct.in", {
          "amr.n_cell": "16 16 16",
          "amr.max_level": "1",

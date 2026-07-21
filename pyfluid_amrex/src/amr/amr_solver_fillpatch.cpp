@@ -159,11 +159,15 @@ void AmrSolverBase::fill_mixed_patch_state_ghosts(amrex::MultiFab& state, int le
 
 amrex::Interpolater* AmrSolverBase::selected_state_interpolater() const
 {
-   if (cfg_.state_interp == "conservative") {
+   if (cfg_.state_interp == "component-conservative") {
       return &amrex::cell_cons_interp;
    }
-   if (cfg_.state_interp == "protected") {
+   if (cfg_.state_interp == "coupled-conservative") {
+#if (AMREX_SPACEDIM == 1)
+      return &amrex::lincc_interp;
+#else
       return &amrex::protected_interp;
+#endif
    }
    if (cfg_.state_interp == "quadratic") {
       return &amrex::quadratic_interp;

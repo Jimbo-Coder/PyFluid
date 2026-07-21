@@ -25,14 +25,18 @@ RMHDPrimitive admissibility_limit_rmhd_primitive(
    RMHDPrimitive face,
    const RMHDPrimitive& center,
    const EOSParams& eos,
-   const SpacetimeMetric& metric
+   const SpacetimeMetric& metric,
+   amrex::Real density_floor,
+   amrex::Real pressure_floor
 ) noexcept
 {
    const RHDPrimitive limited = admissibility_limit_rhd_primitive<EOSIdealGas>(
       {face.rho, face.eps, face.pressure, face.v1, face.v2, face.v3},
       {center.rho, center.eps, center.pressure, center.v1, center.v2, center.v3},
       eos,
-      metric
+      metric,
+      density_floor,
+      pressure_floor
    );
    face.rho = limited.rho;
    face.eps = limited.eps;
@@ -54,9 +58,23 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
    int jr,
    int kr,
    const EOSParams& eos,
-   const SpacetimeMetric& metric
+   const SpacetimeMetric& metric,
+   EOSThermodynamicState const& atmosphere_l,
+   EOSThermodynamicState const& atmosphere_r
 ) noexcept
 {
+   const RMHDPrimitive center_l = rmhd_primitive_at(
+      primitive, il, jl, kl, eos
+   );
+   const RMHDPrimitive center_r = rmhd_primitive_at(
+      primitive, ir, jr, kr, eos
+   );
+   if (center_l.rho <= atmosphere_l.rho
+       || center_l.pressure <= atmosphere_l.pressure
+       || center_r.rho <= atmosphere_r.rho
+       || center_r.pressure <= atmosphere_r.pressure) {
+      return {center_l, center_r};
+   }
    const ScalarFaceValues rho = primitive_component_face_values<ReconMethod, Direction, RHO>(
       primitive, il, jl, kl, ir, jr, kr
    );
@@ -107,15 +125,19 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
    };
    face.left = admissibility_limit_rmhd_primitive(
       face.left,
-      rmhd_primitive_at(primitive, il, jl, kl, eos),
+      center_l,
       eos,
-      metric
+      metric,
+      atmosphere_l.rho,
+      atmosphere_l.pressure
    );
    face.right = admissibility_limit_rmhd_primitive(
       face.right,
-      rmhd_primitive_at(primitive, ir, jr, kr, eos),
+      center_r,
       eos,
-      metric
+      metric,
+      atmosphere_r.rho,
+      atmosphere_r.pressure
    );
    return face;
 }
@@ -203,12 +225,15 @@ RMHDConserved rmhd_riemann_flux(
    int jr,
    int kr,
    const EOSParams& eos,
-   const SpacetimeMetric& metric
+   const SpacetimeMetric& metric,
+   EOSThermodynamicState const& atmosphere_l,
+   EOSThermodynamicState const& atmosphere_r
 ) noexcept
 {
    const RMHDPrimitiveFaceStates face =
       rmhd_primitive_face_states<ReconMethod, Direction>(
-         primitive, il, jl, kl, ir, jr, kr, eos, metric
+         primitive, il, jl, kl, ir, jr, kr, eos, metric,
+         atmosphere_l, atmosphere_r
       );
    if constexpr (RiemannMethod == RiemannLLF) {
       return rmhd_llf_flux<Direction>(face.left, face.right, eos, metric);
@@ -231,6 +256,7 @@ inline void fill_rmhd_flux_direction(
    const EOSParams& eos,
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
+   EOSThermodynamicState const& atmosphere,
    amrex::Real time
 )
 {
@@ -267,7 +293,17 @@ inline void fill_rmhd_flux_direction(
             );
          const RMHDConserved value =
             rmhd_riemann_flux<ReconMethod, RiemannMethod, Direction>(
-               cached, il, jl, kl, i, j, k, eos, face_geometry.metric
+               cached,
+               il,
+               jl,
+               kl,
+               i,
+               j,
+               k,
+               eos,
+               face_geometry.metric,
+               atmosphere,
+               atmosphere
             );
          store_rmhd_conserved(face_flux, i, j, k, value);
       });
@@ -279,7 +315,8 @@ inline void fill_rmhd_flux_direction(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    const amrex::MultiFab& primitive,
    const EOSParams& eos,
-   const amrex::MultiFab& cell_spacetime
+   const amrex::MultiFab& cell_spacetime,
+   EOSThermodynamicState const& atmosphere
 )
 {
    amrex::MultiFab& flux = *fluxes[Direction];
@@ -316,7 +353,19 @@ inline void fill_rmhd_flux_direction(
             ReconMethod,
             RiemannMethod,
             Direction
-         >(cached, il, jl, kl, i, j, k, eos, metric);
+         >(
+            cached,
+            il,
+            jl,
+            kl,
+            i,
+            j,
+            k,
+            eos,
+            metric,
+            atmosphere,
+            atmosphere
+         );
          store_rmhd_conserved(face_flux, i, j, k, value);
       });
    }
@@ -330,23 +379,27 @@ inline void fill_rmhd_flux_direction_runtime(
    int riemann_method,
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
+   EOSThermodynamicState const& atmosphere,
    amrex::Real time
 )
 {
    switch (riemann_method) {
    case RiemannLLF:
       fill_rmhd_flux_direction<ReconMethod, RiemannLLF, Direction>(
-         fluxes, primitive, eos, geometry, spacetime, time
+         fluxes, primitive, eos, geometry, spacetime,
+         atmosphere, time
       );
       return;
    case RiemannHLL:
       fill_rmhd_flux_direction<ReconMethod, RiemannHLL, Direction>(
-         fluxes, primitive, eos, geometry, spacetime, time
+         fluxes, primitive, eos, geometry, spacetime,
+         atmosphere, time
       );
       return;
    case RiemannHLLE:
       fill_rmhd_flux_direction<ReconMethod, RiemannHLLE, Direction>(
-         fluxes, primitive, eos, geometry, spacetime, time
+         fluxes, primitive, eos, geometry, spacetime,
+         atmosphere, time
       );
       return;
    default:
@@ -360,23 +413,27 @@ inline void fill_rmhd_flux_direction_runtime(
    const amrex::MultiFab& primitive,
    const EOSParams& eos,
    int riemann_method,
-   const amrex::MultiFab& cell_spacetime
+   const amrex::MultiFab& cell_spacetime,
+   EOSThermodynamicState const& atmosphere
 )
 {
    switch (riemann_method) {
    case RiemannLLF:
       fill_rmhd_flux_direction<ReconMethod, RiemannLLF, Direction>(
-         fluxes, primitive, eos, cell_spacetime
+         fluxes, primitive, eos, cell_spacetime,
+         atmosphere
       );
       return;
    case RiemannHLL:
       fill_rmhd_flux_direction<ReconMethod, RiemannHLL, Direction>(
-         fluxes, primitive, eos, cell_spacetime
+         fluxes, primitive, eos, cell_spacetime,
+         atmosphere
       );
       return;
    case RiemannHLLE:
       fill_rmhd_flux_direction<ReconMethod, RiemannHLLE, Direction>(
-         fluxes, primitive, eos, cell_spacetime
+         fluxes, primitive, eos, cell_spacetime,
+         atmosphere
       );
       return;
    default:

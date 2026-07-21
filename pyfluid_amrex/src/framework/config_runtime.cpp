@@ -133,10 +133,12 @@ std::string trim_copy(std::string value)
    return value;
 }
 
-std::vector<std::string> aux_gf_names(RunConfig const& cfg)
+namespace {
+
+std::vector<std::string> comma_separated_names(std::string const& value)
 {
    std::vector<std::string> names;
-   std::stringstream stream(cfg.aux_gfs);
+   std::stringstream stream(value);
    std::string token;
    while (std::getline(stream, token, ',')) {
       token = trim_copy(token);
@@ -146,6 +148,18 @@ std::vector<std::string> aux_gf_names(RunConfig const& cfg)
       names.push_back(token);
    }
    return names;
+}
+
+} // namespace
+
+std::vector<std::string> aux_gf_names(RunConfig const& cfg)
+{
+   return comma_separated_names(cfg.aux_gfs);
+}
+
+std::vector<std::string> azimuthal_mode_field_names(RunConfig const& cfg)
+{
+   return comma_separated_names(cfg.diagnostic_azimuthal_mode_fields);
 }
 
 bool aux_gfs_enabled(RunConfig const& cfg)

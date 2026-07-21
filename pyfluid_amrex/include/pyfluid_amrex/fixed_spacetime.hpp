@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "pyfluid_amrex/fixed_spacetime_types.hpp"
+#include "pyfluid_amrex/physical_geometry.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 
 namespace pyfluid_amrex {
@@ -40,9 +41,12 @@ FixedSpacetimeGeometry fixed_spacetime_geometry(
       const amrex::Real displacement1 = position1 - parameters.origin1;
       const amrex::Real displacement2 = position2 - parameters.origin2;
       const amrex::Real displacement3 = position3 - parameters.origin3;
-      const amrex::Real radius_squared = displacement1 * displacement1
-         + displacement2 * displacement2 + displacement3 * displacement3;
-      const amrex::Real radius = std::sqrt(radius_squared);
+      const amrex::Real radius_squared = cartesian_radius_squared(
+         displacement1, displacement2, displacement3
+      );
+      const amrex::Real radius = cartesian_radius(
+         displacement1, displacement2, displacement3
+      );
       const amrex::Real inverse_radius = 1.0 / radius;
       const amrex::Real inverse_radius_cubed = inverse_radius / radius_squared;
       const amrex::Real compactness = 0.5 * parameters.mass * inverse_radius;
@@ -100,17 +104,19 @@ inline void validate_fixed_spacetime_domain(
          return point < lo ? lo - point : (point > hi ? point - hi : 0.0);
       };
       const amrex::Real distance1 = interval_distance(parameters.origin1, lower[0], upper[0]);
-      amrex::Real radius_squared = distance1 * distance1;
 #if (AMREX_SPACEDIM >= 2)
       const amrex::Real distance2 = interval_distance(parameters.origin2, lower[1], upper[1]);
-      radius_squared += distance2 * distance2;
+#else
+      const amrex::Real distance2 = 0.0;
 #endif
 #if (AMREX_SPACEDIM == 3)
       const amrex::Real distance3 = interval_distance(parameters.origin3, lower[2], upper[2]);
-      radius_squared += distance3 * distance3;
+#else
+      const amrex::Real distance3 = 0.0;
 #endif
       if (!(parameters.mass > 0.0)
-          || !(std::sqrt(radius_squared) > 0.5 * parameters.mass)) {
+          || !(cartesian_radius(distance1, distance2, distance3)
+               > 0.5 * parameters.mass)) {
          amrex::Abort(
             "the isotropic-Schwarzschild domain must remain outside r = M/2"
          );

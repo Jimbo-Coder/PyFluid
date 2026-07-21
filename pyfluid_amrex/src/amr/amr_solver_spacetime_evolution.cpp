@@ -1,5 +1,8 @@
 #include "amr/amr_solver_base.hpp"
 
+#include <AMReX_BC_TYPES.H>
+#include <AMReX_PhysBCFunct.H>
+
 #include "pyfluid_amrex/centering_transfer.hpp"
 #include "pyfluid_amrex/relativistic_boundary.hpp"
 #include "pyfluid_amrex/spacetime_coupling.hpp"
@@ -78,7 +81,10 @@ void AmrSolverBase::prepare_spacetime_coupling_range(
          rk_stage
       );
       transfer_grid_field_centering<4, AMREX_SPACEDIM>(
-         *spacetime_coupling_.cell_spacetime()[lev], *state[lev], true
+         *spacetime_coupling_.cell_spacetime()[lev],
+         *state[lev],
+         Geom(lev),
+         true
       );
       spacetime_coupling_.mark_cell_spacetime_valid(lev);
    }
@@ -143,9 +149,8 @@ void AmrSolverBase::refresh_stored_spacetime_fluid_boundary(
 void AmrSolverBase::fill_spacetime_matter_range(int lev_begin, int lev_end)
 {
    for (int lev = lev_begin; lev < lev_end; ++lev) {
-      amrex::MultiFab& vertex_matter = *spacetime_coupling_.vertex_matter()[lev];
       if (!spacetime_includes_matter(cfg_)) {
-         vertex_matter.setVal(0.0);
+         spacetime_coupling_.vertex_matter()[lev]->setVal(0.0);
          continue;
       }
       amrex::MultiFab& cell_matter = *spacetime_coupling_.cell_matter()[lev];
@@ -177,8 +182,83 @@ void AmrSolverBase::fill_spacetime_matter_range(int lev_begin, int lev_end)
       } else {
          amrex::Abort("evolved spacetime matter coupling requires RHD or RMHD");
       }
+   }
+
+   amrex::Vector<amrex::BCRec> boundary_conditions(
+      EULERIAN_MATTER_NUM_COMPONENTS
+   );
+   for (amrex::BCRec& boundary : boundary_conditions) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         const int boundary_type = Geom(0).isPeriodic(direction)
+            ? amrex::BCType::int_dir
+            : amrex::BCType::foextrap;
+         boundary.setLo(direction, boundary_type);
+         boundary.setHi(direction, boundary_type);
+      }
+   }
+   amrex::GpuBndryFuncFab<amrex::FabFillNoOp> boundary_function;
+   using MatterPhysicalBoundary = amrex::PhysBCFunct<
+      amrex::GpuBndryFuncFab<amrex::FabFillNoOp>
+   >;
+   for (int lev = lev_begin; lev < lev_end; ++lev) {
+      if (!spacetime_includes_matter(cfg_)) {
+         continue;
+      }
+      amrex::MultiFab& cell_matter = *spacetime_coupling_.cell_matter()[lev];
+      cell_matter.OverrideSync(Geom(lev).periodicity());
+      MatterPhysicalBoundary fine_boundary(
+         Geom(lev), boundary_conditions, boundary_function
+      );
+      amrex::Vector<amrex::MultiFab*> fine_data{&cell_matter};
+      amrex::Vector<amrex::Real> fine_time{0.0};
+      if (lev == 0) {
+         amrex::FillPatchSingleLevel(
+            cell_matter,
+            cell_matter.nGrowVect(),
+            0.0,
+            fine_data,
+            fine_time,
+            0,
+            0,
+            EULERIAN_MATTER_NUM_COMPONENTS,
+            Geom(lev),
+            fine_boundary,
+            0
+         );
+      } else {
+         MatterPhysicalBoundary coarse_boundary(
+            Geom(lev - 1), boundary_conditions, boundary_function
+         );
+         amrex::Vector<amrex::MultiFab*> coarse_data{
+            spacetime_coupling_.cell_matter()[lev - 1].get()
+         };
+         amrex::Vector<amrex::Real> coarse_time{0.0};
+         amrex::FillPatchTwoLevels(
+            cell_matter,
+            cell_matter.nGrowVect(),
+            0.0,
+            coarse_data,
+            coarse_time,
+            fine_data,
+            fine_time,
+            0,
+            0,
+            EULERIAN_MATTER_NUM_COMPONENTS,
+            Geom(lev - 1),
+            Geom(lev),
+            coarse_boundary,
+            0,
+            fine_boundary,
+            0,
+            refRatio(lev - 1),
+            selected_state_interpolater(),
+            boundary_conditions,
+            0
+         );
+      }
+      amrex::MultiFab& vertex_matter = *spacetime_coupling_.vertex_matter()[lev];
       transfer_grid_field_centering<4, AMREX_SPACEDIM>(
-         vertex_matter, cell_matter
+         vertex_matter, cell_matter, Geom(lev)
       );
    }
 }

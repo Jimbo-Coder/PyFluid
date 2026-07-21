@@ -290,47 +290,8 @@ void accumulate_metric_aware_directional_indicator(
 #endif
 }
 
-template <typename ValueAt>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real metric_aware_indicator(
-   ValueAt value_at,
-   int i,
-   int j,
-   int k,
-   amrex::Real reference_scale,
-   int coordinate,
-   MeshAxes const& axes,
-   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
-   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
-   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& min_feature_lengths
-) noexcept
-{
-   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators{};
-   accumulate_metric_aware_directional_indicator(
-      indicators,
-      value_at,
-      i,
-      j,
-      k,
-      reference_scale,
-      coordinate,
-      axes,
-      problo,
-      dx,
-      min_feature_lengths
-   );
-   amrex::Real indicator = indicators[0];
-#if (AMREX_SPACEDIM >= 2)
-   indicator = amrex::max(indicator, indicators[1]);
-#endif
-#if (AMREX_SPACEDIM == 3)
-   indicator = amrex::max(indicator, indicators[2]);
-#endif
-   return indicator;
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_from_primitive(
+amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fluid_amr_directional_indicators(
    amrex::Array4<amrex::Real const> const& primitive,
    int i,
    int j,
@@ -511,6 +472,101 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> auto_amr_directional_indicators_fro
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacetime_amr_directional_indicators(
+   int i,
+   int j,
+   int k,
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& min_feature_lengths,
+   AmrSpacetimeMetricView const& spacetime
+) noexcept
+{
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators{};
+   if (!spacetime.stored) {
+      return indicators;
+   }
+   const auto conformal_perturbation_at = [=] AMREX_GPU_HOST_DEVICE(
+      int ia, int ja, int ka
+   ) noexcept {
+      return spacetime.state(ia, ja, ka, Z4C_CHI) - 1.0;
+   };
+   const amrex::Real reference_scale = amrex::max(
+      amrex::Math::abs(conformal_perturbation_at(i, j, k)), 1.0e-12
+   );
+   accumulate_metric_aware_directional_indicator(
+      indicators,
+      conformal_perturbation_at,
+      i,
+      j,
+      k,
+      reference_scale,
+      coordinate,
+      axes,
+      problo,
+      dx,
+      min_feature_lengths
+   );
+   return indicators;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>
+auto_amr_directional_indicators_from_primitive(
+   amrex::Array4<amrex::Real const> const& primitive,
+   int i,
+   int j,
+   int k,
+   EOSParams const& eos,
+   int eos_method,
+   PhysicalSystem system,
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& min_feature_lengths,
+   amrex::Real min_refine_radius,
+   AmrSpacetimeMetricView const& spacetime = {}
+) noexcept
+{
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators =
+      fluid_amr_directional_indicators(
+         primitive,
+         i,
+         j,
+         k,
+         eos,
+         eos_method,
+         system,
+         coordinate,
+         axes,
+         problo,
+         dx,
+         min_feature_lengths,
+         min_refine_radius,
+         spacetime
+      );
+   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacetime_indicators =
+      spacetime_amr_directional_indicators(
+         i,
+         j,
+         k,
+         coordinate,
+         axes,
+         problo,
+         dx,
+         min_feature_lengths,
+         spacetime
+      );
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      indicators[dir] = amrex::max(indicators[dir], spacetime_indicators[dir]);
+   }
+   return indicators;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real auto_amr_indicator_from_primitive(
    amrex::Array4<amrex::Real const> const& primitive,
    int i,
@@ -528,23 +584,22 @@ amrex::Real auto_amr_indicator_from_primitive(
    AmrSpacetimeMetricView const& spacetime = {}
 ) noexcept
 {
-   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators =
-      auto_amr_directional_indicators_from_primitive(
-         primitive,
-         i,
-         j,
-         k,
-         eos,
-         eos_method,
-         system,
-         coordinate,
-         axes,
-         problo,
-         dx,
-         min_feature_lengths,
-         min_refine_radius,
-         spacetime
-      );
+   const auto indicators = auto_amr_directional_indicators_from_primitive(
+      primitive,
+      i,
+      j,
+      k,
+      eos,
+      eos_method,
+      system,
+      coordinate,
+      axes,
+      problo,
+      dx,
+      min_feature_lengths,
+      min_refine_radius,
+      spacetime
+   );
    amrex::Real indicator = indicators[0];
 #if (AMREX_SPACEDIM >= 2)
    indicator = amrex::max(indicator, indicators[1]);

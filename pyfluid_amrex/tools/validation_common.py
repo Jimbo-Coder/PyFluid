@@ -650,7 +650,9 @@ def infer_mhd_run(params: dict[str, str], summary: dict[str, str], rows: list[di
    if params.get("pyfluid.initial_data", "").lower().find("mag") >= 0:
       return True
    if rows:
-      magnetic_energy = parse_float(rows[-1].get("magnetic_energy"), 0.0)
+      magnetic_energy = parse_float(
+         rows[-1].get("newtonian_magnetic_energy"), 0.0
+      ) + parse_float(rows[-1].get("rmhd_electromagnetic_energy"), 0.0)
       divb = parse_float(rows[-1].get("divb_l1"), 0.0)
       return abs(magnetic_energy) > 0.0 or abs(divb) > 0.0
    return False

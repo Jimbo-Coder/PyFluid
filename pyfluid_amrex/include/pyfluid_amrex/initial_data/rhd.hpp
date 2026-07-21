@@ -30,7 +30,9 @@ inline void initialize_relativistic_state_method(
    const PhysicalSystem system = physical_system(cfg);
    const bool magnetized = physical_system_has_magnetic_field(system);
    const bool initialize_magnetic_from_id = initial_data.fields.magnetic_from_id;
-   const FluidInitialDataParameters parameters = fluid_initial_data_parameters(cfg);
+   const FluidInitialDataParameters parameters = fluid_initial_data_parameters(
+      cfg, initial_data
+   );
    const FixedSpacetimeGeometry reference_geometry = fixed_spacetime_geometry(
       spacetime,
       0.5 * (problo[0] + probhi[0]),

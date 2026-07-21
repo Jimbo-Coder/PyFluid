@@ -1,5 +1,7 @@
 name = "local"
-mpi_launcher = ["mpirun", "-np", "{ranks}"]
+# Open MPI 5's default logical-core binding can pin Apple-silicon ranks to the
+# efficiency-core subset. Let macOS place local ranks on performance cores.
+mpi_launcher = ["mpirun", "-np", "{ranks}", "--bind-to", "none"]
 direct_one_rank = true
 default_ranks = 3
 environment = { OMP_NUM_THREADS = "1" }

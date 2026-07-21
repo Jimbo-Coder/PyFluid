@@ -1,10 +1,12 @@
 #pragma once
 
+#include <AMReX_Geometry.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_iMultiFab.H>
 
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
+#include "pyfluid_amrex/mesh_geometry.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
 
 namespace pyfluid_amrex {
@@ -32,6 +34,7 @@ void apply_relativistic_atmosphere(
    PhysicalSystem physical_system,
    int eos_method,
    EOSParams const& eos,
+   EOSThermodynamicState const& atmosphere,
    int ghost_cells
 );
 

@@ -258,7 +258,9 @@ std::vector<std::string> aux_grid_field_output_names(AuxGridField field)
    std::vector<std::string> names;
    for (GridFieldComponentInfo const& component : info.components) {
       if (component.name.empty()) {
-         amrex::Abort("aux grid field registry has an empty component name for " + std::string(info.name));
+         amrex::Abort(
+            "aux grid field registry has an empty component name for " + info.name
+         );
       }
       names.emplace_back(component.name);
    }
@@ -291,6 +293,25 @@ int grid_field_component_count(GridFieldSetInfo const& set)
       count += static_cast<int>(field.components.size());
    }
    return count;
+}
+
+int scalar_grid_field_component(
+   GridFieldSetInfo const& set,
+   std::string const& name
+)
+{
+   int component = 0;
+   for (GridFieldInfo const& field : set.fields) {
+      const bool scalar = field.value_kind == GridFieldValueKind::Scalar
+         && field.components.size() == 1;
+      for (GridFieldComponentInfo const& field_component : field.components) {
+         if (scalar && (name == field.name || name == field_component.name)) {
+            return component;
+         }
+         ++component;
+      }
+   }
+   return -1;
 }
 
 int grid_field_ghost_width(GridFieldSetInfo const& set)

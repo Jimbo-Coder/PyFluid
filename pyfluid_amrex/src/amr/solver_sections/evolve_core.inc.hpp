@@ -210,12 +210,15 @@
       (this->*operations.fill_boundaries)(fluid_state_.state(), time);
       fill_all_spacetime_boundaries(spacetime_state_.state(), time);
       const int start_step = level_steps_[0];
+      run_evolution_preflight(time);
       debug_check_state_all_levels("initial accepted state", start_step, time, true);
 
       std::ofstream scalar_file;
       std::ofstream amr_level_file;
+      std::ofstream multipole_file;
       const std::filesystem::path scalar_path = std::filesystem::path(cfg_.output_dir) / "scalars.tsv";
       const std::filesystem::path amr_level_path = std::filesystem::path(cfg_.output_dir) / "amr_levels.tsv";
+      const std::filesystem::path multipole_path = std::filesystem::path(cfg_.output_dir) / "multipoles.tsv";
       const auto history_last_step = [](std::filesystem::path const& path) -> std::optional<int> {
          if (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) == 0) {
             return std::nullopt;
@@ -237,6 +240,12 @@
       };
       const std::optional<int> scalar_history_step = history_last_step(scalar_path);
       const std::optional<int> amr_history_step = history_last_step(amr_level_path);
+      const bool radiation_enabled = cfg_.diagnostic_multipole_l_max >= 2;
+      const bool azimuthal_modes_enabled = !azimuthal_mode_field_names(cfg_).empty();
+      const bool multipoles_enabled = radiation_enabled || azimuthal_modes_enabled;
+      const std::optional<int> multipole_history_step = multipoles_enabled
+         ? history_last_step(multipole_path)
+         : std::nullopt;
       if (!cfg_.restart_file.empty() && scalar_history_step.has_value() != amr_history_step.has_value()) {
          amrex::Abort("restart output contains incomplete scalar/AMR history");
       }
@@ -248,10 +257,32 @@
           && *scalar_history_step > start_step) {
          amrex::Abort("restart output history extends beyond the checkpoint step");
       }
+      if (!cfg_.restart_file.empty() && multipoles_enabled
+          && multipole_history_step.has_value()
+          && *multipole_history_step > start_step) {
+         amrex::Abort("restart multipole history extends beyond the checkpoint step");
+      }
+      if (!cfg_.restart_file.empty() && multipoles_enabled
+          && multipole_history_step.has_value()
+          && scalar_history_step.has_value()
+          && *multipole_history_step != *scalar_history_step) {
+         amrex::Abort("restart scalar and multipole histories end at different steps");
+      }
       const bool append_restart_history =
          !cfg_.restart_file.empty() && scalar_history_step.has_value() && amr_history_step.has_value();
       const bool append_restart_initial =
          append_restart_history && *scalar_history_step < start_step;
+      const bool append_multipole_history =
+         multipoles_enabled && !cfg_.restart_file.empty()
+         && multipole_history_step.has_value();
+      const bool append_multipole_initial =
+         append_multipole_history && *multipole_history_step < start_step;
+      ScalarDiagnosticSelection scalar_selection =
+         scalar_diagnostic_selection(cfg_.scalar_diagnostics);
+      if (radiation_enabled) {
+         scalar_selection.enable_group(ScalarDiagnosticGroup::Radiation);
+      }
+      apply_scalar_diagnostic_requirements(scalar_selection, cfg_);
       if (amrex::ParallelDescriptor::IOProcessor()) {
          std::filesystem::create_directories(cfg_.output_dir);
          write_run_parameter_file((std::filesystem::path(cfg_.output_dir) / "run.in").string());
@@ -260,8 +291,16 @@
          scalar_file.open(scalar_path, history_mode);
          amr_level_file.open(amr_level_path, history_mode);
          if (!append_restart_history) {
-            write_scalar_header(scalar_file, cfg_, start_step, time);
+            write_scalar_header(scalar_file, cfg_, start_step, time, scalar_selection);
             write_amr_level_header(amr_level_file, maxLevel(), cfg_, start_step, time);
+         }
+         if (multipoles_enabled) {
+            const std::ios::openmode multipole_mode = std::ios::out
+               | (append_multipole_history ? std::ios::app : std::ios::trunc);
+            multipole_file.open(multipole_path, multipole_mode);
+            if (!append_multipole_history) {
+               write_multipole_header(multipole_file, start_step, time);
+            }
          }
       }
 
@@ -289,10 +328,62 @@
       const TemporalCadence aux_cadence{TemporalCadenceUnit::Steps, cfg_.aux_gf_int};
       const TemporalCadence checkpoint_cadence{TemporalCadenceUnit::Steps, cfg_.checkpoint_int};
 
+      auto compute_and_append_multipoles = [&](
+         ScalarDiagnostics& scalars,
+         int diagnostic_step,
+         amrex::Real diagnostic_time,
+         bool emit_record
+      ) {
+         if (!emit_record || !multipoles_enabled) {
+            return;
+         }
+         amrex::Real radius = 0.0;
+         std::vector<MultipoleMode> modes;
+         if (radiation_enabled) {
+            RadiationDiagnostics radiation =
+               compute_spacetime_radiation_diagnostics(diagnostic_time);
+            radius = radiation.radius;
+            scalars.extraction_radius = radiation.radius;
+            scalars.matter_energy_flux = radiation.matter_energy_flux;
+            scalars.psi4_l2 = radiation.psi4_l2;
+            modes.insert(
+               modes.end(),
+               std::make_move_iterator(radiation.psi4_modes.begin()),
+               std::make_move_iterator(radiation.psi4_modes.end())
+            );
+         }
+         if (azimuthal_modes_enabled) {
+            MultipoleDiagnostics azimuthal =
+               compute_azimuthal_surface_modes(diagnostic_time);
+            radius = azimuthal.radius;
+            modes.insert(
+               modes.end(),
+               std::make_move_iterator(azimuthal.modes.begin()),
+               std::make_move_iterator(azimuthal.modes.end())
+            );
+         }
+         if (amrex::ParallelDescriptor::IOProcessor()) {
+            append_multipole_rows(
+               multipole_file,
+               diagnostic_step,
+               diagnostic_time,
+               radius,
+               modes
+            );
+         }
+      };
+
       auto initial = compute_current_scalars(
          start_step, time, dt, 1.0, 1.0, 1.0, 1.0,
          std::numeric_limits<amrex::Real>::quiet_NaN(), 0.0, 0.0, 0.0, {},
-         EOSMethod
+         EOSMethod, scalar_selection
+      );
+      const bool emit_initial_history = stream_scalars
+         && (!append_restart_history || append_restart_initial);
+      const bool emit_initial_multipoles = stream_scalars
+         && (!append_multipole_history || append_multipole_initial);
+      compute_and_append_multipoles(
+         initial, start_step, time, emit_initial_multipoles
       );
       validate_scalar_health(initial);
       wall_work_reference_energy_ = initial.energy;
@@ -328,8 +419,8 @@
       initial.gravity_total_energy_rel_drift = 0.0;
       initial.passive_mass_rel_drift = 0.0;
       if (amrex::ParallelDescriptor::IOProcessor()) {
-         if (stream_scalars && (!append_restart_history || append_restart_initial)) {
-            append_scalar_row(scalar_file, initial);
+         if (emit_initial_history) {
+            append_scalar_row(scalar_file, initial, scalar_selection);
             append_current_amr_level_row(amr_level_file, start_step, time);
             wrote_scalars = true;
          }
@@ -337,10 +428,11 @@
       if (plot_cadence.should_record_initial()) {
          write_current_state_plotfile(start_step, time);
       }
-      if (should_refresh_initial_mhd_aux_fields()) {
+      const bool write_initial_aux_gfs = aux_cadence.should_record_initial();
+      if (should_refresh_initial_mhd_aux_fields(write_initial_aux_gfs)) {
          refresh_all_mhd_aux_fields_for_output();
       }
-      if (aux_cadence.should_record_initial()) {
+      if (write_initial_aux_gfs) {
          write_current_aux_gfs(start_step, time);
       }
       if (checkpoint_cadence.should_record_initial()) {
@@ -527,7 +619,7 @@
                ? (time - last_scalar_sim_time) / elapsed
                : 0.0;
             const amrex::Real diagnostics_start = profile_.begin();
-            const auto scalars = compute_current_scalars(
+            auto scalars = compute_current_scalars(
                step,
                time,
                dt,
@@ -540,12 +632,16 @@
                layout_mcells_per_s,
                sim_time_per_s,
                diffusion,
-               EOSMethod
+               EOSMethod,
+               scalar_selection
+            );
+            compute_and_append_multipoles(
+               scalars, step, time, multipoles_enabled
             );
             profile_.end(ProfileStage::Diagnostics, diagnostics_start);
             validate_scalar_health(scalars);
             if (amrex::ParallelDescriptor::IOProcessor()) {
-               append_scalar_row(scalar_file, scalars);
+               append_scalar_row(scalar_file, scalars, scalar_selection);
                append_current_amr_level_row(amr_level_file, step, time);
             }
             wrote_scalars = true;
@@ -597,32 +693,38 @@
       const std::filesystem::path output_dir(cfg_.output_dir);
       profile_.write(output_dir, max_elapsed_wall);
       profile_.write_detail(output_dir, max_elapsed_wall);
-      if (amrex::ParallelDescriptor::IOProcessor()) {
-         if (!stream_scalars) {
-            const auto scalars = compute_current_scalars(
-               current_step,
-               time,
-               dt,
-               mass0,
-               energy0,
-               gravity_total_energy0,
-               passive_mass0,
-               max_rho0,
-               0.0,
-               0.0,
-               0.0,
-               {},
-               EOSMethod
-            );
-            validate_scalar_health(scalars);
-         if (!wrote_scalars) {
-            append_scalar_row(scalar_file, scalars);
+      if (!stream_scalars && !wrote_scalars) {
+         auto scalars = compute_current_scalars(
+            current_step,
+            time,
+            dt,
+            mass0,
+            energy0,
+            gravity_total_energy0,
+            passive_mass0,
+            max_rho0,
+            0.0,
+            0.0,
+            0.0,
+            {},
+            EOSMethod,
+            scalar_selection
+         );
+         compute_and_append_multipoles(
+            scalars, current_step, time, multipoles_enabled
+         );
+         validate_scalar_health(scalars);
+         if (amrex::ParallelDescriptor::IOProcessor()) {
+            append_scalar_row(scalar_file, scalars, scalar_selection);
             append_current_amr_level_row(amr_level_file, current_step, time);
          }
+         wrote_scalars = true;
       }
-      scalar_file.close();
-      amr_level_file.close();
-      const int advanced_steps = current_step - start_step;
+      if (amrex::ParallelDescriptor::IOProcessor()) {
+         scalar_file.close();
+         amr_level_file.close();
+         multipole_file.close();
+         const int advanced_steps = current_step - start_step;
          const amrex::Real average_mcells_s = max_elapsed_wall > 0.0
             ? total_active_cell_updates / max_elapsed_wall / 1.0e6
             : 0.0;

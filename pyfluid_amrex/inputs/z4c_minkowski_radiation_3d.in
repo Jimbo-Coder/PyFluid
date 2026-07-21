@@ -1,0 +1,51 @@
+pyfluid.run_name = z4c_minkowski_radiation_3d
+pyfluid.output_dir = runs/current/z4c/z4c_minkowski_radiation_3d
+pyfluid.validation_policy = smoke
+
+geometry.prob_lo = -1.0 -1.0 -1.0
+geometry.prob_hi = 1.0 1.0 1.0
+geometry.is_periodic = 0 0 0
+
+amr.n_cell = 16 16 16
+amr.max_level = 0
+amr.max_grid_size = 8
+amr.blocking_factor = 4
+amr.tag_metric = none
+
+spacetime.evolution = evolved
+spacetime.matter_coupling = vacuum
+spacetime.initial_data = minkowski
+spacetime.lapse_gauge = frozen
+spacetime.shift_gauge = frozen
+spacetime.ko_dissipation = 0.0
+
+diagnostics.surface_radius = 0.6
+diagnostics.surface_polar_points = 12
+diagnostics.multipole_l_max = 4
+diagnostics.azimuthal_mode_fields = rho,pressure
+diagnostics.azimuthal_mode_m_max = 4
+
+pyfluid.physics = rhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = uniform
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.final_time = -1
+pyfluid.max_step = 1
+pyfluid.ng = 3
+pyfluid.cfl = 0.5
+pyfluid.recon = pwc
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.subcycling = off
+pyfluid.bc = outflow
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = -1
+pyfluid.checkpoint_int = -1

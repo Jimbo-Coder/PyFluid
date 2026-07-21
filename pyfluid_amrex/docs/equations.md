@@ -72,6 +72,120 @@ $$u(P,\rho) = \frac{P polytropic_{\gamma} - P + cold_{specific energy offset} po
 
 $$c_s^2 = \frac{P thermal_{\gamma} + polytropic_{\gamma} polytropic_{k} \rho^{polytropic_{\gamma}} - polytropic_{k} \rho^{polytropic_{\gamma}} thermal_{\gamma}}{\rho}.$$
 
+## Diagnostic Integrands
+
+### Total rest mass
+
+`rest-mass`
+
+$$M_0 = \int_\Omega D\,d^3x.$$
+
+### ADM mass surface integral
+
+`adm-mass-surface`
+
+$$M_{\rm ADM}^{S}=\frac{1}{16\pi}\oint_{\partial\Omega}\sqrt{\gamma}\,\gamma^{ij}\gamma^{kl}(\partial_j\gamma_{ik}-\partial_k\gamma_{ij})\,dS_l.$$
+
+### Constraint-assisted ADM mass volume integral
+
+`adm-mass-volume`
+
+$$M_{\rm ADM}^{V}=\int_\Omega\sqrt{\gamma}\left[\rho+\frac{1}{16\pi}\left(K_{ij}K^{ij}-K^2-\mathcal G\right)\right]d^3x,\qquad\mathcal G=\gamma^{ij}\left(\Gamma^k{}_{i\ell}\Gamma^\ell{}_{jk}-\Gamma^k{}_{ij}\Gamma^\ell{}_{k\ell}\right).$$
+
+### ADM linear momentum surface integral
+
+`adm-linear-momentum-surface`
+
+$$P_i^{S}=\frac{1}{8\pi}\oint_{\partial\Omega}\sqrt{\gamma}(K^l{}_i-\delta^l{}_iK)\,dS_l.$$
+
+### Constraint-assisted ADM linear momentum volume integral
+
+`adm-linear-momentum-volume`
+
+$$P_a^{V}=\int_\Omega\sqrt{\gamma}\left[S_i\xi_a^i+\frac{1}{16\pi}(K^{ij}-\gamma^{ij}K)\mathcal L_{\xi_a}\gamma_{ij}\right]d^3x,\qquad \xi_a^i=\delta_a^i.$$
+
+### ADM angular momentum surface integral
+
+`adm-angular-momentum-surface`
+
+$$J_i^{S}=\frac{1}{8\pi}\oint_{\partial\Omega}\sqrt{\gamma}(K^l{}_k-\delta^l{}_kK)\phi_i^k\,dS_l,\qquad\phi_i^k=\epsilon_{ijk}x^j.$$
+
+### Constraint-assisted ADM angular momentum volume integral
+
+`adm-angular-momentum-volume`
+
+$$J_a^{V}=\int_\Omega\sqrt{\gamma}\left[S_i\phi_a^i+\frac{1}{16\pi}(K^{ij}-\gamma^{ij}K)\mathcal L_{\phi_a}\gamma_{ij}\right]d^3x,\qquad \phi_a^i=\epsilon_{aji}x^j.$$
+
+### Proper matter-energy volume integral
+
+`proper-mass-volume`
+
+$$M_{\rm proper}^{V}=\int_\Omega\sqrt{\gamma}\,E\,d^3x.$$
+
+### Komar mass surface integral
+
+`komar-mass-surface`
+
+$$M_{\rm K}^{S}=\frac{1}{4\pi}\oint_{\partial\Omega}\left(D^i\alpha-K^i{}_j\beta^j\right)dS_i.$$
+
+### Stationary Komar mass volume integral
+
+`komar-mass-volume`
+
+$$M_{\rm K}^{V}=\int_\Omega\sqrt{\gamma}\left[\alpha(E+S)-2\beta^iS_i\right]d^3x,\qquadS=\gamma^{ij}S_{ij}.$$
+
+### Hamiltonian constraint norms
+
+`hamiltonian-norms`
+
+$$\|\mathcal H\|_2=\sqrt{V^{-1}\int_\Omega\mathcal H^2dV},\qquad\|\mathcal H\|_\infty=\max_\Omega|\mathcal H|.$$
+
+### Relativistic magnetofluid invariants
+
+`rmhd-runtime-invariants`
+
+$$b^2=b^\mu b_\mu,\qquad \sigma_h=\frac{b^2}{\rho h},\qquad\beta_{\rm plasma}=\frac{2P}{b^2},\qquad W=(1-v_iv^i)^{-1/2}.$$
+
+### Eulerian electromagnetic energy
+
+`rmhd-electromagnetic-energy`
+
+$$E_{\rm EM}=\int_\Omega\sqrt{\gamma}\,n_\mu n_\nu\left(T_{\rm RMHD}^{\mu\nu}-T_{\rm RHD}^{\mu\nu}\right)d^3x.$$
+
+### Electric and magnetic Weyl radiation
+
+`weyl-radiation`
+
+$$E_{ij}=\left[R_{ij}+KK_{ij}-K_{ik}K^k{}_j-4\pi\left(S_{ij}+\gamma_{ij}(E-S)\right)\right]^{\rm TF},\qquadB_{ij}=\left[\epsilon_i{}^{kl}D_kK_{lj}\right]^{\rm STF},\qquad\Psi_4=(E_{ij}-iB_{ij})\bar m^i\bar m^j.$$
+
+### Finite-radius matter energy flux
+
+`matter-energy-flux`
+
+$$\mathcal F_{\rm matter}=\oint \alpha\sqrt{\gamma}\,J^i_{(t)}dS_i,\qquadJ^i_{(t)}=-E\beta^i+\alpha S^i+\frac{\beta^i}{\alpha}S_j\beta^j-S^i{}_j\beta^j.$$
+
+## Runtime Diagnostic Groups
+
+| Group | Diagnostics |
+|---|---|
+| `standard` | `step`, `time`, `dt`, `mass`, `mom1`, `mom2`, `mom3`, `angular_mom1`, `angular_mom2`, `angular_mom3`, `energy`, `gravity_potential_energy`, `gravity_total_energy`, `gravity_total_energy_rel_drift`, `passive_mass`, `passive_mass_rel_drift`, `wall_work`, `wall_power`, `energy_minus_wall_work`, `wall_work_rel_error`, `external_budget_valid`, `boundary_mass_change`, `boundary_energy_change`, `source_mass_change`, `source_energy_change`, `external_mass_change`, `external_energy_change`, `external_mass_residual`, `external_energy_residual`, `external_mass_rel_error`, `external_energy_rel_error`, `mass_rel_drift`, `energy_rel_drift`, `min_rho`, `max_rho`, `max_rho_rel_change`, `min_pressure`, `min_lapse`, `newtonian_magnetic_energy`, `rmhd_electromagnetic_energy`, `rmhd_max_b_squared`, `rmhd_max_enthalpy_magnetization`, `rmhd_min_plasma_beta`, `max_lorentz_factor`, `relativistic_atmosphere_volume_fraction`, `divb_l1`, `divb_l2`, `divb_linf`, `diffusion_residual`, `diffusion_iterations`, `amr_total_cells`, `amr_active_finest_level`, `amr_finest_headroom`, `amr_touches_max_level`, `amr_total_budget_fraction`, `amr_peak_level_budget_fraction`, `mcells_per_s`, `layout_mcells_per_s`, `sim_time_per_s`, `cfl_limiter_frequency`, `cfl_limiter_level`, `cfl_limiter_i`, `cfl_limiter_j`, `cfl_limiter_k`, `cfl_limiter_q1`, `cfl_limiter_q2`, `cfl_limiter_q3`, `z4c_hamiltonian_linf`, `z4c_hamiltonian_l2`, `z4c_hamiltonian_interior_linf`, `z4c_hamiltonian_interior_l2`, `z4c_hamiltonian_cf_linf`, `z4c_hamiltonian_cf_l2`, `z4c_momentum_linf`, `z4c_z_linf`, `z4c_theta_linf`, `z4c_log_conformal_determinant_linf`, `z4c_trace_a_tilde_linf` |
+| `coordinates` | `step`, `time`, `dt` |
+| `conservation` | `mass`, `mom1`, `mom2`, `mom3`, `angular_mom1`, `angular_mom2`, `angular_mom3`, `energy`, `mass_rel_drift`, `energy_rel_drift` |
+| `gravity` | `gravity_potential_energy`, `gravity_total_energy`, `gravity_total_energy_rel_drift` |
+| `passive` | `passive_mass`, `passive_mass_rel_drift` |
+| `ledger` | `wall_work`, `wall_power`, `energy_minus_wall_work`, `wall_work_rel_error`, `external_budget_valid`, `boundary_mass_change`, `boundary_energy_change`, `source_mass_change`, `source_energy_change`, `external_mass_change`, `external_energy_change`, `external_mass_residual`, `external_energy_residual`, `external_mass_rel_error`, `external_energy_rel_error` |
+| `state_bounds` | `min_rho`, `max_rho`, `max_rho_rel_change`, `min_pressure`, `min_lapse` |
+| `mhd` | `newtonian_magnetic_energy`, `divb_l1`, `divb_l2`, `divb_linf` |
+| `rmhd` | `rmhd_electromagnetic_energy`, `rmhd_max_b_squared`, `rmhd_max_enthalpy_magnetization`, `rmhd_min_plasma_beta` |
+| `relativistic` | `max_lorentz_factor`, `relativistic_atmosphere_volume_fraction` |
+| `diffusion` | `diffusion_residual`, `diffusion_iterations` |
+| `amr` | `amr_total_cells`, `amr_active_finest_level`, `amr_finest_headroom`, `amr_touches_max_level`, `amr_total_budget_fraction`, `amr_peak_level_budget_fraction` |
+| `performance` | `mcells_per_s`, `layout_mcells_per_s`, `sim_time_per_s` |
+| `cfl` | `cfl_limiter_frequency`, `cfl_limiter_level`, `cfl_limiter_i`, `cfl_limiter_j`, `cfl_limiter_k`, `cfl_limiter_q1`, `cfl_limiter_q2`, `cfl_limiter_q3` |
+| `constraints` | `z4c_hamiltonian_linf`, `z4c_hamiltonian_l2`, `z4c_hamiltonian_interior_linf`, `z4c_hamiltonian_interior_l2`, `z4c_hamiltonian_cf_linf`, `z4c_hamiltonian_cf_l2`, `z4c_momentum_linf`, `z4c_z_linf`, `z4c_theta_linf`, `z4c_log_conformal_determinant_linf`, `z4c_trace_a_tilde_linf` |
+| `global_gr` | `adm_mass_surface`, `adm_mass_volume`, `proper_mass_volume`, `komar_mass_surface`, `komar_mass_volume`, `binding_energy_volume`, `adm_momentum1_surface`, `adm_momentum2_surface`, `adm_momentum3_surface`, `adm_momentum1_volume`, `adm_momentum2_volume`, `adm_momentum3_volume`, `adm_angular_momentum1_surface`, `adm_angular_momentum2_surface`, `adm_angular_momentum3_surface`, `adm_angular_momentum1_volume`, `adm_angular_momentum2_volume`, `adm_angular_momentum3_volume` |
+| `radiation` | `extraction_radius`, `matter_energy_flux`, `psi4_l2` |
+
 ## Grid Fields
 
 | Field | Label | Components | Centering | Role | Sector |

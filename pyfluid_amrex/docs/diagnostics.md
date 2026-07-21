@@ -11,10 +11,15 @@ Each run writes one tab-separated scalar file:
 runs/current/<ic_name>/<run_name>/scalars.tsv
 ```
 
-The first row is the exact runtime header generated from
+The first row is the exact applicable runtime header generated from
 `codegen/pyfluid_codegen/diagnostic_catalog.py`. The generated C++ view is
 `generated/diagnostic_catalog.hpp`; plotting and reports read the matching
-generated JSON metadata. The fixed schema includes compact columns for:
+generated JSON metadata. Each entry carries a logical family, scalar/vector/
+tensor kind, component index, requirements, and mathematical label. Vector and
+tensor components remain ordinary columns in this one file; there is no second
+history file to synchronize. Selecting a family such as
+`adm_momentum_surface` enables every component. The schema includes compact
+columns for:
 
 - step, time, and dt;
 - conserved totals and relative drifts;
@@ -25,16 +30,23 @@ generated JSON metadata. The fixed schema includes compact columns for:
 
 Rules:
 
-- The current implementation writes a fixed schema. Hydro-only runs write zero
-  magnetic/diffusion values.
+- The selected groups are filtered by generated applicability requirements.
+  Hydro runs therefore omit MHD-only columns, runs without a spacetime omit
+  Z4c constraints, and inactive diffusion/passive/gravity columns are not
+  emitted as misleading zeros. Cowling runs retain constraints because a
+  fixed metric and its matter can still be constraint-consistent or violating.
 - `pyfluid.scalar_int` controls runtime scalar cadence. The default is
   `1`, so every accepted coarse step writes a scalar row. `0` writes the
   initial row only. `-1` currently still creates `scalars.tsv` with the
   initial accepted state, but writes no later cadence rows.
 - Every AMReX/MPI reduction must be called by every rank in the same order.
   File writes are rank-0 only, but scalar computation itself is collective.
-- `divb_l1` must use the same discrete divergence implied by the CT
-  representation.
+- `divb_l1`, `divb_l2`, and `divb_linf` use the same discrete divergence
+  implied by the CT representation.
+- `newtonian_magnetic_energy` is the Newtonian integral of `B^2/2`. RMHD does
+  not reuse that name or formula: it emits the generated Eulerian
+  electromagnetic energy, comoving `b_squared`, enthalpy magnetization,
+  plasma beta, and Lorentz-factor extrema.
 - `mcells_per_s` is average cell-update throughput since the previous
   diagnostic sample.
 - `passive_mass` and `passive_mass_rel_drift` are active when
@@ -44,6 +56,10 @@ Rules:
   maximum conserved density for Newtonian HD/MHD. `max_rho_rel_change` measures
   it against the initial or checkpoint-persisted reference, making stellar
   equilibrium drift and oscillation amplitude visible without postprocessing.
+- `min_lapse` and `relativistic_atmosphere_volume_fraction` are enabled by the
+  standard group when applicable. The latter is the composite-AMR physical
+  volume at the configured atmosphere divided by total composite volume; it is
+  an accepted-state health diagnostic, not a C2P fallback counter.
 - `sim_time_per_s` is average simulation time advanced per wall-clock second
   since the previous diagnostic sample. This is the main cost metric for
   comparing AMR/subcycling/diffusion choices at fixed physical target time.
@@ -51,8 +67,134 @@ Rules:
   `amr_total_budget_fraction`, and `amr_peak_level_budget_fraction` mirror the
   compact hierarchy-health fields from `amr_levels.tsv` so ordinary scalar
   reports immediately show whether a run is max-level or budget limited.
+- The opt-in `global_gr` group evaluates ADM mass, linear momentum, and angular momentum in
+  surface and constraint-assisted volume forms, proper matter energy, Komar
+  surface and stationary volume masses, and baryonic-minus-ADM binding energy.
+  These use the shared hierarchy reduction executor and generated integrands.
+  The ADM volume expressions use the constraints to remove curvature
+  divergences; they are not naive divergence-theorem copies of the surface
+  quadrature.
+- The high-level formulas in
+  `codegen/pyfluid_codegen/diagnostic_equations.py` generate the point kernels
+  and the Diagnostic Integrands sections of `docs/equations.md` and
+  `docs/equations.tex`. Those records are the human-readable equation catalog;
+  runtime code must not carry a second handwritten definition.
+- General relativity has no local, gauge-invariant gravitational-energy
+  density to add pointwise to the fluid energy. For an isolated asymptotically
+  flat system, ADM mass is the global total energy at spatial infinity. The
+  finite-radius radiation ledger below combines the ADM surface estimate with
+  matter and gravitational-wave fluxes through the same extraction sphere; it
+  is a convergence diagnostic, not an exact Bondi balance at finite radius.
+- Diagnostic integrands are defined once in a physical tensor basis and must
+  not be expanded separately for Cartesian, cylindrical, or spherical meshes.
+  Coordinate support belongs to the quadrature executors. A volume executor
+  supplies the physical point, mapped cell measure, and composite-AMR ownership
+  mask. A surface executor supplies a parametric physical surface, its tangents,
+  oriented area element, and interpolation of the requested fields from the
+  hierarchy. Coordinate singularities are handled by the map and measure, not
+  by diagnostic-specific branches.
+- The existing Newtonian volume reductions already follow this geometry-aware
+  contract. `global_gr` now builds one interior spherical surface using
+  Gauss-Legendre polar quadrature and uniform azimuthal quadrature, maps every
+  physical point into the active mesh coordinates, selects the finest complete
+  AMR interpolation cell, and evaluates all requested generated flux bundles
+  through one nodal hierarchy plan. The same surface contraction accepts one
+  physical flux vector per scalar charge or one flux tensor per vector charge,
+  so ADM mass, Komar mass, and ADM angular momentum do not own separate
+  quadrature loops. `diagnostics.surface_radius < 0` selects an
+  automatically inscribed Cartesian sphere; `diagnostics.surface_center1/2/3`,
+  `diagnostics.surface_radius`, and `diagnostics.surface_polar_points` select an
+  explicit surface. The geometry/interpolation service supports single-patch
+  Cartesian, cylindrical, and spherical coordinate maps. Relativistic
+  integrands remain restricted to Cartesian evolution until the reference-metric
+  curvilinear Z4c formulation is implemented; the integrands are not duplicated.
+- Cartesian `symmetry` boundaries reconstruct omitted half, quadrant, or octant
+  sectors for volume diagnostics using field parity. Scalar charges receive one
+  factor of two per reduced axis; polar vectors and axial vectors use their
+  respective reflection parity. Interior spherical extraction is intentionally
+  unavailable on a reduced domain until the surface sampler can reconstruct
+  every omitted sector with the same catalog parity metadata.
 - The diagnostic cadence should default to a small, cheap number for validation
   and be configurable for production runs.
+
+## Gravitational Radiation
+
+`diagnostics.multipole_l_max = 0` disables radiation extraction. Values from 2
+through 16 enable one extraction at the scalar cadence. Real reductions
+(`extraction_radius`, `matter_energy_flux`, and `psi4_l2`) use the normal
+`scalars.tsv` lifecycle, while complex mode coefficients use:
+
+```text
+multipoles.tsv
+```
+
+The extraction uses the same `ParametricSurface` and finest-complete AMR
+interpolation plan as the ADM surface diagnostics. The runtime first computes
+the regular electric and magnetic Weyl tensors on the nodal hierarchy,
+interpolates those tensors and the physical metric to Gauss-sphere points, and
+only then constructs the angular tetrad and contracts `Psi4`. This ordering
+avoids introducing a coordinate-axis tetrad singularity into otherwise regular
+grid data.
+
+The generated convention is
+
+```text
+Psi4 = (E_ij - i B_ij) mbar^i mbar^j,
+mbar = (e_theta - i e_phi) / sqrt(2).
+```
+
+The `(e_r, e_theta, e_phi)` frame is orthonormalized with the interpolated
+physical spatial metric and outward coordinate radial direction. Mode rows are
+the coefficients of spin-weight `-2` harmonics and are stored in generalized
+long form with explicit `field`, `basis`, `spin_weight`, `ell`, and `m` columns.
+No mode set is hardcoded into the scalar schema.
+
+## Azimuthal Surface Modes
+
+`diagnostics.azimuthal_mode_fields` accepts a comma-separated set of scalar
+fields and `diagnostics.azimuthal_mode_m_max` selects the largest nonnegative
+mode. `none` disables the diagnostic. `rho` and `pressure` select physical
+primitive fields consistently for HD, MHD, RHD, and RMHD; scalar stored fluid
+and spacetime GFs may be selected by their field-catalog names. At the same
+surface and scalar cadence, the runtime writes
+
+```text
+C_m[f](r) = integral over S_r of f exp(-i m phi) dA
+```
+
+as `basis=azimuthal_fourier` rows in `multipoles.tsv`. Only `m >= 0` is stored
+because real fields satisfy `C_-m = conjugate(C_m)`. Runtime stores the raw
+complex coefficients, including `C_0`; normalized amplitudes `|C_m|/|C_0|`,
+phases, growth rates, and pattern speeds are postprocessed quantities. This is
+a shell diagnostic, distinct from the related volume-integrated density-mode
+diagnostic used for global bar and disk instabilities. The common long-form
+schema records `ell=none` for these azimuthal Fourier rows because `ell` applies
+only to spherical-harmonic modes.
+
+Run
+
+```text
+uv run python pyfluid_amrex/tools/postprocess_radiation.py <run_dir>
+```
+
+to produce `radiation_modes_postprocess.tsv` and `radiation_balance.tsv` in the
+same run directory. Normal `run_case.py` workflows invoke this postprocessor
+automatically through the existing lightweight physics-hook layer. The
+postprocessor uses
+`Psi4 = d^2(h_plus - i h_cross)/dt^2`, integrates by the trapezoidal rule with
+news and strain set to zero at the first available sample, and computes
+
+```text
+L_GW = r^2/(16 pi) sum_lm |N_lm|^2.
+```
+
+Those finite-time integration constants are not drift removal. Production
+waveforms may need fixed-frequency integration or an independently justified
+early-time baseline. The finite-radius balance is emitted only when
+`adm_mass_surface` exists in `scalars.tsv`; missing ADM or flux terms are left
+blank rather than replaced by zero. Extraction-radius convergence and gauge
+dependence must be assessed before interpreting the result as radiation at
+null infinity.
 
 ## AMR Level TSV
 
@@ -123,8 +265,10 @@ fields for the active dimension:
 - `pyfluid.aux_gfs` selects optional auxiliary grid functions. Common choices
   are `j`, `e`, `divb`, `magnetic_energy`, `mach`, `plasma_beta`, `entropy`,
   `amr_tag_metric`, `solid_volume_fraction`, `solid_swept_volume`, and
-  `solid_phi`. `pyfluid.aux_gf_compute_int` controls live cached derivatives
-  such as `j`/`e`; `pyfluid.aux_gf_int` controls plotfile output. Compute-only
+  `solid_phi`. By default, aux output inherits `pyfluid.plot_int`, and live
+  cached derivatives such as `j`/`e` use that same resolved cadence.
+  `pyfluid.aux_gf_int` and `pyfluid.aux_gf_compute_int` remain explicit
+  overrides; explicitly setting either to `-1` disables that path. Compute-only
   aux requests are valid only for cached derivatives.
 - Pure diagnostic GFs such as `mach`, `plasma_beta`, `entropy`, `vorticity`,
   `magnetic_energy`, and `amr_tag_metric` are never stored as solver state.

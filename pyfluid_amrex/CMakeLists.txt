@@ -103,6 +103,7 @@ set(PYFLUID_AMREX_AMR_SOURCES
    src/amr/amr_solver_metrics.cpp
    src/amr/amr_solver_multipatch.cpp
    src/amr/amr_solver_output.cpp
+   src/amr/amr_solver_radiation.cpp
    src/amr/amr_solver_spacetime.cpp
    src/amr/amr_solver_spacetime_evolution.cpp
    src/amr/amr_solver_valid_cells.cpp
@@ -115,6 +116,8 @@ set(PYFLUID_AMREX_FRAMEWORK_SOURCES
    src/framework/evolution_sector_storage.cpp
    src/framework/fields.cpp
    src/framework/profiling.cpp
+   src/framework/multipoles.cpp
+   src/framework/surface_geometry.cpp
 )
 
 set(PYFLUID_AMREX_EOS_SOURCES
@@ -127,6 +130,7 @@ set(PYFLUID_AMREX_NUMERICS_SOURCES
    src/numerics/flux_factory.cpp
    src/numerics/implicit_resistivity.cpp
    src/numerics/nodal_interpolater.cpp
+   src/numerics/hierarchy_interpolation.cpp
 )
 
 set(PYFLUID_AMREX_FLUX_KERNEL_SOURCES
@@ -153,6 +157,7 @@ set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
 
 set(PYFLUID_AMREX_RELATIVITY_SOURCES
    src/relativity/primitive_cache_factory.cpp
+   src/relativity/relativistic_flux_limiter.cpp
    src/relativity/relativistic_source_factory.cpp
    src/relativity/signal_speed_factory.cpp
    src/relativity/spacetime_coupling_storage.cpp
@@ -194,6 +199,13 @@ set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
    tests/multipatch_check.cpp
 )
 
+set(PYFLUID_AMREX_SURFACE_CHECK_SOURCES
+   src/framework/multipoles.cpp
+   src/framework/surface_geometry.cpp
+   src/numerics/hierarchy_interpolation.cpp
+   tests/surface_interpolation_check.cpp
+)
+
 set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
    src/framework/config.cpp
    src/framework/config_runtime.cpp
@@ -206,6 +218,16 @@ set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
    tests/initial_data_elliptic_check.cpp
    src/numerics/nodal_interpolater.cpp
    src/initial_data/tov_initial_data.cpp
+)
+
+set(PYFLUID_AMREX_TOV_SEQUENCE_SOURCES
+   src/framework/config.cpp
+   src/framework/config_runtime.cpp
+   src/framework/fields.cpp
+   src/eos/eos_config.cpp
+   src/eos/presets.cpp
+   src/initial_data/tov_initial_data.cpp
+   tools/cpp/tov_sequence.cpp
 )
 
 find_program(PYFLUID_UV_EXECUTABLE uv)
@@ -221,6 +243,9 @@ if(PYFLUID_UV_EXECUTABLE)
    )
    set(PYFLUID_AMREX_GENERATED_DIFFERENTIAL_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/differential_ops.hpp
+   )
+   set(PYFLUID_AMREX_GENERATED_DIAGNOSTIC_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/diagnostics.hpp
    )
    set(PYFLUID_AMREX_GENERATED_RIEMANN_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/riemann_ops.hpp
@@ -292,6 +317,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_DIFFERENTIAL_HEADER}
+         ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_HEADER}
          ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
@@ -315,6 +341,7 @@ if(PYFLUID_UV_EXECUTABLE)
          --family flux
          --family operator
          --family differential
+         --family diagnostic
          --family riemann
          --family characteristic
          --family vector
@@ -325,6 +352,7 @@ if(PYFLUID_UV_EXECUTABLE)
          --eos-header ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          --operator-header ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
          --differential-header ${PYFLUID_AMREX_GENERATED_DIFFERENTIAL_HEADER}
+         --diagnostic-header ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_HEADER}
          --riemann-header ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          --characteristic-header ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          --vector-header ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
@@ -343,6 +371,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/characteristic_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/differential_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/diagnostic_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/discretization.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py
@@ -351,6 +380,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/flux_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/kernel_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/metric_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/operator_equations.py
@@ -499,6 +529,21 @@ foreach(dim 1 2 3)
          if(TARGET pyfluid_amrex_generate_kernels)
             add_dependencies(pyfluid_amrex_c2p_benchmark pyfluid_amrex_generate_kernels)
          endif()
+
+         add_executable(pyfluid_amrex_tov_sequence EXCLUDE_FROM_ALL ${PYFLUID_AMREX_TOV_SEQUENCE_SOURCES})
+         pyfluid_amrex_configure_target(pyfluid_amrex_tov_sequence ${dim})
+         if(TARGET pyfluid_amrex_generate_kernels)
+            add_dependencies(pyfluid_amrex_tov_sequence pyfluid_amrex_generate_kernels)
+         endif()
+      endif()
+
+      if(dim EQUAL 3)
+         add_executable(
+            pyfluid_amrex_surface_check
+            EXCLUDE_FROM_ALL
+            ${PYFLUID_AMREX_SURFACE_CHECK_SOURCES}
+         )
+         pyfluid_amrex_configure_target(pyfluid_amrex_surface_check ${dim})
       endif()
 
       if(dim GREATER 1)

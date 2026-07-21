@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import sympy as sp
 
 from .kernel_equations import ScalarKernel, StructKernel
+from .tensor_algebra import symmetric_tensor3_symbols
 
 
 DIMENSION = 3
@@ -10,11 +13,7 @@ SYMMETRIC_COMPONENTS = ((0, 0), (0, 1), (0, 2), (1, 1), (1, 2), (2, 2))
 
 
 def _symmetric_matrix(prefix: str) -> sp.Matrix:
-   values = {
-      (first, second): sp.Symbol(f"{prefix}{first + 1}{second + 1}")
-      for first, second in SYMMETRIC_COMPONENTS
-   }
-   return sp.Matrix(DIMENSION, DIMENSION, lambda row, column: values[tuple(sorted((row, column)))])
+   return symmetric_tensor3_symbols(prefix)
 
 
 def _symmetric_derivatives(prefix: str) -> list[sp.Matrix]:
@@ -67,6 +66,84 @@ def _inverse_symmetric_3x3(matrix: sp.Matrix) -> tuple[sp.Expr, sp.Matrix]:
    return determinant, adjugate / determinant
 
 
+@dataclass(frozen=True)
+class Z4cPhysicalGeometryExpressions:
+   chi: sp.Expr
+   gamma_tilde: sp.Matrix
+   inverse_gamma_tilde: sp.Matrix
+   gamma: sp.Matrix
+   inverse_gamma: sp.Matrix
+   d_gamma: tuple[sp.Matrix, ...]
+   dd_gamma: tuple[tuple[sp.Matrix, ...], ...]
+   extrinsic_curvature: sp.Matrix
+   d_extrinsic_curvature: tuple[sp.Matrix, ...]
+   trace_extrinsic_curvature: sp.Expr
+   d_trace_extrinsic_curvature: tuple[sp.Expr, ...]
+
+
+def z4c_physical_geometry_expressions() -> Z4cPhysicalGeometryExpressions:
+   """Return the physical 3-geometry once for evolution and diagnostics codegen."""
+   chi = sp.Symbol("state.chi", positive=True)
+   gamma_tilde = _state_metric()
+   _, inverse_gamma_tilde = _inverse_symmetric_3x3(gamma_tilde)
+   d_chi = tuple(sp.Symbol(f"derivatives.d_chi[{direction}]") for direction in range(DIMENSION))
+   dd_chi = tuple(
+      tuple(sp.Symbol(f"derivatives.dd_chi[{first}][{second}]") for second in range(DIMENSION))
+      for first in range(DIMENSION)
+   )
+   d_gamma_tilde = tuple(_symmetric_derivatives("derivatives.d_gamma_tilde"))
+   dd_gamma_tilde = tuple(
+      tuple(row) for row in _symmetric_second_derivatives("derivatives.dd_gamma_tilde")
+   )
+   gamma = gamma_tilde / chi
+   inverse_gamma = chi * inverse_gamma_tilde
+   d_gamma = tuple(
+      d_gamma_tilde[direction] / chi
+      - gamma_tilde * d_chi[direction] / chi**2
+      for direction in range(DIMENSION)
+   )
+   dd_gamma = tuple(
+      tuple(
+         dd_gamma_tilde[first][second] / chi
+         - d_gamma_tilde[first] * d_chi[second] / chi**2
+         - d_gamma_tilde[second] * d_chi[first] / chi**2
+         - gamma_tilde * dd_chi[first][second] / chi**2
+         + 2 * gamma_tilde * d_chi[first] * d_chi[second] / chi**3
+         for second in range(DIMENSION)
+      )
+      for first in range(DIMENSION)
+   )
+   a_tilde = _symmetric_matrix("state.a_tilde")
+   d_a_tilde = tuple(_symmetric_derivatives("derivatives.d_a_tilde"))
+   trace_extrinsic_curvature = sp.Symbol("state.k_hat") + 2 * sp.Symbol("state.theta")
+   d_trace_extrinsic_curvature = tuple(
+      sp.Symbol(f"derivatives.d_k_hat[{direction}]")
+      + 2 * sp.Symbol(f"derivatives.d_theta[{direction}]")
+      for direction in range(DIMENSION)
+   )
+   extrinsic_curvature = a_tilde / chi + gamma * trace_extrinsic_curvature / 3
+   d_extrinsic_curvature = tuple(
+      d_a_tilde[direction] / chi
+      - a_tilde * d_chi[direction] / chi**2
+      + d_gamma[direction] * trace_extrinsic_curvature / 3
+      + gamma * d_trace_extrinsic_curvature[direction] / 3
+      for direction in range(DIMENSION)
+   )
+   return Z4cPhysicalGeometryExpressions(
+      chi=chi,
+      gamma_tilde=gamma_tilde,
+      inverse_gamma_tilde=inverse_gamma_tilde,
+      gamma=gamma,
+      inverse_gamma=inverse_gamma,
+      d_gamma=d_gamma,
+      dd_gamma=dd_gamma,
+      extrinsic_curvature=extrinsic_curvature,
+      d_extrinsic_curvature=d_extrinsic_curvature,
+      trace_extrinsic_curvature=trace_extrinsic_curvature,
+      d_trace_extrinsic_curvature=d_trace_extrinsic_curvature,
+   )
+
+
 def _christoffel(
    inverse_metric: sp.Matrix,
    metric_derivatives: list[sp.Matrix],
@@ -90,6 +167,13 @@ def _christoffel(
       ]
       for upper in range(DIMENSION)
    ]
+
+
+def z4c_physical_christoffel(
+   geometry: Z4cPhysicalGeometryExpressions,
+) -> list[list[list[sp.Expr]]]:
+   """Return physical Christoffel symbols from the canonical Z4c geometry."""
+   return _christoffel(geometry.inverse_gamma, list(geometry.d_gamma))
 
 
 def _inverse_metric_derivatives(
@@ -213,19 +297,7 @@ def z4c_spacetime_metric_kernel() -> StructKernel:
 
 
 def z4c_spacetime_metric_derivatives_kernel() -> StructKernel:
-   chi = sp.Symbol("state.chi", positive=True)
-   gamma_tilde = _state_metric()
-   d_chi = [sp.Symbol(f"derivatives.d_chi[{direction}]") for direction in range(3)]
-   d_gamma_tilde = _symmetric_derivatives("derivatives.d_gamma_tilde")
-   physical_metric = gamma_tilde / chi
-   d_physical_metric = [
-      d_gamma_tilde[direction] / chi
-      - gamma_tilde * d_chi[direction] / chi**2
-      for direction in range(3)
-   ]
-   total_curvature = sp.Symbol("state.k_hat") + 2 * sp.Symbol("state.theta")
-   a_tilde = _symmetric_matrix("state.a_tilde")
-   extrinsic_curvature = a_tilde / chi + physical_metric * total_curvature / 3
+   geometry = z4c_physical_geometry_expressions()
    return StructKernel(
       name="z4c_spacetime_metric_derivatives",
       return_type="SpacetimeMetricDerivatives",
@@ -247,9 +319,9 @@ def z4c_spacetime_metric_derivatives_kernel() -> StructKernel:
          *(sp.Symbol(f"derivatives.d_lapse[{direction}]") for direction in range(3)),
          *(sp.Symbol(f"derivatives.d_shift[{direction}][{component}]")
            for component in range(3) for direction in range(3)),
-         *(d_physical_metric[direction][first, second]
+         *(geometry.d_gamma[direction][first, second]
            for direction in range(3) for first, second in SYMMETRIC_COMPONENTS),
-         *_symmetric_expressions(extrinsic_curvature),
+         *_symmetric_expressions(geometry.extrinsic_curvature),
       ),
    )
 
@@ -375,36 +447,12 @@ def z4c_connections_kernel() -> StructKernel:
 
 
 def z4c_diagnostic_geometry_kernel() -> StructKernel:
-   chi = sp.Symbol("state.chi", positive=True)
-   gamma_tilde = _state_metric()
+   geometry = z4c_physical_geometry_expressions()
    inverse_physical_metric = _metric_from_argument("metric", "inv_gamma")
-   d_chi = [sp.Symbol(f"derivatives.d_chi[{direction}]") for direction in range(DIMENSION)]
-   dd_chi = [
-      [sp.Symbol(f"derivatives.dd_chi[{first}][{second}]") for second in range(DIMENSION)]
-      for first in range(DIMENSION)
-   ]
-   d_gamma_tilde = _symmetric_derivatives("derivatives.d_gamma_tilde")
-   dd_gamma_tilde = _symmetric_second_derivatives("derivatives.dd_gamma_tilde")
-   d_physical_metric = [
-      d_gamma_tilde[direction] / chi
-      - gamma_tilde * d_chi[direction] / chi**2
-      for direction in range(DIMENSION)
-   ]
-   dd_physical_metric = [
-      [
-         dd_gamma_tilde[first][second] / chi
-         - d_gamma_tilde[first] * d_chi[second] / chi**2
-         - d_gamma_tilde[second] * d_chi[first] / chi**2
-         - gamma_tilde * dd_chi[first][second] / chi**2
-         + 2 * gamma_tilde * d_chi[first] * d_chi[second] / chi**3
-         for second in range(DIMENSION)
-      ]
-      for first in range(DIMENSION)
-   ]
    ricci = _ricci_tensor(
       inverse_physical_metric,
-      d_physical_metric,
-      dd_physical_metric,
+      list(geometry.d_gamma),
+      [list(row) for row in geometry.dd_gamma],
       _connections_physical_christoffel(),
    )
    return StructKernel(

@@ -437,6 +437,66 @@ def rmhd_eulerian_matter_kernel() -> StructKernel:
    )
 
 
+def rhd_diagnostic_integrands_kernel() -> StructKernel:
+   primitive, metric = _symbols()
+   velocity_squared = metric.spatial_metric.norm_squared(primitive.velocity)
+   return StructKernel(
+      name="rhd_diagnostic_integrands",
+      return_type="RelativisticFluidDiagnosticIntegrands",
+      arguments=(
+         ("const RHDPrimitive&", "primitive"),
+         ("const SpacetimeMetric&", "metric"),
+      ),
+      outputs=("lorentz_factor",),
+      expressions=(1 / sp.sqrt(1 - velocity_squared),),
+   )
+
+
+def rmhd_diagnostic_integrands_kernel() -> StructKernel:
+   primitive, metric = _rmhd_symbols()
+   system = ValenciaMagnetohydrodynamics()
+   hydro_primitive = ValenciaPrimitive(
+      density=primitive.density,
+      specific_internal_energy=primitive.specific_internal_energy,
+      pressure=primitive.pressure,
+      velocity=primitive.velocity,
+   )
+   magnetic_squared = system.comoving_magnetic_squared(primitive, metric)
+   specific_enthalpy = (
+      1 + primitive.specific_internal_energy
+      + primitive.pressure / primitive.density
+   )
+   velocity_squared = metric.spatial_metric.norm_squared(primitive.velocity)
+   magnetofluid_energy = eulerian_matter_projection(
+      system.stress_energy(primitive, metric), metric
+   ).energy
+   fluid_energy = eulerian_matter_projection(
+      ValenciaHydrodynamics().stress_energy(hydro_primitive, metric), metric
+   ).energy
+   return StructKernel(
+      name="rmhd_diagnostic_integrands",
+      return_type="RMHDDiagnosticIntegrands",
+      arguments=(
+         ("const RMHDPrimitive&", "primitive"),
+         ("const SpacetimeMetric&", "metric"),
+      ),
+      outputs=(
+         "electromagnetic_energy",
+         "b_squared",
+         "enthalpy_magnetization",
+         "plasma_beta",
+         "lorentz_factor",
+      ),
+      expressions=(
+         metric.sqrt_spatial_determinant * (magnetofluid_energy - fluid_energy),
+         magnetic_squared,
+         magnetic_squared / (primitive.density * specific_enthalpy),
+         2 * primitive.pressure / magnetic_squared,
+         1 / sp.sqrt(1 - velocity_squared),
+      ),
+   )
+
+
 def rhd_geometric_source_kernel() -> StructKernel:
    primitive, metric = _symbols()
    system = ValenciaHydrodynamics()
@@ -1159,9 +1219,11 @@ def relativistic_source_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
    return (
       rhd_stress_energy_kernel(),
       rhd_eulerian_matter_kernel(),
+      rhd_diagnostic_integrands_kernel(),
       rhd_geometric_source_kernel(),
       rmhd_stress_energy_kernel(),
       rmhd_eulerian_matter_kernel(),
+      rmhd_diagnostic_integrands_kernel(),
       rmhd_geometric_source_kernel(),
    )
 

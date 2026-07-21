@@ -26,6 +26,26 @@ def centered_stencils(derivative: int) -> tuple[FiniteDifferenceStencil, ...]:
    return tuple(stencils)
 
 
+def one_sided_stencils() -> tuple[
+   tuple[FiniteDifferenceStencil, FiniteDifferenceStencil], ...
+]:
+   stencils = []
+   for order in (2, 4, 6, 8):
+      backward_offsets = tuple(range(-order, 1))
+      forward_offsets = tuple(range(0, order + 1))
+      stencils.append(
+         (
+            FiniteDifferenceStencil(
+               order, backward_offsets, _weights(1, backward_offsets)
+            ),
+            FiniteDifferenceStencil(
+               order, forward_offsets, _weights(1, forward_offsets)
+            ),
+         )
+      )
+   return tuple(stencils)
+
+
 def upwind_stencils() -> tuple[tuple[FiniteDifferenceStencil, FiniteDifferenceStencil], ...]:
    stencils = []
    for order in (2, 4, 6, 8):

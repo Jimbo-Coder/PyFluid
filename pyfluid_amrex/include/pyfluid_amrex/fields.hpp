@@ -144,6 +144,10 @@ std::string checkpoint_state_field_name();
 std::string checkpoint_face_b_field_name(int direction);
 int aux_grid_field_component_count(AuxGridField field);
 int grid_field_component_count(GridFieldSetInfo const& set);
+int scalar_grid_field_component(
+   GridFieldSetInfo const& set,
+   std::string const& name
+);
 int grid_field_ghost_width(GridFieldSetInfo const& set);
 amrex::Vector<std::string> grid_field_component_names(GridFieldSetInfo const& set);
 

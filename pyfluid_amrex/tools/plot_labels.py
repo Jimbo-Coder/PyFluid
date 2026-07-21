@@ -16,6 +16,13 @@ _DIAGNOSTIC_SYMBOLS = {
     diagnostic["name"]: diagnostic["label"]
     for diagnostic in _CATALOG["diagnostics"]
 }
+_DIAGNOSTIC_FAMILIES: dict[str, list[dict[str, object]]] = {}
+for _diagnostic in _CATALOG["diagnostics"]:
+    _DIAGNOSTIC_FAMILIES.setdefault(
+        str(_diagnostic["family"]), []
+    ).append(_diagnostic)
+for _components in _DIAGNOSTIC_FAMILIES.values():
+    _components.sort(key=lambda component: int(component["component_index"]))
 _DERIVED_SYMBOLS = {
     "dye": "C",
 }
@@ -55,6 +62,14 @@ def component_math(component: str) -> str:
             return rf"({symbol})_{{{direction}}}" if prefix in {"mom", "grad_phi"} else rf"{symbol}_{{{direction}}}"
     escaped = component.replace("_", r"\_")
     return rf"\mathrm{{{escaped}}}"
+
+
+def diagnostic_family_components(family: str) -> tuple[str, ...]:
+    """Return catalog-ordered scalar columns belonging to one typed family."""
+    return tuple(
+        str(component["name"])
+        for component in _DIAGNOSTIC_FAMILIES.get(family, ())
+    )
 
 
 def field_label(

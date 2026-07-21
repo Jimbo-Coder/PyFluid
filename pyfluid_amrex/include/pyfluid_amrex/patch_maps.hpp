@@ -6,6 +6,7 @@
 
 #include "pyfluid_amrex/kernels_generated/patch_maps.hpp"
 #include "pyfluid_amrex/multipatch.hpp"
+#include "pyfluid_amrex/physical_geometry.hpp"
 
 #include <cmath>
 
@@ -136,19 +137,15 @@ PatchCoordinate patch_coordinate_subtract(PatchCoordinate const& a, PatchCoordin
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real patch_coordinate_radius(PatchCoordinate const& coordinate) noexcept
+amrex::Real cartesian_radius(PatchCoordinate const& coordinate) noexcept
 {
-   return std::sqrt(
-      coordinate.q1 * coordinate.q1
-      + coordinate.q2 * coordinate.q2
-      + coordinate.q3 * coordinate.q3
-   );
+   return cartesian_radius(coordinate.q1, coordinate.q2, coordinate.q3);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real patch_coordinate_cylindrical_radius(PatchCoordinate const& coordinate) noexcept
+amrex::Real cartesian_cylindrical_radius(PatchCoordinate const& coordinate) noexcept
 {
-   return std::sqrt(coordinate.q1 * coordinate.q1 + coordinate.q2 * coordinate.q2);
+   return cartesian_cylindrical_radius(coordinate.q1, coordinate.q2);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -742,7 +739,7 @@ inline int patch_system_owner_patch_id(PatchMapSystem const& system, PatchCoordi
 {
    const PatchCoordinate centered = patch_coordinate_subtract(global, system.origin);
    if (system.system_kind == PatchMapSystemThornburg04 || system.system_kind == PatchMapSystemThornburg13) {
-      const amrex::Real radial_coordinate = patch_coordinate_radius(centered);
+      const amrex::Real radial_coordinate = cartesian_radius(centered);
       const int axis = patch_dominant_active_axis(centered, system.active_axes);
       if (radial_coordinate < system.inner_radius) {
          return 0;
@@ -760,7 +757,7 @@ inline int patch_system_owner_patch_id(PatchMapSystem const& system, PatchCoordi
       );
    }
    if (system.system_kind == PatchMapSystemCylindrical5 || system.system_kind == PatchMapSystemCylindrical9) {
-      const amrex::Real radial_coordinate = patch_coordinate_cylindrical_radius(centered);
+      const amrex::Real radial_coordinate = cartesian_cylindrical_radius(centered);
       if (radial_coordinate < system.inner_radius) {
          return 0;
       }

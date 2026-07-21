@@ -64,11 +64,7 @@ struct RelativisticInitialDataView {
    {
       RelativisticInitialDataSample output;
       if (tov.active()) {
-         const amrex::Real radius = std::sqrt(
-            physical.q1 * physical.q1
-            + physical.q2 * physical.q2
-            + physical.q3 * physical.q3
-         );
+         const amrex::Real radius = cartesian_radius(physical);
          const TovSample point = tov.sample(radius);
          output.has_fluid = true;
          output.has_spacetime = true;

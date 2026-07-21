@@ -7,7 +7,22 @@
 #include "pyfluid_amrex/relativistic_state.hpp"
 #include "pyfluid_amrex/state.hpp"
 
+#include <limits>
+
 namespace pyfluid_amrex {
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool primitive_is_atmosphere(
+   amrex::Real rho,
+   amrex::Real pressure,
+   EOSParams const& eos
+) noexcept
+{
+   constexpr amrex::Real tolerance =
+      1024.0 * std::numeric_limits<amrex::Real>::epsilon();
+   return rho <= eos.rho_floor * (1.0 + tolerance)
+      || pressure <= eos.pressure_floor * (1.0 + tolerance);
+}
 
 template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

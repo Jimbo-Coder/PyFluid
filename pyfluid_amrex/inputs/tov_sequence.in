@@ -1,0 +1,25 @@
+pyfluid.run_name = tov_sequence
+pyfluid.output_dir = runs/current/tov/sequences
+pyfluid.validation_policy = smoke
+
+amr.max_level = 0
+
+spacetime.evolution = fixed
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.eos_preset = custom
+pyfluid.polytropic_k = 100.0
+pyfluid.polytropic_gamma = 2.0
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = tov
+pyfluid.tov_central_density = 1.28e-3
+pyfluid.tov_absolute_tolerance = 1.0e-12
+pyfluid.tov_relative_tolerance = 1.0e-10
+pyfluid.tov_max_steps = 100000
+
+tov_sequence.central_density_min = 7.0e-4
+tov_sequence.central_density_max = 5.0e-3
+tov_sequence.points = 80
+tov_sequence.eos_presets = custom sly apr4 h4 ms1
+tov_sequence.output_dir = runs/current/tov/sequences

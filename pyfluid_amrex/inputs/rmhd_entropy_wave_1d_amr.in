@@ -15,7 +15,7 @@ amr.regrid_int = 2
 amr.tag_metric = lohner
 amr.min_feature_length = 0.00001
 amr.total_cell_budget = 1000000
-amr.state_interp = conservative
+amr.state_interp = component-conservative
 
 spacetime.evolution = fixed
 

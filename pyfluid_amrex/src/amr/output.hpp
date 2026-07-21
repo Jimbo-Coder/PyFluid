@@ -17,6 +17,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "pyfluid_amrex/ct.hpp"
@@ -264,58 +265,59 @@ inline void write_plotfile(
    );
 }
 
-inline bool aux_field_has_centering(AuxGridFieldInfo const& info, GridFieldCentering centering)
-{
-   for (GridFieldComponentInfo const& component : info.components) {
-      if (component.centering == centering) {
-         return true;
-      }
-   }
-   return false;
-}
+struct AuxOutputEntry {
+   AuxGridField field = AuxGridField::Unknown;
+   std::vector<int> source_components{};
+};
 
-inline amrex::Vector<std::string> aux_output_names(RunConfig const& cfg, GridFieldCentering centering)
+struct AuxOutputLayout {
+   GridFieldCentering centering = GridFieldCentering::Cell;
+   amrex::Vector<std::string> component_names{};
+   std::vector<AuxOutputEntry> entries{};
+};
+
+inline std::vector<AuxOutputLayout> aux_output_layouts(RunConfig const& cfg)
 {
-   amrex::Vector<std::string> output_names;
-   for (std::string const& name : aux_gf_names(cfg)) {
-      const AuxGridField field = aux_grid_field_from_name(name);
-      const AuxGridFieldInfo info = aux_grid_field_info(field);
-      for (GridFieldComponentInfo const& component : info.components) {
-         if (component.centering == centering) {
-            output_names.emplace_back(component.name);
+   const std::vector<std::string> selected_names = aux_gf_names(cfg);
+   std::vector<AuxOutputLayout> layouts;
+   for (GridFieldCentering centering : grid_field_centerings()) {
+      AuxOutputLayout layout;
+      layout.centering = centering;
+      for (std::string const& name : selected_names) {
+         const AuxGridField field = aux_grid_field_from_name(name);
+         const AuxGridFieldInfo info = aux_grid_field_info(field);
+         if (info.field == AuxGridField::Unknown) {
+            amrex::Abort("cannot build output layout for unknown auxiliary grid field " + name);
+         }
+         AuxOutputEntry entry;
+         entry.field = field;
+         for (int component = 0; component < static_cast<int>(info.components.size()); ++component) {
+            if (info.components[component].centering == centering) {
+               entry.source_components.push_back(component);
+               layout.component_names.emplace_back(info.components[component].name);
+            }
+         }
+         if (!entry.source_components.empty()) {
+            layout.entries.push_back(std::move(entry));
          }
       }
-   }
-   return output_names;
-}
-
-inline int aux_output_component_count(RunConfig const& cfg, GridFieldCentering centering)
-{
-   int ncomp = 0;
-   for (std::string const& name : aux_gf_names(cfg)) {
-      const AuxGridFieldInfo info = aux_grid_field_info(aux_grid_field_from_name(name));
-      for (GridFieldComponentInfo const& component : info.components) {
-         if (component.centering == centering) {
-            ++ncomp;
-         }
+      if (!layout.component_names.empty()) {
+         layouts.push_back(std::move(layout));
       }
    }
-   return ncomp;
+   return layouts;
 }
 
-inline void copy_matching_aux_components(
+inline void copy_selected_aux_components(
    amrex::MultiFab& output,
    amrex::MultiFab const& source,
-   AuxGridFieldInfo const& info,
-   GridFieldCentering centering,
+   AuxOutputEntry const& entry,
    int& dst
 )
 {
-   for (int component = 0; component < static_cast<int>(info.components.size()); ++component) {
-      if (info.components[component].centering == centering) {
-         amrex::MultiFab::Copy(output, source, component, dst, 1, 0);
-         ++dst;
-      }
+   for (int component : entry.source_components) {
+      amrex::MultiFab::Copy(output, source, component, dst, 1, 0);
+      ++dst;
    }
 }
 
@@ -334,10 +336,9 @@ inline void fill_aux_gf_output(
    amrex::Geometry const& geom,
    RunConfig const& cfg,
    amrex::Real time,
-   GridFieldCentering centering
+   AuxOutputLayout const& layout
 )
 {
-   const std::vector<std::string> aux_names = aux_gf_names(cfg);
    std::unique_ptr<EdgeElectricField> edge_current_work;
    std::unique_ptr<EdgeElectricField> edge_electric_work;
 
@@ -375,36 +376,29 @@ inline void fill_aux_gf_output(
    };
 
    int dst = 0;
-   for (std::string const& name : aux_names) {
-      const AuxGridField field = aux_grid_field_from_name(name);
+   for (AuxOutputEntry const& entry : layout.entries) {
+      const AuxGridField field = entry.field;
       const AuxGridFieldInfo info = aux_grid_field_info(field);
-      if (!aux_field_has_centering(info, centering)) {
-         continue;
-      }
       switch (field) {
       case AuxGridField::CurrentDensity: {
          const EdgeElectricField& edge_j = edge_current_for_output();
-         for (int component = 0; component < static_cast<int>(info.components.size()); ++component) {
-            if (info.components[component].centering == centering) {
-               if (!edge_j.e[component]) {
-                  amrex::Abort("requested edge current-density output component is unavailable");
-               }
-               amrex::MultiFab::Copy(output, *edge_j.e[component], 0, dst, 1, 0);
-               ++dst;
+         for (int component : entry.source_components) {
+            if (!edge_j.e[component]) {
+               amrex::Abort("requested edge current-density output component is unavailable");
             }
+            amrex::MultiFab::Copy(output, *edge_j.e[component], 0, dst, 1, 0);
+            ++dst;
          }
          break;
       }
       case AuxGridField::ElectricField: {
          const EdgeElectricField& edge_e = edge_electric_for_output();
-         for (int component = 0; component < static_cast<int>(info.components.size()); ++component) {
-            if (info.components[component].centering == centering) {
-               if (!edge_e.e[component]) {
-                  amrex::Abort("requested edge electric-field output component is unavailable");
-               }
-               amrex::MultiFab::Copy(output, *edge_e.e[component], 0, dst, 1, 0);
-               ++dst;
+         for (int component : entry.source_components) {
+            if (!edge_e.e[component]) {
+               amrex::Abort("requested edge electric-field output component is unavailable");
             }
+            amrex::MultiFab::Copy(output, *edge_e.e[component], 0, dst, 1, 0);
+            ++dst;
          }
          break;
       }
@@ -422,61 +416,61 @@ inline void fill_aux_gf_output(
          } else {
             fill_cell_divergence(divb, state, geom, false);
          }
-         copy_matching_aux_components(output, divb, info, centering, dst);
+         copy_selected_aux_components(output, divb, entry, dst);
          break;
       }
       case AuxGridField::MagneticEnergy: {
          amrex::MultiFab magnetic_energy(state.boxArray(), state.DistributionMap(), 1, 0);
          fill_magnetic_energy_density(magnetic_energy, state);
-         copy_matching_aux_components(output, magnetic_energy, info, centering, dst);
+         copy_selected_aux_components(output, magnetic_energy, entry, dst);
          break;
       }
       case AuxGridField::Vorticity: {
          amrex::MultiFab vorticity(state.boxArray(), state.DistributionMap(), 3, 0);
          fill_vorticity_output(vorticity, state, geom);
-         copy_matching_aux_components(output, vorticity, info, centering, dst);
+         copy_selected_aux_components(output, vorticity, entry, dst);
          break;
       }
       case AuxGridField::MachNumber: {
          amrex::MultiFab mach(state.boxArray(), state.DistributionMap(), 1, 0);
          fill_mach_number_output(mach, state, geom, time, cfg);
-         copy_matching_aux_components(output, mach, info, centering, dst);
+         copy_selected_aux_components(output, mach, entry, dst);
          break;
       }
       case AuxGridField::PlasmaBeta: {
          amrex::MultiFab plasma_beta(state.boxArray(), state.DistributionMap(), 1, 0);
          fill_plasma_beta_output(plasma_beta, state, geom, time, cfg);
-         copy_matching_aux_components(output, plasma_beta, info, centering, dst);
+         copy_selected_aux_components(output, plasma_beta, entry, dst);
          break;
       }
       case AuxGridField::EntropyProxy: {
          amrex::MultiFab entropy(state.boxArray(), state.DistributionMap(), 1, 0);
          fill_entropy_proxy_output(entropy, state, geom, time, cfg);
-         copy_matching_aux_components(output, entropy, info, centering, dst);
+         copy_selected_aux_components(output, entropy, entry, dst);
          break;
       }
       case AuxGridField::AmrTagMetric: {
          amrex::MultiFab tag_metric(state.boxArray(), state.DistributionMap(), 1, 0);
          fill_amr_tag_metric_output(tag_metric, state, spacetime_state, geom, time, cfg);
-         copy_matching_aux_components(output, tag_metric, info, centering, dst);
+         copy_selected_aux_components(output, tag_metric, entry, dst);
          break;
       }
       case AuxGridField::GravityPotential:
          if (gravity_phi == nullptr) {
             amrex::Abort("phi output requested before gravity potential storage exists");
          }
-         copy_matching_aux_components(output, *gravity_phi, info, centering, dst);
+         copy_selected_aux_components(output, *gravity_phi, entry, dst);
          break;
       case AuxGridField::GravityGradient: {
          amrex::MultiFab cell_gradient(state.boxArray(), state.DistributionMap(), 3, 0);
          fill_cell_centered_gravity_gradient(cell_gradient, gravity_gradient);
-         copy_matching_aux_components(output, cell_gradient, info, centering, dst);
+         copy_selected_aux_components(output, cell_gradient, entry, dst);
          break;
       }
       case AuxGridField::SolidMask: {
          amrex::MultiFab mask_output(state.boxArray(), state.DistributionMap(), 1, 0);
          fill_solid_mask_output(mask_output, solid_mask);
-         copy_matching_aux_components(output, mask_output, info, centering, dst);
+         copy_selected_aux_components(output, mask_output, entry, dst);
          break;
       }
       case AuxGridField::SolidVolumeFraction: {
@@ -486,27 +480,27 @@ inline void fill_aux_gf_output(
          } else {
             fill_solid_volume_fraction_output(volume_fraction, solid_mask, geom, cfg, time);
          }
-         copy_matching_aux_components(output, volume_fraction, info, centering, dst);
+         copy_selected_aux_components(output, volume_fraction, entry, dst);
          break;
       }
       case AuxGridField::SolidSweptVolume: {
          amrex::MultiFab swept_volume(state.boxArray(), state.DistributionMap(), 1, 0);
          fill_solid_swept_volume_output(swept_volume, geom, cfg, cfg.solid_swept_reference_time, time);
-         copy_matching_aux_components(output, swept_volume, info, centering, dst);
+         copy_selected_aux_components(output, swept_volume, entry, dst);
          break;
       }
       case AuxGridField::SolidAperture1:
          if (solid_aperture[0] == nullptr) {
             amrex::Abort("solid_aperture1 output requested before the discrete AMR aperture field exists");
          }
-         copy_matching_aux_components(output, *solid_aperture[0], info, centering, dst);
+         copy_selected_aux_components(output, *solid_aperture[0], entry, dst);
          break;
 #if (AMREX_SPACEDIM >= 2)
       case AuxGridField::SolidAperture2:
          if (solid_aperture[1] == nullptr) {
             amrex::Abort("solid_aperture2 output requested before the discrete AMR aperture field exists");
          }
-         copy_matching_aux_components(output, *solid_aperture[1], info, centering, dst);
+         copy_selected_aux_components(output, *solid_aperture[1], entry, dst);
          break;
 #endif
 #if (AMREX_SPACEDIM == 3)
@@ -514,19 +508,20 @@ inline void fill_aux_gf_output(
          if (solid_aperture[2] == nullptr) {
             amrex::Abort("solid_aperture3 output requested before the discrete AMR aperture field exists");
          }
-         copy_matching_aux_components(output, *solid_aperture[2], info, centering, dst);
+         copy_selected_aux_components(output, *solid_aperture[2], entry, dst);
          break;
 #endif
       case AuxGridField::SolidPhi: {
          amrex::MultiFab phi_output(state.boxArray(), state.DistributionMap(), 1, 0);
          fill_solid_phi_output(phi_output, geom, cfg, time);
-         copy_matching_aux_components(output, phi_output, info, centering, dst);
+         copy_selected_aux_components(output, phi_output, entry, dst);
          break;
       }
       default:
-         amrex::Abort("unsupported auxiliary grid function in output: " + name);
+         amrex::Abort("unsupported auxiliary grid function in output: " + info.name);
       }
    }
+   AMREX_ALWAYS_ASSERT(dst == static_cast<int>(layout.component_names.size()));
 }
 
 inline void write_aux_gf_plotfile(
@@ -547,18 +542,18 @@ inline void write_aux_gf_plotfile(
    RunConfig const& output_cfg = RunConfig{}
 )
 {
-   if (aux_gf_names(cfg).empty()) {
+   const auto layouts = aux_output_layouts(cfg);
+   if (layouts.empty()) {
       return;
    }
 
    const std::filesystem::path plot_dir = std::filesystem::path(cfg.output_dir) / "auxGF";
    std::filesystem::create_directories(plot_dir);
-   for (GridFieldCentering centering : grid_field_centerings()) {
-      const int ncomp = aux_output_component_count(cfg, centering);
-      if (ncomp == 0) {
-         continue;
-      }
-      const amrex::BoxArray output_ba = amrex::convert(state.boxArray(), grid_field_index_type(centering));
+   for (AuxOutputLayout const& layout : layouts) {
+      const int ncomp = static_cast<int>(layout.component_names.size());
+      const amrex::BoxArray output_ba = amrex::convert(
+         state.boxArray(), grid_field_index_type(layout.centering)
+      );
       amrex::MultiFab output(output_ba, state.DistributionMap(), ncomp, 0);
       fill_aux_gf_output(
          output,
@@ -575,15 +570,17 @@ inline void write_aux_gf_plotfile(
          geom,
          cfg,
          time,
-         centering
+         layout
       );
 
-      const std::string stem = (plot_dir / ("auxGF" + grid_field_stem_suffix(centering))).string();
+      const std::string stem = (
+         plot_dir / ("auxGF" + grid_field_stem_suffix(layout.centering))
+      ).string();
       write_output_gf(
          output,
          stem,
          geom,
-         aux_output_names(cfg, centering),
+         layout.component_names,
          time,
          step,
          output_cfg,
@@ -613,21 +610,21 @@ inline void write_multilevel_aux_gf_plotfile(
    RunConfig const& output_cfg = RunConfig{}
 )
 {
-   if (aux_gf_names(cfg).empty()) {
+   const auto layouts = aux_output_layouts(cfg);
+   if (layouts.empty()) {
       return;
    }
 
    const std::filesystem::path plot_dir = std::filesystem::path(cfg.output_dir) / "auxGF";
    std::filesystem::create_directories(plot_dir);
-   for (GridFieldCentering centering : grid_field_centerings()) {
-      const int ncomp = aux_output_component_count(cfg, centering);
-      if (ncomp == 0) {
-         continue;
-      }
+   for (AuxOutputLayout const& layout : layouts) {
+      const int ncomp = static_cast<int>(layout.component_names.size());
       std::vector<std::unique_ptr<amrex::MultiFab>> output(finest_level + 1);
       amrex::Vector<amrex::MultiFab const*> levels(finest_level + 1);
       for (int lev = 0; lev <= finest_level; ++lev) {
-         const amrex::BoxArray output_ba = amrex::convert(state[lev]->boxArray(), grid_field_index_type(centering));
+         const amrex::BoxArray output_ba = amrex::convert(
+            state[lev]->boxArray(), grid_field_index_type(layout.centering)
+         );
          output[lev] = std::make_unique<amrex::MultiFab>(output_ba, state[lev]->DistributionMap(), ncomp, 0);
          FaceMagneticField const* face_b_ptr = ct_enabled(cfg) ? &face_b[lev] : nullptr;
          EdgeElectricField const* edge_current_ptr = edge_current[lev].e[0] ? &edge_current[lev] : nullptr;
@@ -656,24 +653,26 @@ inline void write_multilevel_aux_gf_plotfile(
             geom[lev],
             cfg,
             time,
-            centering
+            layout
          );
          levels[lev] = output[lev].get();
       }
 
-   const std::string stem = (plot_dir / ("auxGF" + grid_field_stem_suffix(centering))).string();
-   write_output_gf(
-      finest_level,
-      output,
-      geom,
-      level_steps,
-      ref_ratio,
-      stem,
-      aux_output_names(cfg, centering),
-      time,
-      step,
-      output_cfg,
-      "aux"
+      const std::string stem = (
+         plot_dir / ("auxGF" + grid_field_stem_suffix(layout.centering))
+      ).string();
+      write_output_gf(
+         finest_level,
+         output,
+         geom,
+         level_steps,
+         ref_ratio,
+         stem,
+         layout.component_names,
+         time,
+         step,
+         output_cfg,
+         "aux"
       );
    }
 }

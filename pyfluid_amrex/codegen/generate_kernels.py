@@ -8,6 +8,7 @@ from pyfluid_codegen.emit_cpp import (
    CsePolicy,
    write_characteristic_header,
    write_differential_header,
+   write_diagnostic_header,
    write_eos_header,
    write_flux_header,
    write_initial_data_header,
@@ -53,6 +54,14 @@ DEFAULT_DIFFERENTIAL_HEADER = (
    / "pyfluid_amrex"
    / "kernels_generated"
    / "differential_ops.hpp"
+)
+DEFAULT_DIAGNOSTIC_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "kernels_generated"
+   / "diagnostics.hpp"
 )
 DEFAULT_RIEMANN_HEADER = (
    ROOT
@@ -152,13 +161,14 @@ def main() -> None:
    parser.add_argument(
       "--family",
       action="append",
-      choices=("catalog", "characteristic", "differential", "eos", "flux", "initial_data", "operator", "relativistic", "riemann", "vector", "metric", "patch_map", "z4c"),
+      choices=("catalog", "characteristic", "diagnostic", "differential", "eos", "flux", "initial_data", "operator", "relativistic", "riemann", "vector", "metric", "patch_map", "z4c"),
       help="generate only this kernel family; repeat as needed (default: all)",
    )
    parser.add_argument("--flux-header", type=Path, default=DEFAULT_FLUX_HEADER)
    parser.add_argument("--eos-header", type=Path, default=DEFAULT_EOS_HEADER)
    parser.add_argument("--operator-header", type=Path, default=DEFAULT_OPERATOR_HEADER)
    parser.add_argument("--differential-header", type=Path, default=DEFAULT_DIFFERENTIAL_HEADER)
+   parser.add_argument("--diagnostic-header", type=Path, default=DEFAULT_DIAGNOSTIC_HEADER)
    parser.add_argument("--riemann-header", type=Path, default=DEFAULT_RIEMANN_HEADER)
    parser.add_argument("--characteristic-header", type=Path, default=DEFAULT_CHARACTERISTIC_HEADER)
    parser.add_argument("--vector-header", type=Path, default=DEFAULT_VECTOR_HEADER)
@@ -180,6 +190,7 @@ def main() -> None:
    generators = {
       "characteristic": (args.characteristic_header, write_characteristic_header),
       "differential": (args.differential_header, write_differential_header),
+      "diagnostic": (args.diagnostic_header, write_diagnostic_header),
       "eos": (args.eos_header, write_eos_header),
       "flux": (args.flux_header, write_flux_header),
       "initial_data": (args.initial_data_header, write_initial_data_header),

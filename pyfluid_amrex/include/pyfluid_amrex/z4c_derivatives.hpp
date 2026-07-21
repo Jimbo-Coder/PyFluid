@@ -10,6 +10,114 @@ namespace pyfluid_amrex {
 
 template <int Order, int Direction, typename Array>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void gather_z4c_geometry_directional_derivatives(
+   Z4cSpatialDerivatives& derivatives,
+   Array const& field,
+   int i,
+   int j,
+   int k,
+   int coordinate_index,
+   int domain_lower,
+   int domain_upper,
+   amrex::Real inv_spacing
+) noexcept
+{
+   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);
+   static_assert(Direction >= 0 && Direction < 3);
+   derivatives.d_chi[Direction] = generated::domain_first<Order, Direction>(
+      field,
+      i,
+      j,
+      k,
+      Z4C_CHI,
+      coordinate_index,
+      domain_lower,
+      domain_upper,
+      inv_spacing
+   );
+   derivatives.d_lapse[Direction] = generated::domain_first<Order, Direction>(
+      field,
+      i,
+      j,
+      k,
+      Z4C_LAPSE,
+      coordinate_index,
+      domain_lower,
+      domain_upper,
+      inv_spacing
+   );
+   for (int component = 0; component < 6; ++component) {
+      derivatives.d_gamma_tilde[Direction][component] =
+         generated::domain_first<Order, Direction>(
+            field,
+            i,
+            j,
+            k,
+            Z4C_GAMMA_TILDE_COMPONENTS[component],
+            coordinate_index,
+            domain_lower,
+            domain_upper,
+            inv_spacing
+         );
+   }
+}
+
+template <int Order, int Dim, typename Array, typename SpacingArray, typename IndexArray>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+Z4cSpatialDerivatives gather_z4c_geometry_derivatives(
+   Array const& field,
+   int i,
+   int j,
+   int k,
+   SpacingArray const& inv_spacing,
+   IndexArray const& domain_lower,
+   IndexArray const& domain_upper
+) noexcept
+{
+   static_assert(Dim >= 1 && Dim <= 3);
+   Z4cSpatialDerivatives derivatives{};
+   gather_z4c_geometry_directional_derivatives<Order, 0>(
+      derivatives,
+      field,
+      i,
+      j,
+      k,
+      i,
+      domain_lower[0],
+      domain_upper[0],
+      inv_spacing[0]
+   );
+   if constexpr (Dim >= 2) {
+      gather_z4c_geometry_directional_derivatives<Order, 1>(
+         derivatives,
+         field,
+         i,
+         j,
+         k,
+         j,
+         domain_lower[1],
+         domain_upper[1],
+         inv_spacing[1]
+      );
+   }
+   if constexpr (Dim == 3) {
+      gather_z4c_geometry_directional_derivatives<Order, 2>(
+         derivatives,
+         field,
+         i,
+         j,
+         k,
+         k,
+         domain_lower[2],
+         domain_upper[2],
+         inv_spacing[2]
+      );
+   }
+   return derivatives;
+}
+
+template <int Order, int Direction, typename Array>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void gather_z4c_directional_derivatives(
    Z4cSpatialDerivatives& derivatives,
    Array const& field,

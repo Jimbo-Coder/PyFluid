@@ -25,7 +25,7 @@ amr.tag_threshold = 0.06
 amr.solid_refine_band_cells = 2.5
 amr.solid_curvature_error = 2.0e-5
 amr.min_feature_length = 0.0025
-amr.state_interp = protected
+amr.state_interp = coupled-conservative
 
 pyfluid.physics = hydro
 pyfluid.ct = off

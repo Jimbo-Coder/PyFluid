@@ -1,0 +1,740 @@
+schema_version = 1
+
+[field_sets]
+fluid_newtonian = ["rho", "momentum", "energy"]
+fluid_relativistic = ["dens", "momentum", "tau"]
+z4c = [
+  "chi",
+  "gamma_tilde_tensor",
+  "k_hat",
+  "a_tilde",
+  "gamma_tilde_vector",
+  "theta",
+  "lapse",
+  "shift",
+]
+auxiliary = [
+  "current_density",
+  "electric_field",
+  "divb",
+  "magnetic_energy_aux",
+  "vorticity",
+  "mach_number",
+  "plasma_beta",
+  "entropy_proxy",
+  "amr_tag_metric",
+  "solid_mask",
+  "solid_volume_fraction",
+  "solid_aperture1",
+  "solid_aperture2",
+  "solid_aperture3",
+  "solid_swept_volume",
+  "solid_phi",
+  "gravity_potential",
+  "gravity_gradient",
+]
+
+[special_fields]
+magnetic = "magnetic_field"
+ct_magnetic = "ct_magnetic_field"
+passive_scalar = "passive_scalar"
+
+[[field]]
+key = "rho"
+name = "rho"
+label = '\rho'
+value_kind = "Scalar"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Fluid"
+
+[[field.components]]
+name = "rho"
+label = '\rho'
+cpp_id = "RHO"
+
+[[field]]
+key = "momentum"
+name = "momentum"
+label = 'm_i'
+value_kind = "Vector3"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Fluid"
+
+[[field.components]]
+name = "mom1"
+label = 'm_{1}'
+cpp_id = "MOM1"
+symmetry = "Vector1"
+
+[[field.components]]
+name = "mom2"
+label = 'm_{2}'
+cpp_id = "MOM2"
+symmetry = "Vector2"
+
+[[field.components]]
+name = "mom3"
+label = 'm_{3}'
+cpp_id = "MOM3"
+symmetry = "Vector3"
+
+[[field]]
+key = "energy"
+name = "energy"
+label = 'E'
+value_kind = "Scalar"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Fluid"
+
+[[field.components]]
+name = "energy"
+label = 'E'
+cpp_id = "ENERGY"
+
+[[field]]
+key = "dens"
+name = "dens"
+label = 'D'
+value_kind = "Scalar"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Fluid"
+
+[[field.components]]
+name = "dens"
+label = 'D'
+cpp_id = "RHO"
+
+[[field]]
+key = "tau"
+name = "tau"
+label = '\tau'
+value_kind = "Scalar"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Fluid"
+
+[[field.components]]
+name = "tau"
+label = '\tau'
+cpp_id = "ENERGY"
+
+[[field]]
+key = "magnetic_field"
+name = "magnetic_field"
+label = 'B^i'
+value_kind = "Vector3"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Fluid"
+requires_mhd = true
+
+[[field.components]]
+name = "b1"
+label = 'B_{1}'
+cpp_id = "B1"
+symmetry = "Vector1"
+
+[[field.components]]
+name = "b2"
+label = 'B_{2}'
+cpp_id = "B2"
+symmetry = "Vector2"
+
+[[field.components]]
+name = "b3"
+label = 'B_{3}'
+cpp_id = "B3"
+symmetry = "Vector3"
+
+[[field]]
+key = "ct_magnetic_field"
+name = "ct_magnetic_field"
+label = 'B^i'
+value_kind = "Vector3"
+role = "EvolutionAuxiliary"
+evolution_kind = "AuxiliaryState"
+sector = "Fluid"
+output = false
+requires_mhd = true
+
+[[field.components]]
+name = "face_b1"
+label = 'B_{1}'
+centering = "Face1"
+symmetry = "Vector1"
+
+[[field.components]]
+name = "face_b2"
+label = 'B_{2}'
+centering = "Face2"
+symmetry = "Vector2"
+
+[[field.components]]
+name = "face_b3"
+label = 'B_{3}'
+centering = "Face3"
+symmetry = "Vector3"
+
+[[field]]
+key = "passive_scalar"
+name = "passive_scalar"
+label = '\rho C'
+value_kind = "Scalar"
+role = "EvolvedState"
+evolution_kind = "NonBackreactingExtra"
+sector = "Fluid"
+
+[[field.components]]
+name = "dye_mass"
+label = '\rho C'
+
+[[field]]
+key = "chi"
+name = "chi"
+label = '\chi'
+value_kind = "Scalar"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Spacetime"
+ghost_width = 3
+
+[[field.components]]
+name = "chi"
+label = '\chi'
+cpp_id = "Z4C_CHI"
+centering = "Vertex"
+
+[[field]]
+key = "gamma_tilde_tensor"
+name = "gamma_tilde"
+label = '\tilde{\gamma}_{ij}'
+value_kind = "SymmetricTensor3"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Spacetime"
+ghost_width = 3
+
+[[field.components]]
+name = "gamma_tilde11"
+label = '\tilde{\gamma}_{11}'
+cpp_id = "Z4C_GAMMA_TILDE11"
+centering = "Vertex"
+symmetry = "Tensor11"
+
+[[field.components]]
+name = "gamma_tilde12"
+label = '\tilde{\gamma}_{12}'
+cpp_id = "Z4C_GAMMA_TILDE12"
+centering = "Vertex"
+symmetry = "Tensor12"
+
+[[field.components]]
+name = "gamma_tilde13"
+label = '\tilde{\gamma}_{13}'
+cpp_id = "Z4C_GAMMA_TILDE13"
+centering = "Vertex"
+symmetry = "Tensor13"
+
+[[field.components]]
+name = "gamma_tilde22"
+label = '\tilde{\gamma}_{22}'
+cpp_id = "Z4C_GAMMA_TILDE22"
+centering = "Vertex"
+symmetry = "Tensor22"
+
+[[field.components]]
+name = "gamma_tilde23"
+label = '\tilde{\gamma}_{23}'
+cpp_id = "Z4C_GAMMA_TILDE23"
+centering = "Vertex"
+symmetry = "Tensor23"
+
+[[field.components]]
+name = "gamma_tilde33"
+label = '\tilde{\gamma}_{33}'
+cpp_id = "Z4C_GAMMA_TILDE33"
+centering = "Vertex"
+symmetry = "Tensor33"
+
+[[field]]
+key = "k_hat"
+name = "k_hat"
+label = '\hat{K}'
+value_kind = "Scalar"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Spacetime"
+ghost_width = 3
+
+[[field.components]]
+name = "k_hat"
+label = '\hat{K}'
+cpp_id = "Z4C_K_HAT"
+centering = "Vertex"
+
+[[field]]
+key = "a_tilde"
+name = "a_tilde"
+label = '\tilde{A}_{ij}'
+value_kind = "SymmetricTensor3"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Spacetime"
+ghost_width = 3
+
+[[field.components]]
+name = "a_tilde11"
+label = '\tilde{A}_{11}'
+cpp_id = "Z4C_A_TILDE11"
+centering = "Vertex"
+symmetry = "Tensor11"
+
+[[field.components]]
+name = "a_tilde12"
+label = '\tilde{A}_{12}'
+cpp_id = "Z4C_A_TILDE12"
+centering = "Vertex"
+symmetry = "Tensor12"
+
+[[field.components]]
+name = "a_tilde13"
+label = '\tilde{A}_{13}'
+cpp_id = "Z4C_A_TILDE13"
+centering = "Vertex"
+symmetry = "Tensor13"
+
+[[field.components]]
+name = "a_tilde22"
+label = '\tilde{A}_{22}'
+cpp_id = "Z4C_A_TILDE22"
+centering = "Vertex"
+symmetry = "Tensor22"
+
+[[field.components]]
+name = "a_tilde23"
+label = '\tilde{A}_{23}'
+cpp_id = "Z4C_A_TILDE23"
+centering = "Vertex"
+symmetry = "Tensor23"
+
+[[field.components]]
+name = "a_tilde33"
+label = '\tilde{A}_{33}'
+cpp_id = "Z4C_A_TILDE33"
+centering = "Vertex"
+symmetry = "Tensor33"
+
+[[field]]
+key = "gamma_tilde_vector"
+name = "gamma_tilde_vector"
+label = '\tilde{\Gamma}^{i}'
+value_kind = "Vector3"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Spacetime"
+ghost_width = 3
+
+[[field.components]]
+name = "gamma_tilde1"
+label = '\tilde{\Gamma}_{1}'
+cpp_id = "Z4C_GAMMA_TILDE1"
+centering = "Vertex"
+symmetry = "Vector1"
+
+[[field.components]]
+name = "gamma_tilde2"
+label = '\tilde{\Gamma}_{2}'
+cpp_id = "Z4C_GAMMA_TILDE2"
+centering = "Vertex"
+symmetry = "Vector2"
+
+[[field.components]]
+name = "gamma_tilde3"
+label = '\tilde{\Gamma}_{3}'
+cpp_id = "Z4C_GAMMA_TILDE3"
+centering = "Vertex"
+symmetry = "Vector3"
+
+[[field]]
+key = "theta"
+name = "theta"
+label = '\Theta'
+value_kind = "Scalar"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Spacetime"
+ghost_width = 3
+
+[[field.components]]
+name = "theta"
+label = '\Theta'
+cpp_id = "Z4C_THETA"
+centering = "Vertex"
+
+[[field]]
+key = "lapse"
+name = "lapse"
+label = '\alpha'
+value_kind = "Scalar"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Spacetime"
+ghost_width = 3
+
+[[field.components]]
+name = "lapse"
+label = '\alpha'
+cpp_id = "Z4C_LAPSE"
+centering = "Vertex"
+
+[[field]]
+key = "shift"
+name = "shift"
+label = '\beta^{i}'
+value_kind = "Vector3"
+role = "EvolvedState"
+evolution_kind = "MainState"
+sector = "Spacetime"
+ghost_width = 3
+
+[[field.components]]
+name = "shift1"
+label = '\beta_{1}'
+cpp_id = "Z4C_SHIFT1"
+centering = "Vertex"
+symmetry = "Vector1"
+
+[[field.components]]
+name = "shift2"
+label = '\beta_{2}'
+cpp_id = "Z4C_SHIFT2"
+centering = "Vertex"
+symmetry = "Vector2"
+
+[[field.components]]
+name = "shift3"
+label = '\beta_{3}'
+cpp_id = "Z4C_SHIFT3"
+centering = "Vertex"
+symmetry = "Vector3"
+
+[[field]]
+key = "current_density"
+name = "j"
+label = 'J^i'
+value_kind = "Vector3"
+role = "CachedDerivative"
+evolution_kind = "AuxiliaryState"
+diagnostic_kind = "MixedAuxiliary"
+aux_id = "CurrentDensity"
+requires_mhd = true
+min_dimension = 2
+
+[[field.components]]
+name = "j1"
+label = 'J_{1}'
+centering = "Edge1"
+symmetry = "Vector1"
+
+[[field.components]]
+name = "j2"
+label = 'J_{2}'
+centering = "Edge2"
+symmetry = "Vector2"
+
+[[field.components]]
+name = "j3"
+label = 'J_{3}'
+centering = "Edge3"
+symmetry = "Vector3"
+
+[[field]]
+key = "electric_field"
+name = "e"
+label = 'E^i'
+value_kind = "Vector3"
+role = "CachedDerivative"
+evolution_kind = "AuxiliaryState"
+diagnostic_kind = "MixedAuxiliary"
+aux_id = "ElectricField"
+requires_mhd = true
+min_dimension = 2
+
+[[field.components]]
+name = "e1"
+label = 'E_{1}'
+centering = "Edge1"
+symmetry = "Vector1"
+
+[[field.components]]
+name = "e2"
+label = 'E_{2}'
+centering = "Edge2"
+symmetry = "Vector2"
+
+[[field.components]]
+name = "e3"
+label = 'E_{3}'
+centering = "Edge3"
+symmetry = "Vector3"
+
+[[field]]
+key = "divb"
+name = "divb"
+label = '\nabla_i B^i'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "DivB"
+requires_mhd = true
+
+[[field.components]]
+name = "divb"
+label = '\nabla_i B^i'
+
+[[field]]
+key = "magnetic_energy_aux"
+name = "magnetic_energy"
+label = 'B^2/2'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "MagneticEnergy"
+requires_mhd = true
+
+[[field.components]]
+name = "magnetic_energy"
+label = 'B^2/2'
+
+[[field]]
+key = "vorticity"
+name = "vorticity"
+label = '\omega^i'
+value_kind = "Vector3"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "Vorticity"
+min_dimension = 2
+
+[[field.components]]
+name = "vorticity1"
+label = '\omega_{1}'
+symmetry = "Vector1"
+
+[[field.components]]
+name = "vorticity2"
+label = '\omega_{2}'
+symmetry = "Vector2"
+
+[[field.components]]
+name = "vorticity3"
+label = '\omega_{3}'
+symmetry = "Vector3"
+
+[[field]]
+key = "mach_number"
+name = "mach"
+label = '\mathcal{M}'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "MachNumber"
+
+[[field.components]]
+name = "mach"
+label = '\mathcal{M}'
+
+[[field]]
+key = "plasma_beta"
+name = "plasma_beta"
+label = '\beta_{\rm plasma}'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "PlasmaBeta"
+requires_mhd = true
+
+[[field.components]]
+name = "plasma_beta"
+label = '\beta_{\rm plasma}'
+
+[[field]]
+key = "entropy_proxy"
+name = "entropy"
+label = 'K'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "EntropyProxy"
+
+[[field.components]]
+name = "entropy"
+label = 'K'
+
+[[field]]
+key = "amr_tag_metric"
+name = "amr_tag_metric"
+label = '\eta_{\rm AMR}'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "AmrTagMetric"
+
+[[field.components]]
+name = "amr_tag_metric"
+label = '\eta_{\rm AMR}'
+
+[[field]]
+key = "solid_mask"
+name = "solid_mask"
+label = 'M_{\rm solid}'
+value_kind = "Scalar"
+role = "EvolutionAuxiliary"
+evolution_kind = "AuxiliaryState"
+aux_id = "SolidMask"
+requires_solid_geometry = true
+
+[[field.components]]
+name = "solid_mask"
+label = 'M_{\rm solid}'
+
+[[field]]
+key = "solid_volume_fraction"
+name = "solid_volume_fraction"
+label = '\kappa_{\rm fluid}'
+value_kind = "Scalar"
+role = "EvolutionAuxiliary"
+evolution_kind = "AuxiliaryState"
+aux_id = "SolidVolumeFraction"
+requires_solid_geometry = true
+
+[[field.components]]
+name = "solid_volume_fraction"
+label = '\kappa_{\rm fluid}'
+
+[[field]]
+key = "solid_aperture1"
+name = "solid_aperture1"
+label = '\alpha_{1}'
+value_kind = "Scalar"
+role = "EvolutionAuxiliary"
+evolution_kind = "AuxiliaryState"
+aux_id = "SolidAperture1"
+requires_solid_geometry = true
+
+[[field.components]]
+name = "solid_aperture1"
+label = '\alpha_{1}'
+centering = "Face1"
+
+[[field]]
+key = "solid_aperture2"
+name = "solid_aperture2"
+label = '\alpha_{2}'
+value_kind = "Scalar"
+role = "EvolutionAuxiliary"
+evolution_kind = "AuxiliaryState"
+aux_id = "SolidAperture2"
+requires_solid_geometry = true
+min_dimension = 2
+
+[[field.components]]
+name = "solid_aperture2"
+label = '\alpha_{2}'
+centering = "Face2"
+
+[[field]]
+key = "solid_aperture3"
+name = "solid_aperture3"
+label = '\alpha_{3}'
+value_kind = "Scalar"
+role = "EvolutionAuxiliary"
+evolution_kind = "AuxiliaryState"
+aux_id = "SolidAperture3"
+requires_solid_geometry = true
+min_dimension = 3
+
+[[field.components]]
+name = "solid_aperture3"
+label = '\alpha_{3}'
+centering = "Face3"
+
+[[field]]
+key = "solid_swept_volume"
+name = "solid_swept_volume"
+label = '\Delta V_{\rm solid}'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "SolidSweptVolume"
+requires_solid_geometry = true
+
+[[field.components]]
+name = "solid_swept_volume"
+label = '\Delta V_{\rm solid}'
+
+[[field]]
+key = "solid_phi"
+name = "solid_phi"
+label = '\phi_{\rm solid}'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "SolidPhi"
+requires_solid_geometry = true
+
+[[field.components]]
+name = "solid_phi"
+label = '\phi_{\rm solid}'
+
+[[field]]
+key = "gravity_potential"
+name = "phi"
+label = '\Phi'
+value_kind = "Scalar"
+role = "EvolutionAuxiliary"
+evolution_kind = "AuxiliaryState"
+aux_id = "GravityPotential"
+requires_gravity = true
+
+[[field.components]]
+name = "phi"
+label = '\Phi'
+
+[[field]]
+key = "gravity_gradient"
+name = "grad_phi"
+label = '\nabla_i\Phi'
+value_kind = "Vector3"
+role = "CachedDerivative"
+evolution_kind = "AuxiliaryState"
+aux_id = "GravityGradient"
+requires_gravity = true
+
+[[field.components]]
+name = "grad_phi1"
+label = '\nabla\Phi_{1}'
+symmetry = "Vector1"
+
+[[field.components]]
+name = "grad_phi2"
+label = '\nabla\Phi_{2}'
+symmetry = "Vector2"
+
+[[field.components]]
+name = "grad_phi3"
+label = '\nabla\Phi_{3}'
+symmetry = "Vector3"

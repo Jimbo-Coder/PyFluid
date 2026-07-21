@@ -4,6 +4,7 @@
 #include "pyfluid_amrex/kernels_generated/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/characteristic_transforms.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
+#include "pyfluid_amrex/kernels_generated/diagnostics.hpp"
 #include "pyfluid_amrex/kernels_generated/scalar_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c.hpp"
@@ -16,6 +17,7 @@
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/eos/presets.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
+#include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
@@ -145,6 +147,66 @@ bool check_topology_centering_transfer()
    return true;
 }
 
+template <int Order, int Dim>
+bool check_bounded_topology_centering_transfer()
+{
+   const CenteringPolynomialGrid<Order - 1> field{};
+   constexpr int num_cells = Order + 4;
+   constexpr int num_centerings = 1 << Dim;
+   for (int source_mask = 0; source_mask < num_centerings; ++source_mask) {
+      amrex::GpuArray<int, 3> source_lo{{0, 0, 0}};
+      amrex::GpuArray<int, 3> source_hi{{0, 0, 0}};
+      for (int direction = 0; direction < Dim; ++direction) {
+         source_hi[direction] = num_cells - 1
+            + ((source_mask & (1 << direction)) != 0 ? 1 : 0);
+      }
+      for (int destination_mask = 0;
+           destination_mask < num_centerings;
+           ++destination_mask) {
+         for (int side = 0; side < 2; ++side) {
+            int destination_index[3] = {0, 0, 0};
+            for (int direction = 0; direction < Dim; ++direction) {
+               destination_index[direction] = side == 0
+                  ? 0
+                  : num_cells - 1
+                     + ((destination_mask & (1 << direction)) != 0 ? 1 : 0);
+            }
+            const auto target_index = [=](int direction) {
+               const amrex::Real source_offset =
+                  (source_mask & (1 << direction)) != 0 ? 0.0 : 0.5;
+               const amrex::Real destination_offset =
+                  (destination_mask & (1 << direction)) != 0 ? 0.0 : 0.5;
+               return destination_index[direction]
+                  + destination_offset - source_offset;
+            };
+            amrex::Real expected = CenteringPolynomialGrid<Order - 1>::power(
+               target_index(0)
+            );
+            expected += 2.0 * CenteringPolynomialGrid<Order - 1>::power(
+               Dim >= 2 ? target_index(1) : 0.0
+            );
+            expected += 3.0 * CenteringPolynomialGrid<Order - 1>::power(
+               Dim >= 3 ? target_index(2) : 0.0
+            );
+            const amrex::Real actual = pyfluid_amrex::generated::
+               bounded_topology_centering_transfer<Order, Dim>(
+                  field,
+                  destination_index[0],
+                  destination_index[1],
+                  destination_index[2],
+                  0,
+                  source_mask,
+                  destination_mask,
+                  source_lo,
+                  source_hi
+               );
+            if (!close_enough(actual, expected)) return false;
+         }
+      }
+   }
+   return true;
+}
+
 struct ComponentGrid {
    AMREX_GPU_HOST_DEVICE
    amrex::Real operator()(int, int, int, int component) const noexcept
@@ -241,6 +303,82 @@ bool close_enough(amrex::Real actual, amrex::Real expected)
 {
    const amrex::Real scale = std::max<amrex::Real>(1.0, std::abs(expected));
    return std::isfinite(actual) && std::abs(actual - expected) <= 8.0e-15 * scale;
+}
+
+bool validate_initial_atmosphere_profiles()
+{
+   pyfluid_amrex::EOSParams ideal_gas{};
+   ideal_gas.gamma = 5.0 / 3.0;
+   ideal_gas.rho_floor = 1.0e-8;
+   ideal_gas.pressure_floor = 1.0e-12;
+   pyfluid_amrex::InitialAtmosphereParameters atmosphere{
+      pyfluid_amrex::InitialAtmosphereProfile::Flat,
+      1.0e-4,
+      1.0e-6,
+      1.0,
+      4.0,
+      ideal_gas,
+   };
+   pyfluid_amrex::InitialDataSamplePoint point{};
+   point.physical = {4.0, 0.0, 0.0};
+   const auto flat = pyfluid_amrex::initial_atmosphere_state<
+      pyfluid_amrex::EOSIdealGas
+   >(atmosphere, point);
+   if (!close_enough(flat.rho, atmosphere.density)
+       || !close_enough(flat.pressure, atmosphere.pressure)) {
+      std::cerr << "flat initial atmosphere mismatch\n";
+      return false;
+   }
+
+   atmosphere.profile = pyfluid_amrex::InitialAtmosphereProfile::PowerLaw;
+   const auto graded = pyfluid_amrex::initial_atmosphere_state<
+      pyfluid_amrex::EOSIdealGas
+   >(atmosphere, point);
+   const amrex::Real expected_density = atmosphere.density / 256.0;
+   const amrex::Real expected_pressure = atmosphere.pressure * std::pow(
+      expected_density / atmosphere.density, ideal_gas.gamma
+   );
+   if (!close_enough(graded.rho, expected_density)
+       || !close_enough(graded.pressure, expected_pressure)) {
+      std::cerr << "power-law initial atmosphere mismatch\n";
+      return false;
+   }
+
+   point.physical = {20.0, 0.0, 0.0};
+   const auto endpoint = pyfluid_amrex::initial_atmosphere_state<
+      pyfluid_amrex::EOSIdealGas
+   >(atmosphere, point);
+   const auto recovery_floor = pyfluid_amrex::eos_project_to_floors<
+      pyfluid_amrex::EOSIdealGas
+   >(ideal_gas.rho_floor, ideal_gas.pressure_floor, ideal_gas);
+   if (!close_enough(endpoint.rho, recovery_floor.rho)
+       || !close_enough(endpoint.pressure, recovery_floor.pressure)
+       || !close_enough(
+          endpoint.specific_internal_energy,
+          recovery_floor.specific_internal_energy
+       )) {
+      std::cerr << "initial atmosphere recovery-floor endpoint mismatch\n";
+      return false;
+   }
+
+   pyfluid_amrex::EOSParams polytrope = ideal_gas;
+   polytrope.segment_k[0] = 2.0;
+   polytrope.segment_gamma[0] = 2.0;
+   atmosphere.eos = polytrope;
+   atmosphere.density = 1.0e-3;
+   atmosphere.pressure = pyfluid_amrex::eos_cold_pressure<
+      pyfluid_amrex::EOSPolytrope
+   >(atmosphere.density, polytrope);
+   point.physical = {2.0, 0.0, 0.0};
+   const auto cold = pyfluid_amrex::initial_atmosphere_state<
+      pyfluid_amrex::EOSPolytrope
+   >(atmosphere, point);
+   return close_enough(
+      cold.pressure,
+      pyfluid_amrex::eos_cold_pressure<pyfluid_amrex::EOSPolytrope>(
+         cold.rho, polytrope
+      )
+   );
 }
 
 std::array<amrex::Real, pyfluid_amrex::Z4C_NUM_COMPONENTS> z4c_state_components(
@@ -710,6 +848,199 @@ bool validate_newtonian_round_trips()
       }
    }
    return true;
+}
+
+amrex::Real scaled_component_error(
+   amrex::Real actual,
+   amrex::Real expected,
+   amrex::Real scale_floor
+)
+{
+   if (!std::isfinite(actual)) {
+      return std::numeric_limits<amrex::Real>::infinity();
+   }
+   const amrex::Real scale = std::max(
+      {std::abs(actual), std::abs(expected), scale_floor}
+   );
+   return std::abs(actual - expected) / scale;
+}
+
+template <int EOSMethod>
+bool validate_rhd_c2p_round_trip_for_eos(
+   pyfluid_amrex::EOSParams const& eos
+)
+{
+   pyfluid_amrex::SpacetimeMetric curved_metric{};
+   curved_metric.lapse = 0.87;
+   curved_metric.shift1 = 0.05;
+   curved_metric.shift2 = -0.02;
+   curved_metric.shift3 = 0.01;
+   curved_metric.gamma11 = 1.44;
+   curved_metric.gamma22 = 1.21;
+   curved_metric.gamma33 = 0.81;
+   curved_metric.inv_gamma11 = 1.0 / curved_metric.gamma11;
+   curved_metric.inv_gamma22 = 1.0 / curved_metric.gamma22;
+   curved_metric.inv_gamma33 = 1.0 / curved_metric.gamma33;
+   curved_metric.sqrt_det_gamma = 1.188;
+
+   const std::array<pyfluid_amrex::SpacetimeMetric, 2> metrics{{
+      pyfluid_amrex::minkowski_spacetime_metric(),
+      curved_metric,
+   }};
+   constexpr std::array<amrex::Real, 6> densities{{
+      1.0e-12, 1.0e-10, 1.0e-8, 1.0e-5, 1.0e-2, 1.0,
+   }};
+   constexpr std::array<std::array<amrex::Real, 3>, 4> velocities{{
+      {{0.0, 0.0, 0.0}},
+      {{3.0e-7, -2.0e-7, 1.0e-7}},
+      {{0.21, -0.08, 0.04}},
+      {{0.75, 0.0, 0.0}},
+   }};
+   constexpr std::array<amrex::Real, 3> thermal_specific_energies{{
+      1.0e-6, 1.0e-3, 1.0e-1,
+   }};
+   const int thermal_samples = EOSMethod == pyfluid_amrex::EOSPolytrope
+      ? 1
+      : static_cast<int>(thermal_specific_energies.size());
+
+   amrex::Real worst_primitive_error = 0.0;
+   amrex::Real worst_conserved_error = 0.0;
+   for (std::size_t metric_index = 0; metric_index < metrics.size(); ++metric_index) {
+      auto const& metric = metrics[metric_index];
+      for (amrex::Real const rho : densities) {
+         const amrex::Real cold_specific_energy =
+            pyfluid_amrex::eos_cold_energy_density<EOSMethod>(rho, eos) / rho;
+         for (int thermal_index = 0;
+              thermal_index < thermal_samples;
+              ++thermal_index) {
+            const amrex::Real thermal_specific_energy =
+               EOSMethod == pyfluid_amrex::EOSPolytrope
+                  ? 0.0
+                  : thermal_specific_energies[thermal_index];
+            const amrex::Real eps = cold_specific_energy
+               + thermal_specific_energy;
+            const amrex::Real pressure =
+               pyfluid_amrex::relativistic_pressure<EOSMethod>(rho, eps, eos);
+            for (auto const& velocity : velocities) {
+               const pyfluid_amrex::RHDPrimitive primitive{
+                  rho,
+                  eps,
+                  pressure,
+                  velocity[0],
+                  velocity[1],
+                  velocity[2],
+               };
+               const auto conserved =
+                  pyfluid_amrex::generated::rhd_primitive_to_conserved(
+                     primitive, metric
+                  );
+               const auto recovered = pyfluid_amrex::recover_rhd<EOSMethod>(
+                  conserved, metric, eos
+               );
+               if (!recovered.attempt.succeeded()) {
+                  std::cerr
+                     << "RHD C2P(P2C(P)) failed EOS=" << EOSMethod
+                     << " metric=" << metric_index
+                     << " rho=" << rho
+                     << " eps=" << eps
+                     << " v1=" << velocity[0]
+                     << " status=" << static_cast<int>(recovered.attempt.status)
+                     << " residual=" << recovered.attempt.residual << '\n';
+                  return false;
+               }
+
+               const auto conserved_round_trip =
+                  pyfluid_amrex::generated::rhd_primitive_to_conserved(
+                     recovered.primitive, metric
+                  );
+               const std::array<amrex::Real, 6> primitive_errors{{
+                  scaled_component_error(recovered.primitive.rho, rho, eos.rho_floor),
+                  scaled_component_error(recovered.primitive.eps, eps, 1.0e-12),
+                  scaled_component_error(
+                     recovered.primitive.pressure, pressure, eos.pressure_floor
+                  ),
+                  scaled_component_error(recovered.primitive.v1, velocity[0], 1.0),
+                  scaled_component_error(recovered.primitive.v2, velocity[1], 1.0),
+                  scaled_component_error(recovered.primitive.v3, velocity[2], 1.0),
+               }};
+               const auto expected_conserved = components(conserved);
+               const auto actual_conserved = components(conserved_round_trip);
+               amrex::Real conserved_error = 0.0;
+               for (std::size_t component = 0;
+                    component < expected_conserved.size();
+                    ++component) {
+                  conserved_error = std::max(
+                     conserved_error,
+                     scaled_component_error(
+                        actual_conserved[component],
+                        expected_conserved[component],
+                        eos.rho_floor * 1.0e-6
+                     )
+                  );
+               }
+               const amrex::Real primitive_error = *std::max_element(
+                  primitive_errors.begin(), primitive_errors.end()
+               );
+               worst_primitive_error = std::max(
+                  worst_primitive_error, primitive_error
+               );
+               worst_conserved_error = std::max(
+                  worst_conserved_error, conserved_error
+               );
+               if (primitive_error > 1.0e-5 || conserved_error > 1.0e-7) {
+                  std::cerr
+                     << "RHD round-trip mismatch EOS=" << EOSMethod
+                     << " metric=" << metric_index
+                     << " rho=" << rho
+                     << " eps=" << eps
+                     << " v1=" << velocity[0]
+                     << " primitive_error=" << primitive_error
+                     << " conserved_error=" << conserved_error << '\n';
+                  return false;
+               }
+            }
+         }
+      }
+   }
+
+   const std::array<pyfluid_amrex::RHDConserved, 3> invalid_states{{
+      {-1.0, 0.0, 0.0, 0.0, 1.0},
+      {1.0, 0.0, 0.0, 0.0, -1.0},
+      {std::numeric_limits<amrex::Real>::quiet_NaN(), 0.0, 0.0, 0.0, 1.0},
+   }};
+   for (auto const& invalid_state : invalid_states) {
+      const auto invalid_recovery = pyfluid_amrex::recover_rhd<EOSMethod>(
+         invalid_state, metrics[0], eos
+      );
+      if (invalid_recovery.attempt.status
+          != pyfluid_amrex::C2PStatus::InvalidConservedState) {
+         std::cerr << "invalid RHD conserved state was not rejected EOS="
+                   << EOSMethod << " status="
+                   << static_cast<int>(invalid_recovery.attempt.status) << '\n';
+         return false;
+      }
+   }
+
+   std::cout << "RHD C2P matrix EOS=" << EOSMethod
+             << " primitive_error=" << worst_primitive_error
+             << " conserved_error=" << worst_conserved_error << '\n';
+   return true;
+}
+
+bool validate_rhd_c2p_round_trip_matrix()
+{
+   pyfluid_amrex::EOSParams eos{};
+   eos.gamma = 2.0;
+   eos.thermal_gamma = 1.8;
+   eos.rho_floor = 1.0e-14;
+   eos.pressure_floor = 1.0e-28;
+   eos.segment_k[0] = 100.0;
+   eos.segment_gamma[0] = 2.0;
+   return validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSIdealGas>(eos)
+      && validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSPolytrope>(eos)
+      && validate_rhd_c2p_round_trip_for_eos<
+         pyfluid_amrex::EOSHybridPolytrope
+      >(eos);
 }
 
 bool validate_piecewise_polytrope()
@@ -2039,8 +2370,10 @@ bool validate_z4c_constraints()
 int main()
 {
    if (!validate_newtonian_round_trips()
+       || !validate_rhd_c2p_round_trip_matrix()
        || !validate_piecewise_polytrope()
        || !validate_read_piecewise_polytropes()
+       || !validate_initial_atmosphere_profiles()
        || !validate_srhd_round_trips()
        || !validate_srmhd_round_trips()
        || !validate_fixed_spacetime_provider()
@@ -2361,6 +2694,16 @@ int main()
       const amrex::Real dx = pyfluid_amrex::generated::centered_first<4, 0>(
          field, i, j, k, component, 1.0
       );
+      const amrex::Real dx_lower = pyfluid_amrex::generated::domain_first<4, 0>(
+         field, 0, j, k, component, 0, 0, 8, 1.0
+      );
+      const amrex::Real dx_near_lower =
+         pyfluid_amrex::generated::domain_first<4, 0>(
+            field, 1, j, k, component, 1, 0, 8, 1.0
+         );
+      const amrex::Real dx_upper = pyfluid_amrex::generated::domain_first<4, 0>(
+         field, 8, j, k, component, 8, 0, 8, 1.0
+      );
       const amrex::Real dxx = pyfluid_amrex::generated::centered_second<4, 0>(
          field, i, j, k, component, 1.0
       );
@@ -2374,6 +2717,9 @@ int main()
          field, i, j, k, component, 1.0
       );
       if (!close_enough(dx, 4.0 * i * i * i + 2.0 * j)
+          || !close_enough(dx_lower, 2.0 * j)
+          || !close_enough(dx_near_lower, 4.0 + 2.0 * j)
+          || !close_enough(dx_upper, 4.0 * 8.0 * 8.0 * 8.0 + 2.0 * j)
           || !close_enough(dxx, 12.0 * i * i)
           || !close_enough(dxy, 2.0)
           || !close_enough(upwind, 4.0 * i * i * i + 2.0 * j)
@@ -2415,7 +2761,19 @@ int main()
          && check_topology_centering_transfer<6, 3>()
          && check_topology_centering_transfer<8, 1>()
          && check_topology_centering_transfer<8, 2>()
-         && check_topology_centering_transfer<8, 3>();
+         && check_topology_centering_transfer<8, 3>()
+         && check_bounded_topology_centering_transfer<2, 1>()
+         && check_bounded_topology_centering_transfer<2, 2>()
+         && check_bounded_topology_centering_transfer<2, 3>()
+         && check_bounded_topology_centering_transfer<4, 1>()
+         && check_bounded_topology_centering_transfer<4, 2>()
+         && check_bounded_topology_centering_transfer<4, 3>()
+         && check_bounded_topology_centering_transfer<6, 1>()
+         && check_bounded_topology_centering_transfer<6, 2>()
+         && check_bounded_topology_centering_transfer<6, 3>()
+         && check_bounded_topology_centering_transfer<8, 1>()
+         && check_bounded_topology_centering_transfer<8, 2>()
+         && check_bounded_topology_centering_transfer<8, 3>();
       if (!centering_transfers_pass) {
          std::cerr << "generated high-order centering-transfer mismatch\n";
          return 1;
@@ -2656,6 +3014,198 @@ int main()
       const auto sph_scale = pyfluid_amrex::coordinate_scale_factors<pyfluid_amrex::MeshSpherical>(2.0, 0.5, 0.0);
       if (!close_enough(sph_scale[2], 2.0 * std::sin(0.5))) {
          std::cerr << "spherical coordinate scale provider mismatch\n";
+         return 1;
+      }
+   }
+   {
+      const auto integrands = pyfluid_amrex::generated::conserved_diagnostic_integrands(
+         2.0, 3.0, -4.0, 5.0, 7.0, 1.0, 2.0, -2.0,
+         0.5, -1.0, 2.0, -3.0, 0.25, 0.5, 0.75, -0.125
+      );
+      if (
+         !close_enough(integrands.mass, 2.0)
+         || !close_enough(integrands.angular_momentum1, 3.0)
+         || !close_enough(integrands.angular_momentum2, 3.5)
+         || !close_enough(integrands.angular_momentum3, 1.0)
+         || !close_enough(integrands.magnetic_energy, 4.5)
+         || !close_enough(integrands.gravity_potential_energy, -2.625)
+         || !close_enough(integrands.passive_mass, 0.75)
+         || !close_enough(integrands.divb, 0.125)
+      ) {
+         std::cerr << "generated conserved diagnostic integrand mismatch\n";
+         return 1;
+      }
+
+      const pyfluid_amrex::RMHDPrimitive rmhd_primitive{
+         1.0, 1.5, 1.0, 0.2, -0.1, 0.05, 0.75, 0.3, -0.2
+      };
+      const pyfluid_amrex::SpacetimeMetric flat_metric{};
+      const auto rmhd_integrands =
+         pyfluid_amrex::generated::rmhd_diagnostic_integrands(
+            rmhd_primitive, flat_metric
+         );
+      if (
+         !close_enough(rmhd_integrands.electromagnetic_energy, 0.358378125)
+         || !close_enough(rmhd_integrands.b_squared, 0.66824375)
+         || !close_enough(
+            rmhd_integrands.enthalpy_magnetization, 0.66824375 / 3.5
+         )
+         || !close_enough(rmhd_integrands.plasma_beta, 2.0 / 0.66824375)
+         || !close_enough(
+            rmhd_integrands.lorentz_factor, 1.0 / std::sqrt(1.0 - 0.0525)
+         )
+      ) {
+         std::cerr << "generated RMHD diagnostic integrand mismatch\n";
+         return 1;
+      }
+
+      pyfluid_amrex::Z4cState minkowski{};
+      minkowski.chi = 1.0;
+      minkowski.gamma_tilde11 = 1.0;
+      minkowski.gamma_tilde22 = 1.0;
+      minkowski.gamma_tilde33 = 1.0;
+      minkowski.lapse = 1.0;
+      const pyfluid_amrex::Z4cSpatialDerivatives zero_derivatives{};
+      const pyfluid_amrex::Vector3 position{1.0, -2.0, 3.0};
+      const auto flux = pyfluid_amrex::generated::adm_flux_integrands(
+         minkowski, zero_derivatives, position
+      );
+      const auto vacuum_volume =
+         pyfluid_amrex::generated::adm_constraint_volume_integrands(
+            minkowski,
+            zero_derivatives,
+            pyfluid_amrex::vacuum_z4c_matter(),
+            position
+         );
+      const auto metric = pyfluid_amrex::generated::z4c_conformal_metric(minkowski);
+      const auto connections = pyfluid_amrex::generated::z4c_connections(
+         minkowski, zero_derivatives, metric
+      );
+      const auto geometry = pyfluid_amrex::generated::z4c_diagnostic_geometry(
+         minkowski, zero_derivatives, metric, connections
+      );
+      const auto radiation = pyfluid_amrex::generated::weyl_radiation_integrands(
+         minkowski,
+         zero_derivatives,
+         metric,
+         connections,
+         geometry,
+         pyfluid_amrex::vacuum_z4c_matter()
+      );
+      const auto psi4 = pyfluid_amrex::generated::psi4_from_weyl(
+         metric, radiation, position
+      );
+      if (
+         !close_enough(flux.mass1, 0.0)
+         || !close_enough(flux.mass2, 0.0)
+         || !close_enough(flux.mass3, 0.0)
+         || !close_enough(flux.linear_momentum11, 0.0)
+         || !close_enough(flux.linear_momentum12, 0.0)
+         || !close_enough(flux.linear_momentum13, 0.0)
+         || !close_enough(flux.linear_momentum21, 0.0)
+         || !close_enough(flux.linear_momentum22, 0.0)
+         || !close_enough(flux.linear_momentum23, 0.0)
+         || !close_enough(flux.linear_momentum31, 0.0)
+         || !close_enough(flux.linear_momentum32, 0.0)
+         || !close_enough(flux.linear_momentum33, 0.0)
+         || !close_enough(flux.angular_momentum11, 0.0)
+         || !close_enough(flux.angular_momentum12, 0.0)
+         || !close_enough(flux.angular_momentum13, 0.0)
+         || !close_enough(flux.angular_momentum21, 0.0)
+         || !close_enough(flux.angular_momentum22, 0.0)
+         || !close_enough(flux.angular_momentum23, 0.0)
+         || !close_enough(flux.angular_momentum31, 0.0)
+         || !close_enough(flux.angular_momentum32, 0.0)
+         || !close_enough(flux.angular_momentum33, 0.0)
+         || !close_enough(vacuum_volume.mass, 0.0)
+         || !close_enough(vacuum_volume.linear_momentum1, 0.0)
+         || !close_enough(vacuum_volume.linear_momentum2, 0.0)
+         || !close_enough(vacuum_volume.linear_momentum3, 0.0)
+         || !close_enough(vacuum_volume.angular_momentum1, 0.0)
+         || !close_enough(vacuum_volume.angular_momentum2, 0.0)
+         || !close_enough(vacuum_volume.angular_momentum3, 0.0)
+         || !close_enough(radiation.electric11, 0.0)
+         || !close_enough(radiation.electric12, 0.0)
+         || !close_enough(radiation.electric13, 0.0)
+         || !close_enough(radiation.electric22, 0.0)
+         || !close_enough(radiation.electric23, 0.0)
+         || !close_enough(radiation.electric33, 0.0)
+         || !close_enough(radiation.magnetic11, 0.0)
+         || !close_enough(radiation.magnetic12, 0.0)
+         || !close_enough(radiation.magnetic13, 0.0)
+         || !close_enough(radiation.magnetic22, 0.0)
+         || !close_enough(radiation.magnetic23, 0.0)
+         || !close_enough(radiation.magnetic33, 0.0)
+         || !close_enough(psi4.psi4_real, 0.0)
+         || !close_enough(psi4.psi4_imaginary, 0.0)
+      ) {
+         std::cerr << "generated Minkowski ADM/radiation diagnostic mismatch\n";
+         return 1;
+      }
+
+      constexpr amrex::Real trace_curvature = 0.6;
+      pyfluid_amrex::Z4cState homogeneous = minkowski;
+      homogeneous.k_hat = trace_curvature;
+      pyfluid_amrex::Z4cMatter constraint_matter{};
+      constraint_matter.rho = trace_curvature * trace_curvature
+         / (24.0 * pyfluid_amrex::constants::pi);
+      const auto constrained_volume =
+         pyfluid_amrex::generated::adm_constraint_volume_integrands(
+            homogeneous, zero_derivatives, constraint_matter, position
+         );
+      if (!close_enough(constrained_volume.mass, 0.0)) {
+         std::cerr << "Hamiltonian-substituted ADM mass integrand mismatch\n";
+         return 1;
+      }
+
+      constexpr amrex::Real conformal_gradient = 0.2;
+      pyfluid_amrex::Z4cSpatialDerivatives conformal_derivatives{};
+      conformal_derivatives.d_chi[0] = -4.0 * conformal_gradient;
+      const auto conformal_flux = pyfluid_amrex::generated::adm_flux_integrands(
+         minkowski, conformal_derivatives, position
+      );
+      const auto conformal_volume =
+         pyfluid_amrex::generated::adm_constraint_volume_integrands(
+            minkowski,
+            conformal_derivatives,
+            pyfluid_amrex::vacuum_z4c_matter(),
+            position
+         );
+      if (
+         !close_enough(
+            conformal_flux.mass1,
+            -conformal_gradient / (2.0 * pyfluid_amrex::constants::pi)
+         )
+         || !close_enough(
+            conformal_volume.mass,
+            -conformal_gradient * conformal_gradient
+               / (2.0 * pyfluid_amrex::constants::pi)
+         )
+      ) {
+         std::cerr << "constraint-assisted conformal ADM mass mismatch\n";
+         return 1;
+      }
+
+      pyfluid_amrex::Z4cMatter momentum_matter{};
+      momentum_matter.momentum1 = 2.0;
+      momentum_matter.momentum2 = 3.0;
+      momentum_matter.momentum3 = 5.0;
+      const auto momentum_volume =
+         pyfluid_amrex::generated::adm_constraint_volume_integrands(
+            minkowski, zero_derivatives, momentum_matter, position
+         );
+      const auto matter_flux = pyfluid_amrex::generated::matter_energy_flux_integrands(
+         minkowski, metric, momentum_matter
+      );
+      if (
+         !close_enough(momentum_volume.angular_momentum1, -19.0)
+         || !close_enough(momentum_volume.angular_momentum2, 1.0)
+         || !close_enough(momentum_volume.angular_momentum3, 7.0)
+         || !close_enough(matter_flux.flux1, 2.0)
+         || !close_enough(matter_flux.flux2, 3.0)
+         || !close_enough(matter_flux.flux3, 5.0)
+      ) {
+         std::cerr << "momentum-constraint or matter-current diagnostic mismatch\n";
          return 1;
       }
    }

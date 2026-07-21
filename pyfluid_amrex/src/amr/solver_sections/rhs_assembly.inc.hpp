@@ -6,7 +6,6 @@
       LevelData& state,
       int lev_begin,
       int lev_end,
-      amrex::Real time,
       int ghost_cells = 0
    )
    {
@@ -25,6 +24,7 @@
             physics_system_,
             EOSMethod,
             eos,
+            recovery_atmosphere_,
             ghost_cells
          );
       }
@@ -58,7 +58,14 @@
    }
 
    template <int NComp, int EOSMethod, bool SubcyclingEnabled = false>
-   void compute_rhs_range(LevelData& input, amrex::Real reflux_weight, int lev_begin, int lev_end, amrex::Real rhs_time)
+   void compute_rhs_range(
+      LevelData& input,
+      amrex::Real reflux_weight,
+      int lev_begin,
+      int lev_end,
+      amrex::Real rhs_time,
+      amrex::Real forward_euler_dt
+   )
    {
       prepare_stage_sources<SubcyclingEnabled>(input, lev_begin, lev_end, rhs_time);
       amrex::Real rhs_wall_power = 0.0;
@@ -113,7 +120,7 @@
             } else {
                launch_flux_direction_runtime<NComp, 0, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, stored_spacetime
+                  rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxX, detail_start);
@@ -134,7 +141,7 @@
             } else {
                launch_flux_direction_runtime<NComp, 1, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, stored_spacetime
+                  rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxY, detail_start);
@@ -156,7 +163,7 @@
             } else {
                launch_flux_direction_runtime<NComp, 2, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, stored_spacetime
+                  rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxZ, detail_start);
@@ -190,7 +197,8 @@
                );
             } else {
                launch_fluxes_runtime<NComp, EOSMethod>(
-                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
+                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
+                  rhs_time, nullptr, nullptr, &recovery_atmosphere_
                );
             }
          }
@@ -203,8 +211,6 @@
          if (patch_union_domain_enabled() && !has_mhd_components<NComp>()) {
             apply_patch_union_hydro_wall_fluxes<NComp>(fluxes, *primitive_[lev], Geom(lev), patch_union_domain_boxes(lev));
          }
-         debug_check_fluxes(lev, use_solid_mask, "flux fill");
-         accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
          if (use_solid_mask && moving_wall_work_enabled_ && reflux_weight != 0.0) {
             amrex::iMultiFab valid_mask = valid_cell_mask(lev);
             const amrex::Real wall_power = solid_wall_energy_power_cutcell(
@@ -291,6 +297,24 @@
             });
             profile_.end(ProfileStage::Sources, stage_start);
          }
+         if (physics_system_ == PhysicalSystem::RHD) {
+            apply_rhd_admissibility_flux_limiter(
+               fluxes,
+               *fluid_state_.rhs()[lev],
+               *input[lev],
+               *primitive_[lev],
+               eos_params(cfg_),
+               eos_method_,
+               Geom(lev),
+               fixed_spacetime_parameters(cfg_),
+               stored_spacetime,
+               recovery_atmosphere_,
+               rhs_time,
+               forward_euler_dt
+            );
+         }
+         debug_check_fluxes(lev, use_solid_mask, "final flux");
+         accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
          debug_check_rhs_level(lev, "RHS assembly");
          stage_start = profile_.begin();
          add_fluxes_to_registers(lev, reflux_weight);
@@ -308,6 +332,7 @@
       int lev_begin,
       int lev_end,
       amrex::Real stage_time,
+      amrex::Real forward_euler_dt,
       amrex::Real fine_step_start = -1.0,
       int rk_stage = 0
    )
@@ -321,6 +346,17 @@
             fine_step_start,
             rk_stage
          );
+         const char* stage_context = input_slot == EvolutionStageSlot::State
+            ? "relativistic state-stage input"
+            : (input_slot == EvolutionStageSlot::Scratch
+                  ? "relativistic scratch-stage input"
+                  : "relativistic next-stage input");
+         debug_check_relativistic_stage_range(
+            fluid_state_.stage(input_slot), lev_begin, lev_end, stage_context, stage_time
+         );
+         project_relativistic_atmosphere_range<EOSMethod>(
+            fluid_state_.stage(input_slot), lev_begin, lev_end
+         );
       }
       if (spacetime_state_.active()) {
          apply_stored_spacetime_fluid_boundaries_range(
@@ -332,7 +368,8 @@
          reflux_weight,
          lev_begin,
          lev_end,
-         stage_time
+         stage_time,
+         forward_euler_dt
       );
       if (spacetime_state_.evolves()) {
          fill_spacetime_matter_range(lev_begin, lev_end);
@@ -346,9 +383,17 @@
    }
 
    template <int NComp, int EOSMethod>
-   void compute_rhs_all(LevelData& input, amrex::Real reflux_weight, amrex::Real rhs_time)
+   void compute_rhs_all(
+      LevelData& input,
+      amrex::Real reflux_weight,
+      amrex::Real rhs_time,
+      amrex::Real forward_euler_dt
+   )
    {
-      compute_rhs_range<NComp, EOSMethod, false>(input, reflux_weight, 0, finestLevel() + 1, rhs_time);
+      compute_rhs_range<NComp, EOSMethod, false>(
+         input, reflux_weight, 0, finestLevel() + 1, rhs_time,
+         forward_euler_dt
+      );
    }
 
    template <int NComp>
@@ -413,7 +458,8 @@
                );
             } else {
                launch_flux_direction_runtime<NComp, 0, EOSMethod>(
-                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
+                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
+                  rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxX, detail_start);
@@ -433,7 +479,8 @@
                );
             } else {
                launch_flux_direction_runtime<NComp, 1, EOSMethod>(
-                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
+                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
+                  rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxY, detail_start);
@@ -454,7 +501,8 @@
                );
             } else {
                launch_flux_direction_runtime<NComp, 2, EOSMethod>(
-                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
+                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
+                  rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxZ, detail_start);
@@ -474,7 +522,8 @@
                );
             } else {
                launch_fluxes_runtime<NComp, EOSMethod>(
-                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr, rhs_time
+                  fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
+                  rhs_time, nullptr, nullptr, &recovery_atmosphere_
                );
             }
          }

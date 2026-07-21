@@ -141,7 +141,7 @@ AMR_OVERRIDES = (
     "amr.grid_eff=0.8",
     "amr.n_error_buf=3 3",
     "amr.tag_metric=lohner",
-    "amr.state_interp=conservative",
+    "amr.state_interp=component-conservative",
     "amr.level_cell_budget_side=384",
     "amr.total_cell_budget=250000",
 )

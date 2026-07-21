@@ -5,7 +5,13 @@ from pathlib import Path
 
 import sympy as sp
 
-from .diagnostic_catalog import POSTPROCESS_DIAGNOSTICS, RUNTIME_SCALAR_DIAGNOSTICS
+from .diagnostic_catalog import (
+    DIAGNOSTIC_GROUPS,
+    POSTPROCESS_DIAGNOSTICS,
+    RUNTIME_SCALAR_DIAGNOSTICS,
+    DiagnosticStorage,
+)
+from .diagnostic_equations import DIAGNOSTIC_EQUATION_RECORDS
 from .equation_catalog import equation_of_state_records, fluid_equation_systems
 from .field_catalog import (
     AUXILIARY_FIELDS,
@@ -294,6 +300,28 @@ def render_equation_markdown() -> str:
             )
         )
 
+    lines.extend(("## Diagnostic Integrands", ""))
+    for diagnostic in DIAGNOSTIC_EQUATION_RECORDS:
+        lines.extend(
+            (
+                f"### {diagnostic.title}",
+                "",
+                f"`{diagnostic.identifier}`",
+                "",
+                rf"$${diagnostic.latex}.$$",
+                "",
+            )
+        )
+
+    lines.extend(("## Runtime Diagnostic Groups", ""))
+    lines.append("| Group | Diagnostics |")
+    lines.append("|---|---|")
+    for group, diagnostics in DIAGNOSTIC_GROUPS.items():
+        lines.append(
+            f"| `{group}` | {', '.join(f'`{name}`' for name in diagnostics)} |"
+        )
+    lines.append("")
+
     lines.extend(("## Grid Fields", ""))
     lines.append("| Field | Label | Components | Centering | Role | Sector |")
     lines.append("|---|---|---|---|---|---|")
@@ -343,6 +371,17 @@ def render_equation_latex() -> str:
                 rf"\[P={sp.latex(eos.pressure)},\qquad u(P,\rho)={sp.latex(eos.energy_from_pressure)},\qquad c_s^2={sp.latex(eos.sound_speed_squared)}.\]",
             )
         )
+    body.append(r"\section{Diagnostic Integrands}")
+    for diagnostic in DIAGNOSTIC_EQUATION_RECORDS:
+        title = diagnostic.title.replace("_", r"\_")
+        body.extend(
+            (
+                rf"\subsection*{{{title}}}",
+                r"\[",
+                diagnostic.latex,
+                r"\]",
+            )
+        )
     body.extend((r"\end{document}", ""))
     return "\n".join(body)
 
@@ -388,7 +427,15 @@ def render_field_catalog_json() -> str:
             "name": diagnostic.name,
             "label": diagnostic.label,
             "evaluation": diagnostic.evaluation.value,
+            "operation": diagnostic.operation.value,
+            "storage": diagnostic.storage.value,
+            "groups": list(diagnostic.groups),
             "dependencies": list(diagnostic.dependencies),
+            "requirements": list(diagnostic.requirements),
+            "family": diagnostic.family or diagnostic.name,
+            "value_kind": diagnostic.value_kind.value,
+            "component_index": diagnostic.component_index,
+            "component_count": diagnostic.component_count,
         }
         for diagnostic in (*RUNTIME_SCALAR_DIAGNOSTICS, *POSTPROCESS_DIAGNOSTICS)
     ]
@@ -398,6 +445,7 @@ def render_field_catalog_json() -> str:
             "component_labels": component_labels,
             "fields": fields,
             "diagnostics": diagnostics,
+            "diagnostic_groups": DIAGNOSTIC_GROUPS,
         },
         indent=2,
         sort_keys=True,
@@ -405,21 +453,117 @@ def render_field_catalog_json() -> str:
 
 
 def render_diagnostic_catalog_header() -> str:
-    names = ",\n".join(
-        f"   {_cpp_string(diagnostic.name)}"
+    storage_types = {
+        DiagnosticStorage.REAL: "amrex::Real",
+        DiagnosticStorage.INTEGER: "int",
+        DiagnosticStorage.LONG: "amrex::Long",
+    }
+    members = "\n".join(
+        f"   {storage_types[diagnostic.storage]} {diagnostic.name} = {diagnostic.default};"
         for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS
     )
+    enum_values = "\n".join(
+        f"   {''.join(part.title() for part in diagnostic.name.split('_'))} = {index},"
+        for index, diagnostic in enumerate(RUNTIME_SCALAR_DIAGNOSTICS)
+    )
+    descriptor_values = ",\n".join(
+        "   {"
+        + ", ".join(
+            (
+                f"ScalarDiagnosticId::{''.join(part.title() for part in diagnostic.name.split('_'))}",
+                _cpp_string(diagnostic.name),
+                _cpp_string(diagnostic.label),
+                _cpp_string(diagnostic.operation.value),
+                _cpp_string(",".join(diagnostic.requirements)),
+                _cpp_string(diagnostic.family or diagnostic.name),
+                _cpp_string(diagnostic.value_kind.value),
+                str(diagnostic.component_index),
+                str(diagnostic.component_count),
+            )
+        )
+        + "}"
+        for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS
+    )
+    visitor_lines = "\n".join(
+        f"   visitor(ScalarDiagnosticId::{''.join(part.title() for part in diagnostic.name.split('_'))}, "
+        f"{_cpp_string(diagnostic.name)}, diagnostics.{diagnostic.name});"
+        for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS
+    )
+    group_names = tuple(DIAGNOSTIC_GROUPS)
+    group_enum_values = "\n".join(
+        f"   {''.join(part.title() for part in group.split('_'))} = {index},"
+        for index, group in enumerate(group_names)
+    )
+    group_entries = []
+    for group in group_names:
+        members_for_group = set(DIAGNOSTIC_GROUPS[group])
+        flags = ", ".join(
+            "true" if diagnostic.name in members_for_group else "false"
+            for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS
+        )
+        group_entries.append(
+            "   {"
+            f"ScalarDiagnosticGroup::{''.join(part.title() for part in group.split('_'))}, "
+            f"{_cpp_string(group)}, {{{flags}}}"
+            "}"
+        )
+    group_descriptor_values = ",\n".join(group_entries)
     return f"""// Generated by pyfluid_codegen.diagnostic_catalog. Do not edit.
 #pragma once
 
+#include <AMReX_REAL.H>
+
 #include <array>
+#include <cstddef>
 #include <string_view>
 
 namespace pyfluid_amrex {{
 
-inline constexpr std::array<std::string_view, {len(RUNTIME_SCALAR_DIAGNOSTICS)}> ScalarDiagnosticColumns = {{{{
-{names}
+enum class ScalarDiagnosticId : std::size_t {{
+{enum_values}
+   Count = {len(RUNTIME_SCALAR_DIAGNOSTICS)},
+}};
+
+enum class ScalarDiagnosticGroup : std::size_t {{
+{group_enum_values}
+   Count = {len(group_names)},
+}};
+
+struct ScalarDiagnosticInfo {{
+   ScalarDiagnosticId id;
+   std::string_view name;
+   std::string_view label;
+   std::string_view operation;
+   std::string_view requirements;
+   std::string_view family;
+   std::string_view value_kind;
+   std::size_t component_index;
+   std::size_t component_count;
+}};
+
+struct ScalarDiagnosticGroupInfo {{
+   ScalarDiagnosticGroup id;
+   std::string_view name;
+   std::array<bool, {len(RUNTIME_SCALAR_DIAGNOSTICS)}> members;
+}};
+
+struct ScalarDiagnostics {{
+{members}
+}};
+
+inline constexpr std::array<ScalarDiagnosticInfo, {len(RUNTIME_SCALAR_DIAGNOSTICS)}> ScalarDiagnosticCatalog = {{{{
+{descriptor_values}
 }}}};
+
+inline constexpr std::array<ScalarDiagnosticGroupInfo, {len(group_names)}> ScalarDiagnosticGroups = {{{{
+{group_descriptor_values}
+}}}};
+
+template <typename Visitor>
+inline void visit_scalar_diagnostics(ScalarDiagnostics const& diagnostics, Visitor&& visitor)
+{{
+{visitor_lines}
+}}
 
 }} // namespace pyfluid_amrex
 """

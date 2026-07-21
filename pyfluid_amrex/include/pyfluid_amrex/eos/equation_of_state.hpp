@@ -150,6 +150,32 @@ amrex::Real eos_pressure_from_density_energy(
    }
 }
 
+template <int EOSMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+EOSThermodynamicState eos_project_to_floors(
+   amrex::Real rho,
+   amrex::Real pressure,
+   EOSParams const& eos
+) noexcept
+{
+   const amrex::Real floored_rho = amrex::max(rho, eos.rho_floor);
+   const amrex::Real floored_pressure = amrex::max(
+      amrex::max(pressure, eos.pressure_floor),
+      eos_cold_pressure<EOSMethod>(floored_rho, eos)
+   );
+   const amrex::Real internal_energy_density =
+      eos_internal_energy_density_from_pressure<EOSMethod>(
+         floored_rho, floored_pressure, eos
+      );
+   return {
+      floored_rho,
+      internal_energy_density / floored_rho,
+      eos_pressure_from_density_energy<EOSMethod>(
+         floored_rho, internal_energy_density, eos
+      ),
+   };
+}
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real eos_pressure_from_density_energy_runtime(
    int eos_method,
