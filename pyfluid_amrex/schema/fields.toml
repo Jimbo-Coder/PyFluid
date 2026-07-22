@@ -33,11 +33,24 @@ auxiliary = [
   "gravity_potential",
   "gravity_gradient",
 ]
+physical_fluid = [
+  "physical_density",
+  "physical_velocity",
+  "physical_pressure",
+]
+adm_initial_data = [
+  "adm_spatial_metric",
+  "adm_extrinsic_curvature",
+  "adm_lapse",
+  "adm_shift",
+]
 
 [special_fields]
 magnetic = "magnetic_field"
 ct_magnetic = "ct_magnetic_field"
 passive_scalar = "passive_scalar"
+physical_magnetic = "physical_magnetic_field"
+physical_passive_scalar = "physical_passive_scalar"
 
 [[field]]
 key = "rho"
@@ -191,6 +204,243 @@ sector = "Fluid"
 [[field.components]]
 name = "dye_mass"
 label = '\rho C'
+
+[[field]]
+key = "physical_density"
+name = "rest_mass_density"
+label = '\rho'
+value_kind = "Scalar"
+role = "InitialDataState"
+evolution_kind = "None"
+sector = "Fluid"
+checkpoint = false
+output = false
+
+[[field.components]]
+name = "rho"
+label = '\rho'
+
+[[field]]
+key = "physical_velocity"
+name = "velocity"
+label = 'v^i'
+value_kind = "Vector3"
+role = "InitialDataState"
+evolution_kind = "None"
+sector = "Fluid"
+checkpoint = false
+output = false
+
+[[field.components]]
+name = "v1"
+label = 'v^{1}'
+symmetry = "Vector1"
+
+[[field.components]]
+name = "v2"
+label = 'v^{2}'
+symmetry = "Vector2"
+
+[[field.components]]
+name = "v3"
+label = 'v^{3}'
+symmetry = "Vector3"
+
+[[field]]
+key = "physical_pressure"
+name = "pressure"
+label = 'p'
+value_kind = "Scalar"
+role = "InitialDataState"
+evolution_kind = "None"
+sector = "Fluid"
+checkpoint = false
+output = false
+
+[[field.components]]
+name = "pressure"
+label = 'p'
+
+[[field]]
+key = "physical_magnetic_field"
+name = "physical_magnetic_field"
+label = 'B^i'
+value_kind = "Vector3"
+role = "InitialDataState"
+evolution_kind = "None"
+sector = "Fluid"
+checkpoint = false
+output = false
+requires_mhd = true
+
+[[field.components]]
+name = "b1"
+label = 'B_{1}'
+symmetry = "Vector1"
+
+[[field.components]]
+name = "b2"
+label = 'B_{2}'
+symmetry = "Vector2"
+
+[[field.components]]
+name = "b3"
+label = 'B_{3}'
+symmetry = "Vector3"
+
+[[field]]
+key = "physical_passive_scalar"
+name = "passive_scalar_fraction"
+label = 'C'
+value_kind = "Scalar"
+role = "InitialDataState"
+evolution_kind = "None"
+sector = "Fluid"
+checkpoint = false
+output = false
+
+[[field.components]]
+name = "dye_fraction"
+label = 'C'
+
+[[field]]
+key = "adm_spatial_metric"
+name = "spatial_metric"
+label = '\gamma_{ij}'
+value_kind = "SymmetricTensor3"
+role = "InitialDataState"
+evolution_kind = "None"
+sector = "Spacetime"
+checkpoint = false
+output = false
+
+[[field.components]]
+name = "gamma11"
+label = '\gamma_{11}'
+centering = "Vertex"
+symmetry = "Tensor11"
+
+[[field.components]]
+name = "gamma12"
+label = '\gamma_{12}'
+centering = "Vertex"
+symmetry = "Tensor12"
+
+[[field.components]]
+name = "gamma13"
+label = '\gamma_{13}'
+centering = "Vertex"
+symmetry = "Tensor13"
+
+[[field.components]]
+name = "gamma22"
+label = '\gamma_{22}'
+centering = "Vertex"
+symmetry = "Tensor22"
+
+[[field.components]]
+name = "gamma23"
+label = '\gamma_{23}'
+centering = "Vertex"
+symmetry = "Tensor23"
+
+[[field.components]]
+name = "gamma33"
+label = '\gamma_{33}'
+centering = "Vertex"
+symmetry = "Tensor33"
+
+[[field]]
+key = "adm_extrinsic_curvature"
+name = "extrinsic_curvature"
+label = 'K_{ij}'
+value_kind = "SymmetricTensor3"
+role = "InitialDataState"
+evolution_kind = "None"
+sector = "Spacetime"
+checkpoint = false
+output = false
+
+[[field.components]]
+name = "k11"
+label = 'K_{11}'
+centering = "Vertex"
+symmetry = "Tensor11"
+
+[[field.components]]
+name = "k12"
+label = 'K_{12}'
+centering = "Vertex"
+symmetry = "Tensor12"
+
+[[field.components]]
+name = "k13"
+label = 'K_{13}'
+centering = "Vertex"
+symmetry = "Tensor13"
+
+[[field.components]]
+name = "k22"
+label = 'K_{22}'
+centering = "Vertex"
+symmetry = "Tensor22"
+
+[[field.components]]
+name = "k23"
+label = 'K_{23}'
+centering = "Vertex"
+symmetry = "Tensor23"
+
+[[field.components]]
+name = "k33"
+label = 'K_{33}'
+centering = "Vertex"
+symmetry = "Tensor33"
+
+[[field]]
+key = "adm_lapse"
+name = "adm_lapse"
+label = '\alpha'
+value_kind = "Scalar"
+role = "InitialDataState"
+evolution_kind = "None"
+sector = "Spacetime"
+checkpoint = false
+output = false
+
+[[field.components]]
+name = "lapse"
+label = '\alpha'
+centering = "Vertex"
+
+[[field]]
+key = "adm_shift"
+name = "adm_shift"
+label = '\beta^i'
+value_kind = "Vector3"
+role = "InitialDataState"
+evolution_kind = "None"
+sector = "Spacetime"
+checkpoint = false
+output = false
+
+[[field.components]]
+name = "shift1"
+label = '\beta_{1}'
+centering = "Vertex"
+symmetry = "Vector1"
+
+[[field.components]]
+name = "shift2"
+label = '\beta_{2}'
+centering = "Vertex"
+symmetry = "Vector2"
+
+[[field.components]]
+name = "shift3"
+label = '\beta_{3}'
+centering = "Vertex"
+symmetry = "Vector3"
 
 [[field]]
 key = "chi"

@@ -26,6 +26,7 @@ from validation_common import (
    amrex_executable,
    append_validation_history,
    materialize_run_input,
+   read_scalar_rows,
    repo_relative,
    run_amrex,
    run_mpi,
@@ -419,6 +420,86 @@ def validate_restart(args: argparse.Namespace) -> dict[str, object]:
    }
 
 
+def validate_physical_id(
+   args: argparse.Namespace,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+   writer_dir = RUN_ROOT / "physical_id_writer"
+   artifact = writer_dir / "physical_id"
+   common = {
+      "pyfluid.max_step": "1",
+      "pyfluid.final_time": "-1",
+      "pyfluid.plot_int": "1",
+      "pyfluid.scalar_int": "1",
+      "pyfluid.checkpoint_int": "-1",
+   }
+   writer_dir, writer_scalar = run_case(
+      "physical_id_writer",
+      INPUTS / "rmhd_uniform_2d_ct.in",
+      {
+         **common,
+         "initial_data.output_file": repo_relative(artifact),
+      },
+      args,
+      dim=2,
+   )
+   reader_dir, reader_scalar = run_case(
+      "physical_id_reader",
+      INPUTS / "rmhd_uniform_2d_ct.in",
+      {
+         **common,
+         "initial_data.input_file": repo_relative(artifact),
+      },
+      args,
+      dim=2,
+   )
+   required_fields = {
+      "Header",
+      "Header.meta",
+      "physical_fluid.h5",
+      "adm_geometry.h5",
+      "evolution_fluid_cache.h5",
+      "evolution_spacetime_cache.h5",
+      "face_b1.h5",
+      "face_b2.h5",
+   }
+   missing = sorted(
+      name for name in required_fields if not (artifact / name).is_file()
+   )
+   if missing:
+      raise RuntimeError(
+         "RMHD physical-ID artifact is incomplete: " + ", ".join(missing)
+      )
+   writer_rows = read_scalar_rows(writer_dir)
+   reader_rows = read_scalar_rows(reader_dir)
+   ignored = {"mcells_per_s", "layout_mcells_per_s", "sim_time_per_s"}
+   comparable_writer = [
+      {key: value for key, value in row.items() if key not in ignored}
+      for row in writer_rows
+   ]
+   comparable_reader = [
+      {key: value for key, value in row.items() if key not in ignored}
+      for row in reader_rows
+   ]
+   if comparable_writer != comparable_reader:
+      raise RuntimeError(
+         "RMHD physical-ID direct evolution differs from fresh initialization"
+      )
+   writer_log = (writer_dir / "run.log").read_text()
+   reader_log = (reader_dir / "run.log").read_text()
+   if "wrote physical initial data:" not in writer_log:
+      raise RuntimeError("RMHD physical-ID writer did not report its artifact")
+   if "loaded physical initial data:" not in reader_log:
+      raise RuntimeError("RMHD physical-ID reader did not report direct loading")
+   return {
+      "kind": "physical_id",
+      "case": "rmhd_ct_direct_round_trip",
+      "status": "PASS",
+      "metric": "exact_physical_scalar_rows",
+      "value": len(writer_rows),
+      "run_dir": repo_relative(reader_dir),
+   }, [writer_scalar, reader_scalar]
+
+
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--level", choices=("quick", "standard"), default="standard")
@@ -454,6 +535,9 @@ def main() -> int:
       rows.append(ct_amr)
       scalar_rows.append(scalar)
       rows.append(validate_restart(args))
+      physical_id, scalars = validate_physical_id(args)
+      rows.append(physical_id)
+      scalar_rows.extend(scalars)
 
    write_tsv(
       RESULTS,

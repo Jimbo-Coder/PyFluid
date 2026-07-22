@@ -7,8 +7,8 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-22, branch `main`, through the local Cycle 215
-upper-rotation and XCTS self-consistent-field pass. Use the commit
+Last reconciled: 2026-07-22, branch `main`, through the local Cycle 216
+physical-ID and explicit rotating-sequence pass. Use the commit
 containing this snapshot plus the exact newer continuity-cycle evidence rather
 than inferring it from an earlier baseline.
 
@@ -119,6 +119,19 @@ The latest recorded evidence is not one monolithic green result:
   consistency, architecture, Python syntax, sparse diagnostic plotting, the
   focused rotating gate, quick gate, and all standard gates pass. No full or
   stability suite was run.
+- Cycle 216 adds explicit in-process angular-velocity targets plus one common
+  physical-ID artifact for Newtonian fluid, TOV/RNS, RHD, and RMHD states. Its
+  catalog-defined physical core contains primitives, ADM fields when present,
+  and CT face fields when present; exact evolution caches support lossless
+  same-hierarchy direct loading. A saved rotating XCTS model can seed a larger
+  target with the same rotation law. Flat HD one-step and flat RMHD+CT
+  round trips preserve all physical scalar diagnostics exactly, and an N=24
+  RNS direct load reproduces its step-zero diagnostics while skipping XCTS.
+  Cross-hierarchy interpolation/extrapolation is not implemented; the reader
+  rejects mismatched hierarchy or physically relevant EoS metadata. The final
+  quick and 42/42 standard gates pass; RMHD standard permanently covers an
+  exact one-step physical-ID round trip. Persisted XCTS seeds reconstruct
+  `A_conformal = psi^6 a_tilde` before continuing rotation.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.

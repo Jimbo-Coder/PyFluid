@@ -31,8 +31,9 @@ mathematics into strings merely to make it declarative.
 
 `fields.toml` is the single declaration point for every canonical GF: any named
 field that is evolved, retained between operations, user-selectable,
-output-visible, or checkpoint eligible. Solver-local RHS, RK-stage, transfer,
-elliptic residual, and other work arrays remain scratch and are not GFs.
+output-visible, checkpoint eligible, or part of the reusable physical
+initial-data contract. Solver-local RHS, RK-stage, transfer, elliptic residual,
+and other work arrays remain scratch and are not GFs.
 
 A representative entry is:
 

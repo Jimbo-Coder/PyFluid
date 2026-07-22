@@ -586,6 +586,8 @@ RotatingStarParameters rotating_star_parameters(
    parameters.relative_tolerance = cfg.initial_data_matter_relative_tolerance;
    parameters.max_iterations = cfg.initial_data_matter_max_iterations;
    parameters.continuation_steps = cfg.initial_data_rotation_continuation_steps;
+   parameters.continuation_targets =
+      cfg.initial_data_rotation_continuation_targets;
    parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
    if (!provider.tov.active() || !(parameters.injection_energy > 0.0)) {
       amrex::Abort("rotating-star continuation requires an active TOV seed");

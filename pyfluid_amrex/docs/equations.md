@@ -198,6 +198,15 @@ $$\mathcal F_{\rm matter}=\oint \alpha\sqrt{\gamma}\,J^i_{(t)}dS_i,\qquadJ^i_{(t
 | `magnetic_field` | $B^i$ | `b1, b2, b3` | `Cell, Cell, Cell` | `EvolvedState` | `Fluid` |
 | `ct_magnetic_field` | $B^i$ | `face_b1, face_b2, face_b3` | `Face1, Face2, Face3` | `EvolutionAuxiliary` | `Fluid` |
 | `passive_scalar` | $\rho C$ | `dye_mass` | `Cell` | `EvolvedState` | `Fluid` |
+| `rest_mass_density` | $\rho$ | `rho` | `Cell` | `InitialDataState` | `Fluid` |
+| `velocity` | $v^i$ | `v1, v2, v3` | `Cell, Cell, Cell` | `InitialDataState` | `Fluid` |
+| `pressure` | $p$ | `pressure` | `Cell` | `InitialDataState` | `Fluid` |
+| `physical_magnetic_field` | $B^i$ | `b1, b2, b3` | `Cell, Cell, Cell` | `InitialDataState` | `Fluid` |
+| `passive_scalar_fraction` | $C$ | `dye_fraction` | `Cell` | `InitialDataState` | `Fluid` |
+| `spatial_metric` | $\gamma_{ij}$ | `gamma11, gamma12, gamma13, gamma22, gamma23, gamma33` | `Vertex, Vertex, Vertex, Vertex, Vertex, Vertex` | `InitialDataState` | `Spacetime` |
+| `extrinsic_curvature` | $K_{ij}$ | `k11, k12, k13, k22, k23, k33` | `Vertex, Vertex, Vertex, Vertex, Vertex, Vertex` | `InitialDataState` | `Spacetime` |
+| `adm_lapse` | $\alpha$ | `lapse` | `Vertex` | `InitialDataState` | `Spacetime` |
+| `adm_shift` | $\beta^i$ | `shift1, shift2, shift3` | `Vertex, Vertex, Vertex` | `InitialDataState` | `Spacetime` |
 | `chi` | $\chi$ | `chi` | `Vertex` | `EvolvedState` | `Spacetime` |
 | `gamma_tilde` | $\tilde{\gamma}_{ij}$ | `gamma_tilde11, gamma_tilde12, gamma_tilde13, gamma_tilde22, gamma_tilde23, gamma_tilde33` | `Vertex, Vertex, Vertex, Vertex, Vertex, Vertex` | `EvolvedState` | `Spacetime` |
 | `k_hat` | $\hat{K}$ | `k_hat` | `Vertex` | `EvolvedState` | `Spacetime` |

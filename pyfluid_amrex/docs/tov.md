@@ -178,6 +178,39 @@ mass-shedding frequency.
 
 Both the rotation-center effective potential and the surface `ln h` field are
 filled through one exchanged ghost layer before arbitrary-point interpolation.
+
+## Reusable Physical Initial Data
+
+Any current Newtonian, TOV, rotating-star, RHD, or RMHD initial state can write
+the common losslessly compressed physical-ID artifact with:
+
+```text
+initial_data.output_file = checkpoints/my_id
+```
+
+The artifact stores catalog-defined fluid primitives, ADM fields when
+spacetime is present, CT face fields when present, text metadata, and exact
+same-hierarchy evolution caches. Loading the same hierarchy with
+
+```text
+initial_data.input_file = checkpoints/my_id
+```
+
+starts evolution directly when the configured rotating target matches the
+saved one. For a rotating-star artifact, a larger angular-velocity target with
+the same law instead performs the next XCTS continuation step and can write a
+new artifact. Explicit in-process targets are provided in increasing magnitude
+without repeating the final target:
+
+```text
+initial_data.rotation_continuation_steps = 1
+initial_data.rotation_continuation_targets = 0.005 0.010 0.015
+initial_data.angular_velocity = 0.020
+```
+
+The current loader requires the saved hierarchy exactly. Interpolation to a
+wider or differently resolved evolution hierarchy is not yet implemented and
+is rejected.
 This is required when a linear interpolation stencil crosses an internal AMReX
 FAB boundary; otherwise the result depends on box decomposition and may read
 outside valid storage. `HierarchyInterpolationPlan` rejects a crossing stencil

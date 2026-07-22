@@ -190,7 +190,15 @@
       if (cfg_.restart_file.empty()) {
          InitFromScratch(0.0);
          clip_multipatch_initial_hierarchy(0.0);
-         materialize_constraint_solved_initial_data();
+         if (cfg_.initial_data_input_file.empty()) {
+            materialize_constraint_solved_initial_data();
+         } else {
+            const bool continue_constraint_solve =
+               load_physical_initial_data_artifact();
+            if (continue_constraint_solve) {
+               materialize_constraint_solved_initial_data(true);
+            }
+         }
       } else {
          load_checkpoint(cfg_.restart_file, time, dt);
       }
@@ -212,6 +220,9 @@
       const int start_step = level_steps_[0];
       run_evolution_preflight(time);
       debug_check_state_all_levels("initial accepted state", start_step, time, true);
+      if (!cfg_.initial_data_output_file.empty()) {
+         write_physical_initial_data_artifact();
+      }
 
       std::ofstream scalar_file;
       std::ofstream amr_level_file;

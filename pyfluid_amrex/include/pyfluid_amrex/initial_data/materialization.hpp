@@ -46,7 +46,8 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    EOSParams const& eos,
    InitialDataFieldSelection const& fields,
    ConformalConstraintFormulation formulation,
-   RotatingStarParameters const& rotating_star
+   RotatingStarParameters const& rotating_star,
+   bool seed_from_spacetime = false
 );
 
 } // namespace pyfluid_amrex

@@ -1,0 +1,52 @@
+#pragma once
+
+#include <AMReX_Geometry.H>
+#include <AMReX_IntVect.H>
+#include <AMReX_MultiFab.H>
+#include <AMReX_Vector.H>
+
+#include <array>
+#include <string>
+
+#include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/physical_system.hpp"
+
+namespace pyfluid_amrex {
+
+struct PhysicalInitialDataMetadata {
+   std::string source_ic;
+   std::string rotation_law;
+   amrex::Real angular_velocity = 0.0;
+};
+
+using ConstPhysicalIdField = amrex::Vector<amrex::MultiFab const*>;
+using MutablePhysicalIdField = amrex::Vector<amrex::MultiFab*>;
+using ConstPhysicalIdFaceFields =
+   std::array<ConstPhysicalIdField, AMREX_SPACEDIM>;
+using MutablePhysicalIdFaceFields =
+   std::array<MutablePhysicalIdField, AMREX_SPACEDIM>;
+
+void write_physical_initial_data(
+   std::string const& path,
+   RunConfig const& cfg,
+   PhysicalSystem system,
+   amrex::Vector<amrex::Geometry> const& geometry,
+   amrex::Vector<amrex::IntVect> const& refinement_ratios,
+   ConstPhysicalIdField const& primitive,
+   ConstPhysicalIdField const& evolution_fluid,
+   ConstPhysicalIdField const& evolution_spacetime,
+   ConstPhysicalIdFaceFields const& face_magnetic
+);
+
+PhysicalInitialDataMetadata read_physical_initial_data(
+   std::string const& path,
+   RunConfig const& cfg,
+   PhysicalSystem system,
+   amrex::Vector<amrex::Geometry> const& geometry,
+   amrex::Vector<amrex::IntVect> const& refinement_ratios,
+   MutablePhysicalIdField const& evolution_fluid,
+   MutablePhysicalIdField const& evolution_spacetime,
+   MutablePhysicalIdFaceFields const& face_magnetic
+);
+
+} // namespace pyfluid_amrex

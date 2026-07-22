@@ -104,6 +104,8 @@ struct RunConfig {
    std::string initial_data_spacetime = "id";
    std::string initial_data_lapse = "id";
    std::string initial_data_shift = "id";
+   std::string initial_data_input_file;
+   std::string initial_data_output_file;
    std::string initial_data_atmosphere = "flat";
    amrex::Real initial_data_atmosphere_density = -1.0;
    amrex::Real initial_data_atmosphere_pressure = -1.0;
@@ -123,6 +125,7 @@ struct RunConfig {
    amrex::Real initial_data_matter_relative_tolerance = 1.0e-8;
    int initial_data_matter_max_iterations = 96;
    int initial_data_rotation_continuation_steps = 1;
+   amrex::Vector<amrex::Real> initial_data_rotation_continuation_targets;
    std::string spacetime_lapse_gauge = "frozen";
    std::string spacetime_shift_gauge = "frozen";
    amrex::Real spacetime_amplitude = 1.0e-8;

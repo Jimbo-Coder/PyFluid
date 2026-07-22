@@ -103,6 +103,7 @@ set(PYFLUID_AMREX_AMR_SOURCES
    src/amr/amr_solver_metrics.cpp
    src/amr/amr_solver_multipatch.cpp
    src/amr/amr_solver_output.cpp
+   src/amr/amr_solver_physical_id.cpp
    src/amr/amr_solver_radiation.cpp
    src/amr/amr_solver_spacetime.cpp
    src/amr/amr_solver_spacetime_evolution.cpp
@@ -150,6 +151,7 @@ set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
    src/initial_data/initial_data_elliptic.cpp
    src/initial_data/initial_data_materialization.cpp
    src/initial_data/initial_data_provider.cpp
+   src/initial_data/physical_id.cpp
    src/initial_data/initial_data_rhd.cpp
    src/initial_data/initial_data_state.cpp
    src/initial_data/rotating_star_initial_data.cpp

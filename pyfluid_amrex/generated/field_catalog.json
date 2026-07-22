@@ -13,6 +13,7 @@
     "chi": "\\chi",
     "dens": "D",
     "divb": "\\nabla_i B^i",
+    "dye_fraction": "C",
     "dye_mass": "\\rho C",
     "e1": "E_{1}",
     "e2": "E_{2}",
@@ -21,6 +22,12 @@
     "face_b1": "B_{1}",
     "face_b2": "B_{2}",
     "face_b3": "B_{3}",
+    "gamma11": "\\gamma_{11}",
+    "gamma12": "\\gamma_{12}",
+    "gamma13": "\\gamma_{13}",
+    "gamma22": "\\gamma_{22}",
+    "gamma23": "\\gamma_{23}",
+    "gamma33": "\\gamma_{33}",
     "gamma_tilde1": "\\tilde{\\Gamma}_{1}",
     "gamma_tilde11": "\\tilde{\\gamma}_{11}",
     "gamma_tilde12": "\\tilde{\\gamma}_{12}",
@@ -36,6 +43,12 @@
     "j1": "J_{1}",
     "j2": "J_{2}",
     "j3": "J_{3}",
+    "k11": "K_{11}",
+    "k12": "K_{12}",
+    "k13": "K_{13}",
+    "k22": "K_{22}",
+    "k23": "K_{23}",
+    "k33": "K_{33}",
     "k_hat": "\\hat{K}",
     "lapse": "\\alpha",
     "mach": "\\mathcal{M}",
@@ -45,6 +58,7 @@
     "mom3": "m_{3}",
     "phi": "\\Phi",
     "plasma_beta": "\\beta_{\\rm plasma}",
+    "pressure": "p",
     "rho": "\\rho",
     "shift1": "\\beta_{1}",
     "shift2": "\\beta_{2}",
@@ -59,6 +73,9 @@
     "tau": "\\tau",
     "thermal_entropy_proxy": "K_{\\rm th}",
     "theta": "\\Theta",
+    "v1": "v^{1}",
+    "v2": "v^{2}",
+    "v3": "v^{3}",
     "vorticity1": "\\omega_{1}",
     "vorticity2": "\\omega_{2}",
     "vorticity3": "\\omega_{3}"
@@ -2320,6 +2337,255 @@
       "role": "EvolvedState",
       "sector": "Fluid",
       "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "\\rho",
+          "name": "rho",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "None",
+      "label": "\\rho",
+      "name": "rest_mass_density",
+      "role": "InitialDataState",
+      "sector": "Fluid",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "v^{1}",
+          "name": "v1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Cell",
+          "label": "v^{2}",
+          "name": "v2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Cell",
+          "label": "v^{3}",
+          "name": "v3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "None",
+      "label": "v^i",
+      "name": "velocity",
+      "role": "InitialDataState",
+      "sector": "Fluid",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "p",
+          "name": "pressure",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "None",
+      "label": "p",
+      "name": "pressure",
+      "role": "InitialDataState",
+      "sector": "Fluid",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "B_{1}",
+          "name": "b1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Cell",
+          "label": "B_{2}",
+          "name": "b2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Cell",
+          "label": "B_{3}",
+          "name": "b3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "None",
+      "label": "B^i",
+      "name": "physical_magnetic_field",
+      "role": "InitialDataState",
+      "sector": "Fluid",
+      "value_kind": "Vector3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "C",
+          "name": "dye_fraction",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "None",
+      "label": "C",
+      "name": "passive_scalar_fraction",
+      "role": "InitialDataState",
+      "sector": "Fluid",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\gamma_{11}",
+          "name": "gamma11",
+          "symmetry": "Tensor11"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\gamma_{12}",
+          "name": "gamma12",
+          "symmetry": "Tensor12"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\gamma_{13}",
+          "name": "gamma13",
+          "symmetry": "Tensor13"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\gamma_{22}",
+          "name": "gamma22",
+          "symmetry": "Tensor22"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\gamma_{23}",
+          "name": "gamma23",
+          "symmetry": "Tensor23"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\gamma_{33}",
+          "name": "gamma33",
+          "symmetry": "Tensor33"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "None",
+      "label": "\\gamma_{ij}",
+      "name": "spatial_metric",
+      "role": "InitialDataState",
+      "sector": "Spacetime",
+      "value_kind": "SymmetricTensor3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "K_{11}",
+          "name": "k11",
+          "symmetry": "Tensor11"
+        },
+        {
+          "centering": "Vertex",
+          "label": "K_{12}",
+          "name": "k12",
+          "symmetry": "Tensor12"
+        },
+        {
+          "centering": "Vertex",
+          "label": "K_{13}",
+          "name": "k13",
+          "symmetry": "Tensor13"
+        },
+        {
+          "centering": "Vertex",
+          "label": "K_{22}",
+          "name": "k22",
+          "symmetry": "Tensor22"
+        },
+        {
+          "centering": "Vertex",
+          "label": "K_{23}",
+          "name": "k23",
+          "symmetry": "Tensor23"
+        },
+        {
+          "centering": "Vertex",
+          "label": "K_{33}",
+          "name": "k33",
+          "symmetry": "Tensor33"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "None",
+      "label": "K_{ij}",
+      "name": "extrinsic_curvature",
+      "role": "InitialDataState",
+      "sector": "Spacetime",
+      "value_kind": "SymmetricTensor3"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\alpha",
+          "name": "lapse",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "None",
+      "label": "\\alpha",
+      "name": "adm_lapse",
+      "role": "InitialDataState",
+      "sector": "Spacetime",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Vertex",
+          "label": "\\beta_{1}",
+          "name": "shift1",
+          "symmetry": "Vector1"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\beta_{2}",
+          "name": "shift2",
+          "symmetry": "Vector2"
+        },
+        {
+          "centering": "Vertex",
+          "label": "\\beta_{3}",
+          "name": "shift3",
+          "symmetry": "Vector3"
+        }
+      ],
+      "diagnostic_kind": "StoredState",
+      "evolution_kind": "None",
+      "label": "\\beta^i",
+      "name": "adm_shift",
+      "role": "InitialDataState",
+      "sector": "Spacetime",
+      "value_kind": "Vector3"
     },
     {
       "components": [

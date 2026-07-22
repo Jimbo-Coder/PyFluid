@@ -34,6 +34,7 @@ struct RotatingStarParameters {
    amrex::Real relative_tolerance = 1.0e-8;
    int max_iterations = 32;
    int continuation_steps = 1;
+   amrex::Vector<amrex::Real> continuation_targets;
    InitialAtmosphereParameters atmosphere{};
 };
 

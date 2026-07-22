@@ -48,6 +48,7 @@ class Symmetry(str, Enum):
 
 class FieldRole(str, Enum):
     EVOLVED_STATE = "EvolvedState"
+    INITIAL_DATA_STATE = "InitialDataState"
     EVOLUTION_AUXILIARY = "EvolutionAuxiliary"
     CACHED_DERIVATIVE = "CachedDerivative"
     OUTPUT_ONLY_AUXILIARY = "OutputOnlyAuxiliary"
@@ -102,8 +103,21 @@ class GridField:
 EnumType = TypeVar("EnumType", bound=Enum)
 
 _ROOT_KEYS = {"schema_version", "field_sets", "special_fields", "field"}
-_FIELD_SET_KEYS = {"fluid_newtonian", "fluid_relativistic", "z4c", "auxiliary"}
-_SPECIAL_FIELD_KEYS = {"magnetic", "ct_magnetic", "passive_scalar"}
+_FIELD_SET_KEYS = {
+    "fluid_newtonian",
+    "fluid_relativistic",
+    "z4c",
+    "auxiliary",
+    "physical_fluid",
+    "adm_initial_data",
+}
+_SPECIAL_FIELD_KEYS = {
+    "magnetic",
+    "ct_magnetic",
+    "passive_scalar",
+    "physical_magnetic",
+    "physical_passive_scalar",
+}
 _FIELD_KEYS = {
     "key",
     "name",
@@ -339,9 +353,13 @@ FLUID_NEWTONIAN_FIELDS = _FIELD_SETS["fluid_newtonian"]
 FLUID_RELATIVISTIC_FIELDS = _FIELD_SETS["fluid_relativistic"]
 Z4C_FIELDS = _FIELD_SETS["z4c"]
 AUXILIARY_FIELDS = _FIELD_SETS["auxiliary"]
+PHYSICAL_FLUID_FIELDS = _FIELD_SETS["physical_fluid"]
+ADM_INITIAL_DATA_FIELDS = _FIELD_SETS["adm_initial_data"]
 MAGNETIC_FIELD = _SPECIAL_FIELDS["magnetic"]
 CT_MAGNETIC_FIELD = _SPECIAL_FIELDS["ct_magnetic"]
 PASSIVE_SCALAR_FIELD = _SPECIAL_FIELDS["passive_scalar"]
+PHYSICAL_MAGNETIC_FIELD = _SPECIAL_FIELDS["physical_magnetic"]
+PHYSICAL_PASSIVE_SCALAR_FIELD = _SPECIAL_FIELDS["physical_passive_scalar"]
 
 
 def component_names(fields: tuple[GridField, ...]) -> tuple[str, ...]:
@@ -369,6 +387,10 @@ def all_fields() -> tuple[GridField, ...]:
         MAGNETIC_FIELD,
         CT_MAGNETIC_FIELD,
         PASSIVE_SCALAR_FIELD,
+        *PHYSICAL_FLUID_FIELDS,
+        PHYSICAL_MAGNETIC_FIELD,
+        PHYSICAL_PASSIVE_SCALAR_FIELD,
+        *ADM_INITIAL_DATA_FIELDS,
         *Z4C_FIELDS,
         *AUXILIARY_FIELDS,
     )

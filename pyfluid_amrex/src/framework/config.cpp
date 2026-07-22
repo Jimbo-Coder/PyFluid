@@ -417,6 +417,8 @@ RunConfig read_config()
    initial_data_pp.queryAdd("spacetime", cfg.initial_data_spacetime);
    initial_data_pp.queryAdd("lapse", cfg.initial_data_lapse);
    initial_data_pp.queryAdd("shift", cfg.initial_data_shift);
+   initial_data_pp.queryAdd("input_file", cfg.initial_data_input_file);
+   initial_data_pp.queryAdd("output_file", cfg.initial_data_output_file);
    initial_data_pp.queryAdd("atmosphere", cfg.initial_data_atmosphere);
    initial_data_pp.queryAdd("atmosphere_density", cfg.initial_data_atmosphere_density);
    initial_data_pp.queryAdd("atmosphere_pressure", cfg.initial_data_atmosphere_pressure);
@@ -449,6 +451,10 @@ RunConfig read_config()
    initial_data_pp.queryAdd(
       "rotation_continuation_steps",
       cfg.initial_data_rotation_continuation_steps
+   );
+   initial_data_pp.queryarr(
+      "rotation_continuation_targets",
+      cfg.initial_data_rotation_continuation_targets
    );
    spacetime_pp.queryAdd("lapse_gauge", cfg.spacetime_lapse_gauge);
    spacetime_pp.queryAdd("shift_gauge", cfg.spacetime_shift_gauge);
@@ -956,6 +962,28 @@ void validate_config(RunConfig const& cfg)
          "nonzero finite axis, 0 < matter_relaxation <= 1, positive "
          "matter_relative_tolerance, matter_max_iterations >= 2, and "
          "rotation_continuation_steps >= 1"
+      );
+   }
+   amrex::Real previous_rotation_magnitude = 0.0;
+   for (amrex::Real target : cfg.initial_data_rotation_continuation_targets) {
+      const amrex::Real magnitude = std::abs(target);
+      if (!std::isfinite(target)
+          || target * cfg.initial_data_angular_velocity <= 0.0
+          || !(magnitude > previous_rotation_magnitude)
+          || !(magnitude < std::abs(cfg.initial_data_angular_velocity))) {
+         amrex::Abort(
+            "initial_data.rotation_continuation_targets must be finite, "
+            "strictly increasing in magnitude with the target rotation sign, "
+            "and exclude the final initial_data.angular_velocity"
+         );
+      }
+      previous_rotation_magnitude = magnitude;
+   }
+   if (!cfg.initial_data_rotation_continuation_targets.empty()
+       && cfg.initial_data_rotation_continuation_steps != 1) {
+      amrex::Abort(
+         "explicit initial_data.rotation_continuation_targets require "
+         "rotation_continuation_steps = 1"
       );
    }
    if (cfg.passive_scalars < 0 || cfg.passive_scalars > MaxPassiveScalars) {
@@ -1814,6 +1842,20 @@ void validate_config(RunConfig const& cfg)
    }
    if (cfg.checkpoint_int < -1) {
       amrex::Abort("pyfluid.checkpoint_int must be -1, 0, or a positive integer");
+   }
+   if (!cfg.restart_file.empty()
+       && (!cfg.initial_data_input_file.empty()
+           || !cfg.initial_data_output_file.empty())) {
+      amrex::Abort(
+         "pyfluid.restart_file is mutually exclusive with physical initial-data "
+         "input or output"
+      );
+   }
+   if (!cfg.initial_data_input_file.empty()
+       && cfg.initial_data_input_file == cfg.initial_data_output_file) {
+      amrex::Abort(
+         "initial_data.input_file and output_file must not name the same artifact"
+      );
    }
    if (cfg.plot_int < -1) {
       amrex::Abort("pyfluid.plot_int must be -1, 0, or a positive integer");

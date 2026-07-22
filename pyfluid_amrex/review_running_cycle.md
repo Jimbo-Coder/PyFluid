@@ -2412,3 +2412,59 @@ I will always continue from the last cycle marked as `in_progress`.
   suite was run. Reusable physical-ID save/load remains the next established
   sequence optimization; the current step-zero checkpoint is not that
   artifact. [DONE]
+
+## Cycle 216 — Reusable rotating-ID sequences and symmetry boundary (WIP)
+
+- Generalize the existing in-process angular-velocity continuation into an
+  explicit ordered target list. A normal initial-data solve remains the
+  one-target case; accepted targets retain their live matter and XCTS fields
+  as the seed for the next target without checkpoint I/O or reconstruction.
+  Preserve the existing scalar target parameters, equations, tolerances, and
+  final acceptance gates. The explicit `0.0005, 0.001` N=24 control converged
+  in 41 total matter iterations with final residuals below `7.15e-13`; omitting
+  the list preserves the existing equal-fraction behavior exactly. [DONE]
+- Add one versioned, losslessly compressed, provider-independent PyFluid
+  physical-ID artifact with text metadata. Its core field contract covers all
+  current initial data: Newtonian fluid primitives, optional CT face magnetic
+  fields, and—when present—relativistic fluid primitives plus physical ADM
+  metric, extrinsic curvature, lapse, and shift. Flat Minkowski hydro is a
+  deliberately redundant round-trip control. Optional exact evolution caches
+  accelerate same-grid loading and seed reconstruction but do not redefine
+  the physical interchange format. The artifact can initialize
+  evolution directly and must not encode timestepper, reconstruction,
+  cadence, or other mutable run controls. The implementation writes the
+  physical core plus optional exact evolution caches through the checkpoint-
+  proven parallel HDF5 field I/O; text metadata owns schema, hierarchy,
+  centering-relevant layout, physics, EoS, and source parameters. Field names,
+  components, labels, roles, and centerings are declared only in
+  `schema/fields.toml`. [DONE]
+- Validate a one-target solve against the current path, a chained target
+  against a fresh-from-TOV control, flat-HD and relativistic direct-load
+  round trips, and direct same-grid evolution loading against the original
+  materialized state. Measure the sequence speedup before changing elliptic
+  symmetry. A two-level flat-HD artifact reproduces every step-zero scalar and
+  one complete RK4 step exactly except wall-clock throughput columns. A
+  flat-Minkowski RMHD+CT artifact reproduces its primitive/conserved preflight
+  and all step-zero scalars exactly while exercising ADM and every active face
+  field. An N=24 `Omega=0.001` RNS artifact reloads in seconds, reproduces all
+  step-zero scalars and C2P/P2C preflight values exactly, and emits no XCTS
+  solve. Continuing that artifact to `Omega=0.0011` converges in 21 matter
+  iterations with residuals below `5.90e-13` and writes the next artifact.
+  This small step did not materially reduce matter iterations versus the
+  22-iteration fresh small-spin solve, so no persisted-seed speedup is claimed.
+  Cross-grid interpolation/exterior materialization remains explicitly
+  unimplemented; exact loads reject hierarchy mismatch. Architecture,
+  catalog regeneration, all three production dimensions, the final `2.98 s` quick
+  gate, and the final 42/42 standard gate pass. The standard RMHD validator now
+  permanently requires exact fresh/direct-load physical scalar rows through
+  one evolution step for a flat-Minkowski RMHD+CT artifact. The corrected
+  persisted XCTS seed reconstructs the conformal extrinsic tensor from Z4c as
+  `A_conformal = psi^6 a_tilde`; the focused `0.001 -> 0.0011` continuation
+  still passes with the same 21 matter iterations and residuals. Canonical
+  runtime cases are `0.92--0.99` of their frozen baselines. The final
+  production cache-hit build is `0.49 s`; no new cold compile was measured.
+  [DONE]
+- Assess aligned, centered Cartesian reflection/octant symmetry only after the
+  reusable sequence path is sound. Do not conflate discrete component parity
+  boundaries with a true two-dimensional axisymmetric cylindrical XCTS
+  formulation. [PENDING]

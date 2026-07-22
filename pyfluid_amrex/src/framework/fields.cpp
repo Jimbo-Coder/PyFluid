@@ -234,6 +234,19 @@ GridFieldSetInfo fluid_state_grid_fields(PhysicalSystem system, int passive_scal
    return generated::fluid_state_grid_fields(system, passive_scalars);
 }
 
+GridFieldSetInfo physical_fluid_grid_fields(
+   PhysicalSystem system,
+   int passive_scalars
+)
+{
+   return generated::physical_fluid_grid_fields(system, passive_scalars);
+}
+
+GridFieldSetInfo const& adm_initial_data_grid_fields()
+{
+   return generated::adm_initial_data_grid_fields();
+}
+
 GridFieldSetInfo const& z4c_state_grid_fields()
 {
    return generated::z4c_state_grid_fields();

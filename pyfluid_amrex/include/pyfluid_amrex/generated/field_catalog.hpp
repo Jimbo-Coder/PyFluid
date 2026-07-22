@@ -47,6 +47,19 @@ inline GridFieldInfo passive_scalar_grid_field(int index)
    return field;
 }
 
+inline GridFieldInfo physical_passive_scalar_grid_field(int index)
+{
+   GridFieldInfo field = {"passive_scalar_fraction", "C", GridFieldValueKind::Scalar, {{"dye_fraction", "C", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false};
+   if (index > 0) {
+      const std::string suffix = "_" + std::to_string(index);
+      field.name += suffix;
+      field.label += "_{" + std::to_string(index) + "}";
+      field.components.front().name += suffix;
+      field.components.front().label += "_{" + std::to_string(index) + "}";
+   }
+   return field;
+}
+
 inline GridFieldSetInfo fluid_state_grid_fields(PhysicalSystem system, int passive_scalars)
 {
    GridFieldSetInfo set{
@@ -89,6 +102,46 @@ inline GridFieldSetInfo const& z4c_state_grid_fields()
          {"theta", "\\Theta", GridFieldValueKind::Scalar, {{"theta", "\\Theta", GridFieldCentering::Vertex, GridFieldSymmetryKind::Scalar}}, FieldRole::EvolvedState, EvolutionFieldKind::MainState, 3, true, true},
          {"lapse", "\\alpha", GridFieldValueKind::Scalar, {{"lapse", "\\alpha", GridFieldCentering::Vertex, GridFieldSymmetryKind::Scalar}}, FieldRole::EvolvedState, EvolutionFieldKind::MainState, 3, true, true},
          {"shift", "\\beta^{i}", GridFieldValueKind::Vector3, {{"shift1", "\\beta_{1}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Vector1}, {"shift2", "\\beta_{2}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Vector2}, {"shift3", "\\beta_{3}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Vector3}}, FieldRole::EvolvedState, EvolutionFieldKind::MainState, 3, true, true}
+      },
+   };
+   return fields;
+}
+
+inline GridFieldSetInfo physical_fluid_grid_fields(
+   PhysicalSystem system,
+   int passive_scalars
+)
+{
+   GridFieldSetInfo set{
+      "physical_fluid",
+      "Physical fluid primitives",
+      EvolutionSector::Fluid,
+      std::vector<GridFieldInfo>{
+         {"rest_mass_density", "\\rho", GridFieldValueKind::Scalar, {{"rho", "\\rho", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false},
+         {"velocity", "v^i", GridFieldValueKind::Vector3, {{"v1", "v^{1}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector1}, {"v2", "v^{2}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector2}, {"v3", "v^{3}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector3}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false},
+         {"pressure", "p", GridFieldValueKind::Scalar, {{"pressure", "p", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false}
+      },
+   };
+   if (physical_system_has_magnetic_field(system)) {
+      set.fields.push_back({"physical_magnetic_field", "B^i", GridFieldValueKind::Vector3, {{"b1", "B_{1}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector1}, {"b2", "B_{2}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector2}, {"b3", "B_{3}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector3}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false});
+   }
+   for (int index = 0; index < passive_scalars; ++index) {
+      set.fields.push_back(physical_passive_scalar_grid_field(index));
+   }
+   return set;
+}
+
+inline GridFieldSetInfo const& adm_initial_data_grid_fields()
+{
+   static const GridFieldSetInfo fields{
+      "adm_geometry",
+      "Physical ADM initial data",
+      EvolutionSector::Spacetime,
+      std::vector<GridFieldInfo>{
+         {"spatial_metric", "\\gamma_{ij}", GridFieldValueKind::SymmetricTensor3, {{"gamma11", "\\gamma_{11}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor11}, {"gamma12", "\\gamma_{12}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor12}, {"gamma13", "\\gamma_{13}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor13}, {"gamma22", "\\gamma_{22}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor22}, {"gamma23", "\\gamma_{23}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor23}, {"gamma33", "\\gamma_{33}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor33}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false},
+         {"extrinsic_curvature", "K_{ij}", GridFieldValueKind::SymmetricTensor3, {{"k11", "K_{11}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor11}, {"k12", "K_{12}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor12}, {"k13", "K_{13}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor13}, {"k22", "K_{22}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor22}, {"k23", "K_{23}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor23}, {"k33", "K_{33}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Tensor33}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false},
+         {"adm_lapse", "\\alpha", GridFieldValueKind::Scalar, {{"lapse", "\\alpha", GridFieldCentering::Vertex, GridFieldSymmetryKind::Scalar}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false},
+         {"adm_shift", "\\beta^i", GridFieldValueKind::Vector3, {{"shift1", "\\beta_{1}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Vector1}, {"shift2", "\\beta_{2}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Vector2}, {"shift3", "\\beta_{3}", GridFieldCentering::Vertex, GridFieldSymmetryKind::Vector3}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false}
       },
    };
    return fields;

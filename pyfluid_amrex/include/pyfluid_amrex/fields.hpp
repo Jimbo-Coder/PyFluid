@@ -26,6 +26,7 @@ enum class GridFieldCentering {
 
 enum class FieldRole {
    EvolvedState,
+   InitialDataState,
    EvolutionAuxiliary,
    CachedDerivative,
    OutputOnlyAuxiliary,
@@ -138,6 +139,11 @@ int state_grid_field_origin_parity(
 std::string supported_aux_grid_field_names();
 amrex::Vector<std::string> state_grid_field_names(PhysicalSystem system, int passive_scalars);
 GridFieldSetInfo fluid_state_grid_fields(PhysicalSystem system, int passive_scalars);
+GridFieldSetInfo physical_fluid_grid_fields(
+   PhysicalSystem system,
+   int passive_scalars
+);
+GridFieldSetInfo const& adm_initial_data_grid_fields();
 GridFieldInfo const& ct_magnetic_grid_field();
 std::vector<std::string> aux_grid_field_output_names(AuxGridField field);
 std::string checkpoint_state_field_name();

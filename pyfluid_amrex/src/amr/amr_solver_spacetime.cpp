@@ -131,7 +131,9 @@ void AmrSolverBase::initialize_spacetime_level(int lev, amrex::Real time)
    fill_spacetime_level_boundaries(spacetime_state_.state(), lev, time);
 }
 
-void AmrSolverBase::materialize_constraint_solved_initial_data()
+void AmrSolverBase::materialize_constraint_solved_initial_data(
+   bool seed_from_loaded_id
+)
 {
    const bool uses_constraint_solve = cfg_.spacetime_initial_data == "ctt"
       || cfg_.spacetime_initial_data == "cttk"
@@ -155,7 +157,9 @@ void AmrSolverBase::materialize_constraint_solved_initial_data()
       hierarchy.geometry.push_back(Geom(lev));
       hierarchy.grids.push_back(boxArray(lev));
       hierarchy.distribution.push_back(DistributionMap(lev));
-      if (initial_data_provider_.view().has_fluid()) {
+      if (seed_from_loaded_id) {
+         fill_level_primitive_cache(lev, 0.0);
+      } else if (initial_data_provider_.view().has_fluid()) {
          initialize_relativistic_primitive_cache_from_provider(
             *primitive_[lev], Geom(lev), cfg_, initial_data_provider_.view()
          );
@@ -190,7 +194,8 @@ void AmrSolverBase::materialize_constraint_solved_initial_data()
       eos_params(cfg_),
       initial_data_provider_.view().fields,
       formulation,
-      rotating_star_parameters(cfg_, initial_data_provider_.view())
+      rotating_star_parameters(cfg_, initial_data_provider_.view()),
+      seed_from_loaded_id
    );
    if (amrex::ParallelDescriptor::IOProcessor()) {
       amrex::Print()
