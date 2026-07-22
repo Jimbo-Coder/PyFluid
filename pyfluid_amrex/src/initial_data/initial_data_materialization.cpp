@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
+#include <string>
 
 #include "pyfluid_amrex/centering_transfer.hpp"
 #include "pyfluid_amrex/initial_data/centering.hpp"
@@ -353,304 +355,90 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    const amrex::Real matter_tolerance = update_rotating_matter
       ? rotating_star.relative_tolerance
       : 1.0e-9;
-   for (int matter_iteration = 1;
-        matter_iteration <= max_matter_iterations;
-        ++matter_iteration) {
-      materialize_conformal_geometry(
-         hierarchy,
-         conformal_factor_const,
-         lapse_conformal_view,
-         shift_view,
-         mean_curvature,
-         conformal_extrinsic_const,
-         spacetime_state,
-         cell_spacetime
-      );
-      for (int level = 0; level < num_levels; ++level) {
-         amrex::MultiFab::Copy(
-            *previous_primitive[level],
-            *primitive_state[level],
-            0,
-            0,
-            primitive_state[level]->nComp(),
-            0
+   const int continuation_steps = update_rotating_matter
+      ? rotating_star.continuation_steps
+      : 1;
+   for (int continuation_step = 1;
+        continuation_step <= continuation_steps;
+        ++continuation_step) {
+      RotatingStarParameters continued_rotating_star = rotating_star;
+      continued_rotating_star.angular_velocity =
+         rotating_star.angular_velocity
+         * static_cast<amrex::Real>(continuation_step)
+         / static_cast<amrex::Real>(continuation_steps);
+      result.relative_matter_update = std::numeric_limits<amrex::Real>::max();
+      int step_matter_iterations = 0;
+      for (int matter_iteration = 1;
+           matter_iteration <= max_matter_iterations;
+           ++matter_iteration) {
+         materialize_conformal_geometry(
+            hierarchy,
+            conformal_factor_const,
+            lapse_conformal_view,
+            shift_view,
+            mean_curvature,
+            conformal_extrinsic_const,
+            spacetime_state,
+            cell_spacetime
          );
-      }
-      // The conformal unknowns start from flat space.  Preserve the spherical
-      // seed through the first constraint solve so the Euler update sees the
-      // star's lapse and shift rather than erasing it in the flat seed metric.
-      if (update_rotating_matter && matter_iteration > 1) {
-         amrex::Vector<amrex::MultiFab const*> cell_spacetime_const(num_levels);
          for (int level = 0; level < num_levels; ++level) {
-            cell_spacetime_const[level] = cell_spacetime[level];
-         }
-         result.rotating_star = update_rotating_star_primitives(
-            hierarchy,
-            primitive_state,
-            cell_spacetime_const,
-            EOSMethod,
-            eos,
-            rotating_star
-         );
-         if (amrex::ParallelDescriptor::IOProcessor()) {
-            amrex::Print()
-               << "rotating matter iteration=" << matter_iteration
-               << " maximum_density=" << result.rotating_star.maximum_density
-               << " maximum_velocity=" << result.rotating_star.maximum_velocity
-               << " injection_energy=" << result.rotating_star.injection_energy
-               << " boundary_density_excess="
-               << result.rotating_star.boundary_density_excess << '\n';
-         }
-      }
-      for (int level = 0; level < num_levels; ++level) {
-         if (primitive_state[level]->contains_nan(
-                0, primitive_state[level]->nComp(), 0
-             )) {
-            amrex::Abort("conformal initial-data primitive state is nonfinite");
-         }
-         if (cell_spacetime[level]->contains_nan(
-                0, cell_spacetime[level]->nComp(), 0
-             )) {
-            amrex::Abort("conformal initial-data cell geometry is nonfinite");
-         }
-         amrex::MultiFab::Copy(
-            *previous_conformal[level], *conformal_storage[level], 0, 0, 1, 0
-         );
-         amrex::MultiFab::Copy(
-            *previous_vector[level], *vector_storage[level], 0, 0, 3, 0
-         );
-         amrex::MultiFab::Copy(
-            *previous_lapse[level],
-            *lapse_conformal_storage[level],
-            0,
-            0,
-            1,
-            0
-         );
-         if (formulation == ConformalConstraintFormulation::cttk) {
             amrex::MultiFab::Copy(
-               *previous_curvature[level], *curvature_storage[level], 0, 0, 1, 0
+               *previous_primitive[level],
+               *primitive_state[level],
+               0,
+               0,
+               primitive_state[level]->nComp(),
+               0
             );
          }
-         for (amrex::MFIter mfi(
-                 *energy_storage[level], amrex::TilingIfNotGPU()
-              ); mfi.isValid(); ++mfi) {
-            const amrex::Box box = mfi.tilebox();
-            const auto primitive = primitive_state[level]->const_array(mfi);
-            const auto cell_geometry = cell_spacetime[level]->const_array(mfi);
-            const auto energy = energy_storage[level]->array(mfi);
-            const auto momentum = momentum_storage[level]->array(mfi);
-            const auto stress_trace_field = stress_trace_storage[level]->array(mfi);
-            amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               const Z4cState geometry = load_z4c_state(
-                  cell_geometry, i, j, k
-               );
-               const SpacetimeMetric metric = generated::z4c_spacetime_metric(geometry);
-               EulerianMatter matter;
-               if constexpr (System == PhysicalSystem::RHD) {
-                  matter = generated::rhd_eulerian_matter(
-                     rhd_primitive_at<EOSMethod>(primitive, i, j, k, eos), metric
-                  );
-               } else {
-                  matter = generated::rmhd_eulerian_matter(
-                     rmhd_primitive_at(primitive, i, j, k, eos), metric
-                  );
-               }
-               energy(i, j, k, 0) = matter.rho;
-               momentum(i, j, k, 0) = matter.momentum1;
-               momentum(i, j, k, 1) = matter.momentum2;
-               momentum(i, j, k, 2) = matter.momentum3;
-               stress_trace_field(i, j, k, 0) =
-                  matter.stress11 * metric.inv_gamma11
-                  + 2.0 * matter.stress12 * metric.inv_gamma12
-                  + 2.0 * matter.stress13 * metric.inv_gamma13
-                  + matter.stress22 * metric.inv_gamma22
-                  + 2.0 * matter.stress23 * metric.inv_gamma23
-                  + matter.stress33 * metric.inv_gamma33;
-            });
-         }
-         if (energy_storage[level]->contains_nan(0, 1, 0)) {
-            amrex::Abort("conformal initial-data energy source is nonfinite");
-         }
-         if (momentum_storage[level]->contains_nan(0, 3, 0)) {
-            amrex::Abort("conformal initial-data momentum source is nonfinite");
-         }
-         if (stress_trace_storage[level]->contains_nan(0, 1, 0)) {
-            amrex::Abort("conformal initial-data stress trace is nonfinite");
-         }
-      }
-      fill_initial_data_ghosts(
-         hierarchy,
-         cell_energy,
-         extrapolating_boundary_records(hierarchy, 1)
-      );
-      fill_initial_data_ghosts(
-         hierarchy,
-         cell_momentum,
-         extrapolating_boundary_records(hierarchy, 3)
-      );
-      fill_initial_data_ghosts(
-         hierarchy,
-         cell_stress,
-         extrapolating_boundary_records(hierarchy, 1)
-      );
-      materialize_initial_data_vertices(
-         hierarchy,
-         vertex_energy,
-         cell_energy_density,
-         extrapolating_boundary_records(hierarchy, 1),
-         2
-      );
-      materialize_initial_data_vertices(
-         hierarchy,
-         vertex_momentum,
-         cell_momentum_density,
-         extrapolating_boundary_records(hierarchy, 3),
-         2
-      );
-      materialize_initial_data_vertices(
-         hierarchy,
-         vertex_stress,
-         cell_stress_trace,
-         extrapolating_boundary_records(hierarchy, 1),
-         2
-      );
-      for (int level = 0; level < num_levels; ++level) {
-         if (vertex_energy_storage[level]->contains_nan(0, 1, 0)) {
-            amrex::Abort("vertex initial-data energy source is nonfinite");
-         }
-         if (vertex_momentum_storage[level]->contains_nan(0, 3, 0)) {
-            amrex::Abort("vertex initial-data momentum source is nonfinite");
-         }
-         if (vertex_stress_storage[level]->contains_nan(0, 1, 0)) {
-            amrex::Abort("vertex initial-data stress trace is nonfinite");
-         }
-      }
-
-      if (formulation == ConformalConstraintFormulation::ctt) {
-         const CttResult constraints = solve_ctt_constraints(
-            hierarchy,
-            conformal_factor,
-            vector_potential,
-            conformal_extrinsic,
-            energy_density,
-            momentum_density,
-            conformal_boundary,
-            vector_boundary,
-            options
-         );
-         result.constraints = {
-            constraints.coupled_iterations,
-            constraints.relative_update,
-            constraints.hamiltonian_residual,
-            0.0,
-            constraints.momentum_residual,
-            constraints.converged,
-         };
-      } else if (formulation == ConformalConstraintFormulation::cttk) {
-         const CttkResult constraints = solve_cttk_hybrid_constraints(
-            hierarchy,
-            conformal_factor,
-            mean_curvature_mutable,
-            vector_potential,
-            conformal_extrinsic,
-            energy_density,
-            momentum_density,
-            conformal_boundary,
-            vector_boundary,
-            cttk_options
-         );
-         result.constraints = {
-            constraints.coupled_iterations,
-            constraints.relative_update,
-            constraints.hamiltonian_residual,
-            0.0,
-            constraints.momentum_residual,
-            constraints.converged,
-         };
-      } else {
-         const XctsResult constraints = solve_xcts_constraints(
-            hierarchy,
-            conformal_factor,
-            lapse_times_conformal_factor,
-            xcts_shift,
-            conformal_extrinsic,
-            energy_density,
-            momentum_density,
-            stress_trace,
-            conformal_boundary,
-            lapse_boundary,
-            vector_boundary,
-            xcts_options
-         );
-         result.constraints = {
-            constraints.coupled_iterations,
-            constraints.relative_update,
-            constraints.hamiltonian_residual,
-            constraints.lapse_residual,
-            constraints.momentum_residual,
-            constraints.converged,
-         };
-      }
-      if (!result.constraints.converged) {
-         amrex::Print()
-            << conformal_constraint_formulation_name(formulation)
-            << " initial-data solve failed: iterations="
-            << result.constraints.coupled_iterations
-            << " relative_update=" << result.constraints.relative_update
-            << " hamiltonian_residual="
-            << result.constraints.hamiltonian_residual
-            << " lapse_residual=" << result.constraints.lapse_residual
-            << " momentum_residual=" << result.constraints.momentum_residual
-            << '\n';
-         amrex::Abort("conformal constraint initial-data solve did not converge");
-      }
-
-      amrex::Real update_norm = 0.0;
-      amrex::Real solution_norm = 0.0;
-      for (int level = 0; level < num_levels; ++level) {
-         amrex::MultiFab::Subtract(
-            *previous_primitive[level],
-            *primitive_state[level],
-            0,
-            0,
-            primitive_state[level]->nComp(),
-            0
-         );
-         for (int component = 0;
-              component < primitive_state[level]->nComp();
-              ++component) {
-            update_norm = std::max(
-               update_norm,
-               previous_primitive[level]->norm0(component, 0, false)
+         // The conformal unknowns start from flat space.  Preserve the spherical
+         // seed through the first constraint solve so the Euler update sees the
+         // star's lapse and shift rather than erasing it in the flat seed metric.
+         const bool preserve_spherical_seed =
+            continuation_step == 1 && matter_iteration == 1;
+         if (update_rotating_matter && !preserve_spherical_seed) {
+            amrex::Vector<amrex::MultiFab const*> cell_spacetime_const(num_levels);
+            for (int level = 0; level < num_levels; ++level) {
+               cell_spacetime_const[level] = cell_spacetime[level];
+            }
+            result.rotating_star = update_rotating_star_primitives(
+               hierarchy,
+               primitive_state,
+               cell_spacetime_const,
+               EOSMethod,
+               eos,
+               continued_rotating_star
             );
-            solution_norm = std::max(
-               solution_norm,
-               primitive_state[level]->norm0(component, 0, false)
-            );
+            if (amrex::ParallelDescriptor::IOProcessor()) {
+               amrex::Print()
+                  << "rotating continuation step=" << continuation_step
+                  << "/" << continuation_steps
+                  << " matter_iteration=" << matter_iteration
+                  << " maximum_density=" << result.rotating_star.maximum_density
+                  << " maximum_velocity=" << result.rotating_star.maximum_velocity
+                  << " injection_energy=" << result.rotating_star.injection_energy
+                  << " boundary_density_excess="
+                  << result.rotating_star.boundary_density_excess << '\n';
+            }
          }
-         amrex::MultiFab::Subtract(
-            *previous_conformal[level], *conformal_storage[level], 0, 0, 1, 0
-         );
-         update_norm = std::max(
-            update_norm, previous_conformal[level]->norm0(0, 0, false)
-         );
-         solution_norm = std::max(
-            solution_norm, conformal_storage[level]->norm0(0, 0, false)
-         );
-         amrex::MultiFab::Subtract(
-            *previous_vector[level], *vector_storage[level], 0, 0, 3, 0
-         );
-         for (int component = 0; component < 3; ++component) {
-            update_norm = std::max(
-               update_norm, previous_vector[level]->norm0(component, 0, false)
+         for (int level = 0; level < num_levels; ++level) {
+            if (primitive_state[level]->contains_nan(
+                   0, primitive_state[level]->nComp(), 0
+                )) {
+               amrex::Abort("conformal initial-data primitive state is nonfinite");
+            }
+            if (cell_spacetime[level]->contains_nan(
+                   0, cell_spacetime[level]->nComp(), 0
+                )) {
+               amrex::Abort("conformal initial-data cell geometry is nonfinite");
+            }
+            amrex::MultiFab::Copy(
+               *previous_conformal[level], *conformal_storage[level], 0, 0, 1, 0
             );
-            solution_norm = std::max(
-               solution_norm, vector_storage[level]->norm0(component, 0, false)
+            amrex::MultiFab::Copy(
+               *previous_vector[level], *vector_storage[level], 0, 0, 3, 0
             );
-         }
-         if (formulation == ConformalConstraintFormulation::xcts) {
-            amrex::MultiFab::Subtract(
+            amrex::MultiFab::Copy(
                *previous_lapse[level],
                *lapse_conformal_storage[level],
                0,
@@ -658,38 +446,277 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                1,
                0
             );
-            update_norm = std::max(
-               update_norm, previous_lapse[level]->norm0(0, 0, false)
+            if (formulation == ConformalConstraintFormulation::cttk) {
+               amrex::MultiFab::Copy(
+                  *previous_curvature[level], *curvature_storage[level], 0, 0, 1, 0
+               );
+            }
+            for (amrex::MFIter mfi(
+                    *energy_storage[level], amrex::TilingIfNotGPU()
+                 ); mfi.isValid(); ++mfi) {
+               const amrex::Box box = mfi.tilebox();
+               const auto primitive = primitive_state[level]->const_array(mfi);
+               const auto cell_geometry = cell_spacetime[level]->const_array(mfi);
+               const auto energy = energy_storage[level]->array(mfi);
+               const auto momentum = momentum_storage[level]->array(mfi);
+               const auto stress_trace_field = stress_trace_storage[level]->array(mfi);
+               amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  const Z4cState geometry = load_z4c_state(
+                     cell_geometry, i, j, k
+                  );
+                  const SpacetimeMetric metric = generated::z4c_spacetime_metric(geometry);
+                  EulerianMatter matter;
+                  if constexpr (System == PhysicalSystem::RHD) {
+                     matter = generated::rhd_eulerian_matter(
+                        rhd_primitive_at<EOSMethod>(primitive, i, j, k, eos), metric
+                     );
+                  } else {
+                     matter = generated::rmhd_eulerian_matter(
+                        rmhd_primitive_at(primitive, i, j, k, eos), metric
+                     );
+                  }
+                  energy(i, j, k, 0) = matter.rho;
+                  momentum(i, j, k, 0) = matter.momentum1;
+                  momentum(i, j, k, 1) = matter.momentum2;
+                  momentum(i, j, k, 2) = matter.momentum3;
+                  stress_trace_field(i, j, k, 0) =
+                     matter.stress11 * metric.inv_gamma11
+                     + 2.0 * matter.stress12 * metric.inv_gamma12
+                     + 2.0 * matter.stress13 * metric.inv_gamma13
+                     + matter.stress22 * metric.inv_gamma22
+                     + 2.0 * matter.stress23 * metric.inv_gamma23
+                     + matter.stress33 * metric.inv_gamma33;
+               });
+            }
+            if (energy_storage[level]->contains_nan(0, 1, 0)) {
+               amrex::Abort("conformal initial-data energy source is nonfinite");
+            }
+            if (momentum_storage[level]->contains_nan(0, 3, 0)) {
+               amrex::Abort("conformal initial-data momentum source is nonfinite");
+            }
+            if (stress_trace_storage[level]->contains_nan(0, 1, 0)) {
+               amrex::Abort("conformal initial-data stress trace is nonfinite");
+            }
+         }
+         fill_initial_data_ghosts(
+            hierarchy,
+            cell_energy,
+            extrapolating_boundary_records(hierarchy, 1)
+         );
+         fill_initial_data_ghosts(
+            hierarchy,
+            cell_momentum,
+            extrapolating_boundary_records(hierarchy, 3)
+         );
+         fill_initial_data_ghosts(
+            hierarchy,
+            cell_stress,
+            extrapolating_boundary_records(hierarchy, 1)
+         );
+         materialize_initial_data_vertices(
+            hierarchy,
+            vertex_energy,
+            cell_energy_density,
+            extrapolating_boundary_records(hierarchy, 1),
+            2
+         );
+         materialize_initial_data_vertices(
+            hierarchy,
+            vertex_momentum,
+            cell_momentum_density,
+            extrapolating_boundary_records(hierarchy, 3),
+            2
+         );
+         materialize_initial_data_vertices(
+            hierarchy,
+            vertex_stress,
+            cell_stress_trace,
+            extrapolating_boundary_records(hierarchy, 1),
+            2
+         );
+         for (int level = 0; level < num_levels; ++level) {
+            if (vertex_energy_storage[level]->contains_nan(0, 1, 0)) {
+               amrex::Abort("vertex initial-data energy source is nonfinite");
+            }
+            if (vertex_momentum_storage[level]->contains_nan(0, 3, 0)) {
+               amrex::Abort("vertex initial-data momentum source is nonfinite");
+            }
+            if (vertex_stress_storage[level]->contains_nan(0, 1, 0)) {
+               amrex::Abort("vertex initial-data stress trace is nonfinite");
+            }
+         }
+
+         if (formulation == ConformalConstraintFormulation::ctt) {
+            const CttResult constraints = solve_ctt_constraints(
+               hierarchy,
+               conformal_factor,
+               vector_potential,
+               conformal_extrinsic,
+               energy_density,
+               momentum_density,
+               conformal_boundary,
+               vector_boundary,
+               options
             );
-            solution_norm = std::max(
-               solution_norm, lapse_conformal_storage[level]->norm0(0, 0, false)
-            );
+            result.constraints = {
+               constraints.coupled_iterations,
+               constraints.relative_update,
+               constraints.hamiltonian_residual,
+               0.0,
+               constraints.momentum_residual,
+               constraints.converged,
+            };
          } else if (formulation == ConformalConstraintFormulation::cttk) {
+            const CttkResult constraints = solve_cttk_hybrid_constraints(
+               hierarchy,
+               conformal_factor,
+               mean_curvature_mutable,
+               vector_potential,
+               conformal_extrinsic,
+               energy_density,
+               momentum_density,
+               conformal_boundary,
+               vector_boundary,
+               cttk_options
+            );
+            result.constraints = {
+               constraints.coupled_iterations,
+               constraints.relative_update,
+               constraints.hamiltonian_residual,
+               0.0,
+               constraints.momentum_residual,
+               constraints.converged,
+            };
+         } else {
+            const XctsResult constraints = solve_xcts_constraints(
+               hierarchy,
+               conformal_factor,
+               lapse_times_conformal_factor,
+               xcts_shift,
+               conformal_extrinsic,
+               energy_density,
+               momentum_density,
+               stress_trace,
+               conformal_boundary,
+               lapse_boundary,
+               vector_boundary,
+               xcts_options
+            );
+            result.constraints = {
+               constraints.coupled_iterations,
+               constraints.relative_update,
+               constraints.hamiltonian_residual,
+               constraints.lapse_residual,
+               constraints.momentum_residual,
+               constraints.converged,
+            };
+         }
+         if (!result.constraints.converged) {
+            amrex::Print()
+               << conformal_constraint_formulation_name(formulation)
+               << " initial-data solve failed: iterations="
+               << result.constraints.coupled_iterations
+               << " relative_update=" << result.constraints.relative_update
+               << " hamiltonian_residual="
+               << result.constraints.hamiltonian_residual
+               << " lapse_residual=" << result.constraints.lapse_residual
+               << " momentum_residual=" << result.constraints.momentum_residual
+               << '\n';
+            amrex::Abort("conformal constraint initial-data solve did not converge");
+         }
+
+         amrex::Real update_norm = 0.0;
+         amrex::Real solution_norm = 0.0;
+         for (int level = 0; level < num_levels; ++level) {
             amrex::MultiFab::Subtract(
-               *previous_curvature[level], *curvature_storage[level], 0, 0, 1, 0
+               *previous_primitive[level],
+               *primitive_state[level],
+               0,
+               0,
+               primitive_state[level]->nComp(),
+               0
+            );
+            for (int component = 0;
+                 component < primitive_state[level]->nComp();
+                 ++component) {
+               update_norm = std::max(
+                  update_norm,
+                  previous_primitive[level]->norm0(component, 0, false)
+               );
+               solution_norm = std::max(
+                  solution_norm,
+                  primitive_state[level]->norm0(component, 0, false)
+               );
+            }
+            amrex::MultiFab::Subtract(
+               *previous_conformal[level], *conformal_storage[level], 0, 0, 1, 0
             );
             update_norm = std::max(
-               update_norm, previous_curvature[level]->norm0(0, 0, false)
+               update_norm, previous_conformal[level]->norm0(0, 0, false)
             );
             solution_norm = std::max(
-               solution_norm, curvature_storage[level]->norm0(0, 0, false)
+               solution_norm, conformal_storage[level]->norm0(0, 0, false)
             );
+            amrex::MultiFab::Subtract(
+               *previous_vector[level], *vector_storage[level], 0, 0, 3, 0
+            );
+            for (int component = 0; component < 3; ++component) {
+               update_norm = std::max(
+                  update_norm, previous_vector[level]->norm0(component, 0, false)
+               );
+               solution_norm = std::max(
+                  solution_norm, vector_storage[level]->norm0(component, 0, false)
+               );
+            }
+            if (formulation == ConformalConstraintFormulation::xcts) {
+               amrex::MultiFab::Subtract(
+                  *previous_lapse[level],
+                  *lapse_conformal_storage[level],
+                  0,
+                  0,
+                  1,
+                  0
+               );
+               update_norm = std::max(
+                  update_norm, previous_lapse[level]->norm0(0, 0, false)
+               );
+               solution_norm = std::max(
+                  solution_norm, lapse_conformal_storage[level]->norm0(0, 0, false)
+               );
+            } else if (formulation == ConformalConstraintFormulation::cttk) {
+               amrex::MultiFab::Subtract(
+                  *previous_curvature[level], *curvature_storage[level], 0, 0, 1, 0
+               );
+               update_norm = std::max(
+                  update_norm, previous_curvature[level]->norm0(0, 0, false)
+               );
+               solution_norm = std::max(
+                  solution_norm, curvature_storage[level]->norm0(0, 0, false)
+               );
+            }
+         }
+         step_matter_iterations = matter_iteration;
+         result.relative_matter_update = update_norm
+            / std::max(amrex::Real(1.0), solution_norm);
+         if (update_rotating_matter && amrex::ParallelDescriptor::IOProcessor()) {
+            amrex::Print()
+               << "rotating continuation step=" << continuation_step
+               << "/" << continuation_steps
+               << " coupled_update_iteration=" << matter_iteration
+               << " relative_update=" << result.relative_matter_update << '\n';
+         }
+         if (result.relative_matter_update <= matter_tolerance) {
+            break;
          }
       }
-      result.matter_iterations = matter_iteration;
-      result.relative_matter_update = update_norm
-         / std::max(amrex::Real(1.0), solution_norm);
-      if (update_rotating_matter && amrex::ParallelDescriptor::IOProcessor()) {
-         amrex::Print()
-            << "rotating coupled update iteration=" << matter_iteration
-            << " relative_update=" << result.relative_matter_update << '\n';
+      result.matter_iterations += step_matter_iterations;
+      if (result.relative_matter_update > matter_tolerance) {
+         amrex::Abort(
+            "matter-coupled conformal fixed-point iteration did not converge "
+            "at rotation continuation step "
+            + std::to_string(continuation_step)
+         );
       }
-      if (result.relative_matter_update <= matter_tolerance) {
-         break;
-      }
-   }
-   if (result.relative_matter_update > matter_tolerance) {
-      amrex::Abort("matter-coupled conformal fixed-point iteration did not converge");
    }
 
    materialize_conformal_geometry(

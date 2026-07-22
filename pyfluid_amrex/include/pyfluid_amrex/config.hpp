@@ -120,6 +120,7 @@ struct RunConfig {
    amrex::Real initial_data_matter_relaxation = 0.5;
    amrex::Real initial_data_matter_relative_tolerance = 1.0e-8;
    int initial_data_matter_max_iterations = 96;
+   int initial_data_rotation_continuation_steps = 1;
    std::string spacetime_lapse_gauge = "frozen";
    std::string spacetime_shift_gauge = "frozen";
    amrex::Real spacetime_amplitude = 1.0e-8;

@@ -2147,3 +2147,65 @@ I will always continue from the last cycle marked as `in_progress`.
   `validate_z4c.py --only rotating_star --force` gate passes both reported
   checks; its small-spin evolution retains rest-mass drift `8.52e-10` at CFL
   `0.9`. [DONE]
+
+## Cycle 211 — Rotation continuation, ID scaling, and saved-ID boundary (active)
+
+- Added an explicit angular-velocity continuation count to rotating-star
+  initial data. Each stage is a fully converged matter/XCTS solve and retains
+  the preceding fields as its seed; the default remains one direct stage.
+  `Omega=0.025` converged with three stages after the direct solve failed.
+  `Omega=0.02625` converged with five stages and 207 total matter iterations,
+  yielding volume `M_ADM=1.864969`, matter/volume/surface `J3` of
+  `1.920608/1.919866/1.906503`, and `J/M_ADM^2=0.5520`. The independent
+  angular-momentum comparisons are within 0.039 and 0.696 percent. [DONE]
+- The N=24 `Omega=0.02625` result remains a numerical reach probe, not a
+  Kepler limit: volume ADM--Komar mass differs by about 4.9 percent and no
+  equatorial mass-shedding indicator or resolution sequence exists yet.
+  Direct `Omega=0.025` and larger jumps failed, while staged continuation
+  separated nonlinear-basin failure from physical-limit evidence. [DONE]
+- The existing Read-style SLy piecewise-polytrope path is compatible with the
+  rotating solver. N=24 `Omega=0.001` converged directly in 23 iterations;
+  matter/volume and surface/volume `J3` differed by 0.076 and 1.17 percent.
+  N=24 `Omega=0.025` converged through three stages in 31/34/35 iterations,
+  with volume `M_ADM=1.533368`, `J3=1.022967`, `J/M^2=0.4351`, and the two
+  charge discrepancies 0.065 and 1.12 percent. Its ADM--Komar gap remains 4.53
+  percent. The lower iteration count than the Gamma=2 model is not an EoS
+  algorithm comparison because the stellar models differ. [DONE]
+- Added coordinate equatorial/polar matter extents and their ratio to the
+  rotating-star summary and focused gate. They are compact deformation sanity
+  checks, not a mass-shedding proxy. The physical equatorial enthalpy-gradient
+  or `Omega/Omega_K` diagnostic remains open. The focused N=24 small-spin gate
+  records coordinate radii `7.60117/7.33333`, ratio `1.03652`, and passes.
+  [DONE]
+- Added a controlled 1/2/3-rank initial-data benchmark that records wall time,
+  seconds per matter iteration, speedup, and parallel efficiency for an
+  identical N=24 small-spin solve with 8-cell boxes. One, two, and three ranks
+  took `399.686`, `221.863`, and `159.385` seconds for the same 24 matter
+  iterations. Speedups are `1.802` and `2.508`, giving 90.1 and 83.6 percent
+  efficiency. Final updates and elliptic residuals agree across ranks. Results
+  are in `runs/current/initial_data_scaling/results.tsv`. [DONE]
+- Rejected the draft step-zero-checkpoint wrapper as the stable saved-ID
+  architecture. A reusable ID must contain provider-independent physical
+  fields before evolution conversion, with its own hierarchy, EoS, physical
+  parameters, diagnostics, and provenance. Loading is one target-hierarchy
+  materialization: matching cells copy exactly; changed grids use field-aware
+  interpolation/asymptotic exterior seeding followed by a target-grid
+  constraint solve. This artifact boundary is now owned by
+  `docs/infrastructure_conventions.md`; the current checkpoint is only a
+  temporary exact-evolution cache. [DONE]
+- Implement the provider-independent physical-field writer and target-grid
+  materializer described by that contract. No checkpoint alias or partial
+  writer is retained in this cycle. [PENDING]
+- Reorganized continuity ownership explicitly: `knowledge.md` contains learned
+  physics/numerical/AMReX subtleties and current evidence boundaries;
+  `references.md` routes to local and external sources and explains what they
+  contain/how to access them; infrastructure and artifact conventions live in
+  `docs/infrastructure_conventions.md`; dated evidence stays in this cycle.
+  [DONE]
+- Integration evidence for this tree: architecture and generated-kernel checks
+  pass, `pyfluid_amrex_production` builds in all dimensions, the focused
+  three-rank rotating-star gate passes both checks, and the complete quick gate
+  passes with the feature matrix in `2.97467 s`. Python syntax and
+  `git diff --check` pass. These are incremental builds and focused/quick
+  evidence, not a cold compile, standard/full/stability suite, or broad runtime
+  benchmark. [DONE]

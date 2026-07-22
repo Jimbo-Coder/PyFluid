@@ -120,6 +120,7 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("initial_data_matter_relaxation", output_metadata_real_string(cfg.initial_data_matter_relaxation));
    entries.emplace_back("initial_data_matter_relative_tolerance", output_metadata_real_string(cfg.initial_data_matter_relative_tolerance));
    entries.emplace_back("initial_data_matter_max_iterations", std::to_string(cfg.initial_data_matter_max_iterations));
+   entries.emplace_back("initial_data_rotation_continuation_steps", std::to_string(cfg.initial_data_rotation_continuation_steps));
    entries.emplace_back("eos", cfg.eos);
    entries.emplace_back("polytropic_k", output_metadata_real_string(cfg.polytropic_k));
    entries.emplace_back("polytropic_gamma", output_metadata_real_string(cfg.polytropic_gamma));

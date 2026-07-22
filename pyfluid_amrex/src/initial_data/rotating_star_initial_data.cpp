@@ -136,7 +136,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
    summary.injection_energy = iteration_parameters.injection_energy;
    for (int level = 0; level < num_levels; ++level) {
       amrex::MultiFab diagnostics(
-         hierarchy.grids[level], hierarchy.distribution[level], 4, 0
+         hierarchy.grids[level], hierarchy.distribution[level], 6, 0
       );
       diagnostics.setVal(0.0);
       const auto problo = hierarchy.geometry[level].ProbLoArray();
@@ -232,6 +232,27 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                : 0.0;
             diagnostic(i, j, k, 3) =
                within_continuation_support && !target.timelike ? 1.0 : 0.0;
+            if (matter.rho > atmosphere.rho) {
+               const amrex::Real displacement1 =
+                  physical.q1 - parameters.rotation_center.q1;
+               const amrex::Real displacement2 =
+                  physical.q2 - parameters.rotation_center.q2;
+               const amrex::Real displacement3 =
+                  physical.q3 - parameters.rotation_center.q3;
+               const amrex::Real parallel =
+                  displacement1 * parameters.rotation_axis.q1
+                  + displacement2 * parameters.rotation_axis.q2
+                  + displacement3 * parameters.rotation_axis.q3;
+               const amrex::Real radius_squared =
+                  displacement1 * displacement1
+                  + displacement2 * displacement2
+                  + displacement3 * displacement3;
+               diagnostic(i, j, k, 4) = std::sqrt(amrex::max(
+                  radius_squared - parallel * parallel,
+                  amrex::Real(0.0)
+               ));
+               diagnostic(i, j, k, 5) = std::abs(parallel);
+            }
          });
       }
       summary.maximum_velocity = std::max(
@@ -245,6 +266,12 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       );
       summary.boundary_density_excess = std::max(
          summary.boundary_density_excess, diagnostics.max(2, 0, false)
+      );
+      summary.equatorial_radius = std::max(
+         summary.equatorial_radius, diagnostics.max(4, 0, false)
+      );
+      summary.polar_radius = std::max(
+         summary.polar_radius, diagnostics.max(5, 0, false)
       );
       if (diagnostics.max(3, 0, false) > 0.0) {
          amrex::Abort(
@@ -302,6 +329,7 @@ RotatingStarParameters rotating_star_parameters(
    parameters.matter_relaxation = cfg.initial_data_matter_relaxation;
    parameters.relative_tolerance = cfg.initial_data_matter_relative_tolerance;
    parameters.max_iterations = cfg.initial_data_matter_max_iterations;
+   parameters.continuation_steps = cfg.initial_data_rotation_continuation_steps;
    parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
    if (!provider.tov.active() || !(parameters.injection_energy > 0.0)) {
       amrex::Abort("rotating-star continuation requires an active TOV seed");

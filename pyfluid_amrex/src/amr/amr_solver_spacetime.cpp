@@ -201,14 +201,25 @@ void AmrSolverBase::materialize_constraint_solved_initial_data()
          << " hamiltonian_residual=" << result.constraints.hamiltonian_residual
          << " lapse_residual=" << result.constraints.lapse_residual
          << " momentum_residual=" << result.constraints.momentum_residual << '\n';
-      if (cfg_.ic == "rotating_star") {
+      if (cfg_.ic == "rotating_star"
+          && cfg_.initial_data_angular_velocity != 0.0) {
+         if (!(result.rotating_star.equatorial_radius > 0.0)
+             || !(result.rotating_star.polar_radius > 0.0)) {
+            amrex::Abort("rotating-star matter support has no resolved surface extent");
+         }
          amrex::Print()
             << "rotating star: omega=" << cfg_.initial_data_angular_velocity
             << " maximum_density=" << result.rotating_star.maximum_density
             << " maximum_velocity=" << result.rotating_star.maximum_velocity
             << " injection_energy=" << result.rotating_star.injection_energy
             << " boundary_density_excess="
-            << result.rotating_star.boundary_density_excess << '\n';
+            << result.rotating_star.boundary_density_excess
+            << " equatorial_radius=" << result.rotating_star.equatorial_radius
+            << " polar_radius=" << result.rotating_star.polar_radius
+            << " coordinate_axis_ratio="
+            << result.rotating_star.equatorial_radius
+               / result.rotating_star.polar_radius
+            << '\n';
       }
    }
 

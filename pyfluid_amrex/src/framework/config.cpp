@@ -439,6 +439,10 @@ RunConfig read_config()
    initial_data_pp.queryAdd(
       "matter_max_iterations", cfg.initial_data_matter_max_iterations
    );
+   initial_data_pp.queryAdd(
+      "rotation_continuation_steps",
+      cfg.initial_data_rotation_continuation_steps
+   );
    spacetime_pp.queryAdd("lapse_gauge", cfg.spacetime_lapse_gauge);
    spacetime_pp.queryAdd("shift_gauge", cfg.spacetime_shift_gauge);
    spacetime_pp.queryAdd("amplitude", cfg.spacetime_amplitude);
@@ -920,11 +924,13 @@ void validate_config(RunConfig const& cfg)
        || !(cfg.initial_data_matter_relaxation > 0.0)
        || !(cfg.initial_data_matter_relaxation <= 1.0)
        || !(cfg.initial_data_matter_relative_tolerance > 0.0)
-       || cfg.initial_data_matter_max_iterations < 2) {
+       || cfg.initial_data_matter_max_iterations < 2
+       || cfg.initial_data_rotation_continuation_steps < 1) {
       amrex::Abort(
          "rotating initial data requires finite angular velocity/center, a "
          "nonzero finite axis, 0 < matter_relaxation <= 1, positive "
-         "matter_relative_tolerance, and matter_max_iterations >= 2"
+         "matter_relative_tolerance, matter_max_iterations >= 2, and "
+         "rotation_continuation_steps >= 1"
       );
    }
    if (cfg.passive_scalars < 0 || cfg.passive_scalars > MaxPassiveScalars) {

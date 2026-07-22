@@ -95,7 +95,8 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
 ## Continuity
 
 - After a context reset, read `pyfluid_amrex/knowledge.md`,
-  `pyfluid_amrex/references.md`, and the tail of
+  `pyfluid_amrex/references.md`,
+  `pyfluid_amrex/docs/infrastructure_conventions.md`, and the tail of
   `pyfluid_amrex/review_running_cycle.md` before changing AMReX. Treat the
   knowledge file as a maintained snapshot: current source and newer continuity
   cycles win when they disagree.
@@ -105,6 +106,10 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
 - Put source-checked external review findings in
   `pyfluid_amrex/review_backlog.md`. Raw review prose is provenance, not an
   accepted implementation plan; mark stale or rejected claims explicitly.
-- Update `pyfluid_amrex/knowledge.md` only for durable ownership rules,
-  validation boundaries, and open limitations. Keep exact commands, failures,
-  measurements, and historical detail in the continuity cycle and run logs.
+- Update `pyfluid_amrex/knowledge.md` only for compact learned physics,
+  numerical, and AMReX facts plus current validation boundaries and open
+  limitations. Put durable ownership and artifact rules in
+  `pyfluid_amrex/docs/infrastructure_conventions.md`. Keep exact commands,
+  failures, measurements, and historical detail in the continuity cycle and
+  run logs. Keep `pyfluid_amrex/references.md` as a router to authoritative
+  local sources and external literature rather than a design document.

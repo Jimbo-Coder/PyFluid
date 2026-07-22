@@ -10,7 +10,9 @@ It intentionally links rather than restating the detailed contracts.
 3. Read at least the last active/completed cycles in
    `review_running_cycle.md`; append one cycle for the current request.
 4. Read `docs/code_conventions.md` before implementation.
-5. Route to the task-specific source and document below. Verify current source
+5. Read `docs/infrastructure_conventions.md` when changing ownership, catalogs,
+   file formats, or persistent artifacts.
+6. Route to the task-specific source and document below. Verify current source
    before relying on a dated result.
 
 ## Topic To Authority
@@ -26,6 +28,7 @@ It intentionally links rather than restating the detailed contracts.
 | Generated equations | labeled symbolic sources under `codegen/pyfluid_codegen/` | `docs/equations.md`, `docs/equations.tex` |
 | Relativistic HD/MHD and Z4c | generated kernels, `src/relativity/{rhd_system,rmhd_system,relativistic_atmosphere}.hpp`, `include/pyfluid_amrex/relativistic_boundary.hpp`, and `src/amr/amr_solver_spacetime*.cpp` | `docs/grmhd_development.md` |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
+| Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
 | Adaptive Richardson status | AMR estimator and validation tools | `docs/adaptive_richardson.md` |
 | Machines, MPI, build | `machines/*.toml`, `tools/validation_common.py` | `docs/install.md`, `docs/machines.md` |
 | External review triage | current source | `review_backlog.md` |
@@ -91,28 +94,23 @@ the generated TSV/log, and the current source revision/dirty state.
 ## Rotating-Star Physics References
 
 - E. Gourgoulhon, *An introduction to the theory of rotating relativistic
-  stars*, arXiv:1003.5015: stationary-star global charges, ADM--Komar equality,
-  GRV2/GRV3 virial identities, surface geometry, and mass shedding.
+  stars*, [arXiv:1003.5015](https://arxiv.org/abs/1003.5015): stationary-star
+  global charges, ADM--Komar equality, GRV2/GRV3 virial identities, surface
+  geometry, and mass shedding.
 - K. Uryu et al., *Modeling differential rotations of compact stars in
-  equilibriums*, Phys. Rev. D 96, 103011 (2017), arXiv:1709.02643: integrable
-  relativistic differential-rotation laws, including Eqs. (8) and (9), and
+  equilibriums*, Phys. Rev. D 96, 103011 (2017),
+  [arXiv:1709.02643](https://arxiv.org/abs/1709.02643): integrable relativistic
+  differential-rotation laws, including Eqs. (8) and (9), and
   spheroidal/toroidal equilibrium sequences.
 - P. Iosif and N. Stergioulas, *Equilibrium sequences of differentially
   rotating stars with post-merger-like rotational profiles*,
-  arXiv:2011.10612: Uryu-law sequence choices and comparison with the
-  established KEH law.
-
-For the current uniform XCTS path, validate prescribed angular velocity with
-independent matter, ADM-volume, and ADM-surface angular momentum. Report
-`J/M_ADM^2`, ADM--Komar disagreement, surface/volume charge disagreement,
-constraint norms, baryon mass, equatorial/polar radii, and a mass-shedding
-indicator. Do not infer the Kepler limit from solver failure or a finite-domain
-boundary guard. The code stores the Eulerian momentum source as covariant
-`S_i`; in conformal flatness the XCTS shift matter source is therefore
-`16 pi alpha psi^4 S^i = 16 pi (alpha psi) S_i / psi`. Uniform-TOV continuation
-anchors the first integral at the interpolated rotation center and retains the
-matter component connected to the preceding iterate; a distant
-positive-enthalpy lobe is not a second star surface.
+  [arXiv:2011.10612](https://arxiv.org/abs/2011.10612): Uryu-law sequence
+  choices and comparison with the established KEH law.
+- J. S. Read et al., *Constraints on a phenomenologically parameterized
+  neutron-star equation of state*,
+  [arXiv:0812.2163](https://arxiv.org/abs/0812.2163): the piecewise-polytrope
+  parametrization and fitted EoS families used by the local SLy/APR4/H4/MS1
+  presets.
 
 ## Local AthenaK Reference
 
@@ -167,28 +165,6 @@ High-value source/test routes include:
   Orszag-Tang, diffusion, Bondi/monopole, and TOV utilities under `inputs/`,
   `tst/test_suite/`, and `src/utils/tov/`.
 
-Treat AthenaK output as an independent numerical reference. A useful paired
-comparison should:
-
-1. write a short equivalence declaration for equations, normalization, EoS,
-   primitive/conserved conventions, domain, boundary conditions, IC, and final
-   time;
-2. match numerical choices where possible, but report irreducible differences
-   such as block AMR versus AMReX, prolongation/reflux policy, CT topology, and
-   floor/recovery rules;
-3. run uniform-grid controls first, then matched refinement studies;
-4. resample both outputs to common physical points or compare scalar/integral
-   diagnostics rather than raw storage ordering;
-5. report each code's conservation, constraints/divB, errors, wall time, and
-   resolution separately; and
-6. store the exact AthenaK input, stdout, build/provenance record, and comparison
-   products under `runs/current/comparisons/athenak/<case>/` rather than relying
-   on an ephemeral terminal invocation.
-
-AthenaK's fast compile/run loop is useful for generating an independent
-high-resolution numerical reference, but it does not replace PyFluid's own
-analytic, conservation, restart, AMR, and performance gates.
-
 ## Local AsterX Robust-Reconstruction Reference
 
 The local AsterX checkout is under
@@ -202,9 +178,3 @@ reconstruction question, use:
 - `ReconX/param.ccl`: independent primary and low-order method parameters;
 - `AsterX/src/con2prim.cxx` and `Con2PrimFactory/src/`: atmosphere, velocity
   ceiling, and ordered recovery behavior.
-
-AsterX is therefore not evidence that raw MP5 should run without safeguards.
-It is evidence for preserving MP5 as the primary component reconstructor while
-making any low-order substitution local and explicit. AthenaK's stage-candidate
-FOFC is the more directly reusable design for preventing an accepted update
-from reaching C2P in a state that requires repair.

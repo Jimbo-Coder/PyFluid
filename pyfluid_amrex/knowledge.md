@@ -7,83 +7,17 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-21, branch `main`, through the local Cycle 208
-relativistic reconstruction/recovery pass. Use the commit containing this
-snapshot plus the exact Cycle 208 evidence rather than inferring it from the
-earlier Cycle 202 baseline.
+Last reconciled: 2026-07-22, branch `main`, through the local Cycle 211
+rotating-star continuation and initial-data scaling pass. Use the commit
+containing this snapshot plus the exact newer continuity-cycle evidence rather
+than inferring it from an earlier baseline.
 
-## Production Boundary
+## Scope
 
-- `pyfluid_amrex/` is the production C++/AMReX implementation. Python/JAX and
-  Python/Numba are references unless a request explicitly includes them.
-- One coordinate-independent physical implementation serves every executable
-  dimension. Dimension branches are for AMReX topology, storage, centering, or
-  an explicitly documented unsupported feature.
-- Fluid conserved state is cell-centered. CT magnetic state is face-centered.
-  Evolved Z4c state is vertex-centered. Stage, RHS, coupling, and transfer
-  arrays are scratch, not checkpointed physical fields.
-- The input file is the simulation configuration. Runners execute and report;
-  they do not override simulation parameters.
-- Production AMR uses the selected state interpolater consistently for level
-  creation, remake, FillPatch, subcycling, and repair seeds. Fluid state is
-  refluxed and averaged down; CT uses edge-EMF reflux and face average-down;
-  nodal spacetime uses its nodal synchronization contract and is not refluxed.
-
-## Canonical Ownership
-
-- Runtime configuration contract: `include/pyfluid_amrex/config.hpp`.
-  Parsing, supported-value catalogs, validation, and derived host policy:
-  `src/framework/config.cpp`, `config_options.hpp`, and `config_runtime.cpp`.
-- Current grid-function declaration source: data-only `schema/fields.toml`.
-  `codegen/pyfluid_codegen/field_catalog.py` strictly loads and validates it,
-  then exposes immutable models and derived views. Generated IDs, descriptors,
-  labels, centerings, output, and plotting views consume that validated model.
-  See `docs/catalog_schema.md`.
-- Rotation-law identity is data-only in `schema/methods.toml`; the strict
-  `method_catalog.py` loader emits the generated C++ enum/descriptors. Uniform
-  rotation is the first implemented family. Its Euler integral remains a
-  generated equation and its hierarchy update remains compiled science code,
-  not TOML expression text.
-- Requested state and auxiliary GF snapshots normally share one resolved GF
-  output cadence: an omitted auxiliary write interval inherits
-  `pyfluid.plot_int`, and
-  the resolved auxiliary compute cadence equals that output cadence. Only an
-  explicit compute override separates them. Explicit auxiliary write and
-  compute overrides, including cached-only operation, remain available;
-  scalars and checkpoints remain independent. Each writer constructs one
-  private ordered auxiliary layout per centering from generated catalog
-  descriptors; names, component IDs, counts, and fill dispatch therefore do
-  not form a second local registry.
-- Critical catalog identity should live in versioned, data-only TOML rather
-  than executable declaration tuples. Python remains the strict loader/model,
-  tensor expander, symbolic implementation, and C++/JSON/document emitter. A
-  canonical GF is any named field that is evolved, retained between operations,
-  selectable for output, or checkpoint eligible; it must exist in the field
-  schema before production code can request it. Unnamed stage/RHS/elliptic work
-  arrays are scratch, not GFs. Runtime code may implement an exhaustive
-  generated-ID fill operation, but may not introduce a raw-string field registry.
-- Runtime and postprocessed diagnostic schema:
-  `codegen/pyfluid_codegen/diagnostic_catalog.py`. Runtime reductions own
-  discrete budgets; postprocessing owns analytic comparisons and derived
-  output views.
-- High-level equations and generated kernels: `codegen/pyfluid_codegen/` and
-  `codegen/generate_kernels.py`. Generated C++ headers are outputs, not edit
-  targets. The browsable generated equation catalog is `docs/equations.md` and
-  `docs/equations.tex`.
-- AMR hierarchy and lifecycle: `src/amr/`. Numerical factories and transfer:
-  `src/numerics/`. Initial-data providers and materialization:
-  `src/initial_data/`. Relativistic recovery, sources, signal speeds, and Z4c
-  runtime: `src/relativity/`. Point flux ownership: `src/flux_kernels/`.
-- Large host orchestration belongs in compiled `.cpp` owners. Header-only code
-  is reserved for small value types and pointwise CPU/GPU kernels whose
-  inlining is part of the numerical implementation. Runtime selection happens
-  once on the host, outside cell loops.
-- The RHD stage-candidate limiter evaluates the concrete RK candidate under
-  its projected candidate metric. A cell that violates the conserved density
-  or admissibility floor receives binary local first-order correction: only
-  adjoining faces are replaced by piecewise-constant LLF fluxes. There is no
-  arbitrary retained-margin fraction. The maintained stellar surface control
-  is PWL/HLL/SSPRK3 at CFL `0.9`, not a lowered-CFL workaround.
+Infrastructure ownership, catalog rules, and artifact semantics live in
+`docs/infrastructure_conventions.md`; source routes live in `references.md`.
+This file keeps learned numerical/physics facts, current evidence boundaries,
+and open limitations that materially affect future implementation.
 
 ## Current Validation Boundary
 
@@ -138,6 +72,12 @@ The latest recorded evidence is not one monolithic green result:
   momentum and records `J_ADM/M_ADM^2`. N=24 ID-only models converge through
   `Omega=0.020`; this is a range probe, not a mass-shedding sequence or a
   resolution-converged spin limit.
+- Cycle 211 adds fully converged angular-velocity continuation stages, compact
+  coordinate surface extents, and a controlled 1/2/3-rank ID benchmark. The
+  focused three-rank rotating-star gate, architecture and generated-kernel
+  checks, all production dimensions, and the complete quick suite pass. This
+  remains coarse N=24 uniform-grid evidence; no standard/full/stability suite
+  or resolution-converged rotating sequence was run.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -171,11 +111,15 @@ performance, and MPI-rank evidence into one claim.
   curvature/angular momentum, and evolution. The current deliberately nonzero-
   mean-curvature CTTK control is a different slice and is excluded from that
   equivalence unless its free data are changed to the equilibrium endpoint.
-- ID-only uniform-rotation probes at N=24 currently establish operation through
-  `Omega=0.020`. That model converges in 77 relaxed matter iterations with
-  `M_ADM,volume=1.695691`, `J_ADM,volume=1.122723`, and
-  `J_ADM/M_ADM^2=0.3905`; matter and volume angular momentum differ by
-  `4.6e-4`, while surface and volume ADM angular momentum differ by `7.6e-3`.
+- ID-only uniform-rotation probes at N=24 currently establish direct operation
+  through `Omega=0.024375` and staged continuation through `Omega=0.02625`.
+  The latter uses five fully converged angular-velocity stages and 207 total
+  matter iterations, with `M_ADM,volume=1.864969`,
+  `J_ADM,volume=1.919866`, and `J_ADM/M_ADM^2=0.5520`; matter and volume
+  angular momentum differ by `3.9e-4`, while surface and volume ADM angular
+  momentum differ by `7.0e-3`. Its roughly 4.9 percent volume ADM--Komar
+  disagreement and coarse N=24 constraints preclude a physical maximum-spin
+  claim.
   The prior roughly 40 percent surface deficit came from an incorrect
   conformal/lapse weight in the generated XCTS shift matter source, not the
   surface quadrature. The focused small-spin gate now enforces both independent
@@ -183,6 +127,26 @@ performance, and MPI-rank evidence into one claim.
   still exits in 24 iterations, while coarse high-spin surface-cell activation
   can require more than 64. No equatorial/polar-radius convergence,
   mass-shedding indicator, or physical maximum-spin claim exists yet.
+- Uniform-star mass shedding is a physical surface condition: the outward
+  equatorial enthalpy gradient approaches zero as the fluid angular velocity
+  reaches the prograde circular-geodesic frequency at the equator. Nonlinear
+  solver failure, finite-domain contact, or a timelike-flow guard does not
+  measure that limit. A credible sequence therefore needs equatorial/polar
+  radii, a surface-gradient or `Omega/Omega_K` indicator, independent charges,
+  constraints, and at least two resolutions.
+- The current N=24 uniform-grid XCTS solve with 8-cell boxes and 24 matter
+  iterations scales from 399.69 seconds on one MPI rank to 221.86 seconds on
+  two and 159.39 seconds on three: speedups 1.80 and 2.51, or 90.1 and 83.6
+  percent parallel efficiency. Elliptic residuals and the final matter update
+  agree across ranks. Initial-data wall time is therefore dominated by the
+  serial sequence of many otherwise well-parallelized elliptic solves at this
+  size, not a demonstrated MPI scaling collapse.
+- The Read-style SLy piecewise-polytrope implementation feeds the same cold
+  barotropic rotating-star inversion successfully: N=24 models converge at
+  `Omega=0.001` directly and at `Omega=0.025` with three continuation stages.
+  This establishes EoS-path compatibility, not that piecewise polytropes
+  improve convergence; the SLy and Gamma=2 stars are different physical
+  models and their iteration counts are not a controlled EoS-algorithm test.
 - Production RHD and RMHD face states reconstruct thermodynamic primitives and
   all three components of spatial four-velocity `z^i = W v^i`. The selected component
   method, including MP5, remains the high-order method; mapping `z^i` through

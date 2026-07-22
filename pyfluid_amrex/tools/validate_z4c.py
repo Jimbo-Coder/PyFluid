@@ -1624,7 +1624,10 @@ def validate_rotating_star_initial_data(
       r"maximum_density=([0-9.eE+-]+) "
       r"maximum_velocity=([0-9.eE+-]+) "
       r"injection_energy=([0-9.eE+-]+) "
-      r"boundary_density_excess=([0-9.eE+-]+)",
+      r"boundary_density_excess=([0-9.eE+-]+) "
+      r"equatorial_radius=([0-9.eE+-]+) "
+      r"polar_radius=([0-9.eE+-]+) "
+      r"coordinate_axis_ratio=([0-9.eE+-]+)",
       run_log,
    )
    if solve_match is None or rotation_match is None:
@@ -1633,6 +1636,9 @@ def validate_rotating_star_initial_data(
    elliptic_residual = max(abs(float(solve_match.group(index))) for index in (4, 5, 6))
    maximum_velocity = float(rotation_match.group(3))
    boundary_density_excess = float(rotation_match.group(5))
+   equatorial_radius = float(rotation_match.group(6))
+   polar_radius = float(rotation_match.group(7))
+   coordinate_axis_ratio = float(rotation_match.group(8))
    angular_momentum3 = float(rotating["angular_mom3"])
    adm_mass_volume = float(initial_rotating["adm_mass_volume"])
    adm_angular_momentum3_surface = float(
@@ -1664,6 +1670,10 @@ def validate_rotating_star_initial_data(
       relative_update > 1.0e-5
       or elliptic_residual > 1.0e-10
       or maximum_velocity <= 0.0
+      or equatorial_radius <= 0.0
+      or polar_radius <= 0.0
+      or coordinate_axis_ratio < 0.5
+      or coordinate_axis_ratio > 2.0
       or angular_momentum3 <= 0.0
       or matter_adm_angular_momentum_relative_error > 1.0e-2
       or surface_volume_angular_momentum_relative_error > 3.0e-2
@@ -1681,6 +1691,7 @@ def validate_rotating_star_initial_data(
          f"relative update={relative_update:.3e}, "
          f"elliptic residual={elliptic_residual:.3e}, "
          f"vmax={maximum_velocity:.3e}, J3={angular_momentum3:.3e}, "
+         f"Req/Rp={coordinate_axis_ratio:.3e}, "
          f"Jmatter/Jvol error={matter_adm_angular_momentum_relative_error:.3e}, "
          f"Jsurface/Jvol error={surface_volume_angular_momentum_relative_error:.3e}, "
          f"chi={dimensionless_spin:.3e}, "
@@ -1708,6 +1719,9 @@ def validate_rotating_star_initial_data(
          "relative_matter_update": relative_update,
          "elliptic_residual": elliptic_residual,
          "maximum_velocity": maximum_velocity,
+         "equatorial_radius": equatorial_radius,
+         "polar_radius": polar_radius,
+         "coordinate_axis_ratio": coordinate_axis_ratio,
          "angular_momentum3": angular_momentum3,
          "adm_angular_momentum3_surface": adm_angular_momentum3_surface,
          "adm_angular_momentum3_volume": adm_angular_momentum3_volume,
@@ -2171,6 +2185,9 @@ def main() -> int:
       "zero_spin_relative_error",
       "elliptic_residual",
       "maximum_velocity",
+      "equatorial_radius",
+      "polar_radius",
+      "coordinate_axis_ratio",
       "angular_momentum3",
       "adm_angular_momentum3_surface",
       "adm_angular_momentum3_volume",

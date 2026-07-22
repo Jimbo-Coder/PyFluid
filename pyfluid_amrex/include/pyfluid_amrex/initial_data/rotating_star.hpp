@@ -30,6 +30,7 @@ struct RotatingStarParameters {
    amrex::Real matter_relaxation = 0.5;
    amrex::Real relative_tolerance = 1.0e-8;
    int max_iterations = 32;
+   int continuation_steps = 1;
    InitialAtmosphereParameters atmosphere{};
 };
 
@@ -47,6 +48,8 @@ struct RotatingStarUpdateSummary {
    amrex::Real maximum_velocity = 0.0;
    amrex::Real boundary_density_excess = 0.0;
    amrex::Real injection_energy = 1.0;
+   amrex::Real equatorial_radius = 0.0;
+   amrex::Real polar_radius = 0.0;
 };
 
 RotatingStarParameters rotating_star_parameters(

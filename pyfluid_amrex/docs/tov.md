@@ -152,7 +152,9 @@ kernel and the AMReX hierarchy update is owned by
 injection energy to retain the requested central enthalpy, under-relaxes the
 matter variables, rebuilds stress-energy, and resolves XCTS lapse, shift, and
 conformal geometry. It rejects non-timelike helical flow and matter touching a
-physical boundary.
+physical boundary. The final summary reports coordinate equatorial and polar
+surface extents about the configured axis; these are deformation sanity checks,
+not a mass-shedding indicator.
 
 The current input controls are:
 
@@ -164,7 +166,28 @@ initial_data.rotation_center1/2/3
 initial_data.matter_relaxation
 initial_data.matter_relative_tolerance
 initial_data.matter_max_iterations
+initial_data.rotation_continuation_steps
 ```
+
+`rotation_continuation_steps` defaults to one. Values above one solve a
+sequence of fully converged intermediate angular velocities, retaining the
+matter and XCTS fields between steps; this is useful when a large direct jump
+from the spherical TOV seed leaves the nonlinear basin of attraction.
+
+Measure spatial MPI scaling with an identical small-spin solve using:
+
+```bash
+UV_CACHE_DIR=.uv-cache MPLCONFIGDIR=.matplotlib uv run python \
+  pyfluid_amrex/tools/benchmark_initial_data.py --force
+```
+
+The tool records wall time, seconds per matter iteration, speedup, and parallel
+efficiency in `runs/current/initial_data_scaling/results.tsv`.
+
+Reusable stellar initial data follow the separate physical-field artifact
+contract in `infrastructure_conventions.md`, not the evolution-checkpoint
+contract. The writer/loader is not implemented yet; a step-zero checkpoint is
+only a temporary exact-evolution cache.
 
 The opt-in focused gate is intentionally outside quick/standard because the
 three nonlinear 3D controls are comparatively slow:
@@ -184,20 +207,21 @@ stationary rotating-star configurations. The shared matter layer can later
 serve CTT/CTTK, but those formulations still need a validated stationarity
 closure before receiving the equilibrium label.
 
-The short-evolution gate also protects the generic RHD invariant-domain flux
-limiter. A high-order candidate must retain a finite fraction of its safe
-low-order LLF candidate's admissibility margin; a roundoff-sized margin is not
-sufficient when the coupled RK stage advances the spacetime metric. The gate
-uses the normal production CFL `0.9`. Lowering CFL is not an accepted substitute
-for reconstruction/admissibility correctness.
+The short-evolution gate also protects the generic RHD stage-candidate flux
+correction. Only faces adjoining a cell whose concrete RK candidate violates
+the conserved admissibility floors are replaced by piecewise-constant LLF
+fluxes. The gate uses the normal production CFL `0.9`; lowering CFL is not an
+accepted substitute for reconstruction/admissibility correctness.
 
-The present fixed-central-enthalpy update identifies the stellar center with
-the minimum helical effective potential. That is appropriate for the current
-small-spin spheroidal continuation. High-spin, toroidal, off-center, or
-mass-shedding sequences require an explicit topology/surface control instead
-of silently reusing this assumption. Differential rotation likewise requires
-its own catalog entry and generated first integral; KEH is not required for
-the uniform-law branch.
+The fixed-central-enthalpy update evaluates the helical effective potential at
+the configured rotation center. Each relaxed update grows or shrinks only the
+matter component connected to the preceding centered TOV seed, excluding
+distant positive-enthalpy lobes. This supports centered spheroidal sequences;
+toroidal families require an explicit alternative topology seed. A physical
+mass-shedding sequence still needs a surface-gradient or `Omega/Omega_K`
+indicator and resolution convergence. Differential rotation likewise requires
+its own catalog entry and generated first integral; KEH is not required for the
+uniform-law branch.
 
 ## Evolution Status
 
