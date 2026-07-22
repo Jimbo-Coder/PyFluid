@@ -2504,6 +2504,11 @@ I will always continue from the last cycle marked as `in_progress`.
   and scalar validation passed with mass drift `7.95e-11`. Architecture,
   generated operators, Python syntax, all production dimensions, the `2.48 s`
   quick gate, and all 42 standard gates (`244.50 s`) pass. Runtime benchmark
-  ratios are `0.92--0.97` of frozen baselines; the integration cache-hit build
-  is `0.52 s` with no compiler invocations and is not a cold-build result.
+  ratios on the precommit run are `0.92--0.97` of frozen baselines; the
+  integration cache-hit build is `0.52 s` with no compiler invocations and is
+  not a cold-build result. Implementation commit `3e22a40` is captured cleanly
+  under `runs/baselines/20260722_175457_physical_id_materialization/`: its
+  standard suite and performance commands return zero and its three-repeat
+  runtime medians are `0.90--0.96` of the frozen baselines. No full or
+  stability suite was run.
   [DONE]

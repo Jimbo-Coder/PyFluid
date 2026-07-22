@@ -139,8 +139,11 @@ The latest recorded evidence is not one monolithic green result:
   covers exact, coarser, and finer/larger one-step loads. A cross-grid RNS
   artifact continued XCTS and its resulting artifact then evolved one CFL
   `0.9` step with zero recovery events. The final quick and 42/42 standard
-  gates pass; runtime ratios are 0.92--0.97 of frozen baselines. Persisted XCTS
-  seeds reconstruct `A_conformal = psi^6 a_tilde` before continuing rotation.
+  gates pass. The clean implementation-commit baseline is
+  `runs/baselines/20260722_175457_physical_id_materialization/`; its standard
+  suite and performance commands return zero, with runtime ratios 0.90--0.96
+  of frozen baselines. Persisted XCTS seeds reconstruct
+  `A_conformal = psi^6 a_tilde` before continuing rotation.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
