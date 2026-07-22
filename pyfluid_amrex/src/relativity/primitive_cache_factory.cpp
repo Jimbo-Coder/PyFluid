@@ -63,7 +63,9 @@ void project_atmosphere(
    amrex::MultiFab const& cell_spacetime,
    EOSParams const& eos,
    EOSThermodynamicState const& atmosphere,
-   int ghost_cells
+   int ghost_cells,
+   amrex::Long* c2p_fallback_count,
+   amrex::Long* atmosphere_reset_count
 )
 {
    project_relativistic_atmosphere<System, EosMethod>(
@@ -75,7 +77,9 @@ void project_atmosphere(
             cell_spacetime.const_array(mfi)
          };
       },
-      ghost_cells
+      ghost_cells,
+      c2p_fallback_count,
+      atmosphere_reset_count
    );
 }
 
@@ -161,7 +165,9 @@ void apply_relativistic_atmosphere(
    int eos_method,
    EOSParams const& eos,
    EOSThermodynamicState const& atmosphere,
-   int ghost_cells
+   int ghost_cells,
+   amrex::Long* c2p_fallback_count,
+   amrex::Long* atmosphere_reset_count
 )
 {
    if (physical_system == PhysicalSystem::RMHD) {
@@ -170,7 +176,9 @@ void apply_relativistic_atmosphere(
          cell_spacetime,
          eos,
          atmosphere,
-         ghost_cells
+         ghost_cells,
+         c2p_fallback_count,
+         atmosphere_reset_count
       );
       return;
    }
@@ -184,7 +192,9 @@ void apply_relativistic_atmosphere(
          cell_spacetime,
          eos,
          atmosphere,
-         ghost_cells
+         ghost_cells,
+         c2p_fallback_count,
+         atmosphere_reset_count
       );
       return;
    case EOSHybridPolytrope:
@@ -193,7 +203,9 @@ void apply_relativistic_atmosphere(
          cell_spacetime,
          eos,
          atmosphere,
-         ghost_cells
+         ghost_cells,
+         c2p_fallback_count,
+         atmosphere_reset_count
       );
       return;
    case EOSIdealGas:
@@ -202,7 +214,9 @@ void apply_relativistic_atmosphere(
          cell_spacetime,
          eos,
          atmosphere,
-         ghost_cells
+         ghost_cells,
+         c2p_fallback_count,
+         atmosphere_reset_count
       );
       return;
    default:

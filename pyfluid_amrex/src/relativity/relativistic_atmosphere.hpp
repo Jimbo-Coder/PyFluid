@@ -1,5 +1,6 @@
 #pragma once
 
+#include <AMReX_GpuAtomic.H>
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_MultiFab.H>
 
@@ -11,6 +12,11 @@
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+struct RelativisticRecoveryCellEvents {
+   int c2p_fallback_count = 0;
+   int atmosphere_reset_count = 0;
+};
 
 template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -37,7 +43,8 @@ auto recover_relativistic_primitive_with_atmosphere(
    int k,
    EOSParams const& eos,
    SpacetimeMetric const& metric,
-   EOSThermodynamicState const& atmosphere
+   EOSThermodynamicState const& atmosphere,
+   RelativisticRecoveryCellEvents* events = nullptr
 ) noexcept
 {
    static_assert(System == PhysicalSystem::RHD || System == PhysicalSystem::RMHD);
@@ -55,9 +62,41 @@ auto recover_relativistic_primitive_with_atmosphere(
             )
          );
       }
+      RHDConserved floor_candidate = load_rhd_conserved(state, i, j, k);
+      if (finite_rhd_conserved(floor_candidate)) {
+         const RHDRecoveryState recovery = generated::rhd_recovery_state(
+            floor_candidate, metric
+         );
+         const amrex::Real admissibility_margin =
+            rhd_conserved_admissibility_margin(floor_candidate, metric);
+         if (recovery.dens > 0.0
+             && amrex::Math::isfinite(admissibility_margin)
+             && admissibility_margin < atmosphere.pressure) {
+            floor_candidate.tau += metric.sqrt_det_gamma
+               * (atmosphere.pressure - admissibility_margin);
+            store_rhd_conserved(state, i, j, k, floor_candidate);
+         }
+      }
       RHDRecoveryResult recovered = recover_rhd<EOSMethod>(
          load_rhd_conserved(state, i, j, k), metric, eos
       );
+      if (!recovered.attempt.succeeded()) {
+         const RHDPrimitive atmosphere_primitive =
+            rhd_atmosphere_primitive<EOSMethod>(atmosphere);
+         store_rhd_conserved(
+            state,
+            i,
+            j,
+            k,
+            generated::rhd_primitive_to_conserved(atmosphere_primitive, metric)
+         );
+         recovered = recover_rhd<EOSMethod>(
+            load_rhd_conserved(state, i, j, k), metric, eos
+         );
+         if (events != nullptr) {
+            events->atmosphere_reset_count = 1;
+         }
+      }
       if (recovered.attempt.succeeded()
           && recovered.primitive.rho < atmosphere.rho) {
          const RHDPrimitive atmosphere_primitive =
@@ -102,6 +141,42 @@ auto recover_relativistic_primitive_with_atmosphere(
       RMHDRecoveryResult recovered = recover_srmhd(
          load_rmhd_conserved(state, i, j, k), metric, eos.gamma
       );
+      const bool finite_magnetic_state =
+         amrex::Math::isfinite(conserved.b1)
+         && amrex::Math::isfinite(conserved.b2)
+         && amrex::Math::isfinite(conserved.b3);
+      if (!recovered.succeeded() && finite_magnetic_state) {
+         const RMHDConserved failed = load_rmhd_conserved(state, i, j, k);
+         const amrex::Real inverse_sqrt_det_gamma = 1.0 / metric.sqrt_det_gamma;
+         const RHDPrimitive fluid =
+            rhd_atmosphere_primitive<EOSIdealGas>(atmosphere);
+         const RMHDPrimitive atmosphere_primitive{
+            fluid.rho,
+            fluid.eps,
+            fluid.pressure,
+            0.0,
+            0.0,
+            0.0,
+            failed.b1 * inverse_sqrt_det_gamma,
+            failed.b2 * inverse_sqrt_det_gamma,
+            failed.b3 * inverse_sqrt_det_gamma,
+         };
+         store_rmhd_conserved(
+            state,
+            i,
+            j,
+            k,
+            generated::rmhd_primitive_to_conserved(atmosphere_primitive, metric)
+         );
+         recovered = recover_srmhd(
+            load_rmhd_conserved(state, i, j, k), metric, eos.gamma
+         );
+         if (events != nullptr) {
+            events->atmosphere_reset_count = 1;
+         }
+      } else if (events != nullptr && recovered.attempt_count > 1) {
+         events->c2p_fallback_count = 1;
+      }
       if (recovered.succeeded()
           && recovered.primitive.rho < atmosphere.rho) {
          const RHDPrimitive fluid =
@@ -155,7 +230,9 @@ inline void project_relativistic_atmosphere(
    EOSParams const& eos,
    EOSThermodynamicState const& atmosphere,
    MetricAccessorFactory&& metric_accessor_factory,
-   int ghost_cells = 0
+   int ghost_cells = 0,
+   amrex::Long* c2p_fallback_count = nullptr,
+   amrex::Long* atmosphere_reset_count = nullptr
 )
 {
    static_assert(System == PhysicalSystem::RHD || System == PhysicalSystem::RMHD);
@@ -165,12 +242,32 @@ inline void project_relativistic_atmosphere(
    for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       amrex::Box box = amrex::grow(mfi.tilebox(), ghost_cells);
       box &= state[mfi].box();
+      const amrex::Box valid_box = mfi.tilebox();
       const auto values = state.array(mfi);
       const auto metric_at = metric_accessor_factory(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         static_cast<void>(recover_relativistic_primitive_with_atmosphere<System, EOSMethod>(
-            values, i, j, k, eos, metric_at(i, j, k), atmosphere
-         ));
+         RelativisticRecoveryCellEvents events;
+         static_cast<void>(
+            recover_relativistic_primitive_with_atmosphere<System, EOSMethod>(
+               values, i, j, k, eos, metric_at(i, j, k), atmosphere, &events
+            )
+         );
+         if (valid_box.contains(i, j, k)) {
+            if (c2p_fallback_count != nullptr
+                && events.c2p_fallback_count != 0) {
+               amrex::HostDevice::Atomic::Add(
+                  c2p_fallback_count,
+                  static_cast<amrex::Long>(events.c2p_fallback_count)
+               );
+            }
+            if (atmosphere_reset_count != nullptr
+                && events.atmosphere_reset_count != 0) {
+               amrex::HostDevice::Atomic::Add(
+                  atmosphere_reset_count,
+                  static_cast<amrex::Long>(events.atmosphere_reset_count)
+               );
+            }
+         }
       });
    }
 }

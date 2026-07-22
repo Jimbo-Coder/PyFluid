@@ -8,6 +8,7 @@
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
+#include "pyfluid_amrex/relativistic_primitive.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -20,6 +21,30 @@ bool metric_boundary_reflects(int kind) noexcept
 {
    return kind == static_cast<int>(BoundaryKind::Reflecting)
       || kind == static_cast<int>(BoundaryKind::Symmetry);
+}
+
+template <typename Primitive>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void reflect_relativistic_velocity(
+   Primitive& primitive,
+   SpacetimeMetric const& source_metric,
+   SpacetimeMetric const& ghost_metric,
+   bool reflect1,
+   bool reflect2,
+   bool reflect3
+) noexcept
+{
+   SpatialFourVelocity z = spatial_four_velocity_from_eulerian(
+      primitive.v1, primitive.v2, primitive.v3, source_metric
+   );
+   if (reflect1) z.z1 = -z.z1;
+   if (reflect2) z.z2 = -z.z2;
+   if (reflect3) z.z3 = -z.z3;
+   const EulerianVelocity velocity =
+      eulerian_velocity_from_spatial_four_velocity(z, ghost_metric);
+   primitive.v1 = velocity.v1;
+   primitive.v2 = velocity.v2;
+   primitive.v3 = velocity.v3;
 }
 
 struct FixedSpacetimeCellMetricAccessor {
@@ -198,10 +223,15 @@ inline void apply_metric_state_boundary(
                      source_metric,
                      eos
                   ).primitive;
+                  reflect_relativistic_velocity(
+                     primitive,
+                     source_metric,
+                     ghost_metric,
+                     x_reflect,
+                     y_reflect,
+                     z_reflect
+                  );
                }
-               if (x_reflect) primitive.v1 = -primitive.v1;
-               if (y_reflect) primitive.v2 = -primitive.v2;
-               if (z_reflect) primitive.v3 = -primitive.v3;
                if ((xlo && x_kind == diode && primitive.v1 > 0.0)
                    || (xhi && x_kind == diode && primitive.v1 < 0.0)) {
                   primitive.v1 = 0.0;
@@ -252,10 +282,15 @@ inline void apply_metric_state_boundary(
                      source_metric,
                      eos.gamma
                   ).primitive;
+                  reflect_relativistic_velocity(
+                     primitive,
+                     source_metric,
+                     ghost_metric,
+                     x_reflect,
+                     y_reflect,
+                     z_reflect
+                  );
                }
-               if (x_reflect) primitive.v1 = -primitive.v1;
-               if (y_reflect) primitive.v2 = -primitive.v2;
-               if (z_reflect) primitive.v3 = -primitive.v3;
                if (x_kind == symmetry) {
                   primitive.b2 = -primitive.b2;
                   primitive.b3 = -primitive.b3;

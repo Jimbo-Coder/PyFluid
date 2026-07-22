@@ -4,6 +4,7 @@
 #include <AMReX_BC_TYPES.H>
 #include <AMReX_FillPatchUtil.H>
 #include <AMReX_GpuLaunch.H>
+#include <AMReX_GpuMemory.H>
 #include <AMReX_Interpolater.H>
 #include <AMReX_Math.H>
 #include <AMReX_MultiFabUtil.H>
@@ -637,6 +638,12 @@ protected:
    amrex::Long regrid_attempt_count_ = 0;
    amrex::Long regrid_noop_count_ = 0;
    amrex::Long regrid_modified_level_count_ = 0;
+   amrex::Gpu::DeviceScalar<amrex::Long>
+      step_relativistic_c2p_fallback_count_{0};
+   amrex::Gpu::DeviceScalar<amrex::Long>
+      step_relativistic_atmosphere_reset_count_{0};
+   amrex::Long relativistic_c2p_fallback_count_ = 0;
+   amrex::Long relativistic_atmosphere_reset_count_ = 0;
    amrex::Vector<amrex::Real> level_times_;
    amrex::Vector<amrex::Real> level_old_times_;
    amrex::Vector<amrex::Real> level_dts_;

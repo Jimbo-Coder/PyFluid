@@ -7,10 +7,10 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-21, branch `main`, through the local Cycle 206
-rotating-star checkpoint. Use the commit containing this snapshot plus the
-exact Cycle 206 evidence rather than inferring it from the earlier Cycle 202
-baseline.
+Last reconciled: 2026-07-21, branch `main`, through the local Cycle 208
+relativistic reconstruction/recovery pass. Use the commit containing this
+snapshot plus the exact Cycle 208 evidence rather than inferring it from the
+earlier Cycle 202 baseline.
 
 ## Production Boundary
 
@@ -78,12 +78,12 @@ baseline.
   is reserved for small value types and pointwise CPU/GPU kernels whose
   inlining is part of the numerical implementation. Runtime selection happens
   once on the host, outside cell loops.
-- The RHD invariant-domain flux limiter treats the low-order LLF update as its
-  safe reference and retains ten percent of that candidate's conserved
-  admissibility margin. Do not reduce this to a roundoff-only margin: coupled
-  RK evolution evaluates the candidate with the input stage metric and accepts
-  it with the advanced metric. The maintained stellar surface control is
-  PWL/HLL/SSPRK3 at CFL `0.9`, not a lowered-CFL workaround.
+- The RHD stage-candidate limiter evaluates the concrete RK candidate under
+  its projected candidate metric. A cell that violates the conserved density
+  or admissibility floor receives binary local first-order correction: only
+  adjoining faces are replaced by piecewise-constant LLF fluxes. There is no
+  arbitrary retained-margin fraction. The maintained stellar surface control
+  is PWL/HLL/SSPRK3 at CFL `0.9`, not a lowered-CFL workaround.
 
 ## Current Validation Boundary
 
@@ -121,6 +121,15 @@ The latest recorded evidence is not one monolithic green result:
   all 42 standard gates pass. This is short finite-state evidence only: no
   long-term stability, rotating sequence, convergence, AMR rotation,
   full/stability suite, or fresh broad runtime-performance result was recorded.
+- Cycle 208 makes `z^i = W v^i` the shared RHD/RMHD component-reconstruction
+  contract, including metric-consistent reflecting ghosts. All production
+  dimensions, generated and architecture checks, the focused RHD AMR pair,
+  exact zero-spin plus three-step small-spin XCTS control, the full RMHD and
+  fixed-spacetime suites, the `2.53 s` quick gate, and all standard gates pass.
+  The canonical performance cases are `0.92--0.99` of their frozen baselines.
+  The named 42/42 standard plus performance artifact is
+  `runs/baselines/20260721_201750_relativistic_reconstruction_recovery/`.
+  No full or stability suite was run.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -151,6 +160,34 @@ performance, and MPI-rank evidence into one claim.
   curvature/angular momentum, and evolution. The current deliberately nonzero-
   mean-curvature CTTK control is a different slice and is excluded from that
   equivalence unless its free data are changed to the equilibrium endpoint.
+- Production RHD and RMHD face states reconstruct thermodynamic primitives and
+  all three components of spatial four-velocity `z^i = W v^i`. The selected component
+  method, including MP5, remains the high-order method; mapping `z^i` through
+  the face metric avoids making a cell velocity superluminal merely by
+  evaluating it in a different metric. RHD also has stage-candidate
+  first-order flux correction: only faces adjoining a cell whose actual RK
+  candidate violates the conserved density/admissibility floors are replaced
+  with piecewise-constant LLF fluxes. This follows AthenaK's local-fallback
+  structure rather than globally downgrading reconstruction. The current
+  stage-candidate correction is RHD-only; RMHD retains its local face-state
+  admissibility limit and ordered C2P policy.
+- During evolution, successful use of a secondary RMHD C2P method and terminal
+  atmosphere resets after C2P exhaustion are counted across ranks and warned
+  once per affected step. Ordinary atmosphere cells are not counted as
+  failures. A terminal RMHD reset preserves finite magnetic fields; a
+  nonfinite magnetic state remains fatal. The smooth five-method RMHD sweep,
+  fixed-curved-metric controls, and small-spin RHD control all record zero
+  recovery events.
+- The current small-spin XCTS PWL control passes three evolved-spacetime steps
+  at CFL 0.9 with rest-mass drift `8.52e-10`. Component MP5 now remains finite
+  for the same three steps, but its `9.35e-8` rest-mass drift fails the existing
+  `1e-8` gate because density-floor projection injects mass in surface cells.
+  Keep the checked-in rotating-star input on PWL and do not weaken that gate;
+  MP5 rotating-star evolution needs a conservative surface treatment before it
+  is a validated production default. The accepted compact policy is to count
+  and warn on recovery fallback/reset, not to add a special atmosphere
+  mass/energy ledger. Reusable candidate-metric scratch and longer rotating-
+  star validation remain open performance/numerical work.
 - Native CompOSE/tabulated EoS support is not implemented. Add a cold,
   beta-equilibrated one-dimensional barotrope first and use the same loaded,
   unit-checked table for direct TOV, rotating-star initial data, C2P/P2C,
@@ -172,11 +209,12 @@ performance, and MPI-rank evidence into one claim.
   composite-AMR volume reductions, spherical hierarchy interpolation,
   parametric-surface quadrature, and general multipole/Fourier reduction. The
   remaining additions are specific quantities: spherical mass-accretion rate,
-  separated fluid and electromagnetic energy fluxes, magnetic flux, and C2P
-  fallback/failure plus atmosphere-injection counters. The existing catalog
+  separated fluid and electromagnetic energy fluxes, and magnetic flux. The
+  existing catalog
   already includes total finite-radius matter energy flux and atmosphere volume
-  fraction. Flat/power-law initial atmospheres and the allocation-free physical
-  geometry provider are implemented.
+  fraction. Recovery fallback/reset counts are compact runtime warnings rather
+  than new scalar GFs. Flat/power-law initial atmospheres and the allocation-
+  free physical geometry provider are implemented.
 
 ## AthenaK Reference Boundary
 
@@ -193,6 +231,14 @@ performance, and MPI-rank evidence into one claim.
   algorithms and test setups. It is not PyFluid's source of truth and its
   numerical output is a code-to-code reference, not an analytic or exact
   solution.
+- For relativistic reconstruction and recovery, inspect
+  `src/dyn_grmhd/dyn_grmhd_fofc.cpp`, `src/dyn_grmhd/dyn_grmhd_fluxes.cpp`,
+  `src/eos/ideal_grhyd.cpp`, and `src/eos/primitive-solver/reset_floor.hpp`.
+  AthenaK predicts the concrete RK-stage candidate, asks C2P whether floors, a
+  velocity ceiling, or recovery failure would be needed, replaces the faces
+  adjoining flagged cells with first-order LLF/HLLE, and records event
+  counters. Its floor policy is an explicit conserved-state mutation after the
+  conservative flux correction, not part of the nominal reconstructor.
 - For comparisons, first match equations, EoS/units, initial data, domain,
   boundaries, resolution, reconstruction/Riemann method, CFL, time integrator,
   output time, and AMR policy. Start with a uniform-grid control, compare

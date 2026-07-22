@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import re
 import shutil
 from pathlib import Path
 
@@ -39,6 +40,7 @@ RESULTS = RUN_ROOT / "rmhd_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
 CHECKPOINT_COMPARE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_2d"
 CT_AMR_DIVB_TOLERANCE = 1.0e-12
+COMPONENT_RECONSTRUCTION_METHODS = ("pwc", "pwl", "wenoz", "mp5", "teno5")
 
 
 def run_case(
@@ -116,6 +118,52 @@ def validate_uniform(args: argparse.Namespace) -> tuple[list[dict[str, object]],
          "status": "PASS",
          "metric": "max_component_spread",
          "value": spread,
+         "run_dir": repo_relative(run_dir),
+      })
+      scalars.append(scalar)
+   return results, scalars
+
+
+def validate_component_reconstruction_methods(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   results = []
+   scalars = []
+   for method in COMPONENT_RECONSTRUCTION_METHODS:
+      run_dir, scalar = run_case(
+         f"recon_{method}",
+         INPUTS / "rmhd_entropy_wave_1d.in",
+         {
+            "amr.n_cell": "32",
+            "amr.max_grid_size": "32",
+            "pyfluid.max_step": "4",
+            "pyfluid.final_time": "-1",
+            "pyfluid.ng": "3" if method in {"wenoz", "mp5", "teno5"} else "2",
+            "pyfluid.recon": method,
+            "pyfluid.scalar_int": "1",
+            "pyfluid.plot_int": "4",
+         },
+         args,
+      )
+      log_text = (run_dir / "run.log").read_text()
+      match = re.search(
+         r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)",
+         log_text,
+      )
+      if match is None:
+         raise RuntimeError(f"{method} did not report relativistic recovery counts")
+      fallback_count, reset_count = (int(value) for value in match.groups())
+      if fallback_count != 0 or reset_count != 0:
+         raise RuntimeError(
+            f"{method} smooth wave required recovery repairs: "
+            f"fallbacks={fallback_count} atmosphere_resets={reset_count}"
+         )
+      results.append({
+         "kind": "reconstruction",
+         "case": f"component_{method}",
+         "status": "PASS",
+         "metric": "recovery_repairs",
+         "value": 0,
          "run_dir": repo_relative(run_dir),
       })
       scalars.append(scalar)
@@ -385,6 +433,9 @@ def main() -> int:
    scalar_rows: list[dict[str, object]] = []
    uniform, scalars = validate_uniform(args)
    rows.extend(uniform)
+   scalar_rows.extend(scalars)
+   reconstruction, scalars = validate_component_reconstruction_methods(args)
+   rows.extend(reconstruction)
    scalar_rows.extend(scalars)
    convergence, scalars = validate_entropy_convergence(args)
    rows.extend(convergence)

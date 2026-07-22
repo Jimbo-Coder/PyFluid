@@ -47,7 +47,7 @@ RMHDPrimitive admissibility_limit_rmhd_primitive(
    return face;
 }
 
-template <int ReconMethod, int Direction>
+template <int ReconMethod, int Direction, typename MetricAccessor>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDPrimitiveFaceStates rmhd_primitive_face_states(
    amrex::Array4<amrex::Real const> const& primitive,
@@ -58,17 +58,42 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
    int jr,
    int kr,
    const EOSParams& eos,
-   const SpacetimeMetric& metric,
+   MetricAccessor const& metric,
    EOSThermodynamicState const& atmosphere_l,
    EOSThermodynamicState const& atmosphere_r
 ) noexcept
 {
-   const RMHDPrimitive center_l = rmhd_primitive_at(
+   RMHDPrimitive center_l = rmhd_primitive_at(
       primitive, il, jl, kl, eos
    );
-   const RMHDPrimitive center_r = rmhd_primitive_at(
+   RMHDPrimitive center_r = rmhd_primitive_at(
       primitive, ir, jr, kr, eos
    );
+   const SpacetimeMetric face_metric = metric.template face<Direction>(
+      ir, jr, kr
+   );
+   const EulerianVelocity center_v_l =
+      eulerian_velocity_from_spatial_four_velocity(
+         spatial_four_velocity_from_eulerian(
+            center_l.v1, center_l.v2, center_l.v3,
+            metric.cell(il, jl, kl)
+         ),
+         face_metric
+      );
+   const EulerianVelocity center_v_r =
+      eulerian_velocity_from_spatial_four_velocity(
+         spatial_four_velocity_from_eulerian(
+            center_r.v1, center_r.v2, center_r.v3,
+            metric.cell(ir, jr, kr)
+         ),
+         face_metric
+      );
+   center_l.v1 = center_v_l.v1;
+   center_l.v2 = center_v_l.v2;
+   center_l.v3 = center_v_l.v3;
+   center_r.v1 = center_v_r.v1;
+   center_r.v2 = center_v_r.v2;
+   center_r.v3 = center_v_r.v3;
    if (center_l.rho <= atmosphere_l.rho
        || center_l.pressure <= atmosphere_l.pressure
        || center_r.rho <= atmosphere_r.rho
@@ -78,15 +103,17 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
    const ScalarFaceValues rho = primitive_component_face_values<ReconMethod, Direction, RHO>(
       primitive, il, jl, kl, ir, jr, kr
    );
-   const ScalarFaceValues v1 = primitive_component_face_values<ReconMethod, Direction, MOM1>(
-      primitive, il, jl, kl, ir, jr, kr
+   const auto z = spatial_four_velocity_face_values<ReconMethod, Direction>(
+      primitive, il, jl, kl, ir, jr, kr, metric
    );
-   const ScalarFaceValues v2 = primitive_component_face_values<ReconMethod, Direction, MOM2>(
-      primitive, il, jl, kl, ir, jr, kr
-   );
-   const ScalarFaceValues v3 = primitive_component_face_values<ReconMethod, Direction, MOM3>(
-      primitive, il, jl, kl, ir, jr, kr
-   );
+   const EulerianVelocity velocity_l =
+      eulerian_velocity_from_spatial_four_velocity(
+         {z[0].left, z[1].left, z[2].left}, face_metric
+      );
+   const EulerianVelocity velocity_r =
+      eulerian_velocity_from_spatial_four_velocity(
+         {z[0].right, z[1].right, z[2].right}, face_metric
+      );
    const ScalarFaceValues pressure = primitive_component_face_values<ReconMethod, Direction, ENERGY>(
       primitive, il, jl, kl, ir, jr, kr
    );
@@ -104,9 +131,9 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
          rho.left,
          0.0,
          pressure.left,
-         v1.left,
-         v2.left,
-         v3.left,
+         velocity_l.v1,
+         velocity_l.v2,
+         velocity_l.v3,
          b1.left,
          b2.left,
          b3.left,
@@ -115,9 +142,9 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
          rho.right,
          0.0,
          pressure.right,
-         v1.right,
-         v2.right,
-         v3.right,
+         velocity_r.v1,
+         velocity_r.v2,
+         velocity_r.v3,
          b1.right,
          b2.right,
          b3.right,
@@ -127,7 +154,7 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
       face.left,
       center_l,
       eos,
-      metric,
+      face_metric,
       atmosphere_l.rho,
       atmosphere_l.pressure
    );
@@ -135,7 +162,7 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
       face.right,
       center_r,
       eos,
-      metric,
+      face_metric,
       atmosphere_r.rho,
       atmosphere_r.pressure
    );
@@ -214,7 +241,7 @@ RMHDConserved rmhd_llf_flux(
    );
 }
 
-template <int ReconMethod, int RiemannMethod, int Direction>
+template <int ReconMethod, int RiemannMethod, int Direction, typename MetricAccessor>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDConserved rmhd_riemann_flux(
    amrex::Array4<amrex::Real const> const& primitive,
@@ -225,7 +252,7 @@ RMHDConserved rmhd_riemann_flux(
    int jr,
    int kr,
    const EOSParams& eos,
-   const SpacetimeMetric& metric,
+   MetricAccessor const& metric,
    EOSThermodynamicState const& atmosphere_l,
    EOSThermodynamicState const& atmosphere_r
 ) noexcept
@@ -235,11 +262,14 @@ RMHDConserved rmhd_riemann_flux(
          primitive, il, jl, kl, ir, jr, kr, eos, metric,
          atmosphere_l, atmosphere_r
       );
+   const SpacetimeMetric face_metric = metric.template face<Direction>(
+      ir, jr, kr
+   );
    if constexpr (RiemannMethod == RiemannLLF) {
-      return rmhd_llf_flux<Direction>(face.left, face.right, eos, metric);
+      return rmhd_llf_flux<Direction>(face.left, face.right, eos, face_metric);
    } else if constexpr (RiemannMethod == RiemannHLL
                         || RiemannMethod == RiemannHLLE) {
-      return rmhd_hll_flux<Direction>(face.left, face.right, eos, metric);
+      return rmhd_hll_flux<Direction>(face.left, face.right, eos, face_metric);
    } else {
       AMREX_ASSERT_WITH_MESSAGE(
          false,
@@ -287,10 +317,9 @@ inline void fill_rmhd_flux_direction(
             --kl;
          }
 #endif
-         const FixedSpacetimeGeometry face_geometry =
-            fixed_spacetime_geometry_at_face<Direction, AMREX_SPACEDIM>(
-               spacetime, lower, spacing, i, j, k, time
-            );
+         const RHDFixedMetricAccessor metric{
+            spacetime, lower, spacing, time
+         };
          const RMHDConserved value =
             rmhd_riemann_flux<ReconMethod, RiemannMethod, Direction>(
                cached,
@@ -301,7 +330,7 @@ inline void fill_rmhd_flux_direction(
                j,
                k,
                eos,
-               face_geometry.metric,
+               metric,
                atmosphere,
                atmosphere
             );
@@ -345,10 +374,7 @@ inline void fill_rmhd_flux_direction(
             --kl;
          }
 #endif
-         const SpacetimeMetric metric = stored_spacetime_metric_at_face<
-            4,
-            Direction
-         >(spacetime, i, j, k);
+         const RHDStoredMetricAccessor metric{spacetime};
          const RMHDConserved value = rmhd_riemann_flux<
             ReconMethod,
             RiemannMethod,

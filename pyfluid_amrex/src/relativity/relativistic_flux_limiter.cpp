@@ -60,7 +60,8 @@ RHDConserved blend(
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real admissibility_floor(
    RHDConserved const& state,
-   SpacetimeMetric const& metric
+   SpacetimeMetric const& metric,
+   amrex::Real thermodynamic_floor
 ) noexcept
 {
    const RHDRecoveryState recovery = generated::rhd_recovery_state(state, metric);
@@ -75,19 +76,7 @@ amrex::Real admissibility_floor(
    const amrex::Real roundoff_floor =
       256.0 * std::numeric_limits<amrex::Real>::epsilon()
       * amrex::max(scale, std::numeric_limits<amrex::Real>::min());
-   // The low-order LLF candidate is the invariant-domain reference.  Retain a
-   // finite fraction of its margin instead of accepting a high-order state at
-   // roundoff distance from the boundary.  Coupled GR advances the metric in
-   // the same RK stage, so a merely machine-positive margin under the input
-   // metric can become nonrecoverable under the accepted metric.
-   constexpr amrex::Real retained_low_order_margin = 0.1;
-   const amrex::Real low_order_margin = energy - std::sqrt(
-      recovery.dens * recovery.dens + momentum * momentum
-   );
-   return amrex::max(
-      roundoff_floor,
-      retained_low_order_margin * amrex::max(low_order_margin, amrex::Real(0.0))
-   );
+   return amrex::max(roundoff_floor, thermodynamic_floor);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -95,58 +84,37 @@ amrex::Real admissibility_theta(
    RHDConserved const& low_order,
    RHDConserved const& high_order,
    SpacetimeMetric const& metric,
-   amrex::Real density_floor
+   amrex::Real density_floor,
+   amrex::Real thermodynamic_floor
 ) noexcept
 {
-   const RHDRecoveryState low = generated::rhd_recovery_state(low_order, metric);
    const RHDRecoveryState high = generated::rhd_recovery_state(high_order, metric);
-   amrex::Real theta = 1.0;
-   if (high.dens < density_floor) {
-      const amrex::Real denominator = low.dens - high.dens;
-      theta = denominator > 0.0
-         ? amrex::max(
-              amrex::Real(0.0),
-              amrex::min(
-                 amrex::Real(1.0),
-                 (low.dens - density_floor) / denominator
-              )
-           )
-         : 0.0;
-   }
-
-   const amrex::Real target = admissibility_floor(low_order, metric);
-   if (rhd_conserved_admissibility_margin(
-          blend(low_order, high_order, theta), metric
-       ) >= target) {
-      return theta;
-   }
-   if (rhd_conserved_admissibility_margin(low_order, metric) < target) {
-      return 0.0;
-   }
-
-   amrex::Real lower = 0.0;
-   amrex::Real upper = theta;
-   for (int iteration = 0; iteration < 48; ++iteration) {
-      const amrex::Real middle = 0.5 * (lower + upper);
-      if (rhd_conserved_admissibility_margin(
-             blend(low_order, high_order, middle), metric
-          ) >= target) {
-         lower = middle;
-      } else {
-         upper = middle;
-      }
-   }
-   return lower;
+   const amrex::Real target = admissibility_floor(
+      low_order, metric, thermodynamic_floor
+   );
+   return high.dens >= density_floor
+      && rhd_conserved_admissibility_margin(high_order, metric) >= target
+      ? 1.0
+      : 0.0;
 }
 
 struct StoredMetricAccessor {
    amrex::Array4<amrex::Real const> spacetime;
+   amrex::Array4<amrex::Real const> candidate_spacetime;
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    SpacetimeMetric cell(int i, int j, int k) const noexcept
    {
       return generated::z4c_spacetime_metric(
          load_z4c_state(spacetime, i, j, k)
+      );
+   }
+
+   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+   SpacetimeMetric candidate_cell(int i, int j, int k) const noexcept
+   {
+      return generated::z4c_spacetime_metric(
+         load_z4c_state(candidate_spacetime, i, j, k)
       );
    }
 
@@ -172,6 +140,12 @@ struct FixedMetricAccessor {
       return fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
          spacetime, lower, spacing, i, j, k, time
       ).metric;
+   }
+
+   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+   SpacetimeMetric candidate_cell(int i, int j, int k) const noexcept
+   {
+      return cell(i, j, k);
    }
 
    template <int Direction>
@@ -215,15 +189,35 @@ RHDConserved low_order_flux(
    int jl;
    int kl;
    left_cell<Direction>(i, j, k, il, jl, kl);
-   const RHDPrimitive left = rhd_primitive_at<EOSMethod>(
+   RHDPrimitive left = rhd_primitive_at<EOSMethod>(
       primitive, il, jl, kl, eos
    );
-   const RHDPrimitive right = rhd_primitive_at<EOSMethod>(
+   RHDPrimitive right = rhd_primitive_at<EOSMethod>(
       primitive, i, j, k, eos
    );
    const SpacetimeMetric face_metric = metric.template face<Direction>(
       i, j, k
    );
+   const EulerianVelocity left_velocity =
+      eulerian_velocity_from_spatial_four_velocity(
+         spatial_four_velocity_from_eulerian(
+            left.v1, left.v2, left.v3, metric.cell(il, jl, kl)
+         ),
+         face_metric
+      );
+   const EulerianVelocity right_velocity =
+      eulerian_velocity_from_spatial_four_velocity(
+         spatial_four_velocity_from_eulerian(
+            right.v1, right.v2, right.v3, metric.cell(i, j, k)
+         ),
+         face_metric
+      );
+   left.v1 = left_velocity.v1;
+   left.v2 = left_velocity.v2;
+   left.v3 = left_velocity.v3;
+   right.v1 = right_velocity.v1;
+   right.v2 = right_velocity.v2;
+   right.v3 = right_velocity.v3;
    const RHDConserved state_l = generated::rhd_primitive_to_conserved(
       left, face_metric
    );
@@ -385,12 +379,15 @@ template <int EOSMethod, typename MetricAccessorFactory>
 void apply_limiter_impl(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab& rhs,
+   amrex::MultiFab const& base_conserved,
    amrex::MultiFab const& conserved,
    amrex::MultiFab const& primitive,
    EOSParams const& eos,
    amrex::Geometry const& geometry,
    EOSThermodynamicState const& atmosphere,
-   amrex::Real forward_euler_dt,
+   amrex::Real base_weight,
+   amrex::Real conserved_weight,
+   amrex::Real increment_scale,
    MetricAccessorFactory&& metric_accessor_factory
 )
 {
@@ -406,6 +403,7 @@ void apply_limiter_impl(
    for (amrex::MFIter mfi(rhs, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& box = mfi.tilebox();
       const auto rhs_values = rhs.const_array(mfi);
+      const auto base_values = base_conserved.const_array(mfi);
       const auto state_values = conserved.const_array(mfi);
       const auto primitive_values = primitive.const_array(mfi);
       const auto flux0 = fluxes[0]->const_array(mfi);
@@ -418,33 +416,45 @@ void apply_limiter_impl(
       const auto theta_values = theta.array(mfi);
       const auto metric = metric_accessor_factory(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         RHDConserved high_candidate = add_scaled(
+         RHDConserved high_candidate{};
+         high_candidate = add_scaled(
+            high_candidate,
+            load_rhd_conserved(base_values, i, j, k),
+            base_weight
+         );
+         high_candidate = add_scaled(
+            high_candidate,
             load_rhd_conserved(state_values, i, j, k),
+            conserved_weight
+         );
+         high_candidate = add_scaled(
+            high_candidate,
             load_rhd_conserved(rhs_values, i, j, k),
-            forward_euler_dt
+            increment_scale
          );
          RHDConserved low_candidate = high_candidate;
          add_low_order_candidate_correction<0, EOSMethod>(
             low_candidate, flux0, primitive_values, i, j, k, eos, metric,
-            forward_euler_dt / spacing[0]
+            increment_scale / spacing[0]
          );
 #if (AMREX_SPACEDIM >= 2)
          add_low_order_candidate_correction<1, EOSMethod>(
             low_candidate, flux1, primitive_values, i, j, k, eos, metric,
-            forward_euler_dt / spacing[1]
+            increment_scale / spacing[1]
          );
 #endif
 #if (AMREX_SPACEDIM == 3)
          add_low_order_candidate_correction<2, EOSMethod>(
             low_candidate, flux2, primitive_values, i, j, k, eos, metric,
-            forward_euler_dt / spacing[2]
+            increment_scale / spacing[2]
          );
 #endif
          theta_values(i, j, k, 0) = admissibility_theta(
             low_candidate,
             high_candidate,
-            metric.cell(i, j, k),
-            atmosphere.rho
+            metric.candidate_cell(i, j, k),
+            atmosphere.rho,
+            atmosphere.pressure
          );
       });
    }
@@ -536,31 +546,39 @@ template <int EOSMethod>
 void apply_limiter(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab& rhs,
+   amrex::MultiFab const& base_conserved,
    amrex::MultiFab const& conserved,
    amrex::MultiFab const& primitive,
    EOSParams const& eos,
    amrex::Geometry const& geometry,
    FixedSpacetimeParameters const& fixed_spacetime,
    amrex::MultiFab const* cell_spacetime,
+   amrex::MultiFab const* candidate_cell_spacetime,
    EOSThermodynamicState const& atmosphere,
    amrex::Real time,
-   amrex::Real forward_euler_dt
+   amrex::Real base_weight,
+   amrex::Real conserved_weight,
+   amrex::Real increment_scale
 )
 {
    if (cell_spacetime != nullptr) {
+      AMREX_ALWAYS_ASSERT(candidate_cell_spacetime != nullptr);
       apply_limiter_impl<EOSMethod>(
-         fluxes, rhs, conserved, primitive, eos, geometry, atmosphere,
-         forward_euler_dt,
+         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
+         atmosphere, base_weight, conserved_weight, increment_scale,
          [&](amrex::MFIter const& mfi) {
-            return StoredMetricAccessor{cell_spacetime->const_array(mfi)};
+            return StoredMetricAccessor{
+               cell_spacetime->const_array(mfi),
+               candidate_cell_spacetime->const_array(mfi)
+            };
          }
       );
    } else {
       const auto lower = geometry.ProbLoArray();
       const auto spacing = geometry.CellSizeArray();
       apply_limiter_impl<EOSMethod>(
-         fluxes, rhs, conserved, primitive, eos, geometry, atmosphere,
-         forward_euler_dt,
+         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
+         atmosphere, base_weight, conserved_weight, increment_scale,
          [=](amrex::MFIter const&) {
             return FixedMetricAccessor{
                fixed_spacetime, lower, spacing, time
@@ -575,6 +593,7 @@ void apply_limiter(
 void apply_rhd_admissibility_flux_limiter(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab& rhs,
+   amrex::MultiFab const& base_conserved,
    amrex::MultiFab const& conserved,
    amrex::MultiFab const& primitive,
    EOSParams const& eos,
@@ -582,31 +601,34 @@ void apply_rhd_admissibility_flux_limiter(
    amrex::Geometry const& geometry,
    FixedSpacetimeParameters const& fixed_spacetime,
    amrex::MultiFab const* cell_spacetime,
+   amrex::MultiFab const* candidate_cell_spacetime,
    EOSThermodynamicState const& atmosphere,
    amrex::Real time,
-   amrex::Real forward_euler_dt
+   amrex::Real base_weight,
+   amrex::Real conserved_weight,
+   amrex::Real increment_scale
 )
 {
-   if (!(forward_euler_dt > 0.0)) {
+   if (!(increment_scale > 0.0)) {
       return;
    }
    if (eos_method == EOSPolytrope) {
       apply_limiter<EOSPolytrope>(
-         fluxes, rhs, conserved, primitive, eos, geometry, fixed_spacetime,
-         cell_spacetime, atmosphere, time,
-         forward_euler_dt
+         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry, fixed_spacetime,
+         cell_spacetime, candidate_cell_spacetime, atmosphere, time,
+         base_weight, conserved_weight, increment_scale
       );
    } else if (eos_method == EOSHybridPolytrope) {
       apply_limiter<EOSHybridPolytrope>(
-         fluxes, rhs, conserved, primitive, eos, geometry, fixed_spacetime,
-         cell_spacetime, atmosphere, time,
-         forward_euler_dt
+         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry, fixed_spacetime,
+         cell_spacetime, candidate_cell_spacetime, atmosphere, time,
+         base_weight, conserved_weight, increment_scale
       );
    } else {
       apply_limiter<EOSIdealGas>(
-         fluxes, rhs, conserved, primitive, eos, geometry, fixed_spacetime,
-         cell_spacetime, atmosphere, time,
-         forward_euler_dt
+         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry, fixed_spacetime,
+         cell_spacetime, candidate_cell_spacetime, atmosphere, time,
+         base_weight, conserved_weight, increment_scale
       );
    }
 }

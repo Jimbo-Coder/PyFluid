@@ -25,8 +25,56 @@
             EOSMethod,
             eos,
             recovery_atmosphere_,
-            ghost_cells
+            ghost_cells,
+            step_relativistic_c2p_fallback_count_.dataPtr(),
+            step_relativistic_atmosphere_reset_count_.dataPtr()
          );
+      }
+   }
+
+   void reset_relativistic_recovery_events()
+   {
+      const amrex::Long zero = 0;
+#ifdef AMREX_USE_GPU
+      amrex::Gpu::htod_memcpy(
+         step_relativistic_c2p_fallback_count_.dataPtr(),
+         &zero,
+         sizeof(zero)
+      );
+      amrex::Gpu::htod_memcpy(
+         step_relativistic_atmosphere_reset_count_.dataPtr(),
+         &zero,
+         sizeof(zero)
+      );
+#else
+      *step_relativistic_c2p_fallback_count_.dataPtr() = zero;
+      *step_relativistic_atmosphere_reset_count_.dataPtr() = zero;
+#endif
+   }
+
+   void report_relativistic_recovery_events(int step, amrex::Real time)
+   {
+      if (!physical_system_is_relativistic(physics_system_)) {
+         return;
+      }
+      amrex::Long c2p_fallback_count =
+         step_relativistic_c2p_fallback_count_.dataValue();
+      amrex::Long atmosphere_reset_count =
+         step_relativistic_atmosphere_reset_count_.dataValue();
+      amrex::ParallelDescriptor::ReduceLongSum(c2p_fallback_count);
+      amrex::ParallelDescriptor::ReduceLongSum(atmosphere_reset_count);
+      relativistic_c2p_fallback_count_ += c2p_fallback_count;
+      relativistic_atmosphere_reset_count_ += atmosphere_reset_count;
+      if (c2p_fallback_count != 0 || atmosphere_reset_count != 0) {
+         amrex::Print()
+            << "WARNING: relativistic recovery repair at step=" << step
+            << " time=" << time
+            << " c2p_fallbacks=" << c2p_fallback_count
+            << " atmosphere_resets=" << atmosphere_reset_count
+            << " cumulative_c2p_fallbacks="
+            << relativistic_c2p_fallback_count_
+            << " cumulative_atmosphere_resets="
+            << relativistic_atmosphere_reset_count_ << "\n";
       }
    }
 
@@ -60,11 +108,14 @@
    template <int NComp, int EOSMethod, bool SubcyclingEnabled = false>
    void compute_rhs_range(
       LevelData& input,
+      LevelData const& candidate_base,
       amrex::Real reflux_weight,
       int lev_begin,
       int lev_end,
       amrex::Real rhs_time,
-      amrex::Real forward_euler_dt
+      amrex::Real candidate_base_weight,
+      amrex::Real candidate_input_weight,
+      amrex::Real candidate_increment_scale
    )
    {
       prepare_stage_sources<SubcyclingEnabled>(input, lev_begin, lev_end, rhs_time);
@@ -203,6 +254,7 @@
             }
          }
          profile_.end(ProfileStage::Flux, stage_start);
+         debug_check_fluxes(lev, use_solid_mask, "reconstructed flux");
          if (physical_vector_flux) {
             transform_primitive_vectors<NComp>(
                *primitive_[lev], Geom(lev), mesh_coordinate_kind(), active_mesh_axes(), false
@@ -297,10 +349,13 @@
             });
             profile_.end(ProfileStage::Sources, stage_start);
          }
-         if (physics_system_ == PhysicalSystem::RHD) {
+         const bool defer_rhd_limiter =
+            physics_system_ == PhysicalSystem::RHD && spacetime_state_.evolves();
+         if (physics_system_ == PhysicalSystem::RHD && !defer_rhd_limiter) {
             apply_rhd_admissibility_flux_limiter(
                fluxes,
                *fluid_state_.rhs()[lev],
+               *candidate_base[lev],
                *input[lev],
                *primitive_[lev],
                eos_params(cfg_),
@@ -308,17 +363,22 @@
                Geom(lev),
                fixed_spacetime_parameters(cfg_),
                stored_spacetime,
+               stored_spacetime,
                recovery_atmosphere_,
                rhs_time,
-               forward_euler_dt
+               candidate_base_weight,
+               candidate_input_weight,
+               candidate_increment_scale
             );
          }
-         debug_check_fluxes(lev, use_solid_mask, "final flux");
-         accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
-         debug_check_rhs_level(lev, "RHS assembly");
-         stage_start = profile_.begin();
-         add_fluxes_to_registers(lev, reflux_weight);
-         profile_.end(ProfileStage::FluxRegister, stage_start);
+         if (!defer_rhd_limiter) {
+            debug_check_fluxes(lev, use_solid_mask, "final flux");
+            accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
+            debug_check_rhs_level(lev, "RHS assembly");
+            stage_start = profile_.begin();
+            add_fluxes_to_registers(lev, reflux_weight);
+            profile_.end(ProfileStage::FluxRegister, stage_start);
+         }
       }
       if (rhs_has_wall_power) {
          latest_wall_power_ = rhs_wall_power;
@@ -332,7 +392,11 @@
       int lev_begin,
       int lev_end,
       amrex::Real stage_time,
-      amrex::Real forward_euler_dt,
+      EvolutionStageSlot candidate_base_slot,
+      amrex::Real candidate_base_weight,
+      amrex::Real candidate_input_weight,
+      amrex::Real candidate_increment_scale,
+      amrex::Real candidate_time,
       amrex::Real fine_step_start = -1.0,
       int rk_stage = 0
    )
@@ -351,25 +415,26 @@
             : (input_slot == EvolutionStageSlot::Scratch
                   ? "relativistic scratch-stage input"
                   : "relativistic next-stage input");
-         debug_check_relativistic_stage_range(
-            fluid_state_.stage(input_slot), lev_begin, lev_end, stage_context, stage_time
-         );
-         project_relativistic_atmosphere_range<EOSMethod>(
-            fluid_state_.stage(input_slot), lev_begin, lev_end
-         );
-      }
-      if (spacetime_state_.active()) {
          apply_stored_spacetime_fluid_boundaries_range(
             fluid_state_.stage(input_slot), lev_begin, lev_end
+         );
+         project_relativistic_atmosphere_range<EOSMethod>(
+            fluid_state_.stage(input_slot), lev_begin, lev_end, cfg_.ng
+         );
+         debug_check_relativistic_stage_range(
+            fluid_state_.stage(input_slot), lev_begin, lev_end, stage_context, stage_time
          );
       }
       compute_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
          fluid_state_.stage(input_slot),
+         fluid_state_.stage(candidate_base_slot),
          reflux_weight,
          lev_begin,
          lev_end,
          stage_time,
-         forward_euler_dt
+         candidate_base_weight,
+         candidate_input_weight,
+         candidate_increment_scale
       );
       if (spacetime_state_.evolves()) {
          fill_spacetime_matter_range(lev_begin, lev_end);
@@ -379,6 +444,97 @@
             lev_end,
             stage_time
          );
+      }
+      if (physics_system_ == PhysicalSystem::RHD && spacetime_state_.evolves()) {
+         LevelData candidate_vertex_spacetime(finestLevel() + 1);
+         LevelData candidate_cell_spacetime(finestLevel() + 1);
+         for (int lev = lev_begin; lev < lev_end; ++lev) {
+            amrex::MultiFab const& input_vertex_spacetime =
+               *spacetime_state_.stage(input_slot)[lev];
+            amrex::MultiFab const& base_vertex_spacetime =
+               *spacetime_state_.stage(candidate_base_slot)[lev];
+            candidate_vertex_spacetime[lev] = std::make_unique<amrex::MultiFab>(
+               input_vertex_spacetime.boxArray(),
+               input_vertex_spacetime.DistributionMap(),
+               input_vertex_spacetime.nComp(),
+               input_vertex_spacetime.nGrowVect()
+            );
+            amrex::MultiFab::LinComb(
+               *candidate_vertex_spacetime[lev],
+               candidate_base_weight,
+               base_vertex_spacetime,
+               0,
+               candidate_input_weight,
+               input_vertex_spacetime,
+               0,
+               0,
+               input_vertex_spacetime.nComp(),
+               input_vertex_spacetime.nGrow()
+            );
+            amrex::MultiFab::Saxpy(
+               *candidate_vertex_spacetime[lev],
+               candidate_increment_scale,
+               *spacetime_state_.rhs()[lev],
+               0,
+               0,
+               input_vertex_spacetime.nComp(),
+               0
+            );
+            project_spacetime_state(*candidate_vertex_spacetime[lev]);
+         }
+         const bool synchronous_levels = lev_end - lev_begin > 1;
+         for (int lev = lev_begin; lev < lev_end; ++lev) {
+            fill_spacetime_level_boundaries(
+               candidate_vertex_spacetime,
+               lev,
+               candidate_time,
+               synchronous_levels,
+               fine_step_start,
+               rk_stage
+            );
+         }
+         for (int lev = lev_begin; lev < lev_end; ++lev) {
+            amrex::MultiFab const& current_cell_spacetime =
+               *spacetime_coupling_.cell_spacetime()[lev];
+            candidate_cell_spacetime[lev] = std::make_unique<amrex::MultiFab>(
+               current_cell_spacetime.boxArray(),
+               current_cell_spacetime.DistributionMap(),
+               current_cell_spacetime.nComp(),
+               0
+            );
+            transfer_grid_field_centering<4, AMREX_SPACEDIM>(
+               *candidate_cell_spacetime[lev],
+               *candidate_vertex_spacetime[lev],
+               Geom(lev),
+               false
+            );
+
+            const auto fluxes = flux_ptrs(lev);
+            apply_rhd_admissibility_flux_limiter(
+               fluxes,
+               *fluid_state_.rhs()[lev],
+               *fluid_state_.stage(candidate_base_slot)[lev],
+               *fluid_state_.stage(input_slot)[lev],
+               *primitive_[lev],
+               eos_params(cfg_),
+               eos_method_,
+               Geom(lev),
+               fixed_spacetime_parameters(cfg_),
+               spacetime_coupling_.cell_spacetime()[lev].get(),
+               candidate_cell_spacetime[lev].get(),
+               recovery_atmosphere_,
+               stage_time,
+               candidate_base_weight,
+               candidate_input_weight,
+               candidate_increment_scale
+            );
+            debug_check_fluxes(lev, false, "final flux");
+            accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
+            debug_check_rhs_level(lev, "RHS assembly");
+            const amrex::Real register_start = profile_.begin();
+            add_fluxes_to_registers(lev, reflux_weight);
+            profile_.end(ProfileStage::FluxRegister, register_start);
+         }
       }
    }
 
@@ -391,8 +547,8 @@
    )
    {
       compute_rhs_range<NComp, EOSMethod, false>(
-         input, reflux_weight, 0, finestLevel() + 1, rhs_time,
-         forward_euler_dt
+         input, input, reflux_weight, 0, finestLevel() + 1, rhs_time,
+         0.0, 1.0, forward_euler_dt
       );
    }
 

@@ -4,6 +4,7 @@
 
 #include "amr/amr_solver_base.hpp"
 #include "pyfluid_amrex/checkpoint.hpp"
+#include "pyfluid_amrex/centering_transfer.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/diffusion.hpp"
 #include "pyfluid_amrex/evolution_kernel_bundle.hpp"

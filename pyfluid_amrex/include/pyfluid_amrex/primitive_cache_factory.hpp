@@ -35,7 +35,9 @@ void apply_relativistic_atmosphere(
    int eos_method,
    EOSParams const& eos,
    EOSThermodynamicState const& atmosphere,
-   int ghost_cells
+   int ghost_cells,
+   amrex::Long* c2p_fallback_count = nullptr,
+   amrex::Long* atmosphere_reset_count = nullptr
 );
 
 } // namespace pyfluid_amrex

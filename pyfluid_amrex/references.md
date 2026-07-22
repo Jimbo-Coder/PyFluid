@@ -24,7 +24,7 @@ It intentionally links rather than restating the detailed contracts.
 | Rotation-law identity | `schema/methods.toml`, loaded by `codegen/pyfluid_codegen/method_catalog.py` | `docs/catalog_schema.md`, `docs/tov.md` |
 | Diagnostics and reductions | `codegen/pyfluid_codegen/diagnostic_catalog.py`, `src/amr/amr_solver_diagnostics.cpp` | `docs/diagnostics.md` |
 | Generated equations | labeled symbolic sources under `codegen/pyfluid_codegen/` | `docs/equations.md`, `docs/equations.tex` |
-| Relativistic HD/MHD and Z4c | generated kernels plus `src/relativity/` and `src/amr/amr_solver_spacetime*.cpp` | `docs/grmhd_development.md` |
+| Relativistic HD/MHD and Z4c | generated kernels, `src/relativity/{rhd_system,rmhd_system,relativistic_atmosphere}.hpp`, `include/pyfluid_amrex/relativistic_boundary.hpp`, and `src/amr/amr_solver_spacetime*.cpp` | `docs/grmhd_development.md` |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
 | Adaptive Richardson status | AMR estimator and validation tools | `docs/adaptive_richardson.md` |
 | Machines, MPI, build | `machines/*.toml`, `tools/validation_common.py` | `docs/install.md`, `docs/machines.md` |
@@ -57,6 +57,9 @@ UV_CACHE_DIR=.uv-cache uv run python pyfluid_amrex/tools/validate_amrex_suite.py
 
 # Performance-sensitive production changes.
 UV_CACHE_DIR=.uv-cache MPLCONFIGDIR=.matplotlib uv run python pyfluid_amrex/tools/benchmark_pyfluid.py
+
+# Focused relativistic reconstruction/recovery, CT/AMR, and restart coverage.
+UV_CACHE_DIR=.uv-cache uv run python pyfluid_amrex/tools/validate_rmhd.py --level standard --ranks 3 --force
 ```
 
 Normal MPI jobs use three ranks and must go through helpers in
@@ -119,6 +122,13 @@ High-value source/test routes include:
   `tst/test_suite/sr/` plus `tst/test_suite/gr/`;
 - coupled spacetime/matter: `src/dyn_grmhd/` and
   `tst/test_suite/dyngrmhd/`;
+- dynamical-GRMHD robustness: `src/dyn_grmhd/dyn_grmhd_fofc.cpp` predicts the
+  actual RK-stage candidate and replaces only faces adjacent to C2P/floor-
+  flagged cells; `src/eos/ideal_grhyd.cpp` performs the test and records floor,
+  velocity-ceiling, recovery-failure, and FOFC counters;
+- explicit atmosphere/floor policy:
+  `src/eos/primitive-solver/reset_floor.hpp` and
+  `src/eos/ideal_c2p_hyd.hpp`;
 - runtime GR task composition: `src/tasklist/numerical_relativity.hpp`,
   `src/tasklist/numerical_relativity.cpp`, `src/z4c/z4c_tasks.cpp`, and
   `src/dyn_grmhd/dyn_grmhd.cpp`;
@@ -152,3 +162,23 @@ comparison should:
 AthenaK's fast compile/run loop is useful for generating an independent
 high-resolution numerical reference, but it does not replace PyFluid's own
 analytic, conservation, restart, AMR, and performance gates.
+
+## Local AsterX Robust-Reconstruction Reference
+
+The local AsterX checkout is under
+`/Users/mrizzo/phys_research/ETK_CarpetX/CactusX/repos/AsterX`. For the narrow
+reconstruction question, use:
+
+- `AsterX/src/fluxes.cxx`: component reconstruction, selectable `z_vec = Wv`
+  reconstruction, face-metric conversion, and per-face-side low-order fallback
+  when reconstructed thermodynamic variables are nonpositive;
+- `ReconX/src/mp5.hxx`: the MP5 formula;
+- `ReconX/param.ccl`: independent primary and low-order method parameters;
+- `AsterX/src/con2prim.cxx` and `Con2PrimFactory/src/`: atmosphere, velocity
+  ceiling, and ordered recovery behavior.
+
+AsterX is therefore not evidence that raw MP5 should run without safeguards.
+It is evidence for preserving MP5 as the primary component reconstructor while
+making any low-order substitution local and explicit. AthenaK's stage-candidate
+FOFC is the more directly reusable design for preventing an accepted update
+from reaching C2P in a state that requires repair.

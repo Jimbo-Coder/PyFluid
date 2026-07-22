@@ -7,9 +7,62 @@
 #include "pyfluid_amrex/relativistic_state.hpp"
 #include "pyfluid_amrex/state.hpp"
 
+#include <cmath>
 #include <limits>
 
 namespace pyfluid_amrex {
+
+struct SpatialFourVelocity {
+   amrex::Real z1 = 0.0;
+   amrex::Real z2 = 0.0;
+   amrex::Real z3 = 0.0;
+};
+
+struct EulerianVelocity {
+   amrex::Real v1 = 0.0;
+   amrex::Real v2 = 0.0;
+   amrex::Real v3 = 0.0;
+};
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+SpatialFourVelocity spatial_four_velocity_from_eulerian(
+   amrex::Real v1,
+   amrex::Real v2,
+   amrex::Real v3,
+   SpacetimeMetric const& metric
+) noexcept
+{
+   const amrex::Real velocity_squared = spatial_vector_norm_squared(
+      v1, v2, v3, metric
+   );
+   const amrex::Real lorentz_factor = 1.0 / std::sqrt(1.0 - velocity_squared);
+   return {
+      lorentz_factor * v1,
+      lorentz_factor * v2,
+      lorentz_factor * v3,
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+EulerianVelocity eulerian_velocity_from_spatial_four_velocity(
+   SpatialFourVelocity const& spatial_four_velocity,
+   SpacetimeMetric const& metric
+) noexcept
+{
+   const amrex::Real lorentz_factor = std::sqrt(
+      1.0 + spatial_vector_norm_squared(
+         spatial_four_velocity.z1,
+         spatial_four_velocity.z2,
+         spatial_four_velocity.z3,
+         metric
+      )
+   );
+   return {
+      spatial_four_velocity.z1 / lorentz_factor,
+      spatial_four_velocity.z2 / lorentz_factor,
+      spatial_four_velocity.z3 / lorentz_factor,
+   };
+}
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool primitive_is_atmosphere(

@@ -1935,3 +1935,128 @@ I will always continue from the last cycle marked as `in_progress`.
   - Create one local checkpoint commit containing the catalog, rotating-star,
     limiter, validation, and continuity changes after the final gates. Nothing
     was pushed. [DONE]
+
+## Cycle 207 [completed]
+- Re-audit the rotating-star RHD surface failure and the Cycle 206 limiter
+  change against component MP5 and established production GRMHD practice. [WIP]
+  - Treat the fixed `0.1` retained-low-order-margin fraction as an unproven
+    heuristic. It has been removed; no arbitrary retained-margin fraction is
+    present in the current limiter. [DONE]
+  - Run the same small-spin XCTS evolution with component primitive MP5 at CFL
+    `0.9`, then determine whether the failure is reconstruction-specific or a
+    coupled-stage admissibility defect. [DONE]
+    - The original MP5 probe failed on the first step with 2168 nonfinite cells.
+      A focused reconstructed-flux check localized the first failure to a face
+      where the cell-centered velocity was causal under its own metric but had
+      `v^2 approximately 1.0187` when reused unchanged with the face metric.
+      RHD now reconstructs all three components of `z^i = W v^i` with the
+      selected component method and converts `z^i` to `v^i` under the face
+      metric. Reconstructed MP5 fluxes are finite after this repair. [DONE]
+    - Exact stage algebra exposed a second issue: the admissibility check had
+      tested a forward-Euler-like candidate under the input metric, although
+      the coupled fluid and Z4c update is recovered under the projected metric
+      of the actual RK candidate. The limiter now receives the concrete base,
+      input, and increment coefficients for Euler, corrector, midpoint,
+      SSPRK3, and RK4, and evaluates the candidate in its matching projected
+      cell metric. [DONE]
+    - With binary first-order correction and minimal energy-floor projection,
+      the PWL/HLL/SSPRK3 checkpoint control completed three steps at CFL `0.9`.
+      Scalar validation passed with rest-mass drift `8.523694827e-10`, fluid
+      energy drift `5.35814591e-5`, final time `1.342840673`, and about
+      `0.05442 Mcells/s`. This is a short evolved-spacetime control, not a
+      long-term rotating-star result. [DONE]
+    - The matching component-MP5 run also completed all three CFL-0.9 steps
+      without a nonfinite state, but scalar validation correctly failed:
+      rest-mass drift was `9.345033624e-8` against the existing `1e-8` gate.
+      Temporary accounting localized the dominant first-stage density change
+      to atmosphere projection (`3.8386e-7` in the raw densitized sum), so the
+      remaining problem is surface density-floor injection, not a reason to
+      lower CFL or globally replace MP5. The input remains PWL and the mass gate
+      remains unchanged. [DONE]
+  - Prefer a stage-consistent physical-state test and principled first-order
+    flux correction, or a mathematically justified positivity limiter, over an
+    arbitrary safety fraction. Record the current XCTS/CTT/CTTK and rotation-law
+    validation boundary without overstating a three-step small-spin smoke. [WIP]
+    - Local AsterX confirms MP5 plus explicit safeguards: it supports `z_vec`
+      reconstruction and substitutes a configured lower-order method only for
+      the invalid reconstructed face side. Local AthenaK's dynamical-GRMHD FOFC
+      predicts the actual RK candidate, asks C2P whether floors, a velocity
+      ceiling, or failure would occur, replaces only adjoining faces with
+      first-order LLF/HLLE, and records counters. The current PyFluid direction
+      follows this localized structure; it does not introduce a global MP5
+      fallback. [DONE]
+    - The current RHD implementation uses binary adjacent-face LLF correction.
+      Accepted-stage atmosphere handling preserves densitized density and
+      momentum when only an energy admissibility floor is needed, raising
+      `tau` minimally before retrying C2P. Density-floor replacement remains
+      explicit and is the measured source of the MP5 mass-gate failure. [DONE]
+    - Current integration evidence: `pyfluid_amrex_production` built in all
+      dimensions; `validate_amrex_suite.py --level quick` passed architecture
+      and the quick feature matrix in `3.03584 s`; `git diff --check` passed.
+      The focused three-rank `rhd_kh_amr_no_subcycling` case passed, and the
+      matching subcycling invocation passed both its no-subcycling dependency
+      and `rhd_kh_amr_subcycling`. The first sandboxed MPI attempt failed only
+      because local sockets were unavailable; both socket-capable reruns passed.
+      These are cache-warm/incremental checks, not a cold compile benchmark.
+      No standard/full/stability suite or runtime performance benchmark has
+      been run for the current WIP. [DONE]
+    - Cycle 208 extended the same `Wv` contract to RMHD and added compact
+      per-step counts for secondary RMHD C2P use and terminal atmosphere
+      resets. The requested KISS policy explicitly excludes a repair
+      mass/energy ledger. Reusable candidate-metric scratch, MP5 stellar-surface
+      treatment, and coupled RMHD candidate FOFC remain possible future work,
+      not production requirements established by this cycle. [DONE]
+    - XCTS remains the first stationary backend because it solves lapse and
+      shift alongside the constraints and shared Euler first integral. CTT can
+      support the same rotating matter after adding a consistent lapse/slicing
+      stationarity closure. The current deliberately nonzero-`K` CTTK free-data
+      branch is not the TOV zero-spin endpoint; it needs a maximal/stationary
+      branch before it is called RNS equilibrium. Uniform rotation is the only
+      implemented law. Zero spin is an exact TOV-path identity; `Omega=0.001`
+      initialization converges, but no spin sequence, resolution convergence,
+      deformation, mass shedding, differential rotation, or long evolution is
+      yet validated. [DONE]
+## Cycle 208 — Relativistic reconstruction and recovery consistency (completed)
+
+- Apply the established spatial-four-velocity reconstruction contract
+  consistently to production GRHD and GRMHD for every selected component
+  reconstruction method, without changing Newtonian HD/MHD behavior. RMHD now
+  reconstructs `z^i = W v^i` under each cell metric and maps it through the
+  face metric exactly as RHD does. [DONE]
+- Curved reflecting boundaries initially exposed a real regression:
+  `schwarzschild_rmhd_1d` mass drift rose to `4.5483e-7`. The external mass
+  ledger residual remained at roundoff, localizing the change to wall flux.
+  Reflecting ghosts had still negated coordinate `v^i`; unequal source/ghost
+  metrics therefore made reconstructed `Wv` non-antisymmetric. The boundary
+  now reflects `Wv` and maps it through the ghost metric. The mass drift returns
+  to `3.2256e-16`, and the complete fixed-spacetime RHD/RMHD suite passes.
+  [DONE]
+- Keep recovery observability deliberately small. Evolution counts successful
+  secondary RMHD C2P use and terminal atmosphere resets after C2P exhaustion,
+  reduces counts across ranks, warns once per affected step, and prints totals
+  at completion. Ordinary atmosphere cells are not failures. GPU builds
+  accumulate into persistent device counters and synchronize once per step.
+  No repair mass/energy ledger or new diagnostic schema was added. [DONE]
+- `validate_rmhd.py` now runs a compact smooth-wave sweep over PWC, PWL,
+  WENO-Z, MP5, and TENO-5 and requires zero fallback/reset events. The complete
+  three-rank RMHD suite passes: entropy-wave order is `2.0642` at N=256,
+  Balsara normal-field spread is zero, CT reference improvement is `1.6369`,
+  AMR improvement is `2.8441`, AMR+CT divB L1 is `1.6069e-15`, and restart is
+  identical within `1e-12`. [DONE]
+- The focused RHD KH single-rate/subcycling pair passes. Exact zero-spin/TOV
+  scalar equivalence remains zero, and the N=24 `Omega=0.001` XCTS control
+  passes three PWL/HLL/SSPRK3 steps at CFL `0.9` with rest-mass drift
+  `8.5237e-10` and zero recovery events. [DONE]
+- Architecture, generated-kernel consistency, all production dimensions, the
+  `2.53 s` quick gate, and every standard gate pass. Canonical performance
+  cases pass at `0.99`, `0.92`, `0.93`, and `0.96` of their frozen baselines.
+  The first standard invocation failed before executing cases because sandbox
+  MPI sockets were unavailable; the identical socket-capable rerun passed.
+  A fresh 42/42 standard plus performance run is archived at
+  `runs/baselines/20260721_201750_relativistic_reconstruction_recovery/`.
+  No full or stability suite was run. [DONE]
+- The CT stage layout was inspected but not changed. AthenaK advances face
+  fields with explicit RK stage coefficients; PyFluid's corresponding concern
+  needs a dedicated temporal-order reproducer before it is treated as a defect
+  or used to justify a redesign. RMHD stage-candidate FOFC remains separate
+  future work rather than an unvalidated change in this pass. [DONE]

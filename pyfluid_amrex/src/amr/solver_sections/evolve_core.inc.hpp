@@ -467,6 +467,7 @@
             break;
          }
          refresh_solid_geometry_all_levels(time, true);
+         reset_relativistic_recovery_events();
          amrex::Real stage_start = profile_.begin();
          dt = (this->*operations.compute_timestep)();
          profile_.end(ProfileStage::Timestep, stage_start);
@@ -565,6 +566,7 @@
             profile_.end(ProfileStage::AverageDown, stage_start);
             current_step = step;
          }
+         report_relativistic_recovery_events(current_step, time);
          total_active_cell_updates += active_cell_updates_this_step;
          total_layout_cell_updates += layout_cell_updates_this_step;
          const bool reached_final_time = has_final_time && time >= cfg_.final_time;
@@ -766,6 +768,13 @@
          amrex::Print() << "AMR regrid attempts=" << regrid_attempt_count_
                         << " noops=" << regrid_noop_count_
                         << " modified_levels=" << regrid_modified_level_count_ << "\n";
+         if (physical_system_is_relativistic(physics_system_)) {
+            amrex::Print()
+               << "Relativistic recovery c2p_fallbacks="
+               << relativistic_c2p_fallback_count_
+               << " atmosphere_resets="
+               << relativistic_atmosphere_reset_count_ << "\n";
+         }
       }
    }
 
