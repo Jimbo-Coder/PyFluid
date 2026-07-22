@@ -2060,3 +2060,43 @@ I will always continue from the last cycle marked as `in_progress`.
   needs a dedicated temporal-order reproducer before it is treated as a defect
   or used to justify a redesign. RMHD stage-candidate FOFC remains separate
   future work rather than an unvalidated change in this pass. [DONE]
+
+## Cycle 209 — Uniform-rotation charge and range probes (completed)
+
+- Rechecked the current nonzero-spin XCTS boundary from source. The uniform
+  Euler/matter update is shared by CTT, CTTK, and XCTS materialization, but the
+  configuration guard admits nonzero spin only for XCTS because the present
+  CTT/CTTK branches do not close a stationary lapse/shift/slicing system.
+  No formulation restriction or source code was changed. [DONE]
+- Ran ID-only three-rank `Omega=0.001` models with global GR diagnostics.
+  At N=24, matter `J3=0.0486005` and volume ADM `J3=0.0485737` agree to
+  `5.53e-4`, giving volume `J/M^2=0.02005`. Surface ADM `J3=0.0285794` is
+  41.2 percent below the volume charge, while surface and volume ADM masses
+  differ by 2.37 percent. [DONE]
+- The N=32 repeat with 48 polar quadrature points failed the unchanged
+  `1e-5` matter-update tolerance at the checked-in 24-iteration cap
+  (`3.83e-5`). Raising only the cap to 40 converged in 30 iterations at
+  `9.93e-6`. Matter/volume ADM angular-momentum disagreement improved to
+  `1.67e-4`, but surface/volume disagreement remained 40.1 percent. Surface
+  spin is therefore not accepted as validated; radius/domain/resolution tests
+  are required before attributing the discrepancy to one implementation.
+  [DONE]
+- Higher-spin N=24 ID probes retained relaxation `0.2` and tolerance `1e-5`:
+  `Omega=0.010` converged in 43 iterations with `M_ADM=1.58685`,
+  `J_ADM=0.516237`, `J/M^2=0.2050`, maximum velocity `0.24938`, and
+  matter/volume-ADM `J` disagreement `5.35e-4`; `Omega=0.015` converged in 45
+  iterations with `M_ADM=1.62996`, `J_ADM=0.838370`, `J/M^2=0.3156`, maximum
+  velocity `0.37550`, and disagreement `5.14e-4`. [DONE]
+- `Omega=0.0175` and `0.020` abort on the first rotating-matter update because
+  matter reaches the physical boundary. This brackets the current
+  fixed-domain/central-enthalpy implementation limit between `0.015` and
+  `0.0175`; it is not a measured Kepler or mass-shedding limit. The successful
+  runs are under `runs/current/z4c_validation/rotating_star_spincheck_*`.
+  [DONE]
+- Stronger production acceptance should use a continued uniform sequence with
+  at least two resolutions, independent matter/ADM volume/ADM surface charges,
+  `J/M_ADM^2`, ADM--Komar and surface--volume agreement, constraint convergence,
+  baryon-mass control, equatorial/polar radii, and an equatorial mass-shedding
+  indicator. Uryu differential-rotation laws are a subsequent extension of the
+  same generated Euler-integral interface, after the uniform sequence and
+  charge boundary are sound. [DONE]

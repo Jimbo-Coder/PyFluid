@@ -88,6 +88,27 @@ for core totals and ledgers.
 Do not use this router as evidence that a gate passed. Use the continuity cycle,
 the generated TSV/log, and the current source revision/dirty state.
 
+## Rotating-Star Physics References
+
+- E. Gourgoulhon, *An introduction to the theory of rotating relativistic
+  stars*, arXiv:1003.5015: stationary-star global charges, ADM--Komar equality,
+  GRV2/GRV3 virial identities, surface geometry, and mass shedding.
+- K. Uryu et al., *Modeling differential rotations of compact stars in
+  equilibriums*, Phys. Rev. D 96, 103011 (2017), arXiv:1709.02643: integrable
+  relativistic differential-rotation laws, including Eqs. (8) and (9), and
+  spheroidal/toroidal equilibrium sequences.
+- P. Iosif and N. Stergioulas, *Equilibrium sequences of differentially
+  rotating stars with post-merger-like rotational profiles*,
+  arXiv:2011.10612: Uryu-law sequence choices and comparison with the
+  established KEH law.
+
+For the current uniform XCTS path, validate prescribed angular velocity with
+independent matter, ADM-volume, and ADM-surface angular momentum. Report
+`J/M_ADM^2`, ADM--Komar disagreement, surface/volume charge disagreement,
+constraint norms, baryon mass, equatorial/polar radii, and a mass-shedding
+indicator. Do not infer the Kepler limit from solver failure or a finite-domain
+boundary guard.
+
 ## Local AthenaK Reference
 
 Usable local paths:

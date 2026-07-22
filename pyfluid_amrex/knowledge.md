@@ -160,6 +160,17 @@ performance, and MPI-rank evidence into one claim.
   curvature/angular momentum, and evolution. The current deliberately nonzero-
   mean-curvature CTTK control is a different slice and is excluded from that
   equivalence unless its free data are changed to the equilibrium endpoint.
+- ID-only uniform-rotation probes at N=24 establish current operation through
+  `Omega=0.015`: the volume ADM charge gives `J=0.83837`, `M=1.62996`, and
+  `J/M^2=0.3156`, while matter and volume ADM angular momentum agree within
+  `5.1e-4`. `Omega=0.0175` and `0.020` abort because the current matter update
+  reaches the finite outer boundary; this brackets an implementation/domain
+  limit, not a physical mass-shedding limit. At `Omega=0.001`, the surface ADM
+  angular momentum is about 40 percent below the volume charge at both N=24
+  and N=32, so surface spin is not yet validated. Use the volume charge only as
+  an internal constraint check until radius/domain/resolution convergence is
+  demonstrated. The N=32 solve also needs 30 rather than 24 matter iterations
+  to meet the unchanged `1e-5` update tolerance.
 - Production RHD and RMHD face states reconstruct thermodynamic primitives and
   all three components of spatial four-velocity `z^i = W v^i`. The selected component
   method, including MP5, remains the high-order method; mapping `z^i` through
