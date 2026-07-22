@@ -204,6 +204,16 @@ sequence of fully converged intermediate angular velocities, retaining the
 matter and XCTS fields between steps; this is useful when a large direct jump
 from the spherical TOV seed leaves the nonlinear basin of attraction.
 
+Within each rotating XCTS point, matter and metric use a damped
+self-consistent-field iteration. Accurate XCTS solves settle changes larger
+than the square root of the requested matter tolerance and certify the final
+fixed point. Only the intermediate regime uses two relaxed XCTS sweeps per
+matter update. This avoids nesting a fully converged frozen-matter XCTS solve
+inside every matter update without weakening the final matter tolerance,
+elliptic residual checks, or physical guards. It follows the field/matter
+iteration structure documented by XNS and LORENE; the spatial elliptic solves
+themselves already use AMReX MLMG.
+
 Measure spatial MPI scaling with an identical small-spin solve using:
 
 ```bash
@@ -233,14 +243,24 @@ requires the subextremal volume diagnostic
 `dimensionless_spin = J_ADM/M_ADM^2`.
 
 The corrected N=32 fixed-central-density SLy uniform sequence currently reaches
-`Omega=0.032`. At `Omega=0.028` and `0.032`, respectively,
-`chi_ms = 0.404505` and `0.230266`, while
-`J_ADM/M_ADM^2 = 0.504573` and `0.594246`. The upper model has coordinate
-axis ratio `1.83922`; matter/volume and surface/volume angular momentum agree
-to `1.75e-4` and `5.77e-3`. It is strongly rotating but remains subcritical.
-These points do not bracket or resolution-converge the mass-shedding endpoint.
+`Omega=0.033`. It has `chi_ms = 0.081731`,
+`J_ADM/M_ADM^2 = 0.619966`, and coordinate axis ratio `1.96889`;
+matter/volume and surface/volume angular momentum agree to `1.70e-4` and
+`5.73e-3`. Attempts at `Omega=0.03325`, `0.0335`, and `0.034` fail in the
+final nonlinear/Robin solve and do not provide physical surface indicators.
+They bracket the present solver basin, not a mass-shedding endpoint. The valid
+points do not yet resolution-converge the mass-shedding limit.
 Earlier N=24 surface-indicator values produced without exchanged interpolation
 ghost data are superseded and must not be used for an endpoint estimate.
+
+At fixed grid spacing, expanding a zero-spin XCTS control from extraction
+radius 12.8 to 19.2 reduces the Komar-surface/ADM-surface difference from
+4.39 to 2.94 percent while changing the Komar surface mass by only 0.009
+percent. The leading `1/R` extrapolation of the ADM surface mass is `1.20627`,
+consistent with the Komar surface value near `1.207`. The several-percent
+ADM--Komar difference on the rotating sequence is therefore finite-radius ADM
+contamination, not evidence for a missing shift or extrinsic-curvature term in
+the Komar diagnostic.
 
 Reusable stellar initial data follow the separate physical-field artifact
 contract in `infrastructure_conventions.md`, not the evolution-checkpoint

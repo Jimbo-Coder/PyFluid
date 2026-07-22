@@ -2330,3 +2330,85 @@ I will always continue from the last cycle marked as `in_progress`.
   compile-check executable still exits on the pre-existing high-order
   centering-transfer mismatch after the new EoS checks, so it is not recorded
   as a whole-executable pass. No full or stability suite was run. [DONE]
+
+## Cycle 214 — Upper uniform-rotation branch and infrastructure stress (DONE)
+
+- Continue the corrected N=32 fixed-central-density SLy uniform sequence above
+  `Omega=0.032`, serially and with no competing solver jobs. Start at
+  `Omega=0.034` with seven fully converged continuation stages. Accept a model
+  only if the signed mass-shedding indicator remains positive, the flow is
+  timelike and subextremal, constraints converge, matter/volume/surface charges
+  agree, and the stellar surface remains inside the physical domain. Solver
+  failure alone is not a mass-shedding endpoint. The seven-stage
+  `Omega=0.034` run reached the final continuation stage after steps 1--6
+  converged. Its final iterate diverged: maximum velocity rose from `0.410` to
+  `0.761`, relative matter updates remained `0.05--0.12`, and the nodal Robin
+  Schur residual reached `4.00e38` versus tolerance `5.26e34`. The mandatory
+  residual guard aborted all ranks; boundary density excess remained zero.
+  This is a cleanly rejected nonlinear/elliptic failure, not a mass-shedding
+  measurement. The narrowed seven-stage `Omega=0.033` point passes after
+  `3609.84 s` and 261 total matter iterations with final update `8.68e-6`,
+  signed `chi_ms=0.0817565`, `J_ADM/M_ADM^2=0.619983`, and coordinate axis
+  ratio `1.96889`. Matter/volume J differs by `1.70e-4`, surface/volume by
+  `5.73e-3`, the maximum residual is `7.20e-13`, and boundary density excess
+  is zero. The eight-stage `Omega=0.0335` run converged through stage 7, then
+  reproduced the `0.034` final-stage failure: maximum velocity rose from
+  `0.404` to `0.718`, relative updates stayed `0.05--0.12`, and the Robin
+  Schur residual reached `3.41e83`; boundary excess remained zero. The
+  eight-stage `Omega=0.03325` bisection likewise converged through stage 7,
+  then ran away at the final target: maximum velocity rose from `0.400` to
+  `0.812`, the relative update reached `0.180`, and the Robin Schur residual
+  reached `2.55e53` against tolerance `1.29e47`. Boundary excess remained
+  zero. The current nonlinear basin is therefore bracketed by the valid
+  `0.033` point and failed `0.03325` attempt; it is not a physical
+  mass-shedding bracket. [DONE]
+- Audit the ADM--Komar discrepancy rather than changing the formulas. The
+  implemented Komar volume and surface expressions include the lapse, shift,
+  stress, momentum, and extrinsic-curvature terms. At fixed `dx=1`, expanding
+  the zero-spin domain changes the extraction radius from 12.8 to 19.2: the
+  Komar-surface/ADM-surface difference falls from 4.39 to 2.94 percent while
+  the Komar surface mass changes by only 0.009 percent. A leading `1/R`
+  extrapolation gives ADM surface mass `1.20627`, consistent with the Komar
+  value near `1.207`. The discrepancy is finite-radius ADM contamination.
+  The control also exposed that scalar plotting assumed standard mass/energy
+  columns; it now renders intentionally sparse diagnostic selections with
+  explicit `not selected` panels and passes a global-GR-only TSV probe. [DONE]
+
+## Cycle 215 — Self-consistent-field XCTS acceleration (DONE)
+
+- Check established rotating-star solvers before changing the nonlinear
+  method. Local COCAL explicitly reuses each converged 3D solution as the next
+  sequence seed. XNS iterates one hierarchical set of Poisson-like field
+  solves with sources from the preceding field/matter iterate, and LORENE
+  documents staged rotation with separate main/Poisson relaxation. PyFluid
+  already uses AMReX MLMG for every spatial elliptic subsolve; the measured
+  waste was nesting a fully converged frozen-matter XCTS fixed point inside
+  every matter update. [DONE]
+- Replace only that nonlinear nesting with a conservative inexact
+  self-consistent-field schedule. Accurate XCTS solves settle dimensionless
+  updates above `sqrt(matter_tolerance)` and, once within
+  `10*matter_tolerance`, permanently polish the endpoint. The intermediate
+  regime uses two ordinary relaxed XCTS sweeps. Acceptance still requires the
+  original matter tolerance, a converged strict XCTS result, finite/timelike
+  matter, interior stellar support, and the existing elliptic residual guards.
+  Aggressive undamped and late-polish prototypes were rejected after they
+  failed the known N=32 upper model; their speedups are not accepted results.
+  [DONE]
+- The final policy reduces the identical N=24, 8-cell-box, three-rank
+  `Omega=0.001` benchmark from `159.62 s` to `66.81 s` (2.39x), with 22 matter
+  updates, a strict 14-iteration final XCTS solve, and residuals below
+  `9.34e-13`. The decisive seven-stage N=32 `Omega=0.033` comparison passes in
+  `2267.96 s` instead of `3609.84 s` (1.59x). It gives
+  `chi_ms=0.081731`, `J_ADM/M_ADM^2=0.619966`, the identical `8.86002/4.5`
+  coordinate radii, matter/volume J difference `1.70e-4`, surface/volume
+  difference `5.73e-3`, and residuals below `7.90e-13`. These agree with the
+  old strict-nested fixed point within the configured matter tolerance. [DONE]
+- Architecture, generated consistency, Python syntax, sparse scalar plotting,
+  all production dimensions, the final two-check three-rank rotating gate,
+  the complete quick gate (`3.27 s`), and the default standard suite pass. The
+  focused gate retains exact zero-spin equivalence, CFL `0.9`, and zero
+  recovery events. The final individual materialization-object rebuild took
+  about `4.9 s`; the cached integration relink took `0.94 s`. No full or stability
+  suite was run. Reusable physical-ID save/load remains the next established
+  sequence optimization; the current step-zero checkpoint is not that
+  artifact. [DONE]

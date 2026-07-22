@@ -112,6 +112,32 @@ the generated TSV/log, and the current source revision/dirty state.
   parametrization and fitted EoS families used by the local SLy/APR4/H4/MS1
   presets.
 
+## Rotating-Star Numerical Method References
+
+- XNS numerical approach,
+  [project documentation](https://www.arcetri.inaf.it/science/ahead/XNS/code.html):
+  hierarchically solves Poisson-like metric equations, rebuilds sources from
+  the preceding iterate, and repeats the coupled field/matter loop to
+  convergence. The companion
+  [XNS guide](https://www.arcetri.inaf.it/science/ahead/XNS/files/Guide.pdf)
+  documents separate field and Bernoulli/matter damping.
+- LORENE `Star_rot::equilibrium`,
+  [class reference](https://lorene.obspm.fr/Refguide/classLorene_1_1Star__rot.html):
+  documents staged rotation, separate main/Poisson relaxation, enthalpy-change
+  convergence, and continued angular-velocity increases toward the Keplerian
+  limit.
+- Public RNS reference implementation,
+  [rns-alberta/rns](https://github.com/rns-alberta/rns): constructs a spherical
+  model at the requested central density before spinning it to the requested
+  frequency. Use only for independent comparisons and algorithm provenance,
+  not imported production data.
+- Local COCAL sequence guidance:
+  `/Users/mrizzo/phys_research/ETK_Carpet/pcocal_illinois/Cocal/TIPS/README.txt`
+  explicitly reuses each converged 3D solution as the initial guess for the
+  next model. `TIPS/README_rnspar.txt` documents constant-rest-mass sequence
+  controls and 1D/3D converged-data inputs. This is the immediate reference for
+  the planned reusable physical-ID sequence seed.
+
 ## Local AthenaK Reference
 
 Usable local paths:

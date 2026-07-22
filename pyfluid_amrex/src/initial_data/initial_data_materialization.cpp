@@ -358,6 +358,9 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    const int continuation_steps = update_rotating_matter
       ? rotating_star.continuation_steps
       : 1;
+   const bool coupled_xcts_matter_iteration =
+      update_rotating_matter
+      && formulation == ConformalConstraintFormulation::xcts;
    for (int continuation_step = 1;
         continuation_step <= continuation_steps;
         ++continuation_step) {
@@ -368,6 +371,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          / static_cast<amrex::Real>(continuation_steps);
       result.relative_matter_update = std::numeric_limits<amrex::Real>::max();
       int step_matter_iterations = 0;
+      bool strict_xcts_polish = false;
       for (int matter_iteration = 1;
            matter_iteration <= max_matter_iterations;
            ++matter_iteration) {
@@ -546,6 +550,15 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             }
          }
 
+         strict_xcts_polish = strict_xcts_polish
+            || (coupled_xcts_matter_iteration
+                && result.relative_matter_update <= 10.0 * matter_tolerance);
+         const bool polish_coupled_xcts = strict_xcts_polish;
+         const bool settle_large_xcts_update =
+            coupled_xcts_matter_iteration
+            && result.relative_matter_update > std::sqrt(matter_tolerance);
+         const bool fully_solve_coupled_xcts =
+            polish_coupled_xcts || settle_large_xcts_update;
          if (formulation == ConformalConstraintFormulation::ctt) {
             const CttResult constraints = solve_ctt_constraints(
                hierarchy,
@@ -588,6 +601,17 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                constraints.converged,
             };
          } else {
+            XctsOptions iteration_options = xcts_options;
+            if (coupled_xcts_matter_iteration
+                && !fully_solve_coupled_xcts) {
+               // Follow the self-consistent-field iteration used by established
+               // rotating-star solvers: advance the metric with the current
+               // matter, update the matter, and converge the combined fixed
+               // point. Accurate XCTS solves settle large changes and certify
+               // the final fixed point; two relaxed sweeps avoid fully
+               // converging each intermediate frozen-matter problem.
+               iteration_options.max_coupled_iterations = 2;
+            }
             const XctsResult constraints = solve_xcts_constraints(
                hierarchy,
                conformal_factor,
@@ -600,7 +624,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                conformal_boundary,
                lapse_boundary,
                vector_boundary,
-               xcts_options
+               iteration_options
             );
             result.constraints = {
                constraints.coupled_iterations,
@@ -611,7 +635,9 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                constraints.converged,
             };
          }
-         if (!result.constraints.converged) {
+         if (!result.constraints.converged
+             && (!coupled_xcts_matter_iteration
+                 || fully_solve_coupled_xcts)) {
             amrex::Print()
                << conformal_constraint_formulation_name(formulation)
                << " initial-data solve failed: iterations="
@@ -705,12 +731,16 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                << " coupled_update_iteration=" << matter_iteration
                << " relative_update=" << result.relative_matter_update << '\n';
          }
-         if (result.relative_matter_update <= matter_tolerance) {
+         if (result.relative_matter_update <= matter_tolerance
+             && (!coupled_xcts_matter_iteration
+                 || result.constraints.converged)) {
             break;
          }
       }
       result.matter_iterations += step_matter_iterations;
-      if (result.relative_matter_update > matter_tolerance) {
+      if (result.relative_matter_update > matter_tolerance
+          || (coupled_xcts_matter_iteration
+              && !result.constraints.converged)) {
          amrex::Abort(
             "matter-coupled conformal fixed-point iteration did not converge "
             "at rotation continuation step "

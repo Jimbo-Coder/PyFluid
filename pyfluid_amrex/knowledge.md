@@ -7,8 +7,8 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-22, branch `main`, through the local Cycle 213
-EOS-aware entropy and resolved rotating-sequence pass. Use the commit
+Last reconciled: 2026-07-22, branch `main`, through the local Cycle 215
+upper-rotation and XCTS self-consistent-field pass. Use the commit
 containing this snapshot plus the exact newer continuity-cycle evidence rather
 than inferring it from an earlier baseline.
 
@@ -102,6 +102,23 @@ The latest recorded evidence is not one monolithic green result:
   exits on its pre-existing high-order centering-transfer mismatch; the new
   EoS proxy checks emit no mismatch before that unrelated failure. No full or
   stability suite was run.
+- Cycle 214 reaches a valid N=32 SLy uniform model at `Omega=0.033` and
+  cleanly rejects `0.03325`, `0.0335`, and `0.034` as nonlinear/Robin failures,
+  not physical mass-shedding measurements. A fixed-spacing domain-radius
+  control pins the several-percent ADM--Komar difference on these small boxes
+  to finite-radius ADM contamination: the surface discrepancy falls from
+  4.39 to 2.94 percent as the extraction radius grows from 12.8 to 19.2, while
+  the Komar surface mass changes by only 0.009 percent.
+- Cycle 215 replaces the nested fully converged frozen-matter XCTS solve with
+  a conservative self-consistent-field schedule: accurate XCTS solves settle
+  large changes and certify the endpoint, while two relaxed XCTS sweeps are
+  used only in the intermediate update regime. The identical N=24/three-rank
+  small-spin benchmark falls from `159.62 s` to `66.81 s`; the known N=32
+  `Omega=0.033` model falls from `3609.84 s` to `2267.96 s` and reproduces its
+  radii and global charges within the configured matter tolerance. Generated
+  consistency, architecture, Python syntax, sparse diagnostic plotting, the
+  focused rotating gate, quick gate, and all standard gates pass. No full or
+  stability suite was run.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -145,16 +162,16 @@ performance, and MPI-rank evidence into one claim.
   fields now allocate and exchange one ghost layer; the hierarchy
   interpolation service also rejects a crossing stencil without sufficient
   storage before any rank-local interpolation or collective reduction.
-- Corrected N=32 fixed-central-density SLy uniform models converge at
-  `Omega=0.001`, `0.028`, and `0.032`. Their signed mass-shedding indicators
-  are `0.999120`, `0.404505`, and `0.230266`; the latter two dimensionless ADM
-  spins are `0.504573` and `0.594246`. At `Omega=0.032`, the equatorial/polar
-  coordinate radii are `8.27647/4.5`, matter/volume angular momentum differs
-  by `1.75e-4`, surface/volume by `5.77e-3`, and final XCTS residuals remain
-  below `5.8e-13`. This is a strongly flattened but still subcritical model,
-  not a mass-shedding endpoint. Another targeted high-resolution point and a
-  second resolution remain necessary; reusable-ID continuation is especially
-  valuable because this six-stage N=32 solve took `2831.43 s` on three ranks.
+- Corrected N=32 fixed-central-density SLy uniform models converge through
+  `Omega=0.033`. The `0.032` and `0.033` signed mass-shedding indicators are
+  `0.230266` and `0.081731`; their dimensionless ADM spins are `0.594246` and
+  `0.619966`. At `Omega=0.033`, the equatorial/polar coordinate radii are
+  `8.86002/4.5`, matter/volume angular momentum differs by `1.70e-4`,
+  surface/volume by `5.73e-3`, and final XCTS residuals remain below
+  `7.90e-13`. Attempts at `0.03325`, `0.0335`, and `0.034` fail in the final
+  nonlinear/Robin solve before producing a valid physical indicator. They
+  bracket the current solver basin, not the mass-shedding endpoint. A second
+  resolution and a valid point closer to the cusp remain necessary.
   The prior roughly 40 percent surface deficit came from an incorrect
   conformal/lapse weight in the generated XCTS shift matter source, not the
   surface quadrature. The focused small-spin gate now enforces both independent
@@ -175,13 +192,16 @@ performance, and MPI-rank evidence into one claim.
   cubic root/derivative interpolation still cannot recover information absent
   from the resolved surface; require monotonic behavior and resolution
   agreement rather than treating the smallest sampled value as the endpoint.
-- The current N=24 uniform-grid XCTS solve with 8-cell boxes and 24 matter
-  iterations scales from 399.69 seconds on one MPI rank to 221.86 seconds on
-  two and 159.39 seconds on three: speedups 1.80 and 2.51, or 90.1 and 83.6
-  percent parallel efficiency. Elliptic residuals and the final matter update
-  agree across ranks. Initial-data wall time is therefore dominated by the
-  serial sequence of many otherwise well-parallelized elliptic solves at this
-  size, not a demonstrated MPI scaling collapse.
+- The original N=24 uniform-grid XCTS solve with 8-cell boxes and nested
+  frozen-matter constraint solves scaled from 399.69 seconds on one MPI rank
+  to 159.39 seconds on three, or 83.6 percent parallel efficiency. MLMG was
+  therefore already effective; the dominant waste was nonlinear nesting, not
+  a missing multigrid method or MPI scaling collapse. The conservative
+  self-consistent-field schedule reduces the identical three-rank solve to
+  `66.81 s` while retaining the strict final XCTS solve. On the strongly
+  deformed N=32 `Omega=0.033` sequence it reduces wall time from `3609.84 s`
+  to `2267.96 s`, a 1.59-fold speedup. Reusing a saved converged physical ID as
+  the next sequence seed remains the larger established opportunity.
 - Hoisting fixed-point scratch allocations and reusing a nodal MLMG operator
   changed the identical three-rank N=24 solve from `159.39` to `159.62`
   seconds, with identical iteration counts, updates, and residuals, but also

@@ -68,7 +68,11 @@ def plot_scalar_report(
    t = np.asarray([row["time"] for row in rows], dtype=float)
    markers = {"marker": "o", "markersize": 4.0} if len(rows) <= 24 else {}
    has_gravity = has_activity(rows, "gravity_potential_energy")
-   energy_key = "gravity_total_energy" if has_gravity and "gravity_total_energy" in rows[0] else "energy"
+   energy_key = (
+      "gravity_total_energy"
+      if has_gravity and "gravity_total_energy" in rows[0]
+      else "energy"
+   )
    energy_label = "total energy" if energy_key == "gravity_total_energy" else "energy"
    has_mhd = (
       has_activity(rows, "newtonian_magnetic_energy")
@@ -84,10 +88,14 @@ def plot_scalar_report(
    fig.suptitle("\n".join(textwrap.wrap(title, 95)), fontsize=12)
 
    ax = axs[0, 0]
-   ax.semilogy(t, positive(relative_change(rows, "mass")), label="mass", linewidth=2.0, **markers)
-   ax.semilogy(t, positive(relative_change(rows, energy_key)), label=energy_label, linewidth=2.0, **markers)
+   if "mass" in rows[0]:
+      ax.semilogy(t, positive(relative_change(rows, "mass")), label="mass", linewidth=2.0, **markers)
+   if energy_key in rows[0]:
+      ax.semilogy(t, positive(relative_change(rows, energy_key)), label=energy_label, linewidth=2.0, **markers)
    if has_activity(rows, "passive_mass"):
       ax.semilogy(t, positive(relative_change(rows, "passive_mass")), label="passive", linewidth=2.0, **markers)
+   if not ax.lines:
+      ax.plot(t, np.zeros_like(t), label="not selected", linewidth=2.0, **markers)
    ax.set_title("Conserved Drift")
    ax.set_xlabel("time")
    ax.set_ylabel("relative change")
@@ -103,6 +111,8 @@ def plot_scalar_report(
             linewidth=2.0,
             **markers,
          )
+   if not ax.lines:
+      ax.plot(t, np.zeros_like(t), label="not selected", linewidth=2.0, **markers)
    ax.set_title("Total Momentum")
    ax.set_xlabel("time")
    ax.legend()
@@ -114,7 +124,15 @@ def plot_scalar_report(
       ax.semilogy(t, positive([row["diffusion_residual"] for row in rows]), label="diffusion residual", linewidth=2.0, **markers)
    if has_wall and "energy_minus_wall_work" in rows[0]:
       ax.semilogy(t, positive([row["energy_minus_wall_work"] for row in rows]), label="E - E0 - work", linewidth=2.0, **markers)
-   if "external_budget_valid" in rows[0] and any(row["external_budget_valid"] > 0.5 for row in rows):
+   has_external_budget = all(
+      key in rows[0]
+      for key in (
+         "external_budget_valid",
+         "external_mass_rel_error",
+         "external_energy_rel_error",
+      )
+   )
+   if has_external_budget and any(row["external_budget_valid"] > 0.5 for row in rows):
       ax.semilogy(
          t,
          positive([row["external_mass_rel_error"] for row in rows]),
@@ -144,6 +162,8 @@ def plot_scalar_report(
       ax.plot(t, [row["max_rho"] for row in rows], label="max rho", linewidth=2.0, **markers)
    if "min_pressure" in rows[0]:
       ax.plot(t, [row["min_pressure"] for row in rows], label="min P", linewidth=2.0, **markers)
+   if not ax.lines:
+      ax.plot(t, np.zeros_like(t), label="not selected", linewidth=2.0, **markers)
    ax.set_title("Floors")
    ax.set_xlabel("time")
    ax.legend()
@@ -158,6 +178,8 @@ def plot_scalar_report(
       ax2.plot(t, [row["mcells_per_s"] for row in rows], color="tab:orange", label="active Mcells/s", linewidth=2.0, **markers)
    if "layout_mcells_per_s" in rows[0]:
       ax2.plot(t, [row["layout_mcells_per_s"] for row in rows], color="tab:red", linestyle=":", label="layout Mcells/s", linewidth=2.0, **markers)
+   if not ax.lines and not ax2.lines:
+      ax.plot(t, np.zeros_like(t), label="not selected", linewidth=2.0, **markers)
    ax.set_title("Timestep / Throughput")
    ax.set_xlabel("time")
    ax.set_ylabel("dt, sim time/s")
@@ -199,8 +221,10 @@ def plot_scalar_report(
          peak_budget = [row["amr_peak_level_budget_fraction"] for row in rows]
          if any(value >= 0.0 for value in peak_budget):
             ax.plot(t, peak_budget, label="AMR peak L frac", linewidth=2.0, linestyle=":", **markers)
-   if not ax.lines:
+   if not ax.lines and energy_key in rows[0]:
       ax.plot(t, [row[energy_key] for row in rows], label=energy_label, linewidth=2.0, **markers)
+   if not ax.lines:
+      ax.plot(t, np.zeros_like(t), label="no active physics diagnostic", linewidth=2.0, **markers)
    ax.set_title("Active Physics / AMR")
    ax.set_xlabel("time")
    ax.legend()
