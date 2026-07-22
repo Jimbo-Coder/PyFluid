@@ -28,7 +28,7 @@ initial_data.rotation_axis2 = 0.0
 initial_data.rotation_axis3 = 1.0
 initial_data.matter_relaxation = 0.2
 initial_data.matter_relative_tolerance = 1.0e-5
-initial_data.matter_max_iterations = 24
+initial_data.matter_max_iterations = 96
 
 pyfluid.physics = rhd
 pyfluid.eos = hybrid_polytrope

@@ -1551,7 +1551,7 @@ def validate_rotating_star_initial_data(
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
    common = {
       "amr.max_level": "0",
-      "pyfluid.scalar_diagnostics": "standard",
+      "pyfluid.scalar_diagnostics": "standard,global_gr",
    }
    zero_spin_common = {**common, "pyfluid.max_step": "0"}
    tov_dir, tov_scalar = run_dimension_case(
@@ -1608,7 +1608,9 @@ def validate_rotating_star_initial_data(
       mhd=False,
       kind="feature",
    )
-   rotating = read_scalar_rows(rotating_dir)[-1]
+   rotating_rows = read_scalar_rows(rotating_dir)
+   initial_rotating = rotating_rows[0]
+   rotating = rotating_rows[-1]
    run_log = (rotating_dir / "run.log").read_text()
    solve_match = re.search(
       r"xcts initial data: matter_iterations=([0-9]+) "
@@ -1632,6 +1634,23 @@ def validate_rotating_star_initial_data(
    maximum_velocity = float(rotation_match.group(3))
    boundary_density_excess = float(rotation_match.group(5))
    angular_momentum3 = float(rotating["angular_mom3"])
+   adm_mass_volume = float(initial_rotating["adm_mass_volume"])
+   adm_angular_momentum3_surface = float(
+      initial_rotating["adm_angular_momentum3_surface"]
+   )
+   adm_angular_momentum3_volume = float(
+      initial_rotating["adm_angular_momentum3_volume"]
+   )
+   matter_adm_angular_momentum_relative_error = abs(
+      float(initial_rotating["angular_mom3"])
+      - adm_angular_momentum3_volume
+   ) / max(abs(adm_angular_momentum3_volume), 1.0e-30)
+   surface_volume_angular_momentum_relative_error = abs(
+      adm_angular_momentum3_surface - adm_angular_momentum3_volume
+   ) / max(abs(adm_angular_momentum3_volume), 1.0e-30)
+   dimensionless_spin = adm_angular_momentum3_volume / (
+      adm_mass_volume * adm_mass_volume
+   )
    transverse_momentum = max(
       abs(float(rotating[name]))
       for name in ("mom1", "mom2", "mom3", "angular_mom1", "angular_mom2")
@@ -1646,6 +1665,9 @@ def validate_rotating_star_initial_data(
       or elliptic_residual > 1.0e-10
       or maximum_velocity <= 0.0
       or angular_momentum3 <= 0.0
+      or matter_adm_angular_momentum_relative_error > 1.0e-2
+      or surface_volume_angular_momentum_relative_error > 3.0e-2
+      or not 0.0 < dimensionless_spin < 1.0
       or transverse_momentum > 1.0e-10
       or boundary_density_excess != 0.0
       or not all(math.isfinite(value) for value in (
@@ -1659,6 +1681,9 @@ def validate_rotating_star_initial_data(
          f"relative update={relative_update:.3e}, "
          f"elliptic residual={elliptic_residual:.3e}, "
          f"vmax={maximum_velocity:.3e}, J3={angular_momentum3:.3e}, "
+         f"Jmatter/Jvol error={matter_adm_angular_momentum_relative_error:.3e}, "
+         f"Jsurface/Jvol error={surface_volume_angular_momentum_relative_error:.3e}, "
+         f"chi={dimensionless_spin:.3e}, "
          f"transverse momentum={transverse_momentum:.3e}, "
          f"boundary excess={boundary_density_excess:.3e}, "
          f"constraints=({hamiltonian_l2:.3e}, {hamiltonian_linf:.3e}, "
@@ -1684,6 +1709,15 @@ def validate_rotating_star_initial_data(
          "elliptic_residual": elliptic_residual,
          "maximum_velocity": maximum_velocity,
          "angular_momentum3": angular_momentum3,
+         "adm_angular_momentum3_surface": adm_angular_momentum3_surface,
+         "adm_angular_momentum3_volume": adm_angular_momentum3_volume,
+         "matter_adm_angular_momentum_relative_error": (
+            matter_adm_angular_momentum_relative_error
+         ),
+         "surface_volume_angular_momentum_relative_error": (
+            surface_volume_angular_momentum_relative_error
+         ),
+         "dimensionless_spin": dimensionless_spin,
          "hamiltonian_l2": hamiltonian_l2,
          "hamiltonian_linf": hamiltonian_linf,
          "momentum_linf": momentum_linf,
@@ -2138,6 +2172,11 @@ def main() -> int:
       "elliptic_residual",
       "maximum_velocity",
       "angular_momentum3",
+      "adm_angular_momentum3_surface",
+      "adm_angular_momentum3_volume",
+      "matter_adm_angular_momentum_relative_error",
+      "surface_volume_angular_momentum_relative_error",
+      "dimensionless_spin",
       "elliptic_hamiltonian_residual",
       "elliptic_lapse_residual",
       "elliptic_momentum_residual",

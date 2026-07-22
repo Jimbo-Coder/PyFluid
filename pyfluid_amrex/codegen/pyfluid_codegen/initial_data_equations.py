@@ -113,12 +113,15 @@ def xcts_kernels() -> tuple[ScalarKernel, ...]:
       for direction in range(3)
    )
    longitudinal_scale = 1 / extrinsic_scale
+   # momentum_density is the covariant Eulerian S_i.  Raising it with
+   # gamma^ij = psi^-4 delta^ij reduces 16 pi alpha psi^4 S^i to
+   # 16 pi (alpha psi) S_i / psi.
    shift_source = (
       16
       * sp.pi
-      * lapse_times_conformal_factor**2
+      * lapse_times_conformal_factor
       * momentum_density
-      / conformal_factor**4
+      / conformal_factor
       - longitudinal_scale
       * sum(
          logarithmic_weight_gradient[direction] * longitudinal_row[direction]

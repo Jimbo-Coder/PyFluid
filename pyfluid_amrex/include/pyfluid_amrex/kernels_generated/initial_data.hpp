@@ -59,9 +59,10 @@ amrex::Real xcts_conformal_extrinsic_scale(amrex::Real conformal_factor, amrex::
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real xcts_shift_source(amrex::Real conformal_factor, amrex::Real lapse_times_conformal_factor, amrex::Real momentum_density, amrex::Real conformal_gradient1, amrex::Real conformal_gradient2, amrex::Real conformal_gradient3, amrex::Real lapse_conformal_gradient1, amrex::Real lapse_conformal_gradient2, amrex::Real lapse_conformal_gradient3, amrex::Real conformal_extrinsic_i1, amrex::Real conformal_extrinsic_i2, amrex::Real conformal_extrinsic_i3) noexcept
 {
-   const amrex::Real tmp0 = 1.0_rt/(lapse_times_conformal_factor);
-   const amrex::Real tmp1 = 7/conformal_factor;
-   return 2*lapse_times_conformal_factor*(8*pyfluid_amrex::constants::pi*lapse_times_conformal_factor*momentum_density + (conformal_extrinsic_i1*(-conformal_gradient1*tmp1 + lapse_conformal_gradient1*tmp0) + conformal_extrinsic_i2*(-conformal_gradient2*tmp1 + lapse_conformal_gradient2*tmp0) + conformal_extrinsic_i3*(-conformal_gradient3*tmp1 + lapse_conformal_gradient3*tmp0))/((conformal_factor)*(conformal_factor)*(conformal_factor)))/pow(conformal_factor, 4);
+   const amrex::Real tmp0 = 1.0_rt/(conformal_factor);
+   const amrex::Real tmp1 = 1.0_rt/(lapse_times_conformal_factor);
+   const amrex::Real tmp2 = 7*tmp0;
+   return 2*lapse_times_conformal_factor*tmp0*(8*pyfluid_amrex::constants::pi*momentum_density + (conformal_extrinsic_i1*(-conformal_gradient1*tmp2 + lapse_conformal_gradient1*tmp1) + conformal_extrinsic_i2*(-conformal_gradient2*tmp2 + lapse_conformal_gradient2*tmp1) + conformal_extrinsic_i3*(-conformal_gradient3*tmp2 + lapse_conformal_gradient3*tmp1))/pow(conformal_factor, 6));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

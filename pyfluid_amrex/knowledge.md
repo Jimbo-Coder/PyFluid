@@ -130,6 +130,14 @@ The latest recorded evidence is not one monolithic green result:
   The named 42/42 standard plus performance artifact is
   `runs/baselines/20260721_201750_relativistic_reconstruction_recovery/`.
   No full or stability suite was run.
+- Cycle 210 corrects the XCTS shift matter source for the covariant Eulerian
+  momentum used by the code, anchors the uniform Euler first integral at an
+  interpolated rotation center, and continues only the matter component
+  connected to the previous TOV/matter iterate. The focused rotating gate now
+  requires agreement among matter, ADM-volume, and ADM-surface angular
+  momentum and records `J_ADM/M_ADM^2`. N=24 ID-only models converge through
+  `Omega=0.020`; this is a range probe, not a mass-shedding sequence or a
+  resolution-converged spin limit.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -149,9 +157,12 @@ performance, and MPI-rank evidence into one claim.
   nonzero gate is only a small-spin uniform-grid initialization plus three
   evolved-spacetime steps, not an RNS sequence, mass-shedding result,
   convergence study, or long-term stability claim. The current
-  central-enthalpy closure assumes the minimum helical
-  effective potential identifies a spheroidal center; add explicit
-  topology/surface control before high-spin, toroidal, or off-center families.
+  central-enthalpy closure evaluates the helical effective potential at the
+  interpolated rotation center. Each relaxed update admits target matter only
+  next to the previous matter component, so disconnected positive-enthalpy
+  outer lobes are not materialized. This is appropriate for continuation of a
+  centered spheroidal TOV seed; toroidal families need an explicit alternative
+  topology seed rather than bypassing the connected-component contract.
   CTT and CTTK must reuse this matter layer, but still need a validated
   stationarity-compatible free-data closure before being labeled equilibrium.
   COCAL, RNS/FUKA, AthenaK, and ETK solutions are comparison baselines only.
@@ -160,17 +171,18 @@ performance, and MPI-rank evidence into one claim.
   curvature/angular momentum, and evolution. The current deliberately nonzero-
   mean-curvature CTTK control is a different slice and is excluded from that
   equivalence unless its free data are changed to the equilibrium endpoint.
-- ID-only uniform-rotation probes at N=24 establish current operation through
-  `Omega=0.015`: the volume ADM charge gives `J=0.83837`, `M=1.62996`, and
-  `J/M^2=0.3156`, while matter and volume ADM angular momentum agree within
-  `5.1e-4`. `Omega=0.0175` and `0.020` abort because the current matter update
-  reaches the finite outer boundary; this brackets an implementation/domain
-  limit, not a physical mass-shedding limit. At `Omega=0.001`, the surface ADM
-  angular momentum is about 40 percent below the volume charge at both N=24
-  and N=32, so surface spin is not yet validated. Use the volume charge only as
-  an internal constraint check until radius/domain/resolution convergence is
-  demonstrated. The N=32 solve also needs 30 rather than 24 matter iterations
-  to meet the unchanged `1e-5` update tolerance.
+- ID-only uniform-rotation probes at N=24 currently establish operation through
+  `Omega=0.020`. That model converges in 77 relaxed matter iterations with
+  `M_ADM,volume=1.695691`, `J_ADM,volume=1.122723`, and
+  `J_ADM/M_ADM^2=0.3905`; matter and volume angular momentum differ by
+  `4.6e-4`, while surface and volume ADM angular momentum differ by `7.6e-3`.
+  The prior roughly 40 percent surface deficit came from an incorrect
+  conformal/lapse weight in the generated XCTS shift matter source, not the
+  surface quadrature. The focused small-spin gate now enforces both independent
+  charge comparisons. The 96-iteration ceiling is non-forcing: small spin
+  still exits in 24 iterations, while coarse high-spin surface-cell activation
+  can require more than 64. No equatorial/polar-radius convergence,
+  mass-shedding indicator, or physical maximum-spin claim exists yet.
 - Production RHD and RMHD face states reconstruct thermodynamic primitives and
   all three components of spatial four-velocity `z^i = W v^i`. The selected component
   method, including MP5, remains the high-order method; mapping `z^i` through

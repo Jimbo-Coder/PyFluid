@@ -107,7 +107,12 @@ independent matter, ADM-volume, and ADM-surface angular momentum. Report
 `J/M_ADM^2`, ADM--Komar disagreement, surface/volume charge disagreement,
 constraint norms, baryon mass, equatorial/polar radii, and a mass-shedding
 indicator. Do not infer the Kepler limit from solver failure or a finite-domain
-boundary guard.
+boundary guard. The code stores the Eulerian momentum source as covariant
+`S_i`; in conformal flatness the XCTS shift matter source is therefore
+`16 pi alpha psi^4 S^i = 16 pi (alpha psi) S_i / psi`. Uniform-TOV continuation
+anchors the first integral at the interpolated rotation center and retains the
+matter component connected to the preceding iterate; a distant
+positive-enthalpy lobe is not a second star surface.
 
 ## Local AthenaK Reference
 

@@ -11,6 +11,7 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/eos/cold_barotrope.hpp"
 #include "pyfluid_amrex/eos/config.hpp"
+#include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
@@ -46,8 +47,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> effective_potential_storage(
       num_levels
    );
-   amrex::Real minimum_effective_potential =
-      std::numeric_limits<amrex::Real>::max();
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> matter_support_storage(
+      num_levels
+   );
    for (int level = 0; level < num_levels; ++level) {
       if (primitive_state[level] == nullptr || cell_spacetime[level] == nullptr) {
          amrex::Abort("rotating-star update received an unallocated level");
@@ -59,6 +61,10 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       effective_potential_storage[level] = std::make_unique<amrex::MultiFab>(
          hierarchy.grids[level], hierarchy.distribution[level], 2, 0
       );
+      matter_support_storage[level] = std::make_unique<amrex::MultiFab>(
+         hierarchy.grids[level], hierarchy.distribution[level], 1, 1
+      );
+      matter_support_storage[level]->setVal(0.0);
       const auto problo = hierarchy.geometry[level].ProbLoArray();
       const auto dx = hierarchy.geometry[level].CellSizeArray();
       const amrex::Box domain = hierarchy.geometry[level].Domain();
@@ -69,8 +75,10 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
               *effective_potential_storage[level], amrex::TilingIfNotGPU()
            ); mfi.isValid(); ++mfi) {
          const amrex::Box box = mfi.tilebox();
+         const auto primitive = primitive_state[level]->const_array(mfi);
          const auto geometry = cell_spacetime[level]->const_array(mfi);
          const auto effective = effective_potential_storage[level]->array(mfi);
+         const auto matter_support = matter_support_storage[level]->array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const PatchCoordinate physical{
                problo[0] + (static_cast<amrex::Real>(i - ilo) + 0.5) * dx[0],
@@ -87,27 +95,44 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                ? metric.lapse * std::sqrt(1.0 - point.velocity_squared)
                : std::numeric_limits<amrex::Real>::max();
             effective(i, j, k, 1) = point.timelike ? 0.0 : 1.0;
+            const InitialDataSamplePoint sample{physical, physical};
+            const EOSThermodynamicState atmosphere =
+               initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
+            matter_support(i, j, k) =
+               primitive(i, j, k, RHO) > atmosphere.rho ? 1.0 : 0.0;
          });
       }
-      minimum_effective_potential = std::min(
-         minimum_effective_potential,
-         effective_potential_storage[level]->min(0, 0, false)
+      matter_support_storage[level]->FillBoundary(
+         hierarchy.geometry[level].periodicity()
       );
-      if (effective_potential_storage[level]->max(1, 0, false) > 0.0) {
-         amrex::Abort(
-            "rotating-star helical flow is not timelike throughout the domain; "
-            "reduce angular velocity or the domain extent"
-         );
-      }
    }
-   if (!(minimum_effective_potential > 0.0)
-       || !std::isfinite(minimum_effective_potential)) {
-      amrex::Abort("rotating-star effective potential is invalid");
+   std::vector<amrex::GpuArray<amrex::Real, 3>> center_point{{{
+      parameters.rotation_center.q1,
+      parameters.rotation_center.q2,
+      parameters.rotation_center.q3,
+   }}};
+   const HierarchyInterpolationPlan center_plan(
+      std::move(center_point),
+      MeshCartesian,
+      mesh_default_axes_layout(MeshCartesian),
+      hierarchy.geometry,
+      hierarchy.grids,
+      hierarchy.distribution,
+      amrex::IndexType::TheCellType()
+   );
+   const std::vector<amrex::Real> center_values = center_plan.interpolate(
+      effective_potential_storage, 0, 2
+   );
+   const amrex::Real center_effective_potential = center_values[0];
+   if (!(center_effective_potential > 0.0)
+       || !std::isfinite(center_effective_potential)
+       || center_values[1] > 0.0) {
+      amrex::Abort("rotating-star effective potential is invalid at the rotation center");
    }
    RotatingStarParameters iteration_parameters = parameters;
    iteration_parameters.injection_energy = std::exp(
       parameters.central_log_specific_enthalpy
-   ) * minimum_effective_potential;
+   ) * center_effective_potential;
    summary.injection_energy = iteration_parameters.injection_energy;
    for (int level = 0; level < num_levels; ++level) {
       amrex::MultiFab diagnostics(
@@ -129,6 +154,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
          const amrex::Box box = mfi.tilebox();
          const auto primitive = primitive_state[level]->array(mfi);
          const auto geometry = cell_spacetime[level]->const_array(mfi);
+         const auto matter_support = matter_support_storage[level]->const_array(mfi);
          const auto diagnostic = diagnostics.array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const PatchCoordinate physical{
@@ -137,6 +163,15 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                problo[2] + (static_cast<amrex::Real>(k - klo) + 0.5) * dx[2],
             };
             const InitialDataSamplePoint sample{physical, physical};
+            bool within_continuation_support = false;
+            for (int dk = -1; dk <= 1; ++dk) {
+               for (int dj = -1; dj <= 1; ++dj) {
+                  for (int di = -1; di <= 1; ++di) {
+                     within_continuation_support = within_continuation_support
+                        || matter_support(i + di, j + dj, k + dk) > 0.0;
+                  }
+               }
+            }
             const SpacetimeMetric metric = generated::z4c_spacetime_metric(
                load_z4c_state(geometry, i, j, k)
             );
@@ -150,7 +185,8 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             amrex::Real v1 = 0.0;
             amrex::Real v2 = 0.0;
             amrex::Real v3 = 0.0;
-            if (target.timelike && target.log_specific_enthalpy > 0.0) {
+            if (within_continuation_support && target.timelike
+                && target.log_specific_enthalpy > 0.0) {
                const amrex::Real old_log_enthalpy = cold_log_specific_enthalpy(
                   primitive(i, j, k, RHO), eos
                );
@@ -185,14 +221,17 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             primitive(i, j, k, MOM2) = v2;
             primitive(i, j, k, MOM3) = v3;
             primitive(i, j, k, ENERGY) = matter.pressure;
-            diagnostic(i, j, k, 0) = target.velocity_squared;
+            diagnostic(i, j, k, 0) = matter.rho > atmosphere.rho
+               ? target.velocity_squared
+               : 0.0;
             diagnostic(i, j, k, 1) = matter.rho;
             const bool boundary = i == ilo || i == ihi || j == jlo || j == jhi
                || k == klo || k == khi;
             diagnostic(i, j, k, 2) = boundary
                ? amrex::max(matter.rho - atmosphere.rho, amrex::Real(0.0))
                : 0.0;
-            diagnostic(i, j, k, 3) = target.timelike ? 0.0 : 1.0;
+            diagnostic(i, j, k, 3) =
+               within_continuation_support && !target.timelike ? 1.0 : 0.0;
          });
       }
       summary.maximum_velocity = std::max(
@@ -209,8 +248,8 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       );
       if (diagnostics.max(3, 0, false) > 0.0) {
          amrex::Abort(
-            "rotating-star helical flow is not timelike throughout the domain; "
-            "reduce angular velocity or the domain extent"
+            "rotating-star helical flow is not timelike inside the continued "
+            "matter support; reduce angular velocity"
          );
       }
       if (primitive_state[level]->contains_nan(0, NVAR_HYDRO, 0)) {

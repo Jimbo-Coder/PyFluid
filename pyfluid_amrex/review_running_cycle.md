@@ -2100,3 +2100,50 @@ I will always continue from the last cycle marked as `in_progress`.
   indicator. Uryu differential-rotation laws are a subsequent extension of the
   same generated Euler-integral interface, after the uniform sequence and
   charge boundary are sound. [DONE]
+
+## Cycle 210 — XCTS spin charge and connected-surface repair (completed)
+
+- Diagnosed the roughly 40 percent ADM-surface angular-momentum deficit before
+  changing quadrature. Moving the N=24 extraction radius from 10 to 12.8 left
+  surface `J3` essentially unchanged (`0.0285362` versus `0.0285794`) while
+  volume `J3=0.0485737`; this ruled out extraction radius as the dominant
+  error. A trial componentwise `r^-2` Robin shift boundary made the nodal
+  conformal-vector solve fail on the second matter iteration and was fully
+  reverted. [DONE]
+- Corrected the generated XCTS shift matter source. The evolved Eulerian
+  momentum projection is covariant `S_i`; with conformal flatness, raising the
+  index changes `16 pi alpha psi^4 S^i` to
+  `16 pi (alpha psi) S_i / psi`. The old symbolic source instead used
+  `16 pi (alpha psi)^2 S_i / psi^4`, suppressing frame dragging. At N=24 and
+  `Omega=0.001`, the corrected ID has matter `J3=0.0442704`, volume ADM
+  `J3=0.0442470`, and surface ADM `J3=0.0438890`: matter/volume differ by
+  `5.3e-4` and surface/volume by `8.1e-3`, replacing the old 41 percent
+  discrepancy. [DONE]
+- Repaired the higher-spin matter topology. The central enthalpy constraint now
+  interpolates the helical effective potential at the configured rotation
+  center rather than using a global domain minimum. A one-ghost-cell matter
+  mask admits target matter only adjacent to the preceding central component,
+  allowing the stellar surface to move while excluding disconnected
+  positive-enthalpy lobes near finite-domain corners. Timelike and maximum-
+  velocity diagnostics now inspect that continued matter support rather than
+  irrelevant vacuum corners. A preliminary expanding-radius envelope was
+  tested, produced repeated coarse shell activations, and was replaced rather
+  than retained. [DONE]
+- The formerly immediate-failing N=24 `Omega=0.0175` model converged in 45
+  matter iterations with matter/volume/surface `J3` equal to
+  `0.923138/0.922702/0.915539` and matter `vmax=0.19619`. The N=24
+  `Omega=0.020` model has one coarse surface-cell activation at iteration 42,
+  then decays with the configured 0.2 relaxation and converges in 77 iterations
+  at `8.744e-6`. Its volume `M_ADM=1.695691`, matter/volume/surface `J3` are
+  `1.123234/1.122723/1.114193`, and volume `J/M^2=0.3905`. This demonstrates
+  operation at that point only; it is not a resolution-converged sequence or a
+  Kepler/mass-shedding limit. [DONE]
+- Raised the rotating-matter maximum-iteration default and checked-in XCTS
+  example ceiling from 32/24 to 96. This ceiling does not force extra work:
+  the small-spin gate still converges in 24 iterations. The focused validator
+  now requests global GR diagnostics, requires matter/volume `J` agreement
+  within 1 percent and surface/volume agreement within 3 percent, checks
+  `0 < J_ADM/M_ADM^2 < 1`, and records the charges and spin. The three-rank
+  `validate_z4c.py --only rotating_star --force` gate passes both reported
+  checks; its small-spin evolution retains rest-mass drift `8.52e-10` at CFL
+  `0.9`. [DONE]
