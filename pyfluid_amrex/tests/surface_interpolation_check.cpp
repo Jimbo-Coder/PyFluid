@@ -49,11 +49,12 @@ std::unique_ptr<amrex::MultiFab> linear_coordinate_field(
    amrex::Geometry const& geometry,
    amrex::BoxArray const& cell_grids,
    amrex::DistributionMapping const& distribution,
-   amrex::IndexType centering
+   amrex::IndexType centering,
+   int ghost_cells = 1
 )
 {
    auto field = std::make_unique<amrex::MultiFab>(
-      amrex::convert(cell_grids, centering), distribution, 1, 1
+      amrex::convert(cell_grids, centering), distribution, 1, ghost_cells
    );
    field->setVal(0.0);
    const auto lower = geometry.ProbLoArray();
@@ -230,6 +231,48 @@ void check_amr_interpolation()
       const amrex::Real expected =
          1.0 + 2.0 * position[0] - 3.0 * position[1] + 0.5 * position[2];
       require_close(values[point], expected, 2.0e-13);
+   }
+
+   // The origin lies between cell centers and exactly on the internal FAB
+   // boundaries at both levels.  Linear interpolation therefore needs values
+   // exchanged into the one-cell ghost layer from neighboring FABs.
+   std::vector<std::unique_ptr<amrex::MultiFab>> cell_hierarchy(2);
+   for (int level = 0; level < 2; ++level) {
+      cell_hierarchy[level] = linear_coordinate_field(
+         geometry[level], grids[level], distribution[level],
+         amrex::IndexType::TheCellType()
+      );
+   }
+   const std::vector<amrex::GpuArray<amrex::Real, 3>> boundary_position{
+      {0.0, 0.0, 0.0}
+   };
+   const HierarchyInterpolationPlan boundary_plan(
+      boundary_position,
+      pyfluid_amrex::MeshCartesian,
+      pyfluid_amrex::mesh_default_axes_layout(pyfluid_amrex::MeshCartesian),
+      geometry,
+      grids,
+      distribution,
+      amrex::IndexType::TheCellType()
+   );
+   const auto boundary_value = boundary_plan.interpolate(cell_hierarchy, 0, 1);
+   require_close(boundary_value[0], 1.0, 2.0e-13);
+
+   std::vector<std::unique_ptr<amrex::MultiFab>> missing_ghost_hierarchy(2);
+   for (int level = 0; level < 2; ++level) {
+      missing_ghost_hierarchy[level] = linear_coordinate_field(
+         geometry[level], grids[level], distribution[level],
+         amrex::IndexType::TheCellType(), 0
+      );
+   }
+   bool rejected_missing_ghost = false;
+   try {
+      static_cast<void>(boundary_plan.interpolate(missing_ghost_hierarchy, 0, 1));
+   } catch (std::out_of_range const&) {
+      rejected_missing_ghost = true;
+   }
+   if (!rejected_missing_ghost) {
+      throw std::runtime_error("cross-FAB interpolation accepted a missing ghost layer");
    }
 }
 

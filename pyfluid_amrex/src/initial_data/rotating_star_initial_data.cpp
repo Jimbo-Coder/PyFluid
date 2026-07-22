@@ -131,7 +131,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
          amrex::Abort("rotating-star update received an incomplete state layout");
       }
       effective_potential_storage[level] = std::make_unique<amrex::MultiFab>(
-         hierarchy.grids[level], hierarchy.distribution[level], 2, 0
+         hierarchy.grids[level], hierarchy.distribution[level], 2, 1
       );
       matter_support_storage[level] = std::make_unique<amrex::MultiFab>(
          hierarchy.grids[level], hierarchy.distribution[level], 1, 1
@@ -174,6 +174,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                primitive(i, j, k, RHO) > atmosphere.rho ? 1.0 : 0.0;
          });
       }
+      effective_potential_storage[level]->FillBoundary(
+         hierarchy.geometry[level].periodicity()
+      );
       matter_support_storage[level]->FillBoundary(
          hierarchy.geometry[level].periodicity()
       );
@@ -199,6 +202,12 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
    if (!(center_effective_potential > 0.0)
        || !std::isfinite(center_effective_potential)
        || center_values[1] > 0.0) {
+      if (amrex::ParallelDescriptor::IOProcessor()) {
+         amrex::Print()
+            << "rotating-star invalid center: effective_potential="
+            << center_effective_potential
+            << " timelike_failure_weight=" << center_values[1] << '\n';
+      }
       amrex::Abort("rotating-star effective potential is invalid at the rotation center");
    }
    RotatingStarParameters iteration_parameters = parameters;
@@ -380,7 +389,7 @@ amrex::Real rotating_star_mass_shedding_indicator(
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> log_enthalpy(num_levels);
    for (int level = 0; level < num_levels; ++level) {
       log_enthalpy[level] = std::make_unique<amrex::MultiFab>(
-         hierarchy.grids[level], hierarchy.distribution[level], 1, 0
+         hierarchy.grids[level], hierarchy.distribution[level], 1, 1
       );
       const auto problo = hierarchy.geometry[level].ProbLoArray();
       const auto dx = hierarchy.geometry[level].CellSizeArray();
@@ -410,6 +419,9 @@ amrex::Real rotating_star_mass_shedding_indicator(
                : -std::numeric_limits<amrex::Real>::max();
          });
       }
+      log_enthalpy[level]->FillBoundary(
+         hierarchy.geometry[level].periodicity()
+      );
    }
 
    const std::array<amrex::Real, 3> axis{

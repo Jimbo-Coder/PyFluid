@@ -7,8 +7,8 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-22, branch `main`, through the local Cycle 212
-mass-shedding and differential-rotation pass. Use the commit
+Last reconciled: 2026-07-22, branch `main`, through the local Cycle 213
+EOS-aware entropy and resolved rotating-sequence pass. Use the commit
 containing this snapshot plus the exact newer continuity-cycle evidence rather
 than inferring it from an earlier baseline.
 
@@ -91,6 +91,17 @@ The latest recorded evidence is not one monolithic green result:
   generated consistency, all production dimensions, the focused rotating and
   elliptic tests, the complete quick gate, all 42 standard gates, and the
   canonical runtime benchmark pass. No full or stability suite was run.
+- Cycle 213 makes the auxiliary thermal-entropy proxy EoS-aware and fixes two
+  rotating-star hierarchy interpolation inputs that lacked exchanged ghost
+  data at internal FAB boundaries. Generated consistency, architecture, all
+  production dimensions, focused three-rank surface, elliptic, rotating-star,
+  and actual auxiliary-HDF5 controls, the complete quick gate, all 42 standard
+  gates, and the canonical runtime benchmark pass. The production integration
+  rebuild took `375.94 s` with one cache hit and 156 misses; its immediate
+  no-op rebuild took `0.61 s`. The generated compile-check executable still
+  exits on its pre-existing high-order centering-transfer mismatch; the new
+  EoS proxy checks emit no mismatch before that unrelated failure. No full or
+  stability suite was run.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -125,18 +136,25 @@ performance, and MPI-rank evidence into one claim.
   curvature/angular momentum, and evolution. The current deliberately nonzero-
   mean-curvature CTTK control is a different slice and is excluded from that
   equivalence unless its free data are changed to the equilibrium endpoint.
-- ID-only uniform-rotation probes at N=24 establish continued solutions but
-  not a physical endpoint. The Gamma=2 sequence previously reached
-  `Omega=0.02625`; the SLy fixed-central-density sequence now reaches
-  `Omega=0.030`. The SLy `Omega=0.025`, `0.026`, `0.028`, and `0.029` charge
-  checks retain matter/volume angular-momentum disagreement below `6.6e-4`
-  and surface/volume disagreement near 1.1 percent. The surface-gradient
-  magnitudes fall from the small-spin N=24 baseline near `0.993` to roughly
-  `0.26--0.32`, but the directly signed values at `Omega=0.028` and `0.029`
-  are non-monotone (`0.2597`, `0.3230`). This is a coarse surface-resolution
-  floor, so further N=24 angular-velocity bisection would create false
-  precision; a higher-resolution sequence or reusable-ID continuation is the
-  next meaningful endpoint test.
+- Prior N=24 uniform-rotation charge probes remain useful charge evidence, but
+  their Cycle-212 surface-gradient indicators are invalid. The temporary
+  effective-potential and `ln h` MultiFabs had no ghost cells, so a linear
+  interpolation stencil crossing an internal FAB boundary read outside the
+  selected FAB. This box-layout dependence, not a demonstrated physical
+  surface-resolution floor, caused the non-monotone N=24 indicator. Both
+  fields now allocate and exchange one ghost layer; the hierarchy
+  interpolation service also rejects a crossing stencil without sufficient
+  storage before any rank-local interpolation or collective reduction.
+- Corrected N=32 fixed-central-density SLy uniform models converge at
+  `Omega=0.001`, `0.028`, and `0.032`. Their signed mass-shedding indicators
+  are `0.999120`, `0.404505`, and `0.230266`; the latter two dimensionless ADM
+  spins are `0.504573` and `0.594246`. At `Omega=0.032`, the equatorial/polar
+  coordinate radii are `8.27647/4.5`, matter/volume angular momentum differs
+  by `1.75e-4`, surface/volume by `5.77e-3`, and final XCTS residuals remain
+  below `5.8e-13`. This is a strongly flattened but still subcritical model,
+  not a mass-shedding endpoint. Another targeted high-resolution point and a
+  second resolution remain necessary; reusable-ID continuation is especially
+  valuable because this six-stage N=32 solve took `2831.43 s` on three ranks.
   The prior roughly 40 percent surface deficit came from an incorrect
   conformal/lapse weight in the generated XCTS shift matter source, not the
   surface quadrature. The focused small-spin gate now enforces both independent
@@ -221,6 +239,12 @@ performance, and MPI-rank evidence into one claim.
   inversion/validity contract and should not be conflated with the first stage.
   Importing selected CompOSE/TEOS table data is permitted; importing another
   code's TOV/RNS/BNS solution for production initialization is not.
+- The output-only `thermal_entropy_proxy` is `p/rho^Gamma` for an ideal gas,
+  `(p-p_cold)/rho^Gamma_th` for a hybrid cold-plus-thermal EoS, and zero for a
+  strictly cold barotrope with no independent entropy. It is not absolute
+  physical entropy; a tabulated EoS must provide its own thermodynamic
+  definition. Do not use a piecewise-polytrope segment gamma on total pressure,
+  because cold-segment changes then masquerade as entropy production.
 - Fixed-spacetime and evolved curvilinear relativistic evolution remain
   pending but are explicitly deprioritized. Evolved curvilinear Z4c requires a generated reference-metric
   formulation, parity/origin regularity, nodal AMR transfer, and matching

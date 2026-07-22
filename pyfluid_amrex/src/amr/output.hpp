@@ -443,10 +443,16 @@ inline void fill_aux_gf_output(
          copy_selected_aux_components(output, plasma_beta, entry, dst);
          break;
       }
-      case AuxGridField::EntropyProxy: {
-         amrex::MultiFab entropy(state.boxArray(), state.DistributionMap(), 1, 0);
-         fill_entropy_proxy_output(entropy, state, geom, time, cfg);
-         copy_selected_aux_components(output, entropy, entry, dst);
+      case AuxGridField::ThermalEntropyProxy: {
+         amrex::MultiFab thermal_entropy_proxy(
+            state.boxArray(), state.DistributionMap(), 1, 0
+         );
+         fill_thermal_entropy_proxy_output(
+            thermal_entropy_proxy, state, geom, time, cfg
+         );
+         copy_selected_aux_components(
+            output, thermal_entropy_proxy, entry, dst
+         );
          break;
       }
       case AuxGridField::AmrTagMetric: {

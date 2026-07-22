@@ -169,17 +169,9 @@ inline void fill_plasma_beta_output(
    }
 }
 
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real entropy_proxy_gamma(int eos_method, EOSParams const& eos) noexcept
-{
-   if (eos_method == EOSIdealGas) {
-      return eos.gamma;
-   }
-   return eos.segment_gamma[0];
-}
-
-inline void fill_entropy_proxy_output(
-   amrex::MultiFab& entropy,
+template <int EOSMethod>
+void fill_thermal_entropy_proxy_output_method(
+   amrex::MultiFab& thermal_entropy_proxy,
    amrex::MultiFab const& state,
    amrex::Geometry const& geometry,
    amrex::Real time,
@@ -187,7 +179,6 @@ inline void fill_entropy_proxy_output(
 )
 {
    const EOSParams eos = eos_params(cfg);
-   const int eos_method = eos_method_code(cfg);
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
    );
@@ -196,16 +187,40 @@ inline void fill_entropy_proxy_output(
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    {
-   for (amrex::MFIter mfi(entropy, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+   for (amrex::MFIter mfi(thermal_entropy_proxy, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
       const auto values = primitive.const_array(mfi);
-      const auto out = entropy.array(mfi);
+      const auto out = thermal_entropy_proxy.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real rho = values(i, j, k, RHO);
-         const amrex::Real p = values(i, j, k, ENERGY);
-         out(i, j, k, 0) = p / std::pow(amrex::max(rho, 1.0e-300), entropy_proxy_gamma(eos_method, eos));
+         out(i, j, k, 0) = eos_thermal_entropy_proxy<EOSMethod>(
+            values(i, j, k, RHO), values(i, j, k, ENERGY), eos
+         );
       });
    }
+   }
+}
+
+inline void fill_thermal_entropy_proxy_output(
+   amrex::MultiFab& thermal_entropy_proxy,
+   amrex::MultiFab const& state,
+   amrex::Geometry const& geometry,
+   amrex::Real time,
+   RunConfig const& cfg
+)
+{
+   const int eos_method = eos_method_code(cfg);
+   if (eos_method == EOSPolytrope) {
+      fill_thermal_entropy_proxy_output_method<EOSPolytrope>(
+         thermal_entropy_proxy, state, geometry, time, cfg
+      );
+   } else if (eos_method == EOSHybridPolytrope) {
+      fill_thermal_entropy_proxy_output_method<EOSHybridPolytrope>(
+         thermal_entropy_proxy, state, geometry, time, cfg
+      );
+   } else {
+      fill_thermal_entropy_proxy_output_method<EOSIdealGas>(
+         thermal_entropy_proxy, state, geometry, time, cfg
+      );
    }
 }
 

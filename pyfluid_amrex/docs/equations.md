@@ -213,7 +213,7 @@ $$\mathcal F_{\rm matter}=\oint \alpha\sqrt{\gamma}\,J^i_{(t)}dS_i,\qquadJ^i_{(t
 | `vorticity` | $\omega^i$ | `vorticity1, vorticity2, vorticity3` | `Cell, Cell, Cell` | `OutputOnlyAuxiliary` | `None` |
 | `mach` | $\mathcal{M}$ | `mach` | `Cell` | `OutputOnlyAuxiliary` | `None` |
 | `plasma_beta` | $\beta_{\rm plasma}$ | `plasma_beta` | `Cell` | `OutputOnlyAuxiliary` | `None` |
-| `entropy` | $K$ | `entropy` | `Cell` | `OutputOnlyAuxiliary` | `None` |
+| `thermal_entropy_proxy` | $K_{\rm th}$ | `thermal_entropy_proxy` | `Cell` | `OutputOnlyAuxiliary` | `None` |
 | `amr_tag_metric` | $\eta_{\rm AMR}$ | `amr_tag_metric` | `Cell` | `OutputOnlyAuxiliary` | `None` |
 | `solid_mask` | $M_{\rm solid}$ | `solid_mask` | `Cell` | `EvolutionAuxiliary` | `None` |
 | `solid_volume_fraction` | $\kappa_{\rm fluid}$ | `solid_volume_fraction` | `Cell` | `EvolutionAuxiliary` | `None` |

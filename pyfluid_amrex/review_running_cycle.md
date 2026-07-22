@@ -2277,3 +2277,56 @@ I will always continue from the last cycle marked as `in_progress`.
   It quantifies the remaining central-config fanout without justifying a config
   redesign inside this physics change. No full or stability suite was run.
   [DONE]
+## Cycle 213 — EOS-aware entropy output and resolved rotation-limit continuation (DONE)
+
+- Replace the misleading single-gamma `entropy` auxiliary output with one
+  EOS-aware thermal entropy proxy. Ideal gas uses total pressure and its
+  adiabatic index; hybrid piecewise-polytropic matter uses
+  `p_th = p - p_cold(rho)` and `Gamma_th`; a strictly cold barotrope has no
+  independent thermal entropy and returns zero. Keep the GF identity and
+  documentation honest and add focused formula/output coverage. The field is
+  now cataloged only as `thermal_entropy_proxy`; generated descriptors and
+  equations were regenerated. The focused ideal-gas HDF5 run writes one
+  component with all 512 values exactly equal to
+  `3/2^1.4 = 1.136787424882799`. Ideal, cold-polytrope, and hybrid-PWP formula
+  checks compile and emit no mismatch in the generated check executable.
+  [DONE]
+- Continue the fixed-central-density SLy uniform-rotation sequence at higher
+  resolution. Use the signed surface-enthalpy-gradient indicator plus
+  independent matter/ADM volume/ADM surface charges; do not infer a physical
+  endpoint from nonlinear failure or another non-monotone coarse-grid sample.
+  Run expensive points serially and first confirm that no old solver jobs are
+  active. No old solver job was present. Initial N=32 attempts exposed
+  decomposition-dependent garbage at the rotation center: the temporary
+  effective-potential and surface-`ln h` fields had zero ghosts while linear
+  interpolation crossed internal FAB boundaries. Both now allocate and
+  exchange one ghost layer. `HierarchyInterpolationPlan` collectively rejects
+  a crossing stencil without sufficient storage, and the focused three-rank
+  regression checks both exact interpolation at an eight-FAB junction and
+  rejection of the zero-ghost control. [DONE]
+- The corrected N=32 SLy sequence passes at `Omega=0.001`, `0.028`, and
+  `0.032`. The `0.028` model has `chi_ms=0.404505` and
+  `J_ADM/M_ADM^2=0.504573`. The six-stage `0.032` solve takes `2831.43 s`,
+  converges in 219 total matter iterations to relative update `8.91e-6`, and
+  gives `chi_ms=0.230266`, coordinate axis ratio `1.83922`, and
+  `J_ADM/M_ADM^2=0.594246`. Its Hamiltonian/lapse/momentum residuals are
+  `6.02e-15`, `1.12e-14`, and `5.72e-13`; matter/volume J differs by
+  `1.75e-4` and surface/volume by `5.77e-3`. This is a strongly flattened,
+  still-subcritical solution, not a bracketed or resolution-converged
+  mass-shedding endpoint. Old N=24 surface-indicator values are superseded;
+  their independent charge comparisons remain usable. [DONE]
+- Run the smallest relevant generated/catalog, focused, build, and quick gates;
+  update `knowledge.md` with only durable numerical findings and commit the
+  completed state if the evidence is sound. Generated consistency,
+  architecture, Python syntax, the focused three-rank surface and
+  elliptic/TOV/CTT/CTTK/XCTS executables, the actual auxiliary-HDF5 run, and
+  the two-check rotating-star gate pass. The rotating gate retains CFL `0.9`,
+  exact zero-spin equivalence, small-spin `chi_ms=0.999696`, dimensionless spin
+  `0.0182646`, and rest-mass drift `8.52e-10`. All production dimensions build;
+  the complete quick gate passes in `3.02 s`, all 42 standard gates pass, and
+  the four canonical runtime benchmarks are `0.92--0.99` of their frozen
+  baselines. The production integration rebuild takes `375.94 s` with one
+  cache hit and 156 misses; its no-op rebuild takes `0.61 s`. The generated
+  compile-check executable still exits on the pre-existing high-order
+  centering-transfer mismatch after the new EoS checks, so it is not recorded
+  as a whole-executable pass. No full or stability suite was run. [DONE]

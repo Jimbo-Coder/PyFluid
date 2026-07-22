@@ -21,7 +21,7 @@ auxiliary = [
   "vorticity",
   "mach_number",
   "plasma_beta",
-  "entropy_proxy",
+  "thermal_entropy_proxy",
   "amr_tag_metric",
   "solid_mask",
   "solid_volume_fraction",
@@ -568,18 +568,18 @@ name = "plasma_beta"
 label = '\beta_{\rm plasma}'
 
 [[field]]
-key = "entropy_proxy"
-name = "entropy"
-label = 'K'
+key = "thermal_entropy_proxy"
+name = "thermal_entropy_proxy"
+label = 'K_{\rm th}'
 value_kind = "Scalar"
 role = "OutputOnlyAuxiliary"
 evolution_kind = "None"
 diagnostic_kind = "PureAuxiliary"
-aux_id = "EntropyProxy"
+aux_id = "ThermalEntropyProxy"
 
 [[field.components]]
-name = "entropy"
-label = 'K'
+name = "thermal_entropy_proxy"
+label = 'K_{\rm th}'
 
 [[field]]
 key = "amr_tag_metric"

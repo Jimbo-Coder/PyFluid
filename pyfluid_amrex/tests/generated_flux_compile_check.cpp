@@ -1046,6 +1046,7 @@ bool validate_rhd_c2p_round_trip_matrix()
 bool validate_piecewise_polytrope()
 {
    pyfluid_amrex::EOSParams eos{};
+   eos.gamma = 1.4;
    eos.thermal_gamma = 1.6;
    eos.polytrope_segments = 2;
    eos.segment_k[0] = 0.5;
@@ -1082,6 +1083,24 @@ bool validate_piecewise_polytrope()
       return false;
    }
 
+   const amrex::Real ideal_rho = 1.7;
+   const amrex::Real ideal_pressure = 0.43;
+   const amrex::Real expected_ideal_entropy = ideal_pressure / std::pow(
+      ideal_rho, eos.gamma
+   );
+   if (!close_enough(
+          pyfluid_amrex::eos_thermal_entropy_proxy<
+             pyfluid_amrex::EOSIdealGas
+          >(ideal_rho, ideal_pressure, eos),
+          expected_ideal_entropy
+       )
+       || pyfluid_amrex::eos_thermal_entropy_proxy<
+             pyfluid_amrex::EOSPolytrope
+          >(ideal_rho, ideal_pressure, eos) != 0.0) {
+      std::cerr << "ideal/cold thermal-entropy proxy mismatch\n";
+      return false;
+   }
+
    for (amrex::Real const rho : {0.5, 1.5, 2.5, 8.0}) {
       const amrex::Real cold_energy =
          pyfluid_amrex::eos_cold_energy_density<pyfluid_amrex::EOSHybridPolytrope>(rho, eos);
@@ -1090,6 +1109,18 @@ bool validate_piecewise_polytrope()
          pyfluid_amrex::eos_pressure_from_density_energy<pyfluid_amrex::EOSHybridPolytrope>(
             rho, cold_energy + thermal_energy, eos
          );
+      const amrex::Real expected_thermal_entropy =
+         (eos.thermal_gamma - 1.0) * thermal_energy
+         / std::pow(rho, eos.thermal_gamma);
+      if (!close_enough(
+             pyfluid_amrex::eos_thermal_entropy_proxy<
+                pyfluid_amrex::EOSHybridPolytrope
+             >(rho, pressure, eos),
+             expected_thermal_entropy
+          )) {
+         std::cerr << "piecewise hybrid thermal-entropy proxy mismatch\n";
+         return false;
+      }
       const amrex::Real recovered_energy =
          pyfluid_amrex::eos_internal_energy_density_from_pressure<pyfluid_amrex::EOSHybridPolytrope>(
             rho, pressure, eos

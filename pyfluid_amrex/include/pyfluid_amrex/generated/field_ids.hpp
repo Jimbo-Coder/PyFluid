@@ -80,7 +80,7 @@ enum class AuxGridField {
    Vorticity,
    MachNumber,
    PlasmaBeta,
-   EntropyProxy,
+   ThermalEntropyProxy,
    AmrTagMetric,
    SolidMask,
    SolidVolumeFraction,

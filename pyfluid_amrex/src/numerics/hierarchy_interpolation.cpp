@@ -167,6 +167,26 @@ std::vector<amrex::Real> HierarchyInterpolationPlan::interpolate(
    if (num_components <= 0 || first_component < 0) {
       throw std::invalid_argument("interpolation component range must be non-empty");
    }
+   for (Point const& point : points_) {
+      if (point.level >= static_cast<int>(hierarchy.size())
+          || hierarchy[point.level] == nullptr
+          || first_component + num_components > hierarchy[point.level]->nComp()) {
+         throw std::out_of_range(
+            "interpolation component range is absent from the selected hierarchy level"
+         );
+      }
+      const amrex::Box interpolation_cell(
+         point.anchor, point.anchor + amrex::IntVect::TheUnitVector()
+      );
+      amrex::Box storage_box = hierarchy[point.level]->boxArray()[point.box];
+      storage_box.grow(hierarchy[point.level]->nGrowVect());
+      if (!storage_box.contains(interpolation_cell)) {
+         throw std::out_of_range(
+            "interpolation stencil extends outside the selected FAB storage; "
+            "provide and fill one ghost layer"
+         );
+      }
+   }
    std::vector<amrex::Real> host_values(points_.size() * num_components, 0.0);
    amrex::Gpu::DeviceVector<amrex::Real> device_values(host_values.size(), 0.0);
    amrex::Real* values = device_values.data();
@@ -196,10 +216,6 @@ std::vector<amrex::Real> HierarchyInterpolationPlan::interpolate(
    for (auto const& [location, host_points] : groups) {
       const int level = location.first;
       const int box = location.second;
-      if (level >= static_cast<int>(hierarchy.size()) || hierarchy[level] == nullptr
-          || first_component + num_components > hierarchy[level]->nComp()) {
-         throw std::out_of_range("interpolation component range is absent from the selected hierarchy level");
-      }
       amrex::Gpu::DeviceVector<DeviceInterpolationPoint> device_points(host_points.size());
       amrex::Gpu::copy(
          amrex::Gpu::hostToDevice,

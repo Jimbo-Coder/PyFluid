@@ -263,16 +263,25 @@ fields for the active dimension:
 - MHD: include the variables needed to inspect the run and reconstruct derived
   quantities in postprocessing.
 - `pyfluid.aux_gfs` selects optional auxiliary grid functions. Common choices
-  are `j`, `e`, `divb`, `magnetic_energy`, `mach`, `plasma_beta`, `entropy`,
+  are `j`, `e`, `divb`, `magnetic_energy`, `mach`, `plasma_beta`,
+  `thermal_entropy_proxy`,
   `amr_tag_metric`, `solid_volume_fraction`, `solid_swept_volume`, and
   `solid_phi`. By default, aux output inherits `pyfluid.plot_int`, and live
   cached derivatives such as `j`/`e` use that same resolved cadence.
   `pyfluid.aux_gf_int` and `pyfluid.aux_gf_compute_int` remain explicit
   overrides; explicitly setting either to `-1` disables that path. Compute-only
   aux requests are valid only for cached derivatives.
-- Pure diagnostic GFs such as `mach`, `plasma_beta`, `entropy`, `vorticity`,
+- Pure diagnostic GFs such as `mach`, `plasma_beta`,
+  `thermal_entropy_proxy`, `vorticity`,
   `magnetic_energy`, and `amr_tag_metric` are never stored as solver state.
   They are computed only at aux-output cadence when requested.
+- `thermal_entropy_proxy` is `p/rho^Gamma` for an ideal gas. For a hybrid
+  piecewise-polytropic EoS it is
+  `(p - p_cold(rho))/rho^Gamma_th`, so changes in cold-polytrope segment do not
+  masquerade as entropy production. A strictly cold barotrope returns zero
+  because entropy is not an independent variable in that model. This is an
+  adiabatic/thermal proxy, not absolute physical entropy; a tabulated EoS must
+  eventually supply its own thermodynamic entropy.
 - `solid_swept_volume` is positive where the analytic solid has consumed fluid
   volume since `pyfluid.solid_swept_reference_time`, and negative where it has
   uncovered fluid volume.

@@ -176,6 +176,14 @@ equatorial cusp. A negative value is supercritical, not an accepted equilibrium.
 The indicator must be checked at multiple resolutions before quoting a physical
 mass-shedding frequency.
 
+Both the rotation-center effective potential and the surface `ln h` field are
+filled through one exchanged ghost layer before arbitrary-point interpolation.
+This is required when a linear interpolation stencil crosses an internal AMReX
+FAB boundary; otherwise the result depends on box decomposition and may read
+outside valid storage. `HierarchyInterpolationPlan` rejects a crossing stencil
+that lacks storage for this layer, while the caller remains responsible for
+calling `FillBoundary` before interpolation.
+
 The current input controls are:
 
 ```text
@@ -220,7 +228,19 @@ Use `--rotation-law j_constant --differential-rotation-length A` or
 for the implemented differential families. Sequence rows accumulate under
 `runs/current/rotating_star_sequence/`; a completed executable is still marked
 `FAIL_PHYSICS` when its independent charges disagree and `SUPERCRITICAL` when
-the signed surface indicator is nonpositive.
+the signed surface indicator is nonpositive. Each new row also records and
+requires the subextremal volume diagnostic
+`dimensionless_spin = J_ADM/M_ADM^2`.
+
+The corrected N=32 fixed-central-density SLy uniform sequence currently reaches
+`Omega=0.032`. At `Omega=0.028` and `0.032`, respectively,
+`chi_ms = 0.404505` and `0.230266`, while
+`J_ADM/M_ADM^2 = 0.504573` and `0.594246`. The upper model has coordinate
+axis ratio `1.83922`; matter/volume and surface/volume angular momentum agree
+to `1.75e-4` and `5.77e-3`. It is strongly rotating but remains subcritical.
+These points do not bracket or resolution-converge the mass-shedding endpoint.
+Earlier N=24 surface-indicator values produced without exchanged interpolation
+ghost data are superseded and must not be used for an endpoint estimate.
 
 Reusable stellar initial data follow the separate physical-field artifact
 contract in `infrastructure_conventions.md`, not the evolution-checkpoint

@@ -177,10 +177,18 @@ def main() -> int:
       surface_volume_angular_momentum_error = relative_difference(
          adm_angular_momentum3_surface, adm_angular_momentum3_volume
       )
+      dimensionless_spin = (
+         adm_angular_momentum3_volume / adm_mass_volume**2
+         if math.isfinite(adm_angular_momentum3_volume)
+         and math.isfinite(adm_mass_volume)
+         and adm_mass_volume > 0.0
+         else math.nan
+      )
       if status == "PASS" and (
          mass_surface_volume_error > 0.1
          or matter_volume_angular_momentum_error > 0.02
          or surface_volume_angular_momentum_error > 0.05
+         or not 0.0 < dimensionless_spin < 1.0
       ):
          status = "FAIL_PHYSICS"
       row: dict[str, object] = {
@@ -220,6 +228,7 @@ def main() -> int:
          "angular_momentum3": matter_angular_momentum3,
          "adm_angular_momentum3_volume": adm_angular_momentum3_volume,
          "adm_angular_momentum3_surface": adm_angular_momentum3_surface,
+         "dimensionless_spin": dimensionless_spin,
          "mass_surface_volume_error": mass_surface_volume_error,
          "matter_volume_angular_momentum_error": (
             matter_volume_angular_momentum_error

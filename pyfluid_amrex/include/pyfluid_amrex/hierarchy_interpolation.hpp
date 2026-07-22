@@ -16,6 +16,8 @@ namespace pyfluid_amrex {
 
 // Reusable interpolation geometry for arbitrary physical points. The plan owns
 // no field data, so one surface construction can evaluate many diagnostics.
+// Cell- or node-centered input fields must provide one valid ghost layer when
+// a linear interpolation stencil crosses a FAB boundary.
 class HierarchyInterpolationPlan {
 public:
    HierarchyInterpolationPlan(

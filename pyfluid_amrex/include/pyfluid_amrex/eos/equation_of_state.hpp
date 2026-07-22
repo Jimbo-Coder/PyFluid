@@ -74,6 +74,30 @@ amrex::Real eos_cold_pressure(amrex::Real rho, EOSParams const& eos) noexcept
 
 template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real eos_thermal_entropy_proxy(
+   amrex::Real rho,
+   amrex::Real pressure,
+   EOSParams const& eos
+) noexcept
+{
+   if constexpr (EOSMethod == EOSPolytrope) {
+      static_cast<void>(rho);
+      static_cast<void>(pressure);
+      static_cast<void>(eos);
+      return 0.0;
+   } else if constexpr (EOSMethod == EOSHybridPolytrope) {
+      return (pressure - eos_cold_pressure<EOSMethod>(rho, eos)) / std::pow(
+         amrex::max(rho, amrex::Real{1.0e-300}), eos.thermal_gamma
+      );
+   } else {
+      return pressure / std::pow(
+         amrex::max(rho, amrex::Real{1.0e-300}), eos.gamma
+      );
+   }
+}
+
+template <int EOSMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real eos_cold_energy_density(amrex::Real rho, EOSParams const& eos) noexcept
 {
    if constexpr (EOSMethod == EOSIdealGas) {

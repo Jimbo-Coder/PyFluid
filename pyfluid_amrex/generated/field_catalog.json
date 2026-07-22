@@ -18,7 +18,6 @@
     "e2": "E_{2}",
     "e3": "E_{3}",
     "energy": "E",
-    "entropy": "K",
     "face_b1": "B_{1}",
     "face_b2": "B_{2}",
     "face_b3": "B_{3}",
@@ -58,6 +57,7 @@
     "solid_swept_volume": "\\Delta V_{\\rm solid}",
     "solid_volume_fraction": "\\kappa_{\\rm fluid}",
     "tau": "\\tau",
+    "thermal_entropy_proxy": "K_{\\rm th}",
     "theta": "\\Theta",
     "vorticity1": "\\omega_{1}",
     "vorticity2": "\\omega_{2}",
@@ -2700,15 +2700,15 @@
       "components": [
         {
           "centering": "Cell",
-          "label": "K",
-          "name": "entropy",
+          "label": "K_{\\rm th}",
+          "name": "thermal_entropy_proxy",
           "symmetry": "Scalar"
         }
       ],
       "diagnostic_kind": "PureAuxiliary",
       "evolution_kind": "None",
-      "label": "K",
-      "name": "entropy",
+      "label": "K_{\\rm th}",
+      "name": "thermal_entropy_proxy",
       "role": "OutputOnlyAuxiliary",
       "sector": "None",
       "value_kind": "Scalar"
