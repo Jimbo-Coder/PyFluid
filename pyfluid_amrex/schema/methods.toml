@@ -9,3 +9,17 @@ cpp_id = "Uniform"
 label = "Uniform angular velocity"
 description = "Circular flow with one constant angular velocity."
 parameters = ["angular_velocity"]
+
+[[rotation_law]]
+name = "j_constant"
+cpp_id = "JConstant"
+label = "Relativistic j-constant"
+description = "Differential rotation with j(Omega) = A^2 (Omega_c - Omega)."
+parameters = ["angular_velocity", "differential_rotation_length"]
+
+[[rotation_law]]
+name = "q_power"
+cpp_id = "QPower"
+label = "Relativistic q-power"
+description = "Generalized differential rotation with q=1 equal to j-constant."
+parameters = ["angular_velocity", "differential_rotation_length", "rotation_power_q"]

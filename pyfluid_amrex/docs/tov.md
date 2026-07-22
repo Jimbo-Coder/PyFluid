@@ -135,7 +135,7 @@ matching Dirichlet/Robin closures, and AMR restriction/prolongation/interface
 consistency. An interior-only fourth-order stencil would remain globally
 second order when a second-order boundary or coarse/fine layer dominates.
 
-## Uniformly Rotating Stars
+## Rotating Stars
 
 `pyfluid.ic = rotating_star` continues the direct TOV seed through a
 coupled matter/XCTS iteration. The shared circular-flow update uses
@@ -145,22 +145,44 @@ v^i = (Omega (axis x (x - center))^i + beta^i) / alpha
 ln h = ln C - ln alpha - 1/2 ln(1 - gamma_ij v^i v^j)
 ```
 
-for uniform angular velocity. Rotation-law identity and required parameters
-are declared once in `schema/methods.toml`; the Euler integral is a generated
-kernel and the AMReX hierarchy update is owned by
+for uniform angular velocity. The implemented differential families use
+
+```text
+j = u^t u_phi
+j_constant: j(Omega) = A^2 (Omega_c - Omega)
+q_power:    j(Omega) = A^2 Omega [(Omega_c/Omega)^q - 1]
+ln h = ln C - ln alpha - 1/2 ln(1 - gamma_ij v^i v^j)
+       - integral_(Omega_c)^Omega j(Omega') dOmega'
+```
+
+so `q_power` with `q = 1` is exactly the j-constant law. Rotation-law identity
+and required parameters are declared once in `schema/methods.toml`; the Euler
+integrals are generated kernels and the AMReX hierarchy update is owned by
 `src/initial_data/rotating_star_initial_data.cpp`. The iteration updates the
 injection energy to retain the requested central enthalpy, under-relaxes the
 matter variables, rebuilds stress-energy, and resolves XCTS lapse, shift, and
 conformal geometry. It rejects non-timelike helical flow and matter touching a
 physical boundary. The final summary reports coordinate equatorial and polar
-surface extents about the configured axis; these are deformation sanity checks,
-not a mass-shedding indicator.
+surface extents about the configured axis as deformation sanity checks. It also
+reports the signed mass-shedding indicator
+
+```text
+chi_ms = (d ln(h) / dr)_equator / (d ln(h) / dr)_pole,
+```
+
+evaluated at interpolated surface roots and averaged over opposite axial and
+equatorial rays. It approaches one in the spherical limit and zero at an
+equatorial cusp. A negative value is supercritical, not an accepted equilibrium.
+The indicator must be checked at multiple resolutions before quoting a physical
+mass-shedding frequency.
 
 The current input controls are:
 
 ```text
 initial_data.rotation_law = uniform
 initial_data.angular_velocity
+initial_data.differential_rotation_length
+initial_data.rotation_power_q
 initial_data.rotation_axis1/2/3
 initial_data.rotation_center1/2/3
 initial_data.matter_relaxation
@@ -184,6 +206,22 @@ UV_CACHE_DIR=.uv-cache MPLCONFIGDIR=.matplotlib uv run python \
 The tool records wall time, seconds per matter iteration, speedup, and parallel
 efficiency in `runs/current/initial_data_scaling/results.tsv`.
 
+Run fixed-central-density SLy sequences, including charge agreement and the
+mass-shedding indicator, with:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run python \
+  pyfluid_amrex/tools/scan_rotating_star_sequence.py \
+  --eos-preset sly --rotation-law uniform --omega 0.025 --continuation-steps 3
+```
+
+Use `--rotation-law j_constant --differential-rotation-length A` or
+`--rotation-law q_power --differential-rotation-length A --rotation-power-q q`
+for the implemented differential families. Sequence rows accumulate under
+`runs/current/rotating_star_sequence/`; a completed executable is still marked
+`FAIL_PHYSICS` when its independent charges disagree and `SUPERCRITICAL` when
+the signed surface indicator is nonpositive.
+
 Reusable stellar initial data follow the separate physical-field artifact
 contract in `infrastructure_conventions.md`, not the evolution-checkpoint
 contract. The writer/loader is not implemented yet; a step-zero checkpoint is
@@ -201,11 +239,10 @@ Zero angular velocity deliberately bypasses the matter continuation, retaining
 the direct TOV path as the exact control. The first executed nonzero control is
 a 3D, cold hybrid-polytrope, uniform-grid XCTS initialization at
 `Omega=0.001`, followed by three PWL/HLL/SSPRK3 evolved-spacetime steps at CFL
-`0.9`. This is a finite-state smoke, not yet a converged rotation sequence or a
-long-term stability result. Only uniform rotation and XCTS are accepted as
-stationary rotating-star configurations. The shared matter layer can later
-serve CTT/CTTK, but those formulations still need a validated stationarity
-closure before receiving the equilibrium label.
+`0.9`. This focused gate is a finite-state smoke, not a long-term stability
+result. Uniform, j-constant, and q-power rotation are accepted with XCTS. The
+shared matter layer can later serve CTT/CTTK, but those formulations still need
+a validated stationarity closure before receiving the equilibrium label.
 
 The short-evolution gate also protects the generic RHD stage-candidate flux
 correction. Only faces adjoining a cell whose concrete RK candidate violates
@@ -218,10 +255,10 @@ the configured rotation center. Each relaxed update grows or shrinks only the
 matter component connected to the preceding centered TOV seed, excluding
 distant positive-enthalpy lobes. This supports centered spheroidal sequences;
 toroidal families require an explicit alternative topology seed. A physical
-mass-shedding sequence still needs a surface-gradient or `Omega/Omega_K`
-indicator and resolution convergence. Differential rotation likewise requires
-its own catalog entry and generated first integral; KEH is not required for the
-uniform-law branch.
+mass-shedding endpoint still needs resolution convergence of the implemented
+surface-gradient indicator. The first differential-law points establish the
+Euler-integral/configuration path and charge agreement, not a differential-
+rotation sequence or endpoint. KEH is not required by these XCTS branches.
 
 ## Evolution Status
 

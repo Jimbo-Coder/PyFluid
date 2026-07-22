@@ -572,7 +572,7 @@ bool validate_uniform_rotation_first_integral()
    metric.gamma33 = 0.9;
    const pyfluid_amrex::PatchCoordinate physical{2.5, 0.5, -0.75};
    const pyfluid_amrex::RotatingStarPoint point =
-      pyfluid_amrex::uniform_rotation_point(parameters, physical, metric);
+      pyfluid_amrex::rotating_star_point(parameters, physical, metric);
    const amrex::Real expected_v1 = (-0.02 + metric.shift1) / metric.lapse;
    const amrex::Real expected_v2 = (0.04 + metric.shift2) / metric.lapse;
    const amrex::Real expected_v3 = metric.shift3 / metric.lapse;
@@ -604,6 +604,142 @@ bool validate_uniform_rotation_first_integral()
                 << " catalog_valid=" << catalog_valid << '\n';
    }
    return point.timelike && catalog_valid && error < 1.0e-14;
+}
+
+bool validate_differential_rotation_first_integrals()
+{
+   pyfluid_amrex::RotatingStarParameters j_parameters;
+   j_parameters.active = true;
+   j_parameters.rotation_law = pyfluid_amrex::RotationLaw::JConstant;
+   j_parameters.angular_velocity = 0.04;
+   j_parameters.differential_rotation_length = 3.0;
+   j_parameters.rotation_axis = {0.0, 0.0, 1.0};
+   j_parameters.injection_energy = 0.9;
+   pyfluid_amrex::RotatingStarParameters q_parameters = j_parameters;
+   q_parameters.rotation_law = pyfluid_amrex::RotationLaw::QPower;
+   q_parameters.rotation_power_q = 1.0;
+
+   pyfluid_amrex::SpacetimeMetric metric;
+   metric.lapse = 1.0;
+   metric.gamma11 = 1.0;
+   metric.gamma22 = 1.0;
+   metric.gamma33 = 1.0;
+   const pyfluid_amrex::PatchCoordinate physical{1.0, 0.0, 0.0};
+   const pyfluid_amrex::RotatingStarPoint j_point =
+      pyfluid_amrex::rotating_star_point(j_parameters, physical, metric);
+   const pyfluid_amrex::RotatingStarPoint q_point =
+      pyfluid_amrex::rotating_star_point(q_parameters, physical, metric);
+
+   const amrex::Real omega = j_point.v2;
+   const amrex::Real metric_j = omega / (1.0 - omega * omega);
+   const amrex::Real law_j =
+      pyfluid_amrex::generated::j_constant_specific_angular_momentum(
+         omega,
+         j_parameters.angular_velocity,
+         j_parameters.differential_rotation_length
+      );
+   const amrex::Real j_integral =
+      pyfluid_amrex::generated::j_constant_rotation_integral(
+         omega,
+         j_parameters.angular_velocity,
+         j_parameters.differential_rotation_length
+      );
+   const amrex::Real q_integral =
+      pyfluid_amrex::generated::q_power_rotation_integral(
+         omega,
+         q_parameters.angular_velocity,
+         q_parameters.differential_rotation_length,
+         q_parameters.rotation_power_q
+      );
+   const amrex::Real expected_log_enthalpy =
+      std::log(j_parameters.injection_energy)
+      - 0.5 * std::log(1.0 - omega * omega) - j_integral;
+   const amrex::Real q_two_integral =
+      pyfluid_amrex::generated::q_power_two_rotation_integral(
+         0.8 * q_parameters.angular_velocity,
+         q_parameters.angular_velocity,
+         q_parameters.differential_rotation_length
+      );
+   pyfluid_amrex::RotatingStarParameters negative_j_parameters = j_parameters;
+   negative_j_parameters.angular_velocity = -j_parameters.angular_velocity;
+   pyfluid_amrex::RotatingStarParameters negative_q_parameters = q_parameters;
+   negative_q_parameters.angular_velocity = -q_parameters.angular_velocity;
+   const pyfluid_amrex::RotatingStarPoint negative_j_point =
+      pyfluid_amrex::rotating_star_point(
+         negative_j_parameters, physical, metric
+      );
+   const pyfluid_amrex::RotatingStarPoint negative_q_point =
+      pyfluid_amrex::rotating_star_point(
+         negative_q_parameters, physical, metric
+      );
+   pyfluid_amrex::RotatingStarParameters fractional_q_parameters =
+      negative_q_parameters;
+   fractional_q_parameters.rotation_power_q = 1.5;
+   const pyfluid_amrex::RotatingStarPoint fractional_q_point =
+      pyfluid_amrex::rotating_star_point(
+         fractional_q_parameters, physical, metric
+      );
+   const amrex::Real fractional_omega = fractional_q_point.v2;
+   const amrex::Real fractional_metric_j = fractional_omega
+      / (1.0 - fractional_omega * fractional_omega);
+   const amrex::Real fractional_law_j =
+      pyfluid_amrex::generated::q_power_specific_angular_momentum(
+         fractional_omega,
+         fractional_q_parameters.angular_velocity,
+         fractional_q_parameters.differential_rotation_length,
+         fractional_q_parameters.rotation_power_q
+      );
+   const amrex::Real identity_error = std::max({
+      std::abs(j_point.log_specific_enthalpy - q_point.log_specific_enthalpy),
+      std::abs(j_point.v1 - q_point.v1),
+      std::abs(j_point.v2 - q_point.v2),
+      std::abs(j_point.v3 - q_point.v3),
+      std::abs(j_integral - q_integral),
+      std::abs(
+         negative_j_point.log_specific_enthalpy
+         - negative_q_point.log_specific_enthalpy
+      ),
+      std::abs(negative_j_point.v2 - negative_q_point.v2),
+   });
+   const amrex::Real residual = std::abs(metric_j - law_j);
+   const amrex::Real fractional_residual = std::abs(
+      fractional_metric_j - fractional_law_j
+   );
+   const amrex::Real enthalpy_error = std::abs(
+      j_point.log_specific_enthalpy - expected_log_enthalpy
+   );
+   bool has_uniform = false;
+   bool has_j_constant = false;
+   bool has_q_power = false;
+   for (pyfluid_amrex::RotationLawInfo const& law
+        : pyfluid_amrex::RotationLawCatalog) {
+      has_uniform = has_uniform
+         || law.id == pyfluid_amrex::RotationLaw::Uniform;
+      has_j_constant = has_j_constant
+         || law.id == pyfluid_amrex::RotationLaw::JConstant;
+      has_q_power = has_q_power
+         || law.id == pyfluid_amrex::RotationLaw::QPower;
+   }
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "differential_rotation_first_integrals identity_error="
+                << identity_error
+                << " residual=" << residual
+                << " fractional_negative_residual=" << fractional_residual
+                << " enthalpy_error=" << enthalpy_error
+                << " q_two_integral=" << q_two_integral
+                << " catalog_valid="
+                << (has_uniform && has_j_constant && has_q_power) << '\n';
+   }
+   return j_point.timelike && q_point.timelike
+      && negative_j_point.timelike && negative_q_point.timelike
+      && fractional_q_point.timelike
+      && has_uniform && has_j_constant && has_q_power
+      && std::isfinite(q_two_integral)
+      && identity_error < 1.0e-13
+      && residual < 1.0e-13
+      && fractional_residual < 1.0e-13
+      && enthalpy_error < 1.0e-14;
 }
 
 #if (AMREX_SPACEDIM == 3)
@@ -952,6 +1088,9 @@ int main(int argc, char* argv[])
          return_code = 1;
       }
       if (!validate_uniform_rotation_first_integral()) {
+         return_code = 1;
+      }
+      if (!validate_differential_rotation_first_integrals()) {
          return_code = 1;
       }
       constexpr int coarse_cells = 32;

@@ -2148,7 +2148,7 @@ I will always continue from the last cycle marked as `in_progress`.
   checks; its small-spin evolution retains rest-mass drift `8.52e-10` at CFL
   `0.9`. [DONE]
 
-## Cycle 211 — Rotation continuation, ID scaling, and saved-ID boundary (active)
+## Cycle 211 — Rotation continuation, ID scaling, and saved-ID boundary (completed)
 
 - Added an explicit angular-velocity continuation count to rotating-star
   initial data. Each stage is a fully converged matter/XCTS solve and retains
@@ -2209,3 +2209,71 @@ I will always continue from the last cycle marked as `in_progress`.
   `git diff --check` pass. These are incremental builds and focused/quick
   evidence, not a cold compile, standard/full/stability suite, or broad runtime
   benchmark. [DONE]
+
+## Cycle 212 — Uniform mass shedding, elliptic efficiency, and q-law rotation (completed)
+
+- Use the existing SLy piecewise-polytrope and fixed-central-enthalpy closure
+  for the first uniform-rotation sequence. Push angular-velocity continuation
+  beyond the current coarse N=24 reach, but identify a physical endpoint only
+  from a source-verified equatorial mass-shedding diagnostic plus resolution
+  evidence, never from nonlinear failure alone. The implemented signed
+  Gourgoulhon-style ratio averages interpolated outward `d ln(h)/dr` over two
+  polar and four equatorial rays; spherical stars approach one and a cusp
+  approaches zero. The first absolute-value version was corrected because it
+  could hide a post-cusp sign reversal. [DONE]
+- The N=24 fixed-central-density SLy sequence records: `Omega=0.001`,
+  23 matter iterations and `chi_ms=0.99257`; `0.025`, 100 iterations and
+  magnitude `0.28881`; `0.026`, 107 and magnitude `0.27937`; directly signed
+  `0.028`, 158 and `0.25972`; directly signed `0.029`, 177 and `0.32299`;
+  and `0.030`, 163 and pre-sign-correction magnitude `0.36020`. Matter/volume
+  angular momentum differs by at most `7.6e-4` in these recorded rows and
+  surface/volume by about 1.1--1.2 percent. The signed N=24 indicator is already
+  non-monotone between `0.028` and `0.029`; no mass-shedding frequency is
+  claimed, and more coarse bisection is rejected in favor of resolution
+  evidence. [DONE]
+- Profile the nested matter/XCTS solve and remove measured elliptic setup,
+  allocation, or repeated-operator overhead without weakening residual or
+  physical gates. Hoisted scratch allocations plus reuse of one nodal MLMG
+  operator changed the identical three-rank N=24 solve from `159.385` to
+  `159.621` seconds while preserving 24 matter iterations, 15 final coupled
+  iterations, `7.590684236e-6` update, and residuals, but changed the
+  surface-gradient diagnostic from about `0.99970` to `0.98548`. The entire
+  experiment was reverted because it bought no measured speed and was not
+  physically identical. [DONE]
+- Add only the requested q-power/j-constant differential-rotation families to
+  `schema/methods.toml`, with generated first integrals and focused zero-law or
+  limiting controls. Do not add the broader Uryu post-merger profiles in this
+  cycle. The relativistic law solves `u^t u_phi = j(Omega)` pointwise; q-power
+  `q=1` equals j-constant to roundoff. Positive/negative and negative
+  noninteger-q unit residuals are below `1e-15`. N=24 SLy `Omega=0.001`,
+  `A=5` full-ID runs pass for j-constant and q-power `q=2` in 23 matter
+  iterations. Their matter/volume J errors are `9.56e-4` and `8.58e-4`, and
+  surface/volume errors are 1.37 and 1.27 percent. N=16 uniform and j-constant
+  SLy controls fail identically after the first constraint solve, establishing
+  that grid as below the usable resolution rather than a law-specific defect.
+  [DONE]
+- Fixed an independent diagnostic dependency exposed by the differential
+  probe. `global_gr`-only volume reductions used vertex matter that was
+  refreshed only when the `constraints` group was also selected; stale data
+  produced volume mass near 3017 while the surface mass was 1.397. Volume GR
+  diagnostics now explicitly refresh matter. The identical q-power rerun with
+  only coordinate angular momentum plus `global_gr` gives surface/volume ADM
+  masses `1.39737/1.36616` and matter/volume/surface J
+  `0.0198317/0.0198147/0.0195623`. [DONE]
+- Run focused rotating-star, generated/architecture, all-dimension build,
+  quick integration, and initial-data performance checks; update the compact
+  knowledge boundary and commit locally only after the evidence is recorded.
+  The focused three-rank elliptic/TOV/CTT/CTTK/XCTS executable passes after the
+  final negative-spin hardening. Generated consistency and architecture pass;
+  all production dimensions build; the focused three-rank rotating gate passes
+  exact zero-spin TOV equivalence plus the small-spin control with signed
+  `chi_ms=0.999696`, CFL `0.9` rest-mass drift `8.52e-10`, and both charge
+  comparisons below one percent. The complete quick gate passes in `3.11 s`,
+  and all 42 standard gates pass. The four canonical runtime benchmarks pass
+  at `0.92--0.99` of frozen baselines. [DONE]
+- The central-config/header integration rebuild took `156.57 s` with two cache
+  hits and 103 misses; its immediate no-op rebuild took `0.61 s`. This is a
+  dirty-tree broad-invalidation/cache-miss measurement, not a clean cold build.
+  It quantifies the remaining central-config fanout without justifying a config
+  redesign inside this physics change. No full or stability suite was run.
+  [DONE]

@@ -1627,7 +1627,8 @@ def validate_rotating_star_initial_data(
       r"boundary_density_excess=([0-9.eE+-]+) "
       r"equatorial_radius=([0-9.eE+-]+) "
       r"polar_radius=([0-9.eE+-]+) "
-      r"coordinate_axis_ratio=([0-9.eE+-]+)",
+      r"coordinate_axis_ratio=([0-9.eE+-]+) "
+      r"mass_shedding_indicator=([0-9.eE+-]+)",
       run_log,
    )
    if solve_match is None or rotation_match is None:
@@ -1639,6 +1640,7 @@ def validate_rotating_star_initial_data(
    equatorial_radius = float(rotation_match.group(6))
    polar_radius = float(rotation_match.group(7))
    coordinate_axis_ratio = float(rotation_match.group(8))
+   mass_shedding_indicator = float(rotation_match.group(9))
    angular_momentum3 = float(rotating["angular_mom3"])
    adm_mass_volume = float(initial_rotating["adm_mass_volume"])
    adm_angular_momentum3_surface = float(
@@ -1674,6 +1676,8 @@ def validate_rotating_star_initial_data(
       or polar_radius <= 0.0
       or coordinate_axis_ratio < 0.5
       or coordinate_axis_ratio > 2.0
+      or mass_shedding_indicator <= 0.0
+      or mass_shedding_indicator > 2.0
       or angular_momentum3 <= 0.0
       or matter_adm_angular_momentum_relative_error > 1.0e-2
       or surface_volume_angular_momentum_relative_error > 3.0e-2
@@ -1692,6 +1696,7 @@ def validate_rotating_star_initial_data(
          f"elliptic residual={elliptic_residual:.3e}, "
          f"vmax={maximum_velocity:.3e}, J3={angular_momentum3:.3e}, "
          f"Req/Rp={coordinate_axis_ratio:.3e}, "
+         f"chi_ms={mass_shedding_indicator:.3e}, "
          f"Jmatter/Jvol error={matter_adm_angular_momentum_relative_error:.3e}, "
          f"Jsurface/Jvol error={surface_volume_angular_momentum_relative_error:.3e}, "
          f"chi={dimensionless_spin:.3e}, "
@@ -1722,6 +1727,7 @@ def validate_rotating_star_initial_data(
          "equatorial_radius": equatorial_radius,
          "polar_radius": polar_radius,
          "coordinate_axis_ratio": coordinate_axis_ratio,
+         "mass_shedding_indicator": mass_shedding_indicator,
          "angular_momentum3": angular_momentum3,
          "adm_angular_momentum3_surface": adm_angular_momentum3_surface,
          "adm_angular_momentum3_volume": adm_angular_momentum3_volume,
@@ -2188,6 +2194,7 @@ def main() -> int:
       "equatorial_radius",
       "polar_radius",
       "coordinate_axis_ratio",
+      "mass_shedding_indicator",
       "angular_momentum3",
       "adm_angular_momentum3_surface",
       "adm_angular_momentum3_volume",

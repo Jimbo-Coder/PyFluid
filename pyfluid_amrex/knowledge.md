@@ -7,8 +7,8 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-22, branch `main`, through the local Cycle 211
-rotating-star continuation and initial-data scaling pass. Use the commit
+Last reconciled: 2026-07-22, branch `main`, through the local Cycle 212
+mass-shedding and differential-rotation pass. Use the commit
 containing this snapshot plus the exact newer continuity-cycle evidence rather
 than inferring it from an earlier baseline.
 
@@ -78,6 +78,19 @@ The latest recorded evidence is not one monolithic green result:
   checks, all production dimensions, and the complete quick suite pass. This
   remains coarse N=24 uniform-grid evidence; no standard/full/stability suite
   or resolution-converged rotating sequence was run.
+- Cycle 212 adds generated relativistic j-constant and q-power Euler integrals,
+  a signed equatorial/polar surface-enthalpy-gradient diagnostic, and a
+  fixed-central-density sequence driver with independent charge gates. N=24
+  SLy j-constant (`A=5`) and q-power (`A=5`, `q=2`) small-spin models pass;
+  matter/volume angular momentum agrees within `9.6e-4` and surface/volume
+  within 1.4 percent. The signed uniform SLy sequence is directly checked at
+  `Omega=0.028` and `0.029`, but its indicator is already non-monotone at this
+  coarse resolution, so no mass-shedding endpoint is claimed. The focused
+  elliptic/differential-law executable passes. Broad integration evidence is
+  recorded at the end of Cycle 212 rather than assumed here. Architecture,
+  generated consistency, all production dimensions, the focused rotating and
+  elliptic tests, the complete quick gate, all 42 standard gates, and the
+  canonical runtime benchmark pass. No full or stability suite was run.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -89,9 +102,10 @@ performance, and MPI-rank evidence into one claim.
   remains roughly constant under the recorded refinement. This is an exposed
   second-order multilevel-elliptic/fourth-order pointwise-diagnostic mismatch,
   not a completed high-order coarse-fine derivative closure.
-- The first self-contained rotating-star path is implemented for 3D uniform
-  rotation, a cold polytropic/hybrid-polytropic EoS, and XCTS. It continues a
-  direct TOV seed with one generated relativistic Euler first integral and a
+- The self-contained rotating-star path is implemented in 3D for uniform,
+  relativistic j-constant, and relativistic q-power rotation with a cold
+  polytropic/hybrid-polytropic EoS and XCTS. It continues a direct TOV seed
+  with generated relativistic Euler first integrals and a
   coupled under-relaxed matter/constraint iteration; zero angular velocity
   bypasses that update and retains the exact TOV control. The first executed
   nonzero gate is only a small-spin uniform-grid initialization plus three
@@ -111,22 +125,25 @@ performance, and MPI-rank evidence into one claim.
   curvature/angular momentum, and evolution. The current deliberately nonzero-
   mean-curvature CTTK control is a different slice and is excluded from that
   equivalence unless its free data are changed to the equilibrium endpoint.
-- ID-only uniform-rotation probes at N=24 currently establish direct operation
-  through `Omega=0.024375` and staged continuation through `Omega=0.02625`.
-  The latter uses five fully converged angular-velocity stages and 207 total
-  matter iterations, with `M_ADM,volume=1.864969`,
-  `J_ADM,volume=1.919866`, and `J_ADM/M_ADM^2=0.5520`; matter and volume
-  angular momentum differ by `3.9e-4`, while surface and volume ADM angular
-  momentum differ by `7.0e-3`. Its roughly 4.9 percent volume ADM--Komar
-  disagreement and coarse N=24 constraints preclude a physical maximum-spin
-  claim.
+- ID-only uniform-rotation probes at N=24 establish continued solutions but
+  not a physical endpoint. The Gamma=2 sequence previously reached
+  `Omega=0.02625`; the SLy fixed-central-density sequence now reaches
+  `Omega=0.030`. The SLy `Omega=0.025`, `0.026`, `0.028`, and `0.029` charge
+  checks retain matter/volume angular-momentum disagreement below `6.6e-4`
+  and surface/volume disagreement near 1.1 percent. The surface-gradient
+  magnitudes fall from the small-spin N=24 baseline near `0.993` to roughly
+  `0.26--0.32`, but the directly signed values at `Omega=0.028` and `0.029`
+  are non-monotone (`0.2597`, `0.3230`). This is a coarse surface-resolution
+  floor, so further N=24 angular-velocity bisection would create false
+  precision; a higher-resolution sequence or reusable-ID continuation is the
+  next meaningful endpoint test.
   The prior roughly 40 percent surface deficit came from an incorrect
   conformal/lapse weight in the generated XCTS shift matter source, not the
   surface quadrature. The focused small-spin gate now enforces both independent
   charge comparisons. The 96-iteration ceiling is non-forcing: small spin
   still exits in 24 iterations, while coarse high-spin surface-cell activation
   can require more than 64. No equatorial/polar-radius convergence,
-  mass-shedding indicator, or physical maximum-spin claim exists yet.
+  physical maximum-spin claim exists yet.
 - Uniform-star mass shedding is a physical surface condition: the outward
   equatorial enthalpy gradient approaches zero as the fluid angular velocity
   reaches the prograde circular-geodesic frequency at the equator. Nonlinear
@@ -134,6 +151,12 @@ performance, and MPI-rank evidence into one claim.
   measure that limit. A credible sequence therefore needs equatorial/polar
   radii, a surface-gradient or `Omega/Omega_K` indicator, independent charges,
   constraints, and at least two resolutions.
+- The implemented Gourgoulhon-style indicator is the signed ratio of outward
+  equatorial to polar `ln h` derivatives. Taking absolute derivatives is
+  incorrect because it can hide a sign reversal past a cusp. On a coarse grid,
+  cubic root/derivative interpolation still cannot recover information absent
+  from the resolved surface; require monotonic behavior and resolution
+  agreement rather than treating the smallest sampled value as the endpoint.
 - The current N=24 uniform-grid XCTS solve with 8-cell boxes and 24 matter
   iterations scales from 399.69 seconds on one MPI rank to 221.86 seconds on
   two and 159.39 seconds on three: speedups 1.80 and 2.51, or 90.1 and 83.6
@@ -141,6 +164,20 @@ performance, and MPI-rank evidence into one claim.
   agree across ranks. Initial-data wall time is therefore dominated by the
   serial sequence of many otherwise well-parallelized elliptic solves at this
   size, not a demonstrated MPI scaling collapse.
+- Hoisting fixed-point scratch allocations and reusing a nodal MLMG operator
+  changed the identical three-rank N=24 solve from `159.39` to `159.62`
+  seconds, with identical iteration counts, updates, and residuals, but also
+  shifted the surface-gradient diagnostic from about `0.9997` to `0.9855`.
+  The patch was therefore reverted rather than retained as an unmeasured and
+  numerically non-identical optimization.
+  AMReX's current nodal/cell initial-data Laplacians remain second order; its
+  boundary interpolation-order knob does not create a fourth-order interior
+  operator.
+- `global_gr` volume diagnostics depend on current vertex-centered matter even
+  when the separate constraint diagnostic group is not selected. Cycle 212
+  fixed that dependency; before the fix, a `global_gr`-only row could read
+  stale allocation contents and report plausible or catastrophic charges by
+  accident. Keep a direct `global_gr`-only matter-coupled control.
 - The Read-style SLy piecewise-polytrope implementation feeds the same cold
   barotropic rotating-star inversion successfully: N=24 models converge at
   `Omega=0.001` directly and at `Omega=0.025` with three continuation stages.

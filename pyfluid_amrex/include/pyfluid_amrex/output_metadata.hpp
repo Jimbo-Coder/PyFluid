@@ -111,6 +111,8 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("tov_max_steps", std::to_string(cfg.tov_max_steps));
    entries.emplace_back("initial_data_rotation_law", cfg.initial_data_rotation_law);
    entries.emplace_back("initial_data_angular_velocity", output_metadata_real_string(cfg.initial_data_angular_velocity));
+   entries.emplace_back("initial_data_differential_rotation_length", output_metadata_real_string(cfg.initial_data_differential_rotation_length));
+   entries.emplace_back("initial_data_rotation_power_q", output_metadata_real_string(cfg.initial_data_rotation_power_q));
    entries.emplace_back("initial_data_rotation_axis1", output_metadata_real_string(cfg.initial_data_rotation_axis1));
    entries.emplace_back("initial_data_rotation_axis2", output_metadata_real_string(cfg.initial_data_rotation_axis2));
    entries.emplace_back("initial_data_rotation_axis3", output_metadata_real_string(cfg.initial_data_rotation_axis3));

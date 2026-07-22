@@ -729,6 +729,18 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       spacetime_state,
       cell_spacetime
    );
+   if (update_rotating_matter) {
+      RotatingStarParameters diagnostic_parameters = rotating_star;
+      diagnostic_parameters.injection_energy = result.rotating_star.injection_energy;
+      amrex::Vector<amrex::MultiFab const*> final_cell_spacetime(num_levels);
+      for (int level = 0; level < num_levels; ++level) {
+         final_cell_spacetime[level] = cell_spacetime[level];
+      }
+      result.rotating_star.mass_shedding_indicator =
+         rotating_star_mass_shedding_indicator(
+            hierarchy, final_cell_spacetime, diagnostic_parameters
+         );
+   }
    for (int level = 0; level < num_levels; ++level) {
       for (amrex::MFIter mfi(*fluid_state[level], amrex::TilingIfNotGPU());
            mfi.isValid(); ++mfi) {

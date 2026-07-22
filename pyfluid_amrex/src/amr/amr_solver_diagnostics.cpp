@@ -1231,10 +1231,12 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
    if (cfg_.cfl_limiter_diagnostics) {
       set_cfl_limiter_diagnostics(d, current_cfl_limiter_location());
    }
+   bool spacetime_matter_current = false;
    if (spacetime_state_.active()
        && selection.contains_any(ScalarDiagnosticGroup::Constraints)) {
       if (spacetime_includes_matter(cfg_)) {
          fill_spacetime_matter_range(0, finestLevel() + 1);
+         spacetime_matter_current = true;
       }
       const SpacetimeConstraintDiagnostics constraints = this->compute_spacetime_constraint_diagnostics(time);
       d.z4c_hamiltonian_linf = constraints.hamiltonian_linf;
@@ -1275,6 +1277,10 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
          || selection.contains(ScalarDiagnosticId::AdmAngularMomentum1Volume)
          || selection.contains(ScalarDiagnosticId::AdmAngularMomentum2Volume)
          || selection.contains(ScalarDiagnosticId::AdmAngularMomentum3Volume);
+      if (volume_requested && spacetime_includes_matter(cfg_)
+          && !spacetime_matter_current) {
+         fill_spacetime_matter_range(0, finestLevel() + 1);
+      }
       const SpacetimeGlobalDiagnostics global = compute_spacetime_global_diagnostics(
          time, surface_requested, volume_requested
       );

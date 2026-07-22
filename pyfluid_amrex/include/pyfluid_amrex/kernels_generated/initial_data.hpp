@@ -84,6 +84,38 @@ amrex::Real uniform_rotation_log_specific_enthalpy(amrex::Real injection_energy,
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real j_constant_specific_angular_momentum(amrex::Real omega, amrex::Real omega_center, amrex::Real differential_length) noexcept
+{
+   return -((differential_length)*(differential_length))*(omega - omega_center);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real q_power_specific_angular_momentum(amrex::Real omega, amrex::Real omega_center, amrex::Real differential_length, amrex::Real rotation_power) noexcept
+{
+   return ((differential_length)*(differential_length))*omega*(pow(omega_center/omega, rotation_power) - 1);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real j_constant_rotation_integral(amrex::Real omega, amrex::Real omega_center, amrex::Real differential_length) noexcept
+{
+   return -1.0_rt/2.0_rt*((differential_length)*(differential_length))*((omega - omega_center)*(omega - omega_center));
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real q_power_rotation_integral(amrex::Real omega, amrex::Real omega_center, amrex::Real differential_length, amrex::Real rotation_power) noexcept
+{
+   const amrex::Real tmp0 = rotation_power - 2;
+   return -((differential_length)*(differential_length))*((1.0_rt/2.0_rt)*((omega)*(omega)) - 1.0_rt/2.0_rt*((omega_center)*(omega_center)) + pow(omega_center, rotation_power)*(-pow(omega_center, -tmp0) + pow(omega, -tmp0))/tmp0);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real q_power_two_rotation_integral(amrex::Real omega, amrex::Real omega_center, amrex::Real differential_length) noexcept
+{
+   const amrex::Real tmp0 = ((omega_center)*(omega_center));
+   return ((differential_length)*(differential_length))*(-1.0_rt/2.0_rt*((omega)*(omega)) + tmp0*log(omega/omega_center) + (1.0_rt/2.0_rt)*tmp0);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real conformal_momentum_source(amrex::Real conformal_factor, amrex::Real momentum_density, amrex::Real mean_curvature_gradient) noexcept
 {
    return 2*pow(conformal_factor, 6)*(4*pyfluid_amrex::constants::pi*pow(conformal_factor, 4)*momentum_density + (1.0_rt/3.0_rt)*mean_curvature_gradient);

@@ -219,6 +219,8 @@ void AmrSolverBase::materialize_constraint_solved_initial_data()
             << " coordinate_axis_ratio="
             << result.rotating_star.equatorial_radius
                / result.rotating_star.polar_radius
+            << " mass_shedding_indicator="
+            << result.rotating_star.mass_shedding_indicator
             << '\n';
       }
    }

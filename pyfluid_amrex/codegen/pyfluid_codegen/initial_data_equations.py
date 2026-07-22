@@ -190,11 +190,66 @@ def rotating_star_kernels() -> tuple[ScalarKernel, ...]:
       - sp.log(lapse)
       - sp.Rational(1, 2) * sp.log(1 - velocity_squared)
    )
+   omega, omega_center, differential_length, rotation_power = sp.symbols(
+      "omega omega_center differential_length rotation_power", positive=True
+   )
+   j_constant = differential_length**2 * (omega_center - omega)
+   q_power = differential_length**2 * omega * (
+      (omega_center / omega) ** rotation_power - 1
+   )
+   j_constant_integral = -sp.Rational(1, 2) * differential_length**2 * (
+      omega - omega_center
+   ) ** 2
+   q_power_integral = differential_length**2 * (
+      omega_center**rotation_power
+      * (omega ** (2 - rotation_power) - omega_center ** (2 - rotation_power))
+      / (2 - rotation_power)
+      - (omega**2 - omega_center**2) / 2
+   )
+   q_power_two_integral = differential_length**2 * (
+      omega_center**2 * sp.log(omega / omega_center)
+      - (omega**2 - omega_center**2) / 2
+   )
    return (
       ScalarKernel(
          name="uniform_rotation_log_specific_enthalpy",
          arguments=("injection_energy", "lapse", "velocity_squared"),
          expression=log_specific_enthalpy,
+      ),
+      ScalarKernel(
+         name="j_constant_specific_angular_momentum",
+         arguments=("omega", "omega_center", "differential_length"),
+         expression=j_constant,
+      ),
+      ScalarKernel(
+         name="q_power_specific_angular_momentum",
+         arguments=(
+            "omega",
+            "omega_center",
+            "differential_length",
+            "rotation_power",
+         ),
+         expression=q_power,
+      ),
+      ScalarKernel(
+         name="j_constant_rotation_integral",
+         arguments=("omega", "omega_center", "differential_length"),
+         expression=j_constant_integral,
+      ),
+      ScalarKernel(
+         name="q_power_rotation_integral",
+         arguments=(
+            "omega",
+            "omega_center",
+            "differential_length",
+            "rotation_power",
+         ),
+         expression=q_power_integral,
+      ),
+      ScalarKernel(
+         name="q_power_two_rotation_integral",
+         arguments=("omega", "omega_center", "differential_length"),
+         expression=q_power_two_integral,
       ),
    )
 

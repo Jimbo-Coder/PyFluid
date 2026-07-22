@@ -111,6 +111,8 @@ struct RunConfig {
    amrex::Real initial_data_atmosphere_power = 4.0;
    std::string initial_data_rotation_law = "uniform";
    amrex::Real initial_data_angular_velocity = 0.0;
+   amrex::Real initial_data_differential_rotation_length = 10.0;
+   amrex::Real initial_data_rotation_power_q = 1.0;
    amrex::Real initial_data_rotation_axis1 = 0.0;
    amrex::Real initial_data_rotation_axis2 = 0.0;
    amrex::Real initial_data_rotation_axis3 = 1.0;

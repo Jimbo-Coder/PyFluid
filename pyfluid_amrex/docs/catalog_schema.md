@@ -84,7 +84,9 @@ resolve exactly once.
 names, broad capability requirements, and implementation entry identifiers.
 Its first implemented family is `rotation_law`: the strict loader emits the C++
 enum and descriptors consumed by configuration and the rotating-star factory.
-The relativistic Euler integral and nonlinear iteration remain generated/C++
+The current entries are uniform, relativistic j-constant, and relativistic
+q-power rotation. Their identities and required parameter names live in TOML;
+the relativistic Euler integrals and nonlinear iteration remain generated/C++
 science code. Future method families should migrate independently rather than
 turning this first catalog into an unvalidated omnibus registry. Factories
 consume generated descriptors. Coupled numerical compatibility and physical

@@ -426,6 +426,13 @@ RunConfig read_config()
    initial_data_pp.queryAdd("atmosphere_power", cfg.initial_data_atmosphere_power);
    initial_data_pp.queryAdd("rotation_law", cfg.initial_data_rotation_law);
    initial_data_pp.queryAdd("angular_velocity", cfg.initial_data_angular_velocity);
+   initial_data_pp.queryAdd(
+      "differential_rotation_length",
+      cfg.initial_data_differential_rotation_length
+   );
+   initial_data_pp.queryAdd(
+      "rotation_power_q", cfg.initial_data_rotation_power_q
+   );
    initial_data_pp.queryAdd("rotation_axis1", cfg.initial_data_rotation_axis1);
    initial_data_pp.queryAdd("rotation_axis2", cfg.initial_data_rotation_axis2);
    initial_data_pp.queryAdd("rotation_axis3", cfg.initial_data_rotation_axis3);
@@ -825,6 +832,24 @@ void validate_config(RunConfig const& cfg)
    if (!rotation_law_supported) {
       amrex::Abort(
          "initial_data.rotation_law is not present in schema/methods.toml"
+      );
+   }
+   if (cfg.ic == "rotating_star"
+       && cfg.initial_data_rotation_law != "uniform"
+       && (!(cfg.initial_data_differential_rotation_length > 0.0)
+           || !std::isfinite(cfg.initial_data_differential_rotation_length))) {
+      amrex::Abort(
+         "differential rotating-star initial data requires a positive finite "
+         "differential_rotation_length"
+      );
+   }
+   if (cfg.ic == "rotating_star"
+       && cfg.initial_data_rotation_law == "q_power"
+       && (!(cfg.initial_data_rotation_power_q >= 1.0)
+           || !std::isfinite(cfg.initial_data_rotation_power_q))) {
+      amrex::Abort(
+         "q-power rotating-star initial data requires finite "
+         "rotation_power_q >= 1"
       );
    }
    require_supported_option(

@@ -100,8 +100,8 @@ the generated TSV/log, and the current source revision/dirty state.
 - K. Uryu et al., *Modeling differential rotations of compact stars in
   equilibriums*, Phys. Rev. D 96, 103011 (2017),
   [arXiv:1709.02643](https://arxiv.org/abs/1709.02643): integrable relativistic
-  differential-rotation laws, including Eqs. (8) and (9), and
-  spheroidal/toroidal equilibrium sequences.
+  differential-rotation laws, including the q-power family whose q=1 member is
+  the j-constant law, plus spheroidal/toroidal equilibrium sequences.
 - P. Iosif and N. Stergioulas, *Equilibrium sequences of differentially
   rotating stars with post-merger-like rotational profiles*,
   [arXiv:2011.10612](https://arxiv.org/abs/2011.10612): Uryu-law sequence
