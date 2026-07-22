@@ -339,8 +339,10 @@ protected:
    );
    void initialize_spacetime_level(int lev, amrex::Real time);
    void materialize_constraint_solved_initial_data(bool seed_from_loaded_id = false);
+   void materialize_configured_initial_data();
    bool load_physical_initial_data_artifact();
    void write_physical_initial_data_artifact();
+   void project_materialized_initial_face_b();
    void fill_new_spacetime_level_from_coarse(int lev, amrex::Real time);
    void fill_remade_spacetime_level(
       int lev,

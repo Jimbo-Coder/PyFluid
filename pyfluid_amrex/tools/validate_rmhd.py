@@ -490,14 +490,64 @@ def validate_physical_id(
       raise RuntimeError("RMHD physical-ID writer did not report its artifact")
    if "loaded physical initial data:" not in reader_log:
       raise RuntimeError("RMHD physical-ID reader did not report direct loading")
+   materialized_scalars: list[dict[str, object]] = []
+   writer_initial = writer_rows[0]
+   extensive = ("mass", "mom1", "mom2", "mom3", "energy", "rmhd_electromagnetic_energy")
+   materialized_cases = (
+      ("physical_id_coarse", {"amr.n_cell": "8 8", "amr.max_grid_size": "8"}, 1.0),
+      (
+         "physical_id_fine_larger",
+         {
+            "amr.n_cell": "40 40",
+            "amr.max_grid_size": "20",
+            "geometry.prob_lo": "-0.5 -0.5",
+            "geometry.prob_hi": "1.5 1.5",
+         },
+         4.0,
+      ),
+   )
+   for case_name, grid_options, volume in materialized_cases:
+      materialized_dir, materialized_scalar = run_case(
+         case_name,
+         INPUTS / "rmhd_uniform_2d_ct.in",
+         {
+            **common,
+            **grid_options,
+            "initial_data.input_file": repo_relative(artifact),
+         },
+         args,
+         dim=2,
+      )
+      materialized_rows = read_scalar_rows(materialized_dir)
+      initial = materialized_rows[0]
+      for key in extensive:
+         if not math.isclose(
+            float(initial[key]) / volume,
+            float(writer_initial[key]),
+            rel_tol=2.0e-12,
+            abs_tol=2.0e-13,
+         ):
+            raise RuntimeError(
+               f"RMHD physical-ID {case_name} changed uniform {key} density"
+            )
+      if float(initial["divb_linf"]) > 1.0e-13:
+         raise RuntimeError(
+            f"RMHD physical-ID {case_name} violated the CT divergence contract"
+         )
+      materialized_log = (materialized_dir / "run.log").read_text()
+      if "materialized physical initial data onto target hierarchy" not in materialized_log:
+         raise RuntimeError(
+            f"RMHD physical-ID {case_name} did not use cross-grid materialization"
+         )
+      materialized_scalars.append(materialized_scalar)
    return {
       "kind": "physical_id",
-      "case": "rmhd_ct_direct_round_trip",
+      "case": "rmhd_ct_direct_and_cross_grid_round_trip",
       "status": "PASS",
-      "metric": "exact_physical_scalar_rows",
-      "value": len(writer_rows),
+      "metric": "exact_rows_and_materialized_layouts",
+      "value": f"{len(writer_rows)};2",
       "run_dir": repo_relative(reader_dir),
-   }, [writer_scalar, reader_scalar]
+   }, [writer_scalar, reader_scalar, *materialized_scalars]
 
 
 def main() -> int:

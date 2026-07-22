@@ -496,6 +496,140 @@ void read_multilevel_hdf5_field(
    );
 }
 
+MultilevelHdf5FieldLayout read_multilevel_hdf5_field_layout(
+   std::string const& root,
+   std::string const& field_name
+)
+{
+   const std::string path = checkpoint_field_path(root, field_name);
+   const hid_t file = H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+   if (file < 0) {
+      checkpoint_hdf5_error("cannot open multilevel HDF5 field", path);
+   }
+   auto read_root_int = [&](char const* name) {
+      const hid_t attribute = H5Aopen(file, name, H5P_DEFAULT);
+      int value = 0;
+      if (attribute < 0
+          || H5Aread(attribute, H5T_NATIVE_INT, &value) < 0) {
+         checkpoint_hdf5_error(
+            std::string("multilevel HDF5 field is missing attribute ") + name,
+            path
+         );
+      }
+      H5Aclose(attribute);
+      return value;
+   };
+   const int num_levels = read_root_int("num_levels");
+   MultilevelHdf5FieldLayout layout;
+   layout.num_components = read_root_int("num_components");
+   if (num_levels <= 0 || layout.num_components <= 0) {
+      checkpoint_hdf5_error("multilevel HDF5 field has invalid root metadata", path);
+   }
+   layout.boxes.resize(num_levels);
+   layout.domains.resize(num_levels);
+   layout.prob_lo.resize(num_levels);
+   layout.prob_hi.resize(num_levels);
+   for (int level = 0; level < num_levels; ++level) {
+      const std::string level_name = "level_" + std::to_string(level);
+      const hid_t group = H5Gopen2(file, level_name.c_str(), H5P_DEFAULT);
+      if (group < 0) {
+         checkpoint_hdf5_error(
+            "multilevel HDF5 field is missing " + level_name, path
+         );
+      }
+      const hid_t boxes_dataset = H5Dopen2(group, "boxes", H5P_DEFAULT);
+      if (boxes_dataset < 0) {
+         checkpoint_hdf5_error("multilevel HDF5 field is missing boxes", path);
+      }
+      const hid_t boxes_space = H5Dget_space(boxes_dataset);
+      hsize_t num_boxes_hdf5 = 0;
+      if (H5Sget_simple_extent_ndims(boxes_space) != 1
+          || H5Sget_simple_extent_dims(
+                boxes_space, &num_boxes_hdf5, nullptr
+             ) < 0) {
+         checkpoint_hdf5_error("multilevel HDF5 boxes have invalid shape", path);
+      }
+      H5Sclose(boxes_space);
+      const hid_t boxes_type = H5Dget_type(boxes_dataset);
+      if (H5Tget_size(boxes_type) != 2 * AMREX_SPACEDIM * sizeof(int)) {
+         checkpoint_hdf5_error("multilevel HDF5 boxes have incompatible type", path);
+      }
+      std::vector<int> bounds(
+         static_cast<std::size_t>(num_boxes_hdf5)
+         * 2 * AMREX_SPACEDIM
+      );
+      if (H5Dread(
+             boxes_dataset,
+             boxes_type,
+             H5S_ALL,
+             H5S_ALL,
+             H5P_DEFAULT,
+             bounds.data()
+          ) < 0) {
+         checkpoint_hdf5_error("cannot read multilevel HDF5 boxes", path);
+      }
+      amrex::BoxList box_list;
+      for (std::size_t box = 0;
+           box < static_cast<std::size_t>(num_boxes_hdf5); ++box) {
+         amrex::IntVect lo;
+         amrex::IntVect hi;
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            lo[direction] = bounds[
+               box * 2 * AMREX_SPACEDIM + direction
+            ];
+            hi[direction] = bounds[
+               box * 2 * AMREX_SPACEDIM + AMREX_SPACEDIM + direction
+            ];
+         }
+         box_list.push_back(amrex::Box(lo, hi));
+      }
+      layout.boxes[level] = amrex::BoxArray(box_list);
+      H5Tclose(boxes_type);
+      H5Dclose(boxes_dataset);
+
+      const hid_t domain_attribute = H5Aopen(group, "prob_domain", H5P_DEFAULT);
+      if (domain_attribute < 0) {
+         checkpoint_hdf5_error("multilevel HDF5 field is missing prob_domain", path);
+      }
+      const hid_t domain_type = H5Aget_type(domain_attribute);
+      std::array<int, 2 * AMREX_SPACEDIM> domain_bounds{};
+      if (H5Tget_size(domain_type) != domain_bounds.size() * sizeof(int)
+          || H5Aread(
+                domain_attribute, domain_type, domain_bounds.data()
+             ) < 0) {
+         checkpoint_hdf5_error("cannot read multilevel HDF5 prob_domain", path);
+      }
+      amrex::IntVect domain_lo;
+      amrex::IntVect domain_hi;
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         domain_lo[direction] = domain_bounds[direction];
+         domain_hi[direction] = domain_bounds[AMREX_SPACEDIM + direction];
+      }
+      layout.domains[level] = amrex::Box(domain_lo, domain_hi);
+      H5Tclose(domain_type);
+      H5Aclose(domain_attribute);
+
+      auto read_real_vector = [&](char const* name, auto& output) {
+         const hid_t attribute = H5Aopen(group, name, H5P_DEFAULT);
+         const hid_t real_type = sizeof(amrex::Real) == sizeof(double)
+            ? H5T_NATIVE_DOUBLE
+            : H5T_NATIVE_FLOAT;
+         if (attribute < 0
+             || H5Aread(attribute, real_type, output.data()) < 0) {
+            checkpoint_hdf5_error(
+               std::string("cannot read multilevel HDF5 ") + name, path
+            );
+         }
+         H5Aclose(attribute);
+      };
+      read_real_vector("prob_lo", layout.prob_lo[level]);
+      read_real_vector("prob_hi", layout.prob_hi[level]);
+      H5Gclose(group);
+   }
+   H5Fclose(file);
+   return layout;
+}
+
 std::string checkpoint_field_path(std::string const& checkpoint_name, std::string const& field_name)
 {
    return checkpoint_field_prefix(checkpoint_name, field_name) + ".h5";

@@ -81,34 +81,54 @@ provider-independent physical core after the initial-data solve:
 - source hierarchy, EoS and physical parameters, diagnostics, schema version,
   and provenance.
 
-The same artifact may also contain exact same-hierarchy evolution caches.
-Those caches are accelerators, not the physical interchange contract: they
-permit lossless direct evolution loading and can seed another XCTS rotation
-target without reconstructing conserved or Z4c state from the physical core.
+The container is deliberately a superset. In addition to the portable
+physical core, it may contain optional consumer-specific sections such as
+exact-layout evolution caches and sequence-continuation seeds. Evolution may
+discard continuation-only fields, while a sequence continuation may discard
+evolution-only caches. These fields are accelerators, not the physical
+interchange contract, and their roles must be explicit in the artifact
+metadata. The current exact-layout caches permit lossless direct evolution
+loading and also seed another XCTS rotation target without reconstructing
+conserved or Z4c state from the physical core.
 
 TOV, rotating-star, binary, and external providers must all produce this same
 field contract. The artifact must not encode timestepper, reconstruction,
 subcycling, output cadence, or other mutable evolution choices.
 
 `initial_data.output_file` writes this artifact at step zero.
-`initial_data.input_file` loads it. On an identical hierarchy, matching
-physics, EoS, component layout, and centering are mandatory and the exact
-caches start evolution directly. For a saved rotating-star artifact with the
-same rotation law and a larger configured target angular velocity, the same
-input automatically continues XCTS from the saved physical state; a matching
-target starts evolution without another XCTS solve. The ordinary in-process
-sequence accepts an explicit strictly ordered
+`initial_data.input_file` loads it. Matching dimension, coordinate/axis
+semantics, periodicity, physics, and physically relevant EoS data are
+mandatory. On an identical hierarchy, exact caches start evolution directly.
+Otherwise the reader interpolates the portable core onto the configured
+coarser, finer, or physically larger target hierarchy, reconstructs conserved
+and Z4c state, and preserves the CT divergence contract. For a saved
+rotating-star artifact with the same rotation law and a larger configured
+target angular velocity, the same materialized state continues XCTS; a
+matching target starts evolution without another XCTS solve. The ordinary
+in-process sequence accepts an explicit strictly ordered
 `initial_data.rotation_continuation_targets` list and retains live fields
 between targets without artifact I/O.
 
-Cross-hierarchy interpolation and asymptotic exterior materialization remain
-the next part of this contract, not a current capability. The present reader
-rejects a different dimension, domain, hierarchy, centering, physics system,
-or physically relevant EoS definition rather than silently interpolating.
+Fresh analytic data and stored artifacts enter evolution through the same
+configured-ID materialization call. The stored-artifact implementation owns
+exact-cache selection, hierarchy interpolation, exterior completion, and state
+reconstruction; callers must not implement separate "sequence load" and
+"evolution load" remappers.
+
+For a periodic source, each periodic target extent must contain an integer
+number of saved periods. For a nonperiodic larger domain, physical fluid data
+extend from the saved boundary state and ADM data use component-appropriate
+asymptotically flat falloff. This is an initialization remap, not a new
+constraint solve: interpolated data can have larger pointwise constraints than
+the saved grid. A continued rotating XCTS solve does solve the remapped target
+again; a direct evolution start does not.
 
 A finer target grid does not recreate information missing from the saved
 solution. It can reduce evolution truncation error, but a genuinely
 higher-resolution initial-data solution requires a higher-resolution solve.
 The field identities and centerings in the physical core are declared once in
 `schema/fields.toml`. Checkpoint/restart remains a separate time-evolution
-contract with step, time, and run-control state.
+contract with step, time, hierarchy, and run-control state. Both formats are
+valid evolution inputs, but a checkpoint resumes its saved time and hierarchy,
+whereas a physical-ID artifact initializes a new run at step zero through this
+materialization interface.

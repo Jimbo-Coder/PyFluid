@@ -76,6 +76,7 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
          amrex::IntVect anchor;
          amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fraction{};
          bool inside = true;
+         bool crosses_periodic_seam = false;
          for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
             amrex::Real coordinate = runtime_coordinates[direction];
             if (level_geometry.isPeriodic(direction)) {
@@ -92,6 +93,23 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
                - centering_offset;
             int lower_index = static_cast<int>(std::floor(continuous_index));
             amrex::Real local_fraction = continuous_index - lower_index;
+            if (level_geometry.isPeriodic(direction)) {
+               const int domain_length = centered_domain.length(direction);
+               if (lower_index < centered_domain.smallEnd(direction)) {
+                  lower_index += domain_length;
+                  crosses_periodic_seam = true;
+               } else if (lower_index > centered_domain.bigEnd(direction)) {
+                  lower_index -= domain_length;
+                  crosses_periodic_seam = true;
+               }
+               if (lower_index == centered_domain.bigEnd(direction)
+                   && local_fraction > 0.0) {
+                  crosses_periodic_seam = true;
+               }
+               anchor[direction] = lower_index;
+               fraction[direction] = local_fraction;
+               continue;
+            }
             if (lower_index < centered_domain.smallEnd(direction)
                 || lower_index + 1 > centered_domain.bigEnd(direction)) {
                const amrex::Real index_tolerance =
@@ -117,10 +135,23 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
          }
          const amrex::BoxArray centered_grids = amrex::convert(grids[level], centering);
          amrex::Box interpolation_cell(anchor, anchor + amrex::IntVect::TheUnitVector());
+         const amrex::Box interior_stencil =
+            interpolation_cell & centered_domain;
          const amrex::BoxArray uncovered = amrex::complementIn(
-            interpolation_cell, centered_grids
+            interior_stencil, centered_grids
          );
-         const bool stencil_covered = uncovered.empty();
+         bool exterior_is_periodic = true;
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            if (!level_geometry.isPeriodic(direction)
+                && (interpolation_cell.smallEnd(direction)
+                       < centered_domain.smallEnd(direction)
+                    || interpolation_cell.bigEnd(direction)
+                       > centered_domain.bigEnd(direction))) {
+               exterior_is_periodic = false;
+            }
+         }
+         const bool stencil_covered = uncovered.empty()
+            && (!crosses_periodic_seam || exterior_is_periodic);
          if (!stencil_covered) {
             continue;
          }

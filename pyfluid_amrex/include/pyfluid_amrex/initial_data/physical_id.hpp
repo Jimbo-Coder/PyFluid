@@ -1,6 +1,7 @@
 #pragma once
 
 #include <AMReX_Geometry.H>
+#include <AMReX_GpuContainers.H>
 #include <AMReX_IntVect.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_Vector.H>
@@ -17,6 +18,8 @@ struct PhysicalInitialDataMetadata {
    std::string source_ic;
    std::string rotation_law;
    amrex::Real angular_velocity = 0.0;
+   amrex::GpuArray<amrex::Real, 3> rotation_center{};
+   bool used_exact_cache = false;
 };
 
 using ConstPhysicalIdField = amrex::Vector<amrex::MultiFab const*>;
@@ -44,9 +47,19 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    PhysicalSystem system,
    amrex::Vector<amrex::Geometry> const& geometry,
    amrex::Vector<amrex::IntVect> const& refinement_ratios,
+   MutablePhysicalIdField const& primitive,
    MutablePhysicalIdField const& evolution_fluid,
    MutablePhysicalIdField const& evolution_spacetime,
    MutablePhysicalIdFaceFields const& face_magnetic
+);
+
+void materialize_physical_initial_data_fluid(
+   RunConfig const& cfg,
+   PhysicalSystem system,
+   amrex::Vector<amrex::Geometry> const& geometry,
+   ConstPhysicalIdField const& primitive,
+   ConstPhysicalIdField const& cell_spacetime,
+   MutablePhysicalIdField const& evolution_fluid
 );
 
 } // namespace pyfluid_amrex

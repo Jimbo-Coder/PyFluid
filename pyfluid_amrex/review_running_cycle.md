@@ -2468,3 +2468,42 @@ I will always continue from the last cycle marked as `in_progress`.
   reusable sequence path is sound. Do not conflate discrete component parity
   boundaries with a true two-dimensional axisymmetric cylindrical XCTS
   formulation. [PENDING]
+
+## Cycle 217 — Grid-independent physical-ID materialization (DONE)
+
+- Correct the physical-ID abstraction: an artifact is a hierarchy-backed
+  initial-data provider, not an exact-layout evolution restore. Route both
+  evolution startup and persisted sequence continuation through one
+  configured-ID materialization call. Preserve exact evolution caches only as
+  a same-layout optimization. The artifact is deliberately a superset:
+  evolution and sequence consumers ignore optional fields they do not need.
+  [DONE]
+- Support materialization onto the same physical grid, finer or coarser grids,
+  and target domains larger than the saved source. Interpolate the saved
+  physical primitives and ADM fields on their catalog centerings; use the
+  appropriate physical exterior state rather than extending evolution-cache
+  values. Preserve the CT divergence contract when magnetic face fields are
+  remapped. Exact layouts read cached conserved/Z4c fields. Other layouts read
+  source-hierarchy primitives, nodal ADM data, and CT faces; reconstruct target
+  conserved and Z4c state; use asymptotically flat ADM falloff outside a
+  nonperiodic source; and project logical CT faces only if interpolation creates
+  measurable divergence. Periodic targets require an integer number of saved
+  periods. A direct remap does not re-solve constraints; rotating continuation
+  does run XCTS again on the target hierarchy. [DONE]
+- Add focused exact, resolution-change, and larger-domain controls before
+  widening validation. Record separately what is source-inspected, compiled,
+  and executed. The permanent RMHD standard gate now evolves exact, 8x8
+  coarser, and 40x40 two-period finer/larger loads; the exact fresh/load scalar
+  rows match, uniform extensive densities scale with volume, and CT divergence
+  remains below `1e-13`. Its independent AMR+CT checkpoint restart remains
+  bitwise exact. A manual RNS control materialized an N=24 `[-16,16]^3`
+  `Omega=0.001` artifact onto N=32 `[-20,20]^3`, continued to `Omega=0.0011`
+  in 22 matter updates with XCTS residuals below `6.52e-13`, wrote a new
+  artifact, then loaded that artifact without XCTS and completed one CFL `0.9`
+  evolved-spacetime step. That step had zero C2P fallbacks/atmosphere resets
+  and scalar validation passed with mass drift `7.95e-11`. Architecture,
+  generated operators, Python syntax, all production dimensions, the `2.48 s`
+  quick gate, and all 42 standard gates (`244.50 s`) pass. Runtime benchmark
+  ratios are `0.92--0.97` of frozen baselines; the integration cache-hit build
+  is `0.52 s` with no compiler invocations and is not a cold-build result.
+  [DONE]

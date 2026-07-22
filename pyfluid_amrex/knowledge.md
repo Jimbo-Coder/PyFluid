@@ -7,8 +7,8 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-22, branch `main`, through the local Cycle 216
-physical-ID and explicit rotating-sequence pass. Use the commit
+Last reconciled: 2026-07-22, branch `main`, through the local Cycle 217
+grid-independent physical-ID materialization pass. Use the commit
 containing this snapshot plus the exact newer continuity-cycle evidence rather
 than inferring it from an earlier baseline.
 
@@ -127,11 +127,20 @@ The latest recorded evidence is not one monolithic green result:
   target with the same rotation law. Flat HD one-step and flat RMHD+CT
   round trips preserve all physical scalar diagnostics exactly, and an N=24
   RNS direct load reproduces its step-zero diagnostics while skipping XCTS.
-  Cross-hierarchy interpolation/extrapolation is not implemented; the reader
-  rejects mismatched hierarchy or physically relevant EoS metadata. The final
-  quick and 42/42 standard gates pass; RMHD standard permanently covers an
-  exact one-step physical-ID round trip. Persisted XCTS seeds reconstruct
-  `A_conformal = psi^6 a_tilde` before continuing rotation.
+  Cycle 217 generalizes the artifact into a source-hierarchy materializer:
+  compatible coarser, finer, and larger target grids reconstruct conserved and
+  Z4c state from the physical core, while identical layouts retain the exact
+  cache path. Periodic remaps require an integer number of saved periods;
+  nonperiodic ADM exteriors use asymptotically flat falloff. A remap is not a
+  new constraint solve, so direct cross-grid evolution must retain that
+  distinction; rotating continuation does solve XCTS again on the target.
+  The reader rejects incompatible dimension, coordinates/axes, periodicity,
+  physics, or physically relevant EoS metadata. RMHD standard permanently
+  covers exact, coarser, and finer/larger one-step loads. A cross-grid RNS
+  artifact continued XCTS and its resulting artifact then evolved one CFL
+  `0.9` step with zero recovery events. The final quick and 42/42 standard
+  gates pass; runtime ratios are 0.92--0.97 of frozen baselines. Persisted XCTS
+  seeds reconstruct `A_conformal = psi^6 a_tilde` before continuing rotation.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.

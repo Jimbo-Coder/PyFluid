@@ -190,17 +190,21 @@ initial_data.output_file = checkpoints/my_id
 
 The artifact stores catalog-defined fluid primitives, ADM fields when
 spacetime is present, CT face fields when present, text metadata, and exact
-same-hierarchy evolution caches. Loading the same hierarchy with
+same-hierarchy evolution caches. It is a superset container: evolution ignores
+sequence-only state, and continuation ignores any evolution-only cache it does
+not need. Loading with
 
 ```text
 initial_data.input_file = checkpoints/my_id
 ```
 
 starts evolution directly when the configured rotating target matches the
-saved one. For a rotating-star artifact, a larger angular-velocity target with
-the same law instead performs the next XCTS continuation step and can write a
-new artifact. Explicit in-process targets are provided in increasing magnitude
-without repeating the final target:
+saved one. An identical hierarchy uses the exact cache; a compatible coarser,
+finer, or larger hierarchy is materialized from physical primitives and ADM
+fields. For a rotating-star artifact, a larger angular-velocity target with
+the same law instead performs the next XCTS continuation step on the target
+hierarchy and can write a new artifact. Explicit in-process targets are
+provided in increasing magnitude without repeating the final target:
 
 ```text
 initial_data.rotation_continuation_steps = 1
@@ -297,8 +301,9 @@ the Komar diagnostic.
 
 Reusable stellar initial data follow the separate physical-field artifact
 contract in `infrastructure_conventions.md`, not the evolution-checkpoint
-contract. The writer/loader is not implemented yet; a step-zero checkpoint is
-only a temporary exact-evolution cache.
+contract. A checkpoint resumes the exact saved evolution time and hierarchy;
+the physical-ID loader initializes a fresh step-zero evolution or continues an
+ID sequence through the common materialization path.
 
 The opt-in focused gate is intentionally outside quick/standard because the
 three nonlinear 3D controls are comparatively slow:
