@@ -152,7 +152,10 @@ The latest recorded evidence is not one monolithic green result:
   intermediate model to the same target within 0.20 percent in selected global
   scalars at the configured `1e-5` matter tolerance. Named EoS identity must be
   recorded as `eos_preset`; generic `eos=hybrid_polytrope` plus unused custom
-  polytrope knobs does not identify SLy versus APR4.
+  polytrope knobs does not identify SLy versus APR4. The clean implementation
+  baseline for commit `504b4b8` is
+  `runs/baselines/20260722_211331_rotating_id_sequences/`; standard passes
+  42/42 and its four performance cases pass at 0.91--0.99 of reference.
 - Symmetry support is currently layered rather than universal. Catalog-driven
   evolution boundaries cover fluid/Z4c parity and CT, volume diagnostics apply
   symmetry factors, and a full-versus-octant TOV evolution control exists. The

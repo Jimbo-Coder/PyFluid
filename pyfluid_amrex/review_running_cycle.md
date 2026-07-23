@@ -2509,9 +2509,14 @@ I will always continue from the last cycle marked as `in_progress`.
   selected global scalars at the configured `1e-5` matter tolerance. All
   production dimensions build, quick passes, the pre-final-metadata standard
   gate passes 42/42 in `244.38 s`, and the final RMHD standard physical-ID gate
-  passes exact and cross-grid loading. Runtime ratios are `0.93--0.99` of the
-  frozen baseline; the final integration build remains to be captured after
-  commit. No full or stability suite was run. [DONE]
+  passes exact and cross-grid loading. Precommit runtime ratios are
+  `0.93--0.99` of the frozen baseline and the integration cache-hit build is
+  `0.21 s` with no compiler invocations. Implementation commit `504b4b8` is
+  captured from a clean worktree under
+  `runs/baselines/20260722_211331_rotating_id_sequences/`; its fresh standard
+  suite passes 42/42 and all four archived performance cases pass at
+  `0.91--0.99` of the frozen baseline. No full or stability suite was run.
+  [DONE]
 - Support materialization onto the same physical grid, finer or coarser grids,
   and target domains larger than the saved source. Interpolate the saved
   physical primitives and ADM fields on their catalog centerings; use the
