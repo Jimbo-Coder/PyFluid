@@ -339,9 +339,23 @@ protected:
    );
    void initialize_spacetime_level(int lev, amrex::Real time);
    void materialize_constraint_solved_initial_data(bool seed_from_loaded_id = false);
+   void finalize_constraint_solved_initial_data_state();
    void materialize_configured_initial_data();
    bool load_physical_initial_data_artifact();
    void write_physical_initial_data_artifact();
+   void write_physical_initial_data_artifact(
+      std::string const& path,
+      amrex::Real angular_velocity,
+      bool refresh_primitive
+   );
+   void initialize_physical_initial_data_sequence_output();
+   bool physical_initial_data_sequence_output_enabled() const;
+   std::string physical_initial_data_sequence_output_dir() const;
+   void write_physical_initial_data_sequence_model(
+      int continuation_step,
+      int continuation_steps,
+      amrex::Real angular_velocity
+   );
    void project_materialized_initial_face_b();
    void fill_new_spacetime_level_from_coarse(int lev, amrex::Real time);
    void fill_remade_spacetime_level(

@@ -144,6 +144,22 @@ The latest recorded evidence is not one monolithic green result:
   suite and performance commands return zero, with runtime ratios 0.90--0.96
   of frozen baselines. Persisted XCTS seeds reconstruct
   `A_conformal = psi^6 a_tilde` before continuing rotation.
+- A live multi-target XCTS sequence can materialize and losslessly compress
+  each accepted model without reloading it or discarding the conformal fields
+  used by the next target. The focused SLy N=24 control writes two 19 MiB
+  artifacts, exact-loads the final model with zero scalar discrepancy, evolves
+  it one CFL 0.9 step with no recovery events, and continues the saved
+  intermediate model to the same target within 0.20 percent in selected global
+  scalars at the configured `1e-5` matter tolerance. Named EoS identity must be
+  recorded as `eos_preset`; generic `eos=hybrid_polytrope` plus unused custom
+  polytrope knobs does not identify SLy versus APR4.
+- Symmetry support is currently layered rather than universal. Catalog-driven
+  evolution boundaries cover fluid/Z4c parity and CT, volume diagnostics apply
+  symmetry factors, and a full-versus-octant TOV evolution control exists. The
+  shared elliptic solver has no inner per-component even/odd boundary contract,
+  so fresh CTT/CTTK/XCTS octant solves (including RNS) are unsupported. Stored
+  octant artifacts also cannot yet parity-expand to full domains, and spherical
+  GR surface diagnostics do not reconstruct omitted sectors.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.

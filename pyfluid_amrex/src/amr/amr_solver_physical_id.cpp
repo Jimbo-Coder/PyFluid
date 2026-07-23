@@ -8,11 +8,66 @@
 #include <AMReX_MLPoisson.H>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <limits>
 #include <memory>
+#include <sstream>
+#include <utility>
 
 namespace pyfluid_amrex {
+namespace {
+
+std::string sequence_path_component(std::string value)
+{
+   for (char& character : value) {
+      const unsigned char byte = static_cast<unsigned char>(character);
+      if (!std::isalnum(byte) && character != '-' && character != '_'
+          && character != '.') {
+         character = '_';
+      }
+   }
+   return value;
+}
+
+std::string sequence_real_label(amrex::Real value)
+{
+   std::ostringstream label;
+   label << std::scientific << std::setprecision(6) << value;
+   return label.str();
+}
+
+std::string sequence_eos_label(RunConfig const& cfg)
+{
+   std::string label = "eos-" + cfg.eos;
+   if (cfg.eos_preset != "custom") {
+      label += "-" + cfg.eos_preset;
+   } else {
+      label += "-custom";
+   }
+   return sequence_path_component(std::move(label));
+}
+
+std::string sequence_rotation_label(RunConfig const& cfg)
+{
+   std::string label = "rotation-" + cfg.initial_data_rotation_law;
+   if (cfg.initial_data_rotation_law == "j_constant"
+       || cfg.initial_data_rotation_law == "q_power") {
+      label += "-A-"
+         + sequence_real_label(
+            cfg.initial_data_differential_rotation_length
+         );
+   }
+   if (cfg.initial_data_rotation_law == "q_power") {
+      label += "-q-" + sequence_real_label(cfg.initial_data_rotation_power_q);
+   }
+   return sequence_path_component(std::move(label));
+}
+
+} // namespace
 
 void AmrSolverBase::materialize_configured_initial_data()
 {
@@ -260,6 +315,19 @@ void AmrSolverBase::project_materialized_initial_face_b()
 
 void AmrSolverBase::write_physical_initial_data_artifact()
 {
+   write_physical_initial_data_artifact(
+      cfg_.initial_data_output_file,
+      cfg_.initial_data_angular_velocity,
+      true
+   );
+}
+
+void AmrSolverBase::write_physical_initial_data_artifact(
+   std::string const& path,
+   amrex::Real angular_velocity,
+   bool refresh_primitive
+)
+{
    amrex::Vector<amrex::Geometry> geometry;
    amrex::Vector<amrex::IntVect> refinement_ratios;
    ConstPhysicalIdField primitive;
@@ -267,7 +335,9 @@ void AmrSolverBase::write_physical_initial_data_artifact()
    ConstPhysicalIdField spacetime;
    ConstPhysicalIdFaceFields face_magnetic;
    for (int level = 0; level <= finestLevel(); ++level) {
-      fill_level_primitive_cache(level, 0.0);
+      if (refresh_primitive) {
+         fill_level_primitive_cache(level, 0.0);
+      }
       geometry.push_back(Geom(level));
       primitive.push_back(primitive_[level].get());
       fluid.push_back(fluid_state_.state()[level].get());
@@ -285,9 +355,11 @@ void AmrSolverBase::write_physical_initial_data_artifact()
          refinement_ratios.push_back(refRatio(level));
       }
    }
+   RunConfig artifact_cfg = cfg_;
+   artifact_cfg.initial_data_angular_velocity = angular_velocity;
    write_physical_initial_data(
-      cfg_.initial_data_output_file,
-      cfg_,
+      path,
+      artifact_cfg,
       physics_system_,
       geometry,
       refinement_ratios,
@@ -296,8 +368,124 @@ void AmrSolverBase::write_physical_initial_data_artifact()
       spacetime,
       face_magnetic
    );
-   amrex::Print()
-      << "wrote physical initial data: " << cfg_.initial_data_output_file << '\n';
+   amrex::Print() << "wrote physical initial data: " << path << '\n';
+}
+
+void AmrSolverBase::initialize_physical_initial_data_sequence_output()
+{
+   if (!physical_initial_data_sequence_output_enabled()) {
+      return;
+   }
+   const std::filesystem::path sequence_dir =
+      physical_initial_data_sequence_output_dir();
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      if (std::filesystem::exists(sequence_dir)) {
+         amrex::Abort(
+            "physical initial-data sequence output already exists: "
+            + sequence_dir.string()
+         );
+      }
+      std::filesystem::create_directories(sequence_dir);
+      std::ofstream index(sequence_dir / "sequence.tsv");
+      index << "index\ttargets\tangular_velocity\tartifact\n";
+      std::ofstream metadata(sequence_dir / "sequence.meta");
+      metadata << "# type=physical_initial_data_sequence\n"
+               << "# schema_version=1\n"
+               << "# eos=" << cfg_.eos << '\n'
+               << "# eos_preset=" << cfg_.eos_preset << '\n'
+               << "# thermal_gamma=" << std::setprecision(17)
+               << cfg_.thermal_gamma << '\n'
+               << "# central_density=" << std::setprecision(17)
+               << cfg_.tov_central_density << '\n'
+               << "# rotation_law=" << cfg_.initial_data_rotation_law << '\n'
+               << "# differential_rotation_length=" << std::setprecision(17)
+               << cfg_.initial_data_differential_rotation_length << '\n'
+               << "# rotation_power_q=" << std::setprecision(17)
+               << cfg_.initial_data_rotation_power_q << '\n'
+               << "# artifact_contract=PyFluid physical initial data v1\n";
+      if (cfg_.eos_preset == "custom") {
+         metadata << "# polytropic_k=" << std::setprecision(17)
+                  << cfg_.polytropic_k << '\n'
+                  << "# polytropic_gamma=" << std::setprecision(17)
+                  << cfg_.polytropic_gamma << '\n'
+                  << "# polytropic_density_breaks=";
+         for (std::size_t index = 0;
+              index < cfg_.polytropic_density_breaks.size(); ++index) {
+            metadata << (index == 0 ? "" : ",") << std::setprecision(17)
+                     << cfg_.polytropic_density_breaks[index];
+         }
+         metadata << '\n' << "# polytropic_segment_gammas=";
+         for (std::size_t index = 0;
+              index < cfg_.polytropic_segment_gammas.size(); ++index) {
+            metadata << (index == 0 ? "" : ",") << std::setprecision(17)
+                     << cfg_.polytropic_segment_gammas[index];
+         }
+         metadata << '\n';
+      }
+   }
+   amrex::ParallelDescriptor::Barrier();
+}
+
+bool AmrSolverBase::physical_initial_data_sequence_output_enabled() const
+{
+   const bool multiple_targets =
+      cfg_.initial_data_rotation_continuation_steps > 1
+      || !cfg_.initial_data_rotation_continuation_targets.empty();
+   const bool continues_saved_model = !cfg_.initial_data_input_file.empty();
+   return cfg_.initial_data_save_sequence
+      && (multiple_targets || continues_saved_model
+          || !cfg_.initial_data_sequence_output_dir.empty());
+}
+
+std::string AmrSolverBase::physical_initial_data_sequence_output_dir() const
+{
+   if (!cfg_.initial_data_sequence_output_dir.empty()) {
+      return cfg_.initial_data_sequence_output_dir;
+   }
+   return (std::filesystem::path(cfg_.output_dir)
+           / "initial_data_sequences"
+           / sequence_eos_label(cfg_)
+           / sequence_rotation_label(cfg_)
+           / ("rho_c-" + sequence_real_label(cfg_.tov_central_density)))
+      .string();
+}
+
+void AmrSolverBase::write_physical_initial_data_sequence_model(
+   int continuation_step,
+   int continuation_steps,
+   amrex::Real angular_velocity
+)
+{
+   std::ostringstream model_name;
+   model_name << "model_" << std::setw(4) << std::setfill('0')
+              << continuation_step
+              << "_omega-" << sequence_real_label(angular_velocity)
+              << "_baseN-";
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      if (direction != 0) {
+         model_name << 'x';
+      }
+      model_name << Geom(0).Domain().length(direction);
+   }
+   model_name << "_levels-" << finestLevel() + 1;
+   const std::filesystem::path relative_artifact = model_name.str();
+   const std::filesystem::path artifact =
+      std::filesystem::path(physical_initial_data_sequence_output_dir())
+      / relative_artifact;
+   write_physical_initial_data_artifact(
+      artifact.string(), angular_velocity, false
+   );
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::ofstream index(
+         std::filesystem::path(physical_initial_data_sequence_output_dir())
+            / "sequence.tsv",
+         std::ios::app
+      );
+      index << continuation_step << '\t' << continuation_steps << '\t'
+            << std::setprecision(17) << angular_velocity << '\t'
+            << relative_artifact.string() << '\n';
+   }
+   amrex::ParallelDescriptor::Barrier();
 }
 
 } // namespace pyfluid_amrex

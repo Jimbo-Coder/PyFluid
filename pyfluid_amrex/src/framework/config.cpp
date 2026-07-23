@@ -419,6 +419,10 @@ RunConfig read_config()
    initial_data_pp.queryAdd("shift", cfg.initial_data_shift);
    initial_data_pp.queryAdd("input_file", cfg.initial_data_input_file);
    initial_data_pp.queryAdd("output_file", cfg.initial_data_output_file);
+   initial_data_pp.queryAdd("save_sequence", cfg.initial_data_save_sequence);
+   initial_data_pp.queryAdd(
+      "sequence_output_dir", cfg.initial_data_sequence_output_dir
+   );
    initial_data_pp.queryAdd("atmosphere", cfg.initial_data_atmosphere);
    initial_data_pp.queryAdd("atmosphere_density", cfg.initial_data_atmosphere_density);
    initial_data_pp.queryAdd("atmosphere_pressure", cfg.initial_data_atmosphere_pressure);
@@ -1845,7 +1849,8 @@ void validate_config(RunConfig const& cfg)
    }
    if (!cfg.restart_file.empty()
        && (!cfg.initial_data_input_file.empty()
-           || !cfg.initial_data_output_file.empty())) {
+           || !cfg.initial_data_output_file.empty()
+           || !cfg.initial_data_sequence_output_dir.empty())) {
       amrex::Abort(
          "pyfluid.restart_file is mutually exclusive with physical initial-data "
          "input or output"
@@ -1855,6 +1860,30 @@ void validate_config(RunConfig const& cfg)
        && cfg.initial_data_input_file == cfg.initial_data_output_file) {
       amrex::Abort(
          "initial_data.input_file and output_file must not name the same artifact"
+      );
+   }
+   if (!cfg.initial_data_sequence_output_dir.empty()
+       && (cfg.ic != "rotating_star"
+           || cfg.spacetime_initial_data != "xcts"
+           || cfg.initial_data_angular_velocity == 0.0)) {
+      amrex::Abort(
+         "initial_data.sequence_output_dir currently requires nonzero "
+         "rotating_star XCTS initial data"
+      );
+   }
+   if (!cfg.initial_data_save_sequence
+       && !cfg.initial_data_sequence_output_dir.empty()) {
+      amrex::Abort(
+         "initial_data.sequence_output_dir requires save_sequence = 1"
+      );
+   }
+   if (!cfg.initial_data_sequence_output_dir.empty()
+       && (cfg.initial_data_sequence_output_dir == cfg.initial_data_input_file
+           || cfg.initial_data_sequence_output_dir
+              == cfg.initial_data_output_file)) {
+      amrex::Abort(
+         "initial_data.sequence_output_dir must not replace a singular input "
+         "or output artifact"
       );
    }
    if (cfg.plot_int < -1) {

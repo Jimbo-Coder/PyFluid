@@ -74,6 +74,23 @@ def parse_tov_observables(run_log: str) -> dict[str, float]:
    return {name: float(value) for name, value in match.groupdict().items()}
 
 
+def read_physical_id_sequence(run_dir: Path) -> tuple[Path, list[dict[str, str]]]:
+   indexes = list((run_dir / "initial_data_sequences").glob("**/sequence.tsv"))
+   if len(indexes) != 1:
+      raise RuntimeError(
+         f"expected one physical-ID sequence under {repo_relative(run_dir)}, "
+         f"found {len(indexes)}"
+      )
+   lines = [line for line in indexes[0].read_text().splitlines() if line]
+   if not lines:
+      raise RuntimeError("physical-ID sequence index is empty")
+   columns = lines[0].split("\t")
+   if columns != ["index", "targets", "angular_velocity", "artifact"]:
+      raise RuntimeError(f"unexpected physical-ID sequence columns: {columns}")
+   rows = [dict(zip(columns, line.split("\t"), strict=True)) for line in lines[1:]]
+   return indexes[0].parent, rows
+
+
 def run_dimension_case(
    name: str,
    base_input: Path,
@@ -1551,6 +1568,7 @@ def validate_rotating_star_initial_data(
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
    common = {
       "amr.max_level": "0",
+      "pyfluid.eos_preset": "sly",
       "pyfluid.scalar_diagnostics": "standard,global_gr",
    }
    zero_spin_common = {**common, "pyfluid.max_step": "0"}
@@ -1578,6 +1596,11 @@ def validate_rotating_star_initial_data(
       mhd=False,
       kind="analytic",
    )
+   if any(
+      (run_dir / "initial_data_sequences").exists()
+      for run_dir in (tov_dir, zero_dir)
+   ):
+      raise RuntimeError("one-model TOV or zero-spin construction wrote a sequence")
    zero_tov = read_scalar_rows(tov_dir)[-1]
    zero_rotating = read_scalar_rows(zero_dir)[-1]
    equivalence_columns = (
@@ -1601,7 +1624,7 @@ def validate_rotating_star_initial_data(
    rotating_dir, rotating_scalar = run_dimension_case(
       "rotating_star_uniform_small_spin",
       ROTATING_STAR_INPUT,
-      common,
+      {**common, "initial_data.rotation_continuation_steps": "2"},
       args,
       dim=3,
       checks=DYNAMIC_SPACETIME_POLICY,
@@ -1611,6 +1634,40 @@ def validate_rotating_star_initial_data(
    rotating_rows = read_scalar_rows(rotating_dir)
    initial_rotating = rotating_rows[0]
    rotating = rotating_rows[-1]
+   sequence_dir, sequence_rows = read_physical_id_sequence(rotating_dir)
+   if len(sequence_rows) != 2:
+      raise RuntimeError(
+         f"rotating-star sequence wrote {len(sequence_rows)} models, expected 2"
+      )
+   sequence_omegas = [float(row["angular_velocity"]) for row in sequence_rows]
+   if sequence_omegas != [5.0e-4, 1.0e-3]:
+      raise RuntimeError(
+         f"unexpected rotating-star sequence targets: {sequence_omegas}"
+      )
+   sequence_artifacts = [sequence_dir / row["artifact"] for row in sequence_rows]
+   for artifact, omega in zip(sequence_artifacts, sequence_omegas, strict=True):
+      expected_name_fields = (
+         f"omega-{omega:.6e}", "baseN-24x24x24", "levels-1"
+      )
+      if not artifact.is_dir() or not all(
+         field in artifact.name for field in expected_name_fields
+      ):
+         raise RuntimeError(
+            f"sequence artifact name does not identify target and hierarchy: "
+            f"{repo_relative(artifact)}"
+         )
+      header = (artifact / "Header.meta").read_text()
+      required_metadata = (
+         "# compression=ZLIB@9",
+         "# eos=hybrid_polytrope",
+         "# eos_preset=sly",
+         "# rotation_law=uniform",
+         f"# angular_velocity={omega:.17g}",
+      )
+      if not all(item in header for item in required_metadata):
+         raise RuntimeError(
+            f"sequence artifact metadata is incomplete: {repo_relative(artifact)}"
+         )
    run_log = (rotating_dir / "run.log").read_text()
    solve_match = re.search(
       r"xcts initial data: matter_iterations=([0-9]+) "
@@ -1705,6 +1762,75 @@ def validate_rotating_star_initial_data(
          f"constraints=({hamiltonian_l2:.3e}, {hamiltonian_linf:.3e}, "
          f"{momentum_linf:.3e})"
       )
+   final_load_dir, final_load_scalar = run_dimension_case(
+      "rotating_star_sequence_final_load",
+      ROTATING_STAR_INPUT,
+      {
+         **common,
+         "initial_data.input_file": repo_relative(sequence_artifacts[-1]),
+         "initial_data.rotation_continuation_steps": "1",
+         "pyfluid.polytropic_k": "17.0",
+         "pyfluid.polytropic_gamma": "1.8",
+         "pyfluid.max_step": "1",
+      },
+      args,
+      dim=3,
+      checks=DYNAMIC_SPACETIME_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   if (final_load_dir / "initial_data_sequences").exists():
+      raise RuntimeError("an exact one-model evolution load wrote a sequence")
+   final_load_initial = read_scalar_rows(final_load_dir)[0]
+   exact_load_error = max(
+      abs(float(final_load_initial[name]) - float(initial_rotating[name]))
+      / max(abs(float(initial_rotating[name])), 1.0)
+      for name in equivalence_columns
+   )
+   if exact_load_error > 1.0e-13:
+      raise RuntimeError(
+         "final sequence model did not load exactly for evolution: "
+         f"maximum normalized scalar error={exact_load_error:.3e}"
+      )
+
+   continue_dir, continue_scalar = run_dimension_case(
+      "rotating_star_sequence_intermediate_continue",
+      ROTATING_STAR_INPUT,
+      {
+         **common,
+         "initial_data.input_file": repo_relative(sequence_artifacts[0]),
+         "initial_data.angular_velocity": "0.001",
+         "initial_data.rotation_continuation_steps": "1",
+         "pyfluid.max_step": "0",
+      },
+      args,
+      dim=3,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="feature",
+   )
+   _, continued_sequence_rows = read_physical_id_sequence(continue_dir)
+   if len(continued_sequence_rows) != 1 or not math.isclose(
+      float(continued_sequence_rows[0]["angular_velocity"]),
+      1.0e-3,
+      rel_tol=0.0,
+      abs_tol=1.0e-15,
+   ):
+      raise RuntimeError("persisted sequence continuation did not save its target")
+   continued_initial = read_scalar_rows(continue_dir)[0]
+   continuation_columns = (
+      "mass", "max_rho", "adm_mass_volume", "adm_angular_momentum3_volume",
+   )
+   continuation_error = max(
+      abs(float(continued_initial[name]) - float(initial_rotating[name]))
+      / max(abs(float(initial_rotating[name])), 1.0e-14)
+      for name in continuation_columns
+   )
+   if continuation_error > 5.0e-3:
+      raise RuntimeError(
+         "persisted intermediate model did not recover the live final target: "
+         f"maximum relative scalar error={continuation_error:.3e}"
+      )
    return ([
       {
          "kind": "analytic",
@@ -1745,7 +1871,32 @@ def validate_rotating_star_initial_data(
          "max_rho_relative_change": max_rho_relative_change,
          "run_dir": repo_relative(rotating_dir),
       },
-   ], [tov_scalar, zero_scalar, rotating_scalar])
+      {
+         "kind": "feature",
+         "case": "rotating_star_sequence_final_load",
+         "status": "PASS",
+         "metric": "exact_load_error",
+         "value": exact_load_error,
+         "exact_load_error": exact_load_error,
+         "sequence_models": len(sequence_rows),
+         "run_dir": repo_relative(final_load_dir),
+      },
+      {
+         "kind": "feature",
+         "case": "rotating_star_sequence_intermediate_continue",
+         "status": "PASS",
+         "metric": "continuation_error",
+         "value": continuation_error,
+         "continuation_error": continuation_error,
+         "run_dir": repo_relative(continue_dir),
+      },
+   ], [
+      tov_scalar,
+      zero_scalar,
+      rotating_scalar,
+      final_load_scalar,
+      continue_scalar,
+   ])
 
 
 def validate_adm_mass_convergence(
@@ -2189,6 +2340,9 @@ def main() -> int:
       "constraint_linf",
       "relative_matter_update",
       "zero_spin_relative_error",
+      "exact_load_error",
+      "continuation_error",
+      "sequence_models",
       "elliptic_residual",
       "maximum_velocity",
       "equatorial_radius",

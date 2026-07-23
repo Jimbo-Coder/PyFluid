@@ -133,7 +133,8 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    InitialDataFieldSelection const& fields,
    ConformalConstraintFormulation formulation,
    RotatingStarParameters const& rotating_star,
-   bool seed_from_spacetime
+   bool seed_from_spacetime,
+   ConformalContinuationObserver const& continuation_observer
 )
 {
    static_assert(System == PhysicalSystem::RHD || System == PhysicalSystem::RMHD);
@@ -442,6 +443,62 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    const bool coupled_xcts_matter_iteration =
       update_rotating_matter
       && formulation == ConformalConstraintFormulation::xcts;
+   const auto materialize_current_evolution_state = [&]() {
+      materialize_conformal_geometry(
+         hierarchy,
+         conformal_factor_const,
+         lapse_conformal_view,
+         shift_view,
+         mean_curvature,
+         conformal_extrinsic_const,
+         spacetime_state,
+         cell_spacetime
+      );
+      for (int level = 0; level < num_levels; ++level) {
+         for (amrex::MFIter mfi(
+                 *fluid_state[level], amrex::TilingIfNotGPU()
+              ); mfi.isValid(); ++mfi) {
+            const amrex::Box box = mfi.tilebox();
+            const auto cell_geometry = cell_spacetime[level]->const_array(mfi);
+            const auto primitive = primitive_state[level]->const_array(mfi);
+            const auto fluid = fluid_state[level]->array(mfi);
+            amrex::ParallelFor(
+               box,
+               [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  const Z4cState geometry = load_z4c_state(
+                     cell_geometry, i, j, k
+                  );
+                  const SpacetimeMetric metric =
+                     generated::z4c_spacetime_metric(geometry);
+                  if constexpr (System == PhysicalSystem::RHD) {
+                     store_rhd_conserved(
+                        fluid,
+                        i,
+                        j,
+                        k,
+                        generated::rhd_primitive_to_conserved(
+                           rhd_primitive_at<EOSMethod>(
+                              primitive, i, j, k, eos
+                           ),
+                           metric
+                        )
+                     );
+                  } else {
+                     store_rmhd_conserved(
+                        fluid,
+                        i,
+                        j,
+                        k,
+                        generated::rmhd_primitive_to_conserved(
+                           rmhd_primitive_at(primitive, i, j, k, eos), metric
+                        )
+                     );
+                  }
+               }
+            );
+         }
+      }
+   };
    for (int continuation_step = 1;
         continuation_step <= static_cast<int>(rotation_targets.size());
         ++continuation_step) {
@@ -830,18 +887,17 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             + std::to_string(continuation_step)
          );
       }
+      if (continuation_observer) {
+         materialize_current_evolution_state();
+         continuation_observer(
+            continuation_step,
+            static_cast<int>(rotation_targets.size()),
+            continued_rotating_star.angular_velocity
+         );
+      }
    }
 
-   materialize_conformal_geometry(
-      hierarchy,
-      conformal_factor_const,
-      lapse_conformal_view,
-      shift_view,
-      mean_curvature,
-      conformal_extrinsic_const,
-      spacetime_state,
-      cell_spacetime
-   );
+   materialize_current_evolution_state();
    if (update_rotating_matter) {
       RotatingStarParameters diagnostic_parameters = rotating_star;
       diagnostic_parameters.injection_energy = result.rotating_star.injection_energy;
@@ -853,42 +909,6 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          rotating_star_mass_shedding_indicator(
             hierarchy, final_cell_spacetime, diagnostic_parameters
          );
-   }
-   for (int level = 0; level < num_levels; ++level) {
-      for (amrex::MFIter mfi(*fluid_state[level], amrex::TilingIfNotGPU());
-           mfi.isValid(); ++mfi) {
-         const amrex::Box box = mfi.tilebox();
-         const auto cell_geometry = cell_spacetime[level]->const_array(mfi);
-         const auto primitive = primitive_state[level]->const_array(mfi);
-         const auto fluid = fluid_state[level]->array(mfi);
-         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const Z4cState geometry = load_z4c_state(
-               cell_geometry, i, j, k
-            );
-            const SpacetimeMetric metric = generated::z4c_spacetime_metric(geometry);
-            if constexpr (System == PhysicalSystem::RHD) {
-               store_rhd_conserved(
-                  fluid,
-                  i,
-                  j,
-                  k,
-                  generated::rhd_primitive_to_conserved(
-                     rhd_primitive_at<EOSMethod>(primitive, i, j, k, eos), metric
-                  )
-               );
-            } else {
-               store_rmhd_conserved(
-                  fluid,
-                  i,
-                  j,
-                  k,
-                  generated::rmhd_primitive_to_conserved(
-                     rmhd_primitive_at(primitive, i, j, k, eos), metric
-                  )
-               );
-            }
-         });
-      }
    }
    return result;
 }
@@ -907,14 +927,15 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataFieldSelection const& fields,
    ConformalConstraintFormulation formulation,
    RotatingStarParameters const& rotating_star,
-   bool seed_from_spacetime
+   bool seed_from_spacetime,
+   ConformalContinuationObserver const& continuation_observer
 )
 {
 #if (AMREX_SPACEDIM != 3)
    amrex::ignore_unused(
       hierarchy, fluid_state, primitive_state, spacetime_state,
       cell_spacetime, system, eos_method, eos, fields, formulation,
-      rotating_star, seed_from_spacetime
+      rotating_star, seed_from_spacetime, continuation_observer
    );
    amrex::Abort("conformal constraint initial data requires the 3D executable");
    return {};
@@ -926,7 +947,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       >(
          hierarchy, fluid_state, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
-         seed_from_spacetime
+         seed_from_spacetime, continuation_observer
       );
    }
    if (system != PhysicalSystem::RHD) {
@@ -939,7 +960,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       >(
          hierarchy, fluid_state, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
-         seed_from_spacetime
+         seed_from_spacetime, continuation_observer
       );
    }
    if (eos_method == EOSHybridPolytrope) {
@@ -949,7 +970,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       >(
          hierarchy, fluid_state, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
-         seed_from_spacetime
+         seed_from_spacetime, continuation_observer
       );
    }
    return materialize_conformal_initial_data_method<
@@ -958,7 +979,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    >(
       hierarchy, fluid_state, primitive_state, spacetime_state,
       cell_spacetime, eos, fields, formulation, rotating_star,
-      seed_from_spacetime
+      seed_from_spacetime, continuation_observer
    );
 #endif
 }

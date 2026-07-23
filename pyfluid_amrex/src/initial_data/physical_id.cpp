@@ -784,23 +784,28 @@ void write_physical_initial_data(
       metadata << "# periodicity=" << periodicity_string(geometry.front()) << '\n';
       metadata << "# refinement_ratios=" << refinement_string(refinement_ratios) << '\n';
       metadata << "# eos=" << cfg.eos << '\n';
+      metadata << "# eos_preset=" << cfg.eos_preset << '\n';
       metadata << "# gamma=" << output_metadata_real_string(cfg.gamma) << '\n';
-      metadata << "# polytropic_k="
-               << output_metadata_real_string(cfg.polytropic_k) << '\n';
-      metadata << "# polytropic_gamma="
-               << output_metadata_real_string(cfg.polytropic_gamma) << '\n';
-      metadata << "# polytropic_density_breaks="
-               << output_metadata_real_vector_string(
-                     cfg.polytropic_density_breaks
-                  )
-               << '\n';
-      metadata << "# polytropic_segment_gammas="
-               << output_metadata_real_vector_string(
-                     cfg.polytropic_segment_gammas
-                  )
-               << '\n';
-      metadata << "# thermal_gamma="
-               << output_metadata_real_string(cfg.thermal_gamma) << '\n';
+      if (cfg.eos != "ideal_gas" && cfg.eos_preset == "custom") {
+         metadata << "# polytropic_k="
+                  << output_metadata_real_string(cfg.polytropic_k) << '\n';
+         metadata << "# polytropic_gamma="
+                  << output_metadata_real_string(cfg.polytropic_gamma) << '\n';
+         metadata << "# polytropic_density_breaks="
+                  << output_metadata_real_vector_string(
+                        cfg.polytropic_density_breaks
+                     )
+                  << '\n';
+         metadata << "# polytropic_segment_gammas="
+                  << output_metadata_real_vector_string(
+                        cfg.polytropic_segment_gammas
+                     )
+                  << '\n';
+      }
+      if (cfg.eos == "hybrid_polytrope") {
+         metadata << "# thermal_gamma="
+                  << output_metadata_real_string(cfg.thermal_gamma) << '\n';
+      }
       metadata << "# passive_scalars=" << cfg.passive_scalars << '\n';
       metadata << "# has_spacetime=" << has_spacetime << '\n';
       metadata << "# has_ct=" << has_ct << '\n';
@@ -884,11 +889,20 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    );
    require_metadata(metadata, "periodicity", periodicity_string(geometry.front()), path);
    require_metadata(metadata, "eos", cfg.eos, path);
+   const auto eos_preset_entry = metadata.find("eos_preset");
+   if (eos_preset_entry != metadata.end()) {
+      require_metadata(metadata, "eos_preset", cfg.eos_preset, path);
+   } else if (cfg.eos_preset != "custom") {
+      amrex::Abort(
+         "legacy physical initial data do not identify their named EoS preset; "
+         "regenerate the artifact before using eos_preset = " + cfg.eos_preset
+      );
+   }
    if (cfg.eos == "ideal_gas") {
       require_metadata(
          metadata, "gamma", output_metadata_real_string(cfg.gamma), path
       );
-   } else {
+   } else if (cfg.eos_preset == "custom") {
       require_metadata(
          metadata,
          "polytropic_k",
@@ -913,14 +927,14 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          output_metadata_real_vector_string(cfg.polytropic_segment_gammas),
          path
       );
-      if (cfg.eos == "hybrid_polytrope") {
-         require_metadata(
-            metadata,
-            "thermal_gamma",
-            output_metadata_real_string(cfg.thermal_gamma),
-            path
-         );
-      }
+   }
+   if (cfg.eos == "hybrid_polytrope") {
+      require_metadata(
+         metadata,
+         "thermal_gamma",
+         output_metadata_real_string(cfg.thermal_gamma),
+         path
+      );
    }
    require_metadata(metadata, "passive_scalars", std::to_string(cfg.passive_scalars), path);
    const bool expects_spacetime = !evolution_spacetime.empty();

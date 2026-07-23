@@ -183,6 +183,20 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
    } else if (cfg_.spacetime_initial_data == "xcts") {
       formulation = ConformalConstraintFormulation::xcts;
    }
+   ConformalContinuationObserver continuation_observer;
+   if (physical_initial_data_sequence_output_enabled()) {
+      initialize_physical_initial_data_sequence_output();
+      continuation_observer = [this](
+         int continuation_step,
+         int continuation_steps,
+         amrex::Real angular_velocity
+      ) {
+         finalize_constraint_solved_initial_data_state();
+         write_physical_initial_data_sequence_model(
+            continuation_step, continuation_steps, angular_velocity
+         );
+      };
+   }
    const ConformalMaterializationResult result = materialize_conformal_initial_data(
       hierarchy,
       fluid,
@@ -195,7 +209,8 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       initial_data_provider_.view().fields,
       formulation,
       rotating_star_parameters(cfg_, initial_data_provider_.view()),
-      seed_from_loaded_id
+      seed_from_loaded_id,
+      continuation_observer
    );
    if (amrex::ParallelDescriptor::IOProcessor()) {
       amrex::Print()
@@ -230,6 +245,11 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       }
    }
 
+   finalize_constraint_solved_initial_data_state();
+}
+
+void AmrSolverBase::finalize_constraint_solved_initial_data_state()
+{
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       spacetime_coupling_.invalidate_cell_spacetime(lev);
    }

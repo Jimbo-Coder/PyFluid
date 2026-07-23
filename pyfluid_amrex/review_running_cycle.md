@@ -2478,6 +2478,40 @@ I will always continue from the last cycle marked as `in_progress`.
   a same-layout optimization. The artifact is deliberately a superset:
   evolution and sequence consumers ignore optional fields they do not need.
   [DONE]
+
+## Cycle 218 — Persisted live sequences and symmetry audit (DONE)
+
+- Save every accepted target by default for a genuine multi-target rotating-ID
+  sequence, with `initial_data.save_sequence=0` as the explicit disable knob.
+  Do not automatically save ordinary one-model TOV or RNS construction. Write
+  the common directly evolvable physical-ID artifact while retaining the live
+  conformal and matter fields for the next target. Keep
+  `initial_data.output_file` as the optional singular final artifact and write
+  a compact sequence index rather than inventing a second file format. [DONE]
+- Audit symmetry across analytic providers, stored artifacts, elliptic solves,
+  evolution boundaries, CT, and diagnostics. TOV octant evolution already has
+  a focused full-versus-octant charge check, catalog-driven fluid/Z4c parity,
+  CT symmetry handling, and volume-charge factors. The common elliptic solver
+  currently assigns Robin or Dirichlet data to every nonperiodic face, so a
+  fresh RNS/XCTS reflection/octant solve is not supported. Stored full-domain
+  data can be geometrically restricted to a contained octant target through
+  the common materializer, although that direction has no focused test;
+  octant-to-full parity reconstruction and spherical GR surface reconstruction
+  are not implemented. [DONE]
+- Add focused sequence save/load/continue/evolve checks, rebuild all production
+  dimensions, and run architecture, generated, quick, and proportionate
+  relativistic gates before committing. The finalized three-rank focused gate
+  passes four checks: zero-spin TOV equivalence, live two-target SLy sequence,
+  exact final-model evolution load, and persisted intermediate-model
+  continuation. Its two N=24 artifacts are 18.6 MiB each with ZLIB@9; the final
+  exact-load scalar error is zero, its CFL 0.9 step has no recovery events, and
+  the independently continued target differs by at most `1.9514e-3` in the
+  selected global scalars at the configured `1e-5` matter tolerance. All
+  production dimensions build, quick passes, the pre-final-metadata standard
+  gate passes 42/42 in `244.38 s`, and the final RMHD standard physical-ID gate
+  passes exact and cross-grid loading. Runtime ratios are `0.93--0.99` of the
+  frozen baseline; the final integration build remains to be captured after
+  commit. No full or stability suite was run. [DONE]
 - Support materialization onto the same physical grid, finer or coarser grids,
   and target domains larger than the saved source. Interpolate the saved
   physical primitives and ADM fields on their catalog centerings; use the
@@ -2512,3 +2546,24 @@ I will always continue from the last cycle marked as `in_progress`.
   runtime medians are `0.90--0.96` of the frozen baselines. No full or
   stability suite was run.
   [DONE]
+
+## Cycle 219 — Physical sequence organization (DONE)
+
+- Organize automatically persisted rotating-star sequences by EoS, rotation
+  law, and fixed central density beneath the configured run directory. Include
+  named EoS presets and differential-law parameters in human-readable path or
+  text metadata, while keeping each artifact's `Header.meta` authoritative and
+  preserving `initial_data.sequence_output_dir` as an explicit override. Named
+  fits now record and validate `eos_preset`; inactive custom polytrope knobs do
+  not control compatibility. Legacy named-EoS artifacts without the preset are
+  rejected because their physical EoS cannot be verified. [DONE]
+
+## Cycle 220 — Informative sequence model names (DONE)
+
+- Include the prescribed angular velocity, base-grid resolution, and hierarchy
+  level count in each persisted sequence model name. Label the prescribed
+  quantity as `omega`, not dimensionless spin, because `J_ADM/M_ADM^2` is a
+  measured property of the converged model. Keep the exact box hierarchy and
+  physical diagnostics in artifact metadata and the sequence index. Names use
+  parser-safe hyphen separators because AMReX treats `=` inside an unquoted
+  input path as a parameter delimiter. [DONE]

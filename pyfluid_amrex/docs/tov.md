@@ -212,9 +212,30 @@ initial_data.rotation_continuation_targets = 0.005 0.010 0.015
 initial_data.angular_velocity = 0.020
 ```
 
-The current loader requires the saved hierarchy exactly. Interpolation to a
-wider or differently resolved evolution hierarchy is not yet implemented and
-is rejected.
+Multi-target rotating sequences save every accepted target by default while
+continuing from the live in-memory fields. Disable this only when the artifacts
+are unwanted:
+
+```text
+initial_data.save_sequence = 0
+```
+
+Ordinary one-model TOV and RNS construction is not automatically saved. A
+single continuation from a saved rotating model is saved by default, and
+`initial_data.sequence_output_dir` explicitly selects another location or
+requests output for a one-model rotating solve. Automatic output is organized
+as
+`<output_dir>/initial_data_sequences/eos-.../rotation-.../rho_c-.../`.
+Each losslessly compressed model name includes `omega`, base resolution, and
+level count; `sequence.meta` describes the physical family and `sequence.tsv`
+indexes the models. The artifacts can either seed the next XCTS target or enter
+evolution through `initial_data.input_file`.
+
+The common loader supports identical, compatible coarser or finer, and
+physically larger target hierarchies. Cross-grid loading interpolates the
+portable physical fields and reconstructs evolution state; it does not improve
+the source ID resolution or re-solve constraints unless a rotating
+continuation target is requested.
 This is required when a linear interpolation stencil crosses an internal AMReX
 FAB boundary; otherwise the result depends on box decomposition and may read
 outside valid storage. `HierarchyInterpolationPlan` rejects a crossing stencil
@@ -234,6 +255,9 @@ initial_data.matter_relaxation
 initial_data.matter_relative_tolerance
 initial_data.matter_max_iterations
 initial_data.rotation_continuation_steps
+initial_data.rotation_continuation_targets
+initial_data.save_sequence
+initial_data.sequence_output_dir
 ```
 
 `rotation_continuation_steps` defaults to one. Values above one solve a
@@ -305,8 +329,10 @@ contract. A checkpoint resumes the exact saved evolution time and hierarchy;
 the physical-ID loader initializes a fresh step-zero evolution or continues an
 ID sequence through the common materialization path.
 
-The opt-in focused gate is intentionally outside quick/standard because the
-three nonlinear 3D controls are comparatively slow:
+The opt-in focused gate is intentionally outside quick/standard because its
+nonlinear 3D controls are comparatively slow. It checks zero-spin TOV
+equivalence, a two-target SLy sequence, exact final-model evolution loading,
+and persisted intermediate-model continuation:
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv run python pyfluid_amrex/tools/validate_z4c.py \

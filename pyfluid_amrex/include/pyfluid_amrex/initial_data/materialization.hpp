@@ -3,6 +3,8 @@
 #include <AMReX_MultiFab.H>
 #include <AMReX_Vector.H>
 
+#include <functional>
+
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/eos/types.hpp"
 #include "pyfluid_amrex/initial_data/ctt.hpp"
@@ -35,6 +37,12 @@ struct ConformalMaterializationResult {
    RotatingStarUpdateSummary rotating_star{};
 };
 
+using ConformalContinuationObserver = std::function<void(
+   int continuation_step,
+   int continuation_steps,
+   amrex::Real angular_velocity
+)>;
+
 ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& fluid_state,
@@ -47,7 +55,8 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataFieldSelection const& fields,
    ConformalConstraintFormulation formulation,
    RotatingStarParameters const& rotating_star,
-   bool seed_from_spacetime = false
+   bool seed_from_spacetime = false,
+   ConformalContinuationObserver const& continuation_observer = {}
 );
 
 } // namespace pyfluid_amrex

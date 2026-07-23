@@ -107,7 +107,22 @@ target angular velocity, the same materialized state continues XCTS; a
 matching target starts evolution without another XCTS solve. The ordinary
 in-process sequence accepts an explicit strictly ordered
 `initial_data.rotation_continuation_targets` list and retains live fields
-between targets without artifact I/O.
+between targets without artifact I/O. A multi-target rotating sequence writes
+every accepted target by default; `initial_data.save_sequence=0` disables
+this. A one-model TOV or RNS construction is not automatically saved. A
+one-target continuation from `initial_data.input_file` is saved because it is
+part of a persisted sequence. `initial_data.sequence_output_dir` overrides
+the automatic location and also explicitly requests output for a one-model
+rotating solve.
+
+Automatic sequence output is organized under the run directory by EoS,
+rotation law, and fixed central density. Named EoS presets and differential
+law parameters are recorded in the path and `sequence.meta`; `sequence.tsv`
+indexes accepted targets. Model names include prescribed `omega`, base-grid
+resolution, and hierarchy level count. Every model is the same losslessly
+compressed, directly evolvable physical-ID artifact—not a sequence-only file.
+Artifact metadata, including `eos_preset`, remains the compatibility authority;
+directory and model names are discovery aids.
 
 Fresh analytic data and stored artifacts enter evolution through the same
 configured-ID materialization call. The stored-artifact implementation owns
@@ -132,3 +147,16 @@ contract with step, time, hierarchy, and run-control state. Both formats are
 valid evolution inputs, but a checkpoint resumes its saved time and hierarchy,
 whereas a physical-ID artifact initializes a new run at step zero through this
 materialization interface.
+
+Evolution boundaries already support catalog-driven reflection parity for
+fluid and Z4c fields, CT face fields, and symmetry factors for volume
+diagnostics. The analytic TOV octant evolution has a focused full-domain charge
+comparison. This does not imply symmetric elliptic initial-data solving: the
+common CTT/CTTK/XCTS elliptic layer currently assigns an outer Robin or
+Dirichlet condition to every nonperiodic face and has no per-component
+even/odd inner-face boundary contract. Fresh RNS/XCTS reflection or octant
+solves are therefore unsupported. Likewise, stored octant data cannot yet be
+expanded to a full domain with tensor parity, and spherical GR surface
+diagnostics do not reconstruct omitted sectors. Do not advertise one symmetry
+mode across TOV, RNS, elliptic solving, artifact remapping, and evolution until
+those distinct contracts are implemented and validated.
