@@ -28,9 +28,14 @@ methods and physics belong in their topic documents; coding style belongs in
   components, labels, centerings, roles, and persistence/output ownership.
   Python strictly loads and validates it and emits generated C++/JSON/document
   views. Runtime code must not create a second raw-string field registry.
-- `schema/methods.toml` owns supported-method identity such as rotation-law
-  names. Generated equations remain in labeled symbolic Python sources rather
-  than TOML expression strings.
+- `schema/methods.toml` owns supported-method identity and dispatch metadata,
+  including reconstruction names/codes/stencil radii/characteristic forms and
+  rotation-law names. Numerical formulas and generated equations remain in
+  labeled C++ or symbolic Python sources rather than TOML expression strings.
+- Each compiled reconstruction value owns one flux-kernel translation unit.
+  Its CMake feature switch must remove that owner from the source list, not
+  merely hide its factory case. Candidate correction composes selected
+  reconstruction methods at runtime; it is not another template axis.
 - Runtime reduction identity/integrands come from the diagnostic catalog.
   Runtime AMReX reductions own discrete totals; postprocessing owns analytic
   comparisons and derived presentation.

@@ -19,16 +19,7 @@ static constexpr std::array<NamedOptionCode, 5> RiemannOptions{{
    {"hlld", RiemannHLLD},
 }};
 
-static constexpr std::array<NamedOptionCode, 8> ReconOptions{{
-   {"pwc", ReconPWC},
-   {"pwl", ReconPWL},
-   {"wenoz", ReconWENOZ},
-   {"wenoz-char", ReconWENOZChar},
-   {"mp5", ReconMP5},
-   {"mp5-char", ReconMP5Char},
-   {"teno5", ReconTENO5},
-   {"teno5-char", ReconTENO5Char},
-}};
+inline constexpr auto const& ReconOptions = ReconstructionMethodCatalog;
 
 static constexpr std::array<NamedOptionCode, 5> TimestepOptions{{
    {"euler", TimeEuler},
@@ -255,6 +246,20 @@ inline bool option_supported(std::string const& value, std::array<NamedOptionCod
 template <std::size_t N>
 inline bool option_supported(
    std::string const& value,
+   std::array<ReconstructionMethodInfo, N> const& options
+)
+{
+   for (ReconstructionMethodInfo const& option : options) {
+      if (value == option.name) {
+         return true;
+      }
+   }
+   return false;
+}
+
+template <std::size_t N>
+inline bool option_supported(
+   std::string const& value,
    std::array<InitialDataOption, N> const& options
 )
 {
@@ -294,6 +299,21 @@ inline std::string supported_option_names(std::array<NamedOptionCode, N> const& 
 
 template <std::size_t N>
 inline std::string supported_option_names(
+   std::array<ReconstructionMethodInfo, N> const& options
+)
+{
+   std::string names;
+   for (std::size_t n = 0; n < N; ++n) {
+      if (n > 0) {
+         names += ", ";
+      }
+      names += options[n].name;
+   }
+   return names;
+}
+
+template <std::size_t N>
+inline std::string supported_option_names(
    std::array<InitialDataOption, N> const& options
 )
 {
@@ -320,6 +340,22 @@ inline int option_code(std::string const& value, std::array<NamedOptionCode, N> 
 }
 
 template <std::size_t N>
+inline int option_code(
+   std::string const& value,
+   std::array<ReconstructionMethodInfo, N> const& options,
+   char const* key
+)
+{
+   for (ReconstructionMethodInfo const& option : options) {
+      if (value == option.name) {
+         return option.code;
+      }
+   }
+   amrex::Abort(std::string(key) + " supports " + supported_option_names(options));
+   return -1;
+}
+
+template <std::size_t N>
 inline void require_supported_option(std::string const& value, std::array<std::string_view, N> const& options, char const* key)
 {
    if (!option_supported(value, options)) {
@@ -329,6 +365,18 @@ inline void require_supported_option(std::string const& value, std::array<std::s
 
 template <std::size_t N>
 inline void require_supported_option(std::string const& value, std::array<NamedOptionCode, N> const& options, char const* key)
+{
+   if (!option_supported(value, options)) {
+      amrex::Abort(std::string(key) + " supports " + supported_option_names(options));
+   }
+}
+
+template <std::size_t N>
+inline void require_supported_option(
+   std::string const& value,
+   std::array<ReconstructionMethodInfo, N> const& options,
+   char const* key
+)
 {
    if (!option_supported(value, options)) {
       amrex::Abort(std::string(key) + " supports " + supported_option_names(options));

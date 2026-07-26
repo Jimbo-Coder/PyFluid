@@ -7,8 +7,8 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-26, branch `main`, through the local Cycle 231
-matched AthenaK Balsara-4 comparison. Use the commit
+Last reconciled: 2026-07-26, branch `main`, through the local Cycle 232
+catalog-driven parabolic/PPM implementation and validation. Use the commit
 containing this snapshot plus the exact newer continuity-cycle evidence rather
 than inferring it from an earlier baseline.
 
@@ -163,6 +163,12 @@ The latest recorded evidence is not one monolithic green result:
   plane symmetry. Stored reflected sectors parity-expand through the field
   catalog, with axial-vector parity for magnetic fields, and rotating surface
   rays reconstruct the omitted z sector.
+- Cycle 232 adds the catalog-driven parabolic/PPM family and true additive
+  reconstruction-owner builds. Formula, smooth-convergence, 45-run exact
+  Balsara, 12-case component/characteristic feature, expanded RMHD standard,
+  architecture/generated-source, all-dimension build, normal quick, complete
+  normal standard, minimal PWC-only build, and canonical MPI performance gates
+  pass. No full or stability suite was run.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -309,7 +315,8 @@ performance, and MPI-rank evidence into one claim.
   `3.253e-3/0.161/3.25`. This strongly supports a lean, generic monotonic
   PPM4 implementation as a useful reconstruction option, but not replacing
   conservative candidate correction or claiming that PPM is universally
-  best.
+  best. The implemented PyFluid result below supersedes this
+  pre-implementation recommendation.
 - PyFluid's `pwl` is limited PWL with the monotonized-central slope, not pure
   two-argument MINMOD. MC itself composes `minmod` bounds and is less
   dissipative; the Balsara reconstruction scan's PWL result is therefore
@@ -327,8 +334,8 @@ performance, and MPI-rank evidence into one claim.
   oscillatory region narrows without monotone amplitude removal. At N=1024
   the extreme-pressure Balsara 3 run records 33 PWL-MC atmosphere resets
   (WENO-Z 4, MP5 35, TENO5 40, PWC 0). This supports testing high order followed
-  by PWL-MC and terminal PWC candidate correction; it does not support
-  declaring standalone PWL-MC or adding PPM finished production solutions.
+  by PWL-MC and terminal PWC candidate correction. It was a
+  pre-implementation comparison, not evidence against later validated PPM.
 - The subsequent 240-run candidate-policy scan used all five exact Balsara
   problems, N=128--1024, four non-PWC primary methods, HLL/SSPRK3, and CFL 0.9.
   Every guarded run completed without an atmosphere reset. MP5 plus direct PWC
@@ -345,6 +352,30 @@ performance, and MPI-rank evidence into one claim.
   mean maximum normalized component L1 errors are `3.63e-3` and `3.77e-3`,
   versus `2.88e-3` for MP5/PWC. PWL-MC-first is not an accuracy improvement
   for any of those high-order methods on the difficult Balsara-4 case.
+- The reconstruction catalog now exposes unlimited `parabolic`, classic
+  monotonic `ppm4`, and smooth-extremum-preserving `ppmx`, with the same
+  component/characteristic method forms as the existing high-order schemes.
+  On the exact periodic smooth wave, parabolic and PPMX retain measured fourth
+  order in both forms; PPM4 is about order 2.1 because its original limiter
+  clips smooth extrema. Unlimited parabolic is a smooth/reference method: an
+  unguarded Balsara-4 run is catastrophically nonphysical.
+- The 45-run SSPRK3/HLL/CFL-0.9 scan of MP5, PPM4, and PPMX with direct PWC
+  correction covers all five exact Balsara problems at N=256, 512, and 1024.
+  Every guarded run has zero atmosphere resets. At N=1024, PPM4/PWC L1 errors
+  for Balsara 1--5 are `2.771e-3, 3.122e-3, 4.602e-3, 3.906e-3, 2.404e-3`;
+  MP5/PWC remains lower-error in every case. PPM4/PWC is materially cleaner on
+  the difficult Balsara 4: overshoot/TV are `0.0488/2.58` versus
+  MP5/PWC `0.161/3.25`, at L1 `3.91e-3` versus `3.25e-3`. PPMX/PWC has
+  Balsara-4 `4.44e-3/0.0455/3.06`; it preserves smooth extrema but is not the
+  best shock default. Keep MP5/PWC as the general accuracy default, use
+  PPM4/PWC when reduced shock ringing is the priority, and do not run the
+  unlimited parabolic method on discontinuities.
+- PPM4 matches MP5 throughput in the focused serial shock scans; PPMX is only
+  a few percent slower. The normal MPI performance gate remains within
+  0.93--0.99 of its frozen baselines. Reconstruction build switches now remove
+  disabled flux-owner translation units: a PWC-only clean 1D probe compiles
+  only `flux_kernels/pwc.cpp` and links successfully, while an unchanged full
+  production cache check completes in 0.78 s.
 - The RMHD guard can select `rmhd_candidate_riemann = same|hll|llf` without a
   new compiled reconstruction axis. AthenaK independently defaults its FOFC
   flux to LLF. A matched PyFluid Balsara-3/4 scan finds that LLF sometimes

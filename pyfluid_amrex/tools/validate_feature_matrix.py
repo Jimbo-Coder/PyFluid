@@ -59,6 +59,12 @@ RECONSTRUCTION_METHODS = (
    ("mp5-char", "3"),
    ("teno5", "3"),
    ("teno5-char", "3"),
+   ("parabolic", "3"),
+   ("parabolic-char", "3"),
+   ("ppm4", "3"),
+   ("ppm4-char", "3"),
+   ("ppmx", "3"),
+   ("ppmx-char", "3"),
 )
 
 

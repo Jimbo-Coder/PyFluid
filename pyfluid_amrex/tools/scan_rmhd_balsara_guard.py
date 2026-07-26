@@ -12,11 +12,18 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from scan_rmhd_balsara_reconstruction import exact_comparison
+from scan_rmhd_balsara_reconstruction import (
+   COMPONENT_NAMES,
+   PLOT_COMPONENTS,
+   exact_comparison,
+)
 from validate_rmhd import (
    EXACT_BALSARA_CASES,
+   EXACT_BALSARA_ROOT,
    INPUTS,
    RUN_ROOT,
+   exact_rmhd_conserved,
+   read_last_exact_balsara_profile,
    relativistic_recovery_counts,
    rmhd_candidate_correction_counts,
    run_case,
@@ -30,7 +37,16 @@ from validation_common import (
 )
 
 
-METHODS = ("pwl", "wenoz", "mp5", "teno5")
+METHODS = ("pwl", "wenoz", "mp5", "teno5", "ppm4", "ppmx")
+METHOD_CHOICES = METHODS + (
+   "parabolic",
+   "wenoz-char",
+   "mp5-char",
+   "teno5-char",
+   "parabolic-char",
+   "ppm4-char",
+   "ppmx-char",
+)
 GUARDS = ("off", "pwc", "pwl-pwc")
 TIMESTEPS = ("ssprk3", "rk4")
 CANDIDATE_RIEMANN_METHODS = ("same", "hll", "llf")
@@ -76,11 +92,7 @@ def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
                         "pyfluid.gamma": repr(spec["gamma"]),
                         "pyfluid.final_time": repr(spec["time"]),
                         "pyfluid.max_step": "10000",
-                        "pyfluid.ng": (
-                           "3"
-                           if method in {"wenoz", "mp5", "teno5"}
-                           else "2"
-                        ),
+                        "pyfluid.ng": "2" if method == "pwl" else "3",
                         "pyfluid.cfl": "0.9",
                         "pyfluid.recon": method,
                         "pyfluid.timestep": timestep,
@@ -177,6 +189,15 @@ def plot_scan(
       "wenoz": "#CC79A7",
       "mp5": "#0072B2",
       "teno5": "#D55E00",
+      "parabolic": "#E69F00",
+      "ppm4": "#56B4E9",
+      "ppmx": "#000000",
+      "wenoz-char": "#CC79A7",
+      "mp5-char": "#0072B2",
+      "teno5-char": "#D55E00",
+      "parabolic-char": "#E69F00",
+      "ppm4-char": "#56B4E9",
+      "ppmx-char": "#000000",
    }
    styles = {"off": ":", "pwc": "--", "pwl-pwc": "-"}
    candidate_styles = {"same": "-", "hll": "-", "llf": "--"}
@@ -186,6 +207,15 @@ def plot_scan(
       "wenoz": "WENO-Z",
       "mp5": "MP5",
       "teno5": "TENO5",
+      "parabolic": "parabolic",
+      "ppm4": "PPM4",
+      "ppmx": "PPMX",
+      "wenoz-char": "WENO-Z char",
+      "mp5-char": "MP5 char",
+      "teno5-char": "TENO5 char",
+      "parabolic-char": "parabolic char",
+      "ppm4-char": "PPM4 char",
+      "ppmx-char": "PPMX char",
    }
    for index, case in enumerate(args.cases):
       axis = axes[index // columns, index % columns]
@@ -240,6 +270,73 @@ def plot_scan(
    plot_path.parent.mkdir(parents=True, exist_ok=True)
    figure.savefig(plot_path, dpi=180)
    plt.close(figure)
+
+
+def plot_balsara4_profiles(
+   args: argparse.Namespace,
+   rows: list[dict[str, object]],
+   plot_path: Path,
+) -> bool:
+   if 4 not in args.cases or not rows:
+      return False
+   cells = max(int(row["cells"]) for row in rows if int(row["case"]) == 4)
+   spec = next(
+      spec for spec in EXACT_BALSARA_CASES if int(spec["case"]) == 4
+   )
+   exact_profile = read_last_exact_balsara_profile(
+      EXACT_BALSARA_ROOT / "solution_b4.dat"
+   )
+   exact_state = exact_rmhd_conserved(
+      exact_profile,
+      normal_magnetic=float(spec["left"][5]),
+      gamma=float(spec["gamma"]),
+   )
+   figure, axes = plt.subplots(
+      1,
+      len(PLOT_COMPONENTS),
+      figsize=(13.5, 3.2),
+      constrained_layout=True,
+   )
+   for column, (name, label) in enumerate(PLOT_COMPONENTS):
+      component = COMPONENT_NAMES.index(name)
+      axes[column].plot(
+         exact_profile[:, 0],
+         exact_state[component],
+         color="black",
+         linewidth=1.8,
+         label="exact",
+      )
+      axes[column].set_title(label)
+      axes[column].set_xlabel("x")
+      axes[column].grid(alpha=0.22)
+
+   for row in rows:
+      if int(row["case"]) != 4 or int(row["cells"]) != cells:
+         continue
+      run_dir = ROOT / str(row["run_dir"])
+      centers, numerical, _, _, _, _ = exact_comparison(4, spec, run_dir)
+      method = str(row["method"])
+      label = (
+         f"{method} / {row['guard']} / "
+         f"{row['candidate_riemann']} / {row['timestep']}"
+      )
+      for column, (name, _) in enumerate(PLOT_COMPONENTS):
+         component = COMPONENT_NAMES.index(name)
+         axes[column].plot(
+            centers,
+            numerical[component],
+            linewidth=1.1,
+            label=label,
+         )
+   axes[0].set_ylabel(f"t = {float(spec['time']):g}")
+   axes[0].legend(frameon=False, fontsize=7)
+   figure.suptitle(
+      f"Exact Balsara 4 profiles — N={cells}, CFL 0.9"
+   )
+   plot_path.parent.mkdir(parents=True, exist_ok=True)
+   figure.savefig(plot_path, dpi=180)
+   plt.close(figure)
+   return True
 
 
 def plot_best_policy(
@@ -320,7 +417,7 @@ def main() -> int:
       "--method",
       dest="methods",
       action="append",
-      choices=METHODS,
+      choices=METHOD_CHOICES,
       help="reconstruction; repeatable (default: all)",
    )
    parser.add_argument(
@@ -398,6 +495,14 @@ def main() -> int:
          ],
       )
    plot_scan(args, rows, plot_path)
+   profile_plot_path = plot_path.with_name(
+      plot_path.name.replace("_convergence", "_profiles")
+   )
+   wrote_profile_plot = plot_balsara4_profiles(
+      args,
+      rows,
+      profile_plot_path,
+   )
    wrote_best_policy_plot = any(
       row["candidate_riemann"] == "same"
       and row["timestep"] == "ssprk3"
@@ -408,6 +513,8 @@ def main() -> int:
       plot_best_policy(rows, best_policy_plot_path)
    print(f"wrote {repo_relative(results_path)}")
    print(f"wrote {repo_relative(plot_path)}")
+   if wrote_profile_plot:
+      print(f"wrote {repo_relative(profile_plot_path)}")
    if wrote_best_policy_plot:
       print(f"wrote {repo_relative(best_policy_plot_path)}")
    return 0

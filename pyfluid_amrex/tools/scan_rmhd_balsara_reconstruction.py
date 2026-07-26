@@ -32,7 +32,16 @@ from validate_rmhd import (
 from validation_common import ROOT, read_scalar_rows, repo_relative, write_tsv
 
 
-METHODS = ("pwc", "pwl", "wenoz", "mp5", "teno5")
+METHODS = ("pwc", "pwl", "wenoz", "mp5", "teno5", "ppm4", "ppmx")
+METHOD_CHOICES = METHODS + (
+   "parabolic",
+   "wenoz-char",
+   "mp5-char",
+   "teno5-char",
+   "parabolic-char",
+   "ppm4-char",
+   "ppmx-char",
+)
 COMPONENT_NAMES = ("dens", "mom1", "mom2", "mom3", "tau", "b1", "b2", "b3")
 PLOT_COMPONENTS = (
    ("dens", r"$D$"),
@@ -151,7 +160,7 @@ def run_scan(
                "pyfluid.gamma": repr(spec["gamma"]),
                "pyfluid.final_time": repr(spec["time"]),
                "pyfluid.max_step": "10000",
-               "pyfluid.ng": "3" if method in {"wenoz", "mp5", "teno5"} else "2",
+               "pyfluid.ng": "2" if method in {"pwc", "pwl"} else "3",
                "pyfluid.cfl": "0.9",
                "pyfluid.recon": method,
                "pyfluid.scalar_int": "64",
@@ -226,6 +235,15 @@ def plot_scan(
       "wenoz": "#CC79A7",
       "mp5": "#0072B2",
       "teno5": "#D55E00",
+      "parabolic": "#E69F00",
+      "ppm4": "#56B4E9",
+      "ppmx": "#000000",
+      "wenoz-char": "#CC79A7",
+      "mp5-char": "#0072B2",
+      "teno5-char": "#D55E00",
+      "parabolic-char": "#E69F00",
+      "ppm4-char": "#56B4E9",
+      "ppmx-char": "#000000",
    }
    line_styles = {
       "pwc": "-",
@@ -233,6 +251,15 @@ def plot_scan(
       "wenoz": "--",
       "mp5": "-",
       "teno5": ":",
+      "parabolic": "--",
+      "ppm4": "-",
+      "ppmx": "-.",
+      "wenoz-char": ":",
+      "mp5-char": ":",
+      "teno5-char": "--",
+      "parabolic-char": ":",
+      "ppm4-char": "--",
+      "ppmx-char": ":",
    }
    display_names = {
       "pwc": "PWC",
@@ -240,6 +267,15 @@ def plot_scan(
       "wenoz": "WENO-Z",
       "mp5": "MP5",
       "teno5": "TENO5",
+      "parabolic": "parabolic",
+      "ppm4": "PPM4",
+      "ppmx": "PPMX",
+      "wenoz-char": "WENO-Z char",
+      "mp5-char": "MP5 char",
+      "teno5-char": "TENO5 char",
+      "parabolic-char": "parabolic char",
+      "ppm4-char": "PPM4 char",
+      "ppmx-char": "PPMX char",
    }
    for row, case in enumerate(plot_cases):
       spec = specs[case]
@@ -369,6 +405,15 @@ def plot_convergence(
       "wenoz": "#CC79A7",
       "mp5": "#0072B2",
       "teno5": "#D55E00",
+      "parabolic": "#E69F00",
+      "ppm4": "#56B4E9",
+      "ppmx": "#000000",
+      "wenoz-char": "#CC79A7",
+      "mp5-char": "#0072B2",
+      "teno5-char": "#D55E00",
+      "parabolic-char": "#E69F00",
+      "ppm4-char": "#56B4E9",
+      "ppmx-char": "#000000",
    }
    display_names = {
       "pwc": "PWC",
@@ -376,6 +421,15 @@ def plot_convergence(
       "wenoz": "WENO-Z",
       "mp5": "MP5",
       "teno5": "TENO5",
+      "parabolic": "parabolic",
+      "ppm4": "PPM4",
+      "ppmx": "PPMX",
+      "wenoz-char": "WENO-Z char",
+      "mp5-char": "MP5 char",
+      "teno5-char": "TENO5 char",
+      "parabolic-char": "parabolic char",
+      "ppm4-char": "PPM4 char",
+      "ppmx-char": "PPMX char",
    }
    for index, case in enumerate(args.cases):
       axis = axes[index // columns, index % columns]
@@ -488,7 +542,7 @@ def main() -> int:
       "--method",
       dest="methods",
       action="append",
-      choices=METHODS,
+      choices=METHOD_CHOICES,
       help="reconstruction method to scan; repeatable (default: all)",
    )
    parser.add_argument("--ranks", type=int, default=1)

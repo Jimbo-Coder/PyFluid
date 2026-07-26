@@ -6,6 +6,91 @@
 
 namespace pyfluid_amrex {
 
+enum ReconstructionMethodCode : int {
+   ReconPWC = 0,
+   ReconPWL = 1,
+   ReconWENOZ = 2,
+   ReconWENOZChar = 3,
+   ReconMP5 = 4,
+   ReconMP5Char = 5,
+   ReconTENO5 = 6,
+   ReconTENO5Char = 7,
+   ReconParabolic = 8,
+   ReconParabolicChar = 9,
+   ReconPPM4 = 10,
+   ReconPPM4Char = 11,
+   ReconPPMX = 12,
+   ReconPPMXChar = 13,
+};
+
+struct ReconstructionMethodInfo {
+   int code;
+   std::string_view name;
+   std::string_view label;
+   std::string_view description;
+   int stencil_radius;
+   bool characteristic;
+};
+
+inline constexpr std::array<ReconstructionMethodInfo, 14> ReconstructionMethodCatalog = {{
+   {ReconPWC, "pwc", "Piecewise constant", "First-order piecewise-constant reconstruction.", 0, false},
+   {ReconPWL, "pwl", "Piecewise linear MC", "Piecewise-linear primitive reconstruction with the monotonized-central limiter.", 1, false},
+   {ReconWENOZ, "wenoz", "WENO-Z", "Fifth-order component-wise WENO-Z reconstruction.", 2, false},
+   {ReconWENOZChar, "wenoz-char", "WENO-Z characteristic", "Fifth-order characteristic WENO-Z reconstruction.", 2, true},
+   {ReconMP5, "mp5", "MP5", "Fifth-order component-wise monotonicity-preserving reconstruction.", 2, false},
+   {ReconMP5Char, "mp5-char", "MP5 characteristic", "Fifth-order characteristic monotonicity-preserving reconstruction.", 2, true},
+   {ReconTENO5, "teno5", "TENO5", "Fifth-order component-wise targeted ENO reconstruction.", 2, false},
+   {ReconTENO5Char, "teno5-char", "TENO5 characteristic", "Fifth-order characteristic targeted ENO reconstruction.", 2, true},
+   {ReconParabolic, "parabolic", "Unlimited parabolic", "Unlimited fourth-order parabolic face interpolation for smooth-reference runs.", 2, false},
+   {ReconParabolicChar, "parabolic-char", "Unlimited parabolic characteristic", "Characteristic unlimited fourth-order parabolic face interpolation.", 2, true},
+   {ReconPPM4, "ppm4", "PPM4", "Classic monotonic piecewise-parabolic reconstruction.", 2, false},
+   {ReconPPM4Char, "ppm4-char", "PPM4 characteristic", "Characteristic classic monotonic piecewise-parabolic reconstruction.", 2, true},
+   {ReconPPMX, "ppmx", "PPMX", "Smooth-extremum-preserving piecewise-parabolic reconstruction.", 2, false},
+   {ReconPPMXChar, "ppmx-char", "PPMX characteristic", "Characteristic smooth-extremum-preserving piecewise-parabolic reconstruction.", 2, true}
+}};
+
+constexpr int reconstruction_stencil_radius(int method) noexcept
+{
+   switch (method) {
+   case ReconPWC: return 0;
+   case ReconPWL: return 1;
+   case ReconWENOZ: return 2;
+   case ReconWENOZChar: return 2;
+   case ReconMP5: return 2;
+   case ReconMP5Char: return 2;
+   case ReconTENO5: return 2;
+   case ReconTENO5Char: return 2;
+   case ReconParabolic: return 2;
+   case ReconParabolicChar: return 2;
+   case ReconPPM4: return 2;
+   case ReconPPM4Char: return 2;
+   case ReconPPMX: return 2;
+   case ReconPPMXChar: return 2;
+   default: return -1;
+   }
+}
+
+constexpr bool reconstruction_is_characteristic(int method) noexcept
+{
+   switch (method) {
+   case ReconPWC: return false;
+   case ReconPWL: return false;
+   case ReconWENOZ: return false;
+   case ReconWENOZChar: return true;
+   case ReconMP5: return false;
+   case ReconMP5Char: return true;
+   case ReconTENO5: return false;
+   case ReconTENO5Char: return true;
+   case ReconParabolic: return false;
+   case ReconParabolicChar: return true;
+   case ReconPPM4: return false;
+   case ReconPPM4Char: return true;
+   case ReconPPMX: return false;
+   case ReconPPMXChar: return true;
+   default: return false;
+   }
+}
+
 enum class RotationLaw : int {
    Uniform = 0,
    JConstant = 1,

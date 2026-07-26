@@ -42,7 +42,16 @@ RESULTS = RUN_ROOT / "rmhd_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
 CHECKPOINT_COMPARE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_2d"
 CT_AMR_DIVB_TOLERANCE = 1.0e-12
-COMPONENT_RECONSTRUCTION_METHODS = ("pwc", "pwl", "wenoz", "mp5", "teno5")
+COMPONENT_RECONSTRUCTION_METHODS = (
+   "pwc",
+   "pwl",
+   "wenoz",
+   "mp5",
+   "teno5",
+   "parabolic",
+   "ppm4",
+   "ppmx",
+)
 EXACT_BALSARA_ROOT = ROOT / "exact_balsara"
 EXACT_BALSARA_CASES = (
    {
@@ -201,7 +210,7 @@ def validate_component_reconstruction_methods(
             "amr.max_grid_size": "32",
             "pyfluid.max_step": "4",
             "pyfluid.final_time": "-1",
-            "pyfluid.ng": "3" if method in {"wenoz", "mp5", "teno5"} else "2",
+            "pyfluid.ng": "2" if method in {"pwc", "pwl"} else "3",
             "pyfluid.recon": method,
             "pyfluid.rmhd_candidate_guard": "pwc",
             "pyfluid.scalar_int": "1",

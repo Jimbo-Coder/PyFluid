@@ -1,5 +1,120 @@
 schema_version = 1
 
+# Reconstruction methods are ordered by their stable generated C++ code.  The
+# catalog declares identity and stencil/dispatch metadata; formulas remain in
+# the reconstruction headers and each compiled method owns one flux entry.
+[[reconstruction]]
+name = "pwc"
+cpp_id = "PWC"
+label = "Piecewise constant"
+description = "First-order piecewise-constant reconstruction."
+stencil_radius = 0
+characteristic = false
+
+[[reconstruction]]
+name = "pwl"
+cpp_id = "PWL"
+label = "Piecewise linear MC"
+description = "Piecewise-linear primitive reconstruction with the monotonized-central limiter."
+stencil_radius = 1
+characteristic = false
+
+[[reconstruction]]
+name = "wenoz"
+cpp_id = "WENOZ"
+label = "WENO-Z"
+description = "Fifth-order component-wise WENO-Z reconstruction."
+stencil_radius = 2
+characteristic = false
+
+[[reconstruction]]
+name = "wenoz-char"
+cpp_id = "WENOZChar"
+label = "WENO-Z characteristic"
+description = "Fifth-order characteristic WENO-Z reconstruction."
+stencil_radius = 2
+characteristic = true
+
+[[reconstruction]]
+name = "mp5"
+cpp_id = "MP5"
+label = "MP5"
+description = "Fifth-order component-wise monotonicity-preserving reconstruction."
+stencil_radius = 2
+characteristic = false
+
+[[reconstruction]]
+name = "mp5-char"
+cpp_id = "MP5Char"
+label = "MP5 characteristic"
+description = "Fifth-order characteristic monotonicity-preserving reconstruction."
+stencil_radius = 2
+characteristic = true
+
+[[reconstruction]]
+name = "teno5"
+cpp_id = "TENO5"
+label = "TENO5"
+description = "Fifth-order component-wise targeted ENO reconstruction."
+stencil_radius = 2
+characteristic = false
+
+[[reconstruction]]
+name = "teno5-char"
+cpp_id = "TENO5Char"
+label = "TENO5 characteristic"
+description = "Fifth-order characteristic targeted ENO reconstruction."
+stencil_radius = 2
+characteristic = true
+
+[[reconstruction]]
+name = "parabolic"
+cpp_id = "Parabolic"
+label = "Unlimited parabolic"
+description = "Unlimited fourth-order parabolic face interpolation for smooth-reference runs."
+stencil_radius = 2
+characteristic = false
+
+[[reconstruction]]
+name = "parabolic-char"
+cpp_id = "ParabolicChar"
+label = "Unlimited parabolic characteristic"
+description = "Characteristic unlimited fourth-order parabolic face interpolation."
+stencil_radius = 2
+characteristic = true
+
+[[reconstruction]]
+name = "ppm4"
+cpp_id = "PPM4"
+label = "PPM4"
+description = "Classic monotonic piecewise-parabolic reconstruction."
+stencil_radius = 2
+characteristic = false
+
+[[reconstruction]]
+name = "ppm4-char"
+cpp_id = "PPM4Char"
+label = "PPM4 characteristic"
+description = "Characteristic classic monotonic piecewise-parabolic reconstruction."
+stencil_radius = 2
+characteristic = true
+
+[[reconstruction]]
+name = "ppmx"
+cpp_id = "PPMX"
+label = "PPMX"
+description = "Smooth-extremum-preserving piecewise-parabolic reconstruction."
+stencil_radius = 2
+characteristic = false
+
+[[reconstruction]]
+name = "ppmx-char"
+cpp_id = "PPMXChar"
+label = "PPMX characteristic"
+description = "Characteristic smooth-extremum-preserving piecewise-parabolic reconstruction."
+stencil_radius = 2
+characteristic = true
+
 # Rotation laws are ordered by their stable generated C++ code.  The catalog
 # declares identity and required user parameters; the Euler integral and
 # numerical iteration remain generated/C++ science code.

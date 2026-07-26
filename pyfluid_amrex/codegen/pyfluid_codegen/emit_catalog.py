@@ -29,7 +29,7 @@ from .field_catalog import (
     GridField,
     all_fields,
 )
-from .method_catalog import ROTATION_LAWS
+from .method_catalog import RECONSTRUCTION_METHODS, ROTATION_LAWS
 from .tensor_algebra import Tensor, Vector
 
 
@@ -45,11 +45,38 @@ def _cpp_string(value: str) -> str:
 
 
 def render_method_catalog_header() -> str:
-    enum_values = "\n".join(
+    reconstruction_enum_values = "\n".join(
+        f"   Recon{method.cpp_id} = {index},"
+        for index, method in enumerate(RECONSTRUCTION_METHODS)
+    )
+    reconstruction_descriptors = ",\n".join(
+        "   {"
+        + ", ".join(
+            (
+                f"Recon{method.cpp_id}",
+                _cpp_string(method.name),
+                _cpp_string(method.label),
+                _cpp_string(method.description),
+                str(method.stencil_radius),
+                str(method.characteristic).lower(),
+            )
+        )
+        + "}"
+        for method in RECONSTRUCTION_METHODS
+    )
+    stencil_cases = "\n".join(
+        f"   case Recon{method.cpp_id}: return {method.stencil_radius};"
+        for method in RECONSTRUCTION_METHODS
+    )
+    characteristic_cases = "\n".join(
+        f"   case Recon{method.cpp_id}: return {str(method.characteristic).lower()};"
+        for method in RECONSTRUCTION_METHODS
+    )
+    rotation_enum_values = "\n".join(
         f"   {law.cpp_id} = {index},"
         for index, law in enumerate(ROTATION_LAWS)
     )
-    descriptors = ",\n".join(
+    rotation_descriptors = ",\n".join(
         "   {"
         + ", ".join(
             (
@@ -71,8 +98,41 @@ def render_method_catalog_header() -> str:
 
 namespace pyfluid_amrex {{
 
+enum ReconstructionMethodCode : int {{
+{reconstruction_enum_values}
+}};
+
+struct ReconstructionMethodInfo {{
+   int code;
+   std::string_view name;
+   std::string_view label;
+   std::string_view description;
+   int stencil_radius;
+   bool characteristic;
+}};
+
+inline constexpr std::array<ReconstructionMethodInfo, {len(RECONSTRUCTION_METHODS)}> ReconstructionMethodCatalog = {{{{
+{reconstruction_descriptors}
+}}}};
+
+constexpr int reconstruction_stencil_radius(int method) noexcept
+{{
+   switch (method) {{
+{stencil_cases}
+   default: return -1;
+   }}
+}}
+
+constexpr bool reconstruction_is_characteristic(int method) noexcept
+{{
+   switch (method) {{
+{characteristic_cases}
+   default: return false;
+   }}
+}}
+
 enum class RotationLaw : int {{
-{enum_values}
+{rotation_enum_values}
 }};
 
 struct RotationLawInfo {{
@@ -84,7 +144,7 @@ struct RotationLawInfo {{
 }};
 
 inline constexpr std::array<RotationLawInfo, {len(ROTATION_LAWS)}> RotationLawCatalog = {{{{
-{descriptors}
+{rotation_descriptors}
 }}}};
 
 }} // namespace pyfluid_amrex

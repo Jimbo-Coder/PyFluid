@@ -42,6 +42,12 @@ option(PYFLUID_AMREX_ENABLE_RECON_MP5 "Compile component MP5 reconstruction." ON
 option(PYFLUID_AMREX_ENABLE_RECON_MP5_CHAR "Compile characteristic MP5 reconstruction." ON)
 option(PYFLUID_AMREX_ENABLE_RECON_TENO5 "Compile component TENO5 reconstruction." ON)
 option(PYFLUID_AMREX_ENABLE_RECON_TENO5_CHAR "Compile characteristic TENO5 reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_PARABOLIC "Compile component unlimited parabolic reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_PARABOLIC_CHAR "Compile characteristic unlimited parabolic reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_PPM4 "Compile component PPM4 reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_PPM4_CHAR "Compile characteristic PPM4 reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_PPMX "Compile component PPMX reconstruction." ON)
+option(PYFLUID_AMREX_ENABLE_RECON_PPMX_CHAR "Compile characteristic PPMX reconstruction." ON)
 option(PYFLUID_AMREX_ENABLE_RIEMANN_LLF "Compile LLF Riemann solver." ON)
 option(PYFLUID_AMREX_ENABLE_RIEMANN_HLL "Compile HLL Riemann solver." ON)
 option(PYFLUID_AMREX_ENABLE_RIEMANN_HLLE "Compile HLLE Riemann solver." ON)
@@ -134,16 +140,49 @@ set(PYFLUID_AMREX_NUMERICS_SOURCES
    src/numerics/hierarchy_interpolation.cpp
 )
 
-set(PYFLUID_AMREX_FLUX_KERNEL_SOURCES
-   src/flux_kernels/mp5.cpp
-   src/flux_kernels/mp5_char.cpp
-   src/flux_kernels/pwc.cpp
-   src/flux_kernels/pwl.cpp
-   src/flux_kernels/teno5.cpp
-   src/flux_kernels/teno5_char.cpp
-   src/flux_kernels/wenoz.cpp
-   src/flux_kernels/wenoz_char.cpp
-)
+set(PYFLUID_AMREX_FLUX_KERNEL_SOURCES)
+if(PYFLUID_AMREX_ENABLE_RECON_PWC)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/pwc.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_PWL)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/pwl.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_WENOZ)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/wenoz.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_WENOZ_CHAR)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/wenoz_char.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_MP5)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/mp5.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_MP5_CHAR)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/mp5_char.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_TENO5)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/teno5.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_TENO5_CHAR)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/teno5_char.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_PARABOLIC)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/parabolic.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_PARABOLIC_CHAR)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/parabolic_char.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_PPM4)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppm4.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_PPM4_CHAR)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppm4_char.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_PPMX)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppmx.cpp)
+endif()
+if(PYFLUID_AMREX_ENABLE_RECON_PPMX_CHAR)
+   list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppmx_char.cpp)
+endif()
 
 set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
    src/initial_data/initial_data_centering.cpp
@@ -196,6 +235,10 @@ set(PYFLUID_AMREX_CODEGEN_CHECK_SOURCES
 
 set(PYFLUID_AMREX_C2P_BENCHMARK_SOURCES
    benchmarks/c2p_benchmark.cpp
+)
+
+set(PYFLUID_AMREX_RECONSTRUCTION_CHECK_SOURCES
+   tests/reconstruction_check.cpp
 )
 
 set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
@@ -466,6 +509,12 @@ set(PYFLUID_AMREX_BUILD_FEATURES
    PYFLUID_AMREX_ENABLE_RECON_MP5_CHAR
    PYFLUID_AMREX_ENABLE_RECON_TENO5
    PYFLUID_AMREX_ENABLE_RECON_TENO5_CHAR
+   PYFLUID_AMREX_ENABLE_RECON_PARABOLIC
+   PYFLUID_AMREX_ENABLE_RECON_PARABOLIC_CHAR
+   PYFLUID_AMREX_ENABLE_RECON_PPM4
+   PYFLUID_AMREX_ENABLE_RECON_PPM4_CHAR
+   PYFLUID_AMREX_ENABLE_RECON_PPMX
+   PYFLUID_AMREX_ENABLE_RECON_PPMX_CHAR
    PYFLUID_AMREX_ENABLE_RIEMANN_LLF
    PYFLUID_AMREX_ENABLE_RIEMANN_HLL
    PYFLUID_AMREX_ENABLE_RIEMANN_HLLE
@@ -534,6 +583,19 @@ foreach(dim 1 2 3)
       endif()
 
       if(dim EQUAL 1)
+         add_executable(
+            pyfluid_amrex_reconstruction_check
+            EXCLUDE_FROM_ALL
+            ${PYFLUID_AMREX_RECONSTRUCTION_CHECK_SOURCES}
+         )
+         pyfluid_amrex_configure_target(pyfluid_amrex_reconstruction_check ${dim})
+         if(TARGET pyfluid_amrex_generate_kernels)
+            add_dependencies(
+               pyfluid_amrex_reconstruction_check
+               pyfluid_amrex_generate_kernels
+            )
+         endif()
+
          add_executable(pyfluid_amrex_c2p_benchmark EXCLUDE_FROM_ALL ${PYFLUID_AMREX_C2P_BENCHMARK_SOURCES})
          pyfluid_amrex_configure_target(pyfluid_amrex_c2p_benchmark ${dim})
          if(TARGET pyfluid_amrex_generate_kernels)

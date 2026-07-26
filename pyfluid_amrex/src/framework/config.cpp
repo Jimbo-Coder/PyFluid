@@ -1875,7 +1875,7 @@ void validate_config(RunConfig const& cfg)
       amrex::Abort("pyfluid.ng must be at least 2 for PWL reconstruction");
    }
    if (uses_five_point && cfg.ng < 3) {
-      amrex::Abort("pyfluid.ng must be at least 3 for fifth-order reconstruction");
+      amrex::Abort("pyfluid.ng must be at least 3 for five-point reconstruction");
    }
    if (cfg.max_step < 0) {
       amrex::Abort("pyfluid.max_step must be non-negative");

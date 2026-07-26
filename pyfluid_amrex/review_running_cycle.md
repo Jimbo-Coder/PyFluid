@@ -3010,3 +3010,42 @@ I will always continue from the last cycle marked as `in_progress`.
   contact/flattening machinery immediately, or calling PPM universally best.
   No PyFluid production source or validation artifact was changed in this
   comparison cycle. [DONE]
+
+## Cycle 232 — Catalog-driven PPM4 and PPMX production reconstruction (DONE)
+
+- Add classic monotonic PPM4 and Colella--Sekora smooth-extremum-preserving
+  PPMX as generic reconstruction methods, with the unlimited fourth-order
+  parabolic interpolation exposed as a smooth/reference method. Give all three
+  the same existing component and characteristic forms as WENO-Z/MP5/TENO5.
+  Reuse the existing additive reconstruction-owner architecture and avoid a
+  new cross-product specialization axis. Reconstruction names, stable codes,
+  stencil radii, and characteristic metadata now come from
+  `schema/methods.toml`; the generated method catalog is the runtime option
+  source. Formula tests cover constants, linear data, exact quadratic face
+  interpolation, classic PPM4 extremum clipping, PPMX smooth-extremum
+  preservation, and discontinuity bounding. [DONE]
+- Validate formula identities and monotonicity, smooth convergence, all five
+  exact Balsara problems with the existing conservative candidate-correction
+  policies, and relevant CT/AMR behavior at production CFL 0.9. Compare
+  accuracy, oscillation, recovery events, correction counts, throughput,
+  compile cost, and current MP5/PWC before selecting a policy. Parabolic and
+  PPMX measure fourth order on the periodic smooth wave in component and
+  characteristic forms; PPM4 measures about order 2.1 because it clips smooth
+  extrema. The 45-run exact Balsara scan at N=256/512/1024 has zero resets for
+  every MP5/PPM4/PPMX plus PWC run. MP5/PWC retains the lowest all-component L1
+  errors, while PPM4/PWC sharply reduces Balsara-4 overshoot/TV at N=1024:
+  `0.0488/2.58` versus MP5/PWC `0.161/3.25`, for L1 `3.91e-3` versus
+  `3.25e-3`. PPMX/PWC gives `4.44e-3/0.0455/3.06`. Unlimited parabolic
+  without correction is catastrophically unsuitable for this shock. [DONE]
+- Reconcile documentation and method catalogs, run proportionate architecture
+  and production integration gates, then commit locally without pushing.
+  Architecture and generated-source checks pass; all production dimensions
+  build; all 12 new hydro/MHD component/characteristic feature cases pass; the
+  expanded RMHD standard gate, normal quick suite, and complete normal standard
+  integration suite pass. The canonical MPI performance ratios are 0.93--0.99
+  of frozen baselines. PPM4 shock throughput matches MP5 and PPMX is a few
+  percent slower. CMake now removes disabled reconstruction owner files rather
+  than merely hiding factory cases; a clean PWC-only 1D configuration compiled
+  only `flux_kernels/pwc.cpp` and linked, and the unchanged full production
+  cache check took 0.78 s. Exact scan and profile artifacts are under
+  `runs/current/rmhd_validation/` and `plots/current/scans/`. [DONE]

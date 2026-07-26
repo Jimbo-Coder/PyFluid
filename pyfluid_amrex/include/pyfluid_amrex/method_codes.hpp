@@ -1,5 +1,7 @@
 #pragma once
 
+#include "pyfluid_amrex/generated/method_catalog.hpp"
+
 namespace pyfluid_amrex {
 
 enum RiemannMethodCode : int {
@@ -10,27 +12,14 @@ enum RiemannMethodCode : int {
    RiemannHLLD = 4
 };
 
-enum ReconstructionMethodCode : int {
-   ReconPWC = 0,
-   ReconPWL = 1,
-   ReconWENOZ = 2,
-   ReconWENOZChar = 3,
-   ReconMP5 = 4,
-   ReconMP5Char = 5,
-   ReconTENO5 = 6,
-   ReconTENO5Char = 7
-};
-
 constexpr bool is_five_point_reconstruction(int method) noexcept
 {
-   return method == ReconWENOZ || method == ReconWENOZChar
-      || method == ReconMP5 || method == ReconMP5Char
-      || method == ReconTENO5 || method == ReconTENO5Char;
+   return reconstruction_stencil_radius(method) == 2;
 }
 
 constexpr bool is_characteristic_reconstruction(int method) noexcept
 {
-   return method == ReconWENOZChar || method == ReconMP5Char || method == ReconTENO5Char;
+   return reconstruction_is_characteristic(method);
 }
 
 enum TimeIntegratorCode : int {

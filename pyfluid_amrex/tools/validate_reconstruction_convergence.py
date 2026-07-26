@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure smooth spatial convergence of fifth-order reconstruction methods."""
+"""Measure smooth spatial convergence of high-order reconstruction methods."""
 
 from __future__ import annotations
 
@@ -36,15 +36,22 @@ HISTORY = ROOT / "runs/current/validation_history.tsv"
 class Method:
    name: str
    label: str
+   minimum_order: float
 
 
 METHODS = (
-   Method("wenoz", "WENO-Z component"),
-   Method("wenoz-char", "WENO-Z characteristic"),
-   Method("mp5", "MP5 component"),
-   Method("mp5-char", "MP5 characteristic"),
-   Method("teno5", "TENO5 component"),
-   Method("teno5-char", "TENO5 characteristic"),
+   Method("wenoz", "WENO-Z component", 4.0),
+   Method("wenoz-char", "WENO-Z characteristic", 4.0),
+   Method("mp5", "MP5 component", 4.0),
+   Method("mp5-char", "MP5 characteristic", 4.0),
+   Method("teno5", "TENO5 component", 4.0),
+   Method("teno5-char", "TENO5 characteristic", 4.0),
+   Method("parabolic", "parabolic component", 3.5),
+   Method("parabolic-char", "parabolic characteristic", 3.5),
+   Method("ppm4", "PPM4 component", 2.0),
+   Method("ppm4-char", "PPM4 characteristic", 2.0),
+   Method("ppmx", "PPMX component", 3.5),
+   Method("ppmx-char", "PPMX characteristic", 3.5),
 )
 
 
@@ -181,6 +188,13 @@ def main() -> int:
    parser.add_argument("--final-time", type=float, default=0.1)
    parser.add_argument("--cfl", type=float, default=0.05)
    parser.add_argument("--ranks", type=int, default=3)
+   parser.add_argument(
+      "--method",
+      dest="method_names",
+      action="append",
+      choices=tuple(method.name for method in METHODS),
+      help="reconstruction method; repeatable (default: all)",
+   )
    parser.add_argument("--force", action="store_true")
    parser.add_argument("--skip-plot", action="store_true")
    args = parser.parse_args()
@@ -191,17 +205,25 @@ def main() -> int:
    if min(args.resolutions) < 16 or args.final_time <= 0.0 or args.cfl <= 0.0:
       raise SystemExit("resolutions must be at least 16; final time and CFL must be positive")
 
-   rows = [run_point(method, nx, args) for method in METHODS for nx in args.resolutions]
+   selected_names = set(args.method_names or (method.name for method in METHODS))
+   selected_methods = tuple(
+      method for method in METHODS if method.name in selected_names
+   )
+   rows = [
+      run_point(method, nx, args)
+      for method in selected_methods
+      for nx in args.resolutions
+   ]
    add_orders(rows)
    serializable = [{key: value for key, value in row.items() if key != "validation"} for row in rows]
    write_tsv(serializable, RESULTS)
    if not args.skip_plot:
       plot_results(rows, PLOT)
    append_validation_history(HISTORY, [row["validation"] for row in rows])
-   for method in METHODS:
+   for method in selected_methods:
       selected = sorted((row for row in rows if row["method"] == method.name), key=lambda row: int(row["nx"]))
       orders = [float(row["order_l1"]) for row in selected[1:]]
-      if min(orders[-2:]) < 4.0:
+      if min(orders[-2:]) < method.minimum_order:
          raise RuntimeError(f"{method.label} did not retain high-order smooth convergence: {orders}")
       print(f"{method.label}: orders={','.join(f'{order:.2f}' for order in orders)} finest_L1={selected[-1]['l1']:.3e}")
    print(f"wrote {repo_relative(RESULTS)}")

@@ -165,6 +165,18 @@ def main() -> None:
     if missing:
         errors.append("required generated catalog outputs are missing: " + relative_paths(missing))
 
+    method_codes = (INCLUDE_ROOT / "method_codes.hpp").read_text()
+    if "enum ReconstructionMethodCode" in method_codes:
+        errors.append(
+            "reconstruction identity must be generated from schema/methods.toml, "
+            "not redeclared in method_codes.hpp"
+        )
+    config_options = (SOURCE_ROOT / "framework" / "config_options.hpp").read_text()
+    if "ReconOptions = ReconstructionMethodCatalog" not in config_options:
+        errors.append(
+            "runtime reconstruction options must consume ReconstructionMethodCatalog"
+        )
+
     synthesized_field_names = []
     for root in (SOURCE_ROOT, INCLUDE_ROOT):
         for path in (*root.rglob("*.cpp"), *root.rglob("*.hpp")):

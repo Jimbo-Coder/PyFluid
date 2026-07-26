@@ -14,6 +14,12 @@ void mp5(FluxLaunch const& launch);
 void mp5_char(FluxLaunch const& launch);
 void teno5(FluxLaunch const& launch);
 void teno5_char(FluxLaunch const& launch);
+void parabolic(FluxLaunch const& launch);
+void parabolic_char(FluxLaunch const& launch);
+void ppm4(FluxLaunch const& launch);
+void ppm4_char(FluxLaunch const& launch);
+void ppmx(FluxLaunch const& launch);
+void ppmx_char(FluxLaunch const& launch);
 
 } // namespace flux_factory_entries
 
@@ -65,6 +71,42 @@ void fill_fluxes(FluxLaunch const& launch)
    case ReconTENO5Char:
 #if PYFLUID_AMREX_ENABLE_RECON_TENO5_CHAR
       flux_factory_entries::teno5_char(launch);
+      return;
+#endif
+      break;
+   case ReconParabolic:
+#if PYFLUID_AMREX_ENABLE_RECON_PARABOLIC
+      flux_factory_entries::parabolic(launch);
+      return;
+#endif
+      break;
+   case ReconParabolicChar:
+#if PYFLUID_AMREX_ENABLE_RECON_PARABOLIC_CHAR
+      flux_factory_entries::parabolic_char(launch);
+      return;
+#endif
+      break;
+   case ReconPPM4:
+#if PYFLUID_AMREX_ENABLE_RECON_PPM4
+      flux_factory_entries::ppm4(launch);
+      return;
+#endif
+      break;
+   case ReconPPM4Char:
+#if PYFLUID_AMREX_ENABLE_RECON_PPM4_CHAR
+      flux_factory_entries::ppm4_char(launch);
+      return;
+#endif
+      break;
+   case ReconPPMX:
+#if PYFLUID_AMREX_ENABLE_RECON_PPMX
+      flux_factory_entries::ppmx(launch);
+      return;
+#endif
+      break;
+   case ReconPPMXChar:
+#if PYFLUID_AMREX_ENABLE_RECON_PPMX_CHAR
+      flux_factory_entries::ppmx_char(launch);
       return;
 #endif
       break;
