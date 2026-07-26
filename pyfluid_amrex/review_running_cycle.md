@@ -2822,3 +2822,27 @@ I will always continue from the last cycle marked as `in_progress`.
   block-structured AMR, and the cited one-dimensional Balsara runs do not test
   AMR topology. Retain AMReX rather than rebuilding a mesh hierarchy absent a
   measured failure attributable to its topology. [DONE]
+
+## Cycle 228 — PWL limiter and PPM triage (DONE)
+
+- Verify the current PWL identity before proposing another reconstruction
+  method. `pyfluid.recon=pwl` reconstructs primitives with the
+  monotonized-central slope
+  `minmod((q[i+1]-q[i-1])/2, minmod(2*(q[i]-q[i-1]),
+  2*(q[i+1]-q[i])))`. It is therefore an already limited PWL method, but is
+  less dissipative than pure MINMOD. Existing plots and Balsara scan rows
+  labeled PWL refer to PWL-MC. [DONE]
+- Do not add PPM as a response to the current RMHD failure. A generic
+  monotonized parabolic interpolation is possible, but AsterX's useful full
+  PPM path includes pressure/velocity shock flattening and density/contact
+  logic, making it physics-aware and parameter-heavy. It would add a primary
+  reconstruction method without supplying the missing RK-candidate
+  protection. [DONE]
+- Keep the robustness hierarchy compact: selected high-order primitive
+  reconstruction; existing face admissibility blending; then, only for a
+  candidate cell flagged by C2P/floors or the relaxed DMP, conservative
+  replacement of every adjoining fluid flux and CT EMF using PWC HLLE/LLF.
+  Pure-MINMOD PWL may later be a useful standalone comparison or face-level
+  fallback, but it should not replace PWC in the last-resort conservative
+  candidate correction because a PWL candidate can itself be inadmissible.
+  No solver change was made in this triage cycle. [DONE]

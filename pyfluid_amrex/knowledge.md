@@ -307,6 +307,16 @@ performance, and MPI-rank evidence into one claim.
   AsterX MP5/WENO-Z nor rules out ringing in unplotted conserved momentum or
   energy. AsterX runs on CarpetX/AMReX block-structured AMR; this shock-tube
   result is not evidence for an octree topology.
+- PyFluid's `pwl` is limited PWL with the monotonized-central slope, not pure
+  two-argument MINMOD. MC itself composes `minmod` bounds and is less
+  dissipative; the Balsara reconstruction scan's PWL result is therefore
+  PWL-MC. AsterX's published PPM is not merely a physics-agnostic parabolic
+  stencil: its production implementation can use pressure/velocity shock
+  flattening and density-specific contact steepening. Do not add PPM merely to
+  reproduce that figure. For RMHD robustness, preserve the high-order primary
+  reconstruction and use local PWC HLLE/LLF flux plus CT-EMF replacement for a
+  failed RK candidate; limited PWL is a weaker rescue because its reconstructed
+  candidate can itself be inadmissible.
 - The current small-spin XCTS PWL control passes three evolved-spacetime steps
   at CFL 0.9 with rest-mass drift `8.52e-10`. Component MP5 now remains finite
   for the same three steps, but its `9.35e-8` rest-mass drift fails the existing
