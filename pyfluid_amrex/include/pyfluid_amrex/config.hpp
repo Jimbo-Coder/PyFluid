@@ -224,6 +224,7 @@ struct RunConfig {
    std::string recon_fine = "";
    int recon_fine_start_level = -1;
    std::string rmhd_candidate_guard = "off";
+   std::string rmhd_candidate_riemann = "same";
    bool rmhd_candidate_dmp = true;
    amrex::Real rmhd_candidate_dmp_factor = 1.2;
    std::string riemann;

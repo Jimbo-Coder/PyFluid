@@ -24,6 +24,7 @@ from validate_rmhd import (
 from validation_common import (
    ROOT,
    read_scalar_rows,
+   read_tsv,
    repo_relative,
    write_tsv,
 )
@@ -31,11 +32,24 @@ from validation_common import (
 
 METHODS = ("pwl", "wenoz", "mp5", "teno5")
 GUARDS = ("off", "pwc", "pwl-pwc")
-RESULTS = RUN_ROOT / "balsara_candidate_guard_scan.tsv"
-PLOT = ROOT / "plots/current/scans/rmhd_balsara_candidate_guard_convergence.png"
-BEST_POLICY_PLOT = (
-   ROOT / "plots/current/scans/rmhd_balsara_best_policy_convergence.png"
-)
+TIMESTEPS = ("ssprk3", "rk4")
+CANDIDATE_RIEMANN_METHODS = ("same", "hll", "llf")
+
+
+def artifact_paths(label: str) -> tuple[Path, Path, Path]:
+   suffix = f"_{label}" if label else ""
+   results = RUN_ROOT / f"balsara_candidate_guard_scan{suffix}.tsv"
+   plot = (
+      ROOT
+      / "plots/current/scans"
+      / f"rmhd_balsara_candidate_guard_convergence{suffix}.png"
+   )
+   best_policy_plot = (
+      ROOT
+      / "plots/current/scans"
+      / f"rmhd_balsara_best_policy_convergence{suffix}.png"
+   )
+   return results, plot, best_policy_plot
 
 
 def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
@@ -50,88 +64,105 @@ def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
          spec = specs[case]
          for method in args.methods:
             for guard in args.guards:
-               overrides = {
-                  "geometry.prob_lo": "-1.0",
-                  "geometry.prob_hi": "1.0",
-                  "amr.n_cell": str(cells),
-                  "amr.max_grid_size": "128",
-                  "pyfluid.gamma": repr(spec["gamma"]),
-                  "pyfluid.final_time": repr(spec["time"]),
-                  "pyfluid.max_step": "10000",
-                  "pyfluid.ng": (
-                     "3" if method in {"wenoz", "mp5", "teno5"} else "2"
-                  ),
-                  "pyfluid.cfl": "0.9",
-                  "pyfluid.recon": method,
-                  "pyfluid.rmhd_candidate_guard": guard,
-                  "pyfluid.scalar_int": "64",
-                  "pyfluid.plot_int": "1000000",
-               }
-               for side, state in (
-                  ("left", spec["left"]),
-                  ("right", spec["right"]),
-               ):
-                  for name, value in zip(
-                     (
-                        "rho",
-                        "pressure",
-                        "v1",
-                        "v2",
-                        "v3",
-                        "b1",
-                        "b2",
-                        "b3",
-                     ),
-                     state,
-                     strict=True,
-                  ):
-                     overrides[f"pyfluid.{name}_{side}"] = repr(value)
-               run_name = (
-                  f"guard_scan_balsara{case}_{method}_{guard}_n{cells}"
-               )
-               run_dir, scalar = run_case(
-                  run_name,
-                  INPUTS / "rmhd_balsara1_1d.in",
-                  overrides,
-                  args,
-               )
-               _, _, _, maximum_l1, overshoot, tv_ratio = exact_comparison(
-                  case, spec, run_dir
-               )
-               fallback_count, reset_count = relativistic_recovery_counts(
-                  run_dir
-               )
-               pwl_count, pwc_count = rmhd_candidate_correction_counts(
-                  run_dir
-               )
-               scalar_rows = read_scalar_rows(run_dir)
-               rows.append({
-                  "case": case,
-                  "method": method,
-                  "guard": guard,
-                  "cells": cells,
-                  "maximum_normalized_component_l1": maximum_l1,
-                  "maximum_normalized_global_overshoot": overshoot,
-                  "maximum_component_tv_ratio": tv_ratio,
-                  "c2p_fallbacks": fallback_count,
-                  "atmosphere_resets": reset_count,
-                  "rmhd_pwl_corrections": pwl_count,
-                  "rmhd_pwc_corrections": pwc_count,
-                  "mass_rel_drift": scalar["mass_rel_drift"],
-                  "energy_rel_drift": scalar["energy_rel_drift"],
-                  "mcells_per_s": scalar_rows[-1]["mcells_per_s"],
-                  "run_dir": repo_relative(run_dir),
-               })
-               print(
-                  f"Balsara {case} {method}/{guard} N={cells}: "
-                  f"L1={maximum_l1:.6e} overshoot={overshoot:.6e} "
-                  f"TV={tv_ratio:.4f} corrections={pwl_count}/{pwc_count} "
-                  f"resets={reset_count}"
-               )
+               for timestep in args.timesteps:
+                  for candidate_riemann in args.candidate_riemann_methods:
+                     if guard == "off" and candidate_riemann != "same":
+                        continue
+                     overrides = {
+                        "geometry.prob_lo": "-1.0",
+                        "geometry.prob_hi": "1.0",
+                        "amr.n_cell": str(cells),
+                        "amr.max_grid_size": "128",
+                        "pyfluid.gamma": repr(spec["gamma"]),
+                        "pyfluid.final_time": repr(spec["time"]),
+                        "pyfluid.max_step": "10000",
+                        "pyfluid.ng": (
+                           "3"
+                           if method in {"wenoz", "mp5", "teno5"}
+                           else "2"
+                        ),
+                        "pyfluid.cfl": "0.9",
+                        "pyfluid.recon": method,
+                        "pyfluid.timestep": timestep,
+                        "pyfluid.rmhd_candidate_guard": guard,
+                        "pyfluid.rmhd_candidate_riemann": candidate_riemann,
+                        "pyfluid.scalar_int": "64",
+                        "pyfluid.plot_int": "1000000",
+                     }
+                     for side, state in (
+                        ("left", spec["left"]),
+                        ("right", spec["right"]),
+                     ):
+                        for name, value in zip(
+                           (
+                              "rho",
+                              "pressure",
+                              "v1",
+                              "v2",
+                              "v3",
+                              "b1",
+                              "b2",
+                              "b3",
+                           ),
+                           state,
+                           strict=True,
+                        ):
+                           overrides[f"pyfluid.{name}_{side}"] = repr(value)
+                     run_name = (
+                        f"guard_scan_balsara{case}_{method}_{guard}_"
+                        f"{candidate_riemann}_{timestep}_n{cells}"
+                     )
+                     run_dir, scalar = run_case(
+                        run_name,
+                        INPUTS / "rmhd_balsara1_1d.in",
+                        overrides,
+                        args,
+                     )
+                     _, _, _, maximum_l1, overshoot, tv_ratio = (
+                        exact_comparison(case, spec, run_dir)
+                     )
+                     fallback_count, reset_count = (
+                        relativistic_recovery_counts(run_dir)
+                     )
+                     pwl_count, pwc_count = (
+                        rmhd_candidate_correction_counts(run_dir)
+                     )
+                     scalar_rows = read_scalar_rows(run_dir)
+                     rows.append({
+                        "case": case,
+                        "method": method,
+                        "guard": guard,
+                        "candidate_riemann": candidate_riemann,
+                        "timestep": timestep,
+                        "cells": cells,
+                        "maximum_normalized_component_l1": maximum_l1,
+                        "maximum_normalized_global_overshoot": overshoot,
+                        "maximum_component_tv_ratio": tv_ratio,
+                        "c2p_fallbacks": fallback_count,
+                        "atmosphere_resets": reset_count,
+                        "rmhd_pwl_corrections": pwl_count,
+                        "rmhd_pwc_corrections": pwc_count,
+                        "mass_rel_drift": scalar["mass_rel_drift"],
+                        "energy_rel_drift": scalar["energy_rel_drift"],
+                        "mcells_per_s": scalar_rows[-1]["mcells_per_s"],
+                        "run_dir": repo_relative(run_dir),
+                     })
+                     print(
+                        f"Balsara {case} {method}/{guard}/"
+                        f"{candidate_riemann}/{timestep} N={cells}: "
+                        f"L1={maximum_l1:.6e} overshoot={overshoot:.6e} "
+                        f"TV={tv_ratio:.4f} "
+                        f"corrections={pwl_count}/{pwc_count} "
+                        f"resets={reset_count}"
+                     )
    return rows
 
 
-def plot_scan(args: argparse.Namespace, rows: list[dict[str, object]]) -> None:
+def plot_scan(
+   args: argparse.Namespace,
+   rows: list[dict[str, object]],
+   plot_path: Path,
+) -> None:
    columns = min(3, len(args.cases))
    num_rows = math.ceil(len(args.cases) / columns)
    figure, axes = plt.subplots(
@@ -148,6 +179,8 @@ def plot_scan(args: argparse.Namespace, rows: list[dict[str, object]]) -> None:
       "teno5": "#D55E00",
    }
    styles = {"off": ":", "pwc": "--", "pwl-pwc": "-"}
+   candidate_styles = {"same": "-", "hll": "-", "llf": "--"}
+   markers = {"ssprk3": "o", "rk4": "s"}
    display_names = {
       "pwl": "PWL-MC",
       "wenoz": "WENO-Z",
@@ -158,26 +191,37 @@ def plot_scan(args: argparse.Namespace, rows: list[dict[str, object]]) -> None:
       axis = axes[index // columns, index % columns]
       for method in args.methods:
          for guard in args.guards:
-            selected = sorted(
-               (
-                  row for row in rows
-                  if int(row["case"]) == case
-                  and row["method"] == method
-                  and row["guard"] == guard
-               ),
-               key=lambda row: int(row["cells"]),
-            )
-            axis.loglog(
-               [int(row["cells"]) for row in selected],
-               [
-                  float(row["maximum_normalized_component_l1"])
-                  for row in selected
-               ],
-               marker="o",
-               color=colors[method],
-               linestyle=styles[guard],
-               label=f"{display_names[method]} / {guard}",
-            )
+            for timestep in args.timesteps:
+               for candidate_riemann in args.candidate_riemann_methods:
+                  selected = sorted(
+                     (
+                        row for row in rows
+                        if int(row["case"]) == case
+                        and row["method"] == method
+                        and row["guard"] == guard
+                        and row["timestep"] == timestep
+                        and row["candidate_riemann"] == candidate_riemann
+                     ),
+                     key=lambda row: int(row["cells"]),
+                  )
+                  axis.loglog(
+                     [int(row["cells"]) for row in selected],
+                     [
+                        float(row["maximum_normalized_component_l1"])
+                        for row in selected
+                     ],
+                     marker=markers[timestep],
+                     color=colors[method],
+                     linestyle=(
+                        candidate_styles[candidate_riemann]
+                        if len(args.candidate_riemann_methods) > 1
+                        else styles[guard]
+                     ),
+                     label=(
+                        f"{display_names[method]} / {guard} / "
+                        f"{candidate_riemann} / {timestep}"
+                     ),
+                  )
       axis.set_title(f"Balsara {case}")
       axis.set_xlabel("cells")
       axis.set_ylabel("maximum normalized component L1")
@@ -185,15 +229,23 @@ def plot_scan(args: argparse.Namespace, rows: list[dict[str, object]]) -> None:
    for index in range(len(args.cases), num_rows * columns):
       axes[index // columns, index % columns].set_visible(False)
    axes[0, 0].legend(frameon=False, fontsize=7)
-   figure.suptitle(
-      "SRMHD candidate correction — HLL/SSPRK3, CFL 0.9"
+   correction_label = "/".join(
+      method.upper() for method in args.candidate_riemann_methods
    )
-   PLOT.parent.mkdir(parents=True, exist_ok=True)
-   figure.savefig(PLOT, dpi=180)
+   timestep_label = "/".join(method.upper() for method in args.timesteps)
+   figure.suptitle(
+      "SRMHD candidate correction — primary HLL, correction "
+      f"{correction_label}, {timestep_label}, CFL 0.9"
+   )
+   plot_path.parent.mkdir(parents=True, exist_ok=True)
+   figure.savefig(plot_path, dpi=180)
    plt.close(figure)
 
 
-def plot_best_policy(rows: list[dict[str, object]]) -> None:
+def plot_best_policy(
+   rows: list[dict[str, object]],
+   plot_path: Path,
+) -> None:
    selections = (
       ("pwl", "off", "PWL-MC", "#009E73", ":"),
       ("mp5", "off", "MP5", "#999999", ":"),
@@ -216,6 +268,8 @@ def plot_best_policy(rows: list[dict[str, object]]) -> None:
                if int(row["case"]) == case
                and row["method"] == method
                and row["guard"] == guard
+               and row["candidate_riemann"] == "same"
+               and row["timestep"] == "ssprk3"
             ),
             key=lambda row: int(row["cells"]),
          )
@@ -241,8 +295,8 @@ def plot_best_policy(rows: list[dict[str, object]]) -> None:
    figure.suptitle(
       "Best SRMHD correction policies — HLL/SSPRK3, CFL 0.9"
    )
-   BEST_POLICY_PLOT.parent.mkdir(parents=True, exist_ok=True)
-   figure.savefig(BEST_POLICY_PLOT, dpi=180)
+   plot_path.parent.mkdir(parents=True, exist_ok=True)
+   figure.savefig(plot_path, dpi=180)
    plt.close(figure)
 
 
@@ -276,41 +330,86 @@ def main() -> int:
       choices=GUARDS,
       help="candidate correction; repeatable (default: all)",
    )
+   parser.add_argument(
+      "--timestep",
+      dest="timesteps",
+      action="append",
+      choices=TIMESTEPS,
+      help="timestepper; repeatable (default: ssprk3)",
+   )
+   parser.add_argument(
+      "--candidate-riemann",
+      dest="candidate_riemann_methods",
+      action="append",
+      choices=CANDIDATE_RIEMANN_METHODS,
+      help="candidate-correction Riemann solver; repeatable (default: same)",
+   )
+   parser.add_argument(
+      "--label",
+      default="",
+      help="artifact suffix for a focused scan",
+   )
    parser.add_argument("--ranks", type=int, default=1)
    parser.add_argument("--timeout", type=int, default=300)
    parser.add_argument("--force", action="store_true")
+   parser.add_argument(
+      "--plot-only",
+      action="store_true",
+      help="regenerate plots from the labeled TSV without running cases",
+   )
    args = parser.parse_args()
    args.cases = sorted(set(args.cases or [3, 4]))
    args.cells = sorted(set(args.cells or [128, 256, 512]))
    args.methods = list(dict.fromkeys(args.methods or METHODS))
    args.guards = list(dict.fromkeys(args.guards or GUARDS))
-   rows = run_scan(args)
-   write_tsv(
-      RESULTS,
-      rows,
-      [
-         "case",
-         "method",
-         "guard",
-         "cells",
-         "maximum_normalized_component_l1",
-         "maximum_normalized_global_overshoot",
-         "maximum_component_tv_ratio",
-         "c2p_fallbacks",
-         "atmosphere_resets",
-         "rmhd_pwl_corrections",
-         "rmhd_pwc_corrections",
-         "mass_rel_drift",
-         "energy_rel_drift",
-         "mcells_per_s",
-         "run_dir",
-      ],
+   args.timesteps = list(dict.fromkeys(args.timesteps or ["ssprk3"]))
+   args.candidate_riemann_methods = list(
+      dict.fromkeys(args.candidate_riemann_methods or ["same"])
    )
-   plot_scan(args, rows)
-   plot_best_policy(rows)
-   print(f"wrote {repo_relative(RESULTS)}")
-   print(f"wrote {repo_relative(PLOT)}")
-   print(f"wrote {repo_relative(BEST_POLICY_PLOT)}")
+   results_path, plot_path, best_policy_plot_path = artifact_paths(args.label)
+   if args.plot_only:
+      rows = read_tsv(results_path)
+      for row in rows:
+         row.setdefault("candidate_riemann", "same")
+         row.setdefault("timestep", "ssprk3")
+   else:
+      rows = run_scan(args)
+      write_tsv(
+         results_path,
+         rows,
+         [
+            "case",
+            "method",
+            "guard",
+            "candidate_riemann",
+            "timestep",
+            "cells",
+            "maximum_normalized_component_l1",
+            "maximum_normalized_global_overshoot",
+            "maximum_component_tv_ratio",
+            "c2p_fallbacks",
+            "atmosphere_resets",
+            "rmhd_pwl_corrections",
+            "rmhd_pwc_corrections",
+            "mass_rel_drift",
+            "energy_rel_drift",
+            "mcells_per_s",
+            "run_dir",
+         ],
+      )
+   plot_scan(args, rows, plot_path)
+   wrote_best_policy_plot = any(
+      row["candidate_riemann"] == "same"
+      and row["timestep"] == "ssprk3"
+      and row["method"] in {"pwl", "mp5"}
+      for row in rows
+   )
+   if wrote_best_policy_plot:
+      plot_best_policy(rows, best_policy_plot_path)
+   print(f"wrote {repo_relative(results_path)}")
+   print(f"wrote {repo_relative(plot_path)}")
+   if wrote_best_policy_plot:
+      print(f"wrote {repo_relative(best_policy_plot_path)}")
    return 0
 
 

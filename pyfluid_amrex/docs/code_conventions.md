@@ -17,7 +17,10 @@ decisions.
   troubled cells from the concrete RK candidate, replace shared face fluxes
   consistently for both adjacent cells, propagate only far enough to leave
   every affected candidate physically recoverable, and count each correction
-  tier separately from post-update recovery or atmosphere repair.
+  tier separately from post-update recovery or atmosphere repair. Select the
+  correction Riemann solver once on the host; do not add a per-cell method
+  branch or couple it to the primary Riemann solver unless the configuration
+  explicitly selects `same`.
 - CT integrates the electric field with the same Runge--Kutta stage weights as
   the cell-centered flux divergence and flux registers. Do not update face
   fields from only the last stage of a multistage integrator.

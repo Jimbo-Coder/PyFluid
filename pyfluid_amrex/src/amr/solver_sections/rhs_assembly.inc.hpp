@@ -1,6 +1,17 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // RHS/flux-stage assembly for conservative updates.
 
+   int rmhd_candidate_riemann_method() const
+   {
+      if (cfg_.rmhd_candidate_riemann == "llf") {
+         return RiemannLLF;
+      }
+      if (cfg_.rmhd_candidate_riemann == "hll") {
+         return RiemannHLL;
+      }
+      return riemann_method_;
+   }
+
    template <int EOSMethod>
    void project_relativistic_atmosphere_range(
       LevelData& state,
@@ -419,7 +430,7 @@
                   *input[lev],
                   *primitive_[lev],
                   eos_params(cfg_),
-                  riemann_method_,
+                  rmhd_candidate_riemann_method(),
                   Geom(lev),
                   fixed_spacetime_parameters(cfg_),
                   stored_spacetime,
@@ -616,7 +627,7 @@
                   *fluid_state_.stage(input_slot)[lev],
                   *primitive_[lev],
                   eos_params(cfg_),
-                  riemann_method_,
+                  rmhd_candidate_riemann_method(),
                   Geom(lev),
                   fixed_spacetime_parameters(cfg_),
                   spacetime_coupling_.cell_spacetime()[lev].get(),

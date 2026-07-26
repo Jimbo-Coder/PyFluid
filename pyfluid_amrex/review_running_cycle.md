@@ -2929,3 +2929,51 @@ I will always continue from the last cycle marked as `in_progress`.
   `benchmark_compile.py --target pyfluid_amrex_production` integration check
   was a `0.58 s` no-op/cache-hit build (`cache_hits=0`, `cache_misses=0` from
   the compiler-cache parser), not a cold-build measurement. [DONE]
+
+## Cycle 230 — RMHD correction solver and RK-stage policy (DONE)
+
+- Quantify the existing WENO-Z and TENO5 candidate-correction results rather
+  than inferring them from the MP5-focused plot. Compare direct PWC and
+  PWL-MC-then-PWC at the same Balsara resolutions, including error, overshoot,
+  variation, correction counts, and terminal atmosphere resets. At N=1024,
+  direct PWC gives five-case mean maximum normalized component L1 errors
+  `3.63e-3` for WENO-Z and `3.77e-3` for TENO5, versus `2.88e-3` for MP5.
+  Every error sequence decreases from N=128 through 1024 and every guarded
+  run has zero resets. PWL-MC-first is slightly worse for both methods overall
+  and clearly worse on Balsara 4. [DONE]
+- Source-check AthenaK's dynamic-GRMHD FOFC staging. It constructs the concrete
+  candidate from the Runge--Kutta stage coefficients, checks density/energy
+  against the factor-1.2 neighborhood DMP, calls C2P in floors-only mode, and
+  replaces all adjoining fluxes before the stage update. PyFluid already runs
+  its guard at the analogous shared stage assembly for every supported
+  timestepper. AthenaK's remaining relevant difference is an independently
+  selected terminal LLF/HLLE correction solver, with LLF as its default.
+  [DONE]
+- Add an independently host-selected RMHD candidate-correction Riemann solver
+  without adding another primary reconstruction or compiled specialization
+  axis. Scan HLL versus LLF correction for MP5, WENO-Z, and TENO5 under
+  SSPRK3/RK4 and enough resolutions to determine whether the AthenaK default
+  improves the exact Balsara behavior. `rmhd_candidate_riemann = same|hll|llf`
+  now selects the already-instantiated correction flux once per stage assembly;
+  `same` remains the default and ignored/non-RMHD combinations are rejected.
+  The 36-run SSPRK3 scan covered Balsara 3/4, N=256/512/1024, and
+  WENO-Z/MP5/TENO5 with direct PWC. LLF often damps Balsara-4 overshoot/TV but
+  does not beat MP5/HLL L1: at N=1024 MP5 is `3.253e-3` with HLL versus
+  `3.826e-3` with LLF. A further 24-run PWL-MC-first scan at N=512/1024 finds
+  no Balsara-4 improvement. Artifacts are
+  `balsara_candidate_guard_scan_correction_solver.tsv`,
+  `balsara_candidate_guard_scan_pwl_correction_solver.tsv`, and their
+  corresponding plots under `plots/current/scans/`. [DONE]
+- Re-run focused smooth, exact, AMR/CT, architecture, compile, and performance
+  gates in proportion to the selected policy. Record the final production
+  recommendation and its remaining limitations, then commit locally without
+  pushing. A 36-run RK4 counterpart shows why SSPRK3 remains the shock default:
+  RK4 triggers one or two atmosphere resets per Balsara-3 run (and up to six
+  for N=1024 TENO5/HLL Balsara 4), while MP5 Balsara-4 L1/TV at N=1024 grows
+  to `1.097e-2/9.69`; the SSPRK3 MP5/HLL values are
+  `3.253e-3/3.25` with zero resets. All production dimensions rebuild,
+  architecture passes, and the complete RMHD standard gate passes including
+  exact Balsara 1--5, AMR, CT, restart, and physical-ID remapping. The required
+  MPI benchmark first failed only because sandbox sockets were unavailable;
+  its approved socket-capable rerun passes at 0.92--0.99 of frozen baselines.
+  [DONE]

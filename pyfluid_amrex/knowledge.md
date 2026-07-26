@@ -327,6 +327,25 @@ performance, and MPI-rank evidence into one claim.
   on the MP5 entropy-wave scan through N=256, which retains order
   `3.77, 3.28, 3.07`; enabled one-dimensional throughput is about 0.63 of
   disabled throughput in small smooth/shock controls.
+- WENO-Z/PWC and TENO5/PWC are also robust, monotonically convergent Balsara
+  policies, but neither beats MP5/PWC across the five cases. At N=1024 their
+  mean maximum normalized component L1 errors are `3.63e-3` and `3.77e-3`,
+  versus `2.88e-3` for MP5/PWC. PWL-MC-first is not an accuracy improvement
+  for any of those high-order methods on the difficult Balsara-4 case.
+- The RMHD guard can select `rmhd_candidate_riemann = same|hll|llf` without a
+  new compiled reconstruction axis. AthenaK independently defaults its FOFC
+  flux to LLF. A matched PyFluid Balsara-3/4 scan finds that LLF sometimes
+  reduces overshoot and total variation but usually corrects more cells and
+  does not improve the best L1 result: Balsara-4 N=1024 MP5/PWC is
+  `3.25e-3` with HLL and `3.83e-3` with LLF. Keep `same` as the default and
+  use LLF only when extra local damping is preferred over minimum error.
+- The guard predicts and checks every concrete RK stage; there is no separate
+  AthenaK timestep-retry algorithm missing from PyFluid. SSPRK3 is materially
+  more robust than non-SSP RK4 for the extreme Balsara shocks. The focused RK4
+  scan reaches post-update atmosphere resets on Balsara 3 and much larger MP5
+  Balsara-4 variation, whereas all corresponding guarded SSPRK3 cases complete
+  without a reset. Retain RK4 for smooth problems, not as the production
+  discontinuous-RMHD default.
 - CT must use the same RK-weighted stage fluxes as the cell update and reflux
   registers. Using only the last stage's EMF is inconsistent for every
   multistage integrator. The current CT path accumulates stage EMFs with the

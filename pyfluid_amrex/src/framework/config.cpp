@@ -408,6 +408,7 @@ RunConfig read_config()
    pp.query("debug_check_finite", cfg.debug_check_finite);
    pp.query("debug_check_physical", cfg.debug_check_physical);
    pp.query("rmhd_candidate_guard", cfg.rmhd_candidate_guard);
+   pp.query("rmhd_candidate_riemann", cfg.rmhd_candidate_riemann);
    pp.query("rmhd_candidate_dmp", cfg.rmhd_candidate_dmp);
    pp.query("rmhd_candidate_dmp_factor", cfg.rmhd_candidate_dmp_factor);
    amrex::ParmParse spacetime_pp("spacetime");
@@ -1014,17 +1015,33 @@ void validate_config(RunConfig const& cfg)
          "pyfluid.rmhd_candidate_guard supports off, pwc, or pwl-pwc"
       );
    }
+   if (cfg.rmhd_candidate_riemann != "same"
+       && cfg.rmhd_candidate_riemann != "llf"
+       && cfg.rmhd_candidate_riemann != "hll") {
+      amrex::Abort(
+         "pyfluid.rmhd_candidate_riemann supports same, llf, or hll"
+      );
+   }
    if (!(cfg.rmhd_candidate_dmp_factor >= 1.0)
        || !std::isfinite(cfg.rmhd_candidate_dmp_factor)) {
       amrex::Abort(
          "pyfluid.rmhd_candidate_dmp_factor must be finite and at least 1"
       );
    }
+   if (cfg.rmhd_candidate_guard == "off"
+       && cfg.rmhd_candidate_riemann != "same") {
+      amrex::Abort(
+         "pyfluid.rmhd_candidate_riemann requires an enabled "
+         "pyfluid.rmhd_candidate_guard"
+      );
+   }
    const PhysicalSystem selected_system = physical_system(cfg);
    if (selected_system != PhysicalSystem::RMHD
-       && cfg.rmhd_candidate_guard != "off") {
+       && (cfg.rmhd_candidate_guard != "off"
+           || cfg.rmhd_candidate_riemann != "same")) {
       amrex::Abort(
-         "pyfluid.rmhd_candidate_guard applies only to pyfluid.physics = rmhd"
+         "RMHD candidate correction options apply only to "
+         "pyfluid.physics = rmhd"
       );
    }
    const InitialDataOption& selected_initial_data = initial_data_option(cfg.ic);
