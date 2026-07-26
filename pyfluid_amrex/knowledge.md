@@ -276,7 +276,12 @@ performance, and MPI-rank evidence into one claim.
   with piecewise-constant LLF fluxes. This follows AthenaK's local-fallback
   structure rather than globally downgrading reconstruction. The current
   stage-candidate correction is RHD-only; RMHD retains its local face-state
-  admissibility limit and ordered C2P policy.
+  admissibility limit and ordered C2P policy. The N=512 exact Balsara
+  reconstruction scan shows why this remains a production limitation: no one
+  high-order method is uniformly robust. MP5 is most accurate on Balsara 1 and
+  5 but resets on 2--4; PWL is the best Balsara 4 high-order control but still
+  rings; WENO-Z has an off-scale Balsara 4 spike; and TENO5 resets 31 times on
+  Balsara 4. PWC is diffusive but completes all five without a reset.
 - During evolution, successful use of a secondary RMHD C2P method and terminal
   atmosphere resets after C2P exhaustion are counted across ranks and warned
   once per affected step. Ordinary atmosphere cells are not counted as

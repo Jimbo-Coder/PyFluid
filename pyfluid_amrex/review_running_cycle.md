@@ -2687,3 +2687,30 @@ I will always continue from the last cycle marked as `in_progress`.
   for RHD. A CT-consistent RMHD candidate limiter is therefore the main open
   production issue exposed by this audit; do not mislabel post-update
   atmosphere projection as conservative reconstruction fallback. [DONE]
+
+## Cycle 223 — Balsara reconstruction scan and named baseline (DONE)
+
+- Run all five exact Balsara problems at N=512, HLL/SSPRK3, and CFL 0.9 with
+  every production component reconstructor: PWC, PWL, WENO-Z, MP5, and TENO5.
+  Persist exact-profile maximum normalized L1, global-range overshoot, total
+  variation ratio, recovery counts, scalar drifts, throughput, and run paths
+  in one scan TSV and generate overlays. No high-order method dominates. MP5
+  has the lowest L1 on Balsara 1 and 5; TENO5 is lowest on 2; WENO-Z is lowest
+  on 3; and PWL is lowest on 4. PWC is substantially more diffusive but is the
+  only method with zero atmosphere resets across all five. [DONE]
+- The hoped-for non-ringing WENO result does not occur on the extreme
+  counter-streaming Balsara 4 problem. WENO-Z develops an off-scale central
+  spike (`0.298` maximum normalized L1, `45.4` normalized global overshoot,
+  and `182.8` maximum component TV ratio) despite zero terminal resets. PWL is
+  the best completed high-order result there (`0.00890` L1, zero resets) but
+  still rings (`4.31` maximum TV ratio). MP5 has `0.0131` L1, `6.89` maximum
+  TV ratio, and two resets; TENO5 has `0.0279` L1, `7.47` maximum TV ratio,
+  and 31 resets. Keep WENO-Z's off-scale result visible in a separate plot so
+  it cannot flatten the useful method comparison. [DONE]
+- Capture the clean committed Cycle 221/222 state at Git `47ae7ba` in
+  `runs/baselines/20260725_221243_elliptic_symmetry_srmhd/`. All 42 standard
+  gates pass with `274.79 s` summed gate time. The canonical MPI benchmark
+  also returns zero: current/frozen throughput ratios are `0.983`, `0.932`,
+  `0.945`, and `0.961` for its four cases. This baseline predates the
+  reconstruction-scan tool only; the scan does not change production code.
+  [DONE]
