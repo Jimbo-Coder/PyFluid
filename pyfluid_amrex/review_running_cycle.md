@@ -2714,3 +2714,11 @@ I will always continue from the last cycle marked as `in_progress`.
   `0.945`, and `0.961` for its four cases. This baseline predates the
   reconstruction-scan tool only; the scan does not change production code.
   [DONE]
+
+## Cycle 224 — Reconstruction plot legibility (DONE)
+
+- Clarify that WENO-Z and TENO5 overlap the other high-order profiles in the
+  Balsara 1 row, while Balsara 4 WENO-Z is deliberately excluded from the
+  bounded comparison because its off-scale failure has a dedicated plot.
+  Give every reconstruction method a distinct color and line style and use
+  explicit WENO-Z/TENO5 legend names. [DONE]

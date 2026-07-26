@@ -216,6 +216,20 @@ def plot_scan(
       "mp5": "#0072B2",
       "teno5": "#D55E00",
    }
+   line_styles = {
+      "pwc": "-",
+      "pwl": "-.",
+      "wenoz": "--",
+      "mp5": "-",
+      "teno5": ":",
+   }
+   display_names = {
+      "pwc": "PWC",
+      "pwl": "PWL",
+      "wenoz": "WENO-Z",
+      "mp5": "MP5",
+      "teno5": "TENO5",
+   }
    for row, case in enumerate(plot_cases):
       spec = specs[case]
       exact_profile = read_last_exact_balsara_profile(
@@ -248,9 +262,10 @@ def plot_scan(
                centers,
                numerical[component],
                color=colors[method],
-               linewidth=0.85,
-               alpha=0.9,
-               label=method.upper(),
+               linestyle=line_styles[method],
+               linewidth=1.25,
+               alpha=0.95,
+               label=display_names[method],
             )
          axis.set_title(f"Balsara {case}: {label}")
          axis.grid(alpha=0.22)
@@ -305,7 +320,8 @@ def plot_scan(
          centers,
          numerical[component],
          color=colors["wenoz"],
-         linewidth=0.9,
+         linestyle=line_styles["wenoz"],
+         linewidth=1.25,
          label="WENO-Z",
       )
       axis.set_title(label)
