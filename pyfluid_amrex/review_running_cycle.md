@@ -2722,3 +2722,40 @@ I will always continue from the last cycle marked as `in_progress`.
   bounded comparison because its off-scale failure has a dedicated plot.
   Give every reconstruction method a distinct color and line style and use
   explicit WENO-Z/TENO5 legend names. [DONE]
+
+## Cycle 225 — RMHD robustness and flat-kernel source audit (DONE)
+
+- Source-check why no high-order reconstructor is uniformly robust in the
+  Balsara scan. PyFluid applies metric-aware face-state admissibility limiting
+  for RMHD, but its actual RK-stage conservative first-order flux correction
+  remains RHD-only. AsterX separately supports a selectable low-order face
+  reconstruction when reconstructed thermodynamic values are nonpositive.
+  AthenaK goes further for dynamical GRMHD: it predicts the actual RK-stage
+  conserved and CT magnetic candidates, tests whether C2P/floors are required,
+  and by default applies a relaxed discrete maximum principle to conserved
+  density and energy with multiplier 1.2. It replaces all adjoining fluid
+  fluxes and magnetic flux/EMF contributions consistently with first-order
+  LLF or HLLE. The maximum-principle part is directly relevant to Balsara 4
+  WENO-Z because its enormous spike is still physically recoverable and hence
+  records no terminal reset. [DONE]
+- Verify exact-profile provenance. The tracked files
+  `exact_balsara/solution_b{1..5}.dat` entered in Git `3aa8217` as output from
+  the Giacomazzo--Rezzolla exact relativistic-MHD Riemann solver. Validation
+  selects the last nonlinear-iteration block, converts its total pressure to
+  gas pressure using the independently evaluated comoving magnetic pressure,
+  and constructs PyFluid's flat Valencia conserved fields in postprocessing.
+  The external profiles never enter evolution. “Exact” here means the
+  self-similar Riemann solution evaluated by the nonlinear exact solver, not a
+  closed-form expression or a PyFluid-generated high-resolution reference.
+  [DONE]
+- Verify the current SRMHD specialization boundary. Fixed Minkowski RHD/RMHD
+  is selected once on the host for fresh Minkowski data or compatible
+  physical-ID metadata. Primitive recovery, fluxes, and CFL then bypass stored
+  Z4c metric arrays, and geometric sources return before launching a kernel.
+  The common Valencia kernels still receive a `SpacetimeMetric` supplied by
+  the analytic fixed-metric accessor; Minkowski is the default value. This is
+  mathematically SRMHD and avoids stored-metric traffic, but is not a distinct
+  compile-time pure-SR algebra: the generic fixed-metric accessor still
+  evaluates its runtime metric kind at cell/face sites. The recorded gain over
+  stored Minkowski data is 2.1 percent for SRMHD, so further flat-only
+  specialization needs a focused benchmark before adding code. [DONE]

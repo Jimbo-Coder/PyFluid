@@ -281,7 +281,13 @@ performance, and MPI-rank evidence into one claim.
   high-order method is uniformly robust. MP5 is most accurate on Balsara 1 and
   5 but resets on 2--4; PWL is the best Balsara 4 high-order control but still
   rings; WENO-Z has an off-scale Balsara 4 spike; and TENO5 resets 31 times on
-  Balsara 4. PWC is diffusive but completes all five without a reset.
+  Balsara 4. PWC is diffusive but completes all five without a reset. AthenaK's
+  RMHD stage-candidate correction additionally enables a relaxed discrete
+  maximum principle by default: conserved density and energy outside 1.2 times
+  the local-neighborhood range flag the cell even if C2P succeeds. It then
+  replaces adjacent fluid fluxes and CT EMFs consistently. This distinction
+  matters for the physically recoverable but off-scale Balsara 4 WENO-Z spike;
+  a face-positivity check or C2P-failure check alone cannot detect it.
 - During evolution, successful use of a secondary RMHD C2P method and terminal
   atmosphere resets after C2P exhaustion are counted across ranks and warned
   once per affected step. Ordinary atmosphere cells are not counted as
