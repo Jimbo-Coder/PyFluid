@@ -288,6 +288,10 @@ performance, and MPI-rank evidence into one claim.
   replaces adjacent fluid fluxes and CT EMFs consistently. This distinction
   matters for the physically recoverable but off-scale Balsara 4 WENO-Z spike;
   a face-positivity check or C2P-failure check alone cannot detect it.
+  The inspected local AsterX checkout does not add an AthenaK-style predicted
+  RK-candidate correction: it has selectable low-order face reconstruction for
+  invalid reconstructed thermodynamics, then post-step ordered C2P, failed-
+  point interpolation, and atmosphere enforcement.
 - During evolution, successful use of a secondary RMHD C2P method and terminal
   atmosphere resets after C2P exhaustion are counted across ranks and warned
   once per affected step. Ordinary atmosphere cells are not counted as
@@ -450,6 +454,14 @@ performance, and MPI-rank evidence into one claim.
   That reduces work compared with PyFluid's built-in initial-data set, but a
   feature-stripped validation binary conflicts with PyFluid's production-build
   contract. Keep it as explanatory evidence, not an optimization to copy.
+- Kokkos and AMReX are different layers rather than direct substitutes.
+  Kokkos owns portable node-level execution, memory spaces/layout, and team
+  policies; AMReX owns distributed block-structured AMR and also provides
+  portable CPU/GPU kernel launches. Replacing AMReX with Kokkos would require
+  reimplementing hierarchy, FillPatch, reflux, average-down, regridding,
+  checkpoint/I/O, and elliptic infrastructure. Consider a Kokkos or custom
+  kernel only for a measured isolated hotspot with a clean data boundary; do
+  not introduce two competing data/launch abstractions speculatively.
 - AthenaK's current Z4c tests are useful independent formulations and
   normalization references, but they are much narrower than PyFluid's existing
   gauge, robust-stability, AMR/interface, stellar, and radiation gates. Adapt

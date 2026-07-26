@@ -2759,3 +2759,36 @@ I will always continue from the last cycle marked as `in_progress`.
   evaluates its runtime metric kind at cell/face sites. The recorded gain over
   stored Minkowski data is 2.1 percent for SRMHD, so further flat-only
   specialization needs a focused benchmark before adding code. [DONE]
+
+## Cycle 226 — Integrator-wide RMHD guard and backend comparison (DONE)
+
+- Verify whether AsterX has the same RK-stage safety layer as AthenaK. The
+  inspected local AsterX source has a primary reconstruction plus selectable
+  Godunov/minmod/monocentral face fallback when reconstructed density,
+  pressure/temperature, entropy, or composition is invalid. Its scheduled
+  post-step path then performs C2P, can interpolate failed points from
+  neighbors, and may enforce atmosphere. No predicted RK-candidate,
+  neighborhood maximum-principle, or conservative adjoining-flux/EMF
+  replacement was found. AthenaK is therefore the stronger direct reference
+  for the proposed guard, while AsterX confirms the high-order plus local
+  low-order face-fallback pattern. [DONE]
+- Keep the correction independent of timestepper identity. PyFluid's existing
+  shared `compute_evolution_rhs_range` receives the base/input weights and
+  candidate increment for Euler, corrector, midpoint, SSPRK3, and every RK4
+  stage, including calls made during AMR subcycling. The RMHD candidate guard
+  should live in that shared stage assembly before physical-boundary flux
+  accounting and flux-register accumulation. It must correct fluid fluxes and
+  CT EMFs together; successful PWC LLF/HLLE correction is a conservative
+  fallback, while terminal atmosphere projection remains a separately counted
+  reset after recovery exhaustion. [DONE]
+- Compare Kokkos and AMReX using current primary documentation. Kokkos is a
+  node-level performance-portability programming model with execution spaces,
+  memory spaces/layout, and hierarchical team policies. AMReX is the
+  distributed block-structured AMR framework and already supports portable
+  CPU plus CUDA/HIP/SYCL/OpenMP/OpenACC kernel launches. For PyFluid's AMR,
+  FillPatch, reflux, average-down, regrid, checkpoint/I/O, and MLMG needs,
+  replacing AMReX with Kokkos would mean rebuilding core infrastructure;
+  AthenaK can use Kokkos because it owns its mesh/AMR stack. A bounded Kokkos
+  or custom kernel experiment is reasonable only after profiling an isolated
+  hot kernel and defining clean AMReX-data interoperability. No backend change
+  was made. [DONE]
