@@ -317,6 +317,18 @@ performance, and MPI-rank evidence into one claim.
   reconstruction and use local PWC HLLE/LLF flux plus CT-EMF replacement for a
   failed RK candidate; limited PWL is a weaker rescue because its reconstructed
   candidate can itself be inadmissible.
+- The exact Balsara reconstruction resolution scan at N=128, 256, 512, and
+  1024 confirms that PWL-MC is the most uniformly reliable current method.
+  On Balsara 4 its maximum normalized all-component L1 decreases
+  `2.260e-2 -> 1.386e-2 -> 8.896e-3 -> 4.365e-3`, ending below MP5
+  `7.660e-3` and PWC `2.038e-2`; WENO-Z remains nonconvergent near `0.3` while
+  its off-scale overshoot grows with resolution. PWL-MC is not pointwise clean:
+  its Balsara 4 maximum TV ratio remains `2.67, 3.15, 4.31, 3.81`, so the
+  oscillatory region narrows without monotone amplitude removal. At N=1024
+  the extreme-pressure Balsara 3 run records 33 PWL-MC atmosphere resets
+  (WENO-Z 4, MP5 35, TENO5 40, PWC 0). This supports testing high order followed
+  by PWL-MC and terminal PWC candidate correction; it does not support
+  declaring standalone PWL-MC or adding PPM finished production solutions.
 - The current small-spin XCTS PWL control passes three evolved-spacetime steps
   at CFL 0.9 with rest-mass drift `8.52e-10`. Component MP5 now remains finite
   for the same three steps, but its `9.35e-8` rest-mass drift fails the existing

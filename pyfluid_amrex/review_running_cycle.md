@@ -2846,3 +2846,38 @@ I will always continue from the last cycle marked as `in_progress`.
   fallback, but it should not replace PWC in the last-resort conservative
   candidate correction because a PWL candidate can itself be inadmissible.
   No solver change was made in this triage cycle. [DONE]
+
+## Cycle 229 — RMHD correction-policy convergence scan (WIP)
+
+- Correct the earlier overstatement about PWL-MC as a fallback. Its slope
+  becomes zero at extrema and sign changes, so it often reduces locally to
+  PWC, but a strong monotone jump can retain a nonzero limited slope. Select it
+  for testing as the first local candidate correction rather than assuming
+  either that it always degenerates to PWC or that it cannot improve on PWC.
+  Retain PWC HLLE/LLF as the terminal correction if the PWL-MC candidate
+  remains flagged. The actual candidate-policy comparison remains pending with
+  the guard implementation below. [DONE]
+- Extend the exact Balsara reconstruction tooling to retain multiple
+  resolutions and reconstruction methods in one result, including normalized
+  all-component L1 error, global overshoot, total-variation ratio, recovery
+  events, conservation policy, throughput, and interpretable convergence
+  plots. Establish the unchanged-reconstruction baseline before selecting a
+  correction policy. The tool now accepts repeatable `--cells` and `--method`
+  selections and writes both the general convergence plot and a focused
+  Balsara 4 PWL-MC resolution overlay. A fresh 100-run, one-rank scan covered
+  all five methods and Balsara problems at N=128, 256, 512, and 1024 with
+  HLL/SSPRK3 at CFL 0.9. PWL-MC is the most uniformly reliable baseline and
+  reaches Balsara 4 maximum normalized component L1 `4.365e-3` at N=1024,
+  versus MP5 `7.660e-3` and PWC `2.038e-2`. Its maximum TV ratio remains
+  `3.806`, however, and the focused overlay shows narrowing rather than
+  pointwise elimination of post-shock ringing. WENO-Z remains nonconvergent
+  there (`0.281` L1, `94.6` normalized global overshoot, `332` maximum TV
+  ratio at N=1024). The extreme-pressure Balsara 3 N=1024 case records 33
+  PWL-MC atmosphere resets, 4 WENO-Z, 35 MP5, 40 TENO5, and zero PWC. [DONE]
+- Implement the optional RMHD RK-candidate guard in the shared stage assembly,
+  including the relaxed density/energy DMP and consistent fluid-flux plus CT
+  magnetic-flux/EMF correction. Compare direct PWC correction with
+  PWL-MC-then-PWC without adding a reconstruction template axis. Validate
+  1D exact behavior, smooth convergence, multidimensional CT/AMR, CFL 0.9,
+  and enabled/disabled performance before choosing the production default.
+  [PENDING]
