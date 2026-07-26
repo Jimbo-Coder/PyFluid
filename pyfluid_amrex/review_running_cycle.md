@@ -3185,3 +3185,31 @@ I will always continue from the last cycle marked as `in_progress`.
   Call a discovery useful only if it is Pareto-improving in accuracy,
   robustness, cost, and compile impact rather than overfitting one plotted
   profile. No new numerical method is claimed in this planning cycle. [DONE]
+
+## Cycle 238 — Reconstruction-first unified-method priority (DONE)
+
+- Target one nonlinear reconstruction and one Riemann solver as the eventual
+  production pair. A single reconstruction may continuously limit its
+  polynomial toward PWL or PWC in the appropriate stencil limit; that
+  asymptotic behavior is part of one formula rather than a runtime method
+  ladder. Physics-aware pressure, compression, contact, velocity, and magnetic
+  information are admissible design inputs when their invariance and limiting
+  behavior are explicit. Retain a separately counted terminal safety repair
+  even if the discovered method makes it inactive in normal validation.
+  [DONE]
+- Prioritize reconstruction discovery for the present Balsara oscillations.
+  With the primary HLL path unchanged, changing reconstruction/candidate
+  selection moved N=1024 Balsara-4 overshoot from MP5/PWC `0.161` and old
+  PPM4/PWC `0.0488` to PPM4/PWC with the tighter selector `0.00452`. Changing
+  only the correction flux from HLL to LLF helps some methods
+  (`TENO5: 0.183 -> 0.0439`) but is not consistently dominant and usually adds
+  diffusion. This evidence identifies reconstruction/nonlinear limiting as the
+  higher-leverage ringing problem. [DONE]
+- Treat a new RMHD Riemann solver as the second discovery stage. A solver with
+  more complete contact and Alfven-wave resolution can reduce HLL diffusion
+  and improve wave-family accuracy after face states are well behaved, but it
+  cannot generally undo oscillatory states supplied by reconstruction.
+  Evaluate reconstruction candidates under a fixed robust HLL baseline first,
+  then evaluate Riemann candidates with the winning reconstruction, and
+  finally check their coupled matrix to avoid attributing gains to the wrong
+  operation. No new method is claimed in this decision cycle. [DONE]
