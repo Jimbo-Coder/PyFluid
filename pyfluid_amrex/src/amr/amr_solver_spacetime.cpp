@@ -175,6 +175,29 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       }
    }
    hierarchy.cell_interpolater = state_interpolater();
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      const BoundaryKind lower = side_boundary_kind(cfg_, direction, false);
+      const BoundaryKind upper = side_boundary_kind(cfg_, direction, true);
+      hierarchy.reflection_lo[direction] =
+         lower == BoundaryKind::Symmetry || lower == BoundaryKind::Reflecting;
+      hierarchy.reflection_hi[direction] =
+         upper == BoundaryKind::Symmetry || upper == BoundaryKind::Reflecting;
+   }
+   bool rotating_xy_reflection =
+      hierarchy.reflection_lo[0] != 0 || hierarchy.reflection_hi[0] != 0;
+#if (AMREX_SPACEDIM >= 2)
+   rotating_xy_reflection = rotating_xy_reflection
+      || hierarchy.reflection_lo[1] != 0
+      || hierarchy.reflection_hi[1] != 0;
+#endif
+   if (cfg_.ic == "rotating_star"
+       && cfg_.initial_data_angular_velocity != 0.0
+       && rotating_xy_reflection) {
+      amrex::Abort(
+         "a nonzero star rotating about z is not invariant under independent "
+         "x/y reflection boundaries; use full x/y and optional z symmetry"
+      );
+   }
 
    ConformalConstraintFormulation formulation =
       ConformalConstraintFormulation::ctt;

@@ -434,6 +434,182 @@ bool validate_nodal_poisson(
    return max_error < 5.0e-3;
 }
 
+bool validate_nodal_reflection_poisson(bool use_robin)
+{
+   constexpr int cells = 24;
+   const amrex::IntVect lo(AMREX_D_DECL(0, 0, 0));
+   const amrex::IntVect hi(AMREX_D_DECL(cells - 1, cells - 1, cells - 1));
+   const amrex::Box domain(lo, hi);
+   const amrex::RealBox physical_domain(
+      AMREX_D_DECL(0.0, 0.0, 0.0),
+      AMREX_D_DECL(1.0, 1.0, 1.0)
+   );
+   const amrex::Array<int, AMREX_SPACEDIM> periodic{AMREX_D_DECL(0, 0, 0)};
+
+   pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
+   hierarchy.geometry.emplace_back(
+      domain, physical_domain, amrex::CoordSys::cartesian, periodic
+   );
+   hierarchy.grids.emplace_back(domain);
+   hierarchy.grids[0].maxSize(12);
+   hierarchy.distribution.emplace_back(hierarchy.grids[0]);
+   hierarchy.reflection_lo.fill(1);
+
+   const amrex::BoxArray nodal_grids = amrex::convert(
+      hierarchy.grids[0], amrex::IntVect::TheNodeVector()
+   );
+   amrex::MultiFab solution(nodal_grids, hierarchy.distribution[0], 1, 1);
+   amrex::MultiFab rhs(nodal_grids, hierarchy.distribution[0], 1, 0);
+   solution.setVal(0.0);
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto dx = hierarchy.geometry[0].CellSizeArray();
+   for (amrex::MFIter mfi(rhs); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto values = rhs.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const amrex::Real x = problo[0] + i * dx[0];
+         amrex::Real exact = std::cos(
+            0.5 * pyfluid_amrex::constants::pi * x
+         );
+#if (AMREX_SPACEDIM >= 2)
+         const amrex::Real y = problo[1] + j * dx[1];
+         exact *= std::cos(0.5 * pyfluid_amrex::constants::pi * y);
+#endif
+#if (AMREX_SPACEDIM == 3)
+         const amrex::Real z = problo[2] + k * dx[2];
+         exact *= std::cos(0.5 * pyfluid_amrex::constants::pi * z);
+#endif
+         values(i, j, k, 0) = -AMREX_SPACEDIM
+            * 0.25 * pyfluid_amrex::constants::pi
+            * pyfluid_amrex::constants::pi * exact;
+      });
+   }
+
+   auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+      hierarchy,
+      1,
+      1.0,
+      0.0,
+      0.0,
+      pyfluid_amrex::InitialDataEllipticCentering::vertex
+   );
+   pyfluid_amrex::set_initial_data_reflection_boundaries(
+      hierarchy,
+      boundary,
+      {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
+   );
+   if (use_robin) {
+      pyfluid_amrex::set_centered_power_law_robin_boundary(
+         hierarchy, boundary, {0.0}, 1.0
+      );
+      const amrex::Box nodal_domain = amrex::surroundingNodes(domain);
+      for (amrex::MFIter mfi(boundary.coefficient_a(0)); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.fabbox();
+         const auto coefficient_a = boundary.coefficient_a(0).array(mfi);
+         const auto coefficient_b = boundary.coefficient_b(0).array(mfi);
+         const auto coefficient_c = boundary.coefficient_c(0).array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            int direction = -1;
+            if (i > nodal_domain.bigEnd(0)) {
+               direction = 0;
+            }
+#if (AMREX_SPACEDIM >= 2)
+            else if (j > nodal_domain.bigEnd(1)) {
+               direction = 1;
+            }
+#endif
+#if (AMREX_SPACEDIM == 3)
+            else if (k > nodal_domain.bigEnd(2)) {
+               direction = 2;
+            }
+#endif
+            if (direction >= 0) {
+               const amrex::Real x = direction == 0
+                  ? 1.0 : problo[0] + i * dx[0];
+               amrex::Real exact = std::cos(
+                  0.5 * pyfluid_amrex::constants::pi * x
+               );
+               amrex::Real derivative = direction == 0
+                  ? -0.5 * pyfluid_amrex::constants::pi
+                     * std::sin(0.5 * pyfluid_amrex::constants::pi * x)
+                  : exact;
+#if (AMREX_SPACEDIM >= 2)
+               const amrex::Real y = direction == 1
+                  ? 1.0 : problo[1] + j * dx[1];
+               const amrex::Real cosine_y = std::cos(
+                  0.5 * pyfluid_amrex::constants::pi * y
+               );
+               exact *= cosine_y;
+               derivative *= direction == 1
+                  ? -0.5 * pyfluid_amrex::constants::pi
+                     * std::sin(0.5 * pyfluid_amrex::constants::pi * y)
+                  : cosine_y;
+#endif
+#if (AMREX_SPACEDIM == 3)
+               const amrex::Real z = direction == 2
+                  ? 1.0 : problo[2] + k * dx[2];
+               const amrex::Real cosine_z = std::cos(
+                  0.5 * pyfluid_amrex::constants::pi * z
+               );
+               exact *= cosine_z;
+               derivative *= direction == 2
+                  ? -0.5 * pyfluid_amrex::constants::pi
+                     * std::sin(0.5 * pyfluid_amrex::constants::pi * z)
+                  : cosine_z;
+#endif
+               constexpr amrex::Real coefficient = 0.25;
+               coefficient_a(i, j, k, 0) = 1.0;
+               coefficient_b(i, j, k, 0) = coefficient;
+               coefficient_c(i, j, k, 0) =
+                  exact + coefficient * derivative;
+            }
+         });
+      }
+   }
+   amrex::Vector<amrex::MultiFab*> solution_levels{&solution};
+   amrex::Vector<amrex::MultiFab const*> rhs_levels{&rhs};
+   const pyfluid_amrex::InitialDataEllipticResult result =
+      pyfluid_amrex::solve_initial_data_poisson(
+         hierarchy, solution_levels, rhs_levels, boundary
+      );
+
+   amrex::MultiFab error(nodal_grids, hierarchy.distribution[0], 1, 0);
+   for (amrex::MFIter mfi(error); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto numerical = solution.const_array(mfi);
+      const auto difference = error.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const amrex::Real x = problo[0] + i * dx[0];
+         amrex::Real exact = std::cos(
+            0.5 * pyfluid_amrex::constants::pi * x
+         );
+#if (AMREX_SPACEDIM >= 2)
+         const amrex::Real y = problo[1] + j * dx[1];
+         exact *= std::cos(0.5 * pyfluid_amrex::constants::pi * y);
+#endif
+#if (AMREX_SPACEDIM == 3)
+         const amrex::Real z = problo[2] + k * dx[2];
+         exact *= std::cos(0.5 * pyfluid_amrex::constants::pi * z);
+#endif
+         difference(i, j, k, 0) = amrex::Math::abs(
+            numerical(i, j, k, 0) - exact
+         );
+      });
+   }
+   const amrex::Real max_error = error.norm0(0);
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "initial_data_nodal_poisson_reflection residual="
+                << result.residual
+                << " boundary=" << (use_robin ? "robin" : "dirichlet")
+                << " boundary_residual=" << result.boundary_residual
+                << " linf_error=" << max_error << '\n';
+   }
+   return max_error < 5.0e-3;
+}
+
 bool validate_tov_solution()
 {
    pyfluid_amrex::EOSParams eos;
@@ -1167,6 +1343,10 @@ int main(int argc, char* argv[])
           || !validate_nodal_poisson(nodal_hierarchy, true)) {
          return_code = 1;
       }
+      if (!validate_nodal_reflection_poisson(false)
+          || !validate_nodal_reflection_poisson(true)) {
+         return_code = 1;
+      }
 
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> solution_storage(2);
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> rhs_storage(2);
@@ -1418,6 +1598,9 @@ int main(int argc, char* argv[])
       }
 #if (AMREX_SPACEDIM == 3)
       constexpr amrex::Real momentum_amplitude = 0.01;
+      pyfluid_amrex::InitialDataEllipticHierarchy momentum_hierarchy =
+         hierarchy;
+      momentum_hierarchy.reflection_lo[0] = 1;
       for (const auto centering : std::array{
               pyfluid_amrex::InitialDataEllipticCentering::cell,
               pyfluid_amrex::InitialDataEllipticCentering::vertex,
@@ -1470,11 +1653,20 @@ int main(int argc, char* argv[])
          }
          auto momentum_boundary =
             pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
-               hierarchy, 3, 1.0, 0.0, 0.0, centering
+               momentum_hierarchy, 3, 1.0, 0.0, 0.0, centering
             );
+         pyfluid_amrex::set_initial_data_reflection_boundaries(
+            momentum_hierarchy,
+            momentum_boundary,
+            {
+               pyfluid_amrex::GridFieldSymmetryKind::Vector1,
+               pyfluid_amrex::GridFieldSymmetryKind::Vector2,
+               pyfluid_amrex::GridFieldSymmetryKind::Vector3,
+            }
+         );
          const pyfluid_amrex::InitialDataEllipticResult momentum_result =
             pyfluid_amrex::solve_initial_data_conformal_vector_laplacian(
-               hierarchy,
+               momentum_hierarchy,
                vector_potential,
                momentum_source,
                momentum_boundary

@@ -17,6 +17,7 @@ from plotfile_reader import (
    level_count,
    parse_plot_header,
    parse_plot_header_1d,
+   parse_plot_bounds,
    read_composite_state_1d,
    read_level_state,
 )
@@ -42,6 +43,44 @@ HISTORY = ROOT / "runs/current/validation_history.tsv"
 CHECKPOINT_COMPARE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_2d"
 CT_AMR_DIVB_TOLERANCE = 1.0e-12
 COMPONENT_RECONSTRUCTION_METHODS = ("pwc", "pwl", "wenoz", "mp5", "teno5")
+EXACT_BALSARA_ROOT = ROOT / "exact_balsara"
+EXACT_BALSARA_CASES = (
+   {
+      "case": 1,
+      "time": 0.4,
+      "gamma": 2.0,
+      "left": (1.0, 1.0, 0.0, 0.0, 0.0, 0.5, 1.0, 0.0),
+      "right": (0.125, 0.1, 0.0, 0.0, 0.0, 0.5, -1.0, 0.0),
+   },
+   {
+      "case": 2,
+      "time": 0.4,
+      "gamma": 5.0 / 3.0,
+      "left": (1.0, 30.0, 0.0, 0.0, 0.0, 5.0, 6.0, 6.0),
+      "right": (1.0, 1.0, 0.0, 0.0, 0.0, 5.0, 0.7, 0.7),
+   },
+   {
+      "case": 3,
+      "time": 0.4,
+      "gamma": 5.0 / 3.0,
+      "left": (1.0, 1000.0, 0.0, 0.0, 0.0, 10.0, 7.0, 7.0),
+      "right": (1.0, 0.1, 0.0, 0.0, 0.0, 10.0, 0.7, 0.7),
+   },
+   {
+      "case": 4,
+      "time": 0.4,
+      "gamma": 5.0 / 3.0,
+      "left": (1.0, 0.1, 0.999, 0.0, 0.0, 10.0, 7.0, 7.0),
+      "right": (1.0, 0.1, -0.999, 0.0, 0.0, 10.0, -7.0, -7.0),
+   },
+   {
+      "case": 5,
+      "time": 0.55,
+      "gamma": 5.0 / 3.0,
+      "left": (1.08, 0.95, 0.4, 0.3, 0.2, 2.0, 0.3, 0.3),
+      "right": (1.0, 1.0, -0.45, -0.2, 0.2, 2.0, -0.7, 0.5),
+   },
+)
 
 
 def run_case(
@@ -90,6 +129,18 @@ def run_case(
    if scalar["status"] != "PASS":
       raise RuntimeError(f"{name} scalar validation failed: {scalar['reason']}")
    return run_dir, scalar
+
+
+def relativistic_recovery_counts(run_dir: Path) -> tuple[int, int]:
+   match = re.search(
+      r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)",
+      (run_dir / "run.log").read_text(),
+   )
+   if match is None:
+      raise RuntimeError(
+         f"{repo_relative(run_dir)} did not report relativistic recovery counts"
+      )
+   return tuple(int(value) for value in match.groups())
 
 
 def validate_uniform(args: argparse.Namespace) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -146,14 +197,7 @@ def validate_component_reconstruction_methods(
          },
          args,
       )
-      log_text = (run_dir / "run.log").read_text()
-      match = re.search(
-         r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)",
-         log_text,
-      )
-      if match is None:
-         raise RuntimeError(f"{method} did not report relativistic recovery counts")
-      fallback_count, reset_count = (int(value) for value in match.groups())
+      fallback_count, reset_count = relativistic_recovery_counts(run_dir)
       if fallback_count != 0 or reset_count != 0:
          raise RuntimeError(
             f"{method} smooth wave required recovery repairs: "
@@ -233,6 +277,184 @@ def validate_shock(args: argparse.Namespace) -> tuple[dict[str, object], dict[st
       "value": normal_field_spread,
       "run_dir": repo_relative(run_dir),
    }, scalar
+
+
+def read_last_exact_balsara_profile(path: Path) -> np.ndarray:
+   """Read the final nonlinear iteration from Giacomazzo's solution.dat."""
+   blocks: list[list[list[float]]] = []
+   current: list[list[float]] = []
+   for line in path.read_text().splitlines():
+      if line.lstrip().startswith("#iteration"):
+         if current:
+            blocks.append(current)
+         current = []
+      elif line.strip() and not line.lstrip().startswith("#"):
+         current.append([float(value) for value in line.split()])
+   if current:
+      blocks.append(current)
+   if not blocks or any(len(row) != 8 for row in blocks[-1]):
+      raise RuntimeError(f"invalid exact RMHD profile: {repo_relative(path)}")
+   return np.asarray(blocks[-1], dtype=float)
+
+
+def exact_rmhd_conserved(
+   profile: np.ndarray,
+   *,
+   normal_magnetic: float,
+   gamma: float,
+) -> np.ndarray:
+   """Convert exact primitive RMHD output to PyFluid's flat Valencia state."""
+   rho = profile[:, 1]
+   total_pressure = profile[:, 2]
+   velocity = profile[:, 3:6]
+   magnetic = np.column_stack((
+      np.full(profile.shape[0], normal_magnetic),
+      profile[:, 6],
+      profile[:, 7],
+   ))
+   velocity_squared = np.sum(velocity * velocity, axis=1)
+   if np.any(velocity_squared >= 1.0):
+      raise RuntimeError("exact RMHD reference contains superluminal states")
+   lorentz = 1.0 / np.sqrt(1.0 - velocity_squared)
+   magnetic_squared = np.sum(magnetic * magnetic, axis=1)
+   magnetic_velocity = np.sum(magnetic * velocity, axis=1)
+   comoving_magnetic_squared = (
+      magnetic_squared / (lorentz * lorentz) + magnetic_velocity**2
+   )
+   pressure = total_pressure - 0.5 * comoving_magnetic_squared
+   if np.any(pressure <= 0.0):
+      raise RuntimeError("exact RMHD reference has nonpositive gas pressure")
+   enthalpy = 1.0 + gamma / (gamma - 1.0) * pressure / rho
+   z_value = rho * enthalpy * lorentz**2
+   dens = rho * lorentz
+   momentum = (
+      (z_value + magnetic_squared)[:, np.newaxis] * velocity
+      - magnetic_velocity[:, np.newaxis] * magnetic
+   )
+   tau = (
+      z_value
+      + magnetic_squared
+      - pressure
+      - 0.5 * comoving_magnetic_squared
+      - dens
+   )
+   return np.vstack((
+      dens,
+      momentum[:, 0],
+      momentum[:, 1],
+      momentum[:, 2],
+      tau,
+      magnetic[:, 0],
+      magnetic[:, 1],
+      magnetic[:, 2],
+   ))
+
+
+def validate_exact_balsara(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   results: list[dict[str, object]] = []
+   scalars: list[dict[str, object]] = []
+   component_names = ("dens", "mom1", "mom2", "mom3", "tau", "b1", "b2", "b3")
+   for spec in EXACT_BALSARA_CASES:
+      case = int(spec["case"])
+      left = spec["left"]
+      right = spec["right"]
+      overrides = {
+         "geometry.prob_lo": "-1.0",
+         "geometry.prob_hi": "1.0",
+         "amr.n_cell": "512",
+         "amr.max_grid_size": "128",
+         "pyfluid.gamma": repr(spec["gamma"]),
+         "pyfluid.final_time": repr(spec["time"]),
+         "pyfluid.max_step": "10000",
+         "pyfluid.ng": "3",
+         "pyfluid.cfl": "0.9",
+         "pyfluid.recon": "mp5",
+         "pyfluid.scalar_int": "64",
+         "pyfluid.plot_int": "1000000",
+      }
+      for side, state in (("left", left), ("right", right)):
+         for name, value in zip(
+            ("rho", "pressure", "v1", "v2", "v3", "b1", "b2", "b3"),
+            state,
+            strict=True,
+         ):
+            overrides[f"pyfluid.{name}_{side}"] = repr(value)
+      run_dir, scalar = run_case(
+         f"balsara{case}_exact",
+         INPUTS / "rmhd_balsara1_1d.in",
+         overrides,
+         args,
+      )
+      plotfile = latest_plotfile(run_dir, require=True)
+      names, output_time = parse_plot_header_1d(plotfile)
+      if not math.isclose(output_time, float(spec["time"]), rel_tol=0.0, abs_tol=1.0e-12):
+         raise RuntimeError(
+            f"Balsara {case} stopped at t={output_time}, expected {spec['time']}"
+         )
+      state = read_composite_state_1d(plotfile, names)
+      numerical = np.vstack([state[names.index(name)] for name in component_names])
+      exact_profile = read_last_exact_balsara_profile(
+         EXACT_BALSARA_ROOT / f"solution_b{case}.dat"
+      )
+      exact_state = exact_rmhd_conserved(
+         exact_profile,
+         normal_magnetic=float(left[5]),
+         gamma=float(spec["gamma"]),
+      )
+      prob_lo, prob_hi = parse_plot_bounds(plotfile)
+      centers = np.linspace(
+         prob_lo[0],
+         prob_hi[0],
+         numerical.shape[1],
+         endpoint=False,
+      ) + 0.5 * (prob_hi[0] - prob_lo[0]) / numerical.shape[1]
+      sampled_exact = np.vstack([
+         np.interp(centers, exact_profile[:, 0], exact_state[component])
+         for component in range(exact_state.shape[0])
+      ])
+      scales = np.maximum(
+         np.ptp(sampled_exact, axis=1),
+         np.max(np.abs(sampled_exact), axis=1),
+      )
+      scales = np.maximum(scales, 1.0e-14)
+      component_errors = np.mean(
+         np.abs(numerical - sampled_exact), axis=1
+      ) / scales
+      maximum_error = float(np.max(component_errors))
+      if maximum_error > 0.03:
+         details = ", ".join(
+            f"{name}={error:.3e}"
+            for name, error in zip(component_names, component_errors, strict=True)
+         )
+         raise RuntimeError(
+            f"Balsara {case} exact-profile error={maximum_error:.3e}: {details}"
+         )
+      normal_field_spread = float(np.ptp(numerical[component_names.index("b1")]))
+      if normal_field_spread > 1.0e-12:
+         raise RuntimeError(
+            f"Balsara {case} changed normal magnetic field: "
+            f"spread={normal_field_spread:.3e}"
+         )
+      fallback_count, reset_count = relativistic_recovery_counts(run_dir)
+      if fallback_count != 0 or reset_count > 4:
+         raise RuntimeError(
+            f"Balsara {case} required excessive recovery repairs: "
+            f"fallbacks={fallback_count} atmosphere_resets={reset_count}"
+         )
+      results.append({
+         "kind": "exact",
+         "case": f"balsara{case}_exact",
+         "status": "PASS",
+         "metric": "maximum_normalized_component_l1",
+         "value": maximum_error,
+         "c2p_fallbacks": fallback_count,
+         "atmosphere_resets": reset_count,
+         "run_dir": repo_relative(run_dir),
+      })
+      scalars.append(scalar)
+   return results, scalars
 
 
 def validate_shock_ct_reference(
@@ -575,6 +797,9 @@ def main() -> int:
       shock, scalar = validate_shock(args)
       rows.append(shock)
       scalar_rows.append(scalar)
+      exact, scalars = validate_exact_balsara(args)
+      rows.extend(exact)
+      scalar_rows.extend(scalars)
       ct_reference, scalars = validate_shock_ct_reference(args)
       rows.append(ct_reference)
       scalar_rows.extend(scalars)
@@ -592,7 +817,18 @@ def main() -> int:
    write_tsv(
       RESULTS,
       rows,
-      ["kind", "case", "status", "metric", "value", "order", "levels", "run_dir"],
+      [
+         "kind",
+         "case",
+         "status",
+         "metric",
+         "value",
+         "order",
+         "levels",
+         "c2p_fallbacks",
+         "atmosphere_resets",
+         "run_dir",
+      ],
    )
    append_validation_history(HISTORY, scalar_rows)
    for row in rows:

@@ -2269,19 +2269,19 @@
           "centering": "Cell",
           "label": "B_{1}",
           "name": "b1",
-          "symmetry": "Vector1"
+          "symmetry": "AxialVector1"
         },
         {
           "centering": "Cell",
           "label": "B_{2}",
           "name": "b2",
-          "symmetry": "Vector2"
+          "symmetry": "AxialVector2"
         },
         {
           "centering": "Cell",
           "label": "B_{3}",
           "name": "b3",
-          "symmetry": "Vector3"
+          "symmetry": "AxialVector3"
         }
       ],
       "diagnostic_kind": "StoredState",
@@ -2298,19 +2298,19 @@
           "centering": "Face1",
           "label": "B_{1}",
           "name": "face_b1",
-          "symmetry": "Vector1"
+          "symmetry": "AxialVector1"
         },
         {
           "centering": "Face2",
           "label": "B_{2}",
           "name": "face_b2",
-          "symmetry": "Vector2"
+          "symmetry": "AxialVector2"
         },
         {
           "centering": "Face3",
           "label": "B_{3}",
           "name": "face_b3",
-          "symmetry": "Vector3"
+          "symmetry": "AxialVector3"
         }
       ],
       "diagnostic_kind": "StoredState",
@@ -2407,19 +2407,19 @@
           "centering": "Cell",
           "label": "B_{1}",
           "name": "b1",
-          "symmetry": "Vector1"
+          "symmetry": "AxialVector1"
         },
         {
           "centering": "Cell",
           "label": "B_{2}",
           "name": "b2",
-          "symmetry": "Vector2"
+          "symmetry": "AxialVector2"
         },
         {
           "centering": "Cell",
           "label": "B_{3}",
           "name": "b3",
-          "symmetry": "Vector3"
+          "symmetry": "AxialVector3"
         }
       ],
       "diagnostic_kind": "StoredState",

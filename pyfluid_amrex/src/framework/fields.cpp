@@ -14,6 +14,38 @@ namespace pyfluid_amrex {
 using GFC = GridFieldCentering;
 using Sym = GridFieldSymmetryKind;
 
+int grid_field_reflection_parity(
+   GridFieldSymmetryKind symmetry,
+   int direction
+)
+{
+   if (direction < 0 || direction >= 3) {
+      amrex::Abort("invalid Cartesian reflection direction");
+   }
+   switch (symmetry) {
+   case Sym::Vector1:
+      return direction == 0 ? -1 : 1;
+   case Sym::Vector2:
+      return direction == 1 ? -1 : 1;
+   case Sym::Vector3:
+      return direction == 2 ? -1 : 1;
+   case Sym::AxialVector1:
+      return direction == 0 ? 1 : -1;
+   case Sym::AxialVector2:
+      return direction == 1 ? 1 : -1;
+   case Sym::AxialVector3:
+      return direction == 2 ? 1 : -1;
+   case Sym::Tensor12:
+      return direction == 0 || direction == 1 ? -1 : 1;
+   case Sym::Tensor13:
+      return direction == 0 || direction == 2 ? -1 : 1;
+   case Sym::Tensor23:
+      return direction == 1 || direction == 2 ? -1 : 1;
+   default:
+      return 1;
+   }
+}
+
 AuxGridField aux_grid_field_from_name(std::string const& name)
 {
    for (AuxGridFieldInfo const& info : generated::auxiliary_grid_fields()) {
@@ -191,11 +223,14 @@ int state_grid_field_origin_parity(
 {
    const StateGridFieldInfo info = state_grid_field_info(system, passive_scalars, component);
    int vector_component = -1;
-   if (info.symmetry == Sym::Vector1) {
+   if (info.symmetry == Sym::Vector1
+       || info.symmetry == Sym::AxialVector1) {
       vector_component = 0;
-   } else if (info.symmetry == Sym::Vector2) {
+   } else if (info.symmetry == Sym::Vector2
+              || info.symmetry == Sym::AxialVector2) {
       vector_component = 1;
-   } else if (info.symmetry == Sym::Vector3) {
+   } else if (info.symmetry == Sym::Vector3
+              || info.symmetry == Sym::AxialVector3) {
       vector_component = 2;
    } else {
       return 1;

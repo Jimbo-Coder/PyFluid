@@ -392,6 +392,7 @@ protected:
       int lev_end
    );
    void refresh_stored_spacetime_fluid_boundary(int lev, amrex::Real time);
+   bool uses_analytic_fixed_spacetime_kernels() const noexcept;
    void fill_spacetime_matter_range(int lev_begin, int lev_end);
    void add_spacetime_ko_dissipation(amrex::MultiFab const& state, int lev);
    template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
@@ -592,6 +593,7 @@ protected:
    int diffusion_method_ = DiffusionNone;
    int eos_method_ = EOSIdealGas;
    ProfileCounters profile_;
+   bool analytic_fixed_spacetime_kernels_ = false;
    bool moving_wall_work_enabled_ = false;
    bool suppress_athena_gravity_energy_source_ = false;
    BoundaryData boundary_data_{};

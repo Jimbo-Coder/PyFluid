@@ -1,6 +1,7 @@
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 
 #include <AMReX.H>
+#include <AMReX_BCUtil.H>
 #include <AMReX_GMRES.H>
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_FillPatchUtil.H>
@@ -29,11 +30,6 @@ using InitialDataPhysicalBoundary = amrex::PhysBCFunct<InitialDataBoundaryFuncti
 
 using BoundaryTypeArray = amrex::Array<amrex::LinOpBCType, AMREX_SPACEDIM>;
 
-enum class BoundaryRepresentation {
-   dirichlet,
-   robin,
-};
-
 amrex::BoxArray elliptic_box_array(
    InitialDataEllipticHierarchy const& hierarchy,
    int level,
@@ -49,25 +45,30 @@ amrex::BoxArray elliptic_box_array(
 }
 
 struct LoweredBoundaryConditions {
-   BoundaryRepresentation representation = BoundaryRepresentation::robin;
-   BoundaryTypeArray domain_types;
+   bool has_robin = false;
+   amrex::Vector<BoundaryTypeArray> lower_types;
+   amrex::Vector<BoundaryTypeArray> upper_types;
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> level_data;
 };
 
-BoundaryTypeArray domain_boundary_types(
-   amrex::Geometry const& geometry,
-   BoundaryRepresentation representation
+amrex::LinOpBCType linop_boundary_type(
+   InitialDataEllipticBoundaryType type,
+   bool robin_as_dirichlet = false
 )
 {
-   BoundaryTypeArray types;
-   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-      types[direction] = geometry.isPeriodic(direction)
-         ? amrex::LinOpBCType::Periodic
-         : representation == BoundaryRepresentation::dirichlet
-            ? amrex::LinOpBCType::Dirichlet
-            : amrex::LinOpBCType::Robin;
+   switch (type) {
+   case InitialDataEllipticBoundaryType::periodic:
+      return amrex::LinOpBCType::Periodic;
+   case InitialDataEllipticBoundaryType::dirichlet:
+      return amrex::LinOpBCType::Dirichlet;
+   case InitialDataEllipticBoundaryType::neumann:
+      return amrex::LinOpBCType::Neumann;
+   case InitialDataEllipticBoundaryType::robin:
+      return robin_as_dirichlet
+         ? amrex::LinOpBCType::Dirichlet
+         : amrex::LinOpBCType::Robin;
    }
-   return types;
+   return amrex::LinOpBCType::Dirichlet;
 }
 
 int validate_elliptic_solve(
@@ -202,18 +203,75 @@ amrex::Vector<std::unique_ptr<amrex::MultiFab>> coordinate_to_normal_b(
    return normal_b;
 }
 
-bool has_zero_derivative_coefficient(
+bool has_stored_robin_boundary(
    InitialDataEllipticBoundaryConditions const& boundary
 )
 {
-   for (int level = 0; level < boundary.num_levels(); ++level) {
-      for (int component = 0; component < boundary.num_components; ++component) {
-         if (boundary.coefficient_b(level).norm0(component, 1, false) != 0.0) {
+   for (int component = 0; component < boundary.num_components; ++component) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         if (boundary.lower_type(component, direction)
+                == InitialDataEllipticBoundaryType::robin
+             || boundary.upper_type(component, direction)
+                == InitialDataEllipticBoundaryType::robin) {
+            return true;
+         }
+      }
+   }
+   return false;
+}
+
+bool has_legacy_coefficient_robin_boundary(
+   InitialDataEllipticBoundaryConditions const& boundary
+)
+{
+   if (has_stored_robin_boundary(boundary)) {
+      return false;
+   }
+   for (int component = 0; component < boundary.num_components; ++component) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         if (boundary.lower_reflection_parity(component, direction) != 0
+             || boundary.upper_reflection_parity(component, direction) != 0) {
             return false;
          }
       }
    }
-   return true;
+   for (int level = 0; level < boundary.num_levels(); ++level) {
+      for (int component = 0; component < boundary.num_components; ++component) {
+         if (boundary.coefficient_b(level).norm0(component, 1, false) != 0.0) {
+            return true;
+         }
+      }
+   }
+   return false;
+}
+
+InitialDataEllipticBoundaryType resolved_boundary_type(
+   InitialDataEllipticBoundaryConditions const& boundary,
+   int component,
+   int direction,
+   bool upper
+)
+{
+   const auto stored = upper
+      ? boundary.upper_type(component, direction)
+      : boundary.lower_type(component, direction);
+   const int reflection = upper
+      ? boundary.upper_reflection_parity(component, direction)
+      : boundary.lower_reflection_parity(component, direction);
+   if (reflection == 0
+       && stored == InitialDataEllipticBoundaryType::dirichlet
+       && has_legacy_coefficient_robin_boundary(boundary)) {
+      return InitialDataEllipticBoundaryType::robin;
+   }
+   return stored;
+}
+
+bool has_robin_boundary(
+   InitialDataEllipticBoundaryConditions const& boundary
+)
+{
+   return has_stored_robin_boundary(boundary)
+      || has_legacy_coefficient_robin_boundary(boundary);
 }
 
 amrex::Vector<std::unique_ptr<amrex::MultiFab>> dirichlet_values(
@@ -233,32 +291,61 @@ amrex::Vector<std::unique_ptr<amrex::MultiFab>> dirichlet_values(
       values[level]->setVal(0.0);
       const amrex::Dim3 domain_lo = amrex::lbound(hierarchy.geometry[level].Domain());
       const amrex::Dim3 domain_hi = amrex::ubound(hierarchy.geometry[level].Domain());
-      for (amrex::MFIter mfi(*values[level]); mfi.isValid(); ++mfi) {
-         const amrex::Box box = mfi.fabbox();
-         const auto coefficient_a = boundary.coefficient_a(level).const_array(mfi);
-         const auto coefficient_c = boundary.coefficient_c(level).const_array(mfi);
-         const auto value = values[level]->array(mfi);
-         const int num_components = boundary.num_components;
-         amrex::ParallelFor(
-            box,
-            num_components,
-            [=] AMREX_GPU_DEVICE(int i, int j, int k, int component) noexcept {
-               const bool outside_domain = i < domain_lo.x || i > domain_hi.x
+      const auto periodic = hierarchy.geometry[level].isPeriodicArray();
+      for (int component = 0;
+           component < boundary.num_components;
+           ++component) {
+         amrex::GpuArray<int, AMREX_SPACEDIM> lower_dirichlet{};
+         amrex::GpuArray<int, AMREX_SPACEDIM> upper_dirichlet{};
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            lower_dirichlet[direction] =
+               resolved_boundary_type(boundary, component, direction, false)
+               == InitialDataEllipticBoundaryType::dirichlet;
+            upper_dirichlet[direction] =
+               resolved_boundary_type(boundary, component, direction, true)
+               == InitialDataEllipticBoundaryType::dirichlet;
+         }
+         for (amrex::MFIter mfi(*values[level]); mfi.isValid(); ++mfi) {
+            const amrex::Box box = mfi.fabbox();
+            const auto coefficient_a =
+               boundary.coefficient_a(level).const_array(mfi);
+            const auto coefficient_c =
+               boundary.coefficient_c(level).const_array(mfi);
+            const auto value = values[level]->array(mfi);
+            amrex::ParallelFor(
+               box,
+               [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  bool dirichlet_face = false;
+                  if (!periodic[0] && i < domain_lo.x) {
+                     dirichlet_face = lower_dirichlet[0] != 0;
+                  } else if (!periodic[0] && i > domain_hi.x) {
+                     dirichlet_face = upper_dirichlet[0] != 0;
+                  }
 #if (AMREX_SPACEDIM >= 2)
-                  || j < domain_lo.y || j > domain_hi.y
+                  else if (!periodic[1] && j < domain_lo.y) {
+                     dirichlet_face = lower_dirichlet[1] != 0;
+                  } else if (!periodic[1] && j > domain_hi.y) {
+                     dirichlet_face = upper_dirichlet[1] != 0;
+                  }
 #endif
 #if (AMREX_SPACEDIM == 3)
-                  || k < domain_lo.z || k > domain_hi.z
+                  else if (!periodic[2] && k < domain_lo.z) {
+                     dirichlet_face = lower_dirichlet[2] != 0;
+                  } else if (!periodic[2] && k > domain_hi.z) {
+                     dirichlet_face = upper_dirichlet[2] != 0;
+                  }
 #endif
-                  ;
-               if (outside_domain) {
-                  const amrex::Real a = coefficient_a(i, j, k, component);
-                  value(i, j, k, component) = a != 0.0
-                     ? coefficient_c(i, j, k, component) / a
-                     : std::numeric_limits<amrex::Real>::quiet_NaN();
+                  if (dirichlet_face) {
+                     const amrex::Real a = coefficient_a(
+                        i, j, k, component
+                     );
+                     value(i, j, k, component) = a != 0.0
+                        ? coefficient_c(i, j, k, component) / a
+                        : std::numeric_limits<amrex::Real>::quiet_NaN();
+                  }
                }
-            }
-         );
+            );
+         }
       }
       if (values[level]->contains_nan(0, boundary.num_components, 1)) {
          amrex::Abort("Dirichlet coefficients require nonzero A on physical boundaries");
@@ -273,13 +360,20 @@ LoweredBoundaryConditions lower_boundary_conditions(
 )
 {
    LoweredBoundaryConditions lowered;
-   lowered.representation = has_zero_derivative_coefficient(boundary)
-      ? BoundaryRepresentation::dirichlet
-      : BoundaryRepresentation::robin;
-   lowered.domain_types = domain_boundary_types(
-      hierarchy.geometry[0], lowered.representation
-   );
-   lowered.level_data = lowered.representation == BoundaryRepresentation::dirichlet
+   lowered.has_robin = has_robin_boundary(boundary);
+   lowered.lower_types.resize(boundary.num_components);
+   lowered.upper_types.resize(boundary.num_components);
+   for (int component = 0; component < boundary.num_components; ++component) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         lowered.lower_types[component][direction] = linop_boundary_type(
+            resolved_boundary_type(boundary, component, direction, false)
+         );
+         lowered.upper_types[component][direction] = linop_boundary_type(
+            resolved_boundary_type(boundary, component, direction, true)
+         );
+      }
+   }
+   lowered.level_data = !lowered.has_robin
       ? dirichlet_values(hierarchy, boundary)
       : coordinate_to_normal_b(hierarchy, boundary);
    return lowered;
@@ -292,9 +386,9 @@ void set_boundary_conditions(
    LoweredBoundaryConditions const& lowered
 )
 {
-   linear_operator.setDomainBC(lowered.domain_types, lowered.domain_types);
+   linear_operator.setDomainBC(lowered.lower_types, lowered.upper_types);
    for (int level = 0; level < boundary.num_levels(); ++level) {
-      if (lowered.representation == BoundaryRepresentation::dirichlet) {
+      if (!lowered.has_robin) {
          linear_operator.setLevelBC(level, lowered.level_data[level].get());
       } else {
          linear_operator.setLevelBC(
@@ -348,17 +442,37 @@ InitialDataEllipticResult elliptic_result(amrex::Real residual)
 
 amrex::Vector<amrex::BCRec> nodal_solution_boundary_records(
    InitialDataEllipticHierarchy const& hierarchy,
-   int num_components
+   InitialDataEllipticBoundaryConditions const& boundary
 )
 {
-   amrex::Vector<amrex::BCRec> records(num_components);
-   for (amrex::BCRec& record : records) {
+   amrex::Vector<amrex::BCRec> records(boundary.num_components);
+   for (int component = 0; component < boundary.num_components; ++component) {
       for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-         const int type = hierarchy.geometry[0].isPeriodic(direction)
-            ? amrex::BCType::int_dir
-            : amrex::BCType::foextrap;
-         record.setLo(direction, type);
-         record.setHi(direction, type);
+         auto record_type = [](InitialDataEllipticBoundaryType type) {
+            if (type == InitialDataEllipticBoundaryType::periodic) {
+               return amrex::BCType::int_dir;
+            }
+            if (type == InitialDataEllipticBoundaryType::neumann) {
+               return amrex::BCType::reflect_even;
+            }
+            return amrex::BCType::foextrap;
+         };
+         const int lower_parity =
+            boundary.lower_reflection_parity(component, direction);
+         const int upper_parity =
+            boundary.upper_reflection_parity(component, direction);
+         records[component].setLo(
+            direction,
+            lower_parity < 0 ? amrex::BCType::reflect_odd
+            : lower_parity > 0 ? amrex::BCType::reflect_even
+                               : record_type(boundary.lower_type(component, direction))
+         );
+         records[component].setHi(
+            direction,
+            upper_parity < 0 ? amrex::BCType::reflect_odd
+            : upper_parity > 0 ? amrex::BCType::reflect_even
+                               : record_type(boundary.upper_type(component, direction))
+         );
       }
    }
    return records;
@@ -366,7 +480,8 @@ amrex::Vector<amrex::BCRec> nodal_solution_boundary_records(
 
 void synchronize_nodal_solution(
    InitialDataEllipticHierarchy const& hierarchy,
-   amrex::Vector<amrex::MultiFab*> const& solution
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   InitialDataEllipticBoundaryConditions const& boundary
 )
 {
    if (solution.front()->nGrow() == 0) {
@@ -375,7 +490,7 @@ void synchronize_nodal_solution(
    detail::fill_initial_data_vertex_ghosts(
       hierarchy,
       solution,
-      nodal_solution_boundary_records(hierarchy, solution.front()->nComp())
+      nodal_solution_boundary_records(hierarchy, boundary)
    );
 }
 
@@ -391,6 +506,22 @@ void set_nodal_dirichlet_values(
       );
       const auto periodic = hierarchy.geometry[level].isPeriodicArray();
       const int num_components = boundary.num_components;
+      amrex::GpuArray<int, AMREX_SPACEDIM> lower_fixed{};
+      amrex::GpuArray<int, AMREX_SPACEDIM> upper_fixed{};
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         const auto upper = resolved_boundary_type(
+            boundary, 0, direction, true
+         );
+         const auto resolved_lower = resolved_boundary_type(
+            boundary, 0, direction, false
+         );
+         lower_fixed[direction] =
+            resolved_lower == InitialDataEllipticBoundaryType::dirichlet
+            || resolved_lower == InitialDataEllipticBoundaryType::robin;
+         upper_fixed[direction] =
+            upper == InitialDataEllipticBoundaryType::dirichlet
+            || upper == InitialDataEllipticBoundaryType::robin;
+      }
       for (amrex::MFIter mfi(*solution[level], amrex::TilingIfNotGPU());
            mfi.isValid(); ++mfi) {
          const amrex::Box box = mfi.tilebox();
@@ -402,40 +533,54 @@ void set_nodal_dirichlet_values(
             num_components,
             [=] AMREX_GPU_DEVICE(int i, int j, int k, int component) noexcept {
                const bool physical_boundary =
-                  (!periodic[0]
-                   && (i == nodal_domain.smallEnd(0)
-                       || i == nodal_domain.bigEnd(0)))
+                  (!periodic[0] && lower_fixed[0] != 0
+                   && i == nodal_domain.smallEnd(0))
+                  || (!periodic[0] && upper_fixed[0] != 0
+                      && i == nodal_domain.bigEnd(0))
+                  ||
+                  (
 #if (AMREX_SPACEDIM >= 2)
-                  || (!periodic[1]
-                      && (j == nodal_domain.smallEnd(1)
-                          || j == nodal_domain.bigEnd(1)))
+                   (!periodic[1] && lower_fixed[1] != 0
+                    && j == nodal_domain.smallEnd(1))
+                   || (!periodic[1] && upper_fixed[1] != 0
+                       && j == nodal_domain.bigEnd(1))
+#else
+                   false
 #endif
+                  )
 #if (AMREX_SPACEDIM == 3)
-                  || (!periodic[2]
-                      && (k == nodal_domain.smallEnd(2)
-                          || k == nodal_domain.bigEnd(2)))
+                  || (!periodic[2] && lower_fixed[2] != 0
+                      && k == nodal_domain.smallEnd(2))
+                  || (!periodic[2] && upper_fixed[2] != 0
+                      && k == nodal_domain.bigEnd(2))
 #endif
                   ;
                if (physical_boundary) {
                   int boundary_i = i;
                   int boundary_j = j;
                   int boundary_k = k;
-                  if (!periodic[0] && i == nodal_domain.smallEnd(0)) {
+                  if (!periodic[0] && lower_fixed[0] != 0
+                      && i == nodal_domain.smallEnd(0)) {
                      --boundary_i;
-                  } else if (!periodic[0] && i == nodal_domain.bigEnd(0)) {
+                  } else if (!periodic[0] && upper_fixed[0] != 0
+                             && i == nodal_domain.bigEnd(0)) {
                      ++boundary_i;
                   }
 #if (AMREX_SPACEDIM >= 2)
-                  else if (!periodic[1] && j == nodal_domain.smallEnd(1)) {
+                  else if (!periodic[1] && lower_fixed[1] != 0
+                           && j == nodal_domain.smallEnd(1)) {
                      --boundary_j;
-                  } else if (!periodic[1] && j == nodal_domain.bigEnd(1)) {
+                  } else if (!periodic[1] && upper_fixed[1] != 0
+                             && j == nodal_domain.bigEnd(1)) {
                      ++boundary_j;
                   }
 #endif
 #if (AMREX_SPACEDIM == 3)
-                  else if (!periodic[2] && k == nodal_domain.smallEnd(2)) {
+                  else if (!periodic[2] && lower_fixed[2] != 0
+                           && k == nodal_domain.smallEnd(2)) {
                      --boundary_k;
-                  } else if (!periodic[2] && k == nodal_domain.bigEnd(2)) {
+                  } else if (!periodic[2] && upper_fixed[2] != 0
+                             && k == nodal_domain.bigEnd(2)) {
                      ++boundary_k;
                   }
 #endif
@@ -476,6 +621,18 @@ amrex::Real compute_nodal_robin_residual(
       );
       const auto periodic = hierarchy.geometry[level].isPeriodicArray();
       const auto dx = hierarchy.geometry[level].CellSizeArray();
+      amrex::GpuArray<int, AMREX_SPACEDIM> lower_robin{};
+      amrex::GpuArray<int, AMREX_SPACEDIM> upper_robin{};
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         lower_robin[direction] = resolved_boundary_type(
+            boundary, 0, direction, false
+         )
+            == InitialDataEllipticBoundaryType::robin;
+         upper_robin[direction] = resolved_boundary_type(
+            boundary, 0, direction, true
+         )
+            == InitialDataEllipticBoundaryType::robin;
+      }
       for (amrex::MFIter mfi(*residual[level], amrex::TilingIfNotGPU());
            mfi.isValid(); ++mfi) {
          const amrex::Box box = mfi.tilebox();
@@ -540,25 +697,31 @@ amrex::Real compute_nodal_robin_residual(
                ++candidate_count;
             };
 
-            if (!periodic[0] && i == nodal_domain.smallEnd(0)) {
+            if (!periodic[0] && lower_robin[0] != 0
+                && i == nodal_domain.smallEnd(0)) {
                add_face(i - 1, j, k, 0, 1);
             }
-            if (!periodic[0] && i == nodal_domain.bigEnd(0)) {
+            if (!periodic[0] && upper_robin[0] != 0
+                && i == nodal_domain.bigEnd(0)) {
                add_face(i + 1, j, k, 0, -1);
             }
 #if (AMREX_SPACEDIM >= 2)
-            if (!periodic[1] && j == nodal_domain.smallEnd(1)) {
+            if (!periodic[1] && lower_robin[1] != 0
+                && j == nodal_domain.smallEnd(1)) {
                add_face(i, j - 1, k, 1, 1);
             }
-            if (!periodic[1] && j == nodal_domain.bigEnd(1)) {
+            if (!periodic[1] && upper_robin[1] != 0
+                && j == nodal_domain.bigEnd(1)) {
                add_face(i, j + 1, k, 1, -1);
             }
 #endif
 #if (AMREX_SPACEDIM == 3)
-            if (!periodic[2] && k == nodal_domain.smallEnd(2)) {
+            if (!periodic[2] && lower_robin[2] != 0
+                && k == nodal_domain.smallEnd(2)) {
                add_face(i, j, k - 1, 2, 1);
             }
-            if (!periodic[2] && k == nodal_domain.bigEnd(2)) {
+            if (!periodic[2] && upper_robin[2] != 0
+                && k == nodal_domain.bigEnd(2)) {
                add_face(i, j, k + 1, 2, -1);
             }
 #endif
@@ -782,7 +945,17 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
 )
 {
    amrex::LPInfo info;
-   if (has_zero_derivative_coefficient(boundary)) {
+   BoundaryTypeArray base_lower;
+   BoundaryTypeArray base_upper;
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      base_lower[direction] = linop_boundary_type(
+         resolved_boundary_type(boundary, 0, direction, false), true
+      );
+      base_upper[direction] = linop_boundary_type(
+         resolved_boundary_type(boundary, 0, direction, true), true
+      );
+   }
+   if (!has_robin_boundary(boundary)) {
       set_nodal_dirichlet_values(hierarchy, solution, boundary);
       amrex::MLNodeLaplacian poisson(
          hierarchy.geometry,
@@ -792,10 +965,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
          {},
          1.0
       );
-      const BoundaryTypeArray domain_types = domain_boundary_types(
-         hierarchy.geometry[0], BoundaryRepresentation::dirichlet
-      );
-      poisson.setDomainBC(domain_types, domain_types);
+      poisson.setDomainBC(base_lower, base_upper);
 
       amrex::MLMG mlmg(poisson);
       configure_mlmg(mlmg, options);
@@ -805,7 +975,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
          options.relative_tolerance,
          options.absolute_tolerance
       );
-      synchronize_nodal_solution(hierarchy, solution);
+      synchronize_nodal_solution(hierarchy, solution, boundary);
       return elliptic_result(residual);
    }
 
@@ -817,10 +987,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
       {},
       1.0
    );
-   const BoundaryTypeArray domain_types = domain_boundary_types(
-      hierarchy.geometry[0], BoundaryRepresentation::dirichlet
-   );
-   poisson.setDomainBC(domain_types, domain_types);
+   poisson.setDomainBC(base_lower, base_upper);
 
    amrex::MLMG mlmg(poisson);
    configure_mlmg(mlmg, options);
@@ -850,7 +1017,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
       options.relative_tolerance * solution_scale
    );
    if (initial_boundary_residual <= boundary_tolerance) {
-      synchronize_nodal_solution(hierarchy, solution);
+      synchronize_nodal_solution(hierarchy, solution, boundary);
       return {residual, initial_boundary_residual, 0};
    }
 
@@ -898,7 +1065,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
                      << schur_residual << '\n';
       amrex::Abort("nodal Robin boundary solve failed its residual check");
    }
-   synchronize_nodal_solution(hierarchy, solution);
+   synchronize_nodal_solution(hierarchy, solution, boundary);
    return {residual, final_boundary_residual, gmres.getNumIters()};
 }
 
@@ -955,16 +1122,8 @@ InitialDataEllipticResult solve_initial_data_nodal_conformal_vector_laplacian(
       scalar_rhs[level] = scalar_rhs_storage[level].get();
    }
 
-   amrex::Vector<amrex::BCRec> boundary_records(3);
-   for (amrex::BCRec& record : boundary_records) {
-      for (int direction = 0; direction < 3; ++direction) {
-         const int type = hierarchy.geometry[0].isPeriodic(direction)
-            ? amrex::BCType::int_dir
-            : amrex::BCType::foextrap;
-         record.setLo(direction, type);
-         record.setHi(direction, type);
-      }
-   }
+   const amrex::Vector<amrex::BCRec> boundary_records =
+      nodal_solution_boundary_records(hierarchy, boundary);
 
    InitialDataEllipticResult result;
    constexpr amrex::Real conformal_vector_relaxation = 0.5;
@@ -1138,6 +1297,46 @@ InitialDataEllipticResult solve_initial_data_nodal_conformal_vector_laplacian(
 
 } // namespace
 
+amrex::Vector<amrex::BCRec> initial_data_boundary_records(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<GridFieldSymmetryKind> const& component_symmetries,
+   int nonsymmetry_type
+)
+{
+   if (component_symmetries.empty()) {
+      amrex::Abort("initial-data boundary records require components");
+   }
+   amrex::Vector<amrex::BCRec> records(component_symmetries.size());
+   for (int component = 0;
+        component < static_cast<int>(component_symmetries.size());
+        ++component) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         const int parity = grid_field_reflection_parity(
+            component_symmetries[component], direction
+         );
+         const int reflection_type = parity < 0
+            ? amrex::BCType::reflect_odd
+            : amrex::BCType::reflect_even;
+         const int periodic_type = hierarchy.geometry[0].isPeriodic(direction)
+            ? amrex::BCType::int_dir
+            : nonsymmetry_type;
+         records[component].setLo(
+            direction,
+            hierarchy.reflection_lo[direction] != 0
+               ? reflection_type
+               : periodic_type
+         );
+         records[component].setHi(
+            direction,
+            hierarchy.reflection_hi[direction] != 0
+               ? reflection_type
+               : periodic_type
+         );
+      }
+   }
+   return records;
+}
+
 void fill_initial_data_ghosts(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& fields,
@@ -1167,6 +1366,22 @@ void fill_initial_data_ghosts(
        || static_cast<int>(boundary_conditions.size()) != num_components) {
       amrex::Abort("invalid initial-data boundary component layout");
    }
+   amrex::Vector<amrex::BCRec> reflection_boundaries = boundary_conditions;
+   bool has_reflection = false;
+   for (amrex::BCRec& record : reflection_boundaries) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         if (hierarchy.reflection_lo[direction] == 0) {
+            record.setLo(direction, amrex::BCType::int_dir);
+         } else {
+            has_reflection = true;
+         }
+         if (hierarchy.reflection_hi[direction] == 0) {
+            record.setHi(direction, amrex::BCType::int_dir);
+         } else {
+            has_reflection = true;
+         }
+      }
+   }
 
    InitialDataBoundaryFunction boundary_function(amrex::FabFillNoOp{});
    for (int level = 0; level < num_levels; ++level) {
@@ -1195,6 +1410,11 @@ void fill_initial_data_ghosts(
             fine_boundary,
             0
          );
+         if (has_reflection) {
+            amrex::FillDomainBoundary(
+               *fields[level], hierarchy.geometry[level], reflection_boundaries
+            );
+         }
          continue;
       }
 
@@ -1225,6 +1445,11 @@ void fill_initial_data_ghosts(
          boundary_conditions,
          0
       );
+      if (has_reflection) {
+            amrex::FillDomainBoundary(
+               *fields[level], hierarchy.geometry[level], reflection_boundaries
+            );
+      }
    }
 }
 
@@ -1252,6 +1477,23 @@ InitialDataEllipticBoundaryConditions InitialDataEllipticBoundaryConditions::con
    boundary.coefficient_a_.resize(num_levels);
    boundary.coefficient_b_.resize(num_levels);
    boundary.coefficient_c_.resize(num_levels);
+   const int side_entries = num_components * AMREX_SPACEDIM;
+   boundary.lower_types_.resize(side_entries);
+   boundary.upper_types_.resize(side_entries);
+   boundary.lower_reflection_parity_.assign(side_entries, 0);
+   boundary.upper_reflection_parity_.assign(side_entries, 0);
+   for (int component = 0; component < num_components; ++component) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         const auto type = hierarchy.geometry[0].isPeriodic(direction)
+            ? InitialDataEllipticBoundaryType::periodic
+            : coefficient_b == 0.0
+               ? InitialDataEllipticBoundaryType::dirichlet
+               : InitialDataEllipticBoundaryType::robin;
+         const int side = component * AMREX_SPACEDIM + direction;
+         boundary.lower_types_[side] = type;
+         boundary.upper_types_[side] = type;
+      }
+   }
    for (int level = 0; level < num_levels; ++level) {
       boundary.coefficient_a_[level] = std::make_unique<amrex::MultiFab>(
          elliptic_box_array(hierarchy, level, centering),
@@ -1325,6 +1567,36 @@ InitialDataEllipticBoundaryConditions::centering() const noexcept
    return centering_;
 }
 
+InitialDataEllipticBoundaryType
+InitialDataEllipticBoundaryConditions::lower_type(
+   int component, int direction
+) const noexcept
+{
+   return lower_types_[component * AMREX_SPACEDIM + direction];
+}
+
+InitialDataEllipticBoundaryType
+InitialDataEllipticBoundaryConditions::upper_type(
+   int component, int direction
+) const noexcept
+{
+   return upper_types_[component * AMREX_SPACEDIM + direction];
+}
+
+int InitialDataEllipticBoundaryConditions::lower_reflection_parity(
+   int component, int direction
+) const noexcept
+{
+   return lower_reflection_parity_[component * AMREX_SPACEDIM + direction];
+}
+
+int InitialDataEllipticBoundaryConditions::upper_reflection_parity(
+   int component, int direction
+) const noexcept
+{
+   return upper_reflection_parity_[component * AMREX_SPACEDIM + direction];
+}
+
 InitialDataEllipticBoundaryConditions
 InitialDataEllipticBoundaryConditions::component(int component) const
 {
@@ -1338,6 +1610,23 @@ InitialDataEllipticBoundaryConditions::component(int component) const
    result.coefficient_a_.resize(num_levels);
    result.coefficient_b_.resize(num_levels);
    result.coefficient_c_.resize(num_levels);
+   const int source_offset = component * AMREX_SPACEDIM;
+   result.lower_types_.assign(
+      lower_types_.begin() + source_offset,
+      lower_types_.begin() + source_offset + AMREX_SPACEDIM
+   );
+   result.upper_types_.assign(
+      upper_types_.begin() + source_offset,
+      upper_types_.begin() + source_offset + AMREX_SPACEDIM
+   );
+   result.lower_reflection_parity_.assign(
+      lower_reflection_parity_.begin() + source_offset,
+      lower_reflection_parity_.begin() + source_offset + AMREX_SPACEDIM
+   );
+   result.upper_reflection_parity_.assign(
+      upper_reflection_parity_.begin() + source_offset,
+      upper_reflection_parity_.begin() + source_offset + AMREX_SPACEDIM
+   );
    for (int level = 0; level < num_levels; ++level) {
       auto make_component = [component](amrex::MultiFab const& source) {
          auto destination = std::make_unique<amrex::MultiFab>(
@@ -1355,11 +1644,102 @@ InitialDataEllipticBoundaryConditions::component(int component) const
    return result;
 }
 
+void set_initial_data_reflection_boundaries(
+   InitialDataEllipticHierarchy const& hierarchy,
+   InitialDataEllipticBoundaryConditions& boundary,
+   amrex::Vector<GridFieldSymmetryKind> const& component_symmetries
+)
+{
+   if (boundary.num_levels() != static_cast<int>(hierarchy.geometry.size())
+       || static_cast<int>(component_symmetries.size())
+          != boundary.num_components) {
+      amrex::Abort("invalid initial-data reflection boundary configuration");
+   }
+   for (int component = 0; component < boundary.num_components; ++component) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         const int side = component * AMREX_SPACEDIM + direction;
+         const int parity = grid_field_reflection_parity(
+            component_symmetries[component], direction
+         );
+         if (hierarchy.reflection_lo[direction] != 0) {
+            boundary.lower_types_[side] = parity < 0
+               ? InitialDataEllipticBoundaryType::dirichlet
+               : InitialDataEllipticBoundaryType::neumann;
+            boundary.lower_reflection_parity_[side] = parity;
+         }
+         if (hierarchy.reflection_hi[direction] != 0) {
+            boundary.upper_types_[side] = parity < 0
+               ? InitialDataEllipticBoundaryType::dirichlet
+               : InitialDataEllipticBoundaryType::neumann;
+            boundary.upper_reflection_parity_[side] = parity;
+         }
+      }
+   }
+
+   for (int level = 0; level < boundary.num_levels(); ++level) {
+      const amrex::Box coefficient_domain =
+         boundary.centering() == InitialDataEllipticCentering::vertex
+         ? amrex::surroundingNodes(hierarchy.geometry[level].Domain())
+         : hierarchy.geometry[level].Domain();
+      const amrex::Dim3 domain_lo = amrex::lbound(coefficient_domain);
+      const amrex::Dim3 domain_hi = amrex::ubound(coefficient_domain);
+      const auto reflection_lo = hierarchy.reflection_lo;
+      const auto reflection_hi = hierarchy.reflection_hi;
+      for (int component = 0; component < boundary.num_components; ++component) {
+         amrex::GpuArray<int, AMREX_SPACEDIM> parity{};
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            parity[direction] = grid_field_reflection_parity(
+               component_symmetries[component], direction
+            );
+         }
+         for (amrex::MFIter mfi(boundary.coefficient_a(level));
+              mfi.isValid(); ++mfi) {
+            const amrex::Box box = mfi.fabbox();
+            const auto coefficient_a = boundary.coefficient_a(level).array(mfi);
+            const auto coefficient_b = boundary.coefficient_b(level).array(mfi);
+            const auto coefficient_c = boundary.coefficient_c(level).array(mfi);
+            amrex::ParallelFor(
+               box,
+               [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  int direction = -1;
+                  if (reflection_lo[0] != 0 && i < domain_lo.x) {
+                     direction = 0;
+                  } else if (reflection_hi[0] != 0 && i > domain_hi.x) {
+                     direction = 0;
+                  }
+#if (AMREX_SPACEDIM >= 2)
+                  else if (reflection_lo[1] != 0 && j < domain_lo.y) {
+                     direction = 1;
+                  } else if (reflection_hi[1] != 0 && j > domain_hi.y) {
+                     direction = 1;
+                  }
+#endif
+#if (AMREX_SPACEDIM == 3)
+                  else if (reflection_lo[2] != 0 && k < domain_lo.z) {
+                     direction = 2;
+                  } else if (reflection_hi[2] != 0 && k > domain_hi.z) {
+                     direction = 2;
+                  }
+#endif
+                  if (direction >= 0) {
+                     const bool odd = parity[direction] < 0;
+                     coefficient_a(i, j, k, component) = odd ? 1.0 : 0.0;
+                     coefficient_b(i, j, k, component) = odd ? 0.0 : 1.0;
+                     coefficient_c(i, j, k, component) = 0.0;
+                  }
+               }
+            );
+         }
+      }
+   }
+}
+
 void set_centered_power_law_robin_boundary(
    InitialDataEllipticHierarchy const& hierarchy,
    InitialDataEllipticBoundaryConditions& boundary,
    amrex::Vector<amrex::Real> const& asymptotic_values,
-   amrex::Real falloff_power
+   amrex::Real falloff_power,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const* physical_center
 )
 {
    if (
@@ -1377,8 +1757,12 @@ void set_centered_power_law_robin_boundary(
       const auto dx = hierarchy.geometry[level].CellSizeArray();
       amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> center;
       amrex::GpuArray<int, AMREX_SPACEDIM> periodic;
+      amrex::GpuArray<int, AMREX_SPACEDIM> robin_lo{};
+      amrex::GpuArray<int, AMREX_SPACEDIM> robin_hi{};
       for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-         center[direction] = 0.5 * (problo[direction] + probhi[direction]);
+         center[direction] = physical_center != nullptr
+            ? (*physical_center)[direction]
+            : 0.5 * (problo[direction] + probhi[direction]);
          periodic[direction] = hierarchy.geometry[level].isPeriodic(direction);
       }
       const amrex::Box coefficient_domain = vertex_centered
@@ -1388,6 +1772,21 @@ void set_centered_power_law_robin_boundary(
       const amrex::Dim3 domain_hi = amrex::ubound(coefficient_domain);
       const amrex::Real coordinate_offset = vertex_centered ? 0.0 : 0.5;
       for (int component = 0; component < boundary.num_components; ++component) {
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            const int side = component * AMREX_SPACEDIM + direction;
+            if (!periodic[direction]
+                && boundary.lower_reflection_parity_[side] == 0) {
+               boundary.lower_types_[side] =
+                  InitialDataEllipticBoundaryType::robin;
+               robin_lo[direction] = 1;
+            }
+            if (!periodic[direction]
+                && boundary.upper_reflection_parity_[side] == 0) {
+               boundary.upper_types_[side] =
+                  InitialDataEllipticBoundaryType::robin;
+               robin_hi[direction] = 1;
+            }
+         }
          const amrex::Real asymptotic_value = asymptotic_values[component];
          for (amrex::MFIter mfi(boundary.coefficient_a(level)); mfi.isValid(); ++mfi) {
             const amrex::Box box = mfi.fabbox();
@@ -1410,27 +1809,27 @@ void set_centered_power_law_robin_boundary(
 #else
                amrex::Real position_3 = 0.0;
 #endif
-               if (!periodic[0] && i < domain_lo.x) {
+               if (robin_lo[0] != 0 && i < domain_lo.x) {
                   face_direction = 0;
                   position_1 = problo[0] - center[0];
-               } else if (!periodic[0] && i > domain_hi.x) {
+               } else if (robin_hi[0] != 0 && i > domain_hi.x) {
                   face_direction = 0;
                   position_1 = probhi[0] - center[0];
                }
 #if (AMREX_SPACEDIM >= 2)
-               else if (!periodic[1] && j < domain_lo.y) {
+               else if (robin_lo[1] != 0 && j < domain_lo.y) {
                   face_direction = 1;
                   position_2 = problo[1] - center[1];
-               } else if (!periodic[1] && j > domain_hi.y) {
+               } else if (robin_hi[1] != 0 && j > domain_hi.y) {
                   face_direction = 1;
                   position_2 = probhi[1] - center[1];
                }
 #endif
 #if (AMREX_SPACEDIM == 3)
-               else if (!periodic[2] && k < domain_lo.z) {
+               else if (robin_lo[2] != 0 && k < domain_lo.z) {
                   face_direction = 2;
                   position_3 = problo[2] - center[2];
-               } else if (!periodic[2] && k > domain_hi.z) {
+               } else if (robin_hi[2] != 0 && k > domain_hi.z) {
                   face_direction = 2;
                   position_3 = probhi[2] - center[2];
                }
@@ -1556,7 +1955,7 @@ InitialDataEllipticResult solve_initial_data_conformal_vector_laplacian(
    const LoweredBoundaryConditions lowered = lower_boundary_conditions(
       hierarchy, boundary
    );
-   if (lowered.representation == BoundaryRepresentation::robin) {
+   if (lowered.has_robin) {
       amrex::Abort(
          "AMReX MLTensorOp does not consistently support Robin tensor cross terms"
       );

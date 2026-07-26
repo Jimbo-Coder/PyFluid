@@ -2572,3 +2572,85 @@ I will always continue from the last cycle marked as `in_progress`.
   physical diagnostics in artifact metadata and the sequence index. Names use
   parser-safe hyphen separators because AMReX treats `=` inside an unquoted
   input path as a parameter delimiter. [DONE]
+
+## Cycle 221 — Octant elliptic ID, SRMHD exact references, and flat/GR audit (DONE)
+
+- Extend the shared CTT/CTTK/XCTS elliptic boundary contract with centered
+  Cartesian reflection planes and component parity. Validate zero-spin TOV
+  and nonzero uniform-rotation RNS octants against matched full-domain solves,
+  including constraints, masses, angular momentum, surface geometry, and short
+  CFL 0.9 evolution. Keep spherical surface extraction limitations explicit
+  until omitted sectors are reconstructed. Scalar/polar-vector/tensor parity
+  is centralized in the field catalog, magnetic fields use axial-vector
+  parity, the nodal and cell elliptic ghost paths touch reflection faces only,
+  and ordinary outer Robin/Dirichlet behavior is preserved. The manufactured
+  reflection-plus-Robin Poisson control has `1.786e-3` L-infinity error at N=24;
+  the complete CTT/CTTK/XCTS elliptic executable passes. A nonrotating star
+  supports x/y/z octant symmetry. A star rotating about z supports z-equatorial
+  symmetry but rejects ordinary x/y reflection because that is not a physical
+  symmetry of azimuthal velocity/shift. [DONE]
+- Solidify reusable-ID symmetry behavior: distinguish contained full-to-octant
+  restriction from octant-to-full parity reconstruction, implement the latter
+  only through catalog/tensor parity rather than scalar clamping, and add
+  focused round trips if it can preserve the physical-field contract cleanly.
+  Reflection faces are persisted in `Header.meta`; coordinates mirror into the
+  stored sector before interpolation and catalog parity is applied afterward.
+  The focused AMR TOV control records a `1.339725e-2` full/octant difference at
+  matched finest spacing, while expanding the octant artifact to the full
+  domain changes selected scalars by only `1.784626e-6`; its reconstructed
+  constraints remain finite. The focused gate is full-tier because the fresh
+  full AMR XCTS solve takes about 397 seconds on one local rank. [DONE]
+- Add self-contained 1D SRMHD Balsara shock-tube comparisons. Verify which
+  published cases have exact relativistic MHD Riemann solutions, implement or
+  use an independent exact postprocessor without importing production physics,
+  and keep exact/reference labels honest. The tracked Giacomazzo--Rezzolla
+  Balsara 1--5 profiles are validation data only. Their total pressure is
+  converted independently to gas pressure and flat Valencia conserved fields.
+  At N=512 with MP5/HLL/SSPRK3 and CFL 0.9, maximum normalized component L1
+  errors are `0.004413`, `0.006203`, `0.011040`, `0.013123`, and `0.003643`.
+  Every normal magnetic field is constant to `1e-12`; all cases have zero C2P
+  fallbacks and at most three counted atmosphere resets. [DONE]
+- Audit compile-time and runtime specialization for SRHD/SRMHD versus
+  GRHD/GRMHD. Quantify the flat-spacetime cost, compare AthenaK's separation,
+  and simplify only boundaries exposed by measurements without duplicating
+  physics implementations. PyFluid previously sent flat RHD/RMHD through
+  stored Z4c metric loads and stored-metric derivative sources. One
+  host-selected flag now sends verified Minkowski configurations to the
+  existing analytic fixed-metric kernels; physical-ID metadata preserves this
+  choice across exact loads, while curved and solved ADM data remain generic.
+  Three-repeat one-rank medians on 4096 cells for 128 MP5/HLL/SSPRK3 steps rise
+  from `0.5695` to `0.7466` Mcell/s for SRHD (31.1 percent) and from `0.1053`
+  to `0.1075` Mcell/s for SRMHD (2.1 percent). AthenaK likewise composes common
+  SR/GR modules rather than using a different flat RMHD algorithm. [DONE]
+- Finish with generated/architecture checks, all production dimensions,
+  focused relativistic gates, quick/standard validation, performance and
+  compile measurements, local commits, and a clean named baseline.
+  Architecture and generated consistency pass; all production dimensions
+  build; complete one-rank RHD, RMHD, and fixed-curved-spacetime standard gates
+  pass; the new focused symmetry gate passes on fresh runs; and the complete
+  three-rank quick gate passes. The production cache-hit build is `0.39 s`.
+  The complete three-rank standard gate and canonical MPI performance benchmark
+  were not executable because the external-socket approval was rejected by the
+  account usage limit until 2026-07-28; do not count that as solver failure or
+  as validation. The coarse N=24 RNS full/z-half comparison differs by
+  4.99 percent in its worst global scalar but has identical radii, strict XCTS
+  residuals, CFL 0.9 MP5 evolution, and zero recovery events. Its raw rest-mass
+  drift (`9.68e-8` full, `6.92e-8` half) exceeds the generic dynamic-spacetime
+  `1e-8` policy, so the focused test explicitly bounds it at `2e-7` and remains
+  a smoke, not long-evolution conservation evidence. Final review added a
+  mixed-parity cell-centered conformal-vector control. It exposed and fixed
+  two boundary-lowering defects: tensor operators now receive per-component
+  boundary types, and explicit even reflection coefficients cannot trigger
+  the legacy coefficient-only Robin inference. The complete elliptic
+  executable then passed through CTT, CTTK, and XCTS; the reflected cell-vector
+  L-infinity error is `6.46e-6` and the reflected nodal-vector error is
+  `5.61e-5`. All production dimensions rebuilt after the final source cleanup
+  in `3.54 s` with three misses; the immediate no-op rebuild took `0.49 s`. Final
+  architecture, Python syntax, and diff-whitespace checks pass. Fresh one-rank
+  reruns of the octant TOV (`55.86 s`) and z-half RNS (`91.77 s`) reproduce
+  their pre-review step-zero scalars and physical diagnostics exactly; the RNS
+  solve and three CFL 0.9 steps complete with zero recovery events, while its
+  expected `6.92e-8` mass drift still fails the generic `1e-8` policy and passes
+  only the explicitly documented `2e-7` focused-smoke bound. The named baseline
+  and canonical MPI benchmark remain unavailable for the stated external
+  execution limit rather than being represented by cached artifacts. [DONE]

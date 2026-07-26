@@ -78,26 +78,6 @@ Z4cState linear_wave_state(amrex::Real phase, amrex::Real amplitude, amrex::Real
    return state;
 }
 
-int reflection_parity(GridFieldSymmetryKind symmetry, int direction)
-{
-   switch (symmetry) {
-   case GridFieldSymmetryKind::Vector1:
-      return direction == 0 ? -1 : 1;
-   case GridFieldSymmetryKind::Vector2:
-      return direction == 1 ? -1 : 1;
-   case GridFieldSymmetryKind::Vector3:
-      return direction == 2 ? -1 : 1;
-   case GridFieldSymmetryKind::Tensor12:
-      return direction == 0 || direction == 1 ? -1 : 1;
-   case GridFieldSymmetryKind::Tensor13:
-      return direction == 0 || direction == 2 ? -1 : 1;
-   case GridFieldSymmetryKind::Tensor23:
-      return direction == 1 || direction == 2 ? -1 : 1;
-   default:
-      return 1;
-   }
-}
-
 } // namespace
 
 Z4cInitialDataParameters z4c_initial_data_parameters(RunConfig const& cfg)
@@ -168,7 +148,8 @@ amrex::Vector<amrex::BCRec> z4c_boundary_records(
             const bool reflect_hi = side_boundary_kind(cfg, direction, true)
                == BoundaryKind::Reflecting
                || side_boundary_kind(cfg, direction, true) == BoundaryKind::Symmetry;
-            const int reflection = reflection_parity(info.symmetry, direction) < 0
+            const int reflection =
+               grid_field_reflection_parity(info.symmetry, direction) < 0
                ? amrex::BCType::reflect_odd
                : amrex::BCType::reflect_even;
             records[component].setLo(

@@ -11,6 +11,8 @@
 
 #include <memory>
 
+#include "pyfluid_amrex/fields.hpp"
+
 namespace pyfluid_amrex {
 
 enum class InitialDataEllipticCentering {
@@ -24,6 +26,15 @@ struct InitialDataEllipticHierarchy {
    amrex::Vector<amrex::DistributionMapping> distribution;
    amrex::Vector<amrex::IntVect> refinement_ratio;
    amrex::Interpolater* cell_interpolater = &amrex::cell_cons_interp;
+   amrex::GpuArray<int, AMREX_SPACEDIM> reflection_lo{};
+   amrex::GpuArray<int, AMREX_SPACEDIM> reflection_hi{};
+};
+
+enum class InitialDataEllipticBoundaryType {
+   periodic,
+   dirichlet,
+   neumann,
+   robin,
 };
 
 struct InitialDataEllipticOptions {
@@ -65,6 +76,14 @@ struct InitialDataEllipticBoundaryConditions {
    int num_levels() const noexcept;
    InitialDataEllipticCentering centering() const noexcept;
    InitialDataEllipticBoundaryConditions component(int component) const;
+   InitialDataEllipticBoundaryType lower_type(
+      int component, int direction
+   ) const noexcept;
+   InitialDataEllipticBoundaryType upper_type(
+      int component, int direction
+   ) const noexcept;
+   int lower_reflection_parity(int component, int direction) const noexcept;
+   int upper_reflection_parity(int component, int direction) const noexcept;
 
    int num_components = 0;
 
@@ -72,8 +91,33 @@ private:
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> coefficient_a_;
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> coefficient_b_;
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> coefficient_c_;
+   amrex::Vector<InitialDataEllipticBoundaryType> lower_types_;
+   amrex::Vector<InitialDataEllipticBoundaryType> upper_types_;
+   amrex::Vector<int> lower_reflection_parity_;
+   amrex::Vector<int> upper_reflection_parity_;
    InitialDataEllipticCentering centering_ = InitialDataEllipticCentering::cell;
+
+   friend void set_initial_data_reflection_boundaries(
+      InitialDataEllipticHierarchy const&,
+      InitialDataEllipticBoundaryConditions&,
+      amrex::Vector<GridFieldSymmetryKind> const&
+   );
+   friend void set_centered_power_law_robin_boundary(
+      InitialDataEllipticHierarchy const&,
+      InitialDataEllipticBoundaryConditions&,
+      amrex::Vector<amrex::Real> const&,
+      amrex::Real,
+      amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const*
+   );
 };
+
+// Apply homogeneous reflection conditions on hierarchy faces marked as
+// reflection planes. Scalar/tensor component parity comes from the GF catalog.
+void set_initial_data_reflection_boundaries(
+   InitialDataEllipticHierarchy const& hierarchy,
+   InitialDataEllipticBoundaryConditions& boundary,
+   amrex::Vector<GridFieldSymmetryKind> const& component_symmetries
+);
 
 // Populate the common coefficient fields for
 // f = f_inf + amplitude/r^p; the unknown amplitude cancels.
@@ -81,7 +125,14 @@ void set_centered_power_law_robin_boundary(
    InitialDataEllipticHierarchy const& hierarchy,
    InitialDataEllipticBoundaryConditions& boundary,
    amrex::Vector<amrex::Real> const& asymptotic_values,
-   amrex::Real falloff_power = 1.0
+   amrex::Real falloff_power = 1.0,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const* physical_center = nullptr
+);
+
+amrex::Vector<amrex::BCRec> initial_data_boundary_records(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<GridFieldSymmetryKind> const& component_symmetries,
+   int nonsymmetry_type = amrex::BCType::foextrap
 );
 
 // Fill same-level, coarse-fine, periodic, and physical ghosts according to

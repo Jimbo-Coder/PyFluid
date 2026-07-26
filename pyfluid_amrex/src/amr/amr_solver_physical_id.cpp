@@ -115,6 +115,10 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       spacetime,
       face_magnetic
    );
+   analytic_fixed_spacetime_kernels_ =
+      !spacetime_state_.evolves()
+      && cfg_.spacetime_initial_data == "minkowski"
+      && metadata.spacetime_initial_data == "minkowski";
    if (!metadata.used_exact_cache) {
       ConstPhysicalIdField cell_spacetime;
       if (spacetime_state_.active()) {

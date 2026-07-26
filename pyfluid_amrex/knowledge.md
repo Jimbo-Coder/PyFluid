@@ -7,8 +7,8 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-22, branch `main`, through the local Cycle 217
-grid-independent physical-ID materialization pass. Use the commit
+Last reconciled: 2026-07-22, branch `main`, through the local Cycle 221
+elliptic-symmetry/SRMHD pass. Use the commit
 containing this snapshot plus the exact newer continuity-cycle evidence rather
 than inferring it from an earlier baseline.
 
@@ -156,13 +156,13 @@ The latest recorded evidence is not one monolithic green result:
   baseline for commit `504b4b8` is
   `runs/baselines/20260722_211331_rotating_id_sequences/`; standard passes
   42/42 and its four performance cases pass at 0.91--0.99 of reference.
-- Symmetry support is currently layered rather than universal. Catalog-driven
-  evolution boundaries cover fluid/Z4c parity and CT, volume diagnostics apply
-  symmetry factors, and a full-versus-octant TOV evolution control exists. The
-  shared elliptic solver has no inner per-component even/odd boundary contract,
-  so fresh CTT/CTTK/XCTS octant solves (including RNS) are unsupported. Stored
-  octant artifacts also cannot yet parity-expand to full domains, and spherical
-  GR surface diagnostics do not reconstruct omitted sectors.
+- The shared elliptic layer now has component-wise Cartesian reflection
+  boundaries, including mixed Robin/Neumann/Dirichlet nodal solves. Fresh
+  zero-spin XCTS TOV octants and nonzero z-equatorial RNS half-domains execute;
+  nonzero x/y rotating-star reflection is rejected because it is not a true
+  plane symmetry. Stored reflected sectors parity-expand through the field
+  catalog, with axial-vector parity for magnetic fields, and rotating surface
+  rays reconstruct the omitted z sector.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -327,6 +327,47 @@ performance, and MPI-rank evidence into one claim.
   fraction. Recovery fallback/reset counts are compact runtime warnings rather
   than new scalar GFs. Flat/power-law initial atmospheres and the allocation-
   free physical geometry provider are implemented.
+
+## Elliptic Symmetry And Flat Relativistic Kernels
+
+- Centered Cartesian elliptic reflection planes are mixed Neumann/Dirichlet
+  boundaries: even components have zero normal derivative and odd components
+  vanish on the plane; outer faces retain their normal Robin/Dirichlet data.
+  Nodal ghost synchronization must modify reflection ghosts only and preserve
+  the elliptic operator's outer-boundary ghost state.
+- A centered nonrotating TOV model can use x/y/z octant symmetry. A nonzero
+  model rotating about z can use z-equatorial symmetry, but ordinary x/y
+  reflection parity is physically invalid for its azimuthal velocity and
+  shift. The configuration validator rejects that combination.
+- Saved physical-ID reflection faces are part of source geometry metadata.
+  Octant-to-full materialization reflects coordinates before interpolation and
+  applies catalog parity afterward. Magnetic fields use axial-vector parity,
+  unlike velocity and momentum.
+- SRHD/SRMHD and fixed-GR HD/MHD share the same generated Valencia physics.
+  Fixed Minkowski runs now bypass stored Z4c metric loads and the fourth-order
+  stored-metric source derivative pass. A physical-ID artifact records its
+  spacetime class, so a Minkowski source loaded into a Minkowski target retains
+  the analytic path; fixed curved metrics and solved ADM data retain the
+  general metric path. This is a host-selected metric specialization, not a
+  duplicate SR physics implementation. On the recorded 4096-cell, 128-step
+  MP5/HLL/SSPRK3 controls it improves SRHD throughput by 31.1 percent and SRMHD
+  throughput by 2.1 percent.
+- The tracked Giacomazzo--Rezzolla profiles under `../exact_balsara/` provide
+  exact 1D SRMHD comparisons for Balsara 1--5. Their pressure column is total
+  pressure; validation must subtract half the comoving magnetic magnitude
+  before independently constructing the flat Valencia conserved state.
+- At matched finest spacing, the current coarse TOV XCTS full/octant control
+  differs by 1.34 percent in its worst selected global scalar; parity-expanding
+  the saved octant artifact changes those scalars by only `1.78e-6`. The N=24
+  uniform RNS full/z-half control differs by 4.99 percent in its worst global
+  scalar while central density/lapse and surface radii agree much more closely.
+  Treat these as coarse nodal-boundary truncation measurements, not exact
+  sector equivalence.
+- Three-step MP5 RNS controls at CFL 0.9 complete with zero recovery events,
+  but their raw rest-mass drifts are `9.68e-8` (full) and `6.92e-8` (z-half),
+  above the generic dynamic-spacetime policy's `1e-8` threshold. The focused
+  ID-symmetry gate treats them as short smoke runs with an explicit `2e-7`
+  bound; this is not a long-evolution conservation validation.
 
 ## AthenaK Reference Boundary
 

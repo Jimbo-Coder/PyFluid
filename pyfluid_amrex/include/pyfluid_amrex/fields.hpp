@@ -51,6 +51,9 @@ enum class GridFieldSymmetryKind {
    Vector1,
    Vector2,
    Vector3,
+   AxialVector1,
+   AxialVector2,
+   AxialVector3,
    Tensor11,
    Tensor12,
    Tensor13,
@@ -58,6 +61,13 @@ enum class GridFieldSymmetryKind {
    Tensor23,
    Tensor33,
 };
+
+// Component parity under reflection through the Cartesian coordinate plane
+// normal to `direction`: +1 is even and -1 is odd.
+int grid_field_reflection_parity(
+   GridFieldSymmetryKind symmetry,
+   int direction
+);
 
 enum class GridFieldValueKind {
    Scalar,

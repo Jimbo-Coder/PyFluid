@@ -16,6 +16,7 @@ namespace pyfluid_amrex {
 
 struct PhysicalInitialDataMetadata {
    std::string source_ic;
+   std::string spacetime_initial_data;
    std::string rotation_law;
    amrex::Real angular_velocity = 0.0;
    amrex::GpuArray<amrex::Real, 3> rotation_center{};

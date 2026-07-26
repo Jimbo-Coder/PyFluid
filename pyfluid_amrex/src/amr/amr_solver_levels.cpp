@@ -40,6 +40,10 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
       spacetime_fillpatch_bcs_ = z4c_boundary_records(cfg_, Geom(0));
       spacetime_fillpatch_func_ = SpacetimeFillPatchFunc(Z4cFillPatchBoundary{});
    }
+   analytic_fixed_spacetime_kernels_ =
+      !spacetime_state_.evolves()
+      && cfg_.spacetime_initial_data == "minkowski"
+      && cfg_.initial_data_input_file.empty();
    state_interpolater_.configure(
       selected_state_interpolater(),
       mesh_layout_.coordinate,

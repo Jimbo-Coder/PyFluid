@@ -149,19 +149,19 @@ requires_mhd = true
 name = "b1"
 label = 'B_{1}'
 cpp_id = "B1"
-symmetry = "Vector1"
+symmetry = "AxialVector1"
 
 [[field.components]]
 name = "b2"
 label = 'B_{2}'
 cpp_id = "B2"
-symmetry = "Vector2"
+symmetry = "AxialVector2"
 
 [[field.components]]
 name = "b3"
 label = 'B_{3}'
 cpp_id = "B3"
-symmetry = "Vector3"
+symmetry = "AxialVector3"
 
 [[field]]
 key = "ct_magnetic_field"
@@ -178,19 +178,19 @@ requires_mhd = true
 name = "face_b1"
 label = 'B_{1}'
 centering = "Face1"
-symmetry = "Vector1"
+symmetry = "AxialVector1"
 
 [[field.components]]
 name = "face_b2"
 label = 'B_{2}'
 centering = "Face2"
-symmetry = "Vector2"
+symmetry = "AxialVector2"
 
 [[field.components]]
 name = "face_b3"
 label = 'B_{3}'
 centering = "Face3"
-symmetry = "Vector3"
+symmetry = "AxialVector3"
 
 [[field]]
 key = "passive_scalar"
@@ -276,17 +276,17 @@ requires_mhd = true
 [[field.components]]
 name = "b1"
 label = 'B_{1}'
-symmetry = "Vector1"
+symmetry = "AxialVector1"
 
 [[field.components]]
 name = "b2"
 label = 'B_{2}'
-symmetry = "Vector2"
+symmetry = "AxialVector2"
 
 [[field.components]]
 name = "b3"
 label = 'B_{3}'
-symmetry = "Vector3"
+symmetry = "AxialVector3"
 
 [[field]]
 key = "physical_passive_scalar"

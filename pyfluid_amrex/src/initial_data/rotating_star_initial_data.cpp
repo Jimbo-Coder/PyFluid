@@ -174,17 +174,39 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                primitive(i, j, k, RHO) > atmosphere.rho ? 1.0 : 0.0;
          });
       }
-      effective_potential_storage[level]->FillBoundary(
-         hierarchy.geometry[level].periodicity()
-      );
-      matter_support_storage[level]->FillBoundary(
-         hierarchy.geometry[level].periodicity()
-      );
    }
+   amrex::Vector<amrex::MultiFab*> effective_potential(num_levels);
+   amrex::Vector<amrex::MultiFab*> matter_support(num_levels);
+   for (int level = 0; level < num_levels; ++level) {
+      effective_potential[level] = effective_potential_storage[level].get();
+      matter_support[level] = matter_support_storage[level].get();
+   }
+   fill_initial_data_ghosts(
+      hierarchy,
+      effective_potential,
+      initial_data_boundary_records(
+         hierarchy,
+         {GridFieldSymmetryKind::Scalar, GridFieldSymmetryKind::Scalar}
+      )
+   );
+   fill_initial_data_ghosts(
+      hierarchy,
+      matter_support,
+      initial_data_boundary_records(
+         hierarchy, {GridFieldSymmetryKind::Scalar}
+      )
+   );
+   auto center_dx = hierarchy.geometry.back().CellSizeArray();
    std::vector<amrex::GpuArray<amrex::Real, 3>> center_point{{{
-      parameters.rotation_center.q1,
-      parameters.rotation_center.q2,
-      parameters.rotation_center.q3,
+      parameters.rotation_center.q1
+         + (hierarchy.reflection_lo[0] != 0 ? 0.5 * center_dx[0] : 0.0)
+         - (hierarchy.reflection_hi[0] != 0 ? 0.5 * center_dx[0] : 0.0),
+      parameters.rotation_center.q2
+         + (hierarchy.reflection_lo[1] != 0 ? 0.5 * center_dx[1] : 0.0)
+         - (hierarchy.reflection_hi[1] != 0 ? 0.5 * center_dx[1] : 0.0),
+      parameters.rotation_center.q3
+         + (hierarchy.reflection_lo[2] != 0 ? 0.5 * center_dx[2] : 0.0)
+         - (hierarchy.reflection_hi[2] != 0 ? 0.5 * center_dx[2] : 0.0),
    }}};
    const HierarchyInterpolationPlan center_plan(
       std::move(center_point),
@@ -229,6 +251,8 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       const int jhi = domain.bigEnd(1);
       const int klo = domain.smallEnd(2);
       const int khi = domain.bigEnd(2);
+      const auto reflection_lo = hierarchy.reflection_lo;
+      const auto reflection_hi = hierarchy.reflection_hi;
       for (amrex::MFIter mfi(
               *primitive_state[level], amrex::TilingIfNotGPU()
            ); mfi.isValid(); ++mfi) {
@@ -306,8 +330,13 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                ? target.velocity_squared
                : 0.0;
             diagnostic(i, j, k, 1) = matter.rho;
-            const bool boundary = i == ilo || i == ihi || j == jlo || j == jhi
-               || k == klo || k == khi;
+            const bool boundary =
+               (i == ilo && reflection_lo[0] == 0)
+               || (i == ihi && reflection_hi[0] == 0)
+               || (j == jlo && reflection_lo[1] == 0)
+               || (j == jhi && reflection_hi[1] == 0)
+               || (k == klo && reflection_lo[2] == 0)
+               || (k == khi && reflection_hi[2] == 0);
             diagnostic(i, j, k, 2) = boundary
                ? amrex::max(matter.rho - atmosphere.rho, amrex::Real(0.0))
                : 0.0;
@@ -419,10 +448,18 @@ amrex::Real rotating_star_mass_shedding_indicator(
                : -std::numeric_limits<amrex::Real>::max();
          });
       }
-      log_enthalpy[level]->FillBoundary(
-         hierarchy.geometry[level].periodicity()
-      );
    }
+   amrex::Vector<amrex::MultiFab*> log_enthalpy_fields(num_levels);
+   for (int level = 0; level < num_levels; ++level) {
+      log_enthalpy_fields[level] = log_enthalpy[level].get();
+   }
+   fill_initial_data_ghosts(
+      hierarchy,
+      log_enthalpy_fields,
+      initial_data_boundary_records(
+         hierarchy, {GridFieldSymmetryKind::Scalar}
+      )
+   );
 
    const std::array<amrex::Real, 3> axis{
       parameters.rotation_axis.q1,
@@ -486,17 +523,29 @@ amrex::Real rotating_star_mass_shedding_indicator(
       for (int direction = 0; direction < 3; ++direction) {
          const amrex::Real ray_component = ray_directions[ray][direction];
          if (ray_component > 0.0) {
-            extent = std::min(
-               extent,
-               (upper[direction] - 1.6 * coarse_dx[direction]
-                - center[direction]) / ray_component
-            );
+            const amrex::Real ray_extent =
+               hierarchy.reflection_hi[direction] != 0
+               ? (
+                    2.0 * upper[direction] - center[direction]
+                    - lower[direction] - 0.6 * coarse_dx[direction]
+                 ) / ray_component
+               : (
+                    upper[direction] - 1.6 * coarse_dx[direction]
+                    - center[direction]
+                 ) / ray_component;
+            extent = std::min(extent, ray_extent);
          } else if (ray_component < 0.0) {
-            extent = std::min(
-               extent,
-               (lower[direction] + 0.6 * coarse_dx[direction]
-                - center[direction]) / ray_component
-            );
+            const amrex::Real ray_extent =
+               hierarchy.reflection_lo[direction] != 0
+               ? (
+                    upper[direction] - 1.6 * coarse_dx[direction]
+                    - 2.0 * lower[direction] + center[direction]
+                 ) / (-ray_component)
+               : (
+                    lower[direction] + 0.6 * coarse_dx[direction]
+                    - center[direction]
+                 ) / ray_component;
+            extent = std::min(extent, ray_extent);
          }
       }
       counts[ray] = static_cast<int>(std::floor(0.98 * extent / spacing)) + 1;
@@ -505,11 +554,31 @@ amrex::Real rotating_star_mass_shedding_indicator(
       }
       for (int sample = 0; sample < counts[ray]; ++sample) {
          const amrex::Real radius = sample * spacing;
-         points.push_back({
+         amrex::GpuArray<amrex::Real, 3> point{{
             center[0] + radius * ray_directions[ray][0],
             center[1] + radius * ray_directions[ray][1],
             center[2] + radius * ray_directions[ray][2],
-         });
+         }};
+         for (int direction = 0; direction < 3; ++direction) {
+            if (hierarchy.reflection_lo[direction] != 0
+                && point[direction] < lower[direction]) {
+               point[direction] =
+                  2.0 * lower[direction] - point[direction];
+            }
+            if (hierarchy.reflection_hi[direction] != 0
+                && point[direction] > upper[direction]) {
+               point[direction] =
+                  2.0 * upper[direction] - point[direction];
+            }
+            if (point[direction] == lower[direction]
+                && hierarchy.reflection_lo[direction] != 0) {
+               point[direction] += 0.5 * coarse_dx[direction];
+            } else if (point[direction] == upper[direction]
+                       && hierarchy.reflection_hi[direction] != 0) {
+               point[direction] -= 0.5 * coarse_dx[direction];
+            }
+         }
+         points.push_back(point);
       }
    }
    const HierarchyInterpolationPlan plan(

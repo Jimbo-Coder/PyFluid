@@ -130,6 +130,35 @@ std::string periodicity_string(amrex::Geometry const& geometry)
    return output.str();
 }
 
+std::string reflection_string(RunConfig const& cfg, bool upper)
+{
+   std::ostringstream output;
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      if (direction != 0) {
+         output << ',';
+      }
+      const BoundaryKind kind = side_boundary_kind(cfg, direction, upper);
+      output << (
+         kind == BoundaryKind::Symmetry || kind == BoundaryKind::Reflecting
+      );
+   }
+   return output.str();
+}
+
+std::vector<GridFieldSymmetryKind> component_symmetries(
+   GridFieldSetInfo const& fields
+)
+{
+   std::vector<GridFieldSymmetryKind> symmetries;
+   symmetries.reserve(grid_field_component_count(fields));
+   for (GridFieldInfo const& field : fields.fields) {
+      for (GridFieldComponentInfo const& component : field.components) {
+         symmetries.push_back(component.symmetry);
+      }
+   }
+   return symmetries;
+}
+
 std::string refinement_string(
    amrex::Vector<amrex::IntVect> const& refinement_ratios
 )
@@ -295,30 +324,39 @@ struct StoredPhysicalHierarchy {
    amrex::Vector<amrex::Geometry> geometry;
    amrex::Vector<amrex::BoxArray> grids;
    amrex::Vector<amrex::DistributionMapping> distribution;
+   std::array<int, AMREX_SPACEDIM> reflection_lo{};
+   std::array<int, AMREX_SPACEDIM> reflection_hi{};
 };
 
-std::array<int, AMREX_SPACEDIM> parse_periodicity(
+std::array<int, AMREX_SPACEDIM> parse_binary_directions(
    std::string const& value,
-   std::string const& path
+   std::string const& path,
+   std::string const& key
 )
 {
-   std::array<int, AMREX_SPACEDIM> periodic{};
+   std::array<int, AMREX_SPACEDIM> flags{};
    std::istringstream input(value);
    for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
       std::string item;
       if (!std::getline(input, item, ',')) {
-         amrex::Abort("invalid physical-ID periodicity metadata in " + path);
+         amrex::Abort(
+            "invalid physical-ID " + key + " metadata in " + path
+         );
       }
       try {
-         periodic[direction] = std::stoi(item);
+         flags[direction] = std::stoi(item);
       } catch (std::exception const&) {
-         amrex::Abort("invalid physical-ID periodicity metadata in " + path);
+         amrex::Abort(
+            "invalid physical-ID " + key + " metadata in " + path
+         );
       }
-      if (periodic[direction] != 0 && periodic[direction] != 1) {
-         amrex::Abort("invalid physical-ID periodicity metadata in " + path);
+      if (flags[direction] != 0 && flags[direction] != 1) {
+         amrex::Abort(
+            "invalid physical-ID " + key + " metadata in " + path
+         );
       }
    }
-   return periodic;
+   return flags;
 }
 
 StoredPhysicalHierarchy stored_physical_hierarchy(
@@ -344,9 +382,26 @@ StoredPhysicalHierarchy stored_physical_hierarchy(
    hierarchy.grids = layout.boxes;
    hierarchy.geometry.reserve(layout.boxes.size());
    hierarchy.distribution.reserve(layout.boxes.size());
-   const auto periodic = parse_periodicity(
-      required_metadata_value(metadata, "periodicity", path), path
+   const auto periodic = parse_binary_directions(
+      required_metadata_value(metadata, "periodicity", path),
+      path,
+      "periodicity"
    );
+   const auto reflection_lo = metadata.find("reflection_lo");
+   const auto reflection_hi = metadata.find("reflection_hi");
+   if ((reflection_lo == metadata.end()) != (reflection_hi == metadata.end())) {
+      amrex::Abort(
+         "physical-ID reflection metadata must define both sides in " + path
+      );
+   }
+   if (reflection_lo != metadata.end()) {
+      hierarchy.reflection_lo = parse_binary_directions(
+         reflection_lo->second, path, "reflection_lo"
+      );
+      hierarchy.reflection_hi = parse_binary_directions(
+         reflection_hi->second, path, "reflection_hi"
+      );
+   }
    for (std::size_t level = 0; level < layout.boxes.size(); ++level) {
       amrex::RealBox real_box(
          layout.prob_lo[level].data(), layout.prob_hi[level].data()
@@ -420,6 +475,7 @@ struct PhysicalInterpolationPoint {
    amrex::GpuArray<amrex::Real, 3> source_point{};
    amrex::Real source_radius = 0.0;
    amrex::Real target_radius = 0.0;
+   int reflection_mask = 0;
    bool exterior = false;
 };
 
@@ -441,15 +497,29 @@ PhysicalInterpolationPoint mapped_source_point(
       const int component = canonical_component_for_runtime_direction(
          source.coordinate_kind, source.axes, direction
       );
+      if (target_mesh[component] < base.ProbLo(direction)
+          && source.reflection_lo[direction] != 0) {
+         target_mesh[component] =
+            2.0 * base.ProbLo(direction) - target_mesh[component];
+         mapped.reflection_mask ^= 1 << direction;
+      } else if (target_mesh[component] > base.ProbHi(direction)
+                 && source.reflection_hi[direction] != 0) {
+         target_mesh[component] =
+            2.0 * base.ProbHi(direction) - target_mesh[component];
+         mapped.reflection_mask ^= 1 << direction;
+      }
       const amrex::Real offset = centering.nodeCentered(direction) ? 0.0 : 0.5;
       const amrex::Real safe_lo = base.ProbLo(direction) + offset * spacing[direction];
       const amrex::Real safe_hi = base.ProbHi(direction) - offset * spacing[direction];
-      mapped.exterior = mapped.exterior
-         || target_mesh[component] < base.ProbLo(direction)
+      const bool outside_source =
+         target_mesh[component] < base.ProbLo(direction)
          || target_mesh[component] > base.ProbHi(direction);
-      target_mesh[component] = amrex::max(
-         safe_lo, amrex::min(safe_hi, target_mesh[component])
-      );
+      mapped.exterior = mapped.exterior || outside_source;
+      if (outside_source) {
+         target_mesh[component] = amrex::max(
+            safe_lo, amrex::min(safe_hi, target_mesh[component])
+         );
+      }
    }
    const auto source_cartesian = mesh_coordinate_triplet_to_cartesian(
       source.coordinate_kind, target_mesh
@@ -512,6 +582,7 @@ void interpolate_stored_field(
    amrex::Vector<amrex::Geometry> const& target_geometry,
    MutablePhysicalIdField const& target_field,
    amrex::IndexType centering,
+   std::vector<GridFieldSymmetryKind> const& symmetries,
    amrex::GpuArray<amrex::Real, 3> const& origin,
    PhysicalFieldExterior exterior,
    bool stationary_rotating
@@ -521,6 +592,9 @@ void interpolate_stored_field(
       amrex::Abort("physical-ID target hierarchy is inconsistent");
    }
    const int num_components = target_field.front()->nComp();
+   if (static_cast<int>(symmetries.size()) != num_components) {
+      amrex::Abort("physical-ID interpolation symmetry layout is inconsistent");
+   }
    for (std::size_t level = 0; level < target_field.size(); ++level) {
       amrex::MultiFab& target = *target_field[level];
       const auto target_lo = target_geometry[level].ProbLoArray();
@@ -571,6 +645,20 @@ void interpolate_stored_field(
          std::vector<amrex::Real> values = plan.interpolate(
             source_field, 0, num_components
          );
+         for (std::size_t point = 0; point < mapped_points.size(); ++point) {
+            for (int component = 0; component < num_components; ++component) {
+               int parity = 1;
+               for (int direction = 0; direction < 3; ++direction) {
+                  if ((mapped_points[point].reflection_mask
+                       & (1 << direction)) != 0) {
+                     parity *= grid_field_reflection_parity(
+                        symmetries[component], direction
+                     );
+                  }
+               }
+               values[point * num_components + component] *= parity;
+            }
+         }
          if (exterior == PhysicalFieldExterior::AsymptoticallyFlatAdm) {
             for (std::size_t point = 0; point < mapped_points.size(); ++point) {
                apply_adm_exterior(
@@ -782,6 +870,8 @@ void write_physical_initial_data(
       metadata << "# prob_lo=" << real_vector_string(geometry.front(), false) << '\n';
       metadata << "# prob_hi=" << real_vector_string(geometry.front(), true) << '\n';
       metadata << "# periodicity=" << periodicity_string(geometry.front()) << '\n';
+      metadata << "# reflection_lo=" << reflection_string(cfg, false) << '\n';
+      metadata << "# reflection_hi=" << reflection_string(cfg, true) << '\n';
       metadata << "# refinement_ratios=" << refinement_string(refinement_ratios) << '\n';
       metadata << "# eos=" << cfg.eos << '\n';
       metadata << "# eos_preset=" << cfg.eos_preset << '\n';
@@ -810,6 +900,8 @@ void write_physical_initial_data(
       metadata << "# has_spacetime=" << has_spacetime << '\n';
       metadata << "# has_ct=" << has_ct << '\n';
       metadata << "# source_ic=" << cfg.ic << '\n';
+      metadata << "# spacetime_initial_data="
+               << cfg.spacetime_initial_data << '\n';
       metadata << "# tov_central_density="
                << output_metadata_real_string(cfg.tov_central_density) << '\n';
       metadata << "# rotation_law=" << cfg.initial_data_rotation_law << '\n';
@@ -986,6 +1078,16 @@ PhysicalInitialDataMetadata read_physical_initial_data(
 
    PhysicalInitialDataMetadata result;
    result.source_ic = required_metadata_value(metadata, "source_ic", path);
+   const auto source_spacetime = metadata.find("spacetime_initial_data");
+   if (source_spacetime != metadata.end()) {
+      result.spacetime_initial_data = source_spacetime->second;
+      if (result.spacetime_initial_data != cfg.spacetime_initial_data) {
+         amrex::Abort(
+            "physical-ID spacetime class is incompatible with the target in "
+            + path
+         );
+      }
+   }
    result.rotation_law = required_metadata_value(metadata, "rotation_law", path);
    try {
       const std::string value = required_metadata_value(
@@ -1132,6 +1234,9 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       geometry,
       primitive,
       amrex::IndexType::TheCellType(),
+      component_symmetries(
+         physical_fluid_grid_fields(system, cfg.passive_scalars)
+      ),
       origin,
       PhysicalFieldExterior::Constant,
       false
@@ -1164,6 +1269,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          geometry,
          target_adm_view,
          amrex::IndexType::TheNodeType(),
+         component_symmetries(adm_initial_data_grid_fields()),
          origin,
          PhysicalFieldExterior::AsymptoticallyFlatAdm,
          result.source_ic == "tov" || result.source_ic == "rotating_star"
@@ -1188,6 +1294,11 @@ PhysicalInitialDataMetadata read_physical_initial_data(
             geometry,
             face_magnetic[direction],
             centering,
+            {
+               ct_magnetic_grid_field().components[
+                  static_cast<std::size_t>(direction)
+               ].symmetry
+            },
             origin,
             PhysicalFieldExterior::Constant,
             false

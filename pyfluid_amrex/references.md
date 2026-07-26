@@ -27,6 +27,7 @@ It intentionally links rather than restating the detailed contracts.
 | Diagnostics and reductions | `codegen/pyfluid_codegen/diagnostic_catalog.py`, `src/amr/amr_solver_diagnostics.cpp` | `docs/diagnostics.md` |
 | Generated equations | labeled symbolic sources under `codegen/pyfluid_codegen/` | `docs/equations.md`, `docs/equations.tex` |
 | Relativistic HD/MHD and Z4c | generated kernels, `src/relativity/{rhd_system,rmhd_system,relativistic_atmosphere}.hpp`, `include/pyfluid_amrex/relativistic_boundary.hpp`, and `src/amr/amr_solver_spacetime*.cpp` | `docs/grmhd_development.md` |
+| Exact SRMHD Riemann profiles | tracked `../exact_balsara/solution_b{1..5}.dat`, read by `tools/validate_rmhd.py` | Giacomazzo--Rezzolla exact solver and paper below |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
 | Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
 | Adaptive Richardson status | AMR estimator and validation tools | `docs/adaptive_richardson.md` |
@@ -190,6 +191,24 @@ High-value source/test routes include:
 - shared numerical references: linear waves, shock tubes, field loops,
   Orszag-Tang, diffusion, Bondi/monopole, and TOV utilities under `inputs/`,
   `tst/test_suite/`, and `src/utils/tov/`.
+
+## Exact SRMHD Riemann Reference
+
+- B. Giacomazzo and L. Rezzolla, *The exact solution of the Riemann problem in
+  relativistic magnetohydrodynamics*, J. Fluid Mech. 562, 223 (2006),
+  [paper](https://doi.org/10.1017/S0022112006001145).
+- The authors' GPL-3.0
+  [Exact_Riemann_Solver](https://github.com/bgiacoma/Exact_Riemann_Solver)
+  emits `solution.dat` columns `x, rho, total pressure, vx, vy, vz, By, Bz`.
+  For nonzero normal magnetic field its README documents nonlinear iterations
+  and the need for suitable initial guesses.
+- `../exact_balsara/solution_b1.dat` through `solution_b5.dat` are tracked
+  outputs from that solver, introduced by commit `3aa8217`. The validation
+  reader selects the final iteration block, reconstructs gas pressure from
+  total pressure and comoving magnetic pressure, converts the exact primitive
+  profile independently to PyFluid's flat Valencia conserved variables, and
+  compares at the published times. These files are independent validation
+  data, not production flux, reconstruction, or recovery code.
 
 ## Local AsterX Robust-Reconstruction Reference
 

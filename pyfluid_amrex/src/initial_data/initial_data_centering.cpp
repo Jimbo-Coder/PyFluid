@@ -12,6 +12,134 @@
 
 namespace pyfluid_amrex {
 
+namespace {
+
+amrex::Vector<amrex::BCRec> reflection_only_records(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::BCRec> records
+)
+{
+   for (amrex::BCRec& record : records) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         if (hierarchy.reflection_lo[direction] == 0) {
+            record.setLo(direction, amrex::BCType::int_dir);
+         }
+         if (hierarchy.reflection_hi[direction] == 0) {
+            record.setHi(direction, amrex::BCType::int_dir);
+         }
+      }
+   }
+   return records;
+}
+
+void fill_nodal_physical_boundaries(
+   amrex::MultiFab& field,
+   amrex::Geometry const& geometry,
+   amrex::Vector<amrex::BCRec> const& boundary_conditions
+)
+{
+   bool has_reflection = false;
+   for (amrex::BCRec const& record : boundary_conditions) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         has_reflection = has_reflection
+            || record.lo(direction) == amrex::BCType::reflect_even
+            || record.lo(direction) == amrex::BCType::reflect_odd
+            || record.hi(direction) == amrex::BCType::reflect_even
+            || record.hi(direction) == amrex::BCType::reflect_odd;
+      }
+   }
+   if (!has_reflection) {
+      return;
+   }
+   const amrex::Box domain = amrex::surroundingNodes(geometry.Domain());
+   const amrex::Dim3 domain_lo = amrex::lbound(domain);
+   const amrex::Dim3 domain_hi = amrex::ubound(domain);
+   for (int component = 0; component < field.nComp(); ++component) {
+      amrex::GpuArray<int, AMREX_SPACEDIM> lower_type{};
+      amrex::GpuArray<int, AMREX_SPACEDIM> upper_type{};
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         lower_type[direction] = boundary_conditions[component].lo(direction);
+         upper_type[direction] = boundary_conditions[component].hi(direction);
+      }
+      for (amrex::MFIter mfi(field); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.fabbox();
+         const auto values = field.array(mfi);
+         amrex::ParallelFor(
+            box,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               int source_i = i;
+               int source_j = j;
+               int source_k = k;
+               int parity = 1;
+               bool physical = false;
+               bool odd_plane = false;
+               auto reflect = [&] AMREX_GPU_DEVICE(
+                  int index,
+                  int lo,
+                  int hi,
+                  int lo_type,
+                  int hi_type,
+                  int& source
+               ) noexcept {
+                  if (lo_type == amrex::BCType::int_dir
+                      && hi_type == amrex::BCType::int_dir) {
+                     return;
+                  }
+                  if (index < lo) {
+                     if (lo_type == amrex::BCType::reflect_even
+                         || lo_type == amrex::BCType::reflect_odd) {
+                        physical = true;
+                        source = 2 * lo - index;
+                        if (lo_type == amrex::BCType::reflect_odd) {
+                           parity *= -1;
+                        }
+                     }
+                  } else if (index > hi) {
+                     if (hi_type == amrex::BCType::reflect_even
+                         || hi_type == amrex::BCType::reflect_odd) {
+                        physical = true;
+                        source = 2 * hi - index;
+                        if (hi_type == amrex::BCType::reflect_odd) {
+                           parity *= -1;
+                        }
+                     }
+                  } else if (
+                     (index == lo && lo_type == amrex::BCType::reflect_odd)
+                     || (index == hi && hi_type == amrex::BCType::reflect_odd)
+                  ) {
+                     odd_plane = true;
+                  }
+               };
+               reflect(
+                  i, domain_lo.x, domain_hi.x,
+                  lower_type[0], upper_type[0], source_i
+               );
+#if (AMREX_SPACEDIM >= 2)
+               reflect(
+                  j, domain_lo.y, domain_hi.y,
+                  lower_type[1], upper_type[1], source_j
+               );
+#endif
+#if (AMREX_SPACEDIM == 3)
+               reflect(
+                  k, domain_lo.z, domain_hi.z,
+                  lower_type[2], upper_type[2], source_k
+               );
+#endif
+               if (odd_plane) {
+                  values(i, j, k, component) = 0.0;
+               } else if (physical) {
+                  values(i, j, k, component) =
+                     parity * values(source_i, source_j, source_k, component);
+               }
+            }
+         );
+      }
+   }
+}
+
+} // namespace
+
 void detail::fill_initial_data_vertex_ghosts(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& fields,
@@ -32,6 +160,8 @@ void detail::fill_initial_data_vertex_ghosts(
        || static_cast<int>(boundary_conditions.size()) != num_components) {
       amrex::Abort("invalid initial-data vertex boundary component layout");
    }
+   const amrex::Vector<amrex::BCRec> reflection_boundaries =
+      reflection_only_records(hierarchy, boundary_conditions);
 
    amrex::GpuBndryFuncFab<amrex::FabFillNoOp> boundary_function;
    for (int level = 0; level < num_levels; ++level) {
@@ -62,6 +192,9 @@ void detail::fill_initial_data_vertex_ghosts(
             fine_bc,
             0
          );
+         fill_nodal_physical_boundaries(
+            *fields[level], hierarchy.geometry[level], reflection_boundaries
+         );
          continue;
       }
       amrex::PhysBCFunct<amrex::GpuBndryFuncFab<amrex::FabFillNoOp>> coarse_bc(
@@ -84,6 +217,9 @@ void detail::fill_initial_data_vertex_ghosts(
          hierarchy.refinement_ratio[level - 1],
          boundary_conditions,
          num_components
+      );
+      fill_nodal_physical_boundaries(
+         *fields[level], hierarchy.geometry[level], reflection_boundaries
       );
    }
 }

@@ -88,6 +88,8 @@
    )
    {
       const bool relativistic = physical_system_is_relativistic(physics_system_);
+      const bool analytic_fixed_spacetime =
+         relativistic && uses_analytic_fixed_spacetime_kernels();
       AMREX_ALWAYS_ASSERT(!relativistic || spacetime_state_.active());
       fill_primitive_cache(PrimitiveCacheLaunch{
          primitive,
@@ -96,7 +98,9 @@
          physics_system_,
          EOSMethod,
          NComp,
-         relativistic ? spacetime_coupling_.cell_spacetime()[lev].get() : nullptr,
+         relativistic && !analytic_fixed_spacetime
+            ? spacetime_coupling_.cell_spacetime()[lev].get()
+            : nullptr,
          use_solid_mask ? primitive_needed_mask_[lev].get() : nullptr,
          use_solid_mask ? &primitive_needed_kind_[lev] : nullptr,
          &Geom(lev),
@@ -131,7 +135,8 @@
             ? production_patch_grid_system_for_level(lev)
             : PatchGridSystem{};
          const PatchLayout patch_layout = use_mapped_patches ? production_patch_layout_for_level(lev) : PatchLayout{};
-         amrex::MultiFab const* stored_spacetime = spacetime_state_.active()
+         amrex::MultiFab const* stored_spacetime =
+            spacetime_state_.active() && !uses_analytic_fixed_spacetime_kernels()
             ? spacetime_coupling_.cell_spacetime()[lev].get()
             : nullptr;
          amrex::Real stage_start = profile_.begin();
@@ -335,7 +340,6 @@
          }
          if (physical_system_is_relativistic(physics_system_)) {
             stage_start = profile_.begin();
-            AMREX_ALWAYS_ASSERT(stored_spacetime != nullptr);
             add_relativistic_sources(RelativisticSourceLaunch{
                *fluid_state_.rhs()[lev],
                *primitive_[lev],

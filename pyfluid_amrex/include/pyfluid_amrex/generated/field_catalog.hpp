@@ -79,7 +79,7 @@ inline GridFieldSetInfo fluid_state_grid_fields(PhysicalSystem system, int passi
       },
    };
    if (physical_system_has_magnetic_field(system)) {
-      set.fields.push_back({"magnetic_field", "B^i", GridFieldValueKind::Vector3, {{"b1", "B_{1}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector1}, {"b2", "B_{2}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector2}, {"b3", "B_{3}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector3}}, FieldRole::EvolvedState, EvolutionFieldKind::MainState, 0, true, true});
+      set.fields.push_back({"magnetic_field", "B^i", GridFieldValueKind::Vector3, {{"b1", "B_{1}", GridFieldCentering::Cell, GridFieldSymmetryKind::AxialVector1}, {"b2", "B_{2}", GridFieldCentering::Cell, GridFieldSymmetryKind::AxialVector2}, {"b3", "B_{3}", GridFieldCentering::Cell, GridFieldSymmetryKind::AxialVector3}}, FieldRole::EvolvedState, EvolutionFieldKind::MainState, 0, true, true});
    }
    for (int index = 0; index < passive_scalars; ++index) {
       set.fields.push_back(passive_scalar_grid_field(index));
@@ -123,7 +123,7 @@ inline GridFieldSetInfo physical_fluid_grid_fields(
       },
    };
    if (physical_system_has_magnetic_field(system)) {
-      set.fields.push_back({"physical_magnetic_field", "B^i", GridFieldValueKind::Vector3, {{"b1", "B_{1}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector1}, {"b2", "B_{2}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector2}, {"b3", "B_{3}", GridFieldCentering::Cell, GridFieldSymmetryKind::Vector3}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false});
+      set.fields.push_back({"physical_magnetic_field", "B^i", GridFieldValueKind::Vector3, {{"b1", "B_{1}", GridFieldCentering::Cell, GridFieldSymmetryKind::AxialVector1}, {"b2", "B_{2}", GridFieldCentering::Cell, GridFieldSymmetryKind::AxialVector2}, {"b3", "B_{3}", GridFieldCentering::Cell, GridFieldSymmetryKind::AxialVector3}}, FieldRole::InitialDataState, EvolutionFieldKind::None, 0, false, false});
    }
    for (int index = 0; index < passive_scalars; ++index) {
       set.fields.push_back(physical_passive_scalar_grid_field(index));
@@ -149,7 +149,7 @@ inline GridFieldSetInfo const& adm_initial_data_grid_fields()
 
 inline GridFieldInfo const& ct_magnetic_grid_field()
 {
-   static const GridFieldInfo field = {"ct_magnetic_field", "B^i", GridFieldValueKind::Vector3, {{"face_b1", "B_{1}", GridFieldCentering::Face1, GridFieldSymmetryKind::Vector1}, {"face_b2", "B_{2}", GridFieldCentering::Face2, GridFieldSymmetryKind::Vector2}, {"face_b3", "B_{3}", GridFieldCentering::Face3, GridFieldSymmetryKind::Vector3}}, FieldRole::EvolutionAuxiliary, EvolutionFieldKind::AuxiliaryState, 0, true, false};
+   static const GridFieldInfo field = {"ct_magnetic_field", "B^i", GridFieldValueKind::Vector3, {{"face_b1", "B_{1}", GridFieldCentering::Face1, GridFieldSymmetryKind::AxialVector1}, {"face_b2", "B_{2}", GridFieldCentering::Face2, GridFieldSymmetryKind::AxialVector2}, {"face_b3", "B_{3}", GridFieldCentering::Face3, GridFieldSymmetryKind::AxialVector3}}, FieldRole::EvolutionAuxiliary, EvolutionFieldKind::AuxiliaryState, 0, true, false};
    return field;
 }
 

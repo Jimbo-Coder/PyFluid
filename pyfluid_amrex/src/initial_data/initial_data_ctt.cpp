@@ -15,22 +15,13 @@ namespace pyfluid_amrex {
 
 namespace {
 
-amrex::Vector<amrex::BCRec> homogeneous_dirichlet_boundary_records(
-   InitialDataEllipticHierarchy const& hierarchy,
-   int num_components
-)
+amrex::Vector<GridFieldSymmetryKind> conformal_vector_symmetries()
 {
-   amrex::Vector<amrex::BCRec> records(num_components);
-   for (amrex::BCRec& record : records) {
-      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-         const int type = hierarchy.geometry[0].isPeriodic(direction)
-            ? amrex::BCType::int_dir
-            : amrex::BCType::reflect_odd;
-         record.setLo(direction, type);
-         record.setHi(direction, type);
-      }
-   }
-   return records;
+   return {
+      GridFieldSymmetryKind::Vector1,
+      GridFieldSymmetryKind::Vector2,
+      GridFieldSymmetryKind::Vector3,
+   };
 }
 
 template <typename FillSource>
@@ -203,7 +194,11 @@ void fill_conformal_extrinsic_curvature(
    fill_initial_data_ghosts(
       hierarchy,
       vector_field,
-      homogeneous_dirichlet_boundary_records(hierarchy, 3)
+      initial_data_boundary_records(
+         hierarchy,
+         conformal_vector_symmetries(),
+         amrex::BCType::reflect_odd
+      )
    );
    for (int level = 0; level < num_levels; ++level) {
       const auto spacing = hierarchy.geometry[level].CellSizeArray();
@@ -567,7 +562,11 @@ CttkCurvatureUpdate update_cttk_mean_curvature(
    fill_initial_data_ghosts(
       hierarchy,
       mean_curvature,
-      homogeneous_dirichlet_boundary_records(hierarchy, 1)
+      initial_data_boundary_records(
+         hierarchy,
+         {GridFieldSymmetryKind::Scalar},
+         amrex::BCType::reflect_odd
+      )
    );
    return {
       update_norm / std::max(amrex::Real(1.0), solution_norm),

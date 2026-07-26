@@ -17,6 +17,7 @@
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/relativistic_primitive.hpp"
 #include "pyfluid_amrex/spacetime_coupling.hpp"
+#include "pyfluid_amrex/spacetime_fields.hpp"
 #include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
@@ -38,22 +39,32 @@ char const* conformal_constraint_formulation_name(
    return "unknown";
 }
 
-amrex::Vector<amrex::BCRec> extrapolating_boundary_records(
-   InitialDataEllipticHierarchy const& hierarchy,
-   int num_components
-)
+amrex::Vector<GridFieldSymmetryKind> scalar_symmetries(int num_components)
 {
-   amrex::Vector<amrex::BCRec> records(num_components);
-   for (amrex::BCRec& record : records) {
-      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-         const int type = hierarchy.geometry[0].isPeriodic(direction)
-            ? amrex::BCType::int_dir
-            : amrex::BCType::foextrap;
-         record.setLo(direction, type);
-         record.setHi(direction, type);
+   return amrex::Vector<GridFieldSymmetryKind>(
+      num_components, GridFieldSymmetryKind::Scalar
+   );
+}
+
+amrex::Vector<GridFieldSymmetryKind> vector_symmetries()
+{
+   return {
+      GridFieldSymmetryKind::Vector1,
+      GridFieldSymmetryKind::Vector2,
+      GridFieldSymmetryKind::Vector3,
+   };
+}
+
+amrex::Vector<GridFieldSymmetryKind> z4c_symmetries()
+{
+   amrex::Vector<GridFieldSymmetryKind> result;
+   result.reserve(Z4C_NUM_COMPONENTS);
+   for (GridFieldInfo const& field : z4c_state_grid_fields().fields) {
+      for (GridFieldComponentInfo const& component : field.components) {
+         result.push_back(component.symmetry);
       }
    }
-   return records;
+   return result;
 }
 
 void materialize_conformal_geometry(
@@ -107,8 +118,8 @@ void materialize_conformal_geometry(
          });
       }
    }
-   const auto boundary = extrapolating_boundary_records(
-      hierarchy, Z4C_NUM_COMPONENTS
+   const auto boundary = initial_data_boundary_records(
+      hierarchy, z4c_symmetries()
    );
    fill_initial_data_ghosts(hierarchy, spacetime_state, boundary);
    for (int level = 0; level < num_levels; ++level) {
@@ -372,8 +383,22 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       0.0,
       InitialDataEllipticCentering::vertex
    );
+   set_initial_data_reflection_boundaries(
+      hierarchy, conformal_boundary, scalar_symmetries(1)
+   );
+   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> elliptic_center{{
+      AMREX_D_DECL(
+         rotating_star.rotation_center.q1,
+         rotating_star.rotation_center.q2,
+         rotating_star.rotation_center.q3
+      )
+   }};
    set_centered_power_law_robin_boundary(
-      hierarchy, conformal_boundary, amrex::Vector<amrex::Real>{0.0}, 1.0
+      hierarchy,
+      conformal_boundary,
+      amrex::Vector<amrex::Real>{0.0},
+      1.0,
+      &elliptic_center
    );
    auto lapse_boundary = InitialDataEllipticBoundaryConditions::constant(
       hierarchy,
@@ -383,8 +408,15 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       0.0,
       InitialDataEllipticCentering::vertex
    );
+   set_initial_data_reflection_boundaries(
+      hierarchy, lapse_boundary, scalar_symmetries(1)
+   );
    set_centered_power_law_robin_boundary(
-      hierarchy, lapse_boundary, amrex::Vector<amrex::Real>{0.0}, 1.0
+      hierarchy,
+      lapse_boundary,
+      amrex::Vector<amrex::Real>{0.0},
+      1.0,
+      &elliptic_center
    );
    auto vector_boundary = InitialDataEllipticBoundaryConditions::constant(
       hierarchy,
@@ -393,6 +425,9 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       0.0,
       0.0,
       InitialDataEllipticCentering::vertex
+   );
+   set_initial_data_reflection_boundaries(
+      hierarchy, vector_boundary, vector_symmetries()
    );
 
    constexpr int max_constraint_iterations = 100;
@@ -643,37 +678,37 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          fill_initial_data_ghosts(
             hierarchy,
             cell_energy,
-            extrapolating_boundary_records(hierarchy, 1)
+            initial_data_boundary_records(hierarchy, scalar_symmetries(1))
          );
          fill_initial_data_ghosts(
             hierarchy,
             cell_momentum,
-            extrapolating_boundary_records(hierarchy, 3)
+            initial_data_boundary_records(hierarchy, vector_symmetries())
          );
          fill_initial_data_ghosts(
             hierarchy,
             cell_stress,
-            extrapolating_boundary_records(hierarchy, 1)
+            initial_data_boundary_records(hierarchy, scalar_symmetries(1))
          );
          materialize_initial_data_vertices(
             hierarchy,
             vertex_energy,
             cell_energy_density,
-            extrapolating_boundary_records(hierarchy, 1),
+            initial_data_boundary_records(hierarchy, scalar_symmetries(1)),
             2
          );
          materialize_initial_data_vertices(
             hierarchy,
             vertex_momentum,
             cell_momentum_density,
-            extrapolating_boundary_records(hierarchy, 3),
+            initial_data_boundary_records(hierarchy, vector_symmetries()),
             2
          );
          materialize_initial_data_vertices(
             hierarchy,
             vertex_stress,
             cell_stress_trace,
-            extrapolating_boundary_records(hierarchy, 1),
+            initial_data_boundary_records(hierarchy, scalar_symmetries(1)),
             2
          );
          for (int level = 0; level < num_levels; ++level) {

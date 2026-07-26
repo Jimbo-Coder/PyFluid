@@ -199,6 +199,20 @@ STEPS = [
       ),
    ),
    GateStep(
+      name="initial_data_symmetry",
+      kind="symmetry",
+      levels=("full",),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_initial_data_symmetry.py",
+         "--ranks",
+         "3",
+         "--force",
+      ),
+   ),
+   GateStep(
       name="obstacle_mask_performance",
       kind="feature",
       levels=("full",),

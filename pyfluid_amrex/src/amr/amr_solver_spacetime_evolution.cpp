@@ -13,6 +13,11 @@ namespace pyfluid_amrex {
 // Stage orchestration only. Pointwise metric, matter, and Z4c algebra is
 // generated and shared with fixed-spacetime relativistic evolution.
 
+bool AmrSolverBase::uses_analytic_fixed_spacetime_kernels() const noexcept
+{
+   return analytic_fixed_spacetime_kernels_;
+}
+
 void AmrSolverBase::project_spacetime_state(amrex::MultiFab& state)
    {
 #ifdef AMREX_USE_OMP

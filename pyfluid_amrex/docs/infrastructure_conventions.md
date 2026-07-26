@@ -124,6 +124,12 @@ compressed, directly evolvable physical-ID artifact—not a sequence-only file.
 Artifact metadata, including `eos_preset`, remains the compatibility authority;
 directory and model names are discovery aids.
 
+The artifact also records `spacetime_initial_data`. A loaded fixed-Minkowski
+artifact may use the analytic flat-spacetime kernels only when both that source
+metadata and the target configuration select Minkowski. Curved, constraint-
+solved, or legacy artifacts without this metadata retain the stored-metric
+path.
+
 Fresh analytic data and stored artifacts enter evolution through the same
 configured-ID materialization call. The stored-artifact implementation owns
 exact-cache selection, hierarchy interpolation, exterior completion, and state
@@ -148,15 +154,27 @@ valid evolution inputs, but a checkpoint resumes its saved time and hierarchy,
 whereas a physical-ID artifact initializes a new run at step zero through this
 materialization interface.
 
-Evolution boundaries already support catalog-driven reflection parity for
-fluid and Z4c fields, CT face fields, and symmetry factors for volume
-diagnostics. The analytic TOV octant evolution has a focused full-domain charge
-comparison. This does not imply symmetric elliptic initial-data solving: the
-common CTT/CTTK/XCTS elliptic layer currently assigns an outer Robin or
-Dirichlet condition to every nonperiodic face and has no per-component
-even/odd inner-face boundary contract. Fresh RNS/XCTS reflection or octant
-solves are therefore unsupported. Likewise, stored octant data cannot yet be
-expanded to a full domain with tensor parity, and spherical GR surface
-diagnostics do not reconstruct omitted sectors. Do not advertise one symmetry
-mode across TOV, RNS, elliptic solving, artifact remapping, and evolution until
-those distinct contracts are implemented and validated.
+Evolution, physical-ID remapping, and the shared CTT/CTTK/XCTS elliptic layer
+use the field catalog's Cartesian reflection parity. Scalar, polar-vector,
+axial-vector, and symmetric-tensor identities are distinct; in particular a
+magnetic field is axial, so its component normal to a symmetry plane is even
+and its tangential components are odd. Physical-ID metadata records saved
+reflection faces. A target outside one of those faces is mirrored into the
+saved sector, interpolated on its declared centering, and transformed by the
+catalog parity; points beyond the saved outer extent still use the normal
+physical exterior completion.
+
+Elliptic boundary types are component-specific: on a reflection plane the
+normal component of a polar vector is odd while its tangential components are
+even. Explicit reflection/type metadata is authoritative. The compatibility
+path that infers legacy Robin data from a nonzero stored coefficient is used
+only when no explicit reflection boundary is present.
+
+For a centered nonrotating TOV model, independent x/y/z reflections permit a
+true octant solve. A star rotating about z is not invariant under independent
+x or y polar-vector reflections: its azimuthal velocity and shift change with
+a coupled rotation, not ordinary plane parity. Nonzero rotating-star initial
+data therefore reject x/y reflection boundaries and support the z-equatorial
+reflection only. Surface rays must reconstruct the omitted reflected
+direction before evaluating polar/equatorial geometry. Do not describe a
+nonzero rotating Cartesian half-domain as an octant.
