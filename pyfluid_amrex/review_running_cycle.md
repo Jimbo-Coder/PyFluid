@@ -3164,3 +3164,24 @@ I will always continue from the last cycle marked as `in_progress`.
   The exact/primitive artifacts are under
   `runs/current/rmhd_validation/` and `plots/current/scans/`, including
   `rmhd_balsara_primitives_ppm4_dmp1p05.png`. [DONE]
+
+## Cycle 237 — Unified shock-capturing discovery objective (DONE)
+
+- Interpret future "AI greedy mode" as a research program for a genuinely
+  better single reconstruction or Riemann method, not as permission to keep
+  adding fallback tiers. Survey a broad set of independently implemented
+  methods and derivations for transferable structure, while retaining the
+  project rule that external codes are comparison references rather than
+  imported production solutions. [DONE]
+- Search offline over an explicit mathematical family subject to conservation,
+  consistency, high-order smooth accuracy, symmetry, positivity,
+  subluminal-state, and monotonicity/entropy constraints. Simplify any winning
+  candidate to one short auditable formula and derive why it satisfies the
+  imposed constraints. Existing fixed methods and hybrids remain baselines,
+  not the target design. [DONE]
+- Require a held-out validation program broader than the search set: smooth
+  extrema and waves, contacts, all exact Balsara tubes, rotated problems,
+  strong magnetization, CT, AMR/coarse-fine crossings, and dynamical GRMHD.
+  Call a discovery useful only if it is Pareto-improving in accuracy,
+  robustness, cost, and compile impact rather than overfitting one plotted
+  profile. No new numerical method is claimed in this planning cycle. [DONE]
