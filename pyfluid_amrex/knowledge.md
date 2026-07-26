@@ -299,6 +299,14 @@ performance, and MPI-rank evidence into one claim.
   nonfinite magnetic state remains fatal. The smooth five-method RMHD sweep,
   fixed-curved-metric controls, and small-spin RHD control all record zero
   recovery events.
+- The published AsterX Balsara figure is a useful but narrower comparison than
+  PyFluid's all-component scan: it shows only rest-mass density and `By`, uses
+  PPM for Balsara 1, 2, 4, and 5, and switches to MINMOD for the
+  four-orders-of-magnitude pressure jump in Balsara 3. Its plotted points agree
+  cleanly with the exact curves in those fields, but it neither validates
+  AsterX MP5/WENO-Z nor rules out ringing in unplotted conserved momentum or
+  energy. AsterX runs on CarpetX/AMReX block-structured AMR; this shock-tube
+  result is not evidence for an octree topology.
 - The current small-spin XCTS PWL control passes three evolved-spacetime steps
   at CFL 0.9 with rest-mass drift `8.52e-10`. Component MP5 now remains finite
   for the same three steps, but its `9.35e-8` rest-mass drift fails the existing

@@ -216,6 +216,16 @@ The local AsterX checkout is under
 `/Users/mrizzo/phys_research/ETK_CarpetX/CactusX/repos/AsterX`. For the narrow
 reconstruction question, use:
 
+- J. V. Kalinani et al., *AsterX: a new open-source GPU-accelerated GRMHD code
+  for dynamical spacetimes*, Class. Quantum Grav. 42, 025016 (2025),
+  [journal](https://doi.org/10.1088/1361-6382/ad9c11),
+  [arXiv:2406.11669](https://arxiv.org/abs/2406.11669). Section 4.1 and
+  figure 3 compare Balsara 1--5 against the Giacomazzo--Rezzolla exact solver.
+  The published curves show only rest-mass density and `By`: tests 1, 2, 4,
+  and 5 use third-order PPM, while the extreme-pressure test 3 deliberately
+  uses more dissipative second-order MINMOD. The paper describes WENO-Z and
+  MP5 as implemented but still under testing, so this figure is not evidence
+  for their published Balsara behavior or for an RK-stage FOFC guard.
 - `AsterX/src/fluxes.cxx`: component reconstruction, selectable `z_vec = Wv`
   reconstruction, face-metric conversion, and per-face-side low-order fallback
   when reconstructed thermodynamic variables are nonpositive;

@@ -2792,3 +2792,33 @@ I will always continue from the last cycle marked as `in_progress`.
   or custom kernel experiment is reasonable only after profiling an isolated
   hot kernel and defining clean AMReX-data interoperability. No backend change
   was made. [DONE]
+
+## Cycle 227 — AsterX Balsara scope and runtime guard policy (DONE)
+
+- Source-check the published AsterX Balsara comparison before using it to
+  motivate PyFluid's RMHD guard. The 2025 paper compares Balsara 1--5 directly
+  with the Giacomazzo--Rezzolla exact solver, but figure 3 exposes only
+  rest-mass density and `By`. It uses third-order PPM for tests 1, 2, 4, and 5
+  and deliberately uses more dissipative second-order MINMOD for the extreme
+  pressure jump in test 3; its WENO-Z and MP5 implementations were described
+  as still under testing. The plotted variables look clean, but the paper
+  cannot establish that all conserved fields are ring-free or that an
+  AthenaK-style candidate guard caused the result. Add the paper and this
+  boundary to the reference router and maintained knowledge. [DONE]
+- Keep the proposed RMHD candidate guard optional without adding a template
+  specialization axis or a per-cell enable branch. Select it once on the host
+  at each shared RK-stage assembly: disabled means no candidate-check or
+  correction kernel is launched; enabled means the one compiled guard path
+  checks the candidate and consistently replaces adjoining fluid fluxes and CT
+  EMFs where required. Benchmark its enabled overhead before choosing the
+  production default. No solver implementation was made in this documentation
+  cycle. [DONE]
+- Distinguish topology from numerical robustness. A block-leaf octree can
+  simplify neighbor relations, enforce two-to-one balance structurally, and
+  make regridding behavior more predictable, whereas clustered rectangular
+  patches can cover anisotropic tagged regions with fewer cells and less
+  ghost/interface area. Neither topology supplies conservation, CT
+  consistency, or stable transfer by itself. AsterX uses CarpetX on AMReX
+  block-structured AMR, and the cited one-dimensional Balsara runs do not test
+  AMR topology. Retain AMReX rather than rebuilding a mesh hierarchy absent a
+  measured failure attributable to its topology. [DONE]
