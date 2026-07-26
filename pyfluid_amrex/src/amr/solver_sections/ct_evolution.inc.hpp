@@ -1,21 +1,66 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // Constrained-transport magnetic-field advancement helpers.
 
+   void reset_ct_stage_emf_level(int lev)
+   {
+      set_edge_field_value(edge_e_[lev], 0.0);
+   }
+
+   void reset_ct_stage_emf_all_levels()
+   {
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         reset_ct_stage_emf_level(lev);
+      }
+   }
+
+   void accumulate_ct_stage_emf(
+      int lev,
+      std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
+      amrex::Real stage_weight
+   )
+   {
+      if (!ct_enabled(cfg_) || stage_weight == 0.0) {
+         return;
+      }
+      AMREX_ALWAYS_ASSERT(ct_stage_edge_e_[lev].e[0] != nullptr);
+#if (AMREX_SPACEDIM >= 2)
+      fill_edge_electric_field_from_mhd_fluxes(
+         ct_stage_edge_e_[lev],
+         fluxes,
+         flux_owner_mask_ptrs(lev),
+         Geom(lev)
+      );
+#else
+      fill_edge_electric_field_from_mhd_fluxes(
+         ct_stage_edge_e_[lev], fluxes, Geom(lev)
+      );
+#endif
+      enforce_edge_electric_boundary(
+         ct_stage_edge_e_[lev], Geom(lev), boundary_data_
+      );
+      // edge_e_ stores the time-integrated RK combination used by the cell
+      // update and flux registers, rather than only the final stage EMF.
+      add_scaled_edge_field(
+         edge_e_[lev], ct_stage_edge_e_[lev], stage_weight
+      );
+   }
+
    DiffusionStats advance_ct_ideal_level(int lev, amrex::Real dt)
    {
       const auto fluxes = flux_ptrs(lev);
-      if (ct_flux_derived_emf_is_available(fluxes)) {
-#if (AMREX_SPACEDIM >= 2)
-         fill_edge_electric_field_from_mhd_fluxes(edge_e_[lev], fluxes, flux_owner_mask_ptrs(lev), Geom(lev));
-#else
-         fill_edge_electric_field_from_mhd_fluxes(edge_e_[lev], fluxes, Geom(lev));
-#endif
-         enforce_edge_electric_boundary(edge_e_[lev], Geom(lev), boundary_data_);
-         apply_edge_electric_curl(face_b_[lev], edge_e_[lev], Geom(lev), dt, cfg_);
+      amrex::Real register_weight = dt;
+      if (
+         ct_flux_derived_emf_is_available(fluxes)
+         && ct_stage_edge_e_[lev].e[0] != nullptr
+      ) {
+         apply_edge_electric_curl(
+            face_b_[lev], edge_e_[lev], Geom(lev), 1.0, cfg_
+         );
+         register_weight = 1.0;
       } else {
          advance_ct_magnetic_field(face_b_[lev], edge_e_[lev], *fluid_state_.state()[lev], Geom(lev), dt, 0.0, cfg_);
       }
-      add_edge_electric_to_registers(lev, dt);
+      add_edge_electric_to_registers(lev, register_weight);
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
       sync_cell_b_from_faces(*fluid_state_.next()[lev], face_b_[lev], Geom(lev), false);
       return {};

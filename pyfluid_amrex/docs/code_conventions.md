@@ -12,6 +12,15 @@ decisions.
 - A selected method means that method. Do not silently replace reconstruction,
   interpolation, Riemann solving, timestepping, diffusion, or CT because a
   branch is inconvenient.
+- An explicitly enabled candidate-state correction is part of the selected
+  conservative method, not a silent reconstruction substitution. Detect
+  troubled cells from the concrete RK candidate, replace shared face fluxes
+  consistently for both adjacent cells, propagate only far enough to leave
+  every affected candidate physically recoverable, and count each correction
+  tier separately from post-update recovery or atmosphere repair.
+- CT integrates the electric field with the same Runge--Kutta stage weights as
+  the cell-centered flux divergence and flux registers. Do not update face
+  fields from only the last stage of a multistage integrator.
 - Generalize an implementation to all intended inputs. If a combination is
   genuinely outside the design, reject it once at configuration validation and
   document the support boundary. A bug in an intended combination does not make

@@ -644,6 +644,7 @@ protected:
    std::vector<bool> gravity_fixed_cache_valid_;
    std::vector<FaceMagneticField> face_b_;
    std::vector<EdgeElectricField> edge_e_;
+   std::vector<EdgeElectricField> ct_stage_edge_e_;
    std::vector<EdgeElectricField> edge_current_;
 #if (AMREX_SPACEDIM >= 2)
    std::vector<std::unique_ptr<CtEdgeFluxRegister>> edge_flux_registers_;
@@ -662,8 +663,14 @@ protected:
       step_relativistic_c2p_fallback_count_{0};
    amrex::Gpu::DeviceScalar<amrex::Long>
       step_relativistic_atmosphere_reset_count_{0};
+   amrex::Gpu::DeviceScalar<amrex::Long>
+      step_rmhd_pwl_correction_count_{0};
+   amrex::Gpu::DeviceScalar<amrex::Long>
+      step_rmhd_pwc_correction_count_{0};
    amrex::Long relativistic_c2p_fallback_count_ = 0;
    amrex::Long relativistic_atmosphere_reset_count_ = 0;
+   amrex::Long rmhd_pwl_correction_count_ = 0;
+   amrex::Long rmhd_pwc_correction_count_ = 0;
    amrex::Vector<amrex::Real> level_times_;
    amrex::Vector<amrex::Real> level_old_times_;
    amrex::Vector<amrex::Real> level_dts_;

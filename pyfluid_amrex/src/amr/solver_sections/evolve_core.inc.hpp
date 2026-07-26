@@ -499,6 +499,9 @@
          } else {
             const amrex::Long layout_cells_this_step = cell_count();
             const amrex::Long active_cells_this_step = active_cell_count();
+            if constexpr (CTEnabled) {
+               reset_ct_stage_emf_all_levels();
+            }
             const bool next_state_needs_copy =
                (this->*operations.advance_single_rate)(time, dt);
             if constexpr (CTEnabled) {
@@ -776,7 +779,11 @@
                << "Relativistic recovery c2p_fallbacks="
                << relativistic_c2p_fallback_count_
                << " atmosphere_resets="
-               << relativistic_atmosphere_reset_count_ << "\n";
+               << relativistic_atmosphere_reset_count_
+               << " rmhd_pwl_corrections="
+               << rmhd_pwl_correction_count_
+               << " rmhd_pwc_corrections="
+               << rmhd_pwc_correction_count_ << "\n";
          }
       }
    }

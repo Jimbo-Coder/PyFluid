@@ -7,8 +7,8 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-22, branch `main`, through the local Cycle 221
-elliptic-symmetry/SRMHD pass. Use the commit
+Last reconciled: 2026-07-25, branch `main`, through the local Cycle 229
+RMHD candidate-correction pass. Use the commit
 containing this snapshot plus the exact newer continuity-cycle evidence rather
 than inferring it from an earlier baseline.
 
@@ -267,31 +267,21 @@ performance, and MPI-rank evidence into one claim.
   improve convergence; the SLy and Gamma=2 stars are different physical
   models and their iteration counts are not a controlled EoS-algorithm test.
 - Production RHD and RMHD face states reconstruct thermodynamic primitives and
-  all three components of spatial four-velocity `z^i = W v^i`. The selected component
-  method, including MP5, remains the high-order method; mapping `z^i` through
-  the face metric avoids making a cell velocity superluminal merely by
-  evaluating it in a different metric. RHD also has stage-candidate
-  first-order flux correction: only faces adjoining a cell whose actual RK
-  candidate violates the conserved density/admissibility floors are replaced
-  with piecewise-constant LLF fluxes. This follows AthenaK's local-fallback
-  structure rather than globally downgrading reconstruction. The current
-  stage-candidate correction is RHD-only; RMHD retains its local face-state
-  admissibility limit and ordered C2P policy. The N=512 exact Balsara
-  reconstruction scan shows why this remains a production limitation: no one
-  high-order method is uniformly robust. MP5 is most accurate on Balsara 1 and
-  5 but resets on 2--4; PWL is the best Balsara 4 high-order control but still
-  rings; WENO-Z has an off-scale Balsara 4 spike; and TENO5 resets 31 times on
-  Balsara 4. PWC is diffusive but completes all five without a reset. AthenaK's
-  RMHD stage-candidate correction additionally enables a relaxed discrete
-  maximum principle by default: conserved density and energy outside 1.2 times
-  the local-neighborhood range flag the cell even if C2P succeeds. It then
-  replaces adjacent fluid fluxes and CT EMFs consistently. This distinction
-  matters for the physically recoverable but off-scale Balsara 4 WENO-Z spike;
-  a face-positivity check or C2P-failure check alone cannot detect it.
-  The inspected local AsterX checkout does not add an AthenaK-style predicted
-  RK-candidate correction: it has selectable low-order face reconstruction for
-  invalid reconstructed thermodynamics, then post-step ordered C2P, failed-
-  point interpolation, and atmosphere enforcement.
+  all three components of spatial four-velocity `z^i = W v^i`. The selected
+  component method, including MP5, remains the primary method; mapping `z^i`
+  through the face metric avoids making a cell velocity superluminal merely by
+  evaluating it in a different metric.
+- RHD always applies its established RK-candidate admissibility correction.
+  RMHD has an optional host-selected candidate guard:
+  `rmhd_candidate_guard = off|pwc|pwl-pwc`. It checks the concrete RK candidate
+  after sources, uses a 1.2 relaxed density/energy DMP only for high-order
+  reconstruction, and conservatively replaces every face adjoining a flagged
+  cell. `pwl-pwc` accepts PWL-MC only when its candidate passes the same check;
+  PWC is terminal. A monotone neighbor-closure pass prevents a corrected shared
+  face from leaving an adjacent candidate unrecoverable. Fluid fluxes,
+  magnetic fluxes, CT EMFs, and reflux inputs use the same final face choice.
+  PWL and PWC counts are distinct from post-update C2P fallbacks and atmosphere
+  resets.
 - During evolution, successful use of a secondary RMHD C2P method and terminal
   atmosphere resets after C2P exhaustion are counted across ranks and warned
   once per affected step. Ordinary atmosphere cells are not counted as
@@ -313,10 +303,7 @@ performance, and MPI-rank evidence into one claim.
   PWL-MC. AsterX's published PPM is not merely a physics-agnostic parabolic
   stencil: its production implementation can use pressure/velocity shock
   flattening and density-specific contact steepening. Do not add PPM merely to
-  reproduce that figure. For RMHD robustness, preserve the high-order primary
-  reconstruction and use local PWC HLLE/LLF flux plus CT-EMF replacement for a
-  failed RK candidate; limited PWL is a weaker rescue because its reconstructed
-  candidate can itself be inadmissible.
+  reproduce that figure.
 - The exact Balsara reconstruction resolution scan at N=128, 256, 512, and
   1024 confirms that PWL-MC is the most uniformly reliable current method.
   On Balsara 4 its maximum normalized all-component L1 decreases
@@ -329,6 +316,28 @@ performance, and MPI-rank evidence into one claim.
   (WENO-Z 4, MP5 35, TENO5 40, PWC 0). This supports testing high order followed
   by PWL-MC and terminal PWC candidate correction; it does not support
   declaring standalone PWL-MC or adding PPM finished production solutions.
+- The subsequent 240-run candidate-policy scan used all five exact Balsara
+  problems, N=128--1024, four non-PWC primary methods, HLL/SSPRK3, and CFL 0.9.
+  Every guarded run completed without an atmosphere reset. MP5 plus direct PWC
+  is the best single policy: at N=1024 it gives maximum normalized all-component
+  L1 errors `2.377e-3, 2.532e-3, 4.060e-3, 3.253e-3, 2.170e-3` for Balsara
+  1--5. PWL-MC then PWC is slightly better on Balsara 3 (`3.999e-3`) but worse
+  on Balsara 4 (`5.982e-3`), so it remains an optional comparison rather than
+  the selected production policy. The guard is inactive and bitwise-neutral
+  on the MP5 entropy-wave scan through N=256, which retains order
+  `3.77, 3.28, 3.07`; enabled one-dimensional throughput is about 0.63 of
+  disabled throughput in small smooth/shock controls.
+- CT must use the same RK-weighted stage fluxes as the cell update and reflux
+  registers. Using only the last stage's EMF is inconsistent for every
+  multistage integrator. The current CT path accumulates stage EMFs with the
+  Euler/corrector/midpoint/SSPRK3/RK4 weights before applying one curl update.
+  The full RMHD standard gate, all 19 MHD method/timestep cases, all five CT
+  AMR subcycling timesteppers, and the extended resistive-current-sheet case
+  pass. A smooth three-level RMHD AMR+CT control has `divB_L1=3.38e-15`.
+  An extreme 2D Balsara-4 extrusion remains a stress limitation: MP5/PWC no
+  longer crashes or resets, but transverse roundoff asymmetry grows to about
+  `2.7e-6` at N=256x8 (`PWL` also grows to `3.9e-7`). Do not treat that
+  extrusion as dimensionally clean until the amplification is diagnosed.
 - The current small-spin XCTS PWL control passes three evolved-spacetime steps
   at CFL 0.9 with rest-mass drift `8.52e-10`. Component MP5 now remains finite
   for the same three steps, but its `9.35e-8` rest-mass drift fails the existing

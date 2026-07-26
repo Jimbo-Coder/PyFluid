@@ -46,9 +46,21 @@
          &zero,
          sizeof(zero)
       );
+      amrex::Gpu::htod_memcpy(
+         step_rmhd_pwl_correction_count_.dataPtr(),
+         &zero,
+         sizeof(zero)
+      );
+      amrex::Gpu::htod_memcpy(
+         step_rmhd_pwc_correction_count_.dataPtr(),
+         &zero,
+         sizeof(zero)
+      );
 #else
       *step_relativistic_c2p_fallback_count_.dataPtr() = zero;
       *step_relativistic_atmosphere_reset_count_.dataPtr() = zero;
+      *step_rmhd_pwl_correction_count_.dataPtr() = zero;
+      *step_rmhd_pwc_correction_count_.dataPtr() = zero;
 #endif
    }
 
@@ -61,20 +73,37 @@
          step_relativistic_c2p_fallback_count_.dataValue();
       amrex::Long atmosphere_reset_count =
          step_relativistic_atmosphere_reset_count_.dataValue();
+      amrex::Long rmhd_pwl_correction_count =
+         step_rmhd_pwl_correction_count_.dataValue();
+      amrex::Long rmhd_pwc_correction_count =
+         step_rmhd_pwc_correction_count_.dataValue();
       amrex::ParallelDescriptor::ReduceLongSum(c2p_fallback_count);
       amrex::ParallelDescriptor::ReduceLongSum(atmosphere_reset_count);
+      amrex::ParallelDescriptor::ReduceLongSum(rmhd_pwl_correction_count);
+      amrex::ParallelDescriptor::ReduceLongSum(rmhd_pwc_correction_count);
       relativistic_c2p_fallback_count_ += c2p_fallback_count;
       relativistic_atmosphere_reset_count_ += atmosphere_reset_count;
-      if (c2p_fallback_count != 0 || atmosphere_reset_count != 0) {
+      rmhd_pwl_correction_count_ += rmhd_pwl_correction_count;
+      rmhd_pwc_correction_count_ += rmhd_pwc_correction_count;
+      if (
+         c2p_fallback_count != 0 || atmosphere_reset_count != 0
+         || rmhd_pwl_correction_count != 0 || rmhd_pwc_correction_count != 0
+      ) {
          amrex::Print()
             << "WARNING: relativistic recovery repair at step=" << step
             << " time=" << time
             << " c2p_fallbacks=" << c2p_fallback_count
             << " atmosphere_resets=" << atmosphere_reset_count
+            << " rmhd_pwl_corrections=" << rmhd_pwl_correction_count
+            << " rmhd_pwc_corrections=" << rmhd_pwc_correction_count
             << " cumulative_c2p_fallbacks="
             << relativistic_c2p_fallback_count_
             << " cumulative_atmosphere_resets="
-            << relativistic_atmosphere_reset_count_ << "\n";
+            << relativistic_atmosphere_reset_count_
+            << " cumulative_rmhd_pwl_corrections="
+            << rmhd_pwl_correction_count_
+            << " cumulative_rmhd_pwc_corrections="
+            << rmhd_pwc_correction_count_ << "\n";
       }
    }
 
@@ -353,33 +382,69 @@
             });
             profile_.end(ProfileStage::Sources, stage_start);
          }
-         const bool defer_rhd_limiter =
-            physics_system_ == PhysicalSystem::RHD && spacetime_state_.evolves();
-         if (physics_system_ == PhysicalSystem::RHD && !defer_rhd_limiter) {
-            apply_rhd_admissibility_flux_limiter(
-               fluxes,
-               *fluid_state_.rhs()[lev],
-               *candidate_base[lev],
-               *input[lev],
-               *primitive_[lev],
-               eos_params(cfg_),
-               eos_method_,
-               Geom(lev),
-               fixed_spacetime_parameters(cfg_),
-               stored_spacetime,
-               stored_spacetime,
-               recovery_atmosphere_,
-               rhs_time,
-               candidate_base_weight,
-               candidate_input_weight,
-               candidate_increment_scale
+         const bool rmhd_candidate_guard =
+            physics_system_ == PhysicalSystem::RMHD
+            && cfg_.rmhd_candidate_guard != "off";
+         const bool defer_relativistic_limiter =
+            spacetime_state_.evolves()
+            && (
+               physics_system_ == PhysicalSystem::RHD
+               || rmhd_candidate_guard
             );
+         if (!defer_relativistic_limiter) {
+            if (physics_system_ == PhysicalSystem::RHD) {
+               apply_rhd_admissibility_flux_limiter(
+                  fluxes,
+                  *fluid_state_.rhs()[lev],
+                  *candidate_base[lev],
+                  *input[lev],
+                  *primitive_[lev],
+                  eos_params(cfg_),
+                  eos_method_,
+                  Geom(lev),
+                  fixed_spacetime_parameters(cfg_),
+                  stored_spacetime,
+                  stored_spacetime,
+                  recovery_atmosphere_,
+                  rhs_time,
+                  candidate_base_weight,
+                  candidate_input_weight,
+                  candidate_increment_scale
+               );
+            } else if (rmhd_candidate_guard) {
+               apply_rmhd_candidate_flux_limiter(
+                  fluxes,
+                  *fluid_state_.rhs()[lev],
+                  *candidate_base[lev],
+                  *input[lev],
+                  *primitive_[lev],
+                  eos_params(cfg_),
+                  riemann_method_,
+                  Geom(lev),
+                  fixed_spacetime_parameters(cfg_),
+                  stored_spacetime,
+                  stored_spacetime,
+                  recovery_atmosphere_,
+                  rhs_time,
+                  candidate_base_weight,
+                  candidate_input_weight,
+                  candidate_increment_scale,
+                  cfg_.rmhd_candidate_guard == "pwl-pwc",
+                  cfg_.rmhd_candidate_dmp
+                     && recon_method != ReconPWL
+                     && recon_method != ReconPWC,
+                  cfg_.rmhd_candidate_dmp_factor,
+                  step_rmhd_pwl_correction_count_.dataPtr(),
+                  step_rmhd_pwc_correction_count_.dataPtr()
+               );
+            }
          }
-         if (!defer_rhd_limiter) {
+         if (!defer_relativistic_limiter) {
             debug_check_fluxes(lev, use_solid_mask, "final flux");
             accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
             debug_check_rhs_level(lev, "RHS assembly");
             stage_start = profile_.begin();
+            accumulate_ct_stage_emf(lev, fluxes, reflux_weight);
             add_fluxes_to_registers(lev, reflux_weight);
             profile_.end(ProfileStage::FluxRegister, stage_start);
          }
@@ -449,7 +514,17 @@
             stage_time
          );
       }
-      if (physics_system_ == PhysicalSystem::RHD && spacetime_state_.evolves()) {
+      const bool deferred_rmhd_candidate_guard =
+         physics_system_ == PhysicalSystem::RMHD
+         && cfg_.rmhd_candidate_guard != "off"
+         && spacetime_state_.evolves();
+      if (
+         spacetime_state_.evolves()
+         && (
+            physics_system_ == PhysicalSystem::RHD
+            || deferred_rmhd_candidate_guard
+         )
+      ) {
          LevelData candidate_vertex_spacetime(finestLevel() + 1);
          LevelData candidate_cell_spacetime(finestLevel() + 1);
          for (int lev = lev_begin; lev < lev_end; ++lev) {
@@ -514,28 +589,57 @@
             );
 
             const auto fluxes = flux_ptrs(lev);
-            apply_rhd_admissibility_flux_limiter(
-               fluxes,
-               *fluid_state_.rhs()[lev],
-               *fluid_state_.stage(candidate_base_slot)[lev],
-               *fluid_state_.stage(input_slot)[lev],
-               *primitive_[lev],
-               eos_params(cfg_),
-               eos_method_,
-               Geom(lev),
-               fixed_spacetime_parameters(cfg_),
-               spacetime_coupling_.cell_spacetime()[lev].get(),
-               candidate_cell_spacetime[lev].get(),
-               recovery_atmosphere_,
-               stage_time,
-               candidate_base_weight,
-               candidate_input_weight,
-               candidate_increment_scale
-            );
+            if (physics_system_ == PhysicalSystem::RHD) {
+               apply_rhd_admissibility_flux_limiter(
+                  fluxes,
+                  *fluid_state_.rhs()[lev],
+                  *fluid_state_.stage(candidate_base_slot)[lev],
+                  *fluid_state_.stage(input_slot)[lev],
+                  *primitive_[lev],
+                  eos_params(cfg_),
+                  eos_method_,
+                  Geom(lev),
+                  fixed_spacetime_parameters(cfg_),
+                  spacetime_coupling_.cell_spacetime()[lev].get(),
+                  candidate_cell_spacetime[lev].get(),
+                  recovery_atmosphere_,
+                  stage_time,
+                  candidate_base_weight,
+                  candidate_input_weight,
+                  candidate_increment_scale
+               );
+            } else {
+               apply_rmhd_candidate_flux_limiter(
+                  fluxes,
+                  *fluid_state_.rhs()[lev],
+                  *fluid_state_.stage(candidate_base_slot)[lev],
+                  *fluid_state_.stage(input_slot)[lev],
+                  *primitive_[lev],
+                  eos_params(cfg_),
+                  riemann_method_,
+                  Geom(lev),
+                  fixed_spacetime_parameters(cfg_),
+                  spacetime_coupling_.cell_spacetime()[lev].get(),
+                  candidate_cell_spacetime[lev].get(),
+                  recovery_atmosphere_,
+                  stage_time,
+                  candidate_base_weight,
+                  candidate_input_weight,
+                  candidate_increment_scale,
+                  cfg_.rmhd_candidate_guard == "pwl-pwc",
+                  cfg_.rmhd_candidate_dmp
+                     && recon_method_for_level(lev) != ReconPWL
+                     && recon_method_for_level(lev) != ReconPWC,
+                  cfg_.rmhd_candidate_dmp_factor,
+                  step_rmhd_pwl_correction_count_.dataPtr(),
+                  step_rmhd_pwc_correction_count_.dataPtr()
+               );
+            }
             debug_check_fluxes(lev, false, "final flux");
             accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
             debug_check_rhs_level(lev, "RHS assembly");
             const amrex::Real register_start = profile_.begin();
+            accumulate_ct_stage_emf(lev, fluxes, reflux_weight);
             add_fluxes_to_registers(lev, reflux_weight);
             profile_.end(ProfileStage::FluxRegister, register_start);
          }
@@ -572,6 +676,12 @@
          return false;
       }
       if (spacetime_state_.active()) {
+         return false;
+      }
+      if (
+         physics_system_ == PhysicalSystem::RMHD
+         && cfg_.rmhd_candidate_guard != "off"
+      ) {
          return false;
       }
       for (int lev = lev_begin; lev < lev_end; ++lev) {
@@ -695,6 +805,7 @@
          accumulate_physical_boundary_flux(lev, fluxes, reflux_weight);
 
          stage_start = profile_.begin();
+         accumulate_ct_stage_emf(lev, fluxes, reflux_weight);
          add_fluxes_to_registers(lev, reflux_weight);
          profile_.end(ProfileStage::FluxRegister, stage_start);
       }

@@ -106,6 +106,7 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
    gravity_fixed_cache_valid_.resize(num_levels, false);
    face_b_.resize(num_levels);
    edge_e_.resize(num_levels);
+   ct_stage_edge_e_.resize(num_levels);
    edge_current_.resize(num_levels);
 #if (AMREX_SPACEDIM >= 2)
    edge_flux_registers_.resize(num_levels);
@@ -293,6 +294,7 @@ void AmrSolverBase::allocate_level(
    }
    if (ct_enabled(cfg_)) {
       allocate_face_magnetic_field(face_b_[lev], ba, dm, cfg_.ng);
+      allocate_edge_electric_field(ct_stage_edge_e_[lev], ba, dm);
    }
    if (needs_edge_electric_field()) {
       allocate_edge_electric_field(edge_e_[lev], ba, dm);
@@ -533,6 +535,9 @@ void AmrSolverBase::ClearLevel(int lev)
       face_b_[lev].b[dir].reset();
    }
    for (auto& component : edge_e_[lev].e) {
+      component.reset();
+   }
+   for (auto& component : ct_stage_edge_e_[lev].e) {
       component.reset();
    }
    for (auto& component : edge_current_[lev].e) {

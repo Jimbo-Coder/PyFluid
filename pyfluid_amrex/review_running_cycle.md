@@ -2847,7 +2847,7 @@ I will always continue from the last cycle marked as `in_progress`.
   candidate correction because a PWL candidate can itself be inadmissible.
   No solver change was made in this triage cycle. [DONE]
 
-## Cycle 229 — RMHD correction-policy convergence scan (WIP)
+## Cycle 229 — RMHD correction-policy convergence scan (DONE)
 
 - Correct the earlier overstatement about PWL-MC as a fallback. Its slope
   becomes zero at extrema and sign changes, so it often reduces locally to
@@ -2880,4 +2880,52 @@ I will always continue from the last cycle marked as `in_progress`.
   PWL-MC-then-PWC without adding a reconstruction template axis. Validate
   1D exact behavior, smooth convergence, multidimensional CT/AMR, CFL 0.9,
   and enabled/disabled performance before choosing the production default.
-  [PENDING]
+  The host-selected `off|pwc|pwl-pwc` implementation now predicts every
+  shared RK-stage candidate after sources. High-order candidates use the
+  AthenaK-style factor-1.2 density/energy DMP plus C2P; a PWL-MC candidate
+  must clear the same test, and PWC is terminal. A monotone mask-closure pass
+  catches neighbors changed by a shared corrected face before applying the
+  final fluxes. PWL/PWC corrections are counted separately from recovery
+  repairs. Disabled runs retain the direct-flux path and launch no guard
+  kernel. [DONE]
+- Run the final correction-policy matrix: all Balsara 1--5 cases, N=128, 256,
+  512, 1024, PWL/WENO-Z/MP5/TENO5, and `off|pwc|pwl-pwc`, for 240 exact-profile
+  runs at HLL/SSPRK3/CFL 0.9. Every guarded run completed with zero atmosphere
+  resets. MP5/PWC is the best single policy and reaches N=1024 maximum
+  normalized all-component L1 errors
+  `2.377e-3, 2.532e-3, 4.060e-3, 3.253e-3, 2.170e-3` for Balsara 1--5.
+  PWL-MC/PWC is slightly better only on Balsara 3 (`3.999e-3`) and is worse on
+  Balsara 4 (`5.982e-3`); retain the knob but prefer direct PWC. The scan is
+  recorded in `runs/current/rmhd_validation/balsara_candidate_guard_scan.tsv`
+  with the complete policy plot
+  `plots/current/scans/rmhd_balsara_candidate_guard_convergence.png` and the
+  focused comparison
+  `plots/current/scans/rmhd_balsara_best_policy_convergence.png`. [DONE]
+- Verify the smooth/performance boundary. MP5 guard on/off entropy-wave errors
+  are identical through N=256 and converge with orders `3.77, 3.28, 3.07`;
+  the guard never activates. Small one-dimensional Balsara 1/5 controls show
+  median enabled throughput about 0.63 of disabled throughput, so the default
+  remains `off` and production inputs opt into `pwc`. The ordinary four-case
+  benchmark passes at 0.90--0.98 of its frozen baselines. [DONE]
+- Correct the CT stage-integration issue exposed while testing corrected
+  magnetic fluxes. The old multistage path applied the curl of only the last
+  RK stage's EMF, even though cell updates and flux registers used weighted
+  stage fluxes. CT now accumulates the same Euler/corrector/midpoint/SSPRK3/RK4
+  stage weights, including subcycling and corrected RMHD fluxes, before one
+  face-field update. All production dimensions compile; RMHD quick and
+  standard pass; the 19-case MHD matrix passes; all five CT AMR/subcycling
+  timesteppers pass; and the resistive-current-sheet AMR+CT case passes when
+  given 300 seconds (it exceeded the broad matrix's 120-second cap). [DONE]
+- Record, do not hide, the remaining extreme dimensional stress limitation.
+  A 256x8 Balsara-4 CT extrusion with MP5/PWC completes at CFL 0.9 with zero
+  recovery repairs, but transverse spread reaches `2.71e-6` and
+  `divB_L1=1.06e-12`; PWL without the guard also amplifies transverse
+  roundoff to `3.93e-7`. The ordinary Balsara-1 CT degeneracy/refinement gate
+  remains roundoff-clean and passes. The Balsara-4 amplification needs a
+  separate diagnosis and is not grounds to relax the existing tolerance.
+  [DONE]
+- Record compile evidence honestly. All three production executables rebuilt
+  successfully after the final source changes. The subsequent
+  `benchmark_compile.py --target pyfluid_amrex_production` integration check
+  was a `0.58 s` no-op/cache-hit build (`cache_hits=0`, `cache_misses=0` from
+  the compiler-cache parser), not a cold-build measurement. [DONE]

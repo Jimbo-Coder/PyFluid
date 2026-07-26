@@ -143,6 +143,17 @@ def relativistic_recovery_counts(run_dir: Path) -> tuple[int, int]:
    return tuple(int(value) for value in match.groups())
 
 
+def rmhd_candidate_correction_counts(run_dir: Path) -> tuple[int, int]:
+   match = re.search(
+      r"Relativistic recovery .*rmhd_pwl_corrections=(\d+) "
+      r"rmhd_pwc_corrections=(\d+)",
+      (run_dir / "run.log").read_text(),
+   )
+   if match is None:
+      return 0, 0
+   return tuple(int(value) for value in match.groups())
+
+
 def validate_uniform(args: argparse.Namespace) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
    cases = (
       ("uniform_1d", INPUTS / "rmhd_uniform_1d.in", 1),
@@ -192,16 +203,24 @@ def validate_component_reconstruction_methods(
             "pyfluid.final_time": "-1",
             "pyfluid.ng": "3" if method in {"wenoz", "mp5", "teno5"} else "2",
             "pyfluid.recon": method,
+            "pyfluid.rmhd_candidate_guard": "pwc",
             "pyfluid.scalar_int": "1",
             "pyfluid.plot_int": "4",
          },
          args,
       )
       fallback_count, reset_count = relativistic_recovery_counts(run_dir)
-      if fallback_count != 0 or reset_count != 0:
+      pwl_count, pwc_count = rmhd_candidate_correction_counts(run_dir)
+      if (
+         fallback_count != 0
+         or reset_count != 0
+         or pwl_count != 0
+         or pwc_count != 0
+      ):
          raise RuntimeError(
-            f"{method} smooth wave required recovery repairs: "
-            f"fallbacks={fallback_count} atmosphere_resets={reset_count}"
+            f"{method} smooth wave triggered a robustness intervention: "
+            f"fallbacks={fallback_count} atmosphere_resets={reset_count} "
+            f"pwl_corrections={pwl_count} pwc_corrections={pwc_count}"
          )
       results.append({
          "kind": "reconstruction",
@@ -209,6 +228,8 @@ def validate_component_reconstruction_methods(
          "status": "PASS",
          "metric": "recovery_repairs",
          "value": 0,
+         "rmhd_pwl_corrections": pwl_count,
+         "rmhd_pwc_corrections": pwc_count,
          "run_dir": repo_relative(run_dir),
       })
       scalars.append(scalar)
@@ -371,6 +392,7 @@ def validate_exact_balsara(
          "pyfluid.ng": "3",
          "pyfluid.cfl": "0.9",
          "pyfluid.recon": "mp5",
+         "pyfluid.rmhd_candidate_guard": "pwc",
          "pyfluid.scalar_int": "64",
          "pyfluid.plot_int": "1000000",
       }
@@ -438,9 +460,10 @@ def validate_exact_balsara(
             f"spread={normal_field_spread:.3e}"
          )
       fallback_count, reset_count = relativistic_recovery_counts(run_dir)
-      if fallback_count != 0 or reset_count > 4:
+      pwl_count, pwc_count = rmhd_candidate_correction_counts(run_dir)
+      if fallback_count != 0 or reset_count != 0:
          raise RuntimeError(
-            f"Balsara {case} required excessive recovery repairs: "
+            f"Balsara {case} required a post-update recovery repair: "
             f"fallbacks={fallback_count} atmosphere_resets={reset_count}"
          )
       results.append({
@@ -451,6 +474,8 @@ def validate_exact_balsara(
          "value": maximum_error,
          "c2p_fallbacks": fallback_count,
          "atmosphere_resets": reset_count,
+         "rmhd_pwl_corrections": pwl_count,
+         "rmhd_pwc_corrections": pwc_count,
          "run_dir": repo_relative(run_dir),
       })
       scalars.append(scalar)
@@ -537,13 +562,17 @@ def validate_amr(args: argparse.Namespace) -> tuple[dict[str, object], list[dict
          "amr.max_grid_size": "16",
          "pyfluid.final_time": "0.2",
          "pyfluid.plot_int": "1000000",
+         "pyfluid.rmhd_candidate_guard": "pwc",
       },
       args,
    )
    amr_dir, amr_scalar = run_case(
       "entropy_amr_subcycling",
       INPUTS / "rmhd_entropy_wave_1d_amr.in",
-      {"pyfluid.plot_int": "1000000"},
+      {
+         "pyfluid.plot_int": "1000000",
+         "pyfluid.rmhd_candidate_guard": "pwc",
+      },
       args,
    )
    plotfile = latest_plotfile(amr_dir, require=True)
@@ -573,7 +602,12 @@ def validate_ct_amr(args: argparse.Namespace) -> tuple[dict[str, object], dict[s
    run_dir, scalar = run_case(
       "entropy_2d_amr_ct_subcycling",
       INPUTS / "rmhd_entropy_wave_2d_amr_ct.in",
-      {"pyfluid.plot_int": "1000000"},
+      {
+         "pyfluid.ng": "3",
+         "pyfluid.recon": "mp5",
+         "pyfluid.rmhd_candidate_guard": "pwc",
+         "pyfluid.plot_int": "1000000",
+      },
       args,
       dim=2,
    )
@@ -827,6 +861,8 @@ def main() -> int:
          "levels",
          "c2p_fallbacks",
          "atmosphere_resets",
+         "rmhd_pwl_corrections",
+         "rmhd_pwc_corrections",
          "run_dir",
       ],
    )

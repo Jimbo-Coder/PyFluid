@@ -27,6 +27,9 @@
       profile_.end(ProfileStage::BoundaryFill, stage_start);
       copy_level_state_to_old(lev);
 
+      if constexpr (CTEnabled) {
+         reset_ct_stage_emf_level(lev);
+      }
       const bool next_state_needs_copy =
          advance_level_range<NComp, TimeMethod, EOSMethod, true, true, !CTEnabled>(time, dt, lev, lev + 1);
 
