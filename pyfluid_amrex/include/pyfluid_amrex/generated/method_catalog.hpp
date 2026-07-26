@@ -21,6 +21,8 @@ enum ReconstructionMethodCode : int {
    ReconPPM4Char = 11,
    ReconPPMX = 12,
    ReconPPMXChar = 13,
+   ReconPPM3 = 14,
+   ReconPPM3Char = 15,
 };
 
 struct ReconstructionMethodInfo {
@@ -32,7 +34,7 @@ struct ReconstructionMethodInfo {
    bool characteristic;
 };
 
-inline constexpr std::array<ReconstructionMethodInfo, 14> ReconstructionMethodCatalog = {{
+inline constexpr std::array<ReconstructionMethodInfo, 16> ReconstructionMethodCatalog = {{
    {ReconPWC, "pwc", "Piecewise constant", "First-order piecewise-constant reconstruction.", 0, false},
    {ReconPWL, "pwl", "Piecewise linear MC", "Piecewise-linear primitive reconstruction with the monotonized-central limiter.", 1, false},
    {ReconWENOZ, "wenoz", "WENO-Z", "Fifth-order component-wise WENO-Z reconstruction.", 2, false},
@@ -46,7 +48,9 @@ inline constexpr std::array<ReconstructionMethodInfo, 14> ReconstructionMethodCa
    {ReconPPM4, "ppm4", "PPM4", "Classic monotonic piecewise-parabolic reconstruction.", 2, false},
    {ReconPPM4Char, "ppm4-char", "PPM4 characteristic", "Characteristic classic monotonic piecewise-parabolic reconstruction.", 2, true},
    {ReconPPMX, "ppmx", "PPMX", "Smooth-extremum-preserving piecewise-parabolic reconstruction.", 2, false},
-   {ReconPPMXChar, "ppmx-char", "PPMX characteristic", "Characteristic smooth-extremum-preserving piecewise-parabolic reconstruction.", 2, true}
+   {ReconPPMXChar, "ppmx-char", "PPMX characteristic", "Characteristic smooth-extremum-preserving piecewise-parabolic reconstruction.", 2, true},
+   {ReconPPM3, "ppm3", "PPM3", "Limited-slope third-order piecewise-parabolic reconstruction.", 2, false},
+   {ReconPPM3Char, "ppm3-char", "PPM3 characteristic", "Characteristic limited-slope third-order piecewise-parabolic reconstruction.", 2, true}
 }};
 
 constexpr int reconstruction_stencil_radius(int method) noexcept
@@ -66,6 +70,8 @@ constexpr int reconstruction_stencil_radius(int method) noexcept
    case ReconPPM4Char: return 2;
    case ReconPPMX: return 2;
    case ReconPPMXChar: return 2;
+   case ReconPPM3: return 2;
+   case ReconPPM3Char: return 2;
    default: return -1;
    }
 }
@@ -87,6 +93,8 @@ constexpr bool reconstruction_is_characteristic(int method) noexcept
    case ReconPPM4Char: return true;
    case ReconPPMX: return false;
    case ReconPPMXChar: return true;
+   case ReconPPM3: return false;
+   case ReconPPM3Char: return true;
    default: return false;
    }
 }

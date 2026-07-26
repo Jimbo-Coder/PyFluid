@@ -215,6 +215,46 @@ High-value source/test routes include:
   compares at the published times. These files are independent validation
   data, not production flux, reconstruction, or recovery code.
 
+## Modern Shock-Capturing Research Routes
+
+Use these as method and comparison references, not imported production
+implementations:
+
+- G. Mattia and A. Mignone, *A comparison of approximate non-linear Riemann
+  solvers for Relativistic MHD*,
+  [arXiv:2111.09369](https://arxiv.org/abs/2111.09369): matched HLL, HLLC,
+  HLLD, HLLEM, and GFORCE accuracy/robustness evidence. HLLD is strongest for
+  weak/moderate magnetization; GFORCE is a robust less-diffusive HLL
+  alternative at strong magnetization.
+- A. Mignone, M. Ugliano, and G. Bodo, *A five-wave HLL Riemann solver for
+  relativistic MHD*, [arXiv:0811.1483](https://arxiv.org/abs/0811.1483):
+  the nonlinear total-pressure closure and jump conditions for RMHD HLLD.
+- O. Zanotti, F. Fambri, and M. Dumbser, *Solving the relativistic
+  magnetohydrodynamics equations with ADER discontinuous Galerkin methods,
+  a posteriori subcell limiting and adaptive mesh refinement*,
+  [arXiv:1504.07458](https://arxiv.org/abs/1504.07458): RMHD evidence for
+  accepting a high-order candidate in smooth cells and replacing troubled
+  cells a posteriori. The DG/subcell implementation is not a direct fit for
+  the finite-volume AMReX path, but the MOOD-style policy is relevant.
+- C. Pan et al., *A high-fidelity finite volume scheme for ideal
+  magnetohydrodynamics equations using boundary variation diminishing
+  algorithm*, [arXiv:2404.13015](https://arxiv.org/abs/2404.13015): recent
+  nonrelativistic MHD plus CT evidence for polynomial/THINC BVD selection.
+  Treat it as a prototype direction requiring independent SRMHD validation.
+- K. Wu and C.-W. Shu, *Entropy Symmetrization and High-Order Accurate Entropy
+  Stable Numerical Schemes for Relativistic MHD Equations*,
+  [arXiv:1907.07467](https://arxiv.org/abs/1907.07467): entropy stability for
+  a symmetrized Godunov--Powell-type RMHD system. This changes the equation
+  discretization and is not a drop-in reconstruction or Riemann-solver swap
+  for the present CT formulation.
+- C. Huang, A. S. Sebastian, and V. Viswanathan, *Learning second-order TVD
+  flux limiters using differentiable solvers*,
+  [arXiv:2503.09625](https://arxiv.org/abs/2503.09625): a constrained learned
+  limiter represented as a convex combination inside the classical TVD
+  admissible family. This supports offline constrained coefficient/search
+  experiments; it is not evidence for deploying an unconstrained neural
+  reconstruction in production RMHD.
+
 ## Local AsterX Robust-Reconstruction Reference
 
 The local AsterX checkout is under

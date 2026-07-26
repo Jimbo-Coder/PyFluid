@@ -52,6 +52,8 @@ METHODS = (
    Method("ppm4-char", "PPM4 characteristic", 2.0),
    Method("ppmx", "PPMX component", 3.5),
    Method("ppmx-char", "PPMX characteristic", 3.5),
+   Method("ppm3", "PPM3 component", 2.0),
+   Method("ppm3-char", "PPM3 characteristic", 2.0),
 )
 
 

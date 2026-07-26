@@ -38,19 +38,22 @@ contract and never add a second simulation-parameter interface.
 
 Every input file is a complete run configuration and explicitly names its run
 and output directory. Supported input values replace registered C++ defaults;
-there is no second launcher-level simulation-parameter interface. Registered method and AMR defaults live in
-[`config.cpp`](src/framework/config.cpp); structural parsing and combination validation
-live in [`config.hpp`](include/pyfluid_amrex/config.hpp). Grid-function names,
+there is no second launcher-level simulation-parameter interface. Registered
+method and AMR defaults live in [`config.cpp`](src/framework/config.cpp);
+structural parsing and combination validation live in
+[`config.hpp`](include/pyfluid_amrex/config.hpp). Grid-function names,
 components, centering, and output roles live in
-[`fields.hpp`](include/pyfluid_amrex/fields.hpp).
+[`schema/fields.toml`](schema/fields.toml); supported method identity and
+dispatch metadata live in [`schema/methods.toml`](schema/methods.toml).
 
 ## Supported Numerical Surface
 
 The regular production path is single-patch Cartesian HD or MHD in native 1D,
 2D, or 3D. It provides hydro-only state allocation for hydro runs, primitive
-PWC/PWL/WENO-Z/MP5/TENO5 reconstruction, LLF/HLL/HLLE/HLLC/HLLD Riemann solvers,
-Euler/midpoint/SSPRK3/RK4 time integration, adaptive CFL stepping, AMR,
-reflux/average-down, checkpoint/restart, and optional AMR subcycling.
+PWC/PWL/WENO-Z/MP5/TENO5/parabolic/PPM3/PPM4/PPMX reconstruction,
+LLF/HLL/HLLE/HLLC/HLLD Riemann solvers, Euler/midpoint/SSPRK3/RK4 time
+integration, adaptive CFL stepping, AMR, reflux/average-down,
+checkpoint/restart, and optional AMR subcycling.
 
 CT MHD uses cell-centered `B` for reconstruction/Riemann solves plus active
 face-centered `B` for the constrained update. Explicit viscosity and CT

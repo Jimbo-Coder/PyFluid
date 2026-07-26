@@ -51,6 +51,7 @@ COMPONENT_RECONSTRUCTION_METHODS = (
    "parabolic",
    "ppm4",
    "ppmx",
+   "ppm3",
 )
 EXACT_BALSARA_ROOT = ROOT / "exact_balsara"
 EXACT_BALSARA_CASES = (

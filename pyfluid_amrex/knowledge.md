@@ -280,14 +280,19 @@ performance, and MPI-rank evidence into one claim.
 - RHD always applies its established RK-candidate admissibility correction.
   RMHD has an optional host-selected candidate guard:
   `rmhd_candidate_guard = off|pwc|pwl-pwc`. It checks the concrete RK candidate
-  after sources, uses a 1.2 relaxed density/energy DMP only for high-order
+  after sources, uses a 1.05 relaxed density/energy DMP only for high-order
   reconstruction, and conservatively replaces every face adjoining a flagged
   cell. `pwl-pwc` accepts PWL-MC only when its candidate passes the same check;
   PWC is terminal. A monotone neighbor-closure pass prevents a corrected shared
   face from leaving an adjacent candidate unrecoverable. Fluid fluxes,
   magnetic fluxes, CT EMFs, and reflux inputs use the same final face choice.
   PWL and PWC counts are distinct from post-update C2P fallbacks and atmosphere
-  resets.
+  resets. The factor is not a reconstruction blend: it controls when the
+  concrete high-order RK candidate is exchanged for the conservative PWC face
+  flux. On exact Balsara 4 at N=1024, PPM4/PWC with 1.05 reduces maximum
+  normalized overshoot from 0.0488 to 0.00452 and maximum TV ratio from 2.58
+  to 1.49 relative to the former 1.2 factor, with no reset; an exact factor of
+  1.0 over-corrects and substantially increases L1 error.
 - During evolution, successful use of a secondary RMHD C2P method and terminal
   atmosphere resets after C2P exhaustion are counted across ranks and warned
   once per affected step. Ordinary atmosphere cells are not counted as

@@ -37,7 +37,7 @@ from validation_common import (
 )
 
 
-METHODS = ("pwl", "wenoz", "mp5", "teno5", "ppm4", "ppmx")
+METHODS = ("pwl", "wenoz", "mp5", "teno5", "ppm4", "ppmx", "ppm3")
 METHOD_CHOICES = METHODS + (
    "parabolic",
    "wenoz-char",
@@ -46,6 +46,7 @@ METHOD_CHOICES = METHODS + (
    "parabolic-char",
    "ppm4-char",
    "ppmx-char",
+   "ppm3-char",
 )
 GUARDS = ("off", "pwc", "pwl-pwc")
 TIMESTEPS = ("ssprk3", "rk4")
@@ -98,6 +99,9 @@ def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
                         "pyfluid.timestep": timestep,
                         "pyfluid.rmhd_candidate_guard": guard,
                         "pyfluid.rmhd_candidate_riemann": candidate_riemann,
+                        "pyfluid.rmhd_candidate_dmp_factor": repr(
+                           args.dmp_factor
+                        ),
                         "pyfluid.scalar_int": "64",
                         "pyfluid.plot_int": "1000000",
                      }
@@ -122,7 +126,8 @@ def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
                            overrides[f"pyfluid.{name}_{side}"] = repr(value)
                      run_name = (
                         f"guard_scan_balsara{case}_{method}_{guard}_"
-                        f"{candidate_riemann}_{timestep}_n{cells}"
+                        f"{candidate_riemann}_{timestep}_"
+                        f"dmp{args.dmp_factor:g}_n{cells}"
                      )
                      run_dir, scalar = run_case(
                         run_name,
@@ -146,6 +151,7 @@ def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
                         "guard": guard,
                         "candidate_riemann": candidate_riemann,
                         "timestep": timestep,
+                        "dmp_factor": args.dmp_factor,
                         "cells": cells,
                         "maximum_normalized_component_l1": maximum_l1,
                         "maximum_normalized_global_overshoot": overshoot,
@@ -192,12 +198,14 @@ def plot_scan(
       "parabolic": "#E69F00",
       "ppm4": "#56B4E9",
       "ppmx": "#000000",
+      "ppm3": "#F0E442",
       "wenoz-char": "#CC79A7",
       "mp5-char": "#0072B2",
       "teno5-char": "#D55E00",
       "parabolic-char": "#E69F00",
       "ppm4-char": "#56B4E9",
       "ppmx-char": "#000000",
+      "ppm3-char": "#F0E442",
    }
    styles = {"off": ":", "pwc": "--", "pwl-pwc": "-"}
    candidate_styles = {"same": "-", "hll": "-", "llf": "--"}
@@ -210,12 +218,14 @@ def plot_scan(
       "parabolic": "parabolic",
       "ppm4": "PPM4",
       "ppmx": "PPMX",
+      "ppm3": "PPM3",
       "wenoz-char": "WENO-Z char",
       "mp5-char": "MP5 char",
       "teno5-char": "TENO5 char",
       "parabolic-char": "parabolic char",
       "ppm4-char": "PPM4 char",
       "ppmx-char": "PPMX char",
+      "ppm3-char": "PPM3 char",
    }
    for index, case in enumerate(args.cases):
       axis = axes[index // columns, index % columns]
@@ -446,6 +456,12 @@ def main() -> int:
       default="",
       help="artifact suffix for a focused scan",
    )
+   parser.add_argument(
+      "--dmp-factor",
+      type=float,
+      default=1.05,
+      help="relaxed candidate DMP factor (default: 1.05)",
+   )
    parser.add_argument("--ranks", type=int, default=1)
    parser.add_argument("--timeout", type=int, default=300)
    parser.add_argument("--force", action="store_true")
@@ -469,6 +485,9 @@ def main() -> int:
       for row in rows:
          row.setdefault("candidate_riemann", "same")
          row.setdefault("timestep", "ssprk3")
+         # Legacy scan rows predate the explicit column and used the former
+         # production default.
+         row.setdefault("dmp_factor", 1.2)
    else:
       rows = run_scan(args)
       write_tsv(
@@ -480,6 +499,7 @@ def main() -> int:
             "guard",
             "candidate_riemann",
             "timestep",
+            "dmp_factor",
             "cells",
             "maximum_normalized_component_l1",
             "maximum_normalized_global_overshoot",

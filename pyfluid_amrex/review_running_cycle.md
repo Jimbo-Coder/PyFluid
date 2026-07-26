@@ -3049,3 +3049,118 @@ I will always continue from the last cycle marked as `in_progress`.
   only `flux_kernels/pwc.cpp` and linked, and the unchanged full production
   cache check took 0.78 s. Exact scan and profile artifacts are under
   `runs/current/rmhd_validation/` and `plots/current/scans/`. [DONE]
+
+## Cycle 233 — Primitive-variable AsterX visual comparison (DONE)
+
+- Do not infer that the published AsterX variables are smooth from PyFluid's
+  conserved-state comparison. Recover ideal-gas flat-SRMHD primitives from the
+  saved N=1024 PPM4/PWC, SSPRK3, CFL 0.9 Balsara states and require a
+  primitive-to-conserved round trip before comparing rest-mass density and
+  `By` with the Giacomazzo--Rezzolla profiles. The maximum relative round-trip
+  residual over all five problems is `2.51e-14`. [DONE]
+- The same-variable comparison does not establish AsterX visual parity.
+  Balsara 4 has normalized density L1/overshoot/TV ratio
+  `5.60e-3/5.33e-3/1.53` and `By`
+  `2.95e-3/1.59e-2/1.31`; both profiles retain visible cell-scale ringing.
+  Other PPM4/PWC cases are substantially cleaner, while Balsara 3 remains
+  strongly smeared and is not a matched AsterX policy because AsterX selects
+  MINMOD for that extreme-pressure case. The diagnostic plot is
+  `plots/current/scans/rmhd_balsara_primitives_ppm4.png`. No production source
+  was changed. [DONE]
+
+## Cycle 234 — Matched local AsterX PPM diagnosis (DONE)
+
+- Source-check the local AsterX Balsara-4 regression rather than judging only
+  the paper figure. It uses 50 cells on `[-0.5,0.5]`, CFL `0.25`, RK4, HLLE,
+  and AsterX's third-order limited-slope PPM. Its default density/contact
+  steepening is enabled and zone flattening is disabled. PyFluid `ppm4`
+  instead uses the fourth-order face interpolant followed by classic
+  parabolic monotonicity, so the two names do not denote the same formula.
+  [DONE]
+- Read AsterX's checked-in iteration-80 primitive TSVs and compare their
+  interior 50 cells directly with the tracked exact profile. AsterX
+  density has L1/overshoot/TV ratio `4.93e-2/1.97e-5/1.43`; `By` has
+  `3.68e-2/5.18e-2/1.24`. The reference therefore contains measurable
+  variation and a five-percent normalized `By` overshoot despite looking
+  nearly oscillation-free when sparsely plotted. [DONE]
+- Run PyFluid PPM4/PWC under the same 50-cell domain, CFL `0.25`, RK4, and
+  final time. The guard does not activate and no recovery reset occurs.
+  Density gives `5.58e-2/3.94e-13/1.34`; `By` gives
+  `4.00e-2/4.49e-2/1.32`. This is comparable rather than uniformly worse:
+  PyFluid has lower density TV and lower `By` overshoot, while AsterX has
+  slightly lower L1 and `By` TV. At N=1024, merely reducing PyFluid's CFL to
+  `0.25` or switching SSPRK3 to RK4 does not remove ringing, so CFL alone is
+  not the explanation. No production source was changed. [DONE]
+
+## Cycle 235 — Modern RMHD shock-capturing improvement triage (DONE)
+
+- Decide whether the Balsara behavior indicates a Valencia/formulation defect
+  before changing algorithms. Exact-profile improvement with resolution,
+  primitive/conserved round trips at `2.51e-14`, zero recovery resets under
+  the selected guard, independent AthenaK WENO-Z behavior, and comparable
+  matched AsterX PPM behavior all point to discontinuity reconstruction and
+  dissipation selection rather than an exposed formulation or C2P error.
+  This does not rule out a hidden defect, but there is no positive evidence
+  for one in the current tests. [DONE]
+- Source-route modern primary methods. RMHD HLLD is the strongest established
+  next Riemann candidate for weak/moderate magnetization, while GFORCE is a
+  lower-complexity robust alternative worth measuring at strong
+  magnetization. A posteriori/MOOD-style candidate selection is already
+  conceptually close to the current RK-stage guard. Polynomial/THINC BVD has
+  promising recent ideal-MHD+CT evidence but no local SRMHD validation.
+  Entropy-stable RMHD changes the equation discretization through a
+  Godunov--Powell-type source and is not a small CT-compatible flux upgrade.
+  Add the primary routes and limitations to `references.md`. [DONE]
+- Prefer one bounded research matrix over another permanent method explosion:
+  first add the AsterX-style limited-slope PPM3 control; then prototype a
+  compact a-posteriori selector among the existing high-order candidate,
+  PPM3/PWL-MC, and terminal PWC using physically meaningful primitive
+  oscillation/admissibility checks; independently measure HLLD when available.
+  Train or search any proposed sensor/limiter offline under conservation,
+  symmetry, positivity, subluminal-velocity, and TVD/monotonicity constraints,
+  freeze it as a short analytic formula, and require held-out smooth,
+  Balsara, rotated, CT, AMR, and GRMHD gates. Do not deploy a black-box neural
+  flux or optimize only the five Balsara profiles. No production method was
+  changed in this triage cycle. [DONE]
+
+## Cycle 236 — PPM3 control and tighter RMHD candidate exchange (DONE)
+
+- Add the physics-agnostic core formula of AsterX's limited-slope third-order
+  PPM as a control through the existing reconstruction catalog and additive
+  owner layout. `ppm3` and `ppm3-char` use MC-limited slopes, the third-order
+  parabolic interface formula, and classic PPM monotonicity; they deliberately
+  omit AsterX's density-specific contact steepening and pressure-based
+  flattening. They add two method-local owner translation units without a new
+  template-product axis. Formula tests cover constants, linear data, extrema,
+  discontinuities, the limited-slope interface value, and characteristic
+  dispatch. Both forms show smooth-wave orders `2.27, 2.01`; the four focused
+  hydro/MHD component/characteristic feature cases pass. [DONE]
+- Test the existing a-posteriori policies rather than assuming a longer
+  fallback ladder is better. Across all five exact Balsara cases at N=256 and
+  N=1024, PPM3 is robust with direct PWC correction but is not competitive
+  with PPM4 on the hard fourth tube: at N=1024 its L1/overshoot/TV is
+  `4.08e-3/0.119/2.64`. Trying PWL-MC before PWC worsens that to
+  `4.31e-3/0.131/3.63`. Retain PPM3 as a useful independent method/control,
+  but do not promote it or the PWL-first ladder as the production answer.
+  [DONE]
+- Improve the high-to-low exchange by calibrating the already explicit
+  relaxed DMP rather than adding another reconstruction tier. With PPM4/PWC
+  at N=1024 Balsara 4, the former factor 1.2 gives
+  `3.91e-3/0.0488/2.58`; factor 1.05 gives
+  `3.20e-3/0.00452/1.49`, zero resets, momentum overshoot `0.00228`, and
+  transverse-field overshoot `0.00293`. Factor 1.0 triggers about 268 thousand
+  corrections and degrades L1 to `1.40e-2`, so exact monotonicity is not a
+  suitable default. The N=256/512/1024, five-case 1.05 scan has zero resets;
+  the other cases pay modest extra diffusion while Balsara 4 improves
+  decisively. Change only the opt-in guard's default factor to 1.05; the guard
+  remains optional and direct PWC remains the preferred terminal correction.
+  The scan tool now records and names its DMP factor explicitly. [DONE]
+- Validate integration. Reconstruction formulas, generated flux checks, and
+  architecture checks pass. All production dimensions build. The one-rank
+  quick RMHD gate and the complete three-rank standard RMHD gate pass,
+  including exact Balsara, CT refinement, AMR/subcycling, divergence, restart,
+  and physical-ID checks. The production cache-hit build is `0.80 s`.
+  Canonical performance cases retain `0.91--0.97` of frozen baselines and pass.
+  The exact/primitive artifacts are under
+  `runs/current/rmhd_validation/` and `plots/current/scans/`, including
+  `rmhd_balsara_primitives_ppm4_dmp1p05.png`. [DONE]

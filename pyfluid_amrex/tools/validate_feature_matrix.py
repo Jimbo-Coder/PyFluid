@@ -65,6 +65,8 @@ RECONSTRUCTION_METHODS = (
    ("ppm4-char", "3"),
    ("ppmx", "3"),
    ("ppmx-char", "3"),
+   ("ppm3", "3"),
+   ("ppm3-char", "3"),
 )
 
 

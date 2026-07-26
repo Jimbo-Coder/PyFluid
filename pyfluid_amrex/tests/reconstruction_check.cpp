@@ -3,6 +3,7 @@
 #include <string_view>
 
 #include "pyfluid_amrex/reconstruction/parabolic.hpp"
+#include "pyfluid_amrex/reconstruction/ppm3.hpp"
 #include "pyfluid_amrex/reconstruction/ppm4.hpp"
 #include "pyfluid_amrex/reconstruction/ppmx.hpp"
 
@@ -54,14 +55,17 @@ bool validate_parabolic_family()
    static_assert(is_five_point_reconstruction(ReconParabolic));
    static_assert(is_five_point_reconstruction(ReconPPM4));
    static_assert(is_five_point_reconstruction(ReconPPMX));
+   static_assert(is_five_point_reconstruction(ReconPPM3));
    static_assert(is_characteristic_reconstruction(ReconParabolicChar));
    static_assert(is_characteristic_reconstruction(ReconPPM4Char));
    static_assert(is_characteristic_reconstruction(ReconPPMXChar));
+   static_assert(is_characteristic_reconstruction(ReconPPM3Char));
 
    bool passed = true;
    passed = validate_constant_and_linear<ReconParabolic>("parabolic") && passed;
    passed = validate_constant_and_linear<ReconPPM4>("ppm4") && passed;
    passed = validate_constant_and_linear<ReconPPMX>("ppmx") && passed;
+   passed = validate_constant_and_linear<ReconPPM3>("ppm3") && passed;
 
    constexpr amrex::Real cell_average_offset = 1.0 / 12.0;
    const amrex::Real quadratic_parabolic = reconstruct_left<ReconParabolic>(
@@ -85,6 +89,13 @@ bool validate_parabolic_family()
       1.0 + cell_average_offset,
       4.0 + cell_average_offset
    );
+   const amrex::Real quadratic_ppm3 = reconstruct_left<ReconPPM3>(
+      4.0 + cell_average_offset,
+      1.0 + cell_average_offset,
+      cell_average_offset,
+      1.0 + cell_average_offset,
+      4.0 + cell_average_offset
+   );
    passed = require_close(
       "parabolic quadratic interface",
       quadratic_parabolic,
@@ -100,6 +111,11 @@ bool validate_parabolic_family()
       quadratic_ppmx,
       0.25
    ) && passed;
+   passed = require_close(
+      "ppm3 clips quadratic extremum",
+      quadratic_ppm3,
+      cell_average_offset
+   ) && passed;
 
    const amrex::Real discontinuity_parabolic =
       reconstruct_left<ReconParabolic>(0.0, 1.0, 1.0, 1.0, 0.0);
@@ -107,6 +123,8 @@ bool validate_parabolic_family()
       reconstruct_left<ReconPPM4>(0.0, 1.0, 1.0, 1.0, 0.0);
    const amrex::Real discontinuity_ppmx =
       reconstruct_left<ReconPPMX>(0.0, 1.0, 1.0, 1.0, 0.0);
+   const amrex::Real discontinuity_ppm3 =
+      reconstruct_left<ReconPPM3>(0.0, 1.0, 1.0, 1.0, 0.0);
    passed = require_close(
       "unlimited parabolic discontinuity overshoot",
       discontinuity_parabolic,
@@ -122,6 +140,16 @@ bool validate_parabolic_family()
       discontinuity_ppmx,
       1.0
    ) && passed;
+   passed = require_close(
+      "ppm3 bounds discontinuity",
+      discontinuity_ppm3,
+      1.0
+   ) && passed;
+   passed = require_close(
+      "ppm3 limited-slope interface",
+      reconstruct_left<ReconPPM3>(0.0, 1.0, 2.0, 4.0, 7.0),
+      17.0 / 6.0
+   ) && passed;
 
    passed = require_close(
       "parabolic characteristic formula",
@@ -136,6 +164,11 @@ bool validate_parabolic_family()
    passed = require_close(
       "ppmx characteristic formula",
       reconstruct_left<ReconPPMXChar>(-2.0, -1.0, 0.0, 1.0, 2.0),
+      0.5
+   ) && passed;
+   passed = require_close(
+      "ppm3 characteristic formula",
+      reconstruct_left<ReconPPM3Char>(-2.0, -1.0, 0.0, 1.0, 2.0),
       0.5
    ) && passed;
    return passed;

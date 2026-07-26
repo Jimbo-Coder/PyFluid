@@ -20,6 +20,8 @@ void ppm4(FluxLaunch const& launch);
 void ppm4_char(FluxLaunch const& launch);
 void ppmx(FluxLaunch const& launch);
 void ppmx_char(FluxLaunch const& launch);
+void ppm3(FluxLaunch const& launch);
+void ppm3_char(FluxLaunch const& launch);
 
 } // namespace flux_factory_entries
 
@@ -107,6 +109,18 @@ void fill_fluxes(FluxLaunch const& launch)
    case ReconPPMXChar:
 #if PYFLUID_AMREX_ENABLE_RECON_PPMX_CHAR
       flux_factory_entries::ppmx_char(launch);
+      return;
+#endif
+      break;
+   case ReconPPM3:
+#if PYFLUID_AMREX_ENABLE_RECON_PPM3
+      flux_factory_entries::ppm3(launch);
+      return;
+#endif
+      break;
+   case ReconPPM3Char:
+#if PYFLUID_AMREX_ENABLE_RECON_PPM3_CHAR
+      flux_factory_entries::ppm3_char(launch);
       return;
 #endif
       break;

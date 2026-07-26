@@ -115,6 +115,22 @@ description = "Characteristic smooth-extremum-preserving piecewise-parabolic rec
 stencil_radius = 2
 characteristic = true
 
+[[reconstruction]]
+name = "ppm3"
+cpp_id = "PPM3"
+label = "PPM3"
+description = "Limited-slope third-order piecewise-parabolic reconstruction."
+stencil_radius = 2
+characteristic = false
+
+[[reconstruction]]
+name = "ppm3-char"
+cpp_id = "PPM3Char"
+label = "PPM3 characteristic"
+description = "Characteristic limited-slope third-order piecewise-parabolic reconstruction."
+stencil_radius = 2
+characteristic = true
+
 # Rotation laws are ordered by their stable generated C++ code.  The catalog
 # declares identity and required user parameters; the Euler integral and
 # numerical iteration remain generated/C++ science code.

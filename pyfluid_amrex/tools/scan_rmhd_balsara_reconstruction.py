@@ -32,7 +32,7 @@ from validate_rmhd import (
 from validation_common import ROOT, read_scalar_rows, repo_relative, write_tsv
 
 
-METHODS = ("pwc", "pwl", "wenoz", "mp5", "teno5", "ppm4", "ppmx")
+METHODS = ("pwc", "pwl", "wenoz", "mp5", "teno5", "ppm4", "ppmx", "ppm3")
 METHOD_CHOICES = METHODS + (
    "parabolic",
    "wenoz-char",
@@ -41,6 +41,7 @@ METHOD_CHOICES = METHODS + (
    "parabolic-char",
    "ppm4-char",
    "ppmx-char",
+   "ppm3-char",
 )
 COMPONENT_NAMES = ("dens", "mom1", "mom2", "mom3", "tau", "b1", "b2", "b3")
 PLOT_COMPONENTS = (
@@ -238,12 +239,14 @@ def plot_scan(
       "parabolic": "#E69F00",
       "ppm4": "#56B4E9",
       "ppmx": "#000000",
+      "ppm3": "#F0E442",
       "wenoz-char": "#CC79A7",
       "mp5-char": "#0072B2",
       "teno5-char": "#D55E00",
       "parabolic-char": "#E69F00",
       "ppm4-char": "#56B4E9",
       "ppmx-char": "#000000",
+      "ppm3-char": "#F0E442",
    }
    line_styles = {
       "pwc": "-",
@@ -254,12 +257,14 @@ def plot_scan(
       "parabolic": "--",
       "ppm4": "-",
       "ppmx": "-.",
+      "ppm3": "--",
       "wenoz-char": ":",
       "mp5-char": ":",
       "teno5-char": "--",
       "parabolic-char": ":",
       "ppm4-char": "--",
       "ppmx-char": ":",
+      "ppm3-char": ":",
    }
    display_names = {
       "pwc": "PWC",
@@ -270,12 +275,14 @@ def plot_scan(
       "parabolic": "parabolic",
       "ppm4": "PPM4",
       "ppmx": "PPMX",
+      "ppm3": "PPM3",
       "wenoz-char": "WENO-Z char",
       "mp5-char": "MP5 char",
       "teno5-char": "TENO5 char",
       "parabolic-char": "parabolic char",
       "ppm4-char": "PPM4 char",
       "ppmx-char": "PPMX char",
+      "ppm3-char": "PPM3 char",
    }
    for row, case in enumerate(plot_cases):
       spec = specs[case]
@@ -408,12 +415,14 @@ def plot_convergence(
       "parabolic": "#E69F00",
       "ppm4": "#56B4E9",
       "ppmx": "#000000",
+      "ppm3": "#F0E442",
       "wenoz-char": "#CC79A7",
       "mp5-char": "#0072B2",
       "teno5-char": "#D55E00",
       "parabolic-char": "#E69F00",
       "ppm4-char": "#56B4E9",
       "ppmx-char": "#000000",
+      "ppm3-char": "#F0E442",
    }
    display_names = {
       "pwc": "PWC",
@@ -424,12 +433,14 @@ def plot_convergence(
       "parabolic": "parabolic",
       "ppm4": "PPM4",
       "ppmx": "PPMX",
+      "ppm3": "PPM3",
       "wenoz-char": "WENO-Z char",
       "mp5-char": "MP5 char",
       "teno5-char": "TENO5 char",
       "parabolic-char": "parabolic char",
       "ppm4-char": "PPM4 char",
       "ppmx-char": "PPMX char",
+      "ppm3-char": "PPM3 char",
    }
    for index, case in enumerate(args.cases):
       axis = axes[index // columns, index % columns]
