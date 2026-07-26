@@ -7,8 +7,8 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-25, branch `main`, through the local Cycle 229
-RMHD candidate-correction pass. Use the commit
+Last reconciled: 2026-07-26, branch `main`, through the local Cycle 231
+matched AthenaK Balsara-4 comparison. Use the commit
 containing this snapshot plus the exact newer continuity-cycle evidence rather
 than inferring it from an earlier baseline.
 
@@ -297,6 +297,19 @@ performance, and MPI-rank evidence into one claim.
   AsterX MP5/WENO-Z nor rules out ringing in unplotted conserved momentum or
   energy. AsterX runs on CarpetX/AMReX block-structured AMR; this shock-tube
   result is not evidence for an octree topology.
+- A fresh independent AthenaK Balsara-4 run uses the exact tracked initial
+  states and solution, N=1024, HLLE, RK3, and the same normalized conserved
+  all-component metrics as PyFluid. AthenaK's original monotonic `ppm4`,
+  without FOFC, gives maximum L1/overshoot/TV-ratio
+  `3.001e-3/0.124/3.23` at CFL 0.4 and
+  `4.768e-3/0.192/4.37` at CFL 0.9. Its extremum-preserving `ppmx` is worse
+  (`4.620e-3/0.246/4.86` at CFL 0.4), and its WENO-Z reproduces PyFluid's
+  pathological result nearly exactly (`0.281/94.6/332`). At the matched
+  aggressive CFL 0.9, PyFluid MP5/PWC remains better than AthenaK PPM4:
+  `3.253e-3/0.161/3.25`. This strongly supports a lean, generic monotonic
+  PPM4 implementation as a useful reconstruction option, but not replacing
+  conservative candidate correction or claiming that PPM is universally
+  best.
 - PyFluid's `pwl` is limited PWL with the monotonized-central slope, not pure
   two-argument MINMOD. MC itself composes `minmod` bounds and is less
   dissipative; the Balsara reconstruction scan's PWL result is therefore

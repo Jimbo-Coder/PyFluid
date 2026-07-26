@@ -186,6 +186,9 @@ High-value source/test routes include:
 - compile/runtime numerical dispatch: `src/hydro/hydro_fluxes.cpp`,
   `src/mhd/mhd_fluxes.cpp`, their `rsolvers/` directories, and the selected
   problem-generator logic in the root and `src/pgen/` CMake files;
+- generic scalar PPM: `src/reconstruct/ppm.hpp`; `PPM4` is the original
+  monotonic Colella--Woodward interpolation, while `PPMX` uses the
+  Colella--Sekora smooth-extremum limiter;
 - Z4c, constraints, gauge, AMR, Weyl/wave extraction, and punctures:
   `src/z4c/`, `inputs/z4c/`, and `tst/test_suite/z4c/`;
 - shared numerical references: linear waves, shock tubes, field loops,

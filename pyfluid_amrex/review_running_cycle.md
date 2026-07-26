@@ -2977,3 +2977,36 @@ I will always continue from the last cycle marked as `in_progress`.
   MPI benchmark first failed only because sandbox sockets were unavailable;
   its approved socket-capable rerun passes at 0.92--0.99 of frozen baselines.
   [DONE]
+
+## Cycle 231 — Matched AthenaK Balsara-4 reconstruction comparison (DONE)
+
+- Source-check what the AsterX paper establishes for Balsara 4. Its published
+  figure uses third-order PPM and shows only rest-mass density and `By`;
+  therefore its clean visual agreement does not establish ring-free conserved
+  momentum or energy. The current local AsterX PPM has Colella--Woodward
+  monotonicity, density/contact detection enabled by default, and optional
+  pressure/velocity zone flattening disabled by default. [DONE]
+- Run AthenaK itself on the exact tracked Balsara-4 initial states and
+  Giacomazzo--Rezzolla comparison used by PyFluid. The existing serial CPU
+  executable at `/Users/mrizzo/phys_research/athenak/athenak/build/src/athena`
+  was used read-only with N=1024, HLLE, RK3, and output under
+  `/private/tmp/athenak_balsara4_*`; the analysis converted AthenaK's spatial
+  four-velocity and internal energy to the same flat-Valencia conserved state
+  and computed the same normalized L1, overshoot, and TV metrics. [DONE]
+- AthenaK `ppm4`, with its ordinary SRMHD FOFC disabled, gives
+  L1/overshoot/TV `3.001e-3/0.124/3.23` at CFL 0.4 and
+  `4.768e-3/0.192/4.37` at CFL 0.9. `ppmx` gives
+  `4.620e-3/0.246/4.86` at CFL 0.4 and worsens at CFL 0.9; PLM gives
+  `4.737e-3/0.344/3.42` at CFL 0.4. AthenaK WENO-Z reproduces PyFluid's
+  pathological Balsara-4 result nearly exactly:
+  `0.281/94.6/332`. This makes a shared implementation bug unlikely and shows
+  that original monotonic PPM is particularly well suited to this
+  discontinuity. [DONE]
+- Keep the comparison calibrated. At the matched N=1024/CFL 0.9, current
+  PyFluid MP5/PWC remains better than AthenaK PPM4:
+  `3.253e-3/0.161/3.25` versus `4.768e-3/0.192/4.37`. The evidence supports
+  adding and scanning a lean, physics-agnostic scalar PPM4 option; it does not
+  support replacing the candidate guard, importing AsterX's full
+  contact/flattening machinery immediately, or calling PPM universally best.
+  No PyFluid production source or validation artifact was changed in this
+  comparison cycle. [DONE]
