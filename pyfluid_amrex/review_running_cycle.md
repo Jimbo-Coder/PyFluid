@@ -2654,3 +2654,36 @@ I will always continue from the last cycle marked as `in_progress`.
   only the explicitly documented `2e-7` focused-smoke bound. The named baseline
   and canonical MPI benchmark remain unavailable for the stated external
   execution limit rather than being represented by cached artifacts. [DONE]
+
+## Cycle 222 — Balsara conservation audit and plots (DONE)
+
+- Re-run the five exact 1D SRMHD Balsara comparisons at N=512 with
+  MP5/HLL/SSPRK3 and CFL 0.9, report conservation without confusing the
+  established open-domain policy with a closed problem, and add concise plots
+  for exact profiles and refinement evidence. All five exact-profile gates
+  reproduce their Cycle 221 normalized component L1 errors. Balsara 1 has
+  roundoff mass and energy drift (`1.38e-15`, `1.51e-15`) and no recovery
+  events. Cases 2--5 have substantial raw total changes because their finite
+  open boxes do not constitute closed conservation controls; cases 2--4 also
+  record two, three, and two terminal atmosphere resets. The plotted Balsara 4
+  MP5 solution follows the exact wave structure but visibly rings in the
+  strongest post-shock regions, consistent with treating its `0.0131` maximum
+  normalized L1 as bounded agreement rather than a finished robustness result.
+  [DONE]
+- Make the convergence label exact. The current Balsara 1 CT refinement uses
+  uniform 2D grids N=128, 256, and 512 against an N=1024 numerical reference;
+  it is not an AMR convergence test. Errors decrease from `5.536e-3` through
+  `3.382e-3` to `1.445e-3`, with interval rates `0.71` and `1.23`, which is
+  sensible shock-dominated near-first-order behavior. The separate smooth
+  RMHD entropy-wave AMR+CT gate remains the actual RMHD AMR evidence. [DONE]
+- Probe whether the open boundaries alone explain the non-roundoff totals by
+  doubling Balsara 2 to a periodic domain containing two causally separated
+  Riemann problems at the same spacing. MP5 reproduces two atmosphere resets,
+  mass drift `9.14e-4`, and energy drift `2.01e-4`; PWL has two resets and
+  drifts `1.81e-4` and `1.54e-4`, while PWC has no reset and conserves mass to
+  `1.89e-15`. This diagnostic configuration is not retained in the standard
+  gate because it deliberately fails today. Source inspection confirms that
+  the stage-candidate conservative first-order flux correction is invoked only
+  for RHD. A CT-consistent RMHD candidate limiter is therefore the main open
+  production issue exposed by this audit; do not mislabel post-update
+  atmosphere projection as conservative reconstruction fallback. [DONE]
