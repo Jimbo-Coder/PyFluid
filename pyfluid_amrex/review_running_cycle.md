@@ -3230,3 +3230,27 @@ I will always continue from the last cycle marked as `in_progress`.
   RMHD solver could improve wave speeds and contact/Alfven resolution but
   would not remove the need for a well-designed nonlinear reconstruction and
   terminal safety policy. [DONE]
+
+## Cycle 240 — Physics-aware PPM and unified Riemann research hypothesis (DONE)
+
+- Treat the Riemann solver as a contributor to observed ringing, not merely a
+  passive consumer. Wave-speed bounds, resolved wave families, and numerical
+  dissipation can damp, preserve, or sharpen reconstruction errors. Current
+  evidence nevertheless assigns greater leverage to reconstruction: with HLL
+  unchanged, the PPM4 candidate policy reduced Balsara-4 overshoot by more than
+  an order of magnitude, whereas changing the correction solver to LLF helped
+  inconsistently and added diffusion. [DONE]
+- Use an improved PPM-like construction as the leading reconstruction research
+  hypothesis rather than the predetermined result. Its compact finite-volume
+  polynomial, explicit contact/shock physics, and natural hierarchical removal
+  of high modes make it a strong base for one nonlinear formula that approaches
+  high order, PWL, and PWC in the appropriate limits. Survey and compare
+  MP/WENO/TENO, smooth-extremum, invariant-domain, entropy, and BVD ideas before
+  fixing the formula so the project does not inherit classic PPM heuristics
+  uncritically. [DONE]
+- Pair the eventual reconstruction with one unified RMHD Riemann model that
+  resolves contact and Alfven families, satisfies entropy/admissibility
+  constraints, supplies CT-consistent induction fluxes, and approaches a
+  robust HLL-type limit continuously at wave degeneracies. Optimize the two
+  operations separately first and jointly only after attribution controls.
+  No original method is yet claimed. [DONE]
