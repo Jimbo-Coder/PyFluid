@@ -3213,3 +3213,20 @@ I will always continue from the last cycle marked as `in_progress`.
   then evaluate Riemann candidates with the winning reconstruction, and
   finally check their coupled matrix to avoid attributing gains to the wrong
   operation. No new method is claimed in this decision cycle. [DONE]
+
+## Cycle 239 — Exact Riemann solver and ringing boundary (DONE)
+
+- Distinguish the exact continuum shock-tube solution from an exact local
+  Riemann solver embedded in a finite-volume update. The continuum solution
+  contains physical discontinuities and waves but no numerical ringing.
+  First-order Godunov evolution with PWC states and an exact solver is normally
+  clean but diffusive. [DONE]
+- An exact local solver does not make high-order reconstruction nonoscillatory.
+  It exactly evolves the local Riemann problem formed from the supplied face
+  states; if reconstruction creates overshooting or oscillatory face states,
+  the exact solver transports those states rather than repairing them.
+  Multistage updates, multidimensional coupling, sources, AMR transfers, and
+  admissibility also remain outside the local exact solve. Therefore an exact
+  RMHD solver could improve wave speeds and contact/Alfven resolution but
+  would not remove the need for a well-designed nonlinear reconstruction and
+  terminal safety policy. [DONE]
