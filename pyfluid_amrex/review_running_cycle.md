@@ -3254,3 +3254,84 @@ I will always continue from the last cycle marked as `in_progress`.
   robust HLL-type limit continuously at wave degeneracies. Optimize the two
   operations separately first and jointly only after attribution controls.
   No original method is yet claimed. [DONE]
+
+## Cycle 241 — Unified reconstruction and Riemann method research (DONE)
+
+- Survey primary derivations and independent implementations across
+  PPM/MP/WENO/TENO/BVD/invariant-domain reconstruction and
+  HLLC/HLLD/HLLEM/entropy/positivity-preserving fluxes. Extract mechanisms and
+  failure boundaries without importing external production implementations.
+  Primary routes now cover MP5, Colella--Sekora, WENO-Z, TENO,
+  multi-resolution WENO, sign-preserving ENO/TeCNO, invariant-domain
+  limiting, HLLC/HLLD and relativistic extensions, entropy-stable HLL/MHD,
+  shock-stable HLLC antidiffusion control, positive HLLD, and recent
+  physical-consistency-preserving MHD HLL work. [DONE]
+- Derive a compact physics-aware nonlinear reconstruction whose formula
+  removes high polynomial modes hierarchically and reaches PWL/PWC limits
+  without selecting a separate reconstruction method. Derive a robust
+  constraint-maximized wave-fan flux for hydro, MHD, and relativistic local
+  Riemann problems, with a continuous robust limit at degeneracies. Treat both
+  names and novelty as provisional until source/literature comparison and
+  held-out validation. `docs/unified_shock_capturing_research.md` records the
+  resulting WCEM/COWE architecture, mathematical constraints, RMHD entropy
+  limitation, literature collision map, promotion matrix, and staged
+  implementation sequence. These are provisional research labels, not
+  novelty or production claims. [DONE]
+- Prototype formulas outside the production evolution path, reject candidates
+  that fail analytic identities or broad training/held-out tests, and only
+  integrate a candidate that improves the measured accuracy/oscillation/
+  robustness/cost Pareto front through the existing method catalog and
+  additive owner architecture. A pressure/compression MP5-to-PPM4 candidate
+  and a constrained-face variant failed held-out N=1024 Balsara 4. A minimal
+  MP5 trace sign projection preserved scalar smooth behavior and cut N=128
+  square-wave overshoot `1.9367e-4 -> 2.7659e-5`, but componentwise RMHD
+  application failed N=512 Balsara 4 (`overshoot=8.3054e-2`,
+  `TV=2.1007`). Both production experiments were fully removed. The standalone
+  scalar histories remain in `tools/research_modal_reconstruction.py` as
+  falsification controls. [DONE]
+- Test the first system-level reconstruction precursor in
+  `tools/research_wave_reconstruction.py`. It projects ideal-gas Euler
+  primitives into the local contact/acoustic basis and continuously moves
+  limited PWL traces toward MP5 under wave-jump and positivity constraints.
+  On the periodic entropy wave it is identical to characteristic MP5 at
+  N=32/64/128, with L1 `4.1934e-6, 1.6301e-7, 9.0039e-9`. On N=128 exact
+  Sod/Lax/blast tubes, the wavewise form nearly preserves MP5 L1 while reducing
+  Lax overshoot `1.8373e-2 -> 1.3427e-2` and blast overshoot
+  `2.9313e-2 -> 2.6207e-2`. At N=256 it improves all three Lax metrics and
+  lowers blast overshoot by 13 percent for a 0.9 percent L1 cost, but regresses
+  Sod. Genuinely-compressive-only limiting improves Sod but loses the
+  strong-shock gain. No grouping dominates characteristic MP5 or PPM4, so the
+  precursor remains outside production and the next formula must limit
+  polynomial modes inside physical subspaces. [DONE]
+- Prototype the Riemann constraint mechanism outside evolution.
+  `tools/research_constrained_riemann.py` implements ideal-gas HD/MHD
+  conserved states, entropy pairs, HLLC/HLLD targets, a minimally
+  entropy-certified LLF baseline, and scalar flux projection. Entropy plus
+  one-sided local admissibility alone accepts the full target for all 20,000
+  random pairs in each physics system and is therefore a no-op. A
+  pressure/compression entropy budget gives mean target weights `0.904/0.959`
+  for HD/MHD while exact stationary contacts retain weight one, but it
+  collides with established HLLC antidiffusion control and remains a research
+  control. [DONE]
+- Leave production numerics unchanged. The next bounded implementation is an
+  entropy/physical-wave shared-state reconstruction for Newtonian HD, followed
+  by the generated MHD characteristic basis and CT contract. The next Riemann
+  prototype must optimize separate wave corrections and validate its entire
+  fan. Do not add another catalog method until those standalone controls beat
+  frozen methods on held-out smooth, exact-shock, rotated, CT, AMR, and
+  relativistic gates. [PENDING]
+- Validate and preserve the research boundary. All three standalone Python
+  harnesses compile. The scalar reconstruction controls reproduce the
+  square-wave and smooth results. Both 20,000-pair HD/MHD Riemann scans have
+  zero inadmissible safe updates and zero nonfinite targets; the enabled
+  budget's maximum normalized constraint residual is `1.22e-12`, and
+  stationary-contact flux errors are at most `2.22e-16`. Euler profile TSVs
+  are under `runs/current/research/wave_reconstruction_*.tsv`, and the random
+  flux scans are `constrained_riemann_{no_budget,budget}.tsv`. After removing
+  both failed production experiments, the 1D solver and reconstruction check
+  rebuild, `pyfluid_amrex_reconstruction_check` reports
+  `reconstruction formulas passed`, and the immediate cache-hit rebuild is
+  `0.68 s`. The normal quick suite passes architecture and feature gates 2/2
+  in `3.2 s`. No standard/full suite is claimed because the final production
+  source is unchanged; Cycle 236 remains the latest full three-rank RMHD
+  standard evidence. [DONE]

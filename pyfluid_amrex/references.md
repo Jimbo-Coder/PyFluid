@@ -220,6 +220,49 @@ High-value source/test routes include:
 Use these as method and comparison references, not imported production
 implementations:
 
+- A. Suresh and H. T. Huynh, *Accurate Monotonicity-Preserving Schemes with
+  Runge--Kutta Time Stepping*,
+  [NASA record and paper](https://ntrs.nasa.gov/citations/19970010128):
+  original MP5 construction and its high-order monotonicity-preserving bounds.
+- P. Colella and M. D. Sekora, *A limiter for PPM that preserves accuracy at
+  smooth extrema*,
+  [paper](https://crd.lbl.gov/assets/pubs_presos/AMCS/ANAG/ColellaSekora.pdf);
+  R. Borges et al., *An improved weighted essentially non-oscillatory scheme
+  for hyperbolic conservation laws*,
+  [WENO-Z](https://doi.org/10.1016/j.jcp.2007.11.038); L. Fu et al.,
+  *A family of high-order targeted ENO schemes for compressible-fluid
+  simulations*,
+  [TENO](https://doi.org/10.1016/j.jcp.2015.10.037); and J. Zhu and C.-W. Shu,
+  *A new type of multi-resolution WENO schemes*,
+  [paper](https://doi.org/10.1016/j.jcp.2018.09.003): primary routes for
+  smooth-extremum, nonlinear-weight, stencil-rejection, and hierarchical
+  polynomial mechanisms.
+- U. S. Fjordholm, S. Mishra, and E. Tadmor, *Arbitrarily high-order accurate
+  entropy stable essentially nonoscillatory schemes for systems of
+  conservation laws*,
+  [TeCNO](https://doi.org/10.1137/110836961), and U. S. Fjordholm and D. Ray,
+  *A sign preserving WENO reconstruction method*,
+  [SP-WENO](https://arxiv.org/abs/1510.09038): the precise role of a
+  reconstructed entropy-variable jump with the sign property. The sign
+  property is not a generic guarantee for component-reconstructed Godunov
+  fluxes.
+- J.-L. Guermond et al., *Second-order invariant domain preserving
+  approximation of the Euler equations using convex limiting*,
+  [paper](https://arxiv.org/abs/1710.00417): invariant-domain constraints and
+  convex correction from a robust low-order update. It motivates admissibility
+  providers but does not by itself specify a sharp complete-wave flux.
+- E. F. Toro, M. Spruce, and W. Speares, *Restoration of the contact surface
+  in the HLL-Riemann solver*,
+  [HLLC](https://doi.org/10.1016/0021-9991(94)90166-X), and T. Miyoshi and
+  K. Kusano, *A multi-state HLL approximate Riemann solver for ideal
+  magnetohydrodynamics*,
+  [HLLD](https://doi.org/10.1016/j.jcp.2005.02.017): baseline contact and
+  contact/Alfven wave-fan constructions.
+- A. Mignone and G. Bodo, *An HLLC Riemann solver for relativistic flows. I.
+  Hydrodynamics*, [arXiv:astro-ph/0506414](https://arxiv.org/abs/astro-ph/0506414),
+  and *II. Magnetohydrodynamics*,
+  [arXiv:astro-ph/0601640](https://arxiv.org/abs/astro-ph/0601640):
+  relativistic HLLC fan derivations and degeneracy boundaries.
 - G. Mattia and A. Mignone, *A comparison of approximate non-linear Riemann
   solvers for Relativistic MHD*,
   [arXiv:2111.09369](https://arxiv.org/abs/2111.09369): matched HLL, HLLC,
@@ -229,6 +272,26 @@ implementations:
 - A. Mignone, M. Ugliano, and G. Bodo, *A five-wave HLL Riemann solver for
   relativistic MHD*, [arXiv:0811.1483](https://arxiv.org/abs/0811.1483):
   the nonlinear total-pressure closure and jump conditions for RMHD HLLD.
+- K. Derigs et al., *Ideal GLM-MHD: About the entropy consistent nine-wave
+  magnetic field divergence diminishing ideal magnetohydrodynamics
+  equations*, [entropy-stable MHD route](https://arxiv.org/abs/1509.09311),
+  and B. Schmidtmann and A. R. Winters, *Hybrid Entropy Stable HLL-Type
+  Riemann Solvers for Hyperbolic Conservation Laws*,
+  [paper](https://arxiv.org/abs/1607.06240). Verify the equation/source
+  formulation before transferring an entropy proof to CT MHD or RMHD.
+- S. Simon and J. C. Mandal,
+  [HLLC-ADC](https://arxiv.org/abs/1803.04954) and
+  [HLLC-SWM](https://arxiv.org/abs/1803.04922): pressure/shock-sensitive
+  control of contact antidiffusion for multidimensional shock stability.
+  These are the closest collision with a pressure/compression entropy budget.
+- X. Zhang et al., *A Provably Positive-Preserving HLLD Riemann Solver for
+  Ideal Magnetohydrodynamics. Part I: The One-Dimensional Case*,
+  [paper](https://doi.org/10.4208/cicp.OA-2024-0068), and F. Zhang,
+  A. Lani, and S. Poedts, *On physical consistency of HLL-type Riemann solvers
+  for ideal MHD*, [preprint](https://arxiv.org/abs/2507.10420) and
+  [published energy-consistency version](https://doi.org/10.1016/j.jcp.2026.114724):
+  source routes for ordered positive fan states and magnetic-energy
+  consistency, not production code to copy.
 - O. Zanotti, F. Fambri, and M. Dumbser, *Solving the relativistic
   magnetohydrodynamics equations with ADER discontinuous Galerkin methods,
   a posteriori subcell limiting and adaptive mesh refinement*,

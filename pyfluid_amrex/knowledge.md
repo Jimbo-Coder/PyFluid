@@ -7,10 +7,10 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-26, branch `main`, through the local Cycle 232
-catalog-driven parabolic/PPM implementation and validation. Use the commit
-containing this snapshot plus the exact newer continuity-cycle evidence rather
-than inferring it from an earlier baseline.
+Last reconciled: 2026-07-27, branch `main`, through Cycle 241's unified
+shock-capturing research and falsification pass. Use the commit containing this
+snapshot plus the exact newer continuity-cycle evidence rather than inferring
+it from an earlier baseline.
 
 ## Scope
 
@@ -169,12 +169,54 @@ The latest recorded evidence is not one monolithic green result:
   architecture/generated-source, all-dimension build, normal quick, complete
   normal standard, minimal PWC-only build, and canonical MPI performance gates
   pass. No full or stability suite was run.
+- Cycle 236 adds PPM3 as an independent limited-slope control and tightens the
+  opt-in RMHD candidate DMP factor from 1.20 to 1.05. The full three-rank RMHD
+  standard gate passes. At N=1024 exact Balsara 4, PPM4/PWC reaches normalized
+  all-component L1 `3.200159e-3`, overshoot `4.524195e-3`, and TV ratio
+  `1.4913`, with zero atmosphere resets. PPM3 and a PWL-MC-before-PWC ladder
+  were not competitive and were not promoted.
+- Cycle 241 is research evidence, not a new production method. Two continuous
+  MP5-to-robust reconstruction candidates were removed after held-out RMHD
+  failures. A componentwise sign projection reduced scalar square-wave
+  overshoot by about sevenfold while preserving smooth MP5 behavior, but
+  raised N=512 Balsara-4 overshoot/TV to `8.3054e-2/2.1007`. The next
+  reconstruction must constrain one coherent entropy/physical-wave state, not
+  independent primitive components. The production method catalog and kernels
+  remain unchanged. A standalone Euler physical-wave precursor preserves the
+  characteristic-MP5 entropy-wave result exactly through N=128. Its common
+  wave weight is clean but diffusive. The wavewise N=256 form improves
+  Lax-shock L1/overshoot/TV simultaneously and lowers blast overshoot by 13
+  percent for a 0.9 percent L1 cost, but modestly regresses Sod. Limiting only
+  genuinely compressive waves improves Sod but loses the strong-shock gain.
+  This identifies mode-selective limiting inside physical subspaces as the
+  next step rather than one high-to-PWL coefficient.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
 
 ## Open Numerical And Physics Boundaries
 
+- A two-point entropy inequality plus one-sided worst-local-CFL
+  admissibility did not limit a scalar LLF-to-HLLC/HLLD flux correction in
+  20,000 broad random HD pairs or 20,000 broad random MHD pairs. Those
+  constraints alone are too weak to define a useful unified Riemann solver.
+  A compressive pressure/total-pressure entropy budget makes the experiment
+  active while retaining exact stationary contacts, but overlaps established
+  antidiffusion controls and is not accepted as new or production-ready. The
+  next prototype must constrain contact, shear/Alfven, and nonlinear fan
+  corrections separately and inspect every intermediate state.
+- Standard entropy-stable RMHD derivations symmetrize the equations with a
+  Godunov--Powell-type source. The present conservative CT RMHD path cannot
+  inherit that proof from a face-flux swap alone. Any RMHD entropy claim must
+  derive the source, CT, and AMR discretization together; until then use
+  characteristic-subspace coherence, admissibility, common normal field, and
+  Rankine--Hugoniot checks without calling the result entropy stable.
+- Changing the reconstruction entries in `schema/methods.toml` changes the
+  generated method catalog and the build's enabled-method definition, so one
+  broad rebuild is expected even though each method has an additive owner.
+  The generators already write outputs only when content changes. Do not
+  attribute this catalog/configuration invalidation to unconditional generated
+  file rewrites, and measure the subsequent cache-hit rebuild separately.
 - Partial-AMR CTT initial data are finite and convergent after the common
   matter-handoff repair, but the normalized coarse-fine Hamiltonian band
   remains roughly constant under the recorded refinement. This is an exposed
