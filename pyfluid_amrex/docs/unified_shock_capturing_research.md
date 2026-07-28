@@ -123,31 +123,31 @@ onto a face-local feasible polygon. Its constraints are the existing MP5
 one-sided admissible intervals and a joint trace jump between zero and the
 neighboring cell-average wave jump. PWL-MC reaches PWC where its slopes vanish.
 The linearly degenerate entropy/contact family retains MP5. A whole-state
-positivity scaling is the only terminal trace constraint.
+positivity scale is shared by both traces, followed by a final positivity/jump
+closure against floating-point drift.
 
 A lexicographic objective was tested and rejected because it over-selected the
 common parabola and lost strong-shock accuracy. The Euclidean projection has
 no fitted shock coefficient. It is inactive on the periodic entropy wave:
 characteristic MP5 and the hierarchy have identical density L1 errors
-`4.1934e-6, 1.6301e-7, 9.0039e-9` at 32, 64, and 128 cells.
+`4.18930e-6, 1.62476e-7, 8.93779e-9` at 32, 64, and 128 cells after the
+face-CFL audit.
 
-At 128 cells the hierarchy reduces overshoot and TV on all three exact Euler
-tubes while changing L1 by less than 0.5 percent:
+After enforcing reconstructed-face signal speeds at every SSPRK stage, the
+audited 256-cell comparison is:
 
 | Case | Method | summed normalized L1 | max overshoot | max TV ratio |
 | --- | --- | ---: | ---: | ---: |
-| Sod | characteristic MP5 | `9.8691e-3` | `4.4275e-3` | `1.00963` |
-| Sod | mode hierarchy | `9.9172e-3` | `3.6851e-3` | `1.00872` |
-| Lax | characteristic MP5 | `2.0742e-2` | `1.8373e-2` | `1.02680` |
-| Lax | mode hierarchy | `2.0743e-2` | `1.7263e-2` | `1.02540` |
-| Blast | characteristic MP5 | `2.5796e-2` | `2.9313e-2` | `1.03004` |
-| Blast | mode hierarchy | `2.5803e-2` | `2.8906e-2` | `1.02957` |
+| Sod | characteristic MP5 | `4.96442e-3` | `2.74858e-3` | `1.007409` |
+| Sod | coefficient hierarchy | `4.97967e-3` | `2.46989e-3` | `1.007372` |
+| Lax | characteristic MP5 | `9.81728e-3` | `1.65163e-2` | `1.026281` |
+| Lax | coefficient hierarchy | `9.80161e-3` | `1.63894e-2` | `1.024594` |
+| Blast | characteristic MP5 | `1.43634e-2` | `2.82300e-2` | `1.029063` |
+| Blast | coefficient hierarchy | `1.46011e-2` | `2.79788e-2` | `1.028767` |
 
-The held-out 256-cell result is similarly stable. Sod exchanges a 0.71 percent
-L1 increase for 17.1 percent less overshoot. Lax improves L1, overshoot, and
-TV. The blast changes L1 by 0.08 percent while lowering overshoot and TV.
-Thus the candidate is a stronger Pareto result than the earlier single-weight
-precursor, but it is not strict L1 dominance on every tube.
+The hierarchy lowers overshoot and TV on all three tubes and improves Lax L1
+by 0.16 percent. It costs 0.31 percent L1 on Sod and 1.66 percent on blast.
+This remains a Pareto control, not strict L1 dominance.
 
 ### Ideal-MHD extension
 
@@ -159,21 +159,58 @@ reconstruction uses one face-normal magnetic field for both traces.
 Two thousand random and near-degenerate characteristic round trips have
 maximum relative error `4.49e-13`. On the exact circular Alfvén wave,
 characteristic MP5 and the hierarchy are identical: transverse normalized L1
-is `2.8143e-5` and `2.6007e-6` at 32 and 64 cells, normal-field spread is zero,
-and conserved-integral errors are at roundoff.
+is `2.75847e-5` and `2.53134e-6` at 32 and 64 cells, normal-field spread is
+zero, and conserved-integral errors are at roundoff.
 
-Brio--Wu is a numerical-reference test, not an exact MHD solution. At 128
-cells against a 512-cell characteristic-MP5/HLLD reference, the hierarchy
-improves all recorded metrics:
+Brio--Wu is a numerical-reference test, not an exact MHD solution. The
+reconstructed-face CFL audit overturns the earlier all-metric improvement
+claim. At 128 cells against a 512-cell characteristic-MP5/HLLD reference:
 
 | Method | aggregate L1 | transverse L1 | max overshoot | max TV ratio |
 | --- | ---: | ---: | ---: | ---: |
-| characteristic MP5 | `5.9279e-3` | `2.3991e-3` | `1.7327e-2` | `1.17402` |
-| mode hierarchy | `5.8718e-3` | `2.3041e-3` | `1.4823e-2` | `1.17250` |
+| characteristic MP5 | `5.92358e-3` | `2.35654e-3` | `1.74145e-2` | `1.173892` |
+| coefficient hierarchy | `6.01583e-3` | `2.56811e-3` | `1.48098e-2` | `1.172509` |
+| balanced hierarchy | `5.99658e-3` | `2.38803e-3` | `1.48495e-2` | `1.172321` |
 
-At 64 cells the hierarchy already lowers transverse L1 by 4.6 percent but
-slightly raises aggregate L1, overshoot, and TV. The favorable 128-cell result
-therefore needs more MHD tubes, rotated waves, CT, and AMR before promotion.
+Both hierarchies reduce overshoot and TV, but MP5 retains lower L1. The
+balanced objective substantially recovers the coefficient hierarchy's
+transverse error, yet still costs 1.23 percent aggregate and 1.34 percent
+transverse L1 against MP5. More MHD tubes, rotated waves, CT, and AMR are
+required before promotion.
+
+### Wave-trace metric experiment
+
+The coefficient projection was also generalized to minimize the error in the
+two returned scalar wave traces. A normalized combined objective,
+
+```text
+||delta theta||^2
+  + 2 ||A delta theta||^2 / ||A||_F^2,
+```
+
+matches the mean eigenvalue of the two-dimensional wave-trace metric to the
+coefficient metric and is invariant to uniform rescaling of the wave. This is
+a **wave-trace metric**, not a coupled primitive, conserved, or entropy metric:
+each characteristic family is still optimized independently.
+
+The combined metric is a strong Pareto result after the reconstructed-face CFL
+audit. At 256 cells it improves L1, overshoot, and TV on Sod and Lax. On blast
+it improves overshoot `2.79788e-2 -> 2.78641e-2` and TV
+`1.028767 -> 1.028692`, while L1 rises by 0.53 percent. At 128-cell Brio--Wu it
+improves aggregate/transverse L1 and TV relative to the coefficient objective,
+while overshoot rises by 0.27 percent. Trace-only and differently normalized
+objectives also change the ranking. Retain this as a useful Pareto control, not
+a universal replacement or an entropy-metric claim.
+
+The final two-sided trace contract now survives the terminal positivity step.
+One common scaling is applied to both traces, and a floating-point closure
+projects farther toward the two cell averages only if the mapped physical
+traces no longer satisfy positivity or the nonlinear-wave jump interval.
+Twenty thousand log-uniform HD stencils and twenty thousand MHD stencils pass
+for each coefficient and combined metric with zero nonfinite/nonpositive
+traces, zero jump violations, and maximum normalized violation `2.853e-14`.
+`tools/research_reconstruction_invariants.py` is the repeatable falsification
+harness.
 
 ### RMHD entropy limitation
 
@@ -236,8 +273,13 @@ sources remain outside the Riemann problem.
 
 ### Fan-hierarchy prototype result
 
+The following Cycle-242 result is retained as falsification history. Its
+independently weighted MHD inner fan was subsequently shown not to preserve
+the contact Rankine--Hugoniot relation and has been replaced by the common-fan
+construction below.
+
 `tools/research_constrained_riemann.py` preserves the first scalar-correction
-falsification control and now also implements a nested fan hierarchy:
+falsification control and originally tested a nested fan hierarchy:
 
 ```text
 entropy-certified LLF
@@ -282,6 +324,64 @@ On a 16-cell smooth circular Alfvén wave it raises transverse L1 from
 that tradeoff. Keep the hierarchy as a robust fan-audit/fallback prototype;
 do not promote it until the entropy control is smooth-consistent or a better
 entropy-compatible resolved target is derived.
+
+### Audited common-fan target and rank-one entropy repair
+
+The independently weighted MHD contact and Alfvén corrections were
+mathematically rejected. The HLLD outer-star pair is not generally adjacent
+across the contact, so it does not satisfy the contact Rankine--Hugoniot
+relation by itself. Unequal contact and Alfvén weights therefore create a
+nonphysical synthetic fan even when every interpolated state is positive.
+
+The corrected prototype uses one common full-fan weight:
+
+```text
+F_target = F_HLL + theta_fan (F_HLLD - F_HLL).
+```
+
+The same `theta_fan` interpolates every single- and double-star state from the
+HLL intermediate state. Convexity of the ideal-HD/MHD admissible set then
+supports a bisection bound, while the common affine weight preserves every
+accepted Rankine--Hugoniot relation. Unordered fans, nonfinite fluxes, an
+inadmissible HLL state, or a normalized fan RH residual above `1e-10` reduce
+the target to HLL/entropy-certified LLF rather than accepting a malformed
+inner fan.
+
+After that audit, a positive Tadmor residual is corrected along the state jump,
+
+```text
+F_entropy = F_target - beta [U],
+beta = max(0, ([v]^T F_target - [psi]) / ([v]^T [U])).
+```
+
+This is the minimum correction in the secant entropy metric, not a new general
+entropy-stabilization principle. A final maximal blend toward the
+entropy-certified LLF flux is available only if the corrected one-sided
+updates are inadmissible. Every reconstructed face now contributes its
+physical signal speed to the standalone SSPRK3 harness; a flux-specific
+contract may only raise that bound. Nonfinite/negative bounds are rejected,
+later-stage increases tighten the timestep with one-percent headroom, and a
+finite but nonphysical final stage is retried rather than committed. The local
+repair audit is defined at CFL `0.45`, so the research CLI rejects
+`entropy_repair` evolution above that value instead of implying a stronger
+guarantee.
+
+In 20,000 broad random pairs, all accepted HD/MHD target fans are admissible,
+ordered, and have maximum normalized RH residual `6.803e-11`; all final local
+updates satisfy the entropy and admissibility checks. The raw MHD HLLD target
+has 879 inadmissible and 2330 unordered fans, and the common accepted fan
+weight averages `0.880429`. The rank-one entropy repair and terminal LLF blend
+are inactive on this distribution, so those mechanisms remain an evidence
+gap rather than a validated benefit. Exact stationary HD/MHD contacts and a
+stationary rotational discontinuity are retained to roundoff.
+
+The literature scan found every ingredient separately: Tadmor entropy
+viscosity, optimization-based entropy corrections, invariant-domain/LLF
+limiting, positive relaxation fans, BVD/trace objectives, and recent
+energy-consistent HLLD variants. It did not locate the exact paired-trace
+hierarchy or the exact `audit full fan -> common fan contraction -> rank-one
+repair -> LLF update bound` composition. That supports continued investigation
+of a possibly useful synthesis, not a novelty claim.
 
 ## Literature Collision Map
 

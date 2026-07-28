@@ -251,6 +251,14 @@ implementations:
   [paper](https://arxiv.org/abs/1710.00417): invariant-domain constraints and
   convex correction from a robust low-order update. It motivates admissibility
   providers but does not by itself specify a sharp complete-wave flux.
+- E. Tadmor, *The numerical viscosity of entropy stable schemes for systems
+  of conservation laws*,
+  [paper](https://doi.org/10.1090/S0025-5718-1987-0890255-3), and R. Abgrall,
+  P. Öffner, and H. Ranocha, *Reinterpretation and Extension of Entropy
+  Correction Terms...*, [arXiv:1908.04556](https://arxiv.org/abs/1908.04556):
+  primary routes for entropy-residual viscosity and minimum-norm constrained
+  corrections. They establish the correction principle; they do not establish
+  the present audited-HLLD composition.
 - E. F. Toro, M. Spruce, and W. Speares, *Restoration of the contact surface
   in the HLL-Riemann solver*,
   [HLLC](https://doi.org/10.1016/0021-9991(94)90166-X), and T. Miyoshi and
@@ -292,6 +300,11 @@ implementations:
   [published energy-consistency version](https://doi.org/10.1016/j.jcp.2026.114724):
   source routes for ordered positive fan states and magnetic-energy
   consistency, not production code to copy.
+- F. Zhang, *An improved estimate of the intermediate internal energy in the
+  energy-consistent HLLD scheme*,
+  [arXiv:2607.10293](https://arxiv.org/abs/2607.10293): July-2026 evidence that
+  admissible-looking standard HLLD algebra can still need internally
+  consistent intermediate thermodynamics under strong magnetic fields.
 - O. Zanotti, F. Fambri, and M. Dumbser, *Solving the relativistic
   magnetohydrodynamics equations with ADER discontinuous Galerkin methods,
   a posteriori subcell limiting and adaptive mesh refinement*,
@@ -304,6 +317,17 @@ implementations:
   algorithm*, [arXiv:2404.13015](https://arxiv.org/abs/2404.13015): recent
   nonrelativistic MHD plus CT evidence for polynomial/THINC BVD selection.
   Treat it as a prototype direction requiring independent SRMHD validation.
+- Y. Ding and K. Wu, *High-order positivity-preserving finite volume methods
+  for ideal MHD with locally divergence-free reconstruction*,
+  [paper](https://doi.org/10.1137/23M1562081): direct projection of magnetic
+  interface values into a discrete-divergence-free space. This is a close
+  lexical collision for "trace projection," but its constraint and objective
+  differ from paired oscillation control.
+- C. Cao et al., *Convex oscillation suppression for high-order discontinuous
+  Galerkin methods*, [paper](https://doi.org/10.1016/j.jcp.2026.114755):
+  parameter-independent entropy-distance damping of a cell polynomial. It is
+  a high-risk broad novelty collision, not the same paired finite-volume
+  PWL/parabolic/MP5 trace polygon.
 - K. Wu and C.-W. Shu, *Entropy Symmetrization and High-Order Accurate Entropy
   Stable Numerical Schemes for Relativistic MHD Equations*,
   [arXiv:1907.07467](https://arxiv.org/abs/1907.07467): entropy stability for

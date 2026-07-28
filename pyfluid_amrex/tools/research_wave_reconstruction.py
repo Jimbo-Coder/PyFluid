@@ -41,6 +41,7 @@ from pyfluid.exact_solutions import (  # noqa: E402
     sod_exact_solution,
 )
 from research_constrained_riemann import (  # noqa: E402
+    entropy_repaired_hydro_flux,
     hierarchical_hydro_flux,
     hydro_hllc_flux,
 )
@@ -56,7 +57,10 @@ from research_modal_reconstruction import (  # noqa: E402
 
 Array = np.ndarray
 FaceReconstruction = Callable[[Array, int, float], tuple[Array, Array]]
-RiemannFlux = Callable[[Array, Array, float], Array]
+RiemannFlux = Callable[
+    [Array, Array, float],
+    Array | tuple[Array, float],
+]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -125,7 +129,7 @@ def stencil_value(
     primitive: Array,
     cell: int,
     periodic: bool,
-) -> Array:
+) -> tuple[Array, float]:
     if periodic:
         return primitive[cell % len(primitive)]
     return primitive[min(len(primitive) - 1, max(0, cell))]
@@ -215,7 +219,7 @@ def from_characteristics(
     )
 
 
-def positive_trace(trace: Array, cell: Array) -> Array:
+def positive_trace_weight(trace: Array, cell: Array) -> float:
     theta = 1.0
     for component in (0, 2):
         floor = 1.0e-13 * max(1.0, cell[component])
@@ -225,7 +229,12 @@ def positive_trace(trace: Array, cell: Array) -> Array:
                 theta,
                 (cell[component] - floor) / (-correction),
             )
-    return cell + max(0.0, min(1.0, theta)) * (trace - cell)
+    return max(0.0, min(1.0, theta))
+
+
+def positive_trace(trace: Array, cell: Array) -> Array:
+    theta = positive_trace_weight(trace, cell)
+    return cell + theta * (trace - cell)
 
 
 def hierarchical_weights(
@@ -287,6 +296,124 @@ def hierarchical_weights(
     )
 
 
+def hierarchical_trace_weights(
+    constraints: list[tuple[float, float, float]],
+    trace_corrections: Array,
+) -> tuple[float, float]:
+    """Project the full target in the left/right scalar wave-trace metric."""
+    target = np.ones(2)
+
+    def constraint_tolerance(
+        constraint: tuple[float, float, float],
+    ) -> float:
+        a, b, c = constraint
+        return 256.0 * np.finfo(float).eps * max(
+            1.0,
+            abs(a),
+            abs(b),
+            abs(c),
+        )
+
+    def feasible(candidate: Array) -> bool:
+        return all(
+            a * candidate[0] + b * candidate[1]
+            <= c + constraint_tolerance((a, b, c))
+            for a, b, c in constraints
+        )
+
+    if feasible(target):
+        return 1.0, 1.0
+
+    vertices = [
+        np.array((0.0, 0.0)),
+        np.array((1.0, 0.0)),
+        np.array((1.0, 1.0)),
+    ]
+    for first_index, first in enumerate(constraints):
+        a0, b0, c0 = first
+        for a1, b1, c1 in constraints[first_index + 1 :]:
+            determinant = a0 * b1 - a1 * b0
+            if abs(determinant) <= 1.0e-14 * max(
+                1.0,
+                abs(a0),
+                abs(b0),
+                abs(a1),
+                abs(b1),
+            ):
+                continue
+            vertices.append(
+                np.array(
+                    (
+                        (c0 * b1 - c1 * b0) / determinant,
+                        (a0 * c1 - a1 * c0) / determinant,
+                    )
+                )
+            )
+    feasible_vertices = [
+        vertex for vertex in vertices if feasible(vertex)
+    ]
+    if not feasible_vertices:
+        return 0.0, 0.0
+
+    candidates = list(feasible_vertices)
+    for constraint in constraints:
+        a, b, c = constraint
+        tolerance = constraint_tolerance(constraint)
+        edge_vertices = [
+            vertex
+            for vertex in feasible_vertices
+            if abs(a * vertex[0] + b * vertex[1] - c) <= tolerance
+        ]
+        if len(edge_vertices) < 2:
+            continue
+        endpoints = max(
+            (
+                (first, second)
+                for first_index, first in enumerate(edge_vertices)
+                for second in edge_vertices[first_index + 1 :]
+            ),
+            key=lambda pair: float(np.dot(pair[1] - pair[0], pair[1] - pair[0])),
+        )
+        start, end = endpoints
+        direction = end - start
+        direction_norm2 = float(np.dot(direction, direction))
+        if direction_norm2 <= np.finfo(float).eps:
+            continue
+        metric_direction = trace_corrections @ direction
+        denominator = float(np.dot(metric_direction, metric_direction))
+        if denominator > np.finfo(float).eps * max(
+            1.0,
+            direction_norm2,
+            float(np.sum(trace_corrections * trace_corrections)),
+        ):
+            metric_offset = trace_corrections @ (start - target)
+            fraction = -float(
+                np.dot(metric_direction, metric_offset)
+            ) / denominator
+        else:
+            fraction = -float(
+                np.dot(direction, start - target)
+            ) / direction_norm2
+        fraction = max(0.0, min(1.0, fraction))
+        candidates.append(start + fraction * direction)
+
+    def objective(candidate: Array) -> tuple[float, float, float, float]:
+        difference = candidate - target
+        trace_error = trace_corrections @ difference
+        return (
+            float(np.dot(trace_error, trace_error)),
+            float(np.dot(difference, difference)),
+            -float(candidate[0]),
+            -float(candidate[1]),
+        )
+
+    best = min(candidates, key=objective)
+    return (
+        max(0.0, min(1.0, float(best[0]))),
+        max(0.0, min(1.0, float(best[1]))),
+    )
+
+
 def append_interval_constraints(
     constraints: list[tuple[float, float, float]],
     base: float,
@@ -314,6 +441,7 @@ def append_interval_constraints(
 
 def hierarchical_scalar_pair(
     values: Array,
+    objective: str = "coefficient",
 ) -> tuple[float, float, float, float]:
     """Reconstruct one physical wave with nested PWL/parabolic/MP5 modes."""
     robust_left = values[2] + 0.5 * mc_slope(
@@ -392,7 +520,37 @@ def hierarchical_scalar_pair(
         jump_upper,
         tolerance,
     )
-    theta_lower, theta_higher = hierarchical_weights(constraints)
+    if objective == "coefficient":
+        theta_lower, theta_higher = hierarchical_weights(constraints)
+    elif objective in ("trace", "balanced"):
+        trace_corrections = np.array(
+            (
+                (left_lower_correction, left_higher_correction),
+                (right_lower_correction, right_higher_correction),
+            )
+        )
+        if objective == "balanced":
+            trace_norm = float(
+                np.sqrt(np.sum(trace_corrections * trace_corrections))
+            )
+            if trace_norm > np.finfo(float).eps:
+                # Match the mean eigenvalue of the two-dimensional trace
+                # metric to the coefficient metric.  This keeps the combined
+                # objective invariant to a uniform rescaling of the wave.
+                trace_corrections = np.vstack(
+                    (
+                        np.eye(2),
+                        math.sqrt(2.0) * trace_corrections / trace_norm,
+                    )
+                )
+            else:
+                trace_corrections = np.eye(2)
+        theta_lower, theta_higher = hierarchical_trace_weights(
+            constraints,
+            trace_corrections,
+        )
+    else:
+        raise ValueError(f"unknown hierarchy objective {objective!r}")
     accepted_left = (
         robust_left
         + theta_lower * left_lower_correction
@@ -411,6 +569,7 @@ def hierarchical_wave_reconstruction(
     left_cell: int,
     gamma: float,
     limit_contact: bool,
+    objective: str,
     periodic: bool,
 ) -> tuple[Array, Array]:
     stencil = np.array(
@@ -431,16 +590,72 @@ def hierarchical_wave_reconstruction(
             accepted_right[wave] = mp5_left(*values[::-1])
             continue
         accepted_left[wave], accepted_right[wave], _, _ = (
-            hierarchical_scalar_pair(values)
+            hierarchical_scalar_pair(values, objective)
         )
 
-    return positive_trace(
-        from_characteristics(accepted_left, rho_ref, sound),
-        stencil[2],
-    ), positive_trace(
-        from_characteristics(accepted_right, rho_ref, sound),
-        stencil[3],
+    left_trace = from_characteristics(accepted_left, rho_ref, sound)
+    right_trace = from_characteristics(accepted_right, rho_ref, sound)
+    theta = min(
+        positive_trace_weight(left_trace, stencil[2]),
+        positive_trace_weight(right_trace, stencil[3]),
     )
+
+    constrained_waves = (0, 1, 2) if limit_contact else (1, 2)
+    cell_jump = waves[3] - waves[2]
+
+    def physical_pair(weight: float) -> tuple[Array, Array]:
+        if weight <= 0.0:
+            return stencil[2].copy(), stencil[3].copy()
+        return (
+            stencil[2] + weight * (left_trace - stencil[2]),
+            stencil[3] + weight * (right_trace - stencil[3]),
+        )
+
+    def pair_feasible(weight: float) -> bool:
+        left, right = physical_pair(weight)
+        if (
+            not np.all(np.isfinite(left))
+            or not np.all(np.isfinite(right))
+            or left[0] <= 0.0
+            or left[2] <= 0.0
+            or right[0] <= 0.0
+            or right[2] <= 0.0
+        ):
+            return False
+        trace_waves = to_characteristics(
+            np.array((left, right)),
+            rho_ref,
+            sound,
+        )
+        trace_jump = trace_waves[1] - trace_waves[0]
+        for wave in constrained_waves:
+            lower = min(0.0, cell_jump[wave])
+            upper = max(0.0, cell_jump[wave])
+            tolerance = 128.0 * np.finfo(float).eps * max(
+                1.0,
+                abs(lower),
+                abs(upper),
+                abs(trace_jump[wave]),
+            )
+            if not (
+                lower - tolerance
+                <= trace_jump[wave]
+                <= upper + tolerance
+            ):
+                return False
+        return True
+
+    if not pair_feasible(theta):
+        lower = 0.0
+        upper = theta
+        for _ in range(52):
+            middle = 0.5 * (lower + upper)
+            if pair_feasible(middle):
+                lower = middle
+            else:
+                upper = middle
+        theta = lower
+    return physical_pair(theta)
 
 
 def hierarchical_wave_mp5(
@@ -453,6 +668,7 @@ def hierarchical_wave_mp5(
         left_cell,
         gamma,
         limit_contact=True,
+        objective="coefficient",
         periodic=bool(hierarchical_wave_mp5.periodic),
     )
 
@@ -470,11 +686,48 @@ def hierarchical_nonlinear_mp5(
         left_cell,
         gamma,
         limit_contact=False,
+        objective="coefficient",
         periodic=bool(hierarchical_nonlinear_mp5.periodic),
     )
 
 
 hierarchical_nonlinear_mp5.periodic = False
+
+
+def trace_metric_nonlinear_mp5(
+    primitive: Array,
+    left_cell: int,
+    gamma: float,
+) -> tuple[Array, Array]:
+    return hierarchical_wave_reconstruction(
+        primitive,
+        left_cell,
+        gamma,
+        limit_contact=False,
+        objective="trace",
+        periodic=bool(trace_metric_nonlinear_mp5.periodic),
+    )
+
+
+trace_metric_nonlinear_mp5.periodic = False
+
+
+def balanced_metric_nonlinear_mp5(
+    primitive: Array,
+    left_cell: int,
+    gamma: float,
+) -> tuple[Array, Array]:
+    return hierarchical_wave_reconstruction(
+        primitive,
+        left_cell,
+        gamma,
+        limit_contact=False,
+        objective="balanced",
+        periodic=bool(balanced_metric_nonlinear_mp5.periodic),
+    )
+
+
+balanced_metric_nonlinear_mp5.periodic = False
 
 
 def characteristic_mp5(
@@ -733,6 +986,17 @@ def hierarchical_flux(
     return result.flux[[0, 1, 4]]
 
 
+def entropy_repair_flux(
+    left: Array,
+    right: Array,
+    gamma: float,
+) -> tuple[Array, float]:
+    left_full = np.array([left[0], left[1], 0.0, 0.0, left[2]])
+    right_full = np.array([right[0], right[1], 0.0, 0.0, right[2]])
+    result = entropy_repaired_hydro_flux(left_full, right_full, gamma)
+    return result.flux[[0, 1, 4]], result.safe_speed
+
+
 def rhs(
     state: Array,
     dx: float,
@@ -740,18 +1004,42 @@ def rhs(
     reconstruct: FaceReconstruction,
     riemann_flux: RiemannFlux,
     periodic: bool,
-) -> Array:
+) -> tuple[Array, float]:
     primitive = primitive_from_conserved(state, gamma)
     if not primitive_is_admissible(primitive):
-        return np.full_like(state, np.nan)
+        return np.full_like(state, np.nan), math.inf
     reconstruct.periodic = periodic
     fluxes = np.empty((len(state) + 1, 3))
+    required_speed = 0.0
     for face in range(len(state) + 1):
         left, right = reconstruct(primitive, face - 1, gamma)
-        fluxes[face] = riemann_flux(left, right, gamma)
+        if not primitive_is_admissible(np.array((left, right))):
+            return np.full_like(state, np.nan), math.inf
+        endpoint_speeds = (
+            abs(left[1]) + math.sqrt(gamma * left[2] / left[0]),
+            abs(right[1]) + math.sqrt(gamma * right[2] / right[0]),
+        )
+        if any(
+            not np.isfinite(speed) or speed < 0.0
+            for speed in endpoint_speeds
+        ):
+            return np.full_like(state, np.nan), math.inf
+        face_speed = max(endpoint_speeds)
+        evaluation = riemann_flux(left, right, gamma)
+        if isinstance(evaluation, tuple):
+            face_flux, flux_speed = evaluation
+            if not np.isfinite(flux_speed) or flux_speed < 0.0:
+                return np.full_like(state, np.nan), math.inf
+            face_speed = max(face_speed, float(flux_speed))
+        else:
+            face_flux = evaluation
+        if not np.all(np.isfinite(face_flux)):
+            return np.full_like(state, np.nan), math.inf
+        fluxes[face] = face_flux
+        required_speed = max(required_speed, face_speed)
     if periodic:
         fluxes[-1] = fluxes[0]
-    return -(fluxes[1:] - fluxes[:-1]) / dx
+    return -(fluxes[1:] - fluxes[:-1]) / dx, required_speed
 
 
 def evolve(
@@ -773,8 +1061,7 @@ def evolve(
         speeds = np.abs(current[:, 1]) + np.sqrt(
             gamma * current[:, 2] / current[:, 0]
         )
-        dt = min(final_time - time, cfl * dx / float(np.max(speeds)))
-        stage1 = state + dt * rhs(
+        rhs0, required_speed = rhs(
             state,
             dx,
             gamma,
@@ -782,10 +1069,16 @@ def evolve(
             riemann_flux,
             periodic,
         )
-        stage2 = 0.75 * state + 0.25 * (
-            stage1
-            + dt
-            * rhs(
+        if (
+            not np.isfinite(required_speed)
+            or not np.all(np.isfinite(rhs0))
+        ):
+            return current, False
+        step_speed = max(float(np.max(speeds)), required_speed)
+        dt = min(final_time - time, cfl * dx / step_speed)
+        for _ in range(12):
+            stage1 = state + dt * rhs0
+            rhs1, stage1_speed = rhs(
                 stage1,
                 dx,
                 gamma,
@@ -793,11 +1086,19 @@ def evolve(
                 riemann_flux,
                 periodic,
             )
-        )
-        state = (1.0 / 3.0) * state + (2.0 / 3.0) * (
-            stage2
-            + dt
-            * rhs(
+            if not np.isfinite(stage1_speed):
+                dt *= 0.5
+                continue
+            reduced_dt = min(
+                dt,
+                final_time - time,
+                cfl * dx / max(step_speed, stage1_speed),
+            )
+            if reduced_dt < dt * (1.0 - 1.0e-13):
+                dt = 0.99 * reduced_dt
+                continue
+            stage2 = 0.75 * state + 0.25 * (stage1 + dt * rhs1)
+            rhs2, stage2_speed = rhs(
                 stage2,
                 dx,
                 gamma,
@@ -805,7 +1106,31 @@ def evolve(
                 riemann_flux,
                 periodic,
             )
-        )
+            if not np.isfinite(stage2_speed):
+                dt *= 0.5
+                continue
+            reduced_dt = min(
+                dt,
+                final_time - time,
+                cfl * dx / max(step_speed, stage1_speed, stage2_speed),
+            )
+            if reduced_dt < dt * (1.0 - 1.0e-13):
+                dt = 0.99 * reduced_dt
+                continue
+            candidate = (1.0 / 3.0) * state + (2.0 / 3.0) * (
+                stage2 + dt * rhs2
+            )
+            if not np.all(np.isfinite(candidate)):
+                dt *= 0.5
+                continue
+            candidate_primitive = primitive_from_conserved(candidate, gamma)
+            if not primitive_is_admissible(candidate_primitive):
+                dt *= 0.5
+                continue
+            state = candidate
+            break
+        else:
+            return primitive_from_conserved(state, gamma), False
         if not np.all(np.isfinite(state)):
             return primitive_from_conserved(state, gamma), False
         time += dt
@@ -976,11 +1301,22 @@ def main() -> None:
     parser.add_argument(
         "--riemann",
         nargs="+",
-        choices=("hllc", "hierarchical0", "hierarchical1"),
+        choices=(
+            "hllc",
+            "hierarchical0",
+            "hierarchical1",
+            "entropy_repair",
+        ),
         default=("hllc",),
     )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    if args.cfl <= 0.0:
+        parser.error("--cfl must be positive")
+    if "entropy_repair" in args.riemann and args.cfl > 0.45:
+        parser.error(
+            "entropy_repair is locally audited only through CFL 0.45"
+        )
 
     known_cases = {"entropy_wave", *(case.name for case in SHOCK_CASES)}
     unknown = sorted(set(args.cases) - known_cases)
@@ -1004,6 +1340,8 @@ def main() -> None:
         "genuine_compression_mp5": genuine_compression_mp5,
         "hierarchical_wave_mp5": hierarchical_wave_mp5,
         "hierarchical_nonlinear_mp5": hierarchical_nonlinear_mp5,
+        "trace_metric_nonlinear_mp5": trace_metric_nonlinear_mp5,
+        "balanced_metric_nonlinear_mp5": balanced_metric_nonlinear_mp5,
     }
     if args.methods != ["all"]:
         unknown_methods = sorted(set(args.methods) - set(methods))
@@ -1030,6 +1368,7 @@ def main() -> None:
                 1.0,
             )
         ),
+        "entropy_repair": entropy_repair_flux,
     }
     riemann_methods = {
         name: riemann_methods[name] for name in args.riemann

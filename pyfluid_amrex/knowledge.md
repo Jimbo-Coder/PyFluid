@@ -7,7 +7,7 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-27, branch `main`, through Cycle 241's unified
+Last reconciled: 2026-07-27, branch `main`, through Cycle 243's unified
 shock-capturing research and falsification pass. Use the commit containing this
 snapshot plus the exact newer continuity-cycle evidence rather than inferring
 it from an earlier baseline.
@@ -199,24 +199,46 @@ The latest recorded evidence is not one monolithic green result:
   overshoot and TV on Sod/Lax/blast for at most 0.71 percent L1 cost and
   improves Lax L1. At N=128 Brio--Wu versus a 4x numerical reference it
   improves aggregate/transverse L1, overshoot, and TV, with exactly constant
-  normal magnetic field. These are promising uniform-grid Newtonian results,
-  not production, CT/AMR, or relativistic validation.
+  normal magnetic field. Those Cycle-242 rankings predate the
+  reconstructed-face CFL audit and are retained only as history; the audited
+  Cycle-243 comparisons below supersede them.
+- Cycle 243 hardens the research contract without changing production. A
+  common two-sided positivity scale plus a floating-point closure preserves
+  the nonlinear-wave jump interval on 20,000 log-uniform HD and 20,000 MHD
+  stencils for both coefficient and normalized wave-trace objectives, with
+  zero invalid traces/violations. After the reconstructed-face CFL audit, the
+  combined metric improves every N=256 Sod/Lax metric and blast overshoot/TV
+  for a 0.53 percent blast-L1 cost. On N=128 Brio--Wu it improves
+  aggregate/transverse L1 and TV over the coefficient objective with a 0.27
+  percent overshoot cost, but characteristic MP5 still has 1.23/1.34 percent
+  lower aggregate/transverse L1. It is a useful Pareto control, not a
+  universal replacement. Independent MHD
+  contact/Alfven fan weights were algebraically falsified: the corrected
+  target uses one common HLL-to-full-HLLD weight, rejects unordered/nonfinite
+  or RH-inconsistent fans, and preserves accepted-fan RH residuals to
+  `6.81e-11` across 20,000 broad pairs. The raw corpus contains 879
+  inadmissible and 2330 unordered HLLD fans; accepted fans and local updates
+  have zero failures. The rank-one Tadmor repair and final LLF blend are
+  inactive on that corpus and remain unvalidated mechanisms. The evolution
+  harness now propagates every reconstructed-face signal speed plus any
+  stricter flux contract through SSPRK3 stage retries, rejects invalid speeds
+  and final states, and restricts the locally audited entropy-repair path to
+  CFL `0.45` or below.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
 
 ## Open Numerical And Physics Boundaries
 
-- The scalar LLF-to-HLLC/HLLD flux projection remains a no-op control. The
-  Cycle-242 fan hierarchy separately adds HLL outer, contact, and Alfven
-  corrections and audits every HLLC/HLLD intermediate state. In 20,000 broad
-  random MHD pairs, 878 finite HLLD target fluxes contain an inadmissible
-  intermediate fan state; the hierarchy drops the invalid inner fan while
-  retaining admissible outer corrections and exact stationary contacts and
-  rotational discontinuities. It is not the default: it slightly reduces
-  Brio--Wu overshoot but worsens L1/TV and degrades the smooth circular-Alfven
-  error. A smooth-consistent entropy constraint or better
-  entropy-compatible resolved target is still required.
+- The scalar LLF-to-HLLC/HLLD flux projection remains a no-op control.
+  Cycle-242's independently weighted MHD contact/Alfven hierarchy is
+  mathematically rejected because unequal weights break contact
+  Rankine--Hugoniot consistency. Cycle 243 replaces it with one common
+  HLL-to-full-HLLD weight and explicitly audits state admissibility, speed
+  ordering, and fan RH residual. This robust target is still not a winning
+  default, and its rank-one entropy repair is inactive on the current broad
+  corpus. A better energy-consistent resolved target plus multidimensional
+  CT/source coupling remains required.
 - Standard entropy-stable RMHD derivations symmetrize the equations with a
   Godunov--Powell-type source. The present conservative CT RMHD path cannot
   inherit that proof from a face-flux swap alone. Any RMHD entropy claim must

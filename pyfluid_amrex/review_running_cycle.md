@@ -3378,3 +3378,54 @@ I will always continue from the last cycle marked as `in_progress`.
   `10.69x/6.82x` to `2.96x/1.50x` for random-Euler/smooth-MHD probes; the
   smooth-Euler probe is `1.60x`. These Python ratios are algorithm-routing
   evidence, not a C++ kernel performance claim. [DONE]
+
+## Cycle 243 — Wave-trace reconstruction and audited common-fan flux (DONE)
+
+- Compare coefficient projection with a scale-invariant wave-trace metric
+  while preserving the nested PWL-MC/parabolic/MP5 polygon. The normalized
+  combined metric, after enforcing reconstructed-face CFL bounds, improves
+  every N=256 Sod/Lax metric and blast overshoot/TV for a 0.53 percent
+  blast-L1 cost. At N=128 Brio--Wu it improves aggregate/transverse L1 and TV
+  over the coefficient objective for a 0.27 percent overshoot cost, but the
+  refreshed characteristic-MP5 control retains 1.23/1.34 percent lower
+  aggregate/transverse L1. This falsifies Cycle 242's pre-audit all-metric MHD
+  improvement claim. The combined objective is a useful Pareto control, not a
+  universal replacement and not a coupled physical/entropy metric. A common
+  two-sided positivity scale plus a floating-point closure fixes a discovered
+  post-scaling jump-contract violation. The new invariant harness passes
+  20,000 log-uniform HD and 20,000 MHD stencils for both objectives with zero
+  invalid traces/jump violations and maximum normalized violation
+  `2.853e-14`. [DONE]
+- Falsify the independently weighted MHD contact/Alfven fan: the outer-star
+  pair does not generally satisfy contact Rankine--Hugoniot consistency, so
+  unequal inner weights create a synthetic nonphysical fan. Replace it with
+  one common HLL-to-full-HLLD weight applied to every intermediate state and
+  flux. Reject unordered/nonfinite/RH-inconsistent targets, audit the HLL
+  state, and apply the state-jump Tadmor correction plus LLF update blend only
+  afterward. In 20,000 broad pairs, raw MHD HLLD has 879 inadmissible and 2330
+  unordered fans; accepted HD/MHD fans have zero admissibility/order failures,
+  maximum normalized RH residual `6.803e-11`, and exact stationary
+  contact/rotational-wave recovery. The entropy repair and terminal LLF blend
+  are inactive, so they remain evidence gaps. The evolved harness now carries
+  every reconstructed-face physical signal speed plus any stricter flux
+  contract through SSPRK3 stage retries. [DONE]
+- Source-check the synthesis against primary literature. Tadmor/Abgrall
+  entropy corrections, invariant-domain blending, positive relaxation fans,
+  BVD/trace objectives, DG entropy-distance damping, and recent
+  energy-consistent HLLD variants cover the ingredients. No exact paired-trace
+  or audited-common-fan composition was found, but broad novelty language is
+  unsupported. Production catalogs/C++ kernels remain unchanged. Python
+  compilation and `git diff --check` pass. The final 2,000-pair `all`
+  projection scan preserves the legacy scalar/hierarchical controls and has
+  zero accepted-fan/admissibility failures for the common-fan repair. Tiny
+  16-cell entropy-wave and circular-Alfven evolutions exercise the
+  reconstructed-face/flux-required-speed SSPRK3 contract, complete without
+  floors, and conserve their applicable integrals to `9.11e-15` or better.
+  Targeted probes additionally verify that nonfinite face-speed contracts are
+  rejected and a finite nonphysical final stage is retried. The repair CLI is
+  restricted to its locally audited CFL `<=0.45`. These are research
+  harness smokes, not production or held-out profile validation. The normal
+  AMReX quick gate passes 2/2; its feature stage is `3.05 s`. No
+  standard/full/performance gate is claimed because production code is
+  unchanged. The containing local commit records this cycle; no push is
+  performed. [DONE]
