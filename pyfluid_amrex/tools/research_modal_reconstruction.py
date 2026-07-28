@@ -78,23 +78,22 @@ def unlimited_fifth_left(
     return (2.0 * vmm - 13.0 * vm + 47.0 * v0 + 27.0 * vp - 3.0 * vpp) / 60.0
 
 
-def mp5_left(
+def mp5_left_with_bounds(
     vmm: float,
     vm: float,
     v0: float,
     vp: float,
     vpp: float,
     _vppp: float = 0.0,
-) -> float:
+) -> tuple[float, float, float]:
     alpha = 4.0
     epsilon = 1.0e-12
     unlimited = unlimited_fifth_left(vmm, vm, v0, vp, vpp)
     monotone = v0 + minmod(vp - v0, alpha * (v0 - vm))
     scale = max(abs(vmm), abs(vm), abs(v0), abs(vp), abs(vpp))
-    if (unlimited - v0) * (unlimited - monotone) <= epsilon * max(
-        1.0, scale * scale
-    ):
-        return unlimited
+    accept_unlimited = (unlimited - v0) * (
+        unlimited - monotone
+    ) <= epsilon * max(1.0, scale * scale)
 
     dm = vmm - 2.0 * vm + v0
     d0 = vm - 2.0 * v0 + vp
@@ -113,7 +112,24 @@ def mp5_left(
         max(v0, vp, median),
         max(v0, upper_limit, large_curvature),
     )
-    return unlimited + minmod(lower_bound - unlimited, upper_bound - unlimited)
+    limited = unlimited + minmod(
+        lower_bound - unlimited,
+        upper_bound - unlimited,
+    )
+    value = unlimited if accept_unlimited else limited
+    return value, min(lower_bound, value), max(upper_bound, value)
+
+
+def mp5_left(
+    vmm: float,
+    vm: float,
+    v0: float,
+    vp: float,
+    vpp: float,
+    _vppp: float = 0.0,
+) -> float:
+    value, _, _ = mp5_left_with_bounds(vmm, vm, v0, vp, vpp)
+    return value
 
 
 def wenoz_left(

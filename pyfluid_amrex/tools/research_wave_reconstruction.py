@@ -40,17 +40,23 @@ from pyfluid.exact_solutions import (  # noqa: E402
     sod_conserved_integrals,
     sod_exact_solution,
 )
-from research_constrained_riemann import hydro_hllc_flux  # noqa: E402
+from research_constrained_riemann import (  # noqa: E402
+    hierarchical_hydro_flux,
+    hydro_hllc_flux,
+)
 from research_modal_reconstruction import (  # noqa: E402
     interval_weight,
     mc_slope,
     mp5_left,
+    mp5_left_with_bounds,
+    parabolic_right_interface,
     ppm4_left,
 )
 
 
 Array = np.ndarray
 FaceReconstruction = Callable[[Array, int, float], tuple[Array, Array]]
+RiemannFlux = Callable[[Array, Array, float], Array]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -220,6 +226,255 @@ def positive_trace(trace: Array, cell: Array) -> Array:
                 (cell[component] - floor) / (-correction),
             )
     return cell + max(0.0, min(1.0, theta)) * (trace - cell)
+
+
+def hierarchical_weights(
+    constraints: list[tuple[float, float, float]],
+) -> tuple[float, float]:
+    """Project the full high-order target onto the feasible mode polygon."""
+    def feasible(candidate: tuple[float, float]) -> bool:
+        theta_lower, theta_higher = candidate
+        return all(
+            a * theta_lower + b * theta_higher
+            <= c + 128.0 * np.finfo(float).eps * max(1.0, abs(c))
+            for a, b, c in constraints
+        )
+
+    if feasible((1.0, 1.0)):
+        return 1.0, 1.0
+
+    candidates = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]
+    for a, b, c in constraints:
+        norm2 = a * a + b * b
+        if norm2 > 0.0:
+            distance_factor = (a + b - c) / norm2
+            candidates.append(
+                (
+                    1.0 - distance_factor * a,
+                    1.0 - distance_factor * b,
+                )
+            )
+    for first_index, first in enumerate(constraints):
+        a0, b0, c0 = first
+        for a1, b1, c1 in constraints[first_index + 1 :]:
+            determinant = a0 * b1 - a1 * b0
+            if abs(determinant) <= 1.0e-14 * max(
+                1.0,
+                abs(a0),
+                abs(b0),
+                abs(a1),
+                abs(b1),
+            ):
+                continue
+            theta_lower = (c0 * b1 - c1 * b0) / determinant
+            theta_higher = (a0 * c1 - a1 * c0) / determinant
+            candidates.append((theta_lower, theta_higher))
+
+    feasible_candidates = [candidate for candidate in candidates if feasible(candidate)]
+    if not feasible_candidates:
+        return 0.0, 0.0
+    best = min(
+        feasible_candidates,
+        key=lambda candidate: (
+            (1.0 - candidate[0]) ** 2 + (1.0 - candidate[1]) ** 2,
+            -candidate[0],
+            -candidate[1],
+        ),
+    )
+    return (
+        max(0.0, min(1.0, best[0])),
+        max(0.0, min(1.0, best[1])),
+    )
+
+
+def append_interval_constraints(
+    constraints: list[tuple[float, float, float]],
+    base: float,
+    lower_correction: float,
+    higher_correction: float,
+    lower: float,
+    upper: float,
+    tolerance: float,
+) -> None:
+    constraints.append(
+        (
+            lower_correction,
+            higher_correction,
+            upper - base + tolerance,
+        )
+    )
+    constraints.append(
+        (
+            -lower_correction,
+            -higher_correction,
+            base - lower + tolerance,
+        )
+    )
+
+
+def hierarchical_scalar_pair(
+    values: Array,
+) -> tuple[float, float, float, float]:
+    """Reconstruct one physical wave with nested PWL/parabolic/MP5 modes."""
+    robust_left = values[2] + 0.5 * mc_slope(
+        values[1],
+        values[2],
+        values[3],
+    )
+    robust_right = values[3] - 0.5 * mc_slope(
+        values[2],
+        values[3],
+        values[4],
+    )
+    cell_jump = values[3] - values[2]
+    jump_lower = min(0.0, cell_jump)
+    jump_upper = max(0.0, cell_jump)
+    robust_jump = robust_right - robust_left
+    projected_jump = min(jump_upper, max(jump_lower, robust_jump))
+    jump_change = projected_jump - robust_jump
+    robust_left -= 0.5 * jump_change
+    robust_right += 0.5 * jump_change
+
+    parabolic = parabolic_right_interface(
+        values[1],
+        values[2],
+        values[3],
+        values[4],
+    )
+    high_left, left_lower, left_upper = mp5_left_with_bounds(*values)
+    high_right, right_lower, right_upper = mp5_left_with_bounds(
+        *values[::-1]
+    )
+    left_lower = min(left_lower, robust_left)
+    left_upper = max(left_upper, robust_left)
+    right_lower = min(right_lower, robust_right)
+    right_upper = max(right_upper, robust_right)
+
+    left_lower_correction = parabolic - robust_left
+    right_lower_correction = parabolic - robust_right
+    left_higher_correction = high_left - parabolic
+    right_higher_correction = high_right - parabolic
+    jump_lower_correction = right_lower_correction - left_lower_correction
+    jump_higher_correction = right_higher_correction - left_higher_correction
+    scale = max(1.0, *(abs(value) for value in values))
+    tolerance = 128.0 * np.finfo(float).eps * scale
+    constraints: list[tuple[float, float, float]] = [
+        (1.0, 0.0, 1.0),
+        (-1.0, 0.0, 0.0),
+        (0.0, 1.0, 1.0),
+        (0.0, -1.0, 0.0),
+        (-1.0, 1.0, 0.0),
+    ]
+    append_interval_constraints(
+        constraints,
+        robust_left,
+        left_lower_correction,
+        left_higher_correction,
+        left_lower,
+        left_upper,
+        tolerance,
+    )
+    append_interval_constraints(
+        constraints,
+        robust_right,
+        right_lower_correction,
+        right_higher_correction,
+        right_lower,
+        right_upper,
+        tolerance,
+    )
+    append_interval_constraints(
+        constraints,
+        projected_jump,
+        jump_lower_correction,
+        jump_higher_correction,
+        jump_lower,
+        jump_upper,
+        tolerance,
+    )
+    theta_lower, theta_higher = hierarchical_weights(constraints)
+    accepted_left = (
+        robust_left
+        + theta_lower * left_lower_correction
+        + theta_higher * left_higher_correction
+    )
+    accepted_right = (
+        robust_right
+        + theta_lower * right_lower_correction
+        + theta_higher * right_higher_correction
+    )
+    return accepted_left, accepted_right, theta_lower, theta_higher
+
+
+def hierarchical_wave_reconstruction(
+    primitive: Array,
+    left_cell: int,
+    gamma: float,
+    limit_contact: bool,
+    periodic: bool,
+) -> tuple[Array, Array]:
+    stencil = np.array(
+        [
+            stencil_value(primitive, left_cell + offset, periodic)
+            for offset in range(-2, 4)
+        ]
+    )
+    rho_ref, sound = characteristic_basis(stencil[2], stencil[3], gamma)
+    waves = to_characteristics(stencil, rho_ref, sound)
+    accepted_left = np.empty(3)
+    accepted_right = np.empty(3)
+
+    for wave in range(3):
+        values = waves[:, wave]
+        if wave == 0 and not limit_contact:
+            accepted_left[wave] = mp5_left(*values)
+            accepted_right[wave] = mp5_left(*values[::-1])
+            continue
+        accepted_left[wave], accepted_right[wave], _, _ = (
+            hierarchical_scalar_pair(values)
+        )
+
+    return positive_trace(
+        from_characteristics(accepted_left, rho_ref, sound),
+        stencil[2],
+    ), positive_trace(
+        from_characteristics(accepted_right, rho_ref, sound),
+        stencil[3],
+    )
+
+
+def hierarchical_wave_mp5(
+    primitive: Array,
+    left_cell: int,
+    gamma: float,
+) -> tuple[Array, Array]:
+    return hierarchical_wave_reconstruction(
+        primitive,
+        left_cell,
+        gamma,
+        limit_contact=True,
+        periodic=bool(hierarchical_wave_mp5.periodic),
+    )
+
+
+hierarchical_wave_mp5.periodic = False
+
+
+def hierarchical_nonlinear_mp5(
+    primitive: Array,
+    left_cell: int,
+    gamma: float,
+) -> tuple[Array, Array]:
+    return hierarchical_wave_reconstruction(
+        primitive,
+        left_cell,
+        gamma,
+        limit_contact=False,
+        periodic=bool(hierarchical_nonlinear_mp5.periodic),
+    )
+
+
+hierarchical_nonlinear_mp5.periodic = False
 
 
 def characteristic_mp5(
@@ -461,11 +716,29 @@ def hllc_flux(left: Array, right: Array, gamma: float) -> Array:
     return full_flux[[0, 1, 4]]
 
 
+def hierarchical_flux(
+    left: Array,
+    right: Array,
+    gamma: float,
+    shock_budget_scale: float,
+) -> Array:
+    left_full = np.array([left[0], left[1], 0.0, 0.0, left[2]])
+    right_full = np.array([right[0], right[1], 0.0, 0.0, right[2]])
+    result = hierarchical_hydro_flux(
+        left_full,
+        right_full,
+        gamma,
+        shock_budget_scale,
+    )
+    return result.flux[[0, 1, 4]]
+
+
 def rhs(
     state: Array,
     dx: float,
     gamma: float,
     reconstruct: FaceReconstruction,
+    riemann_flux: RiemannFlux,
     periodic: bool,
 ) -> Array:
     primitive = primitive_from_conserved(state, gamma)
@@ -475,7 +748,7 @@ def rhs(
     fluxes = np.empty((len(state) + 1, 3))
     for face in range(len(state) + 1):
         left, right = reconstruct(primitive, face - 1, gamma)
-        fluxes[face] = hllc_flux(left, right, gamma)
+        fluxes[face] = riemann_flux(left, right, gamma)
     if periodic:
         fluxes[-1] = fluxes[0]
     return -(fluxes[1:] - fluxes[:-1]) / dx
@@ -487,6 +760,7 @@ def evolve(
     cfl: float,
     gamma: float,
     reconstruct: FaceReconstruction,
+    riemann_flux: RiemannFlux,
     periodic: bool,
 ) -> tuple[Array, bool]:
     state = conserved_from_primitive(primitive, gamma)
@@ -505,6 +779,7 @@ def evolve(
             dx,
             gamma,
             reconstruct,
+            riemann_flux,
             periodic,
         )
         stage2 = 0.75 * state + 0.25 * (
@@ -515,6 +790,7 @@ def evolve(
                 dx,
                 gamma,
                 reconstruct,
+                riemann_flux,
                 periodic,
             )
         )
@@ -526,6 +802,7 @@ def evolve(
                 dx,
                 gamma,
                 reconstruct,
+                riemann_flux,
                 periodic,
             )
         )
@@ -616,6 +893,7 @@ def entropy_wave_result(
     cfl: float,
     gamma: float,
     reconstruct: FaceReconstruction,
+    riemann_flux: RiemannFlux,
 ) -> Result:
     x = (np.arange(cells) + 0.5) / cells
     primitive = np.column_stack(
@@ -631,6 +909,7 @@ def entropy_wave_result(
         cfl=cfl,
         gamma=gamma,
         reconstruct=reconstruct,
+        riemann_flux=riemann_flux,
         periodic=True,
     )
     density_l1 = float(np.mean(np.abs(evolved[:, 0] - primitive[:, 0])))
@@ -694,6 +973,12 @@ def main() -> None:
         nargs="+",
         default=["all"],
     )
+    parser.add_argument(
+        "--riemann",
+        nargs="+",
+        choices=("hllc", "hierarchical0", "hierarchical1"),
+        default=("hllc",),
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
@@ -717,6 +1002,8 @@ def main() -> None:
         "nonlinear_wave_mp5": nonlinear_wave_mp5,
         "compressive_wave_mp5": compressive_wave_mp5,
         "genuine_compression_mp5": genuine_compression_mp5,
+        "hierarchical_wave_mp5": hierarchical_wave_mp5,
+        "hierarchical_nonlinear_mp5": hierarchical_nonlinear_mp5,
     }
     if args.methods != ["all"]:
         unknown_methods = sorted(set(args.methods) - set(methods))
@@ -725,43 +1012,73 @@ def main() -> None:
         methods = {name: methods[name] for name in args.methods}
 
     results: list[Result] = []
+    riemann_methods: dict[str, RiemannFlux] = {
+        "hllc": hllc_flux,
+        "hierarchical0": (
+            lambda left, right, gamma: hierarchical_flux(
+                left,
+                right,
+                gamma,
+                0.0,
+            )
+        ),
+        "hierarchical1": (
+            lambda left, right, gamma: hierarchical_flux(
+                left,
+                right,
+                gamma,
+                1.0,
+            )
+        ),
+    }
+    riemann_methods = {
+        name: riemann_methods[name] for name in args.riemann
+    }
     for cells in args.cells:
         for method, reconstruct in methods.items():
-            if "entropy_wave" in args.cases:
-                results.append(
-                    entropy_wave_result(
-                        method,
-                        cells,
+            for riemann_name, riemann_flux in riemann_methods.items():
+                result_name = (
+                    method
+                    if riemann_name == "hllc"
+                    else f"{method}+{riemann_name}"
+                )
+                if "entropy_wave" in args.cases:
+                    results.append(
+                        entropy_wave_result(
+                            result_name,
+                            cells,
+                            args.cfl,
+                            args.gamma,
+                            reconstruct,
+                            riemann_flux,
+                        )
+                    )
+                for case in SHOCK_CASES:
+                    if case.name not in args.cases:
+                        continue
+                    x = (np.arange(cells) + 0.5) / cells
+                    primitive = np.empty((cells, 3))
+                    primitive[x < 0.5] = case.left
+                    primitive[x >= 0.5] = case.right
+                    evolved, completed = evolve(
+                        primitive,
+                        case.final_time,
                         args.cfl,
                         args.gamma,
                         reconstruct,
+                        riemann_flux,
+                        periodic=False,
                     )
-                )
-            for case in SHOCK_CASES:
-                if case.name not in args.cases:
-                    continue
-                x = (np.arange(cells) + 0.5) / cells
-                primitive = np.empty((cells, 3))
-                primitive[x < 0.5] = case.left
-                primitive[x >= 0.5] = case.right
-                evolved, completed = evolve(
-                    primitive,
-                    case.final_time,
-                    args.cfl,
-                    args.gamma,
-                    reconstruct,
-                    periodic=False,
-                )
-                results.append(
-                    shock_result(
-                        case,
-                        method,
-                        cells,
-                        evolved,
-                        completed,
-                        args.gamma,
+                    results.append(
+                        shock_result(
+                            case,
+                            result_name,
+                            cells,
+                            evolved,
+                            completed,
+                            args.gamma,
+                        )
                     )
-                )
     print_results(results)
     if args.output is not None:
         write_results(args.output, results)

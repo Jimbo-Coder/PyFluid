@@ -3335,3 +3335,46 @@ I will always continue from the last cycle marked as `in_progress`.
   in `3.2 s`. No standard/full suite is claimed because the final production
   source is unchanged; Cycle 236 remains the latest full three-rank RMHD
   standard evidence. [DONE]
+
+## Cycle 242 — Mode-selective reconstruction and fan-resolved flux research (DONE)
+
+- Replace the Cycle-241 high-versus-PWL face weight with a mode-selective
+  constrained reconstruction in physical-wave variables. Preserve the smooth
+  MP5 target, make PWL/PWC limits arise from the same coefficient hierarchy,
+  and test Newtonian Euler before extending the generated ideal-MHD
+  characteristic basis and CT normal-field contract. The accepted research
+  form projects the full `(theta_lower, theta_higher)=(1,1)` target onto the
+  feasible PWL-MC/parabolic/MP5 polygon for genuinely nonlinear families and
+  leaves entropy/contact/Alfven families at MP5. A lexicographic objective was
+  rejected because it over-selected the parabola. The Euclidean form matches
+  smooth Euler entropy and exact circular-Alfven MP5 results, keeps normal B
+  exactly constant, lowers Euler shock overshoot/TV through N=256 for at most
+  0.71 percent L1 cost, and at N=128 Brio--Wu improves aggregate/transverse
+  L1, overshoot, and TV against the same 4x numerical reference. [DONE]
+- Replace the scalar LLF-to-HLLC/HLLD correction with separately constrained
+  linearly-degenerate and genuinely nonlinear fan corrections. Inspect every
+  intermediate state, retain exact stationary contacts/Alfven waves, and
+  approach the robust HLL/LLF fan continuously at degeneracies. The research
+  hierarchy now adds HLL outer, contact, and Alfven corrections with nested
+  independently maximal weights, audits both HLLC star states and all HLLD
+  star/double-star states, and drops only an invalid inner fan. In 20,000
+  random MHD pairs, 878 finite HLLD fluxes have an inadmissible intermediate
+  state; all safe and projected one-sided updates remain admissible with
+  nested weights and no entropy-budget violation, and stationary contacts plus
+  a rotational discontinuity are recovered to roundoff. Evolved profiles
+  reject it as the universal flux: it modestly lowers Brio--Wu overshoot but
+  worsens L1/TV and degrades smooth circular-Alfven error. Retain it as a
+  fan-audit and robust prototype pending a smooth-consistent
+  entropy-compatible target. [DONE]
+- Keep all work in standalone research harnesses until one frozen candidate
+  improves smooth accuracy, exact-shock L1/overshoot/TV, random-state
+  admissibility, MHD wave coherence, and cost on held-out controls. Remove or
+  retain only as explicit falsification evidence any candidate that fails that
+  boundary. Production schemas and C++ kernels remain unchanged. The
+  reconstruction is promising but still needs broader MHD, CT, AMR, rotated,
+  relativistic, and cost gates. The fan-resolved Riemann form is retained only
+  as explicit robustness/falsification evidence. An exact full-target
+  feasibility fast path reduced the Python face-call overhead from
+  `10.69x/6.82x` to `2.96x/1.50x` for random-Euler/smooth-MHD probes; the
+  smooth-Euler probe is `1.60x`. These Python ratios are algorithm-routing
+  evidence, not a C++ kernel performance claim. [DONE]

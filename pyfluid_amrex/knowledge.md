@@ -190,21 +190,33 @@ The latest recorded evidence is not one monolithic green result:
   genuinely compressive waves improves Sod but loses the strong-shock gain.
   This identifies mode-selective limiting inside physical subspaces as the
   next step rather than one high-to-PWL coefficient.
+- Cycle 242 implements that mode-selective step in standalone Euler and
+  ideal-MHD harnesses. Genuinely nonlinear families use one nested
+  PWL-MC/parabolic/MP5 formula whose two weights are the Euclidean projection
+  of the full target onto the MP5/joint-jump feasible polygon; linearly
+  degenerate families retain MP5. It is identical to characteristic MP5 on
+  smooth Euler entropy and exact circular-Alfven waves. At N=256 it lowers
+  overshoot and TV on Sod/Lax/blast for at most 0.71 percent L1 cost and
+  improves Lax L1. At N=128 Brio--Wu versus a 4x numerical reference it
+  improves aggregate/transverse L1, overshoot, and TV, with exactly constant
+  normal magnetic field. These are promising uniform-grid Newtonian results,
+  not production, CT/AMR, or relativistic validation.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
 
 ## Open Numerical And Physics Boundaries
 
-- A two-point entropy inequality plus one-sided worst-local-CFL
-  admissibility did not limit a scalar LLF-to-HLLC/HLLD flux correction in
-  20,000 broad random HD pairs or 20,000 broad random MHD pairs. Those
-  constraints alone are too weak to define a useful unified Riemann solver.
-  A compressive pressure/total-pressure entropy budget makes the experiment
-  active while retaining exact stationary contacts, but overlaps established
-  antidiffusion controls and is not accepted as new or production-ready. The
-  next prototype must constrain contact, shear/Alfven, and nonlinear fan
-  corrections separately and inspect every intermediate state.
+- The scalar LLF-to-HLLC/HLLD flux projection remains a no-op control. The
+  Cycle-242 fan hierarchy separately adds HLL outer, contact, and Alfven
+  corrections and audits every HLLC/HLLD intermediate state. In 20,000 broad
+  random MHD pairs, 878 finite HLLD target fluxes contain an inadmissible
+  intermediate fan state; the hierarchy drops the invalid inner fan while
+  retaining admissible outer corrections and exact stationary contacts and
+  rotational discontinuities. It is not the default: it slightly reduces
+  Brio--Wu overshoot but worsens L1/TV and degrades the smooth circular-Alfven
+  error. A smooth-consistent entropy constraint or better
+  entropy-compatible resolved target is still required.
 - Standard entropy-stable RMHD derivations symmetrize the equations with a
   Godunov--Powell-type source. The present conservative CT RMHD path cannot
   inherit that proof from a face-flux swap alone. Any RMHD entropy claim must

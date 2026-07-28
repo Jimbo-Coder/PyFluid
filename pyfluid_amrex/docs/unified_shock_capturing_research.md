@@ -104,39 +104,76 @@ preserve a coupled RMHD wave. The production candidate must project a shared
 physical-wave subspace and then map one coherent left/right state back to
 primitives.
 
-### Newtonian physical-wave precursor
+### Mode-selective physical-wave prototype
 
-`tools/research_wave_reconstruction.py` tests the first system-level
-precursor on one-dimensional ideal-gas Euler. It projects a primitive stencil
-into the local contact and acoustic basis, continuously moves limited PWL
-traces toward MP5, and enforces the wave-jump constraints either wavewise, on
-the acoustic group, or with one face weight. A whole-state positivity scaling
-is the only terminal trace constraint.
+`tools/research_wave_reconstruction.py` now implements the missing
+mode-selective step for one-dimensional ideal-gas Euler. Each genuinely
+nonlinear acoustic family has one nested trace formula,
 
-The constraint is inactive on the periodic entropy wave: characteristic MP5
-and the wavewise form have identical density L1 errors
-`4.1934e-6, 1.6301e-7, 9.0039e-9` at 32, 64, and 128 cells, or measured
-orders 4.69 and 4.18 with SSPRK3 time error present. It is active on exact
-shock tubes, but no grouping is yet Pareto dominant. At 128 cells:
+```text
+q_face = q_PWL
+       + theta_lower  (q_parabolic - q_PWL)
+       + theta_higher (q_MP5 - q_parabolic),
+
+0 <= theta_higher <= theta_lower <= 1.
+```
+
+The two coefficients are the Euclidean projection of the full target `(1, 1)`
+onto a face-local feasible polygon. Its constraints are the existing MP5
+one-sided admissible intervals and a joint trace jump between zero and the
+neighboring cell-average wave jump. PWL-MC reaches PWC where its slopes vanish.
+The linearly degenerate entropy/contact family retains MP5. A whole-state
+positivity scaling is the only terminal trace constraint.
+
+A lexicographic objective was tested and rejected because it over-selected the
+common parabola and lost strong-shock accuracy. The Euclidean projection has
+no fitted shock coefficient. It is inactive on the periodic entropy wave:
+characteristic MP5 and the hierarchy have identical density L1 errors
+`4.1934e-6, 1.6301e-7, 9.0039e-9` at 32, 64, and 128 cells.
+
+At 128 cells the hierarchy reduces overshoot and TV on all three exact Euler
+tubes while changing L1 by less than 0.5 percent:
 
 | Case | Method | summed normalized L1 | max overshoot | max TV ratio |
 | --- | --- | ---: | ---: | ---: |
 | Sod | characteristic MP5 | `9.8691e-3` | `4.4275e-3` | `1.00963` |
-| Sod | wavewise constraint | `1.0006e-2` | `4.6451e-3` | `1.01008` |
+| Sod | mode hierarchy | `9.9172e-3` | `3.6851e-3` | `1.00872` |
 | Lax | characteristic MP5 | `2.0742e-2` | `1.8373e-2` | `1.02680` |
-| Lax | wavewise constraint | `2.0747e-2` | `1.3427e-2` | `1.01915` |
+| Lax | mode hierarchy | `2.0743e-2` | `1.7263e-2` | `1.02540` |
 | Blast | characteristic MP5 | `2.5796e-2` | `2.9313e-2` | `1.03004` |
-| Blast | wavewise constraint | `2.5481e-2` | `2.6207e-2` | `1.02680` |
+| Blast | mode hierarchy | `2.5803e-2` | `2.8906e-2` | `1.02957` |
 
-The N=256 held-out tests preserve the pattern. Wavewise limiting improves Lax
-L1/overshoot/TV from `9.8050e-3/1.6347e-2/1.02632` to
-`9.7278e-3/1.1626e-2/1.01824`. On the blast it lowers overshoot from
-`2.8574e-2` to `2.4832e-2` and TV from `1.02943` to `1.02563`, but raises L1
-from `1.4393e-2` to `1.4526e-2`. Sod regresses in all three metrics. Limiting
-only genuinely compressive acoustic waves improves Sod but loses the
-strong-shock gains. This is a useful mechanism result, not a winning method:
-the next version needs mode-selective constraints inside each physical
-subspace rather than a single high-versus-PWL coefficient.
+The held-out 256-cell result is similarly stable. Sod exchanges a 0.71 percent
+L1 increase for 17.1 percent less overshoot. Lax improves L1, overshoot, and
+TV. The blast changes L1 by 0.08 percent while lowering overshoot and TV.
+Thus the candidate is a stronger Pareto result than the earlier single-weight
+precursor, but it is not strict L1 dominance on every tube.
+
+### Ideal-MHD extension
+
+`tools/research_mhd_wave_reconstruction.py` carries the identical hierarchy
+into the generated seven-wave ideal-MHD basis. Entropy and Alfvén families
+retain MP5; fast and slow families receive the nested projection. The reduced
+reconstruction uses one face-normal magnetic field for both traces.
+
+Two thousand random and near-degenerate characteristic round trips have
+maximum relative error `4.49e-13`. On the exact circular Alfvén wave,
+characteristic MP5 and the hierarchy are identical: transverse normalized L1
+is `2.8143e-5` and `2.6007e-6` at 32 and 64 cells, normal-field spread is zero,
+and conserved-integral errors are at roundoff.
+
+Brio--Wu is a numerical-reference test, not an exact MHD solution. At 128
+cells against a 512-cell characteristic-MP5/HLLD reference, the hierarchy
+improves all recorded metrics:
+
+| Method | aggregate L1 | transverse L1 | max overshoot | max TV ratio |
+| --- | ---: | ---: | ---: | ---: |
+| characteristic MP5 | `5.9279e-3` | `2.3991e-3` | `1.7327e-2` | `1.17402` |
+| mode hierarchy | `5.8718e-3` | `2.3041e-3` | `1.4823e-2` | `1.17250` |
+
+At 64 cells the hierarchy already lowers transverse L1 by 4.6 percent but
+slightly raises aggregate L1, overshoot, and TV. The favorable 128-cell result
+therefore needs more MHD tubes, rotated waves, CT, and AMR before promotion.
 
 ### RMHD entropy limitation
 
@@ -197,12 +234,25 @@ For GRMHD, the solver acts only on the special-relativistic local face problem.
 The tetrad transforms fluxes and states back to the coordinate basis. Curvature
 sources remain outside the Riemann problem.
 
-### Prototype result
+### Fan-hierarchy prototype result
 
-`tools/research_constrained_riemann.py` implements the first scalar-correction
-falsification harness for ideal-gas HD and MHD. It constructs a minimally
-entropy-certified LLF flux, targets HLLC/HLLD, and limits their difference by
-two-point entropy and worst-local-CFL admissibility.
+`tools/research_constrained_riemann.py` preserves the first scalar-correction
+falsification control and now also implements a nested fan hierarchy:
+
+```text
+entropy-certified LLF
+  + theta_outer   (HLL - LLF)
+  + theta_contact (contact fan - HLL)
+  + theta_Alfven  (HLLD - contact fan),
+
+1 >= theta_outer >= theta_contact >= theta_Alfven >= 0.
+```
+
+Each coefficient is independently maximized while retaining the two-point
+entropy budget and admissibility of both worst-local-CFL one-sided updates.
+The implementation now inspects both HLLC star states and all HLLD star/double
+star states. An invalid inner fan is removed without discarding an admissible
+outer fan.
 
 Those two constraints alone were inactive for all 20,000 broad random HD
 pairs and all 20,000 broad random MHD pairs. This is not a successful new
@@ -213,9 +263,25 @@ entropy budget makes the prototype nontrivial (mean accepted target weights
 but this overlaps established HLLC antidiffusion-control ideas and is not a
 novelty claim.
 
-The next Riemann prototype must expose separate contact, shear/Alfven, and
-nonlinear corrections and test the intermediate fan itself. A scalar blend
-will not be promoted.
+On 20,000 broad random pairs with no added compressive entropy budget, every
+safe update is admissible and every target flux is finite. All HD HLLC fans are
+admissible. In MHD, 878 HLLD target fans (4.39 percent) contain an inadmissible
+intermediate conserved state even though the returned flux is finite. The fan
+hierarchy detects those cases; its mean accepted outer/contact/Alfvén weights
+are `0.999991/0.988508/0.988508`. It recovers stationary HD contacts, the
+stationary MHD contact, and an exact stationary rotational discontinuity to
+`2.78e-17` or better.
+
+This is a meaningful robustness result but not a winning default flux. With
+the mode-selective reconstruction at 64 cells, the no-budget fan hierarchy is
+indistinguishable from HLLC on Sod and Lax and slightly worse on the Euler
+blast. On Brio--Wu it lowers maximum overshoot from `2.1723e-2` to
+`2.0991e-2`, but raises aggregate L1 from `9.4958e-3` to `9.6533e-3` and TV.
+On a 16-cell smooth circular Alfvén wave it raises transverse L1 from
+`4.5696e-4` to `5.8685e-4`. The compressive-budget variant does not remove
+that tradeoff. Keep the hierarchy as a robust fan-audit/fallback prototype;
+do not promote it until the entropy control is smooth-consistent or a better
+entropy-compatible resolved target is derived.
 
 ## Literature Collision Map
 
@@ -280,13 +346,13 @@ remain mandatory.
 
 ## Immediate Research Sequence
 
-1. Replace the scalar high-versus-PWL coefficient in the Newtonian HD
-   precursor with an entropy-scaled, mode-selective constrained projection and
-   compare against MP5, WENO-Z, PPM4, SP-WENO, and the recorded precursor.
-2. Extend the same projection to the existing generated Newtonian MHD
-   characteristic basis and CT normal-field contract.
-3. Implement the per-wave COWE optimizer with HLLC/HLLD targets and
-   multidimensional shock probes.
+1. Freeze the current mode hierarchy without fitted coefficients and test more
+   smooth extrema, all MHD wave families, MHD tubes, rotation, CT, and AMR.
+2. Derive the same physical-subspace hierarchy for the existing RHD/RMHD local
+   orthonormal face problems; do not apply scalar component constraints.
+3. Retain the fan hierarchy as an intermediate-state audit. Investigate an
+   entropy-compatible resolved target or a smooth-consistent entropy
+   constraint before further profile promotion.
 4. Derive and test RHD HLLC and RMHD HLLD providers in a local orthonormal
    frame. Do not make them production methods before random-fan and exact
    relativistic gates pass.
