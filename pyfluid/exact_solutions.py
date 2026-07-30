@@ -112,15 +112,25 @@ def sod_exact_solution(x, time_value, gamma, left, right, x0=0.5):
    return rho, pressure, velocity
 
 
-def sod_wave_breakpoints(time_value, gamma, left, right, x0=0.5):
+def sod_wave_breakpoints(
+   time_value,
+   gamma,
+   left,
+   right,
+   x0=0.5,
+   domain_lo=0.0,
+   domain_hi=1.0,
+):
+   if domain_hi <= domain_lo:
+      raise ValueError("Sod breakpoint domain must have positive extent")
    if time_value <= 0.0:
-      return (0.0, x0, 1.0)
+      return (domain_lo, min(max(x0, domain_lo), domain_hi), domain_hi)
    rho_l, velocity_l, pressure_l = left
    rho_r, velocity_r, pressure_r = right
    pressure_star, velocity_star = solve_sod_star_state(left, right, gamma)
    sound_l = np.sqrt(gamma * pressure_l / rho_l)
    sound_r = np.sqrt(gamma * pressure_r / rho_r)
-   points = [0.0, 1.0]
+   points = [domain_lo, domain_hi]
 
    if pressure_star > pressure_l:
       left_shock = velocity_l - sound_l * np.sqrt(
@@ -146,16 +156,19 @@ def sod_wave_breakpoints(time_value, gamma, left, right, x0=0.5):
       points.append(x0 + (velocity_star + sound_star_r) * time_value)
       points.append(x0 + (velocity_r + sound_r) * time_value)
 
-   clipped = [min(max(float(point), 0.0), 1.0) for point in points]
+   clipped = [
+      min(max(float(point), domain_lo), domain_hi)
+      for point in points
+   ]
    clipped.sort()
    unique = []
    for point in clipped:
       if not unique or abs(point - unique[-1]) > 1.0e-14:
          unique.append(point)
-   if unique[0] > 0.0:
-      unique.insert(0, 0.0)
-   if unique[-1] < 1.0:
-      unique.append(1.0)
+   if unique[0] > domain_lo:
+      unique.insert(0, domain_lo)
+   if unique[-1] < domain_hi:
+      unique.append(domain_hi)
    return tuple(unique)
 
 

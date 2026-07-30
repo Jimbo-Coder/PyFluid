@@ -11,6 +11,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np
 
 from scan_rmhd_balsara_reconstruction import (
    COMPONENT_NAMES,
@@ -22,6 +23,7 @@ from validate_rmhd import (
    EXACT_BALSARA_ROOT,
    INPUTS,
    RUN_ROOT,
+   exact_rmhd_cell_averages,
    exact_rmhd_conserved,
    read_last_exact_balsara_profile,
    relativistic_recovery_counts,
@@ -301,6 +303,14 @@ def plot_balsara4_profiles(
       normal_magnetic=float(spec["left"][5]),
       gamma=float(spec["gamma"]),
    )
+   cell_edges = np.linspace(-1.0, 1.0, cells + 1)
+   exact_average = exact_rmhd_cell_averages(
+      exact_profile,
+      normal_magnetic=float(spec["left"][5]),
+      gamma=float(spec["gamma"]),
+      cell_edges=cell_edges,
+   )
+   exact_centers = 0.5 * (cell_edges[:-1] + cell_edges[1:])
    figure, axes = plt.subplots(
       1,
       len(PLOT_COMPONENTS),
@@ -312,9 +322,17 @@ def plot_balsara4_profiles(
       axes[column].plot(
          exact_profile[:, 0],
          exact_state[component],
+         color="0.65",
+         linewidth=1.0,
+         label="exact point profile",
+      )
+      axes[column].step(
+         exact_centers,
+         exact_average[component],
+         where="mid",
          color="black",
-         linewidth=1.8,
-         label="exact",
+         linewidth=1.6,
+         label="exact FV average",
       )
       axes[column].set_title(label)
       axes[column].set_xlabel("x")
@@ -326,9 +344,15 @@ def plot_balsara4_profiles(
       run_dir = ROOT / str(row["run_dir"])
       centers, numerical, _, _, _, _ = exact_comparison(4, spec, run_dir)
       method = str(row["method"])
+      candidate_riemann = str(row["candidate_riemann"])
+      candidate_label = (
+         "HLL (same as primary)"
+         if candidate_riemann == "same"
+         else candidate_riemann.upper()
+      )
       label = (
-         f"{method} / {row['guard']} / "
-         f"{row['candidate_riemann']} / {row['timestep']}"
+         f"{method.upper()} / {str(row['guard']).upper()} guard / "
+         f"{candidate_label} / {str(row['timestep']).upper()}"
       )
       for column, (name, _) in enumerate(PLOT_COMPONENTS):
          component = COMPONENT_NAMES.index(name)

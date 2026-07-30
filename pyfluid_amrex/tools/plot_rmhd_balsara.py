@@ -25,6 +25,7 @@ from validate_rmhd import (
    EXACT_BALSARA_CASES,
    EXACT_BALSARA_ROOT,
    RUN_ROOT,
+   exact_rmhd_cell_averages,
    exact_rmhd_conserved,
    read_last_exact_balsara_profile,
 )
@@ -73,22 +74,42 @@ def plot_exact_profiles() -> None:
          normal_magnetic=float(spec["left"][5]),
          gamma=float(spec["gamma"]),
       )
+      prob_lo, prob_hi = parse_plot_bounds(plotfile)
+      cell_edges = np.linspace(
+         prob_lo[0],
+         prob_hi[0],
+         numerical_state.shape[1] + 1,
+      )
+      exact_average = exact_rmhd_cell_averages(
+         exact_profile,
+         normal_magnetic=float(spec["left"][5]),
+         gamma=float(spec["gamma"]),
+         cell_edges=cell_edges,
+      )
       exact_names = ("dens", "mom1", "mom2", "mom3", "tau", "b1", "b2", "b3")
       for column, (name, label) in enumerate(COMPONENTS):
          axis = axes[row, column]
          axis.plot(
             exact_profile[:, 0],
             exact_state[exact_names.index(name)],
+            color="0.55",
+            linewidth=1.0,
+            label="exact point profile",
+         )
+         axis.step(
+            centers,
+            exact_average[exact_names.index(name)],
+            where="mid",
             color="black",
-            linewidth=1.6,
-            label="exact",
+            linewidth=1.5,
+            label="exact FV average",
          )
          axis.plot(
             centers,
             numerical_state[names.index(name)],
             color="#0072B2",
             linewidth=1.0,
-            label="PyFluid MP5",
+            label="PyFluid FV average",
          )
          axis.set_title(f"Balsara {case}: {label}")
          axis.grid(alpha=0.25)
@@ -98,7 +119,8 @@ def plot_exact_profiles() -> None:
             axis.set_xlabel("x")
    axes[0, 0].legend(frameon=False)
    figure.suptitle(
-      "Exact 1D SRMHD Riemann profiles — N=512, MP5/HLL, CFL 0.9"
+      "Exact 1D SRMHD Valencia conserved profiles — "
+      "N=512, MP5 with PWC candidate guard/HLL, CFL 0.9"
    )
    EXACT_PLOT.parent.mkdir(parents=True, exist_ok=True)
    figure.savefig(EXACT_PLOT, dpi=180)

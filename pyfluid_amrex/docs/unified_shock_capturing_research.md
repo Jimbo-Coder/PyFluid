@@ -33,10 +33,12 @@ operation.
 The current strongest verified RMHD policy remains PPM4 with the RK-stage
 candidate DMP/PWC correction at factor 1.05 when low ringing is the priority.
 On exact Balsara 4 at 1024 cells it has maximum normalized all-component L1
-`3.200159e-3`, overshoot `4.524195e-3`, TV ratio `1.4913`, 2236 PWC
+`2.797194e-3`, overshoot `4.524195e-3`, TV ratio `1.4913`, 2236 PWC
 corrections, and zero atmosphere resets. A research candidate must beat this
 and the existing MP5 accuracy controls on held-out cases before it is added to
-the production method catalog.
+the production method catalog. The L1 value uses the Cycle-247
+discontinuity-aware average of the exact conserved state over each numerical
+cell; the older point-sampled comparison reported `3.200159e-3`.
 
 ## Reconstruction Candidate: Wave-Constrained Entropy-Modal Reconstruction
 
@@ -138,16 +140,18 @@ audited 256-cell comparison is:
 
 | Case | Method | summed normalized L1 | max overshoot | max TV ratio |
 | --- | --- | ---: | ---: | ---: |
-| Sod | characteristic MP5 | `4.96442e-3` | `2.74858e-3` | `1.007409` |
-| Sod | coefficient hierarchy | `4.97967e-3` | `2.46989e-3` | `1.007372` |
-| Lax | characteristic MP5 | `9.81728e-3` | `1.65163e-2` | `1.026281` |
-| Lax | coefficient hierarchy | `9.80161e-3` | `1.63894e-2` | `1.024594` |
-| Blast | characteristic MP5 | `1.43634e-2` | `2.82300e-2` | `1.029063` |
-| Blast | coefficient hierarchy | `1.46011e-2` | `2.79788e-2` | `1.028767` |
+| Sod | characteristic MP5 | `3.61173e-3` | `2.74858e-3` | `1.007409` |
+| Sod | coefficient hierarchy | `3.62721e-3` | `2.46989e-3` | `1.007372` |
+| Lax | characteristic MP5 | `6.25535e-3` | `1.65163e-2` | `1.026281` |
+| Lax | coefficient hierarchy | `6.23747e-3` | `1.63894e-2` | `1.024594` |
+| Blast | characteristic MP5 | `9.50178e-3` | `2.82300e-2` | `1.029063` |
+| Blast | coefficient hierarchy | `9.73949e-3` | `2.79788e-2` | `1.028767` |
 
 The hierarchy lowers overshoot and TV on all three tubes and improves Lax L1
-by 0.16 percent. It costs 0.31 percent L1 on Sod and 1.66 percent on blast.
-This remains a Pareto control, not strict L1 dominance.
+by 0.29 percent. It costs 0.43 percent L1 on Sod and 2.50 percent on blast.
+These Cycle-247 values compare exact conserved cell averages with numerical
+cell averages; the earlier point-profile scores were not finite-volume
+consistent. This remains a Pareto control, not strict L1 dominance.
 
 ### Ideal-MHD extension
 
@@ -193,12 +197,16 @@ coefficient metric and is invariant to uniform rescaling of the wave. This is
 a **wave-trace metric**, not a coupled primitive, conserved, or entropy metric:
 each characteristic family is still optimized independently.
 
-The combined metric is a strong Pareto result after the reconstructed-face CFL
-audit. At 256 cells it improves L1, overshoot, and TV on Sod and Lax. On blast
-it improves overshoot `2.79788e-2 -> 2.78641e-2` and TV
-`1.028767 -> 1.028692`, while L1 rises by 0.53 percent. At 128-cell Brio--Wu it
-improves aggregate/transverse L1 and TV relative to the coefficient objective,
-while overshoot rises by 0.27 percent. Trace-only and differently normalized
+The cell-average-corrected audit gives a narrower result. At 256 cells the
+combined metric improves the coefficient hierarchy's Sod L1/overshoot/TV and
+Lax overshoot/TV, while its Lax L1 is effectively tied but higher by
+`2.0e-8`. On blast it improves overshoot
+`2.79788e-2 -> 2.78641e-2` and TV `1.028767 -> 1.028692`, but L1 rises from
+`9.73949e-3` to `1.02657e-2`, a 5.40 percent cost rather than the old
+point-profile estimate of 0.53 percent. At 128-cell Brio--Wu it improves
+aggregate/transverse L1 and TV relative to the coefficient objective, while
+overshoot rises by 0.27 percent; that fine-to-coarse MHD comparison was already
+conservative and is unchanged. Trace-only and differently normalized
 objectives also change the ranking. Retain this as a useful Pareto control, not
 a universal replacement or an entropy-metric claim.
 
@@ -228,6 +236,105 @@ The first WCEM implementation should therefore:
   Rankine--Hugoniot constraints for the existing conservative CT RMHD path;
 - make no RMHD entropy-stability claim unless the symmetrizing source and CT
   discretization are derived and validated together.
+
+### Local MP5-THINC and physical-wave subcell prototype
+
+`tools/research_subcell_reconstruction.py` implements an order-independent
+local precursor of cascade BVD. It offers MP5 or P4 and conservative THINC
+profiles with the published Euler steepness pair `beta=(1.1, 1.6)`.
+Wavewise selection minimizes boundary variation separately in each
+characteristic field; shared selection chooses one profile for the complete
+characteristic state. The THINC quadrature audit preserves its supplied cell
+average to `6.03e-15`.
+
+P4-THINC is rejected in this operator because it produces substantially larger
+Euler overshoot and TV. MP5-THINC is a useful but not universal control. At 32
+cells its wavewise form lowers exact-profile aggregate L1 relative to
+characteristic MP5 on Sod, Lax, blast, and reverse blast, and lowers a moving
+contact L1 from `3.1006e-2` to `1.5933e-2`. It is exactly identical to MP5 on
+the 16- and 32-cell smooth entropy wave. The colliding-shock tube and the MHD
+tests expose the cost of indiscriminate sharpening: L1 can improve while
+overshoot and TV worsen.
+
+The Cycle-247 conserved-cell-average rerun preserves that conclusion. At
+N=32, wavewise MP5-THINC changes summed L1 from
+`2.70394e-2/3.66389e-2/6.36557e-2/6.27026e-2` to
+`2.30437e-2/3.02472e-2/5.84587e-2/5.98763e-2` for
+Sod/Lax/blast/reverse-blast, but worsens colliding-shock L1 from
+`1.18189e-2` to `1.34963e-2`. The contact rerun initializes and compares
+off-grid discontinuities as exact cell averages; the older center-sampled
+contact scores were `4.7462e-2/3.0593e-2`.
+
+The physical-wave hybrid therefore assigns the candidates by wave class:
+
+```text
+nonlinear acoustic / fast / slow:
+    balanced PWL-MC -> parabola -> MP5 hierarchy
+
+linearly degenerate contact / entropy / Alfven:
+    MP5 <-> THINC subcell candidate selected by boundary variation
+```
+
+The MHD form retains one normal magnetic field at every face. A continuous
+wave-purity factor,
+
+```text
+purity_j = activity(linear wave j)
+           / (activity(linear wave j) + activity(nonlinear waves)),
+```
+
+also tests whether a linearly-degenerate component is isolated or embedded in
+a compound shock. The square-root form and a purity-adaptive THINC steepness
+are Pareto experiments, not fitted production formulas.
+
+At 32 cells versus an eight-times-finer characteristic-MP5 reference, the
+purity-adaptive hybrid improves all four reported error metrics over the
+balanced hierarchy:
+
+| MHD tube | method | aggregate L1 | transverse L1 | max overshoot | max TV ratio |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Brio--Wu | balanced MP5 | `1.72919e-2` | `7.50805e-3` | `4.25628e-2` | `1.163526` |
+| Brio--Wu | adaptive hybrid | `1.71603e-2` | `7.46165e-3` | `4.24460e-2` | `1.162719` |
+| Dai--Woodward | balanced MP5 | `1.40437e-2` | `1.60693e-2` | `3.07651e-3` | `0.994860` |
+| Dai--Woodward | adaptive hybrid | `1.35155e-2` | `1.51481e-2` | `2.79280e-3` | `0.994851` |
+
+The 64-cell Brio--Wu check prevents a broad winning claim. Characteristic MP5
+still has the lowest aggregate L1 (`9.40473e-3`). The adaptive hybrid improves
+balanced-MP5 L1, transverse L1, and overshoot but raises its TV ratio from
+`1.140908` to `1.141213`; the gentler fixed-beta hybrid improves all four
+balanced-MP5 metrics but remains behind characteristic MP5 in L1 and TV. All
+tested smooth circular-Alfven results are identical to characteristic MP5,
+1,000 broad random MHD stencils have no inadmissible traces, and the normal
+magnetic jump is zero. These are one-dimensional Newtonian research results
+with numerical MHD references, not CT, AMR, SRMHD, cost, or production
+validation.
+
+The first rescaled-state audit found a concrete homogeneity defect in the
+baseline MP5 provider: its unlimited-candidate test uses
+`epsilon * max(1, scale^2)`. Rescaling ideal-MHD primitive states as
+`rho,p -> zeta(rho,p)` and `B -> sqrt(zeta) B` can therefore change the
+selected trace. A standalone MP5 variant using `epsilon * scale^2` reduces
+the maximum 200-stencil BVD reconstruction mismatch from `1.67e1` to
+`2.81e-14`; its 32-cell Brio--Wu and Dai--Woodward metrics remain essentially
+the same. The production `mp5.hpp` has the same absolute unit-scale test, but
+this research cycle does not change it. The full physical-wave hybrid also
+inherits absolute tolerances from the older balanced hierarchy and is not yet
+a homogeneous SR candidate.
+
+The current Python form deliberately recomputes neighboring candidates at
+each face. A 32-face microbenchmark measures the adaptive hybrid at `24.95x`
+characteristic MP5 and `2.83x` the balanced hierarchy; scale-invariant
+wavewise BVD is `17.41x` MP5. These ratios are useful evidence that the
+research implementation shape is not production-ready, not a C++ throughput
+prediction. A C++ experiment must compute each cell candidate once, reuse it
+at both faces, and then measure the complete timestep.
+
+The SR extension is architectural rather than automatic. It should replace
+the Newtonian eigenbasis and positive-density/pressure scale with a
+relativistic characteristic provider and a convex physical-constraint
+projection that also enforces subluminal velocity. SRMHD must additionally
+retain the one-normal-field/CT contract. Do not apply scalar THINC directly to
+relativistic primitive components and call it the same method.
 
 ## Riemann Candidate: Constraint-Optimized Wave Enrichment
 

@@ -18,7 +18,12 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pyfluid.exact_solutions import sod_conserved_integrals, sod_exact_solution  # noqa: E402
+from pyfluid.exact_solutions import (  # noqa: E402
+   sod_conserved_integrals,
+   sod_exact_solution,
+   sod_wave_breakpoints,
+)
+from exact_reference import cell_average_newtonian_hydro  # noqa: E402
 from plotfile_reader import latest_plotfile as discover_latest_plotfile
 from plot_amrex_1d_profile import parse_plot_header, read_level0_state_1d  # noqa: E402
 from validation_common import append_validation_history, next_numbered_path, read_scalar_rows, run_mpi, write_tsv  # noqa: E402
@@ -197,9 +202,28 @@ def collect_result(case: SodCase, run_dir: Path, args: argparse.Namespace) -> di
    nx = rho.size
    dx = 1.0 / nx
    x = (np.arange(nx, dtype=float) + 0.5) * dx
+   cell_edges = np.linspace(0.0, 1.0, nx + 1)
    left = (args.rho_left, args.v1_left, args.pressure_left)
    right = (args.rho_right, args.v1_right, args.pressure_right)
-   rho_exact, pressure_exact, vx_exact = sod_exact_solution(x, time_value, args.gamma, left, right, args.shock_x0)
+   rho_exact, pressure_exact, vx_exact = cell_average_newtonian_hydro(
+      lambda points: sod_exact_solution(
+         points,
+         time_value,
+         args.gamma,
+         left,
+         right,
+         args.shock_x0,
+      ),
+      cell_edges,
+      args.gamma,
+      breakpoints=sod_wave_breakpoints(
+         time_value,
+         args.gamma,
+         left,
+         right,
+         args.shock_x0,
+      ),
+   )
    exact_integrals = sod_conserved_integrals(time_value, args.gamma, left, right, args.shock_x0)
    scalar_rows = read_scalar_rows(run_dir)
    if not scalar_rows:
@@ -327,11 +351,20 @@ def write_profile_plot(
    plot_dir.mkdir(parents=True, exist_ok=True)
    path = next_numbered_path(plot_dir, f"{case.name}_exact_overlay")
    fig, axes = plt.subplots(3, 1, figsize=(9.0, 8.2), sharex=True, constrained_layout=True)
-   fig.suptitle(f"{case.label}: exact Sod overlay, t={time_value:.5f}")
+   fig.suptitle(
+      f"{case.label}: exact finite-volume Sod overlay, t={time_value:.5f}"
+   )
    labels = ("rho", "P", "v1")
    for ax, label, num, ref in zip(axes, labels, numerical, exact, strict=True):
       ax.plot(x, num, color="tab:blue", marker="o", markersize=2.0, linewidth=1.0, label="num")
-      ax.plot(x, ref, color="black", linestyle=":", linewidth=1.8, label="exact")
+      ax.plot(
+         x,
+         ref,
+         color="black",
+         linestyle=":",
+         linewidth=1.8,
+         label="exact FV average",
+      )
       ax.set_ylabel(label)
       ax.grid(True, which="major", alpha=0.25)
       ax.legend()
@@ -463,6 +496,20 @@ def main() -> int:
    args.run_root = args.run_root if args.run_root.is_absolute() else ROOT / args.run_root
    args.plot_dir = args.plot_dir if args.plot_dir.is_absolute() else ROOT / args.plot_dir
    args.output = args.output if args.output.is_absolute() else ROOT / args.output
+   shock_face = args.shock_x0 * args.nx
+   if not (
+      0.0 < args.shock_x0 < 1.0
+      and math.isclose(
+         shock_face,
+         round(shock_face),
+         rel_tol=0.0,
+         abs_tol=1.0e-12,
+      )
+   ):
+      parser.error(
+         "--shock-x0 must lie inside [0,1] and align with a cell face; "
+         "analytic Sod initial data is currently center sampled"
+      )
 
    if args.method_ladder:
       cases = [SodCase(point.riemann, point.recon, point.timestep, args.nx, args.final_time, args.cfl) for point in LADDER_POINTS]

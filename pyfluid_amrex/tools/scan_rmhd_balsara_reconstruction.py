@@ -24,6 +24,7 @@ from validate_rmhd import (
    EXACT_BALSARA_ROOT,
    INPUTS,
    RUN_ROOT,
+   exact_rmhd_cell_averages,
    exact_rmhd_conserved,
    read_last_exact_balsara_profile,
    relativistic_recovery_counts,
@@ -101,19 +102,26 @@ def exact_comparison(
    prob_lo, prob_hi = parse_plot_bounds(plotfile)
    spacing = (prob_hi[0] - prob_lo[0]) / numerical.shape[1]
    centers = prob_lo[0] + (np.arange(numerical.shape[1]) + 0.5) * spacing
-   sampled_exact = np.vstack([
-      np.interp(centers, exact_profile[:, 0], exact_state[component])
-      for component in range(exact_state.shape[0])
-   ])
+   cell_edges = np.linspace(
+      prob_lo[0],
+      prob_hi[0],
+      numerical.shape[1] + 1,
+   )
+   averaged_exact = exact_rmhd_cell_averages(
+      exact_profile,
+      normal_magnetic=float(spec["left"][5]),
+      gamma=float(spec["gamma"]),
+      cell_edges=cell_edges,
+   )
    scales = np.maximum(
-      np.ptp(sampled_exact, axis=1),
-      np.max(np.abs(sampled_exact), axis=1),
+      np.ptp(exact_state, axis=1),
+      np.max(np.abs(exact_state), axis=1),
    )
    scales = np.maximum(scales, 1.0e-14)
-   component_l1 = np.mean(np.abs(numerical - sampled_exact), axis=1) / scales
+   component_l1 = np.mean(np.abs(numerical - averaged_exact), axis=1) / scales
 
-   exact_min = np.min(sampled_exact, axis=1)
-   exact_max = np.max(sampled_exact, axis=1)
+   exact_min = np.min(exact_state, axis=1)
+   exact_max = np.max(exact_state, axis=1)
    lower_overshoot = np.maximum(exact_min[:, np.newaxis] - numerical, 0.0)
    upper_overshoot = np.maximum(numerical - exact_max[:, np.newaxis], 0.0)
    maximum_overshoot = float(
@@ -121,13 +129,13 @@ def exact_comparison(
    )
 
    numerical_tv = np.sum(np.abs(np.diff(numerical, axis=1)), axis=1)
-   exact_tv = np.sum(np.abs(np.diff(sampled_exact, axis=1)), axis=1)
+   exact_tv = np.sum(np.abs(np.diff(averaged_exact, axis=1)), axis=1)
    active = exact_tv > 1.0e-12 * scales
    maximum_tv_ratio = float(np.max(numerical_tv[active] / exact_tv[active]))
    return (
       centers,
       numerical,
-      exact_profile[:, 0],
+      averaged_exact,
       float(np.max(component_l1)),
       maximum_overshoot,
       maximum_tv_ratio,
@@ -294,15 +302,37 @@ def plot_scan(
          normal_magnetic=float(spec["left"][5]),
          gamma=float(spec["gamma"]),
       )
+      reference_centers = profiles[(case, args.methods[0], plot_cells)][0]
+      spacing = reference_centers[1] - reference_centers[0]
+      cell_edges = np.linspace(
+         reference_centers[0] - 0.5 * spacing,
+         reference_centers[-1] + 0.5 * spacing,
+         reference_centers.size + 1,
+      )
+      exact_average = exact_rmhd_cell_averages(
+         exact_profile,
+         normal_magnetic=float(spec["left"][5]),
+         gamma=float(spec["gamma"]),
+         cell_edges=cell_edges,
+      )
       for column, (name, label) in enumerate(PLOT_COMPONENTS):
          component = COMPONENT_NAMES.index(name)
          axis = axes[row, column]
          axis.plot(
             exact_profile[:, 0],
             exact_state[component],
+            color="0.65",
+            linewidth=1.0,
+            label="exact point profile",
+            zorder=9,
+         )
+         axis.step(
+            reference_centers,
+            exact_average[component],
+            where="mid",
             color="black",
-            linewidth=1.8,
-            label="exact",
+            linewidth=1.6,
+            label="exact FV average",
             zorder=10,
          )
          plotted_methods = (
@@ -334,7 +364,8 @@ def plot_scan(
       loc="best",
    )
    figure.suptitle(
-      f"SRMHD reconstruction comparison — N={plot_cells}, HLL/SSPRK3, CFL 0.9; "
+      f"SRMHD Valencia conserved comparison — "
+      f"N={plot_cells}, HLL/SSPRK3, CFL 0.9; "
       "Balsara 4 WENO-Z is off scale"
    )
    PLOT.parent.mkdir(parents=True, exist_ok=True)
@@ -354,6 +385,17 @@ def plot_scan(
       gamma=float(spec["gamma"]),
    )
    centers, numerical = profiles[(case, "wenoz", plot_cells)]
+   spacing = centers[1] - centers[0]
+   exact_average = exact_rmhd_cell_averages(
+      exact_profile,
+      normal_magnetic=float(spec["left"][5]),
+      gamma=float(spec["gamma"]),
+      cell_edges=np.linspace(
+         centers[0] - 0.5 * spacing,
+         centers[-1] + 0.5 * spacing,
+         centers.size + 1,
+      ),
+   )
    failure_figure, failure_axes = plt.subplots(
       1,
       len(PLOT_COMPONENTS),
@@ -366,9 +408,17 @@ def plot_scan(
       axis.plot(
          exact_profile[:, 0],
          exact_state[component],
+         color="0.65",
+         linewidth=1.0,
+         label="exact point profile",
+      )
+      axis.step(
+         centers,
+         exact_average[component],
+         where="mid",
          color="black",
-         linewidth=1.8,
-         label="exact",
+         linewidth=1.6,
+         label="exact FV average",
       )
       axis.plot(
          centers,
@@ -467,7 +517,8 @@ def plot_convergence(
       axes[index // columns, index % columns].set_visible(False)
    axes[0, 0].legend(frameon=False, fontsize=8)
    figure.suptitle(
-      "Exact SRMHD Balsara resolution scan — HLL/SSPRK3, CFL 0.9"
+      "Exact cell-averaged SRMHD Balsara resolution scan — "
+      "HLL/SSPRK3, CFL 0.9"
    )
    CONVERGENCE_PLOT.parent.mkdir(parents=True, exist_ok=True)
    figure.savefig(CONVERGENCE_PLOT, dpi=180)
@@ -491,6 +542,18 @@ def plot_pwl_balsara4_resolution(
       normal_magnetic=float(spec["left"][5]),
       gamma=float(spec["gamma"]),
    )
+   reference_centers = profiles[(4, "pwl", max(args.cells))][0]
+   spacing = reference_centers[1] - reference_centers[0]
+   exact_average = exact_rmhd_cell_averages(
+      exact_profile,
+      normal_magnetic=float(spec["left"][5]),
+      gamma=float(spec["gamma"]),
+      cell_edges=np.linspace(
+         reference_centers[0] - 0.5 * spacing,
+         reference_centers[-1] + 0.5 * spacing,
+         reference_centers.size + 1,
+      ),
+   )
    figure, axes = plt.subplots(
       1,
       len(PLOT_COMPONENTS),
@@ -506,10 +569,19 @@ def plot_pwl_balsara4_resolution(
       axis.plot(
          exact_profile[:, 0],
          exact_state[component],
-         color="black",
-         linewidth=1.8,
-         label="exact",
+         color="0.65",
+         linewidth=1.0,
+         label="exact point profile",
          zorder=10,
+      )
+      axis.step(
+         reference_centers,
+         exact_average[component],
+         where="mid",
+         color="black",
+         linewidth=1.5,
+         label=f"exact FV average (N={max(args.cells)})",
+         zorder=11,
       )
       for color, cells in zip(colors, args.cells, strict=True):
          centers, numerical = profiles[(4, "pwl", cells)]

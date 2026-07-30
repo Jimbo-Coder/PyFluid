@@ -13,7 +13,13 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pyfluid.exact_solutions import circular_alfven_wave_exact, resistive_mhd_wave_exact, sod_exact_solution
+from pyfluid.exact_solutions import (
+    circular_alfven_wave_exact,
+    resistive_mhd_wave_exact,
+    sod_exact_solution,
+    sod_wave_breakpoints,
+)
+from exact_reference import cell_average_newtonian_hydro
 from plotfile_reader import parse_plot_header_1d
 from plotfile_reader import read_level0_state_1d as _read_level0_state_1d
 
@@ -87,7 +93,27 @@ def main() -> None:
     if args.sod:
         left = (args.rho_left, args.v1_left, args.pressure_left)
         right = (args.rho_right, args.v1_right, args.pressure_right)
-        exact = sod_exact_solution(x, time_value, args.gamma, left, right, x0=args.shock_x0)
+        exact = cell_average_newtonian_hydro(
+            lambda points: sod_exact_solution(
+                points,
+                time_value,
+                args.gamma,
+                left,
+                right,
+                x0=args.shock_x0,
+            ),
+            np.linspace(args.xlo, args.xhi, ncell + 1),
+            args.gamma,
+            breakpoints=sod_wave_breakpoints(
+                time_value,
+                args.gamma,
+                left,
+                right,
+                x0=args.shock_x0,
+                domain_lo=args.xlo,
+                domain_hi=args.xhi,
+            ),
+        )
     if args.circular_alfven:
         exact = circular_alfven_wave_exact(
             x,

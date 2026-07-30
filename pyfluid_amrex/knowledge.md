@@ -7,10 +7,10 @@ design specification. Read `../AGENTS.md`, this file,
 backend. When this file disagrees with current source or a newer continuity
 cycle, verify the source and update this snapshot.
 
-Last reconciled: 2026-07-27, branch `main`, through Cycle 243's unified
-shock-capturing research and falsification pass. Use the commit containing this
-snapshot plus the exact newer continuity-cycle evidence rather than inferring
-it from an earlier baseline.
+Last reconciled: 2026-07-29, branch `main`, through Cycle 247's exact-profile
+representation audit. Use the commit containing this snapshot plus the exact
+newer continuity-cycle evidence rather than inferring it from an earlier
+baseline.
 
 ## Scope
 
@@ -171,10 +171,12 @@ The latest recorded evidence is not one monolithic green result:
   pass. No full or stability suite was run.
 - Cycle 236 adds PPM3 as an independent limited-slope control and tightens the
   opt-in RMHD candidate DMP factor from 1.20 to 1.05. The full three-rank RMHD
-  standard gate passes. At N=1024 exact Balsara 4, PPM4/PWC reaches normalized
-  all-component L1 `3.200159e-3`, overshoot `4.524195e-3`, and TV ratio
-  `1.4913`, with zero atmosphere resets. PPM3 and a PWL-MC-before-PWC ladder
-  were not competitive and were not promoted.
+  standard gate passes. The original point-sampled N=1024 Balsara-4 comparison
+  reported PPM4/PWC normalized all-component L1 `3.200159e-3`. Cycle 247's
+  conserved cell-average reference corrects that value to `2.797194e-3`;
+  overshoot `4.524195e-3`, TV ratio `1.4913`, 2236 PWC corrections, and zero
+  atmosphere resets are unchanged. PPM3 and a PWL-MC-before-PWC ladder were
+  not competitive and were not promoted.
 - Cycle 241 is research evidence, not a new production method. Two continuous
   MP5-to-robust reconstruction candidates were removed after held-out RMHD
   failures. A componentwise sign projection reduced scalar square-wave
@@ -206,13 +208,17 @@ The latest recorded evidence is not one monolithic green result:
   common two-sided positivity scale plus a floating-point closure preserves
   the nonlinear-wave jump interval on 20,000 log-uniform HD and 20,000 MHD
   stencils for both coefficient and normalized wave-trace objectives, with
-  zero invalid traces/violations. After the reconstructed-face CFL audit, the
-  combined metric improves every N=256 Sod/Lax metric and blast overshoot/TV
-  for a 0.53 percent blast-L1 cost. On N=128 Brio--Wu it improves
-  aggregate/transverse L1 and TV over the coefficient objective with a 0.27
-  percent overshoot cost, but characteristic MP5 still has 1.23/1.34 percent
-  lower aggregate/transverse L1. It is a useful Pareto control, not a
-  universal replacement. Independent MHD
+  zero invalid traces/violations. Cycle 247's finite-volume correction
+  supersedes the old point-profile Euler rankings: at N=256 the combined
+  metric improves coefficient-hierarchy Sod L1/overshoot/TV and Lax
+  overshoot/TV, but its Lax L1 is higher by `2.0e-8` and its blast-L1 cost is
+  5.40 percent rather than 0.53 percent. Characteristic MP5 has the lowest Sod
+  and blast L1; the balanced hierarchy has the lowest Lax L1. On N=128
+  Brio--Wu the combined metric still improves aggregate/transverse L1 and TV
+  over the coefficient objective with a 0.27 percent overshoot cost, but
+  characteristic MP5 has 1.23/1.34 percent lower aggregate/transverse L1.
+  That fine-to-coarse MHD reference was already conservative. The candidate
+  is a useful Pareto control, not a universal replacement. Independent MHD
   contact/Alfven fan weights were algebraically falsified: the corrected
   target uses one common HLL-to-full-HLLD weight, rejects unordered/nonfinite
   or RH-inconsistent fans, and preserves accepted-fan RH residuals to
@@ -224,9 +230,95 @@ The latest recorded evidence is not one monolithic green result:
   stricter flux contract through SSPRK3 stage retries, rejects invalid speeds
   and final states, and restricts the locally audited entropy-repair path to
   CFL `0.45` or below.
+- Cycle 246 tests conservative subcell structure without changing production.
+  A local MP5-THINC BVD precursor preserves the smooth MP5 path and sharply
+  improves moving-contact and several Euler-tube L1 errors, but unrestricted
+  characteristic THINC worsens overshoot/TV on compound MHD shocks. A more
+  physical hybrid uses the balanced MP5 hierarchy on nonlinear waves and
+  THINC only on linearly-degenerate waves, with optional continuous
+  linear/nonlinear wave purity. At 32 cells the purity-adaptive form
+  improves aggregate/transverse L1, overshoot, and TV over balanced MP5 on
+  both Brio--Wu and Dai--Woodward numerical-reference tubes. At 64-cell
+  Brio--Wu, characteristic MP5 still has lower L1/TV, so no universal or
+  state-of-the-art claim is justified. SR requires a relativistic eigenbasis
+  plus density/pressure/subluminal PCP projection; Newtonian positivity is
+  insufficient. A rescaled-state audit also finds that the research and
+  production MP5 unlimited-candidate test uses an absolute
+  `epsilon*max(1,scale^2)` threshold. The standalone homogeneous
+  `epsilon*scale^2` variant reduces a 200-stencil MHD scaling mismatch from
+  `1.67e1` to `2.81e-14` with nearly unchanged tube metrics. Treat production
+  MP5 homogeneity as a focused follow-up, not as fixed by this research cycle.
+- Cycle 247 finds that the exact Balsara and Sod comparisons sampled continuum
+  point values while numerical state stores conserved finite-volume averages.
+  The corrected path splits known discontinuities, averages conserved
+  quantities over each cell, and only then applies the numerical
+  conserved-to-primitive interpretation. The sparse Balsara tables have
+  107--140 unique coordinates versus up to 1024 numerical cells. Their
+  repeated coordinates are physical jumps; Balsara 1 also contains one
+  out-of-order zero-strength sample whose identical states permit removing it.
+  Any nontrivial coordinate reversal is rejected. The corrected unguarded
+  Balsara-2 N=1024 comparison reverses the old MP5/PPM4 maximum-L1 ranking:
+  PPM4 is `2.584842e-3` and MP5 is `2.642574e-3`. This invalidates small
+  point-sampled ranking differences but does not remove the measured
+  oscillations. A fresh run of the official exact solver at ten times the
+  output density shows maximum normalized cell-average reference changes of
+  `3.06e-5` for Balsara 2 and `7.93e-4` for Balsara 3; the latter is large
+  enough to move close reconstruction scores, although the broad ranking and
+  all validation thresholds survive. Dense Balsara 4 sampling hits the legacy
+  solver's documented velocity-root limitation, and dense Balsara 5 was
+  stopped after several minutes, so a uniformly dense five-case exact corpus
+  is not yet established. The same audit found an off-grid top-hat in the
+  subcell moving-contact harness: center sampling gave the N=32 initial high
+  state width as 0.375 instead of 0.4. Exact initial/final cell averages change
+  characteristic-MP5 versus physical-subcell L1 from the stale
+  `4.7462e-2/3.0593e-2` to `3.1006e-2/1.5933e-2`; the subcell improvement
+  survives without the mass mismatch.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
+
+## Exact And Analytic Reference Semantics
+
+- A finite-volume profile comparison must compare numerical conserved cell
+  averages with exact conserved cell averages. For nonlinear systems, average
+  the conserved state rather than averaging primitives or evaluating the
+  conserved map at an averaged primitive. A recovered primitive comparison
+  must apply the same C2P interpretation to the averaged exact conserved state.
+- A tabulated Riemann reference needs discontinuity-aware integration.
+  Repeated coordinates encode a zero-width jump and must not be smoothed by
+  ordinary interpolation. Normalize errors with the complete physical
+  profile, and compare TV with the exact profile averaged onto the same mesh.
+- Exact-solver convergence and profile-tabulation accuracy are different.
+  The public Giacomazzo--Rezzolla code solves the nonlinear wave states first,
+  then uses a nonuniform plotting grid with exact duplicate coordinates at
+  discontinuities and `nx/5` rarefaction samples. Increasing `nx` tests only
+  representation of the solved profile. Its checked-in Balsara 2--5 source
+  uses decimal `gamma=1.6666` even though the paper and standard tests specify
+  `5/3`; a fresh Balsara-2 N=100 output matches the tracked table to
+  `1.0e-11`. Correcting the temporary source to `5/3` changes normalized
+  Balsara-2/3 cell averages by at most `1.14e-5/1.71e-5`, below the measured
+  Balsara-3 sampling error and current numerical errors but still a provenance
+  caveat for “exact” labels.
+- Published and local profile plots must identify their variables. The AsterX
+  Balsara figure shows rest-mass density and `B_y`; the original PyFluid scan
+  emphasized Valencia `D`, `S_1`, `tau`, and `B_2`. At Lorentz factors near
+  22, small primitive velocity errors can be strongly magnified in momentum
+  and energy, so those plots are not visually interchangeable.
+- Do not mechanically cell-average every existing smooth analytic reference.
+  Many analytic initial-data providers currently sample primitives at cell
+  centers even though evolution, reconstruction, reflux, and average-down use
+  the finite-volume cell-average contract. Their pointwise comparisons test
+  that center-sampled discrete initialization; they do not validate a
+  high-order finite-volume initial projection. A future projection change must
+  average conserved initial data and update its analytic references together.
+  Fine-to-coarse numerical references that explicitly average down are already
+  conservative and remain valid.
+- A discontinuous center-sampled IC is compatible with a continuum exact
+  finite-volume reference only when every initial jump lies on a cell face.
+  The Sod exact validator now enforces that restriction. For arbitrary
+  translations of center-sampled periodic data, compare with the conservative
+  translation of the discrete cell averages, as the advection-medley validator
+  now does, rather than resampling the continuum profile at target centers.
 
 ## Open Numerical And Physics Boundaries
 

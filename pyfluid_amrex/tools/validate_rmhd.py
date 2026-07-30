@@ -11,6 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
+from exact_reference import cell_average_tabulated_mapped
 from plotfile_reader import (
    latest_checkpoint,
    latest_plotfile,
@@ -324,8 +325,34 @@ def read_last_exact_balsara_profile(path: Path) -> np.ndarray:
    if current:
       blocks.append(current)
    if not blocks or any(len(row) != 8 for row in blocks[-1]):
-      raise RuntimeError(f"invalid exact RMHD profile: {repo_relative(path)}")
-   return np.asarray(blocks[-1], dtype=float)
+      raise RuntimeError(f"invalid exact RMHD profile: {path}")
+   profile = np.asarray(blocks[-1], dtype=float)
+   while np.any(np.diff(profile[:, 0]) < 0.0):
+      reversal = int(np.flatnonzero(np.diff(profile[:, 0]) < 0.0)[0])
+      lower_coordinate = profile[reversal + 1, 0]
+      redundant = reversal
+      while (
+         redundant >= 0
+         and profile[redundant, 0] > lower_coordinate
+         and np.allclose(
+            profile[redundant, 1:],
+            profile[reversal + 1, 1:],
+            rtol=64.0 * np.finfo(float).eps,
+            atol=64.0 * np.finfo(float).eps,
+         )
+      ):
+         redundant -= 1
+      first_redundant = redundant + 1
+      if first_redundant > reversal:
+         raise RuntimeError(
+            f"nontrivial out-of-order exact RMHD profile: {path}"
+         )
+      profile = np.delete(
+         profile,
+         np.s_[first_redundant : reversal + 1],
+         axis=0,
+      )
+   return profile
 
 
 def exact_rmhd_conserved(
@@ -379,6 +406,34 @@ def exact_rmhd_conserved(
       magnetic[:, 1],
       magnetic[:, 2],
    ))
+
+
+def exact_rmhd_cell_averages(
+   profile: np.ndarray,
+   *,
+   normal_magnetic: float,
+   gamma: float,
+   cell_edges: np.ndarray,
+) -> np.ndarray:
+   """Average the exact primitive profile after its nonlinear Valencia map."""
+
+   def transform(primitive: np.ndarray) -> np.ndarray:
+      samples = primitive.shape[-1]
+      mapped_profile = np.empty((samples, 8))
+      mapped_profile[:, 0] = 0.0
+      mapped_profile[:, 1:] = primitive.T
+      return exact_rmhd_conserved(
+         mapped_profile,
+         normal_magnetic=normal_magnetic,
+         gamma=gamma,
+      )
+
+   return cell_average_tabulated_mapped(
+      profile[:, 0],
+      profile[:, 1:].T,
+      cell_edges,
+      transform,
+   )
 
 
 def validate_exact_balsara(
@@ -436,23 +491,24 @@ def validate_exact_balsara(
          gamma=float(spec["gamma"]),
       )
       prob_lo, prob_hi = parse_plot_bounds(plotfile)
-      centers = np.linspace(
+      cell_edges = np.linspace(
          prob_lo[0],
          prob_hi[0],
-         numerical.shape[1],
-         endpoint=False,
-      ) + 0.5 * (prob_hi[0] - prob_lo[0]) / numerical.shape[1]
-      sampled_exact = np.vstack([
-         np.interp(centers, exact_profile[:, 0], exact_state[component])
-         for component in range(exact_state.shape[0])
-      ])
+         numerical.shape[1] + 1,
+      )
+      averaged_exact = exact_rmhd_cell_averages(
+         exact_profile,
+         normal_magnetic=float(left[5]),
+         gamma=float(spec["gamma"]),
+         cell_edges=cell_edges,
+      )
       scales = np.maximum(
-         np.ptp(sampled_exact, axis=1),
-         np.max(np.abs(sampled_exact), axis=1),
+         np.ptp(exact_state, axis=1),
+         np.max(np.abs(exact_state), axis=1),
       )
       scales = np.maximum(scales, 1.0e-14)
       component_errors = np.mean(
-         np.abs(numerical - sampled_exact), axis=1
+         np.abs(numerical - averaged_exact), axis=1
       ) / scales
       maximum_error = float(np.max(component_errors))
       if maximum_error > 0.03:

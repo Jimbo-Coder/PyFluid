@@ -39,7 +39,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from pyfluid.exact_solutions import (  # noqa: E402
     sod_conserved_integrals,
     sod_exact_solution,
+    sod_wave_breakpoints,
 )
+from exact_reference import cell_average_newtonian_hydro  # noqa: E402
 from research_constrained_riemann import (  # noqa: E402
     entropy_repaired_hydro_flux,
     hierarchical_hydro_flux,
@@ -1155,13 +1157,25 @@ def shock_result(
     completed: bool,
     gamma: float,
 ) -> Result:
-    x = (np.arange(cells) + 0.5) / cells
-    rho_exact, pressure_exact, velocity_exact = sod_exact_solution(
-        x,
-        case.final_time,
-        gamma,
-        case.left,
-        case.right,
+    cell_edges = np.linspace(0.0, 1.0, cells + 1)
+    rho_exact, pressure_exact, velocity_exact = (
+        cell_average_newtonian_hydro(
+            lambda points: sod_exact_solution(
+                points,
+                case.final_time,
+                gamma,
+                case.left,
+                case.right,
+            ),
+            cell_edges,
+            gamma,
+            breakpoints=sod_wave_breakpoints(
+                case.final_time,
+                gamma,
+                case.left,
+                case.right,
+            ),
+        )
     )
     exact_values = np.column_stack(
         (rho_exact, velocity_exact, pressure_exact),

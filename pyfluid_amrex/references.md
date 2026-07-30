@@ -212,8 +212,19 @@ High-value source/test routes include:
   reader selects the final iteration block, reconstructs gas pressure from
   total pressure and comoving magnetic pressure, converts the exact primitive
   profile independently to PyFluid's flat Valencia conserved variables, and
-  compares at the published times. These files are independent validation
-  data, not production flux, reconstruction, or recovery code.
+  compares conserved cell averages at the published times. Repeated
+  coordinates encode jumps; a redundant zero-strength Balsara-1 wave sample is
+  removed only because its states are identical, and any nontrivial coordinate
+  reversal is rejected. These files are independent validation data, not
+  production flux, reconstruction, or recovery code.
+  The public solver constructs a nonuniform output grid after solving the wave
+  states: discontinuities are emitted at their exact coordinates and
+  rarefactions receive `nx/5` samples. Its current `initialdata.f90` spells
+  Balsara 2--5's nominal `5/3` adiabatic index as `1.6666`; the paper's table
+  uses `5/3`. A temporary Cycle-247 regeneration verified this discrepancy is
+  small but nonzero and that output-density sensitivity is larger for Balsara
+  3. See Cycle 247 for measurements and failed dense-case boundaries rather
+  than treating the tracked plot tables as infinite-resolution functions.
 
 ## Modern Shock-Capturing Research Routes
 
@@ -317,6 +328,36 @@ implementations:
   algorithm*, [arXiv:2404.13015](https://arxiv.org/abs/2404.13015): recent
   nonrelativistic MHD plus CT evidence for polynomial/THINC BVD selection.
   Treat it as a prototype direction requiring independent SRMHD validation.
+- Z. Sun, S. Inaba, and F. Xiao, *Boundary Variation Diminishing
+  reconstruction: a new approach to improve Godunov scheme*,
+  [arXiv:1602.00814](https://arxiv.org/abs/1602.00814), and X. Deng et al.,
+  *A fifth-order shock capturing scheme with two-stage boundary variation
+  diminishing algorithm*,
+  [arXiv:1811.01379](https://arxiv.org/abs/1811.01379): original in-cell
+  jump-like BVD motivation and the P4 plus two-THINC cascade. These are the
+  primary definitions behind the local MP5-THINC research precursor.
+- E. Pimentel-García et al., *In-cell Discontinuous Reconstruction
+  path-conservative methods...*,
+  [arXiv:2105.00424](https://arxiv.org/abs/2105.00424), and E. Abreu et al.,
+  *High-order DR.MOOD...*,
+  [arXiv:2407.02931](https://arxiv.org/abs/2407.02931): exact isolated-shock
+  capture by explicitly representing a discontinuity inside a cell. Their
+  current equation sets are not a drop-in conservative MHD or SRMHD method.
+- H. Zhang et al., *An Adaptive Reconstruction Method for Arbitrary
+  High-Order Accuracy Using Discontinuity Feedback*,
+  [arXiv:2410.05489](https://arxiv.org/abs/2410.05489): a recent
+  low-to-high-order alternative in which a discontinuity-feedback factor is
+  both detector and reconstruction input. It supports continuous,
+  scale-independent adaptation but does not establish the physical-wave
+  purity construction tested here.
+- Y. Chen and K. Wu, *A Physical-Constraint-Preserving Finite Volume WENO
+  Method for Special Relativistic Hydrodynamics on Unstructured Meshes*,
+  [arXiv:2207.09385](https://arxiv.org/abs/2207.09385), and M. Dumbser et al.,
+  *ADER-WENO finite volume schemes with space-time adaptive mesh refinement*,
+  [SRHD/SRMHD formulation](https://arxiv.org/abs/1312.7784): primary routes
+  for relativistic admissibility, scaling-invariant nonlinear weights, and
+  high-order finite-volume extension. A Newtonian positivity check does not
+  substitute for density/pressure/subluminal relativistic PCP constraints.
 - Y. Ding and K. Wu, *High-order positivity-preserving finite volume methods
   for ideal MHD with locally divergence-free reconstruction*,
   [paper](https://doi.org/10.1137/23M1562081): direct projection of magnetic

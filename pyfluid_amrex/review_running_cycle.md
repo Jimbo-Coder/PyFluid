@@ -3429,3 +3429,189 @@ I will always continue from the last cycle marked as `in_progress`.
   standard/full/performance gate is claimed because production code is
   unchanged. The containing local commit records this cycle; no push is
   performed. [DONE]
+
+## Cycle 244 — Unified reconstruction readiness audit (DONE)
+
+- Recheck the current WCEM precursor boundary rather than inferring
+  relativistic or production readiness from the Newtonian research harnesses.
+  The implemented coherent physical-wave reconstruction remains standalone
+  one-dimensional ideal-gas Euler and ideal-MHD research code. No current
+  SRHD, SRMHD, GRHD, or GRMHD implementation exists, and the production
+  reconstruction catalog and kernels remain unchanged. [DONE]
+- Confirm the candidate is Pareto-useful but not a universal winner. Fresh
+  64-cell Euler entropy/Sod and 32-cell circular-Alfven/Brio--Wu probes
+  complete. The balanced hierarchy is identical to characteristic MP5 on the
+  smooth waves and reduces Sod and Brio--Wu overshoot, but it raises Sod and
+  aggregate Brio--Wu L1 and raises the coarse Brio--Wu TV ratio. The audited
+  N=128 Brio--Wu result likewise retains 1.23/1.34 percent lower
+  aggregate/transverse L1 for characteristic MP5. [DONE]
+- Rerun 2,000 log-uniform HD and MHD paired-stencil checks for both coefficient
+  and balanced objectives. All four rows have zero nonfinite/nonpositive
+  traces and zero jump violations; the maximum normalized closure error is
+  `2.850e-14`. This supports the Newtonian face invariant, not relativistic,
+  multidimensional CT/AMR, cost, or production validation. The next
+  implementation boundary remains SRHD followed by coherent SRMHD physical
+  subspaces, exact relativistic tubes, random admissibility, and only then the
+  local-tetrad GR path. [DONE]
+
+## Cycle 245 — Subcell discontinuity hypothesis (DONE)
+
+- Distinguish the exact finite-volume conservation law from the representation
+  used by a standard Godunov reconstruction. Cell averages are not the
+  questionable assumption. The information loss is that one average and one
+  smooth polynomial per cell do not encode the location or states of a
+  discontinuity lying inside the cell; the reconstructed mismatch is then
+  presented as a face Riemann problem. A moving shock is consequently spread
+  over cells by numerical dissipation even though the ideal continuum shock
+  need not coincide with a grid face. [DONE]
+- Treat an embedded physical-wave discontinuity as a concrete extension of
+  the WCEM hypothesis: retain the high-order polynomial in smooth cells, but
+  permit one conservative subcell jump with left/right states, wave family,
+  and position constrained by the cell average, admissibility, and
+  Rankine--Hugoniot relations. It should contract continuously back to the
+  polynomial when the fitted jump vanishes rather than introduce a discrete
+  reconstruction ladder. This overlaps BVD/THINC and shock-fitting ideas but
+  would differ by fitting one coherent HD/MHD/relativistic physical-wave
+  state rather than an independent scalar sigmoid. [DONE]
+- Do not describe this as a flaw in finite volume or as an accepted new
+  method. BVD explicitly identifies the face-only discontinuity premise and
+  demonstrates an in-cell jump-like reconstruction, including a 2024 ideal
+  MHD plus CT extension. The physical-wave embedded form remains a
+  falsifiable research direction requiring exact-shock, smooth-wave,
+  multidimensional, CT/AMR, relativistic, and cost comparisons. [DONE]
+
+## Cycle 246 — Local subcell BVD and wave-purity prototypes (DONE)
+
+- Source-check the current reconstruction frontier. Original and fifth-order
+  BVD/THINC, in-cell discontinuous reconstruction and DR.MOOD, adaptive-order
+  WENO/discontinuity feedback, MHD BVD plus CT, and relativistic
+  physical-constraint-preserving WENO/ADER-WENO cover the main nearby
+  mechanisms. No source establishes one reconstruction that dominates across
+  smooth, shock, contact, MHD, relativistic, CT/AMR, and cost regimes. [DONE]
+- Add standalone Newtonian Euler and ideal-MHD local cascade-BVD precursors.
+  The audited THINC formula preserves its cell average to `6.03e-15`.
+  P4-THINC is rejected for large overshoot/TV. MP5-THINC is exactly MP5 on
+  16/32-cell smooth entropy and circular-Alfven waves, lowers a 32-cell moving
+  contact L1 from `4.7462e-2` to `3.0593e-2`, and improves several exact Euler
+  tube L1 errors, but unrestricted sharpening worsens colliding-shock and
+  fine-reference MHD overshoot/TV. [DONE]
+- Derive a physical-wave hybrid: the existing balanced MP5 hierarchy owns
+  nonlinear acoustic/fast/slow families, while BVD/THINC is restricted to
+  contact/entropy/Alfven families. Test gentler MHD THINC parameters,
+  component-bound rejection, continuous BVD gain, and continuous physical
+  wave purity. Component-bound scaling is decisively too diffusive; the
+  continuous-gain and strong-purity forms collapse toward MP5 and lose most
+  contact gain. Retain them only as explicit falsification controls. [DONE]
+- Freeze the purity-adaptive result before more tuning. At N=32 against
+  8x numerical references it improves aggregate/transverse L1, maximum
+  overshoot, and maximum TV over balanced MP5 on Brio--Wu and Dai--Woodward.
+  At N=64 Brio--Wu it improves balanced MP5 in L1/transverse L1/overshoot but
+  is slightly worse in TV, while characteristic MP5 retains the best L1/TV.
+  Smooth circular-Alfven stays exactly on MP5; 1,000 broad random MHD
+  stencils have zero inadmissible traces and zero normal-field jump. This is a
+  promising Pareto prototype, not a universal winner, SR method, CT/AMR
+  result, performance result, or production change. [DONE]
+- Record the SR boundary: reuse the selection architecture only after
+  supplying a relativistic characteristic provider and a
+  density/pressure/subluminal physical-constraint projection, with one normal
+  magnetic field and CT in SRMHD. A rescaled-state audit finds that the
+  baseline research and production MP5 unlimited-candidate test is not
+  homogeneous because it uses `epsilon*max(1,scale^2)`. A standalone
+  `epsilon*scale^2` variant reduces the 200-stencil MHD mismatch from `1.67e1`
+  to `2.81e-14` while leaving the N=32 tube rankings essentially unchanged.
+  Production MP5 is deliberately not changed in this research cycle. A
+  32-face Python microbenchmark puts the adaptive hybrid at `24.95x`
+  characteristic MP5 and `2.83x` the balanced hierarchy because the local
+  precursor recomputes cell candidates at each face; this is an explicit
+  requirement to precompute/reuse candidates, not a C++ performance claim.
+  Python compilation and `git diff --check` pass. Ruff is unavailable in the
+  environment, so no Ruff result is claimed. The first sandboxed quick gate
+  fails when MPI cannot open local sockets; the required socket-capable rerun
+  passes architecture and feature matrix 2/2. Production schemas, generated
+  C++, and kernels remain unchanged. [DONE]
+
+## Cycle 247 — Exact-profile representation audit (DONE)
+
+- Audit analytic and exact-profile comparisons against the production storage
+  contract. Fluid conserved state, reconstruction, AMR restriction, and reflux
+  treat cell-centered values as finite-volume cell averages. The exact SRMHD
+  Balsara validators instead interpolate a sparse discontinuous point profile
+  at cell centers, and the Sod validator compares recovered primitives with
+  pointwise exact primitives. Correct those Riemann comparisons by averaging
+   exact conserved state over each numerical cell before applying the same
+   conserved-to-primitive interpretation used for the numerical cell average.
+  `tools/exact_reference.py` now owns callable, tabulated, nonlinear-mapped,
+  and periodic-discrete cell-average operations. Sod averages exact conserved
+  mass/momentum/energy and then recovers its comparison primitives; Balsara
+  linearly represents the tabulated primitive fans, applies the nonlinear
+  Valencia map at quadrature points, and averages that conserved state.
+  [DONE]
+- Do not mechanically convert every smooth analytic comparison. Many current
+  analytic initial-data paths sample primitives at cell centers rather than
+  constructing cell-averaged conserved data. Their pointwise comparisons test
+  that center-sampled discrete problem, while exposing a separate initial-data
+  projection limitation. Inventory and document that boundary explicitly.
+  Conservative fine-to-coarse numerical references already use average-down
+  and should remain unchanged. Sod now rejects an off-face initial jump, the
+  periodic advection medley conservatively translates its actual discrete cell
+  averages, and the subcell moving-contact harness initializes and compares
+  its off-grid top-hat with exact cell averages. A general high-order
+  conserved initial-data projection remains open and is not disguised as a
+  postprocessing fix. [DONE]
+- Add a shared, discontinuity-aware tabulated cell-average utility, regression
+  checks for duplicate-coordinate jumps and constant exterior completion, and
+  refresh the affected Balsara/Sod metrics from existing outputs where
+  possible. Record which apparent reconstruction rankings change and which
+  primitive or magnetic oscillations remain after the reference repair. The
+  regression covers scalar/vector tables, duplicate jumps, exterior states,
+  nonlinear mapping, analytic breakpoints, polynomial quadrature, periodic
+  conservative translation, all five tracked Balsara profiles, and
+  grid-repartitioned integrals. Balsara 1's nonmonotone identical-state
+  zero-strength sample is canonicalized; a nontrivial reversal is rejected.
+  The quick suite includes this gate. [DONE]
+- Refresh the numerical evidence. Direct N=512 MP5/PWC exact-profile maximum
+  L1 is `5.855628e-3`, `6.628467e-3`, `7.242970e-3`, `5.028213e-3`, and
+  `2.998750e-3` for Balsara 1--5. PPM4/PWC/DMP1.05 at Balsara-4 N=1024 changes
+  from stale point L1 `3.200159e-3` to `2.797194e-3`; its
+  `4.524195e-3` overshoot, `1.491277` TV, 2236 conservative corrections, and
+  zero resets are unchanged. Unguarded Balsara-2 N=1024 now puts PPM4 at
+  `2.584842e-3` and MP5 at `2.642574e-3`, reversing their old point-profile
+  ordering. Density/`B_y` remain smoother than the Lorentz-amplified Valencia
+  momentum/energy fields, so the reference repair does not eliminate real
+  Balsara-4 ringing. [DONE]
+- Independently compile the public Giacomazzo--Rezzolla exact solver in
+  `/private/tmp` and raise output density from 100 to 1000 without importing
+  its code. Its output routine places shocks at duplicate exact coordinates
+  and assigns `nx/5` points to rarefactions. Dense Balsara-2/3 references
+  change maximum normalized cell-average state by `3.06e-5/7.93e-4`;
+  recomputing the N=1024 method scan against them preserves the broad ordering
+  but moves Balsara-3 scores materially (for example WENO-Z
+  `3.93270e-3 -> 3.57013e-3`). Dense Balsara 4 hits the documented legacy
+  velocity-root failure and dense Balsara 5 was interrupted after several
+  minutes. The public source also spells the paper's Balsara-2--5 `5/3` gamma
+  as `1.6666`; fresh Balsara 2 reproduces the tracked N=100 table to
+  `1.0e-11`, while a temporary `5/3` correction changes Balsara-2/3 averaged
+  references by only `1.14e-5/1.71e-5`. Record both finite reference
+  uncertainties instead of calling the tracked tables infinitely resolved.
+  [DONE]
+- Recompute the affected standalone Euler research. At N=256,
+  characteristic MP5 has the best Sod/blast L1
+  (`3.61173e-3/9.50178e-3`), while the balanced hierarchy narrowly wins Lax
+  (`6.23137e-3` versus MP5 `6.25535e-3`). The combined trace metric's blast
+  L1 cost relative to the coefficient hierarchy is 5.40 percent, not the stale
+  0.53 percent; it remains a Pareto overshoot/TV trade. At N=32, wavewise
+  MP5-THINC still improves Sod/Lax/blast/reverse-blast L1 but worsens the
+  colliding-shock L1. Correct cell-average initialization changes the moving
+  contact MP5/subcell L1 from stale `4.7462e-2/3.0593e-2` to
+  `3.1006e-2/1.5933e-2`, preserving the selective contact gain without the
+  initial mass mismatch. No universal reconstruction winner is established.
+  [DONE]
+- Validation: Python compilation, `git diff --check`, the focused exact
+  sampler gate, saved-output Balsara plot/guard scans, and the full standard
+  RMHD validator pass. The fresh three-rank Sod method ladder passes 4/4 with
+  cell-average total L1 `4.34044e-2`, `2.50371e-2`, `6.47145e-3`, and
+  `5.46562e-3`; saved-output discrete-FV advection-medley postprocessing also
+  passes. The final socket-capable AMReX quick suite passes architecture,
+  exact-reference sampling, and both feature cases in reported gate times
+  `0.0750 + 0.1465 + 2.6875 s`. Production C++ kernels and schemas are
+  unchanged. [DONE]

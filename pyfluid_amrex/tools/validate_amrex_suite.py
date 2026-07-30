@@ -51,6 +51,17 @@ STEPS = [
       command=("uv", "run", "python", "pyfluid_amrex/tools/check_architecture.py"),
    ),
    GateStep(
+      name="exact_reference_sampling",
+      kind="analytic",
+      levels=("quick", "standard", "full"),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_exact_reference.py",
+      ),
+   ),
+   GateStep(
       name="quick_feature_matrix",
       kind="feature",
       levels=("quick",),

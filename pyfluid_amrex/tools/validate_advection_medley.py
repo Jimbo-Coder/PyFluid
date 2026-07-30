@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare reconstruction methods on one exact periodic contact-advection medley."""
+"""Compare reconstruction methods on a periodic discrete-FV advection medley."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
+from exact_reference import conservatively_shift_periodic_cell_averages
 from plotfile_reader import latest_plotfile, parse_plot_header_1d, read_level0_state_1d
 from validation_common import (
    CLOSED_POLICY,
@@ -110,7 +111,11 @@ def run_method(method: Method, args: argparse.Namespace) -> dict[str, object]:
    state = read_level0_state_1d(plotfile, names)
    rho = state[names.index("rho")]
    x = (np.arange(rho.size, dtype=float) + 0.5) / rho.size
-   exact = args.rho0 + args.amplitude * medley_profile(x - args.velocity * time_value)
+   initial = args.rho0 + args.amplitude * medley_profile(x)
+   exact = conservatively_shift_periodic_cell_averages(
+      initial,
+      args.velocity * time_value * rho.size,
+   )
    normalized_error = (rho - exact) / args.amplitude
    phase = np.mod(x - args.velocity * time_value, 1.0)
    segment = np.minimum((4.0 * phase).astype(int), 3)
@@ -163,7 +168,13 @@ def plot_results(rows: list[dict[str, object]], output: Path) -> None:
    output.parent.mkdir(parents=True, exist_ok=True)
    fig, axes = plt.subplots(2, 2, figsize=(12, 7.5), constrained_layout=True)
    reference = rows[0]
-   axes[0, 0].plot(reference["x"], reference["exact"], color="black", lw=2.0, label="exact")
+   axes[0, 0].plot(
+      reference["x"],
+      reference["exact"],
+      color="black",
+      lw=2.0,
+      label="exact discrete-FV translation",
+   )
    for row in rows:
       linestyle = ":" if row["method"].endswith("_char") else "-"
       zorder = 4 if row["method"].endswith("_char") else 2
