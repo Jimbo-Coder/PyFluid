@@ -3687,3 +3687,76 @@ I will always continue from the last cycle marked as `in_progress`.
   AMReX quick suite passes architecture, exact-reference sampling, and the
   feature matrix in reported gate times `0.0767 + 0.2729 + 2.7524 s`. The
   slow Python prototypes are not production performance evidence. [DONE]
+
+## Cycle 249 — Causal persistent-front prototype (DONE)
+
+- Continue from Cycle 248's actual boundary rather than tuning a spatial
+  limiter or final-profile sharpening threshold. Source-check how GRP,
+  in-cell discontinuous reconstruction, and front-tracking methods carry
+  interface-time information and handle front creation/interactions. Define a
+  minimal conservative lifecycle for one persistent NRHD front embedded in a
+  high-order finite-volume background. Aguillon's in-cell method confirms the
+  pure-shock/crossing-flux mechanism but calls its full-Euler extension
+  prospective and uses a separate rarefaction background. ADER and GRP sources
+  support a coherent local space-time predictor, including MHD and SRHD
+  precedents, but do not supply persistent MHD front topology. [DONE]
+- Falsify the lifecycle on held-out compound and interacting waves. Require
+  exact isolated-wave retention, an unchanged smooth MP5 path, conservation,
+  admissibility, CFL 0.9, and simultaneous L1/overshoot/TV improvement before
+  extending the mechanism to NRMHD. Approximate HLL/HLLD intermediate states
+  are not eligible physical fronts unless their physical fluxes satisfy the
+  complete jump relation. A Riemann-seeded single-wave birth is mixed and not
+  universal. Carrying the whole exact Euler fan while MP5/HLLC owns
+  rarefactions improves L1, overshoot, and TV on five aligned and four off-grid
+  controls over N=16--64 and CFL 0.4/0.9, with roundoff candidate
+  conservation. The N=32/CFL-0.9 aligned L1 values are
+  `4.302e-3/9.905e-3/6.761e-3/2.773e-3/1.68e-16` for
+  Sod/Lax/blast/reverse-blast/two-shock, versus
+  `3.174e-2/4.035e-2/6.583e-2/5.295e-2/1.571e-2` for MP5/HLLC. [DONE]
+- Audit the exact-reference anomaly exposed by held-out tubes. The Euler
+  reference hardcoded the isentropic star-density formula on the left and
+  shock formula on the right, so canonical Sod passed while reverse-blast and
+  two-shock conserved integrals were wrong. Select each side's formula from
+  `p_star > p_side`; add domain-balance and conserved-cell-average checks for
+  left-rarefaction/right-shock, the reverse, two shocks, and two rarefactions.
+  The focused exact-reference gate passes. [DONE]
+- Exercise causal interaction/deletion rather than only independent fans. Two
+  symmetric blast fans collide at `t=2.016813160575e-2`; the incident shocks
+  are clipped and a child fan is solved from their post-shock states. The test
+  ends before the next shock/contact event. At N=32/CFL-0.9, fronts plus the
+  MP5 rarefaction background reduce L1 `5.027e-2 -> 9.198e-3` but slightly
+  worsen overshoot/TV, exposing an ownership interface. A primitive-linear
+  rarefaction is worse (`2.755e-2`, TV `1.1001`). Integrating the physical
+  complete fan gives L1 `1.181e-9`, overshoot `5.68e-9`, TV
+  `1.000000014`, and roundoff conservation; N=64 L1 is `7.78e-14`.
+  The physical rarefaction curve, not endpoint interpolation, is required.
+  [DONE]
+- Cross the Newtonian-MHD boundary through an exact invariant subsystem rather
+  than an imported solver. For `gamma=2`, `Bx=0`, zero transverse velocity,
+  and `By=k rho`, the audited MHD state/flux map is Euler with effective
+  pressure `p+By^2/2`. The perpendicular-fast shock collision/rebirth gives
+  total L1 `5.4e-16`--`5.4e-11` over N=16--64 and CFL 0.4/0.9, near-roundoff
+  conserved errors, zero normal-field spread, and near-unit TV; MP5+HLLD gives
+  `2.36e-2`--`8.36e-2`. N=32/CFL-0.9 magnetic-mass ratios `0.03` and `0.13`
+  retain the result. This is bounded fast-wave/induction evidence, not
+  nonzero-normal-field, slow/Alfven, CT, AMR, general birth, or performance
+  validation. [DONE]
+- Preserve the method boundary. The first representation to clear every tested
+  causal interaction metric is a complete local space-time physical fan with
+  event deletion/rebirth, not a new static limiter or an approximate HLLD
+  state bundle. The present fan origin and analytic wave curves are supplied,
+  so this remains an oracle-assisted mechanism proof. The next falsifiable
+  work is state-derived birth, a second interaction event, and a local
+  Riemann/GRP predictor that approximates the physical rarefaction flux without
+  primitive-linear interpolation. Production C++ remains unchanged. [DONE]
+- Validation: Python compilation passes for the exact-reference correction and
+  all four Cycle-249 research tools. The exact-reference gate passes all Euler
+  wave-pattern domain balances plus the tracked SRMHD sampling checks. The
+  single-fan, interaction, and mapped-NRMHD scripts now fail explicitly if
+  their complete-fan candidate leaves the baseline L1/overshoot/TV Pareto
+  front, violates conservation, changes normal-field/B-to-mass invariants, or
+  fails completion; their N=16/32/64, CFL-0.4/0.9 matrices pass. The AMReX
+  quick suite passes architecture, exact-reference sampling, and the feature
+  matrix in `0.0787 + 0.3379 + 2.7083 s`. `git diff --check` passes. These are
+  standalone mechanism results, not C++ production throughput, CT/AMR, or
+  broad MHD validation. [DONE]

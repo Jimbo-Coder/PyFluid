@@ -302,6 +302,32 @@ The latest recorded evidence is not one monolithic green result:
   open. A GRMHD path is local SRMHD in an orthonormal face frame with
   consistent metric/source integration, not a direct reuse of a flat global
   jump.
+- Cycle 249 shows that the missing object is the complete causal space-time
+  fan, not merely more persistent discontinuities. An exact Euler fan seeded
+  from its endpoint states improves L1, overshoot, and TV over MP5+HLLC for
+  Sod, Lax, blast, reverse blast, and a two-shock held-out case at N=16--64
+  and CFL 0.4/0.9; off-grid fan origins retain roundoff conservation. In a
+  symmetric two-fan shock collision, deleting the incident shocks and
+  spawning the exact child fan is not enough if MP5 independently owns the
+  rarefaction interiors: L1 improves, but ownership boundaries can worsen TV.
+  Integrating the complete physical fan through the same collision/rebirth
+  reduces total L1 to `1.18e-9` at N=32 and `7.78e-14` at N=64 for CFL 0.9,
+  with roundoff conservation and TV `1 + O(1e-8)` or better. A
+  primitive-linear rarefaction surrogate is worse than the partial hybrid;
+  rarefactions must follow the physical wave curve rather than interpolate
+  endpoint primitives.
+- The same complete-fan mechanism crosses a nontrivial Newtonian-MHD boundary
+  without an imported exact solver. For `gamma=2`, `Bx=0`, zero transverse
+  velocity, and `By=k rho`, 1D ideal MHD is exactly Euler with effective
+  pressure `p + By^2/2`. The algebraically audited mapped shock
+  collision/rebirth gives total primitive L1 from `5.4e-16` to `5.4e-11`
+  over N=16--64 and CFL 0.4/0.9, roundoff conserved errors, zero normal-field
+  spread, and near-unit TV; MP5+HLLD gives `2.36e-2`--`8.36e-2`. This exercises
+  perpendicular fast waves and induction, not nonzero-normal-field
+  slow/Alfven structure, CT, AMR, multidimensional topology, general fan
+  birth, or production cost. The practical candidate is therefore a
+  state-derived local space-time Riemann/GRP element with causal event
+  handling; the current full-fan result remains oracle-seeded research.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
@@ -313,6 +339,11 @@ performance, and MPI-rank evidence into one claim.
   the conserved state rather than averaging primitives or evaluating the
   conserved map at an averaged primitive. A recovered primitive comparison
   must apply the same C2P interpretation to the averaged exact conserved state.
+- Exact Euler star densities must use the shock compression formula on either
+  side when `p_star > p_side` and the isentropic rarefaction formula otherwise.
+  Canonical Sod exercises only left-rarefaction/right-shock and can hide a
+  side-hardcoded implementation. Keep reverse-blast, two-shock, and
+  two-rarefaction domain-balance checks so all four branches remain covered.
 - A tabulated Riemann reference needs discontinuity-aware integration.
   Repeated coordinates encode a zero-width jump and must not be smoothed by
   ordinary interpolation. Normalize errors with the complete physical

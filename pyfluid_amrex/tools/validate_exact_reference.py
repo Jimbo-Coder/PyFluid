@@ -10,8 +10,13 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from pyfluid.exact_solutions import sod_wave_breakpoints  # noqa: E402
+from pyfluid.exact_solutions import (  # noqa: E402
+   sod_conserved_integrals,
+   sod_exact_solution,
+   sod_wave_breakpoints,
+)
 from exact_reference import (
+   cell_average_newtonian_hydro,
    cell_average_function,
    cell_average_tabulated,
    cell_average_tabulated_mapped,
@@ -32,6 +37,24 @@ def require_close(label: str, actual: np.ndarray, expected: np.ndarray) -> None:
    scale = max(1.0, float(np.max(np.abs(expected))))
    if error > 2.0e-13 * scale:
       raise RuntimeError(f"{label}: error={error:.3e}")
+
+
+def euler_conserved_and_flux(
+   primitive: tuple[float, float, float],
+   gamma: float,
+) -> tuple[np.ndarray, np.ndarray]:
+   rho, velocity, pressure = primitive
+   energy = pressure / (gamma - 1.0) + 0.5 * rho * velocity * velocity
+   return (
+      np.asarray((rho, rho * velocity, energy)),
+      np.asarray(
+         (
+            rho * velocity,
+            rho * velocity * velocity + pressure,
+            velocity * (energy + pressure),
+         )
+      ),
+   )
 
 
 def main() -> int:
@@ -124,6 +147,101 @@ def main() -> int:
       or tuple(sorted(sod_points)) != sod_points
    ):
       raise RuntimeError("Sod breakpoints do not honor the requested domain")
+
+   euler_cases = (
+      (
+         "left rarefaction and right shock",
+         (1.0, 0.0, 1.0),
+         (0.125, 0.0, 0.1),
+         0.2,
+      ),
+      (
+         "left shock and right rarefaction",
+         (1.0, 0.0, 0.01),
+         (1.0, 0.0, 100.0),
+         0.012,
+      ),
+      (
+         "two shocks",
+         (5.99924, 19.5975, 460.894),
+         (5.99242, -6.19633, 46.095),
+         0.006,
+      ),
+      (
+         "two rarefactions",
+         (1.0, -1.0, 1.0),
+         (1.0, 1.0, 1.0),
+         0.05,
+      ),
+   )
+   euler_edges = np.linspace(0.0, 1.0, 257)
+   euler_gamma = 1.4
+   for label, left, right, final_time in euler_cases:
+      conserved_left, flux_left = euler_conserved_and_flux(
+         left,
+         euler_gamma,
+      )
+      conserved_right, flux_right = euler_conserved_and_flux(
+         right,
+         euler_gamma,
+      )
+      balance_integrals = (
+         0.5 * (conserved_left + conserved_right)
+         + final_time * (flux_left - flux_right)
+      )
+      averages = cell_average_newtonian_hydro(
+         lambda points, left=left, right=right, final_time=final_time: (
+            sod_exact_solution(
+               points,
+               final_time,
+               euler_gamma,
+               left,
+               right,
+            )
+         ),
+         euler_edges,
+         euler_gamma,
+         breakpoints=sod_wave_breakpoints(
+            final_time,
+            euler_gamma,
+            left,
+            right,
+         ),
+      )
+      rho, pressure, velocity = averages
+      conserved_means = np.asarray(
+         (
+            np.mean(rho),
+            np.mean(rho * velocity),
+            np.mean(
+               pressure / (euler_gamma - 1.0)
+               + 0.5 * rho * velocity * velocity
+            ),
+         )
+      )
+      exact_integrals = sod_conserved_integrals(
+         final_time,
+         euler_gamma,
+         left,
+         right,
+      )
+      integral_vector = np.asarray(
+         (
+            exact_integrals["mass"],
+            exact_integrals["momx"],
+            exact_integrals["energy"],
+         )
+      )
+      require_close(
+         f"Euler {label} domain balance",
+         integral_vector,
+         balance_integrals,
+      )
+      require_close(
+         f"Euler {label} conserved cell averages",
+         conserved_means,
+         integral_vector,
+      )
 
    for spec in EXACT_BALSARA_CASES:
       case = int(spec["case"])

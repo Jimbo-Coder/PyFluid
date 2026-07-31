@@ -343,6 +343,14 @@ implementations:
   [arXiv:2407.02931](https://arxiv.org/abs/2407.02931): exact isolated-shock
   capture by explicitly representing a discontinuity inside a cell. Their
   current equation sets are not a drop-in conservative MHD or SRMHD method.
+- N. Aguillon, *A Non-dissipative Reconstruction Scheme for the Compressible
+  Euler Equations*,
+  [arXiv:1403.7497](https://arxiv.org/abs/1403.7497): conservative in-cell
+  shock reconstruction and crossing-time flux integration that is exact for
+  pure shocks. Its full-Euler results are prospective, contact detection is
+  explicitly imperfect, and rarefactions use a separate background scheme;
+  it is the closest source precedent for the causal-front prototype, not a
+  complete MHD/relativistic implementation.
 - G. I. Montecinos, E. F. Toro, and L. O. Müller, *A generalized Riemann
   problem-based compact reconstruction method for finite volume schemes*,
   [arXiv:2602.21911](https://arxiv.org/abs/2602.21911): a compact
@@ -372,6 +380,22 @@ implementations:
   space-time-predictor and divergence-free-MHD precedent. It motivates
   integrating a high-order background flux in time instead of treating a
   spatial reconstruction as the complete discontinuity update.
+- M. Dumbser et al., *ADER-WENO finite volume schemes with space-time adaptive
+  mesh refinement*,
+  [arXiv:1212.3585](https://arxiv.org/abs/1212.3585): a conservative
+  one-step finite-volume route coupling WENO data to a local space-time DG
+  predictor, including Euler and MHD with AMR. This is the primary general
+  precedent for a coherent space-time background; it does not supply exact
+  persistent front topology.
+- J. Li and Z. Du, *A Two-Stage Fourth Order Time-Accurate Discretization for
+  Lax-Wendroff Type Flow Solvers. I. Hyperbolic Conservation Laws*,
+  [arXiv:1512.03664](https://arxiv.org/abs/1512.03664), and Y. Yuan and
+  H. Tang, *Two-stage fourth-order accurate time discretizations for 1D and
+  2D special relativistic hydrodynamics*,
+  [arXiv:1712.05546](https://arxiv.org/abs/1712.05546): primary GRP-based
+  routes to fourth-order time accuracy, including an analytic SRHD GRP.
+  They support deriving time-dependent physical flux rather than adding more
+  Runge--Kutta sampling of static face traces.
 - E. Gaburro and M. Dumbser, *A posteriori subcell finite volume limiter for
   general PNPM schemes: applications from gasdynamics to relativistic
   magnetohydrodynamics*,

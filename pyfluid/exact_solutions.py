@@ -56,8 +56,17 @@ def sod_exact_solution(x, time_value, gamma, left, right, x0=0.5):
    velocity = np.empty_like(x)
    pressure = np.empty_like(x)
 
-   rho_star_l = rho_l * (pressure_star / pressure_l) ** (1.0 / gamma)
-   rho_star_r = rho_r * ((pressure_star / pressure_r + gamma_ratio) / (1.0 + gamma_ratio * pressure_star / pressure_r))
+   def star_density(rho_k, pressure_k):
+      pressure_ratio = pressure_star / pressure_k
+      if pressure_star > pressure_k:
+         return rho_k * (
+            (pressure_ratio + gamma_ratio)
+            / (1.0 + gamma_ratio * pressure_ratio)
+         )
+      return rho_k * pressure_ratio ** (1.0 / gamma)
+
+   rho_star_l = star_density(rho_l, pressure_l)
+   rho_star_r = star_density(rho_r, pressure_r)
 
    for n, speed in enumerate(xi):
       if speed <= velocity_star:

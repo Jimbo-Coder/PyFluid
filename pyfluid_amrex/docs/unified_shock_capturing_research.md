@@ -413,6 +413,79 @@ a face-local orthonormal tetrad while integrating metric/source variation
 consistently; local flat Rankine--Hugoniot consistency alone does not make a
 curved-spacetime wave globally exact.
 
+### Causal complete-fan and interaction result
+
+Cycle 249 tests the next lifecycle object in
+`tools/research_causal_fan_bundle.py` and
+`tools/research_causal_fan_interaction.py`. The first harness solves an exact
+Euler Riemann problem from the supplied endpoint states, persists its shock
+and contact trajectories, and lets characteristic MP5/HLLC own only
+rarefaction interiors. It is still oracle-assisted because the fan birth
+location is supplied, but it carries the solution causally rather than
+sharpening a final profile.
+
+Across N=16, 32, and 64 at CFL 0.4 and 0.9, this representation improves
+aggregate L1, maximum overshoot, and maximum TV ratio over MP5/HLLC for Sod,
+Lax, blast, reverse blast, and a held-out two-shock problem. At N=32 and CFL
+0.9:
+
+| case | MP5/HLLC L1 | causal fan L1 | causal overshoot | causal max TV |
+| --- | ---: | ---: | ---: | ---: |
+| Sod | `3.17441e-2` | `4.30192e-3` | `3.59e-16` | `1.000000` |
+| Lax | `4.03541e-2` | `9.90492e-3` | `7.26e-16` | `1.018971` |
+| blast | `6.58278e-2` | `6.76072e-3` | `4.91e-16` | `1.013531` |
+| reverse blast | `5.29490e-2` | `2.77318e-3` | `5.88e-16` | `1.000000` |
+| two shocks | `1.57149e-2` | `1.68e-16` | `6.41e-17` | `1.000000` |
+
+Moving the initial interface to `x=0.487` so it cuts a cell preserves the
+advantage and candidate conserved integrals to roundoff. During this audit,
+the shared exact Euler reference was found to hardcode a left-rarefaction
+density and right-shock density. Canonical Sod hid the defect. Star density
+now selects the shock or isentropic formula independently on each side, and
+the exact-reference gate covers left/right shock-rarefaction, two-shock, and
+two-rarefaction domain balances.
+
+The interaction harness launches two exact fans toward one another, computes
+their first shock-collision event, deletes the incident fronts, and solves a
+new child Riemann fan from the two post-shock states. It stops before that
+child fan reaches the old contacts, so the tested event graph is exact and
+bounded. At N=32 and CFL 0.9:
+
+| ownership policy | total L1 | max overshoot | max TV |
+| --- | ---: | ---: | ---: |
+| MP5/HLLC | `5.02687e-2` | `2.65897e-2` | `1.040089` |
+| exact fronts, MP5 rarefactions | `9.19792e-3` | `2.66522e-2` | `1.041781` |
+| primitive-linear complete fan | `2.75452e-2` | `5.00606e-2` | `1.100121` |
+| physical complete fan | `1.18111e-9` | `5.67743e-9` | `1.000000014` |
+
+At N=64 and CFL 0.9 the physical complete-fan L1 is `7.78e-14`. All candidate
+forms are globally conservative because they replace one face flux, but only
+the actual rarefaction wave curve removes the ownership artifact. A
+primitive-linear surrogate is decisively worse. This supports a coherent
+local space-time Riemann/GRP element, not an arbitrary interpolation between
+wave endpoints.
+
+`tools/research_causal_mhd_fan_interaction.py` carries the same event through
+an exact ideal-NRMHD invariant subsystem. With `gamma=2`, `Bx=0`, zero
+transverse velocity, and `By=k rho`, the MHD conserved state and flux map
+exactly to Euler with effective pressure `p + By^2/2`. The harness audits that
+mapping for every incident/star/child state, then evolves the mapped problem
+with characteristic MP5/HLLD or the complete physical-fan flux. Over N=16--64,
+CFL 0.4/0.9, and magnetic-mass ratio `k=0.1`, the causal result has total
+primitive L1 `5.4e-16`--`5.4e-11`, conserved errors near roundoff, zero normal
+field spread, and maximum TV within `1e-9` of one. MP5/HLLD gives
+`2.36e-2`--`8.36e-2` L1. N=32/CFL-0.9 checks at `k=0.03` and `0.13` retain
+the same result; the latter makes 84.5 percent of the low-pressure state's
+effective pressure magnetic.
+
+These are the strongest mechanism tests so far, but not a production method
+or universal claim. The complete Euler fan uses analytic Riemann information
+and supplied birth events. The MHD result covers perpendicular fast structure
+only. General birth from cell-average data, nonzero-normal-field
+slow/Alfven/compound fans, repeated event topology, shock-smooth interaction,
+multidimensional geometry, CT/AMR transfer, relativistic wave curves, and
+cost remain open.
+
 ## Riemann Candidate: Constraint-Optimized Wave Enrichment
 
 The provisional Riemann policy is abbreviated COWE. The robust version is
@@ -630,14 +703,19 @@ remain mandatory.
 
 ## Immediate Research Sequence
 
-1. Freeze the current mode hierarchy without fitted coefficients and test more
-   smooth extrema, all MHD wave families, MHD tubes, rotation, CT, and AMR.
-2. Derive the same physical-subspace hierarchy for the existing RHD/RMHD local
-   orthonormal face problems; do not apply scalar component constraints.
-3. Retain the fan hierarchy as an intermediate-state audit. Investigate an
-   entropy-compatible resolved target or a smooth-consistent entropy
-   constraint before further profile promotion.
-4. Derive and test RHD HLLC and RMHD HLLD providers in a local orthonormal
-   frame. Do not make them production methods before random-fan and exact
-   relativistic gates pass.
-5. Only then combine WCEM and COWE; keep attribution runs with one side fixed.
+1. Infer and persist a complete Euler fan from cell-average data without an
+   oracle birth tag. Require the detector to leave smooth MP5 data bitwise
+   unchanged and reject unrelated conserved mixtures.
+2. Add one more event generation: let the child shocks meet the surviving
+   contacts, rebuild the local fan graph, and compare with an independently
+   refined reference after the analytic one-event interval ends.
+3. Replace analytic Euler rarefactions with a local state-derived GRP or
+   space-time predictor and test whether it reproduces the complete-fan flux
+   closely enough to retain the L1/overshoot/TV result. Do not use
+   primitive-linear wave interpolation.
+4. Extend the exact-subsystem MHD control toward nonzero normal field using
+   independently verified slow/Alfven/fast wave curves. Approximate HLLD
+   intermediate states remain ineligible persistent fronts.
+5. Only after those one-dimensional tests pass, derive CT-compatible
+   multidimensional face/edge ownership and AMR event transfer. Relativistic
+   and GR paths follow the same local proof ladder rather than preceding it.

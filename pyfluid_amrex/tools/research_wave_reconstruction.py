@@ -1156,6 +1156,7 @@ def shock_result(
     evolved: Array,
     completed: bool,
     gamma: float,
+    discontinuity_position: float = 0.5,
 ) -> Result:
     cell_edges = np.linspace(0.0, 1.0, cells + 1)
     rho_exact, pressure_exact, velocity_exact = (
@@ -1166,6 +1167,7 @@ def shock_result(
                 gamma,
                 case.left,
                 case.right,
+                discontinuity_position,
             ),
             cell_edges,
             gamma,
@@ -1174,6 +1176,7 @@ def shock_result(
                 gamma,
                 case.left,
                 case.right,
+                discontinuity_position,
             ),
         )
     )
@@ -1207,6 +1210,7 @@ def shock_result(
         gamma,
         case.left,
         case.right,
+        discontinuity_position,
     )
     state = conserved_from_primitive(evolved, gamma)
     integrals = np.mean(state, axis=0)
