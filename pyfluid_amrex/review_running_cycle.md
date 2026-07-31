@@ -3615,3 +3615,75 @@ I will always continue from the last cycle marked as `in_progress`.
   exact-reference sampling, and both feature cases in reported gate times
   `0.0750 + 0.1465 + 2.6875 s`. Production C++ kernels and schemas are
   unchanged. [DONE]
+
+## Cycle 248 — Physical-wave subcell reconstruction research (DONE)
+
+- Test the next reconstruction hypothesis without changing production C++:
+  a smooth cell retains characteristic MP5, while an isolated discontinuity
+  may use one conservative in-cell physical wave whose end states are
+  admissible, whose position reproduces the cell average, and whose flux jump
+  satisfies Rankine--Hugoniot. Hold the existing Riemann solver, timestepper,
+  and CT machinery fixed first so the experiment isolates reconstruction.
+  Begin with exact single-wave NRHD controls, then extend only viable
+  mechanics to NRMHD. Spatial traces alone barely change the baseline. The
+  viable operator instead replaces the affected face's SSPRK-integrated flux
+  with the exact crossing-time average of the fitted physical wave, including
+  uncontaminated plateau-buffer fluxes. [DONE]
+- Require held-out evidence rather than a tuned demonstration. The candidate
+  must preserve smooth-wave accuracy, improve shock/contact L1, overshoot, and
+  total variation, remain admissible on broad random states, preserve the
+  common normal magnetic field, and have an implementable cost path. Do not
+  start SRHD/SRMHD production work unless the Newtonian operator establishes a
+  real improvement boundary. At CFL 0.9 and N=32 the NRHD contact/shock total
+  L1 becomes `1.656e-13/1.809e-15`, versus MP5
+  `1.001e-2/1.152e-2`. The NRMHD contact/oblique-fast/rotational controls
+  become `4.005e-13/1.256e-15/1.160e-12`, remain one-cell, conserve near
+  roundoff, and retain zero normal-field spread; characteristic MP5+HLLD
+  spreads them over 17/29/32 cells. Smooth entropy and circular-Alfven paths
+  agree with baseline to roundoff. [DONE]
+- Carry only the local mechanism across the relativistic boundary in
+  standalone tools, not production. SRHD supplies Valencia conserved
+  variables, nonlinear pressure recovery, subluminal admissibility, and a
+  complete relativistic jump. Flat SRMHD supplies the full conserved/flux map,
+  constrained primitive recovery, common normal field, and an admissible
+  component-MP5/HLLE control. At CFL 0.9 the N=16 SRHD contact/shock errors are
+  `2.526e-15/1.693e-15`; the N=8 SRMHD contact/oblique-shock errors are
+  `1.337e-15/5.274e-14`. All retain one mixed cell and near-roundoff
+  conservation. Smooth SRHD/SRMHD entropy controls are bitwise identical to
+  baseline. These are local flat-spacetime proofs, not characteristic SRMHD,
+  CT, multidimensional, AMR, or GRMHD validation. [DONE]
+- Falsify accidental detector permissiveness. The cross-regime audit builds
+  1,000 random unrelated endpoint pairs per system, gives each an exact
+  conserved convex mixture, inverts the mixture, and then applies the complete
+  jump test. All 4,000 mixtures recover, zero are falsely accepted, and all 64
+  exact-contact controls pass. Python compilation passes for the physical-wave
+  and detector-audit tools. [DONE]
+- Test the compound-fan boundary rather than extrapolating the isolated result.
+  N=32 CFL-0.9 Brio--Wu and Dai--Woodward leave the memoryless candidate
+  numerically identical to MP5+HLLD (`1.47037e-2/1.10285e-2` aggregate L1)
+  because no initial cell contains one isolated wave. Persisting the entire
+  HLLD fan is much worse (`1.33361e-1/8.38784e-2`); recovered HLLD
+  intermediate jumps have physical-flux RH residuals `2.5e-2`--`8.5e-1`.
+  Conservative raw-window condensation is small/mixed. A nonlinear offline
+  projection can enforce RH and window totals to `1e-9` or better, but
+  projected condensation worsens Brio--Wu and trades a roughly one-percent
+  Dai--Woodward L1 gain for overshoot `1.655e-2 -> 2.165e-2` and TV
+  `0.9990 -> 1.0024`. Do not use an approximate HLLD fan or a posteriori
+  sharpening as a persistent physical solution. [DONE]
+- Record the actual next method boundary. The promising object is no longer
+  "one better spatial limiter"; it is a conservative two-representation
+  space-time operator: high-order polynomial/GRP data for smooth,
+  rarefactive, and interacting structure, plus persistent subcell fronts only
+  when a physical jump is independently verified. Front creation from
+  compound fans, causal interaction/deletion, multidimensional topology,
+  CT/AMR transfer, and cached C++ cost remain open. GRMHD would apply the
+  eventually validated SRMHD front in a local orthonormal face frame with
+  metric/source integration. Production C++ and schemas remain unchanged.
+  [DONE]
+- Validation: Python compilation passes for all six new research/audit tools;
+  `git diff --check` passes; focused CFL-0.9 NRHD, NRMHD, SRHD, and SRMHD runs
+  pass their admissibility, conservation, smooth-path, and normal-field
+  assertions; the 4,000-pair detector audit passes; and the socket-capable
+  AMReX quick suite passes architecture, exact-reference sampling, and the
+  feature matrix in reported gate times `0.0767 + 0.2729 + 2.7524 s`. The
+  slow Python prototypes are not production performance evidence. [DONE]

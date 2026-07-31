@@ -336,6 +336,83 @@ projection that also enforces subluminal velocity. SRMHD must additionally
 retain the one-normal-field/CT contract. Do not apply scalar THINC directly to
 relativistic primitive components and call it the same method.
 
+### Time-integrated physical-front result
+
+Cycle 248 tests a stronger interpretation of the in-cell hypothesis. A
+standard spatial trace is insufficient even when it recovers the correct
+plateau state: SSPRK stages still average fluxes at different numerical
+profiles, and a moving discontinuity is diffused when it crosses a face. The
+new research operator therefore retains characteristic/component MP5 in
+ordinary cells but, for one accepted physical wave, integrates the plateau
+flux on each affected face over the exact substep crossing time.
+
+Acceptance is deliberately strict:
+
+1. two constant plateau states bound the candidate cell;
+2. one common fraction of their conserved states reproduces every component
+   of the cell average;
+3. both endpoints are physically admissible, including subluminal velocity in
+   the relativistic systems and one common normal magnetic field in MHD; and
+4. one speed satisfies the complete Rankine--Hugoniot flux jump.
+
+This changes the isolated-wave result qualitatively. The trace-only ablation
+is close to ordinary MP5, whereas the time-integrated operator transports the
+tested fronts in one mixed cell:
+
+| system and CFL-0.9 control | baseline total L1 | physical-front total L1 |
+| --- | ---: | ---: |
+| NRHD contact, N=32 | `1.00072e-2` | `1.65597e-13` |
+| NRHD normal shock, N=32 | `1.15160e-2` | `1.80850e-15` |
+| NRMHD contact, N=32 | `9.97088e-3` | `4.00519e-13` |
+| NRMHD oblique fast shock, N=32 | `4.38486e-2` | `1.25649e-15` |
+| NRMHD rotational discontinuity, N=32 | `4.98718e-2` | `1.16012e-12` |
+| SRHD contact / shock, N=16 | `1.34642e-2 / 1.02568e-1` | `2.52576e-15 / 1.69348e-15` |
+| SRMHD contact / oblique shock, N=8 | `2.80856e-2 / 2.44601e-1` | `1.33747e-15 / 5.27361e-14` |
+
+The smooth NRHD entropy, NRMHD circular-Alfven, SRHD entropy, and SRMHD entropy
+controls remain on the baseline path to roundoff. The NRMHD and SRMHD tests
+retain exactly one normal magnetic field. A hostile detector audit constructs
+1,000 unrelated but admissible conserved mixtures in each of NRHD, NRMHD,
+SRHD, and SRMHD: all 4,000 mixtures invert successfully, none passes the full jump
+test, and all 64 exact-contact controls pass.
+
+This is not yet the requested all-regime reconstruction. Brio--Wu and
+Dai--Woodward start as compound Riemann fans, so the strict memoryless detector
+does not activate and returns exactly MP5+HLLD. Retaining the complete initial
+HLLD fan is not a solution: at N=32 and CFL 0.9 its aggregate L1 is
+`1.33361e-1/8.38784e-2`, versus `1.47037e-2/1.10285e-2` for MP5+HLLD. The
+individual HLLD intermediate jumps have physical-flux Rankine--Hugoniot
+residuals from roughly `2.5e-2` to `8.5e-1`; they are useful approximate flux
+states, not an exact fan that can be persisted as physical subcell structure.
+
+An offline nonlinear projection can move broadened transition endpoints onto
+the exact MHD jump manifold while preserving the complete window total.
+Condensing those projected waves is still mixed: Brio--Wu L1 and TV worsen;
+Dai--Woodward L1 improves by about one percent, but maximum overshoot rises
+from `1.65489e-2` to `2.16524e-2` and TV crosses above one. This falsifies
+final-profile sharpening as the missing universal rule. A physical front must
+be a causal degree of freedom carried through time, not inferred and sharpened
+after numerical diffusion has already altered its location and neighbors.
+
+The resulting research direction is a two-representation finite-volume
+operator:
+
+```text
+smooth / rarefaction / interacting background:
+    high-order conservative space-time polynomial or GRP predictor
+
+independently verified shock / contact / rotational front:
+    persistent conservative subcell jump + time-integrated face flux
+```
+
+The unresolved work is front creation from a compound fan, wave interactions
+and deletion, multidimensional front geometry, CT coupling, AMR transfer, and
+an efficient cached implementation. SRHD/SRMHD show that the local algebra is
+not the blocker. GRMHD should only apply the validated SRMHD front operation in
+a face-local orthonormal tetrad while integrating metric/source variation
+consistently; local flat Rankine--Hugoniot consistency alone does not make a
+curved-spacetime wave globally exact.
+
 ## Riemann Candidate: Constraint-Optimized Wave Enrichment
 
 The provisional Riemann policy is abbreviated COWE. The robust version is

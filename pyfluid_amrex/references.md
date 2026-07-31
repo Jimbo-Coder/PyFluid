@@ -343,6 +343,14 @@ implementations:
   [arXiv:2407.02931](https://arxiv.org/abs/2407.02931): exact isolated-shock
   capture by explicitly representing a discontinuity inside a cell. Their
   current equation sets are not a drop-in conservative MHD or SRMHD method.
+- G. I. Montecinos, E. F. Toro, and L. O. Müller, *A generalized Riemann
+  problem-based compact reconstruction method for finite volume schemes*,
+  [arXiv:2602.21911](https://arxiv.org/abs/2602.21911): a compact
+  space-time route that carries interface GRP data between steps and builds a
+  high-order polynomial from current cell averages plus that history. The
+  February-2026 paper reports one-dimensional advection/Euler tests, not MHD
+  or relativistic evidence, but it is directly relevant to the missing
+  time-integrated-background representation in the physical-front prototype.
 - H. Zhang et al., *An Adaptive Reconstruction Method for Arbitrary
   High-Order Accuracy Using Discontinuity Feedback*,
   [arXiv:2410.05489](https://arxiv.org/abs/2410.05489): a recent
@@ -358,6 +366,27 @@ implementations:
   for relativistic admissibility, scaling-invariant nonlinear weights, and
   high-order finite-volume extension. A Newtonian positivity check does not
   substitute for density/pressure/subluminal relativistic PCP constraints.
+- D. S. Balsara et al., *Efficient, high accuracy ADER-WENO schemes for
+  hydrodynamics and divergence-free magnetohydrodynamics*,
+  [arXiv:0811.2200](https://arxiv.org/abs/0811.2200): primary
+  space-time-predictor and divergence-free-MHD precedent. It motivates
+  integrating a high-order background flux in time instead of treating a
+  spatial reconstruction as the complete discontinuity update.
+- E. Gaburro and M. Dumbser, *A posteriori subcell finite volume limiter for
+  general PNPM schemes: applications from gasdynamics to relativistic
+  magnetohydrodynamics*,
+  [arXiv:2010.04853](https://arxiv.org/abs/2010.04853): a broad
+  HD/MHD/SRHD/SRMHD route for retaining a high-order space-time candidate and
+  replacing only troubled subcells. It does not supply an exact persistent
+  physical-front degree of freedom.
+- J. Duan, P. Chandrashekar, and C. Klingenberg, *Active flux for ideal
+  magnetohydrodynamics: A positivity-preserving scheme with the
+  Godunov--Powell source term*,
+  [arXiv:2506.04857](https://arxiv.org/abs/2506.04857): recent evidence for
+  evolving interface point values as additional degrees of freedom instead
+  of reconstructing every face state anew. Its multidimensional MHD
+  formulation uses a different divergence treatment and is not a direct CT
+  implementation route.
 - Y. Ding and K. Wu, *High-order positivity-preserving finite volume methods
   for ideal MHD with locally divergence-free reconstruction*,
   [paper](https://doi.org/10.1137/23M1562081): direct projection of magnetic

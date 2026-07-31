@@ -273,6 +273,35 @@ The latest recorded evidence is not one monolithic green result:
   characteristic-MP5 versus physical-subcell L1 from the stale
   `4.7462e-2/3.0593e-2` to `3.1006e-2/1.5933e-2`; the subcell improvement
   survives without the mass mismatch.
+- Cycle 248 isolates the time part of an exact in-cell front. Correct spatial
+  plateau traces alone remain close to ordinary MP5; replacing the complete
+  SSPRK-integrated flux on affected faces with the crossing-time average of one
+  admissible Rankine--Hugoniot wave changes the result. At CFL 0.9 the
+  standalone operator advects tested NRHD contacts/shocks, NRMHD
+  contacts/fast shocks/rotational discontinuities, and SRHD/SRMHD
+  contacts/shocks in one mixed cell with total L1 from `1.3e-15` to `1.2e-12`,
+  conserved-integral errors near roundoff, and exactly constant normal
+  magnetic field. Smooth entropy/Alfven controls remain on the MP5 path to
+  roundoff. Across four systems, 4,000 unrelated admissible conserved mixtures
+  produce zero false physical-wave acceptances while 64 exact-contact
+  controls all pass. This establishes a cross-equation isolated-wave
+  mechanism, not a universal reconstruction.
+- Compound-wave activation remains the decisive boundary. The strict
+  memoryless operator is exactly MP5+HLLD on N=32 Brio--Wu and Dai--Woodward.
+  Persisting the complete initial HLLD fan is 7--9 times worse in aggregate
+  L1; its recovered intermediate-state physical-flux RH residuals are
+  `2.5e-2` to `8.5e-1`, so approximate HLLD fan states must not be treated as
+  exact physical fronts. Offline projection can enforce the full jump and
+  window-total constraints, but final-profile condensation worsens Brio--Wu
+  and trades about one percent Dai--Woodward L1 improvement for materially
+  larger overshoot/TV. The viable next hypothesis is a causal
+  two-representation method: a high-order space-time/GRP background for smooth
+  and rarefactive structure plus persistent subcell fronts only for
+  independently verified physical discontinuities. Front birth,
+  interaction, multidimensional geometry, CT/AMR transfer, and cost remain
+  open. A GRMHD path is local SRMHD in an orthonormal face frame with
+  consistent metric/source integration, not a direct reuse of a flat global
+  jump.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
