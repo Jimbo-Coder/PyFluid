@@ -3760,3 +3760,60 @@ I will always continue from the last cycle marked as `in_progress`.
   matrix in `0.0787 + 0.3379 + 2.7083 s`. `git diff --check` passes. These are
   standalone mechanism results, not C++ production throughput, CT/AMR, or
   broad MHD validation. [DONE]
+
+## Cycle 250 — Cached causal NRMHD Riemann elements (DONE)
+
+- Test the strongest interpretation of Cycle 249 rather than declaring a
+  universal reconstruction from an invariant subsystem. A nonsmooth region
+  carries an aged local physical Riemann element: discontinuities, nonlinear
+  rarefaction wave curves, birth position/time, and pending interaction
+  events. Smooth cells remain exactly on the existing MP5 path. The expensive
+  fan solve is permitted only at birth or collision and is cached between
+  steps; face-time flux integration must then be cheap. Primary ideal-MHD
+  wave-curve sources expose a necessary boundary: non-strict hyperbolicity,
+  non-convexity, intermediate shocks, and switch waves can make the Riemann
+  fan nonunique. Brio--Wu has one regular and uncountably many nonregular
+  solutions. A general provider therefore needs an explicit
+  admissibility/regularization choice; complete RH plus the ordinary entropy
+  condition is not a universal selector. [DONE]
+- Falsify a brute-force dissipative birth solve before building the full
+  seven-wave algebra. `research_regularized_mhd_selection.py` uses a
+  conservative fourth-order centered ideal flux plus explicit viscosity,
+  resistivity, and heat conduction, with coefficient paths normalized to the
+  same maximum diffusion length. Brio--Wu and the coplanar/near-coplanar
+  Torrilhon controls through N=2048 complete, remain admissible, preserve
+  normal B, and close the discrete boundary-flux balance to `1.55e-13` or
+  better. Path differences shrink with resolution but so does the resolution
+  difference; the near-coplanar test remains in the known pseudo-convergence
+  regime. A small cached PDE micro-solve can therefore cache a convincing
+  wrong fan and is rejected as the birth mechanism. [DONE]
+- Identify and test the missing NRMHD representation. Recent
+  numerical-path-preserving analysis traces pseudo-convergence to the
+  straight chord produced by componentwise averaging across an Alfvén
+  rotation, while the physical wave follows the constant-`|Bt|` arc. In the
+  new half-turn control, endpoints with `|Bt|=0.5, p=1` give a homogeneous
+  mixed primitive with `|Bt|=0, p=7/6`. The existing memoryless
+  physical-wave prototype re-detects from this corrupted representation: it
+  is near roundoff at small controls but loses the half-turn at N=32/CFL 0.9
+  and both rotations at N=64. That resolution reversal falsifies repeated
+  inference as persistence. [DONE]
+- Carry the verified jump explicitly. The new persistent isolated-wave path
+  accepts only endpoints/speed satisfying the complete physical jump, retains
+  them with the position, and uses exact face-time crossing fractions without
+  re-detection. Contacts, the nontrivial oblique fast shock, and 90/180-degree
+  rotations cross many cells for N=16/32/64 and CFL 0.4/0.9 with total L1
+  `1.2e-16`--`1.2e-14`, one transition cell, unit TV, roundoff conserved
+  errors, and constant normal field. At N=32/CFL 0.9 the half-turn changes
+  MP5/HLLD L1/overshoot/TV `7.8404e-2/1.3010e-1/1.7710` to
+  `2.2190e-15/2.6645e-15/1.0`. The 24-case persistent matrix runs in 0.26 s
+  in Python after birth, supporting amortization but not measuring production
+  C++ throughput. [DONE]
+- Preserve the boundary. This is the first concrete NRMHD explanation and
+  mechanism that survives the hostile Alfvén control, not a complete
+  all-regime method or novelty claim. The next provider must derive birth in
+  physical path space, retain the Alfvén arc, implement independently checked
+  fast/slow shock and rarefaction curves, and declare its regular/nonregular
+  solution policy. General compound fans, repeated events, multidimensional
+  CT geometry, AMR event transfer, SRMHD/GRMHD, and production code remain
+  unimplemented. Both modified research tools compile, their focused gates
+  pass, and `git diff --check` passes. [DONE]

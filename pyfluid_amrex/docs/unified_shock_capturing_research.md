@@ -486,6 +486,81 @@ slow/Alfven/compound fans, repeated event topology, shock-smooth interaction,
 multidimensional geometry, CT/AMR transfer, relativistic wave curves, and
 cost remain open.
 
+### NRMHD path selection and latent Alfvén state
+
+General ideal NRMHD changes the question in two ways. First, the exact Riemann
+problem need not be unique: regular and nonregular intermediate/compound-wave
+solutions can satisfy the usual weak and entropy conditions for the same
+data. Second, even a uniquely chosen rotational discontinuity does not survive
+ordinary homogeneous finite-volume projection. Its physical path keeps
+`|Bt|` fixed while rotating in the `(By,Bz)` plane; the componentwise cell
+average follows the chord instead of that arc.
+
+The half-turn control makes the state error explicit. Both endpoints have
+`|Bt|=0.5` and `p=1`, but their equal conserved mixture inverts to
+`|Bt|=0` and `p=7/6`. The conserved total energy is intact; the homogeneous
+primitive inverse has reclassified unresolved tangential magnetic and kinetic
+energy as heat. This is the large-angle Alfvén averaging mechanism identified
+independently by Xu et al.'s numerical-path-preserving Roe analysis.
+
+The old `physical_wave_space_time` prototype did not fully honor its own
+design: it inferred the same wave again from homogeneous primitives every
+step. It carries the half-turn to about `1e-12` at N=16 and at N=32/CFL 0.4,
+then loses it at N=32/CFL 0.9; at N=64 it also loses the 90-degree rotation.
+That resolution reversal is a detector/projection failure, not physical
+convergence.
+
+`persistent_physical_wave_space_time` instead verifies the complete jump once,
+retains the two endpoint states, speed, and position, and integrates the
+physical flux over every face-crossing interval. It never asks the chord
+average to rediscover the arc. Contacts, the independently constructed
+oblique fast shock, and 90/180-degree rotations cross many cells at N=16, 32,
+and 64 and CFL 0.4/0.9 with:
+
+- total L1 `1.2e-16`--`1.2e-14`;
+- exactly one transition cell and maximum TV equal to one to roundoff;
+- conserved-integral errors at roundoff; and
+- exactly constant normal magnetic field.
+
+For the N=32/CFL-0.9 half-turn, characteristic MP5/HLLD has total L1
+`7.8404e-2`, maximum overshoot `1.3010e-1`, and maximum TV ratio `1.7710`;
+the persistent element has `2.2190e-15`, `2.6645e-15`, and `1.0`.
+The persistent 24-case matrix takes about 0.26 seconds in the Python harness
+because propagation is analytic after birth. The comparison is mechanism and
+amortization evidence, not a production C++ throughput benchmark.
+
+A second standalone probe evolves Brio--Wu and the coplanar/near-coplanar
+Torrilhon data with a conservative fourth-order centered ideal flux plus
+explicit viscosity, resistivity, and heat conduction. Balanced,
+viscosity-dominant, and resistivity-dominant paths are normalized to the same
+maximum diffusion length. Through 2048 cells they remain admissible, preserve
+normal field, and close their discrete boundary-flux balance to about
+`1.6e-13`; path and resolution differences shrink together. This does not
+establish a universal dissipative limit. The near-coplanar control retains the
+known slow pseudo-convergence, so a small brute-force local PDE solve can cache
+the wrong apparent fan.
+
+The resulting method boundary is sharper:
+
+```text
+smooth region:
+    high-order cell averages + MP5/space-time predictor
+
+accepted nonsmooth region:
+    physical wave/fan path as latent state
+    + cheap time-integrated propagation between events
+
+birth/collision:
+    state-derived wave-curve solve with an explicit admissibility rule
+```
+
+This is more than switching reconstruction or Riemann formulas, but it remains
+inside conservative finite volume: the cell average is still the conserved
+ledger, while the latent fan supplies information that averaging destroys.
+The isolated result does not yet solve general fan birth, rarefactions,
+nonunique-solution policy, interactions, CT edge ownership, AMR transfer, or
+relativistic/curved-spacetime extension.
+
 ## Riemann Candidate: Constraint-Optimized Wave Enrichment
 
 The provisional Riemann policy is abbreviated COWE. The robust version is
@@ -713,9 +788,12 @@ remain mandatory.
    space-time predictor and test whether it reproduces the complete-fan flux
    closely enough to retain the L1/overshoot/TV result. Do not use
    primitive-linear wave interpolation.
-4. Extend the exact-subsystem MHD control toward nonzero normal field using
-   independently verified slow/Alfven/fast wave curves. Approximate HLLD
-   intermediate states remain ineligible persistent fronts.
+4. Build a state-derived nonzero-normal-field birth provider in physical path
+   space. Preserve the constant-`|Bt|` Alfvén arc rather than the chord,
+   verify fast/slow shock and rarefaction curves independently, and state the
+   regular/nonregular admissibility policy. Approximate HLLD intermediate
+   states and a finite pseudo-converged micro-solve remain ineligible
+   persistent fronts.
 5. Only after those one-dimensional tests pass, derive CT-compatible
    multidimensional face/edge ownership and AMR event transfer. Relativistic
    and GR paths follow the same local proof ladder rather than preceding it.

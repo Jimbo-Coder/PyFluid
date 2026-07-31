@@ -311,6 +311,35 @@ implementations:
   [published energy-consistency version](https://doi.org/10.1016/j.jcp.2026.114724):
   source routes for ordered positive fan states and magnetic-energy
   consistency, not production code to copy.
+- K. Takahashi and S. Yamada, *Exact Riemann solver for ideal
+  magnetohydrodynamics that can handle all types of intermediate shocks and
+  switch-on/off waves*,
+  [arXiv:1310.2330](https://arxiv.org/abs/1310.2330), and *Regular and
+  non-regular solutions of the Riemann problem in ideal
+  magnetohydrodynamics*,
+  [arXiv:1210.5584](https://arxiv.org/abs/1210.5584): primary wave-curve,
+  degeneracy, and nonuniqueness sources. Rankine--Hugoniot plus the ordinary
+  entropy condition does not define one universal ideal-MHD fan; the
+  Brio--Wu data admit one regular solution and uncountably many nonregular
+  solutions.
+- M. Torrilhon, *Uniqueness conditions for Riemann problems of ideal
+  magnetohydrodynamics*,
+  [paper](https://doi.org/10.1017/S0022377803002186), and *Non-uniform
+  convergence of finite volume schemes for Riemann problems of ideal
+  magnetohydrodynamics*,
+  [paper](https://doi.org/10.1016/S0021-9991(03)00347-4): primary sources for
+  the non-strict/non-convex ideal-MHD fan, large-angle tangential-field test,
+  and pseudo-convergence boundary. A finite-resolution numerical fan that
+  looks stable is not necessarily the regular solution.
+- K. Xu et al., *Numerical path preserving Roe scheme for ideal MHD Riemann
+  problem: Complete elimination of pseudo-convergence*,
+  [paper](https://doi.org/10.1016/j.jcp.2024.113621): identifies straight-line
+  averaging of Alfvén rotations in the transverse-magnetic plane as the
+  corruption mechanism and constructs a Roe correction whose numerical path
+  follows the constant-`|Bt|` arc. This is direct support for retaining an
+  accepted rotational wave as latent physical structure; it is not a source
+  implementation to import and does not by itself solve general fan birth,
+  interactions, CT, or AMR.
 - F. Zhang, *An improved estimate of the intermediate internal energy in the
   energy-consistent HLLD scheme*,
   [arXiv:2607.10293](https://arxiv.org/abs/2607.10293): July-2026 evidence that

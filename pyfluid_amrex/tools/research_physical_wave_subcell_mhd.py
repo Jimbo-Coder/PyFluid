@@ -496,6 +496,82 @@ def evolve_space_time(
     return final, mhd.primitive_is_admissible(final)
 
 
+def evolve_persistent_wave(
+    primitive: Array,
+    final_time: float,
+    cfl: float,
+    gamma: float,
+    left: Array,
+    right: Array,
+    speed: float,
+    initial_position: float,
+) -> tuple[Array, bool]:
+    """Carry one accepted physical jump without re-detecting its FV average."""
+    fitted_wave = fit_physical_mhd_wave(
+        left,
+        left,
+        right,
+        gamma,
+        allow_endpoint=True,
+    )
+    if fitted_wave is None or not math.isclose(
+        fitted_wave.speed,
+        speed,
+        rel_tol=3.0e-10,
+        abs_tol=3.0e-10,
+    ):
+        raise ValueError(
+            "persistent wave must satisfy the complete physical jump"
+        )
+    state = mhd.conserved_array(primitive, gamma)
+    cells = len(state)
+    dx = 1.0 / cells
+    faces = np.linspace(0.0, 1.0, cells + 1)
+    left_flux = mhd_flux(left, gamma)
+    right_flux = mhd_flux(right, gamma)
+    signal_speed = max(
+        abs(left[1]) + mhd.mhd_fast_speed(left, gamma),
+        abs(right[1]) + mhd.mhd_fast_speed(right, gamma),
+    )
+    position = initial_position
+    time_value = 0.0
+    while time_value < final_time:
+        dt = min(
+            final_time - time_value,
+            cfl * dx / signal_speed,
+        )
+        if speed > 0.0:
+            crossing_time = (faces - position) / speed
+            left_fraction = np.clip(
+                (dt - crossing_time) / dt,
+                0.0,
+                1.0,
+            )
+        elif speed < 0.0:
+            crossing_time = (faces - position) / speed
+            left_fraction = np.clip(crossing_time / dt, 0.0, 1.0)
+        else:
+            left_fraction = (faces < position).astype(float)
+        integrated_flux = (
+            left_fraction[:, None] * left_flux[None, :]
+            + (1.0 - left_fraction[:, None]) * right_flux[None, :]
+        )
+        candidate = state - dt * (
+            integrated_flux[1:] - integrated_flux[:-1]
+        ) / dx
+        candidate_primitive = mhd.primitive_from_conserved(
+            candidate,
+            gamma,
+        )
+        if not mhd.primitive_is_admissible(candidate_primitive):
+            return candidate_primitive, False
+        state = candidate
+        position += speed * dt
+        time_value += dt
+    final = mhd.primitive_from_conserved(state, gamma)
+    return final, mhd.primitive_is_admissible(final)
+
+
 def discontinuity_cell_averages(
     cells: int,
     position: float,
@@ -886,7 +962,6 @@ def discontinuity_result(
     speed: float,
     initial_position: float,
     final_time: float,
-    space_time: bool,
 ) -> Result:
     initial = discontinuity_cell_averages(
         cells,
@@ -895,7 +970,7 @@ def discontinuity_result(
         right,
         gamma,
     )
-    if space_time:
+    if method == "physical_wave_space_time":
         evolved, completed = evolve_space_time(
             initial,
             final_time,
@@ -903,7 +978,18 @@ def discontinuity_result(
             gamma,
             periodic=False,
         )
-    else:
+    elif method == "persistent_physical_wave_space_time":
+        evolved, completed = evolve_persistent_wave(
+            initial,
+            final_time,
+            cfl,
+            gamma,
+            left,
+            right,
+            speed,
+            initial_position,
+        )
+    elif method == "mp5_hlld":
         evolved, completed = mhd.evolve(
             initial,
             final_time,
@@ -913,6 +999,8 @@ def discontinuity_result(
             mhd_hlld_flux,
             periodic=False,
         )
+    else:
+        raise ValueError(f"unknown isolated-wave method: {method}")
     exact = discontinuity_cell_averages(
         cells,
         initial_position + speed * final_time,
@@ -944,6 +1032,30 @@ def print_results(results: list[Result]) -> None:
             else:
                 values.append(str(value))
         print("\t".join(values))
+
+
+def validate_persistent_results(results: list[Result]) -> None:
+    for result in results:
+        if result.method != "persistent_physical_wave_space_time":
+            continue
+        if (
+            not result.completed
+            or result.total_l1 > 5.0e-10
+            or result.maximum_overshoot > 5.0e-10
+            or abs(result.maximum_tv_ratio - 1.0) > 5.0e-9
+            or result.transition_cells != 1
+            or result.maximum_divergence_proxy > 5.0e-13
+            or max(
+                result.mass_error,
+                result.momentum_error,
+                result.energy_error,
+            )
+            > 5.0e-11
+        ):
+            raise RuntimeError(
+                "persistent physical-wave control failed: "
+                f"{result.case}, N={result.cells}, CFL={result.cfl:g}"
+            )
 
 
 def shock_tube_comparison(
@@ -1154,7 +1266,22 @@ def main() -> None:
     parser.add_argument("--gamma", type=float, default=5.0 / 3.0)
     parser.add_argument("--include-shock-tubes", action="store_true")
     parser.add_argument("--scan-physical-windows", action="store_true")
+    parser.add_argument("--skip-smooth-control", action="store_true")
     parser.add_argument("--reference-factor", type=int, default=4)
+    parser.add_argument(
+        "--methods",
+        nargs="+",
+        choices=(
+            "mp5_hlld",
+            "physical_wave_space_time",
+            "persistent_physical_wave_space_time",
+        ),
+        default=(
+            "mp5_hlld",
+            "physical_wave_space_time",
+            "persistent_physical_wave_space_time",
+        ),
+    )
     args = parser.parse_args()
 
     contact_left = np.array(
@@ -1179,6 +1306,49 @@ def main() -> None:
     if rotational_fit is None:
         raise RuntimeError("rotational-discontinuity control is not physical")
     rotational_speed = rotational_fit.speed
+    half_turn_left = np.array(
+        (1.0, 1.5, 0.5, 0.0, 1.0, 1.0, 0.5, 0.0)
+    )
+    half_turn_right = np.array(
+        (1.0, 1.5, -0.5, 0.0, 1.0, 1.0, -0.5, 0.0)
+    )
+    half_turn_fit = fit_physical_mhd_wave(
+        half_turn_left,
+        half_turn_left,
+        half_turn_right,
+        args.gamma,
+        allow_endpoint=True,
+    )
+    if half_turn_fit is None:
+        raise RuntimeError(
+            "half-turn rotational-discontinuity control is not physical"
+        )
+    half_turn_speed = half_turn_fit.speed
+    half_turn_mixed_state = np.mean(
+        mhd.conserved_array(
+            np.array((half_turn_left, half_turn_right)),
+            args.gamma,
+        ),
+        axis=0,
+    )
+    half_turn_mixed = mhd.primitive_from_conserved(
+        half_turn_mixed_state[None, :],
+        args.gamma,
+    )[0]
+    endpoint_bt = math.hypot(half_turn_left[6], half_turn_left[7])
+    mixed_bt = math.hypot(half_turn_mixed[6], half_turn_mixed[7])
+    if (
+        mixed_bt > 1.0e-14
+        or half_turn_mixed[4] <= half_turn_left[4]
+    ):
+        raise RuntimeError("half-turn chord-average corruption control failed")
+    print(
+        "half_turn_chord_average"
+        f"\tendpoint_bt={endpoint_bt:.12e}"
+        f"\tmixed_bt={mixed_bt:.12e}"
+        f"\tendpoint_pressure={half_turn_left[4]:.12e}"
+        f"\tmixed_pressure={half_turn_mixed[4]:.12e}"
+    )
     fast_shock_left, fast_shock_right, fast_shock_speed = (
         oblique_fast_shock_states(args.gamma)
     )
@@ -1186,10 +1356,7 @@ def main() -> None:
     results: list[Result] = []
     for cells in args.cells:
         for cfl in args.cfl:
-            for method, space_time in (
-                ("mp5_hlld", False),
-                ("physical_wave_space_time", True),
-            ):
+            for method in args.methods:
                 results.append(
                     discontinuity_result(
                         case="moving_mhd_contact",
@@ -1202,7 +1369,6 @@ def main() -> None:
                         speed=0.5,
                         initial_position=0.233,
                         final_time=0.6,
-                        space_time=space_time,
                     )
                 )
                 results.append(
@@ -1217,7 +1383,6 @@ def main() -> None:
                         speed=fast_shock_speed,
                         initial_position=0.217,
                         final_time=0.2,
-                        space_time=space_time,
                     )
                 )
                 results.append(
@@ -1232,9 +1397,24 @@ def main() -> None:
                         speed=rotational_speed,
                         initial_position=0.217,
                         final_time=0.6,
-                        space_time=space_time,
                     )
                 )
+                results.append(
+                    discontinuity_result(
+                        case="moving_half_turn_rotational_discontinuity",
+                        method=method,
+                        cells=cells,
+                        cfl=cfl,
+                        gamma=args.gamma,
+                        left=half_turn_left,
+                        right=half_turn_right,
+                        speed=half_turn_speed,
+                        initial_position=0.217,
+                        final_time=0.6,
+                    )
+                )
+            if args.skip_smooth_control:
+                continue
             _, smooth_initial = mhd.circular_alfven_initial(cells)
             smooth_baseline, baseline_completed = mhd.evolve(
                 smooth_initial,
@@ -1270,6 +1450,7 @@ def main() -> None:
                 f"\tcfl={cfl:g}"
                 f"\tmaximum_difference={smooth_difference:.12e}"
             )
+    validate_persistent_results(results)
     print_results(results)
     if args.include_shock_tubes:
         shock_tube_results: list[mhd.Result] = []

@@ -328,6 +328,41 @@ The latest recorded evidence is not one monolithic green result:
   birth, or production cost. The practical candidate is therefore a
   state-derived local space-time Riemann/GRP element with causal event
   handling; the current full-fan result remains oracle-seeded research.
+- Ideal NRMHD adds a selection problem that Euler does not: the system is
+  non-strictly hyperbolic and non-convex, and the usual jump plus entropy
+  conditions need not select one Riemann fan. Brio--Wu admits a regular
+  solution and a continuum of nonregular compound solutions. A future
+  physical-fan provider must state its admissibility/regularization choice;
+  an algebraically exact ideal-MHD solver is not automatically a unique
+  physical oracle.
+- Large Alfvén rotations expose a more immediate finite-volume representation
+  error. Their physical integral curve is an arc of constant transverse-field
+  magnitude, while a homogeneous cell average lies on the chord. In the
+  half-turn control, two endpoints with `|Bt|=0.5` and `p=1` average to a
+  primitive state with `|Bt|=0` and `p=7/6`; magnetic and tangential kinetic
+  energy are misinterpreted as heat. This explains MHD pseudo-convergence and
+  shows why repeatedly reconstructing a homogeneous primitive from a mixed
+  conserved cell cannot preserve the Alfvén manifold.
+- The remedy demonstrated by the isolated-wave harness is latent physical
+  state, not another scalar limiter. Once a complete-RH contact, fast shock,
+  or 90/180-degree rotational discontinuity is accepted, retain its endpoint
+  states, position, and speed and time-integrate its crossing flux without
+  re-detecting it from the cell average. The persistent controls cross many
+  cells at N=16--64 and CFL 0.4/0.9 with total L1 `1.2e-16`--`1.2e-14`,
+  one transition cell, unit TV, roundoff conservation, and constant normal
+  field. The old memoryless detector loses rotational waves as resolution or
+  CFL changes, confirming that inference after every projection is not
+  persistence. Birth, full nonzero-`Bn` fans, rarefaction curves,
+  interactions, multidimensional CT geometry, and AMR transfer remain open.
+- A fourth-order centered viscous/resistive/heat-conducting micro-solve is a
+  useful solution-selection probe but not the birth algorithm. Brio--Wu and
+  Torrilhon controls through 2048 cells remain admissible, conservative to
+  about `1.6e-13`, and preserve constant normal field, while coefficient-path
+  and resolution differences shrink together. The near-coplanar problem
+  retains the known slow pseudo-convergence, so a small brute-force cached
+  PDE solve can confidently cache the wrong fan. Solve birth in physical
+  wave/path space and use dissipative micro-solves only as explicit selection
+  experiments.
 
 Never collapse compile, focused validation, smoke, standard/full suite,
 performance, and MPI-rank evidence into one claim.
