@@ -125,6 +125,57 @@ def read_level_components(path: Path) -> list[np.ndarray]:
    ]
 
 
+def maximum_overlapping_node_disagreement(path: Path) -> float:
+   """Return the largest disagreement where nodal HDF5 boxes overlap."""
+   with h5py.File(path, "r") as handle:
+      dimension = int(
+         np.asarray(handle.attrs["dim"]).reshape(-1)[0]
+      )
+      num_components = int(
+         np.asarray(handle.attrs["num_components"]).reshape(-1)[0]
+      )
+      group = handle["level_0"]
+      data = np.asarray(group["data:datatype=0"])
+      offsets = np.asarray(group["data:offsets=0"], dtype=np.int64)
+      boxes = np.asarray(group["boxes"])
+      box_values = np.asarray(
+         [tuple(int(value) for value in box) for box in boxes], dtype=int
+      )
+      lower = np.min(box_values[:, :dimension], axis=0)
+      upper = np.max(box_values[:, dimension:], axis=0)
+      extents = tuple((upper - lower + 1).tolist())
+      dense = np.full((num_components, *extents), np.nan)
+      maximum = 0.0
+      for bounds, begin, end in zip(
+         box_values, offsets[:-1], offsets[1:]
+      ):
+         box_lower = bounds[:dimension]
+         box_upper = bounds[dimension:]
+         box_extents = tuple((box_upper - box_lower + 1).tolist())
+         block = data[begin:end].reshape(
+            (num_components, *reversed(box_extents))
+         )
+         block = block.transpose(
+            (0, *range(dimension, 0, -1))
+         )
+         slices = tuple(
+            slice(
+               int(box_lower[direction] - lower[direction]),
+               int(box_upper[direction] - lower[direction] + 1),
+            )
+            for direction in range(dimension)
+         )
+         destination = dense[(slice(None), *slices)]
+         overlap = np.isfinite(destination)
+         if np.any(overlap):
+            maximum = max(
+               maximum,
+               float(np.max(np.abs(destination[overlap] - block[overlap]))),
+            )
+         destination[...] = block
+   return maximum
+
+
 def read_cell_component(
    path: Path,
    index: tuple[int, int, int],
@@ -288,6 +339,17 @@ def validate_reduced_rns_handoff(
       raise RuntimeError(
          f"reduced small-spin RNS diagnostics are unphysical: {required_diagnostics}"
       )
+   matter_outer_radius = float(metadata.get("matter_outer_radius", "nan"))
+   if not 0.0 < matter_outer_radius < radial_faces[-1]:
+      raise RuntimeError("reduced RNS artifact lost its matter-support bound")
+   nodal_disagreement = maximum_overlapping_node_disagreement(
+      source_artifact / "adm_geometry.h5"
+   )
+   if nodal_disagreement > 2.0e-13:
+      raise RuntimeError(
+         "reduced RNS nodal geometry is not single-valued across HDF5 boxes: "
+         f"maximum disagreement={nodal_disagreement:.6e}"
+      )
 
    _, materialized_artifact, materialization_seconds = run_id_case(
       "rns_materialized_16cubed",
@@ -325,6 +387,32 @@ def validate_reduced_rns_handoff(
       "initial_data.matter_relative_tolerance": "1.0e-7",
       "initial_data.matter_max_iterations": "128",
    }
+   same_omega_run, same_omega_artifact, same_omega_seconds = run_id_case(
+      "rns_adaptive_same_omega_resolved_96x24",
+      2,
+      RNS_SOURCE_INPUT,
+      {
+         "amr.n_cell": "96 24",
+         "amr.max_grid_size": "48",
+         "initial_data.radial_grid": "adaptive",
+         "initial_data.angular_velocity": "0.001",
+         "initial_data.input_file": repo_relative(source_artifact),
+         "initial_data.matter_relative_tolerance": "1.0e-7",
+         "initial_data.matter_max_iterations": "128",
+      },
+      args,
+   )
+   if (
+      "re-solving rotating physical initial data on the changed r-theta grid"
+      not in (same_omega_run / "run.log").read_text()
+   ):
+      raise RuntimeError("changed-grid same-omega RNS load skipped its XCTS solve")
+   same_omega_metadata = read_artifact_metadata(same_omega_artifact)
+   if (
+      same_omega_metadata.get("coordinate_faces_0_0")
+      == metadata.get("coordinate_faces_0_0")
+   ):
+      raise RuntimeError("same-omega RNS re-solve did not change its radial map")
    _, direct_artifact, direct_seconds = run_id_case(
       "rns_adaptive_direct_96x24",
       2,
@@ -368,6 +456,7 @@ def validate_reduced_rns_handoff(
          "mass_shedding_indicator"
       ],
       "dimensionless_spin": required_diagnostics["dimensionless_spin"],
+      "nodal_overlap_disagreement": nodal_disagreement,
       "source_seconds": source_seconds,
       "materialization_seconds": materialization_seconds,
       "run_dir": repo_relative(materialized_artifact.parent),
@@ -380,6 +469,14 @@ def validate_reduced_rns_handoff(
       "source_seconds": direct_seconds,
       "materialization_seconds": continued_seconds,
       "run_dir": repo_relative(continued_artifact.parent),
+   }, {
+      "kind": "initial_data",
+      "case": "rns_adaptive_same_omega_different_grid_resolve",
+      "status": "PASS",
+      "metric": "matter_outer_radius",
+      "value": float(same_omega_metadata["matter_outer_radius"]),
+      "source_seconds": same_omega_seconds,
+      "run_dir": repo_relative(same_omega_run),
    }]
 
 

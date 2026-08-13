@@ -212,6 +212,15 @@ fixed during one nonlinear solve and rotation sequence so live fields never
 need an in-solve regrid. Uniform remains the explicit work-precision control.
 This is star-adapted mapped spacing, not residual-driven AMR: binaries and
 multiple compact objects still need a block/multidomain design.
+`initial_data.adaptive_source_radius_factor` and
+`initial_data.adaptive_exterior_fraction` are bounded solver-private policy
+controls; the saved explicit faces, rather than either knob, are authoritative
+for continuation and materialization. The conventional RNS inputs keep the
+uniform source ball through 1.8 times the spherical seed radius and reserve one
+third of radial cells for the gravity exterior. TOV retains the 1.5 and
+one-third defaults. Changing either map for a reduced solve-only RNS load
+forces a new discrete XCTS solve even when angular velocity is unchanged;
+same-map loading remains a direct sequence continuation.
 
 Matter support and gravity extent need not be the same computational domain.
 An ID method may stop its matter representation at the enthalpy-zero surface
@@ -224,7 +233,12 @@ Cell-, node-, face-, and edge-centered arrays may share one hierarchy and
 coordinate-map descriptor, but they are different degrees of freedom and are
 not aliases of a single base array. Their index extents, ownership at shared
 faces/edges, interpolation, synchronization, and conservation identities
-differ. Remove duplicated topology/metadata and temporary caches where safe;
+remain distinct. Nodal derivatives need valid neighbor data across AMReX box
+boundaries, and portable nodal fields must be synchronized to one value on
+overlapping valid nodes before output. A coordinate/basis change is algebraic;
+these centering, parity, axis, origin, and stellar-surface contracts are the
+nontrivial part of reduced spherical-to-Cartesian materialization.
+Remove duplicated topology/metadata and temporary caches where safe;
 do not collapse physically distinct centerings into one storage view.
 
 Interpolation ownership includes target points outside the source sample

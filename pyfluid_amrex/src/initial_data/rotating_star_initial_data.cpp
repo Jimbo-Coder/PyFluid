@@ -252,7 +252,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
    summary.injection_energy = iteration_parameters.injection_energy;
    for (int level = 0; level < num_levels; ++level) {
       amrex::MultiFab diagnostics(
-         hierarchy.grids[level], hierarchy.distribution[level], 6, 0
+         hierarchy.grids[level], hierarchy.distribution[level], 7, 0
       );
       diagnostics.setVal(0.0);
       const auto problo = hierarchy.geometry[level].ProbLoArray();
@@ -380,6 +380,10 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                   amrex::Real(0.0)
                ));
                diagnostic(i, j, k, 5) = std::abs(parallel);
+               diagnostic(i, j, k, 6) = std::sqrt(radius_squared)
+                  + 0.5 * std::sqrt(
+                     dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2]
+                  );
             }
          });
       }
@@ -400,6 +404,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       );
       summary.polar_radius = std::max(
          summary.polar_radius, diagnostics.max(5, 0, false)
+      );
+      summary.matter_outer_radius = std::max(
+         summary.matter_outer_radius, diagnostics.max(6, 0, false)
       );
       if (diagnostics.max(3, 0, false) > 0.0) {
          amrex::Abort(
@@ -475,10 +482,14 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
       radial_coordinates.centers.data(), radial_coordinates.centers.size()
    );
+   amrex::Gpu::AsyncArray<amrex::Real> radial_face_storage(
+      radial_coordinates.faces.data(), radial_coordinates.faces.size()
+   );
    amrex::Gpu::AsyncArray<amrex::Real> angular_center_storage(
       angular_coordinates.centers.data(), angular_coordinates.centers.size()
    );
    const amrex::Real* radial_center = radial_center_storage.data();
+   const amrex::Real* radial_face = radial_face_storage.data();
    const amrex::Real* angular_center = angular_center_storage.data();
    const amrex::Box domain = hierarchy.geometry[0].Domain();
    const amrex::Dim3 domain_lo = amrex::lbound(domain);
@@ -586,7 +597,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    ) * center_effective_potential;
 
    amrex::MultiFab diagnostics(
-      hierarchy.grids[0], hierarchy.distribution[0], 6, 0
+      hierarchy.grids[0], hierarchy.distribution[0], 8, 0
    );
    diagnostics.setVal(0.0);
    for (amrex::MFIter mfi(*primitive_state[0], amrex::TilingIfNotGPU());
@@ -676,11 +687,16 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
             ? matter.rho - atmosphere.rho : 0.0;
          diagnostic(i, j, k, 3) = within_support && !target.timelike
             ? 1.0 : 0.0;
+         const bool failed_support = within_support && !target.timelike;
+         diagnostic(i, j, k, 7) = failed_support ? sample.mesh.q1 : 0.0;
          if (contains_matter) {
             diagnostic(i, j, k, 4) = sample.mesh.q1
                * std::sin(sample.mesh.q2);
             diagnostic(i, j, k, 5) = sample.mesh.q1
                * std::abs(std::cos(sample.mesh.q2));
+            diagnostic(i, j, k, 6) = radial_face[
+               i - domain_lo.x + 1
+            ];
          }
       });
    }
@@ -693,7 +709,11 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    summary.injection_energy = iteration_parameters.injection_energy;
    summary.equatorial_radius = diagnostics.max(4, 0, false);
    summary.polar_radius = diagnostics.max(5, 0, false);
+   summary.matter_outer_radius = diagnostics.max(6, 0, false);
    if (diagnostics.max(3, 0, false) > 0.0) {
+      amrex::Print()
+         << "axisymmetric rotating-star failed support maximum_radius="
+         << diagnostics.max(7, 0, false) << '\n';
       amrex::Abort(
          "axisymmetric rotating-star helical flow is not timelike inside matter"
       );

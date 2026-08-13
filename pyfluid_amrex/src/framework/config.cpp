@@ -430,6 +430,14 @@ RunConfig read_config()
       "sequence_output_dir", cfg.initial_data_sequence_output_dir
    );
    initial_data_pp.queryAdd("radial_grid", cfg.initial_data_radial_grid);
+   initial_data_pp.queryAdd(
+      "adaptive_source_radius_factor",
+      cfg.initial_data_adaptive_source_radius_factor
+   );
+   initial_data_pp.queryAdd(
+      "adaptive_exterior_fraction",
+      cfg.initial_data_adaptive_exterior_fraction
+   );
    initial_data_pp.queryAdd("atmosphere", cfg.initial_data_atmosphere);
    initial_data_pp.queryAdd("atmosphere_density", cfg.initial_data_atmosphere_density);
    initial_data_pp.queryAdd("atmosphere_pressure", cfg.initial_data_atmosphere_pressure);
@@ -1966,6 +1974,18 @@ void validate_config(RunConfig const& cfg)
    if (cfg.initial_data_radial_grid != "uniform"
        && cfg.initial_data_radial_grid != "adaptive") {
       amrex::Abort("initial_data.radial_grid must be uniform or adaptive");
+   }
+   if (!(cfg.initial_data_adaptive_source_radius_factor > 1.0)
+       || cfg.initial_data_adaptive_source_radius_factor > 3.0) {
+      amrex::Abort(
+         "initial_data.adaptive_source_radius_factor must be in (1, 3]"
+      );
+   }
+   if (!(cfg.initial_data_adaptive_exterior_fraction >= 0.125
+         && cfg.initial_data_adaptive_exterior_fraction <= 0.5)) {
+      amrex::Abort(
+         "initial_data.adaptive_exterior_fraction must be in [0.125, 0.5]"
+      );
    }
    if (cfg.initial_data_radial_grid == "adaptive"
        && ((!reduced_axisymmetric_xcts && !reduced_radial_tov)

@@ -188,6 +188,15 @@ the generated TSV/log, and the current source revision/dirty state.
   (`grid_r`) uses a uniform inner interval followed by a geometrically growing
   exterior. It is a useful finite-volume stretching control, not an assumed
   optimum for PyFluid's axisymmetric XCTS solver.
+- The companion COCAL angular construction
+  `/Users/mrizzo/phys_research/ETK_Hypatia/COCAL/COCAL_ID/src/Cocal/coordinate_grav_theta.f90`
+  keeps theta uniform through the full radial domain; it is not precedent for
+  radius-dependent angular coarsening. Representative local RNS parameter
+  files use `120x24x48` or `192x48x48` gravity grids, a surface radius normalized
+  to one, a uniform-inner transition near `1.25`, and extremely distant
+  geometrically stretched outer radii. COCAL's KEH equations and domains differ
+  from PyFluid XCTS, so these counts are comparison guidance rather than copied
+  production parameters.
 
 ## Local AthenaK Reference
 

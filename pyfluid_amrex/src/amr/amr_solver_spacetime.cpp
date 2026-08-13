@@ -158,7 +158,9 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
          stellar_adaptive_radial_faces(
             provider.tov.surface_radius,
             Geom(0).ProbHi(0),
-            Geom(0).Domain().length(0)
+            Geom(0).Domain().length(0),
+            cfg_.initial_data_adaptive_source_radius_factor,
+            cfg_.initial_data_adaptive_exterior_fraction
          );
       initial_data_coordinate_faces_ =
          mapped_hierarchy.physical_coordinate_faces;
@@ -253,7 +255,9 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
             stellar_adaptive_radial_faces(
                provider.tov.surface_radius,
                hierarchy.geometry[0].ProbHi(0),
-               hierarchy.geometry[0].Domain().length(0)
+               hierarchy.geometry[0].Domain().length(0),
+               cfg_.initial_data_adaptive_source_radius_factor,
+               cfg_.initial_data_adaptive_exterior_fraction
             );
          initial_data_coordinate_faces_ = hierarchy.physical_coordinate_faces;
          initialize_relativistic_primitive_cache_from_provider(
@@ -357,6 +361,8 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
             << result.rotating_star.boundary_density_excess
             << " equatorial_radius=" << result.rotating_star.equatorial_radius
             << " polar_radius=" << result.rotating_star.polar_radius
+            << " matter_outer_radius="
+            << result.rotating_star.matter_outer_radius
             << " coordinate_axis_ratio="
             << result.rotating_star.equatorial_radius
                / result.rotating_star.polar_radius

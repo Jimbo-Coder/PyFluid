@@ -54,6 +54,7 @@ struct RotatingStarUpdateSummary {
    amrex::Real injection_energy = 1.0;
    amrex::Real equatorial_radius = 0.0;
    amrex::Real polar_radius = 0.0;
+   amrex::Real matter_outer_radius = 0.0;
    amrex::Real equatorial_log_enthalpy_gradient = 0.0;
    amrex::Real polar_log_enthalpy_gradient = 0.0;
    amrex::Real mass_shedding_indicator = 1.0;

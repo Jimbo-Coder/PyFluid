@@ -71,7 +71,9 @@ amrex::Vector<amrex::Real> surface_focused_radial_faces(
 amrex::Vector<amrex::Real> stellar_adaptive_radial_faces(
    amrex::Real seed_surface_radius,
    amrex::Real outer_radius,
-   int radial_cells
+   int radial_cells,
+   amrex::Real source_radius_factor,
+   amrex::Real exterior_fraction
 );
 
 enum class InitialDataEllipticBoundaryType {

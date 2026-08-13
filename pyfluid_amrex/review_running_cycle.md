@@ -5344,3 +5344,49 @@ I will always continue from the last cycle marked as `in_progress`.
   focused interpolation/elliptic checks, architecture, the three-rank reduced-
   ID standard gate, and 3/3 quick suite pass. The unchanged cache-hit
   production rebuild is `0.57 s`. [DONE]
+
+## Cycle 292 — RNS adaptive-domain work precision (DONE)
+
+- Measure rather than assume how much radial and angular resolution the XCTS
+  exterior needs. Source-check the local COCAL/KEH domain layout, retain the
+  formulation difference, and scan constraints, raw surface slopes, ADM and
+  baryonic mass, angular momentum, spin, and runtime against the accepted
+  uniform/adaptive controls. Local COCAL uses uniform inner radial spacing,
+  geometric exterior spacing, and uniform theta; it does not provide a
+  radius-dependent angular algorithm for PyFluid. At fixed `256x64`, changing
+  the source-ball factor from 1.4 to 1.8 and the exterior fraction from 1/8 to
+  1/2 changes the near-limit surface diagnostic materially but costs the same
+  roughly 5 seconds, showing that allocation is an accuracy policy rather than
+  a same-N speed knob. [DONE]
+- Keep the current rectangular `r theta` separable operator honest: reducing
+  theta points as a function of radius requires a multidomain or modal-domain
+  interface, not a disguised nonuniform-coordinate knob. First profile angular
+  mode content by radius and determine whether a controlled exterior mode cap
+  or a separate coarse-angular exterior domain has measurable value. The
+  existing solver already diagonalizes and MPI-distributes angular modes.
+  Offline projection of the `1024x256` model gives maximum global exterior ADM
+  errors `8.86e-6/1.78e-6/4.36e-7/1.09e-7` at the source-ball boundary for
+  4/8/16/32 angular cells. Four is too aggressive; 16 is a promising future
+  modal-domain control, not yet a production solve. [DONE]
+- Implement only an evidence-backed, solver-private adaptive policy with a
+  bounded user override. Preserve explicit-face physical-ID artifacts,
+  different-grid continuation, reflection regularity, and unchanged Cartesian
+  evolution materialization. The production RNS map now exposes bounded source-
+  radius/exterior-fraction controls and conventionally uses 1.8 and one third.
+  Explicit coordinate faces participate in exact-layout identity, so a changed
+  same-Omega grid re-solves XCTS instead of silently reusing the source map.
+  Rotating artifacts persist matter support and regenerate the exact target
+  atmosphere outside it. Ghost-filled nodal derivatives plus final nodal sync
+  remove former order-unity `K_(r phi)` disagreement on overlapping box nodes.
+  Same-map re-solves at `512x128`, `768x192`, and `1024x256` take
+  `10.64/26.22/45.21 s` and give unequal-grid orders `1.74--1.99` in surface and
+  global diagnostics. The `1024x256` branch accepts `Omega=0.03295`
+  (`chi_ms=0.0293355`, `J/M^2=0.672529`) and rejects `0.033` after the surface
+  check, refining the numerical bracket. Production 1D/2D/3D, the three-rank
+  reduced-ID standard gate (including same-Omega changed-grid re-solve and
+  nodal-overlap assertion), and architecture pass. The high-spin `1024x256`
+  artifact materializes onto Cartesian `32^3` in `1.176 s` with maximum
+  primitive/conserved preflight errors `8.82e-13/1.12e-14`; its compressed
+  source artifact is about 20 MiB. The normal standard suite passes 43/43 gates
+  in `167.56 s`. The final incremental production build takes `1.97 s` with
+  three misses and two hits; this is not a cold-build measurement. [DONE]

@@ -173,30 +173,42 @@ amrex::Vector<amrex::Real> surface_focused_radial_faces(
 amrex::Vector<amrex::Real> stellar_adaptive_radial_faces(
    amrex::Real seed_surface_radius,
    amrex::Real outer_radius,
-   int radial_cells
+   int radial_cells,
+   amrex::Real source_radius_factor,
+   amrex::Real exterior_fraction
 )
 {
    if (!(seed_surface_radius > 0.0)
        || !(outer_radius > 1.05 * seed_surface_radius)
-       || radial_cells < 16) {
+       || radial_cells < 16
+       || !(source_radius_factor > 1.0)
+       || !(exterior_fraction > 0.0 && exterior_fraction < 1.0)) {
       amrex::Abort("invalid stellar adaptive radial-grid parameters");
    }
    // Uniform rotation expands the equator and contracts the pole.  Resolve a
    // conservative enclosing source ball rather than fitting only the TOV
    // surface, so the mapping stays fixed throughout a continuation sequence.
    const amrex::Real source_radius = std::min(
-      1.5 * seed_surface_radius, 0.8 * outer_radius
+      source_radius_factor * seed_surface_radius, 0.8 * outer_radius
    );
    if (!(source_radius > seed_surface_radius)) {
       amrex::Abort("stellar adaptive radial grid cannot enclose the seed star");
    }
    // A metric solve cannot spend nearly all its degrees of freedom on matter:
    // the asymptotic fields and the later Cartesian handoff still sample the
-   // complete gravity domain.  One third outside the enclosing source ball is
-   // a bounded compromise that keeps a smooth exterior while retaining a
-   // much finer stellar spacing than a uniform full-domain grid.
-   const int exterior_cells = std::max(8, radial_cells / 3);
+   // complete gravity domain.  The bounded exterior fraction controls the
+   // work split while retaining a smooth exterior and a much finer stellar
+   // spacing than a uniform full-domain grid.
+   const int exterior_cells = std::max(
+      8,
+      static_cast<int>(
+         std::floor(exterior_fraction * static_cast<amrex::Real>(radial_cells))
+      )
+   );
    const int source_cells = radial_cells - exterior_cells;
+   if (source_cells < 8) {
+      amrex::Abort("stellar adaptive radial grid needs eight source cells");
+   }
    return surface_focused_radial_faces(
       source_radius, outer_radius, source_cells, exterior_cells
    );

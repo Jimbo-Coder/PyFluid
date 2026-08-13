@@ -85,6 +85,8 @@ void append_rotating_star_metadata(
       << rotating_star.equatorial_radius << '\n'
       << "# polar_radius=" << std::setprecision(17)
       << rotating_star.polar_radius << '\n'
+      << "# matter_outer_radius=" << std::setprecision(17)
+      << rotating_star.matter_outer_radius << '\n'
       << "# equatorial_log_enthalpy_gradient=" << std::setprecision(17)
       << rotating_star.equatorial_log_enthalpy_gradient << '\n'
       << "# polar_log_enthalpy_gradient=" << std::setprecision(17)
@@ -134,7 +136,9 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       initial_data_coordinate_faces_[0][0] = stellar_adaptive_radial_faces(
          provider.tov.surface_radius,
          Geom(0).ProbHi(0),
-         Geom(0).Domain().length(0)
+         Geom(0).Domain().length(0),
+         cfg_.initial_data_adaptive_source_radius_factor,
+         cfg_.initial_data_adaptive_exterior_fraction
       );
    }
 #endif
@@ -273,7 +277,22 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          << metadata.angular_velocity
          << " target_omega=" << cfg_.initial_data_angular_velocity << '\n';
    }
-   return continue_rotation;
+   bool resolve_changed_reduced_rns = false;
+#if (AMREX_SPACEDIM == 2)
+   resolve_changed_reduced_rns = configured_rotation
+      && cfg_.initial_data_solve_only
+      && cfg_.spacetime_initial_data == "xcts"
+      && cfg_.mesh_coordinate == "spherical"
+      && cfg_.mesh_axes == "r theta"
+      && !metadata.exact_layout;
+#endif
+   if (resolve_changed_reduced_rns && !continue_rotation) {
+      amrex::Print()
+         << "re-solving rotating physical initial data on the changed "
+            "r-theta grid at omega="
+         << cfg_.initial_data_angular_velocity << '\n';
+   }
+   return continue_rotation || resolve_changed_reduced_rns;
 }
 
 void AmrSolverBase::project_materialized_initial_face_b()

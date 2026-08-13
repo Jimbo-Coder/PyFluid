@@ -264,9 +264,11 @@ baseline remains the latest broad integration baseline.
   equilibrium methods. A deliberately nonzero-mean-curvature CTTK slice is not
   the zero-spin XCTS/TOV endpoint.
 - The reusable physical-ID container and sequence behavior are defined in
-  `docs/infrastructure_conventions.md`. A remapped artifact is initialization,
-  not a new constraint solve; finer evolution cannot recreate unresolved ID
-  information. A continued XCTS target does solve again on the target grid.
+  `docs/infrastructure_conventions.md`. Materialization onto an evolution grid
+  is interpolation, not a new constraint solve, so finer evolution cannot
+  recreate unresolved ID information. A changed-grid reduced solve-only RNS
+  load re-solves XCTS even at unchanged angular velocity; a same-map load keeps
+  the direct sequence path.
 - Physical-ID schema v2 makes the source chart independent of the target
   executable: dimension, coordinate family, ordered active axes,
   periodic/reflection closure, and orthonormal tensor basis are runtime
@@ -344,6 +346,41 @@ baseline remains the latest broad integration baseline.
   Surface-fitted/multidomain refinement and residual-controlled angular-mode
   truncation remain promising isolated-star upgrades; general block-adaptive
   ID remains the appropriate later route for binaries.
+- Explicit-face layout identity includes the coordinate faces, not only AMReX
+  index boxes and physical bounds. Otherwise a requested remap can silently
+  retain the source map. Rotating artifacts persist an enclosing
+  `matter_outer_radius`; different-grid materialization evaluates the exact
+  target atmosphere outside that support so tiny power-law-atmosphere
+  interpolation error cannot create disconnected matter near the light
+  cylinder. Nodal ADM temporaries need ghost-filled derivatives and final
+  `OverrideSync`: overlapping nodal boxes formerly disagreed only in
+  `K_(r phi)`, by order unity at box boundaries.
+- The conventional reduced RNS map now keeps uniform source spacing to 1.8
+  times the nonrotating seed radius and one third of cells in the gravity
+  exterior; both are bounded runtime controls, while saved explicit faces are
+  authoritative. At `Omega=0.0329`, same-map re-solves at `512x128`, `768x192`,
+  and `1024x256` take `10.6/26.2/45.2 s`. Their mass-shedding indicators are
+  `0.049055/0.048556/0.048369`; bulk charges and raw surface slopes show
+  observed unequal-grid orders about `1.74--1.99`. The `1024x256` model has
+  `M_ADM=1.513929`, `M_b=1.651972`, `J=1.538163`, and `J/M^2=0.671106`.
+  Its losslessly compressed portable artifact is about 20 MiB and materializes
+  onto a full three-rank Cartesian `32^3` hierarchy in `1.18 s`, with maximum
+  primitive/conserved preflight errors `8.82e-13/1.12e-14`. This is a
+  high-resolution numerical sequence point, not yet a physical mass-shedding
+  limit.
+- Continuing that `1024x256` branch to `Omega=0.03295` converges in `129.0 s`
+  with residuals at most `1.31e-10`, zero recovery, `chi_ms=0.0293355`, and
+  `J/M^2=0.672529`. At `Omega=0.033`, the matter iteration reaches its update
+  tolerance but the surface ray no longer contains a resolved enthalpy zero,
+  so it is correctly rejected. The current high-resolution numerical bracket
+  is therefore `0.03295 < Omega_limit < 0.033`; it remains resolution- and
+  sequence-path-dependent rather than a quoted physical mass-shedding limit.
+- Offline parity-aware angular projection of the `1024x256` exterior gives
+  maximum global ADM-field errors at the source-ball boundary of roughly
+  `8.9e-6/1.8e-6/4.4e-7/1.1e-7` for `4/8/16/32` angular cells. Four cells are
+  too aggressive near the star. Actual radius-dependent angular reduction
+  needs a modal/multidomain interface and coupled residual test; COCAL keeps a
+  uniform theta grid and therefore does not validate this algorithm for us.
 - On finer same-domain physical-ID loads, outer target cell centers can lie in
   the half-cell strip outside the source cell-center interpolation hull. The
   reader must apply the field's physical exterior there. For TOV/RNS fluid it
@@ -409,11 +446,10 @@ baseline remains the latest broad integration baseline.
 
 ## Next Milestones
 
-1. Use the accepted explicit-face artifact path for a still finer adaptive RNS
-   endpoint sequence, with smaller same-grid continuation steps and convergence
-   of both raw surface slopes and global charges before quoting a physical
-   mass-shedding frequency. Profile angular mode amplitudes first; only then
-   add residual-controlled mode truncation or a surface-fitted multidomain map.
+1. Independently refine the `0.03295 < Omega_limit < 0.033` adaptive RNS
+   bracket before quoting a physical mass-shedding frequency. Prototype an exterior modal
+   domain only with at least 16 near-source modes, a smooth/interface-consistent
+   coupling, and unchanged global-charge/constraint convergence.
 2. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.

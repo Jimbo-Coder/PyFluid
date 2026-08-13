@@ -205,6 +205,33 @@ RuntimePhysicalIdCoordinateFaces runtime_coordinate_faces(
    return coordinates;
 }
 
+bool coordinate_faces_match(
+   RuntimePhysicalIdCoordinateFaces const& source,
+   PhysicalIdCoordinateFaces const* target,
+   int dimension
+)
+{
+   if (source.empty()) {
+      return target == nullptr || target->empty();
+   }
+   if (target == nullptr || source.size() != target->size()) {
+      return false;
+   }
+   for (std::size_t level = 0; level < source.size(); ++level) {
+      for (int direction = 0; direction < dimension; ++direction) {
+         auto const& source_faces = source[level][direction];
+         auto const& target_faces = (*target)[level][direction];
+         if (source_faces.size() != target_faces.size()
+             || !std::equal(
+                source_faces.begin(), source_faces.end(), target_faces.begin()
+             )) {
+            return false;
+         }
+      }
+   }
+   return true;
+}
+
 std::string periodicity_string(amrex::Geometry const& geometry)
 {
    std::ostringstream output;
@@ -675,14 +702,19 @@ void apply_initial_atmosphere_exterior(
    PhysicalInterpolationPoint const& point,
    PhysicalSystem system,
    int eos_method,
-   InitialAtmosphereParameters const& atmosphere
+   InitialAtmosphereParameters const& atmosphere,
+   amrex::Real matter_outer_radius
 )
 {
    // A cell-centred radial source has no sample exactly at the regular origin.
    // Clamping a target there to the innermost source centre is interpolation,
    // not stellar exterior.  Atmosphere continuation applies only beyond the
    // saved source radius.
-   if (!point.exterior || !(point.target_radius > point.source_radius)) {
+   const bool beyond_source = point.exterior
+      && point.target_radius > point.source_radius;
+   const bool beyond_matter = matter_outer_radius > 0.0
+      && point.target_radius > matter_outer_radius;
+   if (!beyond_source && !beyond_matter) {
       return;
    }
    const EOSThermodynamicState state = initial_atmosphere_state_for_method(
@@ -894,7 +926,8 @@ void interpolate_stored_field(
                   mapped_points[point],
                   system,
                   eos_method,
-                  atmosphere
+                  atmosphere,
+                  -1.0
                );
             }
          }
@@ -932,7 +965,8 @@ void interpolate_portable_field(
    bool stationary_rotating,
    PhysicalSystem system,
    int eos_method,
-   InitialAtmosphereParameters const& atmosphere
+   InitialAtmosphereParameters const& atmosphere,
+   amrex::Real matter_outer_radius
 )
 {
    if (target_geometry.size() != target_field.size()) {
@@ -1055,7 +1089,8 @@ void interpolate_portable_field(
                   point,
                   system,
                   eos_method,
-                  atmosphere
+                  atmosphere,
+                  matter_outer_radius
                );
             }
             for (int component = 0; component < num_components; ++component) {
@@ -1603,6 +1638,44 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          + path
       );
    }
+   if (result.source_ic == "rotating_star") {
+      try {
+         const auto stored_outer = metadata.find("matter_outer_radius");
+         if (stored_outer != metadata.end()) {
+            std::size_t parsed = 0;
+            result.matter_outer_radius = std::stod(
+               stored_outer->second, &parsed
+            );
+            if (parsed != stored_outer->second.size()) {
+               throw std::invalid_argument(
+                  "trailing matter_outer_radius metadata"
+               );
+            }
+         } else {
+            const amrex::Real equatorial = std::stod(
+               required_metadata_value(metadata, "equatorial_radius", path)
+            );
+            const amrex::Real polar = std::stod(
+               required_metadata_value(metadata, "polar_radius", path)
+            );
+            // Older artifacts store independent cylindrical and axial
+            // extents.  Their Euclidean combination is a conservative sphere
+            // enclosing every source matter cell.
+            result.matter_outer_radius = std::hypot(equatorial, polar);
+         }
+      } catch (std::exception const&) {
+         amrex::Abort(
+            "rotating physical-ID matter-support metadata is invalid in "
+            + path
+         );
+      }
+      if (!(result.matter_outer_radius > 0.0)
+          || !std::isfinite(result.matter_outer_radius)) {
+         amrex::Abort(
+            "rotating physical-ID matter-support radius is invalid in " + path
+         );
+      }
+   }
    result.rotation_center = {
       cfg.initial_data_rotation_center1,
       cfg.initial_data_rotation_center2,
@@ -1661,8 +1734,12 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       }
    }
    const bool exact_layout = exact_boxes
-      &&
-      required_metadata_value(metadata, "levels", path)
+      && same_chart
+      && source_dimension == AMREX_SPACEDIM
+      && coordinate_faces_match(
+         source_coordinate_faces, coordinate_faces, source_dimension
+      )
+      && required_metadata_value(metadata, "levels", path)
          == std::to_string(levels)
       && required_metadata_value(metadata, "domain", path)
          == domain_string(geometry.front())
@@ -1672,6 +1749,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          == real_vector_string(geometry.front(), true)
       && required_metadata_value(metadata, "refinement_ratios", path)
          == refinement_string(refinement_ratios);
+   result.exact_layout = exact_layout;
    if (coordinate_faces != nullptr) {
       if (exact_layout && !source_coordinate_faces.empty()) {
          coordinate_faces->clear();
@@ -1783,7 +1861,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          false,
          system,
          eos_method_code(cfg),
-         atmosphere
+         atmosphere,
+         result.matter_outer_radius
       );
       if (expects_spacetime) {
          const GridFieldSetInfo& adm_field_set = adm_initial_data_grid_fields();
@@ -1818,7 +1897,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
             result.source_ic == "rotating_star",
             system,
             eos_method_code(cfg),
-            atmosphere
+            atmosphere,
+            -1.0
          );
          adm_to_z4c(evolution_spacetime, target_adm);
       }

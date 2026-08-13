@@ -240,34 +240,55 @@ void materialize_axisymmetric_vertex_geometry(
       hierarchy.grids[0], amrex::IntVect::TheNodeVector()
    );
    amrex::MultiFab vertex_psi(
-      vertex_grids, hierarchy.distribution[0], 1, 0
+      vertex_grids, hierarchy.distribution[0], 1, 1
    );
    amrex::MultiFab vertex_lapse_psi(
-      vertex_grids, hierarchy.distribution[0], 1, 0
+      vertex_grids, hierarchy.distribution[0], 1, 1
    );
    amrex::MultiFab vertex_beta(
-      vertex_grids, hierarchy.distribution[0], 1, 0
+      vertex_grids, hierarchy.distribution[0], 1, 1
+   );
+   const auto scalar_boundary_records = initial_data_boundary_records(
+      hierarchy, scalar_boundary
+   );
+   const auto shift_boundary_records = initial_data_boundary_records(
+      hierarchy, shift_boundary
    );
    materialize_initial_data_vertices(
       hierarchy,
       amrex::Vector<amrex::MultiFab*>{&vertex_psi},
       amrex::Vector<amrex::MultiFab const*>{&conformal_factor},
-      initial_data_boundary_records(hierarchy, scalar_boundary),
+      scalar_boundary_records,
       2
    );
    materialize_initial_data_vertices(
       hierarchy,
       amrex::Vector<amrex::MultiFab*>{&vertex_lapse_psi},
       amrex::Vector<amrex::MultiFab const*>{&lapse_times_conformal_factor},
-      initial_data_boundary_records(hierarchy, scalar_boundary),
+      scalar_boundary_records,
       2
    );
    materialize_initial_data_vertices(
       hierarchy,
       amrex::Vector<amrex::MultiFab*>{&vertex_beta},
       amrex::Vector<amrex::MultiFab const*>{&azimuthal_shift},
-      initial_data_boundary_records(hierarchy, shift_boundary),
+      shift_boundary_records,
       2
+   );
+   detail::fill_initial_data_vertex_ghosts(
+      hierarchy,
+      amrex::Vector<amrex::MultiFab*>{&vertex_psi},
+      scalar_boundary_records
+   );
+   detail::fill_initial_data_vertex_ghosts(
+      hierarchy,
+      amrex::Vector<amrex::MultiFab*>{&vertex_lapse_psi},
+      scalar_boundary_records
+   );
+   detail::fill_initial_data_vertex_ghosts(
+      hierarchy,
+      amrex::Vector<amrex::MultiFab*>{&vertex_beta},
+      shift_boundary_records
    );
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto spacing = hierarchy.geometry[0].CellSizeArray();
@@ -352,6 +373,11 @@ void materialize_axisymmetric_vertex_geometry(
          );
       });
    }
+   // Nodal valid regions overlap at AMReX box boundaries.  The derivative
+   // inputs above are ghost-filled from one synchronized owner, and the
+   // completed ADM/Z4c field must retain that same single-valued contract for
+   // portable output and later materialization.
+   spacetime_state.OverrideSync(hierarchy.geometry[0].periodicity());
 }
 
 template <int EOSMethod>
