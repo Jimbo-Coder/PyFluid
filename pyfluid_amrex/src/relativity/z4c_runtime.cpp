@@ -8,6 +8,8 @@
 #include <cmath>
 
 #include "pyfluid_amrex/constants.hpp"
+#include "pyfluid_amrex/coordinate_locations.hpp"
+#include "pyfluid_amrex/mesh_geometry.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 #include "pyfluid_amrex/z4c_derivatives.hpp"
 
@@ -180,6 +182,9 @@ void initialize_z4c_state_at_offset(
    const Z4cInitialDataParameters parameters = z4c_initial_data_parameters(cfg);
    const auto lower = geometry.ProbLoArray();
    const auto spacing = geometry.CellSizeArray();
+   const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
+   const MeshAxes mesh_axes = mesh_axes_layout(cfg);
+   const bool node_centered = coordinate_offset == 0.0;
    const InitialDataFieldSelection fields = initial_data.fields;
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion() && !fill_ghosts)
@@ -190,19 +195,29 @@ void initialize_z4c_state_at_offset(
       const amrex::Box box = fill_ghosts ? mfi.fabbox() : mfi.tilebox();
       const auto output = state.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real x = lower[0]
-            + (static_cast<amrex::Real>(i) + coordinate_offset) * spacing[0];
+         const auto mesh_point = mesh_coordinate_triplet_at_location(
+            mesh_coordinate,
+            mesh_axes,
+            lower,
+            spacing,
+            i,
+            j,
+            k,
+            node_centered,
+            AMREX_SPACEDIM >= 2 && node_centered,
+            AMREX_SPACEDIM == 3 && node_centered
+         );
+         const auto physical = mesh_coordinate_triplet_to_cartesian(
+            mesh_coordinate, mesh_point
+         );
+         const amrex::Real x = physical[0];
          const amrex::Real phase = constants::two_pi
             * parameters.wave_number * (x - time);
          Z4cState point;
          if (initial_data.has_spacetime()) {
-            const amrex::Real y = AMREX_SPACEDIM >= 2
-               ? lower[1] + (static_cast<amrex::Real>(j) + coordinate_offset) * spacing[1]
-               : 0.0;
-            const amrex::Real z = AMREX_SPACEDIM == 3
-               ? lower[2] + (static_cast<amrex::Real>(k) + coordinate_offset) * spacing[2]
-               : 0.0;
-            point = initial_data.sample({x, y, z}).spacetime;
+            point = initial_data.sample(
+               {physical[0], physical[1], physical[2]}
+            ).spacetime;
          } else if (parameters.kind == Z4cInitialData::GaugeWave) {
             point = gauge_wave_state(
                phase, parameters.amplitude, constants::two_pi * parameters.wave_number

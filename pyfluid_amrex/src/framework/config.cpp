@@ -424,6 +424,7 @@ RunConfig read_config()
    initial_data_pp.queryAdd("shift", cfg.initial_data_shift);
    initial_data_pp.queryAdd("input_file", cfg.initial_data_input_file);
    initial_data_pp.queryAdd("output_file", cfg.initial_data_output_file);
+   initial_data_pp.queryAdd("solve_only", cfg.initial_data_solve_only);
    initial_data_pp.queryAdd("save_sequence", cfg.initial_data_save_sequence);
    initial_data_pp.queryAdd(
       "sequence_output_dir", cfg.initial_data_sequence_output_dir
@@ -1104,7 +1105,8 @@ void validate_config(RunConfig const& cfg)
             "Newtonian sources/gravity, or solid geometry"
          );
       }
-      if (cfg.mesh_coordinate != "cartesian" || cfg.mesh_patch_system != "single") {
+      if ((!cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian")
+          || cfg.mesh_patch_system != "single") {
          amrex::Abort("relativistic-fluid runtime evolution currently supports a single Cartesian patch");
       }
       const bool uses_characteristic_reconstruction =
@@ -1921,6 +1923,21 @@ void validate_config(RunConfig const& cfg)
        && cfg.initial_data_input_file == cfg.initial_data_output_file) {
       amrex::Abort(
          "initial_data.input_file and output_file must not name the same artifact"
+      );
+   }
+   if (cfg.initial_data_solve_only && cfg.initial_data_output_file.empty()) {
+      amrex::Abort(
+         "initial_data.solve_only requires initial_data.output_file"
+      );
+   }
+   if (cfg.initial_data_solve_only && !cfg.restart_file.empty()) {
+      amrex::Abort("initial_data.solve_only cannot restart evolution checkpoints");
+   }
+   if (cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"
+       && cfg.ic != "tov") {
+      amrex::Abort(
+         "reduced curvilinear initial-data solves currently support TOV; "
+         "rotating-star r-theta XCTS remains a separate solver capability"
       );
    }
    if (!cfg.initial_data_sequence_output_dir.empty()

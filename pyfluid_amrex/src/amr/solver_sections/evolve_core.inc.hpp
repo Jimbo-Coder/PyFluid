@@ -228,8 +228,10 @@
          load_checkpoint(cfg_.restart_file, time, dt);
       }
       enforce_cell_budget("building initial AMR hierarchy");
-      validate_active_hierarchy_for_evolution();
-      define_flux_registers();
+      if (!cfg_.initial_data_solve_only) {
+         validate_active_hierarchy_for_evolution();
+         define_flux_registers();
+      }
       enforce_solid_mask_nesting_from_fine();
       average_down_state();
       average_down_spacetime();
@@ -245,6 +247,13 @@
       const int start_step = level_steps_[0];
       run_evolution_preflight(time);
       debug_check_state_all_levels("initial accepted state", start_step, time, true);
+      if (cfg_.initial_data_solve_only) {
+         write_physical_initial_data_artifact();
+         report_relativistic_recovery_events(start_step, time);
+         amrex::Print() << "completed initial-data-only solve and artifact write\n";
+         print_relativistic_recovery_summary();
+         return;
+      }
       if (!cfg_.initial_data_output_file.empty()) {
          write_physical_initial_data_artifact();
       }
@@ -824,19 +833,7 @@
          amrex::Print() << "AMR regrid attempts=" << regrid_attempt_count_
                         << " noops=" << regrid_noop_count_
                         << " modified_levels=" << regrid_modified_level_count_ << "\n";
-         if (physical_system_is_relativistic(physics_system_)) {
-            amrex::Print()
-               << "Relativistic recovery c2p_fallbacks="
-               << relativistic_c2p_fallback_count_
-               << " atmosphere_resets="
-               << relativistic_atmosphere_reset_count_
-               << " rmhd_pwl_corrections="
-               << rmhd_pwl_correction_count_
-               << " rmhd_pwc_corrections="
-               << rmhd_pwc_correction_count_
-               << " rmhd_riemann_hll_fallbacks="
-               << rmhd_riemann_hll_fallback_count_ << "\n";
-         }
+         print_relativistic_recovery_summary();
       }
    }
 

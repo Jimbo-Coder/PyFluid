@@ -17,8 +17,9 @@ make a path supported.
 | Single-patch Cartesian HD/MHD | Production numerical path |
 | Cartesian SRHD/SRMHD and fixed-curved GRHD/GRMHD | Production for focused validated combinations |
 | Coupled evolved-Z4c matter | Validated vertical slice; long stellar evolution remains an explicit gate |
-| TOV and XCTS rotating-star initial data | Implemented for the documented EoS, rotation-law, and symmetry boundaries |
-| Reusable physical-ID and sequence artifacts | Implemented through the common materialization interface |
+| TOV initial data | Direct 3D Cartesian and portable spherical-1D solve/materialization paths validated |
+| XCTS rotating-star initial data | 3D Cartesian path implemented for the documented EoS, rotation-law, and symmetry boundaries; axisymmetric `r theta` solve not yet implemented |
+| Reusable physical-ID and sequence artifacts | Same-chart and schema-v2 cross-dimension/cross-coordinate handoff implemented through one materialization interface |
 | Native 1D, 2D, 3D | Production build modes |
 | AMR, reflux, average-down, restart | Production infrastructure |
 | AMR subcycling | Production for validated Cartesian cases |
@@ -86,6 +87,31 @@ RMHD evolution currently accepts only `ideal_gas`. Cold and hybrid
 polytropes remain available to the supported nonmagnetized relativistic and
 stellar paths; adding them to RMHD requires a consistent magnetic C2P, signal-
 speed, atmosphere, and evolution validation boundary.
+
+## Initial-Data Solve And Handoff
+
+Initial-data solving and evolution are separate owners. A solver produces
+portable cell-centred physical fluid primitives and nodal 3+1 ADM geometry;
+the common materializer constructs the target hierarchy's conserved fluid and
+Z4c state. `initial_data.solve_only=1` terminates after preflight and artifact
+write. This mode neither selects nor instantiates an evolution reconstruction,
+Riemann, or timestep algorithm beyond the existing bundle used to enter the
+shared initialization lifecycle.
+
+The schema-v2 artifact describes its source chart at runtime. It does not add
+coordinate or dimension template products. Exact hierarchy caches remain a
+lossless same-layout acceleration. A different target dimension, coordinate,
+resolution, or physical extent samples the portable physical fields, transforms
+catalog-declared tensors through orthonormal Cartesian components, completes
+the physical exterior, and then runs the normal target preflight. Evolution
+remains three-dimensional Cartesian for GRHD/GRMHD in the current production
+contract.
+
+Spherical one-dimensional TOV is the validated reduced solve. Axisymmetric
+rotating XCTS is not obtained by merely relabelling a Cartesian operator: its
+next implementation layer is a spherical `r theta` scalar/vector elliptic
+operator with origin/axis/equator/outer-boundary regularity, followed by a
+zero-spin TOV equivalence gate and only then nonzero uniform rotation.
 
 ## Public Interfaces And Compilation
 

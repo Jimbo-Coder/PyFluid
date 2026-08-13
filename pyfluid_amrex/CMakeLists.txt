@@ -200,6 +200,7 @@ set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
    src/initial_data/initial_data_materialization.cpp
    src/initial_data/initial_data_provider.cpp
    src/initial_data/physical_id.cpp
+   src/initial_data/physical_id_interpolation.cpp
    src/initial_data/initial_data_rhd.cpp
    src/initial_data/initial_data_state.cpp
    src/initial_data/rotating_star_initial_data.cpp
@@ -265,6 +266,12 @@ set(PYFLUID_AMREX_RMHD_RIEMANN_CHECK_SOURCES
 set(PYFLUID_AMREX_STATE_INTERPOLATION_CHECK_SOURCES
    src/amr/state_interpolation.cpp
    tests/state_interpolation_check.cpp
+)
+
+set(PYFLUID_AMREX_PHYSICAL_ID_INTERPOLATION_CHECK_SOURCES
+   src/framework/fields.cpp
+   src/initial_data/physical_id_interpolation.cpp
+   tests/physical_id_interpolation_check.cpp
 )
 
 set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
@@ -672,6 +679,22 @@ foreach(dim 1 2 3)
       endif()
 
       if(dim EQUAL 3)
+         add_executable(
+            pyfluid_amrex_physical_id_interpolation_check
+            EXCLUDE_FROM_ALL
+            ${PYFLUID_AMREX_PHYSICAL_ID_INTERPOLATION_CHECK_SOURCES}
+         )
+         pyfluid_amrex_configure_target(
+            pyfluid_amrex_physical_id_interpolation_check
+            ${dim}
+         )
+         if(TARGET pyfluid_amrex_generate_kernels)
+            add_dependencies(
+               pyfluid_amrex_physical_id_interpolation_check
+               pyfluid_amrex_generate_kernels
+            )
+         endif()
+
          add_executable(
             pyfluid_amrex_surface_check
             EXCLUDE_FROM_ALL

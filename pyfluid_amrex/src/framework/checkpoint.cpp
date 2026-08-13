@@ -630,6 +630,235 @@ MultilevelHdf5FieldLayout read_multilevel_hdf5_field_layout(
    return layout;
 }
 
+RuntimeDimensionHdf5Field read_runtime_dimension_hdf5_field(
+   std::string const& root,
+   std::string const& field_name
+)
+{
+   const std::string path = checkpoint_field_path(root, field_name);
+   const hid_t file = H5Fopen(path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+   if (file < 0) {
+      checkpoint_hdf5_error("cannot open runtime-dimension HDF5 field", path);
+   }
+   auto read_root_int = [&](char const* name) {
+      const hid_t attribute = H5Aopen(file, name, H5P_DEFAULT);
+      int value = 0;
+      if (attribute < 0
+          || H5Aread(attribute, H5T_NATIVE_INT, &value) < 0) {
+         checkpoint_hdf5_error(
+            std::string("runtime-dimension HDF5 field is missing attribute ")
+               + name,
+            path
+         );
+      }
+      H5Aclose(attribute);
+      return value;
+   };
+
+   RuntimeDimensionHdf5Field field;
+   field.dimension = read_root_int("dim");
+   field.num_components = read_root_int("num_components");
+   const int num_levels = read_root_int("num_levels");
+   if (field.dimension < 1 || field.dimension > 3
+       || field.num_components <= 0 || num_levels <= 0) {
+      checkpoint_hdf5_error(
+         "runtime-dimension HDF5 field has invalid root metadata", path
+      );
+   }
+   field.levels.resize(num_levels);
+   const hid_t real_type = sizeof(amrex::Real) == sizeof(double)
+      ? H5T_NATIVE_DOUBLE
+      : H5T_NATIVE_FLOAT;
+
+   for (int level = 0; level < num_levels; ++level) {
+      RuntimeDimensionHdf5Level& output = field.levels[level];
+      const std::string level_name = "level_" + std::to_string(level);
+      const hid_t group = H5Gopen2(file, level_name.c_str(), H5P_DEFAULT);
+      if (group < 0) {
+         checkpoint_hdf5_error(
+            "runtime-dimension HDF5 field is missing " + level_name, path
+         );
+      }
+
+      auto read_real_vector = [&](char const* name, auto& values) {
+         const hid_t attribute = H5Aopen(group, name, H5P_DEFAULT);
+         if (attribute < 0
+             || H5Aread(attribute, real_type, values.data()) < 0) {
+            checkpoint_hdf5_error(
+               std::string("cannot read runtime-dimension HDF5 ") + name,
+               path
+            );
+         }
+         H5Aclose(attribute);
+      };
+      read_real_vector("prob_lo", output.prob_lo);
+      read_real_vector("prob_hi", output.prob_hi);
+
+      const hid_t domain_attribute = H5Aopen(
+         group, "prob_domain", H5P_DEFAULT
+      );
+      const hid_t domain_type = domain_attribute >= 0
+         ? H5Aget_type(domain_attribute)
+         : -1;
+      std::array<int, 6> domain_bounds{};
+      if (domain_attribute < 0 || domain_type < 0
+          || H5Tget_size(domain_type)
+             != static_cast<std::size_t>(2 * field.dimension) * sizeof(int)
+          || H5Aread(
+                domain_attribute, domain_type, domain_bounds.data()
+             ) < 0) {
+         checkpoint_hdf5_error(
+            "cannot read runtime-dimension HDF5 prob_domain", path
+         );
+      }
+      for (int direction = 0; direction < field.dimension; ++direction) {
+         output.domain_lower[direction] = domain_bounds[direction];
+         output.domain_upper[direction] =
+            domain_bounds[field.dimension + direction];
+      }
+      H5Tclose(domain_type);
+      H5Aclose(domain_attribute);
+
+      const hid_t boxes_dataset = H5Dopen2(
+         group, "boxes", H5P_DEFAULT
+      );
+      const hid_t offsets_dataset = H5Dopen2(
+         group, "data:offsets=0", H5P_DEFAULT
+      );
+      const hid_t data_dataset = H5Dopen2(
+         group, "data:datatype=0", H5P_DEFAULT
+      );
+      if (boxes_dataset < 0 || offsets_dataset < 0 || data_dataset < 0) {
+         checkpoint_hdf5_error(
+            "runtime-dimension HDF5 field has an incomplete level layout",
+            path
+         );
+      }
+
+      const hid_t boxes_space = H5Dget_space(boxes_dataset);
+      hsize_t num_boxes_hdf5 = 0;
+      if (H5Sget_simple_extent_ndims(boxes_space) != 1
+          || H5Sget_simple_extent_dims(
+                boxes_space, &num_boxes_hdf5, nullptr
+             ) < 0) {
+         checkpoint_hdf5_error(
+            "runtime-dimension HDF5 boxes have invalid shape", path
+         );
+      }
+      H5Sclose(boxes_space);
+      const std::size_t num_boxes = static_cast<std::size_t>(num_boxes_hdf5);
+      const hid_t boxes_type = H5Dget_type(boxes_dataset);
+      if (H5Tget_size(boxes_type)
+          != static_cast<std::size_t>(2 * field.dimension) * sizeof(int)) {
+         checkpoint_hdf5_error(
+            "runtime-dimension HDF5 boxes have incompatible type", path
+         );
+      }
+      std::vector<int> box_bounds(
+         num_boxes * static_cast<std::size_t>(2 * field.dimension)
+      );
+      std::vector<unsigned long long> offsets(num_boxes + 1);
+      if (H5Dread(
+             boxes_dataset,
+             boxes_type,
+             H5S_ALL,
+             H5S_ALL,
+             H5P_DEFAULT,
+             box_bounds.data()
+          ) < 0
+          || H5Dread(
+                offsets_dataset,
+                H5T_NATIVE_ULLONG,
+                H5S_ALL,
+                H5S_ALL,
+                H5P_DEFAULT,
+                offsets.data()
+             ) < 0) {
+         checkpoint_hdf5_error(
+            "cannot read runtime-dimension HDF5 box metadata", path
+         );
+      }
+      H5Tclose(boxes_type);
+
+      const hid_t data_space = H5Dget_space(data_dataset);
+      hsize_t data_size_hdf5 = 0;
+      if (H5Sget_simple_extent_ndims(data_space) != 1
+          || H5Sget_simple_extent_dims(
+                data_space, &data_size_hdf5, nullptr
+             ) < 0) {
+         checkpoint_hdf5_error(
+            "runtime-dimension HDF5 data have invalid shape", path
+         );
+      }
+      H5Sclose(data_space);
+      std::vector<amrex::Real> all_data(
+         static_cast<std::size_t>(data_size_hdf5)
+      );
+      if (H5Dread(
+             data_dataset,
+             real_type,
+             H5S_ALL,
+             H5S_ALL,
+             H5P_DEFAULT,
+             all_data.data()
+          ) < 0) {
+         checkpoint_hdf5_error(
+            "cannot read runtime-dimension HDF5 data", path
+         );
+      }
+
+      if (offsets.empty() || offsets.front() != 0
+          || offsets.back() != all_data.size()) {
+         checkpoint_hdf5_error(
+            "runtime-dimension HDF5 offsets are inconsistent", path
+         );
+      }
+      output.boxes.resize(num_boxes);
+      for (std::size_t box_index = 0; box_index < num_boxes; ++box_index) {
+         RuntimeDimensionHdf5Box& box = output.boxes[box_index];
+         std::size_t points = 1;
+         for (int direction = 0; direction < field.dimension; ++direction) {
+            box.lower[direction] = box_bounds[
+               box_index * 2 * field.dimension + direction
+            ];
+            box.upper[direction] = box_bounds[
+               box_index * 2 * field.dimension
+                  + field.dimension + direction
+            ];
+            if (box.upper[direction] < box.lower[direction]) {
+               checkpoint_hdf5_error(
+                  "runtime-dimension HDF5 box has invalid bounds", path
+               );
+            }
+            points *= static_cast<std::size_t>(
+               box.upper[direction] - box.lower[direction] + 1
+            );
+         }
+         const std::size_t begin = static_cast<std::size_t>(
+            offsets[box_index]
+         );
+         const std::size_t end = static_cast<std::size_t>(
+            offsets[box_index + 1]
+         );
+         if (end < begin
+             || end - begin
+                != points * static_cast<std::size_t>(field.num_components)) {
+            checkpoint_hdf5_error(
+               "runtime-dimension HDF5 box has incompatible data size", path
+            );
+         }
+         box.data.assign(all_data.begin() + begin, all_data.begin() + end);
+      }
+
+      H5Dclose(boxes_dataset);
+      H5Dclose(offsets_dataset);
+      H5Dclose(data_dataset);
+      H5Gclose(group);
+   }
+   H5Fclose(file);
+   return field;
+}
+
 std::string checkpoint_field_path(std::string const& checkpoint_name, std::string const& field_name)
 {
    return checkpoint_field_prefix(checkpoint_name, field_name) + ".h5";

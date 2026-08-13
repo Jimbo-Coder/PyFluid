@@ -3,6 +3,7 @@
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/coordinate_locations.hpp"
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
+#include "pyfluid_amrex/initial_data/physical_id_interpolation.hpp"
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
@@ -36,8 +37,9 @@
 namespace pyfluid_amrex {
 namespace {
 
-constexpr int PhysicalIdSchemaVersion = 1;
-constexpr char const* PhysicalIdFormat = "PyFluidPhysicalIDHDF5-v1";
+constexpr int PhysicalIdSchemaVersion = 2;
+constexpr int LegacyPhysicalIdSchemaVersion = 1;
+constexpr char const* PhysicalIdFormat = "PyFluidPhysicalIDHDF5-v2";
 constexpr char const* PhysicalFluidField = "physical_fluid";
 constexpr char const* AdmGeometryField = "adm_geometry";
 constexpr char const* EvolutionFluidField = "evolution_fluid_cache";
@@ -325,19 +327,23 @@ struct StoredPhysicalHierarchy {
    amrex::Vector<amrex::Geometry> geometry;
    amrex::Vector<amrex::BoxArray> grids;
    amrex::Vector<amrex::DistributionMapping> distribution;
-   std::array<int, AMREX_SPACEDIM> reflection_lo{};
-   std::array<int, AMREX_SPACEDIM> reflection_hi{};
+   std::array<int, 3> reflection_lo{};
+   std::array<int, 3> reflection_hi{};
 };
 
-std::array<int, AMREX_SPACEDIM> parse_binary_directions(
+std::array<int, 3> parse_binary_directions(
    std::string const& value,
    std::string const& path,
-   std::string const& key
+   std::string const& key,
+   int dimension
 )
 {
-   std::array<int, AMREX_SPACEDIM> flags{};
+   if (dimension < 1 || dimension > 3) {
+      amrex::Abort("invalid physical-ID dimension metadata in " + path);
+   }
+   std::array<int, 3> flags{};
    std::istringstream input(value);
-   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+   for (int direction = 0; direction < dimension; ++direction) {
       std::string item;
       if (!std::getline(input, item, ',')) {
          amrex::Abort(
@@ -386,7 +392,8 @@ StoredPhysicalHierarchy stored_physical_hierarchy(
    const auto periodic = parse_binary_directions(
       required_metadata_value(metadata, "periodicity", path),
       path,
-      "periodicity"
+      "periodicity",
+      AMREX_SPACEDIM
    );
    const auto reflection_lo = metadata.find("reflection_lo");
    const auto reflection_hi = metadata.find("reflection_hi");
@@ -397,10 +404,10 @@ StoredPhysicalHierarchy stored_physical_hierarchy(
    }
    if (reflection_lo != metadata.end()) {
       hierarchy.reflection_lo = parse_binary_directions(
-         reflection_lo->second, path, "reflection_lo"
+         reflection_lo->second, path, "reflection_lo", AMREX_SPACEDIM
       );
       hierarchy.reflection_hi = parse_binary_directions(
-         reflection_hi->second, path, "reflection_hi"
+         reflection_hi->second, path, "reflection_hi", AMREX_SPACEDIM
       );
    }
    for (std::size_t level = 0; level < layout.boxes.size(); ++level) {
@@ -560,6 +567,7 @@ enum class PhysicalFieldExterior {
    Constant,
    InitialAtmosphere,
    AsymptoticallyFlatAdm,
+   TovSchwarzschildAdm,
 };
 
 EOSThermodynamicState initial_atmosphere_state_for_method(
@@ -586,7 +594,11 @@ void apply_initial_atmosphere_exterior(
    InitialAtmosphereParameters const& atmosphere
 )
 {
-   if (!point.exterior) {
+   // A cell-centred radial source has no sample exactly at the regular origin.
+   // Clamping a target there to the innermost source centre is interpolation,
+   // not stellar exterior.  Atmosphere continuation applies only beyond the
+   // saved source radius.
+   if (!point.exterior || !(point.target_radius > point.source_radius)) {
       return;
    }
    const EOSThermodynamicState state = initial_atmosphere_state_for_method(
@@ -637,6 +649,53 @@ void apply_adm_exterior(
       values[component] = asymptotic
          + (values[component] - asymptotic) * scale;
    }
+}
+
+void apply_tov_schwarzschild_adm_exterior(
+   amrex::Real* values,
+   PhysicalInterpolationPoint const& point
+)
+{
+   if (!point.exterior || !(point.target_radius > point.source_radius)
+       || !(point.source_radius > 0.0)) {
+      return;
+   }
+   const amrex::Real determinant =
+      values[AdmGamma11]
+         * (values[AdmGamma22] * values[AdmGamma33]
+            - values[AdmGamma23] * values[AdmGamma23])
+      - values[AdmGamma12]
+         * (values[AdmGamma12] * values[AdmGamma33]
+            - values[AdmGamma13] * values[AdmGamma23])
+      + values[AdmGamma13]
+         * (values[AdmGamma12] * values[AdmGamma23]
+            - values[AdmGamma13] * values[AdmGamma22]);
+   if (!(determinant > 0.0) || !std::isfinite(determinant)) {
+      amrex::Abort(
+         "TOV exterior continuation requires a finite positive spatial metric"
+      );
+   }
+   const amrex::Real source_conformal_factor = std::pow(determinant, 1.0 / 12.0);
+   const amrex::Real mass = 2.0 * point.source_radius
+      * (source_conformal_factor - 1.0);
+   const amrex::Real compact_radius = mass / (2.0 * point.target_radius);
+   const amrex::Real target_conformal_factor = 1.0 + compact_radius;
+   const amrex::Real spatial_diagonal = std::pow(
+      target_conformal_factor, 4.0
+   );
+   values[AdmGamma11] = spatial_diagonal;
+   values[AdmGamma12] = 0.0;
+   values[AdmGamma13] = 0.0;
+   values[AdmGamma22] = spatial_diagonal;
+   values[AdmGamma23] = 0.0;
+   values[AdmGamma33] = spatial_diagonal;
+   for (int component = AdmK11; component <= AdmK33; ++component) {
+      values[component] = 0.0;
+   }
+   values[AdmLapse] = (1.0 - compact_radius) / target_conformal_factor;
+   values[AdmShift1] = 0.0;
+   values[AdmShift2] = 0.0;
+   values[AdmShift3] = 0.0;
 }
 
 void interpolate_stored_field(
@@ -734,6 +793,15 @@ void interpolate_stored_field(
                   stationary_rotating
                );
             }
+         } else if (
+            exterior == PhysicalFieldExterior::TovSchwarzschildAdm
+         ) {
+            for (std::size_t point = 0; point < mapped_points.size(); ++point) {
+               apply_tov_schwarzschild_adm_exterior(
+                  values.data() + point * num_components,
+                  mapped_points[point]
+               );
+            }
          } else if (exterior == PhysicalFieldExterior::InitialAtmosphere) {
             for (std::size_t point = 0; point < mapped_points.size(); ++point) {
                apply_initial_atmosphere_exterior(
@@ -757,6 +825,132 @@ void interpolate_stored_field(
                   ];
                }
                ++point;
+            }
+         }
+      }
+      target.FillBoundary(target_geometry[level].periodicity());
+   }
+}
+
+void interpolate_portable_field(
+   std::string const& path,
+   std::string const& name,
+   PhysicalIdChart const& source_chart,
+   PhysicalIdChart const& target_chart,
+   amrex::Vector<amrex::Geometry> const& target_geometry,
+   MutablePhysicalIdField const& target_field,
+   GridFieldSetInfo const& field_set,
+   amrex::IndexType centering,
+   amrex::GpuArray<amrex::Real, 3> const& origin,
+   PhysicalFieldExterior exterior,
+   bool stationary_rotating,
+   PhysicalSystem system,
+   int eos_method,
+   InitialAtmosphereParameters const& atmosphere
+)
+{
+   if (target_geometry.size() != target_field.size()) {
+      amrex::Abort("portable physical-ID target hierarchy is inconsistent");
+   }
+   const int num_components = grid_field_component_count(field_set);
+   if (target_field.empty() || target_field.front()->nComp() != num_components) {
+      amrex::Abort("portable physical-ID target component layout is inconsistent");
+   }
+   PortablePhysicalIdInterpolator interpolator(
+      read_runtime_dimension_hdf5_field(path, name),
+      source_chart,
+      field_set,
+      centering == amrex::IndexType::TheNodeType()
+   );
+   const int target_coordinate = target_chart.coordinate_kind;
+   MeshAxes axes{};
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      axes.axis[direction] = target_chart.axes[direction];
+   }
+
+   for (std::size_t level = 0; level < target_field.size(); ++level) {
+      amrex::MultiFab& target = *target_field[level];
+      const auto target_lo = target_geometry[level].ProbLoArray();
+      const auto target_dx = target_geometry[level].CellSizeArray();
+      for (int box_index = 0; box_index < target.boxArray().size(); ++box_index) {
+         if (target.DistributionMap()[box_index]
+             != amrex::ParallelDescriptor::MyProc()) {
+            continue;
+         }
+         const amrex::Box box = target.boxArray()[box_index];
+         amrex::FArrayBox& fab = target[box_index];
+         for (amrex::BoxIterator iterator(box); iterator.ok(); ++iterator) {
+            const amrex::IntVect& index = iterator();
+            const auto target_q = mesh_coordinate_triplet_at_location(
+               target_coordinate,
+               axes,
+               target_lo,
+               target_dx,
+               index[0],
+#if (AMREX_SPACEDIM >= 2)
+               index[1],
+#else
+               0,
+#endif
+#if (AMREX_SPACEDIM == 3)
+               index[2],
+#else
+               0,
+#endif
+               centering.nodeCentered(0),
+               AMREX_SPACEDIM >= 2 && centering.nodeCentered(1),
+               AMREX_SPACEDIM == 3 && centering.nodeCentered(2)
+            );
+            const auto target_cartesian = mesh_coordinate_triplet_to_cartesian(
+               target_coordinate, target_q
+            );
+            PortablePhysicalIdSample sample = interpolator.sample(
+               {target_cartesian[0], target_cartesian[1], target_cartesian[2]},
+               target_chart
+            );
+            PhysicalInterpolationPoint point;
+            point.exterior = sample.exterior;
+            point.target_mesh = {target_q[0], target_q[1], target_q[2]};
+            point.target_physical = {
+               target_cartesian[0], target_cartesian[1], target_cartesian[2]
+            };
+            amrex::Real source_radius_squared = 0.0;
+            amrex::Real target_radius_squared = 0.0;
+            for (int component = 0; component < 3; ++component) {
+               const amrex::Real source_delta =
+                  sample.source_cartesian[component] - origin[component];
+               const amrex::Real target_delta =
+                  target_cartesian[component] - origin[component];
+               source_radius_squared += source_delta * source_delta;
+               target_radius_squared += target_delta * target_delta;
+            }
+            point.source_radius = std::sqrt(source_radius_squared);
+            point.target_radius = std::sqrt(target_radius_squared);
+            if (exterior == PhysicalFieldExterior::AsymptoticallyFlatAdm) {
+               apply_adm_exterior(
+                  sample.values.data(),
+                  num_components,
+                  point,
+                  stationary_rotating
+               );
+            } else if (
+               exterior == PhysicalFieldExterior::TovSchwarzschildAdm
+            ) {
+               apply_tov_schwarzschild_adm_exterior(
+                  sample.values.data(), point
+               );
+            } else if (exterior == PhysicalFieldExterior::InitialAtmosphere) {
+               apply_initial_atmosphere_exterior(
+                  sample.values.data(),
+                  num_components,
+                  point,
+                  system,
+                  eos_method,
+                  atmosphere
+               );
+            }
+            for (int component = 0; component < num_components; ++component) {
+               fab(iterator(), component) = sample.values[component];
             }
          }
       }
@@ -875,14 +1069,19 @@ void write_physical_initial_data(
    write_field(
       path, PhysicalFluidField, primitive, geometry, refinement_ratios, compression
    );
-   write_field(
-      path,
-      EvolutionFluidField,
-      evolution_fluid,
-      geometry,
-      refinement_ratios,
-      compression
+   const bool write_exact_caches = !(
+      cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"
    );
+   if (write_exact_caches) {
+      write_field(
+         path,
+         EvolutionFluidField,
+         evolution_fluid,
+         geometry,
+         refinement_ratios,
+         compression
+      );
+   }
 
    if (has_spacetime) {
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> adm;
@@ -895,14 +1094,16 @@ void write_physical_initial_data(
          refinement_ratios,
          compression
       );
-      write_field(
-         path,
-         EvolutionSpacetimeField,
-         evolution_spacetime,
-         geometry,
-         refinement_ratios,
-         compression
-      );
+      if (write_exact_caches) {
+         write_field(
+            path,
+            EvolutionSpacetimeField,
+            evolution_spacetime,
+            geometry,
+            refinement_ratios,
+            compression
+         );
+      }
    }
 
    const bool has_ct = !face_magnetic[0].empty();
@@ -924,7 +1125,7 @@ void write_physical_initial_data(
 
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::ofstream header(std::filesystem::path(path) / "Header");
-      header << "PyFluid physical initial data v1\n"
+      header << "PyFluid physical initial data v2\n"
              << "Provider-independent physical fields with exact same-grid "
                 "evolution caches.\n";
       std::ofstream metadata(std::filesystem::path(path) / "Header.meta");
@@ -943,6 +1144,7 @@ void write_physical_initial_data(
                      mesh_coordinate_code(cfg.mesh_coordinate), cfg.mesh_axes
                   )
                << '\n';
+      metadata << "# component_basis=mesh_orthonormal\n";
       metadata << "# domain=" << domain_string(geometry.front()) << '\n';
       metadata << "# prob_lo=" << real_vector_string(geometry.front(), false) << '\n';
       metadata << "# prob_hi=" << real_vector_string(geometry.front(), true) << '\n';
@@ -976,6 +1178,7 @@ void write_physical_initial_data(
       metadata << "# passive_scalars=" << cfg.passive_scalars << '\n';
       metadata << "# has_spacetime=" << has_spacetime << '\n';
       metadata << "# has_ct=" << has_ct << '\n';
+      metadata << "# has_exact_caches=" << write_exact_caches << '\n';
       metadata << "# source_ic=" << cfg.ic << '\n';
       metadata << "# spacetime_initial_data="
                << cfg.spacetime_initial_data << '\n';
@@ -1037,9 +1240,24 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    );
    const auto metadata = read_metadata(path);
    require_metadata(metadata, "type", "physical_initial_data", path);
-   require_metadata(metadata, "schema_version", std::to_string(PhysicalIdSchemaVersion), path);
+   int schema_version = 0;
+   int source_dimension = 0;
+   try {
+      schema_version = std::stoi(
+         required_metadata_value(metadata, "schema_version", path)
+      );
+      source_dimension = std::stoi(
+         required_metadata_value(metadata, "amrex_spacedim", path)
+      );
+   } catch (std::exception const&) {
+      amrex::Abort("physical initial-data schema metadata is invalid in " + path);
+   }
+   if ((schema_version != PhysicalIdSchemaVersion
+        && schema_version != LegacyPhysicalIdSchemaVersion)
+       || source_dimension < 1 || source_dimension > 3) {
+      amrex::Abort("unsupported physical initial-data schema in " + path);
+   }
    require_metadata(metadata, "format", "hdf5", path);
-   require_metadata(metadata, "amrex_spacedim", std::to_string(AMREX_SPACEDIM), path);
    require_metadata(metadata, "physics", cfg.physics, path);
    require_metadata(metadata, "fluid_components", std::to_string(fluid_components), path);
    require_metadata(
@@ -1048,16 +1266,71 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       std::to_string(physical_fluid_components),
       path
    );
-   require_metadata(metadata, "mesh_coordinate", cfg.mesh_coordinate, path);
-   require_metadata(
-      metadata,
-      "mesh_axes",
-      mesh_axes_or_default(
-         mesh_coordinate_code(cfg.mesh_coordinate), cfg.mesh_axes
-      ),
-      path
+   const std::string source_coordinate = required_metadata_value(
+      metadata, "mesh_coordinate", path
    );
-   require_metadata(metadata, "periodicity", periodicity_string(geometry.front()), path);
+   const std::string source_axes_value = required_metadata_value(
+      metadata, "mesh_axes", path
+   );
+   const auto source_periodic = parse_binary_directions(
+      required_metadata_value(metadata, "periodicity", path),
+      path,
+      "periodicity",
+      source_dimension
+   );
+   const auto reflection_lo_entry = metadata.find("reflection_lo");
+   const auto reflection_hi_entry = metadata.find("reflection_hi");
+   if ((reflection_lo_entry == metadata.end())
+       != (reflection_hi_entry == metadata.end())) {
+      amrex::Abort(
+         "physical-ID reflection metadata must define both sides in " + path
+      );
+   }
+   const std::array<int, 3> source_reflection_lo =
+      reflection_lo_entry == metadata.end()
+      ? std::array<int, 3>{}
+      : parse_binary_directions(
+           reflection_lo_entry->second,
+           path,
+           "reflection_lo",
+           source_dimension
+        );
+   const std::array<int, 3> source_reflection_hi =
+      reflection_hi_entry == metadata.end()
+      ? std::array<int, 3>{}
+      : parse_binary_directions(
+           reflection_hi_entry->second,
+           path,
+           "reflection_hi",
+           source_dimension
+        );
+   const PhysicalIdChart source_chart = make_physical_id_chart(
+      source_dimension,
+      source_coordinate,
+      source_axes_value,
+      source_periodic,
+      source_reflection_lo,
+      source_reflection_hi
+   );
+   const PhysicalIdChart target_chart = current_physical_id_chart(
+      cfg.mesh_coordinate, cfg.mesh_axes
+   );
+   bool same_chart = source_chart.dimension == target_chart.dimension
+      && source_chart.coordinate_kind == target_chart.coordinate_kind;
+   for (int direction = 0; same_chart && direction < AMREX_SPACEDIM;
+        ++direction) {
+      same_chart = source_chart.axes[direction] == target_chart.axes[direction]
+         && source_chart.periodic[direction]
+            == geometry.front().isPeriodic(direction);
+   }
+   const bool portable_basis = metadata.find("component_basis") != metadata.end()
+      && metadata.at("component_basis") == "mesh_orthonormal";
+   if (!same_chart && !portable_basis) {
+      amrex::Abort(
+         "cross-coordinate or cross-dimensional physical-ID materialization "
+         "requires a schema-v2 mesh_orthonormal artifact"
+      );
+   }
    require_metadata(metadata, "eos", cfg.eos, path);
    const auto eos_preset_entry = metadata.find("eos_preset");
    if (eos_preset_entry != metadata.end()) {
@@ -1120,6 +1393,12 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    }
    require_metadata(metadata, "has_spacetime", expects_spacetime ? "1" : "0", path);
    const bool expects_ct = !face_magnetic[0].empty();
+   if (expects_ct && !same_chart) {
+      amrex::Abort(
+         "cross-coordinate physical-ID materialization does not yet support "
+         "face-centered constrained transport fields"
+      );
+   }
    if (expects_ct) {
       for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
          validate_level_fields(
@@ -1211,19 +1490,22 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          );
       }
    }
-   const MultilevelHdf5FieldLayout stored_layout =
-      read_multilevel_hdf5_field_layout(path, PhysicalFluidField);
-   bool exact_boxes = static_cast<int>(stored_layout.boxes.size()) == levels;
-   for (int level = 0; exact_boxes && level < levels; ++level) {
-      const amrex::BoxArray& stored_boxes = stored_layout.boxes[level];
-      const amrex::BoxArray& target_boxes = evolution_fluid[level]->boxArray();
-      exact_boxes = stored_boxes.size() == target_boxes.size();
-      for (int target = 0; exact_boxes && target < target_boxes.size(); ++target) {
-         bool found = false;
-         for (int stored = 0; stored < stored_boxes.size(); ++stored) {
-            found = found || stored_boxes[stored] == target_boxes[target];
+   bool exact_boxes = false;
+   if (source_dimension == AMREX_SPACEDIM && same_chart) {
+      const MultilevelHdf5FieldLayout stored_layout =
+         read_multilevel_hdf5_field_layout(path, PhysicalFluidField);
+      exact_boxes = static_cast<int>(stored_layout.boxes.size()) == levels;
+      for (int level = 0; exact_boxes && level < levels; ++level) {
+         const amrex::BoxArray& stored_boxes = stored_layout.boxes[level];
+         const amrex::BoxArray& target_boxes = evolution_fluid[level]->boxArray();
+         exact_boxes = stored_boxes.size() == target_boxes.size();
+         for (int target = 0; exact_boxes && target < target_boxes.size(); ++target) {
+            bool found = false;
+            for (int stored = 0; stored < stored_boxes.size(); ++stored) {
+               found = found || stored_boxes[stored] == target_boxes[target];
+            }
+            exact_boxes = found;
          }
-         exact_boxes = found;
       }
    }
    const bool exact_layout = exact_boxes
@@ -1272,6 +1554,67 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          }
       }
       result.used_exact_cache = true;
+      return result;
+   }
+
+   if (portable_basis && !expects_ct
+       && (source_dimension != AMREX_SPACEDIM || !same_chart)) {
+      const amrex::GpuArray<amrex::Real, 3> origin = result.rotation_center;
+      const GridFieldSetInfo fluid_field_set = physical_fluid_grid_fields(
+         system, cfg.passive_scalars
+      );
+      interpolate_portable_field(
+         path,
+         PhysicalFluidField,
+         source_chart,
+         target_chart,
+         geometry,
+         primitive,
+         fluid_field_set,
+         amrex::IndexType::TheCellType(),
+         origin,
+         result.source_ic == "tov" || result.source_ic == "rotating_star"
+            ? PhysicalFieldExterior::InitialAtmosphere
+            : PhysicalFieldExterior::Constant,
+         false,
+         system,
+         eos_method_code(cfg),
+         atmosphere
+      );
+      if (expects_spacetime) {
+         const GridFieldSetInfo& adm_field_set = adm_initial_data_grid_fields();
+         const int adm_components = grid_field_component_count(adm_field_set);
+         amrex::Vector<std::unique_ptr<amrex::MultiFab>> target_adm(levels);
+         MutablePhysicalIdField target_adm_view(levels);
+         for (int level = 0; level < levels; ++level) {
+            target_adm[level] = std::make_unique<amrex::MultiFab>(
+               evolution_spacetime[level]->boxArray(),
+               evolution_spacetime[level]->DistributionMap(),
+               adm_components,
+               0
+            );
+            target_adm_view[level] = target_adm[level].get();
+         }
+         interpolate_portable_field(
+            path,
+            AdmGeometryField,
+            source_chart,
+            target_chart,
+            geometry,
+            target_adm_view,
+            adm_field_set,
+            amrex::IndexType::TheNodeType(),
+            origin,
+            result.source_ic == "tov"
+               ? PhysicalFieldExterior::TovSchwarzschildAdm
+               : PhysicalFieldExterior::AsymptoticallyFlatAdm,
+            result.source_ic == "rotating_star",
+            system,
+            eos_method_code(cfg),
+            atmosphere
+         );
+         adm_to_z4c(evolution_spacetime, target_adm);
+      }
       return result;
    }
 
@@ -1354,8 +1697,10 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          amrex::IndexType::TheNodeType(),
          component_symmetries(adm_initial_data_grid_fields()),
          origin,
-         PhysicalFieldExterior::AsymptoticallyFlatAdm,
-         result.source_ic == "tov" || result.source_ic == "rotating_star",
+         result.source_ic == "tov"
+            ? PhysicalFieldExterior::TovSchwarzschildAdm
+            : PhysicalFieldExterior::AsymptoticallyFlatAdm,
+         result.source_ic == "rotating_star",
          system,
          eos_method_code(cfg),
          atmosphere

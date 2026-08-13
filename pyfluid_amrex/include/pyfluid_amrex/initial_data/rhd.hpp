@@ -24,6 +24,7 @@ inline void initialize_relativistic_state_method(
    const auto problo = geometry.ProbLoArray();
    const auto probhi = geometry.ProbHiArray();
    const auto dx = geometry.CellSizeArray();
+   const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes axes = mesh_axes_layout(cfg);
    const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
    validate_fixed_spacetime_domain(spacetime, geometry);
@@ -56,7 +57,7 @@ inline void initialize_relativistic_state_method(
       const auto conserved = state.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
-            MeshCartesian, axes, problo, dx, i, j, k
+            mesh_coordinate, axes, problo, dx, i, j, k
          );
          const FixedSpacetimeGeometry local_geometry = fixed_spacetime_geometry(
             spacetime,

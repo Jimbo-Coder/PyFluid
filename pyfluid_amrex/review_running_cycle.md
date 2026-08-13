@@ -5130,3 +5130,50 @@ I will always continue from the last cycle marked as `in_progress`.
   gate, and RNS equatorial-reflection validation pass; the rotating gate now
   also compares a cross-grid saved continuation against a matched N=32 direct
   solve with maximum relative charge/state difference `1.0181e-3`. [DONE]
+
+## Cycle 287 — Reduced-dimensional stellar-ID handoff (DONE)
+
+- Preserve the existing 3D Cartesian evolution owner while separating the
+  portable physical-ID source mesh from the target evolution hierarchy.
+  Audit the current exact-cache, HDF5, coordinate/axis, reflection, and
+  materialization contracts before changing them. Exact caches remain a
+  same-layout acceleration; physical primitives plus nodal ADM geometry are
+  the portable contract. [DONE]
+- Make the physical-ID chart and portable field reader source-dimension aware
+  without adding coordinate/formulation/EoS template axes. Retain exact
+  same-layout caches as optional accelerators and use the shared field catalog
+  for tensor identity and centering. Schema v2 now records dimension,
+  coordinate family, ordered axes, periodic/reflection closure, and
+  `mesh_orthonormal` basis. One separately compiled runtime interpolator maps
+  physical points and transforms scalar, polar/axial-vector, and symmetric-
+  tensor fields through Cartesian components. The focused anisotropic tensor,
+  polar-vector, axial-vector, and equatorial-reflection check passes. [DONE]
+- Prove the new path first with spherical 1D TOV expanded onto multiple 3D
+  Cartesian targets, including larger/smaller domains and reflection.
+  `initial_data.solve_only=1` now runs the normal relativistic preflight,
+  writes the portable core, and returns without flux-register setup. The
+  spherical source omits exact evolution caches and is 8.0 MiB at each tested
+  resolution because the two compressed parallel-HDF5 fields reach the local
+  minimum allocation. [DONE]
+- The full three-rank gate solves `N_r=256/512/1024`, materializes each onto a
+  direct 32-cubed Cartesian control, checks a target cell exactly at the
+  regular origin, checks a larger `[-40,40]^3` target, and evolves the loaded
+  `N_r=1024` model for three CFL-0.9 SSPRK3/PWL steps. Maximum normalized
+  density errors decrease `7.5827e-4/3.5249e-5/1.1601e-5`; pressure, diagonal
+  metric, and lapse errors also decrease monotonically. The larger-domain
+  maximum is `1.2453e-5`, central density error is `9.8862e-6`, evolution mass
+  drift is `3.5072e-12`, and all source/target preflights and evolution report
+  zero recovery. Existing RMHD standard including exact/cross-grid physical-ID
+  loading passes, as do all production dimensions, architecture, the focused
+  tensor test, and the `1.77 s` quick suite. The no-op production rebuild is
+  `0.57 s`. The complete post-change standard suite passes 43/43 gates with
+  `138.13 s` summed gate time; the full reduced-ID evidence is retained
+  separately in `reduced_initial_data_full.tsv` so the standard gate cannot
+  overwrite it. [DONE]
+- Keep the next numerical layer honest: portable materialization is ready for
+  an axisymmetric artifact, but the current conformal scalar/vector operator,
+  rotating matter update, and surface diagnostic are still Cartesian 3D. A
+  genuine spherical `r theta` elliptic operator with origin/axis/equator/outer
+  regularity, manufactured scalar tests, and zero-spin TOV equivalence is the
+  next milestone before nonzero 2D XCTS RNS. Cross-chart CT remains rejected
+  until face-centred divergence-preserving transfer has an owner. [DONE]

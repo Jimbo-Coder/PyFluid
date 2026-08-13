@@ -10,8 +10,9 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-12, branch `main`, through Cycle 284's completed
-production-stabilization pass and preserved standard/performance baseline.
+Last reconciled: 2026-08-13, branch `main`, through Cycle 287's reduced-TOV
+physical-ID handoff. Cycle 284's preserved standard/performance baseline
+remains the latest broad integration baseline.
 
 ## Scope And Evidence
 
@@ -261,12 +262,38 @@ production-stabilization pass and preserved standard/performance baseline.
   `docs/infrastructure_conventions.md`. A remapped artifact is initialization,
   not a new constraint solve; finer evolution cannot recreate unresolved ID
   information. A continued XCTS target does solve again on the target grid.
-- On finer same-domain physical-ID loads, target cell centers can lie in the
-  half-cell strip outside the source cell-center interpolation hull. The
+- Physical-ID schema v2 makes the source chart independent of the target
+  executable: dimension, coordinate family, ordered active axes,
+  periodic/reflection closure, and orthonormal tensor basis are runtime
+  metadata. Scalars, polar/axial vectors, and symmetric tensors transform
+  through Cartesian physical components; this adds one compiled materializer
+  owner rather than a coordinate/formulation/EoS template axis. Exact
+  same-layout caches remain optional accelerators.
+- `initial_data.solve_only=1` performs the normal ID materialization and
+  relativistic C2P/P2C preflight, writes the portable artifact, and exits before
+  evolution. The validated reduced path is spherical 1D TOV to Cartesian 3D.
+  At source `N_r=256/512/1024`, the maximum normalized density error against a
+  direct 32-cubed TOV decreases `7.58e-4/3.52e-5/1.16e-5`; pressure, diagonal
+  metric, and lapse errors also decrease monotonically. An `N_r=1024` source
+  materialized onto `[-40,40]^3` has maximum tracked error `1.25e-5`, the
+  regular origin density differs by `9.89e-6`, and a three-step CFL-0.9 loaded
+  evolution has mass drift `3.51e-12` with zero recovery.
+- A cell-centred radial source's half-cell gap at `r=0` is regular interior
+  interpolation, not stellar exterior. Beyond a spherical TOV source radius,
+  fluid uses the configured target atmosphere and ADM geometry uses the exact
+  isotropic-Schwarzschild exterior inferred from the saved outer metric.
+- The portable materializer does not make rotating XCTS axisymmetric by
+  itself. Spherical `r theta` RNS still needs a genuine axisymmetric
+  scalar/vector elliptic operator and regularity conditions. Cross-chart CT is
+  likewise rejected until face-centred divergence-preserving transfer is
+  implemented.
+- On finer same-domain physical-ID loads, outer target cell centers can lie in
+  the half-cell strip outside the source cell-center interpolation hull. The
   reader must apply the field's physical exterior there. For TOV/RNS fluid it
   regenerates the configured atmosphere at the target point; copying the last
-  source atmosphere value can fabricate matter support. Atmosphere/support
-  classification also needs a roundoff tolerance rather than strict equality.
+  source atmosphere value can fabricate matter support. This is distinct from
+  the regular radial-origin gap above. Atmosphere/support classification also
+  needs a roundoff tolerance rather than strict equality.
 - Short rotating-star evolution is currently cleaner with PWL than MP5 at the
   surface. Do not weaken rest-mass gates to promote MP5; a conservative stellar
   surface treatment and longer evolution evidence are still required.
@@ -325,17 +352,21 @@ production-stabilization pass and preserved standard/performance baseline.
 
 ## Next Milestones
 
-1. Make canonical face-`B` ownership stage-coupled before relying on long
+1. Implement and manufacture-test the spherical `r theta` scalar elliptic
+   operator, then the conformal vector/XCTS operator and axis/equator
+   regularity. Require zero-spin agreement with the spherical TOV source before
+   continuing uniform RNS rotation and re-evaluating the surface diagnostic.
+2. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.
-2. Run a matched PyFluid/AthenaK work-precision comparison: uniform Balsara and
+3. Run a matched PyFluid/AthenaK work-precision comparison: uniform Balsara and
    multidimensional Orszag--Tang first, with AMR only after the uniform
    equivalence statement is sound. This calibrates performance and error; it is
    not another reconstruction search.
-3. Add a two-resolution time-dependent TOV oscillation/constraint gate, then
+4. Add a two-resolution time-dependent TOV oscillation/constraint gate, then
    evolve a saved uniform-RNS artifact with PWL while tracking rest mass,
    angular momentum, constraints, central density, and mode content.
-4. Add CompOSE/tabulated EoS after the stellar evolution boundary is stable.
+5. Add CompOSE/tabulated EoS after the stellar evolution boundary is stable.
 
 ## Review Discipline
 

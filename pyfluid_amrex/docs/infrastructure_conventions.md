@@ -139,12 +139,18 @@ field contract. The artifact must not encode timestepper, reconstruction,
 subcycling, output cadence, or other mutable evolution choices.
 
 `initial_data.output_file` writes this artifact at step zero.
-`initial_data.input_file` loads it. Matching dimension, coordinate/axis
-semantics, periodicity, physics, and physically relevant EoS data are
-mandatory. On an identical hierarchy, exact caches start evolution directly.
-Otherwise the reader interpolates the portable core onto the configured
-coarser, finer, or physically larger target hierarchy, reconstructs conserved
-and Z4c state, and preserves the CT divergence contract. For a saved
+`initial_data.input_file` loads it. `initial_data.solve_only=1` performs the
+configured initial-data construction, runs the normal relativistic preflight,
+writes the artifact, and returns before allocating evolution flux-register
+work. The source chart is part of the artifact rather than an evolution
+requirement: schema-v2 records source dimension, coordinate family, ordered
+active axes, periodic/reflection closure, and `mesh_orthonormal` tensor basis.
+Physics and physically relevant EoS data remain mandatory. On an identical
+hierarchy, optional exact caches start evolution directly. Otherwise the
+reader maps physical target points into the source chart, interpolates the
+portable core, transforms catalog-declared scalars, polar/axial vectors, and
+symmetric tensors through an orthonormal Cartesian basis, reconstructs
+conserved and Z4c state, and applies the target preflight. For a saved
 rotating-star artifact with the same rotation law and a larger configured
 target angular velocity, the same materialized state continues XCTS; a
 matching target starts evolution without another XCTS solve. The ordinary
@@ -158,14 +164,16 @@ part of a persisted sequence. `initial_data.sequence_output_dir` overrides
 the automatic location and also explicitly requests output for a one-model
 rotating solve.
 
-Interpolation ownership includes the target points inside the physical domain
-but outside the source cell-center interpolation hull. These occur, for
-example, in the half-cell boundary strip of a finer same-domain target. The
-loader clamps only the source sample and then applies the selected physical
-exterior at the original target point: asymptotic ADM falloff for geometry and
+Interpolation ownership includes target points outside the source sample
+hull. A cell-centred radial source has a half-cell gap at the regular origin;
+clamping there is interior regular interpolation and must not create
+atmosphere. Beyond the saved outer radius, the loader clamps only the source
+sample and applies the selected physical exterior at the original target
+point: exact isotropic-Schwarzschild exterior for spherical TOV ADM data,
+component-appropriate asymptotically flat falloff for general ADM data, and
 the configured target atmosphere for TOV/RNS fluid. It must not copy a
-source-boundary atmosphere value into that strip or use exact floating-point
-equality to classify stellar matter support.
+source-boundary atmosphere value or use exact floating-point equality to
+classify stellar matter support.
 
 Automatic sequence output is organized under the run directory by EoS,
 rotation law, and fixed central density. Named EoS presets and differential
@@ -188,10 +196,10 @@ exact-cache selection, hierarchy interpolation, exterior completion, and state
 reconstruction; callers must not implement separate "sequence load" and
 "evolution load" remappers.
 
-For a periodic source, each periodic target extent must contain an integer
-number of saved periods. For a nonperiodic larger domain, physical fluid data
-extend from the saved boundary state and ADM data use component-appropriate
-asymptotically flat falloff. This is an initialization remap, not a new
+For a same-chart periodic source, each periodic target extent must contain an
+integer number of saved periods. For a nonperiodic larger domain, physical
+fluid data use the configured atmosphere and ADM data use the physical
+exterior described above. This is an initialization remap, not a new
 constraint solve: interpolated data can have larger pointwise constraints than
 the saved grid. A continued rotating XCTS solve does solve the remapped target
 again; a direct evolution start does not.
@@ -207,14 +215,22 @@ whereas a physical-ID artifact initializes a new run at step zero through this
 materialization interface.
 
 Evolution, physical-ID remapping, and the shared CTT/CTTK/XCTS elliptic layer
-use the field catalog's Cartesian reflection parity. Scalar, polar-vector,
-axial-vector, and symmetric-tensor identities are distinct; in particular a
-magnetic field is axial, so its component normal to a symmetry plane is even
-and its tangential components are odd. Physical-ID metadata records saved
+use tensor identity from the field catalog. Scalar, polar-vector, axial-vector,
+and symmetric-tensor identities are distinct; in particular a magnetic field
+is axial, so its component normal to a Cartesian symmetry plane is even and
+its tangential components are odd. Physical-ID metadata records saved
 reflection faces. A target outside one of those faces is mirrored into the
-saved sector, interpolated on its declared centering, and transformed by the
-catalog parity; points beyond the saved outer extent still use the normal
-physical exterior completion.
+saved sector, interpolated on its declared centering, transformed in physical
+Cartesian components, then expressed in the target basis. Points beyond the
+saved outer extent still use the normal physical exterior completion.
+
+The currently validated reduced solve is spherical one-dimensional TOV to
+three-dimensional Cartesian RHD. Cross-chart CT is deliberately rejected
+until face-centred divergence-preserving magnetic transfer has an owner. A
+two-dimensional spherical `r theta` rotating XCTS solve is also not supplied
+by the materializer: it requires a real axisymmetric scalar/vector elliptic
+operator and axis/equator regularity before it can emit the same portable
+physical core.
 
 Elliptic boundary types are component-specific: on a reflection plane the
 normal component of a polar vector is odd while its tangential components are

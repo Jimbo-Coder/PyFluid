@@ -206,6 +206,22 @@ STEPS = [
       ),
    ),
    GateStep(
+      name="reduced_initial_data_handoff",
+      kind="initial_data",
+      levels=("standard", "full"),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_reduced_initial_data.py",
+         "--level",
+         "standard",
+         "--ranks",
+         "3",
+         "--force",
+      ),
+   ),
+   GateStep(
       name="obstacle_mask_performance",
       kind="feature",
       levels=("full",),

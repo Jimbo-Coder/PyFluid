@@ -107,6 +107,7 @@ struct RunConfig {
    std::string initial_data_shift = "id";
    std::string initial_data_input_file;
    std::string initial_data_output_file;
+   bool initial_data_solve_only = false;
    bool initial_data_save_sequence = true;
    std::string initial_data_sequence_output_dir;
    std::string initial_data_atmosphere = "flat";

@@ -7,7 +7,9 @@
 #include <AMReX_MultiFab.H>
 #include <AMReX_Vector.H>
 
+#include <array>
 #include <string>
+#include <vector>
 
 namespace pyfluid_amrex {
 
@@ -17,6 +19,30 @@ struct MultilevelHdf5FieldLayout {
    amrex::Vector<amrex::Box> domains;
    amrex::Vector<amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>> prob_lo;
    amrex::Vector<amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>> prob_hi;
+};
+
+// A dimension-neutral view of the same AMReX HDF5 field payload.  Checkpoints
+// continue to use the native-dimension reader above; portable physical initial
+// data use this representation when the source and target executables have
+// different dimensions.
+struct RuntimeDimensionHdf5Box {
+   std::array<int, 3> lower{};
+   std::array<int, 3> upper{};
+   std::vector<amrex::Real> data;
+};
+
+struct RuntimeDimensionHdf5Level {
+   std::array<int, 3> domain_lower{};
+   std::array<int, 3> domain_upper{};
+   std::array<amrex::Real, 3> prob_lo{};
+   std::array<amrex::Real, 3> prob_hi{};
+   std::vector<RuntimeDimensionHdf5Box> boxes;
+};
+
+struct RuntimeDimensionHdf5Field {
+   int dimension = 0;
+   int num_components = 0;
+   std::vector<RuntimeDimensionHdf5Level> levels;
 };
 
 void write_multilevel_hdf5_field(
@@ -45,6 +71,11 @@ void read_multilevel_hdf5_field(
 );
 
 MultilevelHdf5FieldLayout read_multilevel_hdf5_field_layout(
+   std::string const& root,
+   std::string const& field_name
+);
+
+RuntimeDimensionHdf5Field read_runtime_dimension_hdf5_field(
    std::string const& root,
    std::string const& field_name
 );

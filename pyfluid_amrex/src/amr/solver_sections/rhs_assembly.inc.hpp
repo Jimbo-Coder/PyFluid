@@ -143,6 +143,24 @@
       }
    }
 
+   void print_relativistic_recovery_summary() const
+   {
+      if (!physical_system_is_relativistic(physics_system_)) {
+         return;
+      }
+      amrex::Print()
+         << "Relativistic recovery c2p_fallbacks="
+         << relativistic_c2p_fallback_count_
+         << " atmosphere_resets="
+         << relativistic_atmosphere_reset_count_
+         << " rmhd_pwl_corrections="
+         << rmhd_pwl_correction_count_
+         << " rmhd_pwc_corrections="
+         << rmhd_pwc_correction_count_
+         << " rmhd_riemann_hll_fallbacks="
+         << rmhd_riemann_hll_fallback_count_ << "\n";
+   }
+
    template <int NComp, int EOSMethod>
    void fill_stage_primitive_cache(
       amrex::MultiFab& primitive,
