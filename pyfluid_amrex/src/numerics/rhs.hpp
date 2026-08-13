@@ -761,51 +761,84 @@ inline void fill_fluxes_for_components(
 )
 {
    if (physical_system(cfg) == PhysicalSystem::RMHD) {
-      AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RMHD fluxes require level geometry");
-      AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
-         atmosphere != nullptr, "RMHD fluxes require the recovery atmosphere state"
-      );
-      const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
-      fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 0>(
-         fluxes, primitive, eos_params(cfg), *geom, spacetime,
-         *atmosphere, time
-      );
+#if PYFLUID_AMREX_ENABLE_MHD
+      if constexpr (NComp != NVAR_MHD
+                    || is_characteristic_reconstruction(ReconMethod)
+                    || SolidWalls || MappedPatches
+                    || EOSMethod != EOSIdealGas) {
+         amrex::Abort(
+            "unsupported RMHD state-layout or flux-topology product reached "
+            "the generic flux path"
+         );
+      } else if constexpr (RiemannMethod == RiemannHLLC
+                    || RiemannMethod == RiemannHLLD) {
+         amrex::Abort(
+            "advanced RMHD Riemann solver must be routed by the flux factory"
+         );
+      } else {
+         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RMHD fluxes require level geometry");
+         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+            atmosphere != nullptr, "RMHD fluxes require the recovery atmosphere state"
+         );
+         const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
+         fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 0>(
+            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            *atmosphere, time
+         );
 #if (AMREX_SPACEDIM >= 2)
-      fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 1>(
-         fluxes, primitive, eos_params(cfg), *geom, spacetime,
-         *atmosphere, time
-      );
+         fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 1>(
+            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            *atmosphere, time
+         );
 #endif
 #if (AMREX_SPACEDIM == 3)
-      fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 2>(
-         fluxes, primitive, eos_params(cfg), *geom, spacetime,
-         *atmosphere, time
-      );
+         fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 2>(
+            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            *atmosphere, time
+         );
+#endif
+      }
+#else
+      amrex::Abort("RMHD fluxes are disabled in this build");
 #endif
       return;
    }
    if (physical_system(cfg) == PhysicalSystem::RHD) {
-      AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RHD fluxes require level geometry");
-      AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
-         atmosphere != nullptr, "RHD fluxes require the recovery atmosphere state"
-      );
-      const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
-      fill_rhd_flux_direction<ReconMethod, RiemannMethod, 0, EOSMethod>(
-         fluxes, primitive, eos_params(cfg), *geom, spacetime,
-         *atmosphere, time
-      );
+      if constexpr (NComp != NVAR_HYDRO
+                    || is_characteristic_reconstruction(ReconMethod)
+                    || SolidWalls || MappedPatches) {
+         amrex::Abort(
+            "unsupported RHD state-layout or flux-topology product reached "
+            "the generic flux path"
+         );
+      } else if constexpr (RiemannMethod == RiemannHLLC
+                    || RiemannMethod == RiemannHLLD) {
+         amrex::Abort(
+            "unsupported advanced RHD Riemann solver reached the generic flux path"
+         );
+      } else {
+         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RHD fluxes require level geometry");
+         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+            atmosphere != nullptr, "RHD fluxes require the recovery atmosphere state"
+         );
+         const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
+         fill_rhd_flux_direction<ReconMethod, RiemannMethod, 0, EOSMethod>(
+            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            *atmosphere, time
+         );
 #if (AMREX_SPACEDIM >= 2)
-      fill_rhd_flux_direction<ReconMethod, RiemannMethod, 1, EOSMethod>(
-         fluxes, primitive, eos_params(cfg), *geom, spacetime,
-         *atmosphere, time
-      );
+         fill_rhd_flux_direction<ReconMethod, RiemannMethod, 1, EOSMethod>(
+            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            *atmosphere, time
+         );
 #endif
 #if (AMREX_SPACEDIM == 3)
-      fill_rhd_flux_direction<ReconMethod, RiemannMethod, 2, EOSMethod>(
-         fluxes, primitive, eos_params(cfg), *geom, spacetime,
-         *atmosphere, time
-      );
+         fill_rhd_flux_direction<ReconMethod, RiemannMethod, 2, EOSMethod>(
+            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            *atmosphere, time
+         );
 #endif
+      }
       return;
    }
    const EOSParams eos = eos_params(cfg);
@@ -983,40 +1016,63 @@ inline void fill_flux_direction_for_riemann(
 {
    const EOSParams eos = eos_params(cfg);
    if (physical_system(cfg) == PhysicalSystem::RMHD) {
-      AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RMHD fluxes require level geometry");
-      AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
-         atmosphere != nullptr, "RMHD fluxes require the recovery atmosphere state"
-      );
-      if (stored_spacetime != nullptr) {
-         fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
-            fluxes, primitive, eos, riemann_method, *stored_spacetime,
-            *atmosphere
+#if PYFLUID_AMREX_ENABLE_MHD
+      if constexpr (NComp != NVAR_MHD
+                    || is_characteristic_reconstruction(ReconMethod)
+                    || SolidWalls || MappedPatches
+                    || EOSMethod != EOSIdealGas) {
+         amrex::Abort(
+            "unsupported RMHD state-layout or flux-topology product reached "
+            "the directional flux path"
          );
       } else {
-         fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
-            fluxes, primitive, eos, riemann_method, *geom,
-            fixed_spacetime_parameters(cfg), *atmosphere,
-            time
+         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RMHD fluxes require level geometry");
+         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+            atmosphere != nullptr, "RMHD fluxes require the recovery atmosphere state"
          );
+         if (stored_spacetime != nullptr) {
+            fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
+               fluxes, primitive, eos, riemann_method, *stored_spacetime,
+               *atmosphere
+            );
+         } else {
+            fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
+               fluxes, primitive, eos, riemann_method, *geom,
+               fixed_spacetime_parameters(cfg), *atmosphere,
+               time
+            );
+         }
       }
+#else
+      amrex::Abort("RMHD fluxes are disabled in this build");
+#endif
       return;
    }
    if (physical_system(cfg) == PhysicalSystem::RHD) {
-      AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RHD fluxes require level geometry");
-      AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
-         atmosphere != nullptr, "RHD fluxes require the recovery atmosphere state"
-      );
-      if (stored_spacetime != nullptr) {
-         fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
-            fluxes, primitive, eos, riemann_method, *stored_spacetime,
-            *atmosphere
+      if constexpr (NComp != NVAR_HYDRO
+                    || is_characteristic_reconstruction(ReconMethod)
+                    || SolidWalls || MappedPatches) {
+         amrex::Abort(
+            "unsupported RHD state-layout or flux-topology product reached "
+            "the directional flux path"
          );
       } else {
-         fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
-            fluxes, primitive, eos, riemann_method, *geom,
-            fixed_spacetime_parameters(cfg), *atmosphere,
-            time
+         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(geom != nullptr, "RHD fluxes require level geometry");
+         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+            atmosphere != nullptr, "RHD fluxes require the recovery atmosphere state"
          );
+         if (stored_spacetime != nullptr) {
+            fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
+               fluxes, primitive, eos, riemann_method, *stored_spacetime,
+               *atmosphere
+            );
+         } else {
+            fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
+               fluxes, primitive, eos, riemann_method, *geom,
+               fixed_spacetime_parameters(cfg), *atmosphere,
+               time
+            );
+         }
       }
       return;
    }

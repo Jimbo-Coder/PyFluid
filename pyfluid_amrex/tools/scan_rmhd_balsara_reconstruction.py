@@ -13,12 +13,6 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from plotfile_reader import (
-   latest_plotfile,
-   parse_plot_bounds,
-   parse_plot_header_1d,
-   read_composite_state_1d,
-)
 from validate_rmhd import (
    EXACT_BALSARA_CASES,
    EXACT_BALSARA_ROOT,
@@ -26,6 +20,7 @@ from validate_rmhd import (
    RUN_ROOT,
    exact_rmhd_cell_averages,
    exact_rmhd_conserved,
+   exact_balsara_comparison as exact_comparison,
    read_last_exact_balsara_profile,
    relativistic_recovery_counts,
    run_case,
@@ -34,16 +29,7 @@ from validation_common import ROOT, read_scalar_rows, repo_relative, write_tsv
 
 
 METHODS = ("pwc", "pwl", "wenoz", "mp5", "teno5", "ppm4", "ppmx", "ppm3")
-METHOD_CHOICES = METHODS + (
-   "parabolic",
-   "wenoz-char",
-   "mp5-char",
-   "teno5-char",
-   "parabolic-char",
-   "ppm4-char",
-   "ppmx-char",
-   "ppm3-char",
-)
+METHOD_CHOICES = METHODS + ("parabolic",)
 COMPONENT_NAMES = ("dens", "mom1", "mom2", "mom3", "tau", "b1", "b2", "b3")
 PLOT_COMPONENTS = (
    ("dens", r"$D$"),
@@ -62,84 +48,6 @@ PWL_BALSARA4_RESOLUTION_PLOT = (
 WENOZ_FAILURE_PLOT = (
    ROOT / "plots/current/scans/rmhd_balsara4_wenoz_failure.png"
 )
-
-
-def exact_comparison(
-   case: int,
-   spec: dict[str, object],
-   run_dir: Path,
-) -> tuple[
-   np.ndarray,
-   np.ndarray,
-   np.ndarray,
-   float,
-   float,
-   float,
-]:
-   plotfile = latest_plotfile(run_dir, require=True)
-   names, output_time = parse_plot_header_1d(plotfile)
-   if not math.isclose(
-      output_time,
-      float(spec["time"]),
-      rel_tol=0.0,
-      abs_tol=1.0e-12,
-   ):
-      raise RuntimeError(
-         f"Balsara {case} stopped at t={output_time}, expected {spec['time']}"
-      )
-   state = read_composite_state_1d(plotfile, names)
-   numerical = np.vstack([
-      state[names.index(name)] for name in COMPONENT_NAMES
-   ])
-   exact_profile = read_last_exact_balsara_profile(
-      EXACT_BALSARA_ROOT / f"solution_b{case}.dat"
-   )
-   exact_state = exact_rmhd_conserved(
-      exact_profile,
-      normal_magnetic=float(spec["left"][5]),
-      gamma=float(spec["gamma"]),
-   )
-   prob_lo, prob_hi = parse_plot_bounds(plotfile)
-   spacing = (prob_hi[0] - prob_lo[0]) / numerical.shape[1]
-   centers = prob_lo[0] + (np.arange(numerical.shape[1]) + 0.5) * spacing
-   cell_edges = np.linspace(
-      prob_lo[0],
-      prob_hi[0],
-      numerical.shape[1] + 1,
-   )
-   averaged_exact = exact_rmhd_cell_averages(
-      exact_profile,
-      normal_magnetic=float(spec["left"][5]),
-      gamma=float(spec["gamma"]),
-      cell_edges=cell_edges,
-   )
-   scales = np.maximum(
-      np.ptp(exact_state, axis=1),
-      np.max(np.abs(exact_state), axis=1),
-   )
-   scales = np.maximum(scales, 1.0e-14)
-   component_l1 = np.mean(np.abs(numerical - averaged_exact), axis=1) / scales
-
-   exact_min = np.min(exact_state, axis=1)
-   exact_max = np.max(exact_state, axis=1)
-   lower_overshoot = np.maximum(exact_min[:, np.newaxis] - numerical, 0.0)
-   upper_overshoot = np.maximum(numerical - exact_max[:, np.newaxis], 0.0)
-   maximum_overshoot = float(
-      np.max(np.maximum(lower_overshoot, upper_overshoot) / scales[:, np.newaxis])
-   )
-
-   numerical_tv = np.sum(np.abs(np.diff(numerical, axis=1)), axis=1)
-   exact_tv = np.sum(np.abs(np.diff(averaged_exact, axis=1)), axis=1)
-   active = exact_tv > 1.0e-12 * scales
-   maximum_tv_ratio = float(np.max(numerical_tv[active] / exact_tv[active]))
-   return (
-      centers,
-      numerical,
-      averaged_exact,
-      float(np.max(component_l1)),
-      maximum_overshoot,
-      maximum_tv_ratio,
-   )
 
 
 def run_scan(

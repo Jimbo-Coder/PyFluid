@@ -66,6 +66,7 @@ struct RunConfig {
    bool debug_poison = false;
    bool debug_check_finite = false;
    bool debug_check_physical = false;
+   bool debug_stage_output = false;
 
    std::string mesh_coordinate = "cartesian";
    std::string mesh_axes = "";

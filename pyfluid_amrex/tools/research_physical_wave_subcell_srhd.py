@@ -187,6 +187,107 @@ def hlle_flux(left: Array, right: Array, gamma: float) -> Array:
     ) / (speed_right - speed_left)
 
 
+def hllc_flux(left: Array, right: Array, gamma: float) -> Array:
+    """Return the Mignone--Bodo SRHD HLLC flux, with HLLE fallback."""
+
+    primitive_pair = np.asarray((left, right), dtype=float)
+    if not primitive_is_admissible(primitive_pair):
+        return np.full(3, np.nan)
+    conserved = conserved_array(primitive_pair, gamma)
+    physical_flux = np.asarray(
+        (flux(left, gamma), flux(right, gamma))
+    )
+    # The HLLC derivation uses total energy E=tau+D and its flux S.
+    state = conserved.copy()
+    state[:, 2] += state[:, 0]
+    energy_flux = physical_flux.copy()
+    energy_flux[:, 2] += energy_flux[:, 0]
+    left_speeds = signal_speeds(left, gamma)
+    right_speeds = signal_speeds(right, gamma)
+    speed_left = min(left_speeds[0], right_speeds[0])
+    speed_right = max(left_speeds[1], right_speeds[1])
+    if 0.0 <= speed_left:
+        return physical_flux[0]
+    if speed_right <= 0.0:
+        return physical_flux[1]
+    inverse_width = 1.0 / (speed_right - speed_left)
+    hll_state = (
+        speed_right * state[1]
+        - speed_left * state[0]
+        + energy_flux[0]
+        - energy_flux[1]
+    ) * inverse_width
+    hll_flux = (
+        speed_right * energy_flux[0]
+        - speed_left * energy_flux[1]
+        + speed_left * speed_right * (state[1] - state[0])
+    ) * inverse_width
+    quadratic = float(hll_flux[2])
+    linear = float(-hll_flux[1] - hll_state[2])
+    constant = float(hll_state[1])
+    coefficient_scale = max(
+        abs(quadratic), abs(linear), abs(constant), 1.0
+    )
+    if abs(quadratic) <= 1.0e-14 * coefficient_scale:
+        contact_speed = (
+            -constant / linear
+            if abs(linear) > 1.0e-14 * coefficient_scale
+            else 0.0
+        )
+    else:
+        discriminant = linear * linear - 4.0 * quadratic * constant
+        if not np.isfinite(discriminant) or discriminant < 0.0:
+            return hlle_flux(left, right, gamma)
+        contact_speed = (
+            -linear - math.sqrt(discriminant)
+        ) / (2.0 * quadratic)
+    if (
+        not np.isfinite(contact_speed)
+        or not speed_left < contact_speed < speed_right
+        or abs(contact_speed) >= 1.0
+    ):
+        return hlle_flux(left, right, gamma)
+    pressure_star = hll_flux[1] - hll_flux[2] * contact_speed
+    if not np.isfinite(pressure_star) or pressure_star <= 0.0:
+        return hlle_flux(left, right, gamma)
+
+    def star_flux(side: int, wave_speed: float) -> tuple[Array, Array] | None:
+        denominator = wave_speed - contact_speed
+        if abs(denominator) <= 1.0e-14:
+            return None
+        primitive = primitive_pair[side]
+        star = np.empty(3)
+        star[0] = (
+            (wave_speed - primitive[1])
+            * state[side, 0]
+            / denominator
+        )
+        star[2] = (
+            wave_speed * state[side, 2]
+            - state[side, 1]
+            + pressure_star * contact_speed
+        ) / denominator
+        star[1] = (star[2] + pressure_star) * contact_speed
+        flux_star = energy_flux[side] + wave_speed * (
+            star - state[side]
+        )
+        if (
+            not np.all(np.isfinite(star))
+            or not np.all(np.isfinite(flux_star))
+            or star[0] <= 0.0
+            or star[2] <= 0.0
+        ):
+            return None
+        return star, flux_star
+
+    left_star = star_flux(0, speed_left)
+    right_star = star_flux(1, speed_right)
+    if left_star is None or right_star is None:
+        return hlle_flux(left, right, gamma)
+    selected = left_star[1] if contact_speed >= 0.0 else right_star[1]
+    return np.asarray((selected[0], selected[1], selected[2] - selected[0]))
+
+
 def fit_physical_wave(
     average: Array,
     left: Array,
@@ -388,6 +489,7 @@ def rhs_with_fluxes(
     gamma: float,
     reconstruct,
     periodic: bool,
+    riemann_flux=hlle_flux,
 ) -> tuple[Array, float, Array]:
     primitive = primitive_from_conserved(state, gamma)
     if not primitive_is_admissible(primitive):
@@ -403,7 +505,7 @@ def rhs_with_fluxes(
         left, right = reconstruct(primitive, face - 1, gamma)
         if not primitive_is_admissible(np.array((left, right))):
             return np.full_like(state, np.nan), math.inf, fluxes
-        fluxes[face] = hlle_flux(left, right, gamma)
+        fluxes[face] = riemann_flux(left, right, gamma)
         required_speed = max(
             required_speed,
             *(abs(speed) for speed in signal_speeds(left, gamma)),
@@ -514,6 +616,7 @@ def evolve(
     *,
     physical_space_time: bool,
     periodic: bool,
+    riemann_flux=hlle_flux,
 ) -> tuple[Array, bool]:
     state = conserved_array(primitive, gamma)
     dx = 1.0 / len(state)
@@ -529,6 +632,7 @@ def evolve(
             gamma,
             reconstruct,
             periodic,
+            riemann_flux,
         )
         if not np.isfinite(speed0) or not np.all(np.isfinite(rhs0)):
             return current, False
@@ -538,9 +642,10 @@ def evolve(
             rhs1, speed1, flux1 = rhs_with_fluxes(
                 stage1,
                 dx,
-                gamma,
-                reconstruct,
-                periodic,
+            gamma,
+            reconstruct,
+            periodic,
+            riemann_flux,
             )
             if not np.isfinite(speed1):
                 dt *= 0.5
@@ -549,9 +654,10 @@ def evolve(
             rhs2, speed2, flux2 = rhs_with_fluxes(
                 stage2,
                 dx,
-                gamma,
-                reconstruct,
-                periodic,
+            gamma,
+            reconstruct,
+            periodic,
+            riemann_flux,
             )
             if not np.isfinite(speed2):
                 dt *= 0.5

@@ -425,6 +425,7 @@ def main() -> int:
    parser.add_argument("--tolerance", type=float, default=1.0e-12)
    parser.add_argument("--quiet-tolerance", type=float, default=1.0e-12)
    parser.add_argument("--force", action="store_true", help="Accepted for validation-suite consistency.")
+   parser.add_argument("--skip-plot", action="store_true")
    args = parser.parse_args()
 
    common = [
@@ -486,8 +487,9 @@ def main() -> int:
       rows.extend([core_row, symmetry_row, quiet_row])
       write_detail(RUN_ROOT / "component_errors.tsv", component_rows)
       write_detail(RUN_ROOT / "radial_pressure_scatter.tsv", radial_rows)
-      plot_path = plot_checks(mixed_run, cart_run, component_rows, radial_rows)
-      print(f"wrote {repo_relative(plot_path)}")
+      if not args.skip_plot:
+         plot_path = plot_checks(mixed_run, cart_run, component_rows, radial_rows)
+         print(f"wrote {repo_relative(plot_path)}")
 
    write_tsv(SUMMARY, rows, SUMMARY_FIELDS)
    for row in rows:

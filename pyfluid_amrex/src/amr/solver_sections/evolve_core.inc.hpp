@@ -13,9 +13,6 @@
    using EvolutionBoundaryFillFunction = void (
       AmrSolver::*)(LevelData&, amrex::Real
    );
-   using EvolutionRegridFunction = bool (
-      AmrSolver::*)(amrex::Real, int, int
-   );
 
    struct EvolutionOperations {
       bool subcycling = false;
@@ -26,7 +23,6 @@
       CtAdvanceFunction advance_inactive_ct_resistivity = nullptr;
       SubcycledAdvanceFunction advance_subcycled = nullptr;
       EvolutionBoundaryFillFunction fill_boundaries = nullptr;
-      EvolutionRegridFunction regrid = nullptr;
    };
 
    template <int NComp, bool CTEnabled>
@@ -132,6 +128,44 @@
       return adaptive_dt_all_levels<NComp, EOSMethod, DiffusionMethod>();
    }
 
+   template <bool SubcyclingEnabled, int EOSMethod>
+   bool regrid_hierarchy_and_project(
+      amrex::Real time,
+      int step,
+      int lbase
+   )
+   {
+      int effective_lbase = std::max(lbase, 0);
+      if (cfg_.initial_refine_fixed_levels > 0) {
+         effective_lbase = std::max(
+            effective_lbase,
+            std::min(cfg_.initial_refine_fixed_levels, finestLevel())
+         );
+      }
+      const bool hierarchy_changed = regrid_hierarchy<SubcyclingEnabled>(
+         time, step, effective_lbase
+      );
+      if (!hierarchy_changed) {
+         return false;
+      }
+      if (spacetime_state_.active()) {
+         prepare_spacetime_coupling_range(
+            spacetime_state_.state(), effective_lbase, finestLevel() + 1,
+            time, -1.0, 0
+         );
+      }
+      project_relativistic_atmosphere_range<EOSMethod>(
+         fluid_state_.state(), effective_lbase, finestLevel() + 1
+      );
+      // The base regrid owner seeded every new/remade fine old-time state
+      // before this final physical projection. Keep those equal-time copies
+      // consistent with the state that evolution and output will consume.
+      for (int lev = effective_lbase + 1; lev <= finestLevel(); ++lev) {
+         copy_level_state_to_old(lev);
+      }
+      return true;
+   }
+
    template <
       int NComp,
       bool CTEnabled,
@@ -147,7 +181,6 @@
       operations.compute_timestep =
          &AmrSolver::compute_evolution_timestep<NComp, EOSMethod, DiffusionMethod, SubcyclingEnabled>;
       operations.fill_boundaries = &AmrSolver::fill_all_level_boundaries<SubcyclingEnabled>;
-      operations.regrid = &AmrSolver::regrid_hierarchy<SubcyclingEnabled>;
       if constexpr (SubcyclingEnabled) {
          operations.advance_subcycled = &AmrSolver::advance_subcycled_hierarchy<
             NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod
@@ -554,6 +587,21 @@
                   sync_all_cell_b_from_faces(fluid_state_.state(), false);
                }
             }
+            if (finestLevel() > 0 || CTEnabled) {
+               if (spacetime_state_.evolves()) {
+                  prepare_spacetime_coupling_range(
+                     spacetime_state_.state(), 0, finestLevel() + 1,
+                     time + dt, -1.0, 0
+                  );
+               }
+               // CT owns the accepted magnetic field. Revalidate the final
+               // conserved state only after its face field has been synced
+               // back to cell centers; atmosphere projection preserves B and
+               // records any last-resort reset.
+               project_relativistic_atmosphere_range<EOSMethod>(
+                  fluid_state_.state(), 0, finestLevel() + 1
+               );
+            }
             reset_barotropic_energy_all_levels<NComp, EOSMethod>();
             profile_.end(ProfileStage::AverageDown, stage_start);
             time += dt;
@@ -572,7 +620,6 @@
             profile_.end(ProfileStage::AverageDown, stage_start);
             current_step = step;
          }
-         report_relativistic_recovery_events(current_step, time);
          total_active_cell_updates += active_cell_updates_this_step;
          total_layout_cell_updates += layout_cell_updates_this_step;
          const bool reached_final_time = has_final_time && time >= cfg_.final_time;
@@ -584,7 +631,9 @@
 
          if (will_regrid) {
             const amrex::Real regrid_start = profile_.begin();
-            const bool hierarchy_changed = (this->*operations.regrid)(time, step, 0);
+            const bool hierarchy_changed = operations.subcycling
+               ? regrid_hierarchy_and_project<true, EOSMethod>(time, step, 0)
+               : regrid_hierarchy_and_project<false, EOSMethod>(time, step, 0);
             if (cfg_.regrid_mode == "aligned" && cfg_.subcycling == "on") {
                aligned_base_regrid_tick_ = aligned_regrid_ticks_;
             }
@@ -604,6 +653,7 @@
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
             }
          }
+         report_relativistic_recovery_events(current_step, time);
          if (cfg_.debug_check_finite || accepted_physical_check_due(current_step, false)) {
             const amrex::Real check_start = profile_.begin();
             debug_check_state_all_levels("post-step accepted state", current_step, time);
@@ -783,7 +833,9 @@
                << " rmhd_pwl_corrections="
                << rmhd_pwl_correction_count_
                << " rmhd_pwc_corrections="
-               << rmhd_pwc_correction_count_ << "\n";
+               << rmhd_pwc_correction_count_
+               << " rmhd_riemann_hll_fallbacks="
+               << rmhd_riemann_hll_fallback_count_ << "\n";
          }
       }
    }

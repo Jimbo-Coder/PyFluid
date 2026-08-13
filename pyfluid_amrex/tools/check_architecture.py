@@ -66,6 +66,14 @@ def main() -> None:
             + relative_paths(private_implementation_leaks)
         )
 
+    amr_base = SOURCE_ROOT / "amr" / "amr_solver_base.hpp"
+    if '"amr/state_interpolation.hpp"' in amr_base.read_text():
+        errors.append(
+            "amr_solver_base.hpp must forward-declare the state interpolater; "
+            "including its implementation header fans interpolation changes "
+            "into every solver kernel bundle"
+        )
+
     public_config = INCLUDE_ROOT / "config.hpp"
     public_config_text = public_config.read_text()
     leaked_config_catalogs = [

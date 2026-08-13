@@ -20,6 +20,7 @@ from plotfile_reader import (
 from validation_common import (
    ROOT,
    append_validation_history,
+   build_cached_target,
    materialize_run_input,
    repo_relative,
    run_amrex,
@@ -463,6 +464,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
    args = parse_args()
+   if args.level == "standard":
+      build_cached_target(CHECKPOINT_COMPARE.name)
    resolutions = (32, 64) if args.level == "quick" else (32, 64, 128)
    metrics = ("rindler",) if args.level == "quick" else (
       "rindler",
@@ -482,10 +485,12 @@ def main() -> int:
          previous_error = error
          metric_results.append(result)
          scalar_rows.append(scalar)
-      if float(metric_results[-1]["order"]) < 0.8:
-         raise RuntimeError(
-            f"{metric} HSE failed to converge: order={metric_results[-1]['order']}"
-         )
+      for result in metric_results[1:]:
+         if float(result["order"]) < 0.8:
+            raise RuntimeError(
+               f"{metric} HSE failed to converge: "
+               f"case={result['case']} order={result['order']}"
+            )
       results.extend(metric_results)
 
    if args.level == "standard":

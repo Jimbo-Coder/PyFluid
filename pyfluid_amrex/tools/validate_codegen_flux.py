@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import math
 import random
 import sys
@@ -148,16 +149,6 @@ def mhd_reference(values: dict[str, float], direction: int) -> list[float]:
    out[1 + direction] += ptot
    out[5 + direction] = 0.0
    return out
-
-
-def evaluate(expressions, values: dict[str, float]) -> list[float]:
-   substitutions = {
-      symbol: values[str(symbol)]
-      for expr in expressions
-      for symbol in expr.free_symbols
-      if str(symbol) in values
-   }
-   return [float(expr.subs(substitutions)) for expr in expressions]
 
 
 def compile_evaluator(expressions):
@@ -1127,6 +1118,10 @@ def characteristic_projection_reference(name: str, values: dict[str, float]) -> 
 
 def validate_characteristic_round_trip(rng: random.Random) -> None:
    kernels = {kernel.name: kernel for kernel in characteristic_kernels()}
+   evaluators = {
+      name: compile_evaluator(kernel.expressions)
+      for name, kernel in kernels.items()
+   }
    for _ in range(128):
       values = random_characteristic_values(rng)
       for projection_name, recovery_name, primitive_fields in (
@@ -1142,7 +1137,7 @@ def validate_characteristic_round_trip(rng: random.Random) -> None:
          ),
       ):
          projection = kernels[projection_name]
-         projected = evaluate(projection.expressions, values)
+         projected = evaluators[projection_name](values)
          assert_close(
             projected,
             characteristic_projection_reference(projection_name, values),
@@ -1155,7 +1150,7 @@ def validate_characteristic_round_trip(rng: random.Random) -> None:
                for field, value in zip(projection.outputs, projected, strict=True)
             }
          )
-         recovered = evaluate(kernels[recovery_name].expressions, recovery_values)
+         recovered = evaluators[recovery_name](recovery_values)
          expected = [values[f"primitive.{field}"] for field in primitive_fields]
          assert_close(recovered, expected, f"{projection_name} round trip")
 
@@ -1682,6 +1677,16 @@ def metric_reference(name: str, values: dict[str, float]) -> float:
 
 
 def main() -> None:
+   parser = argparse.ArgumentParser(description=__doc__)
+   parser.add_argument(
+      "--skip-generated-comparison",
+      action="store_true",
+      help=(
+         "skip expensive byte-for-byte regeneration; use only in the standard "
+         "suite after the CMake code-generation dependency has run"
+      ),
+   )
+   args = parser.parse_args()
    if not FLUX_HEADER.exists():
       raise SystemExit(f"missing generated header: {FLUX_HEADER}")
    if not EOS_HEADER.exists():
@@ -1702,66 +1707,69 @@ def main() -> None:
       raise SystemExit(f"missing generated header: {Z4C_HEADER}")
    if not INITIAL_DATA_HEADER.exists():
       raise SystemExit(f"missing generated header: {INITIAL_DATA_HEADER}")
-   catalog_artifacts = {
-      FIELD_IDS_HEADER: render_field_ids_header(),
-      FIELD_CATALOG_HEADER: render_field_catalog_header(),
-      DIAGNOSTIC_CATALOG_HEADER: render_diagnostic_catalog_header(),
-      METHOD_CATALOG_HEADER: render_method_catalog_header(),
-      FIELD_CATALOG_JSON: render_field_catalog_json(),
-      EQUATION_MARKDOWN: render_equation_markdown(),
-      EQUATION_LATEX: render_equation_latex(),
-   }
-   for path, rendered in catalog_artifacts.items():
-      if not path.exists() or path.read_text(encoding="utf-8") != rendered:
-         raise SystemExit(f"generated catalog artifact is stale: {path}")
-   rendered_flux = render_flux_header()
-   stored_flux = FLUX_HEADER.read_text(encoding="utf-8")
-   if rendered_flux != stored_flux:
-      raise SystemExit(f"generated header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
-   if render_eos_header() != EOS_HEADER.read_text(encoding="utf-8"):
-      raise SystemExit(f"generated EOS header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
-   rendered_operator = render_operator_header()
-   stored_operator = OPERATOR_HEADER.read_text(encoding="utf-8")
-   if rendered_operator != stored_operator:
-      raise SystemExit(f"generated operator header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
-   rendered_riemann = render_riemann_header()
-   stored_riemann = RIEMANN_HEADER.read_text(encoding="utf-8")
-   if rendered_riemann != stored_riemann:
-      raise SystemExit(f"generated Riemann header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
-   rendered_vector = render_vector_header()
-   stored_vector = VECTOR_HEADER.read_text(encoding="utf-8")
-   if rendered_vector != stored_vector:
-      raise SystemExit(f"generated vector header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
-   rendered_metric = render_metric_header()
-   stored_metric = METRIC_HEADER.read_text(encoding="utf-8")
-   if rendered_metric != stored_metric:
-      raise SystemExit(f"generated metric header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
-   rendered_characteristic = render_characteristic_header()
-   stored_characteristic = CHARACTERISTIC_HEADER.read_text(encoding="utf-8")
-   if rendered_characteristic != stored_characteristic:
-      raise SystemExit(f"generated characteristic header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
-   rendered_relativistic = render_relativistic_header()
-   stored_relativistic = RELATIVISTIC_HEADER.read_text(encoding="utf-8")
-   if rendered_relativistic != stored_relativistic:
-      raise SystemExit(f"generated relativistic header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
-   for name, rendered in render_relativistic_headers().items():
-      path = RELATIVISTIC_HEADER_DIR / f"{name}.hpp"
-      if not path.exists() or rendered != path.read_text(encoding="utf-8"):
-         raise SystemExit(f"generated relativistic group is stale: {path}")
-   if render_z4c_header() != Z4C_HEADER.read_text(encoding="utf-8"):
-      raise SystemExit(f"generated Z4c header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
-   for name, rendered in render_z4c_headers().items():
-      path = Z4C_HEADER_DIR / f"{name}.hpp"
-      if not path.exists() or rendered != path.read_text(encoding="utf-8"):
-         raise SystemExit(f"generated Z4c group is stale: {path}")
-   if render_initial_data_header() != INITIAL_DATA_HEADER.read_text(encoding="utf-8"):
-      raise SystemExit(
-         f"generated initial-data header is stale: rerun {CODEGEN / 'generate_kernels.py'}"
-      )
-   if render_diagnostic_header() != DIAGNOSTIC_HEADER.read_text(encoding="utf-8"):
-      raise SystemExit(
-         f"generated diagnostic header is stale: rerun {CODEGEN / 'generate_kernels.py'}"
-      )
+   if not DIAGNOSTIC_HEADER.exists():
+      raise SystemExit(f"missing generated header: {DIAGNOSTIC_HEADER}")
+   if not args.skip_generated_comparison:
+      catalog_artifacts = {
+         FIELD_IDS_HEADER: render_field_ids_header(),
+         FIELD_CATALOG_HEADER: render_field_catalog_header(),
+         DIAGNOSTIC_CATALOG_HEADER: render_diagnostic_catalog_header(),
+         METHOD_CATALOG_HEADER: render_method_catalog_header(),
+         FIELD_CATALOG_JSON: render_field_catalog_json(),
+         EQUATION_MARKDOWN: render_equation_markdown(),
+         EQUATION_LATEX: render_equation_latex(),
+      }
+      for path, rendered in catalog_artifacts.items():
+         if not path.exists() or path.read_text(encoding="utf-8") != rendered:
+            raise SystemExit(f"generated catalog artifact is stale: {path}")
+      rendered_flux = render_flux_header()
+      stored_flux = FLUX_HEADER.read_text(encoding="utf-8")
+      if rendered_flux != stored_flux:
+         raise SystemExit(f"generated header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      if render_eos_header() != EOS_HEADER.read_text(encoding="utf-8"):
+         raise SystemExit(f"generated EOS header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      rendered_operator = render_operator_header()
+      stored_operator = OPERATOR_HEADER.read_text(encoding="utf-8")
+      if rendered_operator != stored_operator:
+         raise SystemExit(f"generated operator header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      rendered_riemann = render_riemann_header()
+      stored_riemann = RIEMANN_HEADER.read_text(encoding="utf-8")
+      if rendered_riemann != stored_riemann:
+         raise SystemExit(f"generated Riemann header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      rendered_vector = render_vector_header()
+      stored_vector = VECTOR_HEADER.read_text(encoding="utf-8")
+      if rendered_vector != stored_vector:
+         raise SystemExit(f"generated vector header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      rendered_metric = render_metric_header()
+      stored_metric = METRIC_HEADER.read_text(encoding="utf-8")
+      if rendered_metric != stored_metric:
+         raise SystemExit(f"generated metric header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      rendered_characteristic = render_characteristic_header()
+      stored_characteristic = CHARACTERISTIC_HEADER.read_text(encoding="utf-8")
+      if rendered_characteristic != stored_characteristic:
+         raise SystemExit(f"generated characteristic header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      rendered_relativistic = render_relativistic_header()
+      stored_relativistic = RELATIVISTIC_HEADER.read_text(encoding="utf-8")
+      if rendered_relativistic != stored_relativistic:
+         raise SystemExit(f"generated relativistic header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      for name, rendered in render_relativistic_headers().items():
+         path = RELATIVISTIC_HEADER_DIR / f"{name}.hpp"
+         if not path.exists() or rendered != path.read_text(encoding="utf-8"):
+            raise SystemExit(f"generated relativistic group is stale: {path}")
+      if render_z4c_header() != Z4C_HEADER.read_text(encoding="utf-8"):
+         raise SystemExit(f"generated Z4c header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      for name, rendered in render_z4c_headers().items():
+         path = Z4C_HEADER_DIR / f"{name}.hpp"
+         if not path.exists() or rendered != path.read_text(encoding="utf-8"):
+            raise SystemExit(f"generated Z4c group is stale: {path}")
+      if render_initial_data_header() != INITIAL_DATA_HEADER.read_text(encoding="utf-8"):
+         raise SystemExit(
+            f"generated initial-data header is stale: rerun {CODEGEN / 'generate_kernels.py'}"
+         )
+      if render_diagnostic_header() != DIAGNOSTIC_HEADER.read_text(encoding="utf-8"):
+         raise SystemExit(
+            f"generated diagnostic header is stale: rerun {CODEGEN / 'generate_kernels.py'}"
+         )
    validate_symbolic_operator_contract()
    validate_symbolic_eos_contract()
    rng = random.Random(20260628)
@@ -1771,62 +1779,111 @@ def main() -> None:
    vector_kernels = tuple(vector_operator_kernels())
    metric_kernels_cached = tuple(metric_kernels())
    eos_kernels_cached = tuple(eos_kernels())
+   hydro_flux_evaluators = tuple(
+      compile_evaluator(hydro_flux_equations(direction).expressions)
+      for direction in range(3)
+   )
+   mhd_flux_evaluators = tuple(
+      compile_evaluator(mhd_flux_equations(direction).expressions)
+      for direction in range(3)
+   )
+   explicit_update_evaluator = compile_evaluator(
+      (explicit_diffusion_update_equation().expression,)
+   )
+   diffusive_flux_evaluator = compile_evaluator(
+      (diffusive_flux_equation().expression,)
+   )
+   laplacian_weight_evaluator = compile_evaluator(
+      (finite_volume_laplacian_face_weight_equation().expression,)
+   )
+   laplacian_evaluators = tuple(
+      compile_evaluator((laplacian_equation(dim).expression,))
+      for dim in (1, 2, 3)
+   )
+   implicit_relaxed_evaluators = tuple(
+      compile_evaluator((implicit_relaxed_equation(dim).expression,))
+      for dim in (1, 2, 3)
+   )
+   implicit_residual_evaluators = tuple(
+      compile_evaluator((implicit_residual_equation(dim).expression,))
+      for dim in (1, 2, 3)
+   )
+   riemann_evaluators = tuple(
+      compile_evaluator(kernel.expressions) for kernel in riemann_kernels
+   )
+   vector_evaluators = tuple(
+      compile_evaluator((kernel.expression,)) for kernel in vector_kernels
+   )
+   metric_evaluators = tuple(
+      compile_evaluator((kernel.expression,)) for kernel in metric_kernels_cached
+   )
+   eos_evaluators = tuple(
+      compile_evaluator((kernel.expression,)) for kernel in eos_kernels_cached
+   )
    for _ in range(128):
       values = random_state(rng)
       for direction in range(3):
-         hydro_actual = evaluate(hydro_flux_equations(direction).expressions, values)
+         hydro_actual = hydro_flux_evaluators[direction](values)
          hydro_expected = hydro_reference(values, direction)
          assert_close(hydro_actual, hydro_expected, f"hydro dir={direction}")
-         mhd_actual = evaluate(mhd_flux_equations(direction).expressions, values)
+         mhd_actual = mhd_flux_evaluators[direction](values)
          mhd_expected = mhd_reference(values, direction)
          assert_close(mhd_actual, mhd_expected, f"mhd dir={direction}")
       operator_values = random_operator_values(rng)
-      update_actual = evaluate((explicit_diffusion_update_equation().expression,), operator_values)
+      update_actual = explicit_update_evaluator(operator_values)
       update_expected = [operator_values["center"] + operator_values["coeff_dt"] * operator_values["lap"]]
       assert_close(update_actual, update_expected, "explicit diffusion update")
-      flux_actual = evaluate((diffusive_flux_equation().expression,), operator_values)
+      flux_actual = diffusive_flux_evaluator(operator_values)
       flux_expected = [
          -operator_values["coefficient"]
          * (operator_values["right"] - operator_values["left"])
          * operator_values["inv_spacing"]
       ]
       assert_close(flux_actual, flux_expected, "diffusive flux")
-      weight_actual = evaluate((finite_volume_laplacian_face_weight_equation().expression,), operator_values)
+      weight_actual = laplacian_weight_evaluator(operator_values)
       weight_expected = [
          operator_values["face_area"] / (operator_values["volume"] * operator_values["spacing"])
       ]
       assert_close(weight_actual, weight_expected, "finite-volume Laplacian face weight")
-      for dim in (1, 2, 3):
-         lap_actual = evaluate((laplacian_equation(dim).expression,), operator_values)
+      for dim_index, dim in enumerate((1, 2, 3)):
+         lap_actual = laplacian_evaluators[dim_index](operator_values)
          lap_expected = [laplacian_reference(operator_values, dim)]
          assert_close(lap_actual, lap_expected, f"laplacian dim={dim}")
-         relaxed_actual = evaluate((implicit_relaxed_equation(dim).expression,), operator_values)
+         relaxed_actual = implicit_relaxed_evaluators[dim_index](operator_values)
          relaxed_expected = [implicit_relaxed_reference(operator_values, dim)]
          assert_close(relaxed_actual, relaxed_expected, f"implicit relaxed dim={dim}")
-         residual_actual = evaluate((implicit_residual_equation(dim).expression,), operator_values)
+         residual_actual = implicit_residual_evaluators[dim_index](operator_values)
          residual_expected = [implicit_residual_reference(operator_values, dim)]
          assert_close(residual_actual, residual_expected, f"implicit residual dim={dim}")
       riemann_values = random_riemann_values(rng)
-      for kernel in riemann_kernels:
-         riemann_actual = evaluate(kernel.expressions, riemann_values)
+      for kernel, evaluator in zip(
+         riemann_kernels, riemann_evaluators, strict=True
+      ):
+         riemann_actual = evaluator(riemann_values)
          riemann_expected = [
             riemann_reference(kernel.name, output, riemann_values)
             for output in kernel.outputs
          ]
          assert_close(riemann_actual, riemann_expected, kernel.name)
       vector_values = random_vector_values(rng)
-      for kernel in vector_kernels:
-         vector_actual = evaluate((kernel.expression,), vector_values)
+      for kernel, evaluator in zip(
+         vector_kernels, vector_evaluators, strict=True
+      ):
+         vector_actual = evaluator(vector_values)
          vector_expected = [vector_reference(kernel.name, vector_values)]
          assert_close(vector_actual, vector_expected, kernel.name)
       metric_values = random_metric_values(rng)
-      for kernel in metric_kernels_cached:
-         metric_actual = evaluate((kernel.expression,), metric_values)
+      for kernel, evaluator in zip(
+         metric_kernels_cached, metric_evaluators, strict=True
+      ):
+         metric_actual = evaluator(metric_values)
          metric_expected = [metric_reference(kernel.name, metric_values)]
          assert_close(metric_actual, metric_expected, kernel.name)
       eos_values = random_eos_values(rng)
-      for kernel in eos_kernels_cached:
-         eos_actual = evaluate((kernel.expression,), eos_values)
+      for kernel, evaluator in zip(
+         eos_kernels_cached, eos_evaluators, strict=True
+      ):
+         eos_actual = evaluator(eos_values)
          eos_expected = [eos_reference(kernel.name, eos_values)]
          assert_close(eos_actual, eos_expected, kernel.name)
    print("PASS codegen_flux_riemann_eos_characteristics_relativistic_operators_vector_ops_and_metrics")

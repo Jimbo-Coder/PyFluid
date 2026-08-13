@@ -78,6 +78,16 @@
          }
       }
 
+      if constexpr (CTEnabled) {
+         // The CT face field is canonical. It is installed after the fluid
+         // integrator's accepted-state recovery and may also be changed by
+         // resistivity, so validate the state that can seed fine-level time
+         // interpolation. The RMHD atmosphere backstop retains B exactly.
+         project_relativistic_atmosphere_range<EOSMethod>(
+            fluid_state_.state(), lev, lev + 1
+         );
+      }
+
       if (cfg_.debug_check_finite || accepted_physical_check_due(level_steps_[lev], false)) {
          stage_start = profile_.begin();
          debug_check_state_level(lev, "post-subcycle accepted state", level_steps_[lev], level_times_[lev]);
@@ -134,12 +144,28 @@
             sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), false);
             reset_barotropic_energy_level<NComp, EOSMethod>(lev);
          }
+         if (spacetime_state_.evolves()) {
+            prepare_spacetime_coupling_range(
+               spacetime_state_.state(), lev, lev + 1,
+               level_times_[lev], -1.0, 0
+            );
+         }
+         // Reflux, average-down, and optional face-B synchronization are the
+         // final coarse-state owners for this parent interval.
+         project_relativistic_atmosphere_range<EOSMethod>(
+            fluid_state_.state(), lev, lev + 1
+         );
          profile_.end(ProfileStage::AverageDown, stage_start);
       }
 
       if (should_regrid_aligned_descendants(lev)) {
          const amrex::Real stage_start = profile_.begin();
-         regrid_hierarchy<true>(level_times_[lev], level_steps_[lev], lev);
+         const bool hierarchy_changed = regrid_hierarchy_and_project<
+            true, EOSMethod
+         >(
+            level_times_[lev], level_steps_[lev], lev
+         );
+         static_cast<void>(hierarchy_changed);
          aligned_regrid_due_ = false;
          profile_.end(ProfileStage::Regrid, stage_start);
       }

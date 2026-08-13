@@ -37,7 +37,8 @@
    void initialize_ct_fields_from_coarse(int lev, amrex::Real time);
    void initialize_remade_ct_fields(int lev, amrex::Real time, FaceMagneticField& old_face_b);
 
-   template <bool SubcyclingEnabled> bool regrid_hierarchy(amrex::Real time, int step, int requested_lbase = 0)
+   template <bool SubcyclingEnabled>
+   bool regrid_hierarchy(amrex::Real time, int step, int requested_lbase = 0)
    {
       int lbase = std::max(requested_lbase, 0);
       if (cfg_.initial_refine_fixed_levels > 0) {

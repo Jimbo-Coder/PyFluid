@@ -407,6 +407,7 @@ RunConfig read_config()
    pp.query("debug_poison", cfg.debug_poison);
    pp.query("debug_check_finite", cfg.debug_check_finite);
    pp.query("debug_check_physical", cfg.debug_check_physical);
+   pp.query("debug_stage_output", cfg.debug_stage_output);
    pp.query("rmhd_candidate_guard", cfg.rmhd_candidate_guard);
    pp.query("rmhd_candidate_riemann", cfg.rmhd_candidate_riemann);
    pp.query("rmhd_candidate_dmp", cfg.rmhd_candidate_dmp);
@@ -1008,6 +1009,16 @@ void validate_config(RunConfig const& cfg)
    if (cfg.physical_check_int < 0) {
       amrex::Abort("pyfluid.physical_check_int must be non-negative; 0 disables accepted-state physical checks");
    }
+   if (cfg.debug_stage_output && cfg.timestep != "ssprk3") {
+      amrex::Abort(
+         "pyfluid.debug_stage_output currently requires pyfluid.timestep = ssprk3"
+      );
+   }
+   if (cfg.debug_stage_output && cfg.amr_max_level > 0) {
+      amrex::Abort(
+         "pyfluid.debug_stage_output currently requires amr.max_level = 0"
+      );
+   }
    if (cfg.rmhd_candidate_guard != "off"
        && cfg.rmhd_candidate_guard != "pwc"
        && cfg.rmhd_candidate_guard != "pwl-pwc") {
@@ -1096,13 +1107,24 @@ void validate_config(RunConfig const& cfg)
       if (cfg.mesh_coordinate != "cartesian" || cfg.mesh_patch_system != "single") {
          amrex::Abort("relativistic-fluid runtime evolution currently supports a single Cartesian patch");
       }
-      if (cfg.recon == "wenoz-char" || cfg.recon == "mp5-char" || cfg.recon == "teno5-char"
-          || cfg.recon_fine == "wenoz-char" || cfg.recon_fine == "mp5-char"
-          || cfg.recon_fine == "teno5-char") {
-         amrex::Abort("relativistic characteristic reconstruction is not implemented; select a component method");
+      const bool uses_characteristic_reconstruction =
+         reconstruction_is_characteristic(recon_method_code(cfg))
+         || (!cfg.recon_fine.empty()
+             && reconstruction_is_characteristic(recon_method_code_from_name(
+                cfg.recon_fine, "pyfluid.recon_fine"
+             )));
+      if (uses_characteristic_reconstruction) {
+         amrex::Abort(
+            "relativistic characteristic reconstruction is not implemented; "
+            "select a component method"
+         );
       }
-      if (cfg.riemann != "llf" && cfg.riemann != "hll" && cfg.riemann != "hlle") {
-         amrex::Abort("relativistic-fluid runtime evolution supports pyfluid.riemann = llf, hll, or hlle");
+      if (selected_system == PhysicalSystem::RHD
+          && cfg.riemann != "llf" && cfg.riemann != "hll"
+          && cfg.riemann != "hlle") {
+         amrex::Abort(
+            "RHD runtime evolution supports pyfluid.riemann = llf, hll, or hlle"
+         );
       }
       if (cfg.ic == "fixed_metric_hse" && cfg.eos != "ideal_gas") {
          amrex::Abort("fixed_metric_hse currently requires pyfluid.eos = ideal_gas");

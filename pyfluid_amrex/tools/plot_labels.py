@@ -46,7 +46,8 @@ def component_math(component: str) -> str:
         return rf"\left| {component_math(component.removeprefix('abs_'))} \right|"
     if component.endswith("_mag"):
         prefix = component.removesuffix("_mag")
-        symbol = _VECTOR_PREFIXES.get(prefix, rf"\mathrm{{{prefix.replace('_', r'\_')}}}")
+        escaped_prefix = prefix.replace("_", r"\_")
+        symbol = _VECTOR_PREFIXES.get(prefix, rf"\mathrm{{{escaped_prefix}}}")
         return rf"\left| \mathbf{{{symbol}}} \right|"
     if component in _FIELD_SYMBOLS:
         return _FIELD_SYMBOLS[component]

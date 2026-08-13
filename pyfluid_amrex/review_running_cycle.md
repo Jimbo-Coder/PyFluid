@@ -3817,3 +3817,1258 @@ I will always continue from the last cycle marked as `in_progress`.
   CT geometry, AMR event transfer, SRMHD/GRMHD, and production code remain
   unimplemented. Both modified research tools compile, their focused gates
   pass, and `git diff --check` passes. [DONE]
+
+## Cycle 251 — State-derived NRMHD physical-fan birth (DONE)
+
+- Resume from Cycle 250's demonstrated persistent-path mechanism rather than
+  returning to another scalar limiter. Reproduce the committed controls and
+  audit their finite-volume, admissibility, and causal-event contracts before
+  extending them. Keep production C++, HLLD, CT, AMR, and timestepping
+  unchanged while the provider remains a standalone research hypothesis.
+  [DONE]
+- Remove the endpoint/speed/location oracle for one isolated physical NRMHD
+  element. Two real plateau cells per side plus one exact conserved mixture or
+  face jump now determine one candidate. A local Galilean normalization,
+  dimensionless conserved-mixture and flux-jump fits, and separate
+  family-level invariants admit contacts, nonzero-`Bn` Alfvén rotations, and
+  extremal fast Lax shocks. Ambiguous/multiple, boundary-clamped, periodic,
+  nonadmissible, non-RH, zero-`Bn` pseudo-Alfvén, and corrupted low-beta or
+  low-pressure states reject. Thirty-two Alfvén controls cover both signs of
+  `Bn`, both Walén signs, and angles through the half-turn. [DONE]
+- Close the numerical-conditioning holes found by adversarial review rather
+  than growing tolerances without limit. Fixed total-energy-ULP pressure
+  allowances are mathematically non-separating. A 100,000-contact scan found
+  exact contacts requiring 4.25 ULPs, a two-million scan reached five, and a
+  separate represented-pressure-jump scan found 1,995/2,385 false contact
+  births under the four-ULP policy. Replace it with a strict resolvability
+  contract: pressure-recovery and boost uncertainty must both remain below the
+  nominal `3e-10` fit tolerance or the detector returns no birth. A clean
+  bulk-200 fast shock and `p=1e-12`, zero-velocity/zero-field contact accept;
+  bulk-300 clean/corrupt shocks, clean/corrupt high-Mach contact and Alfvén
+  pairs, the `Bn=1e6` rotation, and a cancellation-dominated low-pressure
+  contact all reject as unresolved. Recovering them needs a trusted
+  local/dual-energy ledger rather than a looser primitive comparison. A final
+  strict-policy scan caught and removed one last double allowance: the
+  accepted conditioning estimate now screens predicate availability but is
+  not added onto the nominal `3e-9` pressure-equality tolerance. In-cap
+  contact and Alfvén pressure jumps at about 1.10 times that tolerance reject.
+  A final component audit also removed global magnetic/velocity roundoff
+  floors: a `By=1e6` field can no longer hide a represented `Bn=5e-8` jump,
+  and the analogous transverse-velocity/normal-velocity control rejects.
+  [DONE]
+- Persist the accepted state-derived element and test it across N=16/32/64,
+  CFL 0.4/0.9. Contacts, both fast-shock directions, and 90/180-degree
+  rotations give maximum total L1 `1.57296e-14`, maximum overshoot
+  `7.92120e-15`, one transition cell, unit TV, zero normal-field spread, and
+  maximum mass/momentum/energy errors
+  `6.66e-16/2.00e-15/6.22e-15`. Six smooth circular-Alfvén controls differ
+  from the MP5/HLLD path by at most `1.93e-14`. Ten thousand unrelated
+  conserved mixtures in each of NRHD/NRMHD/SRHD/SRMHD produce zero false
+  accepts; all 16 exact contacts per system accept. [DONE]
+- Test complete fan ownership rather than assuming that state-derived birth
+  resolves compound structure. At off-grid N=64 Sod/CFL 0.4, exact
+  shocks/contact plus the separately integrated MP5 rarefaction changes L1
+  `1.75513e-2 -> 4.38891e-3` and removes overshoot but worsens TV
+  `1.011879 -> 1.020994`. The seam persists at CFL 0.9. Exact-reference
+  integration of the complete physical fan gives maximum L1 `1.52380e-15`,
+  overshoot `2.33336e-15`, unit TV, and roundoff conservation across 60
+  aligned/off-grid N=16--64, CFL-0.4/0.9 Euler controls. This calls the exact
+  Euler solution and validates representation/event bookkeeping, not a
+  practical predictive rarefaction algorithm. [DONE]
+- Derive both initial origins/endpoints in the perpendicular NRMHD two-fan
+  collision from the finite-volume state. The incident and child fans remain
+  exact-Euler-solver-assisted inside the `Bx=0`, `By=k rho`, `gamma=2`
+  invariant subsystem. Six N=16--64, CFL-0.4/0.9 candidates reach maximum L1
+  `5.42697e-11`, overshoot `1.63783e-10`, TV deviation `9.50e-10`, roundoff
+  conservation, and zero normal-field spread; N=32/CFL-0.9 controls at
+  `k=0.03` and `0.13` retain the result. [DONE]
+- Preserve the actual boundary. A homogeneous nonsmooth FV average loses
+  curved physical-path information, and a fan split between independent
+  space-time operators creates a measurable ownership seam. The next
+  falsifiable object is a complete regular-NRMHD wave-curve provider with
+  Alfvén arcs, fast/slow rarefaction ODEs, shock-Hugoniot continuation, and an
+  explicit regular/nonregular solution policy, followed by a practical
+  GRP/ADER face-time predictor and another interaction. No production C++,
+  CT, AMR, SRMHD, or GRMHD path changed. [DONE]
+- Final validation after the strict conditioning policy: Python compilation
+  and `git diff --check` pass. The 30-case NRMHD matrix, six smooth controls,
+  40,000 unrelated-pair/four-system detector audit, 60-case complete Euler
+  fan matrix, two-CFL partial-ownership negative control, six-case mapped-MHD
+  interaction matrix, and `k=0.03/0.13` focused controls all pass their stated
+  scopes. A 100,000-draw exact NRMHD contact audit leaves 11,386 cases inside
+  both strict conditioning caps; all fit/classify as contacts and 129
+  representative full-birth probes pass (`seed=252`,
+  `rho=10^U[-3,3]`, `p=10^U[-14,3]`, and random-direction
+  `|v|,|B|=10^U[-3,7]`). Deliberate in-cap pressure scans accept
+  `0/2,000` contacts and `0/1,947` Alfvén states outside the nominal
+  equality tolerance. The final hidden-component check is deterministic, not
+  randomized. The AMReX quick suite passes architecture, exact-reference
+  sampling, and the feature matrix in
+  reported gate times `0.0767 + 0.4653 + 3.0083 s`. Production code remains
+  unchanged; standalone Python timings are not throughput evidence. [DONE]
+
+## Cycle 252 — Course-correct physical-wave research to production causality (DONE)
+
+- Recover the original production symptoms before extending another research
+  fan. Keep flat-SRMHD Balsara 4 ringing separate from Balsara 3 recovery,
+  verify all exact comparisons use conserved cell averages, and classify the
+  current isolated-wave/fan scripts as candidate mechanism, bounded control,
+  or parked drift. Two independent source audits and one causal-design audit
+  agree that no curved-GRMHD failure has yet been established and that the
+  first useful experiment is a production SSPRK3 onset trace. [DONE]
+- Add `diagnose_rmhd_balsara_onset.py`. It runs four accepted-state timelines,
+  one-stage Euler controls, and opt-in SSPRK3 candidate traces at CFL 0.9. The
+  time-matched exact reference rescales the self-similar tabulated profile and
+  averages its Valencia conserved state into every numerical cell; it never
+  selects a runtime face or state. Stable results and plots live under
+  `runs/current/rmhd_validation/` and `plots/current/scans/`. [DONE]
+- Add the off-by-default `pyfluid.debug_stage_output` path. It requires SSPRK3
+  and one uniform level and writes stage-1, stage-2, and stage-3 candidates
+  before terminal atmosphere projection plus the accepted candidate after
+  projection. The stage writer reuses canonical state component names and the
+  existing compressed HDF5 output path. No state, flux, correction, recovery,
+  CT, or reflux operation depends on the option. [DONE]
+- Localize Balsara 4. At N=256 the aligned initial jump gives the same first
+  Euler result for PPM4, PPM4/PWC, PPM4/PWC-LLF, and global PWC. SSPRK3 stages
+  1 and 2 have no measured global overshoot or plateau reversal. Stage 3 is
+  the first surviving event: raw PPM4 has overshoot `1.536317e-3`, TV
+  `1.242834`; PWC correction removes global overshoot and lowers TV to
+  `1.138395`, while global PWC and MP5/PWC give TV `1.118963/1.104608`.
+  Atmosphere projection is bitwise-neutral to the recorded stage-3 candidate.
+  The full PPM4/PWC run ends at L1/overshoot/TV
+  `9.805072e-3/9.955165e-3/1.327840`, 574 PWC corrections, zero recovery
+  events. [DONE]
+- Localize Balsara 3 separately. At N=128, unguarded MP5 accepted step 2 has a
+  stage-1 candidate with overshoot `0.805053`, TV `2.489339`, and one failure
+  in the standalone offline C2P. Projection before stage 2 records the
+  production atmosphere reset; three resets occur by final time. The guarded
+  stage-1 control has roundoff overshoot, unit TV, and no reset; the full
+  guarded run has 181 PWC corrections and zero recovery events. [DONE]
+- Test whether the existing prototype can causally address either symptom.
+  `audit_srmhd_physical_wave_balsara.py` applies its own standalone C2P and
+  two-plateau/full-RH predicate to saved production stages. Both initial
+  compound jumps and all guarded Balsara-3/4 stages reject. Its only nominal
+  activation is the far-right, unguarded Balsara-4 face after stage 3, with
+  speed `-1` and relative conserved jump `6.18e-15`; this is unresolved
+  far-field roundoff after the artifact, not a usable birth. Park complete-fan
+  and invariant-subsystem growth. Retain the isolated carrier as a bounded
+  mechanism control and require activation before the artifact before any
+  production ablation. [DONE]
+- Replace the research roadmap with a causal sequence: face-local replay of
+  the implicated stage-3 production flux; a controlled Newtonian-limit
+  SRMHD--NRMHD reduction followed by SRHD/NRHD; spatial two-state then
+  crossing-time-flux ablations only if an oracle-free detector activates in
+  time; CT/AMR/GR only after the flat four-system mechanism survives. Update
+  `knowledge.md`, `references.md`, and the unified research record so context
+  compaction cannot silently restore the parked NRMHD fan-provider roadmap.
+  Mark the three affected research harness docstrings with the same bounded or
+  parked status so their limitations travel with the executable controls.
+  [DONE]
+- Validation: the complete one-rank onset/stage matrix and offline prototype
+  audit pass their stated diagnostic scopes. Python compilation and final
+  `git diff --check` pass. The AMReX quick suite passes architecture, exact
+  reference sampling, and the feature matrix in reported gate times
+  `0.0586 + 0.3418 + 2.6722 s`. The 1D target cold-reconfigured after the
+  Homebrew toolchain change and compiled in 74.05 s (`16` cache hits, `59`
+  misses); the all-dimension production target then compiled in 350.28 s
+  (`0` hits, `150` misses) and its immediate cache-hit rebuild took 0.86 s.
+  The standard MPI performance gate passes its 3D WENO-Z/HLLC/RK4 case at
+  `0.1723 Mcells/s`, or `0.907` of the July baseline, but warns on all three
+  cheap PWC/LLF/Euler cases at `0.42--0.66` of baseline. Those cases do not
+  instantiate SSPRK3 and therefore cannot measure or implicate this
+  SSPRK3-only debug hook; keep the slowdown as an ambient/toolchain benchmark
+  warning rather than claiming a clean broad performance pass. Ruff was not
+  installed in the current `uv` environment, so only Python byte compilation,
+  not Ruff linting, was available. [DONE]
+
+## Cycle 253 — Expose the SRMHD causal spatial profiles (DONE)
+
+- Answer the request for profiles with the finite-volume quantity actually
+  scored: time-matched exact conserved cell averages overlaid with numerical
+  conserved cell averages. Extend `diagnose_rmhd_balsara_onset.py --plot-only`
+  to write a final-time Balsara-3/4 comparison and a causal candidate plot.
+  The latter shows Balsara-4 `S_2` through SSPRK3 stages 1--3 and the Balsara-3
+  step-2/stage-1 `D`, `S_1`, and `tau` candidates. [DONE]
+- Keep the views diagnostic rather than evidentiary sleight of hand: exact data
+  remain offline, the full profiles show the actual cell resolution, and the
+  stage views zoom only after retaining every cell center in the displayed
+  interval. Visual inspection confirms legible axes, methods, stages, and the
+  raw-versus-guarded Balsara-3 spike. Python compilation, plot-only generation,
+  visualization-fragment rendering, and `git diff --check` pass. [DONE]
+
+## Cycle 254 — Disambiguate SRMHD profile labels (DONE)
+
+- Clarify that none of the plotted methods is the new physical-wave prototype.
+  The Balsara-4 legend now names `PPM4 raw`, `PPM4 + PWC guard`, `Global PWC`,
+  and `MP5 + PWC guard`; the separate Balsara-3 legend names `MP5 raw` and
+  `MP5 + PWC guard`. The unplotted prototype remains the offline isolated-wave
+  carrier whose detector does not activate before either production symptom.
+  Re-rendering the corrected visualization fragment succeeds; no numerical
+  code, result, or static data plot changed. [DONE]
+
+## Cycle 255 — Require exact/A/B/A-B hybrid comparisons (DONE)
+
+- Adopt the user's comparison contract as a durable numerical-research rule:
+  every hybrid `A/B` is compared with the exact or independent reference, pure
+  `A`, pure `B`, and hybrid `A/B` under identical numerical settings. Record
+  activation counts and preserve constituent failures rather than omitting
+  them. Add the rule to the unified research record and `knowledge.md`. [DONE]
+- Complete both displayed matrices. Balsara 4 now compares exact, raw PPM4,
+  global PWC, and PPM4/PWC. At `t=0.4`, raw PPM4 has L1/overshoot/TV
+  `1.3160e-2/2.02195e-1/3.82096` and two atmosphere resets; global PWC has
+  `3.7971e-2/1.13693e-3/1.00568`; the hybrid has
+  `9.8051e-3/9.95517e-3/1.32784`, zero resets, and 574 corrections. Thus the
+  hybrid is more accurate than either constituent and prevents raw failure,
+  while pure PWC remains less oscillatory but much more diffusive. [DONE]
+- Balsara 3 now compares exact, raw MP5, global PWC, and MP5/PWC. Their final
+  L1 errors are `2.1029e-2/4.7109e-2/1.8083e-2`; raw MP5 needs three resets,
+  while PWC and the hybrid need none. The hybrid retains the best L1 and nearly
+  unit TV without the raw recovery failure. Add the missing pure-PWC timeline
+  and stage trace, update both spatial figures, and fix subset-only stage plots
+  so a selected case no longer assumes the other case is present. Python
+  compilation, all new scalar checks, full plot-only regeneration, visual
+  inspection, visualization-fragment rendering, and diff hygiene pass. [DONE]
+
+## Cycle 256 — Promote full-evolution hybrid comparisons (DONE)
+
+- Correct the evidentiary scope after the user notes that the one/two-step PWC
+  and hybrid profiles look nearly identical. They do: the short trace exists to
+  locate the first bad SSPRK3 candidate, and the guard intentionally uses the
+  low-order branch heavily at the unresolved initial jump. It cannot rank the
+  eventual hybrid. Make that distinction durable in the research and knowledge
+  documents. [DONE]
+- Add `rmhd_balsara_hybrid_timelines.png`, using all 57 accepted Balsara-4
+  states and all 29 accepted Balsara-3 states. It shows exact-relative L1,
+  overshoot, and TV for pure high order, global PWC, and the hybrid. At `t=0.4`,
+  PPM4/PWC has L1 `9.8051e-3` versus PWC `3.7971e-2` (`3.87x` lower), while its
+  overshoot/TV are `9.9552e-3/1.32784` versus PWC
+  `1.1369e-3/1.00568`. MP5/PWC has L1 `1.8083e-2` versus PWC `4.7109e-2`
+  (`2.61x` lower), with essentially unit TV and overshoot `1.4175e-6` versus
+  zero. Thus neither hybrid is pure PWC over the full evolution; each trades a
+  small amount of variation for substantially less diffusion. [DONE]
+- Keep the stage trace as the causal plot and use the full timeline plus final
+  spatial profiles for method judgment. Python compilation, plot-only
+  regeneration, visual inspection, inline-fragment rendering, and final diff
+  hygiene pass. No new solver run was needed because the matched full timelines
+  were already saved. [DONE]
+
+## Cycle 257 — Show multi-time profiles and separate the two mechanisms (DONE)
+
+- Correct the terminology explicitly. The plotted PPM4/PWC and MP5/PWC methods
+  are the existing production candidate-state guard: a conservative shared-face
+  replay selected from the concrete RK candidate, with no persistent subcell
+  front. The parked standalone physical-wave prototype does have a strict
+  two-plateau/full-RH subcell discontinuity detector and crossing-time carrier,
+  but it does not activate before either present Balsara symptom and remains
+  absent from production plots. Record this distinction in `knowledge.md` and
+  the unified research document. [DONE]
+- Add `rmhd_balsara_hybrid_profile_evolution.png`. It compares exact FV cell
+  averages, pure high order `A`, global PWC `B`, and the existing `A/B` guard
+  at accepted steps 10/28/57 for Balsara 4 `S_2` and 5/14/29 for Balsara 3
+  `S_1`. The horizontal axis is `x/t`, so the same wave locations can be read
+  across early, middle, and final time. Saved method times differ by at most
+  `3.1e-10` and `4.4e-5`, respectively, and agree exactly at `t=0.4`. [DONE]
+- Regenerate all diagnostic plots from the saved runs; no solver run is needed.
+  Python byte compilation and `--plot-only` generation pass, the new static
+  figure is visually inspected, and the new responsive inline fragment renders
+  successfully. Final `git diff --check` also passes. [DONE]
+
+## Cycle 258 — Restore density and reject prototype overstatement (DONE)
+
+- Accept the criticism that the symptom-only multi-time view was too selective.
+  Add density at all three displayed times for both Balsara 4 and Balsara 3,
+  while retaining `S_2` and `S_1` as the components that expose the localized
+  artifacts. Regenerate the static plot from the same saved full runs and add a
+  four-panel final-time inline view. [DONE]
+- Quantify density separately. Balsara-4 raw/guard density L1 is
+  `1.10882e-2/9.80507e-3` and TV is `1.49961/1.32784`, so the guard's gain is
+  modest and not visually clean. Balsara 3 is more adverse: the exact N=128 FV
+  density peak is `20.7419`; raw/guard/PWC reach `8.0785/5.2175/2.9060`.
+  Raw MP5 has lower density L1 than the guard (`7.85467e-3` versus
+  `9.92183e-3`) but incurs three atmosphere resets. The guard is a robustness
+  compromise, not a high-fidelity resolution of the tube. [DONE]
+- Make the research status explicit. The existing candidate guard is production
+  safety machinery rather than the novel prototype. The physical-front carrier
+  succeeds on isolated recognized waves but fails the causal activation gate
+  here. Mode-selective/THINC and constrained-fan work remains offline Pareto or
+  falsification evidence; exact/causal fans remain oracle/restricted controls;
+  WCEM/COWE remain unimplemented designs. No new prototype currently solves the
+  production Balsara symptoms. [DONE]
+- Python byte compilation, saved-run `--plot-only` regeneration, full-resolution
+  visual inspection, inline-data length checks, inline-fragment rendering, and
+  final diff hygiene pass. No solver run or production numerical method changes
+  in this cycle. [DONE]
+
+## Cycle 259 — Resolve what the Balsara-3 contact plot can establish (DONE)
+
+- Accept the visual diagnosis that none of the N=128 methods resolves the
+  narrow Balsara-3 density front. Inspect the final exact primitive table rather
+  than inferring the wave from the plot. At `x=0.381160560`, density alone jumps
+  `0.0979823515 -> 10.1039427`; total pressure, velocity, and transverse field
+  remain equal to table accuracy, so this is the contact. The high-density
+  state ends at the adjacent MHD jump `x=0.392556640`. [DONE]
+- Quantify the representation limit. The shell width is `0.011396080`; on the
+  plotted `[-1,1]` N=128 grid it spans only `0.729` cell. N=256/512/1024 provide
+  `1.459/2.917/5.835` cells. Thus the N=128 accepted-state trace remains a valid
+  recovery/causality diagnostic but cannot rank sharp-contact fidelity for
+  ordinary homogeneous-cell FV methods. [DONE]
+- Separate the remaining flux limitation with source and saved-run evidence.
+  RMHD supports LLF/HLL/HLLE, and HLL/HLLE share the same two-wave
+  implementation; no RMHD HLLC/HLLD path resolves the contact family. At
+  N=1024 the guarded WENO-Z/MP5/TENO5 maximum `D` values are
+  `27.6303/28.1006/28.1327` versus exact FV `34.0283`: the shell begins to
+  recover with resolution but remains diffuse. Prioritize an isolated
+  production RMHD contact and a validated contact-resolving flux experiment
+  before more reconstruction scans. No solver run or production source change
+  was made in this cycle. [DONE]
+
+## Cycle 260 — Establish RMHD-HLLD feasibility and expose high-resolution profiles (DONE)
+
+- Source-check whether a contact-resolving relativistic flux is actually
+  available. Mignone--Bodo RMHD HLLC restores the contact without a full
+  characteristic decomposition, but the original general-field construction
+  can become singular as normal magnetic field tends to zero. The established
+  five-wave RMHD HLLD construction retains two fast waves, two rotational
+  waves, and the contact, closes a nonlinear scalar total-pressure equation,
+  and admits the appropriate three-wave zero-normal-field degeneracy. A modern
+  matched comparison ranks HLLD best for weak/moderate magnetization. Thus
+  PyFluid's LLF/HLL/HLLE-only RMHD dispatch is an implementation gap, not a
+  physical or Valencia-formulation prohibition. [DONE]
+- Define the implementation boundary without importing another solver. Derive
+  flat-SRMHD HLLD from the primary jump conditions, audit every intermediate
+  state and wave ordering, retain HLL as the robust degenerate limit, validate
+  contacts/rotations/Balsara/random states, then add one face-normal local
+  orthonormal transformation for fixed or evolved GR metrics. HLLC is useful
+  as a contact-only algebra control but need not become another production
+  knob. No solver implementation was begun in this explanatory cycle. [DONE]
+- Build a four-panel high-resolution Balsara-3 conserved-density comparison
+  from saved HLL/SSPRK3/CFL-0.9 production outputs. It separates established
+  N=512/1024 methods from the removed HARM5/SP-MP5 reconstruction prototypes
+  and marks the exact contact and adjacent MHD jump. At N=512 exact/MP5-PWC/
+  HARM5-PWC/SP-MP5-PWC peaks are `34.0283/19.5114/14.2114/14.5365`; at N=1024
+  exact/MP5-PWC/HARM5-PWC are `34.0283/28.1006/24.2244`. Raw MP5 records 3/35
+  atmosphere resets and is not a clean accuracy winner. [DONE]
+- Agree with the calibrated negative conclusion. The production high-order/PWC
+  hybrid is valuable as candidate-state safety but does not sharply resolve
+  the Balsara-3 shell. The removed reconstruction prototypes are worse. The
+  physical-front subcell prototype has no curve because its detector never
+  activates before the Balsara-3/4 symptoms; inventing one would misrepresent
+  the experiment. The inline profile fragment parses successfully and a
+  separately rendered static four-panel equivalent was visually inspected.
+  The bundled visualization renderer was absent from this plugin installation,
+  so that optional wrapper check could not be run. [DONE]
+
+## Cycle 261 — Calibrate the AthenaK and AsterX comparison (DONE)
+
+- Reconcile the visibly diffuse high-resolution Balsara-3 profiles with the
+  earlier cross-code statements. The quantitative AthenaK comparison was only
+  Balsara 4 at N=1024 with matched HLLE/RK3 and conserved all-component
+  metrics; PyFluid MP5/PWC was better there. The later PPM4/PWC result used an
+  improved exact cell-average scorer that was not rerun on AthenaK, so it must
+  remain an internal PyFluid result rather than an enlarged cross-code claim.
+  None of this assesses the Balsara-3 contact shell or establishes overall
+  solver superiority. [DONE]
+- Keep the AsterX claim narrower still. A matched local 50-cell Balsara-4
+  control found PyFluid PPM4/PWC and AsterX PPM comparable, with each winning
+  different primitive-density/`By` metrics. The paper's clean-looking
+  Balsara-3 panel instead uses MINMOD and shows only primitive `rho` and `By`;
+  it supplies no all-conserved-component score, and no matched PyFluid run was
+  made against it. Therefore retract any broad wording that called PyFluid
+  equal to or better than AsterX, AthenaK, or other codes across these tests.
+  The supported statement is only that PyFluid is competitive on the matched
+  Balsara-4 controls while its current HLL-family Balsara-3 contact resolution
+  remains visibly inadequate. [DONE]
+- Record this scope in maintained knowledge and the unified research note so
+  later context compaction cannot turn a case-specific result into a global
+  ranking. No solver source, run, or numerical artifact changed. [DONE]
+
+## Cycle 262 — Production RMHD HLLD and HLLC control for SRMHD/GRMHD (DONE)
+
+- Add the Mignone--Bodo contact-restoring RMHD HLLC fan and the
+  Mignone--Ugliano--Bodo five-wave RMHD HLLD fan through the existing AMReX
+  Riemann dispatch. One face-normal orthonormal tetrad maps coordinate
+  primitives to the flat-SRMHD solve; the sampled state/flux at the
+  shift-driven moving interface maps back to the coordinate Valencia flux.
+  HLL remains the documented HLLD inadmissibility/nonconvergence limit and the
+  HLLC invalid-star limit. Candidate `rmhd_candidate_riemann=same` now really
+  reuses HLLC/HLLD instead of silently selecting HLL, while explicit HLL
+  remains available. Final selected-face HLL-limit uses are reduced across MPI
+  and reported as `rmhd_riemann_hll_fallbacks`. [DONE]
+- Keep the heavy fan algebra out of generic flux-owner headers. A small public
+  host entry routes RMHD HLLC/HLLD to one dedicated compiled owner; the large
+  device-callable routines are non-inlined, and only the nine valid component
+  reconstruction methods instantiate. Configuration now rejects all seven
+  relativistic characteristic reconstruction names, including the four PPM
+  variants that the old three-name check missed. Advanced-object sizes fell
+  from about `714 KiB/1.4 MiB/2.1 MiB` to
+  `402 KiB/783 KiB/1.1 MiB` for 1D/2D/3D. The one-time public-header
+  invalidation rebuilt the broad production graph in `310.89 s`; after
+  isolation, a real six-miss all-dimension advanced/config rebuild took
+  `11.42 s`, and the final no-op production build took `0.25 s`. [DONE]
+- Pass the standalone formula/tetrad executable: exact HLL algebra, all three
+  directions of a non-diagonal curved metric, identical-state coordinate flux,
+  local/direct HLL equivalence, isolated contact, isolated rotational wave,
+  zero-normal-field degeneracy, and 2,000 deterministic broad random fans with
+  finite samples and contact Rankine--Hugoniot residual gates. The production
+  1D/2D/3D targets and architecture check pass. [DONE]
+- Pass the complete three-rank CFL-0.9 integration gate for both methods.
+  Isolated-contact maximum scaled errors are `2.78e-15` (HLLC) and `4.26e-15`
+  (HLLD). Uniform 2D/3D CT stays exactly uniform; Rindler fixed-metric and
+  periodic coupled evolved-Z4c GRMHD complete; three-level entropy-wave AMR+CT
+  has `divB_L1=2.36e-15/2.29e-15`. No case uses a C2P fallback or atmosphere
+  reset. HLLD uses no HLL limit. Raw rotated Balsara-1 CT gives maximum defect
+  `6.95e-11` for HLLD. Register this dedicated gate in both the standard and
+  full suites; its final direct rerun takes `5.64 s`. [DONE]
+- Keep HLLC's limitation visible instead of relaxing the HLLD gate. Its raw
+  rotated Balsara-1 CT defect is `1.34e-9` on three ranks and reached
+  `2.29e-8` in the one-rank diagnostic; plain HLL stays near `1e-14`, PWC does
+  not remove the HLLC effect, and HLLC uses the HLL limit at the initial strong
+  interface. This is consistent with the documented multidimensional
+  shock-sensitivity of contact antidiffusion. HLLC remains a validated
+  contact/algebra control, not the production multidimensional MHD choice;
+  HLLD is the production solver. No unreferenced ADC/SWM extension was added.
+  [DONE]
+- Pass all five exact N=512 Balsara profiles. Maximum normalized
+  all-conserved-component L1 errors are
+  HLLC=`0.005306/0.006457/0.007137/0.004810/0.002936` and
+  HLLD=`0.006076/0.006470/0.007062/0.004905/0.002904`; HLLD uses zero internal
+  HLL limits, while HLLC records `3/0/0/2/0`. At Balsara 3 N=1024,
+  HLL/HLLC/HLLD errors are `0.004952/0.004938/0.004934`, but the exact
+  `D_max=34.0283` shell reaches only `26.867/26.826/26.728`. Complete-wave
+  fluxes are a real but modest error improvement, not a cure for a narrow
+  under-resolved shell. [DONE]
+- Pass the full standard suite on its clean rerun after one transient PMIx
+  listener failure was reproduced as an exact pass in isolation. The standard
+  symbolic gate was the apparent new latency outlier: it spent `129.82 s`
+  regenerating and repeatedly substituting SymPy artifacts, not compiling C++.
+  Cache expression evaluators, retain the same 128 randomized contract cases,
+  and move exact byte-for-byte regeneration to the full suite. The standard
+  contract now takes `5.03 s`; the exhaustive artifact comparison takes
+  `94.01 s` instead of about `130 s` and passes. Quick suite, Python compile,
+  `git diff --check`, and architecture validation pass. The final cached
+  all-dimension production build takes `0.23 s`. [DONE]
+- Do not change the primitive initializer's `eps=0` placeholder. The owning
+  helper immediately derives the thermodynamic value before use; no failing
+  path or uninitialized consumption was found, so treating the literal as a
+  bug would add unsupported complexity. [DONE]
+
+## Cycle 263 — Show exact SRMHD and curved-GRMHD Riemann profiles (DONE)
+
+- Add one reusable postprocessing/scan tool that places HLL, HLLC, and HLLD
+  beside the same reference and writes both static profile/error figures and a
+  compact machine-readable payload. For flat SRMHD, consume the already
+  validated N=512 MP5/PWC, SSPRK3, CFL-0.9 Balsara outputs and use the exact
+  finite-volume conserved averages, not point samples. [DONE]
+- Show representative component behavior rather than only aggregate maxima.
+  HLL/HLLC/HLLD normalized L1 is `3.956e-3/3.627e-3/3.954e-3` for Balsara-1
+  density, `7.243e-3/7.137e-3/7.062e-3` for Balsara-3 density, and
+  `4.310e-3/4.192e-3/4.005e-3` for Balsara-4 transverse momentum. The new
+  methods improve selected structures modestly; they do not transform the
+  visibly under-resolved Balsara-3 shell. [DONE]
+- Add a nonuniform fixed-Schwarzschild Balsara-1 comparison to exercise the
+  complete curved-background GRMHD tetrad, flux, and source path. Run each
+  method at N=512 and N=2048 on three ranks with MP5/PWC, SSPRK3, and CFL 0.9;
+  compare every N=512 curve to its own down-averaged N=2048 result so the
+  reference does not algebraically favor HLLD. HLL/HLLC/HLLD self-resolution
+  L1 is `3.125e-3/2.905e-3/2.882e-3` for densitized density and
+  `1.748e-3/1.638e-3/1.567e-3` for densitized transverse field. All six runs
+  complete without C2P fallback or atmosphere reset. HLLD is about 8--10%
+  lower-error than HLL here, but this numerical fixed-background comparison is
+  not an exact solution or a dynamical-Einstein profile claim. [DONE]
+- Visually inspect both static figures, render the inline comparison fragment,
+  pass Python byte compilation and `git diff --check`, and preserve the TSV,
+  run inputs/logs, and JSON payload under ignored run/plot roots. [DONE]
+
+## Cycle 264 — Attribute remaining Balsara degradation (DONE)
+
+- Add a production-path accepted/RK-stage replay and a separate offline DMP
+  audit. In Balsara 4, the first Forward-Euler candidate at cells 127--128 has
+  `D=42.476` to the recorded precision, matching the exact finite-volume
+  compression; candidate error is about `3.04e-8` of the error from retaining
+  the stage input. The factor-1.05 component DMP nevertheless rejects both
+  cells. The later reconstruction of that partially developed fan creates the
+  alternating defect: the raw second-step stage-1 candidate has 127 recovery
+  failures, while the first accepted step already has a small zigzag without a
+  recovery or physical-entropy-minimum violation. In Balsara 3, the same DMP
+  rejects beneficial early fan evolution and broadens the narrow shell. CT is
+  absent in these 1D runs; HLLD changes errors but not this causal category.
+  [DONE]
+- Falsify the cheap trigger alternatives before touching production. Rebuilding
+  the Forward-Euler candidate makes the DMP at least as restrictive: Balsara-4
+  step-1 current/FE/accepted-base-union counts are `2/2/2`, `0/2/0`, and
+  `4/4/4`; representative Balsara-3 counts are `2/4/2`, `0/3/0`, and
+  `2/6/1`. A Berta-style five-point detector plus one-cell halo contains every
+  DMP cell in both cases and therefore does not distinguish physical from
+  spurious structure. The PPM pressure/compression sensor catches only some
+  Balsara-4 flags and none of the early HLL Balsara-3 flags. With a `1e-8`
+  tolerance, the initial specific-entropy minimum accepts the first complete
+  Balsara-4 HLL/HLLD timestep; admissibility and this scalar entropy condition
+  are necessary but not sufficient oscillation tests. Results are preserved in
+  `balsara_candidate_dmp_audit.tsv`. [DONE]
+- Test component and shock-qualified guard ablations with an explicit rebuild
+  before every C++ experiment. A tau-only DMP improves most HLL/HLLD L1 errors
+  and reduces Balsara-3 corrections, but at HLLD N=1024 it changes Balsara-4
+  L1/overshoot/TV from `0.00350485/0.0102207/2.2565` to
+  `0.00369563/0.0716531/2.4373`. Density factor 1.2 plus tau is not better.
+  Enabling density only under the PPM shock sensor leaves Balsara 3 at the
+  tau-only result and gives unacceptable Balsara-4 overshoot (`0.1068` at
+  N=256 and `0.0640` at N=1024). A factor-only scan likewise cannot release
+  Balsara 3 without degrading Balsara 4. Restore the full density/energy DMP;
+  none of these experiments is promoted. [DONE]
+- Re-audit the existing prototypes against the causal trace. The physical-wave
+  detector activates on no relevant cell before either symptom; approximate
+  HLLD fan states have large jump residuals and the prior persistence control
+  is much worse in NRMHD. THINC/BVD is only a Newtonian Pareto control, and
+  exact/isolated carriers require oracle or restricted-system information.
+  None solves the production symptom. Defer the characteristic WCEM path: the
+  bounded next research object is a full-timestep, characteristic-free
+  a posteriori admissibility plus formulation-consistent entropy/residual test
+  with conservative shared-face flux and CT-EMF repair. [DONE]
+- Correct a tooling pitfall discovered during the ablations:
+  `diagnose_rmhd_balsara_onset.py --force` reruns the existing executable but
+  does not compile modified C++. Discard the stale preliminary ablation
+  numbers, rebuild `pyfluid_amrex_1d` for every reported source experiment,
+  then restore and rebuild the production guard. The final cache-hit rebuild
+  takes `0.43 s`. Restored Balsara-4 PPM4/PWC gives HLL
+  L1/overshoot/TV=`0.00980507/0.00995517/1.32784` and HLLD
+  `0.00906003/0.0125394/1.60152`, matching the guarded baselines. The diagnostic
+  Python files byte-compile, `git diff --check` passes, and the AMReX quick
+  suite passes architecture, exact-reference sampling, and the feature matrix
+  in `0.0473 + 0.3455 + 2.7004 s`. No production numerical policy changes in
+  this cycle. [DONE]
+
+## Cycle 265 — Make the candidate decision genuinely temporal (DONE)
+
+- Correct the next-prototype boundary from one completed timestep to a short
+  history of complete timesteps. Retain at least two accepted states and judge
+  the current completed candidate before committing it; if it fails, replay
+  the current step with conservative shared-face flux and compatible CT-EMF
+  correction. Do not accept a defect and attempt to remove it in a later step.
+  Stage-local correction remains only the immediate C2P/admissibility
+  backstop. [DONE]
+- Reject a raw same-cell temporal DMP as the replacement: a physical shock or
+  contact passing through a cell is naturally nonsmooth in time. The research
+  discriminator must be a characteristic-free local space-time entropy or
+  consistency residual that can distinguish coherent front motion from a
+  growing alternating mode. Balsara 3 and 4 are deliberately severe and expose
+  different limits, but difficulty is not evidence that their current smearing
+  or ringing is irreducible. Documentation only; no numerical code or run
+  changes. [DONE]
+
+## Cycle 266 — Exact operator autopsy and bounded temporal prototype (DONE)
+
+- Separate the Balsara-4 defect with matched exact-state and numerical-state
+  operator replays. Compare exact finite-volume cell averages, production
+  reconstructed face states, approximate face fluxes, exact physical traces,
+  time-integrated exact fluxes, and the complete timestep map before assigning
+  the cause to reconstruction, Riemann solving, or method-of-lines time
+  integration. Exact data are diagnostic oracles only. The local PPM4/HLL
+  replay matches saved production stages to relative errors
+  `2.17e-13/1.18e-14/9.51e-14`; the exact physical-trace one-step defect is
+  only `3.61e-5`. Reconstructed velocity and thermodynamic traces dominate,
+  while the exact finite-volume Balsara-4 compound fan is sharper and more
+  alternating than the numerical recovered primitive profile. [DONE]
+- Quantify Balsara-3 shell attenuation at N=512/1024 through the same layers so
+  the known N=128 representation limit is not mistaken for avoidable numerical
+  diffusion. Keep the density/energy guard, recovery-only path, HLL, and HLLD
+  as explicit controls. At N=1024 the operator defect remains concentrated in
+  the clustered shell, and exact velocity traces reduce its worst defect by
+  factors `0.376` (HLL) and `0.319` (HLLD). A matched base-N=128 AMR run reaches
+  local N=1024 spacing with 536 peak cells, level-three refinement and three
+  levels of headroom. HLL/HLLD L1=`0.004324/0.004278`, slightly below uniform
+  N=1024 `0.004952/0.004859`, with zero fallback/reset and about 2.4 times the
+  simulation-time throughput. Final level-three boxes have moved away from the
+  initial `[-0.08,0.08]` seed to cover the physical fan intervals near
+  `[-0.358,-0.297]` and `[0.157,0.437]`. [DONE]
+- Rough-prototype only the smallest mechanism-matched correction supported by
+  that decomposition. Do not add a production method, characteristic taxonomy,
+  template axis, or tuned detector merely because it improves one final plot.
+  A causally dilated two-history detector also flags an exact Balsara-5 fan;
+  its complete marked-face PWL replay changes Balsara-4
+  L1/Linf/TV=`0.007655/0.42968/1.0571` to
+  `0.008159/0.41345/1.6289`. Direct velocity/rapidity coordinates are neutral.
+  Adaptive shifted-log pressure reverses its exact-state one-step gain in full
+  HLL and HLLD evolution, and fitted HLLD outer speeds are unsafe when signal
+  bounded. Reject all four mechanisms and leave production numerics unchanged.
+  The Python diagnostics byte-compile, the C++ formula/tetrad oracle passes,
+  `git diff --check` is clean, and the AMReX quick architecture/exact-sampling/
+  feature gates pass in `0.066 + 0.342 + 2.668 s`. [DONE]
+
+## Cycle 267 — Calibrate the apparent cross-code Balsara-3 deficit (DONE)
+
+- Treat the user's visual concern as plausible instead of extending the
+  earlier Balsara-4 comparison. Normalize the grids first: the checked-in
+  AsterX Balsara-3 production parfile uses 400 cells on `[-0.5,0.5]`, hence
+  `dx=0.0025`; PyFluid N=512 on `[-1,1]` is 56 percent coarser, while N=800
+  on that domain has the same spacing. The AsterX paper itself exposes only
+  primitive `rho` and `By` and does not publish an all-state error table.
+  [DONE]
+- Run the local AthenaK executable read-only on the tracked Balsara-3 states
+  with N=400 on `[-0.5,0.5]`, PPM4, HLLE, RK3, and CFL 0.4. Convert AthenaK's
+  spatial four-velocity and internal energy to the same flat-Valencia state
+  and compare with exact conserved cell averages. AthenaK maximum normalized
+  component L1/overshoot/TV is
+  `7.97415e-3/5.94919e-5/1.07803`; `D_max=24.4097` and recovered
+  `rho_max=7.48017`. The same-grid PyFluid PPM4/PWC, HLL, SSPRK3 control gives
+  `8.65465e-3/5.37454e-5/1.09718`, `D_max=25.0590`, and
+  `rho_max=7.72545`. PyFluid density L1 is slightly lower
+  (`7.78375e-3` versus `7.89580e-3`), while AthenaK is modestly better in
+  transverse momentum and field. This is comparable performance, not a large
+  PyFluid deficit. [DONE]
+- Separate robustness from visual sharpness at the required production CFL.
+  AthenaK PPM4/HLLE at CFL 0.9 reaches maximum L1 `6.34219e-2` and TV ratio
+  `1.81928`, dominated by transverse momentum/field oscillation. PyFluid
+  PPM4/PWC at the same grid/CFL remains nonoscillatory but more diffuse:
+  `1.35282e-2/5.08337e-5/0.91063`, with 1000 PWC corrections and no C2P
+  fallback/reset. The current MP5/HLLD/PWC run at the same `dx`, restricted
+  to the same physical interval, improves maximum L1 to `1.19055e-2` and
+  `D_max` to `23.1579`. Its whole `[-1,1]` metric is `5.95276e-3`.
+  The correct diagnosis is a production-CFL sharpness cost from the guard,
+  not broad inferiority; releasing it indiscriminately reproduces the other
+  code's transverse ringing. [DONE]
+- Recheck the existing AMR result rather than judging only the coarse plot.
+  Base-N=128 AMR reaching local N=1024 spacing gives `D_max=29.5882` and
+  recovered `rho_max=9.1335`, compared with uniform N=1024
+  `26.9656/8.7805` and exact finite-volume `34.0283/10.1039`. Both have zero
+  fallback/reset, and AMR's maximum L1 is lower. The new PyFluid scalar files
+  pass the shared sanity check; no production source or numerical policy was
+  changed. [DONE]
+
+## Cycle 268 — Expose the matched low-CFL Balsara-3 profiles (DONE)
+
+- Answer the CFL interpretation with the already matched N=400,
+  `[-0.5,0.5]`, `dx=0.0025`, PPM4/PWC, HLL, SSPRK3 controls rather than
+  starting a differently resolved run. Plot CFL 0.4 and CFL 0.9 together
+  against exact finite-volume cell averages at `t=0.4`, including conserved
+  density `D`, recovered rest density, transverse momentum, and transverse
+  magnetic field. The exact primitive comparison is recovered from the exact
+  cell-averaged conserved state, so it respects the finite-volume
+  representation contract. CFL 0.4 reaches `D_max=25.0590` and
+  `rho_max=7.72545`, versus `20.0801/6.86100` at CFL 0.9. This presentation
+  adds no run, numerical policy, or production-source change. [DONE]
+
+## Cycle 269 — Clarify the robustness hierarchy boundary (DONE)
+
+- Do not treat local timestep subdivision as an ordinary reconstruction
+  fallback. It couples the spatial correction to an asynchronous temporal
+  operator and would complicate conservation, RK order, CT, and AMR. Keep one
+  common timestep and RK stage; if every admissible spatial/flux candidate
+  fails, reject and retry the whole step rather than silently creating local
+  time integration. [DONE]
+- Preserve the negative research result from the existing hybrid scans:
+  switching MP5/PPM/WENO-Z/TENO traces wholesale to PWL-MC or PWC mainly moves
+  along a diffusion-versus-oscillation tradeoff and has not delivered a major
+  all-regime improvement. Do not present another reconstruction ladder as the
+  missing solution without new evidence. An evolved atmosphere reset remains
+  a severe failure signal that is counted and warned about, not benign hybrid
+  behavior; routine hybrid correction and C2P/reset events remain distinct.
+  [DONE]
+
+## Cycle 270 — Earn a unified finite-volume reconstruction (DONE)
+
+- Refine one bounded research candidate before changing production: recover
+  point primitives from finite-volume conserved averages with a smoothness-
+  gated average-to-point map, then reconstruct one coupled primitive state
+  through a nested PWL-MC/PPM/MP5 correction. The coupling must preserve
+  variable coherence, reduce continuously rather than switch whole methods,
+  and retain a terminal admissibility projection. The resulting research
+  harness reconstructs an average-preserving conserved polynomial, recovers
+  three Gauss-point primitives, uses one state-wide continuous PPM4-to-MP5
+  correction with an exact smooth plateau, and conditions its characteristic
+  basis on whether the finite-volume representation remains recoverable. In
+  SRMHD, every concrete SSPRK3 candidate is checked with the production-style
+  factor-1.05 density/energy DMP; both shared faces of a troubled cell use PWC
+  flux, without local time subdivision or an atmosphere reset. Per-wave
+  sensing, binary PPAO selection, a PWL-first face hierarchy, and an evolved-
+  low-order DMP reference were tested and rejected. [DONE]
+- Require the candidate to match smooth high-order accuracy and improve or at
+  least preserve the relevant shock metrics across HD, MHD, and SRMHD. Test
+  complete timesteps and Balsara profiles, not only isolated stencils or exact
+  operator oracles. Do not add it to AMReX unless it earns a clear Pareto
+  improvement over the existing individual methods and guards. It matches
+  characteristic MP5 on the N=32/64 smooth HD entropy and circular-Alfven
+  waves, and it is a strong SRMHD robustness point: at N=128, CFL 0.4,
+  Balsara-4 L1/overshoot/TV improve from PPM4
+  `1.6923e-2/0.2847/3.314` to `1.2162e-2/0.0383/1.385`, while raw MP5 fails.
+  At CFL 0.9 the candidate completes Balsara 3 and 4 and beats the surviving
+  Balsara-4 MP5 profile. It nevertheless fails the universal promotion gate:
+  at N=64, CFL 0.4 it is 14--34 percent worse than characteristic MP5 on the
+  three HD shocks, 27 percent worse on the NRMHD Brio--Wu reference, and 22
+  percent worse on SRMHD Balsara 3. At N=128, CFL 0.4 its Balsara-3 L1 is
+  `1.9740e-2` versus MP5 `1.2000e-2`. The prototype, compressed profiles, and
+  final comparison are preserved in
+  `tools/research_coupled_fv_reconstruction.py`,
+  `runs/current/research/coupled_fv5_dmp_b34_n128_cfl04.npz`, and
+  `runs/current/research/coupled_fv5_dmp_b34_n128_cfl09.npz`. It is not added
+  to the AMReX method catalog: optimization cannot repair an algorithmic
+  cross-regime regression. Production MP5/PWC and PPM4/PWC remain the
+  accuracy- and low-ringing controls, respectively. [DONE]
+- Final cleanup removes the rejected sensor/replay branches from the research
+  harness. Python byte compilation and a fresh N=32 HD/MHD cross-system run
+  pass; its smooth errors still match MP5 while all shock/reference branches
+  complete with the recorded candidate regressions. A fresh N=32, CFL-0.9,
+  four-step Balsara-3/4 smoke also completes both candidate evolutions; the
+  unguarded PPM4/MP5 controls retain their expected early failures or ringing.
+  The compressed N=128 exact/candidate/control profiles render successfully
+  in the four-panel comparison, and `git diff --check` passes. No AMReX build
+  is required because the promotion gate rejected production integration.
+  [DONE]
+
+## Cycle 271 — Test a physical minimum-correction selector (DONE)
+
+- Keep production numerics frozen. Use the saved, production-matched SRMHD
+  stages and exact finite-volume references to test whether an oracle-free,
+  system-level conservation/entropy or wave-coherence residual distinguishes
+  legitimate Balsara-3 shell formation from the Balsara-4 candidate defect.
+  Admissibility remains the hard backstop; a raw component DMP, another named
+  reconstruction ladder, local timestep subdivision, or problem labels are
+  excluded. A local physical-specific-entropy minimum fails: at relative
+  tolerance `0.002`, the saved Balsara-3 second-step deficit is `5.956e-3`,
+  larger than Balsara-4's targeted third-step `4.533e-3`, and an exact
+  finite-volume Balsara-3 control reaches `1.976e-3`. A numerical local
+  characteristic hull likewise flags exact Balsara fans 1--5 and can demand
+  zero retained high-order content when a legitimate nonlinear fan creates a
+  direction absent from the old hull. Neither criterion is a physical
+  acceptance condition. [DONE]
+- As a final bounded ablation, prototype the minimum conservative shared-face
+  correction
+  `F = F_low + theta (F_high - F_low)` through complete SSPRK3 timesteps.
+  Require exact smooth inactivity, scalar conservation, improved or preserved
+  L1/overshoot/TV, and CFL 0.4/0.9 behavior before considering AMReX. The
+  N=64 MP5/PWC comparison rejects it. At CFL 0.4, Balsara-4 continuous/binary
+  L1/overshoot/TV are `0.02617/0.1614/1.714` and
+  `0.01953/0.05545/1.429`, while Balsara-3 L1 is essentially tied
+  (`0.02694/0.02696`). At CFL 0.9 the continuous method slightly lowers
+  Balsara-3 L1 but raises Balsara-4 L1 and TV. The shared-face integral errors
+  agree, so this is an accuracy/selection loss rather than a conservation
+  failure. Production remains unchanged. [DONE]
+- Remove the rejected experimental implementation instead of retaining a new
+  selector/limiter knob. Preserve only the compact numerical conclusions here
+  and in `knowledge.md`; byte-compile the surviving research harnesses and run
+  whitespace/status hygiene checks. The experimental file is removed; the
+  coupled-FV and three operator/candidate diagnostics byte-compile,
+  `git diff --check` passes, and the pre-existing dirty production/research
+  worktree is otherwise unchanged. No broader AMReX run is warranted because
+  the offline candidate failed its first direct promotion comparison. [DONE]
+
+## Cycle 272 — Test a proper conservative subcell front treatment (DONE)
+
+- Treat subcell reconstruction as a persistent conservative representation of
+  a resolved discontinuity inside a finite-volume cell, not as another named
+  low-order fallback or an exact-solution oracle. Source-check the established
+  in-cell reconstruction/BVD/MOOD neighborhood and audit the existing physical-
+  wave prototype before adding code. Preserve one shared subcell fraction for
+  the coupled state, common normal magnetic field, and one face flux for both
+  adjacent cells. The isolated-wave carrier already satisfies that propagation
+  contract. A corrected Harten-style polynomial/shared-jump audit rejects
+  plateau, face-aligned, weak-jump, acausal, and componentwise-RH false
+  positives and finds no usable front before either Balsara-3/4 symptom. The
+  late Balsara-3 candidates describe resolved outer shocks rather than its
+  subcell contact-bounded shell. [DONE]
+- Begin offline. Require oracle-free creation, propagation, interaction, and
+  deletion logic through complete timesteps; exact solutions may score the
+  result but may not enter evolution. Compare baseline, subcell, and guarded
+  forms across smooth HD/MHD waves, HD shocks, Brio--Wu, and exact SRMHD
+  Balsara 3/4 at CFL 0.4 and 0.9. Only a held-out Pareto improvement may enter
+  the AMReX catalog. A strict plateau-birth time-slab flux improves some final
+  Balsara metrics but is not dominant. A conservative, recoverable Hancock
+  profile exposes a real coherent-time mechanism: at CFL 0.9 its N=64
+  Balsara-3/4 L1 is `0.02475/0.01873` versus guarded SSPRK3
+  `0.03225/0.02344`, and the improvement persists at N=128 and 256. It fails
+  the broader gate: at CFL 0.4 Balsara-3 L1 worsens from
+  `0.02696 -> 0.03275` at N=64 and `0.01722 -> 0.02157` at N=128, while
+  high-resolution overshoot/TV remain mixed. Full-step and RK-stage local
+  splices lose more of the gain through method-ownership seams. A minimal
+  primitive local-GRP precursor confirms the literature direction but its
+  low-order spatial profile does not beat Hancock. The direct SRMHD Pareto
+  failure stops the HD/MHD/CT promotion matrix early. [DONE]
+- If the offline operator wins, add the minimum production support without a
+  new template-product axis: host-selected policy, conservative shared-face
+  flux ownership, RK-consistent CT EMFs, AMR/restart semantics for any
+  persistent front state, diagnostics, and focused compile/performance gates.
+  Otherwise remove the rejected branch and retain only the learned numerical
+  boundary. The prototype does not enter AMReX and adds no numerical knob or
+  template axis. The durable boundary is that a complete high-order
+  primitive-variable ADER/GRP background could be researched as a separate
+  operator, whereas per-cell persistent generic subgrids would duplicate the
+  already validated state-following AMR remedy. The rejected time-slab/
+  Hancock/GRP experiment is removed after preserving its compact evidence;
+  the corrected detector audit remains as the reproducible negative check.
+  [DONE]
+
+## Cycle 273 — Build a coherent high-order space-time FV candidate (WIP)
+
+- Replace the rejected low-order Hancock/RK splices with one conservative
+  fully discrete operator: reconstruct one scale-independent primitive
+  polynomial, solve one cell-local weak space-time DG/Picard problem, and use
+  one shared time-integrated face flux. Keep production AMReX frozen. The HD,
+  NRMHD, and SRHD adapters now share the same CWENO-Z/ADER-Prim structure and
+  `high -> MP5 parabola -> PWL-MC -> PWC` correction hierarchy. Smooth HD,
+  circular-Alfven NRMHD, and SRHD entropy gates recover about fifth order at
+  CFL 0.9 with roundoff conservation. Exact HD and SRHD shock matrices remain
+  Pareto rather than universally L1-dominant; the SRHD compression-scaled DMP
+  is retained only in that adapter. [DONE]
+- Add a flat-SRMHD adapter around the production C2P/HLLD executable instead
+  of duplicating pointwise RMHD physics. Batch all oracle rows and vectorize
+  the primitive Jacobians: N=8 entropy wall time falls from tens of seconds to
+  about two seconds without changing its error beyond roundoff. Replace
+  subtractive finite differences with complex-step derivatives of the
+  independently checked analytic flat-SRMHD map; state/flux agreement with the
+  C++ oracle is `1.42e-14/3.55e-15`. A 10,000-state extreme audit leaves only
+  `20` genuinely non-real numerical systems after adding a real-Schur
+  invariant-subspace fallback; the maximum accepted residual across broad,
+  forced-`B_normal=0`, and forced-`B=0` samples is `1.18e-13`. Forced
+  `B_normal=0` and `B=0` entropy waves retain order `5.00`.
+  [DONE]
+- Gate all seven linearized SRMHD families at CFL 0.9. From N=8 to 16, the
+  candidate's observed orders are `4.87--5.10`; every family is more accurate
+  than component MP5+SSPRK3, scalar integrals agree to roundoff, and normal B
+  is exact. The finite-amplitude entropy N=8/16/32 errors are
+  `3.50e-4/1.05e-5/3.29e-7`, orders `5.07/4.99`, versus MP5
+  `5.92e-4/2.76e-5/1.77e-6`. [DONE]
+- Run complete exact finite-volume Balsara evolutions through the same
+  candidate. At N=64/CFL 0.9, cases 1--5 worst-component L1 improve from
+  `0.02147/0.01854/0.01931/0.02553/0.01214` to
+  `0.01418/0.01579/0.01420/0.01709/0.01143`; maximum TV improves in all five,
+  and Balsara 4 loses most excess structure. At N=128/CFL 0.4, Balsara-3 max
+  L1 is tied within `0.06%` (`0.009492` versus `0.009497`) while density L1,
+  overshoot, and TV improve. The held-out failure is Balsara-2 density
+  undershoot at N=64 (`0.00293 -> 0.01103`). An MP5 trace anchor, DMP through
+  MP5, DMP through PWL, and a compression-gated secondary DMP were tested and
+  removed: they exchange that deficit for case-1 tau overshoot or excessive
+  diffusion. [DONE]
+- Localize the Balsara-2 failure before adding another generic fallback. The
+  growing mode lies on the left plateau immediately before the strong material
+  contact, whose exact pressure, velocity, and magnetic field are continuous.
+  Pure HLLE masks it only through diffusion; the HLLD interface flux already
+  satisfies the tested two-point entropy inequality. A direct
+  conserved-average-to-primitive-center shortcut is only second order, while
+  the existing average-to-point/C2P path remains fifth order. THINC and a
+  projected-contact replacement fail the held-out matrix and are removed.
+  Gamma-law SRMHD state and flux are affine in density for fixed `p,v,B`, so
+  retain a material-contact density trace as the bounded physical hypothesis.
+  [DONE]
+- Add that hypothesis only to the offline coherent MP5 correction rung. The
+  retained correction requires a local material-characteristic fraction to
+  the twelfth power, nonzero magnetization, and a five-cell normalized fourth
+  difference, then blends only density toward limited PPM3 contact steepening;
+  the complete trace still passes whole-state admissibility. Random reflected-
+  stencil audits swap the two traces to `1.1e-16`, and both NRMHD and SRMHD are
+  bit-identical to the uncorrected coefficients at `B=0`. Smooth entropy and
+  all seven linear families remain fifth order. At N=64/CFL 0.9 Balsara-2
+  undershoot improves `0.0110316 -> 0.0102429` (`7.15%`) and worst-component
+  L1 improves slightly; at N=128 the undershoot improves `0.0081001 ->
+  0.0075728` (`6.51%`). Cases 1 and 3--5 remain essentially tied. Brio--Wu and
+  Dai--Woodward total L1 improve by `0.22%/0.03%` relative to the uncorrected
+  coherent operator. Add the missing same-resolution characteristic-MP5
+  control: against the common N=512 numerical reference, coherent corrected is
+  `6.44%` worse in Brio--Wu total L1 but lowers overshoot/TV from
+  `0.0466/1.205` to `0.0272/1.136`; it is `12.0%` better in Dai--Woodward total
+  L1 and also lowers overshoot/TV. All NRMHD corrections stop at MP5 and occupy
+  `15.6%/12.2%` of Brio--Wu/Dai--Woodward cell-steps. Disabling the DMP keeps
+  both states physical and high order but worsens total L1 by `7.6%/5.9%`
+  relative to the guarded coherent result. A bounded DMP relative-tolerance
+  scan over `0--0.1` leaves `0.01` best for Brio--Wu; Dai--Woodward's slightly
+  lower-L1 `0.005` result has higher TV. Do not retune it. The cross-system
+  controls prevent promotion: HD shock L1 worsens, and the current component-
+  MP5 / SSPRK3 operator is tied or mixed. At CFL 0.4 the full correction improves
+  Balsara-2 undershoot/TV by `2.53%/0.12%` but worsens worst-component/density
+  L1 by `1.04%/3.14%`; a 25--75% strength scan finds no nonzero all-metric
+  dominance. Preserve the mechanism and gate in the research adapters, but do
+  not add a production method or limiter knob. [DONE]
+- Compose the strict physical-wave carrier with the coherent SRMHD update.
+  A temporary adapter incorrectly converted only the override from production
+  `tau` flux to total-energy flux; the resulting conservation failure was
+  fixed at the contract boundary. N=16/CFL-0.9 moving-contact/oblique-shock L1
+  is now `2.8e-14/8.3e-10` with roundoff conservation. Balsara 3/4 activate
+  zero physical faces, so this remains a narrow isolated-front capability and
+  receives no credit for the compound-fan gains. [DONE]
+- Finalize the bounded offline gate without touching AMReX production source.
+  Fresh NRMHD N=64/CFL-0.9 circular-Alfven, Brio--Wu, and Dai--Woodward runs;
+  SRMHD entropy N=8/16/32; all seven linear modes; forced-`B_normal=0` and
+  forced-`B=0` entropy; isolated exact fronts; and 10,000-state broad and
+  degenerate basis audits complete. Conserved integral errors remain at
+  roundoff and normal magnetic field is exact. The contact traces are
+  reflection-consistent to `1.1e-16`; both MHD adapters are bit-identical when
+  `B=0`. The research Python files byte-compile and `git diff --check` passes.
+  `ruff` is not installed in the current uv environment, so no lint result is
+  claimed. No AMReX build is warranted because no production source changed.
+  [DONE]
+- Before production promotion, resolve or explicitly accept the Balsara-2
+  Pareto trade, add multidimensional CT/rotation and AMR/reflux gates, carry
+  the primitive predictor through a nontrivial GR metric/tetrad, and replace
+  the research numerical eigensolve with a generated and benchmarked
+  device-suitable Jacobian/basis. If it earns those gates, expose one host
+  runtime method through the existing factory; do not add a template-product
+  axis. [PENDING]
+
+## Cycle 274 — Separate the coherent core from its fallback shell (DONE)
+
+- Treat the user's concern as a promotion-critical hypothesis: the Cycle-273
+  candidate may be an established ADER-style operator wrapped in enough
+  MP5/PWL/PWC correction machinery that its apparent gain cannot yet be
+  attributed to a genuinely better high-order core. Source-check novelty and
+  build a matched spatial/temporal ablation: MP5+RK, CWENO+RK,
+  MP5+local-space-time, and CWENO+local-space-time, with correction counts and
+  high-order-only controls reported separately. Keep production AMReX frozen.
+  The three durable harnesses are
+  `research_{,mhd_,srmhd_}spacetime_operator_ablation.py`; the MHD/SRMHD
+  coherent adapters now accept the already shared MP5-parabola-primary control
+  without duplicating pointwise physics. [DONE]
+- Require the core, not the fallback ladder, to explain a useful accuracy or
+  robustness gain across smooth HD/MHD/SRMHD waves and held-out shock tubes.
+  Simplify or reject research branches that do not survive this attribution.
+  Do not call an established ADER-WENO/MOOD composition novel merely because
+  it is new to PyFluid. Source checking identifies the double-reconstruction,
+  primitive local weak space-time predictor, and conservative update as
+  Zanotti--Dumbser ADER-Prim; a-posteriori candidate checking is established
+  MOOD-family logic. The retained result is a PyFluid implementation and
+  evaluation, not a novelty claim. [DONE]
+- The HD four-way control at CFL 0.9 finds smooth N=32/64 density errors
+  `7.56e-6/5.86e-7` for MP5+SSPRK3, `6.42e-6/5.50e-7` for CWENO+SSPRK3,
+  `3.81e-5/4.50e-6` for MP5-parabola+local-time, and
+  `2.37e-6/7.42e-8` for CWENO+local-time. Only the last branch realizes fifth
+  order. On the same CWENO spatial operator, local-time lowers N=64 shock L1
+  by `0.06/21.4/25.9/8.1%` on Sod/Lax/blast/contact, but ordinary MP5 retains
+  the better spatial result on several fronts. Disabling the DMP leaves all
+  four high-order HD shock updates physical; the shell is a modest modifier,
+  not the source of the temporal gain. [DONE]
+- The NRMHD N=64/CFL-0.9 control makes the same separation. CWENO+local-time
+  versus CWENO+SSPRK3 total L1 is `0.01346/0.01692` on Brio--Wu and
+  `0.00766/0.01155` on Dai--Woodward. The DMP-disabled local-time values are
+  `0.01535/0.00922`, so the shell supplies additional L1 but trades some
+  overshoot/TV. MP5+SSPRK3 remains lower-L1 on Brio--Wu and essentially ties
+  guarded CWENO+local-time on Dai--Woodward; no broad NRMHD dominance is
+  claimed. [DONE]
+- The exact SRMHD matrix is decisive. At N=64/CFL 0.9, CWENO+SSPRK3 Balsara
+  1--5 worst-component L1 is
+  `0.01750/0.02954/0.02330/0.01734/0.01672`; guarded CWENO+local-time gives
+  `0.01418/0.01579/0.01420/0.01709/0.01143`; and disabling only the DMP gives
+  `0.01766/0.02095/0.01534/0.01982/0.01291`. Thus the coherent temporal core
+  helps the fixed spatial operator in every case and the shell further lowers
+  worst L1 in every case, while Balsara-2/4 secondary metrics remain Pareto.
+  Smooth SRMHD N=16/32 CWENO+local-time errors
+  `1.05e-5/3.29e-7` retain order `4.99`, whereas the sharp
+  MP5-parabola+local-time branch remains about third order. [DONE]
+- Falsify the obvious simplifications rather than retaining knobs. Setting the
+  CWENO exponent to zero recovers the unlimited optimal quartic; without DMP
+  it rings strongly and its RK form fails Balsara 4, while guarded local-time
+  demotes about `38--39%` of N=32 cell-steps and reproduces the current result.
+  A point-sample-correct MP5 trace anchor preserves fifth order but improves
+  some Balsara L1 values while worsening case 3 or overshoot/TV. Central
+  linear weights `0.6/0.95/0.99` and WENO-Z exponents `1/3/4` move the same
+  trade among held-out cases; retain `0.85/2`. Remove those experimental
+  branches, make the magnetized contact correction opt-in in the research
+  adapters, and leave production MP5/HLLD/guard unchanged. [DONE]
+- Repeat the exact SRMHD attribution at CFL 0.4 rather than extrapolating from
+  the production-target CFL 0.9. N=64 CWENO+SSPRK3 Balsara 1--5 worst L1 is
+  `0.01942/0.02341/0.01644/0.01495/0.01567`; guarded CWENO+local-time is
+  `0.01563/0.01763/0.01504/0.01701/0.01285`. The predictor improves four
+  cases by `8.5--24.7%` but regresses case 4 by `13.8%` while lowering TV.
+  DMP-disabled case 2/4 is `0.02211/0.01556`, proving that the shell helps the
+  former but trades L1 for TV in the latter. The candidate is a strong
+  CFL-0.9 Pareto point, not an all-CFL universal operator. [DONE]
+- Fresh Python byte-compilation of the four touched research tools passes,
+  the existing smooth MHD and SRMHD controls remain reproducible, and
+  `git diff --check` passes. These are offline Python numerical gates; no AMReX
+  build is warranted because production source is unchanged. Optimized ADER
+  literature reports competitive cost, but current Python wall times are not
+  a production performance benchmark. Fresh four-way N=8 MHD and SRMHD smoke
+  rows also complete with roundoff conserved-integral errors and exact normal
+  magnetic field. [DONE]
+
+## Cycle 275 — Show matched exact Balsara profiles (DONE)
+
+- Generate fresh, apples-to-apples flat-SRMHD Balsara 1--5 profiles from the
+  Cycle-274 offline harness: exact finite-volume conserved averages, the old
+  component-MP5+SSPRK3/HLLD control, and the retained characteristic-CWENO
+  ADER-Prim/MOOD candidate. Use the same grid, CFL, boundaries, C2P/HLLD
+  oracle, and final time; label this as an offline matched baseline rather than
+  an AMReX production run. Show density plus selectable conserved components
+  and do not hide Balsara-2 or low-CFL Pareto limitations. [DONE]
+- Fresh N=64, CFL 0.9 reruns reproduce the Cycle-274 worst-component
+  normalized-L1 pairs for Balsara 1--5 exactly: old/new is
+  `0.021465/0.014184`, `0.018539/0.015789`, `0.019307/0.014199`,
+  `0.025531/0.017094`, and `0.012141/0.011427`. The candidate improves this
+  aggregate on all five cases, but individual component and low-CFL Pareto
+  tradeoffs remain visible and documented. [DONE]
+- Build `balsara_aderprim_vs_mp5_profiles.html` as a thread visualization with
+  a five-case D/B2 overview and selectable conserved-component detail view.
+  Curves use exact Valencia finite-volume averages, not mismatched pointwise
+  samples. The fragment passes the visualize renderer, a JavaScript syntax
+  check, fragment-structure checks, and includes 760/430-pixel responsive
+  layouts. Screenshot QA was unavailable because no in-app browser backend was
+  connected; the AMReX production operator remains unchanged. [DONE]
+
+## Cycle 276 — Retry Balsara profile delivery (DONE)
+
+- The first interactive attachment rendered incorrectly for the user. Replace
+  that delivery with a directly inspected static PNG showing fan-cropped
+  conserved D/B2 profiles for all five matched N=64, CFL 0.9 cases, and wrap
+  the PNG in a minimal no-script thread fragment for reliable inline display.
+  The image visibly contains the exact FV step profile, old MP5 control, new
+  ADER-Prim/MOOD candidate, axes, legend, and per-component L1 values. The
+  earlier interactive fragment was also changed from an ES-module D3 import to
+  the pinned classic D3 script, but the static rendering is the retry shown to
+  the user. No solver or production source changed. [DONE]
+
+## Cycle 277 — Deliver Balsara profiles as direct PNGs (DONE)
+
+- The static-HTML retry was also unusable in the client. Remove the attachment
+  layer entirely and deliver two directly rendered/inspected PNGs: five stacked
+  conserved-D profiles and five stacked B2 profiles. Each shows exact FV
+  averages, the matched old MP5+SSPRK3+HLLD control, the new
+  ADER-Prim/MOOD+HLLD candidate, fan-cropped x axes, and per-case normalized-L1
+  values at N=64/CFL 0.9. No numerical rerun or solver source change was needed;
+  these plots use the already verified fresh Cycle-275 payloads. [DONE]
+
+## Cycle 278 — Interpret the matched Balsara profiles (DONE)
+
+- Visual inspection establishes that the retained ADER-Prim/MOOD candidate is
+  comparable to, but not decisively better than, the matched component-MP5
+  control. Its lower worst-component normalized L1 at CFL 0.9 often comes from
+  replacing MP5 oscillation with smoother/diffusier transitions rather than
+  recovering missing waves or contacts. The narrow Balsara-3 density structure
+  remains badly unresolved and its B2 L1 is worse (`0.01024 -> 0.01371`), while
+  Balsara 5 is effectively tied. Do not promote this operator to production or
+  call it a universal/best reconstruction based on the aggregate five-case
+  numbers. Retain it only as an offline Pareto/reference method unless a future
+  mechanism produces a clear held-out structural gain. [DONE]
+
+## Cycle 279 — Autopsy Balsara-3 shell capture and complementary hybrids (DONE)
+
+- Determine whether any existing lower-order/diffusive, parabolic, or
+  compressive reconstruction captures the narrow Balsara-3 density shell more
+  faithfully than matched component MP5 or ADER-Prim/MOOD at N=64/CFL 0.9.
+  First quantify shell width, location, cell-average peak, and integrated shell
+  content against exact FV averages; do not equate lower ringing with better
+  shell capture. Compare only matched flux/C2P/boundary/time settings where
+  possible, then test whether a general local selector has genuinely
+  complementary candidates rather than inventing Balsara-specific logic.
+- The exact dense shell lies between the material contact at
+  `x=0.38116056` and the adjacent shock at `x=0.39255664`, so its width is
+  only `0.01139608`. On `[-1,1]` this is `0.365/0.729/1.459/2.917/5.835`
+  cells at N=`64/128/256/512/1024`. At N=64 both fronts are inside one finite-
+  volume cell; total D is conserved, but an ordinary one-average scheme can
+  only redistribute that unresolved shell across neighboring cells.
+- A matched N=64/CFL-0.9 low-order control rejects the proposed diffusive
+  cure. PWC, strict MINMOD, PWL-MC, and component MP5 give density L1
+  `0.01135/0.01085/0.00894/0.01001` and peaks
+  `2.34/3.82/5.05/5.44`; the resolution-matched exact FV peak is `13.07`.
+  MINMOD/PWC reduce some oscillatory components by broadening the shell and do
+  not supply complementary contact resolution.
+- The only genuinely different existing candidate, density THINC/BVD with
+  MP5/HLLD/SSPRK3 held fixed, was tested without Balsara-specific tuning.
+  At N=512 raw MP5 has density L1/peak/B2 L1
+  `0.004687/19.37/0.003546`; THINC(beta=1.2) gives
+  `0.005141/16.80/0.003772`, and MP5/THINC BVD gives
+  `0.004745/19.46/0.003635`. The same ordering already appears at N=256.
+  This falsifies THINC/BVD as a clear Balsara-3 improvement; keep it offline.
+- A fresh matched offline component-MP5 + SSPRK3 + HLLD resolution sequence at
+  CFL 0.9 establishes stable structural convergence. Density L1 decreases
+  monotonically `0.010005 -> 0.007940 -> 0.006324 -> 0.004687 -> 0.003653`
+  from N=64 through 1024, while the shell peak rises
+  `5.44 -> 8.39 -> 12.52 -> 19.37 -> 27.83` toward the continuum value
+  `34.03`. Maximum all-conserved-component L1 also decreases
+  `0.01931 -> 0.01109 -> 0.006324 -> 0.004687 -> 0.003653`; every run has
+  zero timestep retries and zero HLLD fallbacks. The N=1024 shell excess D is
+  preserved to `4.6e-5` relative. The fitted density-L1 rate is only about
+  `N^-0.37`, consistent with a discontinuous under-resolved compound feature,
+  so call this clean monotone convergence, not high-order convergence or exact
+  shell capture. Direct inspected PNGs are
+  `balsara3-mp5-resolution-profiles.png` and
+  `balsara3-mp5-resolution-convergence.png`; an all-active-conserved-component
+  error plot is `balsara3-mp5-all-components-convergence.png`, all in the
+  current visualization artifact folder. No AMReX production source changed.
+  [DONE]
+
+## Cycle 280 — Correct the Balsara-3 exact-profile presentation (DONE)
+
+- Audit why the plotted black "exact" staircase changed with numerical
+  resolution. Distinguish the unique continuum exact solution from its
+  resolution- and grid-alignment-dependent finite-volume projection, verify
+  the exact cell-average implementation independently, and replace the
+  misleading profile sequence with one that draws the same continuum solution
+  in every panel while retaining grid-matched FV averages as a separately
+  labeled comparison quantity.
+- The concern is valid about the presentation but does not expose a different
+  continuum solution. The previous black staircases were exact conserved
+  profiles integrated over each run's cells. Their peaks are
+  `13.0651/20.7419/34.0283/34.0283/34.0283` at
+  N=`64/128/256/512/1024`: at N=64 the shell fills 0.3647 of the containing
+  cell, at N=128 it fills 0.6057 of the best-aligned cell, and from N=256 a
+  complete cell lies inside the `D=34.0283` plateau. The exact projected
+  total-D integral is the identical floating-point value
+  `1.999943717502351` at every checked N through 2048.
+- `validate_exact_reference.py` passes its repeated-coordinate discontinuity,
+  nonlinear-map, polynomial-quadrature, and exact-RMHD averaging checks. An
+  independent local shell-overlap calculation agrees with the projected peak
+  cells. There is no averaging bug in this audit; the original plot legend and
+  visual hierarchy were misleading.
+- Overwrite `balsara3-mp5-resolution-profiles.png` with a corrected, directly
+  inspected plot: the black continuum exact curve is now literally identical
+  in all five panels, the orange dashed staircase is explicitly the exact
+  projection onto that panel's FV grid, and blue remains the numerical cell
+  average. Titles compare numerical peaks to the fixed continuum plateau while
+  L1 continues to use the mathematically appropriate matched FV reference. No
+  solver or production source changed. [DONE]
+
+## Cycle 281 — Remove the exact-FV projection from the profile figure (DONE)
+
+- The grid-projected exact staircase is necessary for finite-volume norms but
+  not useful in the human-facing resolution profile once the fixed continuum
+  curve is present. Remove it and the redundant shell shading from
+  `balsara3-mp5-resolution-profiles.png`; retain only the identical black
+  continuum solution and blue numerical cell averages. The reported L1 values
+  continue to compare numerical cell averages with exact cell averages under
+  the hood. No numerical result or production source changed. [DONE]
+
+## Cycle 282 — Reconcile fixed-exact and finite-volume error norms (DONE)
+
+- Establish the fixed continuum exact solution as the sole physical authority.
+  For plots, compare numerical profiles with that fixed curve. For the standard
+  finite-volume accuracy norm, compare evolved cell averages with integrals of
+  that same fixed curve over each cell; sampling the exact solution at cell
+  centers would compare unlike quantities and can call a correct mixed shock
+  cell wrong.
+- Independently integrate the numerical piecewise-constant density profile
+  directly against the fixed continuum Balsara-3 solution. Its normalized L1
+  decreases `0.0107581 -> 0.0100732 -> 0.0083257 -> 0.0060422 -> 0.0037713`
+  for N=64--1024. The standard FV-DOF values are
+  `0.0100050 -> 0.0079399 -> 0.0063240 -> 0.0046867 -> 0.0036533`.
+  Both are monotone and have essentially the same global fitted rate, so the
+  convergence finding does not depend on the projection convention.
+- Keep the cell-average norm primary because it tests the quantities the FV
+  method evolves and preserves high-order smooth verification. Treat the
+  continuum-versus-piecewise-constant norm as a supplementary physical-profile
+  diagnostic because it includes unavoidable subcell representation error.
+  Relabel the displayed metric as `FV-cell-average L1` in both current plots;
+  the black reference remains the fixed continuum curve. No solver source or
+  numerical evolution changed. [DONE]
+
+## Cycle 283 — Resolve Balsara-3 fronts with production AMR (DONE)
+
+- Establish the uniform-grid production reference before judging AMR. Fresh
+  three-rank AMReX runs use MP5/PWC candidate correction, SSPRK3, HLLD, CFL
+  `0.9`, and the fixed exact continuum profile. At N=`2048/4096/8192`, the
+  dense-shell D peak is `34.3077/35.0154/35.1795` versus exact `34.0283`, and
+  worst-conserved-component FV-cell-average L1 decreases
+  `0.0030693 -> 0.0022899 -> 0.0014892`. All three have zero C2P fallback or
+  atmosphere reset and roundoff-scale closed-domain mass/energy drift. The
+  shell spans `11.7/23.3/46.7` cells, and at N=8192 the adjacent smaller
+  post-shock shelf also becomes a distinct structure. [DONE]
+- Test a deliberately coarse base hierarchy whose refinement follows the
+  moving Balsara fan from the initial state rather than appearing only after
+  the fronts have diffused. Base N=128 with effective finest N=8192 and no
+  time subcycling succeeds: D peak `35.0130`, worst-component L1 `0.0017727`,
+  zero C2P fallback/reset, roundoff conservation, 1648 peak active cells, and
+  three unused refinement levels of headroom. This is a useful spatial-AMR
+  control but not yet validation of local-time stepping. [DONE]
+- Autopsy the local-time-subcycled failure before changing flux accounting.
+  The accepted finest-level update and synchronized hierarchy are physical;
+  the scheduled level remake then creates a new L4 cell through 1D coupled-
+  conservative `lincc_interp`. The captured physical L3 parent and its two
+  children preserve their average to roundoff, but the right child has
+  `p=-0.1886` and fails C2P. Reflux, average-down, SSPRK3 register weights, and
+  register ownership are not the cause. Component-conservative interpolation
+  fails on the same child, and the no-subcycling control avoids it only by
+  remaking levels at much smaller physical-time intervals. [DONE]
+- Add the missing relativistic transfer contract without a reset. After the
+  selected base interpolater runs, blend every child deviation from its coarse
+  parent by one common maximal C2P-admissible `theta`; use the same `theta` for
+  all siblings and conserved components. This leaves admissible transfers
+  bitwise unchanged and preserves the parent average for a conservative base.
+  Abort on nonfinite output or a non-admissible parent. The implementation is
+  intentionally scoped to Cartesian analytic fixed-spacetime, CT-off
+  relativistic state; curvilinear basis transfer, evolved/stored metrics, and
+  CT face fields need a later owner-aware path.
+  The captured-stencil regression reproduces the raw bad child, finds
+  `theta~0.63`, proves both limited children recover, and proves exact component
+  averages. Cached rebuilds of all three production dimensions pass. [DONE]
+- Rerun the full Balsara-3 production comparison at CFL `0.9`. The former
+  synchronized-regrid N=2048-equivalent crash now reaches `t=0.4` with peak D
+  `30.8254`, maximum component FV L1 `0.0037041`, zero C2P fallback/reset, and
+  mass/energy drift `1.87e-12/5.70e-12`. At N=8192-equivalent spacing the
+  default aligned local-subcycling hierarchy uses 2088 peak active cells,
+  three levels of headroom, recovers D peak `33.9167/34.0283`, has maximum L1
+  `0.0025537`, zero fallback/reset, and drift `1.96e-12/5.98e-12`. The no-
+  subcycling control is sharper (`D=35.0130`, L1 `0.0017727`) but slower;
+  deliberately synchronized local regridding is stable but more diffusive
+  (`D=31.0137`, L1 `0.0038561`). Keep the fixed continuum exact curve as the
+  only human-facing exact profile. [DONE]
+- Add a captured-stencil executable and a named standard/full dynamic-regrid
+  gate. The fresh three-rank gate completes step 29/t=`0.4` beyond the former
+  step-16 failure in 1.3 s, exercises changing cell counts `544 -> 808`, keeps
+  five levels of headroom, and passes L1, scalar, recovery, and Riemann-
+  fallback assertions. Architecture, all production dimensions, the focused
+  executable, and diff hygiene pass. [DONE]
+- A focused final review finds no blocker in the validated CPU path. The
+  ordinary 2D hydro performance control remains `109.06 Mcells/s`, 0.99 of its
+  saved baseline, and the cached 1D target build is `0.37 s`. GPU performance
+  remains unmeasured: the current AMReX interpolater-level implementation must
+  retrieve a device failure flag after each FAB interpolation, so a future GPU
+  owner should batch that status check across FillPatch rather than claiming
+  performance neutrality from CPU evidence. [DONE]
+
+## Cycle 284 — Production stabilization and next-step audit (DONE)
+
+- Reconstructed the dirty-tree ownership boundary before editing and kept the
+  offline shock-capturing research separate from production claims. Audited
+  AMR/CT/GR state ownership, relativistic flux routing, configuration, compile
+  products, validation artifacts, suite placement, and continuity documents.
+  Only source-confirmed defects and measured cleanup opportunities were
+  promoted. [DONE]
+- Made relativistic coarse-fine transfer independent of AMReX's partial-FAB
+  decomposition. The selected interpolater now expands a request into private
+  sibling-aligned scratch, limits one complete conserved child family with one
+  C2P-admissible factor, and copies back only the requested subset. Captured
+  bad-child, family-conservation, smooth-data, and split-sibling regressions
+  pass. Device scratch retains `Elixir` ownership through asynchronous work.
+  [DONE]
+- Closed accepted-state ownership holes after reflux, average-down, CT
+  face-to-cell synchronization, and regrid. Metric coupling is refreshed at
+  the last owner, relativistic acceptance is rerun, and newly/remade fine
+  current/old state remains consistent. The focused CFL-0.9 Balsara-3 dynamic
+  AMR gate passes with maximum conserved L1 `3.703950e-3`, cells `544 -> 808`,
+  active L4 plus five levels of headroom, zero C2P fallbacks, atmosphere
+  resets, or HLL fallback evaluations, and mass/energy drift
+  `1.869e-12/5.695e-12`. [DONE]
+- Replaced manually grown CPU tiles in ordinary, patch-union, relativistic,
+  atmosphere, and CT boundary work with ownership-safe `growntilebox`, and
+  added forced-small-tile 2D/3D checks. Those checks pass, but the local AMReX
+  build is not OpenMP-enabled and therefore does not execute the former writes
+  concurrently. [DONE]
+- Consolidated RMHD HLLC/HLLD into a dedicated compiled owner and pruned
+  unreachable generic relativistic template products. The state-interpolation
+  header dependency fanout fell from 81 to 9 production objects. Seven
+  characteristic owners fell from `133,845,512` to `117,401,792` bytes
+  (`-12.2856%`), and their impossible direct relativistic symbols fell from
+  1008 to zero. The HLL fallback diagnostic counts solver evaluations, not
+  unique final selected faces; cumulative recovery totals restart with the
+  process. [DONE]
+- Removed redundant standard-suite subsets, kept their convergence assertions,
+  made auxiliary validation targets self-build, protected canonical artifacts
+  from filtered scans, sanitized new TSV control characters, and fixed the RMHD
+  recovery parser to use the final cumulative summary. The quick suite passed
+  in `2.393 s` after the suite trim and `1.776 s` on the final cache-hot rerun.
+  The post-fix RMHD standard and complete advanced-Riemann validators pass.
+  [DONE]
+- Preserved the broad CPU baseline at
+  `runs/baselines/20260812_212858_cycle284_final`: 42/42 standard gates pass
+  with `135.305 s` summed gate time. The four runtime controls pass at
+  `108.1707`, `122.0241`, `5.87315`, and `0.179690 Mcells/s`, ratios
+  `0.9842`, `0.8901`, `0.9216`, and `0.9454` to their saved baselines. This is
+  standard-suite evidence, not a full-suite, GPU, or matched AthenaK
+  work-precision result. [DONE]
+- An isolated empty-build-tree production compile passes all dimensions in
+  `544.32 s` with 231 cache misses; an unchanged production rebuild takes
+  `0.66 s`. Compile pruning reduced real products and normal iteration is fast,
+  but cold compilation remains a material cost. [DONE]
+- Compacted `knowledge.md` to current learned numerical/physics facts, kept
+  `references.md` as a source router, and placed durable ownership rules in
+  `docs/infrastructure_conventions.md`. The next production numerical task is
+  same-stage canonical face-`B` RK/CT ownership. Then run a matched uniform-grid
+  PyFluid/AthenaK Balsara plus Orszag--Tang work-precision study, followed by a
+  two-resolution TOV evolution and saved uniform-RNS PWL evolution. Per-FAB GPU
+  transfer synchronization, full-suite/GPU coverage, and native CompOSE remain
+  explicit later boundaries. [DONE]

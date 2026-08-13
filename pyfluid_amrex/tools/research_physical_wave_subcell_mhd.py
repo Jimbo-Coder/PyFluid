@@ -10,6 +10,12 @@ and whose complete state/flux jump satisfies Rankine--Hugoniot.
 For an accepted wave, the face flux is integrated over the exact crossing time
 during the step.  This is a one-dimensional precursor: it tests the coupled
 MHD algebra and the normal-field invariant, not multidimensional CT or AMR.
+
+Course-correction status: retain this isolated-wave carrier as a bounded
+mechanism control only.  The current standalone detector does not activate
+before the production Balsara-3 recovery or Balsara-4 ringing event, so it is
+not a candidate production fix without a new oracle-free, pre-artifact birth
+result.
 """
 
 from __future__ import annotations
@@ -42,6 +48,20 @@ from research_physical_wave_subcell import (  # noqa: E402
 Array = np.ndarray
 
 
+# A physical-wave carrier must not be born from primitives whose pressure was
+# recovered by subtracting nearly equal conserved-energy terms beyond the
+# detector's nominal resolution. More permissive ULP allowances cannot
+# separate exact contacts from distinctly represented pressure jumps.
+PHYSICAL_WAVE_RELATIVE_TOLERANCE = 3.0e-10
+MAX_RELATIVE_PRESSURE_RECOVERY_UNCERTAINTY = (
+    PHYSICAL_WAVE_RELATIVE_TOLERANCE
+)
+
+# The same rule bounds the roundoff allowance introduced by a bulk Galilean
+# boost. Above it, the state stays on the baseline FV path.
+MAX_BOOST_CONDITIONING_UNCERTAINTY = PHYSICAL_WAVE_RELATIVE_TOLERANCE
+
+
 @dataclasses.dataclass(frozen=True)
 class Result:
     case: str
@@ -71,39 +91,356 @@ class WindowFit:
     plateau_residual: float
 
 
-def fit_physical_mhd_wave(
+@dataclasses.dataclass(frozen=True)
+class PhysicalWavePath:
+    family: str
+    transverse_field_radius: float | None = None
+    transverse_rotation_angle: float | None = None
+    walen_sign: int | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class PhysicalWaveBirth:
+    wave: PhysicalWave
+    path: PhysicalWavePath
+    cell: int
+    position: float
+    location_kind: str
+
+
+@dataclasses.dataclass(frozen=True)
+class MhdNormalization:
+    density_scale: float
+    velocity_scale: float
+    pressure_scale: float
+    magnetic_scale: float
+    velocity_origin: Array
+
+
+@dataclasses.dataclass(frozen=True)
+class MhdMixtureFit:
+    left_fraction: float
+    mixture_residual: float
+    normalization: MhdNormalization
+    left_state: Array
+    right_state: Array
+
+
+def maximum_componentwise_residual(
+    value: Array,
+    reference: Array,
+    *scales: Array,
+    scale_floor: float = np.finfo(float).tiny,
+) -> float:
+    """Return the strict worst relative residual of any component."""
+    scale = np.zeros_like(np.asarray(value, dtype=float))
+    for candidate in (value, reference, *scales):
+        scale = np.maximum(scale, np.abs(np.asarray(candidate, dtype=float)))
+    scale = np.maximum(scale, scale_floor)
+    return float(
+        np.max(
+            np.abs(
+                np.asarray(value, dtype=float)
+                - np.asarray(reference, dtype=float)
+            )
+            / scale
+        )
+    )
+
+
+def components_agree(
+    value: Array,
+    reference: Array,
+    *scales: Array,
+    relative_tolerance: float,
+    roundoff_scale: Array | float,
+    roundoff_factor: float = 256.0,
+) -> bool:
+    """Compare each component with relative and conditioning-aware floors."""
+    value_array = np.asarray(value, dtype=float)
+    reference_array = np.asarray(reference, dtype=float)
+    physical_scale = np.maximum(np.abs(value_array), np.abs(reference_array))
+    for candidate in scales:
+        physical_scale = np.maximum(
+            physical_scale,
+            np.abs(np.asarray(candidate, dtype=float)),
+        )
+    tolerance = (
+        relative_tolerance * physical_scale
+        + roundoff_factor
+        * np.finfo(float).eps
+        * np.abs(np.asarray(roundoff_scale, dtype=float))
+    )
+    return bool(np.all(np.abs(value_array - reference_array) <= tolerance))
+
+
+def primitive_component_roundoff_scales(
+    *primitive_states: Array,
+) -> Array:
+    states = np.atleast_2d(np.asarray(primitive_states, dtype=float))
+    component_scale = np.maximum(
+        np.max(np.abs(states), axis=0),
+        np.finfo(float).tiny,
+    )
+    # Coupled conserved updates and characteristic transforms can place
+    # ordinary arithmetic roundoff into an analytically zero component.
+    # Giving that component a subnormal tolerance makes an exact physical
+    # plateau fail equality after one otherwise roundoff-accurate step.  Keep
+    # this floor componentwise: scaling it by an unrelated large component
+    # would hide a resolved normal-field or normal-velocity mismatch.
+    return np.maximum(component_scale, 1.0)
+
+
+def primitive_components_agree(
+    value: Array,
+    reference: Array,
+    *scale_states: Array,
+    gamma: float,
+    relative_tolerance: float,
+    indices: Array | list[int] | tuple[int, ...] | None = None,
+    pressure_from_conserved: bool = False,
+    roundoff_factor: float = 256.0,
+) -> bool:
+    all_states = (value, reference, *scale_states)
+    roundoff_scales = primitive_component_roundoff_scales(*all_states)
+    if pressure_from_conserved:
+        for state in all_states:
+            primitive = np.asarray(state, dtype=float)
+            roundoff_scales[4] = max(
+                roundoff_scales[4],
+                float(primitive[0] * np.dot(primitive[1:4], primitive[1:4])),
+                float(np.dot(primitive[5:8], primitive[5:8])),
+            )
+    if indices is None:
+        selected = np.arange(8)
+    else:
+        selected = np.asarray(indices, dtype=int)
+    return components_agree(
+        np.asarray(value, dtype=float)[selected],
+        np.asarray(reference, dtype=float)[selected],
+        *(np.asarray(state, dtype=float)[selected] for state in scale_states),
+        relative_tolerance=relative_tolerance,
+        roundoff_scale=roundoff_scales[selected],
+        roundoff_factor=roundoff_factor,
+    )
+
+
+def maximum_pressure_recovery_uncertainty(
+    gamma: float,
+    *primitive_states: Array,
+    roundoff_factor: float = 32.0,
+) -> float:
+    """Estimate relative pressure uncertainty from conserved-energy loss."""
+    maximum_uncertainty = 0.0
+    for primitive_state in primitive_states:
+        primitive = np.asarray(primitive_state, dtype=float)
+        density = float(primitive[0])
+        pressure = float(primitive[4])
+        kinetic_energy = 0.5 * density * float(
+            np.dot(primitive[1:4], primitive[1:4])
+        )
+        magnetic_energy = 0.5 * float(
+            np.dot(primitive[5:8], primitive[5:8])
+        )
+        internal_energy = pressure / (gamma - 1.0)
+        total_energy = internal_energy + kinetic_energy + magnetic_energy
+        cancellation_scale = (
+            abs(total_energy) + kinetic_energy + magnetic_energy
+        )
+        relative_uncertainty = (
+            roundoff_factor
+            * np.finfo(float).eps
+            * (gamma - 1.0)
+            * cancellation_scale
+            / max(abs(pressure), np.finfo(float).tiny)
+        )
+        maximum_uncertainty = max(
+            maximum_uncertainty,
+            relative_uncertainty,
+        )
+    return maximum_uncertainty
+
+
+def pressure_invariant_agrees(
+    left: Array,
+    right: Array,
+    gamma: float,
+    *,
+    relative_tolerance: float,
+) -> bool:
+    """Compare pressure only when conserved-energy recovery resolves it."""
+    recovery_uncertainty = maximum_pressure_recovery_uncertainty(
+        gamma,
+        left,
+        right,
+    )
+    if recovery_uncertainty > relative_tolerance:
+        return False
+    pressure_scale = max(
+        abs(float(left[4])),
+        abs(float(right[4])),
+        np.finfo(float).tiny,
+    )
+    tolerance = relative_tolerance * pressure_scale
+    return abs(float(left[4]) - float(right[4])) <= tolerance
+
+
+def mhd_primitive_normalization(
+    gamma: float,
+    *primitive_states: Array,
+) -> MhdNormalization:
+    states = np.atleast_2d(np.asarray(primitive_states, dtype=float))
+    velocity_origin = np.mean(states[:, 1:4], axis=0)
+    local_states = states.copy()
+    local_states[:, 1:4] -= velocity_origin
+    density_scale = max(float(np.max(states[:, 0])), np.finfo(float).tiny)
+    velocity_scale = max(
+        float(np.max(np.abs(local_states[:, 1:4]))),
+        np.finfo(float).tiny,
+    )
+    for state in local_states:
+        density = max(float(state[0]), np.finfo(float).tiny)
+        pressure = max(float(state[4]), 0.0)
+        velocity_scale = max(
+            velocity_scale,
+            math.sqrt(gamma * pressure / density),
+            float(np.linalg.norm(state[5:8])) / math.sqrt(density),
+        )
+    pressure_scale = density_scale * velocity_scale**2
+    magnetic_scale = math.sqrt(density_scale) * velocity_scale
+    return MhdNormalization(
+        density_scale=density_scale,
+        velocity_scale=velocity_scale,
+        pressure_scale=pressure_scale,
+        magnetic_scale=magnetic_scale,
+        velocity_origin=velocity_origin,
+    )
+
+
+def mhd_conserved_scales(
+    normalization: MhdNormalization,
+) -> Array:
+    density_scale = normalization.density_scale
+    velocity_scale = normalization.velocity_scale
+    pressure_scale = normalization.pressure_scale
+    magnetic_scale = normalization.magnetic_scale
+    return np.array(
+        (
+            density_scale,
+            density_scale * velocity_scale,
+            density_scale * velocity_scale,
+            density_scale * velocity_scale,
+            pressure_scale,
+            magnetic_scale,
+            magnetic_scale,
+            magnetic_scale,
+        )
+    )
+
+
+def mhd_flux_scales(
+    normalization: MhdNormalization,
+) -> Array:
+    density_scale = normalization.density_scale
+    velocity_scale = normalization.velocity_scale
+    pressure_scale = normalization.pressure_scale
+    magnetic_scale = normalization.magnetic_scale
+    return np.array(
+        (
+            density_scale * velocity_scale,
+            pressure_scale,
+            pressure_scale,
+            pressure_scale,
+            pressure_scale * velocity_scale,
+            magnetic_scale * velocity_scale,
+            magnetic_scale * velocity_scale,
+            magnetic_scale * velocity_scale,
+        )
+    )
+
+
+def mhd_boost_conditioning_uncertainty(
+    normalization: MhdNormalization,
+) -> float:
+    boost_ratio = (
+        float(np.linalg.norm(normalization.velocity_origin))
+        / normalization.velocity_scale
+    )
+    return 2.0 * np.finfo(float).eps * (1.0 + boost_ratio**2)
+
+
+def fit_mhd_conserved_mixture(
     average: Array,
     left: Array,
     right: Array,
     gamma: float,
     *,
-    mixture_tolerance: float = 3.0e-10,
-    jump_tolerance: float = 3.0e-10,
+    mixture_tolerance: float,
     allow_endpoint: bool = False,
-) -> PhysicalWave | None:
+) -> MhdMixtureFit | None:
+    """Fit one dimensionless conserved mixture with conditioned C2P closure."""
     endpoints = np.array((left, right), dtype=float)
-    if not mhd.primitive_is_admissible(endpoints):
+    observed_average = np.asarray(average, dtype=float)[None, :]
+    if (
+        not mhd.primitive_is_admissible(endpoints)
+        or not mhd.primitive_is_admissible(observed_average)
+    ):
         return None
-    normal_b_scale = max(abs(left[5]), abs(right[5]), 1.0)
-    if abs(left[5] - right[5]) > 3.0e-10 * normal_b_scale:
+    if (
+        maximum_pressure_recovery_uncertainty(
+            gamma,
+            average,
+            left,
+            right,
+        )
+        > MAX_RELATIVE_PRESSURE_RECOVERY_UNCERTAINTY
+    ):
+        # The original total-energy state no longer contains enough pressure
+        # information to distinguish a physical wave from a nearby corrupt
+        # state.  Growing the detector tolerance here creates false births.
         return None
-    endpoint_state = mhd.conserved_array(endpoints, gamma)
-    average_state = mhd.conserved_array(
-        np.asarray(average, dtype=float)[None, :],
-        gamma,
-    )[0]
-    left_state, right_state = endpoint_state
+    normalization = mhd_primitive_normalization(gamma, left, right)
+    boost_conditioning_uncertainty = mhd_boost_conditioning_uncertainty(
+        normalization
+    )
+    if (
+        boost_conditioning_uncertainty
+        > MAX_BOOST_CONDITIONING_UNCERTAINTY
+    ):
+        return None
+    conserved_scales = mhd_conserved_scales(normalization)
+    local_endpoints = endpoints.copy()
+    local_endpoints[:, 1:4] -= normalization.velocity_origin
+    local_average = observed_average.copy()
+    local_average[:, 1:4] -= normalization.velocity_origin
+    left_state, right_state = (
+        mhd.conserved_array(local_endpoints, gamma) / conserved_scales
+    )
+    average_state = (
+        mhd.conserved_array(local_average, gamma)[0] / conserved_scales
+    )
     state_jump = left_state - right_state
     jump_norm2 = float(np.dot(state_jump, state_jump))
-    scale = max(
+    state_scale = max(
         float(np.dot(left_state, left_state)),
         float(np.dot(right_state, right_state)),
         np.finfo(float).tiny,
     )
-    if jump_norm2 <= 256.0 * np.finfo(float).eps**2 * scale:
+    if jump_norm2 <= 256.0 * np.finfo(float).eps**2 * state_scale:
         return None
+    ledger_components = np.array((0, 5, 6, 7))
+    fit_jump = state_jump[ledger_components]
+    fit_jump_norm2 = float(np.dot(fit_jump, fit_jump))
+    if fit_jump_norm2 > 256.0 * np.finfo(float).eps**2 * state_scale:
+        fit_average = average_state[ledger_components]
+        fit_right = right_state[ledger_components]
+    else:
+        fit_jump = state_jump
+        fit_jump_norm2 = jump_norm2
+        fit_average = average_state
+        fit_right = right_state
     left_fraction = float(
-        np.dot(average_state - right_state, state_jump) / jump_norm2
+        np.dot(fit_average - fit_right, fit_jump) / fit_jump_norm2
     )
     endpoint_tolerance = 256.0 * np.finfo(float).eps
     if allow_endpoint:
@@ -114,9 +451,7 @@ def fit_physical_mhd_wave(
         ):
             return None
     elif not (
-        endpoint_tolerance
-        < left_fraction
-        < 1.0 - endpoint_tolerance
+        endpoint_tolerance < left_fraction < 1.0 - endpoint_tolerance
     ):
         return None
     left_fraction = min(max(left_fraction, 0.0), 1.0)
@@ -130,25 +465,105 @@ def fit_physical_mhd_wave(
         fitted_average,
         state_jump,
     )
-    if mixture_residual > mixture_tolerance:
-        return None
-    left_flux = mhd_flux(left, gamma)
-    right_flux = mhd_flux(right, gamma)
-    flux_jump = left_flux - right_flux
-    speed = float(np.dot(state_jump, flux_jump) / jump_norm2)
-    jump_residual = scaled_residual(
-        flux_jump - speed * state_jump,
-        flux_jump,
-        speed * state_jump,
+    conditioned_mixture_tolerance = (
+        mixture_tolerance
+        + boost_conditioning_uncertainty
     )
-    if not np.isfinite(speed) or jump_residual > jump_tolerance:
+    if mixture_residual > conditioned_mixture_tolerance:
         return None
+    fitted_primitive = mhd.primitive_from_conserved(
+        (fitted_average * conserved_scales)[None, :],
+        gamma,
+    )[0]
+    fitted_primitive[1:4] += normalization.velocity_origin
+    if (
+        not mhd.primitive_is_admissible(fitted_primitive[None, :])
+        or not primitive_components_agree(
+            average,
+            fitted_primitive,
+            left,
+            right,
+            gamma=gamma,
+            relative_tolerance=mixture_tolerance,
+            pressure_from_conserved=True,
+            roundoff_factor=32.0,
+        )
+    ):
+        return None
+    return MhdMixtureFit(
+        left_fraction=left_fraction,
+        mixture_residual=mixture_residual,
+        normalization=normalization,
+        left_state=left_state,
+        right_state=right_state,
+    )
+
+
+def fit_physical_mhd_wave(
+    average: Array,
+    left: Array,
+    right: Array,
+    gamma: float,
+    *,
+    mixture_tolerance: float = PHYSICAL_WAVE_RELATIVE_TOLERANCE,
+    jump_tolerance: float = PHYSICAL_WAVE_RELATIVE_TOLERANCE,
+    allow_endpoint: bool = False,
+) -> PhysicalWave | None:
+    if not primitive_components_agree(
+        left,
+        right,
+        gamma=gamma,
+        relative_tolerance=3.0e-10,
+        indices=(5,),
+    ):
+        return None
+    mixture = fit_mhd_conserved_mixture(
+        average,
+        left,
+        right,
+        gamma,
+        mixture_tolerance=mixture_tolerance,
+        allow_endpoint=allow_endpoint,
+    )
+    if mixture is None:
+        return None
+    left_state = mixture.left_state
+    right_state = mixture.right_state
+    state_jump = left_state - right_state
+    jump_norm2 = float(np.dot(state_jump, state_jump))
+    flux_scales = mhd_flux_scales(mixture.normalization)
+    local_left = np.asarray(left, dtype=float).copy()
+    local_right = np.asarray(right, dtype=float).copy()
+    local_left[1:4] -= mixture.normalization.velocity_origin
+    local_right[1:4] -= mixture.normalization.velocity_origin
+    left_flux = mhd_flux(local_left, gamma) / flux_scales
+    right_flux = mhd_flux(local_right, gamma) / flux_scales
+    flux_jump = left_flux - right_flux
+    normalized_speed = float(np.dot(state_jump, flux_jump) / jump_norm2)
+    jump_residual = maximum_componentwise_residual(
+        flux_jump,
+        normalized_speed * state_jump,
+        scale_floor=1.0,
+    )
+    conditioned_jump_tolerance = (
+        jump_tolerance
+        + mhd_boost_conditioning_uncertainty(mixture.normalization)
+    )
+    if (
+        not np.isfinite(normalized_speed)
+        or jump_residual > conditioned_jump_tolerance
+    ):
+        return None
+    speed = (
+        normalized_speed * mixture.normalization.velocity_scale
+        + mixture.normalization.velocity_origin[0]
+    )
     return PhysicalWave(
         left=np.asarray(left, dtype=float).copy(),
         right=np.asarray(right, dtype=float).copy(),
         speed=speed,
-        left_fraction=left_fraction,
-        mixture_residual=mixture_residual,
+        left_fraction=mixture.left_fraction,
+        mixture_residual=mixture.mixture_residual,
         jump_residual=jump_residual,
     )
 
@@ -165,15 +580,223 @@ def local_primitive(
 
 
 def states_agree(left: Array, right: Array, gamma: float) -> bool:
-    left_state, right_state = mhd.conserved_array(
-        np.array((left, right)),
-        gamma,
+    return primitive_components_agree(
+        left,
+        right,
+        gamma=gamma,
+        relative_tolerance=3.0e-10,
     )
-    return scaled_residual(
-        left_state - right_state,
-        left_state,
-        right_state,
-    ) <= 3.0e-10
+
+
+def mhd_characteristic_speeds(primitive: Array, gamma: float) -> Array:
+    rho = float(primitive[0])
+    normal_velocity = float(primitive[1])
+    pressure = float(primitive[4])
+    normal_b = float(primitive[5])
+    transverse_b2 = float(primitive[6] ** 2 + primitive[7] ** 2)
+    sound2 = gamma * pressure / rho
+    magnetic2 = (normal_b**2 + transverse_b2) / rho
+    normal_alfven2 = normal_b**2 / rho
+    discriminant = max(
+        (sound2 + magnetic2) ** 2
+        - 4.0 * sound2 * normal_alfven2,
+        0.0,
+    )
+    fast2 = 0.5 * (
+        sound2 + magnetic2 + math.sqrt(discriminant)
+    )
+    slow2 = 0.5 * (
+        sound2 + magnetic2 - math.sqrt(discriminant)
+    )
+    alfven = math.sqrt(max(normal_alfven2, 0.0))
+    fast = math.sqrt(max(fast2, 0.0))
+    slow = math.sqrt(max(slow2, 0.0))
+    return np.array(
+        (
+            normal_velocity - fast,
+            normal_velocity - alfven,
+            normal_velocity - slow,
+            normal_velocity,
+            normal_velocity + slow,
+            normal_velocity + alfven,
+            normal_velocity + fast,
+        )
+    )
+
+
+def classify_physical_mhd_wave(
+    wave: PhysicalWave,
+    gamma: float,
+) -> PhysicalWavePath | None:
+    """Accept a contact, canonical Alfvén endpoint path, or fast Lax shock."""
+    left = wave.left
+    right = wave.right
+    primitive_scales = primitive_component_roundoff_scales(left, right)
+    speed_scale = max(
+        abs(wave.speed - left[1]),
+        abs(wave.speed - right[1]),
+        abs(left[5]) / math.sqrt(left[0]),
+        abs(right[5]) / math.sqrt(right[0]),
+        math.sqrt(gamma * left[4] / left[0]),
+        math.sqrt(gamma * right[4] / right[0]),
+        np.finfo(float).tiny,
+    )
+    tolerance = speed_scale * (
+        3.0e-9 + 256.0 * np.finfo(float).eps
+    )
+
+    if (
+        primitive_components_agree(
+            left,
+            right,
+            gamma=gamma,
+            relative_tolerance=3.0e-9,
+            indices=(1, 2, 3, 5, 6, 7),
+        )
+        and pressure_invariant_agrees(
+            left,
+            right,
+            gamma,
+            relative_tolerance=3.0e-9,
+        )
+        and abs(wave.speed - left[1]) <= tolerance
+        and abs(wave.speed - right[1]) <= tolerance
+    ):
+        return PhysicalWavePath(family="contact")
+
+    transverse_left = np.asarray(left[6:8], dtype=float)
+    transverse_right = np.asarray(right[6:8], dtype=float)
+    radius_left = float(np.linalg.norm(transverse_left))
+    radius_right = float(np.linalg.norm(transverse_right))
+    transverse_velocity_jump = right[2:4] - left[2:4]
+    transverse_field_jump = right[6:8] - left[6:8]
+    walen_signs = []
+    for walen_sign in (-1, 1):
+        speed_left = (
+            left[1]
+            - walen_sign * left[5] / math.sqrt(left[0])
+        )
+        speed_right = (
+            right[1]
+            - walen_sign * right[5] / math.sqrt(right[0])
+        )
+        walen_matches = components_agree(
+            transverse_velocity_jump,
+            walen_sign
+            * transverse_field_jump
+            / math.sqrt(0.5 * (left[0] + right[0])),
+            relative_tolerance=3.0e-9,
+            roundoff_scale=primitive_scales[2:4],
+        )
+        if (
+            abs(wave.speed - speed_left) <= tolerance
+            and abs(wave.speed - speed_right) <= tolerance
+            and walen_matches
+        ):
+            walen_signs.append(walen_sign)
+    radius_scale = max(radius_left, radius_right, np.finfo(float).tiny)
+    radius_tolerance = (
+        3.0e-9 * radius_scale
+        + 256.0
+        * np.finfo(float).eps
+        * max(float(np.max(primitive_scales[6:8])), np.finfo(float).tiny)
+    )
+    normal_b_scale = max(abs(left[5]), abs(right[5]), np.finfo(float).tiny)
+    normal_b_tolerance = (
+        3.0e-9 * normal_b_scale
+        + 256.0 * np.finfo(float).eps * primitive_scales[5]
+    )
+    if (
+        primitive_components_agree(
+            left,
+            right,
+            gamma=gamma,
+            relative_tolerance=3.0e-9,
+            indices=(0, 1, 5),
+        )
+        and pressure_invariant_agrees(
+            left,
+            right,
+            gamma,
+            relative_tolerance=3.0e-9,
+        )
+        and abs(0.5 * (left[5] + right[5])) > normal_b_tolerance
+        and abs(radius_left - radius_right) <= radius_tolerance
+        and radius_left > radius_tolerance
+        and float(np.linalg.norm(transverse_left - transverse_right))
+        > radius_tolerance
+        and len(walen_signs) == 1
+    ):
+        cross = (
+            transverse_left[0] * transverse_right[1]
+            - transverse_left[1] * transverse_right[0]
+        )
+        dot = float(np.dot(transverse_left, transverse_right))
+        rotation_angle = math.atan2(cross, dot)
+        if abs(abs(rotation_angle) - math.pi) <= 3.0e-9:
+            # The two signed half-turn arcs have identical endpoints.  Do not
+            # let roundoff in sin(pi) masquerade as physical path selection.
+            rotation_angle = math.pi
+        return PhysicalWavePath(
+            family=(
+                "alfven_minus"
+                if wave.speed < 0.5 * (left[1] + right[1])
+                else "alfven_plus"
+            ),
+            transverse_field_radius=0.5 * (radius_left + radius_right),
+            transverse_rotation_angle=rotation_angle,
+            walen_sign=walen_signs[0],
+        )
+
+    left_speeds = mhd_characteristic_speeds(left, gamma)
+    right_speeds = mhd_characteristic_speeds(right, gamma)
+    lax_families: list[int] = []
+    for family in (0, 6):
+        if not (
+            left_speeds[family] > wave.speed + tolerance
+            and wave.speed > right_speeds[family] + tolerance
+        ):
+            continue
+        slower_exits = (
+            family == 0
+            or left_speeds[family - 1] < wave.speed - tolerance
+        )
+        faster_exits = (
+            family == 6
+            or wave.speed < right_speeds[family + 1] - tolerance
+        )
+        if family == 0:
+            downstream = right
+            upstream = left
+        else:
+            downstream = left
+            upstream = right
+        log_pressure_ratio = math.log(downstream[4] / upstream[4])
+        log_density_ratio = math.log(downstream[0] / upstream[0])
+        log_entropy_increase = (
+            log_pressure_ratio - gamma * log_density_ratio
+        )
+        entropy_roundoff = (
+            256.0
+            * np.finfo(float).eps
+            * (
+                1.0
+                + abs(log_pressure_ratio)
+                + gamma * abs(log_density_ratio)
+            )
+        )
+        entropy_increases = log_entropy_increase > entropy_roundoff
+        if slower_exits and faster_exits and entropy_increases:
+            lax_families.append(family)
+    if len(lax_families) == 1:
+        return PhysicalWavePath(
+            family=(
+                "fast_minus_shock"
+                if lax_families[0] == 0
+                else "fast_plus_shock"
+            )
+        )
+    return None
 
 
 def fit_cell_wave(
@@ -215,6 +838,72 @@ def fit_face_wave(
         gamma,
         allow_endpoint=True,
     )
+
+
+def find_single_physical_wave_birth(
+    primitive: Array,
+    gamma: float,
+    periodic: bool,
+) -> PhysicalWaveBirth | None:
+    """Infer one isolated nonperiodic jump from finite-volume state alone."""
+    if periodic:
+        # A periodic piecewise-constant state necessarily contains a return
+        # jump.  This one-element prototype does not yet own paired topology.
+        return None
+    cells = len(primitive)
+    dx = 1.0 / cells
+    births: list[PhysicalWaveBirth] = []
+    for cell in range(2, cells - 2):
+        wave = fit_cell_wave(
+            primitive,
+            cell,
+            gamma,
+            periodic,
+        )
+        if wave is None:
+            continue
+        path = classify_physical_mhd_wave(wave, gamma)
+        if path is None:
+            continue
+        position = (cell + wave.left_fraction) * dx
+        if periodic:
+            position %= 1.0
+        elif not (cell * dx < position < (cell + 1) * dx):
+            continue
+        births.append(
+            PhysicalWaveBirth(
+                wave=wave,
+                path=path,
+                cell=cell,
+                position=position,
+                location_kind="mixed_cell",
+            )
+        )
+
+    for face in range(2, cells - 1):
+        wave = fit_face_wave(
+            primitive,
+            face - 1,
+            gamma,
+            periodic=False,
+        )
+        if wave is None:
+            continue
+        path = classify_physical_mhd_wave(wave, gamma)
+        if path is None:
+            continue
+        births.append(
+            PhysicalWaveBirth(
+                wave=wave,
+                path=path,
+                cell=face,
+                position=face * dx,
+                location_kind="face",
+            )
+        )
+    if len(births) != 1:
+        return None
+    return births[0]
 
 
 def physical_wave_mp5(
@@ -342,7 +1031,7 @@ def physical_flux_overrides(
     fitted_cells: set[int] = set()
     for cell in range(cells):
         wave = fit_cell_wave(primitive, cell, gamma, periodic)
-        if wave is None:
+        if wave is None or classify_physical_mhd_wave(wave, gamma) is None:
             continue
         fitted_cells.add(cell)
         left_flux = mhd_flux(wave.left, gamma)
@@ -375,7 +1064,7 @@ def physical_flux_overrides(
         if left_index in fitted_cells or right_index in fitted_cells:
             continue
         wave = fit_face_wave(primitive, left_cell, gamma, periodic)
-        if wave is None:
+        if wave is None or classify_physical_mhd_wave(wave, gamma) is None:
             continue
         upwind = wave.left if wave.speed >= 0.0 else wave.right
         add_override(left_cell + 1, mhd_flux(upwind, gamma))
@@ -572,6 +1261,41 @@ def evolve_persistent_wave(
     return final, mhd.primitive_is_admissible(final)
 
 
+def evolve_born_persistent_wave(
+    primitive: Array,
+    final_time: float,
+    cfl: float,
+    gamma: float,
+    periodic: bool,
+) -> tuple[Array, bool]:
+    """Birth one verified jump from the FV state, then carry it causally."""
+    birth = find_single_physical_wave_birth(
+        primitive,
+        gamma,
+        periodic,
+    )
+    if birth is None:
+        return mhd.evolve(
+            primitive,
+            final_time,
+            cfl,
+            gamma,
+            mhd.characteristic_mp5,
+            mhd_hlld_flux,
+            periodic=periodic,
+        )
+    return evolve_persistent_wave(
+        primitive,
+        final_time,
+        cfl,
+        gamma,
+        birth.wave.left,
+        birth.wave.right,
+        birth.wave.speed,
+        birth.position,
+    )
+
+
 def discontinuity_cell_averages(
     cells: int,
     position: float,
@@ -597,6 +1321,157 @@ def discontinuity_cell_averages(
             + (1.0 - left_fraction) * right_state
         )
     return mhd.primitive_from_conserved(averages, gamma)
+
+
+def require_physical_wave_birth(
+    *,
+    case: str,
+    cells: int,
+    gamma: float,
+    left: Array,
+    right: Array,
+    speed: float,
+    position: float,
+    expected_family: str,
+) -> PhysicalWaveBirth:
+    initial = discontinuity_cell_averages(
+        cells,
+        position,
+        left,
+        right,
+        gamma,
+    )
+    birth = find_single_physical_wave_birth(
+        initial,
+        gamma,
+        periodic=False,
+    )
+    if birth is None:
+        raise RuntimeError(f"{case} did not produce one physical-wave birth")
+    if (
+        birth.path.family != expected_family
+        or not primitive_components_agree(
+            birth.wave.left,
+            left,
+            gamma=gamma,
+            relative_tolerance=3.0e-10,
+            pressure_from_conserved=True,
+        )
+        or not primitive_components_agree(
+            birth.wave.right,
+            right,
+            gamma=gamma,
+            relative_tolerance=3.0e-10,
+            pressure_from_conserved=True,
+        )
+        or not math.isclose(
+            birth.wave.speed,
+            speed,
+            rel_tol=3.0e-10,
+            abs_tol=3.0e-10,
+        )
+        or not math.isclose(
+            birth.position,
+            position,
+            rel_tol=0.0,
+            abs_tol=3.0e-13,
+        )
+    ):
+        raise RuntimeError(f"{case} physical-wave birth was misidentified")
+    return birth
+
+
+def validate_alfven_birth_family(gamma: float) -> int:
+    angles = tuple(
+        math.radians(value)
+        for value in (-179.999, -90.0, -15.0, 15.0, 90.0, 179.999)
+    ) + (-math.pi, math.pi)
+    controls = 0
+    rho = 1.0
+    pressure = 1.0
+    normal_velocity = 0.2
+    radius = 0.5
+    offset_velocity = np.array((0.1, -0.2))
+    for normal_b in (-1.0, 1.0):
+        for walen_sign in (-1, 1):
+            left_transverse_b = np.array((radius, 0.0))
+            left_transverse_v = (
+                offset_velocity
+                + walen_sign * left_transverse_b / math.sqrt(rho)
+            )
+            left = np.array(
+                (
+                    rho,
+                    normal_velocity,
+                    *left_transverse_v,
+                    pressure,
+                    normal_b,
+                    *left_transverse_b,
+                )
+            )
+            speed = (
+                normal_velocity
+                - walen_sign * normal_b / math.sqrt(rho)
+            )
+            expected_family = (
+                "alfven_minus"
+                if speed < normal_velocity
+                else "alfven_plus"
+            )
+            for angle in angles:
+                right_transverse_b = radius * np.array(
+                    (math.cos(angle), math.sin(angle))
+                )
+                right_transverse_v = (
+                    offset_velocity
+                    + walen_sign
+                    * right_transverse_b
+                    / math.sqrt(rho)
+                )
+                right = np.array(
+                    (
+                        rho,
+                        normal_velocity,
+                        *right_transverse_v,
+                        pressure,
+                        normal_b,
+                        *right_transverse_b,
+                    )
+                )
+                birth = require_physical_wave_birth(
+                    case="alfven_family",
+                    cells=32,
+                    gamma=gamma,
+                    left=left,
+                    right=right,
+                    speed=speed,
+                    position=0.333,
+                    expected_family=expected_family,
+                )
+                recovered_angle = birth.path.transverse_rotation_angle
+                if (
+                    birth.path.walen_sign != walen_sign
+                    or birth.path.transverse_field_radius is None
+                    or not math.isclose(
+                        birth.path.transverse_field_radius,
+                        radius,
+                        rel_tol=3.0e-10,
+                        abs_tol=3.0e-10,
+                    )
+                    or recovered_angle is None
+                    or abs(
+                        math.atan2(
+                            math.sin(recovered_angle - angle),
+                            math.cos(recovered_angle - angle),
+                        )
+                    )
+                    > 3.0e-10
+                ):
+                    raise RuntimeError(
+                        "Alfven physical-path metadata was misidentified"
+                    )
+                controls += 1
+    return controls
 
 
 def physical_window_fits(
@@ -989,6 +1864,14 @@ def discontinuity_result(
             speed,
             initial_position,
         )
+    elif method == "born_persistent_physical_wave_space_time":
+        evolved, completed = evolve_born_persistent_wave(
+            initial,
+            final_time,
+            cfl,
+            gamma,
+            periodic=False,
+        )
     elif method == "mp5_hlld":
         evolved, completed = mhd.evolve(
             initial,
@@ -1036,7 +1919,10 @@ def print_results(results: list[Result]) -> None:
 
 def validate_persistent_results(results: list[Result]) -> None:
     for result in results:
-        if result.method != "persistent_physical_wave_space_time":
+        if result.method not in (
+            "persistent_physical_wave_space_time",
+            "born_persistent_physical_wave_space_time",
+        ):
             continue
         if (
             not result.completed
@@ -1275,11 +2161,13 @@ def main() -> None:
             "mp5_hlld",
             "physical_wave_space_time",
             "persistent_physical_wave_space_time",
+            "born_persistent_physical_wave_space_time",
         ),
         default=(
             "mp5_hlld",
             "physical_wave_space_time",
             "persistent_physical_wave_space_time",
+            "born_persistent_physical_wave_space_time",
         ),
     )
     args = parser.parse_args()
@@ -1352,6 +2240,612 @@ def main() -> None:
     fast_shock_left, fast_shock_right, fast_shock_speed = (
         oblique_fast_shock_states(args.gamma)
     )
+    fast_minus_left = fast_shock_right.copy()
+    fast_minus_right = fast_shock_left.copy()
+    fast_minus_left[[1, 5]] *= -1.0
+    fast_minus_right[[1, 5]] *= -1.0
+    fast_minus_speed = -fast_shock_speed
+    weak_mach = 1.0001
+    weak_shock_speed = weak_mach * math.sqrt(args.gamma)
+    weak_compression = (
+        (args.gamma + 1.0) * weak_mach**2
+        / ((args.gamma - 1.0) * weak_mach**2 + 2.0)
+    )
+    weak_pressure_ratio = (
+        2.0 * args.gamma * weak_mach**2 - (args.gamma - 1.0)
+    ) / (args.gamma + 1.0)
+    weak_fast_right = np.array(
+        (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0)
+    )
+    weak_fast_left = np.array(
+        (
+            weak_compression,
+            weak_shock_speed * (1.0 - 1.0 / weak_compression),
+            0.0,
+            0.0,
+            weak_pressure_ratio,
+            0.0,
+            0.0,
+            0.0,
+        )
+    )
+    # This boost remains resolvable at the nominal detector tolerance; the
+    # rejection controls below exercise nearby under-resolved states.
+    boost_velocity = 2.0e2
+    boosted_fast_left = fast_shock_left.copy()
+    boosted_fast_right = fast_shock_right.copy()
+    boosted_fast_left[1] += boost_velocity
+    boosted_fast_right[1] += boost_velocity
+    boosted_fast_speed = fast_shock_speed + boost_velocity
+
+    birth_controls = (
+        (
+            "moving_mhd_contact",
+            contact_left,
+            contact_right,
+            0.5,
+            "contact",
+        ),
+        (
+            "moving_oblique_fast_shock",
+            fast_shock_left,
+            fast_shock_right,
+            fast_shock_speed,
+            "fast_plus_shock",
+        ),
+        (
+            "moving_rotational_discontinuity",
+            rotational_left,
+            rotational_right,
+            rotational_speed,
+            "alfven_minus",
+        ),
+        (
+            "moving_half_turn_rotational_discontinuity",
+            half_turn_left,
+            half_turn_right,
+            half_turn_speed,
+            "alfven_minus",
+        ),
+        (
+            "moving_oblique_fast_minus_shock",
+            fast_minus_left,
+            fast_minus_right,
+            fast_minus_speed,
+            "fast_minus_shock",
+        ),
+        (
+            "weak_hydro_fast_shock",
+            weak_fast_left,
+            weak_fast_right,
+            weak_shock_speed,
+            "fast_plus_shock",
+        ),
+        (
+            "galilean_boosted_fast_shock",
+            boosted_fast_left,
+            boosted_fast_right,
+            boosted_fast_speed,
+            "fast_plus_shock",
+        ),
+    )
+    for birth_position in (0.217, 0.5):
+        for case, left, right, speed, expected_family in birth_controls:
+            birth = require_physical_wave_birth(
+                case=case,
+                cells=32,
+                gamma=args.gamma,
+                left=left,
+                right=right,
+                speed=speed,
+                position=birth_position,
+                expected_family=expected_family,
+            )
+            print(
+                "physical_wave_birth"
+                f"\tcase={case}"
+                f"\tfamily={birth.path.family}"
+                f"\tlocation={birth.location_kind}"
+                f"\tcell={birth.cell}"
+                f"\tposition={birth.position:.12e}"
+                f"\tspeed={birth.wave.speed:.12e}"
+            )
+
+    face_evolution_results = []
+    for case, left, right, speed, _ in (
+        birth_controls[0],
+        birth_controls[1],
+        birth_controls[3],
+        birth_controls[4],
+    ):
+        face_evolution_results.append(
+            discontinuity_result(
+                case=f"{case}_face_aligned",
+                method="born_persistent_physical_wave_space_time",
+                cells=32,
+                cfl=0.9,
+                gamma=args.gamma,
+                left=left,
+                right=right,
+                speed=speed,
+                initial_position=0.5,
+                final_time=0.11 if "shock" in case else 0.6,
+            )
+        )
+    validate_persistent_results(face_evolution_results)
+    print(
+        "physical_wave_face_evolution"
+        f"\tcases={len(face_evolution_results)}"
+        f"\tmaximum_l1={max(result.total_l1 for result in face_evolution_results):.12e}"
+        "\tmaximum_overshoot="
+        f"{max(result.maximum_overshoot for result in face_evolution_results):.12e}"
+    )
+
+    perturbed_rotation = rotational_right.copy()
+    perturbed_rotation[4] *= 1.0001
+    perturbed_initial = discontinuity_cell_averages(
+        32,
+        0.217,
+        rotational_left,
+        perturbed_rotation,
+        args.gamma,
+    )
+    zero_normal_left = np.array(
+        (1.0, 0.2, 0.6, -0.2, 1.0, 0.0, 0.5, 0.0)
+    )
+    zero_normal_right = np.array(
+        (1.0, 0.2, 0.1, 0.3, 1.0, 0.0, 0.0, 0.5)
+    )
+    zero_normal_initial = discontinuity_cell_averages(
+        32,
+        0.217,
+        zero_normal_left,
+        zero_normal_right,
+        args.gamma,
+    )
+    low_beta_left = np.array(
+        (1.0, 1.5, 0.5, 0.0, 1.0, 1.0e6, 0.5, 0.0)
+    )
+    low_beta_right = np.array(
+        (1.0, 1.5, -0.5, 0.0, 1.0, 1.0e6, -0.5, 0.0)
+    )
+    low_beta_initial = discontinuity_cell_averages(
+        32,
+        0.217,
+        low_beta_left,
+        low_beta_right,
+        args.gamma,
+    )
+    low_beta_corruption = discontinuity_cell_averages(
+        32,
+        0.217,
+        low_beta_left,
+        low_beta_right,
+        args.gamma,
+    )
+    low_beta_corruption[6, 4] += 0.05
+    unresolved_low_pressure_left = np.array(
+        (2.0, 0.5, 0.1, -0.2, 1.0e-12, 0.75, 0.3, -0.4)
+    )
+    unresolved_low_pressure_right = unresolved_low_pressure_left.copy()
+    unresolved_low_pressure_right[0] = 1.0
+    unresolved_low_pressure = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_low_pressure_left,
+        unresolved_low_pressure_right,
+        args.gamma,
+    )
+    resolved_low_pressure_left = np.array(
+        (2.0, 0.0, 0.0, 0.0, 1.0e-12, 0.0, 0.0, 0.0)
+    )
+    resolved_low_pressure_right = resolved_low_pressure_left.copy()
+    resolved_low_pressure_right[0] = 1.0
+    resolved_low_pressure_birth = require_physical_wave_birth(
+        case="resolved_low_pressure_contact",
+        cells=32,
+        gamma=args.gamma,
+        left=resolved_low_pressure_left,
+        right=resolved_low_pressure_right,
+        speed=0.0,
+        position=0.217,
+        expected_family="contact",
+    )
+    low_pressure_corruption = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_low_pressure_left,
+        unresolved_low_pressure_right,
+        args.gamma,
+    )
+    low_pressure_corruption[6, 4] += 1.0e-12
+    low_pressure_plateau = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_low_pressure_left,
+        unresolved_low_pressure_right,
+        args.gamma,
+    )
+    low_pressure_plateau[4, 4] *= 2.0
+    nonadmissible_average = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_low_pressure_left,
+        unresolved_low_pressure_right,
+        args.gamma,
+    )
+    nonadmissible_average[6, 4] = -unresolved_low_pressure_left[4]
+    hidden_invariant_left = np.array(
+        (1.0, 1.5, 1.0e6, 0.0, 1.0, 1.0e6, 1.0e6, 0.0)
+    )
+    hidden_invariant_right = np.array(
+        (1.0, 1.5, -1.0e6, 0.0, 1.0005, 1.0e6, -1.0e6, 0.0)
+    )
+    hidden_invariant = discontinuity_cell_averages(
+        32,
+        0.217,
+        hidden_invariant_left,
+        hidden_invariant_right,
+        args.gamma,
+    )
+    scaled_non_rh_left = fast_shock_left.copy()
+    scaled_non_rh_right = fast_shock_right.copy()
+    for state in (scaled_non_rh_left, scaled_non_rh_right):
+        state[0] *= 1.0e-12
+        state[4] *= 1.0e-12
+        state[5:8] *= 1.0e-6
+    scaled_non_rh_left[4] *= 1.1
+    scaled_non_rh = discontinuity_cell_averages(
+        32,
+        0.217,
+        scaled_non_rh_left,
+        scaled_non_rh_right,
+        args.gamma,
+    )
+    boosted_non_rh_left = boosted_fast_left.copy()
+    boosted_non_rh_left[4] *= 1.1
+    boosted_non_rh = discontinuity_cell_averages(
+        32,
+        0.217,
+        boosted_non_rh_left,
+        boosted_fast_right,
+        args.gamma,
+    )
+    unresolved_boost_velocity = 3.0e2
+    unresolved_boost_left = fast_shock_left.copy()
+    unresolved_boost_right = fast_shock_right.copy()
+    unresolved_boost_left[1] += unresolved_boost_velocity
+    unresolved_boost_right[1] += unresolved_boost_velocity
+    unresolved_boost = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_boost_left,
+        unresolved_boost_right,
+        args.gamma,
+    )
+    unresolved_boost_corrupt_left = unresolved_boost_left.copy()
+    unresolved_boost_corrupt_left[4] *= 1.1
+    unresolved_boost_corrupt = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_boost_corrupt_left,
+        unresolved_boost_right,
+        args.gamma,
+    )
+    unresolved_contact_left = np.array(
+        (2.0, 2.0e4, 0.1, -0.2, 1.0, 0.7, 0.3, -0.4)
+    )
+    unresolved_contact_right = unresolved_contact_left.copy()
+    unresolved_contact_right[0] = 1.0
+    unresolved_contact_clean = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_contact_left,
+        unresolved_contact_right,
+        args.gamma,
+    )
+    unresolved_contact_right[4] += 1.5e-7
+    unresolved_contact_corrupt = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_contact_left,
+        unresolved_contact_right,
+        args.gamma,
+    )
+    unresolved_alfven_left = np.array(
+        (1.0, 2.50015e4, 0.5, 0.0, 1.0, 1.0, 0.5, 0.0)
+    )
+    unresolved_alfven_right = np.array(
+        (1.0, 2.50015e4, 0.0, 0.5, 1.0, 1.0, 0.0, 0.5)
+    )
+    unresolved_alfven_clean = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_alfven_left,
+        unresolved_alfven_right,
+        args.gamma,
+    )
+    unresolved_alfven_right[4] += 1.5e-7
+    unresolved_alfven_corrupt = discontinuity_cell_averages(
+        32,
+        0.217,
+        unresolved_alfven_left,
+        unresolved_alfven_right,
+        args.gamma,
+    )
+    resolved_corrupt_contact_left = np.array(
+        (2.0, 0.0, 0.0, 0.0, 1.0, 250.0, 0.0, 0.0)
+    )
+    resolved_corrupt_contact_right = resolved_corrupt_contact_left.copy()
+    resolved_corrupt_contact_right[0] = 1.0
+    resolved_corrupt_contact_right[4] = 1.000000003297
+    resolved_corrupt_contact = discontinuity_cell_averages(
+        32,
+        0.217,
+        resolved_corrupt_contact_left,
+        resolved_corrupt_contact_right,
+        args.gamma,
+    )
+    resolved_corrupt_alfven_left = np.array(
+        (1.0, 0.0, 102.65, 0.0, 1.0, 205.3, 102.65, 0.0)
+    )
+    resolved_corrupt_alfven_right = np.array(
+        (
+            1.0,
+            0.0,
+            0.0,
+            102.65,
+            1.0000000032987,
+            205.3,
+            0.0,
+            102.65,
+        )
+    )
+    resolved_corrupt_alfven = discontinuity_cell_averages(
+        32,
+        0.217,
+        resolved_corrupt_alfven_left,
+        resolved_corrupt_alfven_right,
+        args.gamma,
+    )
+    hidden_normal_b_left = np.array(
+        (2.0, 0.0, 0.0, 0.0, 1.0e8, 0.0, 1.0e6, 0.0)
+    )
+    hidden_normal_b_right = np.array(
+        (1.0, 0.0, 0.0, 0.0, 1.0e8, 5.0e-8, 1.0e6, 0.0)
+    )
+    hidden_normal_b = discontinuity_cell_averages(
+        32,
+        0.217,
+        hidden_normal_b_left,
+        hidden_normal_b_right,
+        args.gamma,
+    )
+    hidden_normal_velocity_left = np.array(
+        (2.0, 0.0, 1.0e6, 0.0, 1.0e8, 0.0, 0.0, 0.0)
+    )
+    hidden_normal_velocity_right = np.array(
+        (1.0, 5.0e-8, 1.0e6, 0.0, 1.0e8, 0.0, 0.0, 0.0)
+    )
+    hidden_normal_velocity = discontinuity_cell_averages(
+        32,
+        0.217,
+        hidden_normal_velocity_left,
+        hidden_normal_velocity_right,
+        args.gamma,
+    )
+    boundary_front = discontinuity_cell_averages(
+        32,
+        1.0 / 32.0 + 0.007,
+        contact_left,
+        contact_right,
+        args.gamma,
+    )
+    _, smooth_birth_control = mhd.circular_alfven_initial(32)
+    endpoint_states = mhd.conserved_array(
+        np.array((contact_left, contact_right)),
+        args.gamma,
+    )
+    double_state = np.repeat(endpoint_states[0][None, :], 32, axis=0)
+    double_state[7] = 0.35 * endpoint_states[0] + 0.65 * endpoint_states[1]
+    double_state[8:23] = endpoint_states[1]
+    double_state[23] = 0.65 * endpoint_states[1] + 0.35 * endpoint_states[0]
+    double_birth_control = mhd.primitive_from_conserved(
+        double_state,
+        args.gamma,
+    )
+    rejection_controls = (
+        find_single_physical_wave_birth(
+            perturbed_initial,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            smooth_birth_control,
+            args.gamma,
+            periodic=True,
+        ),
+        find_single_physical_wave_birth(
+            double_birth_control,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            zero_normal_initial,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            low_beta_initial,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            low_beta_corruption,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            unresolved_low_pressure,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            low_pressure_corruption,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            low_pressure_plateau,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            nonadmissible_average,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            hidden_invariant,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            scaled_non_rh,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            boosted_non_rh,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            unresolved_boost,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            unresolved_boost_corrupt,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            unresolved_contact_clean,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            unresolved_contact_corrupt,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            unresolved_alfven_clean,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            unresolved_alfven_corrupt,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            resolved_corrupt_contact,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            resolved_corrupt_alfven,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            hidden_normal_b,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            hidden_normal_velocity,
+            args.gamma,
+            periodic=False,
+        ),
+        find_single_physical_wave_birth(
+            boundary_front,
+            args.gamma,
+            periodic=False,
+        ),
+    )
+    rejection_control_names = (
+        "perturbed_rotation",
+        "smooth_periodic_wave",
+        "multiple_fronts",
+        "zero_normal_field",
+        "unresolved_low_beta",
+        "corrupt_low_beta",
+        "unresolved_low_pressure",
+        "corrupt_low_pressure",
+        "low_pressure_plateau",
+        "nonadmissible_average",
+        "hidden_invariant",
+        "scaled_non_rh",
+        "boosted_non_rh",
+        "unresolved_boost",
+        "corrupt_unresolved_boost",
+        "unresolved_contact",
+        "corrupt_unresolved_contact",
+        "unresolved_alfven",
+        "corrupt_unresolved_alfven",
+        "resolved_corrupt_contact",
+        "resolved_corrupt_alfven",
+        "hidden_normal_field",
+        "hidden_normal_velocity",
+        "boundary_front",
+    )
+    failed_rejections = [
+        name
+        for name, control in zip(
+            rejection_control_names,
+            rejection_controls,
+            strict=True,
+        )
+        if control is not None
+    ]
+    if failed_rejections:
+        raise RuntimeError(
+            "physical-wave birth rejection control failed: "
+            + ", ".join(failed_rejections)
+        )
+    alfven_birth_controls = validate_alfven_birth_family(args.gamma)
+    print(
+        "physical_wave_birth_rejections"
+        "\tnon_rh=passed\tsmooth=passed\tmultiple_candidates=passed"
+        "\tzero_normal_alfven=passed\tlow_beta_unresolved=passed"
+        "\tlow_beta_corruption=passed"
+        "\tlow_pressure_unresolved=passed"
+        "\tlow_pressure_corruption=passed\tplateau_conditioning=passed"
+        "\tnonadmissible_average=passed"
+        "\thidden_invariant=passed\tscaling_symmetry=passed"
+        "\tgalilean_symmetry=passed"
+        "\tunresolved_boost_clean=passed"
+        "\tunresolved_boost_corrupt=passed"
+        "\tunresolved_contact_pair=passed"
+        "\tunresolved_alfven_pair=passed"
+        "\tresolved_pressure_jump_contact=passed"
+        "\tresolved_pressure_jump_alfven=passed"
+        "\tcomponentwise_normal_b=passed"
+        "\tcomponentwise_normal_velocity=passed"
+        "\tpressure_uncertainty_ceiling="
+        f"{MAX_RELATIVE_PRESSURE_RECOVERY_UNCERTAINTY:.3e}"
+        f"\tboost_uncertainty_ceiling={MAX_BOOST_CONDITIONING_UNCERTAINTY:.3e}"
+        "\tboundary_plateau=passed\tperiodic=unsupported"
+        f"\talfven_path_controls={alfven_birth_controls}"
+    )
+    print(
+        "physical_wave_resolved_acceptance"
+        f"\tlow_pressure={resolved_low_pressure_birth.path.family}"
+        f"\tboosted_fast_velocity={boost_velocity:.1f}"
+    )
 
     results: list[Result] = []
     for cells in args.cells:
@@ -1401,6 +2895,20 @@ def main() -> None:
                 )
                 results.append(
                     discontinuity_result(
+                        case="moving_oblique_fast_minus_shock",
+                        method=method,
+                        cells=cells,
+                        cfl=cfl,
+                        gamma=args.gamma,
+                        left=fast_minus_left,
+                        right=fast_minus_right,
+                        speed=fast_minus_speed,
+                        initial_position=0.783,
+                        final_time=0.2,
+                    )
+                )
+                results.append(
+                    discontinuity_result(
                         case="moving_half_turn_rotational_discontinuity",
                         method=method,
                         cells=cells,
@@ -1432,12 +2940,23 @@ def main() -> None:
                 gamma=5.0 / 3.0,
                 periodic=True,
             )
+            smooth_born, born_completed = evolve_born_persistent_wave(
+                smooth_initial,
+                final_time=1.0,
+                cfl=cfl,
+                gamma=5.0 / 3.0,
+                periodic=True,
+            )
             smooth_difference = float(
-                np.max(np.abs(smooth_candidate - smooth_baseline))
+                max(
+                    np.max(np.abs(smooth_candidate - smooth_baseline)),
+                    np.max(np.abs(smooth_born - smooth_baseline)),
+                )
             )
             if (
                 not baseline_completed
                 or not candidate_completed
+                or not born_completed
                 or smooth_difference > 3.0e-12
             ):
                 raise RuntimeError(

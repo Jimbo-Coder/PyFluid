@@ -45,6 +45,38 @@ void AmrSolverBase::write_current_state_plotfile(int step, amrex::Real time) con
    }
 }
 
+void AmrSolverBase::write_debug_stage_state(
+   LevelData const& state,
+   std::string const& stage_name,
+   amrex::Real time,
+   int lev_begin,
+   int lev_end
+) const
+{
+   if (!cfg_.debug_stage_output) {
+      return;
+   }
+   if (finestLevel() != 0 || lev_begin != 0 || lev_end != 1) {
+      amrex::Abort(
+         "pyfluid.debug_stage_output currently supports one uniform AMR level"
+      );
+   }
+   const int step = level_steps_.at(0) + 1;
+   const std::filesystem::path plot_dir =
+      std::filesystem::path(cfg_.output_dir) / "debugStage";
+   std::filesystem::create_directories(plot_dir);
+   write_output_gf(
+      *state[0],
+      (plot_dir / (stage_name + "GF")).string(),
+      Geom(0),
+      state_grid_field_names(physics_system_, cfg_.passive_scalars),
+      time,
+      step,
+      cfg_,
+      "debug_stage"
+   );
+}
+
 void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
 {
    if (!aux_gfs_enabled(cfg_)) {

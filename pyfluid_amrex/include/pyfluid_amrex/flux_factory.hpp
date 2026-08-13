@@ -39,6 +39,7 @@ struct FluxLaunch {
    PatchLayout const* patch_layout = nullptr;
    amrex::MultiFab const* cell_spacetime = nullptr;
    EOSThermodynamicState const* atmosphere = nullptr;
+   amrex::Long* rmhd_riemann_hll_fallback_count = nullptr;
 };
 
 void fill_fluxes(FluxLaunch const& launch);
@@ -56,7 +57,8 @@ inline void launch_fluxes_runtime(
    amrex::Real time = 0.0,
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* patch_layout = nullptr,
-   EOSThermodynamicState const* atmosphere = nullptr
+   EOSThermodynamicState const* atmosphere = nullptr,
+   amrex::Long* rmhd_riemann_hll_fallback_count = nullptr
 )
 {
    constexpr FluxTopology topology = MappedPatches
@@ -81,6 +83,7 @@ inline void launch_fluxes_runtime(
       patch_layout,
       nullptr,
       atmosphere,
+      rmhd_riemann_hll_fallback_count,
    });
 }
 
@@ -104,7 +107,8 @@ inline void launch_flux_direction_runtime(
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* patch_layout = nullptr,
    amrex::MultiFab const* cell_spacetime = nullptr,
-   EOSThermodynamicState const* atmosphere = nullptr
+   EOSThermodynamicState const* atmosphere = nullptr,
+   amrex::Long* rmhd_riemann_hll_fallback_count = nullptr
 )
 {
    constexpr FluxTopology topology = MappedPatches
@@ -129,6 +133,7 @@ inline void launch_flux_direction_runtime(
       patch_layout,
       cell_spacetime,
       atmosphere,
+      rmhd_riemann_hll_fallback_count,
    });
 }
 

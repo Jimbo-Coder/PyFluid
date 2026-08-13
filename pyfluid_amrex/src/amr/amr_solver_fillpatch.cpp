@@ -1,4 +1,5 @@
 #include "amr/amr_solver_base.hpp"
+#include "amr/state_interpolation.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
 #include "pyfluid_amrex/mapped_patch_fill.hpp"
@@ -184,10 +185,21 @@ amrex::Interpolater* AmrSolverBase::selected_state_interpolater() const
 
 amrex::Interpolater* AmrSolverBase::state_interpolater() const
 {
-   if (mhd_enabled() || mesh_coordinate_kind() == MeshCartesian) {
-      return selected_state_interpolater();
-   }
-   return &state_interpolater_;
+   state_interpolater_->configure(
+      selected_state_interpolater(),
+      mesh_layout_.coordinate,
+      mesh_layout_.axes,
+      !mhd_enabled(),
+      physics_system_,
+      eos_method_,
+      eos_params(cfg_),
+      fixed_spacetime_parameters(cfg_),
+      physical_system_is_relativistic(physics_system_)
+         && mesh_coordinate_kind() == MeshCartesian
+         && uses_analytic_fixed_spacetime_kernels()
+         && !ct_enabled(cfg_)
+   );
+   return state_interpolater_.get();
 }
 
 bool AmrSolverBase::level_refinement_ratio_is_anisotropic(int coarse_lev) const

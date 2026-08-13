@@ -174,7 +174,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
          hierarchy.refinement_ratio.push_back(refRatio(lev));
       }
    }
-   hierarchy.cell_interpolater = state_interpolater();
+   hierarchy.cell_interpolater = selected_state_interpolater();
    for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
       const BoundaryKind lower = side_boundary_kind(cfg_, direction, false);
       const BoundaryKind upper = side_boundary_kind(cfg_, direction, true);

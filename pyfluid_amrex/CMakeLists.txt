@@ -116,6 +116,7 @@ set(PYFLUID_AMREX_AMR_SOURCES
    src/amr/amr_solver_spacetime.cpp
    src/amr/amr_solver_spacetime_evolution.cpp
    src/amr/amr_solver_valid_cells.cpp
+   src/amr/state_interpolation.cpp
 )
 
 set(PYFLUID_AMREX_FRAMEWORK_SOURCES
@@ -152,43 +153,43 @@ endif()
 if(PYFLUID_AMREX_ENABLE_RECON_WENOZ)
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/wenoz.cpp)
 endif()
-if(PYFLUID_AMREX_ENABLE_RECON_WENOZ_CHAR)
+if(PYFLUID_AMREX_ENABLE_RECON_WENOZ_CHAR AND (PYFLUID_AMREX_ENABLE_HYDRO OR PYFLUID_AMREX_ENABLE_MHD))
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/wenoz_char.cpp)
 endif()
 if(PYFLUID_AMREX_ENABLE_RECON_MP5)
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/mp5.cpp)
 endif()
-if(PYFLUID_AMREX_ENABLE_RECON_MP5_CHAR)
+if(PYFLUID_AMREX_ENABLE_RECON_MP5_CHAR AND (PYFLUID_AMREX_ENABLE_HYDRO OR PYFLUID_AMREX_ENABLE_MHD))
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/mp5_char.cpp)
 endif()
 if(PYFLUID_AMREX_ENABLE_RECON_TENO5)
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/teno5.cpp)
 endif()
-if(PYFLUID_AMREX_ENABLE_RECON_TENO5_CHAR)
+if(PYFLUID_AMREX_ENABLE_RECON_TENO5_CHAR AND (PYFLUID_AMREX_ENABLE_HYDRO OR PYFLUID_AMREX_ENABLE_MHD))
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/teno5_char.cpp)
 endif()
 if(PYFLUID_AMREX_ENABLE_RECON_PARABOLIC)
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/parabolic.cpp)
 endif()
-if(PYFLUID_AMREX_ENABLE_RECON_PARABOLIC_CHAR)
+if(PYFLUID_AMREX_ENABLE_RECON_PARABOLIC_CHAR AND (PYFLUID_AMREX_ENABLE_HYDRO OR PYFLUID_AMREX_ENABLE_MHD))
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/parabolic_char.cpp)
 endif()
 if(PYFLUID_AMREX_ENABLE_RECON_PPM4)
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppm4.cpp)
 endif()
-if(PYFLUID_AMREX_ENABLE_RECON_PPM4_CHAR)
+if(PYFLUID_AMREX_ENABLE_RECON_PPM4_CHAR AND (PYFLUID_AMREX_ENABLE_HYDRO OR PYFLUID_AMREX_ENABLE_MHD))
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppm4_char.cpp)
 endif()
 if(PYFLUID_AMREX_ENABLE_RECON_PPMX)
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppmx.cpp)
 endif()
-if(PYFLUID_AMREX_ENABLE_RECON_PPMX_CHAR)
+if(PYFLUID_AMREX_ENABLE_RECON_PPMX_CHAR AND (PYFLUID_AMREX_ENABLE_HYDRO OR PYFLUID_AMREX_ENABLE_MHD))
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppmx_char.cpp)
 endif()
 if(PYFLUID_AMREX_ENABLE_RECON_PPM3)
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppm3.cpp)
 endif()
-if(PYFLUID_AMREX_ENABLE_RECON_PPM3_CHAR)
+if(PYFLUID_AMREX_ENABLE_RECON_PPM3_CHAR AND (PYFLUID_AMREX_ENABLE_HYDRO OR PYFLUID_AMREX_ENABLE_MHD))
    list(APPEND PYFLUID_AMREX_FLUX_KERNEL_SOURCES src/flux_kernels/ppm3_char.cpp)
 endif()
 
@@ -213,6 +214,14 @@ set(PYFLUID_AMREX_RELATIVITY_SOURCES
    src/relativity/spacetime_coupling_storage.cpp
    src/relativity/z4c_runtime.cpp
 )
+
+if(PYFLUID_AMREX_ENABLE_MHD AND
+   (PYFLUID_AMREX_ENABLE_RIEMANN_HLLC OR
+    PYFLUID_AMREX_ENABLE_RIEMANN_HLLD))
+   list(APPEND PYFLUID_AMREX_RELATIVITY_SOURCES
+      src/relativity/rmhd_advanced_flux.cpp
+   )
+endif()
 
 set(PYFLUID_AMREX_SOURCES
    ${PYFLUID_AMREX_DRIVER_SOURCES}
@@ -249,8 +258,22 @@ set(PYFLUID_AMREX_RECONSTRUCTION_CHECK_SOURCES
    tests/reconstruction_check.cpp
 )
 
+set(PYFLUID_AMREX_RMHD_RIEMANN_CHECK_SOURCES
+   tests/rmhd_riemann_check.cpp
+)
+
+set(PYFLUID_AMREX_STATE_INTERPOLATION_CHECK_SOURCES
+   src/amr/state_interpolation.cpp
+   tests/state_interpolation_check.cpp
+)
+
 set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
    tests/multipatch_check.cpp
+)
+
+set(PYFLUID_AMREX_BOUNDARY_TILING_CHECK_SOURCES
+   src/framework/fields.cpp
+   tests/boundary_tiling_check.cpp
 )
 
 set(PYFLUID_AMREX_SURFACE_CHECK_SOURCES
@@ -606,6 +629,35 @@ foreach(dim 1 2 3)
             )
          endif()
 
+         add_executable(
+            pyfluid_amrex_rmhd_riemann_check
+            EXCLUDE_FROM_ALL
+            ${PYFLUID_AMREX_RMHD_RIEMANN_CHECK_SOURCES}
+         )
+         pyfluid_amrex_configure_target(pyfluid_amrex_rmhd_riemann_check ${dim})
+         if(TARGET pyfluid_amrex_generate_kernels)
+            add_dependencies(
+               pyfluid_amrex_rmhd_riemann_check
+               pyfluid_amrex_generate_kernels
+            )
+         endif()
+
+         add_executable(
+            pyfluid_amrex_state_interpolation_check
+            EXCLUDE_FROM_ALL
+            ${PYFLUID_AMREX_STATE_INTERPOLATION_CHECK_SOURCES}
+         )
+         pyfluid_amrex_configure_target(
+            pyfluid_amrex_state_interpolation_check
+            ${dim}
+         )
+         if(TARGET pyfluid_amrex_generate_kernels)
+            add_dependencies(
+               pyfluid_amrex_state_interpolation_check
+               pyfluid_amrex_generate_kernels
+            )
+         endif()
+
          add_executable(pyfluid_amrex_c2p_benchmark EXCLUDE_FROM_ALL ${PYFLUID_AMREX_C2P_BENCHMARK_SOURCES})
          pyfluid_amrex_configure_target(pyfluid_amrex_c2p_benchmark ${dim})
          if(TARGET pyfluid_amrex_generate_kernels)
@@ -633,6 +685,19 @@ foreach(dim 1 2 3)
          pyfluid_amrex_configure_target(pyfluid_amrex_multipatch_check_${dim}d ${dim})
          if(TARGET pyfluid_amrex_generate_kernels)
             add_dependencies(pyfluid_amrex_multipatch_check_${dim}d pyfluid_amrex_generate_kernels)
+         endif()
+
+         add_executable(
+            pyfluid_amrex_boundary_tiling_check_${dim}d
+            EXCLUDE_FROM_ALL
+            ${PYFLUID_AMREX_BOUNDARY_TILING_CHECK_SOURCES}
+         )
+         pyfluid_amrex_configure_target(pyfluid_amrex_boundary_tiling_check_${dim}d ${dim})
+         if(TARGET pyfluid_amrex_generate_kernels)
+            add_dependencies(
+               pyfluid_amrex_boundary_tiling_check_${dim}d
+               pyfluid_amrex_generate_kernels
+            )
          endif()
       endif()
    endif()

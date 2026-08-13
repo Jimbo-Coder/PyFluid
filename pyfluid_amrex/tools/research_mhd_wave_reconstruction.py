@@ -664,6 +664,7 @@ def result_from_exact(
     transverse_errors = [
         normalized_l1(evolved[:, component], exact[:, component])
         for component in (2, 3, 6, 7)
+        if np.ptp(exact[:, component]) > 1.0e-13
     ]
     overshoots = []
     tv_ratios = []
@@ -691,7 +692,9 @@ def result_from_exact(
         cells=len(evolved),
         completed=completed,
         total_l1=float(np.mean(errors)),
-        transverse_l1=float(np.mean(transverse_errors)),
+        transverse_l1=(
+            float(np.mean(transverse_errors)) if transverse_errors else 0.0
+        ),
         maximum_overshoot=max(overshoots, default=0.0),
         maximum_tv_ratio=max(tv_ratios, default=1.0),
         mass_error=abs(final_integrals[0] - exact_integrals[0]),

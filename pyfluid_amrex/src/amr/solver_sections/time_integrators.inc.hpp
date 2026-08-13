@@ -79,6 +79,10 @@
             stage_start = profile_.begin();
             copy_plus_flux_divergence_range<NComp>(fluid_state_.scratch(), fluid_state_.state(), dt, lev_begin, lev_end);
             profile_.end(ProfileStage::Divergence, stage_start);
+            write_debug_stage_state(
+               fluid_state_.scratch(), "ssprk3_stage1_candidate",
+               time + dt, lev_begin, lev_end
+            );
 
             stage_start = profile_.begin();
             fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt);
@@ -89,6 +93,10 @@
                fluid_state_.next(), fluid_state_.state(), fluid_state_.scratch(), 0.75, 0.25, 0.25 * dt, lev_begin, lev_end
             );
             profile_.end(ProfileStage::Divergence, stage_start);
+            write_debug_stage_state(
+               fluid_state_.next(), "ssprk3_stage2_candidate",
+               time + 0.5 * dt, lev_begin, lev_end
+            );
 
             stage_start = profile_.begin();
             fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.next(), lev_begin, lev_end, time + 0.5 * dt);
@@ -99,6 +107,10 @@
                final_state, fluid_state_.state(), fluid_state_.next(), 1.0 / 3.0, 2.0 / 3.0, 2.0 * dt / 3.0, lev_begin, lev_end
             );
             profile_.end(ProfileStage::Divergence, stage_start);
+            write_debug_stage_state(
+               final_state, "ssprk3_stage3_candidate",
+               time + dt, lev_begin, lev_end
+            );
          } else if constexpr (TimeMethod == TimeRK4) {
             amrex::Real stage_start = 0.0;
             if constexpr (!InitialBoundariesFilled) {
@@ -159,6 +171,12 @@
          project_relativistic_atmosphere_range<EOSMethod>(
             final_state, lev_begin, lev_end
          );
+         if constexpr (TimeMethod == TimeSSPRK3) {
+            write_debug_stage_state(
+               final_state, "ssprk3_accepted",
+               time + dt, lev_begin, lev_end
+            );
+         }
          return !FinalInPlace;
       }
 
@@ -273,6 +291,10 @@
             prepare_stage_sources<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt);
             apply_athena_ssprk3_energy_release_range(fluid_state_.scratch(), 0, dt, lev_begin, lev_end);
          }
+         write_debug_stage_state(
+            fluid_state_.scratch(), "ssprk3_stage1_candidate",
+            time + dt, lev_begin, lev_end
+         );
 
          stage_start = profile_.begin();
          fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt);
@@ -301,6 +323,10 @@
             prepare_stage_sources<SubcyclingEnabled>(fluid_state_.next(), lev_begin, lev_end, time + 0.5 * dt);
             apply_athena_ssprk3_energy_release_range(fluid_state_.next(), 1, dt, lev_begin, lev_end);
          }
+         write_debug_stage_state(
+            fluid_state_.next(), "ssprk3_stage2_candidate",
+            time + 0.5 * dt, lev_begin, lev_end
+         );
 
          stage_start = profile_.begin();
          fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.next(), lev_begin, lev_end, time + 0.5 * dt);
@@ -333,6 +359,10 @@
             EvolutionStageSlot::Next, EvolutionStageSlot::Scratch, lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
+         write_debug_stage_state(
+            fluid_state_.next(), "ssprk3_stage3_candidate",
+            time + dt, lev_begin, lev_end
+         );
          suppress_athena_gravity_energy_source_ = previous_suppression;
       } else if constexpr (TimeMethod == TimeRK4) {
          amrex::Real stage_start = 0.0;
@@ -479,6 +509,12 @@
       project_relativistic_atmosphere_range<EOSMethod>(
          fluid_state_.next(), lev_begin, lev_end
       );
+      if constexpr (TimeMethod == TimeSSPRK3) {
+         write_debug_stage_state(
+            fluid_state_.next(), "ssprk3_accepted",
+            time + dt, lev_begin, lev_end
+         );
+      }
       debug_check_relativistic_stage_range(
          fluid_state_.next(), lev_begin, lev_end,
          "relativistic accepted candidate", time + dt

@@ -40,23 +40,18 @@ from validation_common import (
 
 
 METHODS = ("pwl", "wenoz", "mp5", "teno5", "ppm4", "ppmx", "ppm3")
-METHOD_CHOICES = METHODS + (
-   "parabolic",
-   "wenoz-char",
-   "mp5-char",
-   "teno5-char",
-   "parabolic-char",
-   "ppm4-char",
-   "ppmx-char",
-   "ppm3-char",
-)
+METHOD_CHOICES = METHODS + ("parabolic",)
 GUARDS = ("off", "pwc", "pwl-pwc")
 TIMESTEPS = ("ssprk3", "rk4")
 CANDIDATE_RIEMANN_METHODS = ("same", "hll", "llf")
+PRIMARY_RIEMANN_METHODS = ("hll", "hlld")
 
 
-def artifact_paths(label: str) -> tuple[Path, Path, Path]:
-   suffix = f"_{label}" if label else ""
+def artifact_paths(label: str, riemann: str) -> tuple[Path, Path, Path]:
+   suffix_parts = [label] if label else []
+   if riemann != "hll":
+      suffix_parts.append(riemann)
+   suffix = f"_{'_'.join(suffix_parts)}" if suffix_parts else ""
    results = RUN_ROOT / f"balsara_candidate_guard_scan{suffix}.tsv"
    plot = (
       ROOT
@@ -98,6 +93,7 @@ def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
                         "pyfluid.ng": "2" if method == "pwl" else "3",
                         "pyfluid.cfl": "0.9",
                         "pyfluid.recon": method,
+                        "pyfluid.riemann": args.riemann,
                         "pyfluid.timestep": timestep,
                         "pyfluid.rmhd_candidate_guard": guard,
                         "pyfluid.rmhd_candidate_riemann": candidate_riemann,
@@ -127,7 +123,8 @@ def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
                         ):
                            overrides[f"pyfluid.{name}_{side}"] = repr(value)
                      run_name = (
-                        f"guard_scan_balsara{case}_{method}_{guard}_"
+                        f"guard_scan_balsara{case}_{method}_{args.riemann}_"
+                        f"{guard}_"
                         f"{candidate_riemann}_{timestep}_"
                         f"dmp{args.dmp_factor:g}_n{cells}"
                      )
@@ -150,6 +147,7 @@ def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
                      rows.append({
                         "case": case,
                         "method": method,
+                        "riemann": args.riemann,
                         "guard": guard,
                         "candidate_riemann": candidate_riemann,
                         "timestep": timestep,
@@ -168,7 +166,7 @@ def run_scan(args: argparse.Namespace) -> list[dict[str, object]]:
                         "run_dir": repo_relative(run_dir),
                      })
                      print(
-                        f"Balsara {case} {method}/{guard}/"
+                        f"Balsara {case} {method}/{args.riemann}/{guard}/"
                         f"{candidate_riemann}/{timestep} N={cells}: "
                         f"L1={maximum_l1:.6e} overshoot={overshoot:.6e} "
                         f"TV={tv_ratio:.4f} "
@@ -276,7 +274,7 @@ def plot_scan(
    )
    timestep_label = "/".join(method.upper() for method in args.timesteps)
    figure.suptitle(
-      "SRMHD candidate correction — primary HLL, correction "
+      f"SRMHD candidate correction — primary {args.riemann.upper()}, correction "
       f"{correction_label}, {timestep_label}, CFL 0.9"
    )
    plot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -351,7 +349,8 @@ def plot_balsara4_profiles(
          else candidate_riemann.upper()
       )
       label = (
-         f"{method.upper()} / {str(row['guard']).upper()} guard / "
+         f"{method.upper()} / {str(row.get('riemann', 'hll')).upper()} / "
+         f"{str(row['guard']).upper()} guard / "
          f"{candidate_label} / {str(row['timestep']).upper()}"
       )
       for column, (name, _) in enumerate(PLOT_COMPONENTS):
@@ -374,6 +373,7 @@ def plot_balsara4_profiles(
 
 
 def plot_best_policy(
+   args: argparse.Namespace,
    rows: list[dict[str, object]],
    plot_path: Path,
 ) -> None:
@@ -424,7 +424,8 @@ def plot_best_policy(
    axes[1, 2].set_visible(False)
    axes[0, 0].legend(frameon=False, fontsize=8)
    figure.suptitle(
-      "Best SRMHD correction policies — HLL/SSPRK3, CFL 0.9"
+      f"Best SRMHD correction policies — {args.riemann.upper()}/SSPRK3, "
+      "CFL 0.9"
    )
    plot_path.parent.mkdir(parents=True, exist_ok=True)
    figure.savefig(plot_path, dpi=180)
@@ -469,6 +470,12 @@ def main() -> int:
       help="timestepper; repeatable (default: ssprk3)",
    )
    parser.add_argument(
+      "--riemann",
+      choices=PRIMARY_RIEMANN_METHODS,
+      default="hll",
+      help="primary Riemann solver (default: hll)",
+   )
+   parser.add_argument(
       "--candidate-riemann",
       dest="candidate_riemann_methods",
       action="append",
@@ -503,15 +510,25 @@ def main() -> int:
    args.candidate_riemann_methods = list(
       dict.fromkeys(args.candidate_riemann_methods or ["same"])
    )
-   results_path, plot_path, best_policy_plot_path = artifact_paths(args.label)
+   results_path, plot_path, best_policy_plot_path = artifact_paths(
+      args.label,
+      args.riemann,
+   )
    if args.plot_only:
       rows = read_tsv(results_path)
       for row in rows:
          row.setdefault("candidate_riemann", "same")
+         row.setdefault("riemann", "hll")
          row.setdefault("timestep", "ssprk3")
          # Legacy scan rows predate the explicit column and used the former
          # production default.
          row.setdefault("dmp_factor", 1.2)
+      stored_riemann_methods = {str(row["riemann"]) for row in rows}
+      if stored_riemann_methods and stored_riemann_methods != {args.riemann}:
+         raise RuntimeError(
+            f"{repo_relative(results_path)} contains primary Riemann methods "
+            f"{sorted(stored_riemann_methods)}, not {args.riemann}"
+         )
    else:
       rows = run_scan(args)
       write_tsv(
@@ -520,6 +537,7 @@ def main() -> int:
          [
             "case",
             "method",
+            "riemann",
             "guard",
             "candidate_riemann",
             "timestep",
@@ -554,7 +572,7 @@ def main() -> int:
       for row in rows
    )
    if wrote_best_policy_plot:
-      plot_best_policy(rows, best_policy_plot_path)
+      plot_best_policy(args, rows, best_policy_plot_path)
    print(f"wrote {repo_relative(results_path)}")
    print(f"wrote {repo_relative(plot_path)}")
    if wrote_profile_plot:

@@ -273,6 +273,7 @@ def compare_component(
    output: Path,
    title: str,
    coordinate_limits: tuple[tuple[float, float], tuple[float, float]] | None = None,
+   skip_plot: bool = False,
 ) -> dict[str, float]:
    command = [
          "uv",
@@ -290,6 +291,8 @@ def compare_component(
          "--title",
          title,
    ]
+   if skip_plot:
+      command.append("--skip-plot")
    if coordinate_limits is not None:
       xlim, ylim = coordinate_limits
       command.extend(("--xlim", str(xlim[0]), str(xlim[1]), "--ylim", str(ylim[0]), str(ylim[1])))
@@ -335,6 +338,7 @@ def write_plot(rows: list[dict[str, object]], output: Path, title: str) -> None:
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--force", action="store_true")
+   parser.add_argument("--skip-plot", action="store_true")
    parser.add_argument("--ranks", type=int, default=3)
    parser.add_argument(
       "--deep-auto-amr",
@@ -380,6 +384,7 @@ def main() -> int:
             comparison_output.with_name(f"{plot_stem(args)}_{candidate_name}_vs_nosub_{component}_001.png"),
             f"{run_label(args)}: {candidate_name} subcycling vs no subcycling",
             coordinate_limits,
+            args.skip_plot,
          )
       )
 
@@ -470,7 +475,8 @@ def main() -> int:
    write_tsv(results, rows, fields)
    append_performance_history(PERFORMANCE_HISTORY, [{"kind": str(summary["case"]), **summary}])
    plot_path = PLOT_ROOT / f"{plot_stem(args)}_benefit_001.png"
-   write_plot(rows, plot_path, run_label(args))
+   if not args.skip_plot:
+      write_plot(rows, plot_path, run_label(args))
 
    print(
       f"{summary['status']} {summary['case']}: speedup={speedup:.3f}, "
@@ -481,7 +487,8 @@ def main() -> int:
       f"fine/coarse steps={candidate['fine_per_coarse_steps']:.1f}"
    )
    print(f"wrote {repo_relative(results)}")
-   print(f"wrote {repo_relative(plot_path)}")
+   if not args.skip_plot:
+      print(f"wrote {repo_relative(plot_path)}")
    if failures:
       for failure in failures:
          print(f"FAIL: {failure}")

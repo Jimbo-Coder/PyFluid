@@ -168,15 +168,19 @@ void dispatch_layout(FluxLaunch const& launch)
    case NVAR_HYDRO:
       dispatch_eos<NVAR_HYDRO, ReconstructionMethod>(launch);
       return;
+#if PYFLUID_AMREX_ENABLE_HYDRO
    case NVAR_HYDRO + 1:
       dispatch_eos<NVAR_HYDRO + 1, ReconstructionMethod>(launch);
       return;
+#endif
+#if PYFLUID_AMREX_ENABLE_MHD
    case NVAR_MHD:
       dispatch_eos<NVAR_MHD, ReconstructionMethod>(launch);
       return;
    case NVAR_MHD + 1:
       dispatch_eos<NVAR_MHD + 1, ReconstructionMethod>(launch);
       return;
+#endif
    default:
       amrex::Abort("unsupported state layout in flux factory");
    }

@@ -50,7 +50,8 @@ void apply_rmhd_candidate_flux_limiter(
    bool enforce_dmp,
    amrex::Real dmp_factor,
    amrex::Long* pwl_correction_count,
-   amrex::Long* pwc_correction_count
+   amrex::Long* pwc_correction_count,
+   amrex::Long* hll_fallback_count
 );
 
 } // namespace pyfluid_amrex

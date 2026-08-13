@@ -27,6 +27,7 @@ from validation_common import (
    ROOT,
    SMOKE_POLICY,
    append_validation_history,
+   build_cached_target,
    materialize_run_input,
    read_key_values,
    read_scalar_rows,
@@ -2288,8 +2289,7 @@ def main() -> int:
    parser.add_argument("--force", action="store_true")
    args = parser.parse_args()
 
-   if not CHECKPOINT_COMPARE.exists():
-      raise SystemExit("build the AMReX solver and checkpoint comparator first")
+   build_cached_target(CHECKPOINT_COMPARE.name)
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
    results: list[dict[str, object]] = []
    scalars: list[dict[str, object]] = []

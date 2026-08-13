@@ -1006,6 +1006,7 @@ def rhs(
     reconstruct: FaceReconstruction,
     riemann_flux: RiemannFlux,
     periodic: bool,
+    boundary_primitives: tuple[Array, Array] | None = None,
 ) -> tuple[Array, float]:
     primitive = primitive_from_conserved(state, gamma)
     if not primitive_is_admissible(primitive):
@@ -1014,7 +1015,16 @@ def rhs(
     fluxes = np.empty((len(state) + 1, 3))
     required_speed = 0.0
     for face in range(len(state) + 1):
-        left, right = reconstruct(primitive, face - 1, gamma)
+        if not periodic and boundary_primitives is not None and face == 0:
+            left = right = boundary_primitives[0]
+        elif (
+            not periodic
+            and boundary_primitives is not None
+            and face == len(state)
+        ):
+            left = right = boundary_primitives[1]
+        else:
+            left, right = reconstruct(primitive, face - 1, gamma)
         if not primitive_is_admissible(np.array((left, right))):
             return np.full_like(state, np.nan), math.inf
         endpoint_speeds = (
@@ -1052,6 +1062,7 @@ def evolve(
     reconstruct: FaceReconstruction,
     riemann_flux: RiemannFlux,
     periodic: bool,
+    boundary_primitives: tuple[Array, Array] | None = None,
 ) -> tuple[Array, bool]:
     state = conserved_from_primitive(primitive, gamma)
     dx = 1.0 / len(state)
@@ -1070,6 +1081,7 @@ def evolve(
             reconstruct,
             riemann_flux,
             periodic,
+            boundary_primitives,
         )
         if (
             not np.isfinite(required_speed)
@@ -1087,6 +1099,7 @@ def evolve(
                 reconstruct,
                 riemann_flux,
                 periodic,
+                boundary_primitives,
             )
             if not np.isfinite(stage1_speed):
                 dt *= 0.5
@@ -1107,6 +1120,7 @@ def evolve(
                 reconstruct,
                 riemann_flux,
                 periodic,
+                boundary_primitives,
             )
             if not np.isfinite(stage2_speed):
                 dt *= 0.5
@@ -1140,8 +1154,18 @@ def evolve(
     return final, primitive_is_admissible(final)
 
 
+def comparison_scale(exact: Array) -> float:
+    """Return a range scale without amplifying constant-field roundoff."""
+
+    variation = float(np.max(exact) - np.min(exact))
+    magnitude = max(float(np.max(np.abs(exact))), 1.0e-14)
+    if variation <= 1.0e-12 * magnitude:
+        return magnitude
+    return variation
+
+
 def normalized_l1(values: Array, exact: Array) -> float:
-    scale = max(float(np.max(exact) - np.min(exact)), 1.0e-14)
+    scale = comparison_scale(exact)
     return float(np.mean(np.abs(values - exact)) / scale)
 
 
@@ -1192,7 +1216,7 @@ def shock_result(
     for component in range(3):
         exact = exact_values[:, component]
         values = evolved[:, component]
-        scale = max(float(np.max(exact) - np.min(exact)), 1.0e-14)
+        scale = comparison_scale(exact)
         overshoots.append(
             max(
                 0.0,
@@ -1201,10 +1225,13 @@ def shock_result(
             )
             / scale
         )
-        tv_ratios.append(
-            total_variation(values)
-            / max(total_variation(exact), 1.0e-14)
-        )
+        exact_tv = total_variation(exact)
+        if exact_tv <= 1.0e-12 * scale:
+            tv_ratios.append(
+                1.0 + total_variation(values - exact) / scale
+            )
+        else:
+            tv_ratios.append(total_variation(values) / exact_tv)
     exact_integrals = sod_conserved_integrals(
         case.final_time,
         gamma,

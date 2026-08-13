@@ -19,7 +19,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from plot_amrex_slice import full_shape, level_chunks, level_count, parse_plot_bounds, parse_plot_header
@@ -37,6 +36,15 @@ from validation_common import (
 RUN_CASE = ROOT / "pyfluid_amrex/tools/run_case.py"
 BASE_INPUT = ROOT / "pyfluid_amrex/inputs/pressure_bump_2d_amr.in"
 OUT_ROOT = ROOT / "runs/current/curvilinear_equivalence"
+
+
+def pyplot():
+   import matplotlib
+
+   matplotlib.use("Agg")
+   import matplotlib.pyplot as plt
+
+   return plt
 
 
 @dataclass(frozen=True)
@@ -271,6 +279,7 @@ def compare_fields(
 
 
 def write_error_plot(path: Path, cyl: FieldSet, pressure_error: np.ndarray) -> None:
+   plt = pyplot()
    path.parent.mkdir(parents=True, exist_ok=True)
    fig, ax = plt.subplots(figsize=(7.2, 6.2), constrained_layout=True)
    finite = np.isfinite(pressure_error)
@@ -319,6 +328,7 @@ def write_acoustic_packet_profile(
    rho0: float,
    pressure0: float,
 ) -> None:
+   plt = pyplot()
    x = np.linspace(-compare_radius, compare_radius, 801)
    y = np.full_like(x, center_y)
    cart = read_sampled_fields(
@@ -391,6 +401,7 @@ def write_entropy_packet_profile(
    advection_speed: float,
    rho0: float,
 ) -> None:
+   plt = pyplot()
    x = np.linspace(-compare_radius, compare_radius, 801)
    y = np.full_like(x, center_y)
    cart = read_sampled_fields(
@@ -614,6 +625,7 @@ def amr_interest_score_rows(
 
 
 def write_amr_interest_plot(path: Path, rows: list[dict[str, object]], coordinate: str) -> None:
+   plt = pyplot()
    time = np.asarray([float(row["time"]) for row in rows])
    fig, axes = plt.subplots(2, 1, figsize=(7.2, 6.4), sharex=True, constrained_layout=True)
    axes[0].plot(time, [float(row["metric_weighted_coverage"]) for row in rows], "o-", label="coverage")
@@ -735,6 +747,7 @@ def main() -> int:
    parser.add_argument("--min-common-finest-points", type=int, default=8)
    parser.add_argument("--timeout", type=int, default=180)
    parser.add_argument("--force", action="store_true")
+   parser.add_argument("--skip-plot", action="store_true")
    args = parser.parse_args()
 
    if args.angular_factor < 1:
@@ -926,11 +939,12 @@ def main() -> int:
          for coordinate, run_dir in (("cartesian", cart_dir), ("cylindrical", cyl_dir)):
             interest_rows = amr_interest_score_rows(run_dir, coordinate, ref_ratio=args.ref_ratio)
             write_tsv(case_dir / f"amr_interest_score_{coordinate}.tsv", interest_rows)
-            write_amr_interest_plot(
-               case_dir / f"amr_interest_score_{coordinate}.png",
-               interest_rows,
-               coordinate,
-            )
+            if not args.skip_plot:
+               write_amr_interest_plot(
+                  case_dir / f"amr_interest_score_{coordinate}.png",
+                  interest_rows,
+                  coordinate,
+               )
       gamma = float(read_key_values(cyl_dir / "run.in").get("pyfluid.gamma", "1.6666666666666667"))
       sample_level = min(cart_amr_summary["active_finest_level"], cyl_amr_summary["active_finest_level"])
       r = centers(0.0, args.radius, nr * (args.ref_ratio**sample_level))
@@ -971,8 +985,9 @@ def main() -> int:
       all_rows.extend(comparison_rows)
 
       write_tsv(case_dir / "equivalence.tsv", comparison_rows)
-      write_error_plot(case_dir / "pressure_error.png", cyl, pressure_error)
-      if args.ic == "density_cloud":
+      if not args.skip_plot:
+         write_error_plot(case_dir / "pressure_error.png", cyl, pressure_error)
+      if args.ic == "density_cloud" and not args.skip_plot:
          write_entropy_packet_profile(
             case_dir,
             cart_dir,
@@ -990,22 +1005,23 @@ def main() -> int:
          )
       if args.ic == "acoustic_packet_x":
          sound_speed = math.sqrt((5.0 / 3.0) * 1.0 / 1.0)
-         write_acoustic_packet_profile(
-            case_dir,
-            cart_dir,
-            cyl_dir,
-            gamma=gamma,
-            ref_ratio=args.ref_ratio,
-            sample_level=sample_level,
-            compare_radius=args.compare_radius,
-            center_x=args.bump_x0,
-            center_y=args.bump_y0,
-            sigma=args.bump_sigma,
-            transverse_sigma=args.transverse_sigma,
-            amplitude=args.amplitude,
-            rho0=1.0,
-            pressure0=1.0,
-         )
+         if not args.skip_plot:
+            write_acoustic_packet_profile(
+               case_dir,
+               cart_dir,
+               cyl_dir,
+               gamma=gamma,
+               ref_ratio=args.ref_ratio,
+               sample_level=sample_level,
+               compare_radius=args.compare_radius,
+               center_x=args.bump_x0,
+               center_y=args.bump_y0,
+               sigma=args.bump_sigma,
+               transverse_sigma=args.transverse_sigma,
+               amplitude=args.amplitude,
+               rho0=1.0,
+               pressure0=1.0,
+            )
          cart_coverage = acoustic_packet_coverage_rows(
             cart_dir,
             "cartesian",

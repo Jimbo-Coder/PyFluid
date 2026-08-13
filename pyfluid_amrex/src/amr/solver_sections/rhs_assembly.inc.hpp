@@ -45,6 +45,9 @@
 
    void reset_relativistic_recovery_events()
    {
+      if (!physical_system_is_relativistic(physics_system_)) {
+         return;
+      }
       const amrex::Long zero = 0;
 #ifdef AMREX_USE_GPU
       amrex::Gpu::htod_memcpy(
@@ -67,11 +70,17 @@
          &zero,
          sizeof(zero)
       );
+      amrex::Gpu::htod_memcpy(
+         step_rmhd_riemann_hll_fallback_count_.dataPtr(),
+         &zero,
+         sizeof(zero)
+      );
 #else
       *step_relativistic_c2p_fallback_count_.dataPtr() = zero;
       *step_relativistic_atmosphere_reset_count_.dataPtr() = zero;
       *step_rmhd_pwl_correction_count_.dataPtr() = zero;
       *step_rmhd_pwc_correction_count_.dataPtr() = zero;
+      *step_rmhd_riemann_hll_fallback_count_.dataPtr() = zero;
 #endif
    }
 
@@ -88,25 +97,39 @@
          step_rmhd_pwl_correction_count_.dataValue();
       amrex::Long rmhd_pwc_correction_count =
          step_rmhd_pwc_correction_count_.dataValue();
+      amrex::Long rmhd_riemann_hll_fallback_count =
+         step_rmhd_riemann_hll_fallback_count_.dataValue();
       amrex::ParallelDescriptor::ReduceLongSum(c2p_fallback_count);
       amrex::ParallelDescriptor::ReduceLongSum(atmosphere_reset_count);
       amrex::ParallelDescriptor::ReduceLongSum(rmhd_pwl_correction_count);
       amrex::ParallelDescriptor::ReduceLongSum(rmhd_pwc_correction_count);
+      amrex::ParallelDescriptor::ReduceLongSum(
+         rmhd_riemann_hll_fallback_count
+      );
       relativistic_c2p_fallback_count_ += c2p_fallback_count;
       relativistic_atmosphere_reset_count_ += atmosphere_reset_count;
       rmhd_pwl_correction_count_ += rmhd_pwl_correction_count;
       rmhd_pwc_correction_count_ += rmhd_pwc_correction_count;
+      rmhd_riemann_hll_fallback_count_ += rmhd_riemann_hll_fallback_count;
       if (
          c2p_fallback_count != 0 || atmosphere_reset_count != 0
          || rmhd_pwl_correction_count != 0 || rmhd_pwc_correction_count != 0
+         || rmhd_riemann_hll_fallback_count != 0
       ) {
+         const bool used_recovery_or_reset =
+            c2p_fallback_count != 0 || atmosphere_reset_count != 0;
          amrex::Print()
-            << "WARNING: relativistic recovery repair at step=" << step
+            << (used_recovery_or_reset
+                  ? "WARNING: relativistic recovery repair"
+                  : "INFO: relativistic conservative correction")
+            << " at step=" << step
             << " time=" << time
             << " c2p_fallbacks=" << c2p_fallback_count
             << " atmosphere_resets=" << atmosphere_reset_count
             << " rmhd_pwl_corrections=" << rmhd_pwl_correction_count
             << " rmhd_pwc_corrections=" << rmhd_pwc_correction_count
+            << " rmhd_riemann_hll_fallbacks="
+            << rmhd_riemann_hll_fallback_count
             << " cumulative_c2p_fallbacks="
             << relativistic_c2p_fallback_count_
             << " cumulative_atmosphere_resets="
@@ -114,7 +137,9 @@
             << " cumulative_rmhd_pwl_corrections="
             << rmhd_pwl_correction_count_
             << " cumulative_rmhd_pwc_corrections="
-            << rmhd_pwc_correction_count_ << "\n";
+            << rmhd_pwc_correction_count_
+            << " cumulative_rmhd_riemann_hll_fallbacks="
+            << rmhd_riemann_hll_fallback_count_ << "\n";
       }
    }
 
@@ -216,7 +241,8 @@
             } else {
                launch_flux_direction_runtime<NComp, 0, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_
+                  rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_,
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxX, detail_start);
@@ -237,7 +263,8 @@
             } else {
                launch_flux_direction_runtime<NComp, 1, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_
+                  rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_,
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxY, detail_start);
@@ -259,7 +286,8 @@
             } else {
                launch_flux_direction_runtime<NComp, 2, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_
+                  rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_,
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxZ, detail_start);
@@ -294,7 +322,8 @@
             } else {
                launch_fluxes_runtime<NComp, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, &recovery_atmosphere_
+                  rhs_time, nullptr, nullptr, &recovery_atmosphere_,
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
          }
@@ -446,7 +475,8 @@
                      && recon_method != ReconPWC,
                   cfg_.rmhd_candidate_dmp_factor,
                   step_rmhd_pwl_correction_count_.dataPtr(),
-                  step_rmhd_pwc_correction_count_.dataPtr()
+                  step_rmhd_pwc_correction_count_.dataPtr(),
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
          }
@@ -643,7 +673,8 @@
                      && recon_method_for_level(lev) != ReconPWC,
                   cfg_.rmhd_candidate_dmp_factor,
                   step_rmhd_pwl_correction_count_.dataPtr(),
-                  step_rmhd_pwc_correction_count_.dataPtr()
+                  step_rmhd_pwc_correction_count_.dataPtr(),
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
             debug_check_fluxes(lev, false, "final flux");
@@ -740,7 +771,8 @@
             } else {
                launch_flux_direction_runtime<NComp, 0, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_
+                  rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_,
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxX, detail_start);
@@ -761,7 +793,8 @@
             } else {
                launch_flux_direction_runtime<NComp, 1, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_
+                  rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_,
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxY, detail_start);
@@ -783,7 +816,8 @@
             } else {
                launch_flux_direction_runtime<NComp, 2, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_
+                  rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_,
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
             profile_.detail_end(ProfileDetailStage::FluxZ, detail_start);
@@ -804,7 +838,8 @@
             } else {
                launch_fluxes_runtime<NComp, EOSMethod>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
-                  rhs_time, nullptr, nullptr, &recovery_atmosphere_
+                  rhs_time, nullptr, nullptr, &recovery_atmosphere_,
+                  step_rmhd_riemann_hll_fallback_count_.dataPtr()
                );
             }
          }

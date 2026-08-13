@@ -13,7 +13,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plotfile_reader import checkpoint_path, latest_plotfile as discover_latest_plotfile  # noqa: E402
-from validation_common import check_scalars, materialize_run_input, read_scalar_rows, run_mpi  # noqa: E402
+from validation_common import (  # noqa: E402
+    build_cached_target,
+    check_scalars,
+    materialize_run_input,
+    read_scalar_rows,
+    run_mpi,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -919,6 +925,9 @@ def main() -> None:
         help="run only the selected checkpoint/restart comparison (implies --restart-checks)",
     )
     args = parser.parse_args()
+
+    if args.restart_checks or args.restart_case:
+        build_cached_target(CHECKPOINT_COMPARE_2D.name)
 
     suites = selected_suites(args.suite)
     selected_cases = [

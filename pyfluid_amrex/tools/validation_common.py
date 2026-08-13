@@ -57,6 +57,30 @@ def amrex_executable(dim: int) -> Path:
    return BUILD / f"pyfluid_amrex_{dim}d"
 
 
+def build_cached_target(target: str, *, parallel: int = 4) -> Path:
+   """Bring one configured CMake target up to date or fail with its log."""
+   completed = subprocess.run(
+      (
+         "cmake",
+         "--build",
+         str(BUILD),
+         "--target",
+         target,
+         "--parallel",
+         str(parallel),
+      ),
+      cwd=ROOT,
+      check=False,
+      capture_output=True,
+      text=True,
+   )
+   if completed.returncode != 0:
+      raise RuntimeError(
+         f"failed to build {target}:\n{completed.stdout}\n{completed.stderr}"
+      )
+   return BUILD / target
+
+
 def _mpi_prefix(ranks: int, machine: str | Path | MachineProfile | None = None) -> list[str]:
    """Return the canonical launcher prefix; callers execute through ``run_mpi``."""
    return mpi_prefix(ranks, machine)
@@ -902,12 +926,29 @@ def scalar_validation_row(
    }
 
 
+_TSV_CONTROL_TRANSLATION = str.maketrans({
+   "\0": r"\0",
+   "\t": r"\t",
+   "\r": r"\r",
+   "\n": r"\n",
+})
+
+
+def sanitize_tsv_row(row: dict[str, object]) -> dict[str, object]:
+   return {
+      key: value.translate(_TSV_CONTROL_TRANSLATION)
+      if isinstance(value, str)
+      else value
+      for key, value in row.items()
+   }
+
+
 def write_tsv(path: Path, rows: list[dict[str, object]], fields: list[str]) -> None:
    path.parent.mkdir(parents=True, exist_ok=True)
    with path.open("w", newline="") as f:
       writer = csv.DictWriter(f, fieldnames=fields, delimiter="\t", extrasaction="ignore")
       writer.writeheader()
-      writer.writerows(rows)
+      writer.writerows(sanitize_tsv_row(row) for row in rows)
 
 
 def recent_history_path(path: Path) -> Path:
@@ -949,7 +990,7 @@ def append_history(path: Path, rows: list[dict[str, object]], fields: list[str],
          writer.writeheader()
       stamp = datetime.now().isoformat(timespec="milliseconds")
       for row in rows:
-         values = dict(row)
+         values = sanitize_tsv_row(row)
          values.setdefault("timestamp", stamp)
          writer.writerow(values)
    write_recent_history(path, fields, recent_runs)

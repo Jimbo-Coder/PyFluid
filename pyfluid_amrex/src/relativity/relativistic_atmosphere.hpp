@@ -240,7 +240,7 @@ inline void project_relativistic_atmosphere(
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      amrex::Box box = amrex::grow(mfi.tilebox(), ghost_cells);
+      amrex::Box box = mfi.growntilebox(ghost_cells);
       box &= state[mfi].box();
       const amrex::Box valid_box = mfi.tilebox();
       const auto values = state.array(mfi);

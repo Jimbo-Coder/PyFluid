@@ -67,7 +67,7 @@ STEPS = [
       levels=("quick",),
       command=feature_matrix_command(
          "hydro_timestep_ssprk3",
-         "mhd_amr_ct_subcycling_ssprk3",
+         "mhd_amr_ct_subcycling_euler",
       ),
    ),
    GateStep(
@@ -114,22 +114,6 @@ STEPS = [
       ),
    ),
    GateStep(
-      name="rhd_quick",
-      kind="analytic",
-      levels=("standard", "full"),
-      command=(
-         "uv",
-         "run",
-         "python",
-         "pyfluid_amrex/tools/validate_rhd.py",
-         "--level",
-         "quick",
-         "--ranks",
-         "3",
-         "--force",
-      ),
-   ),
-   GateStep(
       name="rhd_standard",
       kind="analytic",
       levels=("standard", "full"),
@@ -140,22 +124,6 @@ STEPS = [
          "pyfluid_amrex/tools/validate_rhd.py",
          "--level",
          "standard",
-         "--ranks",
-         "3",
-         "--force",
-      ),
-   ),
-   GateStep(
-      name="rmhd_quick",
-      kind="analytic",
-      levels=("standard", "full"),
-      command=(
-         "uv",
-         "run",
-         "python",
-         "pyfluid_amrex/tools/validate_rmhd.py",
-         "--level",
-         "quick",
          "--ranks",
          "3",
          "--force",
@@ -178,18 +146,32 @@ STEPS = [
       ),
    ),
    GateStep(
-      name="fixed_spacetime_quick",
-      kind="analytic",
+      name="rmhd_balsara3_amr_prolongation",
+      kind="amr",
       levels=("standard", "full"),
       command=(
          "uv",
          "run",
          "python",
-         "pyfluid_amrex/tools/validate_fixed_spacetime.py",
-         "--level",
-         "quick",
+         "pyfluid_amrex/tools/validate_rmhd_balsara3_amr_prolongation.py",
          "--ranks",
          "3",
+         "--force",
+      ),
+   ),
+   GateStep(
+      name="rmhd_advanced_riemann",
+      kind="reference",
+      levels=("standard", "full"),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_rmhd_advanced_riemann.py",
+         "--ranks",
+         "3",
+         "--cells",
+         "512",
          "--force",
       ),
    ),
@@ -290,6 +272,17 @@ STEPS = [
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_causal_policy.py", "--force", "--ranks", "3"),
    ),
    GateStep(
+      name="boundary_tiling",
+      kind="feature",
+      levels=("standard", "full"),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_boundary_tiling.py",
+      ),
+   ),
+   GateStep(
       name="multipatch_cartesian",
       kind="feature",
       levels=("full",),
@@ -305,7 +298,7 @@ STEPS = [
       name="mixed_patch_crawl",
       kind="feature",
       levels=("standard", "full"),
-      command=("uv", "run", "python", "pyfluid_amrex/tools/validate_mixed_patch_crawl.py", "--ranks", "1", "--force"),
+      command=("uv", "run", "python", "pyfluid_amrex/tools/validate_mixed_patch_crawl.py", "--ranks", "1", "--force", "--skip-plot"),
    ),
    GateStep(
       name="obstacle_wall_amr",
@@ -340,26 +333,6 @@ STEPS = [
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_solid_sphere_geometry.py", "--force"),
    ),
    GateStep(
-      name="quick_dimensional_consistency",
-      kind="feature",
-      levels=("standard",),
-      command=(
-         "uv",
-         "run",
-         "python",
-         "pyfluid_amrex/tools/validate_dimensional_consistency.py",
-         "--force",
-         "--ranks",
-         "3",
-         "--only",
-         "hydro_pressure_bump_1d_vs_2d_1xn",
-         "--only",
-         "hydro_diagonal_sod_xy_swap",
-         "--only",
-         "mhd_ct_pressure_bump_2d_vs_3d_1xnxn",
-      ),
-   ),
-   GateStep(
       name="dimensional_consistency",
       kind="feature",
       levels=("standard", "full"),
@@ -378,9 +351,21 @@ STEPS = [
       command=("uv", "run", "python", "pyfluid_amrex/tools/benchmark_pyfluid.py", "--force", "--allow-warn"),
    ),
    GateStep(
+      name="codegen_contract",
+      kind="feature",
+      levels=("standard",),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_codegen_flux.py",
+         "--skip-generated-comparison",
+      ),
+   ),
+   GateStep(
       name="codegen_flux",
       kind="feature",
-      levels=("standard", "full"),
+      levels=("full",),
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_codegen_flux.py"),
    ),
    GateStep(
@@ -465,6 +450,7 @@ STEPS = [
          "pyfluid_amrex/tools/validate_subcycling_benefit.py",
          "--curvilinear-equivalence",
          "--force",
+         "--skip-plot",
          "--ranks",
          "3",
       ),
@@ -496,6 +482,7 @@ STEPS = [
          "100000",
          "--min-headroom",
          "0",
+         "--skip-plot",
          "--force",
          "--ranks",
          "3",
@@ -663,7 +650,7 @@ STEPS = [
       name="subcycling_benefit",
       kind="performance",
       levels=("full",),
-      command=("uv", "run", "python", "pyfluid_amrex/tools/validate_subcycling_benefit.py", "--force"),
+      command=("uv", "run", "python", "pyfluid_amrex/tools/validate_subcycling_benefit.py", "--force", "--skip-plot"),
    ),
    GateStep(
       name="hydro_cfl_edge",
@@ -786,7 +773,7 @@ def write_summary(rows: list[dict[str, str]]) -> None:
 
 
 def append_gate_history(rows: list[dict[str, str]]) -> None:
-   append_validation_history(HISTORY, [{"kind": "suite", **row} for row in rows])
+   append_validation_history(HISTORY, [{"suite": "amrex_gate", **row} for row in rows])
 
 
 def selected_steps(level: str, kinds: list[str] | None, only: list[str] | None) -> list[GateStep]:

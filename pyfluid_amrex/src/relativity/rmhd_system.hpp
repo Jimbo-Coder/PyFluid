@@ -429,7 +429,7 @@ inline void fill_rmhd_flux_direction_runtime(
       );
       return;
    default:
-      amrex::Abort("RMHD supports LLF, HLL, and HLLE Riemann solvers");
+      amrex::Abort("invalid basic RMHD Riemann solver dispatch");
    }
 }
 
@@ -463,7 +463,7 @@ inline void fill_rmhd_flux_direction_runtime(
       );
       return;
    default:
-      amrex::Abort("RMHD supports LLF, HLL, and HLLE Riemann solvers");
+      amrex::Abort("invalid basic RMHD Riemann solver dispatch");
    }
 }
 

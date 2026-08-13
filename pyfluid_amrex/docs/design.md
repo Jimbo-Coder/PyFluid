@@ -2,10 +2,11 @@
 
 ## Purpose And Status
 
-PyFluid AMReX is the production Newtonian HD/MHD solver. It is a finite-volume
-code with AMReX-managed hierarchy, parallelism, and I/O. The implementation is
-organized so that physical equations and numerical methods can evolve without
-rewriting hierarchy, output, or validation infrastructure.
+PyFluid AMReX is the production finite-volume backend for Newtonian and
+relativistic HD/MHD. AMReX manages hierarchy, parallelism, and I/O; the same
+infrastructure supports flat spacetime, fixed curved metrics, and coupled Z4c
+evolution. Physical equations and numerical methods can therefore evolve
+without rewriting hierarchy, output, or validation infrastructure.
 
 Supported means a path has a focused validation gate and uses the standard
 finite-volume contracts below. A parsed option or an input file alone does not
@@ -14,6 +15,10 @@ make a path supported.
 | Area | Current status |
 | --- | --- |
 | Single-patch Cartesian HD/MHD | Production numerical path |
+| Cartesian SRHD/SRMHD and fixed-curved GRHD/GRMHD | Production for focused validated combinations |
+| Coupled evolved-Z4c matter | Validated vertical slice; long stellar evolution remains an explicit gate |
+| TOV and XCTS rotating-star initial data | Implemented for the documented EoS, rotation-law, and symmetry boundaries |
+| Reusable physical-ID and sequence artifacts | Implemented through the common materialization interface |
 | Native 1D, 2D, 3D | Production build modes |
 | AMR, reflux, average-down, restart | Production infrastructure |
 | AMR subcycling | Production for validated Cartesian cases |
@@ -76,6 +81,11 @@ segments produce the same immutable `EOSParams` value consumed by all runtime
 kernels, so there is no preset-specific evolution branch. Future tabulated
 EoS support belongs behind this same module boundary and must declare its unit
 system explicitly.
+
+RMHD evolution currently accepts only `ideal_gas`. Cold and hybrid
+polytropes remain available to the supported nonmagnetized relativistic and
+stellar paths; adding them to RMHD requires a consistent magnetic C2P, signal-
+speed, atmosphere, and evolution validation boundary.
 
 ## Public Interfaces And Compilation
 
@@ -186,14 +196,15 @@ duplicate the AMR driver to obtain compile isolation.
 
 ## State And Grid Functions
 
-`codegen/pyfluid_codegen/field_catalog.py` is the sole schema for grid
-functions. It owns field and component names, mathematical labels, tensor
-shape, centering, symmetry, diagnostic kind, evolution role, requirements,
-checkpoint ownership, and output ownership. The generator emits public C++
-component IDs, runtime descriptors, plotting JSON, and the field tables in the
-equation reference. `fields.hpp` defines only the C++ descriptor types and
-AMReX-facing query API. Evolution, checkpointing, output, diagnostics, and
-plotting consume generated views of the same catalog.
+`schema/fields.toml` is the sole declaration source for named grid functions.
+It owns field and component names, mathematical labels, tensor shape,
+centering, symmetry, diagnostic kind, evolution role, requirements, checkpoint
+ownership, and output ownership. `field_catalog.py` is the strict loader,
+model, and validator; it is not a second declaration table. The generator
+emits public C++ component IDs, runtime descriptors, plotting JSON, and the
+field tables in the equation reference. `fields.hpp` defines only C++
+descriptor types and the AMReX-facing query API. Evolution, checkpointing,
+output, diagnostics, and plotting consume generated views of the same schema.
 
 `codegen/pyfluid_codegen/diagnostic_catalog.py` distinguishes runtime scalar
 reductions from field-output and postprocessed quantities. Runtime reductions
@@ -260,14 +271,16 @@ validated.
 
 ## Finite Volume And AMR
 
-Every accepted stage follows the same order:
+Every fluid RK evaluation follows the same order; hierarchy synchronization
+occurs after an accepted level step:
 
-1. Fill physical and coarse-fine ghosts.
+1. Prepare the stage state, metric coupling, and physical/coarse-fine ghosts.
 2. Reconstruct primitive states and solve face Riemann problems.
 3. Compute conservative flux divergence and CT EMFs when active.
 4. Add stage-local source terms through the source interface.
 5. Combine stages with the selected time integrator.
-6. Reflux coarse-fine flux mismatches and average down covered coarse state.
+6. Reflux coarse-fine mismatches, average down covered state, synchronize
+   canonical CT face fields into cell state, and apply accepted-state checks.
 
 AMR uses the standard finite-volume contract:
 
@@ -291,24 +304,63 @@ ghost state must be completely initialized by that contract and the physical
 boundary operator. Nonfinite values are errors, not input to a neighbor-copy
 repair. Linear and quartic conservative interpolation preserve closed-system
 totals when adaptive boxes move. Coupled linear conservative interpolation is
-the robust production default: one limiter is shared by the full conserved
-state so coarse-time interpolation does not independently break component
-relations at contacts, stellar surfaces, or atmosphere interfaces. AMReX's
-full protected conservative interpolater supplies this contract in 2D/3D; its
-shared-limiter base kernel supplies the 1D contract because AMReX does not
-implement the protection pass in 1D. This is isolated in the interpolater
-selector. The component-limited linear method is an explicit alternative.
-Conservative quartic interpolation is a smooth-data choice and is not
-positivity preserving. Non-conservative quadratic and quartic interpolation
-remain explicit experimental choices.
+the robust production default: AMReX's base kernel shares its linear slope
+limiter across the full conserved state so interpolation does not independently
+break component relations. That linear coupling alone does not preserve the
+nonlinear relativistic admissible set, and the stock `protected_interp` hook is
+not invoked by the FillPatch/level-remake paths used here. For Cartesian,
+analytic fixed-spacetime, CT-off RHD/RMHD, PyFluid therefore post-limits each
+parent family's interpolated deviations with one C2P-admissible factor shared
+by every child and every conserved component. A conservative base then retains
+the parent average exactly; an already admissible interpolation is unchanged,
+while nonfinite output or a non-admissible coarse anchor is a transfer error
+rather than an atmosphere repair. Curvilinear basis transfer, stored/evolved-
+spacetime, and CT-on relativistic transfer need their metric/face-field-aware
+owner and are not covered by this cell-state limiter. The component-limited
+linear method is an explicit alternative. Conservative quartic interpolation
+is a smooth-data choice and
+is not positivity preserving. Non-conservative quadratic and quartic
+interpolation remain explicit experimental choices.
 
-RHD additionally applies one source-aware conservative flux limiter to the
-complete forward-Euler candidate at each RK stage. It blends each shared face
-between the selected high-order flux and PWC LLF only as much as required to
-preserve positive densitized rest mass and the Valencia admissibility margin.
-The final blended face flux is the single value consumed by the RHS, physical
-boundary ledger, and reflux registers. Accepted-state atmosphere projection is
-not used as a replacement for this conservation step.
+AMReX can request a fine region that contains only part of one coarse parent's
+child family. A family-coupled limiter therefore expands to the complete
+sibling-aligned region, performs base interpolation and admissibility limiting
+in private scratch, and copies only the requested subset. Limiting only the
+visible children makes the answer FAB/ghost-decomposition dependent and does
+not preserve the stated family-average contract.
+
+Following reflux, average-down, face-field synchronization, or regrid, the
+last hierarchy owner refreshes metric coupling and performs relativistic
+acceptance before exposing the state. Newly created and remade fine levels
+then keep current and old-time storage consistent with that accepted state.
+
+RHD applies one source-aware conservative flux limiter to the complete
+forward-Euler candidate at each RK stage. It blends each shared face between
+the selected high-order flux and PWC LLF only as much as required to preserve
+positive densitized rest mass and the Valencia admissibility margin.
+
+RMHD separately predicts each concrete RK candidate and replaces shared faces
+adjacent to cells that fail the configured candidate/recovery checks with the
+selected terminal low-order flux, normally PWC. The guard is a robustness
+policy, not an invariant-domain or nonoscillation proof. If accepted-state C2P
+still exhausts its recovery paths, the atmosphere reset is counted and warned
+as a distinct last resort. For either conservative correction, the final
+shared-face flux is the single value consumed by the RHS, boundary ledger, and
+reflux registers; accepted-state atmosphere projection is not a replacement
+for that conservation step.
+
+Advanced RMHD HLLC/HLLD uses one dedicated compiled owner rather than
+instantiating the heavy fan algebra in every generic flux owner. HLLD solves
+the five-wave flat-SRMHD fan and nonlinear total-pressure closure in a local
+face-normal orthonormal frame, then transforms the sampled flux back to the
+coordinate Valencia frame. An unordered, inadmissible, nonfinite, or
+nonconverged fan uses the explicit counted HLL limit. HLLD is the production
+choice; HLLC remains a contact/algebra control. This validation boundary is not
+an all-regime positivity or entropy proof, especially for strongly magnetized
+intermediate states and the coupled CT/source discretization.
+The reported HLL fallback value counts solver evaluations, including discarded
+candidate trials and shared-face/FAB duplication, rather than unique final
+faces; zero is meaningful, while a positive magnitude is diagnostic only.
 
 The production AMR tagger follows HD/MHD physical state structure with physical
 gradients and cell sizes. Passive scalars never drive tags. max_level,
@@ -340,10 +392,22 @@ explicit operators are generated from the same coordinate-independent physics
 across every supported dimension and coordinate family. The implicit CT update
 uses the same generated resistive EMF and CT curl update, but its linear solve
 is limited to one-level Cartesian 2D/3D by AMReX 25.11 `MLCurlCurl`.
+Fluid viscosity and diffusion are currently Newtonian-only; configuration
+rejects RHD/RMHD combinations rather than silently applying those operators.
 
-CT uses face-centered magnetic fields and edge-centered EMFs. The matching
-face-divergence operator is the only divb diagnostic. Cell-centered B is
-synchronized from faces for reconstruction and Riemann solves.
+CT uses face-centered magnetic fields and edge-centered EMFs. Face `B` is the
+canonical magnetic state, and the matching face-divergence operator is the
+only divb diagnostic. Cell-centered `B` must be synchronized from the
+corresponding canonical face state before reconstruction and physical
+acceptance.
+
+The current implementation accumulates EMFs with the same RK weights used by
+the fluid update and applies one face curl update after the multistage fluid
+step. Final face-to-cell synchronization plus accepted-state recovery is a
+necessary backstop, but this remains a step-boundary CT path: later fluid RK
+stages do not yet reconstruct from a same-stage evolved face field. Full
+stage-coupled CT must advance canonical face `B` at every RK stage and use that
+same field for reconstruction, C2P, edge-EMF reflux, and face average-down.
 
 Fixed gravity is a stage-local source with cached potential/acceleration data.
 Periodic self-gravity solves the multilevel Poisson problem at synchronized
@@ -417,13 +481,17 @@ scheduling contract, and validation ladder are maintained in
 
 Before declaring a new feature complete:
 
-1. Add or extend state and auxiliary fields in fields.hpp.
-2. Define configuration validation in config.hpp.
-3. Use existing RHS, source, AMR, output, and checkpoint interfaces.
-4. Add a focused analytic, reference, or invariance validation.
-5. Run scalar validation and compare feature on/off where meaningful.
-6. Run the standard suite and the performance benchmark if a hot path changed.
-7. Document the exact support boundary in the README and this file.
+1. Declare named state or auxiliary GFs in `schema/fields.toml`; do not add a
+   second field table in C++ or Python.
+2. Declare supported method identity in `schema/methods.toml` when applicable,
+   and keep the numerical formula in its labeled C++ or symbolic owner.
+3. Extend the runtime configuration registry and combination validator, then
+   regenerate and verify derived catalog artifacts.
+4. Use existing RHS, source, AMR, output, and checkpoint interfaces.
+5. Add a focused analytic, reference, or invariance validation.
+6. Run scalar validation and compare feature on/off where meaningful.
+7. Run the standard suite and the performance benchmark if a hot path changed.
+8. Document the exact support boundary in the README and this file.
 
 Do not introduce another fallback implementation merely to keep an unsupported
 combination running. Reject it clearly until it has one correct implementation

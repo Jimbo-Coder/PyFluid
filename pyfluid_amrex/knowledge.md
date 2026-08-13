@@ -1,877 +1,330 @@
 # PyFluid AMReX Working Knowledge
 
-This is the compact, maintained state snapshot for an agent entering the AMReX
-backend after a context reset. It is a router and status record, not a second
-design specification. Read `../AGENTS.md`, this file,
-`references.md`, and the tail of `review_running_cycle.md` before changing the
-backend. When this file disagrees with current source or a newer continuity
-cycle, verify the source and update this snapshot.
+This is the compact state snapshot for an agent entering the production AMReX
+backend after a context reset. It records learned numerical and physics facts,
+current evidence boundaries, and open limitations. It is not a design
+specification, bibliography, or work log.
 
-Last reconciled: 2026-07-29, branch `main`, through Cycle 247's exact-profile
-representation audit. Use the commit containing this snapshot plus the exact
-newer continuity-cycle evidence rather than inferring it from an earlier
-baseline.
+Read `../AGENTS.md`, this file, `references.md`,
+`docs/infrastructure_conventions.md`, and the tail of
+`review_running_cycle.md` before changing the backend. Current source and a
+newer continuity cycle win if they disagree with this snapshot.
 
-## Scope
+Last reconciled: 2026-08-12, branch `main`, through Cycle 284's completed
+production-stabilization pass and preserved standard/performance baseline.
 
-Infrastructure ownership, catalog rules, and artifact semantics live in
-`docs/infrastructure_conventions.md`; source routes live in `references.md`.
-This file keeps learned numerical/physics facts, current evidence boundaries,
-and open limitations that materially affect future implementation.
+## Scope And Evidence
 
-## Current Validation Boundary
+- `docs/infrastructure_conventions.md` owns durable source, catalog, AMR, and
+  artifact contracts. `references.md` routes to implementation and external
+  literature. `review_running_cycle.md` owns dated commands, measurements,
+  failures, and decisions.
+- The production implementation is C++/AMReX. Python research tools are
+  baselines, offline operators, or postprocessing unless a task explicitly
+  promotes and validates a production implementation.
+- A compile, focused executable, smoke run, standard suite, full suite,
+  performance benchmark, and MPI-rank comparison are different evidence.
+  Report them separately and attach claims to the exact revision or dirty tree.
+- Cycle 284's final cache-hot quick suite passed 3/3 in 1.776 s. Its preserved
+  standard baseline passed 42/42 gates with 135.305 s summed gate time, and all
+  four runtime performance controls passed their recorded warn thresholds. The
+  archive is `runs/baselines/20260812_212858_cycle284_final`. This is broad
+  standard-suite CPU evidence, not a full-suite or GPU validation result.
+- Preserved baselines under `runs/baselines/` and rolling TSV histories are
+  routing evidence, not proof for later source. Re-run the smallest relevant
+  gate before relying on an old result.
 
-The latest recorded evidence is not one monolithic green result:
+## Production Numerical Snapshot
 
-- Cycle 175 was the last recorded uninterrupted full suite: 46/46 gates. It
-  predates substantial relativistic, diagnostic, transfer, and atmosphere
-  work and is historical evidence, not validation of the present dirty tree.
-- Cycle 192 recorded all production dimensions, architecture, generated
-  physics, focused RHD/RMHD/TOV checks, the complete quick suite, and fresh
-  runtime performance ratios of 0.93--0.99 of the frozen baselines.
-- Cycle 193 changed the partial-AMR CTT matter handoff afterward. It recorded
-  architecture, generated-kernel consistency, all production dimensions, the
-  six-check focused CTT gate, and the three-check evolved TOV/subcycling gate.
-  A requested three-rank rerun was not executable, and Cycle 193 did not record
-  a complete quick or standard suite.
-- Cycle 200 subsequently moved GF declarations to `schema/fields.toml` and
-  removed dead flux-dispatch templates without changing active kernels. It
-  recorded generated-kernel consistency, architecture, all production
-  dimensions, the complete quick suite, and a three-rank WENO-Z/HLLC runtime
-  comparison. This is the newest broad validation of the current dirty tree;
-  it is still not a standard or full suite.
-- Cycle 202 integrates the accumulated tree, cadence/catalog output cleanup,
-  and validation retiering. Architecture, generated physics (including the
-  atmosphere profiles), all production dimensions, both focused auxiliary
-  cadence cases, the `2.64 s` quick gate, and all 42 standard gates pass. The
-  roughly 90-second exhaustive multipatch executable is preserved in full and
-  was not rerun by standard. Consult the end of Cycle 202 for the post-commit
-  compile and runtime baseline rather than inferring those from this gate.
-- Cycle 206 adds the first uniform-rotation XCTS matter/constraint continuation
-  and the rotation-law TOML catalog. Generated/architecture checks, all
-  production dimensions, the focused elliptic/CTT/TOV executable, exact
-  zero-spin scalar equivalence, one N=24 `Omega=0.001` initialization, three
-  PWL/HLL evolved-spacetime steps at CFL `0.9`, the focused RHD KH AMR pair, and
-  all 42 standard gates pass. This is short finite-state evidence only: no
-  long-term stability, rotating sequence, convergence, AMR rotation,
-  full/stability suite, or fresh broad runtime-performance result was recorded.
-- Cycle 208 makes `z^i = W v^i` the shared RHD/RMHD component-reconstruction
-  contract, including metric-consistent reflecting ghosts. All production
-  dimensions, generated and architecture checks, the focused RHD AMR pair,
-  exact zero-spin plus three-step small-spin XCTS control, the full RMHD and
-  fixed-spacetime suites, the `2.53 s` quick gate, and all standard gates pass.
-  The canonical performance cases are `0.92--0.99` of their frozen baselines.
-  The named 42/42 standard plus performance artifact is
-  `runs/baselines/20260721_201750_relativistic_reconstruction_recovery/`.
-  No full or stability suite was run.
-- Cycle 210 corrects the XCTS shift matter source for the covariant Eulerian
-  momentum used by the code, anchors the uniform Euler first integral at an
-  interpolated rotation center, and continues only the matter component
-  connected to the previous TOV/matter iterate. The focused rotating gate now
-  requires agreement among matter, ADM-volume, and ADM-surface angular
-  momentum and records `J_ADM/M_ADM^2`. N=24 ID-only models converge through
-  `Omega=0.020`; this is a range probe, not a mass-shedding sequence or a
-  resolution-converged spin limit.
-- Cycle 211 adds fully converged angular-velocity continuation stages, compact
-  coordinate surface extents, and a controlled 1/2/3-rank ID benchmark. The
-  focused three-rank rotating-star gate, architecture and generated-kernel
-  checks, all production dimensions, and the complete quick suite pass. This
-  remains coarse N=24 uniform-grid evidence; no standard/full/stability suite
-  or resolution-converged rotating sequence was run.
-- Cycle 212 adds generated relativistic j-constant and q-power Euler integrals,
-  a signed equatorial/polar surface-enthalpy-gradient diagnostic, and a
-  fixed-central-density sequence driver with independent charge gates. N=24
-  SLy j-constant (`A=5`) and q-power (`A=5`, `q=2`) small-spin models pass;
-  matter/volume angular momentum agrees within `9.6e-4` and surface/volume
-  within 1.4 percent. The signed uniform SLy sequence is directly checked at
-  `Omega=0.028` and `0.029`, but its indicator is already non-monotone at this
-  coarse resolution, so no mass-shedding endpoint is claimed. The focused
-  elliptic/differential-law executable passes. Broad integration evidence is
-  recorded at the end of Cycle 212 rather than assumed here. Architecture,
-  generated consistency, all production dimensions, the focused rotating and
-  elliptic tests, the complete quick gate, all 42 standard gates, and the
-  canonical runtime benchmark pass. No full or stability suite was run.
-- Cycle 213 makes the auxiliary thermal-entropy proxy EoS-aware and fixes two
-  rotating-star hierarchy interpolation inputs that lacked exchanged ghost
-  data at internal FAB boundaries. Generated consistency, architecture, all
-  production dimensions, focused three-rank surface, elliptic, rotating-star,
-  and actual auxiliary-HDF5 controls, the complete quick gate, all 42 standard
-  gates, and the canonical runtime benchmark pass. The production integration
-  rebuild took `375.94 s` with one cache hit and 156 misses; its immediate
-  no-op rebuild took `0.61 s`. The generated compile-check executable still
-  exits on its pre-existing high-order centering-transfer mismatch; the new
-  EoS proxy checks emit no mismatch before that unrelated failure. No full or
-  stability suite was run.
-- Cycle 214 reaches a valid N=32 SLy uniform model at `Omega=0.033` and
-  cleanly rejects `0.03325`, `0.0335`, and `0.034` as nonlinear/Robin failures,
-  not physical mass-shedding measurements. A fixed-spacing domain-radius
-  control pins the several-percent ADM--Komar difference on these small boxes
-  to finite-radius ADM contamination: the surface discrepancy falls from
-  4.39 to 2.94 percent as the extraction radius grows from 12.8 to 19.2, while
-  the Komar surface mass changes by only 0.009 percent.
-- Cycle 215 replaces the nested fully converged frozen-matter XCTS solve with
-  a conservative self-consistent-field schedule: accurate XCTS solves settle
-  large changes and certify the endpoint, while two relaxed XCTS sweeps are
-  used only in the intermediate update regime. The identical N=24/three-rank
-  small-spin benchmark falls from `159.62 s` to `66.81 s`; the known N=32
-  `Omega=0.033` model falls from `3609.84 s` to `2267.96 s` and reproduces its
-  radii and global charges within the configured matter tolerance. Generated
-  consistency, architecture, Python syntax, sparse diagnostic plotting, the
-  focused rotating gate, quick gate, and all standard gates pass. No full or
-  stability suite was run.
-- Cycle 216 adds explicit in-process angular-velocity targets plus one common
-  physical-ID artifact for Newtonian fluid, TOV/RNS, RHD, and RMHD states. Its
-  catalog-defined physical core contains primitives, ADM fields when present,
-  and CT face fields when present; exact evolution caches support lossless
-  same-hierarchy direct loading. A saved rotating XCTS model can seed a larger
-  target with the same rotation law. Flat HD one-step and flat RMHD+CT
-  round trips preserve all physical scalar diagnostics exactly, and an N=24
-  RNS direct load reproduces its step-zero diagnostics while skipping XCTS.
-  Cycle 217 generalizes the artifact into a source-hierarchy materializer:
-  compatible coarser, finer, and larger target grids reconstruct conserved and
-  Z4c state from the physical core, while identical layouts retain the exact
-  cache path. Periodic remaps require an integer number of saved periods;
-  nonperiodic ADM exteriors use asymptotically flat falloff. A remap is not a
-  new constraint solve, so direct cross-grid evolution must retain that
-  distinction; rotating continuation does solve XCTS again on the target.
-  The reader rejects incompatible dimension, coordinates/axes, periodicity,
-  physics, or physically relevant EoS metadata. RMHD standard permanently
-  covers exact, coarser, and finer/larger one-step loads. A cross-grid RNS
-  artifact continued XCTS and its resulting artifact then evolved one CFL
-  `0.9` step with zero recovery events. The final quick and 42/42 standard
-  gates pass. The clean implementation-commit baseline is
-  `runs/baselines/20260722_175457_physical_id_materialization/`; its standard
-  suite and performance commands return zero, with runtime ratios 0.90--0.96
-  of frozen baselines. Persisted XCTS seeds reconstruct
-  `A_conformal = psi^6 a_tilde` before continuing rotation.
-- A live multi-target XCTS sequence can materialize and losslessly compress
-  each accepted model without reloading it or discarding the conformal fields
-  used by the next target. The focused SLy N=24 control writes two 19 MiB
-  artifacts, exact-loads the final model with zero scalar discrepancy, evolves
-  it one CFL 0.9 step with no recovery events, and continues the saved
-  intermediate model to the same target within 0.20 percent in selected global
-  scalars at the configured `1e-5` matter tolerance. Named EoS identity must be
-  recorded as `eos_preset`; generic `eos=hybrid_polytrope` plus unused custom
-  polytrope knobs does not identify SLy versus APR4. The clean implementation
-  baseline for commit `504b4b8` is
-  `runs/baselines/20260722_211331_rotating_id_sequences/`; standard passes
-  42/42 and its four performance cases pass at 0.91--0.99 of reference.
-- The shared elliptic layer now has component-wise Cartesian reflection
-  boundaries, including mixed Robin/Neumann/Dirichlet nodal solves. Fresh
-  zero-spin XCTS TOV octants and nonzero z-equatorial RNS half-domains execute;
-  nonzero x/y rotating-star reflection is rejected because it is not a true
-  plane symmetry. Stored reflected sectors parity-expand through the field
-  catalog, with axial-vector parity for magnetic fields, and rotating surface
-  rays reconstruct the omitted z sector.
-- Cycle 232 adds the catalog-driven parabolic/PPM family and true additive
-  reconstruction-owner builds. Formula, smooth-convergence, 45-run exact
-  Balsara, 12-case component/characteristic feature, expanded RMHD standard,
-  architecture/generated-source, all-dimension build, normal quick, complete
-  normal standard, minimal PWC-only build, and canonical MPI performance gates
-  pass. No full or stability suite was run.
-- Cycle 236 adds PPM3 as an independent limited-slope control and tightens the
-  opt-in RMHD candidate DMP factor from 1.20 to 1.05. The full three-rank RMHD
-  standard gate passes. The original point-sampled N=1024 Balsara-4 comparison
-  reported PPM4/PWC normalized all-component L1 `3.200159e-3`. Cycle 247's
-  conserved cell-average reference corrects that value to `2.797194e-3`;
-  overshoot `4.524195e-3`, TV ratio `1.4913`, 2236 PWC corrections, and zero
-  atmosphere resets are unchanged. PPM3 and a PWL-MC-before-PWC ladder were
-  not competitive and were not promoted.
-- Cycle 241 is research evidence, not a new production method. Two continuous
-  MP5-to-robust reconstruction candidates were removed after held-out RMHD
-  failures. A componentwise sign projection reduced scalar square-wave
-  overshoot by about sevenfold while preserving smooth MP5 behavior, but
-  raised N=512 Balsara-4 overshoot/TV to `8.3054e-2/2.1007`. The next
-  reconstruction must constrain one coherent entropy/physical-wave state, not
-  independent primitive components. The production method catalog and kernels
-  remain unchanged. A standalone Euler physical-wave precursor preserves the
-  characteristic-MP5 entropy-wave result exactly through N=128. Its common
-  wave weight is clean but diffusive. The wavewise N=256 form improves
-  Lax-shock L1/overshoot/TV simultaneously and lowers blast overshoot by 13
-  percent for a 0.9 percent L1 cost, but modestly regresses Sod. Limiting only
-  genuinely compressive waves improves Sod but loses the strong-shock gain.
-  This identifies mode-selective limiting inside physical subspaces as the
-  next step rather than one high-to-PWL coefficient.
-- Cycle 242 implements that mode-selective step in standalone Euler and
-  ideal-MHD harnesses. Genuinely nonlinear families use one nested
-  PWL-MC/parabolic/MP5 formula whose two weights are the Euclidean projection
-  of the full target onto the MP5/joint-jump feasible polygon; linearly
-  degenerate families retain MP5. It is identical to characteristic MP5 on
-  smooth Euler entropy and exact circular-Alfven waves. At N=256 it lowers
-  overshoot and TV on Sod/Lax/blast for at most 0.71 percent L1 cost and
-  improves Lax L1. At N=128 Brio--Wu versus a 4x numerical reference it
-  improves aggregate/transverse L1, overshoot, and TV, with exactly constant
-  normal magnetic field. Those Cycle-242 rankings predate the
-  reconstructed-face CFL audit and are retained only as history; the audited
-  Cycle-243 comparisons below supersede them.
-- Cycle 243 hardens the research contract without changing production. A
-  common two-sided positivity scale plus a floating-point closure preserves
-  the nonlinear-wave jump interval on 20,000 log-uniform HD and 20,000 MHD
-  stencils for both coefficient and normalized wave-trace objectives, with
-  zero invalid traces/violations. Cycle 247's finite-volume correction
-  supersedes the old point-profile Euler rankings: at N=256 the combined
-  metric improves coefficient-hierarchy Sod L1/overshoot/TV and Lax
-  overshoot/TV, but its Lax L1 is higher by `2.0e-8` and its blast-L1 cost is
-  5.40 percent rather than 0.53 percent. Characteristic MP5 has the lowest Sod
-  and blast L1; the balanced hierarchy has the lowest Lax L1. On N=128
-  Brio--Wu the combined metric still improves aggregate/transverse L1 and TV
-  over the coefficient objective with a 0.27 percent overshoot cost, but
-  characteristic MP5 has 1.23/1.34 percent lower aggregate/transverse L1.
-  That fine-to-coarse MHD reference was already conservative. The candidate
-  is a useful Pareto control, not a universal replacement. Independent MHD
-  contact/Alfven fan weights were algebraically falsified: the corrected
-  target uses one common HLL-to-full-HLLD weight, rejects unordered/nonfinite
-  or RH-inconsistent fans, and preserves accepted-fan RH residuals to
-  `6.81e-11` across 20,000 broad pairs. The raw corpus contains 879
-  inadmissible and 2330 unordered HLLD fans; accepted fans and local updates
-  have zero failures. The rank-one Tadmor repair and final LLF blend are
-  inactive on that corpus and remain unvalidated mechanisms. The evolution
-  harness now propagates every reconstructed-face signal speed plus any
-  stricter flux contract through SSPRK3 stage retries, rejects invalid speeds
-  and final states, and restricts the locally audited entropy-repair path to
-  CFL `0.45` or below.
-- Cycle 246 tests conservative subcell structure without changing production.
-  A local MP5-THINC BVD precursor preserves the smooth MP5 path and sharply
-  improves moving-contact and several Euler-tube L1 errors, but unrestricted
-  characteristic THINC worsens overshoot/TV on compound MHD shocks. A more
-  physical hybrid uses the balanced MP5 hierarchy on nonlinear waves and
-  THINC only on linearly-degenerate waves, with optional continuous
-  linear/nonlinear wave purity. At 32 cells the purity-adaptive form
-  improves aggregate/transverse L1, overshoot, and TV over balanced MP5 on
-  both Brio--Wu and Dai--Woodward numerical-reference tubes. At 64-cell
-  Brio--Wu, characteristic MP5 still has lower L1/TV, so no universal or
-  state-of-the-art claim is justified. SR requires a relativistic eigenbasis
-  plus density/pressure/subluminal PCP projection; Newtonian positivity is
-  insufficient. A rescaled-state audit also finds that the research and
-  production MP5 unlimited-candidate test uses an absolute
-  `epsilon*max(1,scale^2)` threshold. The standalone homogeneous
-  `epsilon*scale^2` variant reduces a 200-stencil MHD scaling mismatch from
-  `1.67e1` to `2.81e-14` with nearly unchanged tube metrics. Treat production
-  MP5 homogeneity as a focused follow-up, not as fixed by this research cycle.
-- Cycle 247 finds that the exact Balsara and Sod comparisons sampled continuum
-  point values while numerical state stores conserved finite-volume averages.
-  The corrected path splits known discontinuities, averages conserved
-  quantities over each cell, and only then applies the numerical
-  conserved-to-primitive interpretation. The sparse Balsara tables have
-  107--140 unique coordinates versus up to 1024 numerical cells. Their
-  repeated coordinates are physical jumps; Balsara 1 also contains one
-  out-of-order zero-strength sample whose identical states permit removing it.
-  Any nontrivial coordinate reversal is rejected. The corrected unguarded
-  Balsara-2 N=1024 comparison reverses the old MP5/PPM4 maximum-L1 ranking:
-  PPM4 is `2.584842e-3` and MP5 is `2.642574e-3`. This invalidates small
-  point-sampled ranking differences but does not remove the measured
-  oscillations. A fresh run of the official exact solver at ten times the
-  output density shows maximum normalized cell-average reference changes of
-  `3.06e-5` for Balsara 2 and `7.93e-4` for Balsara 3; the latter is large
-  enough to move close reconstruction scores, although the broad ranking and
-  all validation thresholds survive. Dense Balsara 4 sampling hits the legacy
-  solver's documented velocity-root limitation, and dense Balsara 5 was
-  stopped after several minutes, so a uniformly dense five-case exact corpus
-  is not yet established. The same audit found an off-grid top-hat in the
-  subcell moving-contact harness: center sampling gave the N=32 initial high
-  state width as 0.375 instead of 0.4. Exact initial/final cell averages change
-  characteristic-MP5 versus physical-subcell L1 from the stale
-  `4.7462e-2/3.0593e-2` to `3.1006e-2/1.5933e-2`; the subcell improvement
-  survives without the mass mismatch.
-- Cycle 248 isolates the time part of an exact in-cell front. Correct spatial
-  plateau traces alone remain close to ordinary MP5; replacing the complete
-  SSPRK-integrated flux on affected faces with the crossing-time average of one
-  admissible Rankine--Hugoniot wave changes the result. At CFL 0.9 the
-  standalone operator advects tested NRHD contacts/shocks, NRMHD
-  contacts/fast shocks/rotational discontinuities, and SRHD/SRMHD
-  contacts/shocks in one mixed cell with total L1 from `1.3e-15` to `1.2e-12`,
-  conserved-integral errors near roundoff, and exactly constant normal
-  magnetic field. Smooth entropy/Alfven controls remain on the MP5 path to
-  roundoff. Across four systems, 4,000 unrelated admissible conserved mixtures
-  produce zero false physical-wave acceptances while 64 exact-contact
-  controls all pass. This establishes a cross-equation isolated-wave
-  mechanism, not a universal reconstruction.
-- Compound-wave activation remains the decisive boundary. The strict
-  memoryless operator is exactly MP5+HLLD on N=32 Brio--Wu and Dai--Woodward.
-  Persisting the complete initial HLLD fan is 7--9 times worse in aggregate
-  L1; its recovered intermediate-state physical-flux RH residuals are
-  `2.5e-2` to `8.5e-1`, so approximate HLLD fan states must not be treated as
-  exact physical fronts. Offline projection can enforce the full jump and
-  window-total constraints, but final-profile condensation worsens Brio--Wu
-  and trades about one percent Dai--Woodward L1 improvement for materially
-  larger overshoot/TV. The viable next hypothesis is a causal
-  two-representation method: a high-order space-time/GRP background for smooth
-  and rarefactive structure plus persistent subcell fronts only for
-  independently verified physical discontinuities. Front birth,
-  interaction, multidimensional geometry, CT/AMR transfer, and cost remain
-  open. A GRMHD path is local SRMHD in an orthonormal face frame with
-  consistent metric/source integration, not a direct reuse of a flat global
-  jump.
-- Cycle 249 shows that the missing object is the complete causal space-time
-  fan, not merely more persistent discontinuities. An exact Euler fan seeded
-  from its endpoint states improves L1, overshoot, and TV over MP5+HLLC for
-  Sod, Lax, blast, reverse blast, and a two-shock held-out case at N=16--64
-  and CFL 0.4/0.9; off-grid fan origins retain roundoff conservation. In a
-  symmetric two-fan shock collision, deleting the incident shocks and
-  spawning the exact child fan is not enough if MP5 independently owns the
-  rarefaction interiors: L1 improves, but ownership boundaries can worsen TV.
-  Integrating the complete physical fan through the same collision/rebirth
-  reduces total L1 to `1.18e-9` at N=32 and `7.78e-14` at N=64 for CFL 0.9,
-  with roundoff conservation and TV `1 + O(1e-8)` or better. A
-  primitive-linear rarefaction surrogate is worse than the partial hybrid;
-  rarefactions must follow the physical wave curve rather than interpolate
-  endpoint primitives.
-- The same complete-fan mechanism crosses a nontrivial Newtonian-MHD boundary
-  without an imported exact solver. For `gamma=2`, `Bx=0`, zero transverse
-  velocity, and `By=k rho`, 1D ideal MHD is exactly Euler with effective
-  pressure `p + By^2/2`. The algebraically audited mapped shock
-  collision/rebirth gives total primitive L1 from `5.4e-16` to `5.4e-11`
-  over N=16--64 and CFL 0.4/0.9, roundoff conserved errors, zero normal-field
-  spread, and near-unit TV; MP5+HLLD gives `2.36e-2`--`8.36e-2`. This exercises
-  perpendicular fast waves and induction, not nonzero-normal-field
-  slow/Alfven structure, CT, AMR, multidimensional topology, general fan
-  birth, or production cost. The practical candidate is therefore a
-  state-derived local space-time Riemann/GRP element with causal event
-  handling; the current full-fan result remains oracle-seeded research.
-- Ideal NRMHD adds a selection problem that Euler does not: the system is
-  non-strictly hyperbolic and non-convex, and the usual jump plus entropy
-  conditions need not select one Riemann fan. Brio--Wu admits a regular
-  solution and a continuum of nonregular compound solutions. A future
-  physical-fan provider must state its admissibility/regularization choice;
-  an algebraically exact ideal-MHD solver is not automatically a unique
-  physical oracle.
-- Large Alfvén rotations expose a more immediate finite-volume representation
-  error. Their physical integral curve is an arc of constant transverse-field
-  magnitude, while a homogeneous cell average lies on the chord. In the
-  half-turn control, two endpoints with `|Bt|=0.5` and `p=1` average to a
-  primitive state with `|Bt|=0` and `p=7/6`; magnetic and tangential kinetic
-  energy are misinterpreted as heat. This explains MHD pseudo-convergence and
-  shows why repeatedly reconstructing a homogeneous primitive from a mixed
-  conserved cell cannot preserve the Alfvén manifold.
-- The remedy demonstrated by the isolated-wave harness is latent physical
-  state, not another scalar limiter. Once a complete-RH contact, fast shock,
-  or 90/180-degree rotational discontinuity is accepted, retain its endpoint
-  states, position, and speed and time-integrate its crossing flux without
-  re-detecting it from the cell average. The persistent controls cross many
-  cells at N=16--64 and CFL 0.4/0.9 with total L1 `1.2e-16`--`1.2e-14`,
-  one transition cell, unit TV, roundoff conservation, and constant normal
-  field. The old memoryless detector loses rotational waves as resolution or
-  CFL changes, confirming that inference after every projection is not
-  persistence. Birth, full nonzero-`Bn` fans, rarefaction curves,
-  interactions, multidimensional CT geometry, and AMR transfer remain open.
-- A fourth-order centered viscous/resistive/heat-conducting micro-solve is a
-  useful solution-selection probe but not the birth algorithm. Brio--Wu and
-  Torrilhon controls through 2048 cells remain admissible, conservative to
-  about `1.6e-13`, and preserve constant normal field, while coefficient-path
-  and resolution differences shrink together. The near-coplanar problem
-  retains the known slow pseudo-convergence, so a small brute-force cached
-  PDE solve can confidently cache the wrong fan. Solve birth in physical
-  wave/path space and use dissipative micro-solves only as explicit selection
-  experiments.
+- `PhysicalSystem` explicitly distinguishes HD, MHD, RHD, and RMHD. SRHD,
+  SRMHD, fixed curved GRHD/GRMHD, and evolved-Z4c matter use the shared
+  relativistic system rather than separate flat-space physics implementations.
+  Analytic Minkowski is a host-selected metric specialization.
+- Production reconstruction acts on primitive variables. For relativistic
+  velocity it reconstructs `z^i = W v^i`, with metric-consistent boundary
+  handling. The validated production configuration for discontinuous RMHD
+  remains component MP5, SSPRK3, the candidate correction, and CFL 0.9; the
+  low-order registered executable defaults are startup-safe, not this accuracy
+  recommendation.
+- The RMHD candidate guard predicts each concrete RK candidate, replaces
+  implicated shared faces with the configured terminal low-order flux, and
+  records correction counts. Direct MP5 to PWC is the selected general policy.
+  PWL-MC before PWC remains an optional comparison, not the default.
+- A post-update recovery fallback and an atmosphere reset are not the same as
+  a conservative face correction. Both are counted across ranks and warned
+  once per affected step. Ordinary prescribed atmosphere cells are not reset
+  events. An evolution-time reset is a serious last resort, not a routine
+  reconstruction branch or a reason to add an atmosphere mass ledger. Current
+  run-total counters restart from zero after checkpoint restart, so their
+  cumulative labels mean since process restart rather than whole logical run.
+- MP5/PWC has the best general error/robustness balance in the current exact
+  SRMHD shock matrix. PPM4/PWC is useful when lower shock ringing matters more
+  than minimum L1 error. Unlimited parabolic reconstruction is a smooth-data
+  reference and is not a discontinuous-flow production choice.
+- `pwl` means monotonized-central limited PWL, not raw two-argument MINMOD.
+  MC is less dissipative than strict MINMOD and reduces to a constant state
+  when its bounded slope vanishes.
+- SSPRK3 is the discontinuous-RMHD default because the stage-candidate guard is
+  materially more robust with it than with non-SSP RK4 on extreme tubes. RK4
+  remains appropriate for smooth problems.
+- HLLD is the production RMHD Riemann solver. HLLC is a contact-restoring
+  algebra/control path with known multidimensional strong-shock sensitivity;
+  do not promote it by weakening HLLD's rotated or CT gates.
 
-Never collapse compile, focused validation, smoke, standard/full suite,
-performance, and MPI-rank evidence into one claim.
+## RMHD HLLD Boundary
+
+- Production HLLD implements the Mignone--Ugliano--Bodo five-wave SRMHD fan in
+  one face-normal orthonormal frame. It solves the nonlinear total-pressure
+  closure, samples the fan at the shift-driven interface, and transforms the
+  Valencia flux back to the coordinate frame.
+- Nonfinite, unordered, inadmissible, or nonconverged HLLD constructions use
+  the explicit HLL limit. The current counter records solver evaluations,
+  including discarded high-order trials, repeated corrected-face evaluations,
+  and duplicate nodal FAB instances; zero is meaningful, but a positive value
+  is not a count of unique final selected faces. This is a documented robust
+  limit, not an unreported fallback.
+- Exact contacts, rotational waves, zero-normal-field degeneracy, random fan
+  audits, fixed curved backgrounds, evolved Z4c, uniform CT, and AMR+CT provide
+  useful validation. Across the exact Balsara tubes HLLD's improvement over HLL
+  is real but modest; a complete-wave fan cannot represent a subcell compound
+  structure by itself.
+- The current validation is not an all-regime invariant-domain, positivity, or
+  entropy proof. Strong-magnetization intermediate thermodynamics and the
+  coupled CT/source/AMR discretization remain audit boundaries. Do not narrow
+  required signal bounds or tune the pressure closure to exact tube speeds.
+- Standard entropy-stable RMHD derivations often use a Powell-like source.
+  Their proof does not transfer to the present conservative staggered-CT path
+  by changing a face flux alone.
 
 ## Exact And Analytic Reference Semantics
 
-- A finite-volume profile comparison must compare numerical conserved cell
-  averages with exact conserved cell averages. For nonlinear systems, average
-  the conserved state rather than averaging primitives or evaluating the
-  conserved map at an averaged primitive. A recovered primitive comparison
-  must apply the same C2P interpretation to the averaged exact conserved state.
-- Exact Euler star densities must use the shock compression formula on either
-  side when `p_star > p_side` and the isentropic rarefaction formula otherwise.
-  Canonical Sod exercises only left-rarefaction/right-shock and can hide a
-  side-hardcoded implementation. Keep reverse-blast, two-shock, and
-  two-rarefaction domain-balance checks so all four branches remain covered.
-- A tabulated Riemann reference needs discontinuity-aware integration.
-  Repeated coordinates encode a zero-width jump and must not be smoothed by
-  ordinary interpolation. Normalize errors with the complete physical
-  profile, and compare TV with the exact profile averaged onto the same mesh.
-- Exact-solver convergence and profile-tabulation accuracy are different.
-  The public Giacomazzo--Rezzolla code solves the nonlinear wave states first,
-  then uses a nonuniform plotting grid with exact duplicate coordinates at
-  discontinuities and `nx/5` rarefaction samples. Increasing `nx` tests only
-  representation of the solved profile. Its checked-in Balsara 2--5 source
-  uses decimal `gamma=1.6666` even though the paper and standard tests specify
-  `5/3`; a fresh Balsara-2 N=100 output matches the tracked table to
-  `1.0e-11`. Correcting the temporary source to `5/3` changes normalized
-  Balsara-2/3 cell averages by at most `1.14e-5/1.71e-5`, below the measured
-  Balsara-3 sampling error and current numerical errors but still a provenance
-  caveat for “exact” labels.
-- Published and local profile plots must identify their variables. The AsterX
-  Balsara figure shows rest-mass density and `B_y`; the original PyFluid scan
-  emphasized Valencia `D`, `S_1`, `tau`, and `B_2`. At Lorentz factors near
-  22, small primitive velocity errors can be strongly magnified in momentum
-  and energy, so those plots are not visually interchangeable.
-- Do not mechanically cell-average every existing smooth analytic reference.
-  Many analytic initial-data providers currently sample primitives at cell
-  centers even though evolution, reconstruction, reflux, and average-down use
-  the finite-volume cell-average contract. Their pointwise comparisons test
-  that center-sampled discrete initialization; they do not validate a
-  high-order finite-volume initial projection. A future projection change must
-  average conserved initial data and update its analytic references together.
-  Fine-to-coarse numerical references that explicitly average down are already
-  conservative and remain valid.
-- A discontinuous center-sampled IC is compatible with a continuum exact
-  finite-volume reference only when every initial jump lies on a cell face.
-  The Sod exact validator now enforces that restriction. For arbitrary
-  translations of center-sampled periodic data, compare with the conservative
-  translation of the discrete cell averages, as the advection-medley validator
-  now does, rather than resampling the continuum profile at target centers.
+- A finite-volume profile comparison matches numerical conserved cell averages
+  to exact conserved cell averages. For nonlinear systems, integrate the
+  conserved map; do not average primitives or evaluate the conserved map at an
+  averaged primitive. Recover exact primitives through the same C2P
+  interpretation used for numerical cell averages.
+- A fixed continuum exact solution is the physical authority in plots. Its
+  finite-volume projection legitimately changes with cell width and phase and
+  is the primary discrete error reference, but it must not be plotted or
+  described as a resolution-dependent continuum solution.
+- A supplementary norm may integrate the difference between the fixed
+  continuum profile and the numerical piecewise-constant representation. It
+  includes unavoidable within-cell representation error and is not the
+  primary finite-volume order metric.
+- Tabulated Riemann data require discontinuity-aware integration. Repeated
+  coordinates encode jumps and must not be smoothed by ordinary interpolation.
+  Reject nontrivial coordinate reversal. Normalize errors using the complete
+  physical profile and compare TV on the same mesh.
+- The Giacomazzo--Rezzolla files under `../exact_balsara/` are independent
+  exact SRMHD references. Their pressure column is total pressure, so validation
+  subtracts comoving magnetic pressure before constructing Valencia state.
+  Their checked-in Balsara 2--5 generator used decimal `1.6666` although the
+  published tests specify `5/3`; retain that provenance caveat.
+- A discontinuous center-sampled IC can use a continuum finite-volume
+  reference only when its jumps lie on cell faces. For translated discrete
+  data, compare against a conservative translation of the initialized cell
+  averages rather than a newly center-sampled continuum profile.
+- Smooth analytic providers that initialize primitives at centers validate that
+  discrete initialization. Do not silently relabel them high-order FV
+  projections; changing initialization requires changing the analytic
+  reference consistently.
 
-## Open Numerical And Physics Boundaries
+## Balsara And Reconstruction Lessons
 
-- The scalar LLF-to-HLLC/HLLD flux projection remains a no-op control.
-  Cycle-242's independently weighted MHD contact/Alfven hierarchy is
-  mathematically rejected because unequal weights break contact
-  Rankine--Hugoniot consistency. Cycle 243 replaces it with one common
-  HLL-to-full-HLLD weight and explicitly audits state admissibility, speed
-  ordering, and fan RH residual. This robust target is still not a winning
-  default, and its rank-one entropy repair is inactive on the current broad
-  corpus. A better energy-consistent resolved target plus multidimensional
-  CT/source coupling remains required.
-- Standard entropy-stable RMHD derivations symmetrize the equations with a
-  Godunov--Powell-type source. The present conservative CT RMHD path cannot
-  inherit that proof from a face-flux swap alone. Any RMHD entropy claim must
-  derive the source, CT, and AMR discretization together; until then use
-  characteristic-subspace coherence, admissibility, common normal field, and
-  Rankine--Hugoniot checks without calling the result entropy stable.
-- Changing the reconstruction entries in `schema/methods.toml` changes the
-  generated method catalog and the build's enabled-method definition, so one
-  broad rebuild is expected even though each method has an additive owner.
-  The generators already write outputs only when content changes. Do not
-  attribute this catalog/configuration invalidation to unconditional generated
-  file rewrites, and measure the subsequent cache-hit rebuild separately.
-- Partial-AMR CTT initial data are finite and convergent after the common
-  matter-handoff repair, but the normalized coarse-fine Hamiltonian band
-  remains roughly constant under the recorded refinement. This is an exposed
-  second-order multilevel-elliptic/fourth-order pointwise-diagnostic mismatch,
-  not a completed high-order coarse-fine derivative closure.
-- The self-contained rotating-star path is implemented in 3D for uniform,
-  relativistic j-constant, and relativistic q-power rotation with a cold
-  polytropic/hybrid-polytropic EoS and XCTS. It continues a direct TOV seed
-  with generated relativistic Euler first integrals and a
-  coupled under-relaxed matter/constraint iteration; zero angular velocity
-  bypasses that update and retains the exact TOV control. The first executed
-  nonzero gate is only a small-spin uniform-grid initialization plus three
-  evolved-spacetime steps, not an RNS sequence, mass-shedding result,
-  convergence study, or long-term stability claim. The current
-  central-enthalpy closure evaluates the helical effective potential at the
-  interpolated rotation center. Each relaxed update admits target matter only
-  next to the previous matter component, so disconnected positive-enthalpy
-  outer lobes are not materialized. This is appropriate for continuation of a
-  centered spheroidal TOV seed; toroidal families need an explicit alternative
-  topology seed rather than bypassing the connected-component contract.
-  CTT and CTTK must reuse this matter layer, but still need a validated
-  stationarity-compatible free-data closure before being labeled equilibrium.
-  COCAL, RNS/FUKA, AthenaK, and ETK solutions are comparison baselines only.
-  The zero-spin limit of each equilibrium branch must match the same-EoS TOV
-  solution, including point fields, masses, radius, vanishing shift/extrinsic
-  curvature/angular momentum, and evolution. The current deliberately nonzero-
-  mean-curvature CTTK control is a different slice and is excluded from that
-  equivalence unless its free data are changed to the equilibrium endpoint.
-- Prior N=24 uniform-rotation charge probes remain useful charge evidence, but
-  their Cycle-212 surface-gradient indicators are invalid. The temporary
-  effective-potential and `ln h` MultiFabs had no ghost cells, so a linear
-  interpolation stencil crossing an internal FAB boundary read outside the
-  selected FAB. This box-layout dependence, not a demonstrated physical
-  surface-resolution floor, caused the non-monotone N=24 indicator. Both
-  fields now allocate and exchange one ghost layer; the hierarchy
-  interpolation service also rejects a crossing stencil without sufficient
-  storage before any rank-local interpolation or collective reduction.
-- Corrected N=32 fixed-central-density SLy uniform models converge through
-  `Omega=0.033`. The `0.032` and `0.033` signed mass-shedding indicators are
-  `0.230266` and `0.081731`; their dimensionless ADM spins are `0.594246` and
-  `0.619966`. At `Omega=0.033`, the equatorial/polar coordinate radii are
-  `8.86002/4.5`, matter/volume angular momentum differs by `1.70e-4`,
-  surface/volume by `5.73e-3`, and final XCTS residuals remain below
-  `7.90e-13`. Attempts at `0.03325`, `0.0335`, and `0.034` fail in the final
-  nonlinear/Robin solve before producing a valid physical indicator. They
-  bracket the current solver basin, not the mass-shedding endpoint. A second
-  resolution and a valid point closer to the cusp remain necessary.
-  The prior roughly 40 percent surface deficit came from an incorrect
-  conformal/lapse weight in the generated XCTS shift matter source, not the
-  surface quadrature. The focused small-spin gate now enforces both independent
-  charge comparisons. The 96-iteration ceiling is non-forcing: small spin
-  still exits in 24 iterations, while coarse high-spin surface-cell activation
-  can require more than 64. No equatorial/polar-radius convergence,
-  physical maximum-spin claim exists yet.
-- Uniform-star mass shedding is a physical surface condition: the outward
-  equatorial enthalpy gradient approaches zero as the fluid angular velocity
-  reaches the prograde circular-geodesic frequency at the equator. Nonlinear
-  solver failure, finite-domain contact, or a timelike-flow guard does not
-  measure that limit. A credible sequence therefore needs equatorial/polar
-  radii, a surface-gradient or `Omega/Omega_K` indicator, independent charges,
-  constraints, and at least two resolutions.
-- The implemented Gourgoulhon-style indicator is the signed ratio of outward
-  equatorial to polar `ln h` derivatives. Taking absolute derivatives is
-  incorrect because it can hide a sign reversal past a cusp. On a coarse grid,
-  cubic root/derivative interpolation still cannot recover information absent
-  from the resolved surface; require monotonic behavior and resolution
-  agreement rather than treating the smallest sampled value as the endpoint.
-- The original N=24 uniform-grid XCTS solve with 8-cell boxes and nested
-  frozen-matter constraint solves scaled from 399.69 seconds on one MPI rank
-  to 159.39 seconds on three, or 83.6 percent parallel efficiency. MLMG was
-  therefore already effective; the dominant waste was nonlinear nesting, not
-  a missing multigrid method or MPI scaling collapse. The conservative
-  self-consistent-field schedule reduces the identical three-rank solve to
-  `66.81 s` while retaining the strict final XCTS solve. On the strongly
-  deformed N=32 `Omega=0.033` sequence it reduces wall time from `3609.84 s`
-  to `2267.96 s`, a 1.59-fold speedup. Reusing a saved converged physical ID as
-  the next sequence seed remains the larger established opportunity.
-- Hoisting fixed-point scratch allocations and reusing a nodal MLMG operator
-  changed the identical three-rank N=24 solve from `159.39` to `159.62`
-  seconds, with identical iteration counts, updates, and residuals, but also
-  shifted the surface-gradient diagnostic from about `0.9997` to `0.9855`.
-  The patch was therefore reverted rather than retained as an unmeasured and
-  numerically non-identical optimization.
-  AMReX's current nodal/cell initial-data Laplacians remain second order; its
-  boundary interpolation-order knob does not create a fourth-order interior
-  operator.
-- `global_gr` volume diagnostics depend on current vertex-centered matter even
-  when the separate constraint diagnostic group is not selected. Cycle 212
-  fixed that dependency; before the fix, a `global_gr`-only row could read
-  stale allocation contents and report plausible or catastrophic charges by
-  accident. Keep a direct `global_gr`-only matter-coupled control.
-- The Read-style SLy piecewise-polytrope implementation feeds the same cold
-  barotropic rotating-star inversion successfully: N=24 models converge at
-  `Omega=0.001` directly and at `Omega=0.025` with three continuation stages.
-  This establishes EoS-path compatibility, not that piecewise polytropes
-  improve convergence; the SLy and Gamma=2 stars are different physical
-  models and their iteration counts are not a controlled EoS-algorithm test.
-- Production RHD and RMHD face states reconstruct thermodynamic primitives and
-  all three components of spatial four-velocity `z^i = W v^i`. The selected
-  component method, including MP5, remains the primary method; mapping `z^i`
-  through the face metric avoids making a cell velocity superluminal merely by
-  evaluating it in a different metric.
-- RHD always applies its established RK-candidate admissibility correction.
-  RMHD has an optional host-selected candidate guard:
-  `rmhd_candidate_guard = off|pwc|pwl-pwc`. It checks the concrete RK candidate
-  after sources, uses a 1.05 relaxed density/energy DMP only for high-order
-  reconstruction, and conservatively replaces every face adjoining a flagged
-  cell. `pwl-pwc` accepts PWL-MC only when its candidate passes the same check;
-  PWC is terminal. A monotone neighbor-closure pass prevents a corrected shared
-  face from leaving an adjacent candidate unrecoverable. Fluid fluxes,
-  magnetic fluxes, CT EMFs, and reflux inputs use the same final face choice.
-  PWL and PWC counts are distinct from post-update C2P fallbacks and atmosphere
-  resets. The factor is not a reconstruction blend: it controls when the
-  concrete high-order RK candidate is exchanged for the conservative PWC face
-  flux. On exact Balsara 4 at N=1024, PPM4/PWC with 1.05 reduces maximum
-  normalized overshoot from 0.0488 to 0.00452 and maximum TV ratio from 2.58
-  to 1.49 relative to the former 1.2 factor, with no reset; an exact factor of
-  1.0 over-corrects and substantially increases L1 error.
-- During evolution, successful use of a secondary RMHD C2P method and terminal
-  atmosphere resets after C2P exhaustion are counted across ranks and warned
-  once per affected step. Ordinary atmosphere cells are not counted as
-  failures. A terminal RMHD reset preserves finite magnetic fields; a
-  nonfinite magnetic state remains fatal. The smooth five-method RMHD sweep,
-  fixed-curved-metric controls, and small-spin RHD control all record zero
-  recovery events.
-- The published AsterX Balsara figure is a useful but narrower comparison than
-  PyFluid's all-component scan: it shows only rest-mass density and `By`, uses
-  PPM for Balsara 1, 2, 4, and 5, and switches to MINMOD for the
-  four-orders-of-magnitude pressure jump in Balsara 3. Its plotted points agree
-  cleanly with the exact curves in those fields, but it neither validates
-  AsterX MP5/WENO-Z nor rules out ringing in unplotted conserved momentum or
-  energy. AsterX runs on CarpetX/AMReX block-structured AMR; this shock-tube
-  result is not evidence for an octree topology.
-- A fresh independent AthenaK Balsara-4 run uses the exact tracked initial
-  states and solution, N=1024, HLLE, RK3, and the same normalized conserved
-  all-component metrics as PyFluid. AthenaK's original monotonic `ppm4`,
-  without FOFC, gives maximum L1/overshoot/TV-ratio
-  `3.001e-3/0.124/3.23` at CFL 0.4 and
-  `4.768e-3/0.192/4.37` at CFL 0.9. Its extremum-preserving `ppmx` is worse
-  (`4.620e-3/0.246/4.86` at CFL 0.4), and its WENO-Z reproduces PyFluid's
-  pathological result nearly exactly (`0.281/94.6/332`). At the matched
-  aggressive CFL 0.9, PyFluid MP5/PWC remains better than AthenaK PPM4:
-  `3.253e-3/0.161/3.25`. This strongly supports a lean, generic monotonic
-  PPM4 implementation as a useful reconstruction option, but not replacing
-  conservative candidate correction or claiming that PPM is universally
-  best. The implemented PyFluid result below supersedes this
-  pre-implementation recommendation.
-- PyFluid's `pwl` is limited PWL with the monotonized-central slope, not pure
-  two-argument MINMOD. MC itself composes `minmod` bounds and is less
-  dissipative; the Balsara reconstruction scan's PWL result is therefore
-  PWL-MC. AsterX's published PPM is not merely a physics-agnostic parabolic
-  stencil: its production implementation can use pressure/velocity shock
-  flattening and density-specific contact steepening. Do not add PPM merely to
-  reproduce that figure.
-- The exact Balsara reconstruction resolution scan at N=128, 256, 512, and
-  1024 confirms that PWL-MC is the most uniformly reliable current method.
-  On Balsara 4 its maximum normalized all-component L1 decreases
-  `2.260e-2 -> 1.386e-2 -> 8.896e-3 -> 4.365e-3`, ending below MP5
-  `7.660e-3` and PWC `2.038e-2`; WENO-Z remains nonconvergent near `0.3` while
-  its off-scale overshoot grows with resolution. PWL-MC is not pointwise clean:
-  its Balsara 4 maximum TV ratio remains `2.67, 3.15, 4.31, 3.81`, so the
-  oscillatory region narrows without monotone amplitude removal. At N=1024
-  the extreme-pressure Balsara 3 run records 33 PWL-MC atmosphere resets
-  (WENO-Z 4, MP5 35, TENO5 40, PWC 0). This supports testing high order followed
-  by PWL-MC and terminal PWC candidate correction. It was a
-  pre-implementation comparison, not evidence against later validated PPM.
-- The subsequent 240-run candidate-policy scan used all five exact Balsara
-  problems, N=128--1024, four non-PWC primary methods, HLL/SSPRK3, and CFL 0.9.
-  Every guarded run completed without an atmosphere reset. MP5 plus direct PWC
-  is the best single policy: at N=1024 it gives maximum normalized all-component
-  L1 errors `2.377e-3, 2.532e-3, 4.060e-3, 3.253e-3, 2.170e-3` for Balsara
-  1--5. PWL-MC then PWC is slightly better on Balsara 3 (`3.999e-3`) but worse
-  on Balsara 4 (`5.982e-3`), so it remains an optional comparison rather than
-  the selected production policy. The guard is inactive and bitwise-neutral
-  on the MP5 entropy-wave scan through N=256, which retains order
-  `3.77, 3.28, 3.07`; enabled one-dimensional throughput is about 0.63 of
-  disabled throughput in small smooth/shock controls.
-- WENO-Z/PWC and TENO5/PWC are also robust, monotonically convergent Balsara
-  policies, but neither beats MP5/PWC across the five cases. At N=1024 their
-  mean maximum normalized component L1 errors are `3.63e-3` and `3.77e-3`,
-  versus `2.88e-3` for MP5/PWC. PWL-MC-first is not an accuracy improvement
-  for any of those high-order methods on the difficult Balsara-4 case.
-- The reconstruction catalog now exposes unlimited `parabolic`, classic
-  monotonic `ppm4`, and smooth-extremum-preserving `ppmx`, with the same
-  component/characteristic method forms as the existing high-order schemes.
-  On the exact periodic smooth wave, parabolic and PPMX retain measured fourth
-  order in both forms; PPM4 is about order 2.1 because its original limiter
-  clips smooth extrema. Unlimited parabolic is a smooth/reference method: an
-  unguarded Balsara-4 run is catastrophically nonphysical.
-- The 45-run SSPRK3/HLL/CFL-0.9 scan of MP5, PPM4, and PPMX with direct PWC
-  correction covers all five exact Balsara problems at N=256, 512, and 1024.
-  Every guarded run has zero atmosphere resets. At N=1024, PPM4/PWC L1 errors
-  for Balsara 1--5 are `2.771e-3, 3.122e-3, 4.602e-3, 3.906e-3, 2.404e-3`;
-  MP5/PWC remains lower-error in every case. PPM4/PWC is materially cleaner on
-  the difficult Balsara 4: overshoot/TV are `0.0488/2.58` versus
-  MP5/PWC `0.161/3.25`, at L1 `3.91e-3` versus `3.25e-3`. PPMX/PWC has
-  Balsara-4 `4.44e-3/0.0455/3.06`; it preserves smooth extrema but is not the
-  best shock default. Keep MP5/PWC as the general accuracy default, use
-  PPM4/PWC when reduced shock ringing is the priority, and do not run the
-  unlimited parabolic method on discontinuities.
-- PPM4 matches MP5 throughput in the focused serial shock scans; PPMX is only
-  a few percent slower. The normal MPI performance gate remains within
-  0.93--0.99 of its frozen baselines. Reconstruction build switches now remove
-  disabled flux-owner translation units: a PWC-only clean 1D probe compiles
-  only `flux_kernels/pwc.cpp` and links successfully, while an unchanged full
-  production cache check completes in 0.78 s.
-- The RMHD guard can select `rmhd_candidate_riemann = same|hll|llf` without a
-  new compiled reconstruction axis. AthenaK independently defaults its FOFC
-  flux to LLF. A matched PyFluid Balsara-3/4 scan finds that LLF sometimes
-  reduces overshoot and total variation but usually corrects more cells and
-  does not improve the best L1 result: Balsara-4 N=1024 MP5/PWC is
-  `3.25e-3` with HLL and `3.83e-3` with LLF. Keep `same` as the default and
-  use LLF only when extra local damping is preferred over minimum error.
-- The guard predicts and checks every concrete RK stage; there is no separate
-  AthenaK timestep-retry algorithm missing from PyFluid. SSPRK3 is materially
-  more robust than non-SSP RK4 for the extreme Balsara shocks. The focused RK4
-  scan reaches post-update atmosphere resets on Balsara 3 and much larger MP5
-  Balsara-4 variation, whereas all corresponding guarded SSPRK3 cases complete
-  without a reset. Retain RK4 for smooth problems, not as the production
-  discontinuous-RMHD default.
-- CT must use the same RK-weighted stage fluxes as the cell update and reflux
-  registers. Using only the last stage's EMF is inconsistent for every
-  multistage integrator. The current CT path accumulates stage EMFs with the
-  Euler/corrector/midpoint/SSPRK3/RK4 weights before applying one curl update.
-  The full RMHD standard gate, all 19 MHD method/timestep cases, all five CT
-  AMR subcycling timesteppers, and the extended resistive-current-sheet case
-  pass. A smooth three-level RMHD AMR+CT control has `divB_L1=3.38e-15`.
-  An extreme 2D Balsara-4 extrusion remains a stress limitation: MP5/PWC no
-  longer crashes or resets, but transverse roundoff asymmetry grows to about
-  `2.7e-6` at N=256x8 (`PWL` also grows to `3.9e-7`). Do not treat that
-  extrusion as dimensionally clean until the amplification is diagnosed.
-- The current small-spin XCTS PWL control passes three evolved-spacetime steps
-  at CFL 0.9 with rest-mass drift `8.52e-10`. Component MP5 now remains finite
-  for the same three steps, but its `9.35e-8` rest-mass drift fails the existing
-  `1e-8` gate because density-floor projection injects mass in surface cells.
-  Keep the checked-in rotating-star input on PWL and do not weaken that gate;
-  MP5 rotating-star evolution needs a conservative surface treatment before it
-  is a validated production default. The accepted compact policy is to count
-  and warn on recovery fallback/reset, not to add a special atmosphere
-  mass/energy ledger. Reusable candidate-metric scratch and longer rotating-
-  star validation remain open performance/numerical work.
-- Native CompOSE/tabulated EoS support is not implemented. Add a cold,
-  beta-equilibrated one-dimensional barotrope first and use the same loaded,
-  unit-checked table for direct TOV, rotating-star initial data, C2P/P2C,
-  signal speeds, atmosphere closure, and evolution. A cold-plus-thermal
-  extension is a bounded next step; a general finite-temperature
-  `(n_b,T,Y_e)` table also requires composition evolution and a larger
-  inversion/validity contract and should not be conflated with the first stage.
-  Importing selected CompOSE/TEOS table data is permitted; importing another
-  code's TOV/RNS/BNS solution for production initialization is not.
-- The output-only `thermal_entropy_proxy` is `p/rho^Gamma` for an ideal gas,
-  `(p-p_cold)/rho^Gamma_th` for a hybrid cold-plus-thermal EoS, and zero for a
-  strictly cold barotrope with no independent entropy. It is not absolute
-  physical entropy; a tabulated EoS must provide its own thermodynamic
-  definition. Do not use a piecewise-polytrope segment gamma on total pressure,
-  because cold-segment changes then masquerade as entropy production.
-- Fixed-spacetime and evolved curvilinear relativistic evolution remain
-  pending but are explicitly deprioritized. Evolved curvilinear Z4c requires a generated reference-metric
-  formulation, parity/origin regularity, nodal AMR transfer, and matching
-  boundaries; it is not a Jacobian-only change.
-- The radiation pipeline has surface interpolation, Weyl/Psi4 generation,
-  multipoles, restart-aware histories, and postprocessing controls. Honest
-  extraction-radius convergence toward null infinity still needs a compact
-  isolated radiative source and multiple physical radii.
-- Diagnostic infrastructure is already shared: generated catalog/integrands,
-  composite-AMR volume reductions, spherical hierarchy interpolation,
-  parametric-surface quadrature, and general multipole/Fourier reduction. The
-  remaining additions are specific quantities: spherical mass-accretion rate,
-  separated fluid and electromagnetic energy fluxes, and magnetic flux. The
-  existing catalog
-  already includes total finite-radius matter energy flux and atmosphere volume
-  fraction. Recovery fallback/reset counts are compact runtime warnings rather
-  than new scalar GFs. Flat/power-law initial atmospheres and the allocation-
-  free physical geometry provider are implemented.
+- The Balsara-3 dense feature is a material contact followed closely by another
+  MHD front. Its physical width is about `0.011396` on the standard `[-1,1]`
+  domain, so it spans less than one cell at N=128 and only a few cells through
+  N=512. A homogeneous-cell FV state cannot represent both boundaries and the
+  intermediate plateau while it is subcell.
+- More diffusion is not a shell-resolution mechanism. PWC, strict MINMOD, and
+  the tested density THINC/BVD variants broadened or lowered the shell. The
+  demonstrated remedies are adequate resolution, state-following AMR, or a
+  genuinely validated multi-interface in-cell representation.
+- Production MP5/SSPRK3/HLLD converges monotonically on uniform Balsara-3
+  refinement. State-following AMR recovers the separate structures with far
+  fewer active cells than a uniform finest mesh while maintaining scalar and
+  recovery gates.
+  This is a focused one-dimensional result, not blanket AMR superiority.
+- Balsara 4 is not one generic ringing mode. Much of its alternating structure
+  is a cluster of physical transverse waves whose amplitude and phase are
+  smeared. A scalar shock detector, entropy minimum, temporal second difference,
+  or independent component limiter did not reliably separate it from legitimate
+  Balsara-3/5 fan evolution.
+- A continuous high-order sensor needs an exact smooth plateau. A weight merely
+  close to one can accumulate damping over many reconstructions. Shared state
+  order is safer than independently selected characteristic order when strong
+  MHD/RMHD components remain coupled.
+- Offline physical-wave carriers, mode-selective limiting, THINC/BVD,
+  constrained-fan, and ADER-Prim/MOOD/CWENO experiments are useful Pareto or
+  falsification controls. None currently dominates the production method over
+  HD, MHD, SRHD, and SRMHD held-out tests. Do not add one to the production
+  catalog from a favorable aggregate Balsara score.
+- When evaluating a hybrid, compare the same-grid exact/reference, pure high
+  method, pure low method, and hybrid over complete accepted timesteps. Include
+  activation and reset counts. One Euler candidate is a causal diagnostic, not
+  a method ranking.
 
-## Elliptic Symmetry And Flat Relativistic Kernels
+## AMR Transfer And CT
 
-- Centered Cartesian elliptic reflection planes are mixed Neumann/Dirichlet
-  boundaries: even components have zero normal derivative and odd components
-  vanish on the plane; outer faces retain their normal Robin/Dirichlet data.
-  Nodal ghost synchronization must modify reflection ghosts only and preserve
-  the elliptic operator's outer-boundary ghost state.
-- A centered nonrotating TOV model can use x/y/z octant symmetry. A nonzero
-  model rotating about z can use z-equatorial symmetry, but ordinary x/y
-  reflection parity is physically invalid for its azimuthal velocity and
-  shift. The configuration validator rejects that combination.
-- Saved physical-ID reflection faces are part of source geometry metadata.
-  Octant-to-full materialization reflects coordinates before interpolation and
-  applies catalog parity afterward. Magnetic fields use axial-vector parity,
-  unlike velocity and momentum.
-- SRHD/SRMHD and fixed-GR HD/MHD share the same generated Valencia physics.
-  Fixed Minkowski runs now bypass stored Z4c metric loads and the fourth-order
-  stored-metric source derivative pass. A physical-ID artifact records its
-  spacetime class, so a Minkowski source loaded into a Minkowski target retains
-  the analytic path; fixed curved metrics and solved ADM data retain the
-  general metric path. This is a host-selected metric specialization, not a
-  duplicate SR physics implementation. On the recorded 4096-cell, 128-step
-  MP5/HLL/SSPRK3 controls it improves SRHD throughput by 31.1 percent and SRMHD
-  throughput by 2.1 percent.
-- The tracked Giacomazzo--Rezzolla profiles under `../exact_balsara/` provide
-  exact 1D SRMHD comparisons for Balsara 1--5. Their pressure column is total
-  pressure; validation must subtract half the comoving magnetic magnitude
-  before independently constructing the flat Valencia conserved state.
-- At matched finest spacing, the current coarse TOV XCTS full/octant control
-  differs by 1.34 percent in its worst selected global scalar; parity-expanding
-  the saved octant artifact changes those scalars by only `1.78e-6`. The N=24
-  uniform RNS full/z-half control differs by 4.99 percent in its worst global
-  scalar while central density/lapse and surface radii agree much more closely.
-  Treat these as coarse nodal-boundary truncation measurements, not exact
-  sector equivalence.
-- Three-step MP5 RNS controls at CFL 0.9 complete with zero recovery events,
-  but their raw rest-mass drifts are `9.68e-8` (full) and `6.92e-8` (z-half),
-  above the generic dynamic-spacetime policy's `1e-8` threshold. The focused
-  ID-symmetry gate treats them as short smoke runs with an explicit `2e-7`
-  bound; this is not a long-evolution conservation validation.
+- AMR follows the standard finite-volume contract: FillPatch/prolongation,
+  flux-register reflux, average-down of covered cells, and for CT edge-EMF
+  reflux plus face average-down. These operations are not interchangeable.
+- Conservative component averages do not guarantee relativistic
+  admissibility. A coarse parent can produce children whose exact component
+  average is correct while one child recovers with negative pressure.
+- For Cartesian analytic fixed spacetime with CT off, the production transfer
+  guard applies
+  `U_f = U_c + theta (U_f_raw - U_c)` with one maximal C2P-admissible `theta`
+  shared by every child and every conserved component. A conservative base
+  therefore retains the parent average, and an already admissible family is
+  unchanged. A nonfinite child or inadmissible parent is an error, not input to
+  an atmosphere repair.
+- AMReX can request only part of a coarse parent's child family because FAB and
+  ghost regions are split independently. A sibling-coupled limiter must expand
+  to a sibling-aligned region, run the base interpolation and limiter on the
+  complete family in private scratch, then copy only the requested region.
+  Limiting only the visible subset makes results decomposition-dependent and
+  invalidates the family-conservation argument.
+- CT-on transfer needs a metric-aware limiter with canonical face `B` held
+  fixed. Stored or evolved spacetime needs the corresponding stage metric; a
+  Minkowski surrogate is not a valid admissibility test.
+- Face-centered magnetic fields are the canonical CT state. RK-weighted EMF
+  accumulation is required, but it is not by itself full stage coupling. The
+  current path accumulates stage EMFs and applies one face curl update after the
+  multistage fluid evolution; later fluid stages therefore do not yet
+  reconstruct from the same-stage canonical face field.
+- Synchronizing cell `B` from faces and re-running accepted-state C2P after the
+  final face update is a necessary final-state backstop. It does not replace
+  the remaining owner-correct task: advance canonical face `B` at every RK
+  stage, synchronize it before reconstruction/physical acceptance, and use the
+  same stage flux/EMF in fluid, CT, and AMR ledgers.
+- After reflux, average-down, final face-field synchronization, and regrid, the
+  hierarchy refreshes metric coupling and applies relativistic acceptance at
+  the last state owner. Newly created or remade fine levels then copy the
+  accepted state consistently into both current and old-time storage.
+- CPU tiled kernels that write grown ghost regions must use AMReX's
+  `growntilebox`; manually growing every internal tile creates overlapping
+  OpenMP writes. Device-side temporary FABs must retain an `Elixir` through
+  asynchronous interpolation/copy chains.
+- The local AMReX build has no OpenMP support. Forced-small-tile 2D/3D boundary
+  regressions validate output and ownership semantics, but they do not execute
+  the former writes concurrently; an OpenMP-enabled run remains useful.
+- The present transfer limiter has CPU evidence. Retrieving a device failure
+  flag after every interpolater call creates a likely GPU synchronization
+  point; batch status at a FillPatch owner before claiming GPU performance
+  neutrality.
+- Runtime configuration rejects diffusion and viscosity for RHD/RMHD, so a
+  separate relativistic post-diffusion recovery path is not currently
+  reachable. Revisit accepted-state ownership when relativistic diffusion is
+  introduced.
 
-## AthenaK Reference Boundary
+## Stellar Initial Data And Evolution
 
-- A local AthenaK source tree is available at
-  `/Users/mrizzo/phys_research/athenak/athenak`, with CPU and MPI executables at
-  `build/src/athena` and `build_mpi/src/athena`. The source tree is not itself
-  a Git checkout, but representative source, test, and build files were
-  byte-matched on 2026-07-21 to AthenaK commit
-  `5f1993109bcb2e5d588ba41b4efc897408e9959a` from
-  `https://github.com/IAS-Astrophysics/athenak.git`. Recheck provenance before
-  publishing or after the local tree changes.
-- AthenaK is a valuable independent reference for Newtonian, SR, fixed-GR,
-  dynamical-GRMHD, AMR, CT-MHD, Z4c, wave, shock-tube, puncture, and radiation
-  algorithms and test setups. It is not PyFluid's source of truth and its
-  numerical output is a code-to-code reference, not an analytic or exact
-  solution.
-- For relativistic reconstruction and recovery, inspect
-  `src/dyn_grmhd/dyn_grmhd_fofc.cpp`, `src/dyn_grmhd/dyn_grmhd_fluxes.cpp`,
-  `src/eos/ideal_grhyd.cpp`, and `src/eos/primitive-solver/reset_floor.hpp`.
-  AthenaK predicts the concrete RK-stage candidate, asks C2P whether floors, a
-  velocity ceiling, or recovery failure would be needed, replaces the faces
-  adjoining flagged cells with first-order LLF/HLLE, and records event
-  counters. Its floor policy is an explicit conserved-state mutation after the
-  conservative flux correction, not part of the nominal reconstructor.
-- For comparisons, first match equations, EoS/units, initial data, domain,
-  boundaries, resolution, reconstruction/Riemann method, CFL, time integrator,
-  output time, and AMR policy. Start with a uniform-grid control, compare
-  physical fields/diagnostics on a common sampling, then add AMR. Record both
-  revisions, dirty states, build configurations, inputs, rank counts, and
-  output paths.
-- Keep AthenaK use read-only unless a request explicitly includes changes to
-  that checkout. Prefer an independent comparison over copying implementation.
-  If code is adapted, review and preserve the BSD-3-Clause attribution and
-  keep PyFluid's generated catalogs and ownership rules intact.
-- The 2026-07-21 optimized CPU build-artifact comparison found the same broad
-  optimization class in both projects (`-O3 -DNDEBUG -mcpu=native`) but very
-  different generated-code volume. AthenaK's one runtime-dimensional binary
-  linked about 13.5 MiB across 144 application objects. PyFluid's three
-  `AMREX_SPACEDIM` binaries linked about 165.2 MiB; eight reconstruction-owned
-  flux bundles contributed about 133.3 MiB. Treat reconstruction/layout/EoS/
-  direction specialization cloning as the first compile-time target, while
-  preserving separate AMReX dimension executables and benchmarking any shift
-  from compile-time to runtime selection.
-- If current measurement later justifies a dispatch rewrite, the accepted
-  direction is an immutable host-built operation plan with approximately
-  additive method ownership, not the current Cartesian template product and
-  not an unmeasured per-cell virtual dispatch. Run-wide choices should be
-  resolved at the coarsest practical boundary. Retain a compile-time policy
-  only when AMReX storage requires it or a focused benchmark demonstrates a
-  meaningful throughput benefit.
-- Compiler caching plus method-local flux owners makes normal narrow iteration
-  fast by reusing unrelated optimized objects. Treat the large specialization
-  graph primarily as cold-build, broad-invalidation, CI/new-toolchain, disk,
-  and possible code-size/runtime debt. Do not rewrite the dispatch unless a
-  current cold/cache-miss matrix or runtime evidence demonstrates enough value;
-  always report cold builds and cache-hit rebuilds separately.
-- AthenaK's hydro/MHD flux owners keep Riemann choice explicitly instantiated
-  but switch the uniform reconstruction method inside the Kokkos kernel. This
-  makes method growth closer to additive, at the price of a uniform device
-  branch. Treat that and a separate-method-launcher design as bounded benchmark
-  candidates, not a source-level recipe.
-- AthenaK's numerical-relativity task list builds a dependency graph once at
-  startup: optional Z4c, matter, gauge, boundary, refinement, and diagnostic
-  operations are added according to available modules and then topologically
-  ordered. The useful PyFluid lesson is a small immutable host operation plan
-  for future GR composition, while AMReX hierarchy lifecycle remains owned by
-  the existing solver. Do not import a second scheduler.
-- AthenaK's ordinary build also compiles only one selected problem generator.
-  That reduces work compared with PyFluid's built-in initial-data set, but a
-  feature-stripped validation binary conflicts with PyFluid's production-build
-  contract. Keep it as explanatory evidence, not an optimization to copy.
-- Kokkos and AMReX are different layers rather than direct substitutes.
-  Kokkos owns portable node-level execution, memory spaces/layout, and team
-  policies; AMReX owns distributed block-structured AMR and also provides
-  portable CPU/GPU kernel launches. Replacing AMReX with Kokkos would require
-  reimplementing hierarchy, FillPatch, reflux, average-down, regridding,
-  checkpoint/I/O, and elliptic infrastructure. Consider a Kokkos or custom
-  kernel only for a measured isolated hotspot with a clean data boundary; do
-  not introduce two competing data/launch abstractions speculatively.
-- AthenaK's current Z4c tests are useful independent formulations and
-  normalization references, but they are much narrower than PyFluid's existing
-  gauge, robust-stability, AMR/interface, stellar, and radiation gates. Adapt
-  test ideas only where they add an independent physical boundary; do not add
-  duplicate linear-wave tests for breadth alone.
+- The self-contained rotating-star path supports 3D uniform, relativistic
+  j-constant, and relativistic q-power rotation with cold
+  polytropic/hybrid-polytropic EoS and XCTS. It continues a TOV seed through a
+  coupled under-relaxed matter/constraint iteration. Zero angular velocity
+  bypasses the rotating update and must reproduce the same-EoS TOV endpoint.
+- Existing nonzero-spin evidence is coarse continuation and short evolution,
+  not a resolution-converged mass-shedding limit, long-term equilibrium, or
+  constant-baryon-mass sequence. The surface-gradient indicator required ghost
+  exchange across FABs; results predating that fix are not physical endpoint
+  evidence.
+- Matter, ADM-volume, and ADM-surface angular momentum should agree under
+  refinement. ADM--Komar disagreement on the tested compact domains is largely
+  a finite-radius extraction effect; do not tune the elliptic solve to force
+  equality at one outer radius.
+- A centered nonrotating TOV model can use x/y/z octant reflection. A star
+  rotating about z can use z-equatorial reflection, but ordinary x/y plane
+  parity is not a symmetry of its azimuthal velocity and shift.
+- CTT and CTTK can reuse the rotating matter layer, but still need a validated
+  stationarity-compatible free-data closure before being called rotating
+  equilibrium methods. A deliberately nonzero-mean-curvature CTTK slice is not
+  the zero-spin XCTS/TOV endpoint.
+- The reusable physical-ID container and sequence behavior are defined in
+  `docs/infrastructure_conventions.md`. A remapped artifact is initialization,
+  not a new constraint solve; finer evolution cannot recreate unresolved ID
+  information. A continued XCTS target does solve again on the target grid.
+- Short rotating-star evolution is currently cleaner with PWL than MP5 at the
+  surface. Do not weaken rest-mass gates to promote MP5; a conservative stellar
+  surface treatment and longer evolution evidence are still required.
+- Native CompOSE/tabulated-EoS support is not implemented. It must enter through
+  the shared immutable EoS interface with one explicit unit convention and be
+  validated consistently in TOV/RNS construction, P2C/C2P, signal speeds,
+  atmosphere closure, and evolution.
 
-## Review And Change Discipline
+## Other Open Boundaries
 
-The local ETK/CarpetX comparison explains how a large option surface avoids a
-single template Cartesian product:
+- The shared CTT/CTTK/XCTS elliptic solve is second-order. Raising the operator,
+  coarse-fine closure, and boundary treatment together is required before
+  claiming fourth-order elliptic accuracy; changing only interpolation or a
+  diagnostic stencil is insufficient.
+- Partial-AMR CTT data are finite and convergent, but the normalized
+  coarse-fine Hamiltonian band exposes a second-order multilevel-elliptic versus
+  fourth-order pointwise-diagnostic mismatch.
+- Cartesian multipatch evolution owns unique cells. Patch overlap is ghost and
+  interpolation context, not duplicated evolved volume. Conservative overset
+  reconciliation remains unimplemented.
+- Cylindrical and spherical single-patch kernels exist for validated method
+  combinations. Mixed Cartesian-curvilinear seam evolution remains
+  experimental. Do not infer production support from maps or sampling alone.
+- Radiation infrastructure includes catalog-driven surface, volume, and
+  multipole reductions plus Weyl/Psi4 paths. Missing quantities should extend
+  those catalogs, not create separate output implementations.
+- Reusable metric/candidate scratch and longer stellar runs are open runtime
+  work. Compile caching makes narrow iteration fast, but cold builds and broad
+  header invalidation remain relevant; measure cold and cache-hit builds
+  separately.
+- Cycle 284's isolated empty-tree production build took 544.32 s with 231
+  cache misses; an unchanged production rebuild took 0.66 s. Template pruning
+  reduced measured object products, but a genuinely cold build remains much
+  slower than the normal incremental-development path.
 
-- CCL separates parameter identity (`param.ccl`), GF/group identity
-  (`interface.ccl`), and conditional operation scheduling (`schedule.ccl`).
-  Many apparent branches are independently compiled thorn routines that are
-  activated/composed once, not alternatives inside one fused kernel.
-- Hot AsterX code still uses uniform runtime choices. Its seven reconstruction
-  methods and LxF/HLLE flux choice are enum switches in device code, while only
-  direction and EoS object type are templated in the inspected flux owner.
-- Modularity does not make the complete build small: the inspected ET_CarpetX
-  configuration contains 85 thorn archives totaling about 402 MiB. AsterX is a
-  16 MiB archive and its largest flux object is about 4.7 MiB. The advantage is
-  additive thorn/owner compilation and effective incremental rebuilds, not a
-  free clean build or zero runtime dispatch cost.
-- The PyFluid analogue is a small immutable operation plan: compile dimension
-  and required storage topology; schedule optional operations at the host
-  level; use uniform runtime method enums where measured acceptable; reserve
-  per-cell branches for genuinely data-dependent physics.
+## Independent References And Comparisons
 
-- Source-checked external review findings live in `review_backlog.md`. Raw
-  Spark notes under `../spark_amrex_review/` are review input, not accepted
-  requirements.
-- Reproduce a claimed defect before refactoring around it. Prefer the smallest
-  correction and its focused gate. Do not introduce a registry, metadata table,
-  helper object, or generic iterator merely because a branch or loop repeats;
-  retain it only when it reduces ownership drift or a measured maintenance,
-  compile-time, or runtime cost.
-- Do not repair nonfinite transfer output, weaken a tolerance, add a temporary
-  unsupported-combination guard, or silently change a physical default to
-  quarantine an active bug.
-- Update `review_running_cycle.md` during every AMReX request. Update this file
-  only when a durable ownership rule, validation boundary, or open limitation
-  changes. Put historical detail and exact measurements in the continuity
-  cycle rather than growing this snapshot indefinitely.
+- AthenaK, AsterX, ETK/CarpetX, COCAL, RNS/FUKA, and public exact solvers are
+  comparison and method references. They are not PyFluid production initial
+  data or implementations unless a request explicitly changes that boundary.
+- A code comparison starts by matching equations, EoS/units, state convention,
+  domain, boundaries, resolution, reconstruction, Riemann solver, CFL,
+  timestepper, output time, and AMR policy. Start uniform, compare common
+  physical quantities, then add AMR.
+- The matched AthenaK/AsterX evidence is case-specific. PyFluid is competitive
+  on the checked Balsara controls; it has not established broad superiority.
+  Preserve both revisions, inputs, builds, rank counts, outputs, conservation,
+  constraints, and wall times.
+- AthenaK demonstrates additive owners, uniform runtime choices, and a
+  startup-built operation graph. The useful PyFluid lesson is a small immutable
+  host operation plan, not a second scheduler or a per-cell virtual interface.
+- AMReX and Kokkos are different layers. Replacing AMReX with Kokkos would also
+  require hierarchy, FillPatch, reflux, restriction, regridding, checkpoint,
+  I/O, and elliptic infrastructure. Consider Kokkos only for a measured isolated
+  hotspot with a clean data boundary.
+
+## Next Milestones
+
+1. Make canonical face-`B` ownership stage-coupled before relying on long
+   production GRMHD evolution. Retain the final post-sync projection as a
+   backstop rather than calling it the stage-coupling solution.
+2. Run a matched PyFluid/AthenaK work-precision comparison: uniform Balsara and
+   multidimensional Orszag--Tang first, with AMR only after the uniform
+   equivalence statement is sound. This calibrates performance and error; it is
+   not another reconstruction search.
+3. Add a two-resolution time-dependent TOV oscillation/constraint gate, then
+   evolve a saved uniform-RNS artifact with PWL while tracking rest mass,
+   angular momentum, constraints, central density, and mode content.
+4. Add CompOSE/tabulated EoS after the stellar evolution boundary is stable.
+
+## Review Discipline
+
+- Source-check external review findings before accepting them. Raw review prose
+  is provenance, not an implementation plan.
+- Prefer the smallest owner-correct fix and a focused reproducer. Do not repair
+  nonfinite transfer output, weaken a physical tolerance, silently change a
+  default, or add a temporary fallback to conceal an intended combination.
+- Treat any numerical improvement as a Pareto point until held-out HD, MHD,
+  SRHD, and SRMHD tests improve without regressions. One-step or offline
+  evidence is not production validation.
+- Update `review_running_cycle.md` with exact work state and measurements.
+  Update this file only when a durable learned fact, current evidence boundary,
+  or open limitation changes.

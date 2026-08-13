@@ -27,6 +27,7 @@ from validation_common import (
    ROOT,
    amrex_executable,
    append_validation_history,
+   build_cached_target,
    materialize_run_input,
    read_scalar_rows,
    repo_relative,
@@ -43,6 +44,16 @@ RESULTS = RUN_ROOT / "rmhd_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
 CHECKPOINT_COMPARE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_2d"
 CT_AMR_DIVB_TOLERANCE = 1.0e-12
+RMHD_COMPONENT_NAMES = (
+   "dens",
+   "mom1",
+   "mom2",
+   "mom3",
+   "tau",
+   "b1",
+   "b2",
+   "b3",
+)
 COMPONENT_RECONSTRUCTION_METHODS = (
    "pwc",
    "pwl",
@@ -142,10 +153,19 @@ def run_case(
    return run_dir, scalar
 
 
+def _relativistic_recovery_summary(run_dir: Path) -> str:
+   for line in reversed((run_dir / "run.log").read_text().splitlines()):
+      if line.startswith("Relativistic recovery "):
+         return line
+   raise RuntimeError(
+      f"{repo_relative(run_dir)} did not report relativistic recovery counts"
+   )
+
+
 def relativistic_recovery_counts(run_dir: Path) -> tuple[int, int]:
    match = re.search(
-      r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)",
-      (run_dir / "run.log").read_text(),
+      r"c2p_fallbacks=(\d+) atmosphere_resets=(\d+)",
+      _relativistic_recovery_summary(run_dir),
    )
    if match is None:
       raise RuntimeError(
@@ -156,13 +176,23 @@ def relativistic_recovery_counts(run_dir: Path) -> tuple[int, int]:
 
 def rmhd_candidate_correction_counts(run_dir: Path) -> tuple[int, int]:
    match = re.search(
-      r"Relativistic recovery .*rmhd_pwl_corrections=(\d+) "
+      r"rmhd_pwl_corrections=(\d+) "
       r"rmhd_pwc_corrections=(\d+)",
-      (run_dir / "run.log").read_text(),
+      _relativistic_recovery_summary(run_dir),
    )
    if match is None:
       return 0, 0
    return tuple(int(value) for value in match.groups())
+
+
+def rmhd_riemann_hll_fallback_count(run_dir: Path) -> int:
+   match = re.search(
+      r"rmhd_riemann_hll_fallbacks=(\d+)",
+      _relativistic_recovery_summary(run_dir),
+   )
+   if match is None:
+      return 0
+   return int(match.group(1))
 
 
 def validate_uniform(args: argparse.Namespace) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
@@ -279,10 +309,14 @@ def validate_entropy_convergence(
       })
       scalars.append(scalar)
       previous_error = error
-   if float(results[-1]["order"]) < 1.8:
-      raise RuntimeError(
-         f"RMHD entropy wave did not retain second-order convergence: {results[-1]['order']}"
-      )
+   order_indices = sorted({1, len(results) - 1})
+   for index in order_indices:
+      order = float(results[index]["order"])
+      if order < 1.8:
+         raise RuntimeError(
+            "RMHD entropy wave did not retain second-order convergence: "
+            f"n={resolutions[index]} order={order:.3f}"
+         )
    return results, scalars
 
 
@@ -436,20 +470,104 @@ def exact_rmhd_cell_averages(
    )
 
 
+def exact_balsara_comparison(
+   case: int,
+   spec: dict[str, object],
+   run_dir: Path,
+) -> tuple[
+   np.ndarray,
+   np.ndarray,
+   np.ndarray,
+   float,
+   float,
+   float,
+]:
+   """Compare conserved FV data with the exact Balsara cell averages."""
+   plotfile = latest_plotfile(run_dir, require=True)
+   names, output_time = parse_plot_header_1d(plotfile)
+   if not math.isclose(
+      output_time,
+      float(spec["time"]),
+      rel_tol=0.0,
+      abs_tol=1.0e-12,
+   ):
+      raise RuntimeError(
+         f"Balsara {case} stopped at t={output_time}, expected {spec['time']}"
+      )
+   state = read_composite_state_1d(plotfile, names)
+   numerical = np.vstack([
+      state[names.index(name)] for name in RMHD_COMPONENT_NAMES
+   ])
+   exact_profile = read_last_exact_balsara_profile(
+      EXACT_BALSARA_ROOT / f"solution_b{case}.dat"
+   )
+   exact_state = exact_rmhd_conserved(
+      exact_profile,
+      normal_magnetic=float(spec["left"][5]),
+      gamma=float(spec["gamma"]),
+   )
+   prob_lo, prob_hi = parse_plot_bounds(plotfile)
+   spacing = (prob_hi[0] - prob_lo[0]) / numerical.shape[1]
+   centers = prob_lo[0] + (np.arange(numerical.shape[1]) + 0.5) * spacing
+   cell_edges = np.linspace(
+      prob_lo[0],
+      prob_hi[0],
+      numerical.shape[1] + 1,
+   )
+   averaged_exact = exact_rmhd_cell_averages(
+      exact_profile,
+      normal_magnetic=float(spec["left"][5]),
+      gamma=float(spec["gamma"]),
+      cell_edges=cell_edges,
+   )
+   scales = np.maximum(
+      np.ptp(exact_state, axis=1),
+      np.max(np.abs(exact_state), axis=1),
+   )
+   scales = np.maximum(scales, 1.0e-14)
+   component_l1 = np.mean(np.abs(numerical - averaged_exact), axis=1) / scales
+
+   exact_min = np.min(exact_state, axis=1)
+   exact_max = np.max(exact_state, axis=1)
+   lower_overshoot = np.maximum(exact_min[:, np.newaxis] - numerical, 0.0)
+   upper_overshoot = np.maximum(numerical - exact_max[:, np.newaxis], 0.0)
+   maximum_overshoot = float(
+      np.max(np.maximum(lower_overshoot, upper_overshoot) / scales[:, np.newaxis])
+   )
+
+   numerical_tv = np.sum(np.abs(np.diff(numerical, axis=1)), axis=1)
+   exact_tv = np.sum(np.abs(np.diff(averaged_exact, axis=1)), axis=1)
+   active = exact_tv > 1.0e-12 * scales
+   maximum_tv_ratio = float(np.max(numerical_tv[active] / exact_tv[active]))
+   return (
+      centers,
+      numerical,
+      averaged_exact,
+      float(np.max(component_l1)),
+      maximum_overshoot,
+      maximum_tv_ratio,
+   )
+
+
 def validate_exact_balsara(
    args: argparse.Namespace,
+   *,
+   riemann_method: str = "hll",
+   candidate_riemann_method: str = "hll",
+   cases: tuple[dict[str, object], ...] = EXACT_BALSARA_CASES,
+   cells: int = 512,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
    results: list[dict[str, object]] = []
    scalars: list[dict[str, object]] = []
    component_names = ("dens", "mom1", "mom2", "mom3", "tau", "b1", "b2", "b3")
-   for spec in EXACT_BALSARA_CASES:
+   for spec in cases:
       case = int(spec["case"])
       left = spec["left"]
       right = spec["right"]
       overrides = {
          "geometry.prob_lo": "-1.0",
          "geometry.prob_hi": "1.0",
-         "amr.n_cell": "512",
+         "amr.n_cell": str(cells),
          "amr.max_grid_size": "128",
          "pyfluid.gamma": repr(spec["gamma"]),
          "pyfluid.final_time": repr(spec["time"]),
@@ -457,7 +575,9 @@ def validate_exact_balsara(
          "pyfluid.ng": "3",
          "pyfluid.cfl": "0.9",
          "pyfluid.recon": "mp5",
+         "pyfluid.riemann": riemann_method,
          "pyfluid.rmhd_candidate_guard": "pwc",
+         "pyfluid.rmhd_candidate_riemann": candidate_riemann_method,
          "pyfluid.scalar_int": "64",
          "pyfluid.plot_int": "1000000",
       }
@@ -468,8 +588,13 @@ def validate_exact_balsara(
             strict=True,
          ):
             overrides[f"pyfluid.{name}_{side}"] = repr(value)
+      run_name = f"balsara{case}_exact"
+      if riemann_method != "hll":
+         run_name = f"balsara{case}_{riemann_method}_exact"
+      if candidate_riemann_method != "hll":
+         run_name += f"_guard_{candidate_riemann_method}"
       run_dir, scalar = run_case(
-         f"balsara{case}_exact",
+         run_name,
          INPUTS / "rmhd_balsara1_1d.in",
          overrides,
          args,
@@ -527,6 +652,7 @@ def validate_exact_balsara(
          )
       fallback_count, reset_count = relativistic_recovery_counts(run_dir)
       pwl_count, pwc_count = rmhd_candidate_correction_counts(run_dir)
+      riemann_hll_fallbacks = rmhd_riemann_hll_fallback_count(run_dir)
       if fallback_count != 0 or reset_count != 0:
          raise RuntimeError(
             f"Balsara {case} required a post-update recovery repair: "
@@ -534,7 +660,7 @@ def validate_exact_balsara(
          )
       results.append({
          "kind": "exact",
-         "case": f"balsara{case}_exact",
+         "case": run_name,
          "status": "PASS",
          "metric": "maximum_normalized_component_l1",
          "value": maximum_error,
@@ -542,6 +668,7 @@ def validate_exact_balsara(
          "atmosphere_resets": reset_count,
          "rmhd_pwl_corrections": pwl_count,
          "rmhd_pwc_corrections": pwc_count,
+         "rmhd_riemann_hll_fallbacks": riemann_hll_fallbacks,
          "run_dir": repo_relative(run_dir),
       })
       scalars.append(scalar)
@@ -879,8 +1006,10 @@ def main() -> int:
    parser.add_argument("--timeout", type=int, default=180)
    parser.add_argument("--force", action="store_true")
    args = parser.parse_args()
-   if not amrex_executable(1).exists() or not CHECKPOINT_COMPARE.exists():
-      raise SystemExit("build the AMReX solvers and 2D checkpoint comparator first")
+   if args.level == "standard":
+      build_cached_target(CHECKPOINT_COMPARE.name)
+   if not amrex_executable(1).exists():
+      raise SystemExit("build the AMReX solvers first")
 
    rows: list[dict[str, object]] = []
    scalar_rows: list[dict[str, object]] = []
@@ -929,6 +1058,7 @@ def main() -> int:
          "atmosphere_resets",
          "rmhd_pwl_corrections",
          "rmhd_pwc_corrections",
+         "rmhd_riemann_hll_fallbacks",
          "run_dir",
       ],
    )

@@ -365,7 +365,7 @@ inline void apply_face_b_boundary(
 #endif
       {
       for (amrex::MFIter mfi(face, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-         const amrex::Box bx = amrex::grow(mfi.tilebox(), ng);
+         const amrex::Box bx = mfi.growntilebox(ng);
          const auto f = face.array(mfi);
          const int d = dir;
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {

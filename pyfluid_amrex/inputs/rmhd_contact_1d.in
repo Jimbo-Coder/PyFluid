@@ -1,0 +1,52 @@
+pyfluid.run_name = rmhd_contact_1d
+pyfluid.output_dir = runs/current/rmhd_contact/rmhd_contact_1d
+
+geometry.prob_lo = -0.5
+geometry.prob_hi = 0.5
+geometry.is_periodic = 0
+
+amr.n_cell = 64
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+spacetime.evolution = fixed
+
+pyfluid.physics = rmhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = sod_x
+pyfluid.gamma = 1.6666666666666667
+pyfluid.shock_x0 = 0.0
+
+pyfluid.rho_left = 10.0
+pyfluid.pressure_left = 1.0
+pyfluid.v1_left = 0.0
+pyfluid.v2_left = 0.7
+pyfluid.v3_left = 0.2
+pyfluid.b1_left = 5.0
+pyfluid.b2_left = 1.0
+pyfluid.b3_left = 0.5
+
+pyfluid.rho_right = 1.0
+pyfluid.pressure_right = 1.0
+pyfluid.v1_right = 0.0
+pyfluid.v2_right = 0.7
+pyfluid.v3_right = 0.2
+pyfluid.b1_right = 5.0
+pyfluid.b2_right = 1.0
+pyfluid.b3_right = 0.5
+
+pyfluid.final_time = 0.1
+pyfluid.max_step = 10000
+pyfluid.ng = 1
+pyfluid.cfl = 0.9
+pyfluid.recon = pwc
+pyfluid.riemann = hlld
+pyfluid.timestep = ssprk3
+pyfluid.bc = outflow
+pyfluid.ct = off
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 1000000
+pyfluid.checkpoint_int = -1

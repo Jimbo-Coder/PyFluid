@@ -36,6 +36,12 @@ methods and physics belong in their topic documents; coding style belongs in
   Its CMake feature switch must remove that owner from the source list, not
   merely hide its factory case. Candidate correction composes selected
   reconstruction methods at runtime; it is not another template axis.
+- A large pointwise algorithm that would multiply through every generic
+  reconstruction owner belongs in one dedicated compiled owner. Keep its
+  public header to a small host entry, keep device-callable mathematics in one
+  private algorithm header, and prevent unintended inlining when measured
+  object growth shows cloned bodies. Instantiate only runtime-valid method
+  combinations; configuration must reject misleading unsupported variants.
 - Runtime reduction identity/integrands come from the diagnostic catalog.
   Runtime AMReX reductions own discrete totals; postprocessing owns analytic
   comparisons and derived presentation.
@@ -46,6 +52,11 @@ methods and physics belong in their topic documents; coding style belongs in
 - Large host orchestration belongs in compiled `.cpp` owners. Header-only code
   is for small value types and pointwise CPU/GPU kernels where inlining is part
   of the implementation. Runtime method choice occurs outside cell loops.
+- The standard suite runs the generated-equation numerical contracts after
+  the CMake code-generation dependency has established freshness. Exact
+  byte-for-byte regeneration of every expensive SymPy artifact belongs in the
+  full suite; do not make ordinary solver iteration repeat that exhaustive
+  check.
 
 ## AMR And Output Infrastructure
 
@@ -56,10 +67,37 @@ methods and physics belong in their topic documents; coding style belongs in
   FillPatch, subcycling, and repair seeds. Fluid state is refluxed and averaged
   down; CT uses edge-EMF reflux and face average-down; nodal spacetime follows
   its nodal synchronization contract and is not refluxed.
+- A physics-system admissibility restriction augments that selected
+  interpolater in its state-transfer owner; it is not a second interpolater or
+  a post-transfer atmosphere repair. Keep relativistic conserved components
+  and a coarse parent's child family coupled so a conservative base retains its
+  parent average. AMReX may request only part of one child family for a FAB or
+  ghost region, so the owner must interpolate and limit the complete
+  sibling-aligned family in private scratch before copying the requested
+  subset. A partial-region call must not change the resulting child values.
+- Face-centered magnetic fields are canonical when CT is active. Before an
+  accepted relativistic state is exposed to another RK stage or AMR level,
+  synchronize its cell-centered magnetic components from the corresponding
+  canonical face state and apply physical acceptance with that same field.
+  A final post-sync recovery/projection is a backstop, not a substitute for
+  stage-consistent face-field evolution.
+- After hierarchy synchronization or regrid, refresh the metric coupling and
+  perform final relativistic acceptance before exposing or writing the state.
+  Newly created or remade levels must keep current and old-time storage
+  semantically consistent after that acceptance step.
+- CPU-tiled kernels that write ghost regions use `MFIter::growntilebox` so
+  adjacent internal tiles do not write overlapping grown boxes. Device-side
+  temporary FABs retain AMReX `Elixir` ownership through asynchronous kernels
+  and copies. The 2D/3D boundary-tiling gate covers ordinary, patch-union,
+  relativistic, and CT ghost fills with forced small tiles.
 - State and auxiliary GF snapshots use generated field descriptors. Auxiliary
   output normally inherits the state GF cadence; explicit compute/write
   overrides remain available. Scalar diagnostics and checkpoints retain their
   independent cadences.
+- Shared TSV writers escape embedded NUL, tab, carriage-return, and newline
+  characters rather than corrupting row structure. Canonical validation result
+  paths belong to the complete declared matrix; filtered or exploratory runs
+  write distinct result names and must not overwrite canonical evidence.
 
 ## Independent Numerical References
 

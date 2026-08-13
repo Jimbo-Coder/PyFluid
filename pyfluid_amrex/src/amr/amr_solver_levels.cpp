@@ -1,4 +1,5 @@
 #include "amr/amr_solver_base.hpp"
+#include "amr/state_interpolation.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
 
@@ -12,7 +13,8 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
      initial_data_provider_(cfg_),
      recovery_atmosphere_(recovery_atmosphere_state(
         eos_method_code(cfg_), eos_params(cfg_)
-     ))
+     )),
+     state_interpolater_(std::make_unique<MeshBasisStateInterpolater>())
 {
    validate_config(cfg_);
    validate_amr_refinement_ratios();
@@ -44,12 +46,6 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
       !spacetime_state_.evolves()
       && cfg_.spacetime_initial_data == "minkowski"
       && cfg_.initial_data_input_file.empty();
-   state_interpolater_.configure(
-      selected_state_interpolater(),
-      mesh_layout_.coordinate,
-      mesh_layout_.axes,
-      !mhd_enabled()
-   );
    validate_state_interpolation_nesting();
    recon_method_ = recon_method_code(cfg_);
    recon_fine_method_ = cfg_.recon_fine.empty()
@@ -124,6 +120,8 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
    }
 }
 
+AmrSolverBase::~AmrSolverBase() = default;
+
 void AmrSolverBase::define_flux_registers(int first_fine_level)
 {
    first_fine_level = std::max(first_fine_level, 1);
@@ -178,17 +176,6 @@ void AmrSolverBase::reset_flux_registers()
    for (int lev = 1; lev <= finestLevel(); ++lev) {
       reset_flux_register(lev);
    }
-}
-
-void AmrSolverBase::reset_edge_flux_registers()
-{
-#if (AMREX_SPACEDIM >= 2)
-   for (int lev = 1; lev <= finestLevel(); ++lev) {
-      if (edge_flux_registers_[lev]) {
-         edge_flux_registers_[lev]->reset();
-      }
-   }
-#endif
 }
 
 void AmrSolverBase::reset_flux_register(int fine_lev)

@@ -12,6 +12,7 @@ from postprocess_radiation import postprocess, self_test
 from validation_common import (
     ROOT,
     SMOKE_POLICY,
+    build_cached_target,
     materialize_run_input,
     read_tsv,
     repo_relative,
@@ -56,6 +57,7 @@ def validate(args: argparse.Namespace) -> Path:
         shutil.rmtree(RUN_ROOT)
     RUN_DIR.mkdir(parents=True, exist_ok=True)
 
+    build_cached_target(SURFACE_CHECK.name)
     surface = run_mpi(SURFACE_CHECK, ranks=args.ranks, timeout=args.timeout)
     (RUN_DIR / "surface_check.log").write_text(surface.stdout)
     if surface.returncode != 0:

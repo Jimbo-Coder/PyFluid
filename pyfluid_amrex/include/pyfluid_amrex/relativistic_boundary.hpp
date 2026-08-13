@@ -102,7 +102,7 @@ inline void apply_metric_state_boundary(
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      amrex::Box grown = amrex::grow(mfi.tilebox(), ng);
+      amrex::Box grown = mfi.growntilebox(ng);
       grown &= state[mfi].box();
       const amrex::BoxList ghost_boxes = amrex::boxDiff(grown, domain);
       const auto values = state.array(mfi);

@@ -46,7 +46,6 @@
 #include "pyfluid_amrex/profiling.hpp"
 #include "pyfluid_amrex/solid_fields.hpp"
 #include "pyfluid_amrex/state.hpp"
-#include "amr/state_interpolation.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 #include "pyfluid_amrex/spacetime_coupling_storage.hpp"
 #include "pyfluid_amrex/temporal_cadence.hpp"
@@ -55,6 +54,7 @@
 namespace pyfluid_amrex {
 
 class HierarchyInterpolationPlan;
+class MeshBasisStateInterpolater;
 class ParametricSurface;
 struct MultipoleDiagnostics;
 struct RadiationDiagnostics;
@@ -62,6 +62,7 @@ struct RadiationDiagnostics;
 class AmrSolverBase : public amrex::AmrCore {
 public:
    explicit AmrSolverBase(RunConfig cfg);
+   ~AmrSolverBase() override;
 
 protected:
    using StateFillPatchFunc = amrex::GpuBndryFuncFab<StateFillPatchBoundary>;
@@ -441,7 +442,6 @@ protected:
 
    void define_flux_registers(int first_fine_level = 1);
    void reset_flux_registers();
-   void reset_edge_flux_registers();
    void reset_flux_register(int fine_lev);
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> flux_ptrs(int lev);
 #if (AMREX_SPACEDIM >= 2)
@@ -555,6 +555,13 @@ protected:
    );
 
    void write_current_state_plotfile(int step, amrex::Real time) const;
+   void write_debug_stage_state(
+      LevelData const& state,
+      std::string const& stage_name,
+      amrex::Real time,
+      int lev_begin,
+      int lev_end
+   ) const;
    void write_current_aux_gfs(int step, amrex::Real time);
    std::string checkpoint_dir() const;
    void load_checkpoint(std::string const& checkpoint_name, amrex::Real& time, amrex::Real& dt);
@@ -597,7 +604,7 @@ protected:
    bool moving_wall_work_enabled_ = false;
    bool suppress_athena_gravity_energy_source_ = false;
    BoundaryData boundary_data_{};
-   mutable MeshBasisStateInterpolater state_interpolater_{};
+   mutable std::unique_ptr<MeshBasisStateInterpolater> state_interpolater_;
    amrex::Vector<amrex::BCRec> state_fillpatch_bcs_;
    amrex::Array<amrex::Vector<amrex::BCRec>, AMREX_SPACEDIM> face_fillpatch_bcs_;
    StateFillPatchFunc state_fillpatch_func_;
@@ -667,10 +674,13 @@ protected:
       step_rmhd_pwl_correction_count_{0};
    amrex::Gpu::DeviceScalar<amrex::Long>
       step_rmhd_pwc_correction_count_{0};
+   amrex::Gpu::DeviceScalar<amrex::Long>
+      step_rmhd_riemann_hll_fallback_count_{0};
    amrex::Long relativistic_c2p_fallback_count_ = 0;
    amrex::Long relativistic_atmosphere_reset_count_ = 0;
    amrex::Long rmhd_pwl_correction_count_ = 0;
    amrex::Long rmhd_pwc_correction_count_ = 0;
+   amrex::Long rmhd_riemann_hll_fallback_count_ = 0;
    amrex::Vector<amrex::Real> level_times_;
    amrex::Vector<amrex::Real> level_old_times_;
    amrex::Vector<amrex::Real> level_dts_;

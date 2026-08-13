@@ -1,17 +1,28 @@
 #!/usr/bin/env python3
-"""Test a complete causal fan in an exact NRMHD invariant subsystem.
+"""Test a state-derived two-fan lifecycle in an exact NRMHD subsystem.
 
 For gamma=2, zero normal field and transverse velocity, and ``By = k rho``,
 one-dimensional ideal MHD is exactly Euler flow with effective pressure equal
 to gas pressure plus magnetic pressure.  This maps the symmetric shock
 collision and fan-rebirth problem into a genuinely magnetized fast-wave test.
-It exercises MHD conservation, induction, primitive recovery, HLLD, and fan
-interaction, but not nonzero normal field, Alfvén/slow waves, CT, or AMR.
+Two initial fan origins and endpoint states are recovered from finite-volume
+data with strict plateau/mixture checks.  The initial and child Euler fans are
+then solved from those recovered states, so this is explicitly
+exact-Euler-solver-assisted, not an oracle-free general MHD Riemann provider.
+It exercises MHD conservation, induction, primitive recovery, HLLD, and one
+causal interaction, but not nonzero normal field, Alfvén/slow waves, CT, AMR,
+or a general regularity selector.
+
+Course-correction status: parked as an exact-subsystem interaction control.
+It does not establish a general NRHD-to-GRMHD reconstruction path and must not
+be promoted into production.  Production work resumes from saved, stage-local
+SRMHD flux causality before any broader fan-lifecycle implementation.
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import math
 import sys
 from pathlib import Path
@@ -33,6 +44,14 @@ import research_wave_reconstruction as hydro  # noqa: E402
 
 Array = np.ndarray
 TIME_NODES, TIME_WEIGHTS = np.polynomial.legendre.leggauss(8)
+
+
+@dataclasses.dataclass(frozen=True)
+class MhdFanBirth:
+    left: Array
+    right: Array
+    position: float
+    location_kind: str
 
 
 def effective_to_mhd(
@@ -71,6 +90,193 @@ def map_effective_averages(
     if not mhd.primitive_is_admissible(mapped):
         raise RuntimeError("mapped MHD cell averages are inadmissible")
     return mapped
+
+
+def mhd_to_effective(
+    primitive: Array,
+    magnetic_mass_ratio: float,
+) -> Array:
+    """Invert the restricted perpendicular-field invariant map."""
+    primitive = np.asarray(primitive, dtype=float)
+    if not mhd.primitive_is_admissible(primitive[np.newaxis, :]):
+        raise ValueError("inferred MHD fan endpoint is inadmissible")
+    rho, velocity, vy, vz, pressure, bx, by, bz = primitive
+    scale = max(abs(magnetic_mass_ratio * rho), 1.0)
+    if (
+        max(abs(vy), abs(vz), abs(bx), abs(bz)) > 3.0e-10
+        or abs(by - magnetic_mass_ratio * rho) > 3.0e-10 * scale
+    ):
+        raise ValueError("state is outside the perpendicular MHD subsystem")
+    return np.asarray((rho, velocity, pressure + 0.5 * by * by))
+
+
+def find_two_mhd_fan_births(
+    primitive: Array,
+    gamma: float,
+) -> tuple[MhdFanBirth, MhdFanBirth] | None:
+    """Infer exactly two isolated Riemann origins from finite-volume state."""
+    cells = len(primitive)
+    dx = 1.0 / cells
+    births: list[MhdFanBirth] = []
+    for cell in range(2, cells - 2):
+        left_outer, left, average, right, right_outer = primitive[
+            cell - 2 : cell + 3
+        ]
+        if not physical_mhd.states_agree(left_outer, left, gamma):
+            continue
+        if not physical_mhd.states_agree(right, right_outer, gamma):
+            continue
+        mixture = physical_mhd.fit_mhd_conserved_mixture(
+            average,
+            left,
+            right,
+            gamma,
+            mixture_tolerance=2.0e-10,
+        )
+        if mixture is None:
+            continue
+        births.append(
+            MhdFanBirth(
+                left=np.asarray(left, dtype=float).copy(),
+                right=np.asarray(right, dtype=float).copy(),
+                position=(cell + mixture.left_fraction) * dx,
+                location_kind="mixed_cell",
+            )
+        )
+    for face in range(2, cells - 1):
+        left_outer, left, right, right_outer = primitive[face - 2 : face + 2]
+        if not physical_mhd.states_agree(left_outer, left, gamma):
+            continue
+        if not physical_mhd.states_agree(right, right_outer, gamma):
+            continue
+        if physical_mhd.states_agree(left, right, gamma):
+            continue
+        births.append(
+            MhdFanBirth(
+                left=np.asarray(left, dtype=float).copy(),
+                right=np.asarray(right, dtype=float).copy(),
+                position=face * dx,
+                location_kind="face",
+            )
+        )
+    if len(births) != 2:
+        return None
+    first, second = sorted(births, key=lambda birth: birth.position)
+    if first.position >= second.position:
+        return None
+    return first, second
+
+
+def build_state_derived_problem(
+    primitive: Array,
+    gamma: float,
+    magnetic_mass_ratio: float,
+) -> tuple[interaction.InteractionProblem, tuple[MhdFanBirth, MhdFanBirth]] | None:
+    """Solve the restricted exact-Euler fan lifecycle from two inferred births."""
+    births = find_two_mhd_fan_births(primitive, gamma)
+    if births is None:
+        return None
+    left_birth, right_birth = births
+    try:
+        left = mhd_to_effective(left_birth.left, magnetic_mass_ratio)
+        middle_left = mhd_to_effective(left_birth.right, magnetic_mass_ratio)
+        middle_right = mhd_to_effective(right_birth.left, magnetic_mass_ratio)
+        right = mhd_to_effective(right_birth.right, magnetic_mass_ratio)
+    except ValueError:
+        return None
+    if not physical_mhd.states_agree(
+        left_birth.right, right_birth.left, gamma
+    ):
+        return None
+    middle = 0.5 * (middle_left + middle_right)
+    left_fan = interaction.fan.exact_fan_bundle(left, middle, gamma)
+    right_fan = interaction.fan.exact_fan_bundle(middle, right, gamma)
+    closing_speed = left_fan.right_head_speed - right_fan.left_head_speed
+    if (
+        not left_fan.right_is_shock
+        or not right_fan.left_is_shock
+        or closing_speed <= 0.0
+    ):
+        return None
+    interaction_time = (
+        right_birth.position - left_birth.position
+    ) / closing_speed
+    left_collision_position = (
+        left_birth.position + left_fan.right_head_speed * interaction_time
+    )
+    right_collision_position = (
+        right_birth.position + right_fan.left_head_speed * interaction_time
+    )
+    if not math.isclose(
+        left_collision_position,
+        right_collision_position,
+        rel_tol=0.0,
+        abs_tol=2.0e-12,
+    ):
+        return None
+    interaction_position = 0.5 * (
+        left_collision_position + right_collision_position
+    )
+    # This child is deliberately exact-Euler-solver-assisted in the invariant
+    # subsystem. It is not a general NRMHD Riemann or regularity selector.
+    child_fan = interaction.fan.exact_fan_bundle(
+        left_fan.star_right,
+        right_fan.star_left,
+        gamma,
+    )
+    left_denominator = left_fan.contact_speed - child_fan.left_head_speed
+    right_denominator = child_fan.right_head_speed - right_fan.contact_speed
+    if left_denominator <= 0.0 or right_denominator <= 0.0:
+        return None
+    left_next = (
+        interaction_position
+        - child_fan.left_head_speed * interaction_time
+        - left_birth.position
+    ) / left_denominator
+    right_next = (
+        right_birth.position
+        - interaction_position
+        + child_fan.right_head_speed * interaction_time
+    ) / right_denominator
+    next_interaction_time = min(left_next, right_next)
+    if next_interaction_time <= interaction_time:
+        return None
+    return (
+        interaction.InteractionProblem(
+            left=left,
+            middle=middle,
+            right=right,
+            left_position=left_birth.position,
+            right_position=right_birth.position,
+            left_fan=left_fan,
+            right_fan=right_fan,
+            interaction_time=interaction_time,
+            interaction_position=interaction_position,
+            child_fan=child_fan,
+            next_interaction_time=next_interaction_time,
+        ),
+        births,
+    )
+
+
+def validate_birth_rejections(initial: Array, gamma: float) -> None:
+    """Reject smooth, damaged, and over-specified initial fan data."""
+    constant = np.repeat(initial[:1], len(initial), axis=0)
+    if find_two_mhd_fan_births(constant, gamma) is not None:
+        raise RuntimeError("constant MHD data produced two fan births")
+    damaged = initial.copy()
+    damaged[len(initial) * 7 // 20, 7] = 1.0e-3
+    if find_two_mhd_fan_births(damaged, gamma) is not None:
+        raise RuntimeError("damaged MHD data produced two fan births")
+    left, middle, right = initial[0], initial[len(initial) // 2], initial[-1]
+    ambiguous = np.empty_like(initial)
+    quarter = len(initial) // 4
+    ambiguous[:quarter] = left
+    ambiguous[quarter : 2 * quarter] = middle
+    ambiguous[2 * quarter : 3 * quarter] = right
+    ambiguous[3 * quarter :] = middle
+    if find_two_mhd_fan_births(ambiguous, gamma) is not None:
+        raise RuntimeError("ambiguous MHD data produced two fan births")
 
 
 def validate_invariant_subsystem(
@@ -300,43 +506,87 @@ def main() -> None:
     parser.add_argument("--magnetic-mass-ratio", type=float, default=0.1)
     args = parser.parse_args()
     gamma = 2.0
-    problem = interaction.make_symmetric_problem(gamma)
+    reference_problem = interaction.make_symmetric_problem(gamma)
     validate_invariant_subsystem(
-        problem,
+        reference_problem,
         gamma,
         args.magnetic_mass_ratio,
-    )
-    final_time = 0.5 * (
-        problem.interaction_time + problem.next_interaction_time
-    )
-    print(
-        "event"
-        f"\tinteraction_time={problem.interaction_time:.12e}"
-        f"\tnext_interaction_time={problem.next_interaction_time:.12e}"
-        f"\tfinal_time={final_time:.12e}"
-        f"\tmagnetic_mass_ratio={args.magnetic_mass_ratio:.12e}"
     )
     results: list[physical_mhd.Result] = []
     for cells in args.cells:
         effective_initial = interaction.cell_averages(
-            problem,
+            reference_problem,
             cells,
             0.0,
-            gamma,
-        )
-        effective_exact = interaction.cell_averages(
-            problem,
-            cells,
-            final_time,
             gamma,
         )
         initial = map_effective_averages(
             effective_initial,
             args.magnetic_mass_ratio,
         )
+        validate_birth_rejections(initial, gamma)
+        derived = build_state_derived_problem(
+            initial,
+            gamma,
+            args.magnetic_mass_ratio,
+        )
+        if derived is None:
+            raise RuntimeError("failed to derive two MHD fan births")
+        problem, births = derived
+        if (
+            not math.isclose(
+                births[0].position,
+                reference_problem.left_position,
+                rel_tol=0.0,
+                abs_tol=3.0e-13,
+            )
+            or not math.isclose(
+                births[1].position,
+                reference_problem.right_position,
+                rel_tol=0.0,
+                abs_tol=3.0e-13,
+            )
+            or not math.isclose(
+                problem.interaction_time,
+                reference_problem.interaction_time,
+                rel_tol=0.0,
+                abs_tol=3.0e-13,
+            )
+        ):
+            raise RuntimeError("state-derived MHD event recovery is incorrect")
+        validate_invariant_subsystem(
+            problem,
+            gamma,
+            args.magnetic_mass_ratio,
+        )
+        final_time = 0.5 * (
+            problem.interaction_time + problem.next_interaction_time
+        )
+        effective_exact = interaction.cell_averages(
+            reference_problem,
+            cells,
+            final_time,
+            gamma,
+        )
         exact = map_effective_averages(
             effective_exact,
             args.magnetic_mass_ratio,
+        )
+        print(
+            "state_derived_event"
+            f"\tcells={cells}"
+            f"\tleft_origin={births[0].position:.12e}"
+            f"\tright_origin={births[1].position:.12e}"
+            f"\tleft_kind={births[0].location_kind}"
+            f"\tright_kind={births[1].location_kind}"
+            f"\tinteraction_time={problem.interaction_time:.12e}"
+            f"\tnext_interaction_time={problem.next_interaction_time:.12e}"
+            f"\tfinal_time={final_time:.12e}"
+            "\tchild=exact_euler_solver_assisted"
+        )
+        print(
+            "state_derived_birth_rejections"
+            "\tconstant=passed\tdamaged=passed\tambiguous=passed"
         )
         for cfl in args.cfl:
             baseline, baseline_completed = mhd.evolve(
@@ -368,7 +618,10 @@ def main() -> None:
             )
             candidate_result = physical_mhd.result_from_exact(
                 case="perpendicular_fast_shock_collision",
-                method="causal_full_fan",
+                method=(
+                    "causal_state_derived_two_fans_"
+                    "exact_euler_child"
+                ),
                 cells=cells,
                 cfl=cfl,
                 completed=candidate_completed,

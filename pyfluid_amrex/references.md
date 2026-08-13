@@ -20,6 +20,8 @@ It intentionally links rather than restating the detailed contracts.
 | Topic | Primary implementation/source of truth | Explanatory document |
 | --- | --- | --- |
 | Architecture, ownership, AMR, coordinates | `src/`, `include/pyfluid_amrex/` | `docs/design.md` |
+| Relativistic coarse-fine admissibility and partial sibling regions | `src/amr/state_interpolation.{hpp,cpp}`, `tests/state_interpolation_check.cpp`, `tools/validate_rmhd_balsara3_amr_prolongation.py` | `docs/design.md`, Cycles 283--284 |
+| CPU tiled ghost ownership and device scratch lifetime | `include/pyfluid_amrex/{boundary,relativistic_boundary,ct}.hpp`, `src/relativity/relativistic_atmosphere.hpp`, `src/amr/state_interpolation.cpp`, `tests/boundary_tiling_check.cpp`, `tools/validate_boundary_tiling.py` | `docs/infrastructure_conventions.md`, Cycle 284 |
 | Coding and review policy | current source | `docs/code_conventions.md` |
 | Runtime configuration | `include/pyfluid_amrex/config.hpp`, `src/framework/config*.{cpp,hpp}` | `README.md`, configuration rules |
 | Grid fields, components, centerings | `schema/fields.toml`, loaded by `codegen/pyfluid_codegen/field_catalog.py` | `docs/catalog_schema.md`, generated field sections in `docs/equations.md` |
@@ -27,7 +29,11 @@ It intentionally links rather than restating the detailed contracts.
 | Diagnostics and reductions | `codegen/pyfluid_codegen/diagnostic_catalog.py`, `src/amr/amr_solver_diagnostics.cpp` | `docs/diagnostics.md` |
 | Generated equations | labeled symbolic sources under `codegen/pyfluid_codegen/` | `docs/equations.md`, `docs/equations.tex` |
 | Relativistic HD/MHD and Z4c | generated kernels, `src/relativity/{rhd_system,rmhd_system,relativistic_atmosphere}.hpp`, `include/pyfluid_amrex/relativistic_boundary.hpp`, and `src/amr/amr_solver_spacetime*.cpp` | `docs/grmhd_development.md` |
+| RMHD HLLC/HLLD fan and closure | `include/pyfluid_amrex/{rmhd_riemann,rmhd_advanced_flux}.hpp`, `src/relativity/rmhd_advanced_flux.cpp`, `tests/rmhd_riemann_check.cpp`, and `tools/validate_rmhd_advanced_riemann.py` | Mignone--Bodo and Mignone--Ugliano--Bodo references below; Cycles 262 and 284 |
+| CT stage and AMR ownership | `src/amr/solver_sections/{ct_evolution,time_integrators,evolve_core,subcycling}.inc.hpp`, `src/numerics/ct_edge_flux_register.cpp`, and `tools/validate_ct_divb.py` | `docs/design.md`, current CT boundary in `knowledge.md` |
 | Exact SRMHD Riemann profiles | tracked `../exact_balsara/solution_b{1..5}.dat`, read by `tools/validate_rmhd.py` | Giacomazzo--Rezzolla exact solver and paper below |
+| SRMHD symptom onset, hybrid attribution, and prototype applicability | `tools/diagnose_rmhd_balsara_onset.py`, `tools/audit_srmhd_physical_wave_balsara.py`, their TSVs under `runs/current/rmhd_validation/`, and `plots/current/scans/rmhd_balsara*_profiles.png` plus `rmhd_balsara_hybrid_timelines.png` and `rmhd_balsara_hybrid_profile_evolution.png` | `docs/unified_shock_capturing_research.md`, Cycles 252--258 |
+| Coherent space-time operator attribution | `tools/research_spacetime_operator_ablation.py`, `tools/research_mhd_spacetime_operator_ablation.py`, and `tools/research_srmhd_spacetime_operator_ablation.py` | `docs/unified_shock_capturing_research.md`, Cycles 273--274 |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
 | Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
 | Adaptive Richardson status | AMR estimator and validation tools | `docs/adaptive_richardson.md` |
@@ -35,9 +41,9 @@ It intentionally links rather than restating the detailed contracts.
 | External review triage | current source | `review_backlog.md` |
 | Independent AthenaK comparison | `/Users/mrizzo/phys_research/athenak/athenak` | local `README.md`, test suite, and inputs |
 
-Generated C++ and JSON files are derived views. Change their current Python
-catalog, later declarative schema, or equation source; regenerate and verify
-consistency rather than hand-editing generated artifacts.
+Generated C++ and JSON files are derived views. Change the owning declarative
+schema, strict catalog loader, or labeled equation source; regenerate and
+verify consistency rather than hand-editing generated artifacts.
 
 ## Validation Ladder
 
@@ -77,6 +83,16 @@ run, use `tools/report_run.py`; for an ad-hoc raw run, use
 `tools/validate_run_scalars.py` unless the declared policy is intentionally
 nonconservative. Runtime `scalars.tsv` reductions remain the source of truth
 for core totals and ledgers.
+
+For AMR interpolation call-path comparisons, the installed AMReX 25.11 headers
+are under `.deps/amrex-mpi-lsolvers-hdf5/include/`; route first to
+`AMReX_FillPatchUtil_I.H`, `AMReX_Interpolater.H`, and
+`AMReX_Interp_1D_C.H`. AthenaK's corresponding componentwise prolongation is
+under `/Users/mrizzo/phys_research/athenak/athenak/src/mesh/` in
+`prolongation.hpp` and `mesh_refinement.cpp`. AsterX declares conserved-group
+prolongation in
+`/Users/mrizzo/phys_research/ETK_CarpetX/CactusX/repos/AsterX/AsterX/interface.ccl`.
+These are behavior/provenance references, not sources to import.
 
 ## Durable Evidence Locations
 
@@ -136,8 +152,8 @@ the generated TSV/log, and the current source revision/dirty state.
   `/Users/mrizzo/phys_research/ETK_Carpet/pcocal_illinois/Cocal/TIPS/README.txt`
   explicitly reuses each converged 3D solution as the initial guess for the
   next model. `TIPS/README_rnspar.txt` documents constant-rest-mass sequence
-  controls and 1D/3D converged-data inputs. This is the immediate reference for
-  the planned reusable physical-ID sequence seed.
+  controls and 1D/3D converged-data inputs. This is an independent provenance
+  route for the implemented persisted sequence-continuation semantics.
 
 ## Local AthenaK Reference
 
@@ -235,6 +251,11 @@ implementations:
   Runge--Kutta Time Stepping*,
   [NASA record and paper](https://ntrs.nasa.gov/citations/19970010128):
   original MP5 construction and its high-order monotonicity-preserving bounds.
+- P. Colella and P. R. Woodward, *The Piecewise Parabolic Method (PPM) for Gas-
+  Dynamical Simulations*,
+  [paper](https://doi.org/10.1016/0021-9991(84)90143-8): original monotonic PPM,
+  flattening, and density contact-steepening construction. The local AthenaK
+  and AsterX routes above are implementation comparisons, not imported source.
 - P. Colella and M. D. Sekora, *A limiter for PPM that preserves accuracy at
   smooth extrema*,
   [paper](https://crd.lbl.gov/assets/pubs_presos/AMCS/ANAG/ColellaSekora.pdf);
@@ -291,6 +312,21 @@ implementations:
 - A. Mignone, M. Ugliano, and G. Bodo, *A five-wave HLL Riemann solver for
   relativistic MHD*, [arXiv:0811.1483](https://arxiv.org/abs/0811.1483):
   the nonlinear total-pressure closure and jump conditions for RMHD HLLD.
+- L. Antón et al., *Numerical 3+1 general relativistic magnetohydrodynamics: a
+  local characteristic approach*,
+  [arXiv:astro-ph/0506063](https://arxiv.org/abs/astro-ph/0506063): the
+  equivalence-principle construction that applies an SRMHD Riemann solver in a
+  local orthonormal frame for 3+1 GRMHD.
+- C. J. White, J. M. Stone, and C. F. Gammie, *An Extension of the Athena++
+  Code Framework for GRMHD Based on Advanced Riemann Solvers and
+  Staggered-Mesh Constrained Transport*,
+  [arXiv:1511.00943](https://arxiv.org/abs/1511.00943): an independent GRMHD
+  HLLC/HLLD plus staggered-CT implementation and validation route.
+- K. Kiuchi et al., *Implementation of advanced Riemann solvers in a
+  neutrino-radiation magnetohydrodynamics code in numerical relativity and its
+  application to a binary neutron star merger*,
+  [arXiv:2205.04487](https://arxiv.org/abs/2205.04487): numerical-relativity
+  HLLC/HLLD and advanced-CT tests in Minkowski and black-hole spacetimes.
 - K. Derigs et al., *Ideal GLM-MHD: About the entropy consistent nine-wave
   magnetic field divergence diminishing ideal magnetohydrodynamics
   equations*, [entropy-stable MHD route](https://arxiv.org/abs/1509.09311),
@@ -352,6 +388,47 @@ implementations:
   accepting a high-order candidate in smooth cells and replacing troubled
   cells a posteriori. The DG/subcell implementation is not a direct fit for
   the finite-volume AMReX path, but the MOOD-style policy is relevant.
+- M. Dumbser, O. Zanotti, R. Loubere, and S. Diot, *A posteriori subcell
+  limiting of the discontinuous Galerkin finite element method for hyperbolic
+  conservation laws*,
+  [arXiv:1406.7416](https://arxiv.org/abs/1406.7416): original local
+  space-time ADER plus MOOD/subcell precedent. It establishes that checking a
+  completed high-order candidate and recomputing troubled regions is an
+  existing method family; it does not validate PyFluid's particular finite-
+  volume DMP or MP5/PWL/PWC ladder.
+- N. Deppe et al., *A positivity-preserving adaptive-order finite-difference
+  scheme for GRMHD*,
+  [arXiv:2306.04755](https://arxiv.org/abs/2306.04755), with the source-checked
+  [SpECTRE PPAO implementation](https://github.com/sxs-collaboration/spectre/blob/develop/src/NumericalAlgorithms/FiniteDifference/PositivityPreservingAdaptiveOrder.hpp):
+  primary reference for using the relative highest-polynomial-mode power to
+  reduce order a priori. Its discrete order cascade and finite-difference
+  flux differencing are useful controls, not a validated replacement for
+  PyFluid's finite-volume candidate guard.
+- R. Bourgeois and D. Lee, *GP-MOOD: A positive-preserving high-order finite
+  volume method for hyperbolic conservation laws*,
+  [arXiv:2110.08683](https://arxiv.org/abs/2110.08683): primary finite-volume
+  precedent for accepting a high-order candidate and cascading local order
+  a posteriori. It supports the guard architecture, but not any particular
+  PyFluid DMP variable, tolerance, or RMHD/CT correction policy.
+- V. Berta, A. Mignone, M. Bugli, and G. Mattia, *A 4th-order accurate finite
+  volume method for ideal classical and special relativistic MHD based on
+  pointwise reconstructions*,
+  [arXiv:2310.11831](https://arxiv.org/abs/2310.11831): primary source for the
+  five-point discontinuity detector and local order-reduction strategy audited
+  in Cycle 264. Detection of a nonsmooth stencil does not by itself distinguish
+  a physical compound fan from a numerical oscillation.
+- K. Wu and H. Tang, *On physical-constraints-preserving schemes for special
+  relativistic magnetohydrodynamics with a general equation of state*,
+  [arXiv:1709.05838](https://arxiv.org/abs/1709.05838): rigorous
+  finite-volume/DG admissibility results for Lax--Friedrichs-type fluxes and
+  the required discrete divergence-free condition. PCP prevents unphysical
+  states; it is not a nonoscillatory-profile theorem.
+- J. Duan and H. Tang, *High-order accurate entropy stable nodal
+  discontinuous Galerkin schemes for the ideal special relativistic
+  magnetohydrodynamics*,
+  [arXiv:1911.03825](https://arxiv.org/abs/1911.03825): an RMHD entropy-stable
+  construction for a modified Powell-like system. Its entropy inequality does
+  not transfer unchanged to the present conservative staggered-CT update.
 - C. Pan et al., *A high-fidelity finite volume scheme for ideal
   magnetohydrodynamics equations using boundary variation diminishing
   algorithm*, [arXiv:2404.13015](https://arxiv.org/abs/2404.13015): recent
@@ -372,6 +449,12 @@ implementations:
   [arXiv:2407.02931](https://arxiv.org/abs/2407.02931): exact isolated-shock
   capture by explicitly representing a discontinuity inside a cell. Their
   current equation sets are not a drop-in conservative MHD or SRMHD method.
+- A. Harten, *ENO schemes with subcell resolution*,
+  [paper](https://doi.org/10.1016/0021-9991(89)90226-X): the original
+  polynomial-plus-in-cell-jump construction used to audit whether a
+  discontinuity can be recovered from neighboring finite-volume averages.
+  The construction is a representation tool, not by itself an MHD wave
+  admissibility or causal-front creation rule.
 - N. Aguillon, *A Non-dissipative Reconstruction Scheme for the Compressible
   Euler Equations*,
   [arXiv:1403.7497](https://arxiv.org/abs/1403.7497): conservative in-cell
@@ -409,6 +492,21 @@ implementations:
   space-time-predictor and divergence-free-MHD precedent. It motivates
   integrating a high-order background flux in time instead of treating a
   spatial reconstruction as the complete discontinuity update.
+- D. S. Balsara et al., *Efficient Implementation of ADER Schemes for Euler
+  and Magnetohydrodynamical Flows on Structured Meshes -- Comparison with
+  Runge-Kutta Methods*,
+  [arXiv:1006.2146](https://arxiv.org/abs/1006.2146): optimized structured-
+  mesh Euler/MHD evidence that ADER can be competitive with, and in that
+  implementation almost twice as fast as, comparable SSPRK schemes. It is a
+  performance precedent only; the current Python research wall times cannot
+  predict a generated AMReX implementation.
+- I. Cravero, M. Semplice, and G. Visconti, *Optimal definition of the
+  nonlinear weights in multidimensional Central WENOZ reconstructions*,
+  [arXiv:1811.08688](https://arxiv.org/abs/1811.08688),
+  [paper](https://doi.org/10.1137/18M1228232): primary CWENO-Z construction
+  and global-smoothness-indicator analysis. It is the reconstruction basis for
+  the offline one-polynomial-per-cell precursor; it does not establish a
+  coupled system sensor or an admissibility policy by itself.
 - M. Dumbser et al., *ADER-WENO finite volume schemes with space-time adaptive
   mesh refinement*,
   [arXiv:1212.3585](https://arxiv.org/abs/1212.3585): a conservative
@@ -416,6 +514,31 @@ implementations:
   predictor, including Euler and MHD with AMR. This is the primary general
   precedent for a coherent space-time background; it does not supply exact
   persistent front topology.
+- O. Zanotti and M. Dumbser, *Efficient conservative ADER schemes based on
+  WENO reconstruction and space-time predictor in primitive variables*,
+  [arXiv:1511.04728](https://arxiv.org/abs/1511.04728): the directly relevant
+  HD/RHD/MHD/RMHD precedent for reconstructing conservative averages to point
+  primitives, evolving one local primitive space-time polynomial, and then
+  applying a conservative flux update. Equations 40--44 define the directly
+  implemented research precursor: tensor-product Gauss-Legendre Lagrange
+  space-time degrees of freedom, a weak primitive PDE integrated by parts in
+  time, and a cell-local discrete Picard solve. It supports a complete
+  ADER/GRP background, not a second-order Hancock flux spliced into
+  Runge--Kutta stages.
+- L. Anton et al., *Relativistic Magnetohydrodynamics: Renormalized
+  eigenvectors and full wave decomposition Riemann solver*,
+  [arXiv:0912.4692](https://arxiv.org/abs/0912.4692): primary reference for
+  complete left/right RMHD eigenvectors that remain regular in degenerate
+  physical states. Use it when replacing the offline numerical
+  eigensystem/real-Schur reconstruction basis with generated production
+  formulas; the paper does not validate PyFluid's Schur limiting fallback.
+- L. Anton et al., *Numerical 3+1 general relativistic magnetohydrodynamics: a
+  local characteristic approach*,
+  [arXiv:astro-ph/0506063](https://arxiv.org/abs/astro-ph/0506063): primary
+  reference for applying regular SRMHD characteristic information in a local
+  orthonormal frame within GRMHD. It is the routing source for the future
+  flat-space predictor-to-GR tetrad step, not evidence that CT/source/AMR
+  coupling follows automatically.
 - J. Li and Z. Du, *A Two-Stage Fourth Order Time-Accurate Discretization for
   Lax-Wendroff Type Flow Solvers. I. Hyperbolic Conservation Laws*,
   [arXiv:1512.03664](https://arxiv.org/abs/1512.03664), and Y. Yuan and

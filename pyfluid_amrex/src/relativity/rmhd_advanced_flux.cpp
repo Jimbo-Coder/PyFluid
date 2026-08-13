@@ -1,0 +1,333 @@
+#include "pyfluid_amrex/rmhd_advanced_flux.hpp"
+
+#include "pyfluid_amrex/build_options.hpp"
+#include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
+#include "pyfluid_amrex/flux_factory.hpp"
+#include "pyfluid_amrex/method_codes.hpp"
+#include "pyfluid_amrex/reconstruction/mp5.hpp"
+#include "pyfluid_amrex/reconstruction/parabolic.hpp"
+#include "pyfluid_amrex/reconstruction/ppm3.hpp"
+#include "pyfluid_amrex/reconstruction/ppm4.hpp"
+#include "pyfluid_amrex/reconstruction/ppmx.hpp"
+#include "pyfluid_amrex/reconstruction/teno5.hpp"
+#include "pyfluid_amrex/reconstruction/wenoz.hpp"
+#include "pyfluid_amrex/rmhd_riemann.hpp"
+#include "relativity/rmhd_system.hpp"
+
+#include <AMReX_GpuAtomic.H>
+#include <AMReX_GpuLaunch.H>
+#include <AMReX_MultiFab.H>
+
+namespace pyfluid_amrex {
+namespace {
+
+template <int ReconMethod, int RiemannMethod, int Direction, typename MetricAccessor>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDRiemannFluxResult rmhd_advanced_riemann_flux(
+   amrex::Array4<amrex::Real const> const& primitive,
+   int il,
+   int jl,
+   int kl,
+   int ir,
+   int jr,
+   int kr,
+   EOSParams const& eos,
+   MetricAccessor const& metric,
+   EOSThermodynamicState const& atmosphere
+) noexcept
+{
+   const RMHDPrimitiveFaceStates face =
+      rmhd_primitive_face_states<ReconMethod, Direction>(
+         primitive,
+         il,
+         jl,
+         kl,
+         ir,
+         jr,
+         kr,
+         eos,
+         metric,
+         atmosphere,
+         atmosphere
+      );
+   const SpacetimeMetric face_metric = metric.template face<Direction>(
+      ir, jr, kr
+   );
+   if constexpr (RiemannMethod == RiemannHLLC) {
+      return rmhd_hllc_flux<Direction>(
+         face.left, face.right, eos, face_metric
+      );
+   } else {
+      static_assert(RiemannMethod == RiemannHLLD);
+      return rmhd_hlld_flux<Direction>(
+         face.left, face.right, eos, face_metric
+      );
+   }
+}
+
+template <int Direction>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void rmhd_left_cell(
+   int i,
+   int j,
+   int k,
+   int& il,
+   int& jl,
+   int& kl
+) noexcept
+{
+   il = i;
+   jl = j;
+   kl = k;
+   if constexpr (Direction == 0) {
+      --il;
+   } else if constexpr (Direction == 1) {
+      --jl;
+   } else {
+      --kl;
+   }
+}
+
+template <int ReconMethod, int RiemannMethod, int Direction>
+void fill_rmhd_advanced_direction(FluxLaunch const& launch)
+{
+   AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+      launch.geometry != nullptr,
+      "RMHD advanced fluxes require level geometry"
+   );
+   AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+      launch.atmosphere != nullptr,
+      "RMHD advanced fluxes require the recovery atmosphere state"
+   );
+   AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+      launch.topology == FluxTopology::Standard,
+      "RMHD advanced fluxes support the standard topology"
+   );
+   const EOSParams eos = eos_params(launch.config);
+   const EOSThermodynamicState atmosphere = *launch.atmosphere;
+   amrex::Long* const hll_fallback_count =
+      launch.rmhd_riemann_hll_fallback_count;
+   amrex::MultiFab& flux = *launch.fluxes[Direction];
+
+   if (launch.cell_spacetime != nullptr) {
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         const amrex::Box& box = mfi.tilebox();
+         const auto cached = launch.primitive.const_array(mfi);
+         const auto spacetime = launch.cell_spacetime->const_array(mfi);
+         const auto face_flux = flux.array(mfi);
+         amrex::ParallelFor(
+            box,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               int il;
+               int jl;
+               int kl;
+               rmhd_left_cell<Direction>(i, j, k, il, jl, kl);
+               const RHDStoredMetricAccessor metric{spacetime};
+               const RMHDRiemannFluxResult result = rmhd_advanced_riemann_flux<
+                  ReconMethod,
+                  RiemannMethod,
+                  Direction
+               >(
+                  cached,
+                  il,
+                  jl,
+                  kl,
+                  i,
+                  j,
+                  k,
+                  eos,
+                  metric,
+                  atmosphere
+               );
+               if (hll_fallback_count != nullptr && result.used_hll) {
+                  amrex::HostDevice::Atomic::Add(
+                     hll_fallback_count, static_cast<amrex::Long>(1)
+                  );
+               }
+               store_rmhd_conserved(face_flux, i, j, k, result.flux);
+            }
+         );
+      }
+      return;
+   }
+
+   const auto lower = launch.geometry->ProbLoArray();
+   const auto spacing = launch.geometry->CellSizeArray();
+   const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(
+      launch.config
+   );
+   const amrex::Real time = launch.time;
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.tilebox();
+      const auto cached = launch.primitive.const_array(mfi);
+      const auto face_flux = flux.array(mfi);
+      amrex::ParallelFor(
+         box,
+         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            int il;
+            int jl;
+            int kl;
+            rmhd_left_cell<Direction>(i, j, k, il, jl, kl);
+            const RHDFixedMetricAccessor metric{
+               spacetime, lower, spacing, time
+            };
+            const RMHDRiemannFluxResult result = rmhd_advanced_riemann_flux<
+               ReconMethod,
+               RiemannMethod,
+               Direction
+            >(
+               cached,
+               il,
+               jl,
+               kl,
+               i,
+               j,
+               k,
+               eos,
+               metric,
+               atmosphere
+            );
+            if (hll_fallback_count != nullptr && result.used_hll) {
+               amrex::HostDevice::Atomic::Add(
+                  hll_fallback_count, static_cast<amrex::Long>(1)
+               );
+            }
+            store_rmhd_conserved(face_flux, i, j, k, result.flux);
+         }
+      );
+   }
+}
+
+template <int ReconMethod, int RiemannMethod>
+void fill_rmhd_advanced_layout(FluxLaunch const& launch)
+{
+   if (launch.direction < 0) {
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 0>(launch);
+#if (AMREX_SPACEDIM >= 2)
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 1>(launch);
+#endif
+#if (AMREX_SPACEDIM == 3)
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 2>(launch);
+#endif
+      return;
+   }
+   switch (launch.direction) {
+   case 0:
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 0>(launch);
+      return;
+#if (AMREX_SPACEDIM >= 2)
+   case 1:
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 1>(launch);
+      return;
+#endif
+#if (AMREX_SPACEDIM == 3)
+   case 2:
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 2>(launch);
+      return;
+#endif
+   default:
+      amrex::Abort("invalid RMHD advanced flux direction");
+   }
+}
+
+template <int RiemannMethod>
+void dispatch_rmhd_advanced_reconstruction(FluxLaunch const& launch)
+{
+   switch (launch.reconstruction_method) {
+   case ReconPWC:
+#if PYFLUID_AMREX_ENABLE_RECON_PWC
+      fill_rmhd_advanced_layout<ReconPWC, RiemannMethod>(launch);
+      return;
+#endif
+      break;
+   case ReconPWL:
+#if PYFLUID_AMREX_ENABLE_RECON_PWL
+      fill_rmhd_advanced_layout<ReconPWL, RiemannMethod>(launch);
+      return;
+#endif
+      break;
+   case ReconWENOZ:
+#if PYFLUID_AMREX_ENABLE_RECON_WENOZ
+      fill_rmhd_advanced_layout<ReconWENOZ, RiemannMethod>(launch);
+      return;
+#endif
+      break;
+   case ReconMP5:
+#if PYFLUID_AMREX_ENABLE_RECON_MP5
+      fill_rmhd_advanced_layout<ReconMP5, RiemannMethod>(launch);
+      return;
+#endif
+      break;
+   case ReconTENO5:
+#if PYFLUID_AMREX_ENABLE_RECON_TENO5
+      fill_rmhd_advanced_layout<ReconTENO5, RiemannMethod>(launch);
+      return;
+#endif
+      break;
+   case ReconParabolic:
+#if PYFLUID_AMREX_ENABLE_RECON_PARABOLIC
+      fill_rmhd_advanced_layout<ReconParabolic, RiemannMethod>(launch);
+      return;
+#endif
+      break;
+   case ReconPPM4:
+#if PYFLUID_AMREX_ENABLE_RECON_PPM4
+      fill_rmhd_advanced_layout<ReconPPM4, RiemannMethod>(launch);
+      return;
+#endif
+      break;
+   case ReconPPMX:
+#if PYFLUID_AMREX_ENABLE_RECON_PPMX
+      fill_rmhd_advanced_layout<ReconPPMX, RiemannMethod>(launch);
+      return;
+#endif
+      break;
+   case ReconPPM3:
+#if PYFLUID_AMREX_ENABLE_RECON_PPM3
+      fill_rmhd_advanced_layout<ReconPPM3, RiemannMethod>(launch);
+      return;
+#endif
+      break;
+   default:
+      amrex::Abort("invalid RMHD reconstruction method");
+      return;
+   }
+   amrex::Abort("selected RMHD reconstruction method is disabled in this build");
+}
+
+} // namespace
+
+void fill_rmhd_advanced_fluxes(FluxLaunch const& launch)
+{
+   AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+      physical_system(launch.config) == PhysicalSystem::RMHD,
+      "advanced RMHD flux entry requires the RMHD physical system"
+   );
+   switch (launch.riemann_method) {
+   case RiemannHLLC:
+#if PYFLUID_AMREX_ENABLE_RIEMANN_HLLC
+      dispatch_rmhd_advanced_reconstruction<RiemannHLLC>(launch);
+      return;
+#else
+      amrex::Abort("RMHD HLLC was disabled at compile time");
+#endif
+   case RiemannHLLD:
+#if PYFLUID_AMREX_ENABLE_RIEMANN_HLLD
+      dispatch_rmhd_advanced_reconstruction<RiemannHLLD>(launch);
+      return;
+#else
+      amrex::Abort("RMHD HLLD was disabled at compile time");
+#endif
+   default:
+      amrex::Abort("invalid advanced RMHD Riemann solver");
+   }
+}
+
+} // namespace pyfluid_amrex

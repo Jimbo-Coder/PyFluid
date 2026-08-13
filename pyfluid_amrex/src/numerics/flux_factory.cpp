@@ -1,7 +1,11 @@
 #include "pyfluid_amrex/flux_factory.hpp"
 
 #include "pyfluid_amrex/build_options.hpp"
+#include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
+#if PYFLUID_AMREX_ENABLE_MHD
+#include "pyfluid_amrex/rmhd_advanced_flux.hpp"
+#endif
 
 namespace pyfluid_amrex {
 namespace flux_factory_entries {
@@ -27,6 +31,18 @@ void ppm3_char(FluxLaunch const& launch);
 
 void fill_fluxes(FluxLaunch const& launch)
 {
+#if PYFLUID_AMREX_ENABLE_MHD
+   if (physical_system(launch.config) == PhysicalSystem::RMHD
+       && (launch.riemann_method == RiemannHLLC
+           || launch.riemann_method == RiemannHLLD)) {
+#if PYFLUID_AMREX_ENABLE_RIEMANN_HLLC || PYFLUID_AMREX_ENABLE_RIEMANN_HLLD
+      fill_rmhd_advanced_fluxes(launch);
+      return;
+#else
+      amrex::Abort("advanced RMHD Riemann solvers are disabled in this build");
+#endif
+   }
+#endif
    switch (launch.reconstruction_method) {
    case ReconPWC:
 #if PYFLUID_AMREX_ENABLE_RECON_PWC

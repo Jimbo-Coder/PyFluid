@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
-"""Test a causal multi-front Euler fan over an MP5/HLLC background.
+"""Test a state-derived causal Euler fan over an MP5/HLLC background.
 
-An exact Riemann fan is initialized once from the shock-tube discontinuity.
-Its shocks, contact, constant star regions, and outer plateau regions are then
-carried causally in physical space.  At each face and timestep, the candidate
-uses exact physical flux while that face lies in a constant region or is
-crossed by a tracked discontinuity.  If the face lies inside a rarefaction,
-the ordinary SSPRK3-integrated characteristic-MP5/HLLC flux retains ownership.
+One isolated Riemann fan is inferred from two locally constant plateaus and
+either their shared face or one mixed finite-volume cell.  The Euler entropy
+solution is solved from those inferred states, then its shocks, contact,
+constant star regions, and outer plateau regions are carried causally in
+physical space.  At each face and timestep, the candidate uses exact physical
+flux while that face lies in a constant region or is crossed by a tracked
+discontinuity.  A switch either leaves rarefaction interiors with the ordinary
+SSPRK3-integrated characteristic-MP5/HLLC flux or integrates their exact
+physical wave curves as an exact-Riemann-solver-assisted mechanism control.
 
-This is intentionally an oracle-assisted mechanism test.  It asks whether the
-multi-front representation removes the one-front trade found by
-``research_riemann_seeded_fronts.py``.  It does not solve front birth from
-general evolving data or interactions between unrelated fans.
+This removes the initial endpoint/location oracle for an isolated Euler fan.
+It does not detect birth from a developed solution, resolve multiple candidate
+fans, or handle interactions between unrelated fans.
+
+Course-correction status: retained as an offline mechanism control, not a
+production roadmap.  Exact fan information may score a saved result but must
+not select a production face or flux.  Resume this branch only if a simpler
+oracle-free detector activates before the corresponding production artifact.
 """
 
 from __future__ import annotations
@@ -27,7 +34,10 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from pyfluid.exact_solutions import solve_sod_star_state  # noqa: E402
+from pyfluid.exact_solutions import (  # noqa: E402
+    sod_exact_solution,
+    solve_sod_star_state,
+)
 
 import research_physical_wave_subcell as physical  # noqa: E402
 import research_riemann_seeded_fronts as seeded  # noqa: E402
@@ -35,6 +45,7 @@ import research_wave_reconstruction as base  # noqa: E402
 
 
 Array = np.ndarray
+TIME_NODES, TIME_WEIGHTS = np.polynomial.legendre.leggauss(16)
 HELD_OUT_CASES = (
     base.ShockCase(
         "reverse_blast",
@@ -96,6 +107,15 @@ class FanBundle:
         if similarity <= self.right_head_speed:
             return None
         return self.right
+
+
+@dataclasses.dataclass(frozen=True)
+class FanBirth:
+    bundle: FanBundle
+    left: Array
+    right: Array
+    position: float
+    location_kind: str
 
 
 @dataclasses.dataclass(frozen=True)
@@ -192,6 +212,172 @@ def exact_fan_bundle(
     return bundle
 
 
+def fit_riemann_mixture(
+    average: Array,
+    left: Array,
+    right: Array,
+    gamma: float,
+) -> tuple[float, float] | None:
+    endpoints = np.asarray((left, right), dtype=float)
+    if not base.primitive_is_admissible(endpoints):
+        return None
+    left_state, right_state = base.conserved_from_primitive(
+        endpoints,
+        gamma,
+    )
+    average_state = base.conserved_from_primitive(
+        np.asarray(average, dtype=float)[None, :],
+        gamma,
+    )[0]
+    jump = left_state - right_state
+    jump_norm2 = float(np.dot(jump, jump))
+    scale = max(
+        float(np.dot(left_state, left_state)),
+        float(np.dot(right_state, right_state)),
+        np.finfo(float).tiny,
+    )
+    if jump_norm2 <= 256.0 * np.finfo(float).eps**2 * scale:
+        return None
+    left_fraction = float(
+        np.dot(average_state - right_state, jump) / jump_norm2
+    )
+    endpoint_tolerance = 256.0 * np.finfo(float).eps
+    if not (
+        endpoint_tolerance
+        < left_fraction
+        < 1.0 - endpoint_tolerance
+    ):
+        return None
+    fitted = (
+        left_fraction * left_state
+        + (1.0 - left_fraction) * right_state
+    )
+    residual = physical.scaled_residual(
+        average_state - fitted,
+        average_state,
+        fitted,
+        jump,
+    )
+    if residual > 2.0e-10:
+        return None
+    return left_fraction, residual
+
+
+def make_fan_birth(
+    *,
+    left: Array,
+    right: Array,
+    position: float,
+    location_kind: str,
+    gamma: float,
+) -> FanBirth | None:
+    if physical.states_agree(left, right, gamma):
+        return None
+    try:
+        bundle = exact_fan_bundle(left, right, gamma)
+    except (FloatingPointError, RuntimeError, ValueError):
+        return None
+    if not np.all(np.isfinite(bundle.boundary_speeds())):
+        return None
+    return FanBirth(
+        bundle=bundle,
+        left=np.asarray(left, dtype=float).copy(),
+        right=np.asarray(right, dtype=float).copy(),
+        position=position,
+        location_kind=location_kind,
+    )
+
+
+def find_single_fan_birth(
+    primitive: Array,
+    gamma: float,
+) -> FanBirth | None:
+    """Infer one isolated Euler Riemann fan from finite-volume data."""
+    cells = len(primitive)
+    dx = 1.0 / cells
+    births: list[FanBirth] = []
+
+    for cell in range(2, cells - 2):
+        left_outer = np.asarray(primitive[cell - 2], dtype=float)
+        left = np.asarray(primitive[cell - 1], dtype=float)
+        average = np.asarray(primitive[cell], dtype=float)
+        right = np.asarray(primitive[cell + 1], dtype=float)
+        right_outer = np.asarray(primitive[cell + 2], dtype=float)
+        if not physical.states_agree(left_outer, left, gamma):
+            continue
+        if not physical.states_agree(right, right_outer, gamma):
+            continue
+        mixture = fit_riemann_mixture(
+            average,
+            left,
+            right,
+            gamma,
+        )
+        if mixture is None:
+            continue
+        left_fraction, _ = mixture
+        birth = make_fan_birth(
+            left=left,
+            right=right,
+            position=(cell + left_fraction) * dx,
+            location_kind="mixed_cell",
+            gamma=gamma,
+        )
+        if birth is not None:
+            births.append(birth)
+
+    for face in range(2, cells - 1):
+        left_outer = np.asarray(primitive[face - 2], dtype=float)
+        left = np.asarray(primitive[face - 1], dtype=float)
+        right = np.asarray(primitive[face], dtype=float)
+        right_outer = np.asarray(primitive[face + 1], dtype=float)
+        if not physical.states_agree(left_outer, left, gamma):
+            continue
+        if not physical.states_agree(right, right_outer, gamma):
+            continue
+        birth = make_fan_birth(
+            left=left,
+            right=right,
+            position=face * dx,
+            location_kind="face",
+            gamma=gamma,
+        )
+        if birth is not None:
+            births.append(birth)
+
+    if len(births) != 1:
+        return None
+    return births[0]
+
+
+def validate_fan_birth_rejections(gamma: float) -> None:
+    cells = 32
+    x = (np.arange(cells) + 0.5) / cells
+    smooth = np.column_stack(
+        (
+            1.0 + 0.2 * np.sin(2.0 * math.pi * x),
+            np.full(cells, 0.5),
+            np.ones(cells),
+        )
+    )
+    if find_single_fan_birth(smooth, gamma) is not None:
+        raise RuntimeError("smooth state produced a Riemann-fan birth")
+
+    left = np.array((1.0, 0.0, 1.0))
+    right = np.array((0.125, 0.0, 0.1))
+    left_state, right_state = base.conserved_from_primitive(
+        np.array((left, right)),
+        gamma,
+    )
+    double_state = np.repeat(left_state[None, :], cells, axis=0)
+    double_state[7] = 0.35 * left_state + 0.65 * right_state
+    double_state[8:23] = right_state
+    double_state[23] = 0.65 * right_state + 0.35 * left_state
+    double_fan = base.primitive_from_conserved(double_state, gamma)
+    if find_single_fan_birth(double_fan, gamma) is not None:
+        raise RuntimeError("ambiguous state produced one Riemann-fan birth")
+
+
 def blended_bundle_flux(
     *,
     baseline_flux: Array,
@@ -201,8 +387,9 @@ def blended_bundle_flux(
     dt: float,
     bundle: FanBundle,
     gamma: float,
+    rarefaction_mode: str,
 ) -> tuple[Array, float]:
-    """Integrate exact constant regions and defer rarefactions to baseline."""
+    """Integrate one fan in time, optionally including its wave curves."""
     distance = face_position - discontinuity_position
     cuts = [time, time + dt]
     for speed in bundle.boundary_speeds():
@@ -222,9 +409,35 @@ def blended_bundle_flux(
         state = bundle.constant_state(similarity)
         duration = upper - lower
         if state is None:
-            integrated += duration * baseline_flux
+            if rarefaction_mode == "baseline":
+                integrated += duration * baseline_flux
+            else:
+                half_duration = 0.5 * duration
+                quadrature_times = midpoint + half_duration * TIME_NODES
+                for quadrature_time, weight in zip(
+                    quadrature_times,
+                    TIME_WEIGHTS,
+                    strict=True,
+                ):
+                    rho, pressure, velocity = sod_exact_solution(
+                        np.asarray((face_position,)),
+                        float(quadrature_time),
+                        gamma,
+                        bundle.left,
+                        bundle.right,
+                        discontinuity_position,
+                    )
+                    quadrature_state = np.asarray(
+                        (rho[0], velocity[0], pressure[0])
+                    )
+                    integrated += (
+                        half_duration
+                        * weight
+                        * physical.euler_flux(quadrature_state, gamma)
+                    )
         else:
             integrated += duration * physical.euler_flux(state, gamma)
+        if state is not None or rarefaction_mode == "exact_reference":
             exact_duration += duration
     return integrated / dt, exact_duration / dt
 
@@ -237,7 +450,10 @@ def evolve(
     bundle: FanBundle,
     *,
     discontinuity_position: float = 0.5,
+    rarefaction_mode: str = "baseline",
 ) -> tuple[Array, bool, BundleStats]:
+    if rarefaction_mode not in {"baseline", "exact_reference"}:
+        raise ValueError(f"unsupported rarefaction mode {rarefaction_mode}")
     state = base.conserved_from_primitive(primitive, gamma)
     cells = len(state)
     dx = 1.0 / cells
@@ -302,6 +518,7 @@ def evolve(
                     dt=dt,
                     bundle=bundle,
                     gamma=gamma,
+                    rarefaction_mode=rarefaction_mode,
                 )
                 step_exact += exact_fraction
             candidate = state - dt * (
@@ -354,15 +571,30 @@ def print_result(result: base.Result, stats: BundleStats | None) -> None:
     print("\t".join(values))
 
 
-def require_improvement(
+def require_candidate_sanity(
     baseline: base.Result,
     candidate: base.Result,
 ) -> None:
-    tolerance = 5.0e-12
     if not candidate.completed:
         raise RuntimeError(f"{candidate.case}: causal fan did not complete")
     if candidate.total_l1 >= baseline.total_l1:
         raise RuntimeError(f"{candidate.case}: causal fan did not improve L1")
+    if max(
+        candidate.mass_error,
+        candidate.momentum_error,
+        candidate.energy_error,
+    ) > 5.0e-10:
+        raise RuntimeError(
+            f"{candidate.case}: causal fan violated conservation"
+        )
+
+
+def require_pareto_improvement(
+    baseline: base.Result,
+    candidate: base.Result,
+) -> None:
+    require_candidate_sanity(baseline, candidate)
+    tolerance = 5.0e-12
     if (
         candidate.maximum_overshoot
         > baseline.maximum_overshoot + tolerance
@@ -371,14 +603,6 @@ def require_improvement(
     ):
         raise RuntimeError(
             f"{candidate.case}: causal fan left the baseline Pareto front"
-        )
-    if max(
-        candidate.mass_error,
-        candidate.momentum_error,
-        candidate.energy_error,
-    ) > 5.0e-10:
-        raise RuntimeError(
-            f"{candidate.case}: causal fan violated conservation"
         )
 
 
@@ -395,12 +619,29 @@ def main() -> None:
     )
     parser.add_argument("--gamma", type=float, default=1.4)
     parser.add_argument(
+        "--rarefaction-mode",
+        choices=("baseline", "exact_reference"),
+        default="baseline",
+    )
+    parser.add_argument(
         "--cases",
         nargs="+",
         choices=tuple(case.name for case in ALL_CASES),
         default=tuple(case.name for case in ALL_CASES),
     )
     args = parser.parse_args()
+    validate_fan_birth_rejections(args.gamma)
+    print("fan_birth_rejections\tsmooth=passed\tambiguous=passed")
+    print(
+        "fan_validation_scope"
+        f"\tmode={args.rarefaction_mode}"
+        "\tstatus="
+        + (
+            "complete_fan_exact_reference_pareto_gate"
+            if args.rarefaction_mode == "exact_reference"
+            else "partial_ownership_negative_control_l1_conservation_only"
+        )
+    )
     print(
         "\t".join(
             (
@@ -435,17 +676,58 @@ def main() -> None:
                         base.hllc_flux,
                         periodic=False,
                     )
+                    birth = find_single_fan_birth(initial, args.gamma)
+                    if birth is None:
+                        raise RuntimeError(
+                            f"{case.name}: did not infer one Riemann-fan birth"
+                        )
+                    if (
+                        not physical.states_agree(
+                            birth.left,
+                            np.asarray(case.left),
+                            args.gamma,
+                        )
+                        or not physical.states_agree(
+                            birth.right,
+                            np.asarray(case.right),
+                            args.gamma,
+                        )
+                        or not math.isclose(
+                            birth.position,
+                            position,
+                            rel_tol=0.0,
+                            abs_tol=3.0e-13,
+                        )
+                    ):
+                        raise RuntimeError(
+                            f"{case.name}: state-derived fan birth is wrong"
+                        )
+                    fan_positions = np.array(
+                        (
+                            birth.position,
+                            *(
+                                birth.position + speed * case.final_time
+                                for speed in birth.bundle.boundary_speeds()
+                            ),
+                        )
+                    )
+                    if (
+                        np.min(fan_positions) <= 0.0
+                        or np.max(fan_positions) >= 1.0
+                    ):
+                        raise ValueError(
+                            f"{case.name}: fan reaches a physical boundary; "
+                            "this harness does not supply general physical "
+                            "boundary fluxes"
+                        )
                     candidate, completed, stats = evolve(
                         initial,
                         case.final_time,
                         cfl,
                         args.gamma,
-                        exact_fan_bundle(
-                            np.asarray(case.left),
-                            np.asarray(case.right),
-                            args.gamma,
-                        ),
-                        discontinuity_position=position,
+                        birth.bundle,
+                        discontinuity_position=birth.position,
+                        rarefaction_mode=args.rarefaction_mode,
                     )
                     label = f"x0={position:.8g}"
                     baseline_result = base.shock_result(
@@ -459,14 +741,31 @@ def main() -> None:
                     )
                     candidate_result = base.shock_result(
                         case,
-                        f"causal_exact_fan_bundle_{label}",
+                        (
+                            "causal_state_derived_fan_bundle_"
+                            f"{birth.location_kind}_"
+                            f"{args.rarefaction_mode}_{label}"
+                        ),
                         cells,
                         candidate,
                         completed,
                         args.gamma,
                         position,
                     )
-                    require_improvement(baseline_result, candidate_result)
+                    if args.rarefaction_mode == "exact_reference":
+                        require_pareto_improvement(
+                            baseline_result,
+                            candidate_result,
+                        )
+                    else:
+                        # This deliberately incomplete ownership mode is a
+                        # negative mechanism control: it may improve L1 while
+                        # creating a TV seam where the exact discontinuities
+                        # hand their rarefaction interior back to MP5/HLLC.
+                        require_candidate_sanity(
+                            baseline_result,
+                            candidate_result,
+                        )
                     print_result(baseline_result, None)
                     print_result(candidate_result, stats)
 

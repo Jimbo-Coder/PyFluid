@@ -26,6 +26,7 @@ from validation_common import (
    ROOT,
    amrex_executable,
    append_validation_history,
+   build_cached_target,
    materialize_run_input,
    repo_relative,
    run_amrex,
@@ -194,9 +195,14 @@ def validate_entropy_convergence(
       })
       scalars.append(scalar)
       previous_error = error
-   final_order = float(results[-1]["order"])
-   if final_order < 1.8:
-      raise RuntimeError(f"RHD entropy wave did not retain second-order convergence: {final_order:.3f}")
+   order_indices = sorted({1, len(results) - 1})
+   for index in order_indices:
+      order = float(results[index]["order"])
+      if order < 1.8:
+         raise RuntimeError(
+            "RHD entropy wave did not retain second-order convergence: "
+            f"n={resolutions[index]} order={order:.3f}"
+         )
    return results, scalars
 
 
@@ -310,8 +316,10 @@ def main() -> int:
    parser.add_argument("--timeout", type=int, default=180)
    parser.add_argument("--force", action="store_true")
    args = parser.parse_args()
-   if not amrex_executable(1).exists() or not CHECKPOINT_COMPARE.exists():
-      raise SystemExit("build the AMReX 1D solver and checkpoint comparator first")
+   if args.level == "standard":
+      build_cached_target(CHECKPOINT_COMPARE.name)
+   if not amrex_executable(1).exists():
+      raise SystemExit("build the AMReX 1D solver first")
 
    rows = []
    scalar_rows = []
