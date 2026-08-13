@@ -14,6 +14,8 @@
 
 namespace pyfluid_amrex {
 
+struct InitialAtmosphereParameters;
+
 struct PhysicalInitialDataMetadata {
    std::string source_ic;
    std::string spacetime_initial_data;
@@ -46,6 +48,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    std::string const& path,
    RunConfig const& cfg,
    PhysicalSystem system,
+   InitialAtmosphereParameters const& atmosphere,
    amrex::Vector<amrex::Geometry> const& geometry,
    amrex::Vector<amrex::IntVect> const& refinement_ratios,
    MutablePhysicalIdField const& primitive,

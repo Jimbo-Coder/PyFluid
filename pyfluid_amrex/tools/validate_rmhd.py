@@ -945,6 +945,11 @@ def validate_physical_id(
    materialized_cases = (
       ("physical_id_coarse", {"amr.n_cell": "8 8", "amr.max_grid_size": "8"}, 1.0),
       (
+         "physical_id_fine_same_domain",
+         {"amr.n_cell": "40 40", "amr.max_grid_size": "20"},
+         1.0,
+      ),
+      (
          "physical_id_fine_larger",
          {
             "amr.n_cell": "40 40",
@@ -994,7 +999,7 @@ def validate_physical_id(
       "case": "rmhd_ct_direct_and_cross_grid_round_trip",
       "status": "PASS",
       "metric": "exact_rows_and_materialized_layouts",
-      "value": f"{len(writer_rows)};2",
+      "value": f"{len(writer_rows)};3",
       "run_dir": repo_relative(reader_dir),
    }, [writer_scalar, reader_scalar, *materialized_scalars]
 

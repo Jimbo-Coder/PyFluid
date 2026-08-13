@@ -24,6 +24,17 @@
 namespace pyfluid_amrex {
 namespace {
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool rotating_star_matter_exceeds_atmosphere(
+   amrex::Real density,
+   amrex::Real atmosphere_density
+) noexcept
+{
+   constexpr amrex::Real tolerance =
+      1024.0 * std::numeric_limits<amrex::Real>::epsilon();
+   return density > atmosphere_density * (1.0 + tolerance);
+}
+
 RotationLaw rotation_law_from_name(std::string const& name)
 {
    for (RotationLawInfo const& law : RotationLawCatalog) {
@@ -170,8 +181,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             const InitialDataSamplePoint sample{physical, physical};
             const EOSThermodynamicState atmosphere =
                initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
-            matter_support(i, j, k) =
-               primitive(i, j, k, RHO) > atmosphere.rho ? 1.0 : 0.0;
+            matter_support(i, j, k) = rotating_star_matter_exceeds_atmosphere(
+               primitive(i, j, k, RHO), atmosphere.rho
+            ) ? 1.0 : 0.0;
          });
       }
    }
@@ -313,7 +325,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                      * primitive(i, j, k, MOM3)
                   + iteration_parameters.matter_relaxation * target.v3;
             }
-            if (!(matter.rho > atmosphere.rho)) {
+            if (!rotating_star_matter_exceeds_atmosphere(
+                   matter.rho, atmosphere.rho
+                )) {
                matter.rho = atmosphere.rho;
                matter.pressure = atmosphere.pressure;
                matter.specific_internal_energy = atmosphere.specific_internal_energy;
@@ -326,7 +340,10 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             primitive(i, j, k, MOM2) = v2;
             primitive(i, j, k, MOM3) = v3;
             primitive(i, j, k, ENERGY) = matter.pressure;
-            diagnostic(i, j, k, 0) = matter.rho > atmosphere.rho
+            const bool contains_matter = rotating_star_matter_exceeds_atmosphere(
+               matter.rho, atmosphere.rho
+            );
+            diagnostic(i, j, k, 0) = contains_matter
                ? target.velocity_squared
                : 0.0;
             diagnostic(i, j, k, 1) = matter.rho;
@@ -337,12 +354,12 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                || (j == jhi && reflection_hi[1] == 0)
                || (k == klo && reflection_lo[2] == 0)
                || (k == khi && reflection_hi[2] == 0);
-            diagnostic(i, j, k, 2) = boundary
-               ? amrex::max(matter.rho - atmosphere.rho, amrex::Real(0.0))
+            diagnostic(i, j, k, 2) = boundary && contains_matter
+               ? matter.rho - atmosphere.rho
                : 0.0;
             diagnostic(i, j, k, 3) =
                within_continuation_support && !target.timelike ? 1.0 : 0.0;
-            if (matter.rho > atmosphere.rho) {
+            if (contains_matter) {
                const amrex::Real displacement1 =
                   physical.q1 - parameters.rotation_center.q1;
                const amrex::Real displacement2 =

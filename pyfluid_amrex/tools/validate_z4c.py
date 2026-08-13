@@ -1863,15 +1863,30 @@ def validate_rotating_star_initial_data(
          f"maximum normalized scalar error={exact_load_error:.3e}"
       )
 
+   cross_grid_parameters = {
+      **common,
+      "initial_data.angular_velocity": "0.001",
+      "initial_data.rotation_continuation_steps": "1",
+      "amr.n_cell": "32 32 32",
+      "amr.max_grid_size": "16",
+      "pyfluid.max_step": "0",
+   }
+   cross_grid_control_dir, cross_grid_control_scalar = run_dimension_case(
+      "rotating_star_sequence_cross_grid_control",
+      ROTATING_STAR_INPUT,
+      cross_grid_parameters,
+      args,
+      dim=3,
+      checks=SMOKE_POLICY,
+      mhd=False,
+      kind="feature",
+   )
    continue_dir, continue_scalar = run_dimension_case(
       "rotating_star_sequence_intermediate_continue",
       ROTATING_STAR_INPUT,
       {
-         **common,
+         **cross_grid_parameters,
          "initial_data.input_file": repo_relative(sequence_artifacts[0]),
-         "initial_data.angular_velocity": "0.001",
-         "initial_data.rotation_continuation_steps": "1",
-         "pyfluid.max_step": "0",
       },
       args,
       dim=3,
@@ -1886,19 +1901,23 @@ def validate_rotating_star_initial_data(
       rel_tol=0.0,
       abs_tol=1.0e-15,
    ):
-      raise RuntimeError("persisted sequence continuation did not save its target")
+      raise RuntimeError(
+         "cross-grid persisted sequence continuation did not save its target"
+      )
    continued_initial = read_scalar_rows(continue_dir)[0]
+   cross_grid_control = read_scalar_rows(cross_grid_control_dir)[0]
    continuation_columns = (
       "mass", "max_rho", "adm_mass_volume", "adm_angular_momentum3_volume",
    )
    continuation_error = max(
-      abs(float(continued_initial[name]) - float(initial_rotating[name]))
-      / max(abs(float(initial_rotating[name])), 1.0e-14)
+      abs(float(continued_initial[name]) - float(cross_grid_control[name]))
+      / max(abs(float(cross_grid_control[name])), 1.0e-14)
       for name in continuation_columns
    )
    if continuation_error > 5.0e-3:
       raise RuntimeError(
-         "persisted intermediate model did not recover the live final target: "
+         "cross-grid persisted intermediate model did not recover the live "
+         "final target: "
          f"maximum relative scalar error={continuation_error:.3e}"
       )
    return ([
@@ -1969,6 +1988,7 @@ def validate_rotating_star_initial_data(
       zero_scalar,
       rotating_scalar,
       final_load_scalar,
+      cross_grid_control_scalar,
       continue_scalar,
    ])
 

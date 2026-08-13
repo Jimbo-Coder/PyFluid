@@ -158,6 +158,15 @@ part of a persisted sequence. `initial_data.sequence_output_dir` overrides
 the automatic location and also explicitly requests output for a one-model
 rotating solve.
 
+Interpolation ownership includes the target points inside the physical domain
+but outside the source cell-center interpolation hull. These occur, for
+example, in the half-cell boundary strip of a finer same-domain target. The
+loader clamps only the source sample and then applies the selected physical
+exterior at the original target point: asymptotic ADM falloff for geometry and
+the configured target atmosphere for TOV/RNS fluid. It must not copy a
+source-boundary atmosphere value into that strip or use exact floating-point
+equality to classify stellar matter support.
+
 Automatic sequence output is organized under the run directory by EoS,
 rotation law, and fixed central density. Named EoS presets and differential
 law parameters are recorded in the path and `sequence.meta`; `sequence.tsv`

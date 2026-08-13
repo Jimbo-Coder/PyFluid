@@ -234,6 +234,14 @@ production-stabilization pass and preserved standard/performance baseline.
   cusp. It is neither a linear measure of remaining angular velocity nor a
   radial/axisymmetric stability criterion; the latter needs an appropriate
   fixed-baryon-mass sequence, turning-point analysis, and time evolution.
+- At fixed central density, the fresh SLy uniform `Omega=0.028` N=24/32/40
+  solves give equatorial `d ln(h)/dr = -0.0138293/-0.0134070/-0.0132684` and
+  `J_ADM/M_ADM^2 = 0.496214/0.504568/0.508643`. The equatorial cusp trend and
+  charges are converging, but the polar slopes
+  `-0.0393502/-0.0331447/-0.0372987` and therefore
+  `chi_ms = 0.351441/0.404501/0.355733` are nonmonotonic. This is strong
+  evidence for a regular high-spin XCTS solution, not a resolution-converged
+  endpoint; retain and inspect both raw slopes whenever the ratio is used.
 - The identical N=24, small-spin XCTS solve takes 171.37/95.61/67.69 seconds
   on one/two/three local MPI ranks, for 89.6/84.4 percent efficiency at two/
   three ranks. This establishes useful local spatial scaling, not large-grid or
@@ -253,6 +261,12 @@ production-stabilization pass and preserved standard/performance baseline.
   `docs/infrastructure_conventions.md`. A remapped artifact is initialization,
   not a new constraint solve; finer evolution cannot recreate unresolved ID
   information. A continued XCTS target does solve again on the target grid.
+- On finer same-domain physical-ID loads, target cell centers can lie in the
+  half-cell strip outside the source cell-center interpolation hull. The
+  reader must apply the field's physical exterior there. For TOV/RNS fluid it
+  regenerates the configured atmosphere at the target point; copying the last
+  source atmosphere value can fabricate matter support. Atmosphere/support
+  classification also needs a roundoff tolerance rather than strict equality.
 - Short rotating-star evolution is currently cleaner with PWL than MP5 at the
   surface. Do not weaken rest-mass gates to promote MP5; a conservative stellar
   surface treatment and longer evolution evidence are still required.

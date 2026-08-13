@@ -5100,3 +5100,33 @@ I will always continue from the last cycle marked as `in_progress`.
   `8.29e-10`, and each compressed sequence artifact is about 18.9 MiB. The
   identical N=24 scaling control takes `171.37/95.61/67.69 s` on one/two/three
   ranks, or `89.6/84.4%` parallel efficiency. [DONE]
+
+## Cycle 286 — High-spin surface-diagnostic trial (DONE)
+
+- Re-solve the corrected uniform-SLy branch with the new per-target surface
+  diagnostics rather than interpreting pre-schema logs. Start at matched
+  `Omega=0.028` on N=24 and N=32, retain every in-process continuation target,
+  and compare the raw equatorial/polar `d ln(h)/dr` values as well as their
+  signed ratio. The five-target N=24/N=32 branches pass in `767.28/1527.47 s`.
+  N=32 is monotonic across all five targets; N=24 exposes coarse polar/surface
+  quantization. [DONE]
+- If the matched point behaves consistently, use the N=32 saved sequence to
+  decide whether the next expensive solve should refine the same point or push
+  toward `Omega=0.033`. Do not call a nonlinear-solver failure a physical
+  mass-shedding endpoint. A cross-grid continued N=40 target converges in 42
+  matter iterations (`1050.98 s`) with elliptic residuals below `5.3e-13`,
+  zero recovery events, spin `0.508643`, matter/volume J error `7.71e-5`, and
+  surface/volume J error `3.23e-3`. The N=24/32/40 equatorial slopes converge
+  to `-0.0138293/-0.0134070/-0.0132684`, but polar slopes and hence
+  `chi_ms=0.351441/0.404501/0.355733` remain nonmonotonic. Refining the surface
+  diagnostic is more honest than pushing the endpoint now. [DONE]
+- The N=32-to-N=40 seed exposed two physical-ID boundary assumptions before
+  the solve: finer target cell centers can lie outside the source cell-center
+  interpolation hull, and a strict atmosphere-density comparison can seed an
+  exterior rigid-rotation branch from roundoff. The loader now applies the
+  target analytic stellar atmosphere in that strip and rotating continuation
+  uses a roundoff-tolerant matter-support predicate. Generic constant physical
+  IDs retain their prior exterior. RMHD standard, the four-check XCTS rotating
+  gate, and RNS equatorial-reflection validation pass; the rotating gate now
+  also compares a cross-grid saved continuation against a matched N=32 direct
+  solve with maximum relative charge/state difference `1.0181e-3`. [DONE]

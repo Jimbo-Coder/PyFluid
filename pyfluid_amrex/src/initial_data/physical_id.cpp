@@ -2,6 +2,7 @@
 
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/coordinate_locations.hpp"
+#include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
@@ -473,6 +474,8 @@ int canonical_component_for_runtime_direction(
 
 struct PhysicalInterpolationPoint {
    amrex::GpuArray<amrex::Real, 3> source_point{};
+   PatchCoordinate target_mesh{};
+   PatchCoordinate target_physical{};
    amrex::Real source_radius = 0.0;
    amrex::Real target_radius = 0.0;
    int reflection_mask = 0;
@@ -511,11 +514,15 @@ PhysicalInterpolationPoint mapped_source_point(
       const amrex::Real offset = centering.nodeCentered(direction) ? 0.0 : 0.5;
       const amrex::Real safe_lo = base.ProbLo(direction) + offset * spacing[direction];
       const amrex::Real safe_hi = base.ProbHi(direction) - offset * spacing[direction];
-      const bool outside_source =
-         target_mesh[component] < base.ProbLo(direction)
-         || target_mesh[component] > base.ProbHi(direction);
-      mapped.exterior = mapped.exterior || outside_source;
-      if (outside_source) {
+      // A finer target can have cell centers inside the same physical domain
+      // but outside the source cell-center interpolation hull. Treat that
+      // half-cell strip with the selected physical exterior policy instead of
+      // asking the generic interpolation plan for unavailable source data.
+      const bool outside_interpolation_hull =
+         target_mesh[component] < safe_lo
+         || target_mesh[component] > safe_hi;
+      mapped.exterior = mapped.exterior || outside_interpolation_hull;
+      if (outside_interpolation_hull) {
          target_mesh[component] = amrex::max(
             safe_lo, amrex::min(safe_hi, target_mesh[component])
          );
@@ -530,6 +537,14 @@ PhysicalInterpolationPoint mapped_source_point(
    const auto target_cartesian = mesh_coordinate_triplet_to_cartesian(
       source.coordinate_kind, original_target_mesh
    );
+   mapped.target_mesh = {
+      original_target_mesh[0],
+      original_target_mesh[1],
+      original_target_mesh[2],
+   };
+   mapped.target_physical = {
+      target_cartesian[0], target_cartesian[1], target_cartesian[2]
+   };
    for (int component = 0; component < 3; ++component) {
       const amrex::Real source_delta = source_cartesian[component] - origin[component];
       source_radius_squared += source_delta * source_delta;
@@ -543,8 +558,56 @@ PhysicalInterpolationPoint mapped_source_point(
 
 enum class PhysicalFieldExterior {
    Constant,
+   InitialAtmosphere,
    AsymptoticallyFlatAdm,
 };
+
+EOSThermodynamicState initial_atmosphere_state_for_method(
+   int eos_method,
+   InitialAtmosphereParameters const& atmosphere,
+   InitialDataSamplePoint const& sample
+)
+{
+   if (eos_method == EOSPolytrope) {
+      return initial_atmosphere_state<EOSPolytrope>(atmosphere, sample);
+   }
+   if (eos_method == EOSHybridPolytrope) {
+      return initial_atmosphere_state<EOSHybridPolytrope>(atmosphere, sample);
+   }
+   return initial_atmosphere_state<EOSIdealGas>(atmosphere, sample);
+}
+
+void apply_initial_atmosphere_exterior(
+   amrex::Real* values,
+   int num_components,
+   PhysicalInterpolationPoint const& point,
+   PhysicalSystem system,
+   int eos_method,
+   InitialAtmosphereParameters const& atmosphere
+)
+{
+   if (!point.exterior) {
+      return;
+   }
+   const EOSThermodynamicState state = initial_atmosphere_state_for_method(
+      eos_method,
+      atmosphere,
+      {point.target_mesh, point.target_physical}
+   );
+   values[RHO] = state.rho;
+   values[MOM1] = 0.0;
+   values[MOM2] = 0.0;
+   values[MOM3] = 0.0;
+   values[ENERGY] = state.pressure;
+   const int base_components = physical_system_has_magnetic_field(system)
+      ? NVAR_MHD
+      : NVAR_HYDRO;
+   for (int component = base_components;
+        component < num_components;
+        ++component) {
+      values[component] = 0.0;
+   }
+}
 
 void apply_adm_exterior(
    amrex::Real* values,
@@ -585,7 +648,10 @@ void interpolate_stored_field(
    std::vector<GridFieldSymmetryKind> const& symmetries,
    amrex::GpuArray<amrex::Real, 3> const& origin,
    PhysicalFieldExterior exterior,
-   bool stationary_rotating
+   bool stationary_rotating,
+   PhysicalSystem system,
+   int eos_method,
+   InitialAtmosphereParameters const& atmosphere
 )
 {
    if (target_geometry.size() != target_field.size()) {
@@ -666,6 +732,17 @@ void interpolate_stored_field(
                   num_components,
                   mapped_points[point],
                   stationary_rotating
+               );
+            }
+         } else if (exterior == PhysicalFieldExterior::InitialAtmosphere) {
+            for (std::size_t point = 0; point < mapped_points.size(); ++point) {
+               apply_initial_atmosphere_exterior(
+                  values.data() + point * num_components,
+                  num_components,
+                  mapped_points[point],
+                  system,
+                  eos_method,
+                  atmosphere
                );
             }
          }
@@ -925,6 +1002,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    std::string const& path,
    RunConfig const& cfg,
    PhysicalSystem system,
+   InitialAtmosphereParameters const& atmosphere,
    amrex::Vector<amrex::Geometry> const& geometry,
    amrex::Vector<amrex::IntVect> const& refinement_ratios,
    MutablePhysicalIdField const& primitive,
@@ -1238,8 +1316,13 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          physical_fluid_grid_fields(system, cfg.passive_scalars)
       ),
       origin,
-      PhysicalFieldExterior::Constant,
-      false
+      result.source_ic == "tov" || result.source_ic == "rotating_star"
+         ? PhysicalFieldExterior::InitialAtmosphere
+         : PhysicalFieldExterior::Constant,
+      false,
+      system,
+      eos_method_code(cfg),
+      atmosphere
    );
    if (expects_spacetime) {
       const int adm_components = grid_field_component_count(
@@ -1272,7 +1355,10 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          component_symmetries(adm_initial_data_grid_fields()),
          origin,
          PhysicalFieldExterior::AsymptoticallyFlatAdm,
-         result.source_ic == "tov" || result.source_ic == "rotating_star"
+         result.source_ic == "tov" || result.source_ic == "rotating_star",
+         system,
+         eos_method_code(cfg),
+         atmosphere
       );
       adm_to_z4c(evolution_spacetime, target_adm);
    }
@@ -1301,7 +1387,10 @@ PhysicalInitialDataMetadata read_physical_initial_data(
             },
             origin,
             PhysicalFieldExterior::Constant,
-            false
+            false,
+            system,
+            eos_method_code(cfg),
+            atmosphere
          );
       }
    }

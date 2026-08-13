@@ -327,6 +327,16 @@ points do not yet resolution-converge the mass-shedding limit.
 Earlier N=24 surface-indicator values produced without exchanged interpolation
 ghost data are superseded and must not be used for an endpoint estimate.
 
+A fresh matched `Omega=0.028` check at N=24/32/40 gives
+`chi_ms = 0.351441/0.404501/0.355733` and
+`J_ADM/M_ADM^2 = 0.496214/0.504568/0.508643`. The raw equatorial slopes
+converge much more cleanly (`-0.0138293/-0.0134070/-0.0132684`) than the polar
+slopes (`-0.0393502/-0.0331447/-0.0372987`). Thus the high-spin solution and
+equatorial cusp trend are credible, while the normalized endpoint diagnostic
+is still polar-resolution limited. Do not extrapolate the N=32 `Omega=0.033`
+point to a physical shedding frequency without the same raw-slope resolution
+check.
+
 At fixed grid spacing, expanding a zero-spin XCTS control from extraction
 radius 12.8 to 19.2 reduces the Komar-surface/ADM-surface difference from
 4.39 to 2.94 percent while changing the Komar surface mass by only 0.009

@@ -64,6 +64,14 @@ def main() -> int:
    parser.add_argument("--cells", type=int, default=24)
    parser.add_argument("--max-grid-size", type=int, default=8)
    parser.add_argument("--continuation-steps", type=int, default=5)
+   parser.add_argument(
+      "--input-artifact",
+      type=Path,
+      help=(
+         "optional compatible rotating physical-ID seed; a larger target "
+         "is fully re-solved on the requested grid"
+      ),
+   )
    parser.add_argument("--ranks", type=int, default=3)
    parser.add_argument("--timeout", type=int, default=3600)
    parser.add_argument("--force", action="store_true")
@@ -82,6 +90,13 @@ def main() -> int:
       raise SystemExit("--differential-rotation-length must be positive and finite")
    if not math.isfinite(args.rotation_power_q) or args.rotation_power_q < 1.0:
       raise SystemExit("--rotation-power-q must be finite and at least one")
+   input_artifact = args.input_artifact
+   if input_artifact is not None:
+      input_artifact = input_artifact.resolve()
+      if not (input_artifact / "Header.meta").is_file():
+         raise SystemExit(
+            f"--input-artifact is not a physical-ID artifact: {input_artifact}"
+         )
 
    law_suffix = args.rotation_law
    if args.rotation_law != "uniform":
@@ -135,6 +150,10 @@ def main() -> int:
             ),
             "pyfluid.run_name": case_name,
             "pyfluid.output_dir": repo_relative(run_dir),
+            **(
+               {"initial_data.input_file": repo_relative(input_artifact)}
+               if input_artifact is not None else {}
+            ),
          },
       )
       completed = run_amrex(
@@ -220,6 +239,9 @@ def main() -> int:
          "rotation_power_q": args.rotation_power_q,
          "cells_per_axis": args.cells,
          "continuation_steps": args.continuation_steps,
+         "input_artifact": (
+            repo_relative(input_artifact) if input_artifact is not None else ""
+         ),
          "seconds": completed.seconds,
          "returncode": completed.returncode,
          "matter_iterations": (

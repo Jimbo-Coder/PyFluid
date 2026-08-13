@@ -1,6 +1,7 @@
 #include "amr/amr_solver_base.hpp"
 
 #include "pyfluid_amrex/ct.hpp"
+#include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 #include "pyfluid_amrex/z4c_runtime.hpp"
@@ -109,6 +110,7 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       cfg_.initial_data_input_file,
       cfg_,
       physics_system_,
+      initial_atmosphere_parameters(cfg_, initial_data_provider_.view()),
       geometry,
       refinement_ratios,
       primitive,
