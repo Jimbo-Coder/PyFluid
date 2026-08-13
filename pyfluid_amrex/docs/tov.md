@@ -173,8 +173,14 @@ chi_ms = (d ln(h) / dr)_equator / (d ln(h) / dr)_pole,
 evaluated at interpolated surface roots and averaged over opposite axial and
 equatorial rays. It approaches one in the spherical limit and zero at an
 equatorial cusp. A negative value is supercritical, not an accepted equilibrium.
-The indicator must be checked at multiple resolutions before quoting a physical
-mass-shedding frequency.
+The raw equatorial and polar `d ln(h) / dr` values are reported with the ratio
+so a sequence can distinguish a changing physical slope from a poorly resolved
+denominator. The indicator is a dimensionless endpoint diagnostic, not a
+linear estimate of the remaining angular velocity. It must be checked at
+multiple resolutions before quoting a physical mass-shedding frequency. It
+diagnoses the equatorial cusp, not secular or dynamical radial/axisymmetric
+stability; those require an appropriate fixed-baryon-mass sequence, turning-
+point analysis, and time evolution.
 
 Both the rotation-center effective potential and the surface `ln h` field are
 filled through one exchanged ghost layer before arbitrary-point interpolation.
@@ -228,8 +234,10 @@ as
 `<output_dir>/initial_data_sequences/eos-.../rotation-.../rho_c-.../`.
 Each losslessly compressed model name includes `omega`, base resolution, and
 level count; `sequence.meta` describes the physical family and `sequence.tsv`
-indexes the models. The artifacts can either seed the next XCTS target or enter
-evolution through `initial_data.input_file`.
+indexes the models together with density, velocity, surface radii, both surface
+enthalpy gradients, and the mass-shedding indicator. Those diagnostics are
+also copied into each artifact's text metadata. The artifacts can either seed
+the next XCTS target or enter evolution through `initial_data.input_file`.
 
 The common loader supports identical, compatible coarser or finer, and
 physically larger target hierarchies. Cross-grid loading interpolates the
@@ -284,6 +292,11 @@ UV_CACHE_DIR=.uv-cache MPLCONFIGDIR=.matplotlib uv run python \
 
 The tool records wall time, seconds per matter iteration, speedup, and parallel
 efficiency in `runs/current/initial_data_scaling/results.tsv`.
+On the current Mac, the identical N=24, `Omega=0.001`, 22-matter-iteration
+solve takes 171.37, 95.61, and 67.69 seconds on one, two, and three ranks. The
+two- and three-rank speedups are 1.79 and 2.53, corresponding to 89.6 and 84.4
+percent parallel efficiency relative to one rank. This is a small local spatial
+scaling control, not a large-problem or multi-node result.
 
 Run fixed-central-density SLy sequences, including charge agreement and the
 mass-shedding indicator, with:
@@ -342,11 +355,12 @@ UV_CACHE_DIR=.uv-cache uv run python pyfluid_amrex/tools/validate_z4c.py \
 Zero angular velocity deliberately bypasses the matter continuation, retaining
 the direct TOV path as the exact control. The first executed nonzero control is
 a 3D, cold hybrid-polytrope, uniform-grid XCTS initialization at
-`Omega=0.001`, followed by three PWL/HLL/SSPRK3 evolved-spacetime steps at CFL
-`0.9`. This focused gate is a finite-state smoke, not a long-term stability
-result. Uniform, j-constant, and q-power rotation are accepted with XCTS. The
-shared matter layer can later serve CTT/CTTK, but those formulations still need
-a validated stationarity closure before receiving the equilibrium label.
+`Omega=0.001`, followed by three default-MP5/HLL/SSPRK3 evolved-spacetime steps
+at CFL `0.9`. This focused gate is a finite-state smoke, not a long-term
+stability result. Uniform, j-constant, and q-power rotation are accepted with
+XCTS. The shared matter layer can later serve CTT/CTTK, but those formulations
+still need a validated stationarity closure before receiving the equilibrium
+label.
 
 The short-evolution gate also protects the generic RHD stage-candidate flux
 correction. Only faces adjoining a cell whose concrete RK candidate violates

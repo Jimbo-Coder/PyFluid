@@ -403,7 +403,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
 
 } // namespace
 
-amrex::Real rotating_star_mass_shedding_indicator(
+RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
    RotatingStarParameters const& parameters
@@ -412,7 +412,7 @@ amrex::Real rotating_star_mass_shedding_indicator(
 #if (AMREX_SPACEDIM != 3)
    amrex::ignore_unused(hierarchy, cell_spacetime, parameters);
    amrex::Abort("rotating-star surface diagnostics require the 3D executable");
-   return 1.0;
+   return {};
 #else
    const int num_levels = static_cast<int>(hierarchy.geometry.size());
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> log_enthalpy(num_levels);
@@ -611,7 +611,11 @@ amrex::Real rotating_star_mass_shedding_indicator(
          "polar enthalpy gradient"
       );
    }
-   return indicator;
+   return {
+      equatorial_gradient,
+      polar_gradient,
+      indicator,
+   };
 #endif
 }
 

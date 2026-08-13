@@ -534,6 +534,23 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          }
       }
    };
+   const auto update_surface_diagnostic = [&](RotatingStarParameters parameters) {
+      parameters.injection_energy = result.rotating_star.injection_energy;
+      amrex::Vector<amrex::MultiFab const*> cell_spacetime_const(num_levels);
+      for (int level = 0; level < num_levels; ++level) {
+         cell_spacetime_const[level] = cell_spacetime[level];
+      }
+      const RotatingStarSurfaceDiagnostic diagnostic =
+         rotating_star_surface_diagnostic(
+            hierarchy, cell_spacetime_const, parameters
+         );
+      result.rotating_star.equatorial_log_enthalpy_gradient =
+         diagnostic.equatorial_log_enthalpy_gradient;
+      result.rotating_star.polar_log_enthalpy_gradient =
+         diagnostic.polar_log_enthalpy_gradient;
+      result.rotating_star.mass_shedding_indicator =
+         diagnostic.mass_shedding_indicator;
+   };
    for (int continuation_step = 1;
         continuation_step <= static_cast<int>(rotation_targets.size());
         ++continuation_step) {
@@ -924,26 +941,19 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       }
       if (continuation_observer) {
          materialize_current_evolution_state();
+         update_surface_diagnostic(continued_rotating_star);
          continuation_observer(
             continuation_step,
             static_cast<int>(rotation_targets.size()),
-            continued_rotating_star.angular_velocity
+            continued_rotating_star.angular_velocity,
+            result.rotating_star
          );
       }
    }
 
    materialize_current_evolution_state();
-   if (update_rotating_matter) {
-      RotatingStarParameters diagnostic_parameters = rotating_star;
-      diagnostic_parameters.injection_energy = result.rotating_star.injection_energy;
-      amrex::Vector<amrex::MultiFab const*> final_cell_spacetime(num_levels);
-      for (int level = 0; level < num_levels; ++level) {
-         final_cell_spacetime[level] = cell_spacetime[level];
-      }
-      result.rotating_star.mass_shedding_indicator =
-         rotating_star_mass_shedding_indicator(
-            hierarchy, final_cell_spacetime, diagnostic_parameters
-         );
+   if (update_rotating_matter && !continuation_observer) {
+      update_surface_diagnostic(rotating_star);
    }
    return result;
 }

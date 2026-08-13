@@ -212,11 +212,15 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       continuation_observer = [this](
          int continuation_step,
          int continuation_steps,
-         amrex::Real angular_velocity
+         amrex::Real angular_velocity,
+         RotatingStarUpdateSummary const& rotating_star
       ) {
          finalize_constraint_solved_initial_data_state();
          write_physical_initial_data_sequence_model(
-            continuation_step, continuation_steps, angular_velocity
+            continuation_step,
+            continuation_steps,
+            angular_velocity,
+            rotating_star
          );
       };
    }
@@ -264,6 +268,10 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
                / result.rotating_star.polar_radius
             << " mass_shedding_indicator="
             << result.rotating_star.mass_shedding_indicator
+            << " equatorial_log_enthalpy_gradient="
+            << result.rotating_star.equatorial_log_enthalpy_gradient
+            << " polar_log_enthalpy_gradient="
+            << result.rotating_star.polar_log_enthalpy_gradient
             << '\n';
       }
    }

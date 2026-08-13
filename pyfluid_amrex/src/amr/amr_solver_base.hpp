@@ -58,6 +58,7 @@ class MeshBasisStateInterpolater;
 class ParametricSurface;
 struct MultipoleDiagnostics;
 struct RadiationDiagnostics;
+struct RotatingStarUpdateSummary;
 
 class AmrSolverBase : public amrex::AmrCore {
 public:
@@ -355,7 +356,8 @@ protected:
    void write_physical_initial_data_sequence_model(
       int continuation_step,
       int continuation_steps,
-      amrex::Real angular_velocity
+      amrex::Real angular_velocity,
+      RotatingStarUpdateSummary const& rotating_star
    );
    void project_materialized_initial_face_b();
    void fill_new_spacetime_level_from_coarse(int lev, amrex::Real time);

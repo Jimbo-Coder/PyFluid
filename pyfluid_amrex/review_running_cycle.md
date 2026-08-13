@@ -2413,7 +2413,7 @@ I will always continue from the last cycle marked as `in_progress`.
   sequence optimization; the current step-zero checkpoint is not that
   artifact. [DONE]
 
-## Cycle 216 — Reusable rotating-ID sequences and symmetry boundary (WIP)
+## Cycle 216 — Reusable rotating-ID sequences and symmetry boundary (DONE)
 
 - Generalize the existing in-process angular-velocity continuation into an
   explicit ordered target list. A normal initial-data solve remains the
@@ -2467,7 +2467,9 @@ I will always continue from the last cycle marked as `in_progress`.
 - Assess aligned, centered Cartesian reflection/octant symmetry only after the
   reusable sequence path is sound. Do not conflate discrete component parity
   boundaries with a true two-dimensional axisymmetric cylindrical XCTS
-  formulation. [PENDING]
+  formulation. This was completed by the explicit symmetry audit in Cycle 218
+  and the shared elliptic parity implementation and controls in Cycle 221.
+  [DONE]
 
 ## Cycle 217 — Grid-independent physical-ID materialization (DONE)
 
@@ -5072,3 +5074,29 @@ I will always continue from the last cycle marked as `in_progress`.
   two-resolution TOV evolution and saved uniform-RNS PWL evolution. Per-FAB GPU
   transfer synchronization, full-suite/GPU coverage, and native CompOSE remain
   explicit later boundaries. [DONE]
+
+## Cycle 285 — Stellar-ID status and sequence diagnostics (DONE)
+
+- Reconstruct the live TOV/CTT/CTTK/XCTS and rotating-star evidence from
+  source, current artifacts, and the maintained stellar documentation. Keep
+  solver convergence distinct from a resolution-converged physical sequence:
+  direct TOV and zero-spin conformal data are mature, while nonzero uniform
+  XCTS has one coarse near-shedding branch and differential rotation has only
+  small-spin controls. [DONE]
+- Make every accepted rotating sequence artifact retain the physical surface
+  evidence that defines its endpoint. Compute the signed surface diagnostic at
+  each saved continuation target, record both raw `d ln(h)/dr` slopes and their
+  ratio in `sequence.tsv` and `Header.meta`, and keep exact-load/continuation
+  behavior unchanged. Close the superseded Cycle 216 symmetry item. The fresh
+  two-target control records `chi_ms=0.999949/0.999791`; its raw equatorial and
+  polar slopes are finite, negative, and reproduce the stored ratios. [DONE]
+- Rebuild the affected production path and run the focused three-rank rotating
+  gate. Then state the smallest resolution/sequence/evolution matrix required
+  before calling the uniform branch complete or widening differential
+  rotation. All production dimensions build; architecture, the `2.47 s` quick
+  suite, and all four fresh rotating-star checks pass. Exact final loading has
+  zero scalar error, persisted continuation remains within `1.9514e-3`, the
+  three-step default-MP5 CFL-0.9 run has zero recovery events and rest-mass drift
+  `8.29e-10`, and each compressed sequence artifact is about 18.9 MiB. The
+  identical N=24 scaling control takes `171.37/95.61/67.69 s` on one/two/three
+  ranks, or `89.6/84.4%` parallel efficiency. [DONE]

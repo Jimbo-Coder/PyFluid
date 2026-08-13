@@ -54,6 +54,14 @@ struct RotatingStarUpdateSummary {
    amrex::Real injection_energy = 1.0;
    amrex::Real equatorial_radius = 0.0;
    amrex::Real polar_radius = 0.0;
+   amrex::Real equatorial_log_enthalpy_gradient = 0.0;
+   amrex::Real polar_log_enthalpy_gradient = 0.0;
+   amrex::Real mass_shedding_indicator = 1.0;
+};
+
+struct RotatingStarSurfaceDiagnostic {
+   amrex::Real equatorial_log_enthalpy_gradient = 0.0;
+   amrex::Real polar_log_enthalpy_gradient = 0.0;
    amrex::Real mass_shedding_indicator = 1.0;
 };
 
@@ -218,7 +226,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives(
    RotatingStarParameters const& parameters
 );
 
-amrex::Real rotating_star_mass_shedding_indicator(
+RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
    RotatingStarParameters const& parameters

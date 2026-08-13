@@ -33,7 +33,9 @@ SURFACE_PATTERN = re.compile(
    r"equatorial_radius=(?P<equator>[0-9.eE+-]+) "
    r"polar_radius=(?P<pole>[0-9.eE+-]+) "
    r"coordinate_axis_ratio=(?P<axis_ratio>[0-9.eE+-]+) "
-   r"mass_shedding_indicator=(?P<mass_shedding>[0-9.eE+-]+)"
+   r"mass_shedding_indicator=(?P<mass_shedding>[0-9.eE+-]+) "
+   r"equatorial_log_enthalpy_gradient=(?P<equatorial_gradient>[0-9.eE+-]+) "
+   r"polar_log_enthalpy_gradient=(?P<polar_gradient>[0-9.eE+-]+)"
 )
 
 
@@ -157,6 +159,14 @@ def main() -> int:
          float(surface_match.group("mass_shedding"))
          if surface_match else math.nan
       )
+      equatorial_log_enthalpy_gradient = (
+         float(surface_match.group("equatorial_gradient"))
+         if surface_match else math.nan
+      )
+      polar_log_enthalpy_gradient = (
+         float(surface_match.group("polar_gradient"))
+         if surface_match else math.nan
+      )
       if status == "PASS" and mass_shedding_indicator <= 0.0:
          status = "SUPERCRITICAL"
       adm_mass_surface = scalar_value(scalar, "adm_mass_surface")
@@ -189,6 +199,17 @@ def main() -> int:
          or matter_volume_angular_momentum_error > 0.02
          or surface_volume_angular_momentum_error > 0.05
          or not 0.0 < dimensionless_spin < 1.0
+         or equatorial_log_enthalpy_gradient >= 0.0
+         or polar_log_enthalpy_gradient >= 0.0
+         or not math.isclose(
+            mass_shedding_indicator,
+            (
+               equatorial_log_enthalpy_gradient
+               / polar_log_enthalpy_gradient
+            ),
+            rel_tol=5.0e-6,
+            abs_tol=5.0e-8,
+         )
       ):
          status = "FAIL_PHYSICS"
       row: dict[str, object] = {
@@ -221,6 +242,12 @@ def main() -> int:
          ),
          "mass_shedding_indicator": (
             mass_shedding_indicator if surface_match else ""
+         ),
+         "equatorial_log_enthalpy_gradient": (
+            equatorial_log_enthalpy_gradient if surface_match else ""
+         ),
+         "polar_log_enthalpy_gradient": (
+            polar_log_enthalpy_gradient if surface_match else ""
          ),
          "adm_mass_surface": adm_mass_surface,
          "adm_mass_volume": adm_mass_volume,

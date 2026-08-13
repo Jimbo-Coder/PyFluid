@@ -40,7 +40,8 @@ struct ConformalMaterializationResult {
 using ConformalContinuationObserver = std::function<void(
    int continuation_step,
    int continuation_steps,
-   amrex::Real angular_velocity
+   amrex::Real angular_velocity,
+   RotatingStarUpdateSummary const& rotating_star
 )>;
 
 ConformalMaterializationResult materialize_conformal_initial_data(

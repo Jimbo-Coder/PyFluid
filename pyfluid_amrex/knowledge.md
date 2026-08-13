@@ -230,6 +230,14 @@ production-stabilization pass and preserved standard/performance baseline.
   constant-baryon-mass sequence. The surface-gradient indicator required ghost
   exchange across FABs; results predating that fix are not physical endpoint
   evidence.
+- The signed surface-gradient ratio diagnoses the equatorial mass-shedding
+  cusp. It is neither a linear measure of remaining angular velocity nor a
+  radial/axisymmetric stability criterion; the latter needs an appropriate
+  fixed-baryon-mass sequence, turning-point analysis, and time evolution.
+- The identical N=24, small-spin XCTS solve takes 171.37/95.61/67.69 seconds
+  on one/two/three local MPI ranks, for 89.6/84.4 percent efficiency at two/
+  three ranks. This establishes useful local spatial scaling, not large-grid or
+  multi-node efficiency.
 - Matter, ADM-volume, and ADM-surface angular momentum should agree under
   refinement. ADM--Komar disagreement on the tested compact domains is largely
   a finite-radius extraction effect; do not tune the elliptic solve to force

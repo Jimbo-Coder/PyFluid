@@ -86,7 +86,19 @@ def read_physical_id_sequence(run_dir: Path) -> tuple[Path, list[dict[str, str]]
    if not lines:
       raise RuntimeError("physical-ID sequence index is empty")
    columns = lines[0].split("\t")
-   if columns != ["index", "targets", "angular_velocity", "artifact"]:
+   if columns != [
+      "index",
+      "targets",
+      "angular_velocity",
+      "maximum_density",
+      "maximum_velocity",
+      "equatorial_radius",
+      "polar_radius",
+      "equatorial_log_enthalpy_gradient",
+      "polar_log_enthalpy_gradient",
+      "mass_shedding_indicator",
+      "artifact",
+   ]:
       raise RuntimeError(f"unexpected physical-ID sequence columns: {columns}")
    rows = [dict(zip(columns, line.split("\t"), strict=True)) for line in lines[1:]]
    return indexes[0].parent, rows
@@ -1669,6 +1681,51 @@ def validate_rotating_star_initial_data(
          raise RuntimeError(
             f"sequence artifact metadata is incomplete: {repo_relative(artifact)}"
          )
+   for row, artifact in zip(sequence_rows, sequence_artifacts, strict=True):
+      maximum_density = float(row["maximum_density"])
+      maximum_velocity = float(row["maximum_velocity"])
+      equatorial_radius = float(row["equatorial_radius"])
+      polar_radius = float(row["polar_radius"])
+      equatorial_gradient = float(row["equatorial_log_enthalpy_gradient"])
+      polar_gradient = float(row["polar_log_enthalpy_gradient"])
+      mass_shedding_indicator = float(row["mass_shedding_indicator"])
+      if (
+         maximum_density <= 0.0
+         or maximum_velocity <= 0.0
+         or equatorial_radius <= 0.0
+         or polar_radius <= 0.0
+         or equatorial_gradient >= 0.0
+         or polar_gradient >= 0.0
+         or mass_shedding_indicator <= 0.0
+         or not math.isclose(
+            mass_shedding_indicator,
+            equatorial_gradient / polar_gradient,
+            rel_tol=5.0e-15,
+            abs_tol=5.0e-15,
+         )
+      ):
+         raise RuntimeError(
+            "rotating-star sequence row has invalid physical diagnostics: "
+            f"{row}"
+         )
+      artifact_metadata = (artifact / "Header.meta").read_text()
+      diagnostic_metadata = {
+         "maximum_density": maximum_density,
+         "maximum_velocity": maximum_velocity,
+         "equatorial_radius": equatorial_radius,
+         "polar_radius": polar_radius,
+         "equatorial_log_enthalpy_gradient": equatorial_gradient,
+         "polar_log_enthalpy_gradient": polar_gradient,
+         "mass_shedding_indicator": mass_shedding_indicator,
+      }
+      if not all(
+         f"# {name}={value:.17g}" in artifact_metadata
+         for name, value in diagnostic_metadata.items()
+      ):
+         raise RuntimeError(
+            "sequence artifact is missing its rotating-star diagnostics: "
+            f"{repo_relative(artifact)}"
+         )
    run_log = (rotating_dir / "run.log").read_text()
    solve_match = re.search(
       r"xcts initial data: matter_iterations=([0-9]+) "
@@ -1686,7 +1743,9 @@ def validate_rotating_star_initial_data(
       r"equatorial_radius=([0-9.eE+-]+) "
       r"polar_radius=([0-9.eE+-]+) "
       r"coordinate_axis_ratio=([0-9.eE+-]+) "
-      r"mass_shedding_indicator=([0-9.eE+-]+)",
+      r"mass_shedding_indicator=([0-9.eE+-]+) "
+      r"equatorial_log_enthalpy_gradient=([0-9.eE+-]+) "
+      r"polar_log_enthalpy_gradient=([0-9.eE+-]+)",
       run_log,
    )
    if solve_match is None or rotation_match is None:
@@ -1699,6 +1758,8 @@ def validate_rotating_star_initial_data(
    polar_radius = float(rotation_match.group(7))
    coordinate_axis_ratio = float(rotation_match.group(8))
    mass_shedding_indicator = float(rotation_match.group(9))
+   equatorial_log_enthalpy_gradient = float(rotation_match.group(10))
+   polar_log_enthalpy_gradient = float(rotation_match.group(11))
    angular_momentum3 = float(rotating["angular_mom3"])
    adm_mass_volume = float(initial_rotating["adm_mass_volume"])
    adm_angular_momentum3_surface = float(
@@ -1736,6 +1797,14 @@ def validate_rotating_star_initial_data(
       or coordinate_axis_ratio > 2.0
       or mass_shedding_indicator <= 0.0
       or mass_shedding_indicator > 2.0
+      or equatorial_log_enthalpy_gradient >= 0.0
+      or polar_log_enthalpy_gradient >= 0.0
+      or not math.isclose(
+         mass_shedding_indicator,
+         equatorial_log_enthalpy_gradient / polar_log_enthalpy_gradient,
+         rel_tol=5.0e-6,
+         abs_tol=5.0e-8,
+      )
       or angular_momentum3 <= 0.0
       or matter_adm_angular_momentum_relative_error > 1.0e-2
       or surface_volume_angular_momentum_relative_error > 3.0e-2
@@ -1855,6 +1924,10 @@ def validate_rotating_star_initial_data(
          "polar_radius": polar_radius,
          "coordinate_axis_ratio": coordinate_axis_ratio,
          "mass_shedding_indicator": mass_shedding_indicator,
+         "equatorial_log_enthalpy_gradient": (
+            equatorial_log_enthalpy_gradient
+         ),
+         "polar_log_enthalpy_gradient": polar_log_enthalpy_gradient,
          "angular_momentum3": angular_momentum3,
          "adm_angular_momentum3_surface": adm_angular_momentum3_surface,
          "adm_angular_momentum3_volume": adm_angular_momentum3_volume,
@@ -2349,6 +2422,8 @@ def main() -> int:
       "polar_radius",
       "coordinate_axis_ratio",
       "mass_shedding_indicator",
+      "equatorial_log_enthalpy_gradient",
+      "polar_log_enthalpy_gradient",
       "angular_momentum3",
       "adm_angular_momentum3_surface",
       "adm_angular_momentum3_volume",
