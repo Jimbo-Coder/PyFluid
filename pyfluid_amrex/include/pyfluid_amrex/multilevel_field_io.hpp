@@ -36,6 +36,7 @@ struct RuntimeDimensionHdf5Level {
    std::array<int, 3> domain_upper{};
    std::array<amrex::Real, 3> prob_lo{};
    std::array<amrex::Real, 3> prob_hi{};
+   std::array<std::vector<amrex::Real>, 3> coordinate_faces;
    std::vector<RuntimeDimensionHdf5Box> boxes;
 };
 

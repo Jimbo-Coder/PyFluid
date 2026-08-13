@@ -1,6 +1,7 @@
 #include "pyfluid_amrex/initial_data/materialization.hpp"
 
 #include <AMReX.H>
+#include <AMReX_GpuAsyncArray.H>
 #include <AMReX_GpuLaunch.H>
 
 #include <algorithm>
@@ -134,6 +135,50 @@ void materialize_conformal_geometry(
 }
 
 #if (AMREX_SPACEDIM == 2)
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+amrex::Real axisymmetric_nodal_derivative(
+   amrex::Array4<amrex::Real const> const& field,
+   int i,
+   int j,
+   int k,
+   int direction,
+   amrex::Dim3 domain_lo,
+   amrex::Dim3 domain_hi,
+   amrex::Real const* radial_faces,
+   amrex::Real inverse_angular_spacing
+) noexcept
+{
+   if (direction != 0) {
+      return 0.5 * inverse_angular_spacing * (
+         field(i, j + 1, k, 0) - field(i, j - 1, k, 0)
+      );
+   }
+   int lower_i = i - 1;
+   int upper_i = i + 1;
+   if (i == domain_hi.x) {
+      lower_i = i - 2;
+      upper_i = i - 1;
+   }
+   const amrex::Real lower_coordinate =
+      radial_faces[lower_i - domain_lo.x];
+   const amrex::Real center = radial_faces[i - domain_lo.x];
+   const amrex::Real upper_coordinate =
+      radial_faces[upper_i - domain_lo.x];
+   return field(lower_i, j, k, 0) * (center - upper_coordinate) / (
+            (lower_coordinate - center)
+            * (lower_coordinate - upper_coordinate)
+         )
+      + field(i, j, k, 0) * (
+            2.0 * center - lower_coordinate - upper_coordinate
+         ) / (
+            (center - lower_coordinate) * (center - upper_coordinate)
+         )
+      + field(upper_i, j, k, 0) * (center - lower_coordinate) / (
+            (upper_coordinate - lower_coordinate)
+            * (upper_coordinate - center)
+         );
+}
+
 void materialize_axisymmetric_cell_geometry(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::MultiFab const& conformal_factor,
@@ -226,13 +271,18 @@ void materialize_axisymmetric_vertex_geometry(
    );
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto spacing = hierarchy.geometry[0].CellSizeArray();
+   const InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   amrex::Gpu::AsyncArray<amrex::Real> radial_face_storage(
+      radial_coordinates.faces.data(), radial_coordinates.faces.size()
+   );
+   const amrex::Real* radial_faces = radial_face_storage.data();
    const amrex::Dim3 domain_lo = amrex::lbound(
       amrex::surroundingNodes(hierarchy.geometry[0].Domain())
    );
    const amrex::Dim3 domain_hi = amrex::ubound(
       amrex::surroundingNodes(hierarchy.geometry[0].Domain())
    );
-   const amrex::Real inverse_two_dr = 0.5 / spacing[0];
    const amrex::Real inverse_two_dtheta = 0.5 / spacing[1];
    const amrex::Real upper_theta = hierarchy.geometry[0].ProbHi(1);
    const bool upper_is_axis = std::abs(upper_theta - constants::pi)
@@ -247,8 +297,7 @@ void materialize_axisymmetric_vertex_geometry(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const amrex::Real radius = problo[0]
-            + (i - domain_lo.x) * spacing[0];
+         const amrex::Real radius = radial_faces[i - domain_lo.x];
          const amrex::Real theta = problo[1]
             + (j - domain_lo.y) * spacing[1];
          const bool radial_origin = i == domain_lo.x;
@@ -260,14 +309,10 @@ void materialize_axisymmetric_vertex_geometry(
          amrex::Real a_r_phi = 0.0;
          amrex::Real a_theta_phi = 0.0;
          if (!radial_origin && !angular_axis) {
-            const amrex::Real d_beta_r = i == domain_hi.x
-               ? (
-                    3.0 * beta(i, j, k, 0)
-                    - 4.0 * beta(i - 1, j, k, 0)
-                    + beta(i - 2, j, k, 0)
-                 ) / (2.0 * spacing[0])
-               : (beta(i + 1, j, k, 0) - beta(i - 1, j, k, 0))
-                    * inverse_two_dr;
+            const amrex::Real d_beta_r = axisymmetric_nodal_derivative(
+               beta, i, j, k, 0, domain_lo, domain_hi,
+               radial_faces, 1.0 / spacing[1]
+            );
             const amrex::Real d_beta_theta = j == domain_hi.y
                ? 0.0
                : (beta(i, j + 1, k, 0) - beta(i, j - 1, k, 0))
@@ -325,8 +370,26 @@ void update_axisymmetric_global_diagnostics(
    amrex::MultiFab integrands(
       hierarchy.grids[0], hierarchy.distribution[0], 3, 0
    );
-   const auto problo = hierarchy.geometry[0].ProbLoArray();
-   const auto spacing = hierarchy.geometry[0].CellSizeArray();
+   const InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   const InitialDataCoordinateLine angular_coordinates =
+      hierarchy.coordinate_line(0, 1);
+   amrex::Gpu::AsyncArray<amrex::Real> radial_face_storage(
+      radial_coordinates.faces.data(), radial_coordinates.faces.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> angular_face_storage(
+      angular_coordinates.faces.data(), angular_coordinates.faces.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+      radial_coordinates.centers.data(), radial_coordinates.centers.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> angular_center_storage(
+      angular_coordinates.centers.data(), angular_coordinates.centers.size()
+   );
+   const amrex::Real* radial_faces = radial_face_storage.data();
+   const amrex::Real* angular_faces = angular_face_storage.data();
+   const amrex::Real* radial_center = radial_center_storage.data();
+   const amrex::Real* angular_center = angular_center_storage.data();
    const amrex::Dim3 domain_lo = amrex::lbound(
       hierarchy.geometry[0].Domain()
    );
@@ -350,13 +413,19 @@ void update_axisymmetric_global_diagnostics(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const amrex::Real radius = problo[0]
-            + (i - domain_lo.x + 0.5) * spacing[0];
-         const amrex::Real theta = problo[1]
-            + (j - domain_lo.y + 0.5) * spacing[1];
+         const int radial_index = i - domain_lo.x;
+         const int angular_index = j - domain_lo.y;
+         const amrex::Real radius = radial_center[radial_index];
+         const amrex::Real theta = angular_center[angular_index];
          const amrex::Real flat_volume = constants::two_pi
-            * theta_symmetry_factor * radius * radius * std::sin(theta)
-            * spacing[0] * spacing[1];
+            * theta_symmetry_factor
+            * (radial_faces[radial_index + 1]
+                  * radial_faces[radial_index + 1]
+                  * radial_faces[radial_index + 1]
+               - radial_faces[radial_index] * radial_faces[radial_index]
+                  * radial_faces[radial_index]) / 3.0
+            * (std::cos(angular_faces[angular_index])
+               - std::cos(angular_faces[angular_index + 1]));
          const amrex::Real psi_value = psi(i, j, k, 0);
          const amrex::Real psi_squared = psi_value * psi_value;
          const amrex::Real psi_sixth = psi_squared * psi_squared

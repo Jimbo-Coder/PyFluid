@@ -1,6 +1,7 @@
 #include "pyfluid_amrex/initial_data/ctt.hpp"
 
 #include <AMReX.H>
+#include <AMReX_GpuAsyncArray.H>
 #include <AMReX_GpuLaunch.H>
 
 #include <algorithm>
@@ -842,24 +843,48 @@ amrex::Real axisymmetric_cell_derivative(
    int k,
    int component,
    int direction,
+   amrex::Dim3 domain_lo,
    amrex::Dim3 domain_hi,
-   amrex::Real inverse_spacing
+   amrex::Real inverse_angular_spacing,
+   amrex::Real const* radial_centers
 ) noexcept
 {
-   if (direction == 0 && i == domain_hi.x) {
-      return 0.5 * inverse_spacing * (
-         3.0 * field(i, j, k, component)
-         - 4.0 * field(i - 1, j, k, component)
-         + field(i - 2, j, k, component)
-      );
-   }
    if (direction == 0) {
-      return 0.5 * inverse_spacing * (
-         field(i + 1, j, k, component)
-         - field(i - 1, j, k, component)
+      int lower_i = i - 1;
+      int upper_i = i + 1;
+      if (i == domain_hi.x) {
+         lower_i = i - 2;
+         upper_i = i - 1;
+      }
+      const amrex::Real center = radial_centers[i - domain_lo.x];
+      const amrex::Real lower_coordinate = lower_i < domain_lo.x
+         ? -radial_centers[domain_lo.x - lower_i - 1]
+         : radial_centers[lower_i - domain_lo.x];
+      const amrex::Real upper_coordinate =
+         radial_centers[upper_i - domain_lo.x];
+      const amrex::Real lower_value = field(
+         lower_i, j, k, component
       );
+      const amrex::Real center_value = field(i, j, k, component);
+      const amrex::Real upper_value = field(
+         upper_i, j, k, component
+      );
+      return lower_value * (center - upper_coordinate) / (
+               (lower_coordinate - center)
+               * (lower_coordinate - upper_coordinate)
+            )
+         + center_value * (
+               2.0 * center - lower_coordinate - upper_coordinate
+            ) / (
+               (center - lower_coordinate)
+               * (center - upper_coordinate)
+            )
+         + upper_value * (center - lower_coordinate) / (
+               (upper_coordinate - lower_coordinate)
+               * (upper_coordinate - center)
+            );
    }
-   return 0.5 * inverse_spacing * (
+   return 0.5 * inverse_angular_spacing * (
       field(i, j + 1, k, component)
       - field(i, j - 1, k, component)
    );
@@ -890,8 +915,13 @@ void fill_axisymmetric_xcts_extrinsic_curvature(
       const amrex::Dim3 domain_hi = amrex::ubound(
          hierarchy.geometry[level].Domain()
       );
-      const amrex::Real inverse_dr = 1.0 / spacing[0];
       const amrex::Real inverse_dtheta = 1.0 / spacing[1];
+      const InitialDataCoordinateLine radial_coordinates =
+         hierarchy.coordinate_line(level, 0);
+      amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+         radial_coordinates.centers.data(), radial_coordinates.centers.size()
+      );
+      const amrex::Real* radial_center = radial_center_storage.data();
       for (amrex::MFIter mfi(
               *conformal_extrinsic_curvature[level],
               amrex::TilingIfNotGPU()
@@ -906,18 +936,19 @@ void fill_axisymmetric_xcts_extrinsic_curvature(
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
             int i, int j, int k
          ) noexcept {
-            const amrex::Real radius = problo[0]
-               + (i - domain_lo.x + 0.5) * spacing[0];
+            const amrex::Real radius = radial_center[i - domain_lo.x];
             const amrex::Real theta = problo[1]
                + (j - domain_lo.y + 0.5) * spacing[1];
             const amrex::Real value = beta(i, j, k, 0);
             const amrex::Real radial_derivative =
                axisymmetric_cell_derivative(
-                  beta, i, j, k, 0, 0, domain_hi, inverse_dr
+                  beta, i, j, k, 0, 0, domain_lo, domain_hi,
+                  inverse_dtheta, radial_center
                );
             const amrex::Real angular_derivative =
                axisymmetric_cell_derivative(
-                  beta, i, j, k, 0, 1, domain_hi, inverse_dtheta
+                  beta, i, j, k, 0, 1, domain_lo, domain_hi,
+                  inverse_dtheta, radial_center
                );
             const amrex::Real longitudinal_r_phi =
                radial_derivative - value / radius;
@@ -1041,8 +1072,13 @@ AxisymmetricMomentumResult solve_axisymmetric_xcts_shift_iteration(
    const amrex::Dim3 domain_hi = amrex::ubound(
       hierarchy.geometry[0].Domain()
    );
-   const amrex::Real inverse_dr = 1.0 / spacing[0];
    const amrex::Real inverse_dtheta = 1.0 / spacing[1];
+   const InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+      radial_coordinates.centers.data(), radial_coordinates.centers.size()
+   );
+   const amrex::Real* radial_center = radial_center_storage.data();
    for (amrex::MFIter mfi(
            *source_storage[0], amrex::TilingIfNotGPU()
         ); mfi.isValid(); ++mfi) {
@@ -1057,19 +1093,22 @@ AxisymmetricMomentumResult solve_axisymmetric_xcts_shift_iteration(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const amrex::Real radius = problo[0]
-            + (i - domain_lo.x + 0.5) * spacing[0];
+         const amrex::Real radius = radial_center[i - domain_lo.x];
          const amrex::Real d_psi_r = axisymmetric_cell_derivative(
-            psi, i, j, k, 0, 0, domain_hi, inverse_dr
+            psi, i, j, k, 0, 0, domain_lo, domain_hi,
+            inverse_dtheta, radial_center
          );
          const amrex::Real d_psi_theta = axisymmetric_cell_derivative(
-            psi, i, j, k, 0, 1, domain_hi, inverse_dtheta
+            psi, i, j, k, 0, 1, domain_lo, domain_hi,
+            inverse_dtheta, radial_center
          ) / radius;
          const amrex::Real d_lapse_psi_r = axisymmetric_cell_derivative(
-            lapse_psi, i, j, k, 0, 0, domain_hi, inverse_dr
+            lapse_psi, i, j, k, 0, 0, domain_lo, domain_hi,
+            inverse_dtheta, radial_center
          );
          const amrex::Real d_lapse_psi_theta = axisymmetric_cell_derivative(
-            lapse_psi, i, j, k, 0, 1, domain_hi, inverse_dtheta
+            lapse_psi, i, j, k, 0, 1, domain_lo, domain_hi,
+            inverse_dtheta, radial_center
          ) / radius;
          source(i, j, k, 0) = generated::xcts_shift_source(
             psi(i, j, k, 0),

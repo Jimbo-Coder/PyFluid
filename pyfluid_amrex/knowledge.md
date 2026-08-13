@@ -284,16 +284,34 @@ baseline remains the latest broad integration baseline.
   materialized onto `[-40,40]^3` has maximum tracked error `1.25e-5`, the
   regular origin density differs by `9.89e-6`, and a three-step CFL-0.9 loaded
   evolution has mass drift `3.51e-12` with zero recovery.
+- The shared star-adapted radial map uses uniform physical spacing through an
+  enclosing matter region and a geometric gravity exterior, with one third of
+  radial cells reserved for the exterior. At `N_r=256`, adaptive TOV-to-32^3
+  errors are density `4.98e-5`, pressure `9.24e-5`, diagonal metric `8.90e-6`,
+  and lapse `4.77e-6`: all are 2.9--15.2 times smaller than uniform `N_r=256`
+  and within 1.2--1.4 times uniform `N_r=512`. This is a demonstrated
+  work-precision point, not residual-driven AMR.
 - A 256x64 reduced SLy RNS artifact materializes onto a full three-rank 32^3
   Cartesian hierarchy with maximum primitive and conserved round-trip errors
   `7.16e-13` and `1.79e-13`. Constraint-solved data must perform the final P2C
   only after nodal ADM fields have been reconstructed at authoritative cell
   centering; using a provisional metric can make otherwise valid cold surface
   primitives fail C2P.
-- A cell-centred radial source's half-cell gap at `r=0` is regular interior
-  interpolation, not stellar exterior. Beyond a spherical TOV source radius,
-  fluid uses the configured target atmosphere and ADM geometry uses the exact
-  isotropic-Schwarzschild exterior inferred from the saved outer metric.
+- Adaptive 256x64 small-spin RNS uses one quarter the cells of uniform 512x128,
+  runs in `2.115 s` versus `7.467 s`, and differs in ADM mass by `6.75e-6`
+  relative (`J/M^2` by `5.68e-4`). Cartesian 32^3 materialization retains
+  primitive/conserved round-trip errors `4.31e-13/1.93e-13`. A saved mapped
+  128x32 model remapped to a 96x24 adaptive grid and continued to the next
+  rotation target agrees with a matched direct tight-tolerance solve to at
+  most `8.08e-6` in global charges; explicit radial faces therefore support
+  same/different-grid sequence continuation and evolution handoff.
+- A cell-centred radial source's half-cell gap at `r=0`, and the corresponding
+  strip adjoining a declared reflection plane such as the RNS equator, are
+  regular interior interpolation rather than stellar exterior. Finer target
+  grids must not turn either strip into atmosphere. Beyond a spherical TOV
+  source radius, fluid uses the configured target atmosphere and ADM geometry
+  uses the exact isotropic-Schwarzschild exterior inferred from the saved
+  outer metric.
 - The cell-centred spherical `r theta` scalar and azimuthal spin-1 operators
   own origin, axis/equator reflection, radial Robin closure, coupled XCTS
   sources, longitudinal-tensor reconstruction, matter iteration, and global
@@ -314,16 +332,18 @@ baseline remains the latest broad integration baseline.
   field converges at order `1.98048`, with `1.09e-6` fine-grid error and
   `5.64e-11` residual, and agrees across one and three ranks. Portable vectors
   retain three physical components even on a two-dimensional source mesh.
-- The separable spherical operator accepts explicit nonuniform radial faces.
-  A surface-focused manufactured control retains second-order source-region
-  convergence (`1.9726`), but reducing radial cells by four gives
-  `1.49e-6` source error versus `3.45e-7` on the matched uniform control and a
-  much larger exterior error. Geometric stretching alone is therefore not a
-  demonstrated work-precision win. Prefer surface-fitted inner domains plus a
-  compactified/multidomain exterior and residual-controlled angular-mode
-  truncation for isolated stars; general block-adaptive ID is more appropriate
-  for binaries. Production RNS remains uniform until its source, derivative,
-  diagnostic, and artifact evaluator all consume the same mapped coordinates.
+- The separable spherical operator, matter/source update, diagnostics, ADM
+  integrals, centering, portable evaluator, and same-grid continuation all
+  consume the same explicit radial faces. The first Cycle-290 map failed
+  because it starved the gravity exterior; reserving one third of cells there
+  fixes that ownership/performance tradeoff. The adaptive 256x64 sequence
+  reaches `Omega=0.0329` in `57.95 s` with `chi_ms=0.05083` and
+  `J/M^2=0.670946`, close to uniform 384x96 (`129.26 s`, `0.05144`,
+  `0.670831`); continuation to `0.033` again loses a resolved enthalpy surface.
+  Thus `0.0329 < Omega < 0.033` survives an independent mapped-grid sequence.
+  Surface-fitted/multidomain refinement and residual-controlled angular-mode
+  truncation remain promising isolated-star upgrades; general block-adaptive
+  ID remains the appropriate later route for binaries.
 - On finer same-domain physical-ID loads, outer target cell centers can lie in
   the half-cell strip outside the source cell-center interpolation hull. The
   reader must apply the field's physical exterior there. For TOV/RNS fluid it
@@ -389,12 +409,11 @@ baseline remains the latest broad integration baseline.
 
 ## Next Milestones
 
-1. Refine the accepted `Omega=0.0329` RNS endpoint once more and use smaller
-   same-grid continuation steps to locate `chi_ms -> 0`; require convergence of
-   the raw surface slopes and global charges before quoting a mass-shedding
-   frequency. Then replace the unsuccessful geometric-stretching control with
-   a surface-fitted inner plus compactified/modal exterior work-precision
-   prototype behind the same physical-ID evaluator contract.
+1. Use the accepted explicit-face artifact path for a still finer adaptive RNS
+   endpoint sequence, with smaller same-grid continuation steps and convergence
+   of both raw surface slopes and global charges before quoting a physical
+   mass-shedding frequency. Profile angular mode amplitudes first; only then
+   add residual-controlled mode truncation or a surface-fitted multidomain map.
 2. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.
@@ -403,7 +422,7 @@ baseline remains the latest broad integration baseline.
    equivalence statement is sound. This calibrates performance and error; it is
    not another reconstruction search.
 4. Add a two-resolution time-dependent TOV oscillation/constraint gate, then
-   evolve a saved uniform-RNS artifact with PWL while tracking rest mass,
+   evolve a saved adaptive-RNS artifact with PWL while tracking rest mass,
    angular momentum, constraints, central density, and mode content.
 5. Add CompOSE/tabulated EoS after the stellar evolution boundary is stable.
 

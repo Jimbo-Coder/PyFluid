@@ -31,6 +31,9 @@ using ConstPhysicalIdFaceFields =
    std::array<ConstPhysicalIdField, AMREX_SPACEDIM>;
 using MutablePhysicalIdFaceFields =
    std::array<MutablePhysicalIdField, AMREX_SPACEDIM>;
+using PhysicalIdCoordinateFaces = amrex::Vector<
+   std::array<amrex::Vector<amrex::Real>, AMREX_SPACEDIM>
+>;
 
 void write_physical_initial_data(
    std::string const& path,
@@ -41,7 +44,8 @@ void write_physical_initial_data(
    ConstPhysicalIdField const& primitive,
    ConstPhysicalIdField const& evolution_fluid,
    ConstPhysicalIdField const& evolution_spacetime,
-   ConstPhysicalIdFaceFields const& face_magnetic
+   ConstPhysicalIdFaceFields const& face_magnetic,
+   PhysicalIdCoordinateFaces const& coordinate_faces = {}
 );
 
 PhysicalInitialDataMetadata read_physical_initial_data(
@@ -54,7 +58,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    MutablePhysicalIdField const& primitive,
    MutablePhysicalIdField const& evolution_fluid,
    MutablePhysicalIdField const& evolution_spacetime,
-   MutablePhysicalIdFaceFields const& face_magnetic
+   MutablePhysicalIdFaceFields const& face_magnetic,
+   PhysicalIdCoordinateFaces* coordinate_faces = nullptr
 );
 
 void materialize_physical_initial_data_fluid(

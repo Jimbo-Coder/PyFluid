@@ -5,6 +5,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "pyfluid_amrex/fields.hpp"
@@ -170,6 +171,45 @@ void check_axial_vector_reflection()
    require_close(sample.values[7], 0.0, 2.0e-14, "reflected magnetic z");
 }
 
+void check_mapped_radial_origin_is_not_exterior()
+{
+   auto field = constant_spherical_field(
+      5, {5.0, 0.0, 0.0, 0.0, 7.0}, false
+   );
+   field.levels.front().prob_lo[0] = 0.0;
+   field.levels.front().prob_hi[0] = 4.0;
+   pyfluid_amrex::RuntimePhysicalIdCoordinateFaces coordinates(1);
+   coordinates.front()[0] = {0.0, 1.0, 4.0};
+   coordinates.front()[1] = {0.0, 0.25 * std::acos(-1.0),
+                             0.5 * std::acos(-1.0)};
+   PortablePhysicalIdInterpolator interpolator(
+      std::move(field),
+      pyfluid_amrex::make_physical_id_chart(
+         2,
+         "spherical",
+         "r theta",
+         {},
+         {},
+         {0, 1, 0}
+      ),
+      pyfluid_amrex::physical_fluid_grid_fields(
+         pyfluid_amrex::PhysicalSystem::RHD, 0
+      ),
+      false,
+      std::move(coordinates)
+   );
+   const auto sample = interpolator.sample(
+      {0.1, 0.0, 0.0},
+      pyfluid_amrex::make_physical_id_chart(3, "cartesian", "x y z")
+   );
+   if (sample.exterior) {
+      throw std::runtime_error(
+         "regular mapped radial origin was marked exterior"
+      );
+   }
+   require_close(sample.values[0], 5.0, 1.0e-14, "mapped-origin scalar");
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -180,6 +220,7 @@ int main(int argc, char** argv)
       check_equatorial_reflection_and_basis_rotation();
       check_symmetric_tensor_rotation();
       check_axial_vector_reflection();
+      check_mapped_radial_origin_is_not_exterior();
       std::cout << "PASS portable physical-ID interpolation check\n";
    } catch (std::exception const& error) {
       std::cerr << "FAIL portable physical-ID interpolation check: "

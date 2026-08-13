@@ -238,14 +238,17 @@ def read_artifact_metadata(artifact: Path) -> dict[str, str]:
    return values
 
 
-def validate_reduced_rns_handoff(args: argparse.Namespace) -> dict[str, object]:
+def validate_reduced_rns_handoff(
+   args: argparse.Namespace,
+) -> list[dict[str, object]]:
    _, source_artifact, source_seconds = run_id_case(
-      "rns_source_128x32",
+      "rns_adaptive_source_128x32",
       2,
       RNS_SOURCE_INPUT,
       {
          "amr.n_cell": "128 32",
          "amr.max_grid_size": "64",
+         "initial_data.radial_grid": "adaptive",
          "initial_data.angular_velocity": "0.001",
       },
       args,
@@ -254,8 +257,17 @@ def validate_reduced_rns_handoff(args: argparse.Namespace) -> dict[str, object]:
    metadata = read_artifact_metadata(source_artifact)
    if metadata.get("mesh_coordinate") != "spherical" \
          or metadata.get("mesh_axes") != "r theta" \
-         or metadata.get("eos_preset") != "sly":
+         or metadata.get("eos_preset") != "sly" \
+         or metadata.get("coordinate_layout") != "explicit_faces_v1":
       raise RuntimeError("reduced RNS artifact lost its chart or EoS identity")
+   radial_faces = np.fromstring(
+      metadata.get("coordinate_faces_0_0", ""), sep=","
+   )
+   if radial_faces.size != 129 \
+         or not np.all(np.diff(radial_faces) > 0.0) \
+         or radial_faces[0] != 0.0 \
+         or radial_faces[-1] != 32.0:
+      raise RuntimeError("adaptive RNS artifact has an invalid radial map")
    required_diagnostics = {
       key: float(metadata[key])
       for key in (
@@ -287,6 +299,7 @@ def validate_reduced_rns_handoff(args: argparse.Namespace) -> dict[str, object]:
          "amr.n_cell": "16 16 16",
          "amr.max_grid_size": "16",
          "initial_data.input_file": repo_relative(source_artifact),
+         "initial_data.radial_grid": "uniform",
          "initial_data.angular_velocity": "0.001",
       },
       args,
@@ -303,9 +316,51 @@ def validate_reduced_rns_handoff(args: argparse.Namespace) -> dict[str, object]:
    velocity_max = float(np.max(np.sqrt(fluid[1] ** 2 + fluid[2] ** 2 + fluid[3] ** 2)))
    if not velocity_max > 1.0e-5:
       raise RuntimeError("materialized rotating star lost its azimuthal velocity")
-   return {
+
+   continuation_overrides = {
+      "amr.n_cell": "96 24",
+      "amr.max_grid_size": "48",
+      "initial_data.radial_grid": "adaptive",
+      "initial_data.angular_velocity": "0.0011",
+      "initial_data.matter_relative_tolerance": "1.0e-7",
+      "initial_data.matter_max_iterations": "128",
+   }
+   _, direct_artifact, direct_seconds = run_id_case(
+      "rns_adaptive_direct_96x24",
+      2,
+      RNS_SOURCE_INPUT,
+      continuation_overrides,
+      args,
+   )
+   _, continued_artifact, continued_seconds = run_id_case(
+      "rns_adaptive_continued_96x24",
+      2,
+      RNS_SOURCE_INPUT,
+      {
+         **continuation_overrides,
+         "initial_data.input_file": repo_relative(source_artifact),
+      },
+      args,
+   )
+   direct_metadata = read_artifact_metadata(direct_artifact)
+   continued_metadata = read_artifact_metadata(continued_artifact)
+   if direct_metadata.get("coordinate_faces_0_0") \
+         != continued_metadata.get("coordinate_faces_0_0"):
+      raise RuntimeError("adaptive RNS continuation changed its radial map")
+   continuation_errors = {}
+   for key in ("adm_mass", "baryonic_mass", "angular_momentum"):
+      direct_value = float(direct_metadata[key])
+      continued_value = float(continued_metadata[key])
+      continuation_errors[key] = abs(continued_value - direct_value) \
+         / abs(direct_value)
+   if max(continuation_errors.values()) > 2.0e-5:
+      raise RuntimeError(
+         "adaptive RNS continuation disagrees with a matched direct solve: "
+         f"{continuation_errors}"
+      )
+   return [{
       "kind": "initial_data",
-      "case": "rns_spherical_128x32_to_cartesian_16cubed",
+      "case": "rns_adaptive_128x32_to_cartesian_16cubed",
       "status": "PASS",
       "metric": "materialized_maximum_velocity",
       "value": velocity_max,
@@ -316,7 +371,16 @@ def validate_reduced_rns_handoff(args: argparse.Namespace) -> dict[str, object]:
       "source_seconds": source_seconds,
       "materialization_seconds": materialization_seconds,
       "run_dir": repo_relative(materialized_artifact.parent),
-   }
+   }, {
+      "kind": "initial_data",
+      "case": "rns_adaptive_saved_sequence_continuation_128x32_to_96x24",
+      "status": "PASS",
+      "metric": "maximum_relative_global_diagnostic_difference",
+      "value": max(continuation_errors.values()),
+      "source_seconds": direct_seconds,
+      "materialization_seconds": continued_seconds,
+      "run_dir": repo_relative(continued_artifact.parent),
+   }]
 
 
 def run_evolution(
@@ -464,6 +528,7 @@ def main() -> int:
          {
             "amr.n_cell": str(resolution),
             "amr.max_grid_size": str(min(128, resolution)),
+            "initial_data.radial_grid": "uniform",
          },
          args,
       )
@@ -531,7 +596,76 @@ def main() -> int:
          "run_dir": repo_relative(materialized_artifact.parent),
       })
    validate_errors(errors, args.level)
-   rows.append(validate_reduced_rns_handoff(args))
+
+   _, adaptive_tov_artifact, adaptive_tov_seconds = run_id_case(
+      "tov_adaptive_source_n256",
+      1,
+      SOURCE_INPUT,
+      {
+         "amr.n_cell": "256",
+         "amr.max_grid_size": "128",
+         "initial_data.radial_grid": "adaptive",
+      },
+      args,
+   )
+   require_portable_source(adaptive_tov_artifact, 1)
+   adaptive_tov_metadata = read_artifact_metadata(adaptive_tov_artifact)
+   adaptive_tov_faces = np.fromstring(
+      adaptive_tov_metadata.get("coordinate_faces_0_0", ""), sep=","
+   )
+   if adaptive_tov_metadata.get("coordinate_layout") != "explicit_faces_v1" \
+         or adaptive_tov_faces.size != 257 \
+         or not np.all(np.diff(adaptive_tov_faces) > 0.0):
+      raise RuntimeError("adaptive TOV artifact has an invalid radial map")
+   _, adaptive_tov_materialized, adaptive_materialization_seconds = run_id_case(
+      "tov_adaptive_n256_to_cartesian_3d",
+      3,
+      MATERIALIZED_INPUT,
+      {
+         "initial_data.input_file": repo_relative(adaptive_tov_artifact),
+      },
+      args,
+   )
+   adaptive_tov_error = compare_artifacts(
+      adaptive_tov_materialized, direct_artifact
+   )
+   adaptive_tov_limits = {
+      "rho_max": 8.0e-5,
+      "pressure_max": 1.2e-4,
+      "gamma_max": 1.2e-5,
+      "lapse_max": 7.0e-6,
+      "inactive_absolute": 2.0e-12,
+   }
+   adaptive_tov_failed = {
+      key: (adaptive_tov_error[key], limit)
+      for key, limit in adaptive_tov_limits.items()
+      if adaptive_tov_error[key] > limit
+   }
+   if adaptive_tov_failed:
+      raise RuntimeError(
+         "adaptive TOV handoff exceeded error limits: "
+         f"{adaptive_tov_failed}"
+      )
+   rows.append({
+      "kind": "initial_data",
+      "case": "tov_adaptive_spherical_n256_to_cartesian_3d",
+      "status": "PASS",
+      "metric": "maximum_normalized_physical_error",
+      "value": max(
+         adaptive_tov_error["rho_max"],
+         adaptive_tov_error["pressure_max"],
+         adaptive_tov_error["gamma_max"],
+         adaptive_tov_error["lapse_max"],
+      ),
+      "rho_max": adaptive_tov_error["rho_max"],
+      "pressure_max": adaptive_tov_error["pressure_max"],
+      "gamma_max": adaptive_tov_error["gamma_max"],
+      "lapse_max": adaptive_tov_error["lapse_max"],
+      "source_seconds": adaptive_tov_seconds,
+      "materialization_seconds": adaptive_materialization_seconds,
+      "run_dir": repo_relative(adaptive_tov_materialized.parent),
+   })
+   rows.extend(validate_reduced_rns_handoff(args))
 
    if args.level == "full":
       finest_source = source_artifacts[max(resolutions)]

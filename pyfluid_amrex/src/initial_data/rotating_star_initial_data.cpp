@@ -1,6 +1,7 @@
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 
 #include <AMReX.H>
+#include <AMReX_GpuAsyncArray.H>
 #include <AMReX_GpuLaunch.H>
 
 #include <algorithm>
@@ -467,6 +468,18 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    matter_support.setVal(0.0);
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto spacing = hierarchy.geometry[0].CellSizeArray();
+   const InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   const InitialDataCoordinateLine angular_coordinates =
+      hierarchy.coordinate_line(0, 1);
+   amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+      radial_coordinates.centers.data(), radial_coordinates.centers.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> angular_center_storage(
+      angular_coordinates.centers.data(), angular_coordinates.centers.size()
+   );
+   const amrex::Real* radial_center = radial_center_storage.data();
+   const amrex::Real* angular_center = angular_center_storage.data();
    const amrex::Box domain = hierarchy.geometry[0].Domain();
    const amrex::Dim3 domain_lo = amrex::lbound(domain);
    const amrex::Dim3 domain_hi = amrex::ubound(domain);
@@ -481,10 +494,15 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const InitialDataSamplePoint sample =
-            cell_center_initial_data_sample_point(
-               MeshSpherical, axes, problo, spacing, i, j, k
-            );
+         PatchCoordinate mesh{
+            radial_center[i - domain_lo.x],
+            angular_center[j - domain_lo.y],
+            0.0,
+         };
+         const InitialDataSamplePoint sample{
+            mesh,
+            mesh_coordinate_to_physical_point(MeshSpherical, axes, mesh),
+         };
          const SpacetimeMetric metric = generated::z4c_spacetime_metric(
             load_z4c_state(geometry, i, j, k)
          );
@@ -526,6 +544,10 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    );
    std::vector<amrex::GpuArray<amrex::Real, 3>> center_points;
    for (int radial_index = 0; radial_index < 2; ++radial_index) {
+      // HierarchyInterpolationPlan addresses the uniform logical AMReX
+      // lattice.  The first mapped cells are uniformly spaced physically, so
+      // select their logical centers here and retain the even-r quadratic
+      // extrapolation below.
       const amrex::Real radius = (radial_index + 0.5) * spacing[0];
       center_points.push_back({{
          radius * std::sin(center_theta),
@@ -577,10 +599,15 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const InitialDataSamplePoint sample =
-            cell_center_initial_data_sample_point(
-               MeshSpherical, axes, problo, spacing, i, j, k
-            );
+         PatchCoordinate mesh{
+            radial_center[i - domain_lo.x],
+            angular_center[j - domain_lo.y],
+            0.0,
+         };
+         const InitialDataSamplePoint sample{
+            mesh,
+            mesh_coordinate_to_physical_point(MeshSpherical, axes, mesh),
+         };
          bool within_support = false;
          for (int dj = -1; dj <= 1; ++dj) {
             for (int di = -1; di <= 1; ++di) {
@@ -924,6 +951,21 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
    );
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto spacing = hierarchy.geometry[0].CellSizeArray();
+   const amrex::Dim3 domain_lo = amrex::lbound(
+      hierarchy.geometry[0].Domain()
+   );
+   const InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   const InitialDataCoordinateLine angular_coordinates =
+      hierarchy.coordinate_line(0, 1);
+   amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+      radial_coordinates.centers.data(), radial_coordinates.centers.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> angular_center_storage(
+      angular_coordinates.centers.data(), angular_coordinates.centers.size()
+   );
+   const amrex::Real* radial_center = radial_center_storage.data();
+   const amrex::Real* angular_center = angular_center_storage.data();
    const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
    for (amrex::MFIter mfi(*log_enthalpy, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
@@ -933,10 +975,15 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const InitialDataSamplePoint sample =
-            cell_center_initial_data_sample_point(
-               MeshSpherical, axes, problo, spacing, i, j, k
-            );
+         PatchCoordinate mesh{
+            radial_center[i - domain_lo.x],
+            angular_center[j - domain_lo.y],
+            0.0,
+         };
+         const InitialDataSamplePoint sample{
+            mesh,
+            mesh_coordinate_to_physical_point(MeshSpherical, axes, mesh),
+         };
          const SpacetimeMetric metric = generated::z4c_spacetime_metric(
             load_z4c_state(geometry, i, j, k)
          );
@@ -961,7 +1008,19 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
    if (radial_cells < 6) {
       amrex::Abort("axisymmetric surface diagnostic needs at least six radial cells");
    }
-   const int radial_samples = radial_cells - 1;
+   int uniform_source_cells = radial_cells;
+   const amrex::Real inner_width = radial_coordinates.widths.front();
+   const amrex::Real width_tolerance = 64.0
+      * std::numeric_limits<amrex::Real>::epsilon()
+      * std::max(amrex::Real(1.0), inner_width);
+   while (uniform_source_cells > 1
+          && std::abs(
+                radial_coordinates.widths[uniform_source_cells - 1]
+                - inner_width
+             ) > width_tolerance) {
+      --uniform_source_cells;
+   }
+   const int radial_samples = uniform_source_cells - 1;
    const amrex::Real polar_theta = problo[1] + 0.5001 * spacing[1];
    const amrex::Real equatorial_theta =
       hierarchy.geometry[0].ProbHi(1) - 0.5001 * spacing[1];
@@ -995,10 +1054,10 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
       enthalpy_owner, 0, 1
    );
    const amrex::Real polar_gradient = ray_surface_derivative(
-      values, 0, radial_samples, spacing[0]
+      values, 0, radial_samples, inner_width
    );
    const amrex::Real equatorial_gradient = ray_surface_derivative(
-      values, radial_samples, radial_samples, spacing[0]
+      values, radial_samples, radial_samples, inner_width
    );
    const amrex::Real indicator = equatorial_gradient / polar_gradient;
    if (!(polar_gradient < 0.0) || !std::isfinite(equatorial_gradient)

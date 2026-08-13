@@ -17,9 +17,9 @@ make a path supported.
 | Single-patch Cartesian HD/MHD | Production numerical path |
 | Cartesian SRHD/SRMHD and fixed-curved GRHD/GRMHD | Production for focused validated combinations |
 | Coupled evolved-Z4c matter | Validated vertical slice; long stellar evolution remains an explicit gate |
-| TOV initial data | Direct 3D Cartesian and portable spherical-1D solve/materialization paths validated |
-| XCTS rotating-star initial data | 3D Cartesian path implemented for the documented EoS, rotation-law, and symmetry boundaries; reduced `r theta` scalar and toroidal-vector elliptic operators are validated, while the coupled axisymmetric matter/XCTS solve remains open |
-| Reusable physical-ID and sequence artifacts | Same-chart and schema-v2 cross-dimension/cross-coordinate handoff implemented through one materialization interface |
+| TOV initial data | Direct 3D Cartesian plus uniform/adaptive spherical-1D artifact and materialization paths validated |
+| XCTS rotating-star initial data | Coupled spherical `r theta` circular-RNS solve, three rotation laws, adaptive radial mapping, diagnostics, and Cartesian materialization validated; long dynamical equilibrium remains open |
+| Reusable physical-ID and sequence artifacts | Same-chart continuation and schema-v2 cross-dimension/cross-coordinate handoff, including explicit radial faces, use one materialization interface |
 | Native 1D, 2D, 3D | Production build modes |
 | AMR, reflux, average-down, restart | Production infrastructure |
 | AMR subcycling | Production for validated Cartesian cases |
@@ -107,15 +107,15 @@ the physical exterior, and then runs the normal target preflight. Evolution
 remains three-dimensional Cartesian for GRHD/GRMHD in the current production
 contract.
 
-Spherical one-dimensional TOV is the validated reduced solve. The uniform
-cell-centred spherical `r theta` scalar elliptic operator now has manufactured
-origin, axis/equator, Dirichlet, Robin, refinement, and MPI-decomposition
-coverage. Its symmetry-reduced toroidal-vector sibling represents the physical
-orthonormal azimuthal shift with one spin-1 field and has the same coverage,
-including odd origin/axis and even-equator regularity. Circular axisymmetric
-XCTS still needs its coupled matter sources and longitudinal-tensor
-reconstruction. A zero-spin TOV equivalence gate follows before nonzero
-uniform rotation.
+Spherical one-dimensional TOV and spherical `r theta` circular RNS are the
+validated reduced solves. The cell-centred scalar and toroidal spin-1 elliptic
+operators own origin, axis/equator, Robin, refinement, and MPI-decomposition
+behavior. Circular XCTS couples those operators to matter, the longitudinal
+tensor, global charges, and the surface-gradient mass-shedding diagnostic.
+The solver may use uniform radial spacing or one runtime-selected explicit-face
+stellar map; both write the same portable fields, and only the materializer
+knows the eventual Cartesian evolution grid. The adaptive map is fixed during
+one solve/sequence and is not general block AMR.
 
 ## Public Interfaces And Compilation
 

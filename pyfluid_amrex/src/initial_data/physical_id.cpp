@@ -121,6 +121,90 @@ std::string real_vector_string(amrex::Geometry const& geometry, bool upper)
    return output.str();
 }
 
+std::string coordinate_face_string(amrex::Vector<amrex::Real> const& faces)
+{
+   std::ostringstream output;
+   output << std::setprecision(17);
+   for (std::size_t index = 0; index < faces.size(); ++index) {
+      if (index != 0) {
+         output << ',';
+      }
+      output << faces[index];
+   }
+   return output.str();
+}
+
+std::vector<amrex::Real> parse_coordinate_faces(
+   std::string const& value,
+   std::string const& path,
+   std::string const& key
+)
+{
+   std::vector<amrex::Real> faces;
+   std::istringstream input(value);
+   for (std::string item; std::getline(input, item, ',');) {
+      try {
+         std::size_t parsed = 0;
+         const amrex::Real face = std::stod(item, &parsed);
+         if (parsed != item.size() || !std::isfinite(face)) {
+            throw std::invalid_argument("invalid coordinate face");
+         }
+         faces.push_back(face);
+      } catch (std::exception const&) {
+         amrex::Abort(
+            "invalid physical-ID " + key + " metadata in " + path
+         );
+      }
+   }
+   for (std::size_t index = 1; index < faces.size(); ++index) {
+      if (!(faces[index] > faces[index - 1])) {
+         amrex::Abort(
+            "physical-ID coordinate faces must be strictly increasing in "
+            + path
+         );
+      }
+   }
+   return faces;
+}
+
+RuntimePhysicalIdCoordinateFaces runtime_coordinate_faces(
+   std::map<std::string, std::string> const& metadata,
+   int dimension,
+   int levels,
+   std::string const& path
+)
+{
+   const auto layout = metadata.find("coordinate_layout");
+   if (layout == metadata.end() || layout->second == "uniform") {
+      return {};
+   }
+   if (layout->second != "explicit_faces_v1") {
+      amrex::Abort("unsupported physical-ID coordinate layout in " + path);
+   }
+   RuntimePhysicalIdCoordinateFaces coordinates(levels);
+   bool has_explicit_faces = false;
+   for (int level = 0; level < levels; ++level) {
+      for (int direction = 0; direction < dimension; ++direction) {
+         const std::string key = "coordinate_faces_"
+            + std::to_string(level) + "_" + std::to_string(direction);
+         const auto found = metadata.find(key);
+         if (found != metadata.end()) {
+            coordinates[level][direction] = parse_coordinate_faces(
+               found->second, path, key
+            );
+            has_explicit_faces = true;
+         }
+      }
+   }
+   if (!has_explicit_faces) {
+      amrex::Abort(
+         "physical-ID explicit coordinate layout has no coordinate faces in "
+         + path
+      );
+   }
+   return coordinates;
+}
+
 std::string periodicity_string(amrex::Geometry const& geometry)
 {
    std::ostringstream output;
@@ -841,6 +925,8 @@ void interpolate_portable_field(
    MutablePhysicalIdField const& target_field,
    GridFieldSetInfo const& field_set,
    amrex::IndexType centering,
+   RuntimePhysicalIdCoordinateFaces const& source_coordinate_faces,
+   PhysicalIdCoordinateFaces const& target_coordinate_faces,
    amrex::GpuArray<amrex::Real, 3> const& origin,
    PhysicalFieldExterior exterior,
    bool stationary_rotating,
@@ -860,7 +946,8 @@ void interpolate_portable_field(
       read_runtime_dimension_hdf5_field(path, name),
       source_chart,
       field_set,
-      centering == amrex::IndexType::TheNodeType()
+      centering == amrex::IndexType::TheNodeType(),
+      source_coordinate_faces
    );
    const int target_coordinate = target_chart.coordinate_kind;
    MeshAxes axes{};
@@ -901,8 +988,28 @@ void interpolate_portable_field(
                AMREX_SPACEDIM >= 2 && centering.nodeCentered(1),
                AMREX_SPACEDIM == 3 && centering.nodeCentered(2)
             );
+            auto mapped_target_q = target_q;
+            if (!target_coordinate_faces.empty()) {
+               for (int direction = 0; direction < AMREX_SPACEDIM;
+                    ++direction) {
+                  auto const& faces =
+                     target_coordinate_faces[level][direction];
+                  if (faces.empty()) {
+                     continue;
+                  }
+                  const int local_index = index[direction]
+                     - target_geometry[level].Domain().smallEnd(direction);
+                  const amrex::Real coordinate =
+                     centering.nodeCentered(direction)
+                     ? faces[local_index]
+                     : 0.5 * (faces[local_index] + faces[local_index + 1]);
+                  mapped_target_q[canonical_component_for_runtime_direction(
+                     target_coordinate, axes, direction
+                  )] = coordinate;
+               }
+            }
             const auto target_cartesian = mesh_coordinate_triplet_to_cartesian(
-               target_coordinate, target_q
+               target_coordinate, mapped_target_q
             );
             PortablePhysicalIdSample sample = interpolator.sample(
                {target_cartesian[0], target_cartesian[1], target_cartesian[2]},
@@ -910,7 +1017,9 @@ void interpolate_portable_field(
             );
             PhysicalInterpolationPoint point;
             point.exterior = sample.exterior;
-            point.target_mesh = {target_q[0], target_q[1], target_q[2]};
+            point.target_mesh = {
+               mapped_target_q[0], mapped_target_q[1], mapped_target_q[2]
+            };
             point.target_physical = {
                target_cartesian[0], target_cartesian[1], target_cartesian[2]
             };
@@ -1032,12 +1141,17 @@ void write_physical_initial_data(
    ConstPhysicalIdField const& primitive,
    ConstPhysicalIdField const& evolution_fluid,
    ConstPhysicalIdField const& evolution_spacetime,
-   ConstPhysicalIdFaceFields const& face_magnetic
+   ConstPhysicalIdFaceFields const& face_magnetic,
+   PhysicalIdCoordinateFaces const& coordinate_faces
 )
 {
    const int levels = static_cast<int>(geometry.size());
    if (levels == 0 || static_cast<int>(refinement_ratios.size()) != levels - 1) {
       amrex::Abort("physical initial data require a nonempty consistent hierarchy");
+   }
+   if (!coordinate_faces.empty()
+       && static_cast<int>(coordinate_faces.size()) != levels) {
+      amrex::Abort("physical initial-data coordinate hierarchy is inconsistent");
    }
    const int fluid_components = grid_field_component_count(
       physical_fluid_grid_fields(system, cfg.passive_scalars)
@@ -1145,6 +1259,21 @@ void write_physical_initial_data(
                   )
                << '\n';
       metadata << "# component_basis=mesh_orthonormal\n";
+      metadata << "# coordinate_layout="
+               << (coordinate_faces.empty()
+                     ? "uniform" : "explicit_faces_v1")
+               << '\n';
+      for (int level = 0;
+           level < static_cast<int>(coordinate_faces.size()); ++level) {
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            auto const& faces = coordinate_faces[level][direction];
+            if (!faces.empty()) {
+               metadata << "# coordinate_faces_" << level << '_'
+                        << direction << '='
+                        << coordinate_face_string(faces) << '\n';
+            }
+         }
+      }
       metadata << "# domain=" << domain_string(geometry.front()) << '\n';
       metadata << "# prob_lo=" << real_vector_string(geometry.front(), false) << '\n';
       metadata << "# prob_hi=" << real_vector_string(geometry.front(), true) << '\n';
@@ -1211,7 +1340,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    MutablePhysicalIdField const& primitive,
    MutablePhysicalIdField const& evolution_fluid,
    MutablePhysicalIdField const& evolution_spacetime,
-   MutablePhysicalIdFaceFields const& face_magnetic
+   MutablePhysicalIdFaceFields const& face_magnetic,
+   PhysicalIdCoordinateFaces* coordinate_faces
 )
 {
    const int levels = static_cast<int>(geometry.size());
@@ -1315,6 +1445,13 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    const PhysicalIdChart target_chart = current_physical_id_chart(
       cfg.mesh_coordinate, cfg.mesh_axes
    );
+   const RuntimePhysicalIdCoordinateFaces source_coordinate_faces =
+      runtime_coordinate_faces(
+         metadata,
+         source_dimension,
+         std::stoi(required_metadata_value(metadata, "levels", path)),
+         path
+      );
    bool same_chart = source_chart.dimension == target_chart.dimension
       && source_chart.coordinate_kind == target_chart.coordinate_kind;
    for (int direction = 0; same_chart && direction < AMREX_SPACEDIM;
@@ -1494,6 +1631,21 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    if (source_dimension == AMREX_SPACEDIM && same_chart) {
       const MultilevelHdf5FieldLayout stored_layout =
          read_multilevel_hdf5_field_layout(path, PhysicalFluidField);
+      for (int level = 0;
+           level < static_cast<int>(source_coordinate_faces.size()); ++level) {
+         for (int direction = 0; direction < AMREX_SPACEDIM;
+              ++direction) {
+            auto const& faces = source_coordinate_faces[level][direction];
+            if (!faces.empty()
+                && static_cast<int>(faces.size())
+                   != stored_layout.domains[level].length(direction) + 1) {
+               amrex::Abort(
+                  "physical-ID coordinate face count is inconsistent in "
+                  + path
+               );
+            }
+         }
+      }
       exact_boxes = static_cast<int>(stored_layout.boxes.size()) == levels;
       for (int level = 0; exact_boxes && level < levels; ++level) {
          const amrex::BoxArray& stored_boxes = stored_layout.boxes[level];
@@ -1520,6 +1672,23 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          == real_vector_string(geometry.front(), true)
       && required_metadata_value(metadata, "refinement_ratios", path)
          == refinement_string(refinement_ratios);
+   if (coordinate_faces != nullptr) {
+      if (exact_layout && !source_coordinate_faces.empty()) {
+         coordinate_faces->clear();
+         coordinate_faces->resize(source_coordinate_faces.size());
+         for (std::size_t level = 0;
+              level < source_coordinate_faces.size(); ++level) {
+            for (int direction = 0; direction < AMREX_SPACEDIM;
+                 ++direction) {
+               auto const& source_faces =
+                  source_coordinate_faces[level][direction];
+               (*coordinate_faces)[level][direction].assign(
+                  source_faces.begin(), source_faces.end()
+               );
+            }
+         }
+      }
+   }
    bool has_exact_caches = multilevel_hdf5_field_exists(
       path, EvolutionFluidField
    );
@@ -1557,8 +1726,40 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       return result;
    }
 
+   // A mapped solver grid is an index-space AMReX hierarchy plus explicit
+   // physical coordinates.  For an exact same-layout continuation, preserve
+   // those physical degrees of freedom directly; reinterpolating them through
+   // the uniform logical Geometry would change the seed before the next solve.
+   if (exact_layout && !source_coordinate_faces.empty() && !expects_ct) {
+      for (int level = 0; level < levels; ++level) {
+         read_multilevel_hdf5_field(
+            *primitive[level], path, level, PhysicalFluidField
+         );
+      }
+      if (expects_spacetime) {
+         const int adm_components = grid_field_component_count(
+            adm_initial_data_grid_fields()
+         );
+         amrex::Vector<std::unique_ptr<amrex::MultiFab>> target_adm(levels);
+         for (int level = 0; level < levels; ++level) {
+            target_adm[level] = std::make_unique<amrex::MultiFab>(
+               evolution_spacetime[level]->boxArray(),
+               evolution_spacetime[level]->DistributionMap(),
+               adm_components,
+               0
+            );
+            read_multilevel_hdf5_field(
+               *target_adm[level], path, level, AdmGeometryField
+            );
+         }
+         adm_to_z4c(evolution_spacetime, target_adm);
+      }
+      return result;
+   }
+
    if (portable_basis && !expects_ct
-       && (source_dimension != AMREX_SPACEDIM || !same_chart)) {
+       && (source_dimension != AMREX_SPACEDIM || !same_chart
+           || !source_coordinate_faces.empty())) {
       const amrex::GpuArray<amrex::Real, 3> origin = result.rotation_center;
       const GridFieldSetInfo fluid_field_set = physical_fluid_grid_fields(
          system, cfg.passive_scalars
@@ -1572,6 +1773,9 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          primitive,
          fluid_field_set,
          amrex::IndexType::TheCellType(),
+         source_coordinate_faces,
+         coordinate_faces == nullptr
+            ? PhysicalIdCoordinateFaces{} : *coordinate_faces,
          origin,
          result.source_ic == "tov" || result.source_ic == "rotating_star"
             ? PhysicalFieldExterior::InitialAtmosphere
@@ -1604,6 +1808,9 @@ PhysicalInitialDataMetadata read_physical_initial_data(
             target_adm_view,
             adm_field_set,
             amrex::IndexType::TheNodeType(),
+            source_coordinate_faces,
+            coordinate_faces == nullptr
+               ? PhysicalIdCoordinateFaces{} : *coordinate_faces,
             origin,
             result.source_ic == "tov"
                ? PhysicalFieldExterior::TovSchwarzschildAdm

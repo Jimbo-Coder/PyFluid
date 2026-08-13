@@ -21,6 +21,13 @@ enum class InitialDataEllipticCentering {
    vertex,
 };
 
+struct InitialDataCoordinateLine {
+   amrex::Vector<amrex::Real> faces;
+   amrex::Vector<amrex::Real> centers;
+   amrex::Vector<amrex::Real> widths;
+   bool uniform = true;
+};
+
 struct InitialDataEllipticHierarchy {
    amrex::Vector<amrex::Geometry> geometry;
    amrex::Vector<amrex::BoxArray> grids;
@@ -41,6 +48,9 @@ struct InitialDataEllipticHierarchy {
    amrex::Vector<amrex::Real> coordinate_faces(
       int level, int direction
    ) const;
+   InitialDataCoordinateLine coordinate_line(
+      int level, int direction
+   ) const;
 };
 
 // Uniform spacing through a compact source region followed by geometrically
@@ -52,6 +62,16 @@ amrex::Vector<amrex::Real> surface_focused_radial_faces(
    amrex::Real outer_radius,
    int surface_cells,
    int exterior_cells
+);
+
+// Allocate most radial cells to the complete stellar source region inferred
+// from a spherical seed, then stretch smoothly through the source-free
+// gravitational exterior.  This is a solver-private ID coordinate, not an
+// evolution AMR hierarchy.
+amrex::Vector<amrex::Real> stellar_adaptive_radial_faces(
+   amrex::Real seed_surface_radius,
+   amrex::Real outer_radius,
+   int radial_cells
 );
 
 enum class InitialDataEllipticBoundaryType {

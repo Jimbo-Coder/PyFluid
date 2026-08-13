@@ -459,14 +459,40 @@ MappedSourcePoint map_source_point(
       }
       const int cell_count = level.domain_upper[direction]
          - level.domain_lower[direction] + 1;
+      const auto& faces = level.coordinate_faces[direction];
       const amrex::Real spacing = (upper - lower) / cell_count;
-      const amrex::Real offset = node_centered ? 0.0 : 0.5;
-      const amrex::Real safe_lower = lower + offset * spacing;
-      const amrex::Real safe_upper = upper - offset * spacing;
-      if (coordinate < safe_lower || coordinate > safe_upper) {
+      const amrex::Real safe_lower = faces.empty()
+         ? lower + (node_centered ? 0.0 : 0.5) * spacing
+         : (node_centered ? faces.front()
+                          : 0.5 * (faces[0] + faces[1]));
+      const amrex::Real safe_upper = faces.empty()
+         ? upper - (node_centered ? 0.0 : 0.5) * spacing
+         : (node_centered ? faces.back()
+                          : 0.5 * (faces[faces.size() - 2] + faces.back()));
+      const amrex::Real scale = std::max(
+         amrex::Real(1.0), std::max(std::abs(lower), std::abs(upper))
+      );
+      const bool regular_radial_origin =
+         chart.axes[direction] == MeshAxisR
+         && std::abs(lower) <= 64.0
+            * std::numeric_limits<amrex::Real>::epsilon() * scale
+         && coordinate >= lower;
+      const bool regular_lower_boundary = coordinate >= lower
+         && (regular_radial_origin || chart.reflection_lo[direction] != 0);
+      const bool regular_upper_boundary = coordinate <= upper
+         && chart.reflection_hi[direction] != 0;
+      // Cell-centered radial data do not contain a sample at r=0, but the
+      // origin is a regular boundary of the stellar chart rather than the
+      // physical exterior.  Clamp that half-cell interpolation strip to the
+      // innermost value without applying an atmosphere/exterior policy.  This
+      // is essential when materializing onto a finer target grid.
+      const bool outside_interpolation_hull =
+         (coordinate < safe_lower && !regular_lower_boundary)
+         || (coordinate > safe_upper && !regular_upper_boundary);
+      if (outside_interpolation_hull) {
          mapped.exterior = true;
-         coordinate = std::max(safe_lower, std::min(safe_upper, coordinate));
       }
+      coordinate = std::max(safe_lower, std::min(safe_upper, coordinate));
    }
    mapped.cartesian = host_vector(mesh_coordinate_triplet_to_cartesian(
       chart.coordinate_kind, gpu_vector(mapped.q)
@@ -492,16 +518,50 @@ bool interpolate_level(
       );
       const int cell_count = level.domain_upper[direction]
          - level.domain_lower[direction] + 1;
-      const amrex::Real spacing = (
-         level.prob_hi[direction] - level.prob_lo[direction]
-      ) / cell_count;
-      const amrex::Real offset = node_centered ? 0.0 : 0.5;
-      const amrex::Real logical = level.domain_lower[direction]
-         + (q[coordinate_component] - level.prob_lo[direction]) / spacing
-         - offset;
       const int valid_lower = level.domain_lower[direction];
       const int valid_upper = level.domain_upper[direction]
          + (node_centered ? 1 : 0);
+      const auto& faces = level.coordinate_faces[direction];
+      amrex::Real logical = 0.0;
+      if (faces.empty()) {
+         const amrex::Real spacing = (
+            level.prob_hi[direction] - level.prob_lo[direction]
+         ) / cell_count;
+         const amrex::Real offset = node_centered ? 0.0 : 0.5;
+         logical = level.domain_lower[direction]
+            + (q[coordinate_component] - level.prob_lo[direction]) / spacing
+            - offset;
+      } else {
+         auto coordinate_at = [&](int local_index) {
+            return node_centered
+               ? faces[local_index]
+               : 0.5 * (faces[local_index] + faces[local_index + 1]);
+         };
+         const int coordinate_count = cell_count + (node_centered ? 1 : 0);
+         if (q[coordinate_component] <= coordinate_at(0)) {
+            logical = valid_lower;
+         } else if (
+            q[coordinate_component] >= coordinate_at(coordinate_count - 1)
+         ) {
+            logical = valid_upper;
+         } else {
+            int lower_coordinate = 0;
+            int upper_coordinate = coordinate_count - 1;
+            while (upper_coordinate - lower_coordinate > 1) {
+               const int middle = lower_coordinate
+                  + (upper_coordinate - lower_coordinate) / 2;
+               if (coordinate_at(middle) <= q[coordinate_component]) {
+                  lower_coordinate = middle;
+               } else {
+                  upper_coordinate = middle;
+               }
+            }
+            const amrex::Real left = coordinate_at(lower_coordinate);
+            const amrex::Real right = coordinate_at(upper_coordinate);
+            logical = valid_lower + lower_coordinate
+               + (q[coordinate_component] - left) / (right - left);
+         }
+      }
       if (valid_lower == valid_upper) {
          lower_index[direction] = valid_lower;
          fraction[direction] = 0.0;
@@ -686,7 +746,8 @@ PortablePhysicalIdInterpolator::PortablePhysicalIdInterpolator(
    RuntimeDimensionHdf5Field field,
    PhysicalIdChart source_chart,
    GridFieldSetInfo field_set,
-   bool node_centered
+   bool node_centered,
+   RuntimePhysicalIdCoordinateFaces coordinate_faces
 )
    : field_(std::move(field)),
      source_chart_(std::move(source_chart)),
@@ -699,7 +760,27 @@ PortablePhysicalIdInterpolator::PortablePhysicalIdInterpolator(
          "portable physical-ID field, chart, and catalog are inconsistent"
       );
    }
-   for (RuntimeDimensionHdf5Level& level : field_.levels) {
+   if (!coordinate_faces.empty()
+       && coordinate_faces.size() != field_.levels.size()) {
+      amrex::Abort("portable physical-ID coordinate hierarchy is inconsistent");
+   }
+   for (std::size_t level_index = 0;
+        level_index < field_.levels.size(); ++level_index) {
+      RuntimeDimensionHdf5Level& level = field_.levels[level_index];
+      if (!coordinate_faces.empty()) {
+         level.coordinate_faces = std::move(coordinate_faces[level_index]);
+      }
+      for (int direction = 0; direction < field_.dimension; ++direction) {
+         auto const& faces = level.coordinate_faces[direction];
+         const int cells = level.domain_upper[direction]
+            - level.domain_lower[direction] + 1;
+         if (!faces.empty()
+             && static_cast<int>(faces.size()) != cells + 1) {
+            amrex::Abort(
+               "portable physical-ID coordinate face count is inconsistent"
+            );
+         }
+      }
       coalesce_complete_level(field_, level, node_centered_);
    }
 }

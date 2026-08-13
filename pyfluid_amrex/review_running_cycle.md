@@ -5299,3 +5299,48 @@ I will always continue from the last cycle marked as `in_progress`.
   The refined numerical endpoint is therefore bracketed in
   `0.0329 < Omega < 0.033`, not yet a resolution-converged physical limit.
   [DONE]
+
+## Cycle 291 — Adaptive stellar initial-data grids (DONE)
+
+- Keep adaptation private to the initial-data solve. Evolution remains full
+  three-dimensional Cartesian, while the existing physical-ID artifact and
+  materializer remain the only handoff. Treat TOV as a radial problem and
+   circular axisymmetric RNS as an `r theta` problem; do not introduce an
+   invalid `theta phi` stellar-volume layout or a coordinate/template product
+   axis. The evolution configuration and operator remain unchanged. [DONE]
+- Pin down one reusable radial-domain contract: TOV retains its adaptive
+  enthalpy ODE, RNS uses solver-owned nonuniform spherical shells with a
+  regular angular basis, and matter support may be smaller than the gravity
+  domain. Promote a mapped grid only after it improves error per unit work
+  against a matched uniform control; the rejected Cycle-290 geometric map is
+  evidence, not a production default. The accepted map keeps uniform spacing
+  through a conservative enclosing source ball and reserves one third of the
+  radial cells for a geometric exterior. Adaptive TOV N=256 improves the
+  same-N uniform errors by 2.9--15.2 times and is within 1.2--1.4 times the
+  uniform N=512 errors. [DONE]
+- Remove repeated angular-decomposition work from coupled axisymmetric XCTS,
+  make every RNS source/derivative/diagnostic path consume the same explicit
+  radial coordinates, and preserve reflection symmetry without duplicating
+  the physics implementation. Scalar/toroidal eigendecompositions are cached;
+  all matter, source, derivative, centering, surface, tensor, and global-
+  integral owners now use the hierarchy coordinate lines. The focused
+  manufactured scalar/toroidal solve retains orders `1.97069/1.98048` across
+  three ranks. [DONE]
+- Extend portable ID coordinate metadata/evaluation only as required for
+  sequence continuation and Cartesian materialization, then run matched
+  work-precision and high-spin endpoint comparisons before documenting or
+  committing the tranche. Schema-v2 explicit faces drive cell/nodal sampling,
+  exact same-layout restart, different-grid continuation, and cross-dimensional
+  materialization. The regular radial-origin and reflection half-cell strips
+  are explicitly not exterior, preventing finer targets from acquiring an
+  artificial atmosphere seam. A mapped 128x32 continuation onto 96x24 agrees
+  with its direct solve within `8.08e-6` in global diagnostics. Adaptive
+  256x64 small-spin RNS is 3.53 times faster than uniform 512x128 with one
+  quarter the cells and `6.75e-6` relative ADM-mass difference. The adaptive
+  endpoint sequence reaches `Omega=0.0329` in `57.95 s` with
+  `chi_ms=0.05083` and `J/M^2=0.670946`; independent rejection at `0.033`
+  preserves the bracket `0.0329 < Omega < 0.033` and is close to the uniform
+  384x96 endpoint (`129.26 s`, `0.05144`, `0.670831`). Production 1D/2D/3D,
+  focused interpolation/elliptic checks, architecture, the three-rank reduced-
+  ID standard gate, and 3/3 quick suite pass. The unchanged cache-hit
+  production rebuild is `0.57 s`. [DONE]

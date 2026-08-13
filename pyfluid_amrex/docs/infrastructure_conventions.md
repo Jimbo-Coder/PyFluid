@@ -137,9 +137,11 @@ exact-layout evolution caches and sequence-continuation seeds. Evolution may
 discard continuation-only fields, while a sequence continuation may discard
 evolution-only caches. These fields are accelerators, not the physical
 interchange contract, and their roles must be explicit in the artifact
-metadata. The current exact-layout caches permit lossless direct evolution
-loading and also seed another XCTS rotation target without reconstructing
-conserved or Z4c state from the physical core.
+metadata. Uniform Cartesian artifacts may carry exact-layout caches for
+lossless direct evolution loading. Reduced mapped artifacts deliberately omit
+those evolution caches: an exact same-layout continuation restores their
+portable primitives and nodal ADM fields without interpolation, while a
+different target uses the common materializer.
 
 TOV, rotating-star, binary, and external providers must all produce this same
 field contract. The artifact must not encode timestepper, reconstruction,
@@ -194,12 +196,22 @@ Keep three representations independent:
 The handoff is an evaluation contract at physical target points, not an AMReX
 box-layout contract. A materializer must not depend on the ID solver matrix,
 iteration storage, logical spacing, or refinement bookkeeping. Conversely, an
-ID solver must not allocate evolution flux/register state. The current
-portable schema implements uniform AMReX levels and cross-dimensional chart
-mapping. A future mapped, modal, or nonuniform artifact must version and store
-its evaluation coordinates/coefficients explicitly before that representation
-is used for production output; it must not encode a nonuniform physical grid
-while advertising uniform `prob_lo/prob_hi` spacing.
+ID solver must not allocate evolution flux/register state. The portable schema
+supports uniform AMReX levels and versioned explicit coordinate faces.
+`coordinate_layout=explicit_faces_v1` stores every nonuniform coordinate face
+used to evaluate cell-centred and nodal fields; logical AMReX boxes remain
+storage indices and never masquerade as uniform physical spacing. A future
+modal or block-adaptive representation must likewise version and store its
+evaluation coordinates or coefficients before production.
+
+`initial_data.radial_grid=adaptive` selects the shared stellar radial-map
+owner. TOV uses spherical `r`; circular RNS uses spherical `r theta`. The map
+keeps regular uniform spacing through a conservative enclosing matter region
+and a geometrically stretched, adequately resolved gravity exterior. It is
+fixed during one nonlinear solve and rotation sequence so live fields never
+need an in-solve regrid. Uniform remains the explicit work-precision control.
+This is star-adapted mapped spacing, not residual-driven AMR: binaries and
+multiple compact objects still need a block/multidomain design.
 
 Matter support and gravity extent need not be the same computational domain.
 An ID method may stop its matter representation at the enthalpy-zero surface
@@ -218,7 +230,10 @@ do not collapse physically distinct centerings into one storage view.
 Interpolation ownership includes target points outside the source sample
 hull. A cell-centred radial source has a half-cell gap at the regular origin;
 clamping there is interior regular interpolation and must not create
-atmosphere. Beyond the saved outer radius, the loader clamps only the source
+atmosphere. The same rule holds for the interior half-cell strip adjoining a
+declared reflection plane, such as the RNS equator; a finer target must not
+turn that regular strip into physical exterior. Beyond the saved outer radius,
+the loader clamps only the source
 sample and applies the selected physical exterior at the original target
 point: exact isotropic-Schwarzschild exterior for spherical TOV ADM data,
 component-appropriate asymptotically flat falloff for general ADM data, and
@@ -283,13 +298,13 @@ or shift even though `phi` is not an active mesh axis. The materializer owns
 the basis transformation to the target chart. Do not truncate portable field
 rank to `AMREX_SPACEDIM` or create a reduced-dimension duplicate field schema.
 
-The currently validated reduced physical-ID handoff is spherical
-one-dimensional TOV to three-dimensional Cartesian RHD. Cross-chart CT is
-deliberately rejected until face-centred divergence-preserving magnetic
-transfer has an owner. A two-dimensional spherical `r theta` rotating XCTS
-solve has validated axisymmetric scalar and toroidal spin-1 elliptic operators.
-It still requires the coupled matter/source and longitudinal-tensor owner plus
-zero-spin equivalence before it can emit the same portable physical core.
+The validated reduced physical-ID handoffs are spherical one-dimensional TOV
+and spherical two-dimensional circular-RNS XCTS to three-dimensional Cartesian
+RHD. Uniform and explicit-face radial artifacts use the same evaluator. An
+exact-layout mapped RNS artifact can seed the next rotation target without
+interpolation; the resulting model remains independently usable for Cartesian
+materialization. Cross-chart CT is deliberately rejected until face-centred
+divergence-preserving magnetic transfer has an owner.
 
 Elliptic boundary types are component-specific: on a reflection plane the
 normal component of a polar vector is odd while its tangential components are

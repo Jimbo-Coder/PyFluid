@@ -17,9 +17,11 @@
 #include <AMReX_ParallelReduce.H>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "pyfluid_amrex/constants.hpp"
@@ -74,6 +76,29 @@ amrex::Vector<amrex::Real> InitialDataEllipticHierarchy::coordinate_faces(
       uniform[face] = problo[direction] + face * spacing[direction];
    }
    return uniform;
+}
+
+InitialDataCoordinateLine InitialDataEllipticHierarchy::coordinate_line(
+   int level,
+   int direction
+) const
+{
+   InitialDataCoordinateLine line;
+   line.faces = coordinate_faces(level, direction);
+   const int cells = static_cast<int>(line.faces.size()) - 1;
+   line.centers.resize(cells);
+   line.widths.resize(cells);
+   const amrex::Real reference_width = line.faces[1] - line.faces[0];
+   const amrex::Real tolerance = 64.0
+      * std::numeric_limits<amrex::Real>::epsilon()
+      * std::max(amrex::Real(1.0), std::abs(reference_width));
+   for (int cell = 0; cell < cells; ++cell) {
+      line.centers[cell] = 0.5 * (line.faces[cell] + line.faces[cell + 1]);
+      line.widths[cell] = line.faces[cell + 1] - line.faces[cell];
+      line.uniform = line.uniform
+         && std::abs(line.widths[cell] - reference_width) <= tolerance;
+   }
+   return line;
 }
 
 amrex::Vector<amrex::Real> surface_focused_radial_faces(
@@ -143,6 +168,38 @@ amrex::Vector<amrex::Real> surface_focused_radial_faces(
    }
    faces.back() = outer_radius;
    return faces;
+}
+
+amrex::Vector<amrex::Real> stellar_adaptive_radial_faces(
+   amrex::Real seed_surface_radius,
+   amrex::Real outer_radius,
+   int radial_cells
+)
+{
+   if (!(seed_surface_radius > 0.0)
+       || !(outer_radius > 1.05 * seed_surface_radius)
+       || radial_cells < 16) {
+      amrex::Abort("invalid stellar adaptive radial-grid parameters");
+   }
+   // Uniform rotation expands the equator and contracts the pole.  Resolve a
+   // conservative enclosing source ball rather than fitting only the TOV
+   // surface, so the mapping stays fixed throughout a continuation sequence.
+   const amrex::Real source_radius = std::min(
+      1.5 * seed_surface_radius, 0.8 * outer_radius
+   );
+   if (!(source_radius > seed_surface_radius)) {
+      amrex::Abort("stellar adaptive radial grid cannot enclose the seed star");
+   }
+   // A metric solve cannot spend nearly all its degrees of freedom on matter:
+   // the asymptotic fields and the later Cartesian handoff still sample the
+   // complete gravity domain.  One third outside the enclosing source ball is
+   // a bounded compromise that keeps a smooth exterior while retaining a
+   // much finer stellar spacing than a uniform full-domain grid.
+   const int exterior_cells = std::max(8, radial_cells / 3);
+   const int source_cells = radial_cells - exterior_cells;
+   return surface_focused_radial_faces(
+      source_radius, outer_radius, source_cells, exterior_cells
+   );
 }
 
 namespace {
@@ -2256,6 +2313,11 @@ struct SymmetricTridiagonalEigensystem {
    std::vector<amrex::Real> vectors;
 };
 
+struct AxisymmetricAngularDecomposition {
+   std::vector<amrex::Real> weights;
+   SymmetricTridiagonalEigensystem eigensystem;
+};
+
 SymmetricTridiagonalEigensystem symmetric_tridiagonal_eigensystem(
    std::vector<amrex::Real> diagonal,
    std::vector<amrex::Real> off_diagonal
@@ -2382,6 +2444,88 @@ SymmetricTridiagonalEigensystem symmetric_tridiagonal_eigensystem(
       }
    }
    return {std::move(diagonal), std::move(mode_vectors)};
+}
+
+std::shared_ptr<AxisymmetricAngularDecomposition const>
+axisymmetric_angular_decomposition(
+   int angular_cells,
+   amrex::Real angular_lower,
+   amrex::Real angular_spacing,
+   AxisymmetricSphericalMode mode
+)
+{
+   struct CacheEntry {
+      int angular_cells = -1;
+      amrex::Real angular_lower = 0.0;
+      amrex::Real angular_spacing = 0.0;
+      std::shared_ptr<AxisymmetricAngularDecomposition const> decomposition;
+   };
+   static std::array<CacheEntry, 2> cache;
+   static std::mutex cache_mutex;
+   const int cache_index = mode == AxisymmetricSphericalMode::scalar ? 0 : 1;
+   std::lock_guard<std::mutex> guard(cache_mutex);
+   CacheEntry& entry = cache[cache_index];
+   if (entry.decomposition && entry.angular_cells == angular_cells
+       && entry.angular_lower == angular_lower
+       && entry.angular_spacing == angular_spacing) {
+      return entry.decomposition;
+   }
+
+   auto decomposition = std::make_shared<AxisymmetricAngularDecomposition>();
+   decomposition->weights.resize(angular_cells, 0.0);
+   std::vector<amrex::Real> angular_diagonal(angular_cells, 0.0);
+   std::vector<amrex::Real> angular_off_diagonal(angular_cells, 0.0);
+   const amrex::Real angular_scale = 1.0 / (
+      angular_spacing * angular_spacing
+   );
+   const amrex::Real angular_spin_squared =
+      mode == AxisymmetricSphericalMode::toroidal_vector ? 1.0 : 0.0;
+   for (int angular_index = 0;
+        angular_index < angular_cells;
+        ++angular_index) {
+      const amrex::Real theta = angular_lower
+         + (angular_index + 0.5) * angular_spacing;
+      decomposition->weights[angular_index] = std::sqrt(std::sin(theta));
+      if (!(decomposition->weights[angular_index] > 0.0)) {
+         amrex::Abort("invalid spherical angular cell weight");
+      }
+      angular_diagonal[angular_index] -= angular_spin_squared / (
+         decomposition->weights[angular_index]
+         * decomposition->weights[angular_index]
+         * decomposition->weights[angular_index]
+         * decomposition->weights[angular_index]
+      );
+   }
+   for (int angular_index = 0;
+        angular_index + 1 < angular_cells;
+        ++angular_index) {
+      const amrex::Real face_theta = angular_lower
+         + (angular_index + 1) * angular_spacing;
+      const amrex::Real face_coefficient =
+         std::sin(face_theta) * angular_scale;
+      angular_off_diagonal[angular_index] = face_coefficient / (
+         decomposition->weights[angular_index]
+         * decomposition->weights[angular_index + 1]
+      );
+      angular_diagonal[angular_index] -= face_coefficient / (
+         decomposition->weights[angular_index]
+         * decomposition->weights[angular_index]
+      );
+      angular_diagonal[angular_index + 1] -= face_coefficient / (
+         decomposition->weights[angular_index + 1]
+         * decomposition->weights[angular_index + 1]
+      );
+   }
+   decomposition->eigensystem = symmetric_tridiagonal_eigensystem(
+      std::move(angular_diagonal), std::move(angular_off_diagonal)
+   );
+   entry = {
+      angular_cells,
+      angular_lower,
+      angular_spacing,
+      decomposition,
+   };
+   return decomposition;
 }
 
 amrex::MultiFab host_copy(amrex::MultiFab const& source)
@@ -2631,9 +2775,6 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       outer_gamma[angular_index] = outer_c[angular_index] / denominator;
    }
 
-   const amrex::Real angular_scale = 1.0 / (dx[1] * dx[1]);
-   const amrex::Real angular_spin_squared =
-      mode == AxisymmetricSphericalMode::toroidal_vector ? 1.0 : 0.0;
    std::vector<amrex::Real> radial_lower(radial_cells, 0.0);
    std::vector<amrex::Real> radial_diagonal(radial_cells, 0.0);
    std::vector<amrex::Real> radial_upper(radial_cells, 0.0);
@@ -2676,46 +2817,14 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       ] -= outer_face_coefficient * outer_gamma[angular_index];
    }
 
-   std::vector<amrex::Real> angular_weight(angular_cells, 0.0);
-   std::vector<amrex::Real> angular_diagonal(angular_cells, 0.0);
-   std::vector<amrex::Real> angular_off_diagonal(angular_cells, 0.0);
-   for (int angular_index = 0;
-        angular_index < angular_cells;
-        ++angular_index) {
-      const amrex::Real theta = problo[1]
-         + (angular_index + 0.5) * dx[1];
-      angular_weight[angular_index] = std::sqrt(std::sin(theta));
-      if (!(angular_weight[angular_index] > 0.0)) {
-         amrex::Abort("invalid spherical angular cell weight");
-      }
-      angular_diagonal[angular_index] -= angular_spin_squared / (
-         angular_weight[angular_index] * angular_weight[angular_index]
-         * angular_weight[angular_index] * angular_weight[angular_index]
-      );
-   }
-   for (int angular_index = 0;
-        angular_index + 1 < angular_cells;
-        ++angular_index) {
-      const amrex::Real face_theta = problo[1]
-         + (angular_index + 1) * dx[1];
-      const amrex::Real face_coefficient =
-         std::sin(face_theta) * angular_scale;
-      angular_off_diagonal[angular_index] = face_coefficient / (
-         angular_weight[angular_index]
-         * angular_weight[angular_index + 1]
-      );
-      angular_diagonal[angular_index] -= face_coefficient / (
-         angular_weight[angular_index] * angular_weight[angular_index]
-      );
-      angular_diagonal[angular_index + 1] -= face_coefficient / (
-         angular_weight[angular_index + 1]
-         * angular_weight[angular_index + 1]
-      );
-   }
-   const SymmetricTridiagonalEigensystem angular_eigensystem =
-      symmetric_tridiagonal_eigensystem(
-         std::move(angular_diagonal), std::move(angular_off_diagonal)
-      );
+   const auto angular_decomposition = axisymmetric_angular_decomposition(
+      angular_cells, problo[1], dx[1], mode
+   );
+   const amrex::Real angular_scale = 1.0 / (dx[1] * dx[1]);
+   const amrex::Real angular_spin_squared =
+      mode == AxisymmetricSphericalMode::toroidal_vector ? 1.0 : 0.0;
+   const auto& angular_weight = angular_decomposition->weights;
+   const auto& angular_eigensystem = angular_decomposition->eigensystem;
 
    const int rank = amrex::ParallelContext::MyProcSub();
    const int ranks = amrex::ParallelContext::NProcsSub();

@@ -20,6 +20,7 @@ spacetime.evolution = fixed
 spacetime.matter_coupling = coupled
 
 initial_data.solve_only = 1
+initial_data.radial_grid = adaptive
 initial_data.output_file = runs/current/tov/tov_spherical_id_1d/physical_id
 initial_data.atmosphere = power_law
 initial_data.atmosphere_density = 1.0e-10

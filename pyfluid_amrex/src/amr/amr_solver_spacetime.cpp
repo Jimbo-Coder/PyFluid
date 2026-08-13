@@ -140,6 +140,51 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
    const bool uses_constraint_solve = cfg_.spacetime_initial_data == "ctt"
       || cfg_.spacetime_initial_data == "cttk"
       || cfg_.spacetime_initial_data == "xcts";
+#if (AMREX_SPACEDIM == 1)
+   if (cfg_.initial_data_radial_grid == "adaptive" && cfg_.ic == "tov"
+       && !seed_from_loaded_id) {
+      const RelativisticInitialDataView provider = initial_data_provider_.view();
+      if (finestLevel() != 0 || !provider.tov.active()) {
+         amrex::Abort(
+            "adaptive TOV ID requires one level and a native TOV provider"
+         );
+      }
+      InitialDataEllipticHierarchy mapped_hierarchy;
+      mapped_hierarchy.geometry.push_back(Geom(0));
+      mapped_hierarchy.grids.push_back(boxArray(0));
+      mapped_hierarchy.distribution.push_back(DistributionMap(0));
+      mapped_hierarchy.physical_coordinate_faces.resize(1);
+      mapped_hierarchy.physical_coordinate_faces[0][0] =
+         stellar_adaptive_radial_faces(
+            provider.tov.surface_radius,
+            Geom(0).ProbHi(0),
+            Geom(0).Domain().length(0)
+         );
+      initial_data_coordinate_faces_ =
+         mapped_hierarchy.physical_coordinate_faces;
+      initialize_relativistic_primitive_cache_from_provider(
+         *primitive_[0], mapped_hierarchy, 0, cfg_, provider
+      );
+      initialize_mapped_z4c_state_from_provider(
+         *spacetime_state_.state()[0],
+         mapped_hierarchy,
+         0,
+         cfg_,
+         0.0,
+         provider
+      );
+      const InitialDataCoordinateLine radial = mapped_hierarchy.coordinate_line(
+         0, 0
+      );
+      amrex::Print()
+         << "adaptive TOV ID radial_cells=" << radial.centers.size()
+         << " surface=" << provider.tov.surface_radius
+         << " inner_dr=" << radial.widths.front()
+         << " outer_dr=" << radial.widths.back() << '\n';
+      finalize_constraint_solved_initial_data_state();
+      return;
+   }
+#endif
    if (!uses_constraint_solve
        || !initial_data_provider_.view().fields.spacetime_from_id) {
       return;
@@ -185,6 +230,48 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
          upper == BoundaryKind::Symmetry || upper == BoundaryKind::Reflecting
          || upper == BoundaryKind::Origin;
    }
+#if (AMREX_SPACEDIM == 2)
+   if (cfg_.initial_data_radial_grid == "adaptive"
+       || !initial_data_coordinate_faces_.empty()) {
+      const RelativisticInitialDataView provider = initial_data_provider_.view();
+      if (finestLevel() != 0 || !provider.tov.active()) {
+         amrex::Abort(
+            "adaptive stellar ID requires one level and a native TOV seed"
+         );
+      }
+      if (seed_from_loaded_id) {
+         if (initial_data_coordinate_faces_.empty()) {
+            amrex::Abort(
+               "adaptive stellar ID continuation requires mapped coordinate "
+               "metadata in the saved artifact"
+            );
+         }
+         hierarchy.physical_coordinate_faces = initial_data_coordinate_faces_;
+      } else {
+         hierarchy.physical_coordinate_faces.resize(1);
+         hierarchy.physical_coordinate_faces[0][0] =
+            stellar_adaptive_radial_faces(
+               provider.tov.surface_radius,
+               hierarchy.geometry[0].ProbHi(0),
+               hierarchy.geometry[0].Domain().length(0)
+            );
+         initial_data_coordinate_faces_ = hierarchy.physical_coordinate_faces;
+         initialize_relativistic_primitive_cache_from_provider(
+            *primitive_[0], hierarchy, 0, cfg_, provider
+         );
+      }
+      if (amrex::ParallelDescriptor::IOProcessor()) {
+         const InitialDataCoordinateLine radial = hierarchy.coordinate_line(
+            0, 0
+         );
+         amrex::Print()
+            << "adaptive stellar ID radial_cells=" << radial.centers.size()
+            << " seed_surface=" << provider.tov.surface_radius
+            << " inner_dr=" << radial.widths.front()
+            << " outer_dr=" << radial.widths.back() << '\n';
+      }
+   }
+#endif
    bool rotating_xy_reflection =
       hierarchy.reflection_lo[0] != 0 || hierarchy.reflection_hi[0] != 0;
 #if (AMREX_SPACEDIM >= 2)
@@ -297,10 +384,12 @@ void AmrSolverBase::finalize_constraint_solved_initial_data_state()
       spacetime_coupling_.invalidate_cell_spacetime(lev);
    }
    fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0);
-   for (int lev = 0; lev <= finestLevel(); ++lev) {
-      complete_z4c_contracted_connections(
-         *spacetime_state_.state()[lev], Geom(lev)
-      );
+   if (initial_data_coordinate_faces_.empty()) {
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         complete_z4c_contracted_connections(
+            *spacetime_state_.state()[lev], Geom(lev)
+         );
+      }
    }
    fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0);
    prepare_spacetime_coupling_range(

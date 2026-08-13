@@ -6,6 +6,7 @@
 namespace pyfluid_amrex {
 
 struct FaceMagneticField;
+struct InitialDataEllipticHierarchy;
 struct RelativisticInitialDataView;
 struct RunConfig;
 
@@ -19,6 +20,25 @@ void initialize_state(
 void initialize_relativistic_primitive_cache_from_provider(
    amrex::MultiFab& primitive,
    amrex::Geometry const& geometry,
+   RunConfig const& config,
+   RelativisticInitialDataView const& initial_data
+);
+
+// Initialize provider-owned ADM/Z4c data at solver-private mapped ID
+// coordinates.  Evolution state remains on its ordinary AMReX Geometry.
+void initialize_mapped_z4c_state_from_provider(
+   amrex::MultiFab& state,
+   InitialDataEllipticHierarchy const& hierarchy,
+   int level,
+   RunConfig const& config,
+   amrex::Real time,
+   RelativisticInitialDataView const& initial_data
+);
+
+void initialize_relativistic_primitive_cache_from_provider(
+   amrex::MultiFab& primitive,
+   InitialDataEllipticHierarchy const& hierarchy,
+   int level,
    RunConfig const& config,
    RelativisticInitialDataView const& initial_data
 );

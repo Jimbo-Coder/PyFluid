@@ -2,13 +2,17 @@
 
 #include <AMReX_BC_TYPES.H>
 #include <AMReX_GpuLaunch.H>
+#include <AMReX_GpuAsyncArray.H>
 #include <AMReX_Math.H>
 
 #include <cstdint>
 #include <cmath>
+#include <optional>
 
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/coordinate_locations.hpp"
+#include "pyfluid_amrex/initial_data.hpp"
+#include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/mesh_geometry.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 #include "pyfluid_amrex/z4c_derivatives.hpp"
@@ -176,7 +180,9 @@ void initialize_z4c_state_at_offset(
    amrex::Real time,
    RelativisticInitialDataView const& initial_data,
    amrex::Real coordinate_offset,
-   bool fill_ghosts
+   bool fill_ghosts,
+   InitialDataEllipticHierarchy const* hierarchy = nullptr,
+   int level = 0
 )
 {
    const Z4cInitialDataParameters parameters = z4c_initial_data_parameters(cfg);
@@ -186,6 +192,42 @@ void initialize_z4c_state_at_offset(
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
    const bool node_centered = coordinate_offset == 0.0;
    const InitialDataFieldSelection fields = initial_data.fields;
+   const amrex::Dim3 domain_lo = amrex::lbound(geometry.Domain());
+   std::optional<amrex::Gpu::AsyncArray<amrex::Real>> coordinate1_storage;
+   amrex::Real const* coordinate1 = nullptr;
+   if (hierarchy != nullptr) {
+      const InitialDataCoordinateLine line = hierarchy->coordinate_line(
+         level, 0
+      );
+      auto const& values = node_centered ? line.faces : line.centers;
+      coordinate1_storage.emplace(values.data(), values.size());
+      coordinate1 = coordinate1_storage->data();
+   }
+#if (AMREX_SPACEDIM >= 2)
+   std::optional<amrex::Gpu::AsyncArray<amrex::Real>> coordinate2_storage;
+   amrex::Real const* coordinate2 = nullptr;
+   if (hierarchy != nullptr) {
+      const InitialDataCoordinateLine line = hierarchy->coordinate_line(
+         level, 1
+      );
+      auto const& values = node_centered ? line.faces : line.centers;
+      coordinate2_storage.emplace(values.data(), values.size());
+      coordinate2 = coordinate2_storage->data();
+   }
+#endif
+#if (AMREX_SPACEDIM == 3)
+   std::optional<amrex::Gpu::AsyncArray<amrex::Real>> coordinate3_storage;
+   amrex::Real const* coordinate3 = nullptr;
+   if (hierarchy != nullptr) {
+      const InitialDataCoordinateLine line = hierarchy->coordinate_line(
+         level, 2
+      );
+      auto const& values = node_centered ? line.faces : line.centers;
+      coordinate3_storage.emplace(values.data(), values.size());
+      coordinate3 = coordinate3_storage->data();
+   }
+#endif
+   const bool mapped_coordinates = hierarchy != nullptr;
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion() && !fill_ghosts)
 #endif
@@ -195,18 +237,33 @@ void initialize_z4c_state_at_offset(
       const amrex::Box box = fill_ghosts ? mfi.fabbox() : mfi.tilebox();
       const auto output = state.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const auto mesh_point = mesh_coordinate_triplet_at_location(
-            mesh_coordinate,
-            mesh_axes,
-            lower,
-            spacing,
-            i,
-            j,
-            k,
-            node_centered,
-            AMREX_SPACEDIM >= 2 && node_centered,
-            AMREX_SPACEDIM == 3 && node_centered
-         );
+         amrex::GpuArray<amrex::Real, 3> mesh_point{};
+         if (mapped_coordinates) {
+            mesh_point[0] = coordinate1[i - domain_lo.x];
+#if (AMREX_SPACEDIM >= 2)
+            mesh_point[1] = coordinate2[j - domain_lo.y];
+#else
+            amrex::ignore_unused(j);
+#endif
+#if (AMREX_SPACEDIM == 3)
+            mesh_point[2] = coordinate3[k - domain_lo.z];
+#else
+            amrex::ignore_unused(k);
+#endif
+         } else {
+            mesh_point = mesh_coordinate_triplet_at_location(
+               mesh_coordinate,
+               mesh_axes,
+               lower,
+               spacing,
+               i,
+               j,
+               k,
+               node_centered,
+               AMREX_SPACEDIM >= 2 && node_centered,
+               AMREX_SPACEDIM == 3 && node_centered
+            );
+         }
          const auto physical = mesh_coordinate_triplet_to_cartesian(
             mesh_coordinate, mesh_point
          );
@@ -277,6 +334,31 @@ void initialize_z4c_state(
 {
    initialize_z4c_state_at_offset(
       state, geometry, cfg, time, initial_data, 0.0, false
+   );
+}
+
+void initialize_mapped_z4c_state_from_provider(
+   amrex::MultiFab& state,
+   InitialDataEllipticHierarchy const& hierarchy,
+   int level,
+   RunConfig const& cfg,
+   amrex::Real time,
+   RelativisticInitialDataView const& initial_data
+)
+{
+   if (level < 0 || level >= static_cast<int>(hierarchy.geometry.size())) {
+      amrex::Abort("mapped Z4c initialization level is invalid");
+   }
+   initialize_z4c_state_at_offset(
+      state,
+      hierarchy.geometry[level],
+      cfg,
+      time,
+      initial_data,
+      0.0,
+      false,
+      &hierarchy,
+      level
    );
 }
 

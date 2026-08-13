@@ -429,6 +429,7 @@ RunConfig read_config()
    initial_data_pp.queryAdd(
       "sequence_output_dir", cfg.initial_data_sequence_output_dir
    );
+   initial_data_pp.queryAdd("radial_grid", cfg.initial_data_radial_grid);
    initial_data_pp.queryAdd("atmosphere", cfg.initial_data_atmosphere);
    initial_data_pp.queryAdd("atmosphere_density", cfg.initial_data_atmosphere_density);
    initial_data_pp.queryAdd("atmosphere_pressure", cfg.initial_data_atmosphere_pressure);
@@ -1955,6 +1956,25 @@ void validate_config(RunConfig const& cfg)
       )
       && cfg.ic == "rotating_star"
       && cfg.spacetime_initial_data == "xcts";
+   const bool reduced_radial_tov =
+      AMREX_SPACEDIM == 1
+      && cfg.mesh_coordinate == "spherical"
+      && mesh_axes_equal(
+         mesh_axes_layout(MeshSpherical, cfg.mesh_axes), MeshAxisR
+      )
+      && cfg.ic == "tov";
+   if (cfg.initial_data_radial_grid != "uniform"
+       && cfg.initial_data_radial_grid != "adaptive") {
+      amrex::Abort("initial_data.radial_grid must be uniform or adaptive");
+   }
+   if (cfg.initial_data_radial_grid == "adaptive"
+       && ((!reduced_axisymmetric_xcts && !reduced_radial_tov)
+           || !cfg.initial_data_solve_only)) {
+      amrex::Abort(
+         "initial_data.radial_grid = adaptive currently requires a solve-only "
+         "spherical-r TOV or spherical r-theta rotating-star XCTS solve"
+      );
+   }
    if (cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"
        && cfg.ic != "tov" && !reduced_axisymmetric_xcts) {
       amrex::Abort(

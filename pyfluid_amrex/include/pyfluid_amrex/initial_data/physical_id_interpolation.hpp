@@ -43,13 +43,17 @@ struct PortablePhysicalIdSample {
    bool exterior = false;
 };
 
+using RuntimePhysicalIdCoordinateFaces =
+   std::vector<std::array<std::vector<amrex::Real>, 3>>;
+
 class PortablePhysicalIdInterpolator {
 public:
    PortablePhysicalIdInterpolator(
       RuntimeDimensionHdf5Field field,
       PhysicalIdChart source_chart,
       GridFieldSetInfo field_set,
-      bool node_centered
+      bool node_centered,
+      RuntimePhysicalIdCoordinateFaces coordinate_faces = {}
    );
 
    PortablePhysicalIdSample sample(

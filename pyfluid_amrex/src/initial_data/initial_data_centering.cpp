@@ -2,6 +2,7 @@
 
 #include <AMReX.H>
 #include <AMReX_FillPatchUtil.H>
+#include <AMReX_GpuAsyncArray.H>
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_PhysBCFunct.H>
@@ -261,12 +262,141 @@ void materialize_initial_data_vertices(
             "initial-data vertex hierarchy boundary/component count mismatch"
          );
       }
-      transfer_grid_field_centering(
-         *vertex_fields[level],
-         *source_fields[level],
-         hierarchy.geometry[level],
-         transfer_order
+      bool mapped = false;
+      std::array<InitialDataCoordinateLine, AMREX_SPACEDIM> coordinates;
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         coordinates[direction] = hierarchy.coordinate_line(level, direction);
+         mapped = mapped || !coordinates[direction].uniform;
+      }
+      if (!mapped) {
+         transfer_grid_field_centering(
+            *vertex_fields[level],
+            *source_fields[level],
+            hierarchy.geometry[level],
+            transfer_order
+         );
+         continue;
+      }
+      if (num_levels != 1 || transfer_order != 2
+          || source_fields[level]->nGrow() < 1) {
+         amrex::Abort(
+            "mapped initial-data vertex materialization currently requires "
+            "one level, second order, and one source ghost cell"
+         );
+      }
+      const amrex::Dim3 cell_lo = amrex::lbound(
+         hierarchy.geometry[level].Domain()
       );
+      const amrex::Dim3 cell_hi = amrex::ubound(
+         hierarchy.geometry[level].Domain()
+      );
+      amrex::Gpu::AsyncArray<amrex::Real> faces1_storage(
+         coordinates[0].faces.data(), coordinates[0].faces.size()
+      );
+      amrex::Gpu::AsyncArray<amrex::Real> centers1_storage(
+         coordinates[0].centers.data(), coordinates[0].centers.size()
+      );
+      const amrex::Real* faces1 = faces1_storage.data();
+      const amrex::Real* centers1 = centers1_storage.data();
+#if (AMREX_SPACEDIM >= 2)
+      amrex::Gpu::AsyncArray<amrex::Real> faces2_storage(
+         coordinates[1].faces.data(), coordinates[1].faces.size()
+      );
+      amrex::Gpu::AsyncArray<amrex::Real> centers2_storage(
+         coordinates[1].centers.data(), coordinates[1].centers.size()
+      );
+      const amrex::Real* faces2 = faces2_storage.data();
+      const amrex::Real* centers2 = centers2_storage.data();
+#endif
+#if (AMREX_SPACEDIM == 3)
+      amrex::Gpu::AsyncArray<amrex::Real> faces3_storage(
+         coordinates[2].faces.data(), coordinates[2].faces.size()
+      );
+      amrex::Gpu::AsyncArray<amrex::Real> centers3_storage(
+         coordinates[2].centers.data(), coordinates[2].centers.size()
+      );
+      const amrex::Real* faces3 = faces3_storage.data();
+      const amrex::Real* centers3 = centers3_storage.data();
+#endif
+      for (amrex::MFIter mfi(*vertex_fields[level], amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto source = source_fields[level]->const_array(mfi);
+         const auto vertex = vertex_fields[level]->array(mfi);
+         const int num_components = vertex_fields[level]->nComp();
+         amrex::ParallelFor(box, num_components, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k, int component
+         ) noexcept {
+            const int face1_index = i - cell_lo.x;
+            const amrex::Real face1 = faces1[face1_index];
+            const amrex::Real lower1 = i - 1 < cell_lo.x
+               ? 2.0 * faces1[0] - centers1[0]
+               : centers1[i - 1 - cell_lo.x];
+            const amrex::Real upper1 = i > cell_hi.x
+               ? 2.0 * faces1[cell_hi.x - cell_lo.x + 1]
+                    - centers1[cell_hi.x - cell_lo.x]
+               : centers1[i - cell_lo.x];
+            const amrex::Real weight1 = (face1 - lower1) / (upper1 - lower1);
+#if (AMREX_SPACEDIM >= 2)
+            const int face2_index = j - cell_lo.y;
+            const amrex::Real face2 = faces2[face2_index];
+            const amrex::Real lower2 = j - 1 < cell_lo.y
+               ? 2.0 * faces2[0] - centers2[0]
+               : centers2[j - 1 - cell_lo.y];
+            const amrex::Real upper2 = j > cell_hi.y
+               ? 2.0 * faces2[cell_hi.y - cell_lo.y + 1]
+                    - centers2[cell_hi.y - cell_lo.y]
+               : centers2[j - cell_lo.y];
+            const amrex::Real weight2 = (face2 - lower2) / (upper2 - lower2);
+#endif
+#if (AMREX_SPACEDIM == 3)
+            const int face3_index = k - cell_lo.z;
+            const amrex::Real face3 = faces3[face3_index];
+            const amrex::Real lower3 = k - 1 < cell_lo.z
+               ? 2.0 * faces3[0] - centers3[0]
+               : centers3[k - 1 - cell_lo.z];
+            const amrex::Real upper3 = k > cell_hi.z
+               ? 2.0 * faces3[cell_hi.z - cell_lo.z + 1]
+                    - centers3[cell_hi.z - cell_lo.z]
+               : centers3[k - cell_lo.z];
+            const amrex::Real weight3 = (face3 - lower3) / (upper3 - lower3);
+#endif
+            amrex::Real value = 0.0;
+#if (AMREX_SPACEDIM == 1)
+            value = (1.0 - weight1) * source(i - 1, j, k, component)
+               + weight1 * source(i, j, k, component);
+#elif (AMREX_SPACEDIM == 2)
+            for (int offset2 = 0; offset2 <= 1; ++offset2) {
+               const amrex::Real angular_weight = offset2 == 0
+                  ? 1.0 - weight2 : weight2;
+               value += angular_weight * (
+                  (1.0 - weight1)
+                     * source(i - 1, j - 1 + offset2, k, component)
+                  + weight1
+                     * source(i, j - 1 + offset2, k, component)
+               );
+            }
+#else
+            for (int offset3 = 0; offset3 <= 1; ++offset3) {
+               const amrex::Real third_weight = offset3 == 0
+                  ? 1.0 - weight3 : weight3;
+               for (int offset2 = 0; offset2 <= 1; ++offset2) {
+                  const amrex::Real second_weight = offset2 == 0
+                     ? 1.0 - weight2 : weight2;
+                  value += third_weight * second_weight * (
+                     (1.0 - weight1) * source(
+                        i - 1, j - 1 + offset2, k - 1 + offset3, component
+                     )
+                     + weight1 * source(
+                        i, j - 1 + offset2, k - 1 + offset3, component
+                     )
+                  );
+               }
+            }
+#endif
+            vertex(i, j, k, component) = value;
+         });
+      }
    }
    for (int level = num_levels - 1; level > 0; --level) {
       amrex::average_down_nodal(

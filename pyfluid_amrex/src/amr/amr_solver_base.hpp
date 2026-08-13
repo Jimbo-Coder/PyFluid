@@ -592,6 +592,9 @@ protected:
 
    RunConfig cfg_;
    RelativisticInitialDataProvider initial_data_provider_;
+   amrex::Vector<
+      std::array<amrex::Vector<amrex::Real>, AMREX_SPACEDIM>
+   > initial_data_coordinate_faces_;
    EOSThermodynamicState recovery_atmosphere_{};
    PhysicalSystem physics_system_ = PhysicalSystem::HD;
    MeshRuntimeLayout mesh_layout_{};

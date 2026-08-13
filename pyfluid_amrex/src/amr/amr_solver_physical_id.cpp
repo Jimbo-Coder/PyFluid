@@ -2,6 +2,7 @@
 
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
+#include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 #include "pyfluid_amrex/z4c_runtime.hpp"
@@ -121,6 +122,22 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
    MutablePhysicalIdField fluid;
    MutablePhysicalIdField spacetime;
    MutablePhysicalIdFaceFields face_magnetic;
+#if (AMREX_SPACEDIM == 2)
+   if (cfg_.initial_data_radial_grid == "adaptive") {
+      const RelativisticInitialDataView provider = initial_data_provider_.view();
+      if (!provider.tov.active() || finestLevel() != 0) {
+         amrex::Abort(
+            "adaptive stellar ID loading requires one level and a TOV seed"
+         );
+      }
+      initial_data_coordinate_faces_.resize(1);
+      initial_data_coordinate_faces_[0][0] = stellar_adaptive_radial_faces(
+         provider.tov.surface_radius,
+         Geom(0).ProbHi(0),
+         Geom(0).Domain().length(0)
+      );
+   }
+#endif
    for (int level = 0; level <= finestLevel(); ++level) {
       geometry.push_back(Geom(level));
       primitive.push_back(primitive_[level].get());
@@ -147,7 +164,8 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       primitive,
       fluid,
       spacetime,
-      face_magnetic
+      face_magnetic,
+      &initial_data_coordinate_faces_
    );
    analytic_fixed_spacetime_kernels_ =
       !spacetime_state_.evolves()
@@ -160,10 +178,12 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
             spacetime_coupling_.invalidate_cell_spacetime(level);
          }
          fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0);
-         for (int level = 0; level <= finestLevel(); ++level) {
-            complete_z4c_contracted_connections(
-               *spacetime_state_.state()[level], Geom(level)
-            );
+         if (initial_data_coordinate_faces_.empty()) {
+            for (int level = 0; level <= finestLevel(); ++level) {
+               complete_z4c_contracted_connections(
+                  *spacetime_state_.state()[level], Geom(level)
+               );
+            }
          }
          fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0);
          prepare_spacetime_coupling_range(
@@ -404,7 +424,8 @@ void AmrSolverBase::write_physical_initial_data_artifact(
       primitive,
       fluid,
       spacetime,
-      face_magnetic
+      face_magnetic,
+      initial_data_coordinate_faces_
    );
    if (initial_data_rotating_star_summary_
        && angular_velocity == cfg_.initial_data_angular_velocity
