@@ -1163,9 +1163,21 @@ void validate_config(RunConfig const& cfg)
       if (cfg.ic == "rotating_star"
           && cfg.initial_data_angular_velocity != 0.0
           && AMREX_SPACEDIM != 3) {
-         amrex::Abort(
-            "nonzero-spin rotating_star currently requires the 3D executable"
-         );
+         const bool reduced_axisymmetric_xcts =
+            AMREX_SPACEDIM == 2
+            && cfg.initial_data_solve_only
+            && cfg.mesh_coordinate == "spherical"
+            && mesh_axes_equal(
+               mesh_axes_layout(MeshSpherical, cfg.mesh_axes),
+               MeshAxisR,
+               MeshAxisTheta
+            );
+         if (!reduced_axisymmetric_xcts) {
+            amrex::Abort(
+               "nonzero-spin rotating_star requires either 3D Cartesian "
+               "materialization or a 2D spherical r-theta solve-only XCTS run"
+            );
+         }
       }
       if (spacetime_evolves(cfg) && cfg.spacetime_fixed_metric != "minkowski") {
          amrex::Abort("spacetime.fixed_metric applies to fixed spacetime only");
@@ -1933,11 +1945,21 @@ void validate_config(RunConfig const& cfg)
    if (cfg.initial_data_solve_only && !cfg.restart_file.empty()) {
       amrex::Abort("initial_data.solve_only cannot restart evolution checkpoints");
    }
+   const bool reduced_axisymmetric_xcts =
+      AMREX_SPACEDIM == 2
+      && cfg.mesh_coordinate == "spherical"
+      && mesh_axes_equal(
+         mesh_axes_layout(MeshSpherical, cfg.mesh_axes),
+         MeshAxisR,
+         MeshAxisTheta
+      )
+      && cfg.ic == "rotating_star"
+      && cfg.spacetime_initial_data == "xcts";
    if (cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"
-       && cfg.ic != "tov") {
+       && cfg.ic != "tov" && !reduced_axisymmetric_xcts) {
       amrex::Abort(
-         "reduced curvilinear initial-data solves currently support TOV; "
-         "rotating-star r-theta XCTS remains a separate solver capability"
+         "reduced curvilinear initial-data solves currently support TOV or "
+         "rotating-star spherical r-theta XCTS"
       );
    }
    if (!cfg.initial_data_sequence_output_dir.empty()

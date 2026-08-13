@@ -29,6 +29,12 @@ from validation_common import (
 SOURCE_INPUT = ROOT / "pyfluid_amrex/inputs/tov_spherical_id_1d.in"
 DIRECT_INPUT = ROOT / "pyfluid_amrex/inputs/tov_direct_id_3d.in"
 MATERIALIZED_INPUT = ROOT / "pyfluid_amrex/inputs/tov_from_spherical_id_3d.in"
+RNS_SOURCE_INPUT = (
+   ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_spherical_id_2d.in"
+)
+RNS_MATERIALIZED_INPUT = (
+   ROOT / "pyfluid_amrex/inputs/rotating_star_from_spherical_id_3d.in"
+)
 RUN_ROOT = ROOT / "runs/current/reduced_initial_data_validation"
 RESULTS = RUN_ROOT / "reduced_initial_data.tsv"
 FULL_RESULTS = RUN_ROOT / "reduced_initial_data_full.tsv"
@@ -219,6 +225,98 @@ def require_portable_source(artifact: Path, dimension: int) -> None:
          "reduced source artifact should contain only portable physical fields: "
          f"expected={sorted(expected)} actual={sorted(actual)}"
       )
+
+
+def read_artifact_metadata(artifact: Path) -> dict[str, str]:
+   values: dict[str, str] = {}
+   for raw_line in (artifact / "Header.meta").read_text().splitlines():
+      line = raw_line.removeprefix("#").strip()
+      if "=" not in line:
+         continue
+      key, value = line.split("=", 1)
+      values[key.strip()] = value.strip()
+   return values
+
+
+def validate_reduced_rns_handoff(args: argparse.Namespace) -> dict[str, object]:
+   _, source_artifact, source_seconds = run_id_case(
+      "rns_source_128x32",
+      2,
+      RNS_SOURCE_INPUT,
+      {
+         "amr.n_cell": "128 32",
+         "amr.max_grid_size": "64",
+         "initial_data.angular_velocity": "0.001",
+      },
+      args,
+   )
+   require_portable_source(source_artifact, 2)
+   metadata = read_artifact_metadata(source_artifact)
+   if metadata.get("mesh_coordinate") != "spherical" \
+         or metadata.get("mesh_axes") != "r theta" \
+         or metadata.get("eos_preset") != "sly":
+      raise RuntimeError("reduced RNS artifact lost its chart or EoS identity")
+   required_diagnostics = {
+      key: float(metadata[key])
+      for key in (
+         "mass_shedding_indicator",
+         "adm_mass",
+         "baryonic_mass",
+         "angular_momentum",
+         "dimensionless_spin",
+      )
+   }
+   if not all(np.isfinite(value) for value in required_diagnostics.values()):
+      raise RuntimeError("reduced RNS artifact has nonfinite global diagnostics")
+   if not 0.9 < required_diagnostics["mass_shedding_indicator"] < 1.1 \
+         or required_diagnostics["adm_mass"] <= 0.0 \
+         or required_diagnostics["baryonic_mass"] <= 0.0 \
+         or required_diagnostics["angular_momentum"] <= 0.0 \
+         or required_diagnostics["dimensionless_spin"] <= 0.0:
+      raise RuntimeError(
+         f"reduced small-spin RNS diagnostics are unphysical: {required_diagnostics}"
+      )
+
+   _, materialized_artifact, materialization_seconds = run_id_case(
+      "rns_materialized_16cubed",
+      3,
+      RNS_MATERIALIZED_INPUT,
+      {
+         "geometry.prob_lo": "-16.0 -16.0 -16.0",
+         "geometry.prob_hi": "16.0 16.0 16.0",
+         "amr.n_cell": "16 16 16",
+         "amr.max_grid_size": "16",
+         "initial_data.input_file": repo_relative(source_artifact),
+         "initial_data.angular_velocity": "0.001",
+      },
+      args,
+   )
+   target_metadata = read_artifact_metadata(materialized_artifact)
+   if target_metadata.get("amrex_spacedim") != "3" \
+         or target_metadata.get("mesh_coordinate") != "cartesian" \
+         or target_metadata.get("mesh_axes") != "x y z" \
+         or target_metadata.get("source_ic") != "rotating_star":
+      raise RuntimeError("materialized RNS artifact lost its target identity")
+   fluid = read_level_components(materialized_artifact / "physical_fluid.h5")
+   if len(fluid) < 5 or not all(np.all(np.isfinite(component)) for component in fluid):
+      raise RuntimeError("materialized RNS fluid is incomplete or nonfinite")
+   velocity_max = float(np.max(np.sqrt(fluid[1] ** 2 + fluid[2] ** 2 + fluid[3] ** 2)))
+   if not velocity_max > 1.0e-5:
+      raise RuntimeError("materialized rotating star lost its azimuthal velocity")
+   return {
+      "kind": "initial_data",
+      "case": "rns_spherical_128x32_to_cartesian_16cubed",
+      "status": "PASS",
+      "metric": "materialized_maximum_velocity",
+      "value": velocity_max,
+      "mass_shedding_indicator": required_diagnostics[
+         "mass_shedding_indicator"
+      ],
+      "dimensionless_spin": required_diagnostics["dimensionless_spin"],
+      "source_seconds": source_seconds,
+      "materialization_seconds": materialization_seconds,
+      "run_dir": repo_relative(materialized_artifact.parent),
+   }
 
 
 def run_evolution(
@@ -433,6 +531,7 @@ def main() -> int:
          "run_dir": repo_relative(materialized_artifact.parent),
       })
    validate_errors(errors, args.level)
+   rows.append(validate_reduced_rns_handoff(args))
 
    if args.level == "full":
       finest_source = source_artifacts[max(resolutions)]
@@ -572,6 +671,8 @@ def main() -> int:
       "lapse_max",
       "source_seconds",
       "materialization_seconds",
+      "mass_shedding_indicator",
+      "dimensionless_spin",
       "run_dir",
    ]
    results_path = RESULTS if args.level == "standard" else FULL_RESULTS
@@ -586,7 +687,7 @@ def main() -> int:
          f"gamma={error['gamma_max']:.6e} "
          f"lapse={error['lapse_max']:.6e}"
       )
-   print("PASS reduced-coordinate TOV physical-ID handoff")
+   print("PASS reduced-coordinate stellar physical-ID handoff")
    return 0
 
 

@@ -418,6 +418,271 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
    return summary;
 }
 
+#if (AMREX_SPACEDIM == 2)
+void validate_axisymmetric_spherical_rotation(
+   InitialDataEllipticHierarchy const& hierarchy,
+   RotatingStarParameters const& parameters
+)
+{
+   const amrex::Real tolerance = 64.0
+      * std::numeric_limits<amrex::Real>::epsilon();
+   if (hierarchy.geometry.size() != 1
+       || hierarchy.geometry[0].ProbLo(0) != 0.0
+       || std::abs(parameters.rotation_center.q1) > tolerance
+       || std::abs(parameters.rotation_center.q2) > tolerance
+       || std::abs(parameters.rotation_center.q3) > tolerance
+       || std::abs(parameters.rotation_axis.q1) > tolerance
+       || std::abs(parameters.rotation_axis.q2) > tolerance
+       || std::abs(parameters.rotation_axis.q3 - 1.0) > tolerance) {
+      amrex::Abort(
+         "axisymmetric spherical rotating-star data require one r-theta "
+         "level centered at the origin and rotation about +z"
+      );
+   }
+}
+
+template <int EOSMethod>
+RotatingStarUpdateSummary
+update_axisymmetric_spherical_rotating_star_primitives_method(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   EOSParams const& eos,
+   RotatingStarParameters const& parameters
+)
+{
+   validate_axisymmetric_spherical_rotation(hierarchy, parameters);
+   if (primitive_state.size() != 1 || cell_spacetime.size() != 1
+       || primitive_state[0] == nullptr || cell_spacetime[0] == nullptr
+       || primitive_state[0]->nComp() < NVAR_HYDRO
+       || cell_spacetime[0]->nComp() < Z4C_NUM_COMPONENTS) {
+      amrex::Abort("invalid axisymmetric rotating-star state layout");
+   }
+   amrex::MultiFab effective(
+      hierarchy.grids[0], hierarchy.distribution[0], 2, 1
+   );
+   amrex::MultiFab matter_support(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 1
+   );
+   matter_support.setVal(0.0);
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto spacing = hierarchy.geometry[0].CellSizeArray();
+   const amrex::Box domain = hierarchy.geometry[0].Domain();
+   const amrex::Dim3 domain_lo = amrex::lbound(domain);
+   const amrex::Dim3 domain_hi = amrex::ubound(domain);
+   const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
+   for (amrex::MFIter mfi(effective, amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto primitive = primitive_state[0]->const_array(mfi);
+      const auto geometry = cell_spacetime[0]->const_array(mfi);
+      const auto effective_array = effective.array(mfi);
+      const auto support = matter_support.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const InitialDataSamplePoint sample =
+            cell_center_initial_data_sample_point(
+               MeshSpherical, axes, problo, spacing, i, j, k
+            );
+         const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+            load_z4c_state(geometry, i, j, k)
+         );
+         const RotatingStarPoint point =
+            rotating_star_axisymmetric_spherical_point(
+               parameters, sample.mesh.q1, sample.mesh.q2, metric
+            );
+         effective_array(i, j, k, 0) = point.timelike
+            ? metric.lapse * std::sqrt(1.0 - point.velocity_squared)
+            : std::numeric_limits<amrex::Real>::max();
+         effective_array(i, j, k, 1) = point.timelike ? 0.0 : 1.0;
+         const EOSThermodynamicState atmosphere =
+            initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
+         support(i, j, k) = rotating_star_matter_exceeds_atmosphere(
+            primitive(i, j, k, RHO), atmosphere.rho
+         ) ? 1.0 : 0.0;
+      });
+   }
+   amrex::Vector<amrex::MultiFab*> effective_fields{&effective};
+   amrex::Vector<amrex::MultiFab*> support_fields{&matter_support};
+   fill_initial_data_ghosts(
+      hierarchy,
+      effective_fields,
+      initial_data_boundary_records(
+         hierarchy,
+         {GridFieldSymmetryKind::Scalar, GridFieldSymmetryKind::Scalar}
+      )
+   );
+   fill_initial_data_ghosts(
+      hierarchy,
+      support_fields,
+      initial_data_boundary_records(
+         hierarchy, {GridFieldSymmetryKind::Scalar}
+      )
+   );
+
+   const amrex::Real center_theta = 0.5 * (
+      hierarchy.geometry[0].ProbLo(1) + hierarchy.geometry[0].ProbHi(1)
+   );
+   std::vector<amrex::GpuArray<amrex::Real, 3>> center_points;
+   for (int radial_index = 0; radial_index < 2; ++radial_index) {
+      const amrex::Real radius = (radial_index + 0.5) * spacing[0];
+      center_points.push_back({{
+         radius * std::sin(center_theta),
+         0.0,
+         radius * std::cos(center_theta),
+      }});
+   }
+   std::vector<std::unique_ptr<amrex::MultiFab>> effective_owner;
+   effective_owner.push_back(std::make_unique<amrex::MultiFab>(
+      effective, amrex::make_alias, 0, 2
+   ));
+   const HierarchyInterpolationPlan center_plan(
+      std::move(center_points),
+      MeshSpherical,
+      axes,
+      hierarchy.geometry,
+      hierarchy.grids,
+      hierarchy.distribution,
+      amrex::IndexType::TheCellType()
+   );
+   const std::vector<amrex::Real> center_values =
+      center_plan.interpolate(effective_owner, 0, 2);
+   const amrex::Real center_effective_potential =
+      1.125 * center_values[0] - 0.125 * center_values[2];
+   const amrex::Real center_failure = std::max(
+      center_values[1], center_values[3]
+   );
+   if (!(center_effective_potential > 0.0)
+       || !std::isfinite(center_effective_potential)
+       || center_failure > 0.0) {
+      amrex::Abort("axisymmetric rotating-star center is not timelike");
+   }
+   RotatingStarParameters iteration_parameters = parameters;
+   iteration_parameters.injection_energy = std::exp(
+      parameters.central_log_specific_enthalpy
+   ) * center_effective_potential;
+
+   amrex::MultiFab diagnostics(
+      hierarchy.grids[0], hierarchy.distribution[0], 6, 0
+   );
+   diagnostics.setVal(0.0);
+   for (amrex::MFIter mfi(*primitive_state[0], amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto primitive = primitive_state[0]->array(mfi);
+      const auto geometry = cell_spacetime[0]->const_array(mfi);
+      const auto support = matter_support.const_array(mfi);
+      const auto diagnostic = diagnostics.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const InitialDataSamplePoint sample =
+            cell_center_initial_data_sample_point(
+               MeshSpherical, axes, problo, spacing, i, j, k
+            );
+         bool within_support = false;
+         for (int dj = -1; dj <= 1; ++dj) {
+            for (int di = -1; di <= 1; ++di) {
+               within_support = within_support
+                  || support(i + di, j + dj, k) > 0.0;
+            }
+         }
+         const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+            load_z4c_state(geometry, i, j, k)
+         );
+         const RotatingStarPoint target =
+            rotating_star_axisymmetric_spherical_point(
+               iteration_parameters, sample.mesh.q1, sample.mesh.q2, metric
+            );
+         const EOSThermodynamicState atmosphere =
+            initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
+         ColdBarotropeState matter;
+         amrex::Real vr = 0.0;
+         amrex::Real vtheta = 0.0;
+         amrex::Real vphi = 0.0;
+         if (within_support && target.timelike
+             && target.log_specific_enthalpy > 0.0) {
+            const amrex::Real old_log_enthalpy = cold_log_specific_enthalpy(
+               primitive(i, j, k, RHO), eos
+            );
+            const amrex::Real relaxed_log_enthalpy =
+               (1.0 - iteration_parameters.matter_relaxation)
+                  * old_log_enthalpy
+               + iteration_parameters.matter_relaxation
+                  * target.log_specific_enthalpy;
+            matter = cold_barotrope_from_log_enthalpy(
+               relaxed_log_enthalpy, eos
+            );
+            vr = (1.0 - iteration_parameters.matter_relaxation)
+                  * primitive(i, j, k, MOM1)
+               + iteration_parameters.matter_relaxation * target.v1;
+            vtheta = (1.0 - iteration_parameters.matter_relaxation)
+                  * primitive(i, j, k, MOM2)
+               + iteration_parameters.matter_relaxation * target.v2;
+            vphi = (1.0 - iteration_parameters.matter_relaxation)
+                  * primitive(i, j, k, MOM3)
+               + iteration_parameters.matter_relaxation * target.v3;
+         }
+         if (!rotating_star_matter_exceeds_atmosphere(
+                matter.rho, atmosphere.rho
+             )) {
+            matter.rho = atmosphere.rho;
+            matter.pressure = atmosphere.pressure;
+            matter.specific_internal_energy = atmosphere.specific_internal_energy;
+            vr = 0.0;
+            vtheta = 0.0;
+            vphi = 0.0;
+         }
+         primitive(i, j, k, RHO) = matter.rho;
+         primitive(i, j, k, MOM1) = vr;
+         primitive(i, j, k, MOM2) = vtheta;
+         primitive(i, j, k, MOM3) = vphi;
+         primitive(i, j, k, ENERGY) = matter.pressure;
+         const bool contains_matter = rotating_star_matter_exceeds_atmosphere(
+            matter.rho, atmosphere.rho
+         );
+         diagnostic(i, j, k, 0) = contains_matter
+            ? target.velocity_squared : 0.0;
+         diagnostic(i, j, k, 1) = matter.rho;
+         diagnostic(i, j, k, 2) = i == domain_hi.x && contains_matter
+            ? matter.rho - atmosphere.rho : 0.0;
+         diagnostic(i, j, k, 3) = within_support && !target.timelike
+            ? 1.0 : 0.0;
+         if (contains_matter) {
+            diagnostic(i, j, k, 4) = sample.mesh.q1
+               * std::sin(sample.mesh.q2);
+            diagnostic(i, j, k, 5) = sample.mesh.q1
+               * std::abs(std::cos(sample.mesh.q2));
+         }
+      });
+   }
+   RotatingStarUpdateSummary summary;
+   summary.maximum_velocity = std::sqrt(std::max(
+      diagnostics.max(0, 0, false), amrex::Real(0.0)
+   ));
+   summary.maximum_density = diagnostics.max(1, 0, false);
+   summary.boundary_density_excess = diagnostics.max(2, 0, false);
+   summary.injection_energy = iteration_parameters.injection_energy;
+   summary.equatorial_radius = diagnostics.max(4, 0, false);
+   summary.polar_radius = diagnostics.max(5, 0, false);
+   if (diagnostics.max(3, 0, false) > 0.0) {
+      amrex::Abort(
+         "axisymmetric rotating-star helical flow is not timelike inside matter"
+      );
+   }
+   if (summary.boundary_density_excess > 0.0) {
+      amrex::Abort(
+         "axisymmetric rotating-star matter reaches the radial boundary"
+      );
+   }
+   if (primitive_state[0]->contains_nan(0, NVAR_HYDRO, 0)) {
+      amrex::Abort("axisymmetric rotating-star update is nonfinite");
+   }
+   return summary;
+}
+#endif
+
 } // namespace
 
 RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
@@ -636,6 +901,114 @@ RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
 #endif
 }
 
+RotatingStarSurfaceDiagnostic
+axisymmetric_spherical_rotating_star_surface_diagnostic(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   RotatingStarParameters const& parameters
+)
+{
+#if (AMREX_SPACEDIM != 2)
+   amrex::ignore_unused(hierarchy, cell_spacetime, parameters);
+   amrex::Abort(
+      "axisymmetric spherical surface diagnostics require the 2D executable"
+   );
+   return {};
+#else
+   validate_axisymmetric_spherical_rotation(hierarchy, parameters);
+   if (cell_spacetime.size() != 1 || cell_spacetime[0] == nullptr) {
+      amrex::Abort("invalid axisymmetric surface-diagnostic geometry");
+   }
+   auto log_enthalpy = std::make_unique<amrex::MultiFab>(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 1
+   );
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto spacing = hierarchy.geometry[0].CellSizeArray();
+   const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
+   for (amrex::MFIter mfi(*log_enthalpy, amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto geometry = cell_spacetime[0]->const_array(mfi);
+      const auto enthalpy = log_enthalpy->array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const InitialDataSamplePoint sample =
+            cell_center_initial_data_sample_point(
+               MeshSpherical, axes, problo, spacing, i, j, k
+            );
+         const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+            load_z4c_state(geometry, i, j, k)
+         );
+         const RotatingStarPoint point =
+            rotating_star_axisymmetric_spherical_point(
+               parameters, sample.mesh.q1, sample.mesh.q2, metric
+            );
+         enthalpy(i, j, k) = point.timelike
+            ? point.log_specific_enthalpy
+            : -std::numeric_limits<amrex::Real>::max();
+      });
+   }
+   amrex::Vector<amrex::MultiFab*> enthalpy_fields{log_enthalpy.get()};
+   fill_initial_data_ghosts(
+      hierarchy,
+      enthalpy_fields,
+      initial_data_boundary_records(
+         hierarchy, {GridFieldSymmetryKind::Scalar}
+      )
+   );
+   const int radial_cells = hierarchy.geometry[0].Domain().length(0);
+   if (radial_cells < 6) {
+      amrex::Abort("axisymmetric surface diagnostic needs at least six radial cells");
+   }
+   const int radial_samples = radial_cells - 1;
+   const amrex::Real polar_theta = problo[1] + 0.5001 * spacing[1];
+   const amrex::Real equatorial_theta =
+      hierarchy.geometry[0].ProbHi(1) - 0.5001 * spacing[1];
+   std::vector<amrex::GpuArray<amrex::Real, 3>> points;
+   points.reserve(2 * radial_samples);
+   for (amrex::Real theta : {polar_theta, equatorial_theta}) {
+      for (int index = 0; index < radial_samples; ++index) {
+         // Sample strictly between the first and last cell centers.  This
+         // avoids grid-edge ambiguity after Cartesian-to-spherical mapping;
+         // the stellar surface is well inside this radial interval.
+         const amrex::Real radius = (index + 1.0) * spacing[0];
+         points.push_back({{
+            radius * std::sin(theta),
+            0.0,
+            radius * std::cos(theta),
+         }});
+      }
+   }
+   std::vector<std::unique_ptr<amrex::MultiFab>> enthalpy_owner;
+   enthalpy_owner.push_back(std::move(log_enthalpy));
+   const HierarchyInterpolationPlan plan(
+      std::move(points),
+      MeshSpherical,
+      axes,
+      hierarchy.geometry,
+      hierarchy.grids,
+      hierarchy.distribution,
+      amrex::IndexType::TheCellType()
+   );
+   const std::vector<amrex::Real> values = plan.interpolate(
+      enthalpy_owner, 0, 1
+   );
+   const amrex::Real polar_gradient = ray_surface_derivative(
+      values, 0, radial_samples, spacing[0]
+   );
+   const amrex::Real equatorial_gradient = ray_surface_derivative(
+      values, radial_samples, radial_samples, spacing[0]
+   );
+   const amrex::Real indicator = equatorial_gradient / polar_gradient;
+   if (!(polar_gradient < 0.0) || !std::isfinite(equatorial_gradient)
+       || !std::isfinite(indicator)) {
+      amrex::Abort("invalid axisymmetric rotating-star surface diagnostic");
+   }
+   return {equatorial_gradient, polar_gradient, indicator};
+#endif
+}
+
 RotatingStarParameters rotating_star_parameters(
    RunConfig const& cfg,
    RelativisticInitialDataView const& provider
@@ -715,6 +1088,40 @@ RotatingStarUpdateSummary update_rotating_star_primitives(
       );
    }
    amrex::Abort("rotating-star equilibrium requires a cold barotropic EOS");
+   return {};
+#endif
+}
+
+RotatingStarUpdateSummary update_axisymmetric_spherical_rotating_star_primitives(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   int eos_method,
+   EOSParams const& eos,
+   RotatingStarParameters const& parameters
+)
+{
+#if (AMREX_SPACEDIM != 2)
+   amrex::ignore_unused(
+      hierarchy, primitive_state, cell_spacetime, eos_method, eos, parameters
+   );
+   amrex::Abort("axisymmetric rotating-star equilibrium requires 2D");
+   return {};
+#else
+   if (!parameters.active || parameters.angular_velocity == 0.0) {
+      return {};
+   }
+   if (eos_method == EOSPolytrope) {
+      return update_axisymmetric_spherical_rotating_star_primitives_method<
+         EOSPolytrope
+      >(hierarchy, primitive_state, cell_spacetime, eos, parameters);
+   }
+   if (eos_method == EOSHybridPolytrope) {
+      return update_axisymmetric_spherical_rotating_star_primitives_method<
+         EOSHybridPolytrope
+      >(hierarchy, primitive_state, cell_spacetime, eos, parameters);
+   }
+   amrex::Abort("axisymmetric rotating stars require a cold barotropic EOS");
    return {};
 #endif
 }

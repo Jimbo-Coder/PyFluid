@@ -60,6 +60,13 @@ methods and physics belong in their topic documents; coding style belongs in
 
 ## AMR And Output Infrastructure
 
+- Repository MPI launches go through `validation_common.py`. Each launcher
+  owns a new POSIX process group containing its ranks; a timeout, fatal-rank
+  marker, nonzero launcher exit, or runner exception/interruption terminates
+  and reaps that complete group while retaining combined rank output. Do not
+  add raw `subprocess.run` MPI call sites that can orphan ranks after the
+  launcher exits.
+
 - One coordinate-independent physical implementation serves every executable
   dimension. Dimension branches are limited to storage, centering, topology,
   or an explicitly documented unsupported feature.
@@ -173,6 +180,40 @@ axis. A spherical axisymmetric artifact therefore stores a genuine ordered
 Matching source and target points may take the exact-layout path; different
 spacing, extent, dimension, or coordinate family uses the same materializer
 and the field's declared origin, exterior, and reflection closure.
+
+Keep three representations independent:
+
+1. the solver-private ID representation, which may be uniform, mapped,
+   multidomain, modal, block-adaptive, or symmetry-reduced;
+2. the portable physical-ID representation, which stores enough chart,
+   hierarchy/mapping, basis, centering, and exterior metadata to evaluate the
+   physical fields; and
+3. the evolution hierarchy, which owns its own Cartesian resolution, extent,
+   AMR, storage, and final primitive-to-conserved conversion.
+
+The handoff is an evaluation contract at physical target points, not an AMReX
+box-layout contract. A materializer must not depend on the ID solver matrix,
+iteration storage, logical spacing, or refinement bookkeeping. Conversely, an
+ID solver must not allocate evolution flux/register state. The current
+portable schema implements uniform AMReX levels and cross-dimensional chart
+mapping. A future mapped, modal, or nonuniform artifact must version and store
+its evaluation coordinates/coefficients explicitly before that representation
+is used for production output; it must not encode a nonuniform physical grid
+while advertising uniform `prob_lo/prob_hi` spacing.
+
+Matter support and gravity extent need not be the same computational domain.
+An ID method may stop its matter representation at the enthalpy-zero surface
+while continuing metric fields through exterior and compactified domains. The
+portable/evolution materializer owns the requested exterior atmosphere and
+asymptotically flat completion. This separation does not license a reset of an
+invalid interior solution or omission of surface matching conditions.
+
+Cell-, node-, face-, and edge-centered arrays may share one hierarchy and
+coordinate-map descriptor, but they are different degrees of freedom and are
+not aliases of a single base array. Their index extents, ownership at shared
+faces/edges, interpolation, synchronization, and conservation identities
+differ. Remove duplicated topology/metadata and temporary caches where safe;
+do not collapse physically distinct centerings into one storage view.
 
 Interpolation ownership includes target points outside the source sample
 hull. A cell-centred radial source has a half-cell gap at the regular origin;

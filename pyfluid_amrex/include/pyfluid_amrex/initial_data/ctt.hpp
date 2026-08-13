@@ -167,4 +167,24 @@ XctsResult solve_xcts_constraints(
    XctsOptions const& options = {}
 );
 
+// Solve circular, stationary, axisymmetric XCTS data on a physical uniform
+// cell-centred (r,theta) hierarchy. Vector quantities are orthonormal physical
+// components; only beta_hat_phi and S_hat_phi are independent. The returned
+// conformal extrinsic tensor uses the common ordered physical components
+// (r,theta,phi) in ConformalTraceFreeComponent.
+XctsResult solve_axisymmetric_spherical_xcts_constraints(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& conformal_factor,
+   amrex::Vector<amrex::MultiFab*> const& lapse_times_conformal_factor,
+   amrex::Vector<amrex::MultiFab*> const& azimuthal_shift,
+   amrex::Vector<amrex::MultiFab*> const& conformal_extrinsic_curvature,
+   amrex::Vector<amrex::MultiFab const*> const& energy_density,
+   amrex::Vector<amrex::MultiFab const*> const& azimuthal_momentum_density,
+   amrex::Vector<amrex::MultiFab const*> const& stress_trace,
+   InitialDataEllipticBoundaryConditions const& conformal_correction_boundary,
+   InitialDataEllipticBoundaryConditions const& lapse_correction_boundary,
+   InitialDataEllipticBoundaryConditions const& azimuthal_shift_boundary,
+   XctsOptions const& options = {}
+);
+
 } // namespace pyfluid_amrex

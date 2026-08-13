@@ -133,6 +133,28 @@ the generated TSV/log, and the current source revision/dirty state.
 
 ## Rotating-Star Numerical Method References
 
+- S. Bonazzola, E. Gourgoulhon, and J.-A. Marck,
+  *Numerical approach for high precision 3-D relativistic star models*,
+  [arXiv:astro-ph/9803086](https://arxiv.org/abs/astro-ph/9803086):
+  surface-fitted multidomain spectral construction; place physical
+  discontinuities such as the stellar surface on domain boundaries so each
+  domain contains smooth fields.
+- P. Grandclement, S. Bonazzola, E. Gourgoulhon, and J.-A. Marck,
+  *A multi-domain spectral method for scalar and vectorial Poisson equations
+  with non-compact sources*,
+  [arXiv:gr-qc/0003072](https://arxiv.org/abs/gr-qc/0003072): spherical
+  multidomain Chebyshev expansions in `r` or `1/r`, spherical harmonics, and
+  noncompact decaying elliptic sources. This is the main route for replacing a
+  large coarsened finite-radius exterior by a controlled compactified one.
+- N. Bucciantini and L. Del Zanna,
+  *GRMHD in axisymmetric dynamical spacetimes: the X-ECHO code*,
+  [arXiv:1010.3532](https://arxiv.org/abs/1010.3532): axisymmetric spherical
+  XCFC/XNS reference using spherical-harmonic decomposition and a banded
+  radial solve on the same numerical grid as the matter calculation.
+- *A new code for computing differentially rotating neutron stars*,
+  [arXiv:2601.05176](https://arxiv.org/abs/2601.05176): current FUKA/KADATH
+  rotating-star reference spanning quasi-isotropic and XCTS formulations,
+  spectral accuracy, differential rotation, and modern sequence diagnostics.
 - XNS numerical approach,
   [project documentation](https://www.arcetri.inaf.it/science/ahead/XNS/code.html):
   hierarchically solves Poisson-like metric equations, rebuilds sources from
@@ -161,6 +183,11 @@ the generated TSV/log, and the current source revision/dirty state.
   next model. `TIPS/README_rnspar.txt` documents constant-rest-mass sequence
   controls and 1D/3D converged-data inputs. This is an independent provenance
   route for the implemented persisted sequence-continuation semantics.
+- Local COCAL radial-grid construction:
+  `/Users/mrizzo/phys_research/ETK_Hypatia/COCAL/COCAL_ID/src/Cocal/coordinate_grav_r.f90`
+  (`grid_r`) uses a uniform inner interval followed by a geometrically growing
+  exterior. It is a useful finite-volume stretching control, not an assumed
+  optimum for PyFluid's axisymmetric XCTS solver.
 
 ## Local AthenaK Reference
 

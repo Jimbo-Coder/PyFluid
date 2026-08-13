@@ -77,6 +77,18 @@ def call_report(args: argparse.Namespace, run_dir: Path, input_file: Path) -> in
    return completed.returncode
 
 
+def call_initial_data_report(run_dir: Path, input_file: Path) -> int:
+   command = [
+      sys.executable,
+      str(ROOT / "pyfluid_amrex/tools/initial_data_report.py"),
+      str(run_dir),
+      "--input",
+      str(input_file),
+   ]
+   completed = subprocess.run(command, cwd=ROOT, text=True, check=False)
+   return completed.returncode
+
+
 def run_physics_hooks(run_dir: Path, input_file: Path) -> bool:
    rows = physics_validation_rows(run_dir, input_file=input_file)
    if not rows:
@@ -140,6 +152,10 @@ def main() -> int:
       return result.returncode
    if not resolved_input.exists():
       raise RuntimeError(f"solver did not write canonical run configuration: {resolved_input}")
+
+   resolved_params = read_key_values(resolved_input)
+   if resolved_params.get("initial_data.solve_only", "0") in ("1", "true", "True"):
+      return call_initial_data_report(run_dir, resolved_input)
 
    report_status = call_report(args, run_dir, resolved_input)
    if report_status != 0:

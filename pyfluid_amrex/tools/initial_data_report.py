@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""Validate and summarize one completed solve-only physical-ID run."""
+
+from __future__ import annotations
+
+import argparse
+import math
+import re
+from pathlib import Path
+
+from validation_common import ROOT, read_key_values, repo_relative, write_tsv
+
+
+FIELDS = (
+   "status",
+   "reason",
+   "case",
+   "dim",
+   "cells",
+   "wall_seconds",
+   "source_ic",
+   "spacetime_initial_data",
+   "output_file",
+   "artifact_bytes",
+   "matter_iterations",
+   "relative_matter_update",
+   "coupled_iterations",
+   "hamiltonian_residual",
+   "lapse_residual",
+   "momentum_residual",
+   "maximum_density",
+   "maximum_velocity",
+   "equatorial_radius",
+   "polar_radius",
+   "mass_shedding_indicator",
+   "adm_mass",
+   "baryonic_mass",
+   "angular_momentum",
+   "dimensionless_spin",
+   "max_conserved_error",
+   "max_primitive_error",
+   "log",
+)
+
+FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+
+
+def _match(text: str, pattern: str) -> re.Match[str] | None:
+   matches = list(re.finditer(pattern, text, re.MULTILINE))
+   return matches[-1] if matches else None
+
+
+def _artifact_path(params: dict[str, str]) -> Path:
+   value = Path(params["initial_data.output_file"])
+   return value if value.is_absolute() else ROOT / value
+
+
+def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, object]:
+   params = read_key_values(input_file)
+   log_path = run_dir / "run.log"
+   text = log_path.read_text(errors="replace") if log_path.exists() else ""
+   n_cell = [int(value) for value in params.get("amr.n_cell", "").split()]
+   artifact = _artifact_path(params)
+   reasons: list[str] = []
+   if params.get("initial_data.solve_only", "0") not in ("1", "true", "True"):
+      reasons.append("canonical input is not solve-only")
+   if "completed initial-data-only solve and artifact write" not in text:
+      reasons.append("missing completion marker")
+   required = [artifact / "Header", artifact / "Header.meta", artifact / "physical_fluid.h5"]
+   metadata_text = (artifact / "Header.meta").read_text(errors="replace") \
+      if (artifact / "Header.meta").exists() else ""
+   if "# has_spacetime=1" in metadata_text:
+      required.append(artifact / "adm_geometry.h5")
+   missing = [path.name for path in required if not path.is_file()]
+   if missing:
+      reasons.append("missing artifact fields: " + ",".join(missing))
+
+   constraint = _match(
+      text,
+      rf"(?:ctt|cttk|xcts) initial data: matter_iterations=(\d+) "
+      rf"relative_matter_update=({FLOAT}) coupled_iterations=(\d+) "
+      rf"hamiltonian_residual=({FLOAT}) lapse_residual=({FLOAT}) "
+      rf"momentum_residual=({FLOAT})",
+   )
+   rotating = _match(
+      text,
+      rf"rotating star:.*?maximum_density=({FLOAT}).*?maximum_velocity=({FLOAT})"
+      rf".*?equatorial_radius=({FLOAT}).*?polar_radius=({FLOAT})"
+      rf".*?mass_shedding_indicator=({FLOAT})",
+   )
+   global_diagnostic = _match(
+      text,
+      rf"rotating star:.*?adm_mass=({FLOAT}).*?baryonic_mass=({FLOAT})"
+      rf".*?angular_momentum=({FLOAT}).*?dimensionless_spin=({FLOAT})",
+   )
+   preflight = _match(
+      text,
+      rf"Evolution preflight C2P/P2C:.*?max_conserved_error=({FLOAT}) "
+      rf"max_primitive_error=({FLOAT})",
+   )
+   wall = _match(text, rf"^# wall_seconds = ({FLOAT})$")
+   if preflight is None:
+      reasons.append("missing C2P/P2C preflight")
+
+   def value(match: re.Match[str] | None, group: int) -> float:
+      return float(match.group(group)) if match is not None else math.nan
+
+   row: dict[str, object] = {
+      "status": "PASS" if not reasons else "FAIL",
+      "reason": "; ".join(reasons),
+      "case": params.get("pyfluid.run_name", run_dir.name),
+      "dim": len(n_cell),
+      "cells": math.prod(n_cell) if n_cell else 0,
+      "wall_seconds": value(wall, 1),
+      "source_ic": params.get("pyfluid.ic", ""),
+      "spacetime_initial_data": params.get("spacetime.initial_data", ""),
+      "output_file": repo_relative(artifact),
+      "artifact_bytes": sum(
+         path.stat().st_size for path in artifact.rglob("*") if path.is_file()
+      ) if artifact.is_dir() else 0,
+      "matter_iterations": int(constraint.group(1)) if constraint else 0,
+      "relative_matter_update": value(constraint, 2),
+      "coupled_iterations": int(constraint.group(3)) if constraint else 0,
+      "hamiltonian_residual": value(constraint, 4),
+      "lapse_residual": value(constraint, 5),
+      "momentum_residual": value(constraint, 6),
+      "maximum_density": value(rotating, 1),
+      "maximum_velocity": value(rotating, 2),
+      "equatorial_radius": value(rotating, 3),
+      "polar_radius": value(rotating, 4),
+      "mass_shedding_indicator": value(rotating, 5),
+      "adm_mass": value(global_diagnostic, 1),
+      "baryonic_mass": value(global_diagnostic, 2),
+      "angular_momentum": value(global_diagnostic, 3),
+      "dimensionless_spin": value(global_diagnostic, 4),
+      "max_conserved_error": value(preflight, 1),
+      "max_primitive_error": value(preflight, 2),
+      "log": repo_relative(log_path),
+   }
+   return row
+
+
+def main() -> int:
+   parser = argparse.ArgumentParser(description=__doc__)
+   parser.add_argument("run_dir", type=Path)
+   parser.add_argument("--input", type=Path)
+   parser.add_argument("--output", type=Path)
+   args = parser.parse_args()
+   run_dir = args.run_dir.resolve()
+   input_file = (args.input or run_dir / "run.in").resolve()
+   output = (args.output or run_dir / "initial_data_report.tsv").resolve()
+   row = initial_data_validation_row(run_dir, input_file)
+   write_tsv(output, [row], FIELDS)
+   print(
+      f"{row['status']} initial_data:{row['case']} "
+      f"cells={row['cells']} wall={float(row['wall_seconds']):.3f}s "
+      f"H={float(row['hamiltonian_residual']):.3e} "
+      f"M={float(row['momentum_residual']):.3e} "
+      f"preflight={float(row['max_primitive_error']):.3e} "
+      f"artifact={int(row['artifact_bytes'])}B"
+      + (f" ({row['reason']})" if row["reason"] else "")
+   )
+   print(f"wrote {repo_relative(output)}")
+   return 0 if row["status"] == "PASS" else 1
+
+
+if __name__ == "__main__":
+   raise SystemExit(main())

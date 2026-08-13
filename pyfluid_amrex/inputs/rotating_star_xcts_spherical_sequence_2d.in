@@ -1,0 +1,74 @@
+pyfluid.run_name = rotating_star_xcts_spherical_sequence_2d
+pyfluid.output_dir = runs/current/rotating_star/rotating_star_xcts_spherical_sequence_2d
+pyfluid.validation_policy = elliptic
+
+mesh.coordinate = spherical
+mesh.axes = r theta
+mesh.patch_system = single
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 32.0 1.5707963267948966
+geometry.is_periodic = 0 0
+geometry.coord_sys = 2
+
+amr.n_cell = 256 64
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+spacetime.evolution = fixed
+spacetime.matter_coupling = coupled
+spacetime.initial_data = xcts
+
+initial_data.spacetime = id
+initial_data.lapse = id
+initial_data.shift = id
+initial_data.solve_only = 1
+initial_data.output_file = runs/current/rotating_star/rotating_star_xcts_spherical_sequence_2d/physical_id
+initial_data.save_sequence = 1
+initial_data.rotation_law = uniform
+initial_data.angular_velocity = 0.028
+initial_data.rotation_continuation_targets = 0.001 0.008 0.015 0.022
+initial_data.rotation_continuation_steps = 1
+initial_data.rotation_axis1 = 0.0
+initial_data.rotation_axis2 = 0.0
+initial_data.rotation_axis3 = 1.0
+initial_data.matter_relaxation = 0.2
+initial_data.matter_relative_tolerance = 1.0e-5
+initial_data.matter_max_iterations = 96
+initial_data.atmosphere = power_law
+initial_data.atmosphere_density = 1.0e-10
+initial_data.atmosphere_pressure = 1.0e-14
+initial_data.atmosphere_power = 4.0
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.eos_preset = sly
+pyfluid.polytropic_k = 100.0
+pyfluid.polytropic_gamma = 2.0
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = rotating_star
+pyfluid.tov_central_density = 1.28e-3
+pyfluid.tov_absolute_tolerance = 1.0e-12
+pyfluid.tov_relative_tolerance = 1.0e-10
+pyfluid.tov_max_steps = 100000
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.max_step = 0
+pyfluid.final_time = -1
+pyfluid.ng = 1
+pyfluid.cfl = 0.9
+pyfluid.recon = pwc
+pyfluid.riemann = hll
+pyfluid.timestep = euler
+pyfluid.subcycling = off
+pyfluid.bc = outflow
+pyfluid.bc_xlo = origin
+pyfluid.bc_ylo = symmetry
+pyfluid.bc_yhi = symmetry
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = -1
+pyfluid.plot_int = -1
+pyfluid.checkpoint_int = -1

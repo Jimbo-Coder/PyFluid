@@ -689,6 +689,8 @@ protected:
    std::vector<amrex::Long> latest_auto_tagged_cells_;
    std::array<std::vector<amrex::Long>, AMREX_SPACEDIM> latest_auto_direction_tagged_cells_;
    std::array<std::vector<amrex::Real>, AMREX_SPACEDIM> latest_auto_direction_strength_;
+   std::unique_ptr<RotatingStarUpdateSummary>
+      initial_data_rotating_star_summary_;
 };
 
 } // namespace pyfluid_amrex

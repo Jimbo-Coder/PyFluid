@@ -69,6 +69,37 @@ std::string sequence_rotation_label(RunConfig const& cfg)
    return sequence_path_component(std::move(label));
 }
 
+void append_rotating_star_metadata(
+   std::filesystem::path const& artifact,
+   RotatingStarUpdateSummary const& rotating_star
+)
+{
+   std::ofstream metadata(artifact / "Header.meta", std::ios::app);
+   metadata
+      << "# maximum_density=" << std::setprecision(17)
+      << rotating_star.maximum_density << '\n'
+      << "# maximum_velocity=" << std::setprecision(17)
+      << rotating_star.maximum_velocity << '\n'
+      << "# equatorial_radius=" << std::setprecision(17)
+      << rotating_star.equatorial_radius << '\n'
+      << "# polar_radius=" << std::setprecision(17)
+      << rotating_star.polar_radius << '\n'
+      << "# equatorial_log_enthalpy_gradient=" << std::setprecision(17)
+      << rotating_star.equatorial_log_enthalpy_gradient << '\n'
+      << "# polar_log_enthalpy_gradient=" << std::setprecision(17)
+      << rotating_star.polar_log_enthalpy_gradient << '\n'
+      << "# mass_shedding_indicator=" << std::setprecision(17)
+      << rotating_star.mass_shedding_indicator << '\n'
+      << "# adm_mass=" << std::setprecision(17)
+      << rotating_star.adm_mass << '\n'
+      << "# baryonic_mass=" << std::setprecision(17)
+      << rotating_star.baryonic_mass << '\n'
+      << "# angular_momentum=" << std::setprecision(17)
+      << rotating_star.angular_momentum << '\n'
+      << "# dimensionless_spin=" << std::setprecision(17)
+      << rotating_star.dimensionless_spin << '\n';
+}
+
 } // namespace
 
 void AmrSolverBase::materialize_configured_initial_data()
@@ -375,6 +406,14 @@ void AmrSolverBase::write_physical_initial_data_artifact(
       spacetime,
       face_magnetic
    );
+   if (initial_data_rotating_star_summary_
+       && angular_velocity == cfg_.initial_data_angular_velocity
+       && amrex::ParallelDescriptor::IOProcessor()) {
+      append_rotating_star_metadata(
+         path, *initial_data_rotating_star_summary_
+      );
+   }
+   amrex::ParallelDescriptor::Barrier();
    amrex::Print() << "wrote physical initial data: " << path << '\n';
 }
 
@@ -399,10 +438,11 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
          << "\tmaximum_velocity\tequatorial_radius\tpolar_radius"
          << "\tequatorial_log_enthalpy_gradient"
          << "\tpolar_log_enthalpy_gradient\tmass_shedding_indicator"
+         << "\tadm_mass\tbaryonic_mass\tangular_momentum\tdimensionless_spin"
          << "\tartifact\n";
       std::ofstream metadata(sequence_dir / "sequence.meta");
       metadata << "# type=physical_initial_data_sequence\n"
-               << "# schema_version=2\n"
+               << "# schema_version=3\n"
                << "# eos=" << cfg_.eos << '\n'
                << "# eos_preset=" << cfg_.eos_preset << '\n'
                << "# thermal_gamma=" << std::setprecision(17)
@@ -489,22 +529,7 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
       artifact.string(), angular_velocity, false
    );
    if (amrex::ParallelDescriptor::IOProcessor()) {
-      std::ofstream artifact_metadata(artifact / "Header.meta", std::ios::app);
-      artifact_metadata
-         << "# maximum_density=" << std::setprecision(17)
-         << rotating_star.maximum_density << '\n'
-         << "# maximum_velocity=" << std::setprecision(17)
-         << rotating_star.maximum_velocity << '\n'
-         << "# equatorial_radius=" << std::setprecision(17)
-         << rotating_star.equatorial_radius << '\n'
-         << "# polar_radius=" << std::setprecision(17)
-         << rotating_star.polar_radius << '\n'
-         << "# equatorial_log_enthalpy_gradient=" << std::setprecision(17)
-         << rotating_star.equatorial_log_enthalpy_gradient << '\n'
-         << "# polar_log_enthalpy_gradient=" << std::setprecision(17)
-         << rotating_star.polar_log_enthalpy_gradient << '\n'
-         << "# mass_shedding_indicator=" << std::setprecision(17)
-         << rotating_star.mass_shedding_indicator << '\n';
+      append_rotating_star_metadata(artifact, rotating_star);
       std::ofstream index(
          std::filesystem::path(physical_initial_data_sequence_output_dir())
             / "sequence.tsv",
@@ -519,6 +544,10 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
             << rotating_star.equatorial_log_enthalpy_gradient << '\t'
             << rotating_star.polar_log_enthalpy_gradient << '\t'
             << rotating_star.mass_shedding_indicator << '\t'
+            << rotating_star.adm_mass << '\t'
+            << rotating_star.baryonic_mass << '\t'
+            << rotating_star.angular_momentum << '\t'
+            << rotating_star.dimensionless_spin << '\t'
             << relative_artifact.string() << '\n';
    }
    amrex::ParallelDescriptor::Barrier();

@@ -9,6 +9,7 @@
 #include <AMReX_MultiFab.H>
 #include <AMReX_Vector.H>
 
+#include <array>
 #include <memory>
 
 #include "pyfluid_amrex/fields.hpp"
@@ -28,7 +29,30 @@ struct InitialDataEllipticHierarchy {
    amrex::Interpolater* cell_interpolater = &amrex::cell_cons_interp;
    amrex::GpuArray<int, AMREX_SPACEDIM> reflection_lo{};
    amrex::GpuArray<int, AMREX_SPACEDIM> reflection_hi{};
+
+   // Optional physical face coordinates for a solver-private mapped grid.
+   // Empty directions use the uniform AMReX Geometry coordinates.  These
+   // coordinates describe elliptic unknowns only; portable ID fields are
+   // materialized onto their destination chart before evolution state exists.
+   amrex::Vector<
+      std::array<amrex::Vector<amrex::Real>, AMREX_SPACEDIM>
+   > physical_coordinate_faces;
+
+   amrex::Vector<amrex::Real> coordinate_faces(
+      int level, int direction
+   ) const;
 };
+
+// Uniform spacing through a compact source region followed by geometrically
+// increasing radial intervals to the gravity boundary.  The returned faces
+// include both endpoints.  TOV and RNS can share this mapping; matter support
+// remains a field property rather than a second coordinate system.
+amrex::Vector<amrex::Real> surface_focused_radial_faces(
+   amrex::Real surface_radius,
+   amrex::Real outer_radius,
+   int surface_cells,
+   int exterior_cells
+);
 
 enum class InitialDataEllipticBoundaryType {
    periodic,
@@ -114,6 +138,12 @@ private:
       InitialDataEllipticBoundaryConditions&,
       int
    );
+   friend void set_axisymmetric_spherical_radial_robin_boundary(
+      InitialDataEllipticHierarchy const&,
+      InitialDataEllipticBoundaryConditions&,
+      amrex::Vector<amrex::Real> const&,
+      amrex::Real
+   );
 };
 
 // Apply homogeneous reflection conditions on hierarchy faces marked as
@@ -133,6 +163,15 @@ void set_axisymmetric_spherical_toroidal_regularity(
    int component = 0
 );
 
+// Apply f = f_inf + amplitude/r^p at the radial outer face of a physical
+// r-theta hierarchy without interpreting theta as a Cartesian distance.
+void set_axisymmetric_spherical_radial_robin_boundary(
+   InitialDataEllipticHierarchy const& hierarchy,
+   InitialDataEllipticBoundaryConditions& boundary,
+   amrex::Vector<amrex::Real> const& asymptotic_values,
+   amrex::Real falloff_power
+);
+
 // Populate the common coefficient fields for
 // f = f_inf + amplitude/r^p; the unknown amplitude cancels.
 void set_centered_power_law_robin_boundary(
@@ -146,6 +185,15 @@ void set_centered_power_law_robin_boundary(
 amrex::Vector<amrex::BCRec> initial_data_boundary_records(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<GridFieldSymmetryKind> const& component_symmetries,
+   int nonsymmetry_type = amrex::BCType::foextrap
+);
+
+// Build reflection records from the explicit component boundary metadata.
+// This is needed by reduced-coordinate components whose parity cannot be
+// inferred from a Cartesian tensor component alone.
+amrex::Vector<amrex::BCRec> initial_data_boundary_records(
+   InitialDataEllipticHierarchy const& hierarchy,
+   InitialDataEllipticBoundaryConditions const& boundary,
    int nonsymmetry_type = amrex::BCType::foextrap
 );
 

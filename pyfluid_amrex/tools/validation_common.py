@@ -7,7 +7,9 @@ import csv
 import math
 import os
 import re
+import signal
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -42,13 +44,41 @@ class AmrexRunResult:
    timed_out: bool = False
 
 
-def _timeout_output(exc: subprocess.TimeoutExpired) -> str:
-   output = exc.stdout if exc.stdout is not None else exc.output
-   if output is None:
-      return ""
-   if isinstance(output, bytes):
-      return output.decode(errors="replace")
-   return output
+MPI_FATAL_MARKERS = (
+   "amrex::Abort::",
+   "MPI_ABORT was invoked",
+   "libc++abi: terminating due to uncaught exception",
+   "SIGABRT",
+   "SIGSEGV",
+   "Segmentation fault",
+   "Floating point exception",
+)
+
+
+def _signal_process_group(process: subprocess.Popen[bytes], signum: int) -> None:
+   try:
+      if os.name == "posix":
+         os.killpg(process.pid, signum)
+      elif process.poll() is None:
+         process.send_signal(signum)
+   except ProcessLookupError:
+      pass
+
+
+def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+   """Terminate the launcher and every rank in its dedicated process group."""
+   _signal_process_group(process, signal.SIGTERM)
+   try:
+      process.wait(timeout=3)
+   except subprocess.TimeoutExpired:
+      pass
+   # The launcher can exit while failed ranks remain in the same group.
+   _signal_process_group(process, signal.SIGKILL)
+   try:
+      process.wait(timeout=3)
+   except subprocess.TimeoutExpired:
+      process.kill()
+      process.wait()
 
 
 def amrex_executable(dim: int) -> Path:
@@ -117,34 +147,69 @@ def run_mpi(
    if extra_env:
       env.update(extra_env)
    start = time.perf_counter()
+   timed_out = False
+   fatal_output = False
+   process: subprocess.Popen[bytes] | None = None
    try:
-      completed = subprocess.run(
-         command,
-         cwd=cwd,
-         env=env,
-         text=True,
-         stdout=subprocess.PIPE,
-         stderr=subprocess.STDOUT,
-         timeout=timeout,
-         check=False,
-      )
-   except subprocess.TimeoutExpired as exc:
-      stdout = _timeout_output(exc)
+      with tempfile.TemporaryDirectory(prefix="pyfluid-mpi-") as temporary:
+         output_path = Path(temporary) / "output.log"
+         with output_path.open("wb") as output_stream:
+            process = subprocess.Popen(
+               command,
+               cwd=cwd,
+               env=env,
+               stdout=output_stream,
+               stderr=subprocess.STDOUT,
+               start_new_session=os.name == "posix",
+            )
+            with output_path.open("rb") as output_reader:
+               scan_tail = ""
+               fatal_seen_at: float | None = None
+               while process.poll() is None:
+                  chunk = output_reader.read()
+                  if chunk:
+                     scan_tail = (
+                        scan_tail + chunk.decode(errors="replace")
+                     )[-8192:]
+                     if fatal_seen_at is None and any(
+                        marker in scan_tail for marker in MPI_FATAL_MARKERS
+                     ):
+                        fatal_seen_at = time.perf_counter()
+                  elapsed = time.perf_counter() - start
+                  if timeout is not None and elapsed >= timeout:
+                     timed_out = True
+                     _terminate_process_group(process)
+                     break
+                  if fatal_seen_at is not None \
+                        and time.perf_counter() - fatal_seen_at >= 0.5:
+                     fatal_output = True
+                     _terminate_process_group(process)
+                     break
+                  time.sleep(0.05)
+            returncode = process.wait()
+         stdout = output_path.read_text(errors="replace")
+   except BaseException:
+      if process is not None:
+         _terminate_process_group(process)
+      raise
+
+   if timed_out or fatal_output:
       if stdout and not stdout.endswith("\n"):
          stdout += "\n"
-      stdout += f"TIMEOUT after {timeout} seconds\n"
-      return AmrexRunResult(
-         command=command,
-         returncode=-999,
-         seconds=time.perf_counter() - start,
-         stdout=stdout,
-         timed_out=True,
-      )
+      if timed_out:
+         stdout += f"TIMEOUT after {timeout} seconds; MPI process group terminated\n"
+         returncode = -999
+      else:
+         stdout += "MPI process group terminated after fatal rank output\n"
+   elif returncode != 0 and process is not None:
+      # A launcher may return before all descendants have been reaped.
+      _terminate_process_group(process)
    return AmrexRunResult(
       command=command,
-      returncode=completed.returncode,
+      returncode=returncode,
       seconds=time.perf_counter() - start,
-      stdout=completed.stdout,
+      stdout=stdout,
+      timed_out=timed_out,
    )
 
 

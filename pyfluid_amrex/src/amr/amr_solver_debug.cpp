@@ -902,6 +902,16 @@ void AmrSolverBase::run_evolution_preflight(amrex::Real time)
       total.primitive_error = std::max(
          total.primitive_error, level.primitive_error
       );
+      total.minimum_density = std::min(
+         total.minimum_density, level.minimum_density
+      );
+      total.minimum_energy = std::min(
+         total.minimum_energy, level.minimum_energy
+      );
+      total.minimum_admissibility_margin = std::min(
+         total.minimum_admissibility_margin,
+         level.minimum_admissibility_margin
+      );
       if (first_failing_level < 0 && level.failures > 0) {
          first_failing_level = lev;
       }
@@ -916,6 +926,9 @@ void AmrSolverBase::run_evolution_preflight(amrex::Real time)
          << " failure_reason=" << total.failure_reason
          << " max_conserved_error=" << total.conserved_error
          << " max_primitive_error=" << total.primitive_error
+         << " min_D=" << total.minimum_density
+         << " min_E=" << total.minimum_energy
+         << " min_q=" << total.minimum_admissibility_margin
          << " tolerance=" << preflight_round_trip_tolerance
          << ". Failure reasons 10+status and 20+status identify the first and "
             "second C2P attempts; 30 identifies a round-trip mismatch.";

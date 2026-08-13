@@ -248,6 +248,12 @@
       run_evolution_preflight(time);
       debug_check_state_all_levels("initial accepted state", start_step, time, true);
       if (cfg_.initial_data_solve_only) {
+         if (amrex::ParallelDescriptor::IOProcessor()) {
+            std::filesystem::create_directories(cfg_.output_dir);
+            write_run_parameter_file(
+               (std::filesystem::path(cfg_.output_dir) / "run.in").string()
+            );
+         }
          write_physical_initial_data_artifact();
          report_relativistic_recovery_events(start_step, time);
          amrex::Print() << "completed initial-data-only solve and artifact write\n";

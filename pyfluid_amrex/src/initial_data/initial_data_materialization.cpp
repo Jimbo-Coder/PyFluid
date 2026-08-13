@@ -133,10 +133,279 @@ void materialize_conformal_geometry(
    fill_initial_data_ghosts(hierarchy, cell_spacetime, boundary);
 }
 
+#if (AMREX_SPACEDIM == 2)
+void materialize_axisymmetric_cell_geometry(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::MultiFab const& conformal_factor,
+   amrex::MultiFab const& lapse_times_conformal_factor,
+   amrex::MultiFab const& azimuthal_shift,
+   amrex::MultiFab const& conformal_extrinsic,
+   amrex::MultiFab& cell_spacetime
+)
+{
+   for (amrex::MFIter mfi(cell_spacetime, amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto psi = conformal_factor.const_array(mfi);
+      const auto lapse_psi = lapse_times_conformal_factor.const_array(mfi);
+      const auto beta = azimuthal_shift.const_array(mfi);
+      const auto extrinsic = conformal_extrinsic.const_array(mfi);
+      const auto geometry = cell_spacetime.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         store_z4c_state(
+            geometry,
+            i,
+            j,
+            k,
+            generated::ctt_canonical_z4c_state(
+               psi(i, j, k, 0),
+               extrinsic(i, j, k, CONFORMAL_A11),
+               extrinsic(i, j, k, CONFORMAL_A12),
+               extrinsic(i, j, k, CONFORMAL_A13),
+               extrinsic(i, j, k, CONFORMAL_A22),
+               extrinsic(i, j, k, CONFORMAL_A23),
+               extrinsic(i, j, k, CONFORMAL_A33),
+               0.0,
+               generated::xcts_lapse_from_conformal_unknowns(
+                  psi(i, j, k, 0), lapse_psi(i, j, k, 0)
+               ),
+               0.0,
+               0.0,
+               beta(i, j, k, 0)
+            )
+         );
+      });
+   }
+   amrex::ignore_unused(hierarchy);
+}
+
+void materialize_axisymmetric_vertex_geometry(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::MultiFab& conformal_factor,
+   amrex::MultiFab& lapse_times_conformal_factor,
+   amrex::MultiFab& azimuthal_shift,
+   InitialDataEllipticBoundaryConditions const& scalar_boundary,
+   InitialDataEllipticBoundaryConditions const& shift_boundary,
+   amrex::MultiFab& spacetime_state
+)
+{
+   const amrex::BoxArray vertex_grids = amrex::convert(
+      hierarchy.grids[0], amrex::IntVect::TheNodeVector()
+   );
+   amrex::MultiFab vertex_psi(
+      vertex_grids, hierarchy.distribution[0], 1, 0
+   );
+   amrex::MultiFab vertex_lapse_psi(
+      vertex_grids, hierarchy.distribution[0], 1, 0
+   );
+   amrex::MultiFab vertex_beta(
+      vertex_grids, hierarchy.distribution[0], 1, 0
+   );
+   materialize_initial_data_vertices(
+      hierarchy,
+      amrex::Vector<amrex::MultiFab*>{&vertex_psi},
+      amrex::Vector<amrex::MultiFab const*>{&conformal_factor},
+      initial_data_boundary_records(hierarchy, scalar_boundary),
+      2
+   );
+   materialize_initial_data_vertices(
+      hierarchy,
+      amrex::Vector<amrex::MultiFab*>{&vertex_lapse_psi},
+      amrex::Vector<amrex::MultiFab const*>{&lapse_times_conformal_factor},
+      initial_data_boundary_records(hierarchy, scalar_boundary),
+      2
+   );
+   materialize_initial_data_vertices(
+      hierarchy,
+      amrex::Vector<amrex::MultiFab*>{&vertex_beta},
+      amrex::Vector<amrex::MultiFab const*>{&azimuthal_shift},
+      initial_data_boundary_records(hierarchy, shift_boundary),
+      2
+   );
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto spacing = hierarchy.geometry[0].CellSizeArray();
+   const amrex::Dim3 domain_lo = amrex::lbound(
+      amrex::surroundingNodes(hierarchy.geometry[0].Domain())
+   );
+   const amrex::Dim3 domain_hi = amrex::ubound(
+      amrex::surroundingNodes(hierarchy.geometry[0].Domain())
+   );
+   const amrex::Real inverse_two_dr = 0.5 / spacing[0];
+   const amrex::Real inverse_two_dtheta = 0.5 / spacing[1];
+   const amrex::Real upper_theta = hierarchy.geometry[0].ProbHi(1);
+   const bool upper_is_axis = std::abs(upper_theta - constants::pi)
+      <= 64.0 * std::numeric_limits<amrex::Real>::epsilon();
+   for (amrex::MFIter mfi(spacetime_state, amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto psi = vertex_psi.const_array(mfi);
+      const auto lapse_psi = vertex_lapse_psi.const_array(mfi);
+      const auto beta = vertex_beta.array(mfi);
+      const auto geometry = spacetime_state.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real radius = problo[0]
+            + (i - domain_lo.x) * spacing[0];
+         const amrex::Real theta = problo[1]
+            + (j - domain_lo.y) * spacing[1];
+         const bool radial_origin = i == domain_lo.x;
+         const bool angular_axis = j == domain_lo.y
+            || (upper_is_axis && j == domain_hi.y);
+         if (radial_origin || angular_axis) {
+            beta(i, j, k, 0) = 0.0;
+         }
+         amrex::Real a_r_phi = 0.0;
+         amrex::Real a_theta_phi = 0.0;
+         if (!radial_origin && !angular_axis) {
+            const amrex::Real d_beta_r = i == domain_hi.x
+               ? (
+                    3.0 * beta(i, j, k, 0)
+                    - 4.0 * beta(i - 1, j, k, 0)
+                    + beta(i - 2, j, k, 0)
+                 ) / (2.0 * spacing[0])
+               : (beta(i + 1, j, k, 0) - beta(i - 1, j, k, 0))
+                    * inverse_two_dr;
+            const amrex::Real d_beta_theta = j == domain_hi.y
+               ? 0.0
+               : (beta(i, j + 1, k, 0) - beta(i, j - 1, k, 0))
+                    * inverse_two_dtheta;
+            const amrex::Real scale =
+               generated::xcts_conformal_extrinsic_scale(
+                  psi(i, j, k, 0), lapse_psi(i, j, k, 0)
+               );
+            a_r_phi = scale * (
+               d_beta_r - beta(i, j, k, 0) / radius
+            );
+            a_theta_phi = scale * (
+               d_beta_theta - beta(i, j, k, 0) / std::tan(theta)
+            ) / radius;
+         }
+         store_z4c_state(
+            geometry,
+            i,
+            j,
+            k,
+            generated::ctt_canonical_z4c_state(
+               psi(i, j, k, 0),
+               0.0,
+               0.0,
+               a_r_phi,
+               0.0,
+               a_theta_phi,
+               0.0,
+               0.0,
+               generated::xcts_lapse_from_conformal_unknowns(
+                  psi(i, j, k, 0), lapse_psi(i, j, k, 0)
+               ),
+               0.0,
+               0.0,
+               beta(i, j, k, 0)
+            )
+         );
+      });
+   }
+}
+
+template <int EOSMethod>
+void update_axisymmetric_global_diagnostics(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::MultiFab const& primitive_state,
+   amrex::MultiFab const& cell_spacetime,
+   amrex::MultiFab const& conformal_factor,
+   amrex::MultiFab const& conformal_extrinsic,
+   amrex::MultiFab const& energy_density,
+   amrex::MultiFab const& azimuthal_momentum_density,
+   EOSParams const& eos,
+   RotatingStarUpdateSummary& summary
+)
+{
+   amrex::MultiFab integrands(
+      hierarchy.grids[0], hierarchy.distribution[0], 3, 0
+   );
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto spacing = hierarchy.geometry[0].CellSizeArray();
+   const amrex::Dim3 domain_lo = amrex::lbound(
+      hierarchy.geometry[0].Domain()
+   );
+   const amrex::Real theta_lo = hierarchy.geometry[0].ProbLo(1);
+   const amrex::Real theta_hi = hierarchy.geometry[0].ProbHi(1);
+   const amrex::Real half_pi = 0.5 * constants::pi;
+   const amrex::Real theta_symmetry_factor =
+      (std::abs(theta_hi - theta_lo - half_pi)
+       <= 64.0 * std::numeric_limits<amrex::Real>::epsilon())
+      ? 2.0 : 1.0;
+   for (amrex::MFIter mfi(integrands, amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto primitive = primitive_state.const_array(mfi);
+      const auto geometry = cell_spacetime.const_array(mfi);
+      const auto psi = conformal_factor.const_array(mfi);
+      const auto extrinsic = conformal_extrinsic.const_array(mfi);
+      const auto energy = energy_density.const_array(mfi);
+      const auto momentum = azimuthal_momentum_density.const_array(mfi);
+      const auto output = integrands.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real radius = problo[0]
+            + (i - domain_lo.x + 0.5) * spacing[0];
+         const amrex::Real theta = problo[1]
+            + (j - domain_lo.y + 0.5) * spacing[1];
+         const amrex::Real flat_volume = constants::two_pi
+            * theta_symmetry_factor * radius * radius * std::sin(theta)
+            * spacing[0] * spacing[1];
+         const amrex::Real psi_value = psi(i, j, k, 0);
+         const amrex::Real psi_squared = psi_value * psi_value;
+         const amrex::Real psi_sixth = psi_squared * psi_squared
+            * psi_squared;
+         const amrex::Real psi_fifth = psi_sixth / psi_value;
+         const amrex::Real psi_minus_seventh = 1.0 / (
+            psi_sixth * psi_value
+         );
+         const RHDPrimitive fluid = rhd_primitive_at<EOSMethod>(
+            primitive, i, j, k, eos
+         );
+         const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+            load_z4c_state(geometry, i, j, k)
+         );
+         const amrex::Real velocity_squared = spatial_vector_norm_squared(
+            fluid.v1, fluid.v2, fluid.v3, metric
+         );
+         const amrex::Real lorentz_factor = 1.0 / std::sqrt(
+            1.0 - velocity_squared
+         );
+         output(i, j, k, 0) = flat_volume * (
+            psi_fifth * energy(i, j, k, 0)
+            + psi_minus_seventh
+               * extrinsic(i, j, k, CONFORMAL_A_SQUARED)
+               / (16.0 * constants::pi)
+         );
+         output(i, j, k, 1) = flat_volume * psi_sixth
+            * momentum(i, j, k, 0) * radius * std::sin(theta);
+         output(i, j, k, 2) = flat_volume * psi_sixth
+            * fluid.rho * lorentz_factor;
+      });
+   }
+   summary.adm_mass = integrands.sum(0, false);
+   summary.angular_momentum = integrands.sum(1, false);
+   summary.baryonic_mass = integrands.sum(2, false);
+   summary.dimensionless_spin = summary.angular_momentum / (
+      summary.adm_mass * summary.adm_mass
+   );
+   if (!(summary.adm_mass > 0.0) || !(summary.baryonic_mass > 0.0)
+       || !std::isfinite(summary.angular_momentum)
+       || !std::isfinite(summary.dimensionless_spin)) {
+      amrex::Abort("axisymmetric rotating-star global diagnostic is invalid");
+   }
+}
+#endif
+
 template <PhysicalSystem System, int EOSMethod>
 ConformalMaterializationResult materialize_conformal_initial_data_method(
    InitialDataEllipticHierarchy const& hierarchy,
-   amrex::Vector<amrex::MultiFab*> const& fluid_state,
    amrex::Vector<amrex::MultiFab*> const& primitive_state,
    amrex::Vector<amrex::MultiFab*> const& spacetime_state,
    amrex::Vector<amrex::MultiFab*> const& cell_spacetime,
@@ -152,7 +421,6 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    amrex::ignore_unused(fields);
    const int num_levels = static_cast<int>(hierarchy.geometry.size());
    if (num_levels == 0
-       || static_cast<int>(fluid_state.size()) != num_levels
        || static_cast<int>(primitive_state.size()) != num_levels
        || static_cast<int>(spacetime_state.size()) != num_levels
        || static_cast<int>(cell_spacetime.size()) != num_levels) {
@@ -203,7 +471,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    amrex::Vector<amrex::MultiFab const*> stress_trace(num_levels);
 
    for (int level = 0; level < num_levels; ++level) {
-      if (fluid_state[level] == nullptr || primitive_state[level] == nullptr
+      if (primitive_state[level] == nullptr
           || spacetime_state[level] == nullptr || cell_spacetime[level] == nullptr) {
          amrex::Abort(
             "conformal initial data received an unallocated hierarchy level"
@@ -212,8 +480,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       const amrex::BoxArray vertex_grids = amrex::convert(
          hierarchy.grids[level], amrex::IntVect::TheNodeVector()
       );
-      if (fluid_state[level]->boxArray() != hierarchy.grids[level]
-          || primitive_state[level]->boxArray() != hierarchy.grids[level]
+      if (primitive_state[level]->boxArray() != hierarchy.grids[level]
           || cell_spacetime[level]->boxArray() != hierarchy.grids[level]
           || spacetime_state[level]->boxArray() != vertex_grids) {
          amrex::Abort(
@@ -478,7 +745,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    const bool coupled_xcts_matter_iteration =
       update_rotating_matter
       && formulation == ConformalConstraintFormulation::xcts;
-   const auto materialize_current_evolution_state = [&]() {
+   const auto materialize_current_geometry = [&]() {
       materialize_conformal_geometry(
          hierarchy,
          conformal_factor_const,
@@ -489,50 +756,6 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          spacetime_state,
          cell_spacetime
       );
-      for (int level = 0; level < num_levels; ++level) {
-         for (amrex::MFIter mfi(
-                 *fluid_state[level], amrex::TilingIfNotGPU()
-              ); mfi.isValid(); ++mfi) {
-            const amrex::Box box = mfi.tilebox();
-            const auto cell_geometry = cell_spacetime[level]->const_array(mfi);
-            const auto primitive = primitive_state[level]->const_array(mfi);
-            const auto fluid = fluid_state[level]->array(mfi);
-            amrex::ParallelFor(
-               box,
-               [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                  const Z4cState geometry = load_z4c_state(
-                     cell_geometry, i, j, k
-                  );
-                  const SpacetimeMetric metric =
-                     generated::z4c_spacetime_metric(geometry);
-                  if constexpr (System == PhysicalSystem::RHD) {
-                     store_rhd_conserved(
-                        fluid,
-                        i,
-                        j,
-                        k,
-                        generated::rhd_primitive_to_conserved(
-                           rhd_primitive_at<EOSMethod>(
-                              primitive, i, j, k, eos
-                           ),
-                           metric
-                        )
-                     );
-                  } else {
-                     store_rmhd_conserved(
-                        fluid,
-                        i,
-                        j,
-                        k,
-                        generated::rmhd_primitive_to_conserved(
-                           rmhd_primitive_at(primitive, i, j, k, eos), metric
-                        )
-                     );
-                  }
-               }
-            );
-         }
-      }
    };
    const auto update_surface_diagnostic = [&](RotatingStarParameters parameters) {
       parameters.injection_energy = result.rotating_star.injection_energy;
@@ -940,7 +1163,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          );
       }
       if (continuation_observer) {
-         materialize_current_evolution_state();
+         materialize_current_geometry();
          update_surface_diagnostic(continued_rotating_star);
          continuation_observer(
             continuation_step,
@@ -951,18 +1174,412 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       }
    }
 
-   materialize_current_evolution_state();
+   materialize_current_geometry();
    if (update_rotating_matter && !continuation_observer) {
       update_surface_diagnostic(rotating_star);
    }
    return result;
 }
 
+#if (AMREX_SPACEDIM == 2)
+template <int EOSMethod>
+ConformalMaterializationResult
+materialize_axisymmetric_spherical_xcts_initial_data_method(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab*> const& spacetime_state,
+   amrex::Vector<amrex::MultiFab*> const& cell_spacetime,
+   EOSParams const& eos,
+   RotatingStarParameters const& rotating_star,
+   ConformalContinuationObserver const& continuation_observer
+)
+{
+   if (hierarchy.geometry.size() != 1
+       || primitive_state.size() != 1
+       || spacetime_state.size() != 1 || cell_spacetime.size() != 1
+       || primitive_state[0] == nullptr
+       || spacetime_state[0] == nullptr || cell_spacetime[0] == nullptr) {
+      amrex::Abort("invalid axisymmetric spherical XCTS materialization");
+   }
+   const amrex::BoxArray& grids = hierarchy.grids[0];
+   const amrex::DistributionMapping& distribution = hierarchy.distribution[0];
+   amrex::MultiFab conformal_factor(grids, distribution, 1, 1);
+   amrex::MultiFab lapse_times_conformal_factor(grids, distribution, 1, 1);
+   amrex::MultiFab azimuthal_shift(grids, distribution, 1, 1);
+   amrex::MultiFab conformal_extrinsic(
+      grids, distribution, CONFORMAL_A_NUM_COMPONENTS, 0
+   );
+   amrex::MultiFab energy_density(grids, distribution, 1, 0);
+   amrex::MultiFab azimuthal_momentum_density(grids, distribution, 1, 0);
+   amrex::MultiFab stress_trace(grids, distribution, 1, 0);
+   amrex::MultiFab previous_conformal(grids, distribution, 1, 0);
+   amrex::MultiFab previous_lapse(grids, distribution, 1, 0);
+   amrex::MultiFab previous_shift(grids, distribution, 1, 0);
+   amrex::MultiFab previous_primitive(
+      grids, distribution, primitive_state[0]->nComp(), 0
+   );
+
+   // Every ID source, including an analytic TOV seed and a loaded portable
+   // artifact, enters through the same ADM/Z4c handoff.  Extract the reduced
+   // XCTS unknowns from that state instead of adding a second seed contract.
+   transfer_grid_field_centering(
+      *cell_spacetime[0],
+      *spacetime_state[0],
+      hierarchy.geometry[0],
+      2
+   );
+   for (amrex::MFIter mfi(conformal_factor, amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto seed = cell_spacetime[0]->const_array(mfi);
+      const auto psi = conformal_factor.array(mfi);
+      const auto lapse_psi = lapse_times_conformal_factor.array(mfi);
+      const auto beta = azimuthal_shift.array(mfi);
+      const auto extrinsic = conformal_extrinsic.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const Z4cState state = load_z4c_state(seed, i, j, k);
+         const amrex::Real value = 1.0 / std::sqrt(std::sqrt(state.chi));
+         const amrex::Real value_squared = value * value;
+         const amrex::Real value_sixth = value_squared * value_squared
+            * value_squared;
+         psi(i, j, k, 0) = value;
+         lapse_psi(i, j, k, 0) = state.lapse * value;
+         beta(i, j, k, 0) = state.shift3;
+         extrinsic(i, j, k, CONFORMAL_A11) = 0.0;
+         extrinsic(i, j, k, CONFORMAL_A12) = 0.0;
+         extrinsic(i, j, k, CONFORMAL_A13) =
+            state.a_tilde13 * value_sixth;
+         extrinsic(i, j, k, CONFORMAL_A22) = 0.0;
+         extrinsic(i, j, k, CONFORMAL_A23) =
+            state.a_tilde23 * value_sixth;
+         extrinsic(i, j, k, CONFORMAL_A33) = 0.0;
+         extrinsic(i, j, k, CONFORMAL_A_SQUARED) = 2.0 * (
+            extrinsic(i, j, k, CONFORMAL_A13)
+               * extrinsic(i, j, k, CONFORMAL_A13)
+            + extrinsic(i, j, k, CONFORMAL_A23)
+               * extrinsic(i, j, k, CONFORMAL_A23)
+         );
+      });
+   }
+   auto scalar_boundary = InitialDataEllipticBoundaryConditions::constant(
+      hierarchy,
+      1,
+      1.0,
+      0.0,
+      0.0,
+      InitialDataEllipticCentering::cell
+   );
+   set_initial_data_reflection_boundaries(
+      hierarchy, scalar_boundary, scalar_symmetries(1)
+   );
+   set_axisymmetric_spherical_radial_robin_boundary(
+      hierarchy, scalar_boundary, {0.0}, 1.0
+   );
+   auto lapse_boundary = scalar_boundary.component(0);
+   auto shift_boundary = InitialDataEllipticBoundaryConditions::constant(
+      hierarchy,
+      1,
+      1.0,
+      0.0,
+      0.0,
+      InitialDataEllipticCentering::cell
+   );
+   set_axisymmetric_spherical_toroidal_regularity(
+      hierarchy, shift_boundary
+   );
+   set_axisymmetric_spherical_radial_robin_boundary(
+      hierarchy, shift_boundary, {0.0}, 2.0
+   );
+
+   XctsOptions xcts_options;
+   xcts_options.max_coupled_iterations = 80;
+   xcts_options.relative_update_tolerance = 1.0e-10;
+   xcts_options.relaxation = 0.7;
+   xcts_options.linear.relative_tolerance = 1.0e-12;
+   amrex::Vector<amrex::MultiFab*> conformal_fields{&conformal_factor};
+   amrex::Vector<amrex::MultiFab*> lapse_fields{
+      &lapse_times_conformal_factor
+   };
+   amrex::Vector<amrex::MultiFab*> shift_fields{&azimuthal_shift};
+   amrex::Vector<amrex::MultiFab*> extrinsic_fields{&conformal_extrinsic};
+   amrex::Vector<amrex::MultiFab const*> energy_fields{&energy_density};
+   amrex::Vector<amrex::MultiFab const*> momentum_fields{
+      &azimuthal_momentum_density
+   };
+   amrex::Vector<amrex::MultiFab const*> stress_fields{&stress_trace};
+   amrex::Vector<amrex::MultiFab const*> cell_geometry_view{
+      cell_spacetime[0]
+   };
+
+   const auto materialize_current_geometry = [&]() {
+      materialize_axisymmetric_cell_geometry(
+         hierarchy,
+         conformal_factor,
+         lapse_times_conformal_factor,
+         azimuthal_shift,
+         conformal_extrinsic,
+         *cell_spacetime[0]
+      );
+      materialize_axisymmetric_vertex_geometry(
+         hierarchy,
+         conformal_factor,
+         lapse_times_conformal_factor,
+         azimuthal_shift,
+         scalar_boundary,
+         shift_boundary,
+         *spacetime_state[0]
+      );
+   };
+   const auto fill_sources = [&]() {
+      materialize_axisymmetric_cell_geometry(
+         hierarchy,
+         conformal_factor,
+         lapse_times_conformal_factor,
+         azimuthal_shift,
+         conformal_extrinsic,
+         *cell_spacetime[0]
+      );
+      for (amrex::MFIter mfi(energy_density, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto primitive = primitive_state[0]->const_array(mfi);
+         const auto geometry = cell_spacetime[0]->const_array(mfi);
+         const auto energy = energy_density.array(mfi);
+         const auto momentum = azimuthal_momentum_density.array(mfi);
+         const auto stress = stress_trace.array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+               load_z4c_state(geometry, i, j, k)
+            );
+            const EulerianMatter matter = generated::rhd_eulerian_matter(
+               rhd_primitive_at<EOSMethod>(primitive, i, j, k, eos), metric
+            );
+            energy(i, j, k, 0) = matter.rho;
+            momentum(i, j, k, 0) = matter.momentum3;
+            stress(i, j, k, 0) =
+               matter.stress11 * metric.inv_gamma11
+               + 2.0 * matter.stress12 * metric.inv_gamma12
+               + 2.0 * matter.stress13 * metric.inv_gamma13
+               + matter.stress22 * metric.inv_gamma22
+               + 2.0 * matter.stress23 * metric.inv_gamma23
+               + matter.stress33 * metric.inv_gamma33;
+         });
+      }
+   };
+
+   const bool update_rotating_matter = rotating_star.active
+      && rotating_star.angular_velocity != 0.0;
+   amrex::Vector<amrex::Real> rotation_targets;
+   if (update_rotating_matter) {
+      rotation_targets = rotating_star.continuation_targets;
+      if (rotation_targets.empty()) {
+         for (int step = 1; step <= rotating_star.continuation_steps; ++step) {
+            rotation_targets.push_back(
+               rotating_star.angular_velocity * step
+               / static_cast<amrex::Real>(rotating_star.continuation_steps)
+            );
+         }
+      } else {
+         rotation_targets.push_back(rotating_star.angular_velocity);
+      }
+   } else {
+      rotation_targets.push_back(rotating_star.angular_velocity);
+   }
+
+   ConformalMaterializationResult result;
+   const int maximum_matter_iterations = update_rotating_matter
+      ? rotating_star.max_iterations : 12;
+   const amrex::Real matter_tolerance = update_rotating_matter
+      ? rotating_star.relative_tolerance : 1.0e-9;
+   for (int continuation_step = 1;
+        continuation_step <= static_cast<int>(rotation_targets.size());
+        ++continuation_step) {
+      RotatingStarParameters continued = rotating_star;
+      continued.angular_velocity = rotation_targets[continuation_step - 1];
+      int step_iterations = 0;
+      result.relative_matter_update =
+         std::numeric_limits<amrex::Real>::max();
+      for (int matter_iteration = 1;
+           matter_iteration <= maximum_matter_iterations;
+           ++matter_iteration) {
+         amrex::MultiFab::Copy(
+            previous_primitive,
+            *primitive_state[0],
+            0,
+            0,
+            primitive_state[0]->nComp(),
+            0
+         );
+         amrex::MultiFab::Copy(
+            previous_conformal, conformal_factor, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Copy(
+            previous_lapse, lapse_times_conformal_factor, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Copy(
+            previous_shift, azimuthal_shift, 0, 0, 1, 0
+         );
+         materialize_axisymmetric_cell_geometry(
+            hierarchy,
+            conformal_factor,
+            lapse_times_conformal_factor,
+            azimuthal_shift,
+            conformal_extrinsic,
+            *cell_spacetime[0]
+         );
+         if (update_rotating_matter
+             && !(continuation_step == 1 && matter_iteration == 1)) {
+            result.rotating_star =
+               update_axisymmetric_spherical_rotating_star_primitives(
+                  hierarchy,
+                  primitive_state,
+                  cell_geometry_view,
+                  EOSMethod,
+                  eos,
+                  continued
+               );
+         }
+         fill_sources();
+         const XctsResult constraints =
+            solve_axisymmetric_spherical_xcts_constraints(
+               hierarchy,
+               conformal_fields,
+               lapse_fields,
+               shift_fields,
+               extrinsic_fields,
+               energy_fields,
+               momentum_fields,
+               stress_fields,
+               scalar_boundary,
+               lapse_boundary,
+               shift_boundary,
+               xcts_options
+            );
+         result.constraints = {
+            constraints.coupled_iterations,
+            constraints.relative_update,
+            constraints.hamiltonian_residual,
+            constraints.lapse_residual,
+            constraints.momentum_residual,
+            constraints.converged,
+         };
+         if (!constraints.converged) {
+            amrex::Abort("axisymmetric spherical XCTS did not converge");
+         }
+         amrex::MultiFab::Subtract(
+            previous_primitive,
+            *primitive_state[0],
+            0,
+            0,
+            primitive_state[0]->nComp(),
+            0
+         );
+         amrex::MultiFab::Subtract(
+            previous_conformal, conformal_factor, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Subtract(
+            previous_lapse, lapse_times_conformal_factor, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Subtract(
+            previous_shift, azimuthal_shift, 0, 0, 1, 0
+         );
+         amrex::Real update_norm = 0.0;
+         amrex::Real solution_norm = 1.0;
+         for (int component = 0;
+              component < primitive_state[0]->nComp();
+              ++component) {
+            update_norm = std::max(
+               update_norm, previous_primitive.norm0(component, 0, false)
+            );
+            solution_norm = std::max(
+               solution_norm,
+               primitive_state[0]->norm0(component, 0, false)
+            );
+         }
+         update_norm = std::max({
+            update_norm,
+            previous_conformal.norm0(0, 0, false),
+            previous_lapse.norm0(0, 0, false),
+            previous_shift.norm0(0, 0, false),
+         });
+         solution_norm = std::max({
+            solution_norm,
+            conformal_factor.norm0(0, 0, false),
+            lapse_times_conformal_factor.norm0(0, 0, false),
+            azimuthal_shift.norm0(0, 0, false),
+         });
+         result.relative_matter_update = update_norm / solution_norm;
+         step_iterations = matter_iteration;
+         if (amrex::ParallelDescriptor::IOProcessor()
+             && update_rotating_matter) {
+            amrex::Print()
+               << "axisymmetric rotating continuation step="
+               << continuation_step << "/" << rotation_targets.size()
+               << " omega=" << continued.angular_velocity
+               << " matter_iteration=" << matter_iteration
+               << " relative_update=" << result.relative_matter_update
+               << '\n';
+         }
+         if (result.relative_matter_update <= matter_tolerance) {
+            break;
+         }
+      }
+      result.matter_iterations += step_iterations;
+      if (result.relative_matter_update > matter_tolerance) {
+         amrex::Abort(
+            "axisymmetric rotating-star matter iteration did not converge"
+         );
+      }
+      materialize_current_geometry();
+      fill_sources();
+      update_axisymmetric_global_diagnostics<EOSMethod>(
+         hierarchy,
+         *primitive_state[0],
+         *cell_spacetime[0],
+         conformal_factor,
+         conformal_extrinsic,
+         energy_density,
+         azimuthal_momentum_density,
+         eos,
+         result.rotating_star
+      );
+      if (update_rotating_matter) {
+         RotatingStarParameters diagnostic_parameters = continued;
+         diagnostic_parameters.injection_energy =
+            result.rotating_star.injection_energy;
+         const RotatingStarSurfaceDiagnostic diagnostic =
+            axisymmetric_spherical_rotating_star_surface_diagnostic(
+               hierarchy, cell_geometry_view, diagnostic_parameters
+            );
+         result.rotating_star.equatorial_log_enthalpy_gradient =
+            diagnostic.equatorial_log_enthalpy_gradient;
+         result.rotating_star.polar_log_enthalpy_gradient =
+            diagnostic.polar_log_enthalpy_gradient;
+         result.rotating_star.mass_shedding_indicator =
+            diagnostic.mass_shedding_indicator;
+      }
+      if (continuation_observer) {
+         continuation_observer(
+            continuation_step,
+            static_cast<int>(rotation_targets.size()),
+            continued.angular_velocity,
+            result.rotating_star
+         );
+      }
+   }
+   materialize_current_geometry();
+   return result;
+}
+#endif
+
 } // namespace
 
 ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataEllipticHierarchy const& hierarchy,
-   amrex::Vector<amrex::MultiFab*> const& fluid_state,
    amrex::Vector<amrex::MultiFab*> const& primitive_state,
    amrex::Vector<amrex::MultiFab*> const& spacetime_state,
    amrex::Vector<amrex::MultiFab*> const& cell_spacetime,
@@ -976,13 +1593,42 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    ConformalContinuationObserver const& continuation_observer
 )
 {
-#if (AMREX_SPACEDIM != 3)
+#if (AMREX_SPACEDIM == 2)
    amrex::ignore_unused(
-      hierarchy, fluid_state, primitive_state, spacetime_state,
+      fields, seed_from_spacetime
+   );
+   if (system != PhysicalSystem::RHD
+       || formulation != ConformalConstraintFormulation::xcts) {
+      amrex::Abort(
+         "reduced axisymmetric spherical conformal data currently require "
+         "RHD and XCTS"
+      );
+   }
+   if (eos_method == EOSPolytrope) {
+      return materialize_axisymmetric_spherical_xcts_initial_data_method<
+         EOSPolytrope
+      >(
+         hierarchy, primitive_state, spacetime_state,
+         cell_spacetime, eos, rotating_star, continuation_observer
+      );
+   }
+   if (eos_method == EOSHybridPolytrope) {
+      return materialize_axisymmetric_spherical_xcts_initial_data_method<
+         EOSHybridPolytrope
+      >(
+         hierarchy, primitive_state, spacetime_state,
+         cell_spacetime, eos, rotating_star, continuation_observer
+      );
+   }
+   amrex::Abort("reduced axisymmetric spherical XCTS requires a cold EOS");
+   return {};
+#elif (AMREX_SPACEDIM != 3)
+   amrex::ignore_unused(
+      hierarchy, primitive_state, spacetime_state,
       cell_spacetime, system, eos_method, eos, fields, formulation,
       rotating_star, seed_from_spacetime, continuation_observer
    );
-   amrex::Abort("conformal constraint initial data requires the 3D executable");
+   amrex::Abort("conformal constraint initial data requires 2D or 3D");
    return {};
 #else
    if (system == PhysicalSystem::RMHD) {
@@ -990,7 +1636,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          PhysicalSystem::RMHD,
          EOSIdealGas
       >(
-         hierarchy, fluid_state, primitive_state, spacetime_state,
+         hierarchy, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
          seed_from_spacetime, continuation_observer
       );
@@ -1003,7 +1649,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          PhysicalSystem::RHD,
          EOSPolytrope
       >(
-         hierarchy, fluid_state, primitive_state, spacetime_state,
+         hierarchy, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
          seed_from_spacetime, continuation_observer
       );
@@ -1013,7 +1659,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          PhysicalSystem::RHD,
          EOSHybridPolytrope
       >(
-         hierarchy, fluid_state, primitive_state, spacetime_state,
+         hierarchy, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
          seed_from_spacetime, continuation_observer
       );
@@ -1022,7 +1668,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       PhysicalSystem::RHD,
       EOSIdealGas
    >(
-      hierarchy, fluid_state, primitive_state, spacetime_state,
+      hierarchy, primitive_state, spacetime_state,
       cell_spacetime, eos, fields, formulation, rotating_star,
       seed_from_spacetime, continuation_observer
    );

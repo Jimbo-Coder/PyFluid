@@ -2,6 +2,7 @@
 #include "amr/state_interpolation.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
+#include "pyfluid_amrex/initial_data/rotating_star.hpp"
 
 #include <limits>
 #include <utility>

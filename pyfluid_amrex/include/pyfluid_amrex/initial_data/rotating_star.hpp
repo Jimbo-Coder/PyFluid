@@ -57,6 +57,10 @@ struct RotatingStarUpdateSummary {
    amrex::Real equatorial_log_enthalpy_gradient = 0.0;
    amrex::Real polar_log_enthalpy_gradient = 0.0;
    amrex::Real mass_shedding_indicator = 1.0;
+   amrex::Real adm_mass = 0.0;
+   amrex::Real baryonic_mass = 0.0;
+   amrex::Real angular_momentum = 0.0;
+   amrex::Real dimensionless_spin = 0.0;
 };
 
 struct RotatingStarSurfaceDiagnostic {
@@ -71,24 +75,14 @@ RotatingStarParameters rotating_star_parameters(
 );
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RotatingStarPoint rotating_star_point(
+RotatingStarPoint rotating_star_point_from_tangent(
    RotatingStarParameters const& parameters,
-   PatchCoordinate const& physical,
+   amrex::Real tangent1,
+   amrex::Real tangent2,
+   amrex::Real tangent3,
    SpacetimeMetric const& metric
 ) noexcept
 {
-   const amrex::Real displacement1 = physical.q1 - parameters.rotation_center.q1;
-   const amrex::Real displacement2 = physical.q2 - parameters.rotation_center.q2;
-   const amrex::Real displacement3 = physical.q3 - parameters.rotation_center.q3;
-   const amrex::Real tangent1 =
-      parameters.rotation_axis.q2 * displacement3
-      - parameters.rotation_axis.q3 * displacement2;
-   const amrex::Real tangent2 =
-      parameters.rotation_axis.q3 * displacement1
-      - parameters.rotation_axis.q1 * displacement3;
-   const amrex::Real tangent3 =
-      parameters.rotation_axis.q1 * displacement2
-      - parameters.rotation_axis.q2 * displacement1;
    amrex::Real angular_velocity = parameters.angular_velocity;
    amrex::Real rotation_integral = 0.0;
    if (parameters.rotation_law != RotationLaw::Uniform
@@ -217,6 +211,44 @@ RotatingStarPoint rotating_star_point(
    };
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RotatingStarPoint rotating_star_point(
+   RotatingStarParameters const& parameters,
+   PatchCoordinate const& physical,
+   SpacetimeMetric const& metric
+) noexcept
+{
+   const amrex::Real displacement1 = physical.q1 - parameters.rotation_center.q1;
+   const amrex::Real displacement2 = physical.q2 - parameters.rotation_center.q2;
+   const amrex::Real displacement3 = physical.q3 - parameters.rotation_center.q3;
+   return rotating_star_point_from_tangent(
+      parameters,
+      parameters.rotation_axis.q2 * displacement3
+         - parameters.rotation_axis.q3 * displacement2,
+      parameters.rotation_axis.q3 * displacement1
+         - parameters.rotation_axis.q1 * displacement3,
+      parameters.rotation_axis.q1 * displacement2
+         - parameters.rotation_axis.q2 * displacement1,
+      metric
+   );
+}
+
+// The reduced spherical owner stores vectors in the physical orthonormal
+// (r, theta, phi) frame.  For rotation about the symmetry axis its Killing
+// tangent therefore has only the phi component r sin(theta).
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RotatingStarPoint rotating_star_axisymmetric_spherical_point(
+   RotatingStarParameters const& parameters,
+   amrex::Real radius,
+   amrex::Real theta,
+   SpacetimeMetric const& metric
+) noexcept
+{
+   return rotating_star_point_from_tangent(
+      parameters, 0.0, 0.0, radius * std::sin(theta), metric
+   );
+}
+
 RotatingStarUpdateSummary update_rotating_star_primitives(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& primitive_state,
@@ -227,6 +259,22 @@ RotatingStarUpdateSummary update_rotating_star_primitives(
 );
 
 RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   RotatingStarParameters const& parameters
+);
+
+RotatingStarUpdateSummary update_axisymmetric_spherical_rotating_star_primitives(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   int eos_method,
+   EOSParams const& eos,
+   RotatingStarParameters const& parameters
+);
+
+RotatingStarSurfaceDiagnostic
+axisymmetric_spherical_rotating_star_surface_diagnostic(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
    RotatingStarParameters const& parameters

@@ -185,6 +185,41 @@ point analysis, and time evolution.
 Both the rotation-center effective potential and the surface `ln h` field are
 filled through one exchanged ghost layer before arbitrary-point interpolation.
 
+### Initial-data grid policy
+
+The reduced `r theta` solve is an ID representation, not an evolution-grid
+choice. Full GRHD/GRMHD evolution remains on its independent Cartesian
+hierarchy and consumes the portable physical fields through the common
+materializer.
+
+A geometrically stretched COCAL-style radial exterior is a useful control but
+is not the default adaptive design. Coarsening the exterior can feed boundary
+error back into the stellar region even when the interior cell size is held
+fixed. Promotion therefore requires a measured work-precision improvement in
+stellar fields, constraints, ADM/Komar charges, surface location, and
+`chi_ms`, not only fewer radial cells.
+
+For isolated TOV/RNS data, the preferred development order is:
+
+1. place the enthalpy-zero surface and any piecewise-EoS interfaces on explicit
+   inner-domain boundaries where practical;
+2. represent the decaying gravitational exterior with a separate mapped or
+   compactified radial domain rather than continuously degrading the same
+   matter grid;
+3. use the existing angular mode decomposition to retain high angular content
+   near the star and truncate exterior modes only when their amplitudes and
+   elliptic residual contributions are below tolerance; and
+4. reserve general block-adaptive ID hierarchies for binaries, distorted
+   multipatch objects, or residual structure that is not well represented by
+   radial domains and angular modes.
+
+The current separable scalar/toroidal owner accepts explicit nonuniform radial
+face coordinates and has a second-order manufactured control. The rest of the
+RNS source, derivative, diagnostic, and portable-artifact pipeline still uses
+the canonical uniform physical `r theta` chart, so mapped production RNS is
+not enabled yet. This boundary is deliberate: solver-private coordinate
+experiments must not silently enter an artifact as uniform samples.
+
 ## Reusable Physical Initial Data
 
 Any current Newtonian, TOV, rotating-star, RHD, or RMHD initial state can write

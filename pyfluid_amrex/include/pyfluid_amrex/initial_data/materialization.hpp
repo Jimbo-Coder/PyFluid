@@ -46,7 +46,6 @@ using ConformalContinuationObserver = std::function<void(
 
 ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataEllipticHierarchy const& hierarchy,
-   amrex::Vector<amrex::MultiFab*> const& fluid_state,
    amrex::Vector<amrex::MultiFab*> const& primitive_state,
    amrex::Vector<amrex::MultiFab*> const& spacetime_state,
    amrex::Vector<amrex::MultiFab*> const& cell_spacetime,

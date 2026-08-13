@@ -9,6 +9,7 @@
 #include "pyfluid_amrex/spacetime_coupling.hpp"
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/initial_data/materialization.hpp"
+#include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/kernels_generated/diagnostics.hpp"
 #include "pyfluid_amrex/nodal_fill.hpp"
 #include "pyfluid_amrex/nodal_interpolater.hpp"
@@ -135,6 +136,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
    bool seed_from_loaded_id
 )
 {
+   initial_data_rotating_star_summary_.reset();
    const bool uses_constraint_solve = cfg_.spacetime_initial_data == "ctt"
       || cfg_.spacetime_initial_data == "cttk"
       || cfg_.spacetime_initial_data == "xcts";
@@ -149,7 +151,6 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
    }
 
    InitialDataEllipticHierarchy hierarchy;
-   amrex::Vector<amrex::MultiFab*> fluid;
    amrex::Vector<amrex::MultiFab*> primitive;
    amrex::Vector<amrex::MultiFab*> spacetime;
    amrex::Vector<amrex::MultiFab*> cell_spacetime;
@@ -166,7 +167,6 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       } else {
          fill_level_primitive_cache(lev, 0.0);
       }
-      fluid.push_back(fluid_state_.state()[lev].get());
       primitive.push_back(primitive_[lev].get());
       spacetime.push_back(spacetime_state_.state()[lev].get());
       cell_spacetime.push_back(spacetime_coupling_.cell_spacetime()[lev].get());
@@ -179,9 +179,11 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       const BoundaryKind lower = side_boundary_kind(cfg_, direction, false);
       const BoundaryKind upper = side_boundary_kind(cfg_, direction, true);
       hierarchy.reflection_lo[direction] =
-         lower == BoundaryKind::Symmetry || lower == BoundaryKind::Reflecting;
+         lower == BoundaryKind::Symmetry || lower == BoundaryKind::Reflecting
+         || lower == BoundaryKind::Origin;
       hierarchy.reflection_hi[direction] =
-         upper == BoundaryKind::Symmetry || upper == BoundaryKind::Reflecting;
+         upper == BoundaryKind::Symmetry || upper == BoundaryKind::Reflecting
+         || upper == BoundaryKind::Origin;
    }
    bool rotating_xy_reflection =
       hierarchy.reflection_lo[0] != 0 || hierarchy.reflection_hi[0] != 0;
@@ -192,6 +194,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
 #endif
    if (cfg_.ic == "rotating_star"
        && cfg_.initial_data_angular_velocity != 0.0
+       && cfg_.mesh_coordinate == "cartesian"
        && rotating_xy_reflection) {
       amrex::Abort(
          "a nonzero star rotating about z is not invariant under independent "
@@ -216,6 +219,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
          RotatingStarUpdateSummary const& rotating_star
       ) {
          finalize_constraint_solved_initial_data_state();
+         run_evolution_preflight(0.0);
          write_physical_initial_data_sequence_model(
             continuation_step,
             continuation_steps,
@@ -226,7 +230,6 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
    }
    const ConformalMaterializationResult result = materialize_conformal_initial_data(
       hierarchy,
-      fluid,
       primitive,
       spacetime,
       cell_spacetime,
@@ -239,6 +242,10 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       seed_from_loaded_id,
       continuation_observer
    );
+   if (cfg_.ic == "rotating_star") {
+      initial_data_rotating_star_summary_ =
+         std::make_unique<RotatingStarUpdateSummary>(result.rotating_star);
+   }
    if (amrex::ParallelDescriptor::IOProcessor()) {
       amrex::Print()
          << cfg_.spacetime_initial_data
@@ -268,6 +275,11 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
                / result.rotating_star.polar_radius
             << " mass_shedding_indicator="
             << result.rotating_star.mass_shedding_indicator
+            << " adm_mass=" << result.rotating_star.adm_mass
+            << " baryonic_mass=" << result.rotating_star.baryonic_mass
+            << " angular_momentum=" << result.rotating_star.angular_momentum
+            << " dimensionless_spin="
+            << result.rotating_star.dimensionless_spin
             << " equatorial_log_enthalpy_gradient="
             << result.rotating_star.equatorial_log_enthalpy_gradient
             << " polar_log_enthalpy_gradient="
@@ -293,6 +305,25 @@ void AmrSolverBase::finalize_constraint_solved_initial_data_state()
    fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0);
    prepare_spacetime_coupling_range(
       spacetime_state_.state(), 0, finestLevel() + 1, 0.0, -1.0, 0
+   );
+   amrex::Vector<amrex::Geometry> geometry;
+   ConstPhysicalIdField primitive;
+   ConstPhysicalIdField cell_spacetime;
+   MutablePhysicalIdField fluid;
+   geometry.reserve(finestLevel() + 1);
+   primitive.reserve(finestLevel() + 1);
+   cell_spacetime.reserve(finestLevel() + 1);
+   fluid.reserve(finestLevel() + 1);
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      geometry.push_back(Geom(lev));
+      primitive.push_back(primitive_[lev].get());
+      cell_spacetime.push_back(
+         spacetime_coupling_.cell_spacetime()[lev].get()
+      );
+      fluid.push_back(fluid_state_.state()[lev].get());
+   }
+   materialize_physical_initial_data_fluid(
+      cfg_, physics_system_, geometry, primitive, cell_spacetime, fluid
    );
    apply_stored_spacetime_fluid_boundaries_range(
       fluid_state_.state(), 0, finestLevel() + 1

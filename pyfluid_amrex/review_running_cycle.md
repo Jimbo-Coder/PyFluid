@@ -5241,3 +5241,61 @@ I will always continue from the last cycle marked as `in_progress`.
   component or compile-time product axis. All production dimensions and the
   3/3 quick suite pass; the measured unchanged production cache-hit build is
   `0.24 s` with zero compiler cache misses. [DONE]
+
+## Cycle 290 — Reduced RNS production path and ID-grid extensibility (DONE)
+
+- Finish and validate the coupled spherical `r theta` XCTS materialization
+  path as a reusable physical-ID producer. Rebuild the global rotating-star
+  diagnostics, verify zero/small-spin behavior, and run a bounded uniform-
+  rotation continuation with raw surface slopes, ADM/baryonic mass, angular
+  momentum, and dimensionless spin retained at every target. A 256x64 SLy
+  sequence converges through `Omega=0.033`, where
+  `chi_ms=0.0068458892`, `M_ADM=1.5179225`, `M_b=1.6565469`,
+  `J=1.5514296`, and `J/M^2=0.6733376`; `Omega=0.0335` runs away despite a
+  half-sized continuation step and lower matter relaxation. This is a
+  numerical endpoint bracket pending independent resolution sequences. [DONE]
+- Prove the same artifact can materialize onto the unchanged full 3D Cartesian
+  evolution hierarchy without adding an evolution coordinate or formulation
+  product axis. The saved 256x64 model materializes on 32^3 with maximum
+  primitive/conserved round-trip errors `7.16e-13/1.79e-13`. Final P2C now
+  occurs only after authoritative nodal-to-cell ADM reconstruction, fixing the
+  provisional-metric surface failure. The standard validation owner now checks
+  a 128x32 solve, persisted diagnostics, and 16-cubed cross-dimensional
+  materialization. [DONE]
+- Evaluate a solver-private stretched/adaptive radial coordinate for stellar
+  initial data. Keep physical fields and chart metadata authoritative at the
+  artifact boundary; do not reuse evolution AMR blindly or introduce a second
+  field/coordinate catalog. Implement only the smallest mapping that preserves
+  the separable elliptic solve and demonstrates a work-precision gain. The
+  separable operator now accepts explicit radial faces and retains order
+  `1.97256` in a manufactured source region, but the first surface-focused
+  geometric control is not a win: four times fewer radial cells give
+  `1.49e-6` source error versus `3.45e-7` for the matched uniform solve and a
+  much larger exterior error. Do not promote this mapping; next test a
+  surface-fitted inner plus compactified/modal exterior representation. [DONE]
+- Reconcile compact numerical knowledge, durable ID ownership conventions,
+  source routing, and current validation limits. Build production targets,
+  run focused/quick/standard evidence proportional to the final changes,
+  benchmark the ID path, and commit one clean tranche. The common MPI runner
+  now owns a process group and terminates all ranks on timeout, fatal-rank
+  output, or launcher failure. A known three-rank RNS abort now returns in
+  `1.79 s` with all rank diagnostics retained and no surviving rank processes,
+  rather than waiting for the caller timeout. A synthetic fatal-output case
+  terminates three sleeping ranks in `0.608 s`; a synthetic `SIGINT` of the
+  Python runner also leaves no launcher or rank. Production 1D/2D/3D, the
+  focused surface and elliptic checks, architecture, reduced-ID standard gate,
+  and quick suite pass. The frozen `reduced-rns-id` standard baseline passes
+  43/43 gates with `153.13 s` summed gate time; the cache-hit production
+  rebuild is `0.58 s` with zero cache hits or misses. [DONE]
+- Run an independent refined uniform-grid endpoint sequence rather than
+  interpreting the 256x64 near-zero surface slope alone. The 384x96 sequence
+  reaches `Omega=0.032` in `129.26 s`, with `chi_ms=0.178679`,
+  `M_ADM=1.487300`, `M_b=1.622400`, `J=1.428571`, and `J/M^2=0.645810`;
+  those values converge against the independent 128x32 and 256x64 branches.
+  Same-grid continuation accepts `Omega=0.0325/0.03275/0.0329` with
+  `chi_ms=0.123315/0.085074/0.051441`, respectively. The `0.0329` solve has
+  residuals below `1.22e-11`, zero recovery, and `J/M^2=0.670831`; `0.033`
+  reaches the matter tolerance but is rejected by the surface diagnostic.
+  The refined numerical endpoint is therefore bracketed in
+  `0.0329 < Omega < 0.033`, not yet a resolution-converged physical limit.
+  [DONE]

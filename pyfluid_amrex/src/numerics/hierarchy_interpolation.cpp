@@ -112,8 +112,19 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
             }
             if (lower_index < centered_domain.smallEnd(direction)
                 || lower_index + 1 > centered_domain.bigEnd(direction)) {
+               // Cartesian-to-curvilinear round trips can amplify floating-
+               // point error near an axis.  Clamp only when the point differs
+               // from the first/last interpolation location by coordinate
+               // roundoff; express that tolerance in index units.
+               const amrex::Real coordinate_scale = std::max({
+                  amrex::Real(1.0),
+                  std::abs(coordinate),
+                  std::abs(lower[direction]),
+                  std::abs(upper[direction]),
+               });
                const amrex::Real index_tolerance =
-                  32.0 * std::numeric_limits<amrex::Real>::epsilon();
+                  1024.0 * std::numeric_limits<amrex::Real>::epsilon()
+                  * coordinate_scale / spacing[direction];
                if (lower_index == centered_domain.smallEnd(direction) - 1
                    && std::abs(1.0 - local_fraction) < index_tolerance) {
                   lower_index = centered_domain.smallEnd(direction);
@@ -171,7 +182,7 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
       }
       if (point.level < 0) {
          throw std::out_of_range(
-            "surface interpolation point is outside the AMR hierarchy: x=("
+            "hierarchy interpolation point is outside the AMR hierarchy: x=("
             + std::to_string(physical_point[0]) + ","
             + std::to_string(physical_point[1]) + ","
             + std::to_string(physical_point[2]) + ") q=("

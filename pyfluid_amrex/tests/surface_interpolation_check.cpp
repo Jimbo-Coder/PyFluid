@@ -329,6 +329,39 @@ void check_coordinate_hierarchy_interpolation(int coordinate)
          require_close(values[point], 1.0 + 2.0 * q[0] - 3.0 * q[1] + 0.5 * q[2], 3.0e-13);
       }
    }
+
+   // A source-grid cell center must remain inside its own interpolation
+   // domain after the curvilinear -> Cartesian -> curvilinear round trip.
+   // Near a spherical/cylindrical axis that round trip can land a few ulps
+   // below the first cell-centered coordinate.
+   const auto spacing = geometry[0].CellSizeArray();
+   const amrex::GpuArray<amrex::Real, 3> first_center{{
+      lower[0] + 0.5 * spacing[0],
+      lower[1] + 0.5 * spacing[1],
+      lower[2] + 0.5 * spacing[2],
+   }};
+   const auto first_center_cartesian =
+      pyfluid_amrex::mesh_coordinate_triplet_to_cartesian(coordinate, first_center);
+   std::vector<std::unique_ptr<amrex::MultiFab>> cell_hierarchy(1);
+   cell_hierarchy[0] = linear_coordinate_field(
+      geometry[0], grids[0], distribution[0], amrex::IndexType::TheCellType()
+   );
+   const HierarchyInterpolationPlan first_center_plan(
+      {first_center_cartesian},
+      coordinate,
+      pyfluid_amrex::mesh_default_axes_layout(coordinate),
+      geometry,
+      grids,
+      distribution,
+      amrex::IndexType::TheCellType()
+   );
+   const auto first_center_value = first_center_plan.interpolate(cell_hierarchy, 0, 1);
+   require_close(
+      first_center_value[0],
+      1.0 + 2.0 * first_center[0] - 3.0 * first_center[1]
+         + 0.5 * first_center[2],
+      3.0e-13
+   );
 }
 
 } // namespace

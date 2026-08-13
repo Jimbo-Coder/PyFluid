@@ -221,28 +221,33 @@ baseline remains the latest broad integration baseline.
 
 ## Stellar Initial Data And Evolution
 
-- The self-contained rotating-star path supports 3D uniform, relativistic
-  j-constant, and relativistic q-power rotation with cold
-  polytropic/hybrid-polytropic EoS and XCTS. It continues a TOV seed through a
-  coupled under-relaxed matter/constraint iteration. Zero angular velocity
-  bypasses the rotating update and must reproduce the same-EoS TOV endpoint.
-- Existing nonzero-spin evidence is coarse continuation and short evolution,
-  not a resolution-converged mass-shedding limit, long-term equilibrium, or
-  constant-baryon-mass sequence. The surface-gradient indicator required ghost
-  exchange across FABs; results predating that fix are not physical endpoint
-  evidence.
+- The self-contained rotating-star path supports 3D and reduced axisymmetric
+  spherical `r theta` XCTS with uniform, relativistic j-constant, and
+  relativistic q-power rotation for cold polytropic/hybrid-polytropic EoS. It
+  continues a TOV seed through one coupled under-relaxed matter/constraint
+  iteration. Zero angular velocity bypasses the rotating update and reproduces
+  the same-EoS TOV endpoint.
+- Existing nonzero-spin evidence is reduced-grid continuation and short
+  evolution, not a resolution-converged mass-shedding limit, long-term
+  equilibrium, or constant-baryon-mass sequence. The surface-gradient
+  indicator required ghost exchange across FABs; results predating that fix
+  are not physical endpoint evidence.
 - The signed surface-gradient ratio diagnoses the equatorial mass-shedding
   cusp. It is neither a linear measure of remaining angular velocity nor a
   radial/axisymmetric stability criterion; the latter needs an appropriate
   fixed-baryon-mass sequence, turning-point analysis, and time evolution.
-- At fixed central density, the fresh SLy uniform `Omega=0.028` N=24/32/40
-  solves give equatorial `d ln(h)/dr = -0.0138293/-0.0134070/-0.0132684` and
-  `J_ADM/M_ADM^2 = 0.496214/0.504568/0.508643`. The equatorial cusp trend and
-  charges are converging, but the polar slopes
-  `-0.0393502/-0.0331447/-0.0372987` and therefore
-  `chi_ms = 0.351441/0.404501/0.355733` are nonmonotonic. This is strong
-  evidence for a regular high-spin XCTS solution, not a resolution-converged
-  endpoint; retain and inspect both raw slopes whenever the ratio is used.
+- At fixed central density `rho_c=1.28e-3`, independent 128x32, 256x64, and
+  384x96 SLy sequences converge through `Omega=0.032`. Their
+  `chi_ms=0.18439/0.17968/0.17868` and the global charges converge cleanly.
+  The 384x96 continuation remains physical at `Omega=0.0329`, with
+  `chi_ms=0.05144`, `M_ADM=1.51433`, `M_b=1.65248`, `J=1.53834`, and
+  `J/M^2=0.67083`; at `0.033` the matter iteration reaches tolerance but the
+  surface diagnostic is invalid, so no model is accepted. By contrast, the
+  256x64 and 128x32 models accept `0.033` with `chi_ms=0.00685/0.03978`.
+  This brackets the refined numerical endpoint in `0.0329 < Omega < 0.033`
+  while demonstrating that the tiny coarse equatorial slope is not a
+  resolution-converged physical mass-shedding frequency. Direct cross-grid
+  near-limit continuation is also more fragile than an independent sequence.
 - The identical N=24, small-spin XCTS solve takes 171.37/95.61/67.69 seconds
   on one/two/three local MPI ranks, for 89.6/84.4 percent efficiency at two/
   three ranks. This establishes useful local spatial scaling, not large-grid or
@@ -271,28 +276,31 @@ baseline remains the latest broad integration baseline.
   same-layout caches remain optional accelerators.
 - `initial_data.solve_only=1` performs the normal ID materialization and
   relativistic C2P/P2C preflight, writes the portable artifact, and exits before
-  evolution. The validated reduced path is spherical 1D TOV to Cartesian 3D.
+  evolution. Validated reduced paths include spherical 1D TOV and spherical
+  2D circular RNS to Cartesian 3D.
   At source `N_r=256/512/1024`, the maximum normalized density error against a
   direct 32-cubed TOV decreases `7.58e-4/3.52e-5/1.16e-5`; pressure, diagonal
   metric, and lapse errors also decrease monotonically. An `N_r=1024` source
   materialized onto `[-40,40]^3` has maximum tracked error `1.25e-5`, the
   regular origin density differs by `9.89e-6`, and a three-step CFL-0.9 loaded
   evolution has mass drift `3.51e-12` with zero recovery.
+- A 256x64 reduced SLy RNS artifact materializes onto a full three-rank 32^3
+  Cartesian hierarchy with maximum primitive and conserved round-trip errors
+  `7.16e-13` and `1.79e-13`. Constraint-solved data must perform the final P2C
+  only after nodal ADM fields have been reconstructed at authoritative cell
+  centering; using a provisional metric can make otherwise valid cold surface
+  primitives fail C2P.
 - A cell-centred radial source's half-cell gap at `r=0` is regular interior
   interpolation, not stellar exterior. Beyond a spherical TOV source radius,
   fluid uses the configured target atmosphere and ADM geometry uses the exact
   isotropic-Schwarzschild exterior inferred from the saved outer metric.
-- The portable materializer does not make rotating XCTS axisymmetric by
-  itself. The uniform cell-centred spherical `r theta` scalar Poisson operator
-  now handles origin, axis/equator reflection, and finite-radius Dirichlet or
-  Robin closure with a separable weighted angular solve. Its regular
-  manufactured `P2+P4` solution converges at second order and gives the same
-  result across one and three ranks. The orthonormal azimuthal spin-1 operator
-  is also validated at second order with odd origin/axis and even equatorial
-  regularity. Full spherical `r theta` RNS still needs the coupled XCTS
-  sources/tensor reconstruction and zero-spin equivalence. Cross-chart CT is
-  likewise rejected until face-centred divergence-preserving transfer is
-  implemented.
+- The cell-centred spherical `r theta` scalar and azimuthal spin-1 operators
+  own origin, axis/equator reflection, radial Robin closure, coupled XCTS
+  sources, longitudinal-tensor reconstruction, matter iteration, and global
+  diagnostics without adding a coordinate/formulation template axis. Their
+  manufactured solutions converge at second order and agree across one and
+  three ranks. Cross-chart CT remains rejected until face-centred
+  divergence-preserving transfer is implemented.
 - A nodal spherical solve makes every angular point at `r=0` a duplicate
   physical degree of freedom. Use a cell-centred radial origin for the reduced
   scalar operator. Stock point-smoothed Cartesian multigrid was not robust for
@@ -306,7 +314,16 @@ baseline remains the latest broad integration baseline.
   field converges at order `1.98048`, with `1.09e-6` fine-grid error and
   `5.64e-11` residual, and agrees across one and three ranks. Portable vectors
   retain three physical components even on a two-dimensional source mesh.
-  XCTS source terms and longitudinal-tensor reconstruction remain open.
+- The separable spherical operator accepts explicit nonuniform radial faces.
+  A surface-focused manufactured control retains second-order source-region
+  convergence (`1.9726`), but reducing radial cells by four gives
+  `1.49e-6` source error versus `3.45e-7` on the matched uniform control and a
+  much larger exterior error. Geometric stretching alone is therefore not a
+  demonstrated work-precision win. Prefer surface-fitted inner domains plus a
+  compactified/multidomain exterior and residual-controlled angular-mode
+  truncation for isolated stars; general block-adaptive ID is more appropriate
+  for binaries. Production RNS remains uniform until its source, derivative,
+  diagnostic, and artifact evaluator all consume the same mapped coordinates.
 - On finer same-domain physical-ID loads, outer target cell centers can lie in
   the half-cell strip outside the source cell-center interpolation hull. The
   reader must apply the field's physical exterior there. For TOV/RNS fluid it
@@ -372,11 +389,12 @@ baseline remains the latest broad integration baseline.
 
 ## Next Milestones
 
-1. Connect the validated spherical `r theta` scalar and toroidal-vector
-   operators through one coupled axisymmetric XCTS matter/source and
-   longitudinal-tensor owner. Require zero-spin agreement with the spherical
-   TOV source before continuing uniform RNS rotation and re-evaluating the
-   surface diagnostic.
+1. Refine the accepted `Omega=0.0329` RNS endpoint once more and use smaller
+   same-grid continuation steps to locate `chi_ms -> 0`; require convergence of
+   the raw surface slopes and global charges before quoting a mass-shedding
+   frequency. Then replace the unsuccessful geometric-stretching control with
+   a surface-fitted inner plus compactified/modal exterior work-precision
+   prototype behind the same physical-ID evaluator contract.
 2. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.
