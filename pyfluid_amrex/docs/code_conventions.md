@@ -183,17 +183,21 @@ decisions.
   analytic or sampled provider data on the canonical field schema; evolution
   must not depend on a particular TOV, XCTS, KEH, or external-data backend.
 - Solve each coupled initial-data problem once on its natural canonical
-  centering. The initial-data hierarchy adapter materializes the centering
+  centering. A same-chart hierarchy adapter may materialize the centering
   declared by each evolution GF through the one generated order-2/4/6/8
-  topology transfer, then applies the AMR synchronization contract for that
-  target topology. Do not solve independent cell-, vertex-, face-, or
+  topology transfer. A reduced or curvilinear solve instead writes the
+  portable physical-ID core on its actual source chart, and the shared
+  coordinate-aware materializer samples and transforms that core onto the
+  evolution hierarchy. Do not solve independent cell-, vertex-, face-, or
   edge-centered copies of the same constraints.
-- Relativistic coupled initial data use one staggered hierarchy matching the
-  evolution schema: finite-volume fluid unknowns are cell-centered,
+- Relativistic coupled initial data use the staggered identities declared by
+  the evolution schema: finite-volume fluid unknowns are cell-centered,
   Z4c/CTT/CTTK/XCTS spacetime unknowns are vertex-centered, and CT magnetic
-  unknowns are face-centered. Inter-centering matter and metric views used
-  inside the coupled equations are shared stage-local operators; there is no
-  final initial-data-to-evolution remap of a solved field.
+  unknowns are face-centered. The ID hierarchy may match the evolution grid
+  exactly or use a natural reduced chart. In either case, inter-centering
+  matter and metric views inside the coupled equations are shared local
+  operators, and the solved physical fields enter evolution only through the
+  common materialization interface.
 - Cell/vertex/face/edge conversions are source and destination masks supplied
   to one tensor-product operator, not separately maintained `c2v`, `v2c`,
   `c2f`, or `v2f` kernels. Analytic providers may bypass interpolation only by

@@ -610,6 +610,251 @@ bool validate_nodal_reflection_poisson(bool use_robin)
    return max_error < 5.0e-3;
 }
 
+#if (AMREX_SPACEDIM == 2)
+struct AxisymmetricSphericalPoissonError {
+   amrex::Real error = 0.0;
+   amrex::Real interior_error = 0.0;
+   amrex::Real origin_error = 0.0;
+   amrex::Real angular_boundary_error = 0.0;
+   amrex::Real outer_error = 0.0;
+   amrex::Real residual = 0.0;
+   amrex::Real boundary_residual = 0.0;
+};
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real axisymmetric_spherical_exact(
+   amrex::Real radius,
+   amrex::Real mu
+) noexcept
+{
+   constexpr amrex::Real quadrupole_amplitude = 0.05;
+   constexpr amrex::Real hexadecapole_amplitude = 0.01;
+   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+   const amrex::Real mu_squared = mu * mu;
+   const amrex::Real legendre_p4 = 0.125 * (
+      35.0 * mu_squared * mu_squared - 30.0 * mu_squared + 3.0
+   );
+   return 1.0
+      + quadrupole_amplitude * std::pow(radius, 4) * legendre_p2
+      + hexadecapole_amplitude * std::pow(radius, 6) * legendre_p4;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real axisymmetric_spherical_rhs(
+   amrex::Real radius,
+   amrex::Real mu
+) noexcept
+{
+   constexpr amrex::Real quadrupole_amplitude = 0.05;
+   constexpr amrex::Real hexadecapole_amplitude = 0.01;
+   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+   const amrex::Real mu_squared = mu * mu;
+   const amrex::Real legendre_p4 = 0.125 * (
+      35.0 * mu_squared * mu_squared - 30.0 * mu_squared + 3.0
+   );
+   return 14.0 * quadrupole_amplitude * radius * radius * legendre_p2
+      + 22.0 * hexadecapole_amplitude * std::pow(radius, 4)
+         * legendre_p4;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real axisymmetric_spherical_radial_derivative(
+   amrex::Real radius,
+   amrex::Real mu
+) noexcept
+{
+   constexpr amrex::Real quadrupole_amplitude = 0.05;
+   constexpr amrex::Real hexadecapole_amplitude = 0.01;
+   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+   const amrex::Real mu_squared = mu * mu;
+   const amrex::Real legendre_p4 = 0.125 * (
+      35.0 * mu_squared * mu_squared - 30.0 * mu_squared + 3.0
+   );
+   return 4.0 * quadrupole_amplitude * std::pow(radius, 3) * legendre_p2
+      + 6.0 * hexadecapole_amplitude * std::pow(radius, 5)
+         * legendre_p4;
+}
+
+AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_poisson(
+   int radial_cells,
+   int angular_cells,
+   bool use_robin
+)
+{
+   const amrex::IntVect lo(0, 0);
+   const amrex::IntVect hi(radial_cells - 1, angular_cells - 1);
+   const amrex::Box domain(lo, hi);
+   const amrex::RealBox physical_domain(
+      {0.0, 0.0}, {1.0, 0.5 * pyfluid_amrex::constants::pi}
+   );
+   const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0};
+
+   pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
+   hierarchy.geometry.emplace_back(
+      domain, physical_domain, amrex::CoordSys::cartesian, periodic
+   );
+   hierarchy.grids.emplace_back(domain);
+   hierarchy.grids[0].maxSize(std::max(8, radial_cells / 2));
+   hierarchy.distribution.emplace_back(hierarchy.grids[0]);
+   hierarchy.reflection_lo = {1, 1};
+   hierarchy.reflection_hi = {0, 1};
+
+   amrex::MultiFab solution(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 1
+   );
+   amrex::MultiFab rhs(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 0
+   );
+   solution.setVal(0.0);
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto dx = hierarchy.geometry[0].CellSizeArray();
+   for (amrex::MFIter mfi(rhs); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto values = rhs.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real radius = problo[0] + (i + 0.5) * dx[0];
+         const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+         const amrex::Real mu = -std::cos(theta);
+         values(i, j, k, 0) = axisymmetric_spherical_rhs(radius, mu);
+      });
+   }
+
+   constexpr amrex::Real robin_b = 0.2;
+   auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+      hierarchy,
+      1,
+      1.0,
+      use_robin ? robin_b : 0.0,
+      0.0,
+      pyfluid_amrex::InitialDataEllipticCentering::cell
+   );
+   pyfluid_amrex::set_initial_data_reflection_boundaries(
+      hierarchy,
+      boundary,
+      {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
+   );
+   for (amrex::MFIter mfi(boundary.coefficient_c(0)); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.fabbox();
+      const auto coefficient_a = boundary.coefficient_a(0).array(mfi);
+      const auto coefficient_b = boundary.coefficient_b(0).array(mfi);
+      const auto coefficient_c = boundary.coefficient_c(0).array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         if (i > domain.bigEnd(0)) {
+            const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+            const amrex::Real mu = -std::cos(theta);
+            const amrex::Real exact = axisymmetric_spherical_exact(1.0, mu);
+            coefficient_a(i, j, k, 0) = 1.0;
+            coefficient_b(i, j, k, 0) = use_robin ? robin_b : 0.0;
+            coefficient_c(i, j, k, 0) = use_robin
+               ? exact + robin_b
+                  * axisymmetric_spherical_radial_derivative(1.0, mu)
+               : exact;
+         }
+      });
+   }
+
+   amrex::Vector<amrex::MultiFab*> solution_levels{&solution};
+   amrex::Vector<amrex::MultiFab const*> rhs_levels{&rhs};
+   pyfluid_amrex::InitialDataEllipticOptions options;
+   options.relative_tolerance = 1.0e-12;
+   options.verbose = 0;
+   const pyfluid_amrex::InitialDataEllipticResult result =
+      pyfluid_amrex::solve_initial_data_axisymmetric_spherical_poisson(
+         hierarchy, solution_levels, rhs_levels, boundary, options
+      );
+
+   amrex::MultiFab error(
+      hierarchy.grids[0], hierarchy.distribution[0], 5, 0
+   );
+   error.setVal(0.0);
+   for (amrex::MFIter mfi(error); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto numerical = solution.const_array(mfi);
+      const auto difference = error.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real radius = problo[0] + (i + 0.5) * dx[0];
+         const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+         const amrex::Real mu = -std::cos(theta);
+         const amrex::Real point_error = amrex::Math::abs(
+            numerical(i, j, k, 0)
+            - axisymmetric_spherical_exact(radius, mu)
+         );
+         difference(i, j, k, 0) = point_error;
+         if (i > domain.smallEnd(0)
+             && i < domain.bigEnd(0)
+             && j > domain.smallEnd(1)
+             && j < domain.bigEnd(1)) {
+            difference(i, j, k, 1) = point_error;
+         }
+         if (i == domain.smallEnd(0)) {
+            difference(i, j, k, 2) = point_error;
+         }
+         if (j == domain.smallEnd(1)
+             || j == domain.bigEnd(1)) {
+            difference(i, j, k, 3) = point_error;
+         }
+         if (i == domain.bigEnd(0)) {
+            difference(i, j, k, 4) = point_error;
+         }
+      });
+   }
+   const AxisymmetricSphericalPoissonError result_values{
+      error.norm0(0),
+      error.norm0(1),
+      error.norm0(2),
+      error.norm0(3),
+      error.norm0(4),
+      result.residual,
+      result.boundary_residual,
+   };
+   return result_values;
+}
+
+bool validate_axisymmetric_spherical_poisson()
+{
+   const AxisymmetricSphericalPoissonError coarse =
+      solve_axisymmetric_spherical_poisson(128, 64, false);
+   const AxisymmetricSphericalPoissonError fine =
+      solve_axisymmetric_spherical_poisson(256, 128, false);
+   const AxisymmetricSphericalPoissonError robin =
+      solve_axisymmetric_spherical_poisson(256, 128, true);
+   const amrex::Real order = std::log(coarse.error / fine.error)
+      / std::log(2.0);
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "axisymmetric_spherical_poisson coarse_error="
+                << coarse.error
+                << " fine_error=" << fine.error
+                << " fine_interior_error=" << fine.interior_error
+                << " fine_origin_error=" << fine.origin_error
+                << " fine_angular_boundary_error="
+                << fine.angular_boundary_error
+                << " fine_outer_error=" << fine.outer_error
+                << " order=" << order
+                << " fine_residual=" << fine.residual
+                << " robin_error=" << robin.error
+                << " robin_residual=" << robin.residual
+                << " robin_boundary_residual=" << robin.boundary_residual
+                << '\n';
+   }
+   return std::isfinite(order)
+      && order > 1.7
+      && fine.error < 1.0e-5
+      && robin.error < 1.0e-5
+      && std::isfinite(fine.residual)
+      && std::isfinite(robin.residual)
+      && fine.residual < 1.0e-7
+      && robin.residual < 1.0e-7
+      && robin.boundary_residual < 1.0e-10;
+}
+#endif
+
 bool validate_tov_solution()
 {
    pyfluid_amrex::EOSParams eos;
@@ -1347,6 +1592,11 @@ int main(int argc, char* argv[])
           || !validate_nodal_reflection_poisson(true)) {
          return_code = 1;
       }
+#if (AMREX_SPACEDIM == 2)
+      if (!validate_axisymmetric_spherical_poisson()) {
+         return_code = 1;
+      }
+#endif
 
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> solution_storage(2);
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> rhs_storage(2);

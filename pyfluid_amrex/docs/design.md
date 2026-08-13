@@ -18,7 +18,7 @@ make a path supported.
 | Cartesian SRHD/SRMHD and fixed-curved GRHD/GRMHD | Production for focused validated combinations |
 | Coupled evolved-Z4c matter | Validated vertical slice; long stellar evolution remains an explicit gate |
 | TOV initial data | Direct 3D Cartesian and portable spherical-1D solve/materialization paths validated |
-| XCTS rotating-star initial data | 3D Cartesian path implemented for the documented EoS, rotation-law, and symmetry boundaries; axisymmetric `r theta` solve not yet implemented |
+| XCTS rotating-star initial data | 3D Cartesian path implemented for the documented EoS, rotation-law, and symmetry boundaries; the reduced `r theta` scalar elliptic foundation is validated, while the toroidal shift and coupled axisymmetric solve remain open |
 | Reusable physical-ID and sequence artifacts | Same-chart and schema-v2 cross-dimension/cross-coordinate handoff implemented through one materialization interface |
 | Native 1D, 2D, 3D | Production build modes |
 | AMR, reflux, average-down, restart | Production infrastructure |
@@ -107,11 +107,13 @@ the physical exterior, and then runs the normal target preflight. Evolution
 remains three-dimensional Cartesian for GRHD/GRMHD in the current production
 contract.
 
-Spherical one-dimensional TOV is the validated reduced solve. Axisymmetric
-rotating XCTS is not obtained by merely relabelling a Cartesian operator: its
-next implementation layer is a spherical `r theta` scalar/vector elliptic
-operator with origin/axis/equator/outer-boundary regularity, followed by a
-zero-spin TOV equivalence gate and only then nonzero uniform rotation.
+Spherical one-dimensional TOV is the validated reduced solve. The uniform
+cell-centred spherical `r theta` scalar elliptic operator now has manufactured
+origin, axis/equator, Dirichlet, Robin, refinement, and MPI-decomposition
+coverage. Circular axisymmetric XCTS still needs its physical azimuthal
+spin-1 shift operator and source/tensor reconstruction; that symmetry-reduced
+operator is preferable to instantiating an unused general three-vector solve.
+A zero-spin TOV equivalence gate follows before nonzero uniform rotation.
 
 ## Public Interfaces And Compilation
 

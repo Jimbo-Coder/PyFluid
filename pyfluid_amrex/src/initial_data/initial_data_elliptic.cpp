@@ -5,6 +5,7 @@
 #include <AMReX_GMRES.H>
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_FillPatchUtil.H>
+#include <AMReX_FabArrayUtility.H>
 #include <AMReX_LO_BCTYPES.H>
 #include <AMReX_MLABecLaplacian.H>
 #include <AMReX_MLMG.H>
@@ -12,6 +13,8 @@
 #include <AMReX_MLTensorOp.H>
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_PhysBCFunct.H>
+#include <AMReX_ParallelContext.H>
+#include <AMReX_ParallelReduce.H>
 
 #include <algorithm>
 #include <cmath>
@@ -19,6 +22,7 @@
 #include <memory>
 #include <vector>
 
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/initial_data/centering.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 
@@ -1912,6 +1916,576 @@ InitialDataEllipticResult solve_initial_data_poisson(
       options.relative_tolerance,
       options.absolute_tolerance
    ));
+}
+
+#if (AMREX_SPACEDIM == 2)
+namespace {
+
+struct SymmetricTridiagonalEigensystem {
+   std::vector<amrex::Real> eigenvalues;
+   // Mode-major eigenvectors: vectors[mode * size + row].
+   std::vector<amrex::Real> vectors;
+};
+
+SymmetricTridiagonalEigensystem symmetric_tridiagonal_eigensystem(
+   std::vector<amrex::Real> diagonal,
+   std::vector<amrex::Real> off_diagonal
+)
+{
+   // Implicit QL iteration keeps the self-adjoint angular solve independent
+   // of an optional platform LAPACK while retaining an orthonormal basis.
+   const int size = static_cast<int>(diagonal.size());
+   if (size < 1 || static_cast<int>(off_diagonal.size()) != size) {
+      amrex::Abort("invalid symmetric tridiagonal eigensystem");
+   }
+   std::vector<amrex::Real> vectors(
+      static_cast<std::size_t>(size) * size, 0.0
+   );
+   for (int index = 0; index < size; ++index) {
+      vectors[static_cast<std::size_t>(index) * size + index] = 1.0;
+   }
+
+   off_diagonal[size - 1] = 0.0;
+   amrex::Real accumulated_shift = 0.0;
+   amrex::Real running_scale = 0.0;
+   const amrex::Real epsilon = std::numeric_limits<amrex::Real>::epsilon();
+   for (int lower = 0; lower < size; ++lower) {
+      running_scale = std::max(
+         running_scale,
+         std::abs(diagonal[lower]) + std::abs(off_diagonal[lower])
+      );
+      int upper = lower;
+      while (upper < size
+             && std::abs(off_diagonal[upper]) > epsilon * running_scale) {
+         ++upper;
+      }
+      if (upper > lower) {
+         int iterations = 0;
+         do {
+            if (++iterations > 64) {
+               amrex::Abort(
+                  "symmetric tridiagonal eigensystem did not converge"
+               );
+            }
+            amrex::Real pivot = diagonal[lower];
+            amrex::Real ratio = (
+               diagonal[lower + 1] - pivot
+            ) / (2.0 * off_diagonal[lower]);
+            amrex::Real radius = std::hypot(ratio, 1.0);
+            if (ratio < 0.0) {
+               radius = -radius;
+            }
+            diagonal[lower] = off_diagonal[lower] / (ratio + radius);
+            diagonal[lower + 1] = off_diagonal[lower] * (ratio + radius);
+            const amrex::Real next_diagonal = diagonal[lower + 1];
+            const amrex::Real shift = pivot - diagonal[lower];
+            for (int index = lower + 2; index < size; ++index) {
+               diagonal[index] -= shift;
+            }
+            accumulated_shift += shift;
+
+            pivot = diagonal[upper];
+            amrex::Real cosine = 1.0;
+            amrex::Real previous_cosine = cosine;
+            amrex::Real previous_previous_cosine = cosine;
+            amrex::Real sine = 0.0;
+            amrex::Real previous_sine = 0.0;
+            const amrex::Real next_off_diagonal = off_diagonal[lower + 1];
+            for (int index = upper - 1; index >= lower; --index) {
+               previous_previous_cosine = previous_cosine;
+               previous_cosine = cosine;
+               previous_sine = sine;
+               const amrex::Real product = cosine * off_diagonal[index];
+               const amrex::Real diagonal_product = cosine * pivot;
+               radius = std::hypot(pivot, off_diagonal[index]);
+               off_diagonal[index + 1] = sine * radius;
+               sine = off_diagonal[index] / radius;
+               cosine = pivot / radius;
+               pivot = cosine * diagonal[index] - sine * product;
+               diagonal[index + 1] = diagonal_product + sine * (
+                  cosine * product + sine * diagonal[index]
+               );
+               for (int row = 0; row < size; ++row) {
+                  const std::size_t upper_offset =
+                     static_cast<std::size_t>(row) * size + index + 1;
+                  const std::size_t lower_offset = upper_offset - 1;
+                  const amrex::Real upper_value = vectors[upper_offset];
+                  vectors[upper_offset] = sine * vectors[lower_offset]
+                     + cosine * upper_value;
+                  vectors[lower_offset] = cosine * vectors[lower_offset]
+                     - sine * upper_value;
+               }
+            }
+            pivot = -sine * previous_sine * previous_previous_cosine
+               * next_off_diagonal * off_diagonal[lower] / next_diagonal;
+            off_diagonal[lower] = sine * pivot;
+            diagonal[lower] = cosine * pivot;
+         } while (
+            std::abs(off_diagonal[lower]) > epsilon * running_scale
+         );
+      }
+      diagonal[lower] += accumulated_shift;
+      off_diagonal[lower] = 0.0;
+   }
+
+   for (int first = 0; first < size - 1; ++first) {
+      int smallest = first;
+      for (int second = first + 1; second < size; ++second) {
+         if (diagonal[second] < diagonal[smallest]) {
+            smallest = second;
+         }
+      }
+      if (smallest != first) {
+         std::swap(diagonal[first], diagonal[smallest]);
+         for (int row = 0; row < size; ++row) {
+            std::swap(
+               vectors[static_cast<std::size_t>(row) * size + first],
+               vectors[static_cast<std::size_t>(row) * size + smallest]
+            );
+         }
+      }
+   }
+   std::vector<amrex::Real> mode_vectors(vectors.size());
+   for (int mode = 0; mode < size; ++mode) {
+      for (int row = 0; row < size; ++row) {
+         mode_vectors[static_cast<std::size_t>(mode) * size + row] =
+            vectors[static_cast<std::size_t>(row) * size + mode];
+      }
+   }
+   return {std::move(diagonal), std::move(mode_vectors)};
+}
+
+amrex::MultiFab host_copy(amrex::MultiFab const& source)
+{
+   amrex::MultiFab result(
+      source.boxArray(), source.DistributionMap(), source.nComp(),
+      source.nGrowVect(),
+      amrex::MFInfo().SetArena(amrex::The_Pinned_Arena())
+   );
+   amrex::dtoh_memcpy(result, source);
+   amrex::Gpu::streamSynchronize();
+   return result;
+}
+
+void copy_host_to_device(
+   amrex::MultiFab& destination,
+   amrex::MultiFab const& source
+)
+{
+   amrex::htod_memcpy(destination, source);
+   amrex::Gpu::streamSynchronize();
+}
+
+} // namespace
+#endif
+
+InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   amrex::Vector<amrex::MultiFab const*> const& rhs,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options
+)
+{
+#if (AMREX_SPACEDIM != 2)
+   amrex::ignore_unused(hierarchy, solution, rhs, boundary, options);
+   amrex::Abort(
+      "the axisymmetric spherical elliptic operator requires a 2D r-theta hierarchy"
+   );
+   return {};
+#else
+   const int num_levels = validate_elliptic_solve(
+      hierarchy, solution, rhs, boundary, options, 1
+   );
+   if (boundary.centering() != InitialDataEllipticCentering::cell) {
+      amrex::Abort(
+         "the axisymmetric spherical elliptic operator requires cell-centered fields"
+      );
+   }
+
+   auto near = [](amrex::Real first, amrex::Real second) {
+      const amrex::Real scale = std::max({
+         amrex::Real(1.0), std::abs(first), std::abs(second)
+      });
+      return std::abs(first - second)
+         <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+   };
+   if (num_levels != 1) {
+      amrex::Abort(
+         "the tensor-product spherical elliptic solver requires one uniform level"
+      );
+   }
+   amrex::Geometry const& geometry = hierarchy.geometry[0];
+   const auto problo = geometry.ProbLoArray();
+   const auto probhi = geometry.ProbHiArray();
+   const auto dx = geometry.CellSizeArray();
+   const amrex::Box domain = geometry.Domain();
+   const amrex::Real half_pi = 0.5 * constants::pi;
+   const bool standard_theta_domain =
+      (near(problo[1], 0.0)
+       && (near(probhi[1], half_pi) || near(probhi[1], constants::pi)))
+      || (near(problo[1], half_pi) && near(probhi[1], constants::pi));
+   if (geometry.Coord() != amrex::CoordSys::cartesian
+       || geometry.isPeriodic(0) || geometry.isPeriodic(1)
+       || !near(problo[0], 0.0) || !(probhi[0] > 0.0)
+       || !standard_theta_domain) {
+      amrex::Abort(
+         "axisymmetric spherical elliptic coordinates require a nonperiodic "
+         "uniform (r,theta) grid with r in [0,R] and theta in [0,pi/2], "
+         "[pi/2,pi], or [0,pi]"
+      );
+   }
+   if (resolved_boundary_type(boundary, 0, 0, false)
+          != InitialDataEllipticBoundaryType::neumann
+       || resolved_boundary_type(boundary, 0, 1, false)
+          != InitialDataEllipticBoundaryType::neumann
+       || resolved_boundary_type(boundary, 0, 1, true)
+          != InitialDataEllipticBoundaryType::neumann) {
+      amrex::Abort(
+         "the spherical origin, axis, and equator require even scalar regularity"
+      );
+   }
+   const InitialDataEllipticBoundaryType radial_outer_type =
+      resolved_boundary_type(boundary, 0, 0, true);
+   if (radial_outer_type != InitialDataEllipticBoundaryType::dirichlet
+       && radial_outer_type != InitialDataEllipticBoundaryType::robin) {
+      amrex::Abort(
+         "the spherical scalar solve requires Dirichlet or Robin radial closure"
+      );
+   }
+
+   const int radial_cells = domain.length(0);
+   const int angular_cells = domain.length(1);
+   const int radial_begin = domain.smallEnd(0);
+   const int angular_begin = domain.smallEnd(1);
+   const int radial_end = domain.bigEnd(0);
+   constexpr int plane_index = 0;
+   const std::size_t total_cells =
+      static_cast<std::size_t>(radial_cells) * angular_cells;
+
+   amrex::MultiFab host_rhs = host_copy(*rhs[0]);
+   amrex::MultiFab host_coefficient_a = host_copy(boundary.coefficient_a(0));
+   amrex::MultiFab host_coefficient_b = host_copy(boundary.coefficient_b(0));
+   amrex::MultiFab host_coefficient_c = host_copy(boundary.coefficient_c(0));
+   std::vector<amrex::Real> weighted_rhs(total_cells, 0.0);
+   std::vector<amrex::Real> outer_a(angular_cells, 0.0);
+   std::vector<amrex::Real> outer_b(angular_cells, 0.0);
+   std::vector<amrex::Real> outer_c(angular_cells, 0.0);
+   std::vector<int> outer_counts(angular_cells, 0);
+   for (amrex::MFIter mfi(host_rhs); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto source = host_rhs.const_array(mfi);
+      for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+         const int angular_index = j - angular_begin;
+         for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+            const int radial_index = i - radial_begin;
+            const amrex::Real radius = problo[0]
+               + (radial_index + 0.5) * dx[0];
+            weighted_rhs[
+               static_cast<std::size_t>(radial_index) * angular_cells
+               + angular_index
+            ] = radius * radius * source(i, j, plane_index, 0);
+         }
+      }
+   }
+   for (amrex::MFIter mfi(host_coefficient_a); mfi.isValid(); ++mfi) {
+      const amrex::Box valid_box = mfi.validbox();
+      if (valid_box.bigEnd(0) != radial_end) {
+         continue;
+      }
+      const auto coefficient_a = host_coefficient_a.const_array(mfi);
+      const auto coefficient_b = host_coefficient_b.const_array(mfi);
+      const auto coefficient_c = host_coefficient_c.const_array(mfi);
+      const int ghost_i = radial_end + 1;
+      for (int j = valid_box.smallEnd(1); j <= valid_box.bigEnd(1); ++j) {
+         const int angular_index = j - angular_begin;
+         outer_a[angular_index] = coefficient_a(
+            ghost_i, j, plane_index, 0
+         );
+         outer_b[angular_index] = coefficient_b(
+            ghost_i, j, plane_index, 0
+         );
+         outer_c[angular_index] = coefficient_c(
+            ghost_i, j, plane_index, 0
+         );
+         outer_counts[angular_index] = 1;
+      }
+   }
+   const auto communicator = amrex::ParallelContext::CommunicatorSub();
+   amrex::ParallelAllReduce::Sum(
+      weighted_rhs.data(), static_cast<int>(weighted_rhs.size()), communicator
+   );
+   amrex::ParallelAllReduce::Sum(
+      outer_a.data(), angular_cells, communicator
+   );
+   amrex::ParallelAllReduce::Sum(
+      outer_b.data(), angular_cells, communicator
+   );
+   amrex::ParallelAllReduce::Sum(
+      outer_c.data(), angular_cells, communicator
+   );
+   amrex::ParallelAllReduce::Sum(
+      outer_counts.data(), angular_cells, communicator
+   );
+
+   std::vector<amrex::Real> outer_gamma(angular_cells);
+   amrex::Real outer_delta = 0.0;
+   for (int angular_index = 0;
+        angular_index < angular_cells;
+        ++angular_index) {
+      if (outer_counts[angular_index] != 1) {
+         amrex::Abort("radial boundary data do not have one unique owner");
+      }
+      const amrex::Real a = outer_a[angular_index];
+      const amrex::Real b = radial_outer_type
+            == InitialDataEllipticBoundaryType::dirichlet
+         ? 0.0
+         : outer_b[angular_index];
+      const amrex::Real denominator = 0.5 * a + b / dx[0];
+      if (denominator == 0.0 || !std::isfinite(denominator)) {
+         amrex::Abort("singular radial elliptic boundary coefficients");
+      }
+      const amrex::Real delta = (b / dx[0] - 0.5 * a) / denominator;
+      if (angular_index == 0) {
+         outer_delta = delta;
+      } else if (!near(delta, outer_delta)) {
+         amrex::Abort(
+            "the tensor-product spherical solve requires an angularly uniform "
+            "radial boundary operator"
+         );
+      }
+      outer_gamma[angular_index] = outer_c[angular_index] / denominator;
+   }
+
+   const amrex::Real radial_scale = 1.0 / (dx[0] * dx[0]);
+   const amrex::Real angular_scale = 1.0 / (dx[1] * dx[1]);
+   std::vector<amrex::Real> radial_lower(radial_cells, 0.0);
+   std::vector<amrex::Real> radial_diagonal(radial_cells, 0.0);
+   std::vector<amrex::Real> radial_upper(radial_cells, 0.0);
+   for (int radial_index = 0; radial_index < radial_cells; ++radial_index) {
+      if (radial_index > 0) {
+         const amrex::Real face_radius = problo[0]
+            + radial_index * dx[0];
+         radial_lower[radial_index] =
+            face_radius * face_radius * radial_scale;
+      }
+      if (radial_index + 1 < radial_cells) {
+         const amrex::Real face_radius = problo[0]
+            + (radial_index + 1) * dx[0];
+         radial_upper[radial_index] =
+            face_radius * face_radius * radial_scale;
+      }
+      radial_diagonal[radial_index] = -(
+         radial_lower[radial_index] + radial_upper[radial_index]
+      );
+   }
+   const amrex::Real outer_face_coefficient =
+      probhi[0] * probhi[0] * radial_scale;
+   radial_diagonal.back() += outer_face_coefficient * (
+      outer_delta - 1.0
+   );
+   for (int angular_index = 0;
+        angular_index < angular_cells;
+        ++angular_index) {
+      weighted_rhs[
+         static_cast<std::size_t>(radial_cells - 1) * angular_cells
+         + angular_index
+      ] -= outer_face_coefficient * outer_gamma[angular_index];
+   }
+
+   std::vector<amrex::Real> angular_weight(angular_cells, 0.0);
+   std::vector<amrex::Real> angular_diagonal(angular_cells, 0.0);
+   std::vector<amrex::Real> angular_off_diagonal(angular_cells, 0.0);
+   for (int angular_index = 0;
+        angular_index < angular_cells;
+        ++angular_index) {
+      const amrex::Real theta = problo[1]
+         + (angular_index + 0.5) * dx[1];
+      angular_weight[angular_index] = std::sqrt(std::sin(theta));
+      if (!(angular_weight[angular_index] > 0.0)) {
+         amrex::Abort("invalid spherical angular cell weight");
+      }
+   }
+   for (int angular_index = 0;
+        angular_index + 1 < angular_cells;
+        ++angular_index) {
+      const amrex::Real face_theta = problo[1]
+         + (angular_index + 1) * dx[1];
+      const amrex::Real face_coefficient =
+         std::sin(face_theta) * angular_scale;
+      angular_off_diagonal[angular_index] = face_coefficient / (
+         angular_weight[angular_index]
+         * angular_weight[angular_index + 1]
+      );
+      angular_diagonal[angular_index] -= face_coefficient / (
+         angular_weight[angular_index] * angular_weight[angular_index]
+      );
+      angular_diagonal[angular_index + 1] -= face_coefficient / (
+         angular_weight[angular_index + 1]
+         * angular_weight[angular_index + 1]
+      );
+   }
+   const SymmetricTridiagonalEigensystem angular_eigensystem =
+      symmetric_tridiagonal_eigensystem(
+         std::move(angular_diagonal), std::move(angular_off_diagonal)
+      );
+
+   const int rank = amrex::ParallelContext::MyProcSub();
+   const int ranks = amrex::ParallelContext::NProcsSub();
+   std::vector<amrex::Real> mode_solution(
+      static_cast<std::size_t>(angular_cells) * radial_cells, 0.0
+   );
+   std::vector<amrex::Real> forward_upper(radial_cells, 0.0);
+   std::vector<amrex::Real> forward_rhs(radial_cells, 0.0);
+   for (int mode = rank; mode < angular_cells; mode += ranks) {
+      const amrex::Real* eigenvector =
+         angular_eigensystem.vectors.data()
+         + static_cast<std::size_t>(mode) * angular_cells;
+      amrex::Real* radial_mode = mode_solution.data()
+         + static_cast<std::size_t>(mode) * radial_cells;
+      for (int radial_index = 0;
+           radial_index < radial_cells;
+           ++radial_index) {
+         amrex::Real projected_rhs = 0.0;
+         const amrex::Real* radial_rhs = weighted_rhs.data()
+            + static_cast<std::size_t>(radial_index) * angular_cells;
+         for (int angular_index = 0;
+              angular_index < angular_cells;
+              ++angular_index) {
+            projected_rhs += eigenvector[angular_index]
+               * angular_weight[angular_index]
+               * radial_rhs[angular_index];
+         }
+         radial_mode[radial_index] = projected_rhs;
+      }
+
+      amrex::Real denominator = radial_diagonal[0]
+         + angular_eigensystem.eigenvalues[mode];
+      if (denominator == 0.0 || !std::isfinite(denominator)) {
+         amrex::Abort("singular spherical radial mode");
+      }
+      forward_upper[0] = radial_upper[0] / denominator;
+      forward_rhs[0] = radial_mode[0] / denominator;
+      for (int radial_index = 1;
+           radial_index < radial_cells;
+           ++radial_index) {
+         denominator = radial_diagonal[radial_index]
+            + angular_eigensystem.eigenvalues[mode]
+            - radial_lower[radial_index]
+               * forward_upper[radial_index - 1];
+         if (denominator == 0.0 || !std::isfinite(denominator)) {
+            amrex::Abort("singular spherical radial elimination");
+         }
+         forward_upper[radial_index] = radial_index + 1 < radial_cells
+            ? radial_upper[radial_index] / denominator
+            : 0.0;
+         forward_rhs[radial_index] = (
+            radial_mode[radial_index]
+            - radial_lower[radial_index] * forward_rhs[radial_index - 1]
+         ) / denominator;
+      }
+      radial_mode[radial_cells - 1] = forward_rhs[radial_cells - 1];
+      for (int radial_index = radial_cells - 2;
+           radial_index >= 0;
+           --radial_index) {
+         radial_mode[radial_index] = forward_rhs[radial_index]
+            - forward_upper[radial_index]
+               * radial_mode[radial_index + 1];
+      }
+   }
+
+   std::vector<amrex::Real> solution_values(total_cells, 0.0);
+   for (int mode = rank; mode < angular_cells; mode += ranks) {
+      const amrex::Real* eigenvector =
+         angular_eigensystem.vectors.data()
+         + static_cast<std::size_t>(mode) * angular_cells;
+      const amrex::Real* radial_mode = mode_solution.data()
+         + static_cast<std::size_t>(mode) * radial_cells;
+      for (int radial_index = 0;
+           radial_index < radial_cells;
+           ++radial_index) {
+         amrex::Real* radial_solution = solution_values.data()
+            + static_cast<std::size_t>(radial_index) * angular_cells;
+         for (int angular_index = 0;
+              angular_index < angular_cells;
+              ++angular_index) {
+            radial_solution[angular_index] += eigenvector[angular_index]
+               * radial_mode[radial_index]
+               / angular_weight[angular_index];
+         }
+      }
+   }
+   amrex::ParallelAllReduce::Sum(
+      solution_values.data(), static_cast<int>(solution_values.size()),
+      communicator
+   );
+
+   amrex::Real residual = 0.0;
+   for (int radial_index = 0;
+        radial_index < radial_cells;
+        ++radial_index) {
+      for (int angular_index = 0;
+           angular_index < angular_cells;
+           ++angular_index) {
+         const std::size_t offset =
+            static_cast<std::size_t>(radial_index) * angular_cells
+            + angular_index;
+         amrex::Real applied = radial_diagonal[radial_index]
+            * solution_values[offset];
+         if (radial_index > 0) {
+            applied += radial_lower[radial_index]
+               * solution_values[offset - angular_cells];
+         }
+         if (radial_index + 1 < radial_cells) {
+            applied += radial_upper[radial_index]
+               * solution_values[offset + angular_cells];
+         }
+         if (angular_index > 0) {
+            const amrex::Real theta = problo[1]
+               + (angular_index + 0.5) * dx[1];
+            const amrex::Real face_theta = problo[1]
+               + angular_index * dx[1];
+            const amrex::Real coefficient =
+               std::sin(face_theta) / std::sin(theta) * angular_scale;
+            applied += coefficient * (
+               solution_values[offset - 1] - solution_values[offset]
+            );
+         }
+         if (angular_index + 1 < angular_cells) {
+            const amrex::Real theta = problo[1]
+               + (angular_index + 0.5) * dx[1];
+            const amrex::Real face_theta = problo[1]
+               + (angular_index + 1) * dx[1];
+            const amrex::Real coefficient =
+               std::sin(face_theta) / std::sin(theta) * angular_scale;
+            applied += coefficient * (
+               solution_values[offset + 1] - solution_values[offset]
+            );
+         }
+         residual = std::max(
+            residual, std::abs(applied - weighted_rhs[offset])
+         );
+      }
+   }
+
+   amrex::MultiFab host_solution = host_copy(*solution[0]);
+   for (amrex::MFIter mfi(host_solution); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto destination = host_solution.array(mfi);
+      for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+         const int angular_index = j - angular_begin;
+         for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+            const int radial_index = i - radial_begin;
+            destination(i, j, plane_index, 0) = solution_values[
+               static_cast<std::size_t>(radial_index) * angular_cells
+               + angular_index
+            ];
+         }
+      }
+   }
+   copy_host_to_device(*solution[0], host_solution);
+   return elliptic_result(residual);
+#endif
 }
 
 InitialDataEllipticResult solve_initial_data_conformal_vector_laplacian(

@@ -164,6 +164,16 @@ part of a persisted sequence. `initial_data.sequence_output_dir` overrides
 the automatic location and also explicitly requests output for a one-model
 rotating solve.
 
+An initial-data solver may use the coordinates and dimension natural to its
+symmetry, independently of the evolution hierarchy. Artifact metadata must
+describe the physical coordinates of the stored samples exactly: a transformed
+solver coordinate must not masquerade as `theta`, `r`, or another canonical
+axis. A spherical axisymmetric artifact therefore stores a genuine ordered
+`r theta` lattice even when the solver uses a weighted angular operator.
+Matching source and target points may take the exact-layout path; different
+spacing, extent, dimension, or coordinate family uses the same materializer
+and the field's declared origin, exterior, and reflection closure.
+
 Interpolation ownership includes target points outside the source sample
 hull. A cell-centred radial source has a half-cell gap at the regular origin;
 clamping there is interior regular interpolation and must not create
@@ -224,13 +234,13 @@ saved sector, interpolated on its declared centering, transformed in physical
 Cartesian components, then expressed in the target basis. Points beyond the
 saved outer extent still use the normal physical exterior completion.
 
-The currently validated reduced solve is spherical one-dimensional TOV to
-three-dimensional Cartesian RHD. Cross-chart CT is deliberately rejected
-until face-centred divergence-preserving magnetic transfer has an owner. A
-two-dimensional spherical `r theta` rotating XCTS solve is also not supplied
-by the materializer: it requires a real axisymmetric scalar/vector elliptic
-operator and axis/equator regularity before it can emit the same portable
-physical core.
+The currently validated reduced physical-ID handoff is spherical
+one-dimensional TOV to three-dimensional Cartesian RHD. Cross-chart CT is
+deliberately rejected until face-centred divergence-preserving magnetic
+transfer has an owner. A two-dimensional spherical `r theta` rotating XCTS
+solve requires both the axisymmetric scalar and conformal-vector operators,
+axis/equator regularity, and zero-spin equivalence before it can emit the same
+portable physical core.
 
 Elliptic boundary types are component-specific: on a reflection plane the
 normal component of a polar vector is odd while its tangential components are

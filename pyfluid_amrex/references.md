@@ -36,6 +36,7 @@ It intentionally links rather than restating the detailed contracts.
 | Coherent space-time operator attribution | `tools/research_spacetime_operator_ablation.py`, `tools/research_mhd_spacetime_operator_ablation.py`, and `tools/research_srmhd_spacetime_operator_ablation.py` | `docs/unified_shock_capturing_research.md`, Cycles 273--274 |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
 | Portable physical-ID solve/save/materialization | `src/initial_data/physical_id.cpp`, `src/initial_data/physical_id_interpolation.cpp`, `src/framework/checkpoint.cpp`, `tests/physical_id_interpolation_check.cpp`, `tools/validate_reduced_initial_data.py` | `docs/infrastructure_conventions.md`, Cycle 287 |
+| Axisymmetric spherical ID elliptic operator | `src/initial_data/initial_data_elliptic.cpp`, `include/pyfluid_amrex/initial_data/elliptic.hpp`, `tests/initial_data_elliptic_check.cpp` | `docs/infrastructure_conventions.md`, Cycle 288 |
 | Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
 | Adaptive Richardson status | AMR estimator and validation tools | `docs/adaptive_richardson.md` |
 | Machines, MPI, build | `machines/*.toml`, `tools/validation_common.py` | `docs/install.md`, `docs/machines.md` |
@@ -139,6 +140,11 @@ the generated TSV/log, and the current source revision/dirty state.
   convergence. The companion
   [XNS guide](https://www.arcetri.inaf.it/science/ahead/XNS/files/Guide.pdf)
   documents separate field and Bernoulli/matter damping.
+- A. G. Pili, N. Bucciantini, and L. Del Zanna,
+  *Axisymmetric equilibrium models for magnetized neutron stars in General
+  Relativity under the Conformally Flat Condition*,
+  [arXiv:1401.4308](https://arxiv.org/abs/1401.4308): primary axisymmetric XCFC
+  equilibrium and spherical-harmonic Poisson-solve reference for XNS.
 - LORENE `Star_rot::equilibrium`,
   [class reference](https://lorene.obspm.fr/Refguide/classLorene_1_1Star__rot.html):
   documents staged rotation, separate main/Poisson relaxation, enthalpy-change

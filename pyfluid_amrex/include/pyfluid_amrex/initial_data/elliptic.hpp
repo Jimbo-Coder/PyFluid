@@ -151,6 +151,30 @@ InitialDataEllipticResult solve_initial_data_poisson(
    InitialDataEllipticOptions const& options = {}
 );
 
+// Solve the axisymmetric physical scalar equation
+//
+//   (1/r^2) d_r(r^2 d_r u)
+//     + (1/(r^2 sin(theta))) d_theta(sin(theta) d_theta u) = rhs
+//
+// on a two-dimensional logical Cartesian hierarchy whose ordered physical
+// coordinates are (r, theta). The unknown and physical rhs are cell-centered,
+// so the coordinate origin and axis are boundary faces rather than duplicated
+// degrees of freedom. Multiplying the equation by r^2 sin(theta) gives the
+// regular conservative operator
+//
+//   sin(theta) d_r(r^2 d_r u)
+//     + d_theta(sin(theta) d_theta u) = r^2 sin(theta) rhs.
+//
+// Callers supply origin, axis/equator, and outer conditions through the
+// ordinary elliptic boundary contract.
+InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   amrex::Vector<amrex::MultiFab const*> const& rhs,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options = {}
+);
+
 InitialDataEllipticResult solve_initial_data_conformal_vector_laplacian(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& vector_potential,

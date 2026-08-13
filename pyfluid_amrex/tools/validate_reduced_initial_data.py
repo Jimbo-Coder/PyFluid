@@ -34,6 +34,9 @@ RESULTS = RUN_ROOT / "reduced_initial_data.tsv"
 FULL_RESULTS = RUN_ROOT / "reduced_initial_data_full.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
 INTERPOLATION_CHECK = "pyfluid_amrex_physical_id_interpolation_check"
+AXISYMMETRIC_ELLIPTIC_CHECK = (
+   "pyfluid_amrex_initial_data_elliptic_check_2d"
+)
 RECOVERY_PATTERN = re.compile(
    r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)"
 )
@@ -335,6 +338,21 @@ def main() -> int:
    if interpolation_result.returncode != 0:
       raise RuntimeError("portable physical-ID basis/reflection check failed")
 
+   elliptic_check = build_cached_target(AXISYMMETRIC_ELLIPTIC_CHECK)
+   elliptic_result = run_mpi(
+      elliptic_check,
+      ranks=args.ranks,
+      timeout=args.timeout,
+   )
+   (RUN_ROOT / "axisymmetric_elliptic_check.log").write_text(
+      elliptic_result.stdout
+   )
+   if (
+      elliptic_result.returncode != 0
+      or "axisymmetric_spherical_poisson" not in elliptic_result.stdout
+   ):
+      raise RuntimeError("axisymmetric spherical elliptic check failed")
+
    resolutions = (512,) if args.level == "standard" else (256, 512, 1024)
    source_artifacts: dict[int, Path] = {}
    run_seconds: dict[int, float] = {}
@@ -361,14 +379,24 @@ def main() -> int:
       args,
    )
    errors: dict[int, dict[str, float]] = {}
-   rows: list[dict[str, object]] = [{
-      "kind": "initial_data",
-      "case": "portable_id_basis_and_equatorial_reflection",
-      "status": "PASS",
-      "metric": "focused_cpp_check",
-      "value": 0.0,
-      "run_dir": repo_relative(RUN_ROOT),
-   }]
+   rows: list[dict[str, object]] = [
+      {
+         "kind": "initial_data",
+         "case": "portable_id_basis_and_equatorial_reflection",
+         "status": "PASS",
+         "metric": "focused_cpp_check",
+         "value": 0.0,
+         "run_dir": repo_relative(RUN_ROOT),
+      },
+      {
+         "kind": "initial_data",
+         "case": "axisymmetric_spherical_elliptic",
+         "status": "PASS",
+         "metric": "focused_cpp_check",
+         "value": 0.0,
+         "run_dir": repo_relative(RUN_ROOT),
+      },
+   ]
    for resolution in resolutions:
       _, materialized_artifact, seconds = run_id_case(
          f"materialized_n{resolution}_3d",

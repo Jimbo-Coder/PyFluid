@@ -5177,3 +5177,39 @@ I will always continue from the last cycle marked as `in_progress`.
   regularity, manufactured scalar tests, and zero-spin TOV equivalence is the
   next milestone before nonzero 2D XCTS RNS. Cross-chart CT remains rejected
   until face-centred divergence-preserving transfer has an owner. [DONE]
+
+## Cycle 288 — Axisymmetric spherical elliptic foundation (DONE)
+
+- Keep evolution on the existing three-dimensional Cartesian hierarchy and
+  extend only the independent initial-data solve layer. Reuse the schema-v2
+  physical-ID artifact for the handoff; do not add coordinate, formulation,
+  or EoS template axes to evolution. [DONE]
+- Add one compiled two-dimensional axisymmetric spherical scalar elliptic
+  operator on a true uniform `r theta` hierarchy. Express the physical
+  Laplacian in conservative weighted form, preserve the existing coefficient
+  boundary contract, and enforce origin, axis, and equatorial even-scalar
+  regularity. Keep the implementation in one compiled owner with runtime
+  geometry checks rather than adding coordinate, boundary, or formulation
+  template products. [DONE]
+- A generic AMReX point-smoothed multigrid trial was not robust for the
+  weighted axis operator, while a direct BiCGStab control was accurate but
+  took `55.66 s` for the three high-resolution manufactured solves. Replace
+  that experiment with a separable solve: symmetrize and diagonalize the
+  angular finite-volume operator, distribute modes over ranks, solve each
+  radial tridiagonal system, and reconstruct. An exploratory square-grid
+  separable control took `1.60 s`, about 35 times faster than that Krylov
+  route; the retained true-`r theta` focused executable takes `0.36 s` on one
+  rank for its complete three-solve matrix. [DONE]
+- Prove the retained operator with a regular `P2+P4` manufactured solution on
+  a hemispherical grid. The 128x64 to 256x128 maximum-error trend is
+  `6.59689e-6 -> 1.68307e-6` (order `1.97069`); the Robin maximum error is
+  `1.48341e-6`; final discrete residuals are `1.57e-9/1.36e-10` or smaller.
+  One- and three-rank runs agree to roundoff in error and both pass. [DONE]
+- Reconcile the durable ID conventions: the solver grid is genuinely uniform
+  physical `r theta`, not an undocumented uniform `mu=-cos(theta)` lattice;
+  a natural-coordinate solve writes the existing portable physical-ID core,
+  and only the shared materializer maps it to Cartesian evolution. The next
+  milestone is the circular-RNS azimuthal spin-1 XCTS operator, followed by a
+  zero-spin reduced-grid TOV equivalence gate before nonzero RNS. All
+  production dimensions, architecture, the three-rank reduced-ID standard
+  gate, and the cache-hot 3/3 quick suite pass. [DONE]

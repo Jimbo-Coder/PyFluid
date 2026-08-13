@@ -10,9 +10,9 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-13, branch `main`, through Cycle 287's reduced-TOV
-physical-ID handoff. Cycle 284's preserved standard/performance baseline
-remains the latest broad integration baseline.
+Last reconciled: 2026-08-13, branch `main`, through Cycle 288's axisymmetric
+spherical elliptic foundation. Cycle 284's preserved standard/performance
+baseline remains the latest broad integration baseline.
 
 ## Scope And Evidence
 
@@ -283,10 +283,26 @@ remains the latest broad integration baseline.
   fluid uses the configured target atmosphere and ADM geometry uses the exact
   isotropic-Schwarzschild exterior inferred from the saved outer metric.
 - The portable materializer does not make rotating XCTS axisymmetric by
-  itself. Spherical `r theta` RNS still needs a genuine axisymmetric
-  scalar/vector elliptic operator and regularity conditions. Cross-chart CT is
-  likewise rejected until face-centred divergence-preserving transfer is
+  itself. The uniform cell-centred spherical `r theta` scalar Poisson operator
+  now handles origin, axis/equator reflection, and finite-radius Dirichlet or
+  Robin closure with a separable weighted angular solve. Its regular
+  manufactured `P2+P4` solution converges at second order and gives the same
+  result across one and three ranks. Full spherical `r theta` RNS still needs
+  the conformal-vector/XCTS operator and zero-spin equivalence. Cross-chart CT
+  is likewise rejected until face-centred divergence-preserving transfer is
   implemented.
+- A nodal spherical solve makes every angular point at `r=0` a duplicate
+  physical degree of freedom. Use a cell-centred radial origin for the reduced
+  scalar operator. Stock point-smoothed Cartesian multigrid was not robust for
+  the strongly weighted spherical-axis operator tested here; the separable
+  solve diagonalizes the self-adjoint angular operator and solves independent
+  radial tridiagonal systems without adding a coordinate/template product.
+- A circular stationary axisymmetric RNS has only the physical azimuthal
+  shift and momentum component. That field is divergence-free, so the flat
+  conformal-vector equation reduces to the toroidal spin-1 scalar Laplacian,
+  rather than a general coupled three-vector solve. Its axis/origin parity,
+  inactive-phi storage, source terms, and longitudinal-tensor reconstruction
+  still need a manufactured contract before it is a production XCTS path.
 - On finer same-domain physical-ID loads, outer target cell centers can lie in
   the half-cell strip outside the source cell-center interpolation hull. The
   reader must apply the field's physical exterior there. For TOV/RNS fluid it
