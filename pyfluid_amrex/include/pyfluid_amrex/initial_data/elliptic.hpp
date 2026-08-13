@@ -109,6 +109,11 @@ private:
       amrex::Real,
       amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const*
    );
+   friend void set_axisymmetric_spherical_toroidal_regularity(
+      InitialDataEllipticHierarchy const&,
+      InitialDataEllipticBoundaryConditions&,
+      int
+   );
 };
 
 // Apply homogeneous reflection conditions on hierarchy faces marked as
@@ -117,6 +122,15 @@ void set_initial_data_reflection_boundaries(
    InitialDataEllipticHierarchy const& hierarchy,
    InitialDataEllipticBoundaryConditions& boundary,
    amrex::Vector<GridFieldSymmetryKind> const& component_symmetries
+);
+
+// Mark one scalar storage component as an orthonormal azimuthal vector on an
+// r-theta hierarchy: odd at the radial origin and rotation axis, even at the
+// equator. The radial outer condition remains owned by the caller.
+void set_axisymmetric_spherical_toroidal_regularity(
+   InitialDataEllipticHierarchy const& hierarchy,
+   InitialDataEllipticBoundaryConditions& boundary,
+   int component = 0
 );
 
 // Populate the common coefficient fields for
@@ -171,6 +185,26 @@ InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& solution,
    amrex::Vector<amrex::MultiFab const*> const& rhs,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options = {}
+);
+
+// Solve the axisymmetric physical azimuthal-vector equation
+//
+//   (1/r^2) d_r(r^2 d_r v_hat_phi)
+//     + (1/(r^2 sin(theta))) d_theta(sin(theta) d_theta v_hat_phi)
+//     - v_hat_phi/(r^2 sin(theta)^2) = source_hat_phi,
+//
+// where v_hat_phi is the orthonormal azimuthal component. A pure axisymmetric
+// azimuthal vector is divergence-free, so this is also its flat conformal-
+// vector Laplacian. Finite regular solutions vanish at the origin and axis;
+// the singular angular term enforces that behavior on the cell-centered
+// r-theta grid, while the equator has even reflection regularity.
+InitialDataEllipticResult
+solve_initial_data_axisymmetric_spherical_toroidal_vector_poisson(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& azimuthal_solution,
+   amrex::Vector<amrex::MultiFab const*> const& azimuthal_source,
    InitialDataEllipticBoundaryConditions const& boundary,
    InitialDataEllipticOptions const& options = {}
 );

@@ -36,7 +36,7 @@ It intentionally links rather than restating the detailed contracts.
 | Coherent space-time operator attribution | `tools/research_spacetime_operator_ablation.py`, `tools/research_mhd_spacetime_operator_ablation.py`, and `tools/research_srmhd_spacetime_operator_ablation.py` | `docs/unified_shock_capturing_research.md`, Cycles 273--274 |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
 | Portable physical-ID solve/save/materialization | `src/initial_data/physical_id.cpp`, `src/initial_data/physical_id_interpolation.cpp`, `src/framework/checkpoint.cpp`, `tests/physical_id_interpolation_check.cpp`, `tools/validate_reduced_initial_data.py` | `docs/infrastructure_conventions.md`, Cycle 287 |
-| Axisymmetric spherical ID elliptic operator | `src/initial_data/initial_data_elliptic.cpp`, `include/pyfluid_amrex/initial_data/elliptic.hpp`, `tests/initial_data_elliptic_check.cpp` | `docs/infrastructure_conventions.md`, Cycle 288 |
+| Axisymmetric spherical ID scalar/toroidal elliptic operators | `src/initial_data/initial_data_elliptic.cpp`, `include/pyfluid_amrex/initial_data/elliptic.hpp`, `tests/initial_data_elliptic_check.cpp` | `docs/infrastructure_conventions.md`, Cycles 288--289 |
 | Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
 | Adaptive Richardson status | AMR estimator and validation tools | `docs/adaptive_richardson.md` |
 | Machines, MPI, build | `machines/*.toml`, `tools/validation_common.py` | `docs/install.md`, `docs/machines.md` |

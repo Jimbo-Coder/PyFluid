@@ -5213,3 +5213,31 @@ I will always continue from the last cycle marked as `in_progress`.
   zero-spin reduced-grid TOV equivalence gate before nonzero RNS. All
   production dimensions, architecture, the three-rank reduced-ID standard
   gate, and the cache-hot 3/3 quick suite pass. [DONE]
+
+## Cycle 289 — Circular-RNS toroidal elliptic component (DONE)
+
+- Use circular stationarity and axisymmetry rather than implementing unused
+  meridional shift components. Represent the physical orthonormal azimuthal
+  shift as one spin-1 field; because it is divergence-free, its conformal-
+  vector Laplacian is the scalar spherical operator plus the regular-singular
+  `-1/(r^2 sin(theta)^2)` angular term. Reuse the Cycle-288 separable owner and
+  do not add a coordinate, component, or formulation template product. [DONE]
+- Prove origin/axis/equator regularity, radial Robin closure, angular-mode
+  content, second-order refinement, and MPI decomposition with a manufactured
+  toroidal field before connecting XCTS sources or longitudinal-tensor
+  reconstruction. The `l=1+3` field gives `4.28906e-6 -> 1.08687e-6`
+  maximum error from 128x64 to 256x128 (order `1.98048`), with
+  `5.64e-11` fine residual; the Robin control gives `5.56311e-7` error and
+  `7.91e-12` residual. One- and three-rank results agree to roundoff. [DONE]
+- Make origin/axis odd and equator even through an explicit toroidal
+  regularity helper and require those boundary types in the solver. Keep the
+  portable artifact contract dimension-independent: the schema's three
+  physical vector components survive a two-dimensional source mesh, so the
+  azimuthal shift has a clean route to Cartesian materialization. [DONE]
+- The focused 1D/2D/3D elliptic targets compile, the three-rank standard
+  reduced-ID gate passes with its existing N=512 TOV errors and three-step
+  evolution contract, and the remaining implementation boundary is the
+  coupled axisymmetric XCTS source/tensor/matter owner—not another vector
+  component or compile-time product axis. All production dimensions and the
+  3/3 quick suite pass; the measured unchanged production cache-hit build is
+  `0.24 s` with zero compiler cache misses. [DONE]

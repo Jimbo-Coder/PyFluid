@@ -1738,6 +1738,100 @@ void set_initial_data_reflection_boundaries(
    }
 }
 
+void set_axisymmetric_spherical_toroidal_regularity(
+   InitialDataEllipticHierarchy const& hierarchy,
+   InitialDataEllipticBoundaryConditions& boundary,
+   int component
+)
+{
+#if (AMREX_SPACEDIM != 2)
+   amrex::ignore_unused(hierarchy, boundary, component);
+   amrex::Abort("spherical toroidal regularity requires two dimensions");
+#else
+   if (boundary.num_levels() != static_cast<int>(hierarchy.geometry.size())
+       || component < 0 || component >= boundary.num_components
+       || boundary.centering() != InitialDataEllipticCentering::cell) {
+      amrex::Abort("invalid spherical toroidal regularity configuration");
+   }
+   auto near = [](amrex::Real first, amrex::Real second) {
+      const amrex::Real scale = std::max({
+         amrex::Real(1.0), std::abs(first), std::abs(second)
+      });
+      return std::abs(first - second)
+         <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+   };
+   const auto first_problo = hierarchy.geometry.front().ProbLoArray();
+   const auto first_probhi = hierarchy.geometry.front().ProbHiArray();
+   const amrex::Real half_pi = 0.5 * constants::pi;
+   const bool lower_axis = near(first_problo[1], 0.0);
+   const bool lower_equator = near(first_problo[1], half_pi);
+   const bool upper_axis = near(first_probhi[1], constants::pi);
+   const bool upper_equator = near(first_probhi[1], half_pi);
+   if (!near(first_problo[0], 0.0)
+       || !(lower_axis || lower_equator)
+       || !(upper_axis || upper_equator)
+       || hierarchy.reflection_lo[0] == 0
+       || hierarchy.reflection_lo[1] == 0
+       || hierarchy.reflection_hi[1] == 0) {
+      amrex::Abort("invalid r-theta domain for toroidal regularity");
+   }
+
+   const int radial_side = component * AMREX_SPACEDIM;
+   const int angular_side = radial_side + 1;
+   boundary.lower_types_[radial_side] =
+      InitialDataEllipticBoundaryType::dirichlet;
+   boundary.lower_reflection_parity_[radial_side] = -1;
+   boundary.lower_types_[angular_side] = lower_axis
+      ? InitialDataEllipticBoundaryType::dirichlet
+      : InitialDataEllipticBoundaryType::neumann;
+   boundary.lower_reflection_parity_[angular_side] = lower_axis ? -1 : 1;
+   boundary.upper_types_[angular_side] = upper_axis
+      ? InitialDataEllipticBoundaryType::dirichlet
+      : InitialDataEllipticBoundaryType::neumann;
+   boundary.upper_reflection_parity_[angular_side] = upper_axis ? -1 : 1;
+
+   for (int level = 0; level < boundary.num_levels(); ++level) {
+      const auto problo = hierarchy.geometry[level].ProbLoArray();
+      const auto probhi = hierarchy.geometry[level].ProbHiArray();
+      if (!near(problo[0], 0.0)
+          || !near(problo[1], first_problo[1])
+          || !near(probhi[1], first_probhi[1])) {
+         amrex::Abort("inconsistent r-theta hierarchy geometry");
+      }
+      const amrex::Box domain = hierarchy.geometry[level].Domain();
+      const amrex::Dim3 domain_lo = amrex::lbound(domain);
+      const amrex::Dim3 domain_hi = amrex::ubound(domain);
+      const int selected_component = component;
+      const int lower_angular_is_axis = lower_axis ? 1 : 0;
+      const int upper_angular_is_axis = upper_axis ? 1 : 0;
+      for (amrex::MFIter mfi(boundary.coefficient_a(level));
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.fabbox();
+         const auto a = boundary.coefficient_a(level).array(mfi);
+         const auto b = boundary.coefficient_b(level).array(mfi);
+         const auto c = boundary.coefficient_c(level).array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            int odd = -1;
+            if (i < domain_lo.x) {
+               odd = 1;
+            } else if (j < domain_lo.y) {
+               odd = lower_angular_is_axis;
+            } else if (j > domain_hi.y) {
+               odd = upper_angular_is_axis;
+            }
+            if (odd >= 0) {
+               a(i, j, k, selected_component) = odd != 0 ? 1.0 : 0.0;
+               b(i, j, k, selected_component) = odd != 0 ? 0.0 : 1.0;
+               c(i, j, k, selected_component) = 0.0;
+            }
+         });
+      }
+   }
+#endif
+}
+
 void set_centered_power_law_robin_boundary(
    InitialDataEllipticHierarchy const& hierarchy,
    InitialDataEllipticBoundaryConditions& boundary,
@@ -1918,6 +2012,15 @@ InitialDataEllipticResult solve_initial_data_poisson(
    ));
 }
 
+namespace {
+
+enum class AxisymmetricSphericalMode {
+   scalar,
+   toroidal_vector,
+};
+
+} // namespace
+
 #if (AMREX_SPACEDIM == 2)
 namespace {
 
@@ -2079,16 +2182,19 @@ void copy_host_to_device(
 } // namespace
 #endif
 
-InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
+namespace {
+
+InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& solution,
    amrex::Vector<amrex::MultiFab const*> const& rhs,
    InitialDataEllipticBoundaryConditions const& boundary,
-   InitialDataEllipticOptions const& options
+   InitialDataEllipticOptions const& options,
+   AxisymmetricSphericalMode mode
 )
 {
 #if (AMREX_SPACEDIM != 2)
-   amrex::ignore_unused(hierarchy, solution, rhs, boundary, options);
+   amrex::ignore_unused(hierarchy, solution, rhs, boundary, options, mode);
    amrex::Abort(
       "the axisymmetric spherical elliptic operator requires a 2D r-theta hierarchy"
    );
@@ -2121,8 +2227,10 @@ InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
    const auto dx = geometry.CellSizeArray();
    const amrex::Box domain = geometry.Domain();
    const amrex::Real half_pi = 0.5 * constants::pi;
+   const bool lower_axis = near(problo[1], 0.0);
+   const bool upper_axis = near(probhi[1], constants::pi);
    const bool standard_theta_domain =
-      (near(problo[1], 0.0)
+      (lower_axis
        && (near(probhi[1], half_pi) || near(probhi[1], constants::pi)))
       || (near(problo[1], half_pi) && near(probhi[1], constants::pi));
    if (geometry.Coord() != amrex::CoordSys::cartesian
@@ -2135,15 +2243,29 @@ InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
          "[pi/2,pi], or [0,pi]"
       );
    }
-   if (resolved_boundary_type(boundary, 0, 0, false)
-          != InitialDataEllipticBoundaryType::neumann
+   const bool toroidal =
+      mode == AxisymmetricSphericalMode::toroidal_vector;
+   const InitialDataEllipticBoundaryType origin_type = toroidal
+      ? InitialDataEllipticBoundaryType::dirichlet
+      : InitialDataEllipticBoundaryType::neumann;
+   const InitialDataEllipticBoundaryType lower_angular_type =
+      toroidal && lower_axis
+      ? InitialDataEllipticBoundaryType::dirichlet
+      : InitialDataEllipticBoundaryType::neumann;
+   const InitialDataEllipticBoundaryType upper_angular_type =
+      toroidal && upper_axis
+      ? InitialDataEllipticBoundaryType::dirichlet
+      : InitialDataEllipticBoundaryType::neumann;
+   if (resolved_boundary_type(boundary, 0, 0, false) != origin_type
        || resolved_boundary_type(boundary, 0, 1, false)
-          != InitialDataEllipticBoundaryType::neumann
+          != lower_angular_type
        || resolved_boundary_type(boundary, 0, 1, true)
-          != InitialDataEllipticBoundaryType::neumann) {
-      amrex::Abort(
-         "the spherical origin, axis, and equator require even scalar regularity"
-      );
+          != upper_angular_type) {
+      amrex::Abort(toroidal
+         ? "the spherical toroidal solve requires odd origin/axis and even "
+           "equator regularity"
+         : "the spherical scalar solve requires even origin, axis, and "
+           "equator regularity");
    }
    const InitialDataEllipticBoundaryType radial_outer_type =
       resolved_boundary_type(boundary, 0, 0, true);
@@ -2259,6 +2381,8 @@ InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
 
    const amrex::Real radial_scale = 1.0 / (dx[0] * dx[0]);
    const amrex::Real angular_scale = 1.0 / (dx[1] * dx[1]);
+   const amrex::Real angular_spin_squared =
+      mode == AxisymmetricSphericalMode::toroidal_vector ? 1.0 : 0.0;
    std::vector<amrex::Real> radial_lower(radial_cells, 0.0);
    std::vector<amrex::Real> radial_diagonal(radial_cells, 0.0);
    std::vector<amrex::Real> radial_upper(radial_cells, 0.0);
@@ -2305,6 +2429,10 @@ InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
       if (!(angular_weight[angular_index] > 0.0)) {
          amrex::Abort("invalid spherical angular cell weight");
       }
+      angular_diagonal[angular_index] -= angular_spin_squared / (
+         angular_weight[angular_index] * angular_weight[angular_index]
+         * angular_weight[angular_index] * angular_weight[angular_index]
+      );
    }
    for (int angular_index = 0;
         angular_index + 1 < angular_cells;
@@ -2462,6 +2590,11 @@ InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
                solution_values[offset + 1] - solution_values[offset]
             );
          }
+         const amrex::Real theta = problo[1]
+            + (angular_index + 0.5) * dx[1];
+         applied -= angular_spin_squared / (
+            std::sin(theta) * std::sin(theta)
+         ) * solution_values[offset];
          residual = std::max(
             residual, std::abs(applied - weighted_rhs[offset])
          );
@@ -2486,6 +2619,45 @@ InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
    copy_host_to_device(*solution[0], host_solution);
    return elliptic_result(residual);
 #endif
+}
+
+} // namespace
+
+InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   amrex::Vector<amrex::MultiFab const*> const& rhs,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options
+)
+{
+   return solve_axisymmetric_spherical_separable(
+      hierarchy,
+      solution,
+      rhs,
+      boundary,
+      options,
+      AxisymmetricSphericalMode::scalar
+   );
+}
+
+InitialDataEllipticResult
+solve_initial_data_axisymmetric_spherical_toroidal_vector_poisson(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& azimuthal_solution,
+   amrex::Vector<amrex::MultiFab const*> const& azimuthal_source,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options
+)
+{
+   return solve_axisymmetric_spherical_separable(
+      hierarchy,
+      azimuthal_solution,
+      azimuthal_source,
+      boundary,
+      options,
+      AxisymmetricSphericalMode::toroidal_vector
+   );
 }
 
 InitialDataEllipticResult solve_initial_data_conformal_vector_laplacian(

@@ -234,13 +234,21 @@ saved sector, interpolated on its declared centering, transformed in physical
 Cartesian components, then expressed in the target basis. Points beyond the
 saved outer extent still use the normal physical exterior completion.
 
+A reduced source dimension removes coordinate dependence, not physical tensor
+components. Portable `Vector3` and `SymmetricTensor3` fields retain all three
+orthonormal physical components declared in `schema/fields.toml`; an
+axisymmetric `r theta` source can therefore store a nonzero azimuthal velocity
+or shift even though `phi` is not an active mesh axis. The materializer owns
+the basis transformation to the target chart. Do not truncate portable field
+rank to `AMREX_SPACEDIM` or create a reduced-dimension duplicate field schema.
+
 The currently validated reduced physical-ID handoff is spherical
 one-dimensional TOV to three-dimensional Cartesian RHD. Cross-chart CT is
 deliberately rejected until face-centred divergence-preserving magnetic
 transfer has an owner. A two-dimensional spherical `r theta` rotating XCTS
-solve requires both the axisymmetric scalar and conformal-vector operators,
-axis/equator regularity, and zero-spin equivalence before it can emit the same
-portable physical core.
+solve has validated axisymmetric scalar and toroidal spin-1 elliptic operators.
+It still requires the coupled matter/source and longitudinal-tensor owner plus
+zero-spin equivalence before it can emit the same portable physical core.
 
 Elliptic boundary types are component-specific: on a reflection plane the
 normal component of a polar vector is odd while its tangential components are

@@ -624,7 +624,8 @@ struct AxisymmetricSphericalPoissonError {
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real axisymmetric_spherical_exact(
    amrex::Real radius,
-   amrex::Real mu
+   amrex::Real mu,
+   bool toroidal
 ) noexcept
 {
    constexpr amrex::Real quadrupole_amplitude = 0.05;
@@ -634,6 +635,16 @@ amrex::Real axisymmetric_spherical_exact(
    const amrex::Real legendre_p4 = 0.125 * (
       35.0 * mu_squared * mu_squared - 30.0 * mu_squared + 3.0
    );
+   if (toroidal) {
+      const amrex::Real sine_theta = std::sqrt(
+         amrex::max(amrex::Real(0.0), 1.0 - mu_squared)
+      );
+      const amrex::Real toroidal_l1 = sine_theta;
+      const amrex::Real toroidal_l3 =
+         1.5 * (5.0 * mu_squared - 1.0) * sine_theta;
+      return quadrupole_amplitude * std::pow(radius, 3) * toroidal_l1
+         + hexadecapole_amplitude * std::pow(radius, 5) * toroidal_l3;
+   }
    return 1.0
       + quadrupole_amplitude * std::pow(radius, 4) * legendre_p2
       + hexadecapole_amplitude * std::pow(radius, 6) * legendre_p4;
@@ -642,7 +653,8 @@ amrex::Real axisymmetric_spherical_exact(
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real axisymmetric_spherical_rhs(
    amrex::Real radius,
-   amrex::Real mu
+   amrex::Real mu,
+   bool toroidal
 ) noexcept
 {
    constexpr amrex::Real quadrupole_amplitude = 0.05;
@@ -652,6 +664,17 @@ amrex::Real axisymmetric_spherical_rhs(
    const amrex::Real legendre_p4 = 0.125 * (
       35.0 * mu_squared * mu_squared - 30.0 * mu_squared + 3.0
    );
+   if (toroidal) {
+      const amrex::Real sine_theta = std::sqrt(
+         amrex::max(amrex::Real(0.0), 1.0 - mu_squared)
+      );
+      const amrex::Real toroidal_l1 = sine_theta;
+      const amrex::Real toroidal_l3 =
+         1.5 * (5.0 * mu_squared - 1.0) * sine_theta;
+      return 10.0 * quadrupole_amplitude * radius * toroidal_l1
+         + 18.0 * hexadecapole_amplitude * std::pow(radius, 3)
+            * toroidal_l3;
+   }
    return 14.0 * quadrupole_amplitude * radius * radius * legendre_p2
       + 22.0 * hexadecapole_amplitude * std::pow(radius, 4)
          * legendre_p4;
@@ -660,7 +683,8 @@ amrex::Real axisymmetric_spherical_rhs(
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real axisymmetric_spherical_radial_derivative(
    amrex::Real radius,
-   amrex::Real mu
+   amrex::Real mu,
+   bool toroidal
 ) noexcept
 {
    constexpr amrex::Real quadrupole_amplitude = 0.05;
@@ -670,15 +694,27 @@ amrex::Real axisymmetric_spherical_radial_derivative(
    const amrex::Real legendre_p4 = 0.125 * (
       35.0 * mu_squared * mu_squared - 30.0 * mu_squared + 3.0
    );
+   if (toroidal) {
+      const amrex::Real sine_theta = std::sqrt(
+         amrex::max(amrex::Real(0.0), 1.0 - mu_squared)
+      );
+      const amrex::Real toroidal_l1 = sine_theta;
+      const amrex::Real toroidal_l3 =
+         1.5 * (5.0 * mu_squared - 1.0) * sine_theta;
+      return 3.0 * quadrupole_amplitude * radius * radius * toroidal_l1
+         + 5.0 * hexadecapole_amplitude * std::pow(radius, 4)
+            * toroidal_l3;
+   }
    return 4.0 * quadrupole_amplitude * std::pow(radius, 3) * legendre_p2
       + 6.0 * hexadecapole_amplitude * std::pow(radius, 5)
          * legendre_p4;
 }
 
-AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_poisson(
+AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
    int radial_cells,
    int angular_cells,
-   bool use_robin
+   bool use_robin,
+   bool toroidal
 )
 {
    const amrex::IntVect lo(0, 0);
@@ -717,7 +753,9 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_poisson(
          const amrex::Real radius = problo[0] + (i + 0.5) * dx[0];
          const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
          const amrex::Real mu = -std::cos(theta);
-         values(i, j, k, 0) = axisymmetric_spherical_rhs(radius, mu);
+         values(i, j, k, 0) = axisymmetric_spherical_rhs(
+            radius, mu, toroidal
+         );
       });
    }
 
@@ -730,11 +768,17 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_poisson(
       0.0,
       pyfluid_amrex::InitialDataEllipticCentering::cell
    );
-   pyfluid_amrex::set_initial_data_reflection_boundaries(
-      hierarchy,
-      boundary,
-      {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
-   );
+   if (toroidal) {
+      pyfluid_amrex::set_axisymmetric_spherical_toroidal_regularity(
+         hierarchy, boundary
+      );
+   } else {
+      pyfluid_amrex::set_initial_data_reflection_boundaries(
+         hierarchy,
+         boundary,
+         {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
+      );
+   }
    for (amrex::MFIter mfi(boundary.coefficient_c(0)); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.fabbox();
       const auto coefficient_a = boundary.coefficient_a(0).array(mfi);
@@ -746,12 +790,16 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_poisson(
          if (i > domain.bigEnd(0)) {
             const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
             const amrex::Real mu = -std::cos(theta);
-            const amrex::Real exact = axisymmetric_spherical_exact(1.0, mu);
+            const amrex::Real exact = axisymmetric_spherical_exact(
+               1.0, mu, toroidal
+            );
             coefficient_a(i, j, k, 0) = 1.0;
             coefficient_b(i, j, k, 0) = use_robin ? robin_b : 0.0;
             coefficient_c(i, j, k, 0) = use_robin
                ? exact + robin_b
-                  * axisymmetric_spherical_radial_derivative(1.0, mu)
+                  * axisymmetric_spherical_radial_derivative(
+                     1.0, mu, toroidal
+                  )
                : exact;
          }
       });
@@ -762,10 +810,14 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_poisson(
    pyfluid_amrex::InitialDataEllipticOptions options;
    options.relative_tolerance = 1.0e-12;
    options.verbose = 0;
-   const pyfluid_amrex::InitialDataEllipticResult result =
-      pyfluid_amrex::solve_initial_data_axisymmetric_spherical_poisson(
-         hierarchy, solution_levels, rhs_levels, boundary, options
-      );
+   const pyfluid_amrex::InitialDataEllipticResult result = toroidal
+      ? pyfluid_amrex::
+         solve_initial_data_axisymmetric_spherical_toroidal_vector_poisson(
+            hierarchy, solution_levels, rhs_levels, boundary, options
+         )
+      : pyfluid_amrex::solve_initial_data_axisymmetric_spherical_poisson(
+           hierarchy, solution_levels, rhs_levels, boundary, options
+        );
 
    amrex::MultiFab error(
       hierarchy.grids[0], hierarchy.distribution[0], 5, 0
@@ -783,7 +835,7 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_poisson(
          const amrex::Real mu = -std::cos(theta);
          const amrex::Real point_error = amrex::Math::abs(
             numerical(i, j, k, 0)
-            - axisymmetric_spherical_exact(radius, mu)
+            - axisymmetric_spherical_exact(radius, mu, toroidal)
          );
          difference(i, j, k, 0) = point_error;
          if (i > domain.smallEnd(0)
@@ -819,13 +871,22 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_poisson(
 bool validate_axisymmetric_spherical_poisson()
 {
    const AxisymmetricSphericalPoissonError coarse =
-      solve_axisymmetric_spherical_poisson(128, 64, false);
+      solve_axisymmetric_spherical_manufactured(128, 64, false, false);
    const AxisymmetricSphericalPoissonError fine =
-      solve_axisymmetric_spherical_poisson(256, 128, false);
+      solve_axisymmetric_spherical_manufactured(256, 128, false, false);
    const AxisymmetricSphericalPoissonError robin =
-      solve_axisymmetric_spherical_poisson(256, 128, true);
+      solve_axisymmetric_spherical_manufactured(256, 128, true, false);
+   const AxisymmetricSphericalPoissonError toroidal_coarse =
+      solve_axisymmetric_spherical_manufactured(128, 64, false, true);
+   const AxisymmetricSphericalPoissonError toroidal_fine =
+      solve_axisymmetric_spherical_manufactured(256, 128, false, true);
+   const AxisymmetricSphericalPoissonError toroidal_robin =
+      solve_axisymmetric_spherical_manufactured(256, 128, true, true);
    const amrex::Real order = std::log(coarse.error / fine.error)
       / std::log(2.0);
+   const amrex::Real toroidal_order = std::log(
+      toroidal_coarse.error / toroidal_fine.error
+   ) / std::log(2.0);
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::cout << std::setprecision(16)
                 << "axisymmetric_spherical_poisson coarse_error="
@@ -842,6 +903,18 @@ bool validate_axisymmetric_spherical_poisson()
                 << " robin_residual=" << robin.residual
                 << " robin_boundary_residual=" << robin.boundary_residual
                 << '\n';
+      std::cout << std::setprecision(16)
+                << "axisymmetric_spherical_toroidal_vector_poisson "
+                << "coarse_error=" << toroidal_coarse.error
+                << " fine_error=" << toroidal_fine.error
+                << " fine_origin_error=" << toroidal_fine.origin_error
+                << " fine_angular_boundary_error="
+                << toroidal_fine.angular_boundary_error
+                << " order=" << toroidal_order
+                << " fine_residual=" << toroidal_fine.residual
+                << " robin_error=" << toroidal_robin.error
+                << " robin_residual=" << toroidal_robin.residual
+                << '\n';
    }
    return std::isfinite(order)
       && order > 1.7
@@ -851,7 +924,15 @@ bool validate_axisymmetric_spherical_poisson()
       && std::isfinite(robin.residual)
       && fine.residual < 1.0e-7
       && robin.residual < 1.0e-7
-      && robin.boundary_residual < 1.0e-10;
+      && robin.boundary_residual < 1.0e-10
+      && std::isfinite(toroidal_order)
+      && toroidal_order > 1.7
+      && toroidal_fine.error < 1.0e-5
+      && toroidal_robin.error < 1.0e-5
+      && std::isfinite(toroidal_fine.residual)
+      && std::isfinite(toroidal_robin.residual)
+      && toroidal_fine.residual < 1.0e-7
+      && toroidal_robin.residual < 1.0e-7;
 }
 #endif
 

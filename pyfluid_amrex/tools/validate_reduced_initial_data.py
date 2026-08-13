@@ -350,6 +350,8 @@ def main() -> int:
    if (
       elliptic_result.returncode != 0
       or "axisymmetric_spherical_poisson" not in elliptic_result.stdout
+      or "axisymmetric_spherical_toroidal_vector_poisson"
+         not in elliptic_result.stdout
    ):
       raise RuntimeError("axisymmetric spherical elliptic check failed")
 
@@ -390,7 +392,7 @@ def main() -> int:
       },
       {
          "kind": "initial_data",
-         "case": "axisymmetric_spherical_elliptic",
+         "case": "axisymmetric_spherical_scalar_and_toroidal_elliptic",
          "status": "PASS",
          "metric": "focused_cpp_check",
          "value": 0.0,

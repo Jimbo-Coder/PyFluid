@@ -10,8 +10,8 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-13, branch `main`, through Cycle 288's axisymmetric
-spherical elliptic foundation. Cycle 284's preserved standard/performance
+Last reconciled: 2026-08-13, branch `main`, through Cycle 289's axisymmetric
+scalar/toroidal elliptic foundation. Cycle 284's preserved standard/performance
 baseline remains the latest broad integration baseline.
 
 ## Scope And Evidence
@@ -287,9 +287,11 @@ baseline remains the latest broad integration baseline.
   now handles origin, axis/equator reflection, and finite-radius Dirichlet or
   Robin closure with a separable weighted angular solve. Its regular
   manufactured `P2+P4` solution converges at second order and gives the same
-  result across one and three ranks. Full spherical `r theta` RNS still needs
-  the conformal-vector/XCTS operator and zero-spin equivalence. Cross-chart CT
-  is likewise rejected until face-centred divergence-preserving transfer is
+  result across one and three ranks. The orthonormal azimuthal spin-1 operator
+  is also validated at second order with odd origin/axis and even equatorial
+  regularity. Full spherical `r theta` RNS still needs the coupled XCTS
+  sources/tensor reconstruction and zero-spin equivalence. Cross-chart CT is
+  likewise rejected until face-centred divergence-preserving transfer is
   implemented.
 - A nodal spherical solve makes every angular point at `r=0` a duplicate
   physical degree of freedom. Use a cell-centred radial origin for the reduced
@@ -300,9 +302,11 @@ baseline remains the latest broad integration baseline.
 - A circular stationary axisymmetric RNS has only the physical azimuthal
   shift and momentum component. That field is divergence-free, so the flat
   conformal-vector equation reduces to the toroidal spin-1 scalar Laplacian,
-  rather than a general coupled three-vector solve. Its axis/origin parity,
-  inactive-phi storage, source terms, and longitudinal-tensor reconstruction
-  still need a manufactured contract before it is a production XCTS path.
+  rather than a general coupled three-vector solve. A manufactured `l=1+3`
+  field converges at order `1.98048`, with `1.09e-6` fine-grid error and
+  `5.64e-11` residual, and agrees across one and three ranks. Portable vectors
+  retain three physical components even on a two-dimensional source mesh.
+  XCTS source terms and longitudinal-tensor reconstruction remain open.
 - On finer same-domain physical-ID loads, outer target cell centers can lie in
   the half-cell strip outside the source cell-center interpolation hull. The
   reader must apply the field's physical exterior there. For TOV/RNS fluid it
@@ -368,10 +372,11 @@ baseline remains the latest broad integration baseline.
 
 ## Next Milestones
 
-1. Implement and manufacture-test the spherical `r theta` scalar elliptic
-   operator, then the conformal vector/XCTS operator and axis/equator
-   regularity. Require zero-spin agreement with the spherical TOV source before
-   continuing uniform RNS rotation and re-evaluating the surface diagnostic.
+1. Connect the validated spherical `r theta` scalar and toroidal-vector
+   operators through one coupled axisymmetric XCTS matter/source and
+   longitudinal-tensor owner. Require zero-spin agreement with the spherical
+   TOV source before continuing uniform RNS rotation and re-evaluating the
+   surface diagnostic.
 2. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.
