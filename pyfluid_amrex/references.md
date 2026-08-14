@@ -155,6 +155,20 @@ the generated TSV/log, and the current source revision/dirty state.
   [arXiv:2601.05176](https://arxiv.org/abs/2601.05176): current FUKA/KADATH
   rotating-star reference spanning quasi-isotropic and XCTS formulations,
   spectral accuracy, differential rotation, and modern sequence diagnostics.
+- N. Stergioulas, T. A. Apostolatos, and J. A. Font,
+  *Nonlinear pulsations in differentially rotating neutron stars*,
+  [arXiv:astro-ph/0312648](https://arxiv.org/abs/astro-ph/0312648): Table 1
+  gives the fixed-central-density `N=1`, `K=100` uniform BU sequence and
+  differential B sequence used by the standalone physical-ID literature
+  check. The tabulated models use full quasi-isotropic GR, so agreement with
+  conformally flat XCTS is a physical sanity check rather than a same-equation
+  code comparison.
+- T. Nozawa, N. Stergioulas, E. Gourgoulhon, and Y. Eriguchi,
+  *Construction of highly accurate models of rotating neutron stars*,
+  [arXiv:gr-qc/9804048](https://arxiv.org/abs/gr-qc/9804048): classic
+  cross-code comparison of 25 polytropic and 22 realistic-EoS equilibria and
+  the provenance for treating smooth rotating-star models as quantitative
+  benchmark data rather than trusting convergence alone.
 - XNS numerical approach,
   [project documentation](https://www.arcetri.inaf.it/science/ahead/XNS/code.html):
   hierarchically solves Poisson-like metric equations, rebuilds sources from

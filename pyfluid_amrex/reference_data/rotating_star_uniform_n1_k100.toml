@@ -1,0 +1,59 @@
+[reference]
+name = "Stergioulas-Apostolatos-Font uniform N=1 sequence BU"
+source = "Stergioulas, Apostolatos, and Font (2004), Table 1"
+url = "https://academic.oup.com/mnras/article/352/3/1089/1218780"
+table_url = "https://academic.oup.com/view-large/20380516"
+arxiv = "https://arxiv.org/abs/astro-ph/0312648"
+notes = "Full-GR quasi-isotropic RNS sequence; PyFluid uses conformally flat XCTS."
+
+[eos]
+kind = "hybrid_polytrope"
+preset = "custom"
+polytropic_k = 100.0
+polytropic_gamma = 2.0
+thermal_gamma = 2.0
+central_rest_mass_density = 1.28e-3
+
+[validation]
+# These are broad physical-sanity bounds, not a code-agreement claim. The
+# reference solves the full quasi-isotropic field equations, whereas the
+# current PyFluid backend solves conformally flat XCTS at finite radius.
+adm_mass_relative_tolerance = 0.02
+coordinate_equatorial_radius_relative_tolerance = 0.02
+coordinate_polar_to_equatorial_ratio_absolute_tolerance = 0.02
+nonrotating_probe_angular_velocity = 1.0e-6
+
+[continuation]
+# Include the published comparison points exactly; the other values only keep
+# the nonlinear continuation inside the converged basin.
+angular_velocities = [
+  0.001,
+  0.005,
+  0.01075,
+  0.015,
+  0.02084,
+  0.023,
+  0.0245,
+  0.0255,
+]
+
+[[model]]
+name = "BU0"
+angular_velocity = 0.0
+adm_mass = 1.400
+coordinate_equatorial_radius = 8.13
+coordinate_polar_to_equatorial_ratio = 1.00
+
+[[model]]
+name = "BU4"
+angular_velocity = 0.02084
+adm_mass = 1.543
+coordinate_equatorial_radius = 9.13
+coordinate_polar_to_equatorial_ratio = 0.80
+
+[[model]]
+name = "BU9"
+angular_velocity = 0.02642
+adm_mass = 1.695
+coordinate_equatorial_radius = 11.63
+coordinate_polar_to_equatorial_ratio = 0.58

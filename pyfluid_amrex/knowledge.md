@@ -384,6 +384,18 @@ baseline remains the latest broad integration baseline.
   `M_ADM=1.42917`, `M_b=1.55769`, `J=1.19629`, and `J/M^2=0.58569`.
   Its roughly 14 MiB artifact is the practical fast-rotation evolution seed;
   endpoint bisection is calibration, not the normal solve path.
+- A direct literature sanity check anchors the reduced solver to the published
+  fixed-central-density uniform `N=1`, `K=100` BU sequence rather than only to
+  its own residuals. At adaptive `512x64`, the near-zero BU0 probe, BU4, and
+  near-shedding BU9 differ from the tabulated ADM masses by
+  `2.10e-4/2.22e-4/1.89e-4` relative. Their quasi-isotropic coordinate
+  equatorial-radius errors are `3.30e-3/6.48e-5/9.11e-3`, and absolute
+  `r_p/r_e` errors are `0/1.41e-3/4.42e-3`. BU9 has
+  `chi_ms=0.01990` and `J/M^2=0.63682`. This is strong evidence that the
+  current IDs are physically recognizable equilibria across the uniform
+  sequence. It is not a precision same-equation comparison: the reference is
+  full quasi-isotropic GR, while PyFluid currently solves conformally flat
+  XCTS at finite outer radius.
 - Differential rotation is validated over useful ranges, not to a physical
   endpoint. Q-power `q=1`, `A=10` reproduces j-constant fields and diagnostics
   to roundoff. Q-power `q=2` converges at `A=10`, `Omega=0.03` and at `A=5`,
@@ -433,6 +445,16 @@ baseline remains the latest broad integration baseline.
   coarse-fine closure, and boundary treatment together is required before
   claiming fourth-order elliptic accuracy; changing only interpolation or a
   diagnostic stencil is insufficient.
+- The existing reduced spherical speed comes from separability: one cached
+  angular eigendecomposition turns each scalar/toroidal Poisson solve into
+  independent tridiagonal radial mode solves on a fixed spherical map. A true
+  surface-fitted map `r = r(s,theta)` makes metric/Jacobian coefficients
+  angle-dependent and couples those modes. Generated XCTS sources, EoS and
+  Euler first integrals, continuation, diagnostics, physical-ID artifacts, and
+  Cartesian materialization remain reusable, but multidomain bases/transforms,
+  regularity, free-surface updates, compactification, inter-domain matching,
+  coupled linear/nonlinear solves, and their MPI ownership are a new elliptic
+  backend rather than a nearly free subclass.
 - Partial-AMR CTT data are finite and convergent, but the normalized
   coarse-fine Hamiltonian band exposes a second-order multilevel-elliptic versus
   fourth-order pointwise-diagnostic mismatch.

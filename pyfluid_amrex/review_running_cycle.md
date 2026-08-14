@@ -5477,3 +5477,40 @@ I will always continue from the last cycle marked as `in_progress`.
   controls pass at 0.93 of the July baseline for both 4-rank 2D PWC/LLF/Euler
   and 3-rank 3D PWC/LLF/Euler. The final cache-hit production build is `0.24 s`
   with no compiler cache hits or misses. [DONE]
+
+## Cycle 295 — Physical rotating-star literature sanity check (DONE)
+
+- Add a compact data-owned comparison against the published fixed-central-
+  density uniform `N=1`, `K=100` BU sequence. Check a near-zero-rotation TOV
+  anchor, an intermediate model, and the near-shedding model through the same
+  reduced adaptive XCTS solve and persisted sequence path. Compare ADM mass,
+  quasi-isotropic coordinate equatorial radius, and coordinate axis ratio;
+  keep broad formulation-aware acceptance bounds because the published RNS
+  table solves full quasi-isotropic GR while PyFluid currently assumes
+  conformal flatness. The standalone adaptive `512x64`, three-rank check passes
+  BU0/BU4/BU9. Relative ADM-mass errors are
+  `2.10e-4/2.22e-4/1.89e-4`, relative coordinate-equatorial-radius errors are
+  `3.30e-3/6.48e-5/9.11e-3`, and absolute `r_p/r_e` errors are
+  `0/1.41e-3/4.42e-3`. The near-zero probe takes `1.16 s`; the persisted
+  nine-point continuation through BU9 takes `94.90 s` and finishes with
+  `chi_ms=0.01990`, `J/M^2=0.63682`, and elliptic residuals below `7.5e-12`.
+  Reference values, tolerances, source URLs, and continuation points live in
+  one human-readable TOML; the runner contains no duplicate benchmark table.
+  The reference and comparison columns explicitly say `r_p/r_e`; the older
+  production log's generic `coordinate_axis_ratio` is `r_e/r_p` and was not
+  reused for the literature comparison. Python compile/list checks, direct
+  postprocessing of the saved BU9 artifact, architecture, and diff-check pass;
+  production C++ was unchanged.
+  [DONE]
+- Source-check how much of the current generated-physics, continuation,
+  diagnostics, physical-ID, and materialization infrastructure a future
+  surface-fitted spectral backend can reuse. Separate a feasible backend
+  boundary from any claim that surface fitting, compactification, spectral
+  regularity, inter-domain matching, or the nonlinear solve comes for free.
+  The existing radial-mode solve is fast precisely because fixed spherical
+  coefficients keep the angular modes separable. A surface map `R(theta)`
+  couples those modes, so the reusable half is physics/EoS/rotation laws,
+  continuation, diagnostics, artifacts, and materialization; mapped domains,
+  bases/transforms, regularity, free-boundary iteration, compactified outer
+  domains, matching, preconditioning, and distributed solve ownership are a
+  substantial new backend. [DONE]
