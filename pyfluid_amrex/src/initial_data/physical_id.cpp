@@ -328,6 +328,51 @@ std::string required_metadata_value(
    return found->second;
 }
 
+amrex::Real parse_metadata_real(
+   std::string const& value,
+   std::string const& key,
+   std::string const& path
+)
+{
+   try {
+      std::size_t parsed = 0;
+      const amrex::Real result = std::stod(value, &parsed);
+      if (parsed != value.size() || !std::isfinite(result)) {
+         throw std::invalid_argument("invalid real metadata");
+      }
+      return result;
+   } catch (std::exception const&) {
+      amrex::Abort(
+         "physical initial-data metadata '" + key
+         + "' is invalid in " + path
+      );
+   }
+   return 0.0;
+}
+
+amrex::Real required_metadata_real(
+   std::map<std::string, std::string> const& metadata,
+   std::string const& key,
+   std::string const& path
+)
+{
+   return parse_metadata_real(
+      required_metadata_value(metadata, key, path), key, path
+   );
+}
+
+amrex::Real optional_metadata_real(
+   std::map<std::string, std::string> const& metadata,
+   std::string const& key,
+   amrex::Real fallback,
+   std::string const& path
+)
+{
+   const auto found = metadata.find(key);
+   return found == metadata.end()
+      ? fallback : parse_metadata_real(found->second, key, path);
+}
+
 void validate_level_fields(
    ConstPhysicalIdField const& fields,
    int levels,
@@ -1352,6 +1397,13 @@ void write_physical_initial_data(
       metadata << "# angular_velocity="
                << output_metadata_real_string(cfg.initial_data_angular_velocity)
                << '\n';
+      metadata << "# differential_rotation_length="
+               << output_metadata_real_string(
+                    cfg.initial_data_differential_rotation_length
+                  ) << '\n';
+      metadata << "# rotation_power_q="
+               << output_metadata_real_string(cfg.initial_data_rotation_power_q)
+               << '\n';
       metadata << "# rotation_center1="
                << output_metadata_real_string(cfg.initial_data_rotation_center1)
                << '\n';
@@ -1618,25 +1670,44 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       }
    }
    result.rotation_law = required_metadata_value(metadata, "rotation_law", path);
-   try {
-      const std::string value = required_metadata_value(
-         metadata, "angular_velocity", path
-      );
-      std::size_t parsed = 0;
-      result.angular_velocity = std::stod(value, &parsed);
-      if (parsed != value.size()) {
-         throw std::invalid_argument("trailing angular_velocity metadata");
-      }
-   } catch (std::exception const&) {
+   result.angular_velocity = required_metadata_real(
+      metadata, "angular_velocity", path
+   );
+   result.injection_energy = optional_metadata_real(
+      metadata, "injection_energy", -1.0, path
+   );
+   if (result.source_ic == "rotating_star"
+       && result.injection_energy != -1.0
+       && !(result.injection_energy > 0.0)) {
       amrex::Abort(
-         "physical initial-data angular_velocity metadata is invalid in " + path
+         "physical initial-data injection energy must be positive in " + path
       );
    }
-   if (!std::isfinite(result.angular_velocity)) {
-      amrex::Abort(
-         "physical initial-data angular_velocity metadata is nonfinite in "
-         + path
+   result.differential_rotation_length =
+      cfg.initial_data_differential_rotation_length;
+   result.rotation_power_q = cfg.initial_data_rotation_power_q;
+   if (result.rotation_law == "j_constant"
+       || result.rotation_law == "q_power") {
+      result.differential_rotation_length = required_metadata_real(
+         metadata, "differential_rotation_length", path
       );
+      if (!(result.differential_rotation_length > 0.0)) {
+         amrex::Abort(
+            "physical initial-data differential rotation length must be "
+            "positive in " + path
+         );
+      }
+   }
+   if (result.rotation_law == "q_power") {
+      result.rotation_power_q = required_metadata_real(
+         metadata, "rotation_power_q", path
+      );
+      if (!(result.rotation_power_q >= 1.0)) {
+         amrex::Abort(
+            "physical initial-data q-power exponent must be at least one in "
+            + path
+         );
+      }
    }
    if (result.source_ic == "rotating_star") {
       try {

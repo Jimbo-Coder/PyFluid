@@ -57,6 +57,7 @@ class HierarchyInterpolationPlan;
 class MeshBasisStateInterpolater;
 class ParametricSurface;
 struct MultipoleDiagnostics;
+struct PhysicalInitialDataMetadata;
 struct RadiationDiagnostics;
 struct RotatingStarUpdateSummary;
 
@@ -694,6 +695,7 @@ protected:
    std::array<std::vector<amrex::Real>, AMREX_SPACEDIM> latest_auto_direction_strength_;
    std::unique_ptr<RotatingStarUpdateSummary>
       initial_data_rotating_star_summary_;
+   std::unique_ptr<PhysicalInitialDataMetadata> loaded_physical_id_metadata_;
 };
 
 } // namespace pyfluid_amrex

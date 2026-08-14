@@ -379,6 +379,25 @@ baseline remains the latest broad integration baseline.
   `0.032975 < Omega_limit < 0.0329875` on two grids. This is not a radial-
   stability turning point; that requires an appropriate constant-baryon-mass
   or constant-angular-momentum sequence.
+- At `Omega=0.02968`, an adaptive `1024x128` uniform SLy model is about 90
+  percent of the lower endpoint bracket and has `chi_ms=0.34204`,
+  `M_ADM=1.42917`, `M_b=1.55769`, `J=1.19629`, and `J/M^2=0.58569`.
+  Its roughly 14 MiB artifact is the practical fast-rotation evolution seed;
+  endpoint bisection is calibration, not the normal solve path.
+- Differential rotation is validated over useful ranges, not to a physical
+  endpoint. Q-power `q=1`, `A=10` reproduces j-constant fields and diagnostics
+  to roundoff. Q-power `q=2` converges at `A=10`, `Omega=0.03` and at `A=5`,
+  `Omega=0.0201`; held-out `q=1.5/3` branches reach `A=10`, `Omega=0.03` with
+  `0.005` continuation spacing; j-constant `A=10` continues through
+  `Omega=0.068` with reduced matter relaxation. A q=1.5 jump from `0.01` to
+  `0.0201` was still decreasing at `2.14e-6` when the 128-iteration cap fired.
+  Continuation-step, relaxation, or iteration-cap failure is a nonlinear basin
+  boundary and must not be labeled mass shedding.
+- A persisted rotating continuation must restore its converged Euler
+  first-integral injection energy as well as rotation law, differential length,
+  and q exponent. Falling back to the TOV injection constant can make the first
+  continued XCTS right-hand side nonfinite even when the saved fields are
+  valid.
 - A matched `1024`-radial angular scan at `Omega=0.0329/0.03295` establishes
   distinct resolution roles. Relative to 256 theta cells, 48 cells are about
   5.9 times faster and retain ADM mass/spin within `3.5e-5/4.9e-5`, but their
@@ -458,10 +477,11 @@ baseline remains the latest broad integration baseline.
 
 ## Next Milestones
 
-1. Automate the two-grid fixed-central-density endpoint bracket, then construct
-   constant-baryon-mass sequences before quoting a physical Kepler/stability
-   limit. Prototype an exterior modal domain only if its interface-consistent
-   residual and work precision beat the already-fast 64/128-theta controls.
+1. Evolve the saved 90-percent-uniform RNS model at two Cartesian resolutions
+   for a meaningful fraction of a rotation, tracking baryon mass, angular
+   momentum, constraints, central density, and modes. Then construct constant-
+   baryon-mass sequences before quoting a radial-stability/turning-point limit.
+   Prototype an exterior modal domain only if it beats the 64/128-theta controls.
 2. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.

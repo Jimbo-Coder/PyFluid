@@ -269,10 +269,14 @@ as
 `<output_dir>/initial_data_sequences/eos-.../rotation-.../rho_c-.../`.
 Each losslessly compressed model name includes `omega`, base resolution, and
 level count; `sequence.meta` describes the physical family and `sequence.tsv`
-indexes the models together with density, velocity, surface radii, both surface
-enthalpy gradients, and the mass-shedding indicator. Those diagnostics are
-also copied into each artifact's text metadata. The artifacts can either seed
-the next XCTS target or enter evolution through `initial_data.input_file`.
+schema v4 indexes the models together with density, velocity, converged
+injection energy, surface radii and gradients, mass-shedding indicator, ADM and
+baryonic masses, angular momentum, and dimensionless spin. Those diagnostics
+are also copied into each artifact's text metadata. The artifacts can either
+seed the next XCTS target or enter evolution through `initial_data.input_file`.
+Continuation requires the same rotation law, differential length, and q-power
+exponent; it restores the saved injection energy rather than the TOV seed's
+first-integral constant.
 
 The common loader supports identical, compatible coarser or finer, and
 physically larger target hierarchies. Cross-grid loading interpolates the
@@ -351,26 +355,36 @@ the signed surface indicator is nonpositive. Each new row also records and
 requires the subextremal volume diagnostic
 `dimensionless_spin = J_ADM/M_ADM^2`.
 
-The corrected N=32 fixed-central-density SLy uniform sequence currently reaches
-`Omega=0.033`. It has `chi_ms = 0.081731`,
-`J_ADM/M_ADM^2 = 0.619966`, and coordinate axis ratio `1.96889`;
-matter/volume and surface/volume angular momentum agree to `1.70e-4` and
-`5.73e-3`. Attempts at `Omega=0.03325`, `0.0335`, and `0.034` fail in the
-final nonlinear/Robin solve and do not provide physical surface indicators.
-They bracket the present solver basin, not a mass-shedding endpoint. The valid
-points do not yet resolution-converge the mass-shedding limit.
-Earlier N=24 surface-indicator values produced without exchanged interpolation
-ghost data are superseded and must not be used for an endpoint estimate.
+For the fixed-central-density SLy uniform family at `rho_c=1.28e-3`, independent
+`1024x128` and `1536x192` reduced solves accept `Omega=0.032975` and reject
+`0.0329875` after the matter iteration reaches tolerance but no resolved
+enthalpy-zero surface remains. Their accepted mass-shedding indicators are
+`0.0126918/0.0116318`. The calibrated numerical bracket is therefore
+`0.032975 < Omega_limit < 0.0329875`; it is a mass-shedding bracket for this
+fixed-central-density family, not a radial-stability turning point. Use 64
+theta cells for ordinary sequence discovery, 128 for endpoint work, and 256
+as an angular-reference control.
 
-A fresh matched `Omega=0.028` check at N=24/32/40 gives
-`chi_ms = 0.351441/0.404501/0.355733` and
-`J_ADM/M_ADM^2 = 0.496214/0.504568/0.508643`. The raw equatorial slopes
-converge much more cleanly (`-0.0138293/-0.0134070/-0.0132684`) than the polar
-slopes (`-0.0393502/-0.0331447/-0.0372987`). Thus the high-spin solution and
-equatorial cusp trend are credible, while the normalized endpoint diagnostic
-is still polar-resolution limited. Do not extrapolate the N=32 `Omega=0.033`
-point to a physical shedding frequency without the same raw-slope resolution
-check.
+The practical fast uniform model at `Omega=0.02968` is about 90 percent of the
+lower endpoint bracket. The adaptive `1024x128` solve gives
+`chi_ms=0.34204`, `M_ADM=1.42917`, `M_b=1.55769`, `J=1.19629`, and
+`J/M^2=0.58569`, with elliptic residuals below `3.4e-11`. Its compressed
+artifact is about 14 MiB. This is the normal high-spin evolution seed; endpoint
+bisection is calibration work, not a requirement for ordinary production IDs.
+
+The differential families have direct nonlinear evidence rather than only
+pointwise formula checks. At `A=10`, q-power with `q=1` reproduces the
+j-constant solve and all global/surface diagnostics to roundoff. Q-power
+`q=2` converges at `A=10` through `Omega=0.03`, and at stronger differential
+rotation `A=5` through the tested `Omega=0.0201`. A j-constant `A=10` branch
+continues through at least `Omega=0.068` when matter relaxation is reduced;
+failure at larger relaxation is a nonlinear-solver basin boundary, not a
+physical shedding diagnosis. Held-out `q=1.5` and `q=3` branches also reach
+`A=10`, `Omega=0.03` on `256x48` adaptive grids when the continuation spacing
+is at most `0.005`. A coarser `0.01 -> 0.0201` q=1.5 jump was still converging
+when it reached the 128-iteration cap, so continuation-step/cap failures must
+not be relabeled as rotation-law endpoints. These are useful-regime checks,
+not calibrated differential mass-shedding endpoints.
 
 At fixed grid spacing, expanding a zero-spin XCTS control from extraction
 radius 12.8 to 19.2 reduces the Komar-surface/ADM-surface difference from
@@ -407,6 +421,21 @@ XCTS. The shared matter layer can later serve CTT/CTTK, but those formulations
 still need a validated stationarity closure before receiving the equilibrium
 label.
 
+Saved reduced models can be exercised directly with the standalone Cartesian
+evolution validator:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run python \
+  pyfluid_amrex/tools/validate_rotating_star_evolution.py \
+  --input-artifact <physical-id-model> --cells 32 48 --force
+```
+
+It uses PWL/HLL/SSPRK3 at CFL 0.9, records rest-mass, angular-momentum,
+maximum-density, and constraint histories, and requires zero C2P fallbacks and
+atmosphere resets. Eight-step uniform 32/48 controls and a q-power `q=2`,
+`A=10`, `Omega=0.03` three-step control pass. This is a materialization and
+short-dynamics gate, not yet a many-rotation equilibrium result.
+
 The short-evolution gate also protects the generic RHD stage-candidate flux
 correction. Only faces adjoining a cell whose concrete RK candidate violates
 the conserved admissibility floors are replaced by piecewise-constant LLF
@@ -419,9 +448,9 @@ matter component connected to the preceding centered TOV seed, excluding
 distant positive-enthalpy lobes. This supports centered spheroidal sequences;
 toroidal families require an explicit alternative topology seed. A physical
 mass-shedding endpoint still needs resolution convergence of the implemented
-surface-gradient indicator. The first differential-law points establish the
-Euler-integral/configuration path and charge agreement, not a differential-
-rotation sequence or endpoint. KEH is not required by these XCTS branches.
+surface-gradient indicator. Differential-law useful-regime validation does not
+yet establish a differential-rotation endpoint. KEH is not required by these
+XCTS branches.
 
 ## Evolution Status
 

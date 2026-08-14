@@ -163,6 +163,10 @@ conserved and Z4c state, and applies the target preflight. For a saved
 rotating-star artifact with the same rotation law and a larger configured
 target angular velocity, the same materialized state continues XCTS; a
 matching target starts evolution without another XCTS solve. The ordinary
+continuation identity includes the differential-rotation length and, for the
+q-power family, its exponent. The artifact must also restore the converged
+Euler first-integral injection energy; recomputing it from the original TOV
+seed changes the nonlinear problem. The ordinary
 in-process sequence accepts an explicit strictly ordered
 `initial_data.rotation_continuation_targets` list and retains live fields
 between targets without artifact I/O. A multi-target rotating sequence writes
@@ -266,8 +270,10 @@ classify stellar matter support.
 Automatic sequence output is organized under the run directory by EoS,
 rotation law, and fixed central density. Named EoS presets and differential
 law parameters are recorded in the path and `sequence.meta`; `sequence.tsv`
-indexes accepted targets. Model names include prescribed `omega`, base-grid
-resolution, and hierarchy level count. Every model is the same losslessly
+schema v4 indexes accepted targets together with the converged injection
+energy, surface diagnostics, ADM/baryonic masses, angular momentum, and spin.
+Model names include prescribed `omega`, base-grid resolution, and hierarchy
+level count. Every model is the same losslessly
 compressed, directly evolvable physical-ID artifact—not a sequence-only file.
 Artifact metadata, including `eos_preset`, remains the compatibility authority;
 directory and model names are discovery aids.

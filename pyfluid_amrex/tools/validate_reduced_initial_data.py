@@ -289,6 +289,128 @@ def read_artifact_metadata(artifact: Path) -> dict[str, str]:
    return values
 
 
+def validate_reduced_differential_rns(
+   args: argparse.Namespace,
+) -> list[dict[str, object]]:
+   common = {
+      "amr.n_cell": "96 24",
+      "amr.max_grid_size": "48",
+      "initial_data.radial_grid": "adaptive",
+      "initial_data.angular_velocity": "0.0201",
+      "initial_data.differential_rotation_length": "10",
+   }
+   artifacts: dict[str, Path] = {}
+   seconds: dict[str, float] = {}
+   for name, law, power in (
+      ("j_constant", "j_constant", "1"),
+      ("q_power_q1", "q_power", "1"),
+      ("q_power_q2", "q_power", "2"),
+   ):
+      _, artifact, elapsed = run_id_case(
+         f"rns_differential_{name}_96x24",
+         2,
+         RNS_SOURCE_INPUT,
+         {
+            **common,
+            "initial_data.rotation_law": law,
+            "initial_data.rotation_power_q": power,
+         },
+         args,
+      )
+      require_portable_source(artifact, 2)
+      artifacts[name] = artifact
+      seconds[name] = elapsed
+
+   metadata = {
+      name: read_artifact_metadata(artifact)
+      for name, artifact in artifacts.items()
+   }
+   if metadata["j_constant"].get("rotation_law") != "j_constant" \
+         or metadata["q_power_q1"].get("rotation_law") != "q_power" \
+         or metadata["q_power_q2"].get("rotation_law") != "q_power" \
+         or metadata["q_power_q1"].get("rotation_power_q") != "1" \
+         or metadata["q_power_q2"].get("rotation_power_q") != "2":
+      raise RuntimeError("differential RNS artifacts lost their law identity")
+
+   identity_fields = (
+      "maximum_density",
+      "maximum_velocity",
+      "injection_energy",
+      "equatorial_radius",
+      "polar_radius",
+      "equatorial_log_enthalpy_gradient",
+      "polar_log_enthalpy_gradient",
+      "mass_shedding_indicator",
+      "adm_mass",
+      "baryonic_mass",
+      "angular_momentum",
+      "dimensionless_spin",
+   )
+   q1_identity_error = max(
+      abs(
+         float(metadata["q_power_q1"][field])
+         - float(metadata["j_constant"][field])
+      ) / max(abs(float(metadata["j_constant"][field])), 1.0e-14)
+      for field in identity_fields
+   )
+   if q1_identity_error > 1.0e-11:
+      raise RuntimeError(
+         "q-power q=1 does not reproduce j-constant RNS: "
+         f"maximum relative diagnostic error={q1_identity_error:.6e}"
+      )
+
+   q2 = metadata["q_power_q2"]
+   q2_values = {
+      key: float(q2[key])
+      for key in (
+         "maximum_velocity",
+         "injection_energy",
+         "mass_shedding_indicator",
+         "adm_mass",
+         "baryonic_mass",
+         "angular_momentum",
+         "dimensionless_spin",
+      )
+   }
+   q2_j_difference = abs(
+      q2_values["angular_momentum"]
+      - float(metadata["j_constant"]["angular_momentum"])
+   ) / abs(float(metadata["j_constant"]["angular_momentum"]))
+   if not all(np.isfinite(value) for value in q2_values.values()) \
+         or q2_values["maximum_velocity"] <= 0.0 \
+         or q2_values["injection_energy"] <= 0.0 \
+         or not 0.0 < q2_values["mass_shedding_indicator"] < 2.0 \
+         or q2_values["adm_mass"] <= 0.0 \
+         or q2_values["baryonic_mass"] <= 0.0 \
+         or q2_values["angular_momentum"] <= 0.0 \
+         or not 0.0 < q2_values["dimensionless_spin"] < 1.0 \
+         or q2_j_difference < 1.0e-3:
+      raise RuntimeError(
+         "q-power q=2 did not produce a distinct physical RNS: "
+         f"values={q2_values}, J difference={q2_j_difference:.6e}"
+      )
+
+   return [{
+      "kind": "initial_data",
+      "case": "rns_j_constant_q_power_q1_identity_96x24",
+      "status": "PASS",
+      "metric": "maximum_relative_diagnostic_error",
+      "value": q1_identity_error,
+      "source_seconds": seconds["j_constant"] + seconds["q_power_q1"],
+      "run_dir": repo_relative(artifacts["q_power_q1"].parent),
+   }, {
+      "kind": "initial_data",
+      "case": "rns_q_power_q2_useful_regime_96x24",
+      "status": "PASS",
+      "metric": "mass_shedding_indicator",
+      "value": q2_values["mass_shedding_indicator"],
+      "mass_shedding_indicator": q2_values["mass_shedding_indicator"],
+      "dimensionless_spin": q2_values["dimensionless_spin"],
+      "source_seconds": seconds["q_power_q2"],
+      "run_dir": repo_relative(artifacts["q_power_q2"].parent),
+   }]
+
+
 def validate_reduced_rns_handoff(
    args: argparse.Namespace,
 ) -> list[dict[str, object]]:
@@ -309,6 +431,9 @@ def validate_reduced_rns_handoff(
    if metadata.get("mesh_coordinate") != "spherical" \
          or metadata.get("mesh_axes") != "r theta" \
          or metadata.get("eos_preset") != "sly" \
+         or metadata.get("rotation_law") != "uniform" \
+         or metadata.get("differential_rotation_length") != "10" \
+         or metadata.get("rotation_power_q") != "1" \
          or metadata.get("coordinate_layout") != "explicit_faces_v1":
       raise RuntimeError("reduced RNS artifact lost its chart or EoS identity")
    radial_faces = np.fromstring(
@@ -323,6 +448,7 @@ def validate_reduced_rns_handoff(
       key: float(metadata[key])
       for key in (
          "mass_shedding_indicator",
+         "injection_energy",
          "adm_mass",
          "baryonic_mass",
          "angular_momentum",
@@ -332,6 +458,7 @@ def validate_reduced_rns_handoff(
    if not all(np.isfinite(value) for value in required_diagnostics.values()):
       raise RuntimeError("reduced RNS artifact has nonfinite global diagnostics")
    if not 0.9 < required_diagnostics["mass_shedding_indicator"] < 1.1 \
+         or required_diagnostics["injection_energy"] <= 0.0 \
          or required_diagnostics["adm_mass"] <= 0.0 \
          or required_diagnostics["baryonic_mass"] <= 0.0 \
          or required_diagnostics["angular_momentum"] <= 0.0 \
@@ -436,7 +563,9 @@ def validate_reduced_rns_handoff(
          != continued_metadata.get("coordinate_faces_0_0"):
       raise RuntimeError("adaptive RNS continuation changed its radial map")
    continuation_errors = {}
-   for key in ("adm_mass", "baryonic_mass", "angular_momentum"):
+   for key in (
+      "injection_energy", "adm_mass", "baryonic_mass", "angular_momentum"
+   ):
       direct_value = float(direct_metadata[key])
       continued_value = float(continued_metadata[key])
       continuation_errors[key] = abs(continued_value - direct_value) \
@@ -763,6 +892,7 @@ def main() -> int:
       "run_dir": repo_relative(adaptive_tov_materialized.parent),
    })
    rows.extend(validate_reduced_rns_handoff(args))
+   rows.extend(validate_reduced_differential_rns(args))
 
    if args.level == "full":
       finest_source = source_artifacts[max(resolutions)]

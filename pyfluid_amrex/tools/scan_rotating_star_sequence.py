@@ -12,6 +12,7 @@ from pathlib import Path
 from validation_common import (
    ROOT,
    materialize_run_input,
+   method_catalog_names,
    read_tsv,
    read_scalar_rows,
    repo_relative,
@@ -22,6 +23,7 @@ from validation_common import (
 
 BASE_INPUT = ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_3d.in"
 RUN_ROOT = ROOT / "runs/current/rotating_star_sequence"
+ROTATION_LAWS = method_catalog_names("rotation_law")
 SOLVE_PATTERN = re.compile(
    r"xcts initial data: matter_iterations=(?P<matter>[0-9]+) "
    r"relative_matter_update=(?P<update>[0-9.eE+-]+) "
@@ -56,7 +58,7 @@ def main() -> int:
    parser.add_argument("--eos-preset", default="sly")
    parser.add_argument(
       "--rotation-law",
-      choices=("uniform", "j_constant", "q_power"),
+      choices=ROTATION_LAWS,
       default="uniform",
    )
    parser.add_argument("--differential-rotation-length", type=float, default=10.0)

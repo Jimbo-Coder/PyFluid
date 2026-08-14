@@ -81,6 +81,8 @@ void append_rotating_star_metadata(
       << rotating_star.maximum_density << '\n'
       << "# maximum_velocity=" << std::setprecision(17)
       << rotating_star.maximum_velocity << '\n'
+      << "# injection_energy=" << std::setprecision(17)
+      << rotating_star.injection_energy << '\n'
       << "# equatorial_radius=" << std::setprecision(17)
       << rotating_star.equatorial_radius << '\n'
       << "# polar_radius=" << std::setprecision(17)
@@ -171,6 +173,8 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       face_magnetic,
       &initial_data_coordinate_faces_
    );
+   loaded_physical_id_metadata_ =
+      std::make_unique<PhysicalInitialDataMetadata>(metadata);
    analytic_fixed_spacetime_kernels_ =
       !spacetime_state_.evolves()
       && cfg_.spacetime_initial_data == "minkowski"
@@ -238,6 +242,23 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       );
    }
    if (configured_rotation
+       && cfg_.initial_data_rotation_law != "uniform"
+       && metadata.differential_rotation_length
+          != cfg_.initial_data_differential_rotation_length) {
+      amrex::Abort(
+         "rotating-star physical ID continuation cannot change the "
+         "differential rotation length"
+      );
+   }
+   if (configured_rotation
+       && cfg_.initial_data_rotation_law == "q_power"
+       && metadata.rotation_power_q != cfg_.initial_data_rotation_power_q) {
+      amrex::Abort(
+         "rotating-star physical ID continuation cannot change the q-power "
+         "exponent"
+      );
+   }
+   if (configured_rotation
        && (metadata.rotation_center[0] != cfg_.initial_data_rotation_center1
            || metadata.rotation_center[1] != cfg_.initial_data_rotation_center2
            || metadata.rotation_center[2] != cfg_.initial_data_rotation_center3)) {
@@ -291,6 +312,13 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          << "re-solving rotating physical initial data on the changed "
             "r-theta grid at omega="
          << cfg_.initial_data_angular_velocity << '\n';
+   }
+   if ((continue_rotation || resolve_changed_reduced_rns)
+       && !(metadata.injection_energy > 0.0)) {
+      amrex::Abort(
+         "saved rotating-star continuation requires persisted injection "
+         "energy; regenerate this legacy physical-ID artifact"
+      );
    }
    return continue_rotation || resolve_changed_reduced_rns;
 }
@@ -475,14 +503,15 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
       std::ofstream index(sequence_dir / "sequence.tsv");
       index
          << "index\ttargets\tangular_velocity\tmaximum_density"
-         << "\tmaximum_velocity\tequatorial_radius\tpolar_radius"
+         << "\tmaximum_velocity\tinjection_energy"
+         << "\tequatorial_radius\tpolar_radius"
          << "\tequatorial_log_enthalpy_gradient"
          << "\tpolar_log_enthalpy_gradient\tmass_shedding_indicator"
          << "\tadm_mass\tbaryonic_mass\tangular_momentum\tdimensionless_spin"
          << "\tartifact\n";
       std::ofstream metadata(sequence_dir / "sequence.meta");
       metadata << "# type=physical_initial_data_sequence\n"
-               << "# schema_version=3\n"
+               << "# schema_version=4\n"
                << "# eos=" << cfg_.eos << '\n'
                << "# eos_preset=" << cfg_.eos_preset << '\n'
                << "# thermal_gamma=" << std::setprecision(17)
@@ -494,7 +523,7 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
                << cfg_.initial_data_differential_rotation_length << '\n'
                << "# rotation_power_q=" << std::setprecision(17)
                << cfg_.initial_data_rotation_power_q << '\n'
-               << "# artifact_contract=PyFluid physical initial data v1\n";
+               << "# artifact_contract=PyFluid physical initial data v2\n";
       if (cfg_.eos_preset == "custom") {
          metadata << "# polytropic_k=" << std::setprecision(17)
                   << cfg_.polytropic_k << '\n'
@@ -579,6 +608,7 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
             << std::setprecision(17) << angular_velocity << '\t'
             << rotating_star.maximum_density << '\t'
             << rotating_star.maximum_velocity << '\t'
+            << rotating_star.injection_energy << '\t'
             << rotating_star.equatorial_radius << '\t'
             << rotating_star.polar_radius << '\t'
             << rotating_star.equatorial_log_enthalpy_gradient << '\t'

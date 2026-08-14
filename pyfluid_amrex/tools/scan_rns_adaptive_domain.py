@@ -14,6 +14,7 @@ import numpy as np
 from validation_common import (
    ROOT,
    materialize_run_input,
+   method_catalog_names,
    read_tsv,
    repo_relative,
    run_amrex,
@@ -24,6 +25,7 @@ from validation_common import (
 BASE_INPUT = ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_spherical_id_2d.in"
 RUN_ROOT = ROOT / "runs/current/rotating_star_adaptive_domain_scan"
 RESULTS = RUN_ROOT / "results.tsv"
+ROTATION_LAWS = method_catalog_names("rotation_law")
 SOLVE_PATTERN = re.compile(
    r"xcts initial data: matter_iterations=(?P<matter>[0-9]+) "
    r"relative_matter_update=(?P<update>[0-9.eE+-]+) "
@@ -70,12 +72,21 @@ def case_name(
    angular_cells: int,
    omega: float,
    label: str,
+   rotation_law: str,
+   differential_rotation_length: float,
+   rotation_power_q: float,
 ) -> str:
    name = (
       f"r{radial_cells}_t{angular_cells}_omega{omega:.6g}_"
       f"source{source_factor:.6g}_exterior{exterior_fraction:.6g}"
       .replace(".", "p")
    )
+   if rotation_law != "uniform":
+      name += (
+         f"_{rotation_law}_a{differential_rotation_length:.6g}"
+      ).replace(".", "p")
+   if rotation_law == "q_power":
+      name += f"_q{rotation_power_q:.6g}".replace(".", "p")
    return f"{name}_{label}" if label else name
 
 
@@ -98,12 +109,46 @@ def scan_cases(args: argparse.Namespace) -> list[tuple[float, float]]:
    return sorted(cases)
 
 
+def equivalent_rotation_law(
+   metadata: dict[str, str],
+   rotation_law: str,
+   differential_rotation_length: float,
+   rotation_power_q: float,
+) -> bool:
+   reference_law = metadata.get("rotation_law", "uniform")
+   if reference_law == "uniform" or rotation_law == "uniform":
+      return reference_law == rotation_law
+   reference_length = float(metadata["differential_rotation_length"])
+   if not math.isclose(
+      reference_length,
+      differential_rotation_length,
+      rel_tol=0.0,
+      abs_tol=1.0e-15,
+   ):
+      return False
+   reference_q = float(metadata.get("rotation_power_q", "1.0"))
+   if reference_law == rotation_law:
+      return rotation_law != "q_power" or math.isclose(
+         reference_q, rotation_power_q, rel_tol=0.0, abs_tol=1.0e-15
+      )
+   return {reference_law, rotation_law} == {"j_constant", "q_power"} \
+      and math.isclose(reference_q, 1.0, rel_tol=0.0, abs_tol=1.0e-15) \
+      and math.isclose(rotation_power_q, 1.0, rel_tol=0.0, abs_tol=1.0e-15)
+
+
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--input-artifact", type=Path)
    parser.add_argument("--reference-artifact", type=Path)
    parser.add_argument("--continuation-targets", type=float, nargs="+")
    parser.add_argument("--omega", type=float, default=0.0329)
+   parser.add_argument(
+      "--rotation-law", choices=ROTATION_LAWS, default="uniform"
+   )
+   parser.add_argument(
+      "--differential-rotation-length", type=float, default=10.0
+   )
+   parser.add_argument("--rotation-power-q", type=float, default=1.0)
    parser.add_argument("--radial-cells", type=int, default=256)
    parser.add_argument(
       "--angular-cells", type=int, nargs="+", default=(64,)
@@ -131,6 +176,12 @@ def main() -> int:
       action="store_true",
       help="require the resolved enthalpy-surface guard to reject every case",
    )
+   parser.add_argument(
+      "--save-sequence",
+      action=argparse.BooleanOptionalAction,
+      default=False,
+      help="persist every requested continuation target as a reusable artifact",
+   )
    parser.add_argument("--force", action="store_true")
    args = parser.parse_args()
 
@@ -157,6 +208,21 @@ def main() -> int:
       raise SystemExit("RNS scan grid is too small")
    if not math.isfinite(args.omega) or args.omega <= 0.0:
       raise SystemExit("--omega must be positive and finite")
+   if not math.isfinite(args.differential_rotation_length) \
+         or args.differential_rotation_length <= 0.0:
+      raise SystemExit(
+         "--differential-rotation-length must be positive and finite"
+      )
+   if not math.isfinite(args.rotation_power_q) \
+         or args.rotation_power_q < 1.0:
+      raise SystemExit("--rotation-power-q must be finite and at least one")
+   differential_rotation_length = (
+      args.differential_rotation_length
+      if args.rotation_law != "uniform" else 10.0
+   )
+   rotation_power_q = (
+      args.rotation_power_q if args.rotation_law == "q_power" else 1.0
+   )
    if args.continuation_targets and (
       any(
          not math.isfinite(target) or not 0.0 < target < args.omega
@@ -193,10 +259,15 @@ def main() -> int:
          int(row["angular_cells"]),
          float(row.get("omega") or args.omega),
          row.get("label") or "",
+         row.get("rotation_law") or "uniform",
+         float(row.get("differential_rotation_length") or 10.0),
+         float(row.get("rotation_power_q") or 1.0),
       ): row
       for row in read_tsv(RESULTS)
    } if RESULTS.is_file() else {}
-   selected_keys: set[tuple[float, float, int, int, float, str]] = set()
+   selected_keys: set[
+      tuple[float, float, int, int, float, str, str, float, float]
+   ] = set()
    scan_points = [
       (source_factor, exterior_fraction, angular_cells)
       for source_factor, exterior_fraction in cases
@@ -210,6 +281,9 @@ def main() -> int:
          angular_cells,
          args.omega,
          args.label,
+         args.rotation_law,
+         differential_rotation_length,
+         rotation_power_q,
       )
       selected_keys.add(key)
       name = case_name(*key)
@@ -221,10 +295,14 @@ def main() -> int:
          (run_dir / "run.log").read_text()
          if (run_dir / "run.log").is_file() else ""
       )
+      has_saved_sequence = any(
+         (run_dir / "initial_data_sequences").glob("**/sequence.tsv")
+      )
       cached_surface_rejection = (
          args.expect_surface_rejection
          and key in existing
          and SURFACE_REJECTION in cached_log
+         and (not args.save_sequence or has_saved_sequence)
       )
       if not args.force and cached_surface_rejection:
          progress_matches = list(MATTER_PROGRESS_PATTERN.finditer(cached_log))
@@ -240,7 +318,8 @@ def main() -> int:
             )
          print(f"CACHED EXPECTED_REJECTION {name}")
          continue
-      if not args.force and key in existing and artifact.is_dir():
+      if not args.force and key in existing and artifact.is_dir() \
+            and (not args.save_sequence or has_saved_sequence):
          print(f"CACHED {name}")
          continue
       run_dir.mkdir(parents=True, exist_ok=True)
@@ -252,6 +331,13 @@ def main() -> int:
             "amr.max_grid_size": str(min(64, args.radial_cells)),
             "initial_data.output_file": repo_relative(artifact),
             "initial_data.angular_velocity": f"{args.omega:.17g}",
+            "initial_data.rotation_law": args.rotation_law,
+            "initial_data.differential_rotation_length": (
+               f"{differential_rotation_length:.17g}"
+            ),
+            "initial_data.rotation_power_q": (
+               f"{rotation_power_q:.17g}"
+            ),
             "initial_data.adaptive_source_radius_factor": (
                f"{source_factor:.17g}"
             ),
@@ -267,7 +353,7 @@ def main() -> int:
             "initial_data.matter_max_iterations": str(
                args.matter_max_iterations
             ),
-            "initial_data.save_sequence": "0",
+            "initial_data.save_sequence": "1" if args.save_sequence else "0",
             "pyfluid.run_name": name,
             "pyfluid.output_dir": repo_relative(run_dir),
             **(
@@ -339,6 +425,7 @@ def main() -> int:
             "equatorial_radius",
             "polar_radius",
             "matter_outer_radius",
+            "injection_energy",
             "equatorial_log_enthalpy_gradient",
             "polar_log_enthalpy_gradient",
             "mass_shedding_indicator",
@@ -366,6 +453,11 @@ def main() -> int:
          ),
          "label": args.label,
          "omega": args.omega,
+         "rotation_law": args.rotation_law,
+         "differential_rotation_length": (
+            differential_rotation_length
+         ),
+         "rotation_power_q": rotation_power_q,
          "source_radius_factor": source_factor,
          "exterior_fraction": exterior_fraction,
          "radial_cells": args.radial_cells,
@@ -382,6 +474,7 @@ def main() -> int:
          "matter_relaxation": args.matter_relaxation,
          "matter_tolerance": args.matter_tolerance,
          "matter_max_iterations": args.matter_max_iterations,
+         "saved_sequence": int(args.save_sequence),
          "seconds": completed.seconds,
          "returncode": completed.returncode,
          "matter_iterations": matter_iterations,
@@ -454,6 +547,13 @@ def main() -> int:
       reference_omega = float(reference["angular_velocity"])
       if not math.isclose(reference_omega, args.omega, rel_tol=0.0, abs_tol=1e-15):
          raise RuntimeError("reference artifact angular velocity does not match")
+      if not equivalent_rotation_law(
+         reference,
+         args.rotation_law,
+         differential_rotation_length,
+         rotation_power_q,
+      ):
+         raise RuntimeError("reference artifact rotation law does not match")
       for row in rows:
          row_key = (
             float(row["source_radius_factor"]),
@@ -462,6 +562,9 @@ def main() -> int:
             int(row["angular_cells"]),
             float(row.get("omega") or args.omega),
             row.get("label") or "",
+            row.get("rotation_law") or "uniform",
+            float(row.get("differential_rotation_length") or 10.0),
+            float(row.get("rotation_power_q") or 1.0),
          )
          if row_key not in selected_keys \
                or row["status"] != "PASS" \

@@ -5422,3 +5422,58 @@ I will always continue from the last cycle marked as `in_progress`.
   Python compile/help checks, architecture, the three-rank reduced-ID standard
   gate, and the 3/3 quick suite pass. The unchanged production target cache-hit
   rebuild is `0.24 s`; it is not a cold-build measurement. [DONE]
+
+## Cycle 294 — Differential RNS sequences and persisted evolution seeds (DONE)
+
+- Select a practical fast uniform model away from the calibrated endpoint and
+  prove the saved reduced artifact enters the unchanged 3D Cartesian evolution
+  path. The adaptive `1024x128`, `Omega=0.02968` SLy model is about 90 percent
+  of the lower endpoint bracket and gives `chi_ms=0.34204`,
+  `M_ADM=1.42917`, `M_b=1.55769`, `J=1.19629`, and `J/M^2=0.58569`; its
+  residuals are below `3.4e-11` and its artifact is about 14 MiB. PWL/HLL/
+  SSPRK3 evolution at CFL 0.9 passes eight steps at 32^3 and 48^3 with zero
+  recovery; the 48^3 rest-mass/angular-momentum/maximum-density changes are
+  `1.45e-9/3.14e-3/3.26e-3`. Longer equilibrium evidence remains open. [DONE]
+- Exercise every generated rotation-law family through the coupled reduced
+  XCTS solve rather than only pointwise kernels. At `A=10`, q-power `q=1`
+  reproduces j-constant surface and global diagnostics to roundoff. Q-power
+  `q=2` accepts `Omega=0.03` for `A=10` and `Omega=0.0201` for `A=5`.
+  J-constant `A=10` continues through `Omega=0.068` with relaxation 0.05;
+  failure at larger relaxation is solver-basin evidence, not mass shedding.
+  A saved q-power `q=2`, `A=10`, `Omega=0.03` model also passes a three-step
+  32^3 Cartesian evolution with zero recovery. Held-out q-power `q=1.5/3`
+  branches reach `A=10`, `Omega=0.03` on adaptive `256x48` grids using 0.005
+  continuation spacing, with `chi_ms=0.701317/0.580477`. A deliberately coarser
+  q=1.5 jump hit the 128-iteration cap while its relative update was still
+  decreasing, directly separating a continuation-basin failure from a physical
+  endpoint. [DONE]
+- Make persisted rotation identity complete. Physical-ID metadata and sequence
+  schema v4 now retain the differential length, q exponent, converged Euler
+  injection energy, surface diagnostics, and global charges. Loading rejects a
+  changed differential law parameter. Restoring the saved injection energy
+  fixes a reproduced strong-j restart whose first continued XCTS right-hand
+  side was otherwise nonfinite; the repaired `Omega=0.06` seed continues
+  through `0.064`. A local Open MPI 5.0.9 shared-file-pointer overflow on long
+  HDF5 sequence paths is avoided centrally with `OMPI_MCA_sharedfp=individual`.
+  [DONE]
+- Keep one implementation and one catalog. The adaptive scan reads rotation
+  law names from `schema/methods.toml`, adds law parameters and optional
+  sequence persistence without a C++ template axis, and can compare q-power
+  `q=1` with j-constant as the same analytic law. The older Cartesian sequence
+  scan consumes that same catalog through the shared validation helper; it no
+  longer owns a second hard-coded law list. The 3D Cartesian sequence owner now
+  computes nonzero ADM/baryonic/angular-momentum metadata through the existing
+  scalar-diagnostic owner instead of a duplicate integral. [DONE]
+- Harden focused validation and finish the tranche. The three-rank reduced-ID
+  standard gate passes, including generated scalar/toroidal elliptic checks,
+  adaptive RNS save/continue/remap, Cartesian handoff, q=1/j identity at
+  `2.34e-14`, and a physical q=2 control with `chi_ms=0.83157`. The forced
+  legacy 3D rotating gate passes 4/4 checks, and its dependent cache now
+  invalidates when an upstream artifact changes while recognizing completed
+  zero-step controls. Production 1D/2D/3D, architecture, the 3/3 quick suite,
+  and the frozen exact-current `rns-differential-final` standard baseline pass;
+  the baseline has 43/43 gates and `156.20 s` summed gate time. Its first broad
+  performance pass was host-noisy in two cheap kernels; isolated three-repeat
+  controls pass at 0.93 of the July baseline for both 4-rank 2D PWC/LLF/Euler
+  and 3-rank 3D PWC/LLF/Euler. The final cache-hit production build is `0.24 s`
+  with no compiler cache hits or misses. [DONE]

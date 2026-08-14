@@ -21,6 +21,9 @@ struct PhysicalInitialDataMetadata {
    std::string spacetime_initial_data;
    std::string rotation_law;
    amrex::Real angular_velocity = 0.0;
+   amrex::Real differential_rotation_length = 0.0;
+   amrex::Real rotation_power_q = 1.0;
+   amrex::Real injection_energy = -1.0;
    amrex::Real matter_outer_radius = -1.0;
    amrex::GpuArray<amrex::Real, 3> rotation_center{};
    bool exact_layout = false;

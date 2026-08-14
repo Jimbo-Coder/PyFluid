@@ -11,6 +11,7 @@ import signal
 import subprocess
 import tempfile
 import time
+import tomllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,20 @@ from machine_common import MachineProfile, load_machine, mpi_prefix
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILD = ROOT / "build" / "pyfluid_amrex"
+
+
+def method_catalog_names(group: str) -> tuple[str, ...]:
+   """Return one method family's names from the declarative schema."""
+   with (ROOT / "pyfluid_amrex/schema/methods.toml").open("rb") as handle:
+      catalog = tomllib.load(handle)
+   entries = catalog.get(group)
+   if not isinstance(entries, list) or not entries:
+      raise RuntimeError(f"methods.toml has no nonempty {group!r} catalog")
+   names = tuple(entry.get("name") for entry in entries)
+   if any(not isinstance(name, str) or not name for name in names) \
+         or len(set(names)) != len(names):
+      raise RuntimeError(f"methods.toml has invalid {group!r} names")
+   return names
 
 
 @dataclass(frozen=True)

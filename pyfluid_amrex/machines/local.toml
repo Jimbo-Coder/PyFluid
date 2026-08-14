@@ -4,7 +4,11 @@ name = "local"
 mpi_launcher = ["mpirun", "-np", "{ranks}", "--bind-to", "none"]
 direct_one_rank = true
 default_ranks = 3
-environment = { OMP_NUM_THREADS = "1" }
+# Open MPI 5.0.9's locked-file shared-pointer probe uses a fixed path buffer
+# and aborts before HDF5 can open long, informative ID-sequence filenames.
+# PyFluid/HDF5 do not use MPI shared-file-pointer operations, so select the
+# individual component and avoid the broken locked-file probe entirely.
+environment = { OMP_NUM_THREADS = "1", OMPI_MCA_sharedfp = "individual" }
 
 [run]
 work_dir = "{root}"

@@ -301,9 +301,52 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       formulation = ConformalConstraintFormulation::xcts;
    }
    ConformalContinuationObserver continuation_observer;
+   const auto with_global_rotating_diagnostics = [this](
+      RotatingStarUpdateSummary summary
+   ) {
+#if (AMREX_SPACEDIM == 3)
+      if (cfg_.ic == "rotating_star"
+          && cfg_.initial_data_angular_velocity != 0.0) {
+         ScalarDiagnosticSelection selection = scalar_diagnostic_selection(
+            "mass,adm_mass_volume,adm_angular_momentum3_volume"
+         );
+         apply_scalar_diagnostic_requirements(selection, cfg_);
+         const ScalarDiagnostics diagnostics = compute_current_scalars(
+            0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            DiffusionStats{},
+            eos_method_,
+            selection
+         );
+         summary.adm_mass = diagnostics.adm_mass_volume;
+         summary.baryonic_mass = diagnostics.mass;
+         summary.angular_momentum =
+            diagnostics.adm_angular_momentum3_volume;
+         summary.dimensionless_spin = summary.angular_momentum / (
+            summary.adm_mass * summary.adm_mass
+         );
+         if (!(summary.adm_mass > 0.0)
+             || !(summary.baryonic_mass > 0.0)
+             || !std::isfinite(summary.angular_momentum)
+             || !std::isfinite(summary.dimensionless_spin)) {
+            amrex::Abort("Cartesian rotating-star global diagnostic is invalid");
+         }
+      }
+#endif
+      return summary;
+   };
    if (physical_initial_data_sequence_output_enabled()) {
       initialize_physical_initial_data_sequence_output();
-      continuation_observer = [this](
+      continuation_observer = [this, with_global_rotating_diagnostics](
          int continuation_step,
          int continuation_steps,
          amrex::Real angular_velocity,
@@ -311,15 +354,24 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       ) {
          finalize_constraint_solved_initial_data_state();
          run_evolution_preflight(0.0);
+         const RotatingStarUpdateSummary persisted =
+            with_global_rotating_diagnostics(rotating_star);
          write_physical_initial_data_sequence_model(
             continuation_step,
             continuation_steps,
             angular_velocity,
-            rotating_star
+            persisted
          );
       };
    }
-   const ConformalMaterializationResult result = materialize_conformal_initial_data(
+   RotatingStarParameters rotating_parameters =
+      rotating_star_parameters(cfg_, initial_data_provider_.view());
+   if (seed_from_loaded_id && loaded_physical_id_metadata_
+       && loaded_physical_id_metadata_->injection_energy > 0.0) {
+      rotating_parameters.injection_energy =
+         loaded_physical_id_metadata_->injection_energy;
+   }
+   ConformalMaterializationResult result = materialize_conformal_initial_data(
       hierarchy,
       primitive,
       spacetime,
@@ -329,9 +381,13 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       eos_params(cfg_),
       initial_data_provider_.view().fields,
       formulation,
-      rotating_star_parameters(cfg_, initial_data_provider_.view()),
+      rotating_parameters,
       seed_from_loaded_id,
       continuation_observer
+   );
+   finalize_constraint_solved_initial_data_state();
+   result.rotating_star = with_global_rotating_diagnostics(
+      result.rotating_star
    );
    if (cfg_.ic == "rotating_star") {
       initial_data_rotating_star_summary_ =
@@ -380,8 +436,6 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
             << '\n';
       }
    }
-
-   finalize_constraint_solved_initial_data_state();
 }
 
 void AmrSolverBase::finalize_constraint_solved_initial_data_state()
