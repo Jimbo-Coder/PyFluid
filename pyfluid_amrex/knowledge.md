@@ -368,13 +368,25 @@ baseline remains the latest broad integration baseline.
   primitive/conserved preflight errors `8.82e-13/1.12e-14`. This is a
   high-resolution numerical sequence point, not yet a physical mass-shedding
   limit.
-- Continuing that `1024x256` branch to `Omega=0.03295` converges in `129.0 s`
-  with residuals at most `1.31e-10`, zero recovery, `chi_ms=0.0293355`, and
-  `J/M^2=0.672529`. At `Omega=0.033`, the matter iteration reaches its update
-  tolerance but the surface ray no longer contains a resolved enthalpy zero,
-  so it is correctly rejected. The current high-resolution numerical bracket
-  is therefore `0.03295 < Omega_limit < 0.033`; it remains resolution- and
-  sequence-path-dependent rather than a quoted physical mass-shedding limit.
+- At `Omega=0.03295`, matched tight-tolerance `1024x256` and independently
+  refined `1536x192` models give `chi_ms=0.0293406/0.0292918`; angular momentum
+  differs by `5.5e-7` relative and the other bulk charges by roughly `1e-5`.
+  The respective re-solves take `31.56/43.89 s`. Both `1024x128` and
+  `1536x192` accept `Omega=0.032975`, with `chi_ms=0.0126918/0.0116318`, and
+  both reach the `1e-7` matter tolerance before the resolved enthalpy-surface
+  guard rejects `Omega=0.0329875`. The fixed-central-density numerical
+  mass-shedding bracket is therefore
+  `0.032975 < Omega_limit < 0.0329875` on two grids. This is not a radial-
+  stability turning point; that requires an appropriate constant-baryon-mass
+  or constant-angular-momentum sequence.
+- A matched `1024`-radial angular scan at `Omega=0.0329/0.03295` establishes
+  distinct resolution roles. Relative to 256 theta cells, 48 cells are about
+  5.9 times faster and retain ADM mass/spin within `3.5e-5/4.9e-5`, but their
+  near-shedding `chi_ms` is 11.8 percent high. Counts 64/96/128 are about
+  4.6/3.2/2.3 times faster and reduce the `chi_ms` error to 6.6/2.7/1.34
+  percent. Every 48--128 case independently rejects `Omega=0.033` through the
+  same resolved-surface guard. Use 64 for sequence discovery, 128 for endpoint
+  work, and 256 as the angular-reference control.
 - Offline parity-aware angular projection of the `1024x256` exterior gives
   maximum global ADM-field errors at the source-ball boundary of roughly
   `8.9e-6/1.8e-6/4.4e-7/1.1e-7` for `4/8/16/32` angular cells. Four cells are
@@ -446,10 +458,10 @@ baseline remains the latest broad integration baseline.
 
 ## Next Milestones
 
-1. Independently refine the `0.03295 < Omega_limit < 0.033` adaptive RNS
-   bracket before quoting a physical mass-shedding frequency. Prototype an exterior modal
-   domain only with at least 16 near-source modes, a smooth/interface-consistent
-   coupling, and unchanged global-charge/constraint convergence.
+1. Automate the two-grid fixed-central-density endpoint bracket, then construct
+   constant-baryon-mass sequences before quoting a physical Kepler/stability
+   limit. Prototype an exterior modal domain only if its interface-consistent
+   residual and work precision beat the already-fast 64/128-theta controls.
 2. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.

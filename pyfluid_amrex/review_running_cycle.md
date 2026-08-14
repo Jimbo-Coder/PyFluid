@@ -5390,3 +5390,35 @@ I will always continue from the last cycle marked as `in_progress`.
   source artifact is about 20 MiB. The normal standard suite passes 43/43 gates
   in `167.56 s`. The final incremental production build takes `1.97 s` with
   three misses and two hits; this is not a cold-build measurement. [DONE]
+
+## Cycle 293 — RNS angular work precision and endpoint refinement (DONE)
+
+- Distinguish the implemented ID adaptation from evolution AMR. The stellar
+  solver owns one fixed nonuniform radial map on a rectangular `r theta`
+  hierarchy; it does not invoke AMReX regridding and theta remains uniform.
+  AMReX supplies distributed boxes/storage, while saved explicit faces own the
+  physical radial coordinates. [DONE]
+- Measure rather than assume the angular work-precision knee. At 1024 radial
+  cells and `Omega=0.03295`, matched 48/64/96/128/256-theta solves take
+  `5.38/6.88/9.73/13.86/31.56 s`. Bulk charges are already within `1.2e-4` at
+  48 theta cells, while the sensitive `chi_ms` error falls from 11.8 percent at
+  48 to 6.6/2.7/1.34 percent at 64/96/128. Every 48--128 continuation rejects
+  `Omega=0.033` through the same resolved-surface guard. Retain 64 for sequence
+  discovery, 128 for endpoint work, and 256 as the reference control. [DONE]
+- Independently refine and bisect the endpoint. `1024x256` and `1536x192`
+  agree at `Omega=0.03295` to 0.17 percent in `chi_ms`, `5.5e-7` relative in
+  angular momentum, and about `1e-5` in the remaining bulk charges. Both
+  `1024x128` and `1536x192` accept `Omega=0.032975`, with
+  `chi_ms=0.0126918/0.0116318`, and both reach the `1e-7` matter tolerance
+  before rejecting `Omega=0.0329875` for the missing resolved enthalpy-zero
+  surface. The fixed-central-density numerical mass-shedding bracket is now
+  `0.032975 < Omega_limit < 0.0329875`; it is not a radial-stability turning
+  point. [DONE]
+- Harden the scan owner with multi-angular cases, provenance labels, matched
+  reference errors, and explicit expected surface rejection. Run focused ID,
+  architecture, and quick validation; benchmark and commit the clean tranche.
+  The multi-angular cached path and cached expected-rejection path both pass;
+  older rejection logs are normalized with their last converged matter update.
+  Python compile/help checks, architecture, the three-rank reduced-ID standard
+  gate, and the 3/3 quick suite pass. The unchanged production target cache-hit
+  rebuild is `0.24 s`; it is not a cold-build measurement. [DONE]

@@ -222,6 +222,14 @@ one-third defaults. Changing either map for a reduced solve-only RNS load
 forces a new discrete XCTS solve even when angular velocity is unchanged;
 same-map loading remains a direct sequence continuation.
 
+Angular resolution remains one uniform `theta` count on the rectangular
+separable grid; it is not AMReX angular AMR. Matched near-shedding solves make
+64 cells the conventional sequence/exploration choice, 128 a practical
+endpoint grid, and 256 the angular-reference control. A radius-dependent mode
+cap or coarse exterior angular domain must own a genuine modal/multidomain
+interface and preserve the coupled residual; do not represent it as a
+nonuniform theta coordinate or silently change `amr.n_cell` during a solve.
+
 Matter support and gravity extent need not be the same computational domain.
 An ID method may stop its matter representation at the enthalpy-zero surface
 while continuing metric fields through exterior and compactified domains. The

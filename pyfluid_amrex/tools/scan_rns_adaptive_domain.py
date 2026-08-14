@@ -32,6 +32,13 @@ SOLVE_PATTERN = re.compile(
    r"lapse_residual=(?P<lapse>[0-9.eE+-]+) "
    r"momentum_residual=(?P<momentum>[0-9.eE+-]+)"
 )
+MATTER_PROGRESS_PATTERN = re.compile(
+   r"matter_iteration=(?P<matter>[0-9]+) "
+   r"relative_update=(?P<update>[0-9.eE+-]+)"
+)
+SURFACE_REJECTION = (
+   "rotating-star surface ray does not contain a resolved enthalpy zero"
+)
 
 
 def read_metadata(artifact: Path) -> dict[str, str]:
@@ -62,12 +69,14 @@ def case_name(
    radial_cells: int,
    angular_cells: int,
    omega: float,
+   label: str,
 ) -> str:
-   return (
+   name = (
       f"r{radial_cells}_t{angular_cells}_omega{omega:.6g}_"
       f"source{source_factor:.6g}_exterior{exterior_fraction:.6g}"
       .replace(".", "p")
    )
+   return f"{name}_{label}" if label else name
 
 
 def scan_cases(args: argparse.Namespace) -> list[tuple[float, float]]:
@@ -96,7 +105,9 @@ def main() -> int:
    parser.add_argument("--continuation-targets", type=float, nargs="+")
    parser.add_argument("--omega", type=float, default=0.0329)
    parser.add_argument("--radial-cells", type=int, default=256)
-   parser.add_argument("--angular-cells", type=int, default=64)
+   parser.add_argument(
+      "--angular-cells", type=int, nargs="+", default=(64,)
+   )
    parser.add_argument(
       "--source-factor", type=float, nargs="+"
    )
@@ -110,6 +121,16 @@ def main() -> int:
    parser.add_argument("--matter-relaxation", type=float, default=0.2)
    parser.add_argument("--matter-tolerance", type=float, default=1.0e-7)
    parser.add_argument("--matter-max-iterations", type=int, default=128)
+   parser.add_argument(
+      "--label",
+      default="",
+      help="optional safe suffix distinguishing scan provenance/controls",
+   )
+   parser.add_argument(
+      "--expect-surface-rejection",
+      action="store_true",
+      help="require the resolved enthalpy-surface guard to reject every case",
+   )
    parser.add_argument("--force", action="store_true")
    args = parser.parse_args()
 
@@ -130,7 +151,9 @@ def main() -> int:
       raise SystemExit(
          "a fresh rotating-star scan needs --continuation-targets"
       )
-   if args.radial_cells < 32 or args.angular_cells < 8:
+   if args.radial_cells < 32 or any(
+      angular_cells < 8 for angular_cells in args.angular_cells
+   ):
       raise SystemExit("RNS scan grid is too small")
    if not math.isfinite(args.omega) or args.omega <= 0.0:
       raise SystemExit("--omega must be positive and finite")
@@ -153,6 +176,8 @@ def main() -> int:
          or not 0.0 < args.matter_tolerance < 1.0 \
          or args.matter_max_iterations < 1:
       raise SystemExit("invalid matter iteration controls")
+   if args.label and re.fullmatch(r"[A-Za-z0-9_-]+", args.label) is None:
+      raise SystemExit("--label may contain only letters, digits, '-' and '_'")
    cases = scan_cases(args)
    if any(not 1.0 < source <= 3.0 for source, _ in cases):
       raise SystemExit("source factors must be in (1, 3]")
@@ -167,17 +192,24 @@ def main() -> int:
          int(row["radial_cells"]),
          int(row["angular_cells"]),
          float(row.get("omega") or args.omega),
+         row.get("label") or "",
       ): row
       for row in read_tsv(RESULTS)
    } if RESULTS.is_file() else {}
-   selected_keys: set[tuple[float, float, int, int, float]] = set()
-   for source_factor, exterior_fraction in cases:
+   selected_keys: set[tuple[float, float, int, int, float, str]] = set()
+   scan_points = [
+      (source_factor, exterior_fraction, angular_cells)
+      for source_factor, exterior_fraction in cases
+      for angular_cells in sorted(set(args.angular_cells))
+   ]
+   for source_factor, exterior_fraction, angular_cells in scan_points:
       key = (
          source_factor,
          exterior_fraction,
          args.radial_cells,
-         args.angular_cells,
+         angular_cells,
          args.omega,
+         args.label,
       )
       selected_keys.add(key)
       name = case_name(*key)
@@ -185,6 +217,29 @@ def main() -> int:
       artifact = run_dir / "physical_id"
       if args.force and run_dir.exists():
          shutil.rmtree(run_dir)
+      cached_log = (
+         (run_dir / "run.log").read_text()
+         if (run_dir / "run.log").is_file() else ""
+      )
+      cached_surface_rejection = (
+         args.expect_surface_rejection
+         and key in existing
+         and SURFACE_REJECTION in cached_log
+      )
+      if not args.force and cached_surface_rejection:
+         progress_matches = list(MATTER_PROGRESS_PATTERN.finditer(cached_log))
+         progress = progress_matches[-1] if progress_matches else None
+         existing[key]["status"] = "EXPECTED_REJECTION"
+         existing[key]["rejection"] = "resolved_enthalpy_surface"
+         if progress is not None:
+            existing[key]["matter_iterations"] = int(
+               progress.group("matter")
+            )
+            existing[key]["relative_matter_update"] = float(
+               progress.group("update")
+            )
+         print(f"CACHED EXPECTED_REJECTION {name}")
+         continue
       if not args.force and key in existing and artifact.is_dir():
          print(f"CACHED {name}")
          continue
@@ -193,7 +248,7 @@ def main() -> int:
          BASE_INPUT,
          run_dir / "input.in",
          {
-            "amr.n_cell": f"{args.radial_cells} {args.angular_cells}",
+            "amr.n_cell": f"{args.radial_cells} {angular_cells}",
             "amr.max_grid_size": str(min(64, args.radial_cells)),
             "initial_data.output_file": repo_relative(artifact),
             "initial_data.angular_velocity": f"{args.omega:.17g}",
@@ -238,7 +293,32 @@ def main() -> int:
       (run_dir / "run.log").write_text(completed.stdout)
       solve_matches = list(SOLVE_PATTERN.finditer(completed.stdout))
       solve = solve_matches[-1] if solve_matches else None
-      status = "PASS" if completed.returncode == 0 and solve else "FAIL"
+      progress_matches = list(
+         MATTER_PROGRESS_PATTERN.finditer(completed.stdout)
+      )
+      progress = progress_matches[-1] if progress_matches else None
+      matter_iterations = (
+         int(solve.group("matter")) if solve is not None
+         else int(progress.group("matter")) if progress is not None
+         else ""
+      )
+      relative_matter_update = (
+         float(solve.group("update")) if solve is not None
+         else float(progress.group("update")) if progress is not None
+         else ""
+      )
+      surface_rejected = (
+         completed.returncode != 0 and SURFACE_REJECTION in completed.stdout
+      )
+      if args.expect_surface_rejection:
+         if surface_rejected:
+            status = "EXPECTED_REJECTION"
+         elif completed.returncode == 0:
+            status = "UNEXPECTED_ACCEPTANCE"
+         else:
+            status = "FAIL"
+      else:
+         status = "PASS" if completed.returncode == 0 and solve else "FAIL"
       metadata = read_metadata(artifact) if artifact.is_dir() else {}
       faces = np.fromstring(metadata.get("coordinate_faces_0_0", ""), sep=",")
       source_cells = 0
@@ -281,11 +361,15 @@ def main() -> int:
          "kind": "initial_data",
          "case": name,
          "status": status,
+         "rejection": (
+            "resolved_enthalpy_surface" if surface_rejected else ""
+         ),
+         "label": args.label,
          "omega": args.omega,
          "source_radius_factor": source_factor,
          "exterior_fraction": exterior_fraction,
          "radial_cells": args.radial_cells,
-         "angular_cells": args.angular_cells,
+         "angular_cells": angular_cells,
          "source_cells": source_cells,
          "exterior_cells": args.radial_cells - source_cells,
          "source_radius": source_radius,
@@ -300,8 +384,8 @@ def main() -> int:
          "matter_max_iterations": args.matter_max_iterations,
          "seconds": completed.seconds,
          "returncode": completed.returncode,
-         "matter_iterations": int(solve.group("matter")) if solve else "",
-         "relative_matter_update": float(solve.group("update")) if solve else "",
+         "matter_iterations": matter_iterations,
+         "relative_matter_update": relative_matter_update,
          "hamiltonian_residual": (
             float(solve.group("hamiltonian")) if solve else ""
          ),
@@ -332,6 +416,7 @@ def main() -> int:
          int(row["radial_cells"]),
          int(row["angular_cells"]),
          float(row.get("omega") or args.omega),
+         row.get("label") or "",
          float(row["source_radius_factor"]),
          float(row["exterior_fraction"]),
       )
@@ -370,7 +455,16 @@ def main() -> int:
       if not math.isclose(reference_omega, args.omega, rel_tol=0.0, abs_tol=1e-15):
          raise RuntimeError("reference artifact angular velocity does not match")
       for row in rows:
-         if row["status"] != "PASS" \
+         row_key = (
+            float(row["source_radius_factor"]),
+            float(row["exterior_fraction"]),
+            int(row["radial_cells"]),
+            int(row["angular_cells"]),
+            float(row.get("omega") or args.omega),
+            row.get("label") or "",
+         )
+         if row_key not in selected_keys \
+               or row["status"] != "PASS" \
                or not math.isclose(
                   float(row.get("omega") or args.omega),
                   reference_omega,
@@ -401,10 +495,13 @@ def main() -> int:
       fields = list(dict.fromkeys(key for row in rows for key in row))
       write_tsv(RESULTS, rows, fields)
    selected_rows = [existing[key] for key in selected_keys]
+   required_status = (
+      "EXPECTED_REJECTION" if args.expect_surface_rejection else "PASS"
+   )
    return (
       0
       if selected_rows
-      and all(row["status"] == "PASS" for row in selected_rows)
+      and all(row["status"] == required_status for row in selected_rows)
       else 1
    )
 

@@ -11,6 +11,8 @@ geometry.prob_hi = 32.0 1.5707963267948966
 geometry.is_periodic = 0 0
 geometry.coord_sys = 2
 
+# 64 theta cells are the validated sequence/exploration choice. Use 128 for
+# near-shedding endpoint work and 256 as an angular-reference control.
 amr.n_cell = 256 64
 amr.max_level = 0
 amr.max_grid_size = 64
