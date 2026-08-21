@@ -5771,3 +5771,53 @@ I will always continue from the last cycle marked as `in_progress`.
   one-time incremental rebuild; no new runtime/template product was added.
   Future horizon-finder settings should stay in their host diagnostic owner so
   tolerance edits do not invalidate flux/reconstruction bundles. [DONE]
+
+## Cycle 301 — Numerical apparent horizon, masks, and gauge calibration (DONE)
+
+- Implemented an independent BHaHAHA-style apparent-horizon owner on the
+  Cycle-300 expansion kernel. A solver-private spherical volume stores
+  hierarchy-interpolated `gamma_ij`, `gamma^ij`, `d_k gamma_ij`, and `K_ij`;
+  the IO rank evolves `r=h(theta,phi)` with damped-wave SSPRK3, sixth-order
+  pole-parity angular differences, stage-consistent radial interpolation,
+  proper-spacing CFL, coarse-to-fine continuation, and residual-tested
+  over-relaxation, then broadcasts the surface. The exact Kerr fixture reaches
+  `M Theta_Linf=1.98833e-5`, maximum coordinate-radius error `8.29284e-3`,
+  and proper-area relative error `4.70116e-3`. No finder parameter entered the
+  reconstruction/Riemann template product. [DONE]
+- Added one runtime tracker with default eight-step cadence, persisted radial
+  shapes and TSV diagnostics, restart continuation, proper area/irreducible
+  mass/centroid/radius diagnostics, and a signed-distance AMR band. An exact-
+  step restored surface is valid immediately; an older persisted shape is only
+  an initial guess and forces a new solve before output or AMR use. The live
+  N=32 Kerr case finds step-zero area `47.81104` (1.946 percent above the exact
+  value), creates a partial level-1 hierarchy from the surface band, improves
+  the step-one area to `46.92379`, and resumes at checkpoint step 2 before
+  finding step 3. [DONE]
+- Added catalog-owned `apparent_horizon_mask` and `excision_mask` output GFs.
+  Both are geometry-only views; the inner mask is strictly nested and remains
+  inert. They do not reuse reflecting solid-obstacle semantics, remove active
+  cells, modify fluxes, or claim to be an event horizon. The focused gate
+  checks nonempty/nested masks on coarse and fine levels, dynamic regridding,
+  persisted shape count, restart scalar finiteness, and zero fluid recovery.
+  True `black_hole_interior=excision` still rejects pending causal outflow,
+  inactive-cell, one-sided-stencil, FillPatch/prolongation, and moving-mask
+  ownership. [DONE]
+- Exposed `spacetime.slow_start_strength` and calibrated its defaults to
+  strength `0.6`, time width `20`. The prior amplitude-one/time-five filled-
+  Kerr stress failed at step 54. The calibrated branch and matched ordinary
+  1+log control both complete 64 CFL-0.9 RK4/KO-0.32 steps with zero recovery.
+  Slow start ends at `t=5.274`, with exterior Hamiltonian L2/Linf and momentum
+  Linf `0.09731/1.28379/0.58237`; ordinary 1+log reaches `t=6.035` with
+  `0.02192/0.25350/0.17426`. Slow start is functional but is not the selected
+  filled-Kerr gauge. Artifacts live under
+  `runs/current/black_hole_gauge_validation/`. [DONE]
+- Validation: focused horizon executable PASS; expanded 14-case three-rank
+  black-hole gate PASS; production 1D/2D/3D PASS; architecture and 3/3 quick
+  suite PASS. The complete standard suite passes 46/46 gates in `218.213 s`;
+  the final restart-only ownership refinement is covered by a subsequent
+  focused black-hole rerun. All four normal performance controls pass at
+  `108.37`, `131.08`, `5.98`, and `0.182` Mcells/s (`0.94--0.99` of their
+  stored baselines), confirming the disabled horizon owner is inert. The
+  unchanged production rebuild is a `0.24 s` cache hit; the earlier broad
+  rebuild came from the one new global slow-start scalar, not a finder template
+  axis. [DONE]

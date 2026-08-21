@@ -105,7 +105,7 @@ Z4cEvolutionParameters z4c_evolution_parameters(RunConfig const& cfg)
    return {
       cfg.spacetime_kappa1,
       cfg.spacetime_kappa2,
-      1.0,
+      cfg.spacetime_slow_start_strength,
       cfg.spacetime_slow_start_time,
       1.0,
       cfg.spacetime_shift_eta,

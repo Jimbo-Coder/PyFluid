@@ -7,12 +7,15 @@ import argparse
 import math
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
+from plotfile_reader import level_count, read_aux_field
 from validation_common import (
     OPEN_POLICY,
     ROOT,
     append_validation_history,
+    build_cached_target,
     materialize_run_input,
     read_tsv,
     repo_relative,
@@ -41,6 +44,166 @@ CONSTRAINT_FIELDS = (
     "z4c_hamiltonian_bh_exterior_l2",
     "z4c_momentum_bh_exterior_linf",
 )
+
+
+def validate_apparent_horizon_core() -> None:
+    target = "pyfluid_amrex_apparent_horizon_check"
+    binary = build_cached_target(target)
+    completed = subprocess.run(
+        (str(binary),),
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"{target} failed:\n{completed.stdout}\n{completed.stderr}"
+        )
+    if "PASS apparent-horizon finder check" not in completed.stdout:
+        raise RuntimeError(f"{target} did not report its PASS marker")
+
+
+def validate_apparent_horizon_run(
+    *, ranks: int, timeout: int | None
+) -> tuple[dict[str, object], dict[str, object]]:
+    name = "kerr_schild_apparent_horizon"
+    row, scalar = run_case(
+        name,
+        {
+            "pyfluid.max_step": "2",
+            "pyfluid.plot_int": "-1",
+            "pyfluid.aux_gf_int": "1",
+            "pyfluid.aux_gfs": "apparent_horizon_mask,excision_mask",
+            "pyfluid.checkpoint_int": "2",
+            "amr.max_level": "1",
+            "amr.ref_ratio": "2",
+            "amr.regrid_int": "1",
+            "amr.n_error_buf": "2",
+            "horizon.enabled": "1",
+            "horizon.find_int": "1",
+            "horizon.radial_points": "48",
+            "horizon.polar_points": "16",
+            "horizon.coarsest_polar_points": "8",
+            "horizon.theta_linf_times_mass_tolerance": "5.0e-4",
+            "horizon.theta_l2_times_mass_tolerance": "1.0e-2",
+            "horizon.refine_band_cells": "2.0",
+        },
+        ranks=ranks,
+        timeout=timeout,
+    )
+    run_dir = RUN_ROOT / name
+    horizon_rows = read_tsv(run_dir / "apparent_horizon.tsv")
+    if len(horizon_rows) != 3:
+        raise RuntimeError(f"{name} did not persist all three tracked surfaces")
+    initial = horizon_rows[0]
+    spin = 0.5
+    exact_area = 8.0 * math.pi * (1.0 + math.sqrt(1.0 - spin * spin))
+    area_error = abs(float(initial["area"]) - exact_area) / exact_area
+    if area_error > 3.0e-2:
+        raise RuntimeError(
+            f"{name} Kerr horizon area error is {area_error:.3e}"
+        )
+    theta_linf = float(initial["theta_linf_times_mass"])
+    if theta_linf > 5.0e-4:
+        raise RuntimeError(
+            f"{name} did not satisfy its expansion tolerance: {theta_linf:.3e}"
+        )
+    shape_rows = read_tsv(run_dir / "apparent_horizon" / "ah00000000.tsv")
+    if len(shape_rows) != 16 * 32:
+        raise RuntimeError(f"{name} persisted an incomplete horizon shape")
+
+    checkpoint = run_dir / "checkpoints" / "chk00002"
+    restart_input = materialize_run_input(
+        BASE_INPUT,
+        run_dir / "restart_input.in",
+        {
+            "pyfluid.run_name": name,
+            "pyfluid.output_dir": repo_relative(run_dir),
+            "pyfluid.restart_file": repo_relative(checkpoint),
+            "pyfluid.max_step": "3",
+            "pyfluid.plot_int": "-1",
+            "pyfluid.aux_gf_int": "1",
+            "pyfluid.aux_gfs": "apparent_horizon_mask,excision_mask",
+            "pyfluid.checkpoint_int": "-1",
+            "amr.max_level": "1",
+            "amr.ref_ratio": "2",
+            "amr.regrid_int": "1",
+            "amr.n_error_buf": "2",
+            "horizon.enabled": "1",
+            "horizon.find_int": "3",
+            "horizon.radial_points": "48",
+            "horizon.polar_points": "16",
+            "horizon.coarsest_polar_points": "8",
+            "horizon.theta_linf_times_mass_tolerance": "5.0e-4",
+            "horizon.theta_l2_times_mass_tolerance": "1.0e-2",
+            "horizon.refine_band_cells": "2.0",
+        },
+    )
+    restarted = run_amrex(
+        dim=3,
+        input_path=restart_input,
+        ranks=ranks,
+        timeout=timeout,
+    )
+    (run_dir / "restart.log").write_text(restarted.stdout)
+    if restarted.returncode != 0:
+        raise RuntimeError(f"{name} restart failed; see {run_dir / 'restart.log'}")
+    if "restored apparent-horizon surface from step 2" not in restarted.stdout:
+        raise RuntimeError(f"{name} restart did not restore its tracked surface")
+    restarted_scalars = read_tsv(
+        run_dir / "scalars.tsv", require_complete=True
+    )
+    if not restarted_scalars or int(restarted_scalars[-1]["step"]) != 3:
+        raise RuntimeError(f"{name} restart has an incomplete scalar history")
+    for scalar_row in restarted_scalars:
+        for field in CONSTRAINT_FIELDS:
+            if field not in scalar_row or not math.isfinite(float(scalar_row[field])):
+                raise RuntimeError(f"{name} restart has nonfinite {field}")
+    recovery = RECOVERY.findall(restarted.stdout)
+    restarted_fallbacks, restarted_resets = (
+        tuple(int(value) for value in recovery[-1]) if recovery else (-1, -1)
+    )
+    if restarted_fallbacks != 0 or restarted_resets != 0:
+        raise RuntimeError(
+            f"{name} restart used C2P fallback/reset: "
+            f"{restarted_fallbacks}/{restarted_resets}"
+        )
+    restarted_horizon_rows = read_tsv(run_dir / "apparent_horizon.tsv")
+    if len(restarted_horizon_rows) != 4 or int(
+        restarted_horizon_rows[-1]["step"]
+    ) != 3:
+        raise RuntimeError(f"{name} restart did not continue its horizon history")
+
+    aux_dir = run_dir / "auxGF"
+    horizon_mask, _ = read_aux_field(
+        aux_dir, "apparent_horizon_mask", step=3
+    )
+    excision_mask, _ = read_aux_field(aux_dir, "excision_mask", step=3)
+    horizon_cells = int(horizon_mask.sum())
+    excision_cells = int(excision_mask.sum())
+    if horizon_cells <= 0 or excision_cells <= 0:
+        raise RuntimeError(f"{name} emitted an empty horizon/excision mask")
+    if (excision_mask > horizon_mask).any():
+        raise RuntimeError(f"{name} excision mask is not nested inside the horizon")
+    aux_plotfile = next(aux_dir.glob("auxGF00003.h5"))
+    if level_count(aux_plotfile) < 2:
+        raise RuntimeError(f"{name} horizon band did not create an AMR level")
+    fine_horizon_mask, _ = read_aux_field(
+        aux_dir, "apparent_horizon_mask", step=3, level=1
+    )
+    fine_excision_mask, _ = read_aux_field(
+        aux_dir, "excision_mask", step=3, level=1
+    )
+    if fine_horizon_mask.sum() <= 0 or fine_excision_mask.sum() <= 0:
+        raise RuntimeError(f"{name} emitted empty fine-level masks")
+    if (fine_excision_mask > fine_horizon_mask).any():
+        raise RuntimeError(f"{name} fine excision mask is not nested")
+    row["ah_theta_linf_times_mass"] = theta_linf
+    row["ah_area_relative_error"] = area_error
+    row["ah_horizon_cells"] = horizon_cells
+    row["ah_excision_cells"] = excision_cells
+    return row, scalar
 
 
 def run_case(
@@ -308,6 +471,12 @@ def main() -> int:
 
     results: list[dict[str, object]] = []
     scalar_rows: list[dict[str, object]] = []
+    validate_apparent_horizon_core()
+    horizon, horizon_scalar = validate_apparent_horizon_run(
+        ranks=args.ranks, timeout=args.timeout
+    )
+    results.append(horizon)
+    scalar_rows.append(horizon_scalar)
     physical_id = RUN_ROOT / "kerr_schild_filled_full" / "physical_id"
     full, full_scalar = run_case(
         "kerr_schild_filled_full",
@@ -549,6 +718,10 @@ def main() -> int:
         "symmetry_gap_ratio",
         "c2p_fallbacks",
         "atmosphere_resets",
+        "ah_theta_linf_times_mass",
+        "ah_area_relative_error",
+        "ah_horizon_cells",
+        "ah_excision_cells",
         "run_dir",
     )
     write_tsv(RESULTS, results, fields)

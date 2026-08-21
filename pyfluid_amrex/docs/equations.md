@@ -225,6 +225,8 @@ $$\mathcal F_{\rm matter}=\oint \alpha\sqrt{\gamma}\,J^i_{(t)}dS_i,\qquadJ^i_{(t
 | `plasma_beta` | $\beta_{\rm plasma}$ | `plasma_beta` | `Cell` | `OutputOnlyAuxiliary` | `None` |
 | `thermal_entropy_proxy` | $K_{\rm th}$ | `thermal_entropy_proxy` | `Cell` | `OutputOnlyAuxiliary` | `None` |
 | `amr_tag_metric` | $\eta_{\rm AMR}$ | `amr_tag_metric` | `Cell` | `OutputOnlyAuxiliary` | `None` |
+| `apparent_horizon_mask` | $M_{\rm AH}$ | `apparent_horizon_mask` | `Cell` | `OutputOnlyAuxiliary` | `None` |
+| `excision_mask` | $M_{\rm excision}$ | `excision_mask` | `Cell` | `OutputOnlyAuxiliary` | `None` |
 | `solid_mask` | $M_{\rm solid}$ | `solid_mask` | `Cell` | `EvolutionAuxiliary` | `None` |
 | `solid_volume_fraction` | $\kappa_{\rm fluid}$ | `solid_volume_fraction` | `Cell` | `EvolutionAuxiliary` | `None` |
 | `solid_aperture1` | $\alpha_{1}$ | `solid_aperture1` | `Face1` | `EvolutionAuxiliary` | `None` |

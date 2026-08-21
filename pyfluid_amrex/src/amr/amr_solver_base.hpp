@@ -52,6 +52,7 @@
 
 namespace pyfluid_amrex {
 
+class ApparentHorizonTracker;
 class HierarchyInterpolationPlan;
 class MeshBasisStateInterpolater;
 class ParametricSurface;
@@ -430,6 +431,9 @@ protected:
    SpacetimeConstraintDiagnostics compute_spacetime_constraint_diagnostics(
       amrex::Real time
    );
+   void update_apparent_horizon(int step, amrex::Real time);
+   amrex::iMultiFab const* apparent_horizon_mask_ptr(int lev);
+   amrex::iMultiFab const* excision_mask_ptr(int lev);
    SpacetimeGlobalDiagnostics compute_spacetime_global_diagnostics(
       amrex::Real time,
       bool surface_requested,
@@ -595,6 +599,7 @@ protected:
 
    RunConfig cfg_;
    std::unique_ptr<RelativisticInitialDataProvider> initial_data_provider_;
+   std::unique_ptr<ApparentHorizonTracker> apparent_horizon_tracker_;
    amrex::Vector<
       std::array<amrex::Vector<amrex::Real>, AMREX_SPACEDIM>
    > initial_data_coordinate_faces_;

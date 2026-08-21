@@ -23,6 +23,8 @@ auxiliary = [
   "plasma_beta",
   "thermal_entropy_proxy",
   "amr_tag_metric",
+  "apparent_horizon_mask",
+  "excision_mask",
   "solid_mask",
   "solid_volume_fraction",
   "solid_aperture1",
@@ -844,6 +846,36 @@ aux_id = "AmrTagMetric"
 [[field.components]]
 name = "amr_tag_metric"
 label = '\eta_{\rm AMR}'
+
+[[field]]
+key = "apparent_horizon_mask"
+name = "apparent_horizon_mask"
+label = 'M_{\rm AH}'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "ApparentHorizonMask"
+min_dimension = 3
+
+[[field.components]]
+name = "apparent_horizon_mask"
+label = 'M_{\rm AH}'
+
+[[field]]
+key = "excision_mask"
+name = "excision_mask"
+label = 'M_{\rm excision}'
+value_kind = "Scalar"
+role = "OutputOnlyAuxiliary"
+evolution_kind = "None"
+diagnostic_kind = "PureAuxiliary"
+aux_id = "ExcisionMask"
+min_dimension = 3
+
+[[field.components]]
+name = "excision_mask"
+label = 'M_{\rm excision}'
 
 [[field]]
 key = "solid_mask"

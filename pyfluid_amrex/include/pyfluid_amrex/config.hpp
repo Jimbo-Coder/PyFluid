@@ -157,7 +157,8 @@ struct RunConfig {
    amrex::Real spacetime_kappa1 = 0.02;
    amrex::Real spacetime_kappa2 = 0.0;
    amrex::Real spacetime_shift_eta = 2.0;
-   amrex::Real spacetime_slow_start_time = 10.0;
+   amrex::Real spacetime_slow_start_strength = 0.6;
+   amrex::Real spacetime_slow_start_time = 20.0;
    amrex::Real spacetime_ko_dissipation = 0.1;
    amrex::Real spacetime_chi_floor = 1.0e-10;
    amrex::Real spacetime_lapse_floor = 1.0e-10;

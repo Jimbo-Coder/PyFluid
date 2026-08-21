@@ -178,9 +178,13 @@ surface solver owns its angular/volume work grid and may persist its radial
 shape for tracking; it consumes Cartesian metric and extrinsic-curvature data
 through the common hierarchy interpolation boundary. Exterior-only constraint
 diagnostics must require the complete derivative stencil, not only its center,
-to lie outside the selected horizon. Only an explicitly validated evolution
-owner may convert a found surface into inactive cells and inner-boundary
-closures.
+to lie outside the selected horizon. Catalog-owned `apparent_horizon_mask` and
+`excision_mask` auxiliary fields are derived views of that surface. They may
+drive diagnostic output; the surface's signed-distance view may drive a
+geometric AMR tagging band. They do not share solid-obstacle semantics and
+must not alter active-cell, flux, FillPatch, or boundary ownership. Only an
+explicitly validated evolution owner may
+convert a found surface into inactive cells and inner-boundary closures.
 
 Optional equilibrium matter components use that same physical field contract;
 they do not create a parallel artifact or materializer. The construction owner

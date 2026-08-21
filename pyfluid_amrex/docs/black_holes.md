@@ -43,10 +43,15 @@ The filled Kerr control now uses ordinary advective `one_plus_log`,
 Positive `spacetime.chi_floor` and `spacetime.lapse_floor` values are enforced
 by the Z4c algebraic projection; both default to `1e-10`. The separate
 `slow_start` lapse choice remains available: it adds a Gaussian-in-time
-relaxation of the lapse toward `sqrt(chi)`. In the present coarse filled-Kerr
-stress it failed later than the old low-dissipation setup but earlier than
-ordinary 1+log, so it is an optional experiment rather than the production
-recommendation. Gauge choices are independent of the interior policy.
+relaxation of the lapse toward `sqrt(chi)`. Its calibrated defaults are
+`spacetime.slow_start_strength = 0.6` and
+`spacetime.slow_start_time = 20`. The former amplitude-one/time-five stress
+overdrove the gauge transition and failed at step 54. With the calibrated
+values the same coarse Kerr case reaches 64 CFL-0.9 steps with zero fluid
+recovery, but its exterior Hamiltonian and momentum norms remain roughly three
+to five times larger than the matched ordinary-1+log control. Slow start is
+therefore functional and available for puncture experiments, not the selected
+filled-Kerr gauge. Gauge choices are independent of the interior policy.
 
 The focused black-hole gate evolves the filled data at CFL 0.9 without C2P
 fallback or atmosphere reset, includes a 16-step moving-puncture-gauge stress,
@@ -75,18 +80,45 @@ domains retain identical extrema.
 
 It accepts a general Cartesian level-set gradient and Hessian and is checked
 against both the analytic expansion `2/R` of a sphere in flat space and zero
-expansion on the exact Kerr horizon. This establishes the equation and sign
-convention, but does not yet constitute an apparent-horizon finder.
+expansion on the exact Kerr horizon.
 
-The first full finder should follow BHaHAHA's infrastructure-independent
-hyperbolic relaxation design: interpolate Cartesian `gamma_ij` and `K_ij`
-from the AMR hierarchy to a solver-private spherical volume, relax a radial
-graph `r=h(theta,phi)` with a damped wave system, and use coarse-to-fine angular
-continuation. It should reuse the existing hierarchy interpolation and surface
-diagnostic owners and persist only the horizon shape and diagnostics. A direct
-Newton backend in the style of AHFinderDirect remains a useful later polishing
-or comparison method. Neither implementation should enter the evolution flux
-template product.
+`horizon.enabled = 1` activates the independent BHaHAHA-style finder. The AMR
+adapter samples Cartesian `gamma_ij`, `gamma^ij`, their spatial derivatives,
+and `K_ij` once onto a solver-private spherical volume. The IO rank then
+relaxes the radial graph `r=h(theta,phi)` with the published damped-wave
+system, SSPRK3, sixth-order pole-parity angular differences, stage-consistent
+radial interpolation, scale-aware residuals, coarse-to-fine angular
+continuation, and residual-tested over-relaxation. The resulting surface is
+broadcast; it never enters the reconstruction/Riemann template product.
+
+The principal runtime controls are `horizon.find_int` (default 8),
+`radial_points` (48), `polar_points` (32, with twice as many azimuthal points),
+`coarsest_polar_points` (8), the radial search bounds and center, `cfl` (0.98),
+`eta_times_mass` (7), the L-infinity/L2 expansion tolerances, and the iteration
+limit. Every successful search appends `apparent_horizon.tsv` and writes the
+radial shape under `apparent_horizon/ah########.tsv`. A restart restores the
+latest compatible shape at or before its checkpoint step. An exact-step shape
+is immediately valid for masks; an older shape is only an initial guess and
+forces a fresh search before output or AMR use. Current diagnostics include
+expansion residuals, proper
+area, irreducible mass, area centroid, and minimum/maximum/mean coordinate
+radius.
+
+`apparent_horizon_mask` and `excision_mask` are catalog-owned cell-centered
+auxiliary GFs. The first marks the found interior; the second is a configurable
+strictly nested fraction of it. `horizon.refine_band_cells > 0` tags a band
+from the surface's signed radial distance for ordinary AMReX regridding. Both
+masks are geometry
+and tracking products only: they do not remove active cells, reflect fluid,
+change fluxes, or claim to be an event horizon. The focused gate checks a
+spinning Kerr surface against the exact radius/area, creates a dynamic fine
+level from the horizon band, writes nested masks on both levels, and restores
+the tracked shape across checkpoint restart.
+
+The current owner finds one star-shaped horizon about a configured fixed
+center in 3D Cartesian stored spacetime. Multiple horizons, moving-center
+tracking, quasilocal spin, an AHFinderDirect-style Newton polishing backend,
+and true evolution excision remain later capabilities.
 
 ## Symmetry and tilt contract
 
@@ -120,7 +152,7 @@ but have separate interior ownership and validation gates.
 True excision is two contracts, not one flag: the ID solve owns an apparent-
 horizon inner boundary, while evolution owns an active-domain mask, one-sided
 stencils/prolongation near the mask, and a causally pure-outflow inner boundary.
-The present configuration reserves this policy but rejects it until those
-owners and their moving/static-mask validation exist. A found horizon is a
-prerequisite for dynamic masks and black-hole diagnostics, not by itself an
-authorization to excise cells.
+The diagnostic candidate mask now exists, but `black_hole_interior = excision`
+still rejects until the evolution owners and characteristic/outflow validation
+exist. A found horizon is a prerequisite, not by itself authorization to
+discard cells.

@@ -9,9 +9,9 @@
 
 namespace pyfluid_amrex::generated {
 
-inline auto auxiliary_grid_fields() -> std::array<AuxGridFieldInfo, 18> const&
+inline auto auxiliary_grid_fields() -> std::array<AuxGridFieldInfo, 20> const&
 {
-   static const std::array<AuxGridFieldInfo, 18> fields = {{
+   static const std::array<AuxGridFieldInfo, 20> fields = {{
          {AuxGridField::CurrentDensity, "j", "J^i", {{"j1", "J_{1}", GridFieldCentering::Edge1, GridFieldSymmetryKind::Vector1}, {"j2", "J_{2}", GridFieldCentering::Edge2, GridFieldSymmetryKind::Vector2}, {"j3", "J_{3}", GridFieldCentering::Edge3, GridFieldSymmetryKind::Vector3}}, FieldRole::CachedDerivative, DiagnosticFieldKind::MixedAuxiliary, EvolutionFieldKind::AuxiliaryState, true, false, false, 2},
          {AuxGridField::ElectricField, "e", "E^i", {{"e1", "E_{1}", GridFieldCentering::Edge1, GridFieldSymmetryKind::Vector1}, {"e2", "E_{2}", GridFieldCentering::Edge2, GridFieldSymmetryKind::Vector2}, {"e3", "E_{3}", GridFieldCentering::Edge3, GridFieldSymmetryKind::Vector3}}, FieldRole::CachedDerivative, DiagnosticFieldKind::MixedAuxiliary, EvolutionFieldKind::AuxiliaryState, true, false, false, 2},
          {AuxGridField::DivB, "divb", "\\nabla_i B^i", {{"divb", "\\nabla_i B^i", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::OutputOnlyAuxiliary, DiagnosticFieldKind::PureAuxiliary, EvolutionFieldKind::None, true, false, false, 1},
@@ -21,6 +21,8 @@ inline auto auxiliary_grid_fields() -> std::array<AuxGridFieldInfo, 18> const&
          {AuxGridField::PlasmaBeta, "plasma_beta", "\\beta_{\\rm plasma}", {{"plasma_beta", "\\beta_{\\rm plasma}", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::OutputOnlyAuxiliary, DiagnosticFieldKind::PureAuxiliary, EvolutionFieldKind::None, true, false, false, 1},
          {AuxGridField::ThermalEntropyProxy, "thermal_entropy_proxy", "K_{\\rm th}", {{"thermal_entropy_proxy", "K_{\\rm th}", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::OutputOnlyAuxiliary, DiagnosticFieldKind::PureAuxiliary, EvolutionFieldKind::None, false, false, false, 1},
          {AuxGridField::AmrTagMetric, "amr_tag_metric", "\\eta_{\\rm AMR}", {{"amr_tag_metric", "\\eta_{\\rm AMR}", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::OutputOnlyAuxiliary, DiagnosticFieldKind::PureAuxiliary, EvolutionFieldKind::None, false, false, false, 1},
+         {AuxGridField::ApparentHorizonMask, "apparent_horizon_mask", "M_{\\rm AH}", {{"apparent_horizon_mask", "M_{\\rm AH}", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::OutputOnlyAuxiliary, DiagnosticFieldKind::PureAuxiliary, EvolutionFieldKind::None, false, false, false, 3},
+         {AuxGridField::ExcisionMask, "excision_mask", "M_{\\rm excision}", {{"excision_mask", "M_{\\rm excision}", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::OutputOnlyAuxiliary, DiagnosticFieldKind::PureAuxiliary, EvolutionFieldKind::None, false, false, false, 3},
          {AuxGridField::SolidMask, "solid_mask", "M_{\\rm solid}", {{"solid_mask", "M_{\\rm solid}", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::EvolutionAuxiliary, DiagnosticFieldKind::StoredState, EvolutionFieldKind::AuxiliaryState, false, true, false, 1},
          {AuxGridField::SolidVolumeFraction, "solid_volume_fraction", "\\kappa_{\\rm fluid}", {{"solid_volume_fraction", "\\kappa_{\\rm fluid}", GridFieldCentering::Cell, GridFieldSymmetryKind::Scalar}}, FieldRole::EvolutionAuxiliary, DiagnosticFieldKind::StoredState, EvolutionFieldKind::AuxiliaryState, false, true, false, 1},
          {AuxGridField::SolidAperture1, "solid_aperture1", "\\alpha_{1}", {{"solid_aperture1", "\\alpha_{1}", GridFieldCentering::Face1, GridFieldSymmetryKind::Scalar}}, FieldRole::EvolutionAuxiliary, DiagnosticFieldKind::StoredState, EvolutionFieldKind::AuxiliaryState, false, true, false, 1},

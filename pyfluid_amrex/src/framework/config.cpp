@@ -505,6 +505,9 @@ RunConfig read_config()
    spacetime_pp.queryAdd("kappa1", cfg.spacetime_kappa1);
    spacetime_pp.queryAdd("kappa2", cfg.spacetime_kappa2);
    spacetime_pp.queryAdd("shift_eta", cfg.spacetime_shift_eta);
+   spacetime_pp.queryAdd(
+      "slow_start_strength", cfg.spacetime_slow_start_strength
+   );
    spacetime_pp.queryAdd("slow_start_time", cfg.spacetime_slow_start_time);
    spacetime_pp.queryAdd("ko_dissipation", cfg.spacetime_ko_dissipation);
    spacetime_pp.queryAdd("chi_floor", cfg.spacetime_chi_floor);
@@ -1401,6 +1404,9 @@ void validate_config(RunConfig const& cfg)
       if (spacetime_evolves(cfg)) {
          if (cfg.spacetime_amplitude < 0.0 || cfg.spacetime_wave_number <= 0.0) {
             amrex::Abort("evolved spacetime amplitude must be non-negative and wave_number positive");
+         }
+         if (cfg.spacetime_slow_start_strength < 0.0) {
+            amrex::Abort("spacetime.slow_start_strength must be nonnegative");
          }
          if (cfg.spacetime_slow_start_time <= 0.0) {
             amrex::Abort("spacetime.slow_start_time must be positive");

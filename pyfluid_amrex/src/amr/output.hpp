@@ -331,6 +331,8 @@ inline void fill_aux_gf_output(
    amrex::MultiFab const* gravity_phi,
    std::array<amrex::MultiFab const*, AMREX_SPACEDIM> const& gravity_gradient,
    amrex::iMultiFab const* solid_mask,
+   amrex::iMultiFab const* apparent_horizon_mask,
+   amrex::iMultiFab const* excision_mask,
    amrex::MultiFab const* solid_volume_fraction,
    std::array<amrex::MultiFab const*, AMREX_SPACEDIM> const& solid_aperture,
    amrex::Geometry const& geom,
@@ -461,6 +463,22 @@ inline void fill_aux_gf_output(
          copy_selected_aux_components(output, tag_metric, entry, dst);
          break;
       }
+      case AuxGridField::ApparentHorizonMask: {
+         amrex::MultiFab mask_output(
+            state.boxArray(), state.DistributionMap(), 1, 0
+         );
+         fill_solid_mask_output(mask_output, apparent_horizon_mask);
+         copy_selected_aux_components(output, mask_output, entry, dst);
+         break;
+      }
+      case AuxGridField::ExcisionMask: {
+         amrex::MultiFab mask_output(
+            state.boxArray(), state.DistributionMap(), 1, 0
+         );
+         fill_solid_mask_output(mask_output, excision_mask);
+         copy_selected_aux_components(output, mask_output, entry, dst);
+         break;
+      }
       case AuxGridField::GravityPotential:
          if (gravity_phi == nullptr) {
             amrex::Abort("phi output requested before gravity potential storage exists");
@@ -539,6 +557,8 @@ inline void write_aux_gf_plotfile(
    amrex::MultiFab const* gravity_phi,
    std::array<amrex::MultiFab const*, AMREX_SPACEDIM> const& gravity_gradient,
    amrex::iMultiFab const* solid_mask,
+   amrex::iMultiFab const* apparent_horizon_mask,
+   amrex::iMultiFab const* excision_mask,
    amrex::MultiFab const* solid_volume_fraction,
    std::array<amrex::MultiFab const*, AMREX_SPACEDIM> const& solid_aperture,
    amrex::Geometry const& geom,
@@ -571,6 +591,8 @@ inline void write_aux_gf_plotfile(
          gravity_phi,
          gravity_gradient,
          solid_mask,
+         apparent_horizon_mask,
+         excision_mask,
          solid_volume_fraction,
          solid_aperture,
          geom,
@@ -604,6 +626,8 @@ inline void write_multilevel_aux_gf_plotfile(
    std::vector<std::unique_ptr<amrex::MultiFab>> const& gravity_phi,
    std::vector<GravityGradient> const& gravity_gradient,
    std::vector<std::unique_ptr<amrex::iMultiFab>> const& solid_mask,
+   std::vector<amrex::iMultiFab const*> const& apparent_horizon_mask,
+   std::vector<amrex::iMultiFab const*> const& excision_mask,
    std::vector<std::unique_ptr<amrex::MultiFab>> const& solid_volume_fraction,
    std::array<std::vector<std::unique_ptr<amrex::MultiFab>>, AMREX_SPACEDIM> const& solid_aperture,
    amrex::Vector<amrex::Geometry> const& geom,
@@ -654,6 +678,8 @@ inline void write_multilevel_aux_gf_plotfile(
             gravity_phi_ptr,
             gravity_gradient_ptrs_for_level,
             solid_ptr,
+            apparent_horizon_mask[lev],
+            excision_mask[lev],
             volume_fraction_ptr,
             aperture_ptr,
             geom[lev],

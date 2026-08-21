@@ -38,7 +38,7 @@ It intentionally links rather than restating the detailed contracts.
 | Native cold CompOSE tables | `eos/compose/`, `src/eos/tabulated.cpp`, `include/pyfluid_amrex/eos/tabulated*.hpp`, `tests/tabulated_eos_check.cpp`, `tools/validate_compose_eos.py` | CompOSE manual and dataset records below; Cycle 297 |
 | Equilibrium torus/disk initial data | `include/pyfluid_amrex/initial_data/equilibrium_torus.hpp`, `src/initial_data/equilibrium_torus_initial_data.cpp`, `schema/methods.toml`, `tools/validate_equilibrium_torus.py` | `docs/tov.md`, `docs/infrastructure_conventions.md`, Cycle 296 |
 | Kerr black-hole initial data and interior policy | `include/pyfluid_amrex/initial_data/kerr_schild.hpp`, `src/initial_data/initial_data_provider.cpp`, `tools/validate_black_hole.py` | `docs/black_holes.md`, Cycles 299--300 |
-| Apparent-horizon geometry and future finder | `include/pyfluid_amrex/apparent_horizon.hpp`, `tests/generated_flux_compile_check.cpp`, hierarchy interpolation and surface owners | `docs/black_holes.md`, Cycle 300 |
+| Apparent-horizon geometry, finder, tracking, and masks | `include/pyfluid_amrex/apparent_horizon.hpp`, `include/pyfluid_amrex/apparent_horizon_finder.hpp`, `src/relativity/apparent_horizon_finder.cpp`, `src/relativity/apparent_horizon_tracker.cpp`, `src/amr/amr_solver_horizon.cpp` | `docs/black_holes.md`, Cycles 300--301 |
 | Portable physical-ID solve/save/materialization, including explicit radial faces | `src/initial_data/physical_id.cpp`, `src/initial_data/physical_id_interpolation.cpp`, `src/initial_data/initial_data_elliptic.cpp`, `src/framework/checkpoint.cpp`, `tests/physical_id_interpolation_check.cpp`, `tools/validate_reduced_initial_data.py` | `docs/infrastructure_conventions.md`, Cycles 287 and 291 |
 | Axisymmetric spherical ID scalar/toroidal elliptic operators | `src/initial_data/initial_data_elliptic.cpp`, `include/pyfluid_amrex/initial_data/elliptic.hpp`, `tests/initial_data_elliptic_check.cpp` | `docs/infrastructure_conventions.md`, Cycles 288--289 |
 | Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
@@ -285,8 +285,9 @@ the generated TSV/log, and the current source revision/dirty state.
   Library for Numerical Relativity*,
   [arXiv:2505.15912](https://arxiv.org/abs/2505.15912): infrastructure-
   independent damped-wave relaxation, coarse-to-fine angular continuation,
-  over-relaxation, and threaded surface finding. This is the preferred method
-  reference for PyFluid's first full finder, not imported code.
+  over-relaxation, and threaded surface finding. This is the method reference
+  for PyFluid's independent first full finder; no implementation code is
+  imported.
 - M. K. Bhattacharyya et al., *Implementation of the dual foliation generalized
   harmonic gauge formulation with application to spherical black hole
   excision*,

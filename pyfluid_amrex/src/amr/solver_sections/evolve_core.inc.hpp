@@ -426,6 +426,7 @@
          }
       };
 
+      update_apparent_horizon(start_step, time);
       auto initial = compute_current_scalars(
          start_step, time, dt, 1.0, 1.0, 1.0, 1.0,
          std::numeric_limits<amrex::Real>::quiet_NaN(), 0.0, 0.0, 0.0, {},
@@ -659,6 +660,8 @@
             }
             profile_.end(ProfileStage::Regrid, regrid_start);
          }
+
+         update_apparent_horizon(step, time);
 
          if (!will_regrid && needs_fresh_state_boundaries_after_step(write_scalars, write_aux_gfs)) {
             stage_start = profile_.begin();

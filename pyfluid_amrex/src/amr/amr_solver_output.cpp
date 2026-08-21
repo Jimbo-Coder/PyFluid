@@ -84,6 +84,12 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
    }
    const bool output_gravity_phi = aux_gfs_contains(cfg_, AuxGridField::GravityPotential);
    const bool output_gravity_gradient = aux_gfs_contains(cfg_, AuxGridField::GravityGradient);
+   const bool output_apparent_horizon_mask = aux_gfs_contains(
+      cfg_, AuxGridField::ApparentHorizonMask
+   );
+   const bool output_excision_mask = aux_gfs_contains(
+      cfg_, AuxGridField::ExcisionMask
+   );
    if (gravity_enabled(cfg_) && (output_gravity_phi || output_gravity_gradient)) {
       prepare_gravity_fields(fluid_state_.state(), output_gravity_gradient);
    }
@@ -103,6 +109,9 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
          gravity_phi_ptr(0),
          gravity_gradient,
          solid_mask_[0].get(),
+         output_apparent_horizon_mask
+            ? apparent_horizon_mask_ptr(0) : nullptr,
+         output_excision_mask ? excision_mask_ptr(0) : nullptr,
          solid_volume_fraction_[0].get(),
          solid_aperture_ptrs(0),
          Geom(0),
@@ -112,6 +121,18 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
          cfg_
       );
    } else {
+      std::vector<amrex::iMultiFab const*> apparent_horizon_masks(
+         finestLevel() + 1
+      );
+      std::vector<amrex::iMultiFab const*> excision_masks(
+         finestLevel() + 1
+      );
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         apparent_horizon_masks[lev] = output_apparent_horizon_mask
+            ? apparent_horizon_mask_ptr(lev) : nullptr;
+         excision_masks[lev] = output_excision_mask
+            ? excision_mask_ptr(lev) : nullptr;
+      }
       write_multilevel_aux_gf_plotfile(
          fluid_state_.state(),
          spacetime_coupling_.cell_spacetime(),
@@ -121,6 +142,8 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
          gravity_phi_,
          gravity_gradient_,
          solid_mask_,
+         apparent_horizon_masks,
+         excision_masks,
          solid_volume_fraction_,
          solid_aperture_,
          Geom(),

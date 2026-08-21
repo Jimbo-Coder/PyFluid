@@ -1,5 +1,6 @@
 #include "amr/amr_solver_base.hpp"
 #include "pyfluid_amrex/amr_indicator.hpp"
+#include "pyfluid_amrex/apparent_horizon_tracker.hpp"
 
 namespace pyfluid_amrex {
 
@@ -466,6 +467,8 @@ void AmrSolverBase::ErrorEst(
    const bool tag_solid_phi_band = solid_phi_tagging_enabled
       && (cfg_.solid_curvature_error <= 0.0 || solid_curvature_error > cfg_.solid_curvature_error);
    const bool solid_tagging = solid_active(lev) && tag_solid_phi_band;
+   const bool horizon_tagging =
+      apparent_horizon_tracker_->refinement_tracking_active();
 
    if (
       cfg_.tag_metric == "none"
@@ -473,6 +476,7 @@ void AmrSolverBase::ErrorEst(
       && !fixed_initial_refine
       && !solid_tagging
       && !tag_solid_phi_band
+      && !horizon_tagging
    ) {
       return;
    }
@@ -504,6 +508,11 @@ void AmrSolverBase::ErrorEst(
 
    if (solid_tagging) {
       tag_solid_fluid_boundaries(tags, active_solid_mask_ptr(lev));
+   }
+   if (horizon_tagging) {
+      apparent_horizon_tracker_->tag_refinement_band(
+         lev, tags, *fluid_state_.state()[lev], Geom(lev)
+      );
    }
 
 #ifdef AMREX_USE_OMP

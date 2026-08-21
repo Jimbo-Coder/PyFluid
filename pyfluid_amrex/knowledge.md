@@ -10,9 +10,10 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-21, branch `main`, through Cycle 300's Kerr exterior,
-gauge, and apparent-horizon foundation. Cycle 284's preserved standard/performance
-baseline remains the latest archived broad integration baseline.
+Last reconciled: 2026-08-21, branch `main`, through Cycle 301's numerical
+apparent-horizon finder and mask contract. Cycle 284's preserved
+standard/performance baseline remains the latest archived broad integration
+baseline.
 
 ## Scope And Evidence
 
@@ -45,6 +46,11 @@ baseline remains the latest archived broad integration baseline.
   moving-puncture-gauge stress. The complete tree passes the 46/46 standard
   suite in 207.68 s summed gate time. Its rolling artifacts are not a long-
   timescale equilibrium result or an apparent-horizon-finder validation.
+- Cycle 301's dirty-tree focused black-hole gate contains 14 reported cases.
+  Its new spinning-Kerr case covers the independent finder, dynamic horizon-
+  band AMR, two nested output masks on both levels, persisted shape history,
+  and restart restoration. This is focused CPU/MPI evidence, not yet a new
+  archived standard or performance baseline.
 - Preserved baselines under `runs/baselines/` and rolling TSV histories are
   routing evidence, not proof for later source. Re-run the smallest relevant
   gate before relying on an old result.
@@ -528,23 +534,31 @@ baseline remains the latest archived broad integration baseline.
   complete fourth-order stencil to lie at `r_KS>r_+`. In the one-step exact
   Kerr controls, N=32 to N=64 improves those norms by factors 3.33/4.91/4.09.
   True ID/evolution excision remains explicitly rejected until an apparent-
-  horizon ID boundary, active-cell mask, and pure-outflow evolution boundary
-  exist.
+  horizon ID boundary and pure-outflow evolution boundary own inactive cells,
+  one-sided stencils, prolongation, and characteristic validation.
 - The tested complete-grid Kerr evolution uses ordinary advective 1+log,
   gamma-driver shift, RK4, KO strength 0.32, and positive chi/lapse floors of
   `1e-10`. A manual 64-step CFL-0.9 coarse-grid stress reaches `t=6.035` with
   zero fluid recovery/reset; this is robustness evidence for the filled
-  control, not proof of an accurate stationary trumpet. With the same RK4/KO
-  and floors, the Gaussian `slow_start` lapse fails by step 54, so it remains
-  optional rather than the current recommendation.
+  control, not proof of an accurate stationary trumpet. The earlier amplitude-
+  one/time-five Gaussian `slow_start` lapse fails by step 54. Calibrating it to
+  strength `0.6` and width `20` reaches 64 steps with zero recovery, but its
+  final exterior Hamiltonian/momentum norms are roughly 3.3 to 5.1 times
+  larger than the matched ordinary-1+log control. It remains optional rather
+  than the current recommendation.
 - `apparent_horizon_expansion()` owns the Cartesian level-set evaluation of
   `Theta=D_i s^i+K_ij s^i s^j-K`; flat-sphere and exact Kerr-horizon pointwise
-  checks fix its sign and geometry convention. There is not yet a finder.
-  The preferred first backend is a solver-private BHaHAHA-style damped-wave
-  relaxation with coarse-to-fine angular continuation, consuming hierarchy-
-  interpolated `gamma_ij,K_ij`; AHFinderDirect-style Newton iteration is a
-  later polishing/comparison option. A found surface does not itself implement
-  excision.
+  checks fix its sign and geometry convention. The first full backend now uses
+  solver-private BHaHAHA-style damped-wave/SSPRK3 relaxation, sixth-order pole-
+  parity angular differences, stage-consistent radial interpolation, coarse-
+  to-fine angular continuation, and hierarchy-interpolated Cartesian
+  `gamma_ij,gamma^ij,d_k gamma_ij,K_ij`. The IO rank solves and broadcasts the
+  star-shaped surface. Shape/residual/area/irreducible-mass/centroid histories
+  persist, and checkpoint restart restores the latest shape. Separate
+  catalog-owned AH and inner candidate masks support output and AMR tagging;
+  neither implements evolution excision or an event horizon. AHFinderDirect-
+  style Newton polishing, moving centers, multiple horizons, and quasilocal
+  spin remain open.
 - A scratch relativistic fluid state must be converted from physical
   primitives only after the final stored cell metric is available. Initializing
   conserved variables against a placeholder metric and then replacing nodal
@@ -631,16 +645,14 @@ baseline remains the latest archived broad integration baseline.
 
 ## Next Milestones
 
-1. Complete the first general apparent-horizon finder on the validated
-   expansion kernel: BHaHAHA-style damped-wave relaxation, coarse-to-fine
-   angular continuation, hierarchy interpolation, persisted tracking shape,
-   and area/irreducible-mass/residual diagnostics. Then build the first
-   constraint-solved single-hole owner: conformally curved Kerr--Schild-seeded
-   XCTS with Cook--Pfeiffer apparent-horizon boundary conditions. Keep exact
-   exterior, filled full-grid controls, and true evolution excision separate;
-   add active-mask/outflow ownership only after the surface finder and boundary
-   characteristic tests pass. Extend the existing torus component first in the
-   aligned limit and only afterward to a full-3D tilted disk.
+1. Build the first constraint-solved single-hole owner: conformally curved
+   Kerr--Schild-seeded XCTS with Cook--Pfeiffer apparent-horizon boundary
+   conditions. Keep exact exterior, filled full-grid controls, and true
+   evolution excision separate. Before activating the present inner candidate
+   mask, add characteristic pure-outflow proof, inactive-cell ownership,
+   one-sided evolution/dissipation, FillPatch/prolongation/regrid closure, and
+   fixed/moving-mask validation. Extend the existing torus component first in
+   the aligned limit and only afterward to a full-3D tilted disk.
 2. Extend the saved fast analytic and CompOSE RNS models from the present short
    two-resolution evolutions to a meaningful fraction of a rotation, tracking
    baryon mass, angular momentum, constraints, central density, and modes.

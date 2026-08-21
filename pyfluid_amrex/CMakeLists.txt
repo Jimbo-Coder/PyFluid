@@ -105,6 +105,7 @@ set(PYFLUID_AMREX_AMR_SOURCES
    src/amr/amr_solver_fillpatch.cpp
    src/amr/amr_solver_flux_registers.cpp
    src/amr/amr_solver_gravity_sync.cpp
+   src/amr/amr_solver_horizon.cpp
    src/amr/amr_solver_solid.cpp
    src/amr/amr_solver_hierarchy.cpp
    src/amr/amr_solver_levels.cpp
@@ -210,6 +211,8 @@ set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
 )
 
 set(PYFLUID_AMREX_RELATIVITY_SOURCES
+   src/relativity/apparent_horizon_finder.cpp
+   src/relativity/apparent_horizon_tracker.cpp
    src/relativity/primitive_cache_factory.cpp
    src/relativity/relativistic_flux_limiter.cpp
    src/relativity/relativistic_source_factory.cpp
@@ -296,6 +299,11 @@ set(PYFLUID_AMREX_SURFACE_CHECK_SOURCES
    src/framework/surface_geometry.cpp
    src/numerics/hierarchy_interpolation.cpp
    tests/surface_interpolation_check.cpp
+)
+
+set(PYFLUID_AMREX_APPARENT_HORIZON_CHECK_SOURCES
+   src/relativity/apparent_horizon_finder.cpp
+   tests/apparent_horizon_finder_check.cpp
 )
 
 set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
@@ -702,6 +710,16 @@ foreach(dim 1 2 3)
       endif()
 
       if(dim EQUAL 3)
+         add_executable(
+            pyfluid_amrex_apparent_horizon_check
+            EXCLUDE_FROM_ALL
+            ${PYFLUID_AMREX_APPARENT_HORIZON_CHECK_SOURCES}
+         )
+         pyfluid_amrex_configure_target(
+            pyfluid_amrex_apparent_horizon_check
+            ${dim}
+         )
+
          add_executable(
             pyfluid_amrex_physical_id_interpolation_check
             EXCLUDE_FROM_ALL

@@ -7,6 +7,7 @@
     "a_tilde23": "\\tilde{A}_{23}",
     "a_tilde33": "\\tilde{A}_{33}",
     "amr_tag_metric": "\\eta_{\\rm AMR}",
+    "apparent_horizon_mask": "M_{\\rm AH}",
     "b1": "B_{1}",
     "b2": "B_{2}",
     "b3": "B_{3}",
@@ -19,6 +20,7 @@
     "e2": "E_{2}",
     "e3": "E_{3}",
     "energy": "E",
+    "excision_mask": "M_{\\rm excision}",
     "face_b1": "B_{1}",
     "face_b2": "B_{2}",
     "face_b3": "B_{3}",
@@ -3089,6 +3091,40 @@
       "evolution_kind": "None",
       "label": "\\eta_{\\rm AMR}",
       "name": "amr_tag_metric",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "M_{\\rm AH}",
+          "name": "apparent_horizon_mask",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "M_{\\rm AH}",
+      "name": "apparent_horizon_mask",
+      "role": "OutputOnlyAuxiliary",
+      "sector": "None",
+      "value_kind": "Scalar"
+    },
+    {
+      "components": [
+        {
+          "centering": "Cell",
+          "label": "M_{\\rm excision}",
+          "name": "excision_mask",
+          "symmetry": "Scalar"
+        }
+      ],
+      "diagnostic_kind": "PureAuxiliary",
+      "evolution_kind": "None",
+      "label": "M_{\\rm excision}",
+      "name": "excision_mask",
       "role": "OutputOnlyAuxiliary",
       "sector": "None",
       "value_kind": "Scalar"

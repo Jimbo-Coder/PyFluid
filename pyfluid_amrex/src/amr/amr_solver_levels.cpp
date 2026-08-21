@@ -1,5 +1,6 @@
 #include "amr/amr_solver_base.hpp"
 #include "amr/state_interpolation.hpp"
+#include "pyfluid_amrex/apparent_horizon_tracker.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
 #include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
@@ -83,6 +84,9 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
    : cfg_(std::move(cfg)),
      initial_data_provider_(
         std::make_unique<RelativisticInitialDataProvider>(cfg_)
+     ),
+     apparent_horizon_tracker_(
+        std::make_unique<ApparentHorizonTracker>(cfg_, maxLevel() + 1)
      ),
      recovery_atmosphere_(recovery_atmosphere_state(
         eos_method_code(cfg_), eos_params(cfg_)
@@ -608,6 +612,7 @@ void AmrSolverBase::ClearLevel(int lev)
    level_times_[lev] = 0.0;
    level_old_times_[lev] = 0.0;
    level_dts_[lev] = 0.0;
+   apparent_horizon_tracker_->invalidate_level(lev);
    invalidate_rk4_stage_cache(lev);
 }
 

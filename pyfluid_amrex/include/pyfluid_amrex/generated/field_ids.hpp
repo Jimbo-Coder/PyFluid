@@ -82,6 +82,8 @@ enum class AuxGridField {
    PlasmaBeta,
    ThermalEntropyProxy,
    AmrTagMetric,
+   ApparentHorizonMask,
+   ExcisionMask,
    SolidMask,
    SolidVolumeFraction,
    SolidAperture1,
