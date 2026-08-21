@@ -119,4 +119,20 @@ inline constexpr std::array<RotationLawInfo, 3> RotationLawCatalog = {{
    {RotationLaw::QPower, "q_power", "Relativistic q-power", "Generalized differential rotation with q=1 equal to j-constant.", "angular_velocity,differential_rotation_length,rotation_power_q"}
 }};
 
+enum class DiskRotationLaw : int {
+   ConstantL = 0,
+};
+
+struct DiskRotationLawInfo {
+   DiskRotationLaw id;
+   std::string_view name;
+   std::string_view label;
+   std::string_view description;
+   std::string_view parameters;
+};
+
+inline constexpr std::array<DiskRotationLawInfo, 1> DiskRotationLawCatalog = {{
+   {DiskRotationLaw::ConstantL, "constant_l", "Constant specific angular momentum", "Stationary circular torus with constant ell=-u_phi/u_t.", "specific_angular_momentum,inner_radius"}
+}};
+
 } // namespace pyfluid_amrex

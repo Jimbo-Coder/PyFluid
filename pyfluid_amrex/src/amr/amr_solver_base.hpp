@@ -57,6 +57,7 @@ class HierarchyInterpolationPlan;
 class MeshBasisStateInterpolater;
 class ParametricSurface;
 struct MultipoleDiagnostics;
+struct EquilibriumTorusUpdateSummary;
 struct PhysicalInitialDataMetadata;
 struct RadiationDiagnostics;
 struct RotatingStarUpdateSummary;
@@ -358,7 +359,8 @@ protected:
       int continuation_step,
       int continuation_steps,
       amrex::Real angular_velocity,
-      RotatingStarUpdateSummary const& rotating_star
+      RotatingStarUpdateSummary const& rotating_star,
+      EquilibriumTorusUpdateSummary const& equilibrium_torus
    );
    void project_materialized_initial_face_b();
    void fill_new_spacetime_level_from_coarse(int lev, amrex::Real time);
@@ -695,6 +697,8 @@ protected:
    std::array<std::vector<amrex::Real>, AMREX_SPACEDIM> latest_auto_direction_strength_;
    std::unique_ptr<RotatingStarUpdateSummary>
       initial_data_rotating_star_summary_;
+   std::unique_ptr<EquilibriumTorusUpdateSummary>
+      initial_data_equilibrium_torus_summary_;
    std::unique_ptr<PhysicalInitialDataMetadata> loaded_physical_id_metadata_;
 };
 

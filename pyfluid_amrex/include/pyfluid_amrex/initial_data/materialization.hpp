@@ -9,6 +9,7 @@
 #include "pyfluid_amrex/eos/types.hpp"
 #include "pyfluid_amrex/initial_data/ctt.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
+#include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
@@ -35,13 +36,15 @@ struct ConformalMaterializationResult {
    amrex::Real relative_matter_update = 0.0;
    ConformalConstraintSummary constraints{};
    RotatingStarUpdateSummary rotating_star{};
+   EquilibriumTorusUpdateSummary equilibrium_torus{};
 };
 
 using ConformalContinuationObserver = std::function<void(
    int continuation_step,
    int continuation_steps,
    amrex::Real angular_velocity,
-   RotatingStarUpdateSummary const& rotating_star
+   RotatingStarUpdateSummary const& rotating_star,
+   EquilibriumTorusUpdateSummary const& equilibrium_torus
 )>;
 
 ConformalMaterializationResult materialize_conformal_initial_data(
@@ -55,6 +58,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataFieldSelection const& fields,
    ConformalConstraintFormulation formulation,
    RotatingStarParameters const& rotating_star,
+   EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime = false,
    ConformalContinuationObserver const& continuation_observer = {}
 );

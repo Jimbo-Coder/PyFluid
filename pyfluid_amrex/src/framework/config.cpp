@@ -445,6 +445,18 @@ RunConfig read_config()
       "atmosphere_transition_radius", cfg.initial_data_atmosphere_transition_radius
    );
    initial_data_pp.queryAdd("atmosphere_power", cfg.initial_data_atmosphere_power);
+   initial_data_pp.queryAdd("disk", cfg.initial_data_disk);
+   initial_data_pp.queryAdd("disk_gravity", cfg.initial_data_disk_gravity);
+   initial_data_pp.queryAdd(
+      "disk_rotation_law", cfg.initial_data_disk_rotation_law
+   );
+   initial_data_pp.queryAdd(
+      "disk_specific_angular_momentum",
+      cfg.initial_data_disk_specific_angular_momentum
+   );
+   initial_data_pp.queryAdd(
+      "disk_inner_radius", cfg.initial_data_disk_inner_radius
+   );
    initial_data_pp.queryAdd("rotation_law", cfg.initial_data_rotation_law);
    initial_data_pp.queryAdd("angular_velocity", cfg.initial_data_angular_velocity);
    initial_data_pp.queryAdd(
@@ -849,6 +861,42 @@ void validate_config(RunConfig const& cfg)
       InitialAtmosphereOptions,
       "initial_data.atmosphere"
    );
+   require_supported_option(
+      cfg.initial_data_disk,
+      InitialDiskOptions,
+      "initial_data.disk"
+   );
+   require_supported_option(
+      cfg.initial_data_disk_gravity,
+      InitialDiskGravityOptions,
+      "initial_data.disk_gravity"
+   );
+   bool disk_rotation_law_supported = false;
+   for (DiskRotationLawInfo const& law : DiskRotationLawCatalog) {
+      disk_rotation_law_supported = disk_rotation_law_supported
+         || law.name == cfg.initial_data_disk_rotation_law;
+   }
+   if (!disk_rotation_law_supported) {
+      amrex::Abort(
+         "initial_data.disk_rotation_law is not present in "
+         "schema/methods.toml"
+      );
+   }
+   const bool equilibrium_torus_enabled =
+      cfg.initial_data_disk == "equilibrium_torus";
+   if (equilibrium_torus_enabled
+       && (cfg.initial_data_disk_rotation_law != "constant_l"
+           || !std::isfinite(
+                cfg.initial_data_disk_specific_angular_momentum
+              )
+           || cfg.initial_data_disk_specific_angular_momentum == 0.0
+           || !(cfg.initial_data_disk_inner_radius > 0.0)
+           || !std::isfinite(cfg.initial_data_disk_inner_radius))) {
+      amrex::Abort(
+         "constant-l equilibrium-torus initial data require a nonzero finite "
+         "disk_specific_angular_momentum and positive finite disk_inner_radius"
+      );
+   }
    bool rotation_law_supported = false;
    for (RotationLawInfo const& law : RotationLawCatalog) {
       rotation_law_supported = rotation_law_supported
@@ -1962,7 +2010,9 @@ void validate_config(RunConfig const& cfg)
          MeshAxisR,
          MeshAxisTheta
       )
-      && cfg.ic == "rotating_star"
+      && (cfg.ic == "rotating_star"
+          || (cfg.ic == "tov"
+              && cfg.initial_data_disk == "equilibrium_torus"))
       && cfg.spacetime_initial_data == "xcts";
    const bool reduced_radial_tov =
       AMREX_SPACEDIM == 1
@@ -1993,6 +2043,22 @@ void validate_config(RunConfig const& cfg)
       amrex::Abort(
          "initial_data.radial_grid = adaptive currently requires a solve-only "
          "spherical-r TOV or spherical r-theta rotating-star XCTS solve"
+      );
+   }
+   if (cfg.initial_data_disk == "equilibrium_torus"
+       && cfg.initial_data_input_file.empty()
+       && (!reduced_axisymmetric_xcts || !cfg.initial_data_solve_only)) {
+      amrex::Abort(
+         "equilibrium-torus construction currently requires a solve-only 2D "
+         "spherical r-theta XCTS solve; a saved artifact may then materialize "
+         "onto a 3D Cartesian evolution grid"
+      );
+   }
+   if (cfg.initial_data_disk == "equilibrium_torus"
+       && cfg.ic != "tov" && cfg.ic != "rotating_star") {
+      amrex::Abort(
+         "equilibrium-torus initial data currently require a TOV or "
+         "rotating_star central object"
       );
    }
    if (cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"

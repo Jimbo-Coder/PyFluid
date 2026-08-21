@@ -5514,3 +5514,48 @@ I will always continue from the last cycle marked as `in_progress`.
   bases/transforms, regularity, free-boundary iteration, compactified outer
   domains, matching, preconditioning, and distributed solve ownership are a
   substantial new backend. [DONE]
+
+## Cycle 296 — Optional equilibrium-torus matter component (DONE)
+
+- Add one reduced `r theta` equilibrium-torus component with a standard
+  constant-specific-angular-momentum law and two explicit gravity contracts.
+  `test_fluid` constructs the torus after solving the central TOV/RNS metric;
+  `coupled` includes disk stress-energy in every XCTS iteration and updates the
+  central star and disk first integrals together. Keep the disk law distinct
+  from the existing stellar `j_constant` law, generate reusable algebra where
+  useful, and avoid a new compile-time product axis. `schema/methods.toml` now
+  owns a separate constant-`ell` disk-law family; generated kernels own
+  circular Omega, normalization, `-u_t`, and `ln h`. One compiled 2D
+  orchestration owner performs the cold-EoS inversion and support diagnostics.
+  The shared atmosphere-support predicate removes the former duplicated
+  star/torus roundoff rule. [DONE]
+- Preserve the existing portable physical-ID and Cartesian materialization
+  boundary. Persist sufficient disk identity, support, mass, and equilibrium
+  diagnostics for exact restart/continuation. Validate the analytic
+  test-fluid limit first, then coupled low-to-massive disk continuation, MPI
+  agreement, different-grid materialization, and short evolution. Physical-ID
+  metadata and sequence schema v5 retain gravity contract, law parameters,
+  resolved support, maximum state, component baryonic mass/angular momentum,
+  and combined matter extent. A second-generation 3D artifact preserves those
+  values exactly and starts ordinary evolution through the same loader. [DONE]
+- The canonical adaptive `256x64` coupled SLy TOV-plus-disk model uses
+  `ell=5.2`, requested inner radius 8, and converges after 133 total matter
+  iterations. It has disk `M_b=0.1038302843`, `J=0.5249522897`, resolved
+  support `8.474448786--33.9152404`, maximum density `2.884144635e-5`,
+  maximum velocity `0.457963066`, and XCTS residuals
+  `1.38e-12/1.47e-12/5.25e-14`. A `512x96` control changes disk maximum
+  density, outer radius, and baryonic mass by at most 1.6476 percent; one- and
+  three-rank diagnostics agree to `2e-12` relative. Test-fluid and coupled
+  small-spin RNS controls also converge. A new negative gate proves a
+  test-fluid torus cannot overwrite central-star support. [DONE]
+- Reduced-to-Cartesian `32^3` materialization preserves all disk metadata.
+  Two evolved-Z4c steps at CFL 0.9 complete with zero recovery and
+  `9.60e-11` rest-mass drift. The full torus matrix, reduced-ID standard gate,
+  codegen byte comparison, architecture, production 1D/2D/3D build, and quick
+  suite pass. The complete standard suite passes 44/44 gates in `178.07 s`;
+  the torus standard step takes `8.11 s`. The final unchanged production
+  rebuild is a `0.57 s` cache hit with zero compiler-cache events, not a cold
+  build. Constant-`ell`, unmagnetized, conformally flat XCTS and short
+  evolution are the current boundary; additional disk laws, magnetization,
+  black-hole central objects, cusp/overflow diagnostics, and long equilibrium
+  evolution remain open. [DONE]

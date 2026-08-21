@@ -3,6 +3,7 @@
 #include <AMReX_GpuQualifiers.H>
 
 #include <cmath>
+#include <limits>
 
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
@@ -30,6 +31,17 @@ InitialAtmosphereParameters initial_atmosphere_parameters(
    RunConfig const& cfg,
    RelativisticInitialDataView const& provider
 );
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool initial_matter_exceeds_atmosphere(
+   amrex::Real density,
+   amrex::Real atmosphere_density
+) noexcept
+{
+   constexpr amrex::Real tolerance =
+      1024.0 * std::numeric_limits<amrex::Real>::epsilon();
+   return density > atmosphere_density * (1.0 + tolerance);
+}
 
 inline EOSThermodynamicState recovery_atmosphere_state(
    int eos_method,

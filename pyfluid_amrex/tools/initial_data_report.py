@@ -37,6 +37,18 @@ FIELDS = (
    "baryonic_mass",
    "angular_momentum",
    "dimensionless_spin",
+   "disk_gravity",
+   "disk_rotation_law",
+   "disk_specific_angular_momentum",
+   "disk_requested_inner_radius",
+   "disk_resolved_inner_radius",
+   "disk_outer_radius",
+   "disk_density_maximum_radius",
+   "disk_maximum_density",
+   "disk_maximum_velocity",
+   "disk_maximum_log_specific_enthalpy",
+   "disk_baryonic_mass",
+   "disk_angular_momentum",
    "max_conserved_error",
    "max_primitive_error",
    "log",
@@ -93,6 +105,15 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
       rf"rotating star:.*?adm_mass=({FLOAT}).*?baryonic_mass=({FLOAT})"
       rf".*?angular_momentum=({FLOAT}).*?dimensionless_spin=({FLOAT})",
    )
+   equilibrium_torus = _match(
+      text,
+      rf"equilibrium torus: gravity=(\w+) rotation_law=(\w+) "
+      rf"specific_angular_momentum=({FLOAT}) requested_inner_radius=({FLOAT}) "
+      rf"resolved_inner_radius=({FLOAT}) outer_radius=({FLOAT}) "
+      rf"density_maximum_radius=({FLOAT}) maximum_density=({FLOAT}) "
+      rf"maximum_velocity=({FLOAT}) maximum_log_specific_enthalpy=({FLOAT}) "
+      rf"baryonic_mass=({FLOAT}) angular_momentum=({FLOAT})",
+   )
    preflight = _match(
       text,
       rf"Evolution preflight C2P/P2C:.*?max_conserved_error=({FLOAT}) "
@@ -133,6 +154,20 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
       "baryonic_mass": value(global_diagnostic, 2),
       "angular_momentum": value(global_diagnostic, 3),
       "dimensionless_spin": value(global_diagnostic, 4),
+      "disk_gravity": equilibrium_torus.group(1)
+         if equilibrium_torus is not None else "",
+      "disk_rotation_law": equilibrium_torus.group(2)
+         if equilibrium_torus is not None else "",
+      "disk_specific_angular_momentum": value(equilibrium_torus, 3),
+      "disk_requested_inner_radius": value(equilibrium_torus, 4),
+      "disk_resolved_inner_radius": value(equilibrium_torus, 5),
+      "disk_outer_radius": value(equilibrium_torus, 6),
+      "disk_density_maximum_radius": value(equilibrium_torus, 7),
+      "disk_maximum_density": value(equilibrium_torus, 8),
+      "disk_maximum_velocity": value(equilibrium_torus, 9),
+      "disk_maximum_log_specific_enthalpy": value(equilibrium_torus, 10),
+      "disk_baryonic_mass": value(equilibrium_torus, 11),
+      "disk_angular_momentum": value(equilibrium_torus, 12),
       "max_conserved_error": value(preflight, 1),
       "max_primitive_error": value(preflight, 2),
       "log": repo_relative(log_path),

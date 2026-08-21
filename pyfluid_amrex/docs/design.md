@@ -19,6 +19,7 @@ make a path supported.
 | Coupled evolved-Z4c matter | Validated vertical slice; long stellar evolution remains an explicit gate |
 | TOV initial data | Direct 3D Cartesian plus uniform/adaptive spherical-1D artifact and materialization paths validated |
 | XCTS rotating-star initial data | Coupled spherical `r theta` circular-RNS solve, three rotation laws, adaptive radial mapping, diagnostics, and Cartesian materialization validated; long dynamical equilibrium remains open |
+| Optional equilibrium torus | Constant-`ell` test-fluid and self-gravitating XCTS components around TOV/RNS validated through reduced solve, portable handoff, and short evolution; long equilibrium and additional disk laws remain open |
 | Reusable physical-ID and sequence artifacts | Same-chart continuation and schema-v2 cross-dimension/cross-coordinate handoff, including explicit radial faces, use one materialization interface |
 | Native 1D, 2D, 3D | Production build modes |
 | AMR, reflux, average-down, restart | Production infrastructure |
@@ -116,6 +117,14 @@ The solver may use uniform radial spacing or one runtime-selected explicit-face
 stellar map; both write the same portable fields, and only the materializer
 knows the eventual Cartesian evolution grid. The adaptive map is fixed during
 one solve/sequence and is not general block AMR.
+
+An optional equilibrium-torus matter component uses the same reduced hierarchy,
+EoS, XCTS source assembly, physical-ID fields, and Cartesian materializer. Its
+rotation-law catalog is deliberately separate from stellar rotation. In
+`test_fluid` mode the central metric is solved before the torus is added; in
+`coupled` mode both matter first integrals and the XCTS fields converge as one
+fixed point. The current construction supports unmagnetized constant-`ell`
+tori around TOV or rotating-star central objects only.
 
 ## Public Interfaces And Compilation
 

@@ -116,6 +116,30 @@ amrex::Real q_power_two_rotation_integral(amrex::Real omega, amrex::Real omega_c
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real constant_l_torus_angular_velocity(amrex::Real metric_tt, amrex::Real metric_t_phi, amrex::Real metric_phi_phi, amrex::Real specific_angular_momentum) noexcept
+{
+   return -(metric_t_phi + metric_tt*specific_angular_momentum)/(metric_phi_phi + metric_t_phi*specific_angular_momentum);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real constant_l_torus_normalization_squared(amrex::Real metric_tt, amrex::Real metric_t_phi, amrex::Real metric_phi_phi, amrex::Real angular_velocity) noexcept
+{
+   return -((angular_velocity)*(angular_velocity))*metric_phi_phi - 2*angular_velocity*metric_t_phi - metric_tt;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real constant_l_torus_minus_covariant_time_velocity(amrex::Real metric_tt, amrex::Real metric_t_phi, amrex::Real angular_velocity, amrex::Real normalization_squared) noexcept
+{
+   return -(angular_velocity*metric_t_phi + metric_tt)/sqrt(normalization_squared);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real constant_l_torus_log_specific_enthalpy(amrex::Real inner_minus_covariant_time_velocity, amrex::Real local_minus_covariant_time_velocity) noexcept
+{
+   return log(inner_minus_covariant_time_velocity) - log(local_minus_covariant_time_velocity);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real conformal_momentum_source(amrex::Real conformal_factor, amrex::Real momentum_density, amrex::Real mean_curvature_gradient) noexcept
 {
    return 2*pow(conformal_factor, 6)*(4*pyfluid_amrex::constants::pi*pow(conformal_factor, 4)*momentum_density + (1.0_rt/3.0_rt)*mean_curvature_gradient);

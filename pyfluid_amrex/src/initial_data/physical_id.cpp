@@ -1391,6 +1391,18 @@ void write_physical_initial_data(
       metadata << "# source_ic=" << cfg.ic << '\n';
       metadata << "# spacetime_initial_data="
                << cfg.spacetime_initial_data << '\n';
+      metadata << "# disk=" << cfg.initial_data_disk << '\n';
+      metadata << "# disk_gravity=" << cfg.initial_data_disk_gravity << '\n';
+      metadata << "# disk_rotation_law="
+               << cfg.initial_data_disk_rotation_law << '\n';
+      metadata << "# disk_specific_angular_momentum="
+               << output_metadata_real_string(
+                    cfg.initial_data_disk_specific_angular_momentum
+                  ) << '\n';
+      metadata << "# disk_inner_radius="
+               << output_metadata_real_string(
+                    cfg.initial_data_disk_inner_radius
+                  ) << '\n';
       metadata << "# tov_central_density="
                << output_metadata_real_string(cfg.tov_central_density) << '\n';
       metadata << "# rotation_law=" << cfg.initial_data_rotation_law << '\n';
@@ -1659,6 +1671,80 @@ PhysicalInitialDataMetadata read_physical_initial_data(
 
    PhysicalInitialDataMetadata result;
    result.source_ic = required_metadata_value(metadata, "source_ic", path);
+   const auto disk_entry = metadata.find("disk");
+   result.disk = disk_entry == metadata.end() ? "none" : disk_entry->second;
+   if (result.disk != cfg.initial_data_disk) {
+      amrex::Abort(
+         "physical-ID disk matter identity is incompatible with the target in "
+         + path
+      );
+   }
+   if (result.disk == "equilibrium_torus") {
+      result.disk_gravity = required_metadata_value(
+         metadata, "disk_gravity", path
+      );
+      result.disk_rotation_law = required_metadata_value(
+         metadata, "disk_rotation_law", path
+      );
+      result.disk_specific_angular_momentum = required_metadata_real(
+         metadata, "disk_specific_angular_momentum", path
+      );
+      result.disk_inner_radius = required_metadata_real(
+         metadata, "disk_inner_radius", path
+      );
+      result.disk_maximum_density = required_metadata_real(
+         metadata, "disk_maximum_density", path
+      );
+      result.disk_maximum_velocity = required_metadata_real(
+         metadata, "disk_maximum_velocity", path
+      );
+      result.disk_resolved_inner_radius = required_metadata_real(
+         metadata, "disk_resolved_inner_radius", path
+      );
+      result.disk_outer_radius = required_metadata_real(
+         metadata, "disk_outer_radius", path
+      );
+      result.disk_density_maximum_radius = required_metadata_real(
+         metadata, "disk_density_maximum_radius", path
+      );
+      result.disk_maximum_log_specific_enthalpy = required_metadata_real(
+         metadata, "disk_maximum_log_specific_enthalpy", path
+      );
+      result.disk_baryonic_mass = required_metadata_real(
+         metadata, "disk_baryonic_mass", path
+      );
+      result.disk_angular_momentum = required_metadata_real(
+         metadata, "disk_angular_momentum", path
+      );
+      if (result.disk_gravity != cfg.initial_data_disk_gravity
+          || result.disk_rotation_law
+             != cfg.initial_data_disk_rotation_law
+          || result.disk_specific_angular_momentum
+             != cfg.initial_data_disk_specific_angular_momentum
+          || result.disk_inner_radius != cfg.initial_data_disk_inner_radius) {
+         amrex::Abort(
+            "physical-ID equilibrium-torus parameters are incompatible with "
+            "the target in " + path
+         );
+      }
+      if (!(result.disk_maximum_density > 0.0)
+          || !(result.disk_maximum_velocity >= 0.0)
+          || !(result.disk_maximum_velocity < 1.0)
+          || !(result.disk_resolved_inner_radius > 0.0)
+          || !(result.disk_outer_radius
+               > result.disk_resolved_inner_radius)
+          || !(result.disk_density_maximum_radius
+               >= result.disk_resolved_inner_radius)
+          || !(result.disk_density_maximum_radius
+               <= result.disk_outer_radius)
+          || !(result.disk_maximum_log_specific_enthalpy > 0.0)
+          || !(result.disk_baryonic_mass > 0.0)
+          || !std::isfinite(result.disk_angular_momentum)) {
+         amrex::Abort(
+            "physical-ID equilibrium-torus diagnostics are invalid in " + path
+         );
+      }
+   }
    const auto source_spacetime = metadata.find("spacetime_initial_data");
    if (source_spacetime != metadata.end()) {
       result.spacetime_initial_data = source_spacetime->second;
@@ -1709,7 +1795,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          );
       }
    }
-   if (result.source_ic == "rotating_star") {
+   if (result.source_ic == "rotating_star"
+       || result.disk == "equilibrium_torus") {
       try {
          const auto stored_outer = metadata.find("matter_outer_radius");
          if (stored_outer != metadata.end()) {

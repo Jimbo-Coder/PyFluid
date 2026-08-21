@@ -213,12 +213,13 @@ For isolated TOV/RNS data, the preferred development order is:
    multipatch objects, or residual structure that is not well represented by
    radial domains and angular modes.
 
-The current separable scalar/toroidal owner accepts explicit nonuniform radial
-face coordinates and has a second-order manufactured control. The rest of the
-RNS source, derivative, diagnostic, and portable-artifact pipeline still uses
-the canonical uniform physical `r theta` chart, so mapped production RNS is
-not enabled yet. This boundary is deliberate: solver-private coordinate
-experiments must not silently enter an artifact as uniform samples.
+The production separable scalar/toroidal owner and every RNS matter, source,
+derivative, diagnostic, continuation, and portable-artifact path consume the
+same explicit radial faces. Uniform and star-adapted mapped radial grids are
+both validated; the saved explicit faces, not the mapping knobs, are the
+coordinate authority. Theta remains uniform on one rectangular separable
+domain. Radius-dependent angular coarsening still requires a genuine modal or
+multidomain interface and must not be disguised as a nonuniform coordinate.
 
 ## Reusable Physical Initial Data
 
@@ -385,6 +386,65 @@ is at most `0.005`. A coarser `0.01 -> 0.0201` q=1.5 jump was still converging
 when it reached the 128-iteration cap, so continuation-step/cap failures must
 not be relabeled as rotation-law endpoints. These are useful-regime checks,
 not calibrated differential mass-shedding endpoints.
+
+## Optional Equilibrium Torus
+
+The reduced spherical `r theta` XCTS solve can compose a TOV or rotating-star
+central object with an unmagnetized, barotropic equilibrium torus. The current
+disk law is constant relativistic specific angular momentum
+`ell=-u_phi/u_t`; it is declared in the separate `disk_rotation_law` catalog
+rather than aliasing the stellar `j_constant` law. The generated first-integral
+kernels evaluate the circular angular velocity, timelike normalization,
+`-u_t`, and `ln h` from the local metric. The cold EoS owner performs the
+enthalpy inversion, so the torus and star use one immutable EoS contract.
+
+Two gravity modes are explicit:
+
+- `test_fluid` solves the central-object metric and then constructs the torus
+  without adding its stress-energy to the XCTS sources. This is a
+  non-self-gravitating approximation, not a zero-density disk.
+- `coupled` first settles the central stellar configuration, then iterates the
+  star and torus first integrals together with the XCTS fields. The converged
+  primitive state of both components sources the constraints on every coupled
+  iteration.
+
+The current controls are:
+
+```text
+initial_data.disk = equilibrium_torus
+initial_data.disk_gravity = test_fluid | coupled
+initial_data.disk_rotation_law = constant_l
+initial_data.disk_specific_angular_momentum
+initial_data.disk_inner_radius
+```
+
+Fresh construction requires the solve-only two-dimensional spherical
+`r theta` XCTS path. The resulting physical-ID artifact stores the combined
+primitive/ADM fields plus disk identity, resolved support, maximum density and
+velocity, baryonic mass, and angular momentum. It can be rematerialized onto
+the ordinary three-dimensional Cartesian evolution hierarchy. When a
+rotating-star summary is present, its ADM, baryonic-mass, angular-momentum, and
+spin values are system totals; the disk component mass and angular momentum
+are reported separately.
+
+The canonical coupled SLy TOV-plus-disk input uses `ell=5.2`, requested inner
+radius 8, and adaptive `256x64` resolution. Its disk baryonic mass is about
+`0.104`, its support is approximately `8.47--33.92`, and a `512x96` control
+changes the disk maximum density, outer radius, and baryonic mass by at most
+1.65 percent. The focused gate also checks one-/three-rank agreement, TOV and
+small-spin RNS central objects, reduced-to-Cartesian metadata preservation, and
+a short CFL-0.9 evolved-Z4c smoke:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run python \
+  pyfluid_amrex/tools/validate_equilibrium_torus.py --level full \
+  --ranks 3 --force
+```
+
+These checks establish a resolved conformally flat XCTS equilibrium and a
+working handoff. They do not yet establish long-term dynamical equilibrium,
+full quasi-isotropic/KEH agreement, cusp or overflow diagnostics, magnetized
+tori, nonconstant disk rotation laws, or black-hole central objects.
 
 At fixed grid spacing, expanding a zero-spin XCTS control from extraction
 radius 12.8 to 19.2 reduces the Komar-surface/ADM-surface difference from

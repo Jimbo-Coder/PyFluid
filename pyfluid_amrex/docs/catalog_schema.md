@@ -83,16 +83,17 @@ resolve exactly once.
 
 `methods.toml` owns supported runtime method names, stable codes, build-option
 names, broad capability requirements, and implementation entry identifiers.
-Its first implemented family is `rotation_law`: the strict loader emits the C++
-enum and descriptors consumed by configuration and the rotating-star factory.
-The current entries are uniform, relativistic j-constant, and relativistic
-q-power rotation. Their identities and required parameter names live in TOML;
-the relativistic Euler integrals and nonlinear iteration remain generated/C++
-science code. Future method families should migrate independently rather than
-turning this first catalog into an unvalidated omnibus registry. Factories
-consume generated descriptors. Coupled numerical compatibility and physical
-validation remain explicit code when they cannot be represented as a simple
-declarative requirement.
+Its first implemented families are `rotation_law` and `disk_rotation_law`:
+the strict loader emits separate C++ enums and descriptors consumed by
+configuration and the corresponding matter factories. Stellar entries are
+uniform, relativistic j-constant, and relativistic q-power rotation; the disk
+entry is constant `ell=-u_phi/u_t`. Their identities and required parameter
+names live in TOML. The relativistic Euler integrals, torus first integral, and
+nonlinear iterations remain generated/C++ science code. Future method families
+should migrate independently rather than turning this catalog into an
+unvalidated omnibus registry. Factories consume generated descriptors. Coupled
+numerical compatibility and physical validation remain explicit code when they
+cannot be represented as a simple declarative requirement.
 
 Configuration parameters may receive a similar catalog later, but only after a
 source audit separates simple name/type/default metadata from coupled parsing
@@ -108,8 +109,8 @@ compatibility rules into an opaque schema language.
    views without declaration tuples.
 4. Strengthen architecture checks so new production GF strings or descriptors
    outside generated views fail.
-5. The first independent method slice, rotation-law identity, now lives in
-   `schema/methods.toml`; extend it only with a matching implementation and
+5. The independent stellar and disk rotation-law identities now live in
+   `schema/methods.toml`; extend either only with a matching implementation and
    focused configuration/equation test.
 6. Repeat independently for diagnostics and other method families after their
    ownership and validation boundary is clear.

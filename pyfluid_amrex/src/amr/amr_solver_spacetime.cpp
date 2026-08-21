@@ -137,6 +137,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
 )
 {
    initial_data_rotating_star_summary_.reset();
+   initial_data_equilibrium_torus_summary_.reset();
    const bool uses_constraint_solve = cfg_.spacetime_initial_data == "ctt"
       || cfg_.spacetime_initial_data == "cttk"
       || cfg_.spacetime_initial_data == "xcts";
@@ -350,7 +351,8 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
          int continuation_step,
          int continuation_steps,
          amrex::Real angular_velocity,
-         RotatingStarUpdateSummary const& rotating_star
+         RotatingStarUpdateSummary const& rotating_star,
+         EquilibriumTorusUpdateSummary const& equilibrium_torus
       ) {
          finalize_constraint_solved_initial_data_state();
          run_evolution_preflight(0.0);
@@ -360,12 +362,15 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
             continuation_step,
             continuation_steps,
             angular_velocity,
-            persisted
+            persisted,
+            equilibrium_torus
          );
       };
    }
    RotatingStarParameters rotating_parameters =
       rotating_star_parameters(cfg_, initial_data_provider_.view());
+   const EquilibriumTorusParameters equilibrium_torus =
+      equilibrium_torus_parameters(cfg_, initial_data_provider_.view());
    if (seed_from_loaded_id && loaded_physical_id_metadata_
        && loaded_physical_id_metadata_->injection_energy > 0.0) {
       rotating_parameters.injection_energy =
@@ -382,6 +387,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       initial_data_provider_.view().fields,
       formulation,
       rotating_parameters,
+      equilibrium_torus,
       seed_from_loaded_id,
       continuation_observer
    );
@@ -392,6 +398,12 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
    if (cfg_.ic == "rotating_star") {
       initial_data_rotating_star_summary_ =
          std::make_unique<RotatingStarUpdateSummary>(result.rotating_star);
+   }
+   if (equilibrium_torus.active) {
+      initial_data_equilibrium_torus_summary_ =
+         std::make_unique<EquilibriumTorusUpdateSummary>(
+            result.equilibrium_torus
+         );
    }
    if (amrex::ParallelDescriptor::IOProcessor()) {
       amrex::Print()
@@ -434,6 +446,30 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
             << " polar_log_enthalpy_gradient="
             << result.rotating_star.polar_log_enthalpy_gradient
             << '\n';
+      }
+      if (equilibrium_torus.active) {
+         amrex::Print()
+            << "equilibrium torus: gravity="
+            << cfg_.initial_data_disk_gravity
+            << " rotation_law=" << cfg_.initial_data_disk_rotation_law
+            << " specific_angular_momentum="
+            << equilibrium_torus.specific_angular_momentum
+            << " requested_inner_radius=" << equilibrium_torus.inner_radius
+            << " resolved_inner_radius="
+            << result.equilibrium_torus.inner_radius
+            << " outer_radius=" << result.equilibrium_torus.outer_radius
+            << " density_maximum_radius="
+            << result.equilibrium_torus.density_maximum_radius
+            << " maximum_density="
+            << result.equilibrium_torus.maximum_density
+            << " maximum_velocity="
+            << result.equilibrium_torus.maximum_velocity
+            << " maximum_log_specific_enthalpy="
+            << result.equilibrium_torus.maximum_log_specific_enthalpy
+            << " baryonic_mass="
+            << result.equilibrium_torus.baryonic_mass
+            << " angular_momentum="
+            << result.equilibrium_torus.angular_momentum << '\n';
       }
    }
 }

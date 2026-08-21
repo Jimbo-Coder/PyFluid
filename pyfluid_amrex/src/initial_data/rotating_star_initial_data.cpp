@@ -25,17 +25,6 @@
 namespace pyfluid_amrex {
 namespace {
 
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-bool rotating_star_matter_exceeds_atmosphere(
-   amrex::Real density,
-   amrex::Real atmosphere_density
-) noexcept
-{
-   constexpr amrex::Real tolerance =
-      1024.0 * std::numeric_limits<amrex::Real>::epsilon();
-   return density > atmosphere_density * (1.0 + tolerance);
-}
-
 RotationLaw rotation_law_from_name(std::string const& name)
 {
    for (RotationLawInfo const& law : RotationLawCatalog) {
@@ -182,7 +171,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             const InitialDataSamplePoint sample{physical, physical};
             const EOSThermodynamicState atmosphere =
                initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
-            matter_support(i, j, k) = rotating_star_matter_exceeds_atmosphere(
+            matter_support(i, j, k) = initial_matter_exceeds_atmosphere(
                primitive(i, j, k, RHO), atmosphere.rho
             ) ? 1.0 : 0.0;
          });
@@ -281,6 +270,19 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                problo[2] + (static_cast<amrex::Real>(k - klo) + 0.5) * dx[2],
             };
             const InitialDataSamplePoint sample{physical, physical};
+            const amrex::Real displacement1 =
+               physical.q1 - iteration_parameters.rotation_center.q1;
+            const amrex::Real displacement2 =
+               physical.q2 - iteration_parameters.rotation_center.q2;
+            const amrex::Real displacement3 =
+               physical.q3 - iteration_parameters.rotation_center.q3;
+            if (std::sqrt(
+                   displacement1 * displacement1
+                   + displacement2 * displacement2
+                   + displacement3 * displacement3
+                ) >= iteration_parameters.update_outer_radius) {
+               return;
+            }
             bool within_continuation_support = false;
             for (int dk = -1; dk <= 1; ++dk) {
                for (int dj = -1; dj <= 1; ++dj) {
@@ -326,7 +328,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                      * primitive(i, j, k, MOM3)
                   + iteration_parameters.matter_relaxation * target.v3;
             }
-            if (!rotating_star_matter_exceeds_atmosphere(
+            if (!initial_matter_exceeds_atmosphere(
                    matter.rho, atmosphere.rho
                 )) {
                matter.rho = atmosphere.rho;
@@ -341,7 +343,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             primitive(i, j, k, MOM2) = v2;
             primitive(i, j, k, MOM3) = v3;
             primitive(i, j, k, ENERGY) = matter.pressure;
-            const bool contains_matter = rotating_star_matter_exceeds_atmosphere(
+            const bool contains_matter = initial_matter_exceeds_atmosphere(
                matter.rho, atmosphere.rho
             );
             diagnostic(i, j, k, 0) = contains_matter
@@ -527,7 +529,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
          effective_array(i, j, k, 1) = point.timelike ? 0.0 : 1.0;
          const EOSThermodynamicState atmosphere =
             initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
-         support(i, j, k) = rotating_star_matter_exceeds_atmosphere(
+         support(i, j, k) = initial_matter_exceeds_atmosphere(
             primitive(i, j, k, RHO), atmosphere.rho
          ) ? 1.0 : 0.0;
       });
@@ -619,6 +621,9 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
             mesh,
             mesh_coordinate_to_physical_point(MeshSpherical, axes, mesh),
          };
+         if (sample.mesh.q1 >= iteration_parameters.update_outer_radius) {
+            return;
+         }
          bool within_support = false;
          for (int dj = -1; dj <= 1; ++dj) {
             for (int di = -1; di <= 1; ++di) {
@@ -662,7 +667,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
                   * primitive(i, j, k, MOM3)
                + iteration_parameters.matter_relaxation * target.v3;
          }
-         if (!rotating_star_matter_exceeds_atmosphere(
+         if (!initial_matter_exceeds_atmosphere(
                 matter.rho, atmosphere.rho
              )) {
             matter.rho = atmosphere.rho;
@@ -677,7 +682,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
          primitive(i, j, k, MOM2) = vtheta;
          primitive(i, j, k, MOM3) = vphi;
          primitive(i, j, k, ENERGY) = matter.pressure;
-         const bool contains_matter = rotating_star_matter_exceeds_atmosphere(
+         const bool contains_matter = initial_matter_exceeds_atmosphere(
             matter.rho, atmosphere.rho
          );
          diagnostic(i, j, k, 0) = contains_matter
@@ -1094,7 +1099,9 @@ RotatingStarParameters rotating_star_parameters(
 )
 {
    RotatingStarParameters parameters;
-   parameters.active = cfg.ic == "rotating_star";
+   parameters.active = cfg.ic == "rotating_star"
+      || (cfg.ic == "tov"
+          && cfg.initial_data_disk == "equilibrium_torus");
    if (!parameters.active) {
       return parameters;
    }
@@ -1153,7 +1160,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives(
    amrex::Abort("rotating-star equilibrium requires the 3D executable");
    return {};
 #else
-   if (!parameters.active || parameters.angular_velocity == 0.0) {
+   if (!parameters.active) {
       return {};
    }
    if (eos_method == EOSPolytrope) {
@@ -1187,7 +1194,7 @@ RotatingStarUpdateSummary update_axisymmetric_spherical_rotating_star_primitives
    amrex::Abort("axisymmetric rotating-star equilibrium requires 2D");
    return {};
 #else
-   if (!parameters.active || parameters.angular_velocity == 0.0) {
+   if (!parameters.active) {
       return {};
    }
    if (eos_method == EOSPolytrope) {

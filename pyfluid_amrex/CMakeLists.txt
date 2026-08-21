@@ -194,6 +194,7 @@ if(PYFLUID_AMREX_ENABLE_RECON_PPM3_CHAR AND (PYFLUID_AMREX_ENABLE_HYDRO OR PYFLU
 endif()
 
 set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
+   src/initial_data/equilibrium_torus_initial_data.cpp
    src/initial_data/initial_data_centering.cpp
    src/initial_data/initial_data_ctt.cpp
    src/initial_data/initial_data_elliptic.cpp

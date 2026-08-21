@@ -1,0 +1,72 @@
+pyfluid.run_name = equilibrium_torus_xcts_spherical_id_2d
+pyfluid.output_dir = runs/current/equilibrium_torus/equilibrium_torus_xcts_spherical_id_2d
+pyfluid.validation_policy = elliptic
+
+mesh.coordinate = spherical
+mesh.axes = r theta
+mesh.patch_system = single
+
+geometry.prob_lo = 0.0 0.0
+geometry.prob_hi = 48.0 1.5707963267948966
+geometry.is_periodic = 0 0
+geometry.coord_sys = 2
+
+amr.n_cell = 256 64
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 8
+
+spacetime.evolution = fixed
+spacetime.matter_coupling = coupled
+spacetime.initial_data = xcts
+
+initial_data.spacetime = id
+initial_data.lapse = id
+initial_data.shift = id
+initial_data.solve_only = 1
+initial_data.radial_grid = adaptive
+initial_data.adaptive_source_radius_factor = 1.5
+initial_data.adaptive_exterior_fraction = 0.5
+initial_data.output_file = runs/current/equilibrium_torus/equilibrium_torus_xcts_spherical_id_2d/physical_id
+initial_data.disk = equilibrium_torus
+initial_data.disk_gravity = test_fluid
+initial_data.disk_rotation_law = constant_l
+initial_data.disk_specific_angular_momentum = 5.8
+initial_data.disk_inner_radius = 16.0
+initial_data.matter_relaxation = 0.2
+initial_data.matter_relative_tolerance = 1.0e-5
+initial_data.matter_max_iterations = 96
+initial_data.atmosphere = power_law
+initial_data.atmosphere_density = 1.0e-10
+initial_data.atmosphere_pressure = 1.0e-14
+initial_data.atmosphere_power = 4.0
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.eos_preset = sly
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = tov
+pyfluid.tov_central_density = 1.28e-3
+pyfluid.tov_absolute_tolerance = 1.0e-12
+pyfluid.tov_relative_tolerance = 1.0e-10
+pyfluid.tov_max_steps = 100000
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.max_step = 0
+pyfluid.final_time = -1
+pyfluid.ng = 1
+pyfluid.cfl = 0.9
+pyfluid.recon = pwc
+pyfluid.riemann = hll
+pyfluid.timestep = euler
+pyfluid.subcycling = off
+pyfluid.bc = outflow
+pyfluid.bc_xlo = origin
+pyfluid.bc_ylo = symmetry
+pyfluid.bc_yhi = symmetry
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = -1
+pyfluid.plot_int = -1
+pyfluid.checkpoint_int = -1

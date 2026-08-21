@@ -20,6 +20,7 @@
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/eos/presets.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
+#include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 #include "pyfluid_amrex/initial_data/tov.hpp"
 #include "pyfluid_amrex/kernels_generated/initial_data.hpp"
@@ -1539,6 +1540,81 @@ bool validate_differential_rotation_first_integrals()
       && enthalpy_error < 1.0e-14;
 }
 
+bool validate_constant_l_torus_first_integral()
+{
+   pyfluid_amrex::EquilibriumTorusParameters parameters;
+   parameters.active = true;
+   parameters.rotation_law =
+      pyfluid_amrex::DiskRotationLaw::ConstantL;
+   parameters.specific_angular_momentum = 2.4;
+   pyfluid_amrex::SpacetimeMetric metric;
+   metric.lapse = 0.82;
+   metric.shift3 = -0.015;
+   metric.gamma11 = 1.1;
+   metric.gamma22 = 1.05;
+   metric.gamma33 = 0.95;
+   const amrex::Real radius = 6.0;
+   const amrex::Real theta = 0.5 * pyfluid_amrex::constants::pi;
+   const amrex::Real tangent = radius * std::sin(theta);
+   const amrex::Real shift_squared = metric.gamma33
+      * metric.shift3 * metric.shift3;
+   const amrex::Real metric_tt = -metric.lapse * metric.lapse
+      + shift_squared;
+   const amrex::Real metric_t_phi = metric.gamma33
+      * metric.shift3 * tangent;
+   const amrex::Real metric_phi_phi = metric.gamma33 * tangent * tangent;
+   const amrex::Real expected_omega = -(
+      metric_t_phi + parameters.specific_angular_momentum * metric_tt
+   ) / (
+      metric_phi_phi
+      + parameters.specific_angular_momentum * metric_t_phi
+   );
+   const amrex::Real normalization_squared = -(
+      metric_tt + 2.0 * expected_omega * metric_t_phi
+      + expected_omega * expected_omega * metric_phi_phi
+   );
+   const amrex::Real local_minus_u_t = -(
+      metric_tt + expected_omega * metric_t_phi
+   ) / std::sqrt(normalization_squared);
+   const amrex::Real inner_minus_u_t = local_minus_u_t * std::exp(0.125);
+   const pyfluid_amrex::EquilibriumTorusPoint point =
+      pyfluid_amrex::equilibrium_torus_axisymmetric_spherical_point(
+         parameters, inner_minus_u_t, radius, theta, metric
+      );
+   const amrex::Real contravariant_time_velocity =
+      1.0 / std::sqrt(normalization_squared);
+   const amrex::Real covariant_time_velocity = (
+      metric_tt + expected_omega * metric_t_phi
+   ) * contravariant_time_velocity;
+   const amrex::Real covariant_phi_velocity = (
+      metric_t_phi + expected_omega * metric_phi_phi
+   ) * contravariant_time_velocity;
+   const amrex::Real recovered_l = -covariant_phi_velocity
+      / covariant_time_velocity;
+   const amrex::Real error = std::max({
+      std::abs(point.angular_velocity - expected_omega),
+      std::abs(point.minus_covariant_time_velocity - local_minus_u_t),
+      std::abs(point.log_specific_enthalpy - 0.125),
+      std::abs(recovered_l - parameters.specific_angular_momentum),
+   });
+   bool catalog_valid = false;
+   for (pyfluid_amrex::DiskRotationLawInfo const& law
+        : pyfluid_amrex::DiskRotationLawCatalog) {
+      catalog_valid = catalog_valid
+         || (law.id == pyfluid_amrex::DiskRotationLaw::ConstantL
+             && law.name == "constant_l"
+             && law.parameters == "specific_angular_momentum,inner_radius");
+   }
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "constant_l_torus_first_integral error=" << error
+                << " timelike=" << point.timelike
+                << " catalog_valid=" << catalog_valid << '\n';
+   }
+   return point.timelike && point.log_specific_enthalpy > 0.0
+      && catalog_valid && error < 1.0e-13;
+}
+
 #if (AMREX_SPACEDIM == 3)
 bool validate_tov_ctt()
 {
@@ -1888,6 +1964,9 @@ int main(int argc, char* argv[])
          return_code = 1;
       }
       if (!validate_differential_rotation_first_integrals()) {
+         return_code = 1;
+      }
+      if (!validate_constant_l_torus_first_integral()) {
          return_code = 1;
       }
       constexpr int coarse_cells = 32;

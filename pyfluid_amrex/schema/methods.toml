@@ -154,3 +154,13 @@ cpp_id = "QPower"
 label = "Relativistic q-power"
 description = "Generalized differential rotation with q=1 equal to j-constant."
 parameters = ["angular_velocity", "differential_rotation_length", "rotation_power_q"]
+
+# Disk rotation laws are a separate physical catalog.  In particular,
+# constant_l means ell=-u_phi/u_t and must not alias the stellar j-constant
+# law above.
+[[disk_rotation_law]]
+name = "constant_l"
+cpp_id = "ConstantL"
+label = "Constant specific angular momentum"
+description = "Stationary circular torus with constant ell=-u_phi/u_t."
+parameters = ["specific_angular_momentum", "inner_radius"]

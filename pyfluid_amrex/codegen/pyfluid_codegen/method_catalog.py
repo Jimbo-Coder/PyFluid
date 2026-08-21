@@ -20,6 +20,15 @@ class RotationLaw:
 
 
 @dataclass(frozen=True)
+class DiskRotationLaw:
+    name: str
+    cpp_id: str
+    label: str
+    description: str
+    parameters: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ReconstructionMethod:
     name: str
     cpp_id: str
@@ -61,6 +70,33 @@ def _load_rotation_law(record: dict[str, Any], index: int) -> RotationLaw:
     if len(parameters) != len(set(parameters)):
         raise ValueError(f"{context}.parameters contains duplicates")
     return RotationLaw(
+        name=_required_string(record, "name", context),
+        cpp_id=_required_string(record, "cpp_id", context),
+        label=_required_string(record, "label", context),
+        description=_required_string(record, "description", context),
+        parameters=tuple(parameters),
+    )
+
+
+def _load_disk_rotation_law(
+    record: dict[str, Any], index: int
+) -> DiskRotationLaw:
+    context = f"disk_rotation_law[{index}]"
+    _reject_unknown_keys(
+        record,
+        {"name", "cpp_id", "label", "description", "parameters"},
+        context,
+    )
+    parameters = record.get("parameters")
+    if (
+        not isinstance(parameters, list)
+        or not parameters
+        or not all(isinstance(parameter, str) and parameter for parameter in parameters)
+    ):
+        raise ValueError(f"{context}.parameters must be a nonempty string array")
+    if len(parameters) != len(set(parameters)):
+        raise ValueError(f"{context}.parameters contains duplicates")
+    return DiskRotationLaw(
         name=_required_string(record, "name", context),
         cpp_id=_required_string(record, "cpp_id", context),
         label=_required_string(record, "label", context),
@@ -115,13 +151,20 @@ def _validate_unique_ids(records: tuple[Any, ...], context: str) -> None:
 
 
 def _load_schema() -> tuple[
-    tuple[ReconstructionMethod, ...], tuple[RotationLaw, ...]
+    tuple[ReconstructionMethod, ...],
+    tuple[RotationLaw, ...],
+    tuple[DiskRotationLaw, ...],
 ]:
     with SCHEMA_PATH.open("rb") as stream:
         schema = tomllib.load(stream)
     _reject_unknown_keys(
         schema,
-        {"schema_version", "reconstruction", "rotation_law"},
+        {
+            "schema_version",
+            "reconstruction",
+            "rotation_law",
+            "disk_rotation_law",
+        },
         "methods schema",
     )
     schema_version = schema.get("schema_version")
@@ -153,7 +196,19 @@ def _load_schema() -> tuple[
     if len(laws) != len(rotation_records):
         raise ValueError("rotation_law entries must be tables")
     _validate_unique_ids(laws, "rotation_law")
-    return reconstruction_methods, laws
+
+    disk_rotation_records = schema.get("disk_rotation_law")
+    if not isinstance(disk_rotation_records, list) or not disk_rotation_records:
+        raise ValueError("disk_rotation_law must be a nonempty array of tables")
+    disk_laws = tuple(
+        _load_disk_rotation_law(record, index)
+        for index, record in enumerate(disk_rotation_records)
+        if isinstance(record, dict)
+    )
+    if len(disk_laws) != len(disk_rotation_records):
+        raise ValueError("disk_rotation_law entries must be tables")
+    _validate_unique_ids(disk_laws, "disk_rotation_law")
+    return reconstruction_methods, laws, disk_laws
 
 
-RECONSTRUCTION_METHODS, ROTATION_LAWS = _load_schema()
+RECONSTRUCTION_METHODS, ROTATION_LAWS, DISK_ROTATION_LAWS = _load_schema()

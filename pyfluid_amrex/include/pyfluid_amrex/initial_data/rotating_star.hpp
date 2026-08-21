@@ -30,6 +30,8 @@ struct RotatingStarParameters {
    PatchCoordinate rotation_center{};
    amrex::Real injection_energy = 1.0;
    amrex::Real central_log_specific_enthalpy = 0.0;
+   amrex::Real update_outer_radius =
+      std::numeric_limits<amrex::Real>::max();
    amrex::Real matter_relaxation = 0.5;
    amrex::Real relative_tolerance = 1.0e-8;
    int max_iterations = 32;

@@ -10,8 +10,8 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-13, branch `main`, through Cycle 289's axisymmetric
-scalar/toroidal elliptic foundation. Cycle 284's preserved standard/performance
+Last reconciled: 2026-08-14, branch `main`, through Cycle 296's optional
+equilibrium-torus matter component. Cycle 284's preserved standard/performance
 baseline remains the latest broad integration baseline.
 
 ## Scope And Evidence
@@ -31,6 +31,10 @@ baseline remains the latest broad integration baseline.
   four runtime performance controls passed their recorded warn thresholds. The
   archive is `runs/baselines/20260812_212858_cycle284_final`. This is broad
   standard-suite CPU evidence, not a full-suite or GPU validation result.
+- Cycle 296's equilibrium-torus implementation tree passes the expanded 44/44
+  standard suite with 178.07 s summed gate time. Its focused full matrix is
+  separate evidence under `runs/current/equilibrium_torus_validation/`; this
+  rolling result is not a preserved performance baseline.
 - Preserved baselines under `runs/baselines/` and rolling TSV histories are
   routing evidence, not proof for later source. Re-run the smallest relevant
   gate before relying on an old result.
@@ -396,6 +400,28 @@ baseline remains the latest broad integration baseline.
   sequence. It is not a precision same-equation comparison: the reference is
   full quasi-isotropic GR, while PyFluid currently solves conformally flat
   XCTS at finite outer radius.
+- The reduced `r theta` XCTS owner can compose either a TOV or rotating-star
+  central object with an optional unmagnetized barotropic constant-`ell`
+  equilibrium torus, where `ell=-u_phi/u_t`. `test_fluid` solves the central
+  metric first and adds the torus without its stress-energy; it does not mean
+  zero torus rest density. `coupled` iterates the stellar and torus first
+  integrals with the XCTS fields and includes both matter sources. The disk law
+  is a separate generated catalog from stellar `j_constant` and q-power laws.
+- A coupled adaptive `256x64` SLy TOV-plus-disk control with `ell=5.2` and
+  requested inner radius 8 has disk baryonic mass `0.103830`, angular momentum
+  `0.524952`, resolved support `8.474--33.915`, and elliptic residuals below
+  `1.5e-12` in the scalar equations and `5.3e-14` in momentum. A matched
+  `512x96` solve changes disk maximum density, outer radius, and baryonic mass
+  by at most 1.65 percent. One- and three-rank disk diagnostics agree to the
+  focused gate tolerance. This establishes a resolved self-gravitating XCTS
+  model, not equivalence to a full quasi-isotropic KEH solution.
+- The same disk component composes with a small-spin RNS in both gravity modes.
+  Physical-ID metadata retain the disk identity, support, component mass and
+  angular momentum through reduced-to-Cartesian rematerialization. A two-step
+  `32^3` evolved-Z4c smoke at CFL 0.9 has rest-mass drift below `1e-10` with
+  zero recovery. Long-term star/disk equilibrium, nonconstant disk laws,
+  magnetized tori, central black holes, cusp/overflow diagnostics, and
+  cross-method comparison remain open.
 - Differential rotation is validated over useful ranges, not to a physical
   endpoint. Q-power `q=1`, `A=10` reproduces j-constant fields and diagnostics
   to roundoff. Q-power `q=2` converges at `A=10`, `Omega=0.03` and at `A=5`,
@@ -501,9 +527,11 @@ baseline remains the latest broad integration baseline.
 
 1. Evolve the saved 90-percent-uniform RNS model at two Cartesian resolutions
    for a meaningful fraction of a rotation, tracking baryon mass, angular
-   momentum, constraints, central density, and modes. Then construct constant-
-   baryon-mass sequences before quoting a radial-stability/turning-point limit.
-   Prototype an exterior modal domain only if it beats the 64/128-theta controls.
+   momentum, constraints, central density, and modes. Extend the same
+   work-precision history to the coupled TOV/RNS-plus-disk controls before
+   calling them dynamical equilibria. Then construct constant-baryon-mass
+   sequences before quoting a radial-stability/turning-point limit. Prototype
+   an exterior modal domain only if it beats the 64/128-theta controls.
 2. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.

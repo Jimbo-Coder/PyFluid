@@ -35,6 +35,7 @@ It intentionally links rather than restating the detailed contracts.
 | SRMHD symptom onset, hybrid attribution, and prototype applicability | `tools/diagnose_rmhd_balsara_onset.py`, `tools/audit_srmhd_physical_wave_balsara.py`, their TSVs under `runs/current/rmhd_validation/`, and `plots/current/scans/rmhd_balsara*_profiles.png` plus `rmhd_balsara_hybrid_timelines.png` and `rmhd_balsara_hybrid_profile_evolution.png` | `docs/unified_shock_capturing_research.md`, Cycles 252--258 |
 | Coherent space-time operator attribution | `tools/research_spacetime_operator_ablation.py`, `tools/research_mhd_spacetime_operator_ablation.py`, and `tools/research_srmhd_spacetime_operator_ablation.py` | `docs/unified_shock_capturing_research.md`, Cycles 273--274 |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
+| Equilibrium torus/disk initial data | `include/pyfluid_amrex/initial_data/equilibrium_torus.hpp`, `src/initial_data/equilibrium_torus_initial_data.cpp`, `schema/methods.toml`, `tools/validate_equilibrium_torus.py` | `docs/tov.md`, `docs/infrastructure_conventions.md`, Cycle 296 |
 | Portable physical-ID solve/save/materialization, including explicit radial faces | `src/initial_data/physical_id.cpp`, `src/initial_data/physical_id_interpolation.cpp`, `src/initial_data/initial_data_elliptic.cpp`, `src/framework/checkpoint.cpp`, `tests/physical_id_interpolation_check.cpp`, `tools/validate_reduced_initial_data.py` | `docs/infrastructure_conventions.md`, Cycles 287 and 291 |
 | Axisymmetric spherical ID scalar/toroidal elliptic operators | `src/initial_data/initial_data_elliptic.cpp`, `include/pyfluid_amrex/initial_data/elliptic.hpp`, `tests/initial_data_elliptic_check.cpp` | `docs/infrastructure_conventions.md`, Cycles 288--289 |
 | Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
@@ -211,6 +212,35 @@ the generated TSV/log, and the current source revision/dirty state.
   geometrically stretched outer radii. COCAL's KEH equations and domains differ
   from PyFluid XCTS, so these counts are comparison guidance rather than copied
   production parameters.
+
+## Equilibrium Torus And Self-Gravitating Disk References
+
+- S. S. Komissarov, *Magnetized Tori around Kerr Black Holes: Analytic
+  Solutions with a Toroidal Magnetic Field*,
+  [arXiv:astro-ph/0601678](https://arxiv.org/abs/astro-ph/0601678): stationary,
+  axisymmetric, barotropic constant-specific-angular-momentum tori. PyFluid
+  currently uses the unmagnetized first integral and defines
+  `ell=-u_phi/u_t`; it does not import a reference solution.
+- Y. Kim, J. Kim, H. I. Kim, and H. M. Lee, *General relativistic
+  self-gravitating equilibrium disks around rotating neutron stars*,
+  [arXiv:2406.00945](https://arxiv.org/abs/2406.00945): extended-KEH
+  self-consistent-field evidence that neutron-star/disk equilibria can include
+  disk rest masses of order `0.1--1 M_sun`. This is a physical and numerical
+  comparison route for PyFluid's coupled XCTS approximation, not a method to
+  import.
+- J. Karkowski et al., *Self-gravitating axially symmetric disks in
+  general-relativistic rotation*,
+  [arXiv:1802.02848](https://arxiv.org/abs/1802.02848): integrable
+  general-relativistic Keplerian rotation laws for self-gravitating disks.
+  Route future nonconstant disk laws through the separate generated disk-law
+  catalog rather than aliasing stellar rotation laws.
+- A. Tsokaros, K. Uryu, and S. L. Shapiro, *Complete initial value spacetimes
+  containing black holes in general relativity: Application to black
+  hole-disk systems*,
+  [arXiv:1810.02825](https://arxiv.org/abs/1810.02825): complete
+  self-gravitating black-hole/disk initial data and a reference for the future
+  central-black-hole provider boundary. The current PyFluid disk component is
+  validated only around TOV/RNS central objects in conformally flat XCTS.
 
 ## Local AthenaK Reference
 

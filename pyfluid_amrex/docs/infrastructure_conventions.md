@@ -147,6 +147,17 @@ TOV, rotating-star, binary, and external providers must all produce this same
 field contract. The artifact must not encode timestepper, reconstruction,
 subcycling, output cadence, or other mutable evolution choices.
 
+Optional equilibrium matter components use that same physical field contract;
+they do not create a parallel artifact or materializer. The construction owner
+may compose a central object and one or more disjoint matter supports before
+writing the combined primitive and ADM fields. Component identity, rotation-law
+parameters, support, and component diagnostics are retained as metadata, while
+system-wide ADM/baryonic/angular-momentum diagnostics remain explicitly
+system-wide. A gravity-disabled `test_fluid` component means its stress-energy
+is omitted from the constraint solve, not that the stored rest density is zero.
+Every self-gravitating component must participate in the coupled matter/metric
+fixed point; adding it after convergence is only the test-fluid contract.
+
 `initial_data.output_file` writes this artifact at step zero.
 `initial_data.input_file` loads it. `initial_data.solve_only=1` performs the
 configured initial-data construction, runs the normal relativistic preflight,

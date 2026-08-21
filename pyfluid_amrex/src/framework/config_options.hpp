@@ -66,6 +66,12 @@ static constexpr std::array<std::string_view, 3> ShiftInitialDataOptions{{
 static constexpr std::array<std::string_view, 2> InitialAtmosphereOptions{{
    "flat", "power_law"
 }};
+static constexpr std::array<std::string_view, 2> InitialDiskOptions{{
+   "none", "equilibrium_torus"
+}};
+static constexpr std::array<std::string_view, 2> InitialDiskGravityOptions{{
+   "test_fluid", "coupled"
+}};
 static constexpr std::array<std::string_view, 4> Z4cLapseGaugeOptions{{
    "frozen", "harmonic", "one_plus_log", "slow_start"
 }};

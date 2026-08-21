@@ -381,6 +381,66 @@ void materialize_axisymmetric_vertex_geometry(
 }
 
 template <int EOSMethod>
+amrex::Real axisymmetric_matter_outer_radius(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::MultiFab const& primitive_state,
+   InitialAtmosphereParameters const& atmosphere
+)
+{
+   amrex::MultiFab support(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 0
+   );
+   support.setVal(0.0);
+   const InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   const InitialDataCoordinateLine angular_coordinates =
+      hierarchy.coordinate_line(0, 1);
+   amrex::Gpu::AsyncArray<amrex::Real> radial_face_storage(
+      radial_coordinates.faces.data(), radial_coordinates.faces.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+      radial_coordinates.centers.data(), radial_coordinates.centers.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> angular_center_storage(
+      angular_coordinates.centers.data(), angular_coordinates.centers.size()
+   );
+   const amrex::Real* radial_faces = radial_face_storage.data();
+   const amrex::Real* radial_center = radial_center_storage.data();
+   const amrex::Real* angular_center = angular_center_storage.data();
+   const amrex::Dim3 domain_lo = amrex::lbound(
+      hierarchy.geometry[0].Domain()
+   );
+   const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
+   for (amrex::MFIter mfi(support, amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto primitive = primitive_state.const_array(mfi);
+      const auto output = support.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const int radial_index = i - domain_lo.x;
+         const int angular_index = j - domain_lo.y;
+         const PatchCoordinate mesh{
+            radial_center[radial_index], angular_center[angular_index], 0.0
+         };
+         const InitialDataSamplePoint sample{
+            mesh,
+            mesh_coordinate_to_physical_point(MeshSpherical, axes, mesh),
+         };
+         const EOSThermodynamicState ambient =
+            initial_atmosphere_state<EOSMethod>(atmosphere, sample);
+         if (initial_matter_exceeds_atmosphere(
+                primitive(i, j, k, RHO), ambient.rho
+             )) {
+            output(i, j, k, 0) = radial_faces[radial_index + 1];
+         }
+      });
+   }
+   return support.max(0, 0, false);
+}
+
+template <int EOSMethod>
 void update_axisymmetric_global_diagnostics(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::MultiFab const& primitive_state,
@@ -496,6 +556,125 @@ void update_axisymmetric_global_diagnostics(
       amrex::Abort("axisymmetric rotating-star global diagnostic is invalid");
    }
 }
+
+template <int EOSMethod>
+void update_axisymmetric_equilibrium_torus_global_diagnostics(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::MultiFab const& primitive_state,
+   amrex::MultiFab const& cell_spacetime,
+   amrex::MultiFab const& conformal_factor,
+   amrex::MultiFab const& azimuthal_momentum_density,
+   EOSParams const& eos,
+   EquilibriumTorusParameters const& parameters,
+   EquilibriumTorusUpdateSummary& summary
+)
+{
+   if (!parameters.active) {
+      return;
+   }
+   amrex::MultiFab integrands(
+      hierarchy.grids[0], hierarchy.distribution[0], 2, 0
+   );
+   integrands.setVal(0.0);
+   const InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   const InitialDataCoordinateLine angular_coordinates =
+      hierarchy.coordinate_line(0, 1);
+   amrex::Gpu::AsyncArray<amrex::Real> radial_face_storage(
+      radial_coordinates.faces.data(), radial_coordinates.faces.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> angular_face_storage(
+      angular_coordinates.faces.data(), angular_coordinates.faces.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+      radial_coordinates.centers.data(), radial_coordinates.centers.size()
+   );
+   amrex::Gpu::AsyncArray<amrex::Real> angular_center_storage(
+      angular_coordinates.centers.data(), angular_coordinates.centers.size()
+   );
+   const amrex::Real* radial_faces = radial_face_storage.data();
+   const amrex::Real* angular_faces = angular_face_storage.data();
+   const amrex::Real* radial_center = radial_center_storage.data();
+   const amrex::Real* angular_center = angular_center_storage.data();
+   const amrex::Dim3 domain_lo = amrex::lbound(
+      hierarchy.geometry[0].Domain()
+   );
+   const amrex::Real theta_extent = hierarchy.geometry[0].ProbHi(1)
+      - hierarchy.geometry[0].ProbLo(1);
+   const amrex::Real theta_symmetry_factor =
+      std::abs(theta_extent - 0.5 * constants::pi)
+         <= 64.0 * std::numeric_limits<amrex::Real>::epsilon()
+      ? 2.0 : 1.0;
+   const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
+   for (amrex::MFIter mfi(integrands, amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto primitive = primitive_state.const_array(mfi);
+      const auto geometry = cell_spacetime.const_array(mfi);
+      const auto psi = conformal_factor.const_array(mfi);
+      const auto momentum = azimuthal_momentum_density.const_array(mfi);
+      const auto output = integrands.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const int radial_index = i - domain_lo.x;
+         const int angular_index = j - domain_lo.y;
+         const amrex::Real radius = radial_center[radial_index];
+         if (radius < parameters.inner_radius) {
+            return;
+         }
+         const amrex::Real theta = angular_center[angular_index];
+         const PatchCoordinate mesh{radius, theta, 0.0};
+         const InitialDataSamplePoint sample{
+            mesh,
+            mesh_coordinate_to_physical_point(MeshSpherical, axes, mesh),
+         };
+         const EOSThermodynamicState atmosphere =
+            initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
+         const RHDPrimitive fluid = rhd_primitive_at<EOSMethod>(
+            primitive, i, j, k, eos
+         );
+         if (!initial_matter_exceeds_atmosphere(
+                fluid.rho, atmosphere.rho
+             )) {
+            return;
+         }
+         const amrex::Real flat_volume = constants::two_pi
+            * theta_symmetry_factor
+            * (radial_faces[radial_index + 1]
+                  * radial_faces[radial_index + 1]
+                  * radial_faces[radial_index + 1]
+               - radial_faces[radial_index]
+                  * radial_faces[radial_index]
+                  * radial_faces[radial_index]) / 3.0
+            * (std::cos(angular_faces[angular_index])
+               - std::cos(angular_faces[angular_index + 1]));
+         const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+            load_z4c_state(geometry, i, j, k)
+         );
+         const amrex::Real velocity_squared = spatial_vector_norm_squared(
+            fluid.v1, fluid.v2, fluid.v3, metric
+         );
+         const amrex::Real lorentz_factor = 1.0 / std::sqrt(
+            1.0 - velocity_squared
+         );
+         const amrex::Real psi_value = psi(i, j, k, 0);
+         const amrex::Real psi_squared = psi_value * psi_value;
+         const amrex::Real psi_sixth = psi_squared * psi_squared
+            * psi_squared;
+         output(i, j, k, 0) = flat_volume * psi_sixth
+            * fluid.rho * lorentz_factor;
+         output(i, j, k, 1) = flat_volume * psi_sixth
+            * momentum(i, j, k, 0) * radius * std::sin(theta);
+      });
+   }
+   summary.baryonic_mass = integrands.sum(0, false);
+   summary.angular_momentum = integrands.sum(1, false);
+   if (!(summary.baryonic_mass > 0.0)
+       || !std::isfinite(summary.angular_momentum)) {
+      amrex::Abort("axisymmetric equilibrium-torus diagnostics are invalid");
+   }
+}
 #endif
 
 template <PhysicalSystem System, int EOSMethod>
@@ -508,12 +687,13 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    InitialDataFieldSelection const& fields,
    ConformalConstraintFormulation formulation,
    RotatingStarParameters const& rotating_star,
+   EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime,
    ConformalContinuationObserver const& continuation_observer
 )
 {
    static_assert(System == PhysicalSystem::RHD || System == PhysicalSystem::RMHD);
-   amrex::ignore_unused(fields);
+   amrex::ignore_unused(fields, equilibrium_torus);
    const int num_levels = static_cast<int>(hierarchy.geometry.size());
    if (num_levels == 0
        || static_cast<int>(primitive_state.size()) != num_levels
@@ -1264,7 +1444,8 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             continuation_step,
             static_cast<int>(rotation_targets.size()),
             continued_rotating_star.angular_velocity,
-            result.rotating_star
+            result.rotating_star,
+            {}
          );
       }
    }
@@ -1286,6 +1467,7 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
    amrex::Vector<amrex::MultiFab*> const& cell_spacetime,
    EOSParams const& eos,
    RotatingStarParameters const& rotating_star,
+   EquilibriumTorusParameters const& equilibrium_torus,
    ConformalContinuationObserver const& continuation_observer
 )
 {
@@ -1466,10 +1648,13 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
       }
    };
 
-   const bool update_rotating_matter = rotating_star.active
-      && rotating_star.angular_velocity != 0.0;
+   const bool coupled_equilibrium_torus = equilibrium_torus.active
+      && equilibrium_torus.gravity == EquilibriumTorusGravity::Coupled;
+   const bool update_stellar_matter = rotating_star.active
+      && (rotating_star.angular_velocity != 0.0
+          || coupled_equilibrium_torus);
    amrex::Vector<amrex::Real> rotation_targets;
-   if (update_rotating_matter) {
+   if (rotating_star.active && rotating_star.angular_velocity != 0.0) {
       rotation_targets = rotating_star.continuation_targets;
       if (rotation_targets.empty()) {
          for (int step = 1; step <= rotating_star.continuation_steps; ++step) {
@@ -1486,16 +1671,25 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
    }
 
    ConformalMaterializationResult result;
-   const int maximum_matter_iterations = update_rotating_matter
-      ? rotating_star.max_iterations : 12;
-   const amrex::Real matter_tolerance = update_rotating_matter
+   const bool iterate_matter = update_stellar_matter
+      || coupled_equilibrium_torus;
+   const int maximum_matter_iterations = iterate_matter
+      ? rotating_star.max_iterations
+         * (coupled_equilibrium_torus ? 2 : 1)
+      : 12;
+   const amrex::Real matter_tolerance = iterate_matter
       ? rotating_star.relative_tolerance : 1.0e-9;
    for (int continuation_step = 1;
         continuation_step <= static_cast<int>(rotation_targets.size());
         ++continuation_step) {
       RotatingStarParameters continued = rotating_star;
       continued.angular_velocity = rotation_targets[continuation_step - 1];
+      if (coupled_equilibrium_torus) {
+         continued.update_outer_radius = equilibrium_torus.inner_radius;
+      }
       int step_iterations = 0;
+      bool torus_activated = !coupled_equilibrium_torus;
+      bool coupled_torus_updated = false;
       result.relative_matter_update =
          std::numeric_limits<amrex::Real>::max();
       for (int matter_iteration = 1;
@@ -1526,8 +1720,10 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
             conformal_extrinsic,
             *cell_spacetime[0]
          );
-         if (update_rotating_matter
-             && !(continuation_step == 1 && matter_iteration == 1)) {
+         const bool preserve_initial_stellar_seed =
+            !equilibrium_torus.active
+            && continuation_step == 1 && matter_iteration == 1;
+         if (update_stellar_matter && !preserve_initial_stellar_seed) {
             result.rotating_star =
                update_axisymmetric_spherical_rotating_star_primitives(
                   hierarchy,
@@ -1537,6 +1733,26 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
                   eos,
                   continued
                );
+         }
+         if (equilibrium_torus.active
+             && result.rotating_star.matter_outer_radius
+                >= equilibrium_torus.inner_radius) {
+            amrex::Abort(
+               "equilibrium-torus inner radius must lie outside the central "
+               "star matter support"
+            );
+         }
+         if (coupled_equilibrium_torus && torus_activated) {
+            result.equilibrium_torus =
+               update_axisymmetric_spherical_equilibrium_torus_primitives(
+                  hierarchy,
+                  primitive_state,
+                  cell_geometry_view,
+                  EOSMethod,
+                  eos,
+                  equilibrium_torus
+               );
+            coupled_torus_updated = true;
          }
          fill_sources();
          const XctsResult constraints =
@@ -1610,26 +1826,67 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          result.relative_matter_update = update_norm / solution_norm;
          step_iterations = matter_iteration;
          if (amrex::ParallelDescriptor::IOProcessor()
-             && update_rotating_matter) {
+             && iterate_matter) {
+            const char* matter_phase = (
+               coupled_equilibrium_torus && torus_activated
+            ) ? "star_torus" : "central_star";
             amrex::Print()
-               << "axisymmetric rotating continuation step="
+               << "axisymmetric matter continuation step="
                << continuation_step << "/" << rotation_targets.size()
                << " omega=" << continued.angular_velocity
+               << " phase=" << matter_phase
                << " matter_iteration=" << matter_iteration
                << " relative_update=" << result.relative_matter_update
                << '\n';
          }
          if (result.relative_matter_update <= matter_tolerance) {
+            if (coupled_equilibrium_torus && !torus_activated) {
+               torus_activated = true;
+               continue;
+            }
             break;
          }
       }
       result.matter_iterations += step_iterations;
-      if (result.relative_matter_update > matter_tolerance) {
+      if (result.relative_matter_update > matter_tolerance
+          || (coupled_equilibrium_torus
+              && (!torus_activated || !coupled_torus_updated))) {
          amrex::Abort(
-            "axisymmetric rotating-star matter iteration did not converge"
+            "axisymmetric star-torus matter iteration did not converge"
          );
       }
       materialize_current_geometry();
+      if (equilibrium_torus.active
+          && equilibrium_torus.gravity
+             == EquilibriumTorusGravity::TestFluid) {
+         const amrex::Real central_matter_outer_radius =
+            axisymmetric_matter_outer_radius<EOSMethod>(
+               hierarchy,
+               *primitive_state[0],
+               equilibrium_torus.atmosphere
+            );
+         if (central_matter_outer_radius >= equilibrium_torus.inner_radius) {
+            amrex::Abort(
+               "equilibrium-torus inner radius must lie outside the central "
+               "star matter support"
+            );
+         }
+         result.rotating_star.matter_outer_radius = std::max(
+            result.rotating_star.matter_outer_radius,
+            central_matter_outer_radius
+         );
+         EquilibriumTorusParameters test_fluid_torus = equilibrium_torus;
+         test_fluid_torus.matter_relaxation = 1.0;
+         result.equilibrium_torus =
+            update_axisymmetric_spherical_equilibrium_torus_primitives(
+               hierarchy,
+               primitive_state,
+               cell_geometry_view,
+               EOSMethod,
+               eos,
+               test_fluid_torus
+            );
+      }
       fill_sources();
       update_axisymmetric_global_diagnostics<EOSMethod>(
          hierarchy,
@@ -1642,7 +1899,17 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          eos,
          result.rotating_star
       );
-      if (update_rotating_matter) {
+      update_axisymmetric_equilibrium_torus_global_diagnostics<EOSMethod>(
+         hierarchy,
+         *primitive_state[0],
+         *cell_spacetime[0],
+         conformal_factor,
+         azimuthal_momentum_density,
+         eos,
+         equilibrium_torus,
+         result.equilibrium_torus
+      );
+      if (update_stellar_matter) {
          RotatingStarParameters diagnostic_parameters = continued;
          diagnostic_parameters.injection_energy =
             result.rotating_star.injection_energy;
@@ -1662,7 +1929,8 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
             continuation_step,
             static_cast<int>(rotation_targets.size()),
             continued.angular_velocity,
-            result.rotating_star
+            result.rotating_star,
+            result.equilibrium_torus
          );
       }
    }
@@ -1684,6 +1952,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataFieldSelection const& fields,
    ConformalConstraintFormulation formulation,
    RotatingStarParameters const& rotating_star,
+   EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime,
    ConformalContinuationObserver const& continuation_observer
 )
@@ -1704,7 +1973,8 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          EOSPolytrope
       >(
          hierarchy, primitive_state, spacetime_state,
-         cell_spacetime, eos, rotating_star, continuation_observer
+         cell_spacetime, eos, rotating_star, equilibrium_torus,
+         continuation_observer
       );
    }
    if (eos_method == EOSHybridPolytrope) {
@@ -1712,7 +1982,8 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          EOSHybridPolytrope
       >(
          hierarchy, primitive_state, spacetime_state,
-         cell_spacetime, eos, rotating_star, continuation_observer
+         cell_spacetime, eos, rotating_star, equilibrium_torus,
+         continuation_observer
       );
    }
    amrex::Abort("reduced axisymmetric spherical XCTS requires a cold EOS");
@@ -1721,7 +1992,8 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    amrex::ignore_unused(
       hierarchy, primitive_state, spacetime_state,
       cell_spacetime, system, eos_method, eos, fields, formulation,
-      rotating_star, seed_from_spacetime, continuation_observer
+      rotating_star, equilibrium_torus, seed_from_spacetime,
+      continuation_observer
    );
    amrex::Abort("conformal constraint initial data requires 2D or 3D");
    return {};
@@ -1733,6 +2005,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       >(
          hierarchy, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
+         equilibrium_torus,
          seed_from_spacetime, continuation_observer
       );
    }
@@ -1746,6 +2019,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       >(
          hierarchy, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
+         equilibrium_torus,
          seed_from_spacetime, continuation_observer
       );
    }
@@ -1756,6 +2030,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       >(
          hierarchy, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
+         equilibrium_torus,
          seed_from_spacetime, continuation_observer
       );
    }
@@ -1765,6 +2040,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    >(
       hierarchy, primitive_state, spacetime_state,
       cell_spacetime, eos, fields, formulation, rotating_star,
+      equilibrium_torus,
       seed_from_spacetime, continuation_observer
    );
 #endif

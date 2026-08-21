@@ -254,6 +254,80 @@ def rotating_star_kernels() -> tuple[ScalarKernel, ...]:
    )
 
 
+def equilibrium_torus_kernels() -> tuple[ScalarKernel, ...]:
+   metric_tt, metric_t_phi, metric_phi_phi, specific_angular_momentum = (
+      sp.symbols(
+         "metric_tt metric_t_phi metric_phi_phi specific_angular_momentum",
+         real=True,
+      )
+   )
+   angular_velocity = -(
+      metric_t_phi + specific_angular_momentum * metric_tt
+   ) / (
+      metric_phi_phi + specific_angular_momentum * metric_t_phi
+   )
+   angular_velocity_argument = sp.Symbol("angular_velocity", real=True)
+   normalization_squared = -(
+      metric_tt
+      + 2 * angular_velocity_argument * metric_t_phi
+      + angular_velocity_argument**2 * metric_phi_phi
+   )
+   normalization_squared_argument = sp.Symbol(
+      "normalization_squared", positive=True
+   )
+   minus_covariant_time_velocity = -(
+      metric_tt + angular_velocity_argument * metric_t_phi
+   ) / sp.sqrt(normalization_squared_argument)
+   inner_minus_covariant_time_velocity, local_minus_covariant_time_velocity = (
+      sp.symbols(
+         "inner_minus_covariant_time_velocity "
+         "local_minus_covariant_time_velocity",
+         positive=True,
+      )
+   )
+   return (
+      ScalarKernel(
+         name="constant_l_torus_angular_velocity",
+         arguments=(
+            "metric_tt",
+            "metric_t_phi",
+            "metric_phi_phi",
+            "specific_angular_momentum",
+         ),
+         expression=angular_velocity,
+      ),
+      ScalarKernel(
+         name="constant_l_torus_normalization_squared",
+         arguments=(
+            "metric_tt",
+            "metric_t_phi",
+            "metric_phi_phi",
+            "angular_velocity",
+         ),
+         expression=normalization_squared,
+      ),
+      ScalarKernel(
+         name="constant_l_torus_minus_covariant_time_velocity",
+         arguments=(
+            "metric_tt",
+            "metric_t_phi",
+            "angular_velocity",
+            "normalization_squared",
+         ),
+         expression=minus_covariant_time_velocity,
+      ),
+      ScalarKernel(
+         name="constant_l_torus_log_specific_enthalpy",
+         arguments=(
+            "inner_minus_covariant_time_velocity",
+            "local_minus_covariant_time_velocity",
+         ),
+         expression=sp.log(inner_minus_covariant_time_velocity)
+         - sp.log(local_minus_covariant_time_velocity),
+      ),
+   )
+
+
 def ctt_momentum_kernels() -> tuple[ScalarKernel, ...]:
    conformal_factor, momentum_density, mean_curvature_gradient = sp.symbols(
       "conformal_factor momentum_density mean_curvature_gradient", real=True
@@ -592,6 +666,7 @@ def initial_data_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
       *ctt_conformal_geometry_kernels(),
       *xcts_kernels(),
       *rotating_star_kernels(),
+      *equilibrium_torus_kernels(),
       *ctt_momentum_kernels(),
       *cttk_kernels(),
       *ctt_canonical_state_kernels(),

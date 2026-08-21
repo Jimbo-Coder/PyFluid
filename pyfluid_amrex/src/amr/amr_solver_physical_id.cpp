@@ -3,6 +3,7 @@
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
+#include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 #include "pyfluid_amrex/z4c_runtime.hpp"
@@ -67,6 +68,15 @@ std::string sequence_rotation_label(RunConfig const& cfg)
    if (cfg.initial_data_rotation_law == "q_power") {
       label += "-q-" + sequence_real_label(cfg.initial_data_rotation_power_q);
    }
+   if (cfg.initial_data_disk == "equilibrium_torus") {
+      label += "-disk-" + cfg.initial_data_disk_rotation_law
+         + "-gravity-" + cfg.initial_data_disk_gravity
+         + "-ell-"
+         + sequence_real_label(
+              cfg.initial_data_disk_specific_angular_momentum
+           )
+         + "-rin-" + sequence_real_label(cfg.initial_data_disk_inner_radius);
+   }
    return sequence_path_component(std::move(label));
 }
 
@@ -87,8 +97,6 @@ void append_rotating_star_metadata(
       << rotating_star.equatorial_radius << '\n'
       << "# polar_radius=" << std::setprecision(17)
       << rotating_star.polar_radius << '\n'
-      << "# matter_outer_radius=" << std::setprecision(17)
-      << rotating_star.matter_outer_radius << '\n'
       << "# equatorial_log_enthalpy_gradient=" << std::setprecision(17)
       << rotating_star.equatorial_log_enthalpy_gradient << '\n'
       << "# polar_log_enthalpy_gradient=" << std::setprecision(17)
@@ -103,6 +111,58 @@ void append_rotating_star_metadata(
       << rotating_star.angular_momentum << '\n'
       << "# dimensionless_spin=" << std::setprecision(17)
       << rotating_star.dimensionless_spin << '\n';
+}
+
+void append_equilibrium_torus_metadata(
+   std::filesystem::path const& artifact,
+   EquilibriumTorusUpdateSummary const& equilibrium_torus
+)
+{
+   std::ofstream metadata(artifact / "Header.meta", std::ios::app);
+   metadata
+      << "# disk_maximum_density=" << std::setprecision(17)
+      << equilibrium_torus.maximum_density << '\n'
+      << "# disk_maximum_velocity=" << std::setprecision(17)
+      << equilibrium_torus.maximum_velocity << '\n'
+      << "# disk_resolved_inner_radius=" << std::setprecision(17)
+      << equilibrium_torus.inner_radius << '\n'
+      << "# disk_outer_radius=" << std::setprecision(17)
+      << equilibrium_torus.outer_radius << '\n'
+      << "# disk_density_maximum_radius=" << std::setprecision(17)
+      << equilibrium_torus.density_maximum_radius << '\n'
+      << "# disk_maximum_log_specific_enthalpy=" << std::setprecision(17)
+      << equilibrium_torus.maximum_log_specific_enthalpy << '\n'
+      << "# disk_baryonic_mass=" << std::setprecision(17)
+      << equilibrium_torus.baryonic_mass << '\n'
+      << "# disk_angular_momentum=" << std::setprecision(17)
+      << equilibrium_torus.angular_momentum << '\n';
+}
+
+void append_matter_outer_radius(
+   std::filesystem::path const& artifact,
+   amrex::Real matter_outer_radius
+)
+{
+   std::ofstream metadata(artifact / "Header.meta", std::ios::app);
+   metadata << "# matter_outer_radius=" << std::setprecision(17)
+            << matter_outer_radius << '\n';
+}
+
+EquilibriumTorusUpdateSummary equilibrium_torus_summary(
+   PhysicalInitialDataMetadata const& metadata
+)
+{
+   EquilibriumTorusUpdateSummary result;
+   result.maximum_density = metadata.disk_maximum_density;
+   result.maximum_velocity = metadata.disk_maximum_velocity;
+   result.inner_radius = metadata.disk_resolved_inner_radius;
+   result.outer_radius = metadata.disk_outer_radius;
+   result.density_maximum_radius = metadata.disk_density_maximum_radius;
+   result.maximum_log_specific_enthalpy =
+      metadata.disk_maximum_log_specific_enthalpy;
+   result.baryonic_mass = metadata.disk_baryonic_mass;
+   result.angular_momentum = metadata.disk_angular_momentum;
+   return result;
 }
 
 } // namespace
@@ -474,12 +534,37 @@ void AmrSolverBase::write_physical_initial_data_artifact(
       face_magnetic,
       initial_data_coordinate_faces_
    );
-   if (initial_data_rotating_star_summary_
-       && angular_velocity == cfg_.initial_data_angular_velocity
+   if (angular_velocity == cfg_.initial_data_angular_velocity
        && amrex::ParallelDescriptor::IOProcessor()) {
-      append_rotating_star_metadata(
-         path, *initial_data_rotating_star_summary_
-      );
+      amrex::Real matter_outer_radius = loaded_physical_id_metadata_
+         ? loaded_physical_id_metadata_->matter_outer_radius : 0.0;
+      if (initial_data_rotating_star_summary_) {
+         append_rotating_star_metadata(
+            path, *initial_data_rotating_star_summary_
+         );
+         matter_outer_radius = std::max(
+            matter_outer_radius,
+            initial_data_rotating_star_summary_->matter_outer_radius
+         );
+      }
+      if (initial_data_equilibrium_torus_summary_) {
+         append_equilibrium_torus_metadata(
+            path, *initial_data_equilibrium_torus_summary_
+         );
+         matter_outer_radius = std::max(
+            matter_outer_radius,
+            initial_data_equilibrium_torus_summary_->outer_radius
+         );
+      } else if (loaded_physical_id_metadata_
+                 && loaded_physical_id_metadata_->disk
+                    == "equilibrium_torus") {
+         append_equilibrium_torus_metadata(
+            path, equilibrium_torus_summary(*loaded_physical_id_metadata_)
+         );
+      }
+      if (matter_outer_radius > 0.0) {
+         append_matter_outer_radius(path, matter_outer_radius);
+      }
    }
    amrex::ParallelDescriptor::Barrier();
    amrex::Print() << "wrote physical initial data: " << path << '\n';
@@ -508,10 +593,13 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
          << "\tequatorial_log_enthalpy_gradient"
          << "\tpolar_log_enthalpy_gradient\tmass_shedding_indicator"
          << "\tadm_mass\tbaryonic_mass\tangular_momentum\tdimensionless_spin"
+         << "\tdisk_maximum_density\tdisk_inner_radius\tdisk_outer_radius"
+         << "\tdisk_density_maximum_radius\tdisk_baryonic_mass"
+         << "\tdisk_angular_momentum"
          << "\tartifact\n";
       std::ofstream metadata(sequence_dir / "sequence.meta");
       metadata << "# type=physical_initial_data_sequence\n"
-               << "# schema_version=4\n"
+               << "# schema_version=5\n"
                << "# eos=" << cfg_.eos << '\n'
                << "# eos_preset=" << cfg_.eos_preset << '\n'
                << "# thermal_gamma=" << std::setprecision(17)
@@ -523,6 +611,15 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
                << cfg_.initial_data_differential_rotation_length << '\n'
                << "# rotation_power_q=" << std::setprecision(17)
                << cfg_.initial_data_rotation_power_q << '\n'
+               << "# disk=" << cfg_.initial_data_disk << '\n'
+               << "# disk_gravity=" << cfg_.initial_data_disk_gravity << '\n'
+               << "# disk_rotation_law="
+               << cfg_.initial_data_disk_rotation_law << '\n'
+               << "# disk_specific_angular_momentum="
+               << std::setprecision(17)
+               << cfg_.initial_data_disk_specific_angular_momentum << '\n'
+               << "# disk_inner_radius=" << std::setprecision(17)
+               << cfg_.initial_data_disk_inner_radius << '\n'
                << "# artifact_contract=PyFluid physical initial data v2\n";
       if (cfg_.eos_preset == "custom") {
          metadata << "# polytropic_k=" << std::setprecision(17)
@@ -575,7 +672,8 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
    int continuation_step,
    int continuation_steps,
    amrex::Real angular_velocity,
-   RotatingStarUpdateSummary const& rotating_star
+   RotatingStarUpdateSummary const& rotating_star,
+   EquilibriumTorusUpdateSummary const& equilibrium_torus
 )
 {
    std::ostringstream model_name;
@@ -599,6 +697,16 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
    );
    if (amrex::ParallelDescriptor::IOProcessor()) {
       append_rotating_star_metadata(artifact, rotating_star);
+      if (cfg_.initial_data_disk == "equilibrium_torus") {
+         append_equilibrium_torus_metadata(artifact, equilibrium_torus);
+      }
+      append_matter_outer_radius(
+         artifact,
+         std::max(
+            rotating_star.matter_outer_radius,
+            equilibrium_torus.outer_radius
+         )
+      );
       std::ofstream index(
          std::filesystem::path(physical_initial_data_sequence_output_dir())
             / "sequence.tsv",
@@ -618,6 +726,12 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
             << rotating_star.baryonic_mass << '\t'
             << rotating_star.angular_momentum << '\t'
             << rotating_star.dimensionless_spin << '\t'
+            << equilibrium_torus.maximum_density << '\t'
+            << equilibrium_torus.inner_radius << '\t'
+            << equilibrium_torus.outer_radius << '\t'
+            << equilibrium_torus.density_maximum_radius << '\t'
+            << equilibrium_torus.baryonic_mass << '\t'
+            << equilibrium_torus.angular_momentum << '\t'
             << relative_artifact.string() << '\n';
    }
    amrex::ParallelDescriptor::Barrier();
