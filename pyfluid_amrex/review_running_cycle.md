@@ -5624,3 +5624,48 @@ I will always continue from the last cycle marked as `in_progress`.
   codegen, and focused CompOSE gates pass; the complete standard suite passes
   45/45 gates in `173.66 s`. The unchanged production rebuild is a `0.24 s`
   cache hit with no compiler-cache events. [DONE]
+
+## Cycle 298 — TOV/RNS tabulated-EoS stress boundary (DONE)
+
+- Stress the existing stellar infrastructure rather than add a new backend.
+  Reuse the adaptive reduced `r theta` XCTS continuation, persisted physical-ID,
+  unchanged Cartesian materialization, and CFL-0.9 evolution paths. Target the
+  least-tested boundary: moderate-to-fast CompOSE SLY4 rotation, resolution and
+  rank consistency, diagnostics near the surface, and a longer saved-ID
+  evolution. Keep the already-closed polytropic endpoint, differential-law, BU
+  literature, and TOV mass-radius tests as controls rather than rerunning them
+  indiscriminately. The adaptive scan now accepts an explicit base input, and
+  the saved-star evolution validator restores CompOSE table/thermal identity
+  from artifact metadata with an explicit relocation override. The unchanged
+  analytic-EoS evolution branch passes a one-step differential-RNS control.
+  [DONE]
+- Require finite/converged matter and elliptic residuals, positive and trending
+  mass-shedding/surface diagnostics, stable ADM/baryonic/angular-momentum
+  charges, zero startup or evolution recovery for accepted models, and scalar
+  conservation from the materialized evolution. Distinguish numerical
+  continuation failure from a physical endpoint and do not claim the full
+  tabulated-EoS rotational regime from a bounded stress sample. [DONE]
+- From the existing small-spin SLY4 artifact, a saved continuation reaches
+  `Omega=0.03`; a tighter continuation accepts `0.031` and `0.032` before the
+  resolved enthalpy-surface guard rejects `0.033` after its matter update
+  reaches `9.28e-7`. A direct jump onward to `0.04` instead drives the matter
+  iteration outside its basin and eventually makes the elliptic right-hand
+  side nonfinite; it is retained as a failed overstep, not an accepted endpoint.
+  The accepted `256x64`, `Omega=0.032` model has `chi_ms=0.174849` and
+  `J/M^2=0.644786`. [DONE]
+- A changed-grid `512x96` re-solve takes `13.71 s`, has elliptic residuals at
+  most `1.21e-11`, `chi_ms=0.174208`, and `J/M^2=0.644985`; baryonic mass and
+  angular momentum differ from `256x64` by `1.90e-4/2.15e-5` relative. An
+  independent one-rank solve reproduces every global charge to roundoff and
+  takes `30.91 s`. The `512x96` branch independently rejects `Omega=0.033`
+  through the same surface contract. [DONE]
+- Matched-time CFL-0.9 SSPRK3/PWL/HLL evolutions of the `512x96` artifact pass
+  through `t=3.5` on `32^3/48^3` with zero recovery, rest-mass drift
+  `5.61e-9/5.51e-9`, angular-momentum change `0.837/0.511` percent, and
+  maximum-density change `0.837/0.423` percent. Initial Komar surface/volume
+  agreement is `5.4e-4`; matter/ADM-volume and matter/ADM-surface angular
+  momentum agree to `3.3e-5/7.0e-4`. The known finite-radius ADM/Komar gap is
+  recorded but not used as a tuning target. The three-table TOV mass-radius,
+  small-spin RNS handoff, restart, and wrong-table rejection gate passes again.
+  This is about 1.8 percent of one rotation, so long equilibrium remains the
+  immediate physics test rather than more infrastructure. [DONE]

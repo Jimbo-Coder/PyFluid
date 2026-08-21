@@ -55,6 +55,10 @@ def relative_history_change(
    return max(abs(float(row[name]) - initial) / scale for row in rows)
 
 
+def relative_difference(left: float, right: float) -> float:
+   return abs(left - right) / max(abs(left), abs(right), 1.0e-30)
+
+
 def parameter_label(value: str) -> str:
    return (
       f"{float(value):.6g}"
@@ -67,9 +71,12 @@ def parameter_label(value: str) -> str:
 def run_case(
    artifact: Path,
    metadata: dict[str, str],
+   eos_table: Path | None,
    cells: int,
    args: argparse.Namespace,
 ) -> tuple[dict[str, object], dict[str, object]]:
+   if metadata["eos"] == "compose" and eos_table is None:
+      raise RuntimeError("CompOSE evolution requires a resolved EoS table")
    duration_label = (
       f"t{args.final_time:g}" if args.final_time > 0.0
       else f"s{args.steps}"
@@ -84,11 +91,10 @@ def run_case(
       law_label += "_q" + parameter_label(
          metadata.get("rotation_power_q", "1")
       )
-   eos_label = re.sub(
-      r"[^A-Za-z0-9_-]+",
-      "-",
-      metadata.get("eos_preset", metadata["eos"]),
-   )
+   eos_name = metadata.get("eos_preset", metadata["eos"])
+   if metadata["eos"] == "compose":
+      eos_name = f"compose-{eos_table.name}"
+   eos_label = re.sub(r"[^A-Za-z0-9_-]+", "-", eos_name)
    omega_label = parameter_label(metadata["angular_velocity"])
    name = (
       f"{args.label}_{eos_label}_{law_label}_omega{omega_label}_"
@@ -109,6 +115,16 @@ def run_case(
    if run_needed and run_dir.exists():
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
+   eos_parameters = {
+      "pyfluid.eos": metadata["eos"],
+      "pyfluid.thermal_gamma": metadata.get("thermal_gamma", "2.0"),
+   }
+   if metadata["eos"] == "compose":
+      eos_parameters["pyfluid.eos_table"] = repo_relative(eos_table)
+   else:
+      eos_parameters["pyfluid.eos_preset"] = metadata.get(
+         "eos_preset", "none"
+      )
    input_path = materialize_run_input(
       BASE_INPUT,
       run_dir / "input.in",
@@ -129,8 +145,7 @@ def run_case(
          "initial_data.rotation_power_q": metadata.get(
             "rotation_power_q", "1.0"
          ),
-         "pyfluid.eos": metadata["eos"],
-         "pyfluid.eos_preset": metadata.get("eos_preset", "none"),
+         **eos_parameters,
          "pyfluid.tov_central_density": metadata["tov_central_density"],
          "spacetime.ko_dissipation": f"{args.ko_dissipation:.17g}",
          "pyfluid.max_step": str(args.steps),
@@ -147,6 +162,8 @@ def run_case(
          "pyfluid.checkpoint_int": "-1",
          "pyfluid.physical_check_int": "1",
       },
+      remove_parameters=("pyfluid.eos_preset",)
+      if metadata["eos"] == "compose" else (),
    )
    if run_needed:
       completed = run_amrex(
@@ -212,6 +229,33 @@ def run_case(
    momentum_linf = max(
       abs(float(row["z4c_momentum_linf"])) for row in rows
    )
+   initial = rows[0]
+   adm_mass_surface = float(initial["adm_mass_surface"])
+   adm_mass_volume = float(initial["adm_mass_volume"])
+   komar_mass_surface = float(initial["komar_mass_surface"])
+   komar_mass_volume = float(initial["komar_mass_volume"])
+   matter_angular_momentum = float(initial["angular_mom3"])
+   adm_angular_momentum_surface = float(
+      initial["adm_angular_momentum3_surface"]
+   )
+   adm_angular_momentum_volume = float(
+      initial["adm_angular_momentum3_volume"]
+   )
+   komar_surface_volume_error = relative_difference(
+      komar_mass_surface, komar_mass_volume
+   )
+   adm_surface_volume_error = relative_difference(
+      adm_mass_surface, adm_mass_volume
+   )
+   adm_komar_surface_error = relative_difference(
+      adm_mass_surface, komar_mass_surface
+   )
+   matter_adm_volume_angular_momentum_error = relative_difference(
+      matter_angular_momentum, adm_angular_momentum_volume
+   )
+   matter_adm_surface_angular_momentum_error = relative_difference(
+      matter_angular_momentum, adm_angular_momentum_surface
+   )
    finite_metrics = (
       mass_drift,
       angular_momentum_drift,
@@ -219,6 +263,11 @@ def run_case(
       hamiltonian_l2,
       hamiltonian_linf,
       momentum_linf,
+      komar_surface_volume_error,
+      adm_surface_volume_error,
+      adm_komar_surface_error,
+      matter_adm_volume_angular_momentum_error,
+      matter_adm_surface_angular_momentum_error,
    )
    status = "PASS"
    reasons: list[str] = []
@@ -235,6 +284,18 @@ def run_case(
          "materialization preflight errors exceed 1e-10: "
          f"{conserved_error}/{primitive_error}"
       )
+   if komar_surface_volume_error > 2.0e-2:
+      reasons.append(
+         "initial Komar surface/volume disagreement exceeds 2%: "
+         f"{komar_surface_volume_error:.3e}"
+      )
+   if matter_adm_volume_angular_momentum_error > 2.0e-2 \
+         or matter_adm_surface_angular_momentum_error > 3.0e-2:
+      reasons.append(
+         "initial matter/ADM angular momentum disagreement is too large: "
+         f"{matter_adm_volume_angular_momentum_error:.3e}/"
+         f"{matter_adm_surface_angular_momentum_error:.3e}"
+      )
    if reasons:
       status = "FAIL"
    result: dict[str, object] = {
@@ -248,6 +309,8 @@ def run_case(
       "step_cap": args.steps,
       "omega": float(metadata["angular_velocity"]),
       "rotation_law": metadata["rotation_law"],
+      "eos": metadata["eos"],
+      "eos_table_fingerprint": metadata.get("eos_table_fingerprint", ""),
       "dimensionless_spin_id": float(metadata["dimensionless_spin"]),
       "mass_shedding_indicator_id": float(
          metadata["mass_shedding_indicator"]
@@ -259,6 +322,15 @@ def run_case(
       "hamiltonian_l2": hamiltonian_l2,
       "hamiltonian_linf": hamiltonian_linf,
       "momentum_linf": momentum_linf,
+      "initial_komar_surface_volume_error": komar_surface_volume_error,
+      "initial_adm_surface_volume_error": adm_surface_volume_error,
+      "initial_adm_komar_surface_error": adm_komar_surface_error,
+      "initial_matter_adm_volume_angular_momentum_error": (
+         matter_adm_volume_angular_momentum_error
+      ),
+      "initial_matter_adm_surface_angular_momentum_error": (
+         matter_adm_surface_angular_momentum_error
+      ),
       "c2p_fallbacks": c2p_fallbacks,
       "atmosphere_resets": atmosphere_resets,
       "preflight_conserved_error": float(conserved_error),
@@ -271,6 +343,11 @@ def run_case(
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--input-artifact", type=Path, required=True)
+   parser.add_argument(
+      "--eos-table",
+      type=Path,
+      help="override the table location recorded by a CompOSE artifact",
+   )
    parser.add_argument("--cells", type=int, nargs="+", default=(32, 48))
    parser.add_argument("--steps", type=int, default=8)
    parser.add_argument("--final-time", type=float, default=-1.0)
@@ -310,6 +387,8 @@ def main() -> int:
       required += ("differential_rotation_length",)
    if metadata.get("rotation_law") == "q_power":
       required += ("rotation_power_q",)
+   if metadata.get("eos") == "compose":
+      required += ("thermal_gamma", "eos_table_fingerprint")
    missing = [name for name in required if name not in metadata]
    if missing or metadata.get("source_ic") != "rotating_star":
       raise SystemExit(
@@ -318,6 +397,23 @@ def main() -> int:
    if not math.isfinite(float(metadata["injection_energy"])) \
          or float(metadata["injection_energy"]) <= 0.0:
       raise SystemExit("rotating-star artifact has invalid injection energy")
+   eos_table: Path | None = None
+   if metadata["eos"] == "compose":
+      if not math.isfinite(float(metadata["thermal_gamma"])) \
+            or float(metadata["thermal_gamma"]) <= 1.0:
+         raise SystemExit("CompOSE artifact has invalid thermal_gamma")
+      if len(metadata["eos_table_fingerprint"]) != 16:
+         raise SystemExit("CompOSE artifact has invalid table fingerprint")
+      table_value = args.eos_table or metadata.get("eos_table_source")
+      if table_value is None:
+         raise SystemExit(
+            "CompOSE artifact has no table source; provide --eos-table"
+         )
+      eos_table = Path(table_value).resolve()
+      if not eos_table.is_dir():
+         raise SystemExit(
+            "CompOSE table is unavailable; provide an existing --eos-table"
+         )
 
    build_cached_target("pyfluid_amrex_3d")
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
@@ -325,7 +421,7 @@ def main() -> int:
    scalar_rows: list[dict[str, object]] = []
    for cells in sorted(set(args.cells)):
       result, scalar_row = run_case(
-         artifact, metadata, cells, args
+         artifact, metadata, eos_table, cells, args
       )
       results.append(result)
       scalar_rows.append(scalar_row)

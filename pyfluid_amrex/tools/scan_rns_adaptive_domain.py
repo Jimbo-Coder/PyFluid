@@ -138,6 +138,12 @@ def equivalent_rotation_law(
 
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
+   parser.add_argument(
+      "--base-input",
+      type=Path,
+      default=BASE_INPUT,
+      help="rotating-star input whose EoS and ID policy seed the scan",
+   )
    parser.add_argument("--input-artifact", type=Path)
    parser.add_argument("--reference-artifact", type=Path)
    parser.add_argument("--continuation-targets", type=float, nargs="+")
@@ -184,6 +190,12 @@ def main() -> int:
    )
    parser.add_argument("--force", action="store_true")
    args = parser.parse_args()
+
+   base_input = args.base_input.resolve()
+   if not base_input.is_file():
+      raise SystemExit("--base-input must name an existing input file")
+   if base_input != BASE_INPUT.resolve() and not args.label:
+      raise SystemExit("a nondefault --base-input requires --label")
 
    input_artifact = (
       args.input_artifact.resolve() if args.input_artifact is not None else None
@@ -324,7 +336,7 @@ def main() -> int:
          continue
       run_dir.mkdir(parents=True, exist_ok=True)
       input_path = materialize_run_input(
-         BASE_INPUT,
+         base_input,
          run_dir / "input.in",
          {
             "amr.n_cell": f"{args.radial_cells} {angular_cells}",
@@ -489,6 +501,7 @@ def main() -> int:
             repo_relative(input_artifact) if input_artifact is not None else ""
          ),
          "run_dir": repo_relative(run_dir),
+         "base_input": repo_relative(base_input),
       }
       existing[key] = row
       current_rows = list(existing.values())

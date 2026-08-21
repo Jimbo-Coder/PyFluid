@@ -487,6 +487,26 @@ baseline remains the latest broad integration baseline.
   Physical-ID and checkpoint compatibility use the path-independent normalized
   table fingerprint and thermal gamma; the source directory is provenance,
   not identity.
+- At fixed central density `rho_c=1.28e-3`, the cold SLY4 uniform sequence
+  continues cleanly through `Omega=0.032`. A `256x64` model has
+  `chi_ms=0.174849` and `J/M^2=0.644786`; a changed-grid `512x96` re-solve has
+  `0.174208` and `0.644985`. Baryonic mass and angular momentum differ by
+  `1.90e-4` and `2.15e-5` relative. One- and three-rank `512x96` diagnostics
+  agree to roundoff, while the three-rank solve is 2.26 times faster on this
+  Mac. Both reduced grids reject `Omega=0.033` only after the matter update
+  reaches tolerance and the resolved enthalpy-zero surface is lost. Thus
+  `0.032 < Omega_limit < 0.033` is a bounded tabulated-EoS numerical
+  mass-shedding bracket, not a turning-point or constant-baryon-mass result.
+- The `512x96`, `Omega=0.032` SLY4 artifact materializes directly onto `32^3`
+  and `48^3` Cartesian grids and evolves to matched time `t=3.5` with CFL 0.9,
+  SSPRK3/PWL/HLL, and zero recovery. Rest-mass drifts are
+  `5.61e-9/5.51e-9`; angular-momentum changes are `0.837/0.511` percent and
+  maximum-density changes are `0.837/0.423` percent. At the initial Cartesian
+  state, Komar surface/volume mass differs by `5.4e-4`, matter/ADM-volume
+  angular momentum by `3.3e-5`, and matter/ADM-surface angular momentum by
+  `7.0e-4`. The known finite-radius ADM-surface/Komar gap is 5.5 percent and
+  must not be tuned away. This interval is only 1.8 percent of a rotation;
+  long equilibrium evidence remains open.
 
 ## Other Open Boundaries
 
@@ -557,13 +577,14 @@ baseline remains the latest broad integration baseline.
 
 ## Next Milestones
 
-1. Evolve the saved 90-percent-uniform RNS model at two Cartesian resolutions
-   for a meaningful fraction of a rotation, tracking baryon mass, angular
-   momentum, constraints, central density, and modes. Extend the same
-   work-precision history to the coupled TOV/RNS-plus-disk controls before
-   calling them dynamical equilibria. Then construct constant-baryon-mass
-   sequences before quoting a radial-stability/turning-point limit. Prototype
-   an exterior modal domain only if it beats the 64/128-theta controls.
+1. Extend the saved fast analytic and CompOSE RNS models from the present short
+   two-resolution evolutions to a meaningful fraction of a rotation, tracking
+   baryon mass, angular momentum, constraints, central density, and modes.
+   Extend the same work-precision history to the coupled TOV/RNS-plus-disk
+   controls before calling them dynamical equilibria. Then construct constant-
+   baryon-mass sequences before quoting a radial-stability/turning-point limit.
+   Prototype an exterior modal domain only if it beats the 64/128-theta
+   controls.
 2. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.
@@ -571,10 +592,7 @@ baseline remains the latest broad integration baseline.
    multidimensional Orszag--Tang first, with AMR only after the uniform
    equivalence statement is sound. This calibrates performance and error; it is
    not another reconstruction search.
-4. Add a two-resolution time-dependent TOV oscillation/constraint gate, then
-   evolve a saved adaptive-RNS artifact with PWL while tracking rest mass,
-   angular momentum, constraints, central density, and mode content.
-5. Add true finite-temperature/composition-dependent CompOSE only when a
+4. Add true finite-temperature/composition-dependent CompOSE only when a
    physical evolution milestone needs it. Do not relabel the current cold
    barotrope plus gamma-law thermal extension as finite-temperature support.
 
