@@ -8,9 +8,11 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/eos/config.hpp"
+#include "pyfluid_amrex/eos/cold_barotrope.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
+#include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
@@ -26,6 +28,7 @@ enum class FluidInitialDataKind : int {
    PeriodicShockPlane,
    FixedMetricHse,
    Provider,
+   EquilibriumTorus,
 };
 
 struct FluidInitialDataParameters {
@@ -66,6 +69,8 @@ struct FluidInitialDataParameters {
    amrex::Real b2_right = 0.0;
    amrex::Real b3_right = 0.0;
    InitialAtmosphereParameters atmosphere{};
+   EquilibriumTorusParameters equilibrium_torus{};
+   amrex::Real equilibrium_torus_inner_normalization = 0.0;
    EOSParams eos{};
 };
 
@@ -103,6 +108,8 @@ inline FluidInitialDataParameters fluid_initial_data_parameters(
       kind = FluidInitialDataKind::FixedMetricHse;
    } else if (cfg.ic == "tov" || cfg.ic == "rotating_star") {
       kind = FluidInitialDataKind::Provider;
+   } else if (cfg.ic == "equilibrium_torus") {
+      kind = FluidInitialDataKind::EquilibriumTorus;
    }
    FluidInitialDataParameters parameters;
    parameters.kind = kind;
@@ -143,6 +150,62 @@ inline FluidInitialDataParameters fluid_initial_data_parameters(
    parameters.b3_right = std::isfinite(cfg.b3_right) ? cfg.b3_right : cfg.b3_0;
    parameters.eos = eos_params(cfg);
    parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
+   parameters.equilibrium_torus = equilibrium_torus_parameters(cfg, provider);
+   if (kind == FluidInitialDataKind::EquilibriumTorus) {
+      EquilibriumTorusParameters const& torus = parameters.equilibrium_torus;
+      const amrex::Real axis[3]{torus.axis1, torus.axis2, torus.axis3};
+      int reference_direction = 0;
+      for (int direction = 1; direction < 3; ++direction) {
+         if (std::abs(axis[direction]) < std::abs(axis[reference_direction])) {
+            reference_direction = direction;
+         }
+      }
+      amrex::Real reference[3]{0.0, 0.0, 0.0};
+      reference[reference_direction] = 1.0;
+      amrex::Real radial[3]{
+         axis[1] * reference[2] - axis[2] * reference[1],
+         axis[2] * reference[0] - axis[0] * reference[2],
+         axis[0] * reference[1] - axis[1] * reference[0],
+      };
+      const amrex::Real radial_norm = std::sqrt(
+         radial[0] * radial[0] + radial[1] * radial[1]
+         + radial[2] * radial[2]
+      );
+      for (amrex::Real& component : radial) {
+         component /= radial_norm;
+      }
+      const PatchCoordinate inner_point{
+         torus.center1 + torus.inner_radius * radial[0],
+         torus.center2 + torus.inner_radius * radial[1],
+         torus.center3 + torus.inner_radius * radial[2],
+      };
+      const FixedSpacetimeGeometry inner_geometry =
+         initial_data_spacetime_geometry(
+            provider.fixed_spacetime,
+            inner_point.q1,
+            inner_point.q2,
+            inner_point.q3,
+            0.0
+         );
+      const EquilibriumTorusPoint inner = equilibrium_torus_point(
+         torus, 1.0, inner_point, inner_geometry.metric
+      );
+      if (!inner.timelike) {
+         amrex::Abort(
+            "equilibrium-torus inner edge does not admit circular timelike flow"
+         );
+      }
+      parameters.equilibrium_torus_inner_normalization =
+         torus.rotation_law == DiskRotationLaw::ConstantL
+         ? inner.minus_covariant_time_velocity
+         : std::exp(-inner.log_specific_enthalpy);
+      if (!(parameters.equilibrium_torus_inner_normalization > 0.0)
+          || !std::isfinite(
+               parameters.equilibrium_torus_inner_normalization
+             )) {
+         amrex::Abort("equilibrium-torus inner normalization is invalid");
+      }
+   }
    return parameters;
 }
 
@@ -182,6 +245,34 @@ FluidPrimitiveSample sample_fluid_initial_data(
       b2 = point.b2;
       b3 = point.b3;
       metric = generated::z4c_spacetime_metric(point.spacetime);
+   } else if (parameters.kind == FluidInitialDataKind::EquilibriumTorus) {
+      const EquilibriumTorusParameters& torus = parameters.equilibrium_torus;
+      const amrex::Real displacement1 = sample.physical.q1 - torus.center1;
+      const amrex::Real displacement2 = sample.physical.q2 - torus.center2;
+      const amrex::Real displacement3 = sample.physical.q3 - torus.center3;
+      const amrex::Real radius = std::sqrt(
+         displacement1 * displacement1 + displacement2 * displacement2
+         + displacement3 * displacement3
+      );
+      const EquilibriumTorusPoint target = equilibrium_torus_point(
+         torus,
+         parameters.equilibrium_torus_inner_normalization,
+         sample.physical,
+         local_geometry.metric
+      );
+      ColdBarotropeState matter;
+      if (radius >= torus.inner_radius && target.timelike
+          && target.log_specific_enthalpy > 0.0) {
+         matter = cold_barotrope_from_log_enthalpy(
+            target.log_specific_enthalpy, parameters.eos
+         );
+         v1 = target.v1;
+         v2 = target.v2;
+         v3 = target.v3;
+      }
+      rho = matter.rho;
+      pressure = matter.pressure;
+      specific_internal_energy = matter.specific_internal_energy;
    } else if (parameters.kind == FluidInitialDataKind::FixedMetricHse) {
       const amrex::Real reference_enthalpy = 1.0
          + parameters.eos.gamma * parameters.pressure0
@@ -287,7 +378,8 @@ FluidPrimitiveSample sample_fluid_initial_data(
       );
    const bool recompute_thermodynamics = !apply_atmosphere && (state_was_floored
       || (parameters.kind != FluidInitialDataKind::Provider
-          && parameters.kind != FluidInitialDataKind::FixedMetricHse));
+          && parameters.kind != FluidInitialDataKind::FixedMetricHse
+          && parameters.kind != FluidInitialDataKind::EquilibriumTorus));
    if (state_was_floored) {
       const EOSThermodynamicState floor_state = eos_project_to_floors<EOSMethod>(
          rho, pressure, parameters.eos

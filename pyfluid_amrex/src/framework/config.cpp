@@ -18,6 +18,7 @@
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/generated/method_catalog.hpp"
+#include "pyfluid_amrex/generated/initial_data_method_catalog.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 
 namespace pyfluid_amrex {
@@ -461,6 +462,16 @@ RunConfig read_config()
    initial_data_pp.queryAdd(
       "disk_specific_angular_momentum",
       cfg.initial_data_disk_specific_angular_momentum
+   );
+   initial_data_pp.queryAdd(
+      "disk_angular_velocity", cfg.initial_data_disk_angular_velocity
+   );
+   initial_data_pp.queryAdd(
+      "disk_differential_rotation_length",
+      cfg.initial_data_disk_differential_rotation_length
+   );
+   initial_data_pp.queryAdd(
+      "disk_rotation_power_q", cfg.initial_data_disk_rotation_power_q
    );
    initial_data_pp.queryAdd(
       "disk_inner_radius", cfg.initial_data_disk_inner_radius
@@ -1020,7 +1031,11 @@ void validate_config(RunConfig const& cfg)
       * inverse_disk_axis_norm;
    const amrex::Real disk_axis_tolerance = 64.0
       * std::numeric_limits<amrex::Real>::epsilon();
+   const bool analytic_kerr_disk_request =
+      AMREX_SPACEDIM == 3 && cfg.mesh_coordinate == "cartesian"
+      && cfg.ic == "equilibrium_torus" && kerr_schild_requested;
    if (equilibrium_torus_enabled
+       && !analytic_kerr_disk_request
        && (std::abs(disk_axis1) > disk_axis_tolerance
            || std::abs(disk_axis2) > disk_axis_tolerance
            || std::abs(disk_axis3 - 1.0) > disk_axis_tolerance)) {
@@ -1030,17 +1045,75 @@ void validate_config(RunConfig const& cfg)
          "the future 3D tilted owner"
       );
    }
+   if (equilibrium_torus_enabled && analytic_kerr_disk_request
+       && black_hole_spin_squared > 0.0) {
+      const amrex::Real inverse_spin_norm = 1.0 / std::sqrt(
+         black_hole_spin_squared
+      );
+      const amrex::Real spin1 = cfg.spacetime_dimensionless_spin1
+         * inverse_spin_norm;
+      const amrex::Real spin2 = cfg.spacetime_dimensionless_spin2
+         * inverse_spin_norm;
+      const amrex::Real spin3 = cfg.spacetime_dimensionless_spin3
+         * inverse_spin_norm;
+      const amrex::Real cross1 = disk_axis2 * spin3 - disk_axis3 * spin2;
+      const amrex::Real cross2 = disk_axis3 * spin1 - disk_axis1 * spin3;
+      const amrex::Real cross3 = disk_axis1 * spin2 - disk_axis2 * spin1;
+      if (std::sqrt(
+             cross1 * cross1 + cross2 * cross2 + cross3 * cross3
+          ) > disk_axis_tolerance) {
+         amrex::Abort(
+            "stationary Kerr equilibrium-torus data require disk_axis "
+            "parallel or antiparallel to the black-hole spin; tilted Kerr "
+            "disks require the explicit nonequilibrium 3D owner"
+         );
+      }
+   }
    if (equilibrium_torus_enabled
-       && (cfg.initial_data_disk_rotation_law != "constant_l"
-           || !std::isfinite(
-                cfg.initial_data_disk_specific_angular_momentum
-              )
-           || cfg.initial_data_disk_specific_angular_momentum == 0.0
-           || !(cfg.initial_data_disk_inner_radius > 0.0)
+       && (!(cfg.initial_data_disk_inner_radius > 0.0)
            || !std::isfinite(cfg.initial_data_disk_inner_radius))) {
       amrex::Abort(
+         "equilibrium-torus initial data require a positive finite "
+         "disk_inner_radius"
+      );
+   }
+   if (equilibrium_torus_enabled
+       && cfg.initial_data_disk_rotation_law == "constant_l"
+       && (!std::isfinite(cfg.initial_data_disk_specific_angular_momentum)
+           || cfg.initial_data_disk_specific_angular_momentum == 0.0)) {
+      amrex::Abort(
          "constant-l equilibrium-torus initial data require a nonzero finite "
-         "disk_specific_angular_momentum and positive finite disk_inner_radius"
+         "disk_specific_angular_momentum"
+      );
+   }
+   if (equilibrium_torus_enabled
+       && cfg.initial_data_disk_rotation_law != "constant_l"
+       && (!std::isfinite(cfg.initial_data_disk_angular_velocity)
+           || cfg.initial_data_disk_angular_velocity == 0.0)) {
+      amrex::Abort(
+         "uniform and differential equilibrium-torus laws require a nonzero "
+         "finite disk_angular_velocity"
+      );
+   }
+   if (equilibrium_torus_enabled
+       && (cfg.initial_data_disk_rotation_law == "j_constant"
+           || cfg.initial_data_disk_rotation_law == "q_power")
+       && (!(cfg.initial_data_disk_differential_rotation_length > 0.0)
+           || !std::isfinite(
+                cfg.initial_data_disk_differential_rotation_length
+              ))) {
+      amrex::Abort(
+         "differential equilibrium-torus laws require a positive finite "
+         "disk_differential_rotation_length"
+      );
+   }
+   if (equilibrium_torus_enabled
+       && cfg.initial_data_disk_rotation_law == "q_power"
+       && (!(cfg.initial_data_disk_rotation_power_q >= 1.0)
+           || !std::isfinite(cfg.initial_data_disk_rotation_power_q))) {
+      amrex::Abort(
+         "q-power equilibrium-torus initial data require finite "
+         "disk_rotation_power_q >= 1"
       );
    }
    bool rotation_law_supported = false;
@@ -2198,6 +2271,12 @@ void validate_config(RunConfig const& cfg)
          mesh_axes_layout(MeshSpherical, cfg.mesh_axes), MeshAxisR
       )
       && cfg.ic == "tov";
+   const bool analytic_kerr_torus =
+      AMREX_SPACEDIM == 3
+      && cfg.mesh_coordinate == "cartesian"
+      && cfg.ic == "equilibrium_torus"
+      && kerr_schild_requested
+      && cfg.initial_data_disk_gravity == "test_fluid";
    if (cfg.initial_data_radial_grid != "uniform"
        && cfg.initial_data_radial_grid != "adaptive") {
       amrex::Abort("initial_data.radial_grid must be uniform or adaptive");
@@ -2224,18 +2303,34 @@ void validate_config(RunConfig const& cfg)
    }
    if (cfg.initial_data_disk == "equilibrium_torus"
        && cfg.initial_data_input_file.empty()
-       && (!reduced_axisymmetric_xcts || !cfg.initial_data_solve_only)) {
+       && ((!reduced_axisymmetric_xcts || !cfg.initial_data_solve_only)
+           && !analytic_kerr_torus)) {
       amrex::Abort(
          "equilibrium-torus construction currently requires a solve-only 2D "
-         "spherical r-theta XCTS solve; a saved artifact may then materialize "
-         "onto a 3D Cartesian evolution grid"
+         "spherical r-theta stellar XCTS solve or a 3D Cartesian test-fluid "
+         "Kerr-Schild central object"
       );
    }
    if (cfg.initial_data_disk == "equilibrium_torus"
-       && cfg.ic != "tov" && cfg.ic != "rotating_star") {
+       && cfg.ic != "tov" && cfg.ic != "rotating_star"
+       && cfg.ic != "equilibrium_torus") {
       amrex::Abort(
          "equilibrium-torus initial data currently require a TOV or "
-         "rotating_star central object"
+         "rotating_star central object, or pyfluid.ic = equilibrium_torus "
+         "for a Kerr-Schild black hole"
+      );
+   }
+   if (cfg.ic == "equilibrium_torus"
+       && cfg.initial_data_disk != "equilibrium_torus") {
+      amrex::Abort(
+         "pyfluid.ic = equilibrium_torus requires "
+         "initial_data.disk = equilibrium_torus"
+      );
+   }
+   if (cfg.ic == "equilibrium_torus" && !analytic_kerr_torus) {
+      amrex::Abort(
+         "black-hole equilibrium-torus initial data currently require a 3D "
+         "Cartesian Kerr-Schild spacetime and disk_gravity = test_fluid"
       );
    }
    if (cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"

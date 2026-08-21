@@ -19,8 +19,8 @@ make a path supported.
 | Coupled evolved-Z4c matter | Validated vertical slice; long stellar evolution remains an explicit gate |
 | TOV initial data | Direct 3D Cartesian plus uniform/adaptive spherical-1D artifact and materialization paths validated |
 | XCTS rotating-star initial data | Coupled spherical `r theta` circular-RNS solve, three rotation laws, adaptive radial mapping, diagnostics, and Cartesian materialization validated; long dynamical equilibrium remains open |
-| Optional equilibrium torus | Constant-`ell` test-fluid and self-gravitating XCTS components around TOV/RNS validated through reduced solve, portable handoff, and short evolution; long equilibrium and additional disk laws remain open |
-| Reusable physical-ID and sequence artifacts | Same-chart continuation and schema-v2 cross-dimension/cross-coordinate handoff, including explicit radial faces, use one materialization interface |
+| Optional equilibrium torus | Constant-`ell` test-fluid and self-gravitating XCTS components around TOV/RNS plus direct fixed-Kerr constant-`ell` and j-constant/q=1 controls use one circular-flow interface; long equilibrium and broader law calibration remain open |
+| Reusable physical-ID and sequence artifacts | Same-chart continuation and schema-v2 cross-dimension/cross-coordinate/rigid-pose handoff, including explicit radial faces, use one materialization interface |
 | Native 1D, 2D, 3D | Production build modes |
 | AMR, reflux, average-down, restart | Production infrastructure |
 | AMR subcycling | Production for validated Cartesian cases |
@@ -132,8 +132,11 @@ EoS, XCTS source assembly, physical-ID fields, and Cartesian materializer. Its
 rotation-law catalog is deliberately separate from stellar rotation. In
 `test_fluid` mode the central metric is solved before the torus is added; in
 `coupled` mode both matter first integrals and the XCTS fields converge as one
-fixed point. The current construction supports unmagnetized constant-`ell`
-tori around TOV or rotating-star central objects only.
+fixed point. Constant-`ell` remains a disk-specific law, while uniform,
+j-constant, and q-power disks share the circular Euler-integral/root owner with
+stars. Direct 3D fixed-Kerr tori are validated for constant-`ell` and the
+j-constant/q=1 identity when disk and spin axes are aligned; a relative tilt is
+not labeled stationary equilibrium.
 
 ## Public Interfaces And Compilation
 

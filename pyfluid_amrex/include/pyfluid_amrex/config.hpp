@@ -131,6 +131,9 @@ struct RunConfig {
    std::string initial_data_disk_gravity = "test_fluid";
    std::string initial_data_disk_rotation_law = "constant_l";
    amrex::Real initial_data_disk_specific_angular_momentum = 0.0;
+   amrex::Real initial_data_disk_angular_velocity = 0.0;
+   amrex::Real initial_data_disk_differential_rotation_length = 10.0;
+   amrex::Real initial_data_disk_rotation_power_q = 1.0;
    amrex::Real initial_data_disk_inner_radius = -1.0;
    amrex::Real initial_data_disk_axis1 = 0.0;
    amrex::Real initial_data_disk_axis2 = 0.0;

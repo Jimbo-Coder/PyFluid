@@ -168,6 +168,7 @@ def main() -> None:
         INCLUDE_ROOT / "generated" / "field_catalog.hpp",
         INCLUDE_ROOT / "generated" / "diagnostic_catalog.hpp",
         INCLUDE_ROOT / "generated" / "method_catalog.hpp",
+        INCLUDE_ROOT / "generated" / "initial_data_method_catalog.hpp",
     )
     missing = [path for path in required_catalog_outputs if not path.is_file()]
     if missing:
@@ -183,6 +184,15 @@ def main() -> None:
     if "ReconOptions = ReconstructionMethodCatalog" not in config_options:
         errors.append(
             "runtime reconstruction options must consume ReconstructionMethodCatalog"
+        )
+    reconstruction_catalog = (
+        INCLUDE_ROOT / "generated" / "method_catalog.hpp"
+    ).read_text()
+    if "enum class RotationLaw" in reconstruction_catalog \
+            or "enum class DiskRotationLaw" in reconstruction_catalog:
+        errors.append(
+            "initial-data method identity must stay out of the broadly included "
+            "reconstruction catalog"
         )
 
     synthesized_field_names = []

@@ -25,7 +25,7 @@ It intentionally links rather than restating the detailed contracts.
 | Coding and review policy | current source | `docs/code_conventions.md` |
 | Runtime configuration | `include/pyfluid_amrex/config.hpp`, `src/framework/config*.{cpp,hpp}` | `README.md`, configuration rules |
 | Grid fields, components, centerings | `schema/fields.toml`, loaded by `codegen/pyfluid_codegen/field_catalog.py` | `docs/catalog_schema.md`, generated field sections in `docs/equations.md` |
-| Reconstruction and rotation-law identity | `schema/methods.toml`, loaded by `codegen/pyfluid_codegen/method_catalog.py`; formulas under `include/pyfluid_amrex/reconstruction/` | `docs/catalog_schema.md`, `docs/tov.md` |
+| Reconstruction and rotation-law identity | `schema/methods.toml`, loaded by `codegen/pyfluid_codegen/method_catalog.py`; formulas under `include/pyfluid_amrex/reconstruction/` and shared circular ID policy under `include/pyfluid_amrex/initial_data/circular_rotation.hpp` | `docs/catalog_schema.md`, `docs/tov.md` |
 | Diagnostics and reductions | `codegen/pyfluid_codegen/diagnostic_catalog.py`, `src/amr/amr_solver_diagnostics.cpp` | `docs/diagnostics.md` |
 | Generated equations | labeled symbolic sources under `codegen/pyfluid_codegen/` | `docs/equations.md`, `docs/equations.tex` |
 | Relativistic HD/MHD and Z4c | generated kernels, `src/relativity/{rhd_system,rmhd_system,relativistic_atmosphere}.hpp`, `include/pyfluid_amrex/relativistic_boundary.hpp`, and `src/amr/amr_solver_spacetime*.cpp` | `docs/grmhd_development.md` |

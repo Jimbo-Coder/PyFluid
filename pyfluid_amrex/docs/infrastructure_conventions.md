@@ -339,7 +339,7 @@ classify stellar matter support.
 Automatic sequence output is organized under the run directory by EoS,
 rotation law, and fixed central density. Named EoS presets and differential
 law parameters are recorded in the path and `sequence.meta`; `sequence.tsv`
-schema v4 indexes accepted targets together with the converged injection
+schema v5 indexes accepted targets together with the converged injection
 energy, surface diagnostics, ADM/baryonic masses, angular momentum, and spin.
 Model names include prescribed `omega`, base-grid resolution, and hierarchy
 level count. Every model is the same losslessly
@@ -402,6 +402,16 @@ exact-layout mapped RNS artifact can seed the next rotation target without
 interpolation; the resulting model remains independently usable for Cartesian
 materialization. Cross-chart CT is deliberately rejected until face-centred
 divergence-preserving magnetic transfer has an owner.
+
+Object pose is a materialization choice, not an elliptic-solver coordinate
+choice. The artifact persists stellar rotation axis and center separately from
+black-hole spin/origin and disk axis. One proper rigid transform maps target
+points back into the source object's Cartesian frame before chart
+interpolation, then rotates catalog-declared polar/axial vectors and symmetric
+tensors into the target frame. A nonidentity pose disables exact evolution
+caches and uses the portable core. Relative axes of composed components must
+remain compatible under that one transform; changing their relative tilt is a
+new physical ID problem, not a materializer option.
 
 Elliptic boundary types are component-specific: on a reflection plane the
 normal component of a polar vector is odd while its tangential components are

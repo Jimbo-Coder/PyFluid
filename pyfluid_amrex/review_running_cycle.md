@@ -5821,3 +5821,34 @@ I will always continue from the last cycle marked as `in_progress`.
   unchanged production rebuild is a `0.24 s` cache hit; the earlier broad
   rebuild came from the one new global slow-start scalar, not a finder template
   axis. [DONE]
+
+## Cycle 302 — Single-object rotation, disk, and materialization closure (DONE)
+
+- Split the generated initial-data rotation-law identity from the broadly
+  included reconstruction catalog so adding a stellar or disk law no longer
+  invalidates every flux-kernel owner. Added one runtime-selected circular
+  Euler-integral owner shared by rotating stars and non-constant-l tori;
+  `constant_l` remains the distinct accretion-torus law. [DONE]
+- Added direct analytic Kerr--Schild equilibrium-torus construction and
+  AMR-aware support/charge diagnostics. Constant-l and j-constant/q=1
+  controls solve, save, reload, and evolve with zero relativistic recovery;
+  misaligned Kerr spin/disk axes reject as a nonequilibrium composition rather
+  than being mislabeled stationary. [DONE]
+- Persist the stellar rotation axis and add one rigid source-to-target frame
+  transform to the portable physical-ID materializer. This must rotate query
+  points, polar/axial vectors, and symmetric tensors consistently, preserve
+  reduced reflection semantics, disable incompatible exact caches, and prove
+  a reduced +z RNS artifact can materialize about an arbitrary 3D axis without
+  a new compiled method product. The adaptive `128x32` RNS control rotated to
+  +x and translated to `(1,-2,0.5)` on a `16^3` Cartesian target preserves
+  sorted density/speed profiles to `1.50e-11`, has exactly zero velocity along
+  the new axis, passes the relativistic startup preflight at `9.03e-14`, and
+  uses zero recovery. Pointwise checks also cover tensor and antiparallel-axis
+  rotation. [DONE]
+- Focused physical-ID, torus, black-hole, and CompOSE gates pass, as do the
+  production 1D/2D/3D build, architecture check, generated-source comparison,
+  3/3 quick suite, and complete 46/46 standard suite in `215.472 s`. Runtime
+  controls pass at `108.41/131.44`, `5.97`, and `0.18` Mcells/s, or
+  `0.94--0.99` of their stored baselines. A method-catalog-only edit completes
+  in `0.95 s` without a C++ rebuild; the unchanged production target is a
+  `0.26 s` cache hit. [DONE]

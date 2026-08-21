@@ -99,40 +99,4 @@ constexpr bool reconstruction_is_characteristic(int method) noexcept
    }
 }
 
-enum class RotationLaw : int {
-   Uniform = 0,
-   JConstant = 1,
-   QPower = 2,
-};
-
-struct RotationLawInfo {
-   RotationLaw id;
-   std::string_view name;
-   std::string_view label;
-   std::string_view description;
-   std::string_view parameters;
-};
-
-inline constexpr std::array<RotationLawInfo, 3> RotationLawCatalog = {{
-   {RotationLaw::Uniform, "uniform", "Uniform angular velocity", "Circular flow with one constant angular velocity.", "angular_velocity"},
-   {RotationLaw::JConstant, "j_constant", "Relativistic j-constant", "Differential rotation with j(Omega) = A^2 (Omega_c - Omega).", "angular_velocity,differential_rotation_length"},
-   {RotationLaw::QPower, "q_power", "Relativistic q-power", "Generalized differential rotation with q=1 equal to j-constant.", "angular_velocity,differential_rotation_length,rotation_power_q"}
-}};
-
-enum class DiskRotationLaw : int {
-   ConstantL = 0,
-};
-
-struct DiskRotationLawInfo {
-   DiskRotationLaw id;
-   std::string_view name;
-   std::string_view label;
-   std::string_view description;
-   std::string_view parameters;
-};
-
-inline constexpr std::array<DiskRotationLawInfo, 1> DiskRotationLawCatalog = {{
-   {DiskRotationLaw::ConstantL, "constant_l", "Constant specific angular momentum", "Stationary circular torus with constant ell=-u_phi/u_t.", "specific_angular_momentum,inner_radius"}
-}};
-
 } // namespace pyfluid_amrex

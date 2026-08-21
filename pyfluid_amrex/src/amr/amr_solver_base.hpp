@@ -346,6 +346,7 @@ protected:
    bool materialize_constraint_solved_initial_data(bool seed_from_loaded_id = false);
    void finalize_constraint_solved_initial_data_state();
    void materialize_configured_initial_data();
+   void summarize_configured_equilibrium_torus();
    bool load_physical_initial_data_artifact();
    void write_physical_initial_data_artifact();
    void write_physical_initial_data_artifact(

@@ -28,6 +28,9 @@ struct PhysicalInitialDataMetadata {
    std::string disk_gravity;
    std::string disk_rotation_law;
    amrex::Real disk_specific_angular_momentum = 0.0;
+   amrex::Real disk_angular_velocity = 0.0;
+   amrex::Real disk_differential_rotation_length = 10.0;
+   amrex::Real disk_rotation_power_q = 1.0;
    amrex::Real disk_inner_radius = -1.0;
    amrex::GpuArray<amrex::Real, 3> disk_axis{{0.0, 0.0, 1.0}};
    amrex::Real disk_maximum_density = -1.0;
@@ -44,7 +47,9 @@ struct PhysicalInitialDataMetadata {
    amrex::Real rotation_power_q = 1.0;
    amrex::Real injection_energy = -1.0;
    amrex::Real matter_outer_radius = -1.0;
+   amrex::GpuArray<amrex::Real, 3> rotation_axis{{0.0, 0.0, 1.0}};
    amrex::GpuArray<amrex::Real, 3> rotation_center{};
+   bool used_rigid_transform = false;
    bool exact_layout = false;
    bool used_exact_cache = false;
 };

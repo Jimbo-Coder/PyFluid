@@ -1000,6 +1000,7 @@ void interpolate_portable_field(
    amrex::IndexType centering,
    RuntimePhysicalIdCoordinateFaces const& source_coordinate_faces,
    PhysicalIdCoordinateFaces const& target_coordinate_faces,
+   PhysicalIdRigidTransform const& rigid_transform,
    amrex::GpuArray<amrex::Real, 3> const& origin,
    PhysicalFieldExterior exterior,
    bool stationary_rotating,
@@ -1021,7 +1022,8 @@ void interpolate_portable_field(
       source_chart,
       field_set,
       centering == amrex::IndexType::TheNodeType(),
-      source_coordinate_faces
+      source_coordinate_faces,
+      rigid_transform
    );
    const int target_coordinate = target_chart.coordinate_kind;
    MeshAxes axes{};
@@ -1442,6 +1444,18 @@ void write_physical_initial_data(
                << output_metadata_real_string(
                     cfg.initial_data_disk_specific_angular_momentum
                   ) << '\n';
+      metadata << "# disk_angular_velocity="
+               << output_metadata_real_string(
+                    cfg.initial_data_disk_angular_velocity
+                  ) << '\n';
+      metadata << "# disk_differential_rotation_length="
+               << output_metadata_real_string(
+                    cfg.initial_data_disk_differential_rotation_length
+                  ) << '\n';
+      metadata << "# disk_rotation_power_q="
+               << output_metadata_real_string(
+                    cfg.initial_data_disk_rotation_power_q
+                  ) << '\n';
       metadata << "# disk_inner_radius="
                << output_metadata_real_string(
                     cfg.initial_data_disk_inner_radius
@@ -1467,6 +1481,15 @@ void write_physical_initial_data(
                   ) << '\n';
       metadata << "# rotation_power_q="
                << output_metadata_real_string(cfg.initial_data_rotation_power_q)
+               << '\n';
+      metadata << "# rotation_axis1="
+               << output_metadata_real_string(cfg.initial_data_rotation_axis1)
+               << '\n';
+      metadata << "# rotation_axis2="
+               << output_metadata_real_string(cfg.initial_data_rotation_axis2)
+               << '\n';
+      metadata << "# rotation_axis3="
+               << output_metadata_real_string(cfg.initial_data_rotation_axis3)
                << '\n';
       metadata << "# rotation_center1="
                << output_metadata_real_string(cfg.initial_data_rotation_center1)
@@ -1773,6 +1796,15 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.disk_specific_angular_momentum = required_metadata_real(
          metadata, "disk_specific_angular_momentum", path
       );
+      result.disk_angular_velocity = optional_metadata_real(
+         metadata, "disk_angular_velocity", 0.0, path
+      );
+      result.disk_differential_rotation_length = optional_metadata_real(
+         metadata, "disk_differential_rotation_length", 10.0, path
+      );
+      result.disk_rotation_power_q = optional_metadata_real(
+         metadata, "disk_rotation_power_q", 1.0, path
+      );
       result.disk_inner_radius = required_metadata_real(
          metadata, "disk_inner_radius", path
       );
@@ -1810,10 +1842,17 @@ PhysicalInitialDataMetadata read_physical_initial_data(
              != cfg.initial_data_disk_rotation_law
           || result.disk_specific_angular_momentum
              != cfg.initial_data_disk_specific_angular_momentum
-          || result.disk_inner_radius != cfg.initial_data_disk_inner_radius
-          || result.disk_axis[0] != cfg.initial_data_disk_axis1
-          || result.disk_axis[1] != cfg.initial_data_disk_axis2
-          || result.disk_axis[2] != cfg.initial_data_disk_axis3) {
+          || (result.disk_rotation_law != "constant_l"
+              && result.disk_angular_velocity
+                 != cfg.initial_data_disk_angular_velocity)
+          || ((result.disk_rotation_law == "j_constant"
+               || result.disk_rotation_law == "q_power")
+              && result.disk_differential_rotation_length
+                 != cfg.initial_data_disk_differential_rotation_length)
+          || (result.disk_rotation_law == "q_power"
+              && result.disk_rotation_power_q
+                 != cfg.initial_data_disk_rotation_power_q)
+          || result.disk_inner_radius != cfg.initial_data_disk_inner_radius) {
          amrex::Abort(
             "physical-ID equilibrium-torus parameters are incompatible with "
             "the target in " + path
@@ -1966,11 +2005,15 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          );
       }
    }
-   result.rotation_center = {
-      cfg.initial_data_rotation_center1,
-      cfg.initial_data_rotation_center2,
-      cfg.initial_data_rotation_center3,
-   };
+   // Schema-v1 artifacts predate explicit pose metadata and were centered at
+   // the coordinate origin.  The target center is a materialization choice,
+   // so it must not be used as the missing source value.
+   result.rotation_center = {0.0, 0.0, 0.0};
+   result.rotation_axis = {{
+      optional_metadata_real(metadata, "rotation_axis1", 0.0, path),
+      optional_metadata_real(metadata, "rotation_axis2", 0.0, path),
+      optional_metadata_real(metadata, "rotation_axis3", 1.0, path),
+   }};
    for (int component = 0; component < 3; ++component) {
       const std::string key = "rotation_center" + std::to_string(component + 1);
       const auto found = metadata.find(key);
@@ -1988,6 +2031,96 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          amrex::Abort(
             "physical initial-data " + key + " metadata is invalid in " + path
          );
+      }
+   }
+   const std::array<amrex::Real, 3> target_rotation_axis{
+      cfg.initial_data_rotation_axis1,
+      cfg.initial_data_rotation_axis2,
+      cfg.initial_data_rotation_axis3,
+   };
+   const std::array<amrex::Real, 3> target_disk_axis{
+      cfg.initial_data_disk_axis1,
+      cfg.initial_data_disk_axis2,
+      cfg.initial_data_disk_axis3,
+   };
+   const std::array<amrex::Real, 3> target_rotation_center{
+      cfg.initial_data_rotation_center1,
+      cfg.initial_data_rotation_center2,
+      cfg.initial_data_rotation_center3,
+   };
+   const std::array<amrex::Real, 3> source_rotation_axis{
+      result.rotation_axis[0],
+      result.rotation_axis[1],
+      result.rotation_axis[2],
+   };
+   const std::array<amrex::Real, 3> source_disk_axis{
+      result.disk_axis[0], result.disk_axis[1], result.disk_axis[2]
+   };
+   const std::array<amrex::Real, 3> source_rotation_center{
+      result.rotation_center[0],
+      result.rotation_center[1],
+      result.rotation_center[2],
+   };
+   PhysicalIdRigidTransform rigid_transform;
+   if (result.spacetime_initial_data == "kerr_schild") {
+      rigid_transform.source_origin = {
+         result.black_hole_origin[0],
+         result.black_hole_origin[1],
+         result.black_hole_origin[2],
+      };
+      rigid_transform.target_origin = rigid_transform.source_origin;
+   } else if (result.source_ic == "rotating_star") {
+      rigid_transform = make_physical_id_rigid_transform(
+         source_rotation_center,
+         target_rotation_center,
+         source_rotation_axis,
+         target_rotation_axis
+      );
+   } else if (result.disk == "equilibrium_torus") {
+      rigid_transform = make_physical_id_rigid_transform(
+         source_rotation_center,
+         target_rotation_center,
+         source_disk_axis,
+         target_disk_axis
+      );
+   } else if (result.source_ic == "tov") {
+      rigid_transform = make_physical_id_rigid_transform(
+         source_rotation_center,
+         target_rotation_center,
+         {0.0, 0.0, 1.0},
+         {0.0, 0.0, 1.0}
+      );
+   }
+   result.used_rigid_transform =
+      !physical_id_rigid_transform_is_identity(rigid_transform);
+   if (result.disk == "equilibrium_torus") {
+      std::array<amrex::Real, 3> mapped_disk_axis{};
+      amrex::Real mapped_norm_squared = 0.0;
+      amrex::Real target_norm_squared = 0.0;
+      for (int i = 0; i < 3; ++i) {
+         for (int j = 0; j < 3; ++j) {
+            mapped_disk_axis[i] += rigid_transform.source_to_target[i][j]
+               * result.disk_axis[j];
+         }
+         mapped_norm_squared += mapped_disk_axis[i] * mapped_disk_axis[i];
+         target_norm_squared += target_disk_axis[i] * target_disk_axis[i];
+      }
+      if (!(mapped_norm_squared > 0.0) || !(target_norm_squared > 0.0)) {
+         amrex::Abort(
+            "physical-ID disk rotation axis must be finite and nonzero"
+         );
+      }
+      const amrex::Real mapped_norm = std::sqrt(mapped_norm_squared);
+      const amrex::Real target_norm = std::sqrt(target_norm_squared);
+      for (int component = 0; component < 3; ++component) {
+         if (std::abs(mapped_disk_axis[component] / mapped_norm
+                      - target_disk_axis[component] / target_norm)
+             > 1.0e-12) {
+            amrex::Abort(
+               "physical-ID stellar/disk relative orientation is "
+               "incompatible with the target in " + path
+            );
+         }
       }
    }
    bool exact_boxes = false;
@@ -2025,6 +2158,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    }
    const bool exact_layout = exact_boxes
       && same_chart
+      && !result.used_rigid_transform
       && source_dimension == AMREX_SPACEDIM
       && coordinate_faces_match(
          source_coordinate_faces, coordinate_faces, source_dimension
@@ -2127,8 +2261,13 @@ PhysicalInitialDataMetadata read_physical_initial_data(
 
    if (portable_basis && !expects_ct
        && (source_dimension != AMREX_SPACEDIM || !same_chart
-           || !source_coordinate_faces.empty())) {
-      const amrex::GpuArray<amrex::Real, 3> origin = result.rotation_center;
+           || !source_coordinate_faces.empty()
+           || result.used_rigid_transform)) {
+      const amrex::GpuArray<amrex::Real, 3> origin{{
+         rigid_transform.target_origin[0],
+         rigid_transform.target_origin[1],
+         rigid_transform.target_origin[2],
+      }};
       const GridFieldSetInfo fluid_field_set = physical_fluid_grid_fields(
          system, cfg.passive_scalars
       );
@@ -2144,6 +2283,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          source_coordinate_faces,
          coordinate_faces == nullptr
             ? PhysicalIdCoordinateFaces{} : *coordinate_faces,
+         rigid_transform,
          origin,
          result.source_ic == "tov" || result.source_ic == "rotating_star"
             ? PhysicalFieldExterior::InitialAtmosphere
@@ -2180,6 +2320,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
             source_coordinate_faces,
             coordinate_faces == nullptr
                ? PhysicalIdCoordinateFaces{} : *coordinate_faces,
+            rigid_transform,
             origin,
             result.source_ic == "tov"
                ? PhysicalFieldExterior::TovSchwarzschildAdm
@@ -2225,7 +2366,11 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       amrex::IndexType::TheCellType(),
       physical_fluid_components
    );
-   const amrex::GpuArray<amrex::Real, 3> origin = result.rotation_center;
+   const amrex::GpuArray<amrex::Real, 3> origin{{
+      rigid_transform.target_origin[0],
+      rigid_transform.target_origin[1],
+      rigid_transform.target_origin[2],
+   }};
    interpolate_stored_field(
       source_fluid,
       source,

@@ -108,7 +108,7 @@ std::vector<std::pair<int, amrex::Real>> equatorial_reference_weights(
    return linear_reference_weights(centers, equator, "equator");
 }
 
-amrex::Real inner_edge_minus_covariant_time_velocity(
+amrex::Real inner_edge_normalization(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::MultiFab const& cell_spacetime,
    EquilibriumTorusParameters const& parameters
@@ -174,8 +174,12 @@ amrex::Real inner_edge_minus_covariant_time_velocity(
                   selected.theta,
                   metric
                );
+            const amrex::Real normalization =
+               parameters.rotation_law == DiskRotationLaw::ConstantL
+               ? point.minus_covariant_time_velocity
+               : std::exp(-point.log_specific_enthalpy);
             output(i, j, k, 0) = point.timelike
-               ? selected.weight * point.minus_covariant_time_velocity : 0.0;
+               ? selected.weight * normalization : 0.0;
             output(i, j, k, 1) = point.timelike ? 0.0 : 1.0;
          }
       });
@@ -188,7 +192,7 @@ amrex::Real inner_edge_minus_covariant_time_velocity(
    const amrex::Real result = reduction.sum(0, false);
    if (!(result > 0.0) || !std::isfinite(result)) {
       amrex::Abort(
-         "equilibrium-torus inner-edge covariant time velocity is invalid"
+         "equilibrium-torus inner-edge normalization is invalid"
       );
    }
    return result;
@@ -211,8 +215,8 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
        || cell_spacetime[0]->nComp() < Z4C_NUM_COMPONENTS) {
       amrex::Abort("invalid axisymmetric equilibrium-torus state layout");
    }
-   const amrex::Real inner_minus_u_t =
-      inner_edge_minus_covariant_time_velocity(
+   const amrex::Real inner_normalization =
+      inner_edge_normalization(
          hierarchy, *cell_spacetime[0], parameters
       );
    const InitialDataCoordinateLine radial_coordinates =
@@ -273,7 +277,7 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
          );
          const EquilibriumTorusPoint target =
             equilibrium_torus_axisymmetric_spherical_point(
-               parameters, inner_minus_u_t, radius, theta, metric
+               parameters, inner_normalization, radius, theta, metric
             );
          ColdBarotropeState matter;
          amrex::Real vr = 0.0;
@@ -352,7 +356,7 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
        || !(summary.outer_radius > summary.inner_radius)
        || !std::isfinite(summary.inner_radius)) {
       amrex::Abort(
-         "constant-l parameters do not produce a resolved finite torus"
+         "equilibrium-torus parameters do not produce resolved finite support"
       );
    }
    if (summary.boundary_density_excess > 0.0) {
@@ -405,6 +409,10 @@ EquilibriumTorusParameters equilibrium_torus_parameters(
    );
    parameters.specific_angular_momentum =
       cfg.initial_data_disk_specific_angular_momentum;
+   parameters.angular_velocity = cfg.initial_data_disk_angular_velocity;
+   parameters.differential_rotation_length =
+      cfg.initial_data_disk_differential_rotation_length;
+   parameters.rotation_power_q = cfg.initial_data_disk_rotation_power_q;
    parameters.inner_radius = cfg.initial_data_disk_inner_radius;
    const amrex::Real axis_norm = std::sqrt(
       cfg.initial_data_disk_axis1 * cfg.initial_data_disk_axis1
@@ -414,6 +422,15 @@ EquilibriumTorusParameters equilibrium_torus_parameters(
    parameters.axis1 = cfg.initial_data_disk_axis1 / axis_norm;
    parameters.axis2 = cfg.initial_data_disk_axis2 / axis_norm;
    parameters.axis3 = cfg.initial_data_disk_axis3 / axis_norm;
+   if (provider.fixed_spacetime.metric == FixedSpacetimeMetric::KerrSchild) {
+      parameters.center1 = provider.fixed_spacetime.origin1;
+      parameters.center2 = provider.fixed_spacetime.origin2;
+      parameters.center3 = provider.fixed_spacetime.origin3;
+   } else {
+      parameters.center1 = cfg.initial_data_rotation_center1;
+      parameters.center2 = cfg.initial_data_rotation_center2;
+      parameters.center3 = cfg.initial_data_rotation_center3;
+   }
    parameters.matter_relaxation = cfg.initial_data_matter_relaxation;
    parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
    return parameters;

@@ -5,6 +5,7 @@
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
+#include "pyfluid_amrex/initial_data/fluid.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
@@ -72,12 +73,30 @@ std::string sequence_rotation_label(RunConfig const& cfg)
    }
    if (cfg.initial_data_disk == "equilibrium_torus") {
       label += "-disk-" + cfg.initial_data_disk_rotation_law
-         + "-gravity-" + cfg.initial_data_disk_gravity
-         + "-ell-"
-         + sequence_real_label(
-              cfg.initial_data_disk_specific_angular_momentum
-           )
-         + "-rin-" + sequence_real_label(cfg.initial_data_disk_inner_radius);
+         + "-gravity-" + cfg.initial_data_disk_gravity;
+      if (cfg.initial_data_disk_rotation_law == "constant_l") {
+         label += "-ell-" + sequence_real_label(
+            cfg.initial_data_disk_specific_angular_momentum
+         );
+      } else {
+         label += "-omega-" + sequence_real_label(
+            cfg.initial_data_disk_angular_velocity
+         );
+      }
+      if (cfg.initial_data_disk_rotation_law == "j_constant"
+          || cfg.initial_data_disk_rotation_law == "q_power") {
+         label += "-A-" + sequence_real_label(
+            cfg.initial_data_disk_differential_rotation_length
+         );
+      }
+      if (cfg.initial_data_disk_rotation_law == "q_power") {
+         label += "-q-" + sequence_real_label(
+            cfg.initial_data_disk_rotation_power_q
+         );
+      }
+      label += "-rin-" + sequence_real_label(
+         cfg.initial_data_disk_inner_radius
+      );
    }
    return sequence_path_component(std::move(label));
 }
@@ -193,11 +212,282 @@ void AmrSolverBase::materialize_configured_initial_data()
          }
          finalize_constraint_solved_initial_data_state();
       }
+      if (!materialized && cfg_.ic == "equilibrium_torus") {
+         summarize_configured_equilibrium_torus();
+      }
       return;
    }
    if (load_physical_initial_data_artifact()) {
       materialize_constraint_solved_initial_data(true);
    }
+}
+
+void AmrSolverBase::summarize_configured_equilibrium_torus()
+{
+#if (AMREX_SPACEDIM != 3)
+   amrex::Abort("direct equilibrium-torus diagnostics require 3D");
+#else
+   if (cfg_.mesh_coordinate != "cartesian"
+       || cfg_.initial_data_disk != "equilibrium_torus") {
+      amrex::Abort("invalid direct equilibrium-torus diagnostic request");
+   }
+   const RelativisticInitialDataView provider = initial_data_provider_->view();
+   const FluidInitialDataParameters fluid_parameters =
+      fluid_initial_data_parameters(cfg_, provider);
+   const EquilibriumTorusParameters torus =
+      fluid_parameters.equilibrium_torus;
+   const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg_);
+   constexpr int density_component = 0;
+   constexpr int velocity_squared_component = 1;
+   constexpr int log_enthalpy_component = 2;
+   constexpr int inner_radius_component = 3;
+   constexpr int outer_radius_component = 4;
+   constexpr int boundary_excess_component = 5;
+   constexpr int density_maximum_radius_component = 6;
+   constexpr int baryonic_mass_component = 7;
+   constexpr int angular_momentum1_component = 8;
+   constexpr int angular_momentum2_component = 9;
+   constexpr int angular_momentum3_component = 10;
+   constexpr int num_components = 11;
+   const amrex::Real invalid_min = std::numeric_limits<amrex::Real>::max();
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> diagnostics;
+   diagnostics.reserve(finestLevel() + 1);
+   EquilibriumTorusUpdateSummary summary;
+   amrex::Real baryonic_mass = 0.0;
+   amrex::GpuArray<amrex::Real, 3> angular_momentum{{0.0, 0.0, 0.0}};
+   for (int level = 0; level <= finestLevel(); ++level) {
+      fill_level_primitive_cache(level, 0.0);
+      amrex::iMultiFab valid_mask = valid_cell_mask(level);
+      diagnostics.push_back(std::make_unique<amrex::MultiFab>(
+         primitive_[level]->boxArray(),
+         primitive_[level]->DistributionMap(),
+         num_components,
+         0
+      ));
+      amrex::MultiFab& diagnostic = *diagnostics.back();
+      diagnostic.setVal(0.0);
+      diagnostic.setVal(invalid_min, inner_radius_component, 1, 0);
+      const auto problo = Geom(level).ProbLoArray();
+      const auto dx = Geom(level).CellSizeArray();
+      const amrex::Box domain = Geom(level).Domain();
+      const amrex::Dim3 domain_lo = amrex::lbound(domain);
+      const amrex::Dim3 domain_hi = amrex::ubound(domain);
+      const amrex::Real half_diagonal = 0.5 * std::sqrt(
+         dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2]
+      );
+      const amrex::Real cell_volume = dx[0] * dx[1] * dx[2];
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      for (amrex::MFIter mfi(diagnostic, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto primitive = primitive_[level]->const_array(mfi);
+         const auto conserved = fluid_state_.state()[level]->const_array(mfi);
+         const auto valid = valid_mask.const_array(mfi);
+         const auto output = diagnostic.array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            if (valid(i, j, k, 0) == 0) {
+               return;
+            }
+            const PatchCoordinate physical{
+               problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0],
+               problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1],
+               problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2],
+            };
+            const InitialDataSamplePoint sample{physical, physical};
+            const EOSThermodynamicState atmosphere =
+               initial_atmosphere_state<EOSRuntime>(
+                  fluid_parameters.atmosphere, sample
+               );
+            const amrex::Real rho = primitive(i, j, k, RHO);
+            if (!initial_matter_exceeds_atmosphere(rho, atmosphere.rho)) {
+               return;
+            }
+            const amrex::Real displacement1 = physical.q1 - torus.center1;
+            const amrex::Real displacement2 = physical.q2 - torus.center2;
+            const amrex::Real displacement3 = physical.q3 - torus.center3;
+            const amrex::Real radius = std::sqrt(
+               displacement1 * displacement1
+               + displacement2 * displacement2
+               + displacement3 * displacement3
+            );
+            const amrex::Real tangent1 =
+               torus.axis2 * displacement3 - torus.axis3 * displacement2;
+            const amrex::Real tangent2 =
+               torus.axis3 * displacement1 - torus.axis1 * displacement3;
+            const amrex::Real tangent3 =
+               torus.axis1 * displacement2 - torus.axis2 * displacement1;
+            const amrex::Real cylindrical_radius = std::sqrt(
+               tangent1 * tangent1 + tangent2 * tangent2
+               + tangent3 * tangent3
+            );
+            const FixedSpacetimeGeometry local_geometry =
+               initial_data_spacetime_geometry(
+                  spacetime,
+                  physical.q1,
+                  physical.q2,
+                  physical.q3,
+                  0.0
+               );
+            const EquilibriumTorusPoint target = equilibrium_torus_point(
+               torus,
+               fluid_parameters.equilibrium_torus_inner_normalization,
+               physical,
+               local_geometry.metric
+            );
+            const amrex::Real velocity_squared = spatial_vector_norm_squared(
+               primitive(i, j, k, MOM1),
+               primitive(i, j, k, MOM2),
+               primitive(i, j, k, MOM3),
+               local_geometry.metric
+            );
+            output(i, j, k, density_component) = rho;
+            output(i, j, k, velocity_squared_component) = velocity_squared;
+            output(i, j, k, log_enthalpy_component) =
+               target.log_specific_enthalpy;
+            output(i, j, k, inner_radius_component) = radius;
+            output(i, j, k, outer_radius_component) =
+               radius + half_diagonal;
+            output(i, j, k, density_maximum_radius_component) =
+               cylindrical_radius;
+            const bool boundary_cell = i == domain_lo.x || i == domain_hi.x
+               || j == domain_lo.y || j == domain_hi.y
+               || k == domain_lo.z || k == domain_hi.z;
+            output(i, j, k, boundary_excess_component) = boundary_cell
+               ? rho - atmosphere.rho : 0.0;
+            output(i, j, k, baryonic_mass_component) =
+               cell_volume * conserved(i, j, k, RHO);
+            const amrex::Real momentum1 = conserved(i, j, k, MOM1);
+            const amrex::Real momentum2 = conserved(i, j, k, MOM2);
+            const amrex::Real momentum3 = conserved(i, j, k, MOM3);
+            output(i, j, k, angular_momentum1_component) = cell_volume * (
+               displacement2 * momentum3 - displacement3 * momentum2
+            );
+            output(i, j, k, angular_momentum2_component) = cell_volume * (
+               displacement3 * momentum1 - displacement1 * momentum3
+            );
+            output(i, j, k, angular_momentum3_component) = cell_volume * (
+               displacement1 * momentum2 - displacement2 * momentum1
+            );
+         });
+      }
+      summary.maximum_density = std::max(
+         summary.maximum_density,
+         diagnostic.max(density_component, 0, false)
+      );
+      summary.maximum_velocity = std::max(
+         summary.maximum_velocity,
+         std::sqrt(std::max(
+            diagnostic.max(velocity_squared_component, 0, false),
+            amrex::Real(0.0)
+         ))
+      );
+      summary.maximum_log_specific_enthalpy = std::max(
+         summary.maximum_log_specific_enthalpy,
+         diagnostic.max(log_enthalpy_component, 0, false)
+      );
+      summary.inner_radius = level == 0
+         ? diagnostic.min(inner_radius_component, 0, false)
+         : std::min(
+              summary.inner_radius,
+              diagnostic.min(inner_radius_component, 0, false)
+           );
+      summary.outer_radius = std::max(
+         summary.outer_radius,
+         diagnostic.max(outer_radius_component, 0, false)
+      );
+      summary.boundary_density_excess = std::max(
+         summary.boundary_density_excess,
+         diagnostic.max(boundary_excess_component, 0, false)
+      );
+      baryonic_mass += diagnostic.sum(baryonic_mass_component, false);
+      angular_momentum[0] += diagnostic.sum(
+         angular_momentum1_component, false
+      );
+      angular_momentum[1] += diagnostic.sum(
+         angular_momentum2_component, false
+      );
+      angular_momentum[2] += diagnostic.sum(
+         angular_momentum3_component, false
+      );
+   }
+   if (!(summary.maximum_density > 0.0)
+       || !(summary.maximum_velocity >= 0.0)
+       || !(summary.maximum_velocity < 1.0)
+       || !(summary.outer_radius > summary.inner_radius)
+       || !(summary.maximum_log_specific_enthalpy > 0.0)
+       || !std::isfinite(summary.inner_radius)) {
+      amrex::Abort(
+         "equilibrium-torus parameters do not produce resolved finite support"
+      );
+   }
+   if (summary.boundary_density_excess > 0.0) {
+      amrex::Abort(
+         "equilibrium-torus matter reaches the Cartesian boundary; enlarge "
+         "the ID domain"
+      );
+   }
+   const amrex::Real density_tolerance = 128.0
+      * std::numeric_limits<amrex::Real>::epsilon();
+   for (auto& diagnostic_storage : diagnostics) {
+      amrex::MultiFab& diagnostic = *diagnostic_storage;
+      const amrex::Real maximum_density = summary.maximum_density;
+      for (amrex::MFIter mfi(diagnostic, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto values = diagnostic.array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            if (values(i, j, k, density_component)
+                < maximum_density * (1.0 - density_tolerance)) {
+               values(i, j, k, density_maximum_radius_component) = 0.0;
+            }
+         });
+      }
+      summary.density_maximum_radius = std::max(
+         summary.density_maximum_radius,
+         diagnostic.max(density_maximum_radius_component, 0, false)
+      );
+   }
+   const amrex::Real volume_factor = symmetry_volume_factor();
+   summary.baryonic_mass = volume_factor * baryonic_mass;
+   summary.angular_momentum =
+      torus.axis1 * symmetry_angular_momentum_factor(0, volume_factor)
+         * angular_momentum[0]
+      + torus.axis2 * symmetry_angular_momentum_factor(1, volume_factor)
+         * angular_momentum[1]
+      + torus.axis3 * symmetry_angular_momentum_factor(2, volume_factor)
+         * angular_momentum[2];
+   if (!(summary.baryonic_mass > 0.0)
+       || !std::isfinite(summary.angular_momentum)) {
+      amrex::Abort("equilibrium-torus global diagnostics are invalid");
+   }
+   initial_data_equilibrium_torus_summary_ =
+      std::make_unique<EquilibriumTorusUpdateSummary>(summary);
+   amrex::Print()
+      << "equilibrium torus: gravity=" << cfg_.initial_data_disk_gravity
+      << " rotation_law=" << cfg_.initial_data_disk_rotation_law
+      << " specific_angular_momentum="
+      << torus.specific_angular_momentum
+      << " angular_velocity=" << torus.angular_velocity
+      << " differential_rotation_length="
+      << torus.differential_rotation_length
+      << " rotation_power_q=" << torus.rotation_power_q
+      << " requested_inner_radius=" << torus.inner_radius
+      << " resolved_inner_radius=" << summary.inner_radius
+      << " outer_radius=" << summary.outer_radius
+      << " density_maximum_radius=" << summary.density_maximum_radius
+      << " maximum_density=" << summary.maximum_density
+      << " maximum_velocity=" << summary.maximum_velocity
+      << " maximum_log_specific_enthalpy="
+      << summary.maximum_log_specific_enthalpy
+      << " baryonic_mass=" << summary.baryonic_mass
+      << " angular_momentum=" << summary.angular_momentum << '\n';
+#endif
 }
 
 bool AmrSolverBase::load_physical_initial_data_artifact()
@@ -340,13 +630,20 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          "exponent"
       );
    }
-   if (configured_rotation
-       && (metadata.rotation_center[0] != cfg_.initial_data_rotation_center1
-           || metadata.rotation_center[1] != cfg_.initial_data_rotation_center2
-           || metadata.rotation_center[2] != cfg_.initial_data_rotation_center3)) {
-      amrex::Abort(
-         "rotating-star physical ID continuation cannot change the rotation center"
-      );
+   if (metadata.used_rigid_transform) {
+      amrex::Print()
+         << "rigidly transformed physical initial data: source_axis=("
+         << metadata.rotation_axis[0] << ',' << metadata.rotation_axis[1]
+         << ',' << metadata.rotation_axis[2] << ") target_axis=("
+         << cfg_.initial_data_rotation_axis1 << ','
+         << cfg_.initial_data_rotation_axis2 << ','
+         << cfg_.initial_data_rotation_axis3 << ") source_center=("
+         << metadata.rotation_center[0] << ','
+         << metadata.rotation_center[1] << ','
+         << metadata.rotation_center[2] << ") target_center=("
+         << cfg_.initial_data_rotation_center1 << ','
+         << cfg_.initial_data_rotation_center2 << ','
+         << cfg_.initial_data_rotation_center3 << ")\n";
    }
    const bool continue_rotation = configured_rotation
       && metadata.angular_velocity != cfg_.initial_data_angular_velocity;
@@ -633,6 +930,14 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
                << cfg_.initial_data_differential_rotation_length << '\n'
                << "# rotation_power_q=" << std::setprecision(17)
                << cfg_.initial_data_rotation_power_q << '\n'
+               << "# rotation_axis=" << std::setprecision(17)
+               << cfg_.initial_data_rotation_axis1 << ','
+               << cfg_.initial_data_rotation_axis2 << ','
+               << cfg_.initial_data_rotation_axis3 << '\n'
+               << "# rotation_center=" << std::setprecision(17)
+               << cfg_.initial_data_rotation_center1 << ','
+               << cfg_.initial_data_rotation_center2 << ','
+               << cfg_.initial_data_rotation_center3 << '\n'
                << "# disk=" << cfg_.initial_data_disk << '\n'
                << "# disk_gravity=" << cfg_.initial_data_disk_gravity << '\n'
                << "# disk_rotation_law="
@@ -640,8 +945,19 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
                << "# disk_specific_angular_momentum="
                << std::setprecision(17)
                << cfg_.initial_data_disk_specific_angular_momentum << '\n'
+               << "# disk_angular_velocity=" << std::setprecision(17)
+               << cfg_.initial_data_disk_angular_velocity << '\n'
+               << "# disk_differential_rotation_length="
+               << std::setprecision(17)
+               << cfg_.initial_data_disk_differential_rotation_length << '\n'
+               << "# disk_rotation_power_q=" << std::setprecision(17)
+               << cfg_.initial_data_disk_rotation_power_q << '\n'
                << "# disk_inner_radius=" << std::setprecision(17)
                << cfg_.initial_data_disk_inner_radius << '\n'
+               << "# disk_axis=" << std::setprecision(17)
+               << cfg_.initial_data_disk_axis1 << ','
+               << cfg_.initial_data_disk_axis2 << ','
+               << cfg_.initial_data_disk_axis3 << '\n'
                << "# artifact_contract=PyFluid physical initial data v2\n";
       if (cfg_.eos_preset == "custom") {
          metadata << "# polytropic_k=" << std::setprecision(17)

@@ -43,6 +43,32 @@ struct PortablePhysicalIdSample {
    bool exterior = false;
 };
 
+// One proper rigid transform maps a portable source object's Cartesian frame
+// into the target Cartesian frame.  Coordinate charts remain responsible for
+// curvilinear components; this transform owns only object translation and
+// orientation, so it does not create coordinate- or dimension-specific
+// materializers.
+struct PhysicalIdRigidTransform {
+   std::array<amrex::Real, 3> source_origin{};
+   std::array<amrex::Real, 3> target_origin{};
+   std::array<std::array<amrex::Real, 3>, 3> source_to_target{{
+      {{1.0, 0.0, 0.0}},
+      {{0.0, 1.0, 0.0}},
+      {{0.0, 0.0, 1.0}},
+   }};
+};
+
+PhysicalIdRigidTransform make_physical_id_rigid_transform(
+   std::array<amrex::Real, 3> const& source_origin,
+   std::array<amrex::Real, 3> const& target_origin,
+   std::array<amrex::Real, 3> const& source_axis,
+   std::array<amrex::Real, 3> const& target_axis
+);
+
+bool physical_id_rigid_transform_is_identity(
+   PhysicalIdRigidTransform const& transform
+);
+
 using RuntimePhysicalIdCoordinateFaces =
    std::vector<std::array<std::vector<amrex::Real>, 3>>;
 
@@ -53,7 +79,8 @@ public:
       PhysicalIdChart source_chart,
       GridFieldSetInfo field_set,
       bool node_centered,
-      RuntimePhysicalIdCoordinateFaces coordinate_faces = {}
+      RuntimePhysicalIdCoordinateFaces coordinate_faces = {},
+      PhysicalIdRigidTransform rigid_transform = {}
    );
 
    PortablePhysicalIdSample sample(
@@ -66,6 +93,7 @@ private:
    PhysicalIdChart source_chart_;
    GridFieldSetInfo field_set_;
    bool node_centered_ = false;
+   PhysicalIdRigidTransform rigid_transform_;
 };
 
 } // namespace pyfluid_amrex

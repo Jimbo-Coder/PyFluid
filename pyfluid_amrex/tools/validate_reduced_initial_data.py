@@ -434,6 +434,9 @@ def validate_reduced_rns_handoff(
          or metadata.get("rotation_law") != "uniform" \
          or metadata.get("differential_rotation_length") != "10" \
          or metadata.get("rotation_power_q") != "1" \
+         or metadata.get("rotation_axis1") != "0" \
+         or metadata.get("rotation_axis2") != "0" \
+         or metadata.get("rotation_axis3") != "1" \
          or metadata.get("coordinate_layout") != "explicit_faces_v1":
       raise RuntimeError("reduced RNS artifact lost its chart or EoS identity")
    radial_faces = np.fromstring(
@@ -505,6 +508,59 @@ def validate_reduced_rns_handoff(
    velocity_max = float(np.max(np.sqrt(fluid[1] ** 2 + fluid[2] ** 2 + fluid[3] ** 2)))
    if not velocity_max > 1.0e-5:
       raise RuntimeError("materialized rotating star lost its azimuthal velocity")
+
+   rotated_run, rotated_artifact, rotated_seconds = run_id_case(
+      "rns_materialized_x_axis_16cubed",
+      3,
+      RNS_MATERIALIZED_INPUT,
+      {
+         "geometry.prob_lo": "-15.0 -18.0 -15.5",
+         "geometry.prob_hi": "17.0 14.0 16.5",
+         "amr.n_cell": "16 16 16",
+         "amr.max_grid_size": "16",
+         "initial_data.input_file": repo_relative(source_artifact),
+         "initial_data.radial_grid": "uniform",
+         "initial_data.angular_velocity": "0.001",
+         "initial_data.rotation_axis1": "1.0",
+         "initial_data.rotation_axis2": "0.0",
+         "initial_data.rotation_axis3": "0.0",
+         "initial_data.rotation_center1": "1.0",
+         "initial_data.rotation_center2": "-2.0",
+         "initial_data.rotation_center3": "0.5",
+      },
+      args,
+   )
+   rotated_metadata = read_artifact_metadata(rotated_artifact)
+   if rotated_metadata.get("rotation_axis1") != "1" \
+         or rotated_metadata.get("rotation_axis2") != "0" \
+         or rotated_metadata.get("rotation_axis3") != "0" \
+         or rotated_metadata.get("rotation_center1") != "1" \
+         or rotated_metadata.get("rotation_center2") != "-2" \
+         or rotated_metadata.get("rotation_center3") != "0.5" \
+         or "rigidly transformed physical initial data" not in \
+            (rotated_run / "run.log").read_text():
+      raise RuntimeError("rotated RNS materialization lost its axis identity")
+   rotated_fluid = read_level_components(
+      rotated_artifact / "physical_fluid.h5"
+   )
+   rotated_speed = np.sqrt(
+      rotated_fluid[1] ** 2
+      + rotated_fluid[2] ** 2
+      + rotated_fluid[3] ** 2
+   )
+   reference_speed = np.sqrt(fluid[1] ** 2 + fluid[2] ** 2 + fluid[3] ** 2)
+   rotation_covariance_error = max(
+      float(np.max(np.abs(np.sort(rotated_fluid[0], axis=None)
+                          - np.sort(fluid[0], axis=None)))),
+      float(np.max(np.abs(np.sort(rotated_speed, axis=None)
+                          - np.sort(reference_speed, axis=None)))),
+   )
+   if rotation_covariance_error > 2.0e-11 \
+         or float(np.max(np.abs(rotated_fluid[1]))) > 2.0e-13:
+      raise RuntimeError(
+         "reduced RNS rigid-axis materialization is not rotation covariant: "
+         f"error={rotation_covariance_error:.6e}"
+      )
 
    continuation_overrides = {
       "amr.n_cell": "96 24",
@@ -589,6 +645,19 @@ def validate_reduced_rns_handoff(
       "source_seconds": source_seconds,
       "materialization_seconds": materialization_seconds,
       "run_dir": repo_relative(materialized_artifact.parent),
+   }, {
+      "kind": "initial_data",
+      "case": "rns_adaptive_rotated_x_axis_128x32_to_16cubed",
+      "status": "PASS",
+      "metric": "rotation_covariance_error",
+      "value": rotation_covariance_error,
+      "mass_shedding_indicator": required_diagnostics[
+         "mass_shedding_indicator"
+      ],
+      "dimensionless_spin": required_diagnostics["dimensionless_spin"],
+      "source_seconds": source_seconds,
+      "materialization_seconds": rotated_seconds,
+      "run_dir": repo_relative(rotated_artifact.parent),
    }, {
       "kind": "initial_data",
       "case": "rns_adaptive_saved_sequence_continuation_128x32_to_96x24",

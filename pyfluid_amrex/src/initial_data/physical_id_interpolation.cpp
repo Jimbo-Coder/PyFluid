@@ -158,6 +158,113 @@ amrex::Real dot(Vector const& left, Vector const& right)
       + left[2] * right[2];
 }
 
+Vector cross(Vector const& left, Vector const& right)
+{
+   return {
+      left[1] * right[2] - left[2] * right[1],
+      left[2] * right[0] - left[0] * right[2],
+      left[0] * right[1] - left[1] * right[0],
+   };
+}
+
+Vector normalized(Vector const& value, char const* label)
+{
+   const amrex::Real magnitude = std::sqrt(dot(value, value));
+   if (!(magnitude > 0.0) || !std::isfinite(magnitude)) {
+      amrex::Abort(
+         std::string("physical-ID ") + label + " must be finite and nonzero"
+      );
+   }
+   return {value[0] / magnitude, value[1] / magnitude, value[2] / magnitude};
+}
+
+Vector rotate_vector(
+   std::array<std::array<amrex::Real, 3>, 3> const& rotation,
+   Vector const& value
+)
+{
+   Vector result{};
+   for (int i = 0; i < 3; ++i) {
+      for (int j = 0; j < 3; ++j) {
+         result[i] += rotation[i][j] * value[j];
+      }
+   }
+   return result;
+}
+
+Vector inverse_rotate_vector(
+   std::array<std::array<amrex::Real, 3>, 3> const& rotation,
+   Vector const& value
+)
+{
+   Vector result{};
+   for (int i = 0; i < 3; ++i) {
+      for (int j = 0; j < 3; ++j) {
+         result[i] += rotation[j][i] * value[j];
+      }
+   }
+   return result;
+}
+
+Vector target_to_source_point(
+   PhysicalIdRigidTransform const& transform,
+   Vector const& target
+)
+{
+   const Vector target_delta{
+      target[0] - transform.target_origin[0],
+      target[1] - transform.target_origin[1],
+      target[2] - transform.target_origin[2],
+   };
+   const Vector source_delta = inverse_rotate_vector(
+      transform.source_to_target, target_delta
+   );
+   return {
+      transform.source_origin[0] + source_delta[0],
+      transform.source_origin[1] + source_delta[1],
+      transform.source_origin[2] + source_delta[2],
+   };
+}
+
+Vector source_to_target_point(
+   PhysicalIdRigidTransform const& transform,
+   Vector const& source
+)
+{
+   const Vector source_delta{
+      source[0] - transform.source_origin[0],
+      source[1] - transform.source_origin[1],
+      source[2] - transform.source_origin[2],
+   };
+   const Vector target_delta = rotate_vector(
+      transform.source_to_target, source_delta
+   );
+   return {
+      transform.target_origin[0] + target_delta[0],
+      transform.target_origin[1] + target_delta[1],
+      transform.target_origin[2] + target_delta[2],
+   };
+}
+
+Tensor rotate_tensor(
+   std::array<std::array<amrex::Real, 3>, 3> const& rotation,
+   Tensor const& value
+)
+{
+   Tensor result{};
+   for (int i = 0; i < 3; ++i) {
+      for (int j = 0; j < 3; ++j) {
+         for (int a = 0; a < 3; ++a) {
+            for (int b = 0; b < 3; ++b) {
+               result[i][j] += rotation[i][a] * value[a][b]
+                  * rotation[j][b];
+            }
+         }
+      }
+   }
+   return result;
+}
+
 Vector basis_vector_to_cartesian(Basis const& basis, Vector const& value)
 {
    Vector result{};
@@ -614,7 +721,8 @@ void transform_field_values(
    std::array<amrex::Real, 3> const& source_q,
    PhysicalIdChart const& target_chart,
    std::array<amrex::Real, 3> const& target_q,
-   int reflection_mask
+   int reflection_mask,
+   PhysicalIdRigidTransform const& rigid_transform
 )
 {
    const Basis source_basis = component_basis(source_chart, source_q);
@@ -636,6 +744,9 @@ void transform_field_values(
             source_basis, source_value
          );
          reflect_vector(cartesian, reflection_mask, axial_vector(field));
+         cartesian = rotate_vector(
+            rigid_transform.source_to_target, cartesian
+         );
          const Vector target_value = cartesian_vector_to_basis(
             target_basis, cartesian
          );
@@ -662,6 +773,9 @@ void transform_field_values(
             source_basis, source_value
          );
          reflect_tensor(cartesian, reflection_mask);
+         cartesian = rotate_tensor(
+            rigid_transform.source_to_target, cartesian
+         );
          const Tensor target_value = cartesian_tensor_to_basis(
             target_basis, cartesian
          );
@@ -685,6 +799,86 @@ void transform_field_values(
 }
 
 } // namespace
+
+PhysicalIdRigidTransform make_physical_id_rigid_transform(
+   std::array<amrex::Real, 3> const& source_origin,
+   std::array<amrex::Real, 3> const& target_origin,
+   std::array<amrex::Real, 3> const& source_axis,
+   std::array<amrex::Real, 3> const& target_axis
+)
+{
+   PhysicalIdRigidTransform transform;
+   transform.source_origin = source_origin;
+   transform.target_origin = target_origin;
+   const Vector source = normalized(source_axis, "source rotation axis");
+   const Vector target = normalized(target_axis, "target rotation axis");
+   const amrex::Real cosine = std::max(
+      amrex::Real(-1.0), std::min(amrex::Real(1.0), dot(source, target))
+   );
+   constexpr amrex::Real alignment_tolerance = 1.0e-14;
+   if (cosine >= 1.0 - alignment_tolerance) {
+      return transform;
+   }
+   if (cosine <= -1.0 + alignment_tolerance) {
+      int least_aligned = 0;
+      for (int component = 1; component < 3; ++component) {
+         if (std::abs(source[component])
+             < std::abs(source[least_aligned])) {
+            least_aligned = component;
+         }
+      }
+      Vector reference{};
+      reference[least_aligned] = 1.0;
+      const Vector half_turn_axis = normalized(
+         cross(source, reference), "antiparallel rotation axis"
+      );
+      for (int i = 0; i < 3; ++i) {
+         for (int j = 0; j < 3; ++j) {
+            transform.source_to_target[i][j] =
+               2.0 * half_turn_axis[i] * half_turn_axis[j]
+               - (i == j ? 1.0 : 0.0);
+         }
+      }
+      return transform;
+   }
+
+   const Vector sine_axis = cross(source, target);
+   const std::array<std::array<amrex::Real, 3>, 3> cross_matrix{{
+      {{0.0, -sine_axis[2], sine_axis[1]}},
+      {{sine_axis[2], 0.0, -sine_axis[0]}},
+      {{-sine_axis[1], sine_axis[0], 0.0}},
+   }};
+   for (int i = 0; i < 3; ++i) {
+      for (int j = 0; j < 3; ++j) {
+         amrex::Real cross_squared = 0.0;
+         for (int component = 0; component < 3; ++component) {
+            cross_squared += cross_matrix[i][component]
+               * cross_matrix[component][j];
+         }
+         transform.source_to_target[i][j] = (i == j ? 1.0 : 0.0)
+            + cross_matrix[i][j] + cross_squared / (1.0 + cosine);
+      }
+   }
+   return transform;
+}
+
+bool physical_id_rigid_transform_is_identity(
+   PhysicalIdRigidTransform const& transform
+)
+{
+   for (int i = 0; i < 3; ++i) {
+      if (transform.source_origin[i] != transform.target_origin[i]) {
+         return false;
+      }
+      for (int j = 0; j < 3; ++j) {
+         if (transform.source_to_target[i][j]
+             != (i == j ? 1.0 : 0.0)) {
+            return false;
+         }
+      }
+   }
+   return true;
+}
 
 PhysicalIdChart make_physical_id_chart(
    int dimension,
@@ -747,12 +941,14 @@ PortablePhysicalIdInterpolator::PortablePhysicalIdInterpolator(
    PhysicalIdChart source_chart,
    GridFieldSetInfo field_set,
    bool node_centered,
-   RuntimePhysicalIdCoordinateFaces coordinate_faces
+   RuntimePhysicalIdCoordinateFaces coordinate_faces,
+   PhysicalIdRigidTransform rigid_transform
 )
    : field_(std::move(field)),
      source_chart_(std::move(source_chart)),
      field_set_(std::move(field_set)),
-     node_centered_(node_centered)
+     node_centered_(node_centered),
+     rigid_transform_(std::move(rigid_transform))
 {
    if (field_.dimension != source_chart_.dimension
        || field_.num_components != grid_field_component_count(field_set_)) {
@@ -793,8 +989,11 @@ PortablePhysicalIdSample PortablePhysicalIdInterpolator::sample(
    if (field_.levels.empty()) {
       amrex::Abort("portable physical-ID field has no levels");
    }
+   const Vector source_query = target_to_source_point(
+      rigid_transform_, target_cartesian
+   );
    const MappedSourcePoint mapped = map_source_point(
-      target_cartesian, source_chart_, field_.levels.front(), node_centered_
+      source_query, source_chart_, field_.levels.front(), node_centered_
    );
    std::vector<amrex::Real> values;
    bool found = false;
@@ -821,9 +1020,14 @@ PortablePhysicalIdSample PortablePhysicalIdInterpolator::sample(
       mapped.q,
       target_chart,
       target_q,
-      mapped.reflection_mask
+      mapped.reflection_mask,
+      rigid_transform_
    );
-   return {std::move(values), mapped.cartesian, mapped.exterior};
+   return {
+      std::move(values),
+      source_to_target_point(rigid_transform_, mapped.cartesian),
+      mapped.exterior,
+   };
 }
 
 } // namespace pyfluid_amrex

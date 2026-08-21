@@ -9,8 +9,9 @@
 #include <limits>
 
 #include "pyfluid_amrex/eos/types.hpp"
-#include "pyfluid_amrex/generated/method_catalog.hpp"
+#include "pyfluid_amrex/generated/initial_data_method_catalog.hpp"
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
+#include "pyfluid_amrex/initial_data/circular_rotation.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/kernels_generated/initial_data.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
@@ -30,10 +31,16 @@ struct EquilibriumTorusParameters {
    EquilibriumTorusGravity gravity = EquilibriumTorusGravity::TestFluid;
    DiskRotationLaw rotation_law = DiskRotationLaw::ConstantL;
    amrex::Real specific_angular_momentum = 0.0;
+   amrex::Real angular_velocity = 0.0;
+   amrex::Real differential_rotation_length = 10.0;
+   amrex::Real rotation_power_q = 1.0;
    amrex::Real inner_radius = 0.0;
    amrex::Real axis1 = 0.0;
    amrex::Real axis2 = 0.0;
    amrex::Real axis3 = 1.0;
+   amrex::Real center1 = 0.0;
+   amrex::Real center2 = 0.0;
+   amrex::Real center3 = 0.0;
    amrex::Real matter_relaxation = 0.5;
    InitialAtmosphereParameters atmosphere{};
 };
@@ -64,13 +71,44 @@ struct EquilibriumTorusUpdateSummary {
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
    EquilibriumTorusParameters const& parameters,
-   amrex::Real inner_minus_covariant_time_velocity,
+   amrex::Real inner_normalization,
    amrex::Real tangent1,
    amrex::Real tangent2,
    amrex::Real tangent3,
    SpacetimeMetric const& metric
 ) noexcept
 {
+   if (parameters.rotation_law != DiskRotationLaw::ConstantL) {
+      RotationLaw circular_law = RotationLaw::Uniform;
+      if (parameters.rotation_law == DiskRotationLaw::JConstant) {
+         circular_law = RotationLaw::JConstant;
+      } else if (parameters.rotation_law == DiskRotationLaw::QPower) {
+         circular_law = RotationLaw::QPower;
+      }
+      const CircularRotationPoint point = circular_rotation_point_from_tangent(
+         {
+            circular_law,
+            parameters.angular_velocity,
+            parameters.differential_rotation_length,
+            parameters.rotation_power_q,
+            inner_normalization,
+         },
+         tangent1,
+         tangent2,
+         tangent3,
+         metric
+      );
+      return {
+         point.log_specific_enthalpy,
+         point.angular_velocity,
+         0.0,
+         point.v1,
+         point.v2,
+         point.v3,
+         point.velocity_squared,
+         point.timelike,
+      };
+   }
    const amrex::Real shift_squared = spatial_vector_norm_squared(
       metric.shift1, metric.shift2, metric.shift3, metric
    );
@@ -105,7 +143,7 @@ EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
    if (!(metric.lapse > 0.0)
        || std::abs(denominator)
           <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale
-       || !(inner_minus_covariant_time_velocity > 0.0)) {
+       || !(inner_normalization > 0.0)) {
       return {};
    }
    const amrex::Real angular_velocity =
@@ -148,7 +186,7 @@ EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
       && std::isfinite(velocity_squared);
    const amrex::Real log_specific_enthalpy = timelike
       ? generated::constant_l_torus_log_specific_enthalpy(
-           inner_minus_covariant_time_velocity,
+           inner_normalization,
            minus_covariant_time_velocity
         )
       : 0.0;
@@ -165,9 +203,30 @@ EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+EquilibriumTorusPoint equilibrium_torus_point(
+   EquilibriumTorusParameters const& parameters,
+   amrex::Real inner_normalization,
+   PatchCoordinate const& physical,
+   SpacetimeMetric const& metric
+) noexcept
+{
+   const amrex::Real displacement1 = physical.q1 - parameters.center1;
+   const amrex::Real displacement2 = physical.q2 - parameters.center2;
+   const amrex::Real displacement3 = physical.q3 - parameters.center3;
+   return equilibrium_torus_point_from_tangent(
+      parameters,
+      inner_normalization,
+      parameters.axis2 * displacement3 - parameters.axis3 * displacement2,
+      parameters.axis3 * displacement1 - parameters.axis1 * displacement3,
+      parameters.axis1 * displacement2 - parameters.axis2 * displacement1,
+      metric
+   );
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 EquilibriumTorusPoint equilibrium_torus_axisymmetric_spherical_point(
    EquilibriumTorusParameters const& parameters,
-   amrex::Real inner_minus_covariant_time_velocity,
+   amrex::Real inner_normalization,
    amrex::Real radius,
    amrex::Real theta,
    SpacetimeMetric const& metric
@@ -175,7 +234,7 @@ EquilibriumTorusPoint equilibrium_torus_axisymmetric_spherical_point(
 {
    return equilibrium_torus_point_from_tangent(
       parameters,
-      inner_minus_covariant_time_velocity,
+      inner_normalization,
       0.0,
       0.0,
       radius * std::sin(theta),

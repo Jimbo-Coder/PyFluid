@@ -129,16 +129,19 @@ use three reflection planes. Independent x/y reflections are not valid for a
 nonzero z spin.
 
 Disk orientation is separately represented by `initial_data.disk_axis1/2/3`
-and persisted in physical-ID metadata. The present reduced r-theta torus owner
-accepts only the aligned +z axis. A future tilted disk is a 3D ID owner using
-the same materialization and metadata contract; it must not reinterpret the
-stellar rotation axis or the black-hole spin axis.
+and persisted in physical-ID metadata. The reduced r-theta torus owner accepts
+only the aligned +z source axis. The direct 3D Cartesian fixed-Kerr torus may
+use any disk axis parallel or antiparallel to the nonzero black-hole spin;
+the pointwise torus and Kerr providers are both arbitrary-axis. A relative
+black-hole/disk tilt is not stationary circular equilibrium and therefore
+rejects pending an explicit nonequilibrium or quasiequilibrium 3D owner.
 
 The orientation contract therefore has three independent axial quantities:
 black-hole spin, stellar rotation axis, and disk axis. Aligned axisymmetric ID
 may reduce to `r theta`; a genuinely tilted composition is full 3D even though
 the target evolution interface and stored ADM/fluid field schema are unchanged.
-No current input is silently rotated into the reduced owner.
+The portable materializer may rigidly rotate and translate an entire isolated
+reduced solution, but it cannot change those axes relative to one another.
 
 ## Next solver layer
 

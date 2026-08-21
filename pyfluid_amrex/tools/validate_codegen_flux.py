@@ -46,6 +46,10 @@ DIAGNOSTIC_CATALOG_HEADER = (
 METHOD_CATALOG_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated" / "method_catalog.hpp"
 )
+INITIAL_DATA_METHOD_CATALOG_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated"
+   / "initial_data_method_catalog.hpp"
+)
 FIELD_CATALOG_JSON = ROOT / "pyfluid_amrex" / "generated" / "field_catalog.json"
 EQUATION_MARKDOWN = ROOT / "pyfluid_amrex" / "docs" / "equations.md"
 EQUATION_LATEX = ROOT / "pyfluid_amrex" / "docs" / "equations.tex"
@@ -58,6 +62,7 @@ from pyfluid_codegen.emit_catalog import (  # noqa: E402
    render_field_catalog_header,
    render_field_catalog_json,
    render_field_ids_header,
+   render_initial_data_method_catalog_header,
    render_method_catalog_header,
 )
 from pyfluid_codegen.emit_cpp import (  # noqa: E402
@@ -1715,6 +1720,9 @@ def main() -> None:
          FIELD_CATALOG_HEADER: render_field_catalog_header(),
          DIAGNOSTIC_CATALOG_HEADER: render_diagnostic_catalog_header(),
          METHOD_CATALOG_HEADER: render_method_catalog_header(),
+         INITIAL_DATA_METHOD_CATALOG_HEADER: (
+            render_initial_data_method_catalog_header()
+         ),
          FIELD_CATALOG_JSON: render_field_catalog_json(),
          EQUATION_MARKDOWN: render_equation_markdown(),
          EQUATION_LATEX: render_equation_latex(),

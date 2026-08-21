@@ -398,6 +398,9 @@ if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/method_catalog.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_INITIAL_DATA_METHOD_CATALOG_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/initial_data_method_catalog.hpp
+   )
    set(PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN
       ${CMAKE_CURRENT_SOURCE_DIR}/docs/equations.md
    )
@@ -408,12 +411,54 @@ if(PYFLUID_UV_EXECUTABLE)
       ${CMAKE_CURRENT_SOURCE_DIR}/docs/equations.tex
    )
    set(PYFLUID_AMREX_CODEGEN_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_kernels.py)
+   set(PYFLUID_AMREX_CATALOG_CODEGEN_STAMP
+      ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_catalog_codegen.stamp
+   )
    set(PYFLUID_AMREX_CODEGEN_STAMP ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_codegen.stamp)
    set(PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP
       ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_initial_data_codegen.stamp
    )
    set(PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP
       ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_patch_map_codegen.stamp
+   )
+   add_custom_command(
+      OUTPUT ${PYFLUID_AMREX_CATALOG_CODEGEN_STAMP}
+      BYPRODUCTS
+         ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
+         ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
+         ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
+         ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
+         ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_METHOD_CATALOG_HEADER}
+         ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
+         ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
+         ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
+      COMMAND ${CMAKE_COMMAND} -E env
+         UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
+         ${PYFLUID_UV_EXECUTABLE} run python
+         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+         --family catalog
+         --field-ids-header ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
+         --field-catalog-header ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
+         --diagnostic-catalog-header ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
+         --method-catalog-header ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
+         --initial-data-method-catalog-header ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_METHOD_CATALOG_HEADER}
+         --field-catalog-json ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
+         --equation-markdown ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
+         --equation-latex ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
+      COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CATALOG_CODEGEN_STAMP}
+      DEPENDS
+         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/diagnostic_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/equation_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/method_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/methods.toml
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
+      COMMENT "Generating PyFluid AMReX catalogs"
+      VERBATIM
    )
    add_custom_command(
       OUTPUT ${PYFLUID_AMREX_CODEGEN_STAMP}
@@ -431,13 +476,6 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADERS}
          ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
          ${PYFLUID_AMREX_GENERATED_Z4C_HEADERS}
-         ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
-         ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
-         ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
-         ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
-         ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
-         ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
-         ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
       COMMAND ${CMAKE_COMMAND} -E env
          UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
          ${PYFLUID_UV_EXECUTABLE} run python
@@ -469,6 +507,7 @@ if(PYFLUID_UV_EXECUTABLE)
          --field-catalog-header ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
          --diagnostic-catalog-header ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
          --method-catalog-header ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
+         --initial-data-method-catalog-header ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_METHOD_CATALOG_HEADER}
          --field-catalog-json ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
          --equation-markdown ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
          --equation-latex ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
@@ -488,8 +527,6 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/flux_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml
-         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/method_catalog.py
-         ${CMAKE_CURRENT_SOURCE_DIR}/schema/methods.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/kernel_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/metric_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/operator_equations.py
@@ -543,12 +580,17 @@ if(PYFLUID_UV_EXECUTABLE)
       VERBATIM
    )
    add_custom_target(
+      pyfluid_amrex_generate_catalog
+      DEPENDS ${PYFLUID_AMREX_CATALOG_CODEGEN_STAMP}
+   )
+   add_custom_target(
       pyfluid_amrex_generate_kernels
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_STAMP}
          ${PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP}
          ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
    )
+   add_dependencies(pyfluid_amrex_generate_kernels pyfluid_amrex_generate_catalog)
 else()
    message(WARNING "uv not found; pyfluid_amrex_generate_kernels target will not be available")
 endif()

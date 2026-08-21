@@ -168,7 +168,9 @@ ln h = ln C - ln alpha - 1/2 ln(1 - gamma_ij v^i v^j)
 
 so `q_power` with `q = 1` is exactly the j-constant law. Rotation-law identity
 and required parameters are declared once in `schema/methods.toml`; the Euler
-integrals are generated kernels and the AMReX hierarchy update is owned by
+integrals are generated kernels, the pointwise circular-flow/root solve is
+shared with nonconstant disk laws in `initial_data/circular_rotation.hpp`, and
+the AMReX hierarchy update is owned by
 `src/initial_data/rotating_star_initial_data.cpp`. The iteration updates the
 injection energy to retain the requested central enthalpy, under-relaxes the
 matter variables, rebuilds stress-energy, and resolves XCTS lapse, shift, and
@@ -280,8 +282,9 @@ requests output for a one-model rotating solve. Automatic output is organized
 as
 `<output_dir>/initial_data_sequences/eos-.../rotation-.../rho_c-.../`.
 Each losslessly compressed model name includes `omega`, base resolution, and
-level count; `sequence.meta` describes the physical family and `sequence.tsv`
-schema v4 indexes the models together with density, velocity, converged
+level count; `sequence.meta` describes the EoS, stellar/disk laws, axes, and
+centers, while `sequence.tsv` schema v5 indexes the models together with
+density, velocity, converged
 injection energy, surface radii and gradients, mass-shedding indicator, ADM and
 baryonic masses, angular momentum, and dimensionless spin. Those diagnostics
 are also copied into each artifact's text metadata. The artifacts can either
@@ -289,6 +292,14 @@ seed the next XCTS target or enter evolution through `initial_data.input_file`.
 Continuation requires the same rotation law, differential length, and q-power
 exponent; it restores the saved injection energy rather than the TOV seed's
 first-integral constant.
+
+The saved stellar axis and center are source-frame metadata. A different 3D
+target axis or center applies one rigid transform in the common portable
+materializer: query points are inverse-transformed into the reduced source,
+then all catalog-declared polar/axial vectors and symmetric tensors are
+rotated into the target frame. This is a rematerialization of the same isolated
+solution, so it disables exact caches; it is not a new elliptic solve or a
+relative tilt between composed components.
 
 The common loader supports identical, compatible coarser or finer, and
 physically larger target hierarchies. Cross-grid loading interpolates the
@@ -401,13 +412,14 @@ not calibrated differential mass-shedding endpoints.
 ## Optional Equilibrium Torus
 
 The reduced spherical `r theta` XCTS solve can compose a TOV or rotating-star
-central object with an unmagnetized, barotropic equilibrium torus. The current
-disk law is constant relativistic specific angular momentum
-`ell=-u_phi/u_t`; it is declared in the separate `disk_rotation_law` catalog
-rather than aliasing the stellar `j_constant` law. The generated first-integral
-kernels evaluate the circular angular velocity, timelike normalization,
-`-u_t`, and `ln h` from the local metric. The cold EoS owner performs the
-enthalpy inversion, so the torus and star use one immutable EoS contract.
+central object with an unmagnetized, barotropic equilibrium torus. Constant
+relativistic specific angular momentum `ell=-u_phi/u_t` remains a distinct
+disk law. Uniform, j-constant, and q-power circular laws instead reuse the
+stellar Euler-integral/root owner without aliasing their catalog identities.
+The generated first-integral kernels evaluate the circular angular velocity,
+timelike normalization, `-u_t` where applicable, and `ln h` from the local
+metric. The cold EoS owner performs the enthalpy inversion, so the torus and
+star use one immutable EoS contract.
 
 Two gravity modes are explicit:
 
@@ -424,9 +436,13 @@ The current controls are:
 ```text
 initial_data.disk = equilibrium_torus
 initial_data.disk_gravity = test_fluid | coupled
-initial_data.disk_rotation_law = constant_l
+initial_data.disk_rotation_law = constant_l | uniform | j_constant | q_power
 initial_data.disk_specific_angular_momentum
+initial_data.disk_angular_velocity
+initial_data.disk_differential_rotation_length
+initial_data.disk_rotation_power_q
 initial_data.disk_inner_radius
+initial_data.disk_axis1/2/3
 ```
 
 Fresh construction requires the solve-only two-dimensional spherical
@@ -454,8 +470,12 @@ UV_CACHE_DIR=.uv-cache uv run python \
 
 These checks establish a resolved conformally flat XCTS equilibrium and a
 working handoff. They do not yet establish long-term dynamical equilibrium,
-full quasi-isotropic/KEH agreement, cusp or overflow diagnostics, magnetized
-tori, nonconstant disk rotation laws, or black-hole central objects.
+full quasi-isotropic/KEH agreement, cusp or overflow diagnostics, or magnetized
+tori. The focused standard gate additionally constructs direct fixed-Kerr
+constant-l and j-constant/q=1 tori, proves the q=1 identity, reloads the
+constant-l artifact into a short CFL-0.9 evolution with zero recovery, and
+rejects a misaligned Kerr spin/disk request. Uniform and q>1 disk laws remain
+parameter-dependent capabilities rather than calibrated accretion baselines.
 
 At fixed grid spacing, expanding a zero-spin XCTS control from extraction
 radius 12.8 to 19.2 reduces the Komar-surface/ADM-surface difference from

@@ -295,7 +295,10 @@ baseline.
   metadata. Scalars, polar/axial vectors, and symmetric tensors transform
   through Cartesian physical components; this adds one compiled materializer
   owner rather than a coordinate/formulation/EoS template axis. Exact
-  same-layout caches remain optional accelerators.
+  same-layout caches remain optional accelerators. Stellar rotation axis and
+  center are persisted; one proper rigid transform may rotate/translate an
+  entire isolated source during portable materialization and disables an
+  otherwise matching exact cache. It cannot change relative component tilt.
 - `initial_data.solve_only=1` performs the normal ID materialization and
   relativistic C2P/P2C preflight, writes the portable artifact, and exits before
   evolution. Validated reduced paths include spherical 1D TOV and spherical
@@ -319,6 +322,12 @@ baseline.
   only after nodal ADM fields have been reconstructed at authoritative cell
   centering; using a provisional metric can make otherwise valid cold surface
   primitives fail C2P.
+- A saved adaptive `128x32` +z RNS rigidly rematerialized about +x and translated
+  to `(1,-2,0.5)` on a correspondingly shifted `16^3` Cartesian grid preserves
+  the sorted density/speed profiles to `1.50e-11` absolute, gives exactly zero
+  velocity along the new axis, passes C2P/P2C at `9.03e-14`, and uses zero
+  recovery. Pointwise controls separately cover tensor rotation and the
+  antiparallel-axis construction.
 - Adaptive 256x64 small-spin RNS uses one quarter the cells of uniform 512x128,
   runs in `2.115 s` versus `7.467 s`, and differs in ADM mass by `6.75e-6`
   relative (`J/M^2` by `5.68e-4`). Cartesian 32^3 materialization retains
@@ -417,12 +426,11 @@ baseline.
   full quasi-isotropic GR, while PyFluid currently solves conformally flat
   XCTS at finite outer radius.
 - The reduced `r theta` XCTS owner can compose either a TOV or rotating-star
-  central object with an optional unmagnetized barotropic constant-`ell`
-  equilibrium torus, where `ell=-u_phi/u_t`. `test_fluid` solves the central
-  metric first and adds the torus without its stress-energy; it does not mean
-  zero torus rest density. `coupled` iterates the stellar and torus first
-  integrals with the XCTS fields and includes both matter sources. The disk law
-  is a separate generated catalog from stellar `j_constant` and q-power laws.
+  central object with an optional unmagnetized barotropic equilibrium torus.
+  Constant `ell=-u_phi/u_t` is a distinct disk law; uniform, j-constant, and
+  q-power disks reuse one runtime-selected circular Euler-integral/root owner
+  with the star without forming a new template product. `test_fluid` omits the
+  torus stress-energy; `coupled` iterates both matter components with XCTS.
 - A coupled adaptive `256x64` SLy TOV-plus-disk control with `ell=5.2` and
   requested inner radius 8 has disk baryonic mass `0.103830`, angular momentum
   `0.524952`, resolved support `8.474--33.915`, and elliptic residuals below
@@ -435,9 +443,12 @@ baseline.
   Physical-ID metadata retain the disk identity, support, component mass and
   angular momentum through reduced-to-Cartesian rematerialization. A two-step
   `32^3` evolved-Z4c smoke at CFL 0.9 has rest-mass drift below `1e-10` with
-  zero recovery. Long-term star/disk equilibrium, nonconstant disk laws,
-  magnetized tori, central black holes, cusp/overflow diagnostics, and
-  cross-method comparison remain open.
+  zero recovery. Direct 3D fixed-Kerr constant-l and j-constant/q=1 artifacts
+  also solve, reload, and evolve with zero recovery; misaligned Kerr spin/disk
+  axes reject because they are not stationary circular equilibrium. Long-term
+  star/disk or black-hole/disk equilibrium, q>1 disk-law calibration,
+  magnetized tori, cusp/overflow diagnostics, and cross-method comparison
+  remain open.
 - Differential rotation is validated over useful ranges, not to a physical
   endpoint. Q-power `q=1`, `A=10` reproduces j-constant fields and diagnostics
   to roundoff. Q-power `q=2` converges at `A=10`, `Omega=0.03` and at `A=5`,

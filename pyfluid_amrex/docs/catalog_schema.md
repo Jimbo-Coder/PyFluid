@@ -87,9 +87,12 @@ Its first implemented families are `rotation_law` and `disk_rotation_law`:
 the strict loader emits separate C++ enums and descriptors consumed by
 configuration and the corresponding matter factories. Stellar entries are
 uniform, relativistic j-constant, and relativistic q-power rotation; the disk
-entry is constant `ell=-u_phi/u_t`. Their identities and required parameter
-names live in TOML. The relativistic Euler integrals, torus first integral, and
-nonlinear iterations remain generated/C++ science code. Future method families
+entries are constant `ell=-u_phi/u_t`, uniform, j-constant, and q-power. Their
+identities and required parameter names live in TOML. Initial-data enums are
+emitted into a dedicated generated header so extending them does not invalidate
+the reconstruction owners. The relativistic Euler integrals, torus first
+integral, and nonlinear iterations remain generated/C++ science code. Future
+method families
 should migrate independently rather than turning this catalog into an
 unvalidated omnibus registry. Factories consume generated descriptors. Coupled
 numerical compatibility and physical validation remain explicit code when they

@@ -164,3 +164,24 @@ cpp_id = "ConstantL"
 label = "Constant specific angular momentum"
 description = "Stationary circular torus with constant ell=-u_phi/u_t."
 parameters = ["specific_angular_momentum", "inner_radius"]
+
+[[disk_rotation_law]]
+name = "j_constant"
+cpp_id = "JConstant"
+label = "Relativistic j-constant"
+description = "Stationary circular torus with j(Omega) = A^2 (Omega_c - Omega)."
+parameters = ["angular_velocity", "differential_rotation_length", "inner_radius"]
+
+[[disk_rotation_law]]
+name = "q_power"
+cpp_id = "QPower"
+label = "Relativistic q-power"
+description = "Stationary circular torus with the generalized q-power j(Omega) law."
+parameters = ["angular_velocity", "differential_rotation_length", "rotation_power_q", "inner_radius"]
+
+[[disk_rotation_law]]
+name = "uniform"
+cpp_id = "Uniform"
+label = "Uniform angular velocity"
+description = "Circular flow with one constant angular velocity; a finite detached torus is still required."
+parameters = ["angular_velocity", "inner_radius"]

@@ -15,6 +15,7 @@
 namespace {
 
 using pyfluid_amrex::PhysicalIdChart;
+using pyfluid_amrex::PhysicalIdRigidTransform;
 using pyfluid_amrex::PortablePhysicalIdInterpolator;
 using pyfluid_amrex::RuntimeDimensionHdf5Box;
 using pyfluid_amrex::RuntimeDimensionHdf5Field;
@@ -210,6 +211,74 @@ void check_mapped_radial_origin_is_not_exterior()
    require_close(sample.values[0], 5.0, 1.0e-14, "mapped-origin scalar");
 }
 
+void check_rigid_axis_and_center_materialization()
+{
+   const PhysicalIdRigidTransform transform =
+      pyfluid_amrex::make_physical_id_rigid_transform(
+         {0.0, 0.0, 0.0},
+         {3.0, -2.0, 1.0},
+         {0.0, 0.0, 1.0},
+         {1.0, 0.0, 0.0}
+      );
+   if (pyfluid_amrex::physical_id_rigid_transform_is_identity(transform)) {
+      throw std::runtime_error("nontrivial physical-ID transform is identity");
+   }
+   PortablePhysicalIdInterpolator fluid_interpolator(
+      constant_spherical_field(5, {5.0, 2.0, 0.0, 0.0, 7.0}, true),
+      pyfluid_amrex::make_physical_id_chart(2, "spherical", "r theta"),
+      pyfluid_amrex::physical_fluid_grid_fields(
+         pyfluid_amrex::PhysicalSystem::RHD, 0
+      ),
+      true,
+      {},
+      transform
+   );
+   const PhysicalIdChart target_chart = pyfluid_amrex::make_physical_id_chart(
+      3, "cartesian", "x y z"
+   );
+   const auto fluid_sample = fluid_interpolator.sample(
+      {5.0, -2.0, 1.0}, target_chart
+   );
+   require_close(fluid_sample.values[0], 5.0, 1.0e-14, "rotated density");
+   require_close(fluid_sample.values[1], 2.0, 2.0e-14, "rotated velocity x");
+   require_close(fluid_sample.values[2], 0.0, 2.0e-14, "rotated velocity y");
+   require_close(fluid_sample.values[3], 0.0, 2.0e-14, "rotated velocity z");
+   require_close(fluid_sample.source_cartesian[0], 5.0, 2.0e-14, "mapped x");
+   require_close(fluid_sample.source_cartesian[1], -2.0, 2.0e-14, "mapped y");
+   require_close(fluid_sample.source_cartesian[2], 1.0, 2.0e-14, "mapped z");
+
+   std::vector<amrex::Real> adm_values(16, 0.0);
+   adm_values[0] = 4.0;
+   adm_values[3] = 2.0;
+   adm_values[5] = 3.0;
+   adm_values[12] = 0.8;
+   adm_values[13] = 2.0;
+   PortablePhysicalIdInterpolator adm_interpolator(
+      constant_spherical_field(16, adm_values, true),
+      pyfluid_amrex::make_physical_id_chart(2, "spherical", "r theta"),
+      pyfluid_amrex::adm_initial_data_grid_fields(),
+      true,
+      {},
+      transform
+   );
+   const auto adm_sample = adm_interpolator.sample(
+      {5.0, -2.0, 1.0}, target_chart
+   );
+   require_close(adm_sample.values[0], 4.0, 2.0e-14, "rotated metric xx");
+   require_close(adm_sample.values[3], 3.0, 2.0e-14, "rotated metric yy");
+   require_close(adm_sample.values[5], 2.0, 2.0e-14, "rotated metric zz");
+   require_close(adm_sample.values[13], 2.0, 2.0e-14, "rotated shift x");
+   require_close(adm_sample.values[14], 0.0, 2.0e-14, "rotated shift y");
+   require_close(adm_sample.values[15], 0.0, 2.0e-14, "rotated shift z");
+
+   const PhysicalIdRigidTransform half_turn =
+      pyfluid_amrex::make_physical_id_rigid_transform(
+         {}, {}, {0.0, 0.0, 1.0}, {0.0, 0.0, -1.0}
+      );
+   const auto& rotation = half_turn.source_to_target;
+   require_close(rotation[2][2], -1.0, 2.0e-14, "half-turn axis map");
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -221,6 +290,7 @@ int main(int argc, char** argv)
       check_symmetric_tensor_rotation();
       check_axial_vector_reflection();
       check_mapped_radial_origin_is_not_exterior();
+      check_rigid_axis_and_center_materialization();
       std::cout << "PASS portable physical-ID interpolation check\n";
    } catch (std::exception const& error) {
       std::cerr << "FAIL portable physical-ID interpolation check: "

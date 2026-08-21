@@ -656,6 +656,12 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
             << " rotation_law=" << cfg_.initial_data_disk_rotation_law
             << " specific_angular_momentum="
             << equilibrium_torus.specific_angular_momentum
+            << " angular_velocity="
+            << equilibrium_torus.angular_velocity
+            << " differential_rotation_length="
+            << equilibrium_torus.differential_rotation_length
+            << " rotation_power_q="
+            << equilibrium_torus.rotation_power_q
             << " requested_inner_radius=" << equilibrium_torus.inner_radius
             << " resolved_inner_radius="
             << result.equilibrium_torus.inner_radius

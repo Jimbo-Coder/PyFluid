@@ -36,6 +36,16 @@ MATERIALIZED_INPUT = (
 EVOLUTION_INPUT = (
    ROOT / "pyfluid_amrex/inputs/equilibrium_torus_evolution_3d.in"
 )
+KERR_ID_INPUT = (
+   ROOT / "pyfluid_amrex/inputs/kerr_schild_equilibrium_torus_id_3d.in"
+)
+KERR_EVOLUTION_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/kerr_schild_equilibrium_torus_evolution_3d.in"
+)
+KERR_J_CONSTANT_INPUT = (
+   ROOT / "pyfluid_amrex/inputs/kerr_schild_j_constant_torus_id_3d.in"
+)
 RNS_INPUT = (
    ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_spherical_id_2d.in"
 )
@@ -47,10 +57,12 @@ ELLIPTIC_CHECK = "pyfluid_amrex_initial_data_elliptic_check_2d"
 FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
 TORUS_PATTERN = re.compile(
    rf"equilibrium torus: gravity=(\w+) rotation_law=(\w+) "
-   rf"specific_angular_momentum=({FLOAT}) requested_inner_radius=({FLOAT}) "
-   rf"resolved_inner_radius=({FLOAT}) outer_radius=({FLOAT}) "
-   rf"density_maximum_radius=({FLOAT}) maximum_density=({FLOAT}) "
-   rf"maximum_velocity=({FLOAT}) maximum_log_specific_enthalpy=({FLOAT}) "
+   rf"specific_angular_momentum=({FLOAT}) angular_velocity=({FLOAT}) "
+   rf"differential_rotation_length=({FLOAT}) rotation_power_q=({FLOAT}) "
+   rf"requested_inner_radius=({FLOAT}) resolved_inner_radius=({FLOAT}) "
+   rf"outer_radius=({FLOAT}) density_maximum_radius=({FLOAT}) "
+   rf"maximum_density=({FLOAT}) maximum_velocity=({FLOAT}) "
+   rf"maximum_log_specific_enthalpy=({FLOAT}) "
    rf"baryonic_mass=({FLOAT}) angular_momentum=({FLOAT})"
 )
 CONSTRAINT_PATTERN = re.compile(
@@ -131,6 +143,7 @@ def run_case(
 
 def run_rejected_case(
    name: str,
+   dim: int,
    base_input: Path,
    overrides: dict[str, str],
    expected_message: str,
@@ -151,7 +164,7 @@ def run_rejected_case(
       },
    )
    completed = run_amrex(
-      dim=2,
+      dim=dim,
       input_path=input_path,
       ranks=args.ranks,
       timeout=args.timeout,
@@ -175,15 +188,18 @@ def torus_diagnostics(log_text: str, name: str) -> dict[str, float | str]:
       "gravity": values[0],
       "rotation_law": values[1],
       "specific_angular_momentum": float(values[2]),
-      "requested_inner_radius": float(values[3]),
-      "resolved_inner_radius": float(values[4]),
-      "outer_radius": float(values[5]),
-      "density_maximum_radius": float(values[6]),
-      "maximum_density": float(values[7]),
-      "maximum_velocity": float(values[8]),
-      "maximum_log_specific_enthalpy": float(values[9]),
-      "baryonic_mass": float(values[10]),
-      "angular_momentum": float(values[11]),
+      "angular_velocity": float(values[3]),
+      "differential_rotation_length": float(values[4]),
+      "rotation_power_q": float(values[5]),
+      "requested_inner_radius": float(values[6]),
+      "resolved_inner_radius": float(values[7]),
+      "outer_radius": float(values[8]),
+      "density_maximum_radius": float(values[9]),
+      "maximum_density": float(values[10]),
+      "maximum_velocity": float(values[11]),
+      "maximum_log_specific_enthalpy": float(values[12]),
+      "baryonic_mass": float(values[13]),
+      "angular_momentum": float(values[14]),
    }
 
 
@@ -208,11 +224,14 @@ def validate_torus(
    *,
    gravity: str,
    massive: bool,
+   rotation_law: str = "constant_l",
 ) -> None:
    if diagnostics["gravity"] != gravity:
       raise RuntimeError(f"torus gravity={diagnostics['gravity']} != {gravity}")
-   if diagnostics["rotation_law"] != "constant_l":
-      raise RuntimeError("torus did not use the generated constant-l law")
+   if diagnostics["rotation_law"] != rotation_law:
+      raise RuntimeError(
+         f"torus rotation_law={diagnostics['rotation_law']} != {rotation_law}"
+      )
    if not (
       float(diagnostics["requested_inner_radius"])
       < float(diagnostics["resolved_inner_radius"])
@@ -250,6 +269,11 @@ def torus_row(
       "gravity": diagnostics["gravity"],
       "rotation_law": diagnostics["rotation_law"],
       "specific_angular_momentum": diagnostics["specific_angular_momentum"],
+      "angular_velocity": diagnostics["angular_velocity"],
+      "differential_rotation_length": diagnostics[
+         "differential_rotation_length"
+      ],
+      "rotation_power_q": diagnostics["rotation_power_q"],
       "requested_inner_radius": diagnostics["requested_inner_radius"],
       "resolved_inner_radius": diagnostics["resolved_inner_radius"],
       "outer_radius": diagnostics["outer_radius"],
@@ -275,6 +299,9 @@ def require_preserved_disk_metadata(source: Path, target: Path) -> None:
       "disk_gravity",
       "disk_rotation_law",
       "disk_specific_angular_momentum",
+      "disk_angular_velocity",
+      "disk_differential_rotation_length",
+      "disk_rotation_power_q",
       "disk_inner_radius",
       "disk_maximum_density",
       "disk_maximum_velocity",
@@ -351,6 +378,7 @@ def main() -> int:
 
    overlap_dir, overlap_seconds = run_rejected_case(
       "test_fluid_central_overlap_rejected",
+      2,
       TEST_FLUID_INPUT,
       {
          **common,
@@ -411,6 +439,133 @@ def main() -> int:
    if int(float(evolution_rows[-1]["step"])) != 2:
       raise RuntimeError("coupled torus evolution did not complete two steps")
 
+   analytic_constraints: dict[str, float | int] = {
+      "matter_iterations": 0,
+      "relative_matter_update": 0.0,
+      "coupled_iterations": 0,
+      "hamiltonian_residual": 0.0,
+      "lapse_residual": 0.0,
+      "momentum_residual": 0.0,
+   }
+   kerr_common = {
+      "amr.n_cell": "32 32 32",
+      "amr.max_grid_size": "16",
+   }
+   kerr_dir, kerr_artifact, kerr_seconds, kerr_log = run_case(
+      "kerr_constant_l_32",
+      3,
+      KERR_ID_INPUT,
+      kerr_common,
+      args,
+   )
+   assert kerr_artifact is not None
+   kerr_torus = torus_diagnostics(kerr_log, "kerr_constant_l_32")
+   validate_torus(
+      kerr_torus,
+      analytic_constraints,
+      gravity="test_fluid",
+      massive=False,
+   )
+
+   j_dir, j_artifact, j_seconds, j_log = run_case(
+      "kerr_j_constant_32",
+      3,
+      KERR_J_CONSTANT_INPUT,
+      {},
+      args,
+   )
+   assert j_artifact is not None
+   j_torus = torus_diagnostics(j_log, "kerr_j_constant_32")
+   validate_torus(
+      j_torus,
+      analytic_constraints,
+      gravity="test_fluid",
+      massive=False,
+      rotation_law="j_constant",
+   )
+
+   q_dir, q_artifact, q_seconds, q_log = run_case(
+      "kerr_q_power_q1_32",
+      3,
+      KERR_J_CONSTANT_INPUT,
+      {
+         "initial_data.disk_rotation_law": "q_power",
+         "initial_data.disk_rotation_power_q": "1.0",
+      },
+      args,
+   )
+   assert q_artifact is not None
+   q_torus = torus_diagnostics(q_log, "kerr_q_power_q1_32")
+   validate_torus(
+      q_torus,
+      analytic_constraints,
+      gravity="test_fluid",
+      massive=False,
+      rotation_law="q_power",
+   )
+   for key in (
+      "resolved_inner_radius",
+      "outer_radius",
+      "density_maximum_radius",
+      "maximum_density",
+      "maximum_velocity",
+      "maximum_log_specific_enthalpy",
+      "baryonic_mass",
+      "angular_momentum",
+   ):
+      if not math.isclose(
+         float(j_torus[key]),
+         float(q_torus[key]),
+         rel_tol=2.0e-12,
+         abs_tol=2.0e-13,
+      ):
+         raise RuntimeError(f"q=1/j-constant identity failed in {key}")
+
+   kerr_evolution_dir, _, kerr_evolution_seconds, _ = run_case(
+      "kerr_constant_l_evolution_32",
+      3,
+      KERR_EVOLUTION_INPUT,
+      {
+         **kerr_common,
+         "initial_data.input_file": repo_relative(kerr_artifact),
+         "pyfluid.max_step": "2",
+      },
+      args,
+      artifact_output=False,
+   )
+   kerr_evolution_scalar = scalar_validation_row(
+      kerr_evolution_dir,
+      case="kerr_constant_l_evolution_32",
+      input_file=kerr_evolution_dir / "input.in",
+      checks="open",
+      mhd=False,
+      dim=3,
+      ranks=args.ranks,
+      kind="initial_data",
+   )
+   if kerr_evolution_scalar["status"] != "PASS":
+      raise RuntimeError(
+         "Kerr torus evolution scalar check failed: "
+         f"{kerr_evolution_scalar['reason']}"
+      )
+   kerr_evolution_rows = read_scalar_rows(kerr_evolution_dir)
+   if int(float(kerr_evolution_rows[-1]["step"])) != 2:
+      raise RuntimeError("Kerr torus evolution did not complete two steps")
+
+   tilted_dir, tilted_seconds = run_rejected_case(
+      "misaligned_kerr_torus_rejected",
+      3,
+      KERR_ID_INPUT,
+      {
+         "amr.n_cell": "16 16 16",
+         "initial_data.disk_axis1": "1.0",
+         "initial_data.disk_axis2": "0.0",
+         "initial_data.disk_axis3": "0.0",
+      },
+      "tilted Kerr disks require the explicit nonequilibrium 3D owner",
+      args,
+   )
+
    rows = [
       torus_row(
          "test_fluid_256x64", test_torus, test_constraints,
@@ -443,6 +598,46 @@ def main() -> int:
          "energy_rel_drift": evolution_scalar["energy_rel_drift"],
          "momentum_abs_drift": evolution_scalar["momentum_abs_drift"],
          "run_dir": repo_relative(evolution_dir),
+      },
+      torus_row(
+         "kerr_constant_l_32",
+         kerr_torus,
+         analytic_constraints,
+         kerr_seconds,
+         kerr_dir,
+      ),
+      torus_row(
+         "kerr_j_constant_32",
+         j_torus,
+         analytic_constraints,
+         j_seconds,
+         j_dir,
+      ),
+      torus_row(
+         "kerr_q_power_q1_32",
+         q_torus,
+         analytic_constraints,
+         q_seconds,
+         q_dir,
+      ),
+      {
+         "kind": "initial_data",
+         "case": "kerr_constant_l_evolution_32",
+         "status": "PASS",
+         "seconds": kerr_evolution_seconds,
+         "mass_rel_drift": kerr_evolution_scalar["mass_rel_drift"],
+         "energy_rel_drift": kerr_evolution_scalar["energy_rel_drift"],
+         "momentum_abs_drift": kerr_evolution_scalar[
+            "momentum_abs_drift"
+         ],
+         "run_dir": repo_relative(kerr_evolution_dir),
+      },
+      {
+         "kind": "initial_data",
+         "case": "misaligned_kerr_torus_rejected",
+         "status": "PASS",
+         "seconds": tilted_seconds,
+         "run_dir": repo_relative(tilted_dir),
       },
    ]
 
