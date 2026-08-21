@@ -4,7 +4,10 @@
    template <int NComp, int EOSMethod>
    void reset_barotropic_energy_level(int lev)
    {
-      if constexpr (EOSMethod == EOSPolytrope) {
+      if constexpr (EOSMethod == EOSPolytrope || EOSMethod == EOSRuntime) {
+         if (eos_method_ != EOSPolytrope) {
+            return;
+         }
          if (physical_system_is_relativistic(physics_system_)) {
             return;
          }
@@ -35,7 +38,10 @@
    template <int NComp, int EOSMethod>
    void reset_barotropic_energy_all_levels()
    {
-      if constexpr (EOSMethod == EOSPolytrope) {
+      if constexpr (EOSMethod == EOSPolytrope || EOSMethod == EOSRuntime) {
+         if (eos_method_ != EOSPolytrope) {
+            return;
+         }
          for (int lev = 0; lev <= finestLevel(); ++lev) {
             reset_barotropic_energy_level<NComp, EOSMethod>(lev);
          }

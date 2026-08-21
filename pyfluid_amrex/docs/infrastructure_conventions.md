@@ -52,6 +52,14 @@ methods and physics belong in their topic documents; coding style belongs in
 - Large host orchestration belongs in compiled `.cpp` owners. Header-only code
   is for small value types and pointwise CPU/GPU kernels where inlining is part
   of the implementation. Runtime method choice occurs outside cell loops.
+- A tabulated EoS is loaded and validated once into immutable managed storage;
+  pointwise CPU/GPU consumers receive the same small pointer/value view. Adding
+  a table backend must not instantiate unsupported physics, layout, topology,
+  or characteristic products. Preserve specialized pointwise kernels where a
+  measured generic dispatch regresses throughput, and prune the added backend
+  at compile time to its validated capability boundary. The table manifest
+  states provenance and continuation policy, while runtime compatibility uses
+  a fingerprint of the normalized physics data rather than a file path.
 - The standard suite runs the generated-equation numerical contracts after
   the CMake code-generation dependency has established freshness. Exact
   byte-for-byte regeneration of every expensive SymPy artifact belongs in the
@@ -177,7 +185,18 @@ matching target starts evolution without another XCTS solve. The ordinary
 continuation identity includes the differential-rotation length and, for the
 q-power family, its exponent. The artifact must also restore the converged
 Euler first-integral injection energy; recomputing it from the original TOV
-seed changes the nonlinear problem. The ordinary
+seed changes the nonlinear problem.
+
+For a tabulated EoS, both physical-ID and checkpoint metadata retain the
+backend/version, normalized-table fingerprint, point counts, causality
+truncation flag, baryon-mass normalization, and thermal-extension parameters.
+The source directory is provenance only: relocating byte-equivalent table
+files must preserve compatibility. A changed normalized table, continuation
+contract, or thermal gamma must fail before materialization or restart. Do not
+substitute a display model name, DOI, archive checksum, or path for the actual
+physics fingerprint.
+
+The ordinary
 in-process sequence accepts an explicit strictly ordered
 `initial_data.rotation_continuation_targets` list and retains live fields
 between targets without artifact I/O. A multi-target rotating sequence writes

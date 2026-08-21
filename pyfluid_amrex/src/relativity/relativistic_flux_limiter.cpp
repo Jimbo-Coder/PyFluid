@@ -620,21 +620,27 @@ void apply_rhd_admissibility_flux_limiter(
    }
    if (eos_method == EOSPolytrope) {
       apply_limiter<EOSPolytrope>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry, fixed_spacetime,
-         cell_spacetime, candidate_cell_spacetime, atmosphere, time,
-         base_weight, conserved_weight, increment_scale
+         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
+         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
+         time, base_weight, conserved_weight, increment_scale
       );
    } else if (eos_method == EOSHybridPolytrope) {
       apply_limiter<EOSHybridPolytrope>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry, fixed_spacetime,
-         cell_spacetime, candidate_cell_spacetime, atmosphere, time,
-         base_weight, conserved_weight, increment_scale
+         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
+         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
+         time, base_weight, conserved_weight, increment_scale
+      );
+   } else if (eos_method == EOSCompose) {
+      apply_limiter<EOSCompose>(
+         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
+         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
+         time, base_weight, conserved_weight, increment_scale
       );
    } else {
       apply_limiter<EOSIdealGas>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry, fixed_spacetime,
-         cell_spacetime, candidate_cell_spacetime, atmosphere, time,
-         base_weight, conserved_weight, increment_scale
+         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
+         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
+         time, base_weight, conserved_weight, increment_scale
       );
    }
 }

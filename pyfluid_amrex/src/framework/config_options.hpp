@@ -35,10 +35,11 @@ static constexpr std::array<NamedOptionCode, 3> DiffusionOptions{{
    {"implicit", DiffusionImplicit},
 }};
 
-static constexpr std::array<NamedOptionCode, 3> EOSOptions{{
+static constexpr std::array<NamedOptionCode, 4> EOSOptions{{
    {"ideal_gas", EOSIdealGas},
    {"polytrope", EOSPolytrope},
    {"hybrid_polytrope", EOSHybridPolytrope},
+   {"compose", EOSCompose},
 }};
 
 inline constexpr auto EOSPresetOptions = eos::PiecewisePolytropePresetNames;

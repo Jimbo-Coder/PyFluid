@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 
@@ -50,6 +51,14 @@ struct PolynomialGrid {
 
 bool close_enough(amrex::Real actual, amrex::Real expected);
 
+bool close_centering_transfer(amrex::Real actual, amrex::Real expected)
+{
+   const amrex::Real scale = std::max<amrex::Real>(1.0, std::abs(expected));
+   return std::isfinite(actual)
+      && std::abs(actual - expected)
+         <= 8192.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+}
+
 template <int Degree>
 struct CenteringPolynomialGrid {
    AMREX_GPU_HOST_DEVICE
@@ -58,6 +67,26 @@ struct CenteringPolynomialGrid {
       amrex::Real result = 1.0;
       for (int exponent = 0; exponent < Degree; ++exponent) result *= value;
       return result;
+   }
+
+   AMREX_GPU_HOST_DEVICE
+   amrex::Real operator()(int i, int j, int k, int component) const noexcept
+   {
+      return power(static_cast<amrex::Real>(i))
+         + 2.0 * power(static_cast<amrex::Real>(j))
+         + 3.0 * power(static_cast<amrex::Real>(k))
+         + component;
+   }
+};
+
+template <int Degree, int CoordinateScale>
+struct ScaledCenteringPolynomialGrid {
+   AMREX_GPU_HOST_DEVICE
+   static amrex::Real power(amrex::Real value) noexcept
+   {
+      return CenteringPolynomialGrid<Degree>::power(
+         value / static_cast<amrex::Real>(CoordinateScale)
+      );
    }
 
    AMREX_GPU_HOST_DEVICE
@@ -98,8 +127,16 @@ bool check_centering_transfer()
    const amrex::Real cell_value = pyfluid_amrex::generated::vertex_to_cell<Order, Dim>(
       field, i, j, k, component
    );
-   return close_enough(vertex_value, expected(-0.5))
-      && close_enough(cell_value, expected(0.5));
+   const amrex::Real expected_vertex = expected(-0.5);
+   const amrex::Real expected_cell = expected(0.5);
+   if (!close_centering_transfer(vertex_value, expected_vertex)
+       || !close_centering_transfer(cell_value, expected_cell)) {
+      std::cerr << "centering transfer order=" << Order << " dim=" << Dim
+                << " vertex=" << vertex_value << "/" << expected_vertex
+                << " cell=" << cell_value << "/" << expected_cell << '\n';
+      return false;
+   }
+   return true;
 }
 
 template <int Order, int Dim>
@@ -141,7 +178,14 @@ bool check_topology_centering_transfer()
                source_mask,
                destination_mask
             );
-         if (!close_enough(actual, expected)) return false;
+         if (!close_centering_transfer(actual, expected)) {
+            std::cerr << "topology centering transfer order=" << Order
+                      << " dim=" << Dim << " source_mask=" << source_mask
+                      << " destination_mask=" << destination_mask
+                      << " actual=" << actual << " expected=" << expected
+                      << '\n';
+            return false;
+         }
       }
    }
    return true;
@@ -150,8 +194,8 @@ bool check_topology_centering_transfer()
 template <int Order, int Dim>
 bool check_bounded_topology_centering_transfer()
 {
-   const CenteringPolynomialGrid<Order - 1> field{};
    constexpr int num_cells = Order + 4;
+   const ScaledCenteringPolynomialGrid<Order - 1, num_cells> field{};
    constexpr int num_centerings = 1 << Dim;
    for (int source_mask = 0; source_mask < num_centerings; ++source_mask) {
       amrex::GpuArray<int, 3> source_lo{{0, 0, 0}};
@@ -179,13 +223,19 @@ bool check_bounded_topology_centering_transfer()
                return destination_index[direction]
                   + destination_offset - source_offset;
             };
-            amrex::Real expected = CenteringPolynomialGrid<Order - 1>::power(
+            amrex::Real expected = ScaledCenteringPolynomialGrid<
+               Order - 1, num_cells
+            >::power(
                target_index(0)
             );
-            expected += 2.0 * CenteringPolynomialGrid<Order - 1>::power(
+            expected += 2.0 * ScaledCenteringPolynomialGrid<
+               Order - 1, num_cells
+            >::power(
                Dim >= 2 ? target_index(1) : 0.0
             );
-            expected += 3.0 * CenteringPolynomialGrid<Order - 1>::power(
+            expected += 3.0 * ScaledCenteringPolynomialGrid<
+               Order - 1, num_cells
+            >::power(
                Dim >= 3 ? target_index(2) : 0.0
             );
             const amrex::Real actual = pyfluid_amrex::generated::
@@ -200,7 +250,17 @@ bool check_bounded_topology_centering_transfer()
                   source_lo,
                   source_hi
                );
-            if (!close_enough(actual, expected)) return false;
+            if (!close_centering_transfer(actual, expected)) {
+               std::cerr << "bounded topology centering transfer order="
+                         << Order << " dim=" << Dim
+                         << " source_mask=" << source_mask
+                         << " destination_mask=" << destination_mask
+                         << " side=" << side << std::setprecision(17)
+                         << " actual=" << actual
+                         << " expected=" << expected
+                         << " difference=" << actual - expected << '\n';
+               return false;
+            }
          }
       }
    }
@@ -1036,11 +1096,24 @@ bool validate_rhd_c2p_round_trip_matrix()
    eos.pressure_floor = 1.0e-28;
    eos.segment_k[0] = 100.0;
    eos.segment_gamma[0] = 2.0;
-   return validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSIdealGas>(eos)
-      && validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSPolytrope>(eos)
-      && validate_rhd_c2p_round_trip_for_eos<
-         pyfluid_amrex::EOSHybridPolytrope
-      >(eos);
+   if (!(validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSIdealGas>(eos)
+         && validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSPolytrope>(eos)
+         && validate_rhd_c2p_round_trip_for_eos<
+            pyfluid_amrex::EOSHybridPolytrope
+         >(eos))) {
+      return false;
+   }
+   for (int method : {
+           pyfluid_amrex::EOSIdealGas,
+           pyfluid_amrex::EOSPolytrope,
+           pyfluid_amrex::EOSHybridPolytrope,
+        }) {
+      eos.method = method;
+      if (!validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSRuntime>(eos)) {
+         return false;
+      }
+   }
+   return true;
 }
 
 bool validate_piecewise_polytrope()

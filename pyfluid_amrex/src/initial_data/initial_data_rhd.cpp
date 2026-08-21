@@ -212,20 +212,9 @@ void initialize_relativistic_primitive_cache_from_provider(
       );
       return;
    }
-   const int eos_method = eos_method_code(cfg);
-   if (eos_method == EOSPolytrope) {
-      initialize_relativistic_primitive_cache_from_provider_method<EOSPolytrope>(
-         primitive, geometry, cfg, initial_data
-      );
-   } else if (eos_method == EOSHybridPolytrope) {
-      initialize_relativistic_primitive_cache_from_provider_method<EOSHybridPolytrope>(
-         primitive, geometry, cfg, initial_data
-      );
-   } else {
-      initialize_relativistic_primitive_cache_from_provider_method<EOSIdealGas>(
-         primitive, geometry, cfg, initial_data
-      );
-   }
+   initialize_relativistic_primitive_cache_from_provider_method<EOSRuntime>(
+      primitive, geometry, cfg, initial_data
+   );
 }
 
 void initialize_relativistic_primitive_cache_from_provider(
@@ -242,20 +231,9 @@ void initialize_relativistic_primitive_cache_from_provider(
       >(primitive, hierarchy, level, cfg, initial_data);
       return;
    }
-   const int eos_method = eos_method_code(cfg);
-   if (eos_method == EOSPolytrope) {
-      initialize_relativistic_primitive_cache_from_mapped_provider_method<
-         EOSPolytrope
-      >(primitive, hierarchy, level, cfg, initial_data);
-   } else if (eos_method == EOSHybridPolytrope) {
-      initialize_relativistic_primitive_cache_from_mapped_provider_method<
-         EOSHybridPolytrope
-      >(primitive, hierarchy, level, cfg, initial_data);
-   } else {
-      initialize_relativistic_primitive_cache_from_mapped_provider_method<
-         EOSIdealGas
-      >(primitive, hierarchy, level, cfg, initial_data);
-   }
+   initialize_relativistic_primitive_cache_from_mapped_provider_method<
+      EOSRuntime
+   >(primitive, hierarchy, level, cfg, initial_data);
 }
 
 } // namespace pyfluid_amrex

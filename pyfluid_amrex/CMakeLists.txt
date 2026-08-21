@@ -133,6 +133,7 @@ set(PYFLUID_AMREX_FRAMEWORK_SOURCES
 set(PYFLUID_AMREX_EOS_SOURCES
    src/eos/eos_config.cpp
    src/eos/presets.cpp
+   src/eos/tabulated.cpp
 )
 
 set(PYFLUID_AMREX_NUMERICS_SOURCES
@@ -244,6 +245,7 @@ set(PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES
    src/framework/config_runtime.cpp
    src/eos/eos_config.cpp
    src/eos/presets.cpp
+   src/eos/tabulated.cpp
    src/framework/fields.cpp
 )
 
@@ -254,6 +256,11 @@ set(PYFLUID_AMREX_CODEGEN_CHECK_SOURCES
 
 set(PYFLUID_AMREX_C2P_BENCHMARK_SOURCES
    benchmarks/c2p_benchmark.cpp
+)
+
+set(PYFLUID_AMREX_TABULATED_EOS_CHECK_SOURCES
+   src/eos/tabulated.cpp
+   tests/tabulated_eos_check.cpp
 )
 
 set(PYFLUID_AMREX_RECONSTRUCTION_CHECK_SOURCES
@@ -297,6 +304,7 @@ set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
    src/framework/fields.cpp
    src/eos/eos_config.cpp
    src/eos/presets.cpp
+   src/eos/tabulated.cpp
    src/initial_data/initial_data_centering.cpp
    src/initial_data/initial_data_ctt.cpp
    src/initial_data/initial_data_elliptic.cpp
@@ -311,6 +319,7 @@ set(PYFLUID_AMREX_TOV_SEQUENCE_SOURCES
    src/framework/fields.cpp
    src/eos/eos_config.cpp
    src/eos/presets.cpp
+   src/eos/tabulated.cpp
    src/initial_data/tov_initial_data.cpp
    tools/cpp/tov_sequence.cpp
 )
@@ -670,6 +679,19 @@ foreach(dim 1 2 3)
          pyfluid_amrex_configure_target(pyfluid_amrex_c2p_benchmark ${dim})
          if(TARGET pyfluid_amrex_generate_kernels)
             add_dependencies(pyfluid_amrex_c2p_benchmark pyfluid_amrex_generate_kernels)
+         endif()
+
+         add_executable(
+            pyfluid_amrex_tabulated_eos_check
+            EXCLUDE_FROM_ALL
+            ${PYFLUID_AMREX_TABULATED_EOS_CHECK_SOURCES}
+         )
+         pyfluid_amrex_configure_target(pyfluid_amrex_tabulated_eos_check ${dim})
+         if(TARGET pyfluid_amrex_generate_kernels)
+            add_dependencies(
+               pyfluid_amrex_tabulated_eos_check
+               pyfluid_amrex_generate_kernels
+            )
          endif()
 
          add_executable(pyfluid_amrex_tov_sequence EXCLUDE_FROM_ALL ${PYFLUID_AMREX_TOV_SEQUENCE_SOURCES})

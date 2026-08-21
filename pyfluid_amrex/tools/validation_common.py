@@ -78,6 +78,15 @@ def _signal_process_group(process: subprocess.Popen[bytes], signum: int) -> None
          process.send_signal(signum)
    except ProcessLookupError:
       pass
+   except PermissionError:
+      # A launcher may have already left its dedicated group while a failing
+      # rank is unwinding. Retain ownership of the direct child instead of
+      # turning the expected MPI failure into a validation-harness exception.
+      if process.poll() is None:
+         try:
+            process.send_signal(signum)
+         except ProcessLookupError:
+            pass
 
 
 def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:

@@ -1,4 +1,5 @@
 #include "pyfluid_amrex/checkpoint.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/output_metadata.hpp"
 #include "pyfluid_amrex/mesh_geometry.hpp"
@@ -234,6 +235,7 @@ void write_checkpoint_metadata(
       amrex::FileOpenFailed(metadata.string());
    }
    const std::string compression = resolved_plotfile_compression(checkpoint_compression);
+   const EOSIdentity eos_metadata = eos_identity(cfg);
    append_output_metadata(
       out,
       "checkpoint",
@@ -262,6 +264,21 @@ void write_checkpoint_metadata(
    out << "# checkpoint_refinement_ratios="
        << refinement_ratios_string(refinement_ratios, finest_level) << "\n";
    out << "# checkpoint_gamma=" << output_metadata_real_string(cfg.gamma) << "\n";
+   out << "# checkpoint_eos_backend=" << eos_metadata.backend << "\n";
+   if (cfg.eos == "compose") {
+      out << "# checkpoint_eos_table_fingerprint="
+          << eos_metadata.fingerprint << "\n";
+      out << "# checkpoint_eos_table_source="
+          << eos_metadata.source_directory << "\n";
+      out << "# checkpoint_eos_table_source_points="
+          << eos_metadata.source_points << "\n";
+      out << "# checkpoint_eos_table_retained_points="
+          << eos_metadata.retained_points << "\n";
+      out << "# checkpoint_eos_table_truncated_for_causality="
+          << (eos_metadata.table_truncated_for_causality ? 1 : 0) << "\n";
+      out << "# checkpoint_eos_table_baryon_mass_mev="
+          << output_metadata_real_string(eos_metadata.baryon_mass_mev) << "\n";
+   }
    out << "# checkpoint_polytropic_k=" << output_metadata_real_string(cfg.polytropic_k) << "\n";
    out << "# checkpoint_polytropic_gamma=" << output_metadata_real_string(cfg.polytropic_gamma) << "\n";
    out << "# checkpoint_polytropic_density_breaks="
@@ -1223,6 +1240,16 @@ void validate_checkpoint_compatibility(
       output_metadata_real_string(cfg.spacetime_mass)
    );
    require_metadata(checkpoint_name, metadata, "eos", cfg.eos);
+   const EOSIdentity eos_metadata = eos_identity(cfg);
+   if (cfg.eos == "compose"
+       || metadata.find("checkpoint_eos_backend") != metadata.end()) {
+      require_metadata(
+         checkpoint_name,
+         metadata,
+         "checkpoint_eos_backend",
+         eos_metadata.backend
+      );
+   }
    require_metadata(checkpoint_name, metadata, "checkpoint_ct", cfg.ct);
    require_metadata_int(checkpoint_name, metadata, "checkpoint_passive_scalars", cfg.passive_scalars);
 
@@ -1277,6 +1304,43 @@ void validate_checkpoint_compatibility(
          metadata,
          "checkpoint_polytropic_segment_gammas",
          output_metadata_real_vector_string(cfg.polytropic_segment_gammas)
+      );
+      require_metadata(
+         checkpoint_name,
+         metadata,
+         "checkpoint_thermal_gamma",
+         output_metadata_real_string(cfg.thermal_gamma)
+      );
+   } else if (cfg.eos == "compose") {
+      require_metadata(
+         checkpoint_name,
+         metadata,
+         "checkpoint_eos_table_fingerprint",
+         eos_metadata.fingerprint
+      );
+      require_metadata_int(
+         checkpoint_name,
+         metadata,
+         "checkpoint_eos_table_source_points",
+         eos_metadata.source_points
+      );
+      require_metadata_int(
+         checkpoint_name,
+         metadata,
+         "checkpoint_eos_table_retained_points",
+         eos_metadata.retained_points
+      );
+      require_metadata_int(
+         checkpoint_name,
+         metadata,
+         "checkpoint_eos_table_truncated_for_causality",
+         eos_metadata.table_truncated_for_causality ? 1 : 0
+      );
+      require_metadata(
+         checkpoint_name,
+         metadata,
+         "checkpoint_eos_table_baryon_mass_mev",
+         output_metadata_real_string(eos_metadata.baryon_mass_mev)
       );
       require_metadata(
          checkpoint_name,

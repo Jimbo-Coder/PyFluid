@@ -119,20 +119,9 @@ inline void initialize_relativistic_state(
       );
       return;
    }
-   const int eos_method = eos_method_code(cfg);
-   if (eos_method == EOSPolytrope) {
-      initialize_relativistic_state_method<EOSPolytrope>(
-         state, geometry, cfg, initial_data
-      );
-   } else if (eos_method == EOSHybridPolytrope) {
-      initialize_relativistic_state_method<EOSHybridPolytrope>(
-         state, geometry, cfg, initial_data
-      );
-   } else {
-      initialize_relativistic_state_method<EOSIdealGas>(
-         state, geometry, cfg, initial_data
-      );
-   }
+   initialize_relativistic_state_method<EOSRuntime>(
+      state, geometry, cfg, initial_data
+   );
 }
 
 template <int EOSMethod>
@@ -227,20 +216,9 @@ inline void convert_newtonian_initial_state_to_relativistic(
    RelativisticInitialDataView const& initial_data
 )
 {
-   const int eos_method = eos_method_code(cfg);
-   if (eos_method == EOSPolytrope) {
-      convert_newtonian_initial_state_to_relativistic_method<EOSPolytrope>(
-         relativistic_state, newtonian_state, geometry, cfg, initial_data
-      );
-   } else if (eos_method == EOSHybridPolytrope) {
-      convert_newtonian_initial_state_to_relativistic_method<EOSHybridPolytrope>(
-         relativistic_state, newtonian_state, geometry, cfg, initial_data
-      );
-   } else {
-      convert_newtonian_initial_state_to_relativistic_method<EOSIdealGas>(
-         relativistic_state, newtonian_state, geometry, cfg, initial_data
-      );
-   }
+   convert_newtonian_initial_state_to_relativistic_method<EOSRuntime>(
+      relativistic_state, newtonian_state, geometry, cfg, initial_data
+   );
 }
 
 } // namespace pyfluid_amrex

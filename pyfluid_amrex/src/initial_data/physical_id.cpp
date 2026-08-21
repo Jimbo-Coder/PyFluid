@@ -732,13 +732,8 @@ EOSThermodynamicState initial_atmosphere_state_for_method(
    InitialDataSamplePoint const& sample
 )
 {
-   if (eos_method == EOSPolytrope) {
-      return initial_atmosphere_state<EOSPolytrope>(atmosphere, sample);
-   }
-   if (eos_method == EOSHybridPolytrope) {
-      return initial_atmosphere_state<EOSHybridPolytrope>(atmosphere, sample);
-   }
-   return initial_atmosphere_state<EOSIdealGas>(atmosphere, sample);
+   static_cast<void>(eos_method);
+   return initial_atmosphere_state<EOSRuntime>(atmosphere, sample);
 }
 
 void apply_initial_atmosphere_exterior(
@@ -1323,6 +1318,7 @@ void write_physical_initial_data(
              << "Provider-independent physical fields with exact same-grid "
                 "evolution caches.\n";
       std::ofstream metadata(std::filesystem::path(path) / "Header.meta");
+      const EOSIdentity eos_metadata = eos_identity(cfg);
       metadata << "# type=physical_initial_data\n";
       metadata << "# schema_version=" << PhysicalIdSchemaVersion << '\n';
       metadata << "# format=hdf5\n";
@@ -1362,9 +1358,25 @@ void write_physical_initial_data(
       metadata << "# reflection_hi=" << reflection_string(cfg, true) << '\n';
       metadata << "# refinement_ratios=" << refinement_string(refinement_ratios) << '\n';
       metadata << "# eos=" << cfg.eos << '\n';
+      metadata << "# eos_backend=" << eos_metadata.backend << '\n';
       metadata << "# eos_preset=" << cfg.eos_preset << '\n';
       metadata << "# gamma=" << output_metadata_real_string(cfg.gamma) << '\n';
-      if (cfg.eos != "ideal_gas" && cfg.eos_preset == "custom") {
+      if (cfg.eos == "compose") {
+         metadata << "# eos_table_fingerprint="
+                  << eos_metadata.fingerprint << '\n';
+         metadata << "# eos_table_source="
+                  << eos_metadata.source_directory << '\n';
+         metadata << "# eos_table_source_points="
+                  << eos_metadata.source_points << '\n';
+         metadata << "# eos_table_retained_points="
+                  << eos_metadata.retained_points << '\n';
+         metadata << "# eos_table_truncated_for_causality="
+                  << (eos_metadata.table_truncated_for_causality ? 1 : 0)
+                  << '\n';
+         metadata << "# eos_table_baryon_mass_mev="
+                  << output_metadata_real_string(eos_metadata.baryon_mass_mev)
+                  << '\n';
+      } else if (cfg.eos != "ideal_gas" && cfg.eos_preset == "custom") {
          metadata << "# polytropic_k="
                   << output_metadata_real_string(cfg.polytropic_k) << '\n';
          metadata << "# polytropic_gamma="
@@ -1380,7 +1392,7 @@ void write_physical_initial_data(
                      )
                   << '\n';
       }
-      if (cfg.eos == "hybrid_polytrope") {
+      if (cfg.eos == "hybrid_polytrope" || cfg.eos == "compose") {
          metadata << "# thermal_gamma="
                   << output_metadata_real_string(cfg.thermal_gamma) << '\n';
       }
@@ -1568,6 +1580,10 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       );
    }
    require_metadata(metadata, "eos", cfg.eos, path);
+   const EOSIdentity eos_metadata = eos_identity(cfg);
+   if (cfg.eos == "compose" || metadata.find("eos_backend") != metadata.end()) {
+      require_metadata(metadata, "eos_backend", eos_metadata.backend, path);
+   }
    const auto eos_preset_entry = metadata.find("eos_preset");
    if (eos_preset_entry != metadata.end()) {
       require_metadata(metadata, "eos_preset", cfg.eos_preset, path);
@@ -1580,6 +1596,34 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    if (cfg.eos == "ideal_gas") {
       require_metadata(
          metadata, "gamma", output_metadata_real_string(cfg.gamma), path
+      );
+   } else if (cfg.eos == "compose") {
+      require_metadata(
+         metadata, "eos_table_fingerprint", eos_metadata.fingerprint, path
+      );
+      require_metadata(
+         metadata,
+         "eos_table_source_points",
+         std::to_string(eos_metadata.source_points),
+         path
+      );
+      require_metadata(
+         metadata,
+         "eos_table_retained_points",
+         std::to_string(eos_metadata.retained_points),
+         path
+      );
+      require_metadata(
+         metadata,
+         "eos_table_truncated_for_causality",
+         eos_metadata.table_truncated_for_causality ? "1" : "0",
+         path
+      );
+      require_metadata(
+         metadata,
+         "eos_table_baryon_mass_mev",
+         output_metadata_real_string(eos_metadata.baryon_mass_mev),
+         path
       );
    } else if (cfg.eos_preset == "custom") {
       require_metadata(
@@ -1607,7 +1651,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          path
       );
    }
-   if (cfg.eos == "hybrid_polytrope") {
+   if (cfg.eos == "hybrid_polytrope" || cfg.eos == "compose") {
       require_metadata(
          metadata,
          "thermal_gamma",
@@ -2335,22 +2379,9 @@ void materialize_physical_initial_data_fluid(
            && geometry.size() != cell_spacetime.size())) {
       amrex::Abort("physical-ID fluid materialization hierarchy is inconsistent");
    }
-   switch (eos_method_code(cfg)) {
-   case EOSPolytrope:
-      materialize_physical_initial_data_fluid_method<EOSPolytrope>(
-         cfg, system, geometry, primitive, cell_spacetime, evolution_fluid
-      );
-      return;
-   case EOSHybridPolytrope:
-      materialize_physical_initial_data_fluid_method<EOSHybridPolytrope>(
-         cfg, system, geometry, primitive, cell_spacetime, evolution_fluid
-      );
-      return;
-   default:
-      materialize_physical_initial_data_fluid_method<EOSIdealGas>(
-         cfg, system, geometry, primitive, cell_spacetime, evolution_fluid
-      );
-   }
+   materialize_physical_initial_data_fluid_method<EOSRuntime>(
+      cfg, system, geometry, primitive, cell_spacetime, evolution_fluid
+   );
 }
 
 } // namespace pyfluid_amrex

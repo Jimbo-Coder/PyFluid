@@ -1068,6 +1068,10 @@ amrex::Real dispatch_eos(SignalSpeedLaunch const& launch, Operation&& operation)
       return dispatch_diffusion<NumComponents, EOSHybridPolytrope>(
          launch.diffusion_method, operation
       );
+   case EOSCompose:
+      return dispatch_diffusion<NumComponents, EOSCompose>(
+         launch.diffusion_method, operation
+      );
    default:
       amrex::Abort("invalid EOS method in signal-speed factory");
       return 0.0;

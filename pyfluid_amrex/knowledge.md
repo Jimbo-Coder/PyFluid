@@ -460,10 +460,33 @@ baseline remains the latest broad integration baseline.
 - Short rotating-star evolution is currently cleaner with PWL than MP5 at the
   surface. Do not weaken rest-mass gates to promote MP5; a conservative stellar
   surface treatment and longer evolution evidence are still required.
-- Native CompOSE/tabulated-EoS support is not implemented. It must enter through
-  the shared immutable EoS interface with one explicit unit convention and be
-  validated consistently in TOV/RNS construction, P2C/C2P, signal speeds,
-  atmosphere closure, and evolution.
+- Native CompOSE support currently means one-parameter cold beta-equilibrium
+  barotropes plus an explicitly configured gamma-law thermal extension; it is
+  not finite-temperature or composition-dependent CompOSE. The immutable
+  table view is shared by TOV/RNS construction, cold enthalpy
+  inversion, relativistic pressure/energy closure, signal
+  speeds, atmosphere projection, C2P/P2C, physical-ID materialization, and RHD
+  evolution. Native CompOSE evolution is intentionally RHD-only; RMHD remains
+  ideal-gas-only until its C2P and advanced Riemann contracts support a general
+  EoS.
+- The cold reader uses the CompOSE `Q1=p/n_b` and
+  `Q7=e/(n_b m_n)-1` quantities in `G=c=M_sun=1`, retains the tabulated total
+  energy density, selects one table-specific baryon-mass normalization so the
+  first point joins a vacuum polytrope with `h -> 1`, and uses a
+  constant-sound-speed continuation above the retained causal prefix. The
+  required `table.toml` states this physics/provenance contract. SLY4 and DD2
+  retain their full source tables; APR retains 148 of 172 points before the
+  causal continuation.
+- The bundled SLY4/APR/DD2 TOV sequences agree with the providers' independent
+  mass-radius files to maximum radius errors `0.6009/0.3273/0.1402` percent on
+  the checked stable overlap; maximum-mass errors are below 1.5 percent. A
+  `256x64` adaptive SLY4 RNS solves, saves, rematerializes to Cartesian, and
+  evolves three CFL-0.9 SSPRK3/PWL steps with zero recovery. A `128x32` source
+  passed ID/preflight but caused 48 first-step atmosphere resets after `32^3`
+  materialization, so it is not the production handoff floor for this model.
+  Physical-ID and checkpoint compatibility use the path-independent normalized
+  table fingerprint and thermal gamma; the source directory is provenance,
+  not identity.
 
 ## Other Open Boundaries
 
@@ -481,6 +504,15 @@ baseline remains the latest broad integration baseline.
   regularity, free-surface updates, compactification, inter-domain matching,
   coupled linear/nonlinear solves, and their MPI ownership are a new elliptic
   backend rather than a nearly free subclass.
+- A KEH backend is not the next speed optimization for the present reduced
+  XCTS equations. The current cached angular diagonalization plus independent
+  tridiagonal radial solves is linear in radial resolution per angular mode;
+  a direct KEH radial Green-function convolution is quadratic unless given a
+  separate fast implementation. KEH's real advantages are natural free-space
+  multipole closure and access to a full quasi-isotropic/CST rotating-star
+  formulation. First compare an offline free-space multipole outer solution
+  with the finite-radius Robin result; implement a second backend only if that
+  exposes a material physical or work-precision limit.
 - Partial-AMR CTT data are finite and convergent, but the normalized
   coarse-fine Hamiltonian band exposes a second-order multilevel-elliptic versus
   fourth-order pointwise-diagnostic mismatch.
@@ -542,7 +574,9 @@ baseline remains the latest broad integration baseline.
 4. Add a two-resolution time-dependent TOV oscillation/constraint gate, then
    evolve a saved adaptive-RNS artifact with PWL while tracking rest mass,
    angular momentum, constraints, central density, and mode content.
-5. Add CompOSE/tabulated EoS after the stellar evolution boundary is stable.
+5. Add true finite-temperature/composition-dependent CompOSE only when a
+   physical evolution milestone needs it. Do not relabel the current cold
+   barotrope plus gamma-law thermal extension as finite-temperature support.
 
 ## Review Discipline
 

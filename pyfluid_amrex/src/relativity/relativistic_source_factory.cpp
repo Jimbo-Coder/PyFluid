@@ -42,6 +42,9 @@ void dispatch_eos(RelativisticSourceLaunch const& launch)
    case EOSHybridPolytrope:
       launch_sources<System, EOSHybridPolytrope>(launch);
       return;
+   case EOSCompose:
+      launch_sources<System, EOSCompose>(launch);
+      return;
    case EOSIdealGas:
       launch_sources<System, EOSIdealGas>(launch);
       return;

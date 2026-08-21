@@ -5559,3 +5559,68 @@ I will always continue from the last cycle marked as `in_progress`.
   evolution are the current boundary; additional disk laws, magnetization,
   black-hole central objects, cusp/overflow diagnostics, and long equilibrium
   evolution remain open. [DONE]
+
+## Cycle 297 — Native CompOSE tabulated EoS and KEH decision (DONE)
+
+- Close the validated equilibrium-torus tranche as commit `aba660d`, then add
+  native CompOSE/tabulated-EoS support through one immutable EoS owner shared by
+  TOV/RNS construction, primitive/conserved conversion, signal speeds,
+  atmosphere closure, physical-ID persistence, and evolution. Preserve explicit
+  units and source provenance, bound the reconstruction-by-EoS compile product,
+  and keep downloaded reference data small and reviewable. An attempted single
+  runtime EoS owner slowed the lean 2D hydro benchmark by 19 percent on a
+  three-repeat control and was rejected. Analytic EoS kernels therefore retain
+  their zero-overhead specializations; one CompOSE specialization is pruned at
+  compile time to the supported RHD/component/topology path. RMHD remains the
+  existing ideal-gas owner. A first 256x64 RNS integration
+  probe exposed and fixed a stale analytic/PWP-only cold-capability dispatch
+  in the rotating-star matter iterator. [DONE]
+- Select a few representative cold neutron-star tables from authoritative
+  CompOSE sources, record their redistribution/source contract, and validate
+  thermodynamic identities, monotonicity/causality, inversion, stellar
+  construction, rematerialization, and short evolution before promoting them.
+  SLY4, APR, and DD2 occupy 232 KiB with CC-BY-4.0 provenance manifests,
+  provider READMEs, raw cold tables, and independent `eos.mr` curves. The
+  reader validates the one-parameter zero-T/Yq contract, joins a vacuum
+  polytrope, audits causality, and fingerprints normalized data plus
+  continuation parameters. Focused table/C2P checks pass at 197/197,
+  148/172, and 410/410 retained/source points. Provider mass-radius maximum
+  relative radius errors are `6.0086e-3/3.2735e-3/1.4016e-3`; maximum-mass
+  errors are below 1.5 percent. [DONE]
+- The three-rank adaptive SLY4 `256x64` RNS reaches the `1e-5` matter tolerance
+  in 23 iterations with elliptic residuals below `1.6e-12`, saves a
+  fingerprinted reduced artifact, rematerializes onto `32^3` Cartesian cells
+  from a relocated byte-equivalent table directory, and evolves three
+  CFL-0.9 SSPRK3/PWL steps with zero recovery. A same-table checkpoint restart
+  passes; physical-ID and checkpoint loads both reject APR through the
+  fingerprint. A 128x32 source passed ID/preflight but caused 48 first-step
+  atmosphere resets after materialization, so the gate deliberately retains
+  256x64 rather than weakening the zero-reset contract. The focused command
+  `validate_compose_eos.py --ranks 3 --force` passes five reported cases in
+  7.8 seconds on the final pre-documentation run. [DONE]
+- Source-check whether a separate KEH backend would materially improve speed,
+  reachable spin, diagnostics, or physical fidelity over the current adaptive
+  reduced XCTS solver. Do not duplicate the already validated continuation,
+  physical-ID, materialization, and diagnostics infrastructure. The present
+  angular eigenmode/tridiagonal radial owner is asymptotically cheaper in
+  radial resolution than a direct KEH Green convolution. KEH would primarily
+  add free-space multipole closure and a full quasi-isotropic/CST formulation,
+  not a drop-in accelerator. Defer it; first run a small offline multipole
+  outer-boundary comparison, and only add a second backend if that exposes a
+  material work-precision or physical-fidelity limit. [DONE]
+- Finish production/architecture/quick/standard integration, quantify the
+  runtime-dispatch and compile impact, update durable documentation, review the
+  final diff, and commit the tranche. The rejected generic runtime-EoS control
+  measured `88.85` Mcells/s for the three-repeat 2D/three-rank case. Restoring
+  analytic specialization and pruning the CompOSE product to RHD recovered
+  `108.77` Mcells/s (`0.99` of baseline); the four-rank control reaches
+  `130.72` Mcells/s (`0.95`). Representative MP5 objects grow 3.06 percent
+  across dimensions, while all seven characteristic-owner objects grow only
+  0.143 percent and contain no CompOSE RHD point kernels. The generated
+  centering-transfer fixture now normalizes its high-order polynomial to avoid
+  cancellation-driven false failures and reports exact failing combinations.
+  Intentional wrong-table MPI aborts now retain direct-launcher cleanup if a
+  departed process group rejects signaling. Production 1D/2D/3D, architecture,
+  codegen, and focused CompOSE gates pass; the complete standard suite passes
+  45/45 gates in `173.66 s`. The unchanged production rebuild is a `0.24 s`
+  cache hit with no compiler-cache events. [DONE]

@@ -35,6 +35,7 @@ It intentionally links rather than restating the detailed contracts.
 | SRMHD symptom onset, hybrid attribution, and prototype applicability | `tools/diagnose_rmhd_balsara_onset.py`, `tools/audit_srmhd_physical_wave_balsara.py`, their TSVs under `runs/current/rmhd_validation/`, and `plots/current/scans/rmhd_balsara*_profiles.png` plus `rmhd_balsara_hybrid_timelines.png` and `rmhd_balsara_hybrid_profile_evolution.png` | `docs/unified_shock_capturing_research.md`, Cycles 252--258 |
 | Coherent space-time operator attribution | `tools/research_spacetime_operator_ablation.py`, `tools/research_mhd_spacetime_operator_ablation.py`, and `tools/research_srmhd_spacetime_operator_ablation.py` | `docs/unified_shock_capturing_research.md`, Cycles 273--274 |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
+| Native cold CompOSE tables | `eos/compose/`, `src/eos/tabulated.cpp`, `include/pyfluid_amrex/eos/tabulated*.hpp`, `tests/tabulated_eos_check.cpp`, `tools/validate_compose_eos.py` | CompOSE manual and dataset records below; Cycle 297 |
 | Equilibrium torus/disk initial data | `include/pyfluid_amrex/initial_data/equilibrium_torus.hpp`, `src/initial_data/equilibrium_torus_initial_data.cpp`, `schema/methods.toml`, `tools/validate_equilibrium_torus.py` | `docs/tov.md`, `docs/infrastructure_conventions.md`, Cycle 296 |
 | Portable physical-ID solve/save/materialization, including explicit radial faces | `src/initial_data/physical_id.cpp`, `src/initial_data/physical_id_interpolation.cpp`, `src/initial_data/initial_data_elliptic.cpp`, `src/framework/checkpoint.cpp`, `tests/physical_id_interpolation_check.cpp`, `tools/validate_reduced_initial_data.py` | `docs/infrastructure_conventions.md`, Cycles 287 and 291 |
 | Axisymmetric spherical ID scalar/toroidal elliptic operators | `src/initial_data/initial_data_elliptic.cpp`, `include/pyfluid_amrex/initial_data/elliptic.hpp`, `tests/initial_data_elliptic_check.cpp` | `docs/infrastructure_conventions.md`, Cycles 288--289 |
@@ -113,6 +114,31 @@ the generated TSV/log, and the current source revision/dirty state.
 
 ## Rotating-Star Physics References
 
+### CompOSE cold-EoS sources
+
+- CompOSE, *CompOSE Reference Manual v3.00*,
+  [official PDF](https://compose.obspm.fr/download/pdf/manual_v3.00.pdf): file
+  schemas, units, thermodynamic quantity definitions, and the one-parameter
+  cold beta-equilibrium export contract. In particular, `Q1=p/n_b` and
+  `Q7=e/(n_b m_n)-1` are the two required `eos.thermo` quantities used by the
+  native reader.
+- RG(SLY4), [CompOSE model 134](https://compose.obspm.fr/eos/134),
+  [Zenodo DOI 10.5281/zenodo.14808591](https://doi.org/10.5281/zenodo.14808591):
+  bundled under `eos/compose/sly4/` with archive MD5 and provider references in
+  `table.toml` and `SOURCE_README.txt`.
+- APR(APR), [CompOSE model 68](https://compose.obspm.fr/eos/68),
+  [Zenodo DOI 10.5281/zenodo.14508034](https://doi.org/10.5281/zenodo.14508034):
+  bundled under `eos/compose/apr/`. The native causal audit retains 148 of 172
+  points before applying the declared constant-sound-speed continuation.
+- GPPVA(DD2) unified inner-crust/core,
+  [CompOSE model 217](https://compose.obspm.fr/eos/217),
+  [Zenodo DOI 10.5281/zenodo.14808942](https://doi.org/10.5281/zenodo.14808942):
+  bundled under `eos/compose/dd2/`.
+- The three downloaded providers declare CC-BY-4.0 redistribution. The bundled
+  raw tables are external reference data, not generated PyFluid solutions;
+  preserve their manifests, source READMEs, archive checksums, and DOI
+  attribution when updating them.
+
 - E. Gourgoulhon, *An introduction to the theory of rotating relativistic
   stars*, [arXiv:1003.5015](https://arxiv.org/abs/1003.5015): stationary-star
   global charges, ADM--Komar equality, GRV2/GRV3 virial identities, surface
@@ -133,6 +159,19 @@ the generated TSV/log, and the current source revision/dirty state.
   presets.
 
 ## Rotating-Star Numerical Method References
+
+- H. Komatsu, Y. Eriguchi, and I. Hachisu, *Rapidly rotating general
+  relativistic stars -- I. Numerical method and its application to uniformly
+  rotating polytropes*, MNRAS 237, 355 (1989),
+  [DOI 10.1093/mnras/237.2.355](https://doi.org/10.1093/mnras/237.2.355):
+  foundational KEH self-consistent-field/Green-function formulation. It is a
+  reference for free-space integral closure and full quasi-isotropic rotating
+  stars, not evidence that a second PyFluid backend would accelerate the
+  present separable radial-mode XCTS solve.
+- N. Stergioulas and J. L. Friedman, *Comparing Models of Rapidly Rotating
+  Relativistic Stars Constructed by Two Numerical Methods*,
+  [arXiv:astro-ph/9411032](https://arxiv.org/abs/astro-ph/9411032): direct KEH
+  versus Butterworth--Ipser comparison and provenance for the public RNS code.
 
 - S. Bonazzola, E. Gourgoulhon, and J.-A. Marck,
   *Numerical approach for high precision 3-D relativistic star models*,

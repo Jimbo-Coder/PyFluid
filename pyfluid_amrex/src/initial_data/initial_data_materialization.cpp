@@ -1968,26 +1968,13 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          "RHD and XCTS"
       );
    }
-   if (eos_method == EOSPolytrope) {
-      return materialize_axisymmetric_spherical_xcts_initial_data_method<
-         EOSPolytrope
-      >(
-         hierarchy, primitive_state, spacetime_state,
-         cell_spacetime, eos, rotating_star, equilibrium_torus,
-         continuation_observer
-      );
-   }
-   if (eos_method == EOSHybridPolytrope) {
-      return materialize_axisymmetric_spherical_xcts_initial_data_method<
-         EOSHybridPolytrope
-      >(
-         hierarchy, primitive_state, spacetime_state,
-         cell_spacetime, eos, rotating_star, equilibrium_torus,
-         continuation_observer
-      );
-   }
-   amrex::Abort("reduced axisymmetric spherical XCTS requires a cold EOS");
-   return {};
+   return materialize_axisymmetric_spherical_xcts_initial_data_method<
+      EOSRuntime
+   >(
+      hierarchy, primitive_state, spacetime_state,
+      cell_spacetime, eos, rotating_star, equilibrium_torus,
+      continuation_observer
+   );
 #elif (AMREX_SPACEDIM != 3)
    amrex::ignore_unused(
       hierarchy, primitive_state, spacetime_state,
@@ -2012,31 +1999,9 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    if (system != PhysicalSystem::RHD) {
       amrex::Abort("conformal constraint initial data requires RHD or RMHD");
    }
-   if (eos_method == EOSPolytrope) {
-      return materialize_conformal_initial_data_method<
-         PhysicalSystem::RHD,
-         EOSPolytrope
-      >(
-         hierarchy, primitive_state, spacetime_state,
-         cell_spacetime, eos, fields, formulation, rotating_star,
-         equilibrium_torus,
-         seed_from_spacetime, continuation_observer
-      );
-   }
-   if (eos_method == EOSHybridPolytrope) {
-      return materialize_conformal_initial_data_method<
-         PhysicalSystem::RHD,
-         EOSHybridPolytrope
-      >(
-         hierarchy, primitive_state, spacetime_state,
-         cell_spacetime, eos, fields, formulation, rotating_star,
-         equilibrium_torus,
-         seed_from_spacetime, continuation_observer
-      );
-   }
    return materialize_conformal_initial_data_method<
       PhysicalSystem::RHD,
-      EOSIdealGas
+      EOSRuntime
    >(
       hierarchy, primitive_state, spacetime_state,
       cell_spacetime, eos, fields, formulation, rotating_star,

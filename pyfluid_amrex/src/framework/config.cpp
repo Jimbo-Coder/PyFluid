@@ -15,6 +15,7 @@
 #include <string_view>
 
 #include "pyfluid_amrex/state.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/generated/method_catalog.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
@@ -359,6 +360,7 @@ RunConfig read_config()
    pp.query("final_time", cfg.final_time);
    pp.query("cfl", cfg.cfl);
    pp.query("gamma", cfg.gamma);
+   pp.query("eos_table", cfg.eos_table);
    pp.query("polytropic_k", cfg.polytropic_k);
    pp.query("polytropic_gamma", cfg.polytropic_gamma);
    pp.queryarr("polytropic_density_breaks", cfg.polytropic_density_breaks);
@@ -810,6 +812,7 @@ RunConfig read_config()
       cfg.level_cell_budget = derived_cells;
    }
    sync_registered_amr_parameters(amr_pp, cfg);
+   prepare_eos(cfg);
    return cfg;
 }
 
@@ -979,6 +982,21 @@ void validate_config(RunConfig const& cfg)
       amrex::Abort(
          "pyfluid.eos_preset requires pyfluid.eos = polytrope or hybrid_polytrope"
       );
+   }
+   if (cfg.eos == "compose") {
+      if (cfg.eos_table.empty()) {
+         amrex::Abort("pyfluid.eos = compose requires pyfluid.eos_table");
+      }
+      if (!cfg.tabulated_eos) {
+         amrex::Abort("the configured CompOSE table was not prepared");
+      }
+      if (physical_system(cfg) != PhysicalSystem::RHD) {
+         amrex::Abort(
+            "native cold CompOSE evolution currently requires pyfluid.system = rhd"
+         );
+      }
+   } else if (!cfg.eos_table.empty()) {
+      amrex::Abort("pyfluid.eos_table requires pyfluid.eos = compose");
    }
    if (cfg.rho_floor <= 0.0 || cfg.pressure_floor <= 0.0) {
       amrex::Abort("pyfluid.rho_floor and pyfluid.pressure_floor must be positive");
@@ -1194,9 +1212,10 @@ void validate_config(RunConfig const& cfg)
       if (cfg.ic == "tov" || cfg.ic == "rotating_star") {
          if (selected_system != PhysicalSystem::RHD
              || !spacetime_stores_state(cfg)
-             || (cfg.eos != "polytrope" && cfg.eos != "hybrid_polytrope")) {
+             || (cfg.eos != "polytrope" && cfg.eos != "hybrid_polytrope"
+                 && cfg.eos != "compose")) {
             amrex::Abort(
-               "TOV/rotating-star initial data require RHD, fixed or evolved spacetime, and a polytrope or hybrid_polytrope EOS"
+               "TOV/rotating-star initial data require RHD, fixed or evolved spacetime, and a cold-capable polytrope, hybrid_polytrope, or compose EOS"
             );
          }
          if (!(cfg.tov_central_density > cfg.rho_floor)
@@ -1512,6 +1531,12 @@ void validate_config(RunConfig const& cfg)
    if (cfg.ic == "hse_polytrope_x"
       && (cfg.gravity != "fixed" || cfg.gravity_fixed_potential != "uniform_acceleration" || cfg.gravity_a1 == 0.0)) {
       amrex::Abort("hse_polytrope_x requires pyfluid.gravity=fixed uniform_acceleration with nonzero gravity_a1");
+   }
+   if (cfg.ic == "hse_polytrope_x" && cfg.eos == "compose") {
+      amrex::Abort(
+         "hse_polytrope_x is an analytic polytropic initial condition and "
+         "does not support pyfluid.eos = compose"
+      );
    }
    if (cfg.ic == "resistive_current_sheet" || cfg.ic == "reconnecting_shear_layer") {
       if (cfg.ct != "on") {

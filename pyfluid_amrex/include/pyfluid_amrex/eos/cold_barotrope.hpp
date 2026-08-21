@@ -19,6 +19,14 @@ struct ColdBarotropeState {
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool cold_barotrope_supported(EOSParams const& eos) noexcept
+{
+   return eos.method == EOSPolytrope
+      || eos.method == EOSHybridPolytrope
+      || eos.method == EOSCompose;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 ColdBarotropeState cold_barotrope_from_density(
    amrex::Real rho,
    EOSParams const& eos
@@ -26,6 +34,19 @@ ColdBarotropeState cold_barotrope_from_density(
 {
    if (!(rho > 0.0)) {
       return {};
+   }
+   if (eos.method == EOSCompose) {
+      const TabulatedColdState cold = tabulated_cold_from_density(
+         rho, eos.table
+      );
+      return {
+         cold.density,
+         cold.pressure,
+         cold.energy_density / cold.density - 1.0,
+         cold.energy_density,
+         cold.specific_enthalpy,
+         cold.sound_speed_squared,
+      };
    }
    const PolytropeSegment segment = polytrope_segment(rho, eos);
    const amrex::Real pressure = eos_cold_pressure<EOSPolytrope>(rho, eos);
@@ -53,6 +74,9 @@ amrex::Real cold_log_specific_enthalpy(
 {
    if (!(rho > 0.0)) {
       return 0.0;
+   }
+   if (eos.method == EOSCompose) {
+      return tabulated_log_enthalpy_from_density(rho, eos.table);
    }
    return std::log(cold_barotrope_from_density(rho, eos).specific_enthalpy);
 }
@@ -83,6 +107,19 @@ ColdBarotropeState cold_barotrope_from_log_enthalpy(
 {
    if (!(log_specific_enthalpy > 0.0)) {
       return {};
+   }
+   if (eos.method == EOSCompose) {
+      const TabulatedColdState cold = tabulated_cold_from_log_enthalpy(
+         log_specific_enthalpy, eos.table
+      );
+      return {
+         cold.density,
+         cold.pressure,
+         cold.energy_density / cold.density - 1.0,
+         cold.energy_density,
+         cold.specific_enthalpy,
+         cold.sound_speed_squared,
+      };
    }
    const int segment_index = cold_polytrope_segment_from_log_enthalpy(
       log_specific_enthalpy, eos

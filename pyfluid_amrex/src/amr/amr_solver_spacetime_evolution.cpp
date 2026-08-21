@@ -106,23 +106,10 @@ void AmrSolverBase::apply_stored_spacetime_fluid_boundaries_range(
    }
    for (int lev = lev_begin; lev < lev_end; ++lev) {
       if (physics_system_ == PhysicalSystem::RHD) {
-         const int eos_method = eos_method_code(cfg_);
-         if (eos_method == EOSPolytrope) {
-            apply_stored_metric_state_boundary<PhysicalSystem::RHD, EOSPolytrope>(
-               *state[lev], Geom(lev), boundary_data_, eos_params(cfg_),
-               *spacetime_coupling_.cell_spacetime()[lev]
-            );
-         } else if (eos_method == EOSHybridPolytrope) {
-            apply_stored_metric_state_boundary<PhysicalSystem::RHD, EOSHybridPolytrope>(
-               *state[lev], Geom(lev), boundary_data_, eos_params(cfg_),
-               *spacetime_coupling_.cell_spacetime()[lev]
-            );
-         } else {
-            apply_stored_metric_state_boundary<PhysicalSystem::RHD, EOSIdealGas>(
-               *state[lev], Geom(lev), boundary_data_, eos_params(cfg_),
-               *spacetime_coupling_.cell_spacetime()[lev]
-            );
-         }
+         apply_stored_metric_state_boundary<PhysicalSystem::RHD, EOSRuntime>(
+            *state[lev], Geom(lev), boundary_data_, eos_params(cfg_),
+            *spacetime_coupling_.cell_spacetime()[lev]
+         );
       } else if (physics_system_ == PhysicalSystem::RMHD) {
          apply_stored_metric_state_boundary<PhysicalSystem::RMHD, EOSIdealGas>(
             *state[lev],
@@ -160,23 +147,10 @@ void AmrSolverBase::fill_spacetime_matter_range(int lev_begin, int lev_end)
       }
       amrex::MultiFab& cell_matter = *spacetime_coupling_.cell_matter()[lev];
       if (physics_system_ == PhysicalSystem::RHD) {
-         const int eos_method = eos_method_code(cfg_);
-         if (eos_method == EOSPolytrope) {
-            fill_eulerian_matter_cells<PhysicalSystem::RHD, EOSPolytrope>(
-               cell_matter, *primitive_[lev],
-               *spacetime_coupling_.cell_spacetime()[lev], eos_params(cfg_)
-            );
-         } else if (eos_method == EOSHybridPolytrope) {
-            fill_eulerian_matter_cells<PhysicalSystem::RHD, EOSHybridPolytrope>(
-               cell_matter, *primitive_[lev],
-               *spacetime_coupling_.cell_spacetime()[lev], eos_params(cfg_)
-            );
-         } else {
-            fill_eulerian_matter_cells<PhysicalSystem::RHD, EOSIdealGas>(
-               cell_matter, *primitive_[lev],
-               *spacetime_coupling_.cell_spacetime()[lev], eos_params(cfg_)
-            );
-         }
+         fill_eulerian_matter_cells<PhysicalSystem::RHD, EOSRuntime>(
+            cell_matter, *primitive_[lev],
+            *spacetime_coupling_.cell_spacetime()[lev], eos_params(cfg_)
+         );
       } else if (physics_system_ == PhysicalSystem::RMHD) {
          fill_eulerian_matter_cells<PhysicalSystem::RMHD, EOSIdealGas>(
             cell_matter,

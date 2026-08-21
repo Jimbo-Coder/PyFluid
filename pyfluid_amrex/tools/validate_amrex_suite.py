@@ -222,6 +222,20 @@ STEPS = [
       ),
    ),
    GateStep(
+      name="compose_eos_stellar_handoff",
+      kind="initial_data",
+      levels=("standard", "full"),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_compose_eos.py",
+         "--ranks",
+         "3",
+         "--force",
+      ),
+   ),
+   GateStep(
       name="equilibrium_torus_standard",
       kind="initial_data",
       levels=("standard",),

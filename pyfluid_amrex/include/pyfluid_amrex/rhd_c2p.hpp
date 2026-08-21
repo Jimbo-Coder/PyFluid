@@ -207,6 +207,13 @@ RHDRecoveryResult recover_rhd(
    if constexpr (EOSMethod == EOSIdealGas) {
       return recover_srhd_palenzuela_1d(conserved, metric, eos.gamma, options);
    } else {
+      if constexpr (EOSMethod == EOSRuntime) {
+         if (eos.method == EOSIdealGas) {
+            return recover_srhd_palenzuela_1d(
+               conserved, metric, eos.gamma, options
+            );
+         }
+      }
       RHDRecoveryResult result{};
       result.attempt.method = C2PMethod::Palenzuela1D;
       const RHDRecoveryState recovery = generated::rhd_recovery_state(
@@ -330,13 +337,8 @@ RHDRecoveryResult recover_rhd_runtime(
    const C2PRecoveryOptions& options = {}
 ) noexcept
 {
-   if (eos_method == EOSPolytrope) {
-      return recover_rhd<EOSPolytrope>(conserved, metric, eos, options);
-   }
-   if (eos_method == EOSHybridPolytrope) {
-      return recover_rhd<EOSHybridPolytrope>(conserved, metric, eos, options);
-   }
-   return recover_rhd<EOSIdealGas>(conserved, metric, eos, options);
+   static_cast<void>(eos_method);
+   return recover_rhd<EOSRuntime>(conserved, metric, eos, options);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

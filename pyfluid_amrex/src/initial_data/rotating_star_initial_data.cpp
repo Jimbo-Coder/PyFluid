@@ -1163,13 +1163,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives(
    if (!parameters.active) {
       return {};
    }
-   if (eos_method == EOSPolytrope) {
-      return update_rotating_star_primitives_method<EOSPolytrope>(
-         hierarchy, primitive_state, cell_spacetime, eos, parameters
-      );
-   }
-   if (eos_method == EOSHybridPolytrope) {
-      return update_rotating_star_primitives_method<EOSHybridPolytrope>(
+   amrex::ignore_unused(eos_method);
+   if (cold_barotrope_supported(eos)) {
+      return update_rotating_star_primitives_method<EOSRuntime>(
          hierarchy, primitive_state, cell_spacetime, eos, parameters
       );
    }
@@ -1197,14 +1193,10 @@ RotatingStarUpdateSummary update_axisymmetric_spherical_rotating_star_primitives
    if (!parameters.active) {
       return {};
    }
-   if (eos_method == EOSPolytrope) {
+   amrex::ignore_unused(eos_method);
+   if (cold_barotrope_supported(eos)) {
       return update_axisymmetric_spherical_rotating_star_primitives_method<
-         EOSPolytrope
-      >(hierarchy, primitive_state, cell_spacetime, eos, parameters);
-   }
-   if (eos_method == EOSHybridPolytrope) {
-      return update_axisymmetric_spherical_rotating_star_primitives_method<
-         EOSHybridPolytrope
+         EOSRuntime
       >(hierarchy, primitive_state, cell_spacetime, eos, parameters);
    }
    amrex::Abort("axisymmetric rotating stars require a cold barotropic EOS");

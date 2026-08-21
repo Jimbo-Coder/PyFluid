@@ -624,10 +624,15 @@ WaveSpeeds mhd_hlle_wave_speeds_from_primitives(
    EOSParams const& eos
 ) noexcept
 {
-   if constexpr (EOSMethod == EOSIdealGas) {
+   if constexpr (EOSMethod == EOSIdealGas || EOSMethod == EOSRuntime) {
       const WaveSpeeds side = mhd_hll_wave_speeds_from_primitives<EOSMethod>(
          primitive_l, primitive_r, direction, eos
       );
+      if constexpr (EOSMethod == EOSRuntime) {
+         if (eos.method != EOSIdealGas) {
+            return side;
+         }
+      }
       const amrex::Real bn_l = mhd_primitive_magnetic_component(primitive_l, direction);
       const amrex::Real bn_r = mhd_primitive_magnetic_component(primitive_r, direction);
       amrex::Real bt1_l = primitive_l.b2;
@@ -840,10 +845,15 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives(
    EOSParams const& eos
 ) noexcept
 {
-   if constexpr (EOSMethod == EOSIdealGas) {
+   if constexpr (EOSMethod == EOSIdealGas || EOSMethod == EOSRuntime) {
       const WaveSpeeds side = hydro_hll_wave_speeds_from_primitives<EOSMethod>(
          primitive_l, primitive_r, direction, eos
       );
+      if constexpr (EOSMethod == EOSRuntime) {
+         if (eos.method != EOSIdealGas) {
+            return side;
+         }
+      }
       const amrex::Real sqrt_l = std::sqrt(primitive_l.rho);
       const amrex::Real sqrt_r = std::sqrt(primitive_r.rho);
       const amrex::Real inv_sum = 1.0 / (sqrt_l + sqrt_r);
@@ -880,10 +890,15 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives(
    EOSParams const& eos
 ) noexcept
 {
-   if constexpr (EOSMethod == EOSIdealGas) {
+   if constexpr (EOSMethod == EOSIdealGas || EOSMethod == EOSRuntime) {
       const WaveSpeeds side = hydro_hll_wave_speeds_from_primitives<Direction, EOSMethod>(
          primitive_l, primitive_r, eos
       );
+      if constexpr (EOSMethod == EOSRuntime) {
+         if (eos.method != EOSIdealGas) {
+            return side;
+         }
+      }
       const amrex::Real sqrt_l = std::sqrt(primitive_l.rho);
       const amrex::Real sqrt_r = std::sqrt(primitive_r.rho);
       const amrex::Real inv_sum = 1.0 / (sqrt_l + sqrt_r);
@@ -942,10 +957,15 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives_normal(
    EOSParams const& eos
 ) noexcept
 {
-   if constexpr (EOSMethod == EOSIdealGas) {
+   if constexpr (EOSMethod == EOSIdealGas || EOSMethod == EOSRuntime) {
       const WaveSpeeds side = hydro_hll_wave_speeds_from_primitives_normal<EOSMethod>(
          primitive_l, primitive_r, normal, eos
       );
+      if constexpr (EOSMethod == EOSRuntime) {
+         if (eos.method != EOSIdealGas) {
+            return side;
+         }
+      }
       const amrex::Real sqrt_l = std::sqrt(primitive_l.rho);
       const amrex::Real sqrt_r = std::sqrt(primitive_r.rho);
       const amrex::Real inv_sum = 1.0 / (sqrt_l + sqrt_r);

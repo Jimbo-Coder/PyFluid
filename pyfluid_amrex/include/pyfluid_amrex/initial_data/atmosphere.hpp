@@ -48,17 +48,8 @@ inline EOSThermodynamicState recovery_atmosphere_state(
    EOSParams const& eos
 )
 {
-   if (eos_method == EOSPolytrope) {
-      return eos_project_to_floors<EOSPolytrope>(
-         eos.rho_floor, eos.pressure_floor, eos
-      );
-   }
-   if (eos_method == EOSHybridPolytrope) {
-      return eos_project_to_floors<EOSHybridPolytrope>(
-         eos.rho_floor, eos.pressure_floor, eos
-      );
-   }
-   return eos_project_to_floors<EOSIdealGas>(
+   static_cast<void>(eos_method);
+   return eos_project_to_floors<EOSRuntime>(
       eos.rho_floor, eos.pressure_floor, eos
    );
 }
@@ -90,9 +81,18 @@ EOSThermodynamicState initial_atmosphere_state(
 
    amrex::Real pressure = atmosphere.pressure;
    if (atmosphere.profile == InitialAtmosphereProfile::PowerLaw) {
-      const amrex::Real atmosphere_gamma = EOSMethod == EOSIdealGas
-         ? atmosphere.eos.gamma
-         : atmosphere.eos.segment_gamma[0];
+      amrex::Real atmosphere_gamma = atmosphere.eos.gamma;
+      if constexpr (EOSMethod == EOSRuntime) {
+         if (atmosphere.eos.method == EOSCompose) {
+            atmosphere_gamma = atmosphere.eos.table.low_density_gamma;
+         } else if (atmosphere.eos.method != EOSIdealGas) {
+            atmosphere_gamma = atmosphere.eos.segment_gamma[0];
+         }
+      } else if constexpr (EOSMethod == EOSCompose) {
+         atmosphere_gamma = atmosphere.eos.table.low_density_gamma;
+      } else if constexpr (EOSMethod != EOSIdealGas) {
+         atmosphere_gamma = atmosphere.eos.segment_gamma[0];
+      }
       pressure *= std::pow(
          density / atmosphere.density, atmosphere_gamma
       );

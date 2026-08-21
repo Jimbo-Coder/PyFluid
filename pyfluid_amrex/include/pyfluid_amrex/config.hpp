@@ -5,6 +5,7 @@
 
 #include <array>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,10 @@
 
 namespace pyfluid_amrex {
 
+namespace eos {
+class TabulatedEOSStorage;
+}
+
 struct RunConfig {
    RunConfig();
 
@@ -27,6 +32,7 @@ struct RunConfig {
    amrex::Real gamma = 5.0 / 3.0;
    std::string eos;
    std::string eos_preset;
+   std::string eos_table;
    amrex::Real polytropic_k = 1.0;
    amrex::Real polytropic_gamma = 5.0 / 3.0;
    std::vector<amrex::Real> polytropic_density_breaks;
@@ -34,6 +40,7 @@ struct RunConfig {
    amrex::Real thermal_gamma = 5.0 / 3.0;
    amrex::Real rho_floor = 1.0e-12;
    amrex::Real pressure_floor = 1.0e-12;
+   std::shared_ptr<eos::TabulatedEOSStorage const> tabulated_eos;
 
    std::string run_name = "amrex_hydro_sine";
    std::string output_dir = "runs/current/amrex_hydro_sine";

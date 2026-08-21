@@ -32,6 +32,8 @@
          dispatch_evolve_timestep<NComp, CTEnabled, EOSPolytrope>();
       } else if (eos_method_ == EOSHybridPolytrope) {
          dispatch_evolve_timestep<NComp, CTEnabled, EOSHybridPolytrope>();
+      } else if (eos_method_ == EOSCompose) {
+         dispatch_evolve_timestep<NComp, CTEnabled, EOSCompose>();
       } else {
          dispatch_evolve_timestep<NComp, CTEnabled, EOSIdealGas>();
       }

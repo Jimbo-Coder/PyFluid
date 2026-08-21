@@ -1,0 +1,11 @@
+schema_version = 1
+table_kind = "cold_beta_equilibrium"
+model = "RG(SLY4)"
+compose_url = "https://compose.obspm.fr/eos/134"
+zenodo_doi = "10.5281/zenodo.14808591"
+archive = "RG_SLY4_nparam_1.zip"
+archive_md5 = "0cb7f015cbd1668da8fb41889e49612d"
+license = "CC-BY-4.0"
+high_density_policy = "causal_extend"
+rest_mass_normalization = "matched_vacuum_enthalpy"
+

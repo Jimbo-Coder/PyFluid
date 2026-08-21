@@ -60,11 +60,13 @@ writer, scalar format, AMR hierarchy, or source-stage loop.
 
 ## EOS And Code Units
 
-HD, MHD, and RHD use the same generated ideal-gas, cold-polytrope, and hybrid
-thermal-polytrope closures. A polytropic run may contain up to eight density
-segments. The input supplies the first `K`, every density break, and each later
-adiabatic index; the solver derives later `K` values and internal-energy
-offsets so pressure and cold specific energy remain continuous.
+HD, MHD, and RHD use the same ideal-gas, cold-polytrope, and hybrid
+thermal-polytrope closure boundary. RHD additionally supports native cold
+CompOSE tables. A polytropic run may contain up to eight density segments. The
+input supplies the first `K`,
+every density break, and each later adiabatic index; the solver derives later
+`K` values and internal-energy offsets so pressure and cold specific energy
+remain continuous.
 
 Custom EOS inputs are code-unit quantities. In `P = K rho^Gamma`, each
 `pyfluid.polytropic_density_breaks` entry has the same code units as `rho`, and
@@ -80,14 +82,21 @@ the common crust and three-piece core fits from
 module explicitly converts the published CGS coefficients into
 `G = c = M_sun = 1` once during configuration. Named presets and custom
 segments produce the same immutable `EOSParams` value consumed by all runtime
-kernels, so there is no preset-specific evolution branch. Future tabulated
-EoS support belongs behind this same module boundary and must declare its unit
-system explicitly.
+kernels, so there is no preset-specific evolution branch. `pyfluid.eos =
+compose` and `pyfluid.eos_table` select a one-parameter cold beta-equilibrium
+directory with a required provenance/continuation manifest. The host owner
+converts its MeV/fm^3 quantities into `G = c = M_sun = 1`, validates and
+normalizes the table once, and exposes one immutable pointer/value view to ID
+and evolution. `pyfluid.thermal_gamma` supplies the optional gamma-law thermal
+extension. This is not finite-temperature or composition-dependent CompOSE.
+Bundled SLY4, APR, and DD2 tables live under `eos/compose/`.
 
 RMHD evolution currently accepts only `ideal_gas`. Cold and hybrid
-polytropes remain available to the supported nonmagnetized relativistic and
-stellar paths; adding them to RMHD requires a consistent magnetic C2P, signal-
-speed, atmosphere, and evolution validation boundary.
+polytropes and cold CompOSE remain available to the supported nonmagnetized
+relativistic and stellar paths; native CompOSE evolution currently requires
+RHD. Adding it to Newtonian HD/MHD or RMHD requires a dedicated validation
+boundary, and RMHD additionally requires consistent general-EoS magnetic C2P,
+signal-speed, atmosphere, and Riemann contracts.
 
 ## Initial-Data Solve And Handoff
 
@@ -171,9 +180,14 @@ The useful compiled boundary is an evolution-kernel bundle. Its key contains
 only properties that change template instantiation: component count, CT
 topology, and EOS dispatch policy. Runtime dispatch selects a fully specialized
 bundle outside cell loops, and that bundle calls the shared numerical
-algorithms. Physical systems with the same compile-time signature reuse one
-bundle; system identity remains explicit runtime data and is never inferred
-from component count.
+algorithms. Analytic EoS and CompOSE kernels retain specialized pointwise
+closures because a measured generic runtime closure regressed the lean hydro
+kernel. Compile-time eligibility discards CompOSE products outside the
+supported RHD/component/topology path; it does not multiply the full
+reconstruction/layout matrix. RMHD retains its ideal-gas-only signature.
+Physical systems with the same compile-time signature reuse one bundle; system
+identity remains explicit runtime data and is never inferred from component
+count.
 
 The evolution lifecycle follows the same boundary. It is compiled once per
 state/EOS/CT bundle and receives one immutable operation table selected before

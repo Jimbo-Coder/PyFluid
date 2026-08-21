@@ -156,6 +156,9 @@ void dispatch_eos(FluxLaunch const& launch)
    case EOSHybridPolytrope:
       fill_layout<NumComponents, ReconstructionMethod, EOSHybridPolytrope>(launch);
       return;
+   case EOSCompose:
+      fill_layout<NumComponents, ReconstructionMethod, EOSCompose>(launch);
+      return;
    default:
       amrex::Abort("invalid EOS method in flux factory");
    }

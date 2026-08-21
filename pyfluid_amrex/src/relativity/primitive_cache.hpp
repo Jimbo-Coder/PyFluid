@@ -336,47 +336,21 @@ inline void fill_base_primitive_cache_runtime(
 )
 {
    if (system == PhysicalSystem::RHD) {
-      switch (eos_method) {
-      case EOSPolytrope:
-         fill_rhd_primitive_cache<EOSPolytrope>(primitive, state, eos, geometry, spacetime, time);
-         return;
-      case EOSHybridPolytrope:
-         fill_rhd_primitive_cache<EOSHybridPolytrope>(primitive, state, eos, geometry, spacetime, time);
-         return;
-      default:
-         fill_rhd_primitive_cache<EOSIdealGas>(primitive, state, eos, geometry, spacetime, time);
-         return;
-      }
+      fill_rhd_primitive_cache<EOSRuntime>(
+         primitive, state, eos, geometry, spacetime, time
+      );
+      return;
    }
    if (system == PhysicalSystem::RMHD) {
       fill_rmhd_primitive_cache(primitive, state, eos, geometry, spacetime, time);
       return;
    }
    const bool mhd = system == PhysicalSystem::MHD;
-   switch (eos_method) {
-   case EOSPolytrope:
-      if (mhd) {
-         fill_primitive_cache<NVAR_MHD, EOSPolytrope>(primitive, state, eos);
-      } else {
-         fill_primitive_cache<NVAR_HYDRO, EOSPolytrope>(primitive, state, eos);
-      }
-      return;
-   case EOSHybridPolytrope:
-      if (mhd) {
-         fill_primitive_cache<NVAR_MHD, EOSHybridPolytrope>(primitive, state, eos);
-      } else {
-         fill_primitive_cache<NVAR_HYDRO, EOSHybridPolytrope>(primitive, state, eos);
-      }
-      return;
-   case EOSIdealGas:
-      if (mhd) {
-         fill_primitive_cache<NVAR_MHD, EOSIdealGas>(primitive, state, eos);
-      } else {
-         fill_primitive_cache<NVAR_HYDRO, EOSIdealGas>(primitive, state, eos);
-      }
-      return;
-   default:
-      amrex::Abort("invalid EOS method in primitive-cache dispatch");
+   static_cast<void>(eos_method);
+   if (mhd) {
+      fill_primitive_cache<NVAR_MHD, EOSRuntime>(primitive, state, eos);
+   } else {
+      fill_primitive_cache<NVAR_HYDRO, EOSRuntime>(primitive, state, eos);
    }
 }
 

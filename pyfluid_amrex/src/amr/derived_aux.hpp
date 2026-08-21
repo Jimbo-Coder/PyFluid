@@ -208,20 +208,9 @@ inline void fill_thermal_entropy_proxy_output(
    RunConfig const& cfg
 )
 {
-   const int eos_method = eos_method_code(cfg);
-   if (eos_method == EOSPolytrope) {
-      fill_thermal_entropy_proxy_output_method<EOSPolytrope>(
-         thermal_entropy_proxy, state, geometry, time, cfg
-      );
-   } else if (eos_method == EOSHybridPolytrope) {
-      fill_thermal_entropy_proxy_output_method<EOSHybridPolytrope>(
-         thermal_entropy_proxy, state, geometry, time, cfg
-      );
-   } else {
-      fill_thermal_entropy_proxy_output_method<EOSIdealGas>(
-         thermal_entropy_proxy, state, geometry, time, cfg
-      );
-   }
+   fill_thermal_entropy_proxy_output_method<EOSRuntime>(
+      thermal_entropy_proxy, state, geometry, time, cfg
+   );
 }
 
 inline void fill_amr_tag_metric_output(

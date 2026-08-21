@@ -631,34 +631,12 @@ inline void fill_pressure_runtime(
    int eos_method
 )
 {
+   static_cast<void>(eos_method);
    if (mhd) {
-      switch (eos_method) {
-      case EOSIdealGas:
-         fill_pressure<true, EOSIdealGas>(pressure, state, eos);
-         return;
-      case EOSPolytrope:
-         fill_pressure<true, EOSPolytrope>(pressure, state, eos);
-         return;
-      case EOSHybridPolytrope:
-         fill_pressure<true, EOSHybridPolytrope>(pressure, state, eos);
-         return;
-      default:
-         amrex::Abort("invalid EOS method in diagnostic pressure dispatch");
-      }
+      fill_pressure<true, EOSRuntime>(pressure, state, eos);
+      return;
    }
-   switch (eos_method) {
-   case EOSIdealGas:
-      fill_pressure<false, EOSIdealGas>(pressure, state, eos);
-      return;
-   case EOSPolytrope:
-      fill_pressure<false, EOSPolytrope>(pressure, state, eos);
-      return;
-   case EOSHybridPolytrope:
-      fill_pressure<false, EOSHybridPolytrope>(pressure, state, eos);
-      return;
-   default:
-      amrex::Abort("invalid EOS method in diagnostic pressure dispatch");
-   }
+   fill_pressure<false, EOSRuntime>(pressure, state, eos);
 }
 
 void write_amr_level_header(

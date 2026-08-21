@@ -39,7 +39,9 @@ enum DiffusionMethodCode : int {
 enum EOSMethodCode : int {
    EOSIdealGas = 0,
    EOSPolytrope = 1,
-   EOSHybridPolytrope = 2
+   EOSHybridPolytrope = 2,
+   EOSCompose = 3,
+   EOSRuntime = -1
 };
 
 } // namespace pyfluid_amrex

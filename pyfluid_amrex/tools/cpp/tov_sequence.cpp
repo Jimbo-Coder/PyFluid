@@ -68,6 +68,11 @@ std::string sequence_label(
    if (preset != "custom") {
       return {};
    }
+   if (config.eos == "compose") {
+      const pyfluid_amrex::EOSIdentity identity =
+         pyfluid_amrex::eos_identity(config);
+      return "CompOSE cold barotrope " + identity.fingerprint;
+   }
    if (!config.polytropic_density_breaks.empty()
        || !config.polytropic_segment_gammas.empty()) {
       return "custom PWP";

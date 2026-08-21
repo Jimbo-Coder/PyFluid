@@ -841,6 +841,9 @@ inline void fill_fluxes_for_components(
       }
       return;
    }
+   if constexpr (EOSMethod == EOSCompose) {
+      amrex::Abort("native cold CompOSE fluxes require RHD");
+   } else {
    const EOSParams eos = eos_params(cfg);
    const SolidGeometryEvaluator solid_params = solid_geometry_evaluator(cfg, time);
    const int mesh_coordinate = geom == nullptr ? MeshCartesian : mesh_coordinate_code(cfg.mesh_coordinate);
@@ -916,6 +919,7 @@ inline void fill_fluxes_for_components(
          *grid_system,
          *layout
       );
+   }
    }
 }
 
@@ -1076,6 +1080,9 @@ inline void fill_flux_direction_for_riemann(
       }
       return;
    }
+   if constexpr (EOSMethod == EOSCompose) {
+      amrex::Abort("native cold CompOSE fluxes require RHD");
+   } else {
    const SolidGeometryEvaluator solid_params = solid_geometry_evaluator(cfg, time);
    const int mesh_coordinate = geom == nullptr ? MeshCartesian : mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(mesh_coordinate, cfg.mesh_axes);
@@ -1145,6 +1152,7 @@ inline void fill_flux_direction_for_riemann(
 #endif
    default:
       amrex::Abort("Invalid parsed Riemann solver code");
+   }
    }
 }
 

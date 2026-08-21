@@ -34,6 +34,9 @@ void dispatch_newtonian_eos(PrimitiveCacheLaunch const& launch)
    case EOSHybridPolytrope:
       fill_newtonian_cache<NumComponents, EOSHybridPolytrope>(launch);
       return;
+   case EOSCompose:
+      fill_newtonian_cache<NumComponents, EOSCompose>(launch);
+      return;
    case EOSIdealGas:
       fill_newtonian_cache<NumComponents, EOSIdealGas>(launch);
       return;
@@ -136,6 +139,9 @@ void fill_primitive_cache(PrimitiveCacheLaunch const& launch)
       case EOSHybridPolytrope:
          fill_rhd_cache<EOSHybridPolytrope>(launch);
          return;
+      case EOSCompose:
+         fill_rhd_cache<EOSCompose>(launch);
+         return;
       case EOSIdealGas:
          fill_rhd_cache<EOSIdealGas>(launch);
          return;
@@ -188,35 +194,26 @@ void apply_relativistic_atmosphere(
    switch (eos_method) {
    case EOSPolytrope:
       project_atmosphere<PhysicalSystem::RHD, EOSPolytrope>(
-         conserved,
-         cell_spacetime,
-         eos,
-         atmosphere,
-         ghost_cells,
-         c2p_fallback_count,
-         atmosphere_reset_count
+         conserved, cell_spacetime, eos, atmosphere, ghost_cells,
+         c2p_fallback_count, atmosphere_reset_count
       );
       return;
    case EOSHybridPolytrope:
       project_atmosphere<PhysicalSystem::RHD, EOSHybridPolytrope>(
-         conserved,
-         cell_spacetime,
-         eos,
-         atmosphere,
-         ghost_cells,
-         c2p_fallback_count,
-         atmosphere_reset_count
+         conserved, cell_spacetime, eos, atmosphere, ghost_cells,
+         c2p_fallback_count, atmosphere_reset_count
+      );
+      return;
+   case EOSCompose:
+      project_atmosphere<PhysicalSystem::RHD, EOSCompose>(
+         conserved, cell_spacetime, eos, atmosphere, ghost_cells,
+         c2p_fallback_count, atmosphere_reset_count
       );
       return;
    case EOSIdealGas:
       project_atmosphere<PhysicalSystem::RHD, EOSIdealGas>(
-         conserved,
-         cell_spacetime,
-         eos,
-         atmosphere,
-         ghost_cells,
-         c2p_fallback_count,
-         atmosphere_reset_count
+         conserved, cell_spacetime, eos, atmosphere, ghost_cells,
+         c2p_fallback_count, atmosphere_reset_count
       );
       return;
    default:

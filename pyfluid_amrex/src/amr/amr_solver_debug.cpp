@@ -384,20 +384,9 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level_runtime(
       >(state, valid_mask, cell_spacetime, geometry, fixed_spacetime, eos, time,
         require_round_trip);
    }
-   if (eos_method == EOSPolytrope) {
-      return evaluate_relativistic_preflight_level<
-         PhysicalSystem::RHD, EOSPolytrope
-      >(state, valid_mask, cell_spacetime, geometry, fixed_spacetime, eos, time,
-        require_round_trip);
-   }
-   if (eos_method == EOSHybridPolytrope) {
-      return evaluate_relativistic_preflight_level<
-         PhysicalSystem::RHD, EOSHybridPolytrope
-      >(state, valid_mask, cell_spacetime, geometry, fixed_spacetime, eos, time,
-        require_round_trip);
-   }
+   static_cast<void>(eos_method);
    return evaluate_relativistic_preflight_level<
-      PhysicalSystem::RHD, EOSIdealGas
+      PhysicalSystem::RHD, EOSRuntime
    >(state, valid_mask, cell_spacetime, geometry, fixed_spacetime, eos, time,
      require_round_trip);
 }
@@ -776,18 +765,7 @@ void AmrSolverBase::check_active_cell_physical_state(int lev, char const* contex
       }                                                                                                                \
    } while (false)
 
-   switch (eos_method_) {
-   case EOSPolytrope:
-      PYFLUID_CHECK_STATE(EOSPolytrope);
-      break;
-   case EOSHybridPolytrope:
-      PYFLUID_CHECK_STATE(EOSHybridPolytrope);
-      break;
-   case EOSIdealGas:
-   default:
-      PYFLUID_CHECK_STATE(EOSIdealGas);
-      break;
-   }
+   PYFLUID_CHECK_STATE(EOSRuntime);
 #undef PYFLUID_CHECK_STATE
 }
 

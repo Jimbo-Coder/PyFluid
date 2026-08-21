@@ -102,6 +102,17 @@ For a one-layer cold EoS, `P=K rho^Gamma` is also the isentropic ideal-gas
 equilibrium relation. A thermal ideal-gas law alone does not select a unique
 TOV sequence without an entropy or temperature profile.
 
+Native cold CompOSE sequences use the same executable with
+`pyfluid.eos = compose`, a required `pyfluid.eos_table` directory, and
+`tov_sequence.eos_presets = custom`; see
+`inputs/tov_compose_sequence.in`. The reader consumes a singleton zero-T/Yq
+one-parameter export, preserves the tabulated total energy density, joins the
+lowest point to a regular vacuum polytrope, and continues above the retained
+causal prefix at constant sound speed. `eos.mr` is independent provider output
+used only by `tools/validate_compose_eos.py`; it is not read by the TOV solver.
+The runtime thermal-gamma extension is inactive in a cold equilibrium and does
+not turn this path into finite-temperature CompOSE.
+
 ## Constraint Initial Data
 
 CTT and XCTS materializations are compared to the direct TOV gravitational,
