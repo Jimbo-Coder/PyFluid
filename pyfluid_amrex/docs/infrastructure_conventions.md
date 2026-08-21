@@ -105,6 +105,13 @@ methods and physics belong in their topic documents; coding style belongs in
   temporary FABs retain AMReX `Elixir` ownership through asynchronous kernels
   and copies. The 2D/3D boundary-tiling gate covers ordinary, patch-union,
   relativistic, and CT ghost fills with forced small tiles.
+- AMReX's all-node physical-boundary path constant-extrapolates ghosts and
+  delegates reflection to the user functor; `BCRec` is not applied there as it
+  is for cell/face data. Nodal Z4c reflection therefore mirrors about the
+  boundary node with catalog parity, composes parity at corners, and explicitly
+  zeros reflection-odd values on the valid boundary plane. Constraint stencil
+  masks treat those reflected ghosts as same-level data while continuing to
+  exclude one-sided outflow-boundary stencils.
 - State and auxiliary GF snapshots use generated field descriptors. Auxiliary
   output normally inherits the state GF cadence; explicit compute/write
   overrides remain available. Scalar diagnostics and checkpoints retain their
@@ -154,6 +161,16 @@ different target uses the common materializer.
 TOV, rotating-star, binary, and external providers must all produce this same
 field contract. The artifact must not encode timestepper, reconstruction,
 subcycling, output cadence, or other mutable evolution choices.
+
+Black-hole providers use the same contract. The exterior ADM fields, the
+horizon-interior policy (`exterior`, complete-grid `filled`, or true
+`excision`), mass, origin, and Cartesian spin vector are artifact identity.
+An interior fill is data on an active cell and must not be reinterpreted as an
+excision mask. Conversely, true excision requires explicit active-domain and
+inner-boundary ownership in both the ID solver and evolution hierarchy.
+Black-hole spin, stellar rotation axis, and disk axis remain separate metadata;
+this preserves aligned reduced solves while allowing a later full-3D tilted
+composition through the same materializer.
 
 Optional equilibrium matter components use that same physical field contract;
 they do not create a parallel artifact or materializer. The construction owner
@@ -237,6 +254,14 @@ used to evaluate cell-centred and nodal fields; logical AMReX boxes remain
 storage indices and never masquerade as uniform physical spacing. A future
 modal or block-adaptive representation must likewise version and store its
 evaluation coordinates or coefficients before production.
+
+For relativistic scratch construction with stored spacetime, the final fluid
+conserved state is formed only after the authoritative nodal ADM/Z4c data have
+been centered onto the evolution cells. Initial fluid primitives may be sampled
+earlier, but they must be resampled/preserved as primitives and converted
+against that final cell metric. Converting against a placeholder analytic
+metric and later replacing the stored spacetime violates the physical-ID
+handoff even if weak-curvature tests happen to recover it.
 
 `initial_data.radial_grid=adaptive` selects the shared stellar radial-map
 owner. TOV uses spherical `r`; circular RNS uses spherical `r theta`. The map

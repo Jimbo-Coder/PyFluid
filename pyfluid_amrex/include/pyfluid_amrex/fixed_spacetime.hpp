@@ -123,6 +123,59 @@ inline void validate_fixed_spacetime_domain(
       }
       return;
    }
+   if (parameters.metric == FixedSpacetimeMetric::KerrSchild) {
+      const amrex::Real spin_squared =
+         parameters.dimensionless_spin1 * parameters.dimensionless_spin1
+         + parameters.dimensionless_spin2 * parameters.dimensionless_spin2
+         + parameters.dimensionless_spin3 * parameters.dimensionless_spin3;
+      if (!(parameters.mass > 0.0) || !(spin_squared < 1.0)) {
+         amrex::Abort(
+            "Kerr-Schild fixed spacetime requires positive mass and "
+            "dimensionless spin magnitude below one"
+         );
+      }
+      if (parameters.black_hole_interior == BlackHoleInterior::Filled) {
+         return;
+      }
+      const auto interval_distance = [](
+         amrex::Real point, amrex::Real lo, amrex::Real hi
+      ) {
+         return point < lo ? lo - point : (point > hi ? point - hi : 0.0);
+      };
+      const amrex::Real distance1 = interval_distance(
+         parameters.origin1, lower[0], upper[0]
+      );
+#if (AMREX_SPACEDIM >= 2)
+      const amrex::Real distance2 = interval_distance(
+         parameters.origin2, lower[1], upper[1]
+      );
+#else
+      const amrex::Real distance2 = 0.0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+      const amrex::Real distance3 = interval_distance(
+         parameters.origin3, lower[2], upper[2]
+      );
+#else
+      const amrex::Real distance3 = 0.0;
+#endif
+      const amrex::Real minimum_euclidean_radius_squared =
+         distance1 * distance1 + distance2 * distance2
+         + distance3 * distance3;
+      const amrex::Real spin_length_squared =
+         parameters.mass * parameters.mass * spin_squared;
+      const amrex::Real horizon_radius = parameters.mass * (
+         1.0 + std::sqrt(1.0 - spin_squared)
+      );
+      if (!(minimum_euclidean_radius_squared - spin_length_squared
+            > horizon_radius * horizon_radius)) {
+         amrex::Abort(
+            "the current Kerr-Schild fixed-spacetime contract requires the "
+            "complete domain to remain outside the outer horizon"
+         );
+      }
+      return;
+   }
    amrex::Real minimum_lapse = 1.0;
    minimum_lapse += parameters.acceleration1
       * ((parameters.acceleration1 >= 0.0 ? lower[0] : upper[0]) - parameters.origin1);

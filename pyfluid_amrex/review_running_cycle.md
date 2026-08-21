@@ -5669,3 +5669,60 @@ I will always continue from the last cycle marked as `in_progress`.
   small-spin RNS handoff, restart, and wrong-table rejection gate passes again.
   This is about 1.8 percent of one rotation, so long equilibrium remains the
   immediate physics test rather than more infrastructure. [DONE]
+
+## Cycle 299 — Kerr black-hole initial-data foundation (DONE)
+
+- Added one exact ingoing Cartesian Kerr--Schild ADM owner for an arbitrary
+  subextremal Cartesian spin vector. Fixed stored-spacetime and evolved-Z4c
+  initial data consume the same provider; no Kerr branch entered the generic
+  reconstruction/flux template product. Pointwise controls cover the
+  Schwarzschild limit and trace of K, arbitrary-spin analytic derivatives,
+  cyclic rotation covariance, regular filled center, exact exterior, and RHD
+  C2P/P2C against direct and centered Kerr metrics. [DONE]
+- Made horizon-interior identity explicit as `exterior`, complete-grid
+  `filled`, or reserved `excision`. Exterior domains must remain outside the
+  outer horizon. The filled policy is exact outside a transition sphere inside
+  the horizon and C2-smoothly joins regular Minkowski center data without
+  sampling the Kerr ring; its arbitrary interior is documented as constraint
+  violating, never excision. True excision rejects at configuration until the
+  Cook--Pfeiffer apparent-horizon ID boundary, active-cell mask, and pure-
+  outflow evolution boundary exist. Physical-ID metadata persist mass, origin,
+  spin, interior policy, and fill radius and reject a changed target spin.
+  [DONE]
+- Preserved three separate orientation identities: black-hole spin, stellar
+  rotation, and disk axis. The present reduced torus accepts only aligned +z,
+  while the disk-axis vector is already persisted for a future full-3D tilted
+  owner. Reflection validation uses the axial-vector rule: a plane must pass
+  through the hole origin and the spin must be normal to it. Schwarzschild may
+  use a true octant; z-spin Kerr may use the z-equatorial half-domain. [DONE]
+- Source-checking `slow_start` confirmed the existing late-start gauge is
+  1+log plus Gaussian relaxation toward `sqrt(chi)`, paired with the existing
+  gamma-driver shift; no duplicate gauge was added. A strong-field handoff
+  audit found and fixed a general stored-spacetime ownership bug: relativistic
+  conserved variables were constructed against a provisional metric before
+  the authoritative nodal metric was centered. Resampling physical primitives
+  and performing the final P2C afterward reduces Kerr preflight mismatch to
+  roundoff. The analytic Minkowski specialization deliberately retains its
+  direct path; an over-broad first patch altered CT-AMR tagging and failed the
+  RMHD standard gate, while the narrowed non-analytic path restores the full
+  RMHD matrix, including three-level CT-AMR with divB L1 `3.38e-15`. [DONE]
+- Found a separate AMReX nodal-boundary defect: the all-node
+  `GpuBndryFuncFab` path does not apply `BCRec` reflection. The Z4c boundary
+  owner now mirrors about the boundary node, composes tensor parity at corners,
+  and zeros reflection-odd valid-plane values. Constraint-stencil validity now
+  mirrors at symmetry planes instead of hiding near-plane samples. After one
+  CFL-0.9 step, matched full/octant Schwarzschild and full/equatorial Kerr at
+  N=32 and N=64 agree in minimum lapse and Hamiltonian/momentum Linf to
+  roundoff. Forced-small-tile 2D/3D boundary binaries pass. [DONE]
+- The focused 12-case three-rank gate passes filled evolution for three steps,
+  changed-grid physical-ID materialization, arbitrary-axis exact exterior,
+  Schwarzschild octant, Kerr equatorial symmetry at two resolutions, and the
+  three negative contracts, with zero C2P fallback or atmosphere reset in
+  every accepted run. Production 1D/2D/3D builds, the pointwise generated
+  check, architecture, and the 3/3 quick suite pass. The complete standard
+  suite passes 46/46 gates in `191.955 s`. Final throughput controls pass at
+  `106.63/129.64` Mcells/s for 3/4-rank 2D, `5.97` for 3D PWC, and `0.18` for
+  3D WENO-Z, or `0.94--0.97` of baseline. Provider/Kerr headers now reach 12
+  actual production owners per dimension and no flux kernel bundle. The final
+  unchanged production build is a `0.26 s` cache hit with zero compiler-cache
+  events, not a cold-build measurement. [DONE]

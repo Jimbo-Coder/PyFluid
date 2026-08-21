@@ -108,6 +108,8 @@ struct RunConfig {
    std::string spacetime_matter_coupling = "coupled";
    std::string spacetime_fixed_metric = "minkowski";
    std::string spacetime_initial_data = "minkowski";
+   std::string spacetime_black_hole_interior = "exterior";
+   amrex::Real spacetime_black_hole_fill_radius = -1.0;
    std::string initial_data_magnetic = "id";
    std::string initial_data_spacetime = "id";
    std::string initial_data_lapse = "id";
@@ -130,6 +132,9 @@ struct RunConfig {
    std::string initial_data_disk_rotation_law = "constant_l";
    amrex::Real initial_data_disk_specific_angular_momentum = 0.0;
    amrex::Real initial_data_disk_inner_radius = -1.0;
+   amrex::Real initial_data_disk_axis1 = 0.0;
+   amrex::Real initial_data_disk_axis2 = 0.0;
+   amrex::Real initial_data_disk_axis3 = 1.0;
    std::string initial_data_rotation_law = "uniform";
    amrex::Real initial_data_angular_velocity = 0.0;
    amrex::Real initial_data_differential_rotation_length = 10.0;
@@ -161,6 +166,9 @@ struct RunConfig {
    amrex::Real spacetime_origin2 = 0.0;
    amrex::Real spacetime_origin3 = 0.0;
    amrex::Real spacetime_mass = 1.0;
+   amrex::Real spacetime_dimensionless_spin1 = 0.0;
+   amrex::Real spacetime_dimensionless_spin2 = 0.0;
+   amrex::Real spacetime_dimensionless_spin3 = 0.0;
    amrex::Real tov_central_density = 1.28e-3;
    amrex::Real tov_absolute_tolerance = 1.0e-12;
    amrex::Real tov_relative_tolerance = 1.0e-10;

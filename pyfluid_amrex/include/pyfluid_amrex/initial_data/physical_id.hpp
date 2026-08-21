@@ -19,11 +19,17 @@ struct InitialAtmosphereParameters;
 struct PhysicalInitialDataMetadata {
    std::string source_ic;
    std::string spacetime_initial_data;
+   amrex::Real black_hole_mass = -1.0;
+   amrex::GpuArray<amrex::Real, 3> black_hole_spin{{0.0, 0.0, 0.0}};
+   amrex::GpuArray<amrex::Real, 3> black_hole_origin{{0.0, 0.0, 0.0}};
+   std::string black_hole_interior;
+   amrex::Real black_hole_fill_radius = -1.0;
    std::string disk;
    std::string disk_gravity;
    std::string disk_rotation_law;
    amrex::Real disk_specific_angular_momentum = 0.0;
    amrex::Real disk_inner_radius = -1.0;
+   amrex::GpuArray<amrex::Real, 3> disk_axis{{0.0, 0.0, 1.0}};
    amrex::Real disk_maximum_density = -1.0;
    amrex::Real disk_maximum_velocity = -1.0;
    amrex::Real disk_resolved_inner_radius = -1.0;

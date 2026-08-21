@@ -39,7 +39,6 @@
 #include "pyfluid_amrex/solid_geometry.hpp"
 #include "pyfluid_amrex/gravity.hpp"
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
-#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/multipatch.hpp"
 #include "pyfluid_amrex/patch_grid.hpp"
 #include "pyfluid_amrex/patch_layout_builder.hpp"
@@ -56,6 +55,7 @@ namespace pyfluid_amrex {
 class HierarchyInterpolationPlan;
 class MeshBasisStateInterpolater;
 class ParametricSurface;
+class RelativisticInitialDataProvider;
 struct MultipoleDiagnostics;
 struct EquilibriumTorusUpdateSummary;
 struct PhysicalInitialDataMetadata;
@@ -342,7 +342,7 @@ protected:
       amrex::Real scale
    );
    void initialize_spacetime_level(int lev, amrex::Real time);
-   void materialize_constraint_solved_initial_data(bool seed_from_loaded_id = false);
+   bool materialize_constraint_solved_initial_data(bool seed_from_loaded_id = false);
    void finalize_constraint_solved_initial_data_state();
    void materialize_configured_initial_data();
    bool load_physical_initial_data_artifact();
@@ -594,7 +594,7 @@ protected:
 #include "amr/solver_sections/debug_contracts.inc.hpp"
 
    RunConfig cfg_;
-   RelativisticInitialDataProvider initial_data_provider_;
+   std::unique_ptr<RelativisticInitialDataProvider> initial_data_provider_;
    amrex::Vector<
       std::array<amrex::Vector<amrex::Real>, AMREX_SPACEDIM>
    > initial_data_coordinate_faces_;

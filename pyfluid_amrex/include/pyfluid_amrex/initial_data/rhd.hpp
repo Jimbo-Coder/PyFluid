@@ -7,6 +7,7 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/initial_data/fluid.hpp"
+#include "pyfluid_amrex/initial_data/kerr_schild.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -34,7 +35,7 @@ inline void initialize_relativistic_state_method(
    const FluidInitialDataParameters parameters = fluid_initial_data_parameters(
       cfg, initial_data
    );
-   const FixedSpacetimeGeometry reference_geometry = fixed_spacetime_geometry(
+   const FixedSpacetimeGeometry reference_geometry = initial_data_spacetime_geometry(
       spacetime,
       0.5 * (problo[0] + probhi[0]),
       AMREX_SPACEDIM >= 2 ? 0.5 * (problo[1] + probhi[1]) : 0.0,
@@ -59,7 +60,7 @@ inline void initialize_relativistic_state_method(
          const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
             mesh_coordinate, axes, problo, dx, i, j, k
          );
-         const FixedSpacetimeGeometry local_geometry = fixed_spacetime_geometry(
+         const FixedSpacetimeGeometry local_geometry = initial_data_spacetime_geometry(
             spacetime,
             sample.physical.q1,
             AMREX_SPACEDIM >= 2 ? sample.physical.q2 : 0.0,
@@ -151,8 +152,16 @@ inline void convert_newtonian_initial_state_to_relativistic_method(
       const auto destination = relativistic_state.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const FixedSpacetimeGeometry geometry_at_cell =
-            fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
-               spacetime, lower, spacing, i, j, k, 0.0
+            initial_data_spacetime_geometry(
+               spacetime,
+               lower[0] + (static_cast<amrex::Real>(i) + 0.5) * spacing[0],
+               AMREX_SPACEDIM >= 2
+                  ? lower[1] + (static_cast<amrex::Real>(j) + 0.5) * spacing[1]
+                  : 0.0,
+               AMREX_SPACEDIM == 3
+                  ? lower[2] + (static_cast<amrex::Real>(k) + 0.5) * spacing[2]
+                  : 0.0,
+               0.0
             );
          if (magnetized) {
             const MHDPrimitive primitive = primitive_from_conserved<EOSMethod>(

@@ -8,23 +8,20 @@ namespace pyfluid_amrex {
 namespace {
 
 template <int EOSMethod>
-void initialize_relativistic_primitive_cache_from_provider_method(
+void initialize_relativistic_primitive_cache_from_initial_data_method(
    amrex::MultiFab& primitive,
    amrex::Geometry const& geometry,
    RunConfig const& cfg,
    RelativisticInitialDataView const& initial_data
 )
 {
-   if (!initial_data.has_fluid()) {
-      amrex::Abort("relativistic primitive initialization requires a fluid provider");
-   }
    const auto problo = geometry.ProbLoArray();
    const auto probhi = geometry.ProbHiArray();
    const auto dx = geometry.CellSizeArray();
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes axes = mesh_axes_layout(cfg);
    const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
-   const FixedSpacetimeGeometry reference_geometry = fixed_spacetime_geometry(
+   const FixedSpacetimeGeometry reference_geometry = initial_data_spacetime_geometry(
       spacetime,
       0.5 * (problo[0] + probhi[0]),
       AMREX_SPACEDIM >= 2 ? 0.5 * (problo[1] + probhi[1]) : 0.0,
@@ -42,7 +39,10 @@ void initialize_relativistic_primitive_cache_from_provider_method(
       cfg, initial_data
    );
    const bool magnetized = physical_system_has_magnetic_field(physical_system(cfg));
-   primitive.setVal(0.0);
+   const int base_components = magnetized ? NVAR_MHD : NVAR_HYDRO;
+   primitive.setVal(
+      0.0, 0, base_components, primitive.nGrowVect()
+   );
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -53,7 +53,7 @@ void initialize_relativistic_primitive_cache_from_provider_method(
          const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
             mesh_coordinate, axes, problo, dx, i, j, k
          );
-         const FixedSpacetimeGeometry local_geometry = fixed_spacetime_geometry(
+         const FixedSpacetimeGeometry local_geometry = initial_data_spacetime_geometry(
             spacetime,
             sample.physical.q1,
             AMREX_SPACEDIM >= 2 ? sample.physical.q2 : 0.0,
@@ -120,7 +120,7 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
    const amrex::Real* coordinate3_values = coordinate3_storage.data();
 #endif
    const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
-   const FixedSpacetimeGeometry reference_geometry = fixed_spacetime_geometry(
+   const FixedSpacetimeGeometry reference_geometry = initial_data_spacetime_geometry(
       spacetime,
       0.5 * (problo[0] + probhi[0]),
       AMREX_SPACEDIM >= 2 ? 0.5 * (problo[1] + probhi[1]) : 0.0,
@@ -173,7 +173,7 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
             mesh,
             mesh_coordinate_to_physical_point(mesh_coordinate, axes, mesh),
          };
-         const FixedSpacetimeGeometry local_geometry = fixed_spacetime_geometry(
+         const FixedSpacetimeGeometry local_geometry = initial_data_spacetime_geometry(
             spacetime,
             sample.physical.q1,
             AMREX_SPACEDIM >= 2 ? sample.physical.q2 : 0.0,
@@ -199,7 +199,7 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
 
 } // namespace
 
-void initialize_relativistic_primitive_cache_from_provider(
+void initialize_relativistic_primitive_cache_from_initial_data(
    amrex::MultiFab& primitive,
    amrex::Geometry const& geometry,
    RunConfig const& cfg,
@@ -207,17 +207,17 @@ void initialize_relativistic_primitive_cache_from_provider(
 )
 {
    if (physical_system(cfg) == PhysicalSystem::RMHD) {
-      initialize_relativistic_primitive_cache_from_provider_method<EOSIdealGas>(
+      initialize_relativistic_primitive_cache_from_initial_data_method<EOSIdealGas>(
          primitive, geometry, cfg, initial_data
       );
       return;
    }
-   initialize_relativistic_primitive_cache_from_provider_method<EOSRuntime>(
+   initialize_relativistic_primitive_cache_from_initial_data_method<EOSRuntime>(
       primitive, geometry, cfg, initial_data
    );
 }
 
-void initialize_relativistic_primitive_cache_from_provider(
+void initialize_relativistic_primitive_cache_from_initial_data(
    amrex::MultiFab& primitive,
    InitialDataEllipticHierarchy const& hierarchy,
    int level,

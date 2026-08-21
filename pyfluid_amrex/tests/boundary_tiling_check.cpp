@@ -3,12 +3,15 @@
 #include <AMReX_Geometry.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_OpenMP.H>
+#include <AMReX_PhysBCFunct.H>
 #include <AMReX_RealBox.H>
 
 #include "pyfluid_amrex/boundary.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/relativistic_boundary.hpp"
+#include "pyfluid_amrex/z4c_runtime.hpp"
+#include "relativity/z4c_boundary.hpp"
 
 #include <algorithm>
 #include <array>
@@ -275,6 +278,91 @@ void check_ct_face_boundary()
    }
 }
 
+void check_nodal_z4c_reflection_boundary()
+{
+   const amrex::Geometry geometry = nonperiodic_geometry();
+   const amrex::BoxArray boxes = amrex::convert(
+      amrex::BoxArray(domain_box()), amrex::IntVect::TheNodeVector()
+   );
+   const amrex::DistributionMapping distribution(boxes);
+   constexpr int num_components = 2;
+   amrex::MultiFab state(boxes, distribution, num_components, NumGhost);
+   state.setVal(
+      std::numeric_limits<amrex::Real>::quiet_NaN(),
+      0,
+      num_components,
+      state.nGrowVect()
+   );
+   for (amrex::MFIter mfi(state); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto values = state.array(mfi);
+      amrex::ParallelFor(
+         box,
+         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            const amrex::Real value = 100.0 * i + 10.0 * j + k;
+            values(i, j, k, 0) = value;
+            values(i, j, k, 1) = value;
+         }
+      );
+   }
+   amrex::Gpu::streamSynchronize();
+
+   amrex::Vector<amrex::BCRec> records(num_components);
+   for (int component = 0; component < num_components; ++component) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         records[component].setLo(
+            direction,
+            component == 0
+               ? amrex::BCType::reflect_even
+               : amrex::BCType::reflect_odd
+         );
+         records[component].setHi(direction, amrex::BCType::foextrap);
+      }
+   }
+   using NodalBoundary = amrex::GpuBndryFuncFab<Z4cFillPatchBoundary>;
+   amrex::PhysBCFunct<NodalBoundary> physical_boundary(
+      geometry, records, NodalBoundary{Z4cFillPatchBoundary{}}
+   );
+   physical_boundary(
+      state,
+      0,
+      num_components,
+      amrex::IntVect(NumGhost),
+      0.0,
+      0
+   );
+   amrex::Gpu::streamSynchronize();
+
+   const amrex::FArrayBox& values = state[0];
+   const auto sample = [&](int i, int j, int k, int component) {
+      return values(amrex::IntVect(AMREX_D_DECL(i, j, k)), component);
+   };
+   require(
+      close_enough(sample(-1, 2, 2, 0), sample(1, 2, 2, 0)),
+      "nodal even reflection used the wrong mirror point"
+   );
+   require(
+      close_enough(sample(-1, 2, 2, 1), -sample(1, 2, 2, 1)),
+      "nodal odd reflection used the wrong parity"
+   );
+#if (AMREX_SPACEDIM >= 2)
+   require(
+      close_enough(sample(-1, -2, 2, 0), sample(1, 2, 2, 0)),
+      "nodal corner reflection used the wrong mirror point"
+   );
+   require(
+      close_enough(sample(-1, -2, 2, 1), sample(1, 2, 2, 1)),
+      "nodal corner reflection did not compose odd parities"
+   );
+#endif
+#if (AMREX_SPACEDIM == 3)
+   require(
+      close_enough(sample(-1, -2, -1, 1), -sample(1, 2, 1, 1)),
+      "nodal three-plane reflection did not compose odd parities"
+   );
+#endif
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -291,6 +379,7 @@ int main(int argc, char* argv[])
       check_patch_union_reflecting_boundary();
       check_relativistic_boundary();
       check_ct_face_boundary();
+      check_nodal_z4c_reflection_boundary();
       amrex::Print() << "PASS boundary grown-tile ownership check\n";
    } catch (std::exception const& error) {
       amrex::Print() << "FAIL " << error.what() << '\n';

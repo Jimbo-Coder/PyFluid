@@ -419,6 +419,12 @@ RunConfig read_config()
    spacetime_pp.queryAdd("matter_coupling", cfg.spacetime_matter_coupling);
    spacetime_pp.queryAdd("fixed_metric", cfg.spacetime_fixed_metric);
    spacetime_pp.queryAdd("initial_data", cfg.spacetime_initial_data);
+   spacetime_pp.queryAdd(
+      "black_hole_interior", cfg.spacetime_black_hole_interior
+   );
+   spacetime_pp.queryAdd(
+      "black_hole_fill_radius", cfg.spacetime_black_hole_fill_radius
+   );
    amrex::ParmParse initial_data_pp("initial_data");
    initial_data_pp.queryAdd("magnetic", cfg.initial_data_magnetic);
    initial_data_pp.queryAdd("spacetime", cfg.initial_data_spacetime);
@@ -459,6 +465,9 @@ RunConfig read_config()
    initial_data_pp.queryAdd(
       "disk_inner_radius", cfg.initial_data_disk_inner_radius
    );
+   initial_data_pp.queryAdd("disk_axis1", cfg.initial_data_disk_axis1);
+   initial_data_pp.queryAdd("disk_axis2", cfg.initial_data_disk_axis2);
+   initial_data_pp.queryAdd("disk_axis3", cfg.initial_data_disk_axis3);
    initial_data_pp.queryAdd("rotation_law", cfg.initial_data_rotation_law);
    initial_data_pp.queryAdd("angular_velocity", cfg.initial_data_angular_velocity);
    initial_data_pp.queryAdd(
@@ -505,6 +514,15 @@ RunConfig read_config()
    spacetime_pp.queryAdd("origin2", cfg.spacetime_origin2);
    spacetime_pp.queryAdd("origin3", cfg.spacetime_origin3);
    spacetime_pp.queryAdd("mass", cfg.spacetime_mass);
+   spacetime_pp.queryAdd(
+      "dimensionless_spin1", cfg.spacetime_dimensionless_spin1
+   );
+   spacetime_pp.queryAdd(
+      "dimensionless_spin2", cfg.spacetime_dimensionless_spin2
+   );
+   spacetime_pp.queryAdd(
+      "dimensionless_spin3", cfg.spacetime_dimensionless_spin3
+   );
    amrex::ParmParse mesh_pp("mesh");
    mesh_pp.query("coordinate", cfg.mesh_coordinate);
    std::vector<std::string> mesh_axis_values;
@@ -834,11 +852,102 @@ void validate_config(RunConfig const& cfg)
       FixedSpacetimeMetricOptions,
       "spacetime.fixed_metric"
    );
+   const amrex::Real black_hole_spin_squared =
+      cfg.spacetime_dimensionless_spin1
+         * cfg.spacetime_dimensionless_spin1
+      + cfg.spacetime_dimensionless_spin2
+         * cfg.spacetime_dimensionless_spin2
+      + cfg.spacetime_dimensionless_spin3
+         * cfg.spacetime_dimensionless_spin3;
+   if (!std::isfinite(black_hole_spin_squared)) {
+      amrex::Abort("spacetime.dimensionless_spin components must be finite");
+   }
+   const bool kerr_schild_initial_data =
+      cfg.spacetime_initial_data == "kerr_schild";
+   const bool kerr_schild_fixed_metric =
+      cfg.spacetime_fixed_metric == "kerr_schild";
+   const bool kerr_schild_requested =
+      kerr_schild_initial_data || kerr_schild_fixed_metric;
+   if (kerr_schild_requested) {
+      if (AMREX_SPACEDIM != 3) {
+         amrex::Abort(
+            "Kerr-Schild materialization/evolution currently requires the "
+            "3D Cartesian executable; reduced-dimensional ID support belongs "
+            "to the elliptic solve/materialization interface"
+         );
+      }
+      if (!(cfg.spacetime_mass > 0.0)
+          || !std::isfinite(cfg.spacetime_mass)
+          || !(black_hole_spin_squared < 1.0)) {
+         amrex::Abort(
+            "Kerr-Schild spacetime requires positive finite mass and "
+            "dimensionless spin magnitude below one"
+         );
+      }
+   } else if (black_hole_spin_squared != 0.0) {
+      amrex::Abort(
+         "spacetime.dimensionless_spin applies only to kerr_schild"
+      );
+   }
    require_supported_option(
       cfg.spacetime_initial_data,
       SpacetimeInitialDataOptions,
       "spacetime.initial_data"
    );
+   require_supported_option(
+      cfg.spacetime_black_hole_interior,
+      BlackHoleInteriorOptions,
+      "spacetime.black_hole_interior"
+   );
+   if (!kerr_schild_requested
+       && (cfg.spacetime_black_hole_interior != "exterior"
+           || cfg.spacetime_black_hole_fill_radius != -1.0)) {
+      amrex::Abort(
+         "black-hole interior options require Kerr-Schild initial data"
+      );
+   }
+   if (kerr_schild_requested
+       && cfg.spacetime_black_hole_interior == "filled") {
+      const amrex::Real outer_horizon_radius = cfg.spacetime_mass * (
+         1.0 + std::sqrt(1.0 - black_hole_spin_squared)
+      );
+      const amrex::Real spin_length = cfg.spacetime_mass
+         * std::sqrt(black_hole_spin_squared);
+      const amrex::Real safe_inner_radius = spin_length
+         + 256.0 * std::numeric_limits<amrex::Real>::epsilon()
+            * cfg.spacetime_mass;
+      if (!(cfg.spacetime_black_hole_fill_radius > 0.0)
+          || !std::isfinite(cfg.spacetime_black_hole_fill_radius)
+          || !(cfg.spacetime_black_hole_fill_radius > safe_inner_radius)
+          || !(cfg.spacetime_black_hole_fill_radius
+               < outer_horizon_radius)) {
+         amrex::Abort(
+            "spacetime.black_hole_fill_radius must lie safely outside |a| "
+            "and strictly inside the Kerr outer horizon"
+         );
+      }
+   } else if (kerr_schild_requested
+              && cfg.spacetime_black_hole_fill_radius != -1.0) {
+      amrex::Abort(
+         "spacetime.black_hole_fill_radius applies only to the filled "
+         "black-hole interior"
+      );
+   }
+   if (kerr_schild_requested
+       && cfg.spacetime_black_hole_interior == "excision") {
+      amrex::Abort(
+         "Kerr-Schild excision is a reserved initial-data/evolution contract; "
+         "the active-cell mask and pure-outflow inner boundary are not yet "
+         "implemented. Use exterior or filled."
+      );
+   }
+   if (cfg.spacetime_evolution == "fixed"
+       && (kerr_schild_initial_data != kerr_schild_fixed_metric)) {
+      amrex::Abort(
+         "fixed Kerr-Schild runs must select kerr_schild consistently for "
+         "both spacetime.initial_data and spacetime.fixed_metric"
+      );
+   }
    require_supported_option(
       cfg.initial_data_magnetic,
       MagneticInitialDataOptions,
@@ -887,6 +996,35 @@ void validate_config(RunConfig const& cfg)
    }
    const bool equilibrium_torus_enabled =
       cfg.initial_data_disk == "equilibrium_torus";
+   const amrex::Real disk_axis_norm = std::sqrt(
+      cfg.initial_data_disk_axis1 * cfg.initial_data_disk_axis1
+      + cfg.initial_data_disk_axis2 * cfg.initial_data_disk_axis2
+      + cfg.initial_data_disk_axis3 * cfg.initial_data_disk_axis3
+   );
+   if (equilibrium_torus_enabled
+       && (!(disk_axis_norm > 0.0) || !std::isfinite(disk_axis_norm))) {
+      amrex::Abort("initial_data.disk_axis must be a finite nonzero vector");
+   }
+   const amrex::Real inverse_disk_axis_norm = equilibrium_torus_enabled
+      ? 1.0 / disk_axis_norm : 1.0;
+   const amrex::Real disk_axis1 = cfg.initial_data_disk_axis1
+      * inverse_disk_axis_norm;
+   const amrex::Real disk_axis2 = cfg.initial_data_disk_axis2
+      * inverse_disk_axis_norm;
+   const amrex::Real disk_axis3 = cfg.initial_data_disk_axis3
+      * inverse_disk_axis_norm;
+   const amrex::Real disk_axis_tolerance = 64.0
+      * std::numeric_limits<amrex::Real>::epsilon();
+   if (equilibrium_torus_enabled
+       && (std::abs(disk_axis1) > disk_axis_tolerance
+           || std::abs(disk_axis2) > disk_axis_tolerance
+           || std::abs(disk_axis3 - 1.0) > disk_axis_tolerance)) {
+      amrex::Abort(
+         "the current r-theta equilibrium-torus owner requires disk_axis = "
+         "(0,0,1); arbitrary disk axes are reserved in the ID metadata for "
+         "the future 3D tilted owner"
+      );
+   }
    if (equilibrium_torus_enabled
        && (cfg.initial_data_disk_rotation_law != "constant_l"
            || !std::isfinite(

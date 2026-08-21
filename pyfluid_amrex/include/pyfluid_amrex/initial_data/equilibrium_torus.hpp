@@ -31,6 +31,9 @@ struct EquilibriumTorusParameters {
    DiskRotationLaw rotation_law = DiskRotationLaw::ConstantL;
    amrex::Real specific_angular_momentum = 0.0;
    amrex::Real inner_radius = 0.0;
+   amrex::Real axis1 = 0.0;
+   amrex::Real axis2 = 0.0;
+   amrex::Real axis3 = 1.0;
    amrex::Real matter_relaxation = 0.5;
    InitialAtmosphereParameters atmosphere{};
 };

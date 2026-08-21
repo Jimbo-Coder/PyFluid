@@ -406,6 +406,14 @@ EquilibriumTorusParameters equilibrium_torus_parameters(
    parameters.specific_angular_momentum =
       cfg.initial_data_disk_specific_angular_momentum;
    parameters.inner_radius = cfg.initial_data_disk_inner_radius;
+   const amrex::Real axis_norm = std::sqrt(
+      cfg.initial_data_disk_axis1 * cfg.initial_data_disk_axis1
+      + cfg.initial_data_disk_axis2 * cfg.initial_data_disk_axis2
+      + cfg.initial_data_disk_axis3 * cfg.initial_data_disk_axis3
+   );
+   parameters.axis1 = cfg.initial_data_disk_axis1 / axis_norm;
+   parameters.axis2 = cfg.initial_data_disk_axis2 / axis_norm;
+   parameters.axis3 = cfg.initial_data_disk_axis3 / axis_norm;
    parameters.matter_relaxation = cfg.initial_data_matter_relaxation;
    parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
    return parameters;

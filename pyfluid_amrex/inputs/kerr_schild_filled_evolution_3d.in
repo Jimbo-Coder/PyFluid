@@ -1,0 +1,55 @@
+pyfluid.run_name = kerr_schild_filled_evolution_3d
+pyfluid.output_dir = runs/current/black_hole/kerr_schild_filled_evolution_3d
+pyfluid.validation_policy = open
+
+geometry.prob_lo = -8.0 -8.0 -8.0
+geometry.prob_hi = 8.0 8.0 8.0
+geometry.is_periodic = 0 0 0
+
+amr.n_cell = 32 32 32
+amr.max_level = 0
+amr.max_grid_size = 16
+amr.blocking_factor = 8
+amr.tag_metric = none
+
+spacetime.evolution = evolved
+spacetime.matter_coupling = vacuum
+spacetime.initial_data = kerr_schild
+spacetime.mass = 1.0
+spacetime.dimensionless_spin1 = 0.0
+spacetime.dimensionless_spin2 = 0.0
+spacetime.dimensionless_spin3 = 0.5
+spacetime.black_hole_interior = filled
+spacetime.black_hole_fill_radius = 1.0
+spacetime.lapse_gauge = slow_start
+spacetime.shift_gauge = gamma_driver
+spacetime.slow_start_time = 5.0
+spacetime.shift_eta = 2.0
+spacetime.ko_dissipation = 0.1
+
+pyfluid.physics = rhd
+pyfluid.eos = ideal_gas
+pyfluid.gamma = 1.6666666666666667
+pyfluid.ic = uniform
+pyfluid.rho0 = 1.0e-4
+pyfluid.pressure0 = 1.0e-6
+pyfluid.v1_0 = 0.0
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-12
+
+pyfluid.final_time = -1
+pyfluid.max_step = 3
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.subcycling = off
+pyfluid.bc = outflow
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 3
+pyfluid.checkpoint_int = -1

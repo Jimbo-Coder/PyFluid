@@ -4,6 +4,7 @@
 #include <AMReX_PhysBCFunct.H>
 
 #include "pyfluid_amrex/centering_transfer.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/relativistic_boundary.hpp"
 #include "pyfluid_amrex/spacetime_coupling.hpp"
 #include "pyfluid_amrex/z4c_evolution_pointwise.hpp"
@@ -69,7 +70,7 @@ void AmrSolverBase::prepare_spacetime_coupling_range(
             Geom(lev),
             cfg_,
             stage_time,
-            initial_data_provider_.view()
+            initial_data_provider_->view()
          );
          spacetime_coupling_.mark_cell_spacetime_valid(lev);
          continue;

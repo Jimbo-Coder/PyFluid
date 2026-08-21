@@ -358,12 +358,23 @@ bool spacetime_includes_matter(RunConfig const& cfg) noexcept
 
 FixedSpacetimeParameters fixed_spacetime_parameters(RunConfig const& cfg)
 {
+   FixedSpacetimeMetric metric = FixedSpacetimeMetric::Minkowski;
+   if (cfg.spacetime_fixed_metric == "rindler") {
+      metric = FixedSpacetimeMetric::Rindler;
+   } else if (cfg.spacetime_fixed_metric == "schwarzschild_isotropic") {
+      metric = FixedSpacetimeMetric::SchwarzschildIsotropic;
+   } else if (cfg.spacetime_fixed_metric == "kerr_schild"
+              || cfg.spacetime_initial_data == "kerr_schild") {
+      metric = FixedSpacetimeMetric::KerrSchild;
+   }
+   BlackHoleInterior black_hole_interior = BlackHoleInterior::Exterior;
+   if (cfg.spacetime_black_hole_interior == "filled") {
+      black_hole_interior = BlackHoleInterior::Filled;
+   } else if (cfg.spacetime_black_hole_interior == "excision") {
+      black_hole_interior = BlackHoleInterior::Excision;
+   }
    return {
-      cfg.spacetime_fixed_metric == "rindler"
-         ? FixedSpacetimeMetric::Rindler
-         : (cfg.spacetime_fixed_metric == "schwarzschild_isotropic"
-            ? FixedSpacetimeMetric::SchwarzschildIsotropic
-            : FixedSpacetimeMetric::Minkowski),
+      metric,
       cfg.spacetime_acceleration1,
       cfg.spacetime_acceleration2,
       cfg.spacetime_acceleration3,
@@ -371,6 +382,11 @@ FixedSpacetimeParameters fixed_spacetime_parameters(RunConfig const& cfg)
       cfg.spacetime_origin2,
       cfg.spacetime_origin3,
       cfg.spacetime_mass,
+      cfg.spacetime_dimensionless_spin1,
+      cfg.spacetime_dimensionless_spin2,
+      cfg.spacetime_dimensionless_spin3,
+      black_hole_interior,
+      cfg.spacetime_black_hole_fill_radius,
    };
 }
 

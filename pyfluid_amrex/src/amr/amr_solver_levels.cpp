@@ -4,22 +4,93 @@
 #include "pyfluid_amrex/initial_data.hpp"
 #include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 #include <utility>
 
 namespace pyfluid_amrex {
+namespace {
+
+void validate_black_hole_reflection_symmetry(
+   RunConfig const& cfg,
+   amrex::Geometry const& geometry
+)
+{
+   const FixedSpacetimeParameters parameters = fixed_spacetime_parameters(cfg);
+   if (parameters.metric != FixedSpacetimeMetric::KerrSchild) {
+      return;
+   }
+   const amrex::Real spin[3]{
+      parameters.dimensionless_spin1,
+      parameters.dimensionless_spin2,
+      parameters.dimensionless_spin3,
+   };
+   const amrex::Real origin[3]{
+      parameters.origin1, parameters.origin2, parameters.origin3,
+   };
+   const auto lower = geometry.ProbLoArray();
+   const auto upper = geometry.ProbHiArray();
+   const amrex::Real coordinate_scale = std::max<amrex::Real>(
+      1.0,
+      std::max(
+         std::abs(parameters.origin1),
+         std::max(
+            std::abs(parameters.origin2), std::abs(parameters.origin3)
+         )
+      )
+   );
+   const amrex::Real tolerance = 64.0
+      * std::numeric_limits<amrex::Real>::epsilon() * coordinate_scale;
+   const amrex::Real spin_tolerance = 64.0
+      * std::numeric_limits<amrex::Real>::epsilon();
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      for (int high_side = 0; high_side < 2; ++high_side) {
+         const BoundaryKind kind = side_boundary_kind(
+            cfg, direction, high_side != 0
+         );
+         if (kind != BoundaryKind::Reflecting
+             && kind != BoundaryKind::Symmetry) {
+            continue;
+         }
+         const amrex::Real plane = high_side != 0
+            ? upper[direction] : lower[direction];
+         if (std::abs(plane - origin[direction]) > tolerance) {
+            amrex::Abort(
+               "Kerr-Schild reflection/symmetry planes must pass through "
+               "the black-hole origin"
+            );
+         }
+         for (int component = 0; component < 3; ++component) {
+            if (component != direction
+                && std::abs(spin[component]) > spin_tolerance) {
+               amrex::Abort(
+                  "a Kerr spin is an axial vector: reflection across a "
+                  "coordinate plane requires spin normal to that plane"
+               );
+            }
+         }
+      }
+   }
+}
+
+} // namespace
 
 AmrSolverBase::AmrSolverBase(RunConfig cfg)
    : cfg_(std::move(cfg)),
-     initial_data_provider_(cfg_),
+     initial_data_provider_(
+        std::make_unique<RelativisticInitialDataProvider>(cfg_)
+     ),
      recovery_atmosphere_(recovery_atmosphere_state(
         eos_method_code(cfg_), eos_params(cfg_)
      )),
      state_interpolater_(std::make_unique<MeshBasisStateInterpolater>())
 {
    validate_config(cfg_);
+   validate_black_hole_reflection_symmetry(cfg_, Geom(0));
    validate_amr_refinement_ratios();
    physics_system_ = physical_system(cfg_);
    mesh_layout_ = mesh_runtime_layout(cfg_);
@@ -401,7 +472,7 @@ void AmrSolverBase::MakeNewLevelFromScratch(
    allocate_level(lev, level_ba, work_dm, time);
    set_level_time_state(lev, time, 0.0);
    initialize_state(
-      *fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_.view()
+      *fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_->view()
    );
    initialize_spacetime_level(lev, time);
    refresh_stored_spacetime_fluid_boundary(lev, time);
@@ -430,7 +501,7 @@ void AmrSolverBase::MakeNewLevelFromCoarse(
    set_level_time_state(lev, time, 0.0);
    if (time == 0.0) {
       initialize_state(
-         *fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_.view()
+         *fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_->view()
       );
    } else {
       fill_new_level_from_coarse_state(lev, time);

@@ -10,9 +10,9 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-14, branch `main`, through Cycle 296's optional
-equilibrium-torus matter component. Cycle 284's preserved standard/performance
-baseline remains the latest broad integration baseline.
+Last reconciled: 2026-08-21, branch `main`, through Cycle 299's Kerr
+black-hole initial-data foundation. Cycle 284's preserved standard/performance
+baseline remains the latest archived broad integration baseline.
 
 ## Scope And Evidence
 
@@ -35,6 +35,11 @@ baseline remains the latest broad integration baseline.
   standard suite with 178.07 s summed gate time. Its focused full matrix is
   separate evidence under `runs/current/equilibrium_torus_validation/`; this
   rolling result is not a preserved performance baseline.
+- Cycle 299's Kerr-foundation tree passes the expanded 46/46 standard suite
+  with 191.96 s summed gate time and the four production throughput controls.
+  Its 12-case black-hole result is rolling evidence under
+  `runs/current/black_hole_validation/`, not a preserved baseline or a true-
+  excision validation.
 - Preserved baselines under `runs/baselines/` and rolling TSV histories are
   routing evidence, not proof for later source. Re-run the smallest relevant
   gate before relying on an old result.
@@ -507,6 +512,32 @@ baseline remains the latest broad integration baseline.
   `7.0e-4`. The known finite-radius ADM-surface/Komar gap is 5.5 percent and
   must not be tuned away. This interval is only 1.8 percent of a rotation;
   long equilibrium evidence remains open.
+- Exact ingoing Cartesian Kerr--Schild ADM data are now available for an
+  arbitrary subextremal Cartesian spin vector. The same physical provider
+  seeds stored fixed-spacetime and evolved-Z4c consumers; the generic flux
+  templates do not contain a Kerr branch. A complete-grid `filled` policy is
+  exact outside a transition radius inside the horizon and regular at the
+  center, but its arbitrary interior violates the constraints. Whole-domain
+  Hamiltonian/momentum norms are therefore not exterior-vacuum error measures.
+  True ID/evolution excision remains explicitly rejected until an apparent-
+  horizon ID boundary, active-cell mask, and pure-outflow evolution boundary
+  exist.
+- A scratch relativistic fluid state must be converted from physical
+  primitives only after the final stored cell metric is available. Initializing
+  conserved variables against a placeholder metric and then replacing nodal
+  spacetime caused order-one preflight inconsistency for strong Kerr data;
+  resampling the configured primitives and finalizing against the centered
+  metric reduced the mismatch to roundoff. This ownership rule applies to all
+  nontrivial stored-spacetime ID, not only black holes.
+- AMReX does not apply `BCRec` reflection in its all-node
+  `GpuBndryFuncFab` path; it constant-extrapolates and invokes the user
+  boundary functor. The former empty Z4c functor therefore made reflection
+  runs resolution-convergent but not symmetry-equivalent. Explicit nodal
+  mirror/parity closure makes matched full/equatorial Kerr and
+  full/Schwarzschild-octant minimum lapse plus Hamiltonian/momentum extrema
+  agree to roundoff after a CFL-0.9 step. Symmetry-aware constraint stencils
+  must also regard reflected ghosts as valid; otherwise reduced domains hide
+  precisely the near-plane interior where a filled hole violates constraints.
 
 ## Other Open Boundaries
 
@@ -577,7 +608,14 @@ baseline remains the latest broad integration baseline.
 
 ## Next Milestones
 
-1. Extend the saved fast analytic and CompOSE RNS models from the present short
+1. Build the first constraint-solved single-hole owner: conformally curved
+   Kerr--Schild-seeded XCTS with Cook--Pfeiffer apparent-horizon boundary
+   conditions. Keep exact exterior and filled full-grid controls separate from
+   true evolution excision. Add horizon/exterior-masked constraint and charge
+   diagnostics before interpreting the arbitrary filled interior, then extend
+   the existing torus component first in the aligned limit and only afterward
+   to a full-3D tilted disk.
+2. Extend the saved fast analytic and CompOSE RNS models from the present short
    two-resolution evolutions to a meaningful fraction of a rotation, tracking
    baryon mass, angular momentum, constraints, central density, and modes.
    Extend the same work-precision history to the coupled TOV/RNS-plus-disk
@@ -585,14 +623,14 @@ baseline remains the latest broad integration baseline.
    baryon-mass sequences before quoting a radial-stability/turning-point limit.
    Prototype an exterior modal domain only if it beats the 64/128-theta
    controls.
-2. Make canonical face-`B` ownership stage-coupled before relying on long
+3. Make canonical face-`B` ownership stage-coupled before relying on long
    production GRMHD evolution. Retain the final post-sync projection as a
    backstop rather than calling it the stage-coupling solution.
-3. Run a matched PyFluid/AthenaK work-precision comparison: uniform Balsara and
+4. Run a matched PyFluid/AthenaK work-precision comparison: uniform Balsara and
    multidimensional Orszag--Tang first, with AMR only after the uniform
    equivalence statement is sound. This calibrates performance and error; it is
    not another reconstruction search.
-4. Add true finite-temperature/composition-dependent CompOSE only when a
+5. Add true finite-temperature/composition-dependent CompOSE only when a
    physical evolution milestone needs it. Do not relabel the current cold
    barotrope plus gamma-law thermal extension as finite-temperature support.
 

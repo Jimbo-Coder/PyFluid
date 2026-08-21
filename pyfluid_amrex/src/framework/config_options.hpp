@@ -49,8 +49,12 @@ static constexpr std::array<std::string_view, 3> SpacetimeEvolutionOptions{{
    "none", "fixed", "evolved"
 }};
 static constexpr std::array<std::string_view, 2> SpacetimeMatterCouplingOptions{{"coupled", "vacuum"}};
-static constexpr std::array<std::string_view, 7> SpacetimeInitialDataOptions{{
-   "minkowski", "gauge_wave", "linear_wave", "robust_stability", "ctt", "cttk", "xcts"
+static constexpr std::array<std::string_view, 8> SpacetimeInitialDataOptions{{
+   "minkowski", "gauge_wave", "linear_wave", "robust_stability",
+   "kerr_schild", "ctt", "cttk", "xcts"
+}};
+static constexpr std::array<std::string_view, 3> BlackHoleInteriorOptions{{
+   "exterior", "filled", "excision"
 }};
 static constexpr std::array<std::string_view, 3> MagneticInitialDataOptions{{
    "id", "zero", "none"
@@ -79,8 +83,8 @@ static constexpr std::array<std::string_view, 4> Z4cLapseGaugeOptions{{
 static constexpr std::array<std::string_view, 2> Z4cShiftGaugeOptions{{
    "frozen", "gamma_driver"
 }};
-static constexpr std::array<std::string_view, 3> FixedSpacetimeMetricOptions{{
-   "minkowski", "rindler", "schwarzschild_isotropic",
+static constexpr std::array<std::string_view, 4> FixedSpacetimeMetricOptions{{
+   "minkowski", "rindler", "schwarzschild_isotropic", "kerr_schild",
 }};
 static constexpr std::array<std::string_view, 2> CTOptions{{"off", "on"}};
 static constexpr std::array<std::string_view, 2> PlotfileFormatOptions{{"amrex", "hdf5"}};

@@ -37,6 +37,7 @@ It intentionally links rather than restating the detailed contracts.
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
 | Native cold CompOSE tables | `eos/compose/`, `src/eos/tabulated.cpp`, `include/pyfluid_amrex/eos/tabulated*.hpp`, `tests/tabulated_eos_check.cpp`, `tools/validate_compose_eos.py` | CompOSE manual and dataset records below; Cycle 297 |
 | Equilibrium torus/disk initial data | `include/pyfluid_amrex/initial_data/equilibrium_torus.hpp`, `src/initial_data/equilibrium_torus_initial_data.cpp`, `schema/methods.toml`, `tools/validate_equilibrium_torus.py` | `docs/tov.md`, `docs/infrastructure_conventions.md`, Cycle 296 |
+| Kerr black-hole initial data and interior policy | `include/pyfluid_amrex/initial_data/kerr_schild.hpp`, `src/initial_data/initial_data_provider.cpp`, `tools/validate_black_hole.py` | `docs/black_holes.md`, Cycle 299 |
 | Portable physical-ID solve/save/materialization, including explicit radial faces | `src/initial_data/physical_id.cpp`, `src/initial_data/physical_id_interpolation.cpp`, `src/initial_data/initial_data_elliptic.cpp`, `src/framework/checkpoint.cpp`, `tests/physical_id_interpolation_check.cpp`, `tools/validate_reduced_initial_data.py` | `docs/infrastructure_conventions.md`, Cycles 287 and 291 |
 | Axisymmetric spherical ID scalar/toroidal elliptic operators | `src/initial_data/initial_data_elliptic.cpp`, `include/pyfluid_amrex/initial_data/elliptic.hpp`, `tests/initial_data_elliptic_check.cpp` | `docs/infrastructure_conventions.md`, Cycles 288--289 |
 | Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
@@ -251,6 +252,28 @@ the generated TSV/log, and the current source revision/dirty state.
   geometrically stretched outer radii. COCAL's KEH equations and domains differ
   from PyFluid XCTS, so these counts are comparison guidance rather than copied
   production parameters.
+
+## Black-Hole Initial-Data And Interior References
+
+- G. B. Cook and H. P. Pfeiffer, *Excision boundary conditions for black-hole
+  initial data*, [arXiv:gr-qc/0407078](https://arxiv.org/abs/gr-qc/0407078):
+  quasi-equilibrium apparent-horizon inner boundary conditions for CTS/XCTS.
+  This is the primary route for PyFluid's future constraint-solved excision
+  owner; it is not interchangeable with an evolution excision boundary.
+- Z. B. Etienne et al., *Relativistic simulations of black-hole-neutron-star
+  mergers: Effects of black-hole spin*,
+  [Phys. Rev. D 76, 101503](https://doi.org/10.1103/PhysRevD.76.101503):
+  smooth constraint-violating black-hole interior data evolved on a complete
+  puncture grid. Use as provenance for an explicitly named filled/turduckened
+  interior, never as evidence that a fill is exact or excised.
+- I. Ruchlin et al., *Three-dimensional numerical relativity with a
+  multipatch approach: high-spin black holes*,
+  [arXiv:1410.8607](https://arxiv.org/abs/1410.8607): comparison route for
+  high-spin full-grid black-hole evolution and gauge behavior.
+- The analytic seed implemented locally is ingoing Cartesian Kerr--Schild
+  data with an arbitrary Cartesian spin vector. Fixed and evolved consumers
+  materialize the same ADM/Z4c fields; the flux templates do not own a second
+  Kerr formula.
 
 ## Equilibrium Torus And Self-Gravitating Disk References
 

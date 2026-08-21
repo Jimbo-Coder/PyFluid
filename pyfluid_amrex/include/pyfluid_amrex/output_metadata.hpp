@@ -68,6 +68,13 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("spacetime_matter_coupling", cfg.spacetime_matter_coupling);
    entries.emplace_back("spacetime_fixed_metric", cfg.spacetime_fixed_metric);
    entries.emplace_back("spacetime_initial_data", cfg.spacetime_initial_data);
+   entries.emplace_back(
+      "spacetime_black_hole_interior", cfg.spacetime_black_hole_interior
+   );
+   entries.emplace_back(
+      "spacetime_black_hole_fill_radius",
+      output_metadata_real_string(cfg.spacetime_black_hole_fill_radius)
+   );
    entries.emplace_back("initial_data_magnetic", cfg.initial_data_magnetic);
    entries.emplace_back("initial_data_spacetime", cfg.initial_data_spacetime);
    entries.emplace_back("initial_data_lapse", cfg.initial_data_lapse);
@@ -89,6 +96,18 @@ inline OutputMetadataEntries output_metadata_records(
       "initial_data_atmosphere_power",
       output_metadata_real_string(cfg.initial_data_atmosphere_power)
    );
+   entries.emplace_back(
+      "initial_data_disk_axis1",
+      output_metadata_real_string(cfg.initial_data_disk_axis1)
+   );
+   entries.emplace_back(
+      "initial_data_disk_axis2",
+      output_metadata_real_string(cfg.initial_data_disk_axis2)
+   );
+   entries.emplace_back(
+      "initial_data_disk_axis3",
+      output_metadata_real_string(cfg.initial_data_disk_axis3)
+   );
    entries.emplace_back("spacetime_lapse_gauge", cfg.spacetime_lapse_gauge);
    entries.emplace_back("spacetime_shift_gauge", cfg.spacetime_shift_gauge);
    entries.emplace_back("spacetime_amplitude", output_metadata_real_string(cfg.spacetime_amplitude));
@@ -105,6 +124,18 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("spacetime_origin2", output_metadata_real_string(cfg.spacetime_origin2));
    entries.emplace_back("spacetime_origin3", output_metadata_real_string(cfg.spacetime_origin3));
    entries.emplace_back("spacetime_mass", output_metadata_real_string(cfg.spacetime_mass));
+   entries.emplace_back(
+      "spacetime_dimensionless_spin1",
+      output_metadata_real_string(cfg.spacetime_dimensionless_spin1)
+   );
+   entries.emplace_back(
+      "spacetime_dimensionless_spin2",
+      output_metadata_real_string(cfg.spacetime_dimensionless_spin2)
+   );
+   entries.emplace_back(
+      "spacetime_dimensionless_spin3",
+      output_metadata_real_string(cfg.spacetime_dimensionless_spin3)
+   );
    entries.emplace_back("tov_central_density", output_metadata_real_string(cfg.tov_central_density));
    entries.emplace_back("tov_absolute_tolerance", output_metadata_real_string(cfg.tov_absolute_tolerance));
    entries.emplace_back("tov_relative_tolerance", output_metadata_real_string(cfg.tov_relative_tolerance));

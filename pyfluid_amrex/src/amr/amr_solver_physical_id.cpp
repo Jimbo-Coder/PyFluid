@@ -1,10 +1,12 @@
 #include "amr/amr_solver_base.hpp"
 
 #include "pyfluid_amrex/ct.hpp"
+#include "pyfluid_amrex/initial_data.hpp"
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 #include "pyfluid_amrex/z4c_runtime.hpp"
 
@@ -170,7 +172,27 @@ EquilibriumTorusUpdateSummary equilibrium_torus_summary(
 void AmrSolverBase::materialize_configured_initial_data()
 {
    if (cfg_.initial_data_input_file.empty()) {
-      materialize_constraint_solved_initial_data();
+      const bool materialized = materialize_constraint_solved_initial_data();
+      if (!materialized && spacetime_state_.active()
+          && !uses_analytic_fixed_spacetime_kernels()
+          && physical_system_is_relativistic(physics_system_)) {
+         // Non-analytic stored spacetime is authoritative only after nodal
+         // initialization and centering. Recover passive concentrations,
+         // resample the configured physical primitives, then construct the
+         // conserved state against that final cell metric. Analytic Minkowski
+         // initialization already uses its final metric and keeps its direct
+         // zero-overhead path unchanged.
+         for (int level = 0; level <= finestLevel(); ++level) {
+            fill_level_primitive_cache(level, 0.0);
+            initialize_relativistic_primitive_cache_from_initial_data(
+               *primitive_[level],
+               Geom(level),
+               cfg_,
+               initial_data_provider_->view()
+            );
+         }
+         finalize_constraint_solved_initial_data_state();
+      }
       return;
    }
    if (load_physical_initial_data_artifact()) {
@@ -188,7 +210,7 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
    MutablePhysicalIdFaceFields face_magnetic;
 #if (AMREX_SPACEDIM == 2)
    if (cfg_.initial_data_radial_grid == "adaptive") {
-      const RelativisticInitialDataView provider = initial_data_provider_.view();
+      const RelativisticInitialDataView provider = initial_data_provider_->view();
       if (!provider.tov.active() || finestLevel() != 0) {
          amrex::Abort(
             "adaptive stellar ID loading requires one level and a TOV seed"
@@ -224,7 +246,7 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       cfg_.initial_data_input_file,
       cfg_,
       physics_system_,
-      initial_atmosphere_parameters(cfg_, initial_data_provider_.view()),
+      initial_atmosphere_parameters(cfg_, initial_data_provider_->view()),
       geometry,
       refinement_ratios,
       primitive,

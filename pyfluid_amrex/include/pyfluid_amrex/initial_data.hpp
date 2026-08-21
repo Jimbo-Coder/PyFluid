@@ -17,7 +17,7 @@ void initialize_state(
    RelativisticInitialDataView const& initial_data
 );
 
-void initialize_relativistic_primitive_cache_from_provider(
+void initialize_relativistic_primitive_cache_from_initial_data(
    amrex::MultiFab& primitive,
    amrex::Geometry const& geometry,
    RunConfig const& config,
@@ -35,7 +35,7 @@ void initialize_mapped_z4c_state_from_provider(
    RelativisticInitialDataView const& initial_data
 );
 
-void initialize_relativistic_primitive_cache_from_provider(
+void initialize_relativistic_primitive_cache_from_initial_data(
    amrex::MultiFab& primitive,
    InitialDataEllipticHierarchy const& hierarchy,
    int level,

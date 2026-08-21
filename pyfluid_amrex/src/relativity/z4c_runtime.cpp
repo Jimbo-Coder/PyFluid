@@ -13,6 +13,7 @@
 #include "pyfluid_amrex/coordinate_locations.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/mesh_geometry.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 #include "pyfluid_amrex/z4c_derivatives.hpp"

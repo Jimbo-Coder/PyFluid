@@ -192,6 +192,20 @@ STEPS = [
       ),
    ),
    GateStep(
+      name="black_hole_foundation",
+      kind="initial_data",
+      levels=("standard", "full"),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_black_hole.py",
+         "--ranks",
+         "3",
+         "--force",
+      ),
+   ),
+   GateStep(
       name="initial_data_symmetry",
       kind="symmetry",
       levels=("full",),

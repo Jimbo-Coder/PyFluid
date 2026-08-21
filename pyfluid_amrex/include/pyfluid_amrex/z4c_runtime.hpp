@@ -7,10 +7,11 @@
 #include <AMReX_Vector.H>
 
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/z4c_state.hpp"
 
 namespace pyfluid_amrex {
+
+struct RelativisticInitialDataView;
 
 enum class Z4cInitialData : int {
    Minkowski,
@@ -39,7 +40,7 @@ void initialize_z4c_state(
    amrex::Geometry const& geometry,
    RunConfig const& cfg,
    amrex::Real time,
-   RelativisticInitialDataView const& initial_data = {}
+   RelativisticInitialDataView const& initial_data
 );
 
 void initialize_z4c_cell_state(
@@ -58,17 +59,16 @@ void complete_z4c_contracted_connections(
 struct Z4cFillPatchBoundary {
    AMREX_GPU_DEVICE
    void operator()(
-      amrex::IntVect const&,
-      amrex::Array4<amrex::Real> const&,
-      int,
-      int,
-      amrex::GeometryData const&,
+      amrex::IntVect const& index,
+      amrex::Array4<amrex::Real> const& values,
+      int destination_component,
+      int num_components,
+      amrex::GeometryData const& geometry,
       amrex::Real,
-      amrex::BCRec const*,
+      amrex::BCRec const* boundary_records,
       int,
       int
-   ) const noexcept
-   {}
+   ) const noexcept;
 };
 
 } // namespace pyfluid_amrex

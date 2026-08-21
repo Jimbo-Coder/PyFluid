@@ -18,6 +18,8 @@
 #include "pyfluid_amrex/eos/presets.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
+#include "pyfluid_amrex/initial_data/kerr_schild.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
@@ -28,6 +30,7 @@
 #include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/z4c_constraint_pointwise.hpp"
 #include "pyfluid_amrex/z4c_evolution_pointwise.hpp"
+#include "pyfluid_amrex/z4c_state_access.hpp"
 
 #include <algorithm>
 #include <array>
@@ -35,6 +38,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <vector>
 
 namespace {
 
@@ -925,6 +929,60 @@ amrex::Real scaled_component_error(
    return std::abs(actual - expected) / scale;
 }
 
+struct ProjectedKerrZ4cNodeGrid {
+   pyfluid_amrex::FixedSpacetimeParameters parameters;
+   amrex::Real spacing;
+
+   amrex::Real operator()(int i, int j, int k, int component) const noexcept
+   {
+      const auto geometry =
+         pyfluid_amrex::kerr_schild_initial_data_geometry(
+            parameters, spacing * i, spacing * j, spacing * k
+         );
+      const auto state =
+         pyfluid_amrex::generated::z4c_project_algebraic_constraints(
+            pyfluid_amrex::z4c_state_from_spacetime_geometry(geometry)
+         );
+      const std::array<amrex::Real, pyfluid_amrex::Z4C_NUM_COMPONENTS>
+         components{{
+            state.chi,
+            state.gamma_tilde11,
+            state.gamma_tilde12,
+            state.gamma_tilde13,
+            state.gamma_tilde22,
+            state.gamma_tilde23,
+            state.gamma_tilde33,
+            state.k_hat,
+            state.a_tilde11,
+            state.a_tilde12,
+            state.a_tilde13,
+            state.a_tilde22,
+            state.a_tilde23,
+            state.a_tilde33,
+            state.gamma_tilde1,
+            state.gamma_tilde2,
+            state.gamma_tilde3,
+            state.theta,
+            state.lapse,
+            state.shift1,
+            state.shift2,
+            state.shift3,
+         }};
+      return components[static_cast<std::size_t>(component)];
+   }
+};
+
+struct CellCenteredKerrZ4cGrid {
+   ProjectedKerrZ4cNodeGrid nodes;
+
+   amrex::Real operator()(int i, int j, int k, int component) const noexcept
+   {
+      return pyfluid_amrex::generated::topology_centering_transfer<4, 3>(
+         nodes, i, j, k, component, 7, 0
+      );
+   }
+};
+
 template <int EOSMethod>
 bool validate_rhd_c2p_round_trip_for_eos(
    pyfluid_amrex::EOSParams const& eos
@@ -943,6 +1001,22 @@ bool validate_rhd_c2p_round_trip_for_eos(
    curved_metric.inv_gamma33 = 1.0 / curved_metric.gamma33;
    curved_metric.sqrt_det_gamma = 1.188;
 
+   pyfluid_amrex::FixedSpacetimeParameters kerr_schild{};
+   kerr_schild.metric = pyfluid_amrex::FixedSpacetimeMetric::KerrSchild;
+   kerr_schild.mass = 1.0;
+   kerr_schild.dimensionless_spin3 = 0.5;
+   kerr_schild.black_hole_interior =
+      pyfluid_amrex::BlackHoleInterior::Filled;
+   kerr_schild.black_hole_fill_radius = 1.0;
+   const auto kerr_inner =
+      pyfluid_amrex::kerr_schild_initial_data_geometry(
+         kerr_schild, 0.25, 0.25, 0.25
+      ).metric;
+   const auto kerr_transition =
+      pyfluid_amrex::kerr_schild_initial_data_geometry(
+         kerr_schild, 0.75, 0.25, 0.25
+      ).metric;
+   const CellCenteredKerrZ4cGrid centered_kerr{{kerr_schild, 0.5}};
    const std::array<pyfluid_amrex::SpacetimeMetric, 2> metrics{{
       pyfluid_amrex::minkowski_spacetime_metric(),
       curved_metric,
@@ -1063,6 +1137,70 @@ bool validate_rhd_c2p_round_trip_for_eos(
       }
    }
 
+   std::vector<pyfluid_amrex::SpacetimeMetric> kerr_metrics{
+      kerr_inner,
+      kerr_transition,
+   };
+   for (int k = -2; k <= 1; ++k) {
+      for (int j = -2; j <= 1; ++j) {
+         for (int i = -2; i <= 1; ++i) {
+            kerr_metrics.push_back(
+               pyfluid_amrex::generated::z4c_spacetime_metric(
+                  pyfluid_amrex::load_z4c_state(centered_kerr, i, j, k)
+               )
+            );
+         }
+      }
+   }
+   for (std::size_t metric_index = 0;
+        metric_index < kerr_metrics.size();
+        ++metric_index) {
+      const amrex::Real rho = 1.0e-4;
+      const amrex::Real eps = 1.0e-2;
+      const amrex::Real pressure =
+         pyfluid_amrex::relativistic_pressure<EOSMethod>(rho, eps, eos);
+      const pyfluid_amrex::RHDPrimitive primitive{
+         rho, eps, pressure, 0.0, 0.0, 0.0,
+      };
+      const auto conserved =
+         pyfluid_amrex::generated::rhd_primitive_to_conserved(
+            primitive, kerr_metrics[metric_index]
+         );
+      const auto recovered = pyfluid_amrex::recover_rhd<EOSMethod>(
+         conserved, kerr_metrics[metric_index], eos
+      );
+      if (!recovered.attempt.succeeded()) {
+         std::cerr << "static Kerr RHD C2P failed EOS=" << EOSMethod
+                   << " metric=" << metric_index << '\n';
+         return false;
+      }
+      const auto regenerated =
+         pyfluid_amrex::generated::rhd_primitive_to_conserved(
+            recovered.primitive, kerr_metrics[metric_index]
+         );
+      const auto expected_components = components(conserved);
+      const auto actual_components = components(regenerated);
+      amrex::Real conserved_error = 0.0;
+      for (std::size_t component = 0;
+           component < expected_components.size();
+           ++component) {
+         conserved_error = std::max(
+            conserved_error,
+            scaled_component_error(
+               actual_components[component],
+               expected_components[component],
+               eos.rho_floor * 1.0e-6
+            )
+         );
+      }
+      if (conserved_error > 1.0e-7) {
+         std::cerr << "static Kerr RHD round-trip mismatch EOS="
+                   << EOSMethod << " metric=" << metric_index
+                   << " conserved_error=" << conserved_error << '\n';
+         return false;
+      }
+   }
+
    const std::array<pyfluid_amrex::RHDConserved, 3> invalid_states{{
       {-1.0, 0.0, 0.0, 0.0, 1.0},
       {1.0, 0.0, 0.0, 0.0, -1.0},
@@ -1096,8 +1234,15 @@ bool validate_rhd_c2p_round_trip_matrix()
    eos.pressure_floor = 1.0e-28;
    eos.segment_k[0] = 100.0;
    eos.segment_gamma[0] = 2.0;
-   if (!(validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSIdealGas>(eos)
-         && validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSPolytrope>(eos)
+   if (!validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSIdealGas>(eos)) {
+      return false;
+   }
+   eos.gamma = 5.0 / 3.0;
+   if (!validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSIdealGas>(eos)) {
+      return false;
+   }
+   eos.gamma = 2.0;
+   if (!(validate_rhd_c2p_round_trip_for_eos<pyfluid_amrex::EOSPolytrope>(eos)
          && validate_rhd_c2p_round_trip_for_eos<
             pyfluid_amrex::EOSHybridPolytrope
          >(eos))) {
@@ -1462,6 +1607,7 @@ bool validate_srhd_round_trips()
 
 bool validate_fixed_spacetime_provider()
 {
+   using pyfluid_amrex::BlackHoleInterior;
    using pyfluid_amrex::FixedSpacetimeMetric;
    using pyfluid_amrex::FixedSpacetimeParameters;
    using pyfluid_amrex::fixed_spacetime_geometry;
@@ -1558,6 +1704,280 @@ bool validate_fixed_spacetime_provider()
        || std::abs(gamma_derivative - schwarzschild_geometry.derivatives.d1_gamma11)
           > 2.0e-9) {
       std::cerr << "isotropic-Schwarzschild metric derivative mismatch\n";
+      return false;
+   }
+
+   const FixedSpacetimeParameters schwarzschild_kerr_schild{
+      FixedSpacetimeMetric::KerrSchild,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.7,
+   };
+   constexpr amrex::Real ks_position1 = 2.3;
+   constexpr amrex::Real ks_position2 = -0.8;
+   constexpr amrex::Real ks_position3 = 0.45;
+   const auto schwarzschild_ks = kerr_schild_initial_data_geometry(
+      schwarzschild_kerr_schild,
+      ks_position1,
+      ks_position2,
+      ks_position3
+   );
+   const amrex::Real ks_radius = std::sqrt(
+      ks_position1 * ks_position1 + ks_position2 * ks_position2
+      + ks_position3 * ks_position3
+   );
+   const amrex::Real ks_profile = schwarzschild_kerr_schild.mass / ks_radius;
+   const amrex::Real ks_lapse_denominator = 1.0 + 2.0 * ks_profile;
+   const amrex::Real ks_null1 = ks_position1 / ks_radius;
+   const amrex::Real expected_ks_trace =
+      2.0 * schwarzschild_kerr_schild.mass
+      * (ks_radius + 3.0 * schwarzschild_kerr_schild.mass)
+      / (
+           std::pow(ks_radius, 1.5)
+           * std::pow(
+                ks_radius + 2.0 * schwarzschild_kerr_schild.mass,
+                1.5
+             )
+        );
+   const auto& ks_metric = schwarzschild_ks.metric;
+   const auto& ks_derivatives = schwarzschild_ks.derivatives;
+   const amrex::Real ks_trace =
+      ks_metric.inv_gamma11 * ks_derivatives.extrinsic11
+      + 2.0 * ks_metric.inv_gamma12 * ks_derivatives.extrinsic12
+      + 2.0 * ks_metric.inv_gamma13 * ks_derivatives.extrinsic13
+      + ks_metric.inv_gamma22 * ks_derivatives.extrinsic22
+      + 2.0 * ks_metric.inv_gamma23 * ks_derivatives.extrinsic23
+      + ks_metric.inv_gamma33 * ks_derivatives.extrinsic33;
+   if (!close_enough(
+          ks_metric.lapse, 1.0 / std::sqrt(ks_lapse_denominator)
+       )
+       || !close_enough(
+          ks_metric.shift1,
+          2.0 * ks_profile * ks_null1 / ks_lapse_denominator
+       )
+       || !close_enough(
+          ks_metric.gamma11,
+          1.0 + 2.0 * ks_profile * ks_null1 * ks_null1
+       )
+       || std::abs(ks_trace - expected_ks_trace) > 3.0e-13) {
+      std::cerr << "Schwarzschild Kerr-Schild identity mismatch\n";
+      return false;
+   }
+
+   const FixedSpacetimeParameters spinning_kerr_schild{
+      FixedSpacetimeMetric::KerrSchild,
+      0.0,
+      0.0,
+      0.0,
+      -0.15,
+      0.07,
+      0.11,
+      0.9,
+      0.2,
+      -0.1,
+      0.35,
+   };
+   const amrex::Real spinning_position[3]{2.4, -1.3, 0.75};
+   const auto spinning = kerr_schild_initial_data_geometry(
+      spinning_kerr_schild,
+      spinning_position[0],
+      spinning_position[1],
+      spinning_position[2]
+   );
+   const amrex::Real analytic_lapse_derivatives[3]{
+      spinning.derivatives.d1_lapse,
+      spinning.derivatives.d2_lapse,
+      spinning.derivatives.d3_lapse,
+   };
+   const amrex::Real analytic_shift_derivatives[3][3]{
+      {
+         spinning.derivatives.d1_shift1,
+         spinning.derivatives.d1_shift2,
+         spinning.derivatives.d1_shift3,
+      },
+      {
+         spinning.derivatives.d2_shift1,
+         spinning.derivatives.d2_shift2,
+         spinning.derivatives.d2_shift3,
+      },
+      {
+         spinning.derivatives.d3_shift1,
+         spinning.derivatives.d3_shift2,
+         spinning.derivatives.d3_shift3,
+      },
+   };
+   const amrex::Real analytic_gamma_derivatives[3][6]{
+      {
+         spinning.derivatives.d1_gamma11,
+         spinning.derivatives.d1_gamma12,
+         spinning.derivatives.d1_gamma13,
+         spinning.derivatives.d1_gamma22,
+         spinning.derivatives.d1_gamma23,
+         spinning.derivatives.d1_gamma33,
+      },
+      {
+         spinning.derivatives.d2_gamma11,
+         spinning.derivatives.d2_gamma12,
+         spinning.derivatives.d2_gamma13,
+         spinning.derivatives.d2_gamma22,
+         spinning.derivatives.d2_gamma23,
+         spinning.derivatives.d2_gamma33,
+      },
+      {
+         spinning.derivatives.d3_gamma11,
+         spinning.derivatives.d3_gamma12,
+         spinning.derivatives.d3_gamma13,
+         spinning.derivatives.d3_gamma22,
+         spinning.derivatives.d3_gamma23,
+         spinning.derivatives.d3_gamma33,
+      },
+   };
+   for (int direction = 0; direction < 3; ++direction) {
+      amrex::Real plus_position[3]{
+         spinning_position[0], spinning_position[1], spinning_position[2]
+      };
+      amrex::Real minus_position[3]{
+         spinning_position[0], spinning_position[1], spinning_position[2]
+      };
+      plus_position[direction] += step;
+      minus_position[direction] -= step;
+      const auto spinning_plus = kerr_schild_initial_data_geometry(
+         spinning_kerr_schild,
+         plus_position[0], plus_position[1], plus_position[2]
+      );
+      const auto spinning_minus = kerr_schild_initial_data_geometry(
+         spinning_kerr_schild,
+         minus_position[0], minus_position[1], minus_position[2]
+      );
+      const amrex::Real numerical_lapse = (
+         spinning_plus.metric.lapse - spinning_minus.metric.lapse
+      ) / (2.0 * step);
+      const amrex::Real numerical_shift[3]{
+         (spinning_plus.metric.shift1 - spinning_minus.metric.shift1)
+            / (2.0 * step),
+         (spinning_plus.metric.shift2 - spinning_minus.metric.shift2)
+            / (2.0 * step),
+         (spinning_plus.metric.shift3 - spinning_minus.metric.shift3)
+            / (2.0 * step),
+      };
+      const amrex::Real numerical_gamma[6]{
+         (spinning_plus.metric.gamma11 - spinning_minus.metric.gamma11)
+            / (2.0 * step),
+         (spinning_plus.metric.gamma12 - spinning_minus.metric.gamma12)
+            / (2.0 * step),
+         (spinning_plus.metric.gamma13 - spinning_minus.metric.gamma13)
+            / (2.0 * step),
+         (spinning_plus.metric.gamma22 - spinning_minus.metric.gamma22)
+            / (2.0 * step),
+         (spinning_plus.metric.gamma23 - spinning_minus.metric.gamma23)
+            / (2.0 * step),
+         (spinning_plus.metric.gamma33 - spinning_minus.metric.gamma33)
+            / (2.0 * step),
+      };
+      if (std::abs(numerical_lapse - analytic_lapse_derivatives[direction])
+             > 2.0e-9) {
+         std::cerr << "Kerr-Schild lapse derivative mismatch\n";
+         return false;
+      }
+      for (int component = 0; component < 3; ++component) {
+         if (std::abs(
+                numerical_shift[component]
+                - analytic_shift_derivatives[direction][component]
+             ) > 2.0e-9) {
+            std::cerr << "Kerr-Schild shift derivative mismatch\n";
+            return false;
+         }
+      }
+      for (int component = 0; component < 6; ++component) {
+         if (std::abs(
+                numerical_gamma[component]
+                - analytic_gamma_derivatives[direction][component]
+             ) > 3.0e-9) {
+            std::cerr << "Kerr-Schild metric derivative mismatch\n";
+            return false;
+         }
+      }
+   }
+   FixedSpacetimeParameters rotated_kerr_schild = spinning_kerr_schild;
+   rotated_kerr_schild.origin1 = spinning_kerr_schild.origin3;
+   rotated_kerr_schild.origin2 = spinning_kerr_schild.origin1;
+   rotated_kerr_schild.origin3 = spinning_kerr_schild.origin2;
+   rotated_kerr_schild.dimensionless_spin1 =
+      spinning_kerr_schild.dimensionless_spin3;
+   rotated_kerr_schild.dimensionless_spin2 =
+      spinning_kerr_schild.dimensionless_spin1;
+   rotated_kerr_schild.dimensionless_spin3 =
+      spinning_kerr_schild.dimensionless_spin2;
+   const auto rotated = kerr_schild_initial_data_geometry(
+      rotated_kerr_schild,
+      spinning_position[2], spinning_position[0], spinning_position[1]
+   );
+   if (!close_enough(rotated.metric.lapse, spinning.metric.lapse)
+       || !close_enough(rotated.metric.shift1, spinning.metric.shift3)
+       || !close_enough(rotated.metric.shift2, spinning.metric.shift1)
+       || !close_enough(rotated.metric.shift3, spinning.metric.shift2)
+       || !close_enough(rotated.metric.gamma11, spinning.metric.gamma33)
+       || !close_enough(rotated.metric.gamma12, spinning.metric.gamma13)
+       || !close_enough(rotated.metric.gamma13, spinning.metric.gamma23)
+       || !close_enough(rotated.metric.gamma22, spinning.metric.gamma11)
+       || !close_enough(rotated.metric.gamma23, spinning.metric.gamma12)
+       || !close_enough(rotated.metric.gamma33, spinning.metric.gamma22)
+       || !close_enough(
+          rotated.derivatives.extrinsic11,
+          spinning.derivatives.extrinsic33
+       )
+       || !close_enough(
+          rotated.derivatives.extrinsic12,
+          spinning.derivatives.extrinsic13
+       )
+       || !close_enough(
+          rotated.derivatives.extrinsic23,
+          spinning.derivatives.extrinsic12
+       )) {
+      std::cerr << "Kerr-Schild rotation covariance mismatch\n";
+      return false;
+   }
+   FixedSpacetimeParameters filled_kerr_schild = spinning_kerr_schild;
+   filled_kerr_schild.black_hole_interior = BlackHoleInterior::Filled;
+   filled_kerr_schild.black_hole_fill_radius = 1.0;
+   const auto filled_center = kerr_schild_initial_data_geometry(
+      filled_kerr_schild,
+      filled_kerr_schild.origin1,
+      filled_kerr_schild.origin2,
+      filled_kerr_schild.origin3
+   );
+   if (!close_enough(filled_center.metric.lapse, 1.0)
+       || !close_enough(filled_center.metric.gamma11, 1.0)
+       || !close_enough(filled_center.metric.gamma22, 1.0)
+       || !close_enough(filled_center.metric.gamma33, 1.0)
+       || !close_enough(filled_center.metric.shift1, 0.0)
+       || !close_enough(filled_center.derivatives.extrinsic11, 0.0)) {
+      std::cerr << "filled Kerr-Schild center is not regular Minkowski data\n";
+      return false;
+   }
+   const amrex::Real exterior_position[3]{
+      filled_kerr_schild.origin1 + 1.1,
+      filled_kerr_schild.origin2,
+      filled_kerr_schild.origin3,
+   };
+   const auto filled_exterior = kerr_schild_initial_data_geometry(
+      filled_kerr_schild,
+      exterior_position[0], exterior_position[1], exterior_position[2]
+   );
+   const auto exact_exterior = exact_kerr_schild_initial_data_geometry(
+      filled_kerr_schild,
+      exterior_position[0], exterior_position[1], exterior_position[2]
+   );
+   if (!close_enough(filled_exterior.metric.lapse, exact_exterior.metric.lapse)
+       || !close_enough(
+          filled_exterior.derivatives.extrinsic13,
+          exact_exterior.derivatives.extrinsic13
+       )) {
+      std::cerr << "filled Kerr-Schild data changed its exact exterior\n";
       return false;
    }
    return true;

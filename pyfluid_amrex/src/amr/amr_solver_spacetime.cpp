@@ -10,13 +10,208 @@
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/initial_data/materialization.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/kernels_generated/diagnostics.hpp"
 #include "pyfluid_amrex/nodal_fill.hpp"
 #include "pyfluid_amrex/nodal_interpolater.hpp"
 #include "pyfluid_amrex/surface_geometry.hpp"
 #include "pyfluid_amrex/z4c_constraint_pointwise.hpp"
+#include "relativity/z4c_boundary.hpp"
 
 namespace pyfluid_amrex {
+namespace {
+
+bool spacetime_boundary_reflects(
+   RunConfig const& config,
+   int direction,
+   bool high_side
+)
+{
+   const BoundaryKind kind = side_boundary_kind(
+      config, direction, high_side
+   );
+   return kind == BoundaryKind::Reflecting || kind == BoundaryKind::Symmetry;
+}
+
+void fill_reflected_nodal_validity_ghosts(
+   amrex::iMultiFab& validity,
+   amrex::Geometry const& geometry,
+   RunConfig const& config,
+   int ghost_cells
+)
+{
+   const amrex::Box nodal_domain = amrex::convert(
+      geometry.Domain(), amrex::IntVect::TheNodeVector()
+   );
+   const auto periodic = geometry.isPeriodicArray();
+   const int lo[3]{
+      nodal_domain.smallEnd(0),
+#if (AMREX_SPACEDIM >= 2)
+      nodal_domain.smallEnd(1),
+#else
+      0,
+#endif
+#if (AMREX_SPACEDIM == 3)
+      nodal_domain.smallEnd(2),
+#else
+      0,
+#endif
+   };
+   const int hi[3]{
+      nodal_domain.bigEnd(0),
+#if (AMREX_SPACEDIM >= 2)
+      nodal_domain.bigEnd(1),
+#else
+      0,
+#endif
+#if (AMREX_SPACEDIM == 3)
+      nodal_domain.bigEnd(2),
+#else
+      0,
+#endif
+   };
+   const bool reflect_lo[3]{
+      spacetime_boundary_reflects(config, 0, false),
+#if (AMREX_SPACEDIM >= 2)
+      spacetime_boundary_reflects(config, 1, false),
+#else
+      false,
+#endif
+#if (AMREX_SPACEDIM == 3)
+      spacetime_boundary_reflects(config, 2, false),
+#else
+      false,
+#endif
+   };
+   const bool reflect_hi[3]{
+      spacetime_boundary_reflects(config, 0, true),
+#if (AMREX_SPACEDIM >= 2)
+      spacetime_boundary_reflects(config, 1, true),
+#else
+      false,
+#endif
+#if (AMREX_SPACEDIM == 3)
+      spacetime_boundary_reflects(config, 2, true),
+#else
+      false,
+#endif
+   };
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(
+           validity, amrex::TilingIfNotGPU()
+        ); mfi.isValid(); ++mfi) {
+      amrex::Box grown = mfi.growntilebox(ghost_cells);
+      grown &= validity[mfi].box();
+      const amrex::BoxList ghost_boxes = amrex::boxDiff(
+         grown, nodal_domain
+      );
+      const auto values = validity.array(mfi);
+      for (amrex::Box const& ghost_box : ghost_boxes) {
+         amrex::ParallelFor(
+            ghost_box,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               const int point[3]{i, j, k};
+               int source[3]{i, j, k};
+               bool touches_reflection = false;
+               bool supported = true;
+               for (int direction = 0; direction < AMREX_SPACEDIM;
+                    ++direction) {
+                  if (point[direction] < lo[direction]) {
+                     if (periodic[direction]) {
+                        continue;
+                     } else if (reflect_lo[direction]) {
+                        source[direction] =
+                           2 * lo[direction] - point[direction];
+                        touches_reflection = true;
+                     } else {
+                        supported = false;
+                     }
+                  } else if (point[direction] > hi[direction]) {
+                     if (periodic[direction]) {
+                        continue;
+                     } else if (reflect_hi[direction]) {
+                        source[direction] =
+                           2 * hi[direction] - point[direction];
+                        touches_reflection = true;
+                     } else {
+                        supported = false;
+                     }
+                  }
+               }
+               if (supported && touches_reflection) {
+                  values(i, j, k, 0) = values(
+                     source[0], source[1], source[2], 0
+                  );
+               }
+            }
+         );
+      }
+   }
+}
+
+void enforce_reflection_odd_nodal_plane_values(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geometry,
+   amrex::Vector<amrex::BCRec> const& boundary_records
+)
+{
+   const amrex::Box nodal_domain = amrex::convert(
+      geometry.Domain(), amrex::IntVect::TheNodeVector()
+   );
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      for (int high_side = 0; high_side < 2; ++high_side) {
+         amrex::GpuArray<int, Z4C_NUM_COMPONENTS> odd_component{};
+         bool has_odd_component = false;
+         for (int component = 0; component < Z4C_NUM_COMPONENTS;
+              ++component) {
+            const int boundary_kind = high_side != 0
+               ? boundary_records[component].hi(direction)
+               : boundary_records[component].lo(direction);
+            odd_component[component] =
+               boundary_kind == amrex::BCType::reflect_odd ? 1 : 0;
+            has_odd_component = has_odd_component
+               || odd_component[component] != 0;
+         }
+         if (!has_odd_component) {
+            continue;
+         }
+         const int plane_index = high_side != 0
+            ? nodal_domain.bigEnd(direction)
+            : nodal_domain.smallEnd(direction);
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+         for (amrex::MFIter mfi(
+                 state, amrex::TilingIfNotGPU()
+              ); mfi.isValid(); ++mfi) {
+            amrex::Box face = mfi.tilebox();
+            if (plane_index < face.smallEnd(direction)
+                || plane_index > face.bigEnd(direction)) {
+               continue;
+            }
+            face.setSmall(direction, plane_index);
+            face.setBig(direction, plane_index);
+            const auto values = state.array(mfi);
+            amrex::ParallelFor(
+               face,
+               [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  for (int component = 0;
+                       component < Z4C_NUM_COMPONENTS;
+                       ++component) {
+                     if (odd_component[component] != 0) {
+                        values(i, j, k, component) = 0.0;
+                     }
+                  }
+               }
+            );
+         }
+      }
+   }
+}
+
+} // namespace
 
 void AmrSolverBase::fill_spacetime_level_boundaries(
    LevelData& data,
@@ -48,6 +243,9 @@ void AmrSolverBase::fill_spacetime_level_boundaries(
          Geom(0),
          fine_bc,
          0
+      );
+      enforce_reflection_odd_nodal_plane_values(
+         *data[0], Geom(0), spacetime_fillpatch_bcs_
       );
       return;
    }
@@ -108,6 +306,9 @@ void AmrSolverBase::fill_spacetime_level_boundaries(
       spacetime_fillpatch_bcs_,
       spacetime_state_.num_components()
    );
+   enforce_reflection_odd_nodal_plane_values(
+      *data[lev], Geom(lev), spacetime_fillpatch_bcs_
+   );
 }
 
 void AmrSolverBase::fill_all_spacetime_boundaries(LevelData& data, amrex::Real time)
@@ -124,7 +325,7 @@ void AmrSolverBase::initialize_spacetime_level(int lev, amrex::Real time)
    }
    initialize_z4c_state(
       *spacetime_state_.state()[lev], Geom(lev), cfg_, time,
-      initial_data_provider_.view()
+      initial_data_provider_->view()
    );
    spacetime_coupling_.invalidate_cell_spacetime(lev);
    fill_spacetime_level_boundaries(spacetime_state_.state(), lev, time);
@@ -132,7 +333,7 @@ void AmrSolverBase::initialize_spacetime_level(int lev, amrex::Real time)
    fill_spacetime_level_boundaries(spacetime_state_.state(), lev, time);
 }
 
-void AmrSolverBase::materialize_constraint_solved_initial_data(
+bool AmrSolverBase::materialize_constraint_solved_initial_data(
    bool seed_from_loaded_id
 )
 {
@@ -144,7 +345,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
 #if (AMREX_SPACEDIM == 1)
    if (cfg_.initial_data_radial_grid == "adaptive" && cfg_.ic == "tov"
        && !seed_from_loaded_id) {
-      const RelativisticInitialDataView provider = initial_data_provider_.view();
+      const RelativisticInitialDataView provider = initial_data_provider_->view();
       if (finestLevel() != 0 || !provider.tov.active()) {
          amrex::Abort(
             "adaptive TOV ID requires one level and a native TOV provider"
@@ -165,7 +366,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
          );
       initial_data_coordinate_faces_ =
          mapped_hierarchy.physical_coordinate_faces;
-      initialize_relativistic_primitive_cache_from_provider(
+      initialize_relativistic_primitive_cache_from_initial_data(
          *primitive_[0], mapped_hierarchy, 0, cfg_, provider
       );
       initialize_mapped_z4c_state_from_provider(
@@ -185,12 +386,12 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
          << " inner_dr=" << radial.widths.front()
          << " outer_dr=" << radial.widths.back() << '\n';
       finalize_constraint_solved_initial_data_state();
-      return;
+      return true;
    }
 #endif
    if (!uses_constraint_solve
-       || !initial_data_provider_.view().fields.spacetime_from_id) {
-      return;
+       || !initial_data_provider_->view().fields.spacetime_from_id) {
+      return false;
    }
    if (!spacetime_state_.active()) {
       amrex::Abort(
@@ -208,9 +409,9 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       hierarchy.distribution.push_back(DistributionMap(lev));
       if (seed_from_loaded_id) {
          fill_level_primitive_cache(lev, 0.0);
-      } else if (initial_data_provider_.view().has_fluid()) {
-         initialize_relativistic_primitive_cache_from_provider(
-            *primitive_[lev], Geom(lev), cfg_, initial_data_provider_.view()
+      } else if (initial_data_provider_->view().has_fluid()) {
+         initialize_relativistic_primitive_cache_from_initial_data(
+            *primitive_[lev], Geom(lev), cfg_, initial_data_provider_->view()
          );
       } else {
          fill_level_primitive_cache(lev, 0.0);
@@ -236,7 +437,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
 #if (AMREX_SPACEDIM == 2)
    if (cfg_.initial_data_radial_grid == "adaptive"
        || !initial_data_coordinate_faces_.empty()) {
-      const RelativisticInitialDataView provider = initial_data_provider_.view();
+      const RelativisticInitialDataView provider = initial_data_provider_->view();
       if (finestLevel() != 0 || !provider.tov.active()) {
          amrex::Abort(
             "adaptive stellar ID requires one level and a native TOV seed"
@@ -261,7 +462,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
                cfg_.initial_data_adaptive_exterior_fraction
             );
          initial_data_coordinate_faces_ = hierarchy.physical_coordinate_faces;
-         initialize_relativistic_primitive_cache_from_provider(
+         initialize_relativistic_primitive_cache_from_initial_data(
             *primitive_[0], hierarchy, 0, cfg_, provider
          );
       }
@@ -368,9 +569,9 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       };
    }
    RotatingStarParameters rotating_parameters =
-      rotating_star_parameters(cfg_, initial_data_provider_.view());
+      rotating_star_parameters(cfg_, initial_data_provider_->view());
    const EquilibriumTorusParameters equilibrium_torus =
-      equilibrium_torus_parameters(cfg_, initial_data_provider_.view());
+      equilibrium_torus_parameters(cfg_, initial_data_provider_->view());
    if (seed_from_loaded_id && loaded_physical_id_metadata_
        && loaded_physical_id_metadata_->injection_energy > 0.0) {
       rotating_parameters.injection_energy =
@@ -384,7 +585,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
       physics_system_,
       eos_method_,
       eos_params(cfg_),
-      initial_data_provider_.view().fields,
+      initial_data_provider_->view().fields,
       formulation,
       rotating_parameters,
       equilibrium_torus,
@@ -472,6 +673,7 @@ void AmrSolverBase::materialize_constraint_solved_initial_data(
             << result.equilibrium_torus.angular_momentum << '\n';
       }
    }
+   return true;
 }
 
 void AmrSolverBase::finalize_constraint_solved_initial_data_state()
@@ -553,6 +755,9 @@ void AmrSolverBase::fill_new_spacetime_level_from_coarse(int lev, amrex::Real ti
       spacetime_fillpatch_bcs_,
       0
    );
+   enforce_reflection_odd_nodal_plane_values(
+      *spacetime_state_.state()[lev], Geom(lev), spacetime_fillpatch_bcs_
+   );
 }
 
 void AmrSolverBase::fill_remade_spacetime_level(
@@ -609,6 +814,9 @@ void AmrSolverBase::fill_remade_spacetime_level(
       refRatio(lev - 1),
       spacetime_fillpatch_bcs_,
       spacetime_state_.num_components()
+   );
+   enforce_reflection_odd_nodal_plane_values(
+      *spacetime_state_.state()[lev], Geom(lev), spacetime_fillpatch_bcs_
    );
 }
 
@@ -669,6 +877,9 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
       stencil_valid.setVal(0);
       stencil_valid.ParallelCopy(valid, 0, 0, 1, 0, 0);
       stencil_valid.FillBoundary(Geom(lev).periodicity());
+      fill_reflected_nodal_validity_ghosts(
+         stencil_valid, Geom(lev), cfg_, 2
+      );
       amrex::MultiFab norms(
          state.boxArray(), state.DistributionMap(), 11, 0
       );
@@ -697,10 +908,12 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
          amrex::Box box = mfi.tilebox();
          for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
             if (!Geom(lev).isPeriodic(direction)
+                && !spacetime_boundary_reflects(cfg_, direction, false)
                 && box.smallEnd(direction) == nodal_domain.smallEnd(direction)) {
                box.setSmall(direction, box.smallEnd(direction) + 2);
             }
             if (!Geom(lev).isPeriodic(direction)
+                && !spacetime_boundary_reflects(cfg_, direction, true)
                 && box.bigEnd(direction) == nodal_domain.bigEnd(direction)) {
                box.setBig(direction, box.bigEnd(direction) - 2);
             }

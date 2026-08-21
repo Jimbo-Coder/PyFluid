@@ -2,6 +2,7 @@
 #include "amr/state_interpolation.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
+#include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/mapped_patch_fill.hpp"
 
 #include <AMReX_FillPatchUtil.H>
@@ -385,7 +386,7 @@ void AmrSolverBase::complete_radial_origin_boundary(LevelData& data, int lev, am
 void AmrSolverBase::fill_new_level_from_coarse_state(int lev, amrex::Real time)
 {
    if (lev == 0) {
-      initialize_state(*fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_.view());
+      initialize_state(*fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_->view());
       apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
       fill_mixed_patch_state_ghosts(*fluid_state_.state()[lev], lev);
       return;

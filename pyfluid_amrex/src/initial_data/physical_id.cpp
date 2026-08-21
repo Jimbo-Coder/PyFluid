@@ -1403,6 +1403,37 @@ void write_physical_initial_data(
       metadata << "# source_ic=" << cfg.ic << '\n';
       metadata << "# spacetime_initial_data="
                << cfg.spacetime_initial_data << '\n';
+      if (cfg.spacetime_initial_data == "kerr_schild") {
+         metadata << "# black_hole_mass="
+                  << output_metadata_real_string(cfg.spacetime_mass) << '\n';
+         metadata << "# black_hole_spin1="
+                  << output_metadata_real_string(
+                       cfg.spacetime_dimensionless_spin1
+                     ) << '\n';
+         metadata << "# black_hole_spin2="
+                  << output_metadata_real_string(
+                       cfg.spacetime_dimensionless_spin2
+                     ) << '\n';
+         metadata << "# black_hole_spin3="
+                  << output_metadata_real_string(
+                       cfg.spacetime_dimensionless_spin3
+                     ) << '\n';
+         metadata << "# black_hole_origin1="
+                  << output_metadata_real_string(cfg.spacetime_origin1)
+                  << '\n';
+         metadata << "# black_hole_origin2="
+                  << output_metadata_real_string(cfg.spacetime_origin2)
+                  << '\n';
+         metadata << "# black_hole_origin3="
+                  << output_metadata_real_string(cfg.spacetime_origin3)
+                  << '\n';
+         metadata << "# black_hole_interior="
+                  << cfg.spacetime_black_hole_interior << '\n';
+         metadata << "# black_hole_fill_radius="
+                  << output_metadata_real_string(
+                       cfg.spacetime_black_hole_fill_radius
+                     ) << '\n';
+      }
       metadata << "# disk=" << cfg.initial_data_disk << '\n';
       metadata << "# disk_gravity=" << cfg.initial_data_disk_gravity << '\n';
       metadata << "# disk_rotation_law="
@@ -1415,6 +1446,15 @@ void write_physical_initial_data(
                << output_metadata_real_string(
                     cfg.initial_data_disk_inner_radius
                   ) << '\n';
+      metadata << "# disk_axis1="
+               << output_metadata_real_string(cfg.initial_data_disk_axis1)
+               << '\n';
+      metadata << "# disk_axis2="
+               << output_metadata_real_string(cfg.initial_data_disk_axis2)
+               << '\n';
+      metadata << "# disk_axis3="
+               << output_metadata_real_string(cfg.initial_data_disk_axis3)
+               << '\n';
       metadata << "# tov_central_density="
                << output_metadata_real_string(cfg.tov_central_density) << '\n';
       metadata << "# rotation_law=" << cfg.initial_data_rotation_law << '\n';
@@ -1736,6 +1776,11 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.disk_inner_radius = required_metadata_real(
          metadata, "disk_inner_radius", path
       );
+      result.disk_axis = {{
+         optional_metadata_real(metadata, "disk_axis1", 0.0, path),
+         optional_metadata_real(metadata, "disk_axis2", 0.0, path),
+         optional_metadata_real(metadata, "disk_axis3", 1.0, path),
+      }};
       result.disk_maximum_density = required_metadata_real(
          metadata, "disk_maximum_density", path
       );
@@ -1765,7 +1810,10 @@ PhysicalInitialDataMetadata read_physical_initial_data(
              != cfg.initial_data_disk_rotation_law
           || result.disk_specific_angular_momentum
              != cfg.initial_data_disk_specific_angular_momentum
-          || result.disk_inner_radius != cfg.initial_data_disk_inner_radius) {
+          || result.disk_inner_radius != cfg.initial_data_disk_inner_radius
+          || result.disk_axis[0] != cfg.initial_data_disk_axis1
+          || result.disk_axis[1] != cfg.initial_data_disk_axis2
+          || result.disk_axis[2] != cfg.initial_data_disk_axis3) {
          amrex::Abort(
             "physical-ID equilibrium-torus parameters are incompatible with "
             "the target in " + path
@@ -1796,6 +1844,46 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          amrex::Abort(
             "physical-ID spacetime class is incompatible with the target in "
             + path
+         );
+      }
+   }
+   if (result.spacetime_initial_data == "kerr_schild") {
+      result.black_hole_mass = required_metadata_real(
+         metadata, "black_hole_mass", path
+      );
+      result.black_hole_spin = {{
+         required_metadata_real(metadata, "black_hole_spin1", path),
+         required_metadata_real(metadata, "black_hole_spin2", path),
+         required_metadata_real(metadata, "black_hole_spin3", path),
+      }};
+      result.black_hole_origin = {{
+         required_metadata_real(metadata, "black_hole_origin1", path),
+         required_metadata_real(metadata, "black_hole_origin2", path),
+         required_metadata_real(metadata, "black_hole_origin3", path),
+      }};
+      result.black_hole_interior = required_metadata_value(
+         metadata, "black_hole_interior", path
+      );
+      result.black_hole_fill_radius = required_metadata_real(
+         metadata, "black_hole_fill_radius", path
+      );
+      if (result.black_hole_mass != cfg.spacetime_mass
+          || result.black_hole_spin[0]
+             != cfg.spacetime_dimensionless_spin1
+          || result.black_hole_spin[1]
+             != cfg.spacetime_dimensionless_spin2
+          || result.black_hole_spin[2]
+             != cfg.spacetime_dimensionless_spin3
+          || result.black_hole_origin[0] != cfg.spacetime_origin1
+          || result.black_hole_origin[1] != cfg.spacetime_origin2
+          || result.black_hole_origin[2] != cfg.spacetime_origin3
+          || result.black_hole_interior
+             != cfg.spacetime_black_hole_interior
+          || result.black_hole_fill_radius
+             != cfg.spacetime_black_hole_fill_radius) {
+         amrex::Abort(
+            "physical-ID Kerr-Schild parameters are incompatible with the "
+            "target in " + path
          );
       }
    }
