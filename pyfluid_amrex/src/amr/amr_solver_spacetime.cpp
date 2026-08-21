@@ -9,6 +9,7 @@
 #include "pyfluid_amrex/spacetime_coupling.hpp"
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/initial_data/materialization.hpp"
+#include "pyfluid_amrex/initial_data/kerr_schild.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/kernels_generated/diagnostics.hpp"
@@ -850,6 +851,16 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
    amrex::Real interior_volume = 0.0;
    amrex::Real cf_hamiltonian_squared_integral = 0.0;
    amrex::Real cf_volume = 0.0;
+   amrex::Real bh_exterior_hamiltonian_squared_integral = 0.0;
+   amrex::Real bh_exterior_volume = 0.0;
+   const FixedSpacetimeParameters black_hole =
+      fixed_spacetime_parameters(cfg_);
+   const bool has_black_hole =
+      black_hole.metric == FixedSpacetimeMetric::KerrSchild;
+   const amrex::Real horizon_radius = has_black_hole
+      ? kerr_schild_outer_horizon_radius(black_hole) : 0.0;
+   const amrex::Real horizon_radius_squared =
+      horizon_radius * horizon_radius;
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       amrex::MultiFab const& state = *spacetime_state_.state()[lev];
       amrex::iMultiFab valid(state.boxArray(), state.DistributionMap(), 1, 0);
@@ -881,13 +892,27 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
          stencil_valid, Geom(lev), cfg_, 2
       );
       amrex::MultiFab norms(
-         state.boxArray(), state.DistributionMap(), 11, 0
+         state.boxArray(), state.DistributionMap(), 14, 0
       );
       norms.setVal(0.0);
       const amrex::Box nodal_domain = amrex::convert(
          Geom(lev).Domain(), amrex::IntVect::TheNodeVector()
       );
       const auto spacing = Geom(lev).CellSizeArray();
+      const auto lower = Geom(lev).ProbLoArray();
+      const amrex::GpuArray<int, 3> domain_lower{{
+         nodal_domain.smallEnd(0),
+#if (AMREX_SPACEDIM >= 2)
+         nodal_domain.smallEnd(1),
+#else
+         0,
+#endif
+#if (AMREX_SPACEDIM == 3)
+         nodal_domain.smallEnd(2),
+#else
+         0,
+#endif
+      }};
       const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
          1.0 / spacing[0],
 #if (AMREX_SPACEDIM >= 2)
@@ -967,6 +992,55 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
             const int weight_component = same_level_stencil ? 8 : 10;
             output(i, j, k, value_component) = amrex::Math::abs(c.hamiltonian);
             output(i, j, k, weight_component) = 1.0;
+            if (has_black_hole) {
+               bool exterior_stencil = true;
+               for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+                  for (int offset = -2; offset <= 2; ++offset) {
+                     int point_i = i;
+                     int point_j = j;
+                     int point_k = k;
+                     if (direction == 0) {
+                        point_i += offset;
+                     }
+#if (AMREX_SPACEDIM >= 2)
+                     if (direction == 1) {
+                        point_j += offset;
+                     }
+#endif
+#if (AMREX_SPACEDIM == 3)
+                     if (direction == 2) {
+                        point_k += offset;
+                     }
+#endif
+                     const amrex::Real position1 = lower[0]
+                        + static_cast<amrex::Real>(point_i - domain_lower[0])
+                           * spacing[0];
+#if (AMREX_SPACEDIM >= 2)
+                     const amrex::Real position2 = lower[1]
+                        + static_cast<amrex::Real>(point_j - domain_lower[1])
+                           * spacing[1];
+#else
+                     const amrex::Real position2 = 0.0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+                     const amrex::Real position3 = lower[2]
+                        + static_cast<amrex::Real>(point_k - domain_lower[2])
+                           * spacing[2];
+#else
+                     const amrex::Real position3 = 0.0;
+#endif
+                     exterior_stencil = exterior_stencil
+                        && kerr_schild_radius_squared(
+                             black_hole, position1, position2, position3
+                           ) > horizon_radius_squared;
+                  }
+               }
+               if (exterior_stencil) {
+                  output(i, j, k, 11) = amrex::Math::abs(c.hamiltonian);
+                  output(i, j, k, 12) = 1.0;
+                  output(i, j, k, 13) = output(i, j, k, 1);
+               }
+            }
          });
       }
       diagnostics.hamiltonian_linf = amrex::max(
@@ -991,6 +1065,18 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
       cf_hamiltonian_squared_integral += level_volume
          * level_cf_norm * level_cf_norm;
       cf_volume += level_volume * norms.sum(10);
+      diagnostics.hamiltonian_bh_exterior_linf = amrex::max(
+         diagnostics.hamiltonian_bh_exterior_linf,
+         norms.norm0(11, 0, false)
+      );
+      const amrex::Real level_bh_exterior_norm = norms.norm2(11);
+      bh_exterior_hamiltonian_squared_integral += level_volume
+         * level_bh_exterior_norm * level_bh_exterior_norm;
+      bh_exterior_volume += level_volume * norms.sum(12);
+      diagnostics.momentum_bh_exterior_linf = amrex::max(
+         diagnostics.momentum_bh_exterior_linf,
+         std::sqrt(norms.norm0(13, 0, false))
+      );
       diagnostics.momentum_linf = amrex::max(
          diagnostics.momentum_linf, std::sqrt(norms.norm0(1, 0, false))
       );
@@ -1021,6 +1107,11 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
    if (cf_volume > 0.0) {
       diagnostics.hamiltonian_cf_l2 = std::sqrt(
          cf_hamiltonian_squared_integral / cf_volume
+      );
+   }
+   if (bh_exterior_volume > 0.0) {
+      diagnostics.hamiltonian_bh_exterior_l2 = std::sqrt(
+         bh_exterior_hamiltonian_squared_integral / bh_exterior_volume
       );
    }
    return diagnostics;

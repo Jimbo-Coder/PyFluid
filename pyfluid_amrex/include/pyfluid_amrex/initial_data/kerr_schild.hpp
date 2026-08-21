@@ -7,6 +7,64 @@
 
 namespace pyfluid_amrex {
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real kerr_schild_radius_squared_from_invariants(
+   amrex::Real euclidean_radius_squared,
+   amrex::Real spin_dot_displacement,
+   amrex::Real spin_squared
+) noexcept
+{
+   const amrex::Real radial_quadratic =
+      euclidean_radius_squared - spin_squared;
+   return 0.5 * (
+      radial_quadratic
+      + std::sqrt(
+           radial_quadratic * radial_quadratic
+           + 4.0 * spin_dot_displacement * spin_dot_displacement
+        )
+   );
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real kerr_schild_radius_squared(
+   const FixedSpacetimeParameters& parameters,
+   amrex::Real position1,
+   amrex::Real position2,
+   amrex::Real position3
+) noexcept
+{
+   const amrex::Real displacement1 = position1 - parameters.origin1;
+   const amrex::Real displacement2 = position2 - parameters.origin2;
+   const amrex::Real displacement3 = position3 - parameters.origin3;
+   const amrex::Real spin1 = parameters.mass
+      * parameters.dimensionless_spin1;
+   const amrex::Real spin2 = parameters.mass
+      * parameters.dimensionless_spin2;
+   const amrex::Real spin3 = parameters.mass
+      * parameters.dimensionless_spin3;
+   return kerr_schild_radius_squared_from_invariants(
+      displacement1 * displacement1 + displacement2 * displacement2
+         + displacement3 * displacement3,
+      spin1 * displacement1 + spin2 * displacement2
+         + spin3 * displacement3,
+      spin1 * spin1 + spin2 * spin2 + spin3 * spin3
+   );
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real kerr_schild_outer_horizon_radius(
+   const FixedSpacetimeParameters& parameters
+) noexcept
+{
+   const amrex::Real dimensionless_spin_squared =
+      parameters.dimensionless_spin1 * parameters.dimensionless_spin1
+      + parameters.dimensionless_spin2 * parameters.dimensionless_spin2
+      + parameters.dimensionless_spin3 * parameters.dimensionless_spin3;
+   return parameters.mass * (
+      1.0 + std::sqrt(1.0 - dimensionless_spin_squared)
+   );
+}
+
 // Exact ingoing Cartesian Kerr-Schild 3+1 data. This is an initial-data
 // materialization kernel, not a runtime flux-kernel branch: nontrivial fixed
 // metrics use the same stored Z4c/cell-metric path as evolved spacetime.
@@ -44,9 +102,10 @@ FixedSpacetimeGeometry exact_kerr_schild_initial_data_geometry(
       radial_quadratic * radial_quadratic
       + 4.0 * spin_dot_displacement * spin_dot_displacement
    );
-   const amrex::Real radius_squared = 0.5 * (
-      radial_quadratic + radial_discriminant
-   );
+   const amrex::Real radius_squared =
+      kerr_schild_radius_squared_from_invariants(
+         euclidean_radius_squared, spin_dot_displacement, spin_squared
+      );
    const amrex::Real radius = std::sqrt(radius_squared);
    const amrex::Real inverse_radius = 1.0 / radius;
    amrex::Real radius_derivative[3]{};

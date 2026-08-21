@@ -37,7 +37,8 @@ It intentionally links rather than restating the detailed contracts.
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
 | Native cold CompOSE tables | `eos/compose/`, `src/eos/tabulated.cpp`, `include/pyfluid_amrex/eos/tabulated*.hpp`, `tests/tabulated_eos_check.cpp`, `tools/validate_compose_eos.py` | CompOSE manual and dataset records below; Cycle 297 |
 | Equilibrium torus/disk initial data | `include/pyfluid_amrex/initial_data/equilibrium_torus.hpp`, `src/initial_data/equilibrium_torus_initial_data.cpp`, `schema/methods.toml`, `tools/validate_equilibrium_torus.py` | `docs/tov.md`, `docs/infrastructure_conventions.md`, Cycle 296 |
-| Kerr black-hole initial data and interior policy | `include/pyfluid_amrex/initial_data/kerr_schild.hpp`, `src/initial_data/initial_data_provider.cpp`, `tools/validate_black_hole.py` | `docs/black_holes.md`, Cycle 299 |
+| Kerr black-hole initial data and interior policy | `include/pyfluid_amrex/initial_data/kerr_schild.hpp`, `src/initial_data/initial_data_provider.cpp`, `tools/validate_black_hole.py` | `docs/black_holes.md`, Cycles 299--300 |
+| Apparent-horizon geometry and future finder | `include/pyfluid_amrex/apparent_horizon.hpp`, `tests/generated_flux_compile_check.cpp`, hierarchy interpolation and surface owners | `docs/black_holes.md`, Cycle 300 |
 | Portable physical-ID solve/save/materialization, including explicit radial faces | `src/initial_data/physical_id.cpp`, `src/initial_data/physical_id_interpolation.cpp`, `src/initial_data/initial_data_elliptic.cpp`, `src/framework/checkpoint.cpp`, `tests/physical_id_interpolation_check.cpp`, `tools/validate_reduced_initial_data.py` | `docs/infrastructure_conventions.md`, Cycles 287 and 291 |
 | Axisymmetric spherical ID scalar/toroidal elliptic operators | `src/initial_data/initial_data_elliptic.cpp`, `include/pyfluid_amrex/initial_data/elliptic.hpp`, `tests/initial_data_elliptic_check.cpp` | `docs/infrastructure_conventions.md`, Cycles 288--289 |
 | Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
@@ -266,10 +267,32 @@ the generated TSV/log, and the current source revision/dirty state.
   smooth constraint-violating black-hole interior data evolved on a complete
   puncture grid. Use as provenance for an explicitly named filled/turduckened
   interior, never as evidence that a fill is exact or excised.
-- I. Ruchlin et al., *Three-dimensional numerical relativity with a
-  multipatch approach: high-spin black holes*,
+- I. Ruchlin et al., *Puncture Initial Data for Black-Hole Binaries with High
+  Spins and High Boosts*,
   [arXiv:1410.8607](https://arxiv.org/abs/1410.8607): comparison route for
-  high-spin full-grid black-hole evolution and gauge behavior.
+  high-spin puncture initial data and modified moving-puncture lapse choices.
+- D. Hilditch et al., *Compact binary evolutions with the Z4c formulation*,
+  [arXiv:1212.2901](https://arxiv.org/abs/1212.2901): standard Z4c,
+  moving-puncture gauge, constraint-damping, and black-hole evolution control.
+- J. Thornburg, *A Fast Apparent-Horizon Finder for 3-Dimensional Cartesian
+  Grids in Numerical Relativity*,
+  [arXiv:gr-qc/0306056](https://arxiv.org/abs/gr-qc/0306056): star-shaped
+  six-patch angular surface, fourth-order finite differences, and direct
+  Newton solution of the apparent-horizon equation. The local ETK checkout at
+  `/Users/mrizzo/phys_research/ETK_CarpetX/SpacetimeX/AHFinderDirect` is an
+  implementation reference only; PyFluid does not import its GPL source.
+- Z. B. Etienne et al., *BHaHAHA: A Fast, Robust Apparent Horizon Finder
+  Library for Numerical Relativity*,
+  [arXiv:2505.15912](https://arxiv.org/abs/2505.15912): infrastructure-
+  independent damped-wave relaxation, coarse-to-fine angular continuation,
+  over-relaxation, and threaded surface finding. This is the preferred method
+  reference for PyFluid's first full finder, not imported code.
+- M. K. Bhattacharyya et al., *Implementation of the dual foliation generalized
+  harmonic gauge formulation with application to spherical black hole
+  excision*,
+  [arXiv:2101.12094](https://arxiv.org/abs/2101.12094): comparison route for
+  causally outflowing black-hole excision boundaries in a different evolution
+  formulation. It does not make a Z4c active-mask boundary automatic.
 - The analytic seed implemented locally is ingoing Cartesian Kerr--Schild
   data with an arbitrary Cartesian spin vector. Fixed and evolved consumers
   materialize the same ADM/Z4c fields; the flux templates do not own a second

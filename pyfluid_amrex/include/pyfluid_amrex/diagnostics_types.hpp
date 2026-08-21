@@ -103,6 +103,9 @@ struct SpacetimeConstraintDiagnostics {
    amrex::Real hamiltonian_interior_l2 = 0.0;
    amrex::Real hamiltonian_cf_linf = 0.0;
    amrex::Real hamiltonian_cf_l2 = 0.0;
+   amrex::Real hamiltonian_bh_exterior_linf = 0.0;
+   amrex::Real hamiltonian_bh_exterior_l2 = 0.0;
+   amrex::Real momentum_bh_exterior_linf = 0.0;
    amrex::Real momentum_linf = 0.0;
    amrex::Real z_linf = 0.0;
    amrex::Real theta_linf = 0.0;

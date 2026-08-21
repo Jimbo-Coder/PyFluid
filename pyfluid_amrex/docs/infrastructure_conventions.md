@@ -172,6 +172,16 @@ Black-hole spin, stellar rotation axis, and disk axis remain separate metadata;
 this preserves aligned reduced solves while allowing a later full-3D tilted
 composition through the same materializer.
 
+An apparent-horizon surface is a diagnostic object sampled from the hierarchy,
+not a second spacetime field layout and not an implicit excision mask. The
+surface solver owns its angular/volume work grid and may persist its radial
+shape for tracking; it consumes Cartesian metric and extrinsic-curvature data
+through the common hierarchy interpolation boundary. Exterior-only constraint
+diagnostics must require the complete derivative stencil, not only its center,
+to lie outside the selected horizon. Only an explicitly validated evolution
+owner may convert a found surface into inactive cells and inner-boundary
+closures.
+
 Optional equilibrium matter components use that same physical field contract;
 they do not create a parallel artifact or materializer. The construction owner
 may compose a central object and one or more disjoint matter supports before

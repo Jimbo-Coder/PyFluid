@@ -20,6 +20,7 @@
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/diagnostics_types.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
+#include "pyfluid_amrex/initial_data/kerr_schild.hpp"
 #include "pyfluid_amrex/kernels_generated/diagnostics.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/sources.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
@@ -549,6 +550,10 @@ void apply_scalar_diagnostic_requirements(
       }
       if (requirement == "spacetime") {
          return spacetime_stores_state(config);
+      }
+      if (requirement == "black_hole") {
+         return fixed_spacetime_parameters(config).metric
+            == FixedSpacetimeMetric::KerrSchild;
       }
       if (requirement == "gravity") {
          return gravity_enabled(config);
@@ -1223,11 +1228,22 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
       d.z4c_hamiltonian_interior_l2 = constraints.hamiltonian_interior_l2;
       d.z4c_hamiltonian_cf_linf = constraints.hamiltonian_cf_linf;
       d.z4c_hamiltonian_cf_l2 = constraints.hamiltonian_cf_l2;
+      d.z4c_hamiltonian_bh_exterior_linf =
+         constraints.hamiltonian_bh_exterior_linf;
+      d.z4c_hamiltonian_bh_exterior_l2 =
+         constraints.hamiltonian_bh_exterior_l2;
+      d.z4c_momentum_bh_exterior_linf =
+         constraints.momentum_bh_exterior_linf;
       d.z4c_momentum_linf = constraints.momentum_linf;
       d.z4c_z_linf = constraints.z_linf;
       d.z4c_theta_linf = constraints.theta_linf;
       d.z4c_log_conformal_determinant_linf = constraints.log_conformal_determinant_linf;
       d.z4c_trace_a_tilde_linf = constraints.trace_a_tilde_linf;
+   }
+   if (selection.contains_any(ScalarDiagnosticGroup::BlackHole)) {
+      d.black_hole_horizon_radius = kerr_schild_outer_horizon_radius(
+         fixed_spacetime_parameters(cfg_)
+      );
    }
    const bool global_gr_requested =
       selection.contains_any(ScalarDiagnosticGroup::GlobalGr);

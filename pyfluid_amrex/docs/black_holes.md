@@ -33,24 +33,60 @@ metric selector, seed evolution.
   called excision. Consequently, unmasked whole-domain constraint norms are
   dominated by the arbitrary interior and are finite-state safety diagnostics,
   not an exterior-vacuum accuracy measurement. A production full-grid method
-  still needs a constraint-improved interior and horizon/exterior diagnostics.
+  still needs a constraint-improved interior or long-lived gauge treatment.
 - `excision` is a reserved contract and currently fails configuration. It will
   require an active-cell mask, a pure-outflow inner evolution boundary, and
   the Cook--Pfeiffer XCTS apparent-horizon boundary before production use.
 
-The existing `slow_start` lapse choice remains the puncture-oriented gauge:
-it is 1+log plus a Gaussian-in-time relaxation of the lapse toward
-`sqrt(chi)`. `gamma_driver` is the corresponding current shift choice. These
-are independent of the interior policy.
+The filled Kerr control now uses ordinary advective `one_plus_log`,
+`gamma_driver`, RK4, and the input-specific tested KO strength `0.32`.
+Positive `spacetime.chi_floor` and `spacetime.lapse_floor` values are enforced
+by the Z4c algebraic projection; both default to `1e-10`. The separate
+`slow_start` lapse choice remains available: it adds a Gaussian-in-time
+relaxation of the lapse toward `sqrt(chi)`. In the present coarse filled-Kerr
+stress it failed later than the old low-dissipation setup but earlier than
+ordinary 1+log, so it is an optional experiment rather than the production
+recommendation. Gauge choices are independent of the interior policy.
 
 The focused black-hole gate evolves the filled data at CFL 0.9 without C2P
-fallback or atmosphere reset, reloads its physical-ID artifact on a changed
-Cartesian grid, and exercises an exact exterior fixed-background control.
+fallback or atmosphere reset, includes a 16-step moving-puncture-gauge stress,
+reloads its physical-ID artifact on a changed Cartesian grid, and exercises an
+exact exterior fixed-background control.
 Matched full/equatorial Kerr domains at two resolutions and a matched
 full/octant Schwarzschild domain agree in minimum lapse and constraint extrema
 to roundoff after one step. The gate also proves that unsupported excision,
 incompatible physical-ID spin, and incompatible reflection planes fail before
 evolution instead of changing the requested problem.
+
+## Horizon diagnostics and finder boundary
+
+`black_hole_horizon_radius` reports the analytic Kerr--Schild seed radius
+`r_+`; it is not a numerically found horizon. The exterior Hamiltonian L2/Linf
+and momentum Linf diagnostics accept a point only when the complete fourth-
+order derivative stencil lies at `r_KS > r_+`. This prevents arbitrary filled
+interior data from leaking into the vacuum accuracy norm. On the exact Kerr
+control the N=32 to N=64 exterior Hamiltonian Linf/L2 and momentum Linf improve
+by factors `4.91`, `3.33`, and `4.09` after one step, while matched symmetry
+domains retain identical extrema.
+
+`apparent_horizon_expansion()` is the shared pointwise geometric owner for
+
+`Theta = D_i s^i + K_ij s^i s^j - K`.
+
+It accepts a general Cartesian level-set gradient and Hessian and is checked
+against both the analytic expansion `2/R` of a sphere in flat space and zero
+expansion on the exact Kerr horizon. This establishes the equation and sign
+convention, but does not yet constitute an apparent-horizon finder.
+
+The first full finder should follow BHaHAHA's infrastructure-independent
+hyperbolic relaxation design: interpolate Cartesian `gamma_ij` and `K_ij`
+from the AMR hierarchy to a solver-private spherical volume, relax a radial
+graph `r=h(theta,phi)` with a damped wave system, and use coarse-to-fine angular
+continuation. It should reuse the existing hierarchy interpolation and surface
+diagnostic owners and persist only the horizon shape and diagnostics. A direct
+Newton backend in the style of AHFinderDirect remains a useful later polishing
+or comparison method. Neither implementation should enter the evolution flux
+template product.
 
 ## Symmetry and tilt contract
 
@@ -85,4 +121,6 @@ True excision is two contracts, not one flag: the ID solve owns an apparent-
 horizon inner boundary, while evolution owns an active-domain mask, one-sided
 stencils/prolongation near the mask, and a causally pure-outflow inner boundary.
 The present configuration reserves this policy but rejects it until those
-owners and their moving/static-mask validation exist.
+owners and their moving/static-mask validation exist. A found horizon is a
+prerequisite for dynamic masks and black-hole diagnostics, not by itself an
+authorization to excise cells.

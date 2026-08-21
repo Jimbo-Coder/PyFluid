@@ -5726,3 +5726,48 @@ I will always continue from the last cycle marked as `in_progress`.
   actual production owners per dimension and no flux kernel bundle. The final
   unchanged production build is a `0.26 s` cache hit with zero compiler-cache
   events, not a cold-build measurement. [DONE]
+
+## Cycle 300 — Kerr exterior, gauge, and horizon foundation (DONE)
+
+- Added one catalog-owned black-hole diagnostic group. The analytic
+  `black_hole_horizon_radius` reports the Kerr--Schild seed `r_+`; exterior
+  Hamiltonian L2/Linf and momentum Linf include a nodal point only when its
+  complete +/-2 fourth-order stencil satisfies `r_KS>r_+`. This prevents the
+  constraint-violating filled interior from entering the vacuum norm. Matched
+  full/equatorial extrema remain identical. After one CFL-0.9 step the N=32 to
+  N=64 full-domain exterior values change from `8.92899e-3` to `1.81890e-3`
+  (Hamiltonian Linf), `3.58418e-4` to `1.07537e-4` (Hamiltonian L2), and
+  `5.30817e-3` to `1.29907e-3` (momentum Linf). [DONE]
+- Autopsied the previous three-step filled-Kerr smoke beyond its short pass.
+  SSPRK3 with KO `0.1` and either slow-start or ordinary 1+log becomes
+  nonfinite around step 8 (`t~0.64`); RK4 alone delays rather than fixes it.
+  RK4 plus KO `0.32`, ordinary advective 1+log, gamma-driver shift, and positive
+  chi/lapse algebraic-projection floors reaches 64 CFL-0.9 steps at `t=6.035`
+  with zero C2P fallback or atmosphere reset. The lapse reaches its configured
+  `1e-10` floor. The same RK4/KO/floor control with Gaussian slow-start fails at
+  step 54 (`t=4.366`) after growing resets, so slow-start remains an option and
+  is not the selected filled-Kerr control. [DONE]
+- Added positive `spacetime.chi_floor` and `spacetime.lapse_floor` runtime
+  parameters, both defaulting to `1e-10`, and applied them in the existing Z4c
+  algebraic projection owner. The parameters are validated and written to
+  output metadata; no gauge or black-hole branch was added to reconstruction
+  or flux templates. The focused input now uses the tested 1+log/RK4/KO-0.32
+  combination. [DONE]
+- Added the reusable pointwise outgoing-null expansion
+  `Theta=D_i s^i+K_ij s^i s^j-K` for a general Cartesian level set. Independent
+  checks recover `2/R` for a flat-space sphere and zero on the exact z-spin
+  Kerr horizon. Source review selects a BHaHAHA-style damped-wave relaxation,
+  coarse-to-fine angular continuation, and hierarchy-interpolated Cartesian
+  `gamma_ij,K_ij` as the first full finder; AHFinderDirect's six-patch Newton
+  method remains a comparison or later polishing backend. This cycle adds the
+  geometry foundation only, not a finder or an excision mask. [DONE]
+- The expanded three-rank black-hole gate passes all 13 cases, including a
+  16-step moving-puncture-gauge stress with minimum lapse `7.60e-4`, zero C2P
+  fallback/reset, exterior convergence, symmetry controls, changed-grid
+  materialization, and all three negative contracts. The generated-kernel
+  matrix, production 1D/2D/3D target, architecture check, and 3/3 quick suite
+  pass. The complete standard suite passes 46/46 gates in `207.683 s` summed
+  gate time. The global `RunConfig` header made the two new floor fields a broad
+  one-time incremental rebuild; no new runtime/template product was added.
+  Future horizon-finder settings should stay in their host diagnostic owner so
+  tolerance edits do not invalidate flux/reconstruction bundles. [DONE]

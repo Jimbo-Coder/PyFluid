@@ -21,6 +21,8 @@ bool AmrSolverBase::uses_analytic_fixed_spacetime_kernels() const noexcept
 
 void AmrSolverBase::project_spacetime_state(amrex::MultiFab& state)
    {
+      const amrex::Real chi_floor = cfg_.spacetime_chi_floor;
+      const amrex::Real lapse_floor = cfg_.spacetime_lapse_floor;
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -31,7 +33,9 @@ void AmrSolverBase::project_spacetime_state(amrex::MultiFab& state)
             amrex::ParallelFor(
                box,
                [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-                  project_z4c_state_at(state_array, i, j, k);
+                  project_z4c_state_at(
+                     state_array, i, j, k, chi_floor, lapse_floor
+                  );
                }
             );
          }

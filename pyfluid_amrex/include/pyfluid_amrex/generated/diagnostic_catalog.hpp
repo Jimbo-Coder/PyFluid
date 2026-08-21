@@ -83,33 +83,37 @@ enum class ScalarDiagnosticId : std::size_t {
    Z4CHamiltonianInteriorL2 = 70,
    Z4CHamiltonianCfLinf = 71,
    Z4CHamiltonianCfL2 = 72,
-   Z4CMomentumLinf = 73,
-   Z4CZLinf = 74,
-   Z4CThetaLinf = 75,
-   Z4CLogConformalDeterminantLinf = 76,
-   Z4CTraceATildeLinf = 77,
-   AdmMassSurface = 78,
-   AdmMassVolume = 79,
-   ProperMassVolume = 80,
-   KomarMassSurface = 81,
-   KomarMassVolume = 82,
-   BindingEnergyVolume = 83,
-   AdmMomentum1Surface = 84,
-   AdmMomentum2Surface = 85,
-   AdmMomentum3Surface = 86,
-   AdmMomentum1Volume = 87,
-   AdmMomentum2Volume = 88,
-   AdmMomentum3Volume = 89,
-   AdmAngularMomentum1Surface = 90,
-   AdmAngularMomentum2Surface = 91,
-   AdmAngularMomentum3Surface = 92,
-   AdmAngularMomentum1Volume = 93,
-   AdmAngularMomentum2Volume = 94,
-   AdmAngularMomentum3Volume = 95,
-   ExtractionRadius = 96,
-   MatterEnergyFlux = 97,
-   Psi4L2 = 98,
-   Count = 99,
+   Z4CHamiltonianBhExteriorLinf = 73,
+   Z4CHamiltonianBhExteriorL2 = 74,
+   Z4CMomentumBhExteriorLinf = 75,
+   Z4CMomentumLinf = 76,
+   Z4CZLinf = 77,
+   Z4CThetaLinf = 78,
+   Z4CLogConformalDeterminantLinf = 79,
+   Z4CTraceATildeLinf = 80,
+   BlackHoleHorizonRadius = 81,
+   AdmMassSurface = 82,
+   AdmMassVolume = 83,
+   ProperMassVolume = 84,
+   KomarMassSurface = 85,
+   KomarMassVolume = 86,
+   BindingEnergyVolume = 87,
+   AdmMomentum1Surface = 88,
+   AdmMomentum2Surface = 89,
+   AdmMomentum3Surface = 90,
+   AdmMomentum1Volume = 91,
+   AdmMomentum2Volume = 92,
+   AdmMomentum3Volume = 93,
+   AdmAngularMomentum1Surface = 94,
+   AdmAngularMomentum2Surface = 95,
+   AdmAngularMomentum3Surface = 96,
+   AdmAngularMomentum1Volume = 97,
+   AdmAngularMomentum2Volume = 98,
+   AdmAngularMomentum3Volume = 99,
+   ExtractionRadius = 100,
+   MatterEnergyFlux = 101,
+   Psi4L2 = 102,
+   Count = 103,
 };
 
 enum class ScalarDiagnosticGroup : std::size_t {
@@ -128,9 +132,10 @@ enum class ScalarDiagnosticGroup : std::size_t {
    Performance = 12,
    Cfl = 13,
    Constraints = 14,
-   GlobalGr = 15,
-   Radiation = 16,
-   Count = 17,
+   BlackHole = 15,
+   GlobalGr = 16,
+   Radiation = 17,
+   Count = 18,
 };
 
 struct ScalarDiagnosticInfo {
@@ -148,7 +153,7 @@ struct ScalarDiagnosticInfo {
 struct ScalarDiagnosticGroupInfo {
    ScalarDiagnosticGroup id;
    std::string_view name;
-   std::array<bool, 99> members;
+   std::array<bool, 103> members;
 };
 
 struct ScalarDiagnostics {
@@ -225,11 +230,15 @@ struct ScalarDiagnostics {
    amrex::Real z4c_hamiltonian_interior_l2 = 0.0;
    amrex::Real z4c_hamiltonian_cf_linf = 0.0;
    amrex::Real z4c_hamiltonian_cf_l2 = 0.0;
+   amrex::Real z4c_hamiltonian_bh_exterior_linf = 0.0;
+   amrex::Real z4c_hamiltonian_bh_exterior_l2 = 0.0;
+   amrex::Real z4c_momentum_bh_exterior_linf = 0.0;
    amrex::Real z4c_momentum_linf = 0.0;
    amrex::Real z4c_z_linf = 0.0;
    amrex::Real z4c_theta_linf = 0.0;
    amrex::Real z4c_log_conformal_determinant_linf = 0.0;
    amrex::Real z4c_trace_a_tilde_linf = 0.0;
+   amrex::Real black_hole_horizon_radius = 0.0;
    amrex::Real adm_mass_surface = 0.0;
    amrex::Real adm_mass_volume = 0.0;
    amrex::Real proper_mass_volume = 0.0;
@@ -253,7 +262,7 @@ struct ScalarDiagnostics {
    amrex::Real psi4_l2 = 0.0;
 };
 
-inline constexpr std::array<ScalarDiagnosticInfo, 99> ScalarDiagnosticCatalog = {{
+inline constexpr std::array<ScalarDiagnosticInfo, 103> ScalarDiagnosticCatalog = {{
    {ScalarDiagnosticId::Step, "step", "n", "coordinate", "", "step", "scalar", 0, 1},
    {ScalarDiagnosticId::Time, "time", "t", "coordinate", "", "time", "scalar", 0, 1},
    {ScalarDiagnosticId::Dt, "dt", "\\Delta t", "coordinate", "", "dt", "scalar", 0, 1},
@@ -327,11 +336,15 @@ inline constexpr std::array<ScalarDiagnosticInfo, 99> ScalarDiagnosticCatalog = 
    {ScalarDiagnosticId::Z4CHamiltonianInteriorL2, "z4c_hamiltonian_interior_l2", "\\|\\mathcal H\\|_{2,\\mathrm{interior}}", "l2_norm", "spacetime", "z4c_hamiltonian_interior_l2", "scalar", 0, 1},
    {ScalarDiagnosticId::Z4CHamiltonianCfLinf, "z4c_hamiltonian_cf_linf", "\\|\\mathcal H\\|_{\\infty,\\mathrm{CF}}", "linf_norm", "spacetime", "z4c_hamiltonian_cf_linf", "scalar", 0, 1},
    {ScalarDiagnosticId::Z4CHamiltonianCfL2, "z4c_hamiltonian_cf_l2", "\\|\\mathcal H\\|_{2,\\mathrm{CF}}", "l2_norm", "spacetime", "z4c_hamiltonian_cf_l2", "scalar", 0, 1},
+   {ScalarDiagnosticId::Z4CHamiltonianBhExteriorLinf, "z4c_hamiltonian_bh_exterior_linf", "\\|\\mathcal H\\|_{\\infty,r_{\\rm KS}>r_+}", "linf_norm", "spacetime,black_hole", "z4c_hamiltonian_bh_exterior_linf", "scalar", 0, 1},
+   {ScalarDiagnosticId::Z4CHamiltonianBhExteriorL2, "z4c_hamiltonian_bh_exterior_l2", "\\|\\mathcal H\\|_{2,r_{\\rm KS}>r_+}", "l2_norm", "spacetime,black_hole", "z4c_hamiltonian_bh_exterior_l2", "scalar", 0, 1},
+   {ScalarDiagnosticId::Z4CMomentumBhExteriorLinf, "z4c_momentum_bh_exterior_linf", "\\|\\mathcal M_i\\|_{\\infty,r_{\\rm KS}>r_+}", "linf_norm", "spacetime,black_hole", "z4c_momentum_bh_exterior_linf", "scalar", 0, 1},
    {ScalarDiagnosticId::Z4CMomentumLinf, "z4c_momentum_linf", "\\|\\mathcal M_i\\|_\\infty", "linf_norm", "spacetime", "z4c_momentum_linf", "scalar", 0, 1},
    {ScalarDiagnosticId::Z4CZLinf, "z4c_z_linf", "\\|Z_i\\|_\\infty", "linf_norm", "spacetime", "z4c_z_linf", "scalar", 0, 1},
    {ScalarDiagnosticId::Z4CThetaLinf, "z4c_theta_linf", "\\|\\Theta\\|_\\infty", "linf_norm", "spacetime", "z4c_theta_linf", "scalar", 0, 1},
    {ScalarDiagnosticId::Z4CLogConformalDeterminantLinf, "z4c_log_conformal_determinant_linf", "\\|\\ln\\det\\tilde\\gamma\\|_\\infty", "linf_norm", "spacetime", "z4c_log_conformal_determinant_linf", "scalar", 0, 1},
    {ScalarDiagnosticId::Z4CTraceATildeLinf, "z4c_trace_a_tilde_linf", "\\|\\mathrm{tr}\\tilde A\\|_\\infty", "linf_norm", "spacetime", "z4c_trace_a_tilde_linf", "scalar", 0, 1},
+   {ScalarDiagnosticId::BlackHoleHorizonRadius, "black_hole_horizon_radius", "r_+", "coordinate", "black_hole", "black_hole_horizon_radius", "scalar", 0, 1},
    {ScalarDiagnosticId::AdmMassSurface, "adm_mass_surface", "M_{\\rm ADM}^{S}", "surface_integral", "spacetime", "adm_mass_surface", "scalar", 0, 1},
    {ScalarDiagnosticId::AdmMassVolume, "adm_mass_volume", "M_{\\rm ADM}^{V}", "volume_integral", "spacetime", "adm_mass_volume", "scalar", 0, 1},
    {ScalarDiagnosticId::ProperMassVolume, "proper_mass_volume", "M_{\\rm proper}^{V}", "volume_integral", "spacetime", "proper_mass_volume", "scalar", 0, 1},
@@ -355,24 +368,25 @@ inline constexpr std::array<ScalarDiagnosticInfo, 99> ScalarDiagnosticCatalog = 
    {ScalarDiagnosticId::Psi4L2, "psi4_l2", "\\|\\Psi_4\\|_{2,S}", "l2_norm", "spacetime", "psi4_l2", "scalar", 0, 1}
 }};
 
-inline constexpr std::array<ScalarDiagnosticGroupInfo, 17> ScalarDiagnosticGroups = {{
-   {ScalarDiagnosticGroup::Standard, "standard", {true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Coordinates, "coordinates", {true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Conservation, "conservation", {false, false, false, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Gravity, "gravity", {false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Passive, "passive", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Ledger, "ledger", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::StateBounds, "state_bounds", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Mhd, "mhd", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Rmhd, "rmhd", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Relativistic, "relativistic", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Diffusion, "diffusion", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Amr, "amr", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Performance, "performance", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Cfl, "cfl", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::Constraints, "constraints", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
-   {ScalarDiagnosticGroup::GlobalGr, "global_gr", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false}},
-   {ScalarDiagnosticGroup::Radiation, "radiation", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true}}
+inline constexpr std::array<ScalarDiagnosticGroupInfo, 18> ScalarDiagnosticGroups = {{
+   {ScalarDiagnosticGroup::Standard, "standard", {true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Coordinates, "coordinates", {true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Conservation, "conservation", {false, false, false, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Gravity, "gravity", {false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Passive, "passive", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Ledger, "ledger", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::StateBounds, "state_bounds", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Mhd, "mhd", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Rmhd, "rmhd", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Relativistic, "relativistic", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Diffusion, "diffusion", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Amr, "amr", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Performance, "performance", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Cfl, "cfl", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::Constraints, "constraints", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::BlackHole, "black_hole", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false}},
+   {ScalarDiagnosticGroup::GlobalGr, "global_gr", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, false}},
+   {ScalarDiagnosticGroup::Radiation, "radiation", {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true}}
 }};
 
 template <typename Visitor>
@@ -451,11 +465,15 @@ inline void visit_scalar_diagnostics(ScalarDiagnostics const& diagnostics, Visit
    visitor(ScalarDiagnosticId::Z4CHamiltonianInteriorL2, "z4c_hamiltonian_interior_l2", diagnostics.z4c_hamiltonian_interior_l2);
    visitor(ScalarDiagnosticId::Z4CHamiltonianCfLinf, "z4c_hamiltonian_cf_linf", diagnostics.z4c_hamiltonian_cf_linf);
    visitor(ScalarDiagnosticId::Z4CHamiltonianCfL2, "z4c_hamiltonian_cf_l2", diagnostics.z4c_hamiltonian_cf_l2);
+   visitor(ScalarDiagnosticId::Z4CHamiltonianBhExteriorLinf, "z4c_hamiltonian_bh_exterior_linf", diagnostics.z4c_hamiltonian_bh_exterior_linf);
+   visitor(ScalarDiagnosticId::Z4CHamiltonianBhExteriorL2, "z4c_hamiltonian_bh_exterior_l2", diagnostics.z4c_hamiltonian_bh_exterior_l2);
+   visitor(ScalarDiagnosticId::Z4CMomentumBhExteriorLinf, "z4c_momentum_bh_exterior_linf", diagnostics.z4c_momentum_bh_exterior_linf);
    visitor(ScalarDiagnosticId::Z4CMomentumLinf, "z4c_momentum_linf", diagnostics.z4c_momentum_linf);
    visitor(ScalarDiagnosticId::Z4CZLinf, "z4c_z_linf", diagnostics.z4c_z_linf);
    visitor(ScalarDiagnosticId::Z4CThetaLinf, "z4c_theta_linf", diagnostics.z4c_theta_linf);
    visitor(ScalarDiagnosticId::Z4CLogConformalDeterminantLinf, "z4c_log_conformal_determinant_linf", diagnostics.z4c_log_conformal_determinant_linf);
    visitor(ScalarDiagnosticId::Z4CTraceATildeLinf, "z4c_trace_a_tilde_linf", diagnostics.z4c_trace_a_tilde_linf);
+   visitor(ScalarDiagnosticId::BlackHoleHorizonRadius, "black_hole_horizon_radius", diagnostics.black_hole_horizon_radius);
    visitor(ScalarDiagnosticId::AdmMassSurface, "adm_mass_surface", diagnostics.adm_mass_surface);
    visitor(ScalarDiagnosticId::AdmMassVolume, "adm_mass_volume", diagnostics.adm_mass_volume);
    visitor(ScalarDiagnosticId::ProperMassVolume, "proper_mass_volume", diagnostics.proper_mass_volume);

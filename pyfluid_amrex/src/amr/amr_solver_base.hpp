@@ -378,8 +378,8 @@ protected:
       int rk_stage = 0
    );
    void fill_all_spacetime_boundaries(LevelData& data, amrex::Real time);
-   static void project_spacetime_state(amrex::MultiFab& state);
-   static void project_spacetime_state_range(
+   void project_spacetime_state(amrex::MultiFab& state);
+   void project_spacetime_state_range(
       LevelData& state,
       int lev_begin,
       int lev_end

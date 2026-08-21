@@ -117,6 +117,8 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("spacetime_shift_eta", output_metadata_real_string(cfg.spacetime_shift_eta));
    entries.emplace_back("spacetime_slow_start_time", output_metadata_real_string(cfg.spacetime_slow_start_time));
    entries.emplace_back("spacetime_ko_dissipation", output_metadata_real_string(cfg.spacetime_ko_dissipation));
+   entries.emplace_back("spacetime_chi_floor", output_metadata_real_string(cfg.spacetime_chi_floor));
+   entries.emplace_back("spacetime_lapse_floor", output_metadata_real_string(cfg.spacetime_lapse_floor));
    entries.emplace_back("spacetime_acceleration1", output_metadata_real_string(cfg.spacetime_acceleration1));
    entries.emplace_back("spacetime_acceleration2", output_metadata_real_string(cfg.spacetime_acceleration2));
    entries.emplace_back("spacetime_acceleration3", output_metadata_real_string(cfg.spacetime_acceleration3));

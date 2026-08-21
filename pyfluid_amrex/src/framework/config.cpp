@@ -507,6 +507,8 @@ RunConfig read_config()
    spacetime_pp.queryAdd("shift_eta", cfg.spacetime_shift_eta);
    spacetime_pp.queryAdd("slow_start_time", cfg.spacetime_slow_start_time);
    spacetime_pp.queryAdd("ko_dissipation", cfg.spacetime_ko_dissipation);
+   spacetime_pp.queryAdd("chi_floor", cfg.spacetime_chi_floor);
+   spacetime_pp.queryAdd("lapse_floor", cfg.spacetime_lapse_floor);
    spacetime_pp.queryAdd("acceleration1", cfg.spacetime_acceleration1);
    spacetime_pp.queryAdd("acceleration2", cfg.spacetime_acceleration2);
    spacetime_pp.queryAdd("acceleration3", cfg.spacetime_acceleration3);
@@ -1405,6 +1407,12 @@ void validate_config(RunConfig const& cfg)
          }
          if (cfg.spacetime_ko_dissipation < 0.0) {
             amrex::Abort("spacetime.ko_dissipation must be nonnegative");
+         }
+         if (cfg.spacetime_chi_floor <= 0.0) {
+            amrex::Abort("spacetime.chi_floor must be positive");
+         }
+         if (cfg.spacetime_lapse_floor <= 0.0) {
+            amrex::Abort("spacetime.lapse_floor must be positive");
          }
       } else if (cfg.spacetime_matter_coupling != "coupled") {
          amrex::Abort(

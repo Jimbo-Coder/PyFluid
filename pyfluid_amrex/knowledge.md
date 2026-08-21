@@ -10,8 +10,8 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-21, branch `main`, through Cycle 299's Kerr
-black-hole initial-data foundation. Cycle 284's preserved standard/performance
+Last reconciled: 2026-08-21, branch `main`, through Cycle 300's Kerr exterior,
+gauge, and apparent-horizon foundation. Cycle 284's preserved standard/performance
 baseline remains the latest archived broad integration baseline.
 
 ## Scope And Evidence
@@ -40,6 +40,11 @@ baseline remains the latest archived broad integration baseline.
   Its 12-case black-hole result is rolling evidence under
   `runs/current/black_hole_validation/`, not a preserved baseline or a true-
   excision validation.
+- Cycle 300's focused black-hole gate contains 13 accepted/negative cases,
+  including exterior-only constraint convergence and a 16-step CFL-0.9
+  moving-puncture-gauge stress. The complete tree passes the 46/46 standard
+  suite in 207.68 s summed gate time. Its rolling artifacts are not a long-
+  timescale equilibrium result or an apparent-horizon-finder validation.
 - Preserved baselines under `runs/baselines/` and rolling TSV histories are
   routing evidence, not proof for later source. Re-run the smallest relevant
   gate before relying on an old result.
@@ -519,9 +524,27 @@ baseline remains the latest archived broad integration baseline.
   exact outside a transition radius inside the horizon and regular at the
   center, but its arbitrary interior violates the constraints. Whole-domain
   Hamiltonian/momentum norms are therefore not exterior-vacuum error measures.
+  Catalog-owned exterior Hamiltonian L2/Linf and momentum Linf now require the
+  complete fourth-order stencil to lie at `r_KS>r_+`. In the one-step exact
+  Kerr controls, N=32 to N=64 improves those norms by factors 3.33/4.91/4.09.
   True ID/evolution excision remains explicitly rejected until an apparent-
   horizon ID boundary, active-cell mask, and pure-outflow evolution boundary
   exist.
+- The tested complete-grid Kerr evolution uses ordinary advective 1+log,
+  gamma-driver shift, RK4, KO strength 0.32, and positive chi/lapse floors of
+  `1e-10`. A manual 64-step CFL-0.9 coarse-grid stress reaches `t=6.035` with
+  zero fluid recovery/reset; this is robustness evidence for the filled
+  control, not proof of an accurate stationary trumpet. With the same RK4/KO
+  and floors, the Gaussian `slow_start` lapse fails by step 54, so it remains
+  optional rather than the current recommendation.
+- `apparent_horizon_expansion()` owns the Cartesian level-set evaluation of
+  `Theta=D_i s^i+K_ij s^i s^j-K`; flat-sphere and exact Kerr-horizon pointwise
+  checks fix its sign and geometry convention. There is not yet a finder.
+  The preferred first backend is a solver-private BHaHAHA-style damped-wave
+  relaxation with coarse-to-fine angular continuation, consuming hierarchy-
+  interpolated `gamma_ij,K_ij`; AHFinderDirect-style Newton iteration is a
+  later polishing/comparison option. A found surface does not itself implement
+  excision.
 - A scratch relativistic fluid state must be converted from physical
   primitives only after the final stored cell metric is available. Initializing
   conserved variables against a placeholder metric and then replacing nodal
@@ -608,13 +631,16 @@ baseline remains the latest archived broad integration baseline.
 
 ## Next Milestones
 
-1. Build the first constraint-solved single-hole owner: conformally curved
-   Kerr--Schild-seeded XCTS with Cook--Pfeiffer apparent-horizon boundary
-   conditions. Keep exact exterior and filled full-grid controls separate from
-   true evolution excision. Add horizon/exterior-masked constraint and charge
-   diagnostics before interpreting the arbitrary filled interior, then extend
-   the existing torus component first in the aligned limit and only afterward
-   to a full-3D tilted disk.
+1. Complete the first general apparent-horizon finder on the validated
+   expansion kernel: BHaHAHA-style damped-wave relaxation, coarse-to-fine
+   angular continuation, hierarchy interpolation, persisted tracking shape,
+   and area/irreducible-mass/residual diagnostics. Then build the first
+   constraint-solved single-hole owner: conformally curved Kerr--Schild-seeded
+   XCTS with Cook--Pfeiffer apparent-horizon boundary conditions. Keep exact
+   exterior, filled full-grid controls, and true evolution excision separate;
+   add active-mask/outflow ownership only after the surface finder and boundary
+   characteristic tests pass. Extend the existing torus component first in the
+   aligned limit and only afterward to a full-3D tilted disk.
 2. Extend the saved fast analytic and CompOSE RNS models from the present short
    two-resolution evolutions to a meaningful fraction of a rotation, tracking
    baryon mass, angular momentum, constraints, central density, and modes.

@@ -37,6 +37,9 @@ CONSTRAINT_FIELDS = (
     "z4c_theta_linf",
     "z4c_log_conformal_determinant_linf",
     "z4c_trace_a_tilde_linf",
+    "z4c_hamiltonian_bh_exterior_linf",
+    "z4c_hamiltonian_bh_exterior_l2",
+    "z4c_momentum_bh_exterior_linf",
 )
 
 
@@ -102,6 +105,16 @@ def run_case(
         "hamiltonian_l2": float(final["z4c_hamiltonian_l2"]),
         "hamiltonian_linf": float(final["z4c_hamiltonian_linf"]),
         "momentum_linf": float(final["z4c_momentum_linf"]),
+        "exterior_hamiltonian_l2": float(
+            final.get("z4c_hamiltonian_bh_exterior_l2", math.nan)
+        ),
+        "exterior_hamiltonian_linf": float(
+            final.get("z4c_hamiltonian_bh_exterior_linf", math.nan)
+        ),
+        "exterior_momentum_linf": float(
+            final.get("z4c_momentum_bh_exterior_linf", math.nan)
+        ),
+        "horizon_radius": float(final.get("black_hole_horizon_radius", math.nan)),
         "min_lapse": float(final.get("min_lapse", math.nan)),
         "max_rho": float(final.get("max_rho", math.nan)),
         "symmetry_lapse_gap": math.nan,
@@ -117,7 +130,12 @@ def require_matched_symmetry_extrema(
     reduced: dict[str, object],
     label: str,
 ) -> None:
-    for field in ("hamiltonian_linf", "momentum_linf"):
+    for field in (
+        "hamiltonian_linf",
+        "momentum_linf",
+        "exterior_hamiltonian_linf",
+        "exterior_momentum_linf",
+    ):
         reference_value = float(reference[field])
         reduced_value = float(reduced[field])
         scale = max(1.0, abs(reference_value), abs(reduced_value))
@@ -163,6 +181,10 @@ def validate_negative_reflection(*, ranks: int, timeout: int | None) -> dict[str
         "hamiltonian_l2": math.nan,
         "hamiltonian_linf": math.nan,
         "momentum_linf": math.nan,
+        "exterior_hamiltonian_l2": math.nan,
+        "exterior_hamiltonian_linf": math.nan,
+        "exterior_momentum_linf": math.nan,
+        "horizon_radius": math.nan,
         "min_lapse": math.nan,
         "max_rho": math.nan,
         "symmetry_lapse_gap": math.nan,
@@ -208,6 +230,10 @@ def validate_unimplemented_excision(
         "hamiltonian_l2": math.nan,
         "hamiltonian_linf": math.nan,
         "momentum_linf": math.nan,
+        "exterior_hamiltonian_l2": math.nan,
+        "exterior_hamiltonian_linf": math.nan,
+        "exterior_momentum_linf": math.nan,
+        "horizon_radius": math.nan,
         "min_lapse": math.nan,
         "max_rho": math.nan,
         "symmetry_lapse_gap": math.nan,
@@ -256,6 +282,10 @@ def validate_incompatible_physical_id(
         "hamiltonian_l2": math.nan,
         "hamiltonian_linf": math.nan,
         "momentum_linf": math.nan,
+        "exterior_hamiltonian_l2": math.nan,
+        "exterior_hamiltonian_linf": math.nan,
+        "exterior_momentum_linf": math.nan,
+        "horizon_radius": math.nan,
         "min_lapse": math.nan,
         "max_rho": math.nan,
         "symmetry_lapse_gap": math.nan,
@@ -327,6 +357,20 @@ def main() -> int:
     )
     results.append(fixed)
     scalar_rows.append(fixed_scalar)
+
+    moving_puncture, moving_puncture_scalar = run_case(
+        "kerr_schild_moving_puncture_step16",
+        {
+            "pyfluid.max_step": "16",
+            "pyfluid.plot_int": "-1",
+        },
+        ranks=args.ranks,
+        timeout=args.timeout,
+    )
+    if float(moving_puncture["min_lapse"]) < 1.0e-10:
+        raise RuntimeError("Kerr moving-puncture lapse crossed its configured floor")
+    results.append(moving_puncture)
+    scalar_rows.append(moving_puncture_scalar)
 
     schwarzschild_common = {
         "spacetime.dimensionless_spin3": "0.0",
@@ -447,6 +491,18 @@ def main() -> int:
     require_matched_symmetry_extrema(
         fine_full, fine_half, "fine Kerr equatorial reflection"
     )
+    for field in (
+        "exterior_hamiltonian_linf",
+        "exterior_hamiltonian_l2",
+        "exterior_momentum_linf",
+    ):
+        coarse_value = float(coarse_full[field])
+        fine_value = float(fine_full[field])
+        if fine_value > 0.4 * coarse_value:
+            raise RuntimeError(
+                f"Kerr exterior {field} does not improve from N=32 to N=64: "
+                f"coarse={coarse_value:.6e}, fine={fine_value:.6e}"
+            )
     for row in (coarse_full, coarse_half):
         row["symmetry_lapse_gap"] = coarse_gap
         row["symmetry_gap_ratio"] = gap_ratio
@@ -483,6 +539,10 @@ def main() -> int:
         "hamiltonian_l2",
         "hamiltonian_linf",
         "momentum_linf",
+        "exterior_hamiltonian_l2",
+        "exterior_hamiltonian_linf",
+        "exterior_momentum_linf",
+        "horizon_radius",
         "min_lapse",
         "max_rho",
         "symmetry_lapse_gap",

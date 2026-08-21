@@ -126,16 +126,24 @@ void store_z4c_state(
 
 template <typename Array>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void project_z4c_state_at(Array const& state, int i, int j, int k) noexcept
+void project_z4c_state_at(
+   Array const& state,
+   int i,
+   int j,
+   int k,
+   amrex::Real chi_floor,
+   amrex::Real lapse_floor
+) noexcept
 {
+   Z4cState point = load_z4c_state(state, i, j, k);
+   point.chi = amrex::max(point.chi, chi_floor);
+   point.lapse = amrex::max(point.lapse, lapse_floor);
    store_z4c_state(
       state,
       i,
       j,
       k,
-      generated::z4c_project_algebraic_constraints(
-         load_z4c_state(state, i, j, k)
-      )
+      generated::z4c_project_algebraic_constraints(point)
    );
 }
 

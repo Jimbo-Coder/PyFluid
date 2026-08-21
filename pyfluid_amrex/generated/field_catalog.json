@@ -89,6 +89,12 @@
       "amr_total_budget_fraction",
       "amr_peak_level_budget_fraction"
     ],
+    "black_hole": [
+      "z4c_hamiltonian_bh_exterior_linf",
+      "z4c_hamiltonian_bh_exterior_l2",
+      "z4c_momentum_bh_exterior_linf",
+      "black_hole_horizon_radius"
+    ],
     "cfl": [
       "cfl_limiter_frequency",
       "cfl_limiter_level",
@@ -118,6 +124,9 @@
       "z4c_hamiltonian_interior_l2",
       "z4c_hamiltonian_cf_linf",
       "z4c_hamiltonian_cf_l2",
+      "z4c_hamiltonian_bh_exterior_linf",
+      "z4c_hamiltonian_bh_exterior_l2",
+      "z4c_momentum_bh_exterior_linf",
       "z4c_momentum_linf",
       "z4c_z_linf",
       "z4c_theta_linf",
@@ -279,11 +288,15 @@
       "z4c_hamiltonian_interior_l2",
       "z4c_hamiltonian_cf_linf",
       "z4c_hamiltonian_cf_l2",
+      "z4c_hamiltonian_bh_exterior_linf",
+      "z4c_hamiltonian_bh_exterior_l2",
+      "z4c_momentum_bh_exterior_linf",
       "z4c_momentum_linf",
       "z4c_z_linf",
       "z4c_theta_linf",
       "z4c_log_conformal_determinant_linf",
-      "z4c_trace_a_tilde_linf"
+      "z4c_trace_a_tilde_linf",
+      "black_hole_horizon_radius"
     ],
     "state_bounds": [
       "min_rho",
@@ -1551,6 +1564,72 @@
         "z4c_constraints"
       ],
       "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_bh_exterior_linf",
+      "groups": [
+        "constraints",
+        "black_hole"
+      ],
+      "label": "\\|\\mathcal H\\|_{\\infty,r_{\\rm KS}>r_+}",
+      "name": "z4c_hamiltonian_bh_exterior_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime",
+        "black_hole"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_bh_exterior_l2",
+      "groups": [
+        "constraints",
+        "black_hole"
+      ],
+      "label": "\\|\\mathcal H\\|_{2,r_{\\rm KS}>r_+}",
+      "name": "z4c_hamiltonian_bh_exterior_l2",
+      "operation": "l2_norm",
+      "requirements": [
+        "spacetime",
+        "black_hole"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_momentum_bh_exterior_linf",
+      "groups": [
+        "constraints",
+        "black_hole"
+      ],
+      "label": "\\|\\mathcal M_i\\|_{\\infty,r_{\\rm KS}>r_+}",
+      "name": "z4c_momentum_bh_exterior_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "spacetime",
+        "black_hole"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
       "family": "z4c_momentum_linf",
       "groups": [
         "constraints"
@@ -1640,6 +1719,24 @@
       "operation": "linf_norm",
       "requirements": [
         "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_radius",
+      "groups": [
+        "black_hole"
+      ],
+      "label": "r_+",
+      "name": "black_hole_horizon_radius",
+      "operation": "coordinate",
+      "requirements": [
+        "black_hole"
       ],
       "storage": "real",
       "value_kind": "scalar"

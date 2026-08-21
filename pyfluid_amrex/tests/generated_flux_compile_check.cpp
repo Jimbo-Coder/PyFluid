@@ -14,6 +14,7 @@
 #include "pyfluid_amrex/kernels_generated/relativistic_fluid.hpp"
 #include "pyfluid_amrex/kernels_generated/riemann_ops.hpp"
 #include "pyfluid_amrex/c2p_policy.hpp"
+#include "pyfluid_amrex/apparent_horizon.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/eos/presets.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
@@ -1978,6 +1979,142 @@ bool validate_fixed_spacetime_provider()
           exact_exterior.derivatives.extrinsic13
        )) {
       std::cerr << "filled Kerr-Schild data changed its exact exterior\n";
+      return false;
+   }
+
+   constexpr amrex::Real flat_sphere_radius = 1.7;
+   const amrex::Real flat_sphere_normal[3]{0.6, -0.8, 0.0};
+   amrex::Real flat_sphere_hessian[3][3]{};
+   for (int first = 0; first < 3; ++first) {
+      for (int second = 0; second < 3; ++second) {
+         flat_sphere_hessian[first][second] = (
+            (first == second ? 1.0 : 0.0)
+            - flat_sphere_normal[first] * flat_sphere_normal[second]
+         ) / flat_sphere_radius;
+      }
+   }
+   const amrex::Real flat_sphere_expansion = apparent_horizon_expansion(
+      pyfluid_amrex::minkowski_spacetime_metric(),
+      {},
+      flat_sphere_normal,
+      flat_sphere_hessian
+   );
+   if (!close_enough(flat_sphere_expansion, 2.0 / flat_sphere_radius)) {
+      std::cerr << "flat-sphere outgoing expansion mismatch: "
+                << flat_sphere_expansion << '\n';
+      return false;
+   }
+
+   FixedSpacetimeParameters horizon_kerr = spinning_kerr_schild;
+   horizon_kerr.dimensionless_spin1 = 0.0;
+   horizon_kerr.dimensionless_spin2 = 0.0;
+   const amrex::Real horizon_radius =
+      kerr_schild_outer_horizon_radius(horizon_kerr);
+   const amrex::Real spin_length = horizon_kerr.mass
+      * horizon_kerr.dimensionless_spin3;
+   const amrex::Real radial_scale = std::sqrt(
+      horizon_radius * horizon_radius + spin_length * spin_length
+   );
+   constexpr amrex::Real surface_theta = 1.1;
+   constexpr amrex::Real surface_phi = 0.7;
+   const amrex::Real horizon_position[3]{
+      horizon_kerr.origin1
+         + radial_scale * std::sin(surface_theta) * std::cos(surface_phi),
+      horizon_kerr.origin2
+         + radial_scale * std::sin(surface_theta) * std::sin(surface_phi),
+      horizon_kerr.origin3
+         + horizon_radius * std::cos(surface_theta),
+   };
+   constexpr amrex::Real derivative_step = 2.0e-4;
+   const auto level_set = [&](amrex::Real x, amrex::Real y, amrex::Real z) {
+      return std::sqrt(kerr_schild_radius_squared(
+         horizon_kerr, x, y, z
+      )) - horizon_radius;
+   };
+   amrex::Real level_set_gradient[3]{};
+   amrex::Real level_set_hessian[3][3]{};
+   const amrex::Real center_value = level_set(
+      horizon_position[0], horizon_position[1], horizon_position[2]
+   );
+   for (int first = 0; first < 3; ++first) {
+      amrex::Real plus[3]{
+         horizon_position[0], horizon_position[1], horizon_position[2]
+      };
+      amrex::Real minus[3]{
+         horizon_position[0], horizon_position[1], horizon_position[2]
+      };
+      plus[first] += derivative_step;
+      minus[first] -= derivative_step;
+      const amrex::Real plus_value = level_set(plus[0], plus[1], plus[2]);
+      const amrex::Real minus_value = level_set(minus[0], minus[1], minus[2]);
+      level_set_gradient[first] = (plus_value - minus_value)
+         / (2.0 * derivative_step);
+      level_set_hessian[first][first] = (
+         plus_value - 2.0 * center_value + minus_value
+      ) / (derivative_step * derivative_step);
+      for (int second = first + 1; second < 3; ++second) {
+         amrex::Real first_plus_second_plus[3]{
+            horizon_position[0], horizon_position[1], horizon_position[2]
+         };
+         amrex::Real first_plus_second_minus[3]{
+            horizon_position[0], horizon_position[1], horizon_position[2]
+         };
+         amrex::Real first_minus_second_plus[3]{
+            horizon_position[0], horizon_position[1], horizon_position[2]
+         };
+         amrex::Real first_minus_second_minus[3]{
+            horizon_position[0], horizon_position[1], horizon_position[2]
+         };
+         first_plus_second_plus[first] += derivative_step;
+         first_plus_second_plus[second] += derivative_step;
+         first_plus_second_minus[first] += derivative_step;
+         first_plus_second_minus[second] -= derivative_step;
+         first_minus_second_plus[first] -= derivative_step;
+         first_minus_second_plus[second] += derivative_step;
+         first_minus_second_minus[first] -= derivative_step;
+         first_minus_second_minus[second] -= derivative_step;
+         const amrex::Real mixed = (
+            level_set(
+               first_plus_second_plus[0],
+               first_plus_second_plus[1],
+               first_plus_second_plus[2]
+            )
+            - level_set(
+               first_plus_second_minus[0],
+               first_plus_second_minus[1],
+               first_plus_second_minus[2]
+            )
+            - level_set(
+               first_minus_second_plus[0],
+               first_minus_second_plus[1],
+               first_minus_second_plus[2]
+            )
+            + level_set(
+               first_minus_second_minus[0],
+               first_minus_second_minus[1],
+               first_minus_second_minus[2]
+            )
+         ) / (4.0 * derivative_step * derivative_step);
+         level_set_hessian[first][second] = mixed;
+         level_set_hessian[second][first] = mixed;
+      }
+   }
+   const auto horizon_geometry = exact_kerr_schild_initial_data_geometry(
+      horizon_kerr,
+      horizon_position[0],
+      horizon_position[1],
+      horizon_position[2]
+   );
+   const amrex::Real horizon_expansion = apparent_horizon_expansion(
+      horizon_geometry.metric,
+      horizon_geometry.derivatives,
+      level_set_gradient,
+      level_set_hessian
+   );
+   if (std::abs(center_value) > 2.0e-14
+       || std::abs(horizon_expansion) > 2.0e-7) {
+      std::cerr << "Kerr apparent-horizon expansion mismatch: F="
+                << center_value << " expansion=" << horizon_expansion << '\n';
       return false;
    }
    return true;
