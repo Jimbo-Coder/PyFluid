@@ -1491,6 +1491,24 @@ void write_physical_initial_data(
       metadata << "# passive_scalars=" << cfg.passive_scalars << '\n';
       metadata << "# has_spacetime=" << has_spacetime << '\n';
       metadata << "# has_ct=" << has_ct << '\n';
+      metadata << "# magnetic_seed="
+               << cfg.initial_data_magnetic_seed << '\n';
+      metadata << "# magnetic_force_balance="
+               << (cfg.initial_data_magnetic_seed == "none"
+                     ? "not_applicable" : "not_solved")
+               << '\n';
+      metadata << "# magnetic_seed_pressure_cutoff="
+               << output_metadata_real_string(
+                    cfg.initial_data_magnetic_seed_pressure_cutoff
+                  ) << '\n';
+      metadata << "# magnetic_seed_exponent="
+               << output_metadata_real_string(
+                    cfg.initial_data_magnetic_seed_exponent
+                  ) << '\n';
+      metadata << "# magnetic_seed_maximum_comoving_field="
+               << output_metadata_real_string(
+                    cfg.initial_data_magnetic_seed_maximum_comoving_field
+                  ) << '\n';
       metadata << "# has_exact_caches=" << write_exact_caches << '\n';
       metadata << "# source_ic=" << cfg.ic << '\n';
       metadata << "# spacetime_initial_data="
@@ -1569,6 +1587,10 @@ void write_physical_initial_data(
       metadata << "# differential_rotation_length="
                << output_metadata_real_string(
                     cfg.initial_data_differential_rotation_length
+                  ) << '\n';
+      metadata << "# differential_rotation_length_b="
+               << output_metadata_real_string(
+                    cfg.initial_data_differential_rotation_length_b
                   ) << '\n';
       metadata << "# rotation_power_q="
                << output_metadata_real_string(cfg.initial_data_rotation_power_q)
@@ -1869,6 +1891,22 @@ PhysicalInitialDataMetadata read_physical_initial_data(
 
    PhysicalInitialDataMetadata result;
    result.source_ic = required_metadata_value(metadata, "source_ic", path);
+   const auto magnetic_seed_entry = metadata.find("magnetic_seed");
+   result.magnetic_seed = magnetic_seed_entry == metadata.end()
+      ? "none" : magnetic_seed_entry->second;
+   result.magnetic_seed_pressure_cutoff = optional_metadata_real(
+      metadata, "magnetic_seed_pressure_cutoff", 0.0, path
+   );
+   result.magnetic_seed_exponent = optional_metadata_real(
+      metadata, "magnetic_seed_exponent", 0.0, path
+   );
+   result.magnetic_seed_maximum_comoving_field =
+      optional_metadata_real(
+         metadata,
+         "magnetic_seed_maximum_comoving_field",
+         0.0,
+         path
+      );
    const auto disk_entry = metadata.find("disk");
    result.disk = disk_entry == metadata.end() ? "none" : disk_entry->second;
    const bool adding_torus = result.disk == "none"
@@ -2080,9 +2118,13 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    }
    result.differential_rotation_length =
       cfg.initial_data_differential_rotation_length;
+   result.differential_rotation_length_b =
+      cfg.initial_data_differential_rotation_length_b;
    result.rotation_power_q = cfg.initial_data_rotation_power_q;
    if (result.rotation_law == "j_constant"
-       || result.rotation_law == "q_power") {
+       || result.rotation_law == "q_power"
+       || result.rotation_law == "uryu_plus_13"
+       || result.rotation_law == "uryu_j_envelope_p1") {
       result.differential_rotation_length = required_metadata_real(
          metadata, "differential_rotation_length", path
       );
@@ -2090,6 +2132,18 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          amrex::Abort(
             "physical initial-data differential rotation length must be "
             "positive in " + path
+         );
+      }
+   }
+   if (result.rotation_law == "uryu_plus_13"
+       || result.rotation_law == "uryu_j_envelope_p1") {
+      result.differential_rotation_length_b = required_metadata_real(
+         metadata, "differential_rotation_length_b", path
+      );
+      if (!(result.differential_rotation_length_b > 0.0)) {
+         amrex::Abort(
+            "physical initial-data Uryu differential rotation length B must "
+            "be positive in " + path
          );
       }
    }

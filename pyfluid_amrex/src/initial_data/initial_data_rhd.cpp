@@ -207,7 +207,7 @@ void initialize_relativistic_primitive_cache_from_initial_data(
 )
 {
    if (physical_system(cfg) == PhysicalSystem::RMHD) {
-      initialize_relativistic_primitive_cache_from_initial_data_method<EOSIdealGas>(
+      initialize_relativistic_primitive_cache_from_initial_data_method<EOSRuntime>(
          primitive, geometry, cfg, initial_data
       );
       return;
@@ -227,7 +227,7 @@ void initialize_relativistic_primitive_cache_from_initial_data(
 {
    if (physical_system(cfg) == PhysicalSystem::RMHD) {
       initialize_relativistic_primitive_cache_from_mapped_provider_method<
-         EOSIdealGas
+         EOSRuntime
       >(primitive, hierarchy, level, cfg, initial_data);
       return;
    }

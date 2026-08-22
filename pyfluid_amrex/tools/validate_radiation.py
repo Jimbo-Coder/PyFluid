@@ -109,7 +109,9 @@ def validate(args: argparse.Namespace) -> Path:
         raise RuntimeError("restart radiation history is duplicated or incomplete")
     psi4_rows = [row for row in mode_rows if row["field"] == "psi4"]
     azimuthal_rows = [
-        row for row in mode_rows if row["basis"] == "azimuthal_fourier"
+        row
+        for row in mode_rows
+        if row["basis"] == "azimuthal_fourier_exp_minus_imphi"
     ]
     expected_psi4_modes = sum(2 * ell + 1 for ell in range(2, 5))
     expected_azimuthal_modes = 2 * 5

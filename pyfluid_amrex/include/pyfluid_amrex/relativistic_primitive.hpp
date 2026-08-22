@@ -99,6 +99,7 @@ RHDPrimitive rhd_primitive_at(
    };
 }
 
+template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDPrimitive rmhd_primitive_at(
    amrex::Array4<amrex::Real const> const& primitive,
@@ -112,7 +113,9 @@ RMHDPrimitive rmhd_primitive_at(
    const amrex::Real pressure = primitive(i, j, k, ENERGY);
    return {
       rho,
-      pressure / ((eos.gamma - 1.0) * rho),
+      relativistic_specific_internal_energy_from_pressure<EOSMethod>(
+         rho, pressure, eos
+      ),
       pressure,
       primitive(i, j, k, MOM1),
       primitive(i, j, k, MOM2),
@@ -121,6 +124,21 @@ RMHDPrimitive rmhd_primitive_at(
       primitive(i, j, k, B2),
       primitive(i, j, k, B3),
    };
+}
+
+// Runtime GRMHD evolution currently owns an ideal-gas C2P implementation.
+// Keep its existing zero-branch call sites concise while allowing physical-ID
+// construction to request the actual cold/hybrid/tabulated EoS explicitly.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDPrimitive rmhd_primitive_at(
+   amrex::Array4<amrex::Real const> const& primitive,
+   int i,
+   int j,
+   int k,
+   EOSParams const& eos
+) noexcept
+{
+   return rmhd_primitive_at<EOSIdealGas>(primitive, i, j, k, eos);
 }
 
 } // namespace pyfluid_amrex

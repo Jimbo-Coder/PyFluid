@@ -5989,3 +5989,127 @@ I will always continue from the last cycle marked as `in_progress`.
   production target is a `0.53 s` no-op with zero compiler-cache events. The
   one-time public `RunConfig` edit rebuilt its existing dependency fan-out but
   adding this owner did not add a template specialization product. [DONE]
+
+## Cycle 306 — Single-object ID physics and geometry completion (WIP)
+
+- Add one or two source-checked post-merger Uryu stellar rotation laws through
+  the declarative method catalog and existing runtime circular first-integral
+  owner. Keep stellar and disk laws physically separate and do not add a new
+  coordinate, EoS, or rotation-law template product. [WIP]
+- Audit and add catalog-owned azimuthal `C_m` mode diagnostics plus reusable
+  equilibrium perturbations. Pressure rescaling must rebuild every
+  EoS-dependent thermodynamic field; radial and nonaxisymmetric perturbations
+  must follow a primary literature definition rather than an invented formula.
+  Diagnostics remain reductions, not duplicated auxiliary-GF identities.
+  The cold pressure scale is explicitly an on-barotrope target-pressure
+  inversion: density, internal energy, enthalpy, pressure, and conserved state
+  all change consistently. It is not a fixed-density pressure depletion, and
+  the reusable equilibrium artifact is written before this evolution-start
+  modifier. Pointwise cold-closure and three-rank artifact-ordering controls
+  pass; broader integration remains in progress. [WIP]
+- Extend native single-object ID ownership toward both Cartesian and spherical
+  `r theta phi` nonlinear solves, with uniform/adaptive choices and the usual
+  lower-dimensional consistency regressions. Reuse one coordinate-independent
+  physical implementation and generated owner metadata; do not treat
+  `N x M x 1` as functionality or add a coordinate/object template product.
+  [WIP]
+- Add an optional self-consistent magnetized-equilibrium route only with a
+  divergence-preserving magnetic representation, coupled magnetic stress in
+  the matter/constraint fixed point, portable face-field ownership, and
+  explicit EoS/geometry validation. Keep the unmagnetized solve free of its
+  cost and storage. [WIP]
+- Validate each bounded addition with the smallest analytic, limiting-case,
+  symmetry, rank, artifact, and startup gates before broad integration. Update
+  the capability catalog, knowledge/reference routing, and exact evidence
+  boundaries, then commit one reviewed coherent state. [PENDING]
+
+## Cycle 307 — Full-storage spherical XCTS and magnetic-ID hardening (DONE)
+
+- Admit and validate the native 3D `r theta phi` Schwarzschild-XCTS shell
+  without relabeling the axisymmetric toroidal momentum sector as a general
+  nonaxisymmetric vector solve. The genuine full spherical scalar operator,
+  mapped radial shell, periodic phi, and `N_phi=1/4` degeneracy all pass. The
+  coupled degeneracy gap is `3.21e-13`. A changed `96x24x4 -> 128x32x4`
+  physical-ID load now re-solves rather than stopping at materialization. Its
+  analytic metric/lapse errors are `9.14393e-3/1.26156e-3`, angular invariance
+  is `9.02e-11`, all shift/extrinsic fields remain exactly zero, and the
+  maximum algebraic residual is `2.78680e-8`. [DONE]
+- Diagnose the changed-grid MLMG failure rather than prohibiting the layout.
+  It reduced the initial residual from `8.06e-4` to `2.52e-8` but missed a
+  `1e-8` normalized request after 500 iterations. The vacuum shell now uses a
+  truncation-aware `2e-8` relative/absolute target and the fixed 500-iteration
+  cap; validation independently limits the measured residual to `3e-8` and
+  checks analytic fields. Fresh and changed vacuum solves seed the uniquely
+  determined analytic Schwarzschild conformal unknowns rather than an
+  interpolated loaded Z4c iterate. [DONE]
+- Add the catalog-owned `pressure_poloidal` magnetic seed through one runtime
+  matter observer, not a new formulation/EoS/coordinate template product.
+  Transient edge vector potential is moved behind a declaration-only public
+  header into `initial_data_magnetic.cpp`; canonical face B remains the
+  schema/artifact owner. The discrete CT curl, current-metric comoving-field
+  normalization, RMHD EoS-aware primitive conversion, and magnetic
+  stress-energy all participate in the coupled XCTS fixed point. [DONE]
+- The three-rank SLy magnetic gate passes at requested `b_max=1e-4` with
+  constraint residual `5.829e-16`, artifact `divB=4.518e-21`, exact face
+  topology, and a finite `8.650e-6` ADM response against a matched unmagnetized
+  XCTS control. Evolution-time seeding rejects. The artifact is explicitly a
+  constraint-consistent pressure-confined field, not magnetohydrostatic force
+  balance; cold/hybrid RMHD evolution C2P remains unsupported. [DONE]
+- Focused validation now passes: production 1D/2D/3D build; three-rank 1D,
+  2D, and 3D elliptic/XCTS checks; generated-source byte comparison;
+  architecture; 18-case black-hole/AH gate; magnetized-ID gate; and 3/3 quick
+  suite. Run the complete standard suite and final diff/compile audit before
+  committing the combined Cycle 306/307 state. Cycle 308 completed that
+  integration while retaining the full magnetohydrostatic equilibrium owner
+  as explicit open work. [DONE]
+
+## Cycle 308 — Axisymmetric full-storage XCTS closure (DONE)
+
+- Source-checked the remaining `r theta phi` stellar failure instead of
+  reducing CFL, damping the physical fixed point, or prohibiting `Nphi>1`.
+  Static TOV, uniform/adaptive radial maps, exact mesh-radius provider seeding,
+  and full/half theta all reproduce the failure, while the genuine
+  full-spherical manufactured operator and shell XCTS controls remain valid.
+  The failure is generic MLMG excitation of physically unused phi modes on an
+  origin-containing axisymmetric problem. [DONE]
+- Generalized the existing separable `r theta` scalar/toroidal solver to full
+  3D storage: one physical plane is gathered across MPI ranks, solved in the
+  cached angular eigenbasis, and broadcast over every periodic phi plane. This
+  is the declared axisymmetric operator, not a projection repair and not a new
+  template product. The independent full-spherical scalar operator remains
+  available for genuinely phi-dependent fields. [DONE]
+- Added the catalog-native full-storage stellar/aligned-torus owner and real
+  adaptive inputs. The three-rank `96x24x4` adaptive RNS passes in 1.277 s with
+  Hamiltonian/momentum residuals `3.077e-13/1.603e-15`, zero recovery, and an
+  `8,866,057`-byte artifact. The permanent 2D/`Nphi=1`/`Nphi=4` gate finds
+  maximum normalized field, diagnostic, and phi-invariance differences of
+  `1.705e-15`, `4.344e-14`, and `1.672e-23`. [DONE]
+- Added and validated the adaptive `96x24x4` self-gravitating aligned
+  TOV-plus-torus route. It converges with residuals
+  `3.078e-13/5.097e-15`, disk baryonic mass `0.0978945`, disk angular
+  momentum `0.494988`, causal maximum speed `0.456454`, and zero recovery.
+  The standard equilibrium-torus gate includes this owner. [DONE]
+- Re-ran the complete 18-case black-hole/AH matrix. Fresh and changed-grid
+  `r theta phi` Schwarzschild-XCTS shells pass their analytic, residual,
+  periodic-phi, horizon-lapse, and zero-field checks; constraint-solved BH is
+  therefore no longer only an `r theta` owner. The vector sector remains
+  honestly axisymmetric. [DONE]
+- Hardened magnetized artifact semantics with
+  `magnetic_force_balance=not_solved`; the refreshed three-rank gate retains
+  `H/M=5.829e-16`, `divB=4.518e-21`, requested `bmax=1e-4`, and finite metric
+  response. This is the divergence-preserving/coupled-stress foundation for a
+  future magnetized Euler or Grad--Shafranov owner, not that equilibrium solve
+  itself. [DONE]
+- Final integration passes: production 1D/2D/3D build; generated-source byte
+  comparison; architecture and Python compile checks; three-rank 1D/2D/3D
+  elliptic/XCTS tests; reduced/full-storage stellar handoff; equilibrium
+  torus, magnetized-ID, and all 18 black-hole/AH cases; 3/3 quick suite; and
+  the complete 49/49 standard suite in `234.144 s`. The explicit final
+  phi-invariance rejection was followed by a fresh 3D elliptic test, reduced
+  ID standard gate, and quick suite. [DONE]
+- Runtime controls pass at `107.91/130.32`, `5.98`, and `0.182` Mcells/s,
+  respectively `0.982/0.951`, `0.939`, and `0.957` of the stored clean MPI
+  baselines. The final touched-object production rebuild took `2.66 s` with
+  one cache hit and one miss; the immediately repeated no-op production build
+  took `0.56 s` with zero cache events. Neither is labeled a cold clean build.
+  `git diff --check` is clean. [DONE]

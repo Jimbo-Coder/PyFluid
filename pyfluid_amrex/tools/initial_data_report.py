@@ -63,6 +63,11 @@ FIELDS = (
    "disk_maximum_log_specific_enthalpy",
    "disk_baryonic_mass",
    "disk_angular_momentum",
+   "magnetic_seed",
+   "magnetic_seed_updates",
+   "maximum_comoving_field",
+   "magnetic_divb_linf",
+   "preflight_kind",
    "max_conserved_error",
    "max_primitive_error",
    "log",
@@ -97,6 +102,8 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
       if (artifact / "Header.meta").exists() else ""
    if "# has_spacetime=1" in metadata_text:
       required.append(artifact / "adm_geometry.h5")
+   if "# has_ct=1" in metadata_text:
+      required.extend(artifact / f"face_b{direction}.h5" for direction in range(1, 4))
    missing = [path.name for path in required if not path.is_file()]
    if missing:
       reasons.append("missing artifact fields: " + ",".join(missing))
@@ -135,9 +142,34 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
       rf"Evolution preflight C2P/P2C:.*?max_conserved_error=({FLOAT}) "
       rf"max_primitive_error=({FLOAT})",
    )
+   physical_id_preflight = (
+      "Physical-ID preflight: finite non-ideal RMHD primitive and conserved fields"
+      in text
+   )
+   magnetic = _match(
+      text,
+      rf"pressure-poloidal magnetic ID: updates=(\d+) "
+      rf"maximum_pressure=({FLOAT}) normalization=({FLOAT}) "
+      rf"maximum_comoving_field=({FLOAT}) divb_linf=({FLOAT})",
+   )
    wall = _match(text, rf"^# wall_seconds = ({FLOAT})$")
-   if preflight is None:
+   if preflight is None and not physical_id_preflight:
       reasons.append("missing C2P/P2C preflight")
+   magnetic_seed = params.get("initial_data.magnetic_seed", "none")
+   if magnetic_seed != "none":
+      if magnetic is None:
+         reasons.append("missing magnetic-ID summary")
+      else:
+         requested_field = float(
+            params["initial_data.magnetic_seed_maximum_comoving_field"]
+         )
+         measured_field = float(magnetic.group(4))
+         if not math.isclose(
+            measured_field, requested_field, rel_tol=1.0e-12, abs_tol=0.0
+         ):
+            reasons.append("magnetic-ID normalization mismatch")
+         if float(magnetic.group(5)) > 1.0e-14:
+            reasons.append("magnetic-ID divergence exceeds roundoff gate")
 
    def value(match: re.Match[str] | None, group: int) -> float:
       return float(match.group(group)) if match is not None else math.nan
@@ -206,6 +238,13 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
       "disk_maximum_log_specific_enthalpy": value(equilibrium_torus, 13),
       "disk_baryonic_mass": value(equilibrium_torus, 14),
       "disk_angular_momentum": value(equilibrium_torus, 15),
+      "magnetic_seed": magnetic_seed,
+      "magnetic_seed_updates": int(magnetic.group(1)) if magnetic else 0,
+      "maximum_comoving_field": value(magnetic, 4),
+      "magnetic_divb_linf": value(magnetic, 5),
+      "preflight_kind": "c2p_p2c" if preflight else (
+         "physical_id_finite" if physical_id_preflight else ""
+      ),
       "max_conserved_error": value(preflight, 1),
       "max_primitive_error": value(preflight, 2),
       "log": repo_relative(log_path),
@@ -229,7 +268,8 @@ def main() -> int:
       f"cells={row['cells']} wall={float(row['wall_seconds']):.3f}s "
       f"H={float(row['hamiltonian_residual']):.3e} "
       f"M={float(row['momentum_residual']):.3e} "
-      f"preflight={float(row['max_primitive_error']):.3e} "
+      f"preflight={row['preflight_kind']} "
+      f"divb={float(row['magnetic_divb_linf']):.3e} "
       f"artifact={int(row['artifact_bytes'])}B"
       + (f" ({row['reason']})" if row["reason"] else "")
    )

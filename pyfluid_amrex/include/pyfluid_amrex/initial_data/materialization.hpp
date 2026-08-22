@@ -52,6 +52,11 @@ using ConformalContinuationObserver = std::function<void(
    EquilibriumTorusUpdateSummary const& equilibrium_torus
 )>;
 
+// Optional runtime hook invoked after each matter update and before the
+// corresponding constraint-source assembly. Keeping it outside the compiled
+// formulation/EoS products lets magnetic-ID ownership remain opt-in.
+using ConformalMatterObserver = std::function<void()>;
+
 ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& primitive_state,
@@ -61,12 +66,14 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    int eos_method,
    EOSParams const& eos,
    InitialDataFieldSelection const& fields,
+   int coordinate_kind,
    ConformalConstraintFormulation formulation,
    ConformalBlackHoleParameters const& black_hole,
    RotatingStarParameters const& rotating_star,
    EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime = false,
-   ConformalContinuationObserver const& continuation_observer = {}
+   ConformalContinuationObserver const& continuation_observer = {},
+   ConformalMatterObserver const& matter_observer = {}
 );
 
 } // namespace pyfluid_amrex

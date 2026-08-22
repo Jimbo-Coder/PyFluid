@@ -10,10 +10,10 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-21, branch `main`, through Cycle 303's full-3D
-single-object initial-data closure. Cycle 284's preserved
-standard/performance baseline remains the latest archived broad integration
-baseline.
+Last reconciled: 2026-08-22, branch `main`, through Cycle 308's integrated
+single-object spherical-XCTS and magnetized-ID work. Cycle 308's complete
+standard/performance controls are the current broad integration evidence;
+Cycle 284 remains the preceding preserved baseline.
 
 ## Scope And Evidence
 
@@ -247,6 +247,19 @@ baseline.
   continues a TOV seed through one coupled under-relaxed matter/constraint
   iteration. Zero angular velocity bypasses the rotating update and reproduces
   the same-EoS TOV endpoint.
+- The generated rotation-law catalog also owns the two post-merger
+  `uryu_plus_13` and `uryu_j_envelope_p1` laws. Their generated angular
+  velocity, derivative, first-integral identity, sign, and j-constant limiting
+  controls pass pointwise. That is not yet a converged nonzero-spin Uryu RNS
+  sequence or evolution validation.
+- A zero-temperature barotrope has one independent thermodynamic variable.
+  Scaling pressure at fixed density is therefore off the cold EoS unless a
+  separate thermal degree of freedom is introduced. PyFluid's
+  `cold_pressure_scale` instead uses the scaled pressure as a target, inverts
+  the same cold EoS for a new density, and rebuilds internal energy, enthalpy,
+  sound speed, and conserved state; its baryon mass changes. It is a small
+  evolution-start perturbation with no constraint re-solve, and reusable
+  equilibrium artifacts are written before it is applied.
 - Existing nonzero-spin evidence is reduced-grid continuation and short
   evolution, not a resolution-converged mass-shedding limit, long-term
   equilibrium, or constant-baryon-mass sequence. The surface-gradient
@@ -283,6 +296,18 @@ baseline.
   stationarity-compatible free-data closure before being called rotating
   equilibrium methods. A deliberately nonzero-mean-curvature CTTK slice is not
   the zero-spin XCTS/TOV endpoint.
+- The first magnetized physical-ID owner is a fresh single-level 3D Cartesian
+  RMHD+CT stellar XCTS solve-only path. It constructs an edge-centered
+  pressure-confined vector potential, takes the existing CT discrete curl,
+  stores canonical face fields, normalizes the maximum comoving field, and
+  includes RMHD magnetic energy, momentum, and stress in every constraint
+  fixed-point update. At requested `b_max=1e-4`, the SLy control has artifact
+  `divB=4.52e-21`, constraint residual `5.83e-16`, and a finite
+  `8.65e-6` ADM response relative to the matched unmagnetized solve. This is
+  constraint-consistent magnetic seeding, not magnetohydrostatic force balance:
+  the fluid Euler/Grad--Shafranov equation is not yet magnetized. Cold/hybrid
+  RMHD artifacts therefore remain solve-only until runtime C2P supports those
+  EoS choices.
 - The reusable physical-ID container and sequence behavior are defined in
   `docs/infrastructure_conventions.md`. Materialization onto an evolution grid
   is interpolation, not a new constraint solve, so finer evolution cannot
@@ -304,8 +329,28 @@ baseline.
   relative tilt, and reflection class. The generated descriptors are host-only
   policy and do not create a coordinate/object/formulation template product.
   Physical combinations that are not a simple capability remain explicit C++
-  validation. In particular, a full `r theta phi` materialized artifact is not
-  evidence for a native curvilinear nonlinear continuation owner.
+  validation. A full `r theta phi` materialized artifact is not by itself
+  evidence for a native curvilinear nonlinear continuation owner. The native
+  3D spherical scalar operator and axisymmetric black-hole XCTS shell are now
+  separate explicit owners; neither is a general nonaxisymmetric three-vector
+  spherical XCTS solve.
+- Axisymmetric stellar, aligned-torus, and Schwarzschild-XCTS owners now have
+  both reduced `r theta` and full-storage `r theta phi` routes. The 3D owner
+  solves the same separable physical `r theta` operator once and broadcasts it
+  over periodic phi storage; it does not invite nonexistent nonaxisymmetric
+  modes into the linear solve. At adaptive `96x24`, the 2D, `Nphi=1`, and
+  `Nphi=4` RNS artifacts agree to `1.71e-15` in stored fields,
+  `4.34e-14` in global diagnostics, and `1.67e-23` in phi invariance. The
+  `96x24x4` rotating solve completes in about 1.3 seconds on three local ranks
+  with constraint residuals below `3.3e-13` and zero recovery.
+- Applying generic 3D MLMG to an origin-containing, phi-redundant axisymmetric
+  stellar solve excites unused azimuthal modes and diverges for `Nphi>1`, even
+  for a static TOV and exact radial seeding. The separable owner is the
+  physical and faster remedy. The generic full-spherical operator remains
+  validated for smooth regular nonaxisymmetric manufactured solutions and
+  shell domains. A general nonaxisymmetric spherical three-component XCTS
+  vector operator remains open; tilted matter stays with full 3D Cartesian
+  XCTS.
 - `initial_data.solve_only=1` performs the normal ID materialization and
   relativistic C2P/P2C preflight, writes the portable artifact, and exits before
   evolution. Validated reduced paths include spherical 1D TOV and spherical
@@ -623,11 +668,16 @@ baseline.
   `2.11e-12/4.89e-12/0`, second-order conformal convergence, an exactly zero
   horizon lapse, finite zero extrinsic curvature, and no recovery. A saved
   `128x16` artifact re-solves on a changed `256x32` map and retains the same
-  analytic agreement. This closes a solve-only exterior owner, not spinning
-  data, a black-hole/disk equilibrium, full-grid evolution, or true excision.
-  Native owner catalogs do not list dimensional-degeneracy projections:
-  `N x M x 1` is the future 3D `r theta phi` operator's one-cell-in-phi
-  compatibility gate against native 2D `r theta`, not another owner.
+  analytic agreement. The same physical system now runs on full periodic
+  `r theta phi` storage through the genuine 3D spherical scalar operator and
+  the axisymmetric toroidal momentum sector. Its `N_phi=1/4` XCTS degeneracy
+  error is `3.21e-13`; a fresh `96x24x4` artifact and changed
+  `128x32x4` re-solve pass analytic Schwarzschild checks, with the latter at
+  metric/lapse errors `9.14e-3/1.26e-3` and maximum algebraic residual
+  `2.79e-8`. This closes a solve-only axisymmetric exterior owner, not a
+  spinning/nonaxisymmetric spherical vector solve, black-hole/disk
+  equilibrium, full-grid evolution, or true excision. `N x M x 1` remains a
+  dimensional-degeneracy test, not a separate owner.
 - The tested complete-grid Kerr evolution uses ordinary advective 1+log,
   gamma-driver shift, RK4, KO strength 0.32, and positive chi/lapse floors of
   `1e-10`. A manual 64-step CFL-0.9 coarse-grid stress reaches `t=6.035` with

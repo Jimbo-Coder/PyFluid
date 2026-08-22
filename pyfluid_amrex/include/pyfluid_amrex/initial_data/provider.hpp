@@ -111,11 +111,12 @@ struct RelativisticInitialDataView {
    }
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-   RelativisticInitialDataSample sample(PatchCoordinate const& physical) const noexcept
+   RelativisticInitialDataSample sample_tov_radius(
+      amrex::Real radius
+   ) const noexcept
    {
       RelativisticInitialDataSample output;
       if (tov.active()) {
-         const amrex::Real radius = cartesian_radius(physical);
          const TovSample point = tov.sample(radius);
          output.has_fluid = true;
          output.has_spacetime = true;
@@ -132,8 +133,17 @@ struct RelativisticInitialDataView {
             * point.conformal_factor * point.conformal_factor
          );
          output.spacetime.lapse = point.lapse;
-         return output;
       }
+      return output;
+   }
+
+   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+   RelativisticInitialDataSample sample(PatchCoordinate const& physical) const noexcept
+   {
+      if (tov.active()) {
+         return sample_tov_radius(cartesian_radius(physical));
+      }
+      RelativisticInitialDataSample output;
       if (fixed_spacetime_active) {
          const FixedSpacetimeGeometry geometry = initial_data_spacetime_geometry(
             fixed_spacetime,

@@ -60,6 +60,13 @@ struct RunConfig {
    int diagnostic_multipole_l_max = 0;
    std::string diagnostic_azimuthal_mode_fields = "none";
    int diagnostic_azimuthal_mode_m_max = 4;
+   int diagnostic_matter_mode_m_max = -1;
+   amrex::Real diagnostic_matter_mode_origin1 = 0.0;
+   amrex::Real diagnostic_matter_mode_origin2 = 0.0;
+   amrex::Real diagnostic_matter_mode_origin3 = 0.0;
+   amrex::Real diagnostic_matter_mode_axis1 = 0.0;
+   amrex::Real diagnostic_matter_mode_axis2 = 0.0;
+   amrex::Real diagnostic_matter_mode_axis3 = 1.0;
    std::string scalar_output_mode = "stream";
    int aux_gf_compute_int = -1;
    int aux_gf_int = -1;
@@ -111,6 +118,10 @@ struct RunConfig {
    std::string spacetime_black_hole_interior = "exterior";
    amrex::Real spacetime_black_hole_fill_radius = -1.0;
    std::string initial_data_magnetic = "id";
+   std::string initial_data_magnetic_seed = "none";
+   amrex::Real initial_data_magnetic_seed_pressure_cutoff = 0.04;
+   amrex::Real initial_data_magnetic_seed_exponent = 2.0;
+   amrex::Real initial_data_magnetic_seed_maximum_comoving_field = 0.0;
    std::string initial_data_spacetime = "id";
    std::string initial_data_lapse = "id";
    std::string initial_data_shift = "id";
@@ -142,6 +153,7 @@ struct RunConfig {
    std::string initial_data_rotation_law = "uniform";
    amrex::Real initial_data_angular_velocity = 0.0;
    amrex::Real initial_data_differential_rotation_length = 10.0;
+   amrex::Real initial_data_differential_rotation_length_b = 10.0;
    amrex::Real initial_data_rotation_power_q = 1.0;
    amrex::Real initial_data_rotation_axis1 = 0.0;
    amrex::Real initial_data_rotation_axis2 = 0.0;
@@ -154,6 +166,12 @@ struct RunConfig {
    int initial_data_matter_max_iterations = 96;
    int initial_data_rotation_continuation_steps = 1;
    amrex::Vector<amrex::Real> initial_data_rotation_continuation_targets;
+   std::string initial_data_perturbation = "none";
+   amrex::Real initial_data_perturbation_pressure_scale = 1.0;
+   amrex::Real initial_data_perturbation_amplitude = 0.005;
+   int initial_data_perturbation_mode = 1;
+   amrex::Real initial_data_perturbation_phase = 0.0;
+   amrex::Real initial_data_perturbation_radius = -1.0;
    std::string spacetime_lapse_gauge = "frozen";
    std::string spacetime_shift_gauge = "frozen";
    amrex::Real spacetime_amplitude = 1.0e-8;

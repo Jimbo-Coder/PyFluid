@@ -200,6 +200,7 @@ set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
    src/initial_data/initial_data_centering.cpp
    src/initial_data/initial_data_ctt.cpp
    src/initial_data/initial_data_elliptic.cpp
+   src/initial_data/initial_data_magnetic.cpp
    src/initial_data/initial_data_materialization.cpp
    src/initial_data/initial_data_provider.cpp
    src/initial_data/physical_id.cpp

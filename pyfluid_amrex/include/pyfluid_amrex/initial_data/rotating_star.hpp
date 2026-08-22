@@ -26,6 +26,7 @@ struct RotatingStarParameters {
    RotationLaw rotation_law = RotationLaw::Uniform;
    amrex::Real angular_velocity = 0.0;
    amrex::Real differential_rotation_length = 10.0;
+   amrex::Real differential_rotation_length_b = 10.0;
    amrex::Real rotation_power_q = 1.0;
    PatchCoordinate rotation_axis{0.0, 0.0, 1.0};
    PatchCoordinate rotation_center{};
@@ -85,6 +86,7 @@ RotatingStarPoint rotating_star_point_from_tangent(
          parameters.rotation_law,
          parameters.angular_velocity,
          parameters.differential_rotation_length,
+         parameters.differential_rotation_length_b,
          parameters.rotation_power_q,
          parameters.injection_energy,
       },

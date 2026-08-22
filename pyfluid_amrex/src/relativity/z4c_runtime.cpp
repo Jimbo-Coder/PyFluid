@@ -273,9 +273,12 @@ void initialize_z4c_state_at_offset(
             * parameters.wave_number * (x - time);
          Z4cState point;
          if (initial_data.has_spacetime()) {
-            point = initial_data.sample(
-               {physical[0], physical[1], physical[2]}
-            ).spacetime;
+            point = mesh_coordinate == MeshSpherical
+                  && initial_data.tov.active()
+               ? initial_data.sample_tov_radius(mesh_point[0]).spacetime
+               : initial_data.sample(
+                    {physical[0], physical[1], physical[2]}
+                 ).spacetime;
          } else if (parameters.kind == Z4cInitialData::GaugeWave) {
             point = gauge_wave_state(
                phase, parameters.amplitude, constants::two_pi * parameters.wave_number

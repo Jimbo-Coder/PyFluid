@@ -72,6 +72,7 @@ struct FluidInitialDataParameters {
    InitialAtmosphereParameters atmosphere{};
    EquilibriumTorusParameters equilibrium_torus{};
    amrex::Real equilibrium_torus_inner_normalization = 0.0;
+   bool provider_radius_is_mesh1 = false;
    EOSParams eos{};
 };
 
@@ -152,6 +153,8 @@ inline FluidInitialDataParameters fluid_initial_data_parameters(
    parameters.b2_right = std::isfinite(cfg.b2_right) ? cfg.b2_right : cfg.b2_0;
    parameters.b3_right = std::isfinite(cfg.b3_right) ? cfg.b3_right : cfg.b3_0;
    parameters.eos = eos_params(cfg);
+   parameters.provider_radius_is_mesh1 = kind == FluidInitialDataKind::Provider
+      && cfg.mesh_coordinate == "spherical" && provider.tov.active();
    parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
    parameters.equilibrium_torus = equilibrium_torus_parameters(cfg, provider);
    if (kind == FluidInitialDataKind::EquilibriumTorus) {
@@ -247,7 +250,10 @@ FluidPrimitiveSample sample_fluid_initial_data(
       b2 = 0.0;
       b3 = 0.0;
    } else if (parameters.kind == FluidInitialDataKind::Provider) {
-      const RelativisticInitialDataSample point = provider.sample(sample.physical);
+      const RelativisticInitialDataSample point =
+         parameters.provider_radius_is_mesh1
+         ? provider.sample_tov_radius(sample.mesh.q1)
+         : provider.sample(sample.physical);
       rho = point.fluid.rho;
       pressure = point.fluid.pressure;
       specific_internal_energy = point.fluid.eps;

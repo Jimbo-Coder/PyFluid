@@ -9,6 +9,8 @@ inline constexpr amrex::Real pi =
 inline constexpr amrex::Real half_pi = 0.5 * pi;
 inline constexpr amrex::Real two_pi = 2.0 * pi;
 inline constexpr amrex::Real four_pi = 4.0 * pi;
+inline constexpr amrex::Real sqrt_two =
+   static_cast<amrex::Real>(1.414213562373095048801688724209698079L);
 inline constexpr amrex::Real radians_per_degree = pi / 180.0;
 
 } // namespace pyfluid_amrex::constants

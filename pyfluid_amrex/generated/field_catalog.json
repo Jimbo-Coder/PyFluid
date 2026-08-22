@@ -192,6 +192,12 @@
       "divb_l2",
       "divb_linf"
     ],
+    "modes": [
+      "matter_mode_mass",
+      "matter_barycenter1",
+      "matter_barycenter2",
+      "matter_barycenter3"
+    ],
     "passive": [
       "passive_mass",
       "passive_mass_rel_drift"
@@ -298,7 +304,11 @@
       "z4c_theta_linf",
       "z4c_log_conformal_determinant_linf",
       "z4c_trace_a_tilde_linf",
-      "black_hole_horizon_radius"
+      "black_hole_horizon_radius",
+      "matter_mode_mass",
+      "matter_barycenter1",
+      "matter_barycenter2",
+      "matter_barycenter3"
     ],
     "state_bounds": [
       "min_rho",
@@ -2157,6 +2167,70 @@
       ],
       "storage": "real",
       "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "matter_mode_mass",
+      "groups": [
+        "modes"
+      ],
+      "label": "C_0",
+      "name": "matter_mode_mass",
+      "operation": "volume_integral",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 3,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "matter_barycenter",
+      "groups": [
+        "modes"
+      ],
+      "label": "x_{\\rm CM}",
+      "name": "matter_barycenter1",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 1,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "matter_barycenter",
+      "groups": [
+        "modes"
+      ],
+      "label": "y_{\\rm CM}",
+      "name": "matter_barycenter2",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 2,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "matter_barycenter",
+      "groups": [
+        "modes"
+      ],
+      "label": "z_{\\rm CM}",
+      "name": "matter_barycenter3",
+      "operation": "derived",
+      "requirements": [],
+      "storage": "real",
+      "value_kind": "vector"
     },
     {
       "component_count": 1,

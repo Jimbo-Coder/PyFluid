@@ -91,6 +91,7 @@ EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
             circular_law,
             parameters.angular_velocity,
             parameters.differential_rotation_length,
+            parameters.differential_rotation_length,
             parameters.rotation_power_q,
             inner_normalization,
          },

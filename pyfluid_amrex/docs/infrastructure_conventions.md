@@ -155,6 +155,23 @@ provider-independent physical core after the initial-data solve:
 - source hierarchy, EoS and physical parameters, diagnostics, schema version,
   and provenance.
 
+For a generated stellar magnetic seed, the edge-centered vector potential is
+transient construction scratch rather than a persistent GF. The owner takes its
+discrete curl with the production CT topology, normalizes against the current
+metric, and stores only the schema-owned canonical face magnetic fields plus
+seed identity/parameters in metadata. A coupled constraint solve invokes this
+owner after each matter update and before assembling RMHD stress-energy. This
+makes the gravitational constraints consistent with the seeded field; it does
+not imply magnetohydrostatic Euler/Grad--Shafranov force balance. The current
+pressure-poloidal owner is deliberately restricted to fresh, single-level,
+3D Cartesian, solve-only stellar XCTS. AMR requires one edge-potential
+prolongation/synchronization owner before it may be admitted.
+
+The artifact records `magnetic_force_balance=not_solved` for this seeded
+route. This is an explicit semantic boundary: the gravitational constraints
+include the magnetic stress, but no magnetized Euler or Grad--Shafranov
+force-balance equation has been solved.
+
 The container is deliberately a superset. In addition to the portable
 physical core, it may contain optional consumer-specific sections such as
 exact-layout evolution caches and sequence-continuation seeds. Evolution may
@@ -180,6 +197,16 @@ inner-boundary ownership in both the ID solver and evolution hierarchy.
 Black-hole spin, stellar rotation axis, and disk axis remain separate metadata;
 this preserves aligned reduced solves and lets the full-3D owner retain a
 physical relative star/hole--disk tilt through the same materializer.
+
+The native spherical Schwarzschild-XCTS owner has both reduced `r theta` and
+full-storage periodic `r theta phi` layouts. In 3D, the Hamiltonian and lapse
+use the genuine spherical scalar operator while the momentum equation remains
+the axisymmetric toroidal sector. This is an ordinary 3D storage/operator
+compatibility owner for aligned data, including the `N_phi=1` degeneracy; it is
+not the general three-component nonaxisymmetric spherical vector XCTS system.
+Changed-grid vacuum shell solves reconstruct their analytic conformal iterate
+from mass and apparent-horizon boundary data rather than treating interpolated
+Z4c fields as authoritative conformal unknowns.
 
 An apparent-horizon surface is a diagnostic object sampled from the hierarchy,
 not a second spacetime field layout and not an implicit excision mask. The
@@ -448,8 +475,10 @@ and spherical two-dimensional circular-RNS XCTS to three-dimensional Cartesian
 RHD. Uniform and explicit-face radial artifacts use the same evaluator. An
 exact-layout mapped RNS artifact can seed the next rotation target without
 interpolation; the resulting model remains independently usable for Cartesian
-materialization. Cross-chart CT is deliberately rejected until face-centred
-divergence-preserving magnetic transfer has an owner.
+materialization. Same-layout Cartesian magnetized artifacts retain their
+canonical face fields. Cross-chart or changed-grid CT remains deliberately
+rejected until face-centered divergence-preserving magnetic transfer has an
+owner.
 
 Object pose is a materialization choice, not an elliptic-solver coordinate
 choice. The artifact persists stellar rotation axis and center separately from

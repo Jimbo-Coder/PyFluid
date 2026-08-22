@@ -58,6 +58,7 @@ class MeshBasisStateInterpolater;
 class ParametricSurface;
 class RelativisticInitialDataProvider;
 struct MultipoleDiagnostics;
+struct MatterModeDiagnostics;
 struct EquilibriumTorusUpdateSummary;
 struct PhysicalInitialDataMetadata;
 struct RadiationDiagnostics;
@@ -345,6 +346,7 @@ protected:
    void initialize_spacetime_level(int lev, amrex::Real time);
    bool materialize_constraint_solved_initial_data(bool seed_from_loaded_id = false);
    void finalize_constraint_solved_initial_data_state();
+   void apply_configured_initial_data_perturbation();
    void materialize_configured_initial_data();
    void summarize_configured_equilibrium_torus();
    bool load_physical_initial_data_artifact();
@@ -447,6 +449,7 @@ protected:
    ) const;
    RadiationDiagnostics compute_spacetime_radiation_diagnostics(amrex::Real time);
    MultipoleDiagnostics compute_azimuthal_surface_modes(amrex::Real time);
+   MatterModeDiagnostics compute_matter_volume_modes(amrex::Real time);
    void apply_all_face_b_boundaries();
    void sync_all_cell_b_from_faces(LevelData& data, bool preserve_pressure);
 

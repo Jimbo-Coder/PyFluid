@@ -423,7 +423,7 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
 }
 #endif
 
-#if (AMREX_SPACEDIM == 2)
+#if (AMREX_SPACEDIM >= 2)
 struct ReferenceWeight {
    int radial_index = 0;
    int angular_index = 0;
@@ -546,6 +546,13 @@ amrex::Real inner_edge_normalization(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
+#if (AMREX_SPACEDIM == 3)
+         // The normalization is a point value, not an azimuthal reduction.
+         // Select one periodic phi plane from the axisymmetric storage.
+         if (k != domain_lo.z) {
+            return;
+         }
+#endif
          for (int weight_index = 0; weight_index < num_weights;
               ++weight_index) {
             const ReferenceWeight selected = weights[weight_index];
@@ -628,7 +635,15 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
    const amrex::Box domain = hierarchy.geometry[0].Domain();
    const amrex::Dim3 domain_lo = amrex::lbound(domain);
    const amrex::Dim3 domain_hi = amrex::ubound(domain);
+#if (AMREX_SPACEDIM == 3)
+   const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta phi");
+   const amrex::Real phi_lo = hierarchy.geometry[0].ProbLo(2);
+   const amrex::Real dphi = hierarchy.geometry[0].CellSize(2);
+#else
    const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
+   const amrex::Real phi_lo = 0.0;
+   const amrex::Real dphi = 0.0;
+#endif
    amrex::MultiFab diagnostics(
       hierarchy.grids[0], hierarchy.distribution[0], 9, 0
    );
@@ -652,7 +667,11 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
             return;
          }
          const amrex::Real theta = angular_center[angular_index];
-         const PatchCoordinate mesh{radius, theta, 0.0};
+         const PatchCoordinate mesh{
+            radius,
+            theta,
+            phi_lo + (k - domain_lo.z + 0.5) * dphi,
+         };
          const InitialDataSamplePoint sample{
             mesh,
             mesh_coordinate_to_physical_point(MeshSpherical, axes, mesh),
@@ -867,11 +886,13 @@ update_axisymmetric_spherical_equilibrium_torus_primitives(
    EquilibriumTorusParameters const& parameters
 )
 {
-#if (AMREX_SPACEDIM != 2)
+#if (AMREX_SPACEDIM < 2)
    amrex::ignore_unused(
       hierarchy, primitive_state, cell_spacetime, eos_method, eos, parameters
    );
-   amrex::Abort("axisymmetric equilibrium-torus construction requires 2D");
+   amrex::Abort(
+      "axisymmetric equilibrium-torus construction requires 2D or 3D"
+   );
    return {};
 #else
    if (!parameters.active) {

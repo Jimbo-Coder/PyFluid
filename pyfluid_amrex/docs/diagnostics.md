@@ -162,7 +162,8 @@ surface and scalar cadence, the runtime writes
 C_m[f](r) = integral over S_r of f exp(-i m phi) dA
 ```
 
-as `basis=azimuthal_fourier` rows in `multipoles.tsv`. Only `m >= 0` is stored
+as `basis=azimuthal_fourier_exp_minus_imphi` rows in `multipoles.tsv`. Only
+`m >= 0` is stored
 because real fields satisfy `C_-m = conjugate(C_m)`. Runtime stores the raw
 complex coefficients, including `C_0`; normalized amplitudes `|C_m|/|C_0|`,
 phases, growth rates, and pattern speeds are postprocessed quantities. This is
@@ -170,6 +171,42 @@ a shell diagnostic, distinct from the related volume-integrated density-mode
 diagnostic used for global bar and disk instabilities. The common long-form
 schema records `ell=none` for these azimuthal Fourier rows because `ell` applies
 only to spherical-harmonic modes.
+
+## Global Matter Modes
+
+`diagnostics.matter_mode_m_max` enables the related volume diagnostic; `-1`
+disables it. The configured origin and axis are
+
+```text
+diagnostics.matter_mode_origin1/2/3
+diagnostics.matter_mode_axis1/2/3
+```
+
+The runtime computes
+
+```text
+C_m = integral D exp(+i m phi) d^3x,
+D = sqrt(gamma) rho W = sqrt(-g) rho u^0,
+```
+
+over composite valid AMR cells and excludes runtime atmosphere. Rows are
+written to `multipoles.tsv` with
+`basis=azimuthal_fourier_exp_plus_imphi`, `field=rest_mass`, and no extraction
+radius. `C_0` is therefore the atmosphere-excluded baryon mass used to
+normalize `|C_m|/C_0`; the same reduction also writes `matter_mode_mass` and
+the three matter-barycenter columns to `scalars.tsv`. Surface and volume modes
+use opposite documented exponential signs and are not interchangeable.
+
+A single reflection plane is supported only when it is the equatorial plane
+through the configured origin and normal to the mode axis. The missing half is
+then reconstructed by its factor of two. Additional reflection planes would
+constrain nonaxisymmetric modes and are rejected instead of silently reporting
+partial-domain amplitudes. The focused full-domain/equatorial and three-rank
+control is
+
+```bash
+uv run python pyfluid_amrex/tools/validate_matter_modes.py --force --ranks 3
+```
 
 Run
 

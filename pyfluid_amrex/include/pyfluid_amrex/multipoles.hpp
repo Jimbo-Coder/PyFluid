@@ -3,6 +3,7 @@
 #include <AMReX_REAL.H>
 
 #include <complex>
+#include <array>
 #include <iosfwd>
 #include <optional>
 #include <string>
@@ -19,10 +20,17 @@ struct MultipoleMode {
    std::optional<int> ell{};
    int m = 0;
    std::complex<amrex::Real> value{};
+   std::optional<amrex::Real> radius{};
 };
 
 struct MultipoleDiagnostics {
    amrex::Real radius = 0.0;
+   std::vector<MultipoleMode> modes{};
+};
+
+struct MatterModeDiagnostics {
+   amrex::Real mass = 0.0;
+   std::array<amrex::Real, 3> barycenter{};
    std::vector<MultipoleMode> modes{};
 };
 
@@ -67,7 +75,6 @@ void append_multipole_rows(
    std::ofstream& output,
    int step,
    amrex::Real time,
-   amrex::Real radius,
    std::vector<MultipoleMode> const& modes
 );
 

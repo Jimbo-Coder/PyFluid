@@ -390,6 +390,13 @@ RunConfig read_config()
    diagnostics_pp.queryAdd("multipole_l_max", cfg.diagnostic_multipole_l_max);
    diagnostics_pp.queryAdd("azimuthal_mode_fields", cfg.diagnostic_azimuthal_mode_fields);
    diagnostics_pp.queryAdd("azimuthal_mode_m_max", cfg.diagnostic_azimuthal_mode_m_max);
+   diagnostics_pp.queryAdd("matter_mode_m_max", cfg.diagnostic_matter_mode_m_max);
+   diagnostics_pp.queryAdd("matter_mode_origin1", cfg.diagnostic_matter_mode_origin1);
+   diagnostics_pp.queryAdd("matter_mode_origin2", cfg.diagnostic_matter_mode_origin2);
+   diagnostics_pp.queryAdd("matter_mode_origin3", cfg.diagnostic_matter_mode_origin3);
+   diagnostics_pp.queryAdd("matter_mode_axis1", cfg.diagnostic_matter_mode_axis1);
+   diagnostics_pp.queryAdd("matter_mode_axis2", cfg.diagnostic_matter_mode_axis2);
+   diagnostics_pp.queryAdd("matter_mode_axis3", cfg.diagnostic_matter_mode_axis3);
    pp.query("aux_gfs", cfg.aux_gfs);
    const bool aux_compute_interval_set =
       pp.query("aux_gf_compute_int", cfg.aux_gf_compute_int);
@@ -429,6 +436,20 @@ RunConfig read_config()
    );
    amrex::ParmParse initial_data_pp("initial_data");
    initial_data_pp.queryAdd("magnetic", cfg.initial_data_magnetic);
+   initial_data_pp.queryAdd(
+      "magnetic_seed", cfg.initial_data_magnetic_seed
+   );
+   initial_data_pp.queryAdd(
+      "magnetic_seed_pressure_cutoff",
+      cfg.initial_data_magnetic_seed_pressure_cutoff
+   );
+   initial_data_pp.queryAdd(
+      "magnetic_seed_exponent", cfg.initial_data_magnetic_seed_exponent
+   );
+   initial_data_pp.queryAdd(
+      "magnetic_seed_maximum_comoving_field",
+      cfg.initial_data_magnetic_seed_maximum_comoving_field
+   );
    initial_data_pp.queryAdd("spacetime", cfg.initial_data_spacetime);
    initial_data_pp.queryAdd("lapse", cfg.initial_data_lapse);
    initial_data_pp.queryAdd("shift", cfg.initial_data_shift);
@@ -491,6 +512,10 @@ RunConfig read_config()
       cfg.initial_data_differential_rotation_length
    );
    initial_data_pp.queryAdd(
+      "differential_rotation_length_b",
+      cfg.initial_data_differential_rotation_length_b
+   );
+   initial_data_pp.queryAdd(
       "rotation_power_q", cfg.initial_data_rotation_power_q
    );
    initial_data_pp.queryAdd("rotation_axis1", cfg.initial_data_rotation_axis1);
@@ -509,6 +534,25 @@ RunConfig read_config()
    initial_data_pp.queryAdd(
       "rotation_continuation_steps",
       cfg.initial_data_rotation_continuation_steps
+   );
+   initial_data_pp.queryAdd(
+      "perturbation", cfg.initial_data_perturbation
+   );
+   initial_data_pp.queryAdd(
+      "perturbation_pressure_scale",
+      cfg.initial_data_perturbation_pressure_scale
+   );
+   initial_data_pp.queryAdd(
+      "perturbation_amplitude", cfg.initial_data_perturbation_amplitude
+   );
+   initial_data_pp.queryAdd(
+      "perturbation_mode", cfg.initial_data_perturbation_mode
+   );
+   initial_data_pp.queryAdd(
+      "perturbation_phase", cfg.initial_data_perturbation_phase
+   );
+   initial_data_pp.queryAdd(
+      "perturbation_radius", cfg.initial_data_perturbation_radius
    );
    initial_data_pp.queryarr(
       "rotation_continuation_targets",
@@ -905,11 +949,17 @@ void validate_config(RunConfig const& cfg)
    );
    const InitialDataOwnerInfo& spherical_axisymmetric_xcts_owner =
       initial_data_owner_info(InitialDataOwner::SphericalAxisymmetricXcts);
+   const InitialDataOwnerInfo& spherical_axisymmetric_xcts_3d_owner =
+      initial_data_owner_info(InitialDataOwner::SphericalAxisymmetricXcts3d);
    const InitialDataOwnerInfo& cartesian_conformal_owner =
       initial_data_owner_info(InitialDataOwner::CartesianConformalConstraints);
    const InitialDataOwnerInfo& spherical_black_hole_xcts_owner =
       initial_data_owner_info(
          InitialDataOwner::SphericalAxisymmetricBlackHoleXcts
+      );
+   const InitialDataOwnerInfo& spherical_black_hole_xcts_3d_owner =
+      initial_data_owner_info(
+         InitialDataOwner::SphericalAxisymmetricBlackHoleXcts3d
       );
    const InitialDataOwnerInfo& cartesian_kerr_owner = initial_data_owner_info(
       InitialDataOwner::CartesianKerrSchild
@@ -920,13 +970,23 @@ void validate_config(RunConfig const& cfg)
       cfg.mesh_coordinate,
       initial_data_axes
    );
-   const bool spherical_axisymmetric_xcts_layout =
+   const bool spherical_axisymmetric_xcts_2d_layout =
       initial_data_owner_layout_matches(
          spherical_axisymmetric_xcts_owner,
          AMREX_SPACEDIM,
          cfg.mesh_coordinate,
          initial_data_axes
       );
+   const bool spherical_axisymmetric_xcts_3d_layout =
+      initial_data_owner_layout_matches(
+         spherical_axisymmetric_xcts_3d_owner,
+         AMREX_SPACEDIM,
+         cfg.mesh_coordinate,
+         initial_data_axes
+      );
+   const bool spherical_axisymmetric_xcts_layout =
+      spherical_axisymmetric_xcts_2d_layout
+      || spherical_axisymmetric_xcts_3d_layout;
    const bool cartesian_conformal_layout = initial_data_owner_layout_matches(
       cartesian_conformal_owner,
       AMREX_SPACEDIM,
@@ -940,6 +1000,13 @@ void validate_config(RunConfig const& cfg)
          cfg.mesh_coordinate,
          initial_data_axes
       );
+   const bool spherical_black_hole_xcts_3d_layout =
+      initial_data_owner_layout_matches(
+         spherical_black_hole_xcts_3d_owner,
+         AMREX_SPACEDIM,
+         cfg.mesh_coordinate,
+         initial_data_axes
+      );
    const bool cartesian_kerr_layout = initial_data_owner_layout_matches(
       cartesian_kerr_owner,
       AMREX_SPACEDIM,
@@ -949,7 +1016,8 @@ void validate_config(RunConfig const& cfg)
    const bool spherical_black_hole_xcts_request =
       cfg.ic == "black_hole"
       && cfg.spacetime_initial_data == "xcts"
-      && spherical_black_hole_xcts_layout;
+      && (spherical_black_hole_xcts_layout
+          || spherical_black_hole_xcts_3d_layout);
    if (kerr_schild_requested) {
       if (AMREX_SPACEDIM != 3) {
          amrex::Abort(
@@ -981,7 +1049,8 @@ void validate_config(RunConfig const& cfg)
            || cfg.spacetime_origin3 != 0.0)) {
       amrex::Abort(
          "black_hole initial data currently require a positive-mass, "
-         "origin-centered solve-only 2D spherical r-theta XCTS shell"
+         "origin-centered solve-only spherical r-theta or axisymmetric "
+         "r-theta-phi XCTS shell"
       );
    }
    require_supported_option(
@@ -1136,12 +1205,23 @@ void validate_config(RunConfig const& cfg)
          cfg.initial_data_disk_gravity
       )
       && cfg.initial_data_disk_gravity == "coupled";
+   const bool spherical_coupled_stellar_torus_request =
+      spherical_axisymmetric_xcts_layout
+      && initial_data_owner_list_contains(
+         spherical_axisymmetric_xcts_3d_layout
+            ? spherical_axisymmetric_xcts_3d_owner.central_objects
+            : spherical_axisymmetric_xcts_owner.central_objects,
+         cfg.ic
+      )
+      && cfg.spacetime_initial_data == "xcts"
+      && cfg.initial_data_disk_gravity == "coupled";
    const bool loaded_3d_materialization_request =
       AMREX_SPACEDIM == 3 && cfg.initial_data_solve_only
       && !cfg.initial_data_input_file.empty();
    if (equilibrium_torus_enabled
        && !analytic_kerr_disk_request
        && !cartesian_coupled_stellar_torus_request
+       && !spherical_coupled_stellar_torus_request
        && !loaded_3d_materialization_request
        && (std::abs(disk_axis1) > disk_axis_tolerance
            || std::abs(disk_axis2) > disk_axis_tolerance
@@ -1283,6 +1363,19 @@ void validate_config(RunConfig const& cfg)
          "differential_rotation_length"
       );
    }
+   const bool uryu_rotation_law =
+      cfg.initial_data_rotation_law == "uryu_plus_13"
+      || cfg.initial_data_rotation_law == "uryu_j_envelope_p1";
+   if (cfg.ic == "rotating_star" && uryu_rotation_law
+       && (!(cfg.initial_data_differential_rotation_length_b > 0.0)
+           || !std::isfinite(
+              cfg.initial_data_differential_rotation_length_b
+           ))) {
+      amrex::Abort(
+         "Uryu rotating-star initial data requires a positive finite "
+         "differential_rotation_length_b"
+      );
+   }
    if (cfg.ic == "rotating_star"
        && cfg.initial_data_rotation_law == "q_power"
        && (!(cfg.initial_data_rotation_power_q >= 1.0)
@@ -1291,6 +1384,117 @@ void validate_config(RunConfig const& cfg)
          "q-power rotating-star initial data requires finite "
          "rotation_power_q >= 1"
       );
+   }
+   bool perturbation_supported = false;
+   for (InitialDataPerturbationInfo const& perturbation
+        : InitialDataPerturbationCatalog) {
+      perturbation_supported = perturbation_supported
+         || perturbation.name == cfg.initial_data_perturbation;
+   }
+   if (!perturbation_supported) {
+      amrex::Abort(
+         "initial_data.perturbation is not present in schema/methods.toml"
+      );
+   }
+   if (cfg.initial_data_perturbation != "none") {
+      if (cfg.ic != "tov" && cfg.ic != "rotating_star") {
+         amrex::Abort(
+            "initial-data equilibrium perturbations require pyfluid.ic = "
+            "tov or rotating_star"
+         );
+      }
+      if (cfg.initial_data_solve_only) {
+         amrex::Abort(
+            "initial-data equilibrium perturbations are evolution-start "
+            "modifiers and cannot be combined with solve_only"
+         );
+      }
+      if (cfg.eos != "polytrope" && cfg.eos != "hybrid_polytrope"
+          && cfg.eos != "compose") {
+         amrex::Abort(
+            "initial-data equilibrium perturbations require a cold "
+            "polytrope, hybrid-polytrope, or CompOSE EoS"
+         );
+      }
+   }
+   if (cfg.initial_data_perturbation == "cold_pressure_scale"
+       && (!(cfg.initial_data_perturbation_pressure_scale > 0.0)
+           || !std::isfinite(
+              cfg.initial_data_perturbation_pressure_scale
+           )
+           || std::abs(cfg.initial_data_perturbation_pressure_scale - 1.0)
+              > 0.1)) {
+      amrex::Abort(
+         "cold_pressure_scale requires a finite positive pressure scale "
+         "within 10 percent of unity"
+      );
+   }
+   if (cfg.initial_data_perturbation
+       == "density_azimuthal_espino2019") {
+#if (AMREX_SPACEDIM != 3)
+      amrex::Abort(
+         "density_azimuthal_espino2019 requires the 3D executable"
+      );
+#endif
+      if (!std::isfinite(cfg.initial_data_perturbation_amplitude)
+          || std::abs(cfg.initial_data_perturbation_amplitude) > 0.1
+          || cfg.initial_data_perturbation_mode < 1
+          || cfg.initial_data_perturbation_mode > 16
+          || !std::isfinite(cfg.initial_data_perturbation_phase)
+          || cfg.initial_data_perturbation_radius == 0.0
+          || !std::isfinite(cfg.initial_data_perturbation_radius)) {
+         amrex::Abort(
+            "density_azimuthal_espino2019 requires |amplitude| <= 0.1, "
+            "mode in [1,16], a finite phase, and positive or automatic "
+            "perturbation_radius"
+         );
+      }
+   }
+   bool magnetic_seed_supported = false;
+   for (InitialDataMagneticSeedInfo const& seed
+        : InitialDataMagneticSeedCatalog) {
+      magnetic_seed_supported = magnetic_seed_supported
+         || seed.name == cfg.initial_data_magnetic_seed;
+   }
+   if (!magnetic_seed_supported) {
+      amrex::Abort(
+         "initial_data.magnetic_seed is not present in schema/methods.toml"
+      );
+   }
+   if (cfg.initial_data_magnetic_seed != "none") {
+#if (AMREX_SPACEDIM != 3)
+      amrex::Abort("magnetic initial-data seeds require the 3D executable");
+#endif
+      if (physical_system(cfg) != PhysicalSystem::RMHD || cfg.ct != "on"
+          || cfg.initial_data_magnetic != "id"
+          || cfg.mesh_coordinate != "cartesian"
+          || (cfg.ic != "tov" && cfg.ic != "rotating_star")
+          || cfg.initial_data_disk != "none"
+          || cfg.spacetime_initial_data != "xcts"
+          || cfg.spacetime_matter_coupling != "coupled"
+          || !cfg.initial_data_input_file.empty()
+          || !cfg.initial_data_solve_only) {
+         amrex::Abort(
+            "magnetic initial-data seeds currently require a fresh 3D "
+            "Cartesian RMHD+CT stellar coupled-XCTS solve-only artifact "
+            "without a disk"
+         );
+      }
+      if (!(cfg.initial_data_magnetic_seed_pressure_cutoff >= 0.0)
+          || !(cfg.initial_data_magnetic_seed_pressure_cutoff < 1.0)
+          || !std::isfinite(cfg.initial_data_magnetic_seed_pressure_cutoff)
+          || !(cfg.initial_data_magnetic_seed_exponent >= 1.0)
+          || !std::isfinite(cfg.initial_data_magnetic_seed_exponent)
+          || !(cfg.initial_data_magnetic_seed_maximum_comoving_field > 0.0)
+          || !std::isfinite(
+             cfg.initial_data_magnetic_seed_maximum_comoving_field
+          )) {
+         amrex::Abort(
+            "pressure-poloidal magnetic seed requires 0 <= pressure_cutoff "
+            "< 1, finite exponent >= 1, and positive finite maximum "
+            "comoving field"
+         );
+      }
    }
    require_supported_option(
       cfg.spacetime_lapse_gauge,
@@ -1496,9 +1700,14 @@ void validate_config(RunConfig const& cfg)
       );
    }
    const InitialDataOption& selected_initial_data = initial_data_option(cfg.ic);
+   const bool magnetized_stellar_physical_id =
+      selected_system == PhysicalSystem::RMHD
+      && cfg.initial_data_solve_only
+      && cfg.initial_data_magnetic_seed != "none"
+      && (cfg.ic == "tov" || cfg.ic == "rotating_star");
    if (!contains_physical_system(
           selected_initial_data.physical_systems, selected_system
-       )) {
+       ) && !magnetized_stellar_physical_id) {
       amrex::Abort(
          "pyfluid.ic = " + cfg.ic
          + " is incompatible with the selected pyfluid.physics system"
@@ -1534,8 +1743,14 @@ void validate_config(RunConfig const& cfg)
       );
    }
    if (physical_system_is_relativistic(selected_system)) {
-      if (selected_system == PhysicalSystem::RMHD && cfg.eos != "ideal_gas") {
-         amrex::Abort("RMHD runtime evolution currently requires pyfluid.eos = ideal_gas");
+      if (selected_system == PhysicalSystem::RMHD && cfg.eos != "ideal_gas"
+          && !(cfg.initial_data_solve_only
+               && cfg.initial_data_magnetic_seed != "none")) {
+         amrex::Abort(
+            "RMHD runtime evolution currently requires pyfluid.eos = "
+            "ideal_gas; cold/hybrid/tabulated RMHD is available only to "
+            "the magnetized physical-ID solve-only route"
+         );
       }
       if (cfg.passive_scalars != 0 || cfg.diffusion != "none"
           || cfg.source != "none" || cfg.gravity != "none" || cfg.solid_geometry != "off") {
@@ -1574,7 +1789,8 @@ void validate_config(RunConfig const& cfg)
          amrex::Abort("pyfluid.ic = fixed_metric_hse requires a non-Minkowski fixed metric");
       }
       if (cfg.ic == "tov" || cfg.ic == "rotating_star") {
-         if (selected_system != PhysicalSystem::RHD
+         if ((selected_system != PhysicalSystem::RHD
+              && !magnetized_stellar_physical_id)
              || !spacetime_stores_state(cfg)
              || (cfg.eos != "polytrope" && cfg.eos != "hybrid_polytrope"
                  && cfg.eos != "compose")) {
@@ -2414,17 +2630,24 @@ void validate_config(RunConfig const& cfg)
    const bool mapped_radial_owner =
       (reduced_axisymmetric_xcts
        && initial_data_owner_list_contains(
-          spherical_axisymmetric_xcts_owner.grid_kinds, "mapped_radial"
+          spherical_axisymmetric_xcts_3d_layout
+             ? spherical_axisymmetric_xcts_3d_owner.grid_kinds
+             : spherical_axisymmetric_xcts_owner.grid_kinds,
+          "mapped_radial"
        ))
       || (reduced_radial_tov
           && initial_data_owner_list_contains(
              spherical_tov_owner.grid_kinds, "mapped_radial"
           ))
       || (reduced_black_hole_xcts
-          && initial_data_owner_list_contains(
-             spherical_black_hole_xcts_owner.grid_kinds,
-             "mapped_radial_shell"
-          ));
+          && (initial_data_owner_list_contains(
+                 spherical_black_hole_xcts_owner.grid_kinds,
+                 "mapped_radial_shell"
+              )
+              || initial_data_owner_list_contains(
+                 spherical_black_hole_xcts_3d_owner.grid_kinds,
+                 "mapped_radial_shell"
+              )));
    const bool analytic_kerr_torus =
       cartesian_kerr_layout
       && cfg.ic == "equilibrium_torus"
@@ -2459,7 +2682,8 @@ void validate_config(RunConfig const& cfg)
       amrex::Abort(
          "initial_data.radial_grid = adaptive currently requires a solve-only "
          "spherical-r TOV, spherical r-theta rotating-star XCTS solve, or "
-         "spherical r-theta black-hole XCTS shell solve"
+         "spherical r-theta or axisymmetric r-theta-phi black-hole XCTS "
+         "shell solve"
       );
    }
    if (equilibrium_torus_enabled
@@ -2501,7 +2725,8 @@ void validate_config(RunConfig const& cfg)
        && !loaded_3d_materialization_request) {
       amrex::Abort(
          "reduced curvilinear initial-data solves currently support TOV or "
-         "rotating-star or black-hole spherical r-theta XCTS"
+         "rotating-star spherical r-theta XCTS, or black-hole spherical "
+         "r-theta/axisymmetric r-theta-phi XCTS"
       );
    }
    if (!cfg.initial_data_sequence_output_dir.empty()
@@ -2563,6 +2788,28 @@ void validate_config(RunConfig const& cfg)
    if (cfg.diagnostic_azimuthal_mode_m_max < 0
        || cfg.diagnostic_azimuthal_mode_m_max > 64) {
       amrex::Abort("diagnostics.azimuthal_mode_m_max must be between 0 and 64");
+   }
+   if (cfg.diagnostic_matter_mode_m_max < -1
+       || cfg.diagnostic_matter_mode_m_max > 64) {
+      amrex::Abort(
+         "diagnostics.matter_mode_m_max must be -1 (disabled) or between 0 "
+         "and 64"
+      );
+   }
+   if (cfg.diagnostic_matter_mode_m_max >= 0) {
+      const amrex::Real axis_squared =
+         cfg.diagnostic_matter_mode_axis1 * cfg.diagnostic_matter_mode_axis1
+         + cfg.diagnostic_matter_mode_axis2 * cfg.diagnostic_matter_mode_axis2
+         + cfg.diagnostic_matter_mode_axis3 * cfg.diagnostic_matter_mode_axis3;
+      if (!(axis_squared > 0.0) || !std::isfinite(axis_squared)
+          || !std::isfinite(cfg.diagnostic_matter_mode_origin1)
+          || !std::isfinite(cfg.diagnostic_matter_mode_origin2)
+          || !std::isfinite(cfg.diagnostic_matter_mode_origin3)) {
+         amrex::Abort(
+            "matter azimuthal modes require a finite origin and nonzero "
+            "finite axis"
+         );
+      }
    }
    for (std::string const& field : azimuthal_mode_field_names(cfg)) {
       const bool primitive = field == "rho" || field == "pressure";

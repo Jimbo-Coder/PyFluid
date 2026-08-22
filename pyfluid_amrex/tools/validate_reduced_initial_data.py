@@ -11,6 +11,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from plotfile_reader import parse_plot_header, read_level_state
 from validation_common import (
    ELLIPTIC_POLICY,
    ROOT,
@@ -34,6 +35,9 @@ RNS_SOURCE_INPUT = (
 )
 RNS_MATERIALIZED_INPUT = (
    ROOT / "pyfluid_amrex/inputs/rotating_star_from_spherical_id_3d.in"
+)
+RNS_FULL_STORAGE_INPUT = (
+   ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_spherical_id_3d.in"
 )
 RUN_ROOT = ROOT / "runs/current/reduced_initial_data_validation"
 RESULTS = RUN_ROOT / "reduced_initial_data.tsv"
@@ -289,6 +293,142 @@ def read_artifact_metadata(artifact: Path) -> dict[str, str]:
    return values
 
 
+def dense_artifact_field(path: Path) -> np.ndarray:
+   names, dimension, _ = parse_plot_header(path)
+   return read_level_state(path, names, dimension, 0)
+
+
+def normalized_maximum_difference(
+   candidate: np.ndarray,
+   reference: np.ndarray,
+) -> float:
+   scale = max(float(np.max(np.abs(reference))), 1.0e-14)
+   return float(np.max(np.abs(candidate - reference)) / scale)
+
+
+def validate_full_storage_rns(
+   args: argparse.Namespace,
+) -> list[dict[str, object]]:
+   common_2d = {
+      "amr.n_cell": "96 24",
+      "amr.max_grid_size": "32",
+      "amr.blocking_factor": "1",
+      "initial_data.radial_grid": "adaptive",
+      "initial_data.angular_velocity": "0.001",
+   }
+   _, reduced_artifact, reduced_seconds = run_id_case(
+      "rns_axisymmetric_2d_96x24",
+      2,
+      RNS_SOURCE_INPUT,
+      common_2d,
+      args,
+   )
+   require_portable_source(reduced_artifact, 2)
+
+   full_artifacts: dict[int, Path] = {}
+   full_seconds: dict[int, float] = {}
+   for azimuthal_cells in (1, 4):
+      _, artifact, seconds = run_id_case(
+         f"rns_axisymmetric_3d_96x24x{azimuthal_cells}",
+         3,
+         RNS_FULL_STORAGE_INPUT,
+         {
+            "amr.n_cell": f"96 24 {azimuthal_cells}",
+            "amr.max_grid_size": "32",
+            "amr.blocking_factor": "1",
+            "initial_data.radial_grid": "adaptive",
+            "initial_data.angular_velocity": "0.001",
+         },
+         args,
+      )
+      require_portable_source(artifact, 3)
+      metadata = read_artifact_metadata(artifact)
+      if metadata.get("mesh_coordinate") != "spherical" \
+            or metadata.get("mesh_axes") != "r theta phi" \
+            or metadata.get("periodicity") != "0,0,1":
+         raise RuntimeError(
+            "full-storage RNS artifact lost its spherical owner identity"
+         )
+      full_artifacts[azimuthal_cells] = artifact
+      full_seconds[azimuthal_cells] = seconds
+
+   reduced_fluid = dense_artifact_field(
+      reduced_artifact / "physical_fluid.h5"
+   )
+   reduced_adm = dense_artifact_field(reduced_artifact / "adm_geometry.h5")
+   full_fields = {
+      azimuthal_cells: (
+         dense_artifact_field(artifact / "physical_fluid.h5"),
+         dense_artifact_field(artifact / "adm_geometry.h5"),
+      )
+      for azimuthal_cells, artifact in full_artifacts.items()
+   }
+   maximum_phi_variation = 0.0
+   maximum_field_difference = 0.0
+   for fluid, adm in full_fields.values():
+      maximum_phi_variation = max(
+         maximum_phi_variation,
+         normalized_maximum_difference(
+            fluid, np.repeat(fluid[..., :1], fluid.shape[-1], axis=-1)
+         ),
+         normalized_maximum_difference(
+            adm, np.repeat(adm[..., :1], adm.shape[-1], axis=-1)
+         ),
+      )
+      maximum_field_difference = max(
+         maximum_field_difference,
+         normalized_maximum_difference(fluid[..., 0], reduced_fluid),
+         normalized_maximum_difference(adm[..., 0], reduced_adm),
+      )
+
+   diagnostic_fields = (
+      "maximum_density",
+      "maximum_velocity",
+      "injection_energy",
+      "equatorial_radius",
+      "polar_radius",
+      "mass_shedding_indicator",
+      "adm_mass",
+      "baryonic_mass",
+      "angular_momentum",
+      "dimensionless_spin",
+   )
+   reduced_metadata = read_artifact_metadata(reduced_artifact)
+   maximum_diagnostic_difference = 0.0
+   for artifact in full_artifacts.values():
+      metadata = read_artifact_metadata(artifact)
+      for field in diagnostic_fields:
+         reference = float(reduced_metadata[field])
+         candidate = float(metadata[field])
+         maximum_diagnostic_difference = max(
+            maximum_diagnostic_difference,
+            abs(candidate - reference) / max(abs(reference), 1.0e-14),
+         )
+
+   if maximum_phi_variation > 5.0e-14 \
+         or maximum_field_difference > 2.0e-12 \
+         or maximum_diagnostic_difference > 2.0e-11:
+      raise RuntimeError(
+         "axisymmetric full-storage RNS does not reduce to the native 2D "
+         "owner: "
+         f"phi={maximum_phi_variation:.6e}, "
+         f"fields={maximum_field_difference:.6e}, "
+         f"diagnostics={maximum_diagnostic_difference:.6e}"
+      )
+   return [{
+      "kind": "initial_data",
+      "case": "rns_axisymmetric_2d_to_3d_nphi1_nphi4",
+      "status": "PASS",
+      "metric": "maximum_normalized_field_difference",
+      "value": maximum_field_difference,
+      "maximum_phi_variation": maximum_phi_variation,
+      "maximum_diagnostic_difference": maximum_diagnostic_difference,
+      "source_seconds": reduced_seconds
+         + full_seconds[1] + full_seconds[4],
+      "run_dir": repo_relative(full_artifacts[4].parent),
+   }]
+
+
 def validate_reduced_differential_rns(
    args: argparse.Namespace,
 ) -> list[dict[str, object]]:
@@ -301,10 +441,12 @@ def validate_reduced_differential_rns(
    }
    artifacts: dict[str, Path] = {}
    seconds: dict[str, float] = {}
-   for name, law, power in (
-      ("j_constant", "j_constant", "1"),
-      ("q_power_q1", "q_power", "1"),
-      ("q_power_q2", "q_power", "2"),
+   for name, law, power, length_b in (
+      ("j_constant", "j_constant", "1", "10"),
+      ("q_power_q1", "q_power", "1", "10"),
+      ("q_power_q2", "q_power", "2", "10"),
+      ("uryu_plus_13", "uryu_plus_13", "1", "10"),
+      ("uryu_j_limit", "uryu_j_envelope_p1", "1", "1e7"),
    ):
       _, artifact, elapsed = run_id_case(
          f"rns_differential_{name}_96x24",
@@ -314,6 +456,7 @@ def validate_reduced_differential_rns(
             **common,
             "initial_data.rotation_law": law,
             "initial_data.rotation_power_q": power,
+            "initial_data.differential_rotation_length_b": length_b,
          },
          args,
       )
@@ -329,7 +472,17 @@ def validate_reduced_differential_rns(
          or metadata["q_power_q1"].get("rotation_law") != "q_power" \
          or metadata["q_power_q2"].get("rotation_law") != "q_power" \
          or metadata["q_power_q1"].get("rotation_power_q") != "1" \
-         or metadata["q_power_q2"].get("rotation_power_q") != "2":
+         or metadata["q_power_q2"].get("rotation_power_q") != "2" \
+         or metadata["uryu_plus_13"].get("rotation_law") \
+            != "uryu_plus_13" \
+         or metadata["uryu_j_limit"].get("rotation_law") \
+            != "uryu_j_envelope_p1" \
+         or float(metadata["uryu_plus_13"].get(
+            "differential_rotation_length_b", "nan"
+         )) != 10.0 \
+         or float(metadata["uryu_j_limit"].get(
+            "differential_rotation_length_b", "nan"
+         )) != 1.0e7:
       raise RuntimeError("differential RNS artifacts lost their law identity")
 
    identity_fields = (
@@ -357,6 +510,19 @@ def validate_reduced_differential_rns(
       raise RuntimeError(
          "q-power q=1 does not reproduce j-constant RNS: "
          f"maximum relative diagnostic error={q1_identity_error:.6e}"
+      )
+
+   uryu_j_limit_error = max(
+      abs(
+         float(metadata["uryu_j_limit"][field])
+         - float(metadata["j_constant"][field])
+      ) / max(abs(float(metadata["j_constant"][field])), 1.0e-14)
+      for field in identity_fields
+   )
+   if uryu_j_limit_error > 1.0e-7:
+      raise RuntimeError(
+         "Uryu j-envelope did not approach j-constant as B increased: "
+         f"maximum relative diagnostic error={uryu_j_limit_error:.6e}"
       )
 
    q2 = metadata["q_power_q2"]
@@ -390,6 +556,38 @@ def validate_reduced_differential_rns(
          f"values={q2_values}, J difference={q2_j_difference:.6e}"
       )
 
+   uryu_plus = metadata["uryu_plus_13"]
+   uryu_plus_values = {
+      key: float(uryu_plus[key])
+      for key in (
+         "maximum_velocity",
+         "injection_energy",
+         "mass_shedding_indicator",
+         "adm_mass",
+         "baryonic_mass",
+         "angular_momentum",
+         "dimensionless_spin",
+      )
+   }
+   uryu_plus_j_difference = abs(
+      uryu_plus_values["angular_momentum"]
+      - float(metadata["j_constant"]["angular_momentum"])
+   ) / abs(float(metadata["j_constant"]["angular_momentum"]))
+   if not all(np.isfinite(value) for value in uryu_plus_values.values()) \
+         or uryu_plus_values["maximum_velocity"] <= 0.0 \
+         or uryu_plus_values["injection_energy"] <= 0.0 \
+         or not 0.0 < uryu_plus_values["mass_shedding_indicator"] < 2.0 \
+         or uryu_plus_values["adm_mass"] <= 0.0 \
+         or uryu_plus_values["baryonic_mass"] <= 0.0 \
+         or uryu_plus_values["angular_momentum"] <= 0.0 \
+         or not 0.0 < uryu_plus_values["dimensionless_spin"] < 1.0 \
+         or uryu_plus_j_difference < 1.0e-3:
+      raise RuntimeError(
+         "Uryu plus p=1 q=3 did not produce a distinct physical RNS: "
+         f"values={uryu_plus_values}, "
+         f"J difference={uryu_plus_j_difference:.6e}"
+      )
+
    return [{
       "kind": "initial_data",
       "case": "rns_j_constant_q_power_q1_identity_96x24",
@@ -408,6 +606,26 @@ def validate_reduced_differential_rns(
       "dimensionless_spin": q2_values["dimensionless_spin"],
       "source_seconds": seconds["q_power_q2"],
       "run_dir": repo_relative(artifacts["q_power_q2"].parent),
+   }, {
+      "kind": "initial_data",
+      "case": "rns_uryu_j_envelope_j_constant_limit_96x24",
+      "status": "PASS",
+      "metric": "maximum_relative_diagnostic_error",
+      "value": uryu_j_limit_error,
+      "source_seconds": seconds["uryu_j_limit"],
+      "run_dir": repo_relative(artifacts["uryu_j_limit"].parent),
+   }, {
+      "kind": "initial_data",
+      "case": "rns_uryu_plus_13_useful_regime_96x24",
+      "status": "PASS",
+      "metric": "mass_shedding_indicator",
+      "value": uryu_plus_values["mass_shedding_indicator"],
+      "mass_shedding_indicator": uryu_plus_values[
+         "mass_shedding_indicator"
+      ],
+      "dimensionless_spin": uryu_plus_values["dimensionless_spin"],
+      "source_seconds": seconds["uryu_plus_13"],
+      "run_dir": repo_relative(artifacts["uryu_plus_13"].parent),
    }]
 
 
@@ -960,6 +1178,7 @@ def main() -> int:
       "materialization_seconds": adaptive_materialization_seconds,
       "run_dir": repo_relative(adaptive_tov_materialized.parent),
    })
+   rows.extend(validate_full_storage_rns(args))
    rows.extend(validate_reduced_rns_handoff(args))
    rows.extend(validate_reduced_differential_rns(args))
 
@@ -1103,6 +1322,8 @@ def main() -> int:
       "materialization_seconds",
       "mass_shedding_indicator",
       "dimensionless_spin",
+      "maximum_phi_variation",
+      "maximum_diagnostic_difference",
       "run_dir",
    ]
    results_path = RESULTS if args.level == "standard" else FULL_RESULTS

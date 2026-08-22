@@ -166,7 +166,22 @@ ln h = ln C - ln alpha - 1/2 ln(1 - gamma_ij v^i v^j)
        - integral_(Omega_c)^Omega j(Omega') dOmega'
 ```
 
-so `q_power` with `q = 1` is exactly the j-constant law. Rotation-law identity
+so `q_power` with `q = 1` is exactly the j-constant law. The two post-merger
+Uryu catalog entries instead parameterize angular velocity
+by `j = u^t u_phi`. With `x=j/A^2` and `kappa=A^2/B^2`, they are
+
+```text
+uryu_plus_13:       Omega(j) = Omega_c (1 + kappa x) / (1 + x^4)
+uryu_j_envelope_p1: Omega(j) = Omega_c (1 + kappa x) (1 - x)
+```
+
+where `A=initial_data.differential_rotation_length` and
+`B=initial_data.differential_rotation_length_b`. Their analytic Euler
+integrals and derivatives are generated from the same symbolic expressions;
+the runtime solves only the local circular-flow root for `j`. The second law
+approaches the j-constant relation as `B` tends to infinity.
+
+Rotation-law identity
 and required parameters are declared once in `schema/methods.toml`; the Euler
 integrals are generated kernels, the pointwise circular-flow/root solve is
 shared with nonconstant disk laws in `initial_data/circular_rotation.hpp`, and
@@ -197,6 +212,51 @@ point analysis, and time evolution.
 
 Both the rotation-center effective potential and the surface `ln h` field are
 filled through one exchanged ghost layer before arbitrary-point interpolation.
+
+### Evolution-start equilibrium perturbations
+
+The optional perturbations are declared once in `schema/methods.toml` and are
+applied after an equilibrium has been materialized onto the evolution grid:
+
+```text
+initial_data.perturbation = none | cold_pressure_scale |
+                            density_azimuthal_espino2019
+```
+
+`cold_pressure_scale` remains on the selected cold barotrope. Given an
+equilibrium state at density `rho` and a scale `alpha`, it solves
+
+```text
+P_cold(rho_new) = alpha P_cold(rho)
+```
+
+and then recomputes `rho_new`, cold pressure, specific internal energy,
+energy density, enthalpy, sound speed, and the conserved state together. It
+does **not** deplete pressure at fixed density: that would violate a strictly
+cold EoS unless a separate thermal/off-cold degree of freedom were introduced.
+Consequently this cold-consistent perturbation changes baryon mass slightly.
+
+`density_azimuthal_espino2019` applies
+
+```text
+rho_new = rho [1 + B (varpi / r_e) sin(m phi + phase)]
+```
+
+about the configured stellar center and rotation axis, then rebuilds the same
+complete cold-EoS state. These are deliberately small evolution seeds. The
+metric is not re-solved after either perturbation, so the runtime reports
+`constraint_polish=none` and the initial constraints should be monitored.
+
+A reusable physical-ID artifact is written before the evolution-start
+perturbation. Loading that artifact later therefore recovers the unperturbed
+equilibrium; checkpoint/restart remains the mechanism for preserving an
+already perturbed evolved state. Focused cold-closure, mode, three-rank, and
+artifact-ordering coverage is provided by
+
+```bash
+uv run python pyfluid_amrex/tools/validate_initial_data_perturbations.py \
+  --force --ranks 3
+```
 
 ### Initial-data grid policy
 
@@ -552,8 +612,13 @@ Cowling mode, maximum-density changes below one percent, and a finite-box rest
 mass ledger residual below `1e-12`. Physical atmosphere outflow is recorded by
 the boundary ledger rather than mislabeled as conservation error.
 
-This is a self-consistent **unmagnetized** star. Adding a magnetic field to a
-TOV profile produces RMHD initial data but not magnetohydrostatic equilibrium.
-A self-consistent magnetized star requires a rotating/magnetized equilibrium
-matter solve coupled to the constraint equations; it is not supplied by the
-current unmagnetized uniform-rotation XCTS path.
+The standard TOV/RNS equilibrium remains **unmagnetized**. The optional
+`initial_data.magnetic_seed = pressure_poloidal` route constructs a staggered
+vector potential, takes the production CT curl, normalizes its maximum comoving
+field, and re-solves coupled XCTS with the resulting RMHD stress-energy. It is
+currently a fresh, single-level, 3D Cartesian, solve-only stellar artifact
+owner. This makes the constraints consistent with the magnetic field, but the
+fluid first integral remains unmagnetized: the result is a pressure-confined
+magnetic seed, not a magnetohydrostatic equilibrium. Full force balance needs a
+magnetized Euler/Grad--Shafranov matter owner. Cold/hybrid RMHD artifacts also
+cannot begin evolution until runtime C2P supports that EoS.

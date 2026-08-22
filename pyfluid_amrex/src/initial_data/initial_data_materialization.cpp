@@ -149,7 +149,7 @@ void materialize_conformal_geometry(
    fill_initial_data_ghosts(hierarchy, cell_spacetime, boundary);
 }
 
-#if (AMREX_SPACEDIM == 2)
+#if (AMREX_SPACEDIM >= 2)
 AMREX_GPU_DEVICE AMREX_FORCE_INLINE
 amrex::Real axisymmetric_nodal_derivative(
    amrex::Array4<amrex::Real const> const& field,
@@ -285,22 +285,37 @@ void enforce_axisymmetric_radial_vertex_boundary(
          const int second_j = amrex::max(cell_lo.y, amrex::min(j, cell_hi.y));
          amrex::Real face_sum = 0.0;
          int face_count = 0;
+#if (AMREX_SPACEDIM == 3)
+         const int first_k = k - 1;
+         const int second_k = k;
+#else
+         const int first_k = k;
+         const int second_k = k;
+#endif
          for (int cell_j = first_j; cell_j <= second_j; ++cell_j) {
-            const amrex::Real a = coefficient_a(ghost_i, cell_j, k, 0);
-            const amrex::Real b = coefficient_b(ghost_i, cell_j, k, 0);
-            const amrex::Real c = coefficient_c(ghost_i, cell_j, k, 0)
-               + a * asymptotic_value;
-            const amrex::Real denominator = lower
-               ? 0.5 * a - b / width
-               : 0.5 * a + b / width;
-            const amrex::Real delta = lower
-               ? -(0.5 * a + b / width) / denominator
-               : (b / width - 0.5 * a) / denominator;
-            const amrex::Real gamma = c / denominator;
-            face_sum += 0.5 * (
-               (1.0 + delta) * cell(cell_i, cell_j, k, 0) + gamma
-            );
-            ++face_count;
+            for (int cell_k = first_k; cell_k <= second_k; ++cell_k) {
+               const amrex::Real a = coefficient_a(
+                  ghost_i, cell_j, cell_k, 0
+               );
+               const amrex::Real b = coefficient_b(
+                  ghost_i, cell_j, cell_k, 0
+               );
+               const amrex::Real c = coefficient_c(
+                  ghost_i, cell_j, cell_k, 0
+               ) + a * asymptotic_value;
+               const amrex::Real denominator = lower
+                  ? 0.5 * a - b / width
+                  : 0.5 * a + b / width;
+               const amrex::Real delta = lower
+                  ? -(0.5 * a + b / width) / denominator
+                  : (b / width - 0.5 * a) / denominator;
+               const amrex::Real gamma = c / denominator;
+               face_sum += 0.5 * (
+                  (1.0 + delta) * cell(cell_i, cell_j, cell_k, 0)
+                  + gamma
+               );
+               ++face_count;
+            }
          }
          vertex(i, j, k, 0) = face_sum / face_count;
       });
@@ -525,7 +540,15 @@ amrex::Real axisymmetric_matter_outer_radius(
    const amrex::Dim3 domain_lo = amrex::lbound(
       hierarchy.geometry[0].Domain()
    );
+#if (AMREX_SPACEDIM == 3)
+   const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta phi");
+   const amrex::Real phi_lo = hierarchy.geometry[0].ProbLo(2);
+   const amrex::Real dphi = hierarchy.geometry[0].CellSize(2);
+#else
    const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
+   const amrex::Real phi_lo = 0.0;
+   const amrex::Real dphi = 0.0;
+#endif
    for (amrex::MFIter mfi(support, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.tilebox();
@@ -537,7 +560,9 @@ amrex::Real axisymmetric_matter_outer_radius(
          const int radial_index = i - domain_lo.x;
          const int angular_index = j - domain_lo.y;
          const PatchCoordinate mesh{
-            radial_center[radial_index], angular_center[angular_index], 0.0
+            radial_center[radial_index],
+            angular_center[angular_index],
+            phi_lo + (k - domain_lo.z + 0.5) * dphi,
          };
          const InitialDataSamplePoint sample{
             mesh,
@@ -599,8 +624,13 @@ void update_axisymmetric_global_diagnostics(
    const amrex::Real half_pi = 0.5 * constants::pi;
    const amrex::Real theta_symmetry_factor =
       (std::abs(theta_hi - theta_lo - half_pi)
-       <= 64.0 * std::numeric_limits<amrex::Real>::epsilon())
+      <= 64.0 * std::numeric_limits<amrex::Real>::epsilon())
       ? 2.0 : 1.0;
+#if (AMREX_SPACEDIM == 3)
+   const amrex::Real azimuthal_measure = hierarchy.geometry[0].CellSize(2);
+#else
+   const amrex::Real azimuthal_measure = constants::two_pi;
+#endif
    for (amrex::MFIter mfi(integrands, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.tilebox();
@@ -618,7 +648,7 @@ void update_axisymmetric_global_diagnostics(
          const int angular_index = j - domain_lo.y;
          const amrex::Real radius = radial_center[radial_index];
          const amrex::Real theta = angular_center[angular_index];
-         const amrex::Real flat_volume = constants::two_pi
+         const amrex::Real flat_volume = azimuthal_measure
             * theta_symmetry_factor
             * (radial_faces[radial_index + 1]
                   * radial_faces[radial_index + 1]
@@ -720,7 +750,17 @@ void update_axisymmetric_equilibrium_torus_global_diagnostics(
       std::abs(theta_extent - 0.5 * constants::pi)
          <= 64.0 * std::numeric_limits<amrex::Real>::epsilon()
       ? 2.0 : 1.0;
+#if (AMREX_SPACEDIM == 3)
+   const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta phi");
+   const amrex::Real phi_lo = hierarchy.geometry[0].ProbLo(2);
+   const amrex::Real dphi = hierarchy.geometry[0].CellSize(2);
+   const amrex::Real azimuthal_measure = dphi;
+#else
    const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
+   const amrex::Real phi_lo = 0.0;
+   const amrex::Real dphi = 0.0;
+   const amrex::Real azimuthal_measure = constants::two_pi;
+#endif
    for (amrex::MFIter mfi(integrands, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.tilebox();
@@ -739,7 +779,11 @@ void update_axisymmetric_equilibrium_torus_global_diagnostics(
             return;
          }
          const amrex::Real theta = angular_center[angular_index];
-         const PatchCoordinate mesh{radius, theta, 0.0};
+         const PatchCoordinate mesh{
+            radius,
+            theta,
+            phi_lo + (k - domain_lo.z + 0.5) * dphi,
+         };
          const InitialDataSamplePoint sample{
             mesh,
             mesh_coordinate_to_physical_point(MeshSpherical, axes, mesh),
@@ -754,7 +798,7 @@ void update_axisymmetric_equilibrium_torus_global_diagnostics(
              )) {
             return;
          }
-         const amrex::Real flat_volume = constants::two_pi
+         const amrex::Real flat_volume = azimuthal_measure
             * theta_symmetry_factor
             * (radial_faces[radial_index + 1]
                   * radial_faces[radial_index + 1]
@@ -880,8 +924,9 @@ void update_equilibrium_torus_global_diagnostics(
             if constexpr (System == PhysicalSystem::RHD) {
                matter = generated::rhd_eulerian_matter(fluid, metric);
             } else {
-               matter = generated::rmhd_eulerian_matter(
-                  rmhd_primitive_at(primitive, i, j, k, eos), metric
+                  matter = generated::rmhd_eulerian_matter(
+                     rmhd_primitive_at<EOSMethod>(primitive, i, j, k, eos),
+                     metric
                );
             }
             const amrex::Real velocity_squared = spatial_vector_norm_squared(
@@ -934,7 +979,8 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    RotatingStarParameters const& rotating_star,
    EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime,
-   ConformalContinuationObserver const& continuation_observer
+   ConformalContinuationObserver const& continuation_observer,
+   ConformalMatterObserver const& matter_observer
 )
 {
    static_assert(System == PhysicalSystem::RHD || System == PhysicalSystem::RMHD);
@@ -1407,6 +1453,9 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             coupled_torus_updated =
                result.equilibrium_torus.maximum_density > 0.0;
          }
+         if (matter_observer) {
+            matter_observer();
+         }
          for (int level = 0; level < num_levels; ++level) {
             if (primitive_state[level]->contains_nan(
                    0, primitive_state[level]->nComp(), 0
@@ -1458,7 +1507,10 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                      );
                   } else {
                      matter = generated::rmhd_eulerian_matter(
-                        rmhd_primitive_at(primitive, i, j, k, eos), metric
+                        rmhd_primitive_at<EOSMethod>(
+                           primitive, i, j, k, eos
+                        ),
+                        metric
                      );
                   }
                   energy(i, j, k, 0) = matter.rho;
@@ -1805,7 +1857,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    return result;
 }
 
-#if (AMREX_SPACEDIM == 2)
+#if (AMREX_SPACEDIM >= 2)
 template <int EOSMethod>
 ConformalMaterializationResult
 materialize_axisymmetric_spherical_xcts_initial_data_method(
@@ -1847,9 +1899,11 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
    );
 
    // Stellar and loaded portable ID sources enter through the same ADM/Z4c
-   // handoff. Extract their reduced XCTS unknowns from that state. The fresh
-   // vacuum black-hole owner below uses its analytic Schwarzschild iterate as
-   // the boundary-condition control and initial nonlinear guess.
+   // handoff. Extract their reduced XCTS unknowns from that state. A vacuum
+   // Schwarzschild shell is instead uniquely determined by its mass and
+   // apparent-horizon boundary, so both a fresh solve and a changed-grid
+   // re-solve use the analytic shell iterate. Interpolated Z4c is the portable
+   // handoff, not an authoritative conformal-unknown seed on a different map.
    const InitialDataCoordinateLine radial_coordinates =
       hierarchy.coordinate_line(0, 0);
    const amrex::Real horizon_radius = 0.5 * black_hole.mass;
@@ -1867,7 +1921,7 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          );
       }
    }
-   if (black_hole.active && !seed_from_spacetime) {
+   if (black_hole.active) {
       amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
          radial_coordinates.centers.data(), radial_coordinates.centers.size()
       );
@@ -1988,10 +2042,17 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
    );
 
    XctsOptions xcts_options;
-   xcts_options.max_coupled_iterations = 80;
+   xcts_options.max_coupled_iterations = black_hole.active ? 4 : 80;
    xcts_options.relative_update_tolerance = 1.0e-10;
-   xcts_options.relaxation = 0.7;
-   xcts_options.linear.relative_tolerance = 1.0e-12;
+   xcts_options.relaxation = black_hole.active ? 1.0 : 0.7;
+   // The vacuum apparent-horizon shell is a decoupled linear control.  Its
+   // algebraic residual only needs to remain well below the second-order
+   // shell truncation error; asking MLMG for 1e-12 on the larger mapped
+   // hierarchy stalls after the physically relevant digits have converged.
+   xcts_options.linear.relative_tolerance = black_hole.active ? 2.0e-8 : 1.0e-12;
+   xcts_options.linear.absolute_tolerance = black_hole.active ? 2.0e-8 : 1.0e-13;
+   xcts_options.linear.max_iterations = 500;
+   xcts_options.linear.verbose = 0;
    amrex::Vector<amrex::MultiFab*> conformal_fields{&conformal_factor};
    amrex::Vector<amrex::MultiFab*> lapse_fields{
       &lapse_times_conformal_factor
@@ -2407,16 +2468,18 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    int eos_method,
    EOSParams const& eos,
    InitialDataFieldSelection const& fields,
+   int coordinate_kind,
    ConformalConstraintFormulation formulation,
    ConformalBlackHoleParameters const& black_hole,
    RotatingStarParameters const& rotating_star,
    EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime,
-   ConformalContinuationObserver const& continuation_observer
+   ConformalContinuationObserver const& continuation_observer,
+   ConformalMatterObserver const& matter_observer
 )
 {
 #if (AMREX_SPACEDIM == 2)
-   amrex::ignore_unused(fields);
+   amrex::ignore_unused(fields, coordinate_kind, matter_observer);
    if (system != PhysicalSystem::RHD
        || formulation != ConformalConstraintFormulation::xcts) {
       amrex::Abort(
@@ -2435,28 +2498,46 @@ ConformalMaterializationResult materialize_conformal_initial_data(
 #elif (AMREX_SPACEDIM != 3)
    amrex::ignore_unused(
       hierarchy, primitive_state, spacetime_state,
-      cell_spacetime, system, eos_method, eos, fields, formulation,
+      cell_spacetime, system, eos_method, eos, fields, coordinate_kind,
+      formulation,
       black_hole, rotating_star, equilibrium_torus, seed_from_spacetime,
-      continuation_observer
+      continuation_observer, matter_observer
    );
    amrex::Abort("conformal constraint initial data requires 2D or 3D");
    return {};
 #else
-   if (black_hole.active) {
-      amrex::Abort(
-         "constraint-solved black-hole XCTS currently requires the native "
-         "2D spherical r-theta shell owner"
+   if (coordinate_kind == MeshSpherical) {
+      if (system != PhysicalSystem::RHD
+          || formulation != ConformalConstraintFormulation::xcts) {
+         amrex::Abort(
+            "axisymmetric spherical XCTS requires RHD storage and XCTS"
+         );
+      }
+      amrex::ignore_unused(fields, eos_method);
+      return materialize_axisymmetric_spherical_xcts_initial_data_method<
+         EOSRuntime
+      >(
+         hierarchy,
+         primitive_state,
+         spacetime_state,
+         cell_spacetime,
+         eos,
+         black_hole,
+         rotating_star,
+         equilibrium_torus,
+         seed_from_spacetime,
+         continuation_observer
       );
    }
    if (system == PhysicalSystem::RMHD) {
       return materialize_conformal_initial_data_method<
          PhysicalSystem::RMHD,
-         EOSIdealGas
+         EOSRuntime
       >(
          hierarchy, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
          equilibrium_torus,
-         seed_from_spacetime, continuation_observer
+         seed_from_spacetime, continuation_observer, matter_observer
       );
    }
    if (system != PhysicalSystem::RHD) {
@@ -2469,7 +2550,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       hierarchy, primitive_state, spacetime_state,
       cell_spacetime, eos, fields, formulation, rotating_star,
       equilibrium_torus,
-      seed_from_spacetime, continuation_observer
+      seed_from_spacetime, continuation_observer, matter_observer
    );
 #endif
 }

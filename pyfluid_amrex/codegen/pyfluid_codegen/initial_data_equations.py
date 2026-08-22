@@ -210,6 +210,39 @@ def rotating_star_kernels() -> tuple[ScalarKernel, ...]:
       omega_center**2 * sp.log(omega / omega_center)
       - (omega**2 - omega_center**2) / 2
    )
+   specific_angular_momentum, differential_length_b = sp.symbols(
+      "specific_angular_momentum differential_length_b", positive=True
+   )
+   uryu_x = specific_angular_momentum / (
+      differential_length**2 * omega_center
+   )
+   uryu_kappa = differential_length**2 / differential_length_b**2
+   uryu_plus_13_omega = omega_center * (
+      1 + uryu_kappa * uryu_x
+   ) / (1 + uryu_x**4)
+   uryu_plus_13_integral_primitive = sp.Rational(1, 4) * (
+      2 * uryu_kappa * sp.atan(uryu_x**2)
+      - sp.sqrt(2) * (
+         sp.atan(1 - sp.sqrt(2) * uryu_x)
+         - sp.atan(1 + sp.sqrt(2) * uryu_x)
+      )
+      + sp.sqrt(2) * sp.atanh(
+         sp.sqrt(2) * uryu_x / (1 + uryu_x**2)
+      )
+   )
+   uryu_plus_13_integral = (
+      specific_angular_momentum * uryu_plus_13_omega
+      - differential_length**2
+      * omega_center**2
+      * uryu_plus_13_integral_primitive
+   )
+   uryu_j_envelope_omega = omega_center * (
+      1 + uryu_kappa * uryu_x
+   ) * (1 - uryu_x)
+   uryu_j_envelope_integral = differential_length**2 * omega_center**2 * (
+      (uryu_kappa - 1) * uryu_x**2 / 2
+      - 2 * uryu_kappa * uryu_x**3 / 3
+   )
    return (
       ScalarKernel(
          name="uniform_rotation_log_specific_enthalpy",
@@ -250,6 +283,70 @@ def rotating_star_kernels() -> tuple[ScalarKernel, ...]:
          name="q_power_two_rotation_integral",
          arguments=("omega", "omega_center", "differential_length"),
          expression=q_power_two_integral,
+      ),
+      ScalarKernel(
+         name="uryu_plus_13_angular_velocity",
+         arguments=(
+            "specific_angular_momentum",
+            "omega_center",
+            "differential_length",
+            "differential_length_b",
+         ),
+         expression=uryu_plus_13_omega,
+      ),
+      ScalarKernel(
+         name="uryu_plus_13_angular_velocity_derivative",
+         arguments=(
+            "specific_angular_momentum",
+            "omega_center",
+            "differential_length",
+            "differential_length_b",
+         ),
+         expression=sp.diff(
+            uryu_plus_13_omega, specific_angular_momentum
+         ),
+      ),
+      ScalarKernel(
+         name="uryu_plus_13_rotation_integral",
+         arguments=(
+            "specific_angular_momentum",
+            "omega_center",
+            "differential_length",
+            "differential_length_b",
+         ),
+         expression=uryu_plus_13_integral,
+      ),
+      ScalarKernel(
+         name="uryu_j_envelope_p1_angular_velocity",
+         arguments=(
+            "specific_angular_momentum",
+            "omega_center",
+            "differential_length",
+            "differential_length_b",
+         ),
+         expression=uryu_j_envelope_omega,
+      ),
+      ScalarKernel(
+         name="uryu_j_envelope_p1_angular_velocity_derivative",
+         arguments=(
+            "specific_angular_momentum",
+            "omega_center",
+            "differential_length",
+            "differential_length_b",
+         ),
+         expression=sp.diff(
+            uryu_j_envelope_omega, specific_angular_momentum
+         ),
+      ),
+      ScalarKernel(
+         name="uryu_j_envelope_p1_rotation_integral",
+         arguments=(
+            "specific_angular_momentum",
+            "omega_center",
+            "differential_length",
+            "differential_length_b",
+         ),
+         expression=uryu_j_envelope_integral,
       ),
    )
 

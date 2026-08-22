@@ -29,6 +29,24 @@ class DiskRotationLaw:
 
 
 @dataclass(frozen=True)
+class InitialDataPerturbation:
+    name: str
+    cpp_id: str
+    label: str
+    description: str
+    parameters: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class InitialDataMagneticSeed:
+    name: str
+    cpp_id: str
+    label: str
+    description: str
+    parameters: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class ReconstructionMethod:
     name: str
     cpp_id: str
@@ -130,6 +148,58 @@ def _load_disk_rotation_law(
     if len(parameters) != len(set(parameters)):
         raise ValueError(f"{context}.parameters contains duplicates")
     return DiskRotationLaw(
+        name=_required_string(record, "name", context),
+        cpp_id=_required_string(record, "cpp_id", context),
+        label=_required_string(record, "label", context),
+        description=_required_string(record, "description", context),
+        parameters=tuple(parameters),
+    )
+
+
+def _load_initial_data_perturbation(
+    record: dict[str, Any], index: int
+) -> InitialDataPerturbation:
+    context = f"initial_data_perturbation[{index}]"
+    _reject_unknown_keys(
+        record,
+        {"name", "cpp_id", "label", "description", "parameters"},
+        context,
+    )
+    parameters = record.get("parameters")
+    if (
+        not isinstance(parameters, list)
+        or not all(isinstance(parameter, str) and parameter for parameter in parameters)
+    ):
+        raise ValueError(f"{context}.parameters must be a string array")
+    if len(parameters) != len(set(parameters)):
+        raise ValueError(f"{context}.parameters contains duplicates")
+    return InitialDataPerturbation(
+        name=_required_string(record, "name", context),
+        cpp_id=_required_string(record, "cpp_id", context),
+        label=_required_string(record, "label", context),
+        description=_required_string(record, "description", context),
+        parameters=tuple(parameters),
+    )
+
+
+def _load_initial_data_magnetic_seed(
+    record: dict[str, Any], index: int
+) -> InitialDataMagneticSeed:
+    context = f"initial_data_magnetic_seed[{index}]"
+    _reject_unknown_keys(
+        record,
+        {"name", "cpp_id", "label", "description", "parameters"},
+        context,
+    )
+    parameters = record.get("parameters")
+    if (
+        not isinstance(parameters, list)
+        or not all(isinstance(parameter, str) and parameter for parameter in parameters)
+    ):
+        raise ValueError(f"{context}.parameters must be a string array")
+    if len(parameters) != len(set(parameters)):
+        raise ValueError(f"{context}.parameters contains duplicates")
+    return InitialDataMagneticSeed(
         name=_required_string(record, "name", context),
         cpp_id=_required_string(record, "cpp_id", context),
         label=_required_string(record, "label", context),
@@ -297,6 +367,8 @@ def _load_schema() -> tuple[
     tuple[ReconstructionMethod, ...],
     tuple[RotationLaw, ...],
     tuple[DiskRotationLaw, ...],
+    tuple[InitialDataPerturbation, ...],
+    tuple[InitialDataMagneticSeed, ...],
     tuple[InitialDataOwner, ...],
 ]:
     with SCHEMA_PATH.open("rb") as stream:
@@ -308,6 +380,8 @@ def _load_schema() -> tuple[
             "reconstruction",
             "rotation_law",
             "disk_rotation_law",
+            "initial_data_perturbation",
+            "initial_data_magnetic_seed",
             "initial_data_owner",
         },
         "methods schema",
@@ -353,6 +427,32 @@ def _load_schema() -> tuple[
     if len(disk_laws) != len(disk_rotation_records):
         raise ValueError("disk_rotation_law entries must be tables")
     _validate_unique_ids(disk_laws, "disk_rotation_law")
+    perturbation_records = schema.get("initial_data_perturbation")
+    if not isinstance(perturbation_records, list) or not perturbation_records:
+        raise ValueError(
+            "initial_data_perturbation must be a nonempty array of tables"
+        )
+    perturbations = tuple(
+        _load_initial_data_perturbation(record, index)
+        for index, record in enumerate(perturbation_records)
+        if isinstance(record, dict)
+    )
+    if len(perturbations) != len(perturbation_records):
+        raise ValueError("initial_data_perturbation entries must be tables")
+    _validate_unique_ids(perturbations, "initial_data_perturbation")
+    magnetic_seed_records = schema.get("initial_data_magnetic_seed")
+    if not isinstance(magnetic_seed_records, list) or not magnetic_seed_records:
+        raise ValueError(
+            "initial_data_magnetic_seed must be a nonempty array of tables"
+        )
+    magnetic_seeds = tuple(
+        _load_initial_data_magnetic_seed(record, index)
+        for index, record in enumerate(magnetic_seed_records)
+        if isinstance(record, dict)
+    )
+    if len(magnetic_seeds) != len(magnetic_seed_records):
+        raise ValueError("initial_data_magnetic_seed entries must be tables")
+    _validate_unique_ids(magnetic_seeds, "initial_data_magnetic_seed")
     owner_records = schema.get("initial_data_owner")
     if not isinstance(owner_records, list) or not owner_records:
         raise ValueError("initial_data_owner must be a nonempty array of tables")
@@ -364,12 +464,21 @@ def _load_schema() -> tuple[
     if len(owners) != len(owner_records):
         raise ValueError("initial_data_owner entries must be tables")
     _validate_unique_ids(owners, "initial_data_owner")
-    return reconstruction_methods, laws, disk_laws, owners
+    return (
+        reconstruction_methods,
+        laws,
+        disk_laws,
+        perturbations,
+        magnetic_seeds,
+        owners,
+    )
 
 
 (
     RECONSTRUCTION_METHODS,
     ROTATION_LAWS,
     DISK_ROTATION_LAWS,
+    INITIAL_DATA_PERTURBATIONS,
+    INITIAL_DATA_MAGNETIC_SEEDS,
     INITIAL_DATA_OWNERS,
 ) = _load_schema()

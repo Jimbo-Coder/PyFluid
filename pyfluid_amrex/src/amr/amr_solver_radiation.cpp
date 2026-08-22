@@ -2,16 +2,24 @@
 
 #include <AMReX_MultiFab.H>
 
+#include <algorithm>
+#include <cmath>
+#include <complex>
+#include <iterator>
+#include <limits>
 #include <optional>
 #include <sstream>
-#include <iterator>
 #include <utility>
 
 #include "pyfluid_amrex/fields.hpp"
+#include "pyfluid_amrex/azimuthal_geometry.hpp"
+#include "pyfluid_amrex/generated/diagnostic_catalog.hpp"
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/kernels_generated/diagnostics.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c.hpp"
+#include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/radiation.hpp"
+#include "pyfluid_amrex/relativistic_primitive.hpp"
 #include "pyfluid_amrex/spacetime_coupling.hpp"
 #include "pyfluid_amrex/surface_geometry.hpp"
 #include "pyfluid_amrex/z4c_derivatives.hpp"
@@ -419,6 +427,211 @@ MultipoleDiagnostics AmrSolverBase::compute_azimuthal_surface_modes(
          std::make_move_iterator(field_modes.begin()),
          std::make_move_iterator(field_modes.end())
       );
+   }
+   return diagnostics;
+#endif
+}
+
+MatterModeDiagnostics AmrSolverBase::compute_matter_volume_modes(
+   amrex::Real time
+)
+{
+   MatterModeDiagnostics diagnostics;
+   if (cfg_.diagnostic_matter_mode_m_max < 0) {
+      return diagnostics;
+   }
+#if (AMREX_SPACEDIM != 3)
+   amrex::Abort(
+      "matter azimuthal volume modes currently require a three-dimensional "
+      "hierarchy"
+   );
+   return {};
+#else
+   if (mixed_patch_system_enabled()) {
+      amrex::Abort(
+         "matter azimuthal volume modes currently require a single mapped "
+         "patch"
+      );
+   }
+   const amrex::GpuArray<amrex::Real, 3> origin{{
+      cfg_.diagnostic_matter_mode_origin1,
+      cfg_.diagnostic_matter_mode_origin2,
+      cfg_.diagnostic_matter_mode_origin3,
+   }};
+   const amrex::GpuArray<amrex::Real, 3> configured_axis{{
+      cfg_.diagnostic_matter_mode_axis1,
+      cfg_.diagnostic_matter_mode_axis2,
+      cfg_.diagnostic_matter_mode_axis3,
+   }};
+   const AzimuthalFrame azimuthal_frame = make_azimuthal_frame(
+      origin, configured_axis
+   );
+
+   int symmetry_direction = -1;
+   for (int direction = 0; direction < 3; ++direction) {
+      if (!symmetry_axis_active(direction)) {
+         continue;
+      }
+      if (symmetry_direction >= 0) {
+         amrex::Abort(
+            "matter azimuthal modes support only equatorial reflection; "
+            "multiple reflection planes would constrain the requested modes"
+         );
+      }
+      symmetry_direction = direction;
+   }
+   amrex::Real symmetry_plane = 0.0;
+   amrex::Real symmetry_factor = 1.0;
+   if (symmetry_direction >= 0) {
+      const bool low_symmetry = side_boundary_kind(
+         cfg_, symmetry_direction, false
+      ) == BoundaryKind::Symmetry;
+      const bool high_symmetry = side_boundary_kind(
+         cfg_, symmetry_direction, true
+      ) == BoundaryKind::Symmetry;
+      if (low_symmetry == high_symmetry) {
+         amrex::Abort(
+            "matter azimuthal modes require exactly one equatorial symmetry "
+            "boundary on the reflected axis"
+         );
+      }
+      symmetry_plane = low_symmetry
+         ? Geom(0).ProbLo(symmetry_direction)
+         : Geom(0).ProbHi(symmetry_direction);
+      const amrex::Real tolerance = 256.0
+         * std::numeric_limits<amrex::Real>::epsilon()
+         * std::max<amrex::Real>(1.0, std::abs(symmetry_plane));
+      if (std::abs(
+             std::abs(azimuthal_frame.axis[symmetry_direction]) - 1.0
+          ) > tolerance
+          || std::abs(origin[symmetry_direction] - symmetry_plane)
+             > tolerance) {
+         amrex::Abort(
+            "matter azimuthal modes can reconstruct only an equatorial "
+            "reflection plane normal to the configured mode axis and through "
+            "the configured origin"
+         );
+      }
+      symmetry_factor = 2.0;
+   }
+
+   const int mode_count = cfg_.diagnostic_matter_mode_m_max + 1;
+   constexpr ComplexModeDiagnosticInfo mode_info = ComplexModeDiagnosticCatalog[
+      static_cast<std::size_t>(
+         ComplexModeDiagnosticId::MatterAzimuthalVolume
+      )
+   ];
+   const int barycenter_begin = 2 * mode_count;
+   const int reduction_components = barycenter_begin + 3;
+   const int coordinate = mesh_coordinate_kind();
+   const MeshAxes axes = active_mesh_axes();
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      fill_level_primitive_cache(lev, time);
+      amrex::iMultiFab mask = valid_cell_mask(lev);
+      amrex::MultiFab reduction(
+         fluid_state_.state()[lev]->boxArray(),
+         fluid_state_.state()[lev]->DistributionMap(),
+         reduction_components,
+         0
+      );
+      reduction.setVal(0.0);
+      const auto problo = Geom(lev).ProbLoArray();
+      const auto dx = Geom(lev).CellSizeArray();
+      const EOSParams eos = eos_params(cfg_);
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      for (amrex::MFIter mfi(reduction, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto state = fluid_state_.state()[lev]->const_array(mfi);
+         const auto primitive = primitive_[lev]->const_array(mfi);
+         const auto valid = mask.const_array(mfi);
+         const auto output = reduction.array(mfi);
+         amrex::ParallelFor(
+            box,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               if (valid(i, j, k, 0) == 0
+                   || primitive_is_atmosphere(
+                      primitive(i, j, k, RHO),
+                      primitive(i, j, k, ENERGY),
+                      eos
+                   )) {
+                  return;
+               }
+               const auto q = mesh_coordinate_triplet_at_location(
+                  coordinate,
+                  axes,
+                  problo,
+                  dx,
+                  i,
+                  j,
+                  k,
+                  false,
+                  false,
+                  false
+               );
+               const auto physical = mesh_coordinate_triplet_to_cartesian(
+                  coordinate, q
+               );
+               const AzimuthalCoordinate azimuthal = azimuthal_coordinate(
+                  azimuthal_frame, physical
+               );
+               const amrex::Real matter_weight = state(i, j, k, RHO)
+                  * mesh_cell_volume_for_reduction(
+                     coordinate, axes, problo, dx, i, j, k
+                  );
+               for (int m = 0; m < mode_count; ++m) {
+                  output(i, j, k, 2 * m) = matter_weight
+                     * std::cos(
+                        static_cast<amrex::Real>(m) * azimuthal.phi
+                     );
+                  output(i, j, k, 2 * m + 1) = matter_weight
+                     * std::sin(
+                        static_cast<amrex::Real>(m) * azimuthal.phi
+                     );
+               }
+               output(i, j, k, barycenter_begin) =
+                  matter_weight * physical[0];
+               output(i, j, k, barycenter_begin + 1) =
+                  matter_weight * physical[1];
+               output(i, j, k, barycenter_begin + 2) =
+                  matter_weight * physical[2];
+            }
+         );
+      }
+      for (int m = 0; m < mode_count; ++m) {
+         const amrex::Real real = symmetry_factor * reduction.sum(2 * m);
+         const amrex::Real imaginary = symmetry_factor
+            * reduction.sum(2 * m + 1);
+         if (lev == 0) {
+            diagnostics.modes.push_back({
+               "rest_mass",
+               std::string(mode_info.basis),
+               0,
+               std::nullopt,
+               m,
+               {real, imaginary},
+               std::nullopt,
+            });
+         } else {
+            diagnostics.modes[static_cast<std::size_t>(m)].value +=
+               std::complex<amrex::Real>(real, imaginary);
+         }
+      }
+      for (int direction = 0; direction < 3; ++direction) {
+         diagnostics.barycenter[direction] += symmetry_factor
+            * reduction.sum(barycenter_begin + direction);
+      }
+   }
+   diagnostics.mass = diagnostics.modes.front().value.real();
+   if (diagnostics.mass > 0.0) {
+      for (int direction = 0; direction < 3; ++direction) {
+         diagnostics.barycenter[direction] /= diagnostics.mass;
+      }
+      if (symmetry_direction >= 0) {
+         diagnostics.barycenter[symmetry_direction] = symmetry_plane;
+      }
    }
    return diagnostics;
 #endif

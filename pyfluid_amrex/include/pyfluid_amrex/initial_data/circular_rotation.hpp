@@ -18,6 +18,7 @@ struct CircularRotationParameters {
    RotationLaw rotation_law = RotationLaw::Uniform;
    amrex::Real angular_velocity = 0.0;
    amrex::Real differential_rotation_length = 10.0;
+   amrex::Real differential_rotation_length_b = 10.0;
    amrex::Real rotation_power_q = 1.0;
    amrex::Real injection_energy = 1.0;
 };
@@ -67,77 +68,201 @@ CircularRotationPoint circular_rotation_point_from_tangent(
       if (tangent_squared > 64.0 * std::numeric_limits<amrex::Real>::epsilon()) {
          const amrex::Real rotation_sign = parameters.angular_velocity > 0.0
             ? 1.0 : -1.0;
-         auto root_function = [=] AMREX_GPU_DEVICE(amrex::Real omega) noexcept {
+         auto metric_specific_angular_momentum =
+            [=] AMREX_GPU_DEVICE(amrex::Real omega) noexcept {
             const amrex::Real denominator =
                metric.lapse * metric.lapse - shift_squared
                - 2.0 * omega * shift_tangent
                - omega * omega * tangent_squared;
             if (!(denominator > 0.0)) {
-               return std::numeric_limits<amrex::Real>::max();
+               return std::numeric_limits<amrex::Real>::quiet_NaN();
             }
-            const amrex::Real metric_j =
-               (omega * tangent_squared + shift_tangent) / denominator;
-            const amrex::Real law_j = parameters.rotation_law
+            return (omega * tangent_squared + shift_tangent) / denominator;
+         };
+         const bool uryu_plus_13 =
+            parameters.rotation_law == RotationLaw::UryuPlus13;
+         const bool uryu_j_envelope =
+            parameters.rotation_law == RotationLaw::UryuJEnvelopeP1;
+         if (uryu_plus_13 || uryu_j_envelope) {
+            const amrex::Real omega_center = std::abs(
+               parameters.angular_velocity
+            );
+            const amrex::Real momentum_scale =
+               parameters.differential_rotation_length
+               * parameters.differential_rotation_length * omega_center;
+            auto law_omega = [=] AMREX_GPU_DEVICE(
+               amrex::Real specific_angular_momentum
+            ) noexcept {
+               return uryu_plus_13
+                  ? generated::uryu_plus_13_angular_velocity(
+                       specific_angular_momentum,
+                       omega_center,
+                       parameters.differential_rotation_length,
+                       parameters.differential_rotation_length_b
+                    )
+                  : generated::uryu_j_envelope_p1_angular_velocity(
+                       specific_angular_momentum,
+                       omega_center,
+                       parameters.differential_rotation_length,
+                       parameters.differential_rotation_length_b
+                    );
+            };
+            auto root_function = [=] AMREX_GPU_DEVICE(
+               amrex::Real specific_angular_momentum
+            ) noexcept {
+               const amrex::Real omega = rotation_sign * law_omega(
+                  specific_angular_momentum
+               );
+               return rotation_sign
+                  * metric_specific_angular_momentum(omega)
+                  - specific_angular_momentum;
+            };
+            amrex::Real lower_momentum = 0.0;
+            amrex::Real lower_value = root_function(lower_momentum);
+            amrex::Real upper_momentum = 0.0;
+            bool bracketed = false;
+            for (int sample = 1; sample <= 32 && !bracketed; ++sample) {
+               upper_momentum = momentum_scale
+                  * static_cast<amrex::Real>(sample) / 32.0;
+               const amrex::Real upper_value = root_function(upper_momentum);
+               if (!std::isfinite(lower_value)
+                   || !std::isfinite(upper_value)) {
+                  return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
+               }
+               if (lower_value >= 0.0 && upper_value <= 0.0) {
+                  bracketed = true;
+               } else {
+                  lower_momentum = upper_momentum;
+                  lower_value = upper_value;
+               }
+            }
+            if (uryu_plus_13) {
+               for (int sample = 0; sample < 64 && !bracketed; ++sample) {
+                  upper_momentum *= 1.25;
+                  const amrex::Real upper_value = root_function(
+                     upper_momentum
+                  );
+                  if (!std::isfinite(lower_value)
+                      || !std::isfinite(upper_value)) {
+                     return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
+                  }
+                  if (lower_value >= 0.0 && upper_value <= 0.0) {
+                     bracketed = true;
+                  } else {
+                     lower_momentum = upper_momentum;
+                     lower_value = upper_value;
+                  }
+               }
+            }
+            if (!bracketed) {
+               return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
+            }
+            for (int iteration = 0; iteration < 56; ++iteration) {
+               const amrex::Real midpoint = 0.5 * (
+                  lower_momentum + upper_momentum
+               );
+               if (root_function(midpoint) >= 0.0) {
+                  lower_momentum = midpoint;
+               } else {
+                  upper_momentum = midpoint;
+               }
+            }
+            const amrex::Real specific_angular_momentum = 0.5 * (
+               lower_momentum + upper_momentum
+            );
+            angular_velocity = rotation_sign * law_omega(
+               specific_angular_momentum
+            );
+            rotation_integral = uryu_plus_13
+               ? generated::uryu_plus_13_rotation_integral(
+                    specific_angular_momentum,
+                    omega_center,
+                    parameters.differential_rotation_length,
+                    parameters.differential_rotation_length_b
+                 )
+               : generated::uryu_j_envelope_p1_rotation_integral(
+                    specific_angular_momentum,
+                    omega_center,
+                    parameters.differential_rotation_length,
+                    parameters.differential_rotation_length_b
+                 );
+         } else {
+            auto root_function = [=] AMREX_GPU_DEVICE(
+               amrex::Real omega
+            ) noexcept {
+               const amrex::Real candidate_metric_j =
+                  metric_specific_angular_momentum(omega);
+               // The established j-constant/q-power bracket may begin beyond
+               // the local timelike interval and bisect back into it.  Keep
+               // that outer trial on the positive side of the bracket; the
+               // Uryu branch above instead brackets in specific angular
+               // momentum and rejects nonfinite trials explicitly.
+               const amrex::Real metric_j = std::isfinite(candidate_metric_j)
+                  ? candidate_metric_j
+                  : std::numeric_limits<amrex::Real>::max();
+               const amrex::Real law_j = parameters.rotation_law
+                     == RotationLaw::JConstant
+                  ? generated::j_constant_specific_angular_momentum(
+                       omega,
+                       parameters.angular_velocity,
+                       parameters.differential_rotation_length
+                    )
+                  : generated::q_power_specific_angular_momentum(
+                       omega,
+                       parameters.angular_velocity,
+                       parameters.differential_rotation_length,
+                       parameters.rotation_power_q
+                    );
+               return rotation_sign * (metric_j - law_j);
+            };
+            amrex::Real lower_scale = 1.0e-10;
+            amrex::Real upper_scale = 1.0;
+            const amrex::Real lower_value = root_function(
+               lower_scale * parameters.angular_velocity
+            );
+            const amrex::Real upper_value = root_function(
+               upper_scale * parameters.angular_velocity
+            );
+            if (!(lower_value <= 0.0 && upper_value >= 0.0)) {
+               return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
+            }
+            for (int iteration = 0; iteration < 48; ++iteration) {
+               const amrex::Real midpoint_scale = 0.5 * (
+                  lower_scale + upper_scale
+               );
+               if (root_function(
+                      midpoint_scale * parameters.angular_velocity
+                   ) <= 0.0) {
+                  lower_scale = midpoint_scale;
+               } else {
+                  upper_scale = midpoint_scale;
+               }
+            }
+            angular_velocity = 0.5 * (lower_scale + upper_scale)
+               * parameters.angular_velocity;
+            rotation_integral = parameters.rotation_law
                   == RotationLaw::JConstant
-               ? generated::j_constant_specific_angular_momentum(
-                    omega,
+               ? generated::j_constant_rotation_integral(
+                    angular_velocity,
                     parameters.angular_velocity,
                     parameters.differential_rotation_length
                  )
-               : generated::q_power_specific_angular_momentum(
-                    omega,
-                    parameters.angular_velocity,
-                    parameters.differential_rotation_length,
-                    parameters.rotation_power_q
+               : (
+                    std::abs(parameters.rotation_power_q - 2.0) < 1.0e-12
+                       ? generated::q_power_two_rotation_integral(
+                            std::abs(angular_velocity),
+                            std::abs(parameters.angular_velocity),
+                            parameters.differential_rotation_length
+                         )
+                       : generated::q_power_rotation_integral(
+                            std::abs(angular_velocity),
+                            std::abs(parameters.angular_velocity),
+                            parameters.differential_rotation_length,
+                            parameters.rotation_power_q
+                         )
                  );
-            return rotation_sign * (metric_j - law_j);
-         };
-         amrex::Real lower_scale = 1.0e-10;
-         amrex::Real upper_scale = 1.0;
-         const amrex::Real lower_value = root_function(
-            lower_scale * parameters.angular_velocity
-         );
-         const amrex::Real upper_value = root_function(
-            upper_scale * parameters.angular_velocity
-         );
-         if (!(lower_value <= 0.0 && upper_value >= 0.0)) {
-            return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, false};
          }
-         for (int iteration = 0; iteration < 48; ++iteration) {
-            const amrex::Real midpoint_scale = 0.5 * (
-               lower_scale + upper_scale
-            );
-            if (root_function(
-                   midpoint_scale * parameters.angular_velocity
-                ) <= 0.0) {
-               lower_scale = midpoint_scale;
-            } else {
-               upper_scale = midpoint_scale;
-            }
-         }
-         angular_velocity = 0.5 * (lower_scale + upper_scale)
-            * parameters.angular_velocity;
       }
-      rotation_integral = parameters.rotation_law == RotationLaw::JConstant
-         ? generated::j_constant_rotation_integral(
-              angular_velocity,
-              parameters.angular_velocity,
-              parameters.differential_rotation_length
-           )
-         : (
-              std::abs(parameters.rotation_power_q - 2.0) < 1.0e-12
-                 ? generated::q_power_two_rotation_integral(
-                      std::abs(angular_velocity),
-                      std::abs(parameters.angular_velocity),
-                      parameters.differential_rotation_length
-                   )
-                 : generated::q_power_rotation_integral(
-                      std::abs(angular_velocity),
-                      std::abs(parameters.angular_velocity),
-                      parameters.differential_rotation_length,
-                      parameters.rotation_power_q
-                   )
-           );
    }
    const amrex::Real v1 = (
       angular_velocity * tangent1 + metric.shift1

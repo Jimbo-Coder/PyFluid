@@ -208,8 +208,11 @@ inline void validate_origin_boundary_geometry(BoundaryData const& bc, amrex::Geo
          amrex::Abort("radial origin boundary with active phi requires geometry.is_periodic = 1 in phi");
       }
       const int nphi = domain.length(phi_dir);
-      if (nphi % 2 != 0) {
-         amrex::Abort("radial origin boundary with active phi requires an even number of phi cells");
+      if (nphi != 1 && nphi % 2 != 0) {
+         amrex::Abort(
+            "radial origin boundary with active phi requires one or an even "
+            "number of phi cells"
+         );
       }
       const amrex::Real width = probhi[phi_dir] - problo[phi_dir];
       if (std::abs(width - constants::two_pi)

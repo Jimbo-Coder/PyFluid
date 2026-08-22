@@ -62,6 +62,9 @@ def main() -> int:
       default="uniform",
    )
    parser.add_argument("--differential-rotation-length", type=float, default=10.0)
+   parser.add_argument(
+      "--differential-rotation-length-b", type=float, default=10.0
+   )
    parser.add_argument("--rotation-power-q", type=float, default=1.0)
    parser.add_argument("--cells", type=int, default=24)
    parser.add_argument("--max-grid-size", type=int, default=8)
@@ -90,6 +93,13 @@ def main() -> int:
       or args.differential_rotation_length <= 0.0
    ):
       raise SystemExit("--differential-rotation-length must be positive and finite")
+   if (
+      not math.isfinite(args.differential_rotation_length_b)
+      or args.differential_rotation_length_b <= 0.0
+   ):
+      raise SystemExit(
+         "--differential-rotation-length-b must be positive and finite"
+      )
    if not math.isfinite(args.rotation_power_q) or args.rotation_power_q < 1.0:
       raise SystemExit("--rotation-power-q must be finite and at least one")
    input_artifact = args.input_artifact
@@ -105,6 +115,8 @@ def main() -> int:
       law_suffix += f"_a{args.differential_rotation_length:g}"
    if args.rotation_law == "q_power":
       law_suffix += f"_q{args.rotation_power_q:g}"
+   if args.rotation_law in ("uryu_plus_13", "uryu_j_envelope_p1"):
+      law_suffix += f"_b{args.differential_rotation_length_b:g}"
    sequence_name = f"{args.eos_preset}_{law_suffix}_n{args.cells}".replace(
       ".", "p"
    )
@@ -137,6 +149,9 @@ def main() -> int:
             "initial_data.rotation_law": args.rotation_law,
             "initial_data.differential_rotation_length": str(
                args.differential_rotation_length
+            ),
+            "initial_data.differential_rotation_length_b": str(
+               args.differential_rotation_length_b
             ),
             "initial_data.rotation_power_q": str(args.rotation_power_q),
             "initial_data.rotation_continuation_steps": str(
@@ -238,6 +253,9 @@ def main() -> int:
          "omega": omega,
          "rotation_law": args.rotation_law,
          "differential_rotation_length": args.differential_rotation_length,
+         "differential_rotation_length_b": (
+            args.differential_rotation_length_b
+         ),
          "rotation_power_q": args.rotation_power_q,
          "cells_per_axis": args.cells,
          "continuation_steps": args.continuation_steps,

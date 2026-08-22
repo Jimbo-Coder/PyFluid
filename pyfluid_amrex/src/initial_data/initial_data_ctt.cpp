@@ -9,6 +9,7 @@
 #include <limits>
 #include <memory>
 
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/initial_data.hpp"
 
@@ -19,6 +20,8 @@ namespace {
 enum class ConformalScalarOperator {
    cartesian,
    axisymmetric_spherical,
+   spherical_axisymmetric_storage,
+   spherical,
 };
 
 amrex::Vector<GridFieldSymmetryKind> conformal_vector_symmetries()
@@ -66,14 +69,27 @@ CttHamiltonianResult solve_conformal_scalar_fixed_point(
          fill_source(level, *rhs_storage[level]);
       }
 
-      const InitialDataEllipticResult linear = scalar_operator
-            == ConformalScalarOperator::axisymmetric_spherical
-         ? solve_initial_data_axisymmetric_spherical_poisson(
-              hierarchy, candidate, rhs, correction_boundary, options.linear
-           )
-         : solve_initial_data_poisson(
-              hierarchy, candidate, rhs, correction_boundary, options.linear
-           );
+      InitialDataEllipticResult linear;
+      if (scalar_operator == ConformalScalarOperator::axisymmetric_spherical) {
+         linear = solve_initial_data_axisymmetric_spherical_poisson(
+            hierarchy, candidate, rhs, correction_boundary, options.linear
+         );
+      } else if (
+         scalar_operator
+         == ConformalScalarOperator::spherical_axisymmetric_storage
+      ) {
+         linear = solve_initial_data_spherical_axisymmetric_poisson(
+            hierarchy, candidate, rhs, correction_boundary, options.linear
+         );
+      } else if (scalar_operator == ConformalScalarOperator::spherical) {
+         linear = solve_initial_data_spherical_poisson(
+            hierarchy, candidate, rhs, correction_boundary, options.linear
+         );
+      } else {
+         linear = solve_initial_data_poisson(
+            hierarchy, candidate, rhs, correction_boundary, options.linear
+         );
+      }
       amrex::Real update_norm = 0.0;
       amrex::Real solution_norm = 0.0;
       for (int level = 0; level < num_levels; ++level) {
@@ -782,7 +798,7 @@ ConformalMomentumResult solve_xcts_shift_iteration(
 }
 #endif
 
-#if (AMREX_SPACEDIM == 2)
+#if (AMREX_SPACEDIM >= 2)
 void validate_axisymmetric_xcts_configuration(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& conformal_factor,
@@ -813,6 +829,19 @@ void validate_axisymmetric_xcts_configuration(
    if (domain.length(0) < 3 || domain.length(1) < 2) {
       amrex::Abort("axisymmetric spherical XCTS grid is too small");
    }
+#if (AMREX_SPACEDIM == 3)
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto probhi = hierarchy.geometry[0].ProbHiArray();
+   const amrex::Real phi_extent = probhi[2] - problo[2];
+   if (!hierarchy.geometry[0].isPeriodic(2)
+       || std::abs(phi_extent - 2.0 * constants::pi)
+          > 64.0 * std::numeric_limits<amrex::Real>::epsilon()
+             * std::max(amrex::Real(1.0), std::abs(phi_extent))) {
+      amrex::Abort(
+         "3D axisymmetric spherical XCTS requires a periodic full-2pi phi axis"
+      );
+   }
+#endif
    const amrex::BoxArray& grids = hierarchy.grids[0];
    if (grids.ixType() != amrex::IndexType::TheCellType()) {
       amrex::Abort("axisymmetric spherical XCTS fields must be cell-centered");
@@ -999,7 +1028,11 @@ CttHamiltonianResult solve_axisymmetric_xcts_lapse_iteration(
       lapse_times_conformal_factor,
       lapse_correction_boundary,
       options,
+#if (AMREX_SPACEDIM == 2)
       ConformalScalarOperator::axisymmetric_spherical,
+#else
+      ConformalScalarOperator::spherical_axisymmetric_storage,
+#endif
       [&](int level, amrex::MultiFab& source) {
          for (amrex::MFIter mfi(source, amrex::TilingIfNotGPU());
               mfi.isValid(); ++mfi) {
@@ -1140,9 +1173,15 @@ AxisymmetricMomentumResult solve_axisymmetric_xcts_shift_iteration(
    amrex::Vector<amrex::MultiFab*> candidate{candidate_storage[0].get()};
    amrex::Vector<amrex::MultiFab const*> source{source_storage[0].get()};
    const InitialDataEllipticResult linear =
+#if (AMREX_SPACEDIM == 2)
       solve_initial_data_axisymmetric_spherical_toroidal_vector_poisson(
          hierarchy, candidate, source, shift_boundary, linear_options
       );
+#else
+      solve_initial_data_spherical_axisymmetric_toroidal_vector_poisson(
+         hierarchy, candidate, source, shift_boundary, linear_options
+      );
+#endif
    amrex::MultiFab update(
       azimuthal_shift[0]->boxArray(),
       azimuthal_shift[0]->DistributionMap(),
@@ -1728,7 +1767,7 @@ XctsResult solve_axisymmetric_spherical_xcts_constraints(
    XctsOptions const& options
 )
 {
-#if (AMREX_SPACEDIM != 2)
+#if (AMREX_SPACEDIM == 1)
    amrex::ignore_unused(
       hierarchy,
       conformal_factor,
@@ -1743,7 +1782,9 @@ XctsResult solve_axisymmetric_spherical_xcts_constraints(
       azimuthal_shift_boundary,
       options
    );
-   amrex::Abort("axisymmetric spherical XCTS requires the 2D executable");
+   amrex::Abort(
+      "axisymmetric spherical XCTS requires r-theta or r-theta-phi"
+   );
    return {};
 #else
    validate_axisymmetric_xcts_configuration(
@@ -1793,7 +1834,11 @@ XctsResult solve_axisymmetric_spherical_xcts_constraints(
          {},
          conformal_correction_boundary,
          scalar_options,
+#if (AMREX_SPACEDIM == 2)
          ConformalScalarOperator::axisymmetric_spherical
+#else
+         ConformalScalarOperator::spherical_axisymmetric_storage
+#endif
       );
       const CttHamiltonianResult lapse =
          solve_axisymmetric_xcts_lapse_iteration(

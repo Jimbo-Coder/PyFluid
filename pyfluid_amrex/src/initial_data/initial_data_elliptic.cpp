@@ -276,6 +276,7 @@ struct LoweredBoundaryConditions {
    amrex::Vector<BoundaryTypeArray> lower_types;
    amrex::Vector<BoundaryTypeArray> upper_types;
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> level_data;
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> robin_normal_b;
 };
 
 amrex::LinOpBCType linop_boundary_type(
@@ -543,6 +544,16 @@ amrex::Vector<std::unique_ptr<amrex::MultiFab>> dirichlet_values(
                box,
                [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                   bool dirichlet_face = false;
+                  int physical_outside_count = !periodic[0]
+                     && (i < domain_lo.x || i > domain_hi.x);
+#if (AMREX_SPACEDIM >= 2)
+                  physical_outside_count += !periodic[1]
+                     && (j < domain_lo.y || j > domain_hi.y);
+#endif
+#if (AMREX_SPACEDIM == 3)
+                  physical_outside_count += !periodic[2]
+                     && (k < domain_lo.z || k > domain_hi.z);
+#endif
                   if (!periodic[0] && i < domain_lo.x) {
                      dirichlet_face = lower_dirichlet[0] != 0;
                   } else if (!periodic[0] && i > domain_hi.x) {
@@ -562,7 +573,7 @@ amrex::Vector<std::unique_ptr<amrex::MultiFab>> dirichlet_values(
                      dirichlet_face = upper_dirichlet[2] != 0;
                   }
 #endif
-                  if (dirichlet_face) {
+                  if (dirichlet_face && physical_outside_count == 1) {
                      const amrex::Real a = coefficient_a(
                         i, j, k, component
                      );
@@ -600,9 +611,13 @@ LoweredBoundaryConditions lower_boundary_conditions(
          );
       }
    }
-   lowered.level_data = !lowered.has_robin
-      ? dirichlet_values(hierarchy, boundary)
-      : coordinate_to_normal_b(hierarchy, boundary);
+   // AMReX consumes ordinary Dirichlet values and Robin A/B/F arrays through
+   // separate setLevelBC arguments. Mixed boundaries therefore need both;
+   // passing only Robin arrays silently homogenizes any Dirichlet face.
+   lowered.level_data = dirichlet_values(hierarchy, boundary);
+   if (lowered.has_robin) {
+      lowered.robin_normal_b = coordinate_to_normal_b(hierarchy, boundary);
+   }
    return lowered;
 }
 
@@ -620,9 +635,9 @@ void set_boundary_conditions(
       } else {
          linear_operator.setLevelBC(
             level,
-            nullptr,
-            &boundary.coefficient_a(level),
             lowered.level_data[level].get(),
+            &boundary.coefficient_a(level),
+            lowered.robin_normal_b[level].get(),
             &boundary.coefficient_c(level)
          );
       }
@@ -2012,9 +2027,11 @@ void set_axisymmetric_spherical_toroidal_regularity(
    int component
 )
 {
-#if (AMREX_SPACEDIM != 2)
+#if (AMREX_SPACEDIM == 1)
    amrex::ignore_unused(hierarchy, boundary, component);
-   amrex::Abort("spherical toroidal regularity requires two dimensions");
+   amrex::Abort(
+      "spherical toroidal regularity requires r-theta or r-theta-phi"
+   );
 #else
    if (boundary.num_levels() != static_cast<int>(hierarchy.geometry.size())
        || component < 0 || component >= boundary.num_components
@@ -2042,7 +2059,11 @@ void set_axisymmetric_spherical_toroidal_regularity(
        || (radial_origin && hierarchy.reflection_lo[0] == 0)
        || (!radial_origin && hierarchy.reflection_lo[0] != 0)
        || hierarchy.reflection_lo[1] == 0
-       || hierarchy.reflection_hi[1] == 0) {
+       || hierarchy.reflection_hi[1] == 0
+#if (AMREX_SPACEDIM == 3)
+       || !hierarchy.geometry.front().isPeriodic(2)
+#endif
+   ) {
       amrex::Abort("invalid r-theta domain for toroidal regularity");
    }
 
@@ -2067,8 +2088,13 @@ void set_axisymmetric_spherical_toroidal_regularity(
       const auto probhi = hierarchy.geometry[level].ProbHiArray();
       if (!near(problo[0], first_problo[0])
           || !near(problo[1], first_problo[1])
-          || !near(probhi[1], first_probhi[1])) {
-         amrex::Abort("inconsistent r-theta hierarchy geometry");
+          || !near(probhi[1], first_probhi[1])
+#if (AMREX_SPACEDIM == 3)
+          || !hierarchy.geometry[level].isPeriodic(2)
+          || !near(probhi[2] - problo[2], 2.0 * constants::pi)
+#endif
+      ) {
+         amrex::Abort("inconsistent spherical axisymmetric hierarchy geometry");
       }
       const amrex::Box domain = hierarchy.geometry[level].Domain();
       const amrex::Dim3 domain_lo = amrex::lbound(domain);
@@ -2111,11 +2137,11 @@ void set_axisymmetric_spherical_radial_robin_boundary(
    amrex::Real falloff_power
 )
 {
-#if (AMREX_SPACEDIM != 2)
+#if (AMREX_SPACEDIM == 1)
    amrex::ignore_unused(
       hierarchy, boundary, asymptotic_values, falloff_power
    );
-   amrex::Abort("spherical radial Robin data require two dimensions");
+   amrex::Abort("spherical radial Robin data require at least r-theta");
 #else
    if (boundary.centering() != InitialDataEllipticCentering::cell
        || boundary.num_levels() != static_cast<int>(hierarchy.geometry.size())
@@ -2130,10 +2156,11 @@ void set_axisymmetric_spherical_radial_robin_boundary(
       boundary.upper_reflection_parity_[side] = 1;
    }
    for (int level = 0; level < boundary.num_levels(); ++level) {
-      const auto problo = hierarchy.geometry[level].ProbLoArray();
-      const auto probhi = hierarchy.geometry[level].ProbHiArray();
+      const auto radial_faces = hierarchy.coordinate_faces(level, 0);
+      const amrex::Real outer_radius = radial_faces.back();
       if (hierarchy.geometry[level].isPeriodic(0)
-          || !(problo[0] >= 0.0 && probhi[0] > problo[0])) {
+          || !(radial_faces.front() >= 0.0)
+          || !(outer_radius > radial_faces.front())) {
          amrex::Abort(
             "spherical radial Robin data require a nonnegative radial interval"
          );
@@ -2141,7 +2168,7 @@ void set_axisymmetric_spherical_radial_robin_boundary(
       const amrex::Dim3 domain_hi = amrex::ubound(
          hierarchy.geometry[level].Domain()
       );
-      const amrex::Real coefficient = falloff_power / probhi[0];
+      const amrex::Real coefficient = falloff_power / outer_radius;
       for (int component = 0;
            component < boundary.num_components;
            ++component) {
@@ -2164,6 +2191,25 @@ void set_axisymmetric_spherical_radial_robin_boundary(
          }
       }
    }
+#endif
+}
+
+void set_spherical_radial_robin_boundary(
+   InitialDataEllipticHierarchy const& hierarchy,
+   InitialDataEllipticBoundaryConditions& boundary,
+   amrex::Vector<amrex::Real> const& asymptotic_values,
+   amrex::Real falloff_power
+)
+{
+#if (AMREX_SPACEDIM != 3)
+   amrex::ignore_unused(
+      hierarchy, boundary, asymptotic_values, falloff_power
+   );
+   amrex::Abort("full spherical radial Robin data require three dimensions");
+#else
+   set_axisymmetric_spherical_radial_robin_boundary(
+      hierarchy, boundary, asymptotic_values, falloff_power
+   );
 #endif
 }
 
@@ -2354,9 +2400,428 @@ enum class AxisymmetricSphericalMode {
    toroidal_vector,
 };
 
+InitialDataEllipticResult solve_axisymmetric_spherical_separable(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   amrex::Vector<amrex::MultiFab const*> const& rhs,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options,
+   AxisymmetricSphericalMode mode
+);
+
+InitialDataEllipticResult solve_initial_data_spherical_mode(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   amrex::Vector<amrex::MultiFab const*> const& rhs,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options,
+   amrex::Real angular_spin_squared
+)
+{
+#if (AMREX_SPACEDIM != 3)
+   amrex::ignore_unused(
+      hierarchy, solution, rhs, boundary, options, angular_spin_squared
+   );
+   amrex::Abort(
+      "the full spherical elliptic operator requires three dimensions"
+   );
+   return {};
+#else
+   if (!(angular_spin_squared >= 0.0)
+       || !std::isfinite(angular_spin_squared)) {
+      amrex::Abort("invalid full spherical angular spin weight");
+   }
+   const int num_levels = validate_elliptic_solve(
+      hierarchy, solution, rhs, boundary, options, 1
+   );
+   if (boundary.centering() != InitialDataEllipticCentering::cell) {
+      amrex::Abort(
+         "the full spherical elliptic operator requires cell-centered fields"
+      );
+   }
+   auto near = [](amrex::Real first, amrex::Real second) {
+      const amrex::Real scale = std::max({
+         amrex::Real(1.0), std::abs(first), std::abs(second)
+      });
+      return std::abs(first - second)
+         <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+   };
+   const amrex::Real half_pi = 0.5 * constants::pi;
+   for (int level = 0; level < num_levels; ++level) {
+      const amrex::Geometry& geometry = hierarchy.geometry[level];
+      const auto problo = geometry.ProbLoArray();
+      const auto probhi = geometry.ProbHiArray();
+      const amrex::Vector<amrex::Real> radial_faces =
+         hierarchy.coordinate_faces(level, 0);
+      const bool theta_domain =
+         (near(problo[1], 0.0)
+          && (near(probhi[1], half_pi) || near(probhi[1], constants::pi)))
+         || (near(problo[1], half_pi) && near(probhi[1], constants::pi));
+      if (geometry.isPeriodic(0) || geometry.isPeriodic(1)
+          || !geometry.isPeriodic(2)
+          || !near(radial_faces.front(), problo[0])
+          || !near(radial_faces.back(), probhi[0])
+          || !(radial_faces.front() >= 0.0)
+          || !(radial_faces.back() > radial_faces.front())
+          || !theta_domain
+          || !near(probhi[2] - problo[2], 2.0 * constants::pi)) {
+         amrex::Abort(
+            "full spherical elliptic coordinates require physical ordered "
+            "(r,theta,phi), nonperiodic r/theta, a full periodic 2pi phi "
+            "interval, and theta in [0,pi/2], [pi/2,pi], or [0,pi]"
+         );
+      }
+      const amrex::Vector<amrex::Real> theta_faces =
+         hierarchy.coordinate_faces(level, 1);
+      const auto dx = geometry.CellSizeArray();
+      for (int face = 0; face < static_cast<int>(theta_faces.size()); ++face) {
+         if (!near(theta_faces[face], problo[1] + face * dx[1])) {
+            amrex::Abort(
+               "the full spherical elliptic operator currently requires uniform theta"
+            );
+         }
+      }
+   }
+
+   const bool radial_origin = near(
+      hierarchy.coordinate_faces(0, 0).front(), 0.0
+   );
+   const auto first_problo = hierarchy.geometry.front().ProbLoArray();
+   const auto first_probhi = hierarchy.geometry.front().ProbHiArray();
+   const bool toroidal = angular_spin_squared > 0.0;
+   const InitialDataEllipticBoundaryType radial_inner_type =
+      resolved_boundary_type(boundary, 0, 0, false);
+   const InitialDataEllipticBoundaryType radial_outer_type =
+      resolved_boundary_type(boundary, 0, 0, true);
+   const bool valid_inner = radial_origin
+      ? radial_inner_type == (
+           toroidal
+              ? InitialDataEllipticBoundaryType::dirichlet
+              : InitialDataEllipticBoundaryType::neumann
+        )
+      : radial_inner_type == InitialDataEllipticBoundaryType::dirichlet
+         || radial_inner_type == InitialDataEllipticBoundaryType::neumann
+         || radial_inner_type == InitialDataEllipticBoundaryType::robin;
+   const InitialDataEllipticBoundaryType lower_theta_type =
+      toroidal && near(first_problo[1], 0.0)
+      ? InitialDataEllipticBoundaryType::dirichlet
+      : InitialDataEllipticBoundaryType::neumann;
+   const InitialDataEllipticBoundaryType upper_theta_type =
+      toroidal && near(first_probhi[1], constants::pi)
+      ? InitialDataEllipticBoundaryType::dirichlet
+      : InitialDataEllipticBoundaryType::neumann;
+   if (!valid_inner
+       || (radial_outer_type != InitialDataEllipticBoundaryType::dirichlet
+           && radial_outer_type != InitialDataEllipticBoundaryType::robin)
+       || resolved_boundary_type(boundary, 0, 1, false)
+          != lower_theta_type
+       || resolved_boundary_type(boundary, 0, 1, true)
+          != upper_theta_type
+       || resolved_boundary_type(boundary, 0, 2, false)
+          != InitialDataEllipticBoundaryType::periodic
+       || resolved_boundary_type(boundary, 0, 2, true)
+          != InitialDataEllipticBoundaryType::periodic) {
+      amrex::Abort(
+         "invalid origin/shell, axis/equator, radial outer, or phi boundary "
+         "for the full spherical scalar operator"
+      );
+   }
+
+   auto logical_boundary = boundary.component(0);
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> weighted_rhs_storage(
+      num_levels
+   );
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> a_coefficient(num_levels);
+   amrex::Vector<amrex::MultiFab const*> weighted_rhs(num_levels);
+   amrex::Vector<amrex::Array<amrex::MultiFab, AMREX_SPACEDIM>>
+      b_coefficient(num_levels);
+
+   for (int level = 0; level < num_levels; ++level) {
+      const amrex::Geometry& geometry = hierarchy.geometry[level];
+      const amrex::Box domain = geometry.Domain();
+      const int radial_begin = domain.smallEnd(0);
+      const int angular_begin = domain.smallEnd(1);
+      const auto problo = geometry.ProbLoArray();
+      const auto dx = geometry.CellSizeArray();
+      const InitialDataCoordinateLine radial = hierarchy.coordinate_line(
+         level, 0
+      );
+      const int radial_cells = static_cast<int>(radial.centers.size());
+      std::vector<amrex::Real> radial_cell_jacobian(radial_cells);
+      std::vector<amrex::Real> radial_face_jacobian(radial_cells + 1);
+      for (int cell = 0; cell < radial_cells; ++cell) {
+         radial_cell_jacobian[cell] = radial.widths[cell] / dx[0];
+      }
+      radial_face_jacobian.front() = radial_cell_jacobian.front();
+      radial_face_jacobian.back() = radial_cell_jacobian.back();
+      for (int face = 1; face < radial_cells; ++face) {
+         radial_face_jacobian[face] = (
+            radial.centers[face] - radial.centers[face - 1]
+         ) / dx[0];
+      }
+      for (amrex::Real jacobian : radial_cell_jacobian) {
+         if (!(jacobian > 0.0) || !std::isfinite(jacobian)) {
+            amrex::Abort("invalid mapped spherical radial cell Jacobian");
+         }
+      }
+      for (amrex::Real jacobian : radial_face_jacobian) {
+         if (!(jacobian > 0.0) || !std::isfinite(jacobian)) {
+            amrex::Abort("invalid mapped spherical radial face Jacobian");
+         }
+      }
+
+      amrex::Gpu::DeviceVector<amrex::Real> device_radial_faces(
+         radial.faces.size()
+      );
+      amrex::Gpu::DeviceVector<amrex::Real> device_radial_centers(
+         radial.centers.size()
+      );
+      amrex::Gpu::DeviceVector<amrex::Real> device_cell_jacobian(
+         radial_cell_jacobian.size()
+      );
+      amrex::Gpu::DeviceVector<amrex::Real> device_face_jacobian(
+         radial_face_jacobian.size()
+      );
+      amrex::Gpu::copy(
+         amrex::Gpu::hostToDevice,
+         radial.faces.begin(), radial.faces.end(),
+         device_radial_faces.begin()
+      );
+      amrex::Gpu::copy(
+         amrex::Gpu::hostToDevice,
+         radial.centers.begin(), radial.centers.end(),
+         device_radial_centers.begin()
+      );
+      amrex::Gpu::copy(
+         amrex::Gpu::hostToDevice,
+         radial_cell_jacobian.begin(), radial_cell_jacobian.end(),
+         device_cell_jacobian.begin()
+      );
+      amrex::Gpu::copy(
+         amrex::Gpu::hostToDevice,
+         radial_face_jacobian.begin(), radial_face_jacobian.end(),
+         device_face_jacobian.begin()
+      );
+      const amrex::Real* radial_face = device_radial_faces.data();
+      const amrex::Real* radial_center = device_radial_centers.data();
+      const amrex::Real* cell_jacobian = device_cell_jacobian.data();
+      const amrex::Real* face_jacobian = device_face_jacobian.data();
+
+      weighted_rhs_storage[level] = std::make_unique<amrex::MultiFab>(
+         hierarchy.grids[level], hierarchy.distribution[level], 1, 0
+      );
+      a_coefficient[level] = std::make_unique<amrex::MultiFab>(
+         hierarchy.grids[level], hierarchy.distribution[level], 1, 0
+      );
+      weighted_rhs[level] = weighted_rhs_storage[level].get();
+      for (amrex::MFIter mfi(*weighted_rhs_storage[level]);
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.validbox();
+         const auto physical_rhs = rhs[level]->const_array(mfi);
+         const auto weighted = weighted_rhs_storage[level]->array(mfi);
+         const auto zeroth_order = a_coefficient[level]->array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const int radial_index = i - radial_begin;
+            const amrex::Real radius = radial_center[radial_index];
+            const amrex::Real theta = problo[1]
+               + (j - angular_begin + 0.5) * dx[1];
+            weighted(i, j, k, 0) = physical_rhs(i, j, k, 0)
+               * cell_jacobian[radial_index] * radius * radius
+               * std::sin(theta);
+            zeroth_order(i, j, k, 0) = cell_jacobian[radial_index]
+               / std::sin(theta);
+         });
+      }
+
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         b_coefficient[level][direction].define(
+            amrex::convert(
+               hierarchy.grids[level],
+               amrex::IntVect::TheDimensionVector(direction)
+            ),
+            hierarchy.distribution[level],
+            1,
+            0
+         );
+      }
+      for (amrex::MFIter mfi(b_coefficient[level][0]);
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.validbox();
+         const auto coefficient = b_coefficient[level][0].array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const int radial_index = i - radial_begin;
+            const amrex::Real theta = problo[1]
+               + (j - angular_begin + 0.5) * dx[1];
+            const amrex::Real radius = radial_face[radial_index];
+            coefficient(i, j, k, 0) = radius * radius * std::sin(theta)
+               / face_jacobian[radial_index];
+         });
+      }
+      for (amrex::MFIter mfi(b_coefficient[level][1]);
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.validbox();
+         const auto coefficient = b_coefficient[level][1].array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const int radial_index = i - radial_begin;
+            const amrex::Real theta_face = problo[1]
+               + (j - angular_begin) * dx[1];
+            coefficient(i, j, k, 0) = cell_jacobian[radial_index]
+               * std::sin(theta_face);
+         });
+      }
+      for (amrex::MFIter mfi(b_coefficient[level][2]);
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.validbox();
+         const auto coefficient = b_coefficient[level][2].array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const int radial_index = i - radial_begin;
+            const amrex::Real theta = problo[1]
+               + (j - angular_begin + 0.5) * dx[1];
+            coefficient(i, j, k, 0) = cell_jacobian[radial_index]
+               / std::sin(theta);
+         });
+      }
+
+      const amrex::Dim3 domain_lo = amrex::lbound(domain);
+      const amrex::Dim3 domain_hi = amrex::ubound(domain);
+      const amrex::Real inverse_inner_jacobian =
+         1.0 / radial_face_jacobian.front();
+      const amrex::Real inverse_outer_jacobian =
+         1.0 / radial_face_jacobian.back();
+      for (amrex::MFIter mfi(logical_boundary.coefficient_b(level));
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.fabbox();
+         const auto coefficient_b =
+            logical_boundary.coefficient_b(level).array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            if (i < domain_lo.x) {
+               coefficient_b(i, j, k, 0) *= inverse_inner_jacobian;
+            } else if (i > domain_hi.x) {
+               coefficient_b(i, j, k, 0) *= inverse_outer_jacobian;
+            }
+         });
+      }
+      amrex::Gpu::streamSynchronize();
+   }
+
+   amrex::LPInfo info;
+   // A one-cell periodic phi slab already has identically cancelling
+   // azimuthal fluxes. Keep it in the ordinary operator instead of AMReX's
+   // hidden-direction path: polar spherical grids need semicoarsening, and
+   // AMReX intentionally forbids combining those two LPInfo modes.
+   info.setSemicoarsening(true).setMaxSemicoarseningLevel(8);
+   amrex::MLABecLaplacian poisson(
+      hierarchy.geometry,
+      hierarchy.grids,
+      hierarchy.distribution,
+      info
+   );
+   poisson.setMaxOrder(options.boundary_interpolation_order);
+   poisson.setScalars(-angular_spin_squared, -1.0);
+   const LoweredBoundaryConditions lowered = lower_boundary_conditions(
+      hierarchy, logical_boundary
+   );
+   for (int level = 0; level < num_levels; ++level) {
+      poisson.setACoeffs(level, *a_coefficient[level]);
+      poisson.setBCoeffs(
+         level, amrex::GetArrOfConstPtrs(b_coefficient[level])
+      );
+   }
+   set_boundary_conditions(poisson, logical_boundary, lowered);
+
+   amrex::MLMG mlmg(poisson);
+   configure_mlmg(mlmg, options);
+   return elliptic_result(mlmg.solve(
+      solution,
+      weighted_rhs,
+      options.relative_tolerance,
+      options.absolute_tolerance
+   ));
+#endif
+}
+
 } // namespace
 
-#if (AMREX_SPACEDIM == 2)
+InitialDataEllipticResult solve_initial_data_spherical_poisson(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   amrex::Vector<amrex::MultiFab const*> const& rhs,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options
+)
+{
+   return solve_initial_data_spherical_mode(
+      hierarchy, solution, rhs, boundary, options, 0.0
+   );
+}
+
+InitialDataEllipticResult solve_initial_data_spherical_axisymmetric_poisson(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   amrex::Vector<amrex::MultiFab const*> const& rhs,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options
+)
+{
+   return solve_axisymmetric_spherical_separable(
+      hierarchy,
+      solution,
+      rhs,
+      boundary,
+      options,
+      AxisymmetricSphericalMode::scalar
+   );
+}
+
+InitialDataEllipticResult
+solve_initial_data_spherical_toroidal_vector_poisson(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& azimuthal_solution,
+   amrex::Vector<amrex::MultiFab const*> const& azimuthal_source,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options
+)
+{
+   return solve_initial_data_spherical_mode(
+      hierarchy,
+      azimuthal_solution,
+      azimuthal_source,
+      boundary,
+      options,
+      1.0
+   );
+}
+
+InitialDataEllipticResult
+solve_initial_data_spherical_axisymmetric_toroidal_vector_poisson(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& azimuthal_solution,
+   amrex::Vector<amrex::MultiFab const*> const& azimuthal_source,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options
+)
+{
+   return solve_axisymmetric_spherical_separable(
+      hierarchy,
+      azimuthal_solution,
+      azimuthal_source,
+      boundary,
+      options,
+      AxisymmetricSphericalMode::toroidal_vector
+   );
+}
+
+#if (AMREX_SPACEDIM >= 2)
 namespace {
 
 struct SymmetricTridiagonalEigensystem {
@@ -2615,10 +3080,10 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    AxisymmetricSphericalMode mode
 )
 {
-#if (AMREX_SPACEDIM != 2)
+#if (AMREX_SPACEDIM < 2)
    amrex::ignore_unused(hierarchy, solution, rhs, boundary, options, mode);
    amrex::Abort(
-      "the axisymmetric spherical elliptic operator requires a 2D r-theta hierarchy"
+      "the axisymmetric spherical elliptic operator requires r-theta storage"
    );
    return {};
 #else
@@ -2673,6 +3138,19 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
          "[0,pi/2], [pi/2,pi], or [0,pi]"
       );
    }
+#if (AMREX_SPACEDIM == 3)
+   if (!geometry.isPeriodic(2)
+       || !near(probhi[2] - problo[2], 2.0 * constants::pi)
+       || resolved_boundary_type(boundary, 0, 2, false)
+          != InitialDataEllipticBoundaryType::periodic
+       || resolved_boundary_type(boundary, 0, 2, true)
+          != InitialDataEllipticBoundaryType::periodic) {
+      amrex::Abort(
+         "full-storage axisymmetric spherical solves require one periodic "
+         "2pi phi interval"
+      );
+   }
+#endif
    const bool toroidal =
       mode == AxisymmetricSphericalMode::toroidal_vector;
    const InitialDataEllipticBoundaryType origin_type = toroidal
@@ -2736,7 +3214,11 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       radial_widths[radial_index] =
          radial_faces[radial_index + 1] - radial_faces[radial_index];
    }
+#if (AMREX_SPACEDIM == 3)
+   const int plane_index = domain.smallEnd(2);
+#else
    constexpr int plane_index = 0;
+#endif
    const std::size_t total_cells =
       static_cast<std::size_t>(radial_cells) * angular_cells;
 
@@ -2755,6 +3237,11 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    std::vector<int> outer_counts(angular_cells, 0);
    for (amrex::MFIter mfi(host_rhs); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.validbox();
+#if (AMREX_SPACEDIM == 3)
+      if (plane_index < box.smallEnd(2) || plane_index > box.bigEnd(2)) {
+         continue;
+      }
+#endif
       const auto source = host_rhs.const_array(mfi);
       for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
          const int angular_index = j - angular_begin;
@@ -2770,6 +3257,12 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    }
    for (amrex::MFIter mfi(host_coefficient_a); mfi.isValid(); ++mfi) {
       const amrex::Box valid_box = mfi.validbox();
+#if (AMREX_SPACEDIM == 3)
+      if (plane_index < valid_box.smallEnd(2)
+          || plane_index > valid_box.bigEnd(2)) {
+         continue;
+      }
+#endif
       const auto coefficient_a = host_coefficient_a.const_array(mfi);
       const auto coefficient_b = host_coefficient_b.const_array(mfi);
       const auto coefficient_c = host_coefficient_c.const_array(mfi);
@@ -2810,6 +3303,47 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    amrex::ParallelAllReduce::Sum(
       weighted_rhs.data(), static_cast<int>(weighted_rhs.size()), communicator
    );
+#if (AMREX_SPACEDIM == 3)
+   amrex::Real azimuthal_rhs_difference = 0.0;
+   amrex::Real azimuthal_rhs_scale = 0.0;
+   for (amrex::MFIter mfi(host_rhs); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto source = host_rhs.const_array(mfi);
+      for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+         for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+            const int angular_index = j - angular_begin;
+            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+               const int radial_index = i - radial_begin;
+               const amrex::Real radius = radial_centers[radial_index];
+               const amrex::Real weighted_source =
+                  radius * radius * source(i, j, k, 0);
+               const amrex::Real reference = weighted_rhs[
+                  static_cast<std::size_t>(radial_index) * angular_cells
+                  + angular_index
+               ];
+               azimuthal_rhs_difference = std::max(
+                  azimuthal_rhs_difference,
+                  std::abs(weighted_source - reference)
+               );
+               azimuthal_rhs_scale = std::max(
+                  azimuthal_rhs_scale,
+                  std::max(std::abs(weighted_source), std::abs(reference))
+               );
+            }
+         }
+      }
+   }
+   amrex::ParallelAllReduce::Max(azimuthal_rhs_difference, communicator);
+   amrex::ParallelAllReduce::Max(azimuthal_rhs_scale, communicator);
+   const amrex::Real azimuthal_rhs_tolerance =
+      1.0e-14 + 1.0e-12 * azimuthal_rhs_scale;
+   if (azimuthal_rhs_difference > azimuthal_rhs_tolerance) {
+      amrex::Abort(
+         "full-storage axisymmetric spherical solve received a "
+         "phi-dependent right-hand side"
+      );
+   }
+#endif
    amrex::ParallelAllReduce::Sum(
       inner_a.data(), angular_cells, communicator
    );
@@ -3115,16 +3649,24 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    for (amrex::MFIter mfi(host_solution); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.validbox();
       const auto destination = host_solution.array(mfi);
+#if (AMREX_SPACEDIM == 3)
+      for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+#else
+      constexpr int k = plane_index;
+#endif
       for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
          const int angular_index = j - angular_begin;
          for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
             const int radial_index = i - radial_begin;
-            destination(i, j, plane_index, 0) = solution_values[
+            destination(i, j, k, 0) = solution_values[
                static_cast<std::size_t>(radial_index) * angular_cells
                + angular_index
             ];
          }
       }
+#if (AMREX_SPACEDIM == 3)
+      }
+#endif
    }
    copy_host_to_device(*solution[0], host_solution);
    return elliptic_result(residual);

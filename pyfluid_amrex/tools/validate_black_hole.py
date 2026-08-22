@@ -37,6 +37,9 @@ BASE_INPUT = ROOT / "pyfluid_amrex/inputs/kerr_schild_filled_evolution_3d.in"
 SPHERICAL_XCTS_INPUT = (
     ROOT / "pyfluid_amrex/inputs/black_hole_xcts_spherical_id_2d.in"
 )
+SPHERICAL_XCTS_3D_INPUT = (
+    ROOT / "pyfluid_amrex/inputs/black_hole_xcts_spherical_id_3d.in"
+)
 RUN_ROOT = ROOT / "runs/current/black_hole_validation"
 RESULTS = RUN_ROOT / "black_hole_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
@@ -153,7 +156,7 @@ def validate_spherical_xcts_black_hole(
         ranks=ranks,
         timeout=timeout,
     )
-    if "re-solving black-hole physical initial data on the changed r-theta shell" \
+    if "re-solving black-hole physical initial data on the changed r theta shell" \
             not in log_text:
         raise RuntimeError("changed-grid black-hole load skipped its XCTS solve")
 
@@ -256,6 +259,186 @@ def validate_spherical_xcts_black_hole(
         "xcts_lapse_linf_error": lapse_linf_error,
         "xcts_zero_field_linf": zero_field_linf,
         "xcts_theta_invariance": theta_invariance,
+        "xcts_elliptic_residual": residual,
+        "xcts_artifact_bytes": artifact_bytes,
+        "run_dir": repo_relative(run_dir),
+    }
+
+
+def validate_spherical_xcts_black_hole_3d(
+    *, ranks: int, timeout: int | None
+) -> dict[str, object]:
+    name = "schwarzschild_xcts_spherical_shell_3d_nphi4"
+    run_dir = RUN_ROOT / name
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True)
+    artifact = run_dir / "physical_id"
+    input_path = materialize_run_input(
+        SPHERICAL_XCTS_3D_INPUT,
+        run_dir / "input.in",
+        {
+            "pyfluid.run_name": name,
+            "pyfluid.output_dir": repo_relative(run_dir),
+            "initial_data.output_file": repo_relative(artifact),
+        },
+    )
+    completed = run_amrex(
+        dim=3,
+        input_path=input_path,
+        ranks=ranks,
+        timeout=timeout,
+    )
+    (run_dir / "run.log").write_text(completed.stdout)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"{name} failed; see {repo_relative(run_dir / 'run.log')}"
+        )
+    recovery = RECOVERY.findall(completed.stdout)
+    if not recovery or tuple(int(value) for value in recovery[-1]) != (0, 0):
+        raise RuntimeError(f"{name} used relativistic recovery during ID")
+    solve = XCTS_SOLVE.search(completed.stdout)
+    if solve is None:
+        raise RuntimeError(f"{name} did not report its XCTS solve")
+    residual = max(abs(float(solve.group(index))) for index in (3, 4, 5))
+    if residual > 3.0e-8:
+        raise RuntimeError(f"{name} elliptic residual is {residual:.3e}")
+
+    source_artifact = artifact
+    name = "schwarzschild_xcts_spherical_shell_3d_changed_nphi4"
+    run_dir = RUN_ROOT / name
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True)
+    artifact = run_dir / "physical_id"
+    input_path = materialize_run_input(
+        SPHERICAL_XCTS_3D_INPUT,
+        run_dir / "input.in",
+        {
+            "pyfluid.run_name": name,
+            "pyfluid.output_dir": repo_relative(run_dir),
+            "amr.n_cell": "128 32 4",
+            "amr.max_grid_size": "64",
+            "initial_data.input_file": repo_relative(source_artifact),
+            "initial_data.output_file": repo_relative(artifact),
+        },
+    )
+    completed = run_amrex(
+        dim=3,
+        input_path=input_path,
+        ranks=ranks,
+        timeout=timeout,
+    )
+    (run_dir / "run.log").write_text(completed.stdout)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"{name} failed; see {repo_relative(run_dir / 'run.log')}"
+        )
+    if "re-solving black-hole physical initial data on the changed " \
+            "r theta phi shell" not in completed.stdout:
+        raise RuntimeError("changed 3D spherical black-hole load skipped XCTS")
+    solve = XCTS_SOLVE.search(completed.stdout)
+    if solve is None:
+        raise RuntimeError(f"{name} did not report its XCTS re-solve")
+    residual = max(abs(float(solve.group(index))) for index in (3, 4, 5))
+    if residual > 3.0e-8:
+        raise RuntimeError(f"{name} elliptic residual is {residual:.3e}")
+
+    metadata = read_artifact_metadata(artifact)
+    if (
+        metadata.get("source_ic") != "black_hole"
+        or metadata.get("spacetime_initial_data") != "xcts"
+        or metadata.get("mesh_coordinate") != "spherical"
+        or metadata.get("mesh_axes") != "r theta phi"
+        or metadata.get("periodicity") != "0,0,1"
+    ):
+        raise RuntimeError("3D spherical black-hole artifact lost owner identity")
+    radial_faces = np.asarray(
+        [float(value) for value in metadata["coordinate_faces_0_0"].split(",")]
+    )
+    geometry_file = artifact / "adm_geometry.h5"
+    names, dimension, _ = parse_plot_header(geometry_file)
+    state = read_level_state(geometry_file, names, dimension, 0)
+    if dimension != 3 or state.shape != (16, 129, 33, 5):
+        raise RuntimeError(
+            f"unexpected 3D spherical XCTS ADM shape {state.shape} in {dimension}D"
+        )
+    if not np.all(np.isfinite(state)):
+        raise RuntimeError("3D spherical XCTS ADM artifact contains nonfinite values")
+    field_component = adm_component_indices()
+    mass = float(metadata["black_hole_mass"])
+    isotropic_radius = 0.5 * mass
+    conformal_factor = 1.0 + isotropic_radius / radial_faces
+    exact_metric = conformal_factor**4
+    exact_lapse = (1.0 - isotropic_radius / radial_faces) / conformal_factor
+    diagonal = state[
+        [field_component[name] for name in ("gamma11", "gamma22", "gamma33")]
+    ]
+    metric_relative_error = float(
+        np.max(
+            np.abs(diagonal - exact_metric[None, :, None, None])
+            / exact_metric[None, :, None, None]
+        )
+    )
+    lapse_linf_error = float(
+        np.max(
+            np.abs(
+                state[field_component["lapse"]]
+                - exact_lapse[:, None, None]
+            )
+        )
+    )
+    zero_components = state[
+        [
+            field_component[name]
+            for name in (
+                "gamma12",
+                "gamma13",
+                "gamma23",
+                "k11",
+                "k12",
+                "k13",
+                "k22",
+                "k23",
+                "k33",
+                "shift1",
+                "shift2",
+                "shift3",
+            )
+        ]
+    ]
+    zero_field_linf = float(np.max(np.abs(zero_components)))
+    angular_invariance = max(
+        float(np.max(np.ptp(values, axis=(1, 2)))) for values in state
+    )
+    if (
+        metric_relative_error > 2.0e-2
+        or lapse_linf_error > 3.0e-3
+        or zero_field_linf > 1.0e-14
+        or angular_invariance > 2.0e-10
+    ):
+        raise RuntimeError(
+            "3D spherical XCTS artifact failed its analytic Schwarzschild "
+            f"check: metric={metric_relative_error:.3e}, "
+            f"lapse={lapse_linf_error:.3e}, zero={zero_field_linf:.3e}, "
+            f"angular={angular_invariance:.3e}"
+        )
+    if state[field_component["lapse"], 0].any():
+        raise RuntimeError("3D spherical XCTS horizon lapse is not exactly zero")
+
+    artifact_bytes = sum(
+        path.stat().st_size for path in artifact.rglob("*") if path.is_file()
+    )
+    return {
+        "case": name,
+        "status": "PASS",
+        "steps": 0,
+        "c2p_fallbacks": 0,
+        "atmosphere_resets": 0,
+        "xcts_metric_relative_error": metric_relative_error,
+        "xcts_lapse_linf_error": lapse_linf_error,
+        "xcts_zero_field_linf": zero_field_linf,
+        "xcts_theta_invariance": angular_invariance,
         "xcts_elliptic_residual": residual,
         "xcts_artifact_bytes": artifact_bytes,
         "run_dir": repo_relative(run_dir),
@@ -735,6 +918,11 @@ def main() -> int:
             ranks=args.ranks, timeout=args.timeout
         )
     )
+    results.append(
+        validate_spherical_xcts_black_hole_3d(
+            ranks=args.ranks, timeout=args.timeout
+        )
+    )
     results.extend(
         validate_spherical_xcts_rejection(
             name,
@@ -752,7 +940,8 @@ def main() -> int:
             (
                 "schwarzschild_xcts_invalid_origin",
                 {"spacetime.origin1": "1.0"},
-                "origin-centered solve-only 2D spherical r-theta XCTS shell",
+                "origin-centered solve-only spherical r-theta or axisymmetric "
+                "r-theta-phi XCTS shell",
             ),
         )
     )

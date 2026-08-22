@@ -7,6 +7,7 @@
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_ParallelDescriptor.H>
+#include <AMReX_ParmParse.H>
 #include <AMReX_RealBox.H>
 
 #include <algorithm>
@@ -22,6 +23,7 @@
 #include "pyfluid_amrex/initial_data/centering.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
+#include "pyfluid_amrex/initial_data/perturbation.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 #include "pyfluid_amrex/initial_data/tov.hpp"
 #include "pyfluid_amrex/generated/initial_data_method_catalog.hpp"
@@ -1809,9 +1811,90 @@ bool validate_differential_rotation_first_integrals()
    const amrex::Real enthalpy_error = std::abs(
       j_point.log_specific_enthalpy - expected_log_enthalpy
    );
+   pyfluid_amrex::RotatingStarParameters uryu_plus_parameters = j_parameters;
+   uryu_plus_parameters.rotation_law =
+      pyfluid_amrex::RotationLaw::UryuPlus13;
+   uryu_plus_parameters.differential_rotation_length_b = 1.5;
+   const pyfluid_amrex::RotatingStarPoint uryu_plus_point =
+      pyfluid_amrex::rotating_star_point(
+         uryu_plus_parameters, physical, metric
+      );
+   const amrex::Real uryu_plus_omega = uryu_plus_point.v2;
+   const amrex::Real uryu_plus_momentum = uryu_plus_omega
+      / (1.0 - uryu_plus_omega * uryu_plus_omega);
+   const amrex::Real uryu_plus_law_omega =
+      pyfluid_amrex::generated::uryu_plus_13_angular_velocity(
+         uryu_plus_momentum,
+         uryu_plus_parameters.angular_velocity,
+         uryu_plus_parameters.differential_rotation_length,
+         uryu_plus_parameters.differential_rotation_length_b
+      );
+   const amrex::Real uryu_plus_residual = std::abs(
+      uryu_plus_omega - uryu_plus_law_omega
+   );
+   const amrex::Real derivative_momentum = 0.4
+      * uryu_plus_parameters.differential_rotation_length
+      * uryu_plus_parameters.differential_rotation_length
+      * uryu_plus_parameters.angular_velocity;
+   const amrex::Real derivative_step = 1.0e-6 * derivative_momentum;
+   const auto uryu_plus_integral = [&](amrex::Real momentum) {
+      return pyfluid_amrex::generated::uryu_plus_13_rotation_integral(
+         momentum,
+         uryu_plus_parameters.angular_velocity,
+         uryu_plus_parameters.differential_rotation_length,
+         uryu_plus_parameters.differential_rotation_length_b
+      );
+   };
+   const amrex::Real finite_difference_integral_derivative = (
+      uryu_plus_integral(derivative_momentum + derivative_step)
+      - uryu_plus_integral(derivative_momentum - derivative_step)
+   ) / (2.0 * derivative_step);
+   const amrex::Real exact_integral_derivative = derivative_momentum
+      * pyfluid_amrex::generated::uryu_plus_13_angular_velocity_derivative(
+         derivative_momentum,
+         uryu_plus_parameters.angular_velocity,
+         uryu_plus_parameters.differential_rotation_length,
+         uryu_plus_parameters.differential_rotation_length_b
+      );
+   const amrex::Real uryu_integral_identity_error = std::abs(
+      finite_difference_integral_derivative - exact_integral_derivative
+   );
+   pyfluid_amrex::RotatingStarParameters uryu_envelope_parameters =
+      j_parameters;
+   uryu_envelope_parameters.rotation_law =
+      pyfluid_amrex::RotationLaw::UryuJEnvelopeP1;
+   uryu_envelope_parameters.differential_rotation_length_b = 1.0e7;
+   const pyfluid_amrex::RotatingStarPoint uryu_envelope_point =
+      pyfluid_amrex::rotating_star_point(
+         uryu_envelope_parameters, physical, metric
+      );
+   pyfluid_amrex::RotatingStarParameters negative_uryu_parameters =
+      uryu_plus_parameters;
+   negative_uryu_parameters.angular_velocity =
+      -uryu_plus_parameters.angular_velocity;
+   const pyfluid_amrex::RotatingStarPoint negative_uryu_point =
+      pyfluid_amrex::rotating_star_point(
+         negative_uryu_parameters, physical, metric
+      );
+   const amrex::Real uryu_limit_error = std::max({
+      std::abs(uryu_envelope_point.v2 - j_point.v2),
+      std::abs(
+         uryu_envelope_point.log_specific_enthalpy
+         - j_point.log_specific_enthalpy
+      ),
+   });
+   const amrex::Real uryu_sign_error = std::max({
+      std::abs(negative_uryu_point.v2 + uryu_plus_point.v2),
+      std::abs(
+         negative_uryu_point.log_specific_enthalpy
+         - uryu_plus_point.log_specific_enthalpy
+      ),
+   });
    bool has_uniform = false;
    bool has_j_constant = false;
    bool has_q_power = false;
+   bool has_uryu_plus = false;
+   bool has_uryu_envelope = false;
    for (pyfluid_amrex::RotationLawInfo const& law
         : pyfluid_amrex::RotationLawCatalog) {
       has_uniform = has_uniform
@@ -1820,6 +1903,10 @@ bool validate_differential_rotation_first_integrals()
          || law.id == pyfluid_amrex::RotationLaw::JConstant;
       has_q_power = has_q_power
          || law.id == pyfluid_amrex::RotationLaw::QPower;
+      has_uryu_plus = has_uryu_plus
+         || law.id == pyfluid_amrex::RotationLaw::UryuPlus13;
+      has_uryu_envelope = has_uryu_envelope
+         || law.id == pyfluid_amrex::RotationLaw::UryuJEnvelopeP1;
    }
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::cout << std::setprecision(16)
@@ -1829,18 +1916,121 @@ bool validate_differential_rotation_first_integrals()
                 << " fractional_negative_residual=" << fractional_residual
                 << " enthalpy_error=" << enthalpy_error
                 << " q_two_integral=" << q_two_integral
+                << " uryu_plus_residual=" << uryu_plus_residual
+                << " uryu_integral_identity_error="
+                << uryu_integral_identity_error
+                << " uryu_j_limit_error=" << uryu_limit_error
+                << " uryu_sign_error=" << uryu_sign_error
                 << " catalog_valid="
-                << (has_uniform && has_j_constant && has_q_power) << '\n';
+                << (has_uniform && has_j_constant && has_q_power
+                    && has_uryu_plus && has_uryu_envelope) << '\n';
    }
    return j_point.timelike && q_point.timelike
       && negative_j_point.timelike && negative_q_point.timelike
       && fractional_q_point.timelike
+      && uryu_plus_point.timelike && uryu_envelope_point.timelike
+      && negative_uryu_point.timelike
       && has_uniform && has_j_constant && has_q_power
+      && has_uryu_plus && has_uryu_envelope
       && std::isfinite(q_two_integral)
       && identity_error < 1.0e-13
       && residual < 1.0e-13
       && fractional_residual < 1.0e-13
-      && enthalpy_error < 1.0e-14;
+      && enthalpy_error < 1.0e-14
+      && uryu_plus_residual < 1.0e-13
+      && uryu_integral_identity_error < 1.0e-9
+      && uryu_limit_error < 1.0e-12
+      && uryu_sign_error < 1.0e-13;
+}
+
+bool validate_equilibrium_perturbations()
+{
+   pyfluid_amrex::EOSParams eos;
+   eos.method = pyfluid_amrex::EOSPolytrope;
+   eos.polytrope_segments = 1;
+   eos.segment_k[0] = 100.0;
+   eos.segment_gamma[0] = 2.0;
+   const amrex::Real rho = 1.0e-2;
+   pyfluid_amrex::InitialDataPerturbationParameters pressure_parameters;
+   pressure_parameters.kind =
+      pyfluid_amrex::InitialDataPerturbation::ColdPressureScale;
+   pressure_parameters.pressure_scale = 0.995;
+   pressure_parameters.eos = eos;
+   const pyfluid_amrex::InitialDataPerturbationPoint pressure_point =
+      pyfluid_amrex::initial_data_perturbation_point(
+         pressure_parameters, {0.0, 0.0, 0.0}, rho
+      );
+   const amrex::Real expected_pressure_density = rho * std::sqrt(0.995);
+   const pyfluid_amrex::ColdBarotropeState expected_pressure_state =
+      pyfluid_amrex::cold_barotrope_from_density(
+         expected_pressure_density, eos
+      );
+   const amrex::Real pressure_error = std::max({
+      std::abs(pressure_point.matter.rho - expected_pressure_state.rho),
+      std::abs(
+         pressure_point.matter.pressure - expected_pressure_state.pressure
+      ),
+      std::abs(
+         pressure_point.matter.specific_internal_energy
+         - expected_pressure_state.specific_internal_energy
+      ),
+      std::abs(
+         pressure_point.matter.specific_enthalpy
+         - expected_pressure_state.specific_enthalpy
+      ),
+   });
+
+   pyfluid_amrex::InitialDataPerturbationParameters mode_parameters;
+   mode_parameters.kind =
+      pyfluid_amrex::InitialDataPerturbation::DensityAzimuthalEspino2019;
+   mode_parameters.amplitude = 0.005;
+   mode_parameters.mode = 1;
+   mode_parameters.reference_radius = 2.0;
+   mode_parameters.frame = pyfluid_amrex::make_azimuthal_frame(
+      {{0.0, 0.0, 0.0}}, {{0.0, 0.0, 1.0}}
+   );
+   mode_parameters.eos = eos;
+   const pyfluid_amrex::InitialDataPerturbationPoint mode_point =
+      pyfluid_amrex::initial_data_perturbation_point(
+         mode_parameters, {0.0, 1.0, 0.0}, rho
+      );
+   const amrex::Real expected_fractional_change = 0.0025;
+   const pyfluid_amrex::ColdBarotropeState expected_mode_state =
+      pyfluid_amrex::cold_barotrope_from_density(
+         rho * (1.0 + expected_fractional_change), eos
+      );
+   const amrex::Real mode_error = std::max({
+      std::abs(
+         mode_point.fractional_density_change - expected_fractional_change
+      ),
+      std::abs(mode_point.matter.rho - expected_mode_state.rho),
+      std::abs(mode_point.matter.pressure - expected_mode_state.pressure),
+      std::abs(
+         mode_point.matter.specific_internal_energy
+         - expected_mode_state.specific_internal_energy
+      ),
+   });
+   bool has_pressure = false;
+   bool has_density_mode = false;
+   for (pyfluid_amrex::InitialDataPerturbationInfo const& perturbation
+        : pyfluid_amrex::InitialDataPerturbationCatalog) {
+      has_pressure = has_pressure
+         || perturbation.id
+            == pyfluid_amrex::InitialDataPerturbation::ColdPressureScale;
+      has_density_mode = has_density_mode
+         || perturbation.id == pyfluid_amrex::InitialDataPerturbation::
+            DensityAzimuthalEspino2019;
+   }
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "equilibrium_perturbations pressure_error="
+                << pressure_error << " mode_error=" << mode_error
+                << " catalog_valid=" << (has_pressure && has_density_mode)
+                << '\n';
+   }
+   return pressure_point.valid && mode_point.valid
+      && has_pressure && has_density_mode
+      && pressure_error < 2.0e-15 && mode_error < 2.0e-15;
 }
 
 bool validate_constant_l_torus_first_integral()
@@ -1919,6 +2109,566 @@ bool validate_constant_l_torus_first_integral()
 }
 
 #if (AMREX_SPACEDIM == 3)
+struct FullSphericalPoissonError {
+   amrex::Real error = 0.0;
+   amrex::Real residual = 0.0;
+};
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real full_spherical_exact(
+   amrex::Real radius,
+   amrex::Real theta,
+   amrex::Real phi,
+   amrex::Real mode_amplitude
+) noexcept
+{
+   constexpr amrex::Real quadrupole_amplitude = 0.05;
+   const amrex::Real sine_theta = std::sin(theta);
+   const amrex::Real mu = std::cos(theta);
+   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+   return 1.0 + radius * radius * (
+      1.0 + mode_amplitude * sine_theta * sine_theta
+         * std::cos(2.0 * phi)
+   ) + quadrupole_amplitude * std::pow(radius, 4) * legendre_p2;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real full_spherical_radial_derivative(
+   amrex::Real radius,
+   amrex::Real theta,
+   amrex::Real phi,
+   amrex::Real mode_amplitude
+) noexcept
+{
+   constexpr amrex::Real quadrupole_amplitude = 0.05;
+   const amrex::Real sine_theta = std::sin(theta);
+   const amrex::Real mu = std::cos(theta);
+   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+   return 2.0 * radius * (
+      1.0 + mode_amplitude * sine_theta * sine_theta
+         * std::cos(2.0 * phi)
+   ) + 4.0 * quadrupole_amplitude * std::pow(radius, 3)
+      * legendre_p2;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real full_spherical_toroidal_exact(
+   amrex::Real radius,
+   amrex::Real theta
+) noexcept
+{
+   return radius * std::sin(theta) * (1.0 + 0.1 * radius * radius);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real full_spherical_toroidal_radial_derivative(
+   amrex::Real radius,
+   amrex::Real theta
+) noexcept
+{
+   return std::sin(theta) * (1.0 + 0.3 * radius * radius);
+}
+
+FullSphericalPoissonError solve_full_spherical_manufactured(
+   int radial_cells,
+   int angular_cells,
+   int azimuthal_cells,
+   bool mapped_radial,
+   bool use_robin,
+   bool nonaxisymmetric = true,
+   bool toroidal = false
+)
+{
+   const amrex::IntVect lo(0, 0, 0);
+   const amrex::IntVect hi(
+      radial_cells - 1, angular_cells - 1, azimuthal_cells - 1
+   );
+   const amrex::Box domain(lo, hi);
+   const amrex::RealBox physical_domain(
+      {0.0, 0.0, 0.0},
+      {
+         1.0,
+         pyfluid_amrex::constants::pi,
+         2.0 * pyfluid_amrex::constants::pi,
+      }
+   );
+   const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0, 1};
+   pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
+   hierarchy.geometry.emplace_back(
+      domain, physical_domain, amrex::CoordSys::cartesian, periodic
+   );
+   hierarchy.grids.emplace_back(domain);
+   hierarchy.grids[0].maxSize(std::max(8, radial_cells / 2));
+   hierarchy.distribution.emplace_back(hierarchy.grids[0]);
+   hierarchy.reflection_lo = {1, 1, 0};
+   hierarchy.reflection_hi = {0, 1, 0};
+   if (mapped_radial) {
+      if (radial_cells % 3 != 0) {
+         amrex::Abort("mapped full-spherical test requires Nr divisible by 3");
+      }
+      hierarchy.physical_coordinate_faces.resize(1);
+      hierarchy.physical_coordinate_faces[0][0] =
+         pyfluid_amrex::surface_focused_radial_faces(
+            0.5, 1.0, 2 * radial_cells / 3, radial_cells / 3
+         );
+   }
+
+   amrex::MultiFab solution(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 1
+   );
+   amrex::MultiFab rhs(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 0
+   );
+   solution.setVal(0.0);
+   rhs.setVal(0.0);
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto dx = hierarchy.geometry[0].CellSizeArray();
+   const auto radial_line = hierarchy.coordinate_line(0, 0);
+   amrex::Gpu::DeviceVector<amrex::Real> device_radial_centers(
+      radial_line.centers.size()
+   );
+   amrex::Gpu::copy(
+      amrex::Gpu::hostToDevice,
+      radial_line.centers.begin(), radial_line.centers.end(),
+      device_radial_centers.begin()
+   );
+   const amrex::Real* radial_center = device_radial_centers.data();
+   const amrex::Real mode_amplitude = nonaxisymmetric ? 0.125 : 0.0;
+   for (amrex::MFIter mfi(rhs); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto values = rhs.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         constexpr amrex::Real quadrupole_amplitude = 0.05;
+         const amrex::Real radius = radial_center[i];
+         const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+         const amrex::Real mu = std::cos(theta);
+         const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+         values(i, j, k, 0) = toroidal
+            ? radius * std::sin(theta)
+            : 6.0 + 14.0 * quadrupole_amplitude * radius * radius
+               * legendre_p2;
+      });
+   }
+
+   constexpr amrex::Real robin_b = 0.2;
+   auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+      hierarchy,
+      1,
+      1.0,
+      use_robin ? robin_b : 0.0,
+      0.0,
+      pyfluid_amrex::InitialDataEllipticCentering::cell
+   );
+   pyfluid_amrex::set_initial_data_reflection_boundaries(
+      hierarchy,
+      boundary,
+      {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
+   );
+   if (toroidal) {
+      pyfluid_amrex::set_axisymmetric_spherical_toroidal_regularity(
+         hierarchy, boundary
+      );
+   }
+   for (amrex::MFIter mfi(boundary.coefficient_c(0));
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.fabbox();
+      const auto coefficient_a = boundary.coefficient_a(0).array(mfi);
+      const auto coefficient_b = boundary.coefficient_b(0).array(mfi);
+      const auto coefficient_c = boundary.coefficient_c(0).array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         if (i > domain.bigEnd(0)) {
+            const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+            const amrex::Real phi = problo[2] + (k + 0.5) * dx[2];
+            const amrex::Real exact = toroidal
+               ? full_spherical_toroidal_exact(1.0, theta)
+               : full_spherical_exact(1.0, theta, phi, mode_amplitude);
+            coefficient_a(i, j, k, 0) = 1.0;
+            coefficient_b(i, j, k, 0) = use_robin ? robin_b : 0.0;
+            coefficient_c(i, j, k, 0) = use_robin
+                 ? exact + robin_b * (
+                    toroidal
+                       ? full_spherical_toroidal_radial_derivative(1.0, theta)
+                       : full_spherical_radial_derivative(
+                          1.0, theta, phi, mode_amplitude
+                       )
+                 )
+               : exact;
+         }
+      });
+   }
+
+   amrex::Vector<amrex::MultiFab*> solution_levels{&solution};
+   amrex::Vector<amrex::MultiFab const*> rhs_levels{&rhs};
+   pyfluid_amrex::InitialDataEllipticOptions options;
+   options.relative_tolerance = 1.0e-12;
+   options.max_iterations = 500;
+   options.verbose = 0;
+   const pyfluid_amrex::InitialDataEllipticResult result = toroidal
+      ? pyfluid_amrex::solve_initial_data_spherical_toroidal_vector_poisson(
+           hierarchy, solution_levels, rhs_levels, boundary, options
+        )
+      : pyfluid_amrex::solve_initial_data_spherical_poisson(
+           hierarchy, solution_levels, rhs_levels, boundary, options
+        );
+
+   amrex::MultiFab error(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 0
+   );
+   for (amrex::MFIter mfi(error); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto numerical = solution.const_array(mfi);
+      const auto difference = error.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+         const amrex::Real phi = problo[2] + (k + 0.5) * dx[2];
+         const amrex::Real exact = toroidal
+            ? full_spherical_toroidal_exact(radial_center[i], theta)
+            : full_spherical_exact(
+                 radial_center[i], theta, phi, mode_amplitude
+              );
+         difference(i, j, k, 0) = amrex::Math::abs(
+            numerical(i, j, k, 0) - exact
+         );
+      });
+   }
+   const amrex::Real max_error = error.norm0(0, 0, false);
+   amrex::Gpu::streamSynchronize();
+   return {max_error, result.residual};
+}
+
+bool validate_full_spherical_poisson()
+{
+   const FullSphericalPoissonError coarse =
+      solve_full_spherical_manufactured(12, 12, 12, false, false);
+   const FullSphericalPoissonError fine =
+      solve_full_spherical_manufactured(24, 24, 24, false, false);
+   const FullSphericalPoissonError mapped_coarse =
+      solve_full_spherical_manufactured(12, 12, 12, true, true);
+   const FullSphericalPoissonError mapped_fine =
+      solve_full_spherical_manufactured(24, 24, 24, true, true);
+   const FullSphericalPoissonError axisymmetric_coarse =
+      solve_full_spherical_manufactured(
+         12, 12, 1, false, false, false
+      );
+   const FullSphericalPoissonError axisymmetric_fine =
+      solve_full_spherical_manufactured(
+         24, 24, 1, false, false, false
+      );
+   const FullSphericalPoissonError toroidal_coarse =
+      solve_full_spherical_manufactured(
+         12, 12, 4, false, false, false, true
+      );
+   const FullSphericalPoissonError toroidal_fine =
+      solve_full_spherical_manufactured(
+         24, 24, 4, false, false, false, true
+      );
+   const FullSphericalPoissonError toroidal_nphi1_fine =
+      solve_full_spherical_manufactured(
+         24, 24, 1, false, false, false, true
+      );
+   const amrex::Real order = std::log(coarse.error / fine.error)
+      / std::log(2.0);
+   const amrex::Real mapped_order = std::log(
+      mapped_coarse.error / mapped_fine.error
+   ) / std::log(2.0);
+   const amrex::Real axisymmetric_order = std::log(
+      axisymmetric_coarse.error / axisymmetric_fine.error
+   ) / std::log(2.0);
+   const amrex::Real toroidal_order = std::log(
+      toroidal_coarse.error / toroidal_fine.error
+   ) / std::log(2.0);
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "full_spherical_poisson coarse_error=" << coarse.error
+                << " fine_error=" << fine.error
+                << " order=" << order
+                << " fine_residual=" << fine.residual
+                << " mapped_coarse_error=" << mapped_coarse.error
+                << " mapped_fine_error=" << mapped_fine.error
+                << " mapped_order=" << mapped_order
+                << " mapped_fine_residual=" << mapped_fine.residual
+                << " axisymmetric_nphi1_coarse_error="
+                << axisymmetric_coarse.error
+                << " axisymmetric_nphi1_fine_error="
+                << axisymmetric_fine.error
+                << " axisymmetric_nphi1_order=" << axisymmetric_order
+                << " axisymmetric_nphi1_residual="
+                << axisymmetric_fine.residual
+                << " toroidal_coarse_error=" << toroidal_coarse.error
+                << " toroidal_fine_error=" << toroidal_fine.error
+                << " toroidal_order=" << toroidal_order
+                << " toroidal_nphi1_error=" << toroidal_nphi1_fine.error
+                << " toroidal_fine_residual=" << toroidal_fine.residual
+                << '\n';
+   }
+   return fine.error < coarse.error
+      && mapped_fine.error < mapped_coarse.error
+      && order > 1.7
+      && mapped_order > 1.6
+      && axisymmetric_order > 1.7
+      && toroidal_order > 1.7
+      && std::abs(toroidal_nphi1_fine.error - toroidal_fine.error) < 5.0e-10
+      && fine.residual < 1.0e-8
+      && mapped_fine.residual < 1.0e-8
+      && axisymmetric_fine.residual < 1.0e-8
+      && toroidal_fine.residual < 1.0e-8
+      && toroidal_nphi1_fine.residual < 1.0e-8;
+}
+
+struct AxisymmetricSphericalXcts3dError {
+   amrex::Real conformal = 0.0;
+   amrex::Real lapse_conformal = 0.0;
+   amrex::Real shift = 0.0;
+   amrex::Real extrinsic = 0.0;
+   amrex::Real conformal_minimum = 0.0;
+   amrex::Real conformal_maximum = 0.0;
+   amrex::Real lapse_minimum = 0.0;
+   amrex::Real lapse_maximum = 0.0;
+   pyfluid_amrex::XctsResult result{};
+};
+
+AxisymmetricSphericalXcts3dError solve_axisymmetric_spherical_xcts_3d(
+   int azimuthal_cells
+)
+{
+   constexpr int radial_cells = 48;
+   constexpr int angular_cells = 12;
+   constexpr amrex::Real mass = 1.0;
+   constexpr amrex::Real horizon_radius = 0.5 * mass;
+   constexpr amrex::Real outer_radius = 24.0;
+   const amrex::Box domain(
+      amrex::IntVect(0, 0, 0),
+      amrex::IntVect(
+         radial_cells - 1, angular_cells - 1, azimuthal_cells - 1
+      )
+   );
+   const amrex::RealBox physical_domain(
+      {horizon_radius, 0.0, 0.0},
+      {
+         outer_radius,
+         0.5 * pyfluid_amrex::constants::pi,
+         2.0 * pyfluid_amrex::constants::pi,
+      }
+   );
+   const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0, 1};
+   pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
+   hierarchy.geometry.emplace_back(
+      domain, physical_domain, amrex::CoordSys::cartesian, periodic
+   );
+   hierarchy.grids.emplace_back(domain);
+   hierarchy.grids[0].maxSize(16);
+   hierarchy.distribution.emplace_back(hierarchy.grids[0]);
+   hierarchy.reflection_lo = {0, 1, 0};
+   hierarchy.reflection_hi = {0, 1, 0};
+   hierarchy.physical_coordinate_faces.resize(1);
+   hierarchy.physical_coordinate_faces[0][0] =
+      pyfluid_amrex::stretched_radial_shell_faces(
+         horizon_radius, outer_radius, radial_cells, 8.0
+      );
+
+   auto make_field = [&](int components, int ghosts) {
+      return std::make_unique<amrex::MultiFab>(
+         hierarchy.grids[0], hierarchy.distribution[0], components, ghosts
+      );
+   };
+   auto conformal = make_field(1, 1);
+   auto lapse_conformal = make_field(1, 1);
+   auto shift = make_field(1, 1);
+   auto extrinsic = make_field(
+      pyfluid_amrex::CONFORMAL_A_NUM_COMPONENTS, 1
+   );
+   auto energy = make_field(1, 0);
+   auto momentum = make_field(1, 0);
+   auto stress = make_field(1, 0);
+   conformal->setVal(1.0);
+   lapse_conformal->setVal(1.0);
+   shift->setVal(0.0);
+   extrinsic->setVal(0.0);
+   energy->setVal(0.0);
+   momentum->setVal(0.0);
+   stress->setVal(0.0);
+
+   auto conformal_boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         hierarchy,
+         1,
+         1.0 / (2.0 * horizon_radius),
+         1.0,
+         -1.0 / (2.0 * horizon_radius),
+         pyfluid_amrex::InitialDataEllipticCentering::cell
+      );
+   pyfluid_amrex::set_initial_data_reflection_boundaries(
+      hierarchy,
+      conformal_boundary,
+      {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
+   );
+   pyfluid_amrex::set_spherical_radial_robin_boundary(
+      hierarchy, conformal_boundary, {0.0}, 1.0
+   );
+   auto lapse_boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         hierarchy,
+         1,
+         1.0,
+         0.0,
+         -1.0,
+         pyfluid_amrex::InitialDataEllipticCentering::cell
+      );
+   pyfluid_amrex::set_initial_data_reflection_boundaries(
+      hierarchy,
+      lapse_boundary,
+      {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
+   );
+   pyfluid_amrex::set_spherical_radial_robin_boundary(
+      hierarchy, lapse_boundary, {0.0}, 1.0
+   );
+   auto shift_boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         hierarchy,
+         1,
+         1.0,
+         0.0,
+         0.0,
+         pyfluid_amrex::InitialDataEllipticCentering::cell
+      );
+   pyfluid_amrex::set_axisymmetric_spherical_toroidal_regularity(
+      hierarchy, shift_boundary
+   );
+   pyfluid_amrex::set_spherical_radial_robin_boundary(
+      hierarchy, shift_boundary, {0.0}, 2.0
+   );
+
+   amrex::Vector<amrex::MultiFab*> conformal_fields{conformal.get()};
+   amrex::Vector<amrex::MultiFab*> lapse_fields{lapse_conformal.get()};
+   amrex::Vector<amrex::MultiFab*> shift_fields{shift.get()};
+   amrex::Vector<amrex::MultiFab*> extrinsic_fields{extrinsic.get()};
+   amrex::Vector<amrex::MultiFab const*> energy_fields{energy.get()};
+   amrex::Vector<amrex::MultiFab const*> momentum_fields{momentum.get()};
+   amrex::Vector<amrex::MultiFab const*> stress_fields{stress.get()};
+   pyfluid_amrex::XctsOptions options;
+   options.max_coupled_iterations = 20;
+   options.relative_update_tolerance = 1.0e-10;
+   options.relaxation = 1.0;
+   options.linear.relative_tolerance = 1.0e-11;
+   options.linear.absolute_tolerance = 1.0e-13;
+   options.linear.max_iterations = 500;
+   options.linear.verbose = 0;
+   const pyfluid_amrex::XctsResult result =
+      pyfluid_amrex::solve_axisymmetric_spherical_xcts_constraints(
+         hierarchy,
+         conformal_fields,
+         lapse_fields,
+         shift_fields,
+         extrinsic_fields,
+         energy_fields,
+         momentum_fields,
+         stress_fields,
+         conformal_boundary,
+         lapse_boundary,
+         shift_boundary,
+         options
+      );
+
+   amrex::MultiFab error(
+      hierarchy.grids[0], hierarchy.distribution[0], 4, 0
+   );
+   const pyfluid_amrex::InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+      radial_coordinates.centers.data(), radial_coordinates.centers.size()
+   );
+   const amrex::Real* radial_center = radial_center_storage.data();
+   const amrex::Dim3 domain_lo = amrex::lbound(domain);
+   for (amrex::MFIter mfi(error); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto psi = conformal->const_array(mfi);
+      const auto lapse_psi = lapse_conformal->const_array(mfi);
+      const auto beta = shift->const_array(mfi);
+      const auto a = extrinsic->const_array(mfi);
+      const auto difference = error.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real inverse_radius_mass = horizon_radius
+            / radial_center[i - domain_lo.x];
+         difference(i, j, k, 0) = amrex::Math::abs(
+            psi(i, j, k, 0) - (1.0 + inverse_radius_mass)
+         );
+         difference(i, j, k, 1) = amrex::Math::abs(
+            lapse_psi(i, j, k, 0) - (1.0 - inverse_radius_mass)
+         );
+         difference(i, j, k, 2) = amrex::Math::abs(beta(i, j, k, 0));
+         amrex::Real extrinsic_error = 0.0;
+         for (int component = 0;
+              component < pyfluid_amrex::CONFORMAL_A_NUM_COMPONENTS;
+              ++component) {
+            extrinsic_error = amrex::max(
+               extrinsic_error,
+               amrex::Math::abs(a(i, j, k, component))
+            );
+         }
+         difference(i, j, k, 3) = extrinsic_error;
+      });
+   }
+   return {
+      error.norm0(0),
+      error.norm0(1),
+      error.norm0(2),
+      error.norm0(3),
+      conformal->min(0, 0, false),
+      conformal->max(0, 0, false),
+      lapse_conformal->min(0, 0, false),
+      lapse_conformal->max(0, 0, false),
+      result,
+   };
+}
+
+bool validate_axisymmetric_spherical_xcts_3d()
+{
+   const AxisymmetricSphericalXcts3dError nphi1 =
+      solve_axisymmetric_spherical_xcts_3d(1);
+   const AxisymmetricSphericalXcts3dError nphi4 =
+      solve_axisymmetric_spherical_xcts_3d(4);
+   const amrex::Real degeneracy_error = std::max({
+      std::abs(nphi1.conformal - nphi4.conformal),
+      std::abs(nphi1.lapse_conformal - nphi4.lapse_conformal),
+      std::abs(nphi1.shift - nphi4.shift),
+      std::abs(nphi1.extrinsic - nphi4.extrinsic),
+   });
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "axisymmetric_spherical_xcts_3d conformal_error="
+                << nphi4.conformal
+                << " lapse_error=" << nphi4.lapse_conformal
+                << " shift_error=" << nphi4.shift
+                << " extrinsic_error=" << nphi4.extrinsic
+                << " psi_range=(" << nphi4.conformal_minimum
+                << ',' << nphi4.conformal_maximum << ')'
+                << " lapse_psi_range=(" << nphi4.lapse_minimum
+                << ',' << nphi4.lapse_maximum << ')'
+                << " nphi_degeneracy_error=" << degeneracy_error
+                << " residuals=(" << nphi4.result.hamiltonian_residual
+                << ',' << nphi4.result.lapse_residual
+                << ',' << nphi4.result.momentum_residual << ")\n";
+   }
+   return nphi1.result.converged
+      && nphi4.result.converged
+      // The scalar operator has a separate two-resolution convergence gate;
+      // this coarse shell test owns the coupled XCTS and Nphi-degeneracy
+      // contract rather than imposing a tighter pointwise truncation target.
+      && nphi4.conformal < 2.0e-2
+      && nphi4.lapse_conformal < 2.0e-2
+      && nphi4.shift < 1.0e-12
+      && nphi4.extrinsic < 1.0e-12
+      && degeneracy_error < 5.0e-10;
+}
+
 bool validate_tov_ctt()
 {
    constexpr int coarse_cells = 32;
@@ -2343,6 +3093,20 @@ int main(int argc, char* argv[])
 {
    amrex::Initialize(argc, argv);
    int return_code = 0;
+   bool full_spherical_only = false;
+   amrex::ParmParse test_pp("test");
+   test_pp.query("full_spherical_only", full_spherical_only);
+   if (full_spherical_only) {
+#if (AMREX_SPACEDIM == 3)
+      return_code = validate_full_spherical_poisson()
+            && validate_axisymmetric_spherical_xcts_3d()
+         ? 0 : 1;
+#else
+      amrex::Abort("test.full_spherical_only requires the 3D executable");
+#endif
+      amrex::Finalize();
+      return return_code;
+   }
    {
       if (!validate_initial_data_owner_catalog()) {
          return_code = 1;
@@ -2354,6 +3118,9 @@ int main(int argc, char* argv[])
          return_code = 1;
       }
       if (!validate_differential_rotation_first_integrals()) {
+         return_code = 1;
+      }
+      if (!validate_equilibrium_perturbations()) {
          return_code = 1;
       }
       if (!validate_constant_l_torus_first_integral()) {
@@ -2448,6 +3215,14 @@ int main(int argc, char* argv[])
          return_code = 1;
       }
       if (!validate_axisymmetric_schwarzschild_xcts()) {
+         return_code = 1;
+      }
+#endif
+#if (AMREX_SPACEDIM == 3)
+      if (!validate_full_spherical_poisson()) {
+         return_code = 1;
+      }
+      if (!validate_axisymmetric_spherical_xcts_3d()) {
          return_code = 1;
       }
 #endif

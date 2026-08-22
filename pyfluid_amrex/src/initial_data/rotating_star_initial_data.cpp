@@ -428,7 +428,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
    return summary;
 }
 
-#if (AMREX_SPACEDIM == 2)
+#if (AMREX_SPACEDIM >= 2)
 void validate_axisymmetric_spherical_rotation(
    InitialDataEllipticHierarchy const& hierarchy,
    RotatingStarParameters const& parameters
@@ -446,9 +446,21 @@ void validate_axisymmetric_spherical_rotation(
        || std::abs(parameters.rotation_axis.q3 - 1.0) > tolerance) {
       amrex::Abort(
          "axisymmetric spherical rotating-star data require one r-theta "
-         "level centered at the origin and rotation about +z"
+         "or r-theta-phi level centered at the origin and rotation about +z"
       );
    }
+#if (AMREX_SPACEDIM == 3)
+   const amrex::Real phi_extent = hierarchy.geometry[0].ProbHi(2)
+      - hierarchy.geometry[0].ProbLo(2);
+   if (!hierarchy.geometry[0].isPeriodic(2)
+       || std::abs(phi_extent - constants::two_pi)
+          > tolerance * std::max(amrex::Real(1.0), phi_extent)) {
+      amrex::Abort(
+         "3D axisymmetric spherical rotating-star data require periodic "
+         "full-2pi phi storage"
+      );
+   }
+#endif
 }
 
 template <int EOSMethod>
@@ -496,7 +508,17 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    const amrex::Box domain = hierarchy.geometry[0].Domain();
    const amrex::Dim3 domain_lo = amrex::lbound(domain);
    const amrex::Dim3 domain_hi = amrex::ubound(domain);
+#if (AMREX_SPACEDIM == 3)
+   const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta phi");
+   const amrex::Real phi_lo = hierarchy.geometry[0].ProbLo(2);
+   const amrex::Real phi_hi = hierarchy.geometry[0].ProbHi(2);
+   const amrex::Real dphi = hierarchy.geometry[0].CellSize(2);
+#else
    const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
+   const amrex::Real phi_lo = 0.0;
+   const amrex::Real phi_hi = 0.0;
+   const amrex::Real dphi = 0.0;
+#endif
    for (amrex::MFIter mfi(effective, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.tilebox();
@@ -510,7 +532,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
          PatchCoordinate mesh{
             radial_center[i - domain_lo.x],
             angular_center[j - domain_lo.y],
-            0.0,
+            phi_lo + (k - domain_lo.z + 0.5) * dphi,
          };
          const InitialDataSamplePoint sample{
             mesh,
@@ -555,6 +577,9 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    const amrex::Real center_theta = 0.5 * (
       hierarchy.geometry[0].ProbLo(1) + hierarchy.geometry[0].ProbHi(1)
    );
+   const amrex::Real center_phi = 0.5 * (
+      phi_lo + phi_hi
+   );
    std::vector<amrex::GpuArray<amrex::Real, 3>> center_points;
    for (int radial_index = 0; radial_index < 2; ++radial_index) {
       // HierarchyInterpolationPlan addresses the uniform logical AMReX
@@ -562,11 +587,10 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
       // select their logical centers here and retain the even-r quadratic
       // extrapolation below.
       const amrex::Real radius = (radial_index + 0.5) * spacing[0];
-      center_points.push_back({{
-         radius * std::sin(center_theta),
-         0.0,
-         radius * std::cos(center_theta),
-      }});
+      const PatchCoordinate physical = mesh_coordinate_to_physical_point(
+         MeshSpherical, axes, {radius, center_theta, center_phi}
+      );
+      center_points.push_back({{physical.q1, physical.q2, physical.q3}});
    }
    std::vector<std::unique_ptr<amrex::MultiFab>> effective_owner;
    effective_owner.push_back(std::make_unique<amrex::MultiFab>(
@@ -615,7 +639,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
          PatchCoordinate mesh{
             radial_center[i - domain_lo.x],
             angular_center[j - domain_lo.y],
-            0.0,
+            phi_lo + (k - domain_lo.z + 0.5) * dphi,
          };
          const InitialDataSamplePoint sample{
             mesh,
@@ -625,10 +649,14 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
             return;
          }
          bool within_support = false;
-         for (int dj = -1; dj <= 1; ++dj) {
-            for (int di = -1; di <= 1; ++di) {
-               within_support = within_support
-                  || support(i + di, j + dj, k) > 0.0;
+         for (int dk = AMREX_SPACEDIM == 3 ? -1 : 0;
+              dk <= (AMREX_SPACEDIM == 3 ? 1 : 0);
+              ++dk) {
+            for (int dj = -1; dj <= 1; ++dj) {
+               for (int di = -1; di <= 1; ++di) {
+                  within_support = within_support
+                     || support(i + di, j + dj, k + dk) > 0.0;
+               }
             }
          }
          const SpacetimeMetric metric = generated::z4c_spacetime_metric(
@@ -960,10 +988,10 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
    RotatingStarParameters const& parameters
 )
 {
-#if (AMREX_SPACEDIM != 2)
+#if (AMREX_SPACEDIM < 2)
    amrex::ignore_unused(hierarchy, cell_spacetime, parameters);
    amrex::Abort(
-      "axisymmetric spherical surface diagnostics require the 2D executable"
+      "axisymmetric spherical surface diagnostics require 2D or 3D"
    );
    return {};
 #else
@@ -991,7 +1019,17 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
    );
    const amrex::Real* radial_center = radial_center_storage.data();
    const amrex::Real* angular_center = angular_center_storage.data();
+#if (AMREX_SPACEDIM == 3)
+   const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta phi");
+   const amrex::Real phi_lo = hierarchy.geometry[0].ProbLo(2);
+   const amrex::Real phi_hi = hierarchy.geometry[0].ProbHi(2);
+   const amrex::Real dphi = hierarchy.geometry[0].CellSize(2);
+#else
    const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
+   const amrex::Real phi_lo = 0.0;
+   const amrex::Real phi_hi = 0.0;
+   const amrex::Real dphi = 0.0;
+#endif
    for (amrex::MFIter mfi(*log_enthalpy, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.tilebox();
@@ -1003,7 +1041,7 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
          PatchCoordinate mesh{
             radial_center[i - domain_lo.x],
             angular_center[j - domain_lo.y],
-            0.0,
+            phi_lo + (k - domain_lo.z + 0.5) * dphi,
          };
          const InitialDataSamplePoint sample{
             mesh,
@@ -1049,6 +1087,9 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
    const amrex::Real polar_theta = problo[1] + 0.5001 * spacing[1];
    const amrex::Real equatorial_theta =
       hierarchy.geometry[0].ProbHi(1) - 0.5001 * spacing[1];
+   const amrex::Real sample_phi = 0.5 * (
+      phi_lo + phi_hi
+   );
    std::vector<amrex::GpuArray<amrex::Real, 3>> points;
    points.reserve(2 * radial_samples);
    for (amrex::Real theta : {polar_theta, equatorial_theta}) {
@@ -1057,11 +1098,10 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
          // avoids grid-edge ambiguity after Cartesian-to-spherical mapping;
          // the stellar surface is well inside this radial interval.
          const amrex::Real radius = (index + 1.0) * spacing[0];
-         points.push_back({{
-            radius * std::sin(theta),
-            0.0,
-            radius * std::cos(theta),
-         }});
+         const PatchCoordinate physical = mesh_coordinate_to_physical_point(
+            MeshSpherical, axes, {radius, theta, sample_phi}
+         );
+         points.push_back({{physical.q1, physical.q2, physical.q3}});
       }
    }
    std::vector<std::unique_ptr<amrex::MultiFab>> enthalpy_owner;
@@ -1112,6 +1152,8 @@ RotatingStarParameters rotating_star_parameters(
    parameters.angular_velocity = cfg.initial_data_angular_velocity;
    parameters.differential_rotation_length =
       cfg.initial_data_differential_rotation_length;
+   parameters.differential_rotation_length_b =
+      cfg.initial_data_differential_rotation_length_b;
    parameters.rotation_power_q = cfg.initial_data_rotation_power_q;
    const amrex::Real axis_norm = std::sqrt(
       cfg.initial_data_rotation_axis1 * cfg.initial_data_rotation_axis1
@@ -1184,11 +1226,11 @@ RotatingStarUpdateSummary update_axisymmetric_spherical_rotating_star_primitives
    RotatingStarParameters const& parameters
 )
 {
-#if (AMREX_SPACEDIM != 2)
+#if (AMREX_SPACEDIM < 2)
    amrex::ignore_unused(
       hierarchy, primitive_state, cell_spacetime, eos_method, eos, parameters
    );
-   amrex::Abort("axisymmetric rotating-star equilibrium requires 2D");
+   amrex::Abort("axisymmetric rotating-star equilibrium requires 2D or 3D");
    return {};
 #else
    if (!parameters.active) {

@@ -154,6 +154,14 @@ the generated TSV/log, and the current source revision/dirty state.
   rotating stars with post-merger-like rotational profiles*,
   [arXiv:2011.10612](https://arxiv.org/abs/2011.10612): Uryu-law sequence
   choices and comparison with the established KEH law.
+- P. L. Espino et al., *Dynamical generation of stable hypermassive neutron
+  stars from spinning neutron star collisions*,
+  [arXiv:1906.08786](https://arxiv.org/abs/1906.08786): global matter-mode
+  convention `C_m = integral sqrt(-g) rho_0 u^0 exp(i m phi) d^3x` and the
+  small `m=1,2` density perturbation used by the catalog. Its separate
+  fixed-density pressure depletion assumes a gamma-law evolution and is not
+  the cold-consistent pressure-target inversion implemented for cold PyFluid
+  equilibria.
 - J. S. Read et al., *Constraints on a phenomenologically parameterized
   neutron-star equation of state*,
   [arXiv:0812.2163](https://arxiv.org/abs/0812.2163): the piecewise-polytrope
@@ -223,6 +231,16 @@ the generated TSV/log, and the current source revision/dirty state.
   Relativity under the Conformally Flat Condition*,
   [arXiv:1401.4308](https://arxiv.org/abs/1401.4308): primary axisymmetric XCFC
   equilibrium and spherical-harmonic Poisson-solve reference for XNS.
+- Local AthenaK pressure-poloidal construction:
+  `/Users/mrizzo/phys_research/athenak/athenak/src/pgen/dyn_grmhd/elliptica/elliptica.cpp`
+  routes the pressure-confined vector-potential prescription, discrete curl,
+  comoving-field normalization, and its AMR/divergence cautions. It is an
+  independent implementation reference, not imported solution data.
+- Local Einstein Toolkit construction:
+  `/Users/mrizzo/phys_research/ETK_Carpet/Cactus/repos/wvuthorns_diagnostics/Seed_Magnetic_Fields_BNS/`
+  contains the staggered magnetic-seed source, parameter interface,
+  documentation, and regression. Use it to cross-check centering and
+  normalization semantics rather than duplicating its GF declarations.
 - LORENE `Star_rot::equilibrium`,
   [class reference](https://lorene.obspm.fr/Refguide/classLorene_1_1Star__rot.html):
   documents staged rotation, separate main/Poisson relaxation, enthalpy-change

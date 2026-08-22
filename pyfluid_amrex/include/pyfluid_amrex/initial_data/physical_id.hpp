@@ -44,6 +44,7 @@ struct PhysicalInitialDataMetadata {
    std::string rotation_law;
    amrex::Real angular_velocity = 0.0;
    amrex::Real differential_rotation_length = 0.0;
+   amrex::Real differential_rotation_length_b = 0.0;
    amrex::Real rotation_power_q = 1.0;
    amrex::Real maximum_density = -1.0;
    amrex::Real maximum_velocity = -1.0;
@@ -60,6 +61,10 @@ struct PhysicalInitialDataMetadata {
    amrex::Real matter_outer_radius = -1.0;
    amrex::GpuArray<amrex::Real, 3> rotation_axis{{0.0, 0.0, 1.0}};
    amrex::GpuArray<amrex::Real, 3> rotation_center{};
+   std::string magnetic_seed;
+   amrex::Real magnetic_seed_pressure_cutoff = 0.0;
+   amrex::Real magnetic_seed_exponent = 0.0;
+   amrex::Real magnetic_seed_maximum_comoving_field = 0.0;
    bool used_rigid_transform = false;
    bool exact_layout = false;
    bool used_exact_cache = false;

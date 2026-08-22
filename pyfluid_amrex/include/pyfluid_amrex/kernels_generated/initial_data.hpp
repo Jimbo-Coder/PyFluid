@@ -116,6 +116,57 @@ amrex::Real q_power_two_rotation_integral(amrex::Real omega, amrex::Real omega_c
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real uryu_plus_13_angular_velocity(amrex::Real specific_angular_momentum, amrex::Real omega_center, amrex::Real differential_length, amrex::Real differential_length_b) noexcept
+{
+   return omega_center*(1 + specific_angular_momentum/(((differential_length_b)*(differential_length_b))*omega_center))/(1 + pow(specific_angular_momentum, 4)/(pow(differential_length, 8)*pow(omega_center, 4)));
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real uryu_plus_13_angular_velocity_derivative(amrex::Real specific_angular_momentum, amrex::Real omega_center, amrex::Real differential_length, amrex::Real differential_length_b) noexcept
+{
+   const amrex::Real tmp0 = pow(differential_length, -8);
+   const amrex::Real tmp1 = 1.0_rt/(1 + pow(specific_angular_momentum, 4)*tmp0/pow(omega_center, 4));
+   const amrex::Real tmp2 = 1.0_rt/((differential_length_b)*(differential_length_b));
+   return tmp1*(tmp2 - 4*((specific_angular_momentum)*(specific_angular_momentum)*(specific_angular_momentum))*tmp0*tmp1*(1 + specific_angular_momentum*tmp2/omega_center)/((omega_center)*(omega_center)*(omega_center)));
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real uryu_plus_13_rotation_integral(amrex::Real specific_angular_momentum, amrex::Real omega_center, amrex::Real differential_length, amrex::Real differential_length_b) noexcept
+{
+   const amrex::Real tmp0 = 1.0_rt/((differential_length_b)*(differential_length_b));
+   const amrex::Real tmp1 = specific_angular_momentum/omega_center;
+   const amrex::Real tmp2 = ((differential_length)*(differential_length));
+   const amrex::Real tmp3 = ((specific_angular_momentum)*(specific_angular_momentum))/(pow(differential_length, 4)*((omega_center)*(omega_center)));
+   const amrex::Real tmp4 = pyfluid_amrex::constants::sqrt_two;
+   const amrex::Real tmp5 = tmp1*tmp4/tmp2;
+   return omega_center*(-1.0_rt/4.0_rt*omega_center*tmp2*(2*tmp0*tmp2*std::atan(tmp3) - tmp4*(-std::atan(tmp5 - 1) - std::atan(tmp5 + 1)) + tmp4*std::atanh(tmp5/(tmp3 + 1))) + specific_angular_momentum*(tmp0*tmp1 + 1)/(1 + pow(specific_angular_momentum, 4)/(pow(differential_length, 8)*pow(omega_center, 4))));
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real uryu_j_envelope_p1_angular_velocity(amrex::Real specific_angular_momentum, amrex::Real omega_center, amrex::Real differential_length, amrex::Real differential_length_b) noexcept
+{
+   const amrex::Real tmp0 = specific_angular_momentum/omega_center;
+   return omega_center*(1 - tmp0/((differential_length)*(differential_length)))*(1 + tmp0/((differential_length_b)*(differential_length_b)));
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real uryu_j_envelope_p1_angular_velocity_derivative(amrex::Real specific_angular_momentum, amrex::Real omega_center, amrex::Real differential_length, amrex::Real differential_length_b) noexcept
+{
+   const amrex::Real tmp0 = 1.0_rt/((differential_length)*(differential_length));
+   const amrex::Real tmp1 = 1.0_rt/((differential_length_b)*(differential_length_b));
+   const amrex::Real tmp2 = specific_angular_momentum/omega_center;
+   return -tmp0*(tmp1*tmp2 + 1) + tmp1*(-tmp0*tmp2 + 1);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real uryu_j_envelope_p1_rotation_integral(amrex::Real specific_angular_momentum, amrex::Real omega_center, amrex::Real differential_length, amrex::Real differential_length_b) noexcept
+{
+   const amrex::Real tmp0 = ((differential_length)*(differential_length));
+   const amrex::Real tmp1 = 1.0_rt/((differential_length_b)*(differential_length_b));
+   return (1.0_rt/6.0_rt)*((specific_angular_momentum)*(specific_angular_momentum))*(3*tmp0*tmp1 - 3 - 4*specific_angular_momentum*tmp1/omega_center)/tmp0;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real constant_l_torus_angular_velocity(amrex::Real metric_tt, amrex::Real metric_t_phi, amrex::Real metric_phi_phi, amrex::Real specific_angular_momentum) noexcept
 {
    return -(metric_t_phi + metric_tt*specific_angular_momentum)/(metric_phi_phi + metric_t_phi*specific_angular_momentum);

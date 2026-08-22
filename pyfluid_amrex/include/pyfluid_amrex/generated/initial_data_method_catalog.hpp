@@ -10,6 +10,8 @@ enum class RotationLaw : int {
    Uniform = 0,
    JConstant = 1,
    QPower = 2,
+   UryuPlus13 = 3,
+   UryuJEnvelopeP1 = 4,
 };
 
 struct RotationLawInfo {
@@ -20,10 +22,12 @@ struct RotationLawInfo {
    std::string_view parameters;
 };
 
-inline constexpr std::array<RotationLawInfo, 3> RotationLawCatalog = {{
+inline constexpr std::array<RotationLawInfo, 5> RotationLawCatalog = {{
    {RotationLaw::Uniform, "uniform", "Uniform angular velocity", "Circular flow with one constant angular velocity.", "angular_velocity"},
    {RotationLaw::JConstant, "j_constant", "Relativistic j-constant", "Differential rotation with j(Omega) = A^2 (Omega_c - Omega).", "angular_velocity,differential_rotation_length"},
-   {RotationLaw::QPower, "q_power", "Relativistic q-power", "Generalized differential rotation with q=1 equal to j-constant.", "angular_velocity,differential_rotation_length,rotation_power_q"}
+   {RotationLaw::QPower, "q_power", "Relativistic q-power", "Generalized differential rotation with q=1 equal to j-constant.", "angular_velocity,differential_rotation_length,rotation_power_q"},
+   {RotationLaw::UryuPlus13, "uryu_plus_13", "Uryu plus p=1 q=3", "Post-merger differential rotation with an off-center angular-velocity maximum.", "angular_velocity,differential_rotation_length,differential_rotation_length_b"},
+   {RotationLaw::UryuJEnvelopeP1, "uryu_j_envelope_p1", "Uryu j-envelope p=1", "Finite-j-envelope post-merger law that limits to j-constant as B tends to infinity.", "angular_velocity,differential_rotation_length,differential_rotation_length_b"}
 }};
 
 enum class DiskRotationLaw : int {
@@ -48,12 +52,52 @@ inline constexpr std::array<DiskRotationLawInfo, 4> DiskRotationLawCatalog = {{
    {DiskRotationLaw::Uniform, "uniform", "Uniform angular velocity", "Circular flow with one constant angular velocity; a finite detached torus is still required.", "angular_velocity,inner_radius"}
 }};
 
+enum class InitialDataPerturbation : int {
+   None = 0,
+   ColdPressureScale = 1,
+   DensityAzimuthalEspino2019 = 2,
+};
+
+struct InitialDataPerturbationInfo {
+   InitialDataPerturbation id;
+   std::string_view name;
+   std::string_view label;
+   std::string_view description;
+   std::string_view parameters;
+};
+
+inline constexpr std::array<InitialDataPerturbationInfo, 3> InitialDataPerturbationCatalog = {{
+   {InitialDataPerturbation::None, "none", "No perturbation", "Leave the materialized equilibrium unchanged.", ""},
+   {InitialDataPerturbation::ColdPressureScale, "cold_pressure_scale", "Cold pressure scale", "Use scaled cold pressure as a target, invert the same cold EoS for density, and rebuild the complete on-EoS state; density is not held fixed.", "perturbation_pressure_scale"},
+   {InitialDataPerturbation::DensityAzimuthalEspino2019, "density_azimuthal_espino2019", "Espino 2019 density mode", "Apply rho -> rho [1+B (varpi/r_e) sin(m phi + phase)] and rebuild the cold EoS state.", "perturbation_amplitude,perturbation_mode,perturbation_phase,perturbation_radius"}
+}};
+
+enum class InitialDataMagneticSeed : int {
+   None = 0,
+   PressurePoloidal = 1,
+};
+
+struct InitialDataMagneticSeedInfo {
+   InitialDataMagneticSeed id;
+   std::string_view name;
+   std::string_view label;
+   std::string_view description;
+   std::string_view parameters;
+};
+
+inline constexpr std::array<InitialDataMagneticSeedInfo, 2> InitialDataMagneticSeedCatalog = {{
+   {InitialDataMagneticSeed::None, "none", "No magnetic seed", "Use the magnetic field supplied by the physical initial-data provider.", ""},
+   {InitialDataMagneticSeed::PressurePoloidal, "pressure_poloidal", "Pressure-confined poloidal seed", "For a stellar pressure field, construct staggered A proportional to axis cross radius times max(p/pmax-pcut,0)^n, take its discrete curl, and normalize the maximum comoving field.", "magnetic_seed_pressure_cutoff,magnetic_seed_exponent,magnetic_seed_maximum_comoving_field,rotation_axis,rotation_center"}
+}};
+
 enum class InitialDataOwner : int {
    SphericalTov = 0,
    SphericalAxisymmetricXcts = 1,
-   CartesianConformalConstraints = 2,
-   SphericalAxisymmetricBlackHoleXcts = 3,
-   CartesianKerrSchild = 4,
+   SphericalAxisymmetricXcts3d = 2,
+   CartesianConformalConstraints = 3,
+   SphericalAxisymmetricBlackHoleXcts = 4,
+   SphericalAxisymmetricBlackHoleXcts3d = 5,
+   CartesianKerrSchild = 6,
 };
 
 struct InitialDataOwnerInfo {
@@ -73,11 +117,13 @@ struct InitialDataOwnerInfo {
    std::string_view reflection_class;
 };
 
-inline constexpr std::array<InitialDataOwnerInfo, 5> InitialDataOwnerCatalog = {{
+inline constexpr std::array<InitialDataOwnerInfo, 7> InitialDataOwnerCatalog = {{
    {InitialDataOwner::SphericalTov, "spherical_tov", "Spherical radial TOV", "One-dimensional spherical TOV construction with an optional mapped radial exterior.", 1, "spherical", "r", "tov", "tov", "none", "none", "uniform,mapped_radial", false, "spherical"},
    {InitialDataOwner::SphericalAxisymmetricXcts, "spherical_axisymmetric_xcts", "Spherical axisymmetric XCTS", "Reduced r-theta XCTS construction for circular stars and aligned optional tori.", 2, "spherical", "r theta", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
+   {InitialDataOwner::SphericalAxisymmetricXcts3d, "spherical_axisymmetric_xcts_3d", "Spherical 3D axisymmetric XCTS", "Full r-theta-phi storage of the axisymmetric circular-star XCTS system with an optional aligned torus.", 3, "spherical", "r theta phi", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
    {InitialDataOwner::CartesianConformalConstraints, "cartesian_conformal_constraints", "Cartesian conformal constraints", "Full three-dimensional Cartesian CTT, CTTK, or XCTS hierarchy with optional coupled stellar torus.", 3, "cartesian", "x y z", "tov,rotating_star", "ctt,cttk,xcts", "none,equilibrium_torus,tilted_torus", "none,coupled", "uniform,block_amr", true, "object_dependent"},
    {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts, "spherical_axisymmetric_black_hole_xcts", "Spherical axisymmetric black-hole XCTS", "Reduced r-theta XCTS construction on a finite apparent-horizon shell.", 2, "spherical", "r theta", "black_hole", "xcts", "none", "none", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
+   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts3d, "spherical_axisymmetric_black_hole_xcts_3d", "Spherical 3D axisymmetric black-hole XCTS", "Full r-theta-phi storage of the axisymmetric apparent-horizon-shell XCTS system, including the Nphi=1 degeneracy.", 3, "spherical", "r theta phi", "black_hole", "xcts", "none", "none", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
    {InitialDataOwner::CartesianKerrSchild, "cartesian_kerr_schild", "Cartesian analytic Kerr-Schild", "Exact Kerr-Schild exterior or filled complete-grid black hole with an optional aligned test-fluid torus.", 3, "cartesian", "x y z", "black_hole", "kerr_schild", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"}
 }};
 

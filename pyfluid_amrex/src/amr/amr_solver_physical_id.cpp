@@ -6,6 +6,7 @@
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/fluid.hpp"
+#include "pyfluid_amrex/initial_data/perturbation.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
@@ -61,12 +62,17 @@ std::string sequence_eos_label(RunConfig const& cfg)
 std::string sequence_rotation_label(RunConfig const& cfg)
 {
    std::string label = "rotation-" + cfg.initial_data_rotation_law;
-   if (cfg.initial_data_rotation_law == "j_constant"
-       || cfg.initial_data_rotation_law == "q_power") {
+   if (cfg.initial_data_rotation_law != "uniform") {
       label += "-A-"
          + sequence_real_label(
             cfg.initial_data_differential_rotation_length
          );
+   }
+   if (cfg.initial_data_rotation_law == "uryu_plus_13"
+       || cfg.initial_data_rotation_law == "uryu_j_envelope_p1") {
+      label += "-B-" + sequence_real_label(
+         cfg.initial_data_differential_rotation_length_b
+      );
    }
    if (cfg.initial_data_rotation_law == "q_power") {
       label += "-q-" + sequence_real_label(cfg.initial_data_rotation_power_q);
@@ -244,6 +250,213 @@ void AmrSolverBase::materialize_configured_initial_data()
    if (load_physical_initial_data_artifact()) {
       materialize_constraint_solved_initial_data(true);
    }
+}
+
+void AmrSolverBase::apply_configured_initial_data_perturbation()
+{
+   if (cfg_.initial_data_perturbation == "none") {
+      return;
+   }
+   if (!physical_system_is_relativistic(physics_system_)
+       || !spacetime_state_.active()) {
+      amrex::Abort(
+         "equilibrium initial-data perturbations require relativistic fluid "
+         "and stored spacetime state"
+      );
+   }
+   if (mixed_patch_system_enabled()) {
+      amrex::Abort(
+         "equilibrium initial-data perturbations currently require a single "
+         "mapped patch"
+      );
+   }
+   InitialDataPerturbation kind = InitialDataPerturbation::None;
+   bool found = false;
+   for (InitialDataPerturbationInfo const& perturbation
+        : InitialDataPerturbationCatalog) {
+      if (perturbation.name == cfg_.initial_data_perturbation) {
+         kind = perturbation.id;
+         found = true;
+         break;
+      }
+   }
+   if (!found) {
+      amrex::Abort("unknown generated initial-data perturbation");
+   }
+   amrex::Real reference_radius = cfg_.initial_data_perturbation_radius;
+   if (kind == InitialDataPerturbation::DensityAzimuthalEspino2019
+       && !(reference_radius > 0.0)) {
+      if (initial_data_rotating_star_summary_) {
+         reference_radius =
+            initial_data_rotating_star_summary_->equatorial_radius;
+      } else if (loaded_physical_id_metadata_
+                 && loaded_physical_id_metadata_->equatorial_radius > 0.0) {
+         reference_radius = loaded_physical_id_metadata_->equatorial_radius;
+      } else {
+         reference_radius = initial_data_provider_->view().tov.surface_radius;
+      }
+   }
+   if (kind == InitialDataPerturbation::DensityAzimuthalEspino2019
+       && !(reference_radius > 0.0)) {
+      amrex::Abort(
+         "density_azimuthal_espino2019 could not resolve a positive "
+         "equatorial reference radius"
+      );
+   }
+   const amrex::GpuArray<amrex::Real, 3> origin{{
+      cfg_.initial_data_rotation_center1,
+      cfg_.initial_data_rotation_center2,
+      cfg_.initial_data_rotation_center3,
+   }};
+   const amrex::GpuArray<amrex::Real, 3> axis{{
+      cfg_.initial_data_rotation_axis1,
+      cfg_.initial_data_rotation_axis2,
+      cfg_.initial_data_rotation_axis3,
+   }};
+   const InitialDataPerturbationParameters parameters{
+      kind,
+      cfg_.initial_data_perturbation_pressure_scale,
+      cfg_.initial_data_perturbation_amplitude,
+      cfg_.initial_data_perturbation_mode,
+      cfg_.initial_data_perturbation_phase,
+      reference_radius,
+      make_azimuthal_frame(origin, axis),
+      eos_params(cfg_),
+   };
+   if (!cold_barotrope_supported(parameters.eos)) {
+      amrex::Abort(
+         "equilibrium initial-data perturbation requires a cold barotrope"
+      );
+   }
+
+   if (kind == InitialDataPerturbation::DensityAzimuthalEspino2019) {
+      int symmetry_direction = -1;
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         if (!symmetry_axis_active(direction)) {
+            continue;
+         }
+         if (symmetry_direction >= 0) {
+            amrex::Abort(
+               "nonaxisymmetric initial-data perturbations support only one "
+               "equatorial reflection plane"
+            );
+         }
+         symmetry_direction = direction;
+      }
+      if (symmetry_direction >= 0) {
+         const bool low_symmetry = side_boundary_kind(
+            cfg_, symmetry_direction, false
+         ) == BoundaryKind::Symmetry;
+         const bool high_symmetry = side_boundary_kind(
+            cfg_, symmetry_direction, true
+         ) == BoundaryKind::Symmetry;
+         const amrex::Real plane = low_symmetry
+            ? Geom(0).ProbLo(symmetry_direction)
+            : Geom(0).ProbHi(symmetry_direction);
+         const amrex::Real tolerance = 256.0
+            * std::numeric_limits<amrex::Real>::epsilon()
+            * std::max<amrex::Real>(1.0, std::abs(plane));
+         if (low_symmetry == high_symmetry
+             || std::abs(
+                std::abs(parameters.frame.axis[symmetry_direction]) - 1.0
+             ) > tolerance
+             || std::abs(origin[symmetry_direction] - plane) > tolerance) {
+            amrex::Abort(
+               "nonaxisymmetric initial-data perturbation is incompatible "
+               "with the configured reflection symmetry"
+            );
+         }
+      }
+   }
+
+   amrex::Real maximum_fractional_change = 0.0;
+   amrex::Real invalid_points = 0.0;
+   const InitialAtmosphereParameters atmosphere =
+      initial_atmosphere_parameters(cfg_, initial_data_provider_->view());
+   const int coordinate = mesh_coordinate_kind();
+   const MeshAxes axes = active_mesh_axes();
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      fill_level_primitive_cache(lev, 0.0);
+      amrex::MultiFab reduction(
+         primitive_[lev]->boxArray(),
+         primitive_[lev]->DistributionMap(),
+         2,
+         0
+      );
+      reduction.setVal(0.0);
+      const auto problo = Geom(lev).ProbLoArray();
+      const auto dx = Geom(lev).CellSizeArray();
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      for (amrex::MFIter mfi(*primitive_[lev], amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto primitive = primitive_[lev]->array(mfi);
+         const auto output = reduction.array(mfi);
+         amrex::ParallelFor(
+            box,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               const auto mesh_point = mesh_coordinate_triplet_at_location(
+                  coordinate,
+                  axes,
+                  problo,
+                  dx,
+                  i,
+                  j,
+                  k,
+                  false,
+                  false,
+                  false
+               );
+               const auto cartesian = mesh_coordinate_triplet_to_cartesian(
+                  coordinate, mesh_point
+               );
+               const PatchCoordinate physical{
+                  cartesian[0], cartesian[1], cartesian[2]
+               };
+               const InitialDataSamplePoint sample{physical, physical};
+               const EOSThermodynamicState atmosphere_state =
+                  initial_atmosphere_state<EOSRuntime>(atmosphere, sample);
+               const amrex::Real rho = primitive(i, j, k, RHO);
+               if (!initial_matter_exceeds_atmosphere(
+                      rho, atmosphere_state.rho
+                   )) {
+                  return;
+               }
+               const InitialDataPerturbationPoint perturbed =
+                  initial_data_perturbation_point(
+                     parameters, physical, rho
+                  );
+               if (!perturbed.valid) {
+                  output(i, j, k, 1) = 1.0;
+                  return;
+               }
+               primitive(i, j, k, RHO) = perturbed.matter.rho;
+               primitive(i, j, k, ENERGY) = perturbed.matter.pressure;
+               output(i, j, k, 0) = std::abs(
+                  perturbed.fractional_density_change
+               );
+            }
+         );
+      }
+      maximum_fractional_change = std::max(
+         maximum_fractional_change, reduction.max(0, 0, false)
+      );
+      invalid_points += reduction.sum(1, false);
+   }
+   if (invalid_points != 0.0) {
+      amrex::Abort(
+         "initial-data perturbation produced an invalid cold-EoS state"
+      );
+   }
+   finalize_constraint_solved_initial_data_state();
+   amrex::Print()
+      << "applied initial-data perturbation: kind="
+      << cfg_.initial_data_perturbation
+      << " maximum_fractional_density_change="
+      << maximum_fractional_change
+      << " constraint_polish=none\n";
 }
 
 void AmrSolverBase::summarize_configured_equilibrium_torus()
@@ -522,8 +735,9 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
    MutablePhysicalIdField fluid;
    MutablePhysicalIdField spacetime;
    MutablePhysicalIdFaceFields face_magnetic;
-#if (AMREX_SPACEDIM == 2)
-   if (cfg_.initial_data_radial_grid == "adaptive") {
+#if (AMREX_SPACEDIM >= 2)
+   if (cfg_.mesh_coordinate == "spherical"
+       && cfg_.initial_data_radial_grid == "adaptive") {
       const RelativisticInitialDataView provider = initial_data_provider_->view();
       const bool black_hole_xcts = cfg_.ic == "black_hole"
          && cfg_.spacetime_initial_data == "xcts";
@@ -658,6 +872,16 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       );
    }
    if (configured_rotation
+       && (cfg_.initial_data_rotation_law == "uryu_plus_13"
+           || cfg_.initial_data_rotation_law == "uryu_j_envelope_p1")
+       && metadata.differential_rotation_length_b
+          != cfg_.initial_data_differential_rotation_length_b) {
+      amrex::Abort(
+         "rotating-star physical ID continuation cannot change the Uryu "
+         "differential rotation length B"
+      );
+   }
+   if (configured_rotation
        && cfg_.initial_data_rotation_law == "q_power"
        && metadata.rotation_power_q != cfg_.initial_data_rotation_power_q) {
       amrex::Abort(
@@ -687,12 +911,26 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
           || cfg_.initial_data_disk == "tilted_torus")
       && cfg_.spacetime_initial_data == "xcts";
    if constexpr (AMREX_SPACEDIM == 3) {
+      const bool spherical_axisymmetric_target =
+         cfg_.mesh_coordinate == "spherical"
+         && cfg_.mesh_axes == "r theta phi"
+         && cfg_.initial_data_rotation_center1 == 0.0
+         && cfg_.initial_data_rotation_center2 == 0.0
+         && cfg_.initial_data_rotation_center3 == 0.0
+         && cfg_.initial_data_rotation_axis1 == 0.0
+         && cfg_.initial_data_rotation_axis2 == 0.0
+         && cfg_.initial_data_rotation_axis3 > 0.0
+         && (!add_torus
+             || (cfg_.initial_data_disk == "equilibrium_torus"
+                 && cfg_.initial_data_disk_axis1 == 0.0
+                 && cfg_.initial_data_disk_axis2 == 0.0
+                 && cfg_.initial_data_disk_axis3 > 0.0));
       if (cfg_.mesh_coordinate != "cartesian"
+          && !spherical_axisymmetric_target
           && (continue_rotation || add_torus)) {
          amrex::Abort(
-            "3D curvilinear physical-ID targets may materialize a completed "
-            "model but cannot continue XCTS matter or add a torus; solve on "
-            "the native Cartesian ID hierarchy first"
+            "3D curvilinear XCTS continuation requires a centered, +z "
+            "axisymmetric r-theta-phi target and an aligned equilibrium torus"
          );
       }
    }
@@ -733,20 +971,24 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          << cfg_.initial_data_disk << " matter component\n";
    }
    bool resolve_changed_reduced_rns = false;
-   bool resolve_changed_reduced_black_hole = false;
-#if (AMREX_SPACEDIM == 2)
+   bool resolve_changed_spherical_black_hole = false;
+#if (AMREX_SPACEDIM >= 2)
    resolve_changed_reduced_rns = configured_rotation
       && cfg_.initial_data_solve_only
       && cfg_.spacetime_initial_data == "xcts"
       && cfg_.mesh_coordinate == "spherical"
-      && cfg_.mesh_axes == "r theta"
+      && (cfg_.mesh_axes == "r theta"
+          || cfg_.mesh_axes == "r theta phi")
       && !metadata.exact_layout;
-   resolve_changed_reduced_black_hole = metadata.source_ic == "black_hole"
+#endif
+#if (AMREX_SPACEDIM >= 2)
+   resolve_changed_spherical_black_hole = metadata.source_ic == "black_hole"
       && cfg_.ic == "black_hole"
       && cfg_.initial_data_solve_only
       && cfg_.spacetime_initial_data == "xcts"
       && cfg_.mesh_coordinate == "spherical"
-      && cfg_.mesh_axes == "r theta"
+      && (cfg_.mesh_axes == "r theta"
+          || cfg_.mesh_axes == "r theta phi")
       && !metadata.exact_layout;
 #endif
    if (resolve_changed_reduced_rns && !continue_rotation) {
@@ -755,10 +997,10 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
             "r-theta grid at omega="
          << cfg_.initial_data_angular_velocity << '\n';
    }
-   if (resolve_changed_reduced_black_hole) {
+   if (resolve_changed_spherical_black_hole) {
       amrex::Print()
          << "re-solving black-hole physical initial data on the changed "
-            "r-theta shell\n";
+         << cfg_.mesh_axes << " shell\n";
    }
    if ((continue_rotation || resolve_changed_reduced_rns)
        && !(metadata.injection_energy > 0.0)) {
@@ -768,7 +1010,7 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       );
    }
    return continue_rotation || resolve_changed_reduced_rns
-      || resolve_changed_reduced_black_hole || add_torus;
+      || resolve_changed_spherical_black_hole || add_torus;
 }
 
 void AmrSolverBase::project_materialized_initial_face_b()
@@ -1005,6 +1247,9 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
                << "# rotation_law=" << cfg_.initial_data_rotation_law << '\n'
                << "# differential_rotation_length=" << std::setprecision(17)
                << cfg_.initial_data_differential_rotation_length << '\n'
+               << "# differential_rotation_length_b="
+               << std::setprecision(17)
+               << cfg_.initial_data_differential_rotation_length_b << '\n'
                << "# rotation_power_q=" << std::setprecision(17)
                << cfg_.initial_data_rotation_power_q << '\n'
                << "# rotation_axis=" << std::setprecision(17)

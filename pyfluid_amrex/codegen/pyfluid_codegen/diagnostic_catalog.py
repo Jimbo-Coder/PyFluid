@@ -38,6 +38,16 @@ class DiagnosticValueKind(str, Enum):
 
 
 @dataclass(frozen=True)
+class ComplexModeDiagnostic:
+    name: str
+    label: str
+    basis: str
+    domain: str
+    integrand: str
+    requirements: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Diagnostic:
     name: str
     label: str
@@ -247,6 +257,43 @@ RUNTIME_SCALAR_DIAGNOSTICS = (
     _scalar("extraction_radius", r"r_{\rm ext}", DiagnosticOperation.COORDINATE, "radiation", requirements=("spacetime",)),
     _scalar("matter_energy_flux", r"\dot E_{\rm matter}^{S}", DiagnosticOperation.SURFACE_INTEGRAL, "radiation", requirements=("spacetime",)),
     _scalar("psi4_l2", r"\|\Psi_4\|_{2,S}", DiagnosticOperation.L2_NORM, "radiation", requirements=("spacetime",)),
+    _scalar("matter_mode_mass", r"C_0", DiagnosticOperation.VOLUME_INTEGRAL, "modes"),
+    *_vector(
+        "matter_barycenter",
+        ("matter_barycenter1", "matter_barycenter2", "matter_barycenter3"),
+        (r"x_{\rm CM}", r"y_{\rm CM}", r"z_{\rm CM}"),
+        DiagnosticOperation.DERIVED,
+        "modes",
+    ),
+)
+
+
+# Complex, dynamically indexed reductions are rows in multipoles.tsv rather
+# than fixed columns in scalars.tsv.  This catalog still owns their stable
+# identity, integration domain, basis, and integrand contract.
+COMPLEX_MODE_DIAGNOSTICS = (
+    ComplexModeDiagnostic(
+        "psi4_spin_weighted_surface",
+        r"\Psi_4^{\ell m}",
+        "spin_weighted_spherical_harmonic",
+        "surface",
+        "psi4",
+        ("spacetime",),
+    ),
+    ComplexModeDiagnostic(
+        "scalar_azimuthal_surface",
+        r"C_m^S[f]",
+        "azimuthal_fourier_exp_minus_imphi",
+        "surface",
+        "configured_scalar_field",
+    ),
+    ComplexModeDiagnostic(
+        "matter_azimuthal_volume",
+        r"C_m",
+        "azimuthal_fourier_exp_plus_imphi",
+        "volume",
+        "atmosphere_excluded_dens",
+    ),
 )
 
 
@@ -268,7 +315,7 @@ DIAGNOSTIC_GROUPS = {
             "coordinates", "conservation", "gravity", "passive", "ledger",
             "state_bounds", "mhd", "rmhd", "relativistic", "diffusion", "amr", "performance", "cfl",
             "constraints", "black_hole", "global_gr",
-            "radiation",
+            "radiation", "modes",
         )
     },
 }
@@ -307,6 +354,9 @@ def validate_diagnostic_catalog() -> None:
         unknown = set(members) - runtime_names
         if unknown:
             raise ValueError(f"diagnostic group {group} contains unknown members: {sorted(unknown)}")
+    mode_names = [diagnostic.name for diagnostic in COMPLEX_MODE_DIAGNOSTICS]
+    if len(mode_names) != len(set(mode_names)):
+        raise ValueError("complex-mode diagnostic names must be unique")
 
 
 validate_diagnostic_catalog()

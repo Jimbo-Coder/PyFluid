@@ -155,6 +155,61 @@ label = "Relativistic q-power"
 description = "Generalized differential rotation with q=1 equal to j-constant."
 parameters = ["angular_velocity", "differential_rotation_length", "rotation_power_q"]
 
+[[rotation_law]]
+name = "uryu_plus_13"
+cpp_id = "UryuPlus13"
+label = "Uryu plus p=1 q=3"
+description = "Post-merger differential rotation with an off-center angular-velocity maximum."
+parameters = ["angular_velocity", "differential_rotation_length", "differential_rotation_length_b"]
+
+[[rotation_law]]
+name = "uryu_j_envelope_p1"
+cpp_id = "UryuJEnvelopeP1"
+label = "Uryu j-envelope p=1"
+description = "Finite-j-envelope post-merger law that limits to j-constant as B tends to infinity."
+parameters = ["angular_velocity", "differential_rotation_length", "differential_rotation_length_b"]
+
+# Evolution-start modifiers consume a completed physical-ID state.  They are
+# runtime choices rather than compiled owner products.
+[[initial_data_perturbation]]
+name = "none"
+cpp_id = "None"
+label = "No perturbation"
+description = "Leave the materialized equilibrium unchanged."
+parameters = []
+
+[[initial_data_perturbation]]
+name = "cold_pressure_scale"
+cpp_id = "ColdPressureScale"
+label = "Cold pressure scale"
+description = "Use scaled cold pressure as a target, invert the same cold EoS for density, and rebuild the complete on-EoS state; density is not held fixed."
+parameters = ["perturbation_pressure_scale"]
+
+[[initial_data_perturbation]]
+name = "density_azimuthal_espino2019"
+cpp_id = "DensityAzimuthalEspino2019"
+label = "Espino 2019 density mode"
+description = "Apply rho -> rho [1+B (varpi/r_e) sin(m phi + phase)] and rebuild the cold EoS state."
+parameters = ["perturbation_amplitude", "perturbation_mode", "perturbation_phase", "perturbation_radius"]
+
+# Magnetic seeds own a divergence-preserving initial field representation.
+# A seed is not, by itself, a magnetohydrostatic equilibrium law; the coupled
+# RMHD XCTS owner includes its stress in the constraints, while a future
+# Grad-Shafranov/Euler first integral will own force balance.
+[[initial_data_magnetic_seed]]
+name = "none"
+cpp_id = "None"
+label = "No magnetic seed"
+description = "Use the magnetic field supplied by the physical initial-data provider."
+parameters = []
+
+[[initial_data_magnetic_seed]]
+name = "pressure_poloidal"
+cpp_id = "PressurePoloidal"
+label = "Pressure-confined poloidal seed"
+description = "For a stellar pressure field, construct staggered A proportional to axis cross radius times max(p/pmax-pcut,0)^n, take its discrete curl, and normalize the maximum comoving field."
+parameters = ["magnetic_seed_pressure_cutoff", "magnetic_seed_exponent", "magnetic_seed_maximum_comoving_field", "rotation_axis", "rotation_center"]
+
 # Disk rotation laws are a separate physical catalog.  In particular,
 # constant_l means ell=-u_phi/u_t and must not alias the stellar j-constant
 # law above.
@@ -223,6 +278,22 @@ relative_tilt = false
 reflection_class = "axis_equatorial"
 
 [[initial_data_owner]]
+name = "spherical_axisymmetric_xcts_3d"
+cpp_id = "SphericalAxisymmetricXcts3d"
+label = "Spherical 3D axisymmetric XCTS"
+description = "Full r-theta-phi storage of the axisymmetric circular-star XCTS system with an optional aligned torus."
+dimension = 3
+coordinate = "spherical"
+axes = ["r", "theta", "phi"]
+central_objects = ["tov", "rotating_star"]
+spacetime_methods = ["xcts"]
+disk_kinds = ["none", "equilibrium_torus"]
+disk_gravity_modes = ["none", "test_fluid", "coupled"]
+grid_kinds = ["uniform", "mapped_radial"]
+relative_tilt = false
+reflection_class = "axis_equatorial"
+
+[[initial_data_owner]]
 name = "cartesian_conformal_constraints"
 cpp_id = "CartesianConformalConstraints"
 label = "Cartesian conformal constraints"
@@ -246,6 +317,22 @@ description = "Reduced r-theta XCTS construction on a finite apparent-horizon sh
 dimension = 2
 coordinate = "spherical"
 axes = ["r", "theta"]
+central_objects = ["black_hole"]
+spacetime_methods = ["xcts"]
+disk_kinds = ["none"]
+disk_gravity_modes = ["none"]
+grid_kinds = ["uniform_shell", "mapped_radial_shell"]
+relative_tilt = false
+reflection_class = "axis_equatorial"
+
+[[initial_data_owner]]
+name = "spherical_axisymmetric_black_hole_xcts_3d"
+cpp_id = "SphericalAxisymmetricBlackHoleXcts3d"
+label = "Spherical 3D axisymmetric black-hole XCTS"
+description = "Full r-theta-phi storage of the axisymmetric apparent-horizon-shell XCTS system, including the Nphi=1 degeneracy."
+dimension = 3
+coordinate = "spherical"
+axes = ["r", "theta", "phi"]
 central_objects = ["black_hole"]
 spacetime_methods = ["xcts"]
 disk_kinds = ["none"]

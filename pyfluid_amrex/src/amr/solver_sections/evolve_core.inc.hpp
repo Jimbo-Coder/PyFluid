@@ -243,6 +243,41 @@
             sync_all_cell_b_from_faces(fluid_state_.state(), false);
          }
       }
+      const bool id_only_rmhd_without_runtime_c2p =
+         cfg_.initial_data_solve_only
+         && physics_system_ == PhysicalSystem::RMHD
+         && cfg_.eos != "ideal_gas";
+      if (id_only_rmhd_without_runtime_c2p) {
+         for (int lev = 0; lev <= finestLevel(); ++lev) {
+            if (primitive_[lev]->contains_nan(
+                   0, primitive_[lev]->nComp(), 0
+                )
+                || fluid_state_.state()[lev]->contains_nan(
+                   0, fluid_state_.state()[lev]->nComp(), 0
+                )) {
+               amrex::Abort(
+                  "non-ideal RMHD physical-ID state is nonfinite"
+               );
+            }
+         }
+         if (amrex::ParallelDescriptor::IOProcessor()) {
+            std::filesystem::create_directories(cfg_.output_dir);
+            write_run_parameter_file(
+               (std::filesystem::path(cfg_.output_dir) / "run.in").string()
+            );
+         }
+         write_physical_initial_data_artifact(
+            cfg_.initial_data_output_file,
+            cfg_.initial_data_angular_velocity,
+            false
+         );
+         amrex::Print()
+            << "Physical-ID preflight: finite non-ideal RMHD primitive and "
+               "conserved fields; evolution C2P round trip intentionally "
+               "deferred until that EoS is supported\n"
+            << "completed initial-data-only solve and artifact write\n";
+         return;
+      }
       reset_barotropic_energy_all_levels<NComp, EOSMethod>();
       (this->*operations.fill_boundaries)(fluid_state_.state(), time);
       fill_all_spacetime_boundaries(spacetime_state_.state(), time);
@@ -264,6 +299,22 @@
       }
       if (!cfg_.initial_data_output_file.empty()) {
          write_physical_initial_data_artifact();
+      }
+      if (cfg_.restart_file.empty()
+          && cfg_.initial_data_perturbation != "none") {
+         // Reusable physical-ID artifacts contain the equilibrium.  The
+         // perturbation is an evolution-start modifier, so apply it only
+         // after any requested artifact write and validate the modified state
+         // independently.  Checkpoint restart already contains the live
+         // perturbed state and must not apply it a second time.
+         apply_configured_initial_data_perturbation();
+         average_down_state();
+         reset_barotropic_energy_all_levels<NComp, EOSMethod>();
+         (this->*operations.fill_boundaries)(fluid_state_.state(), time);
+         run_evolution_preflight(time);
+         debug_check_state_all_levels(
+            "perturbed initial accepted state", start_step, time, true
+         );
       }
 
       std::ofstream scalar_file;
@@ -295,7 +346,9 @@
       const std::optional<int> amr_history_step = history_last_step(amr_level_path);
       const bool radiation_enabled = cfg_.diagnostic_multipole_l_max >= 2;
       const bool azimuthal_modes_enabled = !azimuthal_mode_field_names(cfg_).empty();
-      const bool multipoles_enabled = radiation_enabled || azimuthal_modes_enabled;
+      const bool matter_modes_enabled = cfg_.diagnostic_matter_mode_m_max >= 0;
+      const bool multipoles_enabled = radiation_enabled
+         || azimuthal_modes_enabled || matter_modes_enabled;
       const std::optional<int> multipole_history_step = multipoles_enabled
          ? history_last_step(multipole_path)
          : std::nullopt;
@@ -334,6 +387,9 @@
          scalar_diagnostic_selection(cfg_.scalar_diagnostics);
       if (radiation_enabled) {
          scalar_selection.enable_group(ScalarDiagnosticGroup::Radiation);
+      }
+      if (matter_modes_enabled) {
+         scalar_selection.enable_group(ScalarDiagnosticGroup::Modes);
       }
       apply_scalar_diagnostic_requirements(scalar_selection, cfg_);
       if (amrex::ParallelDescriptor::IOProcessor()) {
@@ -390,12 +446,10 @@
          if (!emit_record || !multipoles_enabled) {
             return;
          }
-         amrex::Real radius = 0.0;
          std::vector<MultipoleMode> modes;
          if (radiation_enabled) {
             RadiationDiagnostics radiation =
                compute_spacetime_radiation_diagnostics(diagnostic_time);
-            radius = radiation.radius;
             scalars.extraction_radius = radiation.radius;
             scalars.matter_energy_flux = radiation.matter_energy_flux;
             scalars.psi4_l2 = radiation.psi4_l2;
@@ -408,11 +462,24 @@
          if (azimuthal_modes_enabled) {
             MultipoleDiagnostics azimuthal =
                compute_azimuthal_surface_modes(diagnostic_time);
-            radius = azimuthal.radius;
             modes.insert(
                modes.end(),
                std::make_move_iterator(azimuthal.modes.begin()),
                std::make_move_iterator(azimuthal.modes.end())
+            );
+         }
+         if (matter_modes_enabled) {
+            MatterModeDiagnostics matter = compute_matter_volume_modes(
+               diagnostic_time
+            );
+            scalars.matter_mode_mass = matter.mass;
+            scalars.matter_barycenter1 = matter.barycenter[0];
+            scalars.matter_barycenter2 = matter.barycenter[1];
+            scalars.matter_barycenter3 = matter.barycenter[2];
+            modes.insert(
+               modes.end(),
+               std::make_move_iterator(matter.modes.begin()),
+               std::make_move_iterator(matter.modes.end())
             );
          }
          if (amrex::ParallelDescriptor::IOProcessor()) {
@@ -420,7 +487,6 @@
                multipole_file,
                diagnostic_step,
                diagnostic_time,
-               radius,
                modes
             );
          }

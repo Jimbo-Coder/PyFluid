@@ -30,6 +30,10 @@ COUPLED_INPUT = (
    ROOT
    / "pyfluid_amrex/inputs/equilibrium_torus_coupled_xcts_spherical_id_2d.in"
 )
+COUPLED_FULL_STORAGE_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/equilibrium_torus_coupled_xcts_spherical_id_3d.in"
+)
 MATERIALIZED_INPUT = (
    ROOT / "pyfluid_amrex/inputs/equilibrium_torus_from_spherical_id_3d.in"
 )
@@ -394,12 +398,31 @@ def main() -> int:
       {**common, "initial_data.disk_gravity": "coupled"},
       args,
    )
+   (
+      full_storage_dir,
+      full_storage_artifact,
+      full_storage_seconds,
+      full_storage_log,
+   ) = run_case(
+      "coupled_massive_spherical_96x24x4",
+      3,
+      COUPLED_FULL_STORAGE_INPUT,
+      {},
+      args,
+   )
    assert test_artifact is not None and coupled_artifact is not None
+   assert full_storage_artifact is not None
    test_torus = torus_diagnostics(test_log, "test_fluid_256x64")
    test_constraints = constraint_diagnostics(test_log, "test_fluid_256x64")
    coupled_torus = torus_diagnostics(coupled_log, "coupled_massive_256x64")
    coupled_constraints = constraint_diagnostics(
       coupled_log, "coupled_massive_256x64"
+   )
+   full_storage_torus = torus_diagnostics(
+      full_storage_log, "coupled_massive_spherical_96x24x4"
+   )
+   full_storage_constraints = constraint_diagnostics(
+      full_storage_log, "coupled_massive_spherical_96x24x4"
    )
    validate_torus(
       test_torus, test_constraints, gravity="test_fluid", massive=False
@@ -407,6 +430,17 @@ def main() -> int:
    validate_torus(
       coupled_torus, coupled_constraints, gravity="coupled", massive=True
    )
+   validate_torus(
+      full_storage_torus,
+      full_storage_constraints,
+      gravity="coupled",
+      massive=True,
+   )
+   full_storage_metadata = read_metadata(full_storage_artifact)
+   if full_storage_metadata.get("mesh_coordinate") != "spherical" \
+         or full_storage_metadata.get("mesh_axes") != "r theta phi" \
+         or full_storage_metadata.get("periodicity") != "0,0,1":
+      raise RuntimeError("full-storage coupled torus lost its owner identity")
    if int(coupled_constraints["matter_iterations"]) <= 100:
       raise RuntimeError("coupled torus did not exercise the disk fixed-point phase")
 
@@ -608,6 +642,13 @@ def main() -> int:
       torus_row(
          "coupled_massive_256x64", coupled_torus, coupled_constraints,
          coupled_seconds, coupled_dir,
+      ),
+      torus_row(
+         "coupled_massive_spherical_96x24x4",
+         full_storage_torus,
+         full_storage_constraints,
+         full_storage_seconds,
+         full_storage_dir,
       ),
       {
          "kind": "initial_data",

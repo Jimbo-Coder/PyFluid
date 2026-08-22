@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "pyfluid_amrex/constants.hpp"
+#include "pyfluid_amrex/generated/diagnostic_catalog.hpp"
 
 namespace pyfluid_amrex {
 namespace {
@@ -101,6 +102,11 @@ std::vector<MultipoleMode> decompose_spin_weighted_field(
       throw std::invalid_argument("multipole ell range is empty");
    }
    std::vector<MultipoleMode> modes;
+   constexpr ComplexModeDiagnosticInfo mode_info = ComplexModeDiagnosticCatalog[
+      static_cast<std::size_t>(
+         ComplexModeDiagnosticId::Psi4SpinWeightedSurface
+      )
+   ];
    for (int ell = ell_min; ell <= ell_max; ++ell) {
       for (int m = -ell; m <= ell; ++m) {
          std::complex<amrex::Real> integral{};
@@ -112,7 +118,15 @@ std::vector<MultipoleMode> decompose_spin_weighted_field(
             integral += quadrature.solid_angle_weight * std::conj(harmonic)
                * std::complex<amrex::Real>(real_values[point], imaginary_values[point]);
          }
-         modes.push_back({field, "spin_weighted_spherical_harmonic", spin_weight, ell, m, integral});
+         modes.push_back({
+            field,
+            std::string(mode_info.basis),
+            spin_weight,
+            ell,
+            m,
+            integral,
+            surface.radius(),
+         });
       }
    }
    return modes;
@@ -132,6 +146,11 @@ std::vector<MultipoleMode> decompose_azimuthal_field(
       throw std::invalid_argument("azimuthal mode maximum must be non-negative");
    }
    std::vector<MultipoleMode> modes;
+   constexpr ComplexModeDiagnosticInfo mode_info = ComplexModeDiagnosticCatalog[
+      static_cast<std::size_t>(
+         ComplexModeDiagnosticId::ScalarAzimuthalSurface
+      )
+   ];
    modes.reserve(static_cast<std::size_t>(m_max + 1));
    const amrex::Real radius_squared = surface.radius() * surface.radius();
    for (int m = 0; m <= m_max; ++m) {
@@ -144,7 +163,15 @@ std::vector<MultipoleMode> decompose_azimuthal_field(
          integral += radius_squared * quadrature.solid_angle_weight
             * values[point] * phase;
       }
-      modes.push_back({field, "azimuthal_fourier", 0, std::nullopt, m, integral});
+      modes.push_back({
+         field,
+         std::string(mode_info.basis),
+         0,
+         std::nullopt,
+         m,
+         integral,
+         surface.radius(),
+      });
    }
    return modes;
 }
@@ -180,13 +207,17 @@ void append_multipole_rows(
    std::ofstream& output,
    int step,
    amrex::Real time,
-   amrex::Real radius,
    std::vector<MultipoleMode> const& modes
 )
 {
    for (MultipoleMode const& mode : modes) {
-      output << step << '\t' << std::setprecision(17) << time << '\t'
-             << radius << '\t' << mode.field << '\t' << mode.basis << '\t'
+      output << step << '\t' << std::setprecision(17) << time << '\t';
+      if (mode.radius.has_value()) {
+         output << *mode.radius;
+      } else {
+         output << "none";
+      }
+      output << '\t' << mode.field << '\t' << mode.basis << '\t'
              << mode.spin_weight << '\t';
       if (mode.ell.has_value()) {
          output << *mode.ell;

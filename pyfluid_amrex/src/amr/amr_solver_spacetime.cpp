@@ -9,6 +9,7 @@
 #include "pyfluid_amrex/spacetime_coupling.hpp"
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/initial_data/materialization.hpp"
+#include "pyfluid_amrex/initial_data/magnetic.hpp"
 #include "pyfluid_amrex/initial_data/kerr_schild.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
@@ -436,16 +437,17 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          upper == BoundaryKind::Symmetry || upper == BoundaryKind::Reflecting
          || upper == BoundaryKind::Origin;
    }
-#if (AMREX_SPACEDIM == 2)
-   if (cfg_.initial_data_radial_grid == "adaptive"
-       || !initial_data_coordinate_faces_.empty()) {
+#if (AMREX_SPACEDIM >= 2)
+   if (cfg_.mesh_coordinate == "spherical"
+       && (cfg_.initial_data_radial_grid == "adaptive"
+           || !initial_data_coordinate_faces_.empty())) {
       const RelativisticInitialDataView provider = initial_data_provider_->view();
       const bool black_hole_xcts = cfg_.ic == "black_hole"
          && cfg_.spacetime_initial_data == "xcts";
       if (finestLevel() != 0
           || (!provider.tov.active() && !black_hole_xcts)) {
          amrex::Abort(
-            "adaptive reduced ID requires one level and a native TOV or "
+            "adaptive spherical ID requires one level and a native TOV or "
             "black-hole XCTS source"
          );
       }
@@ -584,7 +586,8 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
    ) {
 #if (AMREX_SPACEDIM == 3)
       if (cfg_.ic == "rotating_star"
-          && cfg_.initial_data_angular_velocity != 0.0) {
+          && cfg_.initial_data_angular_velocity != 0.0
+          && mesh_coordinate_kind() == MeshCartesian) {
          ScalarDiagnosticSelection selection = scalar_diagnostic_selection(
             "mass,adm_mass_volume,adm_angular_momentum3_volume"
          );
@@ -653,6 +656,50 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       rotating_parameters.injection_energy =
          loaded_physical_id_metadata_->injection_energy;
    }
+   PressurePoloidalMagneticSeedWorkspace magnetic_workspace;
+   PressurePoloidalMagneticSeedSummary magnetic_summary;
+   int magnetic_seed_updates = 0;
+   ConformalMatterObserver matter_observer;
+   if (cfg_.initial_data_magnetic_seed == "pressure_poloidal") {
+#if (AMREX_SPACEDIM != 3)
+      amrex::Abort("pressure-poloidal magnetic seed requires 3D");
+#else
+      if (finestLevel() != 0 || maxLevel() != 0) {
+         amrex::Abort(
+            "pressure-poloidal magnetic seed currently requires a single "
+            "uniform level; AMR needs one edge-potential prolongation owner"
+         );
+      }
+      const PressurePoloidalMagneticSeedParameters magnetic_parameters{
+         cfg_.initial_data_magnetic_seed_pressure_cutoff,
+         cfg_.initial_data_magnetic_seed_exponent,
+         cfg_.initial_data_magnetic_seed_maximum_comoving_field,
+         {{
+            cfg_.initial_data_rotation_axis1,
+            cfg_.initial_data_rotation_axis2,
+            cfg_.initial_data_rotation_axis3,
+         }},
+         {{
+            cfg_.initial_data_rotation_center1,
+            cfg_.initial_data_rotation_center2,
+            cfg_.initial_data_rotation_center3,
+         }},
+      };
+      matter_observer = [&, magnetic_parameters]() {
+         magnetic_summary = apply_pressure_poloidal_magnetic_seed(
+            face_b_[0],
+            *primitive_[0],
+            *spacetime_coupling_.cell_spacetime()[0],
+            Geom(0),
+            cfg_,
+            eos_params(cfg_),
+            magnetic_parameters,
+            magnetic_workspace
+         );
+         ++magnetic_seed_updates;
+      };
+#endif
+   }
    ConformalMaterializationResult result = materialize_conformal_initial_data(
       hierarchy,
       primitive,
@@ -662,6 +709,7 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       eos_method_,
       eos_params(cfg_),
       initial_data_provider_->view().fields,
+      mesh_coordinate_kind(),
       formulation,
       {
          cfg_.ic == "black_hole",
@@ -670,8 +718,18 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       rotating_parameters,
       equilibrium_torus,
       seed_from_loaded_id,
-      continuation_observer
+      continuation_observer,
+      matter_observer
    );
+   if (magnetic_seed_updates > 0) {
+      amrex::Print()
+         << "pressure-poloidal magnetic ID: updates=" << magnetic_seed_updates
+         << " maximum_pressure=" << magnetic_summary.maximum_pressure
+         << " normalization=" << magnetic_summary.normalization
+         << " maximum_comoving_field="
+         << magnetic_summary.maximum_comoving_field
+         << " divb_linf=" << magnetic_summary.divergence_linf << '\n';
+   }
    finalize_constraint_solved_initial_data_state();
    result.rotating_star = with_global_rotating_diagnostics(
       result.rotating_star

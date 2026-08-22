@@ -57,6 +57,8 @@ class PyFluidCxxPrinter(C99CodePrinter):
       return super()._print_Function(expr)
 
    def _print_Pow(self, expr: sp.Pow) -> str:
+      if expr.base == 2 and expr.exp == sp.Rational(1, 2):
+         return "pyfluid_amrex::constants::sqrt_two"
       if expr.exp == 2:
          base = self._print(expr.base)
          return f"(({base})*({base}))"
@@ -85,6 +87,9 @@ class PyFluidCxxPrinter(C99CodePrinter):
 
    def _print_atan(self, expr: sp.Function) -> str:
       return f"std::atan({self._print(expr.args[0])})"
+
+   def _print_atanh(self, expr: sp.Function) -> str:
+      return f"std::atanh({self._print(expr.args[0])})"
 
    def _print_Abs(self, expr: sp.Abs) -> str:
       return f"amrex::Math::abs({self._print(expr.args[0])})"
