@@ -27,6 +27,7 @@ enum class FluidInitialDataKind : int {
    ShockPlane,
    PeriodicShockPlane,
    FixedMetricHse,
+   Atmosphere,
    Provider,
    EquilibriumTorus,
 };
@@ -106,6 +107,8 @@ inline FluidInitialDataParameters fluid_initial_data_parameters(
       kind = FluidInitialDataKind::PeriodicShockPlane;
    } else if (cfg.ic == "fixed_metric_hse") {
       kind = FluidInitialDataKind::FixedMetricHse;
+   } else if (cfg.ic == "black_hole") {
+      kind = FluidInitialDataKind::Atmosphere;
    } else if (cfg.ic == "tov" || cfg.ic == "rotating_star") {
       kind = FluidInitialDataKind::Provider;
    } else if (cfg.ic == "equilibrium_torus") {
@@ -233,7 +236,17 @@ FluidPrimitiveSample sample_fluid_initial_data(
          rho, pressure, parameters.eos
       );
 
-   if (parameters.kind == FluidInitialDataKind::Provider) {
+   if (parameters.kind == FluidInitialDataKind::Atmosphere) {
+      rho = 0.0;
+      pressure = 0.0;
+      specific_internal_energy = 0.0;
+      v1 = 0.0;
+      v2 = 0.0;
+      v3 = 0.0;
+      b1 = 0.0;
+      b2 = 0.0;
+      b3 = 0.0;
+   } else if (parameters.kind == FluidInitialDataKind::Provider) {
       const RelativisticInitialDataSample point = provider.sample(sample.physical);
       rho = point.fluid.rho;
       pressure = point.fluid.pressure;

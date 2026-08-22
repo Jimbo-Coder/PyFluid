@@ -254,7 +254,13 @@ def _load_initial_data_owner(
             f"{context}.disk_gravity_modes contains an unsupported value"
         )
     grid_kinds = _required_string_array(record, "grid_kinds", context)
-    if not set(grid_kinds) <= {"uniform", "mapped_radial", "block_amr"}:
+    if not set(grid_kinds) <= {
+        "uniform",
+        "mapped_radial",
+        "uniform_shell",
+        "mapped_radial_shell",
+        "block_amr",
+    }:
         raise ValueError(f"{context}.grid_kinds contains an unsupported value")
     if relative_tilt and "tilted_torus" not in disk_kinds:
         raise ValueError(

@@ -63,6 +63,38 @@ to roundoff after one step. The gate also proves that unsupported excision,
 incompatible physical-ID spin, and incompatible reflection planes fail before
 evolution instead of changing the requested problem.
 
+## Constraint-solved Schwarzschild shell
+
+`pyfluid.ic = black_hole`, `spacetime.initial_data = xcts`, and
+`initial_data.solve_only = 1` select the first native constraint-solved
+black-hole owner. It is deliberately the smallest physically complete case: a
+spinless origin-centered vacuum hole on a 2D spherical `r theta` shell whose
+inner face is the isotropic Schwarzschild apparent horizon `r=M/2`. The scalar
+XCTS unknowns use
+the Cook--Pfeiffer apparent-horizon Robin condition for the conformal factor,
+zero lapse at the inner face, zero shift, and asymptotically flat outer Robin
+conditions. The atmosphere is only the stored fluid-floor convention and is
+excluded from the vacuum elliptic sources.
+
+Uniform and geometrically stretched finite shells share one separable
+axisymmetric elliptic operator. The supplied `M=1` mapped control spans
+`[M/2,32M]` with a last/first radial-cell-width ratio of 16. The `256x32`
+analytic control has
+Hamiltonian/lapse/momentum residuals
+`2.11e-12/4.89e-12/0`, conformal-factor second-order convergence, zero shift
+and extrinsic curvature, and a horizon lapse of exactly zero in the portable
+nodal ADM artifact. Its losslessly compressed artifact is about 8.1 MiB. A
+saved `128x16` shell can seed and re-solve a changed `256x32` mapped shell; the
+result is checked directly against isotropic Schwarzschild and uses no fluid
+recovery.
+
+This is an exterior solve-only owner, not yet a complete-grid evolution model.
+Spinning Cook--Pfeiffer data, black-hole/disk coupling, target-grid constraint
+polishing, and the separate filled or true-excision evolution interiors remain
+open. Likewise, `N x M x 1` will be a 3D `r theta phi` degeneracy gate against
+this 2D solution once the native 3D curvilinear elliptic owner exists; it is
+not represented as another owner in the method catalog.
+
 ## Horizon diagnostics and finder boundary
 
 `black_hole_horizon_radius` reports the analytic Kerr--Schild seed radius
@@ -176,12 +208,13 @@ reduced solution, but it cannot change those axes relative to one another.
 
 ## Next solver layer
 
-The primary constraint-solved black-hole method is Kerr--Schild-seeded,
-conformally curved XCTS with Cook--Pfeiffer quasi-equilibrium apparent-horizon
-boundary conditions. Exact Kerr--Schild remains the fixed-background and
-vacuum control. Bowen--York puncture data are not the primary route. True
-evolution excision and full-grid filled evolution share the exterior solution,
-but have separate interior ownership and validation gates.
+The next constraint-solved black-hole step is the spinning,
+Kerr--Schild-seeded conformally curved XCTS extension of the present
+Cook--Pfeiffer Schwarzschild shell. Exact Kerr--Schild remains the
+fixed-background and vacuum control. Bowen--York puncture data are not the
+primary route. True evolution excision and full-grid filled evolution may
+share the exterior solution, but have separate interior ownership and
+validation gates.
 
 True excision is two contracts, not one flag: the ID solve owns an apparent-
 horizon inner boundary, while evolution owns an active-domain mask, one-sided

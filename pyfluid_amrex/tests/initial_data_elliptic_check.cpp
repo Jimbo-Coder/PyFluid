@@ -43,6 +43,9 @@ bool validate_initial_data_owner_catalog()
    const auto& cartesian = initial_data_owner_info(
       InitialDataOwner::CartesianConformalConstraints
    );
+   const auto& black_hole = initial_data_owner_info(
+      InitialDataOwner::SphericalAxisymmetricBlackHoleXcts
+   );
    const auto& kerr = initial_data_owner_info(
       InitialDataOwner::CartesianKerrSchild
    );
@@ -63,6 +66,16 @@ bool validate_initial_data_owner_catalog()
       && initial_data_owner_list_contains(
          cartesian.disk_kinds, "tilted_torus"
       )
+      && initial_data_owner_layout_matches(
+         black_hole, 2, "spherical", "r theta"
+      )
+      && initial_data_owner_list_contains(
+         black_hole.central_objects, "black_hole"
+      )
+      && initial_data_owner_list_contains(
+         black_hole.grid_kinds, "mapped_radial_shell"
+      )
+      && !black_hole.relative_tilt
       && initial_data_owner_layout_matches(
          kerr, 3, "cartesian", "x y z"
       )
@@ -1282,6 +1295,244 @@ bool validate_axisymmetric_tov_xcts()
       && fine.shift < 1.0e-12
       && fine.extrinsic < 1.0e-12;
 }
+
+struct AxisymmetricSchwarzschildXctsError {
+   amrex::Real conformal = 0.0;
+   amrex::Real lapse_conformal = 0.0;
+   amrex::Real shift = 0.0;
+   amrex::Real extrinsic = 0.0;
+   pyfluid_amrex::XctsResult result{};
+};
+
+AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
+   int radial_cells,
+   int angular_cells
+)
+{
+   constexpr amrex::Real mass = 1.0;
+   constexpr amrex::Real horizon_radius = 0.5 * mass;
+   constexpr amrex::Real outer_radius = 32.0;
+   const amrex::Box domain(
+      amrex::IntVect(0, 0),
+      amrex::IntVect(radial_cells - 1, angular_cells - 1)
+   );
+   const amrex::RealBox physical_domain(
+      {horizon_radius, 0.0},
+      {outer_radius, 0.5 * pyfluid_amrex::constants::pi}
+   );
+   const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0};
+   pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
+   hierarchy.geometry.emplace_back(
+      domain, physical_domain, amrex::CoordSys::cartesian, periodic
+   );
+   hierarchy.grids.emplace_back(domain);
+   hierarchy.grids[0].maxSize(std::max(16, radial_cells / 4));
+   hierarchy.distribution.emplace_back(hierarchy.grids[0]);
+   hierarchy.reflection_lo = {0, 1};
+   hierarchy.reflection_hi = {0, 1};
+   hierarchy.physical_coordinate_faces.resize(1);
+   hierarchy.physical_coordinate_faces[0][0] =
+      pyfluid_amrex::stretched_radial_shell_faces(
+         horizon_radius, outer_radius, radial_cells, 16.0
+      );
+
+   auto make_field = [&](int components, int ghosts) {
+      return std::make_unique<amrex::MultiFab>(
+         hierarchy.grids[0],
+         hierarchy.distribution[0],
+         components,
+         ghosts
+      );
+   };
+   auto conformal = make_field(1, 1);
+   auto lapse_conformal = make_field(1, 1);
+   auto shift = make_field(1, 1);
+   auto extrinsic = make_field(
+      pyfluid_amrex::CONFORMAL_A_NUM_COMPONENTS, 1
+   );
+   auto energy = make_field(1, 0);
+   auto momentum = make_field(1, 0);
+   auto stress = make_field(1, 0);
+   conformal->setVal(1.0);
+   lapse_conformal->setVal(1.0);
+   shift->setVal(0.0);
+   extrinsic->setVal(0.0);
+   energy->setVal(0.0);
+   momentum->setVal(0.0);
+   stress->setVal(0.0);
+
+   // In isotropic coordinates, psi=1+a/r and alpha*psi=1-a/r with
+   // a=M/2. The Cook--Pfeiffer apparent-horizon condition becomes
+   // d_r(psi-1)+(psi-1)/(2a)=-1/(2a) on the inner shell face.
+   auto conformal_boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         hierarchy,
+         1,
+         1.0 / (2.0 * horizon_radius),
+         1.0,
+         -1.0 / (2.0 * horizon_radius),
+         pyfluid_amrex::InitialDataEllipticCentering::cell
+      );
+   pyfluid_amrex::set_initial_data_reflection_boundaries(
+      hierarchy,
+      conformal_boundary,
+      {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
+   );
+   pyfluid_amrex::set_axisymmetric_spherical_radial_robin_boundary(
+      hierarchy, conformal_boundary, {0.0}, 1.0
+   );
+   auto lapse_boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         hierarchy,
+         1,
+         1.0,
+         0.0,
+         -1.0,
+         pyfluid_amrex::InitialDataEllipticCentering::cell
+      );
+   pyfluid_amrex::set_initial_data_reflection_boundaries(
+      hierarchy,
+      lapse_boundary,
+      {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
+   );
+   pyfluid_amrex::set_axisymmetric_spherical_radial_robin_boundary(
+      hierarchy, lapse_boundary, {0.0}, 1.0
+   );
+   auto shift_boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         hierarchy,
+         1,
+         1.0,
+         0.0,
+         0.0,
+         pyfluid_amrex::InitialDataEllipticCentering::cell
+      );
+   pyfluid_amrex::set_axisymmetric_spherical_toroidal_regularity(
+      hierarchy, shift_boundary
+   );
+   pyfluid_amrex::set_axisymmetric_spherical_radial_robin_boundary(
+      hierarchy, shift_boundary, {0.0}, 2.0
+   );
+
+   amrex::Vector<amrex::MultiFab*> conformal_fields{conformal.get()};
+   amrex::Vector<amrex::MultiFab*> lapse_fields{lapse_conformal.get()};
+   amrex::Vector<amrex::MultiFab*> shift_fields{shift.get()};
+   amrex::Vector<amrex::MultiFab*> extrinsic_fields{extrinsic.get()};
+   amrex::Vector<amrex::MultiFab const*> energy_fields{energy.get()};
+   amrex::Vector<amrex::MultiFab const*> momentum_fields{momentum.get()};
+   amrex::Vector<amrex::MultiFab const*> stress_fields{stress.get()};
+   pyfluid_amrex::XctsOptions options;
+   options.max_coupled_iterations = 20;
+   options.relative_update_tolerance = 1.0e-11;
+   options.relaxation = 1.0;
+   options.linear.relative_tolerance = 1.0e-13;
+   const pyfluid_amrex::XctsResult result =
+      pyfluid_amrex::solve_axisymmetric_spherical_xcts_constraints(
+         hierarchy,
+         conformal_fields,
+         lapse_fields,
+         shift_fields,
+         extrinsic_fields,
+         energy_fields,
+         momentum_fields,
+         stress_fields,
+         conformal_boundary,
+         lapse_boundary,
+         shift_boundary,
+         options
+      );
+
+   amrex::MultiFab error(
+      hierarchy.grids[0], hierarchy.distribution[0], 4, 0
+   );
+   error.setVal(0.0);
+   const pyfluid_amrex::InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+      radial_coordinates.centers.data(), radial_coordinates.centers.size()
+   );
+   const amrex::Real* radial_center = radial_center_storage.data();
+   const amrex::Dim3 domain_lo = amrex::lbound(domain);
+   for (amrex::MFIter mfi(error); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto psi = conformal->const_array(mfi);
+      const auto lapse_psi = lapse_conformal->const_array(mfi);
+      const auto beta = shift->const_array(mfi);
+      const auto a = extrinsic->const_array(mfi);
+      const auto difference = error.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real radius = radial_center[i - domain_lo.x];
+         const amrex::Real inverse_radius_mass = horizon_radius / radius;
+         difference(i, j, k, 0) = amrex::Math::abs(
+            psi(i, j, k, 0) - (1.0 + inverse_radius_mass)
+         );
+         difference(i, j, k, 1) = amrex::Math::abs(
+            lapse_psi(i, j, k, 0) - (1.0 - inverse_radius_mass)
+         );
+         difference(i, j, k, 2) = amrex::Math::abs(beta(i, j, k, 0));
+         amrex::Real extrinsic_error = 0.0;
+         for (int component = 0;
+              component < pyfluid_amrex::CONFORMAL_A_NUM_COMPONENTS;
+              ++component) {
+            extrinsic_error = amrex::max(
+               extrinsic_error, amrex::Math::abs(a(i, j, k, component))
+            );
+         }
+         difference(i, j, k, 3) = extrinsic_error;
+      });
+   }
+   return {
+      error.norm0(0),
+      error.norm0(1),
+      error.norm0(2),
+      error.norm0(3),
+      result,
+   };
+}
+
+bool validate_axisymmetric_schwarzschild_xcts()
+{
+   const AxisymmetricSchwarzschildXctsError coarse =
+      solve_axisymmetric_schwarzschild_xcts(128, 16);
+   const AxisymmetricSchwarzschildXctsError fine =
+      solve_axisymmetric_schwarzschild_xcts(256, 32);
+   const amrex::Real conformal_order = std::log(
+      coarse.conformal / fine.conformal
+   ) / std::log(2.0);
+   const amrex::Real lapse_order = std::log(
+      coarse.lapse_conformal / fine.lapse_conformal
+   ) / std::log(2.0);
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "axisymmetric_schwarzschild_xcts coarse_conformal_error="
+                << coarse.conformal
+                << " fine_conformal_error=" << fine.conformal
+                << " conformal_order=" << conformal_order
+                << " fine_lapse_conformal_error="
+                << fine.lapse_conformal
+                << " lapse_order=" << lapse_order
+                << " shift_error=" << fine.shift
+                << " extrinsic_error=" << fine.extrinsic
+                << " coupled_iterations="
+                << fine.result.coupled_iterations
+                << " relative_update=" << fine.result.relative_update
+                << " residuals=(" << fine.result.hamiltonian_residual
+                << "," << fine.result.lapse_residual
+                << "," << fine.result.momentum_residual << ")\n";
+   }
+   return coarse.result.converged
+      && fine.result.converged
+      && std::isfinite(conformal_order)
+      && std::isfinite(lapse_order)
+      && conformal_order > 1.7
+      && lapse_order > 1.7
+      && fine.conformal < 1.0e-3
+      && fine.lapse_conformal < 1.0e-3
+      && fine.shift < 1.0e-13
+      && fine.extrinsic < 1.0e-13;
+}
 #endif
 
 bool validate_tov_solution()
@@ -2194,6 +2445,9 @@ int main(int argc, char* argv[])
          return_code = 1;
       }
       if (!validate_axisymmetric_tov_xcts()) {
+         return_code = 1;
+      }
+      if (!validate_axisymmetric_schwarzschild_xcts()) {
          return_code = 1;
       }
 #endif

@@ -196,7 +196,7 @@ static constexpr PhysicalSystemSet AllFluidSystems = HydroSystems | PhysicalSyst
 // This is the single source of truth for IC/system compatibility. A Newtonian
 // profile admitted for RHD/RMHD is converted through primitive variables; that
 // does not make its Newtonian analytic evolution an exact relativistic test.
-static constexpr std::array<InitialDataOption, 34> InitialDataOptions{{
+static constexpr std::array<InitialDataOption, 35> InitialDataOptions{{
    {"sin_wave", AllFluidSystems},
    {"advection_medley", HydroSystems},
    {"characteristic_medley", HydroSystems},
@@ -216,6 +216,7 @@ static constexpr std::array<InitialDataOption, 34> InitialDataOptions{{
    {"tov", physical_system_set(PhysicalSystem::RHD)},
    {"rotating_star", physical_system_set(PhysicalSystem::RHD)},
    {"equilibrium_torus", physical_system_set(PhysicalSystem::RHD)},
+   {"black_hole", physical_system_set(PhysicalSystem::RHD)},
    {"hydro_beam", HydroSystems},
    {"sod_x", AllFluidSystems},
    {"sod_plane", AllFluidSystems},

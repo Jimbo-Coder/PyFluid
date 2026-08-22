@@ -31,6 +31,11 @@ struct ConformalConstraintSummary {
    bool converged = false;
 };
 
+struct ConformalBlackHoleParameters {
+   bool active = false;
+   amrex::Real mass = 1.0;
+};
+
 struct ConformalMaterializationResult {
    int matter_iterations = 0;
    amrex::Real relative_matter_update = 0.0;
@@ -57,6 +62,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    EOSParams const& eos,
    InitialDataFieldSelection const& fields,
    ConformalConstraintFormulation formulation,
+   ConformalBlackHoleParameters const& black_hole,
    RotatingStarParameters const& rotating_star,
    EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime = false,

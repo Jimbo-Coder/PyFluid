@@ -1495,7 +1495,8 @@ void write_physical_initial_data(
       metadata << "# source_ic=" << cfg.ic << '\n';
       metadata << "# spacetime_initial_data="
                << cfg.spacetime_initial_data << '\n';
-      if (cfg.spacetime_initial_data == "kerr_schild") {
+      if (cfg.spacetime_initial_data == "kerr_schild"
+          || cfg.ic == "black_hole") {
          metadata << "# black_hole_mass="
                   << output_metadata_real_string(cfg.spacetime_mass) << '\n';
          metadata << "# black_hole_spin1="
@@ -1981,7 +1982,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          );
       }
    }
-   if (result.spacetime_initial_data == "kerr_schild") {
+   if (result.spacetime_initial_data == "kerr_schild"
+       || result.source_ic == "black_hole") {
       result.black_hole_mass = required_metadata_real(
          metadata, "black_hole_mass", path
       );
@@ -2016,8 +2018,10 @@ PhysicalInitialDataMetadata read_physical_initial_data(
           || result.black_hole_fill_radius
              != cfg.spacetime_black_hole_fill_radius) {
          amrex::Abort(
-            "physical-ID Kerr-Schild parameters are incompatible with the "
-            "target in " + path
+            std::string("physical-ID ")
+            + (result.spacetime_initial_data == "kerr_schild"
+                  ? "Kerr-Schild" : "black-hole XCTS")
+            + " parameters are incompatible with the target in " + path
          );
       }
    }
@@ -2203,7 +2207,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.rotation_center[2],
    };
    PhysicalIdRigidTransform rigid_transform;
-   if (result.spacetime_initial_data == "kerr_schild") {
+   if (result.spacetime_initial_data == "kerr_schild"
+       || result.source_ic == "black_hole") {
       rigid_transform.source_origin = {
          result.black_hole_origin[0],
          result.black_hole_origin[1],

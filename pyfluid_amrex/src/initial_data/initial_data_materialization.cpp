@@ -170,7 +170,11 @@ amrex::Real axisymmetric_nodal_derivative(
    }
    int lower_i = i - 1;
    int upper_i = i + 1;
-   if (i == domain_hi.x) {
+   const bool radial_origin = radial_faces[0] == 0.0;
+   if (i == domain_lo.x && !radial_origin) {
+      lower_i = i + 1;
+      upper_i = i + 2;
+   } else if (i == domain_hi.x) {
       lower_i = i - 2;
       upper_i = i - 1;
    }
@@ -241,12 +245,75 @@ void materialize_axisymmetric_cell_geometry(
    amrex::ignore_unused(hierarchy);
 }
 
+void enforce_axisymmetric_radial_vertex_boundary(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::MultiFab const& cell_field,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   amrex::Real asymptotic_value,
+   amrex::MultiFab& vertex_field
+)
+{
+   const InitialDataCoordinateLine radial = hierarchy.coordinate_line(0, 0);
+   const amrex::Box cell_domain = hierarchy.geometry[0].Domain();
+   const amrex::Box vertex_domain = amrex::surroundingNodes(cell_domain);
+   const amrex::Dim3 cell_lo = amrex::lbound(cell_domain);
+   const amrex::Dim3 cell_hi = amrex::ubound(cell_domain);
+   const amrex::Dim3 vertex_lo = amrex::lbound(vertex_domain);
+   const amrex::Dim3 vertex_hi = amrex::ubound(vertex_domain);
+   const bool has_inner_shell = radial.faces.front() > 0.0;
+   const amrex::Real inner_width = radial.widths.front();
+   const amrex::Real outer_width = radial.widths.back();
+   for (amrex::MFIter mfi(vertex_field); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.validbox();
+      const auto cell = cell_field.const_array(mfi);
+      const auto coefficient_a = boundary.coefficient_a(0).const_array(mfi);
+      const auto coefficient_b = boundary.coefficient_b(0).const_array(mfi);
+      const auto coefficient_c = boundary.coefficient_c(0).const_array(mfi);
+      const auto vertex = vertex_field.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const bool lower = has_inner_shell && i == vertex_lo.x;
+         const bool upper = i == vertex_hi.x;
+         if (!lower && !upper) {
+            return;
+         }
+         const int cell_i = lower ? cell_lo.x : cell_hi.x;
+         const int ghost_i = lower ? cell_lo.x - 1 : cell_hi.x + 1;
+         const amrex::Real width = lower ? inner_width : outer_width;
+         const int first_j = amrex::max(cell_lo.y, amrex::min(j - 1, cell_hi.y));
+         const int second_j = amrex::max(cell_lo.y, amrex::min(j, cell_hi.y));
+         amrex::Real face_sum = 0.0;
+         int face_count = 0;
+         for (int cell_j = first_j; cell_j <= second_j; ++cell_j) {
+            const amrex::Real a = coefficient_a(ghost_i, cell_j, k, 0);
+            const amrex::Real b = coefficient_b(ghost_i, cell_j, k, 0);
+            const amrex::Real c = coefficient_c(ghost_i, cell_j, k, 0)
+               + a * asymptotic_value;
+            const amrex::Real denominator = lower
+               ? 0.5 * a - b / width
+               : 0.5 * a + b / width;
+            const amrex::Real delta = lower
+               ? -(0.5 * a + b / width) / denominator
+               : (b / width - 0.5 * a) / denominator;
+            const amrex::Real gamma = c / denominator;
+            face_sum += 0.5 * (
+               (1.0 + delta) * cell(cell_i, cell_j, k, 0) + gamma
+            );
+            ++face_count;
+         }
+         vertex(i, j, k, 0) = face_sum / face_count;
+      });
+   }
+}
+
 void materialize_axisymmetric_vertex_geometry(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::MultiFab& conformal_factor,
    amrex::MultiFab& lapse_times_conformal_factor,
    amrex::MultiFab& azimuthal_shift,
    InitialDataEllipticBoundaryConditions const& scalar_boundary,
+   InitialDataEllipticBoundaryConditions const& lapse_boundary,
    InitialDataEllipticBoundaryConditions const& shift_boundary,
    amrex::MultiFab& spacetime_state
 )
@@ -266,6 +333,9 @@ void materialize_axisymmetric_vertex_geometry(
    const auto scalar_boundary_records = initial_data_boundary_records(
       hierarchy, scalar_boundary
    );
+   const auto lapse_boundary_records = initial_data_boundary_records(
+      hierarchy, lapse_boundary
+   );
    const auto shift_boundary_records = initial_data_boundary_records(
       hierarchy, shift_boundary
    );
@@ -280,7 +350,7 @@ void materialize_axisymmetric_vertex_geometry(
       hierarchy,
       amrex::Vector<amrex::MultiFab*>{&vertex_lapse_psi},
       amrex::Vector<amrex::MultiFab const*>{&lapse_times_conformal_factor},
-      scalar_boundary_records,
+      lapse_boundary_records,
       2
    );
    materialize_initial_data_vertices(
@@ -298,12 +368,33 @@ void materialize_axisymmetric_vertex_geometry(
    detail::fill_initial_data_vertex_ghosts(
       hierarchy,
       amrex::Vector<amrex::MultiFab*>{&vertex_lapse_psi},
-      scalar_boundary_records
+      lapse_boundary_records
    );
    detail::fill_initial_data_vertex_ghosts(
       hierarchy,
       amrex::Vector<amrex::MultiFab*>{&vertex_beta},
       shift_boundary_records
+   );
+   enforce_axisymmetric_radial_vertex_boundary(
+      hierarchy,
+      conformal_factor,
+      scalar_boundary,
+      1.0,
+      vertex_psi
+   );
+   enforce_axisymmetric_radial_vertex_boundary(
+      hierarchy,
+      lapse_times_conformal_factor,
+      lapse_boundary,
+      1.0,
+      vertex_lapse_psi
+   );
+   enforce_axisymmetric_radial_vertex_boundary(
+      hierarchy,
+      azimuthal_shift,
+      shift_boundary,
+      0.0,
+      vertex_beta
    );
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto spacing = hierarchy.geometry[0].CellSizeArray();
@@ -336,7 +427,8 @@ void materialize_axisymmetric_vertex_geometry(
          const amrex::Real radius = radial_faces[i - domain_lo.x];
          const amrex::Real theta = problo[1]
             + (j - domain_lo.y) * spacing[1];
-         const bool radial_origin = i == domain_lo.x;
+         const bool radial_origin = radial_faces[0] == 0.0
+            && i == domain_lo.x;
          const bool angular_axis = j == domain_lo.y
             || (upper_is_axis && j == domain_hi.y);
          if (radial_origin || angular_axis) {
@@ -357,12 +449,20 @@ void materialize_axisymmetric_vertex_geometry(
                generated::xcts_conformal_extrinsic_scale(
                   psi(i, j, k, 0), lapse_psi(i, j, k, 0)
                );
-            a_r_phi = scale * (
-               d_beta_r - beta(i, j, k, 0) / radius
-            );
-            a_theta_phi = scale * (
+            const amrex::Real radial_numerator =
+               d_beta_r - beta(i, j, k, 0) / radius;
+            const amrex::Real angular_numerator = (
                d_beta_theta - beta(i, j, k, 0) / std::tan(theta)
             ) / radius;
+            // The Cook--Pfeiffer Schwarzschild inner boundary has
+            // alpha*psi=0 and identically zero shift.  Avoid forming
+            // infinity times an exact zero when materializing that analytic
+            // zero-extrinsic-curvature limit.  A future spinning owner must
+            // supply and validate its finite horizon limit separately.
+            a_r_phi = radial_numerator == 0.0
+               ? 0.0 : scale * radial_numerator;
+            a_theta_phi = angular_numerator == 0.0
+               ? 0.0 : scale * angular_numerator;
          }
          store_z4c_state(
             geometry,
@@ -1714,8 +1814,10 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
    amrex::Vector<amrex::MultiFab*> const& spacetime_state,
    amrex::Vector<amrex::MultiFab*> const& cell_spacetime,
    EOSParams const& eos,
+   ConformalBlackHoleParameters const& black_hole,
    RotatingStarParameters const& rotating_star,
    EquilibriumTorusParameters const& equilibrium_torus,
+   bool seed_from_spacetime,
    ConformalContinuationObserver const& continuation_observer
 )
 {
@@ -1744,56 +1846,106 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
       grids, distribution, primitive_state[0]->nComp(), 0
    );
 
-   // Every ID source, including an analytic TOV seed and a loaded portable
-   // artifact, enters through the same ADM/Z4c handoff.  Extract the reduced
-   // XCTS unknowns from that state instead of adding a second seed contract.
-   transfer_grid_field_centering(
-      *cell_spacetime[0],
-      *spacetime_state[0],
-      hierarchy.geometry[0],
-      2
-   );
-   for (amrex::MFIter mfi(conformal_factor, amrex::TilingIfNotGPU());
-        mfi.isValid(); ++mfi) {
-      const amrex::Box box = mfi.tilebox();
-      const auto seed = cell_spacetime[0]->const_array(mfi);
-      const auto psi = conformal_factor.array(mfi);
-      const auto lapse_psi = lapse_times_conformal_factor.array(mfi);
-      const auto beta = azimuthal_shift.array(mfi);
-      const auto extrinsic = conformal_extrinsic.array(mfi);
-      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
-         int i, int j, int k
-      ) noexcept {
-         const Z4cState state = load_z4c_state(seed, i, j, k);
-         const amrex::Real value = 1.0 / std::sqrt(std::sqrt(state.chi));
-         const amrex::Real value_squared = value * value;
-         const amrex::Real value_sixth = value_squared * value_squared
-            * value_squared;
-         psi(i, j, k, 0) = value;
-         lapse_psi(i, j, k, 0) = state.lapse * value;
-         beta(i, j, k, 0) = state.shift3;
-         extrinsic(i, j, k, CONFORMAL_A11) = 0.0;
-         extrinsic(i, j, k, CONFORMAL_A12) = 0.0;
-         extrinsic(i, j, k, CONFORMAL_A13) =
-            state.a_tilde13 * value_sixth;
-         extrinsic(i, j, k, CONFORMAL_A22) = 0.0;
-         extrinsic(i, j, k, CONFORMAL_A23) =
-            state.a_tilde23 * value_sixth;
-         extrinsic(i, j, k, CONFORMAL_A33) = 0.0;
-         extrinsic(i, j, k, CONFORMAL_A_SQUARED) = 2.0 * (
-            extrinsic(i, j, k, CONFORMAL_A13)
-               * extrinsic(i, j, k, CONFORMAL_A13)
-            + extrinsic(i, j, k, CONFORMAL_A23)
-               * extrinsic(i, j, k, CONFORMAL_A23)
+   // Stellar and loaded portable ID sources enter through the same ADM/Z4c
+   // handoff. Extract their reduced XCTS unknowns from that state. The fresh
+   // vacuum black-hole owner below uses its analytic Schwarzschild iterate as
+   // the boundary-condition control and initial nonlinear guess.
+   const InitialDataCoordinateLine radial_coordinates =
+      hierarchy.coordinate_line(0, 0);
+   const amrex::Real horizon_radius = 0.5 * black_hole.mass;
+   if (black_hole.active) {
+      const amrex::Real scale = std::max(black_hole.mass, amrex::Real(1.0));
+      if (!(black_hole.mass > 0.0)
+          || std::abs(hierarchy.geometry[0].ProbLo(0) - horizon_radius)
+             > 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale
+          || std::abs(radial_coordinates.faces.front() - horizon_radius)
+             > 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale
+          || rotating_star.active || equilibrium_torus.active) {
+         amrex::Abort(
+            "the first spherical-shell black-hole XCTS owner requires a "
+            "vacuum Schwarzschild horizon at r=M/2"
          );
-      });
+      }
+   }
+   if (black_hole.active && !seed_from_spacetime) {
+      amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+         radial_coordinates.centers.data(), radial_coordinates.centers.size()
+      );
+      const amrex::Real* radial_center = radial_center_storage.data();
+      const amrex::Dim3 domain_lo = amrex::lbound(
+         hierarchy.geometry[0].Domain()
+      );
+      for (amrex::MFIter mfi(conformal_factor, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto psi = conformal_factor.array(mfi);
+         const auto lapse_psi = lapse_times_conformal_factor.array(mfi);
+         const auto beta = azimuthal_shift.array(mfi);
+         const auto extrinsic = conformal_extrinsic.array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const amrex::Real radius = radial_center[i - domain_lo.x];
+            const amrex::Real compactness = horizon_radius / radius;
+            psi(i, j, k, 0) = 1.0 + compactness;
+            lapse_psi(i, j, k, 0) = 1.0 - compactness;
+            beta(i, j, k, 0) = 0.0;
+            for (int component = 0;
+                 component < CONFORMAL_A_NUM_COMPONENTS;
+                 ++component) {
+               extrinsic(i, j, k, component) = 0.0;
+            }
+         });
+      }
+   } else {
+      transfer_grid_field_centering(
+         *cell_spacetime[0],
+         *spacetime_state[0],
+         hierarchy.geometry[0],
+         2
+      );
+      for (amrex::MFIter mfi(conformal_factor, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto seed = cell_spacetime[0]->const_array(mfi);
+         const auto psi = conformal_factor.array(mfi);
+         const auto lapse_psi = lapse_times_conformal_factor.array(mfi);
+         const auto beta = azimuthal_shift.array(mfi);
+         const auto extrinsic = conformal_extrinsic.array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const Z4cState state = load_z4c_state(seed, i, j, k);
+            const amrex::Real value = 1.0 / std::sqrt(std::sqrt(state.chi));
+            const amrex::Real value_squared = value * value;
+            const amrex::Real value_sixth = value_squared * value_squared
+               * value_squared;
+            psi(i, j, k, 0) = value;
+            lapse_psi(i, j, k, 0) = state.lapse * value;
+            beta(i, j, k, 0) = state.shift3;
+            extrinsic(i, j, k, CONFORMAL_A11) = 0.0;
+            extrinsic(i, j, k, CONFORMAL_A12) = 0.0;
+            extrinsic(i, j, k, CONFORMAL_A13) =
+               state.a_tilde13 * value_sixth;
+            extrinsic(i, j, k, CONFORMAL_A22) = 0.0;
+            extrinsic(i, j, k, CONFORMAL_A23) =
+               state.a_tilde23 * value_sixth;
+            extrinsic(i, j, k, CONFORMAL_A33) = 0.0;
+            extrinsic(i, j, k, CONFORMAL_A_SQUARED) = 2.0 * (
+               extrinsic(i, j, k, CONFORMAL_A13)
+                  * extrinsic(i, j, k, CONFORMAL_A13)
+               + extrinsic(i, j, k, CONFORMAL_A23)
+                  * extrinsic(i, j, k, CONFORMAL_A23)
+            );
+         });
+      }
    }
    auto scalar_boundary = InitialDataEllipticBoundaryConditions::constant(
       hierarchy,
       1,
-      1.0,
-      0.0,
-      0.0,
+      black_hole.active ? 1.0 / (2.0 * horizon_radius) : 1.0,
+      black_hole.active ? 1.0 : 0.0,
+      black_hole.active ? -1.0 / (2.0 * horizon_radius) : 0.0,
       InitialDataEllipticCentering::cell
    );
    set_initial_data_reflection_boundaries(
@@ -1802,7 +1954,24 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
    set_axisymmetric_spherical_radial_robin_boundary(
       hierarchy, scalar_boundary, {0.0}, 1.0
    );
-   auto lapse_boundary = scalar_boundary.component(0);
+   auto lapse_boundary = black_hole.active
+      ? InitialDataEllipticBoundaryConditions::constant(
+           hierarchy,
+           1,
+           1.0,
+           0.0,
+           -1.0,
+           InitialDataEllipticCentering::cell
+        )
+      : scalar_boundary.component(0);
+   if (black_hole.active) {
+      set_initial_data_reflection_boundaries(
+         hierarchy, lapse_boundary, scalar_symmetries(1)
+      );
+      set_axisymmetric_spherical_radial_robin_boundary(
+         hierarchy, lapse_boundary, {0.0}, 1.0
+      );
+   }
    auto shift_boundary = InitialDataEllipticBoundaryConditions::constant(
       hierarchy,
       1,
@@ -1853,11 +2022,18 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          lapse_times_conformal_factor,
          azimuthal_shift,
          scalar_boundary,
+         lapse_boundary,
          shift_boundary,
          *spacetime_state[0]
       );
    };
    const auto fill_sources = [&]() {
+      if (black_hole.active) {
+         energy_density.setVal(0.0);
+         azimuthal_momentum_density.setVal(0.0);
+         stress_trace.setVal(0.0);
+         return;
+      }
       materialize_axisymmetric_cell_geometry(
          hierarchy,
          conformal_factor,
@@ -1895,6 +2071,39 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          });
       }
    };
+
+   if (black_hole.active) {
+      fill_sources();
+      const XctsResult constraints =
+         solve_axisymmetric_spherical_xcts_constraints(
+            hierarchy,
+            conformal_fields,
+            lapse_fields,
+            shift_fields,
+            extrinsic_fields,
+            energy_fields,
+            momentum_fields,
+            stress_fields,
+            scalar_boundary,
+            lapse_boundary,
+            shift_boundary,
+            xcts_options
+         );
+      if (!constraints.converged) {
+         amrex::Abort("spherical-shell black-hole XCTS did not converge");
+      }
+      materialize_current_geometry();
+      ConformalMaterializationResult result;
+      result.constraints = {
+         constraints.coupled_iterations,
+         constraints.relative_update,
+         constraints.hamiltonian_residual,
+         constraints.lapse_residual,
+         constraints.momentum_residual,
+         constraints.converged,
+      };
+      return result;
+   }
 
    const bool coupled_equilibrium_torus = equilibrium_torus.active
       && equilibrium_torus.gravity == EquilibriumTorusGravity::Coupled;
@@ -2199,6 +2408,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    EOSParams const& eos,
    InitialDataFieldSelection const& fields,
    ConformalConstraintFormulation formulation,
+   ConformalBlackHoleParameters const& black_hole,
    RotatingStarParameters const& rotating_star,
    EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime,
@@ -2206,9 +2416,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
 )
 {
 #if (AMREX_SPACEDIM == 2)
-   amrex::ignore_unused(
-      fields, seed_from_spacetime
-   );
+   amrex::ignore_unused(fields);
    if (system != PhysicalSystem::RHD
        || formulation != ConformalConstraintFormulation::xcts) {
       amrex::Abort(
@@ -2220,19 +2428,26 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       EOSRuntime
    >(
       hierarchy, primitive_state, spacetime_state,
-      cell_spacetime, eos, rotating_star, equilibrium_torus,
+      cell_spacetime, eos, black_hole, rotating_star, equilibrium_torus,
+      seed_from_spacetime,
       continuation_observer
    );
 #elif (AMREX_SPACEDIM != 3)
    amrex::ignore_unused(
       hierarchy, primitive_state, spacetime_state,
       cell_spacetime, system, eos_method, eos, fields, formulation,
-      rotating_star, equilibrium_torus, seed_from_spacetime,
+      black_hole, rotating_star, equilibrium_torus, seed_from_spacetime,
       continuation_observer
    );
    amrex::Abort("conformal constraint initial data requires 2D or 3D");
    return {};
 #else
+   if (black_hole.active) {
+      amrex::Abort(
+         "constraint-solved black-hole XCTS currently requires the native "
+         "2D spherical r-theta shell owner"
+      );
+   }
    if (system == PhysicalSystem::RMHD) {
       return materialize_conformal_initial_data_method<
          PhysicalSystem::RMHD,

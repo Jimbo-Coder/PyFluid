@@ -239,6 +239,22 @@ relative_tilt = true
 reflection_class = "object_dependent"
 
 [[initial_data_owner]]
+name = "spherical_axisymmetric_black_hole_xcts"
+cpp_id = "SphericalAxisymmetricBlackHoleXcts"
+label = "Spherical axisymmetric black-hole XCTS"
+description = "Reduced r-theta XCTS construction on a finite apparent-horizon shell."
+dimension = 2
+coordinate = "spherical"
+axes = ["r", "theta"]
+central_objects = ["black_hole"]
+spacetime_methods = ["xcts"]
+disk_kinds = ["none"]
+disk_gravity_modes = ["none"]
+grid_kinds = ["uniform_shell", "mapped_radial_shell"]
+relative_tilt = false
+reflection_class = "axis_equatorial"
+
+[[initial_data_owner]]
 name = "cartesian_kerr_schild"
 cpp_id = "CartesianKerrSchild"
 label = "Cartesian analytic Kerr-Schild"

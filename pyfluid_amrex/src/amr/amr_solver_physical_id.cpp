@@ -525,19 +525,30 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
 #if (AMREX_SPACEDIM == 2)
    if (cfg_.initial_data_radial_grid == "adaptive") {
       const RelativisticInitialDataView provider = initial_data_provider_->view();
-      if (!provider.tov.active() || finestLevel() != 0) {
+      const bool black_hole_xcts = cfg_.ic == "black_hole"
+         && cfg_.spacetime_initial_data == "xcts";
+      if ((!provider.tov.active() && !black_hole_xcts)
+          || finestLevel() != 0) {
          amrex::Abort(
-            "adaptive stellar ID loading requires one level and a TOV seed"
+            "adaptive reduced ID loading requires one level and a native "
+            "TOV or black-hole XCTS source"
          );
       }
       initial_data_coordinate_faces_.resize(1);
-      initial_data_coordinate_faces_[0][0] = stellar_adaptive_radial_faces(
-         provider.tov.surface_radius,
-         Geom(0).ProbHi(0),
-         Geom(0).Domain().length(0),
-         cfg_.initial_data_adaptive_source_radius_factor,
-         cfg_.initial_data_adaptive_exterior_fraction
-      );
+      initial_data_coordinate_faces_[0][0] = black_hole_xcts
+         ? stretched_radial_shell_faces(
+              0.5 * cfg_.spacetime_mass,
+              Geom(0).ProbHi(0),
+              Geom(0).Domain().length(0),
+              cfg_.initial_data_adaptive_shell_width_ratio
+           )
+         : stellar_adaptive_radial_faces(
+              provider.tov.surface_radius,
+              Geom(0).ProbHi(0),
+              Geom(0).Domain().length(0),
+              cfg_.initial_data_adaptive_source_radius_factor,
+              cfg_.initial_data_adaptive_exterior_fraction
+           );
    }
 #endif
    for (int level = 0; level <= finestLevel(); ++level) {
@@ -722,8 +733,16 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          << cfg_.initial_data_disk << " matter component\n";
    }
    bool resolve_changed_reduced_rns = false;
+   bool resolve_changed_reduced_black_hole = false;
 #if (AMREX_SPACEDIM == 2)
    resolve_changed_reduced_rns = configured_rotation
+      && cfg_.initial_data_solve_only
+      && cfg_.spacetime_initial_data == "xcts"
+      && cfg_.mesh_coordinate == "spherical"
+      && cfg_.mesh_axes == "r theta"
+      && !metadata.exact_layout;
+   resolve_changed_reduced_black_hole = metadata.source_ic == "black_hole"
+      && cfg_.ic == "black_hole"
       && cfg_.initial_data_solve_only
       && cfg_.spacetime_initial_data == "xcts"
       && cfg_.mesh_coordinate == "spherical"
@@ -736,6 +755,11 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
             "r-theta grid at omega="
          << cfg_.initial_data_angular_velocity << '\n';
    }
+   if (resolve_changed_reduced_black_hole) {
+      amrex::Print()
+         << "re-solving black-hole physical initial data on the changed "
+            "r-theta shell\n";
+   }
    if ((continue_rotation || resolve_changed_reduced_rns)
        && !(metadata.injection_energy > 0.0)) {
       amrex::Abort(
@@ -744,7 +768,7 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       );
    }
    return continue_rotation || resolve_changed_reduced_rns
-      || add_torus;
+      || resolve_changed_reduced_black_hole || add_torus;
 }
 
 void AmrSolverBase::project_materialized_initial_face_b()

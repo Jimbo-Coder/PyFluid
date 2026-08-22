@@ -4,13 +4,21 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import re
 import shutil
 import subprocess
 from pathlib import Path
 
-from plotfile_reader import level_count, read_aux_field
+import numpy as np
+
+from plotfile_reader import (
+    level_count,
+    parse_plot_header,
+    read_aux_field,
+    read_level_state,
+)
 from validation_common import (
     OPEN_POLICY,
     ROOT,
@@ -26,11 +34,22 @@ from validation_common import (
 
 
 BASE_INPUT = ROOT / "pyfluid_amrex/inputs/kerr_schild_filled_evolution_3d.in"
+SPHERICAL_XCTS_INPUT = (
+    ROOT / "pyfluid_amrex/inputs/black_hole_xcts_spherical_id_2d.in"
+)
 RUN_ROOT = ROOT / "runs/current/black_hole_validation"
 RESULTS = RUN_ROOT / "black_hole_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
+FIELD_CATALOG = ROOT / "pyfluid_amrex/generated/field_catalog.json"
 RECOVERY = re.compile(
     r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)"
+)
+XCTS_SOLVE = re.compile(
+    r"xcts initial data: matter_iterations=(\d+) .*?"
+    r"coupled_iterations=(\d+) "
+    r"hamiltonian_residual=([0-9.eE+-]+) "
+    r"lapse_residual=([0-9.eE+-]+) "
+    r"momentum_residual=([0-9.eE+-]+)"
 )
 CONSTRAINT_FIELDS = (
     "z4c_hamiltonian_linf",
@@ -44,6 +63,244 @@ CONSTRAINT_FIELDS = (
     "z4c_hamiltonian_bh_exterior_l2",
     "z4c_momentum_bh_exterior_linf",
 )
+
+
+def read_artifact_metadata(artifact: Path) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for raw_line in (artifact / "Header.meta").read_text().splitlines():
+        line = raw_line.strip()
+        if not line.startswith("#") or "=" not in line:
+            continue
+        key, value = line[1:].split("=", 1)
+        metadata[key.strip()] = value.strip()
+    return metadata
+
+
+def adm_component_indices() -> dict[str, int]:
+    catalog = json.loads(FIELD_CATALOG.read_text())
+    components = [
+        component["name"]
+        for field in catalog["fields"]
+        if field["role"] == "InitialDataState"
+        and field["sector"] == "Spacetime"
+        for component in field["components"]
+    ]
+    return {name: index for index, name in enumerate(components)}
+
+
+def run_spherical_xcts_case(
+    name: str,
+    overrides: dict[str, str],
+    *,
+    ranks: int,
+    timeout: int | None,
+) -> tuple[Path, Path, str]:
+    run_dir = RUN_ROOT / name
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True)
+    artifact = run_dir / "physical_id"
+    input_path = materialize_run_input(
+        SPHERICAL_XCTS_INPUT,
+        run_dir / "input.in",
+        {
+            "pyfluid.run_name": name,
+            "pyfluid.output_dir": repo_relative(run_dir),
+            "initial_data.output_file": repo_relative(artifact),
+            **overrides,
+        },
+    )
+    completed = run_amrex(
+        dim=2,
+        input_path=input_path,
+        ranks=ranks,
+        timeout=timeout,
+    )
+    (run_dir / "run.log").write_text(completed.stdout)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"{name} failed; see {repo_relative(run_dir / 'run.log')}"
+        )
+    if not artifact.is_dir():
+        raise RuntimeError(f"{name} did not write its physical-ID artifact")
+    recovery = RECOVERY.findall(completed.stdout)
+    if not recovery or tuple(int(value) for value in recovery[-1]) != (0, 0):
+        raise RuntimeError(f"{name} used relativistic recovery during ID")
+    solve = XCTS_SOLVE.search(completed.stdout)
+    if solve is None:
+        raise RuntimeError(f"{name} did not report its XCTS solve")
+    residual = max(abs(float(solve.group(index))) for index in (3, 4, 5))
+    if residual > 1.0e-10:
+        raise RuntimeError(f"{name} elliptic residual is {residual:.3e}")
+    return run_dir, artifact, completed.stdout
+
+
+def validate_spherical_xcts_black_hole(
+    *, ranks: int, timeout: int | None
+) -> dict[str, object]:
+    _, coarse_artifact, _ = run_spherical_xcts_case(
+        "schwarzschild_xcts_spherical_shell_n128",
+        {
+            "amr.n_cell": "128 16",
+            "amr.max_grid_size": "64",
+        },
+        ranks=ranks,
+        timeout=timeout,
+    )
+    run_dir, artifact, log_text = run_spherical_xcts_case(
+        "schwarzschild_xcts_spherical_shell_changed_n256",
+        {"initial_data.input_file": repo_relative(coarse_artifact)},
+        ranks=ranks,
+        timeout=timeout,
+    )
+    if "re-solving black-hole physical initial data on the changed r-theta shell" \
+            not in log_text:
+        raise RuntimeError("changed-grid black-hole load skipped its XCTS solve")
+
+    source_metadata = read_artifact_metadata(coarse_artifact)
+    metadata = read_artifact_metadata(artifact)
+    if metadata.get("source_ic") != "black_hole" \
+            or metadata.get("spacetime_initial_data") != "xcts" \
+            or metadata.get("mesh_coordinate") != "spherical" \
+            or metadata.get("mesh_axes") != "r theta":
+        raise RuntimeError("spherical black-hole artifact lost its owner identity")
+    radial_key = "coordinate_faces_0_0"
+    if metadata.get(radial_key) == source_metadata.get(radial_key):
+        raise RuntimeError("changed-grid black-hole re-solve retained the source map")
+    radial_faces = np.asarray(
+        [float(value) for value in metadata[radial_key].split(",")]
+    )
+
+    geometry_file = artifact / "adm_geometry.h5"
+    names, dimension, _ = parse_plot_header(geometry_file)
+    state = read_level_state(geometry_file, names, dimension, 0)
+    if dimension != 2 or state.shape != (16, 257, 33):
+        raise RuntimeError(
+            f"unexpected spherical XCTS ADM shape {state.shape} in {dimension}D"
+        )
+    if not np.all(np.isfinite(state)):
+        raise RuntimeError("spherical XCTS ADM artifact contains nonfinite values")
+    component = adm_component_indices()
+    if len(component) != state.shape[0]:
+        raise RuntimeError("ADM artifact disagrees with the generated field catalog")
+
+    mass = float(metadata["black_hole_mass"])
+    isotropic_radius = 0.5 * mass
+    conformal_factor = 1.0 + isotropic_radius / radial_faces
+    exact_metric = conformal_factor**4
+    exact_lapse = (
+        (1.0 - isotropic_radius / radial_faces) / conformal_factor
+    )
+    diagonal = state[
+        [component[name] for name in ("gamma11", "gamma22", "gamma33")]
+    ]
+    metric_relative_error = float(
+        np.max(
+            np.abs(diagonal - exact_metric[None, :, None])
+            / exact_metric[None, :, None]
+        )
+    )
+    lapse_linf_error = float(
+        np.max(np.abs(state[component["lapse"]] - exact_lapse[:, None]))
+    )
+    zero_components = state[
+        [
+            component[name]
+            for name in (
+                "gamma12",
+                "gamma13",
+                "gamma23",
+                "k11",
+                "k12",
+                "k13",
+                "k22",
+                "k23",
+                "k33",
+                "shift1",
+                "shift2",
+                "shift3",
+            )
+        ]
+    ]
+    zero_field_linf = float(np.max(np.abs(zero_components)))
+    theta_invariance = max(
+        float(np.max(np.ptp(component, axis=1))) for component in state
+    )
+    if metric_relative_error > 2.0e-3 \
+            or lapse_linf_error > 2.0e-5 \
+            or zero_field_linf > 1.0e-14 \
+            or theta_invariance > 2.0e-12:
+        raise RuntimeError(
+            "spherical XCTS artifact failed its analytic Schwarzschild check: "
+            f"metric={metric_relative_error:.3e}, "
+            f"lapse={lapse_linf_error:.3e}, "
+            f"zero={zero_field_linf:.3e}, "
+            f"theta={theta_invariance:.3e}"
+        )
+    if state[component["lapse"], 0, :].any():
+        raise RuntimeError("spherical XCTS horizon lapse is not exactly zero")
+
+    solve = XCTS_SOLVE.search(log_text)
+    assert solve is not None
+    residual = max(abs(float(solve.group(index))) for index in (3, 4, 5))
+    artifact_bytes = sum(
+        path.stat().st_size for path in artifact.rglob("*") if path.is_file()
+    )
+    return {
+        "case": "schwarzschild_xcts_spherical_shell_changed_n256",
+        "status": "PASS",
+        "steps": 0,
+        "c2p_fallbacks": 0,
+        "atmosphere_resets": 0,
+        "xcts_metric_relative_error": metric_relative_error,
+        "xcts_lapse_linf_error": lapse_linf_error,
+        "xcts_zero_field_linf": zero_field_linf,
+        "xcts_theta_invariance": theta_invariance,
+        "xcts_elliptic_residual": residual,
+        "xcts_artifact_bytes": artifact_bytes,
+        "run_dir": repo_relative(run_dir),
+    }
+
+
+def validate_spherical_xcts_rejection(
+    name: str,
+    overrides: dict[str, str],
+    expected: str,
+    *,
+    ranks: int,
+    timeout: int | None,
+) -> dict[str, object]:
+    run_dir = RUN_ROOT / name
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True)
+    input_path = materialize_run_input(
+        SPHERICAL_XCTS_INPUT,
+        run_dir / "input.in",
+        {
+            "pyfluid.run_name": name,
+            "pyfluid.output_dir": repo_relative(run_dir),
+            "initial_data.output_file": repo_relative(run_dir / "physical_id"),
+            **overrides,
+        },
+    )
+    completed = run_amrex(
+        dim=2,
+        input_path=input_path,
+        ranks=ranks,
+        timeout=timeout,
+    )
+    (run_dir / "run.log").write_text(completed.stdout)
+    if completed.returncode == 0 or expected not in completed.stdout:
+        raise RuntimeError(f"invalid spherical XCTS case {name} was accepted")
+    return {
+        "case": name,
+        "status": "PASS",
+        "steps": 0,
+        "c2p_fallbacks": 0,
+        "atmosphere_resets": 0,
+        "run_dir": repo_relative(run_dir),
+    }
 
 
 def validate_apparent_horizon_core() -> None:
@@ -473,6 +730,32 @@ def main() -> int:
 
     results: list[dict[str, object]] = []
     scalar_rows: list[dict[str, object]] = []
+    results.append(
+        validate_spherical_xcts_black_hole(
+            ranks=args.ranks, timeout=args.timeout
+        )
+    )
+    results.extend(
+        validate_spherical_xcts_rejection(
+            name,
+            overrides,
+            expected,
+            ranks=args.ranks,
+            timeout=args.timeout,
+        )
+        for name, overrides, expected in (
+            (
+                "schwarzschild_xcts_invalid_inner_boundary",
+                {"geometry.prob_lo": "0.4 0.0"},
+                "vacuum Schwarzschild horizon at r=M/2",
+            ),
+            (
+                "schwarzschild_xcts_invalid_origin",
+                {"spacetime.origin1": "1.0"},
+                "origin-centered solve-only 2D spherical r-theta XCTS shell",
+            ),
+        )
+    )
     validate_apparent_horizon_core()
     horizon, horizon_scalar = validate_apparent_horizon_run(
         ranks=args.ranks, timeout=args.timeout
@@ -724,6 +1007,12 @@ def main() -> int:
         "ah_area_relative_error",
         "ah_horizon_cells",
         "ah_excision_cells",
+        "xcts_metric_relative_error",
+        "xcts_lapse_linf_error",
+        "xcts_zero_field_linf",
+        "xcts_theta_invariance",
+        "xcts_elliptic_residual",
+        "xcts_artifact_bytes",
         "run_dir",
     )
     write_tsv(RESULTS, results, fields)

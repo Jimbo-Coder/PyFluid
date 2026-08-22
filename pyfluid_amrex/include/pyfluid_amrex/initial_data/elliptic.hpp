@@ -76,6 +76,18 @@ amrex::Vector<amrex::Real> stellar_adaptive_radial_faces(
    amrex::Real exterior_fraction
 );
 
+// Resolve a finite inner boundary while spending progressively fewer radial
+// cells in the smooth exterior. The final cell is
+// outer_to_inner_cell_width_ratio times wider than the first; one recovers a
+// uniform shell. This is suitable for apparent-horizon and excision surfaces,
+// not for a grid containing a regular radial origin.
+amrex::Vector<amrex::Real> stretched_radial_shell_faces(
+   amrex::Real inner_radius,
+   amrex::Real outer_radius,
+   int radial_cells,
+   amrex::Real outer_to_inner_cell_width_ratio
+);
+
 enum class InitialDataEllipticBoundaryType {
    periodic,
    dirichlet,
@@ -177,8 +189,8 @@ void set_initial_data_reflection_boundaries(
 );
 
 // Mark one scalar storage component as an orthonormal azimuthal vector on an
-// r-theta hierarchy: odd at the radial origin and rotation axis, even at the
-// equator. The radial outer condition remains owned by the caller.
+// r-theta hierarchy: odd at a radial origin and the rotation axis, even at the
+// equator. On a shell, both radial conditions remain owned by the caller.
 void set_axisymmetric_spherical_toroidal_regularity(
    InitialDataEllipticHierarchy const& hierarchy,
    InitialDataEllipticBoundaryConditions& boundary,
@@ -249,8 +261,10 @@ InitialDataEllipticResult solve_initial_data_poisson(
 //   sin(theta) d_r(r^2 d_r u)
 //     + d_theta(sin(theta) d_theta u) = r^2 sin(theta) rhs.
 //
-// Callers supply origin, axis/equator, and outer conditions through the
-// ordinary elliptic boundary contract.
+// Callers supply origin or shell-inner, axis/equator, and outer conditions
+// through the ordinary elliptic boundary contract. The tensor-product backend
+// requires a shell's A/B inner operator to be independent of theta;
+// inhomogeneous C data may vary over the inner face.
 InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& solution,

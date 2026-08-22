@@ -52,7 +52,8 @@ enum class InitialDataOwner : int {
    SphericalTov = 0,
    SphericalAxisymmetricXcts = 1,
    CartesianConformalConstraints = 2,
-   CartesianKerrSchild = 3,
+   SphericalAxisymmetricBlackHoleXcts = 3,
+   CartesianKerrSchild = 4,
 };
 
 struct InitialDataOwnerInfo {
@@ -72,10 +73,11 @@ struct InitialDataOwnerInfo {
    std::string_view reflection_class;
 };
 
-inline constexpr std::array<InitialDataOwnerInfo, 4> InitialDataOwnerCatalog = {{
+inline constexpr std::array<InitialDataOwnerInfo, 5> InitialDataOwnerCatalog = {{
    {InitialDataOwner::SphericalTov, "spherical_tov", "Spherical radial TOV", "One-dimensional spherical TOV construction with an optional mapped radial exterior.", 1, "spherical", "r", "tov", "tov", "none", "none", "uniform,mapped_radial", false, "spherical"},
    {InitialDataOwner::SphericalAxisymmetricXcts, "spherical_axisymmetric_xcts", "Spherical axisymmetric XCTS", "Reduced r-theta XCTS construction for circular stars and aligned optional tori.", 2, "spherical", "r theta", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
    {InitialDataOwner::CartesianConformalConstraints, "cartesian_conformal_constraints", "Cartesian conformal constraints", "Full three-dimensional Cartesian CTT, CTTK, or XCTS hierarchy with optional coupled stellar torus.", 3, "cartesian", "x y z", "tov,rotating_star", "ctt,cttk,xcts", "none,equilibrium_torus,tilted_torus", "none,coupled", "uniform,block_amr", true, "object_dependent"},
+   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts, "spherical_axisymmetric_black_hole_xcts", "Spherical axisymmetric black-hole XCTS", "Reduced r-theta XCTS construction on a finite apparent-horizon shell.", 2, "spherical", "r theta", "black_hole", "xcts", "none", "none", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
    {InitialDataOwner::CartesianKerrSchild, "cartesian_kerr_schild", "Cartesian analytic Kerr-Schild", "Exact Kerr-Schild exterior or filled complete-grid black hole with an optional aligned test-fluid torus.", 3, "cartesian", "x y z", "black_hole", "kerr_schild", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"}
 }};
 

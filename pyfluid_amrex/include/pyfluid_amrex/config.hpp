@@ -122,6 +122,7 @@ struct RunConfig {
    std::string initial_data_radial_grid = "uniform";
    amrex::Real initial_data_adaptive_source_radius_factor = 1.5;
    amrex::Real initial_data_adaptive_exterior_fraction = 1.0 / 3.0;
+   amrex::Real initial_data_adaptive_shell_width_ratio = 16.0;
    std::string initial_data_atmosphere = "flat";
    amrex::Real initial_data_atmosphere_density = -1.0;
    amrex::Real initial_data_atmosphere_pressure = -1.0;

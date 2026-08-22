@@ -2755,7 +2755,8 @@ inline void initialize_state_impl(
       return;
    }
 
-   if (initial_data.has_fluid() || cfg.ic == "fixed_metric_hse") {
+   if (initial_data.has_fluid() || cfg.ic == "fixed_metric_hse"
+       || cfg.ic == "black_hole") {
       initialize_relativistic_state(state, geom, cfg, initial_data);
    } else {
       const int newtonian_components = physical_system_has_magnetic_field(

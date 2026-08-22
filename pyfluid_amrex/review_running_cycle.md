@@ -5945,3 +5945,47 @@ I will always continue from the last cycle marked as `in_progress`.
   added. The black-hole gate also exposed and fixed stale AH TSV accumulation;
   each ordinary validation case now overwrites its stable run directory and
   the clean rerun passes all 14 cases. [DONE]
+
+## Cycle 305 — Constraint-solved single-hole owner (DONE)
+
+- Source-check the Cook--Pfeiffer XCTS inner conditions against the present
+  elliptic boundary contract and choose the smallest native geometry that is
+  physically complete. Prefer a reduced spherical shell for an aligned single
+  hole when it reuses the existing `r`/`r theta` operator and portable
+  materializer; do not force an internal spherical boundary into Cartesian
+  block AMR or add every coordinate/dimension product for completeness. The
+  separable spherical operator now accepts finite radial shells with
+  Dirichlet/Neumann/Robin inner data and a geometrically stretched map. The
+  generated host-only method catalog owns one new native 2D `r theta`
+  Schwarzschild-XCTS shell owner; no compiled method-product axis was added.
+  `N x M x 1` is recorded as the future 3D curvilinear operator's degeneracy
+  test against native 2D, not another physical owner. [DONE]
+- Separate the initial-data apparent-horizon boundary from both the analytic
+  Kerr `filled` control and evolution excision. Add only the host/catalog and
+  elliptic behavior required by an actually tested Schwarzschild/Kerr control,
+  preserving the existing full-3D Cartesian owner for genuinely tilted matter.
+  The vacuum shell uses `r_inner=M/2`, the Cook--Pfeiffer conformal-factor
+  Robin condition, zero lapse, zero shift, and asymptotically flat outer Robin
+  data. It stores ordinary atmosphere primitives but excludes atmosphere from
+  the vacuum XCTS sources. The nodal handoff reconstructs both radial faces
+  from the same boundary coefficients; this fixed a copied inner lapse and an
+  infinity-times-zero NaN in horizon extrinsic curvature. True evolution
+  excision and a complete-grid interior remain explicitly unsupported. [DONE]
+- Validate the first owner against an analytic stationary hole, changed-grid
+  materialization, constraint residuals, symmetry, and configuration
+  rejections before composing an aligned self-gravitating torus. The focused
+  `128x16 -> 256x32` three-rank load re-solves on the target map and passes:
+  metric relative error `1.76213e-3`, lapse Linf error `1.17245e-5`, zero-field
+  error exactly zero, theta-invariance error `9.52e-13`, elliptic residual
+  `4.89e-12`, zero recovery, and an `8,457,982`-byte lossless artifact. The
+  direct two-resolution operator control is second order
+  (`1.973/1.932` for conformal/lapse unknowns); an invalid inner radius
+  rejects, as does a nonzero reduced-shell origin. All 17 black-hole/AH cases
+  pass, as do the reduced TOV/RNS gate,
+  full equilibrium-torus/tilt/AMR gate, architecture check, production
+  1D/2D/3D build, 3/3 quick suite, and complete 46/46 standard suite in
+  `214.630 s`. Runtime controls pass at `108.93/131.02`, `5.95`, and `0.18`
+  Mcells/s, or `0.93--0.99` of their stored baselines. The final unchanged
+  production target is a `0.53 s` no-op with zero compiler-cache events. The
+  one-time public `RunConfig` edit rebuilt its existing dependency fan-out but
+  adding this owner did not add a template specialization product. [DONE]

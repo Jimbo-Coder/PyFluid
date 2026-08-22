@@ -448,6 +448,10 @@ RunConfig read_config()
       "adaptive_exterior_fraction",
       cfg.initial_data_adaptive_exterior_fraction
    );
+   initial_data_pp.queryAdd(
+      "adaptive_shell_width_ratio",
+      cfg.initial_data_adaptive_shell_width_ratio
+   );
    initial_data_pp.queryAdd("atmosphere", cfg.initial_data_atmosphere);
    initial_data_pp.queryAdd("atmosphere_density", cfg.initial_data_atmosphere_density);
    initial_data_pp.queryAdd("atmosphere_pressure", cfg.initial_data_atmosphere_pressure);
@@ -903,6 +907,10 @@ void validate_config(RunConfig const& cfg)
       initial_data_owner_info(InitialDataOwner::SphericalAxisymmetricXcts);
    const InitialDataOwnerInfo& cartesian_conformal_owner =
       initial_data_owner_info(InitialDataOwner::CartesianConformalConstraints);
+   const InitialDataOwnerInfo& spherical_black_hole_xcts_owner =
+      initial_data_owner_info(
+         InitialDataOwner::SphericalAxisymmetricBlackHoleXcts
+      );
    const InitialDataOwnerInfo& cartesian_kerr_owner = initial_data_owner_info(
       InitialDataOwner::CartesianKerrSchild
    );
@@ -925,12 +933,23 @@ void validate_config(RunConfig const& cfg)
       cfg.mesh_coordinate,
       initial_data_axes
    );
+   const bool spherical_black_hole_xcts_layout =
+      initial_data_owner_layout_matches(
+         spherical_black_hole_xcts_owner,
+         AMREX_SPACEDIM,
+         cfg.mesh_coordinate,
+         initial_data_axes
+      );
    const bool cartesian_kerr_layout = initial_data_owner_layout_matches(
       cartesian_kerr_owner,
       AMREX_SPACEDIM,
       cfg.mesh_coordinate,
       initial_data_axes
    );
+   const bool spherical_black_hole_xcts_request =
+      cfg.ic == "black_hole"
+      && cfg.spacetime_initial_data == "xcts"
+      && spherical_black_hole_xcts_layout;
    if (kerr_schild_requested) {
       if (AMREX_SPACEDIM != 3) {
          amrex::Abort(
@@ -950,6 +969,19 @@ void validate_config(RunConfig const& cfg)
    } else if (black_hole_spin_squared != 0.0) {
       amrex::Abort(
          "spacetime.dimensionless_spin applies only to kerr_schild"
+      );
+   }
+   if (cfg.ic == "black_hole"
+       && (!spherical_black_hole_xcts_request
+           || !cfg.initial_data_solve_only
+           || !(cfg.spacetime_mass > 0.0)
+           || !std::isfinite(cfg.spacetime_mass)
+           || cfg.spacetime_origin1 != 0.0
+           || cfg.spacetime_origin2 != 0.0
+           || cfg.spacetime_origin3 != 0.0)) {
+      amrex::Abort(
+         "black_hole initial data currently require a positive-mass, "
+         "origin-centered solve-only 2D spherical r-theta XCTS shell"
       );
    }
    require_supported_option(
@@ -1558,6 +1590,14 @@ void validate_config(RunConfig const& cfg)
                "TOV initial data requires central_density > rho_floor, positive solve tolerances, and max_steps >= 16"
             );
          }
+      }
+      if (cfg.ic == "black_hole"
+          && (selected_system != PhysicalSystem::RHD
+              || !spacetime_stores_state(cfg))) {
+         amrex::Abort(
+            "black_hole XCTS initial data require RHD and stored fixed or "
+            "evolved spacetime"
+         );
       }
       if (cfg.ic == "rotating_star"
           && cfg.initial_data_angular_velocity != 0.0
@@ -2367,6 +2407,7 @@ void validate_config(RunConfig const& cfg)
       && (cfg.ic == "rotating_star"
           || (cfg.ic == "tov" && stationary_torus_enabled))
       && cfg.spacetime_initial_data == "xcts";
+   const bool reduced_black_hole_xcts = spherical_black_hole_xcts_request;
    const bool reduced_radial_tov =
       spherical_tov_layout
       && cfg.ic == "tov";
@@ -2378,6 +2419,11 @@ void validate_config(RunConfig const& cfg)
       || (reduced_radial_tov
           && initial_data_owner_list_contains(
              spherical_tov_owner.grid_kinds, "mapped_radial"
+          ))
+      || (reduced_black_hole_xcts
+          && initial_data_owner_list_contains(
+             spherical_black_hole_xcts_owner.grid_kinds,
+             "mapped_radial_shell"
           ));
    const bool analytic_kerr_torus =
       cartesian_kerr_layout
@@ -2400,11 +2446,20 @@ void validate_config(RunConfig const& cfg)
          "initial_data.adaptive_exterior_fraction must be in [0.125, 0.5]"
       );
    }
+   if (!(cfg.initial_data_adaptive_shell_width_ratio >= 1.0)
+       || cfg.initial_data_adaptive_shell_width_ratio > 128.0
+       || !std::isfinite(cfg.initial_data_adaptive_shell_width_ratio)) {
+      amrex::Abort(
+         "initial_data.adaptive_shell_width_ratio must be finite and in "
+         "[1, 128]"
+      );
+   }
    if (cfg.initial_data_radial_grid == "adaptive"
        && (!mapped_radial_owner || !cfg.initial_data_solve_only)) {
       amrex::Abort(
          "initial_data.radial_grid = adaptive currently requires a solve-only "
-         "spherical-r TOV or spherical r-theta rotating-star XCTS solve"
+         "spherical-r TOV, spherical r-theta rotating-star XCTS solve, or "
+         "spherical r-theta black-hole XCTS shell solve"
       );
    }
    if (equilibrium_torus_enabled
@@ -2442,10 +2497,11 @@ void validate_config(RunConfig const& cfg)
    }
    if (cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"
        && cfg.ic != "tov" && !reduced_axisymmetric_xcts
+       && !reduced_black_hole_xcts
        && !loaded_3d_materialization_request) {
       amrex::Abort(
          "reduced curvilinear initial-data solves currently support TOV or "
-         "rotating-star spherical r-theta XCTS"
+         "rotating-star or black-hole spherical r-theta XCTS"
       );
    }
    if (!cfg.initial_data_sequence_output_dir.empty()

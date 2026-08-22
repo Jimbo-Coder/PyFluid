@@ -410,7 +410,8 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       hierarchy.distribution.push_back(DistributionMap(lev));
       if (seed_from_loaded_id) {
          fill_level_primitive_cache(lev, 0.0);
-      } else if (initial_data_provider_->view().has_fluid()) {
+      } else if (initial_data_provider_->view().has_fluid()
+                 || cfg_.ic == "black_hole") {
          initialize_relativistic_primitive_cache_from_initial_data(
             *primitive_[lev], Geom(lev), cfg_, initial_data_provider_->view()
          );
@@ -439,9 +440,13 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
    if (cfg_.initial_data_radial_grid == "adaptive"
        || !initial_data_coordinate_faces_.empty()) {
       const RelativisticInitialDataView provider = initial_data_provider_->view();
-      if (finestLevel() != 0 || !provider.tov.active()) {
+      const bool black_hole_xcts = cfg_.ic == "black_hole"
+         && cfg_.spacetime_initial_data == "xcts";
+      if (finestLevel() != 0
+          || (!provider.tov.active() && !black_hole_xcts)) {
          amrex::Abort(
-            "adaptive stellar ID requires one level and a native TOV seed"
+            "adaptive reduced ID requires one level and a native TOV or "
+            "black-hole XCTS source"
          );
       }
       if (seed_from_loaded_id) {
@@ -454,14 +459,20 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          hierarchy.physical_coordinate_faces = initial_data_coordinate_faces_;
       } else {
          hierarchy.physical_coordinate_faces.resize(1);
-         hierarchy.physical_coordinate_faces[0][0] =
-            stellar_adaptive_radial_faces(
-               provider.tov.surface_radius,
-               hierarchy.geometry[0].ProbHi(0),
-               hierarchy.geometry[0].Domain().length(0),
-               cfg_.initial_data_adaptive_source_radius_factor,
-               cfg_.initial_data_adaptive_exterior_fraction
-            );
+         hierarchy.physical_coordinate_faces[0][0] = black_hole_xcts
+            ? stretched_radial_shell_faces(
+                 0.5 * cfg_.spacetime_mass,
+                 hierarchy.geometry[0].ProbHi(0),
+                 hierarchy.geometry[0].Domain().length(0),
+                 cfg_.initial_data_adaptive_shell_width_ratio
+              )
+            : stellar_adaptive_radial_faces(
+                 provider.tov.surface_radius,
+                 hierarchy.geometry[0].ProbHi(0),
+                 hierarchy.geometry[0].Domain().length(0),
+                 cfg_.initial_data_adaptive_source_radius_factor,
+                 cfg_.initial_data_adaptive_exterior_fraction
+              );
          initial_data_coordinate_faces_ = hierarchy.physical_coordinate_faces;
          initialize_relativistic_primitive_cache_from_initial_data(
             *primitive_[0], hierarchy, 0, cfg_, provider
@@ -472,8 +483,9 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
             0, 0
          );
          amrex::Print()
-            << "adaptive stellar ID radial_cells=" << radial.centers.size()
-            << " seed_surface=" << provider.tov.surface_radius
+            << "adaptive " << (black_hole_xcts ? "black-hole" : "stellar")
+            << " ID radial_cells=" << radial.centers.size()
+            << " inner_face=" << radial.faces.front()
             << " inner_dr=" << radial.widths.front()
             << " outer_dr=" << radial.widths.back() << '\n';
       }
@@ -651,6 +663,10 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       eos_params(cfg_),
       initial_data_provider_->view().fields,
       formulation,
+      {
+         cfg_.ic == "black_hole",
+         cfg_.spacetime_mass,
+      },
       rotating_parameters,
       equilibrium_torus,
       seed_from_loaded_id,

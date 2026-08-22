@@ -611,9 +611,23 @@ baseline.
   Catalog-owned exterior Hamiltonian L2/Linf and momentum Linf now require the
   complete fourth-order stencil to lie at `r_KS>r_+`. In the one-step exact
   Kerr controls, N=32 to N=64 improves those norms by factors 3.33/4.91/4.09.
-  True ID/evolution excision remains explicitly rejected until an apparent-
-  horizon ID boundary and pure-outflow evolution boundary own inactive cells,
-  one-sided stencils, prolongation, and characteristic validation.
+  True evolution excision remains explicitly rejected until a pure-outflow
+  evolution boundary owns inactive cells, one-sided stencils, prolongation,
+  and characteristic validation.
+- The first constraint-solved black-hole owner is the spinless vacuum
+  Schwarzschild exterior on a finite spherical `r theta` shell. At the
+  isotropic horizon `r=M/2`, the Cook--Pfeiffer conformal-factor Robin
+  condition, zero lapse, and zero shift reproduce
+  `psi=1+M/(2r)`, `alpha psi=1-M/(2r)`. The mapped `256x32` control has
+  Hamiltonian/lapse/momentum residuals
+  `2.11e-12/4.89e-12/0`, second-order conformal convergence, an exactly zero
+  horizon lapse, finite zero extrinsic curvature, and no recovery. A saved
+  `128x16` artifact re-solves on a changed `256x32` map and retains the same
+  analytic agreement. This closes a solve-only exterior owner, not spinning
+  data, a black-hole/disk equilibrium, full-grid evolution, or true excision.
+  Native owner catalogs do not list dimensional-degeneracy projections:
+  `N x M x 1` is the future 3D `r theta phi` operator's one-cell-in-phi
+  compatibility gate against native 2D `r theta`, not another owner.
 - The tested complete-grid Kerr evolution uses ordinary advective 1+log,
   gamma-driver shift, RK4, KO strength 0.32, and positive chi/lapse floors of
   `1e-10`. A manual 64-step CFL-0.9 coarse-grid stress reaches `t=6.035` with
@@ -730,16 +744,15 @@ baseline.
 
 ## Next Milestones
 
-1. Build the first constraint-solved single-hole owner: conformally curved
-   Kerr--Schild-seeded XCTS with Cook--Pfeiffer apparent-horizon boundary
-   conditions. Keep exact exterior, filled full-grid controls, and true
-   evolution excision separate. Before activating the present inner candidate
-   mask, add characteristic pure-outflow proof, inactive-cell ownership,
-   one-sided evolution/dissipation, FillPatch/prolongation/regrid closure, and
-   fixed/moving-mask validation. Extend the existing torus component first to
-   an aligned constraint-solved black-hole disk and only afterward to a
-   full-3D tilted black-hole disk; the corresponding stellar 3D tilt and
-   artifact-handoff infrastructure is already in place.
+1. Extend the constraint-solved Schwarzschild shell to spinning,
+   Kerr--Schild-seeded conformally curved XCTS, then compose the existing torus
+   component into an aligned constraint-solved black-hole disk before a full-3D
+   tilted black-hole disk. Keep exact exterior, filled full-grid controls, and
+   true evolution excision separate. Before activating the present inner
+   candidate mask, add characteristic pure-outflow proof, inactive-cell
+   ownership, one-sided evolution/dissipation, FillPatch/prolongation/regrid
+   closure, and fixed/moving-mask validation. The stellar 3D tilt and artifact-
+   handoff infrastructure is already in place.
 2. Extend the saved fast analytic and CompOSE RNS models from the present short
    two-resolution evolutions to a meaningful fraction of a rotation, tracking
    baryon mass, angular momentum, constraints, central density, and modes.

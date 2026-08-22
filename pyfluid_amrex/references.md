@@ -259,8 +259,9 @@ the generated TSV/log, and the current source revision/dirty state.
 - G. B. Cook and H. P. Pfeiffer, *Excision boundary conditions for black-hole
   initial data*, [arXiv:gr-qc/0407078](https://arxiv.org/abs/gr-qc/0407078):
   quasi-equilibrium apparent-horizon inner boundary conditions for CTS/XCTS.
-  This is the primary route for PyFluid's future constraint-solved excision
-  owner; it is not interchangeable with an evolution excision boundary.
+  This is the source for PyFluid's constraint-solved Schwarzschild shell and
+  planned spinning extension; its initial-data horizon boundary is not
+  interchangeable with an evolution excision boundary.
 - Z. B. Etienne et al., *Relativistic simulations of black-hole-neutron-star
   mergers: Effects of black-hole spin*,
   [Phys. Rev. D 76, 101503](https://doi.org/10.1103/PhysRevD.76.101503):

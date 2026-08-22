@@ -86,7 +86,7 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
    RelativisticInitialDataView const& initial_data
 )
 {
-   if (!initial_data.has_fluid() || level < 0
+   if ((!initial_data.has_fluid() && cfg.ic != "black_hole") || level < 0
        || level >= static_cast<int>(hierarchy.geometry.size())) {
       amrex::Abort("mapped relativistic primitive initialization is invalid");
    }

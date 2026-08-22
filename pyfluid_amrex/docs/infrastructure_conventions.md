@@ -36,6 +36,11 @@ methods and physics belong in their topic documents; coding style belongs in
   remain explicit host validation; owner records do not generate a solver
   Cartesian product. Numerical formulas and generated equations remain in
   labeled C++ or symbolic Python sources rather than TOML expression strings.
+  The catalog describes native nonlinear solve owners, not every validation
+  projection. In particular, an `N x M x 1` run is the 3D operator on a
+  one-cell invariant direction and is a required dimensional-degeneracy check
+  against the corresponding native `N x M` reduction when that symmetry is
+  valid; it is not a separate physical owner or a new compiled method product.
 - Each compiled reconstruction value owns one flux-kernel translation unit.
   Its CMake feature switch must remove that owner from the source list, not
   merely hide its factory case. Candidate correction composes selected
