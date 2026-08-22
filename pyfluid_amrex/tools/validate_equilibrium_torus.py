@@ -364,6 +364,7 @@ def main() -> int:
    args = parser.parse_args()
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
    results_path = FULL_RESULTS if args.level == "full" else STANDARD_RESULTS
+   additional_scalar_rows: list[dict[str, object]] = []
 
    check_binary = build_cached_target(ELLIPTIC_CHECK)
    check = run_mpi(check_binary, ranks=args.ranks, timeout=args.timeout)
@@ -875,6 +876,123 @@ def main() -> int:
       ))
 
       (
+         adaptive_disk_dir,
+         adaptive_disk_artifact,
+         adaptive_disk_seconds,
+         adaptive_disk_log,
+      ) = run_case(
+         "equilibrium_torus_coupled_xcts_cartesian_amr_12",
+         3,
+         CARTESIAN_COUPLED_INPUT,
+         {
+            "geometry.prob_lo": "-24.0 -24.0 -24.0",
+            "geometry.prob_hi": "24.0 24.0 24.0",
+            "amr.n_cell": "12 12 12",
+            "amr.max_level": "1",
+            "amr.ref_ratio": "2",
+            "amr.max_grid_size": "12",
+            "amr.blocking_factor": "4",
+            "amr.tag_metric": "none",
+            "amr.initial_refine": "box",
+            "amr.initial_refine_levels": "1",
+            "amr.initial_refine_fixed_levels": "1",
+            "amr.initial_refine_box_lo": "-18.0 -18.0 -18.0",
+            "amr.initial_refine_box_hi": "18.0 18.0 18.0",
+            "initial_data.input_file": repo_relative(
+               cartesian_tov_artifact
+            ),
+         },
+         args,
+      )
+      assert adaptive_disk_artifact is not None
+      adaptive_disk_torus = torus_diagnostics(
+         adaptive_disk_log,
+         "equilibrium_torus_coupled_xcts_cartesian_amr_12",
+      )
+      adaptive_disk_constraints = constraint_diagnostics(
+         adaptive_disk_log,
+         "equilibrium_torus_coupled_xcts_cartesian_amr_12",
+      )
+      validate_torus(
+         adaptive_disk_torus,
+         adaptive_disk_constraints,
+         gravity="coupled",
+         massive=False,
+         minimum_mass=1.0e-12,
+      )
+      if read_metadata(adaptive_disk_artifact).get("levels") != "2":
+         raise RuntimeError("adaptive Cartesian torus artifact is not two-level")
+      for key in (
+         "resolved_inner_radius",
+         "outer_radius",
+         "density_maximum_radius",
+         "maximum_density",
+         "baryonic_mass",
+         "angular_momentum",
+      ):
+         if not math.isclose(
+            float(adaptive_disk_torus[key]),
+            float(cartesian_disk_torus[key]),
+            rel_tol=5.0e-7,
+            abs_tol=1.0e-15,
+         ):
+            raise RuntimeError(f"uniform/adaptive 3D torus mismatch in {key}")
+      rows.append(torus_row(
+         "equilibrium_torus_coupled_xcts_cartesian_amr_12",
+         adaptive_disk_torus,
+         adaptive_disk_constraints,
+         adaptive_disk_seconds,
+         adaptive_disk_dir,
+      ))
+
+      adaptive_evolution_dir, _, adaptive_evolution_seconds, _ = run_case(
+         "equilibrium_torus_coupled_xcts_cartesian_amr_to_uniform_16",
+         3,
+         EVOLUTION_INPUT,
+         {
+            "geometry.prob_lo": "-24.0 -24.0 -24.0",
+            "geometry.prob_hi": "24.0 24.0 24.0",
+            "amr.n_cell": "16 16 16",
+            "amr.max_level": "0",
+            "amr.max_grid_size": "8",
+            "initial_data.input_file": repo_relative(adaptive_disk_artifact),
+            "initial_data.disk_inner_radius": "10.0",
+            "pyfluid.max_step": "1",
+            "pyfluid.plot_int": "-1",
+         },
+         args,
+         artifact_output=False,
+      )
+      adaptive_evolution_scalar = scalar_validation_row(
+         adaptive_evolution_dir,
+         case="equilibrium_torus_coupled_xcts_cartesian_amr_to_uniform_16",
+         input_file=adaptive_evolution_dir / "input.in",
+         checks="dynamic_spacetime",
+         mhd=False,
+         dim=3,
+         ranks=args.ranks,
+         kind="initial_data",
+      )
+      if adaptive_evolution_scalar["status"] != "PASS":
+         raise RuntimeError(
+            "adaptive Cartesian torus handoff scalar check failed: "
+            f"{adaptive_evolution_scalar['reason']}"
+         )
+      additional_scalar_rows.append(adaptive_evolution_scalar)
+      rows.append({
+         "kind": "initial_data",
+         "case": "equilibrium_torus_coupled_xcts_cartesian_amr_to_uniform_16",
+         "status": "PASS",
+         "seconds": adaptive_evolution_seconds,
+         "mass_rel_drift": adaptive_evolution_scalar["mass_rel_drift"],
+         "energy_rel_drift": adaptive_evolution_scalar["energy_rel_drift"],
+         "momentum_abs_drift": adaptive_evolution_scalar[
+            "momentum_abs_drift"
+         ],
+         "run_dir": repo_relative(adaptive_evolution_dir),
+      })
+
+      (
          reflected_disk_dir,
          reflected_disk_artifact,
          reflected_disk_seconds,
@@ -1120,7 +1238,7 @@ def main() -> int:
       "step": "equilibrium_torus",
       "seconds": sum(float(row.get("seconds", 0.0)) for row in rows),
    })
-   append_validation_history(HISTORY, [evolution_scalar])
+   append_validation_history(HISTORY, [evolution_scalar, *additional_scalar_rows])
    print(
       "PASS equilibrium_torus: "
       f"test_mass={float(test_torus['baryonic_mass']):.6e} "

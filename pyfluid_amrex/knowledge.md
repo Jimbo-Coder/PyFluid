@@ -299,6 +299,13 @@ baseline.
   center are persisted; one proper rigid transform may rotate/translate an
   entire isolated source during portable materialization and disables an
   otherwise matching exact cache. It cannot change relative component tilt.
+- Native single-object ID ownership is cataloged once in `schema/methods.toml`:
+  natural dimension/chart/axes, broad object and disk capabilities, grid kind,
+  relative tilt, and reflection class. The generated descriptors are host-only
+  policy and do not create a coordinate/object/formulation template product.
+  Physical combinations that are not a simple capability remain explicit C++
+  validation. In particular, a full `r theta phi` materialized artifact is not
+  evidence for a native curvilinear nonlinear continuation owner.
 - `initial_data.solve_only=1` performs the normal ID materialization and
   relativistic C2P/P2C preflight, writes the portable artifact, and exits before
   evolution. Validated reduced paths include spherical 1D TOV and spherical
@@ -460,12 +467,12 @@ baseline.
 - PyFluid now names that boundary explicitly. `equilibrium_torus` requires a
   genuinely aligned stationary composition; `tilted_torus` is a full-3D
   Cartesian, coupled-XCTS circular seed with independent stellar and disk
-  rotation laws. The first `36^3` SLy closure at a 30-degree relative tilt,
+  rotation laws. The bounded `24^3` SLy closure at a 30-degree relative tilt,
   stellar `Omega=0.001`, disk `ell=5.8`, and requested `r_in=10` converges in
-  59 matter iterations with Hamiltonian/lapse residuals near `1e-15`, momentum
-  residual `5.46e-13`, causal disk speed `0.421`, ordered support
+  52 matter iterations with Hamiltonian/lapse residuals near `2e-15`, momentum
+  residual `9.84e-13`, causal disk speed `0.421`, ordered support
   `10.30--15.41`, and zero recovery. Its disk baryonic mass is only
-  `1.36e-7`, so it validates orientation/coupling infrastructure, not a
+  `1.41e-7`, so it validates orientation/coupling infrastructure, not a
   strongly self-gravitating tilted-disk regime.
 - The native nonaxisymmetric elliptic owner remains 3D Cartesian. A completed
   tilted artifact materializes through the portable physical-ID interface on
@@ -475,6 +482,14 @@ baseline.
   must retain both disk metadata and rotating-star injection/surface/charge
   metadata so the result remains valid for either evolution or later sequence
   continuation.
+- A two-level Cartesian coupled-XCTS disk solve with a `12^3` base and a fixed
+  factor-two refined central box reproduces the matched uniform `24^3` support,
+  maximum density, disk mass, and angular momentum within `5e-7` relative,
+  then materializes onto a uniform `16^3` evolution grid with zero recovery and
+  `1.85e-9` one-step mass drift. It takes `134.15 s` versus `91.52 s` for the
+  tiny uniform control, so this proves adaptive ownership and handoff, not a
+  work-precision speedup; useful Cartesian ID AMR needs larger problems or a
+  tighter refined region.
 - A reflected cell-centered initial-data hierarchy must let the cell-to-node
   transfer consume its parity-filled ghost cells. Treating the reflection plane
   as an ordinary bounded face selects a one-sided nodal closure and changes the
@@ -622,6 +637,13 @@ baseline.
   neither implements evolution excision or an event horizon. AHFinderDirect-
   style Newton polishing, moving centers, multiple horizons, and quasilocal
   spin remain open.
+- An event horizon is nonlocal in time. The clean future owner is offline: it
+  consumes a schema-declared, time-ordered Cartesian lapse/shift/spatial-metric
+  history and integrates an outgoing null surface backward from a late settled
+  seed. A single radial graph is acceptable for an initial stationary-hole
+  control but cannot represent general BBH topology change; a volume level set
+  and derived surface/generator products are the general boundary. Sparse
+  checkpoints or a live AH mask are not substitutes for this history contract.
 - A scratch relativistic fluid state must be converted from physical
   primitives only after the final stored cell metric is available. Initializing
   conserved variables against a placeholder metric and then replacing nodal

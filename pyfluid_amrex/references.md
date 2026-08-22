@@ -288,6 +288,20 @@ the generated TSV/log, and the current source revision/dirty state.
   over-relaxation, and threaded surface finding. This is the method reference
   for PyFluid's independent first full finder; no implementation code is
   imported.
+- P. Diener, *A new general purpose event horizon finder for 3D numerical
+  spacetimes*,
+  [arXiv:gr-qc/0305039](https://arxiv.org/abs/gr-qc/0305039): evolves a complete
+  null level-set surface backward through an already computed 3D spacetime and
+  naturally admits topology change. This is the primary reference for a
+  future offline PyFluid event-horizon owner; it is not an extension of the
+  slice-local apparent-horizon relaxation.
+- M. I. Cohen, H. P. Pfeiffer, and M. A. Scheel, *Revisiting event horizon
+  finders*,
+  [DOI 10.1088/0264-9381/26/3/035005](https://doi.org/10.1088/0264-9381/26/3/035005):
+  comparative evidence for backward null-geodesic and null-surface methods,
+  late-time seeding, generator histories, and merger tests. Use it to validate
+  method choices against analytic Kerr and binary controls rather than
+  assuming one representation dominates every postprocessing task.
 - M. K. Bhattacharyya et al., *Implementation of the dual foliation generalized
   harmonic gauge formulation with application to spherical black hole
   excision*,

@@ -214,6 +214,8 @@ def run_case(
     timeout: int | None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     run_dir = RUN_ROOT / name
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     input_path = materialize_run_input(
         BASE_INPUT,

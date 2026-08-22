@@ -13,6 +13,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "pyfluid_amrex/state.hpp"
 #include "pyfluid_amrex/eos/config.hpp"
@@ -884,6 +885,52 @@ void validate_config(RunConfig const& cfg)
       cfg.spacetime_fixed_metric == "kerr_schild";
    const bool kerr_schild_requested =
       kerr_schild_initial_data || kerr_schild_fixed_metric;
+   const int initial_data_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
+   const std::vector<std::string> initial_data_axis_tokens = mesh_axis_tokens(
+      initial_data_coordinate, cfg.mesh_axes
+   );
+   std::string initial_data_axes;
+   for (std::size_t index = 0; index < initial_data_axis_tokens.size(); ++index) {
+      if (index > 0) {
+         initial_data_axes += ' ';
+      }
+      initial_data_axes += initial_data_axis_tokens[index];
+   }
+   const InitialDataOwnerInfo& spherical_tov_owner = initial_data_owner_info(
+      InitialDataOwner::SphericalTov
+   );
+   const InitialDataOwnerInfo& spherical_axisymmetric_xcts_owner =
+      initial_data_owner_info(InitialDataOwner::SphericalAxisymmetricXcts);
+   const InitialDataOwnerInfo& cartesian_conformal_owner =
+      initial_data_owner_info(InitialDataOwner::CartesianConformalConstraints);
+   const InitialDataOwnerInfo& cartesian_kerr_owner = initial_data_owner_info(
+      InitialDataOwner::CartesianKerrSchild
+   );
+   const bool spherical_tov_layout = initial_data_owner_layout_matches(
+      spherical_tov_owner,
+      AMREX_SPACEDIM,
+      cfg.mesh_coordinate,
+      initial_data_axes
+   );
+   const bool spherical_axisymmetric_xcts_layout =
+      initial_data_owner_layout_matches(
+         spherical_axisymmetric_xcts_owner,
+         AMREX_SPACEDIM,
+         cfg.mesh_coordinate,
+         initial_data_axes
+      );
+   const bool cartesian_conformal_layout = initial_data_owner_layout_matches(
+      cartesian_conformal_owner,
+      AMREX_SPACEDIM,
+      cfg.mesh_coordinate,
+      initial_data_axes
+   );
+   const bool cartesian_kerr_layout = initial_data_owner_layout_matches(
+      cartesian_kerr_owner,
+      AMREX_SPACEDIM,
+      cfg.mesh_coordinate,
+      initial_data_axes
+   );
    if (kerr_schild_requested) {
       if (AMREX_SPACEDIM != 3) {
          amrex::Abort(
@@ -1036,13 +1083,26 @@ void validate_config(RunConfig const& cfg)
    const amrex::Real disk_axis_tolerance = 64.0
       * std::numeric_limits<amrex::Real>::epsilon();
    const bool analytic_kerr_disk_request =
-      AMREX_SPACEDIM == 3 && cfg.mesh_coordinate == "cartesian"
+      cartesian_kerr_layout
       && cfg.ic == "equilibrium_torus" && kerr_schild_requested
-      && stationary_torus_enabled;
+      && stationary_torus_enabled
+      && initial_data_owner_list_contains(
+         cartesian_kerr_owner.disk_kinds, cfg.initial_data_disk
+      )
+      && initial_data_owner_list_contains(
+         cartesian_kerr_owner.disk_gravity_modes,
+         cfg.initial_data_disk_gravity
+      );
    const bool cartesian_coupled_stellar_torus_request =
-      AMREX_SPACEDIM == 3 && cfg.mesh_coordinate == "cartesian"
-      && (cfg.ic == "tov" || cfg.ic == "rotating_star")
+      cartesian_conformal_layout
+      && initial_data_owner_list_contains(
+         cartesian_conformal_owner.central_objects, cfg.ic
+      )
       && cfg.spacetime_initial_data == "xcts"
+      && initial_data_owner_list_contains(
+         cartesian_conformal_owner.disk_gravity_modes,
+         cfg.initial_data_disk_gravity
+      )
       && cfg.initial_data_disk_gravity == "coupled";
    const bool loaded_3d_materialization_request =
       AMREX_SPACEDIM == 3 && cfg.initial_data_solve_only
@@ -1059,7 +1119,9 @@ void validate_config(RunConfig const& cfg)
          "(0,0,1); arbitrary axes require the 3D Cartesian coupled XCTS owner"
       );
    }
-   if (tilted_torus_enabled && !cartesian_coupled_stellar_torus_request
+   if (tilted_torus_enabled
+       && (!cartesian_conformal_owner.relative_tilt
+           || !cartesian_coupled_stellar_torus_request)
        && !loaded_3d_materialization_request) {
       amrex::Abort(
          "initial_data.disk = tilted_torus requires a 3D Cartesian, coupled "
@@ -1510,14 +1572,8 @@ void validate_config(RunConfig const& cfg)
           && cfg.initial_data_angular_velocity != 0.0
           && AMREX_SPACEDIM != 3) {
          const bool reduced_axisymmetric_xcts =
-            AMREX_SPACEDIM == 2
-            && cfg.initial_data_solve_only
-            && cfg.mesh_coordinate == "spherical"
-            && mesh_axes_equal(
-               mesh_axes_layout(MeshSpherical, cfg.mesh_axes),
-               MeshAxisR,
-               MeshAxisTheta
-            );
+            spherical_axisymmetric_xcts_layout
+            && cfg.initial_data_solve_only;
          if (!reduced_axisymmetric_xcts) {
             amrex::Abort(
                "nonzero-spin rotating_star requires either 3D Cartesian "
@@ -2307,26 +2363,24 @@ void validate_config(RunConfig const& cfg)
       amrex::Abort("initial_data.solve_only cannot restart evolution checkpoints");
    }
    const bool reduced_axisymmetric_xcts =
-      AMREX_SPACEDIM == 2
-      && cfg.mesh_coordinate == "spherical"
-      && mesh_axes_equal(
-         mesh_axes_layout(MeshSpherical, cfg.mesh_axes),
-         MeshAxisR,
-         MeshAxisTheta
-      )
+      spherical_axisymmetric_xcts_layout
       && (cfg.ic == "rotating_star"
           || (cfg.ic == "tov" && stationary_torus_enabled))
       && cfg.spacetime_initial_data == "xcts";
    const bool reduced_radial_tov =
-      AMREX_SPACEDIM == 1
-      && cfg.mesh_coordinate == "spherical"
-      && mesh_axes_equal(
-         mesh_axes_layout(MeshSpherical, cfg.mesh_axes), MeshAxisR
-      )
+      spherical_tov_layout
       && cfg.ic == "tov";
+   const bool mapped_radial_owner =
+      (reduced_axisymmetric_xcts
+       && initial_data_owner_list_contains(
+          spherical_axisymmetric_xcts_owner.grid_kinds, "mapped_radial"
+       ))
+      || (reduced_radial_tov
+          && initial_data_owner_list_contains(
+             spherical_tov_owner.grid_kinds, "mapped_radial"
+          ));
    const bool analytic_kerr_torus =
-      AMREX_SPACEDIM == 3
-      && cfg.mesh_coordinate == "cartesian"
+      cartesian_kerr_layout
       && cfg.ic == "equilibrium_torus"
       && kerr_schild_requested
       && cfg.initial_data_disk_gravity == "test_fluid";
@@ -2347,8 +2401,7 @@ void validate_config(RunConfig const& cfg)
       );
    }
    if (cfg.initial_data_radial_grid == "adaptive"
-       && ((!reduced_axisymmetric_xcts && !reduced_radial_tov)
-           || !cfg.initial_data_solve_only)) {
+       && (!mapped_radial_owner || !cfg.initial_data_solve_only)) {
       amrex::Abort(
          "initial_data.radial_grid = adaptive currently requires a solve-only "
          "spherical-r TOV or spherical r-theta rotating-star XCTS solve"

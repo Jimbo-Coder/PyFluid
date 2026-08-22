@@ -24,9 +24,60 @@
 #include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
 #include "pyfluid_amrex/initial_data/tov.hpp"
+#include "pyfluid_amrex/generated/initial_data_method_catalog.hpp"
 #include "pyfluid_amrex/kernels_generated/initial_data.hpp"
 
 namespace {
+
+bool validate_initial_data_owner_catalog()
+{
+   using pyfluid_amrex::InitialDataOwner;
+   using pyfluid_amrex::initial_data_owner_info;
+   using pyfluid_amrex::initial_data_owner_layout_matches;
+   using pyfluid_amrex::initial_data_owner_list_contains;
+
+   const auto& radial = initial_data_owner_info(InitialDataOwner::SphericalTov);
+   const auto& axisymmetric = initial_data_owner_info(
+      InitialDataOwner::SphericalAxisymmetricXcts
+   );
+   const auto& cartesian = initial_data_owner_info(
+      InitialDataOwner::CartesianConformalConstraints
+   );
+   const auto& kerr = initial_data_owner_info(
+      InitialDataOwner::CartesianKerrSchild
+   );
+
+   const bool valid =
+      initial_data_owner_layout_matches(radial, 1, "spherical", "r")
+      && initial_data_owner_list_contains(radial.grid_kinds, "mapped_radial")
+      && initial_data_owner_layout_matches(
+         axisymmetric, 2, "spherical", "r theta"
+      )
+      && initial_data_owner_list_contains(
+         axisymmetric.disk_gravity_modes, "coupled"
+      )
+      && initial_data_owner_layout_matches(
+         cartesian, 3, "cartesian", "x y z"
+      )
+      && cartesian.relative_tilt
+      && initial_data_owner_list_contains(
+         cartesian.disk_kinds, "tilted_torus"
+      )
+      && initial_data_owner_layout_matches(
+         kerr, 3, "cartesian", "x y z"
+      )
+      && initial_data_owner_list_contains(kerr.central_objects, "black_hole")
+      && initial_data_owner_list_contains(
+         kerr.disk_gravity_modes, "test_fluid"
+      )
+      && !kerr.relative_tilt
+      && !initial_data_owner_list_contains(kerr.disk_kinds, "tilted_torus");
+
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << "initial_data_owner_catalog valid=" << valid << '\n';
+   }
+   return valid;
+}
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real manufactured_solution(amrex::Real x, amrex::Real y, amrex::Real z) noexcept
@@ -2042,6 +2093,9 @@ int main(int argc, char* argv[])
    amrex::Initialize(argc, argv);
    int return_code = 0;
    {
+      if (!validate_initial_data_owner_catalog()) {
+         return_code = 1;
+      }
       if (!validate_tov_solution()) {
          return_code = 1;
       }

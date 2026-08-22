@@ -48,4 +48,74 @@ inline constexpr std::array<DiskRotationLawInfo, 4> DiskRotationLawCatalog = {{
    {DiskRotationLaw::Uniform, "uniform", "Uniform angular velocity", "Circular flow with one constant angular velocity; a finite detached torus is still required.", "angular_velocity,inner_radius"}
 }};
 
+enum class InitialDataOwner : int {
+   SphericalTov = 0,
+   SphericalAxisymmetricXcts = 1,
+   CartesianConformalConstraints = 2,
+   CartesianKerrSchild = 3,
+};
+
+struct InitialDataOwnerInfo {
+   InitialDataOwner id;
+   std::string_view name;
+   std::string_view label;
+   std::string_view description;
+   int dimension;
+   std::string_view coordinate;
+   std::string_view axes;
+   std::string_view central_objects;
+   std::string_view spacetime_methods;
+   std::string_view disk_kinds;
+   std::string_view disk_gravity_modes;
+   std::string_view grid_kinds;
+   bool relative_tilt;
+   std::string_view reflection_class;
+};
+
+inline constexpr std::array<InitialDataOwnerInfo, 4> InitialDataOwnerCatalog = {{
+   {InitialDataOwner::SphericalTov, "spherical_tov", "Spherical radial TOV", "One-dimensional spherical TOV construction with an optional mapped radial exterior.", 1, "spherical", "r", "tov", "tov", "none", "none", "uniform,mapped_radial", false, "spherical"},
+   {InitialDataOwner::SphericalAxisymmetricXcts, "spherical_axisymmetric_xcts", "Spherical axisymmetric XCTS", "Reduced r-theta XCTS construction for circular stars and aligned optional tori.", 2, "spherical", "r theta", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
+   {InitialDataOwner::CartesianConformalConstraints, "cartesian_conformal_constraints", "Cartesian conformal constraints", "Full three-dimensional Cartesian CTT, CTTK, or XCTS hierarchy with optional coupled stellar torus.", 3, "cartesian", "x y z", "tov,rotating_star", "ctt,cttk,xcts", "none,equilibrium_torus,tilted_torus", "none,coupled", "uniform,block_amr", true, "object_dependent"},
+   {InitialDataOwner::CartesianKerrSchild, "cartesian_kerr_schild", "Cartesian analytic Kerr-Schild", "Exact Kerr-Schild exterior or filled complete-grid black hole with an optional aligned test-fluid torus.", 3, "cartesian", "x y z", "black_hole", "kerr_schild", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"}
+}};
+
+constexpr InitialDataOwnerInfo const& initial_data_owner_info(
+   InitialDataOwner owner
+) noexcept
+{
+   return InitialDataOwnerCatalog[static_cast<int>(owner)];
+}
+
+constexpr bool initial_data_owner_layout_matches(
+   InitialDataOwnerInfo const& owner,
+   int dimension,
+   std::string_view coordinate,
+   std::string_view axes
+) noexcept
+{
+   return owner.dimension == dimension && owner.coordinate == coordinate
+      && owner.axes == axes;
+}
+
+constexpr bool initial_data_owner_list_contains(
+   std::string_view values,
+   std::string_view value
+) noexcept
+{
+   std::size_t begin = 0;
+   while (begin <= values.size()) {
+      const std::size_t end = values.find(',', begin);
+      const std::size_t count = end == std::string_view::npos
+         ? values.size() - begin : end - begin;
+      if (values.substr(begin, count) == value) {
+         return true;
+      }
+      if (end == std::string_view::npos) {
+         break;
+      }
+      begin = end + 1;
+   }
+   return false;
+}
+
 } // namespace pyfluid_amrex

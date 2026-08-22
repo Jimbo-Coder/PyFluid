@@ -185,3 +185,71 @@ cpp_id = "Uniform"
 label = "Uniform angular velocity"
 description = "Circular flow with one constant angular velocity; a finite detached torus is still required."
 parameters = ["angular_velocity", "inner_radius"]
+
+# Native single-object initial-data owners. These entries declare broad host
+# capabilities and natural solver layouts. Coupled physical restrictions such
+# as nonzero rotating CTT stationarity, central-object/disk overlap, and Kerr
+# spin/disk alignment remain explicit C++ validation rather than TOML logic.
+[[initial_data_owner]]
+name = "spherical_tov"
+cpp_id = "SphericalTov"
+label = "Spherical radial TOV"
+description = "One-dimensional spherical TOV construction with an optional mapped radial exterior."
+dimension = 1
+coordinate = "spherical"
+axes = ["r"]
+central_objects = ["tov"]
+spacetime_methods = ["tov"]
+disk_kinds = ["none"]
+disk_gravity_modes = ["none"]
+grid_kinds = ["uniform", "mapped_radial"]
+relative_tilt = false
+reflection_class = "spherical"
+
+[[initial_data_owner]]
+name = "spherical_axisymmetric_xcts"
+cpp_id = "SphericalAxisymmetricXcts"
+label = "Spherical axisymmetric XCTS"
+description = "Reduced r-theta XCTS construction for circular stars and aligned optional tori."
+dimension = 2
+coordinate = "spherical"
+axes = ["r", "theta"]
+central_objects = ["tov", "rotating_star"]
+spacetime_methods = ["xcts"]
+disk_kinds = ["none", "equilibrium_torus"]
+disk_gravity_modes = ["none", "test_fluid", "coupled"]
+grid_kinds = ["uniform", "mapped_radial"]
+relative_tilt = false
+reflection_class = "axis_equatorial"
+
+[[initial_data_owner]]
+name = "cartesian_conformal_constraints"
+cpp_id = "CartesianConformalConstraints"
+label = "Cartesian conformal constraints"
+description = "Full three-dimensional Cartesian CTT, CTTK, or XCTS hierarchy with optional coupled stellar torus."
+dimension = 3
+coordinate = "cartesian"
+axes = ["x", "y", "z"]
+central_objects = ["tov", "rotating_star"]
+spacetime_methods = ["ctt", "cttk", "xcts"]
+disk_kinds = ["none", "equilibrium_torus", "tilted_torus"]
+disk_gravity_modes = ["none", "coupled"]
+grid_kinds = ["uniform", "block_amr"]
+relative_tilt = true
+reflection_class = "object_dependent"
+
+[[initial_data_owner]]
+name = "cartesian_kerr_schild"
+cpp_id = "CartesianKerrSchild"
+label = "Cartesian analytic Kerr-Schild"
+description = "Exact Kerr-Schild exterior or filled complete-grid black hole with an optional aligned test-fluid torus."
+dimension = 3
+coordinate = "cartesian"
+axes = ["x", "y", "z"]
+central_objects = ["black_hole"]
+spacetime_methods = ["kerr_schild"]
+disk_kinds = ["none", "equilibrium_torus"]
+disk_gravity_modes = ["none", "test_fluid"]
+grid_kinds = ["uniform", "block_amr"]
+relative_tilt = false
+reflection_class = "object_dependent"

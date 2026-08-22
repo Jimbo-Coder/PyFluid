@@ -30,7 +30,11 @@ methods and physics belong in their topic documents; coding style belongs in
   views. Runtime code must not create a second raw-string field registry.
 - `schema/methods.toml` owns supported-method identity and dispatch metadata,
   including reconstruction names/codes/stencil radii/characteristic forms and
-  rotation-law names. Numerical formulas and generated equations remain in
+  rotation-law names. Its native initial-data-owner records declare natural
+  coordinate/axis layouts, dimensions, grid kinds, broad object/disk support,
+  relative-tilt support, and reflection class. Coupled physical restrictions
+  remain explicit host validation; owner records do not generate a solver
+  Cartesian product. Numerical formulas and generated equations remain in
   labeled C++ or symbolic Python sources rather than TOML expression strings.
 - Each compiled reconstruction value owns one flux-kernel translation unit.
   Its CMake feature switch must remove that owner from the source list, not
@@ -185,6 +189,15 @@ geometric AMR tagging band. They do not share solid-obstacle semantics and
 must not alter active-cell, flux, FillPatch, or boundary ownership. Only an
 explicitly validated evolution owner may
 convert a found surface into inactive cells and inner-boundary closures.
+
+An event horizon is a history-consuming postprocessing object, not a
+slice-local auxiliary GF. Its future offline owner consumes a time-ordered,
+schema-declared Cartesian spacetime history and evolves a null surface
+backward. A general multiple-hole representation must permit topology change;
+surface meshes and generator histories are derived artifacts and cannot be
+used as evolution masks. Do not register an event-horizon runtime capability
+until the history writer, temporal interpolation contract, backward operator,
+and analytic validation gate exist together.
 
 Optional equilibrium matter components use that same physical field contract;
 they do not create a parallel artifact or materializer. The construction owner

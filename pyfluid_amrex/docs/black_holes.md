@@ -120,6 +120,37 @@ center in 3D Cartesian stored spacetime. Multiple horizons, moving-center
 tracking, quasilocal spin, an AHFinderDirect-style Newton polishing backend,
 and true evolution excision remain later capabilities.
 
+## Event-horizon postprocessing boundary
+
+An event horizon is global in time and is not a live replacement for the
+apparent-horizon finder. The production direction is an offline owner that
+integrates an outgoing null surface backward through a completed spacetime
+history. A late, settled apparent horizon supplies a useful terminal seed, but
+the result is an event horizon only after the backward history solve.
+
+The evolution-side prerequisite is therefore a compact, opt-in spacetime
+history, not another checkpoint flavor. Each record must carry an ordered time,
+the Cartesian hierarchy/coordinate metadata, and the lapse, shift, and spatial
+metric needed to interpolate the four-metric in space and time. The writer and
+offline reader must share one declared field schema and reject gaps or layout
+changes that the selected temporal interpolant cannot represent. Initial-data
+artifacts and ordinary sparse checkpoints do not by themselves satisfy this
+contract.
+
+For a settled single hole, a star-shaped backward surface is a useful first
+validation backend. A general BBH/multiple-horizon backend cannot be restricted
+to one radial graph: it must represent disconnected components, merger
+topology change, caustics/crossovers, and generator entry. A volume level set
+is the clean general owner; extracted surface meshes and generator histories
+are postprocessing products, never solver GFs or evolution masks. The first
+tests should be analytic stationary Schwarzschild/Kerr histories followed by a
+stored dynamical single-hole control. BBH support should wait for long,
+well-resolved spacetime histories and multi-horizon apparent-horizon tracking.
+
+No runtime `event_horizon` option is registered yet. Adding an empty selector
+before the history writer, backward operator, and analytic gate exist would
+create a misleading compatibility promise.
+
 ## Symmetry and tilt contract
 
 Kerr spin is an axial vector. A Cartesian reflection plane is valid only when

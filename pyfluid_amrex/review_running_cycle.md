@@ -5908,3 +5908,40 @@ I will always continue from the last cycle marked as `in_progress`.
   `0.27 s` no-op with zero compiler-cache events, not a cold-build result. The
   one-time public runtime-option/interpolation-header edit rebuilt its existing
   dependency fanout but added no compiled behavior axis. [DONE]
+
+## Cycle 304 — Initial-data capability closure and horizon roadmap (DONE)
+
+- Centralize the native initial-data owner compatibility matrix in the strict
+  generated method catalog: coordinate family, active axes, central object,
+  optional disk kind/gravity, mapped-grid support, relative tilt, and valid
+  reflection class. Keep physical compatibility declarative without encoding
+  coupled numerical algorithms in TOML or introducing a template product.
+  Replace duplicated configuration ownership with generated host policy and
+  retain explicit rejection of physically incomplete reductions. Four native
+  owners now generate one host-only descriptor catalog; the 1D/2D/3D
+  production build completed in 10.9 seconds after the catalog edit. The final
+  unchanged production target is a 0.61-second no-op with no compiler-cache
+  events; neither measurement is labeled a cold build. [DONE]
+- Add focused accepted/rejected configuration coverage for reduced adaptive
+  `r theta`, full Cartesian, loaded full `r theta phi` materialization,
+  aligned reflection, and tilted full-domain ownership. Re-run the smallest
+  generated-source, architecture, configuration, torus, and black-hole gates
+  that can falsify the change before broader integration. The catalog C++
+  check passes inside the three-rank elliptic test; the full torus gate covers
+  mapped `r theta`, uniform/adaptive Cartesian, full `r theta phi` artifact
+  roundtrip, aligned reflection, tilt, and both intended rejection paths. The
+  reduced-ID gate, complete black-hole/AH gate, architecture check, production
+  build, and 3/3 quick suite pass. [DONE]
+- Re-audit the current tilted-disk and black-hole evidence. Keep the light
+  tilted stellar-disk closure distinct from a massive tilted sequence, and
+  exact/filled Kerr plus apparent-horizon tracking distinct from the pending
+  constraint-solved Cook--Pfeiffer/XCTS and true-excision owner. Assess an
+  event-horizon postprocessor as a history-consuming, backward null-surface
+  diagnostic for future long single/BBH runs rather than conflating it with
+  the slice-local apparent-horizon finder. Source-checking Diener and Cohen--
+  Pfeiffer--Scheel fixes the future boundary: opt-in Cartesian spacetime
+  history, backward null-surface evolution, analytic Kerr first, and a
+  topology-changing level set for general BBH. No empty runtime selector was
+  added. The black-hole gate also exposed and fixed stale AH TSV accumulation;
+  each ordinary validation case now overwrites its stable run directory and
+  the clean rerun passes all 14 cases. [DONE]

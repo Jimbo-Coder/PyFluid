@@ -83,16 +83,21 @@ resolve exactly once.
 
 `methods.toml` owns supported runtime method names, stable codes, build-option
 names, broad capability requirements, and implementation entry identifiers.
-Its first implemented families are `rotation_law` and `disk_rotation_law`:
-the strict loader emits separate C++ enums and descriptors consumed by
-configuration and the corresponding matter factories. Stellar entries are
-uniform, relativistic j-constant, and relativistic q-power rotation; the disk
-entries are constant `ell=-u_phi/u_t`, uniform, j-constant, and q-power. Their
-identities and required parameter names live in TOML. Initial-data enums are
-emitted into a dedicated generated header so extending them does not invalidate
-the reconstruction owners. The relativistic Euler integrals, torus first
-integral, and nonlinear iterations remain generated/C++ science code. Future
-method families
+Its implemented initial-data families are `rotation_law`,
+`disk_rotation_law`, and `initial_data_owner`. The strict loader emits separate
+C++ enums and descriptors consumed by configuration and the corresponding
+matter factories. Stellar entries are uniform, relativistic j-constant, and
+relativistic q-power rotation; the disk entries are constant
+`ell=-u_phi/u_t`, uniform, j-constant, and q-power. Native-owner entries declare
+the natural coordinate/axis layout, dimension, broad central-object and disk
+capabilities, grid kinds, relative-tilt support, and reflection class. Coupled
+restrictions that are not a simple capability—such as stationarity, matter
+overlap, or Kerr spin/disk alignment—remain explicit C++ validation. These
+identities and required parameters live in TOML. Initial-data enums are emitted
+into a dedicated generated header so extending them does not invalidate the
+reconstruction owners. The relativistic Euler integrals, torus first integral,
+elliptic operators, and nonlinear iterations remain generated/C++ science
+code. Future method families
 should migrate independently rather than turning this catalog into an
 unvalidated omnibus registry. Factories consume generated descriptors. Coupled
 numerical compatibility and physical validation remain explicit code when they
@@ -115,7 +120,10 @@ compatibility rules into an opaque schema language.
 5. The independent stellar and disk rotation-law identities now live in
    `schema/methods.toml`; extend either only with a matching implementation and
    focused configuration/equation test.
-6. Repeat independently for diagnostics and other method families after their
+6. Native single-object ID owner capabilities now live beside those laws and
+   generate host-only layout/grid/symmetry policy. They do not generate solver
+   variants or authorize every Cartesian product of their broad capabilities.
+7. Repeat independently for diagnostics and other method families after their
    ownership and validation boundary is clear.
 
 Every migration stage must preserve catalog ordering, component IDs, centerings,
