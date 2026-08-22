@@ -7,6 +7,7 @@
 #include <AMReX_IndexType.H>
 #include <AMReX_MultiFab.H>
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -17,7 +18,8 @@ namespace pyfluid_amrex {
 // Reusable interpolation geometry for arbitrary physical points. The plan owns
 // no field data, so one surface construction can evaluate many diagnostics.
 // Cell- or node-centered input fields must provide one valid ghost layer when
-// a linear interpolation stencil crosses a FAB boundary.
+// a linear interpolation stencil crosses a FAB boundary. Optional reflection
+// flags admit that same stencil through a parity-filled physical ghost layer.
 class HierarchyInterpolationPlan {
 public:
    HierarchyInterpolationPlan(
@@ -27,7 +29,9 @@ public:
       std::vector<amrex::Geometry> const& geometry,
       std::vector<amrex::BoxArray> const& grids,
       std::vector<amrex::DistributionMapping> const& distribution,
-      amrex::IndexType centering
+      amrex::IndexType centering,
+      std::array<int, 3> const& reflection_lo = {},
+      std::array<int, 3> const& reflection_hi = {}
    );
 
    std::vector<amrex::Real> interpolate(

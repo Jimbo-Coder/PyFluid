@@ -41,6 +41,7 @@ ROTATING_PATTERN = re.compile(
    r"boundary_density_excess=(?P<boundary_density_excess>[0-9.eE+-]+) "
    r"equatorial_radius=(?P<equatorial_radius>[0-9.eE+-]+) "
    r"polar_radius=(?P<polar_radius>[0-9.eE+-]+) "
+   r"matter_outer_radius=(?P<matter_outer_radius>[0-9.eE+-]+) "
    r"coordinate_axis_ratio=(?P<coordinate_axis_ratio>[0-9.eE+-]+) "
    r"mass_shedding_indicator=(?P<mass_shedding_indicator>[0-9.eE+-]+)"
 )
@@ -164,6 +165,18 @@ def validate_tov(
       args,
       checks=SMOKE_POLICY,
    )
+   finer_expanded_dir, finer_expanded_scalar = run_case(
+      "tov_octant_expanded_finer",
+      TOV_FULL_INPUT,
+      {
+         "initial_data.input_file": repo_relative(octant_artifact),
+         "amr.n_cell": "48 48 48",
+         "amr.max_grid_size": "24",
+         "pyfluid.plot_int": "-1",
+      },
+      args,
+      checks=SMOKE_POLICY,
+   )
 
    columns = ("mass", "energy", "max_rho", "min_lapse")
    full_octant_error = maximum_relative_difference(
@@ -181,17 +194,36 @@ def validate_tov(
          "z4c_momentum_linf",
       )
    )
+   finer_expanded = initial_row(finer_expanded_dir)
+   finer_profile_error = maximum_relative_difference(
+      initial_row(octant_dir),
+      finer_expanded,
+      ("max_rho", "min_lapse"),
+   )
+   finer_constraint = max(
+      abs(float(finer_expanded[name]))
+      for name in (
+         "z4c_hamiltonian_l2",
+         "z4c_hamiltonian_linf",
+         "z4c_momentum_linf",
+      )
+   )
    if (
       full_octant_error > 2.0e-2
       or expansion_error > 1.0e-4
+      or finer_profile_error > 1.0e-4
       or not math.isfinite(expanded_constraint)
       or expanded_constraint > 1.0e-2
+      or not math.isfinite(finer_constraint)
+      or finer_constraint > 1.5e-1
    ):
       raise RuntimeError(
          "TOV symmetry validation failed: "
          f"full/octant={full_octant_error:.3e}, "
          f"expansion={expansion_error:.3e}, "
-         f"expanded constraint={expanded_constraint:.3e}"
+         f"expanded constraint={expanded_constraint:.3e}, "
+         f"finer profile={finer_profile_error:.3e}, "
+         f"finer constraint={finer_constraint:.3e}"
       )
    return ([
       {
@@ -212,7 +244,21 @@ def validate_tov(
          "constraint_linf": expanded_constraint,
          "run_dir": repo_relative(expanded_dir),
       },
-   ], [full_scalar, octant_scalar, expanded_scalar])
+      {
+         "kind": "symmetry",
+         "case": "tov_physical_id_octant_finer_expansion",
+         "status": "PASS",
+         "metric": "maximum_relative_profile_difference",
+         "value": finer_profile_error,
+         "constraint_linf": finer_constraint,
+         "run_dir": repo_relative(finer_expanded_dir),
+      },
+   ], [
+      full_scalar,
+      octant_scalar,
+      expanded_scalar,
+      finer_expanded_scalar,
+   ])
 
 
 def validate_rns(
@@ -256,6 +302,7 @@ def validate_rns(
       "injection_energy",
       "equatorial_radius",
       "polar_radius",
+      "matter_outer_radius",
       "coordinate_axis_ratio",
       "mass_shedding_indicator",
    )

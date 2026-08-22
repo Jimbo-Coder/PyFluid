@@ -324,9 +324,28 @@ the generated TSV/log, and the current source revision/dirty state.
   containing black holes in general relativity: Application to black
   hole-disk systems*,
   [arXiv:1810.02825](https://arxiv.org/abs/1810.02825): complete
-  self-gravitating black-hole/disk initial data and a reference for the future
-  central-black-hole provider boundary. The current PyFluid disk component is
-  validated only around TOV/RNS central objects in conformally flat XCTS.
+  three-dimensional self-gravitating black-hole/disk initial data. The method
+  assumes approximate time stationarity and axisymmetry about the *disk* axis,
+  solves the circular Euler first integral with the gravitational elliptic
+  system, and explicitly states that a tilted system is not an equilibrium.
+  Its sequence fixes the disk inner point and maximum density, determines the
+  fluid constants during the coupled iteration, and continues from a light
+  disk toward larger disk masses. COCAL uses a nonuniform-radial `660x48x48`
+  spherical KEH grid and a non-conformally-flat Kerr--Schild-matched gravity
+  formulation; these are comparison targets, not imported PyFluid data.
+- A. Tsokaros, M. Ruiz, S. L. Shapiro, and V. Paschalidis,
+  *Self-gravitating disks around rapidly spinning, tilted black holes:
+  General-relativistic simulations*,
+  [arXiv:2209.04454](https://arxiv.org/abs/2209.04454),
+  [DOI 10.1103/PhysRevD.106.104010](https://doi.org/10.1103/PhysRevD.106.104010):
+  evolution of the COCAL-style construction at `0`, `45`, `90`, and `180`
+  degree black-hole tilts. The fluid is treated as approximately stationary
+  and axisymmetric about the disk axis because the disk is well separated from
+  the tilted hole; the models use a Gamma-`4/3`, constant-`ell` torus and grow a
+  self-gravitating sequence from a massless disk. This is direct provenance
+  for naming a tilted circular model a constraint-consistent non-equilibrium
+  seed and then measuring its precession/warping during evolution, not for
+  labeling it stationary equilibrium.
 
 ## Local AthenaK Reference
 

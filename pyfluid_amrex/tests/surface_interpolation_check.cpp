@@ -4,6 +4,7 @@
 #include <AMReX_ParallelDescriptor.H>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <memory>
@@ -276,6 +277,52 @@ void check_amr_interpolation()
    }
 }
 
+void check_reflected_cell_interpolation()
+{
+   const amrex::GpuArray<int, 3> periodic{{0, 0, 0}};
+   const amrex::GpuArray<amrex::Real, 3> lower{{0.0, -1.0, -1.0}};
+   const amrex::GpuArray<amrex::Real, 3> upper{{1.0, 1.0, 1.0}};
+   std::vector<amrex::Geometry> geometry{
+      make_geometry(8, periodic, lower, upper)
+   };
+   amrex::BoxArray level_grids(geometry[0].Domain());
+   level_grids.maxSize(4);
+   std::vector<amrex::BoxArray> grids{level_grids};
+   std::vector<amrex::DistributionMapping> distribution{
+      amrex::DistributionMapping(level_grids)
+   };
+   std::vector<std::unique_ptr<amrex::MultiFab>> hierarchy(1);
+   hierarchy[0] = std::make_unique<amrex::MultiFab>(
+      grids[0], distribution[0], 2, 1
+   );
+   const auto spacing = geometry[0].CellSizeArray();
+   for (amrex::MFIter mfi(*hierarchy[0], false); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.fabbox();
+      const auto values = hierarchy[0]->array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real x = lower[0] + (i + 0.5) * spacing[0];
+         values(i, j, k, 0) = 1.0 + x * x;
+         values(i, j, k, 1) = x;
+      });
+   }
+   const HierarchyInterpolationPlan plan(
+      {{{0.0, 0.0, 0.0}}},
+      pyfluid_amrex::MeshCartesian,
+      pyfluid_amrex::mesh_default_axes_layout(pyfluid_amrex::MeshCartesian),
+      geometry,
+      grids,
+      distribution,
+      amrex::IndexType::TheCellType(),
+      std::array<int, 3>{{1, 0, 0}},
+      std::array<int, 3>{{0, 0, 0}}
+   );
+   const auto values = plan.interpolate(hierarchy, 0, 2);
+   require_close(values[0], 1.0 + 0.25 * spacing[0] * spacing[0], 2.0e-13);
+   require_close(values[1], 0.0, 2.0e-13);
+}
+
 void check_coordinate_hierarchy_interpolation(int coordinate)
 {
    const amrex::GpuArray<int, 3> periodic{{0, 0, 0}};
@@ -376,6 +423,7 @@ int main(int argc, char* argv[])
       check_azimuthal_modes();
       check_coordinate_round_trip();
       check_amr_interpolation();
+      check_reflected_cell_interpolation();
       check_coordinate_hierarchy_interpolation(pyfluid_amrex::MeshCylindrical);
       check_coordinate_hierarchy_interpolation(pyfluid_amrex::MeshSpherical);
       amrex::Print() << "PASS surface geometry, multipoles, and AMR interpolation\n";

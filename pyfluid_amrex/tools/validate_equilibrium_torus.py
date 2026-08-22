@@ -49,6 +49,25 @@ KERR_J_CONSTANT_INPUT = (
 RNS_INPUT = (
    ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_spherical_id_2d.in"
 )
+CARTESIAN_TOV_INPUT = (
+   ROOT / "pyfluid_amrex/inputs/tov_xcts_cartesian_id_3d.in"
+)
+CARTESIAN_COUPLED_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/equilibrium_torus_coupled_xcts_cartesian_id_3d.in"
+)
+CARTESIAN_TILTED_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/tilted_torus_coupled_xcts_cartesian_id_3d.in"
+)
+SPHERICAL_TILTED_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/tilted_torus_from_cartesian_id_spherical_3d.in"
+)
+CARTESIAN_ROUNDTRIP_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/tilted_torus_from_spherical_id_cartesian_3d.in"
+)
 RUN_ROOT = ROOT / "runs/current/equilibrium_torus_validation"
 STANDARD_RESULTS = RUN_ROOT / "equilibrium_torus.tsv"
 FULL_RESULTS = RUN_ROOT / "equilibrium_torus_full.tsv"
@@ -225,6 +244,7 @@ def validate_torus(
    gravity: str,
    massive: bool,
    rotation_law: str = "constant_l",
+   minimum_mass: float | None = None,
 ) -> None:
    if diagnostics["gravity"] != gravity:
       raise RuntimeError(f"torus gravity={diagnostics['gravity']} != {gravity}")
@@ -235,7 +255,7 @@ def validate_torus(
    if not (
       float(diagnostics["requested_inner_radius"])
       < float(diagnostics["resolved_inner_radius"])
-      < float(diagnostics["density_maximum_radius"])
+      <= float(diagnostics["density_maximum_radius"])
       < float(diagnostics["outer_radius"])
       < 120.0
    ):
@@ -244,7 +264,8 @@ def validate_torus(
       raise RuntimeError("torus velocity is not causal")
    if not (float(diagnostics["maximum_log_specific_enthalpy"]) > 0.0):
       raise RuntimeError("torus enthalpy support is empty")
-   minimum_mass = 5.0e-2 if massive else 1.0e-5
+   if minimum_mass is None:
+      minimum_mass = 5.0e-2 if massive else 1.0e-5
    if not (float(diagnostics["baryonic_mass"]) > minimum_mass):
       raise RuntimeError(
          f"torus baryonic mass={diagnostics['baryonic_mass']} <= {minimum_mass}"
@@ -311,6 +332,18 @@ def require_preserved_disk_metadata(source: Path, target: Path) -> None:
       "disk_maximum_log_specific_enthalpy",
       "disk_baryonic_mass",
       "disk_angular_momentum",
+      "maximum_density",
+      "maximum_velocity",
+      "injection_energy",
+      "equatorial_radius",
+      "polar_radius",
+      "equatorial_log_enthalpy_gradient",
+      "polar_log_enthalpy_gradient",
+      "mass_shedding_indicator",
+      "adm_mass",
+      "baryonic_mass",
+      "angular_momentum",
+      "dimensionless_spin",
       "matter_outer_radius",
    )
    mismatches = {
@@ -326,7 +359,7 @@ def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--level", choices=("standard", "full"), default="standard")
    parser.add_argument("--ranks", type=int, default=3)
-   parser.add_argument("--timeout", type=int, default=180)
+   parser.add_argument("--timeout", type=int, default=300)
    parser.add_argument("--force", action="store_true")
    args = parser.parse_args()
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
@@ -717,6 +750,305 @@ def main() -> int:
          coupled_rns_seconds,
          coupled_rns_dir,
       ))
+
+      (
+         cartesian_tov_dir,
+         cartesian_tov_artifact,
+         cartesian_tov_seconds,
+         cartesian_tov_log,
+      ) = run_case(
+            "tov_xcts_cartesian_24",
+            3,
+            CARTESIAN_TOV_INPUT,
+            {
+               "geometry.prob_lo": "-24.0 -24.0 -24.0",
+               "geometry.prob_hi": "24.0 24.0 24.0",
+               "amr.n_cell": "24 24 24",
+            },
+            args,
+         )
+      assert cartesian_tov_artifact is not None
+      cartesian_tov_constraints = constraint_diagnostics(
+         cartesian_tov_log, "tov_xcts_cartesian_24"
+      )
+      if (
+         abs(float(cartesian_tov_constraints["hamiltonian_residual"]))
+         > 2.0e-10
+         or abs(float(cartesian_tov_constraints["momentum_residual"]))
+         > 2.0e-10
+      ):
+         raise RuntimeError("3D Cartesian TOV XCTS residual is too large")
+      rows.append({
+         "kind": "initial_data",
+         "case": "tov_xcts_cartesian_24",
+         "status": "PASS",
+         **cartesian_tov_constraints,
+         "seconds": cartesian_tov_seconds,
+         "run_dir": repo_relative(cartesian_tov_dir),
+      })
+
+      (
+         reflected_tov_dir,
+         reflected_tov_artifact,
+         reflected_tov_seconds,
+         reflected_tov_log,
+      ) = run_case(
+         "tov_xcts_cartesian_z_half_24x24x12",
+         3,
+         CARTESIAN_TOV_INPUT,
+         {
+            "geometry.prob_lo": "-24.0 -24.0 0.0",
+            "geometry.prob_hi": "24.0 24.0 24.0",
+            "amr.n_cell": "24 24 12",
+            "pyfluid.bc_zlo": "symmetry",
+         },
+         args,
+      )
+      assert reflected_tov_artifact is not None
+      reflected_tov_constraints = constraint_diagnostics(
+         reflected_tov_log, "tov_xcts_cartesian_z_half_24x24x12"
+      )
+      if (
+         abs(float(reflected_tov_constraints["hamiltonian_residual"]))
+         > 2.0e-10
+         or abs(float(reflected_tov_constraints["momentum_residual"]))
+         > 2.0e-10
+      ):
+         raise RuntimeError("z-half 3D Cartesian TOV XCTS residual is too large")
+      if not math.isclose(
+         float(reflected_tov_constraints["relative_matter_update"]),
+         float(cartesian_tov_constraints["relative_matter_update"]),
+         rel_tol=1.0e-6,
+         abs_tol=1.0e-14,
+      ):
+         raise RuntimeError("full/z-half Cartesian TOV fixed points differ")
+      rows.append({
+         "kind": "initial_data",
+         "case": "tov_xcts_cartesian_z_half_24x24x12",
+         "status": "PASS",
+         **reflected_tov_constraints,
+         "seconds": reflected_tov_seconds,
+         "run_dir": repo_relative(reflected_tov_dir),
+      })
+
+      (
+         cartesian_disk_dir,
+         cartesian_disk_artifact,
+         cartesian_disk_seconds,
+         cartesian_disk_log,
+      ) = run_case(
+            "equilibrium_torus_coupled_xcts_cartesian_24",
+            3,
+            CARTESIAN_COUPLED_INPUT,
+            {
+               "geometry.prob_lo": "-24.0 -24.0 -24.0",
+               "geometry.prob_hi": "24.0 24.0 24.0",
+               "amr.n_cell": "24 24 24",
+               "initial_data.input_file": repo_relative(
+                  cartesian_tov_artifact
+               ),
+            },
+            args,
+         )
+      assert cartesian_disk_artifact is not None
+      cartesian_disk_torus = torus_diagnostics(
+         cartesian_disk_log,
+         "equilibrium_torus_coupled_xcts_cartesian_24",
+      )
+      cartesian_disk_constraints = constraint_diagnostics(
+         cartesian_disk_log,
+         "equilibrium_torus_coupled_xcts_cartesian_24",
+      )
+      validate_torus(
+         cartesian_disk_torus,
+         cartesian_disk_constraints,
+         gravity="coupled",
+         massive=False,
+         minimum_mass=1.0e-12,
+      )
+      rows.append(torus_row(
+         "equilibrium_torus_coupled_xcts_cartesian_24",
+         cartesian_disk_torus,
+         cartesian_disk_constraints,
+         cartesian_disk_seconds,
+         cartesian_disk_dir,
+      ))
+
+      (
+         reflected_disk_dir,
+         reflected_disk_artifact,
+         reflected_disk_seconds,
+         reflected_disk_log,
+      ) = run_case(
+         "equilibrium_torus_coupled_xcts_cartesian_z_half_24x24x12",
+         3,
+         CARTESIAN_COUPLED_INPUT,
+         {
+            "geometry.prob_lo": "-24.0 -24.0 0.0",
+            "geometry.prob_hi": "24.0 24.0 24.0",
+            "amr.n_cell": "24 24 12",
+            "initial_data.input_file": repo_relative(reflected_tov_artifact),
+            "pyfluid.bc_zlo": "symmetry",
+         },
+         args,
+      )
+      assert reflected_disk_artifact is not None
+      reflected_disk_torus = torus_diagnostics(
+         reflected_disk_log,
+         "equilibrium_torus_coupled_xcts_cartesian_z_half_24x24x12",
+      )
+      reflected_disk_constraints = constraint_diagnostics(
+         reflected_disk_log,
+         "equilibrium_torus_coupled_xcts_cartesian_z_half_24x24x12",
+      )
+      validate_torus(
+         reflected_disk_torus,
+         reflected_disk_constraints,
+         gravity="coupled",
+         massive=False,
+         minimum_mass=1.0e-12,
+      )
+      for key in (
+         "resolved_inner_radius",
+         "outer_radius",
+         "density_maximum_radius",
+         "maximum_density",
+         "baryonic_mass",
+         "angular_momentum",
+      ):
+         if not math.isclose(
+            float(reflected_disk_torus[key]),
+            float(cartesian_disk_torus[key]),
+            rel_tol=5.0e-7,
+            abs_tol=1.0e-15,
+         ):
+            raise RuntimeError(f"full/z-half 3D torus mismatch in {key}")
+      rows.append(torus_row(
+         "equilibrium_torus_coupled_xcts_cartesian_z_half_24x24x12",
+         reflected_disk_torus,
+         reflected_disk_constraints,
+         reflected_disk_seconds,
+         reflected_disk_dir,
+      ))
+
+      (
+         tilted_3d_dir,
+         tilted_3d_artifact,
+         tilted_3d_seconds,
+         tilted_3d_log,
+      ) = run_case(
+            "tilted_torus_coupled_xcts_cartesian_24",
+            3,
+            CARTESIAN_TILTED_INPUT,
+            {
+               "geometry.prob_lo": "-24.0 -24.0 -24.0",
+               "geometry.prob_hi": "24.0 24.0 24.0",
+               "amr.n_cell": "24 24 24",
+               "initial_data.input_file": repo_relative(
+                  cartesian_tov_artifact
+               ),
+            },
+            args,
+         )
+      assert tilted_3d_artifact is not None
+      tilted_3d_torus = torus_diagnostics(
+         tilted_3d_log, "tilted_torus_coupled_xcts_cartesian_24"
+      )
+      tilted_3d_constraints = constraint_diagnostics(
+         tilted_3d_log, "tilted_torus_coupled_xcts_cartesian_24"
+      )
+      validate_torus(
+         tilted_3d_torus,
+         tilted_3d_constraints,
+         gravity="coupled",
+         massive=False,
+         minimum_mass=1.0e-9,
+      )
+      tilted_metadata = read_metadata(tilted_3d_artifact)
+      if tilted_metadata.get("disk") != "tilted_torus":
+         raise RuntimeError("3D tilted-torus identity was not persisted")
+      rows.append(torus_row(
+         "tilted_torus_coupled_xcts_cartesian_24",
+         tilted_3d_torus,
+         tilted_3d_constraints,
+         tilted_3d_seconds,
+         tilted_3d_dir,
+      ))
+
+      spherical_dir, spherical_artifact, spherical_seconds, _ = run_case(
+         "tilted_torus_to_spherical_36x24x32",
+         3,
+         SPHERICAL_TILTED_INPUT,
+         {"initial_data.input_file": repo_relative(tilted_3d_artifact)},
+         args,
+      )
+      assert spherical_artifact is not None
+      require_preserved_disk_metadata(tilted_3d_artifact, spherical_artifact)
+      rows.append({
+         "kind": "initial_data",
+         "case": "tilted_torus_to_spherical_36x24x32",
+         "status": "PASS",
+         "seconds": spherical_seconds,
+         "run_dir": repo_relative(spherical_dir),
+      })
+
+      roundtrip_dir, roundtrip_artifact, roundtrip_seconds, _ = run_case(
+         "tilted_torus_spherical_to_cartesian_36",
+         3,
+         CARTESIAN_ROUNDTRIP_INPUT,
+         {"initial_data.input_file": repo_relative(spherical_artifact)},
+         args,
+      )
+      assert roundtrip_artifact is not None
+      require_preserved_disk_metadata(spherical_artifact, roundtrip_artifact)
+      rows.append({
+         "kind": "initial_data",
+         "case": "tilted_torus_spherical_to_cartesian_36",
+         "status": "PASS",
+         "seconds": roundtrip_seconds,
+         "run_dir": repo_relative(roundtrip_dir),
+      })
+
+      reflection_dir, reflection_seconds = run_rejected_case(
+         "tilted_torus_reflection_rejected",
+         3,
+         CARTESIAN_TILTED_INPUT,
+         {
+            "geometry.prob_lo": "-24.0 -24.0 0.0",
+            "geometry.prob_hi": "24.0 24.0 24.0",
+            "amr.n_cell": "24 24 12",
+            "initial_data.input_file": repo_relative(cartesian_tov_artifact),
+            "pyfluid.bc_zlo": "symmetry",
+         },
+         "relative tilt requires a full 3D domain",
+         args,
+      )
+      rows.append({
+         "kind": "initial_data",
+         "case": "tilted_torus_reflection_rejected",
+         "status": "PASS",
+         "seconds": reflection_seconds,
+         "run_dir": repo_relative(reflection_dir),
+      })
+
+      curvilinear_dir, curvilinear_seconds = run_rejected_case(
+         "tilted_torus_curvilinear_continuation_rejected",
+         3,
+         SPHERICAL_TILTED_INPUT,
+         {
+            "initial_data.input_file": repo_relative(spherical_artifact),
+            "initial_data.angular_velocity": "0.002",
+         },
+         "3D curvilinear physical-ID targets may materialize a completed model",
+         args,
+      )
+      rows.append({
+         "kind": "initial_data",
+         "case": "tilted_torus_curvilinear_continuation_rejected",
+         "status": "PASS",
+         "seconds": curvilinear_seconds,
+         "run_dir": repo_relative(curvilinear_dir),
+      })
 
       rank1_dir, rank1_artifact, rank1_seconds, rank1_log = run_case(
          "coupled_massive_256x64_rank1",

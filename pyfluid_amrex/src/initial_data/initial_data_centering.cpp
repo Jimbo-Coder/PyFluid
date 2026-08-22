@@ -33,6 +33,116 @@ amrex::Vector<amrex::BCRec> reflection_only_records(
    return records;
 }
 
+template <int Order>
+void transfer_initial_data_cell_to_vertices_with_reflection(
+   amrex::MultiFab& destination,
+   amrex::MultiFab const& source,
+   amrex::Geometry const& geometry,
+   amrex::GpuArray<int, AMREX_SPACEDIM> const& reflection_lo,
+   amrex::GpuArray<int, AMREX_SPACEDIM> const& reflection_hi
+)
+{
+   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);
+   constexpr int destination_mask = (1 << AMREX_SPACEDIM) - 1;
+   if (source.nComp() != destination.nComp()
+       || centering_mask(source.ixType()) != 0
+       || centering_mask(destination.ixType()) != destination_mask) {
+      amrex::Abort("invalid reflected cell-to-vertex transfer layout");
+   }
+   amrex::BoxArray expected_boxes = source.boxArray();
+   expected_boxes.convert(destination.ixType());
+   if (destination.boxArray() != expected_boxes) {
+      amrex::Abort("reflected centering transfer requires one cell layout");
+   }
+   const amrex::Box cell_domain = geometry.Domain();
+   amrex::GpuArray<int, 3> source_lo{{0, 0, 0}};
+   amrex::GpuArray<int, 3> source_hi{{0, 0, 0}};
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      const int ghost_cells = source.nGrowVect()[direction];
+      if (ghost_cells < Order / 2) {
+         amrex::Abort(
+            "reflected centering transfer source has insufficient ghosts"
+         );
+      }
+      source_lo[direction] = cell_domain.smallEnd(direction);
+      source_hi[direction] = cell_domain.bigEnd(direction);
+      if (geometry.isPeriodic(direction)
+          || reflection_lo[direction] != 0) {
+         source_lo[direction] -= ghost_cells;
+      }
+      if (geometry.isPeriodic(direction)
+          || reflection_hi[direction] != 0) {
+         source_hi[direction] += ghost_cells;
+      }
+   }
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+   for (amrex::MFIter mfi(destination, amrex::TilingIfNotGPU());
+        mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto input = source.const_array(mfi);
+      const auto output = destination.array(mfi);
+      amrex::ParallelFor(
+         box,
+         destination.nComp(),
+         [=] AMREX_GPU_DEVICE(
+            int i, int j, int k, int component
+         ) noexcept {
+            output(i, j, k, component) =
+               generated::bounded_topology_centering_transfer<
+                  Order, AMREX_SPACEDIM
+               >(
+                  input,
+                  i,
+                  j,
+                  k,
+                  component,
+                  0,
+                  destination_mask,
+                  source_lo,
+                  source_hi
+               );
+         }
+      );
+   }
+}
+
+void transfer_initial_data_cell_to_vertices_with_reflection(
+   amrex::MultiFab& destination,
+   amrex::MultiFab const& source,
+   amrex::Geometry const& geometry,
+   int order,
+   amrex::GpuArray<int, AMREX_SPACEDIM> const& reflection_lo,
+   amrex::GpuArray<int, AMREX_SPACEDIM> const& reflection_hi
+)
+{
+   switch (order) {
+   case 2:
+      transfer_initial_data_cell_to_vertices_with_reflection<2>(
+         destination, source, geometry, reflection_lo, reflection_hi
+      );
+      return;
+   case 4:
+      transfer_initial_data_cell_to_vertices_with_reflection<4>(
+         destination, source, geometry, reflection_lo, reflection_hi
+      );
+      return;
+   case 6:
+      transfer_initial_data_cell_to_vertices_with_reflection<6>(
+         destination, source, geometry, reflection_lo, reflection_hi
+      );
+      return;
+   case 8:
+      transfer_initial_data_cell_to_vertices_with_reflection<8>(
+         destination, source, geometry, reflection_lo, reflection_hi
+      );
+      return;
+   default:
+      amrex::Abort("initial-data centering transfer order is unsupported");
+   }
+}
+
 void fill_nodal_physical_boundaries(
    amrex::MultiFab& field,
    amrex::Geometry const& geometry,
@@ -269,12 +379,29 @@ void materialize_initial_data_vertices(
          mapped = mapped || !coordinates[direction].uniform;
       }
       if (!mapped) {
-         transfer_grid_field_centering(
-            *vertex_fields[level],
-            *source_fields[level],
-            hierarchy.geometry[level],
-            transfer_order
-         );
+         bool has_reflection = false;
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            has_reflection = has_reflection
+               || hierarchy.reflection_lo[direction] != 0
+               || hierarchy.reflection_hi[direction] != 0;
+         }
+         if (has_reflection) {
+            transfer_initial_data_cell_to_vertices_with_reflection(
+               *vertex_fields[level],
+               *source_fields[level],
+               hierarchy.geometry[level],
+               transfer_order,
+               hierarchy.reflection_lo,
+               hierarchy.reflection_hi
+            );
+         } else {
+            transfer_grid_field_centering(
+               *vertex_fields[level],
+               *source_fields[level],
+               hierarchy.geometry[level],
+               transfer_order
+            );
+         }
          continue;
       }
       if (num_levels != 1 || transfer_order != 2

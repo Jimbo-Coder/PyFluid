@@ -10,8 +10,8 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-21, branch `main`, through Cycle 301's numerical
-apparent-horizon finder and mask contract. Cycle 284's preserved
+Last reconciled: 2026-08-21, branch `main`, through Cycle 303's full-3D
+single-object initial-data closure. Cycle 284's preserved
 standard/performance baseline remains the latest archived broad integration
 baseline.
 
@@ -449,6 +449,58 @@ baseline.
   star/disk or black-hole/disk equilibrium, q>1 disk-law calibration,
   magnetized tori, cusp/overflow diagnostics, and cross-method comparison
   remain open.
+- A relative star/hole--disk tilt removes the shared axial Killing symmetry.
+  Tsokaros--Uryu--Shapiro and the later Tsokaros--Ruiz evolutions handle this
+  honestly: assume approximate time stationarity and circular axisymmetry only
+  about the disk axis, solve that Euler first integral together with the full
+  gravitational elliptic system, and call the tilted result a self-consistent
+  non-equilibrium starting point. KEH is their Poisson solver, not what makes
+  the tilted fluid an equilibrium. They obtain massive models by continuing
+  from a massless disk while targeting increasing disk maximum density.
+- PyFluid now names that boundary explicitly. `equilibrium_torus` requires a
+  genuinely aligned stationary composition; `tilted_torus` is a full-3D
+  Cartesian, coupled-XCTS circular seed with independent stellar and disk
+  rotation laws. The first `36^3` SLy closure at a 30-degree relative tilt,
+  stellar `Omega=0.001`, disk `ell=5.8`, and requested `r_in=10` converges in
+  59 matter iterations with Hamiltonian/lapse residuals near `1e-15`, momentum
+  residual `5.46e-13`, causal disk speed `0.421`, ordered support
+  `10.30--15.41`, and zero recovery. Its disk baryonic mass is only
+  `1.36e-7`, so it validates orientation/coupling infrastructure, not a
+  strongly self-gravitating tilted-disk regime.
+- The native nonaxisymmetric elliptic owner remains 3D Cartesian. A completed
+  tilted artifact materializes through the portable physical-ID interface on
+  a full `r theta phi` chart and back to Cartesian with finite preflight error
+  and zero recovery; 3D curvilinear continuation or disk insertion rejects
+  before it can masquerade as a native spherical XCTS solve. Rematerialization
+  must retain both disk metadata and rotating-star injection/surface/charge
+  metadata so the result remains valid for either evolution or later sequence
+  continuation.
+- A reflected cell-centered initial-data hierarchy must let the cell-to-node
+  transfer consume its parity-filled ghost cells. Treating the reflection plane
+  as an ordinary bounded face selects a one-sided nodal closure and changes the
+  discrete matter source even while the elliptic residual converges. With the
+  corrected transfer, matched full and z-half `24^3`/`24x24x12` Cartesian TOV
+  fixed-point updates agree to `4.7e-16` absolute, and aligned torus support,
+  maximum density, reconstructed baryonic mass, and projected angular momentum
+  agree within `6e-8` relative.
+- Saved reduced-domain data need the same parity extension during
+  rematerialization. Clamping an octant cell center to the coarse-grid
+  interpolation hull lowered the expanded TOV central density by 5.15 percent
+  and raised Hamiltonian Linf from `3.01e-4` to `4.92e-3`, despite the native
+  full/octant solves agreeing. A centering-general parity ghost plus an
+  explicitly reflected interpolation stencil restores octant-to-full scalar
+  agreement to `2.64e-5` and Hamiltonian Linf to `3.01e-4`. The matched RNS
+  full/equatorial-half scalar and surface errors are `2.57e-4` and `8.30e-7`,
+  with zero recovery.
+- Upsampling cannot improve the saved ID's differentiability. A `48^3` base
+  plus one refined level materialized from the octant artifact preserves
+  maximum density/minimum lapse to `1.72e-16` and passes preflight with zero
+  recovery, directly exercising the reflected half-cell ghost. Its fourth-
+  order target-grid Hamiltonian Linf is nevertheless `9.69e-2` because a
+  piecewise-linear source is being differentiated on a grid twice as fine.
+  This is a valid field-transfer control, not evolution-ready high-resolution
+  constraint evidence. Solve the source at least as finely as the intended
+  evolution region until a target-grid constraint-polish owner is validated.
 - Differential rotation is validated over useful ranges, not to a physical
   endpoint. Q-power `q=1`, `A=10` reproduces j-constant fields and diagnostics
   to roundoff. Q-power `q=2` converges at `A=10`, `Omega=0.03` and at `A=5`,
@@ -662,8 +714,10 @@ baseline.
    evolution excision separate. Before activating the present inner candidate
    mask, add characteristic pure-outflow proof, inactive-cell ownership,
    one-sided evolution/dissipation, FillPatch/prolongation/regrid closure, and
-   fixed/moving-mask validation. Extend the existing torus component first in
-   the aligned limit and only afterward to a full-3D tilted disk.
+   fixed/moving-mask validation. Extend the existing torus component first to
+   an aligned constraint-solved black-hole disk and only afterward to a
+   full-3D tilted black-hole disk; the corresponding stellar 3D tilt and
+   artifact-handoff infrastructure is already in place.
 2. Extend the saved fast analytic and CompOSE RNS models from the present short
    two-resolution evolutions to a meaningful fraction of a rotation, tracking
    baryon mass, angular momentum, constraints, central density, and modes.

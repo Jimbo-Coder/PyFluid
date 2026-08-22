@@ -1010,8 +1010,12 @@ void validate_config(RunConfig const& cfg)
          "schema/methods.toml"
       );
    }
-   const bool equilibrium_torus_enabled =
+   const bool stationary_torus_enabled =
       cfg.initial_data_disk == "equilibrium_torus";
+   const bool tilted_torus_enabled =
+      cfg.initial_data_disk == "tilted_torus";
+   const bool equilibrium_torus_enabled = stationary_torus_enabled
+      || tilted_torus_enabled;
    const amrex::Real disk_axis_norm = std::sqrt(
       cfg.initial_data_disk_axis1 * cfg.initial_data_disk_axis1
       + cfg.initial_data_disk_axis2 * cfg.initial_data_disk_axis2
@@ -1033,17 +1037,67 @@ void validate_config(RunConfig const& cfg)
       * std::numeric_limits<amrex::Real>::epsilon();
    const bool analytic_kerr_disk_request =
       AMREX_SPACEDIM == 3 && cfg.mesh_coordinate == "cartesian"
-      && cfg.ic == "equilibrium_torus" && kerr_schild_requested;
+      && cfg.ic == "equilibrium_torus" && kerr_schild_requested
+      && stationary_torus_enabled;
+   const bool cartesian_coupled_stellar_torus_request =
+      AMREX_SPACEDIM == 3 && cfg.mesh_coordinate == "cartesian"
+      && (cfg.ic == "tov" || cfg.ic == "rotating_star")
+      && cfg.spacetime_initial_data == "xcts"
+      && cfg.initial_data_disk_gravity == "coupled";
+   const bool loaded_3d_materialization_request =
+      AMREX_SPACEDIM == 3 && cfg.initial_data_solve_only
+      && !cfg.initial_data_input_file.empty();
    if (equilibrium_torus_enabled
        && !analytic_kerr_disk_request
+       && !cartesian_coupled_stellar_torus_request
+       && !loaded_3d_materialization_request
        && (std::abs(disk_axis1) > disk_axis_tolerance
            || std::abs(disk_axis2) > disk_axis_tolerance
            || std::abs(disk_axis3 - 1.0) > disk_axis_tolerance)) {
       amrex::Abort(
-         "the current r-theta equilibrium-torus owner requires disk_axis = "
-         "(0,0,1); arbitrary disk axes are reserved in the ID metadata for "
-         "the future 3D tilted owner"
+         "the reduced r-theta equilibrium-torus owner requires disk_axis = "
+         "(0,0,1); arbitrary axes require the 3D Cartesian coupled XCTS owner"
       );
+   }
+   if (tilted_torus_enabled && !cartesian_coupled_stellar_torus_request
+       && !loaded_3d_materialization_request) {
+      amrex::Abort(
+         "initial_data.disk = tilted_torus requires a 3D Cartesian, coupled "
+         "TOV or rotating-star XCTS solve"
+      );
+   }
+   if (stationary_torus_enabled
+       && cartesian_coupled_stellar_torus_request
+       && cfg.ic == "rotating_star"
+       && cfg.initial_data_angular_velocity != 0.0) {
+      const amrex::Real star_axis_norm = std::sqrt(
+         cfg.initial_data_rotation_axis1 * cfg.initial_data_rotation_axis1
+         + cfg.initial_data_rotation_axis2 * cfg.initial_data_rotation_axis2
+         + cfg.initial_data_rotation_axis3 * cfg.initial_data_rotation_axis3
+      );
+      if (star_axis_norm > 0.0 && std::isfinite(star_axis_norm)) {
+         const amrex::Real star_axis1 =
+            cfg.initial_data_rotation_axis1 / star_axis_norm;
+         const amrex::Real star_axis2 =
+            cfg.initial_data_rotation_axis2 / star_axis_norm;
+         const amrex::Real star_axis3 =
+            cfg.initial_data_rotation_axis3 / star_axis_norm;
+         const amrex::Real cross1 = disk_axis2 * star_axis3
+            - disk_axis3 * star_axis2;
+         const amrex::Real cross2 = disk_axis3 * star_axis1
+            - disk_axis1 * star_axis3;
+         const amrex::Real cross3 = disk_axis1 * star_axis2
+            - disk_axis2 * star_axis1;
+         if (std::sqrt(
+                cross1 * cross1 + cross2 * cross2 + cross3 * cross3
+             ) > disk_axis_tolerance) {
+            amrex::Abort(
+               "stationary equilibrium_torus data require aligned stellar "
+               "and disk axes; use initial_data.disk = tilted_torus for an "
+               "explicit constraint-consistent, nonstationary 3D seed"
+            );
+         }
+      }
    }
    if (equilibrium_torus_enabled && analytic_kerr_disk_request
        && black_hole_spin_squared > 0.0) {
@@ -2261,8 +2315,7 @@ void validate_config(RunConfig const& cfg)
          MeshAxisTheta
       )
       && (cfg.ic == "rotating_star"
-          || (cfg.ic == "tov"
-              && cfg.initial_data_disk == "equilibrium_torus"))
+          || (cfg.ic == "tov" && stationary_torus_enabled))
       && cfg.spacetime_initial_data == "xcts";
    const bool reduced_radial_tov =
       AMREX_SPACEDIM == 1
@@ -2301,17 +2354,18 @@ void validate_config(RunConfig const& cfg)
          "spherical-r TOV or spherical r-theta rotating-star XCTS solve"
       );
    }
-   if (cfg.initial_data_disk == "equilibrium_torus"
+   if (equilibrium_torus_enabled
        && cfg.initial_data_input_file.empty()
        && ((!reduced_axisymmetric_xcts || !cfg.initial_data_solve_only)
-           && !analytic_kerr_torus)) {
+           && !analytic_kerr_torus
+           && !cartesian_coupled_stellar_torus_request)) {
       amrex::Abort(
-         "equilibrium-torus construction currently requires a solve-only 2D "
-         "spherical r-theta stellar XCTS solve or a 3D Cartesian test-fluid "
-         "Kerr-Schild central object"
+         "torus construction requires a solve-only 2D spherical r-theta "
+         "stellar XCTS solve, a 3D Cartesian coupled stellar XCTS solve, or "
+         "a 3D Cartesian test-fluid Kerr-Schild central object"
       );
    }
-   if (cfg.initial_data_disk == "equilibrium_torus"
+   if (equilibrium_torus_enabled
        && cfg.ic != "tov" && cfg.ic != "rotating_star"
        && cfg.ic != "equilibrium_torus") {
       amrex::Abort(
@@ -2321,7 +2375,7 @@ void validate_config(RunConfig const& cfg)
       );
    }
    if (cfg.ic == "equilibrium_torus"
-       && cfg.initial_data_disk != "equilibrium_torus") {
+       && !stationary_torus_enabled) {
       amrex::Abort(
          "pyfluid.ic = equilibrium_torus requires "
          "initial_data.disk = equilibrium_torus"
@@ -2334,7 +2388,8 @@ void validate_config(RunConfig const& cfg)
       );
    }
    if (cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"
-       && cfg.ic != "tov" && !reduced_axisymmetric_xcts) {
+       && cfg.ic != "tov" && !reduced_axisymmetric_xcts
+       && !loaded_3d_materialization_request) {
       amrex::Abort(
          "reduced curvilinear initial-data solves currently support TOV or "
          "rotating-star spherical r-theta XCTS"

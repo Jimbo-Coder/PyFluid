@@ -681,9 +681,12 @@ PhysicalInterpolationPoint mapped_source_point(
       // but outside the source cell-center interpolation hull. Treat that
       // half-cell strip with the selected physical exterior policy instead of
       // asking the generic interpolation plan for unavailable source data.
-      const bool outside_interpolation_hull =
-         target_mesh[component] < safe_lo
-         || target_mesh[component] > safe_hi;
+      const bool below_interpolation_hull = target_mesh[component] < safe_lo
+         && source.reflection_lo[direction] == 0;
+      const bool above_interpolation_hull = target_mesh[component] > safe_hi
+         && source.reflection_hi[direction] == 0;
+      const bool outside_interpolation_hull = below_interpolation_hull
+         || above_interpolation_hull;
       mapped.exterior = mapped.exterior || outside_interpolation_hull;
       if (outside_interpolation_hull) {
          target_mesh[component] = amrex::max(
@@ -876,6 +879,91 @@ void interpolate_stored_field(
    if (static_cast<int>(symmetries.size()) != num_components) {
       amrex::Abort("physical-ID interpolation symmetry layout is inconsistent");
    }
+   bool has_reflection = false;
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      has_reflection = has_reflection
+         || source.reflection_lo[direction] != 0
+         || source.reflection_hi[direction] != 0;
+   }
+   // AMReX's scalar FillDomainBoundary helper is cell-only, while a portable
+   // artifact also stores nodal ADM fields and face-centered magnetic fields.
+   // Fill the one-layer parity extension explicitly for every centering so the
+   // common interpolation plan can use a reflected stencil without inventing
+   // separate field-specific materializers.
+   for (std::size_t level = 0;
+        has_reflection && level < source_field.size();
+        ++level) {
+      amrex::MultiFab& field = *source_field[level];
+      const amrex::Box centered_domain = amrex::convert(
+         source.geometry[level].Domain(), centering
+      );
+      amrex::GpuArray<int, 3> domain_lo{{0, 0, 0}};
+      amrex::GpuArray<int, 3> domain_hi{{0, 0, 0}};
+      amrex::GpuArray<int, 3> periodic{{0, 0, 0}};
+      amrex::GpuArray<int, 3> node_centered{{0, 0, 0}};
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         domain_lo[direction] = centered_domain.smallEnd(direction);
+         domain_hi[direction] = centered_domain.bigEnd(direction);
+         periodic[direction] = source.geometry[level].isPeriodic(direction)
+            ? 1 : 0;
+         node_centered[direction] = centering.nodeCentered(direction) ? 1 : 0;
+      }
+      const auto reflection_lo = source.reflection_lo;
+      const auto reflection_hi = source.reflection_hi;
+      for (int component = 0; component < num_components; ++component) {
+         amrex::GpuArray<int, 3> parity{{1, 1, 1}};
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            parity[direction] = grid_field_reflection_parity(
+               symmetries[component], direction
+            );
+         }
+         for (amrex::MFIter mfi(field, false); mfi.isValid(); ++mfi) {
+            const amrex::Box box = mfi.fabbox();
+            const auto values = field.array(mfi);
+            amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+               int i, int j, int k
+            ) noexcept {
+               int source_index[3]{i, j, k};
+               int reflection_parity = 1;
+               bool reflected = false;
+               bool supported = true;
+               for (int direction = 0;
+                    direction < AMREX_SPACEDIM;
+                    ++direction) {
+                  if (source_index[direction] < domain_lo[direction]) {
+                     if (reflection_lo[direction] != 0) {
+                        source_index[direction] =
+                           2 * domain_lo[direction] - source_index[direction]
+                           - (node_centered[direction] == 0 ? 1 : 0);
+                        reflection_parity *= parity[direction];
+                        reflected = true;
+                     } else if (periodic[direction] == 0) {
+                        supported = false;
+                     }
+                  } else if (source_index[direction] > domain_hi[direction]) {
+                     if (reflection_hi[direction] != 0) {
+                        source_index[direction] =
+                           2 * domain_hi[direction] - source_index[direction]
+                           + (node_centered[direction] == 0 ? 1 : 0);
+                        reflection_parity *= parity[direction];
+                        reflected = true;
+                     } else if (periodic[direction] == 0) {
+                        supported = false;
+                     }
+                  }
+               }
+               if (reflected && supported) {
+                  values(i, j, k, component) = reflection_parity * values(
+                     source_index[0],
+                     source_index[1],
+                     source_index[2],
+                     component
+                  );
+               }
+            });
+         }
+      }
+   }
    for (std::size_t level = 0; level < target_field.size(); ++level) {
       amrex::MultiFab& target = *target_field[level];
       const auto target_lo = target_geometry[level].ProbLoArray();
@@ -921,7 +1009,9 @@ void interpolate_stored_field(
             source.geometry,
             source.grids,
             source.distribution,
-            centering
+            centering,
+            source.reflection_lo,
+            source.reflection_hi
          );
          std::vector<amrex::Real> values = plan.interpolate(
             source_field, 0, num_components
@@ -1780,13 +1870,18 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    result.source_ic = required_metadata_value(metadata, "source_ic", path);
    const auto disk_entry = metadata.find("disk");
    result.disk = disk_entry == metadata.end() ? "none" : disk_entry->second;
-   if (result.disk != cfg.initial_data_disk) {
+   const bool adding_torus = result.disk == "none"
+      && (cfg.initial_data_disk == "equilibrium_torus"
+          || cfg.initial_data_disk == "tilted_torus")
+      && cfg.spacetime_initial_data == "xcts";
+   if (result.disk != cfg.initial_data_disk && !adding_torus) {
       amrex::Abort(
          "physical-ID disk matter identity is incompatible with the target in "
          + path
       );
    }
-   if (result.disk == "equilibrium_torus") {
+   if (result.disk == "equilibrium_torus"
+       || result.disk == "tilted_torus") {
       result.disk_gravity = required_metadata_value(
          metadata, "disk_gravity", path
       );
@@ -1933,12 +2028,51 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    result.injection_energy = optional_metadata_real(
       metadata, "injection_energy", -1.0, path
    );
-   if (result.source_ic == "rotating_star"
-       && result.injection_energy != -1.0
-       && !(result.injection_energy > 0.0)) {
-      amrex::Abort(
-         "physical initial-data injection energy must be positive in " + path
+   if (result.source_ic == "rotating_star") {
+      result.maximum_density = required_metadata_real(
+         metadata, "maximum_density", path
       );
+      result.maximum_velocity = required_metadata_real(
+         metadata, "maximum_velocity", path
+      );
+      result.equatorial_radius = required_metadata_real(
+         metadata, "equatorial_radius", path
+      );
+      result.polar_radius = required_metadata_real(
+         metadata, "polar_radius", path
+      );
+      result.equatorial_log_enthalpy_gradient = required_metadata_real(
+         metadata, "equatorial_log_enthalpy_gradient", path
+      );
+      result.polar_log_enthalpy_gradient = required_metadata_real(
+         metadata, "polar_log_enthalpy_gradient", path
+      );
+      result.mass_shedding_indicator = required_metadata_real(
+         metadata, "mass_shedding_indicator", path
+      );
+      result.adm_mass = required_metadata_real(metadata, "adm_mass", path);
+      result.baryonic_mass = required_metadata_real(
+         metadata, "baryonic_mass", path
+      );
+      result.angular_momentum = required_metadata_real(
+         metadata, "angular_momentum", path
+      );
+      result.dimensionless_spin = required_metadata_real(
+         metadata, "dimensionless_spin", path
+      );
+      if (!(result.maximum_density > 0.0)
+          || !(result.maximum_velocity >= 0.0
+               && result.maximum_velocity < 1.0)
+          || !(result.injection_energy > 0.0)
+          || !(result.equatorial_radius > 0.0)
+          || !(result.polar_radius > 0.0)
+          || !(result.adm_mass > 0.0)
+          || !(result.baryonic_mass > 0.0)) {
+         amrex::Abort(
+            "physical rotating-star diagnostic metadata is invalid in "
+            + path
+         );
+      }
    }
    result.differential_rotation_length =
       cfg.initial_data_differential_rotation_length;
@@ -1967,7 +2101,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       }
    }
    if (result.source_ic == "rotating_star"
-       || result.disk == "equilibrium_torus") {
+       || result.disk == "equilibrium_torus"
+       || result.disk == "tilted_torus") {
       try {
          const auto stored_outer = metadata.find("matter_outer_radius");
          if (stored_outer != metadata.end()) {
@@ -1981,12 +2116,18 @@ PhysicalInitialDataMetadata read_physical_initial_data(
                );
             }
          } else {
-            const amrex::Real equatorial = std::stod(
-               required_metadata_value(metadata, "equatorial_radius", path)
-            );
-            const amrex::Real polar = std::stod(
-               required_metadata_value(metadata, "polar_radius", path)
-            );
+            const amrex::Real equatorial = result.source_ic == "rotating_star"
+               ? result.equatorial_radius
+               : std::stod(
+                    required_metadata_value(
+                       metadata, "equatorial_radius", path
+                    )
+                 );
+            const amrex::Real polar = result.source_ic == "rotating_star"
+               ? result.polar_radius
+               : std::stod(
+                    required_metadata_value(metadata, "polar_radius", path)
+                 );
             // Older artifacts store independent cylindrical and axial
             // extents.  Their Euclidean combination is a conservative sphere
             // enclosing every source matter cell.
@@ -2076,7 +2217,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          source_rotation_axis,
          target_rotation_axis
       );
-   } else if (result.disk == "equilibrium_torus") {
+   } else if (result.disk == "equilibrium_torus"
+              || result.disk == "tilted_torus") {
       rigid_transform = make_physical_id_rigid_transform(
          source_rotation_center,
          target_rotation_center,
@@ -2093,7 +2235,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    }
    result.used_rigid_transform =
       !physical_id_rigid_transform_is_identity(rigid_transform);
-   if (result.disk == "equilibrium_torus") {
+   if (result.disk == "equilibrium_torus"
+       || result.disk == "tilted_torus") {
       std::array<amrex::Real, 3> mapped_disk_axis{};
       amrex::Real mapped_norm_squared = 0.0;
       amrex::Real target_norm_squared = 0.0;

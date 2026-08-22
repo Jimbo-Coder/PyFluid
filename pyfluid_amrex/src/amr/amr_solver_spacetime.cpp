@@ -479,22 +479,85 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       }
    }
 #endif
-   bool rotating_xy_reflection =
-      hierarchy.reflection_lo[0] != 0 || hierarchy.reflection_hi[0] != 0;
-#if (AMREX_SPACEDIM >= 2)
-   rotating_xy_reflection = rotating_xy_reflection
-      || hierarchy.reflection_lo[1] != 0
-      || hierarchy.reflection_hi[1] != 0;
-#endif
-   if (cfg_.ic == "rotating_star"
-       && cfg_.initial_data_angular_velocity != 0.0
-       && cfg_.mesh_coordinate == "cartesian"
-       && rotating_xy_reflection) {
-      amrex::Abort(
-         "a nonzero star rotating about z is not invariant under independent "
-         "x/y reflection boundaries; use full x/y and optional z symmetry"
+#if (AMREX_SPACEDIM == 3)
+   if (cfg_.mesh_coordinate == "cartesian") {
+      const bool rotating_star = cfg_.ic == "rotating_star"
+         && cfg_.initial_data_angular_velocity != 0.0;
+      const bool rotating_disk = cfg_.initial_data_disk == "equilibrium_torus"
+         || cfg_.initial_data_disk == "tilted_torus";
+      const amrex::Real star_axis_norm = std::sqrt(
+         cfg_.initial_data_rotation_axis1
+            * cfg_.initial_data_rotation_axis1
+         + cfg_.initial_data_rotation_axis2
+            * cfg_.initial_data_rotation_axis2
+         + cfg_.initial_data_rotation_axis3
+            * cfg_.initial_data_rotation_axis3
       );
+      const amrex::Real disk_axis_norm = std::sqrt(
+         cfg_.initial_data_disk_axis1 * cfg_.initial_data_disk_axis1
+         + cfg_.initial_data_disk_axis2 * cfg_.initial_data_disk_axis2
+         + cfg_.initial_data_disk_axis3 * cfg_.initial_data_disk_axis3
+      );
+      const amrex::Real star_axis[3]{
+         cfg_.initial_data_rotation_axis1 / star_axis_norm,
+         cfg_.initial_data_rotation_axis2 / star_axis_norm,
+         cfg_.initial_data_rotation_axis3 / star_axis_norm,
+      };
+      const amrex::Real disk_axis[3]{
+         cfg_.initial_data_disk_axis1 / disk_axis_norm,
+         cfg_.initial_data_disk_axis2 / disk_axis_norm,
+         cfg_.initial_data_disk_axis3 / disk_axis_norm,
+      };
+      const amrex::Real center[3]{
+         cfg_.initial_data_rotation_center1,
+         cfg_.initial_data_rotation_center2,
+         cfg_.initial_data_rotation_center3,
+      };
+      for (int direction = 0; direction < 3; ++direction) {
+         for (int side = 0; side < 2; ++side) {
+            const bool reflected = side == 0
+               ? hierarchy.reflection_lo[direction] != 0
+               : hierarchy.reflection_hi[direction] != 0;
+            if (!reflected || (!rotating_star && !rotating_disk)) {
+               continue;
+            }
+            const amrex::Real plane = side == 0
+               ? hierarchy.geometry[0].ProbLo(direction)
+               : hierarchy.geometry[0].ProbHi(direction);
+            const amrex::Real coordinate_tolerance = 64.0
+               * std::numeric_limits<amrex::Real>::epsilon()
+               * std::max({
+                    amrex::Real(1.0), std::abs(plane), std::abs(center[direction])
+                 });
+            if (std::abs(plane - center[direction]) > coordinate_tolerance) {
+               amrex::Abort(
+                  "rotating single-object ID reflection planes must pass "
+                  "through the common rotation center"
+               );
+            }
+            const auto axis_is_normal = [direction](
+               amrex::Real const axis[3]
+            ) {
+               amrex::Real tangent_squared = 0.0;
+               for (int component = 0; component < 3; ++component) {
+                  if (component != direction) {
+                     tangent_squared += axis[component] * axis[component];
+                  }
+               }
+               return tangent_squared <= 1.0e-24;
+            };
+            if ((rotating_star && !axis_is_normal(star_axis))
+                || (rotating_disk && !axis_is_normal(disk_axis))) {
+               amrex::Abort(
+                  "a rotating star or disk is reflection invariant only "
+                  "across its equatorial plane; relative tilt requires a "
+                  "full 3D domain"
+               );
+            }
+         }
+      }
    }
+#endif
 
    ConformalConstraintFormulation formulation =
       ConformalConstraintFormulation::ctt;

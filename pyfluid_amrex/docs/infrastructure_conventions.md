@@ -169,8 +169,8 @@ An interior fill is data on an active cell and must not be reinterpreted as an
 excision mask. Conversely, true excision requires explicit active-domain and
 inner-boundary ownership in both the ID solver and evolution hierarchy.
 Black-hole spin, stellar rotation axis, and disk axis remain separate metadata;
-this preserves aligned reduced solves while allowing a later full-3D tilted
-composition through the same materializer.
+this preserves aligned reduced solves and lets the full-3D owner retain a
+physical relative star/hole--disk tilt through the same materializer.
 
 An apparent-horizon surface is a diagnostic object sampled from the hierarchy,
 not a second spacetime field layout and not an implicit excision mask. The
@@ -196,6 +196,32 @@ system-wide. A gravity-disabled `test_fluid` component means its stress-energy
 is omitted from the constraint solve, not that the stored rest density is zero.
 Every self-gravitating component must participate in the coupled matter/metric
 fixed point; adding it after convergence is only the test-fluid contract.
+`equilibrium_torus` means the central-object and disk axes admit the stationary
+circular first integral. `tilted_torus` means a deliberately nonstationary,
+constraint-consistent circular seed: the fluid is approximately stationary and
+axisymmetric about its own axis while the coupled spacetime is fully 3D. It
+requires the native 3D Cartesian coupled-XCTS owner. The portable artifact may
+then be evaluated on Cartesian or full `r theta phi` targets. A 3D curvilinear
+target may not continue the nonlinear matter solve or add a torus until a
+native curvilinear elliptic owner exists.
+
+Initial-data centering transfer treats periodic and reflection ghost values as
+valid stencil support. Bounded one-sided closure is reserved for true physical
+nonreflection faces. Otherwise a reduced-domain matter source can solve a
+different discrete elliptic problem even when its reported residual is tiny.
+Keep this policy in the initial-data transfer owner rather than broadening the
+generic evolution-centering template surface.
+
+The portable physical-ID reader applies the same rule to a reflected source
+artifact. It fills one parity-aware source ghost layer for cell-, face-, and
+node-centered fields and explicitly authorizes the hierarchy interpolation
+stencil to cross only metadata-declared reflection planes. A reflected
+half-cell strip is source support, not atmosphere or asymptotic exterior.
+Materialization preserves the saved physical fields; it does not manufacture
+unresolved scales or project the interpolated fields back onto the constraints.
+For evolution on a finer target, solve the source ID at least as finely as the
+target's physically important region or perform an explicit target-grid
+constraint polish once such an owner is selected and validated.
 
 `initial_data.output_file` writes this artifact at step zero.
 `initial_data.input_file` loads it. `initial_data.solve_only=1` performs the
@@ -217,6 +243,10 @@ continuation identity includes the differential-rotation length and, for the
 q-power family, its exponent. The artifact must also restore the converged
 Euler first-integral injection energy; recomputing it from the original TOV
 seed changes the nonlinear problem.
+Rematerialization must carry forward the complete rotating-star continuation
+summary (injection energy, surface diagnostics, charges, and spin) and disk
+component summary, not only the fields. Otherwise a valid evolution artifact
+silently ceases to be a valid sequence-continuation artifact.
 
 For a tabulated EoS, both physical-ID and checkpoint metadata retain the
 backend/version, normalized-table fingerprint, point counts, causality

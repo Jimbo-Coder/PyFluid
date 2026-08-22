@@ -71,8 +71,8 @@ static constexpr std::array<std::string_view, 3> ShiftInitialDataOptions{{
 static constexpr std::array<std::string_view, 2> InitialAtmosphereOptions{{
    "flat", "power_law"
 }};
-static constexpr std::array<std::string_view, 2> InitialDiskOptions{{
-   "none", "equilibrium_torus"
+static constexpr std::array<std::string_view, 3> InitialDiskOptions{{
+   "none", "equilibrium_torus", "tilted_torus"
 }};
 static constexpr std::array<std::string_view, 2> InitialDiskGravityOptions{{
    "test_fluid", "coupled"

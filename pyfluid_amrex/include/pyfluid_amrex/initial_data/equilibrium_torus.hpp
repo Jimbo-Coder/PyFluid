@@ -42,6 +42,7 @@ struct EquilibriumTorusParameters {
    amrex::Real center2 = 0.0;
    amrex::Real center3 = 0.0;
    amrex::Real matter_relaxation = 0.5;
+   bool continue_existing_matter = false;
    InitialAtmosphereParameters atmosphere{};
 };
 
@@ -249,6 +250,15 @@ EquilibriumTorusParameters equilibrium_torus_parameters(
 
 EquilibriumTorusUpdateSummary
 update_axisymmetric_spherical_equilibrium_torus_primitives(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   int eos_method,
+   EOSParams const& eos,
+   EquilibriumTorusParameters const& parameters
+);
+
+EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& primitive_state,
    amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,

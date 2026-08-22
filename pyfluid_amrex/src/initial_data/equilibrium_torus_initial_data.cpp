@@ -13,6 +13,7 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/eos/cold_barotrope.hpp"
+#include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
@@ -32,6 +33,395 @@ DiskRotationLaw disk_rotation_law_from_name(std::string const& name)
    amrex::Abort("unknown generated disk rotation law: " + name);
    return DiskRotationLaw::ConstantL;
 }
+
+#if (AMREX_SPACEDIM == 3)
+std::array<amrex::Real, 3> torus_equatorial_direction(
+   EquilibriumTorusParameters const& parameters
+)
+{
+   const std::array<amrex::Real, 3> axis{
+      parameters.axis1, parameters.axis2, parameters.axis3,
+   };
+   int reference_direction = 0;
+   for (int direction = 1; direction < 3; ++direction) {
+      if (std::abs(axis[direction]) < std::abs(axis[reference_direction])) {
+         reference_direction = direction;
+      }
+   }
+   std::array<amrex::Real, 3> reference{0.0, 0.0, 0.0};
+   reference[reference_direction] = 1.0;
+   std::array<amrex::Real, 3> radial{
+      axis[1] * reference[2] - axis[2] * reference[1],
+      axis[2] * reference[0] - axis[0] * reference[2],
+      axis[0] * reference[1] - axis[1] * reference[0],
+   };
+   const amrex::Real norm = std::sqrt(
+      radial[0] * radial[0] + radial[1] * radial[1]
+      + radial[2] * radial[2]
+   );
+   for (amrex::Real& component : radial) {
+      component /= norm;
+   }
+   return radial;
+}
+
+amrex::Real inner_edge_normalization_3d(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   EquilibriumTorusParameters const& parameters
+)
+{
+   const int num_levels = static_cast<int>(hierarchy.geometry.size());
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> normalization(num_levels);
+   amrex::Vector<amrex::MultiFab*> normalization_view(num_levels);
+   for (int level = 0; level < num_levels; ++level) {
+      normalization[level] = std::make_unique<amrex::MultiFab>(
+         hierarchy.grids[level], hierarchy.distribution[level], 2, 1
+      );
+      normalization[level]->setVal(0.0);
+      normalization_view[level] = normalization[level].get();
+      const auto problo = hierarchy.geometry[level].ProbLoArray();
+      const auto dx = hierarchy.geometry[level].CellSizeArray();
+      const amrex::Box domain = hierarchy.geometry[level].Domain();
+      const amrex::Dim3 domain_lo = amrex::lbound(domain);
+      for (amrex::MFIter mfi(
+              *normalization[level], amrex::TilingIfNotGPU()
+           ); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto geometry = cell_spacetime[level]->const_array(mfi);
+         const auto output = normalization[level]->array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const PatchCoordinate physical{
+               problo[0] + (static_cast<amrex::Real>(i - domain_lo.x) + 0.5)
+                  * dx[0],
+               problo[1] + (static_cast<amrex::Real>(j - domain_lo.y) + 0.5)
+                  * dx[1],
+               problo[2] + (static_cast<amrex::Real>(k - domain_lo.z) + 0.5)
+                  * dx[2],
+            };
+            const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+               load_z4c_state(geometry, i, j, k)
+            );
+            const EquilibriumTorusPoint point = equilibrium_torus_point(
+               parameters, 1.0, physical, metric
+            );
+            output(i, j, k, 0) = parameters.rotation_law
+                  == DiskRotationLaw::ConstantL
+               ? point.minus_covariant_time_velocity
+               : std::exp(-point.log_specific_enthalpy);
+            output(i, j, k, 1) = point.timelike ? 0.0 : 1.0;
+         });
+      }
+   }
+   fill_initial_data_ghosts(
+      hierarchy,
+      normalization_view,
+      initial_data_boundary_records(
+         hierarchy,
+         {GridFieldSymmetryKind::Scalar, GridFieldSymmetryKind::Scalar}
+      )
+   );
+   const std::array<amrex::Real, 3> radial =
+      torus_equatorial_direction(parameters);
+   amrex::GpuArray<amrex::Real, 3> inner_point{{
+      parameters.center1 + parameters.inner_radius * radial[0],
+      parameters.center2 + parameters.inner_radius * radial[1],
+      parameters.center3 + parameters.inner_radius * radial[2],
+   }};
+   const auto coarse_dx = hierarchy.geometry[0].CellSizeArray();
+   const auto coarse_problo = hierarchy.geometry[0].ProbLoArray();
+   const auto coarse_probhi = hierarchy.geometry[0].ProbHiArray();
+   for (int direction = 0; direction < 3; ++direction) {
+      const bool lower_reflection = hierarchy.reflection_lo[direction] != 0;
+      const bool upper_reflection = hierarchy.reflection_hi[direction] != 0;
+      if (!lower_reflection && !upper_reflection) {
+         continue;
+      }
+      const amrex::Real plane = lower_reflection
+         ? coarse_problo[direction] : coarse_probhi[direction];
+      const amrex::Real tolerance = 64.0
+         * std::numeric_limits<amrex::Real>::epsilon()
+         * std::max(amrex::Real(1.0), std::abs(plane));
+      if (std::abs(inner_point[direction] - plane) > tolerance) {
+         continue;
+      }
+      // On the corresponding full cell-centered lattice, linear
+      // interpolation at an even reflection plane averages the two adjacent
+      // centers.  Their values are identical by parity, so sampling the first
+      // retained center reproduces the full-domain discrete normalization.
+      const amrex::Real inward_sign = lower_reflection ? 1.0 : -1.0;
+      inner_point[direction] = plane
+         + inward_sign * 0.5 * coarse_dx[direction];
+   }
+   std::vector<amrex::GpuArray<amrex::Real, 3>> inner_points{inner_point};
+   const HierarchyInterpolationPlan plan(
+      std::move(inner_points),
+      MeshCartesian,
+      mesh_default_axes_layout(MeshCartesian),
+      hierarchy.geometry,
+      hierarchy.grids,
+      hierarchy.distribution,
+      amrex::IndexType::TheCellType()
+   );
+   const std::vector<amrex::Real> values = plan.interpolate(
+      normalization, 0, 2
+   );
+   const amrex::Real result = values[0];
+   if (!(result > 0.0) || !std::isfinite(result) || values[1] > 1.0e-12) {
+      amrex::Abort(
+         "equilibrium-torus inner edge does not admit a resolved timelike "
+         "circular orbit"
+      );
+   }
+   return result;
+}
+
+template <int EOSMethod>
+EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   EOSParams const& eos,
+   EquilibriumTorusParameters const& parameters
+)
+{
+   const int num_levels = static_cast<int>(hierarchy.geometry.size());
+   if (num_levels == 0
+       || static_cast<int>(primitive_state.size()) != num_levels
+       || static_cast<int>(cell_spacetime.size()) != num_levels) {
+      amrex::Abort("invalid 3D equilibrium-torus hierarchy");
+   }
+   const amrex::Real inner_normalization = inner_edge_normalization_3d(
+      hierarchy, cell_spacetime, parameters
+   );
+   EquilibriumTorusUpdateSummary summary;
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> diagnostics(num_levels);
+   for (int level = 0; level < num_levels; ++level) {
+      if (primitive_state[level] == nullptr || cell_spacetime[level] == nullptr
+          || primitive_state[level]->nComp() < NVAR_HYDRO
+          || cell_spacetime[level]->nComp() < Z4C_NUM_COMPONENTS) {
+         amrex::Abort("invalid 3D equilibrium-torus state layout");
+      }
+      diagnostics[level] = std::make_unique<amrex::MultiFab>(
+         hierarchy.grids[level], hierarchy.distribution[level], 9, 0
+      );
+      diagnostics[level]->setVal(0.0);
+      diagnostics[level]->setVal(
+         std::numeric_limits<amrex::Real>::max(), 3, 1, 0
+      );
+      const auto problo = hierarchy.geometry[level].ProbLoArray();
+      const auto dx = hierarchy.geometry[level].CellSizeArray();
+      const amrex::Box domain = hierarchy.geometry[level].Domain();
+      const amrex::Dim3 domain_lo = amrex::lbound(domain);
+      const amrex::Dim3 domain_hi = amrex::ubound(domain);
+      const auto reflection_lo = hierarchy.reflection_lo;
+      const auto reflection_hi = hierarchy.reflection_hi;
+      const amrex::Real half_diagonal = 0.5 * std::sqrt(
+         dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2]
+      );
+      for (amrex::MFIter mfi(
+              *primitive_state[level], amrex::TilingIfNotGPU()
+           ); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto primitive = primitive_state[level]->array(mfi);
+         const auto geometry = cell_spacetime[level]->const_array(mfi);
+         const auto diagnostic = diagnostics[level]->array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const PatchCoordinate physical{
+               problo[0] + (static_cast<amrex::Real>(i - domain_lo.x) + 0.5)
+                  * dx[0],
+               problo[1] + (static_cast<amrex::Real>(j - domain_lo.y) + 0.5)
+                  * dx[1],
+               problo[2] + (static_cast<amrex::Real>(k - domain_lo.z) + 0.5)
+                  * dx[2],
+            };
+            const amrex::Real displacement1 = physical.q1 - parameters.center1;
+            const amrex::Real displacement2 = physical.q2 - parameters.center2;
+            const amrex::Real displacement3 = physical.q3 - parameters.center3;
+            const amrex::Real spherical_radius = std::sqrt(
+               displacement1 * displacement1 + displacement2 * displacement2
+               + displacement3 * displacement3
+            );
+            if (spherical_radius < parameters.inner_radius) {
+               return;
+            }
+            const amrex::Real parallel = displacement1 * parameters.axis1
+               + displacement2 * parameters.axis2
+               + displacement3 * parameters.axis3;
+            const amrex::Real cylindrical_radius = std::sqrt(amrex::max(
+               spherical_radius * spherical_radius - parallel * parallel,
+               amrex::Real(0.0)
+            ));
+            const InitialDataSamplePoint sample{physical, physical};
+            const EOSThermodynamicState atmosphere =
+               initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
+            const bool contained_old_torus =
+               parameters.continue_existing_matter
+               && initial_matter_exceeds_atmosphere(
+                    primitive(i, j, k, RHO), atmosphere.rho
+                  );
+            const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+               load_z4c_state(geometry, i, j, k)
+            );
+            const EquilibriumTorusPoint target = equilibrium_torus_point(
+               parameters, inner_normalization, physical, metric
+            );
+            diagnostic(i, j, k, 2) = target.timelike
+               ? amrex::max(target.log_specific_enthalpy, amrex::Real(0.0))
+               : 0.0;
+            ColdBarotropeState matter;
+            amrex::Real v1 = 0.0;
+            amrex::Real v2 = 0.0;
+            amrex::Real v3 = 0.0;
+            if (target.timelike && target.log_specific_enthalpy > 0.0) {
+               const amrex::Real old_log_enthalpy = contained_old_torus
+                  ? cold_log_specific_enthalpy(
+                       primitive(i, j, k, RHO), eos
+                    )
+                  : 0.0;
+               const amrex::Real relaxed_log_enthalpy =
+                  (1.0 - parameters.matter_relaxation) * old_log_enthalpy
+                  + parameters.matter_relaxation
+                     * target.log_specific_enthalpy;
+               matter = cold_barotrope_from_log_enthalpy(
+                  relaxed_log_enthalpy, eos
+               );
+               v1 = (1.0 - parameters.matter_relaxation)
+                     * primitive(i, j, k, MOM1)
+                  + parameters.matter_relaxation * target.v1;
+               v2 = (1.0 - parameters.matter_relaxation)
+                     * primitive(i, j, k, MOM2)
+                  + parameters.matter_relaxation * target.v2;
+               v3 = (1.0 - parameters.matter_relaxation)
+                     * primitive(i, j, k, MOM3)
+                  + parameters.matter_relaxation * target.v3;
+            }
+            if (!initial_matter_exceeds_atmosphere(
+                   matter.rho, atmosphere.rho
+                )) {
+               matter.rho = atmosphere.rho;
+               matter.pressure = atmosphere.pressure;
+               matter.specific_internal_energy =
+                  atmosphere.specific_internal_energy;
+               v1 = 0.0;
+               v2 = 0.0;
+               v3 = 0.0;
+            }
+            primitive(i, j, k, RHO) = matter.rho;
+            primitive(i, j, k, MOM1) = v1;
+            primitive(i, j, k, MOM2) = v2;
+            primitive(i, j, k, MOM3) = v3;
+            primitive(i, j, k, ENERGY) = matter.pressure;
+            const bool contains_torus = initial_matter_exceeds_atmosphere(
+               matter.rho, atmosphere.rho
+            );
+            if (contains_torus) {
+               diagnostic(i, j, k, 0) = matter.rho;
+               diagnostic(i, j, k, 1) = target.velocity_squared;
+               diagnostic(i, j, k, 3) = cylindrical_radius;
+               diagnostic(i, j, k, 4) = spherical_radius + half_diagonal;
+               diagnostic(i, j, k, 5) = cylindrical_radius;
+            }
+            const bool boundary =
+               (i == domain_lo.x && reflection_lo[0] == 0)
+               || (i == domain_hi.x && reflection_hi[0] == 0)
+               || (j == domain_lo.y && reflection_lo[1] == 0)
+               || (j == domain_hi.y && reflection_hi[1] == 0)
+               || (k == domain_lo.z && reflection_lo[2] == 0)
+               || (k == domain_hi.z && reflection_hi[2] == 0);
+            diagnostic(i, j, k, 6) = boundary && contains_torus
+               ? matter.rho - atmosphere.rho : 0.0;
+            diagnostic(i, j, k, 7) = contained_old_torus && !target.timelike
+               ? 1.0 : 0.0;
+         });
+      }
+      summary.maximum_density = std::max(
+         summary.maximum_density, diagnostics[level]->max(0, 0, false)
+      );
+      summary.maximum_velocity = std::max(
+         summary.maximum_velocity,
+         std::sqrt(std::max(
+            diagnostics[level]->max(1, 0, false), amrex::Real(0.0)
+         ))
+      );
+      summary.maximum_log_specific_enthalpy = std::max(
+         summary.maximum_log_specific_enthalpy,
+         diagnostics[level]->max(2, 0, false)
+      );
+      summary.inner_radius = summary.inner_radius == 0.0
+         ? diagnostics[level]->min(3, 0, false)
+         : std::min(summary.inner_radius, diagnostics[level]->min(3, 0, false));
+      summary.outer_radius = std::max(
+         summary.outer_radius, diagnostics[level]->max(4, 0, false)
+      );
+      summary.boundary_density_excess = std::max(
+         summary.boundary_density_excess,
+         diagnostics[level]->max(6, 0, false)
+      );
+      if (diagnostics[level]->max(7, 0, false) > 0.0) {
+         amrex::Abort(
+            "equilibrium-torus continuation lost a timelike orbit inside its "
+            "previous matter support"
+         );
+      }
+      if (primitive_state[level]->contains_nan(0, NVAR_HYDRO, 0)) {
+         amrex::Abort("3D equilibrium-torus update is nonfinite");
+      }
+   }
+   const bool resolved_support = summary.maximum_density > 0.0
+      && summary.outer_radius > summary.inner_radius
+      && std::isfinite(summary.inner_radius);
+   if (!resolved_support) {
+      if (amrex::ParallelDescriptor::IOProcessor()) {
+         amrex::Print()
+            << "3D torus unresolved: inner_normalization="
+            << inner_normalization
+            << " maximum_log_specific_enthalpy="
+            << summary.maximum_log_specific_enthalpy
+            << " maximum_density=" << summary.maximum_density << '\n';
+      }
+      if (!parameters.continue_existing_matter) {
+         return summary;
+      }
+      amrex::Abort(
+         "equilibrium-torus parameters do not produce resolved finite support"
+      );
+   }
+   if (summary.boundary_density_excess > 0.0) {
+      amrex::Abort(
+         "equilibrium-torus matter reaches the physical boundary; enlarge "
+         "the ID domain"
+      );
+   }
+   const amrex::Real density_tolerance = 128.0
+      * std::numeric_limits<amrex::Real>::epsilon();
+   for (int level = 0; level < num_levels; ++level) {
+      const amrex::Real maximum_density = summary.maximum_density;
+      for (amrex::MFIter mfi(
+              *diagnostics[level], amrex::TilingIfNotGPU()
+           ); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto diagnostic = diagnostics[level]->array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            diagnostic(i, j, k, 8) = diagnostic(i, j, k, 0)
+                  >= maximum_density * (1.0 - density_tolerance)
+               ? diagnostic(i, j, k, 5) : 0.0;
+         });
+      }
+      summary.density_maximum_radius = std::max(
+         summary.density_maximum_radius,
+         diagnostics[level]->max(8, 0, false)
+      );
+   }
+   return summary;
+}
+#endif
 
 #if (AMREX_SPACEDIM == 2)
 struct ReferenceWeight {
@@ -397,7 +787,8 @@ EquilibriumTorusParameters equilibrium_torus_parameters(
 )
 {
    EquilibriumTorusParameters parameters;
-   parameters.active = cfg.initial_data_disk == "equilibrium_torus";
+   parameters.active = cfg.initial_data_disk == "equilibrium_torus"
+      || cfg.initial_data_disk == "tilted_torus";
    if (!parameters.active) {
       return parameters;
    }
@@ -434,6 +825,36 @@ EquilibriumTorusParameters equilibrium_torus_parameters(
    parameters.matter_relaxation = cfg.initial_data_matter_relaxation;
    parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
    return parameters;
+}
+
+EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   int eos_method,
+   EOSParams const& eos,
+   EquilibriumTorusParameters const& parameters
+)
+{
+#if (AMREX_SPACEDIM != 3)
+   amrex::ignore_unused(
+      hierarchy, primitive_state, cell_spacetime, eos_method, eos, parameters
+   );
+   amrex::Abort("general equilibrium-torus construction requires 3D");
+   return {};
+#else
+   if (!parameters.active) {
+      return {};
+   }
+   amrex::ignore_unused(eos_method);
+   if (cold_barotrope_supported(eos)) {
+      return update_equilibrium_torus_primitives_method<EOSRuntime>(
+         hierarchy, primitive_state, cell_spacetime, eos, parameters
+      );
+   }
+   amrex::Abort("equilibrium-torus construction requires a cold barotropic EOS");
+   return {};
+#endif
 }
 
 EquilibriumTorusUpdateSummary

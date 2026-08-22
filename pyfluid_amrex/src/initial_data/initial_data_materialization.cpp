@@ -3,6 +3,7 @@
 #include <AMReX.H>
 #include <AMReX_GpuAsyncArray.H>
 #include <AMReX_GpuLaunch.H>
+#include <AMReX_MultiFabUtil.H>
 
 #include <algorithm>
 #include <cmath>
@@ -54,6 +55,20 @@ amrex::Vector<GridFieldSymmetryKind> vector_symmetries()
       GridFieldSymmetryKind::Vector2,
       GridFieldSymmetryKind::Vector3,
    };
+}
+
+amrex::Real reflected_domain_volume_factor(
+   InitialDataEllipticHierarchy const& hierarchy
+) noexcept
+{
+   amrex::Real factor = 1.0;
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      if (hierarchy.reflection_lo[direction] != 0
+          || hierarchy.reflection_hi[direction] != 0) {
+         factor *= 2.0;
+      }
+   }
+   return factor;
 }
 
 amrex::Vector<GridFieldSymmetryKind> z4c_symmetries()
@@ -677,6 +692,136 @@ void update_axisymmetric_equilibrium_torus_global_diagnostics(
 }
 #endif
 
+#if (AMREX_SPACEDIM == 3)
+template <PhysicalSystem System, int EOSMethod>
+void update_equilibrium_torus_global_diagnostics(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab const*> const& primitive_state,
+   amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
+   EOSParams const& eos,
+   EquilibriumTorusParameters const& parameters,
+   EquilibriumTorusUpdateSummary& summary
+)
+{
+   if (!parameters.active) {
+      return;
+   }
+   summary.baryonic_mass = 0.0;
+   summary.angular_momentum = 0.0;
+   const int finest_level = static_cast<int>(hierarchy.geometry.size()) - 1;
+   for (int level = 0; level <= finest_level; ++level) {
+      amrex::iMultiFab valid(
+         hierarchy.grids[level], hierarchy.distribution[level], 1, 0
+      );
+      if (level < finest_level) {
+         valid = amrex::makeFineMask(
+            *primitive_state[level],
+            hierarchy.grids[level + 1],
+            hierarchy.refinement_ratio[level],
+            hierarchy.geometry[level].periodicity(),
+            1,
+            0
+         );
+      } else {
+         valid.setVal(1);
+      }
+      amrex::MultiFab integrands(
+         hierarchy.grids[level], hierarchy.distribution[level], 2, 0
+      );
+      integrands.setVal(0.0);
+      const auto problo = hierarchy.geometry[level].ProbLoArray();
+      const auto dx = hierarchy.geometry[level].CellSizeArray();
+      const amrex::Box domain = hierarchy.geometry[level].Domain();
+      const amrex::Dim3 domain_lo = amrex::lbound(domain);
+      const amrex::Real cell_volume = dx[0] * dx[1] * dx[2];
+      for (amrex::MFIter mfi(integrands, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto primitive = primitive_state[level]->const_array(mfi);
+         const auto geometry = cell_spacetime[level]->const_array(mfi);
+         const auto valid_cell = valid.const_array(mfi);
+         const auto output = integrands.array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            if (valid_cell(i, j, k, 0) == 0) {
+               return;
+            }
+            const PatchCoordinate physical{
+               problo[0] + (static_cast<amrex::Real>(i - domain_lo.x) + 0.5)
+                  * dx[0],
+               problo[1] + (static_cast<amrex::Real>(j - domain_lo.y) + 0.5)
+                  * dx[1],
+               problo[2] + (static_cast<amrex::Real>(k - domain_lo.z) + 0.5)
+                  * dx[2],
+            };
+            const amrex::Real r1 = physical.q1 - parameters.center1;
+            const amrex::Real r2 = physical.q2 - parameters.center2;
+            const amrex::Real r3 = physical.q3 - parameters.center3;
+            if (std::sqrt(r1 * r1 + r2 * r2 + r3 * r3)
+                < parameters.inner_radius) {
+               return;
+            }
+            const InitialDataSamplePoint sample{physical, physical};
+            const EOSThermodynamicState atmosphere =
+               initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
+            const RHDPrimitive fluid = rhd_primitive_at<EOSMethod>(
+               primitive, i, j, k, eos
+            );
+            if (!initial_matter_exceeds_atmosphere(
+                   fluid.rho, atmosphere.rho
+                )) {
+               return;
+            }
+            const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+               load_z4c_state(geometry, i, j, k)
+            );
+            EulerianMatter matter;
+            if constexpr (System == PhysicalSystem::RHD) {
+               matter = generated::rhd_eulerian_matter(fluid, metric);
+            } else {
+               matter = generated::rmhd_eulerian_matter(
+                  rmhd_primitive_at(primitive, i, j, k, eos), metric
+               );
+            }
+            const amrex::Real velocity_squared = spatial_vector_norm_squared(
+               fluid.v1, fluid.v2, fluid.v3, metric
+            );
+            const amrex::Real lorentz_factor = 1.0 / std::sqrt(
+               1.0 - velocity_squared
+            );
+            const amrex::Real angular_momentum1 =
+               r2 * matter.momentum3 - r3 * matter.momentum2;
+            const amrex::Real angular_momentum2 =
+               r3 * matter.momentum1 - r1 * matter.momentum3;
+            const amrex::Real angular_momentum3 =
+               r1 * matter.momentum2 - r2 * matter.momentum1;
+            output(i, j, k, 0) = cell_volume * metric.sqrt_det_gamma
+               * fluid.rho * lorentz_factor;
+            output(i, j, k, 1) = cell_volume * metric.sqrt_det_gamma * (
+               parameters.axis1 * angular_momentum1
+               + parameters.axis2 * angular_momentum2
+               + parameters.axis3 * angular_momentum3
+            );
+         });
+      }
+      summary.baryonic_mass += integrands.sum(0, false);
+      summary.angular_momentum += integrands.sum(1, false);
+   }
+   // Configuration admits a rotating disk on a reflected Cartesian domain
+   // only when every reflection is its equatorial plane.  The projected
+   // angular momentum therefore has the same even parity as the mass, so both
+   // reductions reconstruct the omitted physical sectors with one factor.
+   const amrex::Real volume_factor = reflected_domain_volume_factor(hierarchy);
+   summary.baryonic_mass *= volume_factor;
+   summary.angular_momentum *= volume_factor;
+   if (!(summary.baryonic_mass > 0.0)
+       || !std::isfinite(summary.angular_momentum)) {
+      amrex::Abort("3D equilibrium-torus diagnostics are invalid");
+   }
+}
+#endif
+
 template <PhysicalSystem System, int EOSMethod>
 ConformalMaterializationResult materialize_conformal_initial_data_method(
    InitialDataEllipticHierarchy const& hierarchy,
@@ -693,13 +838,25 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
 )
 {
    static_assert(System == PhysicalSystem::RHD || System == PhysicalSystem::RMHD);
-   amrex::ignore_unused(fields, equilibrium_torus);
+   amrex::ignore_unused(fields);
    const int num_levels = static_cast<int>(hierarchy.geometry.size());
    if (num_levels == 0
        || static_cast<int>(primitive_state.size()) != num_levels
        || static_cast<int>(spacetime_state.size()) != num_levels
        || static_cast<int>(cell_spacetime.size()) != num_levels) {
       amrex::Abort("invalid conformal initial-data hierarchy materialization");
+   }
+   amrex::Real maximum_cell_half_diagonal = 0.0;
+   for (int level = 0; level < num_levels; ++level) {
+      const auto dx = hierarchy.geometry[level].CellSizeArray();
+      maximum_cell_half_diagonal = std::max(
+         maximum_cell_half_diagonal,
+         amrex::Real(0.5) * std::sqrt(
+            AMREX_D_TERM(
+               dx[0] * dx[0], + dx[1] * dx[1], + dx[2] * dx[2]
+            )
+         )
+      );
    }
 
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> conformal_storage(num_levels);
@@ -991,16 +1148,21 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    cttk_options.linear = options.linear;
 
    ConformalMaterializationResult result;
-   const bool update_rotating_matter = rotating_star.active
-      && rotating_star.angular_velocity != 0.0;
-   const int max_matter_iterations = update_rotating_matter
-      ? rotating_star.max_iterations
+   const bool coupled_equilibrium_torus = equilibrium_torus.active
+      && equilibrium_torus.gravity == EquilibriumTorusGravity::Coupled;
+   const bool update_stellar_matter = rotating_star.active
+      && (rotating_star.angular_velocity != 0.0
+          || coupled_equilibrium_torus);
+   const bool iterate_matter = update_stellar_matter
+      || coupled_equilibrium_torus;
+   const int max_matter_iterations = iterate_matter
+      ? rotating_star.max_iterations * (coupled_equilibrium_torus ? 2 : 1)
       : 12;
-   const amrex::Real matter_tolerance = update_rotating_matter
+   const amrex::Real matter_tolerance = iterate_matter
       ? rotating_star.relative_tolerance
       : 1.0e-9;
    amrex::Vector<amrex::Real> rotation_targets;
-   if (update_rotating_matter) {
+   if (rotating_star.active && rotating_star.angular_velocity != 0.0) {
       rotation_targets = rotating_star.continuation_targets;
       if (rotation_targets.empty()) {
          rotation_targets.reserve(rotating_star.continuation_steps);
@@ -1018,7 +1180,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       rotation_targets.push_back(rotating_star.angular_velocity);
    }
    const bool coupled_xcts_matter_iteration =
-      update_rotating_matter
+      iterate_matter
       && formulation == ConformalConstraintFormulation::xcts;
    const auto materialize_current_geometry = [&]() {
       materialize_conformal_geometry(
@@ -1055,9 +1217,16 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       RotatingStarParameters continued_rotating_star = rotating_star;
       continued_rotating_star.angular_velocity =
          rotation_targets[continuation_step - 1];
+      if (coupled_equilibrium_torus) {
+         continued_rotating_star.update_outer_radius =
+            equilibrium_torus.inner_radius;
+      }
       result.relative_matter_update = std::numeric_limits<amrex::Real>::max();
       int step_matter_iterations = 0;
       bool strict_xcts_polish = false;
+      bool torus_activated = !coupled_equilibrium_torus;
+      bool coupled_torus_updated = false;
+      bool stellar_matter_updated = false;
       for (int matter_iteration = 1;
            matter_iteration <= max_matter_iterations;
            ++matter_iteration) {
@@ -1086,11 +1255,11 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          // star's lapse and shift rather than erasing it in the flat seed metric.
          const bool preserve_spherical_seed =
             continuation_step == 1 && matter_iteration == 1;
-         if (update_rotating_matter && !preserve_spherical_seed) {
-            amrex::Vector<amrex::MultiFab const*> cell_spacetime_const(num_levels);
-            for (int level = 0; level < num_levels; ++level) {
-               cell_spacetime_const[level] = cell_spacetime[level];
-            }
+         amrex::Vector<amrex::MultiFab const*> cell_spacetime_const(num_levels);
+         for (int level = 0; level < num_levels; ++level) {
+            cell_spacetime_const[level] = cell_spacetime[level];
+         }
+         if (update_stellar_matter && !preserve_spherical_seed) {
             result.rotating_star = update_rotating_star_primitives(
                hierarchy,
                primitive_state,
@@ -1099,6 +1268,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                eos,
                continued_rotating_star
             );
+            stellar_matter_updated = true;
             if (amrex::ParallelDescriptor::IOProcessor()) {
                amrex::Print()
                   << "rotating continuation step=" << continuation_step
@@ -1112,6 +1282,30 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                   << " boundary_density_excess="
                   << result.rotating_star.boundary_density_excess << '\n';
             }
+         }
+         if (equilibrium_torus.active
+             && result.rotating_star.matter_outer_radius
+                   - maximum_cell_half_diagonal
+                >= equilibrium_torus.inner_radius) {
+            amrex::Abort(
+               "equilibrium-torus inner radius must lie outside the central "
+               "star matter support"
+            );
+         }
+         if (coupled_equilibrium_torus && torus_activated) {
+            EquilibriumTorusParameters continued_torus = equilibrium_torus;
+            continued_torus.continue_existing_matter =
+               coupled_torus_updated;
+            result.equilibrium_torus = update_equilibrium_torus_primitives(
+               hierarchy,
+               primitive_state,
+               cell_spacetime_const,
+               EOSMethod,
+               eos,
+               continued_torus
+            );
+            coupled_torus_updated =
+               result.equilibrium_torus.maximum_density > 0.0;
          }
          for (int level = 0; level < num_levels; ++level) {
             if (primitive_state[level]->contains_nan(
@@ -1412,46 +1606,100 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          step_matter_iterations = matter_iteration;
          result.relative_matter_update = update_norm
             / std::max(amrex::Real(1.0), solution_norm);
-         if (update_rotating_matter && amrex::ParallelDescriptor::IOProcessor()) {
+         if (iterate_matter && amrex::ParallelDescriptor::IOProcessor()) {
+            const char* matter_phase = coupled_equilibrium_torus
+                  && torus_activated
+               ? "star_torus" : "central_star";
             amrex::Print()
                << "rotating continuation step=" << continuation_step
                << "/" << rotation_targets.size()
                << " target_omega="
                << continued_rotating_star.angular_velocity
+               << " phase=" << matter_phase
                << " coupled_update_iteration=" << matter_iteration
                << " relative_update=" << result.relative_matter_update << '\n';
          }
          if (result.relative_matter_update <= matter_tolerance
              && (!coupled_xcts_matter_iteration
                  || result.constraints.converged)) {
+            if (coupled_equilibrium_torus && !torus_activated) {
+               if (!update_stellar_matter || stellar_matter_updated) {
+                  torus_activated = true;
+                  strict_xcts_polish = false;
+                  result.relative_matter_update =
+                     std::numeric_limits<amrex::Real>::max();
+               }
+               continue;
+            }
+            if (coupled_equilibrium_torus && !coupled_torus_updated) {
+               continue;
+            }
             break;
          }
       }
       result.matter_iterations += step_matter_iterations;
       if (result.relative_matter_update > matter_tolerance
           || (coupled_xcts_matter_iteration
-              && !result.constraints.converged)) {
+              && !result.constraints.converged)
+          || (coupled_equilibrium_torus
+              && (!torus_activated || !coupled_torus_updated))) {
          amrex::Abort(
             "matter-coupled conformal fixed-point iteration did not converge "
             "at rotation continuation step "
             + std::to_string(continuation_step)
          );
       }
+      materialize_current_geometry();
+      if (equilibrium_torus.active
+          && equilibrium_torus.gravity
+             == EquilibriumTorusGravity::TestFluid) {
+         EquilibriumTorusParameters test_fluid_torus = equilibrium_torus;
+         test_fluid_torus.matter_relaxation = 1.0;
+         amrex::Vector<amrex::MultiFab const*> cell_spacetime_const(num_levels);
+         for (int level = 0; level < num_levels; ++level) {
+            cell_spacetime_const[level] = cell_spacetime[level];
+         }
+         result.equilibrium_torus = update_equilibrium_torus_primitives(
+            hierarchy,
+            primitive_state,
+            cell_spacetime_const,
+            EOSMethod,
+            eos,
+            test_fluid_torus
+         );
+      }
+      if (equilibrium_torus.active) {
+         amrex::Vector<amrex::MultiFab const*> primitive_const(num_levels);
+         amrex::Vector<amrex::MultiFab const*> cell_spacetime_const(num_levels);
+         for (int level = 0; level < num_levels; ++level) {
+            primitive_const[level] = primitive_state[level];
+            cell_spacetime_const[level] = cell_spacetime[level];
+         }
+         update_equilibrium_torus_global_diagnostics<System, EOSMethod>(
+            hierarchy,
+            primitive_const,
+            cell_spacetime_const,
+            eos,
+            equilibrium_torus,
+            result.equilibrium_torus
+         );
+      }
       if (continuation_observer) {
-         materialize_current_geometry();
-         update_surface_diagnostic(continued_rotating_star);
+         if (update_stellar_matter) {
+            update_surface_diagnostic(continued_rotating_star);
+         }
          continuation_observer(
             continuation_step,
             static_cast<int>(rotation_targets.size()),
             continued_rotating_star.angular_velocity,
             result.rotating_star,
-            {}
+            result.equilibrium_torus
          );
       }
    }
 
    materialize_current_geometry();
-   if (update_rotating_matter && !continuation_observer) {
+   if (update_stellar_matter && !continuation_observer) {
       update_surface_diagnostic(rotating_star);
    }
    return result;

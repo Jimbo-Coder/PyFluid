@@ -49,7 +49,9 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
    std::vector<amrex::Geometry> const& geometry,
    std::vector<amrex::BoxArray> const& grids,
    std::vector<amrex::DistributionMapping> const& distribution,
-   amrex::IndexType centering
+   amrex::IndexType centering,
+   std::array<int, 3> const& reflection_lo,
+   std::array<int, 3> const& reflection_hi
 )
 {
    if (geometry.empty() || geometry.size() != grids.size()
@@ -76,7 +78,6 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
          amrex::IntVect anchor;
          amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fraction{};
          bool inside = true;
-         bool crosses_periodic_seam = false;
          for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
             amrex::Real coordinate = runtime_coordinates[direction];
             if (level_geometry.isPeriodic(direction)) {
@@ -97,21 +98,23 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
                const int domain_length = centered_domain.length(direction);
                if (lower_index < centered_domain.smallEnd(direction)) {
                   lower_index += domain_length;
-                  crosses_periodic_seam = true;
                } else if (lower_index > centered_domain.bigEnd(direction)) {
                   lower_index -= domain_length;
-                  crosses_periodic_seam = true;
-               }
-               if (lower_index == centered_domain.bigEnd(direction)
-                   && local_fraction > 0.0) {
-                  crosses_periodic_seam = true;
                }
                anchor[direction] = lower_index;
                fraction[direction] = local_fraction;
                continue;
             }
-            if (lower_index < centered_domain.smallEnd(direction)
-                || lower_index + 1 > centered_domain.bigEnd(direction)) {
+            const bool crosses_lower_reflection =
+               lower_index == centered_domain.smallEnd(direction) - 1
+               && reflection_lo[direction] != 0;
+            const bool crosses_upper_reflection =
+               lower_index == centered_domain.bigEnd(direction)
+               && reflection_hi[direction] != 0;
+            if ((lower_index < centered_domain.smallEnd(direction)
+                 || lower_index + 1 > centered_domain.bigEnd(direction))
+                && !crosses_lower_reflection
+                && !crosses_upper_reflection) {
                // Cartesian-to-curvilinear round trips can amplify floating-
                // point error near an axis.  Clamp only when the point differs
                // from the first/last interpolation location by coordinate
@@ -151,23 +154,34 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
          const amrex::BoxArray uncovered = amrex::complementIn(
             interior_stencil, centered_grids
          );
-         bool exterior_is_periodic = true;
+         bool exterior_is_supported = true;
          for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
             if (!level_geometry.isPeriodic(direction)
-                && (interpolation_cell.smallEnd(direction)
-                       < centered_domain.smallEnd(direction)
-                    || interpolation_cell.bigEnd(direction)
-                       > centered_domain.bigEnd(direction))) {
-               exterior_is_periodic = false;
+                && ((interpolation_cell.smallEnd(direction)
+                        < centered_domain.smallEnd(direction)
+                     && reflection_lo[direction] == 0)
+                    || (interpolation_cell.bigEnd(direction)
+                          > centered_domain.bigEnd(direction)
+                        && reflection_hi[direction] == 0))) {
+               exterior_is_supported = false;
             }
          }
          const bool stencil_covered = uncovered.empty()
-            && (!crosses_periodic_seam || exterior_is_periodic);
+            && exterior_is_supported;
          if (!stencil_covered) {
             continue;
          }
+         amrex::IntVect owner_index = anchor;
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            owner_index[direction] = std::max(
+               centered_domain.smallEnd(direction),
+               std::min(
+                  centered_domain.bigEnd(direction), owner_index[direction]
+               )
+            );
+         }
          for (int box = 0; box < centered_grids.size(); ++box) {
-            if (centered_grids[box].contains(anchor)) {
+            if (centered_grids[box].contains(owner_index)) {
                point.level = level;
                point.box = box;
                point.owner = distribution[level][box];

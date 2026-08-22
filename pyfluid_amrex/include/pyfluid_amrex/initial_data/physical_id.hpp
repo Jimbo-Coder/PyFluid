@@ -45,7 +45,18 @@ struct PhysicalInitialDataMetadata {
    amrex::Real angular_velocity = 0.0;
    amrex::Real differential_rotation_length = 0.0;
    amrex::Real rotation_power_q = 1.0;
+   amrex::Real maximum_density = -1.0;
+   amrex::Real maximum_velocity = -1.0;
    amrex::Real injection_energy = -1.0;
+   amrex::Real equatorial_radius = -1.0;
+   amrex::Real polar_radius = -1.0;
+   amrex::Real equatorial_log_enthalpy_gradient = 0.0;
+   amrex::Real polar_log_enthalpy_gradient = 0.0;
+   amrex::Real mass_shedding_indicator = -1.0;
+   amrex::Real adm_mass = -1.0;
+   amrex::Real baryonic_mass = -1.0;
+   amrex::Real angular_momentum = 0.0;
+   amrex::Real dimensionless_spin = 0.0;
    amrex::Real matter_outer_radius = -1.0;
    amrex::GpuArray<amrex::Real, 3> rotation_axis{{0.0, 0.0, 1.0}};
    amrex::GpuArray<amrex::Real, 3> rotation_center{};

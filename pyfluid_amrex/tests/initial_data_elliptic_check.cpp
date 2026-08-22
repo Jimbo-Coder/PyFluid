@@ -19,6 +19,7 @@
 #include "pyfluid_amrex/initial_data/ctt.hpp"
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/eos/presets.hpp"
+#include "pyfluid_amrex/initial_data/centering.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
@@ -1950,6 +1951,90 @@ bool validate_tov_ctt()
 }
 #endif
 
+bool validate_reflected_cell_to_vertex_transfer()
+{
+   constexpr int cells = 8;
+   const amrex::Box domain(
+      amrex::IntVect(AMREX_D_DECL(0, 0, 0)),
+      amrex::IntVect(AMREX_D_DECL(cells - 1, cells - 1, cells - 1))
+   );
+   const amrex::RealBox physical_domain(
+      AMREX_D_DECL(0.0, -1.0, -1.0),
+      AMREX_D_DECL(1.0, 1.0, 1.0)
+   );
+   const amrex::Array<int, AMREX_SPACEDIM> periodic{
+      AMREX_D_DECL(0, 0, 0)
+   };
+   pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
+   hierarchy.geometry.emplace_back(
+      domain, physical_domain, amrex::CoordSys::cartesian, periodic
+   );
+   hierarchy.grids.emplace_back(domain);
+   hierarchy.grids[0].maxSize(4);
+   hierarchy.distribution.emplace_back(hierarchy.grids[0]);
+   hierarchy.reflection_lo[0] = 1;
+
+   amrex::MultiFab cell(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 1
+   );
+   const amrex::BoxArray vertex_grids = amrex::convert(
+      hierarchy.grids[0], amrex::IntVect::TheNodeVector()
+   );
+   amrex::MultiFab vertex(
+      vertex_grids, hierarchy.distribution[0], 1, 0
+   );
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto dx = hierarchy.geometry[0].CellSizeArray();
+   for (amrex::MFIter mfi(cell, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto values = cell.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real x = problo[0] + (i + 0.5) * dx[0];
+         values(i, j, k, 0) = 1.0 + x * x;
+      });
+   }
+   amrex::Vector<amrex::MultiFab*> cell_view{&cell};
+   const auto scalar_boundary = pyfluid_amrex::initial_data_boundary_records(
+      hierarchy, {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
+   );
+   pyfluid_amrex::fill_initial_data_ghosts(
+      hierarchy, cell_view, scalar_boundary
+   );
+   amrex::Vector<amrex::MultiFab*> vertex_view{&vertex};
+   amrex::Vector<amrex::MultiFab const*> source_view{&cell};
+   pyfluid_amrex::materialize_initial_data_vertices(
+      hierarchy, vertex_view, source_view, scalar_boundary, 2
+   );
+
+   amrex::MultiFab error(vertex_grids, hierarchy.distribution[0], 1, 0);
+   error.setVal(0.0);
+   const amrex::Dim3 domain_lo = amrex::lbound(domain);
+   const amrex::Real expected = 1.0 + 0.25 * dx[0] * dx[0];
+   for (amrex::MFIter mfi(error, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto transferred = vertex.const_array(mfi);
+      const auto difference = error.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         if (i == domain_lo.x) {
+            difference(i, j, k, 0) = amrex::Math::abs(
+               transferred(i, j, k, 0) - expected
+            );
+         }
+      });
+   }
+   const amrex::Real max_error = error.max(0, 0, false);
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "reflected_cell_to_vertex linf_error=" << max_error
+                << '\n';
+   }
+   return max_error < 1.0e-13;
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -1967,6 +2052,9 @@ int main(int argc, char* argv[])
          return_code = 1;
       }
       if (!validate_constant_l_torus_first_integral()) {
+         return_code = 1;
+      }
+      if (!validate_reflected_cell_to_vertex_transfer()) {
          return_code = 1;
       }
       constexpr int coarse_cells = 32;

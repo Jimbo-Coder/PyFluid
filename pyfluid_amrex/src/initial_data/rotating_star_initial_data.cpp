@@ -1101,7 +1101,8 @@ RotatingStarParameters rotating_star_parameters(
    RotatingStarParameters parameters;
    parameters.active = cfg.ic == "rotating_star"
       || (cfg.ic == "tov"
-          && cfg.initial_data_disk == "equilibrium_torus");
+          && (cfg.initial_data_disk == "equilibrium_torus"
+              || cfg.initial_data_disk == "tilted_torus"));
    if (!parameters.active) {
       return parameters;
    }

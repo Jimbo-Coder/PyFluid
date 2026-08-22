@@ -71,7 +71,8 @@ std::string sequence_rotation_label(RunConfig const& cfg)
    if (cfg.initial_data_rotation_law == "q_power") {
       label += "-q-" + sequence_real_label(cfg.initial_data_rotation_power_q);
    }
-   if (cfg.initial_data_disk == "equilibrium_torus") {
+   if (cfg.initial_data_disk == "equilibrium_torus"
+       || cfg.initial_data_disk == "tilted_torus") {
       label += "-disk-" + cfg.initial_data_disk_rotation_law
          + "-gravity-" + cfg.initial_data_disk_gravity;
       if (cfg.initial_data_disk_rotation_law == "constant_l") {
@@ -183,6 +184,29 @@ EquilibriumTorusUpdateSummary equilibrium_torus_summary(
       metadata.disk_maximum_log_specific_enthalpy;
    result.baryonic_mass = metadata.disk_baryonic_mass;
    result.angular_momentum = metadata.disk_angular_momentum;
+   return result;
+}
+
+RotatingStarUpdateSummary rotating_star_summary(
+   PhysicalInitialDataMetadata const& metadata
+)
+{
+   RotatingStarUpdateSummary result;
+   result.maximum_density = metadata.maximum_density;
+   result.maximum_velocity = metadata.maximum_velocity;
+   result.injection_energy = metadata.injection_energy;
+   result.equatorial_radius = metadata.equatorial_radius;
+   result.polar_radius = metadata.polar_radius;
+   result.equatorial_log_enthalpy_gradient =
+      metadata.equatorial_log_enthalpy_gradient;
+   result.polar_log_enthalpy_gradient =
+      metadata.polar_log_enthalpy_gradient;
+   result.mass_shedding_indicator = metadata.mass_shedding_indicator;
+   result.adm_mass = metadata.adm_mass;
+   result.baryonic_mass = metadata.baryonic_mass;
+   result.angular_momentum = metadata.angular_momentum;
+   result.dimensionless_spin = metadata.dimensionless_spin;
+   result.matter_outer_radius = metadata.matter_outer_radius;
    return result;
 }
 
@@ -647,6 +671,20 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
    }
    const bool continue_rotation = configured_rotation
       && metadata.angular_velocity != cfg_.initial_data_angular_velocity;
+   const bool add_torus = metadata.disk == "none"
+      && (cfg_.initial_data_disk == "equilibrium_torus"
+          || cfg_.initial_data_disk == "tilted_torus")
+      && cfg_.spacetime_initial_data == "xcts";
+   if constexpr (AMREX_SPACEDIM == 3) {
+      if (cfg_.mesh_coordinate != "cartesian"
+          && (continue_rotation || add_torus)) {
+         amrex::Abort(
+            "3D curvilinear physical-ID targets may materialize a completed "
+            "model but cannot continue XCTS matter or add a torus; solve on "
+            "the native Cartesian ID hierarchy first"
+         );
+      }
+   }
    if (continue_rotation) {
       if (cfg_.spacetime_initial_data != "xcts") {
          amrex::Abort(
@@ -677,6 +715,12 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          << metadata.angular_velocity
          << " target_omega=" << cfg_.initial_data_angular_velocity << '\n';
    }
+   if (add_torus) {
+      amrex::Print()
+         << "continuing physical initial data with a "
+         << cfg_.initial_data_disk_gravity << ' '
+         << cfg_.initial_data_disk << " matter component\n";
+   }
    bool resolve_changed_reduced_rns = false;
 #if (AMREX_SPACEDIM == 2)
    resolve_changed_reduced_rns = configured_rotation
@@ -699,7 +743,8 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          "energy; regenerate this legacy physical-ID artifact"
       );
    }
-   return continue_rotation || resolve_changed_reduced_rns;
+   return continue_rotation || resolve_changed_reduced_rns
+      || add_torus;
 }
 
 void AmrSolverBase::project_materialized_initial_face_b()
@@ -865,6 +910,12 @@ void AmrSolverBase::write_physical_initial_data_artifact(
             matter_outer_radius,
             initial_data_rotating_star_summary_->matter_outer_radius
          );
+      } else if (loaded_physical_id_metadata_
+                 && loaded_physical_id_metadata_->source_ic
+                    == "rotating_star") {
+         append_rotating_star_metadata(
+            path, rotating_star_summary(*loaded_physical_id_metadata_)
+         );
       }
       if (initial_data_equilibrium_torus_summary_) {
          append_equilibrium_torus_metadata(
@@ -875,8 +926,10 @@ void AmrSolverBase::write_physical_initial_data_artifact(
             initial_data_equilibrium_torus_summary_->outer_radius
          );
       } else if (loaded_physical_id_metadata_
-                 && loaded_physical_id_metadata_->disk
-                    == "equilibrium_torus") {
+                 && (loaded_physical_id_metadata_->disk
+                        == "equilibrium_torus"
+                     || loaded_physical_id_metadata_->disk
+                        == "tilted_torus")) {
          append_equilibrium_torus_metadata(
             path, equilibrium_torus_summary(*loaded_physical_id_metadata_)
          );
@@ -1035,7 +1088,8 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
    );
    if (amrex::ParallelDescriptor::IOProcessor()) {
       append_rotating_star_metadata(artifact, rotating_star);
-      if (cfg_.initial_data_disk == "equilibrium_torus") {
+      if (cfg_.initial_data_disk == "equilibrium_torus"
+          || cfg_.initial_data_disk == "tilted_torus") {
          append_equilibrium_torus_metadata(artifact, equilibrium_torus);
       }
       append_matter_outer_radius(

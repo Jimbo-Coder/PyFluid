@@ -5852,3 +5852,59 @@ I will always continue from the last cycle marked as `in_progress`.
   `0.94--0.99` of their stored baselines. A method-catalog-only edit completes
   in `0.95 s` without a C++ rebuild; the unchanged production target is a
   `0.26 s` cache hit. [DONE]
+
+## Cycle 303 — Three-dimensional single-object ID closure (DONE)
+
+- Source-checked Tsokaros--Uryu--Shapiro and Tsokaros--Ruiz--Shapiro--
+  Paschalidis. Their tilted black-hole/disk data solve a disk-axis circular
+  Euler first integral with the full elliptic gravity system but explicitly are
+  not stationary equilibria; KEH is the Poisson engine, not the physical tilt
+  prescription. PyFluid therefore reserves `equilibrium_torus` for aligned
+  stationary compositions and names `tilted_torus` a full-3D,
+  constraint-consistent nonstationary circular seed. [DONE]
+- Added one runtime-selected 3D Cartesian torus updater on the existing XCTS
+  hierarchy. It uses the actual metric, arbitrary normalized disk axis and
+  common center, independent stellar/disk rotation laws, staged star-then-disk
+  fixed-point continuation, AMR-aware component charges, and strict support,
+  causality, overlap, and boundary checks. No reconstruction, Riemann, EoS,
+  coordinate, or tilt template product was added. Completed artifacts
+  materialize on full `r theta phi` and back to Cartesian; native curvilinear
+  nonlinear continuation rejects until that elliptic owner exists. [DONE]
+- Persisted the complete rotating-star continuation summary together with disk
+  identity, gravity/law parameters, axis, support, mass, angular momentum, and
+  the existing rigid transform. Aligned equatorial reflection reconstructs
+  component mass and projected angular momentum; a relative star--disk tilt
+  rejects every reduced reflection domain. The bounded 30-degree SLy fixture
+  converges in 52 matter iterations with Hamiltonian/lapse residuals
+  `1.75e-15/2.74e-15`, momentum residual `9.84e-13`, causal maximum speed
+  `0.421`, ordered support `10.30--15.41`, and zero recovery. Its mass is only
+  `1.41e-7`, so this is infrastructure evidence, not a massive tilted-disk or
+  long-time equilibrium claim. [DONE]
+- Found two symmetry defects while source-checking the new gate. Generic
+  cell-to-node ID centering had ignored parity-filled reflection ghosts and
+  selected a one-sided nodal source; the repaired full/z-half `24^3` pair now
+  agrees in fixed-point update to `4.7e-16` absolute and in torus
+  density/charges within `6e-8` relative. Saved-octant materialization then
+  exposed the same mistake in source interpolation: coarse-hull clamping
+  lowered central density by 5.15 percent. A centering-general parity ghost and
+  explicitly reflected hierarchy stencil restore octant-to-full scalar error
+  to `2.64e-5` and Hamiltonian Linf to `3.01e-4`. Full/equatorial-half RNS
+  scalar/surface errors are `2.57e-4/8.30e-7` with zero recovery. [DONE]
+- A deliberately finer reflected-artifact target preserves maximum density and
+  minimum lapse to `1.72e-16`, reaches preflight at `1.93e-13`, and uses zero
+  recovery, proving the parity ghost is active. Its target-grid Hamiltonian
+  Linf is `9.69e-2`: differentiating piecewise-linear saved data at twice the
+  source resolution is not a constraint-preserving upsample. The materializer
+  remains a field handoff, and production evolution should use source ID at
+  least as fine as the important target region pending an explicit Cartesian
+  target-grid constraint-polish owner. [DONE]
+- Validation passes: reflected-centering and reflected-interpolation unit
+  checks on three ranks; complete equilibrium-torus full gate including
+  one/three-rank and `512x96` controls; reduced physical-ID handoff;
+  TOV/RNS symmetry; generated-source and architecture checks; production
+  1D/2D/3D; 3/3 quick; and the complete 46/46 standard suite in `208.766 s`.
+  Runtime controls pass at `108.25/130.58`, `6.03`, and `0.18` Mcells/s, or
+  `0.95--0.98` of stored baselines. The final unchanged production build is a
+  `0.27 s` no-op with zero compiler-cache events, not a cold-build result. The
+  one-time public runtime-option/interpolation-header edit rebuilt its existing
+  dependency fanout but added no compiled behavior axis. [DONE]
