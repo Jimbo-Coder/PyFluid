@@ -264,6 +264,20 @@ STEPS = [
       ),
    ),
    GateStep(
+      name="magnetohydrostatic_initial_data",
+      kind="initial_data",
+      levels=("full",),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_magnetohydrostatic_initial_data.py",
+         "--ranks",
+         "3",
+         "--force",
+      ),
+   ),
+   GateStep(
       name="initial_data_perturbations",
       kind="initial_data",
       levels=("standard", "full"),

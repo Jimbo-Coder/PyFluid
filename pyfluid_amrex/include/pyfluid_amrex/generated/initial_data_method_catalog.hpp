@@ -90,6 +90,24 @@ inline constexpr std::array<InitialDataMagneticSeedInfo, 2> InitialDataMagneticS
    {InitialDataMagneticSeed::PressurePoloidal, "pressure_poloidal", "Pressure-confined poloidal seed", "For a stellar pressure field, construct staggered A proportional to axis cross radius times max(p/pmax-pcut,0)^n, take its discrete curl, and normalize the maximum comoving field.", "magnetic_seed_pressure_cutoff,magnetic_seed_exponent,magnetic_seed_maximum_comoving_field,rotation_axis,rotation_center"}
 }};
 
+enum class InitialDataMagneticEquilibrium : int {
+   None = 0,
+   PoloidalGradShafranov = 1,
+};
+
+struct InitialDataMagneticEquilibriumInfo {
+   InitialDataMagneticEquilibrium id;
+   std::string_view name;
+   std::string_view label;
+   std::string_view description;
+   std::string_view parameters;
+};
+
+inline constexpr std::array<InitialDataMagneticEquilibriumInfo, 2> InitialDataMagneticEquilibriumCatalog = {{
+   {InitialDataMagneticEquilibrium::None, "none", "No magnetic equilibrium", "Do not solve a magnetohydrostatic field equation.", ""},
+   {InitialDataMagneticEquilibrium::PoloidalGradShafranov, "poloidal_grad_shafranov", "Poloidal Grad-Shafranov", "Solve the conformally flat pure-poloidal Grad-Shafranov equation with M(A_phi)=k_pol(A_phi+xi A_phi^2/2), include its magnetic Bernoulli term, and couple the RMHD stress to XCTS.", "magnetic_equilibrium_poloidal_magnetization,magnetic_equilibrium_nonlinear_poloidal,magnetic_equilibrium_relaxation,rotation_axis,rotation_center"}
+}};
+
 enum class InitialDataOwner : int {
    SphericalTov = 0,
    SphericalAxisymmetricXcts = 1,

@@ -19,8 +19,9 @@ make a path supported.
 | Coupled evolved-Z4c matter | Validated vertical slice; long stellar evolution remains an explicit gate |
 | TOV initial data | Direct 3D Cartesian plus uniform/adaptive spherical-1D artifact and materialization paths validated |
 | XCTS rotating-star initial data | Coupled spherical `r theta` circular-RNS solve, three rotation laws, adaptive radial mapping, diagnostics, and Cartesian materialization validated; long dynamical equilibrium remains open |
+| Magnetized stellar initial data | Pressure-confined CT seed and pure-poloidal Grad--Shafranov/Bernoulli TOV/RNS coupled-XCTS owners are validated on fresh single-level 3D Cartesian grids; changed-grid CT and cold-EoS RMHD evolution remain open |
 | Optional equilibrium torus | Constant-`ell` test-fluid and self-gravitating XCTS components around TOV/RNS plus direct fixed-Kerr constant-`ell` and j-constant/q=1 controls use one circular-flow interface; long equilibrium and broader law calibration remain open |
-| Reusable physical-ID and sequence artifacts | Same-chart continuation and schema-v2 cross-dimension/cross-coordinate/rigid-pose handoff, including explicit radial faces, use one materialization interface |
+| Reusable physical-ID and sequence artifacts | Same-chart continuation and schema-v3 cross-dimension/cross-coordinate/rigid-pose handoff, including explicit radial faces, use one materialization interface |
 | Native 1D, 2D, 3D | Production build modes |
 | AMR, reflux, average-down, restart | Production infrastructure |
 | AMR subcycling | Production for validated Cartesian cases |
@@ -108,7 +109,8 @@ write. This mode neither selects nor instantiates an evolution reconstruction,
 Riemann, or timestep algorithm beyond the existing bundle used to enter the
 shared initialization lifecycle.
 
-The schema-v2 artifact describes its source chart at runtime. It does not add
+The schema-v3 artifact describes its source chart at runtime and declares CT
+magnetic representation/force-balance semantics. It does not add
 coordinate or dimension template products. Exact hierarchy caches remain a
 lossless same-layout acceleration. A different target dimension, coordinate,
 resolution, or physical extent samples the portable physical fields, transforms

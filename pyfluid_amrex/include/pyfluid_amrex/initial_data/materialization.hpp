@@ -57,6 +57,22 @@ using ConformalContinuationObserver = std::function<void(
 // formulation/EoS products lets magnetic-ID ownership remain opt-in.
 using ConformalMatterObserver = std::function<void()>;
 
+// Optional runtime owner for a coupled stellar matter update.  It replaces
+// the ordinary circular-fluid update so a Grad-Shafranov field and magnetic
+// Bernoulli term can advance in the same fixed point without adding a
+// formulation/EoS template product.  The boolean is false on the protected
+// first spherical-seed constraint sweep.
+struct ConformalStellarMatterUpdateResult {
+   RotatingStarUpdateSummary rotating_star{};
+   amrex::Real relative_update = 0.0;
+};
+
+using ConformalStellarMatterUpdater = std::function<
+   ConformalStellarMatterUpdateResult(
+   RotatingStarParameters const&,
+   bool update_fluid
+)>;
+
 ConformalMaterializationResult materialize_conformal_initial_data(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& primitive_state,
@@ -73,7 +89,8 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime = false,
    ConformalContinuationObserver const& continuation_observer = {},
-   ConformalMatterObserver const& matter_observer = {}
+   ConformalMatterObserver const& matter_observer = {},
+   ConformalStellarMatterUpdater const& stellar_matter_updater = {}
 );
 
 } // namespace pyfluid_amrex

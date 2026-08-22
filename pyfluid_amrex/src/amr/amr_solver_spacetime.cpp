@@ -660,6 +660,10 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
    PressurePoloidalMagneticSeedSummary magnetic_summary;
    int magnetic_seed_updates = 0;
    ConformalMatterObserver matter_observer;
+   PoloidalGradShafranovWorkspace magnetic_equilibrium_workspace;
+   PoloidalGradShafranovSummary magnetic_equilibrium_summary;
+   int magnetic_equilibrium_updates = 0;
+   ConformalStellarMatterUpdater stellar_matter_updater;
    if (cfg_.initial_data_magnetic_seed == "pressure_poloidal") {
 #if (AMREX_SPACEDIM != 3)
       amrex::Abort("pressure-poloidal magnetic seed requires 3D");
@@ -700,6 +704,79 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       };
 #endif
    }
+   if (cfg_.initial_data_magnetic_equilibrium
+          == "poloidal_grad_shafranov"
+       && cfg_.initial_data_magnetic_equilibrium_poloidal_magnetization
+          != 0.0) {
+#if (AMREX_SPACEDIM != 3)
+      amrex::Abort("poloidal Grad-Shafranov equilibrium requires 3D");
+#else
+      if (finestLevel() != 0 || maxLevel() != 0) {
+         amrex::Abort(
+            "poloidal Grad-Shafranov equilibrium currently requires one "
+            "uniform level"
+         );
+      }
+      const PoloidalGradShafranovParameters magnetic_parameters{
+         cfg_.initial_data_magnetic_equilibrium_poloidal_magnetization,
+         cfg_.initial_data_magnetic_equilibrium_nonlinear_poloidal,
+         cfg_.initial_data_magnetic_equilibrium_relaxation,
+         {{
+            cfg_.initial_data_rotation_axis1,
+            cfg_.initial_data_rotation_axis2,
+            cfg_.initial_data_rotation_axis3,
+         }},
+         {{
+            cfg_.initial_data_rotation_center1,
+            cfg_.initial_data_rotation_center2,
+            cfg_.initial_data_rotation_center3,
+         }},
+      };
+      stellar_matter_updater = [&, magnetic_parameters](
+         RotatingStarParameters const& continued_rotating_star,
+         bool update_fluid
+      ) {
+         magnetic_equilibrium_summary =
+            update_poloidal_grad_shafranov_equilibrium(
+               hierarchy,
+               face_b_[0],
+               *primitive_[0],
+               *spacetime_coupling_.cell_spacetime()[0],
+               cfg_,
+               eos_method_,
+               eos_params(cfg_),
+               continued_rotating_star,
+               magnetic_parameters,
+               magnetic_equilibrium_workspace,
+               update_fluid
+            );
+         ++magnetic_equilibrium_updates;
+         if (amrex::ParallelDescriptor::IOProcessor()) {
+            amrex::Print()
+               << "poloidal Grad-Shafranov sweep="
+               << magnetic_equilibrium_updates
+               << " update_fluid=" << update_fluid
+               << " relative_potential_update="
+               << magnetic_equilibrium_summary.relative_potential_update
+               << " equation_relative_residual="
+               << magnetic_equilibrium_summary.equation_relative_residual
+               << " bernoulli_residual="
+               << magnetic_equilibrium_summary.bernoulli_residual
+               << " maximum_comoving_field="
+               << magnetic_equilibrium_summary.maximum_comoving_field
+               << " divb_linf="
+               << magnetic_equilibrium_summary.divergence_linf << '\n';
+         }
+         return ConformalStellarMatterUpdateResult{
+            magnetic_equilibrium_summary.rotating_star,
+            std::max(
+               magnetic_equilibrium_summary.relative_potential_update,
+               magnetic_equilibrium_summary.bernoulli_residual
+            ),
+         };
+      };
+#endif
+   }
    ConformalMaterializationResult result = materialize_conformal_initial_data(
       hierarchy,
       primitive,
@@ -719,7 +796,8 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       equilibrium_torus,
       seed_from_loaded_id,
       continuation_observer,
-      matter_observer
+      matter_observer,
+      stellar_matter_updater
    );
    if (magnetic_seed_updates > 0) {
       amrex::Print()
@@ -730,7 +808,35 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          << magnetic_summary.maximum_comoving_field
          << " divb_linf=" << magnetic_summary.divergence_linf << '\n';
    }
+   if (magnetic_equilibrium_updates > 0) {
+      amrex::Print()
+         << "poloidal Grad-Shafranov magnetic ID: updates="
+         << magnetic_equilibrium_updates
+         << " relative_potential_update="
+         << magnetic_equilibrium_summary.relative_potential_update
+         << " linear_residual="
+         << magnetic_equilibrium_summary.linear_residual
+         << " equation_relative_residual="
+         << magnetic_equilibrium_summary.equation_relative_residual
+         << " bernoulli_residual="
+         << magnetic_equilibrium_summary.bernoulli_residual
+         << " maximum_comoving_field="
+         << magnetic_equilibrium_summary.maximum_comoving_field
+         << " divb_linf="
+         << magnetic_equilibrium_summary.divergence_linf << '\n';
+   }
    finalize_constraint_solved_initial_data_state();
+   if (magnetic_seed_updates > 0 || magnetic_equilibrium_updates > 0) {
+      sync_rmhd_primitive_b_from_densitized_faces(
+         *primitive_[0],
+         face_b_[0],
+         *spacetime_coupling_.cell_spacetime()[0]
+      );
+      // The first finalization establishes the authoritative cell-centered
+      // metric from the completed nodal solve.  Rebuild the Valencia cache
+      // once more after converting its densitized CT field to physical B^i.
+      finalize_constraint_solved_initial_data_state();
+   }
    result.rotating_star = with_global_rotating_diagnostics(
       result.rotating_star
    );

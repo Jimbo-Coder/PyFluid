@@ -172,6 +172,29 @@ route. This is an explicit semantic boundary: the gravitational constraints
 include the magnetic stress, but no magnetized Euler or Grad--Shafranov
 force-balance equation has been solved.
 
+The separate `poloidal_grad_shafranov` owner is the force-balanced stellar
+route. It solves the pure-poloidal conformally-flat vector Grad--Shafranov
+equation together with the magnetic Bernoulli first integral inside the same
+stellar/XCTS fixed point. Its catalog parameters select
+`M(A_phi)=k_pol(A_phi+xi A_phi^2/2)` and nonlinear relaxation; the toroidal
+current is zero. Cell-centered and edge-centered potentials are private solver
+scratch. The persistent CT owner is the Valencia density
+`mathcal B^i=sqrt(gamma) B^i`; portable primitive fields contain physical
+Eulerian `B^i`. The shared field catalog keeps the representation-neutral
+label `B^i`; the route-specific artifact metadata is authoritative. Artifacts
+record `magnetic_force_balance=grad_shafranov` and
+`magnetic_face_representation=valencia_densitized`. Schema-v1/v2 RMHD artifacts
+lack the latter identity and are rejected rather than guessed.
+
+The first force-balanced owner is deliberately fresh, single-level, 3D
+Cartesian, cold-barotropic TOV/RNS, coupled-XCTS, and solve-only. It supports
+an equatorial reflection plane normal to its magnetic/rotation axis. A
+transverse Cartesian reflection is not a symmetry of an oriented axial
+magnetic moment and is rejected. AMR, curvilinear Grad--Shafranov solves,
+toroidal/mixed fields, magnetized disks, and changed-grid CT materialization
+need their own validated discrete owners; catalog presence does not imply
+those combinations.
+
 The container is deliberately a superset. In addition to the portable
 physical core, it may contain optional consumer-specific sections such as
 exact-layout evolution caches and sequence-continuation seeds. Evolution may
@@ -273,7 +296,7 @@ constraint polish once such an owner is selected and validated.
 configured initial-data construction, runs the normal relativistic preflight,
 writes the artifact, and returns before allocating evolution flux-register
 work. The source chart is part of the artifact rather than an evolution
-requirement: schema-v2 records source dimension, coordinate family, ordered
+requirement: the current schema-v3 records source dimension, coordinate family, ordered
 active axes, periodic/reflection closure, and `mesh_orthonormal` tensor basis.
 Physics and physically relevant EoS data remain mandatory. On an identical
 hierarchy, optional exact caches start evolution directly. Otherwise the

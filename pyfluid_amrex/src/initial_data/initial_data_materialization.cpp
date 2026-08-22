@@ -980,7 +980,8 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime,
    ConformalContinuationObserver const& continuation_observer,
-   ConformalMatterObserver const& matter_observer
+   ConformalMatterObserver const& matter_observer,
+   ConformalStellarMatterUpdater const& stellar_matter_updater
 )
 {
    static_assert(System == PhysicalSystem::RHD || System == PhysicalSystem::RMHD);
@@ -1296,9 +1297,10 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    ConformalMaterializationResult result;
    const bool coupled_equilibrium_torus = equilibrium_torus.active
       && equilibrium_torus.gravity == EquilibriumTorusGravity::Coupled;
-   const bool update_stellar_matter = rotating_star.active
-      && (rotating_star.angular_velocity != 0.0
-          || coupled_equilibrium_torus);
+   const bool update_stellar_matter = stellar_matter_updater
+      || (rotating_star.active
+          && (rotating_star.angular_velocity != 0.0
+              || coupled_equilibrium_torus));
    const bool iterate_matter = update_stellar_matter
       || coupled_equilibrium_torus;
    const int max_matter_iterations = iterate_matter
@@ -1405,7 +1407,18 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          for (int level = 0; level < num_levels; ++level) {
             cell_spacetime_const[level] = cell_spacetime[level];
          }
-         if (update_stellar_matter && !preserve_spherical_seed) {
+         amrex::Real stellar_matter_external_update = 0.0;
+         if (stellar_matter_updater) {
+            const ConformalStellarMatterUpdateResult updated =
+               stellar_matter_updater(
+                  continued_rotating_star, !preserve_spherical_seed
+               );
+            stellar_matter_external_update = updated.relative_update;
+            if (!preserve_spherical_seed) {
+               result.rotating_star = updated.rotating_star;
+               stellar_matter_updated = true;
+            }
+         } else if (update_stellar_matter && !preserve_spherical_seed) {
             result.rotating_star = update_rotating_star_primitives(
                hierarchy,
                primitive_state,
@@ -1415,6 +1428,8 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                continued_rotating_star
             );
             stellar_matter_updated = true;
+         }
+         if (update_stellar_matter && !preserve_spherical_seed) {
             if (amrex::ParallelDescriptor::IOProcessor()) {
                amrex::Print()
                   << "rotating continuation step=" << continuation_step
@@ -1758,6 +1773,9 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          step_matter_iterations = matter_iteration;
          result.relative_matter_update = update_norm
             / std::max(amrex::Real(1.0), solution_norm);
+         result.relative_matter_update = std::max(
+            result.relative_matter_update, stellar_matter_external_update
+         );
          if (iterate_matter && amrex::ParallelDescriptor::IOProcessor()) {
             const char* matter_phase = coupled_equilibrium_torus
                   && torus_activated
@@ -2475,11 +2493,14 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    EquilibriumTorusParameters const& equilibrium_torus,
    bool seed_from_spacetime,
    ConformalContinuationObserver const& continuation_observer,
-   ConformalMatterObserver const& matter_observer
+   ConformalMatterObserver const& matter_observer,
+   ConformalStellarMatterUpdater const& stellar_matter_updater
 )
 {
 #if (AMREX_SPACEDIM == 2)
-   amrex::ignore_unused(fields, coordinate_kind, matter_observer);
+   amrex::ignore_unused(
+      fields, coordinate_kind, matter_observer, stellar_matter_updater
+   );
    if (system != PhysicalSystem::RHD
        || formulation != ConformalConstraintFormulation::xcts) {
       amrex::Abort(
@@ -2501,7 +2522,7 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       cell_spacetime, system, eos_method, eos, fields, coordinate_kind,
       formulation,
       black_hole, rotating_star, equilibrium_torus, seed_from_spacetime,
-      continuation_observer, matter_observer
+      continuation_observer, matter_observer, stellar_matter_updater
    );
    amrex::Abort("conformal constraint initial data requires 2D or 3D");
    return {};
@@ -2537,7 +2558,10 @@ ConformalMaterializationResult materialize_conformal_initial_data(
          hierarchy, primitive_state, spacetime_state,
          cell_spacetime, eos, fields, formulation, rotating_star,
          equilibrium_torus,
-         seed_from_spacetime, continuation_observer, matter_observer
+         seed_from_spacetime,
+         continuation_observer,
+         matter_observer,
+         stellar_matter_updater
       );
    }
    if (system != PhysicalSystem::RHD) {
@@ -2550,7 +2574,10 @@ ConformalMaterializationResult materialize_conformal_initial_data(
       hierarchy, primitive_state, spacetime_state,
       cell_spacetime, eos, fields, formulation, rotating_star,
       equilibrium_torus,
-      seed_from_spacetime, continuation_observer, matter_observer
+      seed_from_spacetime,
+      continuation_observer,
+      matter_observer,
+      stellar_matter_updater
    );
 #endif
 }

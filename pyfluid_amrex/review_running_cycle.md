@@ -6113,3 +6113,70 @@ I will always continue from the last cycle marked as `in_progress`.
   one cache hit and one miss; the immediately repeated no-op production build
   took `0.56 s` with zero cache events. Neither is labeled a cold clean build.
   `git diff --check` is clean. [DONE]
+
+## Cycle 309 — Self-consistent magnetized stellar equilibrium (DONE)
+
+- Promote the existing divergence-preserving, constraint-coupled poloidal
+  seed to the smallest honest magnetohydrostatic owner. Source-check the
+  magnetized Bernoulli integral and Grad--Shafranov equation against
+  Pili--Bucciantini--Del Zanna before choosing the free current and
+  magnetization functions. Keep the existing seed as a distinct control and
+  do not call magnetic-stress constraint consistency fluid force balance.
+  [DONE]
+- Reuse the existing runtime initial-data observer, CT face-field ownership,
+  coupled XCTS iteration, and host method catalog. Add no formulation/EoS/
+  coordinate template product. The first production equilibrium must have a
+  continuous zero-magnetization limit, explicit supported geometry/EoS
+  boundary, and portable artifact semantics. [DONE]
+- Validate the Euler/Lorentz residual independently of the nonlinear stopping
+  criterion, together with Grad--Shafranov residual, `divB`, symmetry,
+  requested field normalization/current prescription, constraint residuals,
+  rank agreement, artifact reload, and invalid-composition rejection. Only
+  after those focused controls pass should the standard suite and performance
+  baseline be refreshed. The Euler check is the independently recomputed
+  magnetic Bernoulli first-integral residual; under the stationary barotropic
+  assumptions this is the integrated Euler--Lorentz balance, not a separate
+  approximate force stencil. [DONE]
+- Added catalog-owned `poloidal_grad_shafranov` with
+  `M(A_phi)=k_pol(A_phi+xi A_phi^2/2)` and zero toroidal current. Three
+  Cartesian components represent `A_phi e_phi/varpi`; the existing scalar
+  Poisson backend, coupled stellar/XCTS loop, and one runtime callback advance
+  field, fluid, and geometry without a new template product. The nonlinear
+  `xi=50` TOV control converges in 45 updates with independent GS residual
+  `1.418e-6`, Bernoulli residual `5.524e-7`, and XCTS residual `6.214e-15`.
+  [DONE]
+- Corrected the RMHD magnetic representation boundary exposed during this
+  work: canonical CT faces are Valencia densities `sqrt(gamma) B^i`, while
+  primitive stress-energy needs physical Eulerian `B^i`. A final
+  authoritative-metric synchronization makes saved face averages and the
+  exact evolution cache agree to `1.63e-16` relative. Physical-ID schema v3
+  records and validates `magnetic_face_representation=valencia_densitized`,
+  magnetic equilibrium identity/current parameters, and force-balance
+  semantics; ambiguous legacy RMHD CT artifacts are rejected. [DONE]
+- An oriented axial magnetic moment admits only the Cartesian reflection plane
+  normal to its axis. The full/equatorial-half nonlinear TOV fields agree to
+  `1.183e-12`; one/three-rank half-domain fields agree to `6.273e-15`.
+  Transverse reflection and seed-plus-equilibrium compositions reject. The
+  exact zero-magnetization limit agrees with matched RHD XCTS to `3.795e-19`.
+  The same reflection rule now protects the older pressure-poloidal seed.
+  [DONE]
+- The independent uniform-RNS composition converges at `Omega=0.005` with
+  `chi=0.0774954`, `J=0.150318`, maximum velocity `0.0434574`, GS residual
+  `2.056e-6`, Bernoulli residual `7.545e-7`, momentum residual `5.781e-13`,
+  and CT handoff `1.62e-16`. A matched unmagnetized control has the same coarse
+  radius-16 `M_ADM > M_b` ordering; the magnetic ADM response is only
+  `5.5e-5` relative, so binding-energy interpretation remains a larger-domain
+  diagnostic task rather than a magnetic-equilibrium failure. [DONE]
+- Final evidence: full-only magnetohydrostatic matrix PASS in `393.084 s`;
+  existing pressure-seeded magnetic gate PASS with `H/M=1.238e-15` and
+  `divB=9.035e-21`; generated-catalog byte comparison, architecture, Python
+  compile, and production 1D/2D/3D build PASS; the exact final tree's complete
+  standard suite is 49/49 PASS in `231.912 s` summed gate time. Runtime
+  controls pass at `108.65/125.87`, `6.04`, and `0.182` Mcells/s, or
+  `0.989/0.918`, `0.948`, and `0.956` of their strict baselines. The no-op
+  production build is `0.27 s` with zero cache events. [DONE]
+- Current explicit boundary: this is a fresh, single-level, 3D Cartesian,
+  cold-barotropic TOV/RNS, pure-poloidal coupled-XCTS solve-only owner.
+  Curvilinear/AMR Grad--Shafranov, toroidal or mixed fields, magnetized disks,
+  changed-grid CT materialization, and cold/hybrid RMHD evolution C2P remain
+  future owners and are not implied by the catalog entry. [DONE]

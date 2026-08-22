@@ -1,0 +1,68 @@
+pyfluid.run_name = rotating_star_xcts_magnetohydrostatic_poloidal_id_3d
+pyfluid.output_dir = runs/current/rotating_star/rotating_star_xcts_magnetohydrostatic_poloidal_id_3d
+pyfluid.validation_policy = elliptic
+
+mesh.coordinate = cartesian
+mesh.axes = x y z
+
+geometry.prob_lo = -16.0 -16.0 -16.0
+geometry.prob_hi = 16.0 16.0 16.0
+geometry.is_periodic = 0 0 0
+
+amr.n_cell = 24 24 24
+amr.max_level = 0
+amr.max_grid_size = 12
+amr.blocking_factor = 4
+
+spacetime.evolution = fixed
+spacetime.matter_coupling = coupled
+spacetime.initial_data = xcts
+
+initial_data.spacetime = id
+initial_data.lapse = id
+initial_data.shift = id
+initial_data.magnetic = id
+initial_data.magnetic_equilibrium = poloidal_grad_shafranov
+initial_data.magnetic_equilibrium_poloidal_magnetization = 1.0e-2
+initial_data.magnetic_equilibrium_nonlinear_poloidal = 50.0
+initial_data.magnetic_equilibrium_relaxation = 1.0
+initial_data.rotation_law = uniform
+initial_data.angular_velocity = 5.0e-3
+initial_data.rotation_continuation_steps = 1
+initial_data.solve_only = 1
+initial_data.output_file = runs/current/rotating_star/rotating_star_xcts_magnetohydrostatic_poloidal_id_3d/physical_id
+initial_data.matter_relative_tolerance = 1.0e-6
+initial_data.matter_max_iterations = 96
+initial_data.matter_relaxation = 0.2
+
+pyfluid.physics = rmhd
+pyfluid.ct = on
+pyfluid.eos = hybrid_polytrope
+pyfluid.eos_preset = sly
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = rotating_star
+pyfluid.tov_central_density = 1.28e-3
+pyfluid.tov_absolute_tolerance = 1.0e-12
+pyfluid.tov_relative_tolerance = 1.0e-10
+pyfluid.tov_max_steps = 100000
+initial_data.atmosphere = power_law
+initial_data.atmosphere_density = 1.0e-10
+initial_data.atmosphere_pressure = 1.0e-14
+initial_data.atmosphere_power = 4.0
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.max_step = 0
+pyfluid.final_time = -1
+pyfluid.ng = 1
+pyfluid.cfl = 0.9
+pyfluid.recon = pwc
+pyfluid.riemann = hll
+pyfluid.timestep = euler
+pyfluid.subcycling = off
+pyfluid.bc = outflow
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = -1
+pyfluid.plot_int = -1
+pyfluid.checkpoint_int = -1

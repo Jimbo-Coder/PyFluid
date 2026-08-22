@@ -10,10 +10,10 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-22, branch `main`, through Cycle 308's integrated
-single-object spherical-XCTS and magnetized-ID work. Cycle 308's complete
-standard/performance controls are the current broad integration evidence;
-Cycle 284 remains the preceding preserved baseline.
+Last reconciled: 2026-08-22, branch `main`, through Cycle 309's focused
+magnetohydrostatic stellar-ID work. Cycle 309's complete standard/performance
+controls are the current broad integration evidence; Cycle 308 is the
+preceding preserved baseline and Cycle 284 the older reference baseline.
 
 ## Scope And Evidence
 
@@ -304,17 +304,36 @@ Cycle 284 remains the preceding preserved baseline.
   fixed-point update. At requested `b_max=1e-4`, the SLy control has artifact
   `divB=4.52e-21`, constraint residual `5.83e-16`, and a finite
   `8.65e-6` ADM response relative to the matched unmagnetized solve. This is
-  constraint-consistent magnetic seeding, not magnetohydrostatic force balance:
-  the fluid Euler/Grad--Shafranov equation is not yet magnetized. Cold/hybrid
-  RMHD artifacts therefore remain solve-only until runtime C2P supports those
-  EoS choices.
+  constraint-consistent magnetic seeding, not magnetohydrostatic force balance.
+- The separate `poloidal_grad_shafranov` owner solves the pure-poloidal CFC
+  vector Grad--Shafranov equation and the magnetic Bernoulli first integral
+  inside the coupled stellar/XCTS fixed point. Its free function is
+  `M(A_phi)=k_pol(A_phi+xi A_phi^2/2)` with zero toroidal current. The Cartesian
+  unknown is `A_phi e_phi/varpi`; transient cell/edge potentials remain solver
+  scratch, while the artifact owns only `sqrt(gamma) B^i` on CT faces and
+  physical `B^i` in portable primitives. A final metric-aware sync makes exact
+  same-grid evolution caches agree with face averages to roundoff.
+- An oriented poloidal field admits a Cartesian reflection only through the
+  plane normal to its magnetic axis (the usual equatorial half-domain). A
+  transverse plane reverses the axial magnetic moment and is not a symmetry;
+  reject it rather than treating a dipole as an unmagnetized TOV octant.
+  Cold/hybrid RMHD artifacts remain solve-only until runtime C2P supports
+  those EoS choices. Cross-grid and cross-chart CT materialization also remain
+  unsupported.
+- On the coarse `24^3`, radius-16 Cartesian RNS control, the finite-domain ADM
+  diagnostic gives `M_ADM > M_b` by about 1.5 percent in both the magnetized
+  and matched unmagnetized models. The nonlinear poloidal field changes that
+  ADM value by only `5.5e-5` relative. Do not use the mass ordering from this
+  coarse diagnostic as a magnetic-equilibrium acceptance test; use the XCTS,
+  Grad--Shafranov, Bernoulli, CT, and matched-response checks, and require a
+  larger-domain/refined ADM extraction before interpreting binding energy.
 - The reusable physical-ID container and sequence behavior are defined in
   `docs/infrastructure_conventions.md`. Materialization onto an evolution grid
   is interpolation, not a new constraint solve, so finer evolution cannot
   recreate unresolved ID information. A changed-grid reduced solve-only RNS
   load re-solves XCTS even at unchanged angular velocity; a same-map load keeps
   the direct sequence path.
-- Physical-ID schema v2 makes the source chart independent of the target
+- Physical-ID schema v3 makes the source chart independent of the target
   executable: dimension, coordinate family, ordered active axes,
   periodic/reflection closure, and orthonormal tensor basis are runtime
   metadata. Scalars, polar/axial vectors, and symmetric tensors transform

@@ -122,6 +122,10 @@ struct RunConfig {
    amrex::Real initial_data_magnetic_seed_pressure_cutoff = 0.04;
    amrex::Real initial_data_magnetic_seed_exponent = 2.0;
    amrex::Real initial_data_magnetic_seed_maximum_comoving_field = 0.0;
+   std::string initial_data_magnetic_equilibrium = "none";
+   amrex::Real initial_data_magnetic_equilibrium_poloidal_magnetization = 0.0;
+   amrex::Real initial_data_magnetic_equilibrium_nonlinear_poloidal = 0.0;
+   amrex::Real initial_data_magnetic_equilibrium_relaxation = 0.5;
    std::string initial_data_spacetime = "id";
    std::string initial_data_lapse = "id";
    std::string initial_data_shift = "id";

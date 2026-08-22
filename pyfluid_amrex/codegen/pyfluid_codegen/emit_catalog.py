@@ -33,6 +33,7 @@ from .field_catalog import (
 from .method_catalog import (
     DISK_ROTATION_LAWS,
     INITIAL_DATA_MAGNETIC_SEEDS,
+    INITIAL_DATA_MAGNETIC_EQUILIBRIA,
     INITIAL_DATA_PERTURBATIONS,
     INITIAL_DATA_OWNERS,
     RECONSTRUCTION_METHODS,
@@ -198,6 +199,24 @@ def render_initial_data_method_catalog_header() -> str:
         + "}"
         for seed in INITIAL_DATA_MAGNETIC_SEEDS
     )
+    magnetic_equilibrium_enum_values = "\n".join(
+        f"   {equilibrium.cpp_id} = {index},"
+        for index, equilibrium in enumerate(INITIAL_DATA_MAGNETIC_EQUILIBRIA)
+    )
+    magnetic_equilibrium_descriptors = ",\n".join(
+        "   {"
+        + ", ".join(
+            (
+                f"InitialDataMagneticEquilibrium::{equilibrium.cpp_id}",
+                _cpp_string(equilibrium.name),
+                _cpp_string(equilibrium.label),
+                _cpp_string(equilibrium.description),
+                _cpp_string(",".join(equilibrium.parameters)),
+            )
+        )
+        + "}"
+        for equilibrium in INITIAL_DATA_MAGNETIC_EQUILIBRIA
+    )
     owner_enum_values = "\n".join(
         f"   {owner.cpp_id} = {index},"
         for index, owner in enumerate(INITIAL_DATA_OWNERS)
@@ -295,6 +314,22 @@ struct InitialDataMagneticSeedInfo {{
 
 inline constexpr std::array<InitialDataMagneticSeedInfo, {len(INITIAL_DATA_MAGNETIC_SEEDS)}> InitialDataMagneticSeedCatalog = {{{{
 {magnetic_seed_descriptors}
+}}}};
+
+enum class InitialDataMagneticEquilibrium : int {{
+{magnetic_equilibrium_enum_values}
+}};
+
+struct InitialDataMagneticEquilibriumInfo {{
+   InitialDataMagneticEquilibrium id;
+   std::string_view name;
+   std::string_view label;
+   std::string_view description;
+   std::string_view parameters;
+}};
+
+inline constexpr std::array<InitialDataMagneticEquilibriumInfo, {len(INITIAL_DATA_MAGNETIC_EQUILIBRIA)}> InitialDataMagneticEquilibriumCatalog = {{{{
+{magnetic_equilibrium_descriptors}
 }}}};
 
 enum class InitialDataOwner : int {{

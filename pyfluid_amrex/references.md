@@ -35,6 +35,7 @@ It intentionally links rather than restating the detailed contracts.
 | SRMHD symptom onset, hybrid attribution, and prototype applicability | `tools/diagnose_rmhd_balsara_onset.py`, `tools/audit_srmhd_physical_wave_balsara.py`, their TSVs under `runs/current/rmhd_validation/`, and `plots/current/scans/rmhd_balsara*_profiles.png` plus `rmhd_balsara_hybrid_timelines.png` and `rmhd_balsara_hybrid_profile_evolution.png` | `docs/unified_shock_capturing_research.md`, Cycles 252--258 |
 | Coherent space-time operator attribution | `tools/research_spacetime_operator_ablation.py`, `tools/research_mhd_spacetime_operator_ablation.py`, and `tools/research_srmhd_spacetime_operator_ablation.py` | `docs/unified_shock_capturing_research.md`, Cycles 273--274 |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
+| Magnetized stellar initial data | `include/pyfluid_amrex/initial_data/magnetic.hpp`, `src/initial_data/initial_data_magnetic.cpp`, `src/initial_data/rotating_star_initial_data.cpp`, `schema/methods.toml`, `tools/validate_magnetized_initial_data.py`, `tools/validate_magnetohydrostatic_initial_data.py` | Pili--Bucciantini--Del Zanna below; `docs/infrastructure_conventions.md`; Cycles 308--309 |
 | Native cold CompOSE tables | `eos/compose/`, `src/eos/tabulated.cpp`, `include/pyfluid_amrex/eos/tabulated*.hpp`, `tests/tabulated_eos_check.cpp`, `tools/validate_compose_eos.py` | CompOSE manual and dataset records below; Cycle 297 |
 | Equilibrium torus/disk initial data | `include/pyfluid_amrex/initial_data/equilibrium_torus.hpp`, `src/initial_data/equilibrium_torus_initial_data.cpp`, `schema/methods.toml`, `tools/validate_equilibrium_torus.py` | `docs/tov.md`, `docs/infrastructure_conventions.md`, Cycle 296 |
 | Kerr black-hole initial data and interior policy | `include/pyfluid_amrex/initial_data/kerr_schild.hpp`, `src/initial_data/initial_data_provider.cpp`, `tools/validate_black_hole.py` | `docs/black_holes.md`, Cycles 299--300 |
@@ -230,7 +231,10 @@ the generated TSV/log, and the current source revision/dirty state.
   *Axisymmetric equilibrium models for magnetized neutron stars in General
   Relativity under the Conformally Flat Condition*,
   [arXiv:1401.4308](https://arxiv.org/abs/1401.4308): primary axisymmetric XCFC
-  equilibrium and spherical-harmonic Poisson-solve reference for XNS.
+  equilibrium and spherical-harmonic Poisson-solve reference for XNS. Equations
+  20--23 give the magnetic Bernoulli integral, pure-poloidal vector
+  Grad--Shafranov equation for `A_phi/(r sin(theta))`, and free magnetization
+  function used by PyFluid's independent Cartesian implementation.
 - Local AthenaK pressure-poloidal construction:
   `/Users/mrizzo/phys_research/athenak/athenak/src/pgen/dyn_grmhd/elliptica/elliptica.cpp`
   routes the pressure-confined vector-potential prescription, discrete curl,

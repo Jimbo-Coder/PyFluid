@@ -210,6 +210,23 @@ label = "Pressure-confined poloidal seed"
 description = "For a stellar pressure field, construct staggered A proportional to axis cross radius times max(p/pmax-pcut,0)^n, take its discrete curl, and normalize the maximum comoving field."
 parameters = ["magnetic_seed_pressure_cutoff", "magnetic_seed_exponent", "magnetic_seed_maximum_comoving_field", "rotation_axis", "rotation_center"]
 
+# Magnetohydrostatic magnetic equilibria are separate from kinematic seeds.
+# These methods close both the magnetic field equation and the fluid Euler
+# first integral inside the matter/XCTS fixed point.
+[[initial_data_magnetic_equilibrium]]
+name = "none"
+cpp_id = "None"
+label = "No magnetic equilibrium"
+description = "Do not solve a magnetohydrostatic field equation."
+parameters = []
+
+[[initial_data_magnetic_equilibrium]]
+name = "poloidal_grad_shafranov"
+cpp_id = "PoloidalGradShafranov"
+label = "Poloidal Grad-Shafranov"
+description = "Solve the conformally flat pure-poloidal Grad-Shafranov equation with M(A_phi)=k_pol(A_phi+xi A_phi^2/2), include its magnetic Bernoulli term, and couple the RMHD stress to XCTS."
+parameters = ["magnetic_equilibrium_poloidal_magnetization", "magnetic_equilibrium_nonlinear_poloidal", "magnetic_equilibrium_relaxation", "rotation_axis", "rotation_center"]
+
 # Disk rotation laws are a separate physical catalog.  In particular,
 # constant_l means ell=-u_phi/u_t and must not alias the stellar j-constant
 # law above.

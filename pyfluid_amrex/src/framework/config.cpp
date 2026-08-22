@@ -450,6 +450,21 @@ RunConfig read_config()
       "magnetic_seed_maximum_comoving_field",
       cfg.initial_data_magnetic_seed_maximum_comoving_field
    );
+   initial_data_pp.queryAdd(
+      "magnetic_equilibrium", cfg.initial_data_magnetic_equilibrium
+   );
+   initial_data_pp.queryAdd(
+      "magnetic_equilibrium_poloidal_magnetization",
+      cfg.initial_data_magnetic_equilibrium_poloidal_magnetization
+   );
+   initial_data_pp.queryAdd(
+      "magnetic_equilibrium_nonlinear_poloidal",
+      cfg.initial_data_magnetic_equilibrium_nonlinear_poloidal
+   );
+   initial_data_pp.queryAdd(
+      "magnetic_equilibrium_relaxation",
+      cfg.initial_data_magnetic_equilibrium_relaxation
+   );
    initial_data_pp.queryAdd("spacetime", cfg.initial_data_spacetime);
    initial_data_pp.queryAdd("lapse", cfg.initial_data_lapse);
    initial_data_pp.queryAdd("shift", cfg.initial_data_shift);
@@ -1496,6 +1511,103 @@ void validate_config(RunConfig const& cfg)
          );
       }
    }
+   bool magnetic_equilibrium_supported = false;
+   for (InitialDataMagneticEquilibriumInfo const& equilibrium
+        : InitialDataMagneticEquilibriumCatalog) {
+      magnetic_equilibrium_supported = magnetic_equilibrium_supported
+         || equilibrium.name == cfg.initial_data_magnetic_equilibrium;
+   }
+   if (!magnetic_equilibrium_supported) {
+      amrex::Abort(
+         "initial_data.magnetic_equilibrium is not present in "
+         "schema/methods.toml"
+      );
+   }
+   if (cfg.initial_data_magnetic_seed != "none"
+       && cfg.initial_data_magnetic_equilibrium != "none") {
+      amrex::Abort(
+         "a kinematic magnetic seed and a magnetohydrostatic magnetic "
+         "equilibrium cannot be selected together"
+      );
+   }
+   if (cfg.initial_data_magnetic_equilibrium != "none") {
+#if (AMREX_SPACEDIM != 3)
+      amrex::Abort(
+         "magnetohydrostatic initial data require the 3D executable"
+      );
+#endif
+      if (physical_system(cfg) != PhysicalSystem::RMHD || cfg.ct != "on"
+          || cfg.initial_data_magnetic != "id"
+          || cfg.mesh_coordinate != "cartesian"
+          || (cfg.ic != "tov" && cfg.ic != "rotating_star")
+          || cfg.initial_data_disk != "none"
+          || cfg.spacetime_initial_data != "xcts"
+          || cfg.spacetime_matter_coupling != "coupled"
+          || !cfg.initial_data_input_file.empty()
+          || !cfg.initial_data_solve_only) {
+         amrex::Abort(
+            "magnetohydrostatic initial data currently require a fresh 3D "
+            "Cartesian RMHD+CT stellar coupled-XCTS solve-only artifact "
+            "without a disk"
+         );
+      }
+      if (!std::isfinite(
+             cfg.initial_data_magnetic_equilibrium_poloidal_magnetization
+          )
+          || !std::isfinite(
+             cfg.initial_data_magnetic_equilibrium_nonlinear_poloidal
+          )
+          || !(cfg.initial_data_magnetic_equilibrium_relaxation > 0.0)
+          || !(cfg.initial_data_magnetic_equilibrium_relaxation <= 1.0)
+          || !std::isfinite(
+             cfg.initial_data_magnetic_equilibrium_relaxation
+          )) {
+         amrex::Abort(
+            "poloidal_grad_shafranov requires a finite poloidal "
+            "magnetization, a finite nonlinear-poloidal coefficient, and "
+            "0 < magnetic-equilibrium relaxation <= 1"
+         );
+      }
+   }
+   const bool oriented_poloidal_field =
+      cfg.initial_data_magnetic_seed == "pressure_poloidal"
+      || (cfg.initial_data_magnetic_equilibrium == "poloidal_grad_shafranov"
+          && cfg.initial_data_magnetic_equilibrium_poloidal_magnetization
+             != 0.0);
+   if (oriented_poloidal_field) {
+      const amrex::Real axis_norm = std::sqrt(
+         cfg.initial_data_rotation_axis1 * cfg.initial_data_rotation_axis1
+         + cfg.initial_data_rotation_axis2 * cfg.initial_data_rotation_axis2
+         + cfg.initial_data_rotation_axis3 * cfg.initial_data_rotation_axis3
+      );
+      const std::array<amrex::Real, 3> axis{{
+         cfg.initial_data_rotation_axis1,
+         cfg.initial_data_rotation_axis2,
+         cfg.initial_data_rotation_axis3,
+      }};
+      const std::array<std::array<std::string, 2>, 3> side_boundaries{{
+         {{cfg.bc_xlo, cfg.bc_xhi}},
+         {{cfg.bc_ylo, cfg.bc_yhi}},
+         {{cfg.bc_zlo, cfg.bc_zhi}},
+      }};
+      const amrex::Real axis_tolerance = 64.0
+         * std::numeric_limits<amrex::Real>::epsilon()
+         * std::max(axis_norm, amrex::Real(1.0));
+      for (int direction = 0; direction < 3; ++direction) {
+         for (std::string const& side : side_boundaries[direction]) {
+            const std::string selected = trim_copy(side).empty()
+               ? trim_copy(cfg.bc) : trim_copy(side);
+            if (selected == "symmetry"
+                && std::abs(std::abs(axis[direction]) - axis_norm)
+                   > axis_tolerance) {
+               amrex::Abort(
+                  "an oriented poloidal magnetic field may use a Cartesian "
+                  "reflection plane only normal to its magnetic axis"
+               );
+            }
+         }
+      }
+   }
    require_supported_option(
       cfg.spacetime_lapse_gauge,
       Z4cLapseGaugeOptions,
@@ -1703,7 +1815,8 @@ void validate_config(RunConfig const& cfg)
    const bool magnetized_stellar_physical_id =
       selected_system == PhysicalSystem::RMHD
       && cfg.initial_data_solve_only
-      && cfg.initial_data_magnetic_seed != "none"
+      && (cfg.initial_data_magnetic_seed != "none"
+          || cfg.initial_data_magnetic_equilibrium != "none")
       && (cfg.ic == "tov" || cfg.ic == "rotating_star");
    if (!contains_physical_system(
           selected_initial_data.physical_systems, selected_system
@@ -1745,7 +1858,8 @@ void validate_config(RunConfig const& cfg)
    if (physical_system_is_relativistic(selected_system)) {
       if (selected_system == PhysicalSystem::RMHD && cfg.eos != "ideal_gas"
           && !(cfg.initial_data_solve_only
-               && cfg.initial_data_magnetic_seed != "none")) {
+               && (cfg.initial_data_magnetic_seed != "none"
+                   || cfg.initial_data_magnetic_equilibrium != "none"))) {
          amrex::Abort(
             "RMHD runtime evolution currently requires pyfluid.eos = "
             "ideal_gas; cold/hybrid/tabulated RMHD is available only to "

@@ -37,8 +37,10 @@
 namespace pyfluid_amrex {
 namespace {
 
-constexpr int PhysicalIdSchemaVersion = 2;
+constexpr int PhysicalIdSchemaVersion = 3;
 constexpr int LegacyPhysicalIdSchemaVersion = 1;
+// The multilevel HDF5 payload layout remains v2; schema-v3 changes metadata
+// semantics and the human-readable artifact header, not the field encoding.
 constexpr char const* PhysicalIdFormat = "PyFluidPhysicalIDHDF5-v2";
 constexpr char const* PhysicalFluidField = "physical_fluid";
 constexpr char const* AdmGeometryField = "adm_geometry";
@@ -1406,7 +1408,7 @@ void write_physical_initial_data(
 
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::ofstream header(std::filesystem::path(path) / "Header");
-      header << "PyFluid physical initial data v2\n"
+      header << "PyFluid physical initial data v3\n"
              << "Provider-independent physical fields with exact same-grid "
                 "evolution caches.\n";
       std::ofstream metadata(std::filesystem::path(path) / "Header.meta");
@@ -1493,9 +1495,17 @@ void write_physical_initial_data(
       metadata << "# has_ct=" << has_ct << '\n';
       metadata << "# magnetic_seed="
                << cfg.initial_data_magnetic_seed << '\n';
+      metadata << "# magnetic_equilibrium="
+               << cfg.initial_data_magnetic_equilibrium << '\n';
       metadata << "# magnetic_force_balance="
-               << (cfg.initial_data_magnetic_seed == "none"
-                     ? "not_applicable" : "not_solved")
+               << (cfg.initial_data_magnetic_equilibrium != "none"
+                     ? "grad_shafranov"
+                     : (cfg.initial_data_magnetic_seed == "none"
+                           ? "not_applicable" : "not_solved"))
+               << '\n';
+      metadata << "# magnetic_face_representation="
+               << (physical_system(cfg) == PhysicalSystem::RMHD
+                     ? "valencia_densitized" : "physical")
                << '\n';
       metadata << "# magnetic_seed_pressure_cutoff="
                << output_metadata_real_string(
@@ -1508,6 +1518,18 @@ void write_physical_initial_data(
       metadata << "# magnetic_seed_maximum_comoving_field="
                << output_metadata_real_string(
                     cfg.initial_data_magnetic_seed_maximum_comoving_field
+                  ) << '\n';
+      metadata << "# magnetic_equilibrium_poloidal_magnetization="
+               << output_metadata_real_string(
+                    cfg.initial_data_magnetic_equilibrium_poloidal_magnetization
+                  ) << '\n';
+      metadata << "# magnetic_equilibrium_nonlinear_poloidal="
+               << output_metadata_real_string(
+                    cfg.initial_data_magnetic_equilibrium_nonlinear_poloidal
+                  ) << '\n';
+      metadata << "# magnetic_equilibrium_relaxation="
+               << output_metadata_real_string(
+                    cfg.initial_data_magnetic_equilibrium_relaxation
                   ) << '\n';
       metadata << "# has_exact_caches=" << write_exact_caches << '\n';
       metadata << "# source_ic=" << cfg.ic << '\n';
@@ -1670,6 +1692,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       amrex::Abort("physical initial-data schema metadata is invalid in " + path);
    }
    if ((schema_version != PhysicalIdSchemaVersion
+        && schema_version != 2
         && schema_version != LegacyPhysicalIdSchemaVersion)
        || source_dimension < 1 || source_dimension > 3) {
       amrex::Abort("unsupported physical initial-data schema in " + path);
@@ -1752,7 +1775,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    if (!same_chart && !portable_basis) {
       amrex::Abort(
          "cross-coordinate or cross-dimensional physical-ID materialization "
-         "requires a schema-v2 mesh_orthonormal artifact"
+         "requires a portable mesh_orthonormal artifact"
       );
    }
    require_metadata(metadata, "eos", cfg.eos, path);
@@ -1849,6 +1872,20 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    }
    require_metadata(metadata, "has_spacetime", expects_spacetime ? "1" : "0", path);
    const bool expects_ct = !face_magnetic[0].empty();
+   if (expects_ct && system == PhysicalSystem::RMHD) {
+      if (schema_version < 3) {
+         amrex::Abort(
+            "legacy RMHD physical-ID artifacts do not declare whether CT "
+            "face fields are physical or Valencia-densitized in " + path
+         );
+      }
+      require_metadata(
+         metadata,
+         "magnetic_face_representation",
+         "valencia_densitized",
+         path
+      );
+   }
    if (expects_ct && !same_chart) {
       amrex::Abort(
          "cross-coordinate physical-ID materialization does not yet support "
@@ -1907,6 +1944,56 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          0.0,
          path
       );
+   const auto magnetic_equilibrium_entry = metadata.find(
+      "magnetic_equilibrium"
+   );
+   result.magnetic_equilibrium = magnetic_equilibrium_entry == metadata.end()
+      ? "none" : magnetic_equilibrium_entry->second;
+   const auto magnetic_force_balance_entry = metadata.find(
+      "magnetic_force_balance"
+   );
+   result.magnetic_force_balance = magnetic_force_balance_entry
+         == metadata.end()
+      ? "" : magnetic_force_balance_entry->second;
+   const auto magnetic_face_representation_entry = metadata.find(
+      "magnetic_face_representation"
+   );
+   result.magnetic_face_representation = magnetic_face_representation_entry
+         == metadata.end()
+      ? "" : magnetic_face_representation_entry->second;
+   if (schema_version >= 3) {
+      if (result.magnetic_seed != "none"
+          && result.magnetic_equilibrium != "none") {
+         amrex::Abort(
+            "physical-ID artifact declares both a magnetic seed and magnetic "
+            "equilibrium in " + path
+         );
+      }
+      const std::string expected_force_balance =
+         result.magnetic_equilibrium != "none"
+            ? "grad_shafranov"
+            : (result.magnetic_seed != "none"
+                  ? "not_solved" : "not_applicable");
+      require_metadata(
+         metadata,
+         "magnetic_force_balance",
+         expected_force_balance,
+         path
+      );
+   }
+   result.magnetic_equilibrium_poloidal_magnetization =
+      optional_metadata_real(
+         metadata,
+         "magnetic_equilibrium_poloidal_magnetization",
+         0.0,
+         path
+      );
+   result.magnetic_equilibrium_nonlinear_poloidal = optional_metadata_real(
+      metadata, "magnetic_equilibrium_nonlinear_poloidal", 0.0, path
+   );
+   result.magnetic_equilibrium_relaxation = optional_metadata_real(
+      metadata, "magnetic_equilibrium_relaxation", 0.0, path
+   );
    const auto disk_entry = metadata.find("disk");
    result.disk = disk_entry == metadata.end() ? "none" : disk_entry->second;
    const bool adding_torus = result.disk == "none"

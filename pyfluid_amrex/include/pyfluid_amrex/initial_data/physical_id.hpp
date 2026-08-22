@@ -65,6 +65,12 @@ struct PhysicalInitialDataMetadata {
    amrex::Real magnetic_seed_pressure_cutoff = 0.0;
    amrex::Real magnetic_seed_exponent = 0.0;
    amrex::Real magnetic_seed_maximum_comoving_field = 0.0;
+   std::string magnetic_equilibrium;
+   std::string magnetic_force_balance;
+   std::string magnetic_face_representation;
+   amrex::Real magnetic_equilibrium_poloidal_magnetization = 0.0;
+   amrex::Real magnetic_equilibrium_nonlinear_poloidal = 0.0;
+   amrex::Real magnetic_equilibrium_relaxation = 0.0;
    bool used_rigid_transform = false;
    bool exact_layout = false;
    bool used_exact_cache = false;

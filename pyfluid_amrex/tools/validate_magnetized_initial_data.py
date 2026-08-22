@@ -109,6 +109,7 @@ def validate(*, ranks: int, timeout: int | None, force: bool) -> dict[str, objec
       "has_ct": "1",
       "magnetic_seed": "pressure_poloidal",
       "magnetic_force_balance": "not_solved",
+      "magnetic_face_representation": "valencia_densitized",
       "source_ic": "tov",
       "spacetime_initial_data": "xcts",
    }

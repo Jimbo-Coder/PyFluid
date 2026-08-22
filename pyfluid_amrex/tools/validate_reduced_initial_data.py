@@ -266,7 +266,7 @@ def compare_artifacts(
 def require_portable_source(artifact: Path, dimension: int) -> None:
    metadata = (artifact / "Header.meta").read_text()
    required = (
-      "# schema_version=2",
+      "# schema_version=3",
       f"# amrex_spacedim={dimension}",
       "# component_basis=mesh_orthonormal",
       "# has_exact_caches=0",

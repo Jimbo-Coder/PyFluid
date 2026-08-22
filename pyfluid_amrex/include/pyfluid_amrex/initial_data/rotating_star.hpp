@@ -67,6 +67,16 @@ struct RotatingStarSurfaceDiagnostic {
    amrex::Real mass_shedding_indicator = 1.0;
 };
 
+// Optional magnetic Euler first-integral closure.  The supplied scalar is the
+// covariant azimuthal flux function A_phi in the same Cartesian chart as the
+// stellar solve.  It remains solver-private scratch; canonical magnetic
+// ownership is the CT face field.
+struct PoloidalMagneticBernoulli {
+   amrex::Vector<amrex::MultiFab const*> flux_function;
+   amrex::Real poloidal_magnetization = 0.0;
+   amrex::Real nonlinear_poloidal = 0.0;
+};
+
 RotatingStarParameters rotating_star_parameters(
    RunConfig const& cfg,
    RelativisticInitialDataView const& provider
@@ -141,7 +151,8 @@ RotatingStarUpdateSummary update_rotating_star_primitives(
    amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
    int eos_method,
    EOSParams const& eos,
-   RotatingStarParameters const& parameters
+   RotatingStarParameters const& parameters,
+   PoloidalMagneticBernoulli const* magnetic_bernoulli = nullptr
 );
 
 RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(

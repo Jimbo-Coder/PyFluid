@@ -112,10 +112,19 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
    amrex::Vector<amrex::MultiFab*> const& primitive_state,
    amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
    EOSParams const& eos,
-   RotatingStarParameters const& parameters
+   RotatingStarParameters const& parameters,
+   PoloidalMagneticBernoulli const* magnetic_bernoulli
 )
 {
    const int num_levels = static_cast<int>(hierarchy.geometry.size());
+   const bool magnetized = magnetic_bernoulli != nullptr;
+   if (magnetized
+       && static_cast<int>(magnetic_bernoulli->flux_function.size())
+          != num_levels) {
+      amrex::Abort(
+         "magnetic rotating-star update received an incomplete flux function"
+      );
+   }
    RotatingStarUpdateSummary summary;
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> effective_potential_storage(
       num_levels
@@ -262,6 +271,13 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
          const auto primitive = primitive_state[level]->array(mfi);
          const auto geometry = cell_spacetime[level]->const_array(mfi);
          const auto matter_support = matter_support_storage[level]->const_array(mfi);
+         const auto magnetic_flux = magnetized
+            ? magnetic_bernoulli->flux_function[level]->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{};
+         const amrex::Real magnetic_k = magnetized
+            ? magnetic_bernoulli->poloidal_magnetization : 0.0;
+         const amrex::Real magnetic_xi = magnetized
+            ? magnetic_bernoulli->nonlinear_poloidal : 0.0;
          const auto diagnostic = diagnostics.array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const PatchCoordinate physical{
@@ -298,6 +314,13 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             const RotatingStarPoint target = rotating_star_point(
                iteration_parameters, sample.physical, metric
             );
+            const amrex::Real flux = magnetized
+               ? magnetic_flux(i, j, k, 0) : 0.0;
+            const amrex::Real magnetic_potential = magnetic_k * (
+               flux + 0.5 * magnetic_xi * flux * flux
+            );
+            const amrex::Real target_log_specific_enthalpy =
+               target.log_specific_enthalpy + magnetic_potential;
             const EOSThermodynamicState atmosphere =
                initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
 
@@ -306,7 +329,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             amrex::Real v2 = 0.0;
             amrex::Real v3 = 0.0;
             if (within_continuation_support && target.timelike
-                && target.log_specific_enthalpy > 0.0) {
+                && target_log_specific_enthalpy > 0.0) {
                const amrex::Real old_log_enthalpy = cold_log_specific_enthalpy(
                   primitive(i, j, k, RHO), eos
                );
@@ -314,7 +337,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                   (1.0 - iteration_parameters.matter_relaxation)
                      * old_log_enthalpy
                   + iteration_parameters.matter_relaxation
-                     * target.log_specific_enthalpy;
+                     * target_log_specific_enthalpy;
                matter = cold_barotrope_from_log_enthalpy(
                   relaxed_log_enthalpy, eos
                );
@@ -1142,7 +1165,8 @@ RotatingStarParameters rotating_star_parameters(
    parameters.active = cfg.ic == "rotating_star"
       || (cfg.ic == "tov"
           && (cfg.initial_data_disk == "equilibrium_torus"
-              || cfg.initial_data_disk == "tilted_torus"));
+              || cfg.initial_data_disk == "tilted_torus"))
+      || cfg.initial_data_magnetic_equilibrium != "none";
    if (!parameters.active) {
       return parameters;
    }
@@ -1193,12 +1217,14 @@ RotatingStarUpdateSummary update_rotating_star_primitives(
    amrex::Vector<amrex::MultiFab const*> const& cell_spacetime,
    int eos_method,
    EOSParams const& eos,
-   RotatingStarParameters const& parameters
+   RotatingStarParameters const& parameters,
+   PoloidalMagneticBernoulli const* magnetic_bernoulli
 )
 {
 #if (AMREX_SPACEDIM != 3)
    amrex::ignore_unused(
-      hierarchy, primitive_state, cell_spacetime, eos_method, eos, parameters
+      hierarchy, primitive_state, cell_spacetime, eos_method, eos, parameters,
+      magnetic_bernoulli
    );
    amrex::Abort("rotating-star equilibrium requires the 3D executable");
    return {};
@@ -1209,7 +1235,12 @@ RotatingStarUpdateSummary update_rotating_star_primitives(
    amrex::ignore_unused(eos_method);
    if (cold_barotrope_supported(eos)) {
       return update_rotating_star_primitives_method<EOSRuntime>(
-         hierarchy, primitive_state, cell_spacetime, eos, parameters
+         hierarchy,
+         primitive_state,
+         cell_spacetime,
+         eos,
+         parameters,
+         magnetic_bernoulli
       );
    }
    amrex::Abort("rotating-star equilibrium requires a cold barotropic EOS");

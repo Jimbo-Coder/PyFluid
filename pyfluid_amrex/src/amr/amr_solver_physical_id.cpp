@@ -1280,7 +1280,7 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
                << cfg_.initial_data_disk_axis1 << ','
                << cfg_.initial_data_disk_axis2 << ','
                << cfg_.initial_data_disk_axis3 << '\n'
-               << "# artifact_contract=PyFluid physical initial data v2\n";
+               << "# artifact_contract=PyFluid physical initial data v3\n";
       if (cfg_.eos_preset == "custom") {
          metadata << "# polytropic_k=" << std::setprecision(17)
                   << cfg_.polytropic_k << '\n'

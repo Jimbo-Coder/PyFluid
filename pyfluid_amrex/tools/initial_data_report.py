@@ -65,6 +65,12 @@ FIELDS = (
    "disk_angular_momentum",
    "magnetic_seed",
    "magnetic_seed_updates",
+   "magnetic_equilibrium",
+   "magnetic_equilibrium_updates",
+   "magnetic_potential_update",
+   "magnetic_linear_residual",
+   "magnetic_equation_residual",
+   "magnetic_bernoulli_residual",
    "maximum_comoving_field",
    "magnetic_divb_linf",
    "preflight_kind",
@@ -152,10 +158,21 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
       rf"maximum_pressure=({FLOAT}) normalization=({FLOAT}) "
       rf"maximum_comoving_field=({FLOAT}) divb_linf=({FLOAT})",
    )
+   magnetic_equilibrium = _match(
+      text,
+      rf"poloidal Grad-Shafranov magnetic ID: updates=(\d+) "
+      rf"relative_potential_update=({FLOAT}) linear_residual=({FLOAT}) "
+      rf"equation_relative_residual=({FLOAT}) "
+      rf"bernoulli_residual=({FLOAT}) "
+      rf"maximum_comoving_field=({FLOAT}) divb_linf=({FLOAT})",
+   )
    wall = _match(text, rf"^# wall_seconds = ({FLOAT})$")
    if preflight is None and not physical_id_preflight:
       reasons.append("missing C2P/P2C preflight")
    magnetic_seed = params.get("initial_data.magnetic_seed", "none")
+   magnetic_equilibrium_name = params.get(
+      "initial_data.magnetic_equilibrium", "none"
+   )
    if magnetic_seed != "none":
       if magnetic is None:
          reasons.append("missing magnetic-ID summary")
@@ -170,6 +187,23 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
             reasons.append("magnetic-ID normalization mismatch")
          if float(magnetic.group(5)) > 1.0e-14:
             reasons.append("magnetic-ID divergence exceeds roundoff gate")
+   if magnetic_equilibrium_name != "none" \
+         and float(params.get(
+            "initial_data.magnetic_equilibrium_poloidal_magnetization", "0"
+         )) != 0.0:
+      if magnetic_equilibrium is None:
+         reasons.append("missing magnetohydrostatic-ID summary")
+      else:
+         if float(magnetic_equilibrium.group(2)) > 1.1e-6:
+            reasons.append("magnetic-potential update exceeds tolerance")
+         if float(magnetic_equilibrium.group(3)) > 1.0e-12:
+            reasons.append("magnetic linear residual exceeds tolerance")
+         if float(magnetic_equilibrium.group(4)) > 3.0e-6:
+            reasons.append("magnetic equation residual exceeds tolerance")
+         if float(magnetic_equilibrium.group(5)) > 1.1e-6:
+            reasons.append("magnetic Bernoulli residual exceeds tolerance")
+         if float(magnetic_equilibrium.group(7)) > 1.0e-14:
+            reasons.append("magnetohydrostatic-ID divergence exceeds roundoff gate")
 
    def value(match: re.Match[str] | None, group: int) -> float:
       return float(match.group(group)) if match is not None else math.nan
@@ -240,8 +274,17 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
       "disk_angular_momentum": value(equilibrium_torus, 15),
       "magnetic_seed": magnetic_seed,
       "magnetic_seed_updates": int(magnetic.group(1)) if magnetic else 0,
-      "maximum_comoving_field": value(magnetic, 4),
-      "magnetic_divb_linf": value(magnetic, 5),
+      "magnetic_equilibrium": magnetic_equilibrium_name,
+      "magnetic_equilibrium_updates": int(magnetic_equilibrium.group(1))
+         if magnetic_equilibrium else 0,
+      "magnetic_potential_update": value(magnetic_equilibrium, 2),
+      "magnetic_linear_residual": value(magnetic_equilibrium, 3),
+      "magnetic_equation_residual": value(magnetic_equilibrium, 4),
+      "magnetic_bernoulli_residual": value(magnetic_equilibrium, 5),
+      "maximum_comoving_field": value(magnetic_equilibrium, 6)
+         if magnetic_equilibrium else value(magnetic, 4),
+      "magnetic_divb_linf": value(magnetic_equilibrium, 7)
+         if magnetic_equilibrium else value(magnetic, 5),
       "preflight_kind": "c2p_p2c" if preflight else (
          "physical_id_finite" if physical_id_preflight else ""
       ),
