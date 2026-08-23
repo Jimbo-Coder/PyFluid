@@ -808,11 +808,9 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
       );
    }
 
-   // Certify the final, post-Euler state rather than the source used to form
-   // the candidate at the beginning of this coupled sweep.
-   fill_grad_shafranov_geometry_and_flux(
-      hierarchy, cell_spacetime, normalized, workspace
-   );
+   // Certify the final, post-Euler matter state.  The Euler update changes
+   // primitive thermodynamics only; the post-solve flux function and current
+   // metric were already refreshed immediately above and remain authoritative.
    fill_grad_shafranov_rhs(
       hierarchy, primitive, eos, rotating_star, normalized, workspace
    );

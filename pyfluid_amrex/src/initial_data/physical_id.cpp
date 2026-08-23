@@ -7,6 +7,7 @@
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
+#include "pyfluid_amrex/generated/initial_data_method_catalog.hpp"
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
@@ -46,6 +47,18 @@ constexpr char const* PhysicalFluidField = "physical_fluid";
 constexpr char const* AdmGeometryField = "adm_geometry";
 constexpr char const* EvolutionFluidField = "evolution_fluid_cache";
 constexpr char const* EvolutionSpacetimeField = "evolution_spacetime_cache";
+
+template <typename Catalog>
+bool method_catalog_contains_name(
+   Catalog const& catalog, std::string_view name
+)
+{
+   return std::any_of(
+      catalog.begin(),
+      catalog.end(),
+      [name](auto const& method) { return method.name == name; }
+   );
+}
 
 enum AdmComponent : int {
    AdmGamma11 = 0,
@@ -1872,19 +1885,30 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    }
    require_metadata(metadata, "has_spacetime", expects_spacetime ? "1" : "0", path);
    const bool expects_ct = !face_magnetic[0].empty();
-   if (expects_ct && system == PhysicalSystem::RMHD) {
-      if (schema_version < 3) {
-         amrex::Abort(
-            "legacy RMHD physical-ID artifacts do not declare whether CT "
-            "face fields are physical or Valencia-densitized in " + path
-         );
-      }
+   if (expects_ct && schema_version < 3
+       && system == PhysicalSystem::RMHD) {
+      amrex::Abort(
+         "legacy RMHD physical-ID artifacts do not declare whether CT "
+         "face fields are physical or Valencia-densitized in " + path
+      );
+   }
+   if (expects_ct && schema_version >= 3) {
+      const char* expected_face_representation =
+         system == PhysicalSystem::RMHD
+            ? "valencia_densitized" : "physical";
       require_metadata(
          metadata,
          "magnetic_face_representation",
-         "valencia_densitized",
+         expected_face_representation,
          path
       );
+      if (system != PhysicalSystem::MHD
+          && system != PhysicalSystem::RMHD) {
+         amrex::Abort(
+            "physical-ID CT fields require a magnetic physical system in "
+            + path
+         );
+      }
    }
    if (expects_ct && !same_chart) {
       amrex::Abort(
@@ -1928,40 +1952,57 @@ PhysicalInitialDataMetadata read_physical_initial_data(
 
    PhysicalInitialDataMetadata result;
    result.source_ic = required_metadata_value(metadata, "source_ic", path);
-   const auto magnetic_seed_entry = metadata.find("magnetic_seed");
-   result.magnetic_seed = magnetic_seed_entry == metadata.end()
-      ? "none" : magnetic_seed_entry->second;
-   result.magnetic_seed_pressure_cutoff = optional_metadata_real(
-      metadata, "magnetic_seed_pressure_cutoff", 0.0, path
+   const auto magnetic_metadata_real = [&](
+      std::string const& key, amrex::Real legacy_fallback
+   ) {
+      return schema_version >= 3
+         ? required_metadata_real(metadata, key, path)
+         : optional_metadata_real(metadata, key, legacy_fallback, path);
+   };
+   result.magnetic_seed = schema_version >= 3
+      ? required_metadata_value(metadata, "magnetic_seed", path)
+      : (metadata.find("magnetic_seed") == metadata.end()
+            ? "none" : metadata.at("magnetic_seed"));
+   result.magnetic_seed_pressure_cutoff = magnetic_metadata_real(
+      "magnetic_seed_pressure_cutoff", 0.0
    );
-   result.magnetic_seed_exponent = optional_metadata_real(
-      metadata, "magnetic_seed_exponent", 0.0, path
+   result.magnetic_seed_exponent = magnetic_metadata_real(
+      "magnetic_seed_exponent", 0.0
    );
    result.magnetic_seed_maximum_comoving_field =
-      optional_metadata_real(
-         metadata,
+      magnetic_metadata_real(
          "magnetic_seed_maximum_comoving_field",
-         0.0,
-         path
+         0.0
       );
-   const auto magnetic_equilibrium_entry = metadata.find(
-      "magnetic_equilibrium"
-   );
-   result.magnetic_equilibrium = magnetic_equilibrium_entry == metadata.end()
-      ? "none" : magnetic_equilibrium_entry->second;
-   const auto magnetic_force_balance_entry = metadata.find(
-      "magnetic_force_balance"
-   );
-   result.magnetic_force_balance = magnetic_force_balance_entry
-         == metadata.end()
-      ? "" : magnetic_force_balance_entry->second;
-   const auto magnetic_face_representation_entry = metadata.find(
-      "magnetic_face_representation"
-   );
-   result.magnetic_face_representation = magnetic_face_representation_entry
-         == metadata.end()
-      ? "" : magnetic_face_representation_entry->second;
+   result.magnetic_equilibrium = schema_version >= 3
+      ? required_metadata_value(metadata, "magnetic_equilibrium", path)
+      : "none";
+   result.magnetic_force_balance = schema_version >= 3
+      ? required_metadata_value(metadata, "magnetic_force_balance", path)
+      : "";
+   result.magnetic_face_representation = schema_version >= 3
+      ? required_metadata_value(
+           metadata, "magnetic_face_representation", path
+        )
+      : "";
    if (schema_version >= 3) {
+      if (!method_catalog_contains_name(
+             InitialDataMagneticSeedCatalog, result.magnetic_seed
+          )) {
+         amrex::Abort(
+            "physical-ID magnetic seed is not present in the method catalog "
+            "in " + path
+         );
+      }
+      if (!method_catalog_contains_name(
+             InitialDataMagneticEquilibriumCatalog,
+             result.magnetic_equilibrium
+          )) {
+         amrex::Abort(
+            "physical-ID magnetic equilibrium is not present in the method "
+            "catalog in " + path
+         );
+      }
       if (result.magnetic_seed != "none"
           && result.magnetic_equilibrium != "none") {
          amrex::Abort(
@@ -1982,18 +2023,64 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       );
    }
    result.magnetic_equilibrium_poloidal_magnetization =
-      optional_metadata_real(
-         metadata,
+      magnetic_metadata_real(
          "magnetic_equilibrium_poloidal_magnetization",
-         0.0,
-         path
+         0.0
       );
-   result.magnetic_equilibrium_nonlinear_poloidal = optional_metadata_real(
-      metadata, "magnetic_equilibrium_nonlinear_poloidal", 0.0, path
+   result.magnetic_equilibrium_nonlinear_poloidal = magnetic_metadata_real(
+      "magnetic_equilibrium_nonlinear_poloidal", 0.0
    );
-   result.magnetic_equilibrium_relaxation = optional_metadata_real(
-      metadata, "magnetic_equilibrium_relaxation", 0.0, path
+   result.magnetic_equilibrium_relaxation = magnetic_metadata_real(
+      "magnetic_equilibrium_relaxation", 0.0
    );
+   const bool constructed_magnetic_field = result.magnetic_seed != "none"
+      || result.magnetic_equilibrium != "none";
+   if (constructed_magnetic_field) {
+      require_metadata(
+         metadata, "reflection_lo", reflection_string(cfg, false), path
+      );
+      require_metadata(
+         metadata, "reflection_hi", reflection_string(cfg, true), path
+      );
+   }
+   if (constructed_magnetic_field
+       && (system != PhysicalSystem::RMHD || !expects_ct)) {
+      amrex::Abort(
+         "a constructed stellar magnetic physical ID requires RMHD+CT in "
+         + path
+      );
+   }
+   if (result.magnetic_seed != "none"
+       && (!(result.magnetic_seed_pressure_cutoff >= 0.0)
+           || !(result.magnetic_seed_pressure_cutoff < 1.0)
+           || !std::isfinite(result.magnetic_seed_pressure_cutoff)
+           || !(result.magnetic_seed_exponent >= 1.0)
+           || !std::isfinite(result.magnetic_seed_exponent)
+           || !(result.magnetic_seed_maximum_comoving_field > 0.0)
+           || !std::isfinite(
+              result.magnetic_seed_maximum_comoving_field
+           ))) {
+      amrex::Abort(
+         "physical-ID magnetic seed parameters are invalid in " + path
+      );
+   }
+   if (result.magnetic_equilibrium != "none"
+       && (!std::isfinite(
+              result.magnetic_equilibrium_poloidal_magnetization
+           )
+           || !std::isfinite(
+              result.magnetic_equilibrium_nonlinear_poloidal
+           )
+           || !(result.magnetic_equilibrium_relaxation > 0.0)
+           || !(result.magnetic_equilibrium_relaxation <= 1.0)
+           || !std::isfinite(
+              result.magnetic_equilibrium_relaxation
+           ))) {
+      amrex::Abort(
+         "physical-ID magnetic equilibrium parameters are invalid in "
+         + path
+      );
+   }
    const auto disk_entry = metadata.find("disk");
    result.disk = disk_entry == metadata.end() ? "none" : disk_entry->second;
    const bool adding_torus = result.disk == "none"
@@ -2463,6 +2550,13 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       && required_metadata_value(metadata, "refinement_ratios", path)
          == refinement_string(refinement_ratios);
    result.exact_layout = exact_layout;
+   if (constructed_magnetic_field && !exact_layout) {
+      amrex::Abort(
+         "constructed stellar magnetic physical-ID artifacts currently "
+         "require an exact target layout; changed-grid transfer needs a "
+         "target-grid magnetic equilibrium owner in " + path
+      );
+   }
    if (coordinate_faces != nullptr) {
       if (exact_layout && !source_coordinate_faces.empty()) {
          coordinate_faces->clear();
@@ -2488,6 +2582,16 @@ PhysicalInitialDataMetadata read_physical_initial_data(
           || multilevel_hdf5_field_exists(path, EvolutionSpacetimeField));
    if (exact_layout && has_exact_caches) {
       for (std::size_t level = 0; level < evolution_fluid.size(); ++level) {
+         // Exact evolution caches accelerate state restoration; they do not
+         // replace the portable primitive core.  Non-ideal RMHD solve-only
+         // artifacts cannot reconstruct this cache through runtime C2P, and
+         // reserialization must retain the saved physical primitives.
+         read_multilevel_hdf5_field(
+            *primitive[level],
+            path,
+            static_cast<int>(level),
+            PhysicalFluidField
+         );
          read_multilevel_hdf5_field(
             *evolution_fluid[level],
             path,

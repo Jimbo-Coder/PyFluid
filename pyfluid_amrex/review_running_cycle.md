@@ -6180,3 +6180,54 @@ I will always continue from the last cycle marked as `in_progress`.
   Curvilinear/AMR Grad--Shafranov, toroidal or mixed fields, magnetized disks,
   changed-grid CT materialization, and cold/hybrid RMHD evolution C2P remain
   future owners and are not implied by the catalog entry. [DONE]
+
+## Cycle 310 — Magnetized-ID reload and post-integration hardening (DONE)
+
+- Audit the committed Grad--Shafranov owner, schema-v3 artifact reader/writer,
+  configuration boundary, focused gate, compile fan-out, and per-sweep work.
+  Prioritize owner-correct reload and metadata behavior over cosmetic source
+  splitting. [DONE]
+- Make a saved non-ideal RMHD stellar artifact reusable through the actual C++
+  physical-ID reader in solve-only mode. Preserve its magnetic construction,
+  current-law, face-representation, and force-balance identity when
+  reserializing. Require exact layout and reject continuation/composition until
+  a target-grid magnetic equilibrium polish exists. [DONE]
+- Validate strict schema-v3 magnetic metadata, exact field round trip,
+  corrupted representation/method rejection, and unsupported magnetic
+  continuation. Remove only redundant Grad--Shafranov sweep work whose inputs
+  provably did not change. [DONE]
+- Rebuild all production dimensions and run architecture, generated, focused
+  magnetic, quick/standard integration, and proportionate compile/runtime
+  controls before committing the coherent hardening tranche. [DONE]
+- The first real C++ exact-reload probe found that the exact-cache branch did
+  not restore `physical_fluid.h5`; reserialization therefore changed portable
+  primitives by `1.280e-3` even though the evolution cache was present. The
+  reader now restores the portable core independently of exact caches. A fresh
+  nonlinear SLy artifact round-trips authoritative fluid/ADM/spacetime/face
+  fields exactly and its derived evolution-fluid cache to `1.588e-17`
+  relative, without rerunning equilibrium. Full-domain, equatorial-half, and
+  pressure-seeded exact reloads take `0.10--0.17 s`. [DONE]
+- Schema-v3 now requires all magnetic construction fields, validates
+  seed/equilibrium identities against the generated method catalog, and
+  validates force-balance, RMHD face representation, finite parameter ranges,
+  and reflection closure. Corrupted representation, unknown method, missing
+  parameter, changed grid, TOV-to-RNS continuation, torus/source recomposition,
+  and changed equatorial reflection all reject at the owner boundary. [DONE]
+- Cold CompOSE SLY4 now passes through the same RMHD+CT solve-only equilibrium
+  owner without enabling general-EoS RMHD evolution: 45 updates,
+  `H/M=6.262e-15`, Grad--Shafranov residual `1.905e-6`, Bernoulli residual
+  `5.551e-7`, `divB=4.574e-20`, and CT handoff `8.510e-17`. The existing
+  pressure-poloidal seed remains independently green at `H/M=1.238e-15` and
+  `divB=9.035e-21`. [DONE]
+- Removed one redundant geometry/flux refresh after the Euler update: only
+  primitive thermodynamics changes there, while metric and the post-solve flux
+  function remain authoritative. The fresh six-row focused matrix passes with
+  `356.361 s` summed solve time, including nonlinear TOV, exact reload,
+  reflection/rank, RNS (`chi=0.0774954`), zero-field limit, and CompOSE. [DONE]
+- Final exact-tree evidence: architecture and Python compile PASS; generated
+  compile checks and production 1D/2D/3D build PASS; quick gate PASS; standard
+  suite 49/49 PASS in `242.942 s` summed gate time. Strict runtime controls
+  pass at `106.69/126.60`, `5.98`, and `0.182` Mcells/s, or
+  `0.971/0.924`, `0.939`, and `0.956` of baseline. No new template product was
+  added; the no-op production build is `0.269 s` with zero cache events and an
+  edited `physical_id.cpp` all-dimension rebuild took `3.12 s`. [DONE]

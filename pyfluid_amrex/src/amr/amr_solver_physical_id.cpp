@@ -910,6 +910,17 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       && (cfg_.initial_data_disk == "equilibrium_torus"
           || cfg_.initial_data_disk == "tilted_torus")
       && cfg_.spacetime_initial_data == "xcts";
+   const bool constructed_magnetic_artifact =
+      metadata.magnetic_seed != "none"
+      || metadata.magnetic_equilibrium != "none";
+   if (constructed_magnetic_artifact
+       && (metadata.source_ic != cfg_.ic || continue_rotation || add_torus)) {
+      amrex::Abort(
+         "constructed stellar magnetic physical-ID artifacts cannot yet be "
+         "continued or recomposed; a target-grid magnetic equilibrium owner "
+         "is required"
+      );
+   }
    if constexpr (AMREX_SPACEDIM == 3) {
       const bool spherical_axisymmetric_target =
          cfg_.mesh_coordinate == "spherical"
@@ -1152,6 +1163,30 @@ void AmrSolverBase::write_physical_initial_data_artifact(
    }
    RunConfig artifact_cfg = cfg_;
    artifact_cfg.initial_data_angular_velocity = angular_velocity;
+   if (loaded_physical_id_metadata_) {
+      // Magnetic construction and force-balance identity belong to the
+      // physical artifact, not to the target run's construction request.
+      // An exact-layout solve-only reload therefore reserializes the saved
+      // identity even though no seed or equilibrium solve is requested again.
+      artifact_cfg.initial_data_magnetic_seed =
+         loaded_physical_id_metadata_->magnetic_seed;
+      artifact_cfg.initial_data_magnetic_seed_pressure_cutoff =
+         loaded_physical_id_metadata_->magnetic_seed_pressure_cutoff;
+      artifact_cfg.initial_data_magnetic_seed_exponent =
+         loaded_physical_id_metadata_->magnetic_seed_exponent;
+      artifact_cfg.initial_data_magnetic_seed_maximum_comoving_field =
+         loaded_physical_id_metadata_->magnetic_seed_maximum_comoving_field;
+      artifact_cfg.initial_data_magnetic_equilibrium =
+         loaded_physical_id_metadata_->magnetic_equilibrium;
+      artifact_cfg.initial_data_magnetic_equilibrium_poloidal_magnetization =
+         loaded_physical_id_metadata_
+            ->magnetic_equilibrium_poloidal_magnetization;
+      artifact_cfg.initial_data_magnetic_equilibrium_nonlinear_poloidal =
+         loaded_physical_id_metadata_
+            ->magnetic_equilibrium_nonlinear_poloidal;
+      artifact_cfg.initial_data_magnetic_equilibrium_relaxation =
+         loaded_physical_id_metadata_->magnetic_equilibrium_relaxation;
+   }
    write_physical_initial_data(
       path,
       artifact_cfg,

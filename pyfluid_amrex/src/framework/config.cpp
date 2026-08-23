@@ -1476,7 +1476,9 @@ void validate_config(RunConfig const& cfg)
          "initial_data.magnetic_seed is not present in schema/methods.toml"
       );
    }
-   if (cfg.initial_data_magnetic_seed != "none") {
+   const bool constructs_magnetic_seed =
+      cfg.initial_data_magnetic_seed != "none";
+   if (constructs_magnetic_seed) {
 #if (AMREX_SPACEDIM != 3)
       amrex::Abort("magnetic initial-data seeds require the 3D executable");
 #endif
@@ -1523,14 +1525,15 @@ void validate_config(RunConfig const& cfg)
          "schema/methods.toml"
       );
    }
-   if (cfg.initial_data_magnetic_seed != "none"
-       && cfg.initial_data_magnetic_equilibrium != "none") {
+   const bool constructs_magnetic_equilibrium =
+      cfg.initial_data_magnetic_equilibrium != "none";
+   if (constructs_magnetic_seed && constructs_magnetic_equilibrium) {
       amrex::Abort(
          "a kinematic magnetic seed and a magnetohydrostatic magnetic "
          "equilibrium cannot be selected together"
       );
    }
-   if (cfg.initial_data_magnetic_equilibrium != "none") {
+   if (constructs_magnetic_equilibrium) {
 #if (AMREX_SPACEDIM != 3)
       amrex::Abort(
          "magnetohydrostatic initial data require the 3D executable"
@@ -1608,6 +1611,16 @@ void validate_config(RunConfig const& cfg)
          }
       }
    }
+   const PhysicalSystem selected_system = physical_system(cfg);
+   const bool loaded_physical_id = !cfg.initial_data_input_file.empty();
+   const bool nonideal_rmhd_stellar_physical_id_only =
+      selected_system == PhysicalSystem::RMHD
+      && cfg.initial_data_solve_only
+      && cfg.ct == "on"
+      && cfg.initial_data_magnetic == "id"
+      && (cfg.ic == "tov" || cfg.ic == "rotating_star")
+      && (constructs_magnetic_seed || constructs_magnetic_equilibrium
+          || loaded_physical_id);
    require_supported_option(
       cfg.spacetime_lapse_gauge,
       Z4cLapseGaugeOptions,
@@ -1670,9 +1683,12 @@ void validate_config(RunConfig const& cfg)
       if (!cfg.tabulated_eos) {
          amrex::Abort("the configured CompOSE table was not prepared");
       }
-      if (physical_system(cfg) != PhysicalSystem::RHD) {
+      if (selected_system != PhysicalSystem::RHD
+          && !nonideal_rmhd_stellar_physical_id_only) {
          amrex::Abort(
-            "native cold CompOSE evolution currently requires pyfluid.system = rhd"
+            "native cold CompOSE evolution currently requires pyfluid.physics "
+            "= rhd; RMHD is available only for a magnetized stellar "
+            "physical-ID solve-only artifact"
          );
       }
    } else if (!cfg.eos_table.empty()) {
@@ -1802,7 +1818,6 @@ void validate_config(RunConfig const& cfg)
          "pyfluid.rmhd_candidate_guard"
       );
    }
-   const PhysicalSystem selected_system = physical_system(cfg);
    if (selected_system != PhysicalSystem::RMHD
        && (cfg.rmhd_candidate_guard != "off"
            || cfg.rmhd_candidate_riemann != "same")) {
@@ -1812,15 +1827,9 @@ void validate_config(RunConfig const& cfg)
       );
    }
    const InitialDataOption& selected_initial_data = initial_data_option(cfg.ic);
-   const bool magnetized_stellar_physical_id =
-      selected_system == PhysicalSystem::RMHD
-      && cfg.initial_data_solve_only
-      && (cfg.initial_data_magnetic_seed != "none"
-          || cfg.initial_data_magnetic_equilibrium != "none")
-      && (cfg.ic == "tov" || cfg.ic == "rotating_star");
    if (!contains_physical_system(
           selected_initial_data.physical_systems, selected_system
-       ) && !magnetized_stellar_physical_id) {
+       ) && !nonideal_rmhd_stellar_physical_id_only) {
       amrex::Abort(
          "pyfluid.ic = " + cfg.ic
          + " is incompatible with the selected pyfluid.physics system"
@@ -1857,13 +1866,11 @@ void validate_config(RunConfig const& cfg)
    }
    if (physical_system_is_relativistic(selected_system)) {
       if (selected_system == PhysicalSystem::RMHD && cfg.eos != "ideal_gas"
-          && !(cfg.initial_data_solve_only
-               && (cfg.initial_data_magnetic_seed != "none"
-                   || cfg.initial_data_magnetic_equilibrium != "none"))) {
+          && !nonideal_rmhd_stellar_physical_id_only) {
          amrex::Abort(
             "RMHD runtime evolution currently requires pyfluid.eos = "
-            "ideal_gas; cold/hybrid/tabulated RMHD is available only to "
-            "the magnetized physical-ID solve-only route"
+            "ideal_gas; cold/hybrid/tabulated RMHD is available only for "
+            "magnetized stellar physical-ID solve-only artifacts"
          );
       }
       if (cfg.passive_scalars != 0 || cfg.diffusion != "none"
@@ -1904,7 +1911,7 @@ void validate_config(RunConfig const& cfg)
       }
       if (cfg.ic == "tov" || cfg.ic == "rotating_star") {
          if ((selected_system != PhysicalSystem::RHD
-              && !magnetized_stellar_physical_id)
+              && !nonideal_rmhd_stellar_physical_id_only)
              || !spacetime_stores_state(cfg)
              || (cfg.eos != "polytrope" && cfg.eos != "hybrid_polytrope"
                  && cfg.eos != "compose")) {

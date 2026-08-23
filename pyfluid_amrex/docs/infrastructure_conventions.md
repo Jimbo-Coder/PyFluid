@@ -186,6 +186,16 @@ record `magnetic_force_balance=grad_shafranov` and
 `magnetic_face_representation=valencia_densitized`. Schema-v1/v2 RMHD artifacts
 lack the latter identity and are rejected rather than guessed.
 
+Schema-v3 magnetic construction metadata is a strict continuation contract:
+the seed/equilibrium names must exist in the generated method catalog, the
+force-balance and face-representation identities must match the selected
+physical system, and every construction parameter must be present and finite.
+An exact-layout RMHD solve-only load may reserialize a saved magnetic artifact
+without rerunning its constructor. That path must load the portable primitive
+core as well as any exact evolution caches and preserve the source magnetic
+metadata and reflection closure. Exact caches accelerate restoration; they
+never replace the portable physical fields.
+
 The first force-balanced owner is deliberately fresh, single-level, 3D
 Cartesian, cold-barotropic TOV/RNS, coupled-XCTS, and solve-only. It supports
 an equatorial reflection plane normal to its magnetic/rotation axis. A
@@ -193,7 +203,10 @@ transverse Cartesian reflection is not a symmetry of an oriented axial
 magnetic moment and is rejected. AMR, curvilinear Grad--Shafranov solves,
 toroidal/mixed fields, magnetized disks, and changed-grid CT materialization
 need their own validated discrete owners; catalog presence does not imply
-those combinations.
+those combinations. A constructed magnetic artifact is also rejected when a
+load changes the source IC, continues TOV into RNS, or composes a new torus:
+those operations change matter/geometry and require a target-grid magnetic
+equilibrium owner rather than retaining stale force balance.
 
 The container is deliberately a superset. In addition to the portable
 physical core, it may contain optional consumer-specific sections such as

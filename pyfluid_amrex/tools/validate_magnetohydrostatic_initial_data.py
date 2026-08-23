@@ -74,6 +74,35 @@ def read_face(path: Path) -> np.ndarray:
    return state[0]
 
 
+ARTIFACT_FIELDS = (
+   "physical_fluid.h5",
+   "adm_geometry.h5",
+   "evolution_fluid_cache.h5",
+   "evolution_spacetime_cache.h5",
+   "face_b1.h5",
+   "face_b2.h5",
+   "face_b3.h5",
+)
+
+
+def artifact_field_differences(
+   first: Path, second: Path
+) -> dict[str, tuple[float, float]]:
+   differences: dict[str, tuple[float, float]] = {}
+   for name in ARTIFACT_FIELDS:
+      first_state = read_state(first / name)
+      second_state = read_state(second / name)
+      if first_state.shape != second_state.shape:
+         raise RuntimeError(
+            f"round-trip field {name} changed shape from "
+            f"{first_state.shape} to {second_state.shape}"
+         )
+      absolute = float(np.max(np.abs(first_state - second_state)))
+      scale = max(float(np.max(np.abs(first_state))), 1.0e-300)
+      differences[name] = (absolute, absolute / scale)
+   return differences
+
+
 def run_case(
    name: str,
    *,
@@ -269,6 +298,83 @@ def validate_equilibrium(
       "maximum_velocity": 0.0,
       "dimensionless_spin": 0.0,
       "artifact_bytes": artifact_bytes,
+      "run_dir": repo_relative(run_dir),
+   }
+
+
+def validate_exact_round_trip(
+   source_artifact: Path, *, ranks: int, timeout: int | None
+) -> dict[str, object]:
+   name = "sly_tov_grad_shafranov_exact_round_trip"
+   run_dir, artifact, text, seconds = run_case(
+      name,
+      ranks=ranks,
+      timeout=timeout,
+      parameters={
+         "initial_data.input_file": repo_relative(source_artifact),
+         "initial_data.magnetic_equilibrium": "none",
+         "initial_data.magnetic_equilibrium_poloidal_magnetization": "0.0",
+         "initial_data.magnetic_equilibrium_nonlinear_poloidal": "0.0",
+         "initial_data.magnetic_equilibrium_relaxation": "0.5",
+      },
+   )
+   required_log = (
+      "loaded physical initial data:",
+      "Physical-ID preflight: finite non-ideal RMHD primitive and conserved fields",
+      "completed initial-data-only solve and artifact write",
+   )
+   if any(fragment not in text for fragment in required_log):
+      raise RuntimeError("magnetic physical-ID round trip missed the C++ reader")
+   if MAGNETIC.search(text) is not None:
+      raise RuntimeError("exact magnetic reload unnecessarily reran equilibrium")
+   source_metadata = read_metadata(source_artifact)
+   round_trip_metadata = read_metadata(artifact)
+   if source_metadata != round_trip_metadata:
+      differing = sorted(
+         key for key in source_metadata.keys() | round_trip_metadata.keys()
+         if source_metadata.get(key) != round_trip_metadata.get(key)
+      )
+      raise RuntimeError(
+         "magnetic physical-ID round trip changed metadata: "
+         + ", ".join(differing)
+      )
+   field_differences = artifact_field_differences(
+      source_artifact, artifact
+   )
+   for field, (absolute, relative) in field_differences.items():
+      limit = 2.0e-15 if field == "evolution_fluid_cache.h5" else 0.0
+      if relative > limit:
+         raise RuntimeError(
+            f"magnetic physical-ID round trip changed {field} by "
+            f"absolute={absolute:.3e}, relative={relative:.3e}"
+         )
+   field_difference = max(
+      relative for _, relative in field_differences.values()
+   )
+   return {
+      "case": name,
+      "status": "PASS",
+      "ranks": ranks,
+      "wall_seconds": seconds,
+      "matter_iterations": 0,
+      "magnetic_updates": 0,
+      "relative_potential_update": 0.0,
+      "linear_residual": 0.0,
+      "equation_relative_residual": 0.0,
+      "bernoulli_residual": 0.0,
+      "maximum_comoving_field": math.nan,
+      "constraint_residual": math.nan,
+      "artifact_divb_linf": 0.0,
+      "handoff_relative_error": field_difference,
+      "symmetry_relative_error": math.nan,
+      "reflection_relative_error": math.nan,
+      "rank_relative_error": math.nan,
+      "zero_limit_geometry_error": math.nan,
+      "maximum_velocity": 0.0,
+      "dimensionless_spin": 0.0,
+      "artifact_bytes": sum(
+         path.stat().st_size for path in artifact.rglob("*") if path.is_file()
+      ),
       "run_dir": repo_relative(run_dir),
    }
 
@@ -568,6 +674,94 @@ def validate_rotating_equilibrium(
    }
 
 
+def validate_compose_equilibrium(
+   *, ranks: int, timeout: int | None
+) -> dict[str, object]:
+   name = "compose_sly4_tov_linear_poloidal_grad_shafranov"
+   run_dir, artifact, text, seconds = run_case(
+      name,
+      ranks=ranks,
+      timeout=timeout,
+      parameters={
+         "pyfluid.eos": "compose",
+         "pyfluid.eos_preset": "custom",
+         "pyfluid.eos_table": "pyfluid_amrex/eos/compose/sly4",
+         "pyfluid.thermal_gamma": "1.8",
+         "initial_data.magnetic_equilibrium_nonlinear_poloidal": "0.0",
+      },
+   )
+   magnetic = MAGNETIC.search(text)
+   if magnetic is None:
+      raise RuntimeError("CompOSE magnetic TOV omitted its equilibrium summary")
+   matter_iterations, constraint_residual = maximum_constraint_residual(text)
+   for group, limit, label in (
+      (2, 1.1e-6, "potential update"),
+      (3, 1.0e-12, "linear residual"),
+      (4, 3.0e-6, "equation residual"),
+      (5, 1.1e-6, "Bernoulli residual"),
+      (7, 1.0e-14, "CT divergence"),
+   ):
+      value = float(magnetic.group(group))
+      if not math.isfinite(value) or value > limit:
+         raise RuntimeError(
+            f"CompOSE magnetic {label}={value:.3e} exceeds {limit:.3e}"
+         )
+   if constraint_residual > 1.0e-10:
+      raise RuntimeError("CompOSE magnetic XCTS residual exceeds tolerance")
+   metadata = read_metadata(artifact)
+   expected = {
+      "eos": "compose",
+      "eos_backend": "compose_cold_barotrope_v1",
+      "magnetic_equilibrium": "poloidal_grad_shafranov",
+      "magnetic_force_balance": "grad_shafranov",
+      "magnetic_face_representation": "valencia_densitized",
+   }
+   for key, value in expected.items():
+      if metadata.get(key) != value:
+         raise RuntimeError(
+            f"CompOSE magnetic metadata {key}={metadata.get(key)!r}"
+         )
+   if not metadata.get("eos_table_fingerprint"):
+      raise RuntimeError("CompOSE magnetic artifact omitted its EoS fingerprint")
+   faces = tuple(
+      read_face(artifact / f"face_b{direction}.h5")
+      for direction in range(1, 4)
+   )
+   face_average = cell_average_faces(faces)
+   evolution = read_state(artifact / "evolution_fluid_cache.h5")
+   handoff_error = float(
+      np.max(np.abs(evolution[5:8] - face_average))
+   ) / max(float(np.max(np.abs(face_average))), 1.0e-300)
+   if handoff_error > 2.0e-15:
+      raise RuntimeError("CompOSE magnetic CT handoff is not exact")
+   return {
+      "case": name,
+      "status": "PASS",
+      "ranks": ranks,
+      "wall_seconds": seconds,
+      "matter_iterations": matter_iterations,
+      "magnetic_updates": int(magnetic.group(1)),
+      "relative_potential_update": float(magnetic.group(2)),
+      "linear_residual": float(magnetic.group(3)),
+      "equation_relative_residual": float(magnetic.group(4)),
+      "bernoulli_residual": float(magnetic.group(5)),
+      "maximum_comoving_field": float(magnetic.group(6)),
+      "constraint_residual": constraint_residual,
+      "artifact_divb_linf": float(magnetic.group(7)),
+      "handoff_relative_error": handoff_error,
+      "symmetry_relative_error": math.nan,
+      "reflection_relative_error": math.nan,
+      "rank_relative_error": math.nan,
+      "zero_limit_geometry_error": math.nan,
+      "maximum_velocity": 0.0,
+      "dimensionless_spin": 0.0,
+      "artifact_bytes": sum(
+         path.stat().st_size for path in artifact.rglob("*") if path.is_file()
+      ),
+      "run_dir": repo_relative(run_dir),
+   }
+
+
 def validate_invalid_composition(*, ranks: int, timeout: int | None) -> None:
    name = "reject_seed_plus_equilibrium"
    run_dir = RUN_ROOT / name
@@ -624,6 +818,163 @@ def validate_invalid_composition(*, ranks: int, timeout: int | None) -> None:
       raise RuntimeError("transverse magnetic reflection did not fail honestly")
 
 
+def corrupted_artifact(
+   source: Path, name: str, key: str, value: str | None
+) -> Path:
+   destination = RUN_ROOT / "invalid_artifacts" / name
+   if destination.exists():
+      shutil.rmtree(destination)
+   destination.parent.mkdir(parents=True, exist_ok=True)
+   shutil.copytree(source, destination)
+   metadata_path = destination / "Header.meta"
+   prefix = f"# {key}="
+   lines = metadata_path.read_text().splitlines()
+   matches = [index for index, line in enumerate(lines) if line.startswith(prefix)]
+   if len(matches) != 1:
+      raise RuntimeError(f"cannot corrupt unique metadata key {key}")
+   if value is None:
+      del lines[matches[0]]
+   else:
+      lines[matches[0]] = prefix + value
+   metadata_path.write_text("\n".join(lines) + "\n")
+   return destination
+
+
+def expect_rejected_load(
+   name: str,
+   artifact: Path,
+   expected: str,
+   *,
+   ranks: int,
+   timeout: int | None,
+   parameters: dict[str, str] | None = None,
+) -> None:
+   run_dir = RUN_ROOT / name
+   if run_dir.exists():
+      shutil.rmtree(run_dir)
+   run_dir.mkdir(parents=True)
+   values = {
+      "pyfluid.run_name": name,
+      "pyfluid.output_dir": repo_relative(run_dir),
+      "initial_data.input_file": repo_relative(artifact),
+      "initial_data.output_file": repo_relative(run_dir / "physical_id"),
+      "initial_data.magnetic_equilibrium": "none",
+      "initial_data.magnetic_equilibrium_poloidal_magnetization": "0.0",
+      "initial_data.magnetic_equilibrium_nonlinear_poloidal": "0.0",
+      "initial_data.magnetic_equilibrium_relaxation": "0.5",
+   }
+   if parameters:
+      values.update(parameters)
+   input_path = materialize_run_input(BASE_INPUT, run_dir / "input.in", values)
+   completed = run_amrex(
+      dim=3, input_path=input_path, ranks=ranks, timeout=timeout
+   )
+   (run_dir / "run.log").write_text(completed.stdout)
+   if completed.returncode == 0 or expected not in completed.stdout:
+      raise RuntimeError(
+         f"{name} did not reject with {expected!r}; see "
+         f"{repo_relative(run_dir / 'run.log')}"
+      )
+
+
+def validate_invalid_artifacts(
+   source_artifact: Path,
+   reflected_artifact: Path,
+   *,
+   ranks: int,
+   timeout: int | None,
+) -> None:
+   bad_representation = corrupted_artifact(
+      source_artifact,
+      "bad_magnetic_face_representation",
+      "magnetic_face_representation",
+      "physical",
+   )
+   expect_rejected_load(
+      "reject_bad_magnetic_face_representation",
+      bad_representation,
+      "metadata mismatch for 'magnetic_face_representation'",
+      ranks=ranks,
+      timeout=timeout,
+   )
+   unknown_method = corrupted_artifact(
+      source_artifact,
+      "unknown_magnetic_equilibrium",
+      "magnetic_equilibrium",
+      "unknown_equilibrium",
+   )
+   expect_rejected_load(
+      "reject_unknown_magnetic_equilibrium",
+      unknown_method,
+      "magnetic equilibrium is not present in the method catalog",
+      ranks=ranks,
+      timeout=timeout,
+   )
+   missing_parameter = corrupted_artifact(
+      source_artifact,
+      "missing_magnetic_equilibrium_relaxation",
+      "magnetic_equilibrium_relaxation",
+      None,
+   )
+   expect_rejected_load(
+      "reject_missing_magnetic_equilibrium_parameter",
+      missing_parameter,
+      "metadata missing 'magnetic_equilibrium_relaxation'",
+      ranks=ranks,
+      timeout=timeout,
+   )
+   expect_rejected_load(
+      "reject_changed_grid_magnetic_equilibrium",
+      source_artifact,
+      "require an exact target layout",
+      ranks=ranks,
+      timeout=timeout,
+      parameters={
+         "amr.n_cell": "20 20 20",
+         "amr.max_grid_size": "10",
+         "amr.blocking_factor": "2",
+      },
+   )
+   expect_rejected_load(
+      "reject_magnetic_tov_to_rns_continuation",
+      source_artifact,
+      "cannot yet be continued or recomposed",
+      ranks=ranks,
+      timeout=timeout,
+      parameters={
+         "pyfluid.ic": "rotating_star",
+         "initial_data.angular_velocity": "5.0e-3",
+      },
+   )
+   expect_rejected_load(
+      "reject_magnetic_torus_composition",
+      source_artifact,
+      "cannot yet be continued or recomposed",
+      ranks=ranks,
+      timeout=timeout,
+      parameters={
+         "initial_data.disk": "equilibrium_torus",
+         "initial_data.disk_gravity": "coupled",
+         "initial_data.disk_specific_angular_momentum": "5.2",
+         "initial_data.disk_inner_radius": "10.0",
+      },
+   )
+   expect_rejected_load(
+      "reject_changed_magnetic_reflection_contract",
+      reflected_artifact,
+      "metadata mismatch for 'reflection_lo'",
+      ranks=ranks,
+      timeout=timeout,
+      parameters={
+         "geometry.prob_lo": "-16.0 -16.0 0.0",
+         "geometry.prob_hi": "16.0 16.0 16.0",
+         "amr.n_cell": "24 24 12",
+         "amr.max_grid_size": "12",
+         "pyfluid.bc_zlo": "outflow",
+      },
+   )
+
+
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--ranks", type=int, default=3)
@@ -633,18 +984,36 @@ def main() -> int:
    if args.force and RUN_ROOT.exists():
       shutil.rmtree(RUN_ROOT)
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
+   equilibrium = validate_equilibrium(ranks=args.ranks, timeout=args.timeout)
+   source_artifact = (
+      RUN_ROOT / "sly_tov_nonlinear_poloidal_grad_shafranov/physical_id"
+   )
+   round_trip = validate_exact_round_trip(
+      source_artifact, ranks=args.ranks, timeout=args.timeout
+   )
    rows = [
-      validate_equilibrium(ranks=args.ranks, timeout=args.timeout),
+      equilibrium,
+      round_trip,
       validate_reflection_and_rank(ranks=args.ranks, timeout=args.timeout),
       validate_rotating_equilibrium(ranks=args.ranks, timeout=args.timeout),
       validate_zero_limit(ranks=args.ranks, timeout=args.timeout),
+      validate_compose_equilibrium(ranks=args.ranks, timeout=args.timeout),
    ]
    validate_invalid_composition(ranks=args.ranks, timeout=args.timeout)
+   reflected_artifact = (
+      RUN_ROOT / "sly_tov_nonlinear_poloidal_equatorial_half/physical_id"
+   )
+   validate_invalid_artifacts(
+      source_artifact,
+      reflected_artifact,
+      ranks=args.ranks,
+      timeout=args.timeout,
+   )
    write_tsv(RESULTS, rows, tuple(rows[0]))
-   equilibrium = rows[0]
-   reflected = rows[1]
-   rotating = rows[2]
-   zero_limit = rows[3]
+   reflected = rows[2]
+   rotating = rows[3]
+   zero_limit = rows[4]
+   compose = rows[5]
    print(
       "PASS magnetohydrostatic_initial_data "
       f"H/M={equilibrium['constraint_residual']:.3e} "
@@ -656,7 +1025,9 @@ def main() -> int:
       f"reflection={reflected['reflection_relative_error']:.3e} "
       f"rank={reflected['rank_relative_error']:.3e} "
       f"rns_chi={rotating['dimensionless_spin']:.3e} "
-      f"zero_limit={zero_limit['zero_limit_geometry_error']:.3e}"
+      f"zero_limit={zero_limit['zero_limit_geometry_error']:.3e} "
+      f"round_trip={round_trip['handoff_relative_error']:.3e} "
+      f"compose_GS={compose['equation_relative_residual']:.3e}"
    )
    return 0
 

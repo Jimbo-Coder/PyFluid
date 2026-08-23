@@ -10,10 +10,11 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-22, branch `main`, through Cycle 309's focused
-magnetohydrostatic stellar-ID work. Cycle 309's complete standard/performance
-controls are the current broad integration evidence; Cycle 308 is the
-preceding preserved baseline and Cycle 284 the older reference baseline.
+Last reconciled: 2026-08-22, branch `main`, through Cycle 310's focused
+magnetized-artifact reload and CompOSE hardening. Cycle 309's complete
+standard/performance controls remain the preceding broad integration evidence;
+Cycle 308 is the preceding preserved baseline and Cycle 284 the older reference
+baseline.
 
 ## Scope And Evidence
 
@@ -320,6 +321,22 @@ preceding preserved baseline and Cycle 284 the older reference baseline.
   Cold/hybrid RMHD artifacts remain solve-only until runtime C2P supports
   those EoS choices. Cross-grid and cross-chart CT materialization also remain
   unsupported.
+- A schema-v3 constructed magnetic artifact can be loaded and reserialized on
+  its exact layout without rerunning the magnetic equilibrium. The reader must
+  restore portable primitives even when exact evolution caches exist and must
+  preserve every magnetic construction parameter. The fresh nonlinear SLy TOV
+  control takes about 75 seconds on three local ranks while its exact reload
+  takes 0.17 seconds and preserves authoritative fields exactly; its derived
+  evolution-fluid cache agrees to `1.59e-17` relative. Changed-grid transfer,
+  source-IC continuation, and torus composition remain rejected because each
+  needs a target-grid force-balance owner. Exact magnetic reload also preserves
+  the saved reflection closure; changing an equatorial symmetry plane into an
+  ordinary boundary is rejected.
+- The same pure-poloidal Grad--Shafranov owner is validated with the bundled
+  cold CompOSE SLY4 table: the focused `24^3` control has XCTS residual
+  `6.26e-15`, Grad--Shafranov residual `1.90e-6`, Bernoulli residual
+  `5.55e-7`, and CT divergence `4.57e-20`. This is CompOSE magnetic-ID support,
+  not general-EoS RMHD evolution support.
 - On the coarse `24^3`, radius-16 Cartesian RNS control, the finite-domain ADM
   diagnostic gives `M_ADM > M_b` by about 1.5 percent in both the magnetized
   and matched unmagnetized models. The nonlinear poloidal field changes that

@@ -19,7 +19,7 @@ make a path supported.
 | Coupled evolved-Z4c matter | Validated vertical slice; long stellar evolution remains an explicit gate |
 | TOV initial data | Direct 3D Cartesian plus uniform/adaptive spherical-1D artifact and materialization paths validated |
 | XCTS rotating-star initial data | Coupled spherical `r theta` circular-RNS solve, three rotation laws, adaptive radial mapping, diagnostics, and Cartesian materialization validated; long dynamical equilibrium remains open |
-| Magnetized stellar initial data | Pressure-confined CT seed and pure-poloidal Grad--Shafranov/Bernoulli TOV/RNS coupled-XCTS owners are validated on fresh single-level 3D Cartesian grids; changed-grid CT and cold-EoS RMHD evolution remain open |
+| Magnetized stellar initial data | Pressure-confined CT seed and pure-poloidal Grad--Shafranov/Bernoulli TOV/RNS coupled-XCTS owners are validated on fresh single-level 3D Cartesian grids, including cold CompOSE construction and exact-layout artifact reload; changed-grid CT and cold-EoS RMHD evolution remain open |
 | Optional equilibrium torus | Constant-`ell` test-fluid and self-gravitating XCTS components around TOV/RNS plus direct fixed-Kerr constant-`ell` and j-constant/q=1 controls use one circular-flow interface; long equilibrium and broader law calibration remain open |
 | Reusable physical-ID and sequence artifacts | Same-chart continuation and schema-v3 cross-dimension/cross-coordinate/rigid-pose handoff, including explicit radial faces, use one materialization interface |
 | Native 1D, 2D, 3D | Production build modes |
@@ -93,10 +93,11 @@ extension. This is not finite-temperature or composition-dependent CompOSE.
 Bundled SLY4, APR, and DD2 tables live under `eos/compose/`.
 
 RMHD evolution currently accepts only `ideal_gas`. Cold and hybrid
-polytropes and cold CompOSE remain available to the supported nonmagnetized
-relativistic and stellar paths; native CompOSE evolution currently requires
-RHD. Adding it to Newtonian HD/MHD or RMHD requires a dedicated validation
-boundary, and RMHD additionally requires consistent general-EoS magnetic C2P,
+polytropes and cold CompOSE are also available to the supported nonmagnetized
+relativistic paths and to the fresh or exact-reload magnetized stellar
+solve-only owner. Native CompOSE evolution currently requires RHD. Adding it
+to Newtonian HD/MHD or RMHD evolution requires a dedicated validation boundary,
+and RMHD additionally requires consistent general-EoS magnetic C2P,
 signal-speed, atmosphere, and Riemann contracts.
 
 ## Initial-Data Solve And Handoff
