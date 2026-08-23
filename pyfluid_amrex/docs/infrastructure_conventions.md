@@ -74,6 +74,16 @@ methods and physics belong in their topic documents; coding style belongs in
   byte-for-byte regeneration of every expensive SymPy artifact belongs in the
   full suite; do not make ordinary solver iteration repeat that exhaustive
   check.
+- Orthogonal coordinate geometry is declared once in
+  `codegen/pyfluid_codegen/coordinates.py` as coordinates and scale factors.
+  The symbolic tensor/finite-volume owners derive metric measures, differential
+  identities, and curvature sources from that frame while the physical
+  conservation law remains coordinate independent. Add a coordinate or
+  projection by extending those high-level owners and their generated tests;
+  do not hand-copy the HD/MHD equations for each chart. Solver algorithms that
+  are not yet expressed through this symbolic layer, notably the current XCTS
+  elliptic discretizations, remain explicit numerical owners rather than being
+  described as generated merely because their materialization is generic.
 
 ## AMR And Output Infrastructure
 
@@ -447,6 +457,15 @@ the configured target atmosphere for TOV/RNS fluid. It must not copy a
 source-boundary atmosphere value or use exact floating-point equality to
 classify stellar matter support.
 
+A periodic cell-centred direction has no physical half-cell exterior at its
+coordinate seam. The portable evaluator wraps both interpolation neighbors
+across that seam, including when explicit coordinate faces are stored, and it
+must not clamp the query or apply an exterior/atmosphere policy there.
+Node-centred periodic data may include the duplicated endpoint and follow their
+own nodal extent. Every newly portable periodic chart needs a seam-focused
+interpolation check; a phi-invariant source is a particularly sharp control
+because any seam-localized matter loss is unambiguously infrastructure error.
+
 Automatic sequence output is organized under the run directory by EoS,
 rotation law, and fixed central density. Named EoS presets and differential
 law parameters are recorded in the path and `sequence.meta`; `sequence.tsv`
@@ -508,13 +527,27 @@ rank to `AMREX_SPACEDIM` or create a reduced-dimension duplicate field schema.
 
 The validated reduced physical-ID handoffs are spherical one-dimensional TOV
 and spherical two-dimensional circular-RNS XCTS to three-dimensional Cartesian
-RHD. Uniform and explicit-face radial artifacts use the same evaluator. An
+RHD. Uniform and explicit-face radial artifacts use the same evaluator. The
+coordinate-equivalence ladder compares (1) native reduced and full-storage
+source fields, (2) both sources materialized onto the identical Cartesian
+hierarchy, and (3) at least one complete identical evolution step. An
+independent solver in another chart is a separate work-precision comparison:
+its errors should decrease under refinement, but it is not expected to agree
+to roundoff with a different discrete elliptic operator. An
 exact-layout mapped RNS artifact can seed the next rotation target without
 interpolation; the resulting model remains independently usable for Cartesian
 materialization. Same-layout Cartesian magnetized artifacts retain their
 canonical face fields. Cross-chart or changed-grid CT remains deliberately
 rejected until face-centered divergence-preserving magnetic transfer has an
 owner.
+
+The spherical Schwarzschild-XCTS owner is an exterior horizon shell. Reduced
+`r theta` and full-storage `r theta phi` shells must agree as coordinate
+projections and may exercise the portable Cartesian evaluator, but this alone
+does not define production full-grid evolution: the target still needs an
+explicit constraint-solved black-hole interior fill or a genuine excision
+boundary. Do not relabel a uniform-fluid materialization probe as a reusable
+black-hole artifact or silently treat horizon clamping as that missing policy.
 
 Object pose is a materialization choice, not an elliptic-solver coordinate
 choice. The artifact persists stellar rotation axis and center separately from

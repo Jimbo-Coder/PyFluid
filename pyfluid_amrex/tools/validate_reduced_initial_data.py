@@ -13,6 +13,7 @@ import numpy as np
 
 from plotfile_reader import parse_plot_header, read_level_state
 from validation_common import (
+   DYNAMIC_SPACETIME_POLICY,
    ELLIPTIC_POLICY,
    ROOT,
    append_validation_history,
@@ -308,7 +309,7 @@ def normalized_maximum_difference(
 
 def validate_full_storage_rns(
    args: argparse.Namespace,
-) -> list[dict[str, object]]:
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
    common_2d = {
       "amr.n_cell": "96 24",
       "amr.max_grid_size": "32",
@@ -415,7 +416,91 @@ def validate_full_storage_rns(
          f"fields={maximum_field_difference:.6e}, "
          f"diagnostics={maximum_diagnostic_difference:.6e}"
       )
-   return [{
+   materialized_artifacts: dict[str, Path] = {}
+   materialization_seconds: dict[str, float] = {}
+   for source_kind, source_artifact in (
+      ("native2d", reduced_artifact),
+      ("full3d", full_artifacts[4]),
+   ):
+      _, artifact, seconds = run_id_case(
+         f"rns_{source_kind}_materialized_16cubed",
+         3,
+         RNS_MATERIALIZED_INPUT,
+         {
+            "amr.n_cell": "16 16 16",
+            "amr.max_grid_size": "16",
+            "initial_data.input_file": repo_relative(source_artifact),
+            "initial_data.rotation_law": reduced_metadata["rotation_law"],
+            "initial_data.angular_velocity": reduced_metadata[
+               "angular_velocity"
+            ],
+         },
+         args,
+      )
+      materialized_artifacts[source_kind] = artifact
+      materialization_seconds[source_kind] = seconds
+   materialization_error = compare_artifacts(
+      materialized_artifacts["full3d"],
+      materialized_artifacts["native2d"],
+   )
+   maximum_materialization_difference = max(materialization_error.values())
+   if maximum_materialization_difference > 5.0e-13:
+      raise RuntimeError(
+         "native-2D and full-3D spherical RNS sources do not materialize "
+         "equivalently onto Cartesian evolution data: "
+         f"{materialization_error}"
+      )
+
+   evolution_rows: dict[str, list[dict[str, str]]] = {}
+   scalar_rows: list[dict[str, object]] = []
+   for source_kind, source_artifact in (
+      ("native2d", reduced_artifact),
+      ("full3d", full_artifacts[4]),
+   ):
+      evolution, scalar = run_coordinate_equivalent_rns_evolution(
+         source_kind, source_artifact, args
+      )
+      evolution_rows[source_kind] = evolution
+      scalar_rows.append(scalar)
+   trajectory_fields = (
+      "time",
+      "dt",
+      "mass",
+      "mom1",
+      "mom2",
+      "mom3",
+      "angular_mom1",
+      "angular_mom2",
+      "angular_mom3",
+      "energy",
+      "max_rho",
+      "min_lapse",
+      "z4c_hamiltonian_l2",
+      "z4c_momentum_linf",
+      "adm_mass_volume",
+      "komar_mass_volume",
+      "adm_angular_momentum3_volume",
+   )
+   maximum_trajectory_difference = 0.0
+   for native_row, full_row in zip(
+      evolution_rows["native2d"], evolution_rows["full3d"]
+   ):
+      for field in trajectory_fields:
+         native_value = float(native_row[field])
+         full_value = float(full_row[field])
+         scale = max(abs(native_value), abs(full_value), 1.0)
+         maximum_trajectory_difference = max(
+            maximum_trajectory_difference,
+            abs(native_value - full_value) / scale,
+         )
+   if maximum_trajectory_difference > 2.0e-12:
+      raise RuntimeError(
+         "native-2D and full-3D spherical RNS sources diverge during their "
+         "one-step Cartesian handoff: "
+         f"{maximum_trajectory_difference:.6e}"
+      )
+
+   result_rows = [{
       "kind": "initial_data",
       "case": "rns_axisymmetric_2d_to_3d_nphi1_nphi4",
       "status": "PASS",
@@ -426,6 +511,215 @@ def validate_full_storage_rns(
       "source_seconds": reduced_seconds
          + full_seconds[1] + full_seconds[4],
       "run_dir": repo_relative(full_artifacts[4].parent),
+   }, {
+      "kind": "initial_data",
+      "case": "rns_native2d_full3d_to_cartesian_16cubed",
+      "status": "PASS",
+      "metric": "maximum_normalized_materialization_difference",
+      "value": maximum_materialization_difference,
+      "rho_max": materialization_error["rho_max"],
+      "pressure_max": materialization_error["pressure_max"],
+      "gamma_max": materialization_error["gamma_max"],
+      "lapse_max": materialization_error["lapse_max"],
+      "materialization_seconds": sum(materialization_seconds.values()),
+      "run_dir": repo_relative(
+         materialized_artifacts["full3d"].parent
+      ),
+   }, {
+      "kind": "initial_data",
+      "case": "rns_native2d_full3d_one_step_cartesian_evolution",
+      "status": "PASS",
+      "metric": "maximum_normalized_trajectory_difference",
+      "value": maximum_trajectory_difference,
+      "run_dir": repo_relative(
+         RUN_ROOT / "rns_full3d_one_step_cartesian_evolution"
+      ),
+   }]
+   if args.level == "full":
+      result_rows.extend(
+         validate_independent_cartesian_rns_work_precision(
+            reduced_artifact,
+            materialized_artifacts["native2d"],
+            args,
+         )
+      )
+   return result_rows, scalar_rows
+
+
+def run_coordinate_equivalent_rns_evolution(
+   source_kind: str,
+   source_artifact: Path,
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, str]], dict[str, object]]:
+   name = f"rns_{source_kind}_one_step_cartesian_evolution"
+   run_dir = RUN_ROOT / name
+   log_path = run_dir / "run.log"
+   cached_scalars = (run_dir / "scalars.tsv").is_file()
+   source_changed = cached_scalars and (
+      not log_path.is_file()
+      or (source_artifact / "Header.meta").stat().st_mtime
+         > log_path.stat().st_mtime
+   )
+   if (args.force or source_changed) and run_dir.exists():
+      shutil.rmtree(run_dir)
+   run_dir.mkdir(parents=True, exist_ok=True)
+   metadata = read_artifact_metadata(source_artifact)
+   input_path = materialize_run_input(
+      ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_3d.in",
+      run_dir / "input.in",
+      {
+         "pyfluid.run_name": name,
+         "pyfluid.output_dir": repo_relative(run_dir),
+         "amr.n_cell": "16 16 16",
+         "amr.max_level": "0",
+         "amr.max_grid_size": "16",
+         "initial_data.input_file": repo_relative(source_artifact),
+         "initial_data.solve_only": "0",
+         "initial_data.save_sequence": "0",
+         "initial_data.rotation_law": metadata["rotation_law"],
+         "initial_data.angular_velocity": metadata["angular_velocity"],
+         "pyfluid.eos": metadata["eos"],
+         "pyfluid.eos_preset": metadata.get("eos_preset", "none"),
+         "pyfluid.tov_central_density": metadata["tov_central_density"],
+         "pyfluid.max_step": "1",
+         "pyfluid.final_time": "-1",
+         "pyfluid.ng": "3",
+         "pyfluid.cfl": "0.9",
+         "pyfluid.recon": "pwl",
+         "pyfluid.riemann": "hll",
+         "pyfluid.timestep": "ssprk3",
+         "pyfluid.subcycling": "off",
+         "pyfluid.scalar_diagnostics": "standard,global_gr",
+         "pyfluid.scalar_int": "1",
+         "pyfluid.plot_int": "-1",
+         "pyfluid.checkpoint_int": "-1",
+         "pyfluid.physical_check_int": "1",
+      },
+   )
+   if args.force or source_changed or not cached_scalars:
+      completed = run_amrex(
+         dim=3,
+         input_path=input_path,
+         ranks=args.ranks,
+         timeout=args.timeout,
+      )
+      log_path.write_text(completed.stdout)
+      if completed.returncode != 0:
+         raise RuntimeError(
+            f"{name} failed; see {repo_relative(log_path)}"
+         )
+   rows = read_scalar_rows(run_dir)
+   if len(rows) != 2:
+      raise RuntimeError(f"{name} did not retain exactly two scalar rows")
+   recovery = RECOVERY_PATTERN.findall(log_path.read_text())
+   if not recovery or tuple(int(value) for value in recovery[-1]) != (0, 0):
+      raise RuntimeError(f"{name} required relativistic recovery")
+   scalar = scalar_validation_row(
+      run_dir,
+      case=name,
+      input_file=run_dir / "run.in",
+      checks=DYNAMIC_SPACETIME_POLICY,
+      mhd=False,
+      dim=3,
+      ranks=args.ranks,
+      kind="initial_data",
+   )
+   if scalar["status"] != "PASS":
+      raise RuntimeError(f"{name} failed scalar checks: {scalar['reason']}")
+   return rows, scalar
+
+
+def validate_independent_cartesian_rns_work_precision(
+   spherical_artifact: Path,
+   materialized_16_artifact: Path,
+   args: argparse.Namespace,
+) -> list[dict[str, object]]:
+   metadata = read_artifact_metadata(spherical_artifact)
+   errors: dict[int, dict[str, float]] = {}
+   direct_seconds = 0.0
+   materialization_seconds = 0.0
+   for cells in (16, 24):
+      _, direct_artifact, seconds = run_id_case(
+         f"rns_cartesian_direct_{cells}cubed",
+         3,
+         ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_3d.in",
+         {
+            "amr.n_cell": f"{cells} {cells} {cells}",
+            "amr.max_grid_size": str(min(16, cells)),
+            "amr.blocking_factor": "4" if cells == 24 else "8",
+            "initial_data.solve_only": "1",
+            "initial_data.rotation_law": metadata["rotation_law"],
+            "initial_data.angular_velocity": metadata["angular_velocity"],
+            "pyfluid.eos": metadata["eos"],
+            "pyfluid.eos_preset": metadata.get("eos_preset", "none"),
+            "pyfluid.tov_central_density": metadata["tov_central_density"],
+            "pyfluid.max_step": "0",
+            "pyfluid.plot_int": "-1",
+            "pyfluid.scalar_int": "-1",
+         },
+         args,
+      )
+      direct_seconds += seconds
+      if cells == 16:
+         materialized_artifact = materialized_16_artifact
+      else:
+         _, materialized_artifact, seconds = run_id_case(
+            f"rns_native2d_materialized_{cells}cubed",
+            3,
+            RNS_MATERIALIZED_INPUT,
+            {
+               "amr.n_cell": f"{cells} {cells} {cells}",
+               "amr.max_grid_size": str(min(16, cells)),
+               "amr.blocking_factor": "4",
+               "initial_data.input_file": repo_relative(spherical_artifact),
+               "initial_data.rotation_law": metadata["rotation_law"],
+               "initial_data.angular_velocity": metadata["angular_velocity"],
+            },
+            args,
+         )
+         materialization_seconds += seconds
+      errors[cells] = compare_artifacts(
+         direct_artifact, materialized_artifact
+      )
+
+   convergence_fields = (
+      "rho_max",
+      "pressure_max",
+      "gamma_max",
+      "lapse_max",
+      "inactive_absolute",
+   )
+   nondecreasing = {
+      field: (errors[16][field], errors[24][field])
+      for field in convergence_fields
+      if not errors[24][field] < errors[16][field]
+   }
+   if nondecreasing:
+      raise RuntimeError(
+         "independent Cartesian RNS XCTS does not approach the spherical "
+         f"owner under refinement: {nondecreasing}"
+      )
+   final_error = max(errors[24][field] for field in convergence_fields)
+   maximum_error_ratio = max(
+      errors[24][field] / errors[16][field]
+      for field in convergence_fields
+   )
+   return [{
+      "kind": "initial_data",
+      "case": "rns_independent_spherical_cartesian_xcts_n16_n24",
+      "status": "PASS",
+      "metric": "n24_maximum_normalized_physical_difference",
+      "value": final_error,
+      "rho_max": errors[24]["rho_max"],
+      "pressure_max": errors[24]["pressure_max"],
+      "gamma_max": errors[24]["gamma_max"],
+      "lapse_max": errors[24]["lapse_max"],
+      "maximum_refined_to_coarse_error_ratio": maximum_error_ratio,
+      "source_seconds": direct_seconds,
+      "materialization_seconds": materialization_seconds,
+      "run_dir": repo_relative(
+         RUN_ROOT / "rns_cartesian_direct_24cubed"
+      ),
    }]
 
 
@@ -1178,7 +1472,10 @@ def main() -> int:
       "materialization_seconds": adaptive_materialization_seconds,
       "run_dir": repo_relative(adaptive_tov_materialized.parent),
    })
-   rows.extend(validate_full_storage_rns(args))
+   full_storage_rows, full_storage_scalar_rows = validate_full_storage_rns(
+      args
+   )
+   rows.extend(full_storage_rows)
    rows.extend(validate_reduced_rns_handoff(args))
    rows.extend(validate_reduced_differential_rns(args))
 
@@ -1324,11 +1621,14 @@ def main() -> int:
       "dimensionless_spin",
       "maximum_phi_variation",
       "maximum_diagnostic_difference",
+      "maximum_refined_to_coarse_error_ratio",
       "run_dir",
    ]
    results_path = RESULTS if args.level == "standard" else FULL_RESULTS
    write_tsv(results_path, rows, result_fields)
-   append_validation_history(HISTORY, [*rows, scalar_row])
+   append_validation_history(
+      HISTORY, [*rows, *full_storage_scalar_rows, scalar_row]
+   )
    print(f"wrote {repo_relative(results_path)}")
    for resolution in resolutions:
       error = errors[resolution]

@@ -6231,3 +6231,54 @@ I will always continue from the last cycle marked as `in_progress`.
   `0.971/0.924`, `0.939`, and `0.956` of baseline. No new template product was
   added; the no-op production build is `0.269 s` with zero cache events and an
   edited `physical_id.cpp` all-dimension rebuild took `3.12 s`. [DONE]
+
+## Cycle 311 — Coordinate-equivalent ID and minimal evolution handoff (DONE)
+
+- Audit the existing spherical `r`, `r theta`, axisymmetric `r theta phi`,
+  Cartesian, mapped-radial, block-AMR, reflection, and portable-materializer
+  gates for TOV, RNS, and black-hole initial data. Distinguish a genuinely
+  independent coordinate solve from replicated axisymmetric 3D storage.
+  The live owner matrix and focused gates were source-checked. TOV already
+  owns spherical-to-Cartesian convergence and a three-step loaded evolution;
+  equilibrium tori already own two-step and AMR-to-uniform one-step handoffs.
+  RNS lacked the post-source 2D/full-storage equivalence gate, while BH lacked
+  a matched 2D/full-storage source comparison. [DONE]
+- Add the smallest missing high-value comparisons: independent spherical and
+  Cartesian RNS solutions on a matched physical target, 2D versus 3D spherical
+  materialization through the same Cartesian interface, and one-step
+  ID-to-evolution trajectories. Keep these as validation owners rather than
+  new physics branches. Fixed periodic cell-centred portable interpolation:
+  phi-seam queries now wrap neighbor indices (including explicit-face maps)
+  instead of being clamped and marked exterior. Before the fix, six surface
+  cells in a 16-cubed RNS handoff were replaced by atmosphere, with absolute
+  density error `5.295e-4`; after it, native `96x24` and full
+  `96x24x4` sources materialize within `2.593e-15` and their one-step SSPRK3,
+  CFL-0.9 Cartesian trajectories agree within `1.661e-15`, with zero recovery.
+  The standard reduced-ID gate now owns both comparisons. [DONE]
+- Added a full-only independent-coordinate work-precision control. Direct
+  Cartesian XCTS at 16-cubed and 24-cubed approaches the matched adaptive
+  spherical owner in every tracked fluid/ADM field (worst refined/coarse
+  ratio `0.774`), but the 24-cubed pressure/metric/lapse differences remain
+  `9.67e-2/6.57e-2/2.64e-2`. This is honest coarse convergence evidence and
+  confirms that the reduced owner, not coarse Cartesian XCTS, is the current
+  efficient production route. [DONE]
+- Probe the black-hole spherical-shell-to-Cartesian handoff honestly. If the
+  current owner boundary rejects it, record the exact missing contract instead
+  of weakening validation or conflating analytic Kerr--Schild with XCTS.
+  Matched adaptive `96x24` and `96x24x4` Schwarzschild-XCTS shells agree to
+  `1.093e-15` in stored fields with zero phi variation; this is now a permanent
+  focused BH gate. Both source forms also pass the generic Cartesian evaluator
+  with exact atmosphere preflight, but production full-grid XCTS-BH evolution
+  remains intentionally unclaimed: the exterior shell has neither a defined
+  constraint-solved interior fill nor true excision. [DONE]
+- Run focused, standard, build, and performance controls in proportion to any
+  production changes; update the compact knowledge/infrastructure boundary and
+  commit only a coherent validated tranche. Production 1D/2D/3D builds, the
+  focused portable-interpolation executable, generated-equation contracts,
+  architecture check, fresh reduced-ID standard gate, and all 18 black-hole
+  cases pass. The cache-hot quick suite passes 3/3 and the complete standard
+  suite passes 49/49 in `227.205 s` summed gate time. A no-op production build
+  is `0.27 s` with zero cache events; only the physical-ID interpolation owner
+  rebuilt after the implementation edit, with no new template product. The
+  evolution-throughput benchmark was intentionally not repeated because no
+  timestep, reconstruction, Riemann, or RHS kernel changed. [DONE]

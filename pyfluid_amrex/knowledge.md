@@ -10,8 +10,9 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-22, branch `main`, through Cycle 310's focused
-magnetized-artifact reload and CompOSE hardening. Cycle 309's complete
+Last reconciled: 2026-08-23, branch `main`, through Cycle 311's focused
+coordinate-equivalent ID/materialization handoff. Cycle 310's focused
+magnetized-artifact reload and CompOSE hardening and Cycle 309's complete
 standard/performance controls remain the preceding broad integration evidence;
 Cycle 308 is the preceding preserved baseline and Cycle 284 the older reference
 baseline.
@@ -379,6 +380,28 @@ baseline.
   `4.34e-14` in global diagnostics, and `1.67e-23` in phi invariance. The
   `96x24x4` rotating solve completes in about 1.3 seconds on three local ranks
   with constraint residuals below `3.3e-13` and zero recovery.
+- Periodic cell-centred physical-ID interpolation must wrap its stencil across
+  the coordinate seam. Treating the half-cell strips around phi=0/2pi as a
+  nonperiodic interpolation exterior changed only six 16-cubed Cartesian RNS
+  matter cells, but the maximum density error was `5.29e-4` because those
+  cells were replaced by atmosphere. With periodic index wrapping, matched
+  native-2D and `96x24x4` sources materialize onto 16-cubed Cartesian data to
+  `2.59e-15` normalized field error and remain within `1.66e-15` through one
+  complete SSPRK3 step at CFL 0.9, with zero recovery/reset.
+- Independent Cartesian and reduced-spherical XCTS are work-precision
+  controls, not roundoff-equivalent storage paths. For the same SLy,
+  central-density, omega=0.001 model on radius 16, refining the direct
+  Cartesian solve from 16-cubed to 24-cubed decreases every tracked fluid/ADM
+  difference against the spherical owner; the worst ratio is `0.774`, but the
+  24-cubed pressure difference is still `9.67e-2`. The reduced spherical owner
+  remains the efficient production ID route; this coarse Cartesian comparison
+  is convergence evidence, not high-accuracy agreement.
+- Matched `96x24` and `96x24x4` adaptive Schwarzschild-XCTS exterior shells
+  agree to `1.09e-15` in fluid/ADM fields with zero phi variation, and both
+  pass the generic Cartesian materializer. This validates the coordinate
+  projection and basis handoff only. Constraint-solved black-hole evolution
+  still lacks an explicit full-grid interior-fill owner or true excision, so a
+  shell-to-full-grid probe must not be promoted as reusable production BH ID.
 - Applying generic 3D MLMG to an origin-containing, phi-redundant axisymmetric
   stellar solve excites unused azimuthal modes and diverges for `Nphi>1`, even
   for a static TOV and exact radial seeding. The separable owner is the

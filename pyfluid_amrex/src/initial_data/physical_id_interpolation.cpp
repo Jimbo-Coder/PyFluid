@@ -564,6 +564,14 @@ MappedSourcePoint map_source_point(
             }
          }
       }
+      // A periodic cell-centred chart has a legitimate interpolation stencil
+      // across the half-cell strips at either end of the coordinate interval.
+      // Keep the wrapped coordinate there; interpolate_level wraps the stencil
+      // indices.  Treating those strips as exterior silently applies the fluid
+      // atmosphere policy at an otherwise regular periodic seam.
+      if (chart.periodic[direction] != 0) {
+         continue;
+      }
       const int cell_count = level.domain_upper[direction]
          - level.domain_lower[direction] + 1;
       const auto& faces = level.coordinate_faces[direction];
@@ -629,6 +637,8 @@ bool interpolate_level(
       const int valid_upper = level.domain_upper[direction]
          + (node_centered ? 1 : 0);
       const auto& faces = level.coordinate_faces[direction];
+      const bool wrap_cell_centres =
+         chart.periodic[direction] != 0 && !node_centered;
       amrex::Real logical = 0.0;
       if (faces.empty()) {
          const amrex::Real spacing = (
@@ -645,7 +655,24 @@ bool interpolate_level(
                : 0.5 * (faces[local_index] + faces[local_index + 1]);
          };
          const int coordinate_count = cell_count + (node_centered ? 1 : 0);
-         if (q[coordinate_component] <= coordinate_at(0)) {
+         if (wrap_cell_centres
+             && q[coordinate_component] < coordinate_at(0)) {
+            const amrex::Real left = coordinate_at(coordinate_count - 1)
+               - (level.prob_hi[direction] - level.prob_lo[direction]);
+            const amrex::Real right = coordinate_at(0);
+            logical = valid_lower - 1
+               + (q[coordinate_component] - left) / (right - left);
+         } else if (
+            wrap_cell_centres
+            && q[coordinate_component]
+               >= coordinate_at(coordinate_count - 1)
+         ) {
+            const amrex::Real left = coordinate_at(coordinate_count - 1);
+            const amrex::Real right = coordinate_at(0)
+               + (level.prob_hi[direction] - level.prob_lo[direction]);
+            logical = valid_upper
+               + (q[coordinate_component] - left) / (right - left);
+         } else if (q[coordinate_component] <= coordinate_at(0)) {
             logical = valid_lower;
          } else if (
             q[coordinate_component] >= coordinate_at(coordinate_count - 1)
@@ -669,7 +696,10 @@ bool interpolate_level(
                + (q[coordinate_component] - left) / (right - left);
          }
       }
-      if (valid_lower == valid_upper) {
+      if (wrap_cell_centres) {
+         lower_index[direction] = static_cast<int>(std::floor(logical));
+         fraction[direction] = logical - lower_index[direction];
+      } else if (valid_lower == valid_upper) {
          lower_index[direction] = valid_lower;
          fraction[direction] = 0.0;
       } else if (logical <= valid_lower) {
@@ -697,6 +727,14 @@ bool interpolate_level(
             weight *= fraction[direction];
          } else {
             weight *= 1.0 - fraction[direction];
+         }
+         if (chart.periodic[direction] != 0 && !node_centered) {
+            const int valid_lower = level.domain_lower[direction];
+            const int cell_count = level.domain_upper[direction]
+               - valid_lower + 1;
+            index[direction] = valid_lower
+               + ((index[direction] - valid_lower) % cell_count + cell_count)
+                  % cell_count;
          }
       }
       if (weight == 0.0) {

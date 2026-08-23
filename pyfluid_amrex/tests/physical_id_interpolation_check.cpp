@@ -69,6 +69,45 @@ RuntimeDimensionHdf5Field constant_spherical_field(
    return field;
 }
 
+RuntimeDimensionHdf5Field constant_full_spherical_field(
+   int num_components,
+   std::vector<amrex::Real> const& component_values
+)
+{
+   RuntimeDimensionHdf5Field field;
+   field.dimension = 3;
+   field.num_components = num_components;
+   field.levels.resize(1);
+   RuntimeDimensionHdf5Level& level = field.levels.front();
+   level.domain_lower = {0, 0, 0};
+   level.domain_upper = {1, 1, 3};
+   level.prob_lo = {1.0, 0.0, 0.0};
+   level.prob_hi = {3.0, 0.5 * std::acos(-1.0), 2.0 * std::acos(-1.0)};
+   level.coordinate_faces[0] = {1.0, 2.0, 3.0};
+   level.coordinate_faces[1] = {
+      0.0, 0.25 * std::acos(-1.0), 0.5 * std::acos(-1.0)
+   };
+   level.coordinate_faces[2] = {
+      0.0,
+      0.5 * std::acos(-1.0),
+      std::acos(-1.0),
+      1.5 * std::acos(-1.0),
+      2.0 * std::acos(-1.0),
+   };
+   level.boxes.resize(1);
+   RuntimeDimensionHdf5Box& box = level.boxes.front();
+   box.lower = level.domain_lower;
+   box.upper = level.domain_upper;
+   constexpr int point_count = 16;
+   box.data.reserve(static_cast<std::size_t>(point_count * num_components));
+   for (amrex::Real component_value : component_values) {
+      for (int point = 0; point < point_count; ++point) {
+         box.data.push_back(component_value);
+      }
+   }
+   return field;
+}
+
 void check_equatorial_reflection_and_basis_rotation()
 {
    const auto field_set = pyfluid_amrex::physical_fluid_grid_fields(
@@ -211,6 +250,34 @@ void check_mapped_radial_origin_is_not_exterior()
    require_close(sample.values[0], 5.0, 1.0e-14, "mapped-origin scalar");
 }
 
+void check_periodic_cell_centred_seam()
+{
+   PortablePhysicalIdInterpolator interpolator(
+      constant_full_spherical_field(5, {5.0, 0.0, 0.0, 0.0, 7.0}),
+      pyfluid_amrex::make_physical_id_chart(
+         3,
+         "spherical",
+         "r theta phi",
+         {0, 0, 1}
+      ),
+      pyfluid_amrex::physical_fluid_grid_fields(
+         pyfluid_amrex::PhysicalSystem::RHD, 0
+      ),
+      false
+   );
+   const PhysicalIdChart target_chart = pyfluid_amrex::make_physical_id_chart(
+      3, "cartesian", "x y z"
+   );
+   for (amrex::Real y : {-0.1, 0.1}) {
+      const auto sample = interpolator.sample({1.4, y, 1.4}, target_chart);
+      if (sample.exterior) {
+         throw std::runtime_error("periodic phi seam was marked exterior");
+      }
+      require_close(sample.values[0], 5.0, 1.0e-14, "periodic-seam scalar");
+      require_close(sample.values[4], 7.0, 1.0e-14, "periodic-seam pressure");
+   }
+}
+
 void check_rigid_axis_and_center_materialization()
 {
    const PhysicalIdRigidTransform transform =
@@ -290,6 +357,7 @@ int main(int argc, char** argv)
       check_symmetric_tensor_rotation();
       check_axial_vector_reflection();
       check_mapped_radial_origin_is_not_exterior();
+      check_periodic_cell_centred_seam();
       check_rigid_axis_and_center_materialization();
       std::cout << "PASS portable physical-ID interpolation check\n";
    } catch (std::exception const& error) {

@@ -305,6 +305,66 @@ def validate_spherical_xcts_black_hole_3d(
         raise RuntimeError(f"{name} elliptic residual is {residual:.3e}")
 
     source_artifact = artifact
+    _, reduced_artifact, _ = run_spherical_xcts_case(
+        "schwarzschild_xcts_spherical_shell_2d_matched_96x24",
+        {
+            "geometry.prob_hi": "24.0 1.5707963267948966",
+            "amr.n_cell": "96 24",
+            "amr.max_grid_size": "32",
+            "amr.blocking_factor": "1",
+            "initial_data.adaptive_shell_width_ratio": "8.0",
+        },
+        ranks=ranks,
+        timeout=timeout,
+    )
+    maximum_reduced_difference = 0.0
+    maximum_phi_variation = 0.0
+    for field_name in ("physical_fluid.h5", "adm_geometry.h5"):
+        reduced_names, reduced_dimension, _ = parse_plot_header(
+            reduced_artifact / field_name
+        )
+        full_names, full_dimension, _ = parse_plot_header(
+            source_artifact / field_name
+        )
+        reduced_state = read_level_state(
+            reduced_artifact / field_name,
+            reduced_names,
+            reduced_dimension,
+            0,
+        )
+        full_state = read_level_state(
+            source_artifact / field_name,
+            full_names,
+            full_dimension,
+            0,
+        )
+        scale = max(float(np.max(np.abs(reduced_state))), 1.0e-14)
+        maximum_reduced_difference = max(
+            maximum_reduced_difference,
+            float(np.max(np.abs(full_state[..., 0] - reduced_state))) / scale,
+        )
+        maximum_phi_variation = max(
+            maximum_phi_variation,
+            float(
+                np.max(
+                    np.abs(
+                        full_state
+                        - np.repeat(
+                            full_state[..., :1], full_state.shape[-1], axis=-1
+                        )
+                    )
+                )
+            ) / scale,
+        )
+    if maximum_reduced_difference > 3.0e-12 \
+            or maximum_phi_variation > 5.0e-14:
+        raise RuntimeError(
+            "matched 2D and full-storage spherical XCTS black-hole shells "
+            "are not coordinate equivalent: "
+            f"fields={maximum_reduced_difference:.3e}, "
+            f"phi={maximum_phi_variation:.3e}"
+        )
+
     name = "schwarzschild_xcts_spherical_shell_3d_changed_nphi4"
     run_dir = RUN_ROOT / name
     if run_dir.exists():
@@ -439,6 +499,8 @@ def validate_spherical_xcts_black_hole_3d(
         "xcts_lapse_linf_error": lapse_linf_error,
         "xcts_zero_field_linf": zero_field_linf,
         "xcts_theta_invariance": angular_invariance,
+        "xcts_reduced_field_difference": maximum_reduced_difference,
+        "xcts_phi_variation": maximum_phi_variation,
         "xcts_elliptic_residual": residual,
         "xcts_artifact_bytes": artifact_bytes,
         "run_dir": repo_relative(run_dir),
@@ -1200,6 +1262,8 @@ def main() -> int:
         "xcts_lapse_linf_error",
         "xcts_zero_field_linf",
         "xcts_theta_invariance",
+        "xcts_reduced_field_difference",
+        "xcts_phi_variation",
         "xcts_elliptic_residual",
         "xcts_artifact_bytes",
         "run_dir",
