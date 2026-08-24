@@ -1,0 +1,953 @@
+schema_version = 1
+
+# Physical-ID fields remain declared exclusively in fields.toml.  This catalog
+# owns only the human-readable artifact manifest: stable key identity, value
+# type, section, and runtime component vocabulary.  Conditional compatibility
+# (for example which EoS keys apply) remains C++ physics policy.
+
+[[component_role]]
+name = "central_object"
+description = "A self-gravitating central star or black hole."
+
+[[component_role]]
+name = "matter"
+description = "A fluid component coupled to or placed on the central spacetime."
+
+[[component_kind]]
+name = "tov"
+description = "A spherical nonrotating relativistic star."
+
+[[component_kind]]
+name = "rotating_star"
+description = "A uniformly or differentially rotating relativistic star."
+
+[[component_kind]]
+name = "black_hole"
+description = "A black-hole spacetime component."
+
+[[component_kind]]
+name = "equilibrium_torus"
+description = "An aligned equilibrium torus."
+
+[[component_kind]]
+name = "tilted_torus"
+description = "A tilted equilibrium torus."
+
+[[component_gravity]]
+name = "coupled"
+description = "The component contributes to the accepted global constraint solve."
+
+[[component_gravity]]
+name = "test_fluid"
+description = "The component is supported by a prescribed background spacetime."
+
+[[component_gravity]]
+name = "analytic"
+description = "The component is represented by an exact analytic spacetime."
+
+[[component_gravity]]
+name = "exterior_shell"
+description = "The component is a constraint-solved exterior shell with an excluded interior."
+
+[[dynamic_key]]
+prefix = "coordinate_faces_"
+suffix = ""
+index_count = 2
+value_type = "real_vector"
+section = "layout"
+description = "Explicit physical coordinate faces for one level and direction."
+
+[[dynamic_key]]
+prefix = "component_"
+suffix = "_role"
+index_count = 1
+value_type = "string"
+section = "components"
+description = "Indexed runtime component role."
+
+[[dynamic_key]]
+prefix = "component_"
+suffix = "_kind"
+index_count = 1
+value_type = "string"
+section = "components"
+description = "Indexed runtime component kind."
+
+[[dynamic_key]]
+prefix = "component_"
+suffix = "_gravity"
+index_count = 1
+value_type = "string"
+section = "components"
+description = "Indexed runtime component gravity treatment."
+
+[[dynamic_key]]
+prefix = "component_"
+suffix = "_origin"
+index_count = 1
+value_type = "real_vector"
+section = "components"
+description = "Indexed runtime component Cartesian origin."
+
+[[dynamic_key]]
+prefix = "component_"
+suffix = "_axis"
+index_count = 1
+value_type = "real_vector"
+section = "components"
+description = "Indexed runtime component Cartesian orientation axis."
+
+# Universal artifact identity and layout.
+[[metadata_key]]
+name = "type"
+cpp_id = "Type"
+value_type = "string"
+section = "artifact"
+required = true
+description = "Artifact kind."
+
+[[metadata_key]]
+name = "schema_version"
+cpp_id = "SchemaVersion"
+value_type = "integer"
+section = "artifact"
+required = true
+description = "Physical-ID manifest schema version."
+
+[[metadata_key]]
+name = "format"
+cpp_id = "Format"
+value_type = "string"
+section = "artifact"
+required = true
+description = "Field payload format."
+
+[[metadata_key]]
+name = "compression"
+cpp_id = "Compression"
+value_type = "string"
+section = "artifact"
+required = true
+description = "Lossless payload compression policy."
+
+[[metadata_key]]
+name = "amrex_spacedim"
+cpp_id = "AmrexSpacedim"
+value_type = "integer"
+section = "layout"
+required = true
+description = "Stored mesh dimension."
+
+[[metadata_key]]
+name = "levels"
+cpp_id = "Levels"
+value_type = "integer"
+section = "layout"
+required = true
+description = "Stored hierarchy level count."
+
+[[metadata_key]]
+name = "physics"
+cpp_id = "Physics"
+value_type = "string"
+section = "fields"
+required = true
+description = "Physical-system identity."
+
+[[metadata_key]]
+name = "fluid_components"
+cpp_id = "FluidComponents"
+value_type = "integer"
+section = "fields"
+required = true
+description = "Evolution-fluid cache component count."
+
+[[metadata_key]]
+name = "physical_fluid_components"
+cpp_id = "PhysicalFluidComponents"
+value_type = "integer"
+section = "fields"
+required = true
+description = "Portable physical-fluid component count."
+
+[[metadata_key]]
+name = "mesh_coordinate"
+cpp_id = "MeshCoordinate"
+value_type = "string"
+section = "layout"
+required = true
+description = "Stored coordinate family."
+
+[[metadata_key]]
+name = "mesh_axes"
+cpp_id = "MeshAxes"
+value_type = "string"
+section = "layout"
+required = true
+description = "Ordered stored active axes."
+
+[[metadata_key]]
+name = "component_basis"
+cpp_id = "ComponentBasis"
+value_type = "string"
+section = "layout"
+required = true
+description = "Vector and tensor component basis."
+
+[[metadata_key]]
+name = "coordinate_layout"
+cpp_id = "CoordinateLayout"
+value_type = "string"
+section = "layout"
+required = true
+description = "Uniform or explicit-face coordinate layout."
+
+[[metadata_key]]
+name = "domain"
+cpp_id = "Domain"
+value_type = "string"
+section = "layout"
+required = true
+description = "AMReX index-space domain."
+
+[[metadata_key]]
+name = "prob_lo"
+cpp_id = "ProbLo"
+value_type = "real_vector"
+section = "layout"
+required = true
+description = "Physical lower bounds."
+
+[[metadata_key]]
+name = "prob_hi"
+cpp_id = "ProbHi"
+value_type = "real_vector"
+section = "layout"
+required = true
+description = "Physical upper bounds."
+
+[[metadata_key]]
+name = "periodicity"
+cpp_id = "Periodicity"
+value_type = "integer_vector"
+section = "layout"
+required = true
+description = "Per-axis periodic flags."
+
+[[metadata_key]]
+name = "reflection_lo"
+cpp_id = "ReflectionLo"
+value_type = "integer_vector"
+section = "layout"
+required = true
+description = "Per-axis low-side reflection flags."
+
+[[metadata_key]]
+name = "reflection_hi"
+cpp_id = "ReflectionHi"
+value_type = "integer_vector"
+section = "layout"
+required = true
+description = "Per-axis high-side reflection flags."
+
+[[metadata_key]]
+name = "refinement_ratios"
+cpp_id = "RefinementRatios"
+value_type = "string"
+section = "layout"
+required = true
+description = "Hierarchy refinement ratios."
+
+# EoS identity.  The catalog declares keys; the runtime EoS owner decides which
+# conditional subset is mandatory for a particular artifact.
+[[metadata_key]]
+name = "eos"
+cpp_id = "Eos"
+value_type = "string"
+section = "eos"
+required = true
+description = "Equation-of-state method."
+
+[[metadata_key]]
+name = "eos_backend"
+cpp_id = "EosBackend"
+value_type = "string"
+section = "eos"
+required = true
+description = "Equation-of-state backend identity."
+
+[[metadata_key]]
+name = "eos_preset"
+cpp_id = "EosPreset"
+value_type = "string"
+section = "eos"
+required = true
+description = "Named or custom EoS preset."
+
+[[metadata_key]]
+name = "gamma"
+cpp_id = "Gamma"
+value_type = "real"
+section = "eos"
+required = true
+description = "Ideal-gas adiabatic index or configured compatibility value."
+
+[[metadata_key]]
+name = "eos_table_fingerprint"
+cpp_id = "EosTableFingerprint"
+value_type = "string"
+section = "eos"
+required = false
+description = "CompOSE table content fingerprint."
+
+[[metadata_key]]
+name = "eos_table_source"
+cpp_id = "EosTableSource"
+value_type = "string"
+section = "eos"
+required = false
+description = "Human-readable CompOSE source location."
+
+[[metadata_key]]
+name = "eos_table_source_points"
+cpp_id = "EosTableSourcePoints"
+value_type = "integer"
+section = "eos"
+required = false
+description = "Original CompOSE density point count."
+
+[[metadata_key]]
+name = "eos_table_retained_points"
+cpp_id = "EosTableRetainedPoints"
+value_type = "integer"
+section = "eos"
+required = false
+description = "Retained causal CompOSE density point count."
+
+[[metadata_key]]
+name = "eos_table_truncated_for_causality"
+cpp_id = "EosTableTruncatedForCausality"
+value_type = "boolean"
+section = "eos"
+required = false
+description = "Whether the imported table was causality-truncated."
+
+[[metadata_key]]
+name = "eos_table_causal_high_density_extension"
+cpp_id = "EosTableCausalHighDensityExtension"
+value_type = "boolean"
+section = "eos"
+required = false
+description = "Deprecated schema-v2 alias for the CompOSE causal-tail policy."
+
+[[metadata_key]]
+name = "eos_table_baryon_mass_mev"
+cpp_id = "EosTableBaryonMassMev"
+value_type = "real"
+section = "eos"
+required = false
+description = "CompOSE baryon mass convention in MeV."
+
+[[metadata_key]]
+name = "polytropic_k"
+cpp_id = "PolytropicK"
+value_type = "real"
+section = "eos"
+required = false
+description = "Custom piecewise-polytropic K coefficients."
+
+[[metadata_key]]
+name = "polytropic_gamma"
+cpp_id = "PolytropicGamma"
+value_type = "real"
+section = "eos"
+required = false
+description = "Custom one-piece polytropic gamma."
+
+[[metadata_key]]
+name = "polytropic_density_breaks"
+cpp_id = "PolytropicDensityBreaks"
+value_type = "real_vector"
+section = "eos"
+required = false
+description = "Custom piecewise-polytropic density breaks."
+
+[[metadata_key]]
+name = "polytropic_segment_gammas"
+cpp_id = "PolytropicSegmentGammas"
+value_type = "real_vector"
+section = "eos"
+required = false
+description = "Custom piecewise-polytropic segment gammas."
+
+[[metadata_key]]
+name = "thermal_gamma"
+cpp_id = "ThermalGamma"
+value_type = "real"
+section = "eos"
+required = false
+description = "Hybrid thermal adiabatic index."
+
+# Stored-field and magnetic construction identity.
+[[metadata_key]]
+name = "passive_scalars"
+cpp_id = "PassiveScalars"
+value_type = "integer"
+section = "fields"
+required = true
+description = "Passive-scalar component count."
+
+[[metadata_key]]
+name = "has_spacetime"
+cpp_id = "HasSpacetime"
+value_type = "boolean"
+section = "fields"
+required = true
+description = "Whether ADM geometry is present."
+
+[[metadata_key]]
+name = "has_ct"
+cpp_id = "HasCt"
+value_type = "boolean"
+section = "fields"
+required = true
+description = "Whether face-centered constrained-transport fields are present."
+
+[[metadata_key]]
+name = "has_exact_caches"
+cpp_id = "HasExactCaches"
+value_type = "boolean"
+section = "fields"
+required = true
+description = "Whether same-layout evolution caches are present."
+
+[[metadata_key]]
+name = "magnetic_seed"
+cpp_id = "MagneticSeed"
+value_type = "string"
+section = "magnetic"
+required = true
+description = "Kinematic magnetic-seed method."
+
+[[metadata_key]]
+name = "magnetic_equilibrium"
+cpp_id = "MagneticEquilibrium"
+value_type = "string"
+section = "magnetic"
+required = true
+description = "Magnetohydrostatic equilibrium method."
+
+[[metadata_key]]
+name = "magnetic_force_balance"
+cpp_id = "MagneticForceBalance"
+value_type = "string"
+section = "magnetic"
+required = true
+description = "Force-balance status of the stored magnetic field."
+
+[[metadata_key]]
+name = "magnetic_face_representation"
+cpp_id = "MagneticFaceRepresentation"
+value_type = "string"
+section = "magnetic"
+required = true
+description = "Physical or Valencia-densitized face-field representation."
+
+[[metadata_key]]
+name = "magnetic_seed_pressure_cutoff"
+cpp_id = "MagneticSeedPressureCutoff"
+value_type = "real"
+section = "magnetic"
+required = true
+description = "Pressure confinement cutoff for a poloidal seed."
+
+[[metadata_key]]
+name = "magnetic_seed_exponent"
+cpp_id = "MagneticSeedExponent"
+value_type = "real"
+section = "magnetic"
+required = true
+description = "Pressure confinement exponent for a poloidal seed."
+
+[[metadata_key]]
+name = "magnetic_seed_maximum_comoving_field"
+cpp_id = "MagneticSeedMaximumComovingField"
+value_type = "real"
+section = "magnetic"
+required = true
+description = "Requested maximum comoving seed field."
+
+[[metadata_key]]
+name = "magnetic_equilibrium_poloidal_magnetization"
+cpp_id = "MagneticEquilibriumPoloidalMagnetization"
+value_type = "real"
+section = "magnetic"
+required = true
+description = "Poloidal magnetization for a coupled equilibrium."
+
+[[metadata_key]]
+name = "magnetic_equilibrium_nonlinear_poloidal"
+cpp_id = "MagneticEquilibriumNonlinearPoloidal"
+value_type = "real"
+section = "magnetic"
+required = true
+description = "Nonlinear poloidal-current coefficient."
+
+[[metadata_key]]
+name = "magnetic_equilibrium_relaxation"
+cpp_id = "MagneticEquilibriumRelaxation"
+value_type = "real"
+section = "magnetic"
+required = true
+description = "Coupled magnetic fixed-point relaxation."
+
+# Construction identity and component parameters.
+[[metadata_key]]
+name = "source_ic"
+cpp_id = "SourceIc"
+value_type = "string"
+section = "construction"
+required = true
+description = "Initial-data matter owner."
+
+[[metadata_key]]
+name = "spacetime_initial_data"
+cpp_id = "SpacetimeInitialData"
+value_type = "string"
+section = "construction"
+required = true
+description = "Spacetime initial-data owner."
+
+[[metadata_key]]
+name = "component_count"
+cpp_id = "ComponentCount"
+value_type = "integer"
+section = "components"
+required = false
+description = "Number of indexed runtime component records."
+
+[[metadata_key]]
+name = "black_hole_mass"
+cpp_id = "BlackHoleMass"
+value_type = "real"
+section = "black_hole"
+required = false
+description = "Black-hole mass."
+
+[[metadata_key]]
+name = "black_hole_spin1"
+cpp_id = "BlackHoleSpin1"
+value_type = "real"
+section = "black_hole"
+required = false
+description = "First black-hole dimensionless spin component."
+
+[[metadata_key]]
+name = "black_hole_spin2"
+cpp_id = "BlackHoleSpin2"
+value_type = "real"
+section = "black_hole"
+required = false
+description = "Second black-hole dimensionless spin component."
+
+[[metadata_key]]
+name = "black_hole_spin3"
+cpp_id = "BlackHoleSpin3"
+value_type = "real"
+section = "black_hole"
+required = false
+description = "Third black-hole dimensionless spin component."
+
+[[metadata_key]]
+name = "black_hole_origin1"
+cpp_id = "BlackHoleOrigin1"
+value_type = "real"
+section = "black_hole"
+required = false
+description = "First black-hole origin component."
+
+[[metadata_key]]
+name = "black_hole_origin2"
+cpp_id = "BlackHoleOrigin2"
+value_type = "real"
+section = "black_hole"
+required = false
+description = "Second black-hole origin component."
+
+[[metadata_key]]
+name = "black_hole_origin3"
+cpp_id = "BlackHoleOrigin3"
+value_type = "real"
+section = "black_hole"
+required = false
+description = "Third black-hole origin component."
+
+[[metadata_key]]
+name = "black_hole_interior"
+cpp_id = "BlackHoleInterior"
+value_type = "string"
+section = "black_hole"
+required = false
+description = "Black-hole interior handling."
+
+[[metadata_key]]
+name = "black_hole_fill_radius"
+cpp_id = "BlackHoleFillRadius"
+value_type = "real"
+section = "black_hole"
+required = false
+description = "Black-hole interior fill or shell radius."
+
+[[metadata_key]]
+name = "disk"
+cpp_id = "Disk"
+value_type = "string"
+section = "disk"
+required = true
+description = "Optional disk kind."
+
+[[metadata_key]]
+name = "disk_gravity"
+cpp_id = "DiskGravity"
+value_type = "string"
+section = "disk"
+required = true
+description = "Disk self-gravity treatment."
+
+[[metadata_key]]
+name = "disk_rotation_law"
+cpp_id = "DiskRotationLaw"
+value_type = "string"
+section = "disk"
+required = true
+description = "Disk rotation law."
+
+[[metadata_key]]
+name = "disk_specific_angular_momentum"
+cpp_id = "DiskSpecificAngularMomentum"
+value_type = "real"
+section = "disk"
+required = true
+description = "Constant-l disk specific angular momentum."
+
+[[metadata_key]]
+name = "disk_angular_velocity"
+cpp_id = "DiskAngularVelocity"
+value_type = "real"
+section = "disk"
+required = true
+description = "Disk angular-velocity scale."
+
+[[metadata_key]]
+name = "disk_differential_rotation_length"
+cpp_id = "DiskDifferentialRotationLength"
+value_type = "real"
+section = "disk"
+required = true
+description = "Disk differential-rotation length."
+
+[[metadata_key]]
+name = "disk_rotation_power_q"
+cpp_id = "DiskRotationPowerQ"
+value_type = "real"
+section = "disk"
+required = true
+description = "Disk q-power rotation exponent."
+
+[[metadata_key]]
+name = "disk_inner_radius"
+cpp_id = "DiskInnerRadius"
+value_type = "real"
+section = "disk"
+required = true
+description = "Requested disk inner radius."
+
+[[metadata_key]]
+name = "disk_axis1"
+cpp_id = "DiskAxis1"
+value_type = "real"
+section = "disk"
+required = true
+description = "First disk-axis component."
+
+[[metadata_key]]
+name = "disk_axis2"
+cpp_id = "DiskAxis2"
+value_type = "real"
+section = "disk"
+required = true
+description = "Second disk-axis component."
+
+[[metadata_key]]
+name = "disk_axis3"
+cpp_id = "DiskAxis3"
+value_type = "real"
+section = "disk"
+required = true
+description = "Third disk-axis component."
+
+[[metadata_key]]
+name = "tov_central_density"
+cpp_id = "TovCentralDensity"
+value_type = "real"
+section = "star"
+required = true
+description = "Requested stellar central density."
+
+[[metadata_key]]
+name = "rotation_law"
+cpp_id = "RotationLaw"
+value_type = "string"
+section = "star"
+required = true
+description = "Stellar rotation law."
+
+[[metadata_key]]
+name = "angular_velocity"
+cpp_id = "AngularVelocity"
+value_type = "real"
+section = "star"
+required = true
+description = "Stellar angular-velocity scale."
+
+[[metadata_key]]
+name = "differential_rotation_length"
+cpp_id = "DifferentialRotationLength"
+value_type = "real"
+section = "star"
+required = true
+description = "Stellar differential-rotation length."
+
+[[metadata_key]]
+name = "differential_rotation_length_b"
+cpp_id = "DifferentialRotationLengthB"
+value_type = "real"
+section = "star"
+required = true
+description = "Second stellar differential-rotation length."
+
+[[metadata_key]]
+name = "rotation_power_q"
+cpp_id = "RotationPowerQ"
+value_type = "real"
+section = "star"
+required = true
+description = "Stellar q-power rotation exponent."
+
+[[metadata_key]]
+name = "rotation_axis1"
+cpp_id = "RotationAxis1"
+value_type = "real"
+section = "star"
+required = true
+description = "First stellar rotation-axis component."
+
+[[metadata_key]]
+name = "rotation_axis2"
+cpp_id = "RotationAxis2"
+value_type = "real"
+section = "star"
+required = true
+description = "Second stellar rotation-axis component."
+
+[[metadata_key]]
+name = "rotation_axis3"
+cpp_id = "RotationAxis3"
+value_type = "real"
+section = "star"
+required = true
+description = "Third stellar rotation-axis component."
+
+[[metadata_key]]
+name = "rotation_center1"
+cpp_id = "RotationCenter1"
+value_type = "real"
+section = "star"
+required = true
+description = "First stellar rotation-center component."
+
+[[metadata_key]]
+name = "rotation_center2"
+cpp_id = "RotationCenter2"
+value_type = "real"
+section = "star"
+required = true
+description = "Second stellar rotation-center component."
+
+[[metadata_key]]
+name = "rotation_center3"
+cpp_id = "RotationCenter3"
+value_type = "real"
+section = "star"
+required = true
+description = "Third stellar rotation-center component."
+
+# Solved diagnostics are optional for analytic/flat artifacts and mandatory by
+# the owning solver when that component is present.
+[[metadata_key]]
+name = "maximum_density"
+cpp_id = "MaximumDensity"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Solved stellar maximum density."
+
+[[metadata_key]]
+name = "maximum_velocity"
+cpp_id = "MaximumVelocity"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Solved stellar maximum three-velocity magnitude."
+
+[[metadata_key]]
+name = "injection_energy"
+cpp_id = "InjectionEnergy"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Solved stellar Euler injection energy."
+
+[[metadata_key]]
+name = "equatorial_radius"
+cpp_id = "EquatorialRadius"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Resolved stellar equatorial radius."
+
+[[metadata_key]]
+name = "polar_radius"
+cpp_id = "PolarRadius"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Resolved stellar polar radius."
+
+[[metadata_key]]
+name = "equatorial_log_enthalpy_gradient"
+cpp_id = "EquatorialLogEnthalpyGradient"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Equatorial surface log-enthalpy gradient."
+
+[[metadata_key]]
+name = "polar_log_enthalpy_gradient"
+cpp_id = "PolarLogEnthalpyGradient"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Polar surface log-enthalpy gradient."
+
+[[metadata_key]]
+name = "mass_shedding_indicator"
+cpp_id = "MassSheddingIndicator"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Equatorial-to-polar enthalpy-gradient mass-shedding indicator."
+
+[[metadata_key]]
+name = "adm_mass"
+cpp_id = "AdmMass"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "ADM mass diagnostic."
+
+[[metadata_key]]
+name = "baryonic_mass"
+cpp_id = "BaryonicMass"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Stellar baryonic mass diagnostic."
+
+[[metadata_key]]
+name = "angular_momentum"
+cpp_id = "AngularMomentum"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Stellar angular-momentum diagnostic."
+
+[[metadata_key]]
+name = "dimensionless_spin"
+cpp_id = "DimensionlessSpin"
+value_type = "real"
+section = "star_diagnostics"
+required = false
+description = "Stellar J over ADM mass squared."
+
+[[metadata_key]]
+name = "disk_maximum_density"
+cpp_id = "DiskMaximumDensity"
+value_type = "real"
+section = "disk_diagnostics"
+required = false
+description = "Solved disk maximum density."
+
+[[metadata_key]]
+name = "disk_maximum_velocity"
+cpp_id = "DiskMaximumVelocity"
+value_type = "real"
+section = "disk_diagnostics"
+required = false
+description = "Solved disk maximum three-velocity magnitude."
+
+[[metadata_key]]
+name = "disk_resolved_inner_radius"
+cpp_id = "DiskResolvedInnerRadius"
+value_type = "real"
+section = "disk_diagnostics"
+required = false
+description = "Resolved disk inner radius."
+
+[[metadata_key]]
+name = "disk_outer_radius"
+cpp_id = "DiskOuterRadius"
+value_type = "real"
+section = "disk_diagnostics"
+required = false
+description = "Resolved disk outer radius."
+
+[[metadata_key]]
+name = "disk_density_maximum_radius"
+cpp_id = "DiskDensityMaximumRadius"
+value_type = "real"
+section = "disk_diagnostics"
+required = false
+description = "Radius of the disk density maximum."
+
+[[metadata_key]]
+name = "disk_maximum_log_specific_enthalpy"
+cpp_id = "DiskMaximumLogSpecificEnthalpy"
+value_type = "real"
+section = "disk_diagnostics"
+required = false
+description = "Maximum disk log specific enthalpy."
+
+[[metadata_key]]
+name = "disk_baryonic_mass"
+cpp_id = "DiskBaryonicMass"
+value_type = "real"
+section = "disk_diagnostics"
+required = false
+description = "Disk baryonic mass diagnostic."
+
+[[metadata_key]]
+name = "disk_angular_momentum"
+cpp_id = "DiskAngularMomentum"
+value_type = "real"
+section = "disk_diagnostics"
+required = false
+description = "Disk angular-momentum diagnostic."
+
+[[metadata_key]]
+name = "matter_outer_radius"
+cpp_id = "MatterOuterRadius"
+value_type = "real"
+section = "diagnostics"
+required = false
+description = "Outermost resolved matter support radius."

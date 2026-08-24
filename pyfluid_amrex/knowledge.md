@@ -351,6 +351,12 @@ baseline.
   needs a target-grid force-balance owner. Exact magnetic reload also preserves
   the saved reflection closure; changing an equatorial symmetry plane into an
   ordinary boundary is rejected.
+- A forced physical-state check refreshes the live RMHD primitive cache from
+  conserved state and can change cell-centered magnetic primitives at
+  roundoff. An unchanged exact-layout solve-only reserialization therefore
+  restores the already-validated portable primitive core immediately before
+  writing. Continuation, changed-grid, rigid-transform, and added-component
+  paths instead serialize their newly materialized primitives.
 - The same pure-poloidal Grad--Shafranov owner is validated with the bundled
   cold CompOSE SLY4 table: the focused `24^3` control has XCTS residual
   `6.26e-15`, Grad--Shafranov residual `1.90e-6`, Bernoulli residual
@@ -370,6 +376,15 @@ baseline.
   recreate unresolved ID information. A changed-grid reduced solve-only RNS
   load re-solves XCTS even at unchanged angular velocity; a same-map load keeps
   the direct sequence path.
+- Physical-ID manifest keys and runtime component vocabulary are declared in
+  `schema/physical_id.toml`; generated C++ rejects unknown/incomplete current
+  manifests and generated JSON feeds reporting. Artifact visibility is atomic:
+  fields, exact caches, solved star/disk diagnostics, and component records are
+  completed under a hidden `.pending` sibling before a same-directory rename.
+  Fresh 256x64 RNS, aligned coupled/test-fluid disk, Kerr--disk, reduced TOV,
+  and black-hole round trips pass with no surviving pending directories. The
+  component records describe provenance and poses only; they do not license
+  superposition of accepted self-gravitating fields.
 - Physical-ID schema v3 makes the source chart independent of the target
   executable: dimension, coordinate family, ordered active axes,
   periodic/reflection closure, and orthonormal tensor basis are runtime

@@ -19,6 +19,7 @@ from plotfile_reader import (
     read_aux_field,
     read_level_state,
 )
+from physical_id_metadata import read_physical_id_metadata
 from validation_common import (
     OPEN_POLICY,
     ROOT,
@@ -68,15 +69,7 @@ CONSTRAINT_FIELDS = (
 )
 
 
-def read_artifact_metadata(artifact: Path) -> dict[str, str]:
-    metadata: dict[str, str] = {}
-    for raw_line in (artifact / "Header.meta").read_text().splitlines():
-        line = raw_line.strip()
-        if not line.startswith("#") or "=" not in line:
-            continue
-        key, value = line[1:].split("=", 1)
-        metadata[key.strip()] = value.strip()
-    return metadata
+read_artifact_metadata = read_physical_id_metadata
 
 
 def adm_component_indices() -> dict[str, int]:

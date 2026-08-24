@@ -8,6 +8,7 @@
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/generated/initial_data_method_catalog.hpp"
+#include "pyfluid_amrex/generated/physical_id_catalog.hpp"
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
@@ -31,6 +32,7 @@
 #include <map>
 #include <limits>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -47,6 +49,12 @@ constexpr char const* PhysicalFluidField = "physical_fluid";
 constexpr char const* AdmGeometryField = "adm_geometry";
 constexpr char const* EvolutionFluidField = "evolution_fluid_cache";
 constexpr char const* EvolutionSpacetimeField = "evolution_spacetime_cache";
+
+std::string required_metadata_value(
+   std::map<std::string, std::string> const& metadata,
+   std::string const& key,
+   std::string const& path
+);
 
 template <typename Catalog>
 bool method_catalog_contains_name(
@@ -114,6 +122,325 @@ std::map<std::string, std::string> read_metadata(std::string const& path)
       }
    }
    return entries;
+}
+
+bool metadata_scalar_value_valid(
+   std::string const& value, bool integer
+)
+{
+   try {
+      std::size_t parsed = 0;
+      if (integer) {
+         std::stoll(value, &parsed);
+      } else {
+         const double result = std::stod(value, &parsed);
+         if (!std::isfinite(result)) {
+            return false;
+         }
+      }
+      return parsed == value.size();
+   } catch (std::exception const&) {
+      return false;
+   }
+}
+
+bool metadata_value_valid(
+   std::string const& value, PhysicalIdMetadataValueType value_type
+)
+{
+   switch (value_type) {
+   case PhysicalIdMetadataValueType::String:
+      return true;
+   case PhysicalIdMetadataValueType::Integer:
+      return metadata_scalar_value_valid(value, true);
+   case PhysicalIdMetadataValueType::Real:
+      return metadata_scalar_value_valid(value, false);
+   case PhysicalIdMetadataValueType::Boolean:
+      return value == "0" || value == "1";
+   case PhysicalIdMetadataValueType::IntegerVector:
+   case PhysicalIdMetadataValueType::RealVector: {
+      if (value.empty()) {
+         return true;
+      }
+      std::istringstream input(value);
+      for (std::string item; std::getline(input, item, ',');) {
+         if (!metadata_scalar_value_valid(
+                item,
+                value_type == PhysicalIdMetadataValueType::IntegerVector
+             )) {
+            return false;
+         }
+      }
+      return true;
+   }
+   }
+   return false;
+}
+
+void validate_physical_id_metadata_catalog(
+   std::map<std::string, std::string> const& metadata,
+   std::string const& path,
+   bool require_current_keys
+)
+{
+   for (auto const& [key, value] : metadata) {
+      auto const* static_info = find_physical_id_metadata_key(key);
+      auto const* dynamic_info = find_physical_id_dynamic_key(key);
+      if (static_info == nullptr && dynamic_info == nullptr) {
+         amrex::Abort(
+            "physical-ID metadata key '" + key
+            + "' is absent from schema/physical_id.toml in " + path
+         );
+      }
+      const PhysicalIdMetadataValueType value_type = static_info != nullptr
+         ? static_info->value_type : dynamic_info->value_type;
+      if (!metadata_value_valid(value, value_type)) {
+         amrex::Abort(
+            "physical-ID metadata key '" + key
+            + "' has the wrong catalog value type in " + path
+         );
+      }
+   }
+   if (!require_current_keys) {
+      return;
+   }
+   for (auto const& info : PhysicalIdMetadataKeyCatalog) {
+      if (info.required
+          && metadata.find(std::string(info.name)) == metadata.end()) {
+         amrex::Abort(
+            "physical-ID metadata missing catalog-required key '"
+            + std::string(info.name) + "' in " + path
+         );
+      }
+   }
+   const auto count_entry = metadata.find("component_count");
+   bool has_component_records = false;
+   for (auto const& [key, unused] : metadata) {
+      auto const* info = find_physical_id_dynamic_key(key);
+      has_component_records = has_component_records
+         || (info != nullptr && info->prefix == "component_");
+   }
+   if (count_entry == metadata.end()) {
+      if (has_component_records) {
+         amrex::Abort(
+            "physical-ID component records require component_count in " + path
+         );
+      }
+      return;
+   }
+   int component_count = 0;
+   try {
+      std::size_t parsed = 0;
+      component_count = std::stoi(count_entry->second, &parsed);
+      if (parsed != count_entry->second.size() || component_count < 0) {
+         throw std::invalid_argument("invalid component count");
+      }
+   } catch (std::exception const&) {
+      amrex::Abort("invalid physical-ID component_count in " + path);
+   }
+   std::set<std::string> expected;
+   for (int index = 0; index < component_count; ++index) {
+      for (auto const& info : PhysicalIdDynamicKeyCatalog) {
+         if (info.prefix == "component_") {
+            expected.insert(
+               std::string(info.prefix) + std::to_string(index)
+               + std::string(info.suffix)
+            );
+         }
+      }
+   }
+   for (std::string const& key : expected) {
+      if (metadata.find(key) == metadata.end()) {
+         amrex::Abort(
+            "physical-ID component record missing key '" + key
+            + "' in " + path
+         );
+      }
+   }
+   for (auto const& [key, unused] : metadata) {
+      auto const* info = find_physical_id_dynamic_key(key);
+      if (info != nullptr && info->prefix == "component_"
+          && expected.find(key) == expected.end()) {
+         amrex::Abort(
+            "physical-ID component record has unexpected key '" + key
+            + "' in " + path
+         );
+      }
+   }
+}
+
+template <typename Catalog>
+bool physical_id_named_catalog_contains(
+   Catalog const& catalog, std::string_view name
+)
+{
+   return std::any_of(
+      catalog.begin(), catalog.end(),
+      [name](auto const& entry) { return entry.name == name; }
+   );
+}
+
+std::string real_triplet_string(
+   amrex::GpuArray<amrex::Real, 3> const& values
+)
+{
+   std::ostringstream output;
+   output << std::setprecision(17)
+          << values[0] << ',' << values[1] << ',' << values[2];
+   return output.str();
+}
+
+amrex::GpuArray<amrex::Real, 3> parse_real_triplet(
+   std::string const& value,
+   std::string const& path,
+   std::string const& key
+)
+{
+   amrex::GpuArray<amrex::Real, 3> result{};
+   std::istringstream input(value);
+   for (int component = 0; component < 3; ++component) {
+      std::string item;
+      if (!std::getline(input, item, ',')) {
+         amrex::Abort(
+            "physical-ID metadata key '" + key
+            + "' must contain three reals in " + path
+         );
+      }
+      try {
+         std::size_t parsed = 0;
+         result[component] = std::stod(item, &parsed);
+         if (parsed != item.size() || !std::isfinite(result[component])) {
+            throw std::invalid_argument("invalid real triplet");
+         }
+      } catch (std::exception const&) {
+         amrex::Abort(
+            "physical-ID metadata key '" + key
+            + "' contains an invalid real in " + path
+         );
+      }
+   }
+   std::string extra;
+   if (std::getline(input, extra, ',')) {
+      amrex::Abort(
+         "physical-ID metadata key '" + key
+         + "' contains more than three reals in " + path
+      );
+   }
+   return result;
+}
+
+std::vector<PhysicalIdComponentMetadata> read_component_metadata(
+   std::map<std::string, std::string> const& metadata,
+   std::string const& path
+)
+{
+   const auto count_entry = metadata.find("component_count");
+   if (count_entry == metadata.end()) {
+      return {};
+   }
+   const int count = std::stoi(count_entry->second);
+   std::vector<PhysicalIdComponentMetadata> components;
+   components.reserve(static_cast<std::size_t>(count));
+   for (int index = 0; index < count; ++index) {
+      const std::string prefix = "component_" + std::to_string(index) + '_';
+      PhysicalIdComponentMetadata component;
+      component.role = required_metadata_value(
+         metadata, prefix + "role", path
+      );
+      component.kind = required_metadata_value(
+         metadata, prefix + "kind", path
+      );
+      component.gravity = required_metadata_value(
+         metadata, prefix + "gravity", path
+      );
+      component.origin = parse_real_triplet(
+         required_metadata_value(metadata, prefix + "origin", path),
+         path,
+         prefix + "origin"
+      );
+      component.axis = parse_real_triplet(
+         required_metadata_value(metadata, prefix + "axis", path),
+         path,
+         prefix + "axis"
+      );
+      if (!physical_id_named_catalog_contains(
+             PhysicalIdComponentRoleCatalog, component.role
+          )
+          || !physical_id_named_catalog_contains(
+             PhysicalIdComponentKindCatalog, component.kind
+          )
+          || !physical_id_named_catalog_contains(
+             PhysicalIdComponentGravityCatalog, component.gravity
+          )) {
+         amrex::Abort(
+            "physical-ID component vocabulary is absent from "
+            "schema/physical_id.toml in " + path
+         );
+      }
+      components.push_back(std::move(component));
+   }
+   return components;
+}
+
+void validate_component_metadata(
+   std::vector<PhysicalIdComponentMetadata> const& components,
+   std::string const& path
+)
+{
+   for (auto const& component : components) {
+      if (!physical_id_named_catalog_contains(
+             PhysicalIdComponentRoleCatalog, component.role
+          )
+          || !physical_id_named_catalog_contains(
+             PhysicalIdComponentKindCatalog, component.kind
+          )
+          || !physical_id_named_catalog_contains(
+             PhysicalIdComponentGravityCatalog, component.gravity
+          )) {
+         amrex::Abort(
+            "physical-ID component vocabulary is absent from "
+            "schema/physical_id.toml for " + path
+         );
+      }
+      amrex::Real axis_norm_squared = 0.0;
+      for (int direction = 0; direction < 3; ++direction) {
+         if (!std::isfinite(component.origin[direction])
+             || !std::isfinite(component.axis[direction])) {
+            amrex::Abort(
+               "physical-ID component pose is nonfinite for " + path
+            );
+         }
+         axis_norm_squared += component.axis[direction]
+            * component.axis[direction];
+      }
+      if (!(axis_norm_squared > 0.0)) {
+         amrex::Abort(
+            "physical-ID component axis is zero for " + path
+         );
+      }
+   }
+}
+
+void transform_component_metadata(
+   std::vector<PhysicalIdComponentMetadata>& components,
+   PhysicalIdRigidTransform const& transform
+)
+{
+   for (PhysicalIdComponentMetadata& component : components) {
+      amrex::GpuArray<amrex::Real, 3> transformed_origin{};
+      amrex::GpuArray<amrex::Real, 3> transformed_axis{};
+      for (int i = 0; i < 3; ++i) {
+         transformed_origin[i] = transform.target_origin[i];
+         for (int j = 0; j < 3; ++j) {
+            transformed_origin[i] += transform.source_to_target[i][j]
+               * (component.origin[j] - transform.source_origin[j]);
+            transformed_axis[i] += transform.source_to_target[i][j]
+               * component.axis[j];
+         }
+      }
+      component.origin = transformed_origin;
+      component.axis = transformed_axis;
+   }
 }
 
 std::string domain_string(amrex::Geometry const& geometry)
@@ -1324,9 +1651,15 @@ void write_physical_initial_data(
    ConstPhysicalIdField const& evolution_fluid,
    ConstPhysicalIdField const& evolution_spacetime,
    ConstPhysicalIdFaceFields const& face_magnetic,
-   PhysicalIdCoordinateFaces const& coordinate_faces
+   PhysicalIdCoordinateFaces const& coordinate_faces,
+   PhysicalInitialDataMetadata const& artifact_metadata
 )
 {
+   const std::filesystem::path target_path(path);
+   const std::filesystem::path staging_path = target_path.parent_path()
+      / ("." + target_path.filename().string() + ".pending");
+   const std::string staging = staging_path.string();
+   validate_component_metadata(artifact_metadata.components, path);
    const int levels = static_cast<int>(geometry.size());
    if (levels == 0 || static_cast<int>(refinement_ratios.size()) != levels - 1) {
       amrex::Abort("physical initial data require a nonempty consistent hierarchy");
@@ -1353,24 +1686,30 @@ void write_physical_initial_data(
    }
 
    if (amrex::ParallelDescriptor::IOProcessor()) {
-      if (std::filesystem::exists(path)) {
+      if (std::filesystem::exists(target_path)) {
          amrex::Abort("physical initial-data output already exists: " + path);
       }
-      std::filesystem::create_directories(path);
+      if (std::filesystem::exists(staging_path)) {
+         amrex::Abort(
+            "stale incomplete physical initial-data transaction exists: "
+            + staging
+         );
+      }
+      std::filesystem::create_directories(staging_path);
    }
    amrex::ParallelDescriptor::Barrier();
    const std::string compression = resolved_plotfile_compression(
       cfg.checkpoint_compression
    );
    write_field(
-      path, PhysicalFluidField, primitive, geometry, refinement_ratios, compression
+      staging, PhysicalFluidField, primitive, geometry, refinement_ratios, compression
    );
    const bool write_exact_caches = !(
       cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"
    );
    if (write_exact_caches) {
       write_field(
-         path,
+         staging,
          EvolutionFluidField,
          evolution_fluid,
          geometry,
@@ -1383,7 +1722,7 @@ void write_physical_initial_data(
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> adm;
       materialize_adm_geometry(evolution_spacetime, adm);
       write_field(
-         path,
+         staging,
          AdmGeometryField,
          const_view(adm),
          geometry,
@@ -1392,7 +1731,7 @@ void write_physical_initial_data(
       );
       if (write_exact_caches) {
          write_field(
-            path,
+            staging,
             EvolutionSpacetimeField,
             evolution_spacetime,
             geometry,
@@ -1409,7 +1748,7 @@ void write_physical_initial_data(
             face_magnetic[direction], levels, 1, "face magnetic field"
          );
          write_field(
-            path,
+            staging,
             checkpoint_face_b_field_name(direction),
             face_magnetic[direction],
             geometry,
@@ -1420,11 +1759,11 @@ void write_physical_initial_data(
    }
 
    if (amrex::ParallelDescriptor::IOProcessor()) {
-      std::ofstream header(std::filesystem::path(path) / "Header");
+      std::ofstream header(staging_path / "Header");
       header << "PyFluid physical initial data v3\n"
              << "Provider-independent physical fields with exact same-grid "
                 "evolution caches.\n";
-      std::ofstream metadata(std::filesystem::path(path) / "Header.meta");
+      std::ofstream metadata(staging_path / "Header.meta");
       const EOSIdentity eos_metadata = eos_identity(cfg);
       metadata << "# type=physical_initial_data\n";
       metadata << "# schema_version=" << PhysicalIdSchemaVersion << '\n';
@@ -1548,6 +1887,21 @@ void write_physical_initial_data(
       metadata << "# source_ic=" << cfg.ic << '\n';
       metadata << "# spacetime_initial_data="
                << cfg.spacetime_initial_data << '\n';
+      metadata << "# component_count="
+               << artifact_metadata.components.size() << '\n';
+      for (std::size_t index = 0;
+           index < artifact_metadata.components.size(); ++index) {
+         auto const& component = artifact_metadata.components[index];
+         const std::string prefix = "# component_" + std::to_string(index)
+            + '_';
+         metadata << prefix << "role=" << component.role << '\n'
+                  << prefix << "kind=" << component.kind << '\n'
+                  << prefix << "gravity=" << component.gravity << '\n'
+                  << prefix << "origin="
+                  << real_triplet_string(component.origin) << '\n'
+                  << prefix << "axis="
+                  << real_triplet_string(component.axis) << '\n';
+      }
       if (cfg.spacetime_initial_data == "kerr_schild"
           || cfg.ic == "black_hole") {
          metadata << "# black_hole_mass="
@@ -1648,6 +2002,109 @@ void write_physical_initial_data(
       metadata << "# rotation_center3="
                << output_metadata_real_string(cfg.initial_data_rotation_center3)
                << '\n';
+      if (artifact_metadata.maximum_density > 0.0) {
+         metadata << "# maximum_density="
+                  << output_metadata_real_string(
+                       artifact_metadata.maximum_density
+                     ) << '\n'
+                  << "# maximum_velocity="
+                  << output_metadata_real_string(
+                       artifact_metadata.maximum_velocity
+                     ) << '\n'
+                  << "# injection_energy="
+                  << output_metadata_real_string(
+                       artifact_metadata.injection_energy
+                     ) << '\n'
+                  << "# equatorial_radius="
+                  << output_metadata_real_string(
+                       artifact_metadata.equatorial_radius
+                     ) << '\n'
+                  << "# polar_radius="
+                  << output_metadata_real_string(
+                       artifact_metadata.polar_radius
+                     ) << '\n'
+                  << "# equatorial_log_enthalpy_gradient="
+                  << output_metadata_real_string(
+                       artifact_metadata.equatorial_log_enthalpy_gradient
+                     ) << '\n'
+                  << "# polar_log_enthalpy_gradient="
+                  << output_metadata_real_string(
+                       artifact_metadata.polar_log_enthalpy_gradient
+                     ) << '\n'
+                  << "# mass_shedding_indicator="
+                  << output_metadata_real_string(
+                       artifact_metadata.mass_shedding_indicator
+                     ) << '\n'
+                  << "# adm_mass="
+                  << output_metadata_real_string(artifact_metadata.adm_mass)
+                  << '\n'
+                  << "# baryonic_mass="
+                  << output_metadata_real_string(
+                       artifact_metadata.baryonic_mass
+                     ) << '\n'
+                  << "# angular_momentum="
+                  << output_metadata_real_string(
+                       artifact_metadata.angular_momentum
+                     ) << '\n'
+                  << "# dimensionless_spin="
+                  << output_metadata_real_string(
+                       artifact_metadata.dimensionless_spin
+                     ) << '\n';
+      }
+      if (artifact_metadata.disk_maximum_density > 0.0) {
+         metadata << "# disk_maximum_density="
+                  << output_metadata_real_string(
+                       artifact_metadata.disk_maximum_density
+                     ) << '\n'
+                  << "# disk_maximum_velocity="
+                  << output_metadata_real_string(
+                       artifact_metadata.disk_maximum_velocity
+                     ) << '\n'
+                  << "# disk_resolved_inner_radius="
+                  << output_metadata_real_string(
+                       artifact_metadata.disk_resolved_inner_radius
+                     ) << '\n'
+                  << "# disk_outer_radius="
+                  << output_metadata_real_string(
+                       artifact_metadata.disk_outer_radius
+                     ) << '\n'
+                  << "# disk_density_maximum_radius="
+                  << output_metadata_real_string(
+                       artifact_metadata.disk_density_maximum_radius
+                     ) << '\n'
+                  << "# disk_maximum_log_specific_enthalpy="
+                  << output_metadata_real_string(
+                       artifact_metadata.disk_maximum_log_specific_enthalpy
+                     ) << '\n'
+                  << "# disk_baryonic_mass="
+                  << output_metadata_real_string(
+                       artifact_metadata.disk_baryonic_mass
+                     ) << '\n'
+                  << "# disk_angular_momentum="
+                  << output_metadata_real_string(
+                       artifact_metadata.disk_angular_momentum
+                     ) << '\n';
+      }
+      if (artifact_metadata.matter_outer_radius > 0.0) {
+         metadata << "# matter_outer_radius="
+                  << output_metadata_real_string(
+                       artifact_metadata.matter_outer_radius
+                     ) << '\n';
+      }
+   }
+   amrex::ParallelDescriptor::Barrier();
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      validate_physical_id_metadata_catalog(
+         read_metadata(staging), staging, true
+      );
+      try {
+         std::filesystem::rename(staging_path, target_path);
+      } catch (std::filesystem::filesystem_error const& error) {
+         amrex::Abort(
+            "failed to publish physical initial-data transaction " + staging
+            + " -> " + path + ": " + error.what()
+         );
+      }
    }
    amrex::ParallelDescriptor::Barrier();
 }
@@ -1710,6 +2167,9 @@ PhysicalInitialDataMetadata read_physical_initial_data(
        || source_dimension < 1 || source_dimension > 3) {
       amrex::Abort("unsupported physical initial-data schema in " + path);
    }
+   validate_physical_id_metadata_catalog(
+      metadata, path, schema_version == PhysicalIdSchemaVersion
+   );
    require_metadata(metadata, "format", "hdf5", path);
    require_metadata(metadata, "physics", cfg.physics, path);
    require_metadata(metadata, "fluid_components", std::to_string(fluid_components), path);
@@ -1825,9 +2285,13 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          std::to_string(eos_metadata.retained_points),
          path
       );
+      const std::string causal_policy_key =
+         metadata.find("eos_table_truncated_for_causality") != metadata.end()
+         ? "eos_table_truncated_for_causality"
+         : "eos_table_causal_high_density_extension";
       require_metadata(
          metadata,
-         "eos_table_truncated_for_causality",
+         causal_policy_key,
          eos_metadata.table_truncated_for_causality ? "1" : "0",
          path
       );
@@ -1951,6 +2415,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    }
 
    PhysicalInitialDataMetadata result;
+   result.components = read_component_metadata(metadata, path);
    result.source_ic = required_metadata_value(metadata, "source_ic", path);
    const auto magnetic_metadata_real = [&](
       std::string const& key, amrex::Real legacy_fallback
@@ -2406,6 +2871,53 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          );
       }
    }
+   if (result.components.empty()) {
+      if (result.spacetime_initial_data == "kerr_schild"
+          || result.source_ic == "black_hole") {
+         PhysicalIdComponentMetadata black_hole;
+         black_hole.role = "central_object";
+         black_hole.kind = "black_hole";
+         black_hole.gravity = result.spacetime_initial_data == "kerr_schild"
+            ? "analytic" : "exterior_shell";
+         black_hole.origin = result.black_hole_origin;
+         amrex::Real spin_norm_squared = 0.0;
+         for (int component = 0; component < 3; ++component) {
+            spin_norm_squared += result.black_hole_spin[component]
+               * result.black_hole_spin[component];
+         }
+         if (spin_norm_squared > 0.0) {
+            const amrex::Real inverse_norm = 1.0 / std::sqrt(spin_norm_squared);
+            for (int component = 0; component < 3; ++component) {
+               black_hole.axis[component] =
+                  result.black_hole_spin[component] * inverse_norm;
+            }
+         }
+         result.components.push_back(std::move(black_hole));
+      } else if (result.source_ic == "tov"
+                 || result.source_ic == "rotating_star") {
+         PhysicalIdComponentMetadata star;
+         star.role = "central_object";
+         star.kind = result.source_ic;
+         star.gravity = result.source_ic == "tov"
+            && result.spacetime_initial_data != "ctt"
+            && result.spacetime_initial_data != "cttk"
+            && result.spacetime_initial_data != "xcts"
+            ? "analytic" : "coupled";
+         star.origin = result.rotation_center;
+         star.axis = result.rotation_axis;
+         result.components.push_back(std::move(star));
+      }
+      if (result.disk == "equilibrium_torus"
+          || result.disk == "tilted_torus") {
+         PhysicalIdComponentMetadata disk;
+         disk.role = "matter";
+         disk.kind = result.disk;
+         disk.gravity = result.disk_gravity;
+         disk.origin = result.rotation_center;
+         disk.axis = result.disk_axis;
+         result.components.push_back(std::move(disk));
+      }
+   }
    const std::array<amrex::Real, 3> target_rotation_axis{
       cfg.initial_data_rotation_axis1,
       cfg.initial_data_rotation_axis2,
@@ -2499,6 +3011,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          }
       }
    }
+   transform_component_metadata(result.components, rigid_transform);
+   validate_component_metadata(result.components, path);
    bool exact_boxes = false;
    if (source_dimension == AMREX_SPACEDIM && same_chart) {
       const MultilevelHdf5FieldLayout stored_layout =
@@ -2855,6 +3369,28 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       }
    }
    return result;
+}
+
+void restore_physical_initial_data_primitive(
+   std::string const& path,
+   MutablePhysicalIdField const& primitive
+)
+{
+   if (!multilevel_hdf5_field_exists(path, PhysicalFluidField)) {
+      amrex::Abort(
+         "cannot restore missing physical-ID primitive core from " + path
+      );
+   }
+   for (std::size_t level = 0; level < primitive.size(); ++level) {
+      if (primitive[level] == nullptr) {
+         amrex::Abort(
+            "cannot restore physical-ID primitive core into a null level"
+         );
+      }
+      read_multilevel_hdf5_field(
+         *primitive[level], path, static_cast<int>(level), PhysicalFluidField
+      );
+   }
 }
 
 namespace {

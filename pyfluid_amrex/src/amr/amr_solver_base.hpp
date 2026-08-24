@@ -354,7 +354,9 @@ protected:
    void write_physical_initial_data_artifact(
       std::string const& path,
       amrex::Real angular_velocity,
-      bool refresh_primitive
+      bool refresh_primitive,
+      RotatingStarUpdateSummary const* rotating_star = nullptr,
+      EquilibriumTorusUpdateSummary const* equilibrium_torus = nullptr
    );
    void initialize_physical_initial_data_sequence_output();
    bool physical_initial_data_sequence_output_enabled() const;

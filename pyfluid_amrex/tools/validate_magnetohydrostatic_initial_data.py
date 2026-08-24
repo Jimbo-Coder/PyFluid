@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from plotfile_reader import parse_plot_header, read_level_state
+from physical_id_metadata import read_physical_id_metadata
 from validation_common import (
    ROOT,
    materialize_run_input,
@@ -52,14 +53,7 @@ ROTATING = re.compile(
 )
 
 
-def read_metadata(artifact: Path) -> dict[str, str]:
-   result: dict[str, str] = {}
-   for raw_line in (artifact / "Header.meta").read_text().splitlines():
-      line = raw_line.strip()
-      if line.startswith("#") and "=" in line:
-         key, value = line[1:].split("=", 1)
-         result[key.strip()] = value.strip()
-   return result
+read_metadata = read_physical_id_metadata
 
 
 def read_state(path: Path) -> np.ndarray:
@@ -320,10 +314,17 @@ def validate_exact_round_trip(
    )
    required_log = (
       "loaded physical initial data:",
-      "Physical-ID preflight: finite non-ideal RMHD primitive and conserved fields",
       "completed initial-data-only solve and artifact write",
    )
-   if any(fragment not in text for fragment in required_log):
+   has_preflight = (
+      "Evolution preflight C2P/P2C:" in text
+      or (
+         "Physical-ID preflight: finite non-ideal RMHD primitive and conserved fields"
+         in text
+      )
+   )
+   if any(fragment not in text for fragment in required_log) \
+         or not has_preflight:
       raise RuntimeError("magnetic physical-ID round trip missed the C++ reader")
    if MAGNETIC.search(text) is not None:
       raise RuntimeError("exact magnetic reload unnecessarily reran equilibrium")
@@ -919,7 +920,47 @@ def validate_invalid_artifacts(
    expect_rejected_load(
       "reject_missing_magnetic_equilibrium_parameter",
       missing_parameter,
-      "metadata missing 'magnetic_equilibrium_relaxation'",
+      "metadata missing catalog-required key "
+      "'magnetic_equilibrium_relaxation'",
+      ranks=ranks,
+      timeout=timeout,
+   )
+   missing_component_kind = corrupted_artifact(
+      source_artifact,
+      "missing_component_kind",
+      "component_0_kind",
+      None,
+   )
+   expect_rejected_load(
+      "reject_missing_component_kind",
+      missing_component_kind,
+      "physical-ID component record missing key 'component_0_kind'",
+      ranks=ranks,
+      timeout=timeout,
+   )
+   malformed_component_origin = corrupted_artifact(
+      source_artifact,
+      "malformed_component_origin",
+      "component_0_origin",
+      "0,0",
+   )
+   expect_rejected_load(
+      "reject_malformed_component_origin",
+      malformed_component_origin,
+      "component_0_origin' must contain three reals",
+      ranks=ranks,
+      timeout=timeout,
+   )
+   out_of_range_component = corrupted_artifact(
+      source_artifact,
+      "out_of_range_component",
+      "component_count",
+      "0",
+   )
+   expect_rejected_load(
+      "reject_out_of_range_component",
+      out_of_range_component,
+      "physical-ID component record has unexpected key",
       ranks=ranks,
       timeout=timeout,
    )

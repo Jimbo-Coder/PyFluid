@@ -8,6 +8,7 @@
 
 #include <array>
 #include <string>
+#include <vector>
 
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
@@ -16,7 +17,19 @@ namespace pyfluid_amrex {
 
 struct InitialAtmosphereParameters;
 
+// Runtime composition metadata is deliberately non-templated.  It describes
+// which single-object owners contributed to an accepted artifact; it does not
+// imply that their final GR fields may be superposed without a global solve.
+struct PhysicalIdComponentMetadata {
+   std::string role;
+   std::string kind;
+   std::string gravity;
+   amrex::GpuArray<amrex::Real, 3> origin{{0.0, 0.0, 0.0}};
+   amrex::GpuArray<amrex::Real, 3> axis{{0.0, 0.0, 1.0}};
+};
+
 struct PhysicalInitialDataMetadata {
+   std::vector<PhysicalIdComponentMetadata> components;
    std::string source_ic;
    std::string spacetime_initial_data;
    amrex::Real black_hole_mass = -1.0;
@@ -96,7 +109,8 @@ void write_physical_initial_data(
    ConstPhysicalIdField const& evolution_fluid,
    ConstPhysicalIdField const& evolution_spacetime,
    ConstPhysicalIdFaceFields const& face_magnetic,
-   PhysicalIdCoordinateFaces const& coordinate_faces = {}
+   PhysicalIdCoordinateFaces const& coordinate_faces,
+   PhysicalInitialDataMetadata const& artifact_metadata
 );
 
 PhysicalInitialDataMetadata read_physical_initial_data(
@@ -111,6 +125,13 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    MutablePhysicalIdField const& evolution_spacetime,
    MutablePhysicalIdFaceFields const& face_magnetic,
    PhysicalIdCoordinateFaces* coordinate_faces = nullptr
+);
+
+// Restore the portable primitive core of an already validated exact-layout
+// artifact before a lossless solve-only reserialization.
+void restore_physical_initial_data_primitive(
+   std::string const& path,
+   MutablePhysicalIdField const& primitive
 );
 
 void materialize_physical_initial_data_fluid(

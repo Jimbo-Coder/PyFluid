@@ -9,6 +9,11 @@ import re
 from pathlib import Path
 
 from validation_common import ROOT, read_key_values, repo_relative, write_tsv
+from physical_id_metadata import (
+   physical_id_component_labels,
+   physical_id_metadata_real,
+   read_physical_id_metadata,
+)
 
 
 FIELDS = (
@@ -22,6 +27,8 @@ FIELDS = (
    "spacetime_initial_data",
    "output_file",
    "artifact_bytes",
+   "component_count",
+   "components",
    "matter_iterations",
    "relative_matter_update",
    "coupled_iterations",
@@ -92,6 +99,25 @@ def _artifact_path(params: dict[str, str]) -> Path:
    return value if value.is_absolute() else ROOT / value
 
 
+def _artifact_metadata(
+   artifact: Path, reasons: list[str]
+) -> dict[str, str]:
+   metadata_path = artifact / "Header.meta"
+   if not metadata_path.is_file():
+      return {}
+   try:
+      return read_physical_id_metadata(artifact)
+   except (OSError, ValueError) as error:
+      reasons.append(str(error))
+      return {}
+
+
+def _metadata_float(
+   metadata: dict[str, str], key: str, fallback: float = math.nan
+) -> float:
+   return physical_id_metadata_real(metadata, key, fallback)
+
+
 def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, object]:
    params = read_key_values(input_file)
    log_path = run_dir / "run.log"
@@ -99,16 +125,15 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
    n_cell = [int(value) for value in params.get("amr.n_cell", "").split()]
    artifact = _artifact_path(params)
    reasons: list[str] = []
+   artifact_metadata = _artifact_metadata(artifact, reasons)
    if params.get("initial_data.solve_only", "0") not in ("1", "true", "True"):
       reasons.append("canonical input is not solve-only")
    if "completed initial-data-only solve and artifact write" not in text:
       reasons.append("missing completion marker")
    required = [artifact / "Header", artifact / "Header.meta", artifact / "physical_fluid.h5"]
-   metadata_text = (artifact / "Header.meta").read_text(errors="replace") \
-      if (artifact / "Header.meta").exists() else ""
-   if "# has_spacetime=1" in metadata_text:
+   if artifact_metadata.get("has_spacetime") == "1":
       required.append(artifact / "adm_geometry.h5")
-   if "# has_ct=1" in metadata_text:
+   if artifact_metadata.get("has_ct") == "1":
       required.extend(artifact / f"face_b{direction}.h5" for direction in range(1, 4))
    missing = [path.name for path in required if not path.is_file()]
    if missing:
@@ -208,6 +233,14 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
    def value(match: re.Match[str] | None, group: int) -> float:
       return float(match.group(group)) if match is not None else math.nan
 
+   try:
+      component_labels = physical_id_component_labels(artifact_metadata)
+   except ValueError as error:
+      reasons.append(str(error))
+      component_labels = ()
+   component_count = len(component_labels)
+   components = ",".join(component_labels)
+
    row: dict[str, object] = {
       "status": "PASS" if not reasons else "FAIL",
       "reason": "; ".join(reasons),
@@ -215,66 +248,112 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
       "dim": len(n_cell),
       "cells": math.prod(n_cell) if n_cell else 0,
       "wall_seconds": value(wall, 1),
-      "source_ic": params.get("pyfluid.ic", ""),
-      "spacetime_initial_data": params.get("spacetime.initial_data", ""),
+      "source_ic": artifact_metadata.get(
+         "source_ic", params.get("pyfluid.ic", "")
+      ),
+      "spacetime_initial_data": artifact_metadata.get(
+         "spacetime_initial_data", params.get("spacetime.initial_data", "")
+      ),
       "output_file": repo_relative(artifact),
       "artifact_bytes": sum(
          path.stat().st_size for path in artifact.rglob("*") if path.is_file()
       ) if artifact.is_dir() else 0,
+      "component_count": component_count,
+      "components": components,
       "matter_iterations": int(constraint.group(1)) if constraint else 0,
       "relative_matter_update": value(constraint, 2),
       "coupled_iterations": int(constraint.group(3)) if constraint else 0,
       "hamiltonian_residual": value(constraint, 4),
       "lapse_residual": value(constraint, 5),
       "momentum_residual": value(constraint, 6),
-      "maximum_density": value(rotating, 1),
-      "maximum_velocity": value(rotating, 2),
-      "equatorial_radius": value(rotating, 3),
-      "polar_radius": value(rotating, 4),
-      "mass_shedding_indicator": value(rotating, 5),
-      "adm_mass": value(global_diagnostic, 1),
-      "baryonic_mass": value(global_diagnostic, 2),
-      "angular_momentum": value(global_diagnostic, 3),
-      "dimensionless_spin": value(global_diagnostic, 4),
-      "rotation_law": params.get("initial_data.rotation_law", "uniform"),
-      "angular_velocity": float(
-         params.get("initial_data.angular_velocity", "0")
+      "maximum_density": _metadata_float(
+         artifact_metadata, "maximum_density", value(rotating, 1)
       ),
-      "rotation_axis1": float(params.get("initial_data.rotation_axis1", "0")),
-      "rotation_axis2": float(params.get("initial_data.rotation_axis2", "0")),
-      "rotation_axis3": float(params.get("initial_data.rotation_axis3", "1")),
-      "rotation_center1": float(
-         params.get("initial_data.rotation_center1", "0")
+      "maximum_velocity": _metadata_float(
+         artifact_metadata, "maximum_velocity", value(rotating, 2)
       ),
-      "rotation_center2": float(
-         params.get("initial_data.rotation_center2", "0")
+      "equatorial_radius": _metadata_float(
+         artifact_metadata, "equatorial_radius", value(rotating, 3)
       ),
-      "rotation_center3": float(
-         params.get("initial_data.rotation_center3", "0")
+      "polar_radius": _metadata_float(
+         artifact_metadata, "polar_radius", value(rotating, 4)
       ),
-      "disk_gravity": equilibrium_torus.group(1)
-         if equilibrium_torus is not None else "",
-      "disk_rotation_law": equilibrium_torus.group(2)
-         if equilibrium_torus is not None else "",
-      "disk_specific_angular_momentum": value(equilibrium_torus, 3),
-      "disk_angular_velocity": value(equilibrium_torus, 4),
-      "disk_differential_rotation_length": value(equilibrium_torus, 5),
-      "disk_rotation_power_q": value(equilibrium_torus, 6),
-      "disk_axis1": float(params.get("initial_data.disk_axis1", "0")),
-      "disk_axis2": float(params.get("initial_data.disk_axis2", "0")),
-      "disk_axis3": float(params.get("initial_data.disk_axis3", "1")),
-      "disk_requested_inner_radius": value(equilibrium_torus, 7),
-      "disk_resolved_inner_radius": value(equilibrium_torus, 8),
-      "disk_outer_radius": value(equilibrium_torus, 9),
-      "disk_density_maximum_radius": value(equilibrium_torus, 10),
-      "disk_maximum_density": value(equilibrium_torus, 11),
-      "disk_maximum_velocity": value(equilibrium_torus, 12),
-      "disk_maximum_log_specific_enthalpy": value(equilibrium_torus, 13),
-      "disk_baryonic_mass": value(equilibrium_torus, 14),
-      "disk_angular_momentum": value(equilibrium_torus, 15),
-      "magnetic_seed": magnetic_seed,
+      "mass_shedding_indicator": _metadata_float(
+         artifact_metadata, "mass_shedding_indicator", value(rotating, 5)
+      ),
+      "adm_mass": _metadata_float(
+         artifact_metadata, "adm_mass", value(global_diagnostic, 1)
+      ),
+      "baryonic_mass": _metadata_float(
+         artifact_metadata, "baryonic_mass", value(global_diagnostic, 2)
+      ),
+      "angular_momentum": _metadata_float(
+         artifact_metadata, "angular_momentum", value(global_diagnostic, 3)
+      ),
+      "dimensionless_spin": _metadata_float(
+         artifact_metadata, "dimensionless_spin", value(global_diagnostic, 4)
+      ),
+      "rotation_law": artifact_metadata.get(
+         "rotation_law", params.get("initial_data.rotation_law", "uniform")
+      ),
+      "angular_velocity": _metadata_float(artifact_metadata, "angular_velocity", 0.0),
+      "rotation_axis1": _metadata_float(artifact_metadata, "rotation_axis1", 0.0),
+      "rotation_axis2": _metadata_float(artifact_metadata, "rotation_axis2", 0.0),
+      "rotation_axis3": _metadata_float(artifact_metadata, "rotation_axis3", 1.0),
+      "rotation_center1": _metadata_float(artifact_metadata, "rotation_center1", 0.0),
+      "rotation_center2": _metadata_float(artifact_metadata, "rotation_center2", 0.0),
+      "rotation_center3": _metadata_float(artifact_metadata, "rotation_center3", 0.0),
+      "disk_gravity": artifact_metadata.get("disk_gravity", ""),
+      "disk_rotation_law": artifact_metadata.get("disk_rotation_law", ""),
+      "disk_specific_angular_momentum": _metadata_float(
+         artifact_metadata, "disk_specific_angular_momentum"
+      ),
+      "disk_angular_velocity": _metadata_float(
+         artifact_metadata, "disk_angular_velocity"
+      ),
+      "disk_differential_rotation_length": _metadata_float(
+         artifact_metadata, "disk_differential_rotation_length"
+      ),
+      "disk_rotation_power_q": _metadata_float(
+         artifact_metadata, "disk_rotation_power_q"
+      ),
+      "disk_axis1": _metadata_float(artifact_metadata, "disk_axis1", 0.0),
+      "disk_axis2": _metadata_float(artifact_metadata, "disk_axis2", 0.0),
+      "disk_axis3": _metadata_float(artifact_metadata, "disk_axis3", 1.0),
+      "disk_requested_inner_radius": _metadata_float(
+         artifact_metadata, "disk_inner_radius", value(equilibrium_torus, 7)
+      ),
+      "disk_resolved_inner_radius": _metadata_float(
+         artifact_metadata, "disk_resolved_inner_radius", value(equilibrium_torus, 8)
+      ),
+      "disk_outer_radius": _metadata_float(
+         artifact_metadata, "disk_outer_radius", value(equilibrium_torus, 9)
+      ),
+      "disk_density_maximum_radius": _metadata_float(
+         artifact_metadata, "disk_density_maximum_radius", value(equilibrium_torus, 10)
+      ),
+      "disk_maximum_density": _metadata_float(
+         artifact_metadata, "disk_maximum_density", value(equilibrium_torus, 11)
+      ),
+      "disk_maximum_velocity": _metadata_float(
+         artifact_metadata, "disk_maximum_velocity", value(equilibrium_torus, 12)
+      ),
+      "disk_maximum_log_specific_enthalpy": _metadata_float(
+         artifact_metadata,
+         "disk_maximum_log_specific_enthalpy",
+         value(equilibrium_torus, 13),
+      ),
+      "disk_baryonic_mass": _metadata_float(
+         artifact_metadata, "disk_baryonic_mass", value(equilibrium_torus, 14)
+      ),
+      "disk_angular_momentum": _metadata_float(
+         artifact_metadata, "disk_angular_momentum", value(equilibrium_torus, 15)
+      ),
+      "magnetic_seed": artifact_metadata.get("magnetic_seed", magnetic_seed),
       "magnetic_seed_updates": int(magnetic.group(1)) if magnetic else 0,
-      "magnetic_equilibrium": magnetic_equilibrium_name,
+      "magnetic_equilibrium": artifact_metadata.get(
+         "magnetic_equilibrium", magnetic_equilibrium_name
+      ),
       "magnetic_equilibrium_updates": int(magnetic_equilibrium.group(1))
          if magnetic_equilibrium else 0,
       "magnetic_potential_update": value(magnetic_equilibrium, 2),

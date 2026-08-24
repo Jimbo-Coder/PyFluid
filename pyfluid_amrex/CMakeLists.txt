@@ -402,11 +402,17 @@ if(PYFLUID_UV_EXECUTABLE)
    set(PYFLUID_AMREX_GENERATED_INITIAL_DATA_METHOD_CATALOG_HEADER
       ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/initial_data_method_catalog.hpp
    )
+   set(PYFLUID_AMREX_GENERATED_PHYSICAL_ID_CATALOG_HEADER
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/physical_id_catalog.hpp
+   )
    set(PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN
       ${CMAKE_CURRENT_SOURCE_DIR}/docs/equations.md
    )
    set(PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON
       ${CMAKE_CURRENT_SOURCE_DIR}/generated/field_catalog.json
+   )
+   set(PYFLUID_AMREX_GENERATED_PHYSICAL_ID_CATALOG_JSON
+      ${CMAKE_CURRENT_SOURCE_DIR}/generated/physical_id_catalog.json
    )
    set(PYFLUID_AMREX_GENERATED_EQUATION_LATEX
       ${CMAKE_CURRENT_SOURCE_DIR}/docs/equations.tex
@@ -430,7 +436,9 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
          ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
          ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_METHOD_CATALOG_HEADER}
+         ${PYFLUID_AMREX_GENERATED_PHYSICAL_ID_CATALOG_HEADER}
          ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
+         ${PYFLUID_AMREX_GENERATED_PHYSICAL_ID_CATALOG_JSON}
          ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
          ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
       COMMAND ${CMAKE_COMMAND} -E env
@@ -443,7 +451,9 @@ if(PYFLUID_UV_EXECUTABLE)
          --diagnostic-catalog-header ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
          --method-catalog-header ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
          --initial-data-method-catalog-header ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_METHOD_CATALOG_HEADER}
+         --physical-id-catalog-header ${PYFLUID_AMREX_GENERATED_PHYSICAL_ID_CATALOG_HEADER}
          --field-catalog-json ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
+         --physical-id-catalog-json ${PYFLUID_AMREX_GENERATED_PHYSICAL_ID_CATALOG_JSON}
          --equation-markdown ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
          --equation-latex ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
       COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CATALOG_CODEGEN_STAMP}
@@ -455,8 +465,10 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/method_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/physical_id_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/methods.toml
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/physical_id.toml
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
       COMMENT "Generating PyFluid AMReX catalogs"
       VERBATIM

@@ -41,6 +41,13 @@ methods and physics belong in their topic documents; coding style belongs in
   one-cell invariant direction and is a required dimensional-degeneracy check
   against the corresponding native `N x M` reduction when that symmetry is
   valid; it is not a separate physical owner or a new compiled method product.
+- `schema/physical_id.toml` owns stable physical-ID manifest keys, their value
+  classes and sections, and the runtime component role/kind/gravity vocabulary.
+  Generated C++ validates artifact publication/loading and generated JSON is
+  the Python reporting view. `fields.toml` still exclusively owns GF identity
+  and centering, while `methods.toml` still owns solve-method capabilities;
+  the manifest catalog does not duplicate either source or encode conditional
+  physics compatibility.
 - Each compiled reconstruction value owns one flux-kernel translation unit.
   Its CMake feature switch must remove that owner from the source list, not
   merely hide its factory case. Candidate correction composes selected
@@ -180,6 +187,29 @@ provider-independent physical core after the initial-data solve:
 - face-centered magnetic data when present; and
 - source hierarchy, EoS and physical parameters, diagnostics, schema version,
   and provenance.
+
+Artifact publication is one transaction. All ranks write portable fields and
+optional exact caches into a hidden sibling staging directory; the I/O rank
+writes the complete manifest, including solved component diagnostics, checks it
+against the generated metadata catalog, and atomically renames the directory
+to its final path. A sequence index may append a model only after that rename
+and the following rank barrier. A visible artifact is therefore complete;
+`Header.meta` must never be amended after publication. A leftover
+`.pending` sibling identifies an interrupted transaction and is rejected
+explicitly rather than guessed or silently reused.
+
+The manifest may carry indexed runtime component records. Today these adapt
+the existing single central TOV/RNS/black-hole owner and optional disk owner;
+they add no object-count template axis and do not create another field layout.
+Component origins and axes are transformed with the same runtime rigid map as
+the portable fields and are preserved when a completed artifact is re-saved.
+A future N-object builder may request component poses, free-data seeds, matter
+sources, and support from the same runtime descriptions, but arbitrary sums of
+accepted GR fields are only labeled initial guesses/test fields. One global
+constraint/fluid owner must accept a self-gravitating multi-object ID before it
+is published as physical initial data. Deprecated manifest spellings may
+remain declared as read-only compatibility aliases; the current writer emits
+only the canonical key.
 
 For a generated stellar magnetic seed, the edge-centered vector potential is
 transient construction scratch rather than a persistent GF. The owner takes its

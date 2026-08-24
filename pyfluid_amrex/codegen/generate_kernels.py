@@ -167,9 +167,20 @@ DEFAULT_INITIAL_DATA_METHOD_CATALOG_HEADER = (
    / "generated"
    / "initial_data_method_catalog.hpp"
 )
+DEFAULT_PHYSICAL_ID_CATALOG_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "generated"
+   / "physical_id_catalog.hpp"
+)
 DEFAULT_EQUATION_MARKDOWN = ROOT / "pyfluid_amrex" / "docs" / "equations.md"
 DEFAULT_EQUATION_LATEX = ROOT / "pyfluid_amrex" / "docs" / "equations.tex"
 DEFAULT_FIELD_CATALOG_JSON = ROOT / "pyfluid_amrex" / "generated" / "field_catalog.json"
+DEFAULT_PHYSICAL_ID_CATALOG_JSON = (
+   ROOT / "pyfluid_amrex" / "generated" / "physical_id_catalog.json"
+)
 
 
 def main() -> None:
@@ -202,7 +213,17 @@ def main() -> None:
       type=Path,
       default=DEFAULT_INITIAL_DATA_METHOD_CATALOG_HEADER,
    )
+   parser.add_argument(
+      "--physical-id-catalog-header",
+      type=Path,
+      default=DEFAULT_PHYSICAL_ID_CATALOG_HEADER,
+   )
    parser.add_argument("--field-catalog-json", type=Path, default=DEFAULT_FIELD_CATALOG_JSON)
+   parser.add_argument(
+      "--physical-id-catalog-json",
+      type=Path,
+      default=DEFAULT_PHYSICAL_ID_CATALOG_JSON,
+   )
    parser.add_argument("--equation-markdown", type=Path, default=DEFAULT_EQUATION_MARKDOWN)
    parser.add_argument("--equation-latex", type=Path, default=DEFAULT_EQUATION_LATEX)
    parser.add_argument("--hard-drop-ops", type=int, default=0)
@@ -233,7 +254,9 @@ def main() -> None:
             args.diagnostic_catalog_header,
             args.method_catalog_header,
             args.initial_data_method_catalog_header,
+            args.physical_id_catalog_header,
             args.field_catalog_json,
+            args.physical_id_catalog_json,
             args.equation_markdown,
             args.equation_latex,
          )
@@ -242,7 +265,9 @@ def main() -> None:
          print(args.diagnostic_catalog_header)
          print(args.method_catalog_header)
          print(args.initial_data_method_catalog_header)
+         print(args.physical_id_catalog_header)
          print(args.field_catalog_json)
+         print(args.physical_id_catalog_json)
          print(args.equation_markdown)
          print(args.equation_latex)
          continue

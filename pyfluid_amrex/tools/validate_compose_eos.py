@@ -11,6 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
+from plotfile_reader import read_checkpoint_metadata
+from physical_id_metadata import read_physical_id_metadata
 from validation_common import (
    DYNAMIC_SPACETIME_POLICY,
    ROOT,
@@ -64,14 +66,7 @@ RESULT_FIELDS = [
 ]
 
 
-def read_metadata(artifact: Path) -> dict[str, str]:
-   values: dict[str, str] = {}
-   for raw_line in (artifact / "Header.meta").read_text().splitlines():
-      line = raw_line.removeprefix("#").strip()
-      if "=" in line:
-         key, value = line.split("=", 1)
-         values[key.strip()] = value.strip()
-   return values
+read_metadata = read_physical_id_metadata
 
 
 def require_clean_recovery(log_text: str, case: str) -> None:
@@ -328,7 +323,7 @@ def validate_rns_handoff(
    if maximum_density_change > 2.0e-2:
       raise RuntimeError("three-step CompOSE RNS density changed by more than 2%")
    checkpoint = evolution_dir / "checkpoints/chk00001"
-   checkpoint_metadata = read_metadata(checkpoint)
+   checkpoint_metadata = read_checkpoint_metadata(checkpoint)
    if checkpoint_metadata.get("checkpoint_eos_table_fingerprint") != fingerprint:
       raise RuntimeError("checkpoint did not retain the CompOSE identity")
 

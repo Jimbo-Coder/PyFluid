@@ -25,6 +25,7 @@
 #include <memory>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace pyfluid_amrex {
 namespace {
@@ -108,72 +109,42 @@ std::string sequence_rotation_label(RunConfig const& cfg)
    return sequence_path_component(std::move(label));
 }
 
-void append_rotating_star_metadata(
-   std::filesystem::path const& artifact,
+void set_rotating_star_metadata(
+   PhysicalInitialDataMetadata& metadata,
    RotatingStarUpdateSummary const& rotating_star
 )
 {
-   std::ofstream metadata(artifact / "Header.meta", std::ios::app);
-   metadata
-      << "# maximum_density=" << std::setprecision(17)
-      << rotating_star.maximum_density << '\n'
-      << "# maximum_velocity=" << std::setprecision(17)
-      << rotating_star.maximum_velocity << '\n'
-      << "# injection_energy=" << std::setprecision(17)
-      << rotating_star.injection_energy << '\n'
-      << "# equatorial_radius=" << std::setprecision(17)
-      << rotating_star.equatorial_radius << '\n'
-      << "# polar_radius=" << std::setprecision(17)
-      << rotating_star.polar_radius << '\n'
-      << "# equatorial_log_enthalpy_gradient=" << std::setprecision(17)
-      << rotating_star.equatorial_log_enthalpy_gradient << '\n'
-      << "# polar_log_enthalpy_gradient=" << std::setprecision(17)
-      << rotating_star.polar_log_enthalpy_gradient << '\n'
-      << "# mass_shedding_indicator=" << std::setprecision(17)
-      << rotating_star.mass_shedding_indicator << '\n'
-      << "# adm_mass=" << std::setprecision(17)
-      << rotating_star.adm_mass << '\n'
-      << "# baryonic_mass=" << std::setprecision(17)
-      << rotating_star.baryonic_mass << '\n'
-      << "# angular_momentum=" << std::setprecision(17)
-      << rotating_star.angular_momentum << '\n'
-      << "# dimensionless_spin=" << std::setprecision(17)
-      << rotating_star.dimensionless_spin << '\n';
+   metadata.maximum_density = rotating_star.maximum_density;
+   metadata.maximum_velocity = rotating_star.maximum_velocity;
+   metadata.injection_energy = rotating_star.injection_energy;
+   metadata.equatorial_radius = rotating_star.equatorial_radius;
+   metadata.polar_radius = rotating_star.polar_radius;
+   metadata.equatorial_log_enthalpy_gradient =
+      rotating_star.equatorial_log_enthalpy_gradient;
+   metadata.polar_log_enthalpy_gradient =
+      rotating_star.polar_log_enthalpy_gradient;
+   metadata.mass_shedding_indicator = rotating_star.mass_shedding_indicator;
+   metadata.adm_mass = rotating_star.adm_mass;
+   metadata.baryonic_mass = rotating_star.baryonic_mass;
+   metadata.angular_momentum = rotating_star.angular_momentum;
+   metadata.dimensionless_spin = rotating_star.dimensionless_spin;
 }
 
-void append_equilibrium_torus_metadata(
-   std::filesystem::path const& artifact,
+void set_equilibrium_torus_metadata(
+   PhysicalInitialDataMetadata& metadata,
    EquilibriumTorusUpdateSummary const& equilibrium_torus
 )
 {
-   std::ofstream metadata(artifact / "Header.meta", std::ios::app);
-   metadata
-      << "# disk_maximum_density=" << std::setprecision(17)
-      << equilibrium_torus.maximum_density << '\n'
-      << "# disk_maximum_velocity=" << std::setprecision(17)
-      << equilibrium_torus.maximum_velocity << '\n'
-      << "# disk_resolved_inner_radius=" << std::setprecision(17)
-      << equilibrium_torus.inner_radius << '\n'
-      << "# disk_outer_radius=" << std::setprecision(17)
-      << equilibrium_torus.outer_radius << '\n'
-      << "# disk_density_maximum_radius=" << std::setprecision(17)
-      << equilibrium_torus.density_maximum_radius << '\n'
-      << "# disk_maximum_log_specific_enthalpy=" << std::setprecision(17)
-      << equilibrium_torus.maximum_log_specific_enthalpy << '\n'
-      << "# disk_baryonic_mass=" << std::setprecision(17)
-      << equilibrium_torus.baryonic_mass << '\n'
-      << "# disk_angular_momentum=" << std::setprecision(17)
-      << equilibrium_torus.angular_momentum << '\n';
-}
-
-void append_matter_outer_radius(
-   std::filesystem::path const& artifact,
-   amrex::Real matter_outer_radius
-)
-{
-   std::ofstream metadata(artifact / "Header.meta", std::ios::app);
-   metadata << "# matter_outer_radius=" << std::setprecision(17)
-            << matter_outer_radius << '\n';
+   metadata.disk_maximum_density = equilibrium_torus.maximum_density;
+   metadata.disk_maximum_velocity = equilibrium_torus.maximum_velocity;
+   metadata.disk_resolved_inner_radius = equilibrium_torus.inner_radius;
+   metadata.disk_outer_radius = equilibrium_torus.outer_radius;
+   metadata.disk_density_maximum_radius =
+      equilibrium_torus.density_maximum_radius;
+   metadata.disk_maximum_log_specific_enthalpy =
+      equilibrium_torus.maximum_log_specific_enthalpy;
+   metadata.disk_baryonic_mass = equilibrium_torus.baryonic_mass;
+   metadata.disk_angular_momentum = equilibrium_torus.angular_momentum;
 }
 
 EquilibriumTorusUpdateSummary equilibrium_torus_summary(
@@ -214,6 +185,152 @@ RotatingStarUpdateSummary rotating_star_summary(
    result.dimensionless_spin = metadata.dimensionless_spin;
    result.matter_outer_radius = metadata.matter_outer_radius;
    return result;
+}
+
+amrex::GpuArray<amrex::Real, 3> normalized_component_axis(
+   amrex::GpuArray<amrex::Real, 3> axis,
+   bool zero_is_unoriented
+)
+{
+   amrex::Real norm_squared = 0.0;
+   for (amrex::Real value : axis) {
+      if (!std::isfinite(value)) {
+         amrex::Abort("physical-ID component axis is nonfinite");
+      }
+      norm_squared += value * value;
+   }
+   if (!(norm_squared > 0.0)) {
+      if (!zero_is_unoriented) {
+         amrex::Abort("physical-ID component axis is zero");
+      }
+      return {{0.0, 0.0, 1.0}};
+   }
+   const amrex::Real inverse_norm = 1.0 / std::sqrt(norm_squared);
+   for (amrex::Real& value : axis) {
+      value *= inverse_norm;
+   }
+   return axis;
+}
+
+std::vector<PhysicalIdComponentMetadata> configured_physical_id_components(
+   RunConfig const& cfg
+)
+{
+   std::vector<PhysicalIdComponentMetadata> components;
+   if (cfg.spacetime_initial_data == "kerr_schild"
+       || cfg.ic == "black_hole") {
+      PhysicalIdComponentMetadata black_hole;
+      black_hole.role = "central_object";
+      black_hole.kind = "black_hole";
+      black_hole.gravity = cfg.spacetime_initial_data == "kerr_schild"
+         ? "analytic" : "exterior_shell";
+      black_hole.origin = {{
+         cfg.spacetime_origin1,
+         cfg.spacetime_origin2,
+         cfg.spacetime_origin3,
+      }};
+      black_hole.axis = normalized_component_axis({{
+         cfg.spacetime_dimensionless_spin1,
+         cfg.spacetime_dimensionless_spin2,
+         cfg.spacetime_dimensionless_spin3,
+      }}, true);
+      components.push_back(std::move(black_hole));
+   } else if (cfg.ic == "tov" || cfg.ic == "rotating_star") {
+      PhysicalIdComponentMetadata star;
+      star.role = "central_object";
+      star.kind = cfg.ic;
+      star.gravity = cfg.ic == "tov"
+         && cfg.spacetime_initial_data != "ctt"
+         && cfg.spacetime_initial_data != "cttk"
+         && cfg.spacetime_initial_data != "xcts"
+         ? "analytic" : "coupled";
+      star.origin = {{
+         cfg.initial_data_rotation_center1,
+         cfg.initial_data_rotation_center2,
+         cfg.initial_data_rotation_center3,
+      }};
+      star.axis = normalized_component_axis({{
+         cfg.initial_data_rotation_axis1,
+         cfg.initial_data_rotation_axis2,
+         cfg.initial_data_rotation_axis3,
+      }}, false);
+      components.push_back(std::move(star));
+   }
+   if (cfg.initial_data_disk == "equilibrium_torus"
+       || cfg.initial_data_disk == "tilted_torus") {
+      PhysicalIdComponentMetadata disk;
+      disk.role = "matter";
+      disk.kind = cfg.initial_data_disk;
+      disk.gravity = cfg.initial_data_disk_gravity;
+      disk.origin = {{
+         cfg.initial_data_rotation_center1,
+         cfg.initial_data_rotation_center2,
+         cfg.initial_data_rotation_center3,
+      }};
+      disk.axis = normalized_component_axis({{
+         cfg.initial_data_disk_axis1,
+         cfg.initial_data_disk_axis2,
+         cfg.initial_data_disk_axis3,
+      }}, false);
+      components.push_back(std::move(disk));
+   }
+   return components;
+}
+
+PhysicalInitialDataMetadata physical_id_artifact_metadata(
+   RunConfig const& cfg,
+   PhysicalInitialDataMetadata const* loaded,
+   RotatingStarUpdateSummary const* rotating_star,
+   EquilibriumTorusUpdateSummary const* equilibrium_torus
+)
+{
+   PhysicalInitialDataMetadata metadata;
+   metadata.components = loaded == nullptr
+      ? std::vector<PhysicalIdComponentMetadata>{}
+      : loaded->components;
+   for (PhysicalIdComponentMetadata const& configured
+        : configured_physical_id_components(cfg)) {
+      // Loading preserves the accepted central-object provenance. The only
+      // currently supported composition operation is adding a matter disk;
+      // future central-object assembly belongs to the global N-object owner.
+      if (loaded != nullptr && configured.role != "matter") {
+         continue;
+      }
+      const bool already_present = std::any_of(
+         metadata.components.begin(), metadata.components.end(),
+         [&configured](PhysicalIdComponentMetadata const& existing) {
+            return existing.role == configured.role
+               && existing.kind == configured.kind;
+         }
+      );
+      if (!already_present) {
+         metadata.components.push_back(configured);
+      }
+   }
+   metadata.matter_outer_radius = loaded == nullptr
+      ? -1.0 : loaded->matter_outer_radius;
+   if (rotating_star != nullptr) {
+      set_rotating_star_metadata(metadata, *rotating_star);
+      metadata.matter_outer_radius = std::max(
+         metadata.matter_outer_radius, rotating_star->matter_outer_radius
+      );
+   } else if (loaded != nullptr && loaded->source_ic == "rotating_star") {
+      const RotatingStarUpdateSummary summary = rotating_star_summary(*loaded);
+      set_rotating_star_metadata(metadata, summary);
+   }
+   if (equilibrium_torus != nullptr) {
+      set_equilibrium_torus_metadata(metadata, *equilibrium_torus);
+      metadata.matter_outer_radius = std::max(
+         metadata.matter_outer_radius, equilibrium_torus->outer_radius
+      );
+   } else if (loaded != nullptr
+              && (loaded->disk == "equilibrium_torus"
+                  || loaded->disk == "tilted_torus")) {
+      const EquilibriumTorusUpdateSummary summary =
+         equilibrium_torus_summary(*loaded);
+      set_equilibrium_torus_metadata(metadata, summary);
+   }
+   return metadata;
 }
 
 } // namespace
@@ -922,6 +1039,11 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       );
    }
    if constexpr (AMREX_SPACEDIM == 3) {
+      const bool axisymmetric_disk = cfg_.initial_data_disk == "none"
+         || (cfg_.initial_data_disk == "equilibrium_torus"
+             && cfg_.initial_data_disk_axis1 == 0.0
+             && cfg_.initial_data_disk_axis2 == 0.0
+             && cfg_.initial_data_disk_axis3 > 0.0);
       const bool spherical_axisymmetric_target =
          cfg_.mesh_coordinate == "spherical"
          && cfg_.mesh_axes == "r theta phi"
@@ -931,17 +1053,14 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          && cfg_.initial_data_rotation_axis1 == 0.0
          && cfg_.initial_data_rotation_axis2 == 0.0
          && cfg_.initial_data_rotation_axis3 > 0.0
-         && (!add_torus
-             || (cfg_.initial_data_disk == "equilibrium_torus"
-                 && cfg_.initial_data_disk_axis1 == 0.0
-                 && cfg_.initial_data_disk_axis2 == 0.0
-                 && cfg_.initial_data_disk_axis3 > 0.0));
+         && axisymmetric_disk;
       if (cfg_.mesh_coordinate != "cartesian"
           && !spherical_axisymmetric_target
           && (continue_rotation || add_torus)) {
          amrex::Abort(
-            "3D curvilinear XCTS continuation requires a centered, +z "
-            "axisymmetric r-theta-phi target and an aligned equilibrium torus"
+            "3D curvilinear physical-ID targets may materialize a completed "
+            "model, but continuation or component addition requires the "
+            "native 3D Cartesian coupled-XCTS owner"
          );
       }
    }
@@ -990,6 +1109,11 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       && cfg_.mesh_coordinate == "spherical"
       && (cfg_.mesh_axes == "r theta"
           || cfg_.mesh_axes == "r theta phi")
+      // A tilted disk makes the full-storage source genuinely phi-dependent.
+      // The native spherical continuation owner is axisymmetric, so this
+      // route remains a portable rematerialization rather than a false
+      // axisymmetric constraint re-solve.
+      && cfg_.initial_data_disk != "tilted_torus"
       && !metadata.exact_layout;
 #endif
 #if (AMREX_SPACEDIM >= 2)
@@ -1121,17 +1245,36 @@ void AmrSolverBase::project_materialized_initial_face_b()
 
 void AmrSolverBase::write_physical_initial_data_artifact()
 {
+   // An exact-layout artifact load restores both the portable primitive core
+   // and evolution caches.  Reconstructing that already-authoritative
+   // primitive core before a solve-only reserialization introduces a tiny C2P
+   // round-trip change and defeats exact continuation.
+   const bool preserve_exact_primitive = loaded_physical_id_metadata_
+      && loaded_physical_id_metadata_->used_exact_cache
+      && !initial_data_rotating_star_summary_
+      && !initial_data_equilibrium_torus_summary_;
+   if (preserve_exact_primitive) {
+      MutablePhysicalIdField primitive;
+      for (int level = 0; level <= finestLevel(); ++level) {
+         primitive.push_back(primitive_[level].get());
+      }
+      restore_physical_initial_data_primitive(
+         cfg_.initial_data_input_file, primitive
+      );
+   }
    write_physical_initial_data_artifact(
       cfg_.initial_data_output_file,
       cfg_.initial_data_angular_velocity,
-      true
+      !preserve_exact_primitive
    );
 }
 
 void AmrSolverBase::write_physical_initial_data_artifact(
    std::string const& path,
    amrex::Real angular_velocity,
-   bool refresh_primitive
+   bool refresh_primitive,
+   RotatingStarUpdateSummary const* rotating_star,
+   EquilibriumTorusUpdateSummary const* equilibrium_torus
 )
 {
    amrex::Vector<amrex::Geometry> geometry;
@@ -1187,6 +1330,26 @@ void AmrSolverBase::write_physical_initial_data_artifact(
       artifact_cfg.initial_data_magnetic_equilibrium_relaxation =
          loaded_physical_id_metadata_->magnetic_equilibrium_relaxation;
    }
+   RotatingStarUpdateSummary const* selected_rotating_star = rotating_star;
+   if (selected_rotating_star == nullptr
+       && angular_velocity == cfg_.initial_data_angular_velocity
+       && initial_data_rotating_star_summary_) {
+      selected_rotating_star = initial_data_rotating_star_summary_.get();
+   }
+   EquilibriumTorusUpdateSummary const* selected_equilibrium_torus =
+      equilibrium_torus;
+   if (selected_equilibrium_torus == nullptr
+       && angular_velocity == cfg_.initial_data_angular_velocity
+       && initial_data_equilibrium_torus_summary_) {
+      selected_equilibrium_torus = initial_data_equilibrium_torus_summary_.get();
+   }
+   const PhysicalInitialDataMetadata artifact_metadata =
+      physical_id_artifact_metadata(
+         artifact_cfg,
+         loaded_physical_id_metadata_.get(),
+         selected_rotating_star,
+         selected_equilibrium_torus
+      );
    write_physical_initial_data(
       path,
       artifact_cfg,
@@ -1197,49 +1360,9 @@ void AmrSolverBase::write_physical_initial_data_artifact(
       fluid,
       spacetime,
       face_magnetic,
-      initial_data_coordinate_faces_
+      initial_data_coordinate_faces_,
+      artifact_metadata
    );
-   if (angular_velocity == cfg_.initial_data_angular_velocity
-       && amrex::ParallelDescriptor::IOProcessor()) {
-      amrex::Real matter_outer_radius = loaded_physical_id_metadata_
-         ? loaded_physical_id_metadata_->matter_outer_radius : 0.0;
-      if (initial_data_rotating_star_summary_) {
-         append_rotating_star_metadata(
-            path, *initial_data_rotating_star_summary_
-         );
-         matter_outer_radius = std::max(
-            matter_outer_radius,
-            initial_data_rotating_star_summary_->matter_outer_radius
-         );
-      } else if (loaded_physical_id_metadata_
-                 && loaded_physical_id_metadata_->source_ic
-                    == "rotating_star") {
-         append_rotating_star_metadata(
-            path, rotating_star_summary(*loaded_physical_id_metadata_)
-         );
-      }
-      if (initial_data_equilibrium_torus_summary_) {
-         append_equilibrium_torus_metadata(
-            path, *initial_data_equilibrium_torus_summary_
-         );
-         matter_outer_radius = std::max(
-            matter_outer_radius,
-            initial_data_equilibrium_torus_summary_->outer_radius
-         );
-      } else if (loaded_physical_id_metadata_
-                 && (loaded_physical_id_metadata_->disk
-                        == "equilibrium_torus"
-                     || loaded_physical_id_metadata_->disk
-                        == "tilted_torus")) {
-         append_equilibrium_torus_metadata(
-            path, equilibrium_torus_summary(*loaded_physical_id_metadata_)
-         );
-      }
-      if (matter_outer_radius > 0.0) {
-         append_matter_outer_radius(path, matter_outer_radius);
-      }
-   }
-   amrex::ParallelDescriptor::Barrier();
    amrex::Print() << "wrote physical initial data: " << path << '\n';
 }
 
@@ -1388,21 +1511,15 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
       std::filesystem::path(physical_initial_data_sequence_output_dir())
       / relative_artifact;
    write_physical_initial_data_artifact(
-      artifact.string(), angular_velocity, false
+      artifact.string(),
+      angular_velocity,
+      false,
+      &rotating_star,
+      (cfg_.initial_data_disk == "equilibrium_torus"
+       || cfg_.initial_data_disk == "tilted_torus")
+         ? &equilibrium_torus : nullptr
    );
    if (amrex::ParallelDescriptor::IOProcessor()) {
-      append_rotating_star_metadata(artifact, rotating_star);
-      if (cfg_.initial_data_disk == "equilibrium_torus"
-          || cfg_.initial_data_disk == "tilted_torus") {
-         append_equilibrium_torus_metadata(artifact, equilibrium_torus);
-      }
-      append_matter_outer_radius(
-         artifact,
-         std::max(
-            rotating_star.matter_outer_radius,
-            equilibrium_torus.outer_radius
-         )
-      );
       std::ofstream index(
          std::filesystem::path(physical_initial_data_sequence_output_dir())
             / "sequence.tsv",

@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from plotfile_reader import parse_plot_header, read_level_state
+from physical_id_metadata import read_physical_id_metadata
 from validation_common import (
    ROOT,
    materialize_run_input,
@@ -47,14 +48,7 @@ PREFLIGHT = re.compile(
 )
 
 
-def read_metadata(artifact: Path) -> dict[str, str]:
-   result: dict[str, str] = {}
-   for raw_line in (artifact / "Header.meta").read_text().splitlines():
-      line = raw_line.strip()
-      if line.startswith("#") and "=" in line:
-         key, value = line[1:].split("=", 1)
-         result[key.strip()] = value.strip()
-   return result
+read_metadata = read_physical_id_metadata
 
 
 def read_face(path: Path) -> np.ndarray:

@@ -9,6 +9,7 @@ import re
 import shutil
 from pathlib import Path
 
+from physical_id_metadata import read_physical_id_metadata
 from validation_common import (
    ROOT,
    append_validation_history,
@@ -99,15 +100,7 @@ RECOVERY_PATTERN = re.compile(
 )
 
 
-def read_metadata(artifact: Path) -> dict[str, str]:
-   values: dict[str, str] = {}
-   for raw_line in (artifact / "Header.meta").read_text().splitlines():
-      line = raw_line.removeprefix("#").strip()
-      if "=" not in line:
-         continue
-      key, value = line.split("=", 1)
-      values[key.strip()] = value.strip()
-   return values
+read_metadata = read_physical_id_metadata
 
 
 def require_clean_relativistic_run(log_text: str, name: str) -> None:

@@ -1,0 +1,953 @@
+{
+  "component_gravities": [
+    {
+      "description": "The component contributes to the accepted global constraint solve.",
+      "name": "coupled"
+    },
+    {
+      "description": "The component is supported by a prescribed background spacetime.",
+      "name": "test_fluid"
+    },
+    {
+      "description": "The component is represented by an exact analytic spacetime.",
+      "name": "analytic"
+    },
+    {
+      "description": "The component is a constraint-solved exterior shell with an excluded interior.",
+      "name": "exterior_shell"
+    }
+  ],
+  "component_kinds": [
+    {
+      "description": "A spherical nonrotating relativistic star.",
+      "name": "tov"
+    },
+    {
+      "description": "A uniformly or differentially rotating relativistic star.",
+      "name": "rotating_star"
+    },
+    {
+      "description": "A black-hole spacetime component.",
+      "name": "black_hole"
+    },
+    {
+      "description": "An aligned equilibrium torus.",
+      "name": "equilibrium_torus"
+    },
+    {
+      "description": "A tilted equilibrium torus.",
+      "name": "tilted_torus"
+    }
+  ],
+  "component_roles": [
+    {
+      "description": "A self-gravitating central star or black hole.",
+      "name": "central_object"
+    },
+    {
+      "description": "A fluid component coupled to or placed on the central spacetime.",
+      "name": "matter"
+    }
+  ],
+  "dynamic_keys": [
+    {
+      "description": "Explicit physical coordinate faces for one level and direction.",
+      "index_count": 2,
+      "prefix": "coordinate_faces_",
+      "section": "layout",
+      "suffix": "",
+      "value_type": "real_vector"
+    },
+    {
+      "description": "Indexed runtime component role.",
+      "index_count": 1,
+      "prefix": "component_",
+      "section": "components",
+      "suffix": "_role",
+      "value_type": "string"
+    },
+    {
+      "description": "Indexed runtime component kind.",
+      "index_count": 1,
+      "prefix": "component_",
+      "section": "components",
+      "suffix": "_kind",
+      "value_type": "string"
+    },
+    {
+      "description": "Indexed runtime component gravity treatment.",
+      "index_count": 1,
+      "prefix": "component_",
+      "section": "components",
+      "suffix": "_gravity",
+      "value_type": "string"
+    },
+    {
+      "description": "Indexed runtime component Cartesian origin.",
+      "index_count": 1,
+      "prefix": "component_",
+      "section": "components",
+      "suffix": "_origin",
+      "value_type": "real_vector"
+    },
+    {
+      "description": "Indexed runtime component Cartesian orientation axis.",
+      "index_count": 1,
+      "prefix": "component_",
+      "section": "components",
+      "suffix": "_axis",
+      "value_type": "real_vector"
+    }
+  ],
+  "metadata_keys": [
+    {
+      "cpp_id": "Type",
+      "description": "Artifact kind.",
+      "name": "type",
+      "required": true,
+      "section": "artifact",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "SchemaVersion",
+      "description": "Physical-ID manifest schema version.",
+      "name": "schema_version",
+      "required": true,
+      "section": "artifact",
+      "value_type": "integer"
+    },
+    {
+      "cpp_id": "Format",
+      "description": "Field payload format.",
+      "name": "format",
+      "required": true,
+      "section": "artifact",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "Compression",
+      "description": "Lossless payload compression policy.",
+      "name": "compression",
+      "required": true,
+      "section": "artifact",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "AmrexSpacedim",
+      "description": "Stored mesh dimension.",
+      "name": "amrex_spacedim",
+      "required": true,
+      "section": "layout",
+      "value_type": "integer"
+    },
+    {
+      "cpp_id": "Levels",
+      "description": "Stored hierarchy level count.",
+      "name": "levels",
+      "required": true,
+      "section": "layout",
+      "value_type": "integer"
+    },
+    {
+      "cpp_id": "Physics",
+      "description": "Physical-system identity.",
+      "name": "physics",
+      "required": true,
+      "section": "fields",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "FluidComponents",
+      "description": "Evolution-fluid cache component count.",
+      "name": "fluid_components",
+      "required": true,
+      "section": "fields",
+      "value_type": "integer"
+    },
+    {
+      "cpp_id": "PhysicalFluidComponents",
+      "description": "Portable physical-fluid component count.",
+      "name": "physical_fluid_components",
+      "required": true,
+      "section": "fields",
+      "value_type": "integer"
+    },
+    {
+      "cpp_id": "MeshCoordinate",
+      "description": "Stored coordinate family.",
+      "name": "mesh_coordinate",
+      "required": true,
+      "section": "layout",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "MeshAxes",
+      "description": "Ordered stored active axes.",
+      "name": "mesh_axes",
+      "required": true,
+      "section": "layout",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "ComponentBasis",
+      "description": "Vector and tensor component basis.",
+      "name": "component_basis",
+      "required": true,
+      "section": "layout",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "CoordinateLayout",
+      "description": "Uniform or explicit-face coordinate layout.",
+      "name": "coordinate_layout",
+      "required": true,
+      "section": "layout",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "Domain",
+      "description": "AMReX index-space domain.",
+      "name": "domain",
+      "required": true,
+      "section": "layout",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "ProbLo",
+      "description": "Physical lower bounds.",
+      "name": "prob_lo",
+      "required": true,
+      "section": "layout",
+      "value_type": "real_vector"
+    },
+    {
+      "cpp_id": "ProbHi",
+      "description": "Physical upper bounds.",
+      "name": "prob_hi",
+      "required": true,
+      "section": "layout",
+      "value_type": "real_vector"
+    },
+    {
+      "cpp_id": "Periodicity",
+      "description": "Per-axis periodic flags.",
+      "name": "periodicity",
+      "required": true,
+      "section": "layout",
+      "value_type": "integer_vector"
+    },
+    {
+      "cpp_id": "ReflectionLo",
+      "description": "Per-axis low-side reflection flags.",
+      "name": "reflection_lo",
+      "required": true,
+      "section": "layout",
+      "value_type": "integer_vector"
+    },
+    {
+      "cpp_id": "ReflectionHi",
+      "description": "Per-axis high-side reflection flags.",
+      "name": "reflection_hi",
+      "required": true,
+      "section": "layout",
+      "value_type": "integer_vector"
+    },
+    {
+      "cpp_id": "RefinementRatios",
+      "description": "Hierarchy refinement ratios.",
+      "name": "refinement_ratios",
+      "required": true,
+      "section": "layout",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "Eos",
+      "description": "Equation-of-state method.",
+      "name": "eos",
+      "required": true,
+      "section": "eos",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "EosBackend",
+      "description": "Equation-of-state backend identity.",
+      "name": "eos_backend",
+      "required": true,
+      "section": "eos",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "EosPreset",
+      "description": "Named or custom EoS preset.",
+      "name": "eos_preset",
+      "required": true,
+      "section": "eos",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "Gamma",
+      "description": "Ideal-gas adiabatic index or configured compatibility value.",
+      "name": "gamma",
+      "required": true,
+      "section": "eos",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "EosTableFingerprint",
+      "description": "CompOSE table content fingerprint.",
+      "name": "eos_table_fingerprint",
+      "required": false,
+      "section": "eos",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "EosTableSource",
+      "description": "Human-readable CompOSE source location.",
+      "name": "eos_table_source",
+      "required": false,
+      "section": "eos",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "EosTableSourcePoints",
+      "description": "Original CompOSE density point count.",
+      "name": "eos_table_source_points",
+      "required": false,
+      "section": "eos",
+      "value_type": "integer"
+    },
+    {
+      "cpp_id": "EosTableRetainedPoints",
+      "description": "Retained causal CompOSE density point count.",
+      "name": "eos_table_retained_points",
+      "required": false,
+      "section": "eos",
+      "value_type": "integer"
+    },
+    {
+      "cpp_id": "EosTableTruncatedForCausality",
+      "description": "Whether the imported table was causality-truncated.",
+      "name": "eos_table_truncated_for_causality",
+      "required": false,
+      "section": "eos",
+      "value_type": "boolean"
+    },
+    {
+      "cpp_id": "EosTableCausalHighDensityExtension",
+      "description": "Deprecated schema-v2 alias for the CompOSE causal-tail policy.",
+      "name": "eos_table_causal_high_density_extension",
+      "required": false,
+      "section": "eos",
+      "value_type": "boolean"
+    },
+    {
+      "cpp_id": "EosTableBaryonMassMev",
+      "description": "CompOSE baryon mass convention in MeV.",
+      "name": "eos_table_baryon_mass_mev",
+      "required": false,
+      "section": "eos",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "PolytropicK",
+      "description": "Custom piecewise-polytropic K coefficients.",
+      "name": "polytropic_k",
+      "required": false,
+      "section": "eos",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "PolytropicGamma",
+      "description": "Custom one-piece polytropic gamma.",
+      "name": "polytropic_gamma",
+      "required": false,
+      "section": "eos",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "PolytropicDensityBreaks",
+      "description": "Custom piecewise-polytropic density breaks.",
+      "name": "polytropic_density_breaks",
+      "required": false,
+      "section": "eos",
+      "value_type": "real_vector"
+    },
+    {
+      "cpp_id": "PolytropicSegmentGammas",
+      "description": "Custom piecewise-polytropic segment gammas.",
+      "name": "polytropic_segment_gammas",
+      "required": false,
+      "section": "eos",
+      "value_type": "real_vector"
+    },
+    {
+      "cpp_id": "ThermalGamma",
+      "description": "Hybrid thermal adiabatic index.",
+      "name": "thermal_gamma",
+      "required": false,
+      "section": "eos",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "PassiveScalars",
+      "description": "Passive-scalar component count.",
+      "name": "passive_scalars",
+      "required": true,
+      "section": "fields",
+      "value_type": "integer"
+    },
+    {
+      "cpp_id": "HasSpacetime",
+      "description": "Whether ADM geometry is present.",
+      "name": "has_spacetime",
+      "required": true,
+      "section": "fields",
+      "value_type": "boolean"
+    },
+    {
+      "cpp_id": "HasCt",
+      "description": "Whether face-centered constrained-transport fields are present.",
+      "name": "has_ct",
+      "required": true,
+      "section": "fields",
+      "value_type": "boolean"
+    },
+    {
+      "cpp_id": "HasExactCaches",
+      "description": "Whether same-layout evolution caches are present.",
+      "name": "has_exact_caches",
+      "required": true,
+      "section": "fields",
+      "value_type": "boolean"
+    },
+    {
+      "cpp_id": "MagneticSeed",
+      "description": "Kinematic magnetic-seed method.",
+      "name": "magnetic_seed",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "MagneticEquilibrium",
+      "description": "Magnetohydrostatic equilibrium method.",
+      "name": "magnetic_equilibrium",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "MagneticForceBalance",
+      "description": "Force-balance status of the stored magnetic field.",
+      "name": "magnetic_force_balance",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "MagneticFaceRepresentation",
+      "description": "Physical or Valencia-densitized face-field representation.",
+      "name": "magnetic_face_representation",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "MagneticSeedPressureCutoff",
+      "description": "Pressure confinement cutoff for a poloidal seed.",
+      "name": "magnetic_seed_pressure_cutoff",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "MagneticSeedExponent",
+      "description": "Pressure confinement exponent for a poloidal seed.",
+      "name": "magnetic_seed_exponent",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "MagneticSeedMaximumComovingField",
+      "description": "Requested maximum comoving seed field.",
+      "name": "magnetic_seed_maximum_comoving_field",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "MagneticEquilibriumPoloidalMagnetization",
+      "description": "Poloidal magnetization for a coupled equilibrium.",
+      "name": "magnetic_equilibrium_poloidal_magnetization",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "MagneticEquilibriumNonlinearPoloidal",
+      "description": "Nonlinear poloidal-current coefficient.",
+      "name": "magnetic_equilibrium_nonlinear_poloidal",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "MagneticEquilibriumRelaxation",
+      "description": "Coupled magnetic fixed-point relaxation.",
+      "name": "magnetic_equilibrium_relaxation",
+      "required": true,
+      "section": "magnetic",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "SourceIc",
+      "description": "Initial-data matter owner.",
+      "name": "source_ic",
+      "required": true,
+      "section": "construction",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "SpacetimeInitialData",
+      "description": "Spacetime initial-data owner.",
+      "name": "spacetime_initial_data",
+      "required": true,
+      "section": "construction",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "ComponentCount",
+      "description": "Number of indexed runtime component records.",
+      "name": "component_count",
+      "required": false,
+      "section": "components",
+      "value_type": "integer"
+    },
+    {
+      "cpp_id": "BlackHoleMass",
+      "description": "Black-hole mass.",
+      "name": "black_hole_mass",
+      "required": false,
+      "section": "black_hole",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleSpin1",
+      "description": "First black-hole dimensionless spin component.",
+      "name": "black_hole_spin1",
+      "required": false,
+      "section": "black_hole",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleSpin2",
+      "description": "Second black-hole dimensionless spin component.",
+      "name": "black_hole_spin2",
+      "required": false,
+      "section": "black_hole",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleSpin3",
+      "description": "Third black-hole dimensionless spin component.",
+      "name": "black_hole_spin3",
+      "required": false,
+      "section": "black_hole",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleOrigin1",
+      "description": "First black-hole origin component.",
+      "name": "black_hole_origin1",
+      "required": false,
+      "section": "black_hole",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleOrigin2",
+      "description": "Second black-hole origin component.",
+      "name": "black_hole_origin2",
+      "required": false,
+      "section": "black_hole",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleOrigin3",
+      "description": "Third black-hole origin component.",
+      "name": "black_hole_origin3",
+      "required": false,
+      "section": "black_hole",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleInterior",
+      "description": "Black-hole interior handling.",
+      "name": "black_hole_interior",
+      "required": false,
+      "section": "black_hole",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "BlackHoleFillRadius",
+      "description": "Black-hole interior fill or shell radius.",
+      "name": "black_hole_fill_radius",
+      "required": false,
+      "section": "black_hole",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "Disk",
+      "description": "Optional disk kind.",
+      "name": "disk",
+      "required": true,
+      "section": "disk",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "DiskGravity",
+      "description": "Disk self-gravity treatment.",
+      "name": "disk_gravity",
+      "required": true,
+      "section": "disk",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "DiskRotationLaw",
+      "description": "Disk rotation law.",
+      "name": "disk_rotation_law",
+      "required": true,
+      "section": "disk",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "DiskSpecificAngularMomentum",
+      "description": "Constant-l disk specific angular momentum.",
+      "name": "disk_specific_angular_momentum",
+      "required": true,
+      "section": "disk",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskAngularVelocity",
+      "description": "Disk angular-velocity scale.",
+      "name": "disk_angular_velocity",
+      "required": true,
+      "section": "disk",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskDifferentialRotationLength",
+      "description": "Disk differential-rotation length.",
+      "name": "disk_differential_rotation_length",
+      "required": true,
+      "section": "disk",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskRotationPowerQ",
+      "description": "Disk q-power rotation exponent.",
+      "name": "disk_rotation_power_q",
+      "required": true,
+      "section": "disk",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskInnerRadius",
+      "description": "Requested disk inner radius.",
+      "name": "disk_inner_radius",
+      "required": true,
+      "section": "disk",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskAxis1",
+      "description": "First disk-axis component.",
+      "name": "disk_axis1",
+      "required": true,
+      "section": "disk",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskAxis2",
+      "description": "Second disk-axis component.",
+      "name": "disk_axis2",
+      "required": true,
+      "section": "disk",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskAxis3",
+      "description": "Third disk-axis component.",
+      "name": "disk_axis3",
+      "required": true,
+      "section": "disk",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "TovCentralDensity",
+      "description": "Requested stellar central density.",
+      "name": "tov_central_density",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "RotationLaw",
+      "description": "Stellar rotation law.",
+      "name": "rotation_law",
+      "required": true,
+      "section": "star",
+      "value_type": "string"
+    },
+    {
+      "cpp_id": "AngularVelocity",
+      "description": "Stellar angular-velocity scale.",
+      "name": "angular_velocity",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DifferentialRotationLength",
+      "description": "Stellar differential-rotation length.",
+      "name": "differential_rotation_length",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DifferentialRotationLengthB",
+      "description": "Second stellar differential-rotation length.",
+      "name": "differential_rotation_length_b",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "RotationPowerQ",
+      "description": "Stellar q-power rotation exponent.",
+      "name": "rotation_power_q",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "RotationAxis1",
+      "description": "First stellar rotation-axis component.",
+      "name": "rotation_axis1",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "RotationAxis2",
+      "description": "Second stellar rotation-axis component.",
+      "name": "rotation_axis2",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "RotationAxis3",
+      "description": "Third stellar rotation-axis component.",
+      "name": "rotation_axis3",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "RotationCenter1",
+      "description": "First stellar rotation-center component.",
+      "name": "rotation_center1",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "RotationCenter2",
+      "description": "Second stellar rotation-center component.",
+      "name": "rotation_center2",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "RotationCenter3",
+      "description": "Third stellar rotation-center component.",
+      "name": "rotation_center3",
+      "required": true,
+      "section": "star",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "MaximumDensity",
+      "description": "Solved stellar maximum density.",
+      "name": "maximum_density",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "MaximumVelocity",
+      "description": "Solved stellar maximum three-velocity magnitude.",
+      "name": "maximum_velocity",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "InjectionEnergy",
+      "description": "Solved stellar Euler injection energy.",
+      "name": "injection_energy",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "EquatorialRadius",
+      "description": "Resolved stellar equatorial radius.",
+      "name": "equatorial_radius",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "PolarRadius",
+      "description": "Resolved stellar polar radius.",
+      "name": "polar_radius",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "EquatorialLogEnthalpyGradient",
+      "description": "Equatorial surface log-enthalpy gradient.",
+      "name": "equatorial_log_enthalpy_gradient",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "PolarLogEnthalpyGradient",
+      "description": "Polar surface log-enthalpy gradient.",
+      "name": "polar_log_enthalpy_gradient",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "MassSheddingIndicator",
+      "description": "Equatorial-to-polar enthalpy-gradient mass-shedding indicator.",
+      "name": "mass_shedding_indicator",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "AdmMass",
+      "description": "ADM mass diagnostic.",
+      "name": "adm_mass",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BaryonicMass",
+      "description": "Stellar baryonic mass diagnostic.",
+      "name": "baryonic_mass",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "AngularMomentum",
+      "description": "Stellar angular-momentum diagnostic.",
+      "name": "angular_momentum",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DimensionlessSpin",
+      "description": "Stellar J over ADM mass squared.",
+      "name": "dimensionless_spin",
+      "required": false,
+      "section": "star_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskMaximumDensity",
+      "description": "Solved disk maximum density.",
+      "name": "disk_maximum_density",
+      "required": false,
+      "section": "disk_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskMaximumVelocity",
+      "description": "Solved disk maximum three-velocity magnitude.",
+      "name": "disk_maximum_velocity",
+      "required": false,
+      "section": "disk_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskResolvedInnerRadius",
+      "description": "Resolved disk inner radius.",
+      "name": "disk_resolved_inner_radius",
+      "required": false,
+      "section": "disk_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskOuterRadius",
+      "description": "Resolved disk outer radius.",
+      "name": "disk_outer_radius",
+      "required": false,
+      "section": "disk_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskDensityMaximumRadius",
+      "description": "Radius of the disk density maximum.",
+      "name": "disk_density_maximum_radius",
+      "required": false,
+      "section": "disk_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskMaximumLogSpecificEnthalpy",
+      "description": "Maximum disk log specific enthalpy.",
+      "name": "disk_maximum_log_specific_enthalpy",
+      "required": false,
+      "section": "disk_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskBaryonicMass",
+      "description": "Disk baryonic mass diagnostic.",
+      "name": "disk_baryonic_mass",
+      "required": false,
+      "section": "disk_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "DiskAngularMomentum",
+      "description": "Disk angular-momentum diagnostic.",
+      "name": "disk_angular_momentum",
+      "required": false,
+      "section": "disk_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "MatterOuterRadius",
+      "description": "Outermost resolved matter support radius.",
+      "name": "matter_outer_radius",
+      "required": false,
+      "section": "diagnostics",
+      "value_type": "real"
+    }
+  ],
+  "schema_version": 1
+}

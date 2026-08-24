@@ -6414,3 +6414,49 @@ I will always continue from the last cycle marked as `in_progress`.
   approximation, not a general physical-ID result. Do not introduce an object
   count, coordinate, EoS, or formulation template product. No production code
   changed in this audit cycle. [DONE]
+
+## Cycle 315 — Generated ID metadata and component-ready handoff (DONE)
+
+- Preserve `schema/fields.toml` as the sole GF identity/centering source and
+  `schema/methods.toml` as the supported-owner/method catalog. Add one strict,
+  human-readable declaration source for physical-ID artifact metadata and
+  component identity; generated C++ and Python views must consume it rather
+  than defining another key/report list. Keep conditional physical
+  compatibility in handwritten C++. `schema/physical_id.toml` now generates
+  the C++ key/type/vocabulary catalog and the strict Python reporting view;
+  indexed component suffixes and value types are also declared there. The GF
+  and method catalogs remain unchanged and authoritative in their own scopes.
+  [DONE]
+- Refactor solve results into one finalized artifact description, remove the
+  base-write-plus-summary-append lifecycle, and publish artifacts
+  transactionally before sequence indexes reference them. Keep ID solving,
+  optional persistence, portable rematerialization, and evolution state
+  construction as separate owners. All fields, exact caches, solved summaries,
+  and the manifest now complete under a hidden sibling `.pending` directory;
+  the I/O rank validates and same-directory-renames it before a sequence index
+  may append the model. No post-publication metadata append remains. [DONE]
+- Represent today's central object and optional disk through a runtime
+  component-ready contract without changing their physics. Future multi-object
+  construction may assemble seeds and sources, but an accepted self-gravitating
+  result still requires the global coupled solve; do not add an object-count,
+  coordinate, EoS, or formulation template product. Runtime component records
+  now preserve central-object/disk role, kind, gravity treatment, origin, and
+  axis; loaded records follow the same rigid transform as the fields and are
+  retained on re-save. Adding today's disk appends only its missing runtime
+  record. No new compiled method product was added. [DONE]
+- Preserve schema-v3 read compatibility, exact-cache behavior, sequence
+  continuation, changed-grid/larger-domain materialization, and short
+  evolution. Add focused metadata/component/transaction controls, rebuild all
+  dimensions, run the relevant ID gates, and commit one coherent tranche.
+  Exact magnetic reserialization restores the validated portable primitive
+  core after forced C2P/P2C checks, and tilted full-storage IDs no longer route
+  into the axisymmetric changed-grid RNS re-solve. Schema-v1/v2 and earlier-v3
+  artifacts remain readable, including the old CompOSE causal-policy alias;
+  malformed, missing, or out-of-range current component records are rejected.
+  Codegen identity, Python compile, architecture, 1D/2D/3D production builds,
+  the AMReX quick gate, reduced TOV/RNS standard and full gates, RNS sequence
+  and spherical-to-Cartesian handoff, full equilibrium-torus/tilt matrix,
+  black-hole/excision/reflection matrix, magnetized ID, full
+  magnetohydrostatic/CompOSE matrix, and CompOSE evolution/restart identity all
+  pass. A scan of 312 non-fixture artifacts finds 108 component records, zero
+  schema errors, and no surviving `.pending` transaction. [DONE]
