@@ -665,6 +665,7 @@ def validate_relativistic_contract(rng: random.Random) -> None:
          gamma = minkowski_values["gamma"]
          pressure = (gamma - 1.0) * rho * eps
          specific_enthalpy = 1.0 + eps + pressure / rho
+         minkowski_values["specific_enthalpy"] = specific_enthalpy
          minkowski_values["sound_speed_squared"] = (
             gamma * pressure / (rho * specific_enthalpy)
          )

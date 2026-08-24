@@ -359,6 +359,21 @@ amrex::Real relativistic_specific_internal_energy_from_pressure(
    return eos_internal_energy_density_from_pressure<EOSMethod>(rho, pressure, eos) / rho;
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real relativistic_compose_pressure(
+   amrex::Real rho,
+   amrex::Real specific_internal_energy,
+   const TabulatedColdState& cold,
+   EOSParams const& eos
+) noexcept
+{
+   const amrex::Real cold_internal_energy_density =
+      cold.energy_density - rho;
+   return cold.pressure + (eos.thermal_gamma - 1.0) * (
+      rho * specific_internal_energy - cold_internal_energy_density
+   );
+}
+
 template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real relativistic_pressure(
@@ -372,8 +387,11 @@ amrex::Real relativistic_pressure(
          rho, rho * specific_internal_energy, eos
       );
    } else if constexpr (EOSMethod == EOSCompose) {
-      return eos_pressure_from_density_energy<EOSCompose>(
-         rho, rho * specific_internal_energy, eos
+      const TabulatedColdState cold = tabulated_cold_from_density(
+         rho, eos.table
+      );
+      return relativistic_compose_pressure(
+         rho, specific_internal_energy, cold, eos
       );
    } else if constexpr (EOSMethod == EOSPolytrope) {
       const PolytropeSegment segment = polytrope_segment(rho, eos);
@@ -440,8 +458,8 @@ amrex::Real relativistic_sound_speed_squared(
       );
    } else if constexpr (EOSMethod == EOSCompose) {
       const TabulatedColdState cold = tabulated_cold_from_density(rho, eos.table);
-      const amrex::Real pressure = relativistic_pressure<EOSCompose>(
-         rho, specific_internal_energy, eos
+      const amrex::Real pressure = relativistic_compose_pressure(
+         rho, specific_internal_energy, cold, eos
       );
       const amrex::Real thermal_energy = specific_internal_energy
          - (cold.energy_density / rho - 1.0);
@@ -475,6 +493,94 @@ amrex::Real relativistic_sound_speed_squared(
       return generated::relativistic_ideal_gas_sound_speed_squared(
          specific_internal_energy, eos.gamma
       );
+   }
+}
+
+template <int EOSMethod>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RelativisticCharacteristicState relativistic_characteristic_state(
+   amrex::Real rho,
+   amrex::Real specific_internal_energy,
+   EOSParams const& eos
+) noexcept
+{
+   if constexpr (EOSMethod == EOSRuntime) {
+      if (eos.method == EOSCompose) {
+         return relativistic_characteristic_state<EOSCompose>(
+            rho, specific_internal_energy, eos
+         );
+      }
+      if (eos.method == EOSPolytrope) {
+         return relativistic_characteristic_state<EOSPolytrope>(
+            rho, specific_internal_energy, eos
+         );
+      }
+      if (eos.method == EOSHybridPolytrope) {
+         return relativistic_characteristic_state<EOSHybridPolytrope>(
+            rho, specific_internal_energy, eos
+         );
+      }
+      return relativistic_characteristic_state<EOSIdealGas>(
+         rho, specific_internal_energy, eos
+      );
+   } else if constexpr (EOSMethod == EOSCompose) {
+      const TabulatedColdState cold = tabulated_cold_from_density(rho, eos.table);
+      const amrex::Real pressure = relativistic_compose_pressure(
+         rho, specific_internal_energy, cold, eos
+      );
+      const amrex::Real thermal_energy = specific_internal_energy
+         - (cold.energy_density / rho - 1.0);
+      const amrex::Real chi = cold.specific_enthalpy
+         * cold.sound_speed_squared
+         + (eos.thermal_gamma - 1.0)
+            * (thermal_energy - cold.pressure / rho);
+      const amrex::Real kappa = (eos.thermal_gamma - 1.0) * rho;
+      const amrex::Real specific_enthalpy =
+         1.0 + specific_internal_energy + pressure / rho;
+      return {
+         specific_enthalpy,
+         (chi + pressure * kappa / (rho * rho)) / specific_enthalpy,
+      };
+   } else if constexpr (EOSMethod == EOSPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
+      return {
+         generated::relativistic_polytrope_specific_enthalpy(
+            rho, specific_internal_energy, segment.k, segment.gamma
+         ),
+         generated::relativistic_polytrope_sound_speed_squared(
+            rho, specific_internal_energy, segment.k, segment.gamma
+         ),
+      };
+   } else if constexpr (EOSMethod == EOSHybridPolytrope) {
+      const PolytropeSegment segment = polytrope_segment(rho, eos);
+      return {
+         generated::relativistic_hybrid_polytrope_specific_enthalpy(
+            rho,
+            specific_internal_energy,
+            segment.k,
+            segment.gamma,
+            eos.thermal_gamma,
+            segment.energy_offset
+         ),
+         generated::relativistic_hybrid_polytrope_sound_speed_squared(
+            rho,
+            specific_internal_energy,
+            segment.k,
+            segment.gamma,
+            eos.thermal_gamma,
+            segment.energy_offset
+         ),
+      };
+   } else {
+      static_cast<void>(rho);
+      return {
+         generated::relativistic_ideal_gas_specific_enthalpy(
+            specific_internal_energy, eos.gamma
+         ),
+         generated::relativistic_ideal_gas_sound_speed_squared(
+            specific_internal_energy, eos.gamma
+         ),
+      };
    }
 }
 

@@ -618,31 +618,12 @@ void apply_rhd_admissibility_flux_limiter(
    if (!(increment_scale > 0.0)) {
       return;
    }
-   if (eos_method == EOSPolytrope) {
-      apply_limiter<EOSPolytrope>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
-         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
-         time, base_weight, conserved_weight, increment_scale
-      );
-   } else if (eos_method == EOSHybridPolytrope) {
-      apply_limiter<EOSHybridPolytrope>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
-         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
-         time, base_weight, conserved_weight, increment_scale
-      );
-   } else if (eos_method == EOSCompose) {
-      apply_limiter<EOSCompose>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
-         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
-         time, base_weight, conserved_weight, increment_scale
-      );
-   } else {
-      apply_limiter<EOSIdealGas>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
-         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
-         time, base_weight, conserved_weight, increment_scale
-      );
-   }
+   static_cast<void>(eos_method);
+   apply_limiter<EOSRuntime>(
+      fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
+      fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
+      time, base_weight, conserved_weight, increment_scale
+   );
 }
 
 namespace {
@@ -781,7 +762,7 @@ bool rmhd_candidate_recovers(
 ) noexcept
 {
    const RMHDRecoveryResult recovered = recover_srmhd(
-      candidate, metric, eos.gamma
+      candidate, metric, eos
    );
    return recovered.succeeded()
       && recovered.primitive.rho >= atmosphere.rho

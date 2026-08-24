@@ -16,7 +16,6 @@ struct PrimitiveCacheLaunch {
    amrex::MultiFab const& conserved;
    EOSParams eos;
    PhysicalSystem physical_system = PhysicalSystem::HD;
-   int eos_method = EOSIdealGas;
    int num_components = 0;
    amrex::MultiFab const* cell_spacetime = nullptr;
    amrex::iMultiFab const* needed_mask = nullptr;
@@ -32,7 +31,6 @@ void apply_relativistic_atmosphere(
    amrex::MultiFab& conserved,
    amrex::MultiFab const& cell_spacetime,
    PhysicalSystem physical_system,
-   int eos_method,
    EOSParams const& eos,
    EOSThermodynamicState const& atmosphere,
    int ghost_cells,

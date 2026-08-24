@@ -112,12 +112,11 @@ auto recover_relativistic_primitive_with_atmosphere(
       }
       return recovered;
    } else {
-      static_assert(EOSMethod == EOSIdealGas);
       const RMHDConserved conserved = load_rmhd_conserved(state, i, j, k);
       if (std::isfinite(conserved.dens)
           && conserved.dens <= metric.sqrt_det_gamma * atmosphere.rho) {
          const RHDPrimitive fluid =
-            rhd_atmosphere_primitive<EOSIdealGas>(atmosphere);
+            rhd_atmosphere_primitive<EOSMethod>(atmosphere);
          const amrex::Real inverse_sqrt_det_gamma = 1.0 / metric.sqrt_det_gamma;
          const RMHDPrimitive atmosphere_primitive{
             fluid.rho,
@@ -139,7 +138,7 @@ auto recover_relativistic_primitive_with_atmosphere(
          );
       }
       RMHDRecoveryResult recovered = recover_srmhd(
-         load_rmhd_conserved(state, i, j, k), metric, eos.gamma
+         load_rmhd_conserved(state, i, j, k), metric, eos
       );
       const bool finite_magnetic_state =
          amrex::Math::isfinite(conserved.b1)
@@ -149,7 +148,7 @@ auto recover_relativistic_primitive_with_atmosphere(
          const RMHDConserved failed = load_rmhd_conserved(state, i, j, k);
          const amrex::Real inverse_sqrt_det_gamma = 1.0 / metric.sqrt_det_gamma;
          const RHDPrimitive fluid =
-            rhd_atmosphere_primitive<EOSIdealGas>(atmosphere);
+            rhd_atmosphere_primitive<EOSMethod>(atmosphere);
          const RMHDPrimitive atmosphere_primitive{
             fluid.rho,
             fluid.eps,
@@ -169,7 +168,7 @@ auto recover_relativistic_primitive_with_atmosphere(
             generated::rmhd_primitive_to_conserved(atmosphere_primitive, metric)
          );
          recovered = recover_srmhd(
-            load_rmhd_conserved(state, i, j, k), metric, eos.gamma
+            load_rmhd_conserved(state, i, j, k), metric, eos
          );
          if (events != nullptr) {
             events->atmosphere_reset_count = 1;
@@ -180,7 +179,7 @@ auto recover_relativistic_primitive_with_atmosphere(
       if (recovered.succeeded()
           && recovered.primitive.rho < atmosphere.rho) {
          const RHDPrimitive fluid =
-            rhd_atmosphere_primitive<EOSIdealGas>(atmosphere);
+            rhd_atmosphere_primitive<EOSMethod>(atmosphere);
          const RMHDPrimitive atmosphere_primitive{
             fluid.rho,
             fluid.eps,

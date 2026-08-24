@@ -19,6 +19,25 @@ namespace {
 
 using namespace pyfluid_amrex;
 
+template <int Direction>
+RMHDWaveSpeeds ideal_srmhd_wave_speeds(
+   RMHDPrimitive const& primitive,
+   SpacetimeMetric const& metric,
+   amrex::Real gamma
+) noexcept
+{
+   return generated::srmhd_wave_speeds<Direction>(
+      primitive,
+      metric,
+      generated::relativistic_ideal_gas_sound_speed_squared(
+         primitive.eps, gamma
+      ),
+      generated::relativistic_ideal_gas_specific_enthalpy(
+         primitive.eps, gamma
+      )
+   );
+}
+
 bool close_enough(
    amrex::Real actual,
    amrex::Real expected,
@@ -125,10 +144,10 @@ RMHDConserved hll_flux(
    );
    const RMHDConserved flux_l = generated::rmhd_flux<0>(left, metric);
    const RMHDConserved flux_r = generated::rmhd_flux<0>(right, metric);
-   const RMHDWaveSpeeds waves_l = generated::srmhd_wave_speeds<0>(
+   const RMHDWaveSpeeds waves_l = ideal_srmhd_wave_speeds<0>(
       left, metric, gamma
    );
-   const RMHDWaveSpeeds waves_r = generated::srmhd_wave_speeds<0>(
+   const RMHDWaveSpeeds waves_r = ideal_srmhd_wave_speeds<0>(
       right, metric, gamma
    );
    const amrex::Real speed_l = amrex::min(
@@ -296,10 +315,10 @@ int run_hlld_fan_table()
       const SRMHDState state_r = srmhd_state_from_primitive(right);
       const SRMHDState flux_l = srmhd_flux_from_primitive(left);
       const SRMHDState flux_r = srmhd_flux_from_primitive(right);
-      const RMHDWaveSpeeds waves_l = generated::srmhd_wave_speeds<0>(
+      const RMHDWaveSpeeds waves_l = ideal_srmhd_wave_speeds<0>(
          left, minkowski_spacetime_metric(), gamma
       );
-      const RMHDWaveSpeeds waves_r = generated::srmhd_wave_speeds<0>(
+      const RMHDWaveSpeeds waves_r = ideal_srmhd_wave_speeds<0>(
          right, minkowski_spacetime_metric(), gamma
       );
       const amrex::Real speed_l = amrex::min(waves_l.minus, waves_r.minus);
@@ -545,10 +564,10 @@ bool validate_curved_hll_equivalence()
    );
    const RMHDConserved flux_l = generated::rmhd_flux<Direction>(left, metric);
    const RMHDConserved flux_r = generated::rmhd_flux<Direction>(right, metric);
-   const RMHDWaveSpeeds waves_l = generated::srmhd_wave_speeds<Direction>(
+   const RMHDWaveSpeeds waves_l = ideal_srmhd_wave_speeds<Direction>(
       left, metric, gamma
    );
-   const RMHDWaveSpeeds waves_r = generated::srmhd_wave_speeds<Direction>(
+   const RMHDWaveSpeeds waves_r = ideal_srmhd_wave_speeds<Direction>(
       right, metric, gamma
    );
    const amrex::Real speed_l = amrex::min(
@@ -571,10 +590,10 @@ bool validate_curved_hll_equivalence()
    const SRMHDState local_state_r = srmhd_state_from_primitive(local_r);
    const SRMHDState local_flux_l = srmhd_flux_from_primitive(local_l);
    const SRMHDState local_flux_r = srmhd_flux_from_primitive(local_r);
-   const RMHDWaveSpeeds local_waves_l = generated::srmhd_wave_speeds<0>(
+   const RMHDWaveSpeeds local_waves_l = ideal_srmhd_wave_speeds<0>(
       local_l, minkowski_spacetime_metric(), gamma
    );
-   const RMHDWaveSpeeds local_waves_r = generated::srmhd_wave_speeds<0>(
+   const RMHDWaveSpeeds local_waves_r = ideal_srmhd_wave_speeds<0>(
       local_r, minkowski_spacetime_metric(), gamma
    );
    const SRMHDRiemannSample sample = srmhd_hll_sample(
@@ -637,10 +656,10 @@ bool validate_contact()
       const SRMHDState state_r = srmhd_state_from_primitive(right);
       const SRMHDState flux_l = srmhd_flux_from_primitive(left);
       const SRMHDState flux_r = srmhd_flux_from_primitive(right);
-      const RMHDWaveSpeeds waves_l = generated::srmhd_wave_speeds<0>(
+      const RMHDWaveSpeeds waves_l = ideal_srmhd_wave_speeds<0>(
          left, minkowski_spacetime_metric(), gamma
       );
-      const RMHDWaveSpeeds waves_r = generated::srmhd_wave_speeds<0>(
+      const RMHDWaveSpeeds waves_r = ideal_srmhd_wave_speeds<0>(
          right, minkowski_spacetime_metric(), gamma
       );
       const amrex::Real speed_l = amrex::min(waves_l.minus, waves_r.minus);
@@ -694,10 +713,10 @@ bool validate_rotational_wave()
    const SRMHDState expected_flux = wave_speed >= 0.0 ? flux_l : flux_r;
    const SRMHDRiemannSample hlld = srmhd_hlld_sample(left, right, gamma, 0.0);
    if (hlld.used_hll) {
-      const RMHDWaveSpeeds waves_l = generated::srmhd_wave_speeds<0>(
+      const RMHDWaveSpeeds waves_l = ideal_srmhd_wave_speeds<0>(
          left, minkowski_spacetime_metric(), gamma
       );
-      const RMHDWaveSpeeds waves_r = generated::srmhd_wave_speeds<0>(
+      const RMHDWaveSpeeds waves_r = ideal_srmhd_wave_speeds<0>(
          right, minkowski_spacetime_metric(), gamma
       );
       const SRMHDHLLDEvaluation exact = srmhd_hlld_evaluate(
@@ -835,10 +854,10 @@ bool validate_random_fans()
       const SRMHDState state_r = srmhd_state_from_primitive(right);
       const SRMHDState flux_l = srmhd_flux_from_primitive(left);
       const SRMHDState flux_r = srmhd_flux_from_primitive(right);
-      const RMHDWaveSpeeds waves_l = generated::srmhd_wave_speeds<0>(
+      const RMHDWaveSpeeds waves_l = ideal_srmhd_wave_speeds<0>(
          left, minkowski_spacetime_metric(), gamma
       );
-      const RMHDWaveSpeeds waves_r = generated::srmhd_wave_speeds<0>(
+      const RMHDWaveSpeeds waves_r = ideal_srmhd_wave_speeds<0>(
          right, minkowski_spacetime_metric(), gamma
       );
       const amrex::Real speed_l = amrex::min(waves_l.minus, waves_r.minus);

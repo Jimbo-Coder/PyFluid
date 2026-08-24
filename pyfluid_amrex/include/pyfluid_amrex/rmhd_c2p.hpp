@@ -2,6 +2,7 @@
 
 #include "pyfluid_amrex/c2p_policy.hpp"
 #include "pyfluid_amrex/c2p_root.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/eos.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/c2p_rmhd.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
@@ -91,6 +92,86 @@ bool finite_rmhd_recovery_state(const RMHDRecoveryState& recovery) noexcept
       && amrex::Math::isfinite(recovery.momentum_squared)
       && amrex::Math::isfinite(recovery.magnetic_squared)
       && amrex::Math::isfinite(recovery.magnetic_momentum);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool valid_runtime_rmhd_eos(const EOSParams& eos) noexcept
+{
+   if (eos.method == EOSIdealGas) {
+      return amrex::Math::isfinite(eos.gamma) && eos.gamma > 1.0
+         && eos.gamma <= 2.0;
+   }
+   if (eos.method == EOSPolytrope) {
+      return eos.polytrope_segments > 0
+         && eos.polytrope_segments <= MaxPolytropeSegments;
+   }
+   if (eos.method == EOSHybridPolytrope) {
+      return eos.polytrope_segments > 0
+         && eos.polytrope_segments <= MaxPolytropeSegments
+         && amrex::Math::isfinite(eos.thermal_gamma)
+         && eos.thermal_gamma > 1.0 && eos.thermal_gamma <= 2.0;
+   }
+   if (eos.method == EOSCompose) {
+      return eos.table.size >= 2 && eos.table.log_density != nullptr
+         && eos.table.log_pressure != nullptr
+         && eos.table.log_specific_enthalpy != nullptr
+         && amrex::Math::isfinite(eos.thermal_gamma)
+         && eos.thermal_gamma > 1.0 && eos.thermal_gamma <= 2.0;
+   }
+   return false;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool finite_rmhd_kinematics(const RMHDRecoveryKinematics& trial) noexcept
+{
+   return amrex::Math::isfinite(trial.rho)
+      && amrex::Math::isfinite(trial.eps)
+      && amrex::Math::isfinite(trial.lorentz_factor)
+      && amrex::Math::isfinite(trial.v1)
+      && amrex::Math::isfinite(trial.v2)
+      && amrex::Math::isfinite(trial.v3)
+      && amrex::Math::isfinite(trial.b1)
+      && amrex::Math::isfinite(trial.b2)
+      && amrex::Math::isfinite(trial.b3)
+      && trial.rho > 0.0 && trial.lorentz_factor >= 1.0;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool finite_rmhd_kinematics(const RMHDRePrimAndKinematics& trial) noexcept
+{
+   return amrex::Math::isfinite(trial.rho)
+      && amrex::Math::isfinite(trial.eps)
+      && amrex::Math::isfinite(trial.lorentz_factor)
+      && amrex::Math::isfinite(trial.fluid_momentum_squared)
+      && amrex::Math::isfinite(trial.fluid_energy)
+      && amrex::Math::isfinite(trial.v1)
+      && amrex::Math::isfinite(trial.v2)
+      && amrex::Math::isfinite(trial.v3)
+      && amrex::Math::isfinite(trial.b1)
+      && amrex::Math::isfinite(trial.b2)
+      && amrex::Math::isfinite(trial.b3)
+      && trial.rho > 0.0 && trial.lorentz_factor >= 1.0
+      && trial.fluid_momentum_squared >= 0.0;
+}
+
+template <typename Kinematics>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDPrimitive rmhd_primitive_from_kinematics(
+   const Kinematics& trial,
+   const EOSParams& eos
+) noexcept
+{
+   return {
+      trial.rho,
+      trial.eps,
+      relativistic_pressure<EOSRuntime>(trial.rho, trial.eps, eos),
+      trial.v1,
+      trial.v2,
+      trial.v3,
+      trial.b1,
+      trial.b2,
+      trial.b3,
+   };
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -949,6 +1030,299 @@ RMHDRecoveryResult recover_srmhd_reprimand(
       validate_rmhd_recovery(result, conserved, metric, options);
    }
    return result;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real srmhd_palenzuela_residual(
+   const RMHDRecoveryState& recovery,
+   amrex::Real x,
+   const EOSParams& eos
+) noexcept
+{
+   const RMHDRecoveryKinematics trial =
+      generated::srmhd_palenzuela_kinematics(recovery, x);
+   if (!finite_rmhd_kinematics(trial)) {
+      return std::numeric_limits<amrex::Real>::quiet_NaN();
+   }
+   const amrex::Real enthalpy = relativistic_specific_enthalpy<EOSRuntime>(
+      trial.rho, trial.eps, eos
+   );
+   return x - enthalpy * trial.lorentz_factor;
+}
+
+template <bool ValidateConserved = false>
+AMREX_GPU_HOST_DEVICE AMREX_NO_INLINE inline
+RMHDRecoveryResult recover_srmhd_palenzuela_1d(
+   const RMHDConserved& conserved,
+   const SpacetimeMetric& metric,
+   const EOSParams& eos,
+   const C2PRecoveryOptions& options = {}
+) noexcept
+{
+   RMHDRecoveryResult invalid{};
+   invalid.attempt.method = C2PMethod::Palenzuela1D;
+   invalid.attempt_count = 1;
+   const RMHDRecoveryState recovery = generated::rmhd_recovery_state(
+      conserved, metric
+   );
+   if (!finite_rmhd_conserved(conserved)
+       || !finite_rmhd_recovery_state(recovery) || !(recovery.dens > 0.0)) {
+      invalid.attempt.status = C2PStatus::InvalidConservedState;
+      return invalid;
+   }
+   if (!valid_runtime_rmhd_eos(eos)) {
+      invalid.attempt.status = C2PStatus::InvalidEquationOfState;
+      return invalid;
+   }
+
+   const auto residual = [=] AMREX_GPU_HOST_DEVICE(amrex::Real x) noexcept {
+      return srmhd_palenzuela_residual(recovery, x, eos);
+   };
+   const amrex::Real q = recovery.tau / recovery.dens;
+   const amrex::Real s = recovery.magnetic_squared / recovery.dens;
+   const amrex::Real tiny = 64.0 * std::numeric_limits<amrex::Real>::epsilon();
+   amrex::Real lower = amrex::max(tiny, 1.0 + q - s);
+   amrex::Real upper = 2.0 + 2.0 * q - s;
+   if (!(upper > lower)) {
+      invalid.attempt.status = C2PStatus::NoBracket;
+      return invalid;
+   }
+
+   amrex::Real lower_residual = residual(lower);
+   amrex::Real upper_residual = residual(upper);
+   if (!amrex::Math::isfinite(upper_residual)) {
+      invalid.attempt.status = C2PStatus::NonfiniteResidual;
+      return invalid;
+   }
+   if (!amrex::Math::isfinite(lower_residual)) {
+      amrex::Real invalid_endpoint = lower;
+      amrex::Real valid_endpoint = upper;
+      for (int iteration = 0; iteration < 64; ++iteration) {
+         const amrex::Real candidate = 0.5 * (
+            invalid_endpoint + valid_endpoint
+         );
+         const amrex::Real candidate_residual = residual(candidate);
+         if (amrex::Math::isfinite(candidate_residual)) {
+            valid_endpoint = candidate;
+            lower_residual = candidate_residual;
+         } else {
+            invalid_endpoint = candidate;
+         }
+      }
+      lower = valid_endpoint;
+   }
+   if (lower_residual * upper_residual > 0.0) {
+      upper = 3.0 + 3.0 * q - 1.5 * s;
+      if (!(upper > lower)) {
+         invalid.attempt.status = C2PStatus::NoBracket;
+         return invalid;
+      }
+      upper_residual = residual(upper);
+   }
+   const RootBracket bracket{
+      lower,
+      upper,
+      lower_residual,
+      upper_residual,
+      amrex::Math::isfinite(lower_residual)
+         && amrex::Math::isfinite(upper_residual)
+         && lower_residual * upper_residual <= 0.0,
+      amrex::Math::isfinite(lower_residual)
+         && amrex::Math::isfinite(upper_residual),
+   };
+   return recover_srmhd_bracketed_candidate<ValidateConserved>(
+      C2PMethod::Palenzuela1D,
+      conserved,
+      metric,
+      bracket,
+      residual,
+      [=] AMREX_GPU_HOST_DEVICE(amrex::Real x) noexcept {
+         return rmhd_primitive_from_kinematics(
+            generated::srmhd_palenzuela_kinematics(recovery, x), eos
+         );
+      },
+      options
+   );
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real srmhd_reprimand_residual(
+   const RMHDRecoveryState& recovery,
+   amrex::Real mu,
+   const EOSParams& eos
+) noexcept
+{
+   const RMHDRePrimAndKinematics trial =
+      generated::srmhd_reprimand_kinematics(recovery, mu);
+   if (!finite_rmhd_kinematics(trial)) {
+      return std::numeric_limits<amrex::Real>::quiet_NaN();
+   }
+   const amrex::Real pressure = relativistic_pressure<EOSRuntime>(
+      trial.rho, trial.eps, eos
+   );
+   const amrex::Real energy_per_baryon = 1.0 + trial.eps;
+   const amrex::Real enthalpy = energy_per_baryon + pressure / trial.rho;
+   if (!amrex::Math::isfinite(pressure) || !(energy_per_baryon > 0.0)
+       || !(enthalpy > 0.0)) {
+      return std::numeric_limits<amrex::Real>::quiet_NaN();
+   }
+   const amrex::Real pressure_ratio = pressure
+      / (trial.rho * energy_per_baryon);
+   const amrex::Real enthalpy_lorentz = amrex::max(
+      (1.0 + pressure_ratio)
+         * (1.0 + trial.fluid_energy
+            - mu * trial.fluid_momentum_squared),
+      enthalpy / trial.lorentz_factor
+   );
+   return mu - 1.0 / (
+      enthalpy_lorentz + mu * trial.fluid_momentum_squared
+   );
+}
+
+template <bool ValidateConserved = false>
+AMREX_GPU_HOST_DEVICE AMREX_NO_INLINE inline
+RMHDRecoveryResult recover_srmhd_reprimand(
+   const RMHDConserved& conserved,
+   const SpacetimeMetric& metric,
+   const EOSParams& eos,
+   const C2PRecoveryOptions& options = {}
+) noexcept
+{
+   RMHDRecoveryResult result{};
+   result.attempt.method = C2PMethod::RePrimAnd;
+   result.attempt_count = 1;
+   const RMHDRecoveryState recovery = generated::rmhd_recovery_state(
+      conserved, metric
+   );
+   if (!finite_rmhd_conserved(conserved)
+       || !finite_rmhd_recovery_state(recovery) || !(recovery.dens > 0.0)) {
+      result.attempt.status = C2PStatus::InvalidConservedState;
+      return result;
+   }
+   if (!valid_runtime_rmhd_eos(eos)) {
+      result.attempt.status = C2PStatus::InvalidEquationOfState;
+      return result;
+   }
+
+   amrex::Real lower = 0.0;
+   amrex::Real upper = 1.0;
+   const amrex::Real normalized_momentum_squared =
+      recovery.momentum_squared / (recovery.dens * recovery.dens);
+   if (normalized_momentum_squared >= 1.0) {
+      amrex::Real bracket_lower = 1.0 / std::sqrt(
+         1.0 + normalized_momentum_squared
+      );
+      amrex::Real bracket_upper = 1.0;
+      for (int iteration = 0; iteration < options.max_iterations; ++iteration) {
+         const amrex::Real trial_mu = 0.5 * (
+            bracket_lower + bracket_upper
+         );
+         const RMHDRePrimAndKinematics trial =
+            generated::srmhd_reprimand_kinematics(recovery, trial_mu);
+         const amrex::Real residual = trial_mu
+            * std::sqrt(1.0 + trial.fluid_momentum_squared) - 1.0;
+         if (!finite_rmhd_kinematics(trial)
+             || !amrex::Math::isfinite(residual)) {
+            result.attempt.status = C2PStatus::NonfiniteResidual;
+            return result;
+         }
+         if (residual > 0.0) {
+            bracket_upper = trial_mu;
+         } else {
+            bracket_lower = trial_mu;
+         }
+         const amrex::Real tolerance = options.absolute_tolerance
+            + options.relative_tolerance
+               * amrex::max(1.0, amrex::Math::abs(trial_mu));
+         if (bracket_upper - bracket_lower <= tolerance) {
+            break;
+         }
+      }
+      upper = bracket_upper * (
+         1.0 + 64.0 * std::numeric_limits<amrex::Real>::epsilon()
+      );
+   }
+
+   const auto residual = [=] AMREX_GPU_HOST_DEVICE(amrex::Real mu) noexcept {
+      return srmhd_reprimand_residual(recovery, mu, eos);
+   };
+   const amrex::Real lower_residual = residual(lower);
+   const amrex::Real upper_residual = residual(upper);
+   if (!amrex::Math::isfinite(lower_residual)
+       || !amrex::Math::isfinite(upper_residual)) {
+      result.attempt.status = C2PStatus::NonfiniteResidual;
+      return result;
+   }
+   if (lower_residual * upper_residual > 0.0) {
+      result.attempt.status = C2PStatus::NoBracket;
+      return result;
+   }
+
+   const auto root = solve_bracketed_illinois(
+      residual,
+      [=] AMREX_GPU_HOST_DEVICE(amrex::Real mu, amrex::Real width) noexcept {
+         const RMHDRePrimAndKinematics trial =
+            generated::srmhd_reprimand_kinematics(recovery, mu);
+         const amrex::Real relative_floor =
+            std::numeric_limits<amrex::Real>::epsilon()
+            * amrex::Math::abs(mu);
+         const amrex::Real tolerance = amrex::max(
+            relative_floor,
+            options.relative_tolerance * amrex::Math::abs(mu)
+               / (trial.lorentz_factor * trial.lorentz_factor)
+         );
+         return width <= tolerance;
+      },
+      lower,
+      upper,
+      lower_residual,
+      upper_residual,
+      options.max_iterations
+   );
+   result.attempt.iterations = root.iterations;
+   result.attempt.residual = amrex::Math::abs(root.residual);
+   if (!root.finite) {
+      result.attempt.status = C2PStatus::NonfiniteResidual;
+      return result;
+   }
+   if (!root.converged) {
+      result.attempt.status = C2PStatus::DidNotConverge;
+      return result;
+   }
+   result.primitive = rmhd_primitive_from_kinematics(
+      generated::srmhd_reprimand_kinematics(recovery, root.root), eos
+   );
+   result.attempt.status = admissible_rmhd_primitive(result.primitive, metric)
+      ? C2PStatus::Success
+      : C2PStatus::UnphysicalPrimitiveState;
+   if constexpr (ValidateConserved) {
+      validate_rmhd_recovery(result, conserved, metric, options);
+   }
+   return result;
+}
+
+template <bool ValidateConserved = false>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDRecoveryResult recover_srmhd(
+   const RMHDConserved& conserved,
+   const SpacetimeMetric& metric,
+   const EOSParams& eos,
+   const C2PRecoveryOptions& options = {}
+) noexcept
+{
+   RMHDRecoveryResult recovered = recover_srmhd_reprimand<ValidateConserved>(
+      conserved, metric, eos, options
+   );
+   if (recovered.succeeded()) AMREX_LIKELY {
+      return recovered;
+   }
+   const int primary_iterations = recovered.attempt.iterations;
+   recovered = recover_srmhd_palenzuela_1d<ValidateConserved>(
+      conserved, metric, eos, options
+   );
+   recovered.attempt_count = 2;
+   recovered.attempt.iterations += primary_iterations;
+   return recovered;
 }
 
 template <bool ValidateConserved = false>

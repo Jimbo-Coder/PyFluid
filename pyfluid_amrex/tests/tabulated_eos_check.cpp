@@ -10,12 +10,20 @@
 #include "pyfluid_amrex/eos/tabulated_barotrope.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
+#include "pyfluid_amrex/rmhd_c2p.hpp"
 
 namespace {
 
 bool close_relative(amrex::Real left, amrex::Real right, amrex::Real tolerance)
 {
    return std::abs(left - right) <= tolerance * std::max({
+      amrex::Real{1.0e-300}, std::abs(left), std::abs(right)
+   });
+}
+
+amrex::Real relative_error(amrex::Real left, amrex::Real right)
+{
+   return std::abs(left - right) / std::max({
       amrex::Real{1.0e-300}, std::abs(left), std::abs(right)
    });
 }
@@ -111,6 +119,28 @@ bool check_table(std::string const& directory)
    const amrex::Real pressure = pyfluid_amrex::relativistic_pressure<
       pyfluid_amrex::EOSRuntime
    >(density, eps, eos);
+   const pyfluid_amrex::RelativisticCharacteristicState characteristic =
+      pyfluid_amrex::relativistic_characteristic_state<
+         pyfluid_amrex::EOSRuntime
+      >(density, eps, eos);
+   if (!close_relative(
+          characteristic.specific_enthalpy,
+          pyfluid_amrex::relativistic_specific_enthalpy<
+             pyfluid_amrex::EOSRuntime
+          >(density, eps, eos),
+          5.0e-14
+       )
+       || !close_relative(
+          characteristic.sound_speed_squared,
+          pyfluid_amrex::relativistic_sound_speed_squared<
+             pyfluid_amrex::EOSRuntime
+          >(density, eps, eos),
+          5.0e-14
+       )) {
+      std::cerr << "CompOSE characteristic closure mismatch for "
+                << directory << '\n';
+      return false;
+   }
    const pyfluid_amrex::RHDPrimitive primitive{
       density, eps, pressure, 0.23, -0.07, 0.03
    };
@@ -131,11 +161,77 @@ bool check_table(std::string const& directory)
       return false;
    }
 
+   const pyfluid_amrex::RMHDPrimitive magnetic_primitive{
+      density,
+      eps,
+      pressure,
+      0.17,
+      -0.05,
+      0.02,
+      0.3,
+      -0.2,
+      0.1,
+   };
+   const pyfluid_amrex::RMHDConserved magnetic_conserved =
+      pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+         magnetic_primitive, metric
+      );
+   const pyfluid_amrex::RMHDRecoveryResult magnetic_recovered =
+      pyfluid_amrex::recover_srmhd<true>(
+         magnetic_conserved, metric, eos
+      );
+   if (!magnetic_recovered.succeeded()) {
+      std::cerr << "RMHD CompOSE C2P recovery failed for " << directory
+                << " status="
+                << static_cast<int>(magnetic_recovered.attempt.status)
+                << " residual=" << magnetic_recovered.attempt.residual << '\n';
+      return false;
+   }
+   const pyfluid_amrex::RMHDConserved magnetic_round_trip =
+      pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+         magnetic_recovered.primitive, metric
+      );
+   const amrex::Real magnetic_primitive_error = std::max({
+      relative_error(magnetic_recovered.primitive.rho, magnetic_primitive.rho),
+      relative_error(magnetic_recovered.primitive.eps, magnetic_primitive.eps),
+      relative_error(
+         magnetic_recovered.primitive.pressure, magnetic_primitive.pressure
+      ),
+      relative_error(magnetic_recovered.primitive.v1, magnetic_primitive.v1),
+      relative_error(magnetic_recovered.primitive.v2, magnetic_primitive.v2),
+      relative_error(magnetic_recovered.primitive.v3, magnetic_primitive.v3),
+      relative_error(magnetic_recovered.primitive.b1, magnetic_primitive.b1),
+      relative_error(magnetic_recovered.primitive.b2, magnetic_primitive.b2),
+      relative_error(magnetic_recovered.primitive.b3, magnetic_primitive.b3),
+   });
+   const amrex::Real magnetic_conserved_error = std::max({
+      relative_error(magnetic_round_trip.dens, magnetic_conserved.dens),
+      relative_error(magnetic_round_trip.mom1, magnetic_conserved.mom1),
+      relative_error(magnetic_round_trip.mom2, magnetic_conserved.mom2),
+      relative_error(magnetic_round_trip.mom3, magnetic_conserved.mom3),
+      relative_error(magnetic_round_trip.tau, magnetic_conserved.tau),
+      relative_error(magnetic_round_trip.b1, magnetic_conserved.b1),
+      relative_error(magnetic_round_trip.b2, magnetic_conserved.b2),
+      relative_error(magnetic_round_trip.b3, magnetic_conserved.b3),
+   });
+   if (magnetic_primitive_error > 1.0e-5
+       || magnetic_conserved_error > 5.0e-9) {
+      std::cerr << "RMHD CompOSE C2P round trip failed for " << directory
+                << " status="
+                << static_cast<int>(magnetic_recovered.attempt.status)
+                << " residual=" << magnetic_recovered.attempt.residual
+                << " primitive_error=" << magnetic_primitive_error
+                << " conserved_error=" << magnetic_conserved_error << '\n';
+      return false;
+   }
+
    std::cout << "PASS CompOSE cold table " << directory
              << " points=" << table.size << '/' << storage->source_points()
              << " baryon_mass_mev=" << storage->baryon_mass_mev()
              << " causal_truncation="
              << (storage->was_truncated_for_causality() ? 1 : 0)
+             << " rmhd_primitive_error=" << magnetic_primitive_error
+             << " rmhd_conserved_error=" << magnetic_conserved_error
              << '\n';
    return true;
 }

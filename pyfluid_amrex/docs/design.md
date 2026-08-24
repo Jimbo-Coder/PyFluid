@@ -19,7 +19,7 @@ make a path supported.
 | Coupled evolved-Z4c matter | Validated vertical slice; long stellar evolution remains an explicit gate |
 | TOV initial data | Direct 3D Cartesian plus uniform/adaptive spherical-1D artifact and materialization paths validated |
 | XCTS rotating-star initial data | Coupled spherical `r theta` circular-RNS solve, three rotation laws, adaptive radial mapping, diagnostics, and Cartesian materialization validated; long dynamical equilibrium remains open |
-| Magnetized stellar initial data | Pressure-confined CT seed and pure-poloidal Grad--Shafranov/Bernoulli TOV/RNS coupled-XCTS owners are validated on fresh single-level 3D Cartesian grids, including cold CompOSE construction and exact-layout artifact reload; changed-grid CT and cold-EoS RMHD evolution remain open |
+| Magnetized stellar initial data | Pressure-confined CT seed and pure-poloidal Grad--Shafranov/Bernoulli TOV/RNS coupled-XCTS owners are validated on fresh single-level 3D Cartesian grids, including cold CompOSE construction and exact-layout artifact reload; changed-grid CT remains open, while t=0 cold/hybrid/CompOSE RMHD handoff now uses the common evolution recovery owner |
 | Optional equilibrium torus | Constant-`ell` test-fluid and self-gravitating XCTS components around TOV/RNS plus direct fixed-Kerr constant-`ell` and j-constant/q=1 controls use one circular-flow interface; long equilibrium and broader law calibration remain open |
 | Reusable physical-ID and sequence artifacts | Same-chart continuation and schema-v3 cross-dimension/cross-coordinate/rigid-pose handoff, including explicit radial faces, use one materialization interface |
 | Native 1D, 2D, 3D | Production build modes |
@@ -61,10 +61,9 @@ writer, scalar format, AMR hierarchy, or source-stage loop.
 
 ## EOS And Code Units
 
-HD, MHD, and RHD use the same ideal-gas, cold-polytrope, and hybrid
-thermal-polytrope closure boundary. RHD additionally supports native cold
-CompOSE tables. A polytropic run may contain up to eight density segments. The
-input supplies the first `K`,
+HD, MHD, RHD, and RMHD use the same ideal-gas, cold-polytrope, hybrid
+thermal-polytrope, and native cold-CompOSE-plus-thermal closure boundary. A
+polytropic run may contain up to eight density segments. The input supplies the first `K`,
 every density break, and each later adiabatic index; the solver derives later
 `K` values and internal-energy offsets so pressure and cold specific energy
 remain continuous.
@@ -92,13 +91,24 @@ and evolution. `pyfluid.thermal_gamma` supplies the optional gamma-law thermal
 extension. This is not finite-temperature or composition-dependent CompOSE.
 Bundled SLY4, APR, and DD2 tables live under `eos/compose/`.
 
-RMHD evolution currently accepts only `ideal_gas`. Cold and hybrid
-polytropes and cold CompOSE are also available to the supported nonmagnetized
-relativistic paths and to the fresh or exact-reload magnetized stellar
-solve-only owner. Native CompOSE evolution currently requires RHD. Adding it
-to Newtonian HD/MHD or RMHD evolution requires a dedicated validation boundary,
-and RMHD additionally requires consistent general-EoS magnetic C2P,
-signal-speed, atmosphere, and Riemann contracts.
+`EOSParams.method` is the sole runtime identity. One `EOSRuntime` production
+bundle supplies primitive recovery, P2C, flux and signal-speed thermodynamics,
+sources, atmosphere, boundaries, and diagnostics without a per-EoS evolution
+or reconstruction template product. RMHD RePrimAnd with Palenzuela1D fallback
+uses generated EoS-independent kinematics and calls that same closure for trial
+pressure and enthalpy. Ideal gas, cold polytrope, hybrid polytrope, and the
+cold-CompOSE-plus-gamma-law-thermal model are therefore supported through the
+same evolution interface. This does not implement a general finite-temperature
+or composition-dependent table: adding temperature, electron fraction, or
+other evolved composition variables requires a larger thermodynamic state and
+separate validation.
+
+The ideal-gas primitive-cache and CFL kernels are the one measured launch-level
+specialization: the host reads the same `EOSParams.method` and selects the
+ideal instantiation, while every nonideal method uses `EOSRuntime`. The
+equations and factory remain shared and the evolution bundle is unchanged.
+This avoids a per-cell branch in two vectorization-sensitive kernels without
+recreating one compiled evolution path per EoS.
 
 ## Initial-Data Solve And Handoff
 
@@ -167,7 +177,7 @@ pretending that a static library automatically reduces template rebuilds:
   CT registers, and implicit operators;
 - `src/initial_data/`: providers, materialization, elliptic solves, and TOV;
 - `src/relativity/`: C2P/cache dispatch, metric coupling, and Z4c runtime;
-- `src/kernel_bundles/`: explicit ownership of unique state-layout/CT/EOS
+- `src/kernel_bundles/`: explicit ownership of unique state-layout/CT
   specializations;
 - `tests/`, `benchmarks/`, and `tools/cpp/`: non-production executables.
 
@@ -184,19 +194,19 @@ where AMReX CPU/GPU lambdas require their definitions. Moving those headers into
 nominal libraries would not isolate rebuilds and could prevent device inlining.
 The useful compiled boundary is an evolution-kernel bundle. Its key contains
 only properties that change template instantiation: component count, CT
-topology, and EOS dispatch policy. Runtime dispatch selects a fully specialized
-bundle outside cell loops, and that bundle calls the shared numerical
-algorithms. Analytic EoS and CompOSE kernels retain specialized pointwise
-closures because a measured generic runtime closure regressed the lean hydro
-kernel. Compile-time eligibility discards CompOSE products outside the
-supported RHD/component/topology path; it does not multiply the full
-reconstruction/layout matrix. RMHD retains its ideal-gas-only signature.
+topology. Runtime dispatch selects that storage/topology bundle outside cell
+loops, and the bundle calls the shared numerical
+algorithms. Analytic EoS and CompOSE mathematics live behind the common runtime
+closure. Only ideal-gas primitive-cache and CFL evaluation retain a measured
+launch-selected specialization; CompOSE and the other nonideal choices do not
+multiply the full reconstruction/layout matrix. RMHD uses the same runtime
+closure signature.
 Physical systems with the same compile-time signature reuse one bundle; system
 identity remains explicit runtime data and is never inferred from component
 count.
 
 The evolution lifecycle follows the same boundary. It is compiled once per
-state/EOS/CT bundle and receives one immutable operation table selected before
+state/CT bundle and receives one immutable operation table selected before
 the time loop. Timestep, RK, diffusion, CT, subcycling, FillPatch, and regrid
 entries point directly to the existing specialized member templates. Indirect
 selection therefore occurs only at stage or coarse-step boundaries, never

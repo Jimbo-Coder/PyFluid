@@ -599,14 +599,10 @@ def srmhd_wave_speed_kernel(direction: int) -> StructKernel:
    if direction < 0 or direction >= 3:
       raise ValueError("SRMHD wave-speed direction must be in [0, 3)")
    primitive, metric = _rmhd_symbols()
-   gamma = sp.Symbol("gamma", positive=True)
-   ideal_gas = ideal_gas_equation_of_state()
-   sound_speed_squared = ideal_gas.relativistic_sound_speed_squared(
-      primitive.specific_internal_energy
-   ).subs({
-      ideal_gas.density: primitive.density,
-      ideal_gas.parameters[0]: gamma,
-   })
+   sound_speed_squared = sp.Symbol(
+      "sound_speed_squared", nonnegative=True
+   )
+   specific_enthalpy = sp.Symbol("specific_enthalpy", positive=True)
    velocity_squared = metric.spatial_metric.norm_squared(primitive.velocity)
    lorentz_factor_squared = 1 / (1 - velocity_squared)
    magnetic_squared = metric.spatial_metric.norm_squared(primitive.magnetic)
@@ -616,12 +612,6 @@ def srmhd_wave_speed_kernel(direction: int) -> StructKernel:
    comoving_magnetic_squared = (
       magnetic_squared / lorentz_factor_squared + magnetic_velocity**2
    )
-   specific_enthalpy = ideal_gas.relativistic_specific_enthalpy(
-      primitive.specific_internal_energy
-   ).subs({
-      ideal_gas.density: primitive.density,
-      ideal_gas.parameters[0]: gamma,
-   })
    alfven_speed_squared = comoving_magnetic_squared / (
       primitive.density * specific_enthalpy + comoving_magnetic_squared
    )
@@ -639,7 +629,8 @@ def srmhd_wave_speed_kernel(direction: int) -> StructKernel:
       arguments=(
          ("const RMHDPrimitive&", "primitive"),
          ("const SpacetimeMetric&", "metric"),
-         ("amrex::Real", "gamma"),
+         ("amrex::Real", "sound_speed_squared"),
+         ("amrex::Real", "specific_enthalpy"),
       ),
       outputs=("minus", "plus"),
       expressions=(minus, plus),
@@ -718,6 +709,7 @@ def _srmhd_palenzuela_expressions() -> tuple[
    tuple[sp.Symbol, ...],
    sp.Expr,
    tuple[sp.Expr, ...],
+   tuple[sp.Expr, ...],
 ]:
    recovery = _rmhd_recovery_symbols()
    dens = recovery.density
@@ -764,11 +756,20 @@ def _srmhd_palenzuela_expressions() -> tuple[
       *velocity.as_tuple(),
       *magnetic.as_tuple(),
    )
-   return (x, gamma), residual, primitive
+   kinematics = (
+      density,
+      specific_internal_energy,
+      lorentz_factor,
+      *velocity.as_tuple(),
+      *magnetic.as_tuple(),
+   )
+   return (x, gamma), residual, primitive, kinematics
 
 
 def srmhd_palenzuela_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
-   arguments, residual, primitive = _srmhd_palenzuela_expressions()
+   arguments, residual, primitive, kinematics = (
+      _srmhd_palenzuela_expressions()
+   )
    scalar_arguments = (
       ("const RMHDRecoveryState&", "recovery"),
       *(str(symbol) for symbol in arguments),
@@ -794,6 +795,19 @@ def srmhd_palenzuela_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
          ),
          outputs=("rho", "eps", "pressure", "v1", "v2", "v3", "b1", "b2", "b3"),
          expressions=primitive,
+      ),
+      StructKernel(
+         name="srmhd_palenzuela_kinematics",
+         return_type="RMHDRecoveryKinematics",
+         arguments=(
+            ("const RMHDRecoveryState&", "recovery"),
+            ("amrex::Real", "x"),
+         ),
+         outputs=(
+            "rho", "eps", "lorentz_factor",
+            "v1", "v2", "v3", "b1", "b2", "b3",
+         ),
+         expressions=kinematics,
       ),
    )
 
@@ -1078,6 +1092,7 @@ def _srmhd_reprimand_expressions() -> tuple[
    sp.Expr,
    sp.Expr,
    sp.Expr,
+   tuple[sp.Expr, ...],
 ]:
    """Return Kastaun's seed-free ideal-MHD master root."""
    recovery = _rmhd_recovery_symbols()
@@ -1143,6 +1158,15 @@ def _srmhd_reprimand_expressions() -> tuple[
       *velocity.as_tuple(),
       *magnetic.as_tuple(),
    )
+   kinematics = (
+      density,
+      specific_internal_energy,
+      lorentz_factor,
+      fluid_momentum_squared,
+      fluid_energy,
+      *velocity.as_tuple(),
+      *magnetic.as_tuple(),
+   )
    return (
       (mu, gamma),
       residual,
@@ -1150,13 +1174,20 @@ def _srmhd_reprimand_expressions() -> tuple[
       upper_residual,
       sp.diff(upper_residual, mu),
       lorentz_factor,
+      kinematics,
    )
 
 
 def srmhd_reprimand_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
-   arguments, residual, primitive, upper_residual, upper_derivative, lorentz_factor = (
-      _srmhd_reprimand_expressions()
-   )
+   (
+      arguments,
+      residual,
+      primitive,
+      upper_residual,
+      upper_derivative,
+      lorentz_factor,
+      kinematics,
+   ) = _srmhd_reprimand_expressions()
    scalar_arguments = (
       ("const RMHDRecoveryState&", "recovery"),
       *(str(symbol) for symbol in arguments),
@@ -1192,6 +1223,20 @@ def srmhd_reprimand_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
          ),
          outputs=("rho", "eps", "pressure", "v1", "v2", "v3", "b1", "b2", "b3"),
          expressions=primitive,
+      ),
+      StructKernel(
+         name="srmhd_reprimand_kinematics",
+         return_type="RMHDRePrimAndKinematics",
+         arguments=(
+            ("const RMHDRecoveryState&", "recovery"),
+            ("amrex::Real", "mu"),
+         ),
+         outputs=(
+            "rho", "eps", "lorentz_factor",
+            "fluid_momentum_squared", "fluid_energy",
+            "v1", "v2", "v3", "b1", "b2", "b3",
+         ),
+         expressions=kinematics,
       ),
    )
 

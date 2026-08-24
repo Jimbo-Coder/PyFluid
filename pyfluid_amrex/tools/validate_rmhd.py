@@ -197,16 +197,40 @@ def rmhd_riemann_hll_fallback_count(run_dir: Path) -> int:
 
 def validate_uniform(args: argparse.Namespace) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
    cases = (
-      ("uniform_1d", INPUTS / "rmhd_uniform_1d.in", 1),
-      ("uniform_2d_ct", INPUTS / "rmhd_uniform_2d_ct.in", 2),
+      ("uniform_1d", INPUTS / "rmhd_uniform_1d.in", 1, {}),
+      (
+         "uniform_1d_hybrid_sly",
+         INPUTS / "rmhd_uniform_1d.in",
+         1,
+         {
+            "pyfluid.eos": "hybrid_polytrope",
+            "pyfluid.eos_preset": "sly",
+            "pyfluid.thermal_gamma": "2.0",
+            "pyfluid.rho0": "1.0e-3",
+            "pyfluid.pressure0": "1.0e-4",
+         },
+      ),
+      (
+         "uniform_1d_compose_sly4",
+         INPUTS / "rmhd_uniform_1d.in",
+         1,
+         {
+            "pyfluid.eos": "compose",
+            "pyfluid.eos_table": "pyfluid_amrex/eos/compose/sly4",
+            "pyfluid.thermal_gamma": "2.0",
+            "pyfluid.rho0": "1.0e-3",
+            "pyfluid.pressure0": "1.0e-4",
+         },
+      ),
+      ("uniform_2d_ct", INPUTS / "rmhd_uniform_2d_ct.in", 2, {}),
    )
    results = []
    scalars = []
-   for name, input_path, dim in cases:
+   for name, input_path, dim, eos_options in cases:
       run_dir, scalar = run_case(
          name,
          input_path,
-         {"pyfluid.plot_int": "1000000"},
+         {"pyfluid.plot_int": "1000000", **eos_options},
          args,
          dim=dim,
       )
@@ -216,12 +240,20 @@ def validate_uniform(args: argparse.Namespace) -> tuple[list[dict[str, object]],
       spread = float(np.max(np.ptp(state.reshape(state.shape[0], -1), axis=1)))
       if spread > 64.0 * np.finfo(float).eps:
          raise RuntimeError(f"{name} free stream changed across cells: spread={spread:.3e}")
+      fallbacks, resets = relativistic_recovery_counts(run_dir)
+      if fallbacks != 0 or resets != 0:
+         raise RuntimeError(
+            f"{name} required C2P recovery fallback/reset: "
+            f"{fallbacks}/{resets}"
+         )
       results.append({
          "kind": "uniform",
          "case": name,
          "status": "PASS",
          "metric": "max_component_spread",
          "value": spread,
+         "c2p_fallbacks": fallbacks,
+         "atmosphere_resets": resets,
          "run_dir": repo_relative(run_dir),
       })
       scalars.append(scalar)

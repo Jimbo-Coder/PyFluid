@@ -268,92 +268,83 @@ RMHDConserved rmhd_flux_dir2(const RMHDPrimitive& primitive, const SpacetimeMetr
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RMHDWaveSpeeds srmhd_wave_speeds_dir0(const RMHDPrimitive& primitive, const SpacetimeMetric& metric, amrex::Real gamma) noexcept
+RMHDWaveSpeeds srmhd_wave_speeds_dir0(const RMHDPrimitive& primitive, const SpacetimeMetric& metric, amrex::Real sound_speed_squared, amrex::Real specific_enthalpy) noexcept
 {
-   const amrex::Real tmp0 = gamma*primitive.eps;
-   const amrex::Real tmp1 = tmp0 + 1;
-   const amrex::Real tmp2 = tmp0*(gamma - 1)/tmp1;
-   const amrex::Real tmp3 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
-   const amrex::Real tmp4 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
-   const amrex::Real tmp5 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
-   const amrex::Real tmp6 = ((primitive.b1*tmp3 + primitive.b2*tmp4 + primitive.b3*tmp5)*(primitive.b1*tmp3 + primitive.b2*tmp4 + primitive.b3*tmp5));
-   const amrex::Real tmp7 = primitive.b1*(metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3) + primitive.b2*(metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3) + primitive.b3*(metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3);
-   const amrex::Real tmp8 = primitive.v1*tmp3 + primitive.v2*tmp4 + primitive.v3*tmp5;
-   const amrex::Real tmp9 = tmp8 - 1;
-   const amrex::Real tmp10 = tmp7*tmp9;
-   const amrex::Real tmp11 = primitive.rho*tmp1;
-   const amrex::Real tmp12 = (-tmp10 + tmp6)/(-tmp10 + tmp11 + tmp6);
-   const amrex::Real tmp13 = tmp12*tmp2;
-   const amrex::Real tmp14 = -tmp12 + tmp13 - tmp2 + 1;
-   const amrex::Real tmp15 = primitive.v1*tmp14;
-   const amrex::Real tmp16 = tmp6 - tmp7*tmp9;
-   const amrex::Real tmp17 = tmp16/(tmp11 + tmp16);
-   const amrex::Real tmp18 = tmp8*(-tmp17*tmp2 + tmp17 + tmp2) - 1;
-   const amrex::Real tmp19 = sqrt(tmp12 - tmp13 + tmp2)*sqrt(((0) > (tmp9*(metric.inv_gamma11*tmp18 + ((primitive.v1)*(primitive.v1))*tmp14)) ? (0) : (tmp9*(metric.inv_gamma11*tmp18 + ((primitive.v1)*(primitive.v1))*tmp14))));
-   const amrex::Real tmp20 = metric.lapse/tmp18;
+   const amrex::Real tmp0 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
+   const amrex::Real tmp1 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
+   const amrex::Real tmp2 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
+   const amrex::Real tmp3 = ((primitive.b1*tmp0 + primitive.b2*tmp1 + primitive.b3*tmp2)*(primitive.b1*tmp0 + primitive.b2*tmp1 + primitive.b3*tmp2));
+   const amrex::Real tmp4 = primitive.b1*(metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3) + primitive.b2*(metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3) + primitive.b3*(metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3);
+   const amrex::Real tmp5 = primitive.v1*tmp0 + primitive.v2*tmp1 + primitive.v3*tmp2;
+   const amrex::Real tmp6 = tmp5 - 1;
+   const amrex::Real tmp7 = tmp4*tmp6;
+   const amrex::Real tmp8 = primitive.rho*specific_enthalpy;
+   const amrex::Real tmp9 = (tmp3 - tmp7)/(tmp3 - tmp7 + tmp8);
+   const amrex::Real tmp10 = sound_speed_squared*tmp9;
+   const amrex::Real tmp11 = -sound_speed_squared + tmp10 - tmp9 + 1;
+   const amrex::Real tmp12 = primitive.v1*tmp11;
+   const amrex::Real tmp13 = tmp3 - tmp4*tmp6;
+   const amrex::Real tmp14 = tmp13/(tmp13 + tmp8);
+   const amrex::Real tmp15 = tmp5*(-sound_speed_squared*tmp14 + sound_speed_squared + tmp14) - 1;
+   const amrex::Real tmp16 = sqrt(sound_speed_squared - tmp10 + tmp9)*sqrt(((0) > (tmp6*(metric.inv_gamma11*tmp15 + ((primitive.v1)*(primitive.v1))*tmp11)) ? (0) : (tmp6*(metric.inv_gamma11*tmp15 + ((primitive.v1)*(primitive.v1))*tmp11))));
+   const amrex::Real tmp17 = metric.lapse/tmp15;
    return {
-      -metric.shift1 - tmp20*(tmp15 - tmp19),
-      -metric.shift1 - tmp20*(tmp15 + tmp19)
+      -metric.shift1 - tmp17*(tmp12 - tmp16),
+      -metric.shift1 - tmp17*(tmp12 + tmp16)
    };
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RMHDWaveSpeeds srmhd_wave_speeds_dir1(const RMHDPrimitive& primitive, const SpacetimeMetric& metric, amrex::Real gamma) noexcept
+RMHDWaveSpeeds srmhd_wave_speeds_dir1(const RMHDPrimitive& primitive, const SpacetimeMetric& metric, amrex::Real sound_speed_squared, amrex::Real specific_enthalpy) noexcept
 {
-   const amrex::Real tmp0 = gamma*primitive.eps;
-   const amrex::Real tmp1 = tmp0 + 1;
-   const amrex::Real tmp2 = tmp0*(gamma - 1)/tmp1;
-   const amrex::Real tmp3 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
-   const amrex::Real tmp4 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
-   const amrex::Real tmp5 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
-   const amrex::Real tmp6 = ((primitive.b1*tmp3 + primitive.b2*tmp4 + primitive.b3*tmp5)*(primitive.b1*tmp3 + primitive.b2*tmp4 + primitive.b3*tmp5));
-   const amrex::Real tmp7 = primitive.b1*(metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3) + primitive.b2*(metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3) + primitive.b3*(metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3);
-   const amrex::Real tmp8 = primitive.v1*tmp3 + primitive.v2*tmp4 + primitive.v3*tmp5;
-   const amrex::Real tmp9 = tmp8 - 1;
-   const amrex::Real tmp10 = tmp7*tmp9;
-   const amrex::Real tmp11 = primitive.rho*tmp1;
-   const amrex::Real tmp12 = (-tmp10 + tmp6)/(-tmp10 + tmp11 + tmp6);
-   const amrex::Real tmp13 = tmp12*tmp2;
-   const amrex::Real tmp14 = -tmp12 + tmp13 - tmp2 + 1;
-   const amrex::Real tmp15 = primitive.v2*tmp14;
-   const amrex::Real tmp16 = tmp6 - tmp7*tmp9;
-   const amrex::Real tmp17 = tmp16/(tmp11 + tmp16);
-   const amrex::Real tmp18 = tmp8*(-tmp17*tmp2 + tmp17 + tmp2) - 1;
-   const amrex::Real tmp19 = sqrt(tmp12 - tmp13 + tmp2)*sqrt(((0) > (tmp9*(metric.inv_gamma22*tmp18 + ((primitive.v2)*(primitive.v2))*tmp14)) ? (0) : (tmp9*(metric.inv_gamma22*tmp18 + ((primitive.v2)*(primitive.v2))*tmp14))));
-   const amrex::Real tmp20 = metric.lapse/tmp18;
+   const amrex::Real tmp0 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
+   const amrex::Real tmp1 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
+   const amrex::Real tmp2 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
+   const amrex::Real tmp3 = ((primitive.b1*tmp0 + primitive.b2*tmp1 + primitive.b3*tmp2)*(primitive.b1*tmp0 + primitive.b2*tmp1 + primitive.b3*tmp2));
+   const amrex::Real tmp4 = primitive.b1*(metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3) + primitive.b2*(metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3) + primitive.b3*(metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3);
+   const amrex::Real tmp5 = primitive.v1*tmp0 + primitive.v2*tmp1 + primitive.v3*tmp2;
+   const amrex::Real tmp6 = tmp5 - 1;
+   const amrex::Real tmp7 = tmp4*tmp6;
+   const amrex::Real tmp8 = primitive.rho*specific_enthalpy;
+   const amrex::Real tmp9 = (tmp3 - tmp7)/(tmp3 - tmp7 + tmp8);
+   const amrex::Real tmp10 = sound_speed_squared*tmp9;
+   const amrex::Real tmp11 = -sound_speed_squared + tmp10 - tmp9 + 1;
+   const amrex::Real tmp12 = primitive.v2*tmp11;
+   const amrex::Real tmp13 = tmp3 - tmp4*tmp6;
+   const amrex::Real tmp14 = tmp13/(tmp13 + tmp8);
+   const amrex::Real tmp15 = tmp5*(-sound_speed_squared*tmp14 + sound_speed_squared + tmp14) - 1;
+   const amrex::Real tmp16 = sqrt(sound_speed_squared - tmp10 + tmp9)*sqrt(((0) > (tmp6*(metric.inv_gamma22*tmp15 + ((primitive.v2)*(primitive.v2))*tmp11)) ? (0) : (tmp6*(metric.inv_gamma22*tmp15 + ((primitive.v2)*(primitive.v2))*tmp11))));
+   const amrex::Real tmp17 = metric.lapse/tmp15;
    return {
-      -metric.shift2 - tmp20*(tmp15 - tmp19),
-      -metric.shift2 - tmp20*(tmp15 + tmp19)
+      -metric.shift2 - tmp17*(tmp12 - tmp16),
+      -metric.shift2 - tmp17*(tmp12 + tmp16)
    };
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RMHDWaveSpeeds srmhd_wave_speeds_dir2(const RMHDPrimitive& primitive, const SpacetimeMetric& metric, amrex::Real gamma) noexcept
+RMHDWaveSpeeds srmhd_wave_speeds_dir2(const RMHDPrimitive& primitive, const SpacetimeMetric& metric, amrex::Real sound_speed_squared, amrex::Real specific_enthalpy) noexcept
 {
-   const amrex::Real tmp0 = gamma*primitive.eps;
-   const amrex::Real tmp1 = tmp0 + 1;
-   const amrex::Real tmp2 = tmp0*(gamma - 1)/tmp1;
-   const amrex::Real tmp3 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
-   const amrex::Real tmp4 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
-   const amrex::Real tmp5 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
-   const amrex::Real tmp6 = ((primitive.b1*tmp3 + primitive.b2*tmp4 + primitive.b3*tmp5)*(primitive.b1*tmp3 + primitive.b2*tmp4 + primitive.b3*tmp5));
-   const amrex::Real tmp7 = primitive.b1*(metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3) + primitive.b2*(metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3) + primitive.b3*(metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3);
-   const amrex::Real tmp8 = primitive.v1*tmp3 + primitive.v2*tmp4 + primitive.v3*tmp5;
-   const amrex::Real tmp9 = tmp8 - 1;
-   const amrex::Real tmp10 = tmp7*tmp9;
-   const amrex::Real tmp11 = primitive.rho*tmp1;
-   const amrex::Real tmp12 = (-tmp10 + tmp6)/(-tmp10 + tmp11 + tmp6);
-   const amrex::Real tmp13 = tmp12*tmp2;
-   const amrex::Real tmp14 = -tmp12 + tmp13 - tmp2 + 1;
-   const amrex::Real tmp15 = primitive.v3*tmp14;
-   const amrex::Real tmp16 = tmp6 - tmp7*tmp9;
-   const amrex::Real tmp17 = tmp16/(tmp11 + tmp16);
-   const amrex::Real tmp18 = tmp8*(-tmp17*tmp2 + tmp17 + tmp2) - 1;
-   const amrex::Real tmp19 = sqrt(tmp12 - tmp13 + tmp2)*sqrt(((0) > (tmp9*(metric.inv_gamma33*tmp18 + ((primitive.v3)*(primitive.v3))*tmp14)) ? (0) : (tmp9*(metric.inv_gamma33*tmp18 + ((primitive.v3)*(primitive.v3))*tmp14))));
-   const amrex::Real tmp20 = metric.lapse/tmp18;
+   const amrex::Real tmp0 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
+   const amrex::Real tmp1 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
+   const amrex::Real tmp2 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
+   const amrex::Real tmp3 = ((primitive.b1*tmp0 + primitive.b2*tmp1 + primitive.b3*tmp2)*(primitive.b1*tmp0 + primitive.b2*tmp1 + primitive.b3*tmp2));
+   const amrex::Real tmp4 = primitive.b1*(metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3) + primitive.b2*(metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3) + primitive.b3*(metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3);
+   const amrex::Real tmp5 = primitive.v1*tmp0 + primitive.v2*tmp1 + primitive.v3*tmp2;
+   const amrex::Real tmp6 = tmp5 - 1;
+   const amrex::Real tmp7 = tmp4*tmp6;
+   const amrex::Real tmp8 = primitive.rho*specific_enthalpy;
+   const amrex::Real tmp9 = (tmp3 - tmp7)/(tmp3 - tmp7 + tmp8);
+   const amrex::Real tmp10 = sound_speed_squared*tmp9;
+   const amrex::Real tmp11 = -sound_speed_squared + tmp10 - tmp9 + 1;
+   const amrex::Real tmp12 = primitive.v3*tmp11;
+   const amrex::Real tmp13 = tmp3 - tmp4*tmp6;
+   const amrex::Real tmp14 = tmp13/(tmp13 + tmp8);
+   const amrex::Real tmp15 = tmp5*(-sound_speed_squared*tmp14 + sound_speed_squared + tmp14) - 1;
+   const amrex::Real tmp16 = sqrt(sound_speed_squared - tmp10 + tmp9)*sqrt(((0) > (tmp6*(metric.inv_gamma33*tmp15 + ((primitive.v3)*(primitive.v3))*tmp11)) ? (0) : (tmp6*(metric.inv_gamma33*tmp15 + ((primitive.v3)*(primitive.v3))*tmp11))));
+   const amrex::Real tmp17 = metric.lapse/tmp15;
    return {
-      -metric.shift3 - tmp20*(tmp15 - tmp19),
-      -metric.shift3 - tmp20*(tmp15 + tmp19)
+      -metric.shift3 - tmp17*(tmp12 - tmp16),
+      -metric.shift3 - tmp17*(tmp12 + tmp16)
    };
 }
 
@@ -387,15 +378,15 @@ RMHDConserved rmhd_flux(const RMHDPrimitive& primitive, const SpacetimeMetric& m
 
 template <int Direction>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RMHDWaveSpeeds srmhd_wave_speeds(const RMHDPrimitive& primitive, const SpacetimeMetric& metric, amrex::Real gamma) noexcept
+RMHDWaveSpeeds srmhd_wave_speeds(const RMHDPrimitive& primitive, const SpacetimeMetric& metric, amrex::Real sound_speed_squared, amrex::Real specific_enthalpy) noexcept
 {
    static_assert(Direction >= 0 && Direction < 3);
    if constexpr (Direction == 0) {
-      return srmhd_wave_speeds_dir0(primitive, metric, gamma);
+      return srmhd_wave_speeds_dir0(primitive, metric, sound_speed_squared, specific_enthalpy);
    } else if constexpr (Direction == 1) {
-      return srmhd_wave_speeds_dir1(primitive, metric, gamma);
+      return srmhd_wave_speeds_dir1(primitive, metric, sound_speed_squared, specific_enthalpy);
    } else {
-      return srmhd_wave_speeds_dir2(primitive, metric, gamma);
+      return srmhd_wave_speeds_dir2(primitive, metric, sound_speed_squared, specific_enthalpy);
    }
 }
 

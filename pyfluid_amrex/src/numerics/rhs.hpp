@@ -765,7 +765,8 @@ inline void fill_fluxes_for_components(
       if constexpr (NComp != NVAR_MHD
                     || is_characteristic_reconstruction(ReconMethod)
                     || SolidWalls || MappedPatches
-                    || EOSMethod != EOSIdealGas) {
+                    || (EOSMethod != EOSIdealGas
+                        && EOSMethod != EOSRuntime)) {
          amrex::Abort(
             "unsupported RMHD state-layout or flux-topology product reached "
             "the generic flux path"
@@ -1024,7 +1025,8 @@ inline void fill_flux_direction_for_riemann(
       if constexpr (NComp != NVAR_MHD
                     || is_characteristic_reconstruction(ReconMethod)
                     || SolidWalls || MappedPatches
-                    || EOSMethod != EOSIdealGas) {
+                    || (EOSMethod != EOSIdealGas
+                        && EOSMethod != EOSRuntime)) {
          amrex::Abort(
             "unsupported RMHD state-layout or flux-topology product reached "
             "the directional flux path"

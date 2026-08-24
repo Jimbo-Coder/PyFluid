@@ -61,14 +61,27 @@ methods and physics belong in their topic documents; coding style belongs in
 - Large host orchestration belongs in compiled `.cpp` owners. Header-only code
   is for small value types and pointwise CPU/GPU kernels where inlining is part
   of the implementation. Runtime method choice occurs outside cell loops.
+- `EOSParams.method` is the sole evolution-time EoS identity. The production
+  bundle instantiates `EOSRuntime` once for each storage/topology signature;
+  flux, signal-speed, primitive-cache, atmosphere, source, boundary, and C2P
+  launches carry that same compact value and must not carry a second method
+  integer. Adding an EoS therefore extends the closure owner rather than the
+  evolution-bundle or reconstruction template product. Introduce a specialized
+  compiled hot path only after a focused benchmark establishes a material gain
+  and keep its numerical contract equivalent to the runtime owner.
+- The measured exception is ideal-gas primitive-cache and CFL evaluation. A
+  host launch checks the canonical `EOSParams.method` once and selects the
+  `EOSIdealGas` instantiation; every nonideal method uses `EOSRuntime`. This
+  recovered the simple 2D hydro controls from `0.73--0.81` to `0.86--0.95` of
+  their strict baselines without restoring the four-EoS evolution or
+  reconstruction product. Do not extend this two-way specialization without a
+  similarly isolated measurement.
 - A tabulated EoS is loaded and validated once into immutable managed storage;
   pointwise CPU/GPU consumers receive the same small pointer/value view. Adding
   a table backend must not instantiate unsupported physics, layout, topology,
-  or characteristic products. Preserve specialized pointwise kernels where a
-  measured generic dispatch regresses throughput, and prune the added backend
-  at compile time to its validated capability boundary. The table manifest
-  states provenance and continuation policy, while runtime compatibility uses
-  a fingerprint of the normalized physics data rather than a file path.
+  or characteristic products. The table manifest states provenance and
+  continuation policy, while runtime compatibility uses a fingerprint of the
+  normalized physics data rather than a file path.
 - The standard suite runs the generated-equation numerical contracts after
   the CMake code-generation dependency has established freshness. Exact
   byte-for-byte regeneration of every expensive SymPy artifact belongs in the

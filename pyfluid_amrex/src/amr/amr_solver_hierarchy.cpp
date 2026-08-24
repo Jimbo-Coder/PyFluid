@@ -39,7 +39,6 @@ void AmrSolverBase::fill_level_primitive_cache(int lev, amrex::Real time)
       *fluid_state_.state()[lev],
       eos_params(cfg_),
       physics_system_,
-      eos_method_code(cfg_),
       fluid_state_.state()[lev]->nComp(),
       relativistic && spacetime_state_.active()
          ? spacetime_coupling_.cell_spacetime()[lev].get()

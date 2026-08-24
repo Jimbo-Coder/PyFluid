@@ -1613,9 +1613,8 @@ void validate_config(RunConfig const& cfg)
    }
    const PhysicalSystem selected_system = physical_system(cfg);
    const bool loaded_physical_id = !cfg.initial_data_input_file.empty();
-   const bool nonideal_rmhd_stellar_physical_id_only =
+   const bool rmhd_stellar_physical_id =
       selected_system == PhysicalSystem::RMHD
-      && cfg.initial_data_solve_only
       && cfg.ct == "on"
       && cfg.initial_data_magnetic == "id"
       && (cfg.ic == "tov" || cfg.ic == "rotating_star")
@@ -1684,11 +1683,9 @@ void validate_config(RunConfig const& cfg)
          amrex::Abort("the configured CompOSE table was not prepared");
       }
       if (selected_system != PhysicalSystem::RHD
-          && !nonideal_rmhd_stellar_physical_id_only) {
+          && selected_system != PhysicalSystem::RMHD) {
          amrex::Abort(
-            "native cold CompOSE evolution currently requires pyfluid.physics "
-            "= rhd; RMHD is available only for a magnetized stellar "
-            "physical-ID solve-only artifact"
+            "native cold CompOSE evolution requires pyfluid.physics = rhd or rmhd"
          );
       }
    } else if (!cfg.eos_table.empty()) {
@@ -1829,7 +1826,7 @@ void validate_config(RunConfig const& cfg)
    const InitialDataOption& selected_initial_data = initial_data_option(cfg.ic);
    if (!contains_physical_system(
           selected_initial_data.physical_systems, selected_system
-       ) && !nonideal_rmhd_stellar_physical_id_only) {
+       ) && !rmhd_stellar_physical_id) {
       amrex::Abort(
          "pyfluid.ic = " + cfg.ic
          + " is incompatible with the selected pyfluid.physics system"
@@ -1865,14 +1862,6 @@ void validate_config(RunConfig const& cfg)
       );
    }
    if (physical_system_is_relativistic(selected_system)) {
-      if (selected_system == PhysicalSystem::RMHD && cfg.eos != "ideal_gas"
-          && !nonideal_rmhd_stellar_physical_id_only) {
-         amrex::Abort(
-            "RMHD runtime evolution currently requires pyfluid.eos = "
-            "ideal_gas; cold/hybrid/tabulated RMHD is available only for "
-            "magnetized stellar physical-ID solve-only artifacts"
-         );
-      }
       if (cfg.passive_scalars != 0 || cfg.diffusion != "none"
           || cfg.source != "none" || cfg.gravity != "none" || cfg.solid_geometry != "off") {
          amrex::Abort(
@@ -1911,7 +1900,7 @@ void validate_config(RunConfig const& cfg)
       }
       if (cfg.ic == "tov" || cfg.ic == "rotating_star") {
          if ((selected_system != PhysicalSystem::RHD
-              && !nonideal_rmhd_stellar_physical_id_only)
+              && !rmhd_stellar_physical_id)
              || !spacetime_stores_state(cfg)
              || (cfg.eos != "polytrope" && cfg.eos != "hybrid_polytrope"
                  && cfg.eos != "compose")) {

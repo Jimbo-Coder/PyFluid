@@ -59,7 +59,7 @@ bool relativistic_child_is_admissible(
          blended(B3),
       };
       const RMHDRecoveryResult recovered = recover_srmhd(
-         conserved, metric, eos.gamma
+         conserved, metric, eos
       );
       return recovered.succeeded()
          && recovered.primitive.rho >= eos.rho_floor

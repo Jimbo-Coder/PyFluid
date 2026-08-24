@@ -25,7 +25,6 @@ struct FluxLaunch {
    amrex::MultiFab const& primitive;
    RunConfig const& config;
    int num_components = 0;
-   int eos_method = 0;
    int reconstruction_method = 0;
    int riemann_method = 0;
    FluxTopology topology = FluxTopology::Standard;
@@ -44,7 +43,7 @@ struct FluxLaunch {
 
 void fill_fluxes(FluxLaunch const& launch);
 
-template <int NumComponents, int EosMethod, bool SolidWalls = false, bool MappedPatches = false>
+template <int NumComponents, bool SolidWalls = false, bool MappedPatches = false>
 inline void launch_fluxes_runtime(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab const& primitive,
@@ -69,7 +68,6 @@ inline void launch_fluxes_runtime(
       primitive,
       config,
       NumComponents,
-      EosMethod,
       reconstruction_method,
       riemann_method,
       topology,
@@ -90,7 +88,6 @@ inline void launch_fluxes_runtime(
 template <
    int NumComponents,
    int Direction,
-   int EosMethod,
    bool SolidWalls = false,
    bool MappedPatches = false
 >
@@ -119,7 +116,6 @@ inline void launch_flux_direction_runtime(
       primitive,
       config,
       NumComponents,
-      EosMethod,
       reconstruction_method,
       riemann_method,
       topology,

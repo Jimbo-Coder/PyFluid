@@ -44,7 +44,6 @@
          *fluid_state_.state()[lev],
          cfg_,
          NComp,
-         EOSMethod,
          DiffusionMethod,
       };
       amrex::MultiFab const* stored_spacetime = nullptr;

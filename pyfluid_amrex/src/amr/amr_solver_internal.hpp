@@ -37,12 +37,6 @@ public:
       dispatch_evolve_eos<NComp, CTEnabled>();
    }
 
-   template <int NComp, bool CTEnabled>
-   void evolve_ideal_gas_bundle()
-   {
-      dispatch_evolve_timestep<NComp, CTEnabled, EOSIdealGas>();
-   }
-
 private:
    void repair_after_hierarchy_change(HydroConservedTotals const& target) override
    {

@@ -154,7 +154,7 @@ void store_rmhd_primitive_cache_cell(
 ) noexcept
 {
    const RMHDRecoveryResult recovered =
-      recover_relativistic_primitive_with_atmosphere<PhysicalSystem::RMHD, EOSIdealGas>(
+      recover_relativistic_primitive_with_atmosphere<PhysicalSystem::RMHD, EOSRuntime>(
          state, i, j, k, eos, metric
       );
    const amrex::Real invalid = std::numeric_limits<amrex::Real>::quiet_NaN();
@@ -182,7 +182,7 @@ void store_rmhd_primitive_cache_cell(
 ) noexcept
 {
    const RMHDRecoveryResult recovered = recover_srmhd(
-      load_rmhd_conserved(state, i, j, k), metric, eos.gamma
+      load_rmhd_conserved(state, i, j, k), metric, eos
    );
    const amrex::Real invalid = std::numeric_limits<amrex::Real>::quiet_NaN();
    const RMHDPrimitive& value = recovered.primitive;
@@ -323,12 +323,11 @@ inline void fill_primitive_cache(amrex::MultiFab& primitive, amrex::MultiFab con
    }
 }
 
-template <typename StateMultiFab>
-inline void fill_base_primitive_cache_runtime(
+template <int EOSMethod, typename StateMultiFab>
+inline void fill_base_primitive_cache(
    amrex::MultiFab& primitive,
    StateMultiFab& state,
    const EOSParams& eos,
-   int eos_method,
    PhysicalSystem system,
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
@@ -336,7 +335,7 @@ inline void fill_base_primitive_cache_runtime(
 )
 {
    if (system == PhysicalSystem::RHD) {
-      fill_rhd_primitive_cache<EOSRuntime>(
+      fill_rhd_primitive_cache<EOSMethod>(
          primitive, state, eos, geometry, spacetime, time
       );
       return;
@@ -346,11 +345,10 @@ inline void fill_base_primitive_cache_runtime(
       return;
    }
    const bool mhd = system == PhysicalSystem::MHD;
-   static_cast<void>(eos_method);
    if (mhd) {
-      fill_primitive_cache<NVAR_MHD, EOSRuntime>(primitive, state, eos);
+      fill_primitive_cache<NVAR_MHD, EOSMethod>(primitive, state, eos);
    } else {
-      fill_primitive_cache<NVAR_HYDRO, EOSRuntime>(primitive, state, eos);
+      fill_primitive_cache<NVAR_HYDRO, EOSMethod>(primitive, state, eos);
    }
 }
 

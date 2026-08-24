@@ -145,6 +145,32 @@ RMHDPrimitive srmhd_primitive_from_palenzuela(const RMHDRecoveryState& recovery,
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDRecoveryKinematics srmhd_palenzuela_kinematics(const RMHDRecoveryState& recovery, amrex::Real x) noexcept
+{
+   const amrex::Real tmp0 = 1.0_rt/(recovery.dens);
+   const amrex::Real tmp1 = recovery.magnetic_squared*tmp0;
+   const amrex::Real tmp2 = ((x)*(x));
+   const amrex::Real tmp3 = ((recovery.magnetic_momentum)*(recovery.magnetic_momentum));
+   const amrex::Real tmp4 = 1/(((recovery.dens)*(recovery.dens))*tmp2);
+   const amrex::Real tmp5 = -tmp4*(recovery.momentum_squared*tmp2 + tmp0*tmp3*(tmp1 + 2*x))/((tmp1 + x)*(tmp1 + x)) + 1;
+   const amrex::Real tmp6 = sqrt(tmp5);
+   const amrex::Real tmp7 = 1.0_rt/(tmp6);
+   const amrex::Real tmp8 = 1.0_rt/(recovery.dens*x + recovery.magnetic_squared);
+   const amrex::Real tmp9 = recovery.magnetic_momentum*tmp0/x;
+   return {
+      recovery.dens*tmp6,
+      (1.0_rt/2.0_rt)*tmp0*tmp7*(recovery.magnetic_squared*tmp5 - 2*recovery.magnetic_squared + 2*recovery.tau + tmp3*tmp4) + tmp6*x*(1 - 1/tmp5) + tmp7 - 1,
+      tmp7,
+      tmp8*(recovery.b1*tmp9 + recovery.mom1),
+      tmp8*(recovery.b2*tmp9 + recovery.mom2),
+      tmp8*(recovery.b3*tmp9 + recovery.mom3),
+      recovery.b1,
+      recovery.b2,
+      recovery.b3
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real srmhd_palenzuela_entropy_residual(const RMHDRecoveryState& recovery, amrex::Real conserved_entropy, amrex::Real x, amrex::Real gamma) noexcept
 {
    const amrex::Real tmp0 = ((x)*(x));
@@ -441,6 +467,39 @@ RMHDPrimitive srmhd_primitive_from_reprimand(const RMHDRecoveryState& recovery, 
       tmp13*(recovery.b1*tmp12 + recovery.mom1),
       tmp13*(recovery.b2*tmp12 + recovery.mom2),
       tmp13*(recovery.b3*tmp12 + recovery.mom3),
+      recovery.b1,
+      recovery.b2,
+      recovery.b3
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDRePrimAndKinematics srmhd_reprimand_kinematics(const RMHDRecoveryState& recovery, amrex::Real mu) noexcept
+{
+   const amrex::Real tmp0 = 1.0_rt/((recovery.dens)*(recovery.dens));
+   const amrex::Real tmp1 = recovery.momentum_squared*tmp0;
+   const amrex::Real tmp2 = ((mu)*(mu));
+   const amrex::Real tmp3 = 1.0_rt/(recovery.dens);
+   const amrex::Real tmp4 = mu*tmp3;
+   const amrex::Real tmp5 = recovery.magnetic_squared*tmp4 + 1;
+   const amrex::Real tmp6 = 1.0_rt/(tmp5);
+   const amrex::Real tmp7 = ((recovery.magnetic_momentum)*(recovery.magnetic_momentum));
+   const amrex::Real tmp8 = tmp6*(recovery.momentum_squared*tmp6 + tmp4*tmp7*(tmp6 + 1));
+   const amrex::Real tmp9 = tmp0*tmp8;
+   const amrex::Real tmp10 = sqrt(1 - fmin(tmp2*tmp9, tmp1/(tmp1 + 1)));
+   const amrex::Real tmp11 = 1.0_rt/(tmp10);
+   const amrex::Real tmp12 = -1.0_rt/2.0_rt*recovery.magnetic_squared + recovery.tau + (1.0_rt/2.0_rt)*tmp0*tmp2*(-recovery.magnetic_squared*recovery.momentum_squared + tmp7)/((tmp5)*(tmp5));
+   const amrex::Real tmp13 = recovery.magnetic_momentum*tmp4;
+   const amrex::Real tmp14 = tmp4*tmp6;
+   return {
+      recovery.dens*tmp10,
+      -tmp11*tmp3*(-tmp12 - tmp4*tmp8*(mu*tmp11/(tmp11 + 1) - 1)),
+      tmp11,
+      tmp9,
+      tmp12*tmp3,
+      tmp14*(recovery.b1*tmp13 + recovery.mom1),
+      tmp14*(recovery.b2*tmp13 + recovery.mom2),
+      tmp14*(recovery.b3*tmp13 + recovery.mom3),
       recovery.b1,
       recovery.b2,
       recovery.b3

@@ -108,8 +108,9 @@ decisions.
   must not duplicate physical equations.
 - Own evolution template instantiations by their compile-time signature, not by
   nominal physical-system names. The bundle key is component count, CT
-  topology, and EOS dispatch policy; systems that share that key share the
-  compiled bundle. Add a bundle only when a new signature is genuinely needed.
+  topology; EoS identity is runtime data. Systems that share that signature
+  share the compiled bundle. Add a bundle only when a new signature is
+  genuinely needed.
 - Runtime method selection belongs in a declaration-only compiled factory.
   Build and validate one immutable operation plan on the host. Do not form the
   Cartesian template product of independent run parameters: adding one method

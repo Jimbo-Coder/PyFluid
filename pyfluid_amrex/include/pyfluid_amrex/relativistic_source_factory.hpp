@@ -15,7 +15,6 @@ struct RelativisticSourceLaunch {
    amrex::Geometry const& geometry;
    EOSParams eos;
    PhysicalSystem physical_system = PhysicalSystem::RHD;
-   int eos_method = EOSIdealGas;
    amrex::MultiFab const* cell_spacetime = nullptr;
    FixedSpacetimeParameters fixed_spacetime{};
    amrex::Real time = 0.0;

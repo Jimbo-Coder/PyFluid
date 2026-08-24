@@ -73,6 +73,34 @@ struct RMHDRecoveryState {
    amrex::Real magnetic_momentum = 0.0;
 };
 
+// EoS-independent trial state produced by the generated RMHD recovery
+// kinematics.  Thermodynamic closure remains owned by EOSParams/EOSRuntime.
+struct RMHDRecoveryKinematics {
+   amrex::Real rho = 0.0;
+   amrex::Real eps = 0.0;
+   amrex::Real lorentz_factor = 1.0;
+   amrex::Real v1 = 0.0;
+   amrex::Real v2 = 0.0;
+   amrex::Real v3 = 0.0;
+   amrex::Real b1 = 0.0;
+   amrex::Real b2 = 0.0;
+   amrex::Real b3 = 0.0;
+};
+
+struct RMHDRePrimAndKinematics {
+   amrex::Real rho = 0.0;
+   amrex::Real eps = 0.0;
+   amrex::Real lorentz_factor = 1.0;
+   amrex::Real fluid_momentum_squared = 0.0;
+   amrex::Real fluid_energy = 0.0;
+   amrex::Real v1 = 0.0;
+   amrex::Real v2 = 0.0;
+   amrex::Real v3 = 0.0;
+   amrex::Real b1 = 0.0;
+   amrex::Real b2 = 0.0;
+   amrex::Real b3 = 0.0;
+};
+
 struct RMHDWaveSpeeds {
    amrex::Real minus = 0.0;
    amrex::Real plus = 0.0;

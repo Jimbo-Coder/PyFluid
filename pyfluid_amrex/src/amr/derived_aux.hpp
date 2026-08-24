@@ -29,7 +29,6 @@ inline void fill_aux_primitive_cache(
       state,
       eos_params(cfg),
       physical_system(cfg),
-      eos_method_code(cfg),
       state.nComp(),
       cell_spacetime,
       nullptr,

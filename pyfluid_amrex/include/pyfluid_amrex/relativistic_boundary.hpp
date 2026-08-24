@@ -258,7 +258,9 @@ inline void apply_metric_state_boundary(
                if (inflow_direction >= 0) {
                   primitive = {
                      inflow_rho,
-                     inflow_pressure / ((eos.gamma - 1.0) * inflow_rho),
+                     relativistic_specific_internal_energy_from_pressure<
+                        EOSMethod
+                     >(inflow_rho, inflow_pressure, eos),
                      inflow_pressure,
                      inflow_v1,
                      inflow_v2,
@@ -280,7 +282,7 @@ inline void apply_metric_state_boundary(
                   primitive = recover_srmhd(
                      load_rmhd_conserved(source_values, source_i, source_j, source_k),
                      source_metric,
-                     eos.gamma
+                     eos
                   ).primitive;
                   reflect_relativistic_velocity(
                      primitive,

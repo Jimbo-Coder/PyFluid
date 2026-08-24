@@ -144,24 +144,9 @@ void fill_layout(FluxLaunch const& launch)
 }
 
 template <int NumComponents, int ReconstructionMethod>
-void dispatch_eos(FluxLaunch const& launch)
+void fill_runtime_eos_layout(FluxLaunch const& launch)
 {
-   switch (launch.eos_method) {
-   case EOSIdealGas:
-      fill_layout<NumComponents, ReconstructionMethod, EOSIdealGas>(launch);
-      return;
-   case EOSPolytrope:
-      fill_layout<NumComponents, ReconstructionMethod, EOSPolytrope>(launch);
-      return;
-   case EOSHybridPolytrope:
-      fill_layout<NumComponents, ReconstructionMethod, EOSHybridPolytrope>(launch);
-      return;
-   case EOSCompose:
-      fill_layout<NumComponents, ReconstructionMethod, EOSCompose>(launch);
-      return;
-   default:
-      amrex::Abort("invalid EOS method in flux factory");
-   }
+   fill_layout<NumComponents, ReconstructionMethod, EOSRuntime>(launch);
 }
 
 template <int ReconstructionMethod>
@@ -169,19 +154,19 @@ void dispatch_layout(FluxLaunch const& launch)
 {
    switch (launch.num_components) {
    case NVAR_HYDRO:
-      dispatch_eos<NVAR_HYDRO, ReconstructionMethod>(launch);
+      fill_runtime_eos_layout<NVAR_HYDRO, ReconstructionMethod>(launch);
       return;
 #if PYFLUID_AMREX_ENABLE_HYDRO
    case NVAR_HYDRO + 1:
-      dispatch_eos<NVAR_HYDRO + 1, ReconstructionMethod>(launch);
+      fill_runtime_eos_layout<NVAR_HYDRO + 1, ReconstructionMethod>(launch);
       return;
 #endif
 #if PYFLUID_AMREX_ENABLE_MHD
    case NVAR_MHD:
-      dispatch_eos<NVAR_MHD, ReconstructionMethod>(launch);
+      fill_runtime_eos_layout<NVAR_MHD, ReconstructionMethod>(launch);
       return;
    case NVAR_MHD + 1:
-      dispatch_eos<NVAR_MHD + 1, ReconstructionMethod>(launch);
+      fill_runtime_eos_layout<NVAR_MHD + 1, ReconstructionMethod>(launch);
       return;
 #endif
    default:

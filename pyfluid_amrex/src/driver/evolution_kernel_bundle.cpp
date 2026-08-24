@@ -10,9 +10,7 @@ namespace evolution_kernel_bundles {
 void hydro(AmrSolver& solver);
 void hydro_passive(AmrSolver& solver);
 void mhd(AmrSolver& solver);
-void rmhd(AmrSolver& solver);
 void mhd_ct(AmrSolver& solver);
-void rmhd_ct(AmrSolver& solver);
 void mhd_passive(AmrSolver& solver);
 void mhd_passive_ct(AmrSolver& solver);
 
@@ -31,25 +29,22 @@ constexpr bool same_key(
 ) noexcept
 {
    return lhs.num_components == rhs.num_components
-      && lhs.ct_enabled == rhs.ct_enabled
-      && lhs.eos_dispatch == rhs.eos_dispatch;
+      && lhs.ct_enabled == rhs.ct_enabled;
 }
 
 constexpr EvolutionKernelBundle compiled_evolution_kernel_bundles[] = {
-   {{NVAR_HYDRO, false, EvolutionEosDispatch::Configured}, evolution_kernel_bundles::hydro},
+   {{NVAR_HYDRO, false}, evolution_kernel_bundles::hydro},
 #if PYFLUID_AMREX_ENABLE_HYDRO
-   {{NVAR_HYDRO + 1, false, EvolutionEosDispatch::Configured}, evolution_kernel_bundles::hydro_passive},
+   {{NVAR_HYDRO + 1, false}, evolution_kernel_bundles::hydro_passive},
 #endif
 #if PYFLUID_AMREX_ENABLE_MHD
-   {{NVAR_MHD, false, EvolutionEosDispatch::Configured}, evolution_kernel_bundles::mhd},
-   {{NVAR_MHD, false, EvolutionEosDispatch::IdealGas}, evolution_kernel_bundles::rmhd},
+   {{NVAR_MHD, false}, evolution_kernel_bundles::mhd},
 #if PYFLUID_AMREX_ENABLE_CT
-   {{NVAR_MHD, true, EvolutionEosDispatch::Configured}, evolution_kernel_bundles::mhd_ct},
-   {{NVAR_MHD, true, EvolutionEosDispatch::IdealGas}, evolution_kernel_bundles::rmhd_ct},
+   {{NVAR_MHD, true}, evolution_kernel_bundles::mhd_ct},
 #endif
-   {{NVAR_MHD + 1, false, EvolutionEosDispatch::Configured}, evolution_kernel_bundles::mhd_passive},
+   {{NVAR_MHD + 1, false}, evolution_kernel_bundles::mhd_passive},
 #if PYFLUID_AMREX_ENABLE_CT
-   {{NVAR_MHD + 1, true, EvolutionEosDispatch::Configured}, evolution_kernel_bundles::mhd_passive_ct},
+   {{NVAR_MHD + 1, true}, evolution_kernel_bundles::mhd_passive_ct},
 #endif
 #endif
 };

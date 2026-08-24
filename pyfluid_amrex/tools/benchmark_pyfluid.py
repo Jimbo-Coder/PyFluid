@@ -117,6 +117,30 @@ CASES = [
          "pyfluid.checkpoint_int=-1",
       ),
    ),
+   PerfCase(
+      name="rmhd1d_32768_pwc_hll_euler_3rank",
+      executable=Path("build/pyfluid_amrex/pyfluid_amrex_1d"),
+      inputs=Path("pyfluid_amrex/inputs/rmhd_uniform_1d.in"),
+      ranks=3,
+      baseline_mcells_s=1.8935269985,
+      baseline_label="runtime_eos_2026-08-23_unified",
+      overrides=(
+         "amr.n_cell=32768",
+         "amr.max_level=0",
+         "amr.max_grid_size=1024",
+         "pyfluid.max_step=128",
+         "pyfluid.final_time=-1",
+         "pyfluid.ng=1",
+         "pyfluid.eos=ideal_gas",
+         "pyfluid.recon=pwc",
+         "pyfluid.riemann=hll",
+         "pyfluid.timestep=euler",
+         "pyfluid.physical_check_int=0",
+         "pyfluid.scalar_int=128",
+         "pyfluid.plot_int=-1",
+         "pyfluid.checkpoint_int=-1",
+      ),
+   ),
 ]
 
 DEFAULT_HISTORY = Path("runs/current/performance_history.tsv")

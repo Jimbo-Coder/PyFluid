@@ -7,12 +7,10 @@ namespace pyfluid_amrex {
 void AmrSolver::evolve()
 {
    bool use_ct = false;
-   EvolutionEosDispatch eos_dispatch = EvolutionEosDispatch::Configured;
 
    if (physics_system_ == PhysicalSystem::RMHD) {
 #if PYFLUID_AMREX_ENABLE_MHD
       use_ct = ct_enabled(cfg_);
-      eos_dispatch = EvolutionEosDispatch::IdealGas;
 #else
       abort_disabled_build_feature("physics", "rmhd");
 #endif
@@ -39,7 +37,6 @@ void AmrSolver::evolve()
    const EvolutionKernelBundleKey key{
       num_state_components(),
       use_ct,
-      eos_dispatch,
    };
    const EvolutionKernelEntry entry = find_evolution_kernel_entry(key);
    if (entry == nullptr) {
@@ -47,10 +44,6 @@ void AmrSolver::evolve()
          std::string("No compiled evolution kernel bundle matches num_components=")
          + std::to_string(key.num_components)
          + " ct=" + (key.ct_enabled ? "on" : "off")
-         + " eos_dispatch="
-         + (key.eos_dispatch == EvolutionEosDispatch::IdealGas
-               ? "ideal_gas"
-               : "configured")
       );
    }
    entry(*this);

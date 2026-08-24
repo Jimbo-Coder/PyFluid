@@ -29,6 +29,7 @@ It intentionally links rather than restating the detailed contracts.
 | Diagnostics and reductions | `codegen/pyfluid_codegen/diagnostic_catalog.py`, `src/amr/amr_solver_diagnostics.cpp` | `docs/diagnostics.md` |
 | Generated equations | labeled symbolic sources under `codegen/pyfluid_codegen/` | `docs/equations.md`, `docs/equations.tex` |
 | Relativistic HD/MHD and Z4c | generated kernels, `src/relativity/{rhd_system,rmhd_system,relativistic_atmosphere}.hpp`, `include/pyfluid_amrex/relativistic_boundary.hpp`, and `src/amr/amr_solver_spacetime*.cpp` | `docs/grmhd_development.md` |
+| Runtime EoS and relativistic C2P | `include/pyfluid_amrex/eos/equation_of_state.hpp`, `include/pyfluid_amrex/{rhd_c2p,rmhd_c2p}.hpp`, generated `relativistic/c2p_*.hpp`, `tests/{generated_flux_compile_check,tabulated_eos_check}.cpp` | RePrimAnd, Spritz, and recovery-comparison references below; `docs/grmhd_development.md` |
 | RMHD HLLC/HLLD fan and closure | `include/pyfluid_amrex/{rmhd_riemann,rmhd_advanced_flux}.hpp`, `src/relativity/rmhd_advanced_flux.cpp`, `tests/rmhd_riemann_check.cpp`, and `tools/validate_rmhd_advanced_riemann.py` | Mignone--Bodo and Mignone--Ugliano--Bodo references below; Cycles 262 and 284 |
 | CT stage and AMR ownership | `src/amr/solver_sections/{ct_evolution,time_integrators,evolve_core,subcycling}.inc.hpp`, `src/numerics/ct_edge_flux_register.cpp`, and `tools/validate_ct_divb.py` | `docs/design.md`, current CT boundary in `knowledge.md` |
 | Exact SRMHD Riemann profiles | tracked `../exact_balsara/solution_b{1..5}.dat`, read by `tools/validate_rmhd.py` | Giacomazzo--Rezzolla exact solver and paper below |
@@ -470,6 +471,27 @@ High-value source/test routes include:
   small but nonzero and that output-density sensitivity is larger for Balsara
   3. See Cycle 247 for measurements and failed dense-case boundaries rather
   than treating the tracked plot tables as infinite-resolution functions.
+
+## Relativistic Primitive-Recovery References
+
+- W. Kastaun, J. V. Kalinani, and R. Ciolfi, *Robust recovery of primitive
+  variables in relativistic ideal magnetohydrodynamics*,
+  [arXiv:2005.01821](https://arxiv.org/abs/2005.01821), derives the seed-free
+  one-dimensional master root, admissibility bounds, and general
+  thermodynamic-closure requirements used as the primary RePrimAnd reference.
+  The independent local C++ implementation is routed in
+  `docs/grmhd_development.md`.
+- R. Cipolletta et al., *Spritz: General Relativistic Magnetohydrodynamics with
+  Neutrinos*, [arXiv:2107.10620](https://arxiv.org/abs/2107.10620), documents
+  a production GRMHD recovery hierarchy, tabulated-EoS integration, atmosphere
+  policy, and validation corpus. Use it to compare recovery ownership and
+  diagnostics, not as source to import.
+- D. M. Siegel et al., *Recovery schemes for primitive variables in general-
+  relativistic magnetohydrodynamics*,
+  [arXiv:1712.07538](https://arxiv.org/abs/1712.07538), compares multidimensional
+  and one-dimensional recovery methods over broad magnetization and EoS
+  regimes. It is the independent robustness/performance comparison route for
+  the maintained RePrimAnd then Palenzuela ordering.
 
 ## Modern Shock-Capturing Research Routes
 

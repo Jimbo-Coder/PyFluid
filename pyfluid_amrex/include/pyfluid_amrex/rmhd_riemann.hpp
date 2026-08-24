@@ -1,6 +1,6 @@
 #pragma once
 
-#include "pyfluid_amrex/eos/types.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/flux.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
@@ -28,6 +28,27 @@ struct SRMHDState {
    amrex::Real bt1 = 0.0;
    amrex::Real bt2 = 0.0;
 };
+
+template <int Direction>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDWaveSpeeds srmhd_wave_speeds(
+   const RMHDPrimitive& primitive,
+   const EOSParams& eos
+) noexcept
+{
+   const RelativisticCharacteristicState thermodynamics =
+      relativistic_characteristic_state<EOSRuntime>(
+         primitive.rho, primitive.eps, eos
+      );
+   return generated::srmhd_wave_speeds<Direction>(
+      primitive,
+      minkowski_spacetime_metric(),
+      amrex::max(
+         amrex::Real{0.0}, thermodynamics.sound_speed_squared
+      ),
+      thermodynamics.specific_enthalpy
+   );
+}
 
 struct SRMHDRiemannSample {
    SRMHDState state{};
@@ -616,7 +637,7 @@ AMREX_GPU_HOST_DEVICE AMREX_NO_INLINE inline
 SRMHDRiemannSample srmhd_hllc_sample(
    RMHDPrimitive primitive_l,
    RMHDPrimitive primitive_r,
-   amrex::Real gamma,
+   const EOSParams& eos,
    amrex::Real sample_speed
 ) noexcept
 {
@@ -647,12 +668,8 @@ SRMHDRiemannSample srmhd_hllc_sample(
          false,
       };
    }
-   const RMHDWaveSpeeds waves_l = generated::srmhd_wave_speeds<0>(
-      primitive_l, minkowski_spacetime_metric(), gamma
-   );
-   const RMHDWaveSpeeds waves_r = generated::srmhd_wave_speeds<0>(
-      primitive_r, minkowski_spacetime_metric(), gamma
-   );
+   const RMHDWaveSpeeds waves_l = srmhd_wave_speeds<0>(primitive_l, eos);
+   const RMHDWaveSpeeds waves_r = srmhd_wave_speeds<0>(primitive_r, eos);
    const amrex::Real speed_l = amrex::min(waves_l.minus, waves_r.minus);
    const amrex::Real speed_r = amrex::max(waves_l.plus, waves_r.plus);
    if (sample_speed <= speed_l) {
@@ -686,6 +703,20 @@ SRMHDRiemannSample srmhd_hllc_sample(
       intermediate.total_pressure,
       false,
    };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+SRMHDRiemannSample srmhd_hllc_sample(
+   RMHDPrimitive primitive_l,
+   RMHDPrimitive primitive_r,
+   amrex::Real gamma,
+   amrex::Real sample_speed
+) noexcept
+{
+   EOSParams eos{};
+   eos.method = EOSIdealGas;
+   eos.gamma = gamma;
+   return srmhd_hllc_sample(primitive_l, primitive_r, eos, sample_speed);
 }
 
 struct SRMHDHLLDVector {
@@ -1284,7 +1315,7 @@ AMREX_GPU_HOST_DEVICE AMREX_NO_INLINE inline
 SRMHDRiemannSample srmhd_hlld_sample(
    RMHDPrimitive primitive_l,
    RMHDPrimitive primitive_r,
-   amrex::Real gamma,
+   const EOSParams& eos,
    amrex::Real sample_speed
 ) noexcept
 {
@@ -1299,12 +1330,8 @@ SRMHDRiemannSample srmhd_hlld_sample(
       return {state_l, flux_l, primitive_l.v1,
               srmhd_total_pressure(primitive_l), false};
    }
-   const RMHDWaveSpeeds waves_l = generated::srmhd_wave_speeds<0>(
-      primitive_l, minkowski_spacetime_metric(), gamma
-   );
-   const RMHDWaveSpeeds waves_r = generated::srmhd_wave_speeds<0>(
-      primitive_r, minkowski_spacetime_metric(), gamma
-   );
+   const RMHDWaveSpeeds waves_l = srmhd_wave_speeds<0>(primitive_l, eos);
+   const RMHDWaveSpeeds waves_r = srmhd_wave_speeds<0>(primitive_r, eos);
    const amrex::Real speed_l = amrex::min(waves_l.minus, waves_r.minus);
    const amrex::Real speed_r = amrex::max(waves_l.plus, waves_r.plus);
    if (sample_speed <= speed_l) {
@@ -1327,7 +1354,7 @@ SRMHDRiemannSample srmhd_hlld_sample(
    );
    if (amrex::Math::abs(shared_bn) <= 1.0e-12 * magnetic_scale) {
       return srmhd_hllc_sample(
-         primitive_l, primitive_r, gamma, sample_speed
+         primitive_l, primitive_r, eos, sample_speed
       );
    }
 
@@ -1371,6 +1398,20 @@ SRMHDRiemannSample srmhd_hlld_sample(
    }
    return {fan.fast_r.state, fan.fast_r.flux, contact_speed,
            solution.total_pressure, false};
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+SRMHDRiemannSample srmhd_hlld_sample(
+   RMHDPrimitive primitive_l,
+   RMHDPrimitive primitive_r,
+   amrex::Real gamma,
+   amrex::Real sample_speed
+) noexcept
+{
+   EOSParams eos{};
+   eos.method = EOSIdealGas;
+   eos.gamma = gamma;
+   return srmhd_hlld_sample(primitive_l, primitive_r, eos, sample_speed);
 }
 
 struct RMHDRiemannFluxResult {
@@ -1523,7 +1564,7 @@ RMHDRiemannFluxResult rmhd_hllc_flux(
       primitive_r, frame
    );
    const SRMHDRiemannSample sample = srmhd_hllc_sample(
-      local_l, local_r, eos.gamma, frame.interface_speed
+      local_l, local_r, eos, frame.interface_speed
    );
    return {
       rmhd_face_sample_to_coordinate_flux<Direction>(sample, frame, metric),
@@ -1548,7 +1589,7 @@ RMHDRiemannFluxResult rmhd_hlld_flux(
       primitive_r, frame
    );
    const SRMHDRiemannSample sample = srmhd_hlld_sample(
-      local_l, local_r, eos.gamma, frame.interface_speed
+      local_l, local_r, eos, frame.interface_speed
    );
    return {
       rmhd_face_sample_to_coordinate_flux<Direction>(sample, frame, metric),

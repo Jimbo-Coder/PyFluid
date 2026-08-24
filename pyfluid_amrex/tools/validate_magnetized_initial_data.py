@@ -38,6 +38,13 @@ XCTS = re.compile(
    rf"hamiltonian_residual=({FLOAT}) lapse_residual=({FLOAT}) "
    rf"momentum_residual=({FLOAT})"
 )
+RECOVERY = re.compile(
+   r"Relativistic recovery .*?c2p_fallbacks=(\d+) atmosphere_resets=(\d+)"
+)
+PREFLIGHT = re.compile(
+   rf"Evolution preflight C2P/P2C: active_cells=(\d+) "
+   rf"max_conserved_error=({FLOAT}) max_primitive_error=({FLOAT})"
+)
 
 
 def read_metadata(artifact: Path) -> dict[str, str]:
@@ -184,32 +191,62 @@ def validate(*, ranks: int, timeout: int | None, force: bool) -> dict[str, objec
          f"response: {geometry_response:.3e}"
       )
 
-   rejection_dir = RUN_ROOT / "reject_evolution_time_seed"
-   if rejection_dir.exists():
-      shutil.rmtree(rejection_dir)
-   rejection_dir.mkdir(parents=True)
-   rejection_input = materialize_run_input(
+   handoff_dir = RUN_ROOT / "sly_tov_pressure_poloidal_handoff"
+   if handoff_dir.exists():
+      shutil.rmtree(handoff_dir)
+   handoff_dir.mkdir(parents=True)
+   handoff_input = materialize_run_input(
       BASE_INPUT,
-      rejection_dir / "input.in",
+      handoff_dir / "input.in",
       {
-         "pyfluid.run_name": rejection_dir.name,
-         "pyfluid.output_dir": repo_relative(rejection_dir),
+         "pyfluid.run_name": handoff_dir.name,
+         "pyfluid.output_dir": repo_relative(handoff_dir),
+         "initial_data.input_file": repo_relative(artifact),
          "initial_data.output_file": repo_relative(
-            rejection_dir / "physical_id"
+            handoff_dir / "physical_id"
          ),
+         "initial_data.magnetic_seed": "none",
          "initial_data.solve_only": "0",
+         "pyfluid.max_step": "0",
+         "pyfluid.final_time": "-1",
+         "pyfluid.scalar_int": "1",
+         "pyfluid.plot_int": "-1",
       },
    )
-   rejected = run_amrex(
-      dim=3, input_path=rejection_input, ranks=ranks, timeout=timeout
+   handoff = run_amrex(
+      dim=3, input_path=handoff_input, ranks=ranks, timeout=timeout
    )
-   (rejection_dir / "run.log").write_text(rejected.stdout)
-   expected_rejection = (
-      "magnetic initial-data seeds currently require a fresh 3D Cartesian "
-      "RMHD+CT stellar coupled-XCTS solve-only artifact without a disk"
+   (handoff_dir / "run.log").write_text(handoff.stdout)
+   if handoff.returncode != 0:
+      raise RuntimeError(
+         "loaded magnetized stellar handoff failed; see "
+         f"{repo_relative(handoff_dir / 'run.log')}"
+      )
+   preflight = PREFLIGHT.search(handoff.stdout)
+   if preflight is None:
+      raise RuntimeError("loaded magnetized handoff omitted its C2P/P2C preflight")
+   active_cells = int(preflight.group(1))
+   handoff_conserved_error = float(preflight.group(2))
+   handoff_primitive_error = float(preflight.group(3))
+   if active_cells != 24**3 or max(
+      handoff_conserved_error, handoff_primitive_error
+   ) > 1.0e-10:
+      raise RuntimeError(
+         "loaded magnetized stellar handoff failed its C2P/P2C contract: "
+         f"cells={active_cells} conserved={handoff_conserved_error:.3e} "
+         f"primitive={handoff_primitive_error:.3e}"
+      )
+   recovery_matches = RECOVERY.findall(handoff.stdout)
+   if not recovery_matches:
+      raise RuntimeError("loaded magnetized handoff omitted its C2P summary")
+   handoff_fallbacks, handoff_resets = (
+      int(value) for value in recovery_matches[-1]
    )
-   if rejected.returncode == 0 or expected_rejection not in rejected.stdout:
-      raise RuntimeError("evolution-time magnetic seed did not fail honestly")
+   if handoff_fallbacks != 0 or handoff_resets != 0:
+      raise RuntimeError(
+         "loaded magnetized stellar handoff required C2P repair: "
+         f"{handoff_fallbacks}/{handoff_resets}"
+      )
 
    artifact_bytes = sum(
       path.stat().st_size for path in artifact.rglob("*") if path.is_file()
@@ -228,6 +265,11 @@ def validate(*, ranks: int, timeout: int | None, force: bool) -> dict[str, objec
       "artifact_divb_linf": artifact_divergence,
       "geometry_response_linf": geometry_response,
       "constraint_residual": constraint_residual,
+      "handoff_active_cells": active_cells,
+      "handoff_conserved_error": handoff_conserved_error,
+      "handoff_primitive_error": handoff_primitive_error,
+      "handoff_c2p_fallbacks": handoff_fallbacks,
+      "handoff_atmosphere_resets": handoff_resets,
       "artifact_bytes": artifact_bytes,
       "run_dir": repo_relative(run_dir),
    }
@@ -247,6 +289,8 @@ def main() -> int:
       f"divb={row['artifact_divb_linf']:.3e} "
       f"bmax={row['maximum_comoving_field']:.3e} "
       f"dgeometry={row['geometry_response_linf']:.3e} "
+      f"handoff={row['handoff_conserved_error']:.3e}/"
+      f"{row['handoff_primitive_error']:.3e} "
       f"artifact={row['artifact_bytes']}B"
    )
    return 0

@@ -30,7 +30,7 @@ RMHDPrimitive admissibility_limit_rmhd_primitive(
    amrex::Real pressure_floor
 ) noexcept
 {
-   const RHDPrimitive limited = admissibility_limit_rhd_primitive<EOSIdealGas>(
+   const RHDPrimitive limited = admissibility_limit_rhd_primitive<EOSRuntime>(
       {face.rho, face.eps, face.pressure, face.v1, face.v2, face.v3},
       {center.rho, center.eps, center.pressure, center.v1, center.v2, center.v3},
       eos,
@@ -45,6 +45,28 @@ RMHDPrimitive admissibility_limit_rmhd_primitive(
    face.v2 = limited.v2;
    face.v3 = limited.v3;
    return face;
+}
+
+template <int Direction>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDWaveSpeeds rmhd_wave_speeds(
+   const RMHDPrimitive& primitive,
+   const SpacetimeMetric& metric,
+   const EOSParams& eos
+) noexcept
+{
+   const RelativisticCharacteristicState thermodynamics =
+      relativistic_characteristic_state<EOSRuntime>(
+         primitive.rho, primitive.eps, eos
+      );
+   return generated::srmhd_wave_speeds<Direction>(
+      primitive,
+      metric,
+      amrex::max(
+         amrex::Real{0.0}, thermodynamics.sound_speed_squared
+      ),
+      thermodynamics.specific_enthalpy
+   );
 }
 
 template <int ReconMethod, int Direction, typename MetricAccessor>
@@ -186,11 +208,11 @@ RMHDConserved rmhd_hll_flux(
    );
    const RMHDConserved flux_l = generated::rmhd_flux<Direction>(primitive_l, metric);
    const RMHDConserved flux_r = generated::rmhd_flux<Direction>(primitive_r, metric);
-   const RMHDWaveSpeeds speed_l = generated::srmhd_wave_speeds<Direction>(
-      primitive_l, metric, eos.gamma
+   const RMHDWaveSpeeds speed_l = rmhd_wave_speeds<Direction>(
+      primitive_l, metric, eos
    );
-   const RMHDWaveSpeeds speed_r = generated::srmhd_wave_speeds<Direction>(
-      primitive_r, metric, eos.gamma
+   const RMHDWaveSpeeds speed_r = rmhd_wave_speeds<Direction>(
+      primitive_r, metric, eos
    );
    const amrex::Real speed_minus = amrex::min(
       0.0, amrex::min(speed_l.minus, speed_r.minus)
@@ -226,11 +248,11 @@ RMHDConserved rmhd_llf_flux(
    );
    const RMHDConserved flux_l = generated::rmhd_flux<Direction>(primitive_l, metric);
    const RMHDConserved flux_r = generated::rmhd_flux<Direction>(primitive_r, metric);
-   const RMHDWaveSpeeds speed_l = generated::srmhd_wave_speeds<Direction>(
-      primitive_l, metric, eos.gamma
+   const RMHDWaveSpeeds speed_l = rmhd_wave_speeds<Direction>(
+      primitive_l, metric, eos
    );
-   const RMHDWaveSpeeds speed_r = generated::srmhd_wave_speeds<Direction>(
-      primitive_r, metric, eos.gamma
+   const RMHDWaveSpeeds speed_r = rmhd_wave_speeds<Direction>(
+      primitive_r, metric, eos
    );
    const amrex::Real wavespeed = amrex::max(
       amrex::max(amrex::Math::abs(speed_l.minus), amrex::Math::abs(speed_l.plus)),

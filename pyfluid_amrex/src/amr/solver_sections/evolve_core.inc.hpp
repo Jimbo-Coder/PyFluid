@@ -28,15 +28,7 @@
    template <int NComp, bool CTEnabled>
    void dispatch_evolve_eos()
    {
-      if (eos_method_ == EOSPolytrope) {
-         dispatch_evolve_timestep<NComp, CTEnabled, EOSPolytrope>();
-      } else if (eos_method_ == EOSHybridPolytrope) {
-         dispatch_evolve_timestep<NComp, CTEnabled, EOSHybridPolytrope>();
-      } else if (eos_method_ == EOSCompose) {
-         dispatch_evolve_timestep<NComp, CTEnabled, EOSCompose>();
-      } else {
-         dispatch_evolve_timestep<NComp, CTEnabled, EOSIdealGas>();
-      }
+      dispatch_evolve_timestep<NComp, CTEnabled, EOSRuntime>();
    }
 
    template <int NComp, bool CTEnabled, int EOSMethod>
@@ -242,41 +234,6 @@
             average_down_face_b();
             sync_all_cell_b_from_faces(fluid_state_.state(), false);
          }
-      }
-      const bool id_only_rmhd_without_runtime_c2p =
-         cfg_.initial_data_solve_only
-         && physics_system_ == PhysicalSystem::RMHD
-         && cfg_.eos != "ideal_gas";
-      if (id_only_rmhd_without_runtime_c2p) {
-         for (int lev = 0; lev <= finestLevel(); ++lev) {
-            if (primitive_[lev]->contains_nan(
-                   0, primitive_[lev]->nComp(), 0
-                )
-                || fluid_state_.state()[lev]->contains_nan(
-                   0, fluid_state_.state()[lev]->nComp(), 0
-                )) {
-               amrex::Abort(
-                  "non-ideal RMHD physical-ID state is nonfinite"
-               );
-            }
-         }
-         if (amrex::ParallelDescriptor::IOProcessor()) {
-            std::filesystem::create_directories(cfg_.output_dir);
-            write_run_parameter_file(
-               (std::filesystem::path(cfg_.output_dir) / "run.in").string()
-            );
-         }
-         write_physical_initial_data_artifact(
-            cfg_.initial_data_output_file,
-            cfg_.initial_data_angular_velocity,
-            false
-         );
-         amrex::Print()
-            << "Physical-ID preflight: finite non-ideal RMHD primitive and "
-               "conserved fields; evolution C2P round trip intentionally "
-               "deferred until that EoS is supported\n"
-            << "completed initial-data-only solve and artifact write\n";
-         return;
       }
       reset_barotropic_energy_all_levels<NComp, EOSMethod>();
       (this->*operations.fill_boundaries)(fluid_state_.state(), time);

@@ -157,21 +157,31 @@ amrex::Real rmhd_signal_frequency_cell(
 ) noexcept
 {
    const RMHDRecoveryResult recovered = recover_srmhd(
-      load_rmhd_conserved(state, i, j, k), metric, eos.gamma
+      load_rmhd_conserved(state, i, j, k), metric, eos
    );
    if (!recovered.succeeded()) {
       return std::numeric_limits<amrex::Real>::infinity();
    }
    const RMHDPrimitive& primitive = recovered.primitive;
+   const RelativisticCharacteristicState thermodynamics =
+      relativistic_characteristic_state<EOSRuntime>(
+         primitive.rho, primitive.eps, eos
+      );
    const RMHDWaveSpeeds speed1 = generated::srmhd_wave_speeds<0>(
-      primitive, metric, eos.gamma
+      primitive,
+      metric,
+      thermodynamics.sound_speed_squared,
+      thermodynamics.specific_enthalpy
    );
    amrex::Real frequency = amrex::max(
       amrex::Math::abs(speed1.minus), amrex::Math::abs(speed1.plus)
    ) / dx[0];
 #if (AMREX_SPACEDIM >= 2)
    const RMHDWaveSpeeds speed2 = generated::srmhd_wave_speeds<1>(
-      primitive, metric, eos.gamma
+      primitive,
+      metric,
+      thermodynamics.sound_speed_squared,
+      thermodynamics.specific_enthalpy
    );
    frequency += amrex::max(
       amrex::Math::abs(speed2.minus), amrex::Math::abs(speed2.plus)
@@ -179,7 +189,10 @@ amrex::Real rmhd_signal_frequency_cell(
 #endif
 #if (AMREX_SPACEDIM == 3)
    const RMHDWaveSpeeds speed3 = generated::srmhd_wave_speeds<2>(
-      primitive, metric, eos.gamma
+      primitive,
+      metric,
+      thermodynamics.sound_speed_squared,
+      thermodynamics.specific_enthalpy
    );
    frequency += amrex::max(
       amrex::Math::abs(speed3.minus), amrex::Math::abs(speed3.plus)
@@ -1053,29 +1066,19 @@ amrex::Real dispatch_diffusion(int diffusion_method, Operation&& operation)
 }
 
 template <int NumComponents, typename Operation>
-amrex::Real dispatch_eos(SignalSpeedLaunch const& launch, Operation&& operation)
+amrex::Real dispatch_runtime_eos(
+   SignalSpeedLaunch const& launch,
+   Operation&& operation
+)
 {
-   switch (launch.eos_method) {
-   case EOSIdealGas:
+   if (eos_method_code(launch.config) == EOSIdealGas) {
       return dispatch_diffusion<NumComponents, EOSIdealGas>(
          launch.diffusion_method, operation
       );
-   case EOSPolytrope:
-      return dispatch_diffusion<NumComponents, EOSPolytrope>(
-         launch.diffusion_method, operation
-      );
-   case EOSHybridPolytrope:
-      return dispatch_diffusion<NumComponents, EOSHybridPolytrope>(
-         launch.diffusion_method, operation
-      );
-   case EOSCompose:
-      return dispatch_diffusion<NumComponents, EOSCompose>(
-         launch.diffusion_method, operation
-      );
-   default:
-      amrex::Abort("invalid EOS method in signal-speed factory");
-      return 0.0;
    }
+   return dispatch_diffusion<NumComponents, EOSRuntime>(
+      launch.diffusion_method, operation
+   );
 }
 
 template <typename Operation>
@@ -1083,13 +1086,13 @@ amrex::Real dispatch_layout(SignalSpeedLaunch const& launch, Operation&& operati
 {
    switch (launch.num_components) {
    case NVAR_HYDRO:
-      return dispatch_eos<NVAR_HYDRO>(launch, operation);
+      return dispatch_runtime_eos<NVAR_HYDRO>(launch, operation);
    case NVAR_HYDRO + 1:
-      return dispatch_eos<NVAR_HYDRO + 1>(launch, operation);
+      return dispatch_runtime_eos<NVAR_HYDRO + 1>(launch, operation);
    case NVAR_MHD:
-      return dispatch_eos<NVAR_MHD>(launch, operation);
+      return dispatch_runtime_eos<NVAR_MHD>(launch, operation);
    case NVAR_MHD + 1:
-      return dispatch_eos<NVAR_MHD + 1>(launch, operation);
+      return dispatch_runtime_eos<NVAR_MHD + 1>(launch, operation);
    default:
       amrex::Abort("unsupported state layout in signal-speed factory");
       return 0.0;
@@ -1168,9 +1171,9 @@ amrex::Real compute_mapped_hydro_adaptive_dt(
    };
    switch (launch.num_components) {
    case NVAR_HYDRO:
-      return dispatch_eos<NVAR_HYDRO>(launch, operation);
+      return dispatch_runtime_eos<NVAR_HYDRO>(launch, operation);
    case NVAR_HYDRO + 1:
-      return dispatch_eos<NVAR_HYDRO + 1>(launch, operation);
+      return dispatch_runtime_eos<NVAR_HYDRO + 1>(launch, operation);
    default:
       amrex::Abort("mapped-patch signal-speed launch requires a hydro state layout");
       return 0.0;

@@ -6282,3 +6282,76 @@ I will always continue from the last cycle marked as `in_progress`.
   rebuilt after the implementation edit, with no new template product. The
   evolution-throughput benchmark was intentionally not repeated because no
   timestep, reconstruction, Riemann, or RHS kernel changed. [DONE]
+
+## Cycle 312 — Runtime-EoS GRMHD ownership (DONE)
+
+- Audit the apparent ideal-gas-only GRMHD boundary against the existing EoS,
+  recovery, flux, source, and evolution dispatch. Preserve the extensive
+  gamma-law Balsara evidence while distinguishing it from cold/hybrid/tabulated
+  stellar evolution. The code already owns a compact GPU-copyable `EOSParams`
+  runtime view and `EOSRuntime` closure; the inconsistency is that RMHD C2P,
+  atmosphere projection, characteristic speeds, and top-level evolution still
+  hard-code or separately instantiate EoS methods. [DONE]
+- Implement one EoS-independent RMHD recovery owner whose generated algebra is
+  kinematic and whose thermodynamic closure is supplied by the uniform runtime
+  EoS view. Do not add an EoS template product, per-EoS recovery routine,
+  virtual per-cell dispatch, or a second EoS declaration source. The generated
+  Palenzuela and RePrimAnd trial states now expose only kinematics; runtime
+  residuals and primitive construction query pressure/enthalpy from the same
+  `EOSParams` view used by P2C. The legacy ideal candidates remain independent
+  regression controls rather than production dispatch. [DONE]
+- Route evolution, flux/source, atmosphere, and primitive-cache consumers
+  through the same `EOSRuntime` instantiation where the numerical algorithm is
+  unchanged. Measure ideal-gas throughput and compiled-product impact rather
+  than assuming either specialization or runtime branching wins. Removed the
+  top-level `EvolutionEosDispatch` axis and its duplicate RMHD bundles, the
+  four-way EoS factory products, and redundant launch-level `eos_method`
+  values; `EOSParams.method` is authoritative. Fluxes, sources, boundaries,
+  atmosphere, interpolation, preflight, and RMHD recovery use the shared
+  runtime closure. [DONE]
+- Add pointwise round trips and short RMHD evolution controls for ideal gas,
+  hybrid/piecewise-polytropic, and cold CompOSE-plus-thermal closures. Retain
+  zero recovery/reset and scalar/constraint requirements; do not claim general
+  finite-temperature/composition support from the present cold table. The
+  analytic runtime matrix has worst primitive/conserved errors
+  `1.069e-15/2.220e-16`. SLY4/DD2/APR CompOSE RMHD round trips have worst full-
+  primitive errors `2.20e-10/1.75e-9/2.83e-6` and conserved errors below
+  `8.86e-16`. One-step CFL-0.9 ideal, hybrid-SLy, and CompOSE-SLY4 free streams
+  remain exactly uniform with zero C2P fallback/reset. The standard RMHD gate,
+  including exact Balsara, AMR+CT, restart, and physical-ID cases, passes.
+  [DONE]
+- Rebuild all dimensions, run focused and integration gates, update the compact
+  ownership/knowledge boundary, and commit only a coherent validated tranche.
+  A saved `24^3` magnetized SLy artifact passes the real evolution startup
+  preflight at conserved/primitive errors `2.334e-12/3.995e-12`, with zero
+  fallback/reset. Four-step coarse-star experiments with both PWC/Euler and
+  MP5/SSPRK3 produce many surface resets and remain an explicitly underresolved
+  long-evolution limitation rather than the t=0 EoS handoff gate. [DONE]
+- A matched three-rank ideal-RMHD PWC/HLL/Euler control at 32768 cells and 128
+  steps measures `2.038` Mcells/s at pre-tranche `d8e7c08` versus `1.895`
+  Mcells/s for the unified runtime recovery, about seven percent slower. This
+  is now a permanent `1.89353` Mcells/s regression control instead of grounds
+  for restoring four per-EoS kernel families. Fully generic per-cell cache/CFL
+  dispatch independently reproduced the known lean-2D regression at
+  `0.81/0.73` of the three/four-rank baselines. A host-selected ideal-gas
+  primitive-cache/CFL specialization restored those controls to `0.95/0.86`;
+  final 3D PWC/high-order controls pass at `0.92/0.94` and RMHD at `1.00`.
+  This is the only measured two-way EoS fast path and does not restore an EoS
+  evolution or reconstruction product. [DONE]
+- Compiled-product evidence: the final 1D executable is `33,540,512` bytes with
+  `13,741` symbols versus `34,859,520` bytes and `21,915` symbols at the old
+  specialized baseline, about 3.8 percent smaller and 37 percent fewer symbols;
+  Mach-O `__TEXT` is about one percent larger. A deliberate public factory-API
+  edit rebuilt every reconstruction object in all dimensions in `368.75 s`,
+  exposing the existing registry fan-out. The later ideal cache/CFL change
+  rebuilt six factory objects and linked all dimensions in `3.23 s`; the final
+  no-op production build is `0.62 s`. The detached baseline clean build is not
+  directly comparable because cache state was not normalized. [DONE]
+- The first complete standard attempt caught a stale symbolic harness input:
+  generated RMHD wave speeds now take closure-owned enthalpy and sound speed,
+  but `validate_codegen_flux.py` supplied only gamma. Supplying the exact ideal-
+  gas control values repaired the contract without changing production. Final
+  generated, Riemann/tetrad, CompOSE, architecture, Python compile, 1D/2D/3D
+  production build, focused RMHD/magnetized-ID, and complete standard controls
+  pass. The exact final tree is 49/49 standard gates in `227.401 s` summed gate
+  time. [DONE]

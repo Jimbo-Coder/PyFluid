@@ -37,4 +37,9 @@ struct EOSThermodynamicState {
    amrex::Real pressure;
 };
 
+struct RelativisticCharacteristicState {
+   amrex::Real specific_enthalpy = 1.0;
+   amrex::Real sound_speed_squared = 0.0;
+};
+
 } // namespace pyfluid_amrex

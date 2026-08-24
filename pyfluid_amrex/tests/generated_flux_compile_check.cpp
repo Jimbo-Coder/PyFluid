@@ -2415,6 +2415,122 @@ bool validate_srmhd_round_trips()
    return true;
 }
 
+bool validate_runtime_eos_rmhd_round_trips()
+{
+   pyfluid_amrex::EOSParams eos{};
+   eos.gamma = 1.4;
+   eos.thermal_gamma = 1.6;
+   eos.polytrope_segments = 1;
+   eos.segment_k[0] = 0.2;
+   eos.segment_gamma[0] = 1.8;
+   const pyfluid_amrex::SpacetimeMetric metric =
+      pyfluid_amrex::minkowski_spacetime_metric();
+   amrex::Real worst_primitive_error = 0.0;
+   amrex::Real worst_conserved_error = 0.0;
+   amrex::Real worst_characteristic_error = 0.0;
+
+   for (int eos_method : {
+           pyfluid_amrex::EOSIdealGas,
+           pyfluid_amrex::EOSPolytrope,
+           pyfluid_amrex::EOSHybridPolytrope,
+        }) {
+      eos.method = eos_method;
+      for (amrex::Real rho : {0.01, 0.3, 1.7}) {
+         const amrex::Real cold_energy =
+            pyfluid_amrex::eos_cold_energy_density<pyfluid_amrex::EOSRuntime>(
+               rho, eos
+            );
+         const amrex::Real thermal_specific_energy =
+            eos_method == pyfluid_amrex::EOSPolytrope ? 0.0 : 0.07;
+         pyfluid_amrex::RMHDPrimitive primitive{
+            rho,
+            cold_energy / rho + thermal_specific_energy,
+            0.0,
+            0.21,
+            -0.08,
+            0.04,
+            0.3,
+            -0.2,
+            0.1,
+         };
+         primitive.pressure = pyfluid_amrex::relativistic_pressure<
+            pyfluid_amrex::EOSRuntime
+         >(primitive.rho, primitive.eps, eos);
+         const pyfluid_amrex::RelativisticCharacteristicState
+            characteristic =
+               pyfluid_amrex::relativistic_characteristic_state<
+                  pyfluid_amrex::EOSRuntime
+               >(primitive.rho, primitive.eps, eos);
+         worst_characteristic_error = std::max(
+            worst_characteristic_error,
+            scaled_max_error(
+               std::array<amrex::Real, 2>{
+                  characteristic.specific_enthalpy,
+                  characteristic.sound_speed_squared,
+               },
+               std::array<amrex::Real, 2>{
+                  pyfluid_amrex::relativistic_specific_enthalpy<
+                     pyfluid_amrex::EOSRuntime
+                  >(primitive.rho, primitive.eps, eos),
+                  pyfluid_amrex::relativistic_sound_speed_squared<
+                     pyfluid_amrex::EOSRuntime
+                  >(primitive.rho, primitive.eps, eos),
+               }
+            )
+         );
+         const pyfluid_amrex::RMHDConserved conserved =
+            pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+               primitive, metric
+            );
+         const pyfluid_amrex::RMHDRecoveryResult recovered =
+            pyfluid_amrex::recover_srmhd<true>(
+               conserved, metric, eos
+            );
+         if (!recovered.succeeded()) {
+            std::cerr << "runtime-EOS RMHD recovery failed EOS=" << eos_method
+                      << " rho=" << rho
+                      << " method="
+                      << static_cast<int>(recovered.attempt.method)
+                      << " status="
+                      << static_cast<int>(recovered.attempt.status)
+                      << " residual=" << recovered.attempt.residual << '\n';
+            return false;
+         }
+         const pyfluid_amrex::RMHDConserved conserved_round_trip =
+            pyfluid_amrex::generated::rmhd_primitive_to_conserved(
+               recovered.primitive, metric
+            );
+         worst_primitive_error = std::max(
+            worst_primitive_error,
+            scaled_max_error(
+               components(recovered.primitive), components(primitive)
+            )
+         );
+         worst_conserved_error = std::max(
+            worst_conserved_error,
+            scaled_max_error(
+               components(conserved_round_trip), components(conserved)
+            )
+         );
+      }
+   }
+   if (worst_primitive_error > 2.0e-8
+       || worst_conserved_error > 5.0e-10
+       || worst_characteristic_error > 5.0e-15) {
+      std::cerr << "runtime-EOS RMHD round-trip residuals primitive="
+                << worst_primitive_error
+                << " conserved=" << worst_conserved_error
+                << " characteristic=" << worst_characteristic_error << '\n';
+      return false;
+   }
+   std::cout << "RMHD runtime-EOS C2P matrix primitive_error="
+             << worst_primitive_error
+             << " conserved_error=" << worst_conserved_error
+             << " characteristic_error=" << worst_characteristic_error
+             << '\n';
+   return true;
+}
+
 pyfluid_amrex::HydroState hydro_llf_reference(
    pyfluid_amrex::HydroState const& flux_l,
    pyfluid_amrex::HydroState const& flux_r,
@@ -3037,6 +3153,7 @@ int main()
        || !validate_initial_atmosphere_profiles()
        || !validate_srhd_round_trips()
        || !validate_srmhd_round_trips()
+       || !validate_runtime_eos_rmhd_round_trips()
        || !validate_fixed_spacetime_provider()
        || !validate_z4c_pointwise_bridge()
        || !validate_z4c_constraints()) {

@@ -17,7 +17,6 @@ struct SignalSpeedLaunch {
    amrex::MultiFab const& state;
    RunConfig const& config;
    int num_components = 0;
-   int eos_method = 0;
    int diffusion_method = 0;
 };
 

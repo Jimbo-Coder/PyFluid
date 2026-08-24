@@ -205,7 +205,7 @@ RelativisticRoundTripResult evaluate_rmhd_round_trip(
 {
    RelativisticRoundTripResult result;
    const RMHDRecoveryResult initial_recovery = recover_srmhd(
-      initial_conserved, metric, eos.gamma
+      initial_conserved, metric, eos
    );
    if (!initial_recovery.succeeded()) {
       result.failure_reason = 10
@@ -216,7 +216,7 @@ RelativisticRoundTripResult evaluate_rmhd_round_trip(
    const RMHDConserved regenerated_conserved =
       generated::rmhd_primitive_to_conserved(initial_recovery.primitive, metric);
    const RMHDRecoveryResult regenerated_recovery = recover_srmhd(
-      regenerated_conserved, metric, eos.gamma
+      regenerated_conserved, metric, eos
    );
    if (!regenerated_recovery.succeeded()) {
       result.failure_reason = 20
@@ -380,7 +380,7 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level_runtime(
 {
    if (system == PhysicalSystem::RMHD) {
       return evaluate_relativistic_preflight_level<
-         PhysicalSystem::RMHD, EOSIdealGas
+         PhysicalSystem::RMHD, EOSRuntime
       >(state, valid_mask, cell_spacetime, geometry, fixed_spacetime, eos, time,
         require_round_trip);
    }

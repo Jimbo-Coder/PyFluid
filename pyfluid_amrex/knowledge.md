@@ -10,8 +10,9 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-23, branch `main`, through Cycle 311's focused
-coordinate-equivalent ID/materialization handoff. Cycle 310's focused
+Last reconciled: 2026-08-24, branch `main`, through Cycle 312's runtime-EoS
+RHD/RMHD evolution ownership. Cycle 311's focused coordinate-equivalent
+ID/materialization handoff and Cycle 310's focused
 magnetized-artifact reload and CompOSE hardening and Cycle 309's complete
 standard/performance controls remain the preceding broad integration evidence;
 Cycle 308 is the preceding preserved baseline and Cycle 284 the older reference
@@ -63,6 +64,17 @@ baseline.
   SRMHD, fixed curved GRHD/GRMHD, and evolved-Z4c matter use the shared
   relativistic system rather than separate flat-space physics implementations.
   Analytic Minkowski is a host-selected metric specialization.
+- `EOSParams.method` is the sole production EoS identity. HD/MHD/RHD/RMHD
+  instantiate one `EOSRuntime` evolution owner; flux, signal speed, primitive
+  cache, atmosphere, sources, boundaries, and RMHD C2P consume the same compact
+  closure view. Current support is ideal gas, cold polytrope, hybrid
+  polytrope, and cold CompOSE plus gamma-law thermal pressure. The latter is
+  not a finite-temperature or composition-dependent CompOSE implementation.
+- One measured exception keeps ideal-gas primitive-cache and CFL evaluation
+  specialized after a host check of that same runtime tag; all nonideal methods
+  share `EOSRuntime`. Fully generic per-cell dispatch regressed the simple 2D
+  hydro controls to `0.73--0.81` of baseline, while this narrow fast path
+  restored `0.86--0.95` without an EoS evolution/reconstruction product.
 - Production reconstruction acts on primitive variables. For relativistic
   velocity it reconstructs `z^i = W v^i`, with metric-consistent boundary
   handling. The validated production configuration for discontinuous RMHD
@@ -319,9 +331,9 @@ baseline.
   plane normal to its magnetic axis (the usual equatorial half-domain). A
   transverse plane reverses the axial magnetic moment and is not a symmetry;
   reject it rather than treating a dipole as an unmagnetized TOV octant.
-  Cold/hybrid RMHD artifacts remain solve-only until runtime C2P supports
-  those EoS choices. Cross-grid and cross-chart CT materialization also remain
-  unsupported.
+  Cold/hybrid/CompOSE RMHD artifacts now pass the common runtime C2P/P2C
+  preflight and may enter evolution on an exact layout. Cross-grid and
+  cross-chart CT materialization remain unsupported.
 - A schema-v3 constructed magnetic artifact can be loaded and reserialized on
   its exact layout without rerunning the magnetic equilibrium. The reader must
   restore portable primitives even when exact evolution caches exist and must
@@ -336,8 +348,9 @@ baseline.
 - The same pure-poloidal Grad--Shafranov owner is validated with the bundled
   cold CompOSE SLY4 table: the focused `24^3` control has XCTS residual
   `6.26e-15`, Grad--Shafranov residual `1.90e-6`, Bernoulli residual
-  `5.55e-7`, and CT divergence `4.57e-20`. This is CompOSE magnetic-ID support,
-  not general-EoS RMHD evolution support.
+  `5.55e-7`, and CT divergence `4.57e-20`. Its exact-layout t=0 evolution
+  handoff uses the same runtime CompOSE RMHD recovery owner; long stellar
+  equilibrium remains a separate evolution validation boundary.
 - On the coarse `24^3`, radius-16 Cartesian RNS control, the finite-domain ADM
   diagnostic gives `M_ADM > M_b` by about 1.5 percent in both the magnetized
   and matched unmagnetized models. The nonlinear poloidal field changes that
@@ -658,15 +671,20 @@ baseline.
 - Short rotating-star evolution is currently cleaner with PWL than MP5 at the
   surface. Do not weaken rest-mass gates to promote MP5; a conservative stellar
   surface treatment and longer evolution evidence are still required.
+- The `24^3` magnetized SLy artifact passes exact-layout RMHD startup preflight
+  at `2.33e-12/4.00e-12` conserved/primitive error with zero repair. Four-step
+  experiments at CFL 0.9 nevertheless produce many surface atmosphere resets
+  with both PWC/Euler and MP5/SSPRK3 because the star spans only a few cells.
+  Treat this as an underresolved long-evolution boundary, not an EoS handoff
+  failure and not a reason to weaken reset accounting.
 - Native CompOSE support currently means one-parameter cold beta-equilibrium
   barotropes plus an explicitly configured gamma-law thermal extension; it is
   not finite-temperature or composition-dependent CompOSE. The immutable
   table view is shared by TOV/RNS construction, cold enthalpy
-  inversion, relativistic pressure/energy closure, signal
-  speeds, atmosphere projection, C2P/P2C, physical-ID materialization, and RHD
-  evolution. Native CompOSE evolution is intentionally RHD-only; RMHD remains
-  ideal-gas-only until its C2P and advanced Riemann contracts support a general
-  EoS.
+  inversion, relativistic pressure/energy closure, signal speeds, atmosphere
+  projection, C2P/P2C, physical-ID materialization, and RHD/RMHD evolution.
+  The RMHD contract is validated for the present cold-plus-thermal closure; it
+  does not imply general finite-temperature or composition-dependent support.
 - The cold reader uses the CompOSE `Q1=p/n_b` and
   `Q7=e/(n_b m_n)-1` quantities in `G=c=M_sun=1`, retains the tabulated total
   energy density, selects one table-specific baryon-mass normalization so the

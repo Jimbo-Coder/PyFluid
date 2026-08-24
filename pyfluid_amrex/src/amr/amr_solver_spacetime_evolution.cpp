@@ -116,7 +116,7 @@ void AmrSolverBase::apply_stored_spacetime_fluid_boundaries_range(
             *spacetime_coupling_.cell_spacetime()[lev]
          );
       } else if (physics_system_ == PhysicalSystem::RMHD) {
-         apply_stored_metric_state_boundary<PhysicalSystem::RMHD, EOSIdealGas>(
+         apply_stored_metric_state_boundary<PhysicalSystem::RMHD, EOSRuntime>(
             *state[lev],
             Geom(lev),
             boundary_data_,
@@ -157,7 +157,7 @@ void AmrSolverBase::fill_spacetime_matter_range(int lev_begin, int lev_end)
             *spacetime_coupling_.cell_spacetime()[lev], eos_params(cfg_)
          );
       } else if (physics_system_ == PhysicalSystem::RMHD) {
-         fill_eulerian_matter_cells<PhysicalSystem::RMHD, EOSIdealGas>(
+         fill_eulerian_matter_cells<PhysicalSystem::RMHD, EOSRuntime>(
             cell_matter,
             *primitive_[lev],
             *spacetime_coupling_.cell_spacetime()[lev],

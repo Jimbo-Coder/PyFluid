@@ -36,18 +36,21 @@ responds to the metric. It is not a second Cowling/fixed branch.
 ## EOS And Initial-Data Ownership
 
 The selected EOS is one immutable run property consumed by initialization,
-P2C/C2P, fluxes, sources, boundaries, diagnostics, and every RK stage. HD, MHD,
-and RHD support `ideal_gas`, `polytrope`, and `hybrid_polytrope`. RMHD currently
-supports `ideal_gas` only because its maintained RePrimAnd/Palenzuela recovery
-residuals are generated for that closure; unsupported RMHD EOS choices are
-rejected before allocation rather than silently using another EOS.
+P2C/C2P, fluxes, sources, boundaries, diagnostics, and every RK stage.
+`EOSParams.method` is its only runtime identity. HD, MHD, RHD, and RMHD use one
+`EOSRuntime` production bundle for `ideal_gas`, `polytrope`,
+`hybrid_polytrope`, and cold `compose` plus the configured gamma-law thermal
+extension. The launch interfaces do not retain a second EoS selector and adding
+an EoS does not add an evolution/reconstruction template product.
 
 Analytic EoS ownership is under `include/pyfluid_amrex/eos/` and `src/eos/`.
 Custom polytropic segments and the named Read-fit presets (`sly`, `apr4`, `h4`,
 and `ms1`) are assembled there into the same continuous runtime representation.
-The eventual finite-temperature tabulated-EoS implementation belongs in this
-module; it must not introduce a second dispatch path in initial data, C2P, or
-evolution kernels.
+The current CompOSE model is a one-parameter cold beta-equilibrium barotrope
+plus a gamma-law thermal extension. It is not a finite-temperature or
+composition-dependent table. That eventual implementation belongs in this
+module and must extend the thermodynamic state without introducing a second
+dispatch path in initial data, C2P, or evolution kernels.
 
 An initial-data provider normally supplies one self-consistent fluid and
 spacetime solution in physical coordinates. A provider advertises those groups
@@ -216,16 +219,18 @@ and subluminal velocity. The validation corpus additionally recomputes P2C and
 checks the full conserved residual; production does not pay for that redundant
 P2C evaluation on every recovery.
 
-The measured production ideal-energy RMHD policy is:
+The production energy-evolving RMHD policy is:
 
 1. RePrimAnd, the seed-free bracketed master-root method;
 2. Palenzuela1D, an independent bracketed Newton/bisection fallback.
 
-Both residuals and primitive reconstructions are generated from the same
-ideal-gas RMHD equations. On the maintained regular corpus, RePrimAnd is about
-2.4 times faster than Palenzuela1D and is at least as robust. The fallback is
-entered only after RePrimAnd returns a reasoned failure; adding another
-candidate does not add work to successful earlier candidates.
+The generator owns the EoS-independent recovery kinematics. Each trial calls
+the same runtime closure used by P2C, fluxes, and sources for pressure and
+enthalpy; primitive construction therefore cannot silently revert to ideal
+gas. On the maintained ideal-gas corpus, RePrimAnd is about 2.4 times faster
+than Palenzuela1D and is at least as robust. The fallback is entered only after
+RePrimAnd returns a reasoned failure; adding another candidate does not add
+work to successful earlier candidates.
 
 The complete implemented candidate catalog is Noble2D, Palenzuela1D,
 RePrimAnd, Noble1D entropy, Palenzuela1D entropy, and Font1D. They are not

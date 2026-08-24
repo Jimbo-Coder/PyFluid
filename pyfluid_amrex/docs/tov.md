@@ -620,5 +620,6 @@ currently a fresh, single-level, 3D Cartesian, solve-only stellar artifact
 owner. This makes the constraints consistent with the magnetic field, but the
 fluid first integral remains unmagnetized: the result is a pressure-confined
 magnetic seed, not a magnetohydrostatic equilibrium. Full force balance needs a
-magnetized Euler/Grad--Shafranov matter owner. Cold/hybrid RMHD artifacts also
-cannot begin evolution until runtime C2P supports that EoS.
+magnetized Euler/Grad--Shafranov matter owner. Cold/hybrid/CompOSE RMHD
+artifacts now pass the common runtime C2P/P2C preflight on an exact layout;
+their long dynamical-equilibrium validation remains separate.

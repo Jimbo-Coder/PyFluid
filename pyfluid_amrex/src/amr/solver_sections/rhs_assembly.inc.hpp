@@ -33,7 +33,6 @@
             *state[lev],
             *spacetime_coupling_.cell_spacetime()[lev],
             physics_system_,
-            EOSMethod,
             eos,
             recovery_atmosphere_,
             ghost_cells,
@@ -179,7 +178,6 @@
          state,
          eos_params(cfg_),
          physics_system_,
-         EOSMethod,
          NComp,
          relativistic && !analytic_fixed_spacetime
             ? spacetime_coupling_.cell_spacetime()[lev].get()
@@ -245,7 +243,7 @@
          if ((profile_.flux_detail_enabled() || stored_spacetime != nullptr) && !use_mapped_patches) {
             amrex::Real detail_start = profile_.begin();
             if (use_solid_mask) {
-               launch_flux_direction_runtime<NComp, 0, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 0, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -257,7 +255,7 @@
                   rhs_time
                );
             } else {
-               launch_flux_direction_runtime<NComp, 0, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 0>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
                   rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_,
                   step_rmhd_riemann_hll_fallback_count_.dataPtr()
@@ -267,7 +265,7 @@
 #if (AMREX_SPACEDIM >= 2)
             detail_start = profile_.begin();
             if (use_solid_mask) {
-               launch_flux_direction_runtime<NComp, 1, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 1, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -279,7 +277,7 @@
                   rhs_time
                );
             } else {
-               launch_flux_direction_runtime<NComp, 1, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 1>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
                   rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_,
                   step_rmhd_riemann_hll_fallback_count_.dataPtr()
@@ -290,7 +288,7 @@
 #if (AMREX_SPACEDIM == 3)
             detail_start = profile_.begin();
             if (use_solid_mask) {
-               launch_flux_direction_runtime<NComp, 2, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 2, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -302,7 +300,7 @@
                   rhs_time
                );
             } else {
-               launch_flux_direction_runtime<NComp, 2, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 2>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
                   rhs_time, nullptr, nullptr, stored_spacetime, &recovery_atmosphere_,
                   step_rmhd_riemann_hll_fallback_count_.dataPtr()
@@ -312,7 +310,7 @@
 #endif
          } else {
             if (use_mapped_patches) {
-               launch_fluxes_runtime<NComp, EOSMethod, false, true>(
+               launch_fluxes_runtime<NComp, false, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -326,7 +324,7 @@
                   &patch_layout
                );
             } else if (use_solid_mask) {
-               launch_fluxes_runtime<NComp, EOSMethod, true>(
+               launch_fluxes_runtime<NComp, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -338,7 +336,7 @@
                   rhs_time
                );
             } else {
-               launch_fluxes_runtime<NComp, EOSMethod>(
+               launch_fluxes_runtime<NComp>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
                   rhs_time, nullptr, nullptr, &recovery_atmosphere_,
                   step_rmhd_riemann_hll_fallback_count_.dataPtr()
@@ -433,7 +431,6 @@
                Geom(lev),
                eos_params(cfg_),
                physics_system_,
-               EOSMethod,
                stored_spacetime,
                fixed_spacetime_parameters(cfg_),
                rhs_time,
@@ -775,7 +772,7 @@
          if (profile_.flux_detail_enabled()) {
             amrex::Real detail_start = profile_.begin();
             if (use_solid_mask) {
-               launch_flux_direction_runtime<NComp, 0, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 0, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -787,7 +784,7 @@
                   rhs_time
                );
             } else {
-               launch_flux_direction_runtime<NComp, 0, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 0>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
                   rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_,
                   step_rmhd_riemann_hll_fallback_count_.dataPtr()
@@ -797,7 +794,7 @@
 #if (AMREX_SPACEDIM >= 2)
             detail_start = profile_.begin();
             if (use_solid_mask) {
-               launch_flux_direction_runtime<NComp, 1, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 1, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -809,7 +806,7 @@
                   rhs_time
                );
             } else {
-               launch_flux_direction_runtime<NComp, 1, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 1>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
                   rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_,
                   step_rmhd_riemann_hll_fallback_count_.dataPtr()
@@ -820,7 +817,7 @@
 #if (AMREX_SPACEDIM == 3)
             detail_start = profile_.begin();
             if (use_solid_mask) {
-               launch_flux_direction_runtime<NComp, 2, EOSMethod, true>(
+               launch_flux_direction_runtime<NComp, 2, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -832,7 +829,7 @@
                   rhs_time
                );
             } else {
-               launch_flux_direction_runtime<NComp, 2, EOSMethod>(
+               launch_flux_direction_runtime<NComp, 2>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
                   rhs_time, nullptr, nullptr, nullptr, &recovery_atmosphere_,
                   step_rmhd_riemann_hll_fallback_count_.dataPtr()
@@ -842,7 +839,7 @@
 #endif
          } else {
             if (use_solid_mask) {
-               launch_fluxes_runtime<NComp, EOSMethod, true>(
+               launch_fluxes_runtime<NComp, true>(
                   fluxes,
                   *primitive_[lev],
                   cfg_,
@@ -854,7 +851,7 @@
                   rhs_time
                );
             } else {
-               launch_fluxes_runtime<NComp, EOSMethod>(
+               launch_fluxes_runtime<NComp>(
                   fluxes, *primitive_[lev], cfg_, recon_method, riemann_method_, nullptr, &Geom(lev), nullptr,
                   rhs_time, nullptr, nullptr, &recovery_atmosphere_,
                   step_rmhd_riemann_hll_fallback_count_.dataPtr()
