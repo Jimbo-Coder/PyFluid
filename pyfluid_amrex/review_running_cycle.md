@@ -6387,3 +6387,30 @@ I will always continue from the last cycle marked as `in_progress`.
   five symbols above the generic tree while remaining 3.2% smaller and 37%
   lower-symbol than the old EoS-specialized tree. Architecture, Python compile,
   and the final three-gate AMReX quick integration suite also pass. [DONE]
+
+## Cycle 314 — Single-object ID/handoff consolidation audit (DONE)
+
+- Source-check the current solve-only, physical-ID, rematerialization,
+  continuation, and short-evolution contracts before adding more coordinate or
+  object combinations. Unmagnetized TOV/RNS and their aligned disk variants
+  already own reduced/full-storage equivalence, explicit mapped coordinates,
+  reflection/periodic closure, changed-grid and larger-domain handoff, EoS
+  identity, exact-cache reload, C2P/P2C preflight, and short Cartesian
+  evolution. Exact full-grid Kerr--Schild is also reusable; the
+  constraint-solved black-hole owner remains an exterior Schwarzschild shell,
+  not a full-grid spinning/excision solution. [DONE]
+- Identify the narrow pre-binary infrastructure seam rather than proposing
+  arbitrary superposition of final fields. `PhysicalInitialDataMetadata`, the
+  artifact writer/reader, sequence writer, and Python report repeat a fixed
+  central-object-plus-one-disk metadata shape; solved summaries are appended
+  after the base artifact write. A future generated artifact schema should own
+  typed keys and component records while handwritten C++ retains conditional
+  physics compatibility. Artifact completion should become transactional and
+  the sequence index should publish a model only after final validation. [DONE]
+- Treat a future N-object layer as a runtime component/source assembly plan:
+  components may provide poses, free-data seeds, matter sources, support, and
+  diagnostics, but one global constraint/fluid solve owns the accepted ID.
+  Superposition is an initial guess or an explicitly labeled test-field
+  approximation, not a general physical-ID result. Do not introduce an object
+  count, coordinate, EoS, or formulation template product. No production code
+  changed in this audit cycle. [DONE]
