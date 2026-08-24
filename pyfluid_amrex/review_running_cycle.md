@@ -6588,3 +6588,51 @@ I will always continue from the last cycle marked as `in_progress`.
   2D case remains a marginal warning at `116.39` Mcells/s (85%), reproducing
   the same machine/OpenMPI scaling boundary measured before this change; it
   does not isolate a source regression. [DONE]
+
+## Cycle 318 — Reproducible AMReX dependency update (DONE)
+
+- Inventory repository-local native dependencies and distinguish production
+  linkage from Homebrew packages, uv-locked Python packages, and reference/data
+  assets. Confirm the installed AMReX version and the latest official stable
+  tag before changing local state. AMReX was the only repository-local linked
+  native dependency: CMake, MPI, compilers, ccache, and parallel HDF5 remain
+  Homebrew-owned; Python packages remain `uv.lock`-owned; Athena and CompOSE
+  remain reference/data assets. The installed 25.11 source resolved to
+  `6dd6d69bdb7c9efd4e210e1c459a897d1b02d21f`; the latest official stable tag
+  was 26.08 at `21cb5b49b49c7beeca22002535d79b3d8a609e95`. [DONE]
+- Replace the unversioned manual dependency lifecycle with one small tracked
+  AMReX manifest and a check-by-default update helper. Build source, build tree,
+  and install under versioned `.deps` paths; verify MPI, HDF5, linear solvers,
+  and 1D/2D/3D support before activating the stable canonical install path.
+  Preserve the old install and roll back activation if the PyFluid production
+  rebuild fails. `dependencies/amrex.toml` now owns the exact release and
+  resolved commit. `tools/manage_amrex.py` checks local/remote state by default,
+  supports an offline check, and updates only with `--update`. The 25.11 install
+  is preserved as `.deps/amrex-25.11-mpi-lsolvers-hdf5`; the canonical install
+  link now selects the versioned 26.08 install. [DONE]
+- Reconfigure and rebuild PyFluid against the updated AMReX release, repair
+  only real compatibility changes, and audit version-specific limitation notes
+  against the new source rather than mechanically replacing version strings.
+  The full 1D/2D/3D production target rebuilt against 26.08 without a PyFluid
+  compatibility patch. Source audit confirmed that `MLCurlCurl` still rejects
+  multiple AMR levels and 1D `MLNodeLaplacian::reflux` still aborts, so both
+  restrictions remain. PyFluid already uses AMReX `face_divfree_interp` for
+  face-field transfers and therefore receives 26.08's generalized preservation
+  of spatially varying underlying coarse divergence without a second path.
+  A locked uv sync resolved 125 and checked 122 packages without changing the
+  lock. [DONE]
+- Run the architecture/codegen/build gates, the quick MPI integration suite,
+  focused AMR/CT and elliptic controls warranted by upstream changes, then
+  update installation/continuity documentation and commit one bounded
+  dependency-maintenance tranche. Architecture and exhaustive code generation
+  pass. The quick suite passes. Standalone Brio-Wu AMR+CT passes with rotated
+  uniform error `4.141e-15`, rotated AMR error `3.895e-15`, and AMR improvement
+  factor `2.112`. The three-rank 2D elliptic executable passes TOV/Komar,
+  rotation-law, perturbation, torus, adaptive spherical Poisson, vector
+  Poisson, TOV/Schwarzschild XCTS, and CTT controls while reporting AMReX 26.08.
+  The exact final tree passes every standard-suite gate, including RMHD,
+  reduced/CompOSE/magnetized ID handoff, AMR/CT, curvilinear, multipatch,
+  analytic, and reference cases. The final no-op production build is `0.99 s`.
+  A runtime throughput comparison was intentionally not used because three
+  unrelated long-lived C++ indexers were each consuming a CPU core during this
+  cycle. [DONE]

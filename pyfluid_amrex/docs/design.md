@@ -28,7 +28,7 @@ make a path supported.
 | CT with explicit resistivity | Production for validated Cartesian cases |
 | Hydro implicit viscosity | Available; use its focused validation |
 | Cartesian periodic implicit CT resistivity | Available in 2D/3D on one AMR level; use its focused validation |
-| Multilevel or curvilinear implicit CT resistivity | Unsupported by the AMReX 25.11 `MLCurlCurl` backend |
+| Multilevel or curvilinear implicit CT resistivity | Unsupported by the AMReX 26.08 `MLCurlCurl` backend |
 | Homogeneous Cartesian multipatch | Hydro-only finite-volume path; use multipatch gate |
 | Cylindrical/spherical single patch | Coordinate-general kernel path; validate the exact method combination |
 | Mixed Cartesian-curvilinear shell layouts | Geometry/maps and sampling only; seam evolution is experimental |
@@ -476,7 +476,7 @@ mismatches. CT resistivity is the corresponding edge-EMF contribution. These
 explicit operators are generated from the same coordinate-independent physics
 across every supported dimension and coordinate family. The implicit CT update
 uses the same generated resistive EMF and CT curl update, but its linear solve
-is limited to one-level Cartesian 2D/3D by AMReX 25.11 `MLCurlCurl`.
+is limited to one-level Cartesian 2D/3D by AMReX 26.08 `MLCurlCurl`.
 Fluid viscosity and diffusion are currently Newtonian-only; configuration
 rejects RHD/RMHD combinations rather than silently applying those operators.
 

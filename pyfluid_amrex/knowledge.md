@@ -10,8 +10,9 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-24, branch `main`, through Cycle 317's generated AMR
-policy, RK-stage CT ownership, and cross-system hardening. Cycle 316's
+Last reconciled: 2026-08-24, branch `main`, through Cycle 318's AMReX 26.08
+dependency update and reproducible check/update lifecycle. Cycle 317's generated
+AMR policy, RK-stage CT ownership, and cross-system hardening, Cycle 316's
 saved-RNS evolution/restart harness and code-generation dependency cleanup,
 Cycle 315's generated physical-ID metadata and component-ready handoff, and Cycle 313's
 measured ideal-RMHD C2P optimization, and Cycle 312's runtime-EoS RHD/RMHD
@@ -29,6 +30,11 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
 - The production implementation is C++/AMReX. Python research tools are
   baselines, offline operators, or postprocessing unless a task explicitly
   promotes and validates a production implementation.
+- The native framework pin is AMReX 26.08 commit
+  `21cb5b49b49c7beeca22002535d79b3d8a609e95`. The tracked manifest owns this
+  identity; the build consumes a stable link to a versioned install. The
+  check-by-default dependency helper updates only on explicit request and
+  preserves/rolls back the previous install if the production rebuild fails.
 - A compile, focused executable, smoke run, standard suite, full suite,
   performance benchmark, and MPI-rank comparison are different evidence.
   Report them separately and attach claims to the exact revision or dirty tree.
@@ -216,6 +222,12 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
 - AMR follows the standard finite-volume contract: FillPatch/prolongation,
   flux-register reflux, average-down of covered cells, and for CT edge-EMF
   reflux plus face average-down. These operations are not interchangeable.
+- PyFluid already routes all face components together through AMReX's
+  `face_divfree_interp`. AMReX 26.08 generalizes that interpolation so fine
+  ghost-cell divergence matches a spatially varying underlying coarse-cell
+  divergence. Keep the existing AMR+CT validation before changing transfer
+  ownership; the upstream improvement is not permission to add a second CT
+  prolongation path.
 - Full GRMHD does not have one universal "tag every evolved field" policy.
   Production evidence separates geometry/vacuum tracking, matter support,
   object-following boxes, and targeted magnetic/shear science criteria. The
@@ -261,6 +273,10 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
 - The local AMReX build has no OpenMP support. Forced-small-tile 2D/3D boundary
   regressions validate output and ownership semantics, but they do not execute
   the former writes concurrently; an OpenMP-enabled run remains useful.
+- AMReX 26.08 still asserts that `MLCurlCurl` has one AMR level, and its 1D
+  `MLNodeLaplacian::reflux` still aborts. The corresponding implicit-CT and 1D
+  nodal-solve restrictions remain real; do not remove them based only on the
+  version update.
 - The present transfer limiter has CPU evidence. Retrieving a device failure
   flag after every interpolater call creates a likely GPU synchronization
   point; batch status at a FillPatch owner before claiming GPU performance

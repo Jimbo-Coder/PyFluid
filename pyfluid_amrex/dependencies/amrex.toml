@@ -1,0 +1,4 @@
+schema_version = 1
+repository = "https://github.com/AMReX-Codes/amrex.git"
+version = "26.08"
+commit = "21cb5b49b49c7beeca22002535d79b3d8a609e95"

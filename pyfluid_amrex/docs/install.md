@@ -1,54 +1,60 @@
 # Local AMReX Dependency
 
-The canonical PyFluid AMReX install is local to this repository:
+PyFluid pins its one repository-local production dependency in
+`dependencies/amrex.toml`. The current release is AMReX 26.08 at the exact
+source commit declared there. Homebrew continues to own CMake, MPI, compilers,
+ccache, and parallel HDF5; `uv.lock` owns Python packages. Athena and CompOSE
+trees are reference/data assets rather than linked native dependencies.
 
-    source:  .deps/amrex-25.11
-    build:   .deps/build-amrex-mpi-lsolvers-hdf5
-    install: .deps/amrex-mpi-lsolvers-hdf5
+The AMReX layout is versioned and the build consumes one stable link:
 
-It is built with MPI, AMR, linear solvers, parallel HDF5, and 1D/2D/3D targets.
-This is the install selected by the full-release CMake preset.
+    source:  .deps/amrex-26.08
+    build:   .deps/build-amrex-26.08-mpi-lsolvers-hdf5
+    install: .deps/amrex-26.08-mpi-lsolvers-hdf5
+    active:  .deps/amrex-mpi-lsolvers-hdf5 -> amrex-26.08-mpi-lsolvers-hdf5
 
-Homebrew `hdf5-mpi` supplies parallel HDF5. Compressed HDF5 plotfiles are the
-default; native AMReX plotfiles remain an explicit runtime option.
+The installed library enables MPI, AMR, linear solvers, parallel HDF5, and
+1D/2D/3D targets. This is the install selected by the CMake preset and local
+machine profile.
 
-Install and activate the MPI variant before configuring AMReX:
+## Check Or Update
+
+The dependency helper checks only by default. It compares the tracked pin,
+managed source commit, installed feature contract, and latest official stable
+release:
+
+    uv run python pyfluid_amrex/tools/manage_amrex.py
+
+For a network-free local consistency check:
+
+    uv run python pyfluid_amrex/tools/manage_amrex.py --offline
+
+To update to the latest official stable release:
+
+    uv run python pyfluid_amrex/tools/manage_amrex.py --update
+
+An explicit release may be selected with `--version YY.MM`. Update mode clones
+the exact release tag, verifies its resolved source commit, builds and installs
+under versioned `.deps` paths, checks MPI/HDF5/linear-solver/dimension support,
+then activates the stable link and rebuilds every PyFluid production dimension.
+The previous AMReX install is preserved. If the PyFluid rebuild fails, the
+helper restores the former link and rebuilds against the former install before
+returning failure. It never updates Homebrew or uv packages.
+
+After a successful update, run the quick suite plus any focused tests warranted
+by the upstream release notes before committing the new manifest pin. AMR/CT
+interpolation and elliptic solvers are normal focused checks for AMReX updates.
+
+## Homebrew Prerequisites
+
+Homebrew `hdf5-mpi` supplies parallel HDF5. Install and activate the MPI variant
+before updating AMReX:
 
     brew unlink hdf5  # only when the serial formula is currently linked
     brew install hdf5-mpi
 
-## Rebuild
-
-Do not modify the AMReX source tree for PyFluid work. Reconfigure and rebuild
-the dedicated dependency build:
-
-    cmake -S .deps/amrex-25.11 -B .deps/build-amrex-mpi-lsolvers-hdf5 \
-      -DCMAKE_INSTALL_PREFIX=$PWD/.deps/amrex-mpi-lsolvers-hdf5 \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_C_COMPILER=/opt/homebrew/bin/mpicc \
-      -DCMAKE_CXX_COMPILER=/opt/homebrew/bin/mpicxx \
-      -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/hdf5-mpi \
-      -DHDF5_ROOT=/opt/homebrew/opt/hdf5-mpi \
-      '-DAMReX_SPACEDIM=1;2;3' \
-      -DAMReX_MPI=ON \
-      -DAMReX_OMP=OFF \
-      -DAMReX_FORTRAN=OFF \
-      -DAMReX_PARTICLES=OFF \
-      -DAMReX_LINEAR_SOLVERS=ON \
-      -DAMReX_LINEAR_SOLVERS_INCFLO=ON \
-      -DAMReX_LINEAR_SOLVERS_EM=ON \
-      -DAMReX_HDF5=ON
-
-    cmake --build .deps/build-amrex-mpi-lsolvers-hdf5 -j 3
-    cmake --install .deps/build-amrex-mpi-lsolvers-hdf5
-
-Verify the install contract:
-
-    rg 'AMReX_MPI_FOUND|AMReX_LSOLVERS_FOUND|AMReX_HDF5_FOUND|AMReX_SPACEDIM' \
-      .deps/amrex-mpi-lsolvers-hdf5/lib/cmake/AMReX/AMReXConfig.cmake
-
-Expected values are MPI on, linear solvers on, HDF5 on, and space dimensions
-1;2;3.
+Compressed parallel-HDF5 plotfiles remain the default; native AMReX plotfiles
+are an explicit runtime option.
 
 ## PyFluid Builds
 
@@ -59,14 +65,14 @@ Use the repository presets:
     cmake --build --preset full-2d
 
 The same full configuration builds every numerical method. Do not use
-feature-stripped binaries for ordinary development or validation.
-The preset pins `AMReX_DIR` directly, so reconfiguring replaces a stale AMReX
-selection in an existing CMake cache.
+feature-stripped binaries for ordinary development or validation. The preset
+pins the stable active AMReX link directly, so reconfiguring replaces a stale
+AMReX selection in an existing CMake cache.
 
 ## MPI And The Agent Sandbox
 
 MPI requires local sockets. The Codex sandbox cannot create those sockets, so a
-sandbox MPI failure is an execution-environment limitation, not a solver result.
-Use the approved socket-capable execution path for MPI validation. Normal
-workstation jobs use three MPI ranks; use four only for deliberate scaling or
-peak-throughput measurements.
+sandbox MPI failure is an execution-environment limitation, not a solver
+result. Use the approved socket-capable execution path for MPI validation.
+Normal workstation jobs use three ranks; use four only for deliberate scaling
+or peak-throughput measurements.

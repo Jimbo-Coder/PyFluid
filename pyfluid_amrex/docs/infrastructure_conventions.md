@@ -19,6 +19,13 @@ methods and physics belong in their topic documents; coding style belongs in
 
 - `pyfluid_amrex/` is the production C++/AMReX path. Python/JAX and
   Python/Numba are reference paths unless a task explicitly selects them.
+- `dependencies/amrex.toml` owns the exact official AMReX release and resolved
+  source commit. `tools/manage_amrex.py` checks only by default. Its explicit
+  update path builds source/build/install under versioned `.deps` directories,
+  verifies MPI, HDF5, linear solvers, and all dimensions, then switches the
+  stable install link only for a full PyFluid production rebuild. Preserve the
+  previous install and restore it if activation fails; do not make CMake
+  presets chase a mutable source checkout.
 - The input file is the simulation configuration. Runners execute and report;
   they do not override simulation parameters.
 - `include/pyfluid_amrex/config.hpp` owns the runtime configuration contract;

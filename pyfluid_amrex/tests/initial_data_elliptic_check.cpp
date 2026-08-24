@@ -3192,7 +3192,7 @@ int main(int argc, char* argv[])
       }
       pyfluid_amrex::InitialDataEllipticHierarchy nodal_hierarchy = hierarchy;
 #if (AMREX_SPACEDIM == 1)
-      // AMReX 25.11 does not implement multilevel reflux for MLNodeLaplacian
+      // AMReX 26.08 does not implement multilevel reflux for MLNodeLaplacian
       // in 1D. The physical TOV provider remains a native 1D ODE solve.
       nodal_hierarchy.geometry.resize(1);
       nodal_hierarchy.grids.resize(1);

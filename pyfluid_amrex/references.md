@@ -92,10 +92,13 @@ run, use `tools/report_run.py`; for an ad-hoc raw run, use
 nonconservative. Runtime `scalars.tsv` reductions remain the source of truth
 for core totals and ledgers.
 
-For AMR interpolation call-path comparisons, the installed AMReX 25.11 headers
+For AMR interpolation call-path comparisons, the installed AMReX 26.08 headers
 are under `.deps/amrex-mpi-lsolvers-hdf5/include/`; route first to
-`AMReX_FillPatchUtil_I.H`, `AMReX_Interpolater.H`, and
-`AMReX_Interp_1D_C.H`. AthenaK's corresponding componentwise prolongation is
+`AMReX_FillPatchUtil{,_I}.H`, `AMReX_Interpolater.H`,
+`AMReX_InterpFaceRegister.H`, and the dimension-specific interpolation
+kernels. The exact official release pin is in `dependencies/amrex.toml`, and
+`tools/manage_amrex.py` checks or updates the local versioned install. AthenaK's
+corresponding componentwise prolongation is
 under `/Users/mrizzo/phys_research/athenak/athenak/src/mesh/` in
 `prolongation.hpp` and `mesh_refinement.cpp`. AsterX declares conserved-group
 prolongation in
@@ -115,6 +118,20 @@ These are behavior/provenance references, not sources to import.
 
 Do not use this router as evidence that a gate passed. Use the continuity cycle,
 the generated TSV/log, and the current source revision/dirty state.
+
+## AMReX Framework Release
+
+- AMReX 26.08,
+  [official release](https://github.com/AMReX-Codes/amrex/releases/tag/26.08):
+  current PyFluid framework pin. Relevant upstream changes include general
+  divergence-preserving interpolation for face-centered fields, linear-solver
+  fixes, flux-register lifecycle fixes, HDF5/tooling fixes, and safer repeated
+  layout/boundary definitions. The exact resolved commit is tracked in
+  `dependencies/amrex.toml`.
+- AMReX,
+  [official download/version documentation](https://amrex-codes.github.io/amrex/docs_html/GettingStarted.html):
+  stable releases use monthly `YY.MM` tags. PyFluid follows stable tags, not
+  the mutable development branch.
 
 ## Relativistic AMR Policy References
 
