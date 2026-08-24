@@ -69,13 +69,16 @@ methods and physics belong in their topic documents; coding style belongs in
   evolution-bundle or reconstruction template product. Introduce a specialized
   compiled hot path only after a focused benchmark establishes a material gain
   and keep its numerical contract equivalent to the runtime owner.
-- The measured exception is ideal-gas primitive-cache and CFL evaluation. A
-  host launch checks the canonical `EOSParams.method` once and selects the
-  `EOSIdealGas` instantiation; every nonideal method uses `EOSRuntime`. This
-  recovered the simple 2D hydro controls from `0.73--0.81` to `0.86--0.95` of
-  their strict baselines without restoring the four-EoS evolution or
-  reconstruction product. Do not extend this two-way specialization without a
-  similarly isolated measurement.
+- The measured ideal-gas exceptions are primitive-cache/CFL launch selection
+  and RMHD C2P boundary selection. A host launch checks the canonical
+  `EOSParams.method` once for cache/CFL kernels. The canonical RMHD recovery
+  entry checks it once per recovery and reuses the existing ideal
+  RePrimAnd/Palenzuela algebra; every nonideal method uses `EOSRuntime`. The
+  latter raised measured C2P throughput from `1.342` to `1.725` million
+  recoveries/s and application throughput by 7.3%.
+  Neither exception restores the four-EoS evolution/reconstruction product.
+  Do not extend these selections without a similarly isolated measurement and
+  an equivalent runtime-owner control.
 - A tabulated EoS is loaded and validated once into immutable managed storage;
   pointwise CPU/GPU consumers receive the same small pointer/value view. Adding
   a table backend must not instantiate unsupported physics, layout, topology,

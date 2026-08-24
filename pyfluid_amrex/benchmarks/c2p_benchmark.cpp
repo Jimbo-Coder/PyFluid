@@ -231,6 +231,9 @@ int main()
    const auto stress_corpus = make_corpus(true);
    const auto cold_corpus = make_corpus(false, true);
    const auto cold_stress_corpus = make_corpus(true, true);
+   pyfluid_amrex::EOSParams ideal_eos{};
+   ideal_eos.method = pyfluid_amrex::EOSIdealGas;
+   ideal_eos.gamma = gamma;
    std::cout << "method\tsuccesses\ttotal\tmean_iterations\tmax_root_residual"
                 "\tmax_conserved_residual"
                 "\tmillion_recoveries_per_second\tchecksum\tsuccess\tinvalid_conserved"
@@ -266,6 +269,28 @@ int main()
    benchmark_candidate("ordered_policy", regular_corpus, [](std::size_t, const RMHDConserved& conserved) {
       return pyfluid_amrex::recover_srmhd(conserved, gamma);
    });
+   benchmark_candidate(
+      "runtime_eos_generic",
+      regular_corpus,
+      [&ideal_eos](std::size_t, const RMHDConserved& conserved) {
+         return pyfluid_amrex::recover_srmhd_runtime_energy(
+            conserved,
+            pyfluid_amrex::minkowski_spacetime_metric(),
+            ideal_eos
+         );
+      }
+   );
+   benchmark_candidate(
+      "runtime_eos_selected",
+      regular_corpus,
+      [&ideal_eos](std::size_t, const RMHDConserved& conserved) {
+         return pyfluid_amrex::recover_srmhd(
+            conserved,
+            pyfluid_amrex::minkowski_spacetime_metric(),
+            ideal_eos
+         );
+      }
+   );
    benchmark_candidate("palenzuela_1d_stress", stress_corpus, [](std::size_t, const RMHDConserved& conserved) {
       return pyfluid_amrex::recover_srmhd_palenzuela_1d(conserved, gamma);
    });

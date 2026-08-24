@@ -10,8 +10,9 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-24, branch `main`, through Cycle 312's runtime-EoS
-RHD/RMHD evolution ownership. Cycle 311's focused coordinate-equivalent
+Last reconciled: 2026-08-24, branch `main`, through Cycle 313's measured
+ideal-RMHD C2P optimization and Cycle 312's runtime-EoS RHD/RMHD evolution
+ownership. Cycle 311's focused coordinate-equivalent
 ID/materialization handoff and Cycle 310's focused
 magnetized-artifact reload and CompOSE hardening and Cycle 309's complete
 standard/performance controls remain the preceding broad integration evidence;
@@ -70,11 +71,16 @@ baseline.
   closure view. Current support is ideal gas, cold polytrope, hybrid
   polytrope, and cold CompOSE plus gamma-law thermal pressure. The latter is
   not a finite-temperature or composition-dependent CompOSE implementation.
-- One measured exception keeps ideal-gas primitive-cache and CFL evaluation
-  specialized after a host check of that same runtime tag; all nonideal methods
-  share `EOSRuntime`. Fully generic per-cell dispatch regressed the simple 2D
-  hydro controls to `0.73--0.81` of baseline, while this narrow fast path
-  restored `0.86--0.95` without an EoS evolution/reconstruction product.
+- Two measured ideal-gas exceptions avoid repeated runtime closure dispatch
+  without adding an EoS evolution/reconstruction product. A host check selects
+  ideal primitive-cache and CFL kernels; the canonical RMHD C2P entry selects
+  the already-maintained ideal RePrimAnd/Palenzuela algebra once per recovery.
+  Every nonideal method continues through `EOSRuntime`. Fully generic per-cell
+  dispatch regressed the simple 2D hydro controls to `0.73--0.81` of baseline.
+  In the RMHD recovery corpus, throughput is `1.342` million recoveries/s with
+  repeated runtime closure calls versus `1.725` after selection. Boundary
+  selection restores 7.3% end-to-end throughput, from `1.892` to `2.030`
+  Mcells/s.
 - Production reconstruction acts on primitive variables. For relativistic
   velocity it reconstructs `z^i = W v^i`, with metric-consistent boundary
   handling. The validated production configuration for discontinuous RMHD

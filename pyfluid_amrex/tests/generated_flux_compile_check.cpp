@@ -2428,6 +2428,7 @@ bool validate_runtime_eos_rmhd_round_trips()
    amrex::Real worst_primitive_error = 0.0;
    amrex::Real worst_conserved_error = 0.0;
    amrex::Real worst_characteristic_error = 0.0;
+   amrex::Real worst_ideal_fast_path_error = 0.0;
 
    for (int eos_method : {
            pyfluid_amrex::EOSIdealGas,
@@ -2496,6 +2497,28 @@ bool validate_runtime_eos_rmhd_round_trips()
                       << " residual=" << recovered.attempt.residual << '\n';
             return false;
          }
+         if (eos_method == pyfluid_amrex::EOSIdealGas) {
+            const pyfluid_amrex::RMHDRecoveryResult ideal_control =
+               pyfluid_amrex::recover_srmhd<true>(
+                  conserved, metric, eos.gamma
+               );
+            if (!ideal_control.succeeded()
+                || ideal_control.attempt.method != recovered.attempt.method
+                || ideal_control.attempt.status != recovered.attempt.status
+                || ideal_control.attempt.iterations
+                   != recovered.attempt.iterations) {
+               std::cerr << "runtime-EOS ideal RMHD fast path disagrees with "
+                            "the legacy ideal-gas API control\n";
+               return false;
+            }
+            worst_ideal_fast_path_error = std::max(
+               worst_ideal_fast_path_error,
+               scaled_max_error(
+                  components(recovered.primitive),
+                  components(ideal_control.primitive)
+               )
+            );
+         }
          const pyfluid_amrex::RMHDConserved conserved_round_trip =
             pyfluid_amrex::generated::rmhd_primitive_to_conserved(
                recovered.primitive, metric
@@ -2516,17 +2539,20 @@ bool validate_runtime_eos_rmhd_round_trips()
    }
    if (worst_primitive_error > 2.0e-8
        || worst_conserved_error > 5.0e-10
-       || worst_characteristic_error > 5.0e-15) {
+       || worst_characteristic_error > 5.0e-15
+       || worst_ideal_fast_path_error != 0.0) {
       std::cerr << "runtime-EOS RMHD round-trip residuals primitive="
                 << worst_primitive_error
                 << " conserved=" << worst_conserved_error
-                << " characteristic=" << worst_characteristic_error << '\n';
+                << " characteristic=" << worst_characteristic_error
+                << " ideal_fast_path=" << worst_ideal_fast_path_error << '\n';
       return false;
    }
    std::cout << "RMHD runtime-EOS C2P matrix primitive_error="
              << worst_primitive_error
              << " conserved_error=" << worst_conserved_error
              << " characteristic_error=" << worst_characteristic_error
+             << " ideal_fast_path_error=" << worst_ideal_fast_path_error
              << '\n';
    return true;
 }

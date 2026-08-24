@@ -52,6 +52,13 @@ composition-dependent table. That eventual implementation belongs in this
 module and must extend the thermodynamic state without introducing a second
 dispatch path in initial data, C2P, or evolution kernels.
 
+RMHD recovery accepts that one runtime EoS view. At the canonical C2P entry,
+ideal gas selects the algebraically equivalent generated ideal
+RePrimAnd/Palenzuela chain once; hybrid, polytropic, and CompOSE closures use
+the generic runtime thermodynamic residuals. This measured boundary selection
+avoids paying method dispatch at every root iteration without creating a
+per-EoS evolution, reconstruction, or factory product.
+
 An initial-data provider normally supplies one self-consistent fluid and
 spacetime solution in physical coordinates. A provider advertises those groups
 independently so analytic fixed metrics need not fabricate fluid data. The fluid

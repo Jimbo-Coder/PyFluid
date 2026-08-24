@@ -1303,7 +1303,31 @@ RMHDRecoveryResult recover_srmhd_reprimand(
 
 template <bool ValidateConserved = false>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-RMHDRecoveryResult recover_srmhd(
+RMHDRecoveryResult recover_srmhd_ideal_energy(
+   const RMHDConserved& conserved,
+   const SpacetimeMetric& metric,
+   amrex::Real gamma,
+   const C2PRecoveryOptions& options = {}
+) noexcept
+{
+   RMHDRecoveryResult recovered = recover_srmhd_reprimand<ValidateConserved>(
+      conserved, metric, gamma, options
+   );
+   if (recovered.succeeded()) AMREX_LIKELY {
+      return recovered;
+   }
+   const int primary_iterations = recovered.attempt.iterations;
+   recovered = recover_srmhd_palenzuela_1d<ValidateConserved>(
+      conserved, metric, gamma, options
+   );
+   recovered.attempt_count = 2;
+   recovered.attempt.iterations += primary_iterations;
+   return recovered;
+}
+
+template <bool ValidateConserved = false>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDRecoveryResult recover_srmhd_runtime_energy(
    const RMHDConserved& conserved,
    const SpacetimeMetric& metric,
    const EOSParams& eos,
@@ -1330,23 +1354,32 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDRecoveryResult recover_srmhd(
    const RMHDConserved& conserved,
    const SpacetimeMetric& metric,
+   const EOSParams& eos,
+   const C2PRecoveryOptions& options = {}
+) noexcept
+{
+   if (eos.method == EOSIdealGas) AMREX_LIKELY {
+      return recover_srmhd_ideal_energy<ValidateConserved>(
+         conserved, metric, eos.gamma, options
+      );
+   }
+   return recover_srmhd_runtime_energy<ValidateConserved>(
+      conserved, metric, eos, options
+   );
+}
+
+template <bool ValidateConserved = false>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDRecoveryResult recover_srmhd(
+   const RMHDConserved& conserved,
+   const SpacetimeMetric& metric,
    amrex::Real gamma,
    const C2PRecoveryOptions& options = {}
 ) noexcept
 {
-   RMHDRecoveryResult recovered = recover_srmhd_reprimand<ValidateConserved>(
+   return recover_srmhd_ideal_energy<ValidateConserved>(
       conserved, metric, gamma, options
    );
-   if (recovered.succeeded()) AMREX_LIKELY {
-      return recovered;
-   }
-   const int primary_iterations = recovered.attempt.iterations;
-   recovered = recover_srmhd_palenzuela_1d<ValidateConserved>(
-      conserved, metric, gamma, options
-   );
-   recovered.attempt_count = 2;
-   recovered.attempt.iterations += primary_iterations;
-   return recovered;
 }
 
 template <bool ValidateConserved = false>

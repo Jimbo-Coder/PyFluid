@@ -6355,3 +6355,35 @@ I will always continue from the last cycle marked as `in_progress`.
   production build, focused RMHD/magnetized-ID, and complete standard controls
   pass. The exact final tree is 49/49 standard gates in `227.401 s` summed gate
   time. [DONE]
+
+## Cycle 313 — Runtime-EoS performance attribution (DONE)
+
+- Reproduce the ideal-RMHD throughput delta with matched three-repeat runs and
+  retain stage-level timing rather than attributing the whole change to EoS
+  modularity. Isolate recovery, characteristic-closure, and launch/factory
+  effects with reversible variants of the committed tree. A seven-repeat
+  matched control measures `1.89195` Mcells/s. Primitive-cache (`0.524 s`) and
+  flux (`0.0905 s`) did not regress; timestep/CFL rose from the old `0.482 s`
+  to `0.541 s`. The C2P corpus isolates repeated runtime thermodynamic closure
+  calls at `1.342` million recoveries/s versus `1.725` for one-time ideal
+  selection, a 28.5% gain from the selected path. [DONE]
+- Keep the single runtime EoS/evolution owner. Accept only an optimization that
+  preserves the nonideal RMHD contract, does not restore the four-EoS
+  reconstruction/evolution template product, and improves the maintained
+  end-to-end benchmark beyond timing noise. The canonical `recover_srmhd`
+  entry now selects the existing ideal RePrimAnd/Palenzuela chain once; all
+  nonideal methods retain the generic runtime closure. The final seven-repeat
+  median is `2.03035` Mcells/s, 7.3% above the generic path and within 0.4% of
+  the old `2.038` specialized control. [DONE]
+- Rebuild, rerun the pointwise EoS/RMHD contracts and focused evolution gates,
+  then record compile/product impact and commit only if the measured variant is
+  a genuine improvement. Generated ideal selection is bitwise identical to the
+  legacy ideal API; generated contracts, HLLC/HLLD/tetrad checks, SLY4/APR/DD2
+  CompOSE C2P, and the three-rank RMHD standard matrix pass, including exact
+  Balsara 1--5, AMR+CT, restart, and physical-ID handoff. The updated baseline
+  control passes at `2.03926` Mcells/s against `2.03035`. The header dependency
+  rebuilt 18 production objects in `56.45 s`; the final no-op build is `0.63 s`.
+  The 1D executable is `33,756,048` bytes with `13,746` symbols, only 0.64% and
+  five symbols above the generic tree while remaining 3.2% smaller and 37%
+  lower-symbol than the old EoS-specialized tree. Architecture, Python compile,
+  and the final three-gate AMReX quick integration suite also pass. [DONE]

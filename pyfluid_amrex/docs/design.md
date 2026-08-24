@@ -103,12 +103,14 @@ or composition-dependent table: adding temperature, electron fraction, or
 other evolved composition variables requires a larger thermodynamic state and
 separate validation.
 
-The ideal-gas primitive-cache and CFL kernels are the one measured launch-level
+The ideal-gas primitive-cache and CFL kernels are the measured launch-level
 specialization: the host reads the same `EOSParams.method` and selects the
-ideal instantiation, while every nonideal method uses `EOSRuntime`. The
-equations and factory remain shared and the evolution bundle is unchanged.
-This avoids a per-cell branch in two vectorization-sensitive kernels without
-recreating one compiled evolution path per EoS.
+ideal instantiation, while every nonideal method uses `EOSRuntime`. RMHD C2P
+has a second narrow selection at its canonical entry: ideal gas reuses the
+existing generated RePrimAnd/Palenzuela algebra, while nonideal recovery stays
+on the runtime closure. This avoids repeated thermodynamic dispatch inside
+root iterations. The equations, factory, and evolution bundle remain shared;
+neither selection recreates one compiled evolution path per EoS.
 
 ## Initial-Data Solve And Handoff
 
@@ -197,10 +199,11 @@ only properties that change template instantiation: component count, CT
 topology. Runtime dispatch selects that storage/topology bundle outside cell
 loops, and the bundle calls the shared numerical
 algorithms. Analytic EoS and CompOSE mathematics live behind the common runtime
-closure. Only ideal-gas primitive-cache and CFL evaluation retain a measured
-launch-selected specialization; CompOSE and the other nonideal choices do not
-multiply the full reconstruction/layout matrix. RMHD uses the same runtime
-closure signature.
+closure. Ideal primitive-cache/CFL kernels retain a measured launch-selected
+specialization, and RMHD recovery selects the equivalent ideal algebra once at
+C2P entry. CompOSE and the other nonideal choices do not multiply the full
+reconstruction/layout matrix. RMHD keeps the same public runtime-closure
+signature.
 Physical systems with the same compile-time signature reuse one bundle; system
 identity remains explicit runtime data and is never inferred from component
 count.
