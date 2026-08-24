@@ -10,14 +10,14 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-24, branch `main`, through Cycle 313's measured
-ideal-RMHD C2P optimization and Cycle 312's runtime-EoS RHD/RMHD evolution
-ownership. Cycle 311's focused coordinate-equivalent
-ID/materialization handoff and Cycle 310's focused
-magnetized-artifact reload and CompOSE hardening and Cycle 309's complete
-standard/performance controls remain the preceding broad integration evidence;
-Cycle 308 is the preceding preserved baseline and Cycle 284 the older reference
-baseline.
+Last reconciled: 2026-08-24, branch `main`, through Cycle 316's saved-RNS
+evolution/restart harness and code-generation dependency cleanup. Cycle 315's
+generated physical-ID metadata and component-ready handoff, Cycle 313's
+measured ideal-RMHD C2P optimization, and Cycle 312's runtime-EoS RHD/RMHD
+evolution ownership are the preceding implementation boundaries. Cycle 311's
+coordinate-equivalent ID/materialization handoff and Cycle 309's complete
+standard/performance controls remain broader integration evidence; Cycle 308
+is the preceding preserved baseline and Cycle 284 the older reference baseline.
 
 ## Scope And Evidence
 
@@ -692,6 +692,17 @@ baseline.
 - Short rotating-star evolution is currently cleaner with PWL than MP5 at the
   surface. Do not weaken rest-mass gates to promote MP5; a conservative stellar
   surface treatment and longer evolution evidence are still required.
+- The production-default MP5/HLL/SSPRK3 saved-RNS harness now passes eight-step
+  CFL-0.9 `32^3/48^3` controls from the adaptive `96x24` source with zero
+  recovery/reset, rest-mass drift `3.24e-9/1.42e-9`, and angular-momentum
+  change `0.797/0.368` percent. A two-step midpoint restart agrees with the
+  uninterrupted final checkpoint to maximum field difference `1.52e-19`, and
+  a separate level-one AMR start passes. This is still short-evolution and
+  does not erase the longer stellar-surface boundary above.
+- The coupled three-dimensional TOV AMR smoke passes its two SSPRK3 steps at
+  the production CFL 0.9 with physical checks, one active fine level, and
+  rest-mass drift `1.64e-10`. The old input-level CFL 0.2 was not required for
+  this path; this remains a startup smoke rather than a long-stability claim.
 - The `24^3` magnetized SLy artifact passes exact-layout RMHD startup preflight
   at `2.33e-12/4.00e-12` conserved/primitive error with zero repair. Four-step
   experiments at CFL 0.9 nevertheless produce many surface atmosphere resets

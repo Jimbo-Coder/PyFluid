@@ -3,25 +3,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from pyfluid_codegen.emit_catalog import write_catalog
-from pyfluid_codegen.emit_cpp import (
-   CsePolicy,
-   write_characteristic_header,
-   write_differential_header,
-   write_diagnostic_header,
-   write_eos_header,
-   write_flux_header,
-   write_initial_data_header,
-   write_metric_header,
-   write_operator_header,
-   write_patch_map_header,
-   write_relativistic_header,
-   write_riemann_header,
-   write_vector_header,
-   write_z4c_header,
-)
-
-
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FLUX_HEADER = (
    ROOT
@@ -229,25 +210,32 @@ def main() -> None:
    parser.add_argument("--hard-drop-ops", type=int, default=0)
    parser.add_argument("--soft-drop-ops", type=int, default=3)
    args = parser.parse_args()
-   policy = CsePolicy(hard_drop_ops=args.hard_drop_ops, soft_drop_ops=args.soft_drop_ops)
-   generators = {
-      "characteristic": (args.characteristic_header, write_characteristic_header),
-      "differential": (args.differential_header, write_differential_header),
-      "diagnostic": (args.diagnostic_header, write_diagnostic_header),
-      "eos": (args.eos_header, write_eos_header),
-      "flux": (args.flux_header, write_flux_header),
-      "initial_data": (args.initial_data_header, write_initial_data_header),
-      "operator": (args.operator_header, write_operator_header),
-      "riemann": (args.riemann_header, write_riemann_header),
-      "vector": (args.vector_header, write_vector_header),
-      "metric": (args.metric_header, write_metric_header),
-      "patch_map": (args.patch_map_header, write_patch_map_header),
-      "relativistic": (args.relativistic_header, write_relativistic_header),
-      "z4c": (args.z4c_header, write_z4c_header),
-   }
-   families = tuple(args.family) if args.family else ("catalog", *generators)
+   kernel_family_names = (
+      "characteristic",
+      "differential",
+      "diagnostic",
+      "eos",
+      "flux",
+      "initial_data",
+      "operator",
+      "riemann",
+      "vector",
+      "metric",
+      "patch_map",
+      "relativistic",
+      "z4c",
+   )
+   families = (
+      tuple(args.family)
+      if args.family
+      else ("catalog", *kernel_family_names)
+   )
+   generators = None
+   policy = None
    for family in families:
       if family == "catalog":
+         from pyfluid_codegen.emit_catalog import write_catalog
+
          write_catalog(
             args.field_ids_header,
             args.field_catalog_header,
@@ -271,6 +259,61 @@ def main() -> None:
          print(args.equation_markdown)
          print(args.equation_latex)
          continue
+      if generators is None:
+         from pyfluid_codegen.emit_cpp import (
+            CsePolicy,
+            write_characteristic_header,
+            write_differential_header,
+            write_diagnostic_header,
+            write_eos_header,
+            write_flux_header,
+            write_initial_data_header,
+            write_metric_header,
+            write_operator_header,
+            write_patch_map_header,
+            write_relativistic_header,
+            write_riemann_header,
+            write_vector_header,
+            write_z4c_header,
+         )
+
+         policy = CsePolicy(
+            hard_drop_ops=args.hard_drop_ops,
+            soft_drop_ops=args.soft_drop_ops,
+         )
+         generators = {
+            "characteristic": (
+               args.characteristic_header,
+               write_characteristic_header,
+            ),
+            "differential": (
+               args.differential_header,
+               write_differential_header,
+            ),
+            "diagnostic": (
+               args.diagnostic_header,
+               write_diagnostic_header,
+            ),
+            "eos": (args.eos_header, write_eos_header),
+            "flux": (args.flux_header, write_flux_header),
+            "initial_data": (
+               args.initial_data_header,
+               write_initial_data_header,
+            ),
+            "operator": (args.operator_header, write_operator_header),
+            "riemann": (args.riemann_header, write_riemann_header),
+            "vector": (args.vector_header, write_vector_header),
+            "metric": (args.metric_header, write_metric_header),
+            "patch_map": (
+               args.patch_map_header,
+               write_patch_map_header,
+            ),
+            "relativistic": (
+               args.relativistic_header,
+               write_relativistic_header,
+            ),
+            "z4c": (args.z4c_header, write_z4c_header),
+         }
       output_path, writer = generators[family]
       writer(output_path, policy)
       print(output_path)

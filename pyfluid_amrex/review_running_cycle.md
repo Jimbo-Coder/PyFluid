@@ -6460,3 +6460,53 @@ I will always continue from the last cycle marked as `in_progress`.
   magnetohydrostatic/CompOSE matrix, and CompOSE evolution/restart identity all
   pass. A scan of 312 non-fixture artifacts finds 108 component records, zero
   schema errors, and no surviving `.pending` transaction. [DONE]
+
+## Cycle 316 — Production evolution harness and codegen dependency cleanup (DONE)
+
+- Route the saved-RNS evolution validator through the strict generated
+  physical-ID metadata reader. Expose the production spatial/temporal controls,
+  AMR hierarchy, and checkpoint/restart path instead of silently replacing the
+  canonical MP5/HLL/SSPRK3/CFL-0.9 setup with a uniform PWL/HLL smoke. Preserve
+  a cheap default validation while making longer production-style runs one
+  explicit command. The harness now consumes the generated strict metadata
+  reader, defaults to MP5/HLL/SSPRK3 at CFL 0.9, exposes runtime method/CFL,
+  AMR/tagging, subcycling, ghost, and checkpoint controls without duplicating
+  their supported-value catalogs, and has an opt-in midpoint restart owner.
+  Restart removes the mutually exclusive physical-ID input and compares the
+  complete final checkpoints with the shared 3D comparison executable. [DONE]
+- Remove stale CFL-0.2 policy from the coupled 3D TOV AMR input only if a focused
+  CFL-0.9 evolution gate passes with physical checks and the standard scalar
+  contract. Do not lower the production target to accommodate a broken path.
+  The two-step, three-rank run passes at CFL 0.9 in 11.87 s with one active fine
+  level, rest-mass drift `1.644e-10`, no momentum issue, and the ordinary
+  report/scalar checks. The input now uses 0.9. [DONE]
+- Separate catalog generation dependencies from expensive SymPy physics-kernel
+  generation. Measure no-op and catalog-emitter-triggered production builds
+  before and after; do not add a new generator implementation or change any
+  generated physics. The generator imports the catalog and C++ emitters only
+  when their families are selected; the physics CMake owner no longer emits or
+  depends on catalog-only outputs/modules, while retaining its real field
+  schema/catalog dependency. Touching `emit_catalog.py` fell from `93.31 s` to
+  `0.99 s`, with zero compile/cache events and identical aggregate generated
+  hashes (`9b74f789869ec921ca9361a5dc4e9b17814f74ae`). [DONE]
+- Rebuild, verify generated-file identity and architecture, run focused saved-ID
+  evolution/restart plus the AMReX quick gate, update the continuity snapshot,
+  and commit one bounded cleanup tranche. Homebrew had removed OpenMPI 5.0.9_1;
+  the configured build cache alone retained its Cellar path. Reconfiguring the
+  three MPI cache entries through `/opt/homebrew/opt/open-mpi` repaired it. The
+  required MPI-5.0.10 normalization build then took `440.80 s` with 252 cache
+  misses; it is not an incremental source measurement. The final no-op
+  production build is `0.26 s` with no cache events. [DONE]
+- Focused evolution evidence: the adaptive `96x24` RNS artifact passes the new
+  eight-step defaults on `32^3/48^3` with mass drift
+  `3.240e-9/1.421e-9`, angular-momentum change `0.797/0.368` percent, maximum
+  density change `2.46e-4/1.79e-4`, and zero recovery/reset. A separate
+  two-step level-one AMR start passes. The midpoint-restarted `32^3` run has
+  maximum final field difference `1.522e-19` and zero time/reference-scalar
+  difference against uninterrupted evolution at tolerance `1e-12`. A `16^3`
+  exploratory control correctly failed the unchanged surface-ADM angular
+  momentum accuracy threshold; it was not used to weaken the gate. [DONE]
+- Final exact-tree checks: Python compile, architecture, exhaustive generated
+  equation identity, 1D/2D/3D production targets, and the three-step AMReX
+  quick gate all pass. No generated file or C++ numerical kernel changed, so
+  the evolution-throughput benchmark was intentionally not repeated. [DONE]

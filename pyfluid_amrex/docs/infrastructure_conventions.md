@@ -97,6 +97,11 @@ methods and physics belong in their topic documents; coding style belongs in
   byte-for-byte regeneration of every expensive SymPy artifact belongs in the
   full suite; do not make ordinary solver iteration repeat that exhaustive
   check.
+- Catalog emission and symbolic physics-kernel emission are separate CMake
+  dependency owners. Catalog emitters and catalog-only schemas must not
+  invalidate the expensive physics-kernel stamp; symbolic kernels retain only
+  the catalog inputs they actually consume, such as the field schema used to
+  define conserved components.
 - Orthogonal coordinate geometry is declared once in
   `codegen/pyfluid_codegen/coordinates.py` as coordinates and scale factors.
   The symbolic tensor/finite-volume owners derive metric measures, differential

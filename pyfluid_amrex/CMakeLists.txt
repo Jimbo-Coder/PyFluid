@@ -493,7 +493,6 @@ if(PYFLUID_UV_EXECUTABLE)
          UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
          ${PYFLUID_UV_EXECUTABLE} run python
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
-         --family catalog
          --family eos
          --family flux
          --family operator
@@ -516,14 +515,6 @@ if(PYFLUID_UV_EXECUTABLE)
          --metric-header ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
          --relativistic-header ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
          --z4c-header ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
-         --field-ids-header ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
-         --field-catalog-header ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
-         --diagnostic-catalog-header ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
-         --method-catalog-header ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
-         --initial-data-method-catalog-header ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_METHOD_CATALOG_HEADER}
-         --field-catalog-json ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_JSON}
-         --equation-markdown ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
-         --equation-latex ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
       COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
@@ -534,9 +525,6 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/discretization.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py
-         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/diagnostic_catalog.py
-         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/equation_catalog.py
-         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/flux_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml

@@ -581,11 +581,16 @@ UV_CACHE_DIR=.uv-cache uv run python \
   --input-artifact <physical-id-model> --cells 32 48 --force
 ```
 
-It uses PWL/HLL/SSPRK3 at CFL 0.9, records rest-mass, angular-momentum,
-maximum-density, and constraint histories, and requires zero C2P fallbacks and
-atmosphere resets. Eight-step uniform 32/48 controls and a q-power `q=2`,
-`A=10`, `Omega=0.03` three-step control pass. This is a materialization and
-short-dynamics gate, not yet a many-rotation equilibrium result.
+It defaults to the production MP5/HLL/SSPRK3 controls at CFL 0.9, records
+rest-mass, angular-momentum, maximum-density, and constraint histories, and
+requires zero C2P fallbacks and atmosphere resets. Reconstruction, Riemann,
+timestep, CFL, AMR level/tagging, subcycling, checkpoint cadence, and ghost
+width remain explicit command-line controls. `--restart-check` writes a
+midpoint checkpoint and requires the restarted final checkpoint to agree with
+the uninterrupted run to `1e-12`. The default eight-step uniform 32/48
+controls pass; the earlier q-power `q=2`, `A=10`, `Omega=0.03` three-step PWL
+control also passes. This is a materialization and short-dynamics gate, not yet
+a many-rotation equilibrium result.
 
 The short-evolution gate also protects the generic RHD stage-candidate flux
 correction. Only faces adjoining a cell whose concrete RK candidate violates

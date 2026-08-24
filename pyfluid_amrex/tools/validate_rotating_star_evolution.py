@@ -9,6 +9,8 @@ import re
 import shutil
 from pathlib import Path
 
+from physical_id_metadata import read_physical_id_metadata
+from plotfile_reader import checkpoint_path
 from validation_common import (
    DYNAMIC_SPACETIME_POLICY,
    ROOT,
@@ -18,6 +20,7 @@ from validation_common import (
    read_scalar_rows,
    repo_relative,
    run_amrex,
+   run_mpi,
    scalar_validation_row,
    write_tsv,
 )
@@ -27,6 +30,9 @@ BASE_INPUT = ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_3d.in"
 RUN_ROOT = ROOT / "runs/current/rotating_star_evolution_validation"
 RESULTS = RUN_ROOT / "rotating_star_evolution.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
+CHECKPOINT_COMPARE = (
+   ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_3d"
+)
 RECOVERY_PATTERN = re.compile(
    r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)"
 )
@@ -35,16 +41,6 @@ PREFLIGHT_PATTERN = re.compile(
    r"max_conserved_error=([0-9.eE+-]+) "
    r"max_primitive_error=([0-9.eE+-]+)"
 )
-
-
-def read_metadata(artifact: Path) -> dict[str, str]:
-   values: dict[str, str] = {}
-   for raw_line in (artifact / "Header.meta").read_text().splitlines():
-      line = raw_line.removeprefix("#").strip()
-      if "=" in line:
-         key, value = line.split("=", 1)
-         values[key.strip()] = value.strip()
-   return values
 
 
 def relative_history_change(
@@ -68,6 +64,16 @@ def parameter_label(value: str) -> str:
    )
 
 
+def method_label(value: str) -> str:
+   return re.sub(r"[^A-Za-z0-9_-]+", "-", value)
+
+
+def effective_checkpoint_int(args: argparse.Namespace) -> int:
+   if not args.restart_check:
+      return args.checkpoint_int
+   return args.steps // 2
+
+
 def run_case(
    artifact: Path,
    metadata: dict[str, str],
@@ -82,6 +88,17 @@ def run_case(
       else f"s{args.steps}"
    ).replace(".", "p")
    ko_label = f"ko{args.ko_dissipation:g}".replace(".", "p")
+   control_label = "_".join(
+      (
+         method_label(args.recon),
+         method_label(args.riemann),
+         method_label(args.timestep),
+         f"cfl{parameter_label(str(args.cfl))}",
+         f"L{args.max_level}",
+         f"sub{method_label(args.subcycling)}",
+         f"chk{effective_checkpoint_int(args)}",
+      )
+   )
    law_label = metadata["rotation_law"]
    if law_label != "uniform":
       law_label += "_a" + parameter_label(
@@ -98,7 +115,7 @@ def run_case(
    omega_label = parameter_label(metadata["angular_velocity"])
    name = (
       f"{args.label}_{eos_label}_{law_label}_omega{omega_label}_"
-      f"n{cells}_{duration_label}_{ko_label}"
+      f"n{cells}_{duration_label}_{ko_label}_{control_label}"
    )
    run_dir = RUN_ROOT / name
    log_path = run_dir / "run.log"
@@ -125,43 +142,49 @@ def run_case(
       eos_parameters["pyfluid.eos_preset"] = metadata.get(
          "eos_preset", "none"
       )
+   input_parameters = {
+      "pyfluid.run_name": name,
+      "pyfluid.output_dir": repo_relative(run_dir),
+      "amr.n_cell": f"{cells} {cells} {cells}",
+      "amr.max_level": str(args.max_level),
+      "amr.max_grid_size": str(min(args.max_grid_size, cells)),
+      "amr.tag_metric": args.amr_tag_metric,
+      "initial_data.input_file": repo_relative(artifact),
+      "initial_data.solve_only": "0",
+      "initial_data.save_sequence": "0",
+      "initial_data.rotation_law": metadata["rotation_law"],
+      "initial_data.angular_velocity": metadata["angular_velocity"],
+      "initial_data.differential_rotation_length": metadata.get(
+         "differential_rotation_length", "10.0"
+      ),
+      "initial_data.rotation_power_q": metadata.get(
+         "rotation_power_q", "1.0"
+      ),
+      **eos_parameters,
+      "pyfluid.tov_central_density": metadata["tov_central_density"],
+      "spacetime.ko_dissipation": f"{args.ko_dissipation:.17g}",
+      "pyfluid.max_step": str(args.steps),
+      "pyfluid.final_time": f"{args.final_time:.17g}",
+      "pyfluid.ng": str(args.ghost_cells),
+      "pyfluid.cfl": f"{args.cfl:.17g}",
+      "pyfluid.recon": args.recon,
+      "pyfluid.riemann": args.riemann,
+      "pyfluid.timestep": args.timestep,
+      "pyfluid.subcycling": args.subcycling,
+      "pyfluid.scalar_diagnostics": "standard,global_gr",
+      "pyfluid.scalar_int": "1",
+      "pyfluid.plot_int": "-1",
+      "pyfluid.checkpoint_int": str(effective_checkpoint_int(args)),
+      "pyfluid.physical_check_int": "1",
+   }
+   if args.max_level > 0:
+      input_parameters["amr.ref_ratio"] = " ".join(
+         "2" for _ in range(args.max_level)
+      )
    input_path = materialize_run_input(
       BASE_INPUT,
       run_dir / "input.in",
-      {
-         "pyfluid.run_name": name,
-         "pyfluid.output_dir": repo_relative(run_dir),
-         "amr.n_cell": f"{cells} {cells} {cells}",
-         "amr.max_level": "0",
-         "amr.max_grid_size": str(min(16, cells)),
-         "initial_data.input_file": repo_relative(artifact),
-         "initial_data.solve_only": "0",
-         "initial_data.save_sequence": "0",
-         "initial_data.rotation_law": metadata["rotation_law"],
-         "initial_data.angular_velocity": metadata["angular_velocity"],
-         "initial_data.differential_rotation_length": metadata.get(
-            "differential_rotation_length", "10.0"
-         ),
-         "initial_data.rotation_power_q": metadata.get(
-            "rotation_power_q", "1.0"
-         ),
-         **eos_parameters,
-         "pyfluid.tov_central_density": metadata["tov_central_density"],
-         "spacetime.ko_dissipation": f"{args.ko_dissipation:.17g}",
-         "pyfluid.max_step": str(args.steps),
-         "pyfluid.final_time": f"{args.final_time:.17g}",
-         "pyfluid.ng": "3",
-         "pyfluid.cfl": "0.9",
-         "pyfluid.recon": "pwl",
-         "pyfluid.riemann": "hll",
-         "pyfluid.timestep": "ssprk3",
-         "pyfluid.subcycling": "off",
-         "pyfluid.scalar_diagnostics": "standard,global_gr",
-         "pyfluid.scalar_int": "1",
-         "pyfluid.plot_int": "-1",
-         "pyfluid.checkpoint_int": "-1",
-         "pyfluid.physical_check_int": "1",
-      },
+      input_parameters,
       remove_parameters=("pyfluid.eos_preset",)
       if metadata["eos"] == "compose" else (),
    )
@@ -340,6 +363,109 @@ def run_case(
    return result, scalar_row
 
 
+def validate_restart(
+   run_dir: Path,
+   args: argparse.Namespace,
+) -> tuple[dict[str, object], dict[str, object]]:
+   restart_step = args.steps // 2
+   source_checkpoint = checkpoint_path(run_dir, restart_step)
+   reference_checkpoint = checkpoint_path(run_dir, args.steps)
+   if not source_checkpoint.is_dir() or not reference_checkpoint.is_dir():
+      raise RuntimeError(
+         "restart validation requires midpoint and final checkpoints: "
+         f"{repo_relative(source_checkpoint)}, "
+         f"{repo_relative(reference_checkpoint)}"
+      )
+   restart_dir = run_dir.with_name(run_dir.name + "_restart")
+   if restart_dir.exists():
+      shutil.rmtree(restart_dir)
+   restart_dir.mkdir(parents=True)
+   restart_name = restart_dir.name
+   restart_input = materialize_run_input(
+      run_dir / "run.in",
+      restart_dir / "input.in",
+      {
+         "pyfluid.run_name": restart_name,
+         "pyfluid.output_dir": repo_relative(restart_dir),
+         "pyfluid.restart_file": repo_relative(source_checkpoint),
+         "pyfluid.plot_int": "-1",
+      },
+      remove_parameters=(
+         "initial_data.input_file",
+         "initial_data.output_file",
+         "initial_data.sequence_output_dir",
+      ),
+   )
+   completed = run_amrex(
+      dim=3,
+      input_path=restart_input,
+      ranks=args.ranks,
+      timeout=args.timeout,
+   )
+   log_path = restart_dir / "run.log"
+   log_path.write_text(completed.stdout)
+   if completed.returncode != 0:
+      raise RuntimeError(
+         f"{restart_name} failed; see {repo_relative(log_path)}"
+      )
+   restart_checkpoint = checkpoint_path(restart_dir, args.steps)
+   if not restart_checkpoint.is_dir():
+      raise RuntimeError(
+         f"{restart_name} did not write its final checkpoint"
+      )
+   compared = run_mpi(
+      CHECKPOINT_COMPARE,
+      [reference_checkpoint, restart_checkpoint, "1e-12"],
+      ranks=args.ranks,
+      timeout=args.timeout,
+   )
+   if compared.returncode != 0:
+      raise RuntimeError(compared.stdout)
+   summary = next(
+      (
+         line for line in compared.stdout.splitlines()
+         if line.startswith("checkpoint max_dt_diff=")
+      ),
+      compared.stdout.strip(),
+   )
+   recovery = RECOVERY_PATTERN.findall(completed.stdout)
+   if not recovery:
+      raise RuntimeError(
+         f"{restart_name} did not report relativistic recovery totals"
+      )
+   c2p_fallbacks, atmosphere_resets = (
+      int(value) for value in recovery[-1]
+   )
+   if c2p_fallbacks != 0 or atmosphere_resets != 0:
+      raise RuntimeError(
+         f"{restart_name} used recovery/reset events: "
+         f"{c2p_fallbacks}/{atmosphere_resets}"
+      )
+   scalar_row = scalar_validation_row(
+      restart_dir,
+      case=restart_name,
+      input_file=restart_dir / "run.in",
+      checks=DYNAMIC_SPACETIME_POLICY,
+      mhd=False,
+      dim=3,
+      ranks=args.ranks,
+      kind="restart",
+   )
+   result: dict[str, object] = {
+      "kind": "restart",
+      "case": restart_name,
+      "status": scalar_row["status"],
+      "reason": scalar_row["reason"],
+      "metric": "checkpoint_compare",
+      "value": summary,
+      "restart_step": restart_step,
+      "final_step": args.steps,
+      "tolerance": 1.0e-12,
+      "run_dir": repo_relative(restart_dir),
+   }
+   return result, scalar_row
+
+
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--input-artifact", type=Path, required=True)
@@ -352,6 +478,21 @@ def main() -> int:
    parser.add_argument("--steps", type=int, default=8)
    parser.add_argument("--final-time", type=float, default=-1.0)
    parser.add_argument("--ko-dissipation", type=float, default=0.02)
+   parser.add_argument("--cfl", type=float, default=0.9)
+   parser.add_argument("--recon", default="mp5")
+   parser.add_argument("--riemann", default="hll")
+   parser.add_argument("--timestep", default="ssprk3")
+   parser.add_argument("--subcycling", default="on")
+   parser.add_argument("--max-level", type=int, default=0)
+   parser.add_argument("--max-grid-size", type=int, default=16)
+   parser.add_argument("--amr-tag-metric", default="lohner")
+   parser.add_argument("--ghost-cells", type=int, default=3)
+   parser.add_argument("--checkpoint-int", type=int, default=-1)
+   parser.add_argument(
+      "--restart-check",
+      action="store_true",
+      help="checkpoint halfway, restart, and compare final checkpoints",
+   )
    parser.add_argument("--ranks", type=int, default=3)
    parser.add_argument("--timeout", type=int, default=300)
    parser.add_argument("--label", default="fast_rns")
@@ -363,6 +504,23 @@ def main() -> int:
       raise SystemExit("--input-artifact must name a physical-ID artifact")
    if args.steps < 1 or args.ranks < 1 or any(cells < 16 for cells in args.cells):
       raise SystemExit("steps/ranks must be positive and cells at least 16")
+   if args.max_level < 0 or args.max_grid_size < 1 or args.ghost_cells < 1:
+      raise SystemExit("AMR level must be nonnegative; grid/ghost sizes positive")
+   if not math.isfinite(args.cfl) or args.cfl <= 0.0:
+      raise SystemExit("--cfl must be finite and positive")
+   if args.checkpoint_int < -1:
+      raise SystemExit("--checkpoint-int must be -1, 0, or positive")
+   if args.restart_check and (
+      args.final_time != -1.0 or args.steps < 2 or args.steps % 2 != 0
+   ):
+      raise SystemExit(
+         "--restart-check requires --final-time=-1 and an even --steps >= 2"
+      )
+   if args.restart_check and args.checkpoint_int not in (-1, args.steps // 2):
+      raise SystemExit(
+         "--restart-check owns the midpoint checkpoint cadence; omit "
+         "--checkpoint-int or set it to steps/2"
+      )
    if not math.isfinite(args.final_time) or (
       args.final_time <= 0.0 and args.final_time != -1.0
    ):
@@ -372,7 +530,7 @@ def main() -> int:
       raise SystemExit("--ko-dissipation must be finite in [0, 0.5]")
    if re.fullmatch(r"[A-Za-z0-9_-]+", args.label) is None:
       raise SystemExit("--label may contain only letters, digits, '-' and '_'")
-   metadata = read_metadata(artifact)
+   metadata = read_physical_id_metadata(artifact)
    required = (
       "source_ic",
       "eos",
@@ -416,6 +574,8 @@ def main() -> int:
          )
 
    build_cached_target("pyfluid_amrex_3d")
+   if args.restart_check:
+      build_cached_target(CHECKPOINT_COMPARE.name)
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
    results: list[dict[str, object]] = []
    scalar_rows: list[dict[str, object]] = []
@@ -431,6 +591,16 @@ def main() -> int:
          f"dJ={result['angular_momentum_drift']:.3e} "
          f"dRhoMax={result['maximum_density_change']:.3e}"
       )
+      if args.restart_check:
+         restart_result, restart_scalar = validate_restart(
+            ROOT / str(result["run_dir"]), args
+         )
+         results.append(restart_result)
+         scalar_rows.append(restart_scalar)
+         print(
+            f"{restart_result['status']} {restart_result['case']} "
+            f"{restart_result['value']}"
+         )
    fields = list(dict.fromkeys(key for row in results for key in row))
    write_tsv(RESULTS, results, fields)
    append_validation_history(HISTORY, [*results, *scalar_rows])
