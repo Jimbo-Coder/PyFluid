@@ -25,7 +25,7 @@ It intentionally links rather than restating the detailed contracts.
 | Coding and review policy | current source | `docs/code_conventions.md` |
 | Runtime configuration | `include/pyfluid_amrex/config.hpp`, `src/framework/config*.{cpp,hpp}` | `README.md`, configuration rules |
 | Grid fields, components, centerings | `schema/fields.toml`, loaded by `codegen/pyfluid_codegen/field_catalog.py` | `docs/catalog_schema.md`, generated field sections in `docs/equations.md` |
-| Reconstruction and rotation-law identity | `schema/methods.toml`, loaded by `codegen/pyfluid_codegen/method_catalog.py`; formulas under `include/pyfluid_amrex/reconstruction/` and shared circular ID policy under `include/pyfluid_amrex/initial_data/circular_rotation.hpp` | `docs/catalog_schema.md`, `docs/tov.md` |
+| Reconstruction, rotation-law, and AMR-policy identity | `schema/methods.toml`, loaded by `codegen/pyfluid_codegen/method_catalog.py`; formulas under `include/pyfluid_amrex/reconstruction/`, AMR evaluation in `include/pyfluid_amrex/amr_indicator.hpp`, and shared circular ID policy under `include/pyfluid_amrex/initial_data/circular_rotation.hpp` | `docs/catalog_schema.md`, `docs/design.md`, `docs/tov.md` |
 | Diagnostics and reductions | `codegen/pyfluid_codegen/diagnostic_catalog.py`, `src/amr/amr_solver_diagnostics.cpp` | `docs/diagnostics.md` |
 | Generated equations | labeled symbolic sources under `codegen/pyfluid_codegen/` | `docs/equations.md`, `docs/equations.tex` |
 | Relativistic HD/MHD and Z4c | generated kernels, `src/relativity/{rhd_system,rmhd_system,relativistic_atmosphere}.hpp`, `include/pyfluid_amrex/relativistic_boundary.hpp`, and `src/amr/amr_solver_spacetime*.cpp` | `docs/grmhd_development.md` |
@@ -115,6 +115,32 @@ These are behavior/provenance references, not sources to import.
 
 Do not use this router as evidence that a gate passed. Use the continuity cycle,
 the generated TSV/log, and the current source revision/dirty state.
+
+## Relativistic AMR Policy References
+
+- M. Daszuta et al., *GR-Athena++: puncture evolutions on vertex-centered
+  oct-tree adaptive mesh refinement*,
+  [GRMHD methods and BNS application](https://arxiv.org/abs/2311.04989): the
+  targeted BNS runs refine on a maximum magnetic-field threshold, while the
+  shear-based policy adds a maximum-density condition specifically to avoid
+  over-refining unphysical low-density regions. The thresholds are
+  experimental, and the shear policy can create more blocks without matching
+  all magnetic amplification of a static finest grid. This is direct evidence
+  for small objective-specific GRMHD policies, not an all-GF maximum.
+- T. Andrade et al., *GRChombo: numerical relativity with adaptive mesh
+  refinement*, [arXiv:1503.03436](https://arxiv.org/abs/1503.03436): vacuum
+  black-hole examples use conformal-factor/geometry-driven refinement. This
+  supports `chi`-like vacuum tagging but does not establish `chi` alone as a
+  universal GRMHD matter criterion.
+- The BAM BNS implementation described in
+  [arXiv:1104.4751](https://arxiv.org/abs/1104.4751): compact objects are
+  followed by nested moving refinement boxes. This is the object-tracking
+  control against which purely state-triggered tagging should be interpreted.
+- E. Schnetter et al., *Lessons for adaptive mesh refinement in numerical
+  relativity*, [DOI 10.1088/1361-6382/ac6fa9](https://doi.org/10.1088/1361-6382/ac6fa9):
+  conformal-geometry derivatives and physical-resolution criteria are useful
+  vacuum/geometry estimators; resource limits are not substitutes for a
+  physical refinement objective.
 
 ## Rotating-Star Physics References
 
@@ -590,6 +616,15 @@ implementations:
   [HLLC-SWM](https://arxiv.org/abs/1803.04922): pressure/shock-sensitive
   control of contact antidiffusion for multidimensional shock stability.
   These are the closest collision with a pressure/compression entropy budget.
+- A. I. Sheikh et al., *The CRONOS code for astrophysical magnetohydrodynamics*,
+  [DOI 10.3847/1538-4365/aabe75](https://doi.org/10.3847/1538-4365/aabe75):
+  a strong-shock detector locally selects HLL to suppress carbuncle modes.
+  Together with HLLC-ADC/SWM, this supports PyFluid's multidimensional
+  pressure-jump HLL parent switch; it does not determine the present threshold.
+- A. Mignone et al., *A robust HLLC-type Riemann solver for relativistic flows*,
+  [MNRAS 496, 2493](https://academic.oup.com/mnras/article/496/2/2493/5857183):
+  relativistic HLL/HLLC blending provides an independent relativistic example
+  of retaining contact resolution away from shock-instability regions.
 - X. Zhang et al., *A Provably Positive-Preserving HLLD Riemann Solver for
   Ideal Magnetohydrodynamics. Part I: The One-Dimensional Case*,
   [paper](https://doi.org/10.4208/cicp.OA-2024-0068), and F. Zhang,

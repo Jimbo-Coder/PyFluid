@@ -574,7 +574,7 @@
             const amrex::Long layout_cells_this_step = cell_count();
             const amrex::Long active_cells_this_step = active_cell_count();
             if constexpr (CTEnabled) {
-               reset_ct_stage_emf_all_levels();
+               begin_ct_step_all_levels();
             }
             const bool next_state_needs_copy =
                (this->*operations.advance_single_rate)(time, dt);

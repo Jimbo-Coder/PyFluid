@@ -1,15 +1,39 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // Constrained-transport magnetic-field advancement helpers.
 
-   void reset_ct_stage_emf_level(int lev)
+   void copy_face_magnetic_field(
+      FaceMagneticField& destination,
+      FaceMagneticField const& source
+   )
    {
-      set_edge_field_value(edge_e_[lev], 0.0);
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         amrex::MultiFab::Copy(
+            *destination.b[dir],
+            *source.b[dir],
+            0,
+            0,
+            1,
+            source.b[dir]->nGrow()
+         );
+      }
    }
 
-   void reset_ct_stage_emf_all_levels()
+   void begin_ct_step_level(int lev)
+   {
+      set_edge_field_value(edge_e_[lev], 0.0);
+      if (ct_enabled(cfg_)) {
+         // Portable ID/checkpoint face fields own valid data; refresh their
+         // periodic and physical ghosts before any RK-stage primitive cache
+         // consumes the canonical face field.
+         apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
+         copy_face_magnetic_field(ct_step_start_face_b_[lev], face_b_[lev]);
+      }
+   }
+
+   void begin_ct_step_all_levels()
    {
       for (int lev = 0; lev <= finestLevel(); ++lev) {
-         reset_ct_stage_emf_level(lev);
+         begin_ct_step_level(lev);
       }
    }
 
@@ -19,10 +43,12 @@
       amrex::Real stage_weight
    )
    {
-      if (!ct_enabled(cfg_) || stage_weight == 0.0) {
+      if (!ct_enabled(cfg_)) {
          return;
       }
-      AMREX_ALWAYS_ASSERT(ct_stage_edge_e_[lev].e[0] != nullptr);
+      if (ct_stage_edge_e_[lev].e[0] == nullptr) {
+         return;
+      }
 #if (AMREX_SPACEDIM >= 2)
       fill_edge_electric_field_from_mhd_fluxes(
          ct_stage_edge_e_[lev],
@@ -40,9 +66,56 @@
       );
       // edge_e_ stores the time-integrated RK combination used by the cell
       // update and flux registers, rather than only the final stage EMF.
-      add_scaled_edge_field(
-         edge_e_[lev], ct_stage_edge_e_[lev], stage_weight
-      );
+      if (stage_weight != 0.0) {
+         add_scaled_edge_field(
+            edge_e_[lev], ct_stage_edge_e_[lev], stage_weight
+         );
+      }
+   }
+
+   template <int EOSMethod>
+   void install_ct_stage_face_field(
+      LevelData& stage_state,
+      EvolutionStageSlot spacetime_slot,
+      int lev_begin,
+      int lev_end,
+      amrex::Real stage_time,
+      amrex::Real start_weight,
+      amrex::Real current_weight,
+      amrex::Real emf_weight
+   )
+   {
+      if (!ct_enabled(cfg_)) {
+         return;
+      }
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         if (ct_stage_edge_e_[lev].e[0] == nullptr) {
+            continue;
+         }
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            amrex::MultiFab& current = *face_b_[lev].b[dir];
+            current.mult(current_weight, 0, 1, current.nGrow());
+            amrex::MultiFab::Saxpy(
+               current,
+               start_weight,
+               *ct_step_start_face_b_[lev].b[dir],
+               0,
+               0,
+               1,
+               current.nGrow()
+            );
+         }
+         apply_edge_electric_curl(
+            face_b_[lev], ct_stage_edge_e_[lev], Geom(lev), emf_weight, cfg_
+         );
+         apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
+      }
+      (void)stage_state;
+      // Metric coupling is independent of the CT face field and is prepared
+      // by the next RHS owner. Do not duplicate that transfer here.
+      (void)spacetime_slot;
+      (void)stage_time;
+      (void)EOSMethod;
    }
 
    DiffusionStats advance_ct_ideal_level(int lev, amrex::Real dt)
@@ -53,6 +126,7 @@
          ct_flux_derived_emf_is_available(fluxes)
          && ct_stage_edge_e_[lev].e[0] != nullptr
       ) {
+         copy_face_magnetic_field(face_b_[lev], ct_step_start_face_b_[lev]);
          apply_edge_electric_curl(
             face_b_[lev], edge_e_[lev], Geom(lev), 1.0, cfg_
          );

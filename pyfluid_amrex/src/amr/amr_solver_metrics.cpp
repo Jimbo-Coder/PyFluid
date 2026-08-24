@@ -143,7 +143,7 @@ amrex::Real AmrSolverBase::active_finest_cell_width() const
 amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> AmrSolverBase::min_feature_lengths() const
 {
    auto lengths = configured_min_feature_lengths(cfg_);
-   if (cfg_.tag_metric != "lohner" || cfg_.amr_max_level <= 1) {
+   if (cfg_.tag_metric == "none" || cfg_.amr_max_level <= 1) {
       return lengths;
    }
    const auto base_widths = level_cell_widths(0);
@@ -489,8 +489,16 @@ void AmrSolverBase::ErrorEst(
    const amrex::Real min_refine_radius = cfg_.min_refine_radius;
    const EOSParams eos = eos_params(cfg_);
    const int eos_method = eos_method_code(cfg_);
+   const int tag_policy = amr_tag_policy_code(cfg_);
+   const amrex::Real density_floor = cfg_.rho_floor;
    const PhysicalSystem physics_system = physics_system_;
-   fill_level_primitive_cache(lev, time);
+   if (amr_tag_policy_uses_fluid(tag_policy)) {
+      fill_level_primitive_cache(lev, time);
+   } else if (spacetime_state_.active()) {
+      prepare_spacetime_coupling_range(
+         spacetime_state_.state(), lev, lev + 1, time, -1.0, 0
+      );
+   }
    const char tagval = amrex::TagBox::SET;
    const int initial_refine_levels = std::min(maxLevel(), cfg_.initial_refine_levels);
    const int fixed_initial_refine_levels = std::min(maxLevel(), cfg_.initial_refine_fixed_levels);
@@ -592,6 +600,8 @@ void AmrSolverBase::ErrorEst(
             eos,
             eos_method,
             physics_system,
+            tag_policy,
+            density_floor,
             coordinate,
             axes,
             problo,

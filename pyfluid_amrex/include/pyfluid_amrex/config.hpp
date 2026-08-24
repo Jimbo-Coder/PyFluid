@@ -420,6 +420,7 @@ int recon_method_code(RunConfig const& cfg);
 int timestep_method_code(RunConfig const& cfg);
 int diffusion_method_code(RunConfig const& cfg);
 int eos_method_code(RunConfig const& cfg);
+int amr_tag_policy_code(RunConfig const& cfg);
 bool valid_plotfile_compression(std::string const& value);
 std::string resolved_plotfile_compression(std::string const& value);
 

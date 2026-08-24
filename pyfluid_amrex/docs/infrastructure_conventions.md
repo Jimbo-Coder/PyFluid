@@ -29,8 +29,11 @@ methods and physics belong in their topic documents; coding style belongs in
   Python strictly loads and validates it and emits generated C++/JSON/document
   views. Runtime code must not create a second raw-string field registry.
 - `schema/methods.toml` owns supported-method identity and dispatch metadata,
-  including reconstruction names/codes/stencil radii/characteristic forms and
-  rotation-law names. Its native initial-data-owner records declare natural
+  including reconstruction names/codes/stencil radii/characteristic forms,
+  rotation-law names, and the runtime AMR indicator policies. An AMR policy
+  selects a small set of semantic density/flow/magnetic/spacetime indicators;
+  it does not create a template product or infer a driver from every stored GF.
+  Its native initial-data-owner records declare natural
   coordinate/axis layouts, dimensions, grid kinds, broad object/disk support,
   relative-tilt support, and reflection class. Coupled physical restrictions
   remain explicit host validation; owner records do not generate a solver
@@ -129,6 +132,10 @@ methods and physics belong in their topic documents; coding style belongs in
   FillPatch, subcycling, and repair seeds. Fluid state is refluxed and averaged
   down; CT uses edge-EMF reflux and face average-down; nodal spacetime follows
   its nodal synchronization contract and is not refluxed.
+- Automatic AMR tagging uses one runtime policy declared in
+  `schema/methods.toml`. Compact-object policies suppress floor-level matter
+  noise and select density support and/or conformal geometry explicitly;
+  broad flow tagging remains opt-in for shocks and instability studies.
 - A physics-system admissibility restriction augments that selected
   interpolater in its state-transfer owner; it is not a second interpolater or
   a post-transfer atmosphere repair. Keep relativistic conserved components
@@ -137,12 +144,15 @@ methods and physics belong in their topic documents; coding style belongs in
   ghost region, so the owner must interpolate and limit the complete
   sibling-aligned family in private scratch before copying the requested
   subset. A partial-region call must not change the resulting child values.
-- Face-centered magnetic fields are canonical when CT is active. Before an
-  accepted relativistic state is exposed to another RK stage or AMR level,
-  synchronize its cell-centered magnetic components from the corresponding
-  canonical face state and apply physical acceptance with that same field.
-  A final post-sync recovery/projection is a backstop, not a substitute for
-  stage-consistent face-field evolution.
+- Face-centered magnetic fields are canonical when CT is active. Each RK stage
+  constructs its face field from the saved step-start field and the appropriate
+  stage EMF combination. Primitive recovery/reconstruction substitutes that
+  face average without mutating the stage momentum or energy. A per-level
+  ownership mask admits valid, same-level, and periodic ghost context; AMReX
+  FillPatch cell state remains authoritative in uncovered coarse-fine ghosts.
+  After the RK-integrated face update, synchronize cell-centered magnetic
+  components and apply final physical acceptance. The latter is a backstop,
+  not a substitute for stage-consistent face evolution.
 - After hierarchy synchronization or regrid, refresh the metric coupling and
   perform final relativistic acceptance before exposing or writing the state.
   Newly created or remade levels must keep current and old-time storage

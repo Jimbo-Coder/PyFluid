@@ -1,5 +1,70 @@
 schema_version = 1
 
+# Runtime-selected AMR policies. These flags choose which coordinate-independent
+# physical indicators enter one Lohner maximum; they are not compiled template
+# products. `lohner` preserves the broad legacy flow-study behavior, while the
+# narrower policies avoid letting atmosphere velocity or magnetization control
+# compact-object refinement.
+[[amr_tag_policy]]
+name = "none"
+cpp_id = "None"
+label = "No automatic tagging"
+description = "Disable state-based automatic AMR tagging."
+density = false
+pressure = false
+velocity = false
+magnetic = false
+spacetime = false
+density_floor_multiple = 0.0
+
+[[amr_tag_policy]]
+name = "lohner"
+cpp_id = "Lohner"
+label = "Broad flow Lohner"
+description = "Apply the legacy system-aware Lohner maximum to density, pressure, velocity, magnetic diagnostics, and stored conformal geometry."
+density = true
+pressure = true
+velocity = true
+magnetic = true
+spacetime = true
+density_floor_multiple = 0.0
+
+[[amr_tag_policy]]
+name = "matter"
+cpp_id = "Matter"
+label = "Matter support"
+description = "Track density-supported matter without allowing atmosphere velocity or magnetization to drive refinement."
+density = true
+pressure = false
+velocity = false
+magnetic = false
+spacetime = false
+density_floor_multiple = 10.0
+
+[[amr_tag_policy]]
+name = "spacetime"
+cpp_id = "Spacetime"
+label = "Spacetime geometry"
+description = "Track stored conformal-factor structure only; intended for vacuum compact-object geometry."
+density = false
+pressure = false
+velocity = false
+magnetic = false
+spacetime = true
+density_floor_multiple = 0.0
+
+[[amr_tag_policy]]
+name = "compact_object"
+cpp_id = "CompactObject"
+label = "Compact object"
+description = "Track density-supported matter and stored conformal-factor structure for GRHD/GRMHD compact objects."
+density = true
+pressure = false
+velocity = false
+magnetic = false
+spacetime = true
+density_floor_multiple = 10.0
+
 # Reconstruction methods are ordered by their stable generated C++ code.  The
 # catalog declares identity and stencil/dispatch metadata; formulas remain in
 # the reconstruction headers and each compiled method owns one flux entry.

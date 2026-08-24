@@ -80,6 +80,7 @@ class Case:
    checks: ScalarPolicy = CLOSED_POLICY
    require_amr: bool = False
    min_amr_level: int = 1
+   max_amr_level: int | None = None
    min_amr_headroom: int = 2
    min_regrid_noops: int = 0
    expected_uniform_state: dict[str, float] = field(default_factory=dict)
@@ -262,6 +263,17 @@ def run_case(case: Case, force: bool, timeout: int, ranks_override: int | None =
       if failures:
          row["status"] = "FAIL"
          row["reason"] = "; ".join(filter(None, (str(row.get("reason", "")), *failures)))
+   if case.max_amr_level is not None:
+      active_level = int(float(row.get("amr_active_finest_level", 0)))
+      if active_level > case.max_amr_level:
+         row["status"] = "FAIL"
+         failure = (
+            f"automatic AMR reached L{active_level}, expected at most "
+            f"L{case.max_amr_level}"
+         )
+         row["reason"] = "; ".join(
+            filter(None, (str(row.get("reason", "")), failure))
+         )
    if case.min_regrid_noops > 0:
       match = re.search(
          r"AMR regrid attempts=(\d+) noops=(\d+) modified_levels=(\d+)",
@@ -846,6 +858,51 @@ def amr_cases() -> list[Case]:
       # This isolated sensor check uses a true magnetic discontinuity, so the
       # configured level is deliberately the stopping condition.
       min_amr_headroom=0,
+   ))
+   cases.append(Case(
+      "rmhd_matter_tag_ignores_magnetic_jump",
+      1,
+      "rmhd_entropy_wave_1d.in",
+      {
+         "amr.n_cell": "16",
+         "amr.max_level": "2",
+         "amr.ref_ratio": "2 2",
+         "amr.max_grid_size": "32",
+         "amr.blocking_factor": "8",
+         "amr.regrid_int": "1",
+         "amr.tag_metric": "matter",
+         "amr.min_feature_length": "1.0e-5",
+         "amr.total_cell_budget": "100000",
+         "pyfluid.ic": "sod_periodic_plane",
+         "pyfluid.shock_x0": "0.5",
+         "pyfluid.shock_nx": "1.0",
+         "pyfluid.rho_left": "1.0",
+         "pyfluid.rho_right": "1.0",
+         "pyfluid.pressure_left": "1.0",
+         "pyfluid.pressure_right": "1.0",
+         "pyfluid.v1_left": "0.0",
+         "pyfluid.v1_right": "0.0",
+         "pyfluid.v2_left": "0.0",
+         "pyfluid.v2_right": "0.0",
+         "pyfluid.v3_left": "0.0",
+         "pyfluid.v3_right": "0.0",
+         "pyfluid.b1_left": "0.2",
+         "pyfluid.b1_right": "0.2",
+         "pyfluid.b2_left": "0.05",
+         "pyfluid.b2_right": "1.0",
+         "pyfluid.b3_left": "0.0",
+         "pyfluid.b3_right": "0.0",
+         "pyfluid.ct": "off",
+         "pyfluid.max_step": "0",
+         "pyfluid.final_time": "-1",
+         "pyfluid.plot_int": "-1",
+         "pyfluid.scalar_int": "1",
+         "pyfluid.aux_gfs": "none",
+         "pyfluid.aux_gf_compute_int": "-1",
+         "pyfluid.aux_gf_int": "-1",
+      },
+      checks=SMOKE_POLICY,
+      max_amr_level=0,
    ))
    for timestep in ["euler", "corrector", "midpoint", "ssprk3", "rk4"]:
       cases.append(Case(

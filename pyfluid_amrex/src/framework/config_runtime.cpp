@@ -64,6 +64,13 @@ int eos_method_code(RunConfig const& cfg)
    return config_options::option_code(cfg.eos, config_options::EOSOptions, "pyfluid.eos");
 }
 
+int amr_tag_policy_code(RunConfig const& cfg)
+{
+   return config_options::option_code(
+      cfg.tag_metric, config_options::AMRTagMetricOptions, "amr.tag_metric"
+   );
+}
+
 bool valid_plotfile_compression(std::string const& value)
 {
    if (value == "none" || value == "best" || value == "zlib") {

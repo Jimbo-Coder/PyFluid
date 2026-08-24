@@ -896,7 +896,7 @@ RunConfig read_config()
          cfg.initial_refine_box_hi[n] = initial_refine_box_hi[n];
       }
    }
-   if (cfg.tag_metric == "lohner" && !cfg.tag_threshold_set) {
+   if (cfg.tag_metric != "none" && !cfg.tag_threshold_set) {
       cfg.tag_threshold = amr_default_lohner_tag_threshold();
    }
    if (cfg.level_cell_budget_side > 0) {
@@ -917,6 +917,12 @@ RunConfig read_config()
 void validate_config(RunConfig const& cfg)
 {
    validate_registered_parameters(cfg);
+   if ((cfg.tag_metric == "spacetime" || cfg.tag_metric == "compact_object")
+       && !spacetime_stores_state(cfg)) {
+      amrex::Abort(
+         "amr.tag_metric = spacetime or compact_object requires stored fixed/evolved spacetime"
+      );
+   }
    require_supported_option(
       cfg.spacetime_evolution,
       SpacetimeEvolutionOptions,

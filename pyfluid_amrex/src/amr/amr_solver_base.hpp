@@ -655,6 +655,7 @@ protected:
    std::vector<std::unique_ptr<amrex::MultiFab>> solid_volume_fraction_;
    std::array<std::vector<std::unique_ptr<amrex::MultiFab>>, AMREX_SPACEDIM> solid_aperture_;
    std::vector<std::unique_ptr<amrex::iMultiFab>> primitive_needed_mask_;
+   std::vector<std::unique_ptr<amrex::iMultiFab>> ct_face_primitive_mask_;
    std::vector<amrex::Vector<int>> solid_valid_kind_;
    std::vector<amrex::Vector<int>> primitive_needed_kind_;
    std::vector<amrex::Array<amrex::Vector<int>, AMREX_SPACEDIM>> solid_flux_kind_;
@@ -669,6 +670,7 @@ protected:
    std::vector<std::unique_ptr<amrex::MultiFab>> gravity_stage_energy_release_;
    std::vector<bool> gravity_fixed_cache_valid_;
    std::vector<FaceMagneticField> face_b_;
+   std::vector<FaceMagneticField> ct_step_start_face_b_;
    std::vector<EdgeElectricField> edge_e_;
    std::vector<EdgeElectricField> ct_stage_edge_e_;
    std::vector<EdgeElectricField> edge_current_;

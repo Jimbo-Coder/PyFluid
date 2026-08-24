@@ -223,6 +223,8 @@ inline void fill_amr_tag_metric_output(
 {
    const EOSParams eos = eos_params(cfg);
    const int eos_method = eos_method_code(cfg);
+   const int tag_policy = amr_tag_policy_code(cfg);
+   const amrex::Real density_floor = cfg.rho_floor;
    const PhysicalSystem system = physical_system(cfg);
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
@@ -230,7 +232,9 @@ inline void fill_amr_tag_metric_output(
    if (physical_system_is_relativistic(system) && spacetime_state == nullptr) {
       amrex::Abort("relativistic AMR-metric output requires canonical spacetime state");
    }
-   fill_aux_primitive_cache(primitive, state, geom, time, cfg, spacetime_state);
+   if (amr_tag_policy_uses_fluid(tag_policy)) {
+      fill_aux_primitive_cache(primitive, state, geom, time, cfg, spacetime_state);
+   }
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
    const auto problo = geom.ProbLoArray();
@@ -260,6 +264,8 @@ inline void fill_amr_tag_metric_output(
             eos,
             eos_method,
             system,
+            tag_policy,
+            density_floor,
             mesh_coordinate,
             mesh_axes,
             problo,

@@ -19,6 +19,21 @@ void fill_newtonian_cache(PrimitiveCacheLaunch const& launch)
       );
       return;
    }
+   if constexpr (has_mhd_components<NumComponents>()) {
+      if (launch.canonical_face_b != nullptr) {
+         AMREX_ALWAYS_ASSERT(launch.geometry != nullptr);
+         AMREX_ALWAYS_ASSERT(launch.canonical_face_b_cell_mask != nullptr);
+         fill_primitive_cache_from_ct_faces<NumComponents, EosMethod>(
+            launch.primitive,
+            launch.conserved,
+            launch.eos,
+            *launch.canonical_face_b,
+            *launch.canonical_face_b_cell_mask,
+            *launch.geometry
+         );
+         return;
+      }
+   }
    fill_primitive_cache<NumComponents, EosMethod>(
       launch.primitive, launch.conserved, launch.eos
    );
@@ -95,7 +110,9 @@ void fill_primitive_cache(PrimitiveCacheLaunch const& launch)
             launch.physical_system,
             *launch.geometry,
             launch.fixed_spacetime,
-            launch.time
+            launch.time,
+            launch.canonical_face_b,
+            launch.canonical_face_b_cell_mask
          );
       } else {
          fill_base_primitive_cache<EOSRuntime>(
@@ -105,7 +122,9 @@ void fill_primitive_cache(PrimitiveCacheLaunch const& launch)
             launch.physical_system,
             *launch.geometry,
             launch.fixed_spacetime,
-            launch.time
+            launch.time,
+            launch.canonical_face_b,
+            launch.canonical_face_b_cell_mask
          );
       }
       return;
@@ -147,7 +166,10 @@ void fill_primitive_cache(PrimitiveCacheLaunch const& launch)
          launch.primitive,
          launch.conserved,
          launch.eos,
-         *launch.cell_spacetime
+         *launch.cell_spacetime,
+         launch.geometry,
+         launch.canonical_face_b,
+         launch.canonical_face_b_cell_mask
       );
       return;
    }

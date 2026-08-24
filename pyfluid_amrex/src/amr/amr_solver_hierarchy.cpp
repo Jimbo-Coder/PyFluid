@@ -70,12 +70,20 @@ AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_s
    const auto amr_min_feature_lengths = min_feature_lengths();
    const EOSParams eos = eos_params(cfg_);
    const int eos_method = eos_method_code(cfg_);
+   const int tag_policy = amr_tag_policy_code(cfg_);
+   const amrex::Real density_floor = cfg_.rho_floor;
    const int coordinate = mesh_coordinate_kind();
    const MeshAxes axes = active_mesh_axes();
    const auto problo = Geom(lev).ProbLoArray();
    const auto dx = Geom(lev).CellSizeArray();
    const amrex::Real min_refine_radius = cfg_.min_refine_radius;
-   fill_level_primitive_cache(lev, time);
+   if (amr_tag_policy_uses_fluid(tag_policy)) {
+      fill_level_primitive_cache(lev, time);
+   } else if (spacetime_state_.active()) {
+      prepare_spacetime_coupling_range(
+         spacetime_state_.state(), lev, lev + 1, time, -1.0, 0
+      );
+   }
 
    amrex::Long local_tagged_cells = 0;
    std::array<amrex::Long, AMREX_SPACEDIM> local_direction_tags{};
@@ -120,6 +128,8 @@ AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_s
                      eos,
                      eos_method,
                      physics_system_,
+                     tag_policy,
+                     density_floor,
                      coordinate,
                      axes,
                      problo,

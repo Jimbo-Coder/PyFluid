@@ -8,6 +8,7 @@
 
 #include "pyfluid_amrex/coordinate_locations.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
+#include "pyfluid_amrex/generated/amr_tag_catalog.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
@@ -43,7 +44,9 @@ RMHDPrimitive rmhd_primitive_from_amr_cache(
    const amrex::Real pressure = primitive(i, j, k, ENERGY);
    return {
       rho,
-      pressure / ((eos.gamma - 1.0) * rho),
+      relativistic_specific_internal_energy_from_pressure<EOSRuntime>(
+         rho, pressure, eos
+      ),
       pressure,
       primitive(i, j, k, MOM1),
       primitive(i, j, k, MOM2),
@@ -299,6 +302,8 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fluid_amr_directional_indicators(
    EOSParams const& eos,
    int eos_method,
    PhysicalSystem system,
+   int tag_policy,
+   amrex::Real density_floor,
    int coordinate,
    MeshAxes const& axes,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
@@ -309,9 +314,13 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fluid_amr_directional_indicators(
 ) noexcept
 {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators{};
+   const AmrTagPolicyFlags policy = amr_tag_policy_flags(tag_policy);
    const bool newtonian_mhd = system == PhysicalSystem::MHD;
    const bool rmhd = system == PhysicalSystem::RMHD;
    if (!amr_cell_allows_radial_refinement(coordinate, axes, problo, dx, i, j, k, min_refine_radius)) {
+      return indicators;
+   }
+   if (!amr_tag_policy_uses_fluid(tag_policy)) {
       return indicators;
    }
    const auto pressure_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
@@ -351,41 +360,56 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fluid_amr_directional_indicators(
       );
    };
 
-   const amrex::Real p0 = amrex::max(amrex::Math::abs(pressure_at(i, j, k)), 1.0e-50);
    const amrex::Real rho0 = amrex::max(amrex::Math::abs(rho_at(i, j, k)), 1.0e-50);
-   const amrex::Real v1_0 = vx_at(i, j, k);
-   const amrex::Real v2_0 = vy_at(i, j, k);
-   const amrex::Real v3_0 = vz_at(i, j, k);
-   const amrex::Real vmag = std::sqrt(squared_norm(StateVector3{v1_0, v2_0, v3_0}));
+   const amrex::Real p0 = (policy.pressure || policy.velocity || policy.magnetic)
+      ? amrex::max(amrex::Math::abs(pressure_at(i, j, k)), 1.0e-50)
+      : 1.0e-50;
+   amrex::Real vmag = 0.0;
+   if (policy.velocity) {
+      const amrex::Real v1_0 = vx_at(i, j, k);
+      const amrex::Real v2_0 = vy_at(i, j, k);
+      const amrex::Real v3_0 = vz_at(i, j, k);
+      vmag = std::sqrt(squared_norm(StateVector3{v1_0, v2_0, v3_0}));
+   }
    amrex::Real b2 = 0.0;
-   if (newtonian_mhd) {
+   if (policy.magnetic && newtonian_mhd) {
       const amrex::Real b1_0 = b1_at(i, j, k);
       const amrex::Real b2_0 = b2_at(i, j, k);
       const amrex::Real b3_0 = b3_at(i, j, k);
       b2 = 2.0 * magnetic_energy_density(StateVector3{b1_0, b2_0, b3_0});
    }
-   const amrex::Real cs0 = fluid_sound_speed_from_primitive_runtime(
-      system, eos_method, rho0, p0, eos
-   );
-   const amrex::Real signal_scale = amrex::max(vmag + std::sqrt(cs0 * cs0 + b2 / rho0), 1.0e-50);
+   if (policy.pressure) {
+      accumulate_metric_aware_directional_indicator(
+         indicators, pressure_at, i, j, k, p0, coordinate, axes, problo, dx, min_feature_lengths
+      );
+   }
+   if (
+      policy.density
+      && rho0 > policy.density_floor_multiple * density_floor
+   ) {
+      accumulate_metric_aware_directional_indicator(
+         indicators, rho_at, i, j, k, rho0, coordinate, axes, problo, dx, min_feature_lengths
+      );
+   }
+   if (policy.velocity) {
+      const amrex::Real cs0 = fluid_sound_speed_from_primitive_runtime(
+         system, eos_method, rho0, p0, eos
+      );
+      const amrex::Real signal_scale = amrex::max(
+         vmag + std::sqrt(cs0 * cs0 + b2 / rho0), 1.0e-50
+      );
+      accumulate_metric_aware_directional_indicator(
+         indicators, vx_at, i, j, k, signal_scale, coordinate, axes, problo, dx, min_feature_lengths
+      );
+      accumulate_metric_aware_directional_indicator(
+         indicators, vy_at, i, j, k, signal_scale, coordinate, axes, problo, dx, min_feature_lengths
+      );
+      accumulate_metric_aware_directional_indicator(
+         indicators, vz_at, i, j, k, signal_scale, coordinate, axes, problo, dx, min_feature_lengths
+      );
+   }
 
-   accumulate_metric_aware_directional_indicator(
-      indicators, pressure_at, i, j, k, p0, coordinate, axes, problo, dx, min_feature_lengths
-   );
-   accumulate_metric_aware_directional_indicator(
-      indicators, rho_at, i, j, k, rho0, coordinate, axes, problo, dx, min_feature_lengths
-   );
-   accumulate_metric_aware_directional_indicator(
-      indicators, vx_at, i, j, k, signal_scale, coordinate, axes, problo, dx, min_feature_lengths
-   );
-   accumulate_metric_aware_directional_indicator(
-      indicators, vy_at, i, j, k, signal_scale, coordinate, axes, problo, dx, min_feature_lengths
-   );
-   accumulate_metric_aware_directional_indicator(
-      indicators, vz_at, i, j, k, signal_scale, coordinate, axes, problo, dx, min_feature_lengths
-   );
-
-   if (newtonian_mhd) {
+   if (policy.magnetic && newtonian_mhd) {
       const auto magnetic_pressure_at = [=] AMREX_GPU_HOST_DEVICE(int ia, int ja, int ka) noexcept {
          const amrex::Real local_b1 = b1_at(ia, ja, ka);
          const amrex::Real local_b2 = b2_at(ia, ja, ka);
@@ -408,7 +432,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fluid_amr_directional_indicators(
       );
    }
 
-   if (rmhd) {
+   if (policy.magnetic && rmhd) {
       const auto magnetic_pressure_at = [=] AMREX_GPU_HOST_DEVICE(
          int ia, int ja, int ka
       ) noexcept {
@@ -522,6 +546,8 @@ auto_amr_directional_indicators_from_primitive(
    EOSParams const& eos,
    int eos_method,
    PhysicalSystem system,
+   int tag_policy,
+   amrex::Real density_floor,
    int coordinate,
    MeshAxes const& axes,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
@@ -540,6 +566,8 @@ auto_amr_directional_indicators_from_primitive(
          eos,
          eos_method,
          system,
+         tag_policy,
+         density_floor,
          coordinate,
          axes,
          problo,
@@ -548,20 +576,22 @@ auto_amr_directional_indicators_from_primitive(
          min_refine_radius,
          spacetime
       );
-   const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacetime_indicators =
-      spacetime_amr_directional_indicators(
-         i,
-         j,
-         k,
-         coordinate,
-         axes,
-         problo,
-         dx,
-         min_feature_lengths,
-         spacetime
-      );
-   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      indicators[dir] = amrex::max(indicators[dir], spacetime_indicators[dir]);
+   if (amr_tag_policy_flags(tag_policy).spacetime) {
+      const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacetime_indicators =
+         spacetime_amr_directional_indicators(
+            i,
+            j,
+            k,
+            coordinate,
+            axes,
+            problo,
+            dx,
+            min_feature_lengths,
+            spacetime
+         );
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         indicators[dir] = amrex::max(indicators[dir], spacetime_indicators[dir]);
+      }
    }
    return indicators;
 }
@@ -575,6 +605,8 @@ amrex::Real auto_amr_indicator_from_primitive(
    EOSParams const& eos,
    int eos_method,
    PhysicalSystem system,
+   int tag_policy,
+   amrex::Real density_floor,
    int coordinate,
    MeshAxes const& axes,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
@@ -592,6 +624,8 @@ amrex::Real auto_amr_indicator_from_primitive(
       eos,
       eos_method,
       system,
+      tag_policy,
+      density_floor,
       coordinate,
       axes,
       problo,

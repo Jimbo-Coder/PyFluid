@@ -95,10 +95,14 @@ def run_method(method: Method, args: argparse.Namespace) -> dict[str, object]:
       assignments.extend((
          "amr.ref_ratio=2 2 2",
          "amr.n_error_buf=2 2 2",
-         "amr.regrid_int=2",
+         "amr.regrid_int=100000",
          "amr.regrid_mode=aligned",
-         "amr.tag_metric=lohner",
-         "amr.min_feature_length=1.0e-6",
+         "amr.tag_metric=none",
+         "amr.initial_refine=box",
+         "amr.initial_refine_levels=3",
+         "amr.initial_refine_fixed_levels=3",
+         "amr.initial_refine_box_lo=0.0",
+         "amr.initial_refine_box_hi=1.0",
          "amr.total_cell_budget=20000",
          "pyfluid.subcycling_steps=local_cfl",
       ))

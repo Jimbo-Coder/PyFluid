@@ -137,18 +137,33 @@ single AMReX ownership, field-schema, code-generation, and validation contracts.
 
 ## AMR Indicators
 
-The production automatic indicator has two semantic aggregates, not one tagger
-per evolved component:
+`schema/methods.toml` owns a small runtime AMR-policy catalog. It selects
+semantic indicators rather than exposing one independent switch per evolved
+component:
 
-1. a scale-free fluid indicator combining thermodynamic, velocity, and, for
-   magnetic systems, magnetic-pressure/magnetization structure;
-2. a scale-free spacetime indicator formed from the normalized second
-   difference of the conformal-geometry perturbation `chi - 1`.
+- `lohner` preserves the broad flow-study maximum over density, pressure,
+  velocity, magnetic structure when present, and stored `chi - 1` when
+  present;
+- `matter` follows density-supported matter only and ignores cells within ten
+  configured density floors;
+- `spacetime` follows stored `chi - 1` only and skips fluid primitive recovery;
+- `compact_object` combines the guarded matter and spacetime indicators.
 
-The directional maximum of those aggregates feeds the existing AMR hierarchy.
-This follows the one-error-GF model used by CarpetX/AsterX while keeping the
-physics choice in PyFluid's generated field-aware policy. Adding a spacetime
-field must not silently make every new component an AMR driver.
+The directional maximum of the selected indicators feeds the unchanged AMReX
+hierarchy. `compact_object` is the normal stellar GRHD/GRMHD choice. `spacetime`
+is appropriate for vacuum compact-object geometry, while `lohner` remains an
+explicit shock, instability, and ideal-flow choice. A magnetic/shear science
+target should become another small documented policy only after a matched
+validation demonstrates its benefit; adding a new evolved or diagnostic field
+must never silently make it an AMR driver.
+
+This distinction is supported by production-code evidence rather than a claim
+that `chi` is universally sufficient. Vacuum numerical-relativity codes refine
+on conformal geometry or truncation error, whereas GRMHD merger work uses
+objective-specific density, magnetic-field, or shear criteria and explicitly
+guards against refining low-density unphysical regions. Broad all-field
+tagging is therefore a useful stress/flow policy, not a realistic universal
+full-GRMHD default.
 
 ## Curvilinear Relativity Boundary
 

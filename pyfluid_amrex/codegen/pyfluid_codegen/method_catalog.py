@@ -66,6 +66,20 @@ class ReconstructionMethod:
 
 
 @dataclass(frozen=True)
+class AmrTagPolicy:
+    name: str
+    cpp_id: str
+    label: str
+    description: str
+    density: bool
+    pressure: bool
+    velocity: bool
+    magnetic: bool
+    spacetime: bool
+    density_floor_multiple: float
+
+
+@dataclass(frozen=True)
 class InitialDataOwner:
     name: str
     cpp_id: str
@@ -279,6 +293,56 @@ def _load_reconstruction(
     )
 
 
+def _load_amr_tag_policy(
+    record: dict[str, Any], index: int
+) -> AmrTagPolicy:
+    context = f"amr_tag_policy[{index}]"
+    _reject_unknown_keys(
+        record,
+        {
+            "name",
+            "cpp_id",
+            "label",
+            "description",
+            "density",
+            "pressure",
+            "velocity",
+            "magnetic",
+            "spacetime",
+            "density_floor_multiple",
+        },
+        context,
+    )
+    flags: dict[str, bool] = {}
+    for key in ("density", "pressure", "velocity", "magnetic", "spacetime"):
+        value = record.get(key)
+        if type(value) is not bool:
+            raise ValueError(f"{context}.{key} must be a boolean")
+        flags[key] = value
+    density_floor_multiple = record.get("density_floor_multiple")
+    if (
+        type(density_floor_multiple) not in (int, float)
+        or density_floor_multiple < 0.0
+    ):
+        raise ValueError(
+            f"{context}.density_floor_multiple must be a nonnegative number"
+        )
+    if not flags["density"] and density_floor_multiple != 0.0:
+        raise ValueError(
+            f"{context}.density_floor_multiple requires density = true"
+        )
+    if index > 0 and not any(flags.values()):
+        raise ValueError(f"{context} must enable at least one indicator")
+    return AmrTagPolicy(
+        name=_required_string(record, "name", context),
+        cpp_id=_required_string(record, "cpp_id", context),
+        label=_required_string(record, "label", context),
+        description=_required_string(record, "description", context),
+        density_floor_multiple=float(density_floor_multiple),
+        **flags,
+    )
+
+
 def _load_initial_data_owner(
     record: dict[str, Any], index: int
 ) -> InitialDataOwner:
@@ -400,6 +464,7 @@ def _validate_unique_ids(records: tuple[Any, ...], context: str) -> None:
 
 def _load_schema() -> tuple[
     tuple[ReconstructionMethod, ...],
+    tuple[AmrTagPolicy, ...],
     tuple[RotationLaw, ...],
     tuple[DiskRotationLaw, ...],
     tuple[InitialDataPerturbation, ...],
@@ -414,6 +479,7 @@ def _load_schema() -> tuple[
         {
             "schema_version",
             "reconstruction",
+            "amr_tag_policy",
             "rotation_law",
             "disk_rotation_law",
             "initial_data_perturbation",
@@ -440,6 +506,28 @@ def _load_schema() -> tuple[
     if len(reconstruction_methods) != len(reconstruction_records):
         raise ValueError("reconstruction entries must be tables")
     _validate_unique_ids(reconstruction_methods, "reconstruction")
+
+    amr_tag_policy_records = schema.get("amr_tag_policy")
+    if not isinstance(amr_tag_policy_records, list) or not amr_tag_policy_records:
+        raise ValueError("amr_tag_policy must be a nonempty array of tables")
+    amr_tag_policies = tuple(
+        _load_amr_tag_policy(record, index)
+        for index, record in enumerate(amr_tag_policy_records)
+        if isinstance(record, dict)
+    )
+    if len(amr_tag_policies) != len(amr_tag_policy_records):
+        raise ValueError("amr_tag_policy entries must be tables")
+    _validate_unique_ids(amr_tag_policies, "amr_tag_policy")
+    if amr_tag_policies[0].name != "none" or any(
+        (
+            amr_tag_policies[0].density,
+            amr_tag_policies[0].pressure,
+            amr_tag_policies[0].velocity,
+            amr_tag_policies[0].magnetic,
+            amr_tag_policies[0].spacetime,
+        )
+    ):
+        raise ValueError("amr_tag_policy[0] must be the inactive none policy")
 
     rotation_records = schema.get("rotation_law")
     if not isinstance(rotation_records, list) or not rotation_records:
@@ -525,6 +613,7 @@ def _load_schema() -> tuple[
     _validate_unique_ids(owners, "initial_data_owner")
     return (
         reconstruction_methods,
+        amr_tag_policies,
         laws,
         disk_laws,
         perturbations,
@@ -536,6 +625,7 @@ def _load_schema() -> tuple[
 
 (
     RECONSTRUCTION_METHODS,
+    AMR_TAG_POLICIES,
     ROTATION_LAWS,
     DISK_ROTATION_LAWS,
     INITIAL_DATA_PERTURBATIONS,

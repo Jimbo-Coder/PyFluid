@@ -10,9 +10,10 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-24, branch `main`, through Cycle 316's saved-RNS
-evolution/restart harness and code-generation dependency cleanup. Cycle 315's
-generated physical-ID metadata and component-ready handoff, Cycle 313's
+Last reconciled: 2026-08-24, branch `main`, through Cycle 317's generated AMR
+policy, RK-stage CT ownership, and cross-system hardening. Cycle 316's
+saved-RNS evolution/restart harness and code-generation dependency cleanup,
+Cycle 315's generated physical-ID metadata and component-ready handoff, and Cycle 313's
 measured ideal-RMHD C2P optimization, and Cycle 312's runtime-EoS RHD/RMHD
 evolution ownership are the preceding implementation boundaries. Cycle 311's
 coordinate-equivalent ID/materialization handoff and Cycle 309's complete
@@ -109,8 +110,13 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   materially more robust with it than with non-SSP RK4 on extreme tubes. RK4
   remains appropriate for smooth problems.
 - HLLD is the production RMHD Riemann solver. HLLC is a contact-restoring
-  algebra/control path with known multidimensional strong-shock sensitivity;
-  do not promote it by weakening HLLD's rotated or CT gates.
+  algebra/control path with known multidimensional strong-shock sensitivity.
+  Multidimensional HLLC now uses a reconstruction-stencil-bounded
+  total-pressure ratio in the local orthonormal face frame to select its HLL
+  parent at strong grid-aligned shocks. It is inactive in 1D, contacts,
+  uniform flow, curved-spacetime smokes, and the smooth AMR control. The
+  rotated Balsara-1 CT defect is `4.07e-8` for stabilized HLLC versus
+  `3.65e-11` for HLLD; do not promote HLLC over HLLD.
 
 ## RMHD HLLD Boundary
 
@@ -210,6 +216,13 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
 - AMR follows the standard finite-volume contract: FillPatch/prolongation,
   flux-register reflux, average-down of covered cells, and for CT edge-EMF
   reflux plus face average-down. These operations are not interchangeable.
+- Full GRMHD does not have one universal "tag every evolved field" policy.
+  Production evidence separates geometry/vacuum tracking, matter support,
+  object-following boxes, and targeted magnetic/shear science criteria. The
+  catalog therefore keeps `lohner` as an explicit broad flow-study policy,
+  uses floor-guarded density for `matter`, `chi - 1` for `spacetime`, and their
+  union for `compact_object`. Adding a diagnostic GF never makes it an AMR
+  driver implicitly; `chi` alone is not a universal matter criterion.
 - Conservative component averages do not guarantee relativistic
   admissibility. A coarse parent can produce children whose exact component
   average is correct while one child recovers with negative pressure.
@@ -229,16 +242,14 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
 - CT-on transfer needs a metric-aware limiter with canonical face `B` held
   fixed. Stored or evolved spacetime needs the corresponding stage metric; a
   Minkowski surrogate is not a valid admissibility test.
-- Face-centered magnetic fields are the canonical CT state. RK-weighted EMF
-  accumulation is required, but it is not by itself full stage coupling. The
-  current path accumulates stage EMFs and applies one face curl update after the
-  multistage fluid evolution; later fluid stages therefore do not yet
-  reconstruct from the same-stage canonical face field.
-- Synchronizing cell `B` from faces and re-running accepted-state C2P after the
-  final face update is a necessary final-state backstop. It does not replace
-  the remaining owner-correct task: advance canonical face `B` at every RK
-  stage, synchronize it before reconstruction/physical acceptance, and use the
-  same stage flux/EMF in fluid, CT, and AMR ledgers.
+- Face-centered magnetic fields are the canonical CT state. Euler, corrector,
+  midpoint, SSPRK3, and RK4 now construct the appropriate intermediate face
+  field from the step-start field and stage EMF. Stage primitive recovery and
+  reconstruction use its face averages without rewriting conservative
+  momentum/energy. Valid, same-level, and periodic ghost cells use canonical
+  faces; uncovered coarse-fine ghosts retain the AMReX FillPatch cell state.
+  The final update reapplies the RK-integrated EMF to the saved start field,
+  then synchronizes cell `B` and performs accepted-state recovery.
 - After reflux, average-down, final face-field synchronization, and regrid, the
   hierarchy refreshes metric coupling and applies relativistic acceptance at
   the last state owner. Newly created or remade fine levels then copy the
@@ -920,9 +931,10 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
    baryon-mass sequences before quoting a radial-stability/turning-point limit.
    Prototype an exterior modal domain only if it beats the 64/128-theta
    controls.
-3. Make canonical face-`B` ownership stage-coupled before relying on long
-   production GRMHD evolution. Retain the final post-sync projection as a
-   backstop rather than calling it the stage-coupling solution.
+3. Extend the now stage-coupled canonical face-`B` path from the passing
+   short/focused CT, Brio-Wu AMR, and SRMHD gates to long multidimensional
+   GRMHD evolutions. Retain final post-sync recovery as a backstop and require
+   zero atmosphere resets before promoting a long production case.
 4. Run a matched PyFluid/AthenaK work-precision comparison: uniform Balsara and
    multidimensional Orszag--Tang first, with AMR only after the uniform
    equivalence statement is sound. This calibrates performance and error; it is

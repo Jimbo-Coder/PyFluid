@@ -46,6 +46,10 @@ DIAGNOSTIC_CATALOG_HEADER = (
 METHOD_CATALOG_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated" / "method_catalog.hpp"
 )
+AMR_TAG_CATALOG_HEADER = (
+   ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated"
+   / "amr_tag_catalog.hpp"
+)
 INITIAL_DATA_METHOD_CATALOG_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated"
    / "initial_data_method_catalog.hpp"
@@ -70,6 +74,7 @@ from pyfluid_codegen.emit_catalog import (  # noqa: E402
    render_field_catalog_json,
    render_field_ids_header,
    render_initial_data_method_catalog_header,
+   render_amr_tag_catalog_header,
    render_method_catalog_header,
    render_physical_id_catalog_header,
    render_physical_id_catalog_json,
@@ -1730,6 +1735,7 @@ def main() -> None:
          FIELD_CATALOG_HEADER: render_field_catalog_header(),
          DIAGNOSTIC_CATALOG_HEADER: render_diagnostic_catalog_header(),
          METHOD_CATALOG_HEADER: render_method_catalog_header(),
+         AMR_TAG_CATALOG_HEADER: render_amr_tag_catalog_header(),
          INITIAL_DATA_METHOD_CATALOG_HEADER: (
             render_initial_data_method_catalog_header()
          ),

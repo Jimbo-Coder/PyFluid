@@ -429,6 +429,15 @@ SRMHDRiemannSample srmhd_hll_sample(
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real srmhd_total_pressure(const RMHDPrimitive& primitive) noexcept
+{
+   return primitive.pressure + 0.5
+      * generated::rmhd_comoving_magnetic_squared(
+         primitive, minkowski_spacetime_metric()
+      );
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real srmhd_minus_quadratic_root(
    amrex::Real quadratic,
    amrex::Real linear,
@@ -638,7 +647,8 @@ SRMHDRiemannSample srmhd_hllc_sample(
    RMHDPrimitive primitive_l,
    RMHDPrimitive primitive_r,
    const EOSParams& eos,
-   amrex::Real sample_speed
+   amrex::Real sample_speed,
+   bool shock_stabilize = false
 ) noexcept
 {
    const amrex::Real shared_bn = 0.5 * (primitive_l.b1 + primitive_r.b1);
@@ -678,6 +688,11 @@ SRMHDRiemannSample srmhd_hllc_sample(
    if (sample_speed >= speed_r) {
       return {state_r, flux_r, 0.0, 0.0, false};
    }
+   if (shock_stabilize) {
+      return srmhd_hll_sample(
+         state_l, state_r, flux_l, flux_r, speed_l, speed_r, sample_speed
+      );
+   }
    const SRMHDHLLCStates intermediate = srmhd_hllc_intermediate_states(
       primitive_l, primitive_r, state_l, state_r, flux_l, flux_r,
       speed_l, speed_r
@@ -710,13 +725,16 @@ SRMHDRiemannSample srmhd_hllc_sample(
    RMHDPrimitive primitive_l,
    RMHDPrimitive primitive_r,
    amrex::Real gamma,
-   amrex::Real sample_speed
+   amrex::Real sample_speed,
+   bool shock_stabilize = false
 ) noexcept
 {
    EOSParams eos{};
    eos.method = EOSIdealGas;
    eos.gamma = gamma;
-   return srmhd_hllc_sample(primitive_l, primitive_r, eos, sample_speed);
+   return srmhd_hllc_sample(
+      primitive_l, primitive_r, eos, sample_speed, shock_stabilize
+   );
 }
 
 struct SRMHDHLLDVector {
@@ -1040,15 +1058,6 @@ bool srmhd_hlld_physical_solution(
          > evaluation.fast_l.alfven_speed
       && evaluation.contact_velocity_r.n
          < evaluation.fast_r.alfven_speed;
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real srmhd_total_pressure(const RMHDPrimitive& primitive) noexcept
-{
-   return primitive.pressure + 0.5
-      * generated::rmhd_comoving_magnetic_squared(
-         primitive, minkowski_spacetime_metric()
-      );
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -1553,7 +1562,8 @@ RMHDRiemannFluxResult rmhd_hllc_flux(
    const RMHDPrimitive& primitive_l,
    const RMHDPrimitive& primitive_r,
    const EOSParams& eos,
-   const SpacetimeMetric& metric
+   const SpacetimeMetric& metric,
+   bool shock_stabilize = false
 ) noexcept
 {
    const RMHDFaceFrame frame = rmhd_face_frame<Direction>(metric);
@@ -1563,8 +1573,24 @@ RMHDRiemannFluxResult rmhd_hllc_flux(
    const RMHDPrimitive local_r = rmhd_primitive_to_face_frame(
       primitive_r, frame
    );
+#if (AMREX_SPACEDIM >= 2)
+   // Contact restoration is vulnerable to an odd-even mode at a strong
+   // grid-aligned shock. Evaluate the pressure ratio in the orthonormal face
+   // frame and use the HLL parent only for that local fan. This consumes no
+   // stencil beyond the states already reconstructed at the face.
+   const amrex::Real total_pressure_l = srmhd_total_pressure(local_l);
+   const amrex::Real total_pressure_r = srmhd_total_pressure(local_r);
+   const amrex::Real pressure_min = amrex::min(
+      total_pressure_l, total_pressure_r
+   );
+   const amrex::Real pressure_max = amrex::max(
+      total_pressure_l, total_pressure_r
+   );
+   shock_stabilize = shock_stabilize
+      || (pressure_max > 0.0 && pressure_min < 0.5 * pressure_max);
+#endif
    const SRMHDRiemannSample sample = srmhd_hllc_sample(
-      local_l, local_r, eos, frame.interface_speed
+      local_l, local_r, eos, frame.interface_speed, shock_stabilize
    );
    return {
       rmhd_face_sample_to_coordinate_flux<Direction>(sample, frame, metric),

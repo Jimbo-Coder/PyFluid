@@ -44,6 +44,7 @@ RESULTS = RUN_ROOT / "rmhd_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
 CHECKPOINT_COMPARE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_2d"
 CT_AMR_DIVB_TOLERANCE = 1.0e-12
+CT_TRANSVERSE_ROUNDOFF_TOLERANCE = 4096.0 * np.finfo(float).eps
 RMHD_COMPONENT_NAMES = (
    "dens",
    "mom1",
@@ -740,10 +741,14 @@ def validate_shock_ct_reference(
       current_names, output_dim, _ = parse_plot_header(plotfile)
       state = read_level_state(plotfile, current_names, output_dim, 0)
       transverse_spread = float(np.max(np.ptp(state, axis=2)))
-      if transverse_spread > 1024.0 * np.finfo(float).eps:
+      # Stage-coupled CT performs multiple face/edge reductions per RK step.
+      # Plane-parallel invariance must remain at accumulated roundoff, but it
+      # is not expected to be bitwise identical after hundreds of stages.
+      if transverse_spread > CT_TRANSVERSE_ROUNDOFF_TOLERANCE:
          raise RuntimeError(
             f"RMHD CT shock lost transverse uniformity at N={cells}: "
-            f"spread={transverse_spread:.3e}"
+            f"spread={transverse_spread:.3e} > "
+            f"{CT_TRANSVERSE_ROUNDOFF_TOLERANCE:.3e}"
          )
       if names is not None and current_names != names:
          raise RuntimeError("RMHD CT refinement cases use different state schemas")

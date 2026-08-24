@@ -19,8 +19,106 @@
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_MultiFab.H>
 
+#include <limits>
+
 namespace pyfluid_amrex {
 namespace {
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDPrimitive cached_rmhd_primitive(
+   amrex::Array4<amrex::Real const> const& primitive,
+   int i,
+   int j,
+   int k
+) noexcept
+{
+   return {
+      primitive(i, j, k, RHO),
+      0.0,
+      primitive(i, j, k, ENERGY),
+      primitive(i, j, k, MOM1),
+      primitive(i, j, k, MOM2),
+      primitive(i, j, k, MOM3),
+      primitive(i, j, k, B1),
+      primitive(i, j, k, B2),
+      primitive(i, j, k, B3),
+   };
+}
+
+template <int Direction>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+RMHDPrimitive cached_rmhd_primitive_at_offset(
+   amrex::Array4<amrex::Real const> const& primitive,
+   int i,
+   int j,
+   int k,
+   int offset
+) noexcept
+{
+   if constexpr (Direction == 0) {
+      i += offset;
+   } else if constexpr (Direction == 1) {
+      j += offset;
+   } else {
+      k += offset;
+   }
+   return cached_rmhd_primitive(primitive, i, j, k);
+}
+
+template <int ReconMethod, int Direction>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool rmhd_hllc_shock_stabilization_needed(
+   amrex::Array4<amrex::Real const> const& primitive,
+   int il,
+   int jl,
+   int kl,
+   int ir,
+   int jr,
+   int kr,
+   SpacetimeMetric const& face_metric
+) noexcept
+{
+#if (AMREX_SPACEDIM == 1)
+   (void)primitive;
+   (void)il;
+   (void)jl;
+   (void)kl;
+   (void)ir;
+   (void)jr;
+   (void)kr;
+   (void)face_metric;
+   return false;
+#else
+   constexpr int sensor_radius = reconstruction_stencil_radius(ReconMethod);
+   static_assert(sensor_radius >= 0 && sensor_radius <= 2);
+   const RMHDFaceFrame frame = rmhd_face_frame<Direction>(face_metric);
+   amrex::Real pressure_min = std::numeric_limits<amrex::Real>::infinity();
+   amrex::Real pressure_max = 0.0;
+   for (int offset = 0; offset <= sensor_radius; ++offset) {
+      const RMHDPrimitive local_l = rmhd_primitive_to_face_frame(
+         cached_rmhd_primitive_at_offset<Direction>(
+            primitive, il, jl, kl, -offset
+         ),
+         frame
+      );
+      const RMHDPrimitive local_r = rmhd_primitive_to_face_frame(
+         cached_rmhd_primitive_at_offset<Direction>(
+            primitive, ir, jr, kr, offset
+         ),
+         frame
+      );
+      const amrex::Real total_pressure_l = srmhd_total_pressure(local_l);
+      const amrex::Real total_pressure_r = srmhd_total_pressure(local_r);
+      pressure_min = amrex::min(
+         pressure_min, amrex::min(total_pressure_l, total_pressure_r)
+      );
+      pressure_max = amrex::max(
+         pressure_max, amrex::max(total_pressure_l, total_pressure_r)
+      );
+   }
+   return pressure_max > 0.0 && pressure_min < 0.5 * pressure_max;
+#endif
+}
 
 template <int ReconMethod, int RiemannMethod, int Direction, typename MetricAccessor>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -55,8 +153,12 @@ RMHDRiemannFluxResult rmhd_advanced_riemann_flux(
       ir, jr, kr
    );
    if constexpr (RiemannMethod == RiemannHLLC) {
+      const bool shock_stabilize =
+         rmhd_hllc_shock_stabilization_needed<ReconMethod, Direction>(
+            primitive, il, jl, kl, ir, jr, kr, face_metric
+         );
       return rmhd_hllc_flux<Direction>(
-         face.left, face.right, eos, face_metric
+         face.left, face.right, eos, face_metric, shock_stabilize
       );
    } else {
       static_assert(RiemannMethod == RiemannHLLD);

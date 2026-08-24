@@ -11,6 +11,8 @@
 
 namespace pyfluid_amrex {
 
+struct FaceMagneticField;
+
 struct PrimitiveCacheLaunch {
    amrex::MultiFab& primitive;
    amrex::MultiFab const& conserved;
@@ -23,6 +25,8 @@ struct PrimitiveCacheLaunch {
    amrex::Geometry const* geometry = nullptr;
    FixedSpacetimeParameters fixed_spacetime{};
    amrex::Real time = 0.0;
+   FaceMagneticField const* canonical_face_b = nullptr;
+   amrex::iMultiFab const* canonical_face_b_cell_mask = nullptr;
 };
 
 void fill_primitive_cache(PrimitiveCacheLaunch const& launch);

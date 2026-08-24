@@ -258,6 +258,11 @@ refinement_decision_L*
 
 Rules:
 
+- `amr_tag_metric` is a catalog-declared pure auxiliary GF and evaluates the
+  currently selected runtime policy. It is not a hidden second tagger. The
+  level-indexed hierarchy columns below remain in `amr_levels.tsv` because
+  their shape depends on the runtime hierarchy rather than a static GF/scalar
+  component catalog.
 - `touches_max_level = 1` means the run may be limited by `amr.max_level`
   rather than the refinement metric.
 - Budget fractions near `1` mean the hierarchy is resource-limited.

@@ -140,6 +140,14 @@ DEFAULT_METHOD_CATALOG_HEADER = (
    / "generated"
    / "method_catalog.hpp"
 )
+DEFAULT_AMR_TAG_CATALOG_HEADER = (
+   ROOT
+   / "pyfluid_amrex"
+   / "include"
+   / "pyfluid_amrex"
+   / "generated"
+   / "amr_tag_catalog.hpp"
+)
 DEFAULT_INITIAL_DATA_METHOD_CATALOG_HEADER = (
    ROOT
    / "pyfluid_amrex"
@@ -189,6 +197,11 @@ def main() -> None:
    parser.add_argument("--field-catalog-header", type=Path, default=DEFAULT_FIELD_CATALOG_HEADER)
    parser.add_argument("--diagnostic-catalog-header", type=Path, default=DEFAULT_DIAGNOSTIC_CATALOG_HEADER)
    parser.add_argument("--method-catalog-header", type=Path, default=DEFAULT_METHOD_CATALOG_HEADER)
+   parser.add_argument(
+      "--amr-tag-catalog-header",
+      type=Path,
+      default=DEFAULT_AMR_TAG_CATALOG_HEADER,
+   )
    parser.add_argument(
       "--initial-data-method-catalog-header",
       type=Path,
@@ -241,6 +254,7 @@ def main() -> None:
             args.field_catalog_header,
             args.diagnostic_catalog_header,
             args.method_catalog_header,
+            args.amr_tag_catalog_header,
             args.initial_data_method_catalog_header,
             args.physical_id_catalog_header,
             args.field_catalog_json,
@@ -252,6 +266,7 @@ def main() -> None:
          print(args.field_catalog_header)
          print(args.diagnostic_catalog_header)
          print(args.method_catalog_header)
+         print(args.amr_tag_catalog_header)
          print(args.initial_data_method_catalog_header)
          print(args.physical_id_catalog_header)
          print(args.field_catalog_json)

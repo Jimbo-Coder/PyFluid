@@ -347,11 +347,14 @@ Every fluid RK evaluation follows the same order; hierarchy synchronization
 occurs after an accepted level step:
 
 1. Prepare the stage state, metric coupling, and physical/coarse-fine ghosts.
-2. Reconstruct primitive states and solve face Riemann problems.
-3. Compute conservative flux divergence and CT EMFs when active.
-4. Add stage-local source terms through the source interface.
-5. Combine stages with the selected time integrator.
-6. Reflux coarse-fine mismatches, average down covered state, synchronize
+2. For CT MHD/RMHD, construct the RK-stage canonical face field from the step
+   start and the preceding stage EMF, then recover/reconstruct primitives with
+   that face field wherever the same AMReX level owns the required face data.
+3. Reconstruct primitive states and solve face Riemann problems.
+4. Compute conservative flux divergence and CT EMFs when active.
+5. Add stage-local source terms through the source interface.
+6. Combine stages with the selected time integrator.
+7. Reflux coarse-fine mismatches, average down covered state, synchronize
    canonical CT face fields into cell state, and apply accepted-state checks.
 
 AMR uses the standard finite-volume contract:
@@ -427,18 +430,28 @@ the five-wave flat-SRMHD fan and nonlinear total-pressure closure in a local
 face-normal orthonormal frame, then transforms the sampled flux back to the
 coordinate Valencia frame. An unordered, inadmissible, nonfinite, or
 nonconverged fan uses the explicit counted HLL limit. HLLD is the production
-choice; HLLC remains a contact/algebra control. This validation boundary is not
-an all-regime positivity or entropy proof, especially for strongly magnetized
+choice; HLLC remains a contact/algebra control. In multidimensional HLLC only,
+a reconstruction-stencil-bounded total-pressure jump sensor, evaluated in the
+local orthonormal face frame, selects the HLL parent locally at a strong
+grid-aligned shock. It remains inactive in one dimension and at smooth states
+or contacts; this is the standard carbuncle-stability tradeoff, not a new
+runtime method or a positivity proof. This validation boundary is not an
+all-regime positivity or entropy proof, especially for strongly magnetized
 intermediate states and the coupled CT/source discretization.
 The reported HLL fallback value counts solver evaluations, including discarded
 candidate trials and shared-face/FAB duplication, rather than unique final
 faces; zero is meaningful, while a positive magnitude is diagnostic only.
 
-The production AMR tagger follows HD/MHD physical state structure with physical
-gradients and cell sizes. Passive scalars never drive tags. max_level,
-min_feature_length, and cell budgets are safety limits; the flow metric should
-normally end refinement. Curvilinear origin guards are topology/resource guards,
-not a substitute for the metric.
+The runtime AMR policy is cataloged in `schema/methods.toml`; it is not a
+template axis or an implicit maximum over every stored GF. `lohner` preserves
+the broad density/pressure/velocity/magnetic/spacetime flow-study indicator,
+`matter` tracks density-supported matter above a cataloged multiple of the
+configured density floor, `spacetime` tracks stored `chi - 1` without fluid
+recovery, and `compact_object` combines the latter two. Passive scalars and
+newly added output fields never drive tags automatically. `max_level`,
+`min_feature_length`, and cell budgets are safety limits; the selected physical
+metric should normally end refinement. Curvilinear origin guards are
+topology/resource guards, not a substitute for the metric.
 
 Coordinate-equivalence validation holds a common seeded hierarchy after
 initialization, so it measures the coordinate operators rather than different
@@ -474,12 +487,15 @@ corresponding canonical face state before reconstruction and physical
 acceptance.
 
 The current implementation accumulates EMFs with the same RK weights used by
-the fluid update and applies one face curl update after the multistage fluid
-step. Final face-to-cell synchronization plus accepted-state recovery is a
-necessary backstop, but this remains a step-boundary CT path: later fluid RK
-stages do not yet reconstruct from a same-stage evolved face field. Full
-stage-coupled CT must advance canonical face `B` at every RK stage and use that
-same field for reconstruction, C2P, edge-EMF reflux, and face average-down.
+the fluid update and also constructs the canonical face field required by each
+intermediate RK abscissa. Primitive recovery and reconstruction use local
+face averages on valid cells and same-level/periodic ghost context. At a
+coarse-fine ghost, AMReX FillPatch remains authoritative because a fine-level
+face ghost is not independently synchronized canonical data. Intermediate
+recovery substitutes only the magnetic field presented to C2P; it does not
+rewrite stage momentum or energy. The accepted update resets to the saved
+step-start face field, applies the RK-integrated EMF curl exactly once, then
+synchronizes cell `B`, refluxes/averages down, and applies final acceptance.
 
 Fixed gravity is a stage-local source with cached potential/acceleration data.
 Periodic self-gravity solves the multilevel Poisson problem at synchronized

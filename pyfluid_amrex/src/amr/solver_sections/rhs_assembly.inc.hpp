@@ -187,6 +187,12 @@
          &Geom(lev),
          fixed_spacetime_parameters(cfg_),
          time,
+         ct_enabled(cfg_) && has_mhd_components<NComp>()
+            ? &face_b_[lev]
+            : nullptr,
+         ct_enabled(cfg_) && has_mhd_components<NComp>()
+            ? ct_face_primitive_mask_[lev].get()
+            : nullptr,
       });
    }
 

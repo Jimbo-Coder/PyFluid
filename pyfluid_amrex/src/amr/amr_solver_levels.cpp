@@ -162,6 +162,7 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
       aperture.resize(num_levels);
    }
    primitive_needed_mask_.resize(num_levels);
+   ct_face_primitive_mask_.resize(num_levels);
    solid_valid_kind_.resize(num_levels);
    primitive_needed_kind_.resize(num_levels);
    solid_flux_kind_.resize(num_levels);
@@ -179,6 +180,7 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
    }
    gravity_fixed_cache_valid_.resize(num_levels, false);
    face_b_.resize(num_levels);
+   ct_step_start_face_b_.resize(num_levels);
    edge_e_.resize(num_levels);
    ct_stage_edge_e_.resize(num_levels);
    edge_current_.resize(num_levels);
@@ -358,7 +360,16 @@ void AmrSolverBase::allocate_level(
       gravity_fixed_cache_valid_[lev] = false;
    }
    if (ct_enabled(cfg_)) {
+      ct_face_primitive_mask_[lev] = std::make_unique<amrex::iMultiFab>(
+         ba, dm, 1, cfg_.ng
+      );
+      ct_face_primitive_mask_[lev]->setVal(0);
+      ct_face_primitive_mask_[lev]->setVal(1, 0, 1, 0);
+      ct_face_primitive_mask_[lev]->FillBoundary(Geom(lev).periodicity());
       allocate_face_magnetic_field(face_b_[lev], ba, dm, cfg_.ng);
+      allocate_face_magnetic_field(
+         ct_step_start_face_b_[lev], ba, dm, cfg_.ng
+      );
       allocate_edge_electric_field(ct_stage_edge_e_[lev], ba, dm);
    }
    if (needs_edge_electric_field()) {
@@ -580,6 +591,7 @@ void AmrSolverBase::ClearLevel(int lev)
    }
    solid_mask_time_[lev] = std::numeric_limits<amrex::Real>::quiet_NaN();
    primitive_needed_mask_[lev].reset();
+   ct_face_primitive_mask_[lev].reset();
    clear_solid_mask_kind_tables(lev);
    solid_active_[lev] = false;
    gravity_phi_[lev].reset();
@@ -598,6 +610,7 @@ void AmrSolverBase::ClearLevel(int lev)
    gravity_fixed_cache_valid_[lev] = false;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       face_b_[lev].b[dir].reset();
+      ct_step_start_face_b_[lev].b[dir].reset();
    }
    for (auto& component : edge_e_[lev].e) {
       component.reset();

@@ -6510,3 +6510,81 @@ I will always continue from the last cycle marked as `in_progress`.
   equation identity, 1D/2D/3D production targets, and the three-step AMReX
   quick gate all pass. No generated file or C++ numerical kernel changed, so
   the evolution-throughput benchmark was intentionally not repeated. [DONE]
+
+## Cycle 317 — GRMHD AMR policy and cross-system hardening (DONE)
+
+- Source-check production numerical-relativity AMR practice before changing
+  PyFluid's indicator. Distinguish vacuum conformal-factor tracking, moving
+  compact-object boxes, matter-support tagging, and targeted magnetic/shear
+  refinement; determine whether the present broad Lohner maximum can
+  over-refine relativistic atmosphere or noisy primitive fields. GRChombo's
+  conformal-factor example is a vacuum black-hole policy, not a GRMHD default;
+  BAM uses moving object-centered boxes; GR-Athena++ reports targeted magnetic
+  and shear/density policies and explicitly avoids low-density unphysical
+  over-refinement. The durable conclusion is a small objective-specific policy,
+  not an indiscriminate maximum over every evolved field. [DONE]
+- Replace any unsupported all-state default with one small runtime policy
+  boundary shared by HD, MHD, RHD, and RMHD. Preserve the legacy broad
+  indicator for explicit flow studies, keep automatic fields declarative and
+  diagnostics catalog-owned, and expose enough attribution to tell why cells
+  were tagged without adding a template axis or a per-GF option language.
+  `schema/methods.toml` now owns generated runtime `none`, `lohner`, `matter`,
+  `spacetime`, and `compact_object` policies. Matter support ignores density at
+  or below ten atmosphere floors; spacetime-only tagging avoids primitive
+  recovery; compact-object tagging combines only density support and stored
+  chi. The broad legacy Lohner policy remains explicit. The existing
+  catalog-owned `amr_tag_metric` and runtime-shaped `amr_levels.tsv` retain
+  their respective owners. A pure transverse magnetic jump refines under
+  broad Lohner but not matter-only tagging. [DONE]
+- Audit the relativistic AMR/CT acceptance boundary and the maintained
+  SRHD/SRMHD/fixed-GR/evolved-GR validation matrix. Repair only owner-correct
+  cross-system defects, measure performance-sensitive changes, and do not
+  weaken CFL 0.9, recovery/reset, conservation, divergence, or constraint
+  gates. The RMHD AMR primitive cache now obtains specific internal energy from
+  the selected runtime EoS instead of assuming an ideal gas. CT now advances
+  the canonical face field at every RK/SSPRK stage from the accepted step-start
+  field and that stage's EMF, while one validity mask admits face averages only
+  on valid/same-level/periodic cells and preserves state FillPatch at
+  coarse-fine ghosts. The final accepted field still applies the integrated RK
+  EMF exactly once. This repaired stage consistency without breaking AMR+CT.
+  The subcycling control now fixes one common three-level hierarchy so it tests
+  time integration rather than comparing two independently regridded meshes.
+  [DONE]
+- Stage-correct CT exposed the known grid-aligned strong-shock instability of
+  contact-restoring HLLC. Multidimensional HLLC now uses its HLL parent only
+  when an orthonormal-face total-pressure jump exceeds the documented local
+  threshold; HLLD remains the production RMHD solver. An initial version that
+  inspected cells outside the selected reconstruction stencil and used
+  coordinate-frame pressure was rejected before acceptance. Rotated Balsara-1
+  transverse defects are `4.068e-8` for guarded HLLC and `3.654e-11` for HLLD;
+  contacts, uniform CT, fixed/evolved-spacetime controls, AMR entropy, and exact
+  Balsara 1--5 all pass. [DONE]
+- Extend the existing runtime physical-ID component records only at the narrow
+  pre-binary seam: a single object may contribute posed free-data/source seeds
+  to a future global solve, but arbitrary final-field superposition is not an
+  accepted self-gravitating ID and must remain impossible to request. Avoid an
+  object-count, coordinate, EoS, or formulation template product. The existing
+  generated component records already preserve role, kind, gravity treatment,
+  pose, and axis through persistence/rematerialization, so no speculative new
+  production API was needed. Infrastructure documentation now fixes the next
+  seam: an N-object builder may assemble posed free-data and matter sources,
+  but one global constraint/fluid solve alone may publish a physical binary ID.
+  Raw accepted-field sums remain explicitly test fields or initial guesses.
+  [DONE]
+- Run focused generated/catalog/architecture checks, builds, AMR policy
+  controls across HD/MHD/RHD/RMHD, relevant CT/GRMHD gates, and compile/runtime
+  benchmarks in proportion to the changed kernels. Reconcile knowledge,
+  references, and durable infrastructure rules, then commit one coherent
+  validated tranche. Exhaustive codegen, architecture, all three production
+  dimensions, six focused HD/MHD/RHD/RMHD AMR cases, the MHD characteristic
+  medley, standalone Brio-Wu AMR+CT, and the RMHD standard and advanced matrices
+  pass. The exact final tree passes all 49 standard-suite gates. Coupled TOV
+  CFL-0.9 controls retain mass to `2.809e-14` in 1D and `1.644e-10` in 3D. The
+  final no-op production build is `0.38 s`. An initial broad repeat overlapped
+  an unrelated ETK/Cactus compile and `mds_stores`; after they ended, focused
+  seven-repeat medians are `104.70` Mcells/s (95%) for normal three-rank 2D
+  hydro and `5.65` Mcells/s (89%) for 3D PWC hydro, both passing. The broad
+  high-order 3D and RMHD cases pass at 88% and 99%. The non-default four-rank
+  2D case remains a marginal warning at `116.39` Mcells/s (85%), reproducing
+  the same machine/OpenMPI scaling boundary measured before this change; it
+  does not isolate a source regression. [DONE]

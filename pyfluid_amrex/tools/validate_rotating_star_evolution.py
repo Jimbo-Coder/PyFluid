@@ -485,7 +485,7 @@ def main() -> int:
    parser.add_argument("--subcycling", default="on")
    parser.add_argument("--max-level", type=int, default=0)
    parser.add_argument("--max-grid-size", type=int, default=16)
-   parser.add_argument("--amr-tag-metric", default="lohner")
+   parser.add_argument("--amr-tag-metric", default="compact_object")
    parser.add_argument("--ghost-cells", type=int, default=3)
    parser.add_argument("--checkpoint-int", type=int, default=-1)
    parser.add_argument(
