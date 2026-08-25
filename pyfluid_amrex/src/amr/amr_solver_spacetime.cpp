@@ -1292,57 +1292,76 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
             }
          });
       }
+      const amrex::Vector<int> maximum_components{
+         0, 7, 9, 11, 13, 1, 2, 3, 4, 5,
+      };
+      const amrex::Vector<amrex::Real> level_maxima = norms.norm0(
+         maximum_components, 0, false
+      );
       diagnostics.hamiltonian_linf = amrex::max(
-         diagnostics.hamiltonian_linf, norms.norm0(0, 0, false)
+         diagnostics.hamiltonian_linf, level_maxima[0]
       );
       const amrex::Real level_volume = cartesian_cell_volume(Geom(lev));
       const amrex::Real level_hamiltonian_norm = norms.norm2(0);
       hamiltonian_squared_integral += level_volume
          * level_hamiltonian_norm * level_hamiltonian_norm;
-      composite_volume += level_volume * norms.sum(6);
+      composite_volume += level_volume * norms.sum(6, true);
       diagnostics.hamiltonian_interior_linf = amrex::max(
-         diagnostics.hamiltonian_interior_linf, norms.norm0(7, 0, false)
+         diagnostics.hamiltonian_interior_linf, level_maxima[1]
       );
       const amrex::Real level_interior_norm = norms.norm2(7);
       interior_hamiltonian_squared_integral += level_volume
          * level_interior_norm * level_interior_norm;
-      interior_volume += level_volume * norms.sum(8);
+      interior_volume += level_volume * norms.sum(8, true);
       diagnostics.hamiltonian_cf_linf = amrex::max(
-         diagnostics.hamiltonian_cf_linf, norms.norm0(9, 0, false)
+         diagnostics.hamiltonian_cf_linf, level_maxima[2]
       );
       const amrex::Real level_cf_norm = norms.norm2(9);
       cf_hamiltonian_squared_integral += level_volume
          * level_cf_norm * level_cf_norm;
-      cf_volume += level_volume * norms.sum(10);
+      cf_volume += level_volume * norms.sum(10, true);
       diagnostics.hamiltonian_bh_exterior_linf = amrex::max(
          diagnostics.hamiltonian_bh_exterior_linf,
-         norms.norm0(11, 0, false)
+         level_maxima[3]
       );
       const amrex::Real level_bh_exterior_norm = norms.norm2(11);
       bh_exterior_hamiltonian_squared_integral += level_volume
          * level_bh_exterior_norm * level_bh_exterior_norm;
-      bh_exterior_volume += level_volume * norms.sum(12);
+      bh_exterior_volume += level_volume * norms.sum(12, true);
       diagnostics.momentum_bh_exterior_linf = amrex::max(
          diagnostics.momentum_bh_exterior_linf,
-         std::sqrt(norms.norm0(13, 0, false))
+         std::sqrt(level_maxima[4])
       );
       diagnostics.momentum_linf = amrex::max(
-         diagnostics.momentum_linf, std::sqrt(norms.norm0(1, 0, false))
+         diagnostics.momentum_linf, std::sqrt(level_maxima[5])
       );
       diagnostics.z_linf = amrex::max(
-         diagnostics.z_linf, std::sqrt(norms.norm0(2, 0, false))
+         diagnostics.z_linf, std::sqrt(level_maxima[6])
       );
       diagnostics.theta_linf = amrex::max(
-         diagnostics.theta_linf, norms.norm0(3, 0, false)
+         diagnostics.theta_linf, level_maxima[7]
       );
       diagnostics.log_conformal_determinant_linf = amrex::max(
          diagnostics.log_conformal_determinant_linf,
-         norms.norm0(4, 0, false)
+         level_maxima[8]
       );
       diagnostics.trace_a_tilde_linf = amrex::max(
-         diagnostics.trace_a_tilde_linf, norms.norm0(5, 0, false)
+         diagnostics.trace_a_tilde_linf, level_maxima[9]
       );
    }
+   std::array<amrex::Real, 4> diagnostic_volumes{
+      composite_volume,
+      interior_volume,
+      cf_volume,
+      bh_exterior_volume,
+   };
+   amrex::ParallelDescriptor::ReduceRealSum(
+      diagnostic_volumes.data(), static_cast<int>(diagnostic_volumes.size())
+   );
+   composite_volume = diagnostic_volumes[0];
+   interior_volume = diagnostic_volumes[1];
+   cf_volume = diagnostic_volumes[2];
+   bh_exterior_volume = diagnostic_volumes[3];
    if (composite_volume > 0.0) {
       diagnostics.hamiltonian_l2 = std::sqrt(
          hamiltonian_squared_integral / composite_volume
@@ -1402,6 +1421,7 @@ AmrSolverBase::compute_spacetime_global_diagnostics(
       KomarMassVolume,
       Count,
    };
+   std::array<amrex::Real, IntegralComponent::Count> volume_integrals{};
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       amrex::MultiFab const& state = *spacetime_state_.state()[lev];
       if (!volume_requested) {
@@ -1511,20 +1531,27 @@ AmrSolverBase::compute_spacetime_global_diagnostics(
                volume_weight * point_volume.komar_mass;
          });
       }
-      diagnostics.adm_mass_volume += integrals.sum(IntegralComponent::AdmMassVolume);
-      diagnostics.adm_momentum_volume[0] += integrals.sum(IntegralComponent::AdmMomentum1Volume);
-      diagnostics.adm_momentum_volume[1] += integrals.sum(IntegralComponent::AdmMomentum2Volume);
-      diagnostics.adm_momentum_volume[2] += integrals.sum(IntegralComponent::AdmMomentum3Volume);
-      diagnostics.adm_angular_momentum_volume[0] +=
-         integrals.sum(IntegralComponent::AdmAngularMomentum1Volume);
-      diagnostics.adm_angular_momentum_volume[1] +=
-         integrals.sum(IntegralComponent::AdmAngularMomentum2Volume);
-      diagnostics.adm_angular_momentum_volume[2] +=
-         integrals.sum(IntegralComponent::AdmAngularMomentum3Volume);
-      diagnostics.proper_mass_volume += integrals.sum(IntegralComponent::ProperMassVolume);
-      diagnostics.komar_mass_volume += integrals.sum(IntegralComponent::KomarMassVolume);
+      for (int component = 0; component < IntegralComponent::Count; ++component) {
+         volume_integrals[component] += integrals.sum(component, true);
+      }
    }
    if (volume_requested) {
+      amrex::ParallelDescriptor::ReduceRealSum(
+         volume_integrals.data(), static_cast<int>(volume_integrals.size())
+      );
+      diagnostics.adm_mass_volume = volume_integrals[IntegralComponent::AdmMassVolume];
+      diagnostics.adm_momentum_volume = {
+         volume_integrals[IntegralComponent::AdmMomentum1Volume],
+         volume_integrals[IntegralComponent::AdmMomentum2Volume],
+         volume_integrals[IntegralComponent::AdmMomentum3Volume],
+      };
+      diagnostics.adm_angular_momentum_volume = {
+         volume_integrals[IntegralComponent::AdmAngularMomentum1Volume],
+         volume_integrals[IntegralComponent::AdmAngularMomentum2Volume],
+         volume_integrals[IntegralComponent::AdmAngularMomentum3Volume],
+      };
+      diagnostics.proper_mass_volume = volume_integrals[IntegralComponent::ProperMassVolume];
+      diagnostics.komar_mass_volume = volume_integrals[IntegralComponent::KomarMassVolume];
       const amrex::Real volume_factor = symmetry_volume_factor();
       diagnostics.adm_mass_volume *= volume_factor;
       diagnostics.proper_mass_volume *= volume_factor;
@@ -1639,9 +1666,14 @@ AmrSolverBase::compute_spacetime_global_diagnostics(
                output(i, j, k, AdmAngularMomentumFlux33) = point_flux.angular_momentum33;
             });
          }
-         flux->FillBoundary(Geom(lev).periodicity());
          surface_flux_hierarchy[lev] = std::move(flux);
       }
+      amrex::Vector<amrex::MultiFab*> surface_flux_fields;
+      surface_flux_fields.reserve(surface_flux_hierarchy.size());
+      for (auto const& flux : surface_flux_hierarchy) {
+         surface_flux_fields.push_back(flux.get());
+      }
+      amrex::FillBoundary(surface_flux_fields, Geom(0).periodicity());
 
       const ParametricSurface surface = diagnostic_extraction_surface();
       const HierarchyInterpolationPlan plan =

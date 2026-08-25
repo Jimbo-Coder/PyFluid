@@ -125,9 +125,14 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
             }
          );
       }
-      geometry->FillBoundary(Geom(lev).periodicity());
       geometry_hierarchy[lev] = std::move(geometry);
    }
+   amrex::Vector<amrex::MultiFab*> geometry_fields;
+   geometry_fields.reserve(geometry_hierarchy.size());
+   for (auto const& geometry : geometry_hierarchy) {
+      geometry_fields.push_back(geometry.get());
+   }
+   amrex::FillBoundary(geometry_fields, Geom(0).periodicity());
 
    const int radial_points = apparent_horizon_tracker_->radial_points();
    const int polar_points = apparent_horizon_tracker_->polar_points();

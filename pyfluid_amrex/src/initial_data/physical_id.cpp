@@ -942,6 +942,7 @@ std::vector<std::unique_ptr<amrex::MultiFab>> load_stored_field(
    std::vector<std::unique_ptr<amrex::MultiFab>> field(
       hierarchy.grids.size()
    );
+   amrex::Vector<amrex::MultiFab*> field_ptrs(field.size());
    for (std::size_t level = 0; level < field.size(); ++level) {
       const amrex::BoxArray boxes = amrex::convert(
          hierarchy.grids[level], centering
@@ -955,8 +956,9 @@ std::vector<std::unique_ptr<amrex::MultiFab>> load_stored_field(
       read_multilevel_hdf5_field(
          *field[level], path, static_cast<int>(level), name
       );
-      field[level]->FillBoundary(hierarchy.geometry[level].periodicity());
+      field_ptrs[level] = field[level].get();
    }
+   amrex::FillBoundary(field_ptrs, hierarchy.geometry.front().periodicity());
    return field;
 }
 
@@ -1417,8 +1419,8 @@ void interpolate_stored_field(
             }
          }
       }
-      target.FillBoundary(target_geometry[level].periodicity());
    }
+   amrex::FillBoundary(target_field, target_geometry.front().periodicity());
 }
 
 void interpolate_portable_field(
@@ -1572,8 +1574,8 @@ void interpolate_portable_field(
             }
          }
       }
-      target.FillBoundary(target_geometry[level].periodicity());
    }
+   amrex::FillBoundary(target_field, target_geometry.front().periodicity());
 }
 
 void adm_to_z4c(

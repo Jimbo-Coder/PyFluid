@@ -52,6 +52,13 @@ amrex::Box domain_box()
    };
 }
 
+amrex::BoxArray split_boxes(amrex::Box const& box)
+{
+   amrex::BoxArray boxes(box);
+   boxes.maxSize(8);
+   return boxes;
+}
+
 amrex::Geometry nonperiodic_geometry()
 {
    const amrex::RealBox physical_domain(
@@ -136,7 +143,7 @@ int tile_count(amrex::MultiFab const& state)
 
 void check_ordinary_boundary()
 {
-   const amrex::BoxArray boxes(domain_box());
+   const amrex::BoxArray boxes = split_boxes(domain_box());
    const amrex::DistributionMapping distribution(boxes);
    amrex::MultiFab state(boxes, distribution, NVAR_HYDRO, NumGhost);
    const std::array<amrex::Real, NVAR_HYDRO> expected{
@@ -169,7 +176,7 @@ void check_patch_union_reflecting_boundary()
       patch_box.setSmall(direction, NumGhost);
       patch_box.setBig(direction, NumCells - NumGhost - 1);
    }
-   const amrex::BoxArray boxes(patch_box);
+   const amrex::BoxArray boxes = split_boxes(patch_box);
    const amrex::DistributionMapping distribution(boxes);
    amrex::MultiFab state(boxes, distribution, NVAR_HYDRO, NumGhost);
    const std::array<amrex::Real, NVAR_HYDRO> expected{
@@ -210,7 +217,7 @@ struct MinkowskiMetricAccessor {
 
 void check_relativistic_boundary()
 {
-   const amrex::BoxArray boxes(domain_box());
+   const amrex::BoxArray boxes = split_boxes(domain_box());
    const amrex::DistributionMapping distribution(boxes);
    amrex::MultiFab state(boxes, distribution, NVAR_HYDRO, NumGhost);
    const EOSParams eos{};
@@ -228,6 +235,7 @@ void check_relativistic_boundary()
       conserved.tau,
    };
    initialize_constant_valid_state(state, expected);
+   state.FillBoundary(nonperiodic_geometry().periodicity());
    apply_metric_state_boundary<PhysicalSystem::RHD, EOSIdealGas>(
       state,
       nonperiodic_geometry(),
@@ -249,7 +257,7 @@ void check_relativistic_boundary()
 
 void check_ct_face_boundary()
 {
-   const amrex::BoxArray boxes(domain_box());
+   const amrex::BoxArray boxes = split_boxes(domain_box());
    const amrex::DistributionMapping distribution(boxes);
    FaceMagneticField face_b;
    allocate_face_magnetic_field(face_b, boxes, distribution, NumGhost);
@@ -278,11 +286,32 @@ void check_ct_face_boundary()
    }
 }
 
+void check_ct_edge_sync()
+{
+   const amrex::BoxArray boxes = split_boxes(domain_box());
+   const amrex::DistributionMapping distribution(boxes);
+   EdgeElectricField edge_e;
+   allocate_edge_electric_field(edge_e, boxes, distribution);
+   for (int component = 0; component < 3; ++component) {
+      edge_e.e[component]->setVal(static_cast<amrex::Real>(component + 1));
+   }
+   enforce_edge_electric_periodicity(edge_e, nonperiodic_geometry());
+   for (int component = 0; component < 3; ++component) {
+      require_constant_component(
+         *edge_e.e[component],
+         0,
+         static_cast<amrex::Real>(component + 1),
+         0,
+         "CT edge component"
+      );
+   }
+}
+
 void check_nodal_z4c_reflection_boundary()
 {
    const amrex::Geometry geometry = nonperiodic_geometry();
    const amrex::BoxArray boxes = amrex::convert(
-      amrex::BoxArray(domain_box()), amrex::IntVect::TheNodeVector()
+      split_boxes(domain_box()), amrex::IntVect::TheNodeVector()
    );
    const amrex::DistributionMapping distribution(boxes);
    constexpr int num_components = 2;
@@ -333,9 +362,9 @@ void check_nodal_z4c_reflection_boundary()
    );
    amrex::Gpu::streamSynchronize();
 
-   const amrex::FArrayBox& values = state[0];
    const auto sample = [&](int i, int j, int k, int component) {
-      return values(amrex::IntVect(AMREX_D_DECL(i, j, k)), component);
+      const amrex::IntVect point(AMREX_D_DECL(i, j, k));
+      return state.min(amrex::Box(point, point), component, NumGhost);
    };
    require(
       close_enough(sample(-1, 2, 2, 0), sample(1, 2, 2, 0)),
@@ -379,6 +408,7 @@ int main(int argc, char* argv[])
       check_patch_union_reflecting_boundary();
       check_relativistic_boundary();
       check_ct_face_boundary();
+      check_ct_edge_sync();
       check_nodal_z4c_reflection_boundary();
       amrex::Print() << "PASS boundary grown-tile ownership check\n";
    } catch (std::exception const& error) {

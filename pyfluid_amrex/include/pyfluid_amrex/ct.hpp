@@ -321,21 +321,22 @@ inline void apply_face_b_boundary(
    for (int dim = 0; dim < AMREX_SPACEDIM; ++dim) {
       all_periodic = all_periodic && geom_periodic[dim];
    }
-   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      face_b.b[dir]->FillBoundary(geom.periodicity());
+   amrex::Vector<amrex::MultiFab*> face_components;
+   face_components.reserve(AMREX_SPACEDIM);
+   for (auto const& component : face_b.b) {
+      face_components.push_back(component.get());
    }
-   if (!all_periodic) {
-      fill_nonfinite_physical_face_boundary(face_b, geom);
-      if (bc.mesh_coordinate == MeshCartesian) {
-         enforce_physical_face_divergence_boundary(face_b, geom);
-      }
+   amrex::FillBoundary(face_components, geom.periodicity());
+   if (all_periodic) {
+      return;
    }
+   fill_nonfinite_physical_face_boundary(face_b, geom);
+   if (bc.mesh_coordinate == MeshCartesian) {
+      enforce_physical_face_divergence_boundary(face_b, geom);
+   }
+   amrex::FillBoundary(face_components, geom.periodicity());
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       amrex::MultiFab& face = *face_b.b[dir];
-      face.FillBoundary(geom.periodicity());
-      if (all_periodic) {
-         continue;
-      }
 
       const amrex::Box face_domain = amrex::convert(geom.Domain(), amrex::IntVect::TheDimensionVector(dir));
       const amrex::Box cell_domain = geom.Domain();
@@ -1876,13 +1877,16 @@ inline void fill_resistive_edge_electric_field(
 
 inline void enforce_edge_electric_periodicity(EdgeElectricField& edge_e, amrex::Geometry const& geom)
 {
-   for (int component_index = 0; component_index < 3; ++component_index) {
-      auto& component = edge_e.e[component_index];
+   amrex::Vector<amrex::MultiFab*> edge_components;
+   edge_components.reserve(edge_e.e.size());
+   for (auto& component : edge_e.e) {
       if (component) {
-         component->FillBoundary(geom.periodicity());
-         component->OverrideSync(geom.periodicity());
-         component->EnforcePeriodicity(geom.periodicity());
+         edge_components.push_back(component.get());
       }
+   }
+   amrex::FillBoundaryAndSync(edge_components, geom.periodicity());
+   for (amrex::MultiFab* component : edge_components) {
+      component->EnforcePeriodicity(geom.periodicity());
    }
 }
 

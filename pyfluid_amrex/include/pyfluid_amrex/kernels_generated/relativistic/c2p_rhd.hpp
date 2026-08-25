@@ -4,6 +4,7 @@
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 #include <cmath>
+#include <AMReX_Math.H>
 
 namespace pyfluid_amrex::generated {
 
@@ -30,7 +31,7 @@ amrex::Real srhd_palenzuela_residual_derivative(const RHDRecoveryState& recovery
    const amrex::Real tmp2 = tmp0*tmp1;
    const amrex::Real tmp3 = sqrt(-recovery.momentum_squared + tmp2);
    const amrex::Real tmp4 = ((recovery.momentum_squared)*(recovery.momentum_squared));
-   const amrex::Real tmp5 = pow(recovery.dens, 4)*pow(x, 4);
+   const amrex::Real tmp5 = amrex::Math::powi<4>(recovery.dens)*amrex::Math::powi<4>(x);
    const amrex::Real tmp6 = recovery.momentum_squared*tmp2;
    const amrex::Real tmp7 = 2*tmp6;
    const amrex::Real tmp8 = recovery.dens*tmp4;

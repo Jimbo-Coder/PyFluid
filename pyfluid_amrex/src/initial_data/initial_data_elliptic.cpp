@@ -841,8 +841,8 @@ void set_nodal_dirichlet_values(
       if (solution[level]->contains_nan(0, num_components, 0)) {
          amrex::Abort("nodal Dirichlet coefficients require nonzero A");
       }
-      solution[level]->FillBoundary(hierarchy.geometry[level].periodicity());
    }
+   amrex::FillBoundary(solution, hierarchy.geometry.front().periodicity());
 }
 
 amrex::Real compute_nodal_robin_residual(

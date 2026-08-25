@@ -141,7 +141,6 @@ void AmrSolverBase::average_down_solid_aperture_from_fine(int fine_lev, int dire
    solid_aperture_[direction][coarse_lev]->ParallelCopy(
       coarse_from_fine, 0, 0, 1, amrex::IntVect::TheDimensionVector(direction),
       amrex::IntVect::TheDimensionVector(direction), Geom(coarse_lev).periodicity());
-   solid_aperture_[direction][coarse_lev]->FillBoundary(Geom(coarse_lev).periodicity());
 }
 
 void AmrSolverBase::enforce_solid_mask_nesting_from_fine()
@@ -160,6 +159,18 @@ void AmrSolverBase::enforce_solid_mask_nesting_from_fine()
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
             average_down_solid_aperture_from_fine(fine_lev, dir);
          }
+         amrex::Vector<amrex::MultiFab*> coarse_apertures;
+         coarse_apertures.reserve(AMREX_SPACEDIM);
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            if (solid_aperture_[dir][fine_lev - 1]) {
+               coarse_apertures.push_back(
+                  solid_aperture_[dir][fine_lev - 1].get()
+               );
+            }
+         }
+         amrex::FillBoundary(
+            coarse_apertures, Geom(fine_lev - 1).periodicity()
+         );
          continue;
       }
       const amrex::IntVect ratio = refRatio(fine_lev - 1);

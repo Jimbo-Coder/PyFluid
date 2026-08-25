@@ -1,5 +1,8 @@
 #include "amr/amr_solver_base.hpp"
 
+#include <algorithm>
+#include <array>
+
 namespace pyfluid_amrex {
 
 amrex::iMultiFab AmrSolverBase::valid_cell_mask(int lev) const
@@ -58,10 +61,18 @@ AmrSolverBase::HydroConservedTotals AmrSolverBase::hydro_valid_conserved_totals(
       }
       }
       for (int n = 0; n < NVAR_HYDRO; ++n) {
-         totals.value[n] += reduction.sum(n) * cell_volume;
+         totals.value[n] += reduction.sum(n, true) * cell_volume;
       }
-      totals.volume += reduction.sum(NVAR_HYDRO) * cell_volume;
+      totals.volume += reduction.sum(NVAR_HYDRO, true) * cell_volume;
    }
+   std::array<amrex::Real, NVAR_HYDRO + 1> reduced_totals{};
+   std::copy(totals.value.begin(), totals.value.end(), reduced_totals.begin());
+   reduced_totals[NVAR_HYDRO] = totals.volume;
+   amrex::ParallelDescriptor::ReduceRealSum(
+      reduced_totals.data(), static_cast<int>(reduced_totals.size())
+   );
+   std::copy_n(reduced_totals.begin(), NVAR_HYDRO, totals.value.begin());
+   totals.volume = reduced_totals[NVAR_HYDRO];
    return totals;
 }
 

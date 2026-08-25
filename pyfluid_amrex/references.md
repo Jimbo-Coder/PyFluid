@@ -128,6 +128,15 @@ the generated TSV/log, and the current source revision/dirty state.
   fixes, flux-register lifecycle fixes, HDF5/tooling fixes, and safer repeated
   layout/boundary definitions. The exact resolved commit is tracked in
   `dependencies/amrex.toml`.
+- AMReX 26.03--26.06 release notes:
+  [26.03](https://github.com/AMReX-Codes/amrex/releases/tag/26.03) introduces
+  the heterogeneous `Reducer`,
+  [26.04](https://github.com/AMReX-Codes/amrex/releases/tag/26.04) adds vector
+  `FillBoundary`/`FillBoundaryAndSync`, and
+  [26.06](https://github.com/AMReX-Codes/amrex/releases/tag/26.06) adds runtime
+  support for fixed-integer `amrex::Math::powi`. These are the upstream API
+  sources for Cycle 319's adoption; the PyFluid owners and tests remain the
+  evidence for local semantics and validation.
 - AMReX,
   [official download/version documentation](https://amrex-codes.github.io/amrex/docs_html/GettingStarted.html):
   stable releases use monthly `YY.MM` tags. PyFluid follows stable tags, not

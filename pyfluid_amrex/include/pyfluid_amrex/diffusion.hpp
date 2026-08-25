@@ -4,6 +4,7 @@
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_iMultiFab.H>
 #include <AMReX_MultiFab.H>
+#include <AMReX_ParallelDescriptor.H>
 
 #include <array>
 #include <limits>
@@ -920,7 +921,14 @@ inline amrex::Real implicit_viscous_momentum_residual(
       });
    }
    }
-   return work.sum(0) / amrex::max(work.sum(1), 1.0);
+   std::array<amrex::Real, 2> residual_sums{
+      work.sum(0, true),
+      work.sum(1, true),
+   };
+   amrex::ParallelDescriptor::ReduceRealSum(
+      residual_sums.data(), static_cast<int>(residual_sums.size())
+   );
+   return residual_sums[0] / amrex::max(residual_sums[1], 1.0);
 }
 
 template <bool DiffuseMomentum>

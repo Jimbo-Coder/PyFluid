@@ -27,9 +27,15 @@
             });
          }
          }
-         total.mass += reduction.sum(0) * cell_volume;
-         total.volume += reduction.sum(1) * cell_volume;
+         total.mass += reduction.sum(0, true) * cell_volume;
+         total.volume += reduction.sum(1, true) * cell_volume;
       }
+      std::array<amrex::Real, 2> density_totals{total.mass, total.volume};
+      amrex::ParallelDescriptor::ReduceRealSum(
+         density_totals.data(), static_cast<int>(density_totals.size())
+      );
+      total.mass = density_totals[0];
+      total.volume = density_totals[1];
       return total;
    }
 
@@ -97,9 +103,7 @@
       if (!std::isfinite(residual)) {
          amrex::Abort("gravity Poisson solve produced a non-finite residual");
       }
-      for (int lev = 0; lev < nlev; ++lev) {
-         gravity_phi_[lev]->FillBoundary(Geom(lev).periodicity());
-      }
+      amrex::FillBoundary(solution, Geom(0).periodicity());
       if (fill_gradient) {
          amrex::Vector<amrex::Array<amrex::MultiFab*, AMREX_SPACEDIM>> grad_ptrs(nlev);
          for (int lev = 0; lev < nlev; ++lev) {
@@ -207,10 +211,22 @@
             });
          }
          }
-         mass += reduction.sum(0) * cell_volume;
+         mass += reduction.sum(0, true) * cell_volume;
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-            force[dir] += reduction.sum(dir + 1) * cell_volume;
+            force[dir] += reduction.sum(dir + 1, true) * cell_volume;
          }
+      }
+      std::array<amrex::Real, AMREX_SPACEDIM + 1> force_and_mass{};
+      force_and_mass[0] = mass;
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         force_and_mass[dir + 1] = force[dir];
+      }
+      amrex::ParallelDescriptor::ReduceRealSum(
+         force_and_mass.data(), static_cast<int>(force_and_mass.size())
+      );
+      mass = force_and_mass[0];
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         force[dir] = force_and_mass[dir + 1];
       }
       if (!(mass > 0.0) || !std::isfinite(mass)) {
          amrex::Abort("self-gravity source offset needs a finite positive mass");

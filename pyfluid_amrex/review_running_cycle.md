@@ -6636,3 +6636,45 @@ I will always continue from the last cycle marked as `in_progress`.
   A runtime throughput comparison was intentionally not used because three
   unrelated long-lived C++ indexers were each consuming a CPU core during this
   cycle. [DONE]
+
+## Cycle 319 — AMReX 26.08 API adoption and communication cleanup (DONE)
+
+- Audit the AMReX 25.12--26.08 release/API delta against PyFluid's actual CT,
+  AMR, elliptic, gravity, output, and reduction owners. Separate improvements
+  already inherited from APIs that require an application change; reject
+  particle, EB, Fortran, or specialized solver additions that do not serve the
+  current finite-volume/GRMHD path. The useful application-facing additions are
+  vector FabArray exchange, heterogeneous local reducers, and fixed-integer
+  `powi`; general face-divfree interpolation and several MLMG/FillPatch fixes
+  are inherited by the existing owners. Deterministic MLMG, variable-alpha
+  CurlCurl, FFT/OpenBC/Stokes, particle/EB, and device-only utilities do not fit
+  the current numerical contracts and remain unenabled. [DONE]
+- Adopt the low- and middle-risk APIs that preserve an existing numerical
+  contract, especially vector-batched FabArray ghost exchange and combined
+  fill/synchronization at owners that already perform both operations. Remove
+  only proven duplicate communication, add no method/template axis, and keep
+  face/edge ownership unchanged. CT face and edge components, hierarchy ID and
+  diagnostic temporaries, resistive edge fields, gravity, radiation, horizon,
+  spacetime, and solid apertures now batch independent exchanges. The all-
+  periodic CT face path drops one proven duplicate fill. Scalar, relativistic,
+  gravity, valid-cell, radiation/matter-mode, spacetime, initial-data, and
+  viscous-residual reductions now fuse local traversals or pack same-operator
+  MPI collectives. The symbolic printer emits `amrex::Math::powi<N>` for fixed
+  integer exponents outside the existing tiny explicit products. [DONE]
+- Build all affected dimensions and run focused boundary, CT, AMR, RMHD,
+  elliptic/initial-data, and standard integration controls. Benchmark the
+  affected communication-heavy path against the preceding revision rather
+  than assuming that an upstream API is faster. Reconcile durable knowledge
+  and commit one bounded tranche only if the evidence passes. The full 1D/2D/
+  3D production build, exhaustive symbolic check, generated-kernel executables,
+  and 3-rank 2D/3D boundary plus elliptic executables pass. Focused explicit and
+  implicit resistive CT, combined AMR/CT/subcycling/resistive/aux, self-gravity,
+  RMHD invariant AMR, and RHD KH AMR cases pass at 3 ranks. Standalone Brio-Wu
+  AMR+CT passes with 2.112 improvement and rotated errors near `4e-15`; the exact
+  tree passes all 49 standard gates. The broad generator event rebuilt 95
+  objects in 270.84 s; the final no-op production build is 0.37 s. A runtime
+  benchmark was stopped after three loaded-machine cases measured only
+  38--60% of their clean baselines because three orphaned VS Code C++ indexers
+  each occupied a full CPU core; those numbers are environmental evidence, not
+  an accepted regression comparison, and were not appended as a completed
+  benchmark batch. [DONE]

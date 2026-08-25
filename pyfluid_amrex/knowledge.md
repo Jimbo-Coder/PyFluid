@@ -10,8 +10,9 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-24, branch `main`, through Cycle 318's AMReX 26.08
-dependency update and reproducible check/update lifecycle. Cycle 317's generated
+Last reconciled: 2026-08-24, branch `main`, through Cycle 319's AMReX 26.08 API
+adoption and communication/reduction cleanup. Cycle 318's dependency update and
+reproducible check/update lifecycle and Cycle 317's generated
 AMR policy, RK-stage CT ownership, and cross-system hardening, Cycle 316's
 saved-RNS evolution/restart harness and code-generation dependency cleanup,
 Cycle 315's generated physical-ID metadata and component-ready handoff, and Cycle 313's
@@ -35,6 +36,21 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   identity; the build consumes a stable link to a versioned install. The
   check-by-default dependency helper updates only on explicit request and
   preserves/rolls back the previous install if the production rebuild fails.
+- AMReX's vector `FillBoundary` and `FillBoundaryAndSync` helpers overlap
+  independent same-phase exchanges without changing field centering or
+  ownership. Batch fields only when they share periodicity and no field depends
+  on the completed ghosts of another; keep numerically dependent phases
+  separate. The periodic CT face path needs one such exchange, not two.
+- `amrex::Reducer` fuses heterogeneous sum/min/max operations into one local
+  traversal; it does not replace the hierarchy owner's MPI reduction. Accumulate
+  levels locally, then issue one packed collective per reduction operator.
+  Generated fixed integer powers use `amrex::Math::powi<N>` once the exponent is
+  outside the printer's small explicit-product cases.
+- Deterministic MLMG, variable-coefficient `MLCurlCurl`, FFT/OpenBC solvers,
+  particle/EB additions, and device-vector reductions are not blanket upgrades.
+  Enable them only for their actual contract: reproducible GPU multigrid,
+  spatially varying resistivity, a compatible linear Cartesian operator,
+  particle/embedded-boundary physics, or a measured device-vector hotspot.
 - A compile, focused executable, smoke run, standard suite, full suite,
   performance benchmark, and MPI-rank comparison are different evidence.
   Report them separately and attach claims to the exact revision or dirty tree.

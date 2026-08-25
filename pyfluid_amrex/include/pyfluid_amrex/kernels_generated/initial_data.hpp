@@ -4,6 +4,7 @@
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/initial_data/ctt.hpp"
 #include "pyfluid_amrex/z4c_state.hpp"
+#include <AMReX_Math.H>
 
 namespace pyfluid_amrex::generated {
 
@@ -32,28 +33,28 @@ ConformalTraceFreeTensor conformal_longitudinal_tensor(amrex::Real d_vector1_1, 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real conformal_hamiltonian_source(amrex::Real conformal_factor, amrex::Real energy_density, amrex::Real conformal_extrinsic_squared, amrex::Real mean_curvature_squared) noexcept
 {
-   const amrex::Real tmp0 = pow(conformal_factor, 5);
-   return -1.0_rt/8.0_rt*conformal_extrinsic_squared/pow(conformal_factor, 7) - 2*pyfluid_amrex::constants::pi*energy_density*tmp0 + (1.0_rt/12.0_rt)*mean_curvature_squared*tmp0;
+   const amrex::Real tmp0 = amrex::Math::powi<5>(conformal_factor);
+   return -1.0_rt/8.0_rt*conformal_extrinsic_squared/amrex::Math::powi<7>(conformal_factor) - 2*pyfluid_amrex::constants::pi*energy_density*tmp0 + (1.0_rt/12.0_rt)*mean_curvature_squared*tmp0;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real conformal_hamiltonian_residual(amrex::Real conformal_factor, amrex::Real laplacian, amrex::Real energy_density, amrex::Real conformal_extrinsic_squared, amrex::Real mean_curvature_squared) noexcept
 {
-   const amrex::Real tmp0 = pow(conformal_factor, 5);
-   return (1.0_rt/8.0_rt)*conformal_extrinsic_squared/pow(conformal_factor, 7) + 2*pyfluid_amrex::constants::pi*energy_density*tmp0 + laplacian - 1.0_rt/12.0_rt*mean_curvature_squared*tmp0;
+   const amrex::Real tmp0 = amrex::Math::powi<5>(conformal_factor);
+   return (1.0_rt/8.0_rt)*conformal_extrinsic_squared/amrex::Math::powi<7>(conformal_factor) + 2*pyfluid_amrex::constants::pi*energy_density*tmp0 + laplacian - 1.0_rt/12.0_rt*mean_curvature_squared*tmp0;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real conformal_hamiltonian_local_jacobian(amrex::Real conformal_factor, amrex::Real energy_density, amrex::Real conformal_extrinsic_squared, amrex::Real mean_curvature_squared) noexcept
 {
-   const amrex::Real tmp0 = pow(conformal_factor, 4);
-   return -7.0_rt/8.0_rt*conformal_extrinsic_squared/pow(conformal_factor, 8) + 10*pyfluid_amrex::constants::pi*energy_density*tmp0 - 5.0_rt/12.0_rt*mean_curvature_squared*tmp0;
+   const amrex::Real tmp0 = amrex::Math::powi<4>(conformal_factor);
+   return -7.0_rt/8.0_rt*conformal_extrinsic_squared/amrex::Math::powi<8>(conformal_factor) + 10*pyfluid_amrex::constants::pi*energy_density*tmp0 - 5.0_rt/12.0_rt*mean_curvature_squared*tmp0;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real xcts_conformal_extrinsic_scale(amrex::Real conformal_factor, amrex::Real lapse_times_conformal_factor) noexcept
 {
-   return (1.0_rt/2.0_rt)*pow(conformal_factor, 7)/lapse_times_conformal_factor;
+   return (1.0_rt/2.0_rt)*amrex::Math::powi<7>(conformal_factor)/lapse_times_conformal_factor;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -62,13 +63,13 @@ amrex::Real xcts_shift_source(amrex::Real conformal_factor, amrex::Real lapse_ti
    const amrex::Real tmp0 = 1.0_rt/(conformal_factor);
    const amrex::Real tmp1 = 1.0_rt/(lapse_times_conformal_factor);
    const amrex::Real tmp2 = 7*tmp0;
-   return 2*lapse_times_conformal_factor*tmp0*(8*pyfluid_amrex::constants::pi*momentum_density + (conformal_extrinsic_i1*(-conformal_gradient1*tmp2 + lapse_conformal_gradient1*tmp1) + conformal_extrinsic_i2*(-conformal_gradient2*tmp2 + lapse_conformal_gradient2*tmp1) + conformal_extrinsic_i3*(-conformal_gradient3*tmp2 + lapse_conformal_gradient3*tmp1))/pow(conformal_factor, 6));
+   return 2*lapse_times_conformal_factor*tmp0*(8*pyfluid_amrex::constants::pi*momentum_density + (conformal_extrinsic_i1*(-conformal_gradient1*tmp2 + lapse_conformal_gradient1*tmp1) + conformal_extrinsic_i2*(-conformal_gradient2*tmp2 + lapse_conformal_gradient2*tmp1) + conformal_extrinsic_i3*(-conformal_gradient3*tmp2 + lapse_conformal_gradient3*tmp1))/amrex::Math::powi<6>(conformal_factor));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real xcts_lapse_conformal_source(amrex::Real conformal_factor, amrex::Real lapse_times_conformal_factor, amrex::Real energy_density, amrex::Real stress_trace, amrex::Real conformal_extrinsic_squared) noexcept
 {
-   return lapse_times_conformal_factor*((7.0_rt/8.0_rt)*conformal_extrinsic_squared/pow(conformal_factor, 8) + 2*pyfluid_amrex::constants::pi*pow(conformal_factor, 4)*(energy_density + 2*stress_trace));
+   return lapse_times_conformal_factor*((7.0_rt/8.0_rt)*conformal_extrinsic_squared/amrex::Math::powi<8>(conformal_factor) + 2*pyfluid_amrex::constants::pi*amrex::Math::powi<4>(conformal_factor)*(energy_density + 2*stress_trace));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -118,14 +119,14 @@ amrex::Real q_power_two_rotation_integral(amrex::Real omega, amrex::Real omega_c
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real uryu_plus_13_angular_velocity(amrex::Real specific_angular_momentum, amrex::Real omega_center, amrex::Real differential_length, amrex::Real differential_length_b) noexcept
 {
-   return omega_center*(1 + specific_angular_momentum/(((differential_length_b)*(differential_length_b))*omega_center))/(1 + pow(specific_angular_momentum, 4)/(pow(differential_length, 8)*pow(omega_center, 4)));
+   return omega_center*(1 + specific_angular_momentum/(((differential_length_b)*(differential_length_b))*omega_center))/(1 + amrex::Math::powi<4>(specific_angular_momentum)/(amrex::Math::powi<8>(differential_length)*amrex::Math::powi<4>(omega_center)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real uryu_plus_13_angular_velocity_derivative(amrex::Real specific_angular_momentum, amrex::Real omega_center, amrex::Real differential_length, amrex::Real differential_length_b) noexcept
 {
-   const amrex::Real tmp0 = pow(differential_length, -8);
-   const amrex::Real tmp1 = 1.0_rt/(1 + pow(specific_angular_momentum, 4)*tmp0/pow(omega_center, 4));
+   const amrex::Real tmp0 = amrex::Math::powi<-8>(differential_length);
+   const amrex::Real tmp1 = 1.0_rt/(1 + amrex::Math::powi<4>(specific_angular_momentum)*tmp0/amrex::Math::powi<4>(omega_center));
    const amrex::Real tmp2 = 1.0_rt/((differential_length_b)*(differential_length_b));
    return tmp1*(tmp2 - 4*((specific_angular_momentum)*(specific_angular_momentum)*(specific_angular_momentum))*tmp0*tmp1*(1 + specific_angular_momentum*tmp2/omega_center)/((omega_center)*(omega_center)*(omega_center)));
 }
@@ -136,10 +137,10 @@ amrex::Real uryu_plus_13_rotation_integral(amrex::Real specific_angular_momentum
    const amrex::Real tmp0 = 1.0_rt/((differential_length_b)*(differential_length_b));
    const amrex::Real tmp1 = specific_angular_momentum/omega_center;
    const amrex::Real tmp2 = ((differential_length)*(differential_length));
-   const amrex::Real tmp3 = ((specific_angular_momentum)*(specific_angular_momentum))/(pow(differential_length, 4)*((omega_center)*(omega_center)));
+   const amrex::Real tmp3 = ((specific_angular_momentum)*(specific_angular_momentum))/(amrex::Math::powi<4>(differential_length)*((omega_center)*(omega_center)));
    const amrex::Real tmp4 = pyfluid_amrex::constants::sqrt_two;
    const amrex::Real tmp5 = tmp1*tmp4/tmp2;
-   return omega_center*(-1.0_rt/4.0_rt*omega_center*tmp2*(2*tmp0*tmp2*std::atan(tmp3) - tmp4*(-std::atan(tmp5 - 1) - std::atan(tmp5 + 1)) + tmp4*std::atanh(tmp5/(tmp3 + 1))) + specific_angular_momentum*(tmp0*tmp1 + 1)/(1 + pow(specific_angular_momentum, 4)/(pow(differential_length, 8)*pow(omega_center, 4))));
+   return omega_center*(-1.0_rt/4.0_rt*omega_center*tmp2*(2*tmp0*tmp2*std::atan(tmp3) - tmp4*(-std::atan(tmp5 - 1) - std::atan(tmp5 + 1)) + tmp4*std::atanh(tmp5/(tmp3 + 1))) + specific_angular_momentum*(tmp0*tmp1 + 1)/(1 + amrex::Math::powi<4>(specific_angular_momentum)/(amrex::Math::powi<8>(differential_length)*amrex::Math::powi<4>(omega_center))));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -193,13 +194,13 @@ amrex::Real constant_l_torus_log_specific_enthalpy(amrex::Real inner_minus_covar
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real conformal_momentum_source(amrex::Real conformal_factor, amrex::Real momentum_density, amrex::Real mean_curvature_gradient) noexcept
 {
-   return 2*pow(conformal_factor, 6)*(4*pyfluid_amrex::constants::pi*pow(conformal_factor, 4)*momentum_density + (1.0_rt/3.0_rt)*mean_curvature_gradient);
+   return 2*amrex::Math::powi<6>(conformal_factor)*(4*pyfluid_amrex::constants::pi*amrex::Math::powi<4>(conformal_factor)*momentum_density + (1.0_rt/3.0_rt)*mean_curvature_gradient);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real cttk_mean_curvature_squared(amrex::Real conformal_factor, amrex::Real laplacian, amrex::Real energy_density, amrex::Real conformal_extrinsic_squared) noexcept
 {
-   return 3*((1.0_rt/2.0_rt)*conformal_extrinsic_squared/pow(conformal_factor, 12) + 8*pyfluid_amrex::constants::pi*energy_density + 4*laplacian/pow(conformal_factor, 5));
+   return 3*((1.0_rt/2.0_rt)*conformal_extrinsic_squared/amrex::Math::powi<12>(conformal_factor) + 8*pyfluid_amrex::constants::pi*energy_density + 4*laplacian/amrex::Math::powi<5>(conformal_factor));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -211,9 +212,9 @@ amrex::Real cttk_hybrid_mean_curvature_squared(amrex::Real energy_density) noexc
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 Z4cState ctt_canonical_z4c_state(amrex::Real conformal_factor, amrex::Real conformal_extrinsic_11, amrex::Real conformal_extrinsic_12, amrex::Real conformal_extrinsic_13, amrex::Real conformal_extrinsic_22, amrex::Real conformal_extrinsic_23, amrex::Real conformal_extrinsic_33, amrex::Real mean_curvature, amrex::Real lapse, amrex::Real shift1, amrex::Real shift2, amrex::Real shift3) noexcept
 {
-   const amrex::Real tmp0 = pow(conformal_factor, -6);
+   const amrex::Real tmp0 = amrex::Math::powi<-6>(conformal_factor);
    return {
-      pow(conformal_factor, -4),
+      amrex::Math::powi<-4>(conformal_factor),
       1,
       0,
       0,
@@ -248,7 +249,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real ctt_manufactured_energy_density_1d(amrex::Real x, amrex::Real y, amrex::Real z, amrex::Real amplitude) noexcept
 {
    const amrex::Real tmp0 = amplitude*std::sin(pyfluid_amrex::constants::pi*x);
-   return (1.0_rt/2.0_rt)*pyfluid_amrex::constants::pi*tmp0/pow(tmp0 + 1, 5);
+   return (1.0_rt/2.0_rt)*pyfluid_amrex::constants::pi*tmp0/amrex::Math::powi<5>(tmp0 + 1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -261,7 +262,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real ctt_manufactured_energy_density_2d(amrex::Real x, amrex::Real y, amrex::Real z, amrex::Real amplitude) noexcept
 {
    const amrex::Real tmp0 = amplitude*std::sin(pyfluid_amrex::constants::pi*x)*std::sin(pyfluid_amrex::constants::pi*y);
-   return pyfluid_amrex::constants::pi*tmp0/pow(tmp0 + 1, 5);
+   return pyfluid_amrex::constants::pi*tmp0/amrex::Math::powi<5>(tmp0 + 1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -274,7 +275,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real ctt_manufactured_energy_density_3d(amrex::Real x, amrex::Real y, amrex::Real z, amrex::Real amplitude) noexcept
 {
    const amrex::Real tmp0 = amplitude*std::sin(pyfluid_amrex::constants::pi*x)*std::sin(pyfluid_amrex::constants::pi*y)*std::sin(pyfluid_amrex::constants::pi*z);
-   return (3.0_rt/2.0_rt)*pyfluid_amrex::constants::pi*tmp0/pow(tmp0 + 1, 5);
+   return (3.0_rt/2.0_rt)*pyfluid_amrex::constants::pi*tmp0/amrex::Math::powi<5>(tmp0 + 1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -327,14 +328,14 @@ amrex::Real ctt_manufactured_coupled_energy_density(amrex::Real x, amrex::Real y
    const amrex::Real tmp8 = ((tmp3)*(tmp3));
    const amrex::Real tmp9 = 3*((tmp1)*(tmp1));
    const amrex::Real tmp10 = ((tmp5)*(tmp5));
-   return (1.0_rt/2.0_rt)*pyfluid_amrex::constants::pi*(3*tmp6 - 1.0_rt/12.0_rt*((vector_amplitude)*(vector_amplitude))*(4*tmp10*tmp8*((std::cos(tmp0))*(std::cos(tmp0))) + tmp10*tmp9*((std::cos(tmp2))*(std::cos(tmp2))) + tmp8*tmp9*((std::cos(tmp4))*(std::cos(tmp4))))/pow(tmp7, 7))/pow(tmp7, 5);
+   return (1.0_rt/2.0_rt)*pyfluid_amrex::constants::pi*(3*tmp6 - 1.0_rt/12.0_rt*((vector_amplitude)*(vector_amplitude))*(4*tmp10*tmp8*((std::cos(tmp0))*(std::cos(tmp0))) + tmp10*tmp9*((std::cos(tmp2))*(std::cos(tmp2))) + tmp8*tmp9*((std::cos(tmp4))*(std::cos(tmp4))))/amrex::Math::powi<7>(tmp7))/amrex::Math::powi<5>(tmp7);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real ctt_manufactured_coupled_momentum_density_1(amrex::Real x, amrex::Real y, amrex::Real z, amrex::Real conformal_amplitude, amrex::Real vector_amplitude) noexcept
 {
    const amrex::Real tmp0 = std::sin(pyfluid_amrex::constants::pi*x)*std::sin(pyfluid_amrex::constants::pi*y)*std::sin(pyfluid_amrex::constants::pi*z);
-   return -5.0_rt/12.0_rt*pyfluid_amrex::constants::pi*tmp0*vector_amplitude/pow(conformal_amplitude*tmp0 + 1, 10);
+   return -5.0_rt/12.0_rt*pyfluid_amrex::constants::pi*tmp0*vector_amplitude/amrex::Math::powi<10>(conformal_amplitude*tmp0 + 1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -343,7 +344,7 @@ amrex::Real ctt_manufactured_coupled_momentum_density_2(amrex::Real x, amrex::Re
    const amrex::Real tmp0 = std::sin(pyfluid_amrex::constants::pi*z);
    const amrex::Real tmp1 = pyfluid_amrex::constants::pi*x;
    const amrex::Real tmp2 = pyfluid_amrex::constants::pi*y;
-   return (1.0_rt/24.0_rt)*pyfluid_amrex::constants::pi*tmp0*vector_amplitude*std::cos(tmp1)*std::cos(tmp2)/pow(conformal_amplitude*tmp0*std::sin(tmp1)*std::sin(tmp2) + 1, 10);
+   return (1.0_rt/24.0_rt)*pyfluid_amrex::constants::pi*tmp0*vector_amplitude*std::cos(tmp1)*std::cos(tmp2)/amrex::Math::powi<10>(conformal_amplitude*tmp0*std::sin(tmp1)*std::sin(tmp2) + 1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -352,7 +353,7 @@ amrex::Real ctt_manufactured_coupled_momentum_density_3(amrex::Real x, amrex::Re
    const amrex::Real tmp0 = std::sin(pyfluid_amrex::constants::pi*y);
    const amrex::Real tmp1 = pyfluid_amrex::constants::pi*x;
    const amrex::Real tmp2 = pyfluid_amrex::constants::pi*z;
-   return (1.0_rt/24.0_rt)*pyfluid_amrex::constants::pi*tmp0*vector_amplitude*std::cos(tmp1)*std::cos(tmp2)/pow(conformal_amplitude*tmp0*std::sin(tmp1)*std::sin(tmp2) + 1, 10);
+   return (1.0_rt/24.0_rt)*pyfluid_amrex::constants::pi*tmp0*vector_amplitude*std::cos(tmp1)*std::cos(tmp2)/amrex::Math::powi<10>(conformal_amplitude*tmp0*std::sin(tmp1)*std::sin(tmp2) + 1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

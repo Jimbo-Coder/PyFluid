@@ -38,6 +38,8 @@ DiffusionStats solve_implicit_resistive_edge_emf(
 
    fill_ct_resistive_emf_from_face_b(edge_e, face_b, geom, cfg.resistivity, cfg);
    enforce_edge_electric_boundary(edge_e, geom, cfg);
+   amrex::Vector<amrex::MultiFab*> solution_components;
+   solution_components.reserve(3);
    for (int component = 0; component < 3; ++component) {
       const amrex::BoxArray edge_boxes = amrex::convert(
          cell_boxes,
@@ -47,8 +49,9 @@ DiffusionStats solve_implicit_resistive_edge_emf(
       rhs[component].define(edge_boxes, distribution, 1, 0);
       amrex::MultiFab::Copy(rhs[component], *edge_e.e[component], 0, 0, 1, 0);
       amrex::MultiFab::Copy(solution[component], rhs[component], 0, 0, 1, 0);
-      solution[component].FillBoundary(geom.periodicity());
+      solution_components.push_back(&solution[component]);
    }
+   amrex::FillBoundary(solution_components, geom.periodicity());
 
    amrex::LPInfo info;
    amrex::MLCurlCurl curl_curl({geom}, {cell_boxes}, {distribution}, info, 0);

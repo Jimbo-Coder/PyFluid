@@ -477,8 +477,10 @@ void ApparentHorizonTracker::refresh_level(
       );
    }
    signed_distance_[level]->FillBoundary(geometry.periodicity());
-   apparent_horizon_mask_[level]->FillBoundary(geometry.periodicity());
-   excision_mask_[level]->FillBoundary(geometry.periodicity());
+   amrex::Vector<amrex::iMultiFab*> masks{
+      apparent_horizon_mask_[level].get(), excision_mask_[level].get()
+   };
+   amrex::FillBoundary(masks, geometry.periodicity());
    level_revision_[level] = surface_revision_;
 }
 

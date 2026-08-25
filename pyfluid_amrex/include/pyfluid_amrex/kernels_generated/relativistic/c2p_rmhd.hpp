@@ -5,6 +5,7 @@
 #include "pyfluid_amrex/relativistic_state.hpp"
 #include <cmath>
 #include "pyfluid_amrex/c2p_root.hpp"
+#include <AMReX_Math.H>
 
 namespace pyfluid_amrex::generated {
 
@@ -22,7 +23,7 @@ amrex::Real srmhd_palenzuela_residual(const RMHDRecoveryState& recovery, amrex::
    const amrex::Real tmp6 = ((recovery.magnetic_momentum)*(recovery.magnetic_momentum));
    const amrex::Real tmp7 = 2*x;
    const amrex::Real tmp8 = recovery.magnetic_squared*tmp6;
-   const amrex::Real tmp9 = pow(recovery.dens, 4);
+   const amrex::Real tmp9 = amrex::Math::powi<4>(recovery.dens);
    const amrex::Real tmp10 = recovery.dens*tmp7;
    const amrex::Real tmp11 = tmp2*tmp5;
    const amrex::Real tmp12 = 2*recovery.magnetic_squared;
@@ -32,7 +33,7 @@ amrex::Real srmhd_palenzuela_residual(const RMHDRecoveryState& recovery, amrex::
    const amrex::Real tmp16 = ((recovery.magnetic_squared)*(recovery.magnetic_squared));
    const amrex::Real tmp17 = tmp16*tmp2;
    const amrex::Real tmp18 = tmp17*tmp3;
-   const amrex::Real tmp19 = sqrt(-tmp10*tmp6 - tmp11 + tmp12*tmp15 + tmp18 - tmp8 + tmp9*pow(x, 4));
+   const amrex::Real tmp19 = sqrt(-tmp10*tmp6 - tmp11 + tmp12*tmp15 + tmp18 - tmp8 + tmp9*amrex::Math::powi<4>(x));
    const amrex::Real tmp20 = gamma*recovery.magnetic_squared;
    const amrex::Real tmp21 = 2*gamma;
    const amrex::Real tmp22 = gamma*tmp1;
@@ -55,7 +56,7 @@ amrex::Real srmhd_palenzuela_residual_derivative(const RMHDRecoveryState& recove
    const amrex::Real tmp7 = gamma*((recovery.magnetic_squared)*(recovery.magnetic_squared)*(recovery.magnetic_squared));
    const amrex::Real tmp8 = 3*gamma;
    const amrex::Real tmp9 = tmp4*tmp8;
-   const amrex::Real tmp10 = pow(recovery.dens, 4);
+   const amrex::Real tmp10 = amrex::Math::powi<4>(recovery.dens);
    const amrex::Real tmp11 = ((x)*(x)*(x));
    const amrex::Real tmp12 = 2*tmp11;
    const amrex::Real tmp13 = ((recovery.dens)*(recovery.dens)*(recovery.dens));
@@ -75,7 +76,7 @@ amrex::Real srmhd_palenzuela_residual_derivative(const RMHDRecoveryState& recove
    const amrex::Real tmp27 = tmp19*tmp21;
    const amrex::Real tmp28 = recovery.tau*tmp27;
    const amrex::Real tmp29 = tmp16*tmp27;
-   const amrex::Real tmp30 = recovery.magnetic_squared*tmp26 + tmp10*pow(x, 4) - tmp15*tmp4 - tmp23 + tmp29 - tmp5;
+   const amrex::Real tmp30 = recovery.magnetic_squared*tmp26 + tmp10*amrex::Math::powi<4>(x) - tmp15*tmp4 - tmp23 + tmp29 - tmp5;
    const amrex::Real tmp31 = sqrt(tmp30);
    const amrex::Real tmp32 = 2*recovery.dens;
    const amrex::Real tmp33 = tmp31*tmp32;
@@ -232,7 +233,7 @@ amrex::Real srmhd_noble_entropy_residual(const RMHDRecoveryState& recovery, amre
    const amrex::Real tmp2 = gamma - 1;
    const amrex::Real tmp3 = conserved_entropy*pow(density, tmp2)*gamma/(recovery.dens*tmp2) + 1;
    const amrex::Real tmp4 = tmp1*tmp3/density;
-   return recovery.momentum_squared + ((recovery.magnetic_squared + tmp4)*(recovery.magnetic_squared + tmp4))*(tmp0/tmp1 - 1) + ((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp0*(recovery.magnetic_squared + 2*tmp4)/(pow(recovery.dens, 4)*((tmp3)*(tmp3)));
+   return recovery.momentum_squared + ((recovery.magnetic_squared + tmp4)*(recovery.magnetic_squared + tmp4))*(tmp0/tmp1 - 1) + ((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp0*(recovery.magnetic_squared + 2*tmp4)/(amrex::Math::powi<4>(recovery.dens)*((tmp3)*(tmp3)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -250,7 +251,7 @@ amrex::Real srmhd_noble_entropy_residual_derivative(const RMHDRecoveryState& rec
    const amrex::Real tmp9 = density*(recovery.magnetic_squared + 2*tmp5);
    const amrex::Real tmp10 = -recovery.dens*tmp4 + tmp3;
    const amrex::Real tmp11 = ((density)*(density));
-   return 2*density*tmp1*((tmp6)*(tmp6)) + 2*recovery.dens*tmp10*tmp6*(tmp1*tmp11 - 1)/tmp11 + 2*tmp10*tmp8/((recovery.dens)*(recovery.dens)*(recovery.dens)) + 2*tmp8*tmp9/pow(recovery.dens, 4) - 2*tmp3*tmp7*tmp9/(pow(recovery.dens, 5)*((tmp4)*(tmp4)*(tmp4)));
+   return 2*density*tmp1*((tmp6)*(tmp6)) + 2*recovery.dens*tmp10*tmp6*(tmp1*tmp11 - 1)/tmp11 + 2*tmp10*tmp8/((recovery.dens)*(recovery.dens)*(recovery.dens)) + 2*tmp8*tmp9/amrex::Math::powi<4>(recovery.dens) - 2*tmp3*tmp7*tmp9/(amrex::Math::powi<5>(recovery.dens)*((tmp4)*(tmp4)*(tmp4)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -285,7 +286,7 @@ amrex::Real srmhd_font_cold_residual(const RMHDRecoveryState& recovery, amrex::R
    const amrex::Real tmp3 = pow(density, polytropic_gamma)*polytropic_k*tmp2;
    const amrex::Real tmp4 = tmp3 + tmp3/(polytropic_gamma - 1) + 1;
    const amrex::Real tmp5 = tmp1*tmp2*tmp4;
-   return recovery.momentum_squared + ((recovery.magnetic_squared + tmp5)*(recovery.magnetic_squared + tmp5))*(tmp0/tmp1 - 1) + ((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp0*(recovery.magnetic_squared + 2*tmp5)/(pow(recovery.dens, 4)*((tmp4)*(tmp4)));
+   return recovery.momentum_squared + ((recovery.magnetic_squared + tmp5)*(recovery.magnetic_squared + tmp5))*(tmp0/tmp1 - 1) + ((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp0*(recovery.magnetic_squared + 2*tmp5)/(amrex::Math::powi<4>(recovery.dens)*((tmp4)*(tmp4)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -304,7 +305,7 @@ amrex::Real srmhd_font_cold_residual_derivative(const RMHDRecoveryState& recover
    const amrex::Real tmp10 = recovery.magnetic_squared + tmp9;
    const amrex::Real tmp11 = ((recovery.magnetic_momentum)*(recovery.magnetic_momentum));
    const amrex::Real tmp12 = tmp11/((tmp8)*(tmp8));
-   const amrex::Real tmp13 = (recovery.magnetic_squared + 2*tmp9)/pow(recovery.dens, 4);
+   const amrex::Real tmp13 = (recovery.magnetic_squared + 2*tmp9)/amrex::Math::powi<4>(recovery.dens);
    const amrex::Real tmp14 = polytropic_gamma*tmp7 + tmp6 - tmp7;
    const amrex::Real tmp15 = polytropic_k*tmp14*tmp2*tmp3 - tmp8;
    const amrex::Real tmp16 = ((density)*(density));

@@ -10,6 +10,7 @@
 #include <optional>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/azimuthal_geometry.hpp"
@@ -263,9 +264,14 @@ RadiationDiagnostics AmrSolverBase::compute_spacetime_radiation_diagnostics(
             output(i, j, k, RadiationComponent::MatterFlux3) = matter_flux.flux3;
          });
       }
-      field->FillBoundary(Geom(lev).periodicity());
       field_hierarchy[lev] = std::move(field);
    }
+   amrex::Vector<amrex::MultiFab*> radiation_fields;
+   radiation_fields.reserve(field_hierarchy.size());
+   for (auto const& field : field_hierarchy) {
+      radiation_fields.push_back(field.get());
+   }
+   amrex::FillBoundary(radiation_fields, Geom(0).periodicity());
 
    const ParametricSurface surface = diagnostic_extraction_surface();
    const HierarchyInterpolationPlan plan =
@@ -523,6 +529,9 @@ MatterModeDiagnostics AmrSolverBase::compute_matter_volume_modes(
    ];
    const int barycenter_begin = 2 * mode_count;
    const int reduction_components = barycenter_begin + 3;
+   std::vector<amrex::Real> reduction_totals(
+      static_cast<std::size_t>(reduction_components), 0.0
+   );
    const int coordinate = mesh_coordinate_kind();
    const MeshAxes axes = active_mesh_axes();
    for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -600,29 +609,31 @@ MatterModeDiagnostics AmrSolverBase::compute_matter_volume_modes(
             }
          );
       }
-      for (int m = 0; m < mode_count; ++m) {
-         const amrex::Real real = symmetry_factor * reduction.sum(2 * m);
-         const amrex::Real imaginary = symmetry_factor
-            * reduction.sum(2 * m + 1);
-         if (lev == 0) {
-            diagnostics.modes.push_back({
-               "rest_mass",
-               std::string(mode_info.basis),
-               0,
-               std::nullopt,
-               m,
-               {real, imaginary},
-               std::nullopt,
-            });
-         } else {
-            diagnostics.modes[static_cast<std::size_t>(m)].value +=
-               std::complex<amrex::Real>(real, imaginary);
-         }
+      for (int component = 0; component < reduction_components; ++component) {
+         reduction_totals[static_cast<std::size_t>(component)] +=
+            reduction.sum(component, true);
       }
-      for (int direction = 0; direction < 3; ++direction) {
-         diagnostics.barycenter[direction] += symmetry_factor
-            * reduction.sum(barycenter_begin + direction);
-      }
+   }
+   amrex::ParallelDescriptor::ReduceRealSum(
+      reduction_totals.data(), reduction_components
+   );
+   for (int m = 0; m < mode_count; ++m) {
+      diagnostics.modes.push_back({
+         "rest_mass",
+         std::string(mode_info.basis),
+         0,
+         std::nullopt,
+         m,
+         {
+            symmetry_factor * reduction_totals[static_cast<std::size_t>(2 * m)],
+            symmetry_factor * reduction_totals[static_cast<std::size_t>(2 * m + 1)],
+         },
+         std::nullopt,
+      });
+   }
+   for (int direction = 0; direction < 3; ++direction) {
+      diagnostics.barycenter[direction] = symmetry_factor
+         * reduction_totals[static_cast<std::size_t>(barycenter_begin + direction)];
    }
    diagnostics.mass = diagnostics.modes.front().value.real();
    if (diagnostics.mass > 0.0) {

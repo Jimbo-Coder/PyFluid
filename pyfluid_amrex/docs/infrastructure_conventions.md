@@ -71,6 +71,18 @@ methods and physics belong in their topic documents; coding style belongs in
 - Runtime reduction identity/integrands come from the diagnostic catalog.
   Runtime AMReX reductions own discrete totals; postprocessing owns analytic
   comparisons and derived presentation.
+- Independent fields at the same communication phase may be passed together to
+  AMReX's vector `FillBoundary` or `FillBoundaryAndSync` APIs so their exchanges
+  can overlap. They must share the hierarchy periodicity and compatible FabArray
+  type. Do not batch across a physical-boundary update, coarse-fine transfer, or
+  any other dependency that requires one field's completed ghosts first.
+- Diagnostic and integral owners fuse per-cell sum/min/max work locally where
+  practical, accumulate all AMR levels, and perform one packed MPI collective
+  per reduction operator. A local AMReX reducer is not permission to omit the
+  explicit hierarchy collective or to mix semantically different cadences.
+- The symbolic C++ printer owns fixed-integer power spelling. It expands the
+  smallest powers directly and emits `amrex::Math::powi<N>` for other integer
+  exponents; generated headers own the corresponding AMReX math include.
 - Fluid conserved state is cell-centered, CT magnetic state is face-centered,
   and evolved Z4c state is vertex-centered. Named persistent fields belong in
   the field schema; RHS, RK-stage, elliptic-residual, transfer, and other local

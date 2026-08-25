@@ -6,6 +6,7 @@
 #include <AMReX_MultiFabUtil.H>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -689,9 +690,17 @@ void update_axisymmetric_global_diagnostics(
             * fluid.rho * lorentz_factor;
       });
    }
-   summary.adm_mass = integrands.sum(0, false);
-   summary.angular_momentum = integrands.sum(1, false);
-   summary.baryonic_mass = integrands.sum(2, false);
+   std::array<amrex::Real, 3> global_integrals{
+      integrands.sum(0, true),
+      integrands.sum(1, true),
+      integrands.sum(2, true),
+   };
+   amrex::ParallelDescriptor::ReduceRealSum(
+      global_integrals.data(), static_cast<int>(global_integrals.size())
+   );
+   summary.adm_mass = global_integrals[0];
+   summary.angular_momentum = global_integrals[1];
+   summary.baryonic_mass = global_integrals[2];
    summary.dimensionless_spin = summary.angular_momentum / (
       summary.adm_mass * summary.adm_mass
    );
@@ -827,8 +836,15 @@ void update_axisymmetric_equilibrium_torus_global_diagnostics(
             * momentum(i, j, k, 0) * radius * std::sin(theta);
       });
    }
-   summary.baryonic_mass = integrands.sum(0, false);
-   summary.angular_momentum = integrands.sum(1, false);
+   std::array<amrex::Real, 2> global_integrals{
+      integrands.sum(0, true),
+      integrands.sum(1, true),
+   };
+   amrex::ParallelDescriptor::ReduceRealSum(
+      global_integrals.data(), static_cast<int>(global_integrals.size())
+   );
+   summary.baryonic_mass = global_integrals[0];
+   summary.angular_momentum = global_integrals[1];
    if (!(summary.baryonic_mass > 0.0)
        || !std::isfinite(summary.angular_momentum)) {
       amrex::Abort("axisymmetric equilibrium-torus diagnostics are invalid");
@@ -950,9 +966,18 @@ void update_equilibrium_torus_global_diagnostics(
             );
          });
       }
-      summary.baryonic_mass += integrands.sum(0, false);
-      summary.angular_momentum += integrands.sum(1, false);
+      summary.baryonic_mass += integrands.sum(0, true);
+      summary.angular_momentum += integrands.sum(1, true);
    }
+   std::array<amrex::Real, 2> global_integrals{
+      summary.baryonic_mass,
+      summary.angular_momentum,
+   };
+   amrex::ParallelDescriptor::ReduceRealSum(
+      global_integrals.data(), static_cast<int>(global_integrals.size())
+   );
+   summary.baryonic_mass = global_integrals[0];
+   summary.angular_momentum = global_integrals[1];
    // Configuration admits a rotating disk on a reflected Cartesian domain
    // only when every reflection is its equatorial plane.  The projected
    // angular momentum therefore has the same even parity as the mass, so both

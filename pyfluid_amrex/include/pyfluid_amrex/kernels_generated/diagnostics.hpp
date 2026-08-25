@@ -5,6 +5,7 @@
 #include "pyfluid_amrex/diagnostics_types.hpp"
 #include "pyfluid_amrex/state.hpp"
 #include "pyfluid_amrex/z4c_state.hpp"
+#include <AMReX_Math.H>
 
 namespace pyfluid_amrex::generated {
 
