@@ -98,6 +98,9 @@ CONSTRAINT_PATTERN = re.compile(
 RECOVERY_PATTERN = re.compile(
    r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)"
 )
+REGRID_PATTERN = re.compile(
+   r"AMR regrid attempts=(\d+) noops=(\d+) modified_levels=(\d+)"
+)
 
 
 read_metadata = read_physical_id_metadata
@@ -613,6 +616,69 @@ def main() -> int:
    if int(float(kerr_evolution_rows[-1]["step"])) != 2:
       raise RuntimeError("Kerr torus evolution did not complete two steps")
 
+   kerr_amr_dir, _, kerr_amr_seconds, kerr_amr_log = run_case(
+      "kerr_constant_l_loaded_amr_32",
+      3,
+      KERR_EVOLUTION_INPUT,
+      {
+         "geometry.prob_lo": "-64.0 -64.0 -64.0",
+         "geometry.prob_hi": "64.0 64.0 64.0",
+         "amr.n_cell": "32 32 32",
+         "amr.max_level": "2",
+         "amr.ref_ratio": "2 2",
+         "amr.max_grid_size": "16",
+         "amr.regrid_int": "4",
+         "amr.n_error_buf": "1",
+         "amr.tag_metric": "compact_object",
+         "amr.min_feature_length": "2.0",
+         "amr.total_cell_budget": "300000",
+         "amr.level_cell_budget": "250000",
+         "amr.state_interp": "quartic-conservative",
+         "initial_data.input_file": repo_relative(kerr_artifact),
+         "pyfluid.max_step": "1",
+         "pyfluid.subcycling": "on",
+         "pyfluid.subcycling_steps": "spatial",
+         "pyfluid.plot_int": "-1",
+         "pyfluid.checkpoint_int": "-1",
+      },
+      args,
+      artifact_output=False,
+   )
+   kerr_amr_scalar = scalar_validation_row(
+      kerr_amr_dir,
+      case="kerr_constant_l_loaded_amr_32",
+      input_file=kerr_amr_dir / "input.in",
+      checks="open",
+      mhd=False,
+      dim=3,
+      ranks=args.ranks,
+      kind="initial_data",
+   )
+   if kerr_amr_scalar["status"] != "PASS":
+      raise RuntimeError(
+         "loaded Kerr torus AMR scalar check failed: "
+         f"{kerr_amr_scalar['reason']}"
+      )
+   kerr_amr_rows = read_scalar_rows(kerr_amr_dir)
+   initial_amr = kerr_amr_rows[0]
+   if int(float(initial_amr["amr_active_finest_level"])) < 1 \
+         or int(float(initial_amr["amr_finest_headroom"])) < 1:
+      raise RuntimeError(
+         "loaded Kerr torus did not build an initial refined hierarchy "
+         "with level headroom"
+      )
+   regrid = REGRID_PATTERN.search(kerr_amr_log)
+   if regrid is None or int(regrid.group(1)) < 2 \
+         or int(regrid.group(2)) < 1 or int(regrid.group(3)) < 1:
+      raise RuntimeError(
+         "loaded Kerr torus did not converge its initial AMR hierarchy"
+      )
+   if kerr_amr_log.count("loaded physical initial data:") < 2:
+      raise RuntimeError(
+         "loaded Kerr torus did not rematerialize its changed AMR hierarchy"
+      )
+   additional_scalar_rows.append(kerr_amr_scalar)
+
    tilted_dir, tilted_seconds = run_rejected_case(
       "misaligned_kerr_torus_rejected",
       3,
@@ -699,6 +765,20 @@ def main() -> int:
             "momentum_abs_drift"
          ],
          "run_dir": repo_relative(kerr_evolution_dir),
+      },
+      {
+         "kind": "initial_data",
+         "case": "kerr_constant_l_loaded_amr_32",
+         "status": "PASS",
+         "seconds": kerr_amr_seconds,
+         "mass_rel_drift": kerr_amr_scalar["mass_rel_drift"],
+         "energy_rel_drift": kerr_amr_scalar["energy_rel_drift"],
+         "momentum_abs_drift": kerr_amr_scalar["momentum_abs_drift"],
+         "amr_active_finest_level": kerr_amr_scalar[
+            "amr_active_finest_level"
+         ],
+         "amr_finest_headroom": kerr_amr_scalar["amr_finest_headroom"],
+         "run_dir": repo_relative(kerr_amr_dir),
       },
       {
          "kind": "initial_data",

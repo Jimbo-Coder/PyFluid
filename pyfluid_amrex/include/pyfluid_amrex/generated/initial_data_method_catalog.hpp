@@ -25,7 +25,7 @@ struct RotationLawInfo {
 inline constexpr std::array<RotationLawInfo, 5> RotationLawCatalog = {{
    {RotationLaw::Uniform, "uniform", "Uniform angular velocity", "Circular flow with one constant angular velocity.", "angular_velocity"},
    {RotationLaw::JConstant, "j_constant", "Relativistic j-constant", "Differential rotation with j(Omega) = A^2 (Omega_c - Omega).", "angular_velocity,differential_rotation_length"},
-   {RotationLaw::QPower, "q_power", "Relativistic q-power", "Generalized differential rotation with q=1 equal to j-constant.", "angular_velocity,differential_rotation_length,rotation_power_q"},
+   {RotationLaw::QPower, "q_power", "Relativistic q-power", "Generalized j=A^2 Omega [(Omega_c/Omega)^q-1] rotation; q=1 is j-constant.", "angular_velocity,differential_rotation_length,rotation_power_q"},
    {RotationLaw::UryuPlus13, "uryu_plus_13", "Uryu plus p=1 q=3", "Post-merger differential rotation with an off-center angular-velocity maximum.", "angular_velocity,differential_rotation_length,differential_rotation_length_b"},
    {RotationLaw::UryuJEnvelopeP1, "uryu_j_envelope_p1", "Uryu j-envelope p=1", "Finite-j-envelope post-merger law that limits to j-constant as B tends to infinity.", "angular_velocity,differential_rotation_length,differential_rotation_length_b"}
 }};
@@ -48,7 +48,7 @@ struct DiskRotationLawInfo {
 inline constexpr std::array<DiskRotationLawInfo, 4> DiskRotationLawCatalog = {{
    {DiskRotationLaw::ConstantL, "constant_l", "Constant specific angular momentum", "Stationary circular torus with constant ell=-u_phi/u_t.", "specific_angular_momentum,inner_radius"},
    {DiskRotationLaw::JConstant, "j_constant", "Relativistic j-constant", "Stationary circular torus with j(Omega) = A^2 (Omega_c - Omega).", "angular_velocity,differential_rotation_length,inner_radius"},
-   {DiskRotationLaw::QPower, "q_power", "Relativistic q-power", "Stationary circular torus with the generalized q-power j(Omega) law.", "angular_velocity,differential_rotation_length,rotation_power_q,inner_radius"},
+   {DiskRotationLaw::QPower, "q_power", "Relativistic q-power", "Stationary circular torus with j=A^2 Omega [(Omega_c/Omega)^q-1]; q=1 is j-constant and the asymptotically flat 1<=q<2 branch has Omega proportional to R^(-2/q).", "angular_velocity,differential_rotation_length,rotation_power_q,inner_radius"},
    {DiskRotationLaw::Uniform, "uniform", "Uniform angular velocity", "Circular flow with one constant angular velocity; a finite detached torus is still required.", "angular_velocity,inner_radius"}
 }};
 

@@ -118,6 +118,11 @@ def _metadata_float(
    return physical_id_metadata_real(metadata, key, fallback)
 
 
+def _parameter_choice(params: dict[str, str], key: str, default: str) -> str:
+   """Read a string choice from source or canonical quoted run input."""
+   return params.get(key, default).strip().strip("\"'")
+
+
 def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, object]:
    params = read_key_values(input_file)
    log_path = run_dir / "run.log"
@@ -194,8 +199,11 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
    wall = _match(text, rf"^# wall_seconds = ({FLOAT})$")
    if preflight is None and not physical_id_preflight:
       reasons.append("missing C2P/P2C preflight")
-   magnetic_seed = params.get("initial_data.magnetic_seed", "none")
-   magnetic_equilibrium_name = params.get(
+   magnetic_seed = _parameter_choice(
+      params, "initial_data.magnetic_seed", "none"
+   )
+   magnetic_equilibrium_name = _parameter_choice(
+      params,
       "initial_data.magnetic_equilibrium", "none"
    )
    if magnetic_seed != "none":

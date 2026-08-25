@@ -71,6 +71,7 @@ class AmrTagPolicy:
     cpp_id: str
     label: str
     description: str
+    default_threshold: float
     density: bool
     pressure: bool
     velocity: bool
@@ -304,6 +305,7 @@ def _load_amr_tag_policy(
             "cpp_id",
             "label",
             "description",
+            "default_threshold",
             "density",
             "pressure",
             "velocity",
@@ -319,6 +321,12 @@ def _load_amr_tag_policy(
         if type(value) is not bool:
             raise ValueError(f"{context}.{key} must be a boolean")
         flags[key] = value
+    default_threshold = record.get("default_threshold")
+    if (
+        type(default_threshold) not in (int, float)
+        or default_threshold <= 0.0
+    ):
+        raise ValueError(f"{context}.default_threshold must be positive")
     density_floor_multiple = record.get("density_floor_multiple")
     if (
         type(density_floor_multiple) not in (int, float)
@@ -338,6 +346,7 @@ def _load_amr_tag_policy(
         cpp_id=_required_string(record, "cpp_id", context),
         label=_required_string(record, "label", context),
         description=_required_string(record, "description", context),
+        default_threshold=float(default_threshold),
         density_floor_multiple=float(density_floor_multiple),
         **flags,
     )

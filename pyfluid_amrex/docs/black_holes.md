@@ -63,6 +63,33 @@ to roundoff after one step. The gate also proves that unsupported excision,
 incompatible physical-ID spin, and incompatible reflection planes fail before
 evolution instead of changing the requested problem.
 
+The longer `a/M=0.5` AMR control reaches `t=10.690 M` in 64 CFL-0.9 steps with
+zero recovery/reset. Its `spacetime` policy retains 98,304 cells, two unused
+levels, and 15 no-op regrids; it follows strong-field `abs(chi-1)` support
+rather than an outgoing gauge tail. Mean coordinate horizon radius grows from
+`1.908 M` to `2.417 M`, so the usual coordinate shrinkage is absent. Proper
+area grows from `47.029 M^2` to `49.184 M^2` (4.9 percent above exact at the
+end), which is a real accuracy limitation hidden by a radius-only statement.
+At the same routine near-hole spacing, `a/M=0.7` reaches `t=2.476 M` with final
+area 2.6 percent above exact. A filled `a/M=0.8` hole is strongly sensitive to
+the arbitrary C2 interior transition and degrades by `t=1.19 M`; treat this as
+motivation for a constraint-improved interior or excision, not a physical spin
+limit of Kerr or the finder.
+
+The aligned fixed-background BH-disk control uses the generated q-power law
+`j=A^2 Omega[(Omega_c/Omega)^q-1]` with catalog `q=1.05`,
+`Omega_c=0.1355`, `A=6 M`, and requested `r_in=10 M`. The catalog exponent
+corresponds asymptotically to the conventional disk shear exponent
+`q_Omega=2/q=1.905`, slightly below constant-angular-momentum-like `q_Omega=2`.
+The saved `64^3` artifact has resolved support `14.098--25.981 M`. Its
+ratio-4/2 AMR evolution reaches `t=51.753 M` in 24 CFL-0.9 steps with zero
+recovery/reset, one level of headroom, and 355,840 cells (47.4 percent of its
+guard, versus 2.10M cells for uniform `dx=1 M`). The maximum density decreases
+3.58 percent and the boundary-corrected mass residual is `4.28e-13`. Large
+late-time Lorentz factors are confined to atmosphere in the filled hole and
+remain the practical reason to implement true excision before calling this a
+long-lived accretion evolution.
+
 ## Constraint-solved Schwarzschild shell
 
 `pyfluid.ic = black_hole`, `spacetime.initial_data = xcts`, and

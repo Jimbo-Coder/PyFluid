@@ -147,6 +147,7 @@ def render_amr_tag_catalog_header() -> str:
                 _cpp_string(policy.name),
                 _cpp_string(policy.label),
                 _cpp_string(policy.description),
+                repr(policy.default_threshold),
                 str(policy.density).lower(),
                 str(policy.pressure).lower(),
                 str(policy.velocity).lower(),
@@ -169,6 +170,7 @@ def render_amr_tag_catalog_header() -> str:
                 policy.velocity,
                 policy.magnetic,
                 policy.spacetime,
+                policy.default_threshold,
                 policy.density_floor_multiple,
             )
         )
@@ -194,6 +196,7 @@ struct AmrTagPolicyInfo {{
    std::string_view name;
    std::string_view label;
    std::string_view description;
+   double default_threshold;
    bool density;
    bool pressure;
    bool velocity;
@@ -212,6 +215,7 @@ struct AmrTagPolicyFlags {{
    bool velocity;
    bool magnetic;
    bool spacetime;
+   double default_threshold;
    double density_floor_multiple;
 }};
 
@@ -220,7 +224,7 @@ constexpr AmrTagPolicyFlags amr_tag_policy_flags(int policy) noexcept
 {{
    switch (policy) {{
 {flag_cases}
-   default: return {{false, false, false, false, false, 0.0}};
+   default: return {{false, false, false, false, false, 0.35, 0.0}};
    }}
 }}
 

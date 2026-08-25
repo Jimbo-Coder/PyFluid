@@ -505,7 +505,8 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacetime_amr_directional_indicator
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& min_feature_lengths,
-   AmrSpacetimeMetricView const& spacetime
+   AmrSpacetimeMetricView const& spacetime,
+   bool track_curvature
 ) noexcept
 {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> indicators{};
@@ -517,9 +518,33 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacetime_amr_directional_indicator
    ) noexcept {
       return spacetime.state(ia, ja, ka, Z4C_CHI) - 1.0;
    };
-   const amrex::Real reference_scale = amrex::max(
-      amrex::Math::abs(conformal_perturbation_at(i, j, k)), 1.0e-12
-   );
+   if (!track_curvature) {
+      const amrex::Real strong_field_support = amrex::Math::abs(
+         conformal_perturbation_at(i, j, k)
+      );
+      for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+         if (amr_direction_is_unresolved(
+                coordinate,
+                axes,
+                problo,
+                dx,
+                dir,
+                i,
+                j,
+                k,
+                min_feature_lengths
+             )) {
+            indicators[dir] = strong_field_support;
+         }
+      }
+      return indicators;
+   }
+   // chi is dimensionless and approaches its Minkowski value of one.  Use
+   // that physical scale in the Lohner smoothness floor so a small, smooth
+   // asymptotic tail is not promoted merely because its local amplitude is
+   // small.  The numerator still follows curvature in chi - 1 near the
+   // compact object.
+   constexpr amrex::Real reference_scale = 1.0;
    accumulate_metric_aware_directional_indicator(
       indicators,
       conformal_perturbation_at,
@@ -587,7 +612,8 @@ auto_amr_directional_indicators_from_primitive(
             problo,
             dx,
             min_feature_lengths,
-            spacetime
+            spacetime,
+            tag_policy == AmrTagLohner
          );
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
          indicators[dir] = amrex::max(indicators[dir], spacetime_indicators[dir]);

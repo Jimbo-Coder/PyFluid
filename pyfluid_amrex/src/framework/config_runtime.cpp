@@ -205,11 +205,6 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> configured_min_feature_lengths(
    return values;
 }
 
-amrex::Real amr_default_lohner_tag_threshold()
-{
-   return 0.08;
-}
-
 amrex::Real amr_default_auto_min_feature_scale(int max_level)
 {
    constexpr amrex::Real points_per_feature = 2.0;

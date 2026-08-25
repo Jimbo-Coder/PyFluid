@@ -37,9 +37,10 @@ methods and physics belong in their topic documents; coding style belongs in
   views. Runtime code must not create a second raw-string field registry.
 - `schema/methods.toml` owns supported-method identity and dispatch metadata,
   including reconstruction names/codes/stencil radii/characteristic forms,
-  rotation-law names, and the runtime AMR indicator policies. An AMR policy
-  selects a small set of semantic density/flow/magnetic/spacetime indicators;
-  it does not create a template product or infer a driver from every stored GF.
+  rotation-law names, and the runtime AMR indicator policies and their default
+  thresholds. An AMR policy selects a small set of semantic
+  density/flow/magnetic/spacetime indicators; it does not create a template
+  product or infer a driver from every stored GF.
   Its native initial-data-owner records declare natural
   coordinate/axis layouts, dimensions, grid kinds, broad object/disk support,
   relative-tilt support, and reflection class. Coupled physical restrictions
@@ -160,9 +161,11 @@ methods and physics belong in their topic documents; coding style belongs in
   down; CT uses edge-EMF reflux and face average-down; nodal spacetime follows
   its nodal synchronization contract and is not refluxed.
 - Automatic AMR tagging uses one runtime policy declared in
-  `schema/methods.toml`. Compact-object policies suppress floor-level matter
-  noise and select density support and/or conformal geometry explicitly;
-  broad flow tagging remains opt-in for shocks and instability studies.
+  `schema/methods.toml`, including the policy's default threshold.
+  Compact-object policies suppress floor-level matter noise and select density
+  support and/or strong-field `abs(chi - 1)` support explicitly; they do not
+  chase small outgoing gauge tails. Broad Lohner curvature tagging remains
+  opt-in for shocks and instability studies.
 - A physics-system admissibility restriction augments that selected
   interpolater in its state-transfer owner; it is not a second interpolater or
   a post-transfer atmosphere repair. Keep relativistic conserved components
@@ -422,6 +425,12 @@ continuation identity includes the differential-rotation length and, for the
 q-power family, its exponent. The artifact must also restore the converged
 Euler first-integral injection energy; recomputing it from the original TOV
 seed changes the nonlinear problem.
+The q-power catalog parameter follows
+`j=A^2 Omega[(Omega_c/Omega)^q-1]`; it is not the conventional radial disk
+shear exponent. In an asymptotically flat region with `1 <= q < 2`, the latter
+is `q_Omega=2/q` in `Omega proportional to R^-q_Omega`. Persist and compare the
+catalog parameter, while reports may derive the conventional exponent for
+interpretation.
 Rematerialization must carry forward the complete rotating-star continuation
 summary (injection energy, surface diagnostics, charges, and spin) and disk
 component summary, not only the fields. Otherwise a valid evolution artifact
@@ -576,6 +585,14 @@ configured-ID materialization call. The stored-artifact implementation owns
 exact-cache selection, hierarchy interpolation, exterior completion, and state
 reconstruction; callers must not implement separate "sequence load" and
 "evolution load" remappers.
+
+AMReX constructs its scratch hierarchy before a stored artifact is available
+to state-based tagging. After the first artifact load, evolution therefore
+regrids the target hierarchy and rematerializes every changed layout directly
+from the artifact until a regrid is a no-op. Do not leave a newly created fine
+level as prolonged coarse initial data when the portable source can evaluate
+that level directly. This convergence is startup-only; runtime regrids retain
+the ordinary FillPatch/prolongation finite-volume contract.
 
 For a same-chart periodic source, each periodic target extent must contain an
 integer number of saved periods. For a nonperiodic larger domain, physical

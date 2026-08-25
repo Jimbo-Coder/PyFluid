@@ -103,7 +103,7 @@ constexpr std::array<RegisteredStringParameter, 4> AMRStringParameters{{
 
 constexpr std::array<RegisteredScalarParameter<amrex::Real>, 8> AMRRealParameters{{
    {"tag_threshold", &RunConfig::tag_threshold, 0.35, RestartPolicy::Mutable,
-    "Dimensionless state-curvature threshold.", &RunConfig::tag_threshold_set},
+    "Dimensionless selected AMR-indicator threshold.", &RunConfig::tag_threshold_set},
    {"min_feature_length", &RunConfig::min_feature_length, std::numeric_limits<amrex::Real>::quiet_NaN(),
     RestartPolicy::Mutable,
     "Global physical resolution guard.", &RunConfig::min_feature_length_set},
@@ -897,7 +897,9 @@ RunConfig read_config()
       }
    }
    if (cfg.tag_metric != "none" && !cfg.tag_threshold_set) {
-      cfg.tag_threshold = amr_default_lohner_tag_threshold();
+      cfg.tag_threshold = amr_tag_policy_flags(
+         amr_tag_policy_code(cfg)
+      ).default_threshold;
    }
    if (cfg.level_cell_budget_side > 0) {
       amrex::Long derived_cells = 1;

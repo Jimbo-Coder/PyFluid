@@ -218,6 +218,39 @@
          InitFromScratch(0.0);
          clip_multipatch_initial_hierarchy(0.0);
          materialize_configured_initial_data();
+         if (!cfg_.initial_data_solve_only
+             && !cfg_.initial_data_input_file.empty()
+             && maxLevel() > 0) {
+            // InitFromScratch cannot tag from a physical-ID artifact that has
+            // not been loaded yet.  Converge the target hierarchy after the
+            // first materialization, then rematerialize every changed layout
+            // directly from the artifact.  New fine levels must not begin as
+            // prolonged coarse ID when their native source resolution is
+            // available.
+            const int maximum_initial_regrids = 2 * maxLevel() + 2;
+            bool hierarchy_stable = false;
+            for (int attempt = 0; attempt < maximum_initial_regrids;
+                 ++attempt) {
+               const bool hierarchy_changed = operations.subcycling
+                  ? regrid_hierarchy_and_project<true, EOSMethod>(
+                       time, 0, 0
+                    )
+                  : regrid_hierarchy_and_project<false, EOSMethod>(
+                       time, 0, 0
+                    );
+               if (!hierarchy_changed) {
+                  hierarchy_stable = true;
+                  break;
+               }
+               materialize_configured_initial_data();
+            }
+            if (!hierarchy_stable) {
+               amrex::Abort(
+                  "physical-ID target hierarchy did not stabilize during "
+                  "initial materialization"
+               );
+            }
+         }
       } else {
          load_checkpoint(cfg_.restart_file, time, dt);
       }

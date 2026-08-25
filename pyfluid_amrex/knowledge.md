@@ -10,7 +10,8 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-24, branch `main`, through Cycle 320's AMReX 26.08 CT
+Last reconciled: 2026-08-25, branch `main`, through Cycle 321's long Kerr-hole,
+loaded-ID AMR, and fixed-Kerr torus audit, Cycle 320's AMReX 26.08 CT
 ratio, host-loop, and measured diagnostic cleanup. Cycle 319's API adoption,
 Cycle 318's dependency update and reproducible check/update lifecycle, and
 Cycle 317's generated
@@ -257,9 +258,13 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   Production evidence separates geometry/vacuum tracking, matter support,
   object-following boxes, and targeted magnetic/shear science criteria. The
   catalog therefore keeps `lohner` as an explicit broad flow-study policy,
-  uses floor-guarded density for `matter`, `chi - 1` for `spacetime`, and their
-  union for `compact_object`. Adding a diagnostic GF never makes it an AMR
-  driver implicitly; `chi` alone is not a universal matter criterion.
+  uses floor-guarded density for `matter`, strong-field support
+  `abs(chi - 1)` for `spacetime`, and their union for `compact_object`.
+  `spacetime` and `compact_object` default to threshold 0.15 and deliberately
+  do not follow a small outgoing gauge tail. Broad `lohner` still measures
+  conformal-factor curvature, with the dimensionless Minkowski scale one in
+  its smoothness floor. Adding a diagnostic GF never makes it an AMR driver
+  implicitly; `chi` alone is not a universal matter criterion.
 - Conservative component averages do not guarantee relativistic
   admissibility. A coarse parent can produce children whose exact component
   average is correct while one child recovers with negative pressure.
@@ -640,10 +645,30 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   Physical-ID metadata retain the disk identity, support, component mass and
   angular momentum through reduced-to-Cartesian rematerialization. A two-step
   `32^3` evolved-Z4c smoke at CFL 0.9 has rest-mass drift below `1e-10` with
-  zero recovery. Direct 3D fixed-Kerr constant-l and j-constant/q=1 artifacts
-  also solve, reload, and evolve with zero recovery; misaligned Kerr spin/disk
-  axes reject because they are not stationary circular equilibrium. Long-term
-  star/disk or black-hole/disk equilibrium, q>1 disk-law calibration,
+  zero recovery. Direct 3D fixed-Kerr constant-l and j-constant/q-power
+  artifacts also solve, reload, and evolve with zero recovery; misaligned Kerr
+  spin/disk axes reject because they are not stationary circular equilibrium.
+  The catalog q-power law is
+  `j=A^2 Omega[(Omega_c/Omega)^q-1]`: `q=1` is j-constant and, for an
+  asymptotically flat metric with `1 <= q < 2`, its outer angular-velocity
+  exponent is `q_Omega=2/q`. Do not confuse the catalog exponent with the
+  conventional `Omega proportional to R^-q_Omega` disk exponent.
+- A bounded differential fixed-Kerr control uses catalog `q=1.05`
+  (`q_Omega=1.905`), `Omega_c=0.1355`, `A=6 M`, and requested `r_in=10 M`.
+  Its 85 MiB compressed `64^3` artifact has resolved support
+  `14.098--25.981 M`, density maximum at `19.092 M`, maximum velocity `0.315`,
+  baryonic mass `8.693e-3`, and zero recovery. Direct rematerialization onto a
+  ratio-4/2 AMR box twice as wide reaches `t=51.753 M` in 24 CFL-0.9 steps
+  with zero recovery/reset. It peaks and ends at 355,840 cells, 47.4 percent
+  of its guard versus 2.10M for uniform `dx=1 M`, retains one level of
+  headroom, and has corrected mass/energy residuals `4.28e-13/3.13e-5`; its
+  maximum density decreases 3.58 percent. Larger changes in the catalog
+  exponent require retuning `Omega_c`: the old fixed `Omega_c=0.15`, `A=6`,
+  `r_in=10 M` q=1.1/1.25/1.5 probes reached the Cartesian boundary, but this
+  is a parameter-family rejection, not evidence that q>1 disks are impossible.
+  The atmosphere inside the filled hole reaches a large Lorentz factor late,
+  so this remains a fixed-background test-fluid control, not a long-lived
+  accretion production run. Long-term star/disk or black-hole/disk equilibrium,
   magnetized tori, cusp/overflow diagnostics, and cross-method comparison
   remain open.
 - A relative star/hole--disk tilt removes the shared axial Killing symmetry.
@@ -841,9 +866,17 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   dimensional-degeneracy test, not a separate owner.
 - The tested complete-grid Kerr evolution uses ordinary advective 1+log,
   gamma-driver shift, RK4, KO strength 0.32, and positive chi/lapse floors of
-  `1e-10`. A manual 64-step CFL-0.9 coarse-grid stress reaches `t=6.035` with
-  zero fluid recovery/reset; this is robustness evidence for the filled
-  control, not proof of an accurate stationary trumpet. The earlier amplitude-
+  `1e-10`. The resolved `a/M=0.5` AMR/horizon control reaches `t=10.690 M` in
+  64 CFL-0.9 steps with zero fluid recovery/reset. All 15 runtime regrids are
+  no-ops at 98,304 cells with two unused levels. Its mean coordinate horizon
+  radius grows 26.7 percent rather than shrinking, while proper area ends 4.9
+  percent above exact; this separates gauge-coordinate motion from a still
+  material physical drift. A practical `a/M=0.7` control reaches `t=2.476 M`
+  with the same bounded hierarchy and final area 2.6 percent above exact.
+  `a/M=0.8` is sensitive to the arbitrary filled interior: widening its C2
+  fill transition extends survival from about `0.15 M` to `1.19 M`, but area
+  falls 4 percent and exterior constraints grow. This is an interior/excision
+  boundary, not a physical Kerr spin limit. The earlier amplitude-
   one/time-five Gaussian `slow_start` lapse fails by step 54. Calibrating it to
   strength `0.6` and width `20` reaches 64 steps with zero recovery, but its
   final exterior Hamiltonian/momentum norms are roughly 3.3 to 5.1 times
@@ -876,6 +909,13 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   resampling the configured primitives and finalizing against the centered
   metric reduced the mismatch to roundoff. This ownership rule applies to all
   nontrivial stored-spacetime ID, not only black holes.
+- `InitFromScratch` cannot tag from a physical-ID artifact before that artifact
+  is loaded. Evolution starts from a saved ID by alternating target-hierarchy
+  regrid and direct artifact rematerialization until the layout is a no-op.
+  This prevents new fine levels from retaining prolonged coarse ID when native
+  source resolution is available. The focused fixed-Kerr torus regression
+  requires one changed layout, one no-op, a refined step-zero hierarchy, and
+  spare level headroom.
 - AMReX does not apply `BCRec` reflection in its all-node
   `GpuBndryFuncFab` path; it constant-extrapolates and invokes the user
   boundary functor. The former empty Z4c functor therefore made reflection

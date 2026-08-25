@@ -6728,3 +6728,74 @@ I will always continue from the last cycle marked as `in_progress`.
   affected three-dimension rebuild is `3.26 s` and the subsequent true no-op
   production build is `0.85 s`. The 1.7 GiB temporary comparison checkout was
   removed after its results were recorded. [DONE]
+
+## Cycle 321 — Long spinning-hole and BH-disk evolution audit (DONE)
+
+- Extend the live apparent-horizon measurement beyond the existing `0.15 M`
+  smoke and distinguish coordinate-radius motion from proper-area and
+  irreducible-mass drift. Track finder residuals, exterior constraints, lapse,
+  and recovery/reset counts rather than using the analytic seed radius as an
+  evolved diagnostic. The final `a/M=0.5`, `dx_min=0.25 M` run reaches
+  `t=10.6896 M` in 64 CFL-0.9 steps with zero recovery/reset. The found mean
+  coordinate radius grows `1.90807 -> 2.41735 M`; area grows
+  `47.0293 -> 49.1841 M^2`, ending 4.87 percent above the exact Kerr area, and
+  irreducible mass grows `0.96727 -> 0.98919 M`. Finder residuals remain below
+  the requested `5e-4` scale-aware Linf tolerance. There is no coordinate
+  shrinkage, but the area drift prevents an equilibrium-accuracy claim.
+  [DONE]
+- Exercise compact-object/horizon AMR on the evolved hole with explicit level,
+  headroom, and cell-budget checks. Start with a bounded probe and reject a
+  hierarchy that grows to its resource guard instead of declaring refinement
+  itself a success. The former Lohner normalization promoted small smooth
+  gauge tails and reached the 400k guard near `t=3.6 M`. The catalog-owned
+  `spacetime`/`compact_object` policies now follow strong-field
+  `abs(chi-1)` support with a 0.15 default threshold, while broad `lohner`
+  retains curvature using the physical dimensionless reference scale one.
+  The final hole uses 98,304 cells, active L2 with two levels of headroom,
+  24.6 percent of its total budget, and all 15 runtime regrids are no-ops.
+  [DONE]
+- Increase Kerr spin only after the baseline is tenable, then evolve one
+  aligned equilibrium BH-torus configuration with a conservative q-power law
+  below two. Record the exact disk law and parameters; do not conflate the
+  disk q-power law with the stellar rotation-law catalog. A practical filled
+  `a/M=0.7` hole reaches `t=2.476 M` at routine spacing with bounded AMR,
+  zero recovery, and final area 2.6 percent above exact. At `a/M=0.8`, widening
+  the arbitrary C2 interior transition improves survival from `0.15 M` to
+  `1.19 M`, but area falls 4 percent and exterior constraints grow; this is an
+  interior/excision limit, not a physical Kerr spin limit. The final
+  fixed-background disk uses `a/M=0.5`, q-power catalog `q=1.05`,
+  `Omega_c=0.1355`, `A=6 M`, and requested `r_in=10 M`; its support is
+  `14.098--25.981 M`, maximum density is `2.661e-6`, maximum speed is `0.315`,
+  and baryonic mass is `8.693e-3`. The catalog law
+  `j=A^2 Omega[(Omega_c/Omega)^q-1]` has conventional asymptotic disk exponent
+  `q_Omega=2/q=1.905`, so it is below the q-Omega=2 identity in the intended
+  sense. The old fixed-`Omega_c=0.15` q=1.1/1.25/1.5 family remains supported
+  at the boundary; calibrating `Omega_c` produces the bounded q>1 artifact.
+  It is 85 MiB compressed and has zero recovery. [DONE]
+- Fix the loaded-ID/AMR initialization order exposed by the disk. AMReX cannot
+  tag from an artifact before it is loaded; after first materialization the
+  solver now alternates regrid and direct artifact rematerialization until the
+  layout is a no-op. This is startup-only and prevents fine levels from
+  retaining prolonged coarse ID. The final ratio-4/2, `[-64,64]^3` disk reaches
+  `t=51.753 M` in 24 steps with zero recovery/reset, peaks and ends at 355,840
+  cells (47.4 percent of its guard versus 2.10M uniform cells), retains one
+  level of headroom, and has corrected mass/energy residuals
+  `4.28e-13/3.13e-5`. The maximum density decreases 3.58 percent. Atmosphere
+  near the filled interior reaches a large Lorentz factor late, reinforcing
+  true excision as the long-lived BH-disk boundary. [DONE]
+- Correct solve-only reporting of quoted canonical string values so an
+  unmagnetized artifact no longer falsely requires a magnetic-ID summary. Add
+  a standard equilibrium-torus regression that requires loaded-ID initial AMR
+  to change once, rematerialize, converge with a no-op, start refined with
+  level headroom, and complete a clean step. The equilibrium-torus standard
+  gate and the complete black-hole/horizon/XCTS/symmetry/restart gate pass at
+  three ranks. The quick suite and all 49 standard gates pass. A narrow
+  generated-description-dependent production rebuild takes `17.09 s`. The
+  one-time generated policy/config header ABI change invalidates 138 objects
+  and takes `406.50 s`; its immediate true no-op rebuild takes `0.71 s`. Keep
+  that broad header fan-out separate from ordinary narrow rebuild timing.
+  The canonical performance batch passes all normal three-rank controls
+  (`102.47/5.81/0.18/2.04` Mcells/s for 2D hydro, 3D PWC, 3D WENOZ, and 1D
+  RMHD); only the already-known four-rank Mac/OpenMPI hydro control warns at
+  `0.72` of baseline. Generated catalogs, documentation, and the final bounded
+  q-power ID/evolution evidence are reconciled before commit. [DONE]

@@ -436,7 +436,6 @@ bool aux_gfs_contains(RunConfig const& cfg, AuxGridField target);
 amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> configured_min_feature_lengths(
    RunConfig const& cfg
 );
-amrex::Real amr_default_lohner_tag_threshold();
 amrex::Real amr_default_auto_min_feature_scale(int max_level);
 
 enum class BoundaryKind {

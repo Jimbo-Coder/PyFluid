@@ -1,15 +1,16 @@
 schema_version = 1
 
 # Runtime-selected AMR policies. These flags choose which coordinate-independent
-# physical indicators enter one Lohner maximum; they are not compiled template
-# products. `lohner` preserves the broad legacy flow-study behavior, while the
-# narrower policies avoid letting atmosphere velocity or magnetization control
-# compact-object refinement.
+# physical indicators enter one runtime maximum; they are not compiled template
+# products. `lohner` preserves the broad legacy curvature behavior, while the
+# narrower policies avoid letting atmosphere velocity, magnetization, or an
+# outgoing gauge pulse control compact-object refinement.
 [[amr_tag_policy]]
 name = "none"
 cpp_id = "None"
 label = "No automatic tagging"
 description = "Disable state-based automatic AMR tagging."
+default_threshold = 0.35
 density = false
 pressure = false
 velocity = false
@@ -22,6 +23,7 @@ name = "lohner"
 cpp_id = "Lohner"
 label = "Broad flow Lohner"
 description = "Apply the legacy system-aware Lohner maximum to density, pressure, velocity, magnetic diagnostics, and stored conformal geometry."
+default_threshold = 0.08
 density = true
 pressure = true
 velocity = true
@@ -34,6 +36,7 @@ name = "matter"
 cpp_id = "Matter"
 label = "Matter support"
 description = "Track density-supported matter without allowing atmosphere velocity or magnetization to drive refinement."
+default_threshold = 0.08
 density = true
 pressure = false
 velocity = false
@@ -45,7 +48,8 @@ density_floor_multiple = 10.0
 name = "spacetime"
 cpp_id = "Spacetime"
 label = "Spacetime geometry"
-description = "Track stored conformal-factor structure only; intended for vacuum compact-object geometry."
+description = "Track strong-field support through the magnitude of chi-1; intended for vacuum compact-object geometry without following outgoing gauge tails."
+default_threshold = 0.15
 density = false
 pressure = false
 velocity = false
@@ -57,7 +61,8 @@ density_floor_multiple = 0.0
 name = "compact_object"
 cpp_id = "CompactObject"
 label = "Compact object"
-description = "Track density-supported matter and stored conformal-factor structure for GRHD/GRMHD compact objects."
+description = "Track density-supported matter and strong-field chi-1 support for GRHD/GRMHD compact objects without following outgoing gauge tails."
+default_threshold = 0.15
 density = true
 pressure = false
 velocity = false
@@ -217,7 +222,7 @@ parameters = ["angular_velocity", "differential_rotation_length"]
 name = "q_power"
 cpp_id = "QPower"
 label = "Relativistic q-power"
-description = "Generalized differential rotation with q=1 equal to j-constant."
+description = "Generalized j=A^2 Omega [(Omega_c/Omega)^q-1] rotation; q=1 is j-constant."
 parameters = ["angular_velocity", "differential_rotation_length", "rotation_power_q"]
 
 [[rotation_law]]
@@ -313,7 +318,7 @@ parameters = ["angular_velocity", "differential_rotation_length", "inner_radius"
 name = "q_power"
 cpp_id = "QPower"
 label = "Relativistic q-power"
-description = "Stationary circular torus with the generalized q-power j(Omega) law."
+description = "Stationary circular torus with j=A^2 Omega [(Omega_c/Omega)^q-1]; q=1 is j-constant and the asymptotically flat 1<=q<2 branch has Omega proportional to R^(-2/q)."
 parameters = ["angular_velocity", "differential_rotation_length", "rotation_power_q", "inner_radius"]
 
 [[disk_rotation_law]]
