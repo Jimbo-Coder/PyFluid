@@ -422,7 +422,10 @@ void MeshBasisStateInterpolater::limit_relativistic_child_deviations(
       ? device_transfer_failure.dataPtr()
       : &host_transfer_failure;
 
-   AMREX_HOST_DEVICE_PARALLEL_FOR_3D_FLAG(
+   // This loop reports a shared failure code. Gpu::Atomic is intentionally
+   // device-only, so the host path must remain an ordinary loop rather than
+   // AMReX's iteration-independent SIMD/concurrent host form.
+   AMREX_HOST_DEVICE_FOR_3D_FLAG(
       run_on,
       coarse_region,
       coarse_i,

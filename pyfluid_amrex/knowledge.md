@@ -10,9 +10,10 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-24, branch `main`, through Cycle 319's AMReX 26.08 API
-adoption and communication/reduction cleanup. Cycle 318's dependency update and
-reproducible check/update lifecycle and Cycle 317's generated
+Last reconciled: 2026-08-24, branch `main`, through Cycle 320's AMReX 26.08 CT
+ratio, host-loop, and measured diagnostic cleanup. Cycle 319's API adoption,
+Cycle 318's dependency update and reproducible check/update lifecycle, and
+Cycle 317's generated
 AMR policy, RK-stage CT ownership, and cross-system hardening, Cycle 316's
 saved-RNS evolution/restart harness and code-generation dependency cleanup,
 Cycle 315's generated physical-ID metadata and component-ready handoff, and Cycle 313's
@@ -41,11 +42,15 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   ownership. Batch fields only when they share periodicity and no field depends
   on the completed ghosts of another; keep numerically dependent phases
   separate. The periodic CT face path needs one such exchange, not two.
-- `amrex::Reducer` fuses heterogeneous sum/min/max operations into one local
-  traversal; it does not replace the hierarchy owner's MPI reduction. Accumulate
-  levels locally, then issue one packed collective per reduction operator.
-  Generated fixed integer powers use `amrex::Math::powi<N>` once the exponent is
-  outside the printer's small explicit-product cases.
+- `amrex::Reducer` can fuse heterogeneous sum/min/max operations into one local
+  traversal, but it is not an automatic CPU optimization and does not replace
+  the hierarchy owner's MPI reduction. A 17-value scalar-diagnostic reducer
+  regressed the clean three-rank CPU path; direct specialized `MultiFab`
+  reductions plus removal of unused integrand components were faster. Use a
+  reducer for a measured local/GPU benefit, and pack same-operator MPI values
+  when that preserves semantics and reduces collectives. Generated fixed
+  integer powers use `amrex::Math::powi<N>` once the exponent is outside the
+  printer's small explicit-product cases.
 - Deterministic MLMG, variable-coefficient `MLCurlCurl`, FFT/OpenBC solvers,
   particle/EB additions, and device-vector reductions are not blanket upgrades.
   Enable them only for their actual contract: reproducible GPU multigrid,
@@ -241,9 +246,13 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
 - PyFluid already routes all face components together through AMReX's
   `face_divfree_interp`. AMReX 26.08 generalizes that interpolation so fine
   ghost-cell divergence matches a spatially varying underlying coarse-cell
-  divergence. Keep the existing AMR+CT validation before changing transfer
-  ownership; the upstream improvement is not permission to add a second CT
-  prolongation path.
+  divergence and supports a refinement ratio of 2 or 4 in every direction.
+  PyFluid rejects other CT ratios before evolution and still requires isotropic
+  CT ratios because its edge-EMF reflux/register path lacks anisotropic
+  evidence. Conservative quartic state interpolation remains ratio-2-only;
+  ratio 4 uses coupled-conservative state transfer. Keep the existing AMR+CT
+  validation before changing transfer ownership; the upstream improvement is
+  not permission to add a second CT prolongation path.
 - Full GRMHD does not have one universal "tag every evolved field" policy.
   Production evidence separates geometry/vacuum tracking, matter support,
   object-following boxes, and targeted magnetic/shear science criteria. The

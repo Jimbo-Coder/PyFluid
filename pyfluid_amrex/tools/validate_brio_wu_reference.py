@@ -46,6 +46,8 @@ class RunSpec:
    n_cell: tuple[int, int]
    max_level: int
    tag_threshold: float
+   ref_ratio: int = 2
+   state_interp: str = "quartic-conservative"
 
 
 COMMON = (
@@ -71,13 +73,12 @@ COMMON = (
    "pyfluid.aux_gfs=none",
    "pyfluid.aux_gf_int=-1",
    "pyfluid.aux_gf_compute_int=-1",
-   "amr.ref_ratio=2 2",
    "amr.max_grid_size=32",
    "amr.blocking_factor=8",
    "amr.regrid_int=2",
    "amr.n_error_buf=4 4",
    "amr.tag_metric=lohner",
-   "amr.state_interp=quartic-conservative",
+   "amr.min_feature_length=0.001",
    "amr.initial_refine=none",
    "amr.initial_refine_levels=0",
    "amr.initial_refine_fixed_levels=0",
@@ -93,6 +94,24 @@ SPECS = (
 AMR_CT_SPECS = (
    RunSpec("x_amr64_l2", "x", (64, 8), 2, 0.02),
    RunSpec("y_amr64_l2", "y", (8, 64), 2, 0.02),
+   RunSpec(
+      "x_amr64_r4_l1",
+      "x",
+      (64, 8),
+      1,
+      0.02,
+      ref_ratio=4,
+      state_interp="coupled-conservative",
+   ),
+   RunSpec(
+      "y_amr64_r4_l1",
+      "y",
+      (8, 64),
+      1,
+      0.02,
+      ref_ratio=4,
+      state_interp="coupled-conservative",
+   ),
 )
 
 
@@ -174,21 +193,25 @@ def write_input(spec: RunSpec) -> Path:
    input_dir.mkdir(parents=True, exist_ok=True)
    output_dir.mkdir(parents=True, exist_ok=True)
    path = input_dir / f"{spec.name}.in"
+   assignments = [
+      f"pyfluid.run_name=brio_wu_{spec.name}",
+      f"pyfluid.output_dir={repo_relative(output_dir)}",
+      *COMMON,
+      *direction_overrides(spec.direction),
+      *state_overrides(),
+      f"amr.n_cell={spec.n_cell[0]} {spec.n_cell[1]}",
+      f"amr.max_level={spec.max_level}",
+      f"amr.tag_threshold={spec.tag_threshold:.17g}",
+   ]
+   if spec.max_level > 0:
+      assignments.extend((
+         f"amr.ref_ratio={' '.join([str(spec.ref_ratio)] * spec.max_level)}",
+         f"amr.state_interp={spec.state_interp}",
+      ))
    return materialize_run_input(
       BASE_INPUT,
       path,
-      parameters_from_assignments(
-         [
-            f"pyfluid.run_name=brio_wu_{spec.name}",
-            f"pyfluid.output_dir={repo_relative(output_dir)}",
-            *COMMON,
-            *direction_overrides(spec.direction),
-            *state_overrides(),
-            f"amr.n_cell={spec.n_cell[0]} {spec.n_cell[1]}",
-            f"amr.max_level={spec.max_level}",
-            f"amr.tag_threshold={spec.tag_threshold:.17g}",
-         ]
-      ),
+      parameters_from_assignments(assignments),
       remove_parameters=("amr.ref_ratio",) if spec.max_level == 0 else (),
    )
 
@@ -284,6 +307,7 @@ def plot_profiles(plotfiles: dict[str, Path], output: Path, max_pixels: int) -> 
       ("x_uniform256", "reference", "k", ":"),
       ("x_uniform64", "uniform64", "tab:orange", "-"),
       ("x_amr64_l2", "AMR L2 CT", "tab:blue", "--"),
+      ("x_amr64_r4_l1", "AMR ratio-4 L1 CT", "tab:green", "-."),
    )
    for ax, (component, label) in zip(axes.ravel(), panels):
       for name, run_label, color, linestyle in styles:
@@ -310,6 +334,7 @@ def main() -> int:
    parser.add_argument("--timeout", type=int, default=120)
    parser.add_argument("--coarse-l2-tol", type=float, default=3.5e-1)
    parser.add_argument("--amr-l2-tol", type=float, default=2.5e-1)
+   parser.add_argument("--ratio4-quality-factor-tol", type=float, default=1.25)
    parser.add_argument("--rotation-l2-tol", type=float, default=1.0e-10)
    parser.add_argument("--amr-rotation-l2-tol", type=float, default=5.0e-3)
    parser.add_argument(
@@ -353,6 +378,14 @@ def main() -> int:
          base_input="generated Brio-Wu sod_plane",
          kind="brio_wu_scalar",
       )
+      if spec.max_level > 0:
+         active_level = int(float(scalar["amr_active_finest_level"]))
+         if active_level != spec.max_level:
+            scalar["status"] = "FAIL"
+            scalar["reason"] = (
+               f"active_finest_level={active_level} != intended "
+               f"max_level={spec.max_level}"
+            )
       rows.append(scalar)
 
    comparisons = (
@@ -362,6 +395,14 @@ def main() -> int:
    amr_comparisons = (
       ("x_amr64_l2_vs_x_uniform256", "x_uniform256", "x_amr64_l2", "x", args.amr_l2_tol),
       ("y_amr64_l2_rotated_vs_x_amr64_l2", "x_amr64_l2", "y_amr64_l2", "y", args.amr_rotation_l2_tol),
+      ("x_amr64_r4_l1_vs_x_uniform256", "x_uniform256", "x_amr64_r4_l1", "x", args.amr_l2_tol),
+      (
+         "y_amr64_r4_l1_rotated_vs_x_amr64_r4_l1",
+         "x_amr64_r4_l1",
+         "y_amr64_r4_l1",
+         "y",
+         args.amr_rotation_l2_tol,
+      ),
    )
    comparison_rows = []
    for name, reference, candidate, candidate_direction, tolerance in comparisons + (amr_comparisons if args.include_amr_ct else ()):
@@ -400,6 +441,35 @@ def main() -> int:
          "reason": "" if improvement >= 1.1 else f"improvement={improvement:.3e} < 1.1",
          "ranks": args.ranks,
          "improvement_factor": improvement,
+      })
+      ratio4 = next(
+         row for row in comparison_rows
+         if row["case"] == "x_amr64_r4_l1_vs_x_uniform256"
+      )
+      ratio4_improvement = float(coarse["max_rel_l2"]) / max(
+         float(ratio4["max_rel_l2"]), 1.0e-300
+      )
+      quality_ratio = float(ratio4["max_rel_l2"]) / max(
+         float(amr["max_rel_l2"]), 1.0e-300
+      )
+      ratio4_failures = []
+      if ratio4_improvement < 1.1:
+         ratio4_failures.append(
+            f"improvement={ratio4_improvement:.3e} < 1.1"
+         )
+      if quality_ratio > args.ratio4_quality_factor_tol:
+         ratio4_failures.append(
+            f"error_ratio={quality_ratio:.3e} > "
+            f"{args.ratio4_quality_factor_tol:.3e}"
+         )
+      rows.append({
+         "case": "ratio4_amr_ct_quality",
+         "kind": "improvement",
+         "status": "PASS" if not ratio4_failures else "FAIL",
+         "reason": "; ".join(ratio4_failures),
+         "ranks": args.ranks,
+         "improvement_factor": ratio4_improvement,
+         "error_ratio_vs_ratio2": quality_ratio,
       })
 
    if not args.skip_plot:

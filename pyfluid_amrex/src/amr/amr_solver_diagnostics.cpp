@@ -3,7 +3,9 @@
 #include <AMReX_MultiFab.H>
 #include <AMReX_ParallelDescriptor.H>
 #include <AMReX_GpuLaunch.H>
+#ifdef AMREX_USE_GPU
 #include <AMReX_Reduce.H>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -52,9 +54,6 @@ enum ScalarReductionComponent {
    ScalarReductionMom2,
    ScalarReductionMom3,
    ScalarReductionEnergy,
-   ScalarReductionMinRho,
-   ScalarReductionMinPressure,
-   ScalarReductionMaxRho,
    ScalarReductionMagneticEnergy,
    ScalarReductionDivB,
    ScalarReductionDivBSquared,
@@ -66,56 +65,6 @@ enum ScalarReductionComponent {
    ScalarReductionPassiveMass,
    ScalarReductionNComp,
 };
-
-static constexpr int ScalarReductionMinComponentCount =
-   ScalarReductionMinPressure - ScalarReductionMinRho + 1;
-
-using ScalarFieldReducer = amrex::Reducer<
-   amrex::TypeMultiplier<
-      amrex::TypeList,
-      amrex::ReduceOpSum[5],
-      amrex::ReduceOpMin[2],
-      amrex::ReduceOpMax,
-      amrex::ReduceOpSum[3],
-      amrex::ReduceOpMax,
-      amrex::ReduceOpSum[5]
-   >,
-   amrex::TypeMultiplier<amrex::TypeList, amrex::Real[ScalarReductionNComp]>
->;
-
-inline auto reduce_scalar_fields_locally(amrex::MultiFab const& reduction)
-{
-   ScalarFieldReducer reducer;
-   const auto fields = reduction.const_arrays();
-   reducer.eval(
-      reduction,
-      amrex::IntVect(0),
-      [=] AMREX_GPU_DEVICE(int box_no, int i, int j, int k) noexcept
-         -> ScalarFieldReducer::Result_t {
-         const auto field = fields[box_no];
-         return {
-            field(i, j, k, ScalarReductionMass),
-            field(i, j, k, ScalarReductionMom1),
-            field(i, j, k, ScalarReductionMom2),
-            field(i, j, k, ScalarReductionMom3),
-            field(i, j, k, ScalarReductionEnergy),
-            field(i, j, k, ScalarReductionMinRho),
-            field(i, j, k, ScalarReductionMinPressure),
-            field(i, j, k, ScalarReductionMaxRho),
-            field(i, j, k, ScalarReductionMagneticEnergy),
-            field(i, j, k, ScalarReductionDivB),
-            field(i, j, k, ScalarReductionDivBSquared),
-            field(i, j, k, ScalarReductionDivBAbs),
-            field(i, j, k, ScalarReductionAngularMom1),
-            field(i, j, k, ScalarReductionAngularMom2),
-            field(i, j, k, ScalarReductionAngularMom3),
-            field(i, j, k, ScalarReductionGravityPotentialEnergy),
-            field(i, j, k, ScalarReductionPassiveMass),
-         };
-      }
-   );
-   return amrex::tupleToArray(reducer.getResult());
-}
 
 template <typename Array>
 AMREX_GPU_DEVICE AMREX_FORCE_INLINE
@@ -159,42 +108,6 @@ enum RelativisticDiagnosticReductionComponent : int {
    RelativisticReductionTotalVolume,
    RelativisticReductionNComp,
 };
-
-using RelativisticFieldReducer = amrex::Reducer<
-   amrex::TypeMultiplier<
-      amrex::TypeList,
-      amrex::ReduceOpSum,
-      amrex::ReduceOpMax[2],
-      amrex::ReduceOpMin,
-      amrex::ReduceOpMax,
-      amrex::ReduceOpSum[2]
-   >,
-   amrex::TypeMultiplier<amrex::TypeList, amrex::Real[RelativisticReductionNComp]>
->;
-
-inline auto reduce_relativistic_fields_locally(amrex::MultiFab const& reduction)
-{
-   RelativisticFieldReducer reducer;
-   const auto fields = reduction.const_arrays();
-   reducer.eval(
-      reduction,
-      amrex::IntVect(0),
-      [=] AMREX_GPU_DEVICE(int box_no, int i, int j, int k) noexcept
-         -> RelativisticFieldReducer::Result_t {
-         const auto field = fields[box_no];
-         return {
-            field(i, j, k, RelativisticReductionElectromagneticEnergy),
-            field(i, j, k, RelativisticReductionMaxBSquared),
-            field(i, j, k, RelativisticReductionMaxEnthalpyMagnetization),
-            field(i, j, k, RelativisticReductionMinPlasmaBeta),
-            field(i, j, k, RelativisticReductionMaxLorentzFactor),
-            field(i, j, k, RelativisticReductionAtmosphereVolume),
-            field(i, j, k, RelativisticReductionTotalVolume),
-         };
-      }
-   );
-   return amrex::tupleToArray(reducer.getResult());
-}
 
 template <bool MHD>
 inline void fill_relativistic_diagnostic_fields(
@@ -343,8 +256,6 @@ template <bool MHD>
 inline void fill_scalar_reduction_fields(
    amrex::MultiFab& reduction,
    amrex::MultiFab const& state,
-   amrex::MultiFab const& diagnostic_density,
-   amrex::MultiFab const& pressure,
    amrex::iMultiFab const& valid_mask,
    amrex::Geometry const& geom,
    int mesh_coordinate,
@@ -367,10 +278,7 @@ inline void fill_scalar_reduction_fields(
       }
    }
 
-   const amrex::Real invalid_min = std::numeric_limits<amrex::Real>::max();
    reduction.setVal(0.0);
-   reduction.setVal(invalid_min, ScalarReductionMinRho, ScalarReductionMinComponentCount, 0);
-   reduction.setVal(-invalid_min, ScalarReductionMaxRho, 1, 0);
    const auto problo = geom.ProbLoArray();
    const auto dx = geom.CellSizeArray();
 #ifdef AMREX_USE_OMP
@@ -380,8 +288,6 @@ inline void fill_scalar_reduction_fields(
    for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.tilebox();
       const auto s = state.const_array(mfi);
-      const auto rho = diagnostic_density.const_array(mfi);
-      const auto p = pressure.const_array(mfi);
       const auto mask = valid_mask.const_array(mfi);
       const bool use_volume_fraction = volume_fraction != nullptr;
       const bool use_gravity_energy = gravity_phi != nullptr && gravity_energy_factor != 0.0;
@@ -401,9 +307,6 @@ inline void fill_scalar_reduction_fields(
             const StateVector3 momentum = mesh_basis_vector_to_cartesian(
                mesh_coordinate, mesh_axes, q, load_momentum_vector3(s, i, j, k)
             );
-            out(i, j, k, ScalarReductionMinRho) = active ? rho(i, j, k, RHO) : invalid_min;
-            out(i, j, k, ScalarReductionMinPressure) = active ? p(i, j, k, 0) : invalid_min;
-            out(i, j, k, ScalarReductionMaxRho) = active ? rho(i, j, k, RHO) : -invalid_min;
             const auto physical = mesh_coordinate_triplet_to_cartesian(mesh_coordinate, q);
             const StateVector3 magnetic = load_magnetic_vector3(s, i, j, k);
             const ConservedDiagnosticIntegrands integrands = generated::conserved_diagnostic_integrands(
@@ -428,9 +331,6 @@ inline void fill_scalar_reduction_fields(
             const StateVector3 momentum = mesh_basis_vector_to_cartesian(
                mesh_coordinate, mesh_axes, q, load_momentum_vector3(s, i, j, k)
             );
-            out(i, j, k, ScalarReductionMinRho) = active ? rho(i, j, k, RHO) : invalid_min;
-            out(i, j, k, ScalarReductionMinPressure) = active ? p(i, j, k, 0) : invalid_min;
-            out(i, j, k, ScalarReductionMaxRho) = active ? rho(i, j, k, RHO) : -invalid_min;
             const auto physical = mesh_coordinate_triplet_to_cartesian(mesh_coordinate, q);
             const ConservedDiagnosticIntegrands integrands = generated::conserved_diagnostic_integrands(
                s(i, j, k, RHO), momentum.x, momentum.y, momentum.z, s(i, j, k, ENERGY),
@@ -449,7 +349,6 @@ inline void fill_scalar_reduction_fields(
 inline void fill_scalar_reduction_fields_mapped_hydro(
    amrex::MultiFab& reduction,
    amrex::MultiFab const& state,
-   amrex::MultiFab const& pressure,
    amrex::iMultiFab const& valid_mask,
    PatchGridSystem const& grid_system,
    PatchLayout const& layout,
@@ -462,10 +361,7 @@ inline void fill_scalar_reduction_fields_mapped_hydro(
    validate_patch_grid_system(grid_system);
    validate_patch_layout(layout);
 
-   const amrex::Real invalid_min = std::numeric_limits<amrex::Real>::max();
    reduction.setVal(0.0);
-   reduction.setVal(invalid_min, ScalarReductionMinRho, ScalarReductionMinComponentCount, 0);
-   reduction.setVal(-invalid_min, ScalarReductionMaxRho, 1, 0);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -478,7 +374,6 @@ inline void fill_scalar_reduction_fields_mapped_hydro(
       const PatchGridDescriptor grid_patch = grid_patch_ref;
       const PatchGridDescriptor central_patch = grid_system.patches.front();
       const auto s = state.const_array(mfi);
-      const auto p = pressure.const_array(mfi);
       const auto mask = valid_mask.const_array(mfi);
       const bool use_gravity_energy = gravity_phi != nullptr && gravity_energy_factor != 0.0;
       const auto phi = use_gravity_energy ? gravity_phi->const_array(mfi) : amrex::Array4<amrex::Real const>{};
@@ -493,9 +388,6 @@ inline void fill_scalar_reduction_fields_mapped_hydro(
          const amrex::Real weight = (valid && physical_owner) ? patch_cell_volume(grid_patch, local) : 0.0;
          const bool active = valid && weight > 0.0;
          const StateVector3 momentum = load_momentum_vector3(s, i, j, k);
-         out(i, j, k, ScalarReductionMinRho) = active ? s(i, j, k, RHO) : invalid_min;
-         out(i, j, k, ScalarReductionMinPressure) = active ? p(i, j, k, 0) : invalid_min;
-         out(i, j, k, ScalarReductionMaxRho) = active ? s(i, j, k, RHO) : -invalid_min;
          const ConservedDiagnosticIntegrands integrands = generated::conserved_diagnostic_integrands(
             s(i, j, k, RHO), momentum.x, momentum.y, momentum.z, s(i, j, k, ENERGY),
             0.0, 0.0, 0.0, global.q1, global.q2, global.q3,
@@ -507,6 +399,85 @@ inline void fill_scalar_reduction_fields_mapped_hydro(
       });
    }
    }
+}
+
+struct DensityPressureExtrema {
+   amrex::Real min_rho = 0.0;
+   amrex::Real max_rho = 0.0;
+   amrex::Real min_pressure = 0.0;
+};
+
+inline DensityPressureExtrema valid_density_pressure_extrema(
+   amrex::MultiFab const& density,
+   amrex::MultiFab const& pressure,
+   amrex::iMultiFab const& valid_mask
+)
+{
+   const amrex::Real invalid_min = std::numeric_limits<amrex::Real>::max();
+   amrex::Real rho_min = invalid_min;
+   amrex::Real rho_max = -invalid_min;
+   amrex::Real pressure_min = invalid_min;
+#ifdef AMREX_USE_GPU
+   using ExtremaReducer = amrex::Reducer<
+      amrex::TypeList<
+         amrex::ReduceOpMin,
+         amrex::ReduceOpMax,
+         amrex::ReduceOpMin
+      >,
+      amrex::TypeList<amrex::Real, amrex::Real, amrex::Real>
+   >;
+   ExtremaReducer reducer;
+   const auto density_values = density.const_arrays();
+   const auto pressure_values = pressure.const_arrays();
+   const auto masks = valid_mask.const_arrays();
+   reducer.eval(
+      density,
+      amrex::IntVect(0),
+      [=] AMREX_GPU_DEVICE(int box_no, int i, int j, int k) noexcept
+         -> ExtremaReducer::Result_t {
+         if (masks[box_no](i, j, k, 0) == 0) {
+            return {invalid_min, -invalid_min, invalid_min};
+         }
+         return {
+            density_values[box_no](i, j, k, RHO),
+            density_values[box_no](i, j, k, RHO),
+            pressure_values[box_no](i, j, k, 0),
+         };
+      }
+   );
+   const auto extrema = amrex::tupleToArray(reducer.getResult());
+   rho_min = extrema[0];
+   rho_max = extrema[1];
+   pressure_min = extrema[2];
+#else
+   for (amrex::MFIter mfi(density); mfi.isValid(); ++mfi) {
+      const amrex::Box& box = mfi.validbox();
+      const amrex::Dim3 lo = amrex::lbound(box);
+      const amrex::Dim3 hi = amrex::ubound(box);
+      const auto rho = density.const_array(mfi);
+      const auto p = pressure.const_array(mfi);
+      const auto mask = valid_mask.const_array(mfi);
+      for (int k = lo.z; k <= hi.z; ++k) {
+         for (int j = lo.y; j <= hi.y; ++j) {
+            for (int i = lo.x; i <= hi.x; ++i) {
+               if (mask(i, j, k, 0) == 0) {
+                  continue;
+               }
+               rho_min = std::min(rho_min, rho(i, j, k, RHO));
+               rho_max = std::max(rho_max, rho(i, j, k, RHO));
+               pressure_min = std::min(pressure_min, p(i, j, k, 0));
+            }
+         }
+      }
+   }
+#endif
+   amrex::Vector<std::reference_wrapper<amrex::Real>> minimum_values{
+      rho_min,
+      pressure_min,
+   };
+   amrex::ParallelDescriptor::ReduceRealMin(minimum_values);
+   amrex::ParallelDescriptor::ReduceRealMax(rho_max);
+   return {rho_min, rho_max, pressure_min};
 }
 
 std::size_t ScalarDiagnosticSelection::size() const noexcept
@@ -1068,52 +1039,54 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
                                 ScalarReductionNComp, 0);
       amrex::MultiFab const* gravity_phi = gravity_enabled(cfg_) ? gravity_phi_[lev].get() : nullptr;
       const int passive_component = cfg_.passive_scalars > 0 ? passive_component_begin(is_mhd(cfg_)) : -1;
-      amrex::MultiFab const& diagnostic_density =
-         physical_system_is_relativistic(physics_system_)
-            ? *primitive_[lev]
-            : *fluid_state_.state()[lev];
       if (mixed_patch_system_enabled() && !is_mhd(cfg_)) {
-         fill_scalar_reduction_fields_mapped_hydro(reduction, *fluid_state_.state()[lev], *pressure_[lev], mask,
+         fill_scalar_reduction_fields_mapped_hydro(reduction, *fluid_state_.state()[lev], mask,
                                                    production_patch_grid_system_for_level(lev),
                                                    production_patch_layout_for_level(lev), gravity_phi,
                                                    gravity_density_offset, gravity_energy_factor, passive_component);
       } else if (is_mhd(cfg_)) {
          fill_scalar_reduction_fields<true>(
-            reduction, *fluid_state_.state()[lev], diagnostic_density, *pressure_[lev], mask,
-            Geom(lev), coordinate, axes, face_b_ptr(lev), nullptr, gravity_phi,
+            reduction, *fluid_state_.state()[lev], mask, Geom(lev), coordinate,
+            axes, face_b_ptr(lev), nullptr, gravity_phi,
             gravity_density_offset, gravity_energy_factor, passive_component
          );
       } else {
          fill_scalar_reduction_fields<false>(
-            reduction, *fluid_state_.state()[lev], diagnostic_density, *pressure_[lev], mask,
-            Geom(lev), coordinate, axes, nullptr,
+            reduction, *fluid_state_.state()[lev], mask, Geom(lev), coordinate,
+            axes, nullptr,
             solid_active(lev) ? solid_volume_fraction_[lev].get() : nullptr, gravity_phi,
             gravity_density_offset, gravity_energy_factor, passive_component
          );
       }
-      const auto scalar_values = reduce_scalar_fields_locally(reduction);
-      d.mass += scalar_values[ScalarReductionMass];
-      d.mom1 += scalar_values[ScalarReductionMom1];
-      d.mom2 += scalar_values[ScalarReductionMom2];
-      d.mom3 += scalar_values[ScalarReductionMom3];
-      d.energy += scalar_values[ScalarReductionEnergy];
-      d.min_rho = amrex::min(d.min_rho, scalar_values[ScalarReductionMinRho]);
-      d.max_rho = amrex::max(d.max_rho, scalar_values[ScalarReductionMaxRho]);
-      d.min_pressure = amrex::min(
-         d.min_pressure,
-         scalar_values[ScalarReductionMinPressure]
-      );
+      d.mass += reduction.sum(ScalarReductionMass);
+      d.mom1 += reduction.sum(ScalarReductionMom1);
+      d.mom2 += reduction.sum(ScalarReductionMom2);
+      d.mom3 += reduction.sum(ScalarReductionMom3);
+      d.energy += reduction.sum(ScalarReductionEnergy);
+      amrex::MultiFab const& density =
+         physical_system_is_relativistic(physics_system_)
+            ? *primitive_[lev]
+            : *fluid_state_.state()[lev];
+      const DensityPressureExtrema extrema =
+         valid_density_pressure_extrema(density, *pressure_[lev], mask);
+      d.min_rho = amrex::min(d.min_rho, extrema.min_rho);
+      d.max_rho = amrex::max(d.max_rho, extrema.max_rho);
+      d.min_pressure = amrex::min(d.min_pressure, extrema.min_pressure);
       if (physics_system_ == PhysicalSystem::MHD) {
-         d.newtonian_magnetic_energy += scalar_values[ScalarReductionMagneticEnergy];
+         d.newtonian_magnetic_energy += reduction.sum(ScalarReductionMagneticEnergy);
       }
-      d.divb_l1 += scalar_values[ScalarReductionDivB];
-      d.divb_l2 += scalar_values[ScalarReductionDivBSquared];
-      d.divb_linf = amrex::max(d.divb_linf, scalar_values[ScalarReductionDivBAbs]);
-      d.angular_mom1 += scalar_values[ScalarReductionAngularMom1];
-      d.angular_mom2 += scalar_values[ScalarReductionAngularMom2];
-      d.angular_mom3 += scalar_values[ScalarReductionAngularMom3];
-      d.gravity_potential_energy += scalar_values[ScalarReductionGravityPotentialEnergy];
-      d.passive_mass += scalar_values[ScalarReductionPassiveMass];
+      d.divb_l1 += reduction.sum(ScalarReductionDivB);
+      d.divb_l2 += reduction.sum(ScalarReductionDivBSquared);
+      d.divb_linf = amrex::max(
+         d.divb_linf,
+         reduction.norm0(ScalarReductionDivBAbs, 0, false)
+      );
+      d.angular_mom1 += reduction.sum(ScalarReductionAngularMom1);
+      d.angular_mom2 += reduction.sum(ScalarReductionAngularMom2);
+      d.angular_mom3 += reduction.sum(ScalarReductionAngularMom3);
+      d.gravity_potential_energy +=
+         reduction.sum(ScalarReductionGravityPotentialEnergy);
+      d.passive_mass += reduction.sum(ScalarReductionPassiveMass);
       if (physical_system_is_relativistic(physics_system_)) {
          amrex::MultiFab relativistic_reduction(
             fluid_state_.state()[lev]->boxArray(),
@@ -1132,6 +1105,27 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
                axes,
                eos_params(cfg_)
             );
+            d.rmhd_electromagnetic_energy += relativistic_reduction.sum(
+               RelativisticReductionElectromagneticEnergy
+            );
+            d.rmhd_max_b_squared = amrex::max(
+               d.rmhd_max_b_squared,
+               relativistic_reduction.norm0(
+                  RelativisticReductionMaxBSquared, 0, false
+               )
+            );
+            d.rmhd_max_enthalpy_magnetization = amrex::max(
+               d.rmhd_max_enthalpy_magnetization,
+               relativistic_reduction.norm0(
+                  RelativisticReductionMaxEnthalpyMagnetization, 0, false
+               )
+            );
+            d.rmhd_min_plasma_beta = amrex::min(
+               d.rmhd_min_plasma_beta,
+               relativistic_reduction.min(
+                  RelativisticReductionMinPlasmaBeta, 0, false
+               )
+            );
          } else {
             fill_relativistic_diagnostic_fields<false>(
                relativistic_reduction,
@@ -1144,76 +1138,20 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
                eos_params(cfg_)
             );
          }
-         const auto relativistic_values =
-            reduce_relativistic_fields_locally(relativistic_reduction);
-         d.rmhd_electromagnetic_energy +=
-            relativistic_values[RelativisticReductionElectromagneticEnergy];
-         d.rmhd_max_b_squared = amrex::max(
-            d.rmhd_max_b_squared,
-            relativistic_values[RelativisticReductionMaxBSquared]
-         );
-         d.rmhd_max_enthalpy_magnetization = amrex::max(
-            d.rmhd_max_enthalpy_magnetization,
-            relativistic_values[RelativisticReductionMaxEnthalpyMagnetization]
-         );
-         d.rmhd_min_plasma_beta = amrex::min(
-            d.rmhd_min_plasma_beta,
-            relativistic_values[RelativisticReductionMinPlasmaBeta]
-         );
          d.max_lorentz_factor = amrex::max(
             d.max_lorentz_factor,
-            relativistic_values[RelativisticReductionMaxLorentzFactor]
+            relativistic_reduction.norm0(
+               RelativisticReductionMaxLorentzFactor, 0, false
+            )
          );
-         d.relativistic_atmosphere_volume_fraction +=
-            relativistic_values[RelativisticReductionAtmosphereVolume];
-         relativistic_diagnostic_volume +=
-            relativistic_values[RelativisticReductionTotalVolume];
-      }
-      if (spacetime_state_.active()) {
-         d.min_lapse = amrex::min(
-            d.min_lapse,
-            spacetime_state_.state()[lev]->min(Z4C_LAPSE, 0, true)
+         d.relativistic_atmosphere_volume_fraction += relativistic_reduction.sum(
+            RelativisticReductionAtmosphereVolume
+         );
+         relativistic_diagnostic_volume += relativistic_reduction.sum(
+            RelativisticReductionTotalVolume
          );
       }
    }
-
-   if (!spacetime_state_.active()) {
-      d.min_lapse = 0.0;
-   }
-   amrex::Vector<std::reference_wrapper<amrex::Real>> sum_diagnostics{
-      d.mass,
-      d.mom1,
-      d.mom2,
-      d.mom3,
-      d.energy,
-      d.newtonian_magnetic_energy,
-      d.divb_l1,
-      d.divb_l2,
-      d.angular_mom1,
-      d.angular_mom2,
-      d.angular_mom3,
-      d.gravity_potential_energy,
-      d.passive_mass,
-      d.rmhd_electromagnetic_energy,
-      d.relativistic_atmosphere_volume_fraction,
-      relativistic_diagnostic_volume,
-   };
-   amrex::ParallelDescriptor::ReduceRealSum(sum_diagnostics);
-   amrex::Vector<std::reference_wrapper<amrex::Real>> max_diagnostics{
-      d.max_rho,
-      d.divb_linf,
-      d.rmhd_max_b_squared,
-      d.rmhd_max_enthalpy_magnetization,
-      d.max_lorentz_factor,
-   };
-   amrex::ParallelDescriptor::ReduceRealMax(max_diagnostics);
-   amrex::Vector<std::reference_wrapper<amrex::Real>> min_diagnostics{
-      d.min_rho,
-      d.min_pressure,
-      d.min_lapse,
-      d.rmhd_min_plasma_beta,
-   };
-   amrex::ParallelDescriptor::ReduceRealMin(min_diagnostics);
 
    const amrex::Real symmetry_factor = symmetry_volume_factor();
    d.mass *= symmetry_factor;
@@ -1231,6 +1169,16 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
    d.rmhd_electromagnetic_energy *= symmetry_factor;
    d.divb_l1 *= symmetry_factor;
    d.divb_l2 = std::sqrt(d.divb_l2 * symmetry_factor);
+   if (spacetime_state_.active()) {
+      for (int lev = 0; lev <= finestLevel(); ++lev) {
+         d.min_lapse = amrex::min(
+            d.min_lapse,
+            spacetime_state_.state()[lev]->min(Z4C_LAPSE, 0, false)
+         );
+      }
+   } else {
+      d.min_lapse = 0.0;
+   }
    if (relativistic_diagnostic_volume > 0.0) {
       d.relativistic_atmosphere_volume_fraction /= relativistic_diagnostic_volume;
    }

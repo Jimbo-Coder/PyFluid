@@ -79,6 +79,7 @@ STEPS = [
          "hydro_amr_subcycling_ssprk3",
          "mhd_timestep_ssprk3",
          "mhd_amr_ct_subcycling_ssprk3",
+         "rmhd_amr_ct_ref_ratio4",
          "hydro_passive_dye_advection",
          "mhd_passive_dye_ct",
          "hydro_diffusion_explicit",

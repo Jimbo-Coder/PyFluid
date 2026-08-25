@@ -76,10 +76,18 @@ methods and physics belong in their topic documents; coding style belongs in
   can overlap. They must share the hierarchy periodicity and compatible FabArray
   type. Do not batch across a physical-boundary update, coarse-fine transfer, or
   any other dependency that requires one field's completed ghosts first.
-- Diagnostic and integral owners fuse per-cell sum/min/max work locally where
-  practical, accumulate all AMR levels, and perform one packed MPI collective
-  per reduction operator. A local AMReX reducer is not permission to omit the
-  explicit hierarchy collective or to mix semantically different cadences.
+- Diagnostic and integral owners may fuse per-cell sum/min/max work locally
+  when profiling supports it and may pack same-operator MPI values when that
+  reduces collectives without changing ownership. Do not assume that one large
+  heterogeneous reducer beats AMReX's specialized `MultiFab` reductions on
+  CPU; retain the faster measured path. A local reducer is not permission to
+  omit the explicit hierarchy collective or to mix semantically different
+  cadences.
+- Validate interpolation-specific refinement-ratio contracts before hierarchy
+  evolution. CT face-divergence-preserving transfer accepts ratios 2 and 4;
+  conservative quartic cell-state interpolation remains ratio-2-only. Keep CT
+  ratios isotropic until edge-EMF reflux/register behavior has direct
+  anisotropic validation.
 - The symbolic C++ printer owns fixed-integer power spelling. It expands the
   smallest powers directly and emits `amrex::Math::powi<N>` for other integer
   exponents; generated headers own the corresponding AMReX math include.

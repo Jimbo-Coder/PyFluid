@@ -96,7 +96,10 @@ For AMR interpolation call-path comparisons, the installed AMReX 26.08 headers
 are under `.deps/amrex-mpi-lsolvers-hdf5/include/`; route first to
 `AMReX_FillPatchUtil{,_I}.H`, `AMReX_Interpolater.H`,
 `AMReX_InterpFaceRegister.H`, and the dimension-specific interpolation
-kernels. The exact official release pin is in `dependencies/amrex.toml`, and
+kernels. The matching source contract for face-divergence-preserving ratios 2
+and 4 is in `.deps/amrex-26.08/CHANGES.md` and
+`.deps/amrex-26.08/Src/AmrCore/AMReX_Interpolater.cpp`. The exact official
+release pin is in `dependencies/amrex.toml`, and
 `tools/manage_amrex.py` checks or updates the local versioned install. AthenaK's
 corresponding componentwise prolongation is
 under `/Users/mrizzo/phys_research/athenak/athenak/src/mesh/` in

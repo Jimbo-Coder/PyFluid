@@ -183,6 +183,16 @@ void AmrSolverBase::validate_amr_refinement_ratios() const
             }
          }
       }
+      if (cfg_.ct != "off") {
+         for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+            if (ratio[dir] != 2 && ratio[dir] != 4) {
+               amrex::Abort(
+                  "pyfluid.ct = on requires amr.ref_ratio = 2 or 4 in "
+                  "every direction"
+               );
+            }
+         }
+      }
       has_anisotropic_ratio = has_anisotropic_ratio || refinement_ratio_is_anisotropic(ratio);
    }
 

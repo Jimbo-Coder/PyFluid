@@ -6678,3 +6678,53 @@ I will always continue from the last cycle marked as `in_progress`.
   each occupied a full CPU core; those numbers are environmental evidence, not
   an accepted regression comparison, and were not appended as a completed
   benchmark batch. [DONE]
+
+## Cycle 320 — AMReX 26.08 refinement and host-loop hardening (DONE)
+
+- Remove the latent GCC host race in relativistic coarse-fine admissibility
+  limiting. The loop reports a shared failure flag, so its CPU execution is
+  not iteration-independent and must use AMReX's ordinary host loop rather
+  than the SIMD/concurrent host form; preserve the existing device launch and
+  device atomic. `MeshBasisStateInterpolater` now uses
+  `AMREX_HOST_DEVICE_FOR_3D_FLAG`; its focused executable passes. Add no new
+  algorithm or runtime branch. [DONE]
+- Validate CT refinement ratios at PyFluid's configuration boundary against
+  the AMReX 26.08 `face_divfree_interp` contract. Support ratios 2 and 4,
+  reject other CT ratios before hierarchy evolution, and retain the current
+  anisotropic-CT restriction until PyFluid's edge-EMF reflux/register path has
+  its own anisotropic evidence. Ratios 2 and 4 are accepted, ratio 3 aborts on
+  all three ranks with PyFluid's boundary message, and conservative quartic
+  interpolation retains its separate ratio-2 restriction. [DONE]
+- Add a focused ratio-4 AMR+CT control against the equivalent ratio-2 finest
+  spacing, then run the state-transfer unit, production build, quick gate,
+  Brio-Wu CT/refinement controls, and a clean targeted performance comparison
+  in proportion to the changed paths. Reconcile durable documentation and
+  commit only after the exact tree passes. Ratio-2 L2 and ratio-4 L1 Brio-Wu
+  runs now assert that their intended finest level actually activates; this
+  exposed and fixed an old test weakness in which the nominal L2 case stopped
+  at L1. Against the same uniform-256 reference, maximum relative L2 error is
+  `3.426e-3` for ratio 2 and `3.147e-3` for ratio 4, with rotated errors below
+  `5.3e-15`; ratio 4 uses fewer cells and is `1.38x` faster in simulation time
+  for this matched-finest-spacing case. Ratio 2 remains the default because
+  this is one shock-tube result, not a broad AMR policy benchmark. [DONE]
+- Profile the Cycle 319 diagnostic reduction changes rather than assuming the
+  new API is faster. Seven alternating clean three-rank 512-squared runs with
+  scalar output every step showed that the 17-value heterogeneous local
+  reducer regressed CPU diagnostics. Restoring AMReX's specialized reductions,
+  removing three unused materialized extrema components, retaining packed
+  conservation-ledger communication, and using a small reducer only for the
+  GPU extrema path improves total throughput from `47.6021` to `53.3549`
+  Mcells/s (`1.121x`) and diagnostic time from `0.7422` to `0.5902` s
+  (`1.257x`) versus pre-adoption revision `a3b5b2a`. A CT many-small-grids
+  comparison is throughput-neutral (`1.004x`) with diagnostic time `1.097x`
+  faster. [DONE]
+- The final 1D/2D/3D production build, Python syntax check, state-transfer
+  executable, quick suite, focused 2D RMHD and 3D MHD ratio-4 cases, standalone
+  Brio-Wu ratio-2/ratio-4 controls, and all 49 standard gates pass. The canonical
+  performance batch passes every normal three-rank control; the known four-rank
+  hydro control warns at `0.72` of its historical baseline while the three-rank
+  hydro control is `0.93`, consistent with the already-recorded Mac/OpenMPI
+  four-rank boundary rather than a source-isolated regression. The final
+  affected three-dimension rebuild is `3.26 s` and the subsequent true no-op
+  production build is `0.85 s`. The 1.7 GiB temporary comparison checkout was
+  removed after its results were recorded. [DONE]
