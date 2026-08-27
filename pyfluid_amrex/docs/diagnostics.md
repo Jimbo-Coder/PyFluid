@@ -11,9 +11,10 @@ Each run writes one tab-separated scalar file:
 runs/current/<ic_name>/<run_name>/scalars.tsv
 ```
 
-The first row is the exact applicable runtime header generated from
-`codegen/pyfluid_codegen/diagnostic_catalog.py`. The generated C++ view is
-`generated/diagnostic_catalog.hpp`; plotting and reports read the matching
+The first row is the exact applicable runtime header declared in
+`schema/diagnostics.toml` and expanded by the strict
+`codegen/pyfluid_codegen/diagnostic_catalog.py` loader. The generated C++ view
+is `generated/diagnostic_catalog.hpp`; plotting and reports read the matching
 generated JSON metadata. Each entry carries a logical family, scalar/vector/
 tensor kind, component index, requirements, and mathematical label. Vector and
 tensor components remain ordinary columns in this one file; there is no second
@@ -363,7 +364,7 @@ run. Plots, exact overlays, and movies should not be required during the solver
 step.
 
 Every diagnostic has one declared evaluation mode in
-`codegen/pyfluid_codegen/diagnostic_catalog.py`:
+`schema/diagnostics.toml`:
 
 - `runtime_reduction`: an MPI reduction written by the solver to `scalars.tsv`;
 - `field_output`: a stored or requested GF written through the canonical field

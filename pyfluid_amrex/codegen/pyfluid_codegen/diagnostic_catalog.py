@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+import tomllib
+from typing import Any
 
 
 class DiagnosticEvaluation(str, Enum):
@@ -64,268 +67,267 @@ class Diagnostic:
     component_count: int = 1
 
 
-def _scalar(
-    name: str,
-    label: str,
-    operation: DiagnosticOperation,
-    *groups: str,
-    storage: DiagnosticStorage = DiagnosticStorage.REAL,
-    dependencies: tuple[str, ...] = (),
-    requirements: tuple[str, ...] = (),
-    default: str | None = None,
-) -> Diagnostic:
-    if default is None:
-        default = "0.0" if storage is DiagnosticStorage.REAL else "0"
-    return Diagnostic(
-        name=name,
-        label=label,
-        evaluation=DiagnosticEvaluation.RUNTIME_REDUCTION,
-        operation=operation,
-        storage=storage,
-        groups=groups,
-        dependencies=dependencies,
-        requirements=requirements,
-        default=default,
-        family=name,
+_SCHEMA_VERSION = 1
+_CATALOG_PATH = (
+    Path(__file__).resolve().parents[2] / "schema" / "diagnostics.toml"
+)
+
+
+def _reject_unknown_keys(
+    table: dict[str, Any], allowed: set[str], context: str
+) -> None:
+    unknown = set(table) - allowed
+    if unknown:
+        raise ValueError(
+            f"{context} contains unknown keys: {', '.join(sorted(unknown))}"
+        )
+
+
+def _require_string(table: dict[str, Any], key: str, context: str) -> str:
+    value = table.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{context}.{key} must be a non-empty string")
+    return value
+
+
+def _string_tuple(
+    table: dict[str, Any], key: str, context: str
+) -> tuple[str, ...]:
+    value = table.get(key, [])
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item for item in value
+    ):
+        raise ValueError(
+            f"{context}.{key} must be an array of non-empty strings"
+        )
+    return tuple(value)
+
+
+def _table_list(
+    root: dict[str, Any], key: str
+) -> tuple[dict[str, Any], ...]:
+    value = root.get(key)
+    if not isinstance(value, list) or not all(
+        isinstance(item, dict) for item in value
+    ):
+        raise ValueError(
+            f"diagnostics.toml {key} must be an array of tables"
+        )
+    return tuple(value)
+
+
+def _enum_value(enum_type: type[Enum], value: str, context: str) -> Any:
+    try:
+        return enum_type(value)
+    except ValueError as error:
+        choices = ", ".join(item.value for item in enum_type)
+        raise ValueError(f"{context} must be one of: {choices}") from error
+
+
+def _load_runtime_diagnostic(
+    table: dict[str, Any], index: int
+) -> tuple[Diagnostic, ...]:
+    context = f"runtime[{index}]"
+    kind = table.get("kind", DiagnosticValueKind.SCALAR.value)
+    if not isinstance(kind, str):
+        raise ValueError(f"{context}.kind must be a string")
+    value_kind = _enum_value(
+        DiagnosticValueKind, kind, f"{context}.kind"
     )
+    if value_kind is DiagnosticValueKind.TENSOR:
+        raise ValueError(
+            f"{context}.kind tensor is not supported by scalars.tsv"
+        )
 
+    common_keys = {
+        "kind",
+        "operation",
+        "storage",
+        "groups",
+        "dependencies",
+        "requirements",
+        "default",
+    }
+    identity_keys = (
+        {"name", "label"}
+        if value_kind is DiagnosticValueKind.SCALAR
+        else {"family", "names", "labels"}
+    )
+    _reject_unknown_keys(table, common_keys | identity_keys, context)
 
-def _vector(
-    family: str,
-    names: tuple[str, str, str],
-    labels: tuple[str, str, str],
-    operation: DiagnosticOperation,
-    *groups: str,
-    dependencies: tuple[str, ...] = (),
-    requirements: tuple[str, ...] = (),
-) -> tuple[Diagnostic, Diagnostic, Diagnostic]:
+    operation = _enum_value(
+        DiagnosticOperation,
+        _require_string(table, "operation", context),
+        f"{context}.operation",
+    )
+    storage_name = table.get("storage", DiagnosticStorage.REAL.value)
+    if not isinstance(storage_name, str) or not storage_name:
+        raise ValueError(f"{context}.storage must be a non-empty string")
+    storage = _enum_value(
+        DiagnosticStorage, storage_name, f"{context}.storage"
+    )
+    groups = _string_tuple(table, "groups", context)
+    dependencies = _string_tuple(table, "dependencies", context)
+    requirements = _string_tuple(table, "requirements", context)
+    default_value = table.get("default")
+    if default_value is None:
+        default = (
+            "0.0" if storage is DiagnosticStorage.REAL else "0"
+        )
+    elif isinstance(default_value, str) and default_value:
+        default = default_value
+    else:
+        raise ValueError(f"{context}.default must be a non-empty string")
+
+    if value_kind is DiagnosticValueKind.SCALAR:
+        name = _require_string(table, "name", context)
+        return (
+            Diagnostic(
+                name=name,
+                label=_require_string(table, "label", context),
+                evaluation=DiagnosticEvaluation.RUNTIME_REDUCTION,
+                operation=operation,
+                storage=storage,
+                groups=groups,
+                dependencies=dependencies,
+                requirements=requirements,
+                default=default,
+                family=name,
+            ),
+        )
+
+    family = _require_string(table, "family", context)
+    names = _string_tuple(table, "names", context)
+    labels = _string_tuple(table, "labels", context)
+    if not names or len(names) != len(labels):
+        raise ValueError(
+            f"{context} vector names and labels must have the same positive length"
+        )
+    component_count = len(names)
     return tuple(
         Diagnostic(
             name=name,
             label=label,
             evaluation=DiagnosticEvaluation.RUNTIME_REDUCTION,
             operation=operation,
+            storage=storage,
             groups=groups,
             dependencies=dependencies,
             requirements=requirements,
+            default=default,
             family=family,
             value_kind=DiagnosticValueKind.VECTOR,
-            component_index=component,
-            component_count=3,
+            component_index=component_index,
+            component_count=component_count,
         )
-        for component, (name, label) in enumerate(zip(names, labels, strict=True))
+        for component_index, (name, label) in enumerate(
+            zip(names, labels, strict=True)
+        )
     )
 
 
-# Ordering here is the canonical scalars.tsv ordering.  The generated C++
-# record, descriptors, selectors, and writer visitor all consume this tuple.
-RUNTIME_SCALAR_DIAGNOSTICS = (
-    _scalar("step", r"n", DiagnosticOperation.COORDINATE, "coordinates", storage=DiagnosticStorage.INTEGER),
-    _scalar("time", r"t", DiagnosticOperation.COORDINATE, "coordinates"),
-    _scalar("dt", r"\Delta t", DiagnosticOperation.COORDINATE, "coordinates"),
-    _scalar("mass", r"M_0", DiagnosticOperation.VOLUME_INTEGRAL, "conservation", dependencies=("rho",)),
-    *_vector(
-        "conserved_momentum",
-        ("mom1", "mom2", "mom3"),
-        (r"P_1", r"P_2", r"P_3"),
-        DiagnosticOperation.VOLUME_INTEGRAL,
-        "conservation",
-        dependencies=("momentum",),
-    ),
-    *_vector(
-        "coordinate_angular_momentum",
-        ("angular_mom1", "angular_mom2", "angular_mom3"),
-        (r"J_1", r"J_2", r"J_3"),
-        DiagnosticOperation.VOLUME_INTEGRAL,
-        "conservation",
-        dependencies=("momentum",),
-    ),
-    _scalar("energy", r"E", DiagnosticOperation.VOLUME_INTEGRAL, "conservation", dependencies=("energy",)),
-    _scalar("gravity_potential_energy", r"E_{\rm grav}", DiagnosticOperation.VOLUME_INTEGRAL, "gravity", requirements=("gravity",)),
-    _scalar("gravity_total_energy", r"E_{\rm total}", DiagnosticOperation.DERIVED, "gravity", requirements=("gravity",)),
-    _scalar("gravity_total_energy_rel_drift", r"\Delta E_{\rm total}/E_{\rm total,0}", DiagnosticOperation.DERIVED, "gravity", requirements=("gravity",)),
-    _scalar("passive_mass", r"M_{\rm passive}", DiagnosticOperation.VOLUME_INTEGRAL, "passive", requirements=("passive",)),
-    _scalar("passive_mass_rel_drift", r"\Delta M_{\rm passive}/M_{\rm passive,0}", DiagnosticOperation.DERIVED, "passive", requirements=("passive",)),
-    _scalar("wall_work", r"W_{\rm wall}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("wall_power", r"\dot W_{\rm wall}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("energy_minus_wall_work", r"\Delta E-W_{\rm wall}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("wall_work_rel_error", r"\epsilon_{W}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("external_budget_valid", r"b_{\rm ext}", DiagnosticOperation.COUNTER, "ledger", storage=DiagnosticStorage.INTEGER, default="1"),
-    _scalar("boundary_mass_change", r"\Delta M_{\partial\Omega}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("boundary_energy_change", r"\Delta E_{\partial\Omega}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("source_mass_change", r"\Delta M_{S}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("source_energy_change", r"\Delta E_{S}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("external_mass_change", r"\Delta M_{\rm ext}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("external_energy_change", r"\Delta E_{\rm ext}", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("external_mass_residual", r"R_M", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("external_energy_residual", r"R_E", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("external_mass_rel_error", r"\epsilon_M", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("external_energy_rel_error", r"\epsilon_E", DiagnosticOperation.DERIVED, "ledger"),
-    _scalar("mass_rel_drift", r"\Delta M/M_0", DiagnosticOperation.DERIVED, "conservation"),
-    _scalar("energy_rel_drift", r"\Delta E/E_0", DiagnosticOperation.DERIVED, "conservation"),
-    _scalar("min_rho", r"\min\rho", DiagnosticOperation.MINIMUM, "state_bounds", dependencies=("rho",)),
-    _scalar("max_rho", r"\max\rho", DiagnosticOperation.MAXIMUM, "state_bounds", dependencies=("rho",)),
-    _scalar("max_rho_rel_change", r"\Delta\rho_{\max}/\rho_{\max,0}", DiagnosticOperation.DERIVED, "state_bounds"),
-    _scalar("min_pressure", r"\min P", DiagnosticOperation.MINIMUM, "state_bounds", dependencies=("pressure",)),
-    _scalar("min_lapse", r"\min\alpha", DiagnosticOperation.MINIMUM, "state_bounds", requirements=("spacetime",)),
-    _scalar("newtonian_magnetic_energy", r"E_B^{\rm NR}", DiagnosticOperation.VOLUME_INTEGRAL, "mhd", requirements=("newtonian_mhd",)),
-    _scalar("rmhd_electromagnetic_energy", r"E_{\rm EM}", DiagnosticOperation.VOLUME_INTEGRAL, "rmhd", requirements=("rmhd",)),
-    _scalar("rmhd_max_b_squared", r"\max b^2", DiagnosticOperation.MAXIMUM, "rmhd", requirements=("rmhd",)),
-    _scalar("rmhd_max_enthalpy_magnetization", r"\max[b^2/(\rho h)]", DiagnosticOperation.MAXIMUM, "rmhd", requirements=("rmhd",)),
-    _scalar("rmhd_min_plasma_beta", r"\min(2P/b^2)", DiagnosticOperation.MINIMUM, "rmhd", requirements=("rmhd",)),
-    _scalar("max_lorentz_factor", r"\max W", DiagnosticOperation.MAXIMUM, "relativistic", requirements=("relativistic",)),
-    _scalar("relativistic_atmosphere_volume_fraction", r"V_{\rm atm}/V", DiagnosticOperation.DERIVED, "relativistic", requirements=("relativistic",)),
-    _scalar("divb_l1", r"\|\nabla_i B^i\|_1", DiagnosticOperation.L1_NORM, "mhd", requirements=("mhd",)),
-    _scalar("divb_l2", r"\|\nabla_i B^i\|_2", DiagnosticOperation.L2_NORM, "mhd", requirements=("mhd",)),
-    _scalar("divb_linf", r"\|\nabla_i B^i\|_\infty", DiagnosticOperation.LINF_NORM, "mhd", requirements=("mhd",)),
-    _scalar("diffusion_residual", r"R_{\rm diff}", DiagnosticOperation.DERIVED, "diffusion", requirements=("diffusion",)),
-    _scalar("diffusion_iterations", r"N_{\rm diff}", DiagnosticOperation.COUNTER, "diffusion", storage=DiagnosticStorage.INTEGER, requirements=("diffusion",)),
-    _scalar("amr_total_cells", r"N_{\rm cells}", DiagnosticOperation.COUNTER, "amr", storage=DiagnosticStorage.LONG),
-    _scalar("amr_active_finest_level", r"L_{\rm active}", DiagnosticOperation.COUNTER, "amr", storage=DiagnosticStorage.INTEGER),
-    _scalar("amr_finest_headroom", r"L_{\max}-L_{\rm active}", DiagnosticOperation.COUNTER, "amr", storage=DiagnosticStorage.INTEGER),
-    _scalar("amr_touches_max_level", r"b_{L_{\max}}", DiagnosticOperation.COUNTER, "amr", storage=DiagnosticStorage.INTEGER),
-    _scalar("amr_total_budget_fraction", r"f_{\rm AMR}", DiagnosticOperation.DERIVED, "amr", default="-1.0"),
-    _scalar("amr_peak_level_budget_fraction", r"f_{\rm AMR,peak}", DiagnosticOperation.DERIVED, "amr", default="-1.0"),
-    _scalar("mcells_per_s", r"10^6\,\mathrm{cells}/\mathrm{s}", DiagnosticOperation.PERFORMANCE, "performance"),
-    _scalar("layout_mcells_per_s", r"10^6\,\mathrm{layout\ cells}/\mathrm{s}", DiagnosticOperation.PERFORMANCE, "performance"),
-    _scalar("sim_time_per_s", r"\Delta t_{\rm sim}/\Delta t_{\rm wall}", DiagnosticOperation.PERFORMANCE, "performance"),
-    _scalar("cfl_limiter_frequency", r"\lambda_{\rm CFL}", DiagnosticOperation.MAXIMUM, "cfl"),
-    _scalar("cfl_limiter_level", r"L_{\rm CFL}", DiagnosticOperation.DERIVED, "cfl", storage=DiagnosticStorage.INTEGER, default="-1"),
-    _scalar("cfl_limiter_i", r"i_{\rm CFL}", DiagnosticOperation.DERIVED, "cfl", storage=DiagnosticStorage.INTEGER),
-    _scalar("cfl_limiter_j", r"j_{\rm CFL}", DiagnosticOperation.DERIVED, "cfl", storage=DiagnosticStorage.INTEGER),
-    _scalar("cfl_limiter_k", r"k_{\rm CFL}", DiagnosticOperation.DERIVED, "cfl", storage=DiagnosticStorage.INTEGER),
-    _scalar("cfl_limiter_q1", r"q^1_{\rm CFL}", DiagnosticOperation.DERIVED, "cfl"),
-    _scalar("cfl_limiter_q2", r"q^2_{\rm CFL}", DiagnosticOperation.DERIVED, "cfl"),
-    _scalar("cfl_limiter_q3", r"q^3_{\rm CFL}", DiagnosticOperation.DERIVED, "cfl"),
-    _scalar("z4c_hamiltonian_linf", r"\|\mathcal H\|_\infty", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_hamiltonian_l2", r"\|\mathcal H\|_2", DiagnosticOperation.L2_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_hamiltonian_interior_linf", r"\|\mathcal H\|_{\infty,\mathrm{interior}}", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_hamiltonian_interior_l2", r"\|\mathcal H\|_{2,\mathrm{interior}}", DiagnosticOperation.L2_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_hamiltonian_cf_linf", r"\|\mathcal H\|_{\infty,\mathrm{CF}}", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_hamiltonian_cf_l2", r"\|\mathcal H\|_{2,\mathrm{CF}}", DiagnosticOperation.L2_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_hamiltonian_bh_exterior_linf", r"\|\mathcal H\|_{\infty,r_{\rm KS}>r_+}", DiagnosticOperation.LINF_NORM, "constraints", "black_hole", requirements=("spacetime", "black_hole"), dependencies=("z4c_constraints",)),
-    _scalar("z4c_hamiltonian_bh_exterior_l2", r"\|\mathcal H\|_{2,r_{\rm KS}>r_+}", DiagnosticOperation.L2_NORM, "constraints", "black_hole", requirements=("spacetime", "black_hole"), dependencies=("z4c_constraints",)),
-    _scalar("z4c_momentum_bh_exterior_linf", r"\|\mathcal M_i\|_{\infty,r_{\rm KS}>r_+}", DiagnosticOperation.LINF_NORM, "constraints", "black_hole", requirements=("spacetime", "black_hole"), dependencies=("z4c_constraints",)),
-    _scalar("z4c_momentum_linf", r"\|\mathcal M_i\|_\infty", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_z_linf", r"\|Z_i\|_\infty", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_theta_linf", r"\|\Theta\|_\infty", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_log_conformal_determinant_linf", r"\|\ln\det\tilde\gamma\|_\infty", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("z4c_trace_a_tilde_linf", r"\|\mathrm{tr}\tilde A\|_\infty", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
-    _scalar("black_hole_horizon_radius", r"r_+", DiagnosticOperation.COORDINATE, "black_hole", requirements=("black_hole",)),
-    _scalar("black_hole_horizon_area", r"A_{\rm H}", DiagnosticOperation.SURFACE_INTEGRAL, "horizon", requirements=("spacetime",)),
-    _scalar("black_hole_horizon_irreducible_mass", r"M_{\rm irr}", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_area",)),
-    _scalar("black_hole_horizon_equatorial_circumference", r"C_{\rm e}", DiagnosticOperation.SURFACE_INTEGRAL, "horizon", requirements=("spacetime",)),
-    _scalar("black_hole_horizon_polar_circumference", r"C_{\rm p}", DiagnosticOperation.SURFACE_INTEGRAL, "horizon", requirements=("spacetime",)),
-    _scalar("black_hole_horizon_kerr_mass", r"M_C", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_area", "black_hole_horizon_equatorial_circumference")),
-    _scalar("black_hole_horizon_kerr_spin", r"|\chi_{\rm H}^{\rm Kerr}|", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_area", "black_hole_horizon_equatorial_circumference"), default="-1.0"),
-    *_vector(
-        "black_hole_horizon_coordinate_angular_momentum",
-        ("black_hole_horizon_coordinate_angular_momentum1", "black_hole_horizon_coordinate_angular_momentum2", "black_hole_horizon_coordinate_angular_momentum3"),
-        (r"J_{\rm H,1}^{\rm coord}", r"J_{\rm H,2}^{\rm coord}", r"J_{\rm H,3}^{\rm coord}"),
-        DiagnosticOperation.SURFACE_INTEGRAL,
-        "horizon",
-        requirements=("spacetime",),
-        dependencies=("black_hole_horizon_area",),
-    ),
-    _scalar("black_hole_horizon_coordinate_angular_momentum_magnitude", r"|J_{\rm H}^{\rm coord}|", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_coordinate_angular_momentum",)),
-    _scalar("black_hole_horizon_coordinate_christodoulou_mass", r"M_{\rm H}^{\rm coord}", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_area", "black_hole_horizon_coordinate_angular_momentum")),
-    *_vector(
-        "black_hole_horizon_coordinate_christodoulou_spin",
-        ("black_hole_horizon_coordinate_christodoulou_spin1", "black_hole_horizon_coordinate_christodoulou_spin2", "black_hole_horizon_coordinate_christodoulou_spin3"),
-        (r"\chi_{\rm H,1}^{\rm coord}", r"\chi_{\rm H,2}^{\rm coord}", r"\chi_{\rm H,3}^{\rm coord}"),
-        DiagnosticOperation.DERIVED,
-        "horizon",
-        requirements=("spacetime",),
-        dependencies=("black_hole_horizon_coordinate_christodoulou_mass", "black_hole_horizon_coordinate_angular_momentum"),
-    ),
-    _scalar("black_hole_horizon_coordinate_christodoulou_spin_magnitude", r"|\chi_{\rm H}^{\rm coord}|", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_coordinate_christodoulou_spin",)),
-    _scalar("adm_mass_surface", r"M_{\rm ADM}^{S}", DiagnosticOperation.SURFACE_INTEGRAL, "global_gr", requirements=("spacetime",), dependencies=("z4c_physical_geometry",)),
-    _scalar("adm_mass_volume", r"M_{\rm ADM}^{V}", DiagnosticOperation.VOLUME_INTEGRAL, "global_gr", requirements=("spacetime",), dependencies=("z4c_physical_geometry",)),
-    _scalar("proper_mass_volume", r"M_{\rm proper}^{V}", DiagnosticOperation.VOLUME_INTEGRAL, "global_gr", requirements=("spacetime",), dependencies=("z4c_physical_geometry",)),
-    _scalar("komar_mass_surface", r"M_{\rm K}^{S}", DiagnosticOperation.SURFACE_INTEGRAL, "global_gr", requirements=("spacetime",), dependencies=("z4c_physical_geometry",)),
-    _scalar("komar_mass_volume", r"M_{\rm K}^{V}", DiagnosticOperation.VOLUME_INTEGRAL, "global_gr", requirements=("spacetime",), dependencies=("z4c_physical_geometry",)),
-    _scalar("binding_energy_volume", r"E_{\rm bind}^{V}", DiagnosticOperation.DERIVED, "global_gr", requirements=("spacetime",), dependencies=("mass", "adm_mass_volume")),
-    *_vector(
-        "adm_momentum_surface",
-        ("adm_momentum1_surface", "adm_momentum2_surface", "adm_momentum3_surface"),
-        (r"P_{\rm ADM,1}^{S}", r"P_{\rm ADM,2}^{S}", r"P_{\rm ADM,3}^{S}"),
-        DiagnosticOperation.SURFACE_INTEGRAL,
-        "global_gr",
-        requirements=("spacetime",),
-        dependencies=("z4c_physical_geometry",),
-    ),
-    *_vector(
-        "adm_momentum_volume",
-        ("adm_momentum1_volume", "adm_momentum2_volume", "adm_momentum3_volume"),
-        (r"P_{\rm ADM,1}^{V}", r"P_{\rm ADM,2}^{V}", r"P_{\rm ADM,3}^{V}"),
-        DiagnosticOperation.VOLUME_INTEGRAL,
-        "global_gr",
-        requirements=("spacetime",),
-        dependencies=("z4c_physical_geometry",),
-    ),
-    *_vector(
-        "adm_angular_momentum_surface",
-        ("adm_angular_momentum1_surface", "adm_angular_momentum2_surface", "adm_angular_momentum3_surface"),
-        (r"J_{\rm ADM,1}^{S}", r"J_{\rm ADM,2}^{S}", r"J_{\rm ADM,3}^{S}"),
-        DiagnosticOperation.SURFACE_INTEGRAL,
-        "global_gr",
-        requirements=("spacetime",),
-        dependencies=("z4c_physical_geometry",),
-    ),
-    *_vector(
-        "adm_angular_momentum_volume",
-        ("adm_angular_momentum1_volume", "adm_angular_momentum2_volume", "adm_angular_momentum3_volume"),
-        (r"J_{\rm ADM,1}^{V}", r"J_{\rm ADM,2}^{V}", r"J_{\rm ADM,3}^{V}"),
-        DiagnosticOperation.VOLUME_INTEGRAL,
-        "global_gr",
-        requirements=("spacetime",),
-        dependencies=("z4c_physical_geometry",),
-    ),
-    _scalar("extraction_radius", r"r_{\rm ext}", DiagnosticOperation.COORDINATE, "radiation", requirements=("spacetime",)),
-    _scalar("matter_energy_flux", r"\dot E_{\rm matter}^{S}", DiagnosticOperation.SURFACE_INTEGRAL, "radiation", requirements=("spacetime",)),
-    _scalar("psi4_l2", r"\|\Psi_4\|_{2,S}", DiagnosticOperation.L2_NORM, "radiation", requirements=("spacetime",)),
-    _scalar("matter_mode_mass", r"C_0", DiagnosticOperation.VOLUME_INTEGRAL, "modes"),
-    *_vector(
-        "matter_barycenter",
-        ("matter_barycenter1", "matter_barycenter2", "matter_barycenter3"),
-        (r"x_{\rm CM}", r"y_{\rm CM}", r"z_{\rm CM}"),
-        DiagnosticOperation.DERIVED,
-        "modes",
-    ),
+def _load_complex_mode(
+    table: dict[str, Any], index: int
+) -> ComplexModeDiagnostic:
+    context = f"complex_mode[{index}]"
+    _reject_unknown_keys(
+        table,
+        {
+            "name",
+            "label",
+            "basis",
+            "domain",
+            "integrand",
+            "requirements",
+        },
+        context,
+    )
+    return ComplexModeDiagnostic(
+        name=_require_string(table, "name", context),
+        label=_require_string(table, "label", context),
+        basis=_require_string(table, "basis", context),
+        domain=_require_string(table, "domain", context),
+        integrand=_require_string(table, "integrand", context),
+        requirements=_string_tuple(table, "requirements", context),
+    )
+
+
+def _load_postprocess_diagnostic(
+    table: dict[str, Any], index: int
+) -> Diagnostic:
+    context = f"postprocess[{index}]"
+    _reject_unknown_keys(
+        table, {"name", "label", "operation", "dependencies"}, context
+    )
+    return Diagnostic(
+        name=_require_string(table, "name", context),
+        label=_require_string(table, "label", context),
+        evaluation=DiagnosticEvaluation.POSTPROCESS,
+        operation=_enum_value(
+            DiagnosticOperation,
+            _require_string(table, "operation", context),
+            f"{context}.operation",
+        ),
+        dependencies=_string_tuple(table, "dependencies", context),
+    )
+
+
+def _load_catalog() -> tuple[
+    tuple[Diagnostic, ...],
+    tuple[ComplexModeDiagnostic, ...],
+    tuple[Diagnostic, ...],
+]:
+    with _CATALOG_PATH.open("rb") as catalog_file:
+        root = tomllib.load(catalog_file)
+    if not isinstance(root, dict):
+        raise ValueError("diagnostics.toml root must be a table")
+    _reject_unknown_keys(
+        root,
+        {"schema_version", "runtime", "complex_mode", "postprocess"},
+        "diagnostics.toml",
+    )
+    if root.get("schema_version") != _SCHEMA_VERSION:
+        raise ValueError(
+            "diagnostics.toml schema_version must be "
+            f"{_SCHEMA_VERSION}, got {root.get('schema_version')!r}"
+        )
+
+    runtime = tuple(
+        diagnostic
+        for index, table in enumerate(_table_list(root, "runtime"))
+        for diagnostic in _load_runtime_diagnostic(table, index)
+    )
+    complex_modes = tuple(
+        _load_complex_mode(table, index)
+        for index, table in enumerate(_table_list(root, "complex_mode"))
+    )
+    postprocess = tuple(
+        _load_postprocess_diagnostic(table, index)
+        for index, table in enumerate(_table_list(root, "postprocess"))
+    )
+    if not runtime or not postprocess:
+        raise ValueError(
+            "diagnostics.toml runtime and postprocess catalogs must not be empty"
+        )
+    return runtime, complex_modes, postprocess
+
+
+(
+    RUNTIME_SCALAR_DIAGNOSTICS,
+    COMPLEX_MODE_DIAGNOSTICS,
+    POSTPROCESS_DIAGNOSTICS,
+) = _load_catalog()
+
+
+# "standard" preserves the compact scalars.tsv contract. Global GR charges,
+# horizon integrals, and radiation diagnostics remain opt-in through groups.
+_RUNTIME_GROUP_NAMES = tuple(
+    dict.fromkeys(
+        group
+        for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS
+        for group in diagnostic.groups
+    )
 )
-
-
-# Complex, dynamically indexed reductions are rows in multipoles.tsv rather
-# than fixed columns in scalars.tsv.  This catalog still owns their stable
-# identity, integration domain, basis, and integrand contract.
-COMPLEX_MODE_DIAGNOSTICS = (
-    ComplexModeDiagnostic(
-        "psi4_spin_weighted_surface",
-        r"\Psi_4^{\ell m}",
-        "spin_weighted_spherical_harmonic",
-        "surface",
-        "psi4",
-        ("spacetime",),
-    ),
-    ComplexModeDiagnostic(
-        "scalar_azimuthal_surface",
-        r"C_m^S[f]",
-        "azimuthal_fourier_exp_minus_imphi",
-        "surface",
-        "configured_scalar_field",
-    ),
-    ComplexModeDiagnostic(
-        "matter_azimuthal_volume",
-        r"C_m",
-        "azimuthal_fourier_exp_plus_imphi",
-        "volume",
-        "atmosphere_excluded_dens",
-    ),
-)
-
-
-# "standard" preserves the historical compact scalars.tsv contract. Global GR
-# surface/volume charges are opt-in until a surface is explicitly configured.
 DIAGNOSTIC_GROUPS = {
     "standard": tuple(
         diagnostic.name
@@ -340,24 +342,9 @@ DIAGNOSTIC_GROUPS = {
             for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS
             if group in diagnostic.groups
         )
-        for group in (
-            "coordinates", "conservation", "gravity", "passive", "ledger",
-            "state_bounds", "mhd", "rmhd", "relativistic", "diffusion", "amr", "performance", "cfl",
-            "constraints", "black_hole", "horizon", "global_gr",
-            "radiation", "modes",
-        )
+        for group in _RUNTIME_GROUP_NAMES
     },
 }
-
-
-POSTPROCESS_DIAGNOSTICS = (
-    Diagnostic("pressure", r"P", DiagnosticEvaluation.POSTPROCESS, DiagnosticOperation.FIELD, dependencies=("rho", "momentum", "energy")),
-    Diagnostic("velocity_mag", r"|v|", DiagnosticEvaluation.POSTPROCESS, DiagnosticOperation.FIELD, dependencies=("rho", "momentum")),
-    Diagnostic("schlieren", r"|\nabla\rho|", DiagnosticEvaluation.POSTPROCESS, DiagnosticOperation.FIELD, dependencies=("rho",)),
-    Diagnostic("j_mag", r"|J|", DiagnosticEvaluation.POSTPROCESS, DiagnosticOperation.FIELD, dependencies=("j1", "j2", "j3")),
-    Diagnostic("e_mag", r"|E|", DiagnosticEvaluation.POSTPROCESS, DiagnosticOperation.FIELD, dependencies=("e1", "e2", "e3")),
-    Diagnostic("vorticity_mag", r"|\omega|", DiagnosticEvaluation.POSTPROCESS, DiagnosticOperation.FIELD, dependencies=("vorticity1", "vorticity2", "vorticity3")),
-)
 
 
 def validate_diagnostic_catalog() -> None:
@@ -371,19 +358,32 @@ def validate_diagnostic_catalog() -> None:
         family = diagnostic.family or diagnostic.name
         shape = (diagnostic.value_kind, diagnostic.component_count)
         if family in family_shapes and family_shapes[family] != shape:
-            raise ValueError(f"diagnostic family {family} has inconsistent shape")
+            raise ValueError(
+                f"diagnostic family {family} has inconsistent shape"
+            )
         family_shapes[family] = shape
-        family_components.setdefault(family, set()).add(diagnostic.component_index)
+        family_components.setdefault(family, set()).add(
+            diagnostic.component_index
+        )
     for family, (_, component_count) in family_shapes.items():
         expected = set(range(component_count))
         if family_components[family] != expected:
-            raise ValueError(f"diagnostic family {family} has incomplete components")
-    runtime_names = {diagnostic.name for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS}
+            raise ValueError(
+                f"diagnostic family {family} has incomplete components"
+            )
+    runtime_names = {
+        diagnostic.name for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS
+    }
     for group, members in DIAGNOSTIC_GROUPS.items():
         unknown = set(members) - runtime_names
         if unknown:
-            raise ValueError(f"diagnostic group {group} contains unknown members: {sorted(unknown)}")
-    mode_names = [diagnostic.name for diagnostic in COMPLEX_MODE_DIAGNOSTICS]
+            raise ValueError(
+                f"diagnostic group {group} contains unknown members: "
+                f"{sorted(unknown)}"
+            )
+    mode_names = [
+        diagnostic.name for diagnostic in COMPLEX_MODE_DIAGNOSTICS
+    ]
     if len(mode_names) != len(set(mode_names)):
         raise ValueError("complex-mode diagnostic names must be unique")
 

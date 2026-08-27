@@ -1,9 +1,10 @@
 # Declarative Catalog Schema
 
-Status: the field stage is implemented. `schema/fields.toml` is authoritative
-for GF declarations. The method stage has begun narrowly with rotation-law
-identity in `schema/methods.toml`; diagnostics and the remaining method
-families remain later staged migrations.
+Status: the field, diagnostic, physical-ID manifest, and selected method stages
+are implemented. `schema/fields.toml` is authoritative for GF declarations,
+`schema/diagnostics.toml` for diagnostic identity and ordering,
+`schema/physical_id.toml` for artifact metadata, and `schema/methods.toml` for
+the supported method families already migrated there.
 
 ## Purpose
 
@@ -79,7 +80,10 @@ field identity, components, labels, centering, or ownership.
 groups, selection names, and references to integrand/reducer implementations.
 The actual symbolic integrands and runtime reduction algorithms stay in Python
 or C++; the text catalog names them and validation requires every reference to
-resolve exactly once.
+resolve exactly once. Contiguous vector declarations expand into ordinary
+`scalars.tsv` columns in declared order. `diagnostic_catalog.py` is the strict
+loader/model/validator and derives group membership; it is not a second
+declaration table.
 
 `methods.toml` owns supported runtime method names, stable codes, build-option
 names, broad capability requirements, and implementation entry identifiers.
@@ -115,16 +119,19 @@ compatibility rules into an opaque schema language.
    preserved generated IDs, descriptors, JSON, and documentation byte-for-byte.
 3. `field_catalog.py` now exposes parsed/validated models and derived helper
    views without declaration tuples.
-4. Strengthen architecture checks so new production GF strings or descriptors
-   outside generated views fail.
+4. Architecture checks require every declarative catalog and its generated
+   public views, and reject duplicate production GF identity.
 5. The independent stellar and disk rotation-law identities now live in
    `schema/methods.toml`; extend either only with a matching implementation and
    focused configuration/equation test.
 6. Native single-object ID owner capabilities now live beside those laws and
    generate host-only layout/grid/symmetry policy. They do not generate solver
    variants or authorize every Cartesian product of their broad capabilities.
-7. Repeat independently for diagnostics and other method families after their
-   ownership and validation boundary is clear.
+7. Diagnostic identity, ordering, groups, value shapes, requirements, and
+   postprocess dependencies now live in `schema/diagnostics.toml`; the staged
+   conversion preserves the generated C++/JSON contract.
+8. Repeat independently for other method families after their ownership and
+   validation boundary is clear.
 
 Every migration stage must preserve catalog ordering, component IDs, centerings,
 checkpoint metadata, output names, and numerical behavior. A format migration

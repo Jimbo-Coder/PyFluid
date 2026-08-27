@@ -5,7 +5,7 @@ An item enters the queue only after its path and claim are checked against the
 current source. Raw suggestions remain linked for provenance and do not become
 architecture policy by repetition.
 
-Last source check: 2026-07-21, dirty `main` at HEAD `d78a0acc6a27`.
+Last source check: 2026-08-27, cleanup cycle on `main` after `23daf38`.
 
 Status meanings:
 
@@ -15,7 +15,7 @@ Status meanings:
 - `REJECT`: conflicts with current ownership/performance policy or lacks a
   concrete benefit.
 
-## Accepted Queue
+## Completed Outcomes And Active Queue
 
 ### 1. Give state and auxiliary GFs one ordinary output cadence (`DONE`, M)
 
@@ -86,7 +86,7 @@ multilevel output. The layout introduces no field identity or metadata outside
 `schema/fields.toml`. The focused multilevel MHD case verifies exact `j,e`
 component order on every edge centering.
 
-### 3. Move critical catalog identity to data-only TOML (`FIELD STAGE DONE`; later stages deferred)
+### 3. Move critical catalog identity to data-only TOML (`DONE` for implemented stages)
 
 Source: `codegen/pyfluid_codegen/field_catalog.py`,
 `codegen/pyfluid_codegen/diagnostic_catalog.py`, configuration/method catalogs,
@@ -99,13 +99,15 @@ former declaration tuples are removed. Generated field/component IDs,
 descriptors, JSON, names, centerings, and documentation remained byte-identical
 through the migration.
 
-After the field migration passes evolution, checkpoint, output, codegen, and
-architecture gates, consider separate `diagnostics.toml` and `methods.toml`
-for declarative identity, labels, groups, stable codes, requirements, and
-implementation references. Symbolic mathematics, reduction algorithms,
-coupled validation, and physical compatibility remain code. Do not introduce
-one omnibus catalog or a custom `.ccl` parser when standard-library TOML meets
-the requirement.
+`schema/diagnostics.toml` now independently owns diagnostic identity, labels,
+groups, stable column ordering, requirements, and component structure.
+`schema/methods.toml` owns only the method families that have a clear
+declarative boundary, and `schema/physical_id.toml` owns the artifact manifest
+vocabulary. Their Python modules are strict loaders/models/validators rather
+than second declaration sources. Symbolic mathematics, reduction algorithms,
+coupled validation, and physical compatibility remain code. Continue staged
+family-by-family migrations only when they delete a real duplicate; do not
+introduce an omnibus catalog or custom parser.
 
 ### 4. Measure dispatch growth before restructuring it (`ACCEPT` measurement only; refactor `DEFER`)
 
@@ -259,6 +261,7 @@ were checked separately:
   repeated review waves; useful for search, not an accepted roadmap.
 
 When an item is implemented, record its exact change and validation in the
-current continuity cycle, then remove it from the accepted queue or move a
-short result to `knowledge.md` only if it changes durable architecture or an
-open limitation.
+current continuity cycle, then retain only a compact outcome here when it is
+needed to interpret later Spark claims. Move a short result to `knowledge.md`
+only if it changes a numerical fact or open limitation; durable ownership
+belongs in `docs/infrastructure_conventions.md`.

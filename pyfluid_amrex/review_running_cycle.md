@@ -4598,7 +4598,7 @@ I will always continue from the last cycle marked as `in_progress`.
   the corrected detector audit remains as the reproducible negative check.
   [DONE]
 
-## Cycle 273 — Build a coherent high-order space-time FV candidate (WIP)
+## Cycle 273 — Build a coherent high-order space-time FV candidate (DONE)
 
 - Replace the rejected low-order Hancock/RK splices with one conservative
   fully discrete operator: reconstruct one scale-independent primitive
@@ -4696,13 +4696,12 @@ I will always continue from the last cycle marked as `in_progress`.
   `ruff` is not installed in the current uv environment, so no lint result is
   claimed. No AMReX build is warranted because no production source changed.
   [DONE]
-- Before production promotion, resolve or explicitly accept the Balsara-2
-  Pareto trade, add multidimensional CT/rotation and AMR/reflux gates, carry
-  the primitive predictor through a nontrivial GR metric/tetrad, and replace
-  the research numerical eigensolve with a generated and benchmarked
-  device-suitable Jacobian/basis. If it earns those gates, expose one host
-  runtime method through the existing factory; do not add a template-product
-  axis. [PENDING]
+- Production promotion was not accepted: the Balsara-2 Pareto trade remained,
+  and multidimensional CT/rotation, AMR/reflux, nontrivial GR metric/tetrad,
+  and generated device-suitable Jacobian/basis gates were not earned. Cycle
+  344 removed the closed standalone branch after preserving its numerical
+  conclusions in `knowledge.md`; no production method or template-product axis
+  remains. [DONE]
 
 ## Cycle 274 — Separate the coherent core from its fallback shell (DONE)
 
@@ -5990,12 +5989,12 @@ I will always continue from the last cycle marked as `in_progress`.
   one-time public `RunConfig` edit rebuilt its existing dependency fan-out but
   adding this owner did not add a template specialization product. [DONE]
 
-## Cycle 306 — Single-object ID physics and geometry completion (WIP)
+## Cycle 306 — Single-object ID physics and geometry completion (DONE)
 
 - Add one or two source-checked post-merger Uryu stellar rotation laws through
   the declarative method catalog and existing runtime circular first-integral
   owner. Keep stellar and disk laws physically separate and do not add a new
-  coordinate, EoS, or rotation-law template product. [WIP]
+  coordinate, EoS, or rotation-law template product. [DONE]
 - Audit and add catalog-owned azimuthal `C_m` mode diagnostics plus reusable
   equilibrium perturbations. Pressure rescaling must rebuild every
   EoS-dependent thermodynamic field; radial and nonaxisymmetric perturbations
@@ -6006,22 +6005,24 @@ I will always continue from the last cycle marked as `in_progress`.
   all change consistently. It is not a fixed-density pressure depletion, and
   the reusable equilibrium artifact is written before this evolution-start
   modifier. Pointwise cold-closure and three-rank artifact-ordering controls
-  pass; broader integration remains in progress. [WIP]
+  pass; broader integration was completed in Cycles 307--315. [DONE]
 - Extend native single-object ID ownership toward both Cartesian and spherical
   `r theta phi` nonlinear solves, with uniform/adaptive choices and the usual
   lower-dimensional consistency regressions. Reuse one coordinate-independent
   physical implementation and generated owner metadata; do not treat
   `N x M x 1` as functionality or add a coordinate/object template product.
-  [WIP]
+  [DONE]
 - Add an optional self-consistent magnetized-equilibrium route only with a
   divergence-preserving magnetic representation, coupled magnetic stress in
   the matter/constraint fixed point, portable face-field ownership, and
   explicit EoS/geometry validation. Keep the unmagnetized solve free of its
-  cost and storage. [WIP]
+  cost and storage. [DONE]
 - Validate each bounded addition with the smallest analytic, limiting-case,
   symmetry, rank, artifact, and startup gates before broad integration. Update
   the capability catalog, knowledge/reference routing, and exact evidence
-  boundaries, then commit one reviewed coherent state. [PENDING]
+  boundaries, then commit one reviewed coherent state. Cycles 307--315 closed
+  those bounded additions and recorded the remaining unsupported combinations
+  in `knowledge.md`. [DONE]
 
 ## Cycle 307 — Full-storage spherical XCTS and magnetic-ID hardening (DONE)
 
@@ -7681,7 +7682,7 @@ I will always continue from the last cycle marked as `in_progress`.
   Diff, Python, shell, TOML, and cache-hit build hygiene complete the cycle;
   the accumulated dirty user tree is preserved and no commit is made. [DONE]
 
-## Cycle 344 — Tile-ownership hardening and preserved performance baseline (WIP)
+## Cycle 344 — Tile-ownership hardening and preserved performance baseline (DONE)
 
 - Audit the accumulated Cycle 322--343 working tree before committing it;
   preserve completed black-hole/ID/OpenMP work as one coherent integration
@@ -7716,3 +7717,45 @@ I will always continue from the last cycle marked as `in_progress`.
   baseline passes at `101.24`, `61.78`, `2.613`, and `2.013` Mcells/s,
   respectively; the corrected 3D cases reproduce their baseline within one
   percent. [DONE]
+
+## Cycle 345 — Declarative diagnostics, compiled-owner split, and output audit (WIP)
+
+- Reconcile stale continuity and review-backlog state after the Cycle-344
+  consolidation. Move declarative diagnostic identity, ordering, grouping,
+  dependencies, and component structure from Python tuples into one strict
+  `schema/diagnostics.toml`; keep Python as the loader/model/validator and keep
+  reduction algorithms in their current C++/postprocessing owners. Require
+  byte-equivalent generated C++ before accepting the migration. The ordered
+  runtime, multipole, and postprocess declarations now live only in the
+  versioned TOML catalog; vector families expand in the strict loader, and
+  group order is derived from declared entries. Generated diagnostic C++/JSON
+  and equation artifacts remain byte-identical. CMake and architecture checks
+  require the new source. Catalog, diagnostic, design, convention, reference,
+  and Spark-backlog text now describes current ownership. [DONE]
+- Split oversized physical-ID/materialization and elliptic implementation files
+  only at existing private compiled-owner boundaries. Do not change formulas,
+  runtime defaults, public APIs, supported combinations, or create a
+  coordinate/object/EoS/template product. The generic AMReX elliptic owner and
+  full/axisymmetric spherical operators now compile separately behind one
+  private internal boundary; primitive-to-evolution physical-ID conversion is
+  separated from artifact I/O/interpolation. Tightly coupled physical-ID I/O
+  and coordinate materialization remain cohesive rather than exposing a broad
+  private helper surface merely to reduce line count. All focused 1D/2D/3D
+  elliptic executables pass, including mapped/full spherical and XCTS
+  convergence; the three-dimension production rebuild passes in 4.42 s and a
+  no-op build takes 0.27 s. Reduced physical-ID handoff passes at three ranks.
+  The exact-tree standard suite passes every gate, and maintained performance
+  controls pass at 102.84, 62.07, 2.61, and 2.01 Mcells/s. `ruff` is not
+  installed in the uv environment; Python byte compilation, architecture,
+  codegen, diff hygiene, and generated byte identity pass. [DONE]
+- Inventory ignored run/build outputs by exact path and size. Preserve compact
+  scalar/log/report/plot evidence, named baselines, canonical inputs, and
+  reusable accepted physical-ID artifacts; propose deletion only for exact
+  regenerable raw GF/checkpoint/failed-scratch targets after an explicit
+  preservation audit. `runs/current` contains 15.72 GiB in 18,389 files. The
+  proposed compact set keeps 1.37 GiB: all tracked-input physical-ID
+  prerequisites, accepted high-mass BH-disk/RNS/magnetized/BH/TOV artifacts,
+  and bounded recent histories. Finished unique KH/curvilinear media add about
+  29 MiB to `runs/final_done`; existing baselines/final outputs remain intact.
+  Deleting the remaining 18,026 current files would recover about 14.32 GiB.
+  The exact destructive transaction awaits user approval. [WIP]

@@ -278,12 +278,14 @@ field tables in the equation reference. `fields.hpp` defines only C++
 descriptor types and the AMReX-facing query API. Evolution, checkpointing,
 output, diagnostics, and plotting consume generated views of the same schema.
 
-`codegen/pyfluid_codegen/diagnostic_catalog.py` distinguishes runtime scalar
-reductions from field-output and postprocessed quantities. Runtime reductions
-are written to `scalars.tsv`; postprocessing reads those values and requested
-GF data rather than maintaining another physical reduction implementation.
-Diagnostic names and labels are generated into C++ and JSON. Adding a plotted
-GF label or scalar column in an independent plotting table is not allowed.
+`schema/diagnostics.toml` distinguishes runtime scalar reductions from
+field-output and postprocessed quantities. Its strict
+`diagnostic_catalog.py` loader validates and expands component families;
+runtime reductions are written to `scalars.tsv`, while postprocessing reads
+those values and requested GF data rather than maintaining another physical
+reduction implementation. Diagnostic names and labels are generated into C++
+and JSON. Adding a plotted GF label or scalar column in an independent plotting
+table is not allowed.
 
 `codegen/pyfluid_codegen/equation_catalog.py` indexes the high-level physical
 systems built by `physical_system.py`. The same symbolic conservation laws and

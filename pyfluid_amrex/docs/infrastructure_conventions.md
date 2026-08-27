@@ -45,6 +45,12 @@ methods and physics belong in their topic documents; coding style belongs in
   components, labels, centerings, roles, and persistence/output ownership.
   Python strictly loads and validates it and emits generated C++/JSON/document
   views. Runtime code must not create a second raw-string field registry.
+- `schema/diagnostics.toml` is the only declaration source for runtime and
+  postprocess diagnostic identity, mathematical labels, scalar/vector shape,
+  canonical column ordering, applicability, groups, and dependencies. Python
+  strictly loads and validates it, expands component families, and emits the
+  generated C++/JSON views. Symbolic integrands and runtime reduction
+  algorithms remain owned by their generated-equation and C++ executors.
 - `schema/methods.toml` owns supported-method identity and dispatch metadata,
   including reconstruction names/codes/stencil radii/characteristic forms,
   rotation-law names, and the runtime AMR indicator policies and their default
@@ -79,9 +85,10 @@ methods and physics belong in their topic documents; coding style belongs in
   private algorithm header, and prevent unintended inlining when measured
   object growth shows cloned bodies. Instantiate only runtime-valid method
   combinations; configuration must reject misleading unsupported variants.
-- Runtime reduction identity/integrands come from the diagnostic catalog.
-  Runtime AMReX reductions own discrete totals; postprocessing owns analytic
-  comparisons and derived presentation.
+- Runtime reduction identity comes from `schema/diagnostics.toml`; generated
+  integrands come from the symbolic diagnostic-equation owner. Runtime AMReX
+  reductions own discrete totals; postprocessing owns analytic comparisons and
+  derived presentation.
 - Independent fields at the same communication phase may be passed together to
   AMReX's vector `FillBoundary` or `FillBoundaryAndSync` APIs so their exchanges
   can overlap. They must share the hierarchy periodicity and compatible FabArray
@@ -230,6 +237,16 @@ methods and physics belong in their topic documents; coding style belongs in
   characters rather than corrupting row structure. Canonical validation result
   paths belong to the complete declared matrix; filtered or exploratory runs
   write distinct result names and must not overwrite canonical evidence.
+- Ignored output has three retention tiers. `runs/current/` is reproducible
+  working state and may be compacted after an exact inventory;
+  `runs/baselines/` stores named bounded validation/performance evidence; and
+  `runs/final_done/` stores deliberately curated finished media, compact run
+  reports, and expensive accepted reusable physical-ID artifacts. Preserve
+  canonical artifact prerequisites referenced by tracked inputs and bounded
+  recent histories. Raw GF snapshots, intermediate checkpoints, failed probes,
+  duplicate movies, and superseded scan points do not become durable merely
+  because they are large. A prune must state exact retained roots, deleted
+  size, and recoverability before removing data.
 
 ## Independent Numerical References
 

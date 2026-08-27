@@ -75,14 +75,15 @@ decisions.
   implementation may switch exhaustively on the generated ID, but it must not
   define identity, components, labels, centering, or ownership again.
 - Define runtime reductions and postprocessed diagnostics once in
-  `codegen/pyfluid_codegen/diagnostic_catalog.py`. Runtime code owns discrete
-  conservation reductions; postprocessing owns analytic comparisons and
-  derived views of output GFs.
-- Migrate declarative diagnostic identity/group metadata and supported-method
-  metadata to separate TOML catalogs only through byte-equivalent staged
-  conversions. Keep symbolic integrands, algorithms, coupled compatibility
-  checks, and physical validation in Python/C++; do not encode them as opaque
-  expression strings or invent a general schema language.
+  `schema/diagnostics.toml`, consumed by the strict
+  `codegen/pyfluid_codegen/diagnostic_catalog.py` loader. Runtime code owns
+  discrete conservation reductions; postprocessing owns analytic comparisons
+  and derived views of output GFs.
+- Keep declarative diagnostic and supported-method identity in separate TOML
+  catalogs. Preserve catalog ordering and generated contracts when extending
+  them. Keep symbolic integrands, algorithms, coupled compatibility checks, and
+  physical validation in Python/C++; do not encode them as opaque expression
+  strings or invent a general schema language.
 - Coordinate transforms, metric factors, and vector/tensor operations each have
   one shared implementation. Initial data, evolution, and diagnostics reuse it.
 - Generated kernels come from one high-level equation source. Do not retain a

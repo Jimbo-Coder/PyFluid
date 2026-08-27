@@ -205,10 +205,12 @@ set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
    src/initial_data/initial_data_centering.cpp
    src/initial_data/initial_data_ctt.cpp
    src/initial_data/initial_data_elliptic.cpp
+   src/initial_data/initial_data_elliptic_spherical.cpp
    src/initial_data/initial_data_magnetic.cpp
    src/initial_data/initial_data_materialization.cpp
    src/initial_data/initial_data_provider.cpp
    src/initial_data/physical_id.cpp
+   src/initial_data/physical_id_fluid_materialization.cpp
    src/initial_data/physical_id_interpolation.cpp
    src/initial_data/initial_data_rhd.cpp
    src/initial_data/initial_data_state.cpp
@@ -322,6 +324,7 @@ set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
    src/initial_data/initial_data_centering.cpp
    src/initial_data/initial_data_ctt.cpp
    src/initial_data/initial_data_elliptic.cpp
+   src/initial_data/initial_data_elliptic_spherical.cpp
    tests/initial_data_elliptic_check.cpp
    src/numerics/nodal_interpolater.cpp
    src/initial_data/tov_initial_data.cpp
@@ -476,6 +479,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/method_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/physical_id_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/diagnostics.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/methods.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/physical_id.toml

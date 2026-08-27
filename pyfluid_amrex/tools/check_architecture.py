@@ -293,6 +293,19 @@ def main() -> None:
     if missing:
         errors.append("required generated catalog outputs are missing: " + relative_paths(missing))
 
+    required_catalog_sources = (
+        ROOT / "schema" / "diagnostics.toml",
+        ROOT / "schema" / "fields.toml",
+        ROOT / "schema" / "methods.toml",
+        ROOT / "schema" / "physical_id.toml",
+    )
+    missing = [path for path in required_catalog_sources if not path.is_file()]
+    if missing:
+        errors.append(
+            "required declarative catalog sources are missing: "
+            + relative_paths(missing)
+        )
+
     method_codes = (INCLUDE_ROOT / "method_codes.hpp").read_text()
     if "enum ReconstructionMethodCode" in method_codes:
         errors.append(

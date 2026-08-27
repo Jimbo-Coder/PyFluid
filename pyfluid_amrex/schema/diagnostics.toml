@@ -1,0 +1,861 @@
+# Canonical diagnostic identities and scalars.tsv ordering.
+# The Python catalog is a strict loader; declarations live only here.
+schema_version = 1
+
+# Runtime: Coordinates
+
+[[runtime]]
+name = "step"
+label = "n"
+operation = "coordinate"
+groups = ["coordinates"]
+storage = "integer"
+
+[[runtime]]
+name = "time"
+label = "t"
+operation = "coordinate"
+groups = ["coordinates"]
+
+[[runtime]]
+name = "dt"
+label = "\\Delta t"
+operation = "coordinate"
+groups = ["coordinates"]
+
+# Runtime: Conservation
+
+[[runtime]]
+name = "mass"
+label = "M_0"
+operation = "volume_integral"
+groups = ["conservation"]
+dependencies = ["rho"]
+
+[[runtime]]
+kind = "vector"
+family = "conserved_momentum"
+names = ["mom1", "mom2", "mom3"]
+labels = ["P_1", "P_2", "P_3"]
+operation = "volume_integral"
+groups = ["conservation"]
+dependencies = ["momentum"]
+
+[[runtime]]
+kind = "vector"
+family = "coordinate_angular_momentum"
+names = ["angular_mom1", "angular_mom2", "angular_mom3"]
+labels = ["J_1", "J_2", "J_3"]
+operation = "volume_integral"
+groups = ["conservation"]
+dependencies = ["momentum"]
+
+[[runtime]]
+name = "energy"
+label = "E"
+operation = "volume_integral"
+groups = ["conservation"]
+dependencies = ["energy"]
+
+# Runtime: Gravity
+
+[[runtime]]
+name = "gravity_potential_energy"
+label = "E_{\\rm grav}"
+operation = "volume_integral"
+groups = ["gravity"]
+requirements = ["gravity"]
+
+[[runtime]]
+name = "gravity_total_energy"
+label = "E_{\\rm total}"
+operation = "derived"
+groups = ["gravity"]
+requirements = ["gravity"]
+
+[[runtime]]
+name = "gravity_total_energy_rel_drift"
+label = "\\Delta E_{\\rm total}/E_{\\rm total,0}"
+operation = "derived"
+groups = ["gravity"]
+requirements = ["gravity"]
+
+# Runtime: Passive
+
+[[runtime]]
+name = "passive_mass"
+label = "M_{\\rm passive}"
+operation = "volume_integral"
+groups = ["passive"]
+requirements = ["passive"]
+
+[[runtime]]
+name = "passive_mass_rel_drift"
+label = "\\Delta M_{\\rm passive}/M_{\\rm passive,0}"
+operation = "derived"
+groups = ["passive"]
+requirements = ["passive"]
+
+# Runtime: Ledger
+
+[[runtime]]
+name = "wall_work"
+label = "W_{\\rm wall}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "wall_power"
+label = "\\dot W_{\\rm wall}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "energy_minus_wall_work"
+label = "\\Delta E-W_{\\rm wall}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "wall_work_rel_error"
+label = "\\epsilon_{W}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "external_budget_valid"
+label = "b_{\\rm ext}"
+operation = "counter"
+groups = ["ledger"]
+storage = "integer"
+default = "1"
+
+[[runtime]]
+name = "boundary_mass_change"
+label = "\\Delta M_{\\partial\\Omega}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "boundary_energy_change"
+label = "\\Delta E_{\\partial\\Omega}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "source_mass_change"
+label = "\\Delta M_{S}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "source_energy_change"
+label = "\\Delta E_{S}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "external_mass_change"
+label = "\\Delta M_{\\rm ext}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "external_energy_change"
+label = "\\Delta E_{\\rm ext}"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "external_mass_residual"
+label = "R_M"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "external_energy_residual"
+label = "R_E"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "external_mass_rel_error"
+label = "\\epsilon_M"
+operation = "derived"
+groups = ["ledger"]
+
+[[runtime]]
+name = "external_energy_rel_error"
+label = "\\epsilon_E"
+operation = "derived"
+groups = ["ledger"]
+
+# Runtime: Conservation
+
+[[runtime]]
+name = "mass_rel_drift"
+label = "\\Delta M/M_0"
+operation = "derived"
+groups = ["conservation"]
+
+[[runtime]]
+name = "energy_rel_drift"
+label = "\\Delta E/E_0"
+operation = "derived"
+groups = ["conservation"]
+
+# Runtime: State Bounds
+
+[[runtime]]
+name = "min_rho"
+label = "\\min\\rho"
+operation = "minimum"
+groups = ["state_bounds"]
+dependencies = ["rho"]
+
+[[runtime]]
+name = "max_rho"
+label = "\\max\\rho"
+operation = "maximum"
+groups = ["state_bounds"]
+dependencies = ["rho"]
+
+[[runtime]]
+name = "max_rho_rel_change"
+label = "\\Delta\\rho_{\\max}/\\rho_{\\max,0}"
+operation = "derived"
+groups = ["state_bounds"]
+
+[[runtime]]
+name = "min_pressure"
+label = "\\min P"
+operation = "minimum"
+groups = ["state_bounds"]
+dependencies = ["pressure"]
+
+[[runtime]]
+name = "min_lapse"
+label = "\\min\\alpha"
+operation = "minimum"
+groups = ["state_bounds"]
+requirements = ["spacetime"]
+
+# Runtime: Mhd
+
+[[runtime]]
+name = "newtonian_magnetic_energy"
+label = "E_B^{\\rm NR}"
+operation = "volume_integral"
+groups = ["mhd"]
+requirements = ["newtonian_mhd"]
+
+# Runtime: Rmhd
+
+[[runtime]]
+name = "rmhd_electromagnetic_energy"
+label = "E_{\\rm EM}"
+operation = "volume_integral"
+groups = ["rmhd"]
+requirements = ["rmhd"]
+
+[[runtime]]
+name = "rmhd_max_b_squared"
+label = "\\max b^2"
+operation = "maximum"
+groups = ["rmhd"]
+requirements = ["rmhd"]
+
+[[runtime]]
+name = "rmhd_max_enthalpy_magnetization"
+label = "\\max[b^2/(\\rho h)]"
+operation = "maximum"
+groups = ["rmhd"]
+requirements = ["rmhd"]
+
+[[runtime]]
+name = "rmhd_min_plasma_beta"
+label = "\\min(2P/b^2)"
+operation = "minimum"
+groups = ["rmhd"]
+requirements = ["rmhd"]
+
+# Runtime: Relativistic
+
+[[runtime]]
+name = "max_lorentz_factor"
+label = "\\max W"
+operation = "maximum"
+groups = ["relativistic"]
+requirements = ["relativistic"]
+
+[[runtime]]
+name = "relativistic_atmosphere_volume_fraction"
+label = "V_{\\rm atm}/V"
+operation = "derived"
+groups = ["relativistic"]
+requirements = ["relativistic"]
+
+# Runtime: Mhd
+
+[[runtime]]
+name = "divb_l1"
+label = "\\|\\nabla_i B^i\\|_1"
+operation = "l1_norm"
+groups = ["mhd"]
+requirements = ["mhd"]
+
+[[runtime]]
+name = "divb_l2"
+label = "\\|\\nabla_i B^i\\|_2"
+operation = "l2_norm"
+groups = ["mhd"]
+requirements = ["mhd"]
+
+[[runtime]]
+name = "divb_linf"
+label = "\\|\\nabla_i B^i\\|_\\infty"
+operation = "linf_norm"
+groups = ["mhd"]
+requirements = ["mhd"]
+
+# Runtime: Diffusion
+
+[[runtime]]
+name = "diffusion_residual"
+label = "R_{\\rm diff}"
+operation = "derived"
+groups = ["diffusion"]
+requirements = ["diffusion"]
+
+[[runtime]]
+name = "diffusion_iterations"
+label = "N_{\\rm diff}"
+operation = "counter"
+groups = ["diffusion"]
+storage = "integer"
+requirements = ["diffusion"]
+
+# Runtime: Amr
+
+[[runtime]]
+name = "amr_total_cells"
+label = "N_{\\rm cells}"
+operation = "counter"
+groups = ["amr"]
+storage = "long"
+
+[[runtime]]
+name = "amr_active_finest_level"
+label = "L_{\\rm active}"
+operation = "counter"
+groups = ["amr"]
+storage = "integer"
+
+[[runtime]]
+name = "amr_finest_headroom"
+label = "L_{\\max}-L_{\\rm active}"
+operation = "counter"
+groups = ["amr"]
+storage = "integer"
+
+[[runtime]]
+name = "amr_touches_max_level"
+label = "b_{L_{\\max}}"
+operation = "counter"
+groups = ["amr"]
+storage = "integer"
+
+[[runtime]]
+name = "amr_total_budget_fraction"
+label = "f_{\\rm AMR}"
+operation = "derived"
+groups = ["amr"]
+default = "-1.0"
+
+[[runtime]]
+name = "amr_peak_level_budget_fraction"
+label = "f_{\\rm AMR,peak}"
+operation = "derived"
+groups = ["amr"]
+default = "-1.0"
+
+# Runtime: Performance
+
+[[runtime]]
+name = "mcells_per_s"
+label = "10^6\\,\\mathrm{cells}/\\mathrm{s}"
+operation = "performance"
+groups = ["performance"]
+
+[[runtime]]
+name = "layout_mcells_per_s"
+label = "10^6\\,\\mathrm{layout\\ cells}/\\mathrm{s}"
+operation = "performance"
+groups = ["performance"]
+
+[[runtime]]
+name = "sim_time_per_s"
+label = "\\Delta t_{\\rm sim}/\\Delta t_{\\rm wall}"
+operation = "performance"
+groups = ["performance"]
+
+# Runtime: Cfl
+
+[[runtime]]
+name = "cfl_limiter_frequency"
+label = "\\lambda_{\\rm CFL}"
+operation = "maximum"
+groups = ["cfl"]
+
+[[runtime]]
+name = "cfl_limiter_level"
+label = "L_{\\rm CFL}"
+operation = "derived"
+groups = ["cfl"]
+storage = "integer"
+default = "-1"
+
+[[runtime]]
+name = "cfl_limiter_i"
+label = "i_{\\rm CFL}"
+operation = "derived"
+groups = ["cfl"]
+storage = "integer"
+
+[[runtime]]
+name = "cfl_limiter_j"
+label = "j_{\\rm CFL}"
+operation = "derived"
+groups = ["cfl"]
+storage = "integer"
+
+[[runtime]]
+name = "cfl_limiter_k"
+label = "k_{\\rm CFL}"
+operation = "derived"
+groups = ["cfl"]
+storage = "integer"
+
+[[runtime]]
+name = "cfl_limiter_q1"
+label = "q^1_{\\rm CFL}"
+operation = "derived"
+groups = ["cfl"]
+
+[[runtime]]
+name = "cfl_limiter_q2"
+label = "q^2_{\\rm CFL}"
+operation = "derived"
+groups = ["cfl"]
+
+[[runtime]]
+name = "cfl_limiter_q3"
+label = "q^3_{\\rm CFL}"
+operation = "derived"
+groups = ["cfl"]
+
+# Runtime: Constraints
+
+[[runtime]]
+name = "z4c_hamiltonian_linf"
+label = "\\|\\mathcal H\\|_\\infty"
+operation = "linf_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_hamiltonian_l2"
+label = "\\|\\mathcal H\\|_2"
+operation = "l2_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_hamiltonian_interior_linf"
+label = "\\|\\mathcal H\\|_{\\infty,\\mathrm{interior}}"
+operation = "linf_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_hamiltonian_interior_l2"
+label = "\\|\\mathcal H\\|_{2,\\mathrm{interior}}"
+operation = "l2_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_hamiltonian_cf_linf"
+label = "\\|\\mathcal H\\|_{\\infty,\\mathrm{CF}}"
+operation = "linf_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_hamiltonian_cf_l2"
+label = "\\|\\mathcal H\\|_{2,\\mathrm{CF}}"
+operation = "l2_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_hamiltonian_bh_exterior_linf"
+label = "\\|\\mathcal H\\|_{\\infty,r_{\\rm KS}>r_+}"
+operation = "linf_norm"
+groups = ["constraints", "black_hole"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime", "black_hole"]
+
+[[runtime]]
+name = "z4c_hamiltonian_bh_exterior_l2"
+label = "\\|\\mathcal H\\|_{2,r_{\\rm KS}>r_+}"
+operation = "l2_norm"
+groups = ["constraints", "black_hole"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime", "black_hole"]
+
+[[runtime]]
+name = "z4c_momentum_bh_exterior_linf"
+label = "\\|\\mathcal M_i\\|_{\\infty,r_{\\rm KS}>r_+}"
+operation = "linf_norm"
+groups = ["constraints", "black_hole"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime", "black_hole"]
+
+[[runtime]]
+name = "z4c_momentum_linf"
+label = "\\|\\mathcal M_i\\|_\\infty"
+operation = "linf_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_z_linf"
+label = "\\|Z_i\\|_\\infty"
+operation = "linf_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_theta_linf"
+label = "\\|\\Theta\\|_\\infty"
+operation = "linf_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_log_conformal_determinant_linf"
+label = "\\|\\ln\\det\\tilde\\gamma\\|_\\infty"
+operation = "linf_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "z4c_trace_a_tilde_linf"
+label = "\\|\\mathrm{tr}\\tilde A\\|_\\infty"
+operation = "linf_norm"
+groups = ["constraints"]
+dependencies = ["z4c_constraints"]
+requirements = ["spacetime"]
+
+# Runtime: Black Hole
+
+[[runtime]]
+name = "black_hole_horizon_radius"
+label = "r_+"
+operation = "coordinate"
+groups = ["black_hole"]
+requirements = ["black_hole"]
+
+# Runtime: Horizon
+
+[[runtime]]
+name = "black_hole_horizon_area"
+label = "A_{\\rm H}"
+operation = "surface_integral"
+groups = ["horizon"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "black_hole_horizon_irreducible_mass"
+label = "M_{\\rm irr}"
+operation = "derived"
+groups = ["horizon"]
+dependencies = ["black_hole_horizon_area"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "black_hole_horizon_equatorial_circumference"
+label = "C_{\\rm e}"
+operation = "surface_integral"
+groups = ["horizon"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "black_hole_horizon_polar_circumference"
+label = "C_{\\rm p}"
+operation = "surface_integral"
+groups = ["horizon"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "black_hole_horizon_kerr_mass"
+label = "M_C"
+operation = "derived"
+groups = ["horizon"]
+dependencies = ["black_hole_horizon_area", "black_hole_horizon_equatorial_circumference"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "black_hole_horizon_kerr_spin"
+label = "|\\chi_{\\rm H}^{\\rm Kerr}|"
+operation = "derived"
+groups = ["horizon"]
+dependencies = ["black_hole_horizon_area", "black_hole_horizon_equatorial_circumference"]
+requirements = ["spacetime"]
+default = "-1.0"
+
+[[runtime]]
+kind = "vector"
+family = "black_hole_horizon_coordinate_angular_momentum"
+names = ["black_hole_horizon_coordinate_angular_momentum1", "black_hole_horizon_coordinate_angular_momentum2", "black_hole_horizon_coordinate_angular_momentum3"]
+labels = ["J_{\\rm H,1}^{\\rm coord}", "J_{\\rm H,2}^{\\rm coord}", "J_{\\rm H,3}^{\\rm coord}"]
+operation = "surface_integral"
+groups = ["horizon"]
+dependencies = ["black_hole_horizon_area"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "black_hole_horizon_coordinate_angular_momentum_magnitude"
+label = "|J_{\\rm H}^{\\rm coord}|"
+operation = "derived"
+groups = ["horizon"]
+dependencies = ["black_hole_horizon_coordinate_angular_momentum"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "black_hole_horizon_coordinate_christodoulou_mass"
+label = "M_{\\rm H}^{\\rm coord}"
+operation = "derived"
+groups = ["horizon"]
+dependencies = ["black_hole_horizon_area", "black_hole_horizon_coordinate_angular_momentum"]
+requirements = ["spacetime"]
+
+[[runtime]]
+kind = "vector"
+family = "black_hole_horizon_coordinate_christodoulou_spin"
+names = ["black_hole_horizon_coordinate_christodoulou_spin1", "black_hole_horizon_coordinate_christodoulou_spin2", "black_hole_horizon_coordinate_christodoulou_spin3"]
+labels = ["\\chi_{\\rm H,1}^{\\rm coord}", "\\chi_{\\rm H,2}^{\\rm coord}", "\\chi_{\\rm H,3}^{\\rm coord}"]
+operation = "derived"
+groups = ["horizon"]
+dependencies = ["black_hole_horizon_coordinate_christodoulou_mass", "black_hole_horizon_coordinate_angular_momentum"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "black_hole_horizon_coordinate_christodoulou_spin_magnitude"
+label = "|\\chi_{\\rm H}^{\\rm coord}|"
+operation = "derived"
+groups = ["horizon"]
+dependencies = ["black_hole_horizon_coordinate_christodoulou_spin"]
+requirements = ["spacetime"]
+
+# Runtime: Global Gr
+
+[[runtime]]
+name = "adm_mass_surface"
+label = "M_{\\rm ADM}^{S}"
+operation = "surface_integral"
+groups = ["global_gr"]
+dependencies = ["z4c_physical_geometry"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "adm_mass_volume"
+label = "M_{\\rm ADM}^{V}"
+operation = "volume_integral"
+groups = ["global_gr"]
+dependencies = ["z4c_physical_geometry"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "proper_mass_volume"
+label = "M_{\\rm proper}^{V}"
+operation = "volume_integral"
+groups = ["global_gr"]
+dependencies = ["z4c_physical_geometry"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "komar_mass_surface"
+label = "M_{\\rm K}^{S}"
+operation = "surface_integral"
+groups = ["global_gr"]
+dependencies = ["z4c_physical_geometry"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "komar_mass_volume"
+label = "M_{\\rm K}^{V}"
+operation = "volume_integral"
+groups = ["global_gr"]
+dependencies = ["z4c_physical_geometry"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "binding_energy_volume"
+label = "E_{\\rm bind}^{V}"
+operation = "derived"
+groups = ["global_gr"]
+dependencies = ["mass", "adm_mass_volume"]
+requirements = ["spacetime"]
+
+[[runtime]]
+kind = "vector"
+family = "adm_momentum_surface"
+names = ["adm_momentum1_surface", "adm_momentum2_surface", "adm_momentum3_surface"]
+labels = ["P_{\\rm ADM,1}^{S}", "P_{\\rm ADM,2}^{S}", "P_{\\rm ADM,3}^{S}"]
+operation = "surface_integral"
+groups = ["global_gr"]
+dependencies = ["z4c_physical_geometry"]
+requirements = ["spacetime"]
+
+[[runtime]]
+kind = "vector"
+family = "adm_momentum_volume"
+names = ["adm_momentum1_volume", "adm_momentum2_volume", "adm_momentum3_volume"]
+labels = ["P_{\\rm ADM,1}^{V}", "P_{\\rm ADM,2}^{V}", "P_{\\rm ADM,3}^{V}"]
+operation = "volume_integral"
+groups = ["global_gr"]
+dependencies = ["z4c_physical_geometry"]
+requirements = ["spacetime"]
+
+[[runtime]]
+kind = "vector"
+family = "adm_angular_momentum_surface"
+names = ["adm_angular_momentum1_surface", "adm_angular_momentum2_surface", "adm_angular_momentum3_surface"]
+labels = ["J_{\\rm ADM,1}^{S}", "J_{\\rm ADM,2}^{S}", "J_{\\rm ADM,3}^{S}"]
+operation = "surface_integral"
+groups = ["global_gr"]
+dependencies = ["z4c_physical_geometry"]
+requirements = ["spacetime"]
+
+[[runtime]]
+kind = "vector"
+family = "adm_angular_momentum_volume"
+names = ["adm_angular_momentum1_volume", "adm_angular_momentum2_volume", "adm_angular_momentum3_volume"]
+labels = ["J_{\\rm ADM,1}^{V}", "J_{\\rm ADM,2}^{V}", "J_{\\rm ADM,3}^{V}"]
+operation = "volume_integral"
+groups = ["global_gr"]
+dependencies = ["z4c_physical_geometry"]
+requirements = ["spacetime"]
+
+# Runtime: Radiation
+
+[[runtime]]
+name = "extraction_radius"
+label = "r_{\\rm ext}"
+operation = "coordinate"
+groups = ["radiation"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "matter_energy_flux"
+label = "\\dot E_{\\rm matter}^{S}"
+operation = "surface_integral"
+groups = ["radiation"]
+requirements = ["spacetime"]
+
+[[runtime]]
+name = "psi4_l2"
+label = "\\|\\Psi_4\\|_{2,S}"
+operation = "l2_norm"
+groups = ["radiation"]
+requirements = ["spacetime"]
+
+# Runtime: Modes
+
+[[runtime]]
+name = "matter_mode_mass"
+label = "C_0"
+operation = "volume_integral"
+groups = ["modes"]
+
+[[runtime]]
+kind = "vector"
+family = "matter_barycenter"
+names = ["matter_barycenter1", "matter_barycenter2", "matter_barycenter3"]
+labels = ["x_{\\rm CM}", "y_{\\rm CM}", "z_{\\rm CM}"]
+operation = "derived"
+groups = ["modes"]
+
+# Dynamically indexed multipole rows.
+
+[[complex_mode]]
+name = "psi4_spin_weighted_surface"
+label = "\\Psi_4^{\\ell m}"
+basis = "spin_weighted_spherical_harmonic"
+domain = "surface"
+integrand = "psi4"
+requirements = ["spacetime"]
+
+[[complex_mode]]
+name = "scalar_azimuthal_surface"
+label = "C_m^S[f]"
+basis = "azimuthal_fourier_exp_minus_imphi"
+domain = "surface"
+integrand = "configured_scalar_field"
+
+[[complex_mode]]
+name = "matter_azimuthal_volume"
+label = "C_m"
+basis = "azimuthal_fourier_exp_plus_imphi"
+domain = "volume"
+integrand = "atmosphere_excluded_dens"
+
+# Derived fields evaluated after evolution.
+
+[[postprocess]]
+name = "pressure"
+label = "P"
+operation = "field"
+dependencies = ["rho", "momentum", "energy"]
+
+[[postprocess]]
+name = "velocity_mag"
+label = "|v|"
+operation = "field"
+dependencies = ["rho", "momentum"]
+
+[[postprocess]]
+name = "schlieren"
+label = "|\\nabla\\rho|"
+operation = "field"
+dependencies = ["rho"]
+
+[[postprocess]]
+name = "j_mag"
+label = "|J|"
+operation = "field"
+dependencies = ["j1", "j2", "j3"]
+
+[[postprocess]]
+name = "e_mag"
+label = "|E|"
+operation = "field"
+dependencies = ["e1", "e2", "e3"]
+
+[[postprocess]]
+name = "vorticity_mag"
+label = "|\\omega|"
+operation = "field"
+dependencies = ["vorticity1", "vorticity2", "vorticity3"]
