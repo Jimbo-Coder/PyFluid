@@ -59,6 +59,7 @@ class ParametricSurface;
 class RelativisticInitialDataProvider;
 struct MultipoleDiagnostics;
 struct MatterModeDiagnostics;
+struct ConformalBlackHoleSummary;
 struct EquilibriumTorusUpdateSummary;
 struct PhysicalInitialDataMetadata;
 struct RadiationDiagnostics;
@@ -353,10 +354,12 @@ protected:
    void write_physical_initial_data_artifact();
    void write_physical_initial_data_artifact(
       std::string const& path,
-      amrex::Real angular_velocity,
+      amrex::Real stellar_angular_velocity,
+      amrex::Real disk_angular_velocity,
       bool refresh_primitive,
       RotatingStarUpdateSummary const* rotating_star = nullptr,
-      EquilibriumTorusUpdateSummary const* equilibrium_torus = nullptr
+      EquilibriumTorusUpdateSummary const* equilibrium_torus = nullptr,
+      ConformalBlackHoleSummary const* black_hole = nullptr
    );
    void initialize_physical_initial_data_sequence_output();
    bool physical_initial_data_sequence_output_enabled() const;
@@ -364,7 +367,9 @@ protected:
    void write_physical_initial_data_sequence_model(
       int continuation_step,
       int continuation_steps,
-      amrex::Real angular_velocity,
+      amrex::Real stellar_angular_velocity,
+      amrex::Real disk_angular_velocity,
+      ConformalBlackHoleSummary const& black_hole,
       RotatingStarUpdateSummary const& rotating_star,
       EquilibriumTorusUpdateSummary const& equilibrium_torus
    );
@@ -407,13 +412,11 @@ protected:
    bool uses_analytic_fixed_spacetime_kernels() const noexcept;
    void fill_spacetime_matter_range(int lev_begin, int lev_end);
    void add_spacetime_ko_dissipation(amrex::MultiFab const& state, int lev);
-   template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
    void compute_spacetime_rhs_level(
       LevelData& input,
       int lev,
       amrex::Real stage_time
    );
-   template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
    void compute_spacetime_rhs_gauge_range(
       LevelData& input,
       int lev_begin,
@@ -421,13 +424,6 @@ protected:
       amrex::Real stage_time
    );
    void compute_spacetime_rhs_range(
-      LevelData& input,
-      int lev_begin,
-      int lev_end,
-      amrex::Real stage_time
-   );
-   template <Z4cLapseGauge LapseGauge>
-   void dispatch_spacetime_rhs_shift_gauge(
       LevelData& input,
       int lev_begin,
       int lev_end,
@@ -710,6 +706,15 @@ protected:
    std::array<std::vector<amrex::Real>, AMREX_SPACEDIM> latest_auto_direction_strength_;
    std::unique_ptr<RotatingStarUpdateSummary>
       initial_data_rotating_star_summary_;
+   amrex::Real initial_data_black_hole_throat_area_ = -1.0;
+   amrex::Real initial_data_black_hole_irreducible_mass_ = -1.0;
+   amrex::Real initial_data_black_hole_throat_equatorial_circumference_ = -1.0;
+   amrex::Real initial_data_black_hole_throat_polar_circumference_ = -1.0;
+   amrex::Real initial_data_black_hole_throat_kerr_mass_ = -1.0;
+   amrex::Real initial_data_black_hole_throat_kerr_spin_ = -1.0;
+   amrex::Real initial_data_black_hole_throat_angular_momentum_ = 0.0;
+   amrex::Real initial_data_black_hole_throat_christodoulou_mass_ = -1.0;
+   amrex::Real initial_data_black_hole_throat_christodoulou_spin_ = 0.0;
    std::unique_ptr<EquilibriumTorusUpdateSummary>
       initial_data_equilibrium_torus_summary_;
    std::unique_ptr<PhysicalInitialDataMetadata> loaded_physical_id_metadata_;

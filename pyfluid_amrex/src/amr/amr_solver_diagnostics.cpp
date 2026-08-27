@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/apparent_horizon_tracker.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/diagnostics_types.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
@@ -568,8 +569,10 @@ void apply_scalar_diagnostic_requirements(
          return spacetime_stores_state(config);
       }
       if (requirement == "black_hole") {
-         return fixed_spacetime_parameters(config).metric
-            == FixedSpacetimeMetric::KerrSchild;
+         const FixedSpacetimeMetric metric =
+            fixed_spacetime_parameters(config).metric;
+         return metric == FixedSpacetimeMetric::KerrSchild
+            || metric == FixedSpacetimeMetric::StaticTrumpet;
       }
       if (requirement == "gravity") {
          return gravity_enabled(config);
@@ -1275,9 +1278,45 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
       d.z4c_trace_a_tilde_linf = constraints.trace_a_tilde_linf;
    }
    if (selection.contains_any(ScalarDiagnosticGroup::BlackHole)) {
-      d.black_hole_horizon_radius = kerr_schild_outer_horizon_radius(
+      d.black_hole_horizon_radius = black_hole_coordinate_horizon_radius(
          fixed_spacetime_parameters(cfg_)
       );
+   }
+   if (selection.contains_any(ScalarDiagnosticGroup::Horizon)) {
+      const ApparentHorizonResult* horizon =
+         apparent_horizon_tracker_->result();
+      if (horizon == nullptr) {
+         amrex::Abort(
+            "horizon scalar diagnostics require horizon.enabled=1 and a "
+            "successful apparent-horizon search"
+         );
+      }
+      d.black_hole_horizon_area = horizon->area;
+      d.black_hole_horizon_irreducible_mass = horizon->irreducible_mass;
+      d.black_hole_horizon_equatorial_circumference =
+         horizon->equatorial_circumference;
+      d.black_hole_horizon_polar_circumference =
+         horizon->polar_circumference;
+      d.black_hole_horizon_kerr_mass = horizon->kerr_horizon_mass;
+      d.black_hole_horizon_kerr_spin = horizon->kerr_dimensionless_spin;
+      d.black_hole_horizon_coordinate_angular_momentum1 =
+         horizon->angular_momentum[0];
+      d.black_hole_horizon_coordinate_angular_momentum2 =
+         horizon->angular_momentum[1];
+      d.black_hole_horizon_coordinate_angular_momentum3 =
+         horizon->angular_momentum[2];
+      d.black_hole_horizon_coordinate_angular_momentum_magnitude =
+         horizon->angular_momentum_magnitude;
+      d.black_hole_horizon_coordinate_christodoulou_mass =
+         horizon->christodoulou_mass;
+      d.black_hole_horizon_coordinate_christodoulou_spin1 =
+         horizon->christodoulou_dimensionless_spin[0];
+      d.black_hole_horizon_coordinate_christodoulou_spin2 =
+         horizon->christodoulou_dimensionless_spin[1];
+      d.black_hole_horizon_coordinate_christodoulou_spin3 =
+         horizon->christodoulou_dimensionless_spin[2];
+      d.black_hole_horizon_coordinate_christodoulou_spin_magnitude =
+         horizon->christodoulou_dimensionless_spin_magnitude;
    }
    const bool global_gr_requested =
       selection.contains_any(ScalarDiagnosticGroup::GlobalGr);

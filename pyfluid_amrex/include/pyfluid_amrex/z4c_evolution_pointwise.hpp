@@ -8,8 +8,6 @@ namespace pyfluid_amrex {
 template <
    int Order,
    int Dim,
-   Z4cLapseGauge LapseGauge,
-   Z4cShiftGauge ShiftGauge,
    typename Array,
    typename SpacingArray
 >
@@ -22,7 +20,9 @@ Z4cRhs evaluate_z4c_rhs_at(
    SpacingArray const& inv_spacing,
    Z4cMatter const& matter,
    amrex::Real time,
-   Z4cEvolutionParameters const& parameters
+   Z4cEvolutionParameters const& parameters,
+   Z4cLapseGauge lapse_gauge,
+   Z4cShiftGauge shift_gauge
 ) noexcept
 {
    const Z4cState state = load_z4c_state(field, i, j, k);
@@ -30,16 +30,14 @@ Z4cRhs evaluate_z4c_rhs_at(
       gather_z4c_spatial_derivatives<Order, Dim>(
          field, i, j, k, inv_spacing, state
       );
-   return generated::evaluate_z4c_rhs<LapseGauge, ShiftGauge>(
-      state, derivatives, matter, time, parameters
+   return generated::evaluate_z4c_rhs(
+      state, derivatives, matter, time, parameters, lapse_gauge, shift_gauge
    );
 }
 
 template <
    int Order,
    int Dim,
-   Z4cLapseGauge LapseGauge,
-   Z4cShiftGauge ShiftGauge,
    typename Array,
    typename SpacingArray
 >
@@ -51,10 +49,12 @@ Z4cRhs evaluate_vacuum_z4c_rhs_at(
    int k,
    SpacingArray const& inv_spacing,
    amrex::Real time,
-   Z4cEvolutionParameters const& parameters
+   Z4cEvolutionParameters const& parameters,
+   Z4cLapseGauge lapse_gauge,
+   Z4cShiftGauge shift_gauge
 ) noexcept
 {
-   return evaluate_z4c_rhs_at<Order, Dim, LapseGauge, ShiftGauge>(
+   return evaluate_z4c_rhs_at<Order, Dim>(
       field,
       i,
       j,
@@ -62,7 +62,9 @@ Z4cRhs evaluate_vacuum_z4c_rhs_at(
       inv_spacing,
       vacuum_z4c_matter(),
       time,
-      parameters
+      parameters,
+      lapse_gauge,
+      shift_gauge
    );
 }
 

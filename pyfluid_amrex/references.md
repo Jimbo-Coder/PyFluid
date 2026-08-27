@@ -21,7 +21,7 @@ It intentionally links rather than restating the detailed contracts.
 | --- | --- | --- |
 | Architecture, ownership, AMR, coordinates | `src/`, `include/pyfluid_amrex/` | `docs/design.md` |
 | Relativistic coarse-fine admissibility and partial sibling regions | `src/amr/state_interpolation.{hpp,cpp}`, `tests/state_interpolation_check.cpp`, `tools/validate_rmhd_balsara3_amr_prolongation.py` | `docs/design.md`, Cycles 283--284 |
-| CPU tiled ghost ownership and device scratch lifetime | `include/pyfluid_amrex/{boundary,relativistic_boundary,ct}.hpp`, `src/relativity/relativistic_atmosphere.hpp`, `src/amr/state_interpolation.cpp`, `tests/boundary_tiling_check.cpp`, `tools/validate_boundary_tiling.py` | `docs/infrastructure_conventions.md`, Cycle 284 |
+| CPU tiled numerical/ghost ownership and device scratch lifetime | `src/numerics/{rhs,patch_wall_flux}.hpp`, `include/pyfluid_amrex/flux_update.hpp`, `include/pyfluid_amrex/{boundary,relativistic_boundary,ct}.hpp`, `src/relativity/relativistic_atmosphere.hpp`, `src/amr/state_interpolation.cpp`, `tests/boundary_tiling_check.cpp`, `tools/{check_architecture,validate_boundary_tiling}.py` | `docs/infrastructure_conventions.md`, Cycles 284 and 343 |
 | Coding and review policy | current source | `docs/code_conventions.md` |
 | Runtime configuration | `include/pyfluid_amrex/config.hpp`, `src/framework/config*.{cpp,hpp}` | `README.md`, configuration rules |
 | Grid fields, components, centerings | `schema/fields.toml`, loaded by `codegen/pyfluid_codegen/field_catalog.py` | `docs/catalog_schema.md`, generated field sections in `docs/equations.md` |
@@ -33,8 +33,6 @@ It intentionally links rather than restating the detailed contracts.
 | RMHD HLLC/HLLD fan and closure | `include/pyfluid_amrex/{rmhd_riemann,rmhd_advanced_flux}.hpp`, `src/relativity/rmhd_advanced_flux.cpp`, `tests/rmhd_riemann_check.cpp`, and `tools/validate_rmhd_advanced_riemann.py` | Mignone--Bodo and Mignone--Ugliano--Bodo references below; Cycles 262 and 284 |
 | CT stage and AMR ownership | `src/amr/solver_sections/{ct_evolution,time_integrators,evolve_core,subcycling}.inc.hpp`, `src/numerics/ct_edge_flux_register.cpp`, and `tools/validate_ct_divb.py` | `docs/design.md`, current CT boundary in `knowledge.md` |
 | Exact SRMHD Riemann profiles | tracked `../exact_balsara/solution_b{1..5}.dat`, read by `tools/validate_rmhd.py` | Giacomazzo--Rezzolla exact solver and paper below |
-| SRMHD symptom onset, hybrid attribution, and prototype applicability | `tools/diagnose_rmhd_balsara_onset.py`, `tools/audit_srmhd_physical_wave_balsara.py`, their TSVs under `runs/current/rmhd_validation/`, and `plots/current/scans/rmhd_balsara*_profiles.png` plus `rmhd_balsara_hybrid_timelines.png` and `rmhd_balsara_hybrid_profile_evolution.png` | `docs/unified_shock_capturing_research.md`, Cycles 252--258 |
-| Coherent space-time operator attribution | `tools/research_spacetime_operator_ablation.py`, `tools/research_mhd_spacetime_operator_ablation.py`, and `tools/research_srmhd_spacetime_operator_ablation.py` | `docs/unified_shock_capturing_research.md`, Cycles 273--274 |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
 | Magnetized stellar initial data | `include/pyfluid_amrex/initial_data/magnetic.hpp`, `src/initial_data/initial_data_magnetic.cpp`, `src/initial_data/rotating_star_initial_data.cpp`, `schema/methods.toml`, `tools/validate_magnetized_initial_data.py`, `tools/validate_magnetohydrostatic_initial_data.py` | Pili--Bucciantini--Del Zanna below; `docs/infrastructure_conventions.md`; Cycles 308--309 |
 | Native cold CompOSE tables | `eos/compose/`, `src/eos/tabulated.cpp`, `include/pyfluid_amrex/eos/tabulated*.hpp`, `tests/tabulated_eos_check.cpp`, `tools/validate_compose_eos.py` | CompOSE manual and dataset records below; Cycle 297 |
@@ -334,12 +332,40 @@ the generated TSV/log, and the current source revision/dirty state.
 
 ## Black-Hole Initial-Data And Interior References
 
+- K. A. Dennison and T. W. Baumgarte, *A Simple Family of Analytical
+  Trumpet Slices of the Schwarzschild Spacetime*,
+  [arXiv:1403.5484](https://arxiv.org/abs/1403.5484): the (R_0=M)
+  horizon-penetrating, spatially isotropic static trumpet used by PyFluid's
+  analytic spinless puncture provider. The local independently maintained
+  NRPy+ formula reference is
+  `/Users/mrizzo/phys_research/ETK_Hypatia/Cactus/repos/nrpytutorial/BSSN/StaticTrumpet.py`.
+- I. Ruchlin, Z. B. Etienne, and T. W. Baumgarte, *SENR/NRPy+: Numerical
+  Relativity in Singular Curvilinear Coordinate Systems*,
+  [arXiv:1712.07658](https://arxiv.org/abs/1712.07658): equation 67 supplies
+  the lapse condition analytically compatible with the static trumpet. The
+  local gauge notebook at
+  `/Users/mrizzo/phys_research/ETK_Hypatia/Cactus/repos/nrpytutorial/Tutorial-BSSN_time_evolution-BSSN_gauge_RHSs.ipynb`
+  is the formula-routing reference; PyFluid independently generates its Z4c
+  gauge kernel and validates the complete stationary RHS away from the
+  puncture.
 - G. B. Cook and H. P. Pfeiffer, *Excision boundary conditions for black-hole
   initial data*, [arXiv:gr-qc/0407078](https://arxiv.org/abs/gr-qc/0407078):
   quasi-equilibrium apparent-horizon inner boundary conditions for CTS/XCTS.
-  This is the source for PyFluid's constraint-solved Schwarzschild shell and
-  planned spinning extension; its initial-data horizon boundary is not
+  This is the source for PyFluid's constraint-solved spinning horizon shell;
+  its initial-data horizon boundary is not
   interchangeable with an evolution excision boundary.
+- M. Caudill et al., *Circular orbits and spin in black-hole initial data*,
+  [arXiv:gr-qc/0605053](https://arxiv.org/abs/gr-qc/0605053): calibrates the
+  freely specified tangential horizon-shift rotation against quasi-local spin
+  in quasi-equilibrium excision data. This is the interpretation route for
+  PyFluid's physical-spin target rather than identifying the boundary
+  coefficient with `J_H/M_H^2`.
+- G. B. Cook and B. F. Whiting, *Approximate Killing Vectors on S^2*,
+  [arXiv:0706.0199](https://arxiv.org/abs/0706.0199): variational elliptic
+  construction of approximate axial Killing vectors on distorted horizon
+  two-surfaces. This is the required next reference for replacing PyFluid's
+  explicitly coordinate-rotation evolved spin with a coordinate-independent
+  generic-horizon diagnostic.
 - Z. B. Etienne et al., *Relativistic simulations of black-hole-neutron-star
   mergers: Effects of black-hole spin*,
   [Phys. Rev. D 76, 101503](https://doi.org/10.1103/PhysRevD.76.101503):
@@ -364,9 +390,12 @@ the generated TSV/log, and the current source revision/dirty state.
   Library for Numerical Relativity*,
   [arXiv:2505.15912](https://arxiv.org/abs/2505.15912): infrastructure-
   independent damped-wave relaxation, coarse-to-fine angular continuation,
-  over-relaxation, and threaded surface finding. This is the method reference
-  for PyFluid's independent first full finder; no implementation code is
-  imported.
+  over-relaxation, and threaded surface finding. The BSD-2-Clause
+  implementation under
+  `/Users/mrizzo/phys_research/ETK_Hypatia/Cactus/repos/einsteinanalysis/ET_BHaHAHA`
+  is the local source reference for parallel-loop ownership, pseudo-time-stage
+  metric reuse, and tracking optimizations. PyFluid independently implements
+  the method against its ADM geometry contract; no source is imported.
 - P. Diener, *A new general purpose event horizon finder for 3D numerical
   spacetimes*,
   [arXiv:gr-qc/0305039](https://arxiv.org/abs/gr-qc/0305039): evolves a complete
@@ -413,6 +442,32 @@ the generated TSV/log, and the current source revision/dirty state.
   general-relativistic Keplerian rotation laws for self-gravitating disks.
   Route future nonconstant disk laws through the separate generated disk-law
   catalog rather than aliasing stellar rotation laws.
+- M. Shibata, K. Kiuchi, S. Fujibayashi, and Y. Sekiguchi,
+  *Alternative possibility of GW190521: Gravitational waves from high-mass
+  black hole-disk systems*,
+  [arXiv:2101.05440](https://arxiv.org/abs/2101.05440): full numerical-
+  relativity evolutions of `15--50 M_sun` disks around an initially
+  `50 M_sun` spinning hole, spanning `M_disk/M_BH,0 = 0.3--1`. The reported
+  black-hole mass and spin are inferred from apparent-horizon area and proper
+  circumferential radii under the vacuum-Kerr functional relation; for the
+  paper's spinning holes `M_BH,0` is therefore not the irreducible mass alone.
+  PyFluid persists both the assumption-free `M0/Mirr` and the explicitly
+  Kerr-inferred horizon-mass ratio for newly solved BH/BH-disk artifacts and
+  live found horizons; older area-only artifacts retain the `M0/Mirr` label.
+  The reported
+  one-arm instability grows in less than one orbital period once the ratio is
+  about `0.6` or larger. This is the primary high-mass evolution benchmark for
+  a future coupled PyFluid BH-disk sequence; a fixed-background torus at the
+  same nominal mass ratio is not physically comparable.
+- M. Shibata, *Rotating black hole surrounded by self-gravitating torus in the
+  puncture framework*,
+  [Phys. Rev. D 76, 064035 (2007)](https://doi.org/10.1103/PhysRevD.76.064035):
+  primary definitions of horizon `J_H`, area, meridional/equatorial proper
+  circumferences, `M_C=C_e/(4 pi)`, irreducible mass, and the Christodoulou
+  `M_BH`. It compares three candidate mass measures for a nonisolated
+  axisymmetric hole and is the definition source for PyFluid's native
+  BH/BH-disk throat diagnostics. A generic dynamical 3D use still requires a
+  valid approximate axial Killing vector.
 - A. Tsokaros, K. Uryu, and S. L. Shapiro, *Complete initial value spacetimes
   containing black holes in general relativity: Application to black
   hole-disk systems*,

@@ -341,10 +341,11 @@ single continuation from a saved rotating model is saved by default, and
 requests output for a one-model rotating solve. Automatic output is organized
 as
 `<output_dir>/initial_data_sequences/eos-.../rotation-.../rho_c-.../`.
-Each losslessly compressed model name includes `omega`, base resolution, and
-level count; `sequence.meta` describes the EoS, stellar/disk laws, axes, and
-centers, while `sequence.tsv` schema v5 indexes the models together with
-density, velocity, converged
+Each losslessly compressed model name includes stellar `omega`, disk
+`diskomega` when present, base resolution, and level count; `sequence.meta`
+describes the EoS, stellar/disk laws, axes, and centers, while `sequence.tsv`
+schema v6 indexes both angular velocities together with density, velocity,
+converged
 injection energy, surface radii and gradients, mass-shedding indicator, ADM and
 baryonic masses, angular momentum, and dimensionless spin. Those diagnostics
 are also copied into each artifact's text metadata. The artifacts can either
@@ -393,7 +394,11 @@ initial_data.sequence_output_dir
 `rotation_continuation_steps` defaults to one. Values above one solve a
 sequence of fully converged intermediate angular velocities, retaining the
 matter and XCTS fields between steps; this is useful when a large direct jump
-from the spherical TOV seed leaves the nonlinear basin of attraction.
+leaves the nonlinear basin of attraction. The same control divides a loaded
+rotating star or coupled rotating disk from its saved angular velocity to the
+new target. Explicit `rotation_continuation_targets` remain a stellar-sequence
+interface; the disk follows the corresponding number of shared live-field
+steps.
 
 Within each rotating XCTS point, matter and metric use a damped
 self-consistent-field iteration. Accurate XCTS solves settle changes larger
@@ -404,6 +409,13 @@ inside every matter update without weakening the final matter tolerance,
 elliptic residual checks, or physical guards. It follows the field/matter
 iteration structure documented by XNS and LORENE; the spatial elliptic solves
 themselves already use AMReX MLMG.
+
+The reported `relative_matter_update` and
+`initial_data.matter_relative_tolerance` refer to the undamped fixed-point
+defect: the hydro-sector update is divided by `matter_relaxation`, while
+geometry and magnetic-sector updates retain their own scale. Changing the
+relaxation therefore changes convergence speed and basin of attraction, not
+the accepted defect tolerance.
 
 Measure spatial MPI scaling with an identical small-spin solve using:
 

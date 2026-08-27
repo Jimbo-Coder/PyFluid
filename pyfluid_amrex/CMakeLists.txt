@@ -31,6 +31,11 @@ if(PYFLUID_AMREX_ENABLE_IMPLICIT_GRAVITY)
 endif()
 
 option(PYFLUID_AMREX_NATIVE "Tune PyFluid AMReX binaries for the build host CPU." ON)
+option(
+   PYFLUID_AMREX_HORIZON_OPENMP
+   "Use isolated OpenMP parallelism in the host apparent-horizon finder."
+   ON
+)
 option(PYFLUID_AMREX_ENABLE_HYDRO "Compile hydro evolution branches." ON)
 option(PYFLUID_AMREX_ENABLE_MHD "Compile MHD evolution branches." ON)
 option(PYFLUID_AMREX_ENABLE_CT "Compile constrained-transport MHD branches." ON)
@@ -212,7 +217,7 @@ set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
 )
 
 set(PYFLUID_AMREX_RELATIVITY_SOURCES
-   src/relativity/apparent_horizon_finder.cpp
+   src/relativity/apparent_horizon_surface.cpp
    src/relativity/apparent_horizon_tracker.cpp
    src/relativity/primitive_cache_factory.cpp
    src/relativity/relativistic_flux_limiter.cpp
@@ -303,7 +308,7 @@ set(PYFLUID_AMREX_SURFACE_CHECK_SOURCES
 )
 
 set(PYFLUID_AMREX_APPARENT_HORIZON_CHECK_SOURCES
-   src/relativity/apparent_horizon_finder.cpp
+   src/relativity/apparent_horizon_surface.cpp
    tests/apparent_horizon_finder_check.cpp
 )
 
@@ -638,9 +643,8 @@ set(PYFLUID_AMREX_BUILD_FEATURES
    PYFLUID_AMREX_ENABLE_SUBCYCLING_ON
 )
 
-function(pyfluid_amrex_configure_target target dim)
+function(pyfluid_amrex_configure_compile_target target)
    target_include_directories(${target} PRIVATE include src)
-   target_link_libraries(${target} PRIVATE AMReX::amrex_${dim}d)
    target_compile_features(${target} PRIVATE cxx_std_20)
    foreach(feature ${PYFLUID_AMREX_BUILD_FEATURES})
       if(${feature})
@@ -654,11 +658,98 @@ function(pyfluid_amrex_configure_target target dim)
    endif()
 endfunction()
 
+function(pyfluid_amrex_configure_target target dim)
+   pyfluid_amrex_configure_compile_target(${target})
+   target_link_libraries(${target} PRIVATE AMReX::amrex_${dim}d)
+endfunction()
+
+# Keep the host-only horizon solver out of the fluid template products and out
+# of the 1D/2D executables.  OpenMP is deliberately private to this library:
+# AMReX remains MPI-only, so enabling the finder does not change the evolution
+# launch model or activate unrelated AMREX_USE_OMP loops.
+add_library(
+   pyfluid_amrex_apparent_horizon
+   STATIC
+   src/relativity/apparent_horizon_finder.cpp
+)
+pyfluid_amrex_configure_compile_target(pyfluid_amrex_apparent_horizon)
+target_link_libraries(
+   pyfluid_amrex_apparent_horizon
+   PUBLIC
+   AMReX::amrex_3d
+)
+if(PYFLUID_AMREX_HORIZON_OPENMP)
+   find_package(OpenMP QUIET COMPONENTS CXX)
+   if(OpenMP_CXX_FOUND)
+      target_link_libraries(
+         pyfluid_amrex_apparent_horizon
+         PRIVATE
+         OpenMP::OpenMP_CXX
+      )
+   elseif(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+      # Homebrew's keg-only libomp is not discovered by FindOpenMP when the
+      # MPI wrapper selects AppleClang.  Keep this fallback target-local.
+      find_path(
+         PYFLUID_AMREX_LIBOMP_INCLUDE_DIR
+         omp.h
+         HINTS
+         /opt/homebrew/opt/libomp/include
+         /usr/local/opt/libomp/include
+      )
+      find_library(
+         PYFLUID_AMREX_LIBOMP_LIBRARY
+         NAMES omp
+         HINTS
+         /opt/homebrew/opt/libomp/lib
+         /usr/local/opt/libomp/lib
+      )
+      if(PYFLUID_AMREX_LIBOMP_INCLUDE_DIR AND PYFLUID_AMREX_LIBOMP_LIBRARY)
+         target_compile_options(
+            pyfluid_amrex_apparent_horizon
+            PRIVATE
+            -Xpreprocessor
+            -fopenmp
+         )
+         target_include_directories(
+            pyfluid_amrex_apparent_horizon
+            PRIVATE
+            ${PYFLUID_AMREX_LIBOMP_INCLUDE_DIR}
+         )
+         target_link_libraries(
+            pyfluid_amrex_apparent_horizon
+            PRIVATE
+            ${PYFLUID_AMREX_LIBOMP_LIBRARY}
+         )
+         set(OpenMP_CXX_FOUND TRUE)
+      endif()
+   endif()
+   if(OpenMP_CXX_FOUND)
+      target_compile_definitions(
+         pyfluid_amrex_apparent_horizon
+         PRIVATE
+         PYFLUID_AMREX_HORIZON_OPENMP=1
+      )
+   else()
+      message(WARNING
+         "OpenMP was not found; the apparent-horizon finder will be serial."
+      )
+   endif()
+endif()
+
 foreach(dim 1 2 3)
    if(TARGET AMReX::amrex_${dim}d)
       add_executable(pyfluid_amrex_${dim}d ${PYFLUID_AMREX_SOURCES})
       list(APPEND PYFLUID_AMREX_PRODUCTION_TARGETS pyfluid_amrex_${dim}d)
-      pyfluid_amrex_configure_target(pyfluid_amrex_${dim}d ${dim})
+      if(dim EQUAL 3)
+         pyfluid_amrex_configure_compile_target(pyfluid_amrex_${dim}d)
+         target_link_libraries(
+            pyfluid_amrex_${dim}d
+            PRIVATE
+            pyfluid_amrex_apparent_horizon
+         )
+      else()
+         pyfluid_amrex_configure_target(pyfluid_amrex_${dim}d ${dim})
+      endif()
       if(TARGET pyfluid_amrex_generate_kernels)
          add_dependencies(pyfluid_amrex_${dim}d pyfluid_amrex_generate_kernels)
       endif()
@@ -763,9 +854,13 @@ foreach(dim 1 2 3)
             EXCLUDE_FROM_ALL
             ${PYFLUID_AMREX_APPARENT_HORIZON_CHECK_SOURCES}
          )
-         pyfluid_amrex_configure_target(
+         pyfluid_amrex_configure_compile_target(
             pyfluid_amrex_apparent_horizon_check
-            ${dim}
+         )
+         target_link_libraries(
+            pyfluid_amrex_apparent_horizon_check
+            PRIVATE
+            pyfluid_amrex_apparent_horizon
          )
 
          add_executable(

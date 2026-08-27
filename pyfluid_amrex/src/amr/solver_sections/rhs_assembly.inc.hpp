@@ -88,23 +88,24 @@
       if (!physical_system_is_relativistic(physics_system_)) {
          return;
       }
-      amrex::Long c2p_fallback_count =
-         step_relativistic_c2p_fallback_count_.dataValue();
-      amrex::Long atmosphere_reset_count =
-         step_relativistic_atmosphere_reset_count_.dataValue();
-      amrex::Long rmhd_pwl_correction_count =
-         step_rmhd_pwl_correction_count_.dataValue();
-      amrex::Long rmhd_pwc_correction_count =
-         step_rmhd_pwc_correction_count_.dataValue();
-      amrex::Long rmhd_riemann_hll_fallback_count =
-         step_rmhd_riemann_hll_fallback_count_.dataValue();
-      amrex::ParallelDescriptor::ReduceLongSum(c2p_fallback_count);
-      amrex::ParallelDescriptor::ReduceLongSum(atmosphere_reset_count);
-      amrex::ParallelDescriptor::ReduceLongSum(rmhd_pwl_correction_count);
-      amrex::ParallelDescriptor::ReduceLongSum(rmhd_pwc_correction_count);
-      amrex::ParallelDescriptor::ReduceLongSum(
-         rmhd_riemann_hll_fallback_count
+      amrex::Long recovery_counts[] = {
+         step_relativistic_c2p_fallback_count_.dataValue(),
+         step_relativistic_atmosphere_reset_count_.dataValue(),
+         step_rmhd_pwl_correction_count_.dataValue(),
+         step_rmhd_pwc_correction_count_.dataValue(),
+         step_rmhd_riemann_hll_fallback_count_.dataValue(),
+      };
+      constexpr int num_recovery_counts = static_cast<int>(
+         sizeof(recovery_counts) / sizeof(recovery_counts[0])
       );
+      amrex::ParallelDescriptor::ReduceLongSum(
+         recovery_counts, num_recovery_counts
+      );
+      const amrex::Long c2p_fallback_count = recovery_counts[0];
+      const amrex::Long atmosphere_reset_count = recovery_counts[1];
+      const amrex::Long rmhd_pwl_correction_count = recovery_counts[2];
+      const amrex::Long rmhd_pwc_correction_count = recovery_counts[3];
+      const amrex::Long rmhd_riemann_hll_fallback_count = recovery_counts[4];
       relativistic_c2p_fallback_count_ += c2p_fallback_count;
       relativistic_atmosphere_reset_count_ += atmosphere_reset_count;
       rmhd_pwl_correction_count_ += rmhd_pwl_correction_count;

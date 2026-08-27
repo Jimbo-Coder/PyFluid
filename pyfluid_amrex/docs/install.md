@@ -6,7 +6,7 @@ source commit declared there. Homebrew continues to own CMake, MPI, compilers,
 ccache, and parallel HDF5; `uv.lock` owns Python packages. Athena and CompOSE
 trees are reference/data assets rather than linked native dependencies.
 
-The AMReX layout is versioned and the build consumes one stable link:
+The default MPI-only AMReX layout is versioned and consumes one stable link:
 
     source:  .deps/amrex-26.08
     build:   .deps/build-amrex-26.08-mpi-lsolvers-hdf5
@@ -16,6 +16,15 @@ The AMReX layout is versioned and the build consumes one stable link:
 The installed library enables MPI, AMR, linear solvers, parallel HDF5, and
 1D/2D/3D targets. This is the install selected by the CMake preset and local
 machine profile.
+
+An optional MPI+OpenMP companion uses the same source pin and feature contract:
+
+    build:   .deps/build-amrex-26.08-mpi-omp-lsolvers-hdf5
+    install: .deps/amrex-26.08-mpi-omp-lsolvers-hdf5
+    active:  .deps/amrex-mpi-omp-lsolvers-hdf5 -> amrex-26.08-mpi-omp-lsolvers-hdf5
+
+It is a build/machine choice only. It does not add a physics method, generated
+kernel product, or runtime numerical branch.
 
 ## Check Or Update
 
@@ -32,6 +41,14 @@ For a network-free local consistency check:
 To update to the latest official stable release:
 
     uv run python pyfluid_amrex/tools/manage_amrex.py --update
+
+To install or repair the OpenMP companion for the current pin:
+
+    uv run python pyfluid_amrex/tools/manage_amrex.py --variant openmp --install
+
+Check it without network access with `--variant openmp --offline`. After an
+AMReX pin update, run the OpenMP install command once to bring the companion to
+the new pin. Only the default `mpi` variant may change the shared source pin.
 
 An explicit release may be selected with `--version YY.MM`. Update mode clones
 the exact release tag, verifies its resolved source commit, builds and installs
@@ -53,6 +70,12 @@ before updating AMReX:
     brew unlink hdf5  # only when the serial formula is currently linked
     brew install hdf5-mpi
 
+The optional OpenMP companion additionally requires Homebrew `libomp`. The
+manager supplies AppleClang's explicit include, compile, and library discovery
+settings; do not add those flags to physics targets by hand:
+
+    brew install libomp
+
 Compressed parallel-HDF5 plotfiles remain the default; native AMReX plotfiles
 are an explicit runtime option.
 
@@ -63,6 +86,11 @@ Use the repository presets:
     cd pyfluid_amrex
     cmake --preset full-release
     cmake --build --preset full-2d
+
+For the explicit OpenMP companion:
+
+    cmake --preset full-release-openmp
+    cmake --build --preset full-openmp-2d
 
 The same full configuration builds every numerical method. Do not use
 feature-stripped binaries for ordinary development or validation. The preset

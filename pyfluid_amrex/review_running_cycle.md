@@ -6799,3 +6799,920 @@ I will always continue from the last cycle marked as `in_progress`.
   RMHD); only the already-known four-rank Mac/OpenMPI hydro control warns at
   `0.72` of baseline. Generated catalogs, documentation, and the final bounded
   q-power ID/evolution evidence are reconciled before commit. [DONE]
+
+## Cycle 322 — Evolved Kerr horizon convergence audit (DONE)
+
+- Separate apparent-horizon finder discretization and stopping error from
+  evolution-grid error and coordinate-gauge motion in the Cycle 321
+  `a/M=0.5` Kerr run. Re-find saved evolved geometries at tighter surface
+  resolution/tolerance, then use a bounded evolution-resolution comparison to
+  determine whether the proper-area drift converges. Change production
+  defaults or algorithms only when the comparison identifies a concrete,
+  general improvement. Zero-step checkpoint re-finds at steps 32 and 64 use
+  16/24/32 polar points and progressively tighter Linf/L2 tolerances. The
+  step-64 area remains 4.67--4.85 percent above exact while its mean coordinate
+  radius changes by only 0.09 percent across those finder settings. The
+  original 4.87 percent area error is therefore not a loose surface-search
+  artifact. [DONE]
+- Run matched CFL-0.9 evolutions to `t=2.5 M` with finest spacings
+  `0.5/0.25/0.125 M`, then re-find each final checkpoint at the same 24-polar-
+  point, `1e-4` residual setting. Final area error falls
+  `7.646/2.059/0.618` percent, with observed orders `1.893/1.736`; change from
+  each grid's measured initial area falls `5.549/2.081/0.291` percent. Every
+  branch has zero recovery/reset, realizes active L1/L2/L3 without touching
+  max level, and the fine branch peaks at 438,272 cells before ending at
+  208,896. Evolution wall times are `18.64/68.28/445.70 s`. The coordinate-
+  radius growth is gauge motion and the early proper-area growth is a strongly
+  convergent filled-interior evolution error. A fine-grid result through the
+  existing `t=10.69 M` endpoint remains unmeasured. [DONE]
+- Add `audit_kerr_horizon_convergence.py` as an ignored-artifact, input-
+  materializing audit for arbitrary saved checkpoints and aligned subextremal
+  spin, with an opt-in bounded evolution-resolution branch. It asserts the
+  requested AMR levels/spacings, budget/headroom, zero recovery, common final
+  finder settings, and writes compact TSVs. Python compilation, diff hygiene,
+  the complete three-rank two-checkpoint re-find, and the full three-rank
+  evolution sweep pass. Document the measured boundary in `black_holes.md`
+  and reconcile the compact knowledge snapshot. No evolution kernel, gauge,
+  or production default changes: resolution already produces the expected
+  improvement, while changing the method from this single early-time study
+  would be unjustified. [DONE]
+
+## Cycle 323 — Parallel apparent-horizon optimization (DONE)
+
+- Source-check BHaHAHA's parallel surface-finding ownership, measure the
+  current host-only relaxation cost independently of AMR geometry sampling,
+  and implement the same clean parallel decomposition where it preserves the
+  existing finder mathematics. Keep the finder outside evolution template
+  products, retain deterministic residual/diagnostic reductions, and validate
+  identical surfaces plus measured speedup at routine and strict angular
+  resolutions before changing any default. The current BSD-2-Clause
+  ET_BHaHAHA source confirms that its dominant angular kernels are OpenMP
+  loops, its interpolated metric is frozen across one pseudo-time RK step, and
+  its MoL scratch is allocated once rather than per iteration. PyFluid now
+  follows those ownership choices independently: metric interpolation is
+  reused across SSPRK3 stages, the already-computed first-stage expansion is
+  reused, RK scratch retains capacity, RHS-only expansion skips proper-area
+  work, and independent angular points use static OpenMP work sharing. The
+  serial norm, minimum-spacing, and diagnostic passes preserve deterministic
+  reduction order. [DONE]
+- Compile the finder once as a standalone 3D static library with target-private
+  OpenMP rather than as part of all three production source products. The
+  lightweight surface interpolation owner remains shared by 1D/2D/3D tracker
+  and restart code. AMReX stays MPI-only and unrelated `AMREX_USE_OMP` loops
+  remain inactive. Standard CMake OpenMP discovery is used where available;
+  AppleClang has a target-local Homebrew-libomp fallback, and the explicit
+  `PYFLUID_AMREX_HORIZON_OPENMP=OFF` serial build and analytic test pass. The
+  local machine profile now supplies two threads only to this isolated finder;
+  the normal evolution path is unchanged. [DONE]
+- On the analytic `a/M=0.6` Kerr grid, the two-thread routine 16-polar-point
+  solve is `0.258 s`. Three strict 32-point solves are
+  `6.82069/6.81074/6.82082 s`, versus one-worker
+  `12.0157/11.8455/11.8878 s` (median speedup `1.74x`). All branches retain
+  2,515/18,150 iterations, `1.99435e-5/1.9978e-5` Linf residuals,
+  `8.29299e-3/5.73583e-4` maximum radius errors, and
+  `4.70132e-3/9.40581e-4` area errors. A proposed array-of-structures angular
+  basis cache regressed the strict threaded solve to `11.1 s`; it was removed.
+  This records that BHaHAHA's structure-of-arrays generated reference-metric
+  cache cannot be copied as a layout-agnostic optimization. [DONE]
+- The final 1D/2D/3D production build and explicit serial/OpenMP analytic
+  targets pass. The final two-thread three-rank black-hole gate passes all 18
+  XCTS, horizon, symmetry, restart, and negative cases; the quick suite passes
+  3/3. The normal performance batch remains unchanged in the intended
+  non-horizon controls: `98.78`, `5.76`, `0.18`, and `2.01 Mcells/s` pass at
+  three ranks. The already-known four-rank Mac/OpenMPI hydro control warns at
+  `0.68` of its historical baseline. After the one-time source-list rebuild,
+  the final no-op production build is `0.26 s`. [DONE]
+
+## Cycle 324 — Gauge-adapted single-hole comparison (DONE)
+
+- Source-checked Dennison--Baumgarte's analytic `R_0=M` spinless Schwarzschild
+  trumpet and the compatible Ruchlin--Etienne--Baumgarte lapse condition
+  against arXiv and the local NRPy formulas. Added the regular conformal Z4c
+  state directly, including the spherical-average puncture value of the
+  direction-dependent trace-free conformal curvature. The singular physical
+  ADM representation remains cell-centered/off-puncture only. Domain checks
+  require positive mass, zero spin, the explicit puncture interior, and a
+  mesh-face-aligned puncture in every Cartesian direction. [DONE]
+- Added `cartesian_static_trumpet` to the generated initial-data method catalog
+  and routed it through the common analytic provider, physical-ID metadata,
+  save/reload/rematerialization, reflection validation, exterior-constraint
+  masks, apparent-horizon diagnostics, and fixed-background equilibrium-torus
+  owner. Nonzero spin and a filled interior are rejected; the method is not
+  mislabeled as Kerr fill or excision. The fixed static-trumpet constant-l
+  torus resolves support `7.141428--19.480290 M`, has baryonic mass
+  `0.13195045`, and completes with zero recovery. [DONE]
+- Generated `z4c_trumpet_lapse_rhs = beta^i d_i alpha - alpha(1-alpha) Khat`.
+  Gauge selection is now a runtime-uniform enum passed into one generated
+  geometric RHS instead of lapse and shift being axes of the large Z4c
+  template product. The one-time broad integration rebuild was `330.43 s`,
+  while the final unchanged production build was `0.43 s` through the compile
+  tracker. The existing hydro/RMHD performance controls do not
+  execute Z4c and therefore do not establish a Z4c dispatch cost; their
+  observed warnings remain host/background drift, not evidence for or against
+  the gauge refactor. [DONE]
+- The complete generated fourth-order vacuum RHS converges on the exact
+  stationary trumpet away from the puncture (`h=0.04 -> 0.02`, fine error less
+  than one eighth coarse and below `2e-6`). All 1D/2D/3D generated-kernel
+  executables pass. The `32^3 -> 24^3` saved-ID materialization passes, and the
+  one-step full/octant exterior-constraint extrema agree to roundoff. [DONE]
+- At `dx=0.5M`, CFL `0.9`, RK4, KO `0.32`, and 16 steps, ordinary advective
+  1+log/Gamma-driver finishes with `0.129975%` horizon-area error,
+  `10.1002%` mean coordinate-radius motion, and exterior Hamiltonian
+  L2/Linf and momentum Linf `0.0139218/0.0449402/0.0299003`. The analytically
+  matched trumpet/frozen pair reduces coordinate-radius motion to `1.37216%`
+  but has `5.09585%` area error and larger exterior norms
+  `0.0312683/0.268951/0.478008`. Both use zero recovery fallback/reset. This
+  short coarse comparison retains 1+log/Gamma-driver as the supplied evolution
+  input and the matched pair as a stationary-coordinate diagnostic; it is not
+  a resolution-converged universal ranking. [DONE]
+- The full black-hole gate passes 25/25 cases: spherical XCTS controls and
+  rejection cases, Kerr apparent horizon, static-trumpet moving/matched/full/
+  changed-grid/octant and rejection cases, Kerr filled/fixed/moving controls,
+  reflection convergence, unimplemented-excision rejection, and incompatible
+  artifact rejection. The standard equilibrium-torus gate, quick Z4c gate
+  (13 checks), quick AMReX gate, Python compile, production 1D/2D/3D build, and
+  `git diff --check` pass. [DONE]
+- While rerunning the Z4c gate, the RMHD neutral-field test exposed that the
+  direct initialization path honored `initial_data.magnetic = zero` but the
+  later primitive-cache rematerialization restored configured uniform fields.
+  Both uniform and mapped primitive-cache initialization now apply the same
+  shared field-selection contract. The focused case passes with magnetic
+  Linf exactly zero and constraint Linf `1.39e-16`. [DONE]
+
+## Cycle 325 — Gauge and zero-field ownership clarification (DONE)
+
+- Source-checked the live Z4c selectors and validation boundary. Lapse choices
+  are frozen, harmonic, advective 1+log, analytic trumpet, and slow-start;
+  shift choices are frozen and Gamma-driver. These are one runtime-uniform
+  implementation surface, but not an assertion that every Cartesian product
+  is a production black-hole gauge. Ordinary 1+log/Gamma-driver remains the
+  measured BH default; trumpet/frozen is the stationary-coordinate control,
+  slow-start is a tested but inferior BH alternative, harmonic owns wave/
+  weak-field validation, and frozen owns stationary/diagnostic controls.
+  [DONE]
+- Confirmed that the generated fluid-field catalog appends cell magnetic
+  components only for MHD/RMHD. A permanently zero-field relativistic problem
+  should select `pyfluid.physics = rhd` (GRHD when spacetime is evolved), which
+  allocates only `D,S_i,tau`; `initial_data.magnetic = none` states the intent.
+  `pyfluid.physics = rmhd` plus `initial_data.magnetic = zero` deliberately
+  retains `B1/B2/B3` (and CT faces when CT is enabled) because it is still a
+  GRMHD state contract. Physics/state layout is fixed for a run and is not
+  dynamically switched merely because the instantaneous magnetic field
+  vanishes. No source change was needed. [DONE]
+
+## Cycle 326 — Evolution reflection symmetry for aligned rotating disks (DONE)
+
+- Audit the production reflection/parity path before adding another symmetry
+  mechanism. The catalog-driven cell, face-CT, and nodal-Z4c parity owners and
+  symmetry-weighted scalar reductions already cover Cartesian evolution. The
+  missing contract is physical compatibility: the rotating star/disk guard is
+  currently reached only during constraint-solved ID materialization, so an
+  analytic nonspinning-black-hole torus can request a physically invalid
+  vertical reflection. Move this validation to the common solver startup and
+  keep one equatorial reflection as the supported rotating-disk reduction.
+  Independent vertical mirrors reverse the disk's axial angular momentum and
+  are not an all-axis/octant symmetry. The common startup guard now separately
+  validates black-hole origin/spin, stellar center/axis, and disk center/axis;
+  the duplicate constraint-solved-materialization guard was removed. [DONE]
+- Add a matched full-domain/equatorial-half fixed-Kerr torus evolution at CFL
+  0.9, compare symmetry-restored runtime reductions through complete accepted
+  timesteps, and add a negative nonspinning-black-hole vertical-plane case so
+  the disk guard is exercised independently of the Kerr-spin guard. Preserve
+  full 3D for tilted disks, vertical/warp modes, and deliberately unrestricted
+  instability studies. The `32^3`/`32x32x16` pair uses 32,768/16,384 cells,
+  completes two CFL-0.9 SSPRK3 steps with zero recovery/reset, and agrees in
+  symmetry-restored mass, energy, and axial angular momentum within
+  `8.2e-10` relative. Maximum-density error is `4.45e-9`; the small CFL
+  extremum difference changes the second accepted time by `4.98e-7` relative.
+  The first deliberately roundoff-level comparison failed at step one with a
+  `1.53e-10` relative mass difference; inspection showed identical initial
+  reductions, zero recovery/reset, and only near-atmosphere extrema amplifying
+  local roundoff. The retained gate therefore separates `2e-9` global-charge,
+  `1e-5` extrema, and `3e-6` timestep tolerances instead of asserting false
+  bitwise identity or ignoring physical integrals.
+  Measured wall times are `0.444/0.378 s` (`1.18x`), so fixed costs dominate
+  this tiny control despite the exact twofold cell reduction. The vertical
+  static-trumpet torus rejection passes independently of BH spin. The standard
+  three-rank equilibrium-torus gate, all 25 black-hole cases, focused 3D
+  rebuild, Python syntax check, and diff hygiene pass. The affected 1D/2D
+  production objects rebuild in `6.05 s`; the final true no-op production
+  build is `0.56 s`. The quick AMReX gate passes all three steps. [DONE]
+
+## Cycle 327 — Black-hole disk mass and symmetry evidence boundary (DONE)
+
+- Audit current physical-ID reports and evolution scalar histories using the
+  dimensionless disk rest-mass ratio `M_0/M_BH`. The largest evolved local
+  value is the constant-ell fixed-Kerr test-fluid torus,
+  `M_0/M_BH=0.515121` for `M_BH=1`; its standard validation evolves two steps
+  to `t=2.593 M`. A closely matched direct `64^3` model has
+  `M_0/M_BH=0.514039` and completes three steps to `t=1.881 M` with zero
+  recovery. Because `disk_gravity=test_fluid`,
+  this large nominal mass is omitted from the constraints and cannot be called
+  a self-gravitating massive BH-disk model. The longest local BH-disk evolution
+  is the q-power fixed-background AMR control at
+  `M_0/M_BH=8.69266e-3`, 24 CFL-0.9 steps, and `t=51.753 M`. The static-
+  trumpet `0.131950`, j-constant `0.0373131`, and q=1 `0.0373131` ratios are
+  current ID controls rather than long evolved self-gravitating systems.
+  [DONE]
+- Confirm the external target from primary sources. Shibata et al.
+  (arXiv:2101.05440) evolve `15--50 M_sun` disks around a `50 M_sun` initial
+  hole, reaching `M_disk/M_BH,0=0.3--1`; above about `0.6` their one-arm mode
+  grows in less than one orbit. The 2019 Tsokaros--Uryu--Shapiro complete-ID
+  demonstration has a BH mass about one fifth of its disk mass, while the 2022
+  tilted evolutions use ratios `0.16--0.28`. PyFluid's coupled
+  `M_0=0.103830` disk is around a TOV/RNS central object and proves shared XCTS
+  disk-source infrastructure, not a self-gravitating BH-disk result. Add the
+  missing Shibata evolution source to the reference router. [DONE]
+- Reconcile the existing reflection implementation with this physics target.
+  Optional per-axis Cartesian reflection/symmetry boundaries exist for ID and
+  evolution, but only compatible combinations are admitted. A diskless
+  spinless hole may use an octant; a rotating BH disk may use only the plane
+  through the disk center normal to its axis. That equatorial half-domain keeps
+  arbitrary azimuthal m, including the important m=1 mode, while excluding
+  vertically odd warp/corrugation and unrestricted symmetry breaking. No code
+  or validation rerun is required for this source/results/documentation audit;
+  Python-independent diff hygiene passes. [DONE]
+
+## Cycle 328 — Explicit disk-gravity ownership and coupled BH-disk audit (DONE)
+
+- Make `none`, `test_fluid`, and `coupled` an explicit consistent contract for
+  every disk-capable initial-data owner. Confirm from source that spherical
+  RNS/TOV XCTS already rebuilds the combined central-object and disk energy,
+  momentum, and stress trace inside every matter/constraint fixed-point
+  iteration, while test-fluid disks are materialized only after the central
+  solve. Expose the same choice for the Cartesian stellar owner and retain
+  test-fluid-only ownership for analytic Kerr-Schild/static-trumpet metrics.
+  [DONE]
+- Extend the axisymmetric spherical black-hole XCTS shell to the same optional
+  disk contract. The first coupled solve converges in the exterior but exposes
+  a previously untested exact-throat `0/0` materialization in `K_rphi`: all
+  cell-centered constraint fields are finite while 64 nodal horizon values are
+  infinite. Source-check the horizon boundary, materialize the finite solved
+  conformal-extrinsic limit onto the exact throat, and make artifact finiteness,
+  matter iteration, and geometric backreaction mandatory regressions before
+  accepting the new owner. [DONE]
+- Found and fixed a serious loaded-fixed-spacetime ownership bug during the
+  mass scan. Disk-sourced XCTS was saved correctly, but fixed evolution rebuilt
+  its cell metric from the default Minkowski selector, lowering the apparent
+  Cartesian baryonic mass from about `0.247` to `0.176`. Non-analytic fixed
+  CTT/CTTK/XCTS data now transfer the authoritative stored nodal state to the
+  cell metric, while explicit analytic Kerr/trumpet/Rindler/isotropic-
+  Schwarzschild owners retain their analytic kernels. The nodal spacetime
+  allocation now supplies the two extra ghosts required by fourth-order
+  vertex-to-cell transfer even when `pyfluid.ng=1`. The standard torus gate
+  materializes the coupled BH disk and requires the runtime step-zero mass to
+  retain the source proper-volume mass. Its first forced run caught an
+  analytic-Kerr full/half regression;
+  the corrected ownership split restores the gate. [DONE]
+- Stress-tested the constant-`ell=4.25`, requested-`r_in=6` coupled BH-disk
+  family. Matched adaptive `320x80` sources give a clean endpoint at `K=12.5`:
+  `M0=0.3091829666`, throat area `54.24728768`, `Mirr=1.038852972`, and
+  `M0/Mirr=0.297619562`. Its `96^3` materialization carries mass
+  `0.3094693033` and completes eight CFL-0.9 SSPRK3/PWL/HLL fixed-XCTS steps to
+  `t=2.102256870` with zero C2P fallback/reset, mass drift `4.755e-4`, and
+  maximum-density change `-0.635%`. The next matched model, `K=10`, has
+  `M0=0.3137957457`, `Mirr=1.040425548`, and `M0/Mirr=0.301603268`; it
+  completes the same eight steps but needs eight atmosphere resets at step one
+  and is not accepted as clean. This brackets a tested short-handoff boundary,
+  not a physical maximum or long-time-stability limit. [DONE]
+- Recorded the nonlinear-cost and convergence boundary rather than hiding it
+  behind relaxation. Fresh/coarse `K=12.5/K=10` solves cost `393/610 s`; their
+  matched `320x80` polishes cost `134/248 s` and `9502/17591` matter
+  iterations. The reported iterate change scales with relaxation, so adjacent
+  models were compared only after matching source resolution and tightening
+  the damped update to `1e-8`. The coarse `K=12.5` source caused 24 resets,
+  while its matched re-solve caused none. Plain fixed-point damping, not the
+  elliptic residual or short hydro evolution, is now the practical heavy-disk
+  bottleneck. [DONE]
+- Final validation passes: the standard equilibrium-torus gate, all 25 focused
+  black-hole cases, the three-step quick AMReX suite, Python syntax checks,
+  the 1D/2D/3D production build, a subsequent no-op production build, and diff
+  hygiene. The integration rebuild was `85.67 s` with 68 cache misses caused by
+  the accumulated single-object/gauge branch changes; the final no-op build
+  was below one second. Two BH negative tests still expected older wording and
+  were narrowed to the unchanged physical rejection clauses; both rejection
+  paths had aborted correctly. [DONE]
+
+## Cycle 329 — Subconstant-angular-momentum BH-disk mass continuation (DONE)
+
+- Replace the marginal constant-specific-angular-momentum stress family
+  (`Omega ~ varpi^-2`) with a Rayleigh-stable q-power disk whose conventional
+  angular-velocity exponent is `q_Omega=1.85`. The generated catalog uses the
+  reciprocal convention `rotation_power_q=2/q_Omega`, so the requested model
+  is represented by `rotation_power_q=1.0810810810810811`; record both
+  quantities and do not compare them as if they were the same parameter.
+  Calibrate the remaining q-power parameters on the same spinless XCTS throat,
+  then continue disk mass with matched adaptive spherical resolution. The
+  accepted `A=6 M`, `Omega_c=0.1416/M`, `K=100` source was cold-solved on a
+  `352x80`, `r_max=192 M` shell and remeshed/polished on `368x80`. The polish
+  took 6459 matter iterations and 195.7 s and produced `M0=0.331071697`,
+  support `17.2401--34.2774 M`, throat area `52.8911976`,
+  `Mirr=1.025786012`, and `M0/Mirr=0.322749280`. Exterior
+  Hamiltonian/lapse/momentum residuals are
+  `4.50e-11/4.44e-11/1.90e-13`. Fixed-`Omega_c` continuation by lowering `K`
+  became branch-jumping and nonfinite at `K=7.5`; increasing `Omega_c` at fixed
+  EOS was the cleaner continuation coordinate. [DONE]
+- Materialize the heaviest converged candidate to an equatorial-half
+  `160x160x80`, `dx=0.5 M` Cartesian target and apply the same eight-step
+  CFL-0.9 acceptance rule:
+  finite state, zero C2P fallback, zero atmosphere reset, and bounded scalar
+  drift. A larger source mass alone is not a clean handoff or evolution result.
+  The materialized step-zero mass is `0.331109811`. Eight SSPRK3/PWL/HLL
+  fixed-XCTS steps reach `t=2.259329 M` with zero fallback/reset, corrected
+  external mass error `2.063e-5`, energy drift `1.982e-6`, and maximum-density
+  change `-0.04921%`. The clean invariant mass-ratio boundary therefore rises
+  from `0.297620` to `0.322749`; this remains a short-handoff result rather than
+  a long-time dynamical-stability claim. [DONE]
+- The enabled apparent-horizon finder exposed a separate reduced-domain bug:
+  its sampler requested a negative-z point outside the equatorial-half AMR
+  hierarchy and aborted before evolution. The accepted evolution ran with the
+  finder disabled, and the throat area above was integrated directly from the
+  solved source ADM geometry. Record rather than conflate this reflection-
+  sampling limitation with disk evolution. [DONE]
+
+## Cycle 330 — Reflection-aware apparent-horizon sampling (DONE)
+
+- Fix the apparent-horizon AMR adapter exposed by the equatorial-half coupled
+  BH-disk run. Map spherical-volume sample points through configured Cartesian
+  reflection planes before hierarchy interpolation and transform every sampled
+  `gamma_ij`, `gamma^ij`, `d_k gamma_ij`, and `K_ij` component with its proper
+  tensor parity. Keep the finder and its stored full-surface representation
+  unchanged; reflection belongs to the hierarchy adapter. Add a focused parity
+  regression and rerun the reflected BH-disk/horizon path plus the existing
+  full-domain horizon checks. The adapter now mirrors arbitrary spherical-
+  volume sample points into the owned Cartesian hierarchy and transforms
+  `gamma_ij`, `gamma^ij`, `d_k gamma_ij`, and `K_ij` with their tensor parity.
+  It uses parity-filled Z4c nodal ghosts for centered fourth-order metric
+  derivatives at symmetry planes rather than a lower-quality one-sided
+  boundary stencil. The first coordinate-only fix removed the outside-
+  hierarchy abort but left a 4.63-percent coarse area error; the centered-
+  derivative correction reduced it to the matched full-domain 1.946-percent
+  discretization error. Full/half expansion norms, area, irreducible mass,
+  and minimum/maximum/mean radii then agree to roundoff. [DONE]
+- Added an all-eight-reflection-mask component-parity/involution unit test and
+  a real equatorial-half Kerr finder regression that requires roundoff
+  agreement with the matched full-domain search. The focused unit finder
+  passes, the full three-rank black-hole gate passes all 26 XCTS, horizon,
+  mask, AMR, restart, reflection, gauge, and rejection cases, and Python syntax
+  and diff hygiene pass. A cold 3D integration build caused by reconfiguration
+  took `233.86 s` with 82 misses; the actual adapter-only incremental rebuild
+  took `2.54 s` with one miss. No solver template axis was added. [DONE]
+- On the actual `q_Omega=1.85`, `M0/Mirr=0.322749` equatorial-half artifact,
+  the fix removes the negative-z hierarchy-sampling abort and reaches the
+  nonlinear finder. The finder still leaves its radial volume on the finite
+  Cartesian XCTS interior fill. Fixed local refinement through level 3
+  (`dx=0.0625 M` at the `r=0.5 M` throat) does not cure it. Keep the native
+  source-throat area as the authoritative current diagnostic and record a
+  separate interior-fill/materialized-horizon compatibility limitation rather
+  than weakening finder tolerances or calling it a reflection failure. [DONE]
+- The standard three-rank equilibrium-torus coupling/persistence/handoff gate
+  passes, as do all three quick-suite steps. Final diff hygiene passes and the
+  final no-op 3D build takes `0.43 s`. [DONE]
+
+## Cycle 331 — Hardware portability and scaling evidence audit (DONE)
+
+- Audit the production AMReX path's MPI, thread, accelerator, and elliptic-ID
+  decomposition against current performance histories and source ownership.
+  Separate locally measured scaling from architecture support and unsupported
+  multi-node claims. Identify the highest-value remaining optimization without
+  redesigning or changing production code during this evidence pass. The
+  production architecture is distributed AMReX `BoxArray`/`MultiFab` work,
+  composite MLMG, MPI reductions, reflux/average-down/FillPatch, and parallel
+  HDF5, with point kernels generally expressed through `ParallelFor` and
+  `AMREX_GPU_DEVICE`. This is an HPC-appropriate ownership model, but the
+  current maintained build is Apple-CPU MPI only; AMReX OpenMP is disabled,
+  the apparent-horizon library alone has two-thread host OpenMP, and no
+  CUDA/HIP/SYCL or multi-node PyFluid result exists. Treat accelerator and
+  multi-node behavior as unvalidated portability potential, not demonstrated
+  parity with AthenaK, AsterX, or other production codes. [DONE]
+- Preserve the actual scaling boundary. Identical N=24 rotating-star work
+  scales from `171.37 s` on one rank to `95.61/67.69 s` on two/three ranks
+  (`89.6/84.4%` efficiency). Identical deep L5 AMR+CT WENO-Z hierarchies reach
+  `92.8--93.1%` three-rank and `81.5--83.1%` four-rank efficiency; uniform
+  512-square hydro spans roughly `87.9--90.4%` at three ranks and
+  `74.4--87.6%` at four. These are useful single-node controls only. [DONE]
+- The current heavy axisymmetric BH-disk endpoint is not at a hardware
+  throughput limit: its `368x80` source contains only 29,440 cells, while the
+  accepted polish performs 6,459 dependent matter fixed-point iterations.
+  Each update uses distributed AMReX field operations and MLMG, but the outer
+  iteration order and repeated norm reductions are sequential. More ranks will
+  quickly become latency/coarse-grid limited. First instrument time per matter
+  update and per XCTS field solve, then test shallow safeguarded Anderson
+  acceleration with monotone residual/physical acceptance and fallback to the
+  current damping. Retain sequence seeding; tune MLMG bottom/coarsening choices
+  only after the profile identifies them. [DONE]
+- For evolution, retain the present AMReX design and obtain evidence before
+  adding execution variants: run matched strong and weak scaling for one 3D
+  GRHD and one 3D GRMHD+CT+AMR workload across nodes, then compile and validate
+  one accelerator backend with identical scalar/conservation/hierarchy gates.
+  Profile a realistic run before changing kernels; prior deep-AMR evidence
+  places `56--68%` in reconstruction/Riemann/flux work and up to `20%` in
+  regridding, so kernel fusion/local reuse and regrid/load-balance policy are
+  plausible targets. Hybrid AMReX OpenMP, GPU transfer synchronization,
+  box-size/distribution tuning, and parallel-I/O scaling remain hypotheses
+  until those campaigns. The IO-rank horizon solve is lower priority at its
+  normal cadence. No production code or configuration changed in this audit.
+  [DONE]
+
+## Cycle 332 — Reduced adaptive-ID coordinate boundary (DONE)
+
+- Clarify the implemented production ownership rather than equating every
+  schema-valid lower-dimensional axis set with an elliptic ID solver. Aligned
+  rotating-star and black-hole/torus XCTS use a genuine axisymmetric spherical
+  `r theta` owner, with uniform theta and either uniform or adaptively mapped
+  radial faces; the corresponding `r theta phi` owner is full periodic
+  axisymmetric storage, including the one-cell-phi degeneracy. Full Cartesian
+  conformal constraints support uniform or block-AMR `x y z`, including the
+  nonaxisymmetric/tilted path. There is no native reduced Cartesian `x z` or
+  `y z` rotating-object constraint owner. An ordinary Cartesian 2D operator
+  would impose translation symmetry in the omitted direction, not axial
+  symmetry; adding the missing cylindrical curvature terms would make it an
+  `r z` axisymmetric formulation and should be named as such. For aligned RNS
+  and BH-disk production, mapped `r theta` is therefore both the physically
+  correct reduction and the more efficient layout. TOV retains its still
+  cheaper mapped one-dimensional `r` owner. [DONE]
+- Separate the two meanings of adaptive. The reduced spherical owner currently
+  adapts radial point placement and stretches the smooth exterior; it does not
+  refine theta locally. Cartesian `block_amr` is genuine AMReX hierarchy
+  adaptivity. Physical-ID persistence/materialization connects either native
+  source to a different full Cartesian evolution hierarchy, but does not turn
+  a lower-dimensional Cartesian slice into an axisymmetric elliptic solve.
+  [DONE]
+
+## Cycle 333 — Focused ID and evolution optimization pass (DONE)
+
+- Measure the current reduced XCTS matter/elliptic iteration and a
+  representative production evolution path before editing. Test only compact,
+  ownership-preserving optimizations such as batching global convergence
+  reductions, reusing invariant workspaces/setup, or removing a measured
+  redundant synchronization. Preserve bitwise or tolerance-qualified physical
+  convergence, scalar diagnostics, source/target metadata, and the existing
+  runtime method surface; retain no speculative specialization or unmeasured
+  branch. The identical `368x80` coupled BH-disk polish (29,440 cells, 6,459
+  matter iterations) took `195.759 s` at three ranks before changes. [DONE]
+- Replace repeated transcendental evaluation in the separable spherical
+  residual with cached angular coefficients, cache quadrature-weighted angular
+  eigenvectors for the dense forward/inverse transforms, and let CPU builds
+  operate directly on their resident `MultiFab` data while retaining explicit
+  host staging for accelerator builds. The final identical run took
+  `176.978 s`, a `9.59%` wall-time reduction. It retained 6,459 iterations,
+  `c2p_p2c` preflight errors `2.17e-14/1.96e-11`, and constraints
+  `H/L/M=4.56e-11/4.44e-11/1.72e-13`. Against the baseline artifact, maximum
+  geometry/fluid differences are `2.84e-14/4.16e-16`; the residual-only stage
+  retained a byte-identical nonlinear trajectory. [DONE]
+- Batch the generic and reduced matter L-infinity convergence values into one
+  same-operator MPI max, and batch the five per-step relativistic
+  recovery/correction counters into one MPI sum. The ID-only batching control
+  was bitwise identical but neutral locally (`196.331 s` versus `195.759 s`),
+  and the three-repeat RMHD evolution median moved only from
+  `2.036743049` to `2.038268545 Mcells/s`; record these as collective-count and
+  scaling cleanup, not measured single-node speedups. [DONE]
+- Integration evidence: production 1D/2D/3D builds pass; the final incremental
+  production build after the communication adjustment took `3.68 s` with
+  three cache misses; the earlier ten-object integration build took `14.59 s`
+  and the elliptic-only rebuild took `3.29 s`. The standard reduced-coordinate
+  physical-ID handoff passes at `N=512`; RMHD quick passes ideal-gas, hybrid
+  SLy, COMPOSE SLy4, CT, every reconstruction, and second-order entropy
+  convergence (`1.998`). The
+  full standard AMReX confidence gate passes all 49 steps, including BH,
+  reduced/COMPOSE/magnetized ID, equilibrium torus, RMHD/Balsara/advanced
+  Riemann, AMR/subcycling/regrid, rank reproducibility, curvilinear, analytic,
+  reference, radiation, and diffusion coverage. Diff hygiene passes. [DONE]
+- Stop the easy pass here. Remaining reduced-ID cost is the repeated direct
+  operator/workspace construction, host boundary gathering on accelerator
+  paths, global full-plane assembly, and the dependent matter fixed point.
+  Reusable scalar/toroidal workspaces and shallow safeguarded Anderson
+  acceleration require a separately profiled architectural change; they are
+  not hidden inside this cleanup. Evolution's maintained profile still points
+  to primitive recovery/timestep work and the reconstruction/Riemann/flux
+  owner rather than another safe micro-optimization. [DONE]
+
+## Cycle 334 — Reduced XCTS bottleneck removal and final hard boundary (DONE)
+
+- The retained `q_Omega=1.85`, `368x80` BH-disk polish was dominated by its
+  manually selected `matter_relaxation=0.0015`: 6,459 dependent updates, not
+  29,440-cell throughput. A constant-relaxation scan found
+  `0.01/0.05/0.1/0.2/0.5/0.8` converged in
+  `1159/377/182/89/33/20` iterations under matched approximate undamped
+  acceptance, while `1.0` excited an alternating support mode and needed 431.
+  Retain the runtime knob; do not embed this endpoint's `0.8` optimum. [DONE]
+- Fix the convergence definition rather than merely tuning the input. The
+  reported matter update now divides only the relaxed hydro-sector step by the
+  active matter relaxation, then takes the maximum with geometry, magnetic,
+  and external equilibrium defects in the same packed MPI max. This makes
+  `matter_relative_tolerance` an undamped fixed-point criterion. RMHD magnetic
+  components are not divided by the hydro relaxation. With ordinary
+  relaxation `0.5`, the exact endpoint reaches defect `8.414e-9` in 33
+  iterations and `2.669 s`, with `H/L/M=4.620e-11/4.466e-11/1.704e-13` and
+  C2P/P2C errors `2.50e-14/3.70e-11`. It is field-byte-identical to the same
+  trajectory stopped by a manually scaled old criterion and is `66.3x` faster
+  than Cycle 333's `176.978 s` control. [DONE]
+- A doubled `736x160`, 117,760-cell solve takes 36 iterations and
+  `12.2--12.9 s` on three ranks. Matched one/two/three-rank wall times are
+  `27.810/15.450/12.2--12.9 s`, with about 90-percent two-rank and
+  72--76-percent three-rank efficiency; rank artifacts agree within
+  `2.0e-14` geometry and `8.8e-15` fluid absolute error. Batching the small
+  radial-boundary collectives and caching their invariant setup was exact but
+  performance-neutral and was removed. The remaining owner is the dense
+  `O(N_r N_theta^2)` angular transforms and two full-plane MPI assemblies per
+  scalar/toroidal field. Improving it materially now requires a different
+  fast/distributed transform or a validated threaded/accelerator backend, not
+  another setup micro-optimization. [DONE]
+- Evolution re-audit shows no new framework hotspot: three-rank maintained
+  controls pass at 90.2--99.2 percent of their recorded baselines; the
+  realistic 3D WENO-Z/HLLC/RK4 case is `0.17815 Mcells/s` and attributes 99.3
+  percent of measured step work to the flux/reconstruction/Riemann owner.
+  The four-rank 2D control warns at 70.5 percent while three ranks pass,
+  confirming this Mac's local contention boundary rather than justifying a
+  new execution branch. Final production 1D/2D/3D build passes, final no-op
+  build is `0.44 s`, the focused equilibrium-torus matrix passes, all five
+  maintained performance controls execute cleanly (four pass thresholds, the
+  known four-rank contention case warns), and the exact final-tree standard
+  suite passes all 49 gates. Diff hygiene passes. [DONE]
+
+## Cycle 335 — Fast BH-disk continuation and scaling stress (DONE)
+
+- Treat the three-to-four-rank efficiency loss as evidence to separate, not a
+  generic Mac excuse. Recheck the faster reduced-XCTS endpoint with matched
+  rank controls and attribute any loss between local core/memory contention,
+  dense angular work, and full-plane collectives. Do not claim multi-node or
+  accelerator scaling from a single-node MPI result. The identical
+  `768x160` polish took `50.286 s` on three ranks and `39.816 s` on four,
+  giving `94.72%` incremental three-to-four-rank efficiency. This clears the
+  local four-performance-core concern but does not establish multi-node
+  scaling. [DONE]
+- Use the corrected undamped fixed-point convergence and ordinary relaxation
+  to continue the aligned `q_Omega=1.85` self-gravitating BH-disk family beyond
+  the current clean `M0/Mirr=0.322749` handoff. Locate candidate endpoints on a
+  moderate mapped `r theta` grid, then genuinely continue/polish the strongest
+  accepted candidates at higher native resolution. Require finite physical-ID
+  fields, bounded matter and XCTS residuals, consistent horizon mass, and
+  monotone or explicitly understood sequence behavior. Saved coupled q-power
+  artifacts now continue at a larger same-sign disk angular velocity while
+  retaining their converged matter. The `768x160` sequence reached
+  `Omega_c=0.157`, `M0=1.073484`, `Mirr=1.063996`, and
+  `M0/Mirr=1.008917`, with `H/L/M=1.56e-10/1.45e-10/5.10e-12`. A native
+  throat-area integral supplies `Mirr` in artifact metadata and reports; its
+  first checked artifact matched the independent HDF5 integral exactly.
+  [DONE]
+- Materialize the strongest credible high-resolution candidates through the
+  existing physical-ID interface and run short CFL-0.9 Cartesian evolution
+  acceptance tests. Require the normal preflight, scalar diagnostics, zero C2P
+  fallback and atmosphere reset, bounded conservation drift, and a comparison
+  against the present accepted endpoint. Finish with focused BH/torus gates,
+  production builds, and exact-tree diff hygiene; record physical, numerical,
+  performance, and hardware-scaling conclusions separately. Both the
+  intermediate ratio-`0.642` model and final ratio-`1.009` model materialize
+  onto an equatorial-half `160x160x80` Cartesian grid and complete eight
+  CFL-0.9 SSPRK3/PWL/HLL fixed-XCTS steps with zero recovery/reset/correction.
+  The final run reaches `t=2.020 M`, raw open-domain mass drift `5.09e-6`, and
+  runs at `0.288 Mcells/s`. The simplified full-tier `384x80` saved-
+  continuation regression passes; the overall reused-cache full gate later
+  stops at a pre-existing mixed-cache one/three-rank torus comparison, so that
+  broad gate is not claimed current. Production 1D/2D/3D builds, the clean
+  standard torus gate, and the quick confidence suite pass. The final no-op
+  production compile takes `0.50 s`; diff hygiene passes. [DONE]
+
+## Cycle 336 — Safe reruns, BH-disk stress, and horizon mass (DONE)
+
+- Make `run_case.py <run_dir>/run.in` safe under its normal overwrite policy by
+  preserving the supplied configuration before cleaning and restoring it as
+  the canonical input used for launch. A complete three-rank RHD run and its
+  direct canonical-input rerun pass; the prior failure was a runner lifecycle
+  bug, not invalid user syntax. [DONE]
+- Continue the accepted adaptive `768x160`, `q_Omega=1.85` coupled BH-disk
+  sequence beyond `M0/Mirr=1.008917` until an accepted/rejected pair brackets
+  the current numerical endpoint. Keep the law, EoS, grid, tolerances, and
+  matter relaxation fixed; do not reinterpret loss of convergence as a
+  physical stability limit. Smaller saved continuation steps reach
+  `Omega_c=0.300/M`, `M0=4.624213`, throat `Mirr=1.403521`, and the explicitly
+  labeled `M0/Mirr=3.294723`, with
+  `H/L/M=2.03e-10/1.48e-10/2.56e-11`, 426 matter iterations, finite fields,
+  and a 13.9-MiB artifact. Large direct jumps to that same accepted target
+  fail with a nonfinite elliptic RHS and a `384x80` heavy re-solve fails, so
+  those are continuation-basin/source-resolution limits. No physical or
+  same-resolution numerical endpoint was found through `0.300`; the point is
+  constructed ID only and the strongest clean evolved model remains
+  `M0/Mirr=1.008917`. [DONE]
+- Use the existing `rotation_continuation_steps` owner for loaded nonconstant-
+  law disks as well as rotating stars. Per-step stellar/disk angular velocity
+  now flows through one runtime schedule; physical-ID sequence schema 6
+  persists `disk_angular_velocity`, filenames include it, and every accepted
+  model owns the matching fluid summary. No template or configuration-product
+  axis was added. The two-step `0.1400 -> 0.1401 -> 0.1402` q-power regression
+  writes both artifacts and the correct sequence index. [DONE]
+- Correct the high-mass-paper denominator. Shibata et al. infer black-hole mass
+  and spin from apparent-horizon area and proper circumferences under a
+  vacuum-Kerr relation; this is not `Mirr` alone for a spinning hole. The
+  generated scalar catalog now exposes live AH area, `Mirr`, equatorial/polar
+  circumference, Kerr-inferred mass, and Kerr-inferred spin whenever the
+  horizon tracker is active. Native spherical BH/BH-disk ID additionally
+  computes and persists the same throat quantities at every continuation step;
+  reports expose both `M0/Mirr` and `M0/MBH^Kerr`. Older artifacts, including
+  the `Omega_c=0.300` stress point, remain area-only and are not relabeled.
+  [DONE]
+- Validation: the production 1D/2D/3D target builds; the C++ Kerr AH control
+  passes with mass/spin errors `4.93e-3/1.26e-2`; the complete focused
+  black-hole matrix passes. On the native `256x32` Schwarzschild shell,
+  area/Kerr-mass errors are `1.56e-3/8.81e-4`, about four times smaller than
+  the `128x16` seed, and matched 2D/periodic-3D throat diagnostics agree to
+  roundoff. The standard torus gate and quick confidence suite pass. The full
+  torus tier reaches and validates the new two-step sequence metadata, then
+  stops later at the already documented coarse Cartesian TOV-plus-torus case:
+  `equilibrium_torus_coupled_xcts_cartesian_24` loses a timelike orbit inside
+  its previous support. That separate broad gate is not claimed passing.
+  Python compile and diff hygiene pass. [DONE]
+
+## Cycle 337 — Quasi-local horizon angular momentum and mass (DONE)
+
+- Source-check the BH-disk mass denominator rather than treating every
+  horizon-derived mass as interchangeable. Shibata (PRD 76, 064035) defines
+  the circumference measure `M_C=C_e/(4 pi)` separately from the
+  Christodoulou mass
+  `M_BH=M_irr sqrt(1+J_H^2/(4 M_irr^4))`; the latter requires the
+  quasi-local horizon angular momentum. The existing live-finder
+  `kerr_horizon_mass` is therefore explicitly the circumference/Kerr measure.
+  [DONE]
+- Extend the native axisymmetric spherical throat quadrature with
+  `J_H=(8 pi)^-1 integral K_ij phi^i s^j dA`, using the exact axial Killing
+  vector already guaranteed by the reduced ID owner. Persist generated-schema
+  metadata for `J_H`, Christodoulou mass, and signed spin at every accepted
+  BH/BH-disk continuation step; retain backward-compatible loading of older
+  area-only and area/circumference artifacts. Reports now keep `M0/Mirr`,
+  `M0/M_C`, and `M0/M_BH` distinct. No template/configuration product was
+  added. Do not emit a generic runtime Christodoulou scalar until the live 3D
+  finder owns a genuine approximate-Killing-vector solve. [DONE]
+- Validation: the production 1D/2D/3D target builds; all 26 focused black-hole
+  cases pass; the changed `256x32` Schwarzschild shell gives `J_H=0` and
+  Christodoulou spin zero exactly, while matched reduced/full-storage
+  spherical diagnostics agree to roundoff. The standard equilibrium-torus
+  gate passes. Its coupled BH-disk control gives finite nonzero `J_H` and a
+  consistent Christodoulou mass. The two-step q-power continuation recomputes
+  `J_H` from `-3.64850e-4` to `-3.98577e-4`, and its final report gives
+  `M0/Mirr=0.191031607`, `M0/M_C=0.191028433`, and
+  `M0/M_BH=0.191031603`. The full torus tier validates those saved sequence
+  fields before stopping later at the known unrelated coarse Cartesian
+  `equilibrium_torus_coupled_xcts_cartesian_24` timelike-orbit failure. The
+  quick AMReX confidence suite, Python compile, and diff hygiene pass. [DONE]
+
+## Cycle 338 — Spinning constraint-solved black holes and evolved spin (DONE)
+
+- Extend the native spherical XCTS apparent-horizon owner from Schwarzschild
+  to aligned spinning black holes using the Cook--Pfeiffer tangential-shift
+  boundary, continuation from the exact spin-zero solution, and calibration
+  against the throat quasi-local angular momentum rather than treating the
+  boundary rotation parameter as the physical spin. Preserve the spin-zero
+  BH-disk continuation and nest any physical-spin calibration outside a
+  converged matter fixed point. The `256x32` vacuum targets `0.3/0.675` give
+  `0.29999997/0.67499489`; target `0.7` currently encounters a nonfinite
+  nonlinear RHS before bracketing and remains an explicitly numerical owner
+  limit. Matched `r theta` and `256x32x4` `r theta phi` target-0.3 fields agree
+  to `8.09e-14` with phi variation `2.63e-17`. Coupled constant-ell disks give
+  `chi_H=-7.50e-7` for target zero and `0.30004288` for target `0.3`; the latter
+  has `H/L/M=6.74e-12/1.06e-11/6.28e-13`. [DONE]
+- Add live evolved-horizon angular momentum, Christodoulou mass, and signed
+  spin-vector diagnostics through the generated scalar catalog. Validate the
+  coordinate-rotation integral on analytic Kerr and state clearly that a
+  Cook--Whiting approximate-Killing-vector solve remains needed for a
+  coordinate-independent spin of a strongly distorted generic horizon.
+  Generated diagnostics now retain the `coordinate_` qualifier. The independent
+  analytic `a/M=0.6` surface has signed-spin error `1.87e-4`, negligible
+  transverse spin, and Christodoulou-mass relative error `2.39e-3`; the coarse
+  runtime AMR control has coordinate-spin error `7.82e-3`. [DONE]
+- Run focused vacuum spin, coupled disk, horizon, production-build, codegen,
+  and quick confidence gates; keep exact-tree diff hygiene and compile-cost
+  claims separate. The 28-case black-hole matrix, standard equilibrium-torus
+  gate, quick confidence suite, full generated-source identity check, apparent-
+  horizon C++ check, and production 1D/2D/3D targets pass. A `64^3` Cartesian
+  target-0.3 artifact completes one CFL-0.9 RK4 evolved-Z4c step with zero
+  recovery/reset; its arbitrary filled interior dominates whole-domain
+  constraints, so this remains a routing/finite-evolution smoke. The measured
+  cache-hit compile was a no-rebuild `0.46 s` check and is not a cold-build
+  claim. The accumulated dirty user tree was preserved and no commit was made.
+  [DONE]
+
+## Cycle 339 — Heavy BH-disk physical-mass hardening (DONE)
+
+- Re-solve the saved `M0/Mirr=1.008917` q-power BH-disk point under the new
+  physical `chi_H=0` boundary semantics without overwriting the historical
+  artifact. Require converged matter/XCTS residuals, a finite quasi-local
+  `J_H`, Christodoulou mass, and explicit `M0/M_BH`; do not infer the latter
+  from `Mirr`. The `768x160` re-solve takes 318 matter iterations and gives
+  `H/L/M=1.56e-10/1.50e-10/5.18e-12`, `M0=1.075252`,
+  `M_BH=1.064211`, `M0/M_BH=1.010375`, and `chi_H=8.05e-6`. [DONE]
+- Stress the recalibrated artifact through the existing materialization and
+  short-evolution contracts if the native solve remains clean. Keep this a
+  bounded hardening pass and do not call a short run a stability result or a
+  physical mass endpoint. The compressed Cartesian artifact is 517,397,483
+  bytes and materializes 2,048,000 cells in 12.29 s with maximum
+  conserved/primitive round-trip errors `5.41e-12/6.38e-11`. Eight CFL-0.9
+  SSPRK3/PWL/HLL fixed-XCTS steps reach `t=2.030 M` with zero C2P fallback,
+  atmosphere reset, or reconstruction/Riemann correction; raw open-domain
+  mass drift is `1.54e-5`. [DONE]
+- Make `solve_only=1` mean solve even when a loaded spherical XCTS black-hole
+  artifact exactly matches the requested layout; ordinary evolution loading
+  retains the exact-layout cache path. Missing legacy quasi-local quantities
+  now report as NaN rather than physical zero. Add exact-layout and changed-
+  layout re-solve checks to the focused black-hole matrix. The complete
+  focused matrix, standard equilibrium-torus gate, quick confidence suite,
+  production 1D/2D/3D target, Python compile, and diff hygiene pass. The
+  accumulated dirty user tree was preserved and no commit was made. [DONE]
+
+## Cycle 340 — Asymmetric-core host backend experiment (DONE)
+
+- Keep host scheduling below the numerical ownership graph: no dispatch types
+  in physics or ID code, no new template/product axis, and no MPI calls from
+  worker tasks. Source inspection showed that AMReX's supported CPU model
+  already parallelizes coarse `MFIter` tiles with OpenMP, whereas plain host
+  `ParallelFor(Box, ...)` is the inner pointwise loop. A true whole-run GCD
+  backend would therefore require an AMReX-level coarse tile scheduler rather
+  than calls scattered through PyFluid. No production GCD executor or source
+  branch was added. [DONE]
+- Build isolated, ignored AMReX 26.08 OpenMP and experimental GCD variants and
+  compare them with the maintained MPI build. The `320x320`, 80-step spherical
+  hydro control gives `2.99/8.99/9.73` Mcells/s for one rank with `1/4/10`
+  OpenMP threads; four MPI ranks give `9.27` Mcells/s, and two ranks by four
+  threads give `10.56` Mcells/s. Repeated four- versus ten-thread controls show
+  a stable roughly eight-percent all-core gain, so the efficiency cores can
+  contribute after the performance cores are occupied. The two-by-five hybrid
+  point is statistically indistinguishable at `10.54` Mcells/s. All checked
+  scalar rows retain positive states and roundoff conservation. [DONE]
+- The inner-`ParallelFor` GCD experiment gives only `3.00--3.17` Mcells/s even
+  though a standalone coarse 64-task dispatch benchmark is `4.5--6.4x` faster
+  than serial. The failure is task grain, not inability of MPI ranks to use GCD
+  workers. The reduced RNS solve likewise remains `1.71 s` with one OpenMP
+  thread and slows monotonically to `3.65 s` at ten because its dense angular
+  mode loop is custom serial work; GCD cannot reach it through AMReX launches.
+  Preserve MPI-only production plus isolated horizon OpenMP for now. If a
+  general threaded production build is later maintained, expose it solely
+  through AMReX and machine profiles and select its rank/thread layout by
+  measured workload rather than a global all-core default. [DONE]
+
+## Cycle 341 — Managed optional AMReX OpenMP companion (DONE)
+
+- Source-check Apple, AMReX, LLVM OpenMP, Kokkos, oneTBB, libc++, and a
+  representative Apple-silicon CPU application before changing production.
+  Apple recommends many coarse dynamically balanced tasks; AMReX's supported
+  CPU backend is MPI plus OpenMP over `MFIter` tiles. The local LLVM OpenMP
+  runtime reports affinity as undefined on macOS, upstream libc++ has an
+  optional libdispatch PSTL backend but the system libc++ does not expose
+  `std::execution::par`, and AthenaK/Kokkos retains OpenMP with an explicitly
+  selectable dynamic work-stealing policy. [DONE]
+- Reject both experimental defaults. Inner-`ParallelFor` GCD remains at
+  serial throughput. AMReX dynamic `MFIter` scheduling is exact in the direct
+  probe but gives only `1.01x` at ten threads; in the full `320x320`, 80-step
+  control it gives `8.96--9.03` Mcells/s versus static
+  `9.44--9.71` Mcells/s, with all scalar gates passing. Uniform PyFluid tiles
+  do not repay the atomic next-tile queue. [DONE]
+- Add one optional managed AMReX OpenMP companion build and a separate local
+  hybrid machine profile. Keep the MPI-only production profile unchanged for
+  reduced ID. The companion must use the same AMReX source pin and feature
+  contract, add no physics/configuration/template path, and select the measured
+  two-rank by four-thread evolution layout only when explicitly requested.
+  `manage_amrex.py --variant openmp --install` now verifies/reuses a versioned
+  install, atomically activates its separate stable link, and configures the
+  `full-release-openmp` tree. `local_openmp.toml` owns the explicit 2x4 choice;
+  shared validation resolves the selected profile's build directory. The first
+  AppleClang configuration rejected missing keg-only `libomp`, restored the
+  absent prior link, and left the default tree untouched; the managed preset
+  now owns the required discovery flags. Repeated installation is a no-op.
+  [DONE]
+- Validate dependency status and rollback semantics, full 1D/2D/3D OpenMP
+  production builds, quick numerical confidence, static scalar equivalence,
+  and representative MPI/OpenMP performance. Keep clean-build and cache-hit
+  measurements distinct; preserve the accumulated dirty user tree. The full
+  clean production target built all dimensions, and the OpenMP 2D preset also
+  builds its checkpoint comparator. The OpenMP-profile quick gate, focused 1D
+  and 3D runs, dependency contract, Python/JSON/TOML checks, and diff hygiene
+  pass. The `320x320`, 80-step spherical hydro comparison gives
+  `9.21` Mcells/s for four MPI ranks and `10.67` for two ranks by four threads
+  (`+15.8%`); the largest finite non-performance scalar difference is
+  `1.78e-15`. The OpenMP production cache-hit rebuild is `0.72 s`; this is not
+  a cold-build timing. The optional install is 28 MiB and its separate build
+  tree is 555 MiB. No commit was made. [DONE]
+
+## Cycle 342 — Apple asymmetric-core hardware attribution (DONE)
+
+- Run an elevated, read-only Apple `powermetrics` measurement around the
+  unchanged `320x320`, 1000-step spherical hydro control. Sample process AMP,
+  IPC, per-core residency, clock, and CPU power at 500 ms without placing GCD,
+  affinity, or platform code in PyFluid. All five solver runs pass their scalar
+  policy. Raw temporary captures remain under
+  `/tmp/pyfluid_powermetrics_core_types`; no repository runtime artifact or
+  source path was added. [DONE]
+- Direct process attribution gives median scheduled occupancy of `1.00P+0E`
+  for one rank by one thread, `3.68P+0.07E` for one by four,
+  `3.33P+2.25E` for one by ten, `3.74P+2.02E` for two by four, and
+  `3.70P+2.23E` for two by five. Threaded active clocks are about
+  `3.88--3.91 GHz` on P cores and `2.74--2.78 GHz` on E cores. Therefore the
+  operating system does run PyFluid on efficiency cores, but the present
+  workload averages only about `2.0--2.25` of the six E cores; it is neither
+  full asymmetric-core saturation nor thermal throttling. [DONE]
+- Measured throughput is `3.053/8.899/9.527/10.391/10.296` Mcells/s for
+  `1x1/1x4/1x10/2x4/2x5`, respectively. The existing explicit `2x4` profile
+  remains the local optimum; two additional workers slightly reduce throughput.
+  The counters bound the remaining issue to parallel coverage/load balance and
+  synchronization or resource contention, but do not isolate those terms well
+  enough to justify another scheduler implementation. Preserve static AMReX
+  `MFIter` OpenMP and the MPI-only default. The dirty user tree was preserved
+  and no commit was made. [DONE]
+
+## Cycle 343 — Repeatable privileged power capture and 3D tile ownership (DONE)
+
+- Add a fixed-function macOS `powermetrics` wrapper plus a one-time privileged
+  installer. The repository copy is never authorized directly: the installer
+  copies it to `/usr/local/sbin/pyfluid-powermetrics` as `root:wheel`, validates
+  a dedicated `/private/etc/sudoers.d/pyfluid-powermetrics` rule with `visudo`,
+  and grants `NOPASSWD` only to that installed wrapper. The wrapper accepts one
+  bounded duration, fixes the task/power/AMP/IPC/QoS samplers, has no output
+  path, and writes to stdout so ordinary-user redirection owns the capture.
+  Shell syntax, executable modes, the invalid-duration exit (`64`), and the
+  non-root installer exit (`77`) pass. The user ran the one-time installer;
+  the resulting wrapper is `root:wheel` mode `0755`, the sudoers fragment is
+  `root:wheel` mode `0440`, and a passwordless 15-second smoke produced 30
+  hardware samples. Apple's occasional `Second underflow occured.` warning
+  does not truncate the capture. [DONE]
+- Keep the next asymmetric-core experiment honest: compare real scheduling
+  implementations with identical physics and diagnostics. The retained GCD
+  dependency/build is the already rejected inner-`ParallelFor` experiment;
+  it is not a valid all-run comparison because it dispatches below the AMReX
+  tile boundary. Inspection found a more important defect before another
+  scheduler was justified: four Newtonian face-flux loops, four masked
+  flux/update loops, and the patch-wall flux loop used `validbox()` as the
+  numerical launch region despite constructing a tiled CPU `MFIter`. AMReX's
+  default 3D tile is effectively `32x8x8` for a `32^3` FAB, so each whole FAB
+  could be recomputed 16 times by overlapping workers. Use `tilebox()` in
+  those nine owners; keep `validbox()` only for whole-FAB metadata. Add an
+  architecture guard that rejects a `ParallelFor` over an assigned
+  `validbox()` inside `TilingIfNotGPU`; a temporary negative fixture was
+  rejected at the exact source line, and the corrected tree passes. [DONE]
+- Preserve exact pre-fix MPI-only and OpenMP executables and compare the same
+  `64^3`, 16-step hydro control. OpenMP `2x4` rises from `8.290` to `40.19`
+  Mcells/s (`4.85x`), and MPI-only three-rank production rises from `5.259` to
+  `26.13` (`4.97x`); reported physical diagnostics are unchanged. A sustained
+  corrected `96^3`, PWL/HLLC/SSPRK3 control gives
+  `2.518/8.161/10.50--10.52/9.810/10.49--10.61` Mcells/s for
+  `1x1/1x4/1x10/2x4/2x5`. Process attribution gives median occupancy
+  `3.93P+0.02E`, `3.66P+3.80E`, `3.86P+2.38E`, and `3.81P+3.39E` for the last
+  four threaded layouts. The one-by-ten and two-by-five points are tied in 3D;
+  the older unaffected 2D control favors two-by-five over one-by-ten and is
+  within about one percent of two-by-four. Update the explicit local OpenMP
+  profile to `2x5` as the cross-dimensional compromise. Static AMReX/OpenMP
+  already obtains throughput consistent with the actually scheduled weighted
+  P/E capacity, so do not add a coarse GCD backend or a scheduler method axis.
+  [DONE]
+- Validate both corrected physics owners and preserve performance boundaries.
+  The 3D CT-MHD blast passes at CFL `0.9` with divB `2.75e-15`; OpenMP/MPI
+  scalar histories differ by at most `6.67e-16` outside timing columns. The
+  forced 3D boundary-tiling check and source-current OpenMP quick gate pass
+  (`3/3`). Teach the dimensional-consistency validator to resolve executables
+  through the selected machine profile rather than its old hardcoded default
+  build directory; rebuilt OpenMP 2D and degenerate 3D agree exactly for both
+  hydro and CT-MHD (`max_abs=max_rel=0`). Explicit OpenMP integration rebuilds
+  take `96.31/214.85/314.89 s`
+  for 1D/2D/3D; the MPI-only 3D rebuild takes `284.89 s`. These are shared
+  header integration rebuilds, not cache hits, and no new compile product was
+  added. The canonical performance gate gives `61.95` Mcells/s (`9.72x` old
+  baseline) for 3D PWC and `2.62` (`13.77x`) for 3D WENO-Z. The default
+  three-rank 2D control remains a pass at `102.67` (`0.93x`), while the
+  nondefault four-rank point reproducibly warns at `98.64` (`0.72x`); this 2D
+  geometry does not tile and is not changed by the ownership fix. Preserve
+  that rank-placement/performance warning rather than weakening its baseline.
+  Diff, Python, shell, TOML, and cache-hit build hygiene complete the cycle;
+  the accumulated dirty user tree is preserved and no commit is made. [DONE]
+
+## Cycle 344 — Tile-ownership hardening and preserved performance baseline (WIP)
+
+- Audit the accumulated Cycle 322--343 working tree before committing it;
+  preserve completed black-hole/ID/OpenMP work as one coherent integration
+  state rather than hiding unrelated files inside a narrow performance commit.
+  Strengthen the architecture guard so it self-tests direct, aliased,
+  constructed, and grown `validbox()` launch forms while accepting the unique
+  `tilebox()` owner. Seven one-off BH-disk inputs that depended on local
+  `runs/current` artifacts and two redundant 2D spinning inputs were removed;
+  canonical validation inputs, reusable tools, production owners, and the
+  measured boundary records remain. The closed RMHD reconstruction research
+  branch was also consolidated: 37 standalone prototype/diagnostic/scan
+  drivers and its 1,236-line narrative report (36,752 lines total)
+  were removed after confirming that no production or canonical-suite owner
+  imports them. Their durable numerical conclusions remain in `knowledge.md`,
+  while Git history preserves the full experiments. Exact Balsara validation,
+  accepted plots, production MP5/HLLD/candidate correction, AMR controls, and
+  current CFL/scaling tools remain. [DONE]
+- Re-run generated/architecture hygiene, focused tiled numerical checks, the
+  standard confidence suite, and the production performance benchmark from
+  current source. Capture a named baseline with exact revision/dirty-tree
+  provenance, audit the staged diff, commit only after all gates pass, and
+  report both the new throughput and what it changes for prior evolution work.
+  The pre-commit three-repeat benchmark gives `101.65`, `61.39`, `2.598`, and
+  `2.013` Mcells/s for the default 2D hydro, simple 3D hydro, WENO-Z 3D hydro,
+  and RMHD C2P controls. Promote the corrected 3D medians to the regression
+  baseline. Remove the permanently warning nondefault four-rank 2D placement
+  from this canonical gate; the dedicated rank-scaling benchmark retains that
+  question. The generated-flux check, architecture check and its negative
+  self-tests, forced 2D/3D boundary-tiling check, both MPI-only and OpenMP
+  production builds, and the full standard suite all pass. The post-cleanup
+  quick gate passes `3/3`. A final four-case benchmark against the promoted
+  baseline passes at `101.24`, `61.78`, `2.613`, and `2.013` Mcells/s,
+  respectively; the corrected 3D cases reproduce their baseline within one
+  percent. [DONE]

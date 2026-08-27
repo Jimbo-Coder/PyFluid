@@ -368,12 +368,17 @@ FixedSpacetimeParameters fixed_spacetime_parameters(RunConfig const& cfg)
    } else if (cfg.spacetime_fixed_metric == "kerr_schild"
               || cfg.spacetime_initial_data == "kerr_schild") {
       metric = FixedSpacetimeMetric::KerrSchild;
+   } else if (cfg.spacetime_fixed_metric == "static_trumpet"
+              || cfg.spacetime_initial_data == "static_trumpet") {
+      metric = FixedSpacetimeMetric::StaticTrumpet;
    }
    BlackHoleInterior black_hole_interior = BlackHoleInterior::Exterior;
    if (cfg.spacetime_black_hole_interior == "filled") {
       black_hole_interior = BlackHoleInterior::Filled;
    } else if (cfg.spacetime_black_hole_interior == "excision") {
       black_hole_interior = BlackHoleInterior::Excision;
+   } else if (cfg.spacetime_black_hole_interior == "puncture") {
+      black_hole_interior = BlackHoleInterior::Puncture;
    }
    return {
       metric,

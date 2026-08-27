@@ -419,7 +419,14 @@ def _load_initial_data_owner(
     spacetime_methods = _required_string_array(
         record, "spacetime_methods", context
     )
-    if not set(spacetime_methods) <= {"tov", "ctt", "cttk", "xcts", "kerr_schild"}:
+    if not set(spacetime_methods) <= {
+        "tov",
+        "ctt",
+        "cttk",
+        "xcts",
+        "kerr_schild",
+        "static_trumpet",
+    }:
         raise ValueError(f"{context}.spacetime_methods contains an unsupported value")
     disk_kinds = _required_string_array(record, "disk_kinds", context)
     if not set(disk_kinds) <= {"none", "equilibrium_torus", "tilted_torus"}:

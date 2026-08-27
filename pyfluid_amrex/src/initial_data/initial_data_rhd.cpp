@@ -39,6 +39,7 @@ void initialize_relativistic_primitive_cache_from_initial_data_method(
       cfg, initial_data
    );
    const bool magnetized = physical_system_has_magnetic_field(physical_system(cfg));
+   const bool magnetic_from_id = initial_data.fields.magnetic_from_id;
    const int base_components = magnetized ? NVAR_MHD : NVAR_HYDRO;
    primitive.setVal(
       0.0, 0, base_components, primitive.nGrowVect()
@@ -69,9 +70,9 @@ void initialize_relativistic_primitive_cache_from_initial_data_method(
          cached(i, j, k, MOM3) = point.fluid.v3;
          cached(i, j, k, ENERGY) = point.fluid.pressure;
          if (magnetized) {
-            cached(i, j, k, B1) = point.b1;
-            cached(i, j, k, B2) = point.b2;
-            cached(i, j, k, B3) = point.b3;
+            cached(i, j, k, B1) = magnetic_from_id ? point.b1 : 0.0;
+            cached(i, j, k, B2) = magnetic_from_id ? point.b2 : 0.0;
+            cached(i, j, k, B3) = magnetic_from_id ? point.b3 : 0.0;
          }
       });
    }
@@ -140,6 +141,7 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
    const bool magnetized = physical_system_has_magnetic_field(
       physical_system(cfg)
    );
+   const bool magnetic_from_id = initial_data.fields.magnetic_from_id;
    primitive.setVal(0.0);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -189,9 +191,9 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
          cached(i, j, k, MOM3) = point.fluid.v3;
          cached(i, j, k, ENERGY) = point.fluid.pressure;
          if (magnetized) {
-            cached(i, j, k, B1) = point.b1;
-            cached(i, j, k, B2) = point.b2;
-            cached(i, j, k, B3) = point.b3;
+            cached(i, j, k, B1) = magnetic_from_id ? point.b1 : 0.0;
+            cached(i, j, k, B2) = magnetic_from_id ? point.b2 : 0.0;
+            cached(i, j, k, B3) = magnetic_from_id ? point.b3 : 0.0;
          }
       });
    }

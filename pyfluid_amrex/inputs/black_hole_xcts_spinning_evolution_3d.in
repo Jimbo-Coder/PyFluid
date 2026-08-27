@@ -1,0 +1,67 @@
+pyfluid.run_name = black_hole_xcts_spinning_evolution_3d
+pyfluid.output_dir = runs/current/black_hole/black_hole_xcts_spinning_evolution_3d
+pyfluid.validation_policy = open
+
+mesh.coordinate = cartesian
+mesh.axes = x y z
+mesh.patch_system = single
+
+geometry.prob_lo = -16.0 -16.0 -16.0
+geometry.prob_hi = 16.0 16.0 16.0
+geometry.is_periodic = 0 0 0
+
+amr.n_cell = 64 64 64
+amr.max_level = 0
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+
+# The exterior is the solved spinning XCTS geometry. The finite smooth fill
+# below its throat is a complete-grid smoke policy, not exact constraint-
+# solved interior data and not excision.
+spacetime.evolution = evolved
+spacetime.matter_coupling = vacuum
+spacetime.initial_data = xcts
+spacetime.mass = 1.0
+spacetime.dimensionless_spin1 = 0.0
+spacetime.dimensionless_spin2 = 0.0
+spacetime.dimensionless_spin3 = 0.3
+spacetime.black_hole_interior = filled
+spacetime.black_hole_fill_radius = 0.5
+spacetime.lapse_gauge = one_plus_log
+spacetime.shift_gauge = gamma_driver
+spacetime.shift_eta = 2.0
+spacetime.ko_dissipation = 0.32
+spacetime.chi_floor = 1.0e-10
+spacetime.lapse_floor = 1.0e-10
+
+initial_data.spacetime = id
+initial_data.lapse = id
+initial_data.shift = id
+initial_data.input_file = runs/current/black_hole/black_hole_xcts_spinning_from_spherical_id_3d/physical_id
+initial_data.atmosphere = flat
+initial_data.atmosphere_density = 1.0e-12
+initial_data.atmosphere_pressure = 1.0e-16
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.eos_preset = sly
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = black_hole
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.max_step = 1
+pyfluid.final_time = -1
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = rk4
+pyfluid.subcycling = off
+pyfluid.bc = outflow
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.scalar_diagnostics = standard
+pyfluid.plot_int = -1
+pyfluid.checkpoint_int = -1

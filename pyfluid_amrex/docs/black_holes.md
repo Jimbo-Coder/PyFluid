@@ -90,18 +90,65 @@ late-time Lorentz factors are confined to atmosphere in the filled hole and
 remain the practical reason to implement true excision before calling this a
 long-lived accretion evolution.
 
-## Constraint-solved Schwarzschild shell
+## Analytic static trumpet control
+
+`spacetime.initial_data = static_trumpet` selects the (R_0=M) member of
+Dennison and Baumgarte's analytic Schwarzschild trumpet family. It is a
+spinless, horizon-penetrating puncture with coordinate horizon radius (M)
+and areal horizon radius (2M). The only supported interior declaration is
+`spacetime.black_hole_interior = puncture`; it is neither the Kerr fill nor
+excision. The current owner is 3D Cartesian and supports uniform/block-AMR
+materialization, full or reflection-reduced domains, portable physical-ID
+save/reload, fixed-background test-fluid disks, and evolved vacuum Z4c.
+
+The physical ADM metric diverges at the puncture, but the evolved conformal
+state has finite radial limits. Initialization therefore writes the analytic
+Z4c state directly instead of passing the puncture through ADM conversion.
+The trace-free conformal extrinsic curvature has a direction-dependent limit;
+its spherical average supplies the one exact nodal puncture value. The
+puncture must lie on a Cartesian mesh face in every direction, which keeps
+fixed-background cell-centered metric sampling away from the singular point
+and makes reflection planes exact. Analytic ADM identities, finite-difference
+metric derivatives, and the complete generated stationary RHS away from the
+puncture are regression checked.
+
+`spacetime.lapse_gauge = trumpet` implements the lapse condition compatible
+with the static solution,
+
+`dt(alpha) = beta^i d_i(alpha) - alpha (1-alpha) K`,
+
+and `spacetime.shift_gauge = frozen` retains the analytic shift. This is a
+diagnostic gauge pair, not the selected production default. In the coarse
+`dx=0.5M`, CFL-0.9, 16-step comparison with KO strength 0.32, the matched pair
+changes mean coordinate horizon radius by only 1.37 percent, but ends with a
+5.10 percent proper-area error and larger exterior constraint norms. The same
+ID under the ordinary advective 1+log/Gamma-driver pair changes coordinate
+radius by 10.10 percent but ends at 0.13 percent proper-area error. Both runs
+complete with zero C2P fallback or atmosphere reset. These are short
+regression measurements, not a resolution-converged universal gauge ranking;
+the ordinary moving-puncture pair remains the supplied evolution input.
+
+The focused black-hole gate also rematerializes a saved trumpet artifact from
+`32^3` to `24^3` and matches full versus octant one-step constraint extrema to
+roundoff. The equilibrium-torus gate builds a fixed-background constant-(l)
+Schwarzschild disk with resolved support `7.141--19.480 M`, baryonic mass
+`0.13195`, and zero recovery. Nonzero trumpet spin, a filled trumpet interior,
+and true excision remain rejected rather than silently mapped to another
+method.
+
+## Constraint-solved spinning horizon shell
 
 `pyfluid.ic = black_hole`, `spacetime.initial_data = xcts`, and
 `initial_data.solve_only = 1` select the first native constraint-solved
-black-hole owner. It is deliberately the smallest physically complete case: a
-spinless origin-centered vacuum hole on a 2D spherical `r theta` shell whose
-inner face is the isotropic Schwarzschild apparent horizon `r=M/2`. The scalar
-XCTS unknowns use
-the Cook--Pfeiffer apparent-horizon Robin condition for the conformal factor,
-zero lapse at the inner face, zero shift, and asymptotically flat outer Robin
-conditions. The atmosphere is only the stored fluid-floor convention and is
-excluded from the vacuum elliptic sources.
+black-hole owner. It is an origin-centered vacuum hole on a spherical shell
+whose inner face is the quasi-equilibrium apparent horizon `r=M/2`. The
+Cook--Pfeiffer conditions give the conformal-factor MOTS Robin condition, use
+zero horizon lapse as the slicing choice, and set the tangential orthonormal
+shift to `beta_hat_phi=Omega_r r_H sin(theta)`. `Omega_r` is a horizon-boundary
+coefficient, not the physical spin. `spacetime.dimensionless_spin3` is instead
+the target signed Christodoulou spin; the reduced owner requires the other two
+spin components to vanish. The atmosphere is only the stored fluid-floor
+convention and is excluded from the vacuum elliptic sources.
 
 Uniform and geometrically stretched finite shells share one separable
 axisymmetric elliptic operator. The supplied `M=1` mapped control spans
@@ -115,14 +162,143 @@ saved `128x16` shell can seed and re-solve a changed `256x32` mapped shell; the
 result is checked directly against isotropic Schwarzschild and uses no fluid
 recovery.
 
-This is an exterior solve-only owner, not yet a complete-grid evolution model.
-Spinning Cook--Pfeiffer data, black-hole/disk coupling, target-grid constraint
-polishing, and the separate filled or true-excision evolution interiors remain
-open. Likewise, `N x M x 1` will be a 3D `r theta phi` degeneracy gate against
-this 2D solution once the native 3D curvilinear elliptic owner exists; it is
-not represented as another owner in the method catalog.
+Nonzero spin starts from that exact spin-zero solution and continues in the
+horizon rotation coefficient while measuring `J_H/M_H^2` on every accepted
+throat. It stops as soon as the measured physical spin brackets the target,
+then calibrates the coefficient; using a Kerr estimate all the way to its
+nominal coefficient can needlessly cross a nonlinear fold. The mapped
+`256x32` `chi_H=0.3` control gives `J_H=0.32381635`,
+`M_H=1.03893597`, `chi_H=0.29999997`, and residuals
+`2.19e-12/5.57e-12/1.39e-13`. The demonstrated high-spin regression reaches
+`chi_H=0.67499489` for target `0.675`; target `0.7` presently reaches a
+nonfinite nonlinear RHS before bracketing and is an open numerical-owner
+limit, not a physical Kerr or quasi-equilibrium limit.
+
+The native throat summary uses that solved spherical geometry to persist area,
+irreducible mass, proper equatorial and polar circumferences, and the same
+Kerr-assumption mass/spin convention as the runtime apparent-horizon tracker.
+Because the native solve is axisymmetric, it additionally evaluates the
+standard quasi-local angular momentum with the exact axial Killing vector and
+persists the Christodoulou mass
+`M_BH=Mirr sqrt(1+J_H^2/(4 Mirr^4))` and signed spin `J_H/M_BH^2`.
+On the changed `256x32` Schwarzschild shell, area and Kerr-mass relative errors
+are `1.56e-3` and `8.81e-4`; doubling radial resolution from the `128x16` seed
+improves both by about four. The inferred zero-spin error decreases from
+`5.67e-2` to `2.83e-2`; this slower-looking quantity is the expected
+ill-conditioning of the inverse Kerr relation near exactly zero spin. Matched
+2D and periodic `r theta phi` storage use the same reduced physical operator
+and agree to roundoff; the full-storage `chi_H=0.3` control has `256x32x4`
+cells and no phi variation. The Schwarzschild controls give `J_H=0` and
+Christodoulou spin zero exactly.
+
+The same shell now owns aligned, unmagnetized, self-gravitating disks.
+`initial_data.disk_gravity = coupled` rebuilds the disk Euler state and its
+energy, momentum, and stress-trace sources inside the XCTS fixed point;
+`test_fluid` leaves the solved hole geometry unchanged. The standard gate
+requires a nonzero coupled matter-iteration count, measurable geometric
+backreaction relative to the test-fluid model, finite throat data, preserved
+disk metadata and proper-volume baryonic mass after Cartesian materialization,
+and a clean one-step fixed-XCTS evolution. Physical-spin calibration is nested
+outside the settled matter fixed point. The zero-target control converges to
+`chi_H=-7.50e-7` instead of retaining the disk-induced
+`chi_H=-1.31e-3` from a zero rotation coefficient; the target-`0.3` control
+converges to `chi_H=0.30004288` with Hamiltonian/lapse/momentum residuals
+`6.74e-12/1.06e-11/6.28e-13`.
+
+This is still an exterior solve-only owner. A Cartesian evolution artifact
+uses a finite smooth interior fill below the throat and retains the solved XCTS
+geometry outside it. That is useful for short fixed-spacetime controls, but it
+is neither excision nor a constraint-solved complete interior, and the current
+massive-disk evidence is not an evolved-Z4c/full-NR claim. The vacuum
+`chi_H=0.3` artifact has also been materialized onto a `64^3` Cartesian grid
+and completed one CFL-0.9 RK4 evolved-Z4c step with zero recovery or atmosphere
+reset. Its whole-domain constraint norms are dominated by the deliberately
+constraint-violating interior fill, so this is a routing and finite-evolution
+smoke, not an exterior-accuracy or stability claim. Target-grid
+constraint polishing, a constraint-improved complete interior, and true
+excision remain open. `N x M x 1` and larger periodic-phi storage are
+dimensional-degeneracy checks of the same owner, not additional methods in the
+catalog.
+
+The current constant-`ell` stress family uses `ell=4.25`, requested
+`r_in=6 M`, and varies the gamma-two polytropic scale. On matched adaptive
+`320x80` shells, the largest clean eight-step CFL-0.9 Cartesian control has
+disk baryonic mass `M0=0.309183`, throat area `54.2473`, and hence
+`M0/Mirr=0.29762`; it reaches `t=2.102 M` with zero C2P fallback or atmosphere
+reset. The next tested model has `M0=0.313796` and `M0/Mirr=0.30160`; it
+finishes eight steps but requires eight atmosphere resets at step one, so it
+is not accepted as clean. This brackets the tested numerical handoff boundary,
+not a physical maximum disk mass or long-time stability threshold. The
+under-relaxed fixed-point update and source resolution must be matched before
+comparing adjacent models: the coarser midpoint produced 24 resets, while its
+matched-resolution re-solve produced none.
+
+A Rayleigh-stable q-power continuation improves that tested handoff boundary.
+The conventional angular-velocity exponent `q_Omega=1.85`, meaning
+`Omega ~ varpi^-q_Omega`, maps to the generated catalog parameter
+`rotation_power_q=2/q_Omega=1.0810810810810811`; these two q conventions must
+not be interchanged. With `A=6 M`, `K=100`, and requested `r_in=6 M`, saved
+coupled artifacts now continue the same family by increasing `Omega_c` while
+preserving the converged matter state. On the adaptive `768x160` shell, a
+physical-spin-zero re-solve at `Omega_c=0.157/M` reaches `M0=1.075252`, throat
+area `56.92796`, `Mirr=1.064211`, quasi-local `J_H=9.12e-6`, and
+Christodoulou `M_BH=1.064211`, hence `M0/M_BH=1.010375`. The measured signed
+horizon spin is `8.05e-6`; the Hamiltonian/lapse/momentum residuals are
+`1.56e-10/1.50e-10/5.18e-12`. Fourth-order materialization onto an
+equatorial-half `160x160x80` Cartesian grid retains these metadata and has
+maximum conserved/primitive round-trip errors `5.41e-12/6.38e-11`. It then
+completes eight CFL-0.9 SSPRK3/PWL/HLL fixed-XCTS steps to `t=2.030 M` with
+zero C2P fallback, atmosphere reset, or reconstruction/Riemann correction.
+The raw open-domain mass drift is `1.54e-5`. This is the first constructed and
+short-evolved point whose mass-ratio-one claim uses the physical
+Christodoulou denominator rather than `Mirr`; it is not a long-time stability
+result or a physical maximum-mass claim.
+
+Continuing that same adaptive `768x160` family with smaller accepted angular-
+velocity steps reaches `Omega_c=0.300/M`, `M0=4.624213`, throat
+`Mirr=1.403521`, and hence the explicitly labeled `M0/Mirr=3.294723`, with
+Hamiltonian/lapse/momentum residuals
+`2.03e-10/1.48e-10/2.56e-11`. This is the largest constructed point checked in
+that continuation, not a physical endpoint and not an evolved-stability
+claim. Direct larger jumps can leave the nonlinear basin even when an
+intermediate saved model reaches the same target; the shared continuation-step
+control now applies to disk angular velocity as well as stellar rotation.
 
 ## Horizon diagnostics and finder boundary
+
+For comparisons with spinning-hole literature, `Mirr=sqrt(A_H/(16 pi))` is
+not generally the quoted black-hole mass. Shibata's circumference measure is
+`M_C=C_e/(4 pi)`; the Christodoulou measure is
+`M_BH=Mirr sqrt(1+J_H^2/(4 Mirr^4))`. The apparent-horizon tracker reports
+proper equatorial and polar circumferences and, assuming the surface obeys the
+vacuum-Kerr area/circumference relations, `M_C` as `M_H^Kerr` and
+`|chi_H^Kerr|`. These horizon-derived values are catalog diagnostics and are
+automatically appended to `scalars.tsv` when horizon finding is enabled. The
+implemented relations are `M_H^Kerr=C_e/(4 pi)` and
+`|chi_H^Kerr|=sqrt(1-[A_H/(8 pi (M_H^Kerr)^2)-1]^2)`; the polar circumference
+is retained as an independent shape diagnostic. The
+Kerr qualifier is deliberate: the proper area, circumferences, and `Mirr`
+remain the assumption-free geometric outputs for a distorted dynamical
+horizon.
+
+Constraint-solved spherical BH and BH-disk artifacts persist the corresponding
+`black_hole_throat_*` quantities directly at solve/continuation cadence,
+including exact-axisymmetry `J_H`, Christodoulou mass, and signed spin. The
+runtime diagnostic catalog consumes the live apparent-horizon tracker and
+emits `black_hole_horizon_*` quantities at evolution cadence. It integrates
+the three flat-coordinate rotation generators about the measured centroid and
+therefore labels the resulting quantities
+`black_hole_horizon_coordinate_angular_momentum*` and
+`black_hole_horizon_coordinate_christodoulou_*`. On a centered or translated
+aligned Kerr horizon the relevant generator is the axial Killing vector; the
+analytic `a/M=0.6` control measures signed spin with absolute error
+`1.87e-4` at 16 polar points. These are two
+deliberately distinct owners: the native throat summary does not require
+rematerializing the ID into Cartesian space, while the runtime values follow
+the evolved found surface. A generic distorted 3D horizon still needs a
+Cook--Whiting approximate-Killing-vector solve for a coordinate-independent
+spin; the current catalog keeps the coordinate qualifier rather than silently
+claiming that stronger result.
 
 `black_hole_horizon_radius` reports the analytic Kerr--Schild seed radius
 `r_+`; it is not a numerically found horizon. The exterior Hamiltonian L2/Linf
@@ -145,10 +321,22 @@ expansion on the exact Kerr horizon.
 adapter samples Cartesian `gamma_ij`, `gamma^ij`, their spatial derivatives,
 and `K_ij` once onto a solver-private spherical volume. The IO rank then
 relaxes the radial graph `r=h(theta,phi)` with the published damped-wave
-system, SSPRK3, sixth-order pole-parity angular differences, stage-consistent
-radial interpolation, scale-aware residuals, coarse-to-fine angular
-continuation, and residual-tested over-relaxation. The resulting surface is
-broadcast; it never enters the reconstruction/Riemann template product.
+system, SSPRK3, sixth-order pole-parity angular differences, one radial metric
+interpolation frozen across each pseudo-time RK step, scale-aware residuals,
+coarse-to-fine angular continuation, and residual-tested over-relaxation.
+Independent angular-point kernels use an isolated work-sized OpenMP team;
+serial norm/diagnostic passes retain deterministic summation order. The finder
+is one separately compiled 3D library, so it neither enables AMReX OpenMP nor
+enters the reconstruction/Riemann template product. The resulting surface is
+broadcast.
+
+On the analytic `a/M=0.6` Kerr control, the local two-thread profile solves the
+routine 16-polar-point surface in about `0.258 s`. Repeated strict 32-point
+solves take `6.81--6.82 s`, versus a repeated one-worker median of `11.89 s`,
+while preserving the same 18,150 iterations, residual, radius error, and area
+error. Build with
+`PYFLUID_AMREX_HORIZON_OPENMP=OFF` when an OpenMP runtime is unavailable; the
+mathematical serial path remains the same.
 
 The principal runtime controls are `horizon.find_int` (default 8),
 `radial_points` (48), `polar_points` (32, with twice as many azimuthal points),
@@ -159,9 +347,9 @@ radial shape under `apparent_horizon/ah########.tsv`. A restart restores the
 latest compatible shape at or before its checkpoint step. An exact-step shape
 is immediately valid for masks; an older shape is only an initial guess and
 forces a fresh search before output or AMR use. Current diagnostics include
-expansion residuals, proper
-area, irreducible mass, area centroid, and minimum/maximum/mean coordinate
-radius.
+expansion residuals, proper area, irreducible mass, circumferences,
+coordinate-rotation angular momentum/spin, area centroid, and
+minimum/maximum/mean coordinate radius.
 
 `apparent_horizon_mask` and `excision_mask` are catalog-owned cell-centered
 auxiliary GFs. The first marks the found interior; the second is a configurable
@@ -175,9 +363,43 @@ level from the horizon band, writes nested masks on both levels, and restores
 the tracked shape across checkpoint restart.
 
 The current owner finds one star-shaped horizon about a configured fixed
-center in 3D Cartesian stored spacetime. Multiple horizons, moving-center
-tracking, quasilocal spin, an AHFinderDirect-style Newton polishing backend,
-and true evolution excision remain later capabilities.
+center in 3D Cartesian stored spacetime. The AMR adapter maps sample points
+through configured Cartesian reflection planes before interpolation, applies
+rank-two parity to `gamma_ij`, `gamma^ij`, and `K_ij`, and applies the extra
+derivative-index parity to `d_k gamma_ij`. It also uses parity-filled nodal
+ghosts for centered metric derivatives at a reflection plane. On the matched
+`32^3`/`32x32x16` Kerr control, the full and equatorial-half finder residuals,
+area, irreducible mass, and radius extrema agree to roundoff. Multiple
+horizons, moving-center tracking, approximate-Killing-vector spin, an
+AHFinderDirect-style Newton polishing backend, and true evolution excision
+remain later capabilities.
+
+The coupled XCTS BH-disk evolution artifact has a distinct live-finder
+boundary. Its native spherical source enforces an apparent-horizon throat at
+`r=M/2`, but the current finite Cartesian interior fill does not yet provide a
+surface to which the nonlinear live finder converges after materialization,
+even with fixed local refinement through `dx=0.0625 M`. Source-throat area can
+still be integrated from the authoritative native ADM artifact. This is an
+interior-fill/materialized-horizon compatibility limitation, not the repaired
+reflection-sampling bug.
+
+Saved evolved geometries can be re-found without taking another evolution
+step:
+
+```console
+uv run python pyfluid_amrex/tools/audit_kerr_horizon_convergence.py
+```
+
+The optional `--evolve-resolution` branch runs the aligned `a/M=0.5` filled-
+Kerr control to `t=2.5 M` at finest spacings `0.5`, `0.25`, and `0.125 M`,
+writes the final checkpoint, and re-finds every final geometry with the same
+surface settings. The measured final proper-area errors are 7.65, 2.06, and
+0.62 percent, while the changes from each grid's measured initial area are
+5.55, 2.08, and 0.29 percent. This demonstrates early-time evolution-grid
+convergence; it does not establish the same rate through the existing
+`t=10.69 M` routine-resolution run. Re-finding that run's step-64 checkpoint
+at 16, 24, and 32 polar points leaves 4.67--4.85 percent area error, so its
+material drift is not a loose finder-tolerance artifact.
 
 ## Event-horizon postprocessing boundary
 
@@ -218,6 +440,32 @@ Thus a z-spin hole may use equatorial z reflection; a Schwarzschild hole may
 use three reflection planes. Independent x/y reflections are not valid for a
 nonzero z spin.
 
+A rotating disk supplies its own axial angular momentum even when the central
+hole is Schwarzschild. Its Cartesian reflection plane must pass through the
+disk center and have normal parallel to the disk axis. Consequently, an
+aligned z-axis BH disk may use the z-equatorial half-domain, but it may not
+inherit the x/y reflections of a spinless isolated hole. Common solver startup
+enforces these black-hole, star, and disk conditions for fresh ID, loaded ID,
+and evolution rather than only while running an elliptic ID owner.
+
+Equatorial reduction still runs the complete 3D Cartesian operator and retains
+arbitrary azimuthal structure, including odd-m modes. It removes only modes
+that are odd across the disk midplane. It is therefore appropriate for aligned
+equilibrium checks, early accretion, and deliberately equatorially symmetric
+instability studies. A tilted disk, warp/corrugation mode, vertical asymmetry,
+or unrestricted turbulent/dynamo evolution requires the full vertical domain.
+Axisymmetric 2D evolution would additionally remove every nonzero azimuthal
+mode and is a different physical restriction.
+
+The focused fixed-Kerr torus regression compares `32^3` with
+`32 x 32 x 16` through two complete CFL-0.9 SSPRK3 steps. Symmetry-restored
+mass, energy, and axial angular momentum agree within `8.2e-10` relative,
+maximum density within `4.5e-9`, and both paths use zero recovery/reset. Cell
+count is exactly halved; this tiny run improves measured wall time only
+`0.444 -> 0.378 s` (`1.18x`) because startup, MPI, and diagnostics dominate.
+Larger production grids should be benchmarked before assigning a realized
+speedup from the ideal twofold cell reduction.
+
 Disk orientation is separately represented by `initial_data.disk_axis1/2/3`
 and persisted in physical-ID metadata. The reduced r-theta torus owner accepts
 only the aligned +z source axis. The direct 3D Cartesian fixed-Kerr torus may
@@ -235,10 +483,11 @@ reduced solution, but it cannot change those axes relative to one another.
 
 ## Next solver layer
 
-The next constraint-solved black-hole step is the spinning,
-Kerr--Schild-seeded conformally curved XCTS extension of the present
-Cook--Pfeiffer Schwarzschild shell. Exact Kerr--Schild remains the
-fixed-background and vacuum control. Bowen--York puncture data are not the
+The aligned conformally flat Cook--Pfeiffer owner now covers physical spin and
+self-gravitating disks. The next constraint-solved black-hole step is a
+Kerr--Schild-seeded conformally curved XCTS extension and, separately, a full
+3D nonaxisymmetric owner for genuine relative tilt. Exact Kerr--Schild remains
+the fixed-background and vacuum control. Bowen--York puncture data are not the
 primary route. True evolution excision and full-grid filled evolution may
 share the exterior solution, but have separate interior ownership and
 validation gates.

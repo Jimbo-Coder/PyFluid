@@ -25,6 +25,7 @@ sys.path.insert(0, str(ROOT / "pyfluid_amrex" / "tools"))
 from plot_amrex_slice import parse_plot_header, read_level_state  # noqa: E402
 from plotfile_reader import latest_plotfile
 from validation_common import (  # noqa: E402
+   amrex_executable,
    append_validation_history,
    materialize_run_input,
    parameters_from_assignments,
@@ -33,7 +34,6 @@ from validation_common import (  # noqa: E402
 )
 
 
-BUILD = ROOT / "build" / "pyfluid_amrex"
 INPUTS = ROOT / "pyfluid_amrex" / "inputs"
 RUN_ROOT = ROOT / "runs" / "current" / "dimensional_consistency"
 INPUT_ROOT = RUN_ROOT / "inputs"
@@ -816,11 +816,6 @@ PAIRS = (
    ),
 )
 
-
-def executable(dim: int) -> Path:
-   return BUILD / f"pyfluid_amrex_{dim}d"
-
-
 def write_input(pair: Pair, spec: RunSpec) -> tuple[Path, Path]:
    run_dir = RUN_ROOT / pair.name / spec.label
    input_dir = INPUT_ROOT / pair.name
@@ -844,7 +839,7 @@ def write_input(pair: Pair, spec: RunSpec) -> tuple[Path, Path]:
 
 def run_spec(pair: Pair, spec: RunSpec, ranks: int) -> tuple[int, Path, str]:
    input_path, run_dir = write_input(pair, spec)
-   proc = run_mpi(executable(spec.dim), [input_path], ranks=ranks)
+   proc = run_mpi(amrex_executable(spec.dim), [input_path], ranks=ranks)
    (run_dir / "run.log").write_text(proc.stdout)
    return proc.returncode, run_dir, "\n".join(proc.stdout.splitlines()[-8:])
 

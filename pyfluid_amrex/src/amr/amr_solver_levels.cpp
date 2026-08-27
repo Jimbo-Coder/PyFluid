@@ -22,7 +22,8 @@ void validate_black_hole_reflection_symmetry(
 )
 {
    const FixedSpacetimeParameters parameters = fixed_spacetime_parameters(cfg);
-   if (parameters.metric != FixedSpacetimeMetric::KerrSchild) {
+   if (parameters.metric != FixedSpacetimeMetric::KerrSchild
+       && parameters.metric != FixedSpacetimeMetric::StaticTrumpet) {
       return;
    }
    const amrex::Real spin[3]{
@@ -61,12 +62,13 @@ void validate_black_hole_reflection_symmetry(
             ? upper[direction] : lower[direction];
          if (std::abs(plane - origin[direction]) > tolerance) {
             amrex::Abort(
-               "Kerr-Schild reflection/symmetry planes must pass through "
+               "black-hole reflection/symmetry planes must pass through "
                "the black-hole origin"
             );
          }
          for (int component = 0; component < 3; ++component) {
-            if (component != direction
+            if (parameters.metric == FixedSpacetimeMetric::KerrSchild
+                && component != direction
                 && std::abs(spin[component]) > spin_tolerance) {
                amrex::Abort(
                   "a Kerr spin is an axial vector: reflection across a "
@@ -76,6 +78,119 @@ void validate_black_hole_reflection_symmetry(
          }
       }
    }
+}
+
+void validate_rotating_object_reflection_symmetry(
+   RunConfig const& cfg,
+   amrex::Geometry const& geometry
+)
+{
+#if (AMREX_SPACEDIM == 3)
+   if (cfg.mesh_coordinate != "cartesian") {
+      return;
+   }
+
+   const bool rotating_star = cfg.ic == "rotating_star"
+      && cfg.initial_data_angular_velocity != 0.0;
+   const bool rotating_disk = cfg.initial_data_disk == "equilibrium_torus"
+      || cfg.initial_data_disk == "tilted_torus";
+   if (!rotating_star && !rotating_disk) {
+      return;
+   }
+
+   const amrex::Real star_axis[3]{
+      cfg.initial_data_rotation_axis1,
+      cfg.initial_data_rotation_axis2,
+      cfg.initial_data_rotation_axis3,
+   };
+   const amrex::Real disk_axis[3]{
+      cfg.initial_data_disk_axis1,
+      cfg.initial_data_disk_axis2,
+      cfg.initial_data_disk_axis3,
+   };
+   const amrex::Real star_center[3]{
+      cfg.initial_data_rotation_center1,
+      cfg.initial_data_rotation_center2,
+      cfg.initial_data_rotation_center3,
+   };
+   const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
+   const bool black_hole_disk =
+      spacetime.metric == FixedSpacetimeMetric::KerrSchild
+      || spacetime.metric == FixedSpacetimeMetric::StaticTrumpet;
+   const amrex::Real disk_center[3]{
+      black_hole_disk ? spacetime.origin1 : star_center[0],
+      black_hole_disk ? spacetime.origin2 : star_center[1],
+      black_hole_disk ? spacetime.origin3 : star_center[2],
+   };
+   const auto lower = geometry.ProbLoArray();
+   const auto upper = geometry.ProbHiArray();
+   const amrex::Real axis_tolerance = 64.0
+      * std::numeric_limits<amrex::Real>::epsilon();
+   const auto axis_is_normal = [axis_tolerance](
+      int direction,
+      amrex::Real const axis[3]
+   ) {
+      amrex::Real norm_squared = 0.0;
+      amrex::Real tangent_squared = 0.0;
+      for (int component = 0; component < 3; ++component) {
+         norm_squared += axis[component] * axis[component];
+         if (component != direction) {
+            tangent_squared += axis[component] * axis[component];
+         }
+      }
+      return tangent_squared
+         <= axis_tolerance * axis_tolerance * norm_squared;
+   };
+   const auto plane_passes_through = [](amrex::Real plane, amrex::Real center) {
+      const amrex::Real tolerance = 64.0
+         * std::numeric_limits<amrex::Real>::epsilon()
+         * std::max({amrex::Real(1.0), std::abs(plane), std::abs(center)});
+      return std::abs(plane - center) <= tolerance;
+   };
+
+   for (int direction = 0; direction < 3; ++direction) {
+      for (int high_side = 0; high_side < 2; ++high_side) {
+         const BoundaryKind kind = side_boundary_kind(
+            cfg, direction, high_side != 0
+         );
+         if (kind != BoundaryKind::Reflecting
+             && kind != BoundaryKind::Symmetry) {
+            continue;
+         }
+         const amrex::Real plane = high_side != 0
+            ? upper[direction] : lower[direction];
+         if (rotating_star
+             && !plane_passes_through(plane, star_center[direction])) {
+            amrex::Abort(
+               "rotating-star reflection/symmetry planes must pass through "
+               "the rotation center"
+            );
+         }
+         if (rotating_disk
+             && !plane_passes_through(plane, disk_center[direction])) {
+            amrex::Abort(
+               "rotating-disk reflection/symmetry planes must pass through "
+               "the disk center"
+            );
+         }
+         if (rotating_star && !axis_is_normal(direction, star_axis)) {
+            amrex::Abort(
+               "a rotating star is reflection invariant only across its "
+               "equatorial plane"
+            );
+         }
+         if (rotating_disk && !axis_is_normal(direction, disk_axis)) {
+            amrex::Abort(
+               "a rotating disk is reflection invariant only across its "
+               "equatorial plane; relative tilt requires a full 3D domain"
+            );
+         }
+      }
+   }
+#else
+   static_cast<void>(cfg);
+   static_cast<void>(geometry);
+#endif
 }
 
 } // namespace
@@ -95,6 +210,7 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
 {
    validate_config(cfg_);
    validate_black_hole_reflection_symmetry(cfg_, Geom(0));
+   validate_rotating_object_reflection_symmetry(cfg_, Geom(0));
    validate_amr_refinement_ratios();
    physics_system_ = physical_system(cfg_);
    mesh_layout_ = mesh_runtime_layout(cfg_);
@@ -107,15 +223,18 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
    if (spacetime_stores_state(cfg_)) {
       GridFieldSetInfo const& spacetime_fields = z4c_state_grid_fields();
       const int spacetime_stencil_width = grid_field_ghost_width(spacetime_fields);
+      const int cell_spacetime_ghost_width = std::max(
+         spacetime_stencil_width, cfg_.ng
+      );
       spacetime_state_.configure(
          spacetime_fields,
          num_levels,
-         std::max(spacetime_stencil_width, cfg_.ng + 2),
+         cell_spacetime_ghost_width + 2,
          spacetime_evolves(cfg_)
       );
       spacetime_coupling_.configure(
          num_levels,
-         std::max(spacetime_stencil_width, cfg_.ng)
+         cell_spacetime_ghost_width
       );
       spacetime_fillpatch_bcs_ = z4c_boundary_records(cfg_, Geom(0));
       spacetime_fillpatch_func_ = SpacetimeFillPatchFunc(Z4cFillPatchBoundary{});

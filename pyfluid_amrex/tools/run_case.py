@@ -131,8 +131,18 @@ def main() -> int:
       raise ValueError("run input must define pyfluid.run_name")
    dim = infer_dim(params)
    run_dir = output_dir_from_params(params)
+   saved_input: bytes | None = None
+   if (
+      not args.keep_existing
+      and input_path.resolve().is_relative_to(run_dir.resolve())
+   ):
+      saved_input = input_path.read_bytes()
    if not args.keep_existing:
       safe_clean_run_dir(run_dir)
+   if saved_input is not None:
+      run_dir.mkdir(parents=True, exist_ok=True)
+      input_path = run_dir / "run.in"
+      input_path.write_bytes(saved_input)
 
    result = run_amrex(
       dim=dim,

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -16,8 +17,126 @@ def relative_paths(paths: list[Path]) -> str:
     return ", ".join(str(path.relative_to(ROOT)) for path in sorted(paths))
 
 
+TILED_MFITER_LOOP = re.compile(
+    r"for\s*\(\s*amrex::MFIter\s+(?P<iterator>[A-Za-z_]\w*)\s*\("
+    r"[^;]*?amrex::TilingIfNotGPU\(\)[^;]*;\s*"
+    r"(?P=iterator)\.isValid\(\)[^;]*;\s*\+\+(?P=iterator)\s*\)\s*\{",
+    re.DOTALL,
+)
+
+
+def braced_body(text: str, opening_brace: int) -> str:
+    depth = 0
+    for index in range(opening_brace, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[opening_brace + 1:index]
+    return text[opening_brace + 1:]
+
+
+def parallel_for_first_arguments(text: str) -> list[str]:
+    arguments: list[str] = []
+    marker = "amrex::ParallelFor"
+    search_start = 0
+    while True:
+        call_start = text.find(marker, search_start)
+        if call_start < 0:
+            return arguments
+        opening = call_start + len(marker)
+        while opening < len(text) and text[opening].isspace():
+            opening += 1
+        if opening >= len(text) or text[opening] != "(":
+            search_start = opening
+            continue
+        depth = 0
+        for index in range(opening + 1, len(text)):
+            character = text[index]
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                if depth == 0:
+                    break
+                depth -= 1
+            elif character == "," and depth == 0:
+                arguments.append(text[opening + 1:index].strip())
+                break
+        search_start = opening + 1
+
+
+def tiled_validbox_launches_in_text(text: str, source: str) -> list[str]:
+    violations: list[str] = []
+    for loop in TILED_MFITER_LOOP.finditer(text):
+        iterator_name = loop.group("iterator")
+        iterator = re.escape(iterator_name)
+        body = braced_body(text, loop.end() - 1)
+        launched_regions: set[str] = set()
+        for expression in parallel_for_first_arguments(body):
+            if re.search(rf"\b{iterator}\.validbox\(\)", expression):
+                launched_regions.add("direct validbox")
+                continue
+            region_match = re.fullmatch(r"[A-Za-z_]\w*", expression)
+            if region_match is None:
+                continue
+            region = region_match.group(0)
+            validbox_initializer = re.compile(
+                rf"[^;{{}}]*\b{re.escape(region)}\b[^;{{}}]*"
+                rf"\b{iterator}\.validbox\(\)[^;{{}}]*;"
+            )
+            if validbox_initializer.search(body):
+                launched_regions.add(region)
+        if launched_regions:
+            line = text.count("\n", 0, loop.start()) + 1
+            regions = ", ".join(sorted(launched_regions))
+            violations.append(f"{source}:{line} ({regions})")
+    return violations
+
+
+def tiled_validbox_launches(path: Path) -> list[str]:
+    return tiled_validbox_launches_in_text(
+        path.read_text(), str(path.relative_to(ROOT))
+    )
+
+
+def check_tiled_launch_guard() -> None:
+    loop_prefix = (
+        "for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); "
+        "mfi.isValid(); ++mfi) {\n"
+    )
+    accepted = (
+        loop_prefix
+        + "const amrex::Box box = mfi.tilebox();\n"
+        + "amrex::ParallelFor(box, kernel);\n}"
+    )
+    if tiled_validbox_launches_in_text(accepted, "guard-accepted"):
+        raise RuntimeError("tiled validbox guard rejected a tilebox launch")
+
+    rejected = (
+        loop_prefix
+        + "amrex::ParallelFor(mfi.validbox(), kernel);\n}",
+        loop_prefix
+        + "const amrex::Box& box = mfi.validbox();\n"
+        + "amrex::ParallelFor(box, kernel);\n}",
+        loop_prefix
+        + "amrex::Box box(mfi.validbox());\n"
+        + "amrex::ParallelFor(box, kernel);\n}",
+        loop_prefix
+        + "const auto box = amrex::grow(mfi.validbox(), 1);\n"
+        + "amrex::ParallelFor(box, kernel);\n}",
+        loop_prefix
+        + "amrex::ParallelFor(amrex::grow(mfi.validbox(), 1), kernel);\n}",
+    )
+    for index, fixture in enumerate(rejected):
+        if len(tiled_validbox_launches_in_text(fixture, f"guard-rejected-{index}")) != 1:
+            raise RuntimeError(f"tiled validbox guard missed fixture {index}")
+
+
 def main() -> None:
     errors: list[str] = []
+
+    check_tiled_launch_guard()
 
     source_root_files = [path for path in SOURCE_ROOT.iterdir() if path.is_file()]
     if source_root_files:
@@ -204,6 +323,17 @@ def main() -> None:
         errors.append(
             "grid-field names must come from the generated catalog, not string synthesis: "
             + relative_paths(synthesized_field_names)
+        )
+
+    tiled_validbox_violations = []
+    for root in (SOURCE_ROOT, INCLUDE_ROOT):
+        for path in (*root.rglob("*.cpp"), *root.rglob("*.hpp")):
+            tiled_validbox_violations.extend(tiled_validbox_launches(path))
+    if tiled_validbox_violations:
+        errors.append(
+            "CPU-tiled MFIter kernels must launch over tilebox/growntilebox; "
+            "validbox is whole-FAB metadata and duplicates work across tiles: "
+            + ", ".join(sorted(tiled_validbox_violations))
         )
 
     if errors:

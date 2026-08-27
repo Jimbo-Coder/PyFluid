@@ -51,6 +51,9 @@ bool validate_initial_data_owner_catalog()
    const auto& kerr = initial_data_owner_info(
       InitialDataOwner::CartesianKerrSchild
    );
+   const auto& trumpet = initial_data_owner_info(
+      InitialDataOwner::CartesianStaticTrumpet
+   );
 
    const bool valid =
       initial_data_owner_layout_matches(radial, 1, "spherical", "r")
@@ -86,7 +89,17 @@ bool validate_initial_data_owner_catalog()
          kerr.disk_gravity_modes, "test_fluid"
       )
       && !kerr.relative_tilt
-      && !initial_data_owner_list_contains(kerr.disk_kinds, "tilted_torus");
+      && !initial_data_owner_list_contains(kerr.disk_kinds, "tilted_torus")
+      && initial_data_owner_layout_matches(
+         trumpet, 3, "cartesian", "x y z"
+      )
+      && initial_data_owner_list_contains(
+         trumpet.spacetime_methods, "static_trumpet"
+      )
+      && initial_data_owner_list_contains(
+         trumpet.disk_gravity_modes, "test_fluid"
+      )
+      && !trumpet.relative_tilt;
 
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::cout << "initial_data_owner_catalog valid=" << valid << '\n';

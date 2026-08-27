@@ -13,6 +13,7 @@
 #include <string>
 
 #include "pyfluid_amrex/centering_transfer.hpp"
+#include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/initial_data/centering.hpp"
 #include "pyfluid_amrex/kernels_generated/initial_data.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
@@ -57,6 +58,303 @@ amrex::Vector<GridFieldSymmetryKind> vector_symmetries()
       GridFieldSymmetryKind::Vector3,
    };
 }
+
+void accumulate_local_linf_norms(
+   amrex::MultiFab const& difference,
+   amrex::MultiFab const& solution,
+   int num_components,
+   amrex::Real& update_norm,
+   amrex::Real& solution_norm
+)
+{
+   for (int component = 0; component < num_components; ++component) {
+      update_norm = std::max(
+         update_norm, difference.norm0(component, 0, true)
+      );
+      solution_norm = std::max(
+         solution_norm, solution.norm0(component, 0, true)
+      );
+   }
+}
+
+amrex::Real global_relative_fixed_point_defect(
+   amrex::Real relaxed_matter_update_norm,
+   amrex::Real other_update_norm,
+   amrex::Real solution_norm,
+   amrex::Real matter_relaxation
+)
+{
+   if (!(matter_relaxation > 0.0) || !(matter_relaxation <= 1.0)
+       || !std::isfinite(matter_relaxation)) {
+      amrex::Abort("matter fixed-point relaxation must lie in (0, 1]");
+   }
+   std::array<amrex::Real, 3> norms{
+      relaxed_matter_update_norm,
+      other_update_norm,
+      solution_norm,
+   };
+   amrex::ParallelAllReduce::Max(
+      norms.data(),
+      static_cast<int>(norms.size()),
+      amrex::ParallelContext::CommunicatorSub()
+   );
+   // A relaxed matter update is lambda * (F(u) - u).  Dividing only that
+   // sector by lambda makes the stopping criterion measure the fixed-point
+   // defect rather than the user-selected damping.  Geometry and magnetic
+   // updates retain their own undamped scale.
+   return std::max(norms[0] / matter_relaxation, norms[1])
+      / std::max(amrex::Real(1.0), norms[2]);
+}
+
+struct CircularContinuationSchedule {
+   amrex::Vector<amrex::Real> stellar_angular_velocities;
+   amrex::Vector<amrex::Real> disk_angular_velocities;
+};
+
+CircularContinuationSchedule circular_continuation_schedule(
+   RotatingStarParameters const& rotating_star,
+   EquilibriumTorusParameters const& equilibrium_torus
+)
+{
+   CircularContinuationSchedule schedule;
+   int continuation_steps = 1;
+   if (!rotating_star.continuation_targets.empty()) {
+      continuation_steps = static_cast<int>(
+         rotating_star.continuation_targets.size()
+      ) + 1;
+   } else if (
+      rotating_star.active
+      && rotating_star.angular_velocity
+         != rotating_star.continuation_source_angular_velocity
+   ) {
+      continuation_steps = std::max(
+         continuation_steps, rotating_star.continuation_steps
+      );
+   }
+   if (
+      equilibrium_torus.active
+      && equilibrium_torus.angular_velocity
+         != equilibrium_torus.continuation_source_angular_velocity
+   ) {
+      continuation_steps = std::max(
+         continuation_steps, equilibrium_torus.continuation_steps
+      );
+   }
+
+   schedule.stellar_angular_velocities.reserve(continuation_steps);
+   schedule.disk_angular_velocities.reserve(continuation_steps);
+   for (int step = 1; step <= continuation_steps; ++step) {
+      amrex::Real stellar_angular_velocity = rotating_star.angular_velocity;
+      if (!rotating_star.continuation_targets.empty()) {
+         stellar_angular_velocity = step < continuation_steps
+            ? rotating_star.continuation_targets[step - 1]
+            : rotating_star.angular_velocity;
+      } else if (rotating_star.active) {
+         const amrex::Real fraction = static_cast<amrex::Real>(step)
+            / static_cast<amrex::Real>(continuation_steps);
+         stellar_angular_velocity =
+            rotating_star.continuation_source_angular_velocity
+            + fraction * (
+               rotating_star.angular_velocity
+               - rotating_star.continuation_source_angular_velocity
+            );
+      }
+      const amrex::Real fraction = static_cast<amrex::Real>(step)
+         / static_cast<amrex::Real>(continuation_steps);
+      const amrex::Real disk_angular_velocity =
+         equilibrium_torus.continuation_source_angular_velocity
+         + fraction * (
+            equilibrium_torus.angular_velocity
+            - equilibrium_torus.continuation_source_angular_velocity
+         );
+      schedule.stellar_angular_velocities.push_back(
+         stellar_angular_velocity
+      );
+      schedule.disk_angular_velocities.push_back(disk_angular_velocity);
+   }
+   return schedule;
+}
+
+#if (AMREX_SPACEDIM >= 2)
+ConformalBlackHoleSummary axisymmetric_black_hole_throat_summary(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::MultiFab const& spacetime_state,
+   amrex::Real throat_radius
+)
+{
+   if (hierarchy.geometry.size() != 1 || !(throat_radius > 0.0)) {
+      amrex::Abort("invalid axisymmetric black-hole throat diagnostic");
+   }
+   const amrex::Geometry& geometry = hierarchy.geometry[0];
+   const amrex::Box nodal_domain = amrex::convert(
+      geometry.Domain(), amrex::IntVect::TheNodeVector()
+   );
+   const int radial_index = nodal_domain.smallEnd(0);
+   const int theta_lower = nodal_domain.smallEnd(1);
+   const int theta_upper = nodal_domain.bigEnd(1);
+   const int equator_index = std::clamp(
+      static_cast<int>(std::llround(
+         (0.5 * constants::pi - geometry.ProbLo(1))
+         / geometry.CellSize(1)
+      )) + theta_lower,
+      theta_lower,
+      theta_upper
+   );
+#if (AMREX_SPACEDIM == 3)
+   const int phi_index = nodal_domain.smallEnd(2);
+#endif
+   const auto lower = geometry.ProbLoArray();
+   const auto spacing = geometry.CellSizeArray();
+   const std::unique_ptr<amrex::iMultiFab> owner =
+      spacetime_state.OwnerMask(geometry.periodicity());
+   amrex::MultiFab integrand(
+      spacetime_state.boxArray(), spacetime_state.DistributionMap(), 4, 0
+   );
+   integrand.setVal(0.0);
+   for (amrex::MFIter mfi(
+           spacetime_state, amrex::TilingIfNotGPU()
+        ); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox() & nodal_domain;
+      const auto state = spacetime_state.const_array(mfi);
+      const auto owned = owner->const_array(mfi);
+      const auto output = integrand.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         if (i != radial_index
+#if (AMREX_SPACEDIM == 3)
+             || k != phi_index
+#endif
+             || owned(i, j, k) == 0) {
+            return;
+         }
+         const Z4cState z4c_state = load_z4c_state(state, i, j, k);
+         const SpacetimeMetric metric =
+            generated::z4c_spacetime_metric(z4c_state);
+         const amrex::Real tangent_determinant =
+            metric.gamma22 * metric.gamma33
+            - metric.gamma23 * metric.gamma23;
+         const amrex::Real endpoint_weight =
+            j == theta_lower || j == theta_upper ? 0.5 : 1.0;
+         const amrex::Real theta = lower[1]
+            + static_cast<amrex::Real>(j - theta_lower) * spacing[1];
+         output(i, j, k, 0) = endpoint_weight * std::sin(theta)
+            * std::sqrt(tangent_determinant);
+         output(i, j, k, 1) = endpoint_weight
+            * std::sqrt(metric.gamma22);
+         if (j == equator_index) {
+            output(i, j, k, 2) = std::sin(theta)
+               * std::sqrt(metric.gamma33);
+         }
+         const amrex::Real trace_third =
+            (z4c_state.k_hat + 2.0 * z4c_state.theta) / 3.0;
+         const amrex::Real inverse_chi = 1.0 / z4c_state.chi;
+         const amrex::Real extrinsic13 = inverse_chi
+            * (z4c_state.a_tilde13
+               + z4c_state.gamma_tilde13 * trace_third);
+         const amrex::Real extrinsic23 = inverse_chi
+            * (z4c_state.a_tilde23
+               + z4c_state.gamma_tilde23 * trace_third);
+         const amrex::Real extrinsic33 = inverse_chi
+            * (z4c_state.a_tilde33
+               + z4c_state.gamma_tilde33 * trace_third);
+         // The native spherical owner is exactly axisymmetric, so
+         // phi^i = (partial_phi)^i is a true Killing vector. In the stored
+         // orthonormal spherical basis its only component is r sin(theta).
+         const amrex::Real axial_curvature = throat_radius * std::sin(theta)
+            * (
+               extrinsic13 * metric.inv_gamma11
+               + extrinsic23 * metric.inv_gamma12
+               + extrinsic33 * metric.inv_gamma13
+            ) / std::sqrt(metric.inv_gamma11);
+         output(i, j, k, 3) = output(i, j, k, 0) * axial_curvature;
+      });
+   }
+   if (integrand.contains_nan(0, 4, 0)) {
+      amrex::Abort("black-hole throat geometry integrand is nonfinite");
+   }
+   amrex::Real theta_integral = integrand.sum(0, true) * spacing[1];
+   amrex::Real polar_integral = integrand.sum(1, true) * spacing[1];
+   amrex::Real equatorial_metric_radius = integrand.sum(2, true);
+   amrex::Real angular_momentum_integral =
+      integrand.sum(3, true) * spacing[1];
+   amrex::Real reductions[4]{
+      theta_integral,
+      polar_integral,
+      equatorial_metric_radius,
+      angular_momentum_integral,
+   };
+   amrex::ParallelDescriptor::ReduceRealSum(reductions, 4);
+   theta_integral = reductions[0];
+   polar_integral = reductions[1];
+   equatorial_metric_radius = reductions[2];
+   angular_momentum_integral = reductions[3];
+   const amrex::Real theta_symmetry_factor =
+      hierarchy.reflection_hi[1] ? 2.0 : 1.0;
+   const amrex::Real area = 2.0 * constants::pi * theta_symmetry_factor
+      * throat_radius * throat_radius * theta_integral;
+   const amrex::Real equatorial_circumference = 2.0 * constants::pi
+      * throat_radius * equatorial_metric_radius;
+   const amrex::Real polar_circumference = 2.0 * theta_symmetry_factor
+      * throat_radius * polar_integral;
+   const amrex::Real kerr_horizon_mass = equatorial_circumference
+      / (4.0 * constants::pi);
+   const amrex::Real angular_momentum = 0.25 * theta_symmetry_factor
+      * throat_radius * throat_radius * angular_momentum_integral;
+   const amrex::Real irreducible_mass = std::sqrt(
+      area / (16.0 * constants::pi)
+   );
+   const amrex::Real christodoulou_mass = irreducible_mass * std::sqrt(
+      1.0 + angular_momentum * angular_momentum
+         / (
+            4.0 * irreducible_mass * irreducible_mass
+               * irreducible_mass * irreducible_mass
+         )
+   );
+   const amrex::Real christodoulou_dimensionless_spin = angular_momentum
+      / (christodoulou_mass * christodoulou_mass);
+   if (!(area > 0.0) || !(equatorial_circumference > 0.0)
+       || !(polar_circumference > 0.0) || !std::isfinite(area)
+       || !std::isfinite(kerr_horizon_mass)
+       || !std::isfinite(angular_momentum)
+       || !(christodoulou_mass > 0.0)
+       || !std::isfinite(christodoulou_dimensionless_spin)
+       || std::abs(christodoulou_dimensionless_spin) > 1.0 + 1.0e-8) {
+      amrex::Abort("black-hole throat geometry diagnostic is invalid");
+   }
+   const amrex::Real kerr_area_factor = area / (
+      8.0 * constants::pi * kerr_horizon_mass * kerr_horizon_mass
+   );
+   amrex::Real kerr_dimensionless_spin = -1.0;
+   if (std::isfinite(kerr_area_factor)
+       && kerr_area_factor >= 1.0 - 5.0e-2
+       && kerr_area_factor <= 2.0 + 5.0e-2) {
+      const amrex::Real bounded_area_factor = std::clamp(
+         kerr_area_factor, amrex::Real(1.0), amrex::Real(2.0)
+      );
+      kerr_dimensionless_spin = std::sqrt(std::max(
+         amrex::Real(0.0),
+         amrex::Real(1.0)
+            - (bounded_area_factor - 1.0) * (bounded_area_factor - 1.0)
+      ));
+   }
+   return {
+      area,
+      irreducible_mass,
+      equatorial_circumference,
+      polar_circumference,
+      kerr_horizon_mass,
+      kerr_dimensionless_spin,
+      angular_momentum,
+      christodoulou_mass,
+      std::clamp(
+         christodoulou_dimensionless_spin,
+         amrex::Real(-1.0),
+         amrex::Real(1.0)
+      ),
+   };
+}
+#endif
 
 amrex::Real reflected_domain_volume_factor(
    InitialDataEllipticHierarchy const& hierarchy
@@ -199,6 +497,60 @@ amrex::Real axisymmetric_nodal_derivative(
          );
 }
 
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+amrex::Real extrapolate_axisymmetric_cell_component_to_inner_vertex(
+   amrex::Array4<amrex::Real const> const& field,
+   int vertex_j,
+   int vertex_k,
+   int component,
+   amrex::Dim3 cell_lo,
+   amrex::Dim3 cell_hi,
+   amrex::Real const* radial_centers,
+   amrex::Real inner_radius
+) noexcept
+{
+   const amrex::Real radius0 = radial_centers[0];
+   const amrex::Real radius1 = radial_centers[1];
+   const amrex::Real radius2 = radial_centers[2];
+   const amrex::Real weight0 =
+      (inner_radius - radius1) * (inner_radius - radius2)
+      / ((radius0 - radius1) * (radius0 - radius2));
+   const amrex::Real weight1 =
+      (inner_radius - radius0) * (inner_radius - radius2)
+      / ((radius1 - radius0) * (radius1 - radius2));
+   const amrex::Real weight2 =
+      (inner_radius - radius0) * (inner_radius - radius1)
+      / ((radius2 - radius0) * (radius2 - radius1));
+   const int first_j = amrex::max(
+      cell_lo.y, amrex::min(vertex_j - 1, cell_hi.y)
+   );
+   const int second_j = amrex::max(
+      cell_lo.y, amrex::min(vertex_j, cell_hi.y)
+   );
+#if (AMREX_SPACEDIM == 3)
+   const int first_k = amrex::max(
+      cell_lo.z, amrex::min(vertex_k - 1, cell_hi.z)
+   );
+   const int second_k = amrex::max(
+      cell_lo.z, amrex::min(vertex_k, cell_hi.z)
+   );
+#else
+   const int first_k = vertex_k;
+   const int second_k = vertex_k;
+#endif
+   amrex::Real value = 0.0;
+   int count = 0;
+   for (int cell_j = first_j; cell_j <= second_j; ++cell_j) {
+      for (int cell_k = first_k; cell_k <= second_k; ++cell_k) {
+         value += weight0 * field(cell_lo.x, cell_j, cell_k, component)
+            + weight1 * field(cell_lo.x + 1, cell_j, cell_k, component)
+            + weight2 * field(cell_lo.x + 2, cell_j, cell_k, component);
+         ++count;
+      }
+   }
+   return value / static_cast<amrex::Real>(count);
+}
+
 void materialize_axisymmetric_cell_geometry(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::MultiFab const& conformal_factor,
@@ -328,6 +680,7 @@ void materialize_axisymmetric_vertex_geometry(
    amrex::MultiFab& conformal_factor,
    amrex::MultiFab& lapse_times_conformal_factor,
    amrex::MultiFab& azimuthal_shift,
+   amrex::MultiFab const& conformal_extrinsic,
    InitialDataEllipticBoundaryConditions const& scalar_boundary,
    InitialDataEllipticBoundaryConditions const& lapse_boundary,
    InitialDataEllipticBoundaryConditions const& shift_boundary,
@@ -416,10 +769,25 @@ void materialize_axisymmetric_vertex_geometry(
    const auto spacing = hierarchy.geometry[0].CellSizeArray();
    const InitialDataCoordinateLine radial_coordinates =
       hierarchy.coordinate_line(0, 0);
+   if (radial_coordinates.centers.size() < 3) {
+      amrex::Abort(
+         "axisymmetric vertex geometry requires at least three radial cells"
+      );
+   }
    amrex::Gpu::AsyncArray<amrex::Real> radial_face_storage(
       radial_coordinates.faces.data(), radial_coordinates.faces.size()
    );
+   amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
+      radial_coordinates.centers.data(), radial_coordinates.centers.size()
+   );
    const amrex::Real* radial_faces = radial_face_storage.data();
+   const amrex::Real* radial_centers = radial_center_storage.data();
+   const amrex::Dim3 cell_lo = amrex::lbound(
+      hierarchy.geometry[0].Domain()
+   );
+   const amrex::Dim3 cell_hi = amrex::ubound(
+      hierarchy.geometry[0].Domain()
+   );
    const amrex::Dim3 domain_lo = amrex::lbound(
       amrex::surroundingNodes(hierarchy.geometry[0].Domain())
    );
@@ -436,6 +804,7 @@ void materialize_axisymmetric_vertex_geometry(
       const auto psi = vertex_psi.const_array(mfi);
       const auto lapse_psi = vertex_lapse_psi.const_array(mfi);
       const auto beta = vertex_beta.array(mfi);
+      const auto cell_extrinsic = conformal_extrinsic.const_array(mfi);
       const auto geometry = spacetime_state.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
@@ -453,32 +822,59 @@ void materialize_axisymmetric_vertex_geometry(
          amrex::Real a_r_phi = 0.0;
          amrex::Real a_theta_phi = 0.0;
          if (!radial_origin && !angular_axis) {
-            const amrex::Real d_beta_r = axisymmetric_nodal_derivative(
-               beta, i, j, k, 0, domain_lo, domain_hi,
-               radial_faces, 1.0 / spacing[1]
-            );
-            const amrex::Real d_beta_theta = j == domain_hi.y
-               ? 0.0
-               : (beta(i, j + 1, k, 0) - beta(i, j - 1, k, 0))
-                    * inverse_two_dtheta;
-            const amrex::Real scale =
-               generated::xcts_conformal_extrinsic_scale(
-                  psi(i, j, k, 0), lapse_psi(i, j, k, 0)
+            const bool lapse_zero_inner_boundary = i == domain_lo.x
+               && radial_faces[0] > 0.0
+               && lapse_psi(i, j, k, 0) == 0.0;
+            if (lapse_zero_inner_boundary) {
+               // On an inversion-symmetric maximal throat, alpha*psi and
+               // the longitudinal shift both vanish while their quotient
+               // has a finite limit. The XCTS solve owns that limit at cell
+               // centers, where alpha*psi is positive. Materialize the
+               // solved conformal extrinsic curvature to the exact throat
+               // instead of independently evaluating its algebraic 0/0
+               // representation at the boundary node.
+               a_r_phi =
+                  extrapolate_axisymmetric_cell_component_to_inner_vertex(
+                     cell_extrinsic,
+                     j,
+                     k,
+                     CONFORMAL_A13,
+                     cell_lo,
+                     cell_hi,
+                     radial_centers,
+                     radial_faces[0]
+                  );
+               a_theta_phi =
+                  extrapolate_axisymmetric_cell_component_to_inner_vertex(
+                     cell_extrinsic,
+                     j,
+                     k,
+                     CONFORMAL_A23,
+                     cell_lo,
+                     cell_hi,
+                     radial_centers,
+                     radial_faces[0]
+                  );
+            } else {
+               const amrex::Real d_beta_r = axisymmetric_nodal_derivative(
+                  beta, i, j, k, 0, domain_lo, domain_hi,
+                  radial_faces, 1.0 / spacing[1]
                );
-            const amrex::Real radial_numerator =
-               d_beta_r - beta(i, j, k, 0) / radius;
-            const amrex::Real angular_numerator = (
-               d_beta_theta - beta(i, j, k, 0) / std::tan(theta)
-            ) / radius;
-            // The Cook--Pfeiffer Schwarzschild inner boundary has
-            // alpha*psi=0 and identically zero shift.  Avoid forming
-            // infinity times an exact zero when materializing that analytic
-            // zero-extrinsic-curvature limit.  A future spinning owner must
-            // supply and validate its finite horizon limit separately.
-            a_r_phi = radial_numerator == 0.0
-               ? 0.0 : scale * radial_numerator;
-            a_theta_phi = angular_numerator == 0.0
-               ? 0.0 : scale * angular_numerator;
+               const amrex::Real d_beta_theta = j == domain_hi.y
+                  ? 0.0
+                  : (beta(i, j + 1, k, 0) - beta(i, j - 1, k, 0))
+                       * inverse_two_dtheta;
+               const amrex::Real scale =
+                  generated::xcts_conformal_extrinsic_scale(
+                     psi(i, j, k, 0), lapse_psi(i, j, k, 0)
+                  );
+               a_r_phi = scale * (
+                  d_beta_r - beta(i, j, k, 0) / radius
+               );
+               a_theta_phi = scale * (
+                  d_beta_theta - beta(i, j, k, 0) / std::tan(theta)
+               ) / radius;
+            }
          }
          store_z4c_state(
             geometry,
@@ -1334,24 +1730,8 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
    const amrex::Real matter_tolerance = iterate_matter
       ? rotating_star.relative_tolerance
       : 1.0e-9;
-   amrex::Vector<amrex::Real> rotation_targets;
-   if (rotating_star.active && rotating_star.angular_velocity != 0.0) {
-      rotation_targets = rotating_star.continuation_targets;
-      if (rotation_targets.empty()) {
-         rotation_targets.reserve(rotating_star.continuation_steps);
-         for (int step = 1; step <= rotating_star.continuation_steps; ++step) {
-            rotation_targets.push_back(
-               rotating_star.angular_velocity
-               * static_cast<amrex::Real>(step)
-               / static_cast<amrex::Real>(rotating_star.continuation_steps)
-            );
-         }
-      } else {
-         rotation_targets.push_back(rotating_star.angular_velocity);
-      }
-   } else {
-      rotation_targets.push_back(rotating_star.angular_velocity);
-   }
+   const CircularContinuationSchedule continuation_schedule =
+      circular_continuation_schedule(rotating_star, equilibrium_torus);
    const bool coupled_xcts_matter_iteration =
       iterate_matter
       && formulation == ConformalConstraintFormulation::xcts;
@@ -1385,11 +1765,20 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          diagnostic.mass_shedding_indicator;
    };
    for (int continuation_step = 1;
-        continuation_step <= static_cast<int>(rotation_targets.size());
+        continuation_step <= static_cast<int>(
+           continuation_schedule.stellar_angular_velocities.size()
+        );
         ++continuation_step) {
       RotatingStarParameters continued_rotating_star = rotating_star;
       continued_rotating_star.angular_velocity =
-         rotation_targets[continuation_step - 1];
+         continuation_schedule.stellar_angular_velocities[
+            continuation_step - 1
+         ];
+      EquilibriumTorusParameters continued_torus = equilibrium_torus;
+      continued_torus.angular_velocity =
+         continuation_schedule.disk_angular_velocities[
+            continuation_step - 1
+         ];
       if (coupled_equilibrium_torus) {
          continued_rotating_star.update_outer_radius =
             equilibrium_torus.inner_radius;
@@ -1398,7 +1787,8 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       int step_matter_iterations = 0;
       bool strict_xcts_polish = false;
       bool torus_activated = !coupled_equilibrium_torus;
-      bool coupled_torus_updated = false;
+      bool coupled_torus_updated =
+         seed_from_spacetime && coupled_equilibrium_torus;
       bool stellar_matter_updated = false;
       for (int matter_iteration = 1;
            matter_iteration <= max_matter_iterations;
@@ -1458,9 +1848,11 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             if (amrex::ParallelDescriptor::IOProcessor()) {
                amrex::Print()
                   << "rotating continuation step=" << continuation_step
-                  << "/" << rotation_targets.size()
-                  << " target_omega="
+                  << "/"
+                  << continuation_schedule.stellar_angular_velocities.size()
+                  << " target_stellar_omega="
                   << continued_rotating_star.angular_velocity
+                  << " target_disk_omega=" << continued_torus.angular_velocity
                   << " matter_iteration=" << matter_iteration
                   << " maximum_density=" << result.rotating_star.maximum_density
                   << " maximum_velocity=" << result.rotating_star.maximum_velocity
@@ -1479,7 +1871,6 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             );
          }
          if (coupled_equilibrium_torus && torus_activated) {
-            EquilibriumTorusParameters continued_torus = equilibrium_torus;
             continued_torus.continue_existing_matter =
                coupled_torus_updated;
             result.equilibrium_torus = update_equilibrium_torus_primitives(
@@ -1725,7 +2116,8 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             amrex::Abort("conformal constraint initial-data solve did not converge");
          }
 
-         amrex::Real update_norm = 0.0;
+         amrex::Real relaxed_matter_update_norm = 0.0;
+         amrex::Real other_update_norm = 0.0;
          amrex::Real solution_norm = 0.0;
          for (int level = 0; level < num_levels; ++level) {
             amrex::MultiFab::Subtract(
@@ -1736,38 +2128,51 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                primitive_state[level]->nComp(),
                0
             );
-            for (int component = 0;
-                 component < primitive_state[level]->nComp();
-                 ++component) {
-               update_norm = std::max(
-                  update_norm,
-                  previous_primitive[level]->norm0(component, 0, false)
-               );
-               solution_norm = std::max(
-                  solution_norm,
-                  primitive_state[level]->norm0(component, 0, false)
-               );
+            const int num_hydro_components = std::min(
+               primitive_state[level]->nComp(),
+               static_cast<int>(NVAR_HYDRO)
+            );
+            accumulate_local_linf_norms(
+               *previous_primitive[level],
+               *primitive_state[level],
+               num_hydro_components,
+               relaxed_matter_update_norm,
+               solution_norm
+            );
+            if (primitive_state[level]->nComp() > num_hydro_components) {
+               for (int component = num_hydro_components;
+                    component < primitive_state[level]->nComp();
+                    ++component) {
+                  other_update_norm = std::max(
+                     other_update_norm,
+                     previous_primitive[level]->norm0(component, 0, true)
+                  );
+                  solution_norm = std::max(
+                     solution_norm,
+                     primitive_state[level]->norm0(component, 0, true)
+                  );
+               }
             }
             amrex::MultiFab::Subtract(
                *previous_conformal[level], *conformal_storage[level], 0, 0, 1, 0
             );
-            update_norm = std::max(
-               update_norm, previous_conformal[level]->norm0(0, 0, false)
-            );
-            solution_norm = std::max(
-               solution_norm, conformal_storage[level]->norm0(0, 0, false)
+            accumulate_local_linf_norms(
+               *previous_conformal[level],
+               *conformal_storage[level],
+               1,
+               other_update_norm,
+               solution_norm
             );
             amrex::MultiFab::Subtract(
                *previous_vector[level], *vector_storage[level], 0, 0, 3, 0
             );
-            for (int component = 0; component < 3; ++component) {
-               update_norm = std::max(
-                  update_norm, previous_vector[level]->norm0(component, 0, false)
-               );
-               solution_norm = std::max(
-                  solution_norm, vector_storage[level]->norm0(component, 0, false)
-               );
-            }
+            accumulate_local_linf_norms(
+               *previous_vector[level],
+               *vector_storage[level],
+               3,
+               other_update_norm,
+               solution_norm
+            );
             if (formulation == ConformalConstraintFormulation::xcts) {
                amrex::MultiFab::Subtract(
                   *previous_lapse[level],
@@ -1777,27 +2182,44 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                   1,
                   0
                );
-               update_norm = std::max(
-                  update_norm, previous_lapse[level]->norm0(0, 0, false)
-               );
-               solution_norm = std::max(
-                  solution_norm, lapse_conformal_storage[level]->norm0(0, 0, false)
+               accumulate_local_linf_norms(
+                  *previous_lapse[level],
+                  *lapse_conformal_storage[level],
+                  1,
+                  other_update_norm,
+                  solution_norm
                );
             } else if (formulation == ConformalConstraintFormulation::cttk) {
                amrex::MultiFab::Subtract(
                   *previous_curvature[level], *curvature_storage[level], 0, 0, 1, 0
                );
-               update_norm = std::max(
-                  update_norm, previous_curvature[level]->norm0(0, 0, false)
-               );
-               solution_norm = std::max(
-                  solution_norm, curvature_storage[level]->norm0(0, 0, false)
+               accumulate_local_linf_norms(
+                  *previous_curvature[level],
+                  *curvature_storage[level],
+                  1,
+                  other_update_norm,
+                  solution_norm
                );
             }
          }
          step_matter_iterations = matter_iteration;
-         result.relative_matter_update = update_norm
-            / std::max(amrex::Real(1.0), solution_norm);
+         amrex::Real active_matter_relaxation = 1.0;
+         if (update_stellar_matter && !preserve_spherical_seed) {
+            active_matter_relaxation =
+               continued_rotating_star.matter_relaxation;
+         }
+         if (coupled_equilibrium_torus && torus_activated) {
+            active_matter_relaxation = std::min(
+               active_matter_relaxation,
+               continued_torus.matter_relaxation
+            );
+         }
+         result.relative_matter_update = global_relative_fixed_point_defect(
+            relaxed_matter_update_norm,
+            other_update_norm,
+            solution_norm,
+            active_matter_relaxation
+         );
          result.relative_matter_update = std::max(
             result.relative_matter_update, stellar_matter_external_update
          );
@@ -1807,9 +2229,11 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
                ? "star_torus" : "central_star";
             amrex::Print()
                << "rotating continuation step=" << continuation_step
-               << "/" << rotation_targets.size()
-               << " target_omega="
+               << "/"
+               << continuation_schedule.stellar_angular_velocities.size()
+               << " target_stellar_omega="
                << continued_rotating_star.angular_velocity
+               << " target_disk_omega=" << continued_torus.angular_velocity
                << " phase=" << matter_phase
                << " coupled_update_iteration=" << matter_iteration
                << " relative_update=" << result.relative_matter_update << '\n';
@@ -1848,7 +2272,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
       if (equilibrium_torus.active
           && equilibrium_torus.gravity
              == EquilibriumTorusGravity::TestFluid) {
-         EquilibriumTorusParameters test_fluid_torus = equilibrium_torus;
+         EquilibriumTorusParameters test_fluid_torus = continued_torus;
          test_fluid_torus.matter_relaxation = 1.0;
          amrex::Vector<amrex::MultiFab const*> cell_spacetime_const(num_levels);
          for (int level = 0; level < num_levels; ++level) {
@@ -1875,7 +2299,7 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
             primitive_const,
             cell_spacetime_const,
             eos,
-            equilibrium_torus,
+            continued_torus,
             result.equilibrium_torus
          );
       }
@@ -1885,8 +2309,12 @@ ConformalMaterializationResult materialize_conformal_initial_data_method(
          }
          continuation_observer(
             continuation_step,
-            static_cast<int>(rotation_targets.size()),
+            static_cast<int>(
+               continuation_schedule.stellar_angular_velocities.size()
+            ),
             continued_rotating_star.angular_velocity,
+            continued_torus.angular_velocity,
+            result.black_hole,
             result.rotating_star,
             result.equilibrium_torus
          );
@@ -1937,6 +2365,9 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
    amrex::MultiFab previous_conformal(grids, distribution, 1, 0);
    amrex::MultiFab previous_lapse(grids, distribution, 1, 0);
    amrex::MultiFab previous_shift(grids, distribution, 1, 0);
+   amrex::MultiFab previous_extrinsic(
+      grids, distribution, CONFORMAL_A_NUM_COMPONENTS, 0
+   );
    amrex::MultiFab previous_primitive(
       grids, distribution, primitive_state[0]->nComp(), 0
    );
@@ -1950,6 +2381,27 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
    const InitialDataCoordinateLine radial_coordinates =
       hierarchy.coordinate_line(0, 0);
    const amrex::Real horizon_radius = 0.5 * black_hole.mass;
+   const amrex::Real target_black_hole_spin =
+      black_hole.active ? black_hole.dimensionless_spin : 0.0;
+   amrex::Real estimated_horizon_rotation_parameter = 0.0;
+   if (target_black_hole_spin != 0.0) {
+      // Cook-Pfeiffer's tangential-shift coefficient is a free horizon
+      // rotation parameter, not the physical spin.  The inertial single-hole
+      // sign is opposite the Kerr horizon angular velocity; this is only a
+      // first iterate and is calibrated against the quasi-local throat spin.
+      estimated_horizon_rotation_parameter = -target_black_hole_spin / (
+         2.0 * black_hole.mass
+         * (1.0 + std::sqrt(
+            1.0 - target_black_hole_spin * target_black_hole_spin
+         ))
+      );
+   }
+   // Start from the exact nonspinning shell and reach the first rotational
+   // estimate by continuation. Directly seeding a moderate-spin conformally
+   // flat XCTS fixed point can select the divergent branch.
+   amrex::Real horizon_rotation_parameter = 0.0;
+   const bool coupled_equilibrium_torus = equilibrium_torus.active
+      && equilibrium_torus.gravity == EquilibriumTorusGravity::Coupled;
    if (black_hole.active) {
       const amrex::Real scale = std::max(black_hole.mass, amrex::Real(1.0));
       if (!(black_hole.mass > 0.0)
@@ -1957,10 +2409,15 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
              > 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale
           || std::abs(radial_coordinates.faces.front() - horizon_radius)
              > 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale
-          || rotating_star.active || equilibrium_torus.active) {
+          || !std::isfinite(target_black_hole_spin)
+          || !(std::abs(target_black_hole_spin) < 1.0)
+          || rotating_star.active
+          || (equilibrium_torus.active
+              && !(equilibrium_torus.inner_radius > horizon_radius))) {
          amrex::Abort(
             "the first spherical-shell black-hole XCTS owner requires a "
-            "vacuum Schwarzschild horizon at r=M/2"
+            "quasi-equilibrium horizon at r=M/2 and any optional torus inner "
+            "radius must lie outside the horizon"
          );
       }
    }
@@ -1972,6 +2429,8 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
       const amrex::Dim3 domain_lo = amrex::lbound(
          hierarchy.geometry[0].Domain()
       );
+      const auto black_hole_problo = hierarchy.geometry[0].ProbLoArray();
+      const auto black_hole_spacing = hierarchy.geometry[0].CellSizeArray();
       for (amrex::MFIter mfi(conformal_factor, amrex::TilingIfNotGPU());
            mfi.isValid(); ++mfi) {
          const amrex::Box box = mfi.tilebox();
@@ -1984,9 +2443,21 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          ) noexcept {
             const amrex::Real radius = radial_center[i - domain_lo.x];
             const amrex::Real compactness = horizon_radius / radius;
+            const amrex::Real radial_ratio = radius / horizon_radius;
+            const amrex::Real theta = black_hole_problo[1]
+               + (j - domain_lo.y + 0.5)
+                  * black_hole_spacing[1];
             psi(i, j, k, 0) = 1.0 + compactness;
             lapse_psi(i, j, k, 0) = 1.0 - compactness;
-            beta(i, j, k, 0) = 0.0;
+            // A regular seed matches beta_hat_phi=Omega_H r_H sin(theta),
+            // has (d_r beta-beta/r)|_H=0 where alpha vanishes, and decays as
+            // r^-2 at infinity. The elliptic solve owns the final profile.
+            beta(i, j, k, 0) = horizon_rotation_parameter
+               * horizon_radius * std::sin(theta)
+               * (4.0 / (radial_ratio * radial_ratio)
+                  - 3.0 / (
+                     radial_ratio * radial_ratio * radial_ratio
+                  ));
             for (int component = 0;
                  component < CONFORMAL_A_NUM_COMPONENTS;
                  ++component) {
@@ -2080,20 +2551,38 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
    set_axisymmetric_spherical_toroidal_regularity(
       hierarchy, shift_boundary
    );
+   if (black_hole.active) {
+      set_axisymmetric_spherical_rotating_horizon_boundary(
+         hierarchy,
+         shift_boundary,
+         horizon_radius,
+         horizon_rotation_parameter
+      );
+   }
    set_axisymmetric_spherical_radial_robin_boundary(
       hierarchy, shift_boundary, {0.0}, 2.0
    );
 
+   const bool vacuum_black_hole = black_hole.active
+      && !coupled_equilibrium_torus;
    XctsOptions xcts_options;
-   xcts_options.max_coupled_iterations = black_hole.active ? 4 : 80;
+   const bool spinning_black_hole = black_hole.active
+      && target_black_hole_spin != 0.0;
+   xcts_options.max_coupled_iterations =
+      vacuum_black_hole && !spinning_black_hole ? 4 : 80;
    xcts_options.relative_update_tolerance = 1.0e-10;
-   xcts_options.relaxation = black_hole.active ? 1.0 : 0.7;
+   xcts_options.relaxation =
+      vacuum_black_hole && !spinning_black_hole ? 1.0 : 0.7;
    // The vacuum apparent-horizon shell is a decoupled linear control.  Its
    // algebraic residual only needs to remain well below the second-order
    // shell truncation error; asking MLMG for 1e-12 on the larger mapped
    // hierarchy stalls after the physically relevant digits have converged.
-   xcts_options.linear.relative_tolerance = black_hole.active ? 2.0e-8 : 1.0e-12;
-   xcts_options.linear.absolute_tolerance = black_hole.active ? 2.0e-8 : 1.0e-13;
+   xcts_options.linear.relative_tolerance =
+      vacuum_black_hole && !spinning_black_hole
+      ? 2.0e-8 : 1.0e-12;
+   xcts_options.linear.absolute_tolerance =
+      vacuum_black_hole && !spinning_black_hole
+      ? 2.0e-8 : 1.0e-13;
    xcts_options.linear.max_iterations = 500;
    xcts_options.linear.verbose = 0;
    amrex::Vector<amrex::MultiFab*> conformal_fields{&conformal_factor};
@@ -2125,19 +2614,14 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          conformal_factor,
          lapse_times_conformal_factor,
          azimuthal_shift,
+         conformal_extrinsic,
          scalar_boundary,
          lapse_boundary,
          shift_boundary,
          *spacetime_state[0]
       );
    };
-   const auto fill_sources = [&]() {
-      if (black_hole.active) {
-         energy_density.setVal(0.0);
-         azimuthal_momentum_density.setVal(0.0);
-         stress_trace.setVal(0.0);
-         return;
-      }
+   const auto fill_matter_sources = [&]() {
       materialize_axisymmetric_cell_geometry(
          hierarchy,
          conformal_factor,
@@ -2175,11 +2659,56 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          });
       }
    };
-
-   if (black_hole.active) {
-      fill_sources();
-      const XctsResult constraints =
-         solve_axisymmetric_spherical_xcts_constraints(
+   const auto fill_sources = [&]() {
+      if (vacuum_black_hole) {
+         energy_density.setVal(0.0);
+         azimuthal_momentum_density.setVal(0.0);
+         stress_trace.setVal(0.0);
+      } else {
+         fill_matter_sources();
+      }
+   };
+   const auto continue_horizon_rotation = [&](amrex::Real target_rotation,
+                                               char const* failure_message) {
+      XctsResult constraints;
+      const amrex::Real maximum_step = 8.0e-3 / black_hole.mass;
+      const amrex::Real minimum_step = 1.0e-6 / black_hole.mass;
+      amrex::Real trial_step = std::min(
+         maximum_step,
+         std::abs(target_rotation - horizon_rotation_parameter)
+      );
+      while (std::abs(target_rotation - horizon_rotation_parameter)
+             > 64.0 * std::numeric_limits<amrex::Real>::epsilon()
+                  * std::max(amrex::Real(1.0), std::abs(target_rotation))) {
+         const amrex::Real remaining =
+            target_rotation - horizon_rotation_parameter;
+         trial_step = std::min(trial_step, std::abs(remaining));
+         const amrex::Real candidate = horizon_rotation_parameter
+            + std::copysign(trial_step, remaining);
+         amrex::MultiFab::Copy(
+            previous_conformal, conformal_factor, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Copy(
+            previous_lapse, lapse_times_conformal_factor, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Copy(
+            previous_shift, azimuthal_shift, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Copy(
+            previous_extrinsic,
+            conformal_extrinsic,
+            0,
+            0,
+            CONFORMAL_A_NUM_COMPONENTS,
+            0
+         );
+         set_axisymmetric_spherical_rotating_horizon_boundary(
+            hierarchy,
+            shift_boundary,
+            horizon_radius,
+            candidate
+         );
+         constraints = solve_axisymmetric_spherical_xcts_constraints(
             hierarchy,
             conformal_fields,
             lapse_fields,
@@ -2193,10 +2722,167 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
             shift_boundary,
             xcts_options
          );
-      if (!constraints.converged) {
-         amrex::Abort("spherical-shell black-hole XCTS did not converge");
+         if (constraints.converged) {
+            horizon_rotation_parameter = candidate;
+            materialize_current_geometry();
+            const ConformalBlackHoleSummary throat =
+               axisymmetric_black_hole_throat_summary(
+                  hierarchy, *spacetime_state[0], horizon_radius
+               );
+            const amrex::Real measured_spin =
+               throat.christodoulou_dimensionless_spin;
+            // The Cook--Pfeiffer rotation coefficient is not the physical
+            // spin and its Kerr estimate can lie beyond a nonlinear branch
+            // fold. Stop continuation as soon as the measured spin brackets
+            // the target; the outer calibration then solves for the precise
+            // coefficient without needlessly overshooting the physical goal.
+            if (target_black_hole_spin * measured_spin > 0.0
+                && std::abs(measured_spin)
+                   >= std::abs(target_black_hole_spin)) {
+               return constraints;
+            }
+            trial_step = std::min(maximum_step, 1.25 * trial_step);
+            continue;
+         }
+
+         amrex::MultiFab::Copy(
+            conformal_factor, previous_conformal, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Copy(
+            lapse_times_conformal_factor, previous_lapse, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Copy(
+            azimuthal_shift, previous_shift, 0, 0, 1, 0
+         );
+         amrex::MultiFab::Copy(
+            conformal_extrinsic,
+            previous_extrinsic,
+            0,
+            0,
+            CONFORMAL_A_NUM_COMPONENTS,
+            0
+         );
+         set_axisymmetric_spherical_rotating_horizon_boundary(
+            hierarchy,
+            shift_boundary,
+            horizon_radius,
+            horizon_rotation_parameter
+         );
+         trial_step *= 0.5;
+         if (trial_step < minimum_step) {
+            amrex::Abort(failure_message);
+         }
       }
-      materialize_current_geometry();
+      return constraints;
+   };
+
+   if (vacuum_black_hole) {
+      fill_sources();
+      XctsResult constraints;
+      ConformalBlackHoleSummary black_hole_summary;
+      amrex::Real previous_rotation_parameter =
+         std::numeric_limits<amrex::Real>::quiet_NaN();
+      amrex::Real previous_measured_spin =
+         std::numeric_limits<amrex::Real>::quiet_NaN();
+      constexpr int maximum_spin_calibrations = 10;
+      const amrex::Real spin_tolerance = std::max(
+         amrex::Real(2.0e-5),
+         2.0e-4 * std::abs(target_black_hole_spin)
+      );
+      bool spin_calibrated = !spinning_black_hole;
+      if (spinning_black_hole) {
+         constraints = continue_horizon_rotation(
+            estimated_horizon_rotation_parameter,
+            "spherical-shell black-hole spin continuation did not converge"
+         );
+      }
+      for (int calibration = 0;
+           calibration < (spinning_black_hole
+              ? maximum_spin_calibrations : 1);
+           ++calibration) {
+         constraints = solve_axisymmetric_spherical_xcts_constraints(
+            hierarchy,
+            conformal_fields,
+            lapse_fields,
+            shift_fields,
+            extrinsic_fields,
+            energy_fields,
+            momentum_fields,
+            stress_fields,
+            scalar_boundary,
+            lapse_boundary,
+            shift_boundary,
+            xcts_options
+         );
+         if (!constraints.converged) {
+            amrex::Abort("spherical-shell black-hole XCTS did not converge");
+         }
+         materialize_current_geometry();
+         black_hole_summary = axisymmetric_black_hole_throat_summary(
+            hierarchy, *spacetime_state[0], horizon_radius
+         );
+         const amrex::Real measured_spin =
+            black_hole_summary.christodoulou_dimensionless_spin;
+         const amrex::Real spin_error =
+            measured_spin - target_black_hole_spin;
+         if (std::abs(spin_error) <= spin_tolerance) {
+            spin_calibrated = true;
+            break;
+         }
+
+         amrex::Real next_rotation_parameter =
+            std::numeric_limits<amrex::Real>::quiet_NaN();
+         if (std::isfinite(previous_measured_spin)
+             && measured_spin != previous_measured_spin) {
+            next_rotation_parameter = horizon_rotation_parameter
+               - spin_error * (
+                  horizon_rotation_parameter - previous_rotation_parameter
+               ) / (measured_spin - previous_measured_spin);
+         }
+         if (!std::isfinite(next_rotation_parameter)
+             && std::abs(measured_spin) > 1.0e-10) {
+            next_rotation_parameter = horizon_rotation_parameter
+               * target_black_hole_spin / measured_spin;
+         }
+         if (!std::isfinite(next_rotation_parameter)) {
+            next_rotation_parameter = horizon_rotation_parameter
+               - std::copysign(
+                  0.025 / black_hole.mass,
+                  spin_error
+               );
+         }
+         const amrex::Real maximum_rotation_parameter =
+            0.75 / black_hole.mass;
+         next_rotation_parameter = std::clamp(
+            next_rotation_parameter,
+            -maximum_rotation_parameter,
+            maximum_rotation_parameter
+         );
+         previous_rotation_parameter = horizon_rotation_parameter;
+         previous_measured_spin = measured_spin;
+         horizon_rotation_parameter = next_rotation_parameter;
+         set_axisymmetric_spherical_rotating_horizon_boundary(
+            hierarchy,
+            shift_boundary,
+            horizon_radius,
+            horizon_rotation_parameter
+         );
+         if (amrex::ParallelDescriptor::IOProcessor()) {
+            amrex::Print()
+               << "black-hole spin calibration iteration="
+               << calibration + 1
+               << " target_chi=" << target_black_hole_spin
+               << " measured_chi=" << measured_spin
+               << " horizon_rotation_parameter="
+               << horizon_rotation_parameter << '\n';
+         }
+      }
+      if (!spin_calibrated) {
+         amrex::Abort(
+            "spherical-shell black-hole XCTS did not reach its physical "
+            "horizon-spin target"
+         );
+      }
       ConformalMaterializationResult result;
       result.constraints = {
          constraints.coupled_iterations,
@@ -2206,51 +2892,91 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          constraints.momentum_residual,
          constraints.converged,
       };
+      result.black_hole = black_hole_summary;
+      if (equilibrium_torus.active) {
+         EquilibriumTorusParameters test_fluid_torus = equilibrium_torus;
+         test_fluid_torus.matter_relaxation = 1.0;
+         result.equilibrium_torus =
+            update_axisymmetric_spherical_equilibrium_torus_primitives(
+               hierarchy,
+               primitive_state,
+               cell_geometry_view,
+               EOSMethod,
+               eos,
+               test_fluid_torus
+            );
+         fill_matter_sources();
+         update_axisymmetric_equilibrium_torus_global_diagnostics<EOSMethod>(
+            hierarchy,
+            *primitive_state[0],
+            *cell_spacetime[0],
+            conformal_factor,
+            azimuthal_momentum_density,
+            eos,
+            equilibrium_torus,
+            result.equilibrium_torus
+         );
+      }
       return result;
    }
 
-   const bool coupled_equilibrium_torus = equilibrium_torus.active
-      && equilibrium_torus.gravity == EquilibriumTorusGravity::Coupled;
+   if (spinning_black_hole) {
+      // Establish the rotating vacuum hole before activating a coupled disk.
+      // This keeps the matter and horizon-spin fixed points individually
+      // small and preserves the same continuation path as the vacuum owner.
+      energy_density.setVal(0.0);
+      azimuthal_momentum_density.setVal(0.0);
+      stress_trace.setVal(0.0);
+      continue_horizon_rotation(
+         estimated_horizon_rotation_parameter,
+         "coupled black-hole/disk spin continuation did not converge"
+      );
+      materialize_current_geometry();
+   }
+
    const bool update_stellar_matter = rotating_star.active
       && (rotating_star.angular_velocity != 0.0
           || coupled_equilibrium_torus);
-   amrex::Vector<amrex::Real> rotation_targets;
-   if (rotating_star.active && rotating_star.angular_velocity != 0.0) {
-      rotation_targets = rotating_star.continuation_targets;
-      if (rotation_targets.empty()) {
-         for (int step = 1; step <= rotating_star.continuation_steps; ++step) {
-            rotation_targets.push_back(
-               rotating_star.angular_velocity * step
-               / static_cast<amrex::Real>(rotating_star.continuation_steps)
-            );
-         }
-      } else {
-         rotation_targets.push_back(rotating_star.angular_velocity);
-      }
-   } else {
-      rotation_targets.push_back(rotating_star.angular_velocity);
-   }
+   const CircularContinuationSchedule continuation_schedule =
+      circular_continuation_schedule(rotating_star, equilibrium_torus);
 
    ConformalMaterializationResult result;
    const bool iterate_matter = update_stellar_matter
       || coupled_equilibrium_torus;
+   const bool calibrate_coupled_black_hole_spin =
+      black_hole.active && coupled_equilibrium_torus;
    const int maximum_matter_iterations = iterate_matter
-      ? rotating_star.max_iterations
+      ? (rotating_star.active
+            ? rotating_star.max_iterations
+            : equilibrium_torus.max_iterations)
          * (coupled_equilibrium_torus ? 2 : 1)
       : 12;
    const amrex::Real matter_tolerance = iterate_matter
-      ? rotating_star.relative_tolerance : 1.0e-9;
+      ? (rotating_star.active
+            ? rotating_star.relative_tolerance
+            : equilibrium_torus.relative_tolerance)
+      : 1.0e-9;
    for (int continuation_step = 1;
-        continuation_step <= static_cast<int>(rotation_targets.size());
+        continuation_step <= static_cast<int>(
+           continuation_schedule.stellar_angular_velocities.size()
+        );
         ++continuation_step) {
       RotatingStarParameters continued = rotating_star;
-      continued.angular_velocity = rotation_targets[continuation_step - 1];
+      continued.angular_velocity =
+         continuation_schedule
+            .stellar_angular_velocities[continuation_step - 1];
+      EquilibriumTorusParameters continued_torus = equilibrium_torus;
+      continued_torus.angular_velocity =
+         continuation_schedule.disk_angular_velocities[continuation_step - 1];
       if (coupled_equilibrium_torus) {
-         continued.update_outer_radius = equilibrium_torus.inner_radius;
+         continued.update_outer_radius = continued_torus.inner_radius;
       }
       int step_iterations = 0;
       bool torus_activated = !coupled_equilibrium_torus;
-      bool coupled_torus_updated = false;
+      bool coupled_torus_updated =
+         seed_from_spacetime && coupled_equilibrium_torus;
+      bool black_hole_spin_converged =
+         !calibrate_coupled_black_hole_spin;
       result.relative_matter_update =
          std::numeric_limits<amrex::Real>::max();
       for (int matter_iteration = 1;
@@ -2282,7 +3008,7 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
             *cell_spacetime[0]
          );
          const bool preserve_initial_stellar_seed =
-            !equilibrium_torus.active
+            !continued_torus.active
             && continuation_step == 1 && matter_iteration == 1;
          if (update_stellar_matter && !preserve_initial_stellar_seed) {
             result.rotating_star =
@@ -2295,9 +3021,9 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
                   continued
                );
          }
-         if (equilibrium_torus.active
+         if (continued_torus.active
              && result.rotating_star.matter_outer_radius
-                >= equilibrium_torus.inner_radius) {
+                >= continued_torus.inner_radius) {
             amrex::Abort(
                "equilibrium-torus inner radius must lie outside the central "
                "star matter support"
@@ -2311,7 +3037,7 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
                   cell_geometry_view,
                   EOSMethod,
                   eos,
-                  equilibrium_torus
+                  continued_torus
                );
             coupled_torus_updated = true;
          }
@@ -2342,6 +3068,25 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          if (!constraints.converged) {
             amrex::Abort("axisymmetric spherical XCTS did not converge");
          }
+         amrex::Real black_hole_spin_error = 0.0;
+         if (black_hole.active) {
+            materialize_current_geometry();
+            result.black_hole = axisymmetric_black_hole_throat_summary(
+               hierarchy, *spacetime_state[0], horizon_radius
+            );
+            const amrex::Real measured_spin =
+               result.black_hole.christodoulou_dimensionless_spin;
+            if (calibrate_coupled_black_hole_spin) {
+               black_hole_spin_error =
+                  measured_spin - target_black_hole_spin;
+               const amrex::Real spin_tolerance = std::max(
+                  amrex::Real(2.0e-5),
+                  2.0e-4 * std::abs(target_black_hole_spin)
+               );
+               black_hole_spin_converged =
+                  std::abs(black_hole_spin_error) <= spin_tolerance;
+            }
+         }
          amrex::MultiFab::Subtract(
             previous_primitive,
             *primitive_state[0],
@@ -2359,48 +3104,120 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          amrex::MultiFab::Subtract(
             previous_shift, azimuthal_shift, 0, 0, 1, 0
          );
-         amrex::Real update_norm = 0.0;
+         amrex::Real relaxed_matter_update_norm = 0.0;
+         amrex::Real other_update_norm = 0.0;
          amrex::Real solution_norm = 1.0;
-         for (int component = 0;
-              component < primitive_state[0]->nComp();
-              ++component) {
-            update_norm = std::max(
-               update_norm, previous_primitive.norm0(component, 0, false)
-            );
-            solution_norm = std::max(
-               solution_norm,
-               primitive_state[0]->norm0(component, 0, false)
+         accumulate_local_linf_norms(
+            previous_primitive,
+            *primitive_state[0],
+            primitive_state[0]->nComp(),
+            relaxed_matter_update_norm,
+            solution_norm
+         );
+         accumulate_local_linf_norms(
+            previous_conformal,
+            conformal_factor,
+            1,
+            other_update_norm,
+            solution_norm
+         );
+         accumulate_local_linf_norms(
+            previous_lapse,
+            lapse_times_conformal_factor,
+            1,
+            other_update_norm,
+            solution_norm
+         );
+         accumulate_local_linf_norms(
+            previous_shift,
+            azimuthal_shift,
+            1,
+            other_update_norm,
+            solution_norm
+         );
+         amrex::Real active_matter_relaxation = 1.0;
+         if (update_stellar_matter && !preserve_initial_stellar_seed) {
+            active_matter_relaxation = continued.matter_relaxation;
+         }
+         if (coupled_equilibrium_torus && torus_activated) {
+            active_matter_relaxation = std::min(
+               active_matter_relaxation,
+               continued_torus.matter_relaxation
             );
          }
-         update_norm = std::max({
-            update_norm,
-            previous_conformal.norm0(0, 0, false),
-            previous_lapse.norm0(0, 0, false),
-            previous_shift.norm0(0, 0, false),
-         });
-         solution_norm = std::max({
+         result.relative_matter_update = global_relative_fixed_point_defect(
+            relaxed_matter_update_norm,
+            other_update_norm,
             solution_norm,
-            conformal_factor.norm0(0, 0, false),
-            lapse_times_conformal_factor.norm0(0, 0, false),
-            azimuthal_shift.norm0(0, 0, false),
-         });
-         result.relative_matter_update = update_norm / solution_norm;
+            active_matter_relaxation
+         );
          step_iterations = matter_iteration;
          if (amrex::ParallelDescriptor::IOProcessor()
              && iterate_matter) {
-            const char* matter_phase = (
-               coupled_equilibrium_torus && torus_activated
-            ) ? "star_torus" : "central_star";
+            const char* matter_phase = black_hole.active
+               ? (torus_activated ? "black_hole_torus" : "black_hole")
+               : ((coupled_equilibrium_torus && torus_activated)
+                     ? "star_torus" : "central_star");
             amrex::Print()
                << "axisymmetric matter continuation step="
-               << continuation_step << "/" << rotation_targets.size()
-               << " omega=" << continued.angular_velocity
+               << continuation_step << "/"
+               << continuation_schedule.stellar_angular_velocities.size()
+               << " stellar_omega=" << continued.angular_velocity
+               << " disk_omega=" << continued_torus.angular_velocity
                << " phase=" << matter_phase
                << " matter_iteration=" << matter_iteration
                << " relative_update=" << result.relative_matter_update
                << '\n';
          }
-         if (result.relative_matter_update <= matter_tolerance) {
+         // Calibrate the physical horizon spin only after the current matter
+         // fixed point has settled. Moving the horizon boundary while the
+         // disk profile is still changing makes two otherwise contractive
+         // iterations chase one another and destabilizes even the spin-zero
+         // control. Calibrating target chi=0 here also removes the small
+         // physical angular momentum induced by the surrounding disk.
+         if (calibrate_coupled_black_hole_spin
+             && result.relative_matter_update <= matter_tolerance
+             && !black_hole_spin_converged) {
+            const amrex::Real measured_spin =
+               result.black_hole.christodoulou_dimensionless_spin;
+            amrex::Real next_rotation_parameter = horizon_rotation_parameter;
+            if (target_black_hole_spin == 0.0) {
+               next_rotation_parameter += 0.25
+                  * black_hole_spin_error / black_hole.mass;
+            } else if (std::abs(measured_spin) > 1.0e-8) {
+               const amrex::Real scaled_rotation = horizon_rotation_parameter
+                  * target_black_hole_spin / measured_spin;
+               next_rotation_parameter = 0.5
+                  * (horizon_rotation_parameter + scaled_rotation);
+            } else {
+               next_rotation_parameter += 0.25
+                  * black_hole_spin_error / black_hole.mass;
+            }
+            const amrex::Real maximum_rotation_parameter =
+               0.75 / black_hole.mass;
+            horizon_rotation_parameter = std::clamp(
+               next_rotation_parameter,
+               -maximum_rotation_parameter,
+               maximum_rotation_parameter
+            );
+            set_axisymmetric_spherical_rotating_horizon_boundary(
+               hierarchy,
+               shift_boundary,
+               horizon_radius,
+               horizon_rotation_parameter
+            );
+            if (amrex::ParallelDescriptor::IOProcessor()) {
+               amrex::Print()
+                  << "coupled black-hole spin calibration"
+                  << " target_chi=" << target_black_hole_spin
+                  << " measured_chi=" << measured_spin
+                  << " horizon_rotation_parameter="
+                  << horizon_rotation_parameter << '\n';
+            }
+            continue;
+         }
+         if (result.relative_matter_update <= matter_tolerance
+             && black_hole_spin_converged) {
             if (coupled_equilibrium_torus && !torus_activated) {
                torus_activated = true;
                continue;
@@ -2410,23 +3227,25 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
       }
       result.matter_iterations += step_iterations;
       if (result.relative_matter_update > matter_tolerance
+          || !black_hole_spin_converged
           || (coupled_equilibrium_torus
               && (!torus_activated || !coupled_torus_updated))) {
          amrex::Abort(
-            "axisymmetric star-torus matter iteration did not converge"
+            "axisymmetric black-hole/stellar torus matter iteration did not "
+            "converge"
          );
       }
       materialize_current_geometry();
-      if (equilibrium_torus.active
-          && equilibrium_torus.gravity
+      if (continued_torus.active
+          && continued_torus.gravity
              == EquilibriumTorusGravity::TestFluid) {
          const amrex::Real central_matter_outer_radius =
             axisymmetric_matter_outer_radius<EOSMethod>(
                hierarchy,
                *primitive_state[0],
-               equilibrium_torus.atmosphere
+               continued_torus.atmosphere
             );
-         if (central_matter_outer_radius >= equilibrium_torus.inner_radius) {
+         if (central_matter_outer_radius >= continued_torus.inner_radius) {
             amrex::Abort(
                "equilibrium-torus inner radius must lie outside the central "
                "star matter support"
@@ -2436,7 +3255,7 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
             result.rotating_star.matter_outer_radius,
             central_matter_outer_radius
          );
-         EquilibriumTorusParameters test_fluid_torus = equilibrium_torus;
+         EquilibriumTorusParameters test_fluid_torus = continued_torus;
          test_fluid_torus.matter_relaxation = 1.0;
          result.equilibrium_torus =
             update_axisymmetric_spherical_equilibrium_torus_primitives(
@@ -2449,17 +3268,19 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
             );
       }
       fill_sources();
-      update_axisymmetric_global_diagnostics<EOSMethod>(
-         hierarchy,
-         *primitive_state[0],
-         *cell_spacetime[0],
-         conformal_factor,
-         conformal_extrinsic,
-         energy_density,
-         azimuthal_momentum_density,
-         eos,
-         result.rotating_star
-      );
+      if (!black_hole.active) {
+         update_axisymmetric_global_diagnostics<EOSMethod>(
+            hierarchy,
+            *primitive_state[0],
+            *cell_spacetime[0],
+            conformal_factor,
+            conformal_extrinsic,
+            energy_density,
+            azimuthal_momentum_density,
+            eos,
+            result.rotating_star
+         );
+      }
       update_axisymmetric_equilibrium_torus_global_diagnostics<EOSMethod>(
          hierarchy,
          *primitive_state[0],
@@ -2467,7 +3288,7 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
          conformal_factor,
          azimuthal_momentum_density,
          eos,
-         equilibrium_torus,
+         continued_torus,
          result.equilibrium_torus
       );
       if (update_stellar_matter) {
@@ -2486,16 +3307,30 @@ materialize_axisymmetric_spherical_xcts_initial_data_method(
             diagnostic.mass_shedding_indicator;
       }
       if (continuation_observer) {
+         if (black_hole.active) {
+            result.black_hole = axisymmetric_black_hole_throat_summary(
+               hierarchy, *spacetime_state[0], horizon_radius
+            );
+         }
          continuation_observer(
             continuation_step,
-            static_cast<int>(rotation_targets.size()),
+            static_cast<int>(
+               continuation_schedule.stellar_angular_velocities.size()
+            ),
             continued.angular_velocity,
+            continued_torus.angular_velocity,
+            result.black_hole,
             result.rotating_star,
             result.equilibrium_torus
          );
       }
    }
    materialize_current_geometry();
+   if (black_hole.active) {
+      result.black_hole = axisymmetric_black_hole_throat_summary(
+         hierarchy, *spacetime_state[0], horizon_radius
+      );
+   }
    return result;
 }
 #endif

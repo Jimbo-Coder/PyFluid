@@ -16,10 +16,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEPS_DIR = ROOT / ".deps"
 MANIFEST = ROOT / "pyfluid_amrex/dependencies/amrex.toml"
-ACTIVE_INSTALL = DEPS_DIR / "amrex-mpi-lsolvers-hdf5"
 PYFLUID_SOURCE = ROOT / "pyfluid_amrex"
-PYFLUID_BUILD = ROOT / "build/pyfluid_amrex"
 RELEASE_RE = re.compile(r"^[0-9]{2}\.[0-9]{2}(?:\.[0-9]+)?$")
+VARIANT_SUFFIXES = {
+    "mpi": "mpi-lsolvers-hdf5",
+    "openmp": "mpi-omp-lsolvers-hdf5",
+}
 
 
 @dataclass(frozen=True)
@@ -123,13 +125,14 @@ def installed_version(prefix: Path) -> str | None:
     return match.group(1) if match else None
 
 
-def install_contract_errors(prefix: Path) -> list[str]:
+def install_contract_errors(prefix: Path, variant: str) -> list[str]:
     config = prefix / "lib/cmake/AMReX/AMReXConfig.cmake"
     if not config.is_file():
         return [f"missing {config}"]
     text = config.read_text()
     expected = {
         "AMReX_MPI_FOUND": "ON",
+        "AMReX_OMP_FOUND": "ON" if variant == "openmp" else "OFF",
         "AMReX_HDF5_FOUND": "ON",
         "AMReX_LSOLVERS_FOUND": "ON",
     }
@@ -160,20 +163,26 @@ def managed_source_dirty(version: str) -> bool | None:
     return bool(captured(["git", "status", "--porcelain"], cwd=source).strip())
 
 
-def print_status(pin: AmrexPin, releases: dict[str, str] | None) -> bool:
-    installed = installed_version(ACTIVE_INSTALL)
-    errors = install_contract_errors(ACTIVE_INSTALL)
+def print_status(
+    pin: AmrexPin,
+    releases: dict[str, str] | None,
+    variant: str,
+) -> bool:
+    active_install = active_install_path(variant)
+    installed = installed_version(active_install)
+    errors = install_contract_errors(active_install, variant)
     source_commit = managed_source_commit(pin.version)
     source_dirty = managed_source_dirty(pin.version)
+    print(f"variant={variant}")
     print(f"manifest_version={pin.version}")
     print(f"manifest_commit={pin.commit}")
     print(f"source_commit={source_commit or '<unmanaged-or-missing>'}")
     print(f"source_dirty={source_dirty if source_dirty is not None else '<unknown>'}")
     print(f"installed_version={installed or '<missing>'}")
-    if ACTIVE_INSTALL.is_symlink():
-        print(f"active_install={ACTIVE_INSTALL} -> {os.readlink(ACTIVE_INSTALL)}")
+    if active_install.is_symlink():
+        print(f"active_install={active_install} -> {os.readlink(active_install)}")
     else:
-        print(f"active_install={ACTIVE_INSTALL}")
+        print(f"active_install={active_install}")
     latest = None
     if releases is not None:
         latest = max(releases, key=version_key)
@@ -183,9 +192,9 @@ def print_status(pin: AmrexPin, releases: dict[str, str] | None) -> bool:
         print(f"contract_error={error}")
     if source_commit != pin.commit:
         print("contract_error=managed source does not match manifest commit")
-    expected_install = install_path(pin.version).resolve()
+    expected_install = install_path(pin.version, variant).resolve()
     active_target_ok = (
-        ACTIVE_INSTALL.is_symlink() and ACTIVE_INSTALL.resolve() == expected_install
+        active_install.is_symlink() and active_install.resolve() == expected_install
     )
     if not active_target_ok:
         print("contract_error=active install is not the pinned versioned install")
@@ -210,15 +219,28 @@ def source_path(version: str) -> Path:
     return DEPS_DIR / f"amrex-{version}"
 
 
-def build_path(version: str) -> Path:
-    return DEPS_DIR / f"build-amrex-{version}-mpi-lsolvers-hdf5"
+def active_install_path(variant: str) -> Path:
+    return DEPS_DIR / f"amrex-{VARIANT_SUFFIXES[variant]}"
 
 
-def install_path(version: str) -> Path:
-    return DEPS_DIR / f"amrex-{version}-mpi-lsolvers-hdf5"
+def build_path(version: str, variant: str) -> Path:
+    return DEPS_DIR / f"build-amrex-{version}-{VARIANT_SUFFIXES[variant]}"
 
 
-def prepare_source(pin: AmrexPin) -> Path:
+def install_path(version: str, variant: str) -> Path:
+    return DEPS_DIR / f"amrex-{version}-{VARIANT_SUFFIXES[variant]}"
+
+
+def pyfluid_build_path(variant: str) -> Path:
+    suffix = "" if variant == "mpi" else "-openmp"
+    return ROOT / f"build/pyfluid_amrex{suffix}"
+
+
+def pyfluid_preset(variant: str) -> str:
+    return "full-release" if variant == "mpi" else "full-release-openmp"
+
+
+def prepare_source(pin: AmrexPin, *, allow_clone: bool = True) -> Path:
     source = source_path(pin.version)
     if source.exists():
         if not (source / ".git").is_dir():
@@ -227,6 +249,8 @@ def prepare_source(pin: AmrexPin) -> Path:
                 "move it aside or use the already installed release"
             )
     else:
+        if not allow_clone:
+            raise RuntimeError(f"offline install requires managed source {source}")
         run(
             [
                 "git",
@@ -249,11 +273,22 @@ def prepare_source(pin: AmrexPin) -> Path:
     return source
 
 
-def build_amrex(pin: AmrexPin, jobs: int) -> Path:
-    source = prepare_source(pin)
-    build = build_path(pin.version)
-    install = install_path(pin.version)
+def build_amrex(
+    pin: AmrexPin,
+    jobs: int,
+    variant: str,
+    *,
+    allow_clone: bool = True,
+) -> Path:
+    source = prepare_source(pin, allow_clone=allow_clone)
+    build = build_path(pin.version, variant)
+    install = install_path(pin.version, variant)
+    existing_errors = install_contract_errors(install, variant)
+    if installed_version(install) == pin.version and not existing_errors:
+        print(f"reusing verified AMReX install {install}")
+        return install
     hdf5_root = Path("/opt/homebrew/opt/hdf5-mpi")
+    libomp_root = Path("/opt/homebrew/opt/libomp")
     compilers = {
         "C": Path("/opt/homebrew/bin/mpicc"),
         "CXX": Path("/opt/homebrew/bin/mpicxx"),
@@ -263,6 +298,17 @@ def build_amrex(pin: AmrexPin, jobs: int) -> Path:
             raise RuntimeError(f"missing {name} compiler wrapper: {compiler}")
     if not hdf5_root.exists():
         raise RuntimeError(f"missing Homebrew parallel HDF5: {hdf5_root}")
+    if variant == "openmp" and not libomp_root.exists():
+        raise RuntimeError(f"missing Homebrew LLVM OpenMP runtime: {libomp_root}")
+    prefix_path = str(hdf5_root)
+    openmp_arguments: list[str] = []
+    if variant == "openmp":
+        prefix_path += f";{libomp_root}"
+        openmp_arguments = [
+            f"-DOpenMP_CXX_FLAGS=-Xpreprocessor -fopenmp -I{libomp_root}/include",
+            "-DOpenMP_CXX_LIB_NAMES=omp",
+            f"-DOpenMP_omp_LIBRARY={libomp_root}/lib/libomp.dylib",
+        ]
     run(
         [
             "cmake",
@@ -274,22 +320,23 @@ def build_amrex(pin: AmrexPin, jobs: int) -> Path:
             "-DCMAKE_BUILD_TYPE=Release",
             f"-DCMAKE_C_COMPILER={compilers['C']}",
             f"-DCMAKE_CXX_COMPILER={compilers['CXX']}",
-            f"-DCMAKE_PREFIX_PATH={hdf5_root}",
+            f"-DCMAKE_PREFIX_PATH={prefix_path}",
             f"-DHDF5_ROOT={hdf5_root}",
             "-DAMReX_SPACEDIM=1;2;3",
             "-DAMReX_MPI=ON",
-            "-DAMReX_OMP=OFF",
+            f"-DAMReX_OMP={'ON' if variant == 'openmp' else 'OFF'}",
             "-DAMReX_FORTRAN=OFF",
             "-DAMReX_PARTICLES=OFF",
             "-DAMReX_LINEAR_SOLVERS=ON",
             "-DAMReX_LINEAR_SOLVERS_INCFLO=ON",
             "-DAMReX_LINEAR_SOLVERS_EM=ON",
             "-DAMReX_HDF5=ON",
+            *openmp_arguments,
         ]
     )
     run(["cmake", "--build", str(build), "-j", str(jobs)])
     run(["cmake", "--install", str(build)])
-    errors = install_contract_errors(install)
+    errors = install_contract_errors(install, variant)
     if installed_version(install) != pin.version:
         errors.append(
             f"installed version is {installed_version(install)!r}, "
@@ -310,51 +357,53 @@ def atomic_symlink(target: Path | str, link: Path) -> None:
     os.replace(temporary, link)
 
 
-def activate_install(candidate: Path) -> ActivationState:
-    relative_candidate = Path(os.path.relpath(candidate, ACTIVE_INSTALL.parent))
-    if ACTIVE_INSTALL.is_symlink():
-        state = ActivationState("symlink", link_target=os.readlink(ACTIVE_INSTALL))
-        atomic_symlink(relative_candidate, ACTIVE_INSTALL)
+def activate_install(candidate: Path, variant: str) -> ActivationState:
+    active_install = active_install_path(variant)
+    relative_candidate = Path(os.path.relpath(candidate, active_install.parent))
+    if active_install.is_symlink():
+        state = ActivationState("symlink", link_target=os.readlink(active_install))
+        atomic_symlink(relative_candidate, active_install)
         return state
-    if ACTIVE_INSTALL.exists():
-        old_version = installed_version(ACTIVE_INSTALL)
+    if active_install.exists():
+        old_version = installed_version(active_install)
         if old_version is None:
-            raise RuntimeError(f"cannot identify legacy install {ACTIVE_INSTALL}")
-        backup = install_path(old_version)
+            raise RuntimeError(f"cannot identify legacy install {active_install}")
+        backup = install_path(old_version, variant)
         if backup.exists():
             raise RuntimeError(f"refusing to overwrite preserved install {backup}")
-        ACTIVE_INSTALL.rename(backup)
+        active_install.rename(backup)
         try:
-            atomic_symlink(relative_candidate, ACTIVE_INSTALL)
+            atomic_symlink(relative_candidate, active_install)
         except Exception:
-            backup.rename(ACTIVE_INSTALL)
+            backup.rename(active_install)
             raise
         return ActivationState("directory", backup=backup)
-    atomic_symlink(relative_candidate, ACTIVE_INSTALL)
+    atomic_symlink(relative_candidate, active_install)
     return ActivationState("missing")
 
 
-def restore_install(state: ActivationState) -> None:
+def restore_install(state: ActivationState, variant: str) -> None:
+    active_install = active_install_path(variant)
     if state.kind == "symlink":
         if state.link_target is None:
             raise RuntimeError("missing previous AMReX link target")
-        atomic_symlink(state.link_target, ACTIVE_INSTALL)
+        atomic_symlink(state.link_target, active_install)
         return
-    if ACTIVE_INSTALL.is_symlink():
-        ACTIVE_INSTALL.unlink()
+    if active_install.is_symlink():
+        active_install.unlink()
     if state.kind == "directory":
         if state.backup is None or not state.backup.exists():
             raise RuntimeError("missing preserved AMReX install during rollback")
-        state.backup.rename(ACTIVE_INSTALL)
+        state.backup.rename(active_install)
 
 
-def rebuild_pyfluid(jobs: int) -> None:
-    run(["cmake", "--preset", "full-release"], cwd=PYFLUID_SOURCE)
+def rebuild_pyfluid(jobs: int, variant: str) -> None:
+    run(["cmake", "--preset", pyfluid_preset(variant)], cwd=PYFLUID_SOURCE)
     run(
         [
             "cmake",
             "--build",
-            str(PYFLUID_BUILD),
+            str(pyfluid_build_path(variant)),
             "-j",
             str(jobs),
             "--target",
@@ -363,24 +412,37 @@ def rebuild_pyfluid(jobs: int) -> None:
     )
 
 
-def update(pin: AmrexPin, target: AmrexPin, jobs: int) -> None:
-    candidate = build_amrex(target, jobs)
-    previous = activate_install(candidate)
+def install_variant(
+    pin: AmrexPin,
+    target: AmrexPin,
+    jobs: int,
+    variant: str,
+    *,
+    update_pin: bool,
+    allow_clone: bool = True,
+) -> None:
+    candidate = build_amrex(target, jobs, variant, allow_clone=allow_clone)
+    previous = activate_install(candidate, variant)
     try:
-        rebuild_pyfluid(jobs)
+        rebuild_pyfluid(jobs, variant)
     except Exception:
         print("PyFluid rebuild failed; restoring the previous AMReX install.")
-        restore_install(previous)
+        restore_install(previous, variant)
         try:
-            rebuild_pyfluid(jobs)
+            if previous.kind != "missing":
+                rebuild_pyfluid(jobs, variant)
         except Exception as rollback_error:
             raise RuntimeError(
                 "AMReX activation and the restored PyFluid rebuild both failed"
             ) from rollback_error
         raise
-    write_pin(target)
-    print(f"updated AMReX {pin.version} -> {target.version}")
-    print("Run validate_amrex_suite.py --level quick before committing the pin.")
+    if update_pin:
+        write_pin(target)
+        print(f"updated AMReX {pin.version} -> {target.version}")
+        print("Run validate_amrex_suite.py --level quick before committing the pin.")
+    else:
+        print(f"installed pinned AMReX {target.version} ({variant})")
+        print("Run validate_amrex_suite.py --level quick before using this variant.")
 
 
 def main() -> int:
@@ -389,6 +451,17 @@ def main() -> int:
         "--update",
         action="store_true",
         help="build, verify, activate, and pin an official stable release",
+    )
+    parser.add_argument(
+        "--install",
+        action="store_true",
+        help="build, verify, and activate the pinned release without changing the pin",
+    )
+    parser.add_argument(
+        "--variant",
+        choices=tuple(VARIANT_SUFFIXES),
+        default="mpi",
+        help="managed AMReX build variant (default: mpi)",
     )
     parser.add_argument(
         "--version",
@@ -401,28 +474,51 @@ def main() -> int:
     )
     parser.add_argument("--jobs", type=int, default=3)
     args = parser.parse_args()
+    if args.install and args.update:
+        parser.error("--install and --update are mutually exclusive")
     if args.version and not args.update:
         parser.error("--version requires --update")
     if args.offline and args.update:
         parser.error("--offline cannot be combined with --update")
+    if args.update and args.variant != "mpi":
+        parser.error("update the shared pin with --variant mpi, then install companions")
     if args.jobs < 1:
         parser.error("--jobs must be positive")
 
     pin = load_pin()
-    releases = None if args.offline else remote_releases(pin.repository)
+    releases = None if args.offline or args.install else remote_releases(pin.repository)
+    if args.install:
+        if print_status(pin, None, args.variant):
+            print(f"AMReX {args.variant} variant is already current; no install performed.")
+            return 0
+        install_variant(
+            pin,
+            pin,
+            args.jobs,
+            args.variant,
+            update_pin=False,
+            allow_clone=not args.offline,
+        )
+        return 0 if print_status(pin, None, args.variant) else 1
     if not args.update:
-        return 0 if print_status(pin, releases) else 1
+        return 0 if print_status(pin, releases, args.variant) else 1
     if releases is None:
         raise RuntimeError("release metadata is required for an update")
     version = args.version or max(releases, key=version_key)
     if version not in releases:
         raise RuntimeError(f"official stable AMReX release not found: {version}")
     target = AmrexPin(pin.repository, version, releases[version])
-    if target == pin and print_status(pin, releases):
+    if target == pin and print_status(pin, releases, args.variant):
         print("AMReX is already current; no update performed.")
         return 0
-    update(pin, target, args.jobs)
-    return 0 if print_status(target, releases) else 1
+    install_variant(
+        pin,
+        target,
+        args.jobs,
+        args.variant,
+        update_pin=True,
+    )
+    return 0 if print_status(target, releases, args.variant) else 1
 
 
 if __name__ == "__main__":

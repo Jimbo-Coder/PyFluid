@@ -105,19 +105,37 @@ def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
       process.wait()
 
 
-def amrex_executable(dim: int) -> Path:
+def amrex_build_dir(
+   machine: str | Path | MachineProfile | None = None,
+) -> Path:
+   """Resolve the selected machine profile's configured build directory."""
+   profile = load_machine(machine)
+   configured = profile.build.get("build_dir", str(BUILD))
+   return Path(profile.expand(str(configured)))
+
+
+def amrex_executable(
+   dim: int,
+   machine: str | Path | MachineProfile | None = None,
+) -> Path:
    if dim not in (1, 2, 3):
       raise ValueError(f"AMReX dimension must be 1, 2, or 3, got {dim}")
-   return BUILD / f"pyfluid_amrex_{dim}d"
+   return amrex_build_dir(machine) / f"pyfluid_amrex_{dim}d"
 
 
-def build_cached_target(target: str, *, parallel: int = 4) -> Path:
+def build_cached_target(
+   target: str,
+   *,
+   parallel: int = 4,
+   machine: str | Path | MachineProfile | None = None,
+) -> Path:
    """Bring one configured CMake target up to date or fail with its log."""
+   build_dir = amrex_build_dir(machine)
    completed = subprocess.run(
       (
          "cmake",
          "--build",
-         str(BUILD),
+         str(build_dir),
          "--target",
          target,
          "--parallel",
@@ -132,7 +150,7 @@ def build_cached_target(target: str, *, parallel: int = 4) -> Path:
       raise RuntimeError(
          f"failed to build {target}:\n{completed.stdout}\n{completed.stderr}"
       )
-   return BUILD / target
+   return build_dir / target
 
 
 def _mpi_prefix(ranks: int, machine: str | Path | MachineProfile | None = None) -> list[str]:
@@ -291,7 +309,9 @@ def run_amrex(
    extra_env: dict[str, str] | None = None,
    machine: str | Path | MachineProfile | None = None,
 ) -> AmrexRunResult:
-   executable_path = executable if executable is not None else amrex_executable(dim)
+   executable_path = (
+      executable if executable is not None else amrex_executable(dim, machine)
+   )
    return run_mpi(
       executable_path,
       [input_path],

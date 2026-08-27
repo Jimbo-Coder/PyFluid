@@ -212,6 +212,33 @@ RUNTIME_SCALAR_DIAGNOSTICS = (
     _scalar("z4c_log_conformal_determinant_linf", r"\|\ln\det\tilde\gamma\|_\infty", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
     _scalar("z4c_trace_a_tilde_linf", r"\|\mathrm{tr}\tilde A\|_\infty", DiagnosticOperation.LINF_NORM, "constraints", requirements=("spacetime",), dependencies=("z4c_constraints",)),
     _scalar("black_hole_horizon_radius", r"r_+", DiagnosticOperation.COORDINATE, "black_hole", requirements=("black_hole",)),
+    _scalar("black_hole_horizon_area", r"A_{\rm H}", DiagnosticOperation.SURFACE_INTEGRAL, "horizon", requirements=("spacetime",)),
+    _scalar("black_hole_horizon_irreducible_mass", r"M_{\rm irr}", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_area",)),
+    _scalar("black_hole_horizon_equatorial_circumference", r"C_{\rm e}", DiagnosticOperation.SURFACE_INTEGRAL, "horizon", requirements=("spacetime",)),
+    _scalar("black_hole_horizon_polar_circumference", r"C_{\rm p}", DiagnosticOperation.SURFACE_INTEGRAL, "horizon", requirements=("spacetime",)),
+    _scalar("black_hole_horizon_kerr_mass", r"M_C", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_area", "black_hole_horizon_equatorial_circumference")),
+    _scalar("black_hole_horizon_kerr_spin", r"|\chi_{\rm H}^{\rm Kerr}|", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_area", "black_hole_horizon_equatorial_circumference"), default="-1.0"),
+    *_vector(
+        "black_hole_horizon_coordinate_angular_momentum",
+        ("black_hole_horizon_coordinate_angular_momentum1", "black_hole_horizon_coordinate_angular_momentum2", "black_hole_horizon_coordinate_angular_momentum3"),
+        (r"J_{\rm H,1}^{\rm coord}", r"J_{\rm H,2}^{\rm coord}", r"J_{\rm H,3}^{\rm coord}"),
+        DiagnosticOperation.SURFACE_INTEGRAL,
+        "horizon",
+        requirements=("spacetime",),
+        dependencies=("black_hole_horizon_area",),
+    ),
+    _scalar("black_hole_horizon_coordinate_angular_momentum_magnitude", r"|J_{\rm H}^{\rm coord}|", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_coordinate_angular_momentum",)),
+    _scalar("black_hole_horizon_coordinate_christodoulou_mass", r"M_{\rm H}^{\rm coord}", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_area", "black_hole_horizon_coordinate_angular_momentum")),
+    *_vector(
+        "black_hole_horizon_coordinate_christodoulou_spin",
+        ("black_hole_horizon_coordinate_christodoulou_spin1", "black_hole_horizon_coordinate_christodoulou_spin2", "black_hole_horizon_coordinate_christodoulou_spin3"),
+        (r"\chi_{\rm H,1}^{\rm coord}", r"\chi_{\rm H,2}^{\rm coord}", r"\chi_{\rm H,3}^{\rm coord}"),
+        DiagnosticOperation.DERIVED,
+        "horizon",
+        requirements=("spacetime",),
+        dependencies=("black_hole_horizon_coordinate_christodoulou_mass", "black_hole_horizon_coordinate_angular_momentum"),
+    ),
+    _scalar("black_hole_horizon_coordinate_christodoulou_spin_magnitude", r"|\chi_{\rm H}^{\rm coord}|", DiagnosticOperation.DERIVED, "horizon", requirements=("spacetime",), dependencies=("black_hole_horizon_coordinate_christodoulou_spin",)),
     _scalar("adm_mass_surface", r"M_{\rm ADM}^{S}", DiagnosticOperation.SURFACE_INTEGRAL, "global_gr", requirements=("spacetime",), dependencies=("z4c_physical_geometry",)),
     _scalar("adm_mass_volume", r"M_{\rm ADM}^{V}", DiagnosticOperation.VOLUME_INTEGRAL, "global_gr", requirements=("spacetime",), dependencies=("z4c_physical_geometry",)),
     _scalar("proper_mass_volume", r"M_{\rm proper}^{V}", DiagnosticOperation.VOLUME_INTEGRAL, "global_gr", requirements=("spacetime",), dependencies=("z4c_physical_geometry",)),
@@ -303,7 +330,9 @@ DIAGNOSTIC_GROUPS = {
     "standard": tuple(
         diagnostic.name
         for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS
-        if "global_gr" not in diagnostic.groups and "radiation" not in diagnostic.groups
+        if "global_gr" not in diagnostic.groups
+        and "radiation" not in diagnostic.groups
+        and "horizon" not in diagnostic.groups
     ),
     **{
         group: tuple(
@@ -314,7 +343,7 @@ DIAGNOSTIC_GROUPS = {
         for group in (
             "coordinates", "conservation", "gravity", "passive", "ledger",
             "state_bounds", "mhd", "rmhd", "relativistic", "diffusion", "amr", "performance", "cfl",
-            "constraints", "black_hole", "global_gr",
+            "constraints", "black_hole", "horizon", "global_gr",
             "radiation", "modes",
         )
     },

@@ -190,6 +190,7 @@ enum class Z4cLapseGauge : int {
    Frozen,
    Harmonic,
    OnePlusLog,
+   Trumpet,
    SlowStart,
 };
 

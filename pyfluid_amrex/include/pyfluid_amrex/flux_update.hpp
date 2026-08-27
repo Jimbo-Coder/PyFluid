@@ -311,7 +311,7 @@ inline void copy_plus_flux_divergence_components_masked(
 #endif
    {
    for (amrex::MFIter mfi(base, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
+      const amrex::Box& bx = mfi.tilebox();
       const auto b = base.const_array(mfi);
       const auto fx = fluxes[0]->const_array(mfi);
 #if (AMREX_SPACEDIM >= 2)
@@ -387,7 +387,7 @@ inline void copy_two_plus_flux_divergence_components_masked(
 #endif
    {
    for (amrex::MFIter mfi(base, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
+      const amrex::Box& bx = mfi.tilebox();
       const auto b = base.const_array(mfi);
       const auto fx = fluxes[0]->const_array(mfi);
 #if (AMREX_SPACEDIM >= 2)
@@ -470,7 +470,7 @@ inline void add_flux_divergence_and_copy_plus_flux_divergence_components_masked(
 #endif
    {
    for (amrex::MFIter mfi(accumulator, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
+      const amrex::Box& bx = mfi.tilebox();
       const auto b = base.const_array(mfi);
       const auto fx = fluxes[0]->const_array(mfi);
 #if (AMREX_SPACEDIM >= 2)
@@ -549,7 +549,7 @@ inline void linear_combination_plus_flux_divergence_components_masked(
 #endif
    {
    for (amrex::MFIter mfi(out, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
+      const amrex::Box& bx = mfi.tilebox();
       const auto b = base.const_array(mfi);
       const auto in = input.const_array(mfi);
       const auto fx = fluxes[0]->const_array(mfi);

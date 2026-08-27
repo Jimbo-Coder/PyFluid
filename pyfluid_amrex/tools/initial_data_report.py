@@ -44,6 +44,18 @@ FIELDS = (
    "baryonic_mass",
    "angular_momentum",
    "dimensionless_spin",
+   "black_hole_throat_area",
+   "black_hole_irreducible_mass",
+   "black_hole_throat_equatorial_circumference",
+   "black_hole_throat_polar_circumference",
+   "black_hole_throat_kerr_mass",
+   "black_hole_throat_kerr_spin",
+   "black_hole_throat_angular_momentum",
+   "black_hole_throat_christodoulou_mass",
+   "black_hole_throat_christodoulou_spin",
+   "disk_mass_over_black_hole_irreducible_mass",
+   "disk_mass_over_black_hole_kerr_mass",
+   "disk_mass_over_black_hole_christodoulou_mass",
    "rotation_law",
    "angular_velocity",
    "rotation_axis1",
@@ -300,6 +312,56 @@ def initial_data_validation_row(run_dir: Path, input_file: Path) -> dict[str, ob
       ),
       "dimensionless_spin": _metadata_float(
          artifact_metadata, "dimensionless_spin", value(global_diagnostic, 4)
+      ),
+      "black_hole_throat_area": _metadata_float(
+         artifact_metadata, "black_hole_throat_area"
+      ),
+      "black_hole_irreducible_mass": _metadata_float(
+         artifact_metadata, "black_hole_irreducible_mass"
+      ),
+      "black_hole_throat_equatorial_circumference": _metadata_float(
+         artifact_metadata, "black_hole_throat_equatorial_circumference"
+      ),
+      "black_hole_throat_polar_circumference": _metadata_float(
+         artifact_metadata, "black_hole_throat_polar_circumference"
+      ),
+      "black_hole_throat_kerr_mass": _metadata_float(
+         artifact_metadata, "black_hole_throat_kerr_mass"
+      ),
+      "black_hole_throat_kerr_spin": _metadata_float(
+         artifact_metadata, "black_hole_throat_kerr_spin"
+      ),
+      "black_hole_throat_angular_momentum": _metadata_float(
+         artifact_metadata, "black_hole_throat_angular_momentum"
+      ),
+      "black_hole_throat_christodoulou_mass": _metadata_float(
+         artifact_metadata, "black_hole_throat_christodoulou_mass"
+      ),
+      "black_hole_throat_christodoulou_spin": _metadata_float(
+         artifact_metadata, "black_hole_throat_christodoulou_spin"
+      ),
+      "disk_mass_over_black_hole_irreducible_mass": (
+         _metadata_float(artifact_metadata, "disk_baryonic_mass")
+         / _metadata_float(artifact_metadata, "black_hole_irreducible_mass")
+         if _metadata_float(
+            artifact_metadata, "black_hole_irreducible_mass"
+         ) > 0.0 else math.nan
+      ),
+      "disk_mass_over_black_hole_kerr_mass": (
+         _metadata_float(artifact_metadata, "disk_baryonic_mass")
+         / _metadata_float(artifact_metadata, "black_hole_throat_kerr_mass")
+         if _metadata_float(
+            artifact_metadata, "black_hole_throat_kerr_mass"
+         ) > 0.0 else math.nan
+      ),
+      "disk_mass_over_black_hole_christodoulou_mass": (
+         _metadata_float(artifact_metadata, "disk_baryonic_mass")
+         / _metadata_float(
+            artifact_metadata, "black_hole_throat_christodoulou_mass"
+         )
+         if _metadata_float(
+            artifact_metadata, "black_hole_throat_christodoulou_mass"
+         ) > 0.0 else math.nan
       ),
       "rotation_law": artifact_metadata.get(
          "rotation_law", params.get("initial_data.rotation_law", "uniform")

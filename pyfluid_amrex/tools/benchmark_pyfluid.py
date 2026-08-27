@@ -52,6 +52,7 @@ HYDRO2D_FAST_OVERRIDES = (
 # values came from a serial AMReX cache launched under mpirun and are not
 # comparable.
 MPI_BASELINE_LABEL = "real_mpi_2026-07-09_clean"
+TILE_OWNERSHIP_BASELINE_LABEL = "tilebox_ownership_2026-08-27"
 
 
 CASES = [
@@ -65,21 +66,12 @@ CASES = [
       overrides=HYDRO2D_FAST_OVERRIDES,
    ),
    PerfCase(
-      name="hydro2d_512_pwc_llf_euler_4rank",
-      executable=Path("build/pyfluid_amrex/pyfluid_amrex_2d"),
-      inputs=Path("pyfluid_amrex/inputs/hydro_sine_2d.in"),
-      ranks=4,
-      baseline_mcells_s=137.0855579,
-      baseline_label=MPI_BASELINE_LABEL,
-      overrides=HYDRO2D_FAST_OVERRIDES,
-   ),
-   PerfCase(
       name="hydro3d_64_pwc_llf_euler",
       executable=Path("build/pyfluid_amrex/pyfluid_amrex_3d"),
       inputs=Path("pyfluid_amrex/inputs/hydro_sine_3d.in"),
       ranks=3,
-      baseline_mcells_s=6.373059139,
-      baseline_label=MPI_BASELINE_LABEL,
+      baseline_mcells_s=61.3922574,
+      baseline_label=TILE_OWNERSHIP_BASELINE_LABEL,
       overrides=(
          "amr.n_cell=64 64 64",
          "amr.max_level=0",
@@ -100,8 +92,8 @@ CASES = [
       executable=Path("build/pyfluid_amrex/pyfluid_amrex_3d"),
       inputs=Path("pyfluid_amrex/inputs/hydro_sine_3d.in"),
       ranks=3,
-      baseline_mcells_s=0.1900616783,
-      baseline_label=MPI_BASELINE_LABEL,
+      baseline_mcells_s=2.59827142,
+      baseline_label=TILE_OWNERSHIP_BASELINE_LABEL,
       overrides=(
          "amr.n_cell=64 64 64",
          "amr.max_level=0",

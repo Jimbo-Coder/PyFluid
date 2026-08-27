@@ -211,9 +211,9 @@ The generated pointwise API is intentionally reusable:
    agree only when the Gamma constraint is satisfied.
 6. `z4c_geometric_rhs` consumes the reusable geometry objects plus explicit
    Eulerian matter projections. Vacuum passes the zero-valued matter object.
-7. `evaluate_z4c_rhs<LapseGauge, ShiftGauge>` is the complete side-effect-free
-   evolution entry point. Gauge choices are compile-time policies, so adding
-   supported gauges does not add a per-point runtime switch.
+7. `evaluate_z4c_rhs` is the complete side-effect-free evolution entry point.
+   Gauge choices are runtime-uniform values so adding a gauge does not
+   multiply the large generated geometric RHS template product.
 
 `evaluate_z4c_constraints_at<Order, Dim>` is the AMReX-grid entry point. It
 loads the canonical nodal state, gathers centered geometric derivatives and
@@ -221,13 +221,13 @@ shift-upwind advection derivatives through the shared generated operator
 contract, then calls `evaluate_z4c_constraints`. Initial-data checks, runtime
 diagnostics, and postprocessing adapters should use that entry point rather
 than assemble their own component or stencil maps.
-`evaluate_z4c_rhs_at<Order, Dim, LapseGauge, ShiftGauge>` applies the same
+`evaluate_z4c_rhs_at<Order, Dim>` applies the same
 loading and derivative contract to the full evolution RHS.
 
-Gauge RHS kernels are separate policies: harmonic, 1+log, slow-start 1+log,
-and Gamma-driver shift. Frozen gauge means a zero RHS selected by runtime
-orchestration; it does not need a duplicate generated equation. Slow-start
-parameters and stage time are explicit arguments.
+Gauge RHS kernels are separate policies: harmonic, 1+log, stationary-trumpet,
+slow-start 1+log, and Gamma-driver shift. Frozen gauge means a zero RHS selected
+by the runtime-uniform selector; it does not need a duplicate generated
+equation. Slow-start parameters and stage time are explicit arguments.
 
 These functions remain side-effect free. Vertex storage, AMR synchronization,
 algebraic-constraint projection, boundary conditions, and time integration

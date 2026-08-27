@@ -987,6 +987,22 @@ def z4c_one_plus_log_lapse_rhs_kernel() -> ScalarKernel:
    )
 
 
+def z4c_trumpet_lapse_rhs_kernel() -> ScalarKernel:
+   lapse = sp.Symbol("state.lapse")
+   return ScalarKernel(
+      name="z4c_trumpet_lapse_rhs",
+      arguments=(("const Z4cState&", "state"), ("const Z4cSpatialDerivatives&", "derivatives")),
+      expression=(
+         -lapse * (1 - lapse) * sp.Symbol("state.k_hat")
+         + sum(
+            sp.Symbol(f"state.shift{direction + 1}")
+            * sp.Symbol(f"derivatives.advection_lapse[{direction}]")
+            for direction in range(DIMENSION)
+         )
+      ),
+   )
+
+
 def z4c_slow_start_lapse_rhs_kernel() -> ScalarKernel:
    chi = sp.Symbol("state.chi", positive=True)
    lapse = sp.Symbol("state.lapse")
@@ -1074,6 +1090,7 @@ def z4c_gauge_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
    return (
       z4c_harmonic_lapse_rhs_kernel(),
       z4c_one_plus_log_lapse_rhs_kernel(),
+      z4c_trumpet_lapse_rhs_kernel(),
       z4c_slow_start_lapse_rhs_kernel(),
       z4c_gamma_driver_shift_rhs_kernel(),
    )

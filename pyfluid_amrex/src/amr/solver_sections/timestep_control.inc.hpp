@@ -9,6 +9,7 @@
       amrex::Real gauge_speed = 1.0;
       const Z4cLapseGauge lapse_gauge = z4c_lapse_gauge(cfg_);
       if (lapse_gauge == Z4cLapseGauge::OnePlusLog
+          || lapse_gauge == Z4cLapseGauge::Trumpet
           || lapse_gauge == Z4cLapseGauge::SlowStart) {
          gauge_speed = std::sqrt(2.0);
       }

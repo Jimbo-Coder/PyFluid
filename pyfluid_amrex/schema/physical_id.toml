@@ -599,6 +599,78 @@ required = false
 description = "Black-hole interior fill or shell radius."
 
 [[metadata_key]]
+name = "black_hole_throat_area"
+cpp_id = "BlackHoleThroatArea"
+value_type = "real"
+section = "black_hole_diagnostics"
+required = false
+description = "Native constraint-solved black-hole throat area diagnostic."
+
+[[metadata_key]]
+name = "black_hole_irreducible_mass"
+cpp_id = "BlackHoleIrreducibleMass"
+value_type = "real"
+section = "black_hole_diagnostics"
+required = false
+description = "Irreducible mass derived from the native black-hole throat area."
+
+[[metadata_key]]
+name = "black_hole_throat_equatorial_circumference"
+cpp_id = "BlackHoleThroatEquatorialCircumference"
+value_type = "real"
+section = "black_hole_diagnostics"
+required = false
+description = "Proper equatorial circumference of the native black-hole throat."
+
+[[metadata_key]]
+name = "black_hole_throat_polar_circumference"
+cpp_id = "BlackHoleThroatPolarCircumference"
+value_type = "real"
+section = "black_hole_diagnostics"
+required = false
+description = "Proper polar circumference of the native black-hole throat."
+
+[[metadata_key]]
+name = "black_hole_throat_kerr_mass"
+cpp_id = "BlackHoleThroatKerrMass"
+value_type = "real"
+section = "black_hole_diagnostics"
+required = false
+description = "Circumference horizon-mass measure M_C inferred from the native throat equatorial circumference."
+
+[[metadata_key]]
+name = "black_hole_throat_kerr_spin"
+cpp_id = "BlackHoleThroatKerrSpin"
+value_type = "real"
+section = "black_hole_diagnostics"
+required = false
+description = "Kerr-assumption dimensionless spin inferred from native throat area and equatorial circumference."
+
+[[metadata_key]]
+name = "black_hole_throat_angular_momentum"
+cpp_id = "BlackHoleThroatAngularMomentum"
+value_type = "real"
+section = "black_hole_diagnostics"
+required = false
+description = "Quasi-local angular momentum from the exact axial Killing vector on an axisymmetric native throat."
+
+[[metadata_key]]
+name = "black_hole_throat_christodoulou_mass"
+cpp_id = "BlackHoleThroatChristodoulouMass"
+value_type = "real"
+section = "black_hole_diagnostics"
+required = false
+description = "Christodoulou horizon mass from native throat area and quasi-local angular momentum."
+
+[[metadata_key]]
+name = "black_hole_throat_christodoulou_spin"
+cpp_id = "BlackHoleThroatChristodoulouSpin"
+value_type = "real"
+section = "black_hole_diagnostics"
+required = false
+description = "Signed dimensionless spin from native throat quasi-local angular momentum and Christodoulou mass."
+
+[[metadata_key]]
 name = "disk"
 cpp_id = "Disk"
 value_type = "string"

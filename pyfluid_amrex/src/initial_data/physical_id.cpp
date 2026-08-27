@@ -1201,6 +1201,84 @@ void apply_tov_schwarzschild_adm_exterior(
    values[AdmShift3] = 0.0;
 }
 
+void fill_constraint_solved_black_hole_interior(
+   amrex::Vector<amrex::Geometry> const& geometry,
+   MutablePhysicalIdField const& adm,
+   amrex::GpuArray<amrex::Real, 3> const& origin,
+   amrex::Real fill_radius
+)
+{
+   if (!(fill_radius > 0.0) || geometry.size() != adm.size()) {
+      amrex::Abort("invalid constraint-solved black-hole interior fill");
+   }
+   const amrex::Real safe_radius = 0.25 * fill_radius;
+   for (std::size_t level = 0; level < adm.size(); ++level) {
+      const auto prob_lo = geometry[level].ProbLoArray();
+      const auto spacing = geometry[level].CellSizeArray();
+      const amrex::Dim3 domain_lo = amrex::lbound(geometry[level].Domain());
+      for (amrex::MFIter mfi(*adm[level], amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto values = adm[level]->array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const amrex::Real position1 = prob_lo[0]
+               + static_cast<amrex::Real>(i - domain_lo.x) * spacing[0];
+            const amrex::Real position2 = prob_lo[1]
+               + static_cast<amrex::Real>(j - domain_lo.y) * spacing[1];
+            const amrex::Real position3 = prob_lo[2]
+               + static_cast<amrex::Real>(k - domain_lo.z) * spacing[2];
+            const amrex::Real displacement1 = position1 - origin[0];
+            const amrex::Real displacement2 = position2 - origin[1];
+            const amrex::Real displacement3 = position3 - origin[2];
+            const amrex::Real radius = std::sqrt(
+               displacement1 * displacement1
+               + displacement2 * displacement2
+               + displacement3 * displacement3
+            );
+            if (radius >= fill_radius) {
+               return;
+            }
+            if (radius <= safe_radius) {
+               for (int component = 0; component < AdmNumComponents;
+                    ++component) {
+                  values(i, j, k, component) = 0.0;
+               }
+               values(i, j, k, AdmGamma11) = 1.0;
+               values(i, j, k, AdmGamma22) = 1.0;
+               values(i, j, k, AdmGamma33) = 1.0;
+               values(i, j, k, AdmLapse) = 1.0;
+               return;
+            }
+            const amrex::Real transition = (
+               radius - safe_radius
+            ) / (fill_radius - safe_radius);
+            const amrex::Real transition_squared = transition * transition;
+            const amrex::Real weight = transition_squared * transition
+               * (10.0 + transition * (-15.0 + 6.0 * transition));
+            values(i, j, k, AdmGamma11) = 1.0 + weight
+               * (values(i, j, k, AdmGamma11) - 1.0);
+            values(i, j, k, AdmGamma12) *= weight;
+            values(i, j, k, AdmGamma13) *= weight;
+            values(i, j, k, AdmGamma22) = 1.0 + weight
+               * (values(i, j, k, AdmGamma22) - 1.0);
+            values(i, j, k, AdmGamma23) *= weight;
+            values(i, j, k, AdmGamma33) = 1.0 + weight
+               * (values(i, j, k, AdmGamma33) - 1.0);
+            for (int component = AdmK11; component <= AdmK33; ++component) {
+               values(i, j, k, component) *= weight;
+            }
+            values(i, j, k, AdmLapse) = 1.0 + weight
+               * (values(i, j, k, AdmLapse) - 1.0);
+            values(i, j, k, AdmShift1) *= weight;
+            values(i, j, k, AdmShift2) *= weight;
+            values(i, j, k, AdmShift3) *= weight;
+         });
+      }
+   }
+}
+
 void interpolate_stored_field(
    std::vector<std::unique_ptr<amrex::MultiFab>> const& source_field,
    StoredPhysicalHierarchy const& source,
@@ -1643,6 +1721,31 @@ void adm_to_z4c(
 
 } // namespace
 
+bool physical_id_disk_continuation_requested(
+   PhysicalInitialDataMetadata const& metadata,
+   RunConfig const& cfg
+)
+{
+   return metadata.disk == cfg.initial_data_disk
+      && (metadata.disk == "equilibrium_torus"
+          || metadata.disk == "tilted_torus")
+      && metadata.disk_gravity == "coupled"
+      && metadata.disk_gravity == cfg.initial_data_disk_gravity
+      && metadata.disk_rotation_law != "constant_l"
+      && metadata.disk_rotation_law == cfg.initial_data_disk_rotation_law
+      && metadata.disk_specific_angular_momentum
+         == cfg.initial_data_disk_specific_angular_momentum
+      && metadata.disk_differential_rotation_length
+         == cfg.initial_data_disk_differential_rotation_length
+      && metadata.disk_rotation_power_q
+         == cfg.initial_data_disk_rotation_power_q
+      && metadata.disk_inner_radius == cfg.initial_data_disk_inner_radius
+      && metadata.disk_angular_velocity
+         != cfg.initial_data_disk_angular_velocity
+      && cfg.initial_data_solve_only
+      && cfg.spacetime_initial_data == "xcts";
+}
+
 void write_physical_initial_data(
    std::string const& path,
    RunConfig const& cfg,
@@ -1904,7 +2007,8 @@ void write_physical_initial_data(
                   << prefix << "axis="
                   << real_triplet_string(component.axis) << '\n';
       }
-      if (cfg.spacetime_initial_data == "kerr_schild"
+      if ((cfg.spacetime_initial_data == "kerr_schild"
+           || cfg.spacetime_initial_data == "static_trumpet")
           || cfg.ic == "black_hole") {
          metadata << "# black_hole_mass="
                   << output_metadata_real_string(cfg.spacetime_mass) << '\n';
@@ -1935,6 +2039,54 @@ void write_physical_initial_data(
                   << output_metadata_real_string(
                        cfg.spacetime_black_hole_fill_radius
                      ) << '\n';
+         if (artifact_metadata.black_hole_throat_area > 0.0) {
+            metadata << "# black_hole_throat_area="
+                     << output_metadata_real_string(
+                          artifact_metadata.black_hole_throat_area
+                        ) << '\n';
+            metadata << "# black_hole_irreducible_mass="
+                     << output_metadata_real_string(
+                          artifact_metadata.black_hole_irreducible_mass
+                        ) << '\n';
+            if (artifact_metadata.black_hole_throat_kerr_mass > 0.0) {
+               metadata << "# black_hole_throat_equatorial_circumference="
+                        << output_metadata_real_string(
+                             artifact_metadata
+                                .black_hole_throat_equatorial_circumference
+                           ) << '\n';
+               metadata << "# black_hole_throat_polar_circumference="
+                        << output_metadata_real_string(
+                             artifact_metadata
+                                .black_hole_throat_polar_circumference
+                           ) << '\n';
+               metadata << "# black_hole_throat_kerr_mass="
+                        << output_metadata_real_string(
+                             artifact_metadata.black_hole_throat_kerr_mass
+                           ) << '\n';
+               metadata << "# black_hole_throat_kerr_spin="
+                        << output_metadata_real_string(
+                             artifact_metadata.black_hole_throat_kerr_spin
+                           ) << '\n';
+               if (artifact_metadata.black_hole_throat_christodoulou_mass
+                   > 0.0) {
+                  metadata << "# black_hole_throat_angular_momentum="
+                           << output_metadata_real_string(
+                                artifact_metadata
+                                   .black_hole_throat_angular_momentum
+                              ) << '\n';
+                  metadata << "# black_hole_throat_christodoulou_mass="
+                           << output_metadata_real_string(
+                                artifact_metadata
+                                   .black_hole_throat_christodoulou_mass
+                              ) << '\n';
+                  metadata << "# black_hole_throat_christodoulou_spin="
+                           << output_metadata_real_string(
+                                artifact_metadata
+                                   .black_hole_throat_christodoulou_spin
+                              ) << '\n';
+               }
+            }
+         }
       }
       metadata << "# disk=" << cfg.initial_data_disk << '\n';
       metadata << "# disk_gravity=" << cfg.initial_data_disk_gravity << '\n';
@@ -2612,6 +2764,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.disk_angular_momentum = required_metadata_real(
          metadata, "disk_angular_momentum", path
       );
+      const bool continuing_disk =
+         physical_id_disk_continuation_requested(result, cfg);
       if (result.disk_gravity != cfg.initial_data_disk_gravity
           || result.disk_rotation_law
              != cfg.initial_data_disk_rotation_law
@@ -2619,7 +2773,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
              != cfg.initial_data_disk_specific_angular_momentum
           || (result.disk_rotation_law != "constant_l"
               && result.disk_angular_velocity
-                 != cfg.initial_data_disk_angular_velocity)
+                 != cfg.initial_data_disk_angular_velocity
+              && !continuing_disk)
           || ((result.disk_rotation_law == "j_constant"
                || result.disk_rotation_law == "q_power")
               && result.disk_differential_rotation_length
@@ -2661,7 +2816,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          );
       }
    }
-   if (result.spacetime_initial_data == "kerr_schild"
+   if ((result.spacetime_initial_data == "kerr_schild"
+        || result.spacetime_initial_data == "static_trumpet")
        || result.source_ic == "black_hole") {
       result.black_hole_mass = required_metadata_real(
          metadata, "black_hole_mass", path
@@ -2682,6 +2838,104 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.black_hole_fill_radius = required_metadata_real(
          metadata, "black_hole_fill_radius", path
       );
+      result.black_hole_throat_area = optional_metadata_real(
+         metadata, "black_hole_throat_area", -1.0, path
+      );
+      result.black_hole_irreducible_mass = optional_metadata_real(
+         metadata, "black_hole_irreducible_mass", -1.0, path
+      );
+      result.black_hole_throat_equatorial_circumference =
+         optional_metadata_real(
+            metadata,
+            "black_hole_throat_equatorial_circumference",
+            -1.0,
+            path
+         );
+      result.black_hole_throat_polar_circumference = optional_metadata_real(
+         metadata, "black_hole_throat_polar_circumference", -1.0, path
+      );
+      result.black_hole_throat_kerr_mass = optional_metadata_real(
+         metadata, "black_hole_throat_kerr_mass", -1.0, path
+      );
+      result.black_hole_throat_kerr_spin = optional_metadata_real(
+         metadata, "black_hole_throat_kerr_spin", -1.0, path
+      );
+      result.black_hole_throat_angular_momentum = optional_metadata_real(
+         metadata, "black_hole_throat_angular_momentum", 0.0, path
+      );
+      result.black_hole_throat_christodoulou_mass = optional_metadata_real(
+         metadata, "black_hole_throat_christodoulou_mass", -1.0, path
+      );
+      result.black_hole_throat_christodoulou_spin = optional_metadata_real(
+         metadata, "black_hole_throat_christodoulou_spin", 0.0, path
+      );
+      const bool has_throat_area_diagnostic =
+         result.black_hole_throat_area > 0.0
+         || result.black_hole_irreducible_mass > 0.0;
+      if (has_throat_area_diagnostic
+          && (!(result.black_hole_throat_area > 0.0)
+              || !(result.black_hole_irreducible_mass > 0.0)
+              || !std::isfinite(result.black_hole_throat_area)
+              || !std::isfinite(result.black_hole_irreducible_mass))) {
+         amrex::Abort(
+            "physical-ID black-hole throat area diagnostic is invalid in "
+            + path
+         );
+      }
+      const bool has_throat_kerr_diagnostic =
+         result.black_hole_throat_equatorial_circumference > 0.0
+         || result.black_hole_throat_polar_circumference > 0.0
+         || result.black_hole_throat_kerr_mass > 0.0
+         || result.black_hole_throat_kerr_spin >= 0.0;
+      if (has_throat_kerr_diagnostic
+          && (!(result.black_hole_throat_equatorial_circumference > 0.0)
+              || !(result.black_hole_throat_polar_circumference > 0.0)
+              || !(result.black_hole_throat_kerr_mass > 0.0)
+              || result.black_hole_throat_kerr_spin < -1.0
+              || result.black_hole_throat_kerr_spin > 1.0
+              || !std::isfinite(
+                   result.black_hole_throat_equatorial_circumference
+                 )
+              || !std::isfinite(
+                   result.black_hole_throat_polar_circumference
+                 )
+              || !std::isfinite(result.black_hole_throat_kerr_mass)
+              || !std::isfinite(result.black_hole_throat_kerr_spin))) {
+         amrex::Abort(
+            "physical-ID black-hole throat Kerr diagnostic is invalid in "
+            + path
+         );
+      }
+      const bool has_throat_christodoulou_diagnostic =
+         metadata.contains("black_hole_throat_angular_momentum")
+         || result.black_hole_throat_christodoulou_mass > 0.0
+         || metadata.contains("black_hole_throat_christodoulou_spin");
+      if (has_throat_christodoulou_diagnostic
+          && (!metadata.contains("black_hole_throat_angular_momentum")
+              || !(result.black_hole_throat_christodoulou_mass > 0.0)
+              || !metadata.contains("black_hole_throat_christodoulou_spin")
+              || !std::isfinite(
+                   result.black_hole_throat_angular_momentum
+                 )
+              || !std::isfinite(
+                   result.black_hole_throat_christodoulou_mass
+                 )
+              || !std::isfinite(
+                   result.black_hole_throat_christodoulou_spin
+                 )
+              || std::abs(result.black_hole_throat_christodoulou_spin)
+                   > 1.0)) {
+         amrex::Abort(
+            "physical-ID black-hole throat Christodoulou diagnostic is "
+            "invalid in " + path
+         );
+      }
+      const bool fills_constraint_solved_interior =
+         result.source_ic == "black_hole"
+         && result.spacetime_initial_data == "xcts"
+         && result.black_hole_interior == "exterior"
+         && cfg.spacetime_black_hole_interior == "filled"
+         && cfg.spacetime_black_hole_fill_radius > 0.0;
       if (result.black_hole_mass != cfg.spacetime_mass
           || result.black_hole_spin[0]
              != cfg.spacetime_dimensionless_spin1
@@ -2692,14 +2946,17 @@ PhysicalInitialDataMetadata read_physical_initial_data(
           || result.black_hole_origin[0] != cfg.spacetime_origin1
           || result.black_hole_origin[1] != cfg.spacetime_origin2
           || result.black_hole_origin[2] != cfg.spacetime_origin3
-          || result.black_hole_interior
-             != cfg.spacetime_black_hole_interior
-          || result.black_hole_fill_radius
-             != cfg.spacetime_black_hole_fill_radius) {
+          || (!fills_constraint_solved_interior
+              && (result.black_hole_interior
+                    != cfg.spacetime_black_hole_interior
+                  || result.black_hole_fill_radius
+                    != cfg.spacetime_black_hole_fill_radius))) {
          amrex::Abort(
             std::string("physical-ID ")
             + (result.spacetime_initial_data == "kerr_schild"
-                  ? "Kerr-Schild" : "black-hole XCTS")
+                  ? "Kerr-Schild"
+                  : (result.spacetime_initial_data == "static_trumpet"
+                       ? "static-trumpet" : "black-hole XCTS"))
             + " parameters are incompatible with the target in " + path
          );
       }
@@ -2874,12 +3131,15 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       }
    }
    if (result.components.empty()) {
-      if (result.spacetime_initial_data == "kerr_schild"
+      if ((result.spacetime_initial_data == "kerr_schild"
+           || result.spacetime_initial_data == "static_trumpet")
           || result.source_ic == "black_hole") {
          PhysicalIdComponentMetadata black_hole;
          black_hole.role = "central_object";
          black_hole.kind = "black_hole";
-         black_hole.gravity = result.spacetime_initial_data == "kerr_schild"
+         black_hole.gravity =
+            result.spacetime_initial_data == "kerr_schild"
+               || result.spacetime_initial_data == "static_trumpet"
             ? "analytic" : "exterior_shell";
          black_hole.origin = result.black_hole_origin;
          amrex::Real spin_norm_squared = 0.0;
@@ -2949,7 +3209,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.rotation_center[2],
    };
    PhysicalIdRigidTransform rigid_transform;
-   if (result.spacetime_initial_data == "kerr_schild"
+   if ((result.spacetime_initial_data == "kerr_schild"
+        || result.spacetime_initial_data == "static_trumpet")
        || result.source_ic == "black_hole") {
       rigid_transform.source_origin = {
          result.black_hole_origin[0],
@@ -3240,6 +3501,17 @@ PhysicalInitialDataMetadata read_physical_initial_data(
             atmosphere,
             -1.0
          );
+         if (result.source_ic == "black_hole"
+             && result.spacetime_initial_data == "xcts"
+             && result.black_hole_interior == "exterior"
+             && cfg.spacetime_black_hole_interior == "filled") {
+            fill_constraint_solved_black_hole_interior(
+               geometry,
+               target_adm_view,
+               origin,
+               cfg.spacetime_black_hole_fill_radius
+            );
+         }
          adm_to_z4c(evolution_spacetime, target_adm);
       }
       return result;

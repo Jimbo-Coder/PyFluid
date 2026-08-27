@@ -381,6 +381,9 @@
       if (matter_modes_enabled) {
          scalar_selection.enable_group(ScalarDiagnosticGroup::Modes);
       }
+      if (apparent_horizon_tracker_->enabled()) {
+         scalar_selection.enable_group(ScalarDiagnosticGroup::Horizon);
+      }
       apply_scalar_diagnostic_requirements(scalar_selection, cfg_);
       if (amrex::ParallelDescriptor::IOProcessor()) {
          std::filesystem::create_directories(cfg_.output_dir);

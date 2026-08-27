@@ -31,6 +31,17 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
    }
    fill_all_spacetime_boundaries(spacetime_state_.state(), time);
 
+   std::array<int, 3> reflection_lo{};
+   std::array<int, 3> reflection_hi{};
+   for (int direction = 0; direction < 3; ++direction) {
+      reflection_lo[direction] = reflective_boundary(
+         side_boundary_kind(cfg_, direction, false)
+      ) ? 1 : 0;
+      reflection_hi[direction] = reflective_boundary(
+         side_boundary_kind(cfg_, direction, true)
+      ) ? 1 : 0;
+   }
+
    LevelData geometry_hierarchy(finestLevel() + 1);
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       amrex::MultiFab const& state = *spacetime_state_.state()[lev];
@@ -48,16 +59,28 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
       const amrex::GpuArray<amrex::Real, 3> inverse_spacing{{
          1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
       }};
-      const amrex::GpuArray<int, 3> domain_lower{{
+      amrex::GpuArray<int, 3> domain_lower{{
          nodal_domain.smallEnd(0),
          nodal_domain.smallEnd(1),
          nodal_domain.smallEnd(2),
       }};
-      const amrex::GpuArray<int, 3> domain_upper{{
+      amrex::GpuArray<int, 3> domain_upper{{
          nodal_domain.bigEnd(0),
          nodal_domain.bigEnd(1),
          nodal_domain.bigEnd(2),
       }};
+      // Reflection ghosts carry exact tensor parity, so centered derivatives
+      // remain valid at that physical plane. Non-reflecting boundaries keep
+      // the generated one-sided domain stencil.
+      constexpr int derivative_radius = 2;
+      for (int direction = 0; direction < 3; ++direction) {
+         if (state.nGrowVect()[direction] >= derivative_radius) {
+            domain_lower[direction] -= derivative_radius
+               * reflection_lo[direction];
+            domain_upper[direction] += derivative_radius
+               * reflection_hi[direction];
+         }
+      }
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -143,11 +166,14 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
    const amrex::Real maximum_radius =
       apparent_horizon_tracker_->maximum_search_radius();
    std::vector<amrex::Real> radial_coordinates(radial_points);
+   const std::size_t sample_count = static_cast<std::size_t>(radial_points)
+      * polar_points * azimuthal_points;
    std::vector<amrex::GpuArray<amrex::Real, 3>> positions;
-   positions.reserve(
-      static_cast<std::size_t>(radial_points)
-      * polar_points * azimuthal_points
-   );
+   std::vector<int> reflection_masks;
+   positions.reserve(sample_count);
+   reflection_masks.reserve(sample_count);
+   const auto hierarchy_lower = Geom(0).ProbLoArray();
+   const auto hierarchy_upper = Geom(0).ProbHiArray();
    const amrex::Real dtheta = std::numbers::pi_v<amrex::Real>
       / polar_points;
    const amrex::Real dphi = 2.0 * std::numbers::pi_v<amrex::Real>
@@ -163,11 +189,29 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
               phi_index < azimuthal_points;
               ++phi_index) {
             const amrex::Real phi = (phi_index + 0.5) * dphi;
-            positions.push_back({{
+            amrex::GpuArray<amrex::Real, 3> position{{
                center[0] + radius * std::sin(theta) * std::cos(phi),
                center[1] + radius * std::sin(theta) * std::sin(phi),
                center[2] + radius * std::cos(theta),
-            }});
+            }};
+            int reflection_mask = 0;
+            for (int direction = 0; direction < 3; ++direction) {
+               if (position[direction] < hierarchy_lower[direction]
+                   && reflection_lo[direction] != 0) {
+                  position[direction] = 2.0 * hierarchy_lower[direction]
+                     - position[direction];
+                  reflection_mask ^= 1 << direction;
+               } else if (
+                  position[direction] > hierarchy_upper[direction]
+                  && reflection_hi[direction] != 0
+               ) {
+                  position[direction] = 2.0 * hierarchy_upper[direction]
+                     - position[direction];
+                  reflection_mask ^= 1 << direction;
+               }
+            }
+            positions.push_back(position);
+            reflection_masks.push_back(reflection_mask);
          }
       }
    }
@@ -205,6 +249,9 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
             ApparentHorizonGeometryComponents,
             samples[point].begin()
          );
+         reflect_apparent_horizon_geometry(
+            samples[point], reflection_masks[point]
+         );
       }
       const ApparentHorizonGeometryGrid finder_geometry(
          center,
@@ -232,12 +279,25 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
       result.converged ? 1 : 0,
       result.iterations,
    }};
-   std::array<amrex::Real, 11> real_packet{{
+   std::array<amrex::Real, 24> real_packet{{
       result.pseudo_time,
       result.theta_linf_times_mass,
       result.theta_l2_times_mass,
       result.area,
       result.irreducible_mass,
+      result.equatorial_circumference,
+      result.polar_circumference,
+      result.kerr_horizon_mass,
+      result.kerr_dimensionless_spin,
+      result.angular_momentum[0],
+      result.angular_momentum[1],
+      result.angular_momentum[2],
+      result.angular_momentum_magnitude,
+      result.christodoulou_mass,
+      result.christodoulou_dimensionless_spin[0],
+      result.christodoulou_dimensionless_spin[1],
+      result.christodoulou_dimensionless_spin[2],
+      result.christodoulou_dimensionless_spin_magnitude,
       result.centroid[0],
       result.centroid[1],
       result.centroid[2],
@@ -265,10 +325,23 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
       result.theta_l2_times_mass = real_packet[2];
       result.area = real_packet[3];
       result.irreducible_mass = real_packet[4];
-      result.centroid = {{real_packet[5], real_packet[6], real_packet[7]}};
-      result.minimum_radius = real_packet[8];
-      result.maximum_radius = real_packet[9];
-      result.mean_radius = real_packet[10];
+      result.equatorial_circumference = real_packet[5];
+      result.polar_circumference = real_packet[6];
+      result.kerr_horizon_mass = real_packet[7];
+      result.kerr_dimensionless_spin = real_packet[8];
+      result.angular_momentum = {{
+         real_packet[9], real_packet[10], real_packet[11]
+      }};
+      result.angular_momentum_magnitude = real_packet[12];
+      result.christodoulou_mass = real_packet[13];
+      result.christodoulou_dimensionless_spin = {{
+         real_packet[14], real_packet[15], real_packet[16]
+      }};
+      result.christodoulou_dimensionless_spin_magnitude = real_packet[17];
+      result.centroid = {{real_packet[18], real_packet[19], real_packet[20]}};
+      result.minimum_radius = real_packet[21];
+      result.maximum_radius = real_packet[22];
+      result.mean_radius = real_packet[23];
       result.surface = ApparentHorizonSurface(
          center,
          polar_points,
@@ -287,6 +360,20 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
       << " MTheta_L2=" << accepted->theta_l2_times_mass
       << " area=" << accepted->area
       << " irreducible_mass=" << accepted->irreducible_mass
+      << " equatorial_circumference="
+      << accepted->equatorial_circumference
+      << " polar_circumference=" << accepted->polar_circumference
+      << " kerr_horizon_mass=" << accepted->kerr_horizon_mass
+      << " kerr_dimensionless_spin="
+      << accepted->kerr_dimensionless_spin
+      << " coordinate_angular_momentum=(" << accepted->angular_momentum[0] << ','
+      << accepted->angular_momentum[1] << ','
+      << accepted->angular_momentum[2] << ')'
+      << " coordinate_christodoulou_mass=" << accepted->christodoulou_mass
+      << " coordinate_christodoulou_dimensionless_spin=("
+      << accepted->christodoulou_dimensionless_spin[0] << ','
+      << accepted->christodoulou_dimensionless_spin[1] << ','
+      << accepted->christodoulou_dimensionless_spin[2] << ')'
       << " centroid=(" << accepted->centroid[0] << ','
       << accepted->centroid[1] << ',' << accepted->centroid[2] << ")\n";
 #endif

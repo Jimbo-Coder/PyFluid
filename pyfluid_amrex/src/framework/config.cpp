@@ -956,6 +956,12 @@ void validate_config(RunConfig const& cfg)
       cfg.spacetime_fixed_metric == "kerr_schild";
    const bool kerr_schild_requested =
       kerr_schild_initial_data || kerr_schild_fixed_metric;
+   const bool static_trumpet_initial_data =
+      cfg.spacetime_initial_data == "static_trumpet";
+   const bool static_trumpet_fixed_metric =
+      cfg.spacetime_fixed_metric == "static_trumpet";
+   const bool static_trumpet_requested =
+      static_trumpet_initial_data || static_trumpet_fixed_metric;
    const int initial_data_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const std::vector<std::string> initial_data_axis_tokens = mesh_axis_tokens(
       initial_data_coordinate, cfg.mesh_axes
@@ -987,6 +993,8 @@ void validate_config(RunConfig const& cfg)
    const InitialDataOwnerInfo& cartesian_kerr_owner = initial_data_owner_info(
       InitialDataOwner::CartesianKerrSchild
    );
+   const InitialDataOwnerInfo& cartesian_trumpet_owner =
+      initial_data_owner_info(InitialDataOwner::CartesianStaticTrumpet);
    const bool spherical_tov_layout = initial_data_owner_layout_matches(
       spherical_tov_owner,
       AMREX_SPACEDIM,
@@ -1036,11 +1044,27 @@ void validate_config(RunConfig const& cfg)
       cfg.mesh_coordinate,
       initial_data_axes
    );
+   const bool cartesian_trumpet_layout = initial_data_owner_layout_matches(
+      cartesian_trumpet_owner,
+      AMREX_SPACEDIM,
+      cfg.mesh_coordinate,
+      initial_data_axes
+   );
    const bool spherical_black_hole_xcts_request =
       cfg.ic == "black_hole"
       && cfg.spacetime_initial_data == "xcts"
       && (spherical_black_hole_xcts_layout
           || spherical_black_hole_xcts_3d_layout);
+   const bool native_spherical_black_hole_solve =
+      spherical_black_hole_xcts_request && cfg.initial_data_solve_only;
+   const bool loaded_cartesian_black_hole_artifact =
+      cfg.ic == "black_hole"
+      && cfg.spacetime_initial_data == "xcts"
+      && AMREX_SPACEDIM == 3
+      && cfg.mesh_coordinate == "cartesian"
+      && initial_data_axes == "x y z"
+      && !cfg.initial_data_input_file.empty()
+      && cfg.spacetime_black_hole_interior == "filled";
    if (kerr_schild_requested) {
       if (AMREX_SPACEDIM != 3) {
          amrex::Abort(
@@ -1057,24 +1081,67 @@ void validate_config(RunConfig const& cfg)
             "dimensionless spin magnitude below one"
          );
       }
-   } else if (black_hole_spin_squared != 0.0) {
+   } else if (static_trumpet_requested) {
+      if (!cartesian_trumpet_layout
+          || !(cfg.spacetime_mass > 0.0)
+          || !std::isfinite(cfg.spacetime_mass)
+          || black_hole_spin_squared != 0.0) {
+         amrex::Abort(
+            "static-trumpet spacetime requires a positive finite mass, zero "
+            "spin, and the 3D Cartesian owner"
+         );
+      }
+      if (cfg.spacetime_black_hole_interior != "puncture"
+          || cfg.spacetime_black_hole_fill_radius != -1.0) {
+         amrex::Abort(
+            "static-trumpet spacetime requires black_hole_interior = "
+            "puncture and no fill radius"
+         );
+      }
+   } else if (black_hole_spin_squared != 0.0
+              && !spherical_black_hole_xcts_request
+              && !loaded_cartesian_black_hole_artifact) {
       amrex::Abort(
-         "spacetime.dimensionless_spin applies only to kerr_schild"
+         "spacetime.dimensionless_spin requires Kerr-Schild data or a "
+         "native/loaded constraint-solved black-hole ID"
+      );
+   }
+   if (spherical_black_hole_xcts_request
+       && (cfg.spacetime_dimensionless_spin1 != 0.0
+           || cfg.spacetime_dimensionless_spin2 != 0.0
+           || !(black_hole_spin_squared < 1.0))) {
+      amrex::Abort(
+         "the axisymmetric spherical black-hole XCTS owner requires spin "
+         "aligned with its third axis and magnitude below one"
       );
    }
    if (cfg.ic == "black_hole"
-       && (!spherical_black_hole_xcts_request
-           || !cfg.initial_data_solve_only
+       && ((!native_spherical_black_hole_solve
+            && !loaded_cartesian_black_hole_artifact)
            || !(cfg.spacetime_mass > 0.0)
            || !std::isfinite(cfg.spacetime_mass)
            || cfg.spacetime_origin1 != 0.0
            || cfg.spacetime_origin2 != 0.0
            || cfg.spacetime_origin3 != 0.0)) {
       amrex::Abort(
-         "black_hole initial data currently require a positive-mass, "
-         "origin-centered solve-only spherical r-theta or axisymmetric "
-         "r-theta-phi XCTS shell"
+         "black_hole initial data require a positive-mass, origin-centered "
+         "native spherical XCTS shell solve or a Cartesian filled-artifact "
+         "materialization/evolution"
       );
+   }
+   if (loaded_cartesian_black_hole_artifact) {
+      const amrex::Real expected_fill_radius = 0.5 * cfg.spacetime_mass;
+      const amrex::Real fill_tolerance = 64.0
+         * std::numeric_limits<amrex::Real>::epsilon()
+         * std::max(amrex::Real(1.0), expected_fill_radius);
+      if (std::abs(
+             cfg.spacetime_black_hole_fill_radius - expected_fill_radius
+          ) > fill_tolerance) {
+         amrex::Abort(
+            "a Cartesian fill of the inversion-symmetric XCTS shell must "
+            "end at its r=M/2 apparent-horizon throat"
+         );
+      }
    }
    require_supported_option(
       cfg.spacetime_initial_data,
@@ -1086,11 +1153,13 @@ void validate_config(RunConfig const& cfg)
       BlackHoleInteriorOptions,
       "spacetime.black_hole_interior"
    );
-   if (!kerr_schild_requested
+   if (!kerr_schild_requested && !static_trumpet_requested
+       && !loaded_cartesian_black_hole_artifact
        && (cfg.spacetime_black_hole_interior != "exterior"
            || cfg.spacetime_black_hole_fill_radius != -1.0)) {
       amrex::Abort(
-         "black-hole interior options require Kerr-Schild initial data"
+         "black-hole interior options require Kerr-Schild or static-trumpet "
+         "initial data"
       );
    }
    if (kerr_schild_requested
@@ -1133,6 +1202,13 @@ void validate_config(RunConfig const& cfg)
       amrex::Abort(
          "fixed Kerr-Schild runs must select kerr_schild consistently for "
          "both spacetime.initial_data and spacetime.fixed_metric"
+      );
+   }
+   if (cfg.spacetime_evolution == "fixed"
+       && (static_trumpet_initial_data != static_trumpet_fixed_metric)) {
+      amrex::Abort(
+         "fixed static-trumpet runs must select static_trumpet consistently "
+         "for both spacetime.initial_data and spacetime.fixed_metric"
       );
    }
    require_supported_option(
@@ -1187,6 +1263,19 @@ void validate_config(RunConfig const& cfg)
       cfg.initial_data_disk == "tilted_torus";
    const bool equilibrium_torus_enabled = stationary_torus_enabled
       || tilted_torus_enabled;
+   if (!equilibrium_torus_enabled
+       && cfg.initial_data_disk_gravity != "none") {
+      amrex::Abort(
+         "initial_data.disk_gravity must be none when no disk is selected"
+      );
+   }
+   if (equilibrium_torus_enabled
+       && cfg.initial_data_disk_gravity == "none") {
+      amrex::Abort(
+         "a selected disk requires initial_data.disk_gravity = test_fluid "
+         "or coupled"
+      );
+   }
    const amrex::Real disk_axis_norm = std::sqrt(
       cfg.initial_data_disk_axis1 * cfg.initial_data_disk_axis1
       + cfg.initial_data_disk_axis2 * cfg.initial_data_disk_axis2
@@ -1206,65 +1295,105 @@ void validate_config(RunConfig const& cfg)
       * inverse_disk_axis_norm;
    const amrex::Real disk_axis_tolerance = 64.0
       * std::numeric_limits<amrex::Real>::epsilon();
-   const bool analytic_kerr_disk_request =
-      cartesian_kerr_layout
-      && cfg.ic == "equilibrium_torus" && kerr_schild_requested
+   const bool analytic_black_hole_disk_request =
+      ((cartesian_kerr_layout && kerr_schild_requested)
+       || (cartesian_trumpet_layout && static_trumpet_requested))
+      && cfg.ic == "equilibrium_torus"
       && stationary_torus_enabled
       && initial_data_owner_list_contains(
-         cartesian_kerr_owner.disk_kinds, cfg.initial_data_disk
+         static_trumpet_requested
+            ? cartesian_trumpet_owner.disk_kinds
+            : cartesian_kerr_owner.disk_kinds,
+         cfg.initial_data_disk
       )
       && initial_data_owner_list_contains(
-         cartesian_kerr_owner.disk_gravity_modes,
+         static_trumpet_requested
+            ? cartesian_trumpet_owner.disk_gravity_modes
+            : cartesian_kerr_owner.disk_gravity_modes,
          cfg.initial_data_disk_gravity
       );
-   const bool cartesian_coupled_stellar_torus_request =
+   const bool cartesian_stellar_torus_request =
       cartesian_conformal_layout
       && initial_data_owner_list_contains(
          cartesian_conformal_owner.central_objects, cfg.ic
       )
       && cfg.spacetime_initial_data == "xcts"
       && initial_data_owner_list_contains(
+         cartesian_conformal_owner.disk_kinds, cfg.initial_data_disk
+      )
+      && initial_data_owner_list_contains(
          cartesian_conformal_owner.disk_gravity_modes,
          cfg.initial_data_disk_gravity
-      )
-      && cfg.initial_data_disk_gravity == "coupled";
-   const bool spherical_coupled_stellar_torus_request =
+      );
+   const InitialDataOwnerInfo& selected_spherical_stellar_owner =
+      spherical_axisymmetric_xcts_3d_layout
+         ? spherical_axisymmetric_xcts_3d_owner
+         : spherical_axisymmetric_xcts_owner;
+   const bool spherical_stellar_torus_request =
       spherical_axisymmetric_xcts_layout
       && initial_data_owner_list_contains(
-         spherical_axisymmetric_xcts_3d_layout
-            ? spherical_axisymmetric_xcts_3d_owner.central_objects
-            : spherical_axisymmetric_xcts_owner.central_objects,
+         selected_spherical_stellar_owner.central_objects,
          cfg.ic
       )
       && cfg.spacetime_initial_data == "xcts"
-      && cfg.initial_data_disk_gravity == "coupled";
+      && initial_data_owner_list_contains(
+         selected_spherical_stellar_owner.disk_kinds, cfg.initial_data_disk
+      )
+      && initial_data_owner_list_contains(
+         selected_spherical_stellar_owner.disk_gravity_modes,
+         cfg.initial_data_disk_gravity
+      );
+   const InitialDataOwnerInfo& selected_spherical_black_hole_owner =
+      spherical_black_hole_xcts_3d_layout
+         ? spherical_black_hole_xcts_3d_owner
+         : spherical_black_hole_xcts_owner;
+   const bool spherical_black_hole_torus_request =
+      spherical_black_hole_xcts_request
+      && initial_data_owner_list_contains(
+         selected_spherical_black_hole_owner.disk_kinds,
+         cfg.initial_data_disk
+      )
+      && initial_data_owner_list_contains(
+         selected_spherical_black_hole_owner.disk_gravity_modes,
+         cfg.initial_data_disk_gravity
+      );
    const bool loaded_3d_materialization_request =
       AMREX_SPACEDIM == 3 && cfg.initial_data_solve_only
       && !cfg.initial_data_input_file.empty();
    if (equilibrium_torus_enabled
-       && !analytic_kerr_disk_request
-       && !cartesian_coupled_stellar_torus_request
-       && !spherical_coupled_stellar_torus_request
-       && !loaded_3d_materialization_request
+       && !analytic_black_hole_disk_request
+       && !cartesian_stellar_torus_request
+       && !spherical_stellar_torus_request
+       && !spherical_black_hole_torus_request
+       && !loaded_cartesian_black_hole_artifact
+       && !loaded_3d_materialization_request) {
+      amrex::Abort(
+         "the selected central object, solve owner, and disk_gravity mode "
+         "do not form a supported disk initial-data composition"
+      );
+   }
+   if (equilibrium_torus_enabled
+       && (spherical_stellar_torus_request
+           || spherical_black_hole_torus_request)
        && (std::abs(disk_axis1) > disk_axis_tolerance
            || std::abs(disk_axis2) > disk_axis_tolerance
            || std::abs(disk_axis3 - 1.0) > disk_axis_tolerance)) {
       amrex::Abort(
          "the reduced r-theta equilibrium-torus owner requires disk_axis = "
-         "(0,0,1); arbitrary axes require the 3D Cartesian coupled XCTS owner"
+         "(0,0,1); arbitrary axes require the 3D Cartesian XCTS owner"
       );
    }
    if (tilted_torus_enabled
        && (!cartesian_conformal_owner.relative_tilt
-           || !cartesian_coupled_stellar_torus_request)
+           || !cartesian_stellar_torus_request)
        && !loaded_3d_materialization_request) {
       amrex::Abort(
-         "initial_data.disk = tilted_torus requires a 3D Cartesian, coupled "
-         "TOV or rotating-star XCTS solve"
+         "initial_data.disk = tilted_torus requires a 3D Cartesian TOV or "
+         "rotating-star XCTS solve"
       );
    }
    if (stationary_torus_enabled
-       && cartesian_coupled_stellar_torus_request
+       && cartesian_stellar_torus_request
        && cfg.ic == "rotating_star"
        && cfg.initial_data_angular_velocity != 0.0) {
       const amrex::Real star_axis_norm = std::sqrt(
@@ -1296,7 +1425,8 @@ void validate_config(RunConfig const& cfg)
          }
       }
    }
-   if (equilibrium_torus_enabled && analytic_kerr_disk_request
+   if (equilibrium_torus_enabled && analytic_black_hole_disk_request
+       && kerr_schild_requested
        && black_hole_spin_squared > 0.0) {
       const amrex::Real inverse_spin_norm = 1.0 / std::sqrt(
          black_hole_spin_squared
@@ -2766,10 +2896,10 @@ void validate_config(RunConfig const& cfg)
                  spherical_black_hole_xcts_3d_owner.grid_kinds,
                  "mapped_radial_shell"
               )));
-   const bool analytic_kerr_torus =
-      cartesian_kerr_layout
+   const bool analytic_black_hole_torus =
+      ((cartesian_kerr_layout && kerr_schild_requested)
+       || (cartesian_trumpet_layout && static_trumpet_requested))
       && cfg.ic == "equilibrium_torus"
-      && kerr_schild_requested
       && cfg.initial_data_disk_gravity == "test_fluid";
    if (cfg.initial_data_radial_grid != "uniform"
        && cfg.initial_data_radial_grid != "adaptive") {
@@ -2806,22 +2936,23 @@ void validate_config(RunConfig const& cfg)
    }
    if (equilibrium_torus_enabled
        && cfg.initial_data_input_file.empty()
-       && ((!reduced_axisymmetric_xcts || !cfg.initial_data_solve_only)
-           && !analytic_kerr_torus
-           && !cartesian_coupled_stellar_torus_request)) {
+       && (((!reduced_axisymmetric_xcts && !reduced_black_hole_xcts)
+             || !cfg.initial_data_solve_only)
+           && !analytic_black_hole_torus
+           && !cartesian_stellar_torus_request)) {
       amrex::Abort(
-         "torus construction requires a solve-only 2D spherical r-theta "
-         "stellar XCTS solve, a 3D Cartesian coupled stellar XCTS solve, or "
-         "a 3D Cartesian test-fluid Kerr-Schild central object"
+         "torus construction requires a solve-only spherical stellar or "
+         "black-hole XCTS owner, a 3D Cartesian stellar XCTS owner, or a 3D "
+         "Cartesian test-fluid analytic black-hole central object"
       );
    }
    if (equilibrium_torus_enabled
        && cfg.ic != "tov" && cfg.ic != "rotating_star"
-       && cfg.ic != "equilibrium_torus") {
+       && cfg.ic != "black_hole" && cfg.ic != "equilibrium_torus") {
       amrex::Abort(
-         "equilibrium-torus initial data currently require a TOV or "
-         "rotating_star central object, or pyfluid.ic = equilibrium_torus "
-         "for a Kerr-Schild black hole"
+         "equilibrium-torus initial data currently require a TOV, "
+         "rotating_star, or black_hole central object, or pyfluid.ic = "
+         "equilibrium_torus for an analytic black hole"
       );
    }
    if (cfg.ic == "equilibrium_torus"
@@ -2831,10 +2962,11 @@ void validate_config(RunConfig const& cfg)
          "initial_data.disk = equilibrium_torus"
       );
    }
-   if (cfg.ic == "equilibrium_torus" && !analytic_kerr_torus) {
+   if (cfg.ic == "equilibrium_torus" && !analytic_black_hole_torus) {
       amrex::Abort(
          "black-hole equilibrium-torus initial data currently require a 3D "
-         "Cartesian Kerr-Schild spacetime and disk_gravity = test_fluid"
+         "Cartesian Kerr-Schild or static-trumpet spacetime and "
+         "disk_gravity = test_fluid"
       );
    }
    if (cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"

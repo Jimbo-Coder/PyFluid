@@ -8,7 +8,10 @@ default_ranks = 3
 # and aborts before HDF5 can open long, informative ID-sequence filenames.
 # PyFluid/HDF5 do not use MPI shared-file-pointer operations, so select the
 # individual component and avoid the broken locked-file probe entirely.
-environment = { OMP_NUM_THREADS = "1", OMPI_MCA_sharedfp = "individual" }
+# AMReX itself remains MPI-only. Two host threads are the sustained optimum for
+# the isolated apparent-horizon library on this machine; other solver kernels
+# do not see OpenMP compile flags.
+environment = { OMP_NUM_THREADS = "2", OMPI_MCA_sharedfp = "individual" }
 
 [run]
 work_dir = "{root}"

@@ -169,6 +169,23 @@
       "gravity_total_energy",
       "gravity_total_energy_rel_drift"
     ],
+    "horizon": [
+      "black_hole_horizon_area",
+      "black_hole_horizon_irreducible_mass",
+      "black_hole_horizon_equatorial_circumference",
+      "black_hole_horizon_polar_circumference",
+      "black_hole_horizon_kerr_mass",
+      "black_hole_horizon_kerr_spin",
+      "black_hole_horizon_coordinate_angular_momentum1",
+      "black_hole_horizon_coordinate_angular_momentum2",
+      "black_hole_horizon_coordinate_angular_momentum3",
+      "black_hole_horizon_coordinate_angular_momentum_magnitude",
+      "black_hole_horizon_coordinate_christodoulou_mass",
+      "black_hole_horizon_coordinate_christodoulou_spin1",
+      "black_hole_horizon_coordinate_christodoulou_spin2",
+      "black_hole_horizon_coordinate_christodoulou_spin3",
+      "black_hole_horizon_coordinate_christodoulou_spin_magnitude"
+    ],
     "ledger": [
       "wall_work",
       "wall_power",
@@ -1749,6 +1766,306 @@
       "operation": "coordinate",
       "requirements": [
         "black_hole"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_area",
+      "groups": [
+        "horizon"
+      ],
+      "label": "A_{\\rm H}",
+      "name": "black_hole_horizon_area",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "black_hole_horizon_area"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_irreducible_mass",
+      "groups": [
+        "horizon"
+      ],
+      "label": "M_{\\rm irr}",
+      "name": "black_hole_horizon_irreducible_mass",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_equatorial_circumference",
+      "groups": [
+        "horizon"
+      ],
+      "label": "C_{\\rm e}",
+      "name": "black_hole_horizon_equatorial_circumference",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_polar_circumference",
+      "groups": [
+        "horizon"
+      ],
+      "label": "C_{\\rm p}",
+      "name": "black_hole_horizon_polar_circumference",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "black_hole_horizon_area",
+        "black_hole_horizon_equatorial_circumference"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_kerr_mass",
+      "groups": [
+        "horizon"
+      ],
+      "label": "M_C",
+      "name": "black_hole_horizon_kerr_mass",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "black_hole_horizon_area",
+        "black_hole_horizon_equatorial_circumference"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_kerr_spin",
+      "groups": [
+        "horizon"
+      ],
+      "label": "|\\chi_{\\rm H}^{\\rm Kerr}|",
+      "name": "black_hole_horizon_kerr_spin",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 3,
+      "component_index": 0,
+      "dependencies": [
+        "black_hole_horizon_area"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_coordinate_angular_momentum",
+      "groups": [
+        "horizon"
+      ],
+      "label": "J_{\\rm H,1}^{\\rm coord}",
+      "name": "black_hole_horizon_coordinate_angular_momentum1",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 1,
+      "dependencies": [
+        "black_hole_horizon_area"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_coordinate_angular_momentum",
+      "groups": [
+        "horizon"
+      ],
+      "label": "J_{\\rm H,2}^{\\rm coord}",
+      "name": "black_hole_horizon_coordinate_angular_momentum2",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 2,
+      "dependencies": [
+        "black_hole_horizon_area"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_coordinate_angular_momentum",
+      "groups": [
+        "horizon"
+      ],
+      "label": "J_{\\rm H,3}^{\\rm coord}",
+      "name": "black_hole_horizon_coordinate_angular_momentum3",
+      "operation": "surface_integral",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "black_hole_horizon_coordinate_angular_momentum"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_coordinate_angular_momentum_magnitude",
+      "groups": [
+        "horizon"
+      ],
+      "label": "|J_{\\rm H}^{\\rm coord}|",
+      "name": "black_hole_horizon_coordinate_angular_momentum_magnitude",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "black_hole_horizon_area",
+        "black_hole_horizon_coordinate_angular_momentum"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_coordinate_christodoulou_mass",
+      "groups": [
+        "horizon"
+      ],
+      "label": "M_{\\rm H}^{\\rm coord}",
+      "name": "black_hole_horizon_coordinate_christodoulou_mass",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 3,
+      "component_index": 0,
+      "dependencies": [
+        "black_hole_horizon_coordinate_christodoulou_mass",
+        "black_hole_horizon_coordinate_angular_momentum"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_coordinate_christodoulou_spin",
+      "groups": [
+        "horizon"
+      ],
+      "label": "\\chi_{\\rm H,1}^{\\rm coord}",
+      "name": "black_hole_horizon_coordinate_christodoulou_spin1",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 1,
+      "dependencies": [
+        "black_hole_horizon_coordinate_christodoulou_mass",
+        "black_hole_horizon_coordinate_angular_momentum"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_coordinate_christodoulou_spin",
+      "groups": [
+        "horizon"
+      ],
+      "label": "\\chi_{\\rm H,2}^{\\rm coord}",
+      "name": "black_hole_horizon_coordinate_christodoulou_spin2",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 3,
+      "component_index": 2,
+      "dependencies": [
+        "black_hole_horizon_coordinate_christodoulou_mass",
+        "black_hole_horizon_coordinate_angular_momentum"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_coordinate_christodoulou_spin",
+      "groups": [
+        "horizon"
+      ],
+      "label": "\\chi_{\\rm H,3}^{\\rm coord}",
+      "name": "black_hole_horizon_coordinate_christodoulou_spin3",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "value_kind": "vector"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "black_hole_horizon_coordinate_christodoulou_spin"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_coordinate_christodoulou_spin_magnitude",
+      "groups": [
+        "horizon"
+      ],
+      "label": "|\\chi_{\\rm H}^{\\rm coord}|",
+      "name": "black_hole_horizon_coordinate_christodoulou_spin_magnitude",
+      "operation": "derived",
+      "requirements": [
+        "spacetime"
       ],
       "storage": "real",
       "value_kind": "scalar"

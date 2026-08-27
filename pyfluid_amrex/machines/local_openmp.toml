@@ -1,0 +1,35 @@
+name = "local_openmp"
+# This explicit evolution profile uses the supported AMReX MPI+OpenMP backend.
+# Two ranks by five threads is the measured cross-dimensional compromise on
+# this 4P+6E Apple-silicon host: it is within noise of the corrected 3D 1x10
+# point and within about one percent of the 2D 2x4 point. This is a machine
+# result, not a portable solver default.
+mpi_launcher = ["mpirun", "-np", "{ranks}", "--bind-to", "none"]
+direct_one_rank = true
+default_ranks = 2
+# LLVM OpenMP does not expose reliable macOS affinity here. Let macOS place the
+# workers; do not encode Apple core IDs or scheduler APIs in solver code.
+environment = { OMP_NUM_THREADS = "5", OMP_PROC_BIND = "false", OMPI_MCA_sharedfp = "individual" }
+
+[run]
+work_dir = "{root}"
+
+[build]
+source_dir = "{root}/pyfluid_amrex"
+build_dir = "{root}/build/pyfluid_amrex-openmp"
+jobs = 3
+cmake_args = [
+  "-DCMAKE_BUILD_TYPE=Release",
+  "-DCMAKE_CXX_COMPILER=/opt/homebrew/bin/mpicxx",
+  "-DCMAKE_PREFIX_PATH={root}/.deps/amrex-mpi-omp-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi;/opt/homebrew/opt/libomp",
+  "-DAMReX_DIR={root}/.deps/amrex-mpi-omp-lsolvers-hdf5/lib/cmake/AMReX",
+  "-DHDF5_ROOT=/opt/homebrew/opt/hdf5-mpi",
+  "-DOpenMP_CXX_FLAGS=-Xpreprocessor -fopenmp -I/opt/homebrew/opt/libomp/include",
+  "-DOpenMP_CXX_LIB_NAMES=omp",
+  "-DOpenMP_omp_LIBRARY=/opt/homebrew/opt/libomp/lib/libomp.dylib",
+  "-DPYFLUID_AMREX_NATIVE=ON",
+]
+
+[submit]
+command = []
+header = ["#!/bin/sh"]

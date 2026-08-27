@@ -6,6 +6,7 @@
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 #include "pyfluid_amrex/initial_data/equilibrium_torus.hpp"
 #include "pyfluid_amrex/initial_data/fluid.hpp"
+#include "pyfluid_amrex/initial_data/materialization.hpp"
 #include "pyfluid_amrex/initial_data/perturbation.hpp"
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
@@ -217,12 +218,15 @@ std::vector<PhysicalIdComponentMetadata> configured_physical_id_components(
 )
 {
    std::vector<PhysicalIdComponentMetadata> components;
-   if (cfg.spacetime_initial_data == "kerr_schild"
+   if ((cfg.spacetime_initial_data == "kerr_schild"
+        || cfg.spacetime_initial_data == "static_trumpet")
        || cfg.ic == "black_hole") {
       PhysicalIdComponentMetadata black_hole;
       black_hole.role = "central_object";
       black_hole.kind = "black_hole";
-      black_hole.gravity = cfg.spacetime_initial_data == "kerr_schild"
+      black_hole.gravity =
+         cfg.spacetime_initial_data == "kerr_schild"
+            || cfg.spacetime_initial_data == "static_trumpet"
          ? "analytic" : "exterior_shell";
       black_hole.origin = {{
          cfg.spacetime_origin1,
@@ -280,6 +284,15 @@ std::vector<PhysicalIdComponentMetadata> configured_physical_id_components(
 PhysicalInitialDataMetadata physical_id_artifact_metadata(
    RunConfig const& cfg,
    PhysicalInitialDataMetadata const* loaded,
+   amrex::Real black_hole_throat_area,
+   amrex::Real black_hole_irreducible_mass,
+   amrex::Real black_hole_throat_equatorial_circumference,
+   amrex::Real black_hole_throat_polar_circumference,
+   amrex::Real black_hole_throat_kerr_mass,
+   amrex::Real black_hole_throat_kerr_spin,
+   amrex::Real black_hole_throat_angular_momentum,
+   amrex::Real black_hole_throat_christodoulou_mass,
+   amrex::Real black_hole_throat_christodoulou_spin,
    RotatingStarUpdateSummary const* rotating_star,
    EquilibriumTorusUpdateSummary const* equilibrium_torus
 )
@@ -309,6 +322,40 @@ PhysicalInitialDataMetadata physical_id_artifact_metadata(
    }
    metadata.matter_outer_radius = loaded == nullptr
       ? -1.0 : loaded->matter_outer_radius;
+   if (black_hole_throat_area > 0.0) {
+      metadata.black_hole_throat_area = black_hole_throat_area;
+      metadata.black_hole_irreducible_mass = black_hole_irreducible_mass;
+      metadata.black_hole_throat_equatorial_circumference =
+         black_hole_throat_equatorial_circumference;
+      metadata.black_hole_throat_polar_circumference =
+         black_hole_throat_polar_circumference;
+      metadata.black_hole_throat_kerr_mass = black_hole_throat_kerr_mass;
+      metadata.black_hole_throat_kerr_spin = black_hole_throat_kerr_spin;
+      metadata.black_hole_throat_angular_momentum =
+         black_hole_throat_angular_momentum;
+      metadata.black_hole_throat_christodoulou_mass =
+         black_hole_throat_christodoulou_mass;
+      metadata.black_hole_throat_christodoulou_spin =
+         black_hole_throat_christodoulou_spin;
+   } else if (loaded != nullptr) {
+      metadata.black_hole_throat_area = loaded->black_hole_throat_area;
+      metadata.black_hole_irreducible_mass =
+         loaded->black_hole_irreducible_mass;
+      metadata.black_hole_throat_equatorial_circumference =
+         loaded->black_hole_throat_equatorial_circumference;
+      metadata.black_hole_throat_polar_circumference =
+         loaded->black_hole_throat_polar_circumference;
+      metadata.black_hole_throat_kerr_mass =
+         loaded->black_hole_throat_kerr_mass;
+      metadata.black_hole_throat_kerr_spin =
+         loaded->black_hole_throat_kerr_spin;
+      metadata.black_hole_throat_angular_momentum =
+         loaded->black_hole_throat_angular_momentum;
+      metadata.black_hole_throat_christodoulou_mass =
+         loaded->black_hole_throat_christodoulou_mass;
+      metadata.black_hole_throat_christodoulou_spin =
+         loaded->black_hole_throat_christodoulou_spin;
+   }
    if (rotating_star != nullptr) {
       set_rotating_star_metadata(metadata, *rotating_star);
       metadata.matter_outer_radius = std::max(
@@ -1023,6 +1070,8 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
    }
    const bool continue_rotation = configured_rotation
       && metadata.angular_velocity != cfg_.initial_data_angular_velocity;
+   const bool continue_disk =
+      physical_id_disk_continuation_requested(metadata, cfg_);
    const bool add_torus = metadata.disk == "none"
       && (cfg_.initial_data_disk == "equilibrium_torus"
           || cfg_.initial_data_disk == "tilted_torus")
@@ -1031,7 +1080,8 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       metadata.magnetic_seed != "none"
       || metadata.magnetic_equilibrium != "none";
    if (constructed_magnetic_artifact
-       && (metadata.source_ic != cfg_.ic || continue_rotation || add_torus)) {
+       && (metadata.source_ic != cfg_.ic || continue_rotation
+           || continue_disk || add_torus)) {
       amrex::Abort(
          "constructed stellar magnetic physical-ID artifacts cannot yet be "
          "continued or recomposed; a target-grid magnetic equilibrium owner "
@@ -1056,7 +1106,7 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          && axisymmetric_disk;
       if (cfg_.mesh_coordinate != "cartesian"
           && !spherical_axisymmetric_target
-          && (continue_rotation || add_torus)) {
+          && (continue_rotation || continue_disk || add_torus)) {
          amrex::Abort(
             "3D curvilinear physical-ID targets may materialize a completed "
             "model, but continuation or component addition requires the "
@@ -1094,6 +1144,22 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          << metadata.angular_velocity
          << " target_omega=" << cfg_.initial_data_angular_velocity << '\n';
    }
+   if (continue_disk) {
+      if (metadata.disk_angular_velocity
+             * cfg_.initial_data_disk_angular_velocity < 0.0
+          || std::abs(metadata.disk_angular_velocity)
+             >= std::abs(cfg_.initial_data_disk_angular_velocity)) {
+         amrex::Abort(
+            "equilibrium-torus physical ID continuation requires a larger "
+            "target angular-velocity magnitude with the saved rotation sign"
+         );
+      }
+      amrex::Print()
+         << "continuing equilibrium-torus physical initial data: "
+         << "source_omega=" << metadata.disk_angular_velocity
+         << " target_omega="
+         << cfg_.initial_data_disk_angular_velocity << '\n';
+   }
    if (add_torus) {
       amrex::Print()
          << "continuing physical initial data with a "
@@ -1101,7 +1167,7 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          << cfg_.initial_data_disk << " matter component\n";
    }
    bool resolve_changed_reduced_rns = false;
-   bool resolve_changed_spherical_black_hole = false;
+   bool resolve_spherical_black_hole = false;
 #if (AMREX_SPACEDIM >= 2)
    resolve_changed_reduced_rns = configured_rotation
       && cfg_.initial_data_solve_only
@@ -1117,14 +1183,13 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
       && !metadata.exact_layout;
 #endif
 #if (AMREX_SPACEDIM >= 2)
-   resolve_changed_spherical_black_hole = metadata.source_ic == "black_hole"
+   resolve_spherical_black_hole = metadata.source_ic == "black_hole"
       && cfg_.ic == "black_hole"
       && cfg_.initial_data_solve_only
       && cfg_.spacetime_initial_data == "xcts"
       && cfg_.mesh_coordinate == "spherical"
       && (cfg_.mesh_axes == "r theta"
-          || cfg_.mesh_axes == "r theta phi")
-      && !metadata.exact_layout;
+          || cfg_.mesh_axes == "r theta phi");
 #endif
    if (resolve_changed_reduced_rns && !continue_rotation) {
       amrex::Print()
@@ -1132,9 +1197,9 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
             "r-theta grid at omega="
          << cfg_.initial_data_angular_velocity << '\n';
    }
-   if (resolve_changed_spherical_black_hole) {
+   if (resolve_spherical_black_hole) {
       amrex::Print()
-         << "re-solving black-hole physical initial data on the changed "
+         << "re-solving black-hole physical initial data on the configured "
          << cfg_.mesh_axes << " shell\n";
    }
    if ((continue_rotation || resolve_changed_reduced_rns)
@@ -1144,8 +1209,8 @@ bool AmrSolverBase::load_physical_initial_data_artifact()
          "energy; regenerate this legacy physical-ID artifact"
       );
    }
-   return continue_rotation || resolve_changed_reduced_rns
-      || resolve_changed_spherical_black_hole || add_torus;
+   return continue_rotation || continue_disk || resolve_changed_reduced_rns
+      || resolve_spherical_black_hole || add_torus;
 }
 
 void AmrSolverBase::project_materialized_initial_face_b()
@@ -1265,16 +1330,19 @@ void AmrSolverBase::write_physical_initial_data_artifact()
    write_physical_initial_data_artifact(
       cfg_.initial_data_output_file,
       cfg_.initial_data_angular_velocity,
+      cfg_.initial_data_disk_angular_velocity,
       !preserve_exact_primitive
    );
 }
 
 void AmrSolverBase::write_physical_initial_data_artifact(
    std::string const& path,
-   amrex::Real angular_velocity,
+   amrex::Real stellar_angular_velocity,
+   amrex::Real disk_angular_velocity,
    bool refresh_primitive,
    RotatingStarUpdateSummary const* rotating_star,
-   EquilibriumTorusUpdateSummary const* equilibrium_torus
+   EquilibriumTorusUpdateSummary const* equilibrium_torus,
+   ConformalBlackHoleSummary const* black_hole
 )
 {
    amrex::Vector<amrex::Geometry> geometry;
@@ -1305,7 +1373,8 @@ void AmrSolverBase::write_physical_initial_data_artifact(
       }
    }
    RunConfig artifact_cfg = cfg_;
-   artifact_cfg.initial_data_angular_velocity = angular_velocity;
+   artifact_cfg.initial_data_angular_velocity = stellar_angular_velocity;
+   artifact_cfg.initial_data_disk_angular_velocity = disk_angular_velocity;
    if (loaded_physical_id_metadata_) {
       // Magnetic construction and force-balance identity belong to the
       // physical artifact, not to the target run's construction request.
@@ -1332,21 +1401,61 @@ void AmrSolverBase::write_physical_initial_data_artifact(
    }
    RotatingStarUpdateSummary const* selected_rotating_star = rotating_star;
    if (selected_rotating_star == nullptr
-       && angular_velocity == cfg_.initial_data_angular_velocity
+       && stellar_angular_velocity == cfg_.initial_data_angular_velocity
        && initial_data_rotating_star_summary_) {
       selected_rotating_star = initial_data_rotating_star_summary_.get();
    }
    EquilibriumTorusUpdateSummary const* selected_equilibrium_torus =
       equilibrium_torus;
    if (selected_equilibrium_torus == nullptr
-       && angular_velocity == cfg_.initial_data_angular_velocity
+       && disk_angular_velocity == cfg_.initial_data_disk_angular_velocity
        && initial_data_equilibrium_torus_summary_) {
       selected_equilibrium_torus = initial_data_equilibrium_torus_summary_.get();
    }
+   const amrex::Real black_hole_throat_area = black_hole == nullptr
+      ? initial_data_black_hole_throat_area_ : black_hole->throat_area;
+   const amrex::Real black_hole_irreducible_mass = black_hole == nullptr
+      ? initial_data_black_hole_irreducible_mass_
+      : black_hole->irreducible_mass;
+   const amrex::Real black_hole_throat_equatorial_circumference =
+      black_hole == nullptr
+         ? initial_data_black_hole_throat_equatorial_circumference_
+         : black_hole->equatorial_circumference;
+   const amrex::Real black_hole_throat_polar_circumference =
+      black_hole == nullptr
+         ? initial_data_black_hole_throat_polar_circumference_
+         : black_hole->polar_circumference;
+   const amrex::Real black_hole_throat_kerr_mass = black_hole == nullptr
+      ? initial_data_black_hole_throat_kerr_mass_
+      : black_hole->kerr_horizon_mass;
+   const amrex::Real black_hole_throat_kerr_spin = black_hole == nullptr
+      ? initial_data_black_hole_throat_kerr_spin_
+      : black_hole->kerr_dimensionless_spin;
+   const amrex::Real black_hole_throat_angular_momentum =
+      black_hole == nullptr
+         ? initial_data_black_hole_throat_angular_momentum_
+         : black_hole->angular_momentum;
+   const amrex::Real black_hole_throat_christodoulou_mass =
+      black_hole == nullptr
+         ? initial_data_black_hole_throat_christodoulou_mass_
+         : black_hole->christodoulou_mass;
+   const amrex::Real black_hole_throat_christodoulou_spin =
+      black_hole == nullptr
+         ? initial_data_black_hole_throat_christodoulou_spin_
+         : black_hole->christodoulou_dimensionless_spin;
    const PhysicalInitialDataMetadata artifact_metadata =
       physical_id_artifact_metadata(
          artifact_cfg,
          loaded_physical_id_metadata_.get(),
+         black_hole_throat_area,
+         black_hole_irreducible_mass,
+         black_hole_throat_equatorial_circumference,
+         black_hole_throat_polar_circumference,
+         black_hole_throat_kerr_mass,
+         black_hole_throat_kerr_spin,
+         black_hole_throat_angular_momentum,
+         black_hole_throat_christodoulou_mass,
+         black_hole_throat_christodoulou_spin,
          selected_rotating_star,
          selected_equilibrium_torus
       );
@@ -1383,7 +1492,8 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
       std::filesystem::create_directories(sequence_dir);
       std::ofstream index(sequence_dir / "sequence.tsv");
       index
-         << "index\ttargets\tangular_velocity\tmaximum_density"
+         << "index\ttargets\tangular_velocity\tdisk_angular_velocity"
+         << "\tmaximum_density"
          << "\tmaximum_velocity\tinjection_energy"
          << "\tequatorial_radius\tpolar_radius"
          << "\tequatorial_log_enthalpy_gradient"
@@ -1395,7 +1505,7 @@ void AmrSolverBase::initialize_physical_initial_data_sequence_output()
          << "\tartifact\n";
       std::ofstream metadata(sequence_dir / "sequence.meta");
       metadata << "# type=physical_initial_data_sequence\n"
-               << "# schema_version=5\n"
+               << "# schema_version=6\n"
                << "# eos=" << cfg_.eos << '\n'
                << "# eos_preset=" << cfg_.eos_preset << '\n'
                << "# thermal_gamma=" << std::setprecision(17)
@@ -1489,7 +1599,9 @@ std::string AmrSolverBase::physical_initial_data_sequence_output_dir() const
 void AmrSolverBase::write_physical_initial_data_sequence_model(
    int continuation_step,
    int continuation_steps,
-   amrex::Real angular_velocity,
+   amrex::Real stellar_angular_velocity,
+   amrex::Real disk_angular_velocity,
+   ConformalBlackHoleSummary const& black_hole,
    RotatingStarUpdateSummary const& rotating_star,
    EquilibriumTorusUpdateSummary const& equilibrium_torus
 )
@@ -1497,7 +1609,13 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
    std::ostringstream model_name;
    model_name << "model_" << std::setw(4) << std::setfill('0')
               << continuation_step
-              << "_omega-" << sequence_real_label(angular_velocity)
+              << "_omega-" << sequence_real_label(stellar_angular_velocity);
+   if (cfg_.initial_data_disk == "equilibrium_torus"
+       || cfg_.initial_data_disk == "tilted_torus") {
+      model_name
+         << "_diskomega-" << sequence_real_label(disk_angular_velocity);
+   }
+   model_name
               << "_baseN-";
    for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
       if (direction != 0) {
@@ -1512,12 +1630,14 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
       / relative_artifact;
    write_physical_initial_data_artifact(
       artifact.string(),
-      angular_velocity,
+      stellar_angular_velocity,
+      disk_angular_velocity,
       false,
       &rotating_star,
       (cfg_.initial_data_disk == "equilibrium_torus"
        || cfg_.initial_data_disk == "tilted_torus")
-         ? &equilibrium_torus : nullptr
+         ? &equilibrium_torus : nullptr,
+      &black_hole
    );
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::ofstream index(
@@ -1526,7 +1646,8 @@ void AmrSolverBase::write_physical_initial_data_sequence_model(
          std::ios::app
       );
       index << continuation_step << '\t' << continuation_steps << '\t'
-            << std::setprecision(17) << angular_velocity << '\t'
+            << std::setprecision(17) << stellar_angular_velocity << '\t'
+            << disk_angular_velocity << '\t'
             << rotating_star.maximum_density << '\t'
             << rotating_star.maximum_velocity << '\t'
             << rotating_star.injection_energy << '\t'

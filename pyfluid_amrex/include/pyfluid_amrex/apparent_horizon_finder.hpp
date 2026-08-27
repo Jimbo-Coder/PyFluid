@@ -71,6 +71,15 @@ void unpack_apparent_horizon_geometry(
    SpacetimeMetricDerivatives& derivatives
 );
 
+// Transform one Cartesian geometry sample after its coordinate was mirrored
+// through the planes selected by reflection_mask.  Metric and extrinsic-
+// curvature components transform as rank-two tensors; d_k gamma_ij also
+// carries the derivative-index parity.
+void reflect_apparent_horizon_geometry(
+   ApparentHorizonGeometrySample& sample,
+   int reflection_mask
+) noexcept;
+
 // A host-owned spherical interpolation volume.  Geometry is sampled on a
 // cell-centered angular grid and arbitrary strictly increasing radial spokes.
 // The AMR adapter constructs this once per horizon search; pseudo-time stages
@@ -195,6 +204,19 @@ struct ApparentHorizonResult {
    amrex::Real theta_l2_times_mass = 0.0;
    amrex::Real area = 0.0;
    amrex::Real irreducible_mass = 0.0;
+   amrex::Real equatorial_circumference = 0.0;
+   amrex::Real polar_circumference = 0.0;
+   amrex::Real kerr_horizon_mass = 0.0;
+   amrex::Real kerr_dimensionless_spin = 0.0;
+   // Quasi-local integrals using the three flat-coordinate rotation
+   // generators about the measured centroid. These are exact when the
+   // corresponding generator is the horizon's axial Killing vector; they are
+   // explicitly coordinate diagnostics for a generic distorted surface.
+   std::array<amrex::Real, 3> angular_momentum{};
+   amrex::Real angular_momentum_magnitude = 0.0;
+   amrex::Real christodoulou_mass = 0.0;
+   std::array<amrex::Real, 3> christodoulou_dimensionless_spin{};
+   amrex::Real christodoulou_dimensionless_spin_magnitude = 0.0;
    std::array<amrex::Real, 3> centroid{};
    amrex::Real minimum_radius = 0.0;
    amrex::Real maximum_radius = 0.0;
@@ -203,9 +225,11 @@ struct ApparentHorizonResult {
 
 // BHaHAHA-style nonlinear hyperbolic relaxation.  The implementation uses
 // SSPRK3, scale-aware stopping criteria, pole-parity angular derivatives,
-// coarse-to-fine continuation, and optional residual-minimizing
-// over-relaxation.  It is an independent implementation of the published
-// method and consumes only the shared ADM 3+1 geometry contract.
+// per-step frozen metric interpolation, coarse-to-fine continuation, and
+// optional residual-minimizing over-relaxation.  Independent angular-point
+// kernels use isolated host OpenMP when available.  This is an independent
+// implementation of the published method and consumes only the shared ADM
+// 3+1 geometry contract.
 ApparentHorizonResult find_apparent_horizon(
    ApparentHorizonGeometryGrid const& geometry,
    amrex::Real initial_radius,

@@ -820,6 +820,10 @@ EquilibriumTorusParameters equilibrium_torus_parameters(
    parameters.specific_angular_momentum =
       cfg.initial_data_disk_specific_angular_momentum;
    parameters.angular_velocity = cfg.initial_data_disk_angular_velocity;
+   parameters.continuation_source_angular_velocity =
+      parameters.angular_velocity;
+   parameters.continuation_steps =
+      cfg.initial_data_rotation_continuation_steps;
    parameters.differential_rotation_length =
       cfg.initial_data_disk_differential_rotation_length;
    parameters.rotation_power_q = cfg.initial_data_disk_rotation_power_q;
@@ -832,7 +836,9 @@ EquilibriumTorusParameters equilibrium_torus_parameters(
    parameters.axis1 = cfg.initial_data_disk_axis1 / axis_norm;
    parameters.axis2 = cfg.initial_data_disk_axis2 / axis_norm;
    parameters.axis3 = cfg.initial_data_disk_axis3 / axis_norm;
-   if (provider.fixed_spacetime.metric == FixedSpacetimeMetric::KerrSchild) {
+   if (provider.fixed_spacetime.metric == FixedSpacetimeMetric::KerrSchild
+       || provider.fixed_spacetime.metric
+          == FixedSpacetimeMetric::StaticTrumpet) {
       parameters.center1 = provider.fixed_spacetime.origin1;
       parameters.center2 = provider.fixed_spacetime.origin2;
       parameters.center3 = provider.fixed_spacetime.origin3;
@@ -842,6 +848,9 @@ EquilibriumTorusParameters equilibrium_torus_parameters(
       parameters.center3 = cfg.initial_data_rotation_center3;
    }
    parameters.matter_relaxation = cfg.initial_data_matter_relaxation;
+   parameters.relative_tolerance =
+      cfg.initial_data_matter_relative_tolerance;
+   parameters.max_iterations = cfg.initial_data_matter_max_iterations;
    parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
    return parameters;
 }

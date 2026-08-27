@@ -597,6 +597,78 @@
       "value_type": "real"
     },
     {
+      "cpp_id": "BlackHoleThroatArea",
+      "description": "Native constraint-solved black-hole throat area diagnostic.",
+      "name": "black_hole_throat_area",
+      "required": false,
+      "section": "black_hole_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleIrreducibleMass",
+      "description": "Irreducible mass derived from the native black-hole throat area.",
+      "name": "black_hole_irreducible_mass",
+      "required": false,
+      "section": "black_hole_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleThroatEquatorialCircumference",
+      "description": "Proper equatorial circumference of the native black-hole throat.",
+      "name": "black_hole_throat_equatorial_circumference",
+      "required": false,
+      "section": "black_hole_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleThroatPolarCircumference",
+      "description": "Proper polar circumference of the native black-hole throat.",
+      "name": "black_hole_throat_polar_circumference",
+      "required": false,
+      "section": "black_hole_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleThroatKerrMass",
+      "description": "Circumference horizon-mass measure M_C inferred from the native throat equatorial circumference.",
+      "name": "black_hole_throat_kerr_mass",
+      "required": false,
+      "section": "black_hole_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleThroatKerrSpin",
+      "description": "Kerr-assumption dimensionless spin inferred from native throat area and equatorial circumference.",
+      "name": "black_hole_throat_kerr_spin",
+      "required": false,
+      "section": "black_hole_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleThroatAngularMomentum",
+      "description": "Quasi-local angular momentum from the exact axial Killing vector on an axisymmetric native throat.",
+      "name": "black_hole_throat_angular_momentum",
+      "required": false,
+      "section": "black_hole_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleThroatChristodoulouMass",
+      "description": "Christodoulou horizon mass from native throat area and quasi-local angular momentum.",
+      "name": "black_hole_throat_christodoulou_mass",
+      "required": false,
+      "section": "black_hole_diagnostics",
+      "value_type": "real"
+    },
+    {
+      "cpp_id": "BlackHoleThroatChristodoulouSpin",
+      "description": "Signed dimensionless spin from native throat quasi-local angular momentum and Christodoulou mass.",
+      "name": "black_hole_throat_christodoulou_spin",
+      "required": false,
+      "section": "black_hole_diagnostics",
+      "value_type": "real"
+    },
+    {
       "cpp_id": "Disk",
       "description": "Optional disk kind.",
       "name": "disk",

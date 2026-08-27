@@ -9,6 +9,9 @@ import re
 import shutil
 from pathlib import Path
 
+import numpy as np
+
+from plotfile_reader import parse_plot_header, read_level_state
 from physical_id_metadata import read_physical_id_metadata
 from validation_common import (
    ROOT,
@@ -50,6 +53,25 @@ KERR_EVOLUTION_INPUT = (
 )
 KERR_J_CONSTANT_INPUT = (
    ROOT / "pyfluid_amrex/inputs/kerr_schild_j_constant_torus_id_3d.in"
+)
+STATIC_TRUMPET_ID_INPUT = (
+   ROOT / "pyfluid_amrex/inputs/static_trumpet_equilibrium_torus_id_3d.in"
+)
+BLACK_HOLE_XCTS_TORUS_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/black_hole_torus_coupled_xcts_spherical_id_2d.in"
+)
+BLACK_HOLE_XCTS_MATERIALIZED_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/black_hole_torus_coupled_xcts_from_spherical_id_3d.in"
+)
+BLACK_HOLE_XCTS_EVOLUTION_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/black_hole_torus_coupled_xcts_fixed_evolution_3d.in"
+)
+BLACK_HOLE_QPOWER_CONTINUATION_INPUT = (
+   ROOT
+   / "pyfluid_amrex/inputs/bh_disk_qomega1p85_continuation_regression_2d.in"
 )
 RNS_INPUT = (
    ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_spherical_id_2d.in"
@@ -104,6 +126,33 @@ REGRID_PATTERN = re.compile(
 
 
 read_metadata = read_physical_id_metadata
+
+
+def artifact_field_relative_difference(
+   first: Path, second: Path, field_name: str
+) -> float:
+   first_names, first_dimension, _ = parse_plot_header(first / field_name)
+   second_names, second_dimension, _ = parse_plot_header(second / field_name)
+   if first_names != second_names or first_dimension != second_dimension:
+      raise RuntimeError(f"incompatible {field_name} artifacts")
+   first_state = read_level_state(
+      first / field_name, first_names, first_dimension, 0
+   )
+   second_state = read_level_state(
+      second / field_name, second_names, second_dimension, 0
+   )
+   if first_state.shape != second_state.shape:
+      raise RuntimeError(f"mismatched {field_name} artifact shapes")
+   if not np.all(np.isfinite(first_state)):
+      raise RuntimeError(f"first {field_name} artifact contains nonfinite values")
+   if not np.all(np.isfinite(second_state)):
+      raise RuntimeError(f"second {field_name} artifact contains nonfinite values")
+   scale = max(
+      float(np.max(np.abs(first_state))),
+      float(np.max(np.abs(second_state))),
+      1.0e-30,
+   )
+   return float(np.max(np.abs(first_state - second_state))) / scale
 
 
 def require_clean_relativistic_run(log_text: str, name: str) -> None:
@@ -344,6 +393,15 @@ def require_preserved_disk_metadata(source: Path, target: Path) -> None:
       "baryonic_mass",
       "angular_momentum",
       "dimensionless_spin",
+      "black_hole_throat_area",
+      "black_hole_irreducible_mass",
+      "black_hole_throat_equatorial_circumference",
+      "black_hole_throat_polar_circumference",
+      "black_hole_throat_kerr_mass",
+      "black_hole_throat_kerr_spin",
+      "black_hole_throat_angular_momentum",
+      "black_hole_throat_christodoulou_mass",
+      "black_hole_throat_christodoulou_spin",
       "matter_outer_radius",
    )
    mismatches = {
@@ -353,6 +411,78 @@ def require_preserved_disk_metadata(source: Path, target: Path) -> None:
    }
    if mismatches:
       raise RuntimeError(f"disk metadata changed during materialization: {mismatches}")
+
+
+def require_equatorial_evolution_equivalence(
+   full_rows: list[dict[str, str]],
+   half_rows: list[dict[str, str]],
+) -> None:
+   if len(full_rows) != len(half_rows):
+      raise RuntimeError(
+         "full/equatorial-half Kerr torus scalar histories have different "
+         "lengths"
+      )
+   integral_keys = (
+      "mass",
+      "energy",
+      "angular_mom3",
+   )
+   extrema_keys = (
+      "max_rho",
+      "min_lapse",
+      "max_lorentz_factor",
+   )
+   zero_keys = (
+      "mom1",
+      "mom2",
+      "mom3",
+      "angular_mom1",
+      "angular_mom2",
+   )
+   for full, half in zip(full_rows, half_rows, strict=True):
+      if int(float(full["step"])) != int(float(half["step"])):
+         raise RuntimeError("full/equatorial-half Kerr torus steps differ")
+      step = int(float(full["step"]))
+      for key in ("time", "dt"):
+         if not math.isclose(
+            float(full[key]),
+            float(half[key]),
+            rel_tol=3.0e-6,
+            abs_tol=2.0e-13,
+         ):
+            raise RuntimeError(
+               "full/equatorial-half Kerr torus timestep mismatch at "
+               f"step={step} in {key}: full={full[key]} half={half[key]}"
+            )
+      for key in integral_keys:
+         if not math.isclose(
+            float(full[key]),
+            float(half[key]),
+            rel_tol=2.0e-9,
+            abs_tol=2.0e-13,
+         ):
+            raise RuntimeError(
+               "full/equatorial-half Kerr torus mismatch at "
+               f"step={step} in {key}: full={full[key]} half={half[key]}"
+            )
+      for key in extrema_keys:
+         if not math.isclose(
+            float(full[key]),
+            float(half[key]),
+            rel_tol=1.0e-5,
+            abs_tol=2.0e-13,
+         ):
+            raise RuntimeError(
+               "full/equatorial-half Kerr torus extremum mismatch at "
+               f"step={step} in {key}: full={full[key]} half={half[key]}"
+            )
+      for key in zero_keys:
+         if max(abs(float(full[key])), abs(float(half[key]))) > 2.0e-13:
+            raise RuntimeError(
+               "full/equatorial-half Kerr torus symmetry-odd reduction is "
+               f"nonzero at step={step} in {key}: "
+               f"full={full[key]} half={half[key]}"
+            )
 
 
 def main() -> int:
@@ -439,6 +569,152 @@ def main() -> int:
       raise RuntimeError("full-storage coupled torus lost its owner identity")
    if int(coupled_constraints["matter_iterations"]) <= 100:
       raise RuntimeError("coupled torus did not exercise the disk fixed-point phase")
+
+   (
+      black_hole_test_dir,
+      black_hole_test_artifact,
+      black_hole_test_seconds,
+      black_hole_test_log,
+   ) = run_case(
+      "black_hole_torus_test_fluid_256x64",
+      2,
+      BLACK_HOLE_XCTS_TORUS_INPUT,
+      {"initial_data.disk_gravity": "test_fluid"},
+      args,
+   )
+   (
+      black_hole_coupled_dir,
+      black_hole_coupled_artifact,
+      black_hole_coupled_seconds,
+      black_hole_coupled_log,
+   ) = run_case(
+      "black_hole_torus_coupled_256x64",
+      2,
+      BLACK_HOLE_XCTS_TORUS_INPUT,
+      {"initial_data.disk_gravity": "coupled"},
+      args,
+   )
+   assert black_hole_test_artifact is not None
+   assert black_hole_coupled_artifact is not None
+   black_hole_test_torus = torus_diagnostics(
+      black_hole_test_log, "black_hole_torus_test_fluid_256x64"
+   )
+   black_hole_test_constraints = constraint_diagnostics(
+      black_hole_test_log, "black_hole_torus_test_fluid_256x64"
+   )
+   black_hole_coupled_torus = torus_diagnostics(
+      black_hole_coupled_log, "black_hole_torus_coupled_256x64"
+   )
+   black_hole_coupled_constraints = constraint_diagnostics(
+      black_hole_coupled_log, "black_hole_torus_coupled_256x64"
+   )
+   validate_torus(
+      black_hole_test_torus,
+      black_hole_test_constraints,
+      gravity="test_fluid",
+      massive=False,
+      minimum_mass=1.0e-4,
+   )
+   validate_torus(
+      black_hole_coupled_torus,
+      black_hole_coupled_constraints,
+      gravity="coupled",
+      massive=False,
+      minimum_mass=1.0e-4,
+   )
+   if int(black_hole_test_constraints["matter_iterations"]) != 0:
+      raise RuntimeError("test-fluid black-hole torus entered the coupled fixed point")
+   if int(black_hole_coupled_constraints["matter_iterations"]) < 3:
+      raise RuntimeError("coupled black-hole torus skipped its matter fixed point")
+   black_hole_coupled_metadata = read_metadata(black_hole_coupled_artifact)
+   black_hole_coupled_spin = float(
+      black_hole_coupled_metadata[
+         "black_hole_throat_christodoulou_spin"
+      ]
+   )
+   if abs(black_hole_coupled_spin) > 2.0e-5:
+      raise RuntimeError(
+         "zero-spin coupled black-hole torus missed its physical horizon-spin "
+         f"target: chi_H={black_hole_coupled_spin:.16e}"
+      )
+   black_hole_geometry_difference = artifact_field_relative_difference(
+      black_hole_test_artifact,
+      black_hole_coupled_artifact,
+      "adm_geometry.h5",
+   )
+   if black_hole_geometry_difference <= 1.0e-6:
+      raise RuntimeError(
+         "coupled black-hole torus did not backreact on the XCTS geometry"
+      )
+
+   (
+      black_hole_materialized_dir,
+      black_hole_materialized_artifact,
+      black_hole_materialized_seconds,
+      _,
+   ) = run_case(
+      "black_hole_torus_coupled_to_cartesian_64",
+      3,
+      BLACK_HOLE_XCTS_MATERIALIZED_INPUT,
+      {
+         "initial_data.input_file": repo_relative(black_hole_coupled_artifact),
+      },
+      args,
+   )
+   assert black_hole_materialized_artifact is not None
+   require_preserved_disk_metadata(
+      black_hole_coupled_artifact, black_hole_materialized_artifact
+   )
+   source_disk_mass = float(
+      read_metadata(black_hole_coupled_artifact)["disk_baryonic_mass"]
+   )
+
+   black_hole_evolution_dir, _, black_hole_evolution_seconds, _ = run_case(
+      "black_hole_torus_coupled_fixed_evolution_64",
+      3,
+      BLACK_HOLE_XCTS_EVOLUTION_INPUT,
+      {
+         "initial_data.input_file": repo_relative(
+            black_hole_materialized_artifact
+         ),
+         "pyfluid.max_step": "1",
+      },
+      args,
+      artifact_output=False,
+   )
+   black_hole_evolution_scalar = scalar_validation_row(
+      black_hole_evolution_dir,
+      case="black_hole_torus_coupled_fixed_evolution_64",
+      input_file=black_hole_evolution_dir / "input.in",
+      checks="open",
+      mhd=False,
+      dim=3,
+      ranks=args.ranks,
+      kind="initial_data",
+   )
+   if black_hole_evolution_scalar["status"] != "PASS":
+      raise RuntimeError(
+         "coupled black-hole torus fixed evolution scalar check failed: "
+         f"{black_hole_evolution_scalar['reason']}"
+      )
+   black_hole_evolution_rows = read_scalar_rows(black_hole_evolution_dir)
+   if int(float(black_hole_evolution_rows[-1]["step"])) != 1:
+      raise RuntimeError(
+         "coupled black-hole torus fixed evolution did not complete one step"
+      )
+   evolution_initial_mass = float(black_hole_evolution_rows[0]["mass"])
+   handoff_mass_relative_error = abs(
+      evolution_initial_mass - source_disk_mass
+   ) / source_disk_mass
+   if handoff_mass_relative_error > 2.0e-3:
+      raise RuntimeError(
+         "fixed evolution did not retain the source proper-volume baryonic "
+         "mass through the stored disk-sourced XCTS handoff: "
+         f"source={source_disk_mass:.16e} "
+         f"scalar={evolution_initial_mass:.16e} "
+         f"relative_error={handoff_mass_relative_error:.3e}"
+      )
+   additional_scalar_rows.append(black_hole_evolution_scalar)
 
    overlap_dir, overlap_seconds = run_rejected_case(
       "test_fluid_central_overlap_rejected",
@@ -531,6 +807,24 @@ def main() -> int:
       massive=False,
    )
 
+   trumpet_dir, trumpet_artifact, trumpet_seconds, trumpet_log = run_case(
+      "static_trumpet_constant_l_32",
+      3,
+      STATIC_TRUMPET_ID_INPUT,
+      {},
+      args,
+   )
+   assert trumpet_artifact is not None
+   trumpet_torus = torus_diagnostics(
+      trumpet_log, "static_trumpet_constant_l_32"
+   )
+   validate_torus(
+      trumpet_torus,
+      analytic_constraints,
+      gravity="test_fluid",
+      massive=False,
+   )
+
    j_dir, j_artifact, j_seconds, j_log = run_case(
       "kerr_j_constant_32",
       3,
@@ -615,6 +909,58 @@ def main() -> int:
    kerr_evolution_rows = read_scalar_rows(kerr_evolution_dir)
    if int(float(kerr_evolution_rows[-1]["step"])) != 2:
       raise RuntimeError("Kerr torus evolution did not complete two steps")
+
+   kerr_half_evolution_dir, _, kerr_half_evolution_seconds, _ = run_case(
+      "kerr_constant_l_evolution_z_half_32x32x16",
+      3,
+      KERR_EVOLUTION_INPUT,
+      {
+         **kerr_common,
+         "geometry.prob_lo": "-32.0 -32.0 0.0",
+         "geometry.prob_hi": "32.0 32.0 32.0",
+         "amr.n_cell": "32 32 16",
+         "initial_data.input_file": repo_relative(kerr_artifact),
+         "pyfluid.bc_zlo": "symmetry",
+         "pyfluid.max_step": "2",
+      },
+      args,
+      artifact_output=False,
+   )
+   kerr_half_evolution_scalar = scalar_validation_row(
+      kerr_half_evolution_dir,
+      case="kerr_constant_l_evolution_z_half_32x32x16",
+      input_file=kerr_half_evolution_dir / "input.in",
+      checks="open",
+      mhd=False,
+      dim=3,
+      ranks=args.ranks,
+      kind="initial_data",
+   )
+   if kerr_half_evolution_scalar["status"] != "PASS":
+      raise RuntimeError(
+         "equatorial-half Kerr torus evolution scalar check failed: "
+         f"{kerr_half_evolution_scalar['reason']}"
+      )
+   kerr_half_evolution_rows = read_scalar_rows(kerr_half_evolution_dir)
+   require_equatorial_evolution_equivalence(
+      kerr_evolution_rows, kerr_half_evolution_rows
+   )
+   additional_scalar_rows.append(kerr_half_evolution_scalar)
+
+   vertical_reflection_dir, vertical_reflection_seconds = run_rejected_case(
+      "static_trumpet_torus_vertical_reflection_rejected",
+      3,
+      STATIC_TRUMPET_ID_INPUT,
+      {
+         "geometry.prob_lo": "0.0 -32.0 -32.0",
+         "geometry.prob_hi": "32.0 32.0 32.0",
+         "amr.n_cell": "16 32 32",
+         "pyfluid.bc_xlo": "symmetry",
+      },
+      "a rotating disk is reflection invariant only across its equatorial "
+      "plane",
+      args,
+   )
 
    kerr_amr_dir, _, kerr_amr_seconds, kerr_amr_log = run_case(
       "kerr_constant_l_loaded_amr_32",
@@ -710,6 +1056,48 @@ def main() -> int:
          full_storage_dir,
       ),
       {
+         **torus_row(
+            "black_hole_torus_test_fluid_256x64",
+            black_hole_test_torus,
+            black_hole_test_constraints,
+            black_hole_test_seconds,
+            black_hole_test_dir,
+         ),
+         "geometry_relative_difference": black_hole_geometry_difference,
+      },
+      {
+         **torus_row(
+            "black_hole_torus_coupled_256x64",
+            black_hole_coupled_torus,
+            black_hole_coupled_constraints,
+            black_hole_coupled_seconds,
+            black_hole_coupled_dir,
+         ),
+         "geometry_relative_difference": black_hole_geometry_difference,
+      },
+      {
+         "kind": "initial_data",
+         "case": "black_hole_torus_coupled_to_cartesian_64",
+         "status": "PASS",
+         "disk_baryonic_mass": source_disk_mass,
+         "seconds": black_hole_materialized_seconds,
+         "run_dir": repo_relative(black_hole_materialized_dir),
+      },
+      {
+         "kind": "initial_data",
+         "case": "black_hole_torus_coupled_fixed_evolution_64",
+         "status": "PASS",
+         "initial_baryonic_mass": evolution_initial_mass,
+         "handoff_mass_relative_error": handoff_mass_relative_error,
+         "mass_rel_drift": black_hole_evolution_scalar["mass_rel_drift"],
+         "energy_rel_drift": black_hole_evolution_scalar["energy_rel_drift"],
+         "momentum_abs_drift": black_hole_evolution_scalar[
+            "momentum_abs_drift"
+         ],
+         "seconds": black_hole_evolution_seconds,
+         "run_dir": repo_relative(black_hole_evolution_dir),
+      },
+      {
          "kind": "initial_data",
          "case": "test_fluid_central_overlap_rejected",
          "status": "PASS",
@@ -741,6 +1129,13 @@ def main() -> int:
          kerr_dir,
       ),
       torus_row(
+         "static_trumpet_constant_l_32",
+         trumpet_torus,
+         analytic_constraints,
+         trumpet_seconds,
+         trumpet_dir,
+      ),
+      torus_row(
          "kerr_j_constant_32",
          j_torus,
          analytic_constraints,
@@ -768,6 +1163,27 @@ def main() -> int:
       },
       {
          "kind": "initial_data",
+         "case": "kerr_constant_l_evolution_z_half_32x32x16",
+         "status": "PASS",
+         "seconds": kerr_half_evolution_seconds,
+         "mass_rel_drift": kerr_half_evolution_scalar["mass_rel_drift"],
+         "energy_rel_drift": kerr_half_evolution_scalar[
+            "energy_rel_drift"
+         ],
+         "momentum_abs_drift": kerr_half_evolution_scalar[
+            "momentum_abs_drift"
+         ],
+         "run_dir": repo_relative(kerr_half_evolution_dir),
+      },
+      {
+         "kind": "initial_data",
+         "case": "static_trumpet_torus_vertical_reflection_rejected",
+         "status": "PASS",
+         "seconds": vertical_reflection_seconds,
+         "run_dir": repo_relative(vertical_reflection_dir),
+      },
+      {
+         "kind": "initial_data",
          "case": "kerr_constant_l_loaded_amr_32",
          "status": "PASS",
          "seconds": kerr_amr_seconds,
@@ -790,6 +1206,233 @@ def main() -> int:
    ]
 
    if args.level == "full":
+      (
+         _,
+         continuation_seed_artifact,
+         _,
+         _,
+      ) = run_case(
+         "bh_disk_qomega1p85_continuation_seed_384x80",
+         2,
+         BLACK_HOLE_QPOWER_CONTINUATION_INPUT,
+         {},
+         args,
+      )
+      assert continuation_seed_artifact is not None
+      (
+         continuation_dir,
+         continuation_artifact,
+         continuation_seconds,
+         continuation_log,
+      ) = run_case(
+         "bh_disk_qomega1p85_continuation_0p1402_384x80",
+         2,
+         BLACK_HOLE_QPOWER_CONTINUATION_INPUT,
+         {
+            "initial_data.input_file": repo_relative(
+               continuation_seed_artifact
+            ),
+            "initial_data.disk_angular_velocity": "0.1402",
+            "initial_data.rotation_continuation_steps": "2",
+         },
+         args,
+      )
+      assert continuation_artifact is not None
+      if (
+         "continuing equilibrium-torus physical initial data: "
+         "source_omega=0.14 target_omega=0.1402"
+         not in continuation_log
+      ):
+         raise RuntimeError("saved q-power BH-disk continuation was not used")
+      for expected_step in (
+         "step=1/2 stellar_omega=0 disk_omega=0.1401",
+         "step=2/2 stellar_omega=0 disk_omega=0.1402",
+      ):
+         if expected_step not in continuation_log:
+            raise RuntimeError(
+               "saved q-power BH-disk continuation did not use the shared "
+               f"step schedule: missing {expected_step!r}"
+            )
+      sequence_indexes = list(
+         (continuation_dir / "initial_data_sequences").glob(
+            "**/sequence.tsv"
+         )
+      )
+      if len(sequence_indexes) != 1:
+         raise RuntimeError(
+            "saved q-power BH-disk continuation did not write one sequence "
+            "index"
+         )
+      sequence_lines = sequence_indexes[0].read_text().splitlines()
+      sequence_columns = sequence_lines[0].split("\t")
+      sequence_rows = [
+         dict(zip(sequence_columns, line.split("\t"), strict=True))
+         for line in sequence_lines[1:]
+         if line
+      ]
+      expected_disk_omegas = (0.1401, 0.1402)
+      if len(sequence_rows) != len(expected_disk_omegas):
+         raise RuntimeError(
+            "saved q-power BH-disk continuation did not persist every step"
+         )
+      sequence_metadata: list[dict[str, str]] = []
+      for row, expected_disk_omega in zip(
+         sequence_rows, expected_disk_omegas, strict=True
+      ):
+         if not math.isclose(
+            float(row["disk_angular_velocity"]),
+            expected_disk_omega,
+            rel_tol=0.0,
+            abs_tol=1.0e-14,
+         ):
+            raise RuntimeError(
+               "saved q-power BH-disk sequence index has the wrong disk "
+               "angular velocity"
+            )
+         artifact_metadata = read_metadata(
+            sequence_indexes[0].parent / row["artifact"]
+         )
+         sequence_metadata.append(artifact_metadata)
+         if not math.isclose(
+            float(artifact_metadata["disk_angular_velocity"]),
+            expected_disk_omega,
+            rel_tol=0.0,
+            abs_tol=1.0e-14,
+         ):
+            raise RuntimeError(
+               "saved q-power BH-disk sequence artifact has the wrong disk "
+               "angular velocity"
+            )
+         for field in (
+            "black_hole_throat_area",
+            "black_hole_irreducible_mass",
+            "black_hole_throat_equatorial_circumference",
+            "black_hole_throat_polar_circumference",
+            "black_hole_throat_kerr_mass",
+            "black_hole_throat_kerr_spin",
+            "black_hole_throat_angular_momentum",
+            "black_hole_throat_christodoulou_mass",
+            "black_hole_throat_christodoulou_spin",
+         ):
+            if field not in artifact_metadata:
+               raise RuntimeError(
+                  "saved q-power BH-disk sequence artifact is missing "
+                  f"{field}"
+               )
+         irreducible_mass = float(
+            artifact_metadata["black_hole_irreducible_mass"]
+         )
+         horizon_angular_momentum = float(
+            artifact_metadata["black_hole_throat_angular_momentum"]
+         )
+         expected_christodoulou_mass = irreducible_mass * math.sqrt(
+            1.0 + horizon_angular_momentum**2
+            / (4.0 * irreducible_mass**4)
+         )
+         christodoulou_mass = float(
+            artifact_metadata["black_hole_throat_christodoulou_mass"]
+         )
+         christodoulou_spin = float(
+            artifact_metadata["black_hole_throat_christodoulou_spin"]
+         )
+         if not math.isclose(
+            christodoulou_mass,
+            expected_christodoulou_mass,
+            rel_tol=5.0e-15,
+            abs_tol=5.0e-15,
+         ) or not math.isclose(
+            christodoulou_spin,
+            horizon_angular_momentum / christodoulou_mass**2,
+            rel_tol=5.0e-15,
+            abs_tol=5.0e-15,
+         ):
+            raise RuntimeError(
+               "saved q-power BH-disk sequence artifact violates the "
+               "Christodoulou horizon identities"
+            )
+      continuation_torus = torus_diagnostics(
+         continuation_log,
+         "bh_disk_qomega1p85_continuation_0p1402_384x80",
+      )
+      continuation_constraints = constraint_diagnostics(
+         continuation_log,
+         "bh_disk_qomega1p85_continuation_0p1402_384x80",
+      )
+      validate_torus(
+         continuation_torus,
+         continuation_constraints,
+         gravity="coupled",
+         massive=False,
+         rotation_law="q_power",
+         minimum_mass=1.0e-8,
+      )
+      continuation_seed_metadata = read_metadata(continuation_seed_artifact)
+      continuation_metadata = read_metadata(continuation_artifact)
+      for field in (
+         "black_hole_throat_area",
+         "black_hole_irreducible_mass",
+         "black_hole_throat_equatorial_circumference",
+         "black_hole_throat_polar_circumference",
+         "black_hole_throat_kerr_mass",
+         "black_hole_throat_kerr_spin",
+         "black_hole_throat_angular_momentum",
+         "black_hole_throat_christodoulou_mass",
+         "black_hole_throat_christodoulou_spin",
+      ):
+         if sequence_metadata[-1][field] != continuation_metadata[field]:
+            raise RuntimeError(
+               "final q-power BH-disk sequence artifact does not own the "
+               f"accepted {field}"
+            )
+      if sequence_metadata[0]["black_hole_throat_kerr_mass"] \
+            == sequence_metadata[-1]["black_hole_throat_kerr_mass"]:
+         raise RuntimeError(
+            "BH-disk sequence horizon mass was inherited from its seed"
+         )
+      if sequence_metadata[0]["black_hole_throat_angular_momentum"] \
+            == sequence_metadata[-1]["black_hole_throat_angular_momentum"]:
+         raise RuntimeError(
+            "BH-disk sequence horizon angular momentum was inherited from "
+            "its seed"
+         )
+      if not (
+         float(continuation_metadata["disk_angular_velocity"])
+         > float(continuation_seed_metadata["disk_angular_velocity"])
+         and float(continuation_metadata["disk_baryonic_mass"])
+         > float(continuation_seed_metadata["disk_baryonic_mass"])
+         and float(continuation_metadata["black_hole_throat_area"]) > 0.0
+         and float(continuation_metadata["black_hole_irreducible_mass"]) > 0.0
+         and float(
+            continuation_metadata[
+               "black_hole_throat_equatorial_circumference"
+            ]
+         ) > 0.0
+         and float(
+            continuation_metadata["black_hole_throat_polar_circumference"]
+         ) > 0.0
+         and float(continuation_metadata["black_hole_throat_kerr_mass"]) > 0.0
+         and -1.0 <= float(
+            continuation_metadata["black_hole_throat_kerr_spin"]
+         ) <= 1.0
+         and math.isfinite(float(
+            continuation_metadata["black_hole_throat_angular_momentum"]
+         ))
+         and float(
+            continuation_metadata["black_hole_throat_christodoulou_mass"]
+         ) > 0.0
+         and -1.0 <= float(
+            continuation_metadata["black_hole_throat_christodoulou_spin"]
+         ) <= 1.0
+      ):
+         raise RuntimeError("saved q-power BH-disk continuation is not monotone")
+      rows.append(torus_row(
+         "bh_disk_qomega1p85_continuation_0p1402_384x80",
+         continuation_torus,
+         continuation_constraints,
+         continuation_seconds,
+         continuation_dir,
+      ))
+
       rns_dir, _, rns_seconds, rns_log = run_case(
          "rotating_star_test_fluid_128x32",
          2,

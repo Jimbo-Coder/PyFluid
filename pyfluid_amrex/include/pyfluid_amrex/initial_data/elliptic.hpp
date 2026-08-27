@@ -178,6 +178,13 @@ private:
       amrex::Vector<amrex::Real> const&,
       amrex::Real
    );
+   friend void set_axisymmetric_spherical_rotating_horizon_boundary(
+      InitialDataEllipticHierarchy const&,
+      InitialDataEllipticBoundaryConditions&,
+      amrex::Real,
+      amrex::Real,
+      int
+   );
    friend void set_spherical_radial_robin_boundary(
       InitialDataEllipticHierarchy const&,
       InitialDataEllipticBoundaryConditions&,
@@ -210,6 +217,20 @@ void set_axisymmetric_spherical_radial_robin_boundary(
    InitialDataEllipticBoundaryConditions& boundary,
    amrex::Vector<amrex::Real> const& asymptotic_values,
    amrex::Real falloff_power
+);
+
+// Impose the Cook-Pfeiffer tangential shift on a spherical excision surface.
+// The stored scalar is the orthonormal azimuthal component, so the rotational
+// conformal Killing vector Omega_H (partial_phi)^i has
+// beta_hat_phi = Omega_H r_H sin(theta). The normal shift remains owned by the
+// lapse/slicing choice; this helper changes only the shell-inner tangential
+// Dirichlet data.
+void set_axisymmetric_spherical_rotating_horizon_boundary(
+   InitialDataEllipticHierarchy const& hierarchy,
+   InitialDataEllipticBoundaryConditions& boundary,
+   amrex::Real horizon_radius,
+   amrex::Real horizon_rotation_parameter,
+   int component = 0
 );
 
 // Apply the same asymptotic radial condition on an r-theta-phi hierarchy.

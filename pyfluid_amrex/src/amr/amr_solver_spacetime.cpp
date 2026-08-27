@@ -340,6 +340,15 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
 )
 {
    initial_data_rotating_star_summary_.reset();
+   initial_data_black_hole_throat_area_ = -1.0;
+   initial_data_black_hole_irreducible_mass_ = -1.0;
+   initial_data_black_hole_throat_equatorial_circumference_ = -1.0;
+   initial_data_black_hole_throat_polar_circumference_ = -1.0;
+   initial_data_black_hole_throat_kerr_mass_ = -1.0;
+   initial_data_black_hole_throat_kerr_spin_ = -1.0;
+   initial_data_black_hole_throat_angular_momentum_ = 0.0;
+   initial_data_black_hole_throat_christodoulou_mass_ = -1.0;
+   initial_data_black_hole_throat_christodoulou_spin_ = 0.0;
    initial_data_equilibrium_torus_summary_.reset();
    const bool uses_constraint_solve = cfg_.spacetime_initial_data == "ctt"
       || cfg_.spacetime_initial_data == "cttk"
@@ -493,86 +502,6 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       }
    }
 #endif
-#if (AMREX_SPACEDIM == 3)
-   if (cfg_.mesh_coordinate == "cartesian") {
-      const bool rotating_star = cfg_.ic == "rotating_star"
-         && cfg_.initial_data_angular_velocity != 0.0;
-      const bool rotating_disk = cfg_.initial_data_disk == "equilibrium_torus"
-         || cfg_.initial_data_disk == "tilted_torus";
-      const amrex::Real star_axis_norm = std::sqrt(
-         cfg_.initial_data_rotation_axis1
-            * cfg_.initial_data_rotation_axis1
-         + cfg_.initial_data_rotation_axis2
-            * cfg_.initial_data_rotation_axis2
-         + cfg_.initial_data_rotation_axis3
-            * cfg_.initial_data_rotation_axis3
-      );
-      const amrex::Real disk_axis_norm = std::sqrt(
-         cfg_.initial_data_disk_axis1 * cfg_.initial_data_disk_axis1
-         + cfg_.initial_data_disk_axis2 * cfg_.initial_data_disk_axis2
-         + cfg_.initial_data_disk_axis3 * cfg_.initial_data_disk_axis3
-      );
-      const amrex::Real star_axis[3]{
-         cfg_.initial_data_rotation_axis1 / star_axis_norm,
-         cfg_.initial_data_rotation_axis2 / star_axis_norm,
-         cfg_.initial_data_rotation_axis3 / star_axis_norm,
-      };
-      const amrex::Real disk_axis[3]{
-         cfg_.initial_data_disk_axis1 / disk_axis_norm,
-         cfg_.initial_data_disk_axis2 / disk_axis_norm,
-         cfg_.initial_data_disk_axis3 / disk_axis_norm,
-      };
-      const amrex::Real center[3]{
-         cfg_.initial_data_rotation_center1,
-         cfg_.initial_data_rotation_center2,
-         cfg_.initial_data_rotation_center3,
-      };
-      for (int direction = 0; direction < 3; ++direction) {
-         for (int side = 0; side < 2; ++side) {
-            const bool reflected = side == 0
-               ? hierarchy.reflection_lo[direction] != 0
-               : hierarchy.reflection_hi[direction] != 0;
-            if (!reflected || (!rotating_star && !rotating_disk)) {
-               continue;
-            }
-            const amrex::Real plane = side == 0
-               ? hierarchy.geometry[0].ProbLo(direction)
-               : hierarchy.geometry[0].ProbHi(direction);
-            const amrex::Real coordinate_tolerance = 64.0
-               * std::numeric_limits<amrex::Real>::epsilon()
-               * std::max({
-                    amrex::Real(1.0), std::abs(plane), std::abs(center[direction])
-                 });
-            if (std::abs(plane - center[direction]) > coordinate_tolerance) {
-               amrex::Abort(
-                  "rotating single-object ID reflection planes must pass "
-                  "through the common rotation center"
-               );
-            }
-            const auto axis_is_normal = [direction](
-               amrex::Real const axis[3]
-            ) {
-               amrex::Real tangent_squared = 0.0;
-               for (int component = 0; component < 3; ++component) {
-                  if (component != direction) {
-                     tangent_squared += axis[component] * axis[component];
-                  }
-               }
-               return tangent_squared <= 1.0e-24;
-            };
-            if ((rotating_star && !axis_is_normal(star_axis))
-                || (rotating_disk && !axis_is_normal(disk_axis))) {
-               amrex::Abort(
-                  "a rotating star or disk is reflection invariant only "
-                  "across its equatorial plane; relative tilt requires a "
-                  "full 3D domain"
-               );
-            }
-         }
-      }
-   }
-#endif
-
    ConformalConstraintFormulation formulation =
       ConformalConstraintFormulation::ctt;
    if (cfg_.spacetime_initial_data == "cttk") {
@@ -630,7 +559,9 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       continuation_observer = [this, with_global_rotating_diagnostics](
          int continuation_step,
          int continuation_steps,
-         amrex::Real angular_velocity,
+         amrex::Real stellar_angular_velocity,
+         amrex::Real disk_angular_velocity,
+         ConformalBlackHoleSummary const& black_hole,
          RotatingStarUpdateSummary const& rotating_star,
          EquilibriumTorusUpdateSummary const& equilibrium_torus
       ) {
@@ -641,7 +572,9 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          write_physical_initial_data_sequence_model(
             continuation_step,
             continuation_steps,
-            angular_velocity,
+            stellar_angular_velocity,
+            disk_angular_velocity,
+            black_hole,
             persisted,
             equilibrium_torus
          );
@@ -649,12 +582,17 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
    }
    RotatingStarParameters rotating_parameters =
       rotating_star_parameters(cfg_, initial_data_provider_->view());
-   const EquilibriumTorusParameters equilibrium_torus =
+   EquilibriumTorusParameters equilibrium_torus =
       equilibrium_torus_parameters(cfg_, initial_data_provider_->view());
-   if (seed_from_loaded_id && loaded_physical_id_metadata_
-       && loaded_physical_id_metadata_->injection_energy > 0.0) {
-      rotating_parameters.injection_energy =
-         loaded_physical_id_metadata_->injection_energy;
+   if (seed_from_loaded_id && loaded_physical_id_metadata_) {
+      rotating_parameters.continuation_source_angular_velocity =
+         loaded_physical_id_metadata_->angular_velocity;
+      equilibrium_torus.continuation_source_angular_velocity =
+         loaded_physical_id_metadata_->disk_angular_velocity;
+      if (loaded_physical_id_metadata_->injection_energy > 0.0) {
+         rotating_parameters.injection_energy =
+            loaded_physical_id_metadata_->injection_energy;
+      }
    }
    PressurePoloidalMagneticSeedWorkspace magnetic_workspace;
    PressurePoloidalMagneticSeedSummary magnetic_summary;
@@ -791,6 +729,7 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       {
          cfg_.ic == "black_hole",
          cfg_.spacetime_mass,
+         cfg_.spacetime_dimensionless_spin3,
       },
       rotating_parameters,
       equilibrium_torus,
@@ -844,6 +783,25 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       initial_data_rotating_star_summary_ =
          std::make_unique<RotatingStarUpdateSummary>(result.rotating_star);
    }
+   if (result.black_hole.throat_area > 0.0) {
+      initial_data_black_hole_throat_area_ = result.black_hole.throat_area;
+      initial_data_black_hole_irreducible_mass_ =
+         result.black_hole.irreducible_mass;
+      initial_data_black_hole_throat_equatorial_circumference_ =
+         result.black_hole.equatorial_circumference;
+      initial_data_black_hole_throat_polar_circumference_ =
+         result.black_hole.polar_circumference;
+      initial_data_black_hole_throat_kerr_mass_ =
+         result.black_hole.kerr_horizon_mass;
+      initial_data_black_hole_throat_kerr_spin_ =
+         result.black_hole.kerr_dimensionless_spin;
+      initial_data_black_hole_throat_angular_momentum_ =
+         result.black_hole.angular_momentum;
+      initial_data_black_hole_throat_christodoulou_mass_ =
+         result.black_hole.christodoulou_mass;
+      initial_data_black_hole_throat_christodoulou_spin_ =
+         result.black_hole.christodoulou_dimensionless_spin;
+   }
    if (equilibrium_torus.active) {
       initial_data_equilibrium_torus_summary_ =
          std::make_unique<EquilibriumTorusUpdateSummary>(
@@ -891,6 +849,26 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
             << " polar_log_enthalpy_gradient="
             << result.rotating_star.polar_log_enthalpy_gradient
             << '\n';
+      }
+      if (result.black_hole.throat_area > 0.0) {
+         amrex::Print()
+            << "black-hole throat: area=" << result.black_hole.throat_area
+            << " irreducible_mass="
+            << result.black_hole.irreducible_mass
+            << " equatorial_circumference="
+            << result.black_hole.equatorial_circumference
+            << " polar_circumference="
+            << result.black_hole.polar_circumference
+            << " kerr_horizon_mass="
+            << result.black_hole.kerr_horizon_mass
+            << " kerr_dimensionless_spin="
+            << result.black_hole.kerr_dimensionless_spin
+            << " angular_momentum="
+            << result.black_hole.angular_momentum
+            << " christodoulou_mass="
+            << result.black_hole.christodoulou_mass
+            << " christodoulou_dimensionless_spin="
+            << result.black_hole.christodoulou_dimensionless_spin << '\n';
       }
       if (equilibrium_torus.active) {
          amrex::Print()
@@ -1105,9 +1083,10 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
    const FixedSpacetimeParameters black_hole =
       fixed_spacetime_parameters(cfg_);
    const bool has_black_hole =
-      black_hole.metric == FixedSpacetimeMetric::KerrSchild;
+      black_hole.metric == FixedSpacetimeMetric::KerrSchild
+      || black_hole.metric == FixedSpacetimeMetric::StaticTrumpet;
    const amrex::Real horizon_radius = has_black_hole
-      ? kerr_schild_outer_horizon_radius(black_hole) : 0.0;
+      ? black_hole_coordinate_horizon_radius(black_hole) : 0.0;
    const amrex::Real horizon_radius_squared =
       horizon_radius * horizon_radius;
    for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -1279,7 +1258,7 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
                      const amrex::Real position3 = 0.0;
 #endif
                      exterior_stencil = exterior_stencil
-                        && kerr_schild_radius_squared(
+                        && black_hole_radial_coordinate_squared(
                              black_hole, position1, position2, position3
                            ) > horizon_radius_squared;
                   }

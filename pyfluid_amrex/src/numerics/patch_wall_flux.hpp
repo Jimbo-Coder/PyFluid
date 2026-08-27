@@ -28,7 +28,7 @@ inline void apply_patch_union_hydro_wall_flux_direction(
 #endif
    {
    for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& box = mfi.validbox();
+      const amrex::Box& box = mfi.tilebox();
       const auto primitive_values = primitive.const_array(mfi);
       const auto flux_values = flux.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {

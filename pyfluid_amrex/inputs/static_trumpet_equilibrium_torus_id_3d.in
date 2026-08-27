@@ -1,0 +1,65 @@
+pyfluid.run_name = static_trumpet_equilibrium_torus_id_3d
+pyfluid.output_dir = runs/current/black_hole_disk/static_trumpet_equilibrium_torus_id_3d
+pyfluid.validation_policy = elliptic
+
+mesh.coordinate = cartesian
+mesh.axes = x y z
+mesh.patch_system = single
+
+geometry.prob_lo = -32.0 -32.0 -32.0
+geometry.prob_hi = 32.0 32.0 32.0
+geometry.is_periodic = 0 0 0
+
+amr.n_cell = 32 32 32
+amr.max_level = 0
+amr.max_grid_size = 16
+amr.blocking_factor = 8
+
+spacetime.evolution = fixed
+spacetime.matter_coupling = coupled
+spacetime.initial_data = static_trumpet
+spacetime.fixed_metric = static_trumpet
+spacetime.mass = 1.0
+spacetime.dimensionless_spin1 = 0.0
+spacetime.dimensionless_spin2 = 0.0
+spacetime.dimensionless_spin3 = 0.0
+spacetime.black_hole_interior = puncture
+
+initial_data.solve_only = 1
+initial_data.output_file = runs/current/black_hole_disk/static_trumpet_equilibrium_torus_id_3d/physical_id
+initial_data.disk = equilibrium_torus
+initial_data.disk_gravity = test_fluid
+initial_data.disk_rotation_law = constant_l
+initial_data.disk_specific_angular_momentum = 4.0
+initial_data.disk_inner_radius = 6.0
+initial_data.disk_axis1 = 0.0
+initial_data.disk_axis2 = 0.0
+initial_data.disk_axis3 = 1.0
+initial_data.atmosphere = flat
+initial_data.atmosphere_density = 1.0e-10
+initial_data.atmosphere_pressure = 1.0e-14
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.eos_preset = custom
+pyfluid.polytropic_k = 100.0
+pyfluid.polytropic_gamma = 2.0
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = equilibrium_torus
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.max_step = 0
+pyfluid.final_time = -1
+pyfluid.ng = 1
+pyfluid.cfl = 0.9
+pyfluid.recon = pwc
+pyfluid.riemann = hll
+pyfluid.timestep = euler
+pyfluid.subcycling = off
+pyfluid.bc = outflow
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = -1
+pyfluid.plot_int = -1
+pyfluid.checkpoint_int = -1

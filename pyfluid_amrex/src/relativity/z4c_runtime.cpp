@@ -120,6 +120,9 @@ Z4cLapseGauge z4c_lapse_gauge(RunConfig const& cfg)
    if (cfg.spacetime_lapse_gauge == "one_plus_log") {
       return Z4cLapseGauge::OnePlusLog;
    }
+   if (cfg.spacetime_lapse_gauge == "trumpet") {
+      return Z4cLapseGauge::Trumpet;
+   }
    if (cfg.spacetime_lapse_gauge == "slow_start") {
       return Z4cLapseGauge::SlowStart;
    }

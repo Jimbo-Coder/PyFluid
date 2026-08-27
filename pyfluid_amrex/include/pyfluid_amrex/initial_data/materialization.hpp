@@ -34,12 +34,29 @@ struct ConformalConstraintSummary {
 struct ConformalBlackHoleParameters {
    bool active = false;
    amrex::Real mass = 1.0;
+   // Signed physical horizon-spin target along the native spherical axis.
+   // The XCTS horizon rotation parameter is calibrated to this quasi-local
+   // Christodoulou spin; it is deliberately not exposed as a second knob.
+   amrex::Real dimensionless_spin = 0.0;
+};
+
+struct ConformalBlackHoleSummary {
+   amrex::Real throat_area = -1.0;
+   amrex::Real irreducible_mass = -1.0;
+   amrex::Real equatorial_circumference = -1.0;
+   amrex::Real polar_circumference = -1.0;
+   amrex::Real kerr_horizon_mass = -1.0;
+   amrex::Real kerr_dimensionless_spin = -1.0;
+   amrex::Real angular_momentum = 0.0;
+   amrex::Real christodoulou_mass = -1.0;
+   amrex::Real christodoulou_dimensionless_spin = 0.0;
 };
 
 struct ConformalMaterializationResult {
    int matter_iterations = 0;
    amrex::Real relative_matter_update = 0.0;
    ConformalConstraintSummary constraints{};
+   ConformalBlackHoleSummary black_hole{};
    RotatingStarUpdateSummary rotating_star{};
    EquilibriumTorusUpdateSummary equilibrium_torus{};
 };
@@ -47,7 +64,9 @@ struct ConformalMaterializationResult {
 using ConformalContinuationObserver = std::function<void(
    int continuation_step,
    int continuation_steps,
-   amrex::Real angular_velocity,
+   amrex::Real stellar_angular_velocity,
+   amrex::Real disk_angular_velocity,
+   ConformalBlackHoleSummary const& black_hole,
    RotatingStarUpdateSummary const& rotating_star,
    EquilibriumTorusUpdateSummary const& equilibrium_torus
 )>;

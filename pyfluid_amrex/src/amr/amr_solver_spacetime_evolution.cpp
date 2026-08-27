@@ -63,12 +63,21 @@ void AmrSolverBase::prepare_spacetime_coupling_range(
 )
 {
    const bool synchronous_levels = lev_end - lev_begin > 1;
+   const bool fixed_spacetime_from_stored_state =
+      !spacetime_state_.evolves()
+      && !uses_analytic_fixed_spacetime_kernels()
+      && cfg_.spacetime_fixed_metric == "minkowski"
+      && (!cfg_.initial_data_input_file.empty()
+          || cfg_.spacetime_initial_data == "ctt"
+          || cfg_.spacetime_initial_data == "cttk"
+          || cfg_.spacetime_initial_data == "xcts");
    for (int lev = lev_begin; lev < lev_end; ++lev) {
       if (!spacetime_state_.evolves()
           && spacetime_coupling_.cell_spacetime_valid(lev)) {
          continue;
       }
-      if (!spacetime_state_.evolves()) {
+      if (!spacetime_state_.evolves()
+          && !fixed_spacetime_from_stored_state) {
          initialize_z4c_cell_state(
             *spacetime_coupling_.cell_spacetime()[lev],
             Geom(lev),
@@ -301,7 +310,6 @@ void AmrSolverBase::add_spacetime_ko_dissipation(
       }
    }
 
-template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
 void AmrSolverBase::compute_spacetime_rhs_level(
       LevelData& input,
       int lev,
@@ -326,6 +334,8 @@ void AmrSolverBase::compute_spacetime_rhs_level(
 #endif
       };
       const Z4cEvolutionParameters parameters = z4c_evolution_parameters(cfg_);
+      const Z4cLapseGauge lapse_gauge = z4c_lapse_gauge(cfg_);
+      const Z4cShiftGauge shift_gauge = z4c_shift_gauge(cfg_);
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -344,12 +354,7 @@ void AmrSolverBase::compute_spacetime_rhs_level(
                      i,
                      j,
                      k,
-                     evaluate_z4c_rhs_at<
-                        4,
-                        AMREX_SPACEDIM,
-                        LapseGauge,
-                        ShiftGauge
-                     >(
+                     evaluate_z4c_rhs_at<4, AMREX_SPACEDIM>(
                         state_array,
                         i,
                         j,
@@ -357,7 +362,9 @@ void AmrSolverBase::compute_spacetime_rhs_level(
                         inv_spacing,
                         load_eulerian_matter(matter_array, i, j, k),
                         stage_time,
-                        parameters
+                        parameters,
+                        lapse_gauge,
+                        shift_gauge
                      )
                   );
                }
@@ -367,7 +374,6 @@ void AmrSolverBase::compute_spacetime_rhs_level(
       add_spacetime_ko_dissipation(state, lev);
    }
 
-template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
 void AmrSolverBase::compute_spacetime_rhs_gauge_range(
       LevelData& input,
       int lev_begin,
@@ -376,42 +382,9 @@ void AmrSolverBase::compute_spacetime_rhs_gauge_range(
    )
    {
       for (int lev = lev_begin; lev < lev_end; ++lev) {
-         compute_spacetime_rhs_level<LapseGauge, ShiftGauge>(
-            input, lev, stage_time
-         );
+         compute_spacetime_rhs_level(input, lev, stage_time);
       }
    }
-
-template <Z4cLapseGauge LapseGauge>
-void AmrSolverBase::dispatch_spacetime_rhs_shift_gauge(
-   LevelData& input,
-   int lev_begin,
-   int lev_end,
-   amrex::Real stage_time
-)
-{
-   if (z4c_shift_gauge(cfg_) == Z4cShiftGauge::Frozen) {
-      compute_spacetime_rhs_gauge_range<
-         LapseGauge,
-         Z4cShiftGauge::Frozen
-      >(
-         input,
-         lev_begin,
-         lev_end,
-         stage_time
-      );
-   } else {
-      compute_spacetime_rhs_gauge_range<
-         LapseGauge,
-         Z4cShiftGauge::GammaDriver
-      >(
-         input,
-         lev_begin,
-         lev_end,
-         stage_time
-      );
-   }
-}
 
 void AmrSolverBase::compute_spacetime_rhs_range(
    LevelData& input,
@@ -420,28 +393,7 @@ void AmrSolverBase::compute_spacetime_rhs_range(
    amrex::Real stage_time
 )
 {
-   switch (z4c_lapse_gauge(cfg_)) {
-   case Z4cLapseGauge::Frozen:
-      dispatch_spacetime_rhs_shift_gauge<Z4cLapseGauge::Frozen>(
-         input, lev_begin, lev_end, stage_time
-      );
-      break;
-   case Z4cLapseGauge::Harmonic:
-      dispatch_spacetime_rhs_shift_gauge<Z4cLapseGauge::Harmonic>(
-         input, lev_begin, lev_end, stage_time
-      );
-      break;
-   case Z4cLapseGauge::OnePlusLog:
-      dispatch_spacetime_rhs_shift_gauge<Z4cLapseGauge::OnePlusLog>(
-         input, lev_begin, lev_end, stage_time
-      );
-      break;
-   case Z4cLapseGauge::SlowStart:
-      dispatch_spacetime_rhs_shift_gauge<Z4cLapseGauge::SlowStart>(
-         input, lev_begin, lev_end, stage_time
-      );
-      break;
-   }
+   compute_spacetime_rhs_gauge_range(input, lev_begin, lev_end, stage_time);
 }
 
 } // namespace pyfluid_amrex

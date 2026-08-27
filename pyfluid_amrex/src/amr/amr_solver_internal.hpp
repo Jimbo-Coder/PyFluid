@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "amr/amr_solver_base.hpp"
+#include "pyfluid_amrex/apparent_horizon_tracker.hpp"
 #include "pyfluid_amrex/checkpoint.hpp"
 #include "pyfluid_amrex/centering_transfer.hpp"
 #include "pyfluid_amrex/ct.hpp"

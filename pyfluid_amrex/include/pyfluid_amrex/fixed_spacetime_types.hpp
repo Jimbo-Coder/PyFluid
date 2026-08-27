@@ -9,12 +9,14 @@ enum class FixedSpacetimeMetric : int {
    Rindler = 1,
    SchwarzschildIsotropic = 2,
    KerrSchild = 3,
+   StaticTrumpet = 4,
 };
 
 enum class BlackHoleInterior : int {
    Exterior = 0,
    Filled = 1,
    Excision = 2,
+   Puncture = 3,
 };
 
 struct FixedSpacetimeParameters {

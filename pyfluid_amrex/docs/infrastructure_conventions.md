@@ -26,6 +26,16 @@ methods and physics belong in their topic documents; coding style belongs in
   stable install link only for a full PyFluid production rebuild. Preserve the
   previous install and restore it if activation fails; do not make CMake
   presets chase a mutable source checkout.
+- Host concurrency is a machine/build concern below the numerical ownership
+  graph. Production kernels target AMReX; machine profiles select MPI and an
+  AMReX-supported host-thread backend when one is useful. Do not call Grand
+  Central Dispatch or another operating-system scheduler from physics, ID,
+  diagnostic, or timestep code. The optional local MPI+OpenMP companion uses
+  the same source pin and generated production matrix as the MPI-only default;
+  it differs only at the managed AMReX install, CMake preset, and machine
+  profile. Host threading belongs at AMReX's coarse tile/task boundary and must
+  demonstrate numerical equivalence and useful task grain before its profile
+  becomes a default for a workload.
 - The input file is the simulation configuration. Runners execute and report;
   they do not override simulation parameters.
 - `include/pyfluid_amrex/config.hpp` owns the runtime configuration contract;
@@ -187,11 +197,16 @@ methods and physics belong in their topic documents; coding style belongs in
   perform final relativistic acceptance before exposing or writing the state.
   Newly created or remade levels must keep current and old-time storage
   semantically consistent after that acceptance step.
-- CPU-tiled kernels that write ghost regions use `MFIter::growntilebox` so
-  adjacent internal tiles do not write overlapping grown boxes. Device-side
-  temporary FABs retain AMReX `Elixir` ownership through asynchronous kernels
-  and copies. The 2D/3D boundary-tiling gate covers ordinary, patch-union,
-  relativistic, and CT ghost fills with forced small tiles.
+- CPU-tiled numerical kernels launch over `MFIter::tilebox`; `validbox` is
+  whole-FAB metadata and must not be used as the `ParallelFor` region inside a
+  tiled loop. This also applies when the iterated `MultiFab` is face-centered:
+  `tilebox` owns each tiled face once. Kernels that write ghost regions use
+  `MFIter::growntilebox` so adjacent internal tiles do not write overlapping
+  grown boxes. Device-side temporary FABs retain AMReX `Elixir` ownership
+  through asynchronous kernels and copies. The architecture check rejects a
+  whole-FAB numerical launch inside `TilingIfNotGPU`; the 2D/3D boundary-
+  tiling gate covers ordinary, patch-union, relativistic, and CT ghost fills
+  with forced small tiles.
 - AMReX's all-node physical-boundary path constant-extrapolates ghosts and
   delegates reflection to the user functor; `BCRec` is not applied there as it
   is for cell/face data. Nodal Z4c reflection therefore mirrors about the
@@ -199,6 +214,14 @@ methods and physics belong in their topic documents; coding style belongs in
   zeros reflection-odd values on the valid boundary plane. Constraint stencil
   masks treat those reflected ghosts as same-level data while continuing to
   exclude one-sided outflow-boundary stencils.
+- Validate rotating-object reflection compatibility once during common solver
+  startup, before either ID or evolution. In Cartesian coordinates every
+  reflection/symmetry plane must pass through the affected object's center and
+  its normal must follow each nonzero rotation/disk axis; black-hole spin has
+  the corresponding axial-vector rule. A spinless isolated hole may use an
+  octant, but attaching a rotating disk leaves only the disk-equatorial plane.
+  This policy applies equally to fresh analytic data, constraint-solved data,
+  and loaded physical-ID artifacts.
 - State and auxiliary GF snapshots use generated field descriptors. Auxiliary
   output normally inherits the state GF cadence; explicit compute/write
   overrides remain available. Scalar diagnostics and checkpoints retain their
@@ -409,9 +432,14 @@ constraint polish once such an owner is selected and validated.
 `initial_data.input_file` loads it. `initial_data.solve_only=1` performs the
 configured initial-data construction, runs the normal relativistic preflight,
 writes the artifact, and returns before allocating evolution flux-register
-work. The source chart is part of the artifact rather than an evolution
-requirement: the current schema-v3 records source dimension, coordinate family, ordered
-active axes, periodic/reflection closure, and `mesh_orthonormal` tensor basis.
+work. For a loaded spherical-shell XCTS black hole, `solve_only=1` always
+re-solves the configured constraints even on an identical layout; ordinary
+evolution loading (`solve_only=0`) retains the exact-cache fast path. This
+prevents an area-only historical artifact from being copied and mislabeled as
+a newly constraint-solved physical-spin model. The source chart is part of the
+artifact rather than an evolution requirement: the current schema-v3 records
+source dimension, coordinate family, ordered active axes, periodic/reflection
+closure, and `mesh_orthonormal` tensor basis.
 Physics and physically relevant EoS data remain mandatory. On an identical
 hierarchy, optional exact caches start evolution directly. Otherwise the
 reader maps physical target points into the source chart, interpolates the
@@ -425,6 +453,19 @@ continuation identity includes the differential-rotation length and, for the
 q-power family, its exponent. The artifact must also restore the converged
 Euler first-integral injection energy; recomputing it from the original TOV
 seed changes the nonlinear problem.
+An aligned coupled equilibrium torus follows the same rule for a nonconstant
+rotation law: unchanged law/EoS/geometry parameters plus a larger same-sign
+disk angular velocity reuse the saved matter and spacetime as the next XCTS
+seed. A matching disk configuration materializes or evolves without another
+solve. The artifact records the native black-hole throat area, irreducible
+mass, proper equatorial/polar circumferences, and Kerr-assumption horizon mass
+and spin. Axisymmetric native throats additionally record quasi-local `J_H`,
+Christodoulou mass, and signed dimensionless spin. Reports retain `M0/Mirr`,
+circumference-derived `M0/M_C`, and Christodoulou `M0/M_BH` as separate
+quantities. Every saved continuation model owns
+these diagnostics for its accepted geometry; it must not inherit them from
+the seed artifact. Keep the Kerr qualifier because a generic distorted
+horizon need not obey the vacuum-Kerr relations.
 The q-power catalog parameter follows
 `j=A^2 Omega[(Omega_c/Omega)^q-1]`; it is not the conventional radial disk
 shear exponent. In an asymptotically flat region with `1 <= q < 2`, the latter
@@ -455,6 +496,13 @@ one-target continuation from `initial_data.input_file` is saved because it is
 part of a persisted sequence. `initial_data.sequence_output_dir` overrides
 the automatic location and also explicitly requests output for a one-model
 rotating solve.
+
+The continuation step count is shared by stellar and disk rotation. Loading a
+compatible artifact initializes each active component from its saved angular
+velocity, linearly advances changed components to their configured targets,
+and writes both angular velocities into every sequence index and artifact.
+This keeps one live-field continuation owner and avoids a separate disk-only
+solver path.
 
 An initial-data solver may use the coordinates and dimension natural to its
 symmetry, independently of the evolution hierarchy. Artifact metadata must

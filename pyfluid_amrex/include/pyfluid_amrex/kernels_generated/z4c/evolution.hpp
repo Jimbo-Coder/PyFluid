@@ -156,14 +156,15 @@ Z4cGeometricRhs z4c_geometric_rhs(const Z4cState& state, const Z4cSpatialDerivat
 }
 
 
-template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 Z4cRhs evaluate_z4c_rhs(
    const Z4cState& state,
    const Z4cSpatialDerivatives& derivatives,
    const Z4cMatter& matter,
    amrex::Real time,
-   const Z4cEvolutionParameters& parameters
+   const Z4cEvolutionParameters& parameters,
+   Z4cLapseGauge lapse_gauge,
+   Z4cShiftGauge shift_gauge
 ) noexcept
 {
    const Z4cConformalMetric metric = z4c_conformal_metric(state);
@@ -182,11 +183,13 @@ Z4cRhs evaluate_z4c_rhs(
       parameters.kappa2
    );
    amrex::Real lapse = 0.0_rt;
-   if constexpr (LapseGauge == Z4cLapseGauge::Harmonic) {
+   if (lapse_gauge == Z4cLapseGauge::Harmonic) {
       lapse = z4c_harmonic_lapse_rhs(state, derivatives);
-   } else if constexpr (LapseGauge == Z4cLapseGauge::OnePlusLog) {
+   } else if (lapse_gauge == Z4cLapseGauge::OnePlusLog) {
       lapse = z4c_one_plus_log_lapse_rhs(state, derivatives);
-   } else if constexpr (LapseGauge == Z4cLapseGauge::SlowStart) {
+   } else if (lapse_gauge == Z4cLapseGauge::Trumpet) {
+      lapse = z4c_trumpet_lapse_rhs(state, derivatives);
+   } else if (lapse_gauge == Z4cLapseGauge::SlowStart) {
       lapse = z4c_slow_start_lapse_rhs(
          state,
          derivatives,
@@ -196,7 +199,7 @@ Z4cRhs evaluate_z4c_rhs(
       );
    }
    Z4cShiftRhs shift{};
-   if constexpr (ShiftGauge == Z4cShiftGauge::GammaDriver) {
+   if (shift_gauge == Z4cShiftGauge::GammaDriver) {
       shift = z4c_gamma_driver_shift_rhs(
          state, derivatives, parameters.shift_mu, parameters.shift_eta
       );
@@ -204,17 +207,19 @@ Z4cRhs evaluate_z4c_rhs(
    return {geometry, lapse, shift};
 }
 
-template <Z4cLapseGauge LapseGauge, Z4cShiftGauge ShiftGauge>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 Z4cRhs evaluate_vacuum_z4c_rhs(
    const Z4cState& state,
    const Z4cSpatialDerivatives& derivatives,
    amrex::Real time,
-   const Z4cEvolutionParameters& parameters
+   const Z4cEvolutionParameters& parameters,
+   Z4cLapseGauge lapse_gauge,
+   Z4cShiftGauge shift_gauge
 ) noexcept
 {
-   return evaluate_z4c_rhs<LapseGauge, ShiftGauge>(
-      state, derivatives, vacuum_z4c_matter(), time, parameters
+   return evaluate_z4c_rhs(
+      state, derivatives, vacuum_z4c_matter(), time, parameters,
+      lapse_gauge, shift_gauge
    );
 }
 

@@ -65,6 +65,38 @@ amrex::Real kerr_schild_outer_horizon_radius(
    );
 }
 
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real black_hole_coordinate_horizon_radius(
+   const FixedSpacetimeParameters& parameters
+) noexcept
+{
+   if (parameters.metric == FixedSpacetimeMetric::StaticTrumpet) {
+      return parameters.mass;
+   }
+   return kerr_schild_outer_horizon_radius(parameters);
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real black_hole_radial_coordinate_squared(
+   const FixedSpacetimeParameters& parameters,
+   amrex::Real position1,
+   amrex::Real position2,
+   amrex::Real position3
+) noexcept
+{
+   if (parameters.metric == FixedSpacetimeMetric::StaticTrumpet) {
+      const amrex::Real displacement1 = position1 - parameters.origin1;
+      const amrex::Real displacement2 = position2 - parameters.origin2;
+      const amrex::Real displacement3 = position3 - parameters.origin3;
+      return displacement1 * displacement1
+         + displacement2 * displacement2
+         + displacement3 * displacement3;
+   }
+   return kerr_schild_radius_squared(
+      parameters, position1, position2, position3
+   );
+}
+
 // Exact ingoing Cartesian Kerr-Schild 3+1 data. This is an initial-data
 // materialization kernel, not a runtime flux-kernel branch: nontrivial fixed
 // metrics use the same stored Z4c/cell-metric path as evolved spacetime.

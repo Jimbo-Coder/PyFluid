@@ -571,13 +571,38 @@ void ApparentHorizonTracker::write_result(
       summary
          << "step\ttime\titerations\tpseudo_time\ttheta_linf_times_mass"
          << "\ttheta_l2_times_mass\tarea\tirreducible_mass"
+         << "\tequatorial_circumference\tpolar_circumference"
+         << "\tkerr_horizon_mass\tkerr_dimensionless_spin"
+         << "\tcoordinate_angular_momentum1"
+         << "\tcoordinate_angular_momentum2"
+         << "\tcoordinate_angular_momentum3"
+         << "\tcoordinate_angular_momentum_magnitude"
+         << "\tcoordinate_christodoulou_mass"
+         << "\tcoordinate_christodoulou_dimensionless_spin1"
+         << "\tcoordinate_christodoulou_dimensionless_spin2"
+         << "\tcoordinate_christodoulou_dimensionless_spin3"
+         << "\tcoordinate_christodoulou_dimensionless_spin_magnitude"
          << "\tcentroid1\tcentroid2\tcentroid3"
          << "\tminimum_radius\tmaximum_radius\tmean_radius\n";
    }
    summary << step << '\t' << time << '\t' << result.iterations << '\t'
            << result.pseudo_time << '\t' << result.theta_linf_times_mass
            << '\t' << result.theta_l2_times_mass << '\t' << result.area
-           << '\t' << result.irreducible_mass << '\t' << result.centroid[0]
+           << '\t' << result.irreducible_mass << '\t'
+           << result.equatorial_circumference << '\t'
+           << result.polar_circumference << '\t'
+           << result.kerr_horizon_mass << '\t'
+           << result.kerr_dimensionless_spin << '\t'
+           << result.angular_momentum[0] << '\t'
+           << result.angular_momentum[1] << '\t'
+           << result.angular_momentum[2] << '\t'
+           << result.angular_momentum_magnitude << '\t'
+           << result.christodoulou_mass << '\t'
+           << result.christodoulou_dimensionless_spin[0] << '\t'
+           << result.christodoulou_dimensionless_spin[1] << '\t'
+           << result.christodoulou_dimensionless_spin[2] << '\t'
+           << result.christodoulou_dimensionless_spin_magnitude << '\t'
+           << result.centroid[0]
            << '\t' << result.centroid[1] << '\t' << result.centroid[2]
            << '\t' << result.minimum_radius << '\t'
            << result.maximum_radius << '\t' << result.mean_radius << '\n';

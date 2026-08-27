@@ -10,19 +10,10 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-25, branch `main`, through Cycle 321's long Kerr-hole,
-loaded-ID AMR, and fixed-Kerr torus audit, Cycle 320's AMReX 26.08 CT
-ratio, host-loop, and measured diagnostic cleanup. Cycle 319's API adoption,
-Cycle 318's dependency update and reproducible check/update lifecycle, and
-Cycle 317's generated
-AMR policy, RK-stage CT ownership, and cross-system hardening, Cycle 316's
-saved-RNS evolution/restart harness and code-generation dependency cleanup,
-Cycle 315's generated physical-ID metadata and component-ready handoff, and Cycle 313's
-measured ideal-RMHD C2P optimization, and Cycle 312's runtime-EoS RHD/RMHD
-evolution ownership are the preceding implementation boundaries. Cycle 311's
-coordinate-equivalent ID/materialization handoff and Cycle 309's complete
-standard/performance controls remain broader integration evidence; Cycle 308
-is the preceding preserved baseline and Cycle 284 the older reference baseline.
+Last reconciled: 2026-08-27, branch `main`, through Cycle 344's consolidated
+Cycle 322--343 integration tree, CPU tile-ownership hardening, and preserved
+performance baseline. `review_running_cycle.md` retains the detailed sequence;
+this file records only the resulting current facts and evidence boundaries.
 
 ## Scope And Evidence
 
@@ -234,6 +225,10 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   falsification controls. None currently dominates the production method over
   HD, MHD, SRHD, and SRMHD held-out tests. Do not add one to the production
   catalog from a favorable aggregate Balsara score.
+- The closed standalone reconstruction-research drivers were removed after
+  their conclusions were distilled here. Git history retains those experiments;
+  do not recreate or restore that prototype matrix without a new falsifiable
+  hypothesis and a clear route into the common HD-to-GRMHD production owner.
 - When evaluating a hybrid, compare the same-grid exact/reference, pure high
   method, pure low method, and hybrid over complete accepted timesteps. Include
   activation and reset counts. One Euler candidate is a causal diagnostic, not
@@ -296,13 +291,45 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   hierarchy refreshes metric coupling and applies relativistic acceptance at
   the last state owner. Newly created or remade fine levels then copy the
   accepted state consistently into both current and old-time storage.
-- CPU tiled kernels that write grown ghost regions must use AMReX's
-  `growntilebox`; manually growing every internal tile creates overlapping
-  OpenMP writes. Device-side temporary FABs must retain an `Elixir` through
-  asynchronous interpolation/copy chains.
-- The local AMReX build has no OpenMP support. Forced-small-tile 2D/3D boundary
-  regressions validate output and ownership semantics, but they do not execute
-  the former writes concurrently; an OpenMP-enabled run remains useful.
+- CPU-tiled numerical kernels must launch over `tilebox`; `validbox` is the
+  whole FAB and is only metadata inside a tiled loop. Face-centered
+  `tilebox()` also supplies unique owned faces. Four Newtonian face-flux
+  owners, four masked flux/update owners, and the patch-wall flux owner once
+  launched over `validbox`; with the default 3D `32x8x8` CPU tiles, a `32^3`
+  FAB could be recomputed 16 times. Correcting those owners raises the
+  `64^3`, 16-step MPI-only control from `5.26` to `26.13` Mcells/s and the
+  OpenMP control from `8.29` to `40.19`, without changing its reported physics
+  diagnostics. Grown ghost writers use `growntilebox`; manually growing every
+  internal tile creates overlapping OpenMP writes. Device-side temporary FABs
+  must retain an `Elixir` through asynchronous interpolation/copy chains.
+- The default local AMReX build remains MPI-only, while a separately managed,
+  explicitly selected MPI+OpenMP companion uses the same AMReX pin, physics
+  matrix, and numerical code. In the `320x320` 2D spherical control, two ranks
+  by four threads gives `10.67` Mcells/s versus `9.21` for four MPI ranks; two
+  by five is within about one percent of that optimum. In the corrected
+  `96^3`, PWL/HLLC/SSPRK3 control, `1x1/1x4/1x10/2x4/2x5` give
+  `2.52/8.16/10.50/9.81/10.49--10.61` Mcells/s. The explicit local OpenMP
+  profile therefore uses two ranks by five threads as the cross-dimensional
+  compromise. Keep reduced ID on the MPI-only profile unless its custom dense
+  loops gain coarse parallel ownership: merely enabling AMReX OpenMP adds
+  overhead there.
+- AMReX's static outer-`MFIter` threading is the useful host boundary. Mapping
+  each inner `ParallelFor` to synchronous GCD is too fine-grained. Dynamic
+  `MFIter` scheduling is exact but is `5--7%` slower in the same uniform-tile
+  control, so static scheduling remains selected. The local LLVM OpenMP runtime
+  does not expose reliable macOS affinity; let the OS place workers rather than
+  encoding Apple core IDs.
+- Apple `powermetrics --show-process-amp` can attribute a process's scheduled
+  CPU time to performance cores directly; efficiency-core time is total CPU
+  time minus that value. In the corrected sustained 3D control, median PyFluid
+  occupancy is `3.93P+0.02E` for `1x4`, `3.66P+3.80E` for `1x10`,
+  `3.86P+2.38E` for `2x4`, and `3.81P+3.39E` for `2x5`; active clocks remain
+  about `3.94/2.8 GHz`. With E cores worth roughly `0.35--0.40` P cores on this
+  integer-heavy workload, all-core throughput is consistent with the actually
+  scheduled weighted capacity. Static AMReX/OpenMP therefore uses the E cores
+  usefully; lack of full six-E-core occupancy and memory/barrier costs explain
+  the remaining gap to a theoretical `4P+6E` limit better than an affinity or
+  thermal failure.
 - AMReX 26.08 still asserts that `MLCurlCurl` has one AMR level, and its 1D
   `MLNodeLaplacian::reflux` still aborts. The corresponding implicit-CT and 1D
   nodal-solve restrictions remain real; do not remove them based only on the
@@ -671,6 +698,96 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   accretion production run. Long-term star/disk or black-hole/disk equilibrium,
   magnetized tori, cusp/overflow diagnostics, and cross-method comparison
   remain open.
+- BH-disk mass ratios must be labeled by gravity ownership and denominator.
+  The axisymmetric apparent-horizon-shell owner now couples an aligned disk's
+  energy, momentum, and stress trace into every XCTS matter/constraint
+  iteration. In the `ell=4.25`, requested-`r_in=6`, gamma-two stress family,
+  matched adaptive `320x80` source models bracket the clean eight-step
+  CFL-0.9 fixed-XCTS handoff: `K=12.5` has `M_0=0.309183`, throat
+  `M_irr=1.038853`, and `M_0/M_irr=0.297620` and evolves to `t=2.102 M` with
+  zero fallback/reset; `K=10` has `M_0=0.313796`, `M_irr=1.040426`, and
+  `M_0/M_irr=0.301603` but needs eight atmosphere resets at step one. The
+  latter is not a clean endpoint. `spacetime.mass=1` is the bare/throat scale,
+  not the backreacted horizon mass; its corresponding raw ratios are
+  `0.309183/0.313796`. These are a numerical short-handoff bracket, not a
+  physical mass limit or long-time stability result. The Cartesian run keeps
+  the disk-sourced XCTS exterior fixed and uses a finite smooth interior fill;
+  it is not an evolved-Z4c/full-NR massive-disk evolution. The largest
+  constructed fixed-Kerr test-fluid torus still has the larger nominal raw
+  ratio `0.5151`, but its stress-energy does not backreact and must not be
+  compared as a self-gravitating result.
+- Moving from marginal constant specific angular momentum
+  (`Omega ~ varpi^-2`) to a Rayleigh-stable q-power law raises the demonstrated
+  clean coupled BH-disk handoff boundary. The conventional `q_Omega=1.85` law
+  is catalog `rotation_power_q=2/q_Omega=1.0810810810810811`. Saved coupled
+  artifacts can continue this family at larger same-sign `Omega_c` while
+  retaining the converged matter state. At `A=6 M`, `Omega_c=0.157/M`,
+  `K=100`, and requested `r_in=6 M`, a physical-spin-zero re-solve on the
+  adaptive `768x160` shell gives `M_0=1.075252`, `M_irr=1.064211`,
+  quasi-local `J_H=9.12e-6`, Christodoulou `M_BH=1.064211`, and
+  `M_0/M_BH=1.010375`; `chi_H=8.05e-6` and
+  `H/L/M=1.56e-10/1.50e-10/5.18e-12`. Its equatorial-half `160x160x80`
+  Cartesian materialization preserves those physical metadata with maximum
+  conserved/primitive round-trip errors `5.41e-12/6.38e-11`, then completes
+  eight CFL-0.9 fixed-XCTS steps to `t=2.030 M` with zero C2P fallback,
+  atmosphere reset, or reconstruction/Riemann correction and raw open-domain
+  mass drift `1.54e-5`. This is a short clean handoff at physical mass ratio
+  one, not a long-time stability or physical maximum-mass result.
+- The same adaptive `768x160` q-power BH-disk family has a clean constructed
+  continuation through `Omega_c=0.300/M`, `M_0=4.624213`, throat
+  `M_irr=1.403521`, and `M_0/M_irr=3.294723`, with
+  `H/L/M=2.03e-10/1.48e-10/2.56e-11`. The point required smaller continuation
+  increments and 426 coupled matter iterations; failed larger jumps were
+  nonlinear-basin failures, not evidence of a physical endpoint. A `384x80`
+  re-solve of the heavy source also fails, so that grid is below the observed
+  convergence floor for this regime. These are initial-data facts only; no
+  dynamical stability has been established beyond the clean evolved
+  `M_0/M_BH=1.010375` model.
+- In the Shibata et al. high-mass BH-disk benchmark, `M_BH,0` is inferred from
+  apparent-horizon area and circumferential radii under vacuum-Kerr relations.
+  It is not `M_irr` alone for a spinning hole. Native spherical BH IDs and the
+  live apparent-horizon tracker now both retain area, `M_irr`, proper
+  equatorial/polar circumferences, and the explicitly Kerr-inferred horizon
+  mass/spin. The circumference quantity is Shibata's `M_C=C_e/(4 pi)`, not a
+  distinct assumption-free mass. Native axisymmetric throats also integrate
+  the exact-axial quasi-local `J_H` and retain Christodoulou
+  `M_BH=M_irr sqrt(1+J_H^2/(4 M_irr^4))`; reports expose `M_0/M_irr`,
+  `M_0/M_C`, and `M_0/M_BH` separately. Each saved
+  BH-disk continuation step recomputes and owns these values. Existing
+  artifacts written before this addition, including the `Omega_c=0.300`
+  stress point, retain only area/`M_irr` and must not be silently relabeled.
+  The `256x32` Schwarzschild shell has area/Kerr-mass relative errors
+  `1.56e-3/8.81e-4`, improving by about four from `128x16`; its inferred
+  zero-spin error is `2.83e-2` because inversion is ill-conditioned near zero.
+  The same Schwarzschild control gives quasi-local `J_H=0` and Christodoulou
+  spin zero exactly. The live tracker integrates the three flat-coordinate
+  rotation generators about its measured centroid; on aligned Kerr this gives
+  signed spin to `1.87e-4` at 16 polar points, but the catalog keeps a
+  `coordinate_` qualifier. A generic distorted 3D horizon still needs a
+  Cook--Whiting approximate-Killing-vector solve for coordinate-independent
+  `J_H` and Christodoulou quantities.
+- Apparent-horizon hierarchy sampling must transform geometry, not merely map
+  coordinates. After mirroring a sample through Cartesian planes,
+  `gamma_ij`, `gamma^ij`, and `K_ij` acquire one sign per tensor index and
+  `d_k gamma_ij` acquires the derivative-index sign too. Metric derivatives at
+  a symmetry boundary must use the parity-filled nodal ghosts; a generic
+  one-sided physical-boundary stencil left a visible full/half finder gap.
+  With both corrections, matched `32^3` and `32x32x16` Kerr searches agree in
+  expansion norms, area, irreducible mass, and radii to roundoff.
+- The native spherical coupled-BH XCTS throat and its finite Cartesian
+  interior fill do not yet have equivalent live-finder behavior. The source
+  throat area is well-defined, but the nonlinear Cartesian finder leaves its
+  radial volume on the materialized artifact even after fixed local AMR
+  reaches `dx=0.0625 M`. Treat this as an interior-fill/materialized-horizon
+  compatibility limitation, separate from reflection sampling and from the
+  clean fixed-XCTS fluid handoff.
+- Source resolution still matters independently of nonlinear convergence: the
+  `K=12.5` `256x64` source produced 24 first-step atmosphere resets after
+  Cartesian handoff, while the `320x80` re-solve at the same physical defect
+  scale produced none. The former strongly damped iteration counts are not a
+  current performance boundary; the solver now reports the relaxation-
+  independent defect and the retained heavy endpoint converges in tens of
+  iterations with a suitable runtime relaxation.
 - A relative star/hole--disk tilt removes the shared axial Killing symmetry.
   Tsokaros--Uryu--Shapiro and the later Tsokaros--Ruiz evolutions handle this
   honestly: assume approximate time stationarity and circular axisymmetry only
@@ -679,6 +796,16 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   non-equilibrium starting point. KEH is their Poisson solver, not what makes
   the tilted fluid an equilibrium. They obtain massive models by continuing
   from a massless disk while targeting increasing disk maximum density.
+- A rotating disk does not inherit all Cartesian reflections of a spinless
+  central object: its axial angular momentum permits only the equatorial plane
+  normal to the disk axis. Equatorial-half Cartesian evolution remains fully
+  3D in-plane and retains arbitrary azimuthal m, but suppresses vertically odd
+  warp/corrugation and symmetry-breaking modes. A matched fixed-Kerr torus
+  `32^3` versus `32x32x16` pair completes two CFL-0.9 SSPRK3 steps with zero
+  recovery/reset and symmetry-restored mass, energy, and axial angular
+  momentum agreement below `8.2e-10` relative. The cell count halves, while
+  the tiny measured wall time improves only `0.444 -> 0.378 s` because fixed
+  overhead dominates.
 - PyFluid now names that boundary explicitly. `equilibrium_torus` requires a
   genuinely aligned stationary composition; `tilted_torus` is a full-3D
   Cartesian, coupled-XCTS circular seed with independent stellar and disk
@@ -845,34 +972,47 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   True evolution excision remains explicitly rejected until a pure-outflow
   evolution boundary owns inactive cells, one-sided stencils, prolongation,
   and characteristic validation.
-- The first constraint-solved black-hole owner is the spinless vacuum
-  Schwarzschild exterior on a finite spherical `r theta` shell. At the
-  isotropic horizon `r=M/2`, the Cook--Pfeiffer conformal-factor Robin
-  condition, zero lapse, and zero shift reproduce
-  `psi=1+M/(2r)`, `alpha psi=1-M/(2r)`. The mapped `256x32` control has
-  Hamiltonian/lapse/momentum residuals
-  `2.11e-12/4.89e-12/0`, second-order conformal convergence, an exactly zero
-  horizon lapse, finite zero extrinsic curvature, and no recovery. A saved
-  `128x16` artifact re-solves on a changed `256x32` map and retains the same
-  analytic agreement. The same physical system now runs on full periodic
-  `r theta phi` storage through the genuine 3D spherical scalar operator and
-  the axisymmetric toroidal momentum sector. Its `N_phi=1/4` XCTS degeneracy
-  error is `3.21e-13`; a fresh `96x24x4` artifact and changed
-  `128x32x4` re-solve pass analytic Schwarzschild checks, with the latter at
-  metric/lapse errors `9.14e-3/1.26e-3` and maximum algebraic residual
-  `2.79e-8`. This closes a solve-only axisymmetric exterior owner, not a
-  spinning/nonaxisymmetric spherical vector solve, black-hole/disk
-  equilibrium, full-grid evolution, or true excision. `N x M x 1` remains a
-  dimensional-degeneracy test, not a separate owner.
+- The constraint-solved black-hole owner is a Cook--Pfeiffer
+  quasi-equilibrium exterior on a finite spherical shell. Spin zero reproduces
+  isotropic Schwarzschild at `r=M/2`; aligned nonzero spin imposes
+  `beta_hat_phi=Omega_r r_H sin(theta)` and calibrates that free boundary
+  coefficient against the exact-axisymmetry throat `J_H/M_H^2`. Physical-spin
+  continuation must stop when measured spin brackets the target: continuing
+  all the way to a Kerr estimate of `Omega_r` can cross a nonlinear fold
+  because the coefficient is not the physical spin. At `256x32`, target
+  `chi_H=0.3` gives `0.29999997` with `H/L/M` residuals
+  `2.19e-12/5.57e-12/1.39e-13`; the demonstrated branch reaches target
+  `0.675` at `0.67499489`, while target `0.7` currently encounters a nonfinite
+  nonlinear RHS and is not a supported physical-limit claim. Matched reduced
+  `r theta` and periodic full-storage `r theta phi` spinning fields agree to
+  roundoff. The same aligned owner supports self-gravitating disks and nested
+  physical-spin/matter fixed points. On the coupled constant-ell control,
+  target zero gives `chi_H=-7.50e-7` after removing the disk-induced
+  `-1.31e-3` spin of a zero boundary coefficient, while target `0.3` gives
+  `0.30004288` with constraint residuals at or below `1.06e-11`. It remains an
+  exterior solve: Cartesian full-grid evolution still uses a finite
+  constraint-violating interior fill. A `64^3` target-`0.3` artifact completes
+  one CFL-0.9 evolved-Z4c step without recovery/reset, which validates routing
+  and finite evolution but not exterior convergence or stability. True
+  excision remains open. `N x M x 1` is a dimensional-degeneracy test, not a
+  separate owner.
 - The tested complete-grid Kerr evolution uses ordinary advective 1+log,
   gamma-driver shift, RK4, KO strength 0.32, and positive chi/lapse floors of
   `1e-10`. The resolved `a/M=0.5` AMR/horizon control reaches `t=10.690 M` in
   64 CFL-0.9 steps with zero fluid recovery/reset. All 15 runtime regrids are
   no-ops at 98,304 cells with two unused levels. Its mean coordinate horizon
   radius grows 26.7 percent rather than shrinking, while proper area ends 4.9
-  percent above exact; this separates gauge-coordinate motion from a still
-  material physical drift. A practical `a/M=0.7` control reaches `t=2.476 M`
-  with the same bounded hierarchy and final area 2.6 percent above exact.
+  percent above exact. Zero-step checkpoint re-finds at 16/24/32 polar points
+  leave the step-64 area error at 4.67--4.85 percent, so finder tolerance and
+  angular discretization do not explain that drift. At matched `t=2.5 M`,
+  halving the finest evolution spacing `0.5 -> 0.25 -> 0.125 M` reduces final
+  proper-area error `7.65 -> 2.06 -> 0.62` percent (observed order about
+  `1.8/1.7`) and area change `5.55 -> 2.08 -> 0.29` percent. Thus coordinate-
+  radius growth is gauge motion and the early proper-area growth is a strongly
+  convergent filled-interior evolution error; this is not yet a fine-grid
+  convergence result through `t=10.7 M`. A practical `a/M=0.7` control reaches
+  `t=2.476 M` with the same bounded hierarchy and final area 2.6 percent above
+  exact.
   `a/M=0.8` is sensitive to the arbitrary filled interior: widening its C2
   fill transition extends survival from about `0.15 M` to `1.19 M`, but area
   falls 4 percent and exterior constraints grow. This is an interior/excision
@@ -882,15 +1022,39 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   final exterior Hamiltonian/momentum norms are roughly 3.3 to 5.1 times
   larger than the matched ordinary-1+log control. It remains optional rather
   than the current recommendation.
+- The analytic spinless (R_0=M) Schwarzschild trumpet is a separate 3D
+  Cartesian puncture owner, not another Kerr interior policy. Its physical ADM
+  metric is singular at the puncture, so evolved initialization writes the
+  finite conformal Z4c state directly; the one direction-dependent
+  `A_tilde_ij` puncture value is its spherical average. The puncture is
+  mesh-face aligned, allowing exact reflection planes while keeping fixed-
+  background cell centers off the singular point. Analytic identities,
+  fourth-order stationary-RHS convergence away from the puncture, `32^3` to
+  `24^3` physical-ID reload, full/octant one-step extrema, and a constant-l
+  test-fluid torus all pass. At `dx=0.5M`, CFL 0.9, KO 0.32, 16 steps, ordinary
+  1+log/Gamma-driver ends at 0.13 percent horizon-area error and 10.10 percent
+  coordinate-radius change; the analytically matched trumpet/frozen pair ends
+  at 5.10 percent area error and 1.37 percent radius change, with larger
+  exterior constraints. Both have zero recovery/reset. This is a short
+  regression ranking only; 1+log/Gamma-driver remains the supplied evolution
+  path and the matched gauge remains diagnostic.
 - `apparent_horizon_expansion()` owns the Cartesian level-set evaluation of
   `Theta=D_i s^i+K_ij s^i s^j-K`; flat-sphere and exact Kerr-horizon pointwise
   checks fix its sign and geometry convention. The first full backend now uses
   solver-private BHaHAHA-style damped-wave/SSPRK3 relaxation, sixth-order pole-
-  parity angular differences, stage-consistent radial interpolation, coarse-
-  to-fine angular continuation, and hierarchy-interpolated Cartesian
-  `gamma_ij,gamma^ij,d_k gamma_ij,K_ij`. The IO rank solves and broadcasts the
-  star-shaped surface. Shape/residual/area/irreducible-mass/centroid histories
-  persist, and checkpoint restart restores the latest shape. Separate
+  parity angular differences, one radial metric interpolation frozen across
+  each pseudo-time SSPRK3 step, coarse-to-fine angular continuation, and
+  hierarchy-interpolated Cartesian `gamma_ij,gamma^ij,d_k gamma_ij,K_ij`.
+  Independent angular points use isolated host OpenMP with work-sized teams;
+  cheap norm/diagnostic reductions remain serial and deterministic. This does
+  not enable AMReX OpenMP or alter fluid evolution kernels. The local machine
+  profile supplies two sustained workers. At fixed analytic Kerr data, the
+  routine 16-polar-point solve takes about `0.258 s`; repeated strict 32-point
+  solves take `6.81--6.82 s` versus a repeated one-worker median of `11.89 s`
+  (`1.74x`). Iterations, residuals, radius error, and area error are thread
+  invariant. The IO rank solves and broadcasts the star-shaped surface.
+  Shape/residual/area/irreducible-mass/centroid histories persist, and
+  checkpoint restart restores the latest shape. Separate
   catalog-owned AH and inner candidate masks support output and AMR tagging;
   neither implements evolution excision or an event horizon. AHFinderDirect-
   style Newton polishing, moving centers, multiple horizons, and quasilocal
@@ -942,6 +1106,41 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
   regularity, free-surface updates, compactification, inter-domain matching,
   coupled linear/nonlinear solves, and their MPI ownership are a new elliptic
   backend rather than a nearly free subclass.
+- The separable owner's dense angular projection/reconstruction and residual
+  evaluation are hot inside long matter fixed points. Cached angular
+  eigenvectors include their weighted projection/reconstruction views, and CPU
+  builds operate directly on resident `MultiFab` data rather than staging host
+  copies. On the `368x80`, 6,459-iteration coupled BH-disk polish these
+  algebra-preserving changes reduced wall time from `195.759 s` to `176.978 s`
+  (9.59%); resulting geometry/fluid fields differed from the baseline by at
+  most `2.84e-14/4.16e-16`.
+- Matter convergence is now the undamped fixed-point defect: divide only the
+  relaxed hydro update by `matter_relaxation`, then take the maximum with
+  geometry, magnetic, and externally reported equilibrium defects. Thus the
+  tolerance no longer weakens when a user selects stronger damping. On the
+  retained `368x80` high-mass q-power BH-disk endpoint, relaxation `0.5`
+  reaches a `8.41e-9` defect in 33 iterations and `2.67 s`, versus 6,459
+  iterations and `176.978 s` for the old `0.0015` control. Its artifact is
+  byte-identical to the same `0.5` trajectory stopped with the manually scaled
+  old criterion. Relaxation `0.8` takes only 20 iterations here, but `1.0`
+  excites a long alternating-support mode and takes 431; retain the runtime
+  knob rather than embedding this endpoint's optimum.
+- At `736x160`, the same solve takes 36 iterations and about `12.2--12.9 s` on
+  three local ranks. Matched one/two/three-rank times are
+  `27.81/15.45/12.2--12.9 s`, about 90-percent two-rank and 72--76-percent
+  three-rank efficiency; rank artifacts agree to `2.0e-14` geometry and
+  `8.8e-15` fluid absolute error. The remaining reduced-ID scaling owner is
+  the dense `O(N_r N_theta^2)` forward/inverse angular transform plus two
+  full-plane MPI assemblies per field. Batching the small radial-boundary
+  collectives and caching its tiny setup were exact but performance-neutral
+  and were removed. A material next improvement requires a different fast
+  transform/distributed backend or validated threaded/accelerator execution,
+  not more setup micro-optimization.
+- Batch same-operator convergence/counter reductions when their ownership is
+  shared. Packed ID L-infinity reductions and five-to-one relativistic event
+  sums preserve their scalar semantics and reduce collective count, but a
+  three-rank single-node test showed no independent wall-time benefit. Treat
+  these as communication/scaling cleanup until multi-node evidence exists.
 - A KEH backend is not the next speed optimization for the present reduced
   XCTS equations. The current cached angular diagonalization plus independent
   tridiagonal radial solves is linear in radial resolution per angular mode;
@@ -995,11 +1194,11 @@ is the preceding preserved baseline and Cycle 284 the older reference baseline.
 
 ## Next Milestones
 
-1. Extend the constraint-solved Schwarzschild shell to spinning,
-   Kerr--Schild-seeded conformally curved XCTS, then compose the existing torus
-   component into an aligned constraint-solved black-hole disk before a full-3D
-   tilted black-hole disk. Keep exact exterior, filled full-grid controls, and
-   true evolution excision separate. Before activating the present inner
+1. Extend the now-spinning, aligned Cook--Pfeiffer XCTS BH/BH-disk owner to a
+   Kerr--Schild-seeded conformally curved solve, then add the full-3D
+   nonaxisymmetric owner needed for a genuinely tilted black-hole disk. Keep
+   exact exterior, filled full-grid controls, and true evolution excision
+   separate. Before activating the present inner
    candidate mask, add characteristic pure-outflow proof, inactive-cell
    ownership, one-sided evolution/dissipation, FillPatch/prolongation/regrid
    closure, and fixed/moving-mask validation. The stellar 3D tilt and artifact-

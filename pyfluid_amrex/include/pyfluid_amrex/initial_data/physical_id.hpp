@@ -37,6 +37,15 @@ struct PhysicalInitialDataMetadata {
    amrex::GpuArray<amrex::Real, 3> black_hole_origin{{0.0, 0.0, 0.0}};
    std::string black_hole_interior;
    amrex::Real black_hole_fill_radius = -1.0;
+   amrex::Real black_hole_throat_area = -1.0;
+   amrex::Real black_hole_irreducible_mass = -1.0;
+   amrex::Real black_hole_throat_equatorial_circumference = -1.0;
+   amrex::Real black_hole_throat_polar_circumference = -1.0;
+   amrex::Real black_hole_throat_kerr_mass = -1.0;
+   amrex::Real black_hole_throat_kerr_spin = -1.0;
+   amrex::Real black_hole_throat_angular_momentum = 0.0;
+   amrex::Real black_hole_throat_christodoulou_mass = -1.0;
+   amrex::Real black_hole_throat_christodoulou_spin = 0.0;
    std::string disk;
    std::string disk_gravity;
    std::string disk_rotation_law;
@@ -88,6 +97,15 @@ struct PhysicalInitialDataMetadata {
    bool exact_layout = false;
    bool used_exact_cache = false;
 };
+
+// A saved self-gravitating disk may seed the next member of the same XCTS
+// sequence by changing only the nonconstant rotation law's angular-velocity
+// scale. Evolution loads and changes to the law/EoS/support contract remain
+// exact-identity operations.
+bool physical_id_disk_continuation_requested(
+   PhysicalInitialDataMetadata const& metadata,
+   RunConfig const& cfg
+);
 
 using ConstPhysicalIdField = amrex::Vector<amrex::MultiFab const*>;
 using MutablePhysicalIdField = amrex::Vector<amrex::MultiFab*>;

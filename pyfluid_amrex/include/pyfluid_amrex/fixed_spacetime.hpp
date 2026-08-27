@@ -6,7 +6,9 @@
 #include <AMReX_GpuQualifiers.H>
 #include <AMReX_REAL.H>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "pyfluid_amrex/fixed_spacetime_types.hpp"
 #include "pyfluid_amrex/physical_geometry.hpp"
@@ -78,6 +80,117 @@ FixedSpacetimeGeometry fixed_spacetime_geometry(
       geometry.derivatives.d3_gamma11 = metric_derivative_scale * displacement3;
       geometry.derivatives.d3_gamma22 = metric_derivative_scale * displacement3;
       geometry.derivatives.d3_gamma33 = metric_derivative_scale * displacement3;
+   } else if (parameters.metric == FixedSpacetimeMetric::StaticTrumpet) {
+      // Exact stationary Schwarzschild trumpet of Dennison and Baumgarte
+      // (2014), expressed directly in Cartesian ADM components. The puncture
+      // itself is excluded from sampling by the mesh-alignment contract.
+      const amrex::Real displacement[3]{
+         position1 - parameters.origin1,
+         position2 - parameters.origin2,
+         position3 - parameters.origin3,
+      };
+      const amrex::Real radius_squared =
+         displacement[0] * displacement[0]
+         + displacement[1] * displacement[1]
+         + displacement[2] * displacement[2];
+      const amrex::Real radius = std::sqrt(radius_squared);
+      const amrex::Real inverse_radius = 1.0 / radius;
+      const amrex::Real inverse_radius_squared = 1.0 / radius_squared;
+      const amrex::Real radius_plus_mass = radius + parameters.mass;
+      const amrex::Real inverse_radius_plus_mass = 1.0 / radius_plus_mass;
+      const amrex::Real conformal_squared = radius_plus_mass * inverse_radius;
+      const amrex::Real conformal_fourth =
+         conformal_squared * conformal_squared;
+      const amrex::Real inverse_conformal_fourth = 1.0 / conformal_fourth;
+
+      geometry.metric.lapse = radius * inverse_radius_plus_mass;
+      geometry.metric.gamma11 = conformal_fourth;
+      geometry.metric.gamma22 = conformal_fourth;
+      geometry.metric.gamma33 = conformal_fourth;
+      geometry.metric.inv_gamma11 = inverse_conformal_fourth;
+      geometry.metric.inv_gamma22 = inverse_conformal_fourth;
+      geometry.metric.inv_gamma33 = inverse_conformal_fourth;
+      geometry.metric.sqrt_det_gamma =
+         conformal_squared * conformal_squared * conformal_squared;
+
+      const amrex::Real shift_scale = parameters.mass
+         * inverse_radius_plus_mass * inverse_radius_plus_mass;
+      geometry.metric.shift1 = shift_scale * displacement[0];
+      geometry.metric.shift2 = shift_scale * displacement[1];
+      geometry.metric.shift3 = shift_scale * displacement[2];
+
+      const amrex::Real lapse_derivative_scale = parameters.mass
+         * inverse_radius * inverse_radius_plus_mass
+         * inverse_radius_plus_mass;
+      geometry.derivatives.d1_lapse =
+         lapse_derivative_scale * displacement[0];
+      geometry.derivatives.d2_lapse =
+         lapse_derivative_scale * displacement[1];
+      geometry.derivatives.d3_lapse =
+         lapse_derivative_scale * displacement[2];
+
+      amrex::Real shift_derivative[3][3]{};
+      const amrex::Real shift_radial_scale = -2.0 * parameters.mass
+         * inverse_radius * inverse_radius_plus_mass
+         * inverse_radius_plus_mass * inverse_radius_plus_mass;
+      for (int derivative = 0; derivative < 3; ++derivative) {
+         for (int component = 0; component < 3; ++component) {
+            shift_derivative[derivative][component] =
+               shift_radial_scale * displacement[derivative]
+                  * displacement[component]
+               + (derivative == component ? shift_scale : 0.0);
+         }
+      }
+      geometry.derivatives.d1_shift1 = shift_derivative[0][0];
+      geometry.derivatives.d2_shift1 = shift_derivative[1][0];
+      geometry.derivatives.d3_shift1 = shift_derivative[2][0];
+      geometry.derivatives.d1_shift2 = shift_derivative[0][1];
+      geometry.derivatives.d2_shift2 = shift_derivative[1][1];
+      geometry.derivatives.d3_shift2 = shift_derivative[2][1];
+      geometry.derivatives.d1_shift3 = shift_derivative[0][2];
+      geometry.derivatives.d2_shift3 = shift_derivative[1][2];
+      geometry.derivatives.d3_shift3 = shift_derivative[2][2];
+
+      const amrex::Real metric_derivative_scale = -2.0 * parameters.mass
+         * radius_plus_mass * inverse_radius_squared * inverse_radius_squared;
+      geometry.derivatives.d1_gamma11 =
+         metric_derivative_scale * displacement[0];
+      geometry.derivatives.d1_gamma22 =
+         metric_derivative_scale * displacement[0];
+      geometry.derivatives.d1_gamma33 =
+         metric_derivative_scale * displacement[0];
+      geometry.derivatives.d2_gamma11 =
+         metric_derivative_scale * displacement[1];
+      geometry.derivatives.d2_gamma22 =
+         metric_derivative_scale * displacement[1];
+      geometry.derivatives.d2_gamma33 =
+         metric_derivative_scale * displacement[1];
+      geometry.derivatives.d3_gamma11 =
+         metric_derivative_scale * displacement[2];
+      geometry.derivatives.d3_gamma22 =
+         metric_derivative_scale * displacement[2];
+      geometry.derivatives.d3_gamma33 =
+         metric_derivative_scale * displacement[2];
+
+      const amrex::Real extrinsic_scale = parameters.mass
+         * inverse_radius_squared;
+      const amrex::Real unit[3]{
+         displacement[0] * inverse_radius,
+         displacement[1] * inverse_radius,
+         displacement[2] * inverse_radius,
+      };
+      geometry.derivatives.extrinsic11 = extrinsic_scale
+         * (1.0 - 2.0 * unit[0] * unit[0]);
+      geometry.derivatives.extrinsic12 = extrinsic_scale
+         * (-2.0 * unit[0] * unit[1]);
+      geometry.derivatives.extrinsic13 = extrinsic_scale
+         * (-2.0 * unit[0] * unit[2]);
+      geometry.derivatives.extrinsic22 = extrinsic_scale
+         * (1.0 - 2.0 * unit[1] * unit[1]);
+      geometry.derivatives.extrinsic23 = extrinsic_scale
+         * (-2.0 * unit[1] * unit[2]);
+      geometry.derivatives.extrinsic33 = extrinsic_scale
+         * (1.0 - 2.0 * unit[2] * unit[2]);
    }
    return geometry;
 }
@@ -173,6 +286,38 @@ inline void validate_fixed_spacetime_domain(
             "the current Kerr-Schild fixed-spacetime contract requires the "
             "complete domain to remain outside the outer horizon"
          );
+      }
+      return;
+   }
+   if (parameters.metric == FixedSpacetimeMetric::StaticTrumpet) {
+      if (!(parameters.mass > 0.0)
+          || parameters.black_hole_interior != BlackHoleInterior::Puncture) {
+         amrex::Abort(
+            "static-trumpet spacetime requires positive mass and the "
+            "puncture interior contract"
+         );
+      }
+      const auto spacing = geometry.CellSizeArray();
+      const amrex::Real origin[3]{
+         parameters.origin1, parameters.origin2, parameters.origin3,
+      };
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         const amrex::Real face_coordinate =
+            (origin[direction] - lower[direction]) / spacing[direction];
+         const amrex::Real nearest_face = std::round(face_coordinate);
+         const amrex::Real tolerance = 128.0
+            * std::numeric_limits<amrex::Real>::epsilon()
+            * std::max<amrex::Real>(1.0, std::abs(face_coordinate));
+         const amrex::Real coordinate_tolerance = tolerance
+            * std::abs(spacing[direction]);
+         if (origin[direction] < lower[direction] - coordinate_tolerance
+             || origin[direction] > upper[direction] + coordinate_tolerance
+             || std::abs(face_coordinate - nearest_face) > tolerance) {
+            amrex::Abort(
+               "the static-trumpet puncture must lie on a mesh face in "
+               "every Cartesian direction"
+            );
+         }
       }
       return;
    }

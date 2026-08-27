@@ -1,0 +1,67 @@
+pyfluid.run_name = black_hole_xcts_spinning_spherical_id_3d
+pyfluid.output_dir = runs/current/black_hole/black_hole_xcts_spinning_spherical_id_3d
+pyfluid.validation_policy = elliptic
+
+mesh.coordinate = spherical
+mesh.axes = r theta phi
+mesh.patch_system = single
+
+# Full r-theta-phi storage of the same axisymmetric spinning XCTS owner. The
+# periodic phi direction exercises the ordinary 3D storage/operator handoff;
+# it does not introduce a separate dimension-specific physics implementation.
+geometry.prob_lo = 0.5 0.0 0.0
+geometry.prob_hi = 32.0 1.5707963267948966 6.283185307179586
+geometry.is_periodic = 0 0 1
+geometry.coord_sys = 0
+
+amr.n_cell = 256 32 4
+amr.max_level = 0
+amr.max_grid_size = 64
+amr.blocking_factor = 4
+
+spacetime.evolution = fixed
+spacetime.matter_coupling = coupled
+spacetime.initial_data = xcts
+spacetime.mass = 1.0
+spacetime.dimensionless_spin1 = 0.0
+spacetime.dimensionless_spin2 = 0.0
+spacetime.dimensionless_spin3 = 0.3
+
+initial_data.spacetime = id
+initial_data.lapse = id
+initial_data.shift = id
+initial_data.solve_only = 1
+initial_data.radial_grid = adaptive
+initial_data.adaptive_shell_width_ratio = 16.0
+initial_data.output_file = runs/current/black_hole/black_hole_xcts_spinning_spherical_id_3d/physical_id
+initial_data.atmosphere = flat
+initial_data.atmosphere_density = 1.0e-12
+initial_data.atmosphere_pressure = 1.0e-16
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.eos_preset = sly
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = black_hole
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.max_step = 0
+pyfluid.final_time = -1
+pyfluid.ng = 1
+pyfluid.cfl = 0.9
+pyfluid.recon = pwc
+pyfluid.riemann = hll
+pyfluid.timestep = euler
+pyfluid.subcycling = off
+pyfluid.bc = outflow
+pyfluid.bc_xlo = outflow
+pyfluid.bc_ylo = symmetry
+pyfluid.bc_yhi = symmetry
+pyfluid.bc_zlo = periodic
+pyfluid.bc_zhi = periodic
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = -1
+pyfluid.plot_int = -1
+pyfluid.checkpoint_int = -1

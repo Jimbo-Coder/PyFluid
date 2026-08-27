@@ -116,6 +116,7 @@ enum class InitialDataOwner : int {
    SphericalAxisymmetricBlackHoleXcts = 4,
    SphericalAxisymmetricBlackHoleXcts3d = 5,
    CartesianKerrSchild = 6,
+   CartesianStaticTrumpet = 7,
 };
 
 struct InitialDataOwnerInfo {
@@ -135,14 +136,15 @@ struct InitialDataOwnerInfo {
    std::string_view reflection_class;
 };
 
-inline constexpr std::array<InitialDataOwnerInfo, 7> InitialDataOwnerCatalog = {{
+inline constexpr std::array<InitialDataOwnerInfo, 8> InitialDataOwnerCatalog = {{
    {InitialDataOwner::SphericalTov, "spherical_tov", "Spherical radial TOV", "One-dimensional spherical TOV construction with an optional mapped radial exterior.", 1, "spherical", "r", "tov", "tov", "none", "none", "uniform,mapped_radial", false, "spherical"},
    {InitialDataOwner::SphericalAxisymmetricXcts, "spherical_axisymmetric_xcts", "Spherical axisymmetric XCTS", "Reduced r-theta XCTS construction for circular stars and aligned optional tori.", 2, "spherical", "r theta", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
    {InitialDataOwner::SphericalAxisymmetricXcts3d, "spherical_axisymmetric_xcts_3d", "Spherical 3D axisymmetric XCTS", "Full r-theta-phi storage of the axisymmetric circular-star XCTS system with an optional aligned torus.", 3, "spherical", "r theta phi", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
-   {InitialDataOwner::CartesianConformalConstraints, "cartesian_conformal_constraints", "Cartesian conformal constraints", "Full three-dimensional Cartesian CTT, CTTK, or XCTS hierarchy with optional coupled stellar torus.", 3, "cartesian", "x y z", "tov,rotating_star", "ctt,cttk,xcts", "none,equilibrium_torus,tilted_torus", "none,coupled", "uniform,block_amr", true, "object_dependent"},
-   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts, "spherical_axisymmetric_black_hole_xcts", "Spherical axisymmetric black-hole XCTS", "Reduced r-theta XCTS construction on a finite apparent-horizon shell.", 2, "spherical", "r theta", "black_hole", "xcts", "none", "none", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
-   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts3d, "spherical_axisymmetric_black_hole_xcts_3d", "Spherical 3D axisymmetric black-hole XCTS", "Full r-theta-phi storage of the axisymmetric apparent-horizon-shell XCTS system, including the Nphi=1 degeneracy.", 3, "spherical", "r theta phi", "black_hole", "xcts", "none", "none", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
-   {InitialDataOwner::CartesianKerrSchild, "cartesian_kerr_schild", "Cartesian analytic Kerr-Schild", "Exact Kerr-Schild exterior or filled complete-grid black hole with an optional aligned test-fluid torus.", 3, "cartesian", "x y z", "black_hole", "kerr_schild", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"}
+   {InitialDataOwner::CartesianConformalConstraints, "cartesian_conformal_constraints", "Cartesian conformal constraints", "Full three-dimensional Cartesian CTT, CTTK, or XCTS hierarchy with optional coupled stellar torus.", 3, "cartesian", "x y z", "tov,rotating_star", "ctt,cttk,xcts", "none,equilibrium_torus,tilted_torus", "none,test_fluid,coupled", "uniform,block_amr", true, "object_dependent"},
+   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts, "spherical_axisymmetric_black_hole_xcts", "Spherical axisymmetric black-hole XCTS", "Reduced r-theta XCTS construction on a finite apparent-horizon shell with an optional aligned torus.", 2, "spherical", "r theta", "black_hole", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
+   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts3d, "spherical_axisymmetric_black_hole_xcts_3d", "Spherical 3D axisymmetric black-hole XCTS", "Full r-theta-phi storage of the axisymmetric apparent-horizon-shell XCTS system with an optional aligned torus, including the Nphi=1 degeneracy.", 3, "spherical", "r theta phi", "black_hole", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
+   {InitialDataOwner::CartesianKerrSchild, "cartesian_kerr_schild", "Cartesian analytic Kerr-Schild", "Exact Kerr-Schild exterior or filled complete-grid black hole with an optional aligned test-fluid torus.", 3, "cartesian", "x y z", "black_hole", "kerr_schild", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"},
+   {InitialDataOwner::CartesianStaticTrumpet, "cartesian_static_trumpet", "Cartesian analytic static trumpet", "Exact stationary spinless Schwarzschild trumpet puncture with an optional arbitrarily oriented test-fluid torus.", 3, "cartesian", "x y z", "black_hole", "static_trumpet", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"}
 }};
 
 constexpr InitialDataOwnerInfo const& initial_data_owner_info(

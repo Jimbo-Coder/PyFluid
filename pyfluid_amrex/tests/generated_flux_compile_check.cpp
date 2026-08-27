@@ -21,6 +21,7 @@
 #include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/initial_data/kerr_schild.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
+#include "pyfluid_amrex/initial_data/static_trumpet.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
@@ -446,6 +447,7 @@ bool validate_initial_atmosphere_profiles()
    );
 }
 
+AMREX_GPU_HOST_DEVICE
 std::array<amrex::Real, pyfluid_amrex::Z4C_NUM_COMPONENTS> z4c_state_components(
    pyfluid_amrex::Z4cState const& state
 )
@@ -474,6 +476,101 @@ std::array<amrex::Real, pyfluid_amrex::Z4C_NUM_COMPONENTS> z4c_state_components(
       state.shift2,
       state.shift3,
    };
+}
+
+struct StaticTrumpetZ4cGrid {
+   pyfluid_amrex::FixedSpacetimeParameters parameters{};
+   amrex::Real spacing = 1.0;
+   std::array<amrex::Real, 3> evaluation_point{};
+
+   AMREX_GPU_HOST_DEVICE
+   amrex::Real operator()(int i, int j, int k, int component) const noexcept
+   {
+      const pyfluid_amrex::Z4cState state =
+         pyfluid_amrex::static_trumpet_z4c_initial_data_state(
+            parameters,
+            evaluation_point[0] + spacing * static_cast<amrex::Real>(i),
+            evaluation_point[1] + spacing * static_cast<amrex::Real>(j),
+            evaluation_point[2] + spacing * static_cast<amrex::Real>(k)
+         );
+      return z4c_state_components(state)[component];
+   }
+};
+
+amrex::Real static_trumpet_rhs_norm(amrex::Real spacing)
+{
+   pyfluid_amrex::FixedSpacetimeParameters parameters{};
+   parameters.metric = pyfluid_amrex::FixedSpacetimeMetric::StaticTrumpet;
+   parameters.mass = 0.8;
+   parameters.black_hole_interior =
+      pyfluid_amrex::BlackHoleInterior::Puncture;
+   const StaticTrumpetZ4cGrid grid{
+      parameters,
+      spacing,
+      {2.3, -1.1, 0.7},
+   };
+   const std::array<amrex::Real, 3> inverse_spacing{
+      1.0 / spacing,
+      1.0 / spacing,
+      1.0 / spacing,
+   };
+   const pyfluid_amrex::Z4cRhs rhs =
+      pyfluid_amrex::evaluate_vacuum_z4c_rhs_at<4, 3>(
+         grid,
+         0,
+         0,
+         0,
+         inverse_spacing,
+         0.0,
+         pyfluid_amrex::Z4cEvolutionParameters{},
+         pyfluid_amrex::Z4cLapseGauge::Trumpet,
+         pyfluid_amrex::Z4cShiftGauge::Frozen
+      );
+   const amrex::Real values[]{
+      rhs.geometry.chi,
+      rhs.geometry.gamma_tilde11,
+      rhs.geometry.gamma_tilde12,
+      rhs.geometry.gamma_tilde13,
+      rhs.geometry.gamma_tilde22,
+      rhs.geometry.gamma_tilde23,
+      rhs.geometry.gamma_tilde33,
+      rhs.geometry.k_hat,
+      rhs.geometry.a_tilde11,
+      rhs.geometry.a_tilde12,
+      rhs.geometry.a_tilde13,
+      rhs.geometry.a_tilde22,
+      rhs.geometry.a_tilde23,
+      rhs.geometry.a_tilde33,
+      rhs.geometry.gamma_tilde1,
+      rhs.geometry.gamma_tilde2,
+      rhs.geometry.gamma_tilde3,
+      rhs.geometry.theta,
+      rhs.lapse,
+      rhs.shift.shift1,
+      rhs.shift.shift2,
+      rhs.shift.shift3,
+   };
+   amrex::Real maximum = 0.0;
+   for (amrex::Real value : values) {
+      maximum = std::max(maximum, std::abs(value));
+   }
+   return maximum;
+}
+
+bool validate_static_trumpet_stationarity()
+{
+   if constexpr (AMREX_SPACEDIM != 3) {
+      return true;
+   }
+   const amrex::Real coarse = static_trumpet_rhs_norm(0.04);
+   const amrex::Real fine = static_trumpet_rhs_norm(0.02);
+   if (!std::isfinite(coarse) || !std::isfinite(fine)
+       || !(fine < coarse / 8.0) || !(fine < 2.0e-6)) {
+      std::cerr << "static-trumpet stationary RHS mismatch: coarse="
+                << coarse << " fine=" << fine << '\n';
+      return false;
+   }
+   return true;
 }
 
 bool validate_z4c_pointwise_bridge()
@@ -524,9 +621,7 @@ bool validate_z4c_pointwise_bridge()
    }
    const auto flat_rhs = pyfluid_amrex::evaluate_vacuum_z4c_rhs_at<
       4,
-      AMREX_SPACEDIM,
-      pyfluid_amrex::Z4cLapseGauge::OnePlusLog,
-      pyfluid_amrex::Z4cShiftGauge::GammaDriver
+      AMREX_SPACEDIM
    >(
       MinkowskiZ4cGrid{},
       i,
@@ -534,7 +629,9 @@ bool validate_z4c_pointwise_bridge()
       k,
       inv_spacing,
       0.25,
-      pyfluid_amrex::Z4cEvolutionParameters{}
+      pyfluid_amrex::Z4cEvolutionParameters{},
+      pyfluid_amrex::Z4cLapseGauge::OnePlusLog,
+      pyfluid_amrex::Z4cShiftGauge::GammaDriver
    );
    const amrex::Real flat_rhs_values[] = {
       flat_rhs.geometry.chi,
@@ -1705,6 +1802,135 @@ bool validate_fixed_spacetime_provider()
        || std::abs(gamma_derivative - schwarzschild_geometry.derivatives.d1_gamma11)
           > 2.0e-9) {
       std::cerr << "isotropic-Schwarzschild metric derivative mismatch\n";
+      return false;
+   }
+
+   FixedSpacetimeParameters trumpet{};
+   trumpet.metric = FixedSpacetimeMetric::StaticTrumpet;
+   trumpet.origin1 = -0.2;
+   trumpet.origin2 = 0.1;
+   trumpet.origin3 = 0.05;
+   trumpet.mass = 0.8;
+   trumpet.black_hole_interior = BlackHoleInterior::Puncture;
+   constexpr amrex::Real trumpet_position1 = 1.4;
+   constexpr amrex::Real trumpet_position2 = -0.5;
+   constexpr amrex::Real trumpet_position3 = 0.65;
+   const auto static_trumpet = fixed_spacetime_geometry(
+      trumpet,
+      trumpet_position1,
+      trumpet_position2,
+      trumpet_position3,
+      0.0
+   );
+   const amrex::Real trumpet_displacement[3]{
+      trumpet_position1 - trumpet.origin1,
+      trumpet_position2 - trumpet.origin2,
+      trumpet_position3 - trumpet.origin3,
+   };
+   const amrex::Real trumpet_radius = std::sqrt(
+      trumpet_displacement[0] * trumpet_displacement[0]
+      + trumpet_displacement[1] * trumpet_displacement[1]
+      + trumpet_displacement[2] * trumpet_displacement[2]
+   );
+   const amrex::Real trumpet_radius_plus_mass =
+      trumpet_radius + trumpet.mass;
+   const amrex::Real expected_trumpet_chi =
+      trumpet_radius * trumpet_radius
+      / (trumpet_radius_plus_mass * trumpet_radius_plus_mass);
+   const auto trumpet_state =
+      pyfluid_amrex::z4c_state_from_spacetime_geometry(static_trumpet);
+   const auto direct_trumpet_state =
+      pyfluid_amrex::static_trumpet_z4c_initial_data_state(
+         trumpet,
+         trumpet_position1,
+         trumpet_position2,
+         trumpet_position3
+      );
+   const auto puncture_trumpet_state =
+      pyfluid_amrex::static_trumpet_z4c_initial_data_state(
+         trumpet, trumpet.origin1, trumpet.origin2, trumpet.origin3
+      );
+   const auto& trumpet_metric = static_trumpet.metric;
+   const auto& trumpet_derivatives = static_trumpet.derivatives;
+   const amrex::Real trumpet_trace =
+      trumpet_metric.inv_gamma11 * trumpet_derivatives.extrinsic11
+      + 2.0 * trumpet_metric.inv_gamma12
+         * trumpet_derivatives.extrinsic12
+      + 2.0 * trumpet_metric.inv_gamma13
+         * trumpet_derivatives.extrinsic13
+      + trumpet_metric.inv_gamma22 * trumpet_derivatives.extrinsic22
+      + 2.0 * trumpet_metric.inv_gamma23
+         * trumpet_derivatives.extrinsic23
+      + trumpet_metric.inv_gamma33 * trumpet_derivatives.extrinsic33;
+   pyfluid_amrex::Z4cSpatialDerivatives trumpet_spatial_derivatives{};
+   trumpet_spatial_derivatives.advection_lapse[0] =
+      trumpet_derivatives.d1_lapse;
+   trumpet_spatial_derivatives.advection_lapse[1] =
+      trumpet_derivatives.d2_lapse;
+   trumpet_spatial_derivatives.advection_lapse[2] =
+      trumpet_derivatives.d3_lapse;
+   const amrex::Real trumpet_lapse_rhs =
+      pyfluid_amrex::generated::z4c_trumpet_lapse_rhs(
+         trumpet_state, trumpet_spatial_derivatives
+      );
+   if (!close_enough(
+          trumpet_metric.lapse,
+          trumpet_radius / trumpet_radius_plus_mass
+       )
+       || !close_enough(trumpet_state.chi, expected_trumpet_chi)
+       || !close_enough(trumpet_state.gamma_tilde11, 1.0)
+       || !close_enough(trumpet_state.gamma_tilde22, 1.0)
+       || !close_enough(trumpet_state.gamma_tilde33, 1.0)
+       || !close_enough(direct_trumpet_state.chi, trumpet_state.chi)
+       || !close_enough(
+            direct_trumpet_state.a_tilde12, trumpet_state.a_tilde12
+          )
+       || !close_enough(puncture_trumpet_state.chi, 0.0)
+       || !close_enough(puncture_trumpet_state.lapse, 0.0)
+       || !close_enough(puncture_trumpet_state.gamma_tilde11, 1.0)
+       || !close_enough(puncture_trumpet_state.a_tilde11, 0.0)
+       || std::abs(
+            trumpet_trace
+            - trumpet.mass
+               / (trumpet_radius_plus_mass * trumpet_radius_plus_mass)
+          ) > 3.0e-13
+       || std::abs(trumpet_lapse_rhs) > 3.0e-15) {
+      std::cerr << "static-trumpet identity mismatch\n";
+      return false;
+   }
+   const auto trumpet_plus = fixed_spacetime_geometry(
+      trumpet,
+      trumpet_position1 + step,
+      trumpet_position2,
+      trumpet_position3,
+      0.0
+   );
+   const auto trumpet_minus = fixed_spacetime_geometry(
+      trumpet,
+      trumpet_position1 - step,
+      trumpet_position2,
+      trumpet_position3,
+      0.0
+   );
+   const amrex::Real trumpet_lapse_derivative =
+      (trumpet_plus.metric.lapse - trumpet_minus.metric.lapse)
+      / (2.0 * step);
+   const amrex::Real trumpet_gamma_derivative =
+      (trumpet_plus.metric.gamma11 - trumpet_minus.metric.gamma11)
+      / (2.0 * step);
+   const amrex::Real trumpet_shift_derivative =
+      (trumpet_plus.metric.shift2 - trumpet_minus.metric.shift2)
+      / (2.0 * step);
+   if (std::abs(
+          trumpet_lapse_derivative - trumpet_derivatives.d1_lapse
+       ) > 2.0e-9
+       || std::abs(
+            trumpet_gamma_derivative - trumpet_derivatives.d1_gamma11
+          ) > 2.0e-8
+       || std::abs(
+            trumpet_shift_derivative - trumpet_derivatives.d1_shift2
+          ) > 2.0e-9) {
+      std::cerr << "static-trumpet derivative mismatch\n";
       return false;
    }
 
@@ -3181,6 +3407,7 @@ int main()
        || !validate_srmhd_round_trips()
        || !validate_runtime_eos_rmhd_round_trips()
        || !validate_fixed_spacetime_provider()
+       || !validate_static_trumpet_stationarity()
        || !validate_z4c_pointwise_bridge()
        || !validate_z4c_constraints()) {
       return 1;

@@ -90,6 +90,7 @@ def read_physical_id_sequence(run_dir: Path) -> tuple[Path, list[dict[str, str]]
       "index",
       "targets",
       "angular_velocity",
+      "disk_angular_velocity",
       "maximum_density",
       "maximum_velocity",
       "injection_energy",

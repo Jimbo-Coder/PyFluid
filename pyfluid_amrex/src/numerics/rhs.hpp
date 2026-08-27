@@ -166,7 +166,7 @@ inline void fill_hydro_flux_direction(
 #endif
    {
    for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
+      const amrex::Box& bx = mfi.tilebox();
       const auto p = primitive.const_array(mfi);
       const auto f = flux.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -231,7 +231,7 @@ inline void fill_hydro_flux_direction_mapped(
 #endif
    {
    for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
+      const amrex::Box& bx = mfi.tilebox();
       const amrex::Box& cell_box = primitive.boxArray()[mfi.index()];
       PatchDescriptor const& layout_patch_ref = patch_layout_descriptor_containing_box(layout, cell_box);
       PatchGridDescriptor const& grid_patch_ref = patch_grid_descriptor_for_layout_patch(grid_system, layout_patch_ref);
@@ -364,7 +364,7 @@ inline void fill_hydro_flux_direction_with_solid_walls(
 #endif
    {
 	   for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-	      const amrex::Box& bx = mfi.validbox();
+	      const amrex::Box& bx = mfi.tilebox();
 	      const auto p = primitive.const_array(mfi);
 	      const auto f = flux.array(mfi);
 	      const auto solid = solid_mask.const_array(mfi);
@@ -614,7 +614,7 @@ inline void fill_mhd_flux_direction(
 #endif
    {
    for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
+      const amrex::Box& bx = mfi.tilebox();
       const auto p = primitive.const_array(mfi);
       const auto f = flux.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {

@@ -42,6 +42,10 @@ struct EquilibriumTorusParameters {
    amrex::Real center2 = 0.0;
    amrex::Real center3 = 0.0;
    amrex::Real matter_relaxation = 0.5;
+   amrex::Real relative_tolerance = 1.0e-8;
+   int max_iterations = 96;
+   amrex::Real continuation_source_angular_velocity = 0.0;
+   int continuation_steps = 1;
    bool continue_existing_matter = false;
    InitialAtmosphereParameters atmosphere{};
 };

@@ -6,6 +6,7 @@
 
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/initial_data/kerr_schild.hpp"
+#include "pyfluid_amrex/initial_data/static_trumpet.hpp"
 #include "pyfluid_amrex/initial_data/tov.hpp"
 #include "pyfluid_amrex/patch_maps.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
@@ -145,6 +146,16 @@ struct RelativisticInitialDataView {
       }
       RelativisticInitialDataSample output;
       if (fixed_spacetime_active) {
+         if (fixed_spacetime.metric == FixedSpacetimeMetric::StaticTrumpet) {
+            output.has_spacetime = true;
+            output.spacetime = static_trumpet_z4c_initial_data_state(
+               fixed_spacetime,
+               physical.q1,
+               physical.q2,
+               physical.q3
+            );
+            return output;
+         }
          const FixedSpacetimeGeometry geometry = initial_data_spacetime_geometry(
             fixed_spacetime,
             physical.q1,

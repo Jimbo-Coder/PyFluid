@@ -55,7 +55,8 @@ RelativisticInitialDataProvider::RelativisticInitialDataProvider(RunConfig const
      fixed_spacetime_active_(
         !tov_.active()
         && (cfg.spacetime_evolution == "fixed"
-            || cfg.spacetime_initial_data == "kerr_schild")
+            || cfg.spacetime_initial_data == "kerr_schild"
+            || cfg.spacetime_initial_data == "static_trumpet")
      ),
      fields_(initial_data_field_selection(cfg))
 {}
