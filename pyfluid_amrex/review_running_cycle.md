@@ -7718,7 +7718,7 @@ I will always continue from the last cycle marked as `in_progress`.
   respectively; the corrected 3D cases reproduce their baseline within one
   percent. [DONE]
 
-## Cycle 345 — Declarative diagnostics, compiled-owner split, and output audit (WIP)
+## Cycle 345 — Declarative diagnostics, compiled-owner split, and output audit (DONE)
 
 - Reconcile stale continuity and review-backlog state after the Cycle-344
   consolidation. Move declarative diagnostic identity, ordering, grouping,
@@ -7752,10 +7752,17 @@ I will always continue from the last cycle marked as `in_progress`.
   scalar/log/report/plot evidence, named baselines, canonical inputs, and
   reusable accepted physical-ID artifacts; propose deletion only for exact
   regenerable raw GF/checkpoint/failed-scratch targets after an explicit
-  preservation audit. `runs/current` contains 15.72 GiB in 18,389 files. The
-  proposed compact set keeps 1.37 GiB: all tracked-input physical-ID
-  prerequisites, accepted high-mass BH-disk/RNS/magnetized/BH/TOV artifacts,
-  and bounded recent histories. Finished unique KH/curvilinear media add about
-  29 MiB to `runs/final_done`; existing baselines/final outputs remain intact.
-  Deleting the remaining 18,026 current files would recover about 14.32 GiB.
-  The exact destructive transaction awaits user approval. [WIP]
+  preservation audit. Immediately before the approved transaction,
+  `runs/current` contained 16,877,302,372 bytes in 18,434 files. A staged,
+  verified replacement keeps 1,472,608,621 bytes in 363 files: every
+  tracked-input physical-ID prerequisite that existed before the prune,
+  accepted high-mass BH-disk/RNS/magnetized/BH/TOV artifacts, and bounded
+  recent histories. The already-missing coupled-XCTS-from-spherical BH-disk
+  prerequisite remains an explicit known absence rather than being
+  fabricated. Twelve finished unique KH/curvilinear movies (30,597,206 bytes)
+  were copied byte-identically into `runs/final_done/media`; named baselines
+  and all pre-existing final outputs remain intact. The staged tree passed
+  prerequisite, curated-root, history, and media-content checks both before
+  and after the atomic directory swap. Removing only the named pre-prune
+  backup deleted 18,071 regenerable current files and recovered 15,374,096,545
+  net bytes (14.32 GiB). [DONE]
