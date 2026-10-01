@@ -3,6 +3,7 @@
 #include <AMReX.H>
 #include <AMReX_GpuAsyncArray.H>
 #include <AMReX_GpuLaunch.H>
+#include <AMReX_ParallelReduce.H>
 
 #include <algorithm>
 #include <cmath>
@@ -10,10 +11,13 @@
 #include <memory>
 
 #include "pyfluid_amrex/constants.hpp"
+#include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/initial_data.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 namespace {
 
@@ -31,6 +35,198 @@ amrex::Vector<GridFieldSymmetryKind> conformal_vector_symmetries()
       GridFieldSymmetryKind::Vector2,
       GridFieldSymmetryKind::Vector3,
    };
+}
+
+amrex::Box cartesian_first_derivative_domain(
+   InitialDataEllipticHierarchy const& hierarchy,
+   int level,
+   amrex::MultiFab const& field
+)
+{
+   amrex::Box domain = amrex::convert(
+      hierarchy.geometry[level].Domain(), field.ixType()
+   );
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      // Cell-centered elliptic fields have face-BC ghosts. At physical outer
+      // vertices, generic nodal FillPatch instead constant-extrapolates; those
+      // ghosts are not derivative data. Use the solved boundary value and an
+      // interior one-sided stencil there. True symmetries retain centered
+      // differences through explicitly mirrored/periodic ghosts.
+      const bool use_ghosts = field.ixType().cellCentered()
+         || hierarchy.geometry[level].isPeriodic(direction);
+      if (use_ghosts || hierarchy.reflection_lo[direction] != 0) {
+         domain.growLo(direction, 1);
+      }
+      if (use_ghosts || hierarchy.reflection_hi[direction] != 0) {
+         domain.growHi(direction, 1);
+      }
+   }
+   return domain;
+}
+
+template <int Direction>
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+amrex::Real cartesian_first_derivative(
+   amrex::Array4<amrex::Real const> const& field,
+   int i, int j, int k, int component,
+   amrex::Dim3 const& domain_lo,
+   amrex::Dim3 const& domain_hi,
+   amrex::Real inverse_spacing
+) noexcept
+{
+   const int index = Direction == 0 ? i : (Direction == 1 ? j : k);
+   const int lower = Direction == 0 ? domain_lo.x
+      : (Direction == 1 ? domain_lo.y : domain_lo.z);
+   const int upper = Direction == 0 ? domain_hi.x
+      : (Direction == 1 ? domain_hi.y : domain_hi.z);
+   if (upper == lower) {
+      return 0.0_rt;
+   }
+   if (upper == lower + 1) {
+      // A one-cell nodal line defines only a linear interpolant. Invariant
+      // dimensional-degeneracy data therefore give exactly zero.
+      return inverse_spacing * (
+         generated::sample_direction<Direction>(
+            field, i, j, k, component, upper - index)
+         - generated::sample_direction<Direction>(
+            field, i, j, k, component, lower - index)
+      );
+   }
+   return generated::domain_first<2, Direction>(
+      field, i, j, k, component, index, lower, upper, inverse_spacing
+   );
+}
+
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+void fill_reduced_cartesian_first_derivatives(
+   amrex::Array4<amrex::Real const> const& field,
+   int i,
+   int j,
+   int k,
+   amrex::GpuArray<int, AMREX_SPACEDIM> const& physical_axes,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& inverse_spacing,
+   amrex::Dim3 const& domain_lo,
+   amrex::Dim3 const& domain_hi,
+   amrex::GpuArray<amrex::Real, 9>& derivatives
+) noexcept
+{
+   for (int entry = 0; entry < 9; ++entry) {
+      derivatives[entry] = 0.0_rt;
+   }
+   for (int component = 0; component < 3; ++component) {
+      derivatives[3 * component + physical_axes[0]] =
+         cartesian_first_derivative<0>(
+            field, i, j, k, component, domain_lo, domain_hi, inverse_spacing[0]
+         );
+#if (AMREX_SPACEDIM >= 2)
+      derivatives[3 * component + physical_axes[1]] =
+         cartesian_first_derivative<1>(
+            field, i, j, k, component, domain_lo, domain_hi, inverse_spacing[1]
+         );
+#endif
+#if (AMREX_SPACEDIM == 3)
+      derivatives[3 * component + physical_axes[2]] =
+         cartesian_first_derivative<2>(
+            field, i, j, k, component, domain_lo, domain_hi, inverse_spacing[2]
+         );
+#endif
+   }
+}
+
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+amrex::Real reduced_cartesian_scalar_gradient_component(
+   amrex::Array4<amrex::Real const> const& field,
+   int i,
+   int j,
+   int k,
+   int component,
+   amrex::GpuArray<int, AMREX_SPACEDIM> const& physical_axes,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& inverse_spacing,
+   amrex::Dim3 const& domain_lo,
+   amrex::Dim3 const& domain_hi
+) noexcept
+{
+   amrex::Real derivative = 0.0_rt;
+   if (physical_axes[0] == component) {
+      derivative = cartesian_first_derivative<0>(
+         field, i, j, k, 0, domain_lo, domain_hi, inverse_spacing[0]
+      );
+   }
+#if (AMREX_SPACEDIM >= 2)
+   if (physical_axes[1] == component) {
+      derivative = cartesian_first_derivative<1>(
+         field, i, j, k, 0, domain_lo, domain_hi, inverse_spacing[1]
+      );
+   }
+#endif
+#if (AMREX_SPACEDIM == 3)
+   if (physical_axes[2] == component) {
+      derivative = cartesian_first_derivative<2>(
+         field, i, j, k, 0, domain_lo, domain_hi, inverse_spacing[2]
+      );
+   }
+#endif
+   return derivative;
+}
+
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+amrex::Real reduced_cartesian_scalar_laplacian(
+   amrex::Array4<amrex::Real const> const& field,
+   int i,
+   int j,
+   int k,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& inverse_spacing_squared
+) noexcept
+{
+   amrex::Real result = generated::centered_second<2, 0>(
+      field, i, j, k, 0, inverse_spacing_squared[0]
+   );
+#if (AMREX_SPACEDIM >= 2)
+   result += generated::centered_second<2, 1>(
+      field, i, j, k, 0, inverse_spacing_squared[1]
+   );
+#endif
+#if (AMREX_SPACEDIM == 3)
+   result += generated::centered_second<2, 2>(
+      field, i, j, k, 0, inverse_spacing_squared[2]
+   );
+#endif
+   return result;
+}
+
+// Consume the linear-solve candidates as update scratch. Callers no longer
+// need their old values; scalar fixed points repopulate them next iteration.
+// Preserve subtraction/offset/scaling order, including the scalar solve for
+// f - 1, and update one ghost layer while measuring only valid points.
+amrex::Real apply_conformal_relaxed_update(
+   amrex::Vector<amrex::MultiFab*> const& field,
+   amrex::Vector<amrex::MultiFab*> const& candidate,
+   amrex::Real relaxation,
+   amrex::Real candidate_offset = 0.0_rt
+)
+{
+   amrex::Real norms[2]{0.0_rt, 0.0_rt};
+   for (int level = 0; level < static_cast<int>(field.size()); ++level) {
+      auto& solution = *field[level];
+      auto& update = *candidate[level];
+      const int num_components = solution.nComp();
+      amrex::MultiFab::Subtract(update, solution, 0, 0, num_components, 1);
+      if (candidate_offset != 0.0_rt) {
+         update.plus(candidate_offset, 0, num_components, 1);
+      }
+      update.mult(relaxation, 0, num_components, 1);
+      amrex::MultiFab::Add(solution, update, 0, 0, num_components, 1);
+      norms[0] = std::max(norms[0], update.norm0(
+         0, num_components, amrex::IntVect(0), true
+      ));
+      norms[1] = std::max(norms[1], solution.norm0(
+         0, num_components, amrex::IntVect(0), true
+      ));
+   }
+   amrex::ParallelAllReduce::Max(
+      norms, 2, amrex::ParallelContext::CommunicatorSub()
+   );
+   return norms[0] / std::max(amrex::Real(1.0_rt), norms[1]);
 }
 
 template <typename FillSource>
@@ -65,7 +261,7 @@ CttHamiltonianResult solve_conformal_scalar_fixed_point(
          amrex::MultiFab::Copy(
             *candidate_storage[level], *field[level], 0, 0, 1, 1
          );
-         candidate_storage[level]->plus(-1.0, 0, 1, 1);
+         candidate_storage[level]->plus(-1.0_rt, 0, 1, 1);
          fill_source(level, *rhs_storage[level]);
       }
 
@@ -90,24 +286,10 @@ CttHamiltonianResult solve_conformal_scalar_fixed_point(
             hierarchy, candidate, rhs, correction_boundary, options.linear
          );
       }
-      amrex::Real update_norm = 0.0;
-      amrex::Real solution_norm = 0.0;
-      for (int level = 0; level < num_levels; ++level) {
-         amrex::MultiFab update(
-            field[level]->boxArray(), field[level]->DistributionMap(), 1, 1
-         );
-         amrex::MultiFab::Copy(update, *candidate_storage[level], 0, 0, 1, 1);
-         amrex::MultiFab::Subtract(update, *field[level], 0, 0, 1, 1);
-         update.plus(1.0, 0, 1, 1);
-         update.mult(options.relaxation, 0, 1, 1);
-         amrex::MultiFab::Add(*field[level], update, 0, 0, 1, 1);
-         update_norm = std::max(update_norm, update.norm0(0, 0, false));
-         solution_norm = std::max(
-            solution_norm, field[level]->norm0(0, 0, false)
-         );
-      }
       result.nonlinear_iterations = iteration;
-      result.relative_update = update_norm / std::max(amrex::Real(1.0), solution_norm);
+      result.relative_update = apply_conformal_relaxed_update(
+         field, candidate, options.relaxation, 1.0_rt
+      );
       result.linear_residual = linear.residual;
       if (!std::isfinite(result.relative_update)) {
          amrex::Abort("conformal scalar solve produced a nonfinite update");
@@ -143,8 +325,8 @@ CttHamiltonianResult solve_ctt_hamiltonian(
       || (has_mean_curvature
           && static_cast<int>(mean_curvature_squared.size()) != num_levels)
       || options.max_nonlinear_iterations <= 0
-      || !(options.relative_update_tolerance > 0.0)
-      || !(options.relaxation > 0.0 && options.relaxation <= 1.0)
+      || !(options.relative_update_tolerance > 0.0_rt)
+      || !(options.relaxation > 0.0_rt && options.relaxation <= 1.0_rt)
    ) {
       amrex::Abort("invalid CTT Hamiltonian solve configuration");
    }
@@ -194,10 +376,10 @@ CttHamiltonianResult solve_ctt_hamiltonian(
             amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                const amrex::Real extrinsic_squared = has_extrinsic_curvature
                   ? extrinsic(i, j, k, CONFORMAL_A_SQUARED)
-                  : 0.0;
+                  : 0.0_rt;
                const amrex::Real k_squared = has_mean_curvature
                   ? curvature_squared(i, j, k, 0)
-                  : 0.0;
+                  : 0.0_rt;
                source(i, j, k, 0) = generated::conformal_hamiltonian_source(
                   psi(i, j, k, 0),
                   matter(i, j, k, 0),
@@ -210,7 +392,6 @@ CttHamiltonianResult solve_ctt_hamiltonian(
    );
 }
 
-#if (AMREX_SPACEDIM == 3)
 template <bool XctsScaling>
 void fill_conformal_extrinsic_curvature(
    InitialDataEllipticHierarchy const& hierarchy,
@@ -232,9 +413,19 @@ void fill_conformal_extrinsic_curvature(
    );
    for (int level = 0; level < num_levels; ++level) {
       const auto spacing = hierarchy.geometry[level].CellSizeArray();
-      const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
-         1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
-      }};
+      const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> inv_spacing{
+         AMREX_D_DECL(
+            1.0_rt / spacing[0],
+            1.0_rt / spacing[1],
+            1.0_rt / spacing[2]
+         )
+      };
+      const auto physical_axes = hierarchy.cartesian_physical_axes;
+      const amrex::Box derivative_domain = cartesian_first_derivative_domain(
+         hierarchy, level, *vector_field[level]
+      );
+      const auto derivative_lo = amrex::lbound(derivative_domain);
+      const auto derivative_hi = amrex::ubound(derivative_domain);
       for (amrex::MFIter mfi(
               *conformal_extrinsic_curvature[level], amrex::TilingIfNotGPU()
            ); mfi.isValid(); ++mfi) {
@@ -247,18 +438,27 @@ void fill_conformal_extrinsic_curvature(
             ? lapse_times_conformal_factor[level]->const_array(mfi)
             : amrex::Array4<amrex::Real const>{};
          const auto extrinsic = conformal_extrinsic_curvature[level]->array(mfi);
-         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         amrex::ParallelFor(box,
+            [vector, physical_axes, inv_spacing, derivative_lo, derivative_hi,
+             psi, lapse_psi, extrinsic]
+            AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            amrex::GpuArray<amrex::Real, 9> derivatives{};
+            fill_reduced_cartesian_first_derivatives(
+               vector,
+               i,
+               j,
+               k,
+               physical_axes,
+               inv_spacing,
+               derivative_lo,
+               derivative_hi,
+               derivatives
+            );
             ConformalTraceFreeTensor point =
                generated::conformal_longitudinal_tensor(
-                  generated::centered_first<2, 0>(vector, i, j, k, 0, inv_spacing[0]),
-                  generated::centered_first<2, 1>(vector, i, j, k, 0, inv_spacing[1]),
-                  generated::centered_first<2, 2>(vector, i, j, k, 0, inv_spacing[2]),
-                  generated::centered_first<2, 0>(vector, i, j, k, 1, inv_spacing[0]),
-                  generated::centered_first<2, 1>(vector, i, j, k, 1, inv_spacing[1]),
-                  generated::centered_first<2, 2>(vector, i, j, k, 1, inv_spacing[2]),
-                  generated::centered_first<2, 0>(vector, i, j, k, 2, inv_spacing[0]),
-                  generated::centered_first<2, 1>(vector, i, j, k, 2, inv_spacing[1]),
-                  generated::centered_first<2, 2>(vector, i, j, k, 2, inv_spacing[2])
+                  derivatives[0], derivatives[1], derivatives[2],
+                  derivatives[3], derivatives[4], derivatives[5],
+                  derivatives[6], derivatives[7], derivatives[8]
                );
             if constexpr (XctsScaling) {
                const amrex::Real scale = generated::xcts_conformal_extrinsic_scale(
@@ -285,8 +485,8 @@ void fill_conformal_extrinsic_curvature(
 }
 
 struct ConformalMomentumResult {
-   amrex::Real relative_update = 0.0;
-   amrex::Real linear_residual = 0.0;
+   amrex::Real relative_update = 0.0_rt;
+   amrex::Real linear_residual = 0.0_rt;
 };
 
 template <typename FillSource>
@@ -333,31 +533,8 @@ ConformalMomentumResult solve_conformal_vector_fixed_point(
          boundary,
          linear_options
       );
-   amrex::Real update_norm = 0.0;
-   amrex::Real solution_norm = 0.0;
-   for (int level = 0; level < num_levels; ++level) {
-      amrex::MultiFab update(
-         vector_field[level]->boxArray(),
-         vector_field[level]->DistributionMap(),
-         3,
-         1
-      );
-      amrex::MultiFab::Copy(update, *candidate_storage[level], 0, 0, 3, 1);
-      amrex::MultiFab::Subtract(update, *vector_field[level], 0, 0, 3, 1);
-      update.mult(relaxation, 0, 3, 1);
-      amrex::MultiFab::Add(*vector_field[level], update, 0, 0, 3, 1);
-      for (int component = 0; component < 3; ++component) {
-         update_norm = std::max(
-            update_norm, update.norm0(component, 0, false)
-         );
-         solution_norm = std::max(
-            solution_norm,
-            vector_field[level]->norm0(component, 0, false)
-         );
-      }
-   }
    return {
-      update_norm / std::max(amrex::Real(1.0), solution_norm),
+      apply_conformal_relaxed_update(vector_field, candidate, relaxation),
       linear.residual,
    };
 }
@@ -382,9 +559,19 @@ ConformalMomentumResult solve_conformal_momentum_iteration(
       relaxation,
       [&](int level, amrex::MultiFab& source) {
          const auto spacing = hierarchy.geometry[level].CellSizeArray();
-         const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
-            1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
-         }};
+         const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> inv_spacing{
+            AMREX_D_DECL(
+               1.0_rt / spacing[0],
+               1.0_rt / spacing[1],
+               1.0_rt / spacing[2]
+            )
+         };
+         const auto physical_axes = hierarchy.cartesian_physical_axes;
+         const amrex::Box derivative_domain = cartesian_first_derivative_domain(
+            hierarchy, level, *conformal_factor[level]
+         );
+         const auto derivative_lo = amrex::lbound(derivative_domain);
+         const auto derivative_hi = amrex::ubound(derivative_domain);
          for (amrex::MFIter mfi(source, amrex::TilingIfNotGPU());
               mfi.isValid(); ++mfi) {
             const amrex::Box box = mfi.tilebox();
@@ -398,21 +585,20 @@ ConformalMomentumResult solve_conformal_momentum_iteration(
                int i, int j, int k
             ) noexcept {
                for (int component = 0; component < 3; ++component) {
-                  amrex::Real curvature_gradient = 0.0;
+                  amrex::Real curvature_gradient = 0.0_rt;
                   if (variable_mean_curvature) {
-                     if (component == 0) {
-                        curvature_gradient = generated::centered_first<2, 0>(
-                           curvature, i, j, k, 0, inv_spacing[0]
+                     curvature_gradient =
+                        reduced_cartesian_scalar_gradient_component(
+                           curvature,
+                           i,
+                           j,
+                           k,
+                           component,
+                           physical_axes,
+                           inv_spacing,
+                           derivative_lo,
+                           derivative_hi
                         );
-                     } else if (component == 1) {
-                        curvature_gradient = generated::centered_first<2, 1>(
-                           curvature, i, j, k, 0, inv_spacing[1]
-                        );
-                     } else {
-                        curvature_gradient = generated::centered_first<2, 2>(
-                           curvature, i, j, k, 0, inv_spacing[2]
-                        );
-                     }
                   }
                   momentum_source(i, j, k, component) =
                      generated::conformal_momentum_source(
@@ -428,8 +614,8 @@ ConformalMomentumResult solve_conformal_momentum_iteration(
 }
 
 struct CttkCurvatureUpdate {
-   amrex::Real relative_update = 0.0;
-   amrex::Real minimum_squared = 0.0;
+   amrex::Real relative_update = 0.0_rt;
+   amrex::Real minimum_squared = 0.0_rt;
 };
 
 enum class CttkHamiltonianPolicy {
@@ -458,8 +644,8 @@ void validate_cttk_configuration(
        || static_cast<int>(energy_density.size()) != num_levels
        || static_cast<int>(momentum_density.size()) != num_levels
        || options.max_coupled_iterations <= 0
-       || !(options.relative_update_tolerance > 0.0)
-       || !(options.relaxation > 0.0 && options.relaxation <= 1.0)
+       || !(options.relative_update_tolerance > 0.0_rt)
+       || !(options.relaxation > 0.0_rt && options.relaxation <= 1.0_rt)
        || (branch_sign != -1 && branch_sign != 1)) {
       amrex::Abort("invalid CTTK configuration");
    }
@@ -509,8 +695,8 @@ CttkCurvatureUpdate update_cttk_mean_curvature(
    const int num_levels = static_cast<int>(hierarchy.geometry.size());
    const amrex::Real sign = static_cast<int>(branch);
    amrex::Real minimum_squared = std::numeric_limits<amrex::Real>::max();
-   amrex::Real update_norm = 0.0;
-   amrex::Real solution_norm = 0.0;
+   amrex::Real update_norm = 0.0_rt;
+   amrex::Real solution_norm = 0.0_rt;
    for (int level = 0; level < num_levels; ++level) {
       amrex::MultiFab previous(
          mean_curvature[level]->boxArray(),
@@ -520,11 +706,14 @@ CttkCurvatureUpdate update_cttk_mean_curvature(
       );
       amrex::MultiFab::Copy(previous, *mean_curvature[level], 0, 0, 1, 0);
       const auto spacing = hierarchy.geometry[level].CellSizeArray();
-      const amrex::GpuArray<amrex::Real, 3> inv_spacing_squared{{
-         1.0 / (spacing[0] * spacing[0]),
-         1.0 / (spacing[1] * spacing[1]),
-         1.0 / (spacing[2] * spacing[2])
-      }};
+      const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>
+         inv_spacing_squared{
+            AMREX_D_DECL(
+               1.0_rt / (spacing[0] * spacing[0]),
+               1.0_rt / (spacing[1] * spacing[1]),
+               1.0_rt / (spacing[2] * spacing[2])
+            )
+         };
       for (amrex::MFIter mfi(
               *mean_curvature_squared[level], amrex::TilingIfNotGPU()
            );
@@ -543,14 +732,8 @@ CttkCurvatureUpdate update_cttk_mean_curvature(
                   );
             } else {
                const amrex::Real laplacian =
-                  generated::centered_second<2, 0>(
-                     psi, i, j, k, 0, inv_spacing_squared[0]
-                  )
-                  + generated::centered_second<2, 1>(
-                     psi, i, j, k, 0, inv_spacing_squared[1]
-                  )
-                  + generated::centered_second<2, 2>(
-                     psi, i, j, k, 0, inv_spacing_squared[2]
+                  reduced_cartesian_scalar_laplacian(
+                     psi, i, j, k, inv_spacing_squared
                   );
                curvature_squared(i, j, k, 0) =
                   generated::cttk_mean_curvature_squared(
@@ -565,7 +748,7 @@ CttkCurvatureUpdate update_cttk_mean_curvature(
       minimum_squared = std::min(
          minimum_squared, mean_curvature_squared[level]->min(0, 0, false)
       );
-      if (minimum_squared < 0.0) {
+      if (minimum_squared < 0.0_rt) {
          amrex::Abort(
             "CTTK Hamiltonian constraint produced negative mean-curvature squared"
          );
@@ -599,7 +782,7 @@ CttkCurvatureUpdate update_cttk_mean_curvature(
       )
    );
    return {
-      update_norm / std::max(amrex::Real(1.0), solution_norm),
+      update_norm / std::max(amrex::Real(1.0_rt), solution_norm),
       minimum_squared,
    };
 }
@@ -626,8 +809,8 @@ void validate_xcts_configuration(
        || static_cast<int>(momentum_density.size()) != num_levels
        || static_cast<int>(stress_trace.size()) != num_levels
        || options.max_coupled_iterations <= 0
-       || !(options.relative_update_tolerance > 0.0)
-       || !(options.relaxation > 0.0 && options.relaxation <= 1.0)) {
+       || !(options.relative_update_tolerance > 0.0_rt)
+       || !(options.relaxation > 0.0_rt && options.relaxation <= 1.0_rt)) {
       amrex::Abort("invalid XCTS configuration");
    }
    for (int level = 0; level < num_levels; ++level) {
@@ -728,9 +911,19 @@ ConformalMomentumResult solve_xcts_shift_iteration(
       relaxation,
       [&](int level, amrex::MultiFab& source) {
          const auto spacing = hierarchy.geometry[level].CellSizeArray();
-         const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
-            1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
-         }};
+         const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> inv_spacing{
+            AMREX_D_DECL(
+               1.0_rt / spacing[0],
+               1.0_rt / spacing[1],
+               1.0_rt / spacing[2]
+            )
+         };
+         const auto physical_axes = hierarchy.cartesian_physical_axes;
+         const amrex::Box derivative_domain = cartesian_first_derivative_domain(
+            hierarchy, level, *conformal_factor[level]
+         );
+         const auto derivative_lo = amrex::lbound(derivative_domain);
+         const auto derivative_hi = amrex::ubound(derivative_domain);
          for (amrex::MFIter mfi(source, amrex::TilingIfNotGPU());
               mfi.isValid(); ++mfi) {
             const amrex::Box box = mfi.tilebox();
@@ -745,25 +938,31 @@ ConformalMomentumResult solve_xcts_shift_iteration(
                int i, int j, int k
             ) noexcept {
                const amrex::Real d_psi[3] = {
-                  generated::centered_first<2, 0>(
-                     psi, i, j, k, 0, inv_spacing[0]
+                  reduced_cartesian_scalar_gradient_component(
+                     psi, i, j, k, 0, physical_axes, inv_spacing,
+                     derivative_lo, derivative_hi
                   ),
-                  generated::centered_first<2, 1>(
-                     psi, i, j, k, 0, inv_spacing[1]
+                  reduced_cartesian_scalar_gradient_component(
+                     psi, i, j, k, 1, physical_axes, inv_spacing,
+                     derivative_lo, derivative_hi
                   ),
-                  generated::centered_first<2, 2>(
-                     psi, i, j, k, 0, inv_spacing[2]
+                  reduced_cartesian_scalar_gradient_component(
+                     psi, i, j, k, 2, physical_axes, inv_spacing,
+                     derivative_lo, derivative_hi
                   ),
                };
                const amrex::Real d_lapse_psi[3] = {
-                  generated::centered_first<2, 0>(
-                     lapse_psi, i, j, k, 0, inv_spacing[0]
+                  reduced_cartesian_scalar_gradient_component(
+                     lapse_psi, i, j, k, 0, physical_axes, inv_spacing,
+                     derivative_lo, derivative_hi
                   ),
-                  generated::centered_first<2, 1>(
-                     lapse_psi, i, j, k, 0, inv_spacing[1]
+                  reduced_cartesian_scalar_gradient_component(
+                     lapse_psi, i, j, k, 1, physical_axes, inv_spacing,
+                     derivative_lo, derivative_hi
                   ),
-                  generated::centered_first<2, 2>(
-                     lapse_psi, i, j, k, 0, inv_spacing[2]
+                  reduced_cartesian_scalar_gradient_component(
+                     lapse_psi, i, j, k, 2, physical_axes, inv_spacing,
+                     derivative_lo, derivative_hi
                   ),
                };
                for (int component = 0; component < 3; ++component) {
@@ -796,8 +995,6 @@ ConformalMomentumResult solve_xcts_shift_iteration(
       }
    );
 }
-#endif
-
 #if (AMREX_SPACEDIM >= 2)
 void validate_axisymmetric_xcts_configuration(
    InitialDataEllipticHierarchy const& hierarchy,
@@ -821,8 +1018,8 @@ void validate_axisymmetric_xcts_configuration(
        || static_cast<int>(azimuthal_momentum_density.size()) != num_levels
        || static_cast<int>(stress_trace.size()) != num_levels
        || options.max_coupled_iterations <= 0
-       || !(options.relative_update_tolerance > 0.0)
-       || !(options.relaxation > 0.0 && options.relaxation <= 1.0)) {
+       || !(options.relative_update_tolerance > 0.0_rt)
+       || !(options.relaxation > 0.0_rt && options.relaxation <= 1.0_rt)) {
       amrex::Abort("invalid axisymmetric spherical XCTS configuration");
    }
    const amrex::Box domain = hierarchy.geometry[0].Domain();
@@ -834,9 +1031,9 @@ void validate_axisymmetric_xcts_configuration(
    const auto probhi = hierarchy.geometry[0].ProbHiArray();
    const amrex::Real phi_extent = probhi[2] - problo[2];
    if (!hierarchy.geometry[0].isPeriodic(2)
-       || std::abs(phi_extent - 2.0 * constants::pi)
-          > 64.0 * std::numeric_limits<amrex::Real>::epsilon()
-             * std::max(amrex::Real(1.0), std::abs(phi_extent))) {
+       || std::abs(phi_extent - 2.0_rt * constants::pi)
+          > 64.0_rt * std::numeric_limits<amrex::Real>::epsilon()
+             * std::max(amrex::Real(1.0_rt), std::abs(phi_extent))) {
       amrex::Abort(
          "3D axisymmetric spherical XCTS requires a periodic full-2pi phi axis"
       );
@@ -882,7 +1079,7 @@ amrex::Real axisymmetric_cell_derivative(
    if (direction == 0) {
       int lower_i = i - 1;
       int upper_i = i + 1;
-      const bool radial_origin = radial_lower_face == 0.0;
+      const bool radial_origin = radial_lower_face == 0.0_rt;
       if (i == domain_lo.x && !radial_origin) {
          lower_i = i + 1;
          upper_i = i + 2;
@@ -892,7 +1089,7 @@ amrex::Real axisymmetric_cell_derivative(
       }
       const amrex::Real center = radial_centers[i - domain_lo.x];
       const amrex::Real lower_coordinate = lower_i < domain_lo.x
-         ? 2.0 * radial_lower_face
+         ? 2.0_rt * radial_lower_face
             - radial_centers[domain_lo.x - lower_i - 1]
          : radial_centers[lower_i - domain_lo.x];
       const amrex::Real upper_coordinate =
@@ -909,7 +1106,7 @@ amrex::Real axisymmetric_cell_derivative(
                * (lower_coordinate - upper_coordinate)
             )
          + center_value * (
-               2.0 * center - lower_coordinate - upper_coordinate
+               2.0_rt * center - lower_coordinate - upper_coordinate
             ) / (
                (center - lower_coordinate)
                * (center - upper_coordinate)
@@ -919,7 +1116,7 @@ amrex::Real axisymmetric_cell_derivative(
                * (upper_coordinate - center)
             );
    }
-   return 0.5 * inverse_angular_spacing * (
+   return 0.5_rt * inverse_angular_spacing * (
       field(i, j + 1, k, component)
       - field(i, j - 1, k, component)
    );
@@ -950,7 +1147,7 @@ void fill_axisymmetric_xcts_extrinsic_curvature(
       const amrex::Dim3 domain_hi = amrex::ubound(
          hierarchy.geometry[level].Domain()
       );
-      const amrex::Real inverse_dtheta = 1.0 / spacing[1];
+      const amrex::Real inverse_dtheta = 1.0_rt / spacing[1];
       const InitialDataCoordinateLine radial_coordinates =
          hierarchy.coordinate_line(level, 0);
       const amrex::Real radial_lower_face = radial_coordinates.faces.front();
@@ -974,7 +1171,7 @@ void fill_axisymmetric_xcts_extrinsic_curvature(
          ) noexcept {
             const amrex::Real radius = radial_center[i - domain_lo.x];
             const amrex::Real theta = problo[1]
-               + (j - domain_lo.y + 0.5) * spacing[1];
+               + (j - domain_lo.y + 0.5_rt) * spacing[1];
             const amrex::Real value = beta(i, j, k, 0);
             const amrex::Real radial_derivative =
                axisymmetric_cell_derivative(
@@ -998,13 +1195,13 @@ void fill_axisymmetric_xcts_extrinsic_curvature(
             const amrex::Real a_r_phi = scale * longitudinal_r_phi;
             const amrex::Real a_theta_phi =
                scale * longitudinal_theta_phi;
-            extrinsic(i, j, k, CONFORMAL_A11) = 0.0;
-            extrinsic(i, j, k, CONFORMAL_A12) = 0.0;
+            extrinsic(i, j, k, CONFORMAL_A11) = 0.0_rt;
+            extrinsic(i, j, k, CONFORMAL_A12) = 0.0_rt;
             extrinsic(i, j, k, CONFORMAL_A13) = a_r_phi;
-            extrinsic(i, j, k, CONFORMAL_A22) = 0.0;
+            extrinsic(i, j, k, CONFORMAL_A22) = 0.0_rt;
             extrinsic(i, j, k, CONFORMAL_A23) = a_theta_phi;
-            extrinsic(i, j, k, CONFORMAL_A33) = 0.0;
-            extrinsic(i, j, k, CONFORMAL_A_SQUARED) = 2.0 * (
+            extrinsic(i, j, k, CONFORMAL_A33) = 0.0_rt;
+            extrinsic(i, j, k, CONFORMAL_A_SQUARED) = 2.0_rt * (
                a_r_phi * a_r_phi + a_theta_phi * a_theta_phi
             );
          });
@@ -1061,12 +1258,7 @@ CttHamiltonianResult solve_axisymmetric_xcts_lapse_iteration(
    );
 }
 
-struct AxisymmetricMomentumResult {
-   amrex::Real relative_update = 0.0;
-   amrex::Real linear_residual = 0.0;
-};
-
-AxisymmetricMomentumResult solve_axisymmetric_xcts_shift_iteration(
+ConformalMomentumResult solve_axisymmetric_xcts_shift_iteration(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& conformal_factor,
    amrex::Vector<amrex::MultiFab*> const& lapse_times_conformal_factor,
@@ -1112,7 +1304,7 @@ AxisymmetricMomentumResult solve_axisymmetric_xcts_shift_iteration(
    const amrex::Dim3 domain_hi = amrex::ubound(
       hierarchy.geometry[0].Domain()
    );
-   const amrex::Real inverse_dtheta = 1.0 / spacing[1];
+   const amrex::Real inverse_dtheta = 1.0_rt / spacing[1];
    const InitialDataCoordinateLine radial_coordinates =
       hierarchy.coordinate_line(0, 0);
    const amrex::Real radial_lower_face = radial_coordinates.faces.front();
@@ -1157,13 +1349,13 @@ AxisymmetricMomentumResult solve_axisymmetric_xcts_shift_iteration(
             momentum(i, j, k, 0),
             d_psi_r,
             d_psi_theta,
-            0.0,
+            0.0_rt,
             d_lapse_psi_r,
             d_lapse_psi_theta,
-            0.0,
+            0.0_rt,
             extrinsic(i, j, k, CONFORMAL_A13),
             extrinsic(i, j, k, CONFORMAL_A23),
-            0.0
+            0.0_rt
          );
       });
    }
@@ -1182,20 +1374,8 @@ AxisymmetricMomentumResult solve_axisymmetric_xcts_shift_iteration(
          hierarchy, candidate, source, shift_boundary, linear_options
       );
 #endif
-   amrex::MultiFab update(
-      azimuthal_shift[0]->boxArray(),
-      azimuthal_shift[0]->DistributionMap(),
-      1,
-      1
-   );
-   amrex::MultiFab::Copy(update, *candidate_storage[0], 0, 0, 1, 1);
-   amrex::MultiFab::Subtract(update, *azimuthal_shift[0], 0, 0, 1, 1);
-   update.mult(relaxation, 0, 1, 1);
-   amrex::MultiFab::Add(*azimuthal_shift[0], update, 0, 0, 1, 1);
    return {
-      update.norm0(0, 0, false) / std::max(
-         amrex::Real(1.0), azimuthal_shift[0]->norm0(0, 0, false)
-      ),
+      apply_conformal_relaxed_update(azimuthal_shift, candidate, relaxation),
       linear.residual,
    };
 }
@@ -1235,21 +1415,6 @@ CttResult solve_ctt_constraints(
    CttOptions const& options
 )
 {
-#if (AMREX_SPACEDIM != 3)
-   amrex::ignore_unused(
-      hierarchy,
-      conformal_factor,
-      vector_potential,
-      conformal_extrinsic_curvature,
-      energy_density,
-      momentum_density,
-      conformal_correction_boundary,
-      vector_potential_boundary,
-      options
-   );
-   amrex::Abort("coupled CTT momentum constraints require the 3D executable");
-   return {};
-#else
    const int num_levels = static_cast<int>(hierarchy.geometry.size());
    if (
       num_levels == 0
@@ -1259,8 +1424,8 @@ CttResult solve_ctt_constraints(
       || static_cast<int>(energy_density.size()) != num_levels
       || static_cast<int>(momentum_density.size()) != num_levels
       || options.max_coupled_iterations <= 0
-      || !(options.relative_update_tolerance > 0.0)
-      || !(options.relaxation > 0.0 && options.relaxation <= 1.0)
+      || !(options.relative_update_tolerance > 0.0_rt)
+      || !(options.relaxation > 0.0_rt && options.relaxation <= 1.0_rt)
    ) {
       amrex::Abort("invalid coupled CTT configuration");
    }
@@ -1344,7 +1509,6 @@ CttResult solve_ctt_constraints(
       hierarchy, vector_potential, {}, {}, conformal_extrinsic_curvature
    );
    return result;
-#endif
 }
 
 CttkResult solve_cttk_constraints(
@@ -1359,21 +1523,6 @@ CttkResult solve_cttk_constraints(
    CttkOptions const& options
 )
 {
-#if (AMREX_SPACEDIM != 3)
-   amrex::ignore_unused(
-      hierarchy,
-      conformal_factor,
-      mean_curvature,
-      vector_potential,
-      conformal_extrinsic_curvature,
-      energy_density,
-      momentum_density,
-      vector_potential_boundary,
-      options
-   );
-   amrex::Abort("CTTK constraints require the 3D executable");
-   return {};
-#else
    validate_cttk_configuration(
       hierarchy,
       conformal_factor,
@@ -1464,7 +1613,6 @@ CttkResult solve_cttk_constraints(
       }
    }
    return result;
-#endif
 }
 
 CttkResult solve_cttk_hybrid_constraints(
@@ -1480,22 +1628,6 @@ CttkResult solve_cttk_hybrid_constraints(
    CttkOptions const& options
 )
 {
-#if (AMREX_SPACEDIM != 3)
-   amrex::ignore_unused(
-      hierarchy,
-      conformal_factor,
-      mean_curvature,
-      vector_potential,
-      conformal_extrinsic_curvature,
-      energy_density,
-      momentum_density,
-      conformal_correction_boundary,
-      vector_potential_boundary,
-      options
-   );
-   amrex::Abort("hybrid CTTK constraints require the 3D executable");
-   return {};
-#else
    const int num_levels = static_cast<int>(hierarchy.geometry.size());
    amrex::Vector<amrex::MultiFab const*> conformal_factor_const(num_levels);
    for (int level = 0; level < num_levels; ++level) {
@@ -1606,7 +1738,6 @@ CttkResult solve_cttk_hybrid_constraints(
       options.mean_curvature_branch
    );
    return result;
-#endif
 }
 
 XctsResult solve_xcts_constraints(
@@ -1624,24 +1755,6 @@ XctsResult solve_xcts_constraints(
    XctsOptions const& options
 )
 {
-#if (AMREX_SPACEDIM != 3)
-   amrex::ignore_unused(
-      hierarchy,
-      conformal_factor,
-      lapse_times_conformal_factor,
-      shift,
-      conformal_extrinsic_curvature,
-      energy_density,
-      momentum_density,
-      stress_trace,
-      conformal_correction_boundary,
-      lapse_correction_boundary,
-      shift_boundary,
-      options
-   );
-   amrex::Abort("XCTS constraints require the 3D executable");
-   return {};
-#else
    validate_xcts_configuration(
       hierarchy,
       conformal_factor,
@@ -1699,8 +1812,8 @@ XctsResult solve_xcts_constraints(
          scalar_options
       );
       for (int level = 0; level < num_levels; ++level) {
-         if (!(conformal_factor[level]->min(0, 0, false) > 0.0)
-             || !(lapse_times_conformal_factor[level]->min(0, 0, false) > 0.0)) {
+         if (!(conformal_factor[level]->min(0, 0, false) > 0.0_rt)
+             || !(lapse_times_conformal_factor[level]->min(0, 0, false) > 0.0_rt)) {
             amrex::Abort("XCTS solve produced a nonpositive conformal unknown");
          }
       }
@@ -1749,7 +1862,6 @@ XctsResult solve_xcts_constraints(
       conformal_extrinsic_curvature
    );
    return result;
-#endif
 }
 
 XctsResult solve_axisymmetric_spherical_xcts_constraints(
@@ -1852,9 +1964,9 @@ XctsResult solve_axisymmetric_spherical_xcts_constraints(
             scalar_options
          );
       for (int level = 0; level < num_levels; ++level) {
-         if (!(conformal_factor[level]->min(0, 0, false) > 0.0)
+         if (!(conformal_factor[level]->min(0, 0, false) > 0.0_rt)
              || !(lapse_times_conformal_factor[level]->min(0, 0, false)
-                  > 0.0)) {
+                  > 0.0_rt)) {
             amrex::Abort(
                "axisymmetric XCTS produced a nonpositive conformal unknown"
             );
@@ -1868,7 +1980,7 @@ XctsResult solve_axisymmetric_spherical_xcts_constraints(
          conformal_extrinsic_curvature,
          azimuthal_shift_boundary
       );
-      const AxisymmetricMomentumResult momentum =
+      const ConformalMomentumResult momentum =
          solve_axisymmetric_xcts_shift_iteration(
             hierarchy,
             conformal_factor,
@@ -1908,6 +2020,427 @@ XctsResult solve_axisymmetric_spherical_xcts_constraints(
       lapse_conformal_const,
       conformal_extrinsic_curvature,
       azimuthal_shift_boundary
+   );
+   return result;
+#endif
+}
+
+XctsResult solve_static_spherical_xcts_constraints(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& conformal_factor,
+   amrex::Vector<amrex::MultiFab*> const& lapse_times_conformal_factor,
+   amrex::Vector<amrex::MultiFab*> const& azimuthal_shift,
+   amrex::Vector<amrex::MultiFab*> const& conformal_extrinsic_curvature,
+   amrex::Vector<amrex::MultiFab const*> const& energy_density,
+   amrex::Vector<amrex::MultiFab const*> const& azimuthal_momentum_density,
+   amrex::Vector<amrex::MultiFab const*> const& stress_trace,
+   InitialDataEllipticBoundaryConditions const& conformal_correction_boundary,
+   InitialDataEllipticBoundaryConditions const& lapse_correction_boundary,
+   amrex::MultiFab const* conformal_baryon_density,
+   amrex::MultiFab const* specific_internal_energy,
+   EOSParams const* eos,
+   XctsOptions const& options
+)
+{
+#if (AMREX_SPACEDIM == 1)
+   amrex::ignore_unused(
+      hierarchy,
+      conformal_factor,
+      lapse_times_conformal_factor,
+      azimuthal_shift,
+      conformal_extrinsic_curvature,
+      energy_density,
+      azimuthal_momentum_density,
+      stress_trace,
+      conformal_correction_boundary,
+      lapse_correction_boundary,
+      conformal_baryon_density,
+      specific_internal_energy,
+      eos,
+      options
+   );
+   amrex::Abort("static spherical XCTS requires r-theta storage");
+   return {};
+#else
+   validate_axisymmetric_xcts_configuration(
+      hierarchy,
+      conformal_factor,
+      lapse_times_conformal_factor,
+      azimuthal_shift,
+      conformal_extrinsic_curvature,
+      energy_density,
+      azimuthal_momentum_density,
+      stress_trace,
+      options
+   );
+   if (hierarchy.geometry.size() != 1
+       || azimuthal_momentum_density[0]->norm0(0, 0, false) > 1.0e-14_rt) {
+      amrex::Abort(
+         "static spherical XCTS requires one level and zero momentum density"
+      );
+   }
+   const bool preserve_baryon_density =
+      conformal_baryon_density != nullptr;
+   if (preserve_baryon_density != (specific_internal_energy != nullptr)
+       || preserve_baryon_density != (eos != nullptr)
+       || (preserve_baryon_density
+           && conformal_baryon_density->boxArray()
+              != conformal_factor[0]->boxArray())
+       || (preserve_baryon_density
+           && specific_internal_energy->boxArray()
+              != conformal_factor[0]->boxArray())) {
+      amrex::Abort(
+         "static spherical XCTS conformal baryon data are inconsistent"
+      );
+   }
+   const EOSParams active_eos = preserve_baryon_density
+      ? *eos : EOSParams{};
+
+   amrex::MultiFab hamiltonian_rhs(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      0
+   );
+   amrex::MultiFab hamiltonian_reaction(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      0
+   );
+   amrex::MultiFab lapse_rhs(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      0
+   );
+   amrex::MultiFab lapse_reaction(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      0
+   );
+   amrex::MultiFab conformal_candidate(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      1
+   );
+   amrex::MultiFab lapse_candidate(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      1
+   );
+   amrex::MultiFab update(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      1
+   );
+   amrex::MultiFab conformal_previous(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      1
+   );
+   amrex::MultiFab nonlinear_candidate(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      1
+   );
+   amrex::MultiFab nonlinear_defect(
+      conformal_factor[0]->boxArray(),
+      conformal_factor[0]->DistributionMap(),
+      1,
+      0
+   );
+
+   amrex::Vector<amrex::MultiFab*> conformal_candidate_view{
+      &conformal_candidate
+   };
+   amrex::Vector<amrex::MultiFab*> lapse_candidate_view{&lapse_candidate};
+   amrex::Vector<amrex::MultiFab const*> hamiltonian_rhs_view{
+      &hamiltonian_rhs
+   };
+   amrex::Vector<amrex::MultiFab const*> hamiltonian_reaction_view{
+      &hamiltonian_reaction
+   };
+   amrex::Vector<amrex::MultiFab const*> lapse_rhs_view{&lapse_rhs};
+   amrex::Vector<amrex::MultiFab const*> lapse_reaction_view{
+      &lapse_reaction
+   };
+   amrex::Vector<amrex::MultiFab*> nonlinear_candidate_view{
+      &nonlinear_candidate
+   };
+
+   azimuthal_shift[0]->setVal(0.0_rt);
+   conformal_extrinsic_curvature[0]->setVal(0.0_rt);
+   const auto hamiltonian_fixed_point_defect = [&]() {
+      for (amrex::MFIter mfi(
+              hamiltonian_rhs, amrex::TilingIfNotGPU()
+           ); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto psi = conformal_factor[0]->const_array(mfi);
+         const auto energy = energy_density[0]->const_array(mfi);
+         const auto baryon = preserve_baryon_density
+            ? conformal_baryon_density->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{};
+         const auto epsilon = preserve_baryon_density
+            ? specific_internal_energy->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{};
+         const auto rhs = hamiltonian_rhs.array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const amrex::Real psi_value = psi(i, j, k, 0);
+            amrex::Real energy_value = energy(i, j, k, 0);
+            if (preserve_baryon_density
+                && baryon(i, j, k, 0) > 0.0_rt) {
+               const amrex::Real psi_squared = psi_value * psi_value;
+               const amrex::Real rho = baryon(i, j, k, 0) / (
+                  psi_squared * psi_squared * psi_squared
+               );
+               energy_value = rho * (1.0_rt + epsilon(i, j, k, 0));
+            }
+            rhs(i, j, k, 0) = generated::conformal_hamiltonian_source(
+               psi_value, energy_value, 0.0_rt, 0.0_rt
+            );
+         });
+      }
+      solve_initial_data_axisymmetric_spherical_poisson(
+         hierarchy,
+         nonlinear_candidate_view,
+         hamiltonian_rhs_view,
+         conformal_correction_boundary,
+         options.linear
+      );
+      nonlinear_candidate.plus(1.0_rt, 0, 1, 1);
+      amrex::MultiFab::Copy(
+         nonlinear_defect, nonlinear_candidate, 0, 0, 1, 0
+      );
+      amrex::MultiFab::Subtract(
+         nonlinear_defect, *conformal_factor[0], 0, 0, 1, 0
+      );
+      return nonlinear_defect.norm0(0, 0, false) / std::max(
+         amrex::Real(1.0_rt), conformal_factor[0]->norm0(0, 0, false)
+      );
+   };
+   XctsResult result;
+   for (int iteration = 1;
+        iteration <= options.max_coupled_iterations;
+        ++iteration) {
+      const amrex::Real old_hamiltonian_defect =
+         hamiltonian_fixed_point_defect();
+      for (amrex::MFIter mfi(
+              hamiltonian_rhs, amrex::TilingIfNotGPU()
+           ); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto psi = conformal_factor[0]->const_array(mfi);
+         const auto energy = energy_density[0]->const_array(mfi);
+         const auto baryon = preserve_baryon_density
+            ? conformal_baryon_density->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{};
+         const auto epsilon = preserve_baryon_density
+            ? specific_internal_energy->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{};
+         const auto rhs = hamiltonian_rhs.array(mfi);
+         const auto reaction = hamiltonian_reaction.array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const amrex::Real psi_value = psi(i, j, k, 0);
+            amrex::Real energy_value = energy(i, j, k, 0);
+            amrex::Real local_jacobian =
+               generated::conformal_hamiltonian_local_jacobian(
+                  psi_value, energy_value, 0.0_rt, 0.0_rt
+               );
+            if (preserve_baryon_density
+                && baryon(i, j, k, 0) > 0.0_rt) {
+               const amrex::Real psi_squared = psi_value * psi_value;
+               const amrex::Real rho = baryon(i, j, k, 0) / (
+                  psi_squared * psi_squared * psi_squared
+               );
+               energy_value = rho * (1.0_rt + epsilon(i, j, k, 0));
+               // At fixed q=sqrt(gamma)rho=psi^6 rho and fixed epsilon,
+               // E=rho(1+epsilon) scales as psi^-6.  Thus
+               // -d[-2 pi psi^5 E]/dpsi = -2 pi psi^4 E.
+               local_jacobian = -2.0_rt * constants::pi
+                  * amrex::Math::powi<4>(psi_value) * energy_value;
+            }
+            const amrex::Real source =
+               generated::conformal_hamiltonian_source(
+                  psi_value, energy_value, 0.0_rt, 0.0_rt
+               );
+            // Solve directly for the new correction c=psi_new-1:
+            // (Delta + J)c = source + J(psi_old-1).
+            reaction(i, j, k, 0) = local_jacobian;
+            rhs(i, j, k, 0) = source
+               + local_jacobian * (psi_value - 1.0_rt);
+         });
+      }
+      const InitialDataEllipticResult hamiltonian =
+         solve_initial_data_axisymmetric_spherical_helmholtz(
+            hierarchy,
+            conformal_candidate_view,
+            hamiltonian_rhs_view,
+            hamiltonian_reaction_view,
+            conformal_correction_boundary,
+            options.linear
+         );
+      if (!std::isfinite(hamiltonian.residual)) {
+         amrex::Abort("static spherical XCTS Newton solve is nonfinite");
+      }
+      conformal_candidate.plus(1.0_rt, 0, 1, 1);
+      amrex::MultiFab::Copy(
+         conformal_previous, *conformal_factor[0], 0, 0, 1, 1
+      );
+      amrex::MultiFab::Copy(update, conformal_candidate, 0, 0, 1, 1);
+      amrex::MultiFab::Subtract(
+         update, *conformal_factor[0], 0, 0, 1, 1
+      );
+      const amrex::Real full_update_norm = update.norm0(0, 0, false);
+      amrex::Real step_fraction = options.relaxation;
+      amrex::Real hamiltonian_defect =
+         std::numeric_limits<amrex::Real>::infinity();
+      bool accepted_step = false;
+      constexpr amrex::Real minimum_step_fraction = 1.0_rt / 1048576.0_rt;
+      while (step_fraction >= minimum_step_fraction) {
+         amrex::MultiFab::Copy(
+            *conformal_factor[0], conformal_previous, 0, 0, 1, 1
+         );
+         amrex::MultiFab::Saxpy(
+            *conformal_factor[0], step_fraction, update, 0, 0, 1, 1
+         );
+         if (conformal_factor[0]->min(0, 0, false) > 0.0_rt) {
+            hamiltonian_defect = hamiltonian_fixed_point_defect();
+            const amrex::Real sufficient_defect = std::max(
+               options.relative_update_tolerance,
+               old_hamiltonian_defect * (1.0_rt - 1.0e-4_rt * step_fraction)
+            );
+            if (hamiltonian_defect <= sufficient_defect) {
+               accepted_step = true;
+               break;
+            }
+         }
+         step_fraction *= 0.5_rt;
+      }
+      if (!accepted_step) {
+         amrex::Abort(
+            "static spherical XCTS Newton line search did not reduce the "
+            "Hamiltonian defect"
+         );
+      }
+      const amrex::Real conformal_update =
+         step_fraction * full_update_norm
+         / std::max(
+            amrex::Real(1.0_rt),
+            conformal_factor[0]->norm0(0, 0, false)
+         );
+
+      for (amrex::MFIter mfi(lapse_rhs, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto psi = conformal_factor[0]->const_array(mfi);
+         const auto energy = energy_density[0]->const_array(mfi);
+         const auto stress = stress_trace[0]->const_array(mfi);
+         const auto baryon = preserve_baryon_density
+            ? conformal_baryon_density->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{};
+         const auto epsilon = preserve_baryon_density
+            ? specific_internal_energy->const_array(mfi)
+            : amrex::Array4<amrex::Real const>{};
+         const auto rhs = lapse_rhs.array(mfi);
+         const auto reaction = lapse_reaction.array(mfi);
+         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+            int i, int j, int k
+         ) noexcept {
+            const amrex::Real psi_value = psi(i, j, k, 0);
+            amrex::Real energy_value = energy(i, j, k, 0);
+            amrex::Real stress_value = stress(i, j, k, 0);
+            if (preserve_baryon_density
+                && baryon(i, j, k, 0) > 0.0_rt) {
+               const amrex::Real psi_squared = psi_value * psi_value;
+               const amrex::Real rho = baryon(i, j, k, 0) / (
+                  psi_squared * psi_squared * psi_squared
+               );
+               const amrex::Real specific_energy = epsilon(i, j, k, 0);
+               energy_value = rho * (1.0_rt + specific_energy);
+               stress_value = 3.0_rt * relativistic_pressure<EOSRuntime>(
+                  rho, specific_energy, active_eos
+               );
+            }
+            const amrex::Real coefficient = 2.0_rt * constants::pi
+               * amrex::Math::powi<4>(psi_value)
+               * (energy_value + 2.0_rt * stress_value);
+            // Delta(alpha psi)-q(alpha psi)=0.  For c=alpha psi-1,
+            // (Delta-q)c=q.
+            reaction(i, j, k, 0) = -coefficient;
+            rhs(i, j, k, 0) = coefficient;
+         });
+      }
+      const InitialDataEllipticResult lapse =
+         solve_initial_data_axisymmetric_spherical_helmholtz(
+            hierarchy,
+            lapse_candidate_view,
+            lapse_rhs_view,
+            lapse_reaction_view,
+            lapse_correction_boundary,
+            options.linear
+         );
+      lapse_candidate.plus(1.0_rt, 0, 1, 1);
+      amrex::MultiFab::Copy(update, lapse_candidate, 0, 0, 1, 1);
+      amrex::MultiFab::Subtract(
+         update, *lapse_times_conformal_factor[0], 0, 0, 1, 1
+      );
+      update.mult(options.relaxation, 0, 1, 1);
+      amrex::MultiFab::Add(
+         *lapse_times_conformal_factor[0], update, 0, 0, 1, 1
+      );
+      const amrex::Real lapse_update = update.norm0(0, 0, false)
+         / std::max(
+            amrex::Real(1.0_rt),
+            lapse_times_conformal_factor[0]->norm0(0, 0, false)
+         );
+
+      result.coupled_iterations = iteration;
+      result.relative_update = std::max(conformal_update, lapse_update);
+      result.hamiltonian_residual = hamiltonian_defect;
+      result.lapse_residual = lapse.residual;
+      result.momentum_residual = 0.0_rt;
+      if (!(conformal_factor[0]->min(0, 0, false) > 0.0_rt)
+          || !(lapse_times_conformal_factor[0]->min(0, 0, false) > 0.0_rt)
+          || !std::isfinite(result.relative_update)) {
+         amrex::Abort(
+            "static spherical XCTS produced a nonpositive or nonfinite iterate"
+         );
+      }
+      if (result.relative_update <= options.relative_update_tolerance
+          && hamiltonian_defect <= options.relative_update_tolerance) {
+         result.converged = true;
+         break;
+      }
+   }
+   // The separable direct solve owns valid cells only.  Vertex ADM
+   // reconstruction reads the adjacent cell ghosts at the radial and angular
+   // boundaries, so synchronize the accepted nonlinear fields before handing
+   // them to the common cell-to-vertex materializer.  Leaving the old seed in
+   // these ghosts produces an angular-axis defect despite a converged radial
+   // solution.
+   fill_initial_data_ghosts(
+      hierarchy,
+      conformal_factor,
+      initial_data_boundary_records(
+         hierarchy, conformal_correction_boundary
+      )
+   );
+   fill_initial_data_ghosts(
+      hierarchy,
+      lapse_times_conformal_factor,
+      initial_data_boundary_records(
+         hierarchy, lapse_correction_boundary
+      )
    );
    return result;
 #endif

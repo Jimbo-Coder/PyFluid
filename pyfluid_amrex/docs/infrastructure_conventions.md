@@ -15,6 +15,124 @@ methods and physics belong in their topic documents; coding style belongs in
   failures, and validation evidence.
 - This file records stable infrastructure ownership and artifact semantics.
 
+## Conservative Stage Accounting
+
+`schema/time_integrators.toml` is the sole declaration of time-method IDs and
+rational stage coefficients. The strict loader derives stage times, final flux
+weights and projection weights and checks nonlinear RK order conditions through
+order four. Generated IDs stay separate from coefficient tables; pointwise
+physics must not include the tables. Main stage updates, CT staging, boundary
+stage times, integrated flux/source budgets and SSPRK3 gravity carry factors
+consume these descriptors. Keep the AMReX lifecycle/storage calls explicit.
+Dense-time interpolation and physics-specific corrections require their own
+mathematical validation; the RK catalog does not certify them automatically.
+
+A direct state projection is a numerical source even when primitive recovery
+succeeds. Record its contribution to the accepted state, not merely to the next
+intermediate candidate. For SSPRK3 the first intermediate-state projection
+survives with weight 1/6, the second with 2/3; a mutation of the base state has
+unit weight. Intermediate midpoint/RK4 projections affect fluxes but have no
+direct state contribution. Physical source-free conservation and closure of
+boundary-plus-source bookkeeping are separate validation claims.
+
+## Spacetime accuracy contract
+
+`spacetime.derivative_order` is the single selection for bulk spacetime
+stencils, connection completion, constraints and KO. Derive ghost reach from
+the generated stencil contract, including one-sided excision reach. Constraint
+validity masks and physical-boundary exclusions must use the selected radius.
+Order selection dispatches the differential operator, not separate copies of
+the equations. Keep initial-data solve accuracy, materialization/prolongation,
+fluid reconstruction, time integration and physical boundary algorithms
+explicitly separate; a high-order stencil does not upgrade those methods.
+
+Cartesian and reference-metric connection completion share the metric-only
+first-derivative gather, with stencil-order dispatch outside the device launch.
+The full evolution gather reuses the same component assembly. Excision keeps
+its existing stencil-side selection and reach; a domain-sided diagnostic
+derivative is not an interchangeable replacement for that policy.
+
+Constraint diagnostics select `Z4cDerivativePurpose::Constraints` in that same
+assembly: metric first/second derivatives and curvature first derivatives,
+without gauge or upwind transport stencils. Select Cartesian versus
+reference-metric equations once on the host before the diagnostic launch. Keep
+the order dispatch confined to the differential operator so each order does not
+instantiate another equation kernel. The symbolic dependency check covers Cartesian and reference-metric
+constraints, including their intermediate geometry; update this contract if
+the equations acquire new inputs. Excision side selection, validity masks and
+diagnostic volume/ownership rules remain responsibilities of their existing
+owners, independent of which derivative subset is evaluated.
+
+Numerical kernel generation depends on both `schema/numerics.toml` and its
+loader/emitter. Generated leaves assert their actual emitted order set rather
+than trusting only a separate catalog header: an incomplete rebuild must not
+silently admit a new order into a zero-return fallback. Host orchestration and
+point-kernel dispatch consume the same catalog but retain appropriate host and
+device call boundaries.
+
+## Reference-metric evolution and future patch interfaces
+
+Reference-metric equation owners consume scalar/vector/tensor values and
+reference-covariant derivatives in a local orthonormal frame. They do not
+select a coordinate family or perform patch lookup, ghost exchange, AMR
+transfer, or MPI calls. Chart geometry owns maps, Jacobians, basis factors
+and their derivatives; the AMReX layer owns storage and communication.
+The current generated operators assume a time-independent reference metric
+and basis. Moving maps need their time derivatives in the evolution contract.
+
+The fCCZ4 runtime adapter maps every component and derivative index between
+runtime axis order and the canonical chart order. It explicitly decodes
+`K=K_hat+2Theta` and the reference Lambda interpretation of the common
+connection slots. Equation kernels do not infer these meanings from buffer
+positions. Checkpoint metadata must preserve the formulation and chart/basis
+semantics. The generated auxiliary-B gauge kernel is separate from the current
+integrated Gamma-driver runtime and does not imply an extra evolved field.
+
+Divergence, flux-register weighting and reflux share
+`uses_cartesian_momentum_fluxes()` for the momentum representation. Newtonian
+full-chart HD may integrate Cartesian momentum through physical face vectors;
+Valencia uses local reference-basis fluxes with scalar curvilinear face areas.
+Do not infer the representation from dimension or absence of magnetic fields.
+
+FV fallback corrections use the same physical face areas and cell volumes as
+the primary divergence. Reduced-domain diagnostic normalization is a separate
+policy in `metric_reductions.hpp`: multiply cell and boundary-face integrals
+by the same symmetry factor. Do not put full-sphere diagnostic factors into
+local evolution fluxes. Constraint L2 weighting uses the chart's nodal dual
+volume; it must not relabel that reference volume as physical proper volume.
+
+Mixed-coordinate patches must represent the same geometric reference metric
+in their respective charts for connection differences to transform as tensors.
+Assigning independently chosen reference connections to each patch changes
+the conformal connection variable's meaning and requires an explicit field
+conversion, not just rotation. In a frame change, every index of a
+reference-covariant derivative transforms, including derivative indices.
+Raw partial derivatives of frame components require the differentiated basis
+and chain rule instead. Constructing destination derivatives after exchanging
+tensor values is a separate contract from transferring derivative jets.
+
+Keep spacetime tensor exchange separate from finite-volume/CT synchronization.
+Cell-integrated conserved quantities, face magnetic fluxes and edge EMF
+integrals need matching physical measures, orientations and conservative
+interface operators. A correct pointwise tensor rotation does not establish
+those contracts. Reduced-dimensional patches also need compatible physical
+symmetry assumptions; matching their counts of active axes is insufficient.
+These are extension boundaries; mixed-coordinate runtime evolution is not yet
+implemented by the reference-metric kernels.
+
+Relativistic accepted-state checking uses the shared non-mutating recovery
+and conserved round-trip contract. Initial-data preflight additionally tests
+repeatability of recovered primitives. Keep these explicit check modes:
+repeated primitive inversion near a cold admissibility boundary can be
+ill-conditioned even when the conserved round trip is accurate. Measure conserved momentum round trips against the
+whole vector norm: raising/lowering can cancel a nearly zero component.
+Keep density and energy separately scaled so that cold-energy errors remain
+visible. Do not duplicate Newtonian strict-positive-pressure
+checks for an EOS/recovery path that admits finite cold matter. Numerical
+normalization in generated kernels belongs in ordered symbolic bindings;
+residuals and derivatives consume those same bindings. Avoid expanding
+normalized recovery algebra into powers of density during code generation.
+
 ## Production And Source Ownership
 
 - `pyfluid_amrex/` is the production C++/AMReX path. Python/JAX and
@@ -23,9 +141,92 @@ methods and physics belong in their topic documents; coding style belongs in
   source commit. `tools/manage_amrex.py` checks only by default. Its explicit
   update path builds source/build/install under versioned `.deps` directories,
   verifies MPI, HDF5, linear solvers, and all dimensions, then switches the
-  stable install link only for a full PyFluid production rebuild. Preserve the
-  previous install and restore it if activation fails; do not make CMake
+  stable install link. Dependency management must not build PyFluid. CMake
+  resolves the stable package hint into real imported include/library paths
+  and tracks the pin as a configure dependency; normal dependency rebuilding
+  must not delete unchanged generated artifacts. Retire obsolete managed
+  trees after successful activation, preserving still-active companions and
+  locally modified/unverified sources, not a permanent archive. Do not make
   presets chase a mutable source checkout.
+- Scalar precision and execution backend are independent build policies.
+  Keep CPU FP64, CPU FP32, and experimental GPU builds in separate directories
+  with matching AMReX installations. Handwritten real-valued arithmetic uses
+  `amrex::Real` and typed `_rt` literals; generated expressions follow the
+  same rule. Retain intentional wider host arithmetic only where its owner
+  requires it. Output metadata reports the build's real mantissa bits.
+  Do not infer precision from filenames or globally weaken validation budgets.
+  The opt-in precision comparison reuses existing physical oracles and declares
+  separate arithmetic and physical-error limits. Performance runs validate each
+  repeat before overwriting its outputs, retaining compact per-repeat scalar
+  results alongside timing medians.
+- Managed CUDA installations select `AMReX_GPU_RDC=OFF`; application targets
+  inherit that policy through AMReX's CMake helper. Pointwise device callees
+  belong to their kernel's translation unit, while ordinary host modules stay
+  separately compiled. This avoids repeated template-kernel registration with
+  the validated CUDA 13 toolchain. Cross-translation-unit device calls would
+  require an explicit ownership/build-policy change and fresh validation.
+  Keep default sanitizer API reporting enabled; do not suppress registration
+  diagnostics or maintain backend-specific copies of the equations.
+  Evaluate backend changes by numerical correctness, instrumentation, startup,
+  steady-state throughput, compile cost and code size together. A smaller
+  binary or a clean warning log alone does not establish an improvement.
+- Selected short, unit-scale precision controls use
+  `validation_common.precision_scalar_policy`, identified as
+  `short_run_roundoff_v1`. Conservation accounting retains its 64-epsilon
+  allowance and existing FP64 bounds. Runtime `divb_l1` is the volume integral
+  of absolute divergence: compare `divb_l1*h/(V*B_ref)` with 64 epsilons in
+  either precision. Declare the characteristic field independently of the
+  observed error. `cartesian_divb_scale` uses the periodic box volume and
+  smallest solver-reported active directional width over saved times.
+  On AMR this is a conservative global bound, not a cellwise normalized norm;
+  curvilinear, symmetry-multiplied or masked domains need their own scale.
+  Per-run result tables retain raw diagnostics, scales, effective tolerances,
+  and precision metadata; rolling history descriptions retain policy identity
+  and divergence scale/tolerance. Unknown/mismatched precision and invalid
+  scales fail. Physical accuracy, convergence, recovery, positivity, and
+  stability requirements remain independent; exact-zero contracts stay exact.
+- FP32 production owners compile with Clang floating promotion/narrowing errors.
+  This includes generated coefficient catalogs, overloads and stage-time
+  arithmetic, not only field storage. Keep intentional wider host work explicit
+  (`WallTime` for profiling), and inspect device IR when changing a backend.
+  Device FP64 must fail on this Metal route rather than be silently demoted.
+  Retain precise device math and validate compiler changes with a fresh JIT cache.
+- RK state blends are affine: the exact coefficient catalog enforces unit
+  total state weight, and `time_integration.hpp` adds the stage difference
+  and RHS increment before the base state. Accepted states, limiter candidates
+  and CT stage fields must use the same arithmetic. Preserve a constant state
+  exactly when the RHS vanishes; general linear combinations retain their
+  separate contract. Do not introduce precision-specific evolution copies.
+- Runtime integral/ledger reductions share `ReductionSum` from
+  `reduction_sum.hpp`: two Real values for compensated FP32, ordinary Real for
+  FP64. Retain the correction when combining local partial sums; host MPI
+  reduction remains the hierarchy owner's operation. The compiled diagnostic
+  component-sum owner is `src/numerics/diagnostic_reductions.cpp`. Python may
+  inspect saved fields to diagnose rounding but must not replace runtime totals.
+- Array4 is a view, not a host-access guarantee. Grid statistics that read
+  solver fields must use AMReX device-capable reductions; detailed host-only
+  inspection requires an explicit completed copy. Directional AMR tag counts
+  and strengths use the same indicator on CPU/GPU and transfer only reduced
+  values for MPI aggregation.
+- Experimental Metal dependency/compiler patches are pinned in
+  `dependencies/metal.toml`, isolated from official CPU sources, and prepared
+  by `tools/manage_metal.py`. Verify exact patched source identity before use;
+  never reset/clean an unexpected dependency checkout. The selected GPU
+  profile must fail without its requested device. Keep device transfers and
+  asynchronous buffer lifetimes in AMReX storage/launch owners, not physics.
+  The Metal runtime must declare indirect USM resources to the command encoder,
+  including allocations reached through Array4/BoxIndexer metadata. Sharing an
+  allocation can hide missing residency/hazard declarations; the storage check
+  deliberately separates field data from metadata. Keep this rule below physics.
+  Unified frontend compilation also requires the compiler's target-selection
+  mechanism; a preprocessor device-pass macro is insufficient. Validate host
+  and device iteration ownership before relying on box-loop backend kernels.
+  See `precision_and_metal.md` for setup and the current evidence boundary.
+- The checked-in Apple Silicon presets and local machine profiles explicitly
+  set `CMAKE_OSX_ARCHITECTURES=arm64`. CMake's implicit Darwin detection queries
+  `sysctl`, which a sandbox may deny; otherwise reconfiguration can silently
+  add/remove `-arch arm64` and invalidate every compile/cache key. Keep this
+  host-specific choice in those presets/profiles, not portable solver CMake.
 - Host concurrency is a machine/build concern below the numerical ownership
   graph. Production kernels target AMReX; machine profiles select MPI and an
   AMReX-supported host-thread backend when one is useful. Do not call Grand
@@ -38,6 +239,14 @@ methods and physics belong in their topic documents; coding style belongs in
   becomes a default for a workload.
 - The input file is the simulation configuration. Runners execute and report;
   they do not override simulation parameters.
+- `tools/input_parameters.py` owns Python interpretation of self-contained
+  AMReX assignment files. Reporting consumes decoded values; input
+  materialization retains serialized quoting. AMReX owns expression evaluation,
+  includes, and conditional preprocessing; Python rejects unresolved directives
+  instead of guessing their effect. Before cleaning output, the runner checks
+  executable and read-dependency availability and rejects overlap with restart,
+  physical-ID, or EoS input artifacts, including symlink paths. Use a separate
+  output directory or explicitly retain existing output for such runs.
 - `include/pyfluid_amrex/config.hpp` owns the runtime configuration contract;
   parsing, supported choices, validation, and derived policy live under
   `src/framework/`.
@@ -51,6 +260,9 @@ methods and physics belong in their topic documents; coding style belongs in
   strictly loads and validates it, expands component families, and emits the
   generated C++/JSON views. Symbolic integrands and runtime reduction
   algorithms remain owned by their generated-equation and C++ executors.
+  A runtime surface integral also declares its surface target there. Generic
+  surface geometry and hierarchy interpolation remain compiled executor
+  services; the catalog must not become a string-encoded quadrature algorithm.
 - `schema/methods.toml` owns supported-method identity and dispatch metadata,
   including reconstruction names/codes/stencil radii/characteristic forms,
   rotation-law names, and the runtime AMR indicator policies and their default
@@ -68,6 +280,13 @@ methods and physics belong in their topic documents; coding style belongs in
   one-cell invariant direction and is a required dimensional-degeneracy check
   against the corresponding native `N x M` reduction when that symmetry is
   valid; it is not a separate physical owner or a new compiled method product.
+- `schema/numerics.toml` owns the small shared identity of supported spatial
+  accuracy families. SymPy derives derivative, upwind, dissipation, staggered
+  point-interpolation, and uniform-Cartesian point/cell-average coefficients
+  from that list; TOML does not store coefficient tables. Catalog presence
+  advertises a reusable stencil family, not whole-solver convergence. Each
+  elliptic, hyperbolic, AMR-transfer, CT, and boundary owner must separately
+  expose and validate the orders it actually supports.
 - `schema/physical_id.toml` owns stable physical-ID manifest keys, their value
   classes and sections, and the runtime component role/kind/gravity vocabulary.
   Generated C++ validates artifact publication/loading and generated JSON is
@@ -116,6 +335,71 @@ methods and physics belong in their topic documents; coding style belongs in
 - Large host orchestration belongs in compiled `.cpp` owners. Header-only code
   is for small value types and pointwise CPU/GPU kernels where inlining is part
   of the implementation. Runtime method choice occurs outside cell loops.
+- Identical implementation sources used by the executable and its utilities or
+  tests share CMake object owners within one dimension/backend. Entry points
+  stay private; a small check must not pull in unrelated implementation files.
+  The isolated horizon-finder OpenMP owner remains separate. Normal dimension
+  build presets build that solver only; comparison tools are explicit targets.
+- Architecture checks protect dependencies and ownership, not file length,
+  suffix preferences, whitespace, or exact qualifier spelling. Retain behavioral
+  fixtures for real failure modes; an independent numerical oracle earns its
+  place by testing a contract that existing checks do not establish.
+- The quick architecture gate follows transitive project includes to protect
+  declaration-only factories/configuration and method-local reconstruction
+  ownership. It reports the include chain on failure. This is a conservative
+  all-feature source check, not a replacement for CMake's configured dependency
+  graph. Intentional shared PPM machinery and the single advanced-RMHD owner
+  are explicit exceptions; new exceptions require a real ownership reason.
+- Measure expensive owners with `tools/profile_compile.py` using the configured
+  compilation database and unchanged production flags. Profiles disable cache,
+  isolate compiler outputs from the build tree, and retain compact logs/timings
+  rather than another object cache. `--trace` selects Clang phase totals or
+  NVCC device-tool process spans. Nested phases and parallel processes overlap;
+  do not add them to estimate wall time. Use `tools/benchmark_compile.py` for
+  whole-target generation, compilation and link cost; select its time budget
+  explicitly. A missed timing goal is recorded as `slow`, distinct from a
+  compilation failure. Both tools default to a separate 300 s hard deadline
+  (`--timeout`); expiry terminates the command's process group and records
+  timeout rather than allowing an unbounded build. `--allow-slow` cannot
+  suppress a timeout. Start investigations with one owner and a bounded probe;
+  justify longer integration runs from measured scope first. Never weaken
+  optimization or remove methods merely to meet a development timing goal.
+- Complete Newtonian face solvers may use ordinary `inline` so the compiler
+  can share large bodies across passive and wall callers. Ordinary hydro PWC
+  retains direct forced inlining because the added call cost measurably slows
+  its cheap loop. Both call the same reconstruction/positivity and Riemann
+  implementations; keep reconstruction and solving fused, with no persistent
+  face-state buffer or new runtime policy. This is a measured exception, not
+  permission to force-inline every pointwise routine or to outline every
+  cheap one. Validate runtime as well as compile time when moving the boundary.
+- Shared diagnostic interfaces include generated IDs and value storage, not
+  descriptor tables or visitors. Both are emitted from `schema/diagnostics.toml`;
+  metadata consumers include the catalog directly. Display-label/group-membership
+  changes must not rewrite the value interface or rebuild unrelated AMR owners.
+- Vector kernels are emitted by equation responsibility under
+  `kernels_generated/vector/`: calculus, reference-metric connection,
+  viscous, EMF, magnetic scalars, CT, and finite-volume divergence. Their single grouping owner is
+  `VECTOR_KERNEL_GROUPS` in `codegen/pyfluid_codegen/vector_equations.py`.
+  `vector_ops.hpp` is an aggregate validation include, never a production
+  dependency. EoS includes only the magnetic-scalar leaf; CFL selection uses
+  `diffusion_timestep.hpp`, not the viscous RHS. Vector-only source edits use
+  their own CMake generation stamp. Keep write-if-changed semantics for every
+  leaf so an unchanged group does not invalidate its consumers.
+- Reference-metric Valencia MultiFab orchestration belongs to the compiled,
+  non-template `src/relativity/reference_metric_valencia.cpp` owner. Its public
+  header is declaration-only. Do not put the loop in `flux_divergence.hpp` or
+  a reconstruction bundle: that couples a geometry edit to every
+  reconstruction product without buying runtime specialization.
+- Analytic fixed-spacetime selection is metric ownership, not merely a storage
+  optimization. Once selected, initialization, primitive recovery, fluxes,
+  CFL, sources, admissibility, boundaries, scalar diagnostics, and auxiliary
+  primitive output must evaluate the analytic metric in the runtime reference
+  basis; they must not consume the redundant stored Cartesian Z4c copy.
+  Generated diagnostic requirements expose Cartesian Z4c constraints only on
+  Cartesian meshes. Coordinate-aware pointwise accessors retain an explicit
+  Cartesian fast path so RMHD and Cartesian RHD do not pay for a basis
+  transformation; do not express coordinate family as another reconstruction
+  template-product axis.
 - `EOSParams.method` is the sole evolution-time EoS identity. The production
   bundle instantiates `EOSRuntime` once for each storage/topology signature;
   flux, signal-speed, primitive-cache, atmosphere, source, boundary, and C2P
@@ -134,6 +418,17 @@ methods and physics belong in their topic documents; coding style belongs in
   Neither exception restores the four-EoS evolution/reconstruction product.
   Do not extend these selections without a similarly isolated measurement and
   an equivalent runtime-owner control.
+- `pyfluid.relativistic_exterior` is the sole physical exterior identity for
+  relativistic matter. One runtime `RelativisticExteriorState` carries either
+  the existing positive atmosphere closure or canonical exact vacuum through
+  initial data, recovery/projection, face fluxes, AMR transfer, physical-ID
+  materialization, output, and restart. Do not infer vacuum from zero-valued
+  EoS floors, add a reconstruction/EoS template axis, or create a second
+  fallback ladder. Valid canonical zero is not a C2P failure; replacing a
+  failed nonzero state remains counted and warned. The policy is immutable
+  checkpoint and physical-ID identity, and legacy physical-ID artifacts imply
+  atmosphere. RMHD rejects vacuum until an electromagnetic exterior closure
+  exists.
 - A tabulated EoS is loaded and validated once into immutable managed storage;
   pointwise CPU/GPU consumers receive the same small pointer/value view. Adding
   a table backend must not instantiate unsupported physics, layout, topology,
@@ -150,6 +445,11 @@ methods and physics belong in their topic documents; coding style belongs in
   invalidate the expensive physics-kernel stamp; symbolic kernels retain only
   the catalog inputs they actually consume, such as the field schema used to
   define conserved components.
+  Diagnostic, Z4c and relativistic-fluid symbolic kernels also have separate
+  stamps. Their actual shared equation dependencies still propagate changes
+  (for example, diagnostics consume Z4c equations); unchanged generated text
+  keeps its timestamp. Do not rejoin these into an unconditional all-family
+  generation step during ordinary builds.
 - Orthogonal coordinate geometry is declared once in
   `codegen/pyfluid_codegen/coordinates.py` as coordinates and scale factors.
   The symbolic tensor/finite-volume owners derive metric measures, differential
@@ -162,6 +462,19 @@ methods and physics belong in their topic documents; coding style belongs in
   described as generated merely because their materialization is generic.
 
 ## AMR And Output Infrastructure
+
+- `GravityFields` owns potential/gradient allocation, fixed-field cache validity,
+  and Poisson operator setup. Consumers receive const field pointers. The
+  hierarchy driver supplies the valid-density RHS and owns stage timing;
+  gravity energy/flux registers remain integrator state. The compiled owner
+  does not receive the solver object or mutate fluid state.
+
+- `src/amr/regrid_lifecycle.{hpp,cpp}` owns regrid attempt bookkeeping and
+  aligned cadence/restart clocks. AMReX callbacks report changed levels; a
+  completed attempt returns the first changed level or no change. The driver
+  owns transfer/synchronization and decides when it is legal to regrid.
+  Descendant attempts do not consume the whole-hierarchy cadence. This compiled
+  owner has no AMReX, field-storage, configuration, or generated-kernel dependency.
 
 - Repository MPI launches go through `validation_common.py`. Each launcher
   owns a new POSIX process group containing its ranks; a timeout, fatal-rank
@@ -183,6 +496,13 @@ methods and physics belong in their topic documents; coding style belongs in
   support and/or strong-field `abs(chi - 1)` support explicitly; they do not
   chase small outgoing gauge tails. Broad Lohner curvature tagging remains
   opt-in for shocks and instability studies.
+- `amr.initial_refine_fixed_levels = 0` makes an initial box a startup seed
+  that is unioned with the selected automatic metric. Use that contract when
+  a physical-ID target needs guaranteed near-object resolution plus separate
+  matter-support refinement. A positive fixed-level count deliberately makes
+  the box the complete initial hierarchy and suppresses automatic tags at the
+  startup instant; do not use it merely to seed a horizon if a disk or star
+  must also be resolved.
 - A physics-system admissibility restriction augments that selected
   interpolater in its state-transfer owner; it is not a second interpolater or
   a post-transfer atmosphere repair. Keep relativistic conserved components
@@ -204,23 +524,59 @@ methods and physics belong in their topic documents; coding style belongs in
   perform final relativistic acceptance before exposing or writing the state.
   Newly created or remade levels must keep current and old-time storage
   semantically consistent after that acceptance step.
+- Z4c centering transfers select one positive-scalar representation from
+  `z4c_centering_representation.hpp`: logarithms of chi/lapse are interpolated
+  and exponentiated; every other component uses the identity. Storage and
+  checkpoint values remain ordinary physical variables. The generic
+  `centering_representation.hpp` and `centering_transfer.hpp` know no Z4c
+  component IDs. Accepted and candidate nodal-to-cell transfers select the
+  same representation, order, and excision region; ordinary and exterior
+  face readers use that same representation. Physical point targets, including
+  MPI/periodic ghosts, use the representation. Outside-domain targets preserve
+  the raw polynomial extension owned by the boundary operator: wide derivative
+  ghosts are not automatically admissible pointwise metrics. Actual metric
+  consumers must still pass the existing signature checks. This changes neither the
+  selected polynomial stencil nor its order, and is not a failed-transfer
+  repair. Invalid sources and tensor-signature failures still fail checks.
+  Array-view adapters captured by GPU kernels must own their lightweight
+  views by value, not references to host-stack handles.
+- `eulerian_matter_access.hpp` owns component packing/unpacking of the shared
+  Eulerian matter state. Consumers needing only access must not include the
+  heavier fluid-to-spacetime coupling kernels just to load that state.
 - CPU-tiled numerical kernels launch over `MFIter::tilebox`; `validbox` is
   whole-FAB metadata and must not be used as the `ParallelFor` region inside a
   tiled loop. This also applies when the iterated `MultiFab` is face-centered:
   `tilebox` owns each tiled face once. Kernels that write ghost regions use
   `MFIter::growntilebox` so adjacent internal tiles do not write overlapping
-  grown boxes. Device-side temporary FABs retain AMReX `Elixir` ownership
-  through asynchronous kernels and copies. The architecture check rejects a
+  grown boxes. Device-side temporary FABs use `The_Async_Arena` or retain
+  AMReX `Elixir` ownership through asynchronous kernels and copies. Ordinary
+  arena deallocation does not acquire stream ordering merely because a FAB
+  was consumed by a GPU kernel. CT edge-integral temporaries select the async
+  arena at allocation; register kernels retain their ordinary field views.
+  The architecture check rejects a
   whole-FAB numerical launch inside `TilingIfNotGPU`; the 2D/3D boundary-
   tiling gate covers ordinary, patch-union, relativistic, and CT ghost fills
   with forced small tiles.
-- AMReX's all-node physical-boundary path constant-extrapolates ghosts and
-  delegates reflection to the user functor; `BCRec` is not applied there as it
-  is for cell/face data. Nodal Z4c reflection therefore mirrors about the
-  boundary node with catalog parity, composes parity at corners, and explicitly
-  zeros reflection-odd values on the valid boundary plane. Constraint stencil
-  masks treat those reflected ghosts as same-level data while continuing to
-  exclude one-sided outflow-boundary stencils.
+- AMReX's all-node physical-boundary path does not apply `BCRec` as the
+  cell/face path does. `Z4cFillPatchBoundary` therefore owns both polynomial
+  extrapolation and catalog-parity reflection. Tensor-product corner fills
+  read physical-domain nodes, not physical ghosts being written concurrently;
+  thin reflected directions fold repeatedly into the domain. Six-point
+  Lagrange weights share `interpolation_weights.hpp` with nodal AMR transfer;
+  globally shorter lines use their available nodes. Evaluate tensor products
+  one direction at a time to avoid unnecessary corner-weight multiplication.
+  The existing nodal halo supplies the same stencil across small boundary
+  boxes; do not lower the order according to MPI decomposition.
+  Reflection-odd valid-plane values are explicitly
+  zeroed. Constraint masks admit reflected stencils but exclude outer ones.
+- Z4c ghost filling and an outgoing RHS condition are separate operations.
+  `z4c_outer_boundary.cpp` owns face selection, boundary records, and the
+  optional `spacetime.outer_boundary=sommerfeld` dispatch after bulk RHS/KO
+  assembly, shared by every stage and level. `extrapolate` retains the bulk
+  RHS. Neither option changes the fluid boundary. Principal lapse/shift speeds
+  share `z4c_characteristics.hpp` with the excision guard and local CFL
+  frequency calculation; runtime choices do not add a template-product axis.
+  Sommerfeld is approximate, not a constraint-preserving boundary.
 - Validate rotating-object reflection compatibility once during common solver
   startup, before either ID or evolution. In Cartesian coordinates every
   reflection/symmetry plane must pass through the affected object's center and
@@ -233,6 +589,16 @@ methods and physics belong in their topic documents; coding style belongs in
   output normally inherits the state GF cadence; explicit compute/write
   overrides remain available. Scalar diagnostics and checkpoints retain their
   independent cadences.
+- Relativistic diode boundaries own both ghost transport and the physical-face
+  trace pair in `relativistic_diode.hpp`. The face uses one interior-derived
+  primitive with no incoming coordinate transport; the selected generated
+  flux/Riemann owner retains pressure and magnetic stresses. Normal fluxes and
+  every candidate-correction tier consume that same boundary contract. Do not
+  clamp only the final mass flux, zero the entire flux, or leave a low-order
+  correction path with a different boundary condition. The comparatively large
+  causal velocity completion is shared/no-inline rather than cloned into the
+  reconstruction template matrix. This condition does not make a boundary
+  nonreflecting and is independent of the spacetime boundary.
 - Shared TSV writers escape embedded NUL, tab, carriage-return, and newline
   characters rather than corrupting row structure. Canonical validation result
   paths belong to the complete declared matrix; filtered or exploratory runs
@@ -247,6 +613,47 @@ methods and physics belong in their topic documents; coding style belongs in
   duplicate movies, and superseded scan points do not become durable merely
   because they are large. A prune must state exact retained roots, deleted
   size, and recoverability before removing data.
+
+## Shared Validation Contracts
+
+Validate shared implementations, not the Cartesian product of every object,
+EoS, disk, coordinate family, and mesh option. Keep four distinct layers:
+
+1. **Algebra and geometry:** compare generated continuum operators with an
+   independent reference for each coordinate family. The Cartesian embeddings
+   and chain-rule oracle in `tests/test_coordinate_contracts.py` check the
+   scale-factor operators for arbitrary local scalar, vector, and tensor
+   derivatives. These identities include symmetry reductions by setting field
+   derivatives to zero, while retaining moving-basis terms and three physical
+   components. Executable axis mappings still need dimensional-consistency
+   tests. Current symbolic coverage is regular Euclidean orthogonal charts,
+   not coordinate singularities or arbitrary curved-spacetime operators.
+2. **Discrete operators:** each numerical owner needs manufactured/exact
+   convergence checks including its boundary closure, centering, and supported
+   order. Pole/origin regularity, mapped/adaptive meshes, and coarse-fine
+   interfaces need their own focused controls. A correct continuum identity
+   does not validate a stencil or its assembled solve.
+3. **Field handoff:** test the shared representation contracts (tensor basis,
+   reflection, centering, save/load, and same/different grids) with synthetic
+   fields. Coordinate changes are algebraic; interpolation is approximate and
+   must converge. Use existing field and method catalogs, not a parallel
+   registry of test-only capabilities.
+4. **Physical owners:** retain equilibrium, constraints, admissibility,
+   conservation, and nonlinear-coupling checks for the actual ID/evolution
+   algorithms. A few independent physical cross-chart anchors per algorithm
+   family check assembly and boundary assumptions; repeating every anchor for
+   every parameter product is unnecessary unless a separate implementation or
+   demonstrated failure mode warrants it.
+
+"Once" means one maintained regression contract per shared implementation,
+rerun when its dependencies change, not permanent certification. Sources and
+oracles generated from the same formula can share a bug; keep independent
+geometry/analytic references. Different discrete grids need not agree bitwise
+at finite resolution, but must approach the same physical solution. Do not
+retire failure-driven regressions merely because symbolic checks pass. Add
+these gates to the existing suite; no new testing framework or compiled
+coordinate-product axis is required. The symbolic coordinate gate runs in
+standard/full, not in the sub-three-second quick suite.
 
 ## Independent Numerical References
 
@@ -375,6 +782,22 @@ Black-hole spin, stellar rotation axis, and disk axis remain separate metadata;
 this preserves aligned reduced solves and lets the full-3D owner retain a
 physical relative star/hole--disk tilt through the same materializer.
 
+Do not encode puncture, trumpet, smooth fill, and excision as four independent
+compile-time axes. Expose three runtime ID-to-evolution interior policies:
+true excision, complete-grid puncture/trumpet, and complete-grid smooth fill.
+The underlying active-domain ownership remains only excised versus complete
+grid. A trumpet is a puncture initial slice, not another interior policy. For
+an exterior XCTS/COCAL solve, smooth filling is a materialization/handoff step
+after the solve and must never modify the saved exterior solution or its
+continuation state. Generated catalogs may enumerate supported combinations,
+but each combination must route through these shared owners rather than
+instantiate another physics implementation.
+
+Fixed-background versus dynamically evolved spacetime is a separate runtime
+axis. Prefer evolved, matter-coupled spacetime for production science; retain
+fixed backgrounds as analytic/test-fluid limits and require convergence toward
+that limit as the matter backreaction is reduced.
+
 The native spherical Schwarzschild-XCTS owner has both reduced `r theta` and
 full-storage periodic `r theta phi` layouts. In 3D, the Hamiltonian and lapse
 use the genuine spherical scalar operator while the momentum equation remains
@@ -395,9 +818,49 @@ to lie outside the selected horizon. Catalog-owned `apparent_horizon_mask` and
 `excision_mask` auxiliary fields are derived views of that surface. They may
 drive diagnostic output; the surface's signed-distance view may drive a
 geometric AMR tagging band. They do not share solid-obstacle semantics and
-must not alter active-cell, flux, FillPatch, or boundary ownership. Only an
-explicitly validated evolution owner may
-convert a found surface into inactive cells and inner-boundary closures.
+must not alter active-cell, flux, FillPatch, or boundary ownership by
+themselves. Only an explicitly selected evolution owner may convert a found
+surface into inactive cells and inner-boundary closures. The fixed-Kerr matter
+excision owner does so at runtime: it owns the active mask, one-sided fluid
+flux, zero interior RHS, recovery/CFL/diagnostic/AMR exclusion, and inner
+conservation ledger. Evolved-Z4c excision instead shares one fixed coordinate
+sphere (`spacetime_excision_region`) across matter, derivative/KO closures,
+centering and face-metric transfers, and nodal AMR interpolation. The AH is
+a containment check, not a moving-boundary controller. Incoming physical or
+gauge characteristics reject the configuration. A runtime derivative policy
+feeds the existing generated Z4c RHS; excision is not another template product
+for the complete physics equations. Inactive primitive caches contain finite
+scratch without C2P or conserved-state edits; exterior fluid stencils must
+not consume it. Restart metadata fixes the interior owner and cut radius.
+The baryon-ledger validity flag is separate from the joint fluid-energy flag:
+evolving geometry invalidates the latter but not baryon conservation.
+
+Debug Z4c stage checks belong in the shared stage/coupling owner, not in each
+integrator or reconstruction. Check finiteness around projection, ghost fill,
+centering transfer, and RHS completion; check metric positive definiteness
+before projection and in the transferred fluid metric halo. The nodal
+projection owns its explicit lapse/chi floors, so its precheck must allow
+those pending floors. Extra excision derivative-only scratch must be finite,
+but is not itself a physical metric. These checks never repair data and add
+no grid sweeps when the debug options are disabled.
+
+The optional radiative outer RHS is one compiled stage owner. Its non-wave
+correction reads an interior bulk-RHS donor displaced off every incident open
+face, including edges/corners. Never read an RHS value concurrently being
+replaced by another boundary kernel. The current nodal donor is local to its
+FAB; no extra full-volume state, RHS synchronization, or analytic background
+is needed. Frozen-gauge and other unowned components keep their bulk RHS.
+
+State output treats immutable fixed spacetime as run context: write one
+multilevel fixed-spacetime snapshot with the first fluid plot, while evolved
+spacetime is written at every fluid-plot cadence. Checkpoints continue to
+carry every restart-required spacetime field in either case.
+AMReX may request the initial hierarchy's tags before the step-zero
+apparent-horizon search has produced a surface. In that pre-surface phase,
+retain the configured initial seed tags instead of inventing or asserting a
+mask. The startup owner must still find the horizon and construct masks on all
+created levels before matter projection, preflight, CFL evaluation, or the
+first evolution stage; every runtime regrid then consumes the tracked mask.
 
 An event horizon is a history-consuming postprocessing object, not a
 slice-local auxiliary GF. Its future offline owner consumes a time-ordered,
@@ -611,13 +1074,13 @@ clamping there is interior regular interpolation and must not create
 atmosphere. The same rule holds for the interior half-cell strip adjoining a
 declared reflection plane, such as the RNS equator; a finer target must not
 turn that regular strip into physical exterior. Beyond the saved outer radius,
-the loader clamps only the source
-sample and applies the selected physical exterior at the original target
-point: exact isotropic-Schwarzschild exterior for spherical TOV ADM data,
+the loader clamps only the source sample and applies the selected physical
+exterior at the original target point: exact isotropic-Schwarzschild exterior
+for spherical TOV ADM data,
 component-appropriate asymptotically flat falloff for general ADM data, and
-the configured target atmosphere for TOV/RNS fluid. It must not copy a
-source-boundary atmosphere value or use exact floating-point equality to
-classify stellar matter support.
+the configured target relativistic exterior for TOV/RNS fluid. It must not
+copy a source-boundary atmosphere value or use exact floating-point equality
+to classify stellar matter support.
 
 A periodic cell-centred direction has no physical half-cell exterior at its
 coordinate seam. The portable evaluator wraps both interpolation neighbors
@@ -661,8 +1124,8 @@ the ordinary FillPatch/prolongation finite-volume contract.
 
 For a same-chart periodic source, each periodic target extent must contain an
 integer number of saved periods. For a nonperiodic larger domain, physical
-fluid data use the configured atmosphere and ADM data use the physical
-exterior described above. This is an initialization remap, not a new
+fluid data use the configured relativistic exterior and ADM data use the
+physical exterior described above. This is an initialization remap, not a new
 constraint solve: interpolated data can have larger pointwise constraints than
 the saved grid. A continued rotating XCTS solve does solve the remapped target
 again; a direct evolution start does not.
@@ -694,6 +1157,30 @@ axisymmetric `r theta` source can therefore store a nonzero azimuthal velocity
 or shift even though `phi` is not an active mesh axis. The materializer owns
 the basis transformation to the target chart. Do not truncate portable field
 rank to `AMREX_SPACEDIM` or create a reduced-dimension duplicate field schema.
+
+The Cartesian conformal-constraint owner follows the same rule inside the
+elliptic solve. `cartesian_physical_axes` maps each active runtime direction to
+canonical physical `x/y/z`; derivatives along omitted axes are exactly zero,
+while the CTT/CTTK/XCTS vector and symmetric-tensor unknowns remain
+three-dimensional physical fields. The physical owner remains the full `x y z`
+stellar problem. Its catalog `solver_axis_layouts` only advertises ordered
+one-, two-, and three-dimensional Cartesian numerical projections for
+manufactured checks, invariant problems, and future explicitly validated
+reduced owners. Do not instantiate separate dimension-specific physics or call
+a planar projection a spherical star. The 3D cell-centered vector solve stays
+on the direct three-component MLTensor path; only 2D packs active physical
+components, and 1D uses the analytically reduced scalar coefficients.
+
+Cartesian ID vector and scalar first derivatives share a centering-aware
+boundary closure. At physical outer vertices, use the generated one-sided
+stencil on solved values, not constant-extrapolated nodal ghosts. At genuine
+reflection/periodic faces, and for cell-centered face-BC fields, use the
+corresponding ghost data with centered differences. Keep this choice outside
+the physics equations; it does not change evolution boundary handling. The
+nonzero manufactured CTT/XCTS convergence gate includes boundary vertices and
+all physical components (`validate_reduced_initial_data.py
+--cartesian-matter-convergence-only`); the cheaper projection gate remains the
+standard-suite slice.
 
 The validated reduced physical-ID handoffs are spherical one-dimensional TOV
 and spherical two-dimensional circular-RNS XCTS to three-dimensional Cartesian

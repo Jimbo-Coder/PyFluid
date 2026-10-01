@@ -15,6 +15,8 @@
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 constexpr int AdmissibilityBisectionIterations = 24;
@@ -24,6 +26,7 @@ bool relativistic_child_is_admissible(
    PhysicalSystem physical_system,
    int eos_method,
    EOSParams const& eos,
+   EOSThermodynamicState const& relativistic_exterior,
    amrex::Array4<amrex::Real const> const& coarse,
    int coarse_component,
    amrex::Array4<amrex::Real const> const& fine,
@@ -38,7 +41,7 @@ bool relativistic_child_is_admissible(
    SpacetimeMetric const& metric
 ) noexcept
 {
-   const auto blended = [=] AMREX_GPU_HOST_DEVICE(int component) noexcept {
+   const auto blended = [=](int component) noexcept {
       const amrex::Real parent = coarse(
          coarse_i, coarse_j, coarse_k, coarse_component + component
       );
@@ -62,8 +65,8 @@ bool relativistic_child_is_admissible(
          conserved, metric, eos
       );
       return recovered.succeeded()
-         && recovered.primitive.rho >= eos.rho_floor
-         && recovered.primitive.pressure >= eos.pressure_floor;
+         && recovered.primitive.rho >= relativistic_exterior.rho
+         && recovered.primitive.pressure >= relativistic_exterior.pressure;
    }
 
    const RHDConserved conserved{
@@ -77,8 +80,302 @@ bool relativistic_child_is_admissible(
       eos_method, conserved, metric, eos
    );
    return recovered.attempt.succeeded()
-      && recovered.primitive.rho >= eos.rho_floor
-      && recovered.primitive.pressure >= eos.pressure_floor;
+      && recovered.primitive.rho >= relativistic_exterior.rho
+      && recovered.primitive.pressure >= relativistic_exterior.pressure;
+}
+
+void transform_interpolated_state_vectors(
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::FArrayBox const& source,
+   int source_component,
+   amrex::FArrayBox& destination,
+   int destination_component,
+   int num_components,
+   amrex::Box const& box,
+   amrex::Geometry const& geometry,
+   bool to_cartesian
+)
+{
+   const auto source_array = source.const_array();
+   const auto destination_array = destination.array();
+   const auto problo = geometry.ProbLoArray();
+   const auto dx = geometry.CellSizeArray();
+   amrex::ParallelFor(
+      box,
+      num_components,
+      [=] AMREX_GPU_DEVICE(
+         int i,
+         int j,
+         int k,
+         int component
+      ) noexcept {
+         const int state_component = component;
+         const int vector_begin =
+            state_component >= MOM1 && state_component <= MOM3
+               ? MOM1
+               : (state_component >= B1 && state_component <= B3 ? B1 : -1);
+         if (vector_begin < 0 || vector_begin + 2 >= num_components) {
+            destination_array(i, j, k, destination_component + component) =
+               source_array(i, j, k, source_component + component);
+            return;
+         }
+
+         const StateVector3 source_vector{
+            source_array(i, j, k, source_component + vector_begin),
+            source_array(i, j, k, source_component + vector_begin + 1),
+            source_array(i, j, k, source_component + vector_begin + 2),
+         };
+         const auto q = mesh_coordinate_triplet_at_location(
+            coordinate, axes, problo, dx, i, j, k, false, false, false
+         );
+         const StateVector3 transformed = to_cartesian
+            ? mesh_basis_vector_to_cartesian(
+                 coordinate, axes, q, source_vector
+              )
+            : cartesian_vector_to_mesh_basis(
+                 coordinate, axes, q, source_vector
+              );
+         const int vector_component = state_component - vector_begin;
+         destination_array(i, j, k, destination_component + component) =
+            vector_component == 0
+               ? transformed.x
+               : (vector_component == 1 ? transformed.y : transformed.z);
+      }
+   );
+}
+
+void limit_interpolated_relativistic_children(
+   PhysicalSystem physical_system,
+   int eos_method,
+   EOSParams const& eos,
+   EOSThermodynamicState const& relativistic_exterior,
+   FixedSpacetimeParameters const& fixed_spacetime,
+   amrex::FArrayBox const& coarse,
+   int coarse_component,
+   amrex::FArrayBox& fine,
+   int fine_component,
+   int num_components,
+   amrex::Box const& fine_region,
+   amrex::IntVect const& ratio,
+   amrex::Geometry const& fine_geometry,
+   int actual_component,
+   amrex::RunOn run_on
+)
+{
+   const int physical_components = base_component_count(physical_system);
+   if (!physical_system_is_relativistic(physical_system)
+       || actual_component != RHO
+       || num_components < physical_components) {
+      return;
+   }
+
+   AMREX_ALWAYS_ASSERT(coarse.box().contains(amrex::coarsen(fine_region, ratio)));
+   AMREX_ALWAYS_ASSERT(fine.box().contains(fine_region));
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      AMREX_ALWAYS_ASSERT(ratio[direction] > 0);
+   }
+
+   const auto coarse_values = coarse.const_array();
+   const auto fine_values = fine.array();
+   const auto original_fine_values = fine.const_array();
+   const amrex::Box coarse_region = amrex::coarsen(fine_region, ratio);
+   const amrex::Dim3 fine_lo = amrex::lbound(fine_region);
+   const amrex::Dim3 fine_hi = amrex::ubound(fine_region);
+   const auto lower = fine_geometry.ProbLoArray();
+   const auto spacing = fine_geometry.CellSizeArray();
+   const int ratio1 = ratio[0];
+#if (AMREX_SPACEDIM >= 2)
+   const int ratio2 = ratio[1];
+#else
+   constexpr int ratio2 = 1;
+#endif
+#if (AMREX_SPACEDIM == 3)
+   const int ratio3 = ratio[2];
+#else
+   constexpr int ratio3 = 1;
+#endif
+   const int children_per_parent = ratio1 * ratio2 * ratio3;
+   int host_transfer_failure = 0;
+   amrex::Gpu::DeviceScalar<int> device_transfer_failure{0};
+   const bool run_on_device =
+      run_on == amrex::RunOn::Device && amrex::Gpu::inLaunchRegion();
+   // Each parent returns a failure code. The launch owns its reduction, so
+   // the same interpolation algebra works on host and device without a SYCL
+   // macro whose host branch aborts or a device atomic on host stack memory.
+   const auto interpolate_parent = [=] AMREX_GPU_HOST_DEVICE(
+      int coarse_i, int coarse_j, int coarse_k
+   ) noexcept -> int {
+      const auto visit_children = [=](
+         amrex::Real theta,
+         bool test_admissibility
+      ) noexcept {
+         bool result = true;
+         for (int child = 0; child < children_per_parent; ++child) {
+            int remainder = child;
+            const int offset1 = remainder % ratio1;
+            remainder /= ratio1;
+            const int offset2 = remainder % ratio2;
+            const int offset3 = remainder / ratio2;
+            const int fine_i = coarse_i * ratio1 + offset1;
+            const int fine_j = coarse_j * ratio2 + offset2;
+            const int fine_k = coarse_k * ratio3 + offset3;
+            if (fine_i < fine_lo.x || fine_i > fine_hi.x
+                || fine_j < fine_lo.y || fine_j > fine_hi.y
+                || fine_k < fine_lo.z || fine_k > fine_hi.z) {
+               continue;
+            }
+            if (test_admissibility) {
+               const SpacetimeMetric metric =
+                  fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
+                     fixed_spacetime,
+                     lower,
+                     spacing,
+                     fine_i,
+                     fine_j,
+                     fine_k,
+                     0.0_rt
+                  ).metric;
+               result = result && relativistic_child_is_admissible(
+                  physical_system,
+                  eos_method,
+                  eos,
+                  relativistic_exterior,
+                  coarse_values,
+                  coarse_component,
+                  original_fine_values,
+                  fine_component,
+                  coarse_i,
+                  coarse_j,
+                  coarse_k,
+                  fine_i,
+                  fine_j,
+                  fine_k,
+                  theta,
+                  metric
+               );
+            } else {
+               for (int component = 0; component < num_components; ++component) {
+                  const amrex::Real parent = coarse_values(
+                     coarse_i,
+                     coarse_j,
+                     coarse_k,
+                     coarse_component + component
+                  );
+                  fine_values(
+                     fine_i, fine_j, fine_k, fine_component + component
+                  ) = parent + theta * (
+                     original_fine_values(
+                        fine_i,
+                        fine_j,
+                        fine_k,
+                        fine_component + component
+                     ) - parent
+                  );
+               }
+            }
+         }
+         return result;
+      };
+
+      bool has_child_deviation = false;
+      bool finite_children = true;
+      for (int child = 0; child < children_per_parent; ++child) {
+         int remainder = child;
+         const int offset1 = remainder % ratio1;
+         remainder /= ratio1;
+         const int offset2 = remainder % ratio2;
+         const int offset3 = remainder / ratio2;
+         const int fine_i = coarse_i * ratio1 + offset1;
+         const int fine_j = coarse_j * ratio2 + offset2;
+         const int fine_k = coarse_k * ratio3 + offset3;
+         if (fine_i < fine_lo.x || fine_i > fine_hi.x
+             || fine_j < fine_lo.y || fine_j > fine_hi.y
+             || fine_k < fine_lo.z || fine_k > fine_hi.z) {
+            continue;
+         }
+         for (int component = 0; component < num_components; ++component) {
+            finite_children = finite_children && amrex::Math::isfinite(
+               original_fine_values(
+                  fine_i, fine_j, fine_k, fine_component + component
+               )
+            );
+            if (component < physical_components) {
+               has_child_deviation = has_child_deviation || (
+                  original_fine_values(
+                     fine_i, fine_j, fine_k, fine_component + component
+                  ) != coarse_values(
+                     coarse_i,
+                     coarse_j,
+                     coarse_k,
+                     coarse_component + component
+                  )
+               );
+            }
+         }
+      }
+      // A nonfinite transfer is not a lower-order admissibility event. Leave
+      // it visible as a transfer failure instead of silently replacing it
+      // with the coarse parent.
+      if (!finite_children) {
+         return 1;
+      }
+      if (!has_child_deviation || visit_children(1.0_rt, true)) {
+         return 0;
+      }
+
+      // The accepted coarse state is the conservative low-order member of the
+      // interpolation family. A common theta keeps every child on its segment
+      // from that parent and preserves the child average whenever the base
+      // interpolater is conservative.
+      if (!visit_children(0.0_rt, true)) {
+         return 2;
+      }
+      amrex::Real lower_theta = 0.0_rt;
+      amrex::Real upper_theta = 1.0_rt;
+      for (int iteration = 0;
+           iteration < AdmissibilityBisectionIterations;
+           ++iteration) {
+         const amrex::Real candidate_theta = 0.5_rt * (
+            lower_theta + upper_theta
+         );
+         if (visit_children(candidate_theta, true)) {
+            lower_theta = candidate_theta;
+         } else {
+            upper_theta = candidate_theta;
+         }
+      }
+      visit_children(lower_theta, false);
+      return 0;
+   };
+   if (run_on_device) {
+      int* transfer_failure_ptr = device_transfer_failure.dataPtr();
+      amrex::ParallelFor(coarse_region,
+         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            const int code = interpolate_parent(i, j, k);
+            if (code != 0) amrex::Gpu::Atomic::Max(transfer_failure_ptr, code);
+         });
+   } else {
+      amrex::LoopOnCpu(coarse_region, [&](int i, int j, int k) noexcept {
+         host_transfer_failure = amrex::max(
+            host_transfer_failure, interpolate_parent(i, j, k));
+      });
+   }
+
+   const int failure = run_on_device
+      ? device_transfer_failure.dataValue()
+      : host_transfer_failure;
+   if (failure == 1) {
+      amrex::Abort(
+         "relativistic coarse-fine interpolation produced nonfinite state"
+      );
+   }
+   if (failure == 2) {
+      amrex::Abort(
+         "relativistic coarse-fine interpolation has a non-admissible "
+         "coarse parent under the fine-cell metric"
+      );
+   }
 }
 
 } // namespace
@@ -91,6 +388,7 @@ void MeshBasisStateInterpolater::configure(
    PhysicalSystem physical_system,
    int eos_method,
    EOSParams const& eos,
+   EOSThermodynamicState const& relativistic_exterior,
    FixedSpacetimeParameters const& fixed_spacetime,
    bool preserve_relativistic_admissibility
 )
@@ -102,6 +400,7 @@ void MeshBasisStateInterpolater::configure(
    physical_system_ = physical_system;
    eos_method_ = eos_method;
    eos_ = eos;
+   relativistic_exterior_ = relativistic_exterior;
    fixed_spacetime_ = fixed_spacetime;
    preserve_relativistic_admissibility_ =
       preserve_relativistic_admissibility;
@@ -314,53 +613,9 @@ void MeshBasisStateInterpolater::transform_state_vectors(
    bool to_cartesian
 ) const
 {
-   const auto source_array = source.const_array();
-   const auto destination_array = destination.array();
-   const auto problo = geometry.ProbLoArray();
-   const auto dx = geometry.CellSizeArray();
-   const int coordinate = coordinate_;
-   const MeshAxes axes = axes_;
-   amrex::ParallelFor(
-      box,
-      num_components,
-      [=] AMREX_GPU_DEVICE(
-         int i,
-         int j,
-         int k,
-         int component
-      ) noexcept {
-         const int state_component = component;
-         const int vector_begin =
-            state_component >= MOM1 && state_component <= MOM3
-               ? MOM1
-               : (state_component >= B1 && state_component <= B3 ? B1 : -1);
-         if (vector_begin < 0 || vector_begin + 2 >= num_components) {
-            destination_array(i, j, k, destination_component + component) =
-               source_array(i, j, k, source_component + component);
-            return;
-         }
-
-         const StateVector3 source_vector{
-            source_array(i, j, k, source_component + vector_begin),
-            source_array(i, j, k, source_component + vector_begin + 1),
-            source_array(i, j, k, source_component + vector_begin + 2),
-         };
-         const auto q = mesh_coordinate_triplet_at_location(
-            coordinate, axes, problo, dx, i, j, k, false, false, false
-         );
-         const StateVector3 transformed = to_cartesian
-            ? mesh_basis_vector_to_cartesian(
-                 coordinate, axes, q, source_vector
-              )
-            : cartesian_vector_to_mesh_basis(
-                 coordinate, axes, q, source_vector
-              );
-         const int vector_component = state_component - vector_begin;
-         destination_array(i, j, k, destination_component + component) =
-            vector_component == 0
-               ? transformed.x
-               : (vector_component == 1 ? transformed.y : transformed.z);
-      }
+   transform_interpolated_state_vectors(
+      coordinate_, axes_, source, source_component, destination,
+      destination_component, num_components, box, geometry, to_cartesian
    );
 }
 
@@ -377,218 +632,11 @@ void MeshBasisStateInterpolater::limit_relativistic_child_deviations(
    amrex::RunOn run_on
 ) const
 {
-   const int physical_components = base_component_count(physical_system_);
-   if (!physical_system_is_relativistic(physical_system_)
-       || actual_component != RHO
-       || num_components < physical_components) {
-      return;
-   }
-
-   AMREX_ALWAYS_ASSERT(coarse.box().contains(amrex::coarsen(fine_region, ratio)));
-   AMREX_ALWAYS_ASSERT(fine.box().contains(fine_region));
-   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-      AMREX_ALWAYS_ASSERT(ratio[direction] > 0);
-   }
-
-   const auto coarse_values = coarse.const_array();
-   const auto fine_values = fine.array();
-   const auto original_fine_values = fine.const_array();
-   const amrex::Box coarse_region = amrex::coarsen(fine_region, ratio);
-   const amrex::Dim3 fine_lo = amrex::lbound(fine_region);
-   const amrex::Dim3 fine_hi = amrex::ubound(fine_region);
-   const auto lower = fine_geometry.ProbLoArray();
-   const auto spacing = fine_geometry.CellSizeArray();
-   const int ratio1 = ratio[0];
-#if (AMREX_SPACEDIM >= 2)
-   const int ratio2 = ratio[1];
-#else
-   constexpr int ratio2 = 1;
-#endif
-#if (AMREX_SPACEDIM == 3)
-   const int ratio3 = ratio[2];
-#else
-   constexpr int ratio3 = 1;
-#endif
-   const int children_per_parent = ratio1 * ratio2 * ratio3;
-   const PhysicalSystem physical_system = physical_system_;
-   const int eos_method = eos_method_;
-   const EOSParams eos = eos_;
-   const FixedSpacetimeParameters fixed_spacetime = fixed_spacetime_;
-   int host_transfer_failure = 0;
-   amrex::Gpu::DeviceScalar<int> device_transfer_failure{0};
-   const bool run_on_device =
-      run_on == amrex::RunOn::Device && amrex::Gpu::inLaunchRegion();
-   int* transfer_failure_ptr = run_on_device
-      ? device_transfer_failure.dataPtr()
-      : &host_transfer_failure;
-
-   // This loop reports a shared failure code. Gpu::Atomic is intentionally
-   // device-only, so the host path must remain an ordinary loop rather than
-   // AMReX's iteration-independent SIMD/concurrent host form.
-   AMREX_HOST_DEVICE_FOR_3D_FLAG(
-      run_on,
-      coarse_region,
-      coarse_i,
-      coarse_j,
-      coarse_k,
-   {
-      const auto visit_children = [=] AMREX_GPU_HOST_DEVICE(
-         amrex::Real theta,
-         bool test_admissibility
-      ) noexcept {
-         bool result = true;
-         for (int child = 0; child < children_per_parent; ++child) {
-            int remainder = child;
-            const int offset1 = remainder % ratio1;
-            remainder /= ratio1;
-            const int offset2 = remainder % ratio2;
-            const int offset3 = remainder / ratio2;
-            const int fine_i = coarse_i * ratio1 + offset1;
-            const int fine_j = coarse_j * ratio2 + offset2;
-            const int fine_k = coarse_k * ratio3 + offset3;
-            if (fine_i < fine_lo.x || fine_i > fine_hi.x
-                || fine_j < fine_lo.y || fine_j > fine_hi.y
-                || fine_k < fine_lo.z || fine_k > fine_hi.z) {
-               continue;
-            }
-            if (test_admissibility) {
-               const SpacetimeMetric metric =
-                  fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
-                     fixed_spacetime,
-                     lower,
-                     spacing,
-                     fine_i,
-                     fine_j,
-                     fine_k,
-                     0.0
-                  ).metric;
-               result = result && relativistic_child_is_admissible(
-                  physical_system,
-                  eos_method,
-                  eos,
-                  coarse_values,
-                  coarse_component,
-                  original_fine_values,
-                  fine_component,
-                  coarse_i,
-                  coarse_j,
-                  coarse_k,
-                  fine_i,
-                  fine_j,
-                  fine_k,
-                  theta,
-                  metric
-               );
-            } else {
-               for (int component = 0; component < num_components; ++component) {
-                  const amrex::Real parent = coarse_values(
-                     coarse_i,
-                     coarse_j,
-                     coarse_k,
-                     coarse_component + component
-                  );
-                  fine_values(
-                     fine_i, fine_j, fine_k, fine_component + component
-                  ) = parent + theta * (
-                     original_fine_values(
-                        fine_i,
-                        fine_j,
-                        fine_k,
-                        fine_component + component
-                     ) - parent
-                  );
-               }
-            }
-         }
-         return result;
-      };
-
-      bool has_child_deviation = false;
-      bool finite_children = true;
-      for (int child = 0; child < children_per_parent; ++child) {
-         int remainder = child;
-         const int offset1 = remainder % ratio1;
-         remainder /= ratio1;
-         const int offset2 = remainder % ratio2;
-         const int offset3 = remainder / ratio2;
-         const int fine_i = coarse_i * ratio1 + offset1;
-         const int fine_j = coarse_j * ratio2 + offset2;
-         const int fine_k = coarse_k * ratio3 + offset3;
-         if (fine_i < fine_lo.x || fine_i > fine_hi.x
-             || fine_j < fine_lo.y || fine_j > fine_hi.y
-             || fine_k < fine_lo.z || fine_k > fine_hi.z) {
-            continue;
-         }
-         for (int component = 0; component < num_components; ++component) {
-            finite_children = finite_children && amrex::Math::isfinite(
-               original_fine_values(
-                  fine_i, fine_j, fine_k, fine_component + component
-               )
-            );
-            if (component < physical_components) {
-               has_child_deviation = has_child_deviation || (
-                  original_fine_values(
-                     fine_i, fine_j, fine_k, fine_component + component
-                  ) != coarse_values(
-                     coarse_i,
-                     coarse_j,
-                     coarse_k,
-                     coarse_component + component
-                  )
-               );
-            }
-         }
-      }
-      // A nonfinite transfer is not a lower-order admissibility event. Leave
-      // it visible as a transfer failure instead of silently replacing it
-      // with the coarse parent.
-      if (!finite_children) {
-         amrex::Gpu::Atomic::Max(transfer_failure_ptr, 1);
-         return;
-      }
-      if (!has_child_deviation || visit_children(1.0, true)) {
-         return;
-      }
-
-      // The accepted coarse state is the conservative low-order member of the
-      // interpolation family. A common theta keeps every child on its segment
-      // from that parent and preserves the child average whenever the base
-      // interpolater is conservative.
-      if (!visit_children(0.0, true)) {
-         amrex::Gpu::Atomic::Max(transfer_failure_ptr, 2);
-         return;
-      }
-      amrex::Real lower_theta = 0.0;
-      amrex::Real upper_theta = 1.0;
-      for (int iteration = 0;
-           iteration < AdmissibilityBisectionIterations;
-           ++iteration) {
-         const amrex::Real candidate_theta = 0.5 * (
-            lower_theta + upper_theta
-         );
-         if (visit_children(candidate_theta, true)) {
-            lower_theta = candidate_theta;
-         } else {
-            upper_theta = candidate_theta;
-         }
-      }
-      visit_children(lower_theta, false);
-   });
-
-   const int failure = run_on_device
-      ? device_transfer_failure.dataValue()
-      : host_transfer_failure;
-   if (failure == 1) {
-      amrex::Abort(
-         "relativistic coarse-fine interpolation produced nonfinite state"
-      );
-   }
-   if (failure == 2) {
-      amrex::Abort(
-         "relativistic coarse-fine interpolation has a non-admissible "
-         "coarse parent under the fine-cell metric"
-      );
-   }
+   limit_interpolated_relativistic_children(
+      physical_system_, eos_method_, eos_, relativistic_exterior_,
+      fixed_spacetime_, coarse, coarse_component, fine, fine_component,
+      num_components, fine_region, ratio, fine_geometry, actual_component, run_on
+   );
 }
 
 } // namespace pyfluid_amrex

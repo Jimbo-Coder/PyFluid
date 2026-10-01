@@ -7,8 +7,12 @@
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 #include "pyfluid_amrex/z4c_state.hpp"
+#include "pyfluid_amrex/z4c_centering_representation.hpp"
+#include "pyfluid_amrex/excision_geometry.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 template <typename ComponentReader>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -69,25 +73,99 @@ struct Z4cCellToFaceReader {
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    amrex::Real operator()(int component) const noexcept
    {
-      return generated::cell_to_face_ordered<Order, Direction>(
+      return represented_cell_to_face_ordered<
+         Z4cPositiveScalarCenteringRepresentation, Order, Direction
+      >(
          state, i, j, k, component
       );
    }
 };
 
 template <int Order, int Direction, typename Array>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-SpacetimeMetric stored_spacetime_metric_at_face(
+struct Z4cExteriorCellToFaceReader {
+   Array const& state;
+   int i, j, k;
+   amrex::GpuArray<int, 3> first, last;
+
+   AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+   amrex::Real operator()(int component) const noexcept
+   {
+      const int index[3]{i, j, k};
+      const int first_offset = first[Direction] - index[Direction];
+      amrex::Real value = 0.0_rt;
+      for (int ordinal = 0; ordinal < Order; ++ordinal) {
+         value += generated::bounded_centering_transfer_axis_weight<Order>(
+            0, 1 << Direction, Direction, first_offset, ordinal)
+            * Z4cPositiveScalarCenteringRepresentation::encode(
+               component,
+               generated::sample_direction<Direction>(
+                  state, i, j, k, component, first_offset + ordinal
+               )
+            );
+      }
+      return Z4cPositiveScalarCenteringRepresentation::decode(component, value);
+   }
+};
+
+// Keep the boundary closure out of every reconstruction/Riemann inlining
+// product. The same small per-order/direction routine serves all methods;
+// this header-owned device implementation does not require CUDA RDC.
+template <int Order, int Direction, typename Array>
+AMREX_GPU_HOST_DEVICE AMREX_NO_INLINE inline
+SpacetimeMetric stored_exterior_spacetime_metric_at_face(
    Array const& cell_spacetime,
    int i,
    int j,
-   int k
+   int k,
+   ExcisionGridView const& excision
 ) noexcept
 {
+   if (excision.region.enabled()) {
+      amrex::GpuArray<int, 3> left{{i, j, k}};
+      --left[Direction];
+      const bool left_active = excision(left[0], left[1], left[2], 0);
+      const bool right_active = excision(i, j, k, 0);
+      if (!left_active && !right_active) {
+         // A wholly inactive face has no physical flux. Its metric is only
+         // finite scratch for the common face loop, which is overwritten.
+         return generated::z4c_spacetime_metric(load_z4c_state(cell_spacetime, i, j, k));
+      }
+      amrex::GpuArray<int, 3> first{{i, j, k}}, last{{i, j, k}};
+      first[Direction] -= Order / 2;
+      last[Direction] = first[Direction] + Order - 1;
+      if (excision.region.intersects(excision.position(first[0], first[1], first[2]),
+                                    excision.position(last[0], last[1], last[2]))) {
+         auto target = excision.position(i, j, k);
+         target[Direction] -= 0.5_rt * excision.spacing[Direction];
+         const bool positive = !left_active || (right_active
+            && target[Direction] >= excision.region.center[Direction]);
+         const int index[3]{i, j, k};
+         first[Direction] = index[Direction] - (positive ? 0 : Order);
+         last[Direction] = first[Direction] + Order - 1;
+         return generated::z4c_spacetime_metric(load_z4c_state_components(
+            Z4cExteriorCellToFaceReader<Order, Direction, Array>{
+               cell_spacetime, i, j, k, first, last}));
+      }
+   }
    const Z4cState state = load_z4c_state_components(
       Z4cCellToFaceReader<Order, Direction, Array>{cell_spacetime, i, j, k}
    );
    return generated::z4c_spacetime_metric(state);
+}
+
+template <int Order, int Direction, typename Array>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+SpacetimeMetric stored_spacetime_metric_at_face(
+   Array const& cell_spacetime, int i, int j, int k,
+   ExcisionGridView const& excision = {}
+) noexcept
+{
+   if (excision.region.enabled()) {
+      return stored_exterior_spacetime_metric_at_face<Order, Direction>(
+         cell_spacetime, i, j, k, excision);
+   }
+   return generated::z4c_spacetime_metric(load_z4c_state_components(
+      Z4cCellToFaceReader<Order, Direction, Array>{cell_spacetime, i, j, k}));
 }
 
 template <typename Array>

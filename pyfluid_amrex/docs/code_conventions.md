@@ -38,6 +38,10 @@ decisions.
   preflight reads conserved state without repair and verifies both
   `P2C(C2P(U))` and a second `C2P` idempotence pass on every active cell before
   iteration zero. Initial-data providers must not carry private substitutes.
+- Accepted relativistic physical checks reuse that non-mutating recovery and
+  round-trip contract. Do not substitute a separate rho/pressure predicate:
+  finite cold ideal-gas matter can have zero pressure without being vacuum.
+  Negative internal energy and unsuccessful recovery remain failures.
 - Development failures belong in `review_running_cycle.md` with the failing
   command and evidence. Fix the underlying implementation; do not add a
   temporary startup prohibition for a branch currently being repaired.
@@ -86,8 +90,30 @@ decisions.
   strings or invent a general schema language.
 - Coordinate transforms, metric factors, and vector/tensor operations each have
   one shared implementation. Initial data, evolution, and diagnostics reuse it.
+- Spatial accuracy orders are one generated family, not repeated literal
+  lists or handwritten coefficient tables. Keep ID, spacetime, fluid/CT, and
+  AMR-transfer order selections independent because they have different
+  closure and stability contracts. Raising a finite-volume fluid order also
+  requires consistent cell-average/point, face-flux, and CT edge integration;
+  a higher-order reconstruction name alone is not a higher-order scheme.
 - Generated kernels come from one high-level equation source. Do not retain a
   handwritten production duplicate after equivalence is established.
+- CPU and optional GPU builds share the same physics sources and generated
+  equations; FP32/FP64 select `amrex::Real` in separate build configurations.
+  Keep backend-specific work in execution, storage and launch adapters that
+  reuse those equations. New pointwise physics should not require a second GPU
+  implementation. Validate new device paths and measure any specialized kernel
+  before accepting the additional maintenance cost.
+- Keep device callability explicit throughout a pointwise call chain. CUDA
+  extended lambdas require a publicly addressable enclosing function and
+  explicit captures for values first used inside `if constexpr`. Prefer the
+  existing namespace-level kernel owner; internal solver launch methods may
+  be public inside the private `src/amr` implementation headers. Keep stored
+  state and non-launch policy encapsulated. Do not export those implementation
+  headers, disable access checking, or duplicate kernels for another compiler.
+  Factory types passed to enclosing CUDA launch templates must be named; keep
+  device launches outside generic host lambdas. Small generated component tables return values through
+  host/device functions so runtime indexing never references host-only storage.
 - Header-only code is reserved for small value types and pointwise CPU/GPU
   kernels whose inlining is part of the numerical implementation. Put host
   orchestration, runtime policy selection, AMR launches, diagnostics, and
@@ -98,6 +124,9 @@ decisions.
   generated groups; Z4c geometry, constraints, gauge, and evolution are
   separate groups. Umbrella headers are aggregate checks only. Production
   modules include the exact generated groups they own.
+  Vector calculus, viscous stress, EMF, magnetic scalars, CT, and finite-volume
+  divergence likewise have separate generated leaves; never pull the vector
+  umbrella into EoS, timestep, or reconstruction consumers.
 - C++ mathematical constants live in `constants.hpp`; generated kernels and
   handwritten code consume those typed values. Python tooling uses `math` or
   NumPy constants. Numeric input files remain serialized numeric data.
@@ -125,6 +154,13 @@ decisions.
   ownership is one flux-kernel registry rather than two materialized stages.
   Formula headers remain method-local so changing MP5, TENO-5, or WENO-Z does
   not invalidate unrelated methods.
+- Kernel inputs must match the operation's actual dependencies. Reuse narrow
+  derivative assembly in larger gathers; do not call a full evolution gather
+  for first-derivative geometry and rely on device dead-code elimination.
+  Independent optional operations, such as additive geometric and fluid AMR
+  tagging, select separate launches on the host. Preserve their synchronization
+  and numerical contracts, and measure generated device code and startup as
+  well as steady-state throughput when changing launch boundaries.
 - Public factory headers contain request types and declarations. Heavy kernel
   headers and template dispatch live in private implementation owners. Do not
   restore umbrella solver headers to broadly included class interfaces merely
@@ -186,7 +222,7 @@ decisions.
   must not depend on a particular TOV, XCTS, KEH, or external-data backend.
 - Solve each coupled initial-data problem once on its natural canonical
   centering. A same-chart hierarchy adapter may materialize the centering
-  declared by each evolution GF through the one generated order-2/4/6/8
+  declared by each evolution GF through the one generated catalogued-order
   topology transfer. A reduced or curvilinear solve instead writes the
   portable physical-ID core on its actual source chart, and the shared
   coordinate-aware materializer samples and transforms that core onto the
@@ -269,6 +305,9 @@ decisions.
 ## Changes
 
 - Prefer deleting an obsolete path over preserving compatibility aliases.
+- Consolidation includes removing the superseded implementation and redundant
+  scratch/storage, not just adding a shared wrapper. Preserve the numerical
+  contract and verify compile cost and runtime before claiming an improvement.
 - Keep patches narrow, then run the smallest relevant regression. After shared
   infrastructure changes, run the quick suite; after hot-path changes, also run
   the benchmark.

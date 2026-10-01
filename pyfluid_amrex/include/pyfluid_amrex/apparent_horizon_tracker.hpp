@@ -12,8 +12,11 @@
 #include <vector>
 
 #include "pyfluid_amrex/apparent_horizon_finder.hpp"
+#include "pyfluid_amrex/excision_geometry.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 struct RunConfig;
 
@@ -25,6 +28,8 @@ public:
    ApparentHorizonTracker(RunConfig const& config, int num_levels);
 
    bool enabled() const noexcept;
+   bool abort_on_failure() const noexcept;
+   bool failed_search_is_fatal() const noexcept;
    bool refinement_tracking_active() const noexcept;
    bool search_due(int step) const noexcept;
    int radial_points() const noexcept;
@@ -77,16 +82,19 @@ private:
    ) const;
 
    bool enabled_ = false;
+   bool abort_on_failure_ = true;
    int find_interval_ = 8;
    int radial_points_ = 48;
    int polar_points_ = 32;
-   amrex::Real minimum_search_radius_ = 0.0;
-   amrex::Real maximum_search_radius_ = 0.0;
-   amrex::Real initial_radius_ = 0.0;
+   amrex::Real minimum_search_radius_ = 0.0_rt;
+   amrex::Real maximum_search_radius_ = 0.0_rt;
+   amrex::Real initial_radius_ = 0.0_rt;
    std::array<amrex::Real, 3> center_{};
    ApparentHorizonFinderParameters finder_parameters_{};
-   amrex::Real refine_band_cells_ = 0.0;
-   amrex::Real excision_fraction_ = 0.8;
+   amrex::Real refine_band_cells_ = 0.0_rt;
+   amrex::Real excision_fraction_ = 0.8_rt;
+   SphericalExcisionRegion spacetime_excision_{};
+   int mask_ghost_cells_ = 1;
    std::optional<ApparentHorizonSurface> restored_surface_;
    std::optional<ApparentHorizonResult> result_;
    amrex::Gpu::DeviceVector<amrex::Real> device_radius_;

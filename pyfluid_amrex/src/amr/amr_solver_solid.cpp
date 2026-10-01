@@ -3,6 +3,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 void AmrSolverBase::clear_solid_mask_kind_tables(int lev)
 {
    if (lev < 0 || lev >= static_cast<int>(solid_valid_kind_.size())) {
@@ -71,7 +73,7 @@ void AmrSolverBase::average_down_solid_aperture_from_fine(int fine_lev, int dire
    amrex::BoxArray coarse_ba = solid_aperture_[direction][fine_lev]->boxArray();
    coarse_ba.coarsen(ratio);
    amrex::MultiFab coarse_from_fine(coarse_ba, solid_aperture_[direction][fine_lev]->DistributionMap(), 1, 1);
-   coarse_from_fine.setVal(1.0);
+   coarse_from_fine.setVal(1.0_rt);
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -94,7 +96,7 @@ void AmrSolverBase::average_down_solid_aperture_from_fine(int fine_lev, int dire
          const int rz = 1;
 #endif
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            amrex::Real sum = 0.0;
+            amrex::Real sum = 0.0_rt;
             int count = 0;
             if (direction == 0) {
                const int fi = i * rx;
@@ -133,7 +135,7 @@ void AmrSolverBase::average_down_solid_aperture_from_fine(int fine_lev, int dire
                }
             }
 #endif
-            coarse(i, j, k, 0) = count > 0 ? sum / static_cast<amrex::Real>(count) : 1.0;
+            coarse(i, j, k, 0) = count > 0 ? sum / static_cast<amrex::Real>(count) : 1.0_rt;
          });
       }
    }
@@ -239,13 +241,13 @@ void AmrSolverBase::refresh_solid_activity(int lev)
 amrex::Real AmrSolverBase::solid_geometry_max_speed() const
 {
    if (!solid_geometry_changes_cell_mask(cfg_)) {
-      return 0.0;
+      return 0.0_rt;
    }
    if (cfg_.solid_motion == "pulse") {
       const amrex::Real omega = constants::two_pi * cfg_.solid_radius_frequency;
       amrex::Real max_rate = omega;
-      if (cfg_.solid_radius_ramp_time > 0.0) {
-         max_rate += static_cast<amrex::Real>(1.875) / cfg_.solid_radius_ramp_time;
+      if (cfg_.solid_radius_ramp_time > 0.0_rt) {
+         max_rate += static_cast<amrex::Real>(1.875_rt) / cfg_.solid_radius_ramp_time;
       }
       return amrex::Math::abs(cfg_.solid_radius_amplitude) * max_rate;
    }
@@ -262,7 +264,7 @@ amrex::Real AmrSolverBase::solid_geometry_max_speed() const
 amrex::Real AmrSolverBase::solid_geometry_motion_dt(int lev) const
 {
    const amrex::Real speed = solid_geometry_max_speed();
-   if (speed <= 0.0 || lev < 0 || lev > finestLevel()) {
+   if (speed <= 0.0_rt || lev < 0 || lev > finestLevel()) {
       return std::numeric_limits<amrex::Real>::max();
    }
    const auto dx = Geom(lev).CellSizeArray();
@@ -273,7 +275,7 @@ amrex::Real AmrSolverBase::solid_geometry_motion_dt(int lev) const
 #if (AMREX_SPACEDIM == 3)
    min_dx = amrex::min(min_dx, dx[2]);
 #endif
-   return 0.25 * min_dx / speed;
+   return 0.25_rt * min_dx / speed;
 }
 
 bool AmrSolverBase::solid_mask_refresh_needed(int lev, amrex::Real time) const
@@ -285,13 +287,13 @@ bool AmrSolverBase::solid_mask_refresh_needed(int lev, amrex::Real time) const
       return true;
    }
    if (solid_geometry_changes_cell_mask(cfg_)) {
-      return amrex::Math::abs(time - solid_mask_time_[lev]) > 0.0;
+      return amrex::Math::abs(time - solid_mask_time_[lev]) > 0.0_rt;
    }
    if (!solid_geometry_enabled(cfg_)) {
       return false;
    }
    const amrex::Real speed = solid_geometry_max_speed();
-   if (speed <= 0.0) {
+   if (speed <= 0.0_rt) {
       return false;
    }
    const auto dx = Geom(lev).CellSizeArray();
@@ -303,7 +305,7 @@ bool AmrSolverBase::solid_mask_refresh_needed(int lev, amrex::Real time) const
    min_dx = amrex::min(min_dx, dx[2]);
 #endif
    const amrex::Real displacement = speed * amrex::Math::abs(time - solid_mask_time_[lev]);
-   return displacement >= 0.25 * min_dx;
+   return displacement >= 0.25_rt * min_dx;
 }
 
 void AmrSolverBase::allocate_solid_apertures_level(int lev)

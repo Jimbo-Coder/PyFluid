@@ -9,7 +9,7 @@ from .field_catalog import (
    RELATIVISTIC_HYDRO_COMPONENT_NAMES,
    RELATIVISTIC_MHD_COMPONENT_NAMES,
 )
-from .kernel_equations import ScalarKernel, StructKernel
+from .kernel_equations import ScalarKernel, StructKernel, differentiate_with_bindings
 from .physical_system import (
    ValenciaHydrodynamics,
    ValenciaMagnetohydrodynamics,
@@ -641,21 +641,35 @@ def _srhd_palenzuela_expressions() -> tuple[
    tuple[sp.Symbol, ...],
    sp.Expr,
    tuple[sp.Expr, ...],
+   tuple[tuple[sp.Symbol, sp.Expr], ...],
 ]:
    dens = sp.Symbol("recovery.dens", positive=True)
    momentum = Vector(*sp.symbols("recovery.mom1 recovery.mom2 recovery.mom3"))
    tau = sp.Symbol("recovery.tau", real=True)
    x, gamma = sp.symbols("x gamma", positive=True)
    momentum_squared = sp.Symbol("recovery.momentum_squared", nonnegative=True)
-   q = tau / dens
-   r = momentum_squared / dens**2
-   lorentz_factor = 1 / sp.sqrt(1 - r / x**2)
-   density = dens / lorentz_factor
-   specific_internal_energy = sp.simplify(
-      lorentz_factor
-      - 1
-      + (1 - lorentz_factor**2) * x / lorentz_factor
-      + lorentz_factor * q
+   # Preserve dimensionless normalization before CSE. Expanding these ratios
+   # into powers of D creates scale-dependent cancellation and underflow.
+   q = sp.Symbol("energy_ratio", real=True)
+   r = sp.Symbol("momentum_ratio_squared", nonnegative=True)
+   velocity_squared = sp.Symbol("velocity_squared", nonnegative=True)
+   inverse_lorentz = sp.Symbol("inverse_lorentz", positive=True)
+   lorentz_factor = sp.Symbol("lorentz_factor", positive=True)
+   lorentz_minus_one = sp.Symbol("lorentz_minus_one", nonnegative=True)
+   bindings = (
+      (q, tau / dens),
+      (r, momentum_squared / dens**2),
+      (velocity_squared, r / x**2),
+      (inverse_lorentz, sp.sqrt(1 - velocity_squared)),
+      (lorentz_factor, 1 / inverse_lorentz),
+      (lorentz_minus_one,
+       velocity_squared / (inverse_lorentz * (1 + inverse_lorentz))),
+   )
+   density = dens * inverse_lorentz
+   # Rationalize W-1. At rest this gives eps=q exactly, including cold matter;
+   # subtracting nearly equal density-dependent terms can make eps negative.
+   specific_internal_energy = (
+      lorentz_minus_one + lorentz_factor * (q - r / x)
    )
    ideal_gas = ideal_gas_equation_of_state()
    pressure = ideal_gas.pressure_from_specific_internal_energy(
@@ -671,25 +685,33 @@ def _srhd_palenzuela_expressions() -> tuple[
       pressure,
       *(momentum / (dens * x)).as_tuple(),
    )
-   return (x, gamma), residual, primitive
+   return (x, gamma), residual, primitive, bindings
 
 
 def srhd_palenzuela_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
-   arguments, residual, primitive = _srhd_palenzuela_expressions()
+   arguments, residual, primitive, bindings = _srhd_palenzuela_expressions()
    scalar_arguments = (
       ("const RHDRecoveryState&", "recovery"),
       *(str(symbol) for symbol in arguments),
    )
    return (
       ScalarKernel(
+         name="rhd_specific_internal_energy_from_palenzuela",
+         arguments=(("const RHDRecoveryState&", "recovery"), ("amrex::Real", "x")),
+         expression=primitive[1],
+         bindings=bindings,
+      ),
+      ScalarKernel(
          name="srhd_palenzuela_residual",
          arguments=scalar_arguments,
          expression=residual,
+         bindings=bindings,
       ),
       ScalarKernel(
          name="srhd_palenzuela_residual_derivative",
          arguments=scalar_arguments,
-         expression=sp.simplify(sp.diff(residual, arguments[-2])),
+         expression=differentiate_with_bindings(residual, arguments[-2], bindings),
+         bindings=bindings,
       ),
       StructKernel(
          name="srhd_primitive_from_palenzuela",
@@ -701,6 +723,7 @@ def srhd_palenzuela_kernels() -> tuple[ScalarKernel | StructKernel, ...]:
          ),
          outputs=("rho", "eps", "pressure", "v1", "v2", "v3"),
          expressions=primitive,
+         bindings=bindings,
       ),
    )
 

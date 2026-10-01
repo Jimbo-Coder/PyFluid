@@ -20,6 +20,7 @@ build_dir = "{root}/build/pyfluid_amrex-openmp"
 jobs = 3
 cmake_args = [
   "-DCMAKE_BUILD_TYPE=Release",
+  "-DCMAKE_OSX_ARCHITECTURES=arm64",
   "-DCMAKE_CXX_COMPILER=/opt/homebrew/bin/mpicxx",
   "-DCMAKE_PREFIX_PATH={root}/.deps/amrex-mpi-omp-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi;/opt/homebrew/opt/libomp",
   "-DAMReX_DIR={root}/.deps/amrex-mpi-omp-lsolvers-hdf5/lib/cmake/AMReX",

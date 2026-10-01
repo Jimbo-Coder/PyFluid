@@ -1,3 +1,4 @@
+#include "pyfluid_amrex/metric_reductions.hpp"
 #include "amr/amr_solver_base.hpp"
 #include <AMReX_Geometry.H>
 #include <AMReX_MultiFab.H>
@@ -6,6 +7,7 @@
 #ifdef AMREX_USE_GPU
 #include <AMReX_Reduce.H>
 #endif
+#include "pyfluid_amrex/diagnostic_reductions.hpp"
 
 #include <algorithm>
 #include <array>
@@ -24,6 +26,7 @@
 #include "pyfluid_amrex/apparent_horizon_tracker.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/diagnostics_types.hpp"
+#include "pyfluid_amrex/generated/diagnostic_catalog.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/initial_data/kerr_schild.hpp"
 #include "pyfluid_amrex/kernels_generated/diagnostics.hpp"
@@ -31,11 +34,15 @@
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
 #include "pyfluid_amrex/relativistic_primitive.hpp"
+#include "pyfluid_amrex/reference_metric_spacetime.hpp"
 #include "pyfluid_amrex/state.hpp"
+#include "pyfluid_amrex/surface_geometry.hpp"
 #include "pyfluid_amrex/output_metadata.hpp"
 #include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 inline void set_cfl_limiter_diagnostics(ScalarDiagnostics& d, CflLimiterLocation const& limiter)
 {
@@ -79,7 +86,7 @@ void store_conserved_diagnostic_integrands(
    ConservedDiagnosticIntegrands const& integrands
 ) noexcept
 {
-   const amrex::Real weighted = active ? weight : 0.0;
+   const amrex::Real weighted = active ? weight : 0.0_rt;
    output(i, j, k, ScalarReductionMass) = weighted * integrands.mass;
    output(i, j, k, ScalarReductionMom1) = weighted * integrands.momentum1;
    output(i, j, k, ScalarReductionMom2) = weighted * integrands.momentum2;
@@ -90,7 +97,7 @@ void store_conserved_diagnostic_integrands(
    output(i, j, k, ScalarReductionDivBSquared) =
       weighted * integrands.divb * integrands.divb;
    output(i, j, k, ScalarReductionDivBAbs) =
-      active ? amrex::Math::abs(integrands.divb) : 0.0;
+      active ? amrex::Math::abs(integrands.divb) : 0.0_rt;
    output(i, j, k, ScalarReductionAngularMom1) = weighted * integrands.angular_momentum1;
    output(i, j, k, ScalarReductionAngularMom2) = weighted * integrands.angular_momentum2;
    output(i, j, k, ScalarReductionAngularMom3) = weighted * integrands.angular_momentum3;
@@ -105,6 +112,7 @@ enum RelativisticDiagnosticReductionComponent : int {
    RelativisticReductionMaxEnthalpyMagnetization,
    RelativisticReductionMinPlasmaBeta,
    RelativisticReductionMaxLorentzFactor,
+   RelativisticReductionMinLapse,
    RelativisticReductionAtmosphereVolume,
    RelativisticReductionTotalVolume,
    RelativisticReductionNComp,
@@ -114,17 +122,25 @@ template <bool MHD>
 inline void fill_relativistic_diagnostic_fields(
    amrex::MultiFab& reduction,
    amrex::MultiFab const& primitive,
-   amrex::MultiFab const& cell_spacetime,
+   amrex::MultiFab const* cell_spacetime,
    amrex::iMultiFab const& valid_mask,
    amrex::Geometry const& geom,
    int mesh_coordinate,
    MeshAxes const& mesh_axes,
-   EOSParams const& eos
+   EOSParams const& eos,
+   FixedSpacetimeParameters const& fixed_spacetime,
+   amrex::Real time,
+   bool analytic_fixed_spacetime
 )
 {
+   AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+      analytic_fixed_spacetime || cell_spacetime != nullptr,
+      "relativistic diagnostics require analytic or stored spacetime"
+   );
    const amrex::Real invalid_min = std::numeric_limits<amrex::Real>::max();
-   reduction.setVal(0.0);
+   reduction.setVal(0.0_rt);
    reduction.setVal(invalid_min, RelativisticReductionMinPlasmaBeta, 1, 0);
+   reduction.setVal(invalid_min, RelativisticReductionMinLapse, 1, 0);
    const auto problo = geom.ProbLoArray();
    const auto dx = geom.CellSizeArray();
 #ifdef AMREX_USE_OMP
@@ -133,16 +149,24 @@ inline void fill_relativistic_diagnostic_fields(
    for (amrex::MFIter mfi(primitive, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.tilebox();
       const auto cached = primitive.const_array(mfi);
-      const auto spacetime = cell_spacetime.const_array(mfi);
+      const auto spacetime = cell_spacetime != nullptr
+         ? cell_spacetime->const_array(mfi)
+         : amrex::Array4<amrex::Real const>{};
       const auto mask = valid_mask.const_array(mfi);
       const auto output = reduction.array(mfi);
-      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::ParallelFor(box, [mask, analytic_fixed_spacetime, fixed_spacetime, mesh_coordinate,
+          mesh_axes, problo, dx, time, spacetime, cached, eos, output, invalid_min] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          if (mask(i, j, k, 0) == 0) {
             return;
          }
-         const SpacetimeMetric metric = generated::z4c_spacetime_metric(
-            load_z4c_state(spacetime, i, j, k)
-         );
+         const SpacetimeMetric metric = analytic_fixed_spacetime
+            ? reference_metric_fixed_spacetime_geometry_at_cell(
+                 fixed_spacetime, mesh_coordinate, mesh_axes,
+                 problo, dx, i, j, k, time
+              ).metric
+            : generated::z4c_spacetime_metric(
+                 load_z4c_state(spacetime, i, j, k)
+              );
          const amrex::Real coordinate_volume = mesh_cell_volume_for_reduction(
             mesh_coordinate, mesh_axes, problo, dx, i, j, k
          );
@@ -157,13 +181,13 @@ inline void fill_relativistic_diagnostic_fields(
             output(i, j, k, RelativisticReductionMaxEnthalpyMagnetization) =
                integrands.enthalpy_magnetization;
             output(i, j, k, RelativisticReductionMinPlasmaBeta) =
-               integrands.b_squared > 0.0 ? integrands.plasma_beta : invalid_min;
+               integrands.b_squared > 0.0_rt ? integrands.plasma_beta : invalid_min;
             output(i, j, k, RelativisticReductionMaxLorentzFactor) =
                integrands.lorentz_factor;
          } else {
             const RHDPrimitive local{
                cached(i, j, k, RHO),
-               0.0,
+               0.0_rt,
                cached(i, j, k, ENERGY),
                cached(i, j, k, MOM1),
                cached(i, j, k, MOM2),
@@ -176,8 +200,9 @@ inline void fill_relativistic_diagnostic_fields(
             cached(i, j, k, RHO), cached(i, j, k, ENERGY), eos
          );
          output(i, j, k, RelativisticReductionAtmosphereVolume) =
-            atmosphere ? coordinate_volume : 0.0;
+            atmosphere ? coordinate_volume : 0.0_rt;
          output(i, j, k, RelativisticReductionTotalVolume) = coordinate_volume;
+         output(i, j, k, RelativisticReductionMinLapse) = metric.lapse;
       });
    }
 }
@@ -191,7 +216,7 @@ AmrLevelDiagnostics summarize_amr_levels(
 {
    AmrLevelDiagnostics summary;
    summary.max_level = max_level;
-   summary.peak_level_budget_fraction = level_cell_budget > 0 ? 0.0 : -1.0;
+   summary.peak_level_budget_fraction = level_cell_budget > 0 ? 0.0_rt : -1.0_rt;
    for (int lev = 0; lev < static_cast<int>(level_cells.size()); ++lev) {
       const amrex::Long cells = level_cells[lev];
       summary.total_cells += cells;
@@ -209,7 +234,7 @@ AmrLevelDiagnostics summarize_amr_levels(
    summary.touches_max_level = (summary.active_finest_level == max_level && max_level > 0) ? 1 : 0;
    summary.total_budget_fraction = total_cell_budget > 0
       ? static_cast<amrex::Real>(summary.total_cells) / static_cast<amrex::Real>(total_cell_budget)
-      : -1.0;
+      : -1.0_rt;
    return summary;
 }
 
@@ -224,7 +249,7 @@ inline void fill_pressure(amrex::MultiFab& pressure, amrex::MultiFab const& stat
       const amrex::Box& bx = mfi.tilebox();
       const auto s = state.const_array(mfi);
       const auto p = pressure.array(mfi);
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::ParallelFor(bx, [p, s, eos] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          if constexpr (MHD) {
             p(i, j, k, 0) = pressure_from_conserved<EOSMethod>(load_mhd_state(s, i, j, k), eos);
          } else {
@@ -264,8 +289,8 @@ inline void fill_scalar_reduction_fields(
    FaceMagneticField const* face_b = nullptr,
    amrex::MultiFab const* volume_fraction = nullptr,
    amrex::MultiFab const* gravity_phi = nullptr,
-   amrex::Real gravity_density_offset = 0.0,
-   amrex::Real gravity_energy_factor = 0.0,
+   amrex::Real gravity_density_offset = 0.0_rt,
+   amrex::Real gravity_energy_factor = 0.0_rt,
    int passive_component = -1
 )
 {
@@ -279,7 +304,7 @@ inline void fill_scalar_reduction_fields(
       }
    }
 
-   reduction.setVal(0.0);
+   reduction.setVal(0.0_rt);
    const auto problo = geom.ProbLoArray();
    const auto dx = geom.CellSizeArray();
 #ifdef AMREX_USE_OMP
@@ -291,7 +316,7 @@ inline void fill_scalar_reduction_fields(
       const auto s = state.const_array(mfi);
       const auto mask = valid_mask.const_array(mfi);
       const bool use_volume_fraction = volume_fraction != nullptr;
-      const bool use_gravity_energy = gravity_phi != nullptr && gravity_energy_factor != 0.0;
+      const bool use_gravity_energy = gravity_phi != nullptr && gravity_energy_factor != 0.0_rt;
       const auto vf = use_volume_fraction ? volume_fraction->const_array(mfi) : amrex::Array4<amrex::Real const>{};
       const auto phi = use_gravity_energy ? gravity_phi->const_array(mfi) : amrex::Array4<amrex::Real const>{};
       const auto out = reduction.array(mfi);
@@ -300,8 +325,8 @@ inline void fill_scalar_reduction_fields(
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const bool valid = mask(i, j, k, 0) != 0;
             const amrex::Real cell_measure = mesh_cell_volume_for_reduction(mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-            const amrex::Real weight = valid ? cell_measure * (use_volume_fraction ? vf(i, j, k, 0) : 1.0) : 0.0;
-            const bool active = valid && weight > 0.0;
+            const amrex::Real weight = valid ? cell_measure * (use_volume_fraction ? vf(i, j, k, 0) : 1.0_rt) : 0.0_rt;
+            const bool active = valid && weight > 0.0_rt;
             const auto q = mesh_coordinate_triplet_at_location(
                mesh_coordinate, mesh_axes, problo, dx, i, j, k, false, false, false
             );
@@ -313,9 +338,9 @@ inline void fill_scalar_reduction_fields(
             const ConservedDiagnosticIntegrands integrands = generated::conserved_diagnostic_integrands(
                s(i, j, k, RHO), momentum.x, momentum.y, momentum.z, s(i, j, k, ENERGY),
                magnetic.x, magnetic.y, magnetic.z, physical[0], physical[1], physical[2],
-               use_gravity_energy ? phi(i, j, k, 0) : 0.0, gravity_density_offset,
+               use_gravity_energy ? phi(i, j, k, 0) : 0.0_rt, gravity_density_offset,
                gravity_energy_factor,
-               passive_component >= 0 ? s(i, j, k, passive_component) : 0.0,
+               passive_component >= 0 ? s(i, j, k, passive_component) : 0.0_rt,
                div(i, j, k, 0)
             );
             store_conserved_diagnostic_integrands(out, i, j, k, weight, active, integrands);
@@ -324,8 +349,8 @@ inline void fill_scalar_reduction_fields(
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const bool valid = mask(i, j, k, 0) != 0;
             const amrex::Real cell_measure = mesh_cell_volume_for_reduction(mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-            const amrex::Real weight = valid ? cell_measure * (use_volume_fraction ? vf(i, j, k, 0) : 1.0) : 0.0;
-            const bool active = valid && weight > 0.0;
+            const amrex::Real weight = valid ? cell_measure * (use_volume_fraction ? vf(i, j, k, 0) : 1.0_rt) : 0.0_rt;
+            const bool active = valid && weight > 0.0_rt;
             const auto q = mesh_coordinate_triplet_at_location(
                mesh_coordinate, mesh_axes, problo, dx, i, j, k, false, false, false
             );
@@ -335,10 +360,10 @@ inline void fill_scalar_reduction_fields(
             const auto physical = mesh_coordinate_triplet_to_cartesian(mesh_coordinate, q);
             const ConservedDiagnosticIntegrands integrands = generated::conserved_diagnostic_integrands(
                s(i, j, k, RHO), momentum.x, momentum.y, momentum.z, s(i, j, k, ENERGY),
-               0.0, 0.0, 0.0, physical[0], physical[1], physical[2],
-               use_gravity_energy ? phi(i, j, k, 0) : 0.0, gravity_density_offset,
+               0.0_rt, 0.0_rt, 0.0_rt, physical[0], physical[1], physical[2],
+               use_gravity_energy ? phi(i, j, k, 0) : 0.0_rt, gravity_density_offset,
                gravity_energy_factor,
-               passive_component >= 0 ? s(i, j, k, passive_component) : 0.0, 0.0
+               passive_component >= 0 ? s(i, j, k, passive_component) : 0.0_rt, 0.0_rt
             );
             store_conserved_diagnostic_integrands(out, i, j, k, weight, active, integrands);
          });
@@ -354,15 +379,15 @@ inline void fill_scalar_reduction_fields_mapped_hydro(
    PatchGridSystem const& grid_system,
    PatchLayout const& layout,
    amrex::MultiFab const* gravity_phi = nullptr,
-   amrex::Real gravity_density_offset = 0.0,
-   amrex::Real gravity_energy_factor = 0.0,
+   amrex::Real gravity_density_offset = 0.0_rt,
+   amrex::Real gravity_energy_factor = 0.0_rt,
    int passive_component = -1
 )
 {
    validate_patch_grid_system(grid_system);
    validate_patch_layout(layout);
 
-   reduction.setVal(0.0);
+   reduction.setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -376,7 +401,7 @@ inline void fill_scalar_reduction_fields_mapped_hydro(
       const PatchGridDescriptor central_patch = grid_system.patches.front();
       const auto s = state.const_array(mfi);
       const auto mask = valid_mask.const_array(mfi);
-      const bool use_gravity_energy = gravity_phi != nullptr && gravity_energy_factor != 0.0;
+      const bool use_gravity_energy = gravity_phi != nullptr && gravity_energy_factor != 0.0_rt;
       const auto phi = use_gravity_energy ? gravity_phi->const_array(mfi) : amrex::Array4<amrex::Real const>{};
       const auto out = reduction.array(mfi);
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -385,16 +410,16 @@ inline void fill_scalar_reduction_fields_mapped_hydro(
          const PatchCoordinate global = patch_local_to_global(grid_patch.map, local);
          const bool physical_owner =
             layout_patch.nominal_patch_id == central_patch.patch_id
-            || !patch_grid_contains_global_point(central_patch, global, 1.0e-12);
-         const amrex::Real weight = (valid && physical_owner) ? patch_cell_volume(grid_patch, local) : 0.0;
-         const bool active = valid && weight > 0.0;
+            || !patch_grid_contains_global_point(central_patch, global, 1.0e-12_rt);
+         const amrex::Real weight = (valid && physical_owner) ? patch_cell_volume(grid_patch, local) : 0.0_rt;
+         const bool active = valid && weight > 0.0_rt;
          const StateVector3 momentum = load_momentum_vector3(s, i, j, k);
          const ConservedDiagnosticIntegrands integrands = generated::conserved_diagnostic_integrands(
             s(i, j, k, RHO), momentum.x, momentum.y, momentum.z, s(i, j, k, ENERGY),
-            0.0, 0.0, 0.0, global.q1, global.q2, global.q3,
-            use_gravity_energy ? phi(i, j, k, 0) : 0.0, gravity_density_offset,
+            0.0_rt, 0.0_rt, 0.0_rt, global.q1, global.q2, global.q3,
+            use_gravity_energy ? phi(i, j, k, 0) : 0.0_rt, gravity_density_offset,
             gravity_energy_factor,
-            passive_component >= 0 ? s(i, j, k, passive_component) : 0.0, 0.0
+            passive_component >= 0 ? s(i, j, k, passive_component) : 0.0_rt, 0.0_rt
          );
          store_conserved_diagnostic_integrands(out, i, j, k, weight, active, integrands);
       });
@@ -403,9 +428,9 @@ inline void fill_scalar_reduction_fields_mapped_hydro(
 }
 
 struct DensityPressureExtrema {
-   amrex::Real min_rho = 0.0;
-   amrex::Real max_rho = 0.0;
-   amrex::Real min_pressure = 0.0;
+   amrex::Real min_rho = 0.0_rt;
+   amrex::Real max_rho = 0.0_rt;
+   amrex::Real min_pressure = 0.0_rt;
 };
 
 inline DensityPressureExtrema valid_density_pressure_extrema(
@@ -479,6 +504,25 @@ inline DensityPressureExtrema valid_density_pressure_extrema(
    amrex::ParallelDescriptor::ReduceRealMin(minimum_values);
    amrex::ParallelDescriptor::ReduceRealMax(rho_max);
    return {rho_min, rho_max, pressure_min};
+}
+
+bool ScalarDiagnosticSelection::contains_any(ScalarDiagnosticGroup group) const noexcept
+{
+   auto const& members = ScalarDiagnosticGroups[static_cast<std::size_t>(group)].members;
+   for (std::size_t index = 0; index < enabled.size(); ++index) {
+      if (enabled[index] && members[index]) {
+         return true;
+      }
+   }
+   return false;
+}
+
+void ScalarDiagnosticSelection::enable_group(ScalarDiagnosticGroup group) noexcept
+{
+   auto const& members = ScalarDiagnosticGroups[static_cast<std::size_t>(group)].members;
+   for (std::size_t index = 0; index < enabled.size(); ++index) {
+      enabled[index] = enabled[index] || members[index];
+   }
 }
 
 std::size_t ScalarDiagnosticSelection::size() const noexcept
@@ -567,6 +611,13 @@ void apply_scalar_diagnostic_requirements(
       }
       if (requirement == "spacetime") {
          return spacetime_stores_state(config);
+      }
+      if (requirement == "z4c_constraints") {
+         return spacetime_stores_state(config)
+            && (config.mesh_coordinate == "cartesian" || config.spacetime_formulation == "fccz4");
+      }
+      if (requirement == "constraint_regions") {
+         return config.diagnostic_constraint_region_extent > 0.0_rt;
       }
       if (requirement == "black_hole") {
          const FixedSpacetimeMetric metric =
@@ -757,22 +808,22 @@ void append_amr_level_row(
       level_cell_budget
    );
    const amrex::Real finest_dx_over_min_feature_length =
-      min_feature_length > 0.0 ? finest_dx / min_feature_length : -1.0;
+      min_feature_length > 0.0_rt ? finest_dx / min_feature_length : -1.0_rt;
    std::array<amrex::Real, AMREX_SPACEDIM> finest_dx_over_min_feature_length_by_dir{};
    bool min_feature_enabled = false;
    bool min_feature_resolved = true;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       const amrex::Real directional_min_length = min_feature_lengths[dir];
-      if (directional_min_length > 0.0) {
+      if (directional_min_length > 0.0_rt) {
          min_feature_enabled = true;
          finest_dx_over_min_feature_length_by_dir[dir] = finest_dx_by_dir[dir] / directional_min_length;
          min_feature_resolved =
             min_feature_resolved && finest_dx_by_dir[dir] <= directional_min_length;
       } else {
-         finest_dx_over_min_feature_length_by_dir[dir] = -1.0;
+         finest_dx_over_min_feature_length_by_dir[dir] = -1.0_rt;
       }
    }
-   const bool curvature_enabled = solid_curvature_tolerance > 0.0;
+   const bool curvature_enabled = solid_curvature_tolerance > 0.0_rt;
    const bool curvature_resolved = !curvature_enabled || solid_curvature_error <= solid_curvature_tolerance;
    const bool has_resolution_cutoff = min_feature_enabled || curvature_enabled;
    const int solid_curvature_resolved = curvature_enabled ? (curvature_resolved ? 1 : 0) : -1;
@@ -819,7 +870,7 @@ void append_amr_level_row(
    }
    for (int lev = 0; lev <= max_level; ++lev) {
       const amrex::Real aspect =
-         lev < static_cast<int>(level_max_box_aspects.size()) ? level_max_box_aspects[lev] : 0.0;
+         lev < static_cast<int>(level_max_box_aspects.size()) ? level_max_box_aspects[lev] : 0.0_rt;
       out << '\t' << aspect;
    }
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
@@ -846,8 +897,8 @@ void append_amr_level_row(
          const auto& dir_tags = auto_direction_tagged_cells[dir];
          const auto& dir_strength = auto_direction_strength[dir];
          const amrex::Long tags = lev < static_cast<int>(dir_tags.size()) ? dir_tags[lev] : 0;
-         const amrex::Real strength = lev < static_cast<int>(dir_strength.size()) ? dir_strength[lev] : 0.0;
-         out << '\t' << (tags > 0 ? strength / static_cast<amrex::Real>(tags) : 0.0);
+         const amrex::Real strength = lev < static_cast<int>(dir_strength.size()) ? dir_strength[lev] : 0.0_rt;
+         out << '\t' << (tags > 0 ? strength / static_cast<amrex::Real>(tags) : 0.0_rt);
       }
    }
    for (int lev = 0; lev <= max_level; ++lev) {
@@ -884,10 +935,10 @@ bool AmrSolverBase::symmetry_axis_active(int dir) const
 
 amrex::Real AmrSolverBase::symmetry_volume_factor() const
 {
-   amrex::Real factor = 1.0;
+   amrex::Real factor = 1.0_rt;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       if (symmetry_axis_active(dir)) {
-         factor *= 2.0;
+         factor *= 2.0_rt;
       }
    }
    return factor;
@@ -895,14 +946,14 @@ amrex::Real AmrSolverBase::symmetry_volume_factor() const
 
 amrex::Real AmrSolverBase::symmetry_momentum_factor(int dir, amrex::Real volume_factor) const
 {
-   return symmetry_axis_active(dir) ? 0.0 : volume_factor;
+   return symmetry_axis_active(dir) ? 0.0_rt : volume_factor;
 }
 
 amrex::Real AmrSolverBase::symmetry_angular_momentum_factor(int dir, amrex::Real volume_factor) const
 {
    for (int axis = 0; axis < AMREX_SPACEDIM; ++axis) {
       if (symmetry_axis_active(axis) && axis != dir) {
-         return 0.0;
+         return 0.0_rt;
       }
    }
    return volume_factor;
@@ -910,90 +961,52 @@ amrex::Real AmrSolverBase::symmetry_angular_momentum_factor(int dir, amrex::Real
 
 CflLimiterLocation AmrSolverBase::current_cfl_limiter_location() const
 {
-   CflLimiterLocation local;
-   local.frequency = -std::numeric_limits<amrex::Real>::infinity();
-
-   const int coordinate = mesh_coordinate_kind();
-   const MeshAxes axes = active_mesh_axes();
+   amrex::Real local_frequency = -std::numeric_limits<amrex::Real>::infinity();
+   int local_level = std::numeric_limits<int>::max();
+   amrex::Long local_index = std::numeric_limits<amrex::Long>::max();
    for (int lev = 0; lev <= finestLevel(); ++lev) {
-      if (!frequency_[lev]) {
-         continue;
-      }
-      amrex::iMultiFab mask = valid_cell_mask(lev);
-      const auto problo = Geom(lev).ProbLoArray();
-      const auto dx = Geom(lev).CellSizeArray();
-      for (amrex::MFIter mfi(*frequency_[lev]); mfi.isValid(); ++mfi) {
-         const amrex::Box& bx = mfi.validbox();
-         const auto f = frequency_[lev]->const_array(mfi);
-         const auto valid = mask.const_array(mfi);
-         const auto lo = amrex::lbound(bx);
-         const auto hi = amrex::ubound(bx);
-         for (int k = lo.z; k <= hi.z; ++k) {
-            for (int j = lo.y; j <= hi.y; ++j) {
-               for (int i = lo.x; i <= hi.x; ++i) {
-                  if (valid(i, j, k, 0) == 0) {
-                     continue;
-                  }
-                  const amrex::Real value = f(i, j, k, 0);
-                  if (value <= local.frequency) {
-                     continue;
-                  }
-                  const auto q =
-                     mesh_coordinate_triplet_at_location(coordinate, axes, problo, dx, i, j, k, false, false, false);
-                  local.frequency = value;
-                  local.level = lev;
-                  local.i = i;
-                  local.j = j;
-                  local.k = k;
-                  local.q1 = q[0];
-                  local.q2 = q[1];
-                  local.q3 = q[2];
-               }
-            }
-         }
+      if (!frequency_[lev]) continue;
+      const amrex::iMultiFab mask = valid_cell_mask(lev);
+      const CellMaximum maximum = diagnostic_masked_maximum(
+         *frequency_[lev], mask, Geom(lev).Domain(), 0
+      );
+      if (maximum.value > local_frequency) {
+         local_frequency = maximum.value;
+         local_level = lev;
+         local_index = maximum.cell_index;
       }
    }
 
-   amrex::Real global_frequency = local.frequency;
+   amrex::Real global_frequency = local_frequency;
    amrex::ParallelDescriptor::ReduceRealMax(global_frequency);
-   if (!std::isfinite(global_frequency) || global_frequency <= 0.0) {
-      return {};
-   }
+   if (!std::isfinite(global_frequency) || global_frequency <= 0.0_rt) return {};
 
-   const amrex::Real tolerance =
-      64.0 * std::numeric_limits<amrex::Real>::epsilon() * std::max<amrex::Real>(1.0, std::abs(global_frequency));
-   int owner_rank = (local.level >= 0 && std::abs(local.frequency - global_frequency) <= tolerance)
-                       ? amrex::ParallelDescriptor::MyProc()
-                       : -1;
-   amrex::ParallelDescriptor::ReduceIntMax(owner_rank);
-   if (owner_rank < 0) {
-      return {};
-   }
+   // Select an actual maximizer, not a cell merely within a rounding tolerance.
+   // Exact ties choose the lowest level and then domain-relative cell index,
+   // independently of box decomposition, MPI ownership or device scheduling.
+   int global_level = local_frequency == global_frequency
+      ? local_level : std::numeric_limits<int>::max();
+   amrex::ParallelDescriptor::ReduceIntMin(global_level);
+   amrex::Long global_index =
+      local_frequency == global_frequency && local_level == global_level
+         ? local_index : std::numeric_limits<amrex::Long>::max();
+   amrex::ParallelDescriptor::ReduceLongMin(global_index);
 
-   std::array<int, 4> int_packet = {{
-      local.level,
-      local.i,
-      local.j,
-      local.k,
-   }};
-   std::array<amrex::Real, 4> real_packet = {{
-      global_frequency,
-      local.q1,
-      local.q2,
-      local.q3,
-   }};
-   amrex::ParallelDescriptor::Bcast(int_packet.data(), int_packet.size(), owner_rank);
-   amrex::ParallelDescriptor::Bcast(real_packet.data(), real_packet.size(), owner_rank);
-
+   const auto location = Geom(global_level).Domain().atOffset3d(global_index);
+   const auto coordinates = mesh_coordinate_triplet_at_location(
+      mesh_coordinate_kind(), active_mesh_axes(), Geom(global_level).ProbLoArray(),
+      Geom(global_level).CellSizeArray(), location[0], location[1], location[2],
+      false, false, false
+   );
    CflLimiterLocation result;
-   result.frequency = real_packet[0];
-   result.level = int_packet[0];
-   result.i = int_packet[1];
-   result.j = int_packet[2];
-   result.k = int_packet[3];
-   result.q1 = real_packet[1];
-   result.q2 = real_packet[2];
-   result.q3 = real_packet[3];
+   result.frequency = global_frequency;
+   result.level = global_level;
+   result.i = location[0];
+   result.j = location[1];
+   result.k = location[2];
+   result.q1 = coordinates[0];
+   result.q2 = coordinates[1];
+   result.q3 = coordinates[2];
    return result;
 }
 
@@ -1014,22 +1027,26 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
    d.min_pressure = std::numeric_limits<amrex::Real>::max();
    d.min_lapse = std::numeric_limits<amrex::Real>::max();
    d.rmhd_min_plasma_beta = std::numeric_limits<amrex::Real>::max();
-   amrex::Real relativistic_diagnostic_volume = 0.0;
-   amrex::Real gravity_density_offset = 0.0;
-   amrex::Real gravity_energy_factor = 0.0;
+   amrex::Real relativistic_diagnostic_volume = 0.0_rt;
+   amrex::Real gravity_density_offset = 0.0_rt;
+   amrex::Real gravity_energy_factor = 0.0_rt;
    if (gravity_enabled(cfg_)) {
       prepare_gravity_fields(fluid_state_.state(), false);
       if (self_gravity_enabled(cfg_)) {
          const DensityTotal density = valid_density_total(fluid_state_.state());
-         gravity_density_offset = density.volume > 0.0 ? density.mass / density.volume : 0.0;
-         gravity_energy_factor = 0.5;
+         gravity_density_offset = density.volume > 0.0_rt ? density.mass / density.volume : 0.0_rt;
+         gravity_energy_factor = 0.5_rt;
       } else {
-         gravity_energy_factor = 1.0;
+         gravity_energy_factor = 1.0_rt;
       }
    }
 
    const int coordinate = mesh_coordinate_kind();
    const MeshAxes axes = active_mesh_axes();
+   const bool analytic_fixed_spacetime =
+      uses_analytic_fixed_spacetime_kernels();
+   const FixedSpacetimeParameters fixed_spacetime =
+      fixed_spacetime_parameters(cfg_);
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       if (physical_system_is_relativistic(physics_system_)) {
          fill_level_primitive_cache(lev, time);
@@ -1040,7 +1057,7 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
       amrex::iMultiFab mask = valid_cell_mask(lev);
       amrex::MultiFab reduction(fluid_state_.state()[lev]->boxArray(), fluid_state_.state()[lev]->DistributionMap(),
                                 ScalarReductionNComp, 0);
-      amrex::MultiFab const* gravity_phi = gravity_enabled(cfg_) ? gravity_phi_[lev].get() : nullptr;
+      amrex::MultiFab const* gravity_phi = gravity_enabled(cfg_) ? gravity_fields_.potential(lev) : nullptr;
       const int passive_component = cfg_.passive_scalars > 0 ? passive_component_begin(is_mhd(cfg_)) : -1;
       if (mixed_patch_system_enabled() && !is_mhd(cfg_)) {
          fill_scalar_reduction_fields_mapped_hydro(reduction, *fluid_state_.state()[lev], mask,
@@ -1061,11 +1078,11 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
             gravity_density_offset, gravity_energy_factor, passive_component
          );
       }
-      d.mass += reduction.sum(ScalarReductionMass);
-      d.mom1 += reduction.sum(ScalarReductionMom1);
-      d.mom2 += reduction.sum(ScalarReductionMom2);
-      d.mom3 += reduction.sum(ScalarReductionMom3);
-      d.energy += reduction.sum(ScalarReductionEnergy);
+      d.mass += diagnostic_component_sum(reduction, ScalarReductionMass);
+      d.mom1 += diagnostic_component_sum(reduction, ScalarReductionMom1);
+      d.mom2 += diagnostic_component_sum(reduction, ScalarReductionMom2);
+      d.mom3 += diagnostic_component_sum(reduction, ScalarReductionMom3);
+      d.energy += diagnostic_component_sum(reduction, ScalarReductionEnergy);
       amrex::MultiFab const& density =
          physical_system_is_relativistic(physics_system_)
             ? *primitive_[lev]
@@ -1076,20 +1093,20 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
       d.max_rho = amrex::max(d.max_rho, extrema.max_rho);
       d.min_pressure = amrex::min(d.min_pressure, extrema.min_pressure);
       if (physics_system_ == PhysicalSystem::MHD) {
-         d.newtonian_magnetic_energy += reduction.sum(ScalarReductionMagneticEnergy);
+         d.newtonian_magnetic_energy += diagnostic_component_sum(reduction, ScalarReductionMagneticEnergy);
       }
-      d.divb_l1 += reduction.sum(ScalarReductionDivB);
-      d.divb_l2 += reduction.sum(ScalarReductionDivBSquared);
+      d.divb_l1 += diagnostic_component_sum(reduction, ScalarReductionDivB);
+      d.divb_l2 += diagnostic_component_sum(reduction, ScalarReductionDivBSquared);
       d.divb_linf = amrex::max(
          d.divb_linf,
          reduction.norm0(ScalarReductionDivBAbs, 0, false)
       );
-      d.angular_mom1 += reduction.sum(ScalarReductionAngularMom1);
-      d.angular_mom2 += reduction.sum(ScalarReductionAngularMom2);
-      d.angular_mom3 += reduction.sum(ScalarReductionAngularMom3);
+      d.angular_mom1 += diagnostic_component_sum(reduction, ScalarReductionAngularMom1);
+      d.angular_mom2 += diagnostic_component_sum(reduction, ScalarReductionAngularMom2);
+      d.angular_mom3 += diagnostic_component_sum(reduction, ScalarReductionAngularMom3);
       d.gravity_potential_energy +=
-         reduction.sum(ScalarReductionGravityPotentialEnergy);
-      d.passive_mass += reduction.sum(ScalarReductionPassiveMass);
+         diagnostic_component_sum(reduction, ScalarReductionGravityPotentialEnergy);
+      d.passive_mass += diagnostic_component_sum(reduction, ScalarReductionPassiveMass);
       if (physical_system_is_relativistic(physics_system_)) {
          amrex::MultiFab relativistic_reduction(
             fluid_state_.state()[lev]->boxArray(),
@@ -1101,14 +1118,17 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
             fill_relativistic_diagnostic_fields<true>(
                relativistic_reduction,
                *primitive_[lev],
-               *spacetime_coupling_.cell_spacetime()[lev],
+               spacetime_coupling_.cell_spacetime()[lev].get(),
                mask,
                Geom(lev),
                coordinate,
                axes,
-               eos_params(cfg_)
+               eos_params(cfg_),
+               fixed_spacetime,
+               time,
+               false
             );
-            d.rmhd_electromagnetic_energy += relativistic_reduction.sum(
+            d.rmhd_electromagnetic_energy += diagnostic_component_sum(relativistic_reduction,
                RelativisticReductionElectromagneticEnergy
             );
             d.rmhd_max_b_squared = amrex::max(
@@ -1133,12 +1153,17 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
             fill_relativistic_diagnostic_fields<false>(
                relativistic_reduction,
                *primitive_[lev],
-               *spacetime_coupling_.cell_spacetime()[lev],
+               analytic_fixed_spacetime
+                  ? nullptr
+                  : spacetime_coupling_.cell_spacetime()[lev].get(),
                mask,
                Geom(lev),
                coordinate,
                axes,
-               eos_params(cfg_)
+               eos_params(cfg_),
+               fixed_spacetime,
+               time,
+               analytic_fixed_spacetime
             );
          }
          d.max_lorentz_factor = amrex::max(
@@ -1147,10 +1172,16 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
                RelativisticReductionMaxLorentzFactor, 0, false
             )
          );
-         d.relativistic_atmosphere_volume_fraction += relativistic_reduction.sum(
+         d.relativistic_atmosphere_volume_fraction += diagnostic_component_sum(relativistic_reduction,
             RelativisticReductionAtmosphereVolume
          );
-         relativistic_diagnostic_volume += relativistic_reduction.sum(
+         d.min_lapse = amrex::min(
+            d.min_lapse,
+            relativistic_reduction.min(
+               RelativisticReductionMinLapse, 0, false
+            )
+         );
+         relativistic_diagnostic_volume += diagnostic_component_sum(relativistic_reduction,
             RelativisticReductionTotalVolume
          );
       }
@@ -1172,42 +1203,44 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
    d.rmhd_electromagnetic_energy *= symmetry_factor;
    d.divb_l1 *= symmetry_factor;
    d.divb_l2 = std::sqrt(d.divb_l2 * symmetry_factor);
-   if (spacetime_state_.active()) {
+   if (!physical_system_is_relativistic(physics_system_)
+       && spacetime_state_.active()) {
       for (int lev = 0; lev <= finestLevel(); ++lev) {
          d.min_lapse = amrex::min(
             d.min_lapse,
             spacetime_state_.state()[lev]->min(Z4C_LAPSE, 0, false)
          );
       }
-   } else {
-      d.min_lapse = 0.0;
+   } else if (!physical_system_is_relativistic(physics_system_)) {
+      d.min_lapse = 0.0_rt;
    }
-   if (relativistic_diagnostic_volume > 0.0) {
+   if (relativistic_diagnostic_volume > 0.0_rt) {
       d.relativistic_atmosphere_volume_fraction /= relativistic_diagnostic_volume;
    }
    if (physics_system_ != PhysicalSystem::RMHD
-       || d.rmhd_max_b_squared == 0.0
+       || d.rmhd_max_b_squared == 0.0_rt
        || d.rmhd_min_plasma_beta == std::numeric_limits<amrex::Real>::max()) {
-      d.rmhd_min_plasma_beta = 0.0;
+      d.rmhd_min_plasma_beta = 0.0_rt;
    }
-   d.mass_rel_drift = amrex::Math::abs(d.mass - mass0) / amrex::max(amrex::Math::abs(mass0), 1.0);
-   d.energy_rel_drift = amrex::Math::abs(d.energy - energy0) / amrex::max(amrex::Math::abs(energy0), 1.0);
-   d.max_rho_rel_change = std::isfinite(max_rho0) && max_rho0 > 0.0 ? (d.max_rho - max_rho0) / max_rho0 : 0.0;
+   d.mass_rel_drift = amrex::Math::abs(d.mass - mass0) / amrex::max(amrex::Math::abs(mass0), 1.0_rt);
+   d.energy_rel_drift = amrex::Math::abs(d.energy - energy0) / amrex::max(amrex::Math::abs(energy0), 1.0_rt);
+   d.max_rho_rel_change = std::isfinite(max_rho0) && max_rho0 > 0.0_rt ? (d.max_rho - max_rho0) / max_rho0 : 0.0_rt;
    d.passive_mass_rel_drift = cfg_.passive_scalars > 0 ? amrex::Math::abs(d.passive_mass - passive_mass0) /
-                                                            amrex::max(amrex::Math::abs(passive_mass0), 1.0)
-                                                       : 0.0;
+                                                            amrex::max(amrex::Math::abs(passive_mass0), 1.0_rt)
+                                                       : 0.0_rt;
    const amrex::Real gravity_total_energy_scale = amrex::Math::abs(gravity_total_energy0);
    d.gravity_total_energy_rel_drift = amrex::Math::abs(d.gravity_total_energy - gravity_total_energy0) /
-                                      (gravity_total_energy_scale > 0.0 ? gravity_total_energy_scale : 1.0);
+                                      (gravity_total_energy_scale > 0.0_rt ? gravity_total_energy_scale : 1.0_rt);
    const amrex::Real energy_delta = d.energy - wall_work_reference_energy_;
    d.wall_work = cumulative_wall_work_;
    d.wall_power = latest_wall_power_;
    d.energy_minus_wall_work = energy_delta - cumulative_wall_work_;
    const amrex::Real work_scale =
-      amrex::max(amrex::max(amrex::Math::abs(energy_delta), amrex::Math::abs(cumulative_wall_work_)), 1.0);
+      amrex::max(amrex::max(amrex::Math::abs(energy_delta), amrex::Math::abs(cumulative_wall_work_)), 1.0_rt);
    d.wall_work_rel_error = amrex::Math::abs(d.energy_minus_wall_work) / work_scale;
-   d.external_budget_valid = external_conservation_budget_supported() ? 1 : 0;
-   if (d.external_budget_valid) {
+   d.external_mass_budget_valid = external_conservation_budget_supported() ? 1 : 0;
+   d.external_budget_valid = d.external_mass_budget_valid && !spacetime_evolves(cfg_) ? 1 : 0;
+   if (d.external_mass_budget_valid) {
       d.boundary_mass_change = conservation_ledger_.boundary_change.mass;
       d.boundary_energy_change = conservation_ledger_.boundary_change.energy;
       d.source_mass_change = conservation_ledger_.source_change.mass;
@@ -1230,9 +1263,9 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
       d.external_mass_residual = measured_mass_change - d.external_mass_change;
       d.external_energy_residual = measured_energy_change - d.external_energy_change;
       const amrex::Real mass_scale =
-         amrex::max(amrex::max(amrex::Math::abs(measured_mass_change), amrex::Math::abs(d.external_mass_change)), 1.0);
+         amrex::max(amrex::max(amrex::Math::abs(measured_mass_change), amrex::Math::abs(d.external_mass_change)), 1.0_rt);
       const amrex::Real energy_scale = amrex::max(
-         amrex::max(amrex::Math::abs(measured_energy_change), amrex::Math::abs(d.external_energy_change)), 1.0);
+         amrex::max(amrex::Math::abs(measured_energy_change), amrex::Math::abs(d.external_energy_change)), 1.0_rt);
       d.external_mass_rel_error = amrex::Math::abs(d.external_mass_residual) / mass_scale;
       d.external_energy_rel_error = amrex::Math::abs(d.external_energy_residual) / energy_scale;
    }
@@ -1252,13 +1285,17 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
       set_cfl_limiter_diagnostics(d, current_cfl_limiter_location());
    }
    bool spacetime_matter_current = false;
+   const bool constraint_regions_requested =
+      selection.contains_any(ScalarDiagnosticGroup::ConstraintRegions);
    if (spacetime_state_.active()
-       && selection.contains_any(ScalarDiagnosticGroup::Constraints)) {
+       && (selection.contains_any(ScalarDiagnosticGroup::Constraints)
+           || constraint_regions_requested)) {
       if (spacetime_includes_matter(cfg_)) {
          fill_spacetime_matter_range(0, finestLevel() + 1);
          spacetime_matter_current = true;
       }
-      const SpacetimeConstraintDiagnostics constraints = this->compute_spacetime_constraint_diagnostics(time);
+      const SpacetimeConstraintDiagnostics constraints =
+         this->compute_spacetime_constraint_diagnostics(time, constraint_regions_requested);
       d.z4c_hamiltonian_linf = constraints.hamiltonian_linf;
       d.z4c_hamiltonian_l2 = constraints.hamiltonian_l2;
       d.z4c_hamiltonian_interior_linf = constraints.hamiltonian_interior_linf;
@@ -1276,47 +1313,74 @@ ScalarDiagnostics AmrSolverBase::compute_current_scalars(int step, amrex::Real t
       d.z4c_theta_linf = constraints.theta_linf;
       d.z4c_log_conformal_determinant_linf = constraints.log_conformal_determinant_linf;
       d.z4c_trace_a_tilde_linf = constraints.trace_a_tilde_linf;
+      d.z4c_hamiltonian_region_l2 = constraints.regional_hamiltonian_l2[0];
+      d.z4c_hamiltonian_region_linf = constraints.regional_hamiltonian_linf[0];
+      d.z4c_momentum_region_linf = constraints.regional_momentum_linf[0];
+      d.z4c_region_volume = constraints.regional_volume[0];
+      d.z4c_hamiltonian_near_l2 = constraints.regional_hamiltonian_l2[1];
+      d.z4c_hamiltonian_near_linf = constraints.regional_hamiltonian_linf[1];
+      d.z4c_momentum_near_linf = constraints.regional_momentum_linf[1];
+      d.z4c_near_volume = constraints.regional_volume[1];
+      d.z4c_hamiltonian_far_l2 = constraints.regional_hamiltonian_l2[2];
+      d.z4c_hamiltonian_far_linf = constraints.regional_hamiltonian_linf[2];
+      d.z4c_momentum_far_linf = constraints.regional_momentum_linf[2];
+      d.z4c_far_volume = constraints.regional_volume[2];
    }
    if (selection.contains_any(ScalarDiagnosticGroup::BlackHole)) {
       d.black_hole_horizon_radius = black_hole_coordinate_horizon_radius(
          fixed_spacetime_parameters(cfg_)
       );
    }
-   if (selection.contains_any(ScalarDiagnosticGroup::Horizon)) {
+   const bool horizon_geometry_requested =
+      selection.contains_any(ScalarDiagnosticGroup::Horizon);
+   const bool horizon_flux_requested = selection.contains(
+      ScalarDiagnosticId::BlackHoleHorizonBaryonAccretionRate
+   );
+   if (horizon_geometry_requested || horizon_flux_requested) {
       const ApparentHorizonResult* horizon =
          apparent_horizon_tracker_->result();
       if (horizon == nullptr) {
-         amrex::Abort(
-            "horizon scalar diagnostics require horizon.enabled=1 and a "
-            "successful apparent-horizon search"
-         );
+         if (apparent_horizon_tracker_->abort_on_failure()) {
+            amrex::Abort(
+               "horizon scalar diagnostics require horizon.enabled=1 and a "
+               "successful apparent-horizon search"
+            );
+         }
+      } else {
+         d.black_hole_horizon_found = 1.0_rt;
+         d.black_hole_horizon_area = horizon->area;
+         d.black_hole_horizon_irreducible_mass = horizon->irreducible_mass;
+         d.black_hole_horizon_equatorial_circumference =
+            horizon->equatorial_circumference;
+         d.black_hole_horizon_polar_circumference =
+            horizon->polar_circumference;
+         d.black_hole_horizon_kerr_mass = horizon->kerr_horizon_mass;
+         d.black_hole_horizon_kerr_spin = horizon->kerr_dimensionless_spin;
+         d.black_hole_horizon_coordinate_angular_momentum1 =
+            horizon->angular_momentum[0];
+         d.black_hole_horizon_coordinate_angular_momentum2 =
+            horizon->angular_momentum[1];
+         d.black_hole_horizon_coordinate_angular_momentum3 =
+            horizon->angular_momentum[2];
+         d.black_hole_horizon_coordinate_angular_momentum_magnitude =
+            horizon->angular_momentum_magnitude;
+         d.black_hole_horizon_coordinate_christodoulou_mass =
+            horizon->christodoulou_mass;
+         d.black_hole_horizon_coordinate_christodoulou_spin1 =
+            horizon->christodoulou_dimensionless_spin[0];
+         d.black_hole_horizon_coordinate_christodoulou_spin2 =
+            horizon->christodoulou_dimensionless_spin[1];
+         d.black_hole_horizon_coordinate_christodoulou_spin3 =
+            horizon->christodoulou_dimensionless_spin[2];
+         d.black_hole_horizon_coordinate_christodoulou_spin_magnitude =
+            horizon->christodoulou_dimensionless_spin_magnitude;
+         if (horizon_flux_requested) {
+            d.black_hole_horizon_baryon_accretion_rate =
+               compute_baryon_surface_accretion_rate(
+                  diagnostic_apparent_horizon_surface(), time
+               );
+         }
       }
-      d.black_hole_horizon_area = horizon->area;
-      d.black_hole_horizon_irreducible_mass = horizon->irreducible_mass;
-      d.black_hole_horizon_equatorial_circumference =
-         horizon->equatorial_circumference;
-      d.black_hole_horizon_polar_circumference =
-         horizon->polar_circumference;
-      d.black_hole_horizon_kerr_mass = horizon->kerr_horizon_mass;
-      d.black_hole_horizon_kerr_spin = horizon->kerr_dimensionless_spin;
-      d.black_hole_horizon_coordinate_angular_momentum1 =
-         horizon->angular_momentum[0];
-      d.black_hole_horizon_coordinate_angular_momentum2 =
-         horizon->angular_momentum[1];
-      d.black_hole_horizon_coordinate_angular_momentum3 =
-         horizon->angular_momentum[2];
-      d.black_hole_horizon_coordinate_angular_momentum_magnitude =
-         horizon->angular_momentum_magnitude;
-      d.black_hole_horizon_coordinate_christodoulou_mass =
-         horizon->christodoulou_mass;
-      d.black_hole_horizon_coordinate_christodoulou_spin1 =
-         horizon->christodoulou_dimensionless_spin[0];
-      d.black_hole_horizon_coordinate_christodoulou_spin2 =
-         horizon->christodoulou_dimensionless_spin[1];
-      d.black_hole_horizon_coordinate_christodoulou_spin3 =
-         horizon->christodoulou_dimensionless_spin[2];
-      d.black_hole_horizon_coordinate_christodoulou_spin_magnitude =
-         horizon->christodoulou_dimensionless_spin_magnitude;
    }
    const bool global_gr_requested =
       selection.contains_any(ScalarDiagnosticGroup::GlobalGr);

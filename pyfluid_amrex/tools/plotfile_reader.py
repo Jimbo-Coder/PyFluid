@@ -21,7 +21,9 @@ except Exception:
 
 FAB_LINE = re.compile(r"FabOnDisk:\s+(\S+)\s+(\d+)")
 FAB_HEADER = re.compile(r"\)\)\(\(([^)]*)\)\s+\(([^)]*)\)\s+\(([^)]*)\)\)\s+(\d+)\s*$")
-FAB_HEADER_1D = re.compile(r"\)\)\(\((-?\d+)\)\s+\((-?\d+)\)\s+\((-?\d+)\)\)\s+(\d+)\s*$")
+FAB_REAL_DESCRIPTOR = re.compile(
+   r"^FAB\s+\(\(8,\s*\(([\d\s]+)\)\),\((\d+),\s*\(([\d\s]+)\)\)\)"
+)
 
 PLOTFILE_STEP_RE = re.compile(r"(\d+)(?:\.(?:h5|hdf5))?$")
 CHECKPOINT_STEP_RE = re.compile(r"^chk(\d+)$")
@@ -461,6 +463,29 @@ def parse_fab_index(cell_header: Path) -> list[tuple[Path, int]]:
    return entries
 
 
+def fab_real_dtype(header: str) -> np.dtype:
+   """Decode AMReX's serialized IEEE format and byte order, not host precision."""
+   match = FAB_REAL_DESCRIPTOR.match(header)
+   if match is None:
+      raise ValueError("unsupported FAB real descriptor")
+   layout = tuple(int(value) for value in match.group(1).split())
+   size = int(match.group(2))
+   ieee_layouts = {
+      4: (32, 8, 23, 0, 1, 9, 0, 127),
+      8: (64, 11, 52, 0, 1, 12, 0, 1023),
+   }
+   if ieee_layouts.get(size) != layout:
+      raise ValueError(f"unsupported FAB floating-point layout: {layout}")
+   byte_order = tuple(int(value) for value in match.group(3).split())
+   if byte_order == tuple(range(size, 0, -1)):
+      endian = "<"
+   elif byte_order == tuple(range(1, size + 1)):
+      endian = ">"
+   else:
+      raise ValueError(f"unsupported FAB byte order: {byte_order}")
+   return np.dtype(f"{endian}f{size}")
+
+
 def read_fab(path: Path, offset: int, ndim: int) -> tuple[tuple[int, ...], tuple[int, ...], np.ndarray]:
    with path.open("rb") as f:
       f.seek(offset)
@@ -474,7 +499,9 @@ def read_fab(path: Path, offset: int, ndim: int) -> tuple[tuple[int, ...], tuple
       ncomp = int(match.group(4))
       shape = tuple(hi[d] - lo[d] + 1 for d in range(ndim))
       ncell = int(np.prod(shape))
-      data = np.fromfile(f, dtype="<f8", count=ncell * ncomp)
+      data = np.fromfile(f, dtype=fab_real_dtype(header), count=ncell * ncomp)
+      if data.size != ncell * ncomp:
+         raise ValueError(f"truncated FAB data in {path} at offset {offset}")
    if ndim == 2:
       return lo, hi, data.reshape((ncomp, shape[1], shape[0])).transpose(0, 2, 1)
    if ndim == 3:
@@ -630,53 +657,55 @@ def read_level0_state_1d(plotfile: Path, names: list[str]) -> np.ndarray:
    return read_level_state(plotfile, names, 1, 0)
 
 
-def read_composite_state_1d(
+def read_composite_state(
    plotfile: Path,
    names: list[str],
    target_level: int | None = None,
 ) -> np.ndarray:
-   """Sample the owned 1D AMR hierarchy on one uniform target level.
+   """Sample the owned AMR hierarchy on one uniform target level.
 
    Coarse cell averages are repeated onto the target mesh, then overwritten by
    progressively finer owned cells. This is an honest piecewise-constant view,
    not an interpolation or smoothing operation.
    """
+   _, ndim, _ = parse_plot_header(plotfile)
    nlevels = level_count(plotfile)
    selected_level = nlevels - 1 if target_level is None else target_level
    if not 0 <= selected_level < nlevels:
       raise ValueError(f"target level {selected_level} not in range [0, {nlevels - 1}]")
    level_shapes = parse_level_shapes(plotfile)
-   target_cells = level_shapes[selected_level][0]
-   composite = np.full((len(names), target_cells), np.nan, dtype=float)
+   target_shape = level_shapes[selected_level]
+   composite = np.full((len(names), *target_shape), np.nan, dtype=float)
    for level in range(selected_level + 1):
-      level_cells = level_shapes[level][0]
-      if target_cells % level_cells != 0:
+      level_shape = level_shapes[level]
+      if any(target % count != 0 for target, count in zip(target_shape, level_shape, strict=True)):
          raise ValueError(
-            f"target level has {target_cells} cells, not an integer multiple of level {level} ({level_cells})"
+            f"target mesh {target_shape} is not an integer multiple of level {level} ({level_shape})"
          )
-      repeat = target_cells // level_cells
-      for lo, hi, data in level_chunks(plotfile, level, 1, names=names):
-         start = lo[0] * repeat
-         stop = (hi[0] + 1) * repeat
-         composite[:, start:stop] = np.repeat(data, repeat, axis=1)
+      repeats = tuple(target // count for target, count in zip(target_shape, level_shape, strict=True))
+      for lo, hi, data in level_chunks(plotfile, level, ndim, names=names):
+         slices = tuple(slice(lo[axis] * repeat, (hi[axis] + 1) * repeat)
+                        for axis, repeat in enumerate(repeats))
+         for axis, repeat in enumerate(repeats, start=1):
+            data = np.repeat(data, repeat, axis=axis)
+         composite[(slice(None), *slices)] = data
    if not np.isfinite(composite).all():
-      raise ValueError(f"AMR hierarchy does not cover the complete 1D target mesh: {plotfile}")
+      raise ValueError(f"AMR hierarchy does not cover the complete target mesh: {plotfile}")
    return composite
+
+
+def read_composite_state_1d(
+   plotfile: Path,
+   names: list[str],
+   target_level: int | None = None,
+) -> np.ndarray:
+   parse_plot_header_1d(plotfile)
+   return read_composite_state(plotfile, names, target_level)
 
 
 def read_fab_1d(plotfile: Path, offset: int) -> tuple[int, int, np.ndarray]:
    path = _ensure_path(plotfile)
    if path.suffix in {".h5", ".hdf5"}:
       raise ValueError(f"hdf5 plotfile does not expose FabOnDisk index offsets: {path}")
-   with path.open("rb") as f:
-      f.seek(offset)
-      header = f.readline().decode("ascii")
-      match = FAB_HEADER_1D.search(header)
-      if not match:
-         raise ValueError(f"could not parse 1D FAB header in {path} at offset {offset}")
-      lo = int(match.group(1))
-      hi = int(match.group(2))
-      ncomp = int(match.group(4))
-      ncell = hi - lo + 1
-      data = np.fromfile(f, dtype="<f8", count=ncell * ncomp)
-   return lo, hi, data.reshape((ncomp, ncell))
+   lo, hi, data = read_fab(path, offset, 1)
+   return lo[0], hi[0], data

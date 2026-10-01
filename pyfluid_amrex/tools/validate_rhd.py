@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import math
+import re
 import shutil
 from pathlib import Path
 
-import math
 import numpy as np
 
 from plotfile_reader import (
@@ -19,11 +20,13 @@ from plotfile_reader import (
    read_composite_state_1d,
    read_level_state,
 )
+from physical_id_metadata import read_physical_id_metadata
 from relativistic_validation import entropy_density_error
 from validation_common import (
    CLOSED_POLICY,
    OPEN_POLICY,
    ROOT,
+   amrex_build_dir,
    amrex_executable,
    append_validation_history,
    build_cached_target,
@@ -31,6 +34,7 @@ from validation_common import (
    repo_relative,
    run_amrex,
    run_mpi,
+   scalar_checks,
    scalar_validation_row,
    write_tsv,
 )
@@ -40,7 +44,36 @@ INPUTS = ROOT / "pyfluid_amrex/inputs"
 RUN_ROOT = ROOT / "runs/current/rhd_validation"
 RESULTS = RUN_ROOT / "rhd_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
-CHECKPOINT_COMPARE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_1d"
+CHECKPOINT_COMPARE = amrex_build_dir() / "pyfluid_amrex_compare_checkpoint_1d"
+RECOVERY = re.compile(
+   r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)"
+)
+TOV_SURFACE_POLICY = scalar_checks(
+   "vacuum_tov_surface",
+   energy=False,
+   momentum=False,
+   divb=False,
+)
+
+
+def require_clean_relativistic_recovery(run_dir: Path) -> None:
+   matches = RECOVERY.findall((run_dir / "run.log").read_text())
+   if not matches:
+      raise RuntimeError(f"{run_dir.name} omitted its recovery summary")
+   fallbacks, resets = (int(value) for value in matches[-1])
+   if fallbacks != 0 or resets != 0:
+      raise RuntimeError(
+         f"{run_dir.name} used recovery fallback/reset: "
+         f"fallbacks={fallbacks} resets={resets}"
+      )
+
+
+def require_exact_vacuum(scalar: dict[str, object], case: str) -> None:
+   for field in ("min_rho", "min_pressure"):
+      if float(scalar[field]) != 0.0:
+         raise RuntimeError(
+            f"{case} did not retain exact vacuum: {field}={scalar[field]}"
+         )
 
 
 def run_case(
@@ -51,6 +84,7 @@ def run_case(
    *,
    checks=CLOSED_POLICY,
    dim: int = 1,
+   remove_parameters: tuple[str, ...] = (),
 ) -> tuple[Path, dict[str, object]]:
    run_dir = RUN_ROOT / name
    if args.force and run_dir.exists():
@@ -64,7 +98,12 @@ def run_case(
       "pyfluid.aux_gf_int": "-1",
       **overrides,
    }
-   input_path = materialize_run_input(base_input, run_dir / "input.in", parameters)
+   input_path = materialize_run_input(
+      base_input,
+      run_dir / "input.in",
+      parameters,
+      remove_parameters=remove_parameters,
+   )
    if args.force or latest_plotfile(run_dir) is None:
       completed = run_amrex(dim=dim, input_path=input_path, ranks=args.ranks, timeout=args.timeout)
       (run_dir / "run.log").write_text(completed.stdout)
@@ -264,6 +303,292 @@ def validate_amr(args: argparse.Namespace) -> tuple[dict[str, object], list[dict
    }, [base_scalar, amr_scalar]
 
 
+def validate_vacuum_expansion(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   results = []
+   scalars = []
+   for name, input_name, require_amr in (
+      ("vacuum_expansion", "rhd_vacuum_expansion_1d.in", False),
+      ("vacuum_expansion_amr", "rhd_vacuum_expansion_1d_amr.in", True),
+   ):
+      run_dir, scalar = run_case(
+         name,
+         INPUTS / input_name,
+         {"pyfluid.plot_int": "1000000"},
+         args,
+         checks=OPEN_POLICY,
+      )
+      require_clean_relativistic_recovery(run_dir)
+      require_exact_vacuum(scalar, name)
+      plotfile = latest_plotfile(run_dir, require=True)
+      levels = level_count(plotfile)
+      if require_amr and levels < 2:
+         raise RuntimeError("vacuum expansion did not create an AMR level")
+      results.append({
+         "kind": "vacuum",
+         "case": name,
+         "status": "PASS",
+         "metric": "exact_zero_exterior_no_resets",
+         "value": 1,
+         "levels": levels,
+         "run_dir": repo_relative(run_dir),
+      })
+      scalars.append(scalar)
+   return results, scalars
+
+
+def validate_vacuum_restart(
+   args: argparse.Namespace,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+   common = {
+      "pyfluid.max_step": "4",
+      "pyfluid.final_time": "-1",
+      "pyfluid.plot_int": "4",
+      "pyfluid.checkpoint_int": "2",
+      "pyfluid.scalar_int": "1",
+   }
+   full_dir, full_scalar = run_case(
+      "vacuum_restart_full",
+      INPUTS / "rhd_vacuum_expansion_1d_amr.in",
+      common,
+      args,
+      checks=OPEN_POLICY,
+   )
+   checkpoint = full_dir / "checkpoints/chk00002"
+   restart_dir, restart_scalar = run_case(
+      "vacuum_restart_from2",
+      INPUTS / "rhd_vacuum_expansion_1d_amr.in",
+      {**common, "pyfluid.restart_file": repo_relative(checkpoint)},
+      args,
+      checks=OPEN_POLICY,
+   )
+   for run_dir, scalar in (
+      (full_dir, full_scalar),
+      (restart_dir, restart_scalar),
+   ):
+      require_clean_relativistic_recovery(run_dir)
+      require_exact_vacuum(scalar, run_dir.name)
+   full_final = latest_checkpoint(full_dir)
+   restart_final = latest_checkpoint(restart_dir)
+   if full_final is None or restart_final is None:
+      raise RuntimeError("vacuum restart did not produce final checkpoints")
+   compared = run_mpi(
+      CHECKPOINT_COMPARE,
+      [full_final, restart_final, "1e-12"],
+      ranks=args.ranks,
+      timeout=args.timeout,
+   )
+   if compared.returncode != 0:
+      raise RuntimeError(compared.stdout)
+   summary = next(
+      line
+      for line in compared.stdout.splitlines()
+      if line.startswith("checkpoint max_dt_diff=")
+   )
+
+   mismatch_dir = RUN_ROOT / "vacuum_restart_as_atmosphere"
+   if mismatch_dir.exists():
+      shutil.rmtree(mismatch_dir)
+   mismatch_dir.mkdir(parents=True)
+   mismatch_input = materialize_run_input(
+      INPUTS / "rhd_vacuum_expansion_1d_amr.in",
+      mismatch_dir / "input.in",
+      {
+         **common,
+         "pyfluid.run_name": mismatch_dir.name,
+         "pyfluid.output_dir": repo_relative(mismatch_dir),
+         "pyfluid.relativistic_exterior": "atmosphere",
+         "pyfluid.restart_file": repo_relative(checkpoint),
+      },
+   )
+   rejected = run_amrex(
+      dim=1,
+      input_path=mismatch_input,
+      ranks=args.ranks,
+      timeout=args.timeout,
+   )
+   (mismatch_dir / "run.log").write_text(rejected.stdout)
+   if rejected.returncode == 0 or "relativistic_exterior" not in rejected.stdout:
+      raise RuntimeError(
+         "checkpoint restart did not reject an exterior-policy mismatch"
+      )
+   return {
+      "kind": "restart",
+      "case": "vacuum_amr_subcycling_restart",
+      "status": "PASS",
+      "metric": "checkpoint_compare_and_policy_identity",
+      "value": summary,
+      "run_dir": repo_relative(restart_dir),
+   }, [full_scalar, restart_scalar]
+
+
+def validate_vacuum_physical_id(
+   args: argparse.Namespace,
+) -> tuple[dict[str, object], dict[str, object]]:
+   source_dir = RUN_ROOT / "vacuum_tov_spherical_id"
+   target_dir = RUN_ROOT / "vacuum_tov_materialized"
+   if args.force:
+      for run_dir in (source_dir, target_dir):
+         if run_dir.exists():
+            shutil.rmtree(run_dir)
+   source_dir.mkdir(parents=True, exist_ok=True)
+   source_artifact = source_dir / "physical_id"
+   source_input = materialize_run_input(
+      INPUTS / "tov_spherical_id_1d.in",
+      source_dir / "input.in",
+      {
+         "pyfluid.run_name": source_dir.name,
+         "pyfluid.output_dir": repo_relative(source_dir),
+         "pyfluid.relativistic_exterior": "vacuum",
+         "initial_data.output_file": repo_relative(source_artifact),
+         "amr.n_cell": "512",
+         "amr.max_grid_size": "128",
+      },
+      remove_parameters=(
+         "initial_data.atmosphere",
+         "initial_data.atmosphere_density",
+         "initial_data.atmosphere_pressure",
+         "initial_data.atmosphere_power",
+      ),
+   )
+   if args.force or not (source_artifact / "Header.meta").is_file():
+      completed = run_amrex(
+         dim=1,
+         input_path=source_input,
+         ranks=args.ranks,
+         timeout=args.timeout,
+      )
+      (source_dir / "run.log").write_text(completed.stdout)
+      if completed.returncode != 0:
+         raise RuntimeError(
+            "vacuum TOV source solve failed; see "
+            f"{repo_relative(source_dir / 'run.log')}"
+         )
+   source_metadata = read_physical_id_metadata(source_artifact)
+   if source_metadata.get("relativistic_exterior") != "vacuum":
+      raise RuntimeError("vacuum TOV artifact omitted exterior identity")
+
+   target_dir.mkdir(parents=True, exist_ok=True)
+   target_artifact = target_dir / "physical_id"
+   target_input = materialize_run_input(
+      INPUTS / "tov_cowling_amr_1d.in",
+      target_dir / "input.in",
+      {
+         "pyfluid.run_name": target_dir.name,
+         "pyfluid.output_dir": repo_relative(target_dir),
+         "pyfluid.relativistic_exterior": "vacuum",
+         "initial_data.input_file": repo_relative(source_artifact),
+         "initial_data.output_file": repo_relative(target_artifact),
+         "amr.n_cell": "256",
+         "amr.max_level": "1",
+         "amr.ref_ratio": "2",
+         "amr.max_grid_size": "64",
+         "amr.initial_refine_levels": "1",
+         "amr.initial_refine_fixed_levels": "1",
+         "pyfluid.max_step": "1",
+         "pyfluid.final_time": "-1",
+         "pyfluid.cfl": "0.9",
+         "pyfluid.subcycling_steps": "local_cfl",
+         "pyfluid.plot_int": "1",
+         "pyfluid.checkpoint_int": "-1",
+      },
+      remove_parameters=(
+         "initial_data.atmosphere",
+         "initial_data.atmosphere_density",
+         "initial_data.atmosphere_pressure",
+         "initial_data.atmosphere_power",
+      ),
+   )
+   completed = run_amrex(
+      dim=1,
+      input_path=target_input,
+      ranks=args.ranks,
+      timeout=args.timeout,
+   )
+   (target_dir / "run.log").write_text(completed.stdout)
+   if completed.returncode != 0:
+      raise RuntimeError(
+         "vacuum TOV materialization/evolution failed; see "
+         f"{repo_relative(target_dir / 'run.log')}"
+      )
+   scalar = scalar_validation_row(
+      target_dir,
+      case=target_dir.name,
+      input_file=target_dir / "run.in",
+      checks=OPEN_POLICY,
+      mhd=False,
+      dim=1,
+      ranks=args.ranks,
+      kind="reference",
+   )
+   if scalar["status"] != "PASS":
+      raise RuntimeError(
+         f"vacuum TOV scalar validation failed: {scalar['reason']}"
+      )
+   require_clean_relativistic_recovery(target_dir)
+   require_exact_vacuum(scalar, target_dir.name)
+   target_metadata = read_physical_id_metadata(target_artifact)
+   if target_metadata.get("relativistic_exterior") != "vacuum":
+      raise RuntimeError("materialized TOV artifact changed exterior identity")
+   return {
+      "kind": "physical_id",
+      "case": "vacuum_tov_roundtrip",
+      "status": "PASS",
+      "metric": "saved_materialized_evolved_exact_zero",
+      "value": 1,
+      "levels": level_count(latest_plotfile(target_dir, require=True)),
+      "run_dir": repo_relative(target_dir),
+   }, scalar
+
+
+def validate_vacuum_tov_surface(
+   args: argparse.Namespace,
+) -> tuple[dict[str, object], dict[str, object]]:
+   run_dir, scalar = run_case(
+      "vacuum_tov_octant_surface",
+      INPUTS / "tov_cowling_octant_amr_3d.in",
+      {
+         "pyfluid.relativistic_exterior": "vacuum",
+         "amr.n_cell": "32 32 32",
+         "amr.max_grid_size": "32",
+         "amr.max_level": "1",
+         "amr.ref_ratio": "2",
+         "amr.n_error_buf": "4",
+         "pyfluid.max_step": "2",
+         "pyfluid.final_time": "-1",
+         "pyfluid.cfl": "0.9",
+         "pyfluid.subcycling_steps": "local_cfl",
+         "pyfluid.plot_int": "2",
+         "pyfluid.debug_check_physical": "1",
+         "pyfluid.checkpoint_int": "-1",
+      },
+      args,
+      checks=TOV_SURFACE_POLICY,
+      dim=3,
+      remove_parameters=(
+         "initial_data.atmosphere",
+         "initial_data.atmosphere_density",
+         "initial_data.atmosphere_pressure",
+         "initial_data.atmosphere_power",
+      ),
+   )
+   require_clean_relativistic_recovery(run_dir)
+   require_exact_vacuum(scalar, run_dir.name)
+   levels = level_count(latest_plotfile(run_dir, require=True))
+   if levels < 2:
+      raise RuntimeError("vacuum TOV surface did not create an AMR level")
+   return {
+      "kind": "vacuum",
+      "case": "vacuum_tov_octant_surface",
+      "status": "PASS",
+      "metric": "stellar_surface_exact_zero_no_resets",
+      "value": 1,
+      "levels": levels,
+      "run_dir": repo_relative(run_dir),
+   }, scalar
+
+
 def validate_restart(args: argparse.Namespace) -> dict[str, object]:
    common = {
       "pyfluid.max_step": "6",
@@ -315,21 +640,27 @@ def main() -> int:
    parser.add_argument("--ranks", type=int, default=3)
    parser.add_argument("--timeout", type=int, default=180)
    parser.add_argument("--force", action="store_true")
+   parser.add_argument(
+      "--only-vacuum",
+      action="store_true",
+      help="run only exact-vacuum expansion, AMR, restart, and TOV handoff gates",
+   )
    args = parser.parse_args()
-   if args.level == "standard":
+   if args.level == "standard" or args.only_vacuum:
       build_cached_target(CHECKPOINT_COMPARE.name)
    if not amrex_executable(1).exists():
       raise SystemExit("build the AMReX 1D solver first")
 
    rows = []
    scalar_rows = []
-   uniform, scalar = validate_uniform(args)
-   rows.append(uniform)
-   scalar_rows.append(scalar)
-   convergence, scalars = validate_entropy_convergence(args)
-   rows.extend(convergence)
-   scalar_rows.extend(scalars)
-   if args.level == "standard":
+   if not args.only_vacuum:
+      uniform, scalar = validate_uniform(args)
+      rows.append(uniform)
+      scalar_rows.append(scalar)
+      convergence, scalars = validate_entropy_convergence(args)
+      rows.extend(convergence)
+      scalar_rows.extend(scalars)
+   if args.level == "standard" and not args.only_vacuum:
       multidimensional, scalars = validate_multidimensional_uniform(args)
       rows.extend(multidimensional)
       scalar_rows.extend(scalars)
@@ -340,6 +671,19 @@ def main() -> int:
       rows.append(amr)
       scalar_rows.extend(scalars)
       rows.append(validate_restart(args))
+   if args.level == "standard" or args.only_vacuum:
+      vacuum, scalars = validate_vacuum_expansion(args)
+      rows.extend(vacuum)
+      scalar_rows.extend(scalars)
+      vacuum_restart, scalars = validate_vacuum_restart(args)
+      rows.append(vacuum_restart)
+      scalar_rows.extend(scalars)
+      physical_id, scalar = validate_vacuum_physical_id(args)
+      rows.append(physical_id)
+      scalar_rows.append(scalar)
+      tov_surface, scalar = validate_vacuum_tov_surface(args)
+      rows.append(tov_surface)
+      scalar_rows.append(scalar)
 
    write_tsv(
       RESULTS,

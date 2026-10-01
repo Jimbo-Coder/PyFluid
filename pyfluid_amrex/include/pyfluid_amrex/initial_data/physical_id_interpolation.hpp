@@ -11,6 +11,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 // Coordinate metadata carried by a portable physical-ID artifact.  Unlike
 // MeshAxes this representation describes the source file, so its dimension is
 // a runtime value and need not match the executable materializing the data.
@@ -52,9 +54,9 @@ struct PhysicalIdRigidTransform {
    std::array<amrex::Real, 3> source_origin{};
    std::array<amrex::Real, 3> target_origin{};
    std::array<std::array<amrex::Real, 3>, 3> source_to_target{{
-      {{1.0, 0.0, 0.0}},
-      {{0.0, 1.0, 0.0}},
-      {{0.0, 0.0, 1.0}},
+      {{1.0_rt, 0.0_rt, 0.0_rt}},
+      {{0.0_rt, 1.0_rt, 0.0_rt}},
+      {{0.0_rt, 0.0_rt, 1.0_rt}},
    }};
 };
 

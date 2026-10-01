@@ -3,8 +3,6 @@
 #include <AMReX_BC_TYPES.H>
 #include <AMReX_Geometry.H>
 #include <AMReX_GpuLaunch.H>
-#include <AMReX_MLMG.H>
-#include <AMReX_MLPoisson.H>
 #include <AMReX_MultiFab.H>
 #include <AMReX_iMultiFab.H>
 
@@ -15,6 +13,7 @@
 
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/constants.hpp"
+#include "pyfluid_amrex/gravity_fields.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/physical_geometry.hpp"
@@ -22,7 +21,7 @@
 
 namespace pyfluid_amrex {
 
-using GravityGradient = std::array<std::unique_ptr<amrex::MultiFab>, AMREX_SPACEDIM>;
+using namespace amrex::literals;
 
 inline amrex::Real gravity_poisson_factor(RunConfig const& cfg)
 {
@@ -37,7 +36,7 @@ amrex::Real fixed_gravity_potential(RunConfig const& cfg, amrex::Real x, amrex::
       const amrex::Real dx = x - cfg.gravity_center_x;
       const amrex::Real dy = y - cfg.gravity_center_y;
       const amrex::Real dz = z - cfg.gravity_center_z;
-      return 0.5 * omega2 * cartesian_radius_squared(dx, dy, dz);
+      return 0.5_rt * omega2 * cartesian_radius_squared(dx, dy, dz);
    }
    return -(cfg.gravity_a1 * x + cfg.gravity_a2 * y + cfg.gravity_a3 * z);
 }
@@ -81,7 +80,7 @@ inline void allocate_gravity_gradient(
       if (!gradient[dir] || !gradient[dir]->boxArray().CellEqual(face_ba)) {
          gradient[dir] = std::make_unique<amrex::MultiFab>(face_ba, dm, 1, 0);
       }
-      gradient[dir]->setVal(0.0);
+      gradient[dir]->setVal(0.0_rt);
    }
 }
 
@@ -103,16 +102,16 @@ inline void fill_fixed_gravity_potential_and_gradient(
          const amrex::Box& bx = mfi.tilebox();
          const auto out = phi.array(mfi);
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-            const amrex::Real y = 0.0;
+            const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             out(i, j, k, 0) = fixed_gravity_potential(cfg, x, y, z);
          });
@@ -129,16 +128,16 @@ inline void fill_fixed_gravity_potential_and_gradient(
             const amrex::Box& bx = mfi.tilebox();
             const auto out = component.array(mfi);
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+               amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-               amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+               amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-               amrex::Real y = 0.0;
+               amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-               amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+               amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-               amrex::Real z = 0.0;
+               amrex::Real z = 0.0_rt;
 #endif
                if (dir == 0) {
                   x = problo[0] + static_cast<amrex::Real>(i) * dx[0];
@@ -188,7 +187,7 @@ inline void fill_cell_centered_gravity_gradient(
          amrex::Abort("grad_phi output requested before gravity gradient was computed");
       }
    }
-   output.setVal(0.0);
+   output.setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -237,7 +236,7 @@ inline void fill_gravity_poisson_rhs(
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             out(i, j, k, 0) = valid(i, j, k, 0) != 0
                ? factor * (s(i, j, k, RHO) - mean_density)
-               : 0.0;
+               : 0.0_rt;
          });
       }
    }
@@ -265,12 +264,12 @@ void add_gravity_source_cell(
 #if (AMREX_SPACEDIM >= 2)
    const amrex::Real gy = -generated::face_to_cell<1>(grad_y, i, j, k, 0) - acceleration_offset[1];
 #else
-   constexpr amrex::Real gy = 0.0;
+   constexpr amrex::Real gy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
    const amrex::Real gz = -generated::face_to_cell<2>(grad_z, i, j, k, 0) - acceleration_offset[2];
 #else
-   constexpr amrex::Real gz = 0.0;
+   constexpr amrex::Real gz = 0.0_rt;
 #endif
    const amrex::Real rho = state(i, j, k, RHO);
    const StateVector3 momentum = load_momentum_vector3(state, i, j, k);
@@ -319,7 +318,7 @@ void add_athena_gravity_energy_source_cell(
       flux[2](i, j, k + 1, RHO) * (-grad_z(i, j, k + 1, 0) - acceleration_offset[2])
       + flux[2](i, j, k, RHO) * (-grad_z(i, j, k, 0) - acceleration_offset[2]);
 #endif
-   rhs(i, j, k, ENERGY) += 0.5 * source;
+   rhs(i, j, k, ENERGY) += 0.5_rt * source;
    (void)NComp;
 }
 

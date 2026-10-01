@@ -13,6 +13,8 @@
 #include "pyfluid_amrex/coordinate_locations.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 struct DeviceInterpolationPoint {
@@ -30,7 +32,7 @@ amrex::Real wrap_periodic_coordinate(
 )
 {
    const amrex::Real period = upper - lower;
-   if (!(period > 0.0)) {
+   if (!(period > 0.0_rt)) {
       throw std::invalid_argument("periodic interpolation coordinate has non-positive extent");
    }
    coordinate = lower + std::fmod(coordinate - lower, period);
@@ -86,8 +88,8 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
                );
             }
             const amrex::Real centering_offset = centering.nodeCentered(direction)
-               ? 0.0
-               : 0.5;
+               ? 0.0_rt
+               : 0.5_rt;
             const amrex::Real continuous_index =
                centered_domain.smallEnd(direction)
                + (coordinate - lower[direction]) / spacing[direction]
@@ -120,22 +122,22 @@ HierarchyInterpolationPlan::HierarchyInterpolationPlan(
                // from the first/last interpolation location by coordinate
                // roundoff; express that tolerance in index units.
                const amrex::Real coordinate_scale = std::max({
-                  amrex::Real(1.0),
+                  amrex::Real(1.0_rt),
                   std::abs(coordinate),
                   std::abs(lower[direction]),
                   std::abs(upper[direction]),
                });
                const amrex::Real index_tolerance =
-                  1024.0 * std::numeric_limits<amrex::Real>::epsilon()
+                  1024.0_rt * std::numeric_limits<amrex::Real>::epsilon()
                   * coordinate_scale / spacing[direction];
                if (lower_index == centered_domain.smallEnd(direction) - 1
-                   && std::abs(1.0 - local_fraction) < index_tolerance) {
+                   && std::abs(1.0_rt - local_fraction) < index_tolerance) {
                   lower_index = centered_domain.smallEnd(direction);
-                  local_fraction = 0.0;
+                  local_fraction = 0.0_rt;
                } else if (lower_index == centered_domain.bigEnd(direction)
                           && std::abs(local_fraction) < index_tolerance) {
                   --lower_index;
-                  local_fraction = 1.0;
+                  local_fraction = 1.0_rt;
                } else {
                   inside = false;
                   break;
@@ -243,8 +245,8 @@ std::vector<amrex::Real> HierarchyInterpolationPlan::interpolate(
          );
       }
    }
-   std::vector<amrex::Real> host_values(points_.size() * num_components, 0.0);
-   amrex::Gpu::DeviceVector<amrex::Real> device_values(host_values.size(), 0.0);
+   std::vector<amrex::Real> host_values(points_.size() * num_components, 0.0_rt);
+   amrex::Gpu::DeviceVector<amrex::Real> device_values(host_values.size(), 0.0_rt);
    amrex::Real* values = device_values.data();
    const int rank = amrex::ParallelDescriptor::MyProc();
    std::map<std::pair<int, int>, std::vector<DeviceInterpolationPoint>> groups;
@@ -286,18 +288,18 @@ std::vector<amrex::Real> HierarchyInterpolationPlan::interpolate(
          const int component = static_cast<int>(work_index % num_components);
          const int local_point = static_cast<int>(work_index / num_components);
          const DeviceInterpolationPoint point = interpolation_points[local_point];
-         const amrex::Real wx[2] = {1.0 - point.fraction[0], point.fraction[0]};
+         const amrex::Real wx[2] = {1.0_rt - point.fraction[0], point.fraction[0]};
 #if (AMREX_SPACEDIM >= 2)
-         const amrex::Real wy[2] = {1.0 - point.fraction[1], point.fraction[1]};
+         const amrex::Real wy[2] = {1.0_rt - point.fraction[1], point.fraction[1]};
 #else
-         const amrex::Real wy[2] = {1.0, 0.0};
+         const amrex::Real wy[2] = {1.0_rt, 0.0_rt};
 #endif
 #if (AMREX_SPACEDIM == 3)
-         const amrex::Real wz[2] = {1.0 - point.fraction[2], point.fraction[2]};
+         const amrex::Real wz[2] = {1.0_rt - point.fraction[2], point.fraction[2]};
 #else
-         const amrex::Real wz[2] = {1.0, 0.0};
+         const amrex::Real wz[2] = {1.0_rt, 0.0_rt};
 #endif
-         amrex::Real value = 0.0;
+         amrex::Real value = 0.0_rt;
          for (int dk = 0; dk < (AMREX_SPACEDIM == 3 ? 2 : 1); ++dk) {
             for (int dj = 0; dj < (AMREX_SPACEDIM >= 2 ? 2 : 1); ++dj) {
                for (int di = 0; di < 2; ++di) {

@@ -40,6 +40,12 @@ class DiagnosticValueKind(str, Enum):
     TENSOR = "tensor"
 
 
+class DiagnosticSurface(str, Enum):
+    NONE = "none"
+    DIAGNOSTIC = "diagnostic_surface"
+    APPARENT_HORIZON = "apparent_horizon"
+
+
 @dataclass(frozen=True)
 class ComplexModeDiagnostic:
     name: str
@@ -65,6 +71,7 @@ class Diagnostic:
     value_kind: DiagnosticValueKind = DiagnosticValueKind.SCALAR
     component_index: int = 0
     component_count: int = 1
+    surface: DiagnosticSurface = DiagnosticSurface.NONE
 
 
 _SCHEMA_VERSION = 1
@@ -147,6 +154,7 @@ def _load_runtime_diagnostic(
         "dependencies",
         "requirements",
         "default",
+        "surface",
     }
     identity_keys = (
         {"name", "label"}
@@ -160,6 +168,21 @@ def _load_runtime_diagnostic(
         _require_string(table, "operation", context),
         f"{context}.operation",
     )
+    surface_name = table.get("surface", DiagnosticSurface.NONE.value)
+    if not isinstance(surface_name, str) or not surface_name:
+        raise ValueError(f"{context}.surface must be a non-empty string")
+    surface = _enum_value(
+        DiagnosticSurface, surface_name, f"{context}.surface"
+    )
+    if operation is DiagnosticOperation.SURFACE_INTEGRAL:
+        if surface is DiagnosticSurface.NONE:
+            raise ValueError(
+                f"{context}.surface is required for a surface integral"
+            )
+    elif surface is not DiagnosticSurface.NONE:
+        raise ValueError(
+            f"{context}.surface is only valid for a surface integral"
+        )
     storage_name = table.get("storage", DiagnosticStorage.REAL.value)
     if not isinstance(storage_name, str) or not storage_name:
         raise ValueError(f"{context}.storage must be a non-empty string")
@@ -193,6 +216,7 @@ def _load_runtime_diagnostic(
                 requirements=requirements,
                 default=default,
                 family=name,
+                surface=surface,
             ),
         )
 
@@ -219,6 +243,7 @@ def _load_runtime_diagnostic(
             value_kind=DiagnosticValueKind.VECTOR,
             component_index=component_index,
             component_count=component_count,
+            surface=surface,
         )
         for component_index, (name, label) in enumerate(
             zip(names, labels, strict=True)
@@ -320,7 +345,7 @@ def _load_catalog() -> tuple[
 
 
 # "standard" preserves the compact scalars.tsv contract. Global GR charges,
-# horizon integrals, and radiation diagnostics remain opt-in through groups.
+# horizon integrals, radiation and fixed-region constraints remain opt-in.
 _RUNTIME_GROUP_NAMES = tuple(
     dict.fromkeys(
         group
@@ -335,6 +360,8 @@ DIAGNOSTIC_GROUPS = {
         if "global_gr" not in diagnostic.groups
         and "radiation" not in diagnostic.groups
         and "horizon" not in diagnostic.groups
+        and "horizon_flux" not in diagnostic.groups
+        and "constraint_regions" not in diagnostic.groups
     ),
     **{
         group: tuple(

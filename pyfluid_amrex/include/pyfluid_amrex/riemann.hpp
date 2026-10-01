@@ -17,34 +17,36 @@
 
 namespace pyfluid_amrex {
 
-constexpr amrex::Real MAGNETIC_EPS = 1.0e-14;
+using namespace amrex::literals;
+
+constexpr amrex::Real MAGNETIC_EPS = 1.0e-14_rt;
 
 struct WaveSpeeds {
-   amrex::Real sl = 0.0;
-   amrex::Real sr = 0.0;
+   amrex::Real sl = 0.0_rt;
+   amrex::Real sr = 0.0_rt;
 };
 
 struct MHDNormalState {
-   amrex::Real rho = 0.0;
-   amrex::Real momn = 0.0;
-   amrex::Real momt1 = 0.0;
-   amrex::Real momt2 = 0.0;
-   amrex::Real energy = 0.0;
-   amrex::Real bn = 0.0;
-   amrex::Real bt1 = 0.0;
-   amrex::Real bt2 = 0.0;
+   amrex::Real rho = 0.0_rt;
+   amrex::Real momn = 0.0_rt;
+   amrex::Real momt1 = 0.0_rt;
+   amrex::Real momt2 = 0.0_rt;
+   amrex::Real energy = 0.0_rt;
+   amrex::Real bn = 0.0_rt;
+   amrex::Real bt1 = 0.0_rt;
+   amrex::Real bt2 = 0.0_rt;
 };
 
 struct MHDNormalPrimitive {
-   amrex::Real rho = 0.0;
-   amrex::Real vn = 0.0;
-   amrex::Real vt1 = 0.0;
-   amrex::Real vt2 = 0.0;
-   amrex::Real pressure = 0.0;
-   amrex::Real energy = 0.0;
-   amrex::Real bn = 0.0;
-   amrex::Real bt1 = 0.0;
-   amrex::Real bt2 = 0.0;
+   amrex::Real rho = 0.0_rt;
+   amrex::Real vn = 0.0_rt;
+   amrex::Real vt1 = 0.0_rt;
+   amrex::Real vt2 = 0.0_rt;
+   amrex::Real pressure = 0.0_rt;
+   amrex::Real energy = 0.0_rt;
+   amrex::Real bn = 0.0_rt;
+   amrex::Real bt1 = 0.0_rt;
+   amrex::Real bt2 = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -279,7 +281,7 @@ MHDState from_normal_flux(MHDNormalState const& flux) noexcept
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 MHDNormalState flux_normal_mhd_primitive(MHDNormalPrimitive const& primitive) noexcept
 {
-   const amrex::Real magnetic = 0.5 * (
+   const amrex::Real magnetic = 0.5_rt * (
       primitive.bn * primitive.bn
       + primitive.bt1 * primitive.bt1
       + primitive.bt2 * primitive.bt2
@@ -296,7 +298,7 @@ MHDNormalState flux_normal_mhd_primitive(MHDNormalPrimitive const& primitive) no
       primitive.rho * primitive.vt1 * primitive.vn - primitive.bn * primitive.bt1,
       primitive.rho * primitive.vt2 * primitive.vn - primitive.bn * primitive.bt2,
       (primitive.energy + total_pressure) * primitive.vn - primitive.bn * vdotb,
-      0.0,
+      0.0_rt,
       primitive.bt1 * primitive.vn - primitive.bn * primitive.vt1,
       primitive.bt2 * primitive.vn - primitive.bn * primitive.vt2,
    };
@@ -333,7 +335,7 @@ MHDNormalPrimitive hlld_star_state(
    }
    const amrex::Real vdotb = primitive.vn * primitive.bn + primitive.vt1 * primitive.bt1 + primitive.vt2 * primitive.bt2;
    const amrex::Real vdotb_star = contact_speed * primitive.bn + vt1_star * bt1_star + vt2_star * bt2_star;
-   const amrex::Real magnetic = 0.5 * (
+   const amrex::Real magnetic = 0.5_rt * (
       primitive.bn * primitive.bn
       + primitive.bt1 * primitive.bt1
       + primitive.bt2 * primitive.bt2
@@ -365,22 +367,22 @@ MHDState mhd_hlld_flux_from_normal_primitives(
    EOSParams const& eos
 ) noexcept
 {
-   const amrex::Real bn = 0.5 * (pl.bn + pr.bn);
+   const amrex::Real bn = 0.5_rt * (pl.bn + pr.bn);
    const MHDNormalState fl = flux_normal_mhd_primitive(pl);
    const MHDNormalState fr = flux_normal_mhd_primitive(pr);
    const amrex::Real cf_l = mhd_fast_speed_from_components<EOSMethod>(pl.rho, pl.pressure, pl.bn, pl.bt1, pl.bt2, eos);
    const amrex::Real cf_r = mhd_fast_speed_from_components<EOSMethod>(pr.rho, pr.pressure, pr.bn, pr.bt1, pr.bt2, eos);
    const amrex::Real sl = amrex::min(pl.vn - cf_l, pr.vn - cf_r);
    const amrex::Real sr = amrex::max(pl.vn + cf_l, pr.vn + cf_r);
-   if (sl >= 0.0) {
+   if (sl >= 0.0_rt) {
       return from_normal_flux<Direction>(fl);
    }
-   if (sr <= 0.0) {
+   if (sr <= 0.0_rt) {
       return from_normal_flux<Direction>(fr);
    }
 
-   const amrex::Real total_pressure_l = pl.pressure + 0.5 * (bn * bn + pl.bt1 * pl.bt1 + pl.bt2 * pl.bt2);
-   const amrex::Real total_pressure_r = pr.pressure + 0.5 * (bn * bn + pr.bt1 * pr.bt1 + pr.bt2 * pr.bt2);
+   const amrex::Real total_pressure_l = pl.pressure + 0.5_rt * (bn * bn + pl.bt1 * pl.bt1 + pl.bt2 * pl.bt2);
+   const amrex::Real total_pressure_r = pr.pressure + 0.5_rt * (bn * bn + pr.bt1 * pr.bt1 + pr.bt2 * pr.bt2);
    const amrex::Real lfac = pl.rho * (sl - pl.vn);
    const amrex::Real rfac = pr.rho * (sr - pr.vn);
    const amrex::Real contact_speed = (rfac * pr.vn - lfac * pl.vn + total_pressure_l - total_pressure_r) / (rfac - lfac);
@@ -398,7 +400,7 @@ MHDState mhd_hlld_flux_from_normal_primitives(
       fl.momt1 + sl * (u_ls.momt1 - u_l.momt1),
       fl.momt2 + sl * (u_ls.momt2 - u_l.momt2),
       fl.energy + sl * (u_ls.energy - u_l.energy),
-      0.0,
+      0.0_rt,
       fl.bt1 + sl * (u_ls.bt1 - u_l.bt1),
       fl.bt2 + sl * (u_ls.bt2 - u_l.bt2),
    };
@@ -408,20 +410,20 @@ MHDState mhd_hlld_flux_from_normal_primitives(
       fr.momt1 + sr * (u_rs.momt1 - u_r.momt1),
       fr.momt2 + sr * (u_rs.momt2 - u_r.momt2),
       fr.energy + sr * (u_rs.energy - u_r.energy),
-      0.0,
+      0.0_rt,
       fr.bt1 + sr * (u_rs.bt1 - u_r.bt1),
       fr.bt2 + sr * (u_rs.bt2 - u_r.bt2),
    };
 
    const amrex::Real abs_bn = amrex::Math::abs(bn);
    if (abs_bn <= MAGNETIC_EPS) {
-      return contact_speed >= 0.0 ? from_normal_flux<Direction>(fls) : from_normal_flux<Direction>(frs);
+      return contact_speed >= 0.0_rt ? from_normal_flux<Direction>(fls) : from_normal_flux<Direction>(frs);
    }
 
    const amrex::Real sqrt_l = std::sqrt(pls.rho);
    const amrex::Real sqrt_r = std::sqrt(prs.rho);
-   const amrex::Real inv_sqrt_sum = 1.0 / (sqrt_l + sqrt_r);
-   const amrex::Real sign_bn = bn < 0.0 ? -1.0 : 1.0;
+   const amrex::Real inv_sqrt_sum = 1.0_rt / (sqrt_l + sqrt_r);
+   const amrex::Real sign_bn = bn < 0.0_rt ? -1.0_rt : 1.0_rt;
    const amrex::Real sl_star = contact_speed - abs_bn / sqrt_l;
    const amrex::Real sr_star = contact_speed + abs_bn / sqrt_r;
    const amrex::Real vt1_double = (
@@ -449,7 +451,7 @@ MHDState mhd_hlld_flux_from_normal_primitives(
       fls.momt1 + sl_star * (u_ld.momt1 - u_ls.momt1),
       fls.momt2 + sl_star * (u_ld.momt2 - u_ls.momt2),
       fls.energy + sl_star * (u_ld.energy - u_ls.energy),
-      0.0,
+      0.0_rt,
       fls.bt1 + sl_star * (u_ld.bt1 - u_ls.bt1),
       fls.bt2 + sl_star * (u_ld.bt2 - u_ls.bt2),
    };
@@ -459,18 +461,18 @@ MHDState mhd_hlld_flux_from_normal_primitives(
       frs.momt1 + sr_star * (u_rd.momt1 - u_rs.momt1),
       frs.momt2 + sr_star * (u_rd.momt2 - u_rs.momt2),
       frs.energy + sr_star * (u_rd.energy - u_rs.energy),
-      0.0,
+      0.0_rt,
       frs.bt1 + sr_star * (u_rd.bt1 - u_rs.bt1),
       frs.bt2 + sr_star * (u_rd.bt2 - u_rs.bt2),
    };
 
-   if (sl_star >= 0.0) {
+   if (sl_star >= 0.0_rt) {
       return from_normal_flux<Direction>(fls);
    }
-   if (contact_speed >= 0.0) {
+   if (contact_speed >= 0.0_rt) {
       return from_normal_flux<Direction>(fld);
    }
-   if (sr_star > 0.0) {
+   if (sr_star > 0.0_rt) {
       return from_normal_flux<Direction>(frd);
    }
    return from_normal_flux<Direction>(frs);
@@ -652,7 +654,7 @@ WaveSpeeds mhd_hlle_wave_speeds_from_primitives(
       }
       const amrex::Real sqrt_l = std::sqrt(primitive_l.rho);
       const amrex::Real sqrt_r = std::sqrt(primitive_r.rho);
-      const amrex::Real inv_sum = 1.0 / (sqrt_l + sqrt_r);
+      const amrex::Real inv_sum = 1.0_rt / (sqrt_l + sqrt_r);
       const amrex::Real vn_roe = (sqrt_l * mhd_primitive_velocity_component(primitive_l, direction)
          + sqrt_r * mhd_primitive_velocity_component(primitive_r, direction)) * inv_sum;
       const amrex::Real bn_roe = (sqrt_l * bn_l + sqrt_r * bn_r) * inv_sum;
@@ -682,20 +684,20 @@ MHDState mhd_hll_flux_from_primitive_speeds(
    const MHDState flux_l = mhd_flux_from_primitives(primitive_l, left, direction);
    const MHDState flux_r = mhd_flux_from_primitives(primitive_r, right, direction);
 
-   if (speeds.sl >= 0.0) {
+   if (speeds.sl >= 0.0_rt) {
       return flux_l;
    }
-   if (speeds.sr <= 0.0) {
+   if (speeds.sr <= 0.0_rt) {
       return flux_r;
    }
 
    MHDState result = generated::mhd_hll_flux(flux_l, flux_r, left, right, speeds.sl, speeds.sr);
    if (direction == 0) {
-      result.b1 = 0.0;
+      result.b1 = 0.0_rt;
    } else if (direction == 1) {
-      result.b2 = 0.0;
+      result.b2 = 0.0_rt;
    } else {
-      result.b3 = 0.0;
+      result.b3 = 0.0_rt;
    }
    return result;
 }
@@ -720,11 +722,11 @@ MHDState mhd_llf_flux_from_primitives(
    const MHDState flux_r = mhd_flux_from_primitives(primitive_r, right, direction);
    MHDState result = generated::mhd_llf_flux(flux_l, flux_r, left, right, wavespeed);
    if (direction == 0) {
-      result.b1 = 0.0;
+      result.b1 = 0.0_rt;
    } else if (direction == 1) {
-      result.b2 = 0.0;
+      result.b2 = 0.0_rt;
    } else {
-      result.b3 = 0.0;
+      result.b3 = 0.0_rt;
    }
    return result;
 }
@@ -771,7 +773,7 @@ MHDState mhd_hlld_flux_from_primitives(
    EOSParams const& eos
 ) noexcept
 {
-   const amrex::Real bn = 0.5 * (
+   const amrex::Real bn = 0.5_rt * (
       mhd_primitive_magnetic_component<Direction>(primitive_l)
       + mhd_primitive_magnetic_component<Direction>(primitive_r)
    );
@@ -856,7 +858,7 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives(
       }
       const amrex::Real sqrt_l = std::sqrt(primitive_l.rho);
       const amrex::Real sqrt_r = std::sqrt(primitive_r.rho);
-      const amrex::Real inv_sum = 1.0 / (sqrt_l + sqrt_r);
+      const amrex::Real inv_sum = 1.0_rt / (sqrt_l + sqrt_r);
       const amrex::Real vx_roe = (sqrt_l * primitive_l.v1 + sqrt_r * primitive_r.v1) * inv_sum;
       const amrex::Real vy_roe = (sqrt_l * primitive_l.v2 + sqrt_r * primitive_r.v2) * inv_sum;
       const amrex::Real vz_roe = (sqrt_l * primitive_l.v3 + sqrt_r * primitive_r.v3) * inv_sum;
@@ -869,13 +871,13 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives(
       const amrex::Real h_l = (energy_l + primitive_l.pressure) / primitive_l.rho;
       const amrex::Real h_r = (energy_r + primitive_r.pressure) / primitive_r.rho;
       const amrex::Real h_roe = (sqrt_l * h_l + sqrt_r * h_r) * inv_sum;
-      const amrex::Real kinetic_roe = 0.5 * (vx_roe * vx_roe + vy_roe * vy_roe + vz_roe * vz_roe);
-      const amrex::Real sound2_roe = amrex::max((eos.gamma - 1.0) * (h_roe - kinetic_roe), 0.0);
+      const amrex::Real kinetic_roe = 0.5_rt * (vx_roe * vx_roe + vy_roe * vy_roe + vz_roe * vz_roe);
+      const amrex::Real sound2_roe = amrex::max((eos.gamma - 1.0_rt) * (h_roe - kinetic_roe), 0.0_rt);
       const amrex::Real sound_roe = std::sqrt(sound2_roe);
       const amrex::Real vn_roe = direction == 0 ? vx_roe : (direction == 1 ? vy_roe : vz_roe);
-      const amrex::Real shock_factor = (eos.gamma + 1.0) / (2.0 * eos.gamma);
-      const amrex::Real q_l = std::sqrt(1.0 + shock_factor * amrex::max(primitive_r.pressure / primitive_l.pressure - 1.0, 0.0));
-      const amrex::Real q_r = std::sqrt(1.0 + shock_factor * amrex::max(primitive_l.pressure / primitive_r.pressure - 1.0, 0.0));
+      const amrex::Real shock_factor = (eos.gamma + 1.0_rt) / (2.0_rt * eos.gamma);
+      const amrex::Real q_l = std::sqrt(1.0_rt + shock_factor * amrex::max(primitive_r.pressure / primitive_l.pressure - 1.0_rt, 0.0_rt));
+      const amrex::Real q_r = std::sqrt(1.0_rt + shock_factor * amrex::max(primitive_l.pressure / primitive_r.pressure - 1.0_rt, 0.0_rt));
       return {amrex::min(side.sl, vn_roe - sound_roe * q_l), amrex::max(side.sr, vn_roe + sound_roe * q_r)};
    } else {
       return hydro_hll_wave_speeds_from_primitives<EOSMethod>(primitive_l, primitive_r, direction, eos);
@@ -901,7 +903,7 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives(
       }
       const amrex::Real sqrt_l = std::sqrt(primitive_l.rho);
       const amrex::Real sqrt_r = std::sqrt(primitive_r.rho);
-      const amrex::Real inv_sum = 1.0 / (sqrt_l + sqrt_r);
+      const amrex::Real inv_sum = 1.0_rt / (sqrt_l + sqrt_r);
       const amrex::Real vx_roe = (sqrt_l * primitive_l.v1 + sqrt_r * primitive_r.v1) * inv_sum;
       const amrex::Real vy_roe = (sqrt_l * primitive_l.v2 + sqrt_r * primitive_r.v2) * inv_sum;
       const amrex::Real vz_roe = (sqrt_l * primitive_l.v3 + sqrt_r * primitive_r.v3) * inv_sum;
@@ -914,8 +916,8 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives(
       const amrex::Real h_l = (energy_l + primitive_l.pressure) / primitive_l.rho;
       const amrex::Real h_r = (energy_r + primitive_r.pressure) / primitive_r.rho;
       const amrex::Real h_roe = (sqrt_l * h_l + sqrt_r * h_r) * inv_sum;
-      const amrex::Real kinetic_roe = 0.5 * (vx_roe * vx_roe + vy_roe * vy_roe + vz_roe * vz_roe);
-      const amrex::Real sound2_roe = amrex::max((eos.gamma - 1.0) * (h_roe - kinetic_roe), 0.0);
+      const amrex::Real kinetic_roe = 0.5_rt * (vx_roe * vx_roe + vy_roe * vy_roe + vz_roe * vz_roe);
+      const amrex::Real sound2_roe = amrex::max((eos.gamma - 1.0_rt) * (h_roe - kinetic_roe), 0.0_rt);
       const amrex::Real sound_roe = std::sqrt(sound2_roe);
       amrex::Real vn_roe = vx_roe;
       if constexpr (Direction == 1) {
@@ -923,9 +925,9 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives(
       } else if constexpr (Direction == 2) {
          vn_roe = vz_roe;
       }
-      const amrex::Real shock_factor = (eos.gamma + 1.0) / (2.0 * eos.gamma);
-      const amrex::Real q_l = std::sqrt(1.0 + shock_factor * amrex::max(primitive_r.pressure / primitive_l.pressure - 1.0, 0.0));
-      const amrex::Real q_r = std::sqrt(1.0 + shock_factor * amrex::max(primitive_l.pressure / primitive_r.pressure - 1.0, 0.0));
+      const amrex::Real shock_factor = (eos.gamma + 1.0_rt) / (2.0_rt * eos.gamma);
+      const amrex::Real q_l = std::sqrt(1.0_rt + shock_factor * amrex::max(primitive_r.pressure / primitive_l.pressure - 1.0_rt, 0.0_rt));
+      const amrex::Real q_r = std::sqrt(1.0_rt + shock_factor * amrex::max(primitive_l.pressure / primitive_r.pressure - 1.0_rt, 0.0_rt));
       return {amrex::min(side.sl, vn_roe - sound_roe * q_l), amrex::max(side.sr, vn_roe + sound_roe * q_r)};
    } else {
       return hydro_hll_wave_speeds_from_primitives<Direction, EOSMethod>(primitive_l, primitive_r, eos);
@@ -968,7 +970,7 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives_normal(
       }
       const amrex::Real sqrt_l = std::sqrt(primitive_l.rho);
       const amrex::Real sqrt_r = std::sqrt(primitive_r.rho);
-      const amrex::Real inv_sum = 1.0 / (sqrt_l + sqrt_r);
+      const amrex::Real inv_sum = 1.0_rt / (sqrt_l + sqrt_r);
       const amrex::Real vx_roe = (sqrt_l * primitive_l.v1 + sqrt_r * primitive_r.v1) * inv_sum;
       const amrex::Real vy_roe = (sqrt_l * primitive_l.v2 + sqrt_r * primitive_r.v2) * inv_sum;
       const amrex::Real vz_roe = (sqrt_l * primitive_l.v3 + sqrt_r * primitive_r.v3) * inv_sum;
@@ -981,16 +983,16 @@ WaveSpeeds hydro_hlle_wave_speeds_from_primitives_normal(
       const amrex::Real h_l = (energy_l + primitive_l.pressure) / primitive_l.rho;
       const amrex::Real h_r = (energy_r + primitive_r.pressure) / primitive_r.rho;
       const amrex::Real h_roe = (sqrt_l * h_l + sqrt_r * h_r) * inv_sum;
-      const amrex::Real kinetic_roe = 0.5 * (vx_roe * vx_roe + vy_roe * vy_roe + vz_roe * vz_roe);
-      const amrex::Real sound2_roe = amrex::max((eos.gamma - 1.0) * (h_roe - kinetic_roe), 0.0);
+      const amrex::Real kinetic_roe = 0.5_rt * (vx_roe * vx_roe + vy_roe * vy_roe + vz_roe * vz_roe);
+      const amrex::Real sound2_roe = amrex::max((eos.gamma - 1.0_rt) * (h_roe - kinetic_roe), 0.0_rt);
       const amrex::Real sound_roe = std::sqrt(sound2_roe);
       const amrex::Real vn_roe = vx_roe * normal.x + vy_roe * normal.y + vz_roe * normal.z;
-      const amrex::Real shock_factor = (eos.gamma + 1.0) / (2.0 * eos.gamma);
+      const amrex::Real shock_factor = (eos.gamma + 1.0_rt) / (2.0_rt * eos.gamma);
       const amrex::Real q_l = std::sqrt(
-         1.0 + shock_factor * amrex::max(primitive_r.pressure / primitive_l.pressure - 1.0, 0.0)
+         1.0_rt + shock_factor * amrex::max(primitive_r.pressure / primitive_l.pressure - 1.0_rt, 0.0_rt)
       );
       const amrex::Real q_r = std::sqrt(
-         1.0 + shock_factor * amrex::max(primitive_l.pressure / primitive_r.pressure - 1.0, 0.0)
+         1.0_rt + shock_factor * amrex::max(primitive_l.pressure / primitive_r.pressure - 1.0_rt, 0.0_rt)
       );
       return {amrex::min(side.sl, vn_roe - sound_roe * q_l), amrex::max(side.sr, vn_roe + sound_roe * q_r)};
    } else {
@@ -1010,10 +1012,10 @@ HydroState hll_flux_from_primitive_speeds_normal(
 {
    const HydroState flux_l = hydro_flux_normal(left, primitive_l.pressure, normal);
    const HydroState flux_r = hydro_flux_normal(right, primitive_r.pressure, normal);
-   if (speeds.sl >= 0.0) {
+   if (speeds.sl >= 0.0_rt) {
       return flux_l;
    }
-   if (speeds.sr <= 0.0) {
+   if (speeds.sr <= 0.0_rt) {
       return flux_r;
    }
    return generated::hydro_hll_flux(flux_l, flux_r, left, right, speeds.sl, speeds.sr);
@@ -1094,14 +1096,14 @@ HydroState hllc_flux_from_primitives_normal(
    const amrex::Real sr = speeds.sr;
    const HydroState flux_l = hydro_flux_normal(left, primitive_l.pressure, normal);
    const HydroState flux_r = hydro_flux_normal(right, primitive_r.pressure, normal);
-   if (sl >= 0.0) {
+   if (sl >= 0.0_rt) {
       return flux_l;
    }
-   if (sr <= 0.0) {
+   if (sr <= 0.0_rt) {
       return flux_r;
    }
    const amrex::Real denom = left.rho * (sl - vn_l) - right.rho * (sr - vn_r);
-   if (!amrex::Math::isfinite(denom) || amrex::Math::abs(denom) <= 1.0e-300) {
+   if (!amrex::Math::isfinite(denom) || amrex::Math::abs(denom) <= 1.0e-300_rt) {
       return hlle_flux_from_primitives_normal<EOSMethod>(primitive_l, primitive_r, eos, normal);
    }
    const amrex::Real s_star = (
@@ -1112,15 +1114,15 @@ HydroState hllc_flux_from_primitives_normal(
    if (!amrex::Math::isfinite(s_star) || s_star <= sl || s_star >= sr) {
       return hlle_flux_from_primitives_normal<EOSMethod>(primitive_l, primitive_r, eos, normal);
    }
-   if (s_star >= 0.0) {
+   if (s_star >= 0.0_rt) {
       const HydroState star_l = hllc_star_state_normal(left, primitive_l.pressure, normal, sl, s_star);
-      if (!hydro_state_is_finite(star_l) || star_l.rho <= 0.0 || star_l.energy <= 0.0) {
+      if (!hydro_state_is_finite(star_l) || star_l.rho <= 0.0_rt || star_l.energy <= 0.0_rt) {
          return hlle_flux_from_primitives_normal<EOSMethod>(primitive_l, primitive_r, eos, normal);
       }
       return add_wave_correction(flux_l, sl, star_l, left);
    }
    const HydroState star_r = hllc_star_state_normal(right, primitive_r.pressure, normal, sr, s_star);
-   if (!hydro_state_is_finite(star_r) || star_r.rho <= 0.0 || star_r.energy <= 0.0) {
+   if (!hydro_state_is_finite(star_r) || star_r.rho <= 0.0_rt || star_r.energy <= 0.0_rt) {
       return hlle_flux_from_primitives_normal<EOSMethod>(primitive_l, primitive_r, eos, normal);
    }
    return add_wave_correction(flux_r, sr, star_r, right);
@@ -1138,10 +1140,10 @@ HydroState hll_flux_from_primitive_speeds(
 {
    const HydroState flux_l = hydro_flux(left, primitive_l.pressure, direction);
    const HydroState flux_r = hydro_flux(right, primitive_r.pressure, direction);
-   if (speeds.sl >= 0.0) {
+   if (speeds.sl >= 0.0_rt) {
       return flux_l;
    }
-   if (speeds.sr <= 0.0) {
+   if (speeds.sr <= 0.0_rt) {
       return flux_r;
    }
    return generated::hydro_hll_flux(flux_l, flux_r, left, right, speeds.sl, speeds.sr);
@@ -1159,10 +1161,10 @@ HydroState hll_flux_from_primitive_speeds(
 {
    const HydroState flux_l = hydro_flux<Direction>(left, primitive_l.pressure);
    const HydroState flux_r = hydro_flux<Direction>(right, primitive_r.pressure);
-   if (speeds.sl >= 0.0) {
+   if (speeds.sl >= 0.0_rt) {
       return flux_l;
    }
-   if (speeds.sr <= 0.0) {
+   if (speeds.sr <= 0.0_rt) {
       return flux_r;
    }
    return generated::hydro_hll_flux(flux_l, flux_r, left, right, speeds.sl, speeds.sr);
@@ -1295,14 +1297,14 @@ HydroState hllc_flux_from_primitives(
    const amrex::Real sr = speeds.sr;
    const HydroState flux_l = hydro_flux(left, primitive_l.pressure, direction);
    const HydroState flux_r = hydro_flux(right, primitive_r.pressure, direction);
-   if (sl >= 0.0) {
+   if (sl >= 0.0_rt) {
       return flux_l;
    }
-   if (sr <= 0.0) {
+   if (sr <= 0.0_rt) {
       return flux_r;
    }
    const amrex::Real denom = left.rho * (sl - vn_l) - right.rho * (sr - vn_r);
-   if (!amrex::Math::isfinite(denom) || amrex::Math::abs(denom) <= 1.0e-300) {
+   if (!amrex::Math::isfinite(denom) || amrex::Math::abs(denom) <= 1.0e-300_rt) {
       return hlle_flux_from_primitives<EOSMethod>(primitive_l, primitive_r, eos, direction);
    }
    const amrex::Real s_star = (
@@ -1313,15 +1315,15 @@ HydroState hllc_flux_from_primitives(
    if (!amrex::Math::isfinite(s_star) || s_star <= sl || s_star >= sr) {
       return hlle_flux_from_primitives<EOSMethod>(primitive_l, primitive_r, eos, direction);
    }
-   if (s_star >= 0.0) {
+   if (s_star >= 0.0_rt) {
       const HydroState star_l = hllc_star_state(left, primitive_l.pressure, direction, sl, s_star);
-      if (!hydro_state_is_finite(star_l) || star_l.rho <= 0.0 || star_l.energy <= 0.0) {
+      if (!hydro_state_is_finite(star_l) || star_l.rho <= 0.0_rt || star_l.energy <= 0.0_rt) {
          return hlle_flux_from_primitives<EOSMethod>(primitive_l, primitive_r, eos, direction);
       }
       return add_wave_correction(flux_l, sl, star_l, left);
    }
    const HydroState star_r = hllc_star_state(right, primitive_r.pressure, direction, sr, s_star);
-   if (!hydro_state_is_finite(star_r) || star_r.rho <= 0.0 || star_r.energy <= 0.0) {
+   if (!hydro_state_is_finite(star_r) || star_r.rho <= 0.0_rt || star_r.energy <= 0.0_rt) {
       return hlle_flux_from_primitives<EOSMethod>(primitive_l, primitive_r, eos, direction);
    }
    return add_wave_correction(flux_r, sr, star_r, right);
@@ -1346,14 +1348,14 @@ HydroState hllc_flux_from_primitives(
    const amrex::Real sr = speeds.sr;
    const HydroState flux_l = hydro_flux<Direction>(left, primitive_l.pressure);
    const HydroState flux_r = hydro_flux<Direction>(right, primitive_r.pressure);
-   if (sl >= 0.0) {
+   if (sl >= 0.0_rt) {
       return flux_l;
    }
-   if (sr <= 0.0) {
+   if (sr <= 0.0_rt) {
       return flux_r;
    }
    const amrex::Real denom = left.rho * (sl - vn_l) - right.rho * (sr - vn_r);
-   if (!amrex::Math::isfinite(denom) || amrex::Math::abs(denom) <= 1.0e-300) {
+   if (!amrex::Math::isfinite(denom) || amrex::Math::abs(denom) <= 1.0e-300_rt) {
       return hlle_flux_from_primitives<Direction, EOSMethod>(primitive_l, primitive_r, eos);
    }
    const amrex::Real s_star = (
@@ -1364,22 +1366,25 @@ HydroState hllc_flux_from_primitives(
    if (!amrex::Math::isfinite(s_star) || s_star <= sl || s_star >= sr) {
       return hlle_flux_from_primitives<Direction, EOSMethod>(primitive_l, primitive_r, eos);
    }
-   if (s_star >= 0.0) {
+   if (s_star >= 0.0_rt) {
       const HydroState star_l = hllc_star_state<Direction>(left, primitive_l.pressure, sl, s_star);
-      if (!hydro_state_is_finite(star_l) || star_l.rho <= 0.0 || star_l.energy <= 0.0) {
+      if (!hydro_state_is_finite(star_l) || star_l.rho <= 0.0_rt || star_l.energy <= 0.0_rt) {
          return hlle_flux_from_primitives<Direction, EOSMethod>(primitive_l, primitive_r, eos);
       }
       return add_wave_correction(flux_l, sl, star_l, left);
    }
    const HydroState star_r = hllc_star_state<Direction>(right, primitive_r.pressure, sr, s_star);
-   if (!hydro_state_is_finite(star_r) || star_r.rho <= 0.0 || star_r.energy <= 0.0) {
+   if (!hydro_state_is_finite(star_r) || star_r.rho <= 0.0_rt || star_r.energy <= 0.0_rt) {
       return hlle_flux_from_primitives<Direction, EOSMethod>(primitive_l, primitive_r, eos);
    }
    return add_wave_correction(flux_r, sr, star_r, right);
 }
 
+// Keep reconstruction and the Riemann solve fused, but let the optimizer share
+// large face solvers across passive/solid-wall callers instead of forcing a
+// copy into every cell-loop body. Small specializations remain inlineable.
 template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+AMREX_GPU_HOST_DEVICE inline
 HydroState hydro_riemann_flux_normal(
    amrex::Array4<amrex::Real const> const& state,
    int il,
@@ -1406,9 +1411,27 @@ HydroState hydro_riemann_flux_normal(
    }
 }
 
-template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
+template <int RiemannMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-HydroState hydro_riemann_flux(
+HydroState hydro_riemann_flux_from_face_states(
+   HydroPrimitiveFaceStates const& face,
+   EOSParams const& eos
+) noexcept
+{
+   if constexpr (RiemannMethod == RiemannHLL) {
+      return hll_flux_from_primitives<Direction, EOSMethod>(face.left, face.right, eos);
+   } else if constexpr (RiemannMethod == RiemannHLLE) {
+      return hlle_flux_from_primitives<Direction, EOSMethod>(face.left, face.right, eos);
+   } else if constexpr (RiemannMethod == RiemannHLLC) {
+      return hllc_flux_from_primitives<Direction, EOSMethod>(face.left, face.right, eos);
+   } else {
+      return llf_flux_from_primitives<Direction, EOSMethod>(face.left, face.right, eos);
+   }
+}
+
+template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
+AMREX_GPU_HOST_DEVICE inline
+HydroState shared_hydro_riemann_flux(
    amrex::Array4<amrex::Real const> const& state,
    int il,
    int jl,
@@ -1422,19 +1445,39 @@ HydroState hydro_riemann_flux(
    const HydroPrimitiveFaceStates face = hydro_primitive_face_states<ReconMethod, Direction, EOSMethod>(
       state, il, jl, kl, ir, jr, kr, eos
    );
-   if constexpr (RiemannMethod == RiemannHLL) {
-      return hll_flux_from_primitives<Direction, EOSMethod>(face.left, face.right, eos);
-   } else if constexpr (RiemannMethod == RiemannHLLE) {
-      return hlle_flux_from_primitives<Direction, EOSMethod>(face.left, face.right, eos);
-   } else if constexpr (RiemannMethod == RiemannHLLC) {
-      return hllc_flux_from_primitives<Direction, EOSMethod>(face.left, face.right, eos);
-   } else {
-      return llf_flux_from_primitives<Direction, EOSMethod>(face.left, face.right, eos);
-   }
+   return hydro_riemann_flux_from_face_states<RiemannMethod, Direction, EOSMethod>(face, eos);
 }
 
 template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+HydroState hydro_riemann_flux(
+   amrex::Array4<amrex::Real const> const& state,
+   int il,
+   int jl,
+   int kl,
+   int ir,
+   int jr,
+   int kr,
+   EOSParams const& eos
+) noexcept
+{
+   // PWC is cheap enough that an extra face call measurably slows the CPU
+   // loop. Keep its direct path, using the same reconstruction/positivity and
+   // Riemann owners as the shared higher-order path. No runtime branch.
+   if constexpr (ReconMethod == ReconPWC) {
+      const HydroPrimitiveFaceStates face = hydro_primitive_face_states<ReconMethod, Direction, EOSMethod>(
+         state, il, jl, kl, ir, jr, kr, eos
+      );
+      return hydro_riemann_flux_from_face_states<RiemannMethod, Direction, EOSMethod>(face, eos);
+   } else {
+      return shared_hydro_riemann_flux<ReconMethod, RiemannMethod, Direction, EOSMethod>(
+         state, il, jl, kl, ir, jr, kr, eos
+      );
+   }
+}
+
+template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
+AMREX_GPU_HOST_DEVICE inline
 MHDState mhd_riemann_flux(
    amrex::Array4<amrex::Real const> const& state,
    int il,

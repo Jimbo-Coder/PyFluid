@@ -18,6 +18,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct RelativisticInitialDataView;
 struct RunConfig;
 
@@ -30,47 +32,47 @@ struct EquilibriumTorusParameters {
    bool active = false;
    EquilibriumTorusGravity gravity = EquilibriumTorusGravity::TestFluid;
    DiskRotationLaw rotation_law = DiskRotationLaw::ConstantL;
-   amrex::Real specific_angular_momentum = 0.0;
-   amrex::Real angular_velocity = 0.0;
-   amrex::Real differential_rotation_length = 10.0;
-   amrex::Real rotation_power_q = 1.0;
-   amrex::Real inner_radius = 0.0;
-   amrex::Real axis1 = 0.0;
-   amrex::Real axis2 = 0.0;
-   amrex::Real axis3 = 1.0;
-   amrex::Real center1 = 0.0;
-   amrex::Real center2 = 0.0;
-   amrex::Real center3 = 0.0;
-   amrex::Real matter_relaxation = 0.5;
-   amrex::Real relative_tolerance = 1.0e-8;
+   amrex::Real specific_angular_momentum = 0.0_rt;
+   amrex::Real angular_velocity = 0.0_rt;
+   amrex::Real differential_rotation_length = 10.0_rt;
+   amrex::Real rotation_power_q = 1.0_rt;
+   amrex::Real inner_radius = 0.0_rt;
+   amrex::Real axis1 = 0.0_rt;
+   amrex::Real axis2 = 0.0_rt;
+   amrex::Real axis3 = 1.0_rt;
+   amrex::Real center1 = 0.0_rt;
+   amrex::Real center2 = 0.0_rt;
+   amrex::Real center3 = 0.0_rt;
+   amrex::Real matter_relaxation = 0.5_rt;
+   amrex::Real relative_tolerance = 1.0e-8_rt;
    int max_iterations = 96;
-   amrex::Real continuation_source_angular_velocity = 0.0;
+   amrex::Real continuation_source_angular_velocity = 0.0_rt;
    int continuation_steps = 1;
    bool continue_existing_matter = false;
    InitialAtmosphereParameters atmosphere{};
 };
 
 struct EquilibriumTorusPoint {
-   amrex::Real log_specific_enthalpy = 0.0;
-   amrex::Real angular_velocity = 0.0;
-   amrex::Real minus_covariant_time_velocity = 0.0;
-   amrex::Real v1 = 0.0;
-   amrex::Real v2 = 0.0;
-   amrex::Real v3 = 0.0;
-   amrex::Real velocity_squared = 0.0;
+   amrex::Real log_specific_enthalpy = 0.0_rt;
+   amrex::Real angular_velocity = 0.0_rt;
+   amrex::Real minus_covariant_time_velocity = 0.0_rt;
+   amrex::Real v1 = 0.0_rt;
+   amrex::Real v2 = 0.0_rt;
+   amrex::Real v3 = 0.0_rt;
+   amrex::Real velocity_squared = 0.0_rt;
    bool timelike = false;
 };
 
 struct EquilibriumTorusUpdateSummary {
-   amrex::Real maximum_density = 0.0;
-   amrex::Real maximum_velocity = 0.0;
-   amrex::Real inner_radius = 0.0;
-   amrex::Real outer_radius = 0.0;
-   amrex::Real density_maximum_radius = 0.0;
-   amrex::Real maximum_log_specific_enthalpy = 0.0;
-   amrex::Real boundary_density_excess = 0.0;
-   amrex::Real baryonic_mass = 0.0;
-   amrex::Real angular_momentum = 0.0;
+   amrex::Real maximum_density = 0.0_rt;
+   amrex::Real maximum_velocity = 0.0_rt;
+   amrex::Real inner_radius = 0.0_rt;
+   amrex::Real outer_radius = 0.0_rt;
+   amrex::Real density_maximum_radius = 0.0_rt;
+   amrex::Real maximum_log_specific_enthalpy = 0.0_rt;
+   amrex::Real boundary_density_excess = 0.0_rt;
+   amrex::Real baryonic_mass = 0.0_rt;
+   amrex::Real angular_momentum = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -107,7 +109,7 @@ EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
       return {
          point.log_specific_enthalpy,
          point.angular_velocity,
-         0.0,
+         0.0_rt,
          point.v1,
          point.v2,
          point.v3,
@@ -142,14 +144,14 @@ EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
    const amrex::Real denominator = metric_phi_phi
       + parameters.specific_angular_momentum * metric_t_phi;
    const amrex::Real scale = std::max({
-      amrex::Real(1.0),
+      amrex::Real(1.0_rt),
       std::abs(metric_phi_phi),
       std::abs(parameters.specific_angular_momentum * metric_t_phi),
    });
-   if (!(metric.lapse > 0.0)
+   if (!(metric.lapse > 0.0_rt)
        || std::abs(denominator)
-          <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale
-       || !(inner_normalization > 0.0)) {
+          <= 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale
+       || !(inner_normalization > 0.0_rt)) {
       return {};
    }
    const amrex::Real angular_velocity =
@@ -163,7 +165,7 @@ EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
       generated::constant_l_torus_normalization_squared(
          metric_tt, metric_t_phi, metric_phi_phi, angular_velocity
       );
-   if (!(normalization_squared > 0.0)
+   if (!(normalization_squared > 0.0_rt)
        || !std::isfinite(normalization_squared)) {
       return {};
    }
@@ -186,8 +188,8 @@ EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
    const amrex::Real velocity_squared = spatial_vector_norm_squared(
       v1, v2, v3, metric
    );
-   const bool timelike = minus_covariant_time_velocity > 0.0
-      && velocity_squared >= 0.0 && velocity_squared < 1.0
+   const bool timelike = minus_covariant_time_velocity > 0.0_rt
+      && velocity_squared >= 0.0_rt && velocity_squared < 1.0_rt
       && std::isfinite(minus_covariant_time_velocity)
       && std::isfinite(velocity_squared);
    const amrex::Real log_specific_enthalpy = timelike
@@ -195,7 +197,7 @@ EquilibriumTorusPoint equilibrium_torus_point_from_tangent(
            inner_normalization,
            minus_covariant_time_velocity
         )
-      : 0.0;
+      : 0.0_rt;
    return {
       log_specific_enthalpy,
       angular_velocity,
@@ -241,8 +243,8 @@ EquilibriumTorusPoint equilibrium_torus_axisymmetric_spherical_point(
    return equilibrium_torus_point_from_tangent(
       parameters,
       inner_normalization,
-      0.0,
-      0.0,
+      0.0_rt,
+      0.0_rt,
       radius * std::sin(theta),
       metric
    );

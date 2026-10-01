@@ -1,0 +1,35 @@
+name = "local_metal"
+mpi_launcher = ["mpirun", "-np", "{ranks}", "--bind-to", "none"]
+direct_one_rank = true
+# One M4 GPU. Multi-rank sharing needs a separate performance/identity audit;
+# AdaptiveCpp does not expose AMReX's optional Intel device-UUID extension.
+default_ranks = 1
+# The inherited postcheck only sleeps and returns success. Keep compilation
+# serialization, the short yield, API error checks and queue deadlines.
+environment = { ACPP_VISIBILITY_MASK = "metal", OMPI_MCA_sharedfp = "individual", ACPP_METAL_JIT_POSTCHECK_MS = "0" }
+
+[run]
+work_dir = "{root}"
+
+[build]
+source_dir = "{root}/pyfluid_amrex"
+build_dir = "{root}/build/pyfluid_amrex-metal"
+jobs = 2
+cmake_args = [
+  "-G", "Ninja",
+  "-DCMAKE_BUILD_TYPE=Release",
+  "-DCMAKE_OSX_ARCHITECTURES=arm64",
+  "-DCMAKE_OSX_SYSROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk",
+  "-DCMAKE_CXX_COMPILER={root}/.deps/adaptivecpp-metal/bin/acpp",
+  "-DCMAKE_CXX_COMPILER_LAUNCHER=",
+  "-DCMAKE_PREFIX_PATH={root}/.deps/amrex-metal;/opt/homebrew/opt/hdf5-mpi",
+  "-DAMReX_DIR={root}/.deps/amrex-metal/lib/cmake/AMReX",
+  "-DHDF5_ROOT=/opt/homebrew/opt/hdf5-mpi",
+  "-DPYFLUID_AMREX_NATIVE=OFF",
+  "-DPYFLUID_AMREX_HORIZON_OPENMP=OFF",
+  "-DPYFLUID_AMREX_PRECISION=SINGLE",
+]
+
+[submit]
+command = []
+header = ["#!/bin/sh"]

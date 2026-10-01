@@ -16,6 +16,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 enum class ConformalConstraintFormulation {
    ctt,
    cttk,
@@ -24,37 +26,37 @@ enum class ConformalConstraintFormulation {
 
 struct ConformalConstraintSummary {
    int coupled_iterations = 0;
-   amrex::Real relative_update = 0.0;
-   amrex::Real hamiltonian_residual = 0.0;
-   amrex::Real lapse_residual = 0.0;
-   amrex::Real momentum_residual = 0.0;
+   amrex::Real relative_update = 0.0_rt;
+   amrex::Real hamiltonian_residual = 0.0_rt;
+   amrex::Real lapse_residual = 0.0_rt;
+   amrex::Real momentum_residual = 0.0_rt;
    bool converged = false;
 };
 
 struct ConformalBlackHoleParameters {
    bool active = false;
-   amrex::Real mass = 1.0;
+   amrex::Real mass = 1.0_rt;
    // Signed physical horizon-spin target along the native spherical axis.
    // The XCTS horizon rotation parameter is calibrated to this quasi-local
    // Christodoulou spin; it is deliberately not exposed as a second knob.
-   amrex::Real dimensionless_spin = 0.0;
+   amrex::Real dimensionless_spin = 0.0_rt;
 };
 
 struct ConformalBlackHoleSummary {
-   amrex::Real throat_area = -1.0;
-   amrex::Real irreducible_mass = -1.0;
-   amrex::Real equatorial_circumference = -1.0;
-   amrex::Real polar_circumference = -1.0;
-   amrex::Real kerr_horizon_mass = -1.0;
-   amrex::Real kerr_dimensionless_spin = -1.0;
-   amrex::Real angular_momentum = 0.0;
-   amrex::Real christodoulou_mass = -1.0;
-   amrex::Real christodoulou_dimensionless_spin = 0.0;
+   amrex::Real throat_area = -1.0_rt;
+   amrex::Real irreducible_mass = -1.0_rt;
+   amrex::Real equatorial_circumference = -1.0_rt;
+   amrex::Real polar_circumference = -1.0_rt;
+   amrex::Real kerr_horizon_mass = -1.0_rt;
+   amrex::Real kerr_dimensionless_spin = -1.0_rt;
+   amrex::Real angular_momentum = 0.0_rt;
+   amrex::Real christodoulou_mass = -1.0_rt;
+   amrex::Real christodoulou_dimensionless_spin = 0.0_rt;
 };
 
 struct ConformalMaterializationResult {
    int matter_iterations = 0;
-   amrex::Real relative_matter_update = 0.0;
+   amrex::Real relative_matter_update = 0.0_rt;
    ConformalConstraintSummary constraints{};
    ConformalBlackHoleSummary black_hole{};
    RotatingStarUpdateSummary rotating_star{};
@@ -83,7 +85,7 @@ using ConformalMatterObserver = std::function<void()>;
 // first spherical-seed constraint sweep.
 struct ConformalStellarMatterUpdateResult {
    RotatingStarUpdateSummary rotating_star{};
-   amrex::Real relative_update = 0.0;
+   amrex::Real relative_update = 0.0_rt;
 };
 
 using ConformalStellarMatterUpdater = std::function<
@@ -109,7 +111,8 @@ ConformalMaterializationResult materialize_conformal_initial_data(
    bool seed_from_spacetime = false,
    ConformalContinuationObserver const& continuation_observer = {},
    ConformalMatterObserver const& matter_observer = {},
-   ConformalStellarMatterUpdater const& stellar_matter_updater = {}
+   ConformalStellarMatterUpdater const& stellar_matter_updater = {},
+   bool preserve_conformal_baryon_density = false
 );
 
 } // namespace pyfluid_amrex

@@ -18,6 +18,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 inline bool sources_enabled(RunConfig const& cfg)
 {
    return cfg.source != "none" || gravity_enabled(cfg);
@@ -26,38 +28,38 @@ inline bool sources_enabled(RunConfig const& cfg)
 inline bool uniform_acceleration_enabled(RunConfig const& cfg)
 {
    return cfg.source == "uniform_acceleration"
-      && (std::abs(cfg.source_a1) > 0.0 || std::abs(cfg.source_a2) > 0.0 || std::abs(cfg.source_a3) > 0.0);
+      && (std::abs(cfg.source_a1) > 0.0_rt || std::abs(cfg.source_a2) > 0.0_rt || std::abs(cfg.source_a3) > 0.0_rt);
 }
 
 inline bool rotating_compact_heating_enabled(RunConfig const& cfg)
 {
-   return cfg.source == "rotating_compact_heating" && cfg.source_power > 0.0;
+   return cfg.source == "rotating_compact_heating" && cfg.source_power > 0.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real smooth_ramp(amrex::Real time, amrex::Real ramp_time) noexcept
 {
-   if (!(ramp_time > 0.0)) {
-      return 1.0;
+   if (!(ramp_time > 0.0_rt)) {
+      return 1.0_rt;
    }
-   const amrex::Real x = amrex::min(amrex::max(time / ramp_time, 0.0), 1.0);
-   return x * x * (3.0 - 2.0 * x);
+   const amrex::Real x = amrex::min(amrex::max(time / ramp_time, 0.0_rt), 1.0_rt);
+   return x * x * (3.0_rt - 2.0_rt * x);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real compact_gaussian(amrex::Real squared_distance_in_sigmas) noexcept
 {
-   constexpr amrex::Real taper_start = 6.25;
-   constexpr amrex::Real support_end = 9.0;
+   constexpr amrex::Real taper_start = 6.25_rt;
+   constexpr amrex::Real support_end = 9.0_rt;
    if (squared_distance_in_sigmas >= support_end) {
-      return 0.0;
+      return 0.0_rt;
    }
-   const amrex::Real gaussian = std::exp(-0.5 * squared_distance_in_sigmas);
+   const amrex::Real gaussian = std::exp(-0.5_rt * squared_distance_in_sigmas);
    if (squared_distance_in_sigmas <= taper_start) {
       return gaussian;
    }
    const amrex::Real x = (support_end - squared_distance_in_sigmas) / (support_end - taper_start);
-   return gaussian * x * x * (3.0 - 2.0 * x);
+   return gaussian * x * x * (3.0_rt - 2.0_rt * x);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -82,7 +84,7 @@ amrex::Real rotating_compact_heating_rate(
    const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
       mesh_coordinate, mesh_axes, problo, dx, i, j, k
    );
-   amrex::Real shape = 0.0;
+   amrex::Real shape = 0.0_rt;
    for (int n = 0; n < mode; ++n) {
       const amrex::Real phase =
          phase0 + angular_speed * time + constants::two_pi * static_cast<amrex::Real>(n) / static_cast<amrex::Real>(mode);
@@ -98,7 +100,7 @@ amrex::Real rotating_compact_heating_rate(
 struct SourceStageContext {
    RunConfig const* cfg = nullptr;
    amrex::Geometry const* geom = nullptr;
-   amrex::Real time = 0.0;
+   amrex::Real time = 0.0_rt;
 
    // Geometry masks are optional source-domain restrictions. They do not
    // change the GF contract; they only tell sources which valid fluid cells
@@ -218,7 +220,7 @@ inline void apply_rotating_compact_heating_source(
    const auto dx = geom.CellSizeArray();
    const amrex::Real source_power = cfg.source_power;
    const amrex::Real source_radius = cfg.source_radius;
-   const amrex::Real inv_sigma2 = 1.0 / (cfg.source_sigma * cfg.source_sigma);
+   const amrex::Real inv_sigma2 = 1.0_rt / (cfg.source_sigma * cfg.source_sigma);
    const amrex::Real angular_speed = cfg.source_omega;
    const amrex::Real phase0 = cfg.source_phase;
    const int mode = cfg.source_azimuthal_mode;

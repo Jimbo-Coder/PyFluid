@@ -6,6 +6,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 void AmrSolverBase::write_current_state_plotfile(int step, amrex::Real time) const
 {
    if (finestLevel() == 0) {
@@ -25,7 +27,12 @@ void AmrSolverBase::write_current_state_plotfile(int step, amrex::Real time) con
          cfg_
       );
    }
-   if (spacetime_state_.active()) {
+   // A fixed spacetime is immutable run context rather than a time-series
+   // field. Preserve one grid snapshot for inspection, but do not duplicate
+   // the usually much larger tensor state beside every fluid frame. Evolved
+   // spacetime remains part of every state output.
+   if (spacetime_state_.active()
+       && (spacetime_state_.evolves() || !fixed_spacetime_plot_written_)) {
       const std::filesystem::path plot_dir =
          std::filesystem::path(cfg_.output_dir) / "stateGF";
       std::filesystem::create_directories(plot_dir);
@@ -42,6 +49,9 @@ void AmrSolverBase::write_current_state_plotfile(int step, amrex::Real time) con
          cfg_,
          "state"
       );
+      if (!spacetime_state_.evolves()) {
+         fixed_spacetime_plot_written_ = true;
+      }
    }
 }
 
@@ -97,10 +107,11 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
       refresh_all_mhd_aux_fields_for_output();
    }
    if (finestLevel() == 0) {
-      const auto gravity_gradient = gravity_gradient_const_ptrs(gravity_gradient_[0]);
+      const auto gravity_gradient = gravity_fields_.gradient_pointers(0);
       write_aux_gf_plotfile(
          *fluid_state_.state()[0],
          spacetime_state_.active()
+               && !uses_analytic_fixed_spacetime_kernels()
             ? spacetime_coupling_.cell_spacetime()[0].get()
             : nullptr,
          face_b_ptr(0),
@@ -118,6 +129,7 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
          cfg_,
          step,
          time,
+         uses_analytic_fixed_spacetime_kernels(),
          cfg_
       );
    } else {
@@ -139,8 +151,7 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
          face_b_,
          edge_current_,
          edge_e_,
-         gravity_phi_,
-         gravity_gradient_,
+         gravity_fields_,
          solid_mask_,
          apparent_horizon_masks,
          excision_masks,
@@ -153,6 +164,7 @@ void AmrSolverBase::write_current_aux_gfs(int step, amrex::Real time)
          cfg_,
          step,
          time,
+         uses_analytic_fixed_spacetime_kernels(),
          cfg_
       );
    }
@@ -251,11 +263,10 @@ void AmrSolverBase::load_checkpoint(std::string const& checkpoint_name, amrex::R
    checkpoint_reference_mass_ = checkpoint.reference_mass;
    checkpoint_reference_energy_ = checkpoint.reference_energy;
    checkpoint_reference_max_rho_ = checkpoint.reference_max_rho;
-   aligned_regrid_ticks_ = checkpoint.aligned_regrid_ticks;
-   aligned_base_regrid_tick_ = checkpoint.aligned_base_regrid_tick >= 0
-      ? checkpoint.aligned_base_regrid_tick
-      : aligned_regrid_ticks_ - aligned_regrid_ticks_ % std::max(cfg_.regrid_int, 1);
-   aligned_regrid_due_ = false;
+   regrid_lifecycle_.restore_clock(
+      {checkpoint.aligned_regrid_ticks, checkpoint.aligned_base_regrid_tick},
+      cfg_.regrid_int
+   );
 }
 
 void AmrSolverBase::apply_boundary(amrex::MultiFab& state, amrex::Geometry const& geom, amrex::Real time) const
@@ -285,25 +296,25 @@ void AmrSolverBase::initialize_ct_fields(int lev, amrex::Real time)
    apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
    refresh_stored_spacetime_fluid_boundary(lev, time);
    bool initialized_analytic_face_b = false;
-   if (cfg_.initial_data_magnetic == "zero" && time == 0.0) {
-      fill_uniform_face_b(face_b_[lev], 0.0, 0.0, 0.0);
+   if (cfg_.initial_data_magnetic == "zero" && time == 0.0_rt) {
+      fill_uniform_face_b(face_b_[lev], 0.0_rt, 0.0_rt, 0.0_rt);
       initialized_analytic_face_b = true;
-   } else if (cfg_.ic == "magnetic_blast_noise" && time == 0.0) {
+   } else if (cfg_.ic == "magnetic_blast_noise" && time == 0.0_rt) {
       initialize_magnetic_blast_noise_face_b(face_b_[lev], Geom(lev), cfg_);
       initialized_analytic_face_b = true;
-   } else if (cfg_.ic == "resistive_current_sheet" && time == 0.0) {
+   } else if (cfg_.ic == "resistive_current_sheet" && time == 0.0_rt) {
       initialize_resistive_current_sheet_face_b(face_b_[lev], Geom(lev), cfg_);
       initialized_analytic_face_b = true;
-   } else if (cfg_.ic == "reconnecting_shear_layer" && time == 0.0) {
+   } else if (cfg_.ic == "reconnecting_shear_layer" && time == 0.0_rt) {
       initialize_reconnecting_shear_layer_face_b(face_b_[lev], Geom(lev), cfg_);
       initialized_analytic_face_b = true;
-   } else if (cfg_.ic == "orszag_tang" && time == 0.0) {
+   } else if (cfg_.ic == "orszag_tang" && time == 0.0_rt) {
       initialize_orszag_tang_face_b(face_b_[lev], Geom(lev), cfg_);
       initialized_analytic_face_b = true;
-   } else if ((cfg_.ic == "kelvin_helmholtz_mhd" || cfg_.ic == "density_cloud") && time == 0.0) {
+   } else if ((cfg_.ic == "kelvin_helmholtz_mhd" || cfg_.ic == "density_cloud") && time == 0.0_rt) {
       fill_uniform_face_b(face_b_[lev], cfg_.b1_0, cfg_.b2_0, cfg_.b3_0);
       initialized_analytic_face_b = true;
-   } else if ((cfg_.ic == "sod_x" || cfg_.ic == "sod_plane" || cfg_.ic == "sod_periodic_plane") && time == 0.0) {
+   } else if ((cfg_.ic == "sod_x" || cfg_.ic == "sod_plane" || cfg_.ic == "sod_periodic_plane") && time == 0.0_rt) {
       initialize_sod_plane_face_b(face_b_[lev], Geom(lev), cfg_);
       initialized_analytic_face_b = true;
    } else {

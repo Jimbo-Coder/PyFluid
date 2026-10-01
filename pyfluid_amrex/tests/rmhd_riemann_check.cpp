@@ -17,6 +17,8 @@
 
 namespace {
 
+using namespace amrex::literals;
+
 using namespace pyfluid_amrex;
 
 template <int Direction>
@@ -41,11 +43,11 @@ RMHDWaveSpeeds ideal_srmhd_wave_speeds(
 bool close_enough(
    amrex::Real actual,
    amrex::Real expected,
-   amrex::Real tolerance = 2.0e-11
+   amrex::Real tolerance = 2.0e-11_rt
 )
 {
    const amrex::Real scale = amrex::max(
-      1.0,
+      1.0_rt,
       amrex::max(amrex::Math::abs(actual), amrex::Math::abs(expected))
    );
    return amrex::Math::abs(actual - expected) <= tolerance * scale;
@@ -55,7 +57,7 @@ bool require_close(
    std::string_view label,
    amrex::Real actual,
    amrex::Real expected,
-   amrex::Real tolerance = 2.0e-11
+   amrex::Real tolerance = 2.0e-11_rt
 )
 {
    if (close_enough(actual, expected, tolerance)) {
@@ -70,7 +72,7 @@ bool require_state_close(
    std::string_view label,
    const SRMHDState& actual,
    const SRMHDState& expected,
-   amrex::Real tolerance = 2.0e-11
+   amrex::Real tolerance = 2.0e-11_rt
 )
 {
    bool passed = true;
@@ -89,7 +91,7 @@ bool require_flux_close(
    std::string_view label,
    const RMHDConserved& actual,
    const RMHDConserved& expected,
-   amrex::Real tolerance = 2.0e-11
+   amrex::Real tolerance = 2.0e-11_rt
 )
 {
    bool passed = true;
@@ -118,7 +120,7 @@ RMHDPrimitive primitive(
 {
    return {
       rho,
-      pressure / ((gamma - 1.0) * rho),
+      pressure / ((gamma - 1.0_rt) * rho),
       pressure,
       v1,
       v2,
@@ -151,15 +153,15 @@ RMHDConserved hll_flux(
       right, metric, gamma
    );
    const amrex::Real speed_l = amrex::min(
-      0.0, amrex::min(waves_l.minus, waves_r.minus)
+      0.0_rt, amrex::min(waves_l.minus, waves_r.minus)
    );
    const amrex::Real speed_r = amrex::max(
-      0.0, amrex::max(waves_l.plus, waves_r.plus)
+      0.0_rt, amrex::max(waves_l.plus, waves_r.plus)
    );
-   if (speed_l >= 0.0) {
+   if (speed_l >= 0.0_rt) {
       return flux_l;
    }
-   if (speed_r <= 0.0) {
+   if (speed_r <= 0.0_rt) {
       return flux_r;
    }
    return generated::rmhd_hll_flux(
@@ -308,7 +310,7 @@ int run_hlld_fan_table()
          std::cerr << "incomplete primitive pair for row " << row_id << '\n';
          return 2;
       }
-      const amrex::Real shared_bn = 0.5 * (left.b1 + right.b1);
+      const amrex::Real shared_bn = 0.5_rt * (left.b1 + right.b1);
       left.b1 = shared_bn;
       right.b1 = shared_bn;
       const SRMHDState state_l = srmhd_state_from_primitive(left);
@@ -329,7 +331,7 @@ int run_hlld_fan_table()
       );
       SRMHDHLLDContactState contact_l{};
       SRMHDHLLDContactState contact_r{};
-      amrex::Real contact_speed = 0.0;
+      amrex::Real contact_speed = 0.0_rt;
       bool valid = solution.valid;
       if (valid) {
          const SRMHDHLLDEvaluation& fan = solution.evaluation;
@@ -341,7 +343,7 @@ int run_hlld_fan_table()
             fan.fast_r, fan.contact_velocity_r, fan.contact_magnetic,
             solution.total_pressure
          );
-         contact_speed = 0.5 * (
+         contact_speed = 0.5_rt * (
             fan.contact_velocity_l.n + fan.contact_velocity_r.n
          );
          valid = contact_l.valid && contact_r.valid;
@@ -388,7 +390,7 @@ int run_hlld_evaluation_table()
          std::cerr << "incomplete HLLD parameters for row " << row_id << '\n';
          return 2;
       }
-      const amrex::Real shared_bn = 0.5 * (left.b1 + right.b1);
+      const amrex::Real shared_bn = 0.5_rt * (left.b1 + right.b1);
       left.b1 = shared_bn;
       right.b1 = shared_bn;
       const SRMHDState state_l = srmhd_state_from_primitive(left);
@@ -401,7 +403,7 @@ int run_hlld_evaluation_table()
       );
       SRMHDHLLDContactState contact_l{};
       SRMHDHLLDContactState contact_r{};
-      amrex::Real contact_speed = 0.0;
+      amrex::Real contact_speed = 0.0_rt;
       if (evaluation.valid) {
          contact_l = srmhd_hlld_contact_state(
             evaluation.fast_l,
@@ -415,7 +417,7 @@ int run_hlld_evaluation_table()
             evaluation.contact_magnetic,
             total_pressure
          );
-         contact_speed = 0.5 * (
+         contact_speed = 0.5_rt * (
             evaluation.contact_velocity_l.n
             + evaluation.contact_velocity_r.n
          );
@@ -451,16 +453,16 @@ int run_hlld_evaluation_table()
 SpacetimeMetric nontrivial_metric()
 {
    SpacetimeMetric metric{};
-   metric.lapse = 0.91;
-   metric.shift1 = 0.07;
-   metric.shift2 = -0.04;
-   metric.shift3 = 0.03;
-   metric.gamma11 = 1.44;
-   metric.gamma12 = 0.12;
-   metric.gamma13 = -0.03;
-   metric.gamma22 = 0.85;
-   metric.gamma23 = 0.05;
-   metric.gamma33 = 1.21;
+   metric.lapse = 0.91_rt;
+   metric.shift1 = 0.07_rt;
+   metric.shift2 = -0.04_rt;
+   metric.shift3 = 0.03_rt;
+   metric.gamma11 = 1.44_rt;
+   metric.gamma12 = 0.12_rt;
+   metric.gamma13 = -0.03_rt;
+   metric.gamma22 = 0.85_rt;
+   metric.gamma23 = 0.05_rt;
+   metric.gamma33 = 1.21_rt;
    const amrex::Real determinant =
       metric.gamma11 * (
          metric.gamma22 * metric.gamma33 - metric.gamma23 * metric.gamma23
@@ -500,22 +502,22 @@ bool validate_frame()
    const RMHDFaceFrame frame = rmhd_face_frame<Direction>(metric);
    bool passed = true;
    passed = require_close(
-      "frame normal norm", rmhd_spatial_dot(frame.basis_n, frame.basis_n, metric), 1.0
+      "frame normal norm", rmhd_spatial_dot(frame.basis_n, frame.basis_n, metric), 1.0_rt
    ) && passed;
    passed = require_close(
-      "frame tangent1 norm", rmhd_spatial_dot(frame.basis_t1, frame.basis_t1, metric), 1.0
+      "frame tangent1 norm", rmhd_spatial_dot(frame.basis_t1, frame.basis_t1, metric), 1.0_rt
    ) && passed;
    passed = require_close(
-      "frame tangent2 norm", rmhd_spatial_dot(frame.basis_t2, frame.basis_t2, metric), 1.0
+      "frame tangent2 norm", rmhd_spatial_dot(frame.basis_t2, frame.basis_t2, metric), 1.0_rt
    ) && passed;
    passed = require_close(
-      "frame normal tangent1", rmhd_spatial_dot(frame.basis_n, frame.basis_t1, metric), 0.0
+      "frame normal tangent1", rmhd_spatial_dot(frame.basis_n, frame.basis_t1, metric), 0.0_rt
    ) && passed;
    passed = require_close(
-      "frame normal tangent2", rmhd_spatial_dot(frame.basis_n, frame.basis_t2, metric), 0.0
+      "frame normal tangent2", rmhd_spatial_dot(frame.basis_n, frame.basis_t2, metric), 0.0_rt
    ) && passed;
    passed = require_close(
-      "frame tangent cross", rmhd_spatial_dot(frame.basis_t1, frame.basis_t2, metric), 0.0
+      "frame tangent cross", rmhd_spatial_dot(frame.basis_t1, frame.basis_t2, metric), 0.0_rt
    ) && passed;
    return passed;
 }
@@ -523,11 +525,11 @@ bool validate_frame()
 template <int Direction>
 bool validate_identical_curved_flux()
 {
-   constexpr amrex::Real gamma = 5.0 / 3.0;
+   constexpr amrex::Real gamma = 5.0_rt / 3.0_rt;
    const EOSParams eos{.gamma = gamma};
    const SpacetimeMetric metric = nontrivial_metric();
    const RMHDPrimitive state = primitive(
-      1.2, 0.8, gamma, 0.08, -0.06, 0.04, 0.7, -0.3, 0.2
+      1.2_rt, 0.8_rt, gamma, 0.08_rt, -0.06_rt, 0.04_rt, 0.7_rt, -0.3_rt, 0.2_rt
    );
    const RMHDConserved expected = generated::rmhd_flux<Direction>(state, metric);
    const RMHDRiemannFluxResult hllc = rmhd_hllc_flux<Direction>(
@@ -548,13 +550,13 @@ bool validate_identical_curved_flux()
 template <int Direction>
 bool validate_curved_hll_equivalence()
 {
-   constexpr amrex::Real gamma = 5.0 / 3.0;
+   constexpr amrex::Real gamma = 5.0_rt / 3.0_rt;
    const SpacetimeMetric metric = nontrivial_metric();
    const RMHDPrimitive left = primitive(
-      1.2, 0.8, gamma, 0.08, -0.06, 0.04, 0.7, -0.3, 0.2
+      1.2_rt, 0.8_rt, gamma, 0.08_rt, -0.06_rt, 0.04_rt, 0.7_rt, -0.3_rt, 0.2_rt
    );
    const RMHDPrimitive right = primitive(
-      0.7, 0.35, gamma, -0.11, 0.03, -0.05, 0.7, -0.3, 0.2
+      0.7_rt, 0.35_rt, gamma, -0.11_rt, 0.03_rt, -0.05_rt, 0.7_rt, -0.3_rt, 0.2_rt
    );
    const RMHDConserved state_l = generated::rmhd_primitive_to_conserved(
       left, metric
@@ -571,10 +573,10 @@ bool validate_curved_hll_equivalence()
       right, metric, gamma
    );
    const amrex::Real speed_l = amrex::min(
-      0.0, amrex::min(waves_l.minus, waves_r.minus)
+      0.0_rt, amrex::min(waves_l.minus, waves_r.minus)
    );
    const amrex::Real speed_r = amrex::max(
-      0.0, amrex::max(waves_l.plus, waves_r.plus)
+      0.0_rt, amrex::max(waves_l.plus, waves_r.plus)
    );
    const RMHDConserved expected = generated::rmhd_hll_flux(
       flux_l, flux_r, state_l, state_r, speed_l, speed_r
@@ -583,7 +585,7 @@ bool validate_curved_hll_equivalence()
    const RMHDFaceFrame frame = rmhd_face_frame<Direction>(metric);
    RMHDPrimitive local_l = rmhd_primitive_to_face_frame(left, frame);
    RMHDPrimitive local_r = rmhd_primitive_to_face_frame(right, frame);
-   const amrex::Real shared_bn = 0.5 * (local_l.b1 + local_r.b1);
+   const amrex::Real shared_bn = 0.5_rt * (local_l.b1 + local_r.b1);
    local_l.b1 = shared_bn;
    local_r.b1 = shared_bn;
    const SRMHDState local_state_l = srmhd_state_from_primitive(local_l);
@@ -609,18 +611,18 @@ bool validate_curved_hll_equivalence()
       sample, frame, metric
    );
    return require_flux_close(
-      "curved local/direct HLL equivalence", actual, expected, 2.0e-10
+      "curved local/direct HLL equivalence", actual, expected, 2.0e-10_rt
    );
 }
 
 bool validate_hll_algebra()
 {
-   const SRMHDState left{1.0, 2.0, 3.0, 4.0, 5.0, 0.5, -0.2, 0.3};
-   const SRMHDState right{2.0, -1.0, 0.5, 3.0, 7.0, 0.5, 0.6, -0.1};
-   const SRMHDState flux_l{-0.2, 1.1, -2.0, 0.4, 3.0, 0.0, 0.7, -0.8};
-   const SRMHDState flux_r{0.6, -0.5, 1.0, -0.9, 2.0, 0.0, -0.3, 0.2};
-   constexpr amrex::Real speed_l = -0.7;
-   constexpr amrex::Real speed_r = 0.9;
+   const SRMHDState left{1.0_rt, 2.0_rt, 3.0_rt, 4.0_rt, 5.0_rt, 0.5_rt, -0.2_rt, 0.3_rt};
+   const SRMHDState right{2.0_rt, -1.0_rt, 0.5_rt, 3.0_rt, 7.0_rt, 0.5_rt, 0.6_rt, -0.1_rt};
+   const SRMHDState flux_l{-0.2_rt, 1.1_rt, -2.0_rt, 0.4_rt, 3.0_rt, 0.0_rt, 0.7_rt, -0.8_rt};
+   const SRMHDState flux_r{0.6_rt, -0.5_rt, 1.0_rt, -0.9_rt, 2.0_rt, 0.0_rt, -0.3_rt, 0.2_rt};
+   constexpr amrex::Real speed_l = -0.7_rt;
+   constexpr amrex::Real speed_r = 0.9_rt;
    const SRMHDState actual = srmhd_hll_state(
       left, right, flux_l, flux_r, speed_l, speed_r
    );
@@ -630,26 +632,26 @@ bool validate_hll_algebra()
       left
    );
    const SRMHDState with_flux = srmhd_state_add_scaled(
-      srmhd_state_add_scaled(expected, 1.0, flux_l), -1.0, flux_r
+      srmhd_state_add_scaled(expected, 1.0_rt, flux_l), -1.0_rt, flux_r
    );
    const SRMHDState normalized = srmhd_state_add_scaled(
-      {}, 1.0 / (speed_r - speed_l), with_flux
+      {}, 1.0_rt / (speed_r - speed_l), with_flux
    );
    return require_state_close("HLL state algebra", actual, normalized);
 }
 
 bool validate_contact()
 {
-   constexpr amrex::Real gamma = 5.0 / 3.0;
+   constexpr amrex::Real gamma = 5.0_rt / 3.0_rt;
    const RMHDPrimitive left = primitive(
-      10.0, 1.0, gamma, 0.0, 0.7, 0.2, 5.0, 1.0, 0.5
+      10.0_rt, 1.0_rt, gamma, 0.0_rt, 0.7_rt, 0.2_rt, 5.0_rt, 1.0_rt, 0.5_rt
    );
    const RMHDPrimitive right = primitive(
-      1.0, 1.0, gamma, 0.0, 0.7, 0.2, 5.0, 1.0, 0.5
+      1.0_rt, 1.0_rt, gamma, 0.0_rt, 0.7_rt, 0.2_rt, 5.0_rt, 1.0_rt, 0.5_rt
    );
    const SRMHDState expected_flux = srmhd_flux_from_primitive(left);
-   const SRMHDRiemannSample hllc = srmhd_hllc_sample(left, right, gamma, 0.0);
-   const SRMHDRiemannSample hlld = srmhd_hlld_sample(left, right, gamma, 0.0);
+   const SRMHDRiemannSample hllc = srmhd_hllc_sample(left, right, gamma, 0.0_rt);
+   const SRMHDRiemannSample hlld = srmhd_hlld_sample(left, right, gamma, 0.0_rt);
    bool passed = !hllc.used_hll && !hlld.used_hll;
    if (!passed) {
       const SRMHDState state_l = srmhd_state_from_primitive(left);
@@ -686,23 +688,23 @@ bool validate_contact()
                 << exact.contact_magnetic.t2 << '\n';
    }
    passed = require_state_close(
-      "HLLC isolated contact", hllc.flux, expected_flux, 2.0e-9
+      "HLLC isolated contact", hllc.flux, expected_flux, 2.0e-9_rt
    ) && passed;
    passed = require_state_close(
-      "HLLD isolated contact", hlld.flux, expected_flux, 2.0e-9
+      "HLLD isolated contact", hlld.flux, expected_flux, 2.0e-9_rt
    ) && passed;
    return passed;
 }
 
 bool validate_rotational_wave()
 {
-   constexpr amrex::Real gamma = 5.0 / 3.0;
+   constexpr amrex::Real gamma = 5.0_rt / 3.0_rt;
    const RMHDPrimitive left = primitive(
-      1.0, 1.0, gamma, 0.4, -0.3, 0.5, 2.4, 1.0, -1.6
+      1.0_rt, 1.0_rt, gamma, 0.4_rt, -0.3_rt, 0.5_rt, 2.4_rt, 1.0_rt, -1.6_rt
    );
    const RMHDPrimitive right = primitive(
-      1.0, 1.0, gamma, 0.377347, -0.482389, 0.424190,
-      2.4, -0.1, -2.178213
+      1.0_rt, 1.0_rt, gamma, 0.377347_rt, -0.482389_rt, 0.424190_rt,
+      2.4_rt, -0.1_rt, -2.178213_rt
    );
    const SRMHDState state_l = srmhd_state_from_primitive(left);
    const SRMHDState state_r = srmhd_state_from_primitive(right);
@@ -710,8 +712,8 @@ bool validate_rotational_wave()
    const SRMHDState flux_r = srmhd_flux_from_primitive(right);
    const amrex::Real wave_speed = (flux_r.bt1 - flux_l.bt1)
       / (state_r.bt1 - state_l.bt1);
-   const SRMHDState expected_flux = wave_speed >= 0.0 ? flux_l : flux_r;
-   const SRMHDRiemannSample hlld = srmhd_hlld_sample(left, right, gamma, 0.0);
+   const SRMHDState expected_flux = wave_speed >= 0.0_rt ? flux_l : flux_r;
+   const SRMHDRiemannSample hlld = srmhd_hlld_sample(left, right, gamma, 0.0_rt);
    if (hlld.used_hll) {
       const RMHDWaveSpeeds waves_l = ideal_srmhd_wave_speeds<0>(
          left, minkowski_spacetime_metric(), gamma
@@ -736,21 +738,21 @@ bool validate_rotational_wave()
       return false;
    }
    return require_state_close(
-      "HLLD isolated rotational wave", hlld.flux, expected_flux, 2.0e-5
+      "HLLD isolated rotational wave", hlld.flux, expected_flux, 2.0e-5_rt
    );
 }
 
 bool validate_zero_normal_degeneracy()
 {
-   constexpr amrex::Real gamma = 5.0 / 3.0;
+   constexpr amrex::Real gamma = 5.0_rt / 3.0_rt;
    const RMHDPrimitive left = primitive(
-      1.0, 1.0, gamma, 0.1, 0.2, -0.1, 0.0, 1.0, 0.5
+      1.0_rt, 1.0_rt, gamma, 0.1_rt, 0.2_rt, -0.1_rt, 0.0_rt, 1.0_rt, 0.5_rt
    );
    const RMHDPrimitive right = primitive(
-      0.8, 0.7, gamma, -0.05, -0.1, 0.15, 0.0, -0.4, 0.2
+      0.8_rt, 0.7_rt, gamma, -0.05_rt, -0.1_rt, 0.15_rt, 0.0_rt, -0.4_rt, 0.2_rt
    );
-   const SRMHDRiemannSample hllc = srmhd_hllc_sample(left, right, gamma, 0.0);
-   const SRMHDRiemannSample hlld = srmhd_hlld_sample(left, right, gamma, 0.0);
+   const SRMHDRiemannSample hllc = srmhd_hllc_sample(left, right, gamma, 0.0_rt);
+   const SRMHDRiemannSample hlld = srmhd_hlld_sample(left, right, gamma, 0.0_rt);
    if (hllc.used_hll || hlld.used_hll) {
       std::cerr << "zero-normal-field HLLC degeneracy unexpectedly used HLL\n";
       return false;
@@ -762,7 +764,7 @@ bool validate_zero_normal_degeneracy()
 
 amrex::Real state_max_abs(const SRMHDState& state)
 {
-   amrex::Real scale = 0.0;
+   amrex::Real scale = 0.0_rt;
    scale = amrex::max(scale, amrex::Math::abs(state.dens));
    scale = amrex::max(scale, amrex::Math::abs(state.momn));
    scale = amrex::max(scale, amrex::Math::abs(state.momt1));
@@ -789,7 +791,7 @@ amrex::Real relative_rh_residual(
    );
    const SRMHDState state_jump = srmhd_state_difference(state_r, state_l);
    const amrex::Real scale = amrex::max(
-      1.0,
+      1.0_rt,
       amrex::max(
          amrex::max(state_max_abs(flux_l), state_max_abs(flux_r)),
          amrex::Math::abs(wave_speed) * state_max_abs(state_jump)
@@ -802,47 +804,47 @@ amrex::Real random_unit(std::uint64_t& state)
 {
    state = state * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
    return static_cast<amrex::Real>(state >> 11)
-      * (1.0 / 9007199254740992.0);
+      * (1.0_rt / 9007199254740992.0_rt);
 }
 
 bool validate_random_fans()
 {
-   constexpr amrex::Real gamma = 5.0 / 3.0;
+   constexpr amrex::Real gamma = 5.0_rt / 3.0_rt;
    std::uint64_t generator = UINT64_C(0x5f3759df12345678);
    int accepted_hllc = 0;
    int accepted_hlld = 0;
    int hll_fallbacks = 0;
-   amrex::Real maximum_hllc_contact_residual = 0.0;
-   amrex::Real maximum_contact_residual = 0.0;
+   amrex::Real maximum_hllc_contact_residual = 0.0_rt;
+   amrex::Real maximum_contact_residual = 0.0_rt;
    for (int sample_index = 0; sample_index < 2000; ++sample_index) {
       const auto signed_random = [&]() {
-         return 2.0 * random_unit(generator) - 1.0;
+         return 2.0_rt * random_unit(generator) - 1.0_rt;
       };
-      const amrex::Real normal_magnetic = 3.0 * signed_random();
+      const amrex::Real normal_magnetic = 3.0_rt * signed_random();
       const auto make_primitive = [&]() {
-         const amrex::Real rho = std::pow(10.0, -3.0 + 5.0 * random_unit(generator));
+         const amrex::Real rho = std::pow(10.0_rt, -3.0_rt + 5.0_rt * random_unit(generator));
          const amrex::Real pressure = std::pow(
-            10.0, -3.0 + 5.0 * random_unit(generator)
+            10.0_rt, -3.0_rt + 5.0_rt * random_unit(generator)
          );
          return primitive(
             rho,
             pressure,
             gamma,
-            0.5 * signed_random(),
-            0.5 * signed_random(),
-            0.5 * signed_random(),
+            0.5_rt * signed_random(),
+            0.5_rt * signed_random(),
+            0.5_rt * signed_random(),
             normal_magnetic,
-            3.0 * signed_random(),
-            3.0 * signed_random()
+            3.0_rt * signed_random(),
+            3.0_rt * signed_random()
          );
       };
       const RMHDPrimitive left = make_primitive();
       const RMHDPrimitive right = make_primitive();
       const SRMHDRiemannSample hllc = srmhd_hllc_sample(
-         left, right, gamma, 0.0
+         left, right, gamma, 0.0_rt
       );
       const SRMHDRiemannSample hlld = srmhd_hlld_sample(
-         left, right, gamma, 0.0
+         left, right, gamma, 0.0_rt
       );
       if (!finite_srmhd_state(hllc.state) || !finite_srmhd_state(hllc.flux)
           || !finite_srmhd_state(hlld.state) || !finite_srmhd_state(hlld.flux)) {
@@ -912,7 +914,7 @@ bool validate_random_fans()
       if (!contact_l.valid || !contact_r.valid) {
          continue;
       }
-      const amrex::Real contact_speed = 0.5 * (
+      const amrex::Real contact_speed = 0.5_rt * (
          solution.evaluation.contact_velocity_l.n
          + solution.evaluation.contact_velocity_r.n
       );
@@ -929,8 +931,8 @@ bool validate_random_fans()
       ++accepted_hlld;
    }
    if (accepted_hllc < 100 || accepted_hlld < 100
-       || maximum_hllc_contact_residual > 2.0e-6
-       || maximum_contact_residual > 2.0e-6) {
+       || maximum_hllc_contact_residual > 2.0e-6_rt
+       || maximum_contact_residual > 2.0e-6_rt) {
       std::cerr << "random RMHD fan audit failed: accepted_hllc="
                 << accepted_hllc << " HLLC_contact_RH="
                 << maximum_hllc_contact_residual << " accepted_hlld="

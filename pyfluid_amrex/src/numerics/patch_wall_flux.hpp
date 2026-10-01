@@ -31,7 +31,7 @@ inline void apply_patch_union_hydro_wall_flux_direction(
       const amrex::Box& box = mfi.tilebox();
       const auto primitive_values = primitive.const_array(mfi);
       const auto flux_values = flux.array(mfi);
-      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::ParallelFor(box, [patch_domain, domain_lo, domain_hi, primitive_values, flux_values] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const PatchDomainFace face = patch_domain_face(
             patch_domain, domain_lo, domain_hi, Direction, i, j, k
          );

@@ -88,7 +88,8 @@ FieldDiff compare_multifab(
 
 int main(int argc, char* argv[])
 {
-   amrex::Initialize(argc, argv);
+   // Positional arguments are checkpoint directories, not an AMReX input file.
+   amrex::Initialize(argc, argv, false);
 
    int return_code = 0;
    {
@@ -107,7 +108,7 @@ int main(int argc, char* argv[])
          if (arg == "--fields-only") {
             fields_only = true;
          } else {
-            tolerance = std::stod(arg);
+            tolerance = static_cast<amrex::Real>(std::stod(arg));
          }
       }
 

@@ -16,6 +16,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct MappedPatchBoundaryFace2D {
    int patch_id = -1;
    int neighbor_patch_id = -1;
@@ -73,10 +75,10 @@ inline PhysicalVector patch_layout_face_endpoint_2d(
 #if (AMREX_SPACEDIM != 2)
    amrex::ignore_unused(grid_patch, layout_patch, dir, face_i, face_j, transverse_offset);
    amrex::Abort("mapped patch interface endpoint helper is implemented for 2D only");
-   return physical_vector(0.0, 0.0, 0.0);
+   return physical_vector(0.0_rt, 0.0_rt, 0.0_rt);
 #else
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> offsets{};
-   offsets[dir] = 0.0;
+   offsets[dir] = 0.0_rt;
    offsets[1 - dir] = transverse_offset;
    const PatchCoordinate local = patch_layout_local_coordinate(
       grid_patch,
@@ -339,7 +341,7 @@ inline amrex::Real mapped_patch_reconstructed_scalar(
          mapped_patch_source_component_at_offset(table, grid_system, patch_id, inside_local_cell, dir, -1, component);
       const amrex::Real qp =
          mapped_patch_source_component_at_offset(table, grid_system, patch_id, inside_local_cell, dir, 1, component);
-      return center + 0.5 * static_cast<amrex::Real>(side) * mc_slope(qm, center, qp);
+      return center + 0.5_rt * static_cast<amrex::Real>(side) * mc_slope(qm, center, qp);
    } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
       amrex::IntVect anchor_cell = inside_local_cell;
       if (side < 0) {
@@ -370,7 +372,7 @@ inline void add_mapped_patch_flux_correction(
    int face_j,
    HydroState const& hydro_flux,
    amrex::Vector<amrex::Real> const& passive_flux,
-   amrex::Real sign = 1.0
+   amrex::Real sign = 1.0_rt
 )
 {
    for (MappedPatchFluxCorrection2D<NComp>& correction : corrections) {
@@ -461,11 +463,11 @@ HydroState mapped_patch_reflecting_wall_flux(
 ) noexcept
 {
    return {
-      0.0,
+      0.0_rt,
       primitive.pressure * normal.x,
       primitive.pressure * normal.y,
       primitive.pressure * normal.z,
-      0.0,
+      0.0_rt,
    };
 }
 
@@ -480,7 +482,7 @@ inline amrex::Vector<MappedPatchBoundaryFace2D> mapped_patch_boundary_faces_2d(
    return {};
 #else
    amrex::Vector<MappedPatchBoundaryFace2D> faces;
-   constexpr amrex::Real epsilon = 1.0e-10;
+   constexpr amrex::Real epsilon = 1.0e-10_rt;
    for (PatchDescriptor const& layout_patch : layout.patches) {
       PatchGridDescriptor const& grid_patch = patch_grid_descriptor_for_layout_patch(grid_system, layout_patch);
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
@@ -532,8 +534,8 @@ inline amrex::Vector<MappedPatchBoundaryFace2D> mapped_patch_boundary_faces_2d(
                   inside_cell,
                   inside_local_cell,
                   outside_global,
-                  patch_layout_face_endpoint_2d(grid_patch, layout_patch, dir, face_i, face_j, 0.0),
-                  patch_layout_face_endpoint_2d(grid_patch, layout_patch, dir, face_i, face_j, 1.0),
+                  patch_layout_face_endpoint_2d(grid_patch, layout_patch, dir, face_i, face_j, 0.0_rt),
+                  patch_layout_face_endpoint_2d(grid_patch, layout_patch, dir, face_i, face_j, 1.0_rt),
                   metric.unit_normal,
                });
             }
@@ -576,7 +578,7 @@ inline void store_mapped_patch_boundary_flux(
    flux(i, j, k, ENERGY) = hydro_flux.energy;
    if constexpr (NComp > NVAR_HYDRO) {
       for (int n = NVAR_HYDRO; n < NComp; ++n) {
-         flux(i, j, k, n) = 0.0;
+         flux(i, j, k, n) = 0.0_rt;
       }
    }
 }
@@ -632,11 +634,11 @@ inline void correct_mapped_patch_hydro_interface_fluxes(
          const amrex::Real face_length = norm(tangent);
          const PhysicalVector neighbor_tangent = neighbor.p1 - neighbor.p0;
          const amrex::Real neighbor_length = norm(neighbor_tangent);
-         if (face_length <= 0.0 || neighbor_length <= 0.0) {
+         if (face_length <= 0.0_rt || neighbor_length <= 0.0_rt) {
             continue;
          }
-         const PhysicalVector tangent_unit = scale(tangent, 1.0 / face_length);
-         const amrex::Real line_tolerance = 1.0e-10 * amrex::max(face_length, amrex::max(neighbor_length, 1.0));
+         const PhysicalVector tangent_unit = scale(tangent, 1.0_rt / face_length);
+         const amrex::Real line_tolerance = 1.0e-10_rt * amrex::max(face_length, amrex::max(neighbor_length, 1.0_rt));
          if (
             distance_to_line(neighbor.p0, face.p0, tangent_unit) > line_tolerance
             || distance_to_line(neighbor.p1, face.p0, tangent_unit) > line_tolerance
@@ -646,10 +648,10 @@ inline void correct_mapped_patch_hydro_interface_fluxes(
 
          const amrex::Real neighbor_t0 = dot(neighbor.p0 - face.p0, tangent_unit);
          const amrex::Real neighbor_t1 = dot(neighbor.p1 - face.p0, tangent_unit);
-         const amrex::Real overlap_lo = amrex::max(0.0, amrex::min(neighbor_t0, neighbor_t1));
+         const amrex::Real overlap_lo = amrex::max(0.0_rt, amrex::min(neighbor_t0, neighbor_t1));
          const amrex::Real overlap_hi = amrex::min(face_length, amrex::max(neighbor_t0, neighbor_t1));
          const amrex::Real overlap_length = overlap_hi - overlap_lo;
-         if (overlap_length <= 1.0e-12 * amrex::max(face_length, 1.0)) {
+         if (overlap_length <= 1.0e-12_rt * amrex::max(face_length, 1.0_rt)) {
             continue;
          }
          const bool requested_stencil_available =
@@ -706,8 +708,8 @@ inline void correct_mapped_patch_hydro_interface_fluxes(
 
          amrex::Vector<amrex::Real> passive_flux;
          if constexpr (NComp > NVAR_HYDRO) {
-            passive_flux.assign(NComp - NVAR_HYDRO, 0.0);
-            const bool use_left_passive = overlap_flux.rho >= 0.0;
+            passive_flux.assign(NComp - NVAR_HYDRO, 0.0_rt);
+            const bool use_left_passive = overlap_flux.rho >= 0.0_rt;
             for (int n = NVAR_HYDRO; n < NComp; ++n) {
                const amrex::Real passive_l = mapped_patch_reconstructed_scalar<ReconMethod>(
                   primitive_table,
@@ -741,7 +743,7 @@ inline void correct_mapped_patch_hydro_interface_fluxes(
             integrated_flux,
             passive_flux
          );
-         const amrex::Real neighbor_sign = dot(face.normal, neighbor.normal) >= 0.0 ? 1.0 : -1.0;
+         const amrex::Real neighbor_sign = dot(face.normal, neighbor.normal) >= 0.0_rt ? 1.0_rt : -1.0_rt;
          add_mapped_patch_flux_correction<NComp>(
             corrections,
             neighbor.patch_id,

@@ -17,10 +17,17 @@
 
 namespace pyfluid_amrex {
 
-void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
+using namespace amrex::literals;
+
+void AmrSolverBase::update_apparent_horizon(
+   int step,
+   amrex::Real time,
+   bool force_search
+)
 {
    apparent_horizon_tracker_->restore_latest_surface(step, cfg_.output_dir);
-   if (!apparent_horizon_tracker_->search_due(step)) {
+   if (!apparent_horizon_tracker_->enabled()
+       || (!force_search && !apparent_horizon_tracker_->search_due(step))) {
       return;
    }
 #if (AMREX_SPACEDIM != 3)
@@ -51,13 +58,13 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
          ApparentHorizonGeometryComponents,
          1
       );
-      geometry->setVal(0.0);
+      geometry->setVal(0.0_rt);
       const amrex::Box nodal_domain = amrex::convert(
          Geom(lev).Domain(), amrex::IntVect::TheNodeVector()
       );
       const auto spacing = Geom(lev).CellSizeArray();
       const amrex::GpuArray<amrex::Real, 3> inverse_spacing{{
-         1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
+         1.0_rt / spacing[0], 1.0_rt / spacing[1], 1.0_rt / spacing[2]
       }};
       amrex::GpuArray<int, 3> domain_lower{{
          nodal_domain.smallEnd(0),
@@ -176,7 +183,7 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
    const auto hierarchy_upper = Geom(0).ProbHiArray();
    const amrex::Real dtheta = std::numbers::pi_v<amrex::Real>
       / polar_points;
-   const amrex::Real dphi = 2.0 * std::numbers::pi_v<amrex::Real>
+   const amrex::Real dphi = 2.0_rt * std::numbers::pi_v<amrex::Real>
       / azimuthal_points;
    for (int radial_index = 0; radial_index < radial_points; ++radial_index) {
       const amrex::Real radius = minimum_radius
@@ -184,11 +191,11 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
             / (radial_points - 1);
       radial_coordinates[radial_index] = radius;
       for (int theta_index = 0; theta_index < polar_points; ++theta_index) {
-         const amrex::Real theta = (theta_index + 0.5) * dtheta;
+         const amrex::Real theta = (theta_index + 0.5_rt) * dtheta;
          for (int phi_index = 0;
               phi_index < azimuthal_points;
               ++phi_index) {
-            const amrex::Real phi = (phi_index + 0.5) * dphi;
+            const amrex::Real phi = (phi_index + 0.5_rt) * dphi;
             amrex::GpuArray<amrex::Real, 3> position{{
                center[0] + radius * std::sin(theta) * std::cos(phi),
                center[1] + radius * std::sin(theta) * std::sin(phi),
@@ -198,14 +205,14 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
             for (int direction = 0; direction < 3; ++direction) {
                if (position[direction] < hierarchy_lower[direction]
                    && reflection_lo[direction] != 0) {
-                  position[direction] = 2.0 * hierarchy_lower[direction]
+                  position[direction] = 2.0_rt * hierarchy_lower[direction]
                      - position[direction];
                   reflection_mask ^= 1 << direction;
                } else if (
                   position[direction] > hierarchy_upper[direction]
                   && reflection_hi[direction] != 0
                ) {
-                  position[direction] = 2.0 * hierarchy_upper[direction]
+                  position[direction] = 2.0_rt * hierarchy_upper[direction]
                      - position[direction];
                   reflection_mask ^= 1 << direction;
                }
@@ -271,7 +278,13 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
       } else {
          amrex::Print()
             << "apparent-horizon find failed at step " << step << ": "
-            << result.failure_reason << '\n';
+            << result.failure_reason
+            << " iterations=" << result.iterations
+            << " pseudo_time=" << result.pseudo_time
+            << " theta_linf_times_mass="
+            << result.theta_linf_times_mass
+            << " theta_l2_times_mass="
+            << result.theta_l2_times_mass << '\n';
       }
    }
    const int root = amrex::ParallelDescriptor::IOProcessorNumber();
@@ -312,7 +325,14 @@ void AmrSolverBase::update_apparent_horizon(int step, amrex::Real time)
       real_packet.data(), real_packet.size(), root
    );
    if (integer_packet[0] == 0) {
-      amrex::Abort("apparent-horizon find failed; see the IO-rank diagnostic");
+      if (apparent_horizon_tracker_->failed_search_is_fatal()) {
+         amrex::Abort(
+            "apparent-horizon find failed; see the IO-rank diagnostic"
+         );
+      }
+      amrex::Print()
+         << "apparent-horizon search will retry at the configured cadence\n";
+      return;
    }
    amrex::ParallelDescriptor::Bcast(
       surface_radius.data(), surface_radius.size(), root

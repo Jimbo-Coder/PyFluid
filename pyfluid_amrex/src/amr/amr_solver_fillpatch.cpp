@@ -9,22 +9,24 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 bool AmrSolverBase::should_regrid(int base_step, bool reached_final_time) const
 {
    if (cfg_.regrid_int <= 0 || maxLevel() <= 0 || base_step == cfg_.max_step || reached_final_time) {
       return false;
    }
    if (cfg_.regrid_mode == "aligned" && cfg_.subcycling == "on") {
-      return aligned_regrid_ticks_ - aligned_base_regrid_tick_ >= cfg_.regrid_int;
+      return regrid_lifecycle_.base_regrid_due(cfg_.regrid_int);
    }
    return base_step % cfg_.regrid_int == 0;
 }
 
 bool AmrSolverBase::should_regrid_aligned_descendants(int lev) const
 {
-   const bool reached_final_time = cfg_.final_time > 0.0 && level_times_[lev] >= cfg_.final_time;
+   const bool reached_final_time = cfg_.final_time > 0.0_rt && level_times_[lev] >= cfg_.final_time;
    return cfg_.regrid_mode == "aligned" && cfg_.subcycling == "on" && !self_gravity_enabled(cfg_) &&
-          aligned_regrid_due_ && lev < maxLevel() &&
+          regrid_lifecycle_.descendants_regrid_due() && lev < maxLevel() &&
           (lev == 0 || !nearly_equal_time(level_times_[lev - 1], level_times_[lev])) && !reached_final_time;
 }
 
@@ -194,6 +196,7 @@ amrex::Interpolater* AmrSolverBase::state_interpolater() const
       physics_system_,
       eos_method_,
       eos_params(cfg_),
+      recovery_exterior_state_,
       fixed_spacetime_parameters(cfg_),
       physical_system_is_relativistic(physics_system_)
          && mesh_coordinate_kind() == MeshCartesian
@@ -448,8 +451,8 @@ bool AmrSolverBase::coarse_time_interval_contains(int coarse_lev, amrex::Real ti
    if (!(new_time > old_time) || !fluid_state_.old_state()[coarse_lev]) {
       return false;
    }
-   const amrex::Real scale = amrex::max(1.0, amrex::max(amrex::Math::abs(old_time), amrex::Math::abs(new_time)));
-   const amrex::Real eps = 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+   const amrex::Real scale = amrex::max(1.0_rt, amrex::max(amrex::Math::abs(old_time), amrex::Math::abs(new_time)));
+   const amrex::Real eps = 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale;
    return time >= old_time - eps && time <= new_time + eps;
 }
 
@@ -603,7 +606,7 @@ void AmrSolverBase::initialize_ct_fields_from_coarse(int lev, amrex::Real time)
       return;
    }
    fill_new_face_b_from_coarse(lev, time);
-   sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), time == 0.0);
+   sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), time == 0.0_rt);
    apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
    refresh_stored_spacetime_fluid_boundary(lev, time);
 }
@@ -614,7 +617,7 @@ void AmrSolverBase::initialize_remade_ct_fields(int lev, amrex::Real time, FaceM
       return;
    }
    fill_remade_face_b(lev, time, old_face_b);
-   sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), time == 0.0);
+   sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), time == 0.0_rt);
    apply_boundary(*fluid_state_.state()[lev], Geom(lev), time);
    refresh_stored_spacetime_fluid_boundary(lev, time);
 }

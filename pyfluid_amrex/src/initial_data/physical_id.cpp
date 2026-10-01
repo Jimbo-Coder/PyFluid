@@ -35,7 +35,20 @@
 #include <string_view>
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
+
+// Convert serialized input directly to the selected scalar type. This is the
+// host parsing boundary; no wider temporary enters physical-ID arithmetic.
+amrex::Real parse_real_number(std::string const& value, std::size_t* parsed = nullptr)
+{
+#ifdef AMREX_USE_FLOAT
+   return std::stof(value, parsed);
+#else
+   return std::stod(value, parsed);
+#endif
+}
 
 constexpr int PhysicalIdSchemaVersion = 3;
 constexpr int LegacyPhysicalIdSchemaVersion = 1;
@@ -128,9 +141,9 @@ bool metadata_scalar_value_valid(
    try {
       std::size_t parsed = 0;
       if (integer) {
-         std::stoll(value, &parsed);
+         (void)std::stoll(value, &parsed);
       } else {
-         const double result = std::stod(value, &parsed);
+         const amrex::Real result = parse_real_number(value, &parsed);
          if (!std::isfinite(result)) {
             return false;
          }
@@ -305,7 +318,7 @@ amrex::GpuArray<amrex::Real, 3> parse_real_triplet(
       }
       try {
          std::size_t parsed = 0;
-         result[component] = std::stod(item, &parsed);
+         result[component] = parse_real_number(item, &parsed);
          if (parsed != item.size() || !std::isfinite(result[component])) {
             throw std::invalid_argument("invalid real triplet");
          }
@@ -399,7 +412,7 @@ void validate_component_metadata(
             "schema/physical_id.toml for " + path
          );
       }
-      amrex::Real axis_norm_squared = 0.0;
+      amrex::Real axis_norm_squared = 0.0_rt;
       for (int direction = 0; direction < 3; ++direction) {
          if (!std::isfinite(component.origin[direction])
              || !std::isfinite(component.axis[direction])) {
@@ -410,7 +423,7 @@ void validate_component_metadata(
          axis_norm_squared += component.axis[direction]
             * component.axis[direction];
       }
-      if (!(axis_norm_squared > 0.0)) {
+      if (!(axis_norm_squared > 0.0_rt)) {
          amrex::Abort(
             "physical-ID component axis is zero for " + path
          );
@@ -484,7 +497,7 @@ std::vector<amrex::Real> parse_coordinate_faces(
    for (std::string item; std::getline(input, item, ',');) {
       try {
          std::size_t parsed = 0;
-         const amrex::Real face = std::stod(item, &parsed);
+         const amrex::Real face = parse_real_number(item, &parsed);
          if (parsed != item.size() || !std::isfinite(face)) {
             throw std::invalid_argument("invalid coordinate face");
          }
@@ -675,7 +688,7 @@ amrex::Real parse_metadata_real(
 {
    try {
       std::size_t parsed = 0;
-      const amrex::Real result = std::stod(value, &parsed);
+      const amrex::Real result = parse_real_number(value, &parsed);
       if (parsed != value.size() || !std::isfinite(result)) {
          throw std::invalid_argument("invalid real metadata");
       }
@@ -686,7 +699,7 @@ amrex::Real parse_metadata_real(
          + "' is invalid in " + path
       );
    }
-   return 0.0;
+   return 0.0_rt;
 }
 
 amrex::Real required_metadata_real(
@@ -751,9 +764,9 @@ void materialize_adm_geometry(
          const auto output = adm[level]->array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const Z4cState state = load_z4c_state(source, i, j, k);
-            const amrex::Real inverse_chi = 1.0 / state.chi;
-            const amrex::Real trace_k = state.k_hat + 2.0 * state.theta;
-            const amrex::Real trace_third = trace_k / 3.0;
+            const amrex::Real inverse_chi = 1.0_rt / state.chi;
+            const amrex::Real trace_k = state.k_hat + 2.0_rt * state.theta;
+            const amrex::Real trace_third = trace_k / 3.0_rt;
             output(i, j, k, AdmGamma11) = state.gamma_tilde11 * inverse_chi;
             output(i, j, k, AdmGamma12) = state.gamma_tilde12 * inverse_chi;
             output(i, j, k, AdmGamma13) = state.gamma_tilde13 * inverse_chi;
@@ -808,7 +821,7 @@ void write_field(
       level_steps,
       refinement_ratios,
       static_cast<int>(field.size()) - 1,
-      0.0,
+      0.0_rt,
       path,
       name,
       compression,
@@ -980,8 +993,8 @@ struct PhysicalInterpolationPoint {
    amrex::GpuArray<amrex::Real, 3> source_point{};
    PatchCoordinate target_mesh{};
    PatchCoordinate target_physical{};
-   amrex::Real source_radius = 0.0;
-   amrex::Real target_radius = 0.0;
+   amrex::Real source_radius = 0.0_rt;
+   amrex::Real target_radius = 0.0_rt;
    int reflection_mask = 0;
    bool exterior = false;
 };
@@ -1007,15 +1020,15 @@ PhysicalInterpolationPoint mapped_source_point(
       if (target_mesh[component] < base.ProbLo(direction)
           && source.reflection_lo[direction] != 0) {
          target_mesh[component] =
-            2.0 * base.ProbLo(direction) - target_mesh[component];
+            2.0_rt * base.ProbLo(direction) - target_mesh[component];
          mapped.reflection_mask ^= 1 << direction;
       } else if (target_mesh[component] > base.ProbHi(direction)
                  && source.reflection_hi[direction] != 0) {
          target_mesh[component] =
-            2.0 * base.ProbHi(direction) - target_mesh[component];
+            2.0_rt * base.ProbHi(direction) - target_mesh[component];
          mapped.reflection_mask ^= 1 << direction;
       }
-      const amrex::Real offset = centering.nodeCentered(direction) ? 0.0 : 0.5;
+      const amrex::Real offset = centering.nodeCentered(direction) ? 0.0_rt : 0.5_rt;
       const amrex::Real safe_lo = base.ProbLo(direction) + offset * spacing[direction];
       const amrex::Real safe_hi = base.ProbHi(direction) - offset * spacing[direction];
       // A finer target can have cell centers inside the same physical domain
@@ -1039,8 +1052,8 @@ PhysicalInterpolationPoint mapped_source_point(
       source.coordinate_kind, target_mesh
    );
    mapped.source_point = source_cartesian;
-   amrex::Real source_radius_squared = 0.0;
-   amrex::Real target_radius_squared = 0.0;
+   amrex::Real source_radius_squared = 0.0_rt;
+   amrex::Real target_radius_squared = 0.0_rt;
    const auto target_cartesian = mesh_coordinate_triplet_to_cartesian(
       source.coordinate_kind, original_target_mesh
    );
@@ -1096,7 +1109,7 @@ void apply_initial_atmosphere_exterior(
    // saved source radius.
    const bool beyond_source = point.exterior
       && point.target_radius > point.source_radius;
-   const bool beyond_matter = matter_outer_radius > 0.0
+   const bool beyond_matter = matter_outer_radius > 0.0_rt
       && point.target_radius > matter_outer_radius;
    if (!beyond_source && !beyond_matter) {
       return;
@@ -1107,9 +1120,9 @@ void apply_initial_atmosphere_exterior(
       {point.target_mesh, point.target_physical}
    );
    values[RHO] = state.rho;
-   values[MOM1] = 0.0;
-   values[MOM2] = 0.0;
-   values[MOM3] = 0.0;
+   values[MOM1] = 0.0_rt;
+   values[MOM2] = 0.0_rt;
+   values[MOM3] = 0.0_rt;
    values[ENERGY] = state.pressure;
    const int base_components = physical_system_has_magnetic_field(system)
       ? NVAR_MHD
@@ -1117,7 +1130,7 @@ void apply_initial_atmosphere_exterior(
    for (int component = base_components;
         component < num_components;
         ++component) {
-      values[component] = 0.0;
+      values[component] = 0.0_rt;
    }
 }
 
@@ -1129,19 +1142,19 @@ void apply_adm_exterior(
 )
 {
    if (!point.exterior || !(point.target_radius > point.source_radius)
-       || !(point.source_radius > 0.0)) {
+       || !(point.source_radius > 0.0_rt)) {
       return;
    }
    for (int component = 0; component < num_components; ++component) {
-      amrex::Real asymptotic = 0.0;
-      amrex::Real falloff = 1.0;
+      amrex::Real asymptotic = 0.0_rt;
+      amrex::Real falloff = 1.0_rt;
       if (component == AdmGamma11 || component == AdmGamma22
           || component == AdmGamma33 || component == AdmLapse) {
-         asymptotic = 1.0;
+         asymptotic = 1.0_rt;
       } else if (component >= AdmK11 && component <= AdmK33) {
-         falloff = stationary_rotating ? 3.0 : 2.0;
+         falloff = stationary_rotating ? 3.0_rt : 2.0_rt;
       } else if (component >= AdmShift1 && component <= AdmShift3) {
-         falloff = stationary_rotating ? 2.0 : 1.0;
+         falloff = stationary_rotating ? 2.0_rt : 1.0_rt;
       }
       const amrex::Real scale = std::pow(
          point.source_radius / point.target_radius, falloff
@@ -1157,7 +1170,7 @@ void apply_tov_schwarzschild_adm_exterior(
 )
 {
    if (!point.exterior || !(point.target_radius > point.source_radius)
-       || !(point.source_radius > 0.0)) {
+       || !(point.source_radius > 0.0_rt)) {
       return;
    }
    const amrex::Real determinant =
@@ -1170,32 +1183,32 @@ void apply_tov_schwarzschild_adm_exterior(
       + values[AdmGamma13]
          * (values[AdmGamma12] * values[AdmGamma23]
             - values[AdmGamma13] * values[AdmGamma22]);
-   if (!(determinant > 0.0) || !std::isfinite(determinant)) {
+   if (!(determinant > 0.0_rt) || !std::isfinite(determinant)) {
       amrex::Abort(
          "TOV exterior continuation requires a finite positive spatial metric"
       );
    }
-   const amrex::Real source_conformal_factor = std::pow(determinant, 1.0 / 12.0);
-   const amrex::Real mass = 2.0 * point.source_radius
-      * (source_conformal_factor - 1.0);
-   const amrex::Real compact_radius = mass / (2.0 * point.target_radius);
-   const amrex::Real target_conformal_factor = 1.0 + compact_radius;
+   const amrex::Real source_conformal_factor = std::pow(determinant, 1.0_rt / 12.0_rt);
+   const amrex::Real mass = 2.0_rt * point.source_radius
+      * (source_conformal_factor - 1.0_rt);
+   const amrex::Real compact_radius = mass / (2.0_rt * point.target_radius);
+   const amrex::Real target_conformal_factor = 1.0_rt + compact_radius;
    const amrex::Real spatial_diagonal = std::pow(
-      target_conformal_factor, 4.0
+      target_conformal_factor, 4.0_rt
    );
    values[AdmGamma11] = spatial_diagonal;
-   values[AdmGamma12] = 0.0;
-   values[AdmGamma13] = 0.0;
+   values[AdmGamma12] = 0.0_rt;
+   values[AdmGamma13] = 0.0_rt;
    values[AdmGamma22] = spatial_diagonal;
-   values[AdmGamma23] = 0.0;
+   values[AdmGamma23] = 0.0_rt;
    values[AdmGamma33] = spatial_diagonal;
    for (int component = AdmK11; component <= AdmK33; ++component) {
-      values[component] = 0.0;
+      values[component] = 0.0_rt;
    }
-   values[AdmLapse] = (1.0 - compact_radius) / target_conformal_factor;
-   values[AdmShift1] = 0.0;
-   values[AdmShift2] = 0.0;
-   values[AdmShift3] = 0.0;
+   values[AdmLapse] = (1.0_rt - compact_radius) / target_conformal_factor;
+   values[AdmShift1] = 0.0_rt;
+   values[AdmShift2] = 0.0_rt;
+   values[AdmShift3] = 0.0_rt;
 }
 
 void fill_constraint_solved_black_hole_interior(
@@ -1205,10 +1218,10 @@ void fill_constraint_solved_black_hole_interior(
    amrex::Real fill_radius
 )
 {
-   if (!(fill_radius > 0.0) || geometry.size() != adm.size()) {
+   if (!(fill_radius > 0.0_rt) || geometry.size() != adm.size()) {
       amrex::Abort("invalid constraint-solved black-hole interior fill");
    }
-   const amrex::Real safe_radius = 0.25 * fill_radius;
+   const amrex::Real safe_radius = 0.25_rt * fill_radius;
    for (std::size_t level = 0; level < adm.size(); ++level) {
       const auto prob_lo = geometry[level].ProbLoArray();
       const auto spacing = geometry[level].CellSizeArray();
@@ -1240,12 +1253,12 @@ void fill_constraint_solved_black_hole_interior(
             if (radius <= safe_radius) {
                for (int component = 0; component < AdmNumComponents;
                     ++component) {
-                  values(i, j, k, component) = 0.0;
+                  values(i, j, k, component) = 0.0_rt;
                }
-               values(i, j, k, AdmGamma11) = 1.0;
-               values(i, j, k, AdmGamma22) = 1.0;
-               values(i, j, k, AdmGamma33) = 1.0;
-               values(i, j, k, AdmLapse) = 1.0;
+               values(i, j, k, AdmGamma11) = 1.0_rt;
+               values(i, j, k, AdmGamma22) = 1.0_rt;
+               values(i, j, k, AdmGamma33) = 1.0_rt;
+               values(i, j, k, AdmLapse) = 1.0_rt;
                return;
             }
             const amrex::Real transition = (
@@ -1253,21 +1266,21 @@ void fill_constraint_solved_black_hole_interior(
             ) / (fill_radius - safe_radius);
             const amrex::Real transition_squared = transition * transition;
             const amrex::Real weight = transition_squared * transition
-               * (10.0 + transition * (-15.0 + 6.0 * transition));
-            values(i, j, k, AdmGamma11) = 1.0 + weight
-               * (values(i, j, k, AdmGamma11) - 1.0);
+               * (10.0_rt + transition * (-15.0_rt + 6.0_rt * transition));
+            values(i, j, k, AdmGamma11) = 1.0_rt + weight
+               * (values(i, j, k, AdmGamma11) - 1.0_rt);
             values(i, j, k, AdmGamma12) *= weight;
             values(i, j, k, AdmGamma13) *= weight;
-            values(i, j, k, AdmGamma22) = 1.0 + weight
-               * (values(i, j, k, AdmGamma22) - 1.0);
+            values(i, j, k, AdmGamma22) = 1.0_rt + weight
+               * (values(i, j, k, AdmGamma22) - 1.0_rt);
             values(i, j, k, AdmGamma23) *= weight;
-            values(i, j, k, AdmGamma33) = 1.0 + weight
-               * (values(i, j, k, AdmGamma33) - 1.0);
+            values(i, j, k, AdmGamma33) = 1.0_rt + weight
+               * (values(i, j, k, AdmGamma33) - 1.0_rt);
             for (int component = AdmK11; component <= AdmK33; ++component) {
                values(i, j, k, component) *= weight;
             }
-            values(i, j, k, AdmLapse) = 1.0 + weight
-               * (values(i, j, k, AdmLapse) - 1.0);
+            values(i, j, k, AdmLapse) = 1.0_rt + weight
+               * (values(i, j, k, AdmLapse) - 1.0_rt);
             values(i, j, k, AdmShift1) *= weight;
             values(i, j, k, AdmShift2) *= weight;
             values(i, j, k, AdmShift3) *= weight;
@@ -1476,7 +1489,7 @@ void interpolate_stored_field(
                   system,
                   eos_method,
                   atmosphere,
-                  -1.0
+                  -1.0_rt
                );
             }
          }
@@ -1587,7 +1600,7 @@ void interpolate_portable_field(
                   const amrex::Real coordinate =
                      centering.nodeCentered(direction)
                      ? faces[local_index]
-                     : 0.5 * (faces[local_index] + faces[local_index + 1]);
+                     : 0.5_rt * (faces[local_index] + faces[local_index + 1]);
                   mapped_target_q[canonical_component_for_runtime_direction(
                      target_coordinate, axes, direction
                   )] = coordinate;
@@ -1608,8 +1621,8 @@ void interpolate_portable_field(
             point.target_physical = {
                target_cartesian[0], target_cartesian[1], target_cartesian[2]
             };
-            amrex::Real source_radius_squared = 0.0;
-            amrex::Real target_radius_squared = 0.0;
+            amrex::Real source_radius_squared = 0.0_rt;
+            amrex::Real target_radius_squared = 0.0_rt;
             for (int component = 0; component < 3; ++component) {
                const amrex::Real source_delta =
                   sample.source_cartesian[component] - origin[component];
@@ -1675,7 +1688,7 @@ void adm_to_z4c(
                g11 * (g22 * g33 - g23 * g23)
                - g12 * (g12 * g33 - g13 * g23)
                + g13 * (g12 * g23 - g13 * g22);
-            const amrex::Real chi = 1.0 / std::cbrt(determinant);
+            const amrex::Real chi = 1.0_rt / std::cbrt(determinant);
             const amrex::Real inv11 = (g22 * g33 - g23 * g23) / determinant;
             const amrex::Real inv12 = (g13 * g23 - g12 * g33) / determinant;
             const amrex::Real inv13 = (g12 * g23 - g13 * g22) / determinant;
@@ -1688,9 +1701,9 @@ void adm_to_z4c(
             const amrex::Real k22 = source(i, j, k, AdmK22);
             const amrex::Real k23 = source(i, j, k, AdmK23);
             const amrex::Real k33 = source(i, j, k, AdmK33);
-            const amrex::Real trace_k = inv11 * k11 + 2.0 * inv12 * k12
-               + 2.0 * inv13 * k13 + inv22 * k22
-               + 2.0 * inv23 * k23 + inv33 * k33;
+            const amrex::Real trace_k = inv11 * k11 + 2.0_rt * inv12 * k12
+               + 2.0_rt * inv13 * k13 + inv22 * k22
+               + 2.0_rt * inv23 * k23 + inv33 * k33;
             Z4cState state;
             state.chi = chi;
             state.gamma_tilde11 = chi * g11;
@@ -1700,12 +1713,12 @@ void adm_to_z4c(
             state.gamma_tilde23 = chi * g23;
             state.gamma_tilde33 = chi * g33;
             state.k_hat = trace_k;
-            state.a_tilde11 = chi * (k11 - g11 * trace_k / 3.0);
-            state.a_tilde12 = chi * (k12 - g12 * trace_k / 3.0);
-            state.a_tilde13 = chi * (k13 - g13 * trace_k / 3.0);
-            state.a_tilde22 = chi * (k22 - g22 * trace_k / 3.0);
-            state.a_tilde23 = chi * (k23 - g23 * trace_k / 3.0);
-            state.a_tilde33 = chi * (k33 - g33 * trace_k / 3.0);
+            state.a_tilde11 = chi * (k11 - g11 * trace_k / 3.0_rt);
+            state.a_tilde12 = chi * (k12 - g12 * trace_k / 3.0_rt);
+            state.a_tilde13 = chi * (k13 - g13 * trace_k / 3.0_rt);
+            state.a_tilde22 = chi * (k22 - g22 * trace_k / 3.0_rt);
+            state.a_tilde23 = chi * (k23 - g23 * trace_k / 3.0_rt);
+            state.a_tilde33 = chi * (k33 - g33 * trace_k / 3.0_rt);
             state.lapse = source(i, j, k, AdmLapse);
             state.shift1 = source(i, j, k, AdmShift1);
             state.shift2 = source(i, j, k, AdmShift2);
@@ -1874,6 +1887,8 @@ void write_physical_initial_data(
       metadata << "# amrex_spacedim=" << AMREX_SPACEDIM << '\n';
       metadata << "# levels=" << levels << '\n';
       metadata << "# physics=" << cfg.physics << '\n';
+      metadata << "# relativistic_exterior="
+               << cfg.relativistic_exterior << '\n';
       metadata << "# fluid_components=" << evolution_fluid.front()->nComp() << '\n';
       metadata << "# physical_fluid_components=" << fluid_components << '\n';
       metadata << "# mesh_coordinate=" << cfg.mesh_coordinate << '\n';
@@ -2036,7 +2051,7 @@ void write_physical_initial_data(
                   << output_metadata_real_string(
                        cfg.spacetime_black_hole_fill_radius
                      ) << '\n';
-         if (artifact_metadata.black_hole_throat_area > 0.0) {
+         if (artifact_metadata.black_hole_throat_area > 0.0_rt) {
             metadata << "# black_hole_throat_area="
                      << output_metadata_real_string(
                           artifact_metadata.black_hole_throat_area
@@ -2045,7 +2060,7 @@ void write_physical_initial_data(
                      << output_metadata_real_string(
                           artifact_metadata.black_hole_irreducible_mass
                         ) << '\n';
-            if (artifact_metadata.black_hole_throat_kerr_mass > 0.0) {
+            if (artifact_metadata.black_hole_throat_kerr_mass > 0.0_rt) {
                metadata << "# black_hole_throat_equatorial_circumference="
                         << output_metadata_real_string(
                              artifact_metadata
@@ -2065,7 +2080,7 @@ void write_physical_initial_data(
                              artifact_metadata.black_hole_throat_kerr_spin
                            ) << '\n';
                if (artifact_metadata.black_hole_throat_christodoulou_mass
-                   > 0.0) {
+                   > 0.0_rt) {
                   metadata << "# black_hole_throat_angular_momentum="
                            << output_metadata_real_string(
                                 artifact_metadata
@@ -2153,7 +2168,7 @@ void write_physical_initial_data(
       metadata << "# rotation_center3="
                << output_metadata_real_string(cfg.initial_data_rotation_center3)
                << '\n';
-      if (artifact_metadata.maximum_density > 0.0) {
+      if (artifact_metadata.maximum_density > 0.0_rt) {
          metadata << "# maximum_density="
                   << output_metadata_real_string(
                        artifact_metadata.maximum_density
@@ -2202,7 +2217,7 @@ void write_physical_initial_data(
                        artifact_metadata.dimensionless_spin
                      ) << '\n';
       }
-      if (artifact_metadata.disk_maximum_density > 0.0) {
+      if (artifact_metadata.disk_maximum_density > 0.0_rt) {
          metadata << "# disk_maximum_density="
                   << output_metadata_real_string(
                        artifact_metadata.disk_maximum_density
@@ -2236,7 +2251,7 @@ void write_physical_initial_data(
                        artifact_metadata.disk_angular_momentum
                      ) << '\n';
       }
-      if (artifact_metadata.matter_outer_radius > 0.0) {
+      if (artifact_metadata.matter_outer_radius > 0.0_rt) {
          metadata << "# matter_outer_radius="
                   << output_metadata_real_string(
                        artifact_metadata.matter_outer_radius
@@ -2323,6 +2338,23 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    );
    require_metadata(metadata, "format", "hdf5", path);
    require_metadata(metadata, "physics", cfg.physics, path);
+   const auto source_exterior_entry = metadata.find("relativistic_exterior");
+   const std::string source_exterior = source_exterior_entry == metadata.end()
+      ? "atmosphere"
+      : source_exterior_entry->second;
+   if (source_exterior != "atmosphere" && source_exterior != "vacuum") {
+      amrex::Abort(
+         "physical initial data have an invalid relativistic_exterior in "
+         + path
+      );
+   }
+   if (source_exterior != cfg.relativistic_exterior) {
+      amrex::Abort(
+         "physical initial-data relativistic_exterior mismatch: artifact='"
+         + source_exterior + "' current='" + cfg.relativistic_exterior
+         + "' in " + path
+      );
+   }
    require_metadata(metadata, "fluid_components", std::to_string(fluid_components), path);
    require_metadata(
       metadata,
@@ -2566,6 +2598,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    }
 
    PhysicalInitialDataMetadata result;
+   result.relativistic_exterior = source_exterior;
    result.components = read_component_metadata(metadata, path);
    result.source_ic = required_metadata_value(metadata, "source_ic", path);
    const auto magnetic_metadata_real = [&](
@@ -2580,15 +2613,15 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       : (metadata.find("magnetic_seed") == metadata.end()
             ? "none" : metadata.at("magnetic_seed"));
    result.magnetic_seed_pressure_cutoff = magnetic_metadata_real(
-      "magnetic_seed_pressure_cutoff", 0.0
+      "magnetic_seed_pressure_cutoff", 0.0_rt
    );
    result.magnetic_seed_exponent = magnetic_metadata_real(
-      "magnetic_seed_exponent", 0.0
+      "magnetic_seed_exponent", 0.0_rt
    );
    result.magnetic_seed_maximum_comoving_field =
       magnetic_metadata_real(
          "magnetic_seed_maximum_comoving_field",
-         0.0
+         0.0_rt
       );
    result.magnetic_equilibrium = schema_version >= 3
       ? required_metadata_value(metadata, "magnetic_equilibrium", path)
@@ -2641,13 +2674,13 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    result.magnetic_equilibrium_poloidal_magnetization =
       magnetic_metadata_real(
          "magnetic_equilibrium_poloidal_magnetization",
-         0.0
+         0.0_rt
       );
    result.magnetic_equilibrium_nonlinear_poloidal = magnetic_metadata_real(
-      "magnetic_equilibrium_nonlinear_poloidal", 0.0
+      "magnetic_equilibrium_nonlinear_poloidal", 0.0_rt
    );
    result.magnetic_equilibrium_relaxation = magnetic_metadata_real(
-      "magnetic_equilibrium_relaxation", 0.0
+      "magnetic_equilibrium_relaxation", 0.0_rt
    );
    const bool constructed_magnetic_field = result.magnetic_seed != "none"
       || result.magnetic_equilibrium != "none";
@@ -2667,12 +2700,12 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       );
    }
    if (result.magnetic_seed != "none"
-       && (!(result.magnetic_seed_pressure_cutoff >= 0.0)
-           || !(result.magnetic_seed_pressure_cutoff < 1.0)
+       && (!(result.magnetic_seed_pressure_cutoff >= 0.0_rt)
+           || !(result.magnetic_seed_pressure_cutoff < 1.0_rt)
            || !std::isfinite(result.magnetic_seed_pressure_cutoff)
-           || !(result.magnetic_seed_exponent >= 1.0)
+           || !(result.magnetic_seed_exponent >= 1.0_rt)
            || !std::isfinite(result.magnetic_seed_exponent)
-           || !(result.magnetic_seed_maximum_comoving_field > 0.0)
+           || !(result.magnetic_seed_maximum_comoving_field > 0.0_rt)
            || !std::isfinite(
               result.magnetic_seed_maximum_comoving_field
            ))) {
@@ -2687,8 +2720,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
            || !std::isfinite(
               result.magnetic_equilibrium_nonlinear_poloidal
            )
-           || !(result.magnetic_equilibrium_relaxation > 0.0)
-           || !(result.magnetic_equilibrium_relaxation <= 1.0)
+           || !(result.magnetic_equilibrium_relaxation > 0.0_rt)
+           || !(result.magnetic_equilibrium_relaxation <= 1.0_rt)
            || !std::isfinite(
               result.magnetic_equilibrium_relaxation
            ))) {
@@ -2721,21 +2754,21 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          metadata, "disk_specific_angular_momentum", path
       );
       result.disk_angular_velocity = optional_metadata_real(
-         metadata, "disk_angular_velocity", 0.0, path
+         metadata, "disk_angular_velocity", 0.0_rt, path
       );
       result.disk_differential_rotation_length = optional_metadata_real(
-         metadata, "disk_differential_rotation_length", 10.0, path
+         metadata, "disk_differential_rotation_length", 10.0_rt, path
       );
       result.disk_rotation_power_q = optional_metadata_real(
-         metadata, "disk_rotation_power_q", 1.0, path
+         metadata, "disk_rotation_power_q", 1.0_rt, path
       );
       result.disk_inner_radius = required_metadata_real(
          metadata, "disk_inner_radius", path
       );
       result.disk_axis = {{
-         optional_metadata_real(metadata, "disk_axis1", 0.0, path),
-         optional_metadata_real(metadata, "disk_axis2", 0.0, path),
-         optional_metadata_real(metadata, "disk_axis3", 1.0, path),
+         optional_metadata_real(metadata, "disk_axis1", 0.0_rt, path),
+         optional_metadata_real(metadata, "disk_axis2", 0.0_rt, path),
+         optional_metadata_real(metadata, "disk_axis3", 1.0_rt, path),
       }};
       result.disk_maximum_density = required_metadata_real(
          metadata, "disk_maximum_density", path
@@ -2785,18 +2818,18 @@ PhysicalInitialDataMetadata read_physical_initial_data(
             "the target in " + path
          );
       }
-      if (!(result.disk_maximum_density > 0.0)
-          || !(result.disk_maximum_velocity >= 0.0)
-          || !(result.disk_maximum_velocity < 1.0)
-          || !(result.disk_resolved_inner_radius > 0.0)
+      if (!(result.disk_maximum_density > 0.0_rt)
+          || !(result.disk_maximum_velocity >= 0.0_rt)
+          || !(result.disk_maximum_velocity < 1.0_rt)
+          || !(result.disk_resolved_inner_radius > 0.0_rt)
           || !(result.disk_outer_radius
                > result.disk_resolved_inner_radius)
           || !(result.disk_density_maximum_radius
                >= result.disk_resolved_inner_radius)
           || !(result.disk_density_maximum_radius
                <= result.disk_outer_radius)
-          || !(result.disk_maximum_log_specific_enthalpy > 0.0)
-          || !(result.disk_baryonic_mass > 0.0)
+          || !(result.disk_maximum_log_specific_enthalpy > 0.0_rt)
+          || !(result.disk_baryonic_mass > 0.0_rt)
           || !std::isfinite(result.disk_angular_momentum)) {
          amrex::Abort(
             "physical-ID equilibrium-torus diagnostics are invalid in " + path
@@ -2836,42 +2869,42 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          metadata, "black_hole_fill_radius", path
       );
       result.black_hole_throat_area = optional_metadata_real(
-         metadata, "black_hole_throat_area", -1.0, path
+         metadata, "black_hole_throat_area", -1.0_rt, path
       );
       result.black_hole_irreducible_mass = optional_metadata_real(
-         metadata, "black_hole_irreducible_mass", -1.0, path
+         metadata, "black_hole_irreducible_mass", -1.0_rt, path
       );
       result.black_hole_throat_equatorial_circumference =
          optional_metadata_real(
             metadata,
             "black_hole_throat_equatorial_circumference",
-            -1.0,
+            -1.0_rt,
             path
          );
       result.black_hole_throat_polar_circumference = optional_metadata_real(
-         metadata, "black_hole_throat_polar_circumference", -1.0, path
+         metadata, "black_hole_throat_polar_circumference", -1.0_rt, path
       );
       result.black_hole_throat_kerr_mass = optional_metadata_real(
-         metadata, "black_hole_throat_kerr_mass", -1.0, path
+         metadata, "black_hole_throat_kerr_mass", -1.0_rt, path
       );
       result.black_hole_throat_kerr_spin = optional_metadata_real(
-         metadata, "black_hole_throat_kerr_spin", -1.0, path
+         metadata, "black_hole_throat_kerr_spin", -1.0_rt, path
       );
       result.black_hole_throat_angular_momentum = optional_metadata_real(
-         metadata, "black_hole_throat_angular_momentum", 0.0, path
+         metadata, "black_hole_throat_angular_momentum", 0.0_rt, path
       );
       result.black_hole_throat_christodoulou_mass = optional_metadata_real(
-         metadata, "black_hole_throat_christodoulou_mass", -1.0, path
+         metadata, "black_hole_throat_christodoulou_mass", -1.0_rt, path
       );
       result.black_hole_throat_christodoulou_spin = optional_metadata_real(
-         metadata, "black_hole_throat_christodoulou_spin", 0.0, path
+         metadata, "black_hole_throat_christodoulou_spin", 0.0_rt, path
       );
       const bool has_throat_area_diagnostic =
-         result.black_hole_throat_area > 0.0
-         || result.black_hole_irreducible_mass > 0.0;
+         result.black_hole_throat_area > 0.0_rt
+         || result.black_hole_irreducible_mass > 0.0_rt;
       if (has_throat_area_diagnostic
-          && (!(result.black_hole_throat_area > 0.0)
-              || !(result.black_hole_irreducible_mass > 0.0)
+          && (!(result.black_hole_throat_area > 0.0_rt)
+              || !(result.black_hole_irreducible_mass > 0.0_rt)
               || !std::isfinite(result.black_hole_throat_area)
               || !std::isfinite(result.black_hole_irreducible_mass))) {
          amrex::Abort(
@@ -2880,16 +2913,16 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          );
       }
       const bool has_throat_kerr_diagnostic =
-         result.black_hole_throat_equatorial_circumference > 0.0
-         || result.black_hole_throat_polar_circumference > 0.0
-         || result.black_hole_throat_kerr_mass > 0.0
-         || result.black_hole_throat_kerr_spin >= 0.0;
+         result.black_hole_throat_equatorial_circumference > 0.0_rt
+         || result.black_hole_throat_polar_circumference > 0.0_rt
+         || result.black_hole_throat_kerr_mass > 0.0_rt
+         || result.black_hole_throat_kerr_spin >= 0.0_rt;
       if (has_throat_kerr_diagnostic
-          && (!(result.black_hole_throat_equatorial_circumference > 0.0)
-              || !(result.black_hole_throat_polar_circumference > 0.0)
-              || !(result.black_hole_throat_kerr_mass > 0.0)
-              || result.black_hole_throat_kerr_spin < -1.0
-              || result.black_hole_throat_kerr_spin > 1.0
+          && (!(result.black_hole_throat_equatorial_circumference > 0.0_rt)
+              || !(result.black_hole_throat_polar_circumference > 0.0_rt)
+              || !(result.black_hole_throat_kerr_mass > 0.0_rt)
+              || result.black_hole_throat_kerr_spin < -1.0_rt
+              || result.black_hole_throat_kerr_spin > 1.0_rt
               || !std::isfinite(
                    result.black_hole_throat_equatorial_circumference
                  )
@@ -2905,11 +2938,11 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       }
       const bool has_throat_christodoulou_diagnostic =
          metadata.contains("black_hole_throat_angular_momentum")
-         || result.black_hole_throat_christodoulou_mass > 0.0
+         || result.black_hole_throat_christodoulou_mass > 0.0_rt
          || metadata.contains("black_hole_throat_christodoulou_spin");
       if (has_throat_christodoulou_diagnostic
           && (!metadata.contains("black_hole_throat_angular_momentum")
-              || !(result.black_hole_throat_christodoulou_mass > 0.0)
+              || !(result.black_hole_throat_christodoulou_mass > 0.0_rt)
               || !metadata.contains("black_hole_throat_christodoulou_spin")
               || !std::isfinite(
                    result.black_hole_throat_angular_momentum
@@ -2921,7 +2954,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
                    result.black_hole_throat_christodoulou_spin
                  )
               || std::abs(result.black_hole_throat_christodoulou_spin)
-                   > 1.0)) {
+                   > 1.0_rt)) {
          amrex::Abort(
             "physical-ID black-hole throat Christodoulou diagnostic is "
             "invalid in " + path
@@ -2932,7 +2965,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          && result.spacetime_initial_data == "xcts"
          && result.black_hole_interior == "exterior"
          && cfg.spacetime_black_hole_interior == "filled"
-         && cfg.spacetime_black_hole_fill_radius > 0.0;
+         && cfg.spacetime_black_hole_fill_radius > 0.0_rt;
       if (result.black_hole_mass != cfg.spacetime_mass
           || result.black_hole_spin[0]
              != cfg.spacetime_dimensionless_spin1
@@ -2963,7 +2996,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       metadata, "angular_velocity", path
    );
    result.injection_energy = optional_metadata_real(
-      metadata, "injection_energy", -1.0, path
+      metadata, "injection_energy", -1.0_rt, path
    );
    if (result.source_ic == "rotating_star") {
       result.maximum_density = required_metadata_real(
@@ -2997,14 +3030,14 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.dimensionless_spin = required_metadata_real(
          metadata, "dimensionless_spin", path
       );
-      if (!(result.maximum_density > 0.0)
-          || !(result.maximum_velocity >= 0.0
-               && result.maximum_velocity < 1.0)
-          || !(result.injection_energy > 0.0)
-          || !(result.equatorial_radius > 0.0)
-          || !(result.polar_radius > 0.0)
-          || !(result.adm_mass > 0.0)
-          || !(result.baryonic_mass > 0.0)) {
+      if (!(result.maximum_density > 0.0_rt)
+          || !(result.maximum_velocity >= 0.0_rt
+               && result.maximum_velocity < 1.0_rt)
+          || !(result.injection_energy > 0.0_rt)
+          || !(result.equatorial_radius > 0.0_rt)
+          || !(result.polar_radius > 0.0_rt)
+          || !(result.adm_mass > 0.0_rt)
+          || !(result.baryonic_mass > 0.0_rt)) {
          amrex::Abort(
             "physical rotating-star diagnostic metadata is invalid in "
             + path
@@ -3023,7 +3056,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.differential_rotation_length = required_metadata_real(
          metadata, "differential_rotation_length", path
       );
-      if (!(result.differential_rotation_length > 0.0)) {
+      if (!(result.differential_rotation_length > 0.0_rt)) {
          amrex::Abort(
             "physical initial-data differential rotation length must be "
             "positive in " + path
@@ -3035,7 +3068,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.differential_rotation_length_b = required_metadata_real(
          metadata, "differential_rotation_length_b", path
       );
-      if (!(result.differential_rotation_length_b > 0.0)) {
+      if (!(result.differential_rotation_length_b > 0.0_rt)) {
          amrex::Abort(
             "physical initial-data Uryu differential rotation length B must "
             "be positive in " + path
@@ -3046,7 +3079,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       result.rotation_power_q = required_metadata_real(
          metadata, "rotation_power_q", path
       );
-      if (!(result.rotation_power_q >= 1.0)) {
+      if (!(result.rotation_power_q >= 1.0_rt)) {
          amrex::Abort(
             "physical initial-data q-power exponent must be at least one in "
             + path
@@ -3060,7 +3093,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          const auto stored_outer = metadata.find("matter_outer_radius");
          if (stored_outer != metadata.end()) {
             std::size_t parsed = 0;
-            result.matter_outer_radius = std::stod(
+            result.matter_outer_radius = parse_real_number(
                stored_outer->second, &parsed
             );
             if (parsed != stored_outer->second.size()) {
@@ -3071,14 +3104,14 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          } else {
             const amrex::Real equatorial = result.source_ic == "rotating_star"
                ? result.equatorial_radius
-               : std::stod(
+               : parse_real_number(
                     required_metadata_value(
                        metadata, "equatorial_radius", path
                     )
                  );
             const amrex::Real polar = result.source_ic == "rotating_star"
                ? result.polar_radius
-               : std::stod(
+               : parse_real_number(
                     required_metadata_value(metadata, "polar_radius", path)
                  );
             // Older artifacts store independent cylindrical and axial
@@ -3092,7 +3125,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
             + path
          );
       }
-      if (!(result.matter_outer_radius > 0.0)
+      if (!(result.matter_outer_radius > 0.0_rt)
           || !std::isfinite(result.matter_outer_radius)) {
          amrex::Abort(
             "rotating physical-ID matter-support radius is invalid in " + path
@@ -3102,11 +3135,11 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    // Schema-v1 artifacts predate explicit pose metadata and were centered at
    // the coordinate origin.  The target center is a materialization choice,
    // so it must not be used as the missing source value.
-   result.rotation_center = {0.0, 0.0, 0.0};
+   result.rotation_center = {0.0_rt, 0.0_rt, 0.0_rt};
    result.rotation_axis = {{
-      optional_metadata_real(metadata, "rotation_axis1", 0.0, path),
-      optional_metadata_real(metadata, "rotation_axis2", 0.0, path),
-      optional_metadata_real(metadata, "rotation_axis3", 1.0, path),
+      optional_metadata_real(metadata, "rotation_axis1", 0.0_rt, path),
+      optional_metadata_real(metadata, "rotation_axis2", 0.0_rt, path),
+      optional_metadata_real(metadata, "rotation_axis3", 1.0_rt, path),
    }};
    for (int component = 0; component < 3; ++component) {
       const std::string key = "rotation_center" + std::to_string(component + 1);
@@ -3116,7 +3149,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       }
       try {
          std::size_t parsed = 0;
-         result.rotation_center[component] = std::stod(found->second, &parsed);
+         result.rotation_center[component] = parse_real_number(found->second, &parsed);
          if (parsed != found->second.size()
              || !std::isfinite(result.rotation_center[component])) {
             throw std::invalid_argument("invalid rotation center");
@@ -3139,13 +3172,13 @@ PhysicalInitialDataMetadata read_physical_initial_data(
                || result.spacetime_initial_data == "static_trumpet"
             ? "analytic" : "exterior_shell";
          black_hole.origin = result.black_hole_origin;
-         amrex::Real spin_norm_squared = 0.0;
+         amrex::Real spin_norm_squared = 0.0_rt;
          for (int component = 0; component < 3; ++component) {
             spin_norm_squared += result.black_hole_spin[component]
                * result.black_hole_spin[component];
          }
-         if (spin_norm_squared > 0.0) {
-            const amrex::Real inverse_norm = 1.0 / std::sqrt(spin_norm_squared);
+         if (spin_norm_squared > 0.0_rt) {
+            const amrex::Real inverse_norm = 1.0_rt / std::sqrt(spin_norm_squared);
             for (int component = 0; component < 3; ++component) {
                black_hole.axis[component] =
                   result.black_hole_spin[component] * inverse_norm;
@@ -3234,8 +3267,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       rigid_transform = make_physical_id_rigid_transform(
          source_rotation_center,
          target_rotation_center,
-         {0.0, 0.0, 1.0},
-         {0.0, 0.0, 1.0}
+         {0.0_rt, 0.0_rt, 1.0_rt},
+         {0.0_rt, 0.0_rt, 1.0_rt}
       );
    }
    result.used_rigid_transform =
@@ -3243,8 +3276,8 @@ PhysicalInitialDataMetadata read_physical_initial_data(
    if (result.disk == "equilibrium_torus"
        || result.disk == "tilted_torus") {
       std::array<amrex::Real, 3> mapped_disk_axis{};
-      amrex::Real mapped_norm_squared = 0.0;
-      amrex::Real target_norm_squared = 0.0;
+      amrex::Real mapped_norm_squared = 0.0_rt;
+      amrex::Real target_norm_squared = 0.0_rt;
       for (int i = 0; i < 3; ++i) {
          for (int j = 0; j < 3; ++j) {
             mapped_disk_axis[i] += rigid_transform.source_to_target[i][j]
@@ -3253,7 +3286,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
          mapped_norm_squared += mapped_disk_axis[i] * mapped_disk_axis[i];
          target_norm_squared += target_disk_axis[i] * target_disk_axis[i];
       }
-      if (!(mapped_norm_squared > 0.0) || !(target_norm_squared > 0.0)) {
+      if (!(mapped_norm_squared > 0.0_rt) || !(target_norm_squared > 0.0_rt)) {
          amrex::Abort(
             "physical-ID disk rotation axis must be finite and nonzero"
          );
@@ -3263,7 +3296,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       for (int component = 0; component < 3; ++component) {
          if (std::abs(mapped_disk_axis[component] / mapped_norm
                       - target_disk_axis[component] / target_norm)
-             > 1.0e-12) {
+             > 1.0e-12_rt) {
             amrex::Abort(
                "physical-ID stellar/disk relative orientation is "
                "incompatible with the target in " + path
@@ -3496,7 +3529,7 @@ PhysicalInitialDataMetadata read_physical_initial_data(
             system,
             eos_method_code(cfg),
             atmosphere,
-            -1.0
+            -1.0_rt
          );
          if (result.source_ic == "black_hole"
              && result.spacetime_initial_data == "xcts"
@@ -3527,10 +3560,10 @@ PhysicalInitialDataMetadata read_physical_initial_data(
       const amrex::Real target_extent = geometry.front().ProbLength(direction);
       const amrex::Real periods = target_extent / source_extent;
       const amrex::Real nearest_periods = std::round(periods);
-      if (!(nearest_periods >= 1.0)
+      if (!(nearest_periods >= 1.0_rt)
           || std::abs(periods - nearest_periods)
-             > 128.0 * std::numeric_limits<amrex::Real>::epsilon()
-                * amrex::max(1.0, std::abs(periods))) {
+             > 128.0_rt * std::numeric_limits<amrex::Real>::epsilon()
+                * amrex::max(1.0_rt, std::abs(periods))) {
          amrex::Abort(
             "periodic physical-ID materialization requires each target extent "
             "to contain an integer number of saved periods"

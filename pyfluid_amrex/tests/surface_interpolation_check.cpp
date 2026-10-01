@@ -14,10 +14,13 @@
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/coordinate_locations.hpp"
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
+#include "pyfluid_amrex/kernels_generated/diagnostics.hpp"
 #include "pyfluid_amrex/multipoles.hpp"
 #include "pyfluid_amrex/surface_geometry.hpp"
 
 namespace {
+
+using namespace amrex::literals;
 
 using pyfluid_amrex::HierarchyInterpolationPlan;
 using pyfluid_amrex::ParametricSurface;
@@ -35,8 +38,8 @@ void require_close(amrex::Real value, amrex::Real expected, amrex::Real toleranc
 amrex::Geometry make_geometry(
    int cells,
    amrex::GpuArray<int, 3> periodic,
-   amrex::GpuArray<amrex::Real, 3> lower = {-1.0, -1.0, -1.0},
-   amrex::GpuArray<amrex::Real, 3> upper = {1.0, 1.0, 1.0}
+   amrex::GpuArray<amrex::Real, 3> lower = {-1.0_rt, -1.0_rt, -1.0_rt},
+   amrex::GpuArray<amrex::Real, 3> upper = {1.0_rt, 1.0_rt, 1.0_rt}
 )
 {
    const amrex::Box domain(
@@ -57,7 +60,7 @@ std::unique_ptr<amrex::MultiFab> linear_coordinate_field(
    auto field = std::make_unique<amrex::MultiFab>(
       amrex::convert(cell_grids, centering), distribution, 1, ghost_cells
    );
-   field->setVal(0.0);
+   field->setVal(0.0_rt);
    const auto lower = geometry.ProbLoArray();
    const auto spacing = geometry.CellSizeArray();
    const amrex::Box centered_domain = amrex::convert(geometry.Domain(), centering);
@@ -66,15 +69,15 @@ std::unique_ptr<amrex::MultiFab> linear_coordinate_field(
       const amrex::Box box = mfi.validbox();
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const amrex::Real q1 = lower[0]
-            + (i - centered_domain.smallEnd(0) + (centering.nodeCentered(0) ? 0.0 : 0.5))
+            + (i - centered_domain.smallEnd(0) + (centering.nodeCentered(0) ? 0.0_rt : 0.5_rt))
                * spacing[0];
          const amrex::Real q2 = lower[1]
-            + (j - centered_domain.smallEnd(1) + (centering.nodeCentered(1) ? 0.0 : 0.5))
+            + (j - centered_domain.smallEnd(1) + (centering.nodeCentered(1) ? 0.0_rt : 0.5_rt))
                * spacing[1];
          const amrex::Real q3 = lower[2]
-            + (k - centered_domain.smallEnd(2) + (centering.nodeCentered(2) ? 0.0 : 0.5))
+            + (k - centered_domain.smallEnd(2) + (centering.nodeCentered(2) ? 0.0_rt : 0.5_rt))
                * spacing[2];
-         output(i, j, k, 0) = 1.0 + 2.0 * q1 - 3.0 * q2 + 0.5 * q3;
+         output(i, j, k, 0) = 1.0_rt + 2.0_rt * q1 - 3.0_rt * q2 + 0.5_rt * q3;
       });
    }
    field->FillBoundary(geometry.periodicity());
@@ -83,11 +86,11 @@ std::unique_ptr<amrex::MultiFab> linear_coordinate_field(
 
 void check_surface_geometry()
 {
-   const auto surface = ParametricSurface::sphere({0.0, 0.0, 0.0}, 1.7, 20);
-   amrex::Real area = 0.0;
+   const auto surface = ParametricSurface::sphere({0.0_rt, 0.0_rt, 0.0_rt}, 1.7_rt, 20);
+   amrex::Real area = 0.0_rt;
    amrex::GpuArray<amrex::Real, 3> area_vector{};
    amrex::GpuArray<amrex::Real, 3> second_moment{};
-   std::vector<amrex::Real> sampled_fluxes(surface.points().size() * 6, 0.0);
+   std::vector<amrex::Real> sampled_fluxes(surface.points().size() * 6, 0.0_rt);
    std::size_t point_index = 0;
    for (auto const& point : surface.points()) {
       const amrex::Real weight = std::sqrt(
@@ -98,30 +101,103 @@ void check_surface_geometry()
       area += weight;
       for (int direction = 0; direction < 3; ++direction) {
          area_vector[direction] += point.area_vector[direction];
-         const amrex::Real normal = point.position[direction] / 1.7;
+         const amrex::Real normal = point.position[direction] / 1.7_rt;
          second_moment[direction] += weight * normal * normal;
          sampled_fluxes[6 * point_index + direction] = normal;
       }
-      sampled_fluxes[6 * point_index + 3] = 1.0;
+      sampled_fluxes[6 * point_index + 3] = 1.0_rt;
       ++point_index;
    }
-   const amrex::Real expected_area = 4.0 * pyfluid_amrex::constants::pi * 1.7 * 1.7;
-   require_close(area, expected_area, 2.0e-13 * expected_area);
+   const amrex::Real expected_area = 4.0_rt * pyfluid_amrex::constants::pi * 1.7_rt * 1.7_rt;
+   require_close(area, expected_area, 2.0e-13_rt * expected_area);
    for (int direction = 0; direction < 3; ++direction) {
-      require_close(area_vector[direction], 0.0, 2.0e-13 * expected_area);
-      require_close(second_moment[direction], expected_area / 3.0, 2.0e-13 * expected_area);
+      require_close(area_vector[direction], 0.0_rt, 2.0e-13_rt * expected_area);
+      require_close(second_moment[direction], expected_area / 3.0_rt, 2.0e-13_rt * expected_area);
    }
    const auto surface_integrals = surface.integrate_normal_fluxes(sampled_fluxes, 2);
-   require_close(surface_integrals[0], expected_area, 2.0e-13 * expected_area);
-   require_close(surface_integrals[1], 0.0, 2.0e-13 * expected_area);
+   require_close(surface_integrals[0], expected_area, 2.0e-13_rt * expected_area);
+   require_close(surface_integrals[1], 0.0_rt, 2.0e-13_rt * expected_area);
+}
+
+void check_radial_graph_geometry()
+{
+   constexpr int num_theta = 48;
+   constexpr int num_phi = 96;
+   constexpr amrex::Real base_radius = 1.7_rt;
+   constexpr amrex::Real deformation = 0.18_rt;
+   const amrex::Real dtheta = pyfluid_amrex::constants::pi / num_theta;
+   const amrex::Real dphi = pyfluid_amrex::constants::two_pi / num_phi;
+   std::vector<amrex::Real> radius;
+   radius.reserve(num_theta * num_phi);
+   amrex::Real expected_position_flux = 0.0_rt;
+   for (int theta_index = 0; theta_index < num_theta; ++theta_index) {
+      const amrex::Real theta = (theta_index + 0.5_rt) * dtheta;
+      const amrex::Real mu = std::cos(theta);
+      const amrex::Real point_radius = base_radius * (
+         1.0_rt + deformation * 0.5_rt * (3.0_rt * mu * mu - 1.0_rt)
+      );
+      for (int phi_index = 0; phi_index < num_phi; ++phi_index) {
+         radius.push_back(point_radius);
+         expected_position_flux += point_radius * point_radius * point_radius
+            * std::sin(theta) * dtheta * dphi;
+      }
+   }
+   const amrex::GpuArray<amrex::Real, 3> center{{0.3_rt, -0.2_rt, 0.1_rt}};
+   const auto surface = ParametricSurface::radial_graph(
+      center, num_theta, num_phi, radius
+   );
+   std::vector<amrex::Real> sampled_fluxes(surface.points().size() * 6, 0.0_rt);
+   for (std::size_t point = 0; point < surface.points().size(); ++point) {
+      const auto& position = surface.points()[point].position;
+      for (int direction = 0; direction < 3; ++direction) {
+         sampled_fluxes[6 * point + direction] = position[direction]
+            - center[direction];
+         sampled_fluxes[6 * point + 3 + direction] = 1.0_rt;
+      }
+   }
+   const auto integrals = surface.integrate_normal_fluxes(sampled_fluxes, 2);
+   require_close(
+      integrals[0], expected_position_flux,
+      2.0e-12_rt * expected_position_flux
+   );
+   require_close(integrals[1], 0.0_rt, 2.0e-10_rt * expected_position_flux);
+}
+
+void check_baryon_surface_flux()
+{
+   constexpr amrex::Real densitized_density = 2.0_rt;
+   constexpr amrex::Real inward_speed = 0.1_rt;
+   const auto surface = ParametricSurface::sphere(
+      {0.0_rt, 0.0_rt, 0.0_rt}, 1.7_rt, 20
+   );
+   const pyfluid_amrex::SpacetimeMetric metric{};
+   std::vector<amrex::Real> sampled_flux(surface.points().size() * 3);
+   for (std::size_t point = 0; point < surface.points().size(); ++point) {
+      const auto& radial = surface.points()[point].radial_unit;
+      const auto flux = pyfluid_amrex::generated::baryon_flux_integrands(
+         densitized_density,
+         -inward_speed * radial[0],
+         -inward_speed * radial[1],
+         -inward_speed * radial[2],
+         metric
+      );
+      sampled_flux[3 * point] = flux.flux1;
+      sampled_flux[3 * point + 1] = flux.flux2;
+      sampled_flux[3 * point + 2] = flux.flux3;
+   }
+   const amrex::Real accretion_rate =
+      -surface.integrate_normal_fluxes(sampled_flux, 1)[0];
+   const amrex::Real expected = densitized_density * inward_speed
+      * 4.0_rt * pyfluid_amrex::constants::pi * 1.7_rt * 1.7_rt;
+   require_close(accretion_rate, expected, 2.0e-13_rt * expected);
 }
 
 void check_coordinate_round_trip()
 {
    const std::vector<std::pair<int, amrex::GpuArray<amrex::Real, 3>>> samples{
-      {pyfluid_amrex::MeshCartesian, {0.4, -0.3, 0.2}},
-      {pyfluid_amrex::MeshCylindrical, {0.8, 1.1, -0.2}},
-      {pyfluid_amrex::MeshSpherical, {0.9, 1.2, 2.1}},
+      {pyfluid_amrex::MeshCartesian, {0.4_rt, -0.3_rt, 0.2_rt}},
+      {pyfluid_amrex::MeshCylindrical, {0.8_rt, 1.1_rt, -0.2_rt}},
+      {pyfluid_amrex::MeshSpherical, {0.9_rt, 1.2_rt, 2.1_rt}},
    };
    for (auto const& [coordinate, mesh_point] : samples) {
       const auto physical = pyfluid_amrex::mesh_coordinate_triplet_to_cartesian(
@@ -131,14 +207,14 @@ void check_coordinate_round_trip()
          coordinate, physical
       );
       for (int component = 0; component < 3; ++component) {
-         require_close(recovered[component], mesh_point[component], 2.0e-14);
+         require_close(recovered[component], mesh_point[component], 2.0e-14_rt);
       }
    }
 }
 
 void check_spin_weighted_multipoles()
 {
-   const auto surface = ParametricSurface::sphere({0.0, 0.0, 0.0}, 2.0, 24);
+   const auto surface = ParametricSurface::sphere({0.0_rt, 0.0_rt, 0.0_rt}, 2.0_rt, 24);
    std::vector<amrex::Real> real_values;
    std::vector<amrex::Real> imaginary_values;
    real_values.reserve(surface.points().size());
@@ -152,38 +228,38 @@ void check_spin_weighted_multipoles()
    }
    require_close(
       pyfluid_amrex::surface_complex_l2(surface, real_values, imaginary_values),
-      1.0,
-      3.0e-13
+      1.0_rt,
+      3.0e-13_rt
    );
    const auto modes = pyfluid_amrex::decompose_spin_weighted_field(
       surface, real_values, imaginary_values, "psi4", -2, 2, 4
    );
    for (auto const& mode : modes) {
-      const amrex::Real expected = mode.ell == 2 && mode.m == 2 ? 1.0 : 0.0;
-      require_close(mode.value.real(), expected, 8.0e-13);
-      require_close(mode.value.imag(), 0.0, 8.0e-13);
+      const amrex::Real expected = mode.ell == 2 && mode.m == 2 ? 1.0_rt : 0.0_rt;
+      require_close(mode.value.real(), expected, 8.0e-13_rt);
+      require_close(mode.value.imag(), 0.0_rt, 8.0e-13_rt);
    }
 }
 
 void check_azimuthal_modes()
 {
-   constexpr amrex::Real amplitude = 0.2;
-   const auto surface = ParametricSurface::sphere({0.0, 0.0, 0.0}, 1.7, 24);
+   constexpr amrex::Real amplitude = 0.2_rt;
+   const auto surface = ParametricSurface::sphere({0.0_rt, 0.0_rt, 0.0_rt}, 1.7_rt, 24);
    std::vector<amrex::Real> values;
    values.reserve(surface.points().size());
    for (auto const& point : surface.points()) {
-      values.push_back(1.0 + amplitude * std::cos(2.0 * point.phi));
+      values.push_back(1.0_rt + amplitude * std::cos(2.0_rt * point.phi));
    }
    const auto modes = pyfluid_amrex::decompose_azimuthal_field(
       surface, values, "rho", 4
    );
-   const amrex::Real area = 4.0 * pyfluid_amrex::constants::pi * 1.7 * 1.7;
+   const amrex::Real area = 4.0_rt * pyfluid_amrex::constants::pi * 1.7_rt * 1.7_rt;
    for (auto const& mode : modes) {
       const amrex::Real expected = mode.m == 0
          ? area
-         : (mode.m == 2 ? 0.5 * amplitude * area : 0.0);
-      require_close(mode.value.real(), expected, 8.0e-13 * area);
-      require_close(mode.value.imag(), 0.0, 8.0e-13 * area);
+         : (mode.m == 2 ? 0.5_rt * amplitude * area : 0.0_rt);
+      require_close(mode.value.real(), expected, 8.0e-13_rt * area);
+      require_close(mode.value.imag(), 0.0_rt, 8.0e-13_rt * area);
    }
 }
 
@@ -212,7 +288,7 @@ void check_amr_interpolation()
       geometry[1], grids[1], distribution[1], amrex::IndexType::TheNodeType()
    );
 
-   const auto surface = ParametricSurface::sphere({0.0, 0.0, 0.0}, 0.4, 10);
+   const auto surface = ParametricSurface::sphere({0.0_rt, 0.0_rt, 0.0_rt}, 0.4_rt, 10);
    std::vector<amrex::GpuArray<amrex::Real, 3>> positions;
    for (auto const& point : surface.points()) {
       positions.push_back(point.position);
@@ -230,8 +306,8 @@ void check_amr_interpolation()
    for (std::size_t point = 0; point < positions.size(); ++point) {
       const auto& position = positions[point];
       const amrex::Real expected =
-         1.0 + 2.0 * position[0] - 3.0 * position[1] + 0.5 * position[2];
-      require_close(values[point], expected, 2.0e-13);
+         1.0_rt + 2.0_rt * position[0] - 3.0_rt * position[1] + 0.5_rt * position[2];
+      require_close(values[point], expected, 2.0e-13_rt);
    }
 
    // The origin lies between cell centers and exactly on the internal FAB
@@ -245,7 +321,7 @@ void check_amr_interpolation()
       );
    }
    const std::vector<amrex::GpuArray<amrex::Real, 3>> boundary_position{
-      {0.0, 0.0, 0.0}
+      {0.0_rt, 0.0_rt, 0.0_rt}
    };
    const HierarchyInterpolationPlan boundary_plan(
       boundary_position,
@@ -257,7 +333,7 @@ void check_amr_interpolation()
       amrex::IndexType::TheCellType()
    );
    const auto boundary_value = boundary_plan.interpolate(cell_hierarchy, 0, 1);
-   require_close(boundary_value[0], 1.0, 2.0e-13);
+   require_close(boundary_value[0], 1.0_rt, 2.0e-13_rt);
 
    std::vector<std::unique_ptr<amrex::MultiFab>> missing_ghost_hierarchy(2);
    for (int level = 0; level < 2; ++level) {
@@ -280,8 +356,8 @@ void check_amr_interpolation()
 void check_reflected_cell_interpolation()
 {
    const amrex::GpuArray<int, 3> periodic{{0, 0, 0}};
-   const amrex::GpuArray<amrex::Real, 3> lower{{0.0, -1.0, -1.0}};
-   const amrex::GpuArray<amrex::Real, 3> upper{{1.0, 1.0, 1.0}};
+   const amrex::GpuArray<amrex::Real, 3> lower{{0.0_rt, -1.0_rt, -1.0_rt}};
+   const amrex::GpuArray<amrex::Real, 3> upper{{1.0_rt, 1.0_rt, 1.0_rt}};
    std::vector<amrex::Geometry> geometry{
       make_geometry(8, periodic, lower, upper)
    };
@@ -302,13 +378,13 @@ void check_reflected_cell_interpolation()
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const amrex::Real x = lower[0] + (i + 0.5) * spacing[0];
-         values(i, j, k, 0) = 1.0 + x * x;
+         const amrex::Real x = lower[0] + (i + 0.5_rt) * spacing[0];
+         values(i, j, k, 0) = 1.0_rt + x * x;
          values(i, j, k, 1) = x;
       });
    }
    const HierarchyInterpolationPlan plan(
-      {{{0.0, 0.0, 0.0}}},
+      {{{0.0_rt, 0.0_rt, 0.0_rt}}},
       pyfluid_amrex::MeshCartesian,
       pyfluid_amrex::mesh_default_axes_layout(pyfluid_amrex::MeshCartesian),
       geometry,
@@ -319,19 +395,19 @@ void check_reflected_cell_interpolation()
       std::array<int, 3>{{0, 0, 0}}
    );
    const auto values = plan.interpolate(hierarchy, 0, 2);
-   require_close(values[0], 1.0 + 0.25 * spacing[0] * spacing[0], 2.0e-13);
-   require_close(values[1], 0.0, 2.0e-13);
+   require_close(values[0], 1.0_rt + 0.25_rt * spacing[0] * spacing[0], 2.0e-13_rt);
+   require_close(values[1], 0.0_rt, 2.0e-13_rt);
 }
 
 void check_coordinate_hierarchy_interpolation(int coordinate)
 {
    const amrex::GpuArray<int, 3> periodic{{0, 0, 0}};
    const amrex::GpuArray<amrex::Real, 3> lower = coordinate == pyfluid_amrex::MeshCylindrical
-      ? amrex::GpuArray<amrex::Real, 3>{{0.0, 0.0, -1.2}}
-      : amrex::GpuArray<amrex::Real, 3>{{0.2, 0.0, 0.0}};
+      ? amrex::GpuArray<amrex::Real, 3>{{0.0_rt, 0.0_rt, -1.2_rt}}
+      : amrex::GpuArray<amrex::Real, 3>{{0.2_rt, 0.0_rt, 0.0_rt}};
    const amrex::GpuArray<amrex::Real, 3> upper = coordinate == pyfluid_amrex::MeshCylindrical
-      ? amrex::GpuArray<amrex::Real, 3>{{2.0, pyfluid_amrex::constants::two_pi, 1.2}}
-      : amrex::GpuArray<amrex::Real, 3>{{2.0, pyfluid_amrex::constants::pi, pyfluid_amrex::constants::two_pi}};
+      ? amrex::GpuArray<amrex::Real, 3>{{2.0_rt, pyfluid_amrex::constants::two_pi, 1.2_rt}}
+      : amrex::GpuArray<amrex::Real, 3>{{2.0_rt, pyfluid_amrex::constants::pi, pyfluid_amrex::constants::two_pi}};
    std::vector<amrex::Geometry> geometry{make_geometry(32, periodic, lower, upper)};
    amrex::BoxArray level_grids(geometry[0].Domain());
    level_grids.maxSize(16);
@@ -339,7 +415,7 @@ void check_coordinate_hierarchy_interpolation(int coordinate)
    std::vector<amrex::DistributionMapping> distribution{
       amrex::DistributionMapping(level_grids)
    };
-   const auto surface = ParametricSurface::sphere({0.0, 0.0, 0.0}, 1.0, 16);
+   const auto surface = ParametricSurface::sphere({0.0_rt, 0.0_rt, 0.0_rt}, 1.0_rt, 16);
    std::vector<amrex::GpuArray<amrex::Real, 3>> positions;
    for (auto const& point : surface.points()) {
       positions.push_back(point.position);
@@ -373,7 +449,7 @@ void check_coordinate_hierarchy_interpolation(int coordinate)
          const auto q = pyfluid_amrex::cartesian_to_mesh_coordinate_triplet(
             coordinate, positions[point]
          );
-         require_close(values[point], 1.0 + 2.0 * q[0] - 3.0 * q[1] + 0.5 * q[2], 3.0e-13);
+         require_close(values[point], 1.0_rt + 2.0_rt * q[0] - 3.0_rt * q[1] + 0.5_rt * q[2], 3.0e-13_rt);
       }
    }
 
@@ -383,9 +459,9 @@ void check_coordinate_hierarchy_interpolation(int coordinate)
    // below the first cell-centered coordinate.
    const auto spacing = geometry[0].CellSizeArray();
    const amrex::GpuArray<amrex::Real, 3> first_center{{
-      lower[0] + 0.5 * spacing[0],
-      lower[1] + 0.5 * spacing[1],
-      lower[2] + 0.5 * spacing[2],
+      lower[0] + 0.5_rt * spacing[0],
+      lower[1] + 0.5_rt * spacing[1],
+      lower[2] + 0.5_rt * spacing[2],
    }};
    const auto first_center_cartesian =
       pyfluid_amrex::mesh_coordinate_triplet_to_cartesian(coordinate, first_center);
@@ -405,9 +481,9 @@ void check_coordinate_hierarchy_interpolation(int coordinate)
    const auto first_center_value = first_center_plan.interpolate(cell_hierarchy, 0, 1);
    require_close(
       first_center_value[0],
-      1.0 + 2.0 * first_center[0] - 3.0 * first_center[1]
-         + 0.5 * first_center[2],
-      3.0e-13
+      1.0_rt + 2.0_rt * first_center[0] - 3.0_rt * first_center[1]
+         + 0.5_rt * first_center[2],
+      3.0e-13_rt
    );
 }
 
@@ -419,6 +495,8 @@ int main(int argc, char* argv[])
    int status = 0;
    try {
       check_surface_geometry();
+      check_radial_graph_geometry();
+      check_baryon_surface_flux();
       check_spin_weighted_multipoles();
       check_azimuthal_modes();
       check_coordinate_round_trip();

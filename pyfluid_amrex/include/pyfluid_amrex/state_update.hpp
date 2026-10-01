@@ -6,6 +6,7 @@
 #include <AMReX_Vector.H>
 
 #include "pyfluid_amrex/mask_regions.hpp"
+#include "pyfluid_amrex/time_integration.hpp"
 
 namespace pyfluid_amrex {
 
@@ -377,44 +378,44 @@ inline void add_scaled_and_copy_plus_scaled_components_masked(
    }
 }
 
-template <int NComp>
-inline void linear_combination_plus_scaled_components(
+template <int NComp = -1>
+inline void affine_combination_plus_scaled_components(
    amrex::MultiFab& out,
    amrex::MultiFab const& base,
    amrex::MultiFab const& input,
    amrex::MultiFab const& increment,
-   amrex::Real base_weight,
    amrex::Real input_weight,
    amrex::Real increment_scale
 )
 {
+   const int num_components = NComp > 0 ? NComp : out.nComp();
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
-	   {
-	   for (amrex::MFIter mfi(out, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-	      const amrex::Box& bx = mfi.tilebox();
-      const auto b = base.const_array(mfi);
-      const auto s = input.const_array(mfi);
-      const auto inc = increment.const_array(mfi);
-      const auto o = out.array(mfi);
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         for (int q = 0; q < NComp; ++q) {
-            o(i, j, k, q) = base_weight * b(i, j, k, q) + input_weight * s(i, j, k, q) + increment_scale * inc(i, j, k, q);
-         }
-      });
-   }
+   {
+      for (amrex::MFIter mfi(out, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         const amrex::Box& bx = mfi.tilebox();
+         const auto b = base.const_array(mfi);
+         const auto s = input.const_array(mfi);
+         const auto inc = increment.const_array(mfi);
+         const auto o = out.array(mfi);
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            for (int q = 0; q < num_components; ++q) {
+               o(i, j, k, q) = affine_state_update(
+                  b(i, j, k, q), s(i, j, k, q), input_weight, increment_scale * inc(i, j, k, q));
+            }
+         });
+      }
    }
 }
 
 template <int NComp>
-inline void linear_combination_plus_scaled_components_masked(
+inline void affine_combination_plus_scaled_components_masked(
    amrex::MultiFab& out,
    amrex::MultiFab const& base,
    amrex::MultiFab const& input,
    amrex::MultiFab const& increment,
    amrex::iMultiFab const& solid_mask,
-   amrex::Real base_weight,
    amrex::Real input_weight,
    amrex::Real increment_scale,
    amrex::Vector<int> const* solid_valid_kind = nullptr
@@ -423,43 +424,43 @@ inline void linear_combination_plus_scaled_components_masked(
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
-	   {
-	   for (amrex::MFIter mfi(out); mfi.isValid(); ++mfi) {
-	      const amrex::Box& bx = mfi.validbox();
-      const auto b = base.const_array(mfi);
-      const auto s = input.const_array(mfi);
-	      const auto inc = increment.const_array(mfi);
-	      const auto solid = solid_mask.const_array(mfi);
-	      const auto o = out.array(mfi);
-	      const int kind = cached_mask_kind(solid_valid_kind, mfi, solid_mask, bx);
-		      if (kind == MaskKindNonzero) {
-		         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-		            for (int q = 0; q < NComp; ++q) {
-		               o(i, j, k, q) = b(i, j, k, q);
-		            }
-		         });
-		         continue;
-		      }
-	      if (kind == MaskKindZero) {
-	         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-	            for (int q = 0; q < NComp; ++q) {
-	               o(i, j, k, q) =
-	                  base_weight * b(i, j, k, q) + input_weight * s(i, j, k, q) + increment_scale * inc(i, j, k, q);
-	            }
-	         });
-	         continue;
-	      }
-	      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-	         for (int q = 0; q < NComp; ++q) {
-	            if (solid(i, j, k, 0) != 0) {
-               o(i, j, k, q) = b(i, j, k, q);
-            } else {
-               o(i, j, k, q) =
-                  base_weight * b(i, j, k, q) + input_weight * s(i, j, k, q) + increment_scale * inc(i, j, k, q);
-            }
+   {
+      for (amrex::MFIter mfi(out); mfi.isValid(); ++mfi) {
+         const amrex::Box& bx = mfi.validbox();
+         const auto b = base.const_array(mfi);
+         const auto s = input.const_array(mfi);
+         const auto inc = increment.const_array(mfi);
+         const auto solid = solid_mask.const_array(mfi);
+         const auto o = out.array(mfi);
+         const int kind = cached_mask_kind(solid_valid_kind, mfi, solid_mask, bx);
+         if (kind == MaskKindNonzero) {
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               for (int q = 0; q < NComp; ++q) {
+                  o(i, j, k, q) = b(i, j, k, q);
+               }
+            });
+            continue;
          }
-      });
-   }
+         if (kind == MaskKindZero) {
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               for (int q = 0; q < NComp; ++q) {
+                  o(i, j, k, q) = affine_state_update(
+                     b(i, j, k, q), s(i, j, k, q), input_weight, increment_scale * inc(i, j, k, q));
+               }
+            });
+            continue;
+         }
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            for (int q = 0; q < NComp; ++q) {
+               if (solid(i, j, k, 0) != 0) {
+                  o(i, j, k, q) = b(i, j, k, q);
+               } else {
+                  o(i, j, k, q) = affine_state_update(
+                     b(i, j, k, q), s(i, j, k, q), input_weight, increment_scale * inc(i, j, k, q));
+               }
+            }
+         });
+      }
    }
 }
 

@@ -195,7 +195,9 @@ def validate_tov(
       )
    )
    finer_expanded = initial_row(finer_expanded_dir)
-   finer_profile_error = maximum_relative_difference(
+   # These are two extrema, not a pointwise profile or a constraint-preserving
+   # upsampling check. Differentiated remapped fields have a separate bound.
+   finer_extrema_error = maximum_relative_difference(
       initial_row(octant_dir),
       finer_expanded,
       ("max_rho", "min_lapse"),
@@ -211,7 +213,7 @@ def validate_tov(
    if (
       full_octant_error > 2.0e-2
       or expansion_error > 1.0e-4
-      or finer_profile_error > 1.0e-4
+      or finer_extrema_error > 1.0e-4
       or not math.isfinite(expanded_constraint)
       or expanded_constraint > 1.0e-2
       or not math.isfinite(finer_constraint)
@@ -222,7 +224,7 @@ def validate_tov(
          f"full/octant={full_octant_error:.3e}, "
          f"expansion={expansion_error:.3e}, "
          f"expanded constraint={expanded_constraint:.3e}, "
-         f"finer profile={finer_profile_error:.3e}, "
+         f"finer extrema={finer_extrema_error:.3e}, "
          f"finer constraint={finer_constraint:.3e}"
       )
    return ([
@@ -248,8 +250,8 @@ def validate_tov(
          "kind": "symmetry",
          "case": "tov_physical_id_octant_finer_expansion",
          "status": "PASS",
-         "metric": "maximum_relative_profile_difference",
-         "value": finer_profile_error,
+         "metric": "maximum_relative_extrema_difference",
+         "value": finer_extrema_error,
          "constraint_linf": finer_constraint,
          "run_dir": repo_relative(finer_expanded_dir),
       },

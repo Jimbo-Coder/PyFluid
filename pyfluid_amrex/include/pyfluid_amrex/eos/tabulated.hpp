@@ -11,6 +11,8 @@
 
 namespace pyfluid_amrex::eos {
 
+using namespace amrex::literals;
+
 class TabulatedEOSStorage {
 public:
    TabulatedEOSStorage(
@@ -40,9 +42,9 @@ private:
    amrex::Gpu::ManagedVector<amrex::Real> log_density_;
    amrex::Gpu::ManagedVector<amrex::Real> log_pressure_;
    amrex::Gpu::ManagedVector<amrex::Real> log_specific_enthalpy_;
-   amrex::Real low_density_gamma_ = 0.0;
-   amrex::Real high_density_sound_speed_squared_ = 0.0;
-   amrex::Real baryon_mass_mev_ = 0.0;
+   amrex::Real low_density_gamma_ = 0.0_rt;
+   amrex::Real high_density_sound_speed_squared_ = 0.0_rt;
+   amrex::Real baryon_mass_mev_ = 0.0_rt;
    int source_points_ = 0;
 };
 

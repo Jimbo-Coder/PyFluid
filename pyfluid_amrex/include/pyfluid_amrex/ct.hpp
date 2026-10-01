@@ -15,11 +15,15 @@
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/scalar_ops.hpp"
-#include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/calculus.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/ct.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/emf.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 inline void enforce_edge_electric_periodicity(EdgeElectricField& edge_e, amrex::Geometry const& geom);
 inline void enforce_edge_electric_boundary(
@@ -51,16 +55,16 @@ inline void fill_face_b_from_cell_b(FaceMagneticField& face_b, amrex::MultiFab c
          const int d = dir;
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             if (d == 0) {
-               f(i, j, k, 0) = 0.5 * (s(i - 1, j, k, B1) + s(i, j, k, B1));
+               f(i, j, k, 0) = 0.5_rt * (s(i - 1, j, k, B1) + s(i, j, k, B1));
             }
 #if (AMREX_SPACEDIM >= 2)
             if (d == 1) {
-               f(i, j, k, 0) = 0.5 * (s(i, j - 1, k, B2) + s(i, j, k, B2));
+               f(i, j, k, 0) = 0.5_rt * (s(i, j - 1, k, B2) + s(i, j, k, B2));
             }
 #endif
 #if (AMREX_SPACEDIM == 3)
             if (d == 2) {
-               f(i, j, k, 0) = 0.5 * (s(i, j, k - 1, B3) + s(i, j, k, B3));
+               f(i, j, k, 0) = 0.5_rt * (s(i, j, k - 1, B3) + s(i, j, k, B3));
             }
 #endif
          });
@@ -130,7 +134,7 @@ inline void enforce_physical_face_divergence_boundary(
             }
 #endif
             const int cell_i = (i == cell_lo.x) ? cell_lo.x : cell_hi.x;
-            amrex::Real tangential_div = 0.0;
+            amrex::Real tangential_div = 0.0_rt;
 #if (AMREX_SPACEDIM >= 2)
             tangential_div += (by_face(cell_i, j + 1, k, 0) - by_face(cell_i, j, k, 0)) / dx[1];
 #endif
@@ -470,25 +474,25 @@ inline void apply_face_b_boundary(
             bool fixed_inflow = false;
             if (boundary_dir >= 0) {
                const amrex::Real x =
-                  problo[0] + (static_cast<amrex::Real>(i) + (dir == 0 ? 0.0 : 0.5)) * dx[0];
+                  problo[0] + (static_cast<amrex::Real>(i) + (dir == 0 ? 0.0_rt : 0.5_rt)) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
                const amrex::Real y =
-                  problo[1] + (static_cast<amrex::Real>(j) + (dir == 1 ? 0.0 : 0.5)) * dx[1];
+                  problo[1] + (static_cast<amrex::Real>(j) + (dir == 1 ? 0.0_rt : 0.5_rt)) * dx[1];
 #else
-               const amrex::Real y = 0.0;
+               const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
                const amrex::Real z =
-                  problo[2] + (static_cast<amrex::Real>(k) + (dir == 2 ? 0.0 : 0.5)) * dx[2];
+                  problo[2] + (static_cast<amrex::Real>(k) + (dir == 2 ? 0.0_rt : 0.5_rt)) * dx[2];
 #else
-               const amrex::Real z = 0.0;
+               const amrex::Real z = 0.0_rt;
 #endif
                fixed_inflow = inflow_profile_is_fixed(bc, boundary_dir, x, y, z);
             }
             if (fixed_inflow) {
                f(i, j, k, 0) = inflow_face_b_component(bc, dir);
             } else {
-               amrex::Real sign = 1.0;
+               amrex::Real sign = 1.0_rt;
                if (x_origin) {
                   sign *= origin_state_parity(bc, 0, B1 + d);
                }
@@ -545,7 +549,7 @@ inline void apply_face_b_boundary(
             on_origin = on_origin || (d == 2 && k == o);
 #endif
             if (on_origin) {
-               f(i, j, k, 0) = 0.0;
+               f(i, j, k, 0) = 0.0_rt;
             }
          });
       }
@@ -589,17 +593,17 @@ inline void sync_cell_b_from_faces_with_axis_mask(
          const amrex::Real old_bx = s(i, j, k, B1);
          const amrex::Real old_by = s(i, j, k, B2);
          const amrex::Real old_bz = s(i, j, k, B3);
-         const amrex::Real face_bx = 0.5 * (bx_face(i, j, k, 0) + bx_face(i + 1, j, k, 0));
+         const amrex::Real face_bx = 0.5_rt * (bx_face(i, j, k, 0) + bx_face(i + 1, j, k, 0));
          const amrex::Real new_bx = sync_bx ? face_bx : old_bx;
 #if (AMREX_SPACEDIM >= 2)
-         const amrex::Real face_by = 0.5 * (by_face(i, j, k, 0) + by_face(i, j + 1, k, 0));
+         const amrex::Real face_by = 0.5_rt * (by_face(i, j, k, 0) + by_face(i, j + 1, k, 0));
          const amrex::Real new_by = sync_by ? face_by : old_by;
 #else
          const amrex::Real new_by = old_by;
          (void)sync_by;
 #endif
 #if (AMREX_SPACEDIM == 3)
-         const amrex::Real face_bz = 0.5 * (bz_face(i, j, k, 0) + bz_face(i, j, k + 1, 0));
+         const amrex::Real face_bz = 0.5_rt * (bz_face(i, j, k, 0) + bz_face(i, j, k + 1, 0));
          const amrex::Real new_bz = sync_bz ? face_bz : old_bz;
 #else
          const amrex::Real new_bz = old_bz;
@@ -609,8 +613,8 @@ inline void sync_cell_b_from_faces_with_axis_mask(
             const amrex::Real old_mag = magnetic_energy_density(old_bx, old_by, old_bz);
             const amrex::Real new_mag = magnetic_energy_density(new_bx, new_by, new_bz);
             s(i, j, k, ENERGY) += new_mag - old_mag;
-            if (s(i, j, k, ENERGY) < 1.0e-300) {
-               s(i, j, k, ENERGY) = 1.0e-300;
+            if (s(i, j, k, ENERGY) < 1.0e-300_rt) {
+               s(i, j, k, ENERGY) = 1.0e-300_rt;
             }
          }
          s(i, j, k, B1) = new_bx;
@@ -661,13 +665,13 @@ amrex::Real cell_current_x(
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx
 ) noexcept
 {
-   amrex::Real dbz_dy = 0.0;
+   amrex::Real dbz_dy = 0.0_rt;
 #if (AMREX_SPACEDIM >= 2)
-   dbz_dy = generated::centered_first<2, 1>(s, i, j, k, B3, 1.0 / dx[1]);
+   dbz_dy = generated::centered_first<2, 1>(s, i, j, k, B3, 1.0_rt / dx[1]);
 #endif
-   amrex::Real dby_dz = 0.0;
+   amrex::Real dby_dz = 0.0_rt;
 #if (AMREX_SPACEDIM == 3)
-   dby_dz = generated::centered_first<2, 2>(s, i, j, k, B2, 1.0 / dx[2]);
+   dby_dz = generated::centered_first<2, 2>(s, i, j, k, B2, 1.0_rt / dx[2]);
 #endif
    return generated::curl_x_cartesian(dbz_dy, dby_dz);
 }
@@ -681,11 +685,11 @@ amrex::Real cell_current_y(
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx
 ) noexcept
 {
-   amrex::Real dbx_dz = 0.0;
+   amrex::Real dbx_dz = 0.0_rt;
 #if (AMREX_SPACEDIM == 3)
-   dbx_dz = generated::centered_first<2, 2>(s, i, j, k, B1, 1.0 / dx[2]);
+   dbx_dz = generated::centered_first<2, 2>(s, i, j, k, B1, 1.0_rt / dx[2]);
 #endif
-   const amrex::Real dbz_dx = generated::centered_first<2, 0>(s, i, j, k, B3, 1.0 / dx[0]);
+   const amrex::Real dbz_dx = generated::centered_first<2, 0>(s, i, j, k, B3, 1.0_rt / dx[0]);
    return generated::curl_y_cartesian(dbx_dz, dbz_dx);
 }
 
@@ -698,10 +702,10 @@ amrex::Real cell_current_z(
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx
 ) noexcept
 {
-   const amrex::Real dby_dx = generated::centered_first<2, 0>(s, i, j, k, B2, 1.0 / dx[0]);
-   amrex::Real dbx_dy = 0.0;
+   const amrex::Real dby_dx = generated::centered_first<2, 0>(s, i, j, k, B2, 1.0_rt / dx[0]);
+   amrex::Real dbx_dy = 0.0_rt;
 #if (AMREX_SPACEDIM >= 2)
-   dbx_dy = generated::centered_first<2, 1>(s, i, j, k, B1, 1.0 / dx[1]);
+   dbx_dy = generated::centered_first<2, 1>(s, i, j, k, B1, 1.0_rt / dx[1]);
 #endif
    return generated::curl_z_cartesian(dby_dx, dbx_dy);
 }
@@ -725,18 +729,18 @@ amrex::Real cell_emf_component(
       const amrex::Real ideal = generated::ideal_emf_x(
          velocity.y, velocity.z, magnetic.y, magnetic.z
       );
-      return eta == 0.0 ? ideal : generated::total_emf(ideal, eta, cell_current_x(s, i, j, k, dx));
+      return eta == 0.0_rt ? ideal : generated::total_emf(ideal, eta, cell_current_x(s, i, j, k, dx));
    }
    if (component == 1) {
       const amrex::Real ideal = generated::ideal_emf_y(
          velocity.z, velocity.x, magnetic.z, magnetic.x
       );
-      return eta == 0.0 ? ideal : generated::total_emf(ideal, eta, cell_current_y(s, i, j, k, dx));
+      return eta == 0.0_rt ? ideal : generated::total_emf(ideal, eta, cell_current_y(s, i, j, k, dx));
    }
    const amrex::Real ideal = generated::ideal_emf_z(
       velocity.x, velocity.y, magnetic.x, magnetic.y
    );
-   return eta == 0.0 ? ideal : generated::total_emf(ideal, eta, cell_current_z(s, i, j, k, dx));
+   return eta == 0.0_rt ? ideal : generated::total_emf(ideal, eta, cell_current_z(s, i, j, k, dx));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -790,9 +794,9 @@ amrex::Real ct_face_b_from_flux(
 ) noexcept
 {
    const amrex::Real area = mesh_face_area_scale(face_dir, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-   if (area == 0.0) {
+   if (area == 0.0_rt) {
       // The radial-origin cap has zero area, so its finite-volume magnetic flux is identically zero.
-      return 0.0;
+      return 0.0_rt;
    }
    return generated::magnetic_face_component(flux, area);
 }
@@ -952,7 +956,7 @@ amrex::Real ct_component_scale_factor(
       if (axis == MeshAxisZ) {
          return scale[2];
       }
-      return 1.0;
+      return 1.0_rt;
    }
    if (axis == MeshAxisX || axis == MeshAxisR) {
       return scale[0];
@@ -963,7 +967,7 @@ amrex::Real ct_component_scale_factor(
    if (axis == MeshAxisZ || axis == MeshAxisPhi) {
       return scale[2];
    }
-   return 1.0;
+   return 1.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -1130,7 +1134,7 @@ amrex::Real ct_edge_current_from_face_b(
    amrex::ignore_unused(component);
    const amrex::Real h0 = ct_component_scale_at_edge(0, 2, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
    const amrex::Real h1 = ct_component_scale_at_edge(1, 2, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-   const amrex::Real inv_h0h1 = 1.0 / amrex::max(amrex::Math::abs(h0 * h1), 1.0e-300);
+   const amrex::Real inv_h0h1 = 1.0_rt / amrex::max(amrex::Math::abs(h0 * h1), 1.0e-300_rt);
    const amrex::Real d_h1_b1_dq0 =
       ct_backward_difference_scaled_face_b(b1, 1, 0, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
    const amrex::Real d_h0_b0_dq1 =
@@ -1140,7 +1144,7 @@ amrex::Real ct_edge_current_from_face_b(
    if (component == 0) {
       const amrex::Real h1 = ct_component_scale_at_edge(1, 0, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
       const amrex::Real h2 = ct_component_scale_at_edge(2, 0, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-      const amrex::Real inv_h1h2 = 1.0 / amrex::max(amrex::Math::abs(h1 * h2), 1.0e-300);
+      const amrex::Real inv_h1h2 = 1.0_rt / amrex::max(amrex::Math::abs(h1 * h2), 1.0e-300_rt);
       const amrex::Real d_h2_b2_dq1 =
          ct_backward_difference_scaled_face_b(b2, 2, 1, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
       const amrex::Real d_h1_b1_dq2 =
@@ -1150,7 +1154,7 @@ amrex::Real ct_edge_current_from_face_b(
    if (component == 1) {
       const amrex::Real h2 = ct_component_scale_at_edge(2, 1, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
       const amrex::Real h0 = ct_component_scale_at_edge(0, 1, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-      const amrex::Real inv_h2h0 = 1.0 / amrex::max(amrex::Math::abs(h2 * h0), 1.0e-300);
+      const amrex::Real inv_h2h0 = 1.0_rt / amrex::max(amrex::Math::abs(h2 * h0), 1.0e-300_rt);
       const amrex::Real d_h0_b0_dq2 =
          ct_backward_difference_scaled_face_b(b0, 0, 2, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
       const amrex::Real d_h2_b2_dq0 =
@@ -1159,7 +1163,7 @@ amrex::Real ct_edge_current_from_face_b(
    }
    const amrex::Real h0 = ct_component_scale_at_edge(0, 2, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
    const amrex::Real h1 = ct_component_scale_at_edge(1, 2, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-   const amrex::Real inv_h0h1 = 1.0 / amrex::max(amrex::Math::abs(h0 * h1), 1.0e-300);
+   const amrex::Real inv_h0h1 = 1.0_rt / amrex::max(amrex::Math::abs(h0 * h1), 1.0e-300_rt);
    const amrex::Real d_h1_b1_dq0 =
       ct_backward_difference_scaled_face_b(b1, 1, 0, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
    const amrex::Real d_h0_b0_dq1 =
@@ -1167,7 +1171,7 @@ amrex::Real ct_edge_current_from_face_b(
    return generated::curl_orthogonal_3(inv_h0h1, d_h1_b1_dq0, d_h0_b0_dq1);
 #else
    amrex::ignore_unused(b0, b1, component, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-   return 0.0;
+   return 0.0_rt;
 #endif
 }
 
@@ -1200,7 +1204,7 @@ inline void fill_edge_electric_field_impl(
    const auto dx = geom.CellSizeArray();
    for (auto& component : edge_e.e) {
       if (component) {
-         component->setVal(0.0);
+         component->setVal(0.0_rt);
       }
    }
 #if (AMREX_SPACEDIM == 2)
@@ -1214,7 +1218,7 @@ inline void fill_edge_electric_field_impl(
       const auto s = state.const_array(mfi);
       const auto e = ez.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         e(i, j, k, 0) = 0.25 * (
+         e(i, j, k, 0) = 0.25_rt * (
             edge_cell_emf_component<ResistiveOnly>(s, i - 1, j - 1, k, 2, dx, eta)
             + edge_cell_emf_component<ResistiveOnly>(s, i, j - 1, k, 2, dx, eta)
             + edge_cell_emf_component<ResistiveOnly>(s, i - 1, j, k, 2, dx, eta)
@@ -1237,21 +1241,21 @@ inline void fill_edge_electric_field_impl(
          const int c = component;
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             if (c == 0) {
-               e(i, j, k, 0) = 0.25 * (
+               e(i, j, k, 0) = 0.25_rt * (
                   edge_cell_emf_component<ResistiveOnly>(s, i, j - 1, k - 1, 0, dx, eta)
                   + edge_cell_emf_component<ResistiveOnly>(s, i, j, k - 1, 0, dx, eta)
                   + edge_cell_emf_component<ResistiveOnly>(s, i, j - 1, k, 0, dx, eta)
                   + edge_cell_emf_component<ResistiveOnly>(s, i, j, k, 0, dx, eta)
                );
             } else if (c == 1) {
-               e(i, j, k, 0) = 0.25 * (
+               e(i, j, k, 0) = 0.25_rt * (
                   edge_cell_emf_component<ResistiveOnly>(s, i - 1, j, k - 1, 1, dx, eta)
                   + edge_cell_emf_component<ResistiveOnly>(s, i, j, k - 1, 1, dx, eta)
                   + edge_cell_emf_component<ResistiveOnly>(s, i - 1, j, k, 1, dx, eta)
                   + edge_cell_emf_component<ResistiveOnly>(s, i, j, k, 1, dx, eta)
                );
             } else {
-               e(i, j, k, 0) = 0.25 * (
+               e(i, j, k, 0) = 0.25_rt * (
                   edge_cell_emf_component<ResistiveOnly>(s, i - 1, j - 1, k, 2, dx, eta)
                   + edge_cell_emf_component<ResistiveOnly>(s, i, j - 1, k, 2, dx, eta)
                   + edge_cell_emf_component<ResistiveOnly>(s, i - 1, j, k, 2, dx, eta)
@@ -1278,7 +1282,7 @@ inline void fill_edge_current_density_from_cells(
 )
 {
    const auto dx = geom.CellSizeArray();
-   set_edge_field_value(edge_j, 0.0);
+   set_edge_field_value(edge_j, 0.0_rt);
 #if (AMREX_SPACEDIM == 2)
    amrex::MultiFab& jz = *mutable_edge_component(edge_j, 2);
 #ifdef AMREX_USE_OMP
@@ -1290,7 +1294,7 @@ inline void fill_edge_current_density_from_cells(
       const auto s = state.const_array(mfi);
       const auto out = jz.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         out(i, j, k, 0) = 0.25 * (
+         out(i, j, k, 0) = 0.25_rt * (
             cell_current_z(s, i - 1, j - 1, k, dx)
             + cell_current_z(s, i, j - 1, k, dx)
             + cell_current_z(s, i - 1, j, k, dx)
@@ -1313,21 +1317,21 @@ inline void fill_edge_current_density_from_cells(
          const int c = component;
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             if (c == 0) {
-               out(i, j, k, 0) = 0.25 * (
+               out(i, j, k, 0) = 0.25_rt * (
                   cell_current_x(s, i, j - 1, k - 1, dx)
                   + cell_current_x(s, i, j, k - 1, dx)
                   + cell_current_x(s, i, j - 1, k, dx)
                   + cell_current_x(s, i, j, k, dx)
                );
             } else if (c == 1) {
-               out(i, j, k, 0) = 0.25 * (
+               out(i, j, k, 0) = 0.25_rt * (
                   cell_current_y(s, i - 1, j, k - 1, dx)
                   + cell_current_y(s, i, j, k - 1, dx)
                   + cell_current_y(s, i - 1, j, k, dx)
                   + cell_current_y(s, i, j, k, dx)
                );
             } else {
-               out(i, j, k, 0) = 0.25 * (
+               out(i, j, k, 0) = 0.25_rt * (
                   cell_current_z(s, i - 1, j - 1, k, dx)
                   + cell_current_z(s, i, j - 1, k, dx)
                   + cell_current_z(s, i - 1, j, k, dx)
@@ -1357,7 +1361,7 @@ inline void fill_edge_curl_b_from_faces(
 {
    const auto dx = geom.CellSizeArray();
    const auto problo = geom.ProbLoArray();
-   set_edge_field_value(edge_out, 0.0);
+   set_edge_field_value(edge_out, 0.0_rt);
 #if (AMREX_SPACEDIM == 2)
    amrex::MultiFab& edge_z = *mutable_edge_component(edge_out, 2);
 #ifdef AMREX_USE_OMP
@@ -1369,7 +1373,9 @@ inline void fill_edge_curl_b_from_faces(
       const auto b1_face = face_b.b[0]->const_array(mfi);
       const auto b2_face = face_b.b[1]->const_array(mfi);
       const auto out = edge_z.array(mfi);
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::ParallelFor(bx,
+         [b1_face, b2_face, mesh_coordinate, mesh_axes, problo, dx, out, eta]
+         AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const amrex::Real current = ct_edge_current_from_face_b(
             b1_face,
             b2_face,
@@ -1404,7 +1410,9 @@ inline void fill_edge_curl_b_from_faces(
          const auto b3_face = face_b.b[2]->const_array(mfi);
          const auto out = edge.array(mfi);
          const int c = component;
-         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         amrex::ParallelFor(bx,
+            [b1_face, b2_face, b3_face, c, mesh_coordinate, mesh_axes, problo, dx, out, eta]
+            AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const amrex::Real current = ct_edge_current_from_face_b(
                b1_face,
                b2_face,
@@ -1446,7 +1454,7 @@ inline void fill_edge_current_density_from_faces(
    MeshAxes const& mesh_axes
 )
 {
-   fill_edge_curl_b_from_faces<false>(edge_j, face_b, geom, 1.0, mesh_coordinate, mesh_axes);
+   fill_edge_curl_b_from_faces<false>(edge_j, face_b, geom, 1.0_rt, mesh_coordinate, mesh_axes);
 }
 
 template <typename EdgeField>
@@ -1532,7 +1540,7 @@ inline void add_scaled_edge_field(
    amrex::Real scale
 )
 {
-   if (scale == 0.0) {
+   if (scale == 0.0_rt) {
       return;
    }
    for (int component = 0; component < 3; ++component) {
@@ -1553,8 +1561,8 @@ inline void fill_edge_electric_field_for_output(
    RunConfig const& cfg
 )
 {
-   fill_edge_electric_field_impl<false>(edge_e, state, geom, 0.0);
-   if (eta == 0.0) {
+   fill_edge_electric_field_impl<false>(edge_e, state, geom, 0.0_rt);
+   if (eta == 0.0_rt) {
       enforce_edge_electric_boundary(edge_e, geom, cfg);
       return;
    }
@@ -1704,9 +1712,9 @@ inline void fill_edge_electric_component_from_mhd_fluxes(
    AMREX_ALWAYS_ASSERT(flux_owner[FaceDir1] != nullptr);
 
    amrex::MultiFab& edge_component = *edge_e.e[EdgeComponent];
-   edge_component.setVal(0.0);
+   edge_component.setVal(0.0_rt);
    amrex::MultiFab edge_count(edge_component.boxArray(), edge_component.DistributionMap(), 1, 0);
-   edge_count.setVal(0.0);
+   edge_count.setVal(0.0_rt);
    const amrex::Box domain = geom.Domain();
    const auto dom_lo = domain.smallEnd();
    const auto dom_hi = domain.bigEnd();
@@ -1729,7 +1737,7 @@ inline void fill_edge_electric_component_from_mhd_fluxes(
       const auto e = edge_component.array(mfi);
       const auto c = edge_count.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         amrex::Real sum = 0.0;
+         amrex::Real sum = 0.0_rt;
          int count = 0;
          add_ct_flux_emf_contribution<SampleAxis0, Sign0, MagneticComponent0>(
             sum,
@@ -1778,7 +1786,7 @@ inline void fill_edge_electric_component_from_mhd_fluxes(
       const auto c = edge_count.const_array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const amrex::Real count = c(i, j, k, 0);
-         e(i, j, k, 0) = count > 0.0 ? e(i, j, k, 0) / count : 0.0;
+         e(i, j, k, 0) = count > 0.0_rt ? e(i, j, k, 0) / count : 0.0_rt;
       });
    }
    }
@@ -1839,7 +1847,7 @@ inline void fill_edge_electric_field_from_mhd_fluxes(
    // later through ct_edge_line_integral/apply_edge_electric_curl.
    for (int component = 0; component < 3; ++component) {
       if (edge_e.e[component]) {
-         edge_e.e[component]->setVal(0.0);
+         edge_e.e[component]->setVal(0.0_rt);
       }
    }
 #if (AMREX_SPACEDIM == 2)
@@ -1932,7 +1940,7 @@ inline void enforce_edge_electric_origin_boundary(
             on_origin = on_origin || (d == 2 && k == o);
 #endif
             if (on_origin) {
-               e(i, j, k, 0) = 0.0;
+               e(i, j, k, 0) = 0.0_rt;
             }
          });
       }
@@ -2230,7 +2238,7 @@ amrex::Real ct_inactive_magnetic_resistive_flux(
    );
    const amrex::Real denominator = amrex::max(
       amrex::Math::abs(h_inactive_face * h_normal),
-      static_cast<amrex::Real>(1.0e-300)
+      static_cast<amrex::Real>(1.0e-300_rt)
    );
    return generated::resistive_emf_scaled_gradient(eta, h_tangent, d_scaled_b, denominator);
 }
@@ -2270,7 +2278,7 @@ amrex::Real ct_inactive_magnetic_resistive_rhs(
    );
    const amrex::Real active_area = amrex::max(
       amrex::Math::abs(h0 * h1),
-      static_cast<amrex::Real>(1.0e-300)
+      static_cast<amrex::Real>(1.0e-300_rt)
    );
    return ((flux0_hi - flux0_lo) / dx[0] + (flux1_hi - flux1_lo) / dx[1]) / active_area;
 }

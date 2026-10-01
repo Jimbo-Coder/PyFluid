@@ -18,26 +18,28 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct RelativisticInitialDataView;
 struct RunConfig;
 
 struct RotatingStarParameters {
    bool active = false;
    RotationLaw rotation_law = RotationLaw::Uniform;
-   amrex::Real angular_velocity = 0.0;
-   amrex::Real differential_rotation_length = 10.0;
-   amrex::Real differential_rotation_length_b = 10.0;
-   amrex::Real rotation_power_q = 1.0;
-   PatchCoordinate rotation_axis{0.0, 0.0, 1.0};
+   amrex::Real angular_velocity = 0.0_rt;
+   amrex::Real differential_rotation_length = 10.0_rt;
+   amrex::Real differential_rotation_length_b = 10.0_rt;
+   amrex::Real rotation_power_q = 1.0_rt;
+   PatchCoordinate rotation_axis{0.0_rt, 0.0_rt, 1.0_rt};
    PatchCoordinate rotation_center{};
-   amrex::Real injection_energy = 1.0;
-   amrex::Real central_log_specific_enthalpy = 0.0;
+   amrex::Real injection_energy = 1.0_rt;
+   amrex::Real central_log_specific_enthalpy = 0.0_rt;
    amrex::Real update_outer_radius =
       std::numeric_limits<amrex::Real>::max();
-   amrex::Real matter_relaxation = 0.5;
-   amrex::Real relative_tolerance = 1.0e-8;
+   amrex::Real matter_relaxation = 0.5_rt;
+   amrex::Real relative_tolerance = 1.0e-8_rt;
    int max_iterations = 32;
-   amrex::Real continuation_source_angular_velocity = 0.0;
+   amrex::Real continuation_source_angular_velocity = 0.0_rt;
    int continuation_steps = 1;
    amrex::Vector<amrex::Real> continuation_targets;
    InitialAtmosphereParameters atmosphere{};
@@ -46,26 +48,26 @@ struct RotatingStarParameters {
 using RotatingStarPoint = CircularRotationPoint;
 
 struct RotatingStarUpdateSummary {
-   amrex::Real maximum_density = 0.0;
-   amrex::Real maximum_velocity = 0.0;
-   amrex::Real boundary_density_excess = 0.0;
-   amrex::Real injection_energy = 1.0;
-   amrex::Real equatorial_radius = 0.0;
-   amrex::Real polar_radius = 0.0;
-   amrex::Real matter_outer_radius = 0.0;
-   amrex::Real equatorial_log_enthalpy_gradient = 0.0;
-   amrex::Real polar_log_enthalpy_gradient = 0.0;
-   amrex::Real mass_shedding_indicator = 1.0;
-   amrex::Real adm_mass = 0.0;
-   amrex::Real baryonic_mass = 0.0;
-   amrex::Real angular_momentum = 0.0;
-   amrex::Real dimensionless_spin = 0.0;
+   amrex::Real maximum_density = 0.0_rt;
+   amrex::Real maximum_velocity = 0.0_rt;
+   amrex::Real boundary_density_excess = 0.0_rt;
+   amrex::Real injection_energy = 1.0_rt;
+   amrex::Real equatorial_radius = 0.0_rt;
+   amrex::Real polar_radius = 0.0_rt;
+   amrex::Real matter_outer_radius = 0.0_rt;
+   amrex::Real equatorial_log_enthalpy_gradient = 0.0_rt;
+   amrex::Real polar_log_enthalpy_gradient = 0.0_rt;
+   amrex::Real mass_shedding_indicator = 1.0_rt;
+   amrex::Real adm_mass = 0.0_rt;
+   amrex::Real baryonic_mass = 0.0_rt;
+   amrex::Real angular_momentum = 0.0_rt;
+   amrex::Real dimensionless_spin = 0.0_rt;
 };
 
 struct RotatingStarSurfaceDiagnostic {
-   amrex::Real equatorial_log_enthalpy_gradient = 0.0;
-   amrex::Real polar_log_enthalpy_gradient = 0.0;
-   amrex::Real mass_shedding_indicator = 1.0;
+   amrex::Real equatorial_log_enthalpy_gradient = 0.0_rt;
+   amrex::Real polar_log_enthalpy_gradient = 0.0_rt;
+   amrex::Real mass_shedding_indicator = 1.0_rt;
 };
 
 // Optional magnetic Euler first-integral closure.  The supplied scalar is the
@@ -74,8 +76,8 @@ struct RotatingStarSurfaceDiagnostic {
 // ownership is the CT face field.
 struct PoloidalMagneticBernoulli {
    amrex::Vector<amrex::MultiFab const*> flux_function;
-   amrex::Real poloidal_magnetization = 0.0;
-   amrex::Real nonlinear_poloidal = 0.0;
+   amrex::Real poloidal_magnetization = 0.0_rt;
+   amrex::Real nonlinear_poloidal = 0.0_rt;
 };
 
 RotatingStarParameters rotating_star_parameters(
@@ -142,7 +144,7 @@ RotatingStarPoint rotating_star_axisymmetric_spherical_point(
 ) noexcept
 {
    return rotating_star_point_from_tangent(
-      parameters, 0.0, 0.0, radius * std::sin(theta), metric
+      parameters, 0.0_rt, 0.0_rt, radius * std::sin(theta), metric
    );
 }
 

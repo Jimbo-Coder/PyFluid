@@ -1,12 +1,13 @@
 #pragma once
 
-#include <AMReX_REAL.H>
-
 #include <array>
 #include <filesystem>
 #include <string>
 
 namespace pyfluid_amrex {
+
+// Host wall-clock timestamps and differences never enter the physics state.
+using WallTime = double;
 
 enum class ProfileStage : int {
    BoundaryFill = 0,
@@ -48,22 +49,22 @@ public:
 
    bool flux_detail_enabled() const;
 
-   amrex::Real begin() const;
+   WallTime begin() const;
 
-   void end(ProfileStage stage, amrex::Real start);
+   void end(ProfileStage stage, WallTime start);
 
-   void detail_end(ProfileDetailStage stage, amrex::Real start);
+   void detail_end(ProfileDetailStage stage, WallTime start);
 
-   void write(std::filesystem::path const& output_dir, amrex::Real elapsed_wall) const;
+   void write(std::filesystem::path const& output_dir, WallTime elapsed_wall) const;
 
-   void write_detail(std::filesystem::path const& output_dir, amrex::Real elapsed_wall) const;
+   void write_detail(std::filesystem::path const& output_dir, WallTime elapsed_wall) const;
 
 private:
    std::string profile_ = "off";
    std::string detail_ = "off";
-   std::array<amrex::Real, ProfileStageCount> seconds_{};
+   std::array<WallTime, ProfileStageCount> seconds_{};
    std::array<long long, ProfileStageCount> calls_{};
-   std::array<amrex::Real, ProfileDetailStageCount> detail_seconds_{};
+   std::array<WallTime, ProfileDetailStageCount> detail_seconds_{};
    std::array<long long, ProfileDetailStageCount> detail_calls_{};
 };
 

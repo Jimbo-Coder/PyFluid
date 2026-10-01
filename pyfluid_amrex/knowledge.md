@@ -10,12 +10,63 @@ Read `../AGENTS.md`, this file, `references.md`,
 `review_running_cycle.md` before changing the backend. Current source and a
 newer continuity cycle win if they disagree with this snapshot.
 
-Last reconciled: 2026-08-27, branch `main`, through Cycle 344's consolidated
+Last full reconciliation: 2026-08-27, branch `main`, through Cycle 344's consolidated
 Cycle 322--343 integration tree, CPU tile-ownership hardening, and preserved
 performance baseline. `review_running_cycle.md` retains the detailed sequence;
 this file records only the resulting current facts and evidence boundaries.
+Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373--380.
 
 ## Scope And Evidence
+
+- Cycle 414 connects the complete generated fCCZ4 equations, reference-frame
+  adapters, diagnostics and stored-metric GRHD bridge on regular charts.
+  Cartesian and spherical gauge propagation, bounded spherical symmetry
+  projections, and a partial-hierarchy spherical mass-conservation control
+  pass. Origin/pole regularity, curved RMHD/CT, mixed-chart exchange and
+  long-duration stellar validation remain open. Unbuffered vacuum-interface
+  AMR reflux can still produce inadmissible energy; see the active cycle.
+
+- Cycle 411 isolates the short self-gravity AMR/subcycling energy failure:
+  disabling regridding has no effect; lower CFL and a finer base grid reduce
+  the error, while tightening Poisson tolerance does not. This supports a
+  temporal/spatial coupling investigation, not a completed conservation fix.
+  The deep restart discrepancy decreases below its unchanged 1e-12 field
+  threshold with Poisson tolerance 1e-11, but both restart controls still fail
+  physical energy/momentum budgets. No production tolerance or gate was changed.
+
+- Cycle 410 verifies the existing NS+disk construction/handoff gate and exposes
+  an evolution setup limitation: a 64^3 evolved-spacetime run with frozen gauge,
+  no KO dissipation and extrapolated outer boundaries develops nonfinite corner
+  states at t=3.71. Changing only the outer condition to Sommerfeld reaches t=5
+  (49 steps at CFL 0.2) with zero recovery resets and baryon drift <8e-10. The
+  stellar disk evolution example now selects Sommerfeld explicitly. This is
+  short-run evidence, not long-term equilibrium or all-configuration support;
+  density changes ~1.2% and constraint norms still need convergence assessment.
+
+- Cycle 409 adds exact finite-amplitude relativistic CP Alfven convergence:
+  1D and axis-aligned 2D CT, PWL/HLL/SSPRK3, CFL 0.9, one period. The initializer
+  uses relativistic inertia for RMHD; Newtonian arithmetic remains unchanged.
+  All six cases pass, with maximum-error orders 2.21/2.20 and finest normalized
+  L1 below 8e-4. This does not cover oblique propagation, curved GRMHD or stars.
+  The fresh 28-row RMHD standard gate also passes, including exact Balsara 1--5.
+
+- Exact finite-pressure SRHD shock heating uses conserved-profile convergence
+  and independent analytic inflow budgets. Cycle 406 fixed SSPRK3 projection
+  accounting; Cycle 408 fixes the RHD limiter's missing shared-face mask closure.
+  W=10 now has zero projection-added energy and analytic energy error <=1.4e-14
+  through 2048 cells in these probes, with matching one/three-rank profiles.
+  W=100 retains its passing sequence. The original W=10 128--512 profile-order
+  gate still fails (density/energy orders 0.576/0.288); the finer 512--2048 probe
+  gives orders 0.660/0.688. Neither thresholds nor atmosphere floors were changed.
+  Low-order terminal candidates can still require projection in other problems;
+  zero recovery/reset counters alone are not conservation evidence.
+
+- Cycle 404's CPU gravity-owner extraction preserves the checked scalar
+  histories, but self-gravity AMR/subcycling has pre-existing conservation-gate
+  failures. The deep self-gravity restart control also fails its checkpoint
+  tolerance and scalar budgets on both pre- and post-extraction binaries.
+  Restart equivalence alone is not physical validation. Exact evidence and
+  current performance-validation limits are recorded in Cycle 404.
 
 - `docs/infrastructure_conventions.md` owns durable source, catalog, AMR, and
   artifact contracts. `references.md` routes to implementation and external
@@ -24,11 +75,265 @@ this file records only the resulting current facts and evidence boundaries.
 - The production implementation is C++/AMReX. Python research tools are
   baselines, offline operators, or postprocessing unless a task explicitly
   promotes and validates a production implementation.
-- The native framework pin is AMReX 26.08 commit
-  `21cb5b49b49c7beeca22002535d79b3d8a609e95`. The tracked manifest owns this
-  identity; the build consumes a stable link to a versioned install. The
-  check-by-default dependency helper updates only on explicit request and
-  preserves/rolls back the previous install if the production rebuild fails.
+- The native framework pin is AMReX 26.10 commit
+  `015c14b65715b277fbc54706ebe7455b196d2254` (Cycle 456). The tracked manifest
+  owns this identity; the build consumes a stable link to a versioned install. The
+  check-by-default dependency helper updates only on explicit request, builds
+  AMReX independently of PyFluid, and retires obsolete managed releases after
+  successful activation. Still-active companions are not obsolete.
+- The 26.10 consumer review finds relevant FillPatch/component-offset,
+  periodic reflux, GPU reduction/launch, HDF5 conversion and finite-aware
+  MLMG fixes without a required solver-policy migration. Cycle456's Mac CPU
+  production, exact/reference AMR, implicit diffusion, elliptic and exact
+  restart controls pass. New sparse AMG, gridding controls and asynchronous
+  MLMG synchronization remain opt-in candidates, not adopted features.
+- Cycle458's same-source 26.09/26.10 CPU comparison preserves all 265
+  selected Sod, Brio-Wu AMR+CT and diffusion accuracy metrics. The refreshed
+  Mac M4 CPU reference is `benchmarks/baseline_2026_10_01.md`; throughput
+  changes range from -2.39% (RMHD) to +3.55% (WENO-Z). Thirteen selected
+  standard gates pass, but the full standard suite still fails the known
+  self-gravity subcycling energy check on both releases. A small Metal
+  cell-centered MLMG probe measures 7.7--9.3x faster solves with no-sync and
+  identical errors/residuals; actual production operators are not validated
+  for that policy, so it remains disabled.
+- The experimental Metal 26.10 patch retains upstream RNG/overflow/C++20
+  fixes and uses a direct subgroup reduction for ordinary SYCL block sizes.
+  The upstream multi-round fold returned zero in native and compensated
+  Metal controls; the corrected library reproduces both prior values and
+  passes the maintained state/reduction/launch check. Larger-count folding
+  remains upstream, and the exact compiler-lowering cause is unproven.
+  The refreshed 1D Metal application passes all 18 maintained CPU64/Metal32
+  precision comparisons; 2D/3D Metal applications were not rebuilt this cycle.
+  WSL dependencies are updated, but WSL application rebuilds/tests are
+  deferred; prior executables are not evidence for the new pin.
+- A stable dependency symlink does not invalidate Make's timestamp checks
+  when it is redirected to an older install. CMake must resolve imported
+  include/library paths to the actual install, and run banners must agree with
+  the selected pin;
+  matching manifests, links, and CMake configuration alone do not prove
+  executable provenance. `CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS` handles this
+  without clean-first or deleting generated kernels. A tiny compiled fixture
+  verifies automatic upgrade/downgrade rebuilding and unchanged generated
+  artifacts. macOS Make 3.81 compares whole-second timestamps; rapid synthetic
+  rebuild tests must separate writes across that granularity.
+- The build-ownership cleanup is verified for all three CPU MPI executables,
+  focused diagnostic/restart checks and the four performance controls. The
+  MPI+OpenMP graph configures but was not rebuilt in that pass. Fast individual
+  recompile/no-op measurements do not establish a universal cold-build bound;
+  ccache forced recaches are distinct from both cache misses and cache hits.
+- Compile cost is not synonymous with template parsing. Current Clang profiles
+  put almost all of the expensive generic MP5 owner's time in optimization and
+  machine-code generation, while orchestration/diagnostic owners are much
+  cheaper. Header isolation protects incremental rebuild reach but cannot by
+  itself fix repeated optimization of large instantiated flux bodies. Allowing
+  the compiler to share complete Newtonian face solvers reduces that repeated
+  work, but doing so indiscriminately slows cheap PWC hydro. Preserve its
+  measured direct-inline path using the same reconstruction/positivity and
+  Riemann owners. The heavy MP5 local-edit target remains unmet; outlining
+  needs matched runtime controls, including walls and mapped patches, not just
+  smaller objects. These measurements are CPU MPI, not GPU evidence.
+- A generated header's size is not its rebuild cost: one broadly imported
+  helper can connect unrelated formula edits to expensive flux instantiations.
+  The old vector umbrella reached reconstruction via magnetic energy in EoS;
+  vector leaves and an independent generation stamp now isolate that path.
+  Measure a forced-cold leaf dependency rebuild separately from no-op/cache-hit
+  timing and the one-time cost of reorganizing the includes.
+- AMReX 26.09 requires CMake >=3.25. Its tensor-operator update-flag and bulk
+  viscosity fixes do not establish an XCTS speedup: the current cell-vector
+  wrapper constructs/solves once and Cartesian XCTS uses a separate nodal
+  operator. The new `compensatedAdd` is a caller-owned scalar Kahan helper,
+  not a replacement for MultiFab/MPI reductions. FFT, EB, particle and GPU
+  additions remain inactive in the maintained CPU builds; no new solver or
+  template axis is needed for this release.
+- CPU FP64 remains the default; CPU FP32 now has an independent AMReX
+  installation, all-dimensional production build, preset and machine profile.
+  Precision selects `amrex::Real` without another physics implementation.
+  Native/HDF5 output preserves its stored precision, and runtime metadata
+  records 24/53 mantissa bits. See `docs/precision_and_metal.md` for commands.
+- Short CPU FP32/FP64 comparisons pass 18 RHD/RMHD entropy and gauge-wave
+  controls with explicit scalar and physical accuracy budgets. FP32 HDF5
+  restarts reproduce fluid and spacetime fields exactly in the bounded
+  entropy/gauge controls. This does not certify long stellar evolution,
+  thermal recovery, elliptic solves, all AMR combinations or every legacy
+  compiled test in FP32. Gauge lapse meets the 1e-6 absolute target, but
+  short-run constraint maxima reach roughly 6e-4--3e-3 at the tested FP32
+  resolutions: refinement can amplify storage roundoff.
+- Final Cycle432 CPU benchmarks find FP32/FP64 speed ratios of 1.08/1.12/1.04
+  for the canonical 2D PWC, 3D PWC and 3D WENO hydro cases, and 1.92 for uniform
+  RMHD. Real arrays halve storage, but runtime benefit is workload-dependent.
+  The Cycle426 fine-grid FP32 error growth was largely RK background-rounding
+  bias. Shared affine stage updates preserve zero-RHS constant states exactly.
+  Cycle428 N1024 RHD/RMHD errors fall from 4.4--4.5e-5 to 3.46e-6/4.56e-6;
+  existing accuracy and conservation budgets pass. FP64 retains 1.76e-6/1.77e-6.
+  FP32 still approaches a roundoff plateau; refinement does not guarantee
+  indefinitely better accuracy. Limiter candidates and CT use the same blend.
+- FP32 arithmetic is checked beyond array storage: Clang rejects implicit
+  floating widening/narrowing in production owners, and captured device IR
+  has no FP64/wider arithmetic. This IR evidence covers exercised kernels;
+  host clocks/formatting and Python reference calculations remain wider.
+  Cycle451 extends the audit to GCC/NVCC: the symbolic C++ printer selects
+  typed math overloads, correcting real GCC widening from unqualified C99
+  calls. CUDA vendor float trigonometric routines contain internal FP64
+  argument-reduction instructions; typed inputs/outputs do not mean every
+  instruction in a vendor implementation is FP32. Static counts are not costs.
+  Generated RK weights and AMR thresholds use Real. FP32 recovery's root
+  bracket is eight epsilons; 512 epsilons was too loose for the unchanged
+  conserved round-trip acceptance bound on smooth RMHD states.
+- Generated derivative sums evaluate antisymmetric sample differences and
+  zero-moment rebased sums before multiplying by rounded coefficients. Mixed
+  derivatives use cross differences. Constant fields then differentiate to
+  exactly zero in both precisions, including one-sided derivatives, without
+  changing the catalogued coefficients/orders. Boundary test roundoff must
+  account for cancellation of donor values, not only the derivative size.
+- Metal uses an isolated experimental AMReX SYCL -> AdaptiveCpp SSCP route,
+  with exact compiler/source pins and reviewed patches. The M4 device probe
+  and complete 1D/2D/3D production builds pass. Short RHD/RMHD entropy and gauge
+  lapse comparisons pass against fresh FP64 runs after correcting compiler
+  control-flow reuse and FP32 recovery. The final Cycle432 matrix passes
+  18/18, and the 2D/3D Alfvén accuracy/convergence controls pass6/6. Gauge constraints remain a numerical
+  limitation: the resolved N64 Metal Hamiltonian maximum is about 0.0125,
+  versus 0.0031 on CPU FP32 and 1.1e-7 on FP64. Evaluating identical saved Metal
+  fields on CPU reproduces that norm in FP32 and FP64; widening the diagnostic
+  cannot restore the evolved state. Full FP32 NR accuracy is not certified.
+  Metal entropy/gauge HDF5 restarts reproduce final fields bitwise, and the
+  poisoned-state debug controls pass. Validation uses one GPU rank. Final moving Newtonian CT refinement and
+  the existing 3D ratio-four CT/reflux topology control pass after the
+  target-selection and temporary-lifetime corrections; these are scoped
+  controls, not certification of all AMR/relativistic configurations.
+  The compatible local toolchain uses LLVM20 and SDK26.5; SDK27 fails LLVM20
+  math headers. One GPU rank is selected until
+  device identity/sharing is audited. HIP remains unvalidated; the scoped
+  native CUDA evidence is recorded below.
+- Device portability includes host/device ownership, not just annotations:
+  checkpoint unpacking needs an explicit host-to-device copy and temporary
+  lifetime; conservation ledgers and active-state debug checks use AMReX
+  reductions over device arrays. Detailed failure formatting copies data to
+  the host instead of dereferencing GPU storage or using device varargs.
+  Keep dependency/compiler fixes separate from pointwise physics. FP32
+  storage cannot retain perturbations below its local relative resolution;
+  wider arithmetic cannot recover discarded data, and this Metal route has
+  no native device FP64. Cycle428 traced the larger-grid failure to missing
+  Metal declarations for indirectly accessed buffers. The runtime now prepares
+  residency/hazard tracking from the same live-allocation inventory as pointer
+  translation. A separated-allocation regression fails even at 256 cells before
+  the patch and passes through 32768 afterward: this was not a RAM-capacity
+  limit. Corrected full waves pass through 262144 cells. At that size the GPU's
+  later evolution reaches 1.314 Mcells/s versus 0.550 CPU FP32 and 0.285 FP64
+  on the same 16 GiB M4 (one GPU rank versus three CPU ranks). Startup still
+  dominated the original short 64-step process: 169 seconds GPU versus 31 CPU
+  FP32. Cycle429 isolates inherited one-second compilation postcheck sleeps:
+  the unchanged executable with `ACPP_METAL_JIT_POSTCHECK_MS=0` passes in
+  16.6--17.0 seconds with a populated source cache, or 43 seconds with a fresh
+  application cache. This establishes a bounded end-to-end GPU gain on reuse;
+  Cycle432 adopts this setting after four fresh/reused-cache debug-enabled
+  hydro/gauge restart pairs preserve final fluid/spacetime fields bitwise. The older
+  256-cell result reflects
+  severe small-workload overhead; it is not a capacity limit. Full measurements
+  and remaining profiling/coverage boundaries are in the precision document.
+- Selected multidimensional GPU controls now pass, but throughput benefits
+  depend on layout and operator cost. The accepted 64³ CT comparison is
+  effectively equal end-to-end on reused-cache Metal and three-rank CPU FP32
+  (about 48.5 s each); fresh-cache Metal costs about 251 s. Later Metal
+  throughput is 19% higher. GPU solver peak RSS is much larger than its
+  260 MiB main-arena use; the tested grids fit 16 GiB without establishing
+  a capacity ceiling. Cycle433 supersedes the 512² FP32 absolute-divB
+  rejections with the shared dimensionally scaled arithmetic policy:
+  `divb_l1*h/(V*B_ref) <= 64*epsilon`. Runtime divB L1 is a volume integral.
+  All 12 saved 2D/3D repeats pass; normalized errors are 0.30–0.37 epsilons
+  across FP64, CPU FP32 and Metal. The original records remain unchanged.
+  This periodic Cartesian scale uses the smallest reported active width;
+  on AMR it is a conservative global bound, not a local constraint norm.
+  Physical accuracy, convergence and stability remain separate requirements.
+  See the precision document for
+  matched inputs, memory definitions and the full measurement boundary.
+- Cycle437 separates RMHD candidate recovery from face reconstruction/Riemann
+  work and reuses tile-local face fluxes. Metal 2D MP5/HLL CT-AMR and shock
+  controls with both PWC and PWL/PWC guards now pass; matched CPU64/CPU32 shock
+  fields remain bitwise unchanged. CPU 3D CT-AMR passes in both precisions.
+  Cycles438--439 close the reproduced Metal 3D CT-AMR compiler failures:
+  connection initialization uses shared metric first derivatives with host
+  order dispatch, and optional geometric tagging launches separately from the
+  fluid indicator. Constraints use the shared derivative subset and select
+  their formulation on the host. The final Metal 3D analytic CT-AMR gate
+  passes; matched CPU/Metal fields and constraint histories are unchanged
+  from Cycle438. CPU Cartesian order-family and regular spherical evolution
+  convergence pass; Metal spherical evidence covers startup only. The retained
+  Cycle439 pipeline failure is from an intermediate shader. Cycle445 reproduces
+  it from retained MSL alone: library creation passes, then Apple's pipeline
+  compiler fails. Holding the entry-point name fixed and changing only its
+  dynamic formulation flag to either constant makes compilation pass; restoring
+  the dynamic flag restores failure. This supports the existing host formulation
+  selection without identifying the faulty compiler pass. Two independent fresh
+  application-cache 3D CT-AMR repeats pass with exact prior fields and constraint
+  histories; OS-managed Metal caches remain intact. A fresh 3D MP5 Metal restart
+  remains outside that evidence. The optional backend still follows the pinned
+  third-party WarpX reference route with local adaptations, documented in
+  `docs/precision_and_metal.md`. These controls do not certify all GR/backend
+  combinations or establish a steady-state speedup.
+- Native AMReX CUDA on WSL uses the same physics sources, generated equations
+  and precision selection. Cycle451 completes all-dimensional FP32 production
+  builds and the maintained precision, 3D MP5 CT-AMR and exact restart controls
+  on one RTX 3070 Ti. GCC CPU32 also passes the precision gate. Two MPI ranks
+  sharing the RTX exercise host-staged transfers; independent devices,
+  GPU-aware MPI, inter-node communication and scaling remain unvalidated.
+- CUDA portability requires valid launch ownership and captures throughout
+  the call chain, named factory types, and device-readable component tables.
+  These are shared infrastructure changes. Final Mac CPU32/Metal precision
+  controls pass; final Metal 3D CT-AMR fields and constraint histories exactly
+  preserve Cycle439. Retaining ideal/runtime EOS host selection through RMHD
+  signal frequency reduces its ideal shader from 1.49 MB to 279 KB and resolves
+  the reproduced intermediate pipeline failure without a Metal equation fork.
+- Matched FP32 RMHD-wave timing at 262144 cells and 64 steps gives Metal 2.42x
+  solver throughput and 2.00x end-to-end speed over three M4 CPU ranks with
+  reused caches. CUDA gives 6.89x throughput and 2.47x end-to-end speed over
+  eight Ryzen ranks, and 3.00x end-to-end over Metal. Cheap short hydro remains
+  startup-dominated on GPUs. These are workload-specific measurements, not
+  multi-device scaling; WSL CPU code is initially portable rather than native
+  tuned. Compile/startup cost and benchmark inputs are recorded in Cycle451.
+- The 3D six-step PWL restart control reaches its one-million-cell AMR budget
+  on CPU64, CPU32 and CUDA32 before completion. This remains a failed control
+  needing an error/resource study; budget exhaustion alone does not prove an
+  instability or tagging bug. The passing MP5 restart does not certify PWL.
+  The checkpoint comparison utility must initialize AMReX without parsing its
+  positional directory arguments as an input file; Linux exposed that defect.
+- Cycle452 resolves duplicate CUDA kernel-entry registrations by selecting
+  AMReX non-RDC compilation with local launch ownership; the failure and fix
+  reproduce in a two-file CUDA-only control. Default memcheck/initcheck/
+  synccheck and racecheck pass actual 1D RMHD evolution without suppression;
+  an invalid-write control still fails. All-dimensional builds, the maintained
+  precision gate and fresh 3D CT-AMR pass. This candidate's exact restart and
+  3D sanitizer follow-up remain incomplete. Cold CUDA compilation is still
+  impractically expensive; the retained single-owner trace is dominated by
+  device optimization and assembly. Do not equate a no-op rebuild with a
+  practical cold/edit workflow or claim broad backend acceptance from these
+  bounded controls.
+- EOS CGS conversion must preserve intermediate representability as well as
+  final values. Staged pressure conversion avoids FP32 c^4 overflow; Read
+  piecewise polytropes are built in code units to avoid overflowing CGS powers.
+  All four presets and 28 segments pass continuity and physical pressure
+  anchors in both precisions. Maintained CompOSE table/recovery checks pass
+  in FP64; this does not certify FP32 cold-surface thermal accuracy.
+- CFL-location diagnostics use masked AMReX reductions with deterministic
+  exact-maximum selection. The Metal checker and CPU64/CPU32/Metal hierarchy
+  on/off controls pass without changing physical scalar histories. Solid-mask
+  host Array4 work remains explicitly deferred.
+- FP32 multidimensional integral diagnostics need compensated summation:
+  `ReductionSum` retains a two-Real residual pair through AMReX reductions;
+  FP64 remains ordinary Real. This corrects apparent 3D Alfvén conservation
+  drift without widening the device arithmetic or replacing runtime totals.
+  Cold Valencia energy and general-EOS recovery use shared rationalized
+  expressions to avoid rest-mass cancellation. A representable TOV center
+  offset plus explicitly selected FP32 ID tolerances make the stellar startup
+  round trip pass at about 1.7e-7.
+- FP32 evolved TOV and filled-hole controls still reject invalid outer-corner
+  ghost metrics. The tested tensor extrapolation plus centering stencil has
+  an absolute weight sum~2.1e8; promoting the stored FP32 donors does not fix
+  it. This is a boundary-conditioning limit requiring a properly validated
+  closure, separate from the existing periodic gauge constraint limitation.
+  Matched FP64 TOV t=10 and filled-hole t=2.4M controls complete, but coarse
+  TOV surface thermal-pressure excess and growing exterior BH constraints
+  preclude a general long-time/converged-accuracy claim. Cycle432 retains the
+  thermal-proxy shell table; it is not a Kelvin-temperature diagnostic.
 - AMReX's vector `FillBoundary` and `FillBoundaryAndSync` helpers overlap
   independent same-phase exchanges without changing field centering or
   ownership. Batch fields only when they share periodicity and no field depends
@@ -51,6 +356,18 @@ this file records only the resulting current facts and evidence boundaries.
 - A compile, focused executable, smoke run, standard suite, full suite,
   performance benchmark, and MPI-rank comparison are different evidence.
   Report them separately and attach claims to the exact revision or dirty tree.
+- Cycle 373's AMReX 26.09 update covers 52 standard gates across scoped reruns:
+  51 pass; the short static-trumpet horizon-area accuracy gate remains failed.
+  Its entire horizon history is byte-identical under verified 26.08 and 26.09
+  builds of the same PyFluid source. This is a pre-existing numerical limit,
+  not a dependency regression, and not a passing complete standard suite.
+  Three stale test fixtures were corrected without changing evolution or
+  loosening tolerances; commands and evidence are in the continuity cycle.
+- The current scalar-policy input reader retains surrounding string quotes
+  from canonical `run.in`. This can misclassify quoted `"none"` as diffusion;
+  use an explicit physically appropriate policy when validating canonical
+  inputs until semantic decoding is fixed. Closed and diffusive policies
+  currently have identical checks, but other quote-sensitive branches do not.
 - Cycle 284's final cache-hot quick suite passed 3/3 in 1.776 s. Its preserved
   standard baseline passed 42/42 gates with 135.305 s summed gate time, and all
   four runtime performance controls passed their recorded warn thresholds. The
@@ -81,6 +398,25 @@ this file records only the resulting current facts and evidence boundaries.
 
 ## Production Numerical Snapshot
 
+- `spacetime.derivative_order` selects 2/4/6/8/10 (default 4) for
+  Cartesian Z4c and regular-chart fCCZ4 bulk derivatives, connection completion,
+  constraints, KO and halo reach. Both formulations pass the three-resolution
+  Cartesian gauge control at every order; the full 22-field spherical gauge
+  comparison passes at every order on a regular shell. High spatial order does
+  not set full evolution order: RK4, fluid reconstruction, matter transfer and
+  boundary algorithms can limit it. Approximate Sommerfeld gradients remain
+  second order. Direct TOV uses adaptive Dormand--Prince 5(4) in log enthalpy;
+  the general Cartesian and reduced-spherical elliptic interiors remain second
+  order. Origin/pole evolution and Cartesian-only AH tracking are still open.
+- `schema/numerics.toml` owns supported spatial orders. Exact SymPy moments
+  generate derivative/KO/centering coefficients and smooth uniform-Cartesian
+  point/cell-average operators. Generated leaf assertions retain their own
+  order snapshot so a stale kernel cannot silently admit a new catalog order.
+  Nodal prolongation independently selects a catalogued order using
+  `spacetime.prolongation_order` (default 4). Tenth-order derivatives together
+  with tenth-order prolongation pass the existing Cartesian four-level
+  subcycling/restart control in both formulations; this does not establish
+  tenth-order AMR convergence or adaptive spherical readiness.
 - `PhysicalSystem` explicitly distinguishes HD, MHD, RHD, and RMHD. SRHD,
   SRMHD, fixed curved GRHD/GRMHD, and evolved-Z4c matter use the shared
   relativistic system rather than separate flat-space physics implementations.
@@ -240,7 +576,7 @@ this file records only the resulting current facts and evidence boundaries.
   flux-register reflux, average-down of covered cells, and for CT edge-EMF
   reflux plus face average-down. These operations are not interchangeable.
 - PyFluid already routes all face components together through AMReX's
-  `face_divfree_interp`. AMReX 26.08 generalizes that interpolation so fine
+  `face_divfree_interp`. AMReX 26.07 generalized that interpolation so fine
   ghost-cell divergence matches a spatially varying underlying coarse-cell
   divergence and supports a refinement ratio of 2 or 4 in every direction.
   PyFluid rejects other CT ratios before evolution and still requires isotropic
@@ -260,6 +596,12 @@ this file records only the resulting current facts and evidence boundaries.
   conformal-factor curvature, with the dimensionless Minkowski scale one in
   its smoothness floor. Adding a diagnostic GF never makes it an AMR driver
   implicitly; `chi` alone is not a universal matter criterion.
+- A floor-relative support guard of only `10 rho_floor` is still too permissive
+  for compact-object accretion: the q-power Kerr-disk run promoted an expanding
+  `rho ~ 1e-11` numerical-atmosphere halo until level 2 requested 3.94 million
+  cells. `compact_object` therefore uses `10^4 rho_floor`, which is about
+  0.4 percent of that disk's peak density; the explicitly broader `matter`
+  policy retains `10 rho_floor` when low-density flow is itself the target.
 - Conservative component averages do not guarantee relativistic
   admissibility. A coarse parent can produce children whose exact component
   average is correct while one child recovers with negative pressure.
@@ -330,7 +672,14 @@ this file records only the resulting current facts and evidence boundaries.
   usefully; lack of full six-E-core occupancy and memory/barrier costs explain
   the remaining gap to a theoretical `4P+6E` limit better than an affinity or
   thermal failure.
-- AMReX 26.08 still asserts that `MLCurlCurl` has one AMR level, and its 1D
+- Apple's M6 CPU has 2 super, 4 performance, and 6 efficiency cores. The
+  corrected tile-owned OpenMP path should let macOS schedule PyFluid across all
+  three classes, but the existing M4 `2x5` profile is not an M6 optimum by
+  construction. Benchmark `1x12`, `2x6`, `3x4`, and the retained `2x5` control
+  with power attribution before selecting an M6 profile. Static equal-tile
+  scheduling can wait on slower workers; revisit dynamic/guided tile ownership
+  only if measured M6 heterogeneity outweighs the M4 dynamic-scheduling cost.
+- AMReX 26.09 still asserts that `MLCurlCurl` has one AMR level, and its 1D
   `MLNodeLaplacian::reflux` still aborts. The corresponding implicit-CT and 1D
   nodal-solve restrictions remain real; do not remove them based only on the
   version update.
@@ -354,8 +703,11 @@ this file records only the resulting current facts and evidence boundaries.
 - The generated rotation-law catalog also owns the two post-merger
   `uryu_plus_13` and `uryu_j_envelope_p1` laws. Their generated angular
   velocity, derivative, first-integral identity, sign, and j-constant limiting
-  controls pass pointwise. That is not yet a converged nonzero-spin Uryu RNS
-  sequence or evolution validation.
+  controls pass pointwise. The maintained adaptive `r theta` gate also solves
+  a nonzero `uryu_plus_13` model and checks `uryu_j_envelope_p1` in its large-B
+  j-constant limit, including artifact identity and physical-diagnostic sanity.
+  These isolated ID checks are not a validated Uryu sequence, independent
+  physical-reference comparison, or Uryu evolution test.
 - A zero-temperature barotrope has one independent thermodynamic variable.
   Scaling pressure at fixed density is therefore off the cold EoS unless a
   separate thermal degree of freedom is introduced. PyFluid's
@@ -364,6 +716,19 @@ this file records only the resulting current facts and evidence boundaries.
   sound speed, and conserved state; its baryon mass changes. It is a small
   evolution-start perturbation with no constraint re-solve, and reusable
   equilibrium artifacts are written before it is applied.
+- Font-style controlled collapse is deliberately off the cold curve: increase
+  density with the radial cosine seed, retain the equilibrium pressure, and
+  recompute specific internal energy through a hybrid-polytrope or Compose EoS.
+  Cold-projecting the denser state instead adds pressure support and changes
+  the intended problem. During a static spherical XCTS polish, preserve both
+  densitized baryon density `psi^6 rho` and specific internal energy, then
+  restore pressure from the runtime EoS after each conformal correction.
+- Automatic AMR has two independent controls: the physical refinement target
+  says what spacing the state needs, while `amr.regrid_int` says how often a
+  new hierarchy may be considered. For subcycled full GR, synchronized mode
+  counts accepted coarse steps. Keep hard `max_level` above the physical
+  target when validation requires emergency headroom; otherwise reaching the
+  hard cap can masquerade as successful adaptive refinement.
 - Existing nonzero-spin evidence is reduced-grid continuation and short
   evolution, not a resolution-converged mass-shedding limit, long-term
   equilibrium, or constant-baryon-mass sequence. The surface-gradient
@@ -568,10 +933,10 @@ this file records only the resulting current facts and evidence boundaries.
 - A cell-centred radial source's half-cell gap at `r=0`, and the corresponding
   strip adjoining a declared reflection plane such as the RNS equator, are
   regular interior interpolation rather than stellar exterior. Finer target
-  grids must not turn either strip into atmosphere. Beyond a spherical TOV
-  source radius, fluid uses the configured target atmosphere and ADM geometry
-  uses the exact isotropic-Schwarzschild exterior inferred from the saved
-  outer metric.
+  grids must not turn either strip into physical exterior. Beyond a spherical
+  TOV source radius, fluid uses the configured target relativistic exterior
+  and ADM geometry uses the exact isotropic-Schwarzschild exterior inferred
+  from the saved outer metric.
 - The cell-centred spherical `r theta` scalar and azimuthal spin-1 operators
   own origin, axis/equator reflection, radial Robin closure, coupled XCTS
   sources, longitudinal-tensor reconstruction, matter iteration, and global
@@ -698,6 +1063,28 @@ this file records only the resulting current facts and evidence boundaries.
   accretion production run. Long-term star/disk or black-hole/disk equilibrium,
   magnetized tori, cusp/overflow diagnostics, and cross-method comparison
   remain open.
+- An equatorially reflected full-azimuth movie control rematerializes that
+  q-power artifact onto a `32x32x16`, ratio-4/2 AMR hierarchy and evolves to
+  `t=62.3269 M` in 32 CFL-0.9 PWL/HLL/SSPRK3 steps. It finishes with 221,184
+  cells, one unused level, zero C2P fallback, zero atmosphere reset, and an
+  external mass-ledger residual `9.23e-13`. The positive octant is a rendering
+  cutaway only; the evolution retains odd azimuthal modes. A finer
+  disk-`dx=0.4 M`/horizon-`dx=0.2 M` MP5/HLLE stress keeps the fixed Kerr
+  horizon invariant but begins filled-hole atmosphere resets at step 20 and
+  accumulates 5,482 by `t=24.19 M`. Do not promote that fine branch as a clean
+  accretion run: it is direct evidence that refinement alone does not replace
+  a better complete-grid interior treatment or true excision.
+- True matter excision extends the fixed-Kerr q-power control to `t=550 M`
+  with disk/horizon spacing `0.5/0.25 M`, CFL 0.9, and no C2P fallback,
+  atmosphere reset, or interior intervention. Its fixed initial orbital
+  period at the saved density maximum is `P_c=527.341 M`, obtained from
+  coordinate transport velocity `alpha*v-beta`; the run covers only
+  `1.043 P_c`, not hundreds of disk orbits. Use that same clock throughout
+  evolution. The atmosphere-excluded `|C1|/C0` decreases `0.00749 -> 0.00530`,
+  `|C2|/C0` reaches `1.73e-4`, and `C0` changes by `-1.21%`. The late mass
+  upturn includes measured open-boundary influx, so this is neither a PPI
+  detection nor an isolated-disk convergence result. Evolved-spacetime
+  excision and long self-gravitating accretion remain unvalidated.
 - BH-disk mass ratios must be labeled by gravity ownership and denominator.
   The axisymmetric apparent-horizon-shell owner now couples an aligned disk's
   energy, momentum, and stress trace into every XCTS matter/constraint
@@ -969,9 +1356,231 @@ this file records only the resulting current facts and evidence boundaries.
   Catalog-owned exterior Hamiltonian L2/Linf and momentum Linf now require the
   complete fourth-order stencil to lie at `r_KS>r_+`. In the one-step exact
   Kerr controls, N=32 to N=64 improves those norms by factors 3.33/4.91/4.09.
-  True evolution excision remains explicitly rejected until a pure-outflow
-  evolution boundary owns inactive cells, one-sided stencils, prolongation,
-  and characteristic validation.
+  Fixed-Kerr RHD/RMHD matter excision now owns inactive cells, a one-sided
+  Valencia diode flux, zero interior RHS/C2P, excision-aware RHD/RMHD
+  candidate repair, CFL/diagnostic/AMR masking, canonical CT face fields, and
+  the inner mass/energy ledger. Evolved-Z4c excision now has a fixed-worldtube
+  owner and short validation described below; moving cuts and long-time
+  exterior convergence remain unvalidated.
+- The analytic Kerr `filled` control C2-blends lapse, shift, and spatial metric
+  to a regular Minkowski core. First derivatives include the blend's product
+  rule; inverse metric/determinant and `K_ij=(D_i beta_j+D_j beta_i)/(2 alpha)`
+  are recomputed from that completed geometry. Exact and filled paths share
+  the kinematic completion and ADM component packing. This fixes the former
+  zero derivatives/independently scaled Kerr K inconsistency, but does NOT
+  solve the constraints or make the arbitrary interior a stationary solution
+  of the vacuum Einstein equations. Stationary ADM identity and derivative
+  tests are not an evolution-stability proof. Fixed-Kerr production accretion
+  should prefer a causally validated interior excision boundary.
+- Black-hole ID-to-evolution handoff exposes three useful interior policies:
+  excision, complete-grid puncture/trumpet, and smooth fill. Underneath, only
+  excision changes the active-domain topology; puncture and filled data both
+  occupy a complete evolution grid. Wormhole puncture and direct trumpet are
+  different initial slices of the puncture policy: ordinary moving-puncture
+  gauge drives the wormhole end toward a trumpet, whereas direct trumpet data
+  start close to that late-time geometry. For an exterior XCTS/COCAL solve,
+  smoothing occurs only after the solve during target-grid materialization and
+  must not feed back into the exterior elliptic solution. `Turduckening` is the
+  literature synonym for this smooth fill, not a separate configuration or
+  solver method.
+- Fixed versus evolved spacetime is orthogonal to the interior policy. The
+  production goal is dynamically evolved, matter-coupled Z4c wherever the
+  combination is mathematically applicable. Fixed Kerr/Schwarzschild remains
+  a test-fluid/reference limit; evolved solutions should approach it as matter
+  backreaction tends to zero.
+- The local WIP COCAL/ETK BHT `smooth` and `IDpar` fills split `K_ij` into trace
+  and trace-free pieces, extrapolate and reproject the trace-free piece against
+  the final filled metric, damp `tr(K)` inward, and zero interior hydro. They
+  do not preserve `tr(K)` unchanged, solve the constraints, or derive the
+  completed curvature from a stationary four-metric. Treat them as independent
+  algorithm provenance for a trace-split turduckening option, not as validated
+  production truth.
+- A smooth fill can seed a subsequent global CTT/CTTK/XCTS constraint solve,
+  but the elliptic correction is nonlocal: it generally changes the exterior,
+  horizon, mass, and spin, and it does not by itself retain black-hole puncture
+  topology. Freezing the exterior while solving only the interior also demands
+  a genuine matching/gluing boundary problem, not the existing target-grid
+  constraint polish. Therefore a constraint-resolved production contract uses
+  either an exterior solve plus evolution excision, or a complete-grid
+  puncture/trumpet formulation whose singular/topological part is built into
+  the conformal ansatz. A trace-split fill may remain a validated compatibility
+  option; an optional global projection must be named experimental and must
+  remeasure the exterior charges and horizon rather than claiming to preserve
+  the supplied black hole.
+- The normal post-fill operation is not an additional elliptic repair: convert
+  the completed ADM data to regular Z4c variables and evolve with
+  moving-puncture gauge plus Z4c constraint damping. Fill error should remain
+  horizon-contained or damp; outward leakage is an error to measure. Validate
+  independence under fill radius/method and refinement using exterior-only
+  constraints, horizon area/mass/spin, lapse, and exterior matter. Coordinate
+  horizon radius may shrink or grow purely through gauge, so it is never a
+  physical-size diagnostic by itself.
+- AsterX supplies optional lapse-threshold limits on density, internal energy,
+  and `Wv` specifically for recovery trouble inside a black hole; ETK GRHydro
+  has a separate hydro-excision reconstruction path. These are provenance for
+  one optional horizon-contained matter-stabilization owner, not for silently
+  accepting general atmosphere resets. Such actions must be counted and must
+  vanish from the exterior solution under refinement.
+- Production black-hole matter handling does not generally mean freezing a
+  stale hydro state. True hydro excision makes safely interior cells inactive,
+  avoids C2P there, and closes the exterior budget through a pure-outflow inner
+  flux. Complete-grid puncture/fill methods instead commonly bound recovered
+  primitives in a region safely nested inside the apparent horizon: EoS-
+  consistent density/pressure or internal-energy floors and ceilings plus a
+  Lorentz-factor ceiling, with a magnetization ceiling for MHD when needed.
+- On the matched `32^3`, `a/M=0.5`, three-step CFL-0.9 fixed-Kerr controls,
+  three no-plot repeats give median bounded/excised RHD throughput
+  `0.309/0.305` Mcells/s. Masked CFL increases excision simulated-time
+  throughput to `3.37` from `3.20 M/s`;
+  excluding the inactive atmosphere from CFL is therefore part of excision
+  ownership. RHD and divergence-free RMHD+CT excision close baryon mass to
+  roundoff (`2.6e-16/6.9e-17` relative); RMHD has `divB_L1=8.45e-19`, zero
+  C2P/reset/candidate correction, and `2.03 M/s`. A forced one-step density
+  ceiling records 560 strictly interior bounds and no reset, proving that the
+  bounded path is active rather than a no-op. These are short coarse controls,
+  not long accretion or evolved-spacetime validation.
+- Fixed-Kerr matter excision passes a two-level ratio-2 AMR control with
+  spatial subcycling and a runtime fine-level remake from 110,592 to 32,768
+  cells. After three coarse steps its exterior baryon budget closes to
+  `4.86e-17` relative, the coordinate-energy/source residual is `3.14e-4`,
+  and recovery, atmosphere-reset, interior-bound, and interior-reset counts
+  are zero. `InitFromScratch` legitimately requests initial tags before the
+  step-zero horizon exists; retain ordinary seed tags in that phase, then
+  require the tracked mask before physical projection, preflight, CFL,
+  evolution, and runtime regridding.
+  Recompute conserved variables and stress-energy after any projection. For
+  CT MHD, prefer raising the matter floor to reduce magnetization rather than
+  independently editing face-centered magnetic fields. Every such operation
+  is a nonconservative numerical intervention, must be counted separately from
+  successful C2P fallback, and may never legalize exterior recovery failure.
+- Recovery ownership now distinguishes inactive excision, bounded interior,
+  and ordinary active fluid. Inactive cells must bypass both projection C2P
+  and temporary primitive-cache C2P. The latter was a real missing path:
+  evolving the metric with nonzero B made inactive conserved data unsuitable
+  for recovery, yielding NaNs that reached neighboring stencils. Cache
+  scratch must be finite without conserved-state repair, and exterior
+  reconstruction/metric transfers must exclude inactive samples. Successful
+  C2P fallbacks leave the evolved conservative state intact; terminal active
+  atmosphere resets remain counted nonconservative failures.
+- Z4c shift advection appears as `+beta^i partial_i u` on the RHS. The generic
+  advection selector therefore needs transport velocity `-beta`, not `beta`.
+  The old sign anti-damped grid-scale modes; the corrected order-2/4/6/8
+  operators damp them for both shift signs. Earlier strong-shift/gauge drift
+  comparisons need revalidation; this is not evidence that every old failure
+  had the same cause.
+- Evolved excision currently uses a fixed spherical cut with outgoing
+  physical/gauge characteristic and AH-containment guards, generated exterior
+  derivatives, masked negative-semidefinite KO, and exterior centering/nodal
+  AMR transfers. Short coupled HD, restart, and AMR/subcycling controls close
+  the exterior baryon ledger to roundoff without C2P/reset. A coarse longer
+  control still loses its AH: long accretion and moving cuts remain open.
+  Evolving geometry does not break densitized baryon conservation, but does
+  invalidate a fluid-only coordinate-energy balance. A uniform physical B on
+  a curved slice need not have zero divergence of densitized CT B; test its
+  preservation separately from a divergence-free magnetic ID control.
+  The fresh divergence-free coupled CT control has `divB_L1=2.03e-19`,
+  zero recovery/reset, and baryon error below `2.4e-17` after four CFL-0.9
+  steps. MP5/HLLD and a four-step coupled hybrid-EoS disk control also pass;
+  the latter starts from test-fluid ID and is not a self-gravitating
+  equilibrium or long-accretion validation.
+- A relativistic `outflow` ghost copy is not a no-inflow condition: the
+  baryon transport is `alpha*v^i-beta^i`, so zero Eulerian velocity can still
+  carry atmosphere inward in a shifted chart. The completed fixed-Kerr disk
+  movie has measured net boundary influx; this alone does not establish
+  contamination of the disk or its modes. The corrected `diode` uses
+  coordinate transport in ghosts and one common interior-derived state on
+  both physical-boundary Riemann traces, including candidate correction.
+  Ghost clipping alone is insufficient: a two-state HLL solve can still
+  import mass through diffusion/averaging. Preserve pressure/magnetic stresses
+  rather than zeroing the entire flux. The old movie selected `outflow`,
+  not `diode`, so it is not retrospectively fixed by this change.
+- Constant-copy nodal ghosts introduce a derivative discontinuity at an open
+  Z4c boundary. Cubic extrapolation greatly reduces the measured Kerr error;
+  the optional, gauge-aware Sommerfeld RHS reduces it further (about 25--31x
+  versus the original small-box controls). Legacy dx-dependent exterior
+  norms plateau at fixed small outer extent. Fixed coordinate-region controls
+  now localize the loss of evolved convergence to boundary contamination:
+  near-BH H_RMS is fourth-order through t=0.6M but loses that order by1.2M
+  on R4. Moving the boundary to R6 at the same dx=0.125 and measuring exactly
+  the same nodes/volumes lowers final near/far H_RMS by14x/835x. The matched
+  R6 coarse/fine pair restores H_RMS order4.05 and momentum-Linf order3.97
+  at1.2M, with no interventions at CFL0.9 (spin0.5 vacuum Kerr control).
+  The AH area response barely changes. This is short exterior convergence,
+  not long-time or massive-disk validation; R6 is not a universal safe radius.
+  Do not confuse global L2 dilution with improvement. These runtime norms
+  retain the established owned-node coordinate-volume quadrature, not proper
+  volume or exact cut-cell integration; sampled volume varies with dx.
+  Extrapolation is not radiative, and Sommerfeld is not constraint-preserving;
+  a constraint-aware outer closure remains open. Applying the pure-wave
+  Sommerfeld operator to exact stationary Kerr data gives a nonzero A RHS
+  that persists as the derivative spacing decreases: the stationary
+  background does not obey its assumed outgoing-wave falloff. Refinement
+  cannot remove this continuum boundary-model error. The ETK NewRad-style
+  interior-RHS correction removes the pointwise stationary plateau, but the
+  matched evolved BH constraint norms still do not decrease with resolution.
+  Do not infer evolved constraint preservation from a consistent point test.
+  Sixth-order ghost extrapolation is needed to preserve fourth-order
+  second-derivative consistency; it is separate from the physical outgoing
+  boundary condition. Fixed AH angular/search tolerances also limit fine-grid
+  area comparisons.
+- A nodal direction with only one cell may require repeated reflection to
+  map a ghost into physical nodes. A single mirror can read an opposite-side
+  unfilled ghost; sequential fills can hide this race. Poisoned-ghost checks
+  now cover this together with mixed reflection/extrapolation corners.
+- Z4c gauge speeds are state-dependent: one-plus-log has squared Eulerian
+  speed `2/alpha`, trumpet `(1-alpha)/alpha`, and the fastest live-shift mode
+  `4*mu_S/(3*chi)`. Fixed sqrt(2)/2 multipliers can underestimate the strong-
+  field bound (or overestimate weak-field shift speeds). CFL, outgoing BC,
+  and excision now share these formulas. This repairs speed selection, not
+  a proof of nonlinear stability at any specified CFL.
+- Generic full-surface interpolation currently does not fold quadrature
+  points across evolution reflection planes. Full-sphere radiation/scalar
+  extraction can therefore reject a half/octant domain even though evolution
+  is valid. The baryon-flux surface path already folds points and restores
+  vector parity; general tensor/pseudotensor extraction still needs that
+  shared treatment. This is a diagnostic gap, not an evolution limitation.
+- The former step-three MP5/LLF filled-Kerr failure was a **frozen-gauge**
+  control, not evidence that MP5 causes the failure or that all fills fail.
+  PWC and halved CFL fail too. The nodal spatial metric first loses positive
+  definiteness near the core; algebraic projection then produces NaNs before
+  fluid recovery fails. With both one-plus-log lapse and Gamma-driver shift,
+  pre-Cycle-371 matched CFL-0.9 controls reached `t=1.2 M` at `32^3` and `64^3` with no
+  recovery/interior interventions; exterior H_Linf improves by 2.65x. This
+  is short robustness evidence, not convergence: H_L2 slightly worsens, and
+  the exterior diagnostic's stencil-exclusion layer changes with resolution.
+  Live-lapse/frozen-shift and wider-fill/frozen-gauge controls expose another
+  mechanism: signed high-order vertex-to-cell interpolation can make lapse
+  or chi negative despite positive nodal values. Nodal floors do not ensure
+  admissible transferred geometry; do not hide this with transfer floors.
+- Positive Z4c scalars now use log-space interpolation for chi/lapse in
+  physical nodal-to-cell and ordinary/exterior cell-to-face transfers. Raw
+  polynomial physical-boundary ghosts are finite-difference extensions, not
+  necessarily admissible pointwise metrics. Outside-domain centering targets
+  preserve that raw extension; MPI/periodic ghosts representing physical
+  points use the same log policy as valid cells. A trial log-space ghost
+  extrapolation overflowed in wide AMR/excision corner storage and was removed.
+  Actual point-metric consumers remain subject to signature checks. Selected
+  polynomial weights/order are unchanged; smooth positive data retain the
+  formal order. This is not a bound/floor limiter, source repair, or guarantee
+  of tensor positive definiteness, and nonrepresentable outputs remain errors.
+  Final corrected-fill controls reach t=1.2 M with SSPRK3/RK4 at CFL 0.9
+  without fluid/interior interventions and with roundoff baryon closure.
+  The boundary/fill/AMR/restart matrix passes14/14 and Z4c quick13/13.
+  The lapse reaches its selected nodal floor.
+  Kinematic consistency and robustness do not imply improved exterior
+  constraint accuracy. The direct log-interpolation cost is not yet isolated
+  or optimized; flat-space throughput gates do not measure stored-GR-metric
+  transfer costs. Detailed results remain in Cycle 371.
+- Smooth-boundary Z4c constraint/radiation conditions cannot simply be pasted
+  onto Cartesian faces with a bisector normal at corners. Hilditch 1212.2901
+  explicitly uses spherical outer patches to avoid corners. The Cycle-371
+  face/bisector trial passed flat/manufactured checks but failed curved-BH
+  outer ghost metrics. Six-point extrapolation multiplies a boundary-only
+  perturbation by 56 at the third ghost node, or 56^3 at a triple corner;
+  this can amplify incompatible face data, independently of MPI races.
+  A radial normal on a box is an oblique approximate closure, not the paper's
+  surface-normal condition. The failed trial is not a production option;
+  corner-compatible constraint-preserving boundaries remain open.
 - The constraint-solved black-hole owner is a Cook--Pfeiffer
   quasi-equilibrium exterior on a finite spherical shell. Spin zero reproduces
   isotropic Schwarzschild at `r=M/2`; aligned nonzero spin imposes
@@ -993,9 +1602,10 @@ this file records only the resulting current facts and evidence boundaries.
   exterior solve: Cartesian full-grid evolution still uses a finite
   constraint-violating interior fill. A `64^3` target-`0.3` artifact completes
   one CFL-0.9 evolved-Z4c step without recovery/reset, which validates routing
-  and finite evolution but not exterior convergence or stability. True
-  excision remains open. `N x M x 1` is a dimensional-degeneracy test, not a
-  separate owner.
+  and finite evolution but not exterior convergence or stability. Dynamic
+  evolved-Z4c excision now has short fixed-worldtube controls, not long
+  self-gravitating accretion validation; fixed-Kerr matter excision is implemented.
+  `N x M x 1` is a dimensional-degeneracy test, not a separate owner.
 - The tested complete-grid Kerr evolution uses ordinary advective 1+log,
   gamma-driver shift, RK4, KO strength 0.32, and positive chi/lapse floors of
   `1e-10`. The resolved `a/M=0.5` AMR/horizon control reaches `t=10.690 M` in
@@ -1031,13 +1641,15 @@ this file records only the resulting current facts and evidence boundaries.
   background cell centers off the singular point. Analytic identities,
   fourth-order stationary-RHS convergence away from the puncture, `32^3` to
   `24^3` physical-ID reload, full/octant one-step extrema, and a constant-l
-  test-fluid torus all pass. At `dx=0.5M`, CFL 0.9, KO 0.32, 16 steps, ordinary
-  1+log/Gamma-driver ends at 0.13 percent horizon-area error and 10.10 percent
-  coordinate-radius change; the analytically matched trumpet/frozen pair ends
-  at 5.10 percent area error and 1.37 percent radius change, with larger
-  exterior constraints. Both have zero recovery/reset. This is a short
-  regression ranking only; 1+log/Gamma-driver remains the supplied evolution
-  path and the matched gauge remains diagnostic.
+  test-fluid torus have passed earlier controls. The earlier coarse-grid gauge
+  ranking is now stale: Cycle 373's current-source `dx=0.5M`, CFL 0.9, KO 0.32,
+  16-step rerun gives ordinary 1+log/Gamma-driver 7.89 percent final horizon-area
+  error and 23.35 percent coordinate-radius change; the matched trumpet/frozen
+  pair gives 7.42 percent area error and 4.99 percent radius change. Both have
+  zero recovery/reset, but the unchanged 2 percent moving-puncture area gate
+  FAILS. The ordinary-gauge horizon history is byte-identical under AMReX
+  26.08 and 26.09, so this is an existing numerical validation gap, not an
+  update regression. Do not promote a current gauge ranking from these runs.
 - `apparent_horizon_expansion()` owns the Cartesian level-set evaluation of
   `Theta=D_i s^i+K_ij s^i s^j-K`; flat-sphere and exact Kerr-horizon pointwise
   checks fix its sign and geometry convention. The first full backend now uses
@@ -1056,9 +1668,10 @@ this file records only the resulting current facts and evidence boundaries.
   Shape/residual/area/irreducible-mass/centroid histories persist, and
   checkpoint restart restores the latest shape. Separate
   catalog-owned AH and inner candidate masks support output and AMR tagging;
-  neither implements evolution excision or an event horizon. AHFinderDirect-
-  style Newton polishing, moving centers, multiple horizons, and quasilocal
-  spin remain open.
+  the explicitly selected fixed-Kerr matter-excision owner may additionally
+  consume the inner mask, while the mask alone never changes ownership. It is
+  not an event horizon. AHFinderDirect-style Newton polishing, moving centers,
+  multiple horizons, and quasilocal spin remain open.
 - An event horizon is nonlocal in time. The clean future owner is offline: it
   consumes a schema-declared, time-ordered Cartesian lapse/shift/spatial-metric
   history and integrates an outgoing null surface backward from a late settled
@@ -1092,6 +1705,186 @@ this file records only the resulting current facts and evidence boundaries.
 
 ## Other Open Boundaries
 
+- Matter vacuum is compatible with curved, evolving spacetime: zero matter
+  supplies zero stress-energy, not a Minkowski metric. Write the fluid
+  enthalpy density as `rho h = rho (1 + eps) + p`, not
+  `rho * (1 + eps + p/rho)`: the former is algebraically identical for matter
+  and makes generated P2C, flux, stress-energy, and source kernels exactly
+  zero at canonical vacuum. The RHD runtime now owns one explicit exterior
+  policy, default atmosphere or exact vacuum, across initial data, EoS,
+  recovery, faces, AMR transfer, physical-ID materialization, output, and
+  restart. Exact zero is a successful recovery state; a failed nonzero state
+  remains a counted reset. RMHD vacuum remains unsupported because nonzero
+  magnetic fields require an electrovacuum or force-free exterior closure.
+- A low-order admissibility flux must use the same physical spectral-radius
+  contract as timestep selection. Hard-coding a unit minimum signal speed can
+  violate the fallback flux's own positivity CFL in subsonic flow. With local-
+  CFL AMR subcycling, each accepted fine substep must also recompute the next
+  allowed fine timestep as the wave speed changes; choosing every substep from
+  the parent interval's initial state can violate CFL later in that interval.
+- A relativistic physical-ID materializer must use the shared EoS limit when
+  converting energy density to specific internal energy. Locally evaluating
+  `energy_density / rho` creates a NaN in canonical vacuum that a uniform
+  startup projection can hide but coarse--fine interpolation correctly
+  exposes. Stored curved stellar spacetime must likewise select the stored-
+  metric evolution path: a legacy target label of `minkowski` does not permit
+  analytic flat kernels when a TOV or rotating-star provider supplied Z4c
+  fields.
+- Sharp stellar surfaces on AMR need enough physics-tag buffer that the
+  coarse--fine interface remains in a smooth region. In the maintained coarse
+  octant TOV gate, an unbuffered interface refluxed tiny negative conserved
+  matter into uncovered coarse cells even though every fine RK stage was
+  admissible; four tag-buffer cells keep the surface refined and the two-step
+  CFL-0.9 gate clean. This is an AMR placement contract, not permission to
+  repair nonfinite interpolation or weaken conservative reflux.
+- Reference-metric spherical evolution is distinct from our spherical ID
+  solver and current Cartesian Z4c evolution. SphericalNR's older filter
+  restriction is not a fundamental MPI limitation; see its later parallel
+  filtering reference. Axisymmetric reduction retains azimuthal tensor/fluid
+  components but excludes nonaxisymmetric m=1/m=2 dynamics. Angular resolution
+  reduction must not silently damp the physical modes being measured.
+- SphericalNR is a published implementation reference but not presently an
+  inspectable public code dependency: its RIT software page provides no source
+  route, and current literature describes the framework as closed-source.
+  Public NRPy does expose related reference-metric symbolic equations,
+  rescaling, regularity tests, and generators. Use those sources to check
+  algebra and implementation patterns while keeping PyFluid's equations and
+  discretization independently owned.
+- A reference-metric Valencia discretization has two equivalent continuum
+  lowerings but they are not equally conservative after discretization.
+  Splitting vector divergence into Cartesian coordinate-volume fluxes plus a
+  cell-centered reference-connection source loses roundoff baryon
+  conservation. Integrating scalar conserved fluxes with exact physical
+  cell/face measures retains the generalized-Stokes conservation law; mixed
+  momentum fluxes additionally need the generated covariant-basis connection
+  correction. Remove the isotropic pressure tensor before that correction and
+  represent its gradient with the same face/volume geometry so a constant
+  pressure state is zero term-by-term. The existing Newtonian curvilinear
+  source is not a Valencia reference-metric source.
+- The bounded production reference-metric GRHD path is single-level and uses
+  one spherical patch with active axes `r` or `r theta`. Fixed Minkowski and
+  centered isotropic Schwarzschild are enabled; the Schwarzschild shell must
+  lie strictly outside `r=M/2`. Initialization, C2P, reconstruction metrics,
+  face fluxes, CFL, geometric sources, candidate limiting, boundaries, and
+  fluid/aux diagnostics all use the same local orthonormal metric owner. The
+  redundant stored Cartesian Z4c copy is not a numerical metric provider, and
+  Cartesian-only Z4c constraint diagnostics are not advertised on this mesh.
+  A nonlinear fixed-Minkowski `r`/`r theta` projection agrees to `4.663e-15`;
+  the Schwarzschild HSE projection agrees to `1.599e-14`, and its fixed-shell
+  errors converge at orders `1.997` and `1.979` from 32 through 128 radial
+  cells. This does not validate AMR reflux, RMHD, Rindler/displaced/trumpet
+  metrics, stored/evolved spacetime, or full spherical 3D; those combinations
+  remain outside that analytic fixed-metric path. The evolved fCCZ4 slice
+  and its separate evidence are described below.
+- The generated fCCZ4 system now evolves regular charts through the shared
+  conformal storage, with physical K=K_hat+2Theta and reference Lambda in the
+  connection slots. Formulation metadata protects checkpoint compatibility.
+  Cartesian gauge waves retain fourth order; the fixed-hierarchy Cartesian
+  AMR/subcycling/restart control passes. The regular 3D spherical plane-wave
+  gate compares all conformal fields to an independent analytic solution and
+  reaches orders 3.84--3.94 on its finest pair. This is short-time interior
+  propagation with periodic phi, not origin/pole or full-star validation.
+  Curved RMHD/CT and mixed-chart evolution remain unsupported, and curved
+  AMR has only isolated conservation controls; vacuum-interface admissibility
+  and long-term stellar stability remain open. Runtime keeps the
+  integrated Gamma-driver; the auxiliary-B point kernel is not an evolved GF.
+- RHD flux fallback must use the same lower/upper face-area-to-volume weights
+  as the high-order FV divergence. Using dt/dx on a curved mesh breaks their
+  conservative equivalence when the fallback activates. Reduced diagnostic
+  cell volumes and boundary areas also need the same symmetry factor.
+- Curved RHD flux registers must use the same local Valencia momentum basis
+  and scalar face areas as the RHS. Newtonian full-chart HD may use Cartesian
+  momentum and physical face vectors; one shared runtime predicate selects
+  this representation for divergence, register weighting and reflux.
+  The partial spherical 3D shell control catches a mass-conservation defect
+  in the former mismatched treatment. It does not validate vacuum interfaces:
+  unbuffered radial AMR still creates negative internal energy after reflux.
+  Moving the interface with a four-cell buffer passes a bounded control but
+  is not a general admissibility-preserving synchronization method.
+- Ideal RHD recovery retains dimensionless numerical intermediates in its
+  generated residual and derivative. The rationalized W-1 expression avoids
+  cold-state cancellation; positive-density zero-pressure matter is accepted
+  by the shared relativistic physical checker. Negative internal energy is
+  rejected, including the low-density controls; no transfer repair is implied.
+- The TOV radial metric sampler uses quintic Hermite segments with ODE-derived
+  first/second derivatives, shared by CPU and device views. Linear metric
+  sampling can create growing second-derivative constraint errors despite
+  accurate point values. Matter remains linearly sampled. Initial shell
+  Hamiltonian errors improve, but evolved global shell constraints have not
+  established convergence; do not infer full-star equilibrium from this fix.
+- A Cartesian analytic fixed-spacetime provider can remain the single physics
+  owner for orthogonal reference-metric Valencia. Evaluate it at the physical
+  Cartesian point, then rotate the metric, inverse metric, shift, and
+  extrinsic curvature into the local orthonormal reference frame. Cartesian
+  partial derivatives are Cartesian covariant derivatives; rotating the lapse
+  gradient, mixed shift derivative, and rank-three spatial-metric derivative
+  therefore gives the reference-covariant derivatives required by the same
+  generated Valencia source algebra. Do not instead differentiate the
+  rotating-basis components as ordinary scalars. The determinant in the
+  orthonormal frame is the reference-determinant ratio. Compiled 1D/2D/3D
+  controls verify conserved-state and geometric-source covariance for
+  Rindler, isotropic Schwarzschild, and the stationary trumpet. The first
+  complete runtime lowering uses this representation only for centered
+  isotropic Schwarzschild in the bounded spherical GRHD path above; the wider
+  curved matrix remains a pointwise validation set, not runtime support.
+- Reference-metric Valencia characteristic speeds are physical orthonormal
+  speeds. Their CFL frequency must divide by physical directional spacing
+  `h_i delta q_i`, not raw angular coordinate width. The bounded spherical RHD
+  path now uses the shared mesh physical-spacing owner; the maintained
+  one-step `r`/`r theta` projection remains at `4.663e-15` with theta spread
+  `5.329e-15` after that correction.
+- A coordinate-aware metric accessor in a relativistic face loop must retain
+  an explicit Cartesian fast path. Routing Cartesian RMHD through the general
+  basis transformation reduced the canonical one-dimensional benchmark from
+  `2.03` to `1.31 Mcells/s`; bypassing the transformation for
+  `MeshCartesian` restored `1.99 Mcells/s` without a new template axis. Keep
+  this performance control whenever the reference-metric accessor changes.
+- Force-free electrodynamics describes magnetically dominated plasma with
+  negligible inertia, not empty electrovacuum. GRMHD/FFE matching needs a
+  consistent electromagnetic update and stress-energy coupling; this can be
+  achieved with coupled regional solvers and need not be a monolithic solver.
+  Shared magnetic storage is one implementation choice, not a physical
+  requirement. Distance or
+  weak gravity alone does not justify replacing outer GRMHD by Newtonian
+  matter or freezing spacetime: relativistic outflows and gravitational waves
+  may still matter. These extensions are research directions, not implemented
+  capabilities; sources are routed in `references.md`.
+- Staged simulation handoff is distinct from live mixed-equation coupling.
+  Published examples transfer settled-remnant data to fixed-metric GRMHD or
+  magnetized outer ejecta to SRMHD. Neither establishes a Newtonian limit.
+  A snapshot remap also does not supply continued inner-engine boundary data
+  or feedback from the outer run. Coordinate/time conventions, EoS closure,
+  magnetic divergence, and transferred fluxes are separate checks.
+- Coordinate identities need independent geometry checks, not only mutually
+  consistent formulas. A vector-gradient connection error can be purely
+  antisymmetric: its trace and symmetric viscous strain remain correct while
+  rigid-rotation vorticity inferred from that gradient is wrong. Likewise,
+  transposed tensor-divergence connection terms are indistinguishable on
+  symmetric stresses. The Cartesian-chain-rule contract now checks arbitrary
+  scalar/vector/general-tensor jets in regular Cartesian/cylindrical/spherical
+  charts and catches both cases. This does not establish discrete boundary,
+  axis/pole, interpolation, or nonlinear-solve accuracy.
+- Cartesian CTT/CTTK/XCTS now uses one physical three-component operator in
+  1D, 2D, and 3D executables. Active runtime axes map to canonical physical
+  `x/y/z`; omitted derivatives are zero. For the cell-centered conformal vector
+  operator, AMReX's 2D `MLTensorOp` with unit shear and zero bulk viscosity
+  retains the physical trace-free `+1/3 grad(div W)` coefficient, while the 1D
+  active component reduces to `(4/3) d2 W = S` and inactive components to
+  scalar Poisson. Three-rank nonzero manufactured CTT/XCTS matter solves
+  converge at second order in both cell/vertex centering in all dimensions,
+  including the physical vector and trace-free tensor, with axis-permuted
+  error norms agreeing to roundoff. Vacuum CTT/CTTK/hybrid/XCTS smoke checks
+  also pass. The manufactured matter is not an EoS equilibrium or an energy-
+  condition test; nonzero reduced CTTK convergence and a physical cross-chart
+  comparison remain unvalidated. The catalog physical Cartesian owner remains
+  `x y z` and lists numerical projections separately.
+- Constant-extrapolated nodal outer ghosts are not valid derivative data:
+  centered differences there halve the boundary slope and prevent the
+  conformal extrinsic-curvature error from converging. Cartesian ID first
+  derivatives use the generated second-order one-sided closure at physical
+  boundary vertices, while cell-centered face-BC ghosts and genuine
+  reflection/periodic ghosts retain centered differences. Include boundary
+  vertices in convergence norms; interior-only norms can hide this defect.
 - The shared CTT/CTTK/XCTS elliptic solve is second-order. Raising the operator,
   coarse-fine closure, and boundary treatment together is required before
   claiming fourth-order elliptic accuracy; changing only interpolation or a
@@ -1136,11 +1929,13 @@ this file records only the resulting current facts and evidence boundaries.
   and were removed. A material next improvement requires a different fast
   transform/distributed backend or validated threaded/accelerator execution,
   not more setup micro-optimization.
-- Batch same-operator convergence/counter reductions when their ownership is
-  shared. Packed ID L-infinity reductions and five-to-one relativistic event
-  sums preserve their scalar semantics and reduce collective count, but a
-  three-rank single-node test showed no independent wall-time benefit. Treat
-  these as communication/scaling cleanup until multi-node evidence exists.
+- Packed convergence norms must use AMReX's current subcommunicator, matching
+  `MultiFab::norm0` rather than assuming all world ranks participate. A consumed
+  linear-solve candidate can double as relaxed-update scratch, but preserve
+  subtraction/offset/scaling order: conformal scalar candidates represent
+  `f - 1`, whereas vector candidates represent the full field. Repopulate the
+  candidate before the next solve. Fewer allocations and collectives alone do
+  not establish a measurable throughput or multi-node scaling improvement.
 - A KEH backend is not the next speed optimization for the present reduced
   XCTS equations. The current cached angular diagonalization plus independent
   tridiagonal radial solves is linear in radial resolution per angular mode;
@@ -1156,12 +1951,46 @@ this file records only the resulting current facts and evidence boundaries.
 - Cartesian multipatch evolution owns unique cells. Patch overlap is ghost and
   interpolation context, not duplicated evolved volume. Conservative overset
   reconciliation remains unimplemented.
+- BlackHoles@Home's published binary-grid example is a useful future design
+  reference: small stretched Cartesian near-hole patches, surrounding
+  overlapping stretched spherical patches, and a shared spherical wave zone.
+  Its historical site also discusses changing the arrangement for merger.
+  BHaHAHA is the associated horizon finder: it samples host ADM fields onto
+  its own centered spherical volume/shell and uses radial-spoke interpolation
+  during surface relaxation. Keep evolution-patch exchange distinct from
+  horizon-search sampling. Adopting vacuum overlapping grids would not supply
+  the conservative fluid/CT seam contract required for GRMHD; reported memory
+  savings are not a matched-resolution PyFluid benchmark. See references.md.
 - Cylindrical and spherical single-patch kernels exist for validated method
   combinations. Mixed Cartesian-curvilinear seam evolution remains
   experimental. Do not infer production support from maps or sampling alone.
 - Radiation infrastructure includes catalog-driven surface, volume, and
   multipole reductions plus Weyl/Psi4 paths. Missing quantities should extend
   those catalogs, not create separate output implementations.
+- A star-shaped found horizon can use the same surface executor as a coordinate
+  sphere when its sampled radius supplies the oriented radial-graph area
+  vector. The Valencia baryon current is
+  `F_D^i = D(alpha v^i-beta^i)` and PyFluid reports `-integral F_D^i dS_i`,
+  positive inward. This is an instantaneous coordinate-surface rate; a moving
+  horizon world tube needs a surface-velocity correction for an exact closed
+  baryon budget.
+- Baryon rest mass is not converted one-for-one into curvature. The conserved
+  baryon current crosses the horizon, while the black hole's area,
+  Christodoulou mass, and spin respond to matter-energy/angular-momentum plus
+  gravitational and electromagnetic fluxes. Binding, thermal, kinetic, and
+  magnetic energy and radiation make `Delta M_H` differ from accreted
+  `Delta M_0`. For excision, require an exterior baryon balance using the inner
+  and outer fluxes, pure-outflow characteristic ownership, convergent horizon
+  mass/spin/area growth, and exterior constraint independence. Fixed-background
+  accretion cannot close the coupled black-hole energy budget by construction;
+  it is only the test-fluid limit.
+- After checkpoint load or prebuilt-hierarchy synchronization, average-down can
+  change a covered coarse relativistic conserved state even though every
+  active fine child remains recoverable. Reapply the normal final
+  relativistic acceptance after fluid and spacetime average-down and before
+  CFL recovery. The collapse checkpoint at `t=75` exposed this as a covered
+  level-0 C2P failure; the corrected restart reaches `t=75.6` with no runtime
+  recovery fallback or atmosphere reset.
 - Reusable metric/candidate scratch and longer stellar runs are open runtime
   work. Compile caching makes narrow iteration fast, but cold builds and broad
   header invalidation remain relevant; measure cold and cache-hit builds
@@ -1192,17 +2021,35 @@ this file records only the resulting current facts and evidence boundaries.
   I/O, and elliptic infrastructure. Consider Kokkos only for a measured isolated
   hotspot with a clean data boundary.
 
+- A physical-ID AMR box with `initial_refine_fixed_levels > 0` is the complete
+  startup hierarchy and suppresses automatic tags at the initial instant. For
+  a black-hole disk, use `initial_refine_fixed_levels = 0`: the box guarantees
+  near-hole resolution while the compact-object metric independently resolves
+  disk support after materialization. The q-power torus exposed this boundary:
+  a fixed horizon-only hierarchy left the torus at `dx=4`, caused 16
+  density-floor projections and a `7.21e-5` baryon residual on the first coarse
+  step; the combined seed/tag hierarchy had zero projections and a
+  `5.94e-18` residual at the same CFL 0.9.
+- Keep ordinary density-floor enforcement distinct from an atmosphere reset:
+  the latter means a failed primitive recovery was replaced by atmosphere.
+  The conservation ledger, not a second reset meaning, exposes material mass
+  added by floor enforcement. The maintained fixed-Kerr q-power disk
+  reaches `t=52.489 M` in 24 CFL-0.9 steps with a live horizon, true matter
+  excision, adaptive ratio-4/2 AMR, exterior baryon residual `1.86e-13`, and
+  zero C2P fallback or atmosphere reset. It is a functional
+  dynamics/accretion control; evolved-Z4c interior ownership and a longer
+  self-gravitating run remain open before a production claim.
+
 ## Next Milestones
 
 1. Extend the now-spinning, aligned Cook--Pfeiffer XCTS BH/BH-disk owner to a
    Kerr--Schild-seeded conformally curved solve, then add the full-3D
    nonaxisymmetric owner needed for a genuinely tilted black-hole disk. Keep
-   exact exterior, filled full-grid controls, and true evolution excision
-   separate. Before activating the present inner
-   candidate mask, add characteristic pure-outflow proof, inactive-cell
-   ownership, one-sided evolution/dissipation, FillPatch/prolongation/regrid
-   closure, and fixed/moving-mask validation. The stellar 3D tilt and artifact-
-   handoff infrastructure is already in place.
+   exact exterior, filled full-grid controls, fixed-Kerr matter excision, and
+   evolved-spacetime excision separate. Extend the latter's new short
+   fixed-worldtube boundary/AMR controls to longer coupled accretion and
+   exterior convergence; moving-mask control is not implemented. The
+   stellar 3D tilt and artifact-handoff infrastructure is already in place.
 2. Extend the saved fast analytic and CompOSE RNS models from the present short
    two-resolution evolutions to a meaningful fraction of a rotation, tracking
    baryon mass, angular momentum, constraints, central density, and modes.

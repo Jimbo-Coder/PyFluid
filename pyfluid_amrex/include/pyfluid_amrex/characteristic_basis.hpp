@@ -10,6 +10,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 MHDCharacteristicBasis mhd_characteristic_basis(
@@ -25,42 +27,42 @@ MHDCharacteristicBasis mhd_characteristic_basis(
    const amrex::Real sound2 = sound_speed * sound_speed;
    const amrex::Real b2 = (b_normal * b_normal + b_tangent1 * b_tangent1 + b_tangent2 * b_tangent2) / rho_ref;
    const amrex::Real ca2 = b_normal * b_normal / rho_ref;
-   amrex::Real discriminant = (sound2 + b2) * (sound2 + b2) - 4.0 * sound2 * ca2;
-   if (discriminant < 0.0 && discriminant > -1.0e-14) {
-      discriminant = 0.0;
+   amrex::Real discriminant = (sound2 + b2) * (sound2 + b2) - 4.0_rt * sound2 * ca2;
+   if (discriminant < 0.0_rt && discriminant > -1.0e-14_rt) {
+      discriminant = 0.0_rt;
    }
-   discriminant = amrex::max(discriminant, 0.0);
+   discriminant = amrex::max(discriminant, 0.0_rt);
    const amrex::Real root = std::sqrt(discriminant);
-   const amrex::Real fast2 = amrex::max(0.5 * (sound2 + b2 + root), 0.0);
-   const amrex::Real slow2 = amrex::max(0.5 * (sound2 + b2 - root), 0.0);
+   const amrex::Real fast2 = amrex::max(0.5_rt * (sound2 + b2 + root), 0.0_rt);
+   const amrex::Real slow2 = amrex::max(0.5_rt * (sound2 + b2 - root), 0.0_rt);
    const amrex::Real b_perp = std::sqrt(b_tangent1 * b_tangent1 + b_tangent2 * b_tangent2);
 
-   amrex::Real beta_t1 = 1.0 / std::sqrt(2.0);
+   amrex::Real beta_t1 = 1.0_rt / std::sqrt(2.0_rt);
    amrex::Real beta_t2 = beta_t1;
-   if (b_perp > 1.0e-14) {
+   if (b_perp > 1.0e-14_rt) {
       beta_t1 = b_tangent1 / b_perp;
       beta_t2 = b_tangent2 / b_perp;
    }
 
-   amrex::Real alpha_f = 1.0;
-   amrex::Real alpha_s = 0.0;
+   amrex::Real alpha_f = 1.0_rt;
+   amrex::Real alpha_s = 0.0_rt;
    const amrex::Real denominator = fast2 - slow2;
-   if (denominator > 1.0e-14) {
-      alpha_f = std::sqrt(amrex::max((sound2 - slow2) / denominator, 0.0));
-      alpha_s = std::sqrt(amrex::max((fast2 - sound2) / denominator, 0.0));
+   if (denominator > 1.0e-14_rt) {
+      alpha_f = std::sqrt(amrex::max((sound2 - slow2) / denominator, 0.0_rt));
+      alpha_s = std::sqrt(amrex::max((fast2 - sound2) / denominator, 0.0_rt));
    }
    amrex::Real velocity_denominator = alpha_f * alpha_f * fast2 + alpha_s * alpha_s * slow2;
-   if (velocity_denominator <= 1.0e-14) {
+   if (velocity_denominator <= 1.0e-14_rt) {
       velocity_denominator = sound2;
    }
    const amrex::Real sqrt_rho = std::sqrt(rho_ref);
-   const amrex::Real inv_sound_speed = 1.0 / sound_speed;
+   const amrex::Real inv_sound_speed = 1.0_rt / sound_speed;
 
    return {
       rho_ref,
-      1.0 / rho_ref,
+      1.0_rt / rho_ref,
       sqrt_rho,
-      1.0 / sqrt_rho,
+      1.0_rt / sqrt_rho,
       sound_speed,
       inv_sound_speed,
       sound2,
@@ -71,9 +73,9 @@ MHDCharacteristicBasis mhd_characteristic_basis(
       alpha_s,
       beta_t1,
       beta_t2,
-      b_normal < 0.0 ? -1.0 : 1.0,
+      b_normal < 0.0_rt ? -1.0_rt : 1.0_rt,
       velocity_denominator,
-      1.0 / velocity_denominator,
+      1.0_rt / velocity_denominator,
    };
 }
 

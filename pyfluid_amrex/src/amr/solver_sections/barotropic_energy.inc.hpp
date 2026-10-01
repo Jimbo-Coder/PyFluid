@@ -1,6 +1,7 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // Barotropic EOS energy reset helpers.
 
+public:
    template <int NComp, int EOSMethod>
    void reset_barotropic_energy_level(int lev)
    {
@@ -19,7 +20,7 @@
          for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             const amrex::Box& bx = mfi.tilebox();
             const auto s = fluid_state_.state()[lev]->array(mfi);
-            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            amrex::ParallelFor(bx, [s, eos] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                if constexpr (has_mhd_components<NComp>()) {
                   MHDState cell = load_mhd_state(s, i, j, k);
                   reset_barotropic_mhd_energy<EOSMethod>(cell, eos);
@@ -34,6 +35,8 @@
          }
       }
    }
+
+private:
 
    template <int NComp, int EOSMethod>
    void reset_barotropic_energy_all_levels()

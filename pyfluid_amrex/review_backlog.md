@@ -251,6 +251,23 @@ were checked separately:
   cleanup-first task: require exact face-field/reflux equivalence, rotated-axis
   controls, AMR+CT restart, and divB/conservation evidence.
 
+## AMReX 26.10 optional integration review (Cycle458)
+
+- `MEASURED / DEFER production adoption`: `MLMG::setNoGpuSync(true)` uses a
+  single-stream solve region and synchronizes before returning. The warmed
+  Metal FP32 cell-centered periodic Helmholtz control is 7.7--9.3x faster
+  for 32/64-cell one-box and 64-cell sixteen-box layouts; both orders retain
+  identical error, mean error and residual. Before enabling it, measure the
+  actual diffusion/gravity operators on/off, including nodal/edge and larger
+  box layouts. No production call site has changed. Exact probe source,
+  flags and logs: `runs/current/infrastructure_audit/cycle458/`.
+- `DEFER`: new sparse AMG/Krylov requires an actual sparse-matrix operator.
+  Current structured MLMG consumers do not justify a new assembly route.
+- `AVAILABLE / DEFER case tuning`: upstream whole-direction refinement and
+  unsplit-box controls may suit thin/slab anisotropic layouts. They preserve
+  the finite-volume transfer contract and do not establish new CT/refinement
+  support; evaluate with the existing physical-error and resource gates.
+
 ## Raw Review Provenance
 
 - `../spark_amrex_review/2026-07-20_final_refinement.txt`: concrete final

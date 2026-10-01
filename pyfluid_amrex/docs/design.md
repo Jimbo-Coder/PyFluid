@@ -28,7 +28,7 @@ make a path supported.
 | CT with explicit resistivity | Production for validated Cartesian cases |
 | Hydro implicit viscosity | Available; use its focused validation |
 | Cartesian periodic implicit CT resistivity | Available in 2D/3D on one AMR level; use its focused validation |
-| Multilevel or curvilinear implicit CT resistivity | Unsupported by the AMReX 26.08 `MLCurlCurl` backend |
+| Multilevel or curvilinear implicit CT resistivity | Unsupported by the AMReX 26.09 `MLCurlCurl` backend |
 | Homogeneous Cartesian multipatch | Hydro-only finite-volume path; use multipatch gate |
 | Cylindrical/spherical single patch | Coordinate-general kernel path; validate the exact method combination |
 | Mixed Cartesian-curvilinear shell layouts | Geometry/maps and sampling only; seam evolution is experimental |
@@ -447,9 +447,11 @@ faces; zero is meaningful, while a positive magnitude is diagnostic only.
 The runtime AMR policy is cataloged in `schema/methods.toml`; it is not a
 template axis or an implicit maximum over every stored GF. `lohner` preserves
 the broad density/pressure/velocity/magnetic/spacetime flow-study indicator,
-`matter` tracks density-supported matter above a cataloged multiple of the
-configured density floor, `spacetime` tracks stored `chi - 1` without fluid
-recovery, and `compact_object` combines the latter two. Passive scalars and
+`matter` broadly tracks density-supported matter above ten configured floors,
+`spacetime` tracks stored `chi - 1` without fluid recovery, and
+`compact_object` combines spacetime support with matter above ten thousand
+configured floors so an expanding numerical-atmosphere halo cannot own the
+hierarchy. Passive scalars and
 newly added output fields never drive tags automatically. `max_level`,
 `min_feature_length`, and cell budgets are safety limits; the selected physical
 metric should normally end refinement. Curvilinear origin guards are
@@ -478,7 +480,7 @@ mismatches. CT resistivity is the corresponding edge-EMF contribution. These
 explicit operators are generated from the same coordinate-independent physics
 across every supported dimension and coordinate family. The implicit CT update
 uses the same generated resistive EMF and CT curl update, but its linear solve
-is limited to one-level Cartesian 2D/3D by AMReX 26.08 `MLCurlCurl`.
+is limited to one-level Cartesian 2D/3D by AMReX 26.09 `MLCurlCurl`.
 Fluid viscosity and diffusion are currently Newtonian-only; configuration
 rejects RHD/RMHD combinations rather than silently applying those operators.
 

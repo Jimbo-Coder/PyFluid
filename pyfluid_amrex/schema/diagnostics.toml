@@ -123,6 +123,14 @@ operation = "derived"
 groups = ["ledger"]
 
 [[runtime]]
+name = "external_mass_budget_valid"
+label = "b_{\\rm ext,M}"
+operation = "counter"
+groups = ["ledger"]
+storage = "integer"
+default = "1"
+
+[[runtime]]
 name = "external_budget_valid"
 label = "b_{\\rm ext}"
 operation = "counter"
@@ -462,7 +470,7 @@ label = "\\|\\mathcal H\\|_\\infty"
 operation = "linf_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_hamiltonian_l2"
@@ -470,7 +478,7 @@ label = "\\|\\mathcal H\\|_2"
 operation = "l2_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_hamiltonian_interior_linf"
@@ -478,7 +486,7 @@ label = "\\|\\mathcal H\\|_{\\infty,\\mathrm{interior}}"
 operation = "linf_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_hamiltonian_interior_l2"
@@ -486,7 +494,7 @@ label = "\\|\\mathcal H\\|_{2,\\mathrm{interior}}"
 operation = "l2_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_hamiltonian_cf_linf"
@@ -494,7 +502,7 @@ label = "\\|\\mathcal H\\|_{\\infty,\\mathrm{CF}}"
 operation = "linf_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_hamiltonian_cf_l2"
@@ -502,7 +510,7 @@ label = "\\|\\mathcal H\\|_{2,\\mathrm{CF}}"
 operation = "l2_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_hamiltonian_bh_exterior_linf"
@@ -510,7 +518,7 @@ label = "\\|\\mathcal H\\|_{\\infty,r_{\\rm KS}>r_+}"
 operation = "linf_norm"
 groups = ["constraints", "black_hole"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime", "black_hole"]
+requirements = ["z4c_constraints", "black_hole"]
 
 [[runtime]]
 name = "z4c_hamiltonian_bh_exterior_l2"
@@ -518,7 +526,7 @@ label = "\\|\\mathcal H\\|_{2,r_{\\rm KS}>r_+}"
 operation = "l2_norm"
 groups = ["constraints", "black_hole"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime", "black_hole"]
+requirements = ["z4c_constraints", "black_hole"]
 
 [[runtime]]
 name = "z4c_momentum_bh_exterior_linf"
@@ -526,7 +534,7 @@ label = "\\|\\mathcal M_i\\|_{\\infty,r_{\\rm KS}>r_+}"
 operation = "linf_norm"
 groups = ["constraints", "black_hole"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime", "black_hole"]
+requirements = ["z4c_constraints", "black_hole"]
 
 [[runtime]]
 name = "z4c_momentum_linf"
@@ -534,7 +542,7 @@ label = "\\|\\mathcal M_i\\|_\\infty"
 operation = "linf_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_z_linf"
@@ -542,7 +550,7 @@ label = "\\|Z_i\\|_\\infty"
 operation = "linf_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_theta_linf"
@@ -550,7 +558,7 @@ label = "\\|\\Theta\\|_\\infty"
 operation = "linf_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_log_conformal_determinant_linf"
@@ -558,7 +566,7 @@ label = "\\|\\ln\\det\\tilde\\gamma\\|_\\infty"
 operation = "linf_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
 
 [[runtime]]
 name = "z4c_trace_a_tilde_linf"
@@ -566,7 +574,108 @@ label = "\\|\\mathrm{tr}\\tilde A\\|_\\infty"
 operation = "linf_norm"
 groups = ["constraints"]
 dependencies = ["z4c_constraints"]
-requirements = ["spacetime"]
+requirements = ["z4c_constraints"]
+
+
+# Runtime: Optional fixed coordinate constraint regions
+# H RMS uses coordinate volume; momentum Linf retains the existing
+# coordinate-component norm. Near/far partition the complete region.
+
+[[runtime]]
+name = "z4c_hamiltonian_region_l2"
+label = "\\|\\mathcal H\\|_{2,\\mathrm{region}}"
+operation = "l2_norm"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_hamiltonian_region_linf"
+label = "\\|\\mathcal H\\|_{\\infty,\\mathrm{region}}"
+operation = "linf_norm"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_momentum_region_linf"
+label = "\\|\\mathcal M_i\\|_{\\infty,\\mathrm{region}}"
+operation = "linf_norm"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_region_volume"
+label = "V_{\\mathrm{region}}"
+operation = "volume_integral"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_hamiltonian_near_l2"
+label = "\\|\\mathcal H\\|_{2,\\mathrm{near}}"
+operation = "l2_norm"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_hamiltonian_near_linf"
+label = "\\|\\mathcal H\\|_{\\infty,\\mathrm{near}}"
+operation = "linf_norm"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_momentum_near_linf"
+label = "\\|\\mathcal M_i\\|_{\\infty,\\mathrm{near}}"
+operation = "linf_norm"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_near_volume"
+label = "V_{\\mathrm{near}}"
+operation = "volume_integral"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_hamiltonian_far_l2"
+label = "\\|\\mathcal H\\|_{2,\\mathrm{far}}"
+operation = "l2_norm"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_hamiltonian_far_linf"
+label = "\\|\\mathcal H\\|_{\\infty,\\mathrm{far}}"
+operation = "linf_norm"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_momentum_far_linf"
+label = "\\|\\mathcal M_i\\|_{\\infty,\\mathrm{far}}"
+operation = "linf_norm"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
+
+[[runtime]]
+name = "z4c_far_volume"
+label = "V_{\\mathrm{far}}"
+operation = "volume_integral"
+groups = ["constraint_regions"]
+dependencies = ["z4c_constraints"]
+requirements = ["z4c_constraints", "constraint_regions"]
 
 # Runtime: Black Hole
 
@@ -580,9 +689,17 @@ requirements = ["black_hole"]
 # Runtime: Horizon
 
 [[runtime]]
+name = "black_hole_horizon_found"
+label = "I_{\\rm AH}"
+operation = "counter"
+groups = ["horizon"]
+requirements = ["spacetime"]
+
+[[runtime]]
 name = "black_hole_horizon_area"
 label = "A_{\\rm H}"
 operation = "surface_integral"
+surface = "apparent_horizon"
 groups = ["horizon"]
 requirements = ["spacetime"]
 
@@ -598,6 +715,7 @@ requirements = ["spacetime"]
 name = "black_hole_horizon_equatorial_circumference"
 label = "C_{\\rm e}"
 operation = "surface_integral"
+surface = "apparent_horizon"
 groups = ["horizon"]
 requirements = ["spacetime"]
 
@@ -605,6 +723,7 @@ requirements = ["spacetime"]
 name = "black_hole_horizon_polar_circumference"
 label = "C_{\\rm p}"
 operation = "surface_integral"
+surface = "apparent_horizon"
 groups = ["horizon"]
 requirements = ["spacetime"]
 
@@ -631,9 +750,18 @@ family = "black_hole_horizon_coordinate_angular_momentum"
 names = ["black_hole_horizon_coordinate_angular_momentum1", "black_hole_horizon_coordinate_angular_momentum2", "black_hole_horizon_coordinate_angular_momentum3"]
 labels = ["J_{\\rm H,1}^{\\rm coord}", "J_{\\rm H,2}^{\\rm coord}", "J_{\\rm H,3}^{\\rm coord}"]
 operation = "surface_integral"
+surface = "apparent_horizon"
 groups = ["horizon"]
 dependencies = ["black_hole_horizon_area"]
 requirements = ["spacetime"]
+
+[[runtime]]
+name = "black_hole_horizon_baryon_accretion_rate"
+label = "\\dot M_{0,\\rm H}"
+operation = "surface_integral"
+surface = "apparent_horizon"
+groups = ["horizon_flux"]
+requirements = ["relativistic", "spacetime"]
 
 [[runtime]]
 name = "black_hole_horizon_coordinate_angular_momentum_magnitude"
@@ -675,6 +803,7 @@ requirements = ["spacetime"]
 name = "adm_mass_surface"
 label = "M_{\\rm ADM}^{S}"
 operation = "surface_integral"
+surface = "diagnostic_surface"
 groups = ["global_gr"]
 dependencies = ["z4c_physical_geometry"]
 requirements = ["spacetime"]
@@ -699,6 +828,7 @@ requirements = ["spacetime"]
 name = "komar_mass_surface"
 label = "M_{\\rm K}^{S}"
 operation = "surface_integral"
+surface = "diagnostic_surface"
 groups = ["global_gr"]
 dependencies = ["z4c_physical_geometry"]
 requirements = ["spacetime"]
@@ -725,6 +855,7 @@ family = "adm_momentum_surface"
 names = ["adm_momentum1_surface", "adm_momentum2_surface", "adm_momentum3_surface"]
 labels = ["P_{\\rm ADM,1}^{S}", "P_{\\rm ADM,2}^{S}", "P_{\\rm ADM,3}^{S}"]
 operation = "surface_integral"
+surface = "diagnostic_surface"
 groups = ["global_gr"]
 dependencies = ["z4c_physical_geometry"]
 requirements = ["spacetime"]
@@ -745,6 +876,7 @@ family = "adm_angular_momentum_surface"
 names = ["adm_angular_momentum1_surface", "adm_angular_momentum2_surface", "adm_angular_momentum3_surface"]
 labels = ["J_{\\rm ADM,1}^{S}", "J_{\\rm ADM,2}^{S}", "J_{\\rm ADM,3}^{S}"]
 operation = "surface_integral"
+surface = "diagnostic_surface"
 groups = ["global_gr"]
 dependencies = ["z4c_physical_geometry"]
 requirements = ["spacetime"]
@@ -772,6 +904,7 @@ requirements = ["spacetime"]
 name = "matter_energy_flux"
 label = "\\dot E_{\\rm matter}^{S}"
 operation = "surface_integral"
+surface = "diagnostic_surface"
 groups = ["radiation"]
 requirements = ["spacetime"]
 

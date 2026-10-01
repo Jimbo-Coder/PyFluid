@@ -16,6 +16,8 @@
 #include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 void sync_rmhd_primitive_b_from_densitized_faces_impl(
@@ -46,14 +48,14 @@ void sync_rmhd_primitive_b_from_densitized_faces_impl(
          const SpacetimeMetric metric = generated::z4c_spacetime_metric(
             load_z4c_state(spacetime, i, j, k)
          );
-         const amrex::Real inverse_volume = 1.0 / metric.sqrt_det_gamma;
-         output(i, j, k, B1) = 0.5 * inverse_volume * (
+         const amrex::Real inverse_volume = 1.0_rt / metric.sqrt_det_gamma;
+         output(i, j, k, B1) = 0.5_rt * inverse_volume * (
             magnetic1(i, j, k, 0) + magnetic1(i + 1, j, k, 0)
          );
-         output(i, j, k, B2) = 0.5 * inverse_volume * (
+         output(i, j, k, B2) = 0.5_rt * inverse_volume * (
             magnetic2(i, j, k, 0) + magnetic2(i, j + 1, k, 0)
          );
-         output(i, j, k, B3) = 0.5 * inverse_volume * (
+         output(i, j, k, B3) = 0.5_rt * inverse_volume * (
             magnetic3(i, j, k, 0) + magnetic3(i, j, k + 1, 0)
          );
       });
@@ -109,7 +111,7 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
       + parameters.axis[1] * parameters.axis[1]
       + parameters.axis[2] * parameters.axis[2]
    );
-   if (!(axis_norm > 0.0) || !std::isfinite(axis_norm)) {
+   if (!(axis_norm > 0.0_rt) || !std::isfinite(axis_norm)) {
       amrex::Abort("pressure-poloidal magnetic seed axis is invalid");
    }
    const std::array<amrex::Real, 3> axis{{
@@ -135,20 +137,20 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
       );
    }
 
-   workspace.pressure->setVal(0.0);
+   workspace.pressure->setVal(0.0_rt);
    amrex::MultiFab::Copy(
       *workspace.pressure, primitive, ENERGY, 0, 1, 0
    );
    workspace.pressure->FillBoundary(geometry.periodicity());
    amrex::Real maximum_pressure = workspace.pressure->norm0(0, 0, true);
    amrex::ParallelDescriptor::ReduceRealMax(maximum_pressure);
-   if (!(maximum_pressure > 0.0) || !std::isfinite(maximum_pressure)) {
+   if (!(maximum_pressure > 0.0_rt) || !std::isfinite(maximum_pressure)) {
       amrex::Abort("pressure-poloidal magnetic seed has no positive pressure support");
    }
 
    const auto lower = geometry.ProbLoArray();
    const auto spacing = geometry.CellSizeArray();
-   const amrex::Real inverse_maximum_pressure = 1.0 / maximum_pressure;
+   const amrex::Real inverse_maximum_pressure = 1.0_rt / maximum_pressure;
    const amrex::Real cutoff = parameters.pressure_cutoff_fraction;
    const amrex::Real exponent = parameters.exponent;
    const amrex::Real axis1 = axis[0];
@@ -157,7 +159,7 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
    const amrex::Real center1 = parameters.center[0];
    const amrex::Real center2 = parameters.center[1];
    const amrex::Real center3 = parameters.center[2];
-   set_edge_field_value(workspace.vector_potential, 0.0);
+   set_edge_field_value(workspace.vector_potential, 0.0_rt);
    for (int component = 0; component < 3; ++component) {
       amrex::MultiFab& edge = *workspace.vector_potential.e[component];
 #ifdef AMREX_USE_OMP
@@ -173,23 +175,23 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
             int i, int j, int k
          ) noexcept {
-            amrex::Real edge_pressure = 0.0;
+            amrex::Real edge_pressure = 0.0_rt;
             if (vector_component == 0) {
-               edge_pressure = 0.25 * (
+               edge_pressure = 0.25_rt * (
                   pressure(i, j - 1, k - 1, 0)
                   + pressure(i, j, k - 1, 0)
                   + pressure(i, j - 1, k, 0)
                   + pressure(i, j, k, 0)
                );
             } else if (vector_component == 1) {
-               edge_pressure = 0.25 * (
+               edge_pressure = 0.25_rt * (
                   pressure(i - 1, j, k - 1, 0)
                   + pressure(i, j, k - 1, 0)
                   + pressure(i - 1, j, k, 0)
                   + pressure(i, j, k, 0)
                );
             } else {
-               edge_pressure = 0.25 * (
+               edge_pressure = 0.25_rt * (
                   pressure(i - 1, j - 1, k, 0)
                   + pressure(i, j - 1, k, 0)
                   + pressure(i - 1, j, k, 0)
@@ -198,15 +200,15 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
             }
             const amrex::Real x = lower[0]
                + (static_cast<amrex::Real>(i)
-                  + (vector_component == 0 ? 0.5 : 0.0)) * spacing[0]
+                  + (vector_component == 0 ? 0.5_rt : 0.0_rt)) * spacing[0]
                - center1;
             const amrex::Real y = lower[1]
                + (static_cast<amrex::Real>(j)
-                  + (vector_component == 1 ? 0.5 : 0.0)) * spacing[1]
+                  + (vector_component == 1 ? 0.5_rt : 0.0_rt)) * spacing[1]
                - center2;
             const amrex::Real z = lower[2]
                + (static_cast<amrex::Real>(k)
-                  + (vector_component == 2 ? 0.5 : 0.0)) * spacing[2]
+                  + (vector_component == 2 ? 0.5_rt : 0.0_rt)) * spacing[2]
                - center3;
             const amrex::Real tangent1 = axis2 * z - axis3 * y;
             const amrex::Real tangent2 = axis3 * x - axis1 * z;
@@ -215,7 +217,7 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
                ? tangent1 : (vector_component == 1 ? tangent2 : tangent3);
             const amrex::Real support = amrex::max(
                edge_pressure * inverse_maximum_pressure - cutoff,
-               amrex::Real(0.0)
+               amrex::Real(0.0_rt)
             );
             potential(i, j, k, 0) = tangent * std::pow(support, exponent);
          });
@@ -226,11 +228,11 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
       workspace.vector_potential, geometry, config
    );
    for (int direction = 0; direction < 3; ++direction) {
-      face_magnetic.b[direction]->setVal(0.0);
+      face_magnetic.b[direction]->setVal(0.0_rt);
    }
    // The CT update is B <- B - dt curl(E); dt=-1 applies B=curl(A).
    apply_edge_electric_curl(
-      face_magnetic, workspace.vector_potential, geometry, -1.0, config
+      face_magnetic, workspace.vector_potential, geometry, -1.0_rt, config
    );
    apply_face_b_boundary(face_magnetic, geometry, config);
    // The CT face owner is the Valencia magnetic density sqrt(gamma) B^i.
@@ -239,7 +241,7 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
       primitive, face_magnetic, cell_spacetime
    );
 
-   workspace.comoving_field_squared->setVal(0.0);
+   workspace.comoving_field_squared->setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -269,7 +271,7 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
    amrex::Real maximum_comoving_squared =
       workspace.comoving_field_squared->norm0(0, 0, true);
    amrex::ParallelDescriptor::ReduceRealMax(maximum_comoving_squared);
-   if (!(maximum_comoving_squared > 0.0)
+   if (!(maximum_comoving_squared > 0.0_rt)
        || !std::isfinite(maximum_comoving_squared)) {
       amrex::Abort("pressure-poloidal magnetic seed produced no finite field");
    }
@@ -334,9 +336,9 @@ void allocate_grad_shafranov_workspace(
       workspace.rhs[component] = std::make_unique<amrex::MultiFab>(
          primitive.boxArray(), primitive.DistributionMap(), 1, 0
       );
-      workspace.vector_potential[component]->setVal(0.0);
-      workspace.candidate[component]->setVal(0.0);
-      workspace.rhs[component]->setVal(0.0);
+      workspace.vector_potential[component]->setVal(0.0_rt);
+      workspace.candidate[component]->setVal(0.0_rt);
+      workspace.rhs[component]->setVal(0.0_rt);
    }
    workspace.flux_function = std::make_unique<amrex::MultiFab>(
       primitive.boxArray(), primitive.DistributionMap(), 1, 1
@@ -356,8 +358,8 @@ void allocate_grad_shafranov_workspace(
    workspace.divergence = std::make_unique<amrex::MultiFab>(
       primitive.boxArray(), primitive.DistributionMap(), 1, 0
    );
-   workspace.flux_function->setVal(0.0);
-   workspace.metric_potential->setVal(0.0);
+   workspace.flux_function->setVal(0.0_rt);
+   workspace.metric_potential->setVal(0.0_rt);
    allocate_edge_electric_field(
       workspace.edge_vector_potential,
       hierarchy.grids[0],
@@ -404,13 +406,13 @@ void fill_grad_shafranov_geometry_and_flux(
          int i, int j, int k
       ) noexcept {
          const amrex::Real x = lower[0]
-            + (static_cast<amrex::Real>(i - ilo) + 0.5) * spacing[0]
+            + (static_cast<amrex::Real>(i - ilo) + 0.5_rt) * spacing[0]
             - center1;
          const amrex::Real y = lower[1]
-            + (static_cast<amrex::Real>(j - jlo) + 0.5) * spacing[1]
+            + (static_cast<amrex::Real>(j - jlo) + 0.5_rt) * spacing[1]
             - center2;
          const amrex::Real z = lower[2]
-            + (static_cast<amrex::Real>(k - klo) + 0.5) * spacing[2]
+            + (static_cast<amrex::Real>(k - klo) + 0.5_rt) * spacing[2]
             - center3;
          const amrex::Real tangent1 = axis2 * z - axis3 * y;
          const amrex::Real tangent2 = axis3 * x - axis1 * z;
@@ -424,9 +426,9 @@ void fill_grad_shafranov_geometry_and_flux(
          );
          const amrex::Real log_volume = std::log(metric.sqrt_det_gamma);
          metric_output(i, j, k, 0) = std::log(metric.lapse)
-            - log_volume / 3.0;
+            - log_volume / 3.0_rt;
          metric_output(i, j, k, 1) = std::exp(
-            (4.0 / 3.0) * log_volume
+            (4.0_rt / 3.0_rt) * log_volume
          );
       });
    }
@@ -484,9 +486,9 @@ void fill_grad_shafranov_rhs(
    const int ilo = domain.smallEnd(0);
    const int jlo = domain.smallEnd(1);
    const int klo = domain.smallEnd(2);
-   const amrex::Real inverse_two_dx1 = 0.5 / spacing[0];
-   const amrex::Real inverse_two_dx2 = 0.5 / spacing[1];
-   const amrex::Real inverse_two_dx3 = 0.5 / spacing[2];
+   const amrex::Real inverse_two_dx1 = 0.5_rt / spacing[0];
+   const amrex::Real inverse_two_dx2 = 0.5_rt / spacing[1];
+   const amrex::Real inverse_two_dx3 = 0.5_rt / spacing[2];
    const amrex::Real axis1 = parameters.axis[0];
    const amrex::Real axis2 = parameters.axis[1];
    const amrex::Real axis3 = parameters.axis[2];
@@ -514,13 +516,13 @@ void fill_grad_shafranov_rhs(
          int i, int j, int k
       ) noexcept {
          const amrex::Real x = lower[0]
-            + (static_cast<amrex::Real>(i - ilo) + 0.5) * spacing[0]
+            + (static_cast<amrex::Real>(i - ilo) + 0.5_rt) * spacing[0]
             - center1;
          const amrex::Real y = lower[1]
-            + (static_cast<amrex::Real>(j - jlo) + 0.5) * spacing[1]
+            + (static_cast<amrex::Real>(j - jlo) + 0.5_rt) * spacing[1]
             - center2;
          const amrex::Real z = lower[2]
-            + (static_cast<amrex::Real>(k - klo) + 0.5) * spacing[2]
+            + (static_cast<amrex::Real>(k - klo) + 0.5_rt) * spacing[2]
             - center3;
          const amrex::Real tangent1 = axis2 * z - axis3 * y;
          const amrex::Real tangent2 = axis3 * x - axis1 * z;
@@ -528,11 +530,11 @@ void fill_grad_shafranov_rhs(
          const amrex::Real cylindrical_radius_squared =
             tangent1 * tangent1 + tangent2 * tangent2
             + tangent3 * tangent3;
-         amrex::Real source1 = 0.0;
-         amrex::Real source2 = 0.0;
-         amrex::Real source3 = 0.0;
+         amrex::Real source1 = 0.0_rt;
+         amrex::Real source2 = 0.0_rt;
+         amrex::Real source3 = 0.0_rt;
          if (cylindrical_radius_squared
-             > 64.0 * std::numeric_limits<amrex::Real>::epsilon()) {
+             > 64.0_rt * std::numeric_limits<amrex::Real>::epsilon()) {
             const amrex::Real cylindrical_radius =
                std::sqrt(cylindrical_radius_squared);
             const amrex::Real flux_value = flux(i, j, k, 0);
@@ -560,7 +562,7 @@ void fill_grad_shafranov_rhs(
             const InitialDataSamplePoint sample{physical, physical};
             const EOSThermodynamicState atmosphere_state =
                initial_atmosphere_state<EOSRuntime>(atmosphere, sample);
-            amrex::Real rho_h = 0.0;
+            amrex::Real rho_h = 0.0_rt;
             if (initial_matter_exceeds_atmosphere(
                    state(i, j, k, RHO), atmosphere_state.rho
                 )) {
@@ -570,14 +572,14 @@ void fill_grad_shafranov_rhs(
                rho_h = matter.rho * matter.specific_enthalpy;
             }
             const amrex::Real magnetization_derivative = magnetic_k * (
-               1.0 + magnetic_xi * flux_value
+               1.0_rt + magnetic_xi * flux_value
             );
             const amrex::Real amplitude = -(
                gradient_coupling / cylindrical_radius
                + metric(i, j, k, 1) * cylindrical_radius * rho_h
                   * magnetization_derivative
             );
-            const amrex::Real inverse_radius = 1.0 / cylindrical_radius;
+            const amrex::Real inverse_radius = 1.0_rt / cylindrical_radius;
             source1 = amplitude * tangent1 * inverse_radius;
             source2 = amplitude * tangent2 * inverse_radius;
             source3 = amplitude * tangent3 * inverse_radius;
@@ -596,7 +598,7 @@ void fill_edge_vector_potential(
    PoloidalGradShafranovWorkspace& workspace
 )
 {
-   set_edge_field_value(workspace.edge_vector_potential, 0.0);
+   set_edge_field_value(workspace.edge_vector_potential, 0.0_rt);
    for (int component = 0; component < 3; ++component) {
       amrex::MultiFab& edge = *workspace.edge_vector_potential.e[component];
 #ifdef AMREX_USE_OMP
@@ -613,17 +615,17 @@ void fill_edge_vector_potential(
             int i, int j, int k
          ) noexcept {
             if (vector_component == 0) {
-               output(i, j, k, 0) = 0.25 * (
+               output(i, j, k, 0) = 0.25_rt * (
                   cell(i, j - 1, k - 1, 0) + cell(i, j, k - 1, 0)
                   + cell(i, j - 1, k, 0) + cell(i, j, k, 0)
                );
             } else if (vector_component == 1) {
-               output(i, j, k, 0) = 0.25 * (
+               output(i, j, k, 0) = 0.25_rt * (
                   cell(i - 1, j, k - 1, 0) + cell(i, j, k - 1, 0)
                   + cell(i - 1, j, k, 0) + cell(i, j, k, 0)
                );
             } else {
-               output(i, j, k, 0) = 0.25 * (
+               output(i, j, k, 0) = 0.25_rt * (
                   cell(i - 1, j - 1, k, 0) + cell(i, j - 1, k, 0)
                   + cell(i - 1, j, k, 0) + cell(i, j, k, 0)
                );
@@ -673,7 +675,7 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
       + parameters.axis[1] * parameters.axis[1]
       + parameters.axis[2] * parameters.axis[2]
    );
-   if (!(axis_norm > 0.0) || !std::isfinite(axis_norm)
+   if (!(axis_norm > 0.0_rt) || !std::isfinite(axis_norm)
        || !cold_barotrope_supported(eos)) {
       amrex::Abort("invalid poloidal Grad-Shafranov equilibrium parameters");
    }
@@ -690,7 +692,7 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
    );
 
    auto vector_boundary = InitialDataEllipticBoundaryConditions::constant(
-      hierarchy, 3, 1.0, 0.0, 0.0
+      hierarchy, 3, 1.0_rt, 0.0_rt, 0.0_rt
    );
    set_initial_data_reflection_boundaries(
       hierarchy, vector_boundary, magnetic_vector_potential_symmetries()
@@ -701,19 +703,19 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
    set_centered_power_law_robin_boundary(
       hierarchy,
       vector_boundary,
-      amrex::Vector<amrex::Real>{0.0, 0.0, 0.0},
-      2.0,
+      amrex::Vector<amrex::Real>{0.0_rt, 0.0_rt, 0.0_rt},
+      2.0_rt,
       &center
    );
    InitialDataEllipticOptions linear_options;
    linear_options.boundary_interpolation_order = 4;
    linear_options.max_iterations = 300;
    linear_options.max_fmg_iterations = 1;
-   linear_options.relative_tolerance = 1.0e-12;
+   linear_options.relative_tolerance = 1.0e-12_rt;
 
    PoloidalGradShafranovSummary summary;
-   amrex::Real update_norm = 0.0;
-   amrex::Real potential_norm = 0.0;
+   amrex::Real update_norm = 0.0_rt;
+   amrex::Real potential_norm = 0.0_rt;
    for (int component = 0; component < 3; ++component) {
       amrex::MultiFab::Copy(
          *workspace.candidate[component],
@@ -768,7 +770,7 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
       );
    }
    summary.relative_potential_update = update_norm / std::max(
-      potential_norm, amrex::Real(1.0e-300)
+      potential_norm, amrex::Real(1.0e-300_rt)
    );
 
    fill_grad_shafranov_geometry_and_flux(
@@ -776,14 +778,14 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
    );
    fill_edge_vector_potential(hierarchy, config, workspace);
    for (int direction = 0; direction < 3; ++direction) {
-      face_magnetic.b[direction]->setVal(0.0);
+      face_magnetic.b[direction]->setVal(0.0_rt);
    }
    // curl(A) is the densitized Valencia field sqrt(gamma) B^i.
    apply_edge_electric_curl(
       face_magnetic,
       workspace.edge_vector_potential,
       hierarchy.geometry[0],
-      -1.0,
+      -1.0_rt,
       config
    );
    apply_face_b_boundary(face_magnetic, hierarchy.geometry[0], config);
@@ -814,13 +816,13 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
    fill_grad_shafranov_rhs(
       hierarchy, primitive, eos, rotating_star, normalized, workspace
    );
-   workspace.equation_residual->setVal(0.0);
-   workspace.bernoulli_residual->setVal(0.0);
-   workspace.comoving_field_squared->setVal(0.0);
+   workspace.equation_residual->setVal(0.0_rt);
+   workspace.bernoulli_residual->setVal(0.0_rt);
+   workspace.comoving_field_squared->setVal(0.0_rt);
    const auto spacing = hierarchy.geometry[0].CellSizeArray();
-   const amrex::Real inverse_dx1_squared = 1.0 / (spacing[0] * spacing[0]);
-   const amrex::Real inverse_dx2_squared = 1.0 / (spacing[1] * spacing[1]);
-   const amrex::Real inverse_dx3_squared = 1.0 / (spacing[2] * spacing[2]);
+   const amrex::Real inverse_dx1_squared = 1.0_rt / (spacing[0] * spacing[0]);
+   const amrex::Real inverse_dx2_squared = 1.0_rt / (spacing[1] * spacing[1]);
+   const amrex::Real inverse_dx3_squared = 1.0_rt / (spacing[2] * spacing[2]);
    const auto lower = hierarchy.geometry[0].ProbLoArray();
    const amrex::Box domain = hierarchy.geometry[0].Domain();
    const int ilo = domain.smallEnd(0);
@@ -863,14 +865,14 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
          for (int component = 0; component < 3; ++component) {
             const auto field = potentials[component];
             const amrex::Real laplacian =
-               (field(i + 1, j, k, 0) - 2.0 * field(i, j, k, 0)
+               (field(i + 1, j, k, 0) - 2.0_rt * field(i, j, k, 0)
                   + field(i - 1, j, k, 0)) * inverse_dx1_squared
-               + (field(i, j + 1, k, 0) - 2.0 * field(i, j, k, 0)
+               + (field(i, j + 1, k, 0) - 2.0_rt * field(i, j, k, 0)
                   + field(i, j - 1, k, 0)) * inverse_dx2_squared
-               + (field(i, j, k + 1, 0) - 2.0 * field(i, j, k, 0)
+               + (field(i, j, k + 1, 0) - 2.0_rt * field(i, j, k, 0)
                   + field(i, j, k - 1, 0)) * inverse_dx3_squared;
             residual(i, j, k, component) = interior
-               ? laplacian - sources[component](i, j, k, 0) : 0.0;
+               ? laplacian - sources[component](i, j, k, 0) : 0.0_rt;
          }
          const SpacetimeMetric metric = generated::z4c_spacetime_metric(
             load_z4c_state(spacetime, i, j, k)
@@ -882,11 +884,11 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
             generated::rmhd_comoving_magnetic_squared(point, metric);
          if (update_fluid) {
             const PatchCoordinate physical{
-               lower[0] + (static_cast<amrex::Real>(i - ilo) + 0.5)
+               lower[0] + (static_cast<amrex::Real>(i - ilo) + 0.5_rt)
                   * spacing[0],
-               lower[1] + (static_cast<amrex::Real>(j - jlo) + 0.5)
+               lower[1] + (static_cast<amrex::Real>(j - jlo) + 0.5_rt)
                   * spacing[1],
-               lower[2] + (static_cast<amrex::Real>(k - klo) + 0.5)
+               lower[2] + (static_cast<amrex::Real>(k - klo) + 0.5_rt)
                   * spacing[2],
             };
             const InitialDataSamplePoint sample{physical, physical};
@@ -904,7 +906,7 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
                const amrex::Real target_log_enthalpy =
                   target.log_specific_enthalpy
                   + magnetic_k * (
-                     flux_value + 0.5 * magnetic_xi
+                     flux_value + 0.5_rt * magnetic_xi
                         * flux_value * flux_value
                   );
                bernoulli(i, j, k, 0) = std::abs(
@@ -915,8 +917,8 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
          }
       });
    }
-   amrex::Real rhs_norm = 0.0;
-   amrex::Real residual_norm = 0.0;
+   amrex::Real rhs_norm = 0.0_rt;
+   amrex::Real residual_norm = 0.0_rt;
    for (int component = 0; component < 3; ++component) {
       rhs_norm = std::max(
          rhs_norm, workspace.rhs[component]->norm0(0, 0, false)
@@ -927,14 +929,14 @@ PoloidalGradShafranovSummary update_poloidal_grad_shafranov_equilibrium(
       );
    }
    summary.equation_relative_residual = residual_norm / std::max(
-      rhs_norm, amrex::Real(1.0e-300)
+      rhs_norm, amrex::Real(1.0e-300_rt)
    );
    summary.bernoulli_residual =
       workspace.bernoulli_residual->norm0(0, 0, false);
    const amrex::Real maximum_comoving_squared =
       workspace.comoving_field_squared->norm0(0, 0, false);
    summary.maximum_comoving_field = std::sqrt(std::max(
-      maximum_comoving_squared, amrex::Real(0.0)
+      maximum_comoving_squared, amrex::Real(0.0_rt)
    ));
    fill_face_divergence(
       *workspace.divergence, face_magnetic, hierarchy.geometry[0], false

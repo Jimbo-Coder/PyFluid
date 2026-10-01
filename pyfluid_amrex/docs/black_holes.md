@@ -34,11 +34,246 @@ metric selector, seed evolution.
   dominated by the arbitrary interior and are finite-state safety diagnostics,
   not an exterior-vacuum accuracy measurement. A production full-grid method
   still needs a constraint-improved interior or long-lived gauge treatment.
-- `excision` is a reserved contract and currently fails configuration. It will
-  require an active-cell mask, a pure-outflow inner evolution boundary, and
-  the Cook--Pfeiffer XCTS apparent-horizon boundary before production use.
+- `excision` makes interior fluid cells inactive and supplies a one-sided
+  Valencia inner flux. Fixed Kerr uses the horizon-fraction mask. Evolved Z4c
+  instead uses the fixed coordinate sphere set by `black_hole_fill_radius`,
+  with exterior derivative/transfer closures and live characteristic and
+  horizon-containment checks. Finite storage below the cut is not an evolved
+  physical interior. See the short-run validation boundary below; evolved
+  excision is not yet a long-accretion production claim.
 
-The filled Kerr control now uses ordinary advective `one_plus_log`,
+These values expose three useful ID-to-evolution interior policies:
+
+1. `excision`, which omits the interior and supplies a causally outflowing
+   inner boundary;
+2. `puncture`, including either wormhole-puncture or direct-trumpet initial
+   slices on a complete grid; and
+3. `filled`, which smoothly completes an exterior solution on the complete
+   evolution grid after the exterior ID solve.
+
+The third policy is the user-facing smooth-fill option; `turduckening` is only
+the established literature name for this operation. It is not a different
+method or a useful configuration term. For constraint-solved XCTS/COCAL data,
+the fill belongs strictly to materialization/handoff and must not feed back
+into the exterior elliptic solve. A wormhole puncture and a direct trumpet are
+two initial slices within the puncture policy: moving-puncture gauge normally
+drives the former toward the latter. Future direct spinning-trumpet data should
+therefore remain `black_hole_interior = puncture`, not add a `trumpet` interior
+policy.
+
+Fixed versus dynamically evolved spacetime is an orthogonal choice. Smooth
+full-grid and puncture/trumpet policies support evolved, matter-coupled Z4c.
+Fixed-background Kerr/Schwarzschild is a valuable test-fluid limit and
+comparison baseline, not a fourth interior method. Evolved excision has its
+own spacetime boundary; its validation must not be inferred from working
+fixed-background hydro excision.
+
+### Evolved excision: current validation boundary
+
+`inputs/kerr_schild_coupled_excision_3d.in` is a short coupled control with
+harmonic lapse, frozen shift, RK4, and CFL 0.9. One fixed spherical worldtube
+owns fluid and Z4c inactivity. The boundary must remain inside the found AH
+and have outgoing physical and gauge characteristics; an incoming mode aborts
+instead of silently imposing missing boundary data. There is no moving-cut
+controller. In particular, moving-puncture gauges are not automatically
+compatible with a chosen cut radius.
+
+Generated one-sided derivatives and negative-semidefinite masked KO close
+the spacetime operator. Centering, cell-to-face metric interpolation, and
+nodal AMR interpolation use exterior samples. Fluid reconstruction reduces
+to its cell-centered trace where its wider stencil crosses the cut; the
+inner face uses the exterior state only. Inactive primitive-cache entries
+are finite scratch, without C2P or any conserved-state reset. They are not
+physical atmosphere injection. Canonical CT magnetic storage is retained.
+
+Four-step coupled hydro and divergence-free CT-RMHD controls pass at CFL 0.9,
+including MP5/HLLD with finite-state poisoning enabled. Restart and
+AMR/subcycling/remake controls also pass; recovery/reset counts are zero and
+baryon balance closes below `6e-17` relative. A compact hybrid-EoS disk reaches
+four SSPRK3 steps (`t=0.6 M`) with coupled metric evolution and zero recovery.
+That disk starts from test-fluid Kerr data, not a self-gravitating constraint
+solve, so it is a routing/robustness control rather than a physical equilibrium
+or accretion result. The baryon ledger
+remains valid in dynamical geometry (`external_mass_budget_valid`); a
+fluid-only energy ledger does not (`external_budget_valid=0`). Linear
+operator and transfer convergence tests are separate from nonlinear
+long-time stability: coarse longer controls still lose horizon tracking.
+The resolved control reaches 32 steps (`t=1.2 M`) without recovery, but its
+tiny outer domain has growing exterior constraint error; a long
+self-gravitating disk evolution remains unvalidated. Surface ADM
+and horizon diagnostics are preferable to interpreting an uncorrected
+whole-volume ADM integral across an omitted interior.
+
+The opt-in `tools/validate_black_hole_excision_convergence.py` separates
+resolution and outer extent at matched time. Its legacy exterior norms exclude
+dx-dependent stencil layers and must not be mistaken for fixed-region norms.
+The opt-in `--fixed-regions` measurements use the same coordinate box of
+half-extent `3.5 M`, exclude Euclidean radius below `2.5 M`, and split near/far
+at `3 M`, intersected with the represented `z >= 0` half-domain. They reuse
+the canonical runtime constraint calculation, not a Python reconstruction.
+
+Current spin-0.5 vacuum Kerr controls at CFL `0.9`, `t=1.2 M`, give:
+
+| Domain half-extent | Spacing | Near H RMS | Far H RMS |
+| --- | --- | --- | --- |
+| 4 M | 0.25 M | 2.49010e-4 | 2.22820e-3 |
+| 4 M | 0.125 M | 1.45880e-4 | 1.71826e-3 |
+| 6 M | 0.25 M | 1.80489e-4 | 3.34900e-5 |
+| 6 M | 0.125 M | 1.04306e-5 | 2.05846e-6 |
+
+The larger-box pair recovers near/far H RMS orders `4.11/4.02` and
+momentum-constraint Linf orders `3.97/3.98`. At fixed fine spacing, moving
+the boundary reduces near/far H RMS by `14x/835x` with identical measured
+nodes and volumes; this is not global-volume dilution. The smaller-box near
+region is fourth-order at `t=0.6 M` before late contamination arrives.
+All four controls have zero recovery/interior interventions and roundoff
+baryon-budget closure. These results identify boundary contamination in this
+small-box experiment, not a failed initial-data solve or a need to reduce CFL.
+They do not establish long-time or self-gravitating-disk accuracy, and `6 M`
+is not a generally adequate production boundary radius. AH search/angular
+error must also be reduced before demanding fine-grid area convergence.
+Cycle 372 records the exact summaries and commands; reproduce with:
+
+```sh
+uv run python pyfluid_amrex/tools/validate_black_hole_excision_convergence.py \
+  --cases extent4_n32 extent4_n64 extent6_n48 extent6_n96 \
+  --fixed-regions --plot --label boundary_localization
+```
+
+The pure-wave stationary-Kerr boundary characterization isolates a continuum-model
+error: exact stationary data still receive a nonzero `A11` boundary RHS as
+the derivative spacing tends to zero. At radius `4 M`, halving the derivative
+spacing from `0.125 M` to `0.0625 M` to `0.03125 M` gives
+`0.006797`, `0.006839`, `0.006850`, rather than zero. The outgoing-wave
+assumption does not describe that stationary background. The ETK-style
+non-wave correction removes that pointwise plateau: at radius `4 M`,
+`dx=0.0625/0.03125 M` gives `5.1155e-4/2.5440e-4`. However, the matched
+evolved small-box control still loses the expected constraint convergence.
+Pointwise consistency is not a full evolution-convergence result; the
+fixed-region/domain-distance checks above distinguish these errors.
+A corner-compatible constraint-aware outer closure remains open.
+
+### Outer spacetime boundaries
+
+`spacetime.outer_boundary=extrapolate` (default) fills open nodal ghosts with
+six-point Lagrange extrapolation and leaves the ordinary RHS on valid boundary
+nodes. This is sixth-order extrapolation (quintic exactness), so a second
+derivative can retain fourth-order consistency. A globally shorter direction
+uses all of its distinct nodes; box decomposition does not shorten the stencil.
+`sommerfeld` uses the same ghosts, then supplies an approximate outgoing RHS
+for Khat, Theta, contracted Gamma, and A. Its speeds follow the selected
+lapse/shift gauge; frozen-gauge Khat/Gamma retain their bulk equations. Other
+metric/gauge equations are not replaced. The non-wave correction uses
+`spacetime.sommerfeld_power=3` by default, following ETK NewRad: subtract the
+radiative model from the neighboring interior MOL RHS and carry that residual
+to the boundary with an `r^-n` falloff. It infers the background from current
+evolved data, without an analytic Kerr provider or a stored initial snapshot.
+Set `sommerfeld_power=-1` for the former pure-wave comparison. Nonnegative
+values select the residual's falloff exponent. This is not a constraint-preserving
+boundary, and it cannot make a too-small outer domain physically adequate.
+The configured spacetime origin must lie strictly inside every open face
+(by more than one cell for the non-wave correction, whose donor must have
+nonzero radius and lie in the bulk); reflection planes through it remain allowed.
+
+One compiled owner applies the condition at every stage and AMR level.
+`tools/validate_z4c_boundary.py` checks flat-space preservation, gauge noise,
+reflection, and coupled excision, with optional `--include-amr-restart`.
+Add `--include-filled-evolution` for matched-time MP5/LLF live-gauge controls
+using SSPRK3 and RK4; they reuse the black-hole validator and scalar checks.
+The matched BH scan selects Sommerfeld by default; use `--outer-boundary
+extrapolate` for the bulk-RHS control. A run marked PASS there means its
+runtime/scalar checks passed, not that its resolution sequence converged.
+
+### Outer fluid boundaries
+
+`pyfluid.bc=outflow` extrapolates ghost data; it does not prohibit incoming
+matter. In a shifted chart the relevant velocity is `alpha*v^i-beta^i`.
+`diode` uses that transport velocity, then supplies one interior-derived
+primitive state to both Riemann traces at each selected outer face. This
+retains pressure and magnetic stresses while preventing numerical baryon
+influx to roundoff. Merely clipping a ghost velocity does not provide that
+guarantee. The same face owner serves RHD/RMHD, the available reconstructions
+and Riemann solvers, and candidate correction. Other boundary types and
+Newtonian kernels are unchanged. `tools/validate_relativistic_diode.py` owns
+the short shifted-boundary evolution controls.
+
+This fluid condition is independent of the spacetime outer boundary and
+cannot fix incoming gravitational/gauge/constraint error. It is also separate
+from the inner excision surface.
+
+The local COCAL/ETK BHT WIP provides a useful comparison for improving the
+filled option. Its smooth/legacy paths split `K_ij` into trace and trace-free
+parts, extrapolate the trace-free part, project it trace-free against the final
+filled metric, damp `tr(K)` toward the center, and remove interior hydro. That
+is a careful turduckening construction rather than simple component blending,
+but it still neither solves the constraints nor supplies an evolution excision
+boundary. For analytic fixed Kerr, deriving `K_ij` from the completed
+stationary lapse/shift/spatial metric is the stronger consistency target. For
+an exterior numerical XCTS/COCAL artifact without a complete stationary
+four-metric, trace-split extrapolation is a bounded compatibility option whose
+exterior independence and constraint propagation must be validated.
+
+Smoothing may be used as an initial guess for another global constraint solve,
+but that operation is not a local repair. Elliptic constraint projection can
+change the exterior fields and therefore the measured horizon, ADM mass, and
+spin. Solving only inside the horizon while requiring both values and smooth
+derivative matching to a frozen exterior is instead a nontrivial localized
+constraint-gluing problem. The production rule is consequently:
+
+- an excision artifact solves the constraints on its exterior domain and never
+  materializes the omitted interior as active evolution cells;
+- a puncture/trumpet artifact solves the constraints with its puncture topology
+  represented in the conformal variables; and
+- a smooth-filled artifact explicitly admits interior constraint error,
+  unless a separately named global projection is run and the resulting black
+  hole is re-diagnosed as a new solution.
+
+The last choice can be a useful experiment, but it must not silently convert a
+requested Kerr/COCAL hole into a different constraint-solved object. A future
+localized gluing owner would be a separate research method rather than an XCTS
+polish flag.
+
+After a smooth fill, the ordinary evolved-spacetime path converts the completed
+ADM fields to regular Z4c variables and evolves them with the selected
+moving-puncture gauge and Z4c constraint damping. This is a settling evolution,
+not a second constraint solve and not a separate hidden preprocessing method.
+The desired outcome is that fill error remains horizon-contained or is damped;
+outward propagation into the physical exterior is a measured error, not the
+mechanism on which the method relies. Acceptance requires comparison across
+fill radii/methods and resolution using exterior-only Hamiltonian/momentum/Z4c
+norms, apparent-horizon area and physical mass/spin, lapse, and exterior matter
+observables.
+
+Coordinate horizon radius is gauge dependent and may shrink or grow while the
+physical horizon area converges. A direct-trumpet slice should reduce the large
+wormhole-to-trumpet coordinate transition, but cannot replace area, mass, spin,
+constraint, and convergence checks.
+
+`spacetime.black_hole_matter` selects one runtime matter owner without adding a
+template product:
+
+- `evolve` is ordinary complete-grid RHD/RMHD evolution;
+- `bounded` is available for `filled` and `puncture` geometries. Inside the
+  strictly nested `horizon.excision_fraction` mask it caps Lorentz factor and
+  specific internal energy, optionally caps density, and limits RMHD
+  magnetization by adding floor matter while retaining canonical CT face `B`.
+  It then recomputes pressure through the selected EoS and converts primitives
+  back to conserved variables. Every bound and terminal interior reset is
+  counted separately; an interior reset is still a warning; and
+- `excision` is inactive-cell matter ownership and requires the matching
+  `black_hole_interior = excision` geometry. C2P is
+  bypassed inside, active-domain diagnostics and CFL omit those cells, AMR does
+  not tag the deep interior, and the one-sided inner flux closes the exterior
+  baryon ledger.
+
+The bounded ceilings are
+`spacetime.black_hole_max_lorentz_factor`,
+`spacetime.black_hole_max_specific_internal_energy`,
+`spacetime.black_hole_max_magnetization`, and the disabled-by-default
+`spacetime.black_hole_max_density`. They are horizon-contained robustness
+controls, not permission to treat exterior atmosphere resets as harmless.
+
+The filled Kerr control uses ordinary advective `one_plus_log`,
 `gamma_driver`, RK4, and the input-specific tested KO strength `0.32`.
 Positive `spacetime.chi_floor` and `spacetime.lapse_floor` values are enforced
 by the Z4c algebraic projection; both default to `1e-10`. The separate
@@ -51,7 +286,57 @@ values the same coarse Kerr case reaches 64 CFL-0.9 steps with zero fluid
 recovery, but its exterior Hamiltonian and momentum norms remain roughly three
 to five times larger than the matched ordinary-1+log control. Slow start is
 therefore functional and available for puncture experiments, not the selected
-filled-Kerr gauge. Gauge choices are independent of the interior policy.
+filled-Kerr gauge. These historical gauge comparisons predate the Cycle 366
+shift-upwind sign correction and require remeasurement before ranking gauges.
+Gauge selection is independent of interior policy, but excision additionally
+requires the selected gauge's characteristics to leave the active domain.
+
+The Cycle 369 autopsy corrects the earlier attribution of a step-three failure
+to high-order reconstruction: that control omitted the live gauges and used
+frozen lapse/shift. PWC and halved CFL also fail. Stage checks find a spatial
+metric that is no longer positive definite near the fill core, before
+projection or fluid recovery produces NaNs. A wider fill or live lapse alone
+can instead first produce negative cell-centered chi/lapse through signed
+high-order interpolation. Neither nodal floors nor a fluid fallback repairs
+that geometry contract.
+
+Before the Cycle-371 fill-geometry correction, at CFL `0.9`, MP5/LLF with
+both one-plus-log and Gamma-driver reached
+`t=1.2 M` at `32^3` and `64^3` without C2P fallback, atmosphere reset, or
+interior bounds/reset. Exterior Hamiltonian Linf decreases from `0.01211`
+to `0.004577`; the coarse RK4 control also reaches the target cleanly.
+Exterior Hamiltonian L2 instead changes from `0.0008103` to `0.0009650`;
+the diagnostic's excluded near-horizon stencil layer also shrinks on the
+finer grid, so this pair is not a fixed-region convergence measurement.
+These historical comparisons use KO `0.1`, not the historical `0.32` above.
+They establish short robustness for that earlier fill, not a converged long accretion
+solution or a constraint-consistent stationary fill.
+These successful fill controls use **vacuum** Z4c evolution with a test fluid:
+live lapse/shift, dynamically evolved geometry, and matter backreaction are
+three distinct choices. They do not show that stress-energy coupling is needed
+to stabilize the fill, nor that frozen gauge is intrinsically invalid. A
+stationary exact exterior can use frozen gauge; the arbitrary filled interior
+is not a stationary solution of that same system.
+
+The current analytic fill differentiates its lapse/shift/spatial-metric blend
+and derives `K_ij` from the stationary ADM identity. The former zero-derivative
+and independently weighted-K completion was inconsistent with a fixed
+four-metric. The new completion is kinematically consistent, not constraint
+satisfying: evolving it with the vacuum equations still changes the interior.
+Pointwise derivative/ADM checks must therefore be supplemented by fresh
+evolution checks, not inherited from the earlier fill.
+
+Positive-scalar transfers interpolate `log(chi)` and `log(lapse)` with the
+selected polynomial weights, then exponentiate. This applies to physical
+node/cell/face centering; tensor fields retain their ordinary representation.
+Outside-domain finite-difference extensions retain the raw boundary polynomial,
+not log extrapolation. Invalid physical sources are not repaired. On the final
+Cycle-371 source, SSPRK3 and RK4 reach `t=1.2 M` at CFL 0.9 with zero C2P
+fallback, atmosphere reset, or interior intervention, and baryon-budget error
+below `4e-16`. The boundary/fill/AMR/restart matrix passes 14/14 and the fresh
+Z4c quick gate passes 13/13. The nodal lapse
+does reach its selected floor. This repairs the observed negative transferred
+lapse, not the arbitrary interior's vacuum-constraint violations.
 
 The focused black-hole gate evolves the filled data at CFL 0.9 without C2P
 fallback or atmosphere reset, includes a 16-step moving-puncture-gauge stress,
@@ -59,9 +344,41 @@ reloads its physical-ID artifact on a changed Cartesian grid, and exercises an
 exact exterior fixed-background control.
 Matched full/equatorial Kerr domains at two resolutions and a matched
 full/octant Schwarzschild domain agree in minimum lapse and constraint extrema
-to roundoff after one step. The gate also proves that unsupported excision,
-incompatible physical-ID spin, and incompatible reflection planes fail before
-evolution instead of changing the requested problem.
+to roundoff after one step. The gate includes fixed-Kerr and short coupled
+excision, incoming-gauge rejection, incompatible physical-ID spin, and
+incompatible reflection-plane rejection.
+
+The focused interior-policy comparison uses the same `32^3`, `a/M=0.5`,
+CFL-0.9 fixed Kerr exterior. With no repeated horizon solve, bounded full-grid
+and excision sustain median `0.309` and `0.305` Mcells/s; excision advances
+`3.37 M/s` versus `3.20 M/s` after inactive cells are removed from the CFL
+maximum. RHD
+and CT-RMHD excision close baryon mass to roundoff, and the RMHD control has
+`divB_L1=8.45e-19` with zero recovery/reset. With the finder run every step,
+the fixed-excision horizon area and Kerr mass change only `2.53e-5` and
+`1.13e-5` relative over three steps (finder tolerance); the evolved smooth
+fill changes them by `2.68` and `1.18` percent by `t=0.237 M` while its
+coordinate radius changes `1.12` percent. The 16-step direct-trumpet control
+ends at `t=1.390 M` with area `50.200 M^2` (`0.13` percent below exact) and
+Kerr mass `0.9948 M`, while its coordinate radius grows by 10.1 percent. These
+are coarse short-run method controls, not a long-time accuracy ranking.
+
+The fixed-excision gate also seeds a two-level ratio-2 hierarchy, advances the
+fine level twice per coarse step, and permits synchronized regridding every
+step. The first regrid remakes level 1 from 110,592 to 32,768 cells around the
+tracked horizon. After three coarse steps the exterior baryon-ledger residual
+is `4.86e-17` relative, the coarse curved-background energy/source residual is
+`3.14e-4`, and C2P fallbacks, atmosphere resets, interior bounds, and interior
+resets are all zero. Initial hierarchy tagging precedes the step-zero horizon
+search and therefore retains ordinary initial tags until a surface exists;
+startup still constructs every level's mask before physical projection,
+preflight, CFL evaluation, or evolution.
+On restart, a saved horizon surface is a search seed, not a current finder
+result. Startup refreshes an enabled finder once even when the checkpoint
+step is off `horizon.find_int`; ordinary evolution retains that cadence. The
+off-cadence excision regression restarts step 1 with `find_int=4`, refreshes
+the surface before scalar output, and closes the baryon ledger to `2.56e-16`
+with zero recovery/reset.
 
 The longer `a/M=0.5` AMR control reaches `t=10.690 M` in 64 CFL-0.9 steps with
 zero recovery/reset. Its `spacetime` policy retains 98,304 cells, two unused
@@ -81,14 +398,20 @@ The aligned fixed-background BH-disk control uses the generated q-power law
 `Omega_c=0.1355`, `A=6 M`, and requested `r_in=10 M`. The catalog exponent
 corresponds asymptotically to the conventional disk shear exponent
 `q_Omega=2/q=1.905`, slightly below constant-angular-momentum-like `q_Omega=2`.
-The saved `64^3` artifact has resolved support `14.098--25.981 M`. Its
-ratio-4/2 AMR evolution reaches `t=51.753 M` in 24 CFL-0.9 steps with zero
-recovery/reset, one level of headroom, and 355,840 cells (47.4 percent of its
-guard, versus 2.10M cells for uniform `dx=1 M`). The maximum density decreases
-3.58 percent and the boundary-corrected mass residual is `4.28e-13`. Large
-late-time Lorentz factors are confined to atmosphere in the filled hole and
-remain the practical reason to implement true excision before calling this a
-long-lived accretion evolution.
+The compressed artifact has a `64^3` base plus a ratio-2 near-hole seed and
+resolved support `14.098--25.981 M`; its current on-disk size is 99 MB. The
+fixed-Kerr production evolution uses true matter excision and a ratio-4/2
+target. Its near-hole box is a seed rather than a fixed complete hierarchy, so
+the compact-object metric also resolves the disk after artifact load. A
+24-step CFL-0.9 run reaches `t=52.489 M`; adaptive regrids grow the layout from
+196,608 to 409,600 cells, the maximum density decreases 3.60 percent, the
+horizon baryon flux grows from `3.10e-9` to `4.92e-8`, and the exterior baryon
+ledger closes to `1.86e-13`. A temporary diagnostic pass identified seven late
+below-floor projections; they are ordinary floor enforcement, not failed-C2P
+atmosphere resets. C2P fallback and atmosphere-reset counts are zero. Horizon
+area and Kerr mass change by `2.53e-5` and `1.13e-5` relative (finder
+tolerance). The corresponding dynamically evolved spacetime still needs Z4c
+excision.
 
 ## Analytic static trumpet control
 
@@ -118,15 +441,18 @@ with the static solution,
 `dt(alpha) = beta^i d_i(alpha) - alpha (1-alpha) K`,
 
 and `spacetime.shift_gauge = frozen` retains the analytic shift. This is a
-diagnostic gauge pair, not the selected production default. In the coarse
-`dx=0.5M`, CFL-0.9, 16-step comparison with KO strength 0.32, the matched pair
-changes mean coordinate horizon radius by only 1.37 percent, but ends with a
-5.10 percent proper-area error and larger exterior constraint norms. The same
-ID under the ordinary advective 1+log/Gamma-driver pair changes coordinate
-radius by 10.10 percent but ends at 0.13 percent proper-area error. Both runs
-complete with zero C2P fallback or atmosphere reset. These are short
-regression measurements, not a resolution-converged universal gauge ranking;
-the ordinary moving-puncture pair remains the supplied evolution input.
+diagnostic gauge pair, not the selected production default. The earlier coarse
+gauge ranking is stale after subsequent numerical changes. Cycle 373 reruns
+the `dx=0.5M`, CFL-0.9, 16-step controls with KO strength 0.32: the matched pair
+changes mean coordinate horizon radius by 4.99 percent and ends with a
+7.42 percent proper-area error; ordinary advective 1+log/Gamma-driver changes
+radius by 23.35 percent and ends with a 7.89 percent proper-area error. Both
+complete with zero C2P fallback or atmosphere reset, but the unchanged
+2-percent final-area regression bound fails. The ordinary-gauge horizon
+history is byte-identical under AMReX 26.08 and 26.09. This is an existing
+accuracy issue to investigate, not an AMReX-update regression or a validated
+current gauge ranking. The ordinary moving-puncture pair remains the supplied
+evolution input.
 
 The focused black-hole gate also rematerializes a saved trumpet artifact from
 `32^3` to `24^3` and matches full versus octant one-step constraint extrema to
@@ -351,6 +677,34 @@ expansion residuals, proper area, irreducible mass, circumferences,
 coordinate-rotation angular momentum/spin, area centroid, and
 minimum/maximum/mean coordinate radius.
 
+The opt-in `horizon_flux` scalar group adds
+`black_hole_horizon_baryon_accretion_rate`. It evaluates the Valencia baryon
+current on the found radial graph,
+
+```text
+F_D^i = D (alpha v^i - beta^i),
+dot(M_0,H) = - integral_H F_D^i dS_i,
+```
+
+so inward flow is positive. The executor uses the evolved densitized baryon
+density `D`, generated metric/current algebra, the generic finest-complete AMR
+surface interpolation plan, and reflection parity when the Cartesian domain
+omits horizon sectors. This is the instantaneous flux through the coordinate
+two-surface on one slice. A rapidly moving horizon requires an explicit
+world-tube/surface-velocity term before it can close an exact moving-boundary
+baryon budget. The sign and Valencia-current convention follow the
+[Einstein Toolkit Outflow documentation](https://einsteintoolkit.org/thornguide/EinsteinAnalysis/Outflow/documentation.html).
+
+This baryon budget is distinct from the black-hole energy budget. Baryon
+number crosses the horizon; it is not converted one-for-one into curvature.
+Horizon area, Christodoulou mass, and spin respond to the total matter-energy,
+angular-momentum, electromagnetic, and gravitational fluxes. Consequently,
+accreted rest mass need not equal the increase in horizon mass. A proper
+dynamic-excision validation requires both the exterior baryon balance and
+convergent horizon area/mass/spin response, together with exterior constraints
+and outer matter/radiation fluxes. Fixed-background accretion deliberately
+omits this geometric backreaction and is only a test-fluid comparison.
+
 `apparent_horizon_mask` and `excision_mask` are catalog-owned cell-centered
 auxiliary GFs. The first marks the found interior; the second is a configurable
 strictly nested fraction of it. `horizon.refine_band_cells > 0` tags a band
@@ -373,6 +727,16 @@ area, irreducible mass, and radius extrema agree to roundoff. Multiple
 horizons, moving-center tracking, approximate-Killing-vector spin, an
 AHFinderDirect-style Newton polishing backend, and true evolution excision
 remain later capabilities.
+
+`horizon.abort_on_failure` defaults to `1`, preserving fail-fast behavior for
+runs that start with a known black hole. Set it to `0` for collapse problems
+that intentionally arm the finder before a horizon exists. In that mode a
+failed search is logged and retried at `horizon.find_int`; no horizon surface,
+mask, or positive horizon scalar is fabricated before a converged search
+succeeds. The scalar catalog reports `black_hole_horizon_found=0` before
+formation and `1` afterward. Once any surface has been accepted or restored,
+a later failed search remains fatal so stale horizon geometry cannot silently
+drive diagnostics or refinement.
 
 The coupled XCTS BH-disk evolution artifact has a distinct live-finder
 boundary. Its native spherical source enforces an apparent-horizon throat at
@@ -466,6 +830,64 @@ count is exactly halved; this tiny run improves measured wall time only
 Larger production grids should be benchmarked before assigning a realized
 speedup from the ideal twofold cell reduction.
 
+The reproducible simulation-derived accretion cutaway uses
+
+```console
+uv run python pyfluid_amrex/tools/run_case.py \
+  pyfluid_amrex/inputs/bh_accretion_octant_movie_3d.in --ranks 3
+uv run python pyfluid_amrex/tools/plot_bh_accretion_octant_movie.py \
+  runs/current/black_hole_disk/bh_accretion_octant_movie_clean
+```
+
+The evolution keeps the complete azimuthal domain and only reflects across the
+equator. The renderer then displays the positive-coordinate octant as a
+cutaway, overlays the live apparent horizon (or exact Kerr fallback) and finest
+AMR boxes, and reports the hole diagnostics and matter `|C1|/C0`, `|C2|/C0`.
+The input is a fixed
+Kerr--Schild `a/M=0.5` control with a test-fluid q-power torus. It now selects
+the same true matter-excision, live-horizon, and seed-plus-automatic-AMR
+ownership as the maintained full-domain control. Its previous filled-hole
+movie remains historical output and must not be cited as validation of the
+updated input until that 32-step rendering run is repeated. This remains an
+accretion/evolution and visualization control, not evidence for a
+self-gravitating massive-disk or PPI endpoint.
+
+The longer maintained control is `bh_accretion_long_excision_3d.in`: disk
+`dx=0.5 M`, horizon seed `dx=0.25 M`, outer boundary `64 M`, and full azimuth
+with equatorial reflection. It reaches `t=550 M` in 300 CFL-0.9 steps with
+zero C2P fallback, atmosphere reset, interior bound, or interior reset. The
+final hierarchy has 501,760 cells (11.15 percent of its cell-budget guard).
+This fixed-Kerr test-fluid run is not evolved-spacetime excision or a
+self-gravitating massive-disk result.
+
+Report disk time as `t/P_c`, with `P_c=2*pi/abs(Omega_peak)` fixed from the
+initial unperturbed disk density maximum. For saved Valencia velocity, use
+coordinate transport velocity `alpha*v-beta`, not `v` alone:
+`Omega_peak=(alpha*v-beta).(axis cross position)/|axis cross position|^2`,
+where position is relative to the disk origin. The sampled physical ID gives
+`P_c=527.3409577286847 M`, so the completed run covers `1.04297 P_c`. This is
+a characteristic orbital clock, not a claim that fluid at every radius has
+completed that many orbits. Retain the reference sample, source artifact,
+angular velocity, and period in run-local `orbital_normalization.tsv`; the
+renderer reads its `period` column automatically, or accepts the explicit
+`--characteristic-period` override. Movie frames retain `t/M` as well.
+
+The companion diagnostic plot uses the runtime `multipoles.tsv` and
+`scalars.tsv`: `|C1|/C0` decreases from `7.49e-3` to `5.30e-3`, while
+`|C2|/C0` reaches `1.73e-4`. The atmosphere-excluded `C0` ends 1.21 percent
+below its initial value. Its late upturn accompanies measured net boundary
+influx; do not interpret this finite-domain control as isolated disk mass
+loss or evidence for PPI growth. The whole-history maximum normalized
+baryon-ledger residual is `9.33e-11`; the final checkpoint continuation closes
+to roundoff. Render the retained output with
+
+```console
+uv run python pyfluid_amrex/tools/plot_bh_accretion_octant_movie.py \
+  runs/current/black_hole_disk/bh_accretion_long_excision \
+  --output runs/current/black_hole_disk/bh_accretion_long_excision/bh_accretion_long_excision.mp4 \
+  --radial-extent 40 --vertical-extent 20 --max-pixels 320 --fps 6
+```
+
 Disk orientation is separately represented by `initial_data.disk_axis1/2/3`
 and persisted in physical-ID metadata. The reduced r-theta torus owner accepts
 only the aligned +z source axis. The direct 3D Cartesian fixed-Kerr torus may
@@ -495,7 +917,11 @@ validation gates.
 True excision is two contracts, not one flag: the ID solve owns an apparent-
 horizon inner boundary, while evolution owns an active-domain mask, one-sided
 stencils/prolongation near the mask, and a causally pure-outflow inner boundary.
-The diagnostic candidate mask now exists, but `black_hole_interior = excision`
-still rejects until the evolution owners and characteristic/outflow validation
-exist. A found horizon is a prerequisite, not by itself authorization to
-discard cells.
+The fixed-Kerr RHD/RMHD owner supplies inactive matter cells, one-sided
+diode fluxes, excision-aware candidate repairs, CT-compatible magnetic
+ownership, CFL/diagnostic/AMR masking, and an inner conservation ledger.
+The evolved-Z4c fixed-worldtube owner now also supplies its characteristic
+guard, one-sided derivatives, masked dissipation and exterior transfers;
+short coupled, AMR and restart controls pass. Moving cuts and long-time
+exterior convergence remain unvalidated. A found horizon is a prerequisite,
+not by itself authorization to discard spacetime cells.

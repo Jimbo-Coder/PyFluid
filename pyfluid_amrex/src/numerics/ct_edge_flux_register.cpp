@@ -4,10 +4,12 @@
 #include <AMReX_MultiFabUtil.H>
 #include <AMReX_Orientation.H>
 
-#include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/ct.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 #if (AMREX_SPACEDIM == 3)
 static constexpr std::array<amrex::IntVect, 3> EdgeIndexType{
@@ -156,7 +158,7 @@ void CtEdgeFluxRegister::reset()
          int k,
          int n
       ) noexcept {
-         arrays[box_no](i, j, k, n) = 0.0;
+         arrays[box_no](i, j, k, n) = 0.0_rt;
       });
    }
    for (auto& face_edges : fine_edge_line_) {
@@ -170,14 +172,14 @@ void CtEdgeFluxRegister::reset()
             int k,
             int n
          ) noexcept {
-            arrays[box_no](i, j, k, n) = 0.0;
+            arrays[box_no](i, j, k, n) = 0.0_rt;
          });
 #else
 #ifdef AMREX_USE_OMP
 #pragma omp parallel
 #endif
          for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
-            mf[mfi].template setVal<amrex::RunOn::Host>(0.0);
+            mf[mfi].template setVal<amrex::RunOn::Host>(0.0_rt);
          }
 #endif
       }
@@ -192,7 +194,7 @@ void CtEdgeFluxRegister::reset()
          int k,
          int n
       ) noexcept {
-         arrays[box_no](i, j, k, n) = 0.0;
+         arrays[box_no](i, j, k, n) = 0.0_rt;
       });
    }
    for (auto& mf : fine_edge_line_) {
@@ -205,14 +207,14 @@ void CtEdgeFluxRegister::reset()
          int k,
          int n
       ) noexcept {
-         arrays[box_no](i, j, k, n) = 0.0;
+         arrays[box_no](i, j, k, n) = 0.0_rt;
       });
 #else
 #ifdef AMREX_USE_OMP
 #pragma omp parallel
 #endif
       for (amrex::MFIter mfi(mf); mfi.isValid(); ++mfi) {
-         mf[mfi].template setVal<amrex::RunOn::Host>(0.0);
+         mf[mfi].template setVal<amrex::RunOn::Host>(0.0_rt);
       }
 #endif
    }
@@ -377,38 +379,38 @@ void CtEdgeFluxRegister::Reflux(
          xbx,
          ncomp_,
          [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-            const amrex::Real d_ey_lo = ymask(i, j, k) ? fine_ey(i, j, k, n) - coarse_ey(i, j, k, n) : 0.0;
-            const amrex::Real d_ey_hi = ymask(i, j, k + 1) ? fine_ey(i, j, k + 1, n) - coarse_ey(i, j, k + 1, n) : 0.0;
-            const amrex::Real d_ez_lo = zmask(i, j, k) ? fine_ez(i, j, k, n) - coarse_ez(i, j, k, n) : 0.0;
-            const amrex::Real d_ez_hi = zmask(i, j + 1, k) ? fine_ez(i, j + 1, k, n) - coarse_ez(i, j + 1, k, n) : 0.0;
+            const amrex::Real d_ey_lo = ymask(i, j, k) ? fine_ey(i, j, k, n) - coarse_ey(i, j, k, n) : 0.0_rt;
+            const amrex::Real d_ey_hi = ymask(i, j, k + 1) ? fine_ey(i, j, k + 1, n) - coarse_ey(i, j, k + 1, n) : 0.0_rt;
+            const amrex::Real d_ez_lo = zmask(i, j, k) ? fine_ez(i, j, k, n) - coarse_ez(i, j, k, n) : 0.0_rt;
+            const amrex::Real d_ez_hi = zmask(i, j + 1, k) ? fine_ez(i, j + 1, k, n) - coarse_ez(i, j + 1, k, n) : 0.0_rt;
             const amrex::Real area = mesh_face_area_scale(0, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
             amrex::Real face_flux = generated::magnetic_face_flux(bx_face(i, j, k, n), area);
-            face_flux = generated::ct_flux_update_3d_dir0(face_flux, 1.0, d_ez_hi, d_ez_lo, d_ey_hi, d_ey_lo);
-            bx_face(i, j, k, n) = area > 0.0 ? generated::magnetic_face_component(face_flux, area) : 0.0;
+            face_flux = generated::ct_flux_update_3d_dir0(face_flux, 1.0_rt, d_ez_hi, d_ez_lo, d_ey_hi, d_ey_lo);
+            bx_face(i, j, k, n) = area > 0.0_rt ? generated::magnetic_face_component(face_flux, area) : 0.0_rt;
          },
          ybx,
          ncomp_,
          [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-            const amrex::Real d_ex_lo = xmask(i, j, k) ? fine_ex(i, j, k, n) - coarse_ex(i, j, k, n) : 0.0;
-            const amrex::Real d_ex_hi = xmask(i, j, k + 1) ? fine_ex(i, j, k + 1, n) - coarse_ex(i, j, k + 1, n) : 0.0;
-            const amrex::Real d_ez_lo = zmask(i, j, k) ? fine_ez(i, j, k, n) - coarse_ez(i, j, k, n) : 0.0;
-            const amrex::Real d_ez_hi = zmask(i + 1, j, k) ? fine_ez(i + 1, j, k, n) - coarse_ez(i + 1, j, k, n) : 0.0;
+            const amrex::Real d_ex_lo = xmask(i, j, k) ? fine_ex(i, j, k, n) - coarse_ex(i, j, k, n) : 0.0_rt;
+            const amrex::Real d_ex_hi = xmask(i, j, k + 1) ? fine_ex(i, j, k + 1, n) - coarse_ex(i, j, k + 1, n) : 0.0_rt;
+            const amrex::Real d_ez_lo = zmask(i, j, k) ? fine_ez(i, j, k, n) - coarse_ez(i, j, k, n) : 0.0_rt;
+            const amrex::Real d_ez_hi = zmask(i + 1, j, k) ? fine_ez(i + 1, j, k, n) - coarse_ez(i + 1, j, k, n) : 0.0_rt;
             const amrex::Real area = mesh_face_area_scale(1, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
             amrex::Real face_flux = generated::magnetic_face_flux(by_face(i, j, k, n), area);
-            face_flux = generated::ct_flux_update_3d_dir1(face_flux, 1.0, d_ex_hi, d_ex_lo, d_ez_hi, d_ez_lo);
-            by_face(i, j, k, n) = area > 0.0 ? generated::magnetic_face_component(face_flux, area) : 0.0;
+            face_flux = generated::ct_flux_update_3d_dir1(face_flux, 1.0_rt, d_ex_hi, d_ex_lo, d_ez_hi, d_ez_lo);
+            by_face(i, j, k, n) = area > 0.0_rt ? generated::magnetic_face_component(face_flux, area) : 0.0_rt;
          },
          zbx,
          ncomp_,
          [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-            const amrex::Real d_ex_lo = xmask(i, j, k) ? fine_ex(i, j, k, n) - coarse_ex(i, j, k, n) : 0.0;
-            const amrex::Real d_ex_hi = xmask(i, j + 1, k) ? fine_ex(i, j + 1, k, n) - coarse_ex(i, j + 1, k, n) : 0.0;
-            const amrex::Real d_ey_lo = ymask(i, j, k) ? fine_ey(i, j, k, n) - coarse_ey(i, j, k, n) : 0.0;
-            const amrex::Real d_ey_hi = ymask(i + 1, j, k) ? fine_ey(i + 1, j, k, n) - coarse_ey(i + 1, j, k, n) : 0.0;
+            const amrex::Real d_ex_lo = xmask(i, j, k) ? fine_ex(i, j, k, n) - coarse_ex(i, j, k, n) : 0.0_rt;
+            const amrex::Real d_ex_hi = xmask(i, j + 1, k) ? fine_ex(i, j + 1, k, n) - coarse_ex(i, j + 1, k, n) : 0.0_rt;
+            const amrex::Real d_ey_lo = ymask(i, j, k) ? fine_ey(i, j, k, n) - coarse_ey(i, j, k, n) : 0.0_rt;
+            const amrex::Real d_ey_hi = ymask(i + 1, j, k) ? fine_ey(i + 1, j, k, n) - coarse_ey(i + 1, j, k, n) : 0.0_rt;
             const amrex::Real area = mesh_face_area_scale(2, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
             amrex::Real face_flux = generated::magnetic_face_flux(bz_face(i, j, k, n), area);
-            face_flux = generated::ct_flux_update_3d_dir2(face_flux, 1.0, d_ey_hi, d_ey_lo, d_ex_hi, d_ex_lo);
-            bz_face(i, j, k, n) = area > 0.0 ? generated::magnetic_face_component(face_flux, area) : 0.0;
+            face_flux = generated::ct_flux_update_3d_dir2(face_flux, 1.0_rt, d_ey_hi, d_ey_lo, d_ex_hi, d_ex_lo);
+            bz_face(i, j, k, n) = area > 0.0_rt ? generated::magnetic_face_component(face_flux, area) : 0.0_rt;
          }
       );
    }
@@ -437,22 +439,22 @@ void CtEdgeFluxRegister::Reflux(
          xbx,
          ncomp_,
          [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-            const amrex::Real d_ez_lo = mask(i, j, k) ? fine_ez(i, j, k, n) - coarse_ez(i, j, k, n) : 0.0;
-            const amrex::Real d_ez_hi = mask(i, j + 1, k) ? fine_ez(i, j + 1, k, n) - coarse_ez(i, j + 1, k, n) : 0.0;
+            const amrex::Real d_ez_lo = mask(i, j, k) ? fine_ez(i, j, k, n) - coarse_ez(i, j, k, n) : 0.0_rt;
+            const amrex::Real d_ez_hi = mask(i, j + 1, k) ? fine_ez(i, j + 1, k, n) - coarse_ez(i, j + 1, k, n) : 0.0_rt;
             const amrex::Real area = mesh_face_area_scale(0, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
             amrex::Real face_flux = generated::magnetic_face_flux(bx_face(i, j, k, n), area);
-            face_flux = generated::ct_flux_update_2d_dir0(face_flux, 1.0, d_ez_hi, d_ez_lo);
-            bx_face(i, j, k, n) = area > 0.0 ? generated::magnetic_face_component(face_flux, area) : 0.0;
+            face_flux = generated::ct_flux_update_2d_dir0(face_flux, 1.0_rt, d_ez_hi, d_ez_lo);
+            bx_face(i, j, k, n) = area > 0.0_rt ? generated::magnetic_face_component(face_flux, area) : 0.0_rt;
          },
          ybx,
          ncomp_,
          [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
-            const amrex::Real d_ez_lo = mask(i, j, k) ? fine_ez(i, j, k, n) - coarse_ez(i, j, k, n) : 0.0;
-            const amrex::Real d_ez_hi = mask(i + 1, j, k) ? fine_ez(i + 1, j, k, n) - coarse_ez(i + 1, j, k, n) : 0.0;
+            const amrex::Real d_ez_lo = mask(i, j, k) ? fine_ez(i, j, k, n) - coarse_ez(i, j, k, n) : 0.0_rt;
+            const amrex::Real d_ez_hi = mask(i + 1, j, k) ? fine_ez(i + 1, j, k, n) - coarse_ez(i + 1, j, k, n) : 0.0_rt;
             const amrex::Real area = mesh_face_area_scale(1, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
             amrex::Real face_flux = generated::magnetic_face_flux(by_face(i, j, k, n), area);
-            face_flux = generated::ct_flux_update_2d_dir1(face_flux, 1.0, d_ez_hi, d_ez_lo);
-            by_face(i, j, k, n) = area > 0.0 ? generated::magnetic_face_component(face_flux, area) : 0.0;
+            face_flux = generated::ct_flux_update_2d_dir1(face_flux, 1.0_rt, d_ez_hi, d_ez_lo);
+            by_face(i, j, k, n) = area > 0.0_rt ? generated::magnetic_face_component(face_flux, area) : 0.0_rt;
          }
       );
    }

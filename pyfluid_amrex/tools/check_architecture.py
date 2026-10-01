@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from build_dependencies import IncludeGraph, ownership_errors
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = ROOT / "src"
@@ -134,25 +135,29 @@ def check_tiled_launch_guard() -> None:
 
 
 def main() -> None:
-    errors: list[str] = []
+    errors: list[str] = ownership_errors(IncludeGraph(ROOT))
 
     check_tiled_launch_guard()
+
+    # C math calls may select a double overload for float arguments on GCC.
+    # Generated C++ must use typed C++/AMReX math across every backend.
+    c_math_call = re.compile(
+        r"(?<![\w:])(?:sqrt|cbrt|log|log2|log10|exp|exp2|pow|"
+        r"sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|asinh|acosh|atanh)\s*\("
+    )
+    for path in (INCLUDE_ROOT / "kernels_generated").rglob("*.hpp"):
+        for number, line in enumerate(path.read_text().splitlines(), 1):
+            if not line.lstrip().startswith("//") and c_math_call.search(line):
+                errors.append(
+                    f"{path.relative_to(ROOT)}:{number}: unqualified C math call "
+                    "can promote FP32 arithmetic"
+                )
 
     source_root_files = [path for path in SOURCE_ROOT.iterdir() if path.is_file()]
     if source_root_files:
         errors.append(
             "production source files must belong to an ownership directory: "
             + relative_paths(source_root_files)
-        )
-
-    implementation_headers = [
-        *SOURCE_ROOT.rglob("*_impl.hpp"),
-        *INCLUDE_ROOT.rglob("*_impl.hpp"),
-    ]
-    if implementation_headers:
-        errors.append(
-            "wrapper implementation headers are prohibited: "
-            + relative_paths(implementation_headers)
         )
 
     private_implementation_leaks = [
@@ -210,20 +215,6 @@ def main() -> None:
             "public config.hpp must declare configuration contracts, not own "
             "host-side implementations"
         )
-    leaked_config_implementations = [
-        include
-        for include in (
-            '"pyfluid_amrex/eos/equation_of_state.hpp"',
-            '"pyfluid_amrex/fixed_spacetime.hpp"',
-        )
-        if include in public_config_text
-    ]
-    if leaked_config_implementations:
-        errors.append(
-            "public config.hpp must depend on stable type schemas, not pointwise "
-            "physics implementations: " + ", ".join(leaked_config_implementations)
-        )
-
     misplaced_programs = [
         path
         for path in SOURCE_ROOT.rglob("*.cpp")
@@ -235,28 +226,15 @@ def main() -> None:
             + relative_paths(misplaced_programs)
         )
 
-    explicit_instantiation_roots = {
-        SOURCE_ROOT / "flux_kernels",
-        SOURCE_ROOT / "kernel_bundles",
-    }
-    wrapper_sources = [
-        path
-        for path in SOURCE_ROOT.rglob("*.cpp")
-        if len(path.read_text().splitlines()) <= 20
-        and not any(root in path.parents for root in explicit_instantiation_roots)
-    ]
-    if wrapper_sources:
-        errors.append(
-            "short production wrappers need a real ownership boundary or removal: "
-            + relative_paths(wrapper_sources)
-        )
-
     declarations = {
         "enum Conserved": [],
         "enum Z4cComponent": [],
         "enum class AuxGridField": [],
         "struct EOSParams": [],
         "struct FixedSpacetimeParameters": [],
+        "struct ScalarDiagnostics": [],
+        "enum class ScalarDiagnosticId": [],
+        "enum class ScalarDiagnosticGroup": [],
     }
     for path in INCLUDE_ROOT.rglob("*.hpp"):
         text = path.read_text()
@@ -270,6 +248,9 @@ def main() -> None:
         "enum class AuxGridField": GENERATED_FIELD_IDS,
         "struct EOSParams": INCLUDE_ROOT / "eos" / "types.hpp",
         "struct FixedSpacetimeParameters": INCLUDE_ROOT / "fixed_spacetime_types.hpp",
+        "struct ScalarDiagnostics": INCLUDE_ROOT / "generated" / "diagnostic_types.hpp",
+        "enum class ScalarDiagnosticId": INCLUDE_ROOT / "generated" / "diagnostic_types.hpp",
+        "enum class ScalarDiagnosticGroup": INCLUDE_ROOT / "generated" / "diagnostic_types.hpp",
     }
     for declaration, owners in declarations.items():
         expected_owner = declaration_owners[declaration]
@@ -286,6 +267,7 @@ def main() -> None:
         ROOT / "docs" / "equations.tex",
         INCLUDE_ROOT / "generated" / "field_catalog.hpp",
         INCLUDE_ROOT / "generated" / "diagnostic_catalog.hpp",
+        INCLUDE_ROOT / "generated" / "diagnostic_types.hpp",
         INCLUDE_ROOT / "generated" / "method_catalog.hpp",
         INCLUDE_ROOT / "generated" / "initial_data_method_catalog.hpp",
     )

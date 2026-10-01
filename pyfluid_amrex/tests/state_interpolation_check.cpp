@@ -21,6 +21,8 @@
 
 namespace {
 
+using namespace amrex::literals;
+
 using namespace pyfluid_amrex;
 
 constexpr int NumComponents = 8;
@@ -44,68 +46,68 @@ struct MinkowskiMetricAccessor {
 // nonphysical child.
 constexpr std::array<State, 3> CoarseStencil{{
    {{
-      2.1931306385515779,
-      22.495734802485632,
-      -26.609584540900791,
-      -26.609544467491101,
-      72.601985874927166,
-      10.0,
-      3.4113931078726103,
-      3.4113872685502082,
+      2.1931306385515779_rt,
+      22.495734802485632_rt,
+      -26.609584540900791_rt,
+      -26.609544467491101_rt,
+      72.601985874927166_rt,
+      10.0_rt,
+      3.4113931078726103_rt,
+      3.4113872685502082_rt,
    }},
    {{
-      1.3699592236632692,
-      6.8011337171385131,
-      -14.773294585508712,
-      -14.773284706240204,
-      57.37705792368817,
-      10.0,
-      2.1928094578507338,
-      2.1928102038848603,
+      1.3699592236632692_rt,
+      6.8011337171385131_rt,
+      -14.773294585508712_rt,
+      -14.773284706240204_rt,
+      57.37705792368817_rt,
+      10.0_rt,
+      2.1928094578507338_rt,
+      2.1928102038848603_rt,
    }},
    {{
-      0.98281245229913061,
-      2.6424267903033103,
-      -8.2115307564322428,
-      -8.2115403976466528,
-      53.399264193074906,
-      10.0,
-      1.6013592363971536,
-      1.6013598254512778,
+      0.98281245229913061_rt,
+      2.6424267903033103_rt,
+      -8.2115307564322428_rt,
+      -8.2115403976466528_rt,
+      53.399264193074906_rt,
+      10.0_rt,
+      1.6013592363971536_rt,
+      1.6013598254512778_rt,
    }},
 }};
 
 constexpr std::array<State, 2> RawChildren{{
    {{
-      1.495316352019509,
-      8.8574142134971776,
-      -16.67884902231825,
-      -16.67883399392236,
-      59.365954788994799,
-      10.0,
-      2.3802813565076075,
-      2.3802814367310154,
+      1.495316352019509_rt,
+      8.8574142134971776_rt,
+      -16.67884902231825_rt,
+      -16.67883399392236_rt,
+      59.365954788994799_rt,
+      10.0_rt,
+      2.3802813565076075_rt,
+      2.3802814367310154_rt,
    }},
    {{
-      1.2446020953070294,
-      4.7448532207798486,
-      -12.867740148699172,
-      -12.867735418558047,
-      55.388161058381542,
-      10.0,
-      2.00533755919386,
-      2.0053389710387051,
+      1.2446020953070294_rt,
+      4.7448532207798486_rt,
+      -12.867740148699172_rt,
+      -12.867735418558047_rt,
+      55.388161058381542_rt,
+      10.0_rt,
+      2.00533755919386_rt,
+      2.0053389710387051_rt,
    }},
 }};
 
 bool close_enough(
    amrex::Real actual,
    amrex::Real expected,
-   amrex::Real tolerance = 8.0e-14
+   amrex::Real tolerance = 8.0e-14_rt
 )
 {
    const amrex::Real scale = std::max(
-      1.0,
+      1.0_rt,
       std::max(std::abs(actual), std::abs(expected))
    );
    return std::abs(actual - expected) <= tolerance * scale;
@@ -122,7 +124,7 @@ void require_close(
    std::string const& label,
    amrex::Real actual,
    amrex::Real expected,
-   amrex::Real tolerance = 8.0e-14
+   amrex::Real tolerance = 8.0e-14_rt
 )
 {
    if (!close_enough(actual, expected, tolerance)) {
@@ -145,8 +147,8 @@ amrex::Geometry make_geometry(int cells)
 {
    const amrex::Box domain = cell_box(0, cells - 1);
    const amrex::RealBox physical_domain(
-      AMREX_D_DECL(-1.0, 0.0, 0.0),
-      AMREX_D_DECL(1.0, 1.0, 1.0)
+      AMREX_D_DECL(-1.0_rt, 0.0_rt, 0.0_rt),
+      AMREX_D_DECL(1.0_rt, 1.0_rt, 1.0_rt)
    );
    const amrex::Array<int, AMREX_SPACEDIM> periodic{
       AMREX_D_DECL(0, 0, 0)
@@ -173,7 +175,7 @@ amrex::Vector<amrex::BCRec> boundary_conditions()
 
 void fill_coarse(
    amrex::FArrayBox& coarse,
-   amrex::Real stencil_scale = 1.0
+   amrex::Real stencil_scale = 1.0_rt
 )
 {
    State const& parent = CoarseStencil[1];
@@ -287,7 +289,7 @@ void check_split_sibling_interpolation_matches_complete_family()
       );
       require_close(
          "split protected child average",
-         0.5 * (left[component] + right[component]),
+         0.5_rt * (left[component] + right[component]),
          CoarseStencil[1][component]
       );
    }
@@ -306,6 +308,7 @@ MeshBasisStateInterpolater make_protected_interpolater(EOSParams const& eos)
       PhysicalSystem::RMHD,
       EOSIdealGas,
       eos,
+      eos_project_to_floors<EOSIdealGas>(eos.rho_floor, eos.pressure_floor, eos),
       FixedSpacetimeParameters{},
       true
    );
@@ -372,11 +375,11 @@ void check_captured_stencil()
    for (int component = 0; component < NumComponents; ++component) {
       require_close(
          "raw child average",
-         0.5 * (raw_left_state[component] + raw_right_state[component]),
+         0.5_rt * (raw_left_state[component] + raw_right_state[component]),
          parent[component]
       );
    }
-   amrex::Real common_theta = -1.0;
+   amrex::Real common_theta = -1.0_rt;
    for (int child = 0; child < 2; ++child) {
       const State raw = read_state(raw_fine, FineLeft + child);
       const State limited = read_state(protected_fine, FineLeft + child);
@@ -392,7 +395,7 @@ void check_captured_stencil()
 
       for (int component = 0; component < NumComponents; ++component) {
          const amrex::Real raw_deviation = raw[component] - parent[component];
-         if (raw_deviation == 0.0) {
+         if (raw_deviation == 0.0_rt) {
             require_close(
                "zero-deviation component",
                limited[component],
@@ -403,15 +406,15 @@ void check_captured_stencil()
          const amrex::Real theta = (
             limited[component] - parent[component]
          ) / raw_deviation;
-         if (common_theta < 0.0) {
+         if (common_theta < 0.0_rt) {
             common_theta = theta;
          } else {
-            require_close("shared child theta", theta, common_theta, 2.0e-12);
+            require_close("shared child theta", theta, common_theta, 2.0e-12_rt);
          }
       }
    }
    require(
-      common_theta >= 0.60 && common_theta <= 0.631,
+      common_theta >= 0.60_rt && common_theta <= 0.631_rt,
       "protected interpolation did not retain the near-maximal admissible slope"
    );
 
@@ -420,7 +423,7 @@ void check_captured_stencil()
    for (int component = 0; component < NumComponents; ++component) {
       require_close(
          "protected child average",
-         0.5 * (limited_left[component] + limited_right[component]),
+         0.5_rt * (limited_left[component] + limited_right[component]),
          parent[component]
       );
    }
@@ -435,7 +438,7 @@ void check_admissible_interpolation_is_unchanged()
    amrex::FArrayBox coarse(coarse_box, NumComponents);
    amrex::FArrayBox raw_fine(fine_box, NumComponents);
    amrex::FArrayBox protected_fine(fine_box, NumComponents);
-   fill_coarse(coarse, 0.1);
+   fill_coarse(coarse, 0.1_rt);
 
    interpolate(
       amrex::lincc_interp,
@@ -477,14 +480,14 @@ void check_post_magnetic_sync_atmosphere_backstop_preserves_b()
    const amrex::Box box = cell_box(0, 0);
    amrex::FArrayBox state(box, NumComponents);
    const auto values = state.array();
-   values(0, 0, 0, RHO) = 1.0;
-   values(0, 0, 0, MOM1) = 0.0;
-   values(0, 0, 0, MOM2) = 0.0;
-   values(0, 0, 0, MOM3) = 0.0;
-   values(0, 0, 0, ENERGY) = 0.15;
-   values(0, 0, 0, B1) = 0.6;
-   values(0, 0, 0, B2) = 0.0;
-   values(0, 0, 0, B3) = 0.0;
+   values(0, 0, 0, RHO) = 1.0_rt;
+   values(0, 0, 0, MOM1) = 0.0_rt;
+   values(0, 0, 0, MOM2) = 0.0_rt;
+   values(0, 0, 0, MOM3) = 0.0_rt;
+   values(0, 0, 0, ENERGY) = 0.15_rt;
+   values(0, 0, 0, B1) = 0.6_rt;
+   values(0, 0, 0, B2) = 0.0_rt;
+   values(0, 0, 0, B3) = 0.0_rt;
 
    const EOSParams eos{};
    const SpacetimeMetric metric = minkowski_spacetime_metric();
@@ -498,14 +501,14 @@ void check_post_magnetic_sync_atmosphere_backstop_preserves_b()
    );
    RelativisticRecoveryCellEvents events;
    const RMHDRecoveryResult recovered =
-      recover_relativistic_primitive_with_atmosphere<
+      recover_relativistic_primitive_with_exterior<
          PhysicalSystem::RMHD, EOSIdealGas
       >(values, 0, 0, 0, eos, metric, atmosphere, &events);
    require(recovered.succeeded(), "post-sync atmosphere backstop did not recover");
    require(events.atmosphere_reset_count == 1, "post-sync reset was not counted");
-   require(values(0, 0, 0, B1) == 0.6, "post-sync reset changed canonical B1");
-   require(values(0, 0, 0, B2) == 0.0, "post-sync reset changed canonical B2");
-   require(values(0, 0, 0, B3) == 0.0, "post-sync reset changed canonical B3");
+   require(values(0, 0, 0, B1) == 0.6_rt, "post-sync reset changed canonical B1");
+   require(values(0, 0, 0, B2) == 0.0_rt, "post-sync reset changed canonical B2");
+   require(values(0, 0, 0, B3) == 0.0_rt, "post-sync reset changed canonical B3");
 }
 
 void check_tiled_ghost_projection_has_unique_valid_cell_owner()
@@ -514,14 +517,14 @@ void check_tiled_ghost_projection_has_unique_valid_cell_owner()
    const amrex::BoxArray boxes(valid_box);
    const amrex::DistributionMapping distribution(boxes);
    amrex::MultiFab state(boxes, distribution, NumComponents, 1);
-   state.setVal(0.0);
-   state.setVal(1.0, RHO, 1, 1);
-   state.setVal(0.15, ENERGY, 1, 1);
+   state.setVal(0.0_rt);
+   state.setVal(1.0_rt, RHO, 1, 1);
+   state.setVal(0.15_rt, ENERGY, 1, 1);
 
    const amrex::IntVect invalid_cell(AMREX_D_DECL(4, 0, 0));
    for (amrex::MFIter mfi(state, false); mfi.isValid(); ++mfi) {
       if (mfi.validbox().contains(invalid_cell)) {
-         state.array(mfi)(4, 0, 0, B1) = 0.6;
+         state.array(mfi)(4, 0, 0, B1) = 0.6_rt;
       }
    }
 
@@ -536,12 +539,14 @@ void check_tiled_ghost_projection_has_unique_valid_cell_owner()
    const int previous_thread_count = amrex::OpenMP::get_max_threads();
    amrex::FabArrayBase::mfiter_tile_size = amrex::IntVect(4);
    amrex::OpenMP::set_num_threads(1);
-   project_relativistic_atmosphere<
+   project_relativistic_exterior<
       PhysicalSystem::RMHD, EOSIdealGas
    >(
       state,
       eos,
-      atmosphere,
+      RelativisticExteriorState{
+         atmosphere, RelativisticExteriorTreatment::Atmosphere
+      },
       [](amrex::MFIter const&) { return MinkowskiMetricAccessor{}; },
       1,
       nullptr,
@@ -565,7 +570,7 @@ void check_tiled_ghost_projection_has_unique_valid_cell_owner()
          eos.gamma
       );
       require(recovered.succeeded(), "tiled ghost projection did not recover the cell");
-      require(values(4, 0, 0, B1) == 0.6, "tiled ghost projection changed B1");
+      require(values(4, 0, 0, B1) == 0.6_rt, "tiled ghost projection changed B1");
    }
 }
 

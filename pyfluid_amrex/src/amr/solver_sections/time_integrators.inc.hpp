@@ -11,6 +11,7 @@
    >
    bool advance_level_range(amrex::Real time, amrex::Real dt, int lev_begin, int lev_end)
    {
+      constexpr auto const& stages = time_integrator_stages<TimeMethod>();
       bool use_direct_flux_stages = can_apply_direct_flux_stages<NComp>(lev_begin, lev_end);
       if constexpr (TimeMethod == TimeRK4 && SubcyclingEnabled) {
          use_direct_flux_stages = false;
@@ -18,321 +19,421 @@
       if (use_direct_flux_stages) {
          LevelData& final_state = FinalInPlace ? fluid_state_.state() : fluid_state_.next();
          if constexpr (TimeMethod == TimeEuler) {
-            amrex::Real stage_start = 0.0;
+            WallTime stage_start = 0.0;
             if constexpr (!InitialBoundariesFilled) {
                stage_start = profile_.begin();
-               fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time);
+               fill_level_boundaries_range<SubcyclingEnabled>(
+                  fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt)
+               );
                profile_.end(ProfileStage::BoundaryFill, stage_start);
             }
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.state(), dt, lev_begin, lev_end, time);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.state(), stages[0].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[0].time.apply(dt)
+            );
             stage_start = profile_.begin();
-            copy_plus_flux_divergence_range<NComp>(final_state, fluid_state_.state(), dt, lev_begin, lev_end);
+            copy_plus_flux_divergence_range<NComp>(
+               final_state, fluid_state_.state(), stages[0].rhs_weight.apply(dt), lev_begin, lev_end
+            );
             profile_.end(ProfileStage::Divergence, stage_start);
          } else if constexpr (TimeMethod == TimeCorrector) {
-            amrex::Real stage_start = 0.0;
+            WallTime stage_start = 0.0;
             if constexpr (!InitialBoundariesFilled) {
                stage_start = profile_.begin();
-               fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time);
+               fill_level_boundaries_range<SubcyclingEnabled>(
+                  fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt)
+               );
                profile_.end(ProfileStage::BoundaryFill, stage_start);
             }
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.state(), 0.5 * dt, lev_begin, lev_end, time);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.state(), stages[0].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[0].time.apply(dt)
+            );
             stage_start = profile_.begin();
-            copy_plus_flux_divergence_range<NComp>(fluid_state_.scratch(), fluid_state_.state(), dt, lev_begin, lev_end);
+            copy_plus_flux_divergence_range<NComp>(
+               fluid_state_.scratch(), fluid_state_.state(), stages[0].rhs_weight.apply(dt), lev_begin,
+               lev_end
+            );
             profile_.end(ProfileStage::Divergence, stage_start);
             if constexpr (has_mhd_components<NComp>()) {
                install_ct_stage_face_field<EOSMethod>(
-                  fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-                  lev_begin, lev_end, time + dt, 1.0, 0.0, dt
+                  fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+                  time + stages[0].output_time.apply(dt), stages[0].input_weight, stages[0].base_weight,
+                  stages[0].rhs_weight.apply(dt)
                );
             }
 
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.scratch(), lev_begin, lev_end, time + stages[1].time.apply(dt)
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.scratch(), 0.5 * dt, lev_begin, lev_end, time + dt);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.scratch(), stages[1].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[1].time.apply(dt)
+            );
             stage_start = profile_.begin();
-            linear_combination_plus_flux_divergence_range<NComp>(
-               final_state, fluid_state_.state(), fluid_state_.scratch(), 0.5, 0.5, 0.5 * dt, lev_begin, lev_end
+            affine_combination_plus_flux_divergence_range<NComp>(
+               final_state, fluid_state_.state(), fluid_state_.scratch(),
+               stages[1].input_weight, stages[1].rhs_weight.apply(dt), lev_begin, lev_end
             );
             profile_.end(ProfileStage::Divergence, stage_start);
          } else if constexpr (TimeMethod == TimeMidpoint) {
-            amrex::Real stage_start = 0.0;
+            WallTime stage_start = 0.0;
             if constexpr (!InitialBoundariesFilled) {
                stage_start = profile_.begin();
-               fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time);
+               fill_level_boundaries_range<SubcyclingEnabled>(
+                  fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt)
+               );
                profile_.end(ProfileStage::BoundaryFill, stage_start);
             }
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.state(), 0.0, lev_begin, lev_end, time);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.state(), stages[0].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[0].time.apply(dt)
+            );
             stage_start = profile_.begin();
-            copy_plus_flux_divergence_range<NComp>(fluid_state_.scratch(), fluid_state_.state(), 0.5 * dt, lev_begin, lev_end);
+            copy_plus_flux_divergence_range<NComp>(
+               fluid_state_.scratch(), fluid_state_.state(), stages[0].rhs_weight.apply(dt), lev_begin,
+               lev_end
+            );
             profile_.end(ProfileStage::Divergence, stage_start);
             if constexpr (has_mhd_components<NComp>()) {
                install_ct_stage_face_field<EOSMethod>(
-                  fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-                  lev_begin, lev_end, time + 0.5 * dt, 1.0, 0.0, 0.5 * dt
+                  fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+                  time + stages[0].output_time.apply(dt), stages[0].input_weight, stages[0].base_weight,
+                  stages[0].rhs_weight.apply(dt)
                );
             }
 
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + 0.5 * dt);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.scratch(), lev_begin, lev_end, time + stages[1].time.apply(dt)
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.scratch(), dt, lev_begin, lev_end, time + 0.5 * dt);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.scratch(), stages[1].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[1].time.apply(dt)
+            );
             stage_start = profile_.begin();
-            copy_plus_flux_divergence_range<NComp>(final_state, fluid_state_.state(), dt, lev_begin, lev_end);
+            copy_plus_flux_divergence_range<NComp>(
+               final_state, fluid_state_.state(), stages[1].rhs_weight.apply(dt), lev_begin, lev_end
+            );
             profile_.end(ProfileStage::Divergence, stage_start);
          } else if constexpr (TimeMethod == TimeSSPRK3) {
-            amrex::Real stage_start = 0.0;
+            WallTime stage_start = 0.0;
             if constexpr (!InitialBoundariesFilled) {
                stage_start = profile_.begin();
-               fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time);
+               fill_level_boundaries_range<SubcyclingEnabled>(
+                  fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt)
+               );
                profile_.end(ProfileStage::BoundaryFill, stage_start);
             }
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.state(), dt / 6.0, lev_begin, lev_end, time);
-            stage_start = profile_.begin();
-            copy_plus_flux_divergence_range<NComp>(fluid_state_.scratch(), fluid_state_.state(), dt, lev_begin, lev_end);
-            profile_.end(ProfileStage::Divergence, stage_start);
-            if constexpr (has_mhd_components<NComp>()) {
-               install_ct_stage_face_field<EOSMethod>(
-                  fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-                  lev_begin, lev_end, time + dt, 1.0, 0.0, dt
-               );
-            }
-            write_debug_stage_state(
-               fluid_state_.scratch(), "ssprk3_stage1_candidate",
-               time + dt, lev_begin, lev_end
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.state(), stages[0].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[0].time.apply(dt)
             );
-
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt);
-            profile_.end(ProfileStage::BoundaryFill, stage_start);
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.scratch(), dt / 6.0, lev_begin, lev_end, time + dt);
-            stage_start = profile_.begin();
-            linear_combination_plus_flux_divergence_range<NComp>(
-               fluid_state_.next(), fluid_state_.state(), fluid_state_.scratch(), 0.75, 0.25, 0.25 * dt, lev_begin, lev_end
+            copy_plus_flux_divergence_range<NComp>(
+               fluid_state_.scratch(), fluid_state_.state(), stages[0].rhs_weight.apply(dt), lev_begin,
+               lev_end
             );
             profile_.end(ProfileStage::Divergence, stage_start);
             if constexpr (has_mhd_components<NComp>()) {
                install_ct_stage_face_field<EOSMethod>(
-                  fluid_state_.next(), EvolutionStageSlot::Next,
-                  lev_begin, lev_end, time + 0.5 * dt,
-                  0.75, 0.25, 0.25 * dt
+                  fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+                  time + stages[0].output_time.apply(dt), stages[0].input_weight, stages[0].base_weight,
+                  stages[0].rhs_weight.apply(dt)
                );
             }
             write_debug_stage_state(
-               fluid_state_.next(), "ssprk3_stage2_candidate",
-               time + 0.5 * dt, lev_begin, lev_end
+               fluid_state_.scratch(), "ssprk3_stage1_candidate", time + stages[0].output_time.apply(dt),
+               lev_begin, lev_end
             );
 
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.next(), lev_begin, lev_end, time + 0.5 * dt);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.scratch(), lev_begin, lev_end, time + stages[1].time.apply(dt)
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.next(), 2.0 * dt / 3.0, lev_begin, lev_end, time + 0.5 * dt);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.scratch(), stages[1].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[1].time.apply(dt)
+            );
             stage_start = profile_.begin();
-            linear_combination_plus_flux_divergence_range<NComp>(
-               final_state, fluid_state_.state(), fluid_state_.next(), 1.0 / 3.0, 2.0 / 3.0, 2.0 * dt / 3.0, lev_begin, lev_end
+            affine_combination_plus_flux_divergence_range<NComp>(
+               fluid_state_.next(), fluid_state_.state(), fluid_state_.scratch(),
+               stages[1].input_weight, stages[1].rhs_weight.apply(dt), lev_begin,
+               lev_end
+            );
+            profile_.end(ProfileStage::Divergence, stage_start);
+            if constexpr (has_mhd_components<NComp>()) {
+               install_ct_stage_face_field<EOSMethod>(
+                  fluid_state_.next(), EvolutionStageSlot::Next, lev_begin, lev_end,
+                  time + stages[1].output_time.apply(dt), stages[1].base_weight, stages[1].input_weight,
+                  stages[1].rhs_weight.apply(dt)
+               );
+            }
+            write_debug_stage_state(
+               fluid_state_.next(), "ssprk3_stage2_candidate", time + stages[1].output_time.apply(dt),
+               lev_begin, lev_end
+            );
+
+            stage_start = profile_.begin();
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.next(), lev_begin, lev_end, time + stages[2].time.apply(dt)
+            );
+            profile_.end(ProfileStage::BoundaryFill, stage_start);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.next(), stages[2].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[2].time.apply(dt)
+            );
+            stage_start = profile_.begin();
+            affine_combination_plus_flux_divergence_range<NComp>(
+               final_state, fluid_state_.state(), fluid_state_.next(),
+               stages[2].input_weight, stages[2].rhs_weight.apply(dt), lev_begin, lev_end
             );
             profile_.end(ProfileStage::Divergence, stage_start);
             write_debug_stage_state(
-               final_state, "ssprk3_stage3_candidate",
-               time + dt, lev_begin, lev_end
+               final_state, "ssprk3_stage3_candidate", time + stages[2].output_time.apply(dt), lev_begin,
+               lev_end
             );
          } else if constexpr (TimeMethod == TimeRK4) {
-            amrex::Real stage_start = 0.0;
+            WallTime stage_start = 0.0;
             if constexpr (!InitialBoundariesFilled) {
                stage_start = profile_.begin();
-               fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time, time, 1);
+               fill_level_boundaries_range<SubcyclingEnabled>(
+                  fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt), time, 1
+               );
                profile_.end(ProfileStage::BoundaryFill, stage_start);
             }
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.state(), dt / 6.0, lev_begin, lev_end, time);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.state(), stages[0].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[0].time.apply(dt)
+            );
             stage_start = profile_.begin();
-            copy_two_plus_flux_divergence_range<NComp>(fluid_state_.next(), fluid_state_.scratch(), fluid_state_.state(), dt / 6.0, 0.5 * dt, lev_begin, lev_end);
-            profile_.end(ProfileStage::Divergence, stage_start);
-            if constexpr (has_mhd_components<NComp>()) {
-               install_ct_stage_face_field<EOSMethod>(
-                  fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-                  lev_begin, lev_end, time + 0.5 * dt, 1.0, 0.0, 0.5 * dt
-               );
-            }
-
-            stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + 0.5 * dt, time, 2);
-            profile_.end(ProfileStage::BoundaryFill, stage_start);
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.scratch(), dt / 3.0, lev_begin, lev_end, time + 0.5 * dt);
-            stage_start = profile_.begin();
-            add_flux_divergence_and_copy_plus_flux_divergence_range<NComp>(
-               fluid_state_.next(), fluid_state_.scratch(), fluid_state_.state(), dt / 3.0, 0.5 * dt, lev_begin, lev_end
+            copy_two_plus_flux_divergence_range<NComp>(
+               fluid_state_.next(), fluid_state_.scratch(), fluid_state_.state(),
+               stages[0].final_rhs_weight.apply(dt), stages[0].rhs_weight.apply(dt), lev_begin, lev_end
             );
             profile_.end(ProfileStage::Divergence, stage_start);
             if constexpr (has_mhd_components<NComp>()) {
                install_ct_stage_face_field<EOSMethod>(
-                  fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-                  lev_begin, lev_end, time + 0.5 * dt, 1.0, 0.0, 0.5 * dt
+                  fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+                  time + stages[0].output_time.apply(dt), stages[0].input_weight, stages[0].base_weight,
+                  stages[0].rhs_weight.apply(dt)
                );
             }
 
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + 0.5 * dt, time, 3);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.scratch(), lev_begin, lev_end, time + stages[1].time.apply(dt), time, 2
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.scratch(), dt / 3.0, lev_begin, lev_end, time + 0.5 * dt);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.scratch(), stages[1].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[1].time.apply(dt)
+            );
             stage_start = profile_.begin();
             add_flux_divergence_and_copy_plus_flux_divergence_range<NComp>(
-               fluid_state_.next(), fluid_state_.scratch(), fluid_state_.state(), dt / 3.0, dt, lev_begin, lev_end
+               fluid_state_.next(), fluid_state_.scratch(), fluid_state_.state(),
+               stages[1].final_rhs_weight.apply(dt), stages[1].rhs_weight.apply(dt), lev_begin, lev_end
             );
             profile_.end(ProfileStage::Divergence, stage_start);
             if constexpr (has_mhd_components<NComp>()) {
                install_ct_stage_face_field<EOSMethod>(
-                  fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-                  lev_begin, lev_end, time + dt, 1.0, 0.0, dt
+                  fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+                  time + stages[1].output_time.apply(dt), stages[1].base_weight, stages[1].input_weight,
+                  stages[1].rhs_weight.apply(dt)
                );
             }
 
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt, time, 4);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.scratch(), lev_begin, lev_end, time + stages[2].time.apply(dt), time, 3
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
-            compute_flux_stage_range<NComp, EOSMethod>(fluid_state_.scratch(), dt / 6.0, lev_begin, lev_end, time + dt);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.scratch(), stages[2].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[2].time.apply(dt)
+            );
+            stage_start = profile_.begin();
+            add_flux_divergence_and_copy_plus_flux_divergence_range<NComp>(
+               fluid_state_.next(), fluid_state_.scratch(), fluid_state_.state(),
+               stages[2].final_rhs_weight.apply(dt), stages[2].rhs_weight.apply(dt), lev_begin, lev_end
+            );
+            profile_.end(ProfileStage::Divergence, stage_start);
+            if constexpr (has_mhd_components<NComp>()) {
+               install_ct_stage_face_field<EOSMethod>(
+                  fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+                  time + stages[2].output_time.apply(dt), stages[2].base_weight, stages[2].input_weight,
+                  stages[2].rhs_weight.apply(dt)
+               );
+            }
+
+            stage_start = profile_.begin();
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.scratch(), lev_begin, lev_end, time + stages[3].time.apply(dt), time, 4
+            );
+            profile_.end(ProfileStage::BoundaryFill, stage_start);
+            compute_flux_stage_range<NComp, EOSMethod>(
+               fluid_state_.scratch(), stages[3].final_rhs_weight.apply(dt), lev_begin, lev_end,
+               time + stages[3].time.apply(dt)
+            );
             stage_start = profile_.begin();
             if constexpr (FinalInPlace) {
-               copy_plus_flux_divergence_range<NComp>(fluid_state_.state(), fluid_state_.next(), dt / 6.0, lev_begin, lev_end);
+               copy_plus_flux_divergence_range<NComp>(
+                  fluid_state_.state(), fluid_state_.next(), stages[3].rhs_weight.apply(dt), lev_begin,
+                  lev_end
+               );
             } else {
                for (int lev = lev_begin; lev < lev_end; ++lev) {
                   if (solid_active(lev) && !has_mhd_components<NComp>() && cfg_.solid_motion == "static") {
                      add_flux_divergence_to_state_masked<NComp>(
-                        *fluid_state_.next()[lev],
-                        *solid_mask_[lev],
-                        flux_ptrs(lev),
-                        Geom(lev),
-                        dt / 6.0,
-                        &solid_valid_kind_[lev]
+                        *fluid_state_.next()[lev], *solid_mask_[lev], flux_ptrs(lev), Geom(lev),
+                        stages[3].final_rhs_weight.apply(dt), &solid_valid_kind_[lev]
                      );
                   } else {
-                     add_flux_divergence_to_state<NComp>(*fluid_state_.next()[lev], flux_ptrs(lev), Geom(lev), dt / 6.0);
+                     add_flux_divergence_to_state<NComp>(
+                        *fluid_state_.next()[lev], flux_ptrs(lev), Geom(lev),
+                        stages[3].final_rhs_weight.apply(dt)
+                     );
                   }
                }
             }
             profile_.end(ProfileStage::Divergence, stage_start);
          }
-         project_relativistic_atmosphere_range<EOSMethod>(
+         debug_check_relativistic_stage_range(
+            final_state, lev_begin, lev_end,
+            "relativistic pre-projection accepted candidate", time + dt
+         );
+         project_relativistic_exterior_range<EOSMethod>(
             final_state, lev_begin, lev_end
          );
          if constexpr (TimeMethod == TimeSSPRK3) {
-            write_debug_stage_state(
-               final_state, "ssprk3_accepted",
-               time + dt, lev_begin, lev_end
-            );
+            write_debug_stage_state(final_state, "ssprk3_accepted", time + dt, lev_begin, lev_end);
          }
          return !FinalInPlace;
       }
 
       if constexpr (TimeMethod == TimeEuler) {
-         amrex::Real stage_start = 0.0;
+         WallTime stage_start = 0.0;
          if constexpr (!InitialBoundariesFilled) {
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt)
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, dt, lev_begin, lev_end, time,
-            EvolutionStageSlot::State, 0.0, 1.0, dt, time + dt
+            EvolutionStageSlot::State, stages[0], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State
          );
          stage_start = profile_.begin();
          evolution_copy_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Next, EvolutionStageSlot::State, dt, lev_begin, lev_end
+            EvolutionStageSlot::Next, EvolutionStageSlot::State, stages[0].rhs_weight.apply(dt),
+            lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
       } else if constexpr (TimeMethod == TimeCorrector) {
-         amrex::Real stage_start = 0.0;
+         WallTime stage_start = 0.0;
          if constexpr (!InitialBoundariesFilled) {
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt)
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, 0.5 * dt, lev_begin, lev_end, time,
-            EvolutionStageSlot::State, 0.0, 1.0, dt, time + dt
+            EvolutionStageSlot::State, stages[0], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State
          );
          stage_start = profile_.begin();
          evolution_copy_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Scratch, EvolutionStageSlot::State, dt, lev_begin, lev_end
+            EvolutionStageSlot::Scratch, EvolutionStageSlot::State, stages[0].rhs_weight.apply(dt),
+            lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
          if constexpr (has_mhd_components<NComp>()) {
             install_ct_stage_face_field<EOSMethod>(
-               fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-               lev_begin, lev_end, time + dt, 1.0, 0.0, dt
+               fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+               time + stages[0].output_time.apply(dt), stages[0].input_weight, stages[0].base_weight,
+               stages[0].rhs_weight.apply(dt)
             );
          }
 
          stage_start = profile_.begin();
-         fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt);
+         fill_level_boundaries_range<SubcyclingEnabled>(
+            fluid_state_.scratch(), lev_begin, lev_end, time + stages[1].time.apply(dt)
+         );
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Scratch, 0.5 * dt, lev_begin, lev_end,
-            time + dt, EvolutionStageSlot::State, 0.5, 0.5, 0.5 * dt,
-            time + dt
+            EvolutionStageSlot::Scratch, stages[1], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State
          );
          stage_start = profile_.begin();
-         evolution_linear_combination_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Next,
-            EvolutionStageSlot::State,
-            EvolutionStageSlot::Scratch,
-            0.5,
-            0.5,
-            0.5 * dt,
-            lev_begin,
+         evolution_affine_combination_plus_scaled_range<NComp>(
+            EvolutionStageSlot::Next, EvolutionStageSlot::State, EvolutionStageSlot::Scratch,
+            stages[1].input_weight, stages[1].rhs_weight.apply(dt), lev_begin,
             lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
       } else if constexpr (TimeMethod == TimeMidpoint) {
-         amrex::Real stage_start = 0.0;
+         WallTime stage_start = 0.0;
          if constexpr (!InitialBoundariesFilled) {
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt)
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, 0.0, lev_begin, lev_end, time,
-            EvolutionStageSlot::State, 0.0, 1.0, 0.5 * dt,
-            time + 0.5 * dt
+            EvolutionStageSlot::State, stages[0], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State
          );
          stage_start = profile_.begin();
          evolution_copy_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Scratch, EvolutionStageSlot::State, 0.5 * dt, lev_begin, lev_end
+            EvolutionStageSlot::Scratch, EvolutionStageSlot::State, stages[0].rhs_weight.apply(dt),
+            lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
          if constexpr (has_mhd_components<NComp>()) {
             install_ct_stage_face_field<EOSMethod>(
-               fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-               lev_begin, lev_end, time + 0.5 * dt,
-               1.0, 0.0, 0.5 * dt
+               fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+               time + stages[0].output_time.apply(dt), stages[0].input_weight, stages[0].base_weight,
+               stages[0].rhs_weight.apply(dt)
             );
          }
 
          stage_start = profile_.begin();
-         fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + 0.5 * dt);
+         fill_level_boundaries_range<SubcyclingEnabled>(
+            fluid_state_.scratch(), lev_begin, lev_end, time + stages[1].time.apply(dt)
+         );
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Scratch, dt, lev_begin, lev_end,
-            time + 0.5 * dt, EvolutionStageSlot::State, 1.0, 0.0, dt,
-            time + dt
+            EvolutionStageSlot::Scratch, stages[1], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State
          );
          stage_start = profile_.begin();
          evolution_copy_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Next, EvolutionStageSlot::State, dt, lev_begin, lev_end
+            EvolutionStageSlot::Next, EvolutionStageSlot::State, stages[1].rhs_weight.apply(dt),
+            lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
       } else if constexpr (TimeMethod == TimeSSPRK3) {
          const bool athena_ssprk3_gravity = uses_athena_ssprk3_gravity_energy_correction();
          const bool previous_suppression = suppress_athena_gravity_energy_source_;
          suppress_athena_gravity_energy_source_ = previous_suppression || athena_ssprk3_gravity;
-         amrex::Real stage_start = 0.0;
+         WallTime stage_start = 0.0;
          if constexpr (!InitialBoundariesFilled) {
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt)
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, dt / 6.0, lev_begin, lev_end, time,
-            EvolutionStageSlot::State, 0.0, 1.0, dt, time + dt
+            EvolutionStageSlot::State, stages[0], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State
          );
          if (athena_ssprk3_gravity) {
             store_athena_ssprk3_start_gravity_range(lev_begin, lev_end);
@@ -340,13 +441,15 @@
          }
          stage_start = profile_.begin();
          evolution_copy_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Scratch, EvolutionStageSlot::State, dt, lev_begin, lev_end
+            EvolutionStageSlot::Scratch, EvolutionStageSlot::State, stages[0].rhs_weight.apply(dt),
+            lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
          if constexpr (has_mhd_components<NComp>()) {
             install_ct_stage_face_field<EOSMethod>(
-               fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-               lev_begin, lev_end, time + dt, 1.0, 0.0, dt
+               fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+               time + stages[0].output_time.apply(dt), stages[0].input_weight, stages[0].base_weight,
+               stages[0].rhs_weight.apply(dt)
             );
          }
          if (athena_ssprk3_gravity) {
@@ -354,69 +457,61 @@
             apply_athena_ssprk3_energy_release_range(fluid_state_.scratch(), 0, dt, lev_begin, lev_end);
          }
          write_debug_stage_state(
-            fluid_state_.scratch(), "ssprk3_stage1_candidate",
-            time + dt, lev_begin, lev_end
+            fluid_state_.scratch(), "ssprk3_stage1_candidate", time + stages[0].output_time.apply(dt),
+            lev_begin, lev_end
          );
 
          stage_start = profile_.begin();
-         fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt);
+         fill_level_boundaries_range<SubcyclingEnabled>(
+            fluid_state_.scratch(), lev_begin, lev_end, time + stages[1].time.apply(dt)
+         );
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Scratch, dt / 6.0, lev_begin, lev_end,
-            time + dt, EvolutionStageSlot::State, 0.75, 0.25, 0.25 * dt,
-            time + 0.5 * dt
+            EvolutionStageSlot::Scratch, stages[1], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State
          );
          if (athena_ssprk3_gravity) {
             store_athena_ssprk3_mass_flux_range(1, lev_begin, lev_end);
          }
          stage_start = profile_.begin();
-         evolution_linear_combination_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Next,
-            EvolutionStageSlot::State,
-            EvolutionStageSlot::Scratch,
-            0.75,
-            0.25,
-            0.25 * dt,
-            lev_begin,
+         evolution_affine_combination_plus_scaled_range<NComp>(
+            EvolutionStageSlot::Next, EvolutionStageSlot::State, EvolutionStageSlot::Scratch,
+            stages[1].input_weight, stages[1].rhs_weight.apply(dt), lev_begin,
             lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
          if constexpr (has_mhd_components<NComp>()) {
             install_ct_stage_face_field<EOSMethod>(
-               fluid_state_.next(), EvolutionStageSlot::Next,
-               lev_begin, lev_end, time + 0.5 * dt,
-               0.75, 0.25, 0.25 * dt
+               fluid_state_.next(), EvolutionStageSlot::Next, lev_begin, lev_end,
+               time + stages[1].output_time.apply(dt), stages[1].base_weight, stages[1].input_weight,
+               stages[1].rhs_weight.apply(dt)
             );
          }
          if (athena_ssprk3_gravity) {
-            prepare_stage_sources<SubcyclingEnabled>(fluid_state_.next(), lev_begin, lev_end, time + 0.5 * dt);
+            prepare_stage_sources<SubcyclingEnabled>(fluid_state_.next(), lev_begin, lev_end, time + stages[1].output_time.apply(dt));
             apply_athena_ssprk3_energy_release_range(fluid_state_.next(), 1, dt, lev_begin, lev_end);
          }
          write_debug_stage_state(
-            fluid_state_.next(), "ssprk3_stage2_candidate",
-            time + 0.5 * dt, lev_begin, lev_end
+            fluid_state_.next(), "ssprk3_stage2_candidate", time + stages[1].output_time.apply(dt),
+            lev_begin, lev_end
          );
 
          stage_start = profile_.begin();
-         fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.next(), lev_begin, lev_end, time + 0.5 * dt);
+         fill_level_boundaries_range<SubcyclingEnabled>(
+            fluid_state_.next(), lev_begin, lev_end, time + stages[2].time.apply(dt)
+         );
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Next, 2.0 * dt / 3.0, lev_begin, lev_end,
-            time + 0.5 * dt, EvolutionStageSlot::State, 1.0 / 3.0,
-            2.0 / 3.0, 2.0 * dt / 3.0, time + dt
+            EvolutionStageSlot::Next, stages[2], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State
          );
          if (athena_ssprk3_gravity) {
             store_athena_ssprk3_mass_flux_range(2, lev_begin, lev_end);
          }
          stage_start = profile_.begin();
-         evolution_linear_combination_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Scratch,
-            EvolutionStageSlot::State,
-            EvolutionStageSlot::Next,
-            1.0 / 3.0,
-            2.0 / 3.0,
-            2.0 * dt / 3.0,
-            lev_begin,
+         evolution_affine_combination_plus_scaled_range<NComp>(
+            EvolutionStageSlot::Scratch, EvolutionStageSlot::State, EvolutionStageSlot::Next,
+            stages[2].input_weight, stages[2].rhs_weight.apply(dt), lev_begin,
             lev_end
          );
          if (athena_ssprk3_gravity) {
@@ -429,21 +524,22 @@
          );
          profile_.end(ProfileStage::Update, stage_start);
          write_debug_stage_state(
-            fluid_state_.next(), "ssprk3_stage3_candidate",
-            time + dt, lev_begin, lev_end
+            fluid_state_.next(), "ssprk3_stage3_candidate", time + stages[2].output_time.apply(dt),
+            lev_begin, lev_end
          );
          suppress_athena_gravity_energy_source_ = previous_suppression;
       } else if constexpr (TimeMethod == TimeRK4) {
-         amrex::Real stage_start = 0.0;
+         WallTime stage_start = 0.0;
          if constexpr (!InitialBoundariesFilled) {
             stage_start = profile_.begin();
-            fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.state(), lev_begin, lev_end, time, time, 1);
+            fill_level_boundaries_range<SubcyclingEnabled>(
+               fluid_state_.state(), lev_begin, lev_end, time + stages[0].time.apply(dt), time, 1
+            );
             profile_.end(ProfileStage::BoundaryFill, stage_start);
          }
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::State, dt / 6.0, lev_begin, lev_end,
-            time, EvolutionStageSlot::State, 0.0, 1.0, 0.5 * dt,
-            time + 0.5 * dt, time, 1
+            EvolutionStageSlot::State, stages[0], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State, time, 1
          );
          if constexpr (SubcyclingEnabled) {
             store_rk4_rhs_stage<NComp>(0, lev_begin, lev_end);
@@ -453,39 +549,26 @@
          }
          stage_start = profile_.begin();
          evolution_copy_two_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Next,
-            EvolutionStageSlot::Scratch,
-            EvolutionStageSlot::State,
-            dt / 6.0,
-            0.5 * dt,
-            lev_begin,
-            lev_end
+            EvolutionStageSlot::Next, EvolutionStageSlot::Scratch, EvolutionStageSlot::State,
+            stages[0].final_rhs_weight.apply(dt), stages[0].rhs_weight.apply(dt), lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
          if constexpr (has_mhd_components<NComp>()) {
             install_ct_stage_face_field<EOSMethod>(
-               fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-               lev_begin, lev_end, time + 0.5 * dt,
-               1.0, 0.0, 0.5 * dt
+               fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+               time + stages[0].output_time.apply(dt), stages[0].input_weight, stages[0].base_weight,
+               stages[0].rhs_weight.apply(dt)
             );
          }
 
          stage_start = profile_.begin();
-         fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + 0.5 * dt, time, 2);
+         fill_level_boundaries_range<SubcyclingEnabled>(
+            fluid_state_.scratch(), lev_begin, lev_end, time + stages[1].time.apply(dt), time, 2
+         );
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Scratch,
-            dt / 3.0,
-            lev_begin,
-            lev_end,
-            time + 0.5 * dt,
-            EvolutionStageSlot::State,
-            1.0,
-            0.0,
-            0.5 * dt,
-            time + 0.5 * dt,
-            time,
-            2
+            EvolutionStageSlot::Scratch, stages[1], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State, time, 2
          );
          if constexpr (SubcyclingEnabled) {
             store_rk4_rhs_stage<NComp>(1, lev_begin, lev_end);
@@ -495,39 +578,26 @@
          }
          stage_start = profile_.begin();
          evolution_add_scaled_and_copy_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Next,
-            EvolutionStageSlot::Scratch,
-            EvolutionStageSlot::State,
-            dt / 3.0,
-            0.5 * dt,
-            lev_begin,
-            lev_end
+            EvolutionStageSlot::Next, EvolutionStageSlot::Scratch, EvolutionStageSlot::State,
+            stages[1].final_rhs_weight.apply(dt), stages[1].rhs_weight.apply(dt), lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
          if constexpr (has_mhd_components<NComp>()) {
             install_ct_stage_face_field<EOSMethod>(
-               fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-               lev_begin, lev_end, time + 0.5 * dt,
-               1.0, 0.0, 0.5 * dt
+               fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+               time + stages[1].output_time.apply(dt), stages[1].base_weight, stages[1].input_weight,
+               stages[1].rhs_weight.apply(dt)
             );
          }
 
          stage_start = profile_.begin();
-         fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + 0.5 * dt, time, 3);
+         fill_level_boundaries_range<SubcyclingEnabled>(
+            fluid_state_.scratch(), lev_begin, lev_end, time + stages[2].time.apply(dt), time, 3
+         );
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Scratch,
-            dt / 3.0,
-            lev_begin,
-            lev_end,
-            time + 0.5 * dt,
-            EvolutionStageSlot::State,
-            1.0,
-            0.0,
-            dt,
-            time + dt,
-            time,
-            3
+            EvolutionStageSlot::Scratch, stages[2], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::State, time, 3
          );
          if constexpr (SubcyclingEnabled) {
             store_rk4_rhs_stage<NComp>(2, lev_begin, lev_end);
@@ -537,38 +607,26 @@
          }
          stage_start = profile_.begin();
          evolution_add_scaled_and_copy_plus_scaled_range<NComp>(
-            EvolutionStageSlot::Next,
-            EvolutionStageSlot::Scratch,
-            EvolutionStageSlot::State,
-            dt / 3.0,
-            dt,
-            lev_begin,
-            lev_end
+            EvolutionStageSlot::Next, EvolutionStageSlot::Scratch, EvolutionStageSlot::State,
+            stages[2].final_rhs_weight.apply(dt), stages[2].rhs_weight.apply(dt), lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
          if constexpr (has_mhd_components<NComp>()) {
             install_ct_stage_face_field<EOSMethod>(
-               fluid_state_.scratch(), EvolutionStageSlot::Scratch,
-               lev_begin, lev_end, time + dt, 1.0, 0.0, dt
+               fluid_state_.scratch(), EvolutionStageSlot::Scratch, lev_begin, lev_end,
+               time + stages[2].output_time.apply(dt), stages[2].base_weight, stages[2].input_weight,
+               stages[2].rhs_weight.apply(dt)
             );
          }
 
          stage_start = profile_.begin();
-         fill_level_boundaries_range<SubcyclingEnabled>(fluid_state_.scratch(), lev_begin, lev_end, time + dt, time, 4);
+         fill_level_boundaries_range<SubcyclingEnabled>(
+            fluid_state_.scratch(), lev_begin, lev_end, time + stages[3].time.apply(dt), time, 4
+         );
          profile_.end(ProfileStage::BoundaryFill, stage_start);
          compute_evolution_rhs_range<NComp, EOSMethod, SubcyclingEnabled>(
-            EvolutionStageSlot::Scratch,
-            dt / 6.0,
-            lev_begin,
-            lev_end,
-            time + dt,
-            EvolutionStageSlot::Next,
-            1.0,
-            0.0,
-            dt / 6.0,
-            time + dt,
-            time,
-            4
+            EvolutionStageSlot::Scratch, stages[3], time, dt, lev_begin, lev_end,
+            EvolutionStageSlot::Next, time, 4
          );
          if constexpr (SubcyclingEnabled) {
             store_rk4_rhs_stage<NComp>(3, lev_begin, lev_end);
@@ -578,7 +636,7 @@
          }
          stage_start = profile_.begin();
          evolution_add_scaled_range<NComp>(
-            EvolutionStageSlot::Next, dt / 6.0, lev_begin, lev_end
+            EvolutionStageSlot::Next, stages[3].final_rhs_weight.apply(dt), lev_begin, lev_end
          );
          profile_.end(ProfileStage::Update, stage_start);
       }
@@ -592,16 +650,36 @@
       }
       if (spacetime_state_.active()) {
          prepare_spacetime_coupling_range(
-            spacetime_state_.state(), lev_begin, lev_end, time + dt, -1.0, 0
+            spacetime_state_.state(), lev_begin, lev_end, time + dt, -1.0_rt, 0
          );
       }
-      project_relativistic_atmosphere_range<EOSMethod>(
-         fluid_state_.next(), lev_begin, lev_end
+      // The accepted-state projection can apply density/pressure floors
+      // without constituting a failed C2P reset. Those changes are real
+      // external sources to the finite-volume matter budget and must be
+      // recorded once, at the state that is actually accepted.
+      debug_check_relativistic_stage_range(
+         fluid_state_.next(), lev_begin, lev_end,
+         "relativistic pre-projection accepted candidate", time + dt
       );
+      for (int lev = lev_begin; lev < lev_end; ++lev) {
+         const MassEnergy projection_before =
+            local_state_mass_energy_integral(
+               lev, *fluid_state_.next()[lev]
+            );
+         project_relativistic_exterior_range<EOSMethod>(
+            fluid_state_.next(), lev, lev + 1
+         );
+         accumulate_source_change(
+            projection_before,
+            local_state_mass_energy_integral(
+               lev, *fluid_state_.next()[lev]
+            ),
+            1.0_rt
+         );
+      }
       if constexpr (TimeMethod == TimeSSPRK3) {
          write_debug_stage_state(
-            fluid_state_.next(), "ssprk3_accepted",
-            time + dt, lev_begin, lev_end
+            fluid_state_.next(), "ssprk3_accepted", time + dt, lev_begin, lev_end
          );
       }
       debug_check_relativistic_stage_range(
@@ -620,7 +698,7 @@
       const bool next_state_needs_copy =
          advance_level_range<NComp, TimeMethod, EOSMethod, false, false, FinalInPlace>(time, dt, 0, finestLevel() + 1);
       if (finestLevel() > 0) {
-         const amrex::Real stage_start = profile_.begin();
+         const WallTime stage_start = profile_.begin();
          if (next_state_needs_copy) {
             reflux_next_levels();
          } else {

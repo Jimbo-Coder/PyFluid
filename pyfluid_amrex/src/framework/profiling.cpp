@@ -57,12 +57,12 @@ bool ProfileCounters::flux_detail_enabled() const
    return enabled() && detail_ == "flux";
 }
 
-amrex::Real ProfileCounters::begin() const
+WallTime ProfileCounters::begin() const
 {
    return enabled() ? amrex::ParallelDescriptor::second() : 0.0;
 }
 
-void ProfileCounters::end(ProfileStage stage, amrex::Real start)
+void ProfileCounters::end(ProfileStage stage, WallTime start)
 {
    if (!enabled()) {
       return;
@@ -72,7 +72,7 @@ void ProfileCounters::end(ProfileStage stage, amrex::Real start)
    calls_[index] += 1;
 }
 
-void ProfileCounters::detail_end(ProfileDetailStage stage, amrex::Real start)
+void ProfileCounters::detail_end(ProfileDetailStage stage, WallTime start)
 {
    if (!flux_detail_enabled()) {
       return;
@@ -82,13 +82,13 @@ void ProfileCounters::detail_end(ProfileDetailStage stage, amrex::Real start)
    detail_calls_[index] += 1;
 }
 
-void ProfileCounters::write(std::filesystem::path const& output_dir, amrex::Real elapsed_wall) const
+void ProfileCounters::write(std::filesystem::path const& output_dir, WallTime elapsed_wall) const
 {
    if (!enabled()) {
       return;
    }
-   std::array<amrex::Real, ProfileStageCount> max_seconds = seconds_;
-   for (amrex::Real& seconds : max_seconds) {
+   std::array<WallTime, ProfileStageCount> max_seconds = seconds_;
+   for (WallTime& seconds : max_seconds) {
       amrex::ParallelDescriptor::ReduceRealMax(seconds, amrex::ParallelDescriptor::IOProcessorNumber());
    }
    if (!amrex::ParallelDescriptor::IOProcessor()) {
@@ -97,7 +97,7 @@ void ProfileCounters::write(std::filesystem::path const& output_dir, amrex::Real
    std::ofstream out(output_dir / "profile.tsv", std::ios::out | std::ios::trunc);
    out << "stage\trank_max_seconds\tfraction_of_run_wall\tcalls\n";
    for (int index = 0; index < ProfileStageCount; ++index) {
-      const amrex::Real fraction = elapsed_wall > 0.0 ? max_seconds[index] / elapsed_wall : 0.0;
+      const WallTime fraction = elapsed_wall > 0.0 ? max_seconds[index] / elapsed_wall : 0.0;
       out << profile_stage_name(static_cast<ProfileStage>(index)) << '\t'
           << std::setprecision(17) << max_seconds[index] << '\t'
           << fraction << '\t'
@@ -105,13 +105,13 @@ void ProfileCounters::write(std::filesystem::path const& output_dir, amrex::Real
    }
 }
 
-void ProfileCounters::write_detail(std::filesystem::path const& output_dir, amrex::Real elapsed_wall) const
+void ProfileCounters::write_detail(std::filesystem::path const& output_dir, WallTime elapsed_wall) const
 {
    if (!flux_detail_enabled()) {
       return;
    }
-   std::array<amrex::Real, ProfileDetailStageCount> max_seconds = detail_seconds_;
-   for (amrex::Real& seconds : max_seconds) {
+   std::array<WallTime, ProfileDetailStageCount> max_seconds = detail_seconds_;
+   for (WallTime& seconds : max_seconds) {
       amrex::ParallelDescriptor::ReduceRealMax(seconds, amrex::ParallelDescriptor::IOProcessorNumber());
    }
    if (!amrex::ParallelDescriptor::IOProcessor()) {
@@ -130,7 +130,7 @@ void ProfileCounters::write_detail(std::filesystem::path const& output_dir, amre
          continue;
       }
 #endif
-      const amrex::Real fraction = elapsed_wall > 0.0 ? max_seconds[index] / elapsed_wall : 0.0;
+      const WallTime fraction = elapsed_wall > 0.0 ? max_seconds[index] / elapsed_wall : 0.0;
       out << profile_detail_stage_name(static_cast<ProfileDetailStage>(index)) << '\t'
           << std::setprecision(17) << max_seconds[index] << '\t'
           << fraction << '\t'

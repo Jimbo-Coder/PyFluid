@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import sympy as sp
 
 
-@dataclass(frozen=True)
-class PatchMapKernel:
-   name: str
-   return_type: str
-   arguments: tuple[tuple[str, str], ...]
-   expressions: tuple[sp.Expr, ...]
+from .kernel_equations import StructKernel
 
 
 def patch_map_symbols() -> dict[str, sp.Symbol]:
@@ -18,19 +11,21 @@ def patch_map_symbols() -> dict[str, sp.Symbol]:
    return {name: symbol for name, symbol in zip(names.split(), sp.symbols(names), strict=True)}
 
 
-def _point_kernel(name: str, expressions: tuple[sp.Expr, sp.Expr, sp.Expr], args: tuple[str, ...]) -> PatchMapKernel:
-   return PatchMapKernel(
+def _point_kernel(name: str, expressions: tuple[sp.Expr, sp.Expr, sp.Expr], args: tuple[str, ...]) -> StructKernel:
+   return StructKernel(
       name=name,
       return_type="PatchPoint",
+      outputs=("q1", "q2", "q3"),
       arguments=tuple(("amrex::Real", arg) for arg in args),
       expressions=expressions,
    )
 
 
-def _jacobian_kernel(name: str, expressions: tuple[sp.Expr, ...], args: tuple[str, ...]) -> PatchMapKernel:
-   return PatchMapKernel(
+def _jacobian_kernel(name: str, expressions: tuple[sp.Expr, ...], args: tuple[str, ...]) -> StructKernel:
+   return StructKernel(
       name=name,
       return_type="PatchJacobian",
+      outputs=tuple(f"j{i}{j}" for i in range(1, 4) for j in range(1, 4)),
       arguments=tuple(("amrex::Real", arg) for arg in args),
       expressions=expressions,
    )
@@ -126,9 +121,9 @@ def _cylindrical_shell_local(axis: int) -> tuple[sp.Expr, sp.Expr, sp.Expr]:
    return (sp.atan(tangent_a), centered[2], radial_coordinate)
 
 
-def patch_map_kernels() -> tuple[PatchMapKernel, ...]:
+def patch_map_kernels() -> tuple[StructKernel, ...]:
    s = patch_map_symbols()
-   kernels: list[PatchMapKernel] = [
+   kernels: list[StructKernel] = [
       _point_kernel(
          "patch_identity_local_to_global",
          (s["o1"] + s["q1"], s["o2"] + s["q2"], s["o3"] + s["q3"]),

@@ -213,6 +213,8 @@ specialized physical checks are thin scripts that consume the same run folder.
   findings that are ready, deferred, stale, or rejected.
 - [`docs/design.md`](docs/design.md): developer architecture and limitations.
 - [`docs/install.md`](docs/install.md): local AMReX build notes.
+- [`docs/precision_and_metal.md`](docs/precision_and_metal.md): isolated FP32
+  builds, precision comparisons, and the experimental Metal dependency route.
 
 Active work is tracked in
 [`review_running_cycle.md`](review_running_cycle.md). Append one cycle at a

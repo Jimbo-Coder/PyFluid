@@ -12,66 +12,69 @@ using namespace amrex::literals;
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDConserved rhd_flux_dir0(const RHDPrimitive& primitive, const SpacetimeMetric& metric) noexcept
 {
-   const amrex::Real tmp0 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
-   const amrex::Real tmp1 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
-   const amrex::Real tmp2 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
-   const amrex::Real tmp3 = primitive.v1*tmp0 + primitive.v2*tmp1 + primitive.v3*tmp2 - 1;
-   const amrex::Real tmp4 = primitive.rho/sqrt(-tmp3);
-   const amrex::Real tmp5 = metric.lapse*primitive.v1;
-   const amrex::Real tmp6 = -metric.shift1 + tmp5;
-   const amrex::Real tmp7 = metric.sqrt_det_gamma*tmp6;
-   const amrex::Real tmp8 = primitive.rho*(primitive.eps + primitive.pressure/primitive.rho + 1)/tmp3;
-   const amrex::Real tmp9 = tmp7*tmp8;
+   const amrex::Real tmp0 = metric.lapse*primitive.v1;
+   const amrex::Real tmp1 = -metric.shift1 + tmp0;
+   const amrex::Real tmp2 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
+   const amrex::Real tmp3 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
+   const amrex::Real tmp4 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
+   const amrex::Real tmp5 = primitive.v1*tmp2 + primitive.v2*tmp3 + primitive.v3*tmp4;
+   const amrex::Real tmp6 = tmp5 - 1;
+   const amrex::Real tmp7 = std::sqrt(-tmp6);
+   const amrex::Real tmp8 = tmp1/tmp6;
+   const amrex::Real tmp9 = tmp8*(primitive.pressure + primitive.rho*(primitive.eps + 1));
+   const amrex::Real tmp10 = metric.sqrt_det_gamma*tmp9;
    return {
-      tmp4*tmp7,
-      metric.sqrt_det_gamma*(metric.lapse*primitive.pressure - tmp0*tmp6*tmp8),
-      -tmp1*tmp9,
-      -tmp2*tmp9,
-      metric.sqrt_det_gamma*(primitive.pressure*tmp5 - tmp6*(primitive.pressure + tmp4 + tmp8))
+      metric.sqrt_det_gamma*primitive.rho*tmp1/tmp7,
+      metric.sqrt_det_gamma*(metric.lapse*primitive.pressure - tmp2*tmp9),
+      -tmp10*tmp3,
+      -tmp10*tmp4,
+      metric.sqrt_det_gamma*(primitive.pressure*tmp0 - tmp8*(primitive.eps*primitive.rho + tmp5*(primitive.pressure + primitive.rho/(tmp7 + 1))))
    };
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDConserved rhd_flux_dir1(const RHDPrimitive& primitive, const SpacetimeMetric& metric) noexcept
 {
-   const amrex::Real tmp0 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
-   const amrex::Real tmp1 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
-   const amrex::Real tmp2 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
-   const amrex::Real tmp3 = primitive.v1*tmp0 + primitive.v2*tmp1 + primitive.v3*tmp2 - 1;
-   const amrex::Real tmp4 = primitive.rho/sqrt(-tmp3);
-   const amrex::Real tmp5 = metric.lapse*primitive.v2;
-   const amrex::Real tmp6 = -metric.shift2 + tmp5;
-   const amrex::Real tmp7 = metric.sqrt_det_gamma*tmp6;
-   const amrex::Real tmp8 = primitive.rho*(primitive.eps + primitive.pressure/primitive.rho + 1)/tmp3;
-   const amrex::Real tmp9 = tmp7*tmp8;
+   const amrex::Real tmp0 = metric.lapse*primitive.v2;
+   const amrex::Real tmp1 = -metric.shift2 + tmp0;
+   const amrex::Real tmp2 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
+   const amrex::Real tmp3 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
+   const amrex::Real tmp4 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
+   const amrex::Real tmp5 = primitive.v1*tmp2 + primitive.v2*tmp3 + primitive.v3*tmp4;
+   const amrex::Real tmp6 = tmp5 - 1;
+   const amrex::Real tmp7 = std::sqrt(-tmp6);
+   const amrex::Real tmp8 = tmp1/tmp6;
+   const amrex::Real tmp9 = tmp8*(primitive.pressure + primitive.rho*(primitive.eps + 1));
+   const amrex::Real tmp10 = metric.sqrt_det_gamma*tmp9;
    return {
-      tmp4*tmp7,
-      -tmp0*tmp9,
-      metric.sqrt_det_gamma*(metric.lapse*primitive.pressure - tmp1*tmp6*tmp8),
-      -tmp2*tmp9,
-      metric.sqrt_det_gamma*(primitive.pressure*tmp5 - tmp6*(primitive.pressure + tmp4 + tmp8))
+      metric.sqrt_det_gamma*primitive.rho*tmp1/tmp7,
+      -tmp10*tmp2,
+      metric.sqrt_det_gamma*(metric.lapse*primitive.pressure - tmp3*tmp9),
+      -tmp10*tmp4,
+      metric.sqrt_det_gamma*(primitive.pressure*tmp0 - tmp8*(primitive.eps*primitive.rho + tmp5*(primitive.pressure + primitive.rho/(tmp7 + 1))))
    };
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDConserved rhd_flux_dir2(const RHDPrimitive& primitive, const SpacetimeMetric& metric) noexcept
 {
-   const amrex::Real tmp0 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
-   const amrex::Real tmp1 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
-   const amrex::Real tmp2 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
-   const amrex::Real tmp3 = primitive.v1*tmp0 + primitive.v2*tmp1 + primitive.v3*tmp2 - 1;
-   const amrex::Real tmp4 = primitive.rho/sqrt(-tmp3);
-   const amrex::Real tmp5 = metric.lapse*primitive.v3;
-   const amrex::Real tmp6 = -metric.shift3 + tmp5;
-   const amrex::Real tmp7 = metric.sqrt_det_gamma*tmp6;
-   const amrex::Real tmp8 = primitive.rho*(primitive.eps + primitive.pressure/primitive.rho + 1)/tmp3;
-   const amrex::Real tmp9 = tmp7*tmp8;
+   const amrex::Real tmp0 = metric.lapse*primitive.v3;
+   const amrex::Real tmp1 = -metric.shift3 + tmp0;
+   const amrex::Real tmp2 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
+   const amrex::Real tmp3 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
+   const amrex::Real tmp4 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
+   const amrex::Real tmp5 = primitive.v1*tmp2 + primitive.v2*tmp3 + primitive.v3*tmp4;
+   const amrex::Real tmp6 = tmp5 - 1;
+   const amrex::Real tmp7 = std::sqrt(-tmp6);
+   const amrex::Real tmp8 = tmp1/tmp6;
+   const amrex::Real tmp9 = tmp8*(primitive.pressure + primitive.rho*(primitive.eps + 1));
+   const amrex::Real tmp10 = metric.sqrt_det_gamma*tmp9;
    return {
-      tmp4*tmp7,
-      -tmp0*tmp9,
-      -tmp1*tmp9,
-      metric.sqrt_det_gamma*(metric.lapse*primitive.pressure - tmp2*tmp6*tmp8),
-      metric.sqrt_det_gamma*(primitive.pressure*tmp5 - tmp6*(primitive.pressure + tmp4 + tmp8))
+      metric.sqrt_det_gamma*primitive.rho*tmp1/tmp7,
+      -tmp10*tmp2,
+      -tmp10*tmp3,
+      metric.sqrt_det_gamma*(metric.lapse*primitive.pressure - tmp4*tmp9),
+      metric.sqrt_det_gamma*(primitive.pressure*tmp0 - tmp8*(primitive.eps*primitive.rho + tmp5*(primitive.pressure + primitive.rho/(tmp7 + 1))))
    };
 }
 
@@ -80,10 +83,10 @@ RHDWaveSpeeds rhd_wave_speeds_dir0(const RHDPrimitive& primitive, const Spacetim
 {
    const amrex::Real tmp0 = sound_speed_squared - 1;
    const amrex::Real tmp1 = primitive.v1*tmp0;
-   const amrex::Real tmp2 = sqrt(sound_speed_squared);
+   const amrex::Real tmp2 = std::sqrt(sound_speed_squared);
    const amrex::Real tmp3 = primitive.v1*(metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3) + primitive.v2*(metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3) + primitive.v3*(metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3);
    const amrex::Real tmp4 = sound_speed_squared*tmp3 - 1;
-   const amrex::Real tmp5 = sqrt(((0) > (-(tmp3 - 1)*(-metric.inv_gamma11*tmp4 + ((primitive.v1)*(primitive.v1))*tmp0)) ? (0) : (-(tmp3 - 1)*(-metric.inv_gamma11*tmp4 + ((primitive.v1)*(primitive.v1))*tmp0))));
+   const amrex::Real tmp5 = std::sqrt(((0) > (-(tmp3 - 1)*(-metric.inv_gamma11*tmp4 + ((primitive.v1)*(primitive.v1))*tmp0)) ? (0) : (-(tmp3 - 1)*(-metric.inv_gamma11*tmp4 + ((primitive.v1)*(primitive.v1))*tmp0))));
    const amrex::Real tmp6 = metric.lapse/tmp4;
    return {
       -metric.shift1 + tmp6*(tmp1 + tmp2*tmp5),
@@ -96,10 +99,10 @@ RHDWaveSpeeds rhd_wave_speeds_dir1(const RHDPrimitive& primitive, const Spacetim
 {
    const amrex::Real tmp0 = sound_speed_squared - 1;
    const amrex::Real tmp1 = primitive.v2*tmp0;
-   const amrex::Real tmp2 = sqrt(sound_speed_squared);
+   const amrex::Real tmp2 = std::sqrt(sound_speed_squared);
    const amrex::Real tmp3 = primitive.v1*(metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3) + primitive.v2*(metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3) + primitive.v3*(metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3);
    const amrex::Real tmp4 = sound_speed_squared*tmp3 - 1;
-   const amrex::Real tmp5 = sqrt(((0) > (-(tmp3 - 1)*(-metric.inv_gamma22*tmp4 + ((primitive.v2)*(primitive.v2))*tmp0)) ? (0) : (-(tmp3 - 1)*(-metric.inv_gamma22*tmp4 + ((primitive.v2)*(primitive.v2))*tmp0))));
+   const amrex::Real tmp5 = std::sqrt(((0) > (-(tmp3 - 1)*(-metric.inv_gamma22*tmp4 + ((primitive.v2)*(primitive.v2))*tmp0)) ? (0) : (-(tmp3 - 1)*(-metric.inv_gamma22*tmp4 + ((primitive.v2)*(primitive.v2))*tmp0))));
    const amrex::Real tmp6 = metric.lapse/tmp4;
    return {
       -metric.shift2 + tmp6*(tmp1 + tmp2*tmp5),
@@ -112,10 +115,10 @@ RHDWaveSpeeds rhd_wave_speeds_dir2(const RHDPrimitive& primitive, const Spacetim
 {
    const amrex::Real tmp0 = sound_speed_squared - 1;
    const amrex::Real tmp1 = primitive.v3*tmp0;
-   const amrex::Real tmp2 = sqrt(sound_speed_squared);
+   const amrex::Real tmp2 = std::sqrt(sound_speed_squared);
    const amrex::Real tmp3 = primitive.v1*(metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3) + primitive.v2*(metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3) + primitive.v3*(metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3);
    const amrex::Real tmp4 = sound_speed_squared*tmp3 - 1;
-   const amrex::Real tmp5 = sqrt(((0) > (-(tmp3 - 1)*(-metric.inv_gamma33*tmp4 + ((primitive.v3)*(primitive.v3))*tmp0)) ? (0) : (-(tmp3 - 1)*(-metric.inv_gamma33*tmp4 + ((primitive.v3)*(primitive.v3))*tmp0))));
+   const amrex::Real tmp5 = std::sqrt(((0) > (-(tmp3 - 1)*(-metric.inv_gamma33*tmp4 + ((primitive.v3)*(primitive.v3))*tmp0)) ? (0) : (-(tmp3 - 1)*(-metric.inv_gamma33*tmp4 + ((primitive.v3)*(primitive.v3))*tmp0))));
    const amrex::Real tmp6 = metric.lapse/tmp4;
    return {
       -metric.shift3 + tmp6*(tmp1 + tmp2*tmp5),
@@ -130,41 +133,40 @@ RMHDConserved rmhd_flux_dir0(const RMHDPrimitive& primitive, const SpacetimeMetr
    const amrex::Real tmp1 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
    const amrex::Real tmp2 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
    const amrex::Real tmp3 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
-   const amrex::Real tmp4 = primitive.v1*tmp1 + primitive.v2*tmp2 + primitive.v3*tmp3 - 1;
-   const amrex::Real tmp5 = -tmp4;
-   const amrex::Real tmp6 = sqrt(tmp5);
-   const amrex::Real tmp7 = 1.0_rt/(tmp6);
-   const amrex::Real tmp8 = primitive.rho*tmp7;
-   const amrex::Real tmp9 = metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3;
+   const amrex::Real tmp4 = primitive.v1*tmp1 + primitive.v2*tmp2 + primitive.v3*tmp3;
+   const amrex::Real tmp5 = tmp4 - 1;
+   const amrex::Real tmp6 = -tmp5;
+   const amrex::Real tmp7 = std::sqrt(tmp6);
+   const amrex::Real tmp8 = 1.0_rt/(tmp7);
+   const amrex::Real tmp9 = 2*primitive.pressure;
    const amrex::Real tmp10 = primitive.b1*tmp1 + primitive.b2*tmp2 + primitive.b3*tmp3;
-   const amrex::Real tmp11 = tmp10*tmp7;
-   const amrex::Real tmp12 = tmp1*tmp11 + tmp6*tmp9;
-   const amrex::Real tmp13 = 2*primitive.b1;
-   const amrex::Real tmp14 = 2*primitive.pressure;
-   const amrex::Real tmp15 = ((tmp10)*(tmp10));
-   const amrex::Real tmp16 = 1.0_rt/(tmp4);
-   const amrex::Real tmp17 = primitive.b1*tmp9;
-   const amrex::Real tmp18 = metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3;
-   const amrex::Real tmp19 = primitive.b2*tmp18;
-   const amrex::Real tmp20 = metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3;
-   const amrex::Real tmp21 = primitive.b3*tmp20;
-   const amrex::Real tmp22 = tmp17 + tmp19 + tmp21;
-   const amrex::Real tmp23 = -tmp15*tmp16 + tmp22;
-   const amrex::Real tmp24 = -tmp14 + tmp23*tmp4;
-   const amrex::Real tmp25 = primitive.rho*(primitive.eps + primitive.pressure/primitive.rho + 1);
-   const amrex::Real tmp26 = tmp16*tmp25;
-   const amrex::Real tmp27 = tmp11*tmp2 + tmp18*tmp6;
-   const amrex::Real tmp28 = metric.lapse*primitive.b1*tmp6;
-   const amrex::Real tmp29 = 1.0_rt/(tmp5);
-   const amrex::Real tmp30 = tmp15*tmp29 + tmp22;
-   const amrex::Real tmp31 = tmp25*tmp29 + tmp30;
-   const amrex::Real tmp32 = tmp11*tmp3 + tmp20*tmp6;
+   const amrex::Real tmp11 = ((tmp10)*(tmp10));
+   const amrex::Real tmp12 = 1.0_rt/(tmp5);
+   const amrex::Real tmp13 = metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3;
+   const amrex::Real tmp14 = primitive.b1*tmp13;
+   const amrex::Real tmp15 = metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3;
+   const amrex::Real tmp16 = primitive.b2*tmp15;
+   const amrex::Real tmp17 = metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3;
+   const amrex::Real tmp18 = primitive.b3*tmp17;
+   const amrex::Real tmp19 = tmp14 + tmp16 + tmp18;
+   const amrex::Real tmp20 = -tmp11*tmp12 + tmp19;
+   const amrex::Real tmp21 = tmp20*tmp5;
+   const amrex::Real tmp22 = tmp10*tmp8;
+   const amrex::Real tmp23 = tmp1*tmp22 + tmp13*tmp7;
+   const amrex::Real tmp24 = 2*primitive.b1;
+   const amrex::Real tmp25 = primitive.pressure + primitive.rho*(primitive.eps + 1);
+   const amrex::Real tmp26 = tmp15*tmp7 + tmp2*tmp22;
+   const amrex::Real tmp27 = metric.lapse*primitive.b1*tmp7;
+   const amrex::Real tmp28 = 1.0_rt/(tmp6);
+   const amrex::Real tmp29 = tmp11*tmp28 + tmp19;
+   const amrex::Real tmp30 = tmp25*tmp28 + tmp29;
+   const amrex::Real tmp31 = tmp17*tmp7 + tmp22*tmp3;
    return {
-      metric.sqrt_det_gamma*tmp0*tmp8,
-      -metric.sqrt_det_gamma*((1.0_rt/2.0_rt)*metric.lapse*(tmp12*tmp13*tmp6 + tmp24) + tmp0*(-tmp1*(tmp23 - tmp26) + tmp11*tmp12)),
-      -metric.sqrt_det_gamma*(tmp0*(tmp11*tmp27 - tmp2*tmp31) + tmp27*tmp28),
-      -metric.sqrt_det_gamma*(tmp0*(tmp11*tmp32 - tmp3*tmp31) + tmp28*tmp32),
-      (1.0_rt/2.0_rt)*metric.sqrt_det_gamma*(-metric.lapse*(-primitive.v1*(tmp14 + tmp30*tmp5) + tmp10*tmp13) + tmp0*(2*tmp17 + 2*tmp19 + 2*tmp21 + tmp24 - 2*tmp26 - 2*tmp8)),
+      metric.sqrt_det_gamma*primitive.rho*tmp0*tmp8,
+      -metric.sqrt_det_gamma*((1.0_rt/2.0_rt)*metric.lapse*(tmp21 + tmp23*tmp24*tmp7 - tmp9) + tmp0*(-tmp1*(-tmp12*tmp25 + tmp20) + tmp22*tmp23)),
+      -metric.sqrt_det_gamma*(tmp0*(-tmp2*tmp30 + tmp22*tmp26) + tmp26*tmp27),
+      -metric.sqrt_det_gamma*(tmp0*(tmp22*tmp31 - tmp3*tmp30) + tmp27*tmp31),
+      (1.0_rt/2.0_rt)*metric.sqrt_det_gamma*(-metric.lapse*(-primitive.v1*(tmp29*tmp6 + tmp9) + tmp10*tmp24) + tmp0*(-2*tmp12*(primitive.eps*primitive.rho + tmp4*(primitive.pressure + primitive.rho/(tmp7 + 1))) + 2*tmp14 + 2*tmp16 + 2*tmp18 + tmp21)),
       0,
       metric.sqrt_det_gamma*(-primitive.b1*(metric.lapse*primitive.v2 - metric.shift2) + primitive.b2*tmp0),
       metric.sqrt_det_gamma*(-primitive.b1*(metric.lapse*primitive.v3 - metric.shift3) + primitive.b3*tmp0)
@@ -178,18 +180,18 @@ RMHDConserved rmhd_flux_dir1(const RMHDPrimitive& primitive, const SpacetimeMetr
    const amrex::Real tmp1 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
    const amrex::Real tmp2 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
    const amrex::Real tmp3 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
-   const amrex::Real tmp4 = primitive.v1*tmp1 + primitive.v2*tmp2 + primitive.v3*tmp3 - 1;
-   const amrex::Real tmp5 = -tmp4;
-   const amrex::Real tmp6 = sqrt(tmp5);
-   const amrex::Real tmp7 = 1.0_rt/(tmp6);
-   const amrex::Real tmp8 = primitive.rho*tmp7;
+   const amrex::Real tmp4 = primitive.v1*tmp1 + primitive.v2*tmp2 + primitive.v3*tmp3;
+   const amrex::Real tmp5 = tmp4 - 1;
+   const amrex::Real tmp6 = -tmp5;
+   const amrex::Real tmp7 = std::sqrt(tmp6);
+   const amrex::Real tmp8 = 1.0_rt/(tmp7);
    const amrex::Real tmp9 = metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3;
    const amrex::Real tmp10 = primitive.b1*tmp1 + primitive.b2*tmp2 + primitive.b3*tmp3;
-   const amrex::Real tmp11 = tmp10*tmp7;
-   const amrex::Real tmp12 = tmp1*tmp11 + tmp6*tmp9;
-   const amrex::Real tmp13 = metric.lapse*primitive.b2*tmp6;
-   const amrex::Real tmp14 = 1.0_rt/(tmp5);
-   const amrex::Real tmp15 = primitive.rho*(primitive.eps + primitive.pressure/primitive.rho + 1);
+   const amrex::Real tmp11 = tmp10*tmp8;
+   const amrex::Real tmp12 = tmp1*tmp11 + tmp7*tmp9;
+   const amrex::Real tmp13 = metric.lapse*primitive.b2*tmp7;
+   const amrex::Real tmp14 = primitive.pressure + primitive.rho*(primitive.eps + 1);
+   const amrex::Real tmp15 = 1.0_rt/(tmp6);
    const amrex::Real tmp16 = ((tmp10)*(tmp10));
    const amrex::Real tmp17 = primitive.b1*tmp9;
    const amrex::Real tmp18 = metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3;
@@ -197,22 +199,21 @@ RMHDConserved rmhd_flux_dir1(const RMHDPrimitive& primitive, const SpacetimeMetr
    const amrex::Real tmp20 = metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3;
    const amrex::Real tmp21 = primitive.b3*tmp20;
    const amrex::Real tmp22 = tmp17 + tmp19 + tmp21;
-   const amrex::Real tmp23 = tmp14*tmp16 + tmp22;
+   const amrex::Real tmp23 = tmp15*tmp16 + tmp22;
    const amrex::Real tmp24 = tmp14*tmp15 + tmp23;
-   const amrex::Real tmp25 = tmp11*tmp2 + tmp18*tmp6;
-   const amrex::Real tmp26 = 2*primitive.b2;
-   const amrex::Real tmp27 = 2*primitive.pressure;
-   const amrex::Real tmp28 = 1.0_rt/(tmp4);
-   const amrex::Real tmp29 = -tmp16*tmp28 + tmp22;
-   const amrex::Real tmp30 = -tmp27 + tmp29*tmp4;
-   const amrex::Real tmp31 = tmp15*tmp28;
-   const amrex::Real tmp32 = tmp11*tmp3 + tmp20*tmp6;
+   const amrex::Real tmp25 = 2*primitive.pressure;
+   const amrex::Real tmp26 = 1.0_rt/(tmp5);
+   const amrex::Real tmp27 = -tmp16*tmp26 + tmp22;
+   const amrex::Real tmp28 = tmp27*tmp5;
+   const amrex::Real tmp29 = tmp11*tmp2 + tmp18*tmp7;
+   const amrex::Real tmp30 = 2*primitive.b2;
+   const amrex::Real tmp31 = tmp11*tmp3 + tmp20*tmp7;
    return {
-      metric.sqrt_det_gamma*tmp0*tmp8,
+      metric.sqrt_det_gamma*primitive.rho*tmp0*tmp8,
       -metric.sqrt_det_gamma*(tmp0*(-tmp1*tmp24 + tmp11*tmp12) + tmp12*tmp13),
-      -metric.sqrt_det_gamma*((1.0_rt/2.0_rt)*metric.lapse*(tmp25*tmp26*tmp6 + tmp30) + tmp0*(tmp11*tmp25 - tmp2*(tmp29 - tmp31))),
-      -metric.sqrt_det_gamma*(tmp0*(tmp11*tmp32 - tmp24*tmp3) + tmp13*tmp32),
-      (1.0_rt/2.0_rt)*metric.sqrt_det_gamma*(-metric.lapse*(-primitive.v2*(tmp23*tmp5 + tmp27) + tmp10*tmp26) + tmp0*(2*tmp17 + 2*tmp19 + 2*tmp21 + tmp30 - 2*tmp31 - 2*tmp8)),
+      -metric.sqrt_det_gamma*((1.0_rt/2.0_rt)*metric.lapse*(-tmp25 + tmp28 + tmp29*tmp30*tmp7) + tmp0*(tmp11*tmp29 - tmp2*(-tmp14*tmp26 + tmp27))),
+      -metric.sqrt_det_gamma*(tmp0*(tmp11*tmp31 - tmp24*tmp3) + tmp13*tmp31),
+      (1.0_rt/2.0_rt)*metric.sqrt_det_gamma*(-metric.lapse*(-primitive.v2*(tmp23*tmp6 + tmp25) + tmp10*tmp30) + tmp0*(2*tmp17 + 2*tmp19 + 2*tmp21 - 2*tmp26*(primitive.eps*primitive.rho + tmp4*(primitive.pressure + primitive.rho/(tmp7 + 1))) + tmp28)),
       metric.sqrt_det_gamma*(primitive.b1*tmp0 - primitive.b2*(metric.lapse*primitive.v1 - metric.shift1)),
       0,
       metric.sqrt_det_gamma*(-primitive.b2*(metric.lapse*primitive.v3 - metric.shift3) + primitive.b3*tmp0)
@@ -226,18 +227,18 @@ RMHDConserved rmhd_flux_dir2(const RMHDPrimitive& primitive, const SpacetimeMetr
    const amrex::Real tmp1 = metric.gamma11*primitive.v1 + metric.gamma12*primitive.v2 + metric.gamma13*primitive.v3;
    const amrex::Real tmp2 = metric.gamma12*primitive.v1 + metric.gamma22*primitive.v2 + metric.gamma23*primitive.v3;
    const amrex::Real tmp3 = metric.gamma13*primitive.v1 + metric.gamma23*primitive.v2 + metric.gamma33*primitive.v3;
-   const amrex::Real tmp4 = primitive.v1*tmp1 + primitive.v2*tmp2 + primitive.v3*tmp3 - 1;
-   const amrex::Real tmp5 = -tmp4;
-   const amrex::Real tmp6 = sqrt(tmp5);
-   const amrex::Real tmp7 = 1.0_rt/(tmp6);
-   const amrex::Real tmp8 = primitive.rho*tmp7;
+   const amrex::Real tmp4 = primitive.v1*tmp1 + primitive.v2*tmp2 + primitive.v3*tmp3;
+   const amrex::Real tmp5 = tmp4 - 1;
+   const amrex::Real tmp6 = -tmp5;
+   const amrex::Real tmp7 = std::sqrt(tmp6);
+   const amrex::Real tmp8 = 1.0_rt/(tmp7);
    const amrex::Real tmp9 = metric.gamma11*primitive.b1 + metric.gamma12*primitive.b2 + metric.gamma13*primitive.b3;
    const amrex::Real tmp10 = primitive.b1*tmp1 + primitive.b2*tmp2 + primitive.b3*tmp3;
-   const amrex::Real tmp11 = tmp10*tmp7;
-   const amrex::Real tmp12 = tmp1*tmp11 + tmp6*tmp9;
-   const amrex::Real tmp13 = metric.lapse*primitive.b3*tmp6;
-   const amrex::Real tmp14 = 1.0_rt/(tmp5);
-   const amrex::Real tmp15 = primitive.rho*(primitive.eps + primitive.pressure/primitive.rho + 1);
+   const amrex::Real tmp11 = tmp10*tmp8;
+   const amrex::Real tmp12 = tmp1*tmp11 + tmp7*tmp9;
+   const amrex::Real tmp13 = metric.lapse*primitive.b3*tmp7;
+   const amrex::Real tmp14 = primitive.pressure + primitive.rho*(primitive.eps + 1);
+   const amrex::Real tmp15 = 1.0_rt/(tmp6);
    const amrex::Real tmp16 = ((tmp10)*(tmp10));
    const amrex::Real tmp17 = primitive.b1*tmp9;
    const amrex::Real tmp18 = metric.gamma12*primitive.b1 + metric.gamma22*primitive.b2 + metric.gamma23*primitive.b3;
@@ -245,22 +246,21 @@ RMHDConserved rmhd_flux_dir2(const RMHDPrimitive& primitive, const SpacetimeMetr
    const amrex::Real tmp20 = metric.gamma13*primitive.b1 + metric.gamma23*primitive.b2 + metric.gamma33*primitive.b3;
    const amrex::Real tmp21 = primitive.b3*tmp20;
    const amrex::Real tmp22 = tmp17 + tmp19 + tmp21;
-   const amrex::Real tmp23 = tmp14*tmp16 + tmp22;
+   const amrex::Real tmp23 = tmp15*tmp16 + tmp22;
    const amrex::Real tmp24 = tmp14*tmp15 + tmp23;
-   const amrex::Real tmp25 = tmp11*tmp2 + tmp18*tmp6;
-   const amrex::Real tmp26 = tmp11*tmp3 + tmp20*tmp6;
-   const amrex::Real tmp27 = 2*primitive.b3;
-   const amrex::Real tmp28 = 2*primitive.pressure;
-   const amrex::Real tmp29 = 1.0_rt/(tmp4);
-   const amrex::Real tmp30 = -tmp16*tmp29 + tmp22;
-   const amrex::Real tmp31 = -tmp28 + tmp30*tmp4;
-   const amrex::Real tmp32 = tmp15*tmp29;
+   const amrex::Real tmp25 = tmp11*tmp2 + tmp18*tmp7;
+   const amrex::Real tmp26 = 2*primitive.pressure;
+   const amrex::Real tmp27 = 1.0_rt/(tmp5);
+   const amrex::Real tmp28 = -tmp16*tmp27 + tmp22;
+   const amrex::Real tmp29 = tmp28*tmp5;
+   const amrex::Real tmp30 = tmp11*tmp3 + tmp20*tmp7;
+   const amrex::Real tmp31 = 2*primitive.b3;
    return {
-      metric.sqrt_det_gamma*tmp0*tmp8,
+      metric.sqrt_det_gamma*primitive.rho*tmp0*tmp8,
       -metric.sqrt_det_gamma*(tmp0*(-tmp1*tmp24 + tmp11*tmp12) + tmp12*tmp13),
       -metric.sqrt_det_gamma*(tmp0*(tmp11*tmp25 - tmp2*tmp24) + tmp13*tmp25),
-      -metric.sqrt_det_gamma*((1.0_rt/2.0_rt)*metric.lapse*(tmp26*tmp27*tmp6 + tmp31) + tmp0*(tmp11*tmp26 - tmp3*(tmp30 - tmp32))),
-      (1.0_rt/2.0_rt)*metric.sqrt_det_gamma*(-metric.lapse*(-primitive.v3*(tmp23*tmp5 + tmp28) + tmp10*tmp27) + tmp0*(2*tmp17 + 2*tmp19 + 2*tmp21 + tmp31 - 2*tmp32 - 2*tmp8)),
+      -metric.sqrt_det_gamma*((1.0_rt/2.0_rt)*metric.lapse*(-tmp26 + tmp29 + tmp30*tmp31*tmp7) + tmp0*(tmp11*tmp30 - tmp3*(-tmp14*tmp27 + tmp28))),
+      (1.0_rt/2.0_rt)*metric.sqrt_det_gamma*(-metric.lapse*(-primitive.v3*(tmp23*tmp6 + tmp26) + tmp10*tmp31) + tmp0*(2*tmp17 + 2*tmp19 + 2*tmp21 - 2*tmp27*(primitive.eps*primitive.rho + tmp4*(primitive.pressure + primitive.rho/(tmp7 + 1))) + tmp29)),
       metric.sqrt_det_gamma*(primitive.b1*tmp0 - primitive.b3*(metric.lapse*primitive.v1 - metric.shift1)),
       metric.sqrt_det_gamma*(primitive.b2*tmp0 - primitive.b3*(metric.lapse*primitive.v2 - metric.shift2)),
       0
@@ -286,7 +286,7 @@ RMHDWaveSpeeds srmhd_wave_speeds_dir0(const RMHDPrimitive& primitive, const Spac
    const amrex::Real tmp13 = tmp3 - tmp4*tmp6;
    const amrex::Real tmp14 = tmp13/(tmp13 + tmp8);
    const amrex::Real tmp15 = tmp5*(-sound_speed_squared*tmp14 + sound_speed_squared + tmp14) - 1;
-   const amrex::Real tmp16 = sqrt(sound_speed_squared - tmp10 + tmp9)*sqrt(((0) > (tmp6*(metric.inv_gamma11*tmp15 + ((primitive.v1)*(primitive.v1))*tmp11)) ? (0) : (tmp6*(metric.inv_gamma11*tmp15 + ((primitive.v1)*(primitive.v1))*tmp11))));
+   const amrex::Real tmp16 = std::sqrt(sound_speed_squared - tmp10 + tmp9)*std::sqrt(((0) > (tmp6*(metric.inv_gamma11*tmp15 + ((primitive.v1)*(primitive.v1))*tmp11)) ? (0) : (tmp6*(metric.inv_gamma11*tmp15 + ((primitive.v1)*(primitive.v1))*tmp11))));
    const amrex::Real tmp17 = metric.lapse/tmp15;
    return {
       -metric.shift1 - tmp17*(tmp12 - tmp16),
@@ -313,7 +313,7 @@ RMHDWaveSpeeds srmhd_wave_speeds_dir1(const RMHDPrimitive& primitive, const Spac
    const amrex::Real tmp13 = tmp3 - tmp4*tmp6;
    const amrex::Real tmp14 = tmp13/(tmp13 + tmp8);
    const amrex::Real tmp15 = tmp5*(-sound_speed_squared*tmp14 + sound_speed_squared + tmp14) - 1;
-   const amrex::Real tmp16 = sqrt(sound_speed_squared - tmp10 + tmp9)*sqrt(((0) > (tmp6*(metric.inv_gamma22*tmp15 + ((primitive.v2)*(primitive.v2))*tmp11)) ? (0) : (tmp6*(metric.inv_gamma22*tmp15 + ((primitive.v2)*(primitive.v2))*tmp11))));
+   const amrex::Real tmp16 = std::sqrt(sound_speed_squared - tmp10 + tmp9)*std::sqrt(((0) > (tmp6*(metric.inv_gamma22*tmp15 + ((primitive.v2)*(primitive.v2))*tmp11)) ? (0) : (tmp6*(metric.inv_gamma22*tmp15 + ((primitive.v2)*(primitive.v2))*tmp11))));
    const amrex::Real tmp17 = metric.lapse/tmp15;
    return {
       -metric.shift2 - tmp17*(tmp12 - tmp16),
@@ -340,7 +340,7 @@ RMHDWaveSpeeds srmhd_wave_speeds_dir2(const RMHDPrimitive& primitive, const Spac
    const amrex::Real tmp13 = tmp3 - tmp4*tmp6;
    const amrex::Real tmp14 = tmp13/(tmp13 + tmp8);
    const amrex::Real tmp15 = tmp5*(-sound_speed_squared*tmp14 + sound_speed_squared + tmp14) - 1;
-   const amrex::Real tmp16 = sqrt(sound_speed_squared - tmp10 + tmp9)*sqrt(((0) > (tmp6*(metric.inv_gamma33*tmp15 + ((primitive.v3)*(primitive.v3))*tmp11)) ? (0) : (tmp6*(metric.inv_gamma33*tmp15 + ((primitive.v3)*(primitive.v3))*tmp11))));
+   const amrex::Real tmp16 = std::sqrt(sound_speed_squared - tmp10 + tmp9)*std::sqrt(((0) > (tmp6*(metric.inv_gamma33*tmp15 + ((primitive.v3)*(primitive.v3))*tmp11)) ? (0) : (tmp6*(metric.inv_gamma33*tmp15 + ((primitive.v3)*(primitive.v3))*tmp11))));
    const amrex::Real tmp17 = metric.lapse/tmp15;
    return {
       -metric.shift3 - tmp17*(tmp12 - tmp16),

@@ -20,6 +20,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 enum class FluidInitialDataKind : int {
    Uniform,
    SineWave,
@@ -34,44 +36,44 @@ enum class FluidInitialDataKind : int {
 
 struct FluidInitialDataParameters {
    FluidInitialDataKind kind = FluidInitialDataKind::Uniform;
-   amrex::Real rho0 = 1.0;
-   amrex::Real pressure0 = 1.0;
-   amrex::Real amplitude = 0.0;
-   amrex::Real wave_number = 1.0;
-   amrex::Real layer_width = 0.05;
-   amrex::Real sheet_center = 0.5;
-   amrex::Real density_amplitude = 0.0;
-   amrex::Real v1_0 = 0.0;
-   amrex::Real v2_0 = 0.0;
-   amrex::Real v3_0 = 0.0;
-   amrex::Real b1_0 = 0.0;
-   amrex::Real b2_0 = 0.0;
-   amrex::Real b3_0 = 0.0;
-   amrex::Real shock_x0 = 0.5;
-   amrex::Real shock_y0 = 0.5;
-   amrex::Real shock_z0 = 0.5;
-   amrex::Real shock_n1 = 1.0;
-   amrex::Real shock_n2 = 0.0;
-   amrex::Real shock_n3 = 0.0;
-   amrex::Real rho_left = 1.0;
-   amrex::Real pressure_left = 1.0;
-   amrex::Real v1_left = 0.0;
-   amrex::Real v2_left = 0.0;
-   amrex::Real v3_left = 0.0;
-   amrex::Real b1_left = 0.0;
-   amrex::Real b2_left = 0.0;
-   amrex::Real b3_left = 0.0;
-   amrex::Real rho_right = 0.125;
-   amrex::Real pressure_right = 0.1;
-   amrex::Real v1_right = 0.0;
-   amrex::Real v2_right = 0.0;
-   amrex::Real v3_right = 0.0;
-   amrex::Real b1_right = 0.0;
-   amrex::Real b2_right = 0.0;
-   amrex::Real b3_right = 0.0;
+   amrex::Real rho0 = 1.0_rt;
+   amrex::Real pressure0 = 1.0_rt;
+   amrex::Real amplitude = 0.0_rt;
+   amrex::Real wave_number = 1.0_rt;
+   amrex::Real layer_width = 0.05_rt;
+   amrex::Real sheet_center = 0.5_rt;
+   amrex::Real density_amplitude = 0.0_rt;
+   amrex::Real v1_0 = 0.0_rt;
+   amrex::Real v2_0 = 0.0_rt;
+   amrex::Real v3_0 = 0.0_rt;
+   amrex::Real b1_0 = 0.0_rt;
+   amrex::Real b2_0 = 0.0_rt;
+   amrex::Real b3_0 = 0.0_rt;
+   amrex::Real shock_x0 = 0.5_rt;
+   amrex::Real shock_y0 = 0.5_rt;
+   amrex::Real shock_z0 = 0.5_rt;
+   amrex::Real shock_n1 = 1.0_rt;
+   amrex::Real shock_n2 = 0.0_rt;
+   amrex::Real shock_n3 = 0.0_rt;
+   amrex::Real rho_left = 1.0_rt;
+   amrex::Real pressure_left = 1.0_rt;
+   amrex::Real v1_left = 0.0_rt;
+   amrex::Real v2_left = 0.0_rt;
+   amrex::Real v3_left = 0.0_rt;
+   amrex::Real b1_left = 0.0_rt;
+   amrex::Real b2_left = 0.0_rt;
+   amrex::Real b3_left = 0.0_rt;
+   amrex::Real rho_right = 0.125_rt;
+   amrex::Real pressure_right = 0.1_rt;
+   amrex::Real v1_right = 0.0_rt;
+   amrex::Real v2_right = 0.0_rt;
+   amrex::Real v3_right = 0.0_rt;
+   amrex::Real b1_right = 0.0_rt;
+   amrex::Real b2_right = 0.0_rt;
+   amrex::Real b3_right = 0.0_rt;
    InitialAtmosphereParameters atmosphere{};
    EquilibriumTorusParameters equilibrium_torus{};
-   amrex::Real equilibrium_torus_inner_normalization = 0.0;
+   amrex::Real equilibrium_torus_inner_normalization = 0.0_rt;
    bool provider_radius_is_mesh1 = false;
    EOSParams eos{};
 };
@@ -81,14 +83,14 @@ struct FluidInitialDataContext {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> probhi{};
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx{};
    bool periodic_second_direction = false;
-   amrex::Real reference_lapse = 1.0;
+   amrex::Real reference_lapse = 1.0_rt;
 };
 
 struct FluidPrimitiveSample {
    RHDPrimitive fluid{};
-   amrex::Real b1 = 0.0;
-   amrex::Real b2 = 0.0;
-   amrex::Real b3 = 0.0;
+   amrex::Real b1 = 0.0_rt;
+   amrex::Real b2 = 0.0_rt;
+   amrex::Real b3 = 0.0_rt;
    SpacetimeMetric metric{};
 };
 
@@ -166,8 +168,8 @@ inline FluidInitialDataParameters fluid_initial_data_parameters(
             reference_direction = direction;
          }
       }
-      amrex::Real reference[3]{0.0, 0.0, 0.0};
-      reference[reference_direction] = 1.0;
+      amrex::Real reference[3]{0.0_rt, 0.0_rt, 0.0_rt};
+      reference[reference_direction] = 1.0_rt;
       amrex::Real radial[3]{
          axis[1] * reference[2] - axis[2] * reference[1],
          axis[2] * reference[0] - axis[0] * reference[2],
@@ -191,10 +193,10 @@ inline FluidInitialDataParameters fluid_initial_data_parameters(
             inner_point.q1,
             inner_point.q2,
             inner_point.q3,
-            0.0
+            0.0_rt
          );
       const EquilibriumTorusPoint inner = equilibrium_torus_point(
-         torus, 1.0, inner_point, inner_geometry.metric
+         torus, 1.0_rt, inner_point, inner_geometry.metric
       );
       if (!inner.timelike) {
          amrex::Abort(
@@ -205,7 +207,7 @@ inline FluidInitialDataParameters fluid_initial_data_parameters(
          torus.rotation_law == DiskRotationLaw::ConstantL
          ? inner.minus_covariant_time_velocity
          : std::exp(-inner.log_specific_enthalpy);
-      if (!(parameters.equilibrium_torus_inner_normalization > 0.0)
+      if (!(parameters.equilibrium_torus_inner_normalization > 0.0_rt)
           || !std::isfinite(
                parameters.equilibrium_torus_inner_normalization
              )) {
@@ -221,7 +223,7 @@ FluidPrimitiveSample sample_fluid_initial_data(
    FluidInitialDataParameters const& parameters,
    FluidInitialDataContext const& context,
    InitialDataSamplePoint const& sample,
-   FixedSpacetimeGeometry const& local_geometry,
+   SpacetimeMetric const& local_metric,
    RelativisticInitialDataView const& provider
 ) noexcept
 {
@@ -233,22 +235,22 @@ FluidPrimitiveSample sample_fluid_initial_data(
    amrex::Real b1 = parameters.b1_0;
    amrex::Real b2 = parameters.b2_0;
    amrex::Real b3 = parameters.b3_0;
-   SpacetimeMetric metric = local_geometry.metric;
+   SpacetimeMetric metric = local_metric;
    amrex::Real specific_internal_energy =
       relativistic_specific_internal_energy_from_pressure<EOSMethod>(
          rho, pressure, parameters.eos
       );
 
    if (parameters.kind == FluidInitialDataKind::Atmosphere) {
-      rho = 0.0;
-      pressure = 0.0;
-      specific_internal_energy = 0.0;
-      v1 = 0.0;
-      v2 = 0.0;
-      v3 = 0.0;
-      b1 = 0.0;
-      b2 = 0.0;
-      b3 = 0.0;
+      rho = 0.0_rt;
+      pressure = 0.0_rt;
+      specific_internal_energy = 0.0_rt;
+      v1 = 0.0_rt;
+      v2 = 0.0_rt;
+      v3 = 0.0_rt;
+      b1 = 0.0_rt;
+      b2 = 0.0_rt;
+      b3 = 0.0_rt;
    } else if (parameters.kind == FluidInitialDataKind::Provider) {
       const RelativisticInitialDataSample point =
          parameters.provider_radius_is_mesh1
@@ -277,11 +279,11 @@ FluidPrimitiveSample sample_fluid_initial_data(
          torus,
          parameters.equilibrium_torus_inner_normalization,
          sample.physical,
-         local_geometry.metric
+         local_metric
       );
       ColdBarotropeState matter;
       if (radius >= torus.inner_radius && target.timelike
-          && target.log_specific_enthalpy > 0.0) {
+          && target.log_specific_enthalpy > 0.0_rt) {
          matter = cold_barotrope_from_log_enthalpy(
             target.log_specific_enthalpy, parameters.eos
          );
@@ -293,22 +295,22 @@ FluidPrimitiveSample sample_fluid_initial_data(
       pressure = matter.pressure;
       specific_internal_energy = matter.specific_internal_energy;
    } else if (parameters.kind == FluidInitialDataKind::FixedMetricHse) {
-      const amrex::Real reference_enthalpy = 1.0
+      const amrex::Real reference_enthalpy = 1.0_rt
          + parameters.eos.gamma * parameters.pressure0
-         / ((parameters.eos.gamma - 1.0) * parameters.rho0);
+         / ((parameters.eos.gamma - 1.0_rt) * parameters.rho0);
       const amrex::Real enthalpy = reference_enthalpy * context.reference_lapse
-         / local_geometry.metric.lapse;
-      const amrex::Real thermodynamic_ratio = (enthalpy - 1.0)
-         / (reference_enthalpy - 1.0);
+         / local_metric.lapse;
+      const amrex::Real thermodynamic_ratio = (enthalpy - 1.0_rt)
+         / (reference_enthalpy - 1.0_rt);
       rho = parameters.rho0 * std::pow(
-         thermodynamic_ratio, 1.0 / (parameters.eos.gamma - 1.0)
+         thermodynamic_ratio, 1.0_rt / (parameters.eos.gamma - 1.0_rt)
       );
       pressure = parameters.pressure0 * std::pow(
          rho / parameters.rho0, parameters.eos.gamma
       );
-      v1 = 0.0;
-      v2 = 0.0;
-      v3 = 0.0;
+      v1 = 0.0_rt;
+      v2 = 0.0_rt;
+      v3 = 0.0_rt;
       specific_internal_energy =
          relativistic_specific_internal_energy_from_pressure<EOSMethod>(
             rho, pressure, parameters.eos
@@ -319,39 +321,39 @@ FluidPrimitiveSample sample_fluid_initial_data(
       const amrex::Real y_length = context.probhi[1] - context.problo[1];
       const amrex::Real x_normalized =
          (sample.physical.q1 - context.problo[0]) / x_length;
-      const amrex::Real width = amrex::max(parameters.layer_width, 2.0 * context.dx[1]);
-      amrex::Real stream_profile = 0.0;
-      amrex::Real layer_profile = 0.0;
+      const amrex::Real width = amrex::max(parameters.layer_width, 2.0_rt * context.dx[1]);
+      amrex::Real stream_profile = 0.0_rt;
+      amrex::Real layer_profile = 0.0_rt;
       if (context.periodic_second_direction) {
          const amrex::Real y_low = sample.physical.q2
-            - (context.problo[1] + 0.25 * y_length);
+            - (context.problo[1] + 0.25_rt * y_length);
          const amrex::Real y_high = sample.physical.q2
-            - (context.problo[1] + 0.75 * y_length);
+            - (context.problo[1] + 0.75_rt * y_length);
          stream_profile = std::tanh(y_low / width)
-            - std::tanh(y_high / width) - 1.0;
-         layer_profile = std::exp(-0.5 * y_low * y_low / (width * width))
-            + std::exp(-0.5 * y_high * y_high / (width * width));
+            - std::tanh(y_high / width) - 1.0_rt;
+         layer_profile = std::exp(-0.5_rt * y_low * y_low / (width * width))
+            + std::exp(-0.5_rt * y_high * y_high / (width * width));
       } else {
          const amrex::Real y_offset = sample.physical.q2 - parameters.sheet_center;
          stream_profile = std::tanh(y_offset / width);
          layer_profile = std::exp(
-            -0.5 * y_offset * y_offset / (width * width)
+            -0.5_rt * y_offset * y_offset / (width * width)
          );
       }
       rho = parameters.rho0 * (
-         1.0 + parameters.density_amplitude * stream_profile
+         1.0_rt + parameters.density_amplitude * stream_profile
       );
       v1 = parameters.v1_0 * stream_profile;
       v2 = parameters.amplitude
          * std::sin(constants::two_pi * parameters.wave_number * x_normalized)
          * layer_profile;
-      v3 = 0.0;
+      v3 = 0.0_rt;
 #endif
    } else if (parameters.kind == FluidInitialDataKind::SineWave) {
       const amrex::Real length = context.probhi[0] - context.problo[0];
       const amrex::Real phase = constants::two_pi * parameters.wave_number
          * (sample.physical.q1 - context.problo[0]) / length;
-      rho *= 1.0 + parameters.amplitude * std::sin(phase);
+      rho *= 1.0_rt + parameters.amplitude * std::sin(phase);
    } else if (parameters.kind == FluidInitialDataKind::ShockPlane
               || parameters.kind == FluidInitialDataKind::PeriodicShockPlane) {
       const amrex::Real y = AMREX_SPACEDIM >= 2
@@ -365,8 +367,8 @@ FluidPrimitiveSample sample_fluid_initial_data(
          + parameters.shock_n2 * (y - parameters.shock_y0)
          + parameters.shock_n3 * (z - parameters.shock_z0);
       const bool left = parameters.kind == FluidInitialDataKind::PeriodicShockPlane
-         ? std::sin(constants::two_pi * signed_distance) < 0.0
-         : signed_distance < 0.0;
+         ? std::sin(constants::two_pi * signed_distance) < 0.0_rt
+         : signed_distance < 0.0_rt;
       rho = left ? parameters.rho_left : parameters.rho_right;
       pressure = left ? parameters.pressure_left : parameters.pressure_right;
       v1 = left ? parameters.v1_left : parameters.v1_right;
@@ -385,9 +387,21 @@ FluidPrimitiveSample sample_fluid_initial_data(
       rho = atmosphere.rho;
       pressure = atmosphere.pressure;
       specific_internal_energy = atmosphere.specific_internal_energy;
-      v1 = 0.0;
-      v2 = 0.0;
-      v3 = 0.0;
+      v1 = 0.0_rt;
+      v2 = 0.0_rt;
+      v3 = 0.0_rt;
+   }
+
+   if (parameters.atmosphere.treatment
+          == RelativisticExteriorTreatment::Vacuum
+       && rho == 0.0_rt && pressure == 0.0_rt) {
+      return {
+         RHDPrimitive{},
+         0.0_rt,
+         0.0_rt,
+         0.0_rt,
+         metric,
+      };
    }
 
    const bool state_was_floored = rho < parameters.eos.rho_floor

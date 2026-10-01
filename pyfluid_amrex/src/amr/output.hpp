@@ -32,6 +32,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 inline void append_plotfile_metadata_on_io_rank(
    std::string const& plotfile_stem,
    RunConfig const& cfg,
@@ -338,7 +340,8 @@ inline void fill_aux_gf_output(
    amrex::Geometry const& geom,
    RunConfig const& cfg,
    amrex::Real time,
-   AuxOutputLayout const& layout
+   AuxOutputLayout const& layout,
+   bool analytic_fixed_spacetime
 )
 {
    std::unique_ptr<EdgeElectricField> edge_current_work;
@@ -369,7 +372,7 @@ inline void fill_aux_gf_output(
          edge_electric_work = std::make_unique<EdgeElectricField>();
          allocate_edge_electric_field(*edge_electric_work, state.boxArray(), state.DistributionMap());
          EdgeElectricField const* j = nullptr;
-         if (cfg.resistivity != 0.0) {
+         if (cfg.resistivity != 0.0_rt) {
             j = &edge_current_for_output();
          }
          fill_edge_electric_field_for_output(*edge_electric_work, state, face_b, j, geom, cfg.resistivity, cfg);
@@ -435,13 +438,17 @@ inline void fill_aux_gf_output(
       }
       case AuxGridField::MachNumber: {
          amrex::MultiFab mach(state.boxArray(), state.DistributionMap(), 1, 0);
-         fill_mach_number_output(mach, state, geom, time, cfg);
+         fill_mach_number_output(
+            mach, state, spacetime_state, geom, time, cfg
+         );
          copy_selected_aux_components(output, mach, entry, dst);
          break;
       }
       case AuxGridField::PlasmaBeta: {
          amrex::MultiFab plasma_beta(state.boxArray(), state.DistributionMap(), 1, 0);
-         fill_plasma_beta_output(plasma_beta, state, geom, time, cfg);
+         fill_plasma_beta_output(
+            plasma_beta, state, spacetime_state, geom, time, cfg
+         );
          copy_selected_aux_components(output, plasma_beta, entry, dst);
          break;
       }
@@ -450,7 +457,7 @@ inline void fill_aux_gf_output(
             state.boxArray(), state.DistributionMap(), 1, 0
          );
          fill_thermal_entropy_proxy_output(
-            thermal_entropy_proxy, state, geom, time, cfg
+            thermal_entropy_proxy, state, spacetime_state, geom, time, cfg
          );
          copy_selected_aux_components(
             output, thermal_entropy_proxy, entry, dst
@@ -459,7 +466,10 @@ inline void fill_aux_gf_output(
       }
       case AuxGridField::AmrTagMetric: {
          amrex::MultiFab tag_metric(state.boxArray(), state.DistributionMap(), 1, 0);
-         fill_amr_tag_metric_output(tag_metric, state, spacetime_state, geom, time, cfg);
+         fill_amr_tag_metric_output(
+            tag_metric, state, spacetime_state, geom, time, cfg,
+            analytic_fixed_spacetime
+         );
          copy_selected_aux_components(output, tag_metric, entry, dst);
          break;
       }
@@ -565,6 +575,7 @@ inline void write_aux_gf_plotfile(
    RunConfig const& cfg,
    int step,
    amrex::Real time,
+   bool analytic_fixed_spacetime,
    RunConfig const& output_cfg = RunConfig{}
 )
 {
@@ -598,7 +609,8 @@ inline void write_aux_gf_plotfile(
          geom,
          cfg,
          time,
-         layout
+         layout,
+         analytic_fixed_spacetime
       );
 
       const std::string stem = (
@@ -623,8 +635,7 @@ inline void write_multilevel_aux_gf_plotfile(
    std::vector<FaceMagneticField> const& face_b,
    std::vector<EdgeElectricField> const& edge_current,
    std::vector<EdgeElectricField> const& edge_electric,
-   std::vector<std::unique_ptr<amrex::MultiFab>> const& gravity_phi,
-   std::vector<GravityGradient> const& gravity_gradient,
+   GravityFields const& gravity_fields,
    std::vector<std::unique_ptr<amrex::iMultiFab>> const& solid_mask,
    std::vector<amrex::iMultiFab const*> const& apparent_horizon_mask,
    std::vector<amrex::iMultiFab const*> const& excision_mask,
@@ -637,6 +648,7 @@ inline void write_multilevel_aux_gf_plotfile(
    RunConfig const& cfg,
    int step,
    amrex::Real time,
+   bool analytic_fixed_spacetime,
    RunConfig const& output_cfg = RunConfig{}
 )
 {
@@ -659,8 +671,8 @@ inline void write_multilevel_aux_gf_plotfile(
          FaceMagneticField const* face_b_ptr = ct_enabled(cfg) ? &face_b[lev] : nullptr;
          EdgeElectricField const* edge_current_ptr = edge_current[lev].e[0] ? &edge_current[lev] : nullptr;
          EdgeElectricField const* edge_electric_ptr = edge_electric[lev].e[0] ? &edge_electric[lev] : nullptr;
-         amrex::MultiFab const* gravity_phi_ptr = gravity_phi[lev] ? gravity_phi[lev].get() : nullptr;
-         const auto gravity_gradient_ptrs_for_level = gravity_gradient_const_ptrs(gravity_gradient[lev]);
+         amrex::MultiFab const* gravity_phi_ptr = gravity_fields.potential(lev);
+         const auto gravity_gradient_ptrs_for_level = gravity_fields.gradient_pointers(lev);
          amrex::iMultiFab const* solid_ptr = solid_mask[lev] ? solid_mask[lev].get() : nullptr;
          amrex::MultiFab const* volume_fraction_ptr =
             solid_volume_fraction[lev] ? solid_volume_fraction[lev].get() : nullptr;
@@ -671,7 +683,9 @@ inline void write_multilevel_aux_gf_plotfile(
          fill_aux_gf_output(
             *output[lev],
             *state[lev],
-            spacetime_state.empty() ? nullptr : spacetime_state[lev].get(),
+            analytic_fixed_spacetime || spacetime_state.empty()
+               ? nullptr
+               : spacetime_state[lev].get(),
             face_b_ptr,
             edge_current_ptr,
             edge_electric_ptr,
@@ -685,7 +699,8 @@ inline void write_multilevel_aux_gf_plotfile(
             geom[lev],
             cfg,
             time,
-            layout
+            layout,
+            analytic_fixed_spacetime
          );
          levels[lev] = output[lev].get();
       }

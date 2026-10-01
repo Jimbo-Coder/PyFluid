@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from postprocess_common import physics_validation_rows, write_physics_validation
-from validation_common import ROOT, SCALAR_POLICIES, read_key_values, repo_relative, run_amrex
+from input_parameters import read_key_values
+from validation_common import (
+   ROOT, SCALAR_POLICIES, amrex_executable, repo_relative, run_amrex,
+)
 
 
 def infer_dim(params: dict[str, str]) -> int:
@@ -28,11 +32,25 @@ def output_dir_from_params(params: dict[str, str]) -> Path:
    return path if path.is_absolute() else ROOT / path
 
 
-def safe_clean_run_dir(path: Path) -> None:
+def path_uses_directory(path: Path, directory: Path) -> bool:
+   """Include symlink entries inside the directory, even if targets are outside."""
+   resolved = directory.resolve()
+   return path.resolve().is_relative_to(resolved) or any(
+      parent.resolve() == resolved for parent in path.absolute().parents
+   )
+
+
+def safe_clean_run_dir(path: Path, *, dependencies: tuple[Path, ...] = ()) -> None:
    resolved = path.resolve()
    runs_root = (ROOT / "runs").resolve()
    if not resolved.is_relative_to(runs_root) or resolved == runs_root:
       raise ValueError(f"refusing to clean non-run output directory: {resolved}")
+   for dependency in dependencies:
+      if path_uses_directory(dependency, resolved) or resolved.is_relative_to(dependency.resolve()):
+         raise ValueError(
+            f"refusing to clean {resolved}: overlaps run dependency {dependency}; "
+            "select a separate output directory or use --keep-existing"
+         )
    if resolved.exists():
       shutil.rmtree(resolved)
 
@@ -126,19 +144,35 @@ def main() -> int:
    args = parser.parse_args()
 
    input_path = args.input if args.input.is_absolute() else ROOT / args.input
+   if not input_path.is_file():
+      raise FileNotFoundError(f"run input does not exist: {input_path}")
    params = read_key_values(input_path)
    if "pyfluid.run_name" not in params:
       raise ValueError("run input must define pyfluid.run_name")
    dim = infer_dim(params)
    run_dir = output_dir_from_params(params)
+   executable = amrex_executable(dim, args.machine)
+   if not executable.is_file() or not os.access(executable, os.X_OK):
+      raise FileNotFoundError(f"AMReX executable is missing or not executable: {executable}")
+   # These are read dependencies, never disposable output. Resolve relative
+   # paths against the same working directory used by run_amrex.
+   dependencies = [executable]
+   for key in ("pyfluid.restart_file", "initial_data.input_file", "pyfluid.eos_table"):
+      value = params.get(key, "")
+      if value:
+         dependency = Path(value)
+         dependency = dependency if dependency.is_absolute() else ROOT / dependency
+         if not dependency.exists():
+            raise FileNotFoundError(f"{key} does not exist: {dependency}")
+         dependencies.append(dependency)
    saved_input: bytes | None = None
    if (
       not args.keep_existing
-      and input_path.resolve().is_relative_to(run_dir.resolve())
+      and path_uses_directory(input_path, run_dir)
    ):
       saved_input = input_path.read_bytes()
    if not args.keep_existing:
-      safe_clean_run_dir(run_dir)
+      safe_clean_run_dir(run_dir, dependencies=tuple(dependencies))
    if saved_input is not None:
       run_dir.mkdir(parents=True, exist_ok=True)
       input_path = run_dir / "run.in"
@@ -150,6 +184,7 @@ def main() -> int:
       ranks=args.ranks,
       timeout=args.timeout,
       machine=args.machine,
+      executable=executable,
    )
    write_run_log(run_dir, result.command, result.stdout, result.seconds)
    resolved_input = run_dir / "run.in"

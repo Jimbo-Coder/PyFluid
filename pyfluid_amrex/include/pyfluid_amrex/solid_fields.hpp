@@ -10,6 +10,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 inline void fill_solid_phi_output(
    amrex::MultiFab& output,
    amrex::Geometry const& geom,
@@ -17,7 +19,7 @@ inline void fill_solid_phi_output(
    amrex::Real time
 )
 {
-   output.setVal(1.0e300);
+   output.setVal(1.0e300_rt);
    if (!solid_geometry_enabled(cfg)) {
       return;
    }
@@ -32,16 +34,16 @@ inline void fill_solid_phi_output(
       const amrex::Box& bx = mfi.growntilebox(output.nGrowVect());
       const auto out = output.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-         const amrex::Real y = 0.0;
+         const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-         const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+         const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-         const amrex::Real z = 0.0;
+         const amrex::Real z = 0.0_rt;
 #endif
          out(i, j, k, 0) = params.phi(time, x, y, z);
       });
@@ -120,7 +122,7 @@ inline void fill_primitive_needed_mask(
 
 inline void fill_solid_mask_output(amrex::MultiFab& output, amrex::iMultiFab const* solid_mask)
 {
-   output.setVal(0.0);
+   output.setVal(0.0_rt);
    if (solid_mask == nullptr) {
       return;
    }
@@ -133,7 +135,7 @@ inline void fill_solid_mask_output(amrex::MultiFab& output, amrex::iMultiFab con
       const auto mask = solid_mask->const_array(mfi);
       const auto out = output.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         out(i, j, k, 0) = mask(i, j, k, 0) != 0 ? 1.0 : 0.0;
+         out(i, j, k, 0) = mask(i, j, k, 0) != 0 ? 1.0_rt : 0.0_rt;
       });
    }
    }
@@ -141,7 +143,7 @@ inline void fill_solid_mask_output(amrex::MultiFab& output, amrex::iMultiFab con
 
 inline void fill_solid_volume_fraction_output(amrex::MultiFab& output, amrex::iMultiFab const* solid_mask)
 {
-   output.setVal(1.0);
+   output.setVal(1.0_rt);
    if (solid_mask == nullptr) {
       return;
    }
@@ -154,7 +156,7 @@ inline void fill_solid_volume_fraction_output(amrex::MultiFab& output, amrex::iM
       const auto mask = solid_mask->const_array(mfi);
       const auto out = output.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         out(i, j, k, 0) = mask(i, j, k, 0) != 0 ? 0.0 : 1.0;
+         out(i, j, k, 0) = mask(i, j, k, 0) != 0 ? 0.0_rt : 1.0_rt;
       });
    }
    }
@@ -173,26 +175,26 @@ inline void fill_solid_volume_fraction_output(
       fill_solid_volume_fraction_output(output, solid_mask);
       return;
    }
-   output.setVal(1.0);
+   output.setVal(1.0_rt);
    const auto problo = geom.ProbLoArray();
    const auto dx = geom.CellSizeArray();
    const SolidGeometryEvaluator params = solid_geometry_evaluator(cfg, time);
 #if (AMREX_SPACEDIM >= 2)
    const amrex::Real dy = dx[1];
 #else
-   const amrex::Real dy = 1.0;
+   const amrex::Real dy = 1.0_rt;
 #endif
 #if (AMREX_SPACEDIM >= 2)
    const amrex::Real ylo = problo[1];
 #else
-   const amrex::Real ylo = 0.0;
+   const amrex::Real ylo = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
    const amrex::Real dz = dx[2];
    const amrex::Real zlo = problo[2];
 #else
-   const amrex::Real dz = 1.0;
-   const amrex::Real zlo = 0.0;
+   const amrex::Real dz = 1.0_rt;
+   const amrex::Real zlo = 0.0_rt;
 #endif
 
 #ifdef AMREX_USE_OMP
@@ -234,7 +236,7 @@ inline void fill_solid_volume_fraction_data(
 inline void fill_solid_mask_from_volume_fraction(
    amrex::iMultiFab& solid_mask,
    amrex::MultiFab const& volume_fraction,
-   amrex::Real fluid_fraction_floor = 1.0e-12
+   amrex::Real fluid_fraction_floor = 1.0e-12_rt
 )
 {
 #ifdef AMREX_USE_OMP
@@ -260,7 +262,7 @@ inline void fill_solid_swept_volume_output(
    amrex::Real time
 )
 {
-   output.setVal(0.0);
+   output.setVal(0.0_rt);
    if (!solid_geometry_enabled(cfg)) {
       return;
    }
@@ -272,15 +274,15 @@ inline void fill_solid_swept_volume_output(
    const amrex::Real dy = dx[1];
    const amrex::Real ylo = problo[1];
 #else
-   const amrex::Real dy = 1.0;
-   const amrex::Real ylo = 0.0;
+   const amrex::Real dy = 1.0_rt;
+   const amrex::Real ylo = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
    const amrex::Real dz = dx[2];
    const amrex::Real zlo = problo[2];
 #else
-   const amrex::Real dz = 1.0;
-   const amrex::Real zlo = 0.0;
+   const amrex::Real dz = 1.0_rt;
+   const amrex::Real zlo = 0.0_rt;
 #endif
 
 #ifdef AMREX_USE_OMP
@@ -320,7 +322,7 @@ inline void fill_solid_face_aperture_output(
    amrex::Real time
 )
 {
-   output.setVal(1.0);
+   output.setVal(1.0_rt);
    if (!solid_geometry_enabled(cfg)) {
       return;
    }

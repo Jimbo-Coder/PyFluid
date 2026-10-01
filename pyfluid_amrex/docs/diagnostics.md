@@ -61,6 +61,24 @@ Rules:
   standard group when applicable. The latter is the composite-AMR physical
   volume at the configured atmosphere divided by total composite volume; it is
   an accepted-state health diagnostic, not a C2P fallback counter.
+- The opt-in `constraint_regions` group reuses the canonical Z4c constraint
+  evaluation for a fixed Cartesian box minus an inner sphere, split into near
+  and far regions at a second sphere. Set
+  `diagnostics.constraint_region_extent` (box half-extent),
+  `diagnostics.constraint_exclusion_radius`, and
+  `diagnostics.constraint_split_radius`, with
+  `0 <= exclusion < split < extent`; the common center is
+  `spacetime.origin1/2/3`. The box must fit inside open physical faces with a
+  two-coarse-cell buffer. Reflection faces intersect the requested region with
+  the represented domain; they do not mirror its reported volume.
+  Each partition reports Hamiltonian RMS/L-infinity, the L-infinity norm of
+  the coordinate momentum-constraint vector, and coordinate volume. These are
+  owned-node coordinate-volume sums, not proper-volume norms or cut-cell
+  quadrature; discrete sampled volumes still vary with resolution. Unlike
+  `z4c_*_bh_exterior_*`, the geometry has no dx-dependent horizon exclusion.
+  Use a sphere outside the horizon/stencil influence for exterior convergence
+  tests. The group is absent from `standard` and requires positive extent even
+  when selecting `all`; disabled runs allocate no extra regional scratch.
 - `sim_time_per_s` is average simulation time advanced per wall-clock second
   since the previous diagnostic sample. This is the main cost metric for
   comparing AMR/subcycling/diffusion choices at fixed physical target time.
@@ -109,12 +127,22 @@ Rules:
   Cartesian, cylindrical, and spherical coordinate maps. Relativistic
   integrands remain restricted to Cartesian evolution until the reference-metric
   curvilinear Z4c formulation is implemented; the integrands are not duplicated.
+- Every runtime `surface_integral` entry declares its target in
+  `schema/diagnostics.toml`. `surface = "diagnostic_surface"` selects the
+  configured extraction sphere and `surface = "apparent_horizon"` selects the
+  latest converged found surface. The catalog owns this identity; generated
+  equations own pointwise integrands, while the C++ surface executor continues
+  to own hierarchy interpolation and quadrature. `ParametricSurface` supports
+  both Gauss-Legendre spheres and a sampled star-shaped radial graph, so the
+  horizon finder does not own a second integration implementation.
 - Cartesian `symmetry` boundaries reconstruct omitted half, quadrant, or octant
   sectors for volume diagnostics using field parity. Scalar charges receive one
   factor of two per reduced axis; polar vectors and axial vectors use their
-  respective reflection parity. Interior spherical extraction is intentionally
-  unavailable on a reduced domain until the surface sampler can reconstruct
-  every omitted sector with the same catalog parity metadata.
+  respective reflection parity. Fixed-radius global-GR extraction remains
+  intentionally unavailable on a reduced domain until all of its tensor
+  integrands use the same parity reconstruction. The apparent-horizon baryon
+  flux already reconstructs omitted surface points and applies polar-vector
+  parity to its three current components.
 - The diagnostic cadence should default to a small, cheap number for validation
   and be configurable for production runs.
 

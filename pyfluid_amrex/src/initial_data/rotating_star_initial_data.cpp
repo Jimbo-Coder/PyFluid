@@ -23,6 +23,8 @@
 #include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 RotationLaw rotation_law_from_name(std::string const& name)
@@ -46,36 +48,36 @@ amrex::Real cubic_surface_derivative(
 {
    auto polynomial = [=](amrex::Real coordinate) {
       const amrex::Real basis_minus =
-         -coordinate * (coordinate - 1.0) * (coordinate - 2.0) / 6.0;
+         -coordinate * (coordinate - 1.0_rt) * (coordinate - 2.0_rt) / 6.0_rt;
       const amrex::Real basis_zero =
-         (coordinate + 1.0) * (coordinate - 1.0)
-         * (coordinate - 2.0) / 2.0;
+         (coordinate + 1.0_rt) * (coordinate - 1.0_rt)
+         * (coordinate - 2.0_rt) / 2.0_rt;
       const amrex::Real basis_plus =
-         -(coordinate + 1.0) * coordinate * (coordinate - 2.0) / 2.0;
+         -(coordinate + 1.0_rt) * coordinate * (coordinate - 2.0_rt) / 2.0_rt;
       const amrex::Real basis_plus_two =
-         (coordinate + 1.0) * coordinate * (coordinate - 1.0) / 6.0;
+         (coordinate + 1.0_rt) * coordinate * (coordinate - 1.0_rt) / 6.0_rt;
       return value_minus * basis_minus + value_zero * basis_zero
          + value_plus * basis_plus + value_plus_two * basis_plus_two;
    };
-   amrex::Real lower = 0.0;
-   amrex::Real upper = 1.0;
+   amrex::Real lower = 0.0_rt;
+   amrex::Real upper = 1.0_rt;
    for (int iteration = 0; iteration < 48; ++iteration) {
-      const amrex::Real midpoint = 0.5 * (lower + upper);
-      if (polynomial(midpoint) > 0.0) {
+      const amrex::Real midpoint = 0.5_rt * (lower + upper);
+      if (polynomial(midpoint) > 0.0_rt) {
          lower = midpoint;
       } else {
          upper = midpoint;
       }
    }
-   const amrex::Real coordinate = 0.5 * (lower + upper);
+   const amrex::Real coordinate = 0.5_rt * (lower + upper);
    const amrex::Real derivative_minus =
-      -(3.0 * coordinate * coordinate - 6.0 * coordinate + 2.0) / 6.0;
+      -(3.0_rt * coordinate * coordinate - 6.0_rt * coordinate + 2.0_rt) / 6.0_rt;
    const amrex::Real derivative_zero =
-      (3.0 * coordinate * coordinate - 4.0 * coordinate - 1.0) / 2.0;
+      (3.0_rt * coordinate * coordinate - 4.0_rt * coordinate - 1.0_rt) / 2.0_rt;
    const amrex::Real derivative_plus =
-      -(3.0 * coordinate * coordinate - 2.0 * coordinate - 2.0) / 2.0;
+      -(3.0_rt * coordinate * coordinate - 2.0_rt * coordinate - 2.0_rt) / 2.0_rt;
    const amrex::Real derivative_plus_two =
-      (3.0 * coordinate * coordinate - 1.0) / 6.0;
+      (3.0_rt * coordinate * coordinate - 1.0_rt) / 6.0_rt;
    return (
       value_minus * derivative_minus + value_zero * derivative_zero
       + value_plus * derivative_plus + value_plus_two * derivative_plus_two
@@ -92,7 +94,7 @@ amrex::Real ray_surface_derivative(
    for (int index = 1; index + 2 < count; ++index) {
       const amrex::Real inside = values[offset + index];
       const amrex::Real outside = values[offset + index + 1];
-      if (inside > 0.0 && outside <= 0.0) {
+      if (inside > 0.0_rt && outside <= 0.0_rt) {
          return cubic_surface_derivative(
             values[offset + index - 1],
             inside,
@@ -103,7 +105,7 @@ amrex::Real ray_surface_derivative(
       }
    }
    amrex::Abort("rotating-star surface ray does not contain a resolved enthalpy zero");
-   return 0.0;
+   return 0.0_rt;
 }
 
 template <int EOSMethod>
@@ -146,7 +148,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       matter_support_storage[level] = std::make_unique<amrex::MultiFab>(
          hierarchy.grids[level], hierarchy.distribution[level], 1, 1
       );
-      matter_support_storage[level]->setVal(0.0);
+      matter_support_storage[level]->setVal(0.0_rt);
       const auto problo = hierarchy.geometry[level].ProbLoArray();
       const auto dx = hierarchy.geometry[level].CellSizeArray();
       const amrex::Box domain = hierarchy.geometry[level].Domain();
@@ -163,9 +165,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
          const auto matter_support = matter_support_storage[level]->array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const PatchCoordinate physical{
-               problo[0] + (static_cast<amrex::Real>(i - ilo) + 0.5) * dx[0],
-               problo[1] + (static_cast<amrex::Real>(j - jlo) + 0.5) * dx[1],
-               problo[2] + (static_cast<amrex::Real>(k - klo) + 0.5) * dx[2],
+               problo[0] + (static_cast<amrex::Real>(i - ilo) + 0.5_rt) * dx[0],
+               problo[1] + (static_cast<amrex::Real>(j - jlo) + 0.5_rt) * dx[1],
+               problo[2] + (static_cast<amrex::Real>(k - klo) + 0.5_rt) * dx[2],
             };
             const SpacetimeMetric metric = generated::z4c_spacetime_metric(
                load_z4c_state(geometry, i, j, k)
@@ -174,15 +176,15 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                parameters, physical, metric
             );
             effective(i, j, k, 0) = point.timelike
-               ? metric.lapse * std::sqrt(1.0 - point.velocity_squared)
+               ? metric.lapse * std::sqrt(1.0_rt - point.velocity_squared)
                : std::numeric_limits<amrex::Real>::max();
-            effective(i, j, k, 1) = point.timelike ? 0.0 : 1.0;
+            effective(i, j, k, 1) = point.timelike ? 0.0_rt : 1.0_rt;
             const InitialDataSamplePoint sample{physical, physical};
             const EOSThermodynamicState atmosphere =
                initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
             matter_support(i, j, k) = initial_matter_exceeds_atmosphere(
                primitive(i, j, k, RHO), atmosphere.rho
-            ) ? 1.0 : 0.0;
+            ) ? 1.0_rt : 0.0_rt;
          });
       }
    }
@@ -210,14 +212,14 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
    auto center_dx = hierarchy.geometry.back().CellSizeArray();
    std::vector<amrex::GpuArray<amrex::Real, 3>> center_point{{{
       parameters.rotation_center.q1
-         + (hierarchy.reflection_lo[0] != 0 ? 0.5 * center_dx[0] : 0.0)
-         - (hierarchy.reflection_hi[0] != 0 ? 0.5 * center_dx[0] : 0.0),
+         + (hierarchy.reflection_lo[0] != 0 ? 0.5_rt * center_dx[0] : 0.0_rt)
+         - (hierarchy.reflection_hi[0] != 0 ? 0.5_rt * center_dx[0] : 0.0_rt),
       parameters.rotation_center.q2
-         + (hierarchy.reflection_lo[1] != 0 ? 0.5 * center_dx[1] : 0.0)
-         - (hierarchy.reflection_hi[1] != 0 ? 0.5 * center_dx[1] : 0.0),
+         + (hierarchy.reflection_lo[1] != 0 ? 0.5_rt * center_dx[1] : 0.0_rt)
+         - (hierarchy.reflection_hi[1] != 0 ? 0.5_rt * center_dx[1] : 0.0_rt),
       parameters.rotation_center.q3
-         + (hierarchy.reflection_lo[2] != 0 ? 0.5 * center_dx[2] : 0.0)
-         - (hierarchy.reflection_hi[2] != 0 ? 0.5 * center_dx[2] : 0.0),
+         + (hierarchy.reflection_lo[2] != 0 ? 0.5_rt * center_dx[2] : 0.0_rt)
+         - (hierarchy.reflection_hi[2] != 0 ? 0.5_rt * center_dx[2] : 0.0_rt),
    }}};
    const HierarchyInterpolationPlan center_plan(
       std::move(center_point),
@@ -232,9 +234,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       effective_potential_storage, 0, 2
    );
    const amrex::Real center_effective_potential = center_values[0];
-   if (!(center_effective_potential > 0.0)
+   if (!(center_effective_potential > 0.0_rt)
        || !std::isfinite(center_effective_potential)
-       || center_values[1] > 0.0) {
+       || center_values[1] > 0.0_rt) {
       if (amrex::ParallelDescriptor::IOProcessor()) {
          amrex::Print()
             << "rotating-star invalid center: effective_potential="
@@ -252,7 +254,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       amrex::MultiFab diagnostics(
          hierarchy.grids[level], hierarchy.distribution[level], 7, 0
       );
-      diagnostics.setVal(0.0);
+      diagnostics.setVal(0.0_rt);
       const auto problo = hierarchy.geometry[level].ProbLoArray();
       const auto dx = hierarchy.geometry[level].CellSizeArray();
       const amrex::Box domain = hierarchy.geometry[level].Domain();
@@ -275,15 +277,15 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             ? magnetic_bernoulli->flux_function[level]->const_array(mfi)
             : amrex::Array4<amrex::Real const>{};
          const amrex::Real magnetic_k = magnetized
-            ? magnetic_bernoulli->poloidal_magnetization : 0.0;
+            ? magnetic_bernoulli->poloidal_magnetization : 0.0_rt;
          const amrex::Real magnetic_xi = magnetized
-            ? magnetic_bernoulli->nonlinear_poloidal : 0.0;
+            ? magnetic_bernoulli->nonlinear_poloidal : 0.0_rt;
          const auto diagnostic = diagnostics.array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const PatchCoordinate physical{
-               problo[0] + (static_cast<amrex::Real>(i - ilo) + 0.5) * dx[0],
-               problo[1] + (static_cast<amrex::Real>(j - jlo) + 0.5) * dx[1],
-               problo[2] + (static_cast<amrex::Real>(k - klo) + 0.5) * dx[2],
+               problo[0] + (static_cast<amrex::Real>(i - ilo) + 0.5_rt) * dx[0],
+               problo[1] + (static_cast<amrex::Real>(j - jlo) + 0.5_rt) * dx[1],
+               problo[2] + (static_cast<amrex::Real>(k - klo) + 0.5_rt) * dx[2],
             };
             const InitialDataSamplePoint sample{physical, physical};
             const amrex::Real displacement1 =
@@ -304,7 +306,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                for (int dj = -1; dj <= 1; ++dj) {
                   for (int di = -1; di <= 1; ++di) {
                      within_continuation_support = within_continuation_support
-                        || matter_support(i + di, j + dj, k + dk) > 0.0;
+                        || matter_support(i + di, j + dj, k + dk) > 0.0_rt;
                   }
                }
             }
@@ -315,9 +317,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                iteration_parameters, sample.physical, metric
             );
             const amrex::Real flux = magnetized
-               ? magnetic_flux(i, j, k, 0) : 0.0;
+               ? magnetic_flux(i, j, k, 0) : 0.0_rt;
             const amrex::Real magnetic_potential = magnetic_k * (
-               flux + 0.5 * magnetic_xi * flux * flux
+               flux + 0.5_rt * magnetic_xi * flux * flux
             );
             const amrex::Real target_log_specific_enthalpy =
                target.log_specific_enthalpy + magnetic_potential;
@@ -325,29 +327,29 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
 
             ColdBarotropeState matter;
-            amrex::Real v1 = 0.0;
-            amrex::Real v2 = 0.0;
-            amrex::Real v3 = 0.0;
+            amrex::Real v1 = 0.0_rt;
+            amrex::Real v2 = 0.0_rt;
+            amrex::Real v3 = 0.0_rt;
             if (within_continuation_support && target.timelike
-                && target_log_specific_enthalpy > 0.0) {
+                && target_log_specific_enthalpy > 0.0_rt) {
                const amrex::Real old_log_enthalpy = cold_log_specific_enthalpy(
                   primitive(i, j, k, RHO), eos
                );
                const amrex::Real relaxed_log_enthalpy =
-                  (1.0 - iteration_parameters.matter_relaxation)
+                  (1.0_rt - iteration_parameters.matter_relaxation)
                      * old_log_enthalpy
                   + iteration_parameters.matter_relaxation
                      * target_log_specific_enthalpy;
                matter = cold_barotrope_from_log_enthalpy(
                   relaxed_log_enthalpy, eos
                );
-               v1 = (1.0 - iteration_parameters.matter_relaxation)
+               v1 = (1.0_rt - iteration_parameters.matter_relaxation)
                      * primitive(i, j, k, MOM1)
                   + iteration_parameters.matter_relaxation * target.v1;
-               v2 = (1.0 - iteration_parameters.matter_relaxation)
+               v2 = (1.0_rt - iteration_parameters.matter_relaxation)
                      * primitive(i, j, k, MOM2)
                   + iteration_parameters.matter_relaxation * target.v2;
-               v3 = (1.0 - iteration_parameters.matter_relaxation)
+               v3 = (1.0_rt - iteration_parameters.matter_relaxation)
                      * primitive(i, j, k, MOM3)
                   + iteration_parameters.matter_relaxation * target.v3;
             }
@@ -357,9 +359,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                matter.rho = atmosphere.rho;
                matter.pressure = atmosphere.pressure;
                matter.specific_internal_energy = atmosphere.specific_internal_energy;
-               v1 = 0.0;
-               v2 = 0.0;
-               v3 = 0.0;
+               v1 = 0.0_rt;
+               v2 = 0.0_rt;
+               v3 = 0.0_rt;
             }
             primitive(i, j, k, RHO) = matter.rho;
             primitive(i, j, k, MOM1) = v1;
@@ -371,7 +373,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
             );
             diagnostic(i, j, k, 0) = contains_matter
                ? target.velocity_squared
-               : 0.0;
+               : 0.0_rt;
             diagnostic(i, j, k, 1) = matter.rho;
             const bool boundary =
                (i == ilo && reflection_lo[0] == 0)
@@ -382,9 +384,9 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                || (k == khi && reflection_hi[2] == 0);
             diagnostic(i, j, k, 2) = boundary && contains_matter
                ? matter.rho - atmosphere.rho
-               : 0.0;
+               : 0.0_rt;
             diagnostic(i, j, k, 3) =
-               within_continuation_support && !target.timelike ? 1.0 : 0.0;
+               within_continuation_support && !target.timelike ? 1.0_rt : 0.0_rt;
             if (contains_matter) {
                const amrex::Real displacement1 =
                   physical.q1 - parameters.rotation_center.q1;
@@ -402,11 +404,11 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
                   + displacement3 * displacement3;
                diagnostic(i, j, k, 4) = std::sqrt(amrex::max(
                   radius_squared - parallel * parallel,
-                  amrex::Real(0.0)
+                  amrex::Real(0.0_rt)
                ));
                diagnostic(i, j, k, 5) = std::abs(parallel);
                diagnostic(i, j, k, 6) = std::sqrt(radius_squared)
-                  + 0.5 * std::sqrt(
+                  + 0.5_rt * std::sqrt(
                      dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2]
                   );
             }
@@ -415,7 +417,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       summary.maximum_velocity = std::max(
          summary.maximum_velocity,
          std::sqrt(std::max(
-            diagnostics.max(0, 0, false), amrex::Real(0.0)
+            diagnostics.max(0, 0, false), amrex::Real(0.0_rt)
          ))
       );
       summary.maximum_density = std::max(
@@ -433,7 +435,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
       summary.matter_outer_radius = std::max(
          summary.matter_outer_radius, diagnostics.max(6, 0, false)
       );
-      if (diagnostics.max(3, 0, false) > 0.0) {
+      if (diagnostics.max(3, 0, false) > 0.0_rt) {
          amrex::Abort(
             "rotating-star helical flow is not timelike inside the continued "
             "matter support; reduce angular velocity"
@@ -443,7 +445,7 @@ RotatingStarUpdateSummary update_rotating_star_primitives_method(
          amrex::Abort("rotating-star primitive update produced a nonfinite state");
       }
    }
-   if (summary.boundary_density_excess > 0.0) {
+   if (summary.boundary_density_excess > 0.0_rt) {
       amrex::Abort(
          "rotating-star matter reaches the physical boundary; enlarge the domain"
       );
@@ -457,16 +459,16 @@ void validate_axisymmetric_spherical_rotation(
    RotatingStarParameters const& parameters
 )
 {
-   const amrex::Real tolerance = 64.0
+   const amrex::Real tolerance = 64.0_rt
       * std::numeric_limits<amrex::Real>::epsilon();
    if (hierarchy.geometry.size() != 1
-       || hierarchy.geometry[0].ProbLo(0) != 0.0
+       || hierarchy.geometry[0].ProbLo(0) != 0.0_rt
        || std::abs(parameters.rotation_center.q1) > tolerance
        || std::abs(parameters.rotation_center.q2) > tolerance
        || std::abs(parameters.rotation_center.q3) > tolerance
        || std::abs(parameters.rotation_axis.q1) > tolerance
        || std::abs(parameters.rotation_axis.q2) > tolerance
-       || std::abs(parameters.rotation_axis.q3 - 1.0) > tolerance) {
+       || std::abs(parameters.rotation_axis.q3 - 1.0_rt) > tolerance) {
       amrex::Abort(
          "axisymmetric spherical rotating-star data require one r-theta "
          "or r-theta-phi level centered at the origin and rotation about +z"
@@ -477,7 +479,7 @@ void validate_axisymmetric_spherical_rotation(
       - hierarchy.geometry[0].ProbLo(2);
    if (!hierarchy.geometry[0].isPeriodic(2)
        || std::abs(phi_extent - constants::two_pi)
-          > tolerance * std::max(amrex::Real(1.0), phi_extent)) {
+          > tolerance * std::max(amrex::Real(1.0_rt), phi_extent)) {
       amrex::Abort(
          "3D axisymmetric spherical rotating-star data require periodic "
          "full-2pi phi storage"
@@ -509,7 +511,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    amrex::MultiFab matter_support(
       hierarchy.grids[0], hierarchy.distribution[0], 1, 1
    );
-   matter_support.setVal(0.0);
+   matter_support.setVal(0.0_rt);
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto spacing = hierarchy.geometry[0].CellSizeArray();
    const InitialDataCoordinateLine radial_coordinates =
@@ -538,9 +540,9 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    const amrex::Real dphi = hierarchy.geometry[0].CellSize(2);
 #else
    const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
-   const amrex::Real phi_lo = 0.0;
-   const amrex::Real phi_hi = 0.0;
-   const amrex::Real dphi = 0.0;
+   const amrex::Real phi_lo = 0.0_rt;
+   const amrex::Real phi_hi = 0.0_rt;
+   const amrex::Real dphi = 0.0_rt;
 #endif
    for (amrex::MFIter mfi(effective, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
@@ -555,7 +557,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
          PatchCoordinate mesh{
             radial_center[i - domain_lo.x],
             angular_center[j - domain_lo.y],
-            phi_lo + (k - domain_lo.z + 0.5) * dphi,
+            phi_lo + (k - domain_lo.z + 0.5_rt) * dphi,
          };
          const InitialDataSamplePoint sample{
             mesh,
@@ -569,14 +571,14 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
                parameters, sample.mesh.q1, sample.mesh.q2, metric
             );
          effective_array(i, j, k, 0) = point.timelike
-            ? metric.lapse * std::sqrt(1.0 - point.velocity_squared)
+            ? metric.lapse * std::sqrt(1.0_rt - point.velocity_squared)
             : std::numeric_limits<amrex::Real>::max();
-         effective_array(i, j, k, 1) = point.timelike ? 0.0 : 1.0;
+         effective_array(i, j, k, 1) = point.timelike ? 0.0_rt : 1.0_rt;
          const EOSThermodynamicState atmosphere =
             initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
          support(i, j, k) = initial_matter_exceeds_atmosphere(
             primitive(i, j, k, RHO), atmosphere.rho
-         ) ? 1.0 : 0.0;
+         ) ? 1.0_rt : 0.0_rt;
       });
    }
    amrex::Vector<amrex::MultiFab*> effective_fields{&effective};
@@ -597,10 +599,10 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
       )
    );
 
-   const amrex::Real center_theta = 0.5 * (
+   const amrex::Real center_theta = 0.5_rt * (
       hierarchy.geometry[0].ProbLo(1) + hierarchy.geometry[0].ProbHi(1)
    );
-   const amrex::Real center_phi = 0.5 * (
+   const amrex::Real center_phi = 0.5_rt * (
       phi_lo + phi_hi
    );
    std::vector<amrex::GpuArray<amrex::Real, 3>> center_points;
@@ -609,7 +611,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
       // lattice.  The first mapped cells are uniformly spaced physically, so
       // select their logical centers here and retain the even-r quadratic
       // extrapolation below.
-      const amrex::Real radius = (radial_index + 0.5) * spacing[0];
+      const amrex::Real radius = (radial_index + 0.5_rt) * spacing[0];
       const PatchCoordinate physical = mesh_coordinate_to_physical_point(
          MeshSpherical, axes, {radius, center_theta, center_phi}
       );
@@ -631,13 +633,13 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    const std::vector<amrex::Real> center_values =
       center_plan.interpolate(effective_owner, 0, 2);
    const amrex::Real center_effective_potential =
-      1.125 * center_values[0] - 0.125 * center_values[2];
+      1.125_rt * center_values[0] - 0.125_rt * center_values[2];
    const amrex::Real center_failure = std::max(
       center_values[1], center_values[3]
    );
-   if (!(center_effective_potential > 0.0)
+   if (!(center_effective_potential > 0.0_rt)
        || !std::isfinite(center_effective_potential)
-       || center_failure > 0.0) {
+       || center_failure > 0.0_rt) {
       amrex::Abort("axisymmetric rotating-star center is not timelike");
    }
    RotatingStarParameters iteration_parameters = parameters;
@@ -648,7 +650,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    amrex::MultiFab diagnostics(
       hierarchy.grids[0], hierarchy.distribution[0], 8, 0
    );
-   diagnostics.setVal(0.0);
+   diagnostics.setVal(0.0_rt);
    for (amrex::MFIter mfi(*primitive_state[0], amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.tilebox();
@@ -662,7 +664,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
          PatchCoordinate mesh{
             radial_center[i - domain_lo.x],
             angular_center[j - domain_lo.y],
-            phi_lo + (k - domain_lo.z + 0.5) * dphi,
+            phi_lo + (k - domain_lo.z + 0.5_rt) * dphi,
          };
          const InitialDataSamplePoint sample{
             mesh,
@@ -678,7 +680,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
             for (int dj = -1; dj <= 1; ++dj) {
                for (int di = -1; di <= 1; ++di) {
                   within_support = within_support
-                     || support(i + di, j + dj, k + dk) > 0.0;
+                     || support(i + di, j + dj, k + dk) > 0.0_rt;
                }
             }
          }
@@ -692,29 +694,29 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
          const EOSThermodynamicState atmosphere =
             initial_atmosphere_state<EOSMethod>(parameters.atmosphere, sample);
          ColdBarotropeState matter;
-         amrex::Real vr = 0.0;
-         amrex::Real vtheta = 0.0;
-         amrex::Real vphi = 0.0;
+         amrex::Real vr = 0.0_rt;
+         amrex::Real vtheta = 0.0_rt;
+         amrex::Real vphi = 0.0_rt;
          if (within_support && target.timelike
-             && target.log_specific_enthalpy > 0.0) {
+             && target.log_specific_enthalpy > 0.0_rt) {
             const amrex::Real old_log_enthalpy = cold_log_specific_enthalpy(
                primitive(i, j, k, RHO), eos
             );
             const amrex::Real relaxed_log_enthalpy =
-               (1.0 - iteration_parameters.matter_relaxation)
+               (1.0_rt - iteration_parameters.matter_relaxation)
                   * old_log_enthalpy
                + iteration_parameters.matter_relaxation
                   * target.log_specific_enthalpy;
             matter = cold_barotrope_from_log_enthalpy(
                relaxed_log_enthalpy, eos
             );
-            vr = (1.0 - iteration_parameters.matter_relaxation)
+            vr = (1.0_rt - iteration_parameters.matter_relaxation)
                   * primitive(i, j, k, MOM1)
                + iteration_parameters.matter_relaxation * target.v1;
-            vtheta = (1.0 - iteration_parameters.matter_relaxation)
+            vtheta = (1.0_rt - iteration_parameters.matter_relaxation)
                   * primitive(i, j, k, MOM2)
                + iteration_parameters.matter_relaxation * target.v2;
-            vphi = (1.0 - iteration_parameters.matter_relaxation)
+            vphi = (1.0_rt - iteration_parameters.matter_relaxation)
                   * primitive(i, j, k, MOM3)
                + iteration_parameters.matter_relaxation * target.v3;
          }
@@ -724,9 +726,9 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
             matter.rho = atmosphere.rho;
             matter.pressure = atmosphere.pressure;
             matter.specific_internal_energy = atmosphere.specific_internal_energy;
-            vr = 0.0;
-            vtheta = 0.0;
-            vphi = 0.0;
+            vr = 0.0_rt;
+            vtheta = 0.0_rt;
+            vphi = 0.0_rt;
          }
          primitive(i, j, k, RHO) = matter.rho;
          primitive(i, j, k, MOM1) = vr;
@@ -737,14 +739,14 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
             matter.rho, atmosphere.rho
          );
          diagnostic(i, j, k, 0) = contains_matter
-            ? target.velocity_squared : 0.0;
+            ? target.velocity_squared : 0.0_rt;
          diagnostic(i, j, k, 1) = matter.rho;
          diagnostic(i, j, k, 2) = i == domain_hi.x && contains_matter
-            ? matter.rho - atmosphere.rho : 0.0;
+            ? matter.rho - atmosphere.rho : 0.0_rt;
          diagnostic(i, j, k, 3) = within_support && !target.timelike
-            ? 1.0 : 0.0;
+            ? 1.0_rt : 0.0_rt;
          const bool failed_support = within_support && !target.timelike;
-         diagnostic(i, j, k, 7) = failed_support ? sample.mesh.q1 : 0.0;
+         diagnostic(i, j, k, 7) = failed_support ? sample.mesh.q1 : 0.0_rt;
          if (contains_matter) {
             diagnostic(i, j, k, 4) = sample.mesh.q1
                * std::sin(sample.mesh.q2);
@@ -758,7 +760,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    }
    RotatingStarUpdateSummary summary;
    summary.maximum_velocity = std::sqrt(std::max(
-      diagnostics.max(0, 0, false), amrex::Real(0.0)
+      diagnostics.max(0, 0, false), amrex::Real(0.0_rt)
    ));
    summary.maximum_density = diagnostics.max(1, 0, false);
    summary.boundary_density_excess = diagnostics.max(2, 0, false);
@@ -766,7 +768,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
    summary.equatorial_radius = diagnostics.max(4, 0, false);
    summary.polar_radius = diagnostics.max(5, 0, false);
    summary.matter_outer_radius = diagnostics.max(6, 0, false);
-   if (diagnostics.max(3, 0, false) > 0.0) {
+   if (diagnostics.max(3, 0, false) > 0.0_rt) {
       amrex::Print()
          << "axisymmetric rotating-star failed support maximum_radius="
          << diagnostics.max(7, 0, false) << '\n';
@@ -774,7 +776,7 @@ update_axisymmetric_spherical_rotating_star_primitives_method(
          "axisymmetric rotating-star helical flow is not timelike inside matter"
       );
    }
-   if (summary.boundary_density_excess > 0.0) {
+   if (summary.boundary_density_excess > 0.0_rt) {
       amrex::Abort(
          "axisymmetric rotating-star matter reaches the radial boundary"
       );
@@ -818,9 +820,9 @@ RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
          const auto enthalpy = log_enthalpy[level]->array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const PatchCoordinate physical{
-               problo[0] + (static_cast<amrex::Real>(i - ilo) + 0.5) * dx[0],
-               problo[1] + (static_cast<amrex::Real>(j - jlo) + 0.5) * dx[1],
-               problo[2] + (static_cast<amrex::Real>(k - klo) + 0.5) * dx[2],
+               problo[0] + (static_cast<amrex::Real>(i - ilo) + 0.5_rt) * dx[0],
+               problo[1] + (static_cast<amrex::Real>(j - jlo) + 0.5_rt) * dx[1],
+               problo[2] + (static_cast<amrex::Real>(k - klo) + 0.5_rt) * dx[2],
             };
             const SpacetimeMetric metric = generated::z4c_spacetime_metric(
                load_z4c_state(geometry, i, j, k)
@@ -857,8 +859,8 @@ RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
          reference_direction = direction;
       }
    }
-   std::array<amrex::Real, 3> reference{0.0, 0.0, 0.0};
-   reference[reference_direction] = 1.0;
+   std::array<amrex::Real, 3> reference{0.0_rt, 0.0_rt, 0.0_rt};
+   reference[reference_direction] = 1.0_rt;
    std::array<amrex::Real, 3> equator1{
       axis[1] * reference[2] - axis[2] * reference[1],
       axis[2] * reference[0] - axis[0] * reference[2],
@@ -893,7 +895,7 @@ RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
       const auto level_dx = hierarchy.geometry[level].CellSizeArray();
       spacing = std::min({spacing, level_dx[0], level_dx[1], level_dx[2]});
    }
-   spacing *= 0.5;
+   spacing *= 0.5_rt;
    const std::array<amrex::Real, 3> center{
       parameters.rotation_center.q1,
       parameters.rotation_center.q2,
@@ -907,33 +909,33 @@ RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
       amrex::Real extent = std::numeric_limits<amrex::Real>::max();
       for (int direction = 0; direction < 3; ++direction) {
          const amrex::Real ray_component = ray_directions[ray][direction];
-         if (ray_component > 0.0) {
+         if (ray_component > 0.0_rt) {
             const amrex::Real ray_extent =
                hierarchy.reflection_hi[direction] != 0
                ? (
-                    2.0 * upper[direction] - center[direction]
-                    - lower[direction] - 0.6 * coarse_dx[direction]
+                    2.0_rt * upper[direction] - center[direction]
+                    - lower[direction] - 0.6_rt * coarse_dx[direction]
                  ) / ray_component
                : (
-                    upper[direction] - 1.6 * coarse_dx[direction]
+                    upper[direction] - 1.6_rt * coarse_dx[direction]
                     - center[direction]
                  ) / ray_component;
             extent = std::min(extent, ray_extent);
-         } else if (ray_component < 0.0) {
+         } else if (ray_component < 0.0_rt) {
             const amrex::Real ray_extent =
                hierarchy.reflection_lo[direction] != 0
                ? (
-                    upper[direction] - 1.6 * coarse_dx[direction]
-                    - 2.0 * lower[direction] + center[direction]
+                    upper[direction] - 1.6_rt * coarse_dx[direction]
+                    - 2.0_rt * lower[direction] + center[direction]
                  ) / (-ray_component)
                : (
-                    lower[direction] + 0.6 * coarse_dx[direction]
+                    lower[direction] + 0.6_rt * coarse_dx[direction]
                     - center[direction]
                  ) / ray_component;
             extent = std::min(extent, ray_extent);
          }
       }
-      counts[ray] = static_cast<int>(std::floor(0.98 * extent / spacing)) + 1;
+      counts[ray] = static_cast<int>(std::floor(0.98_rt * extent / spacing)) + 1;
       if (counts[ray] < 6) {
          amrex::Abort("rotating-star surface diagnostic domain is too small");
       }
@@ -948,19 +950,19 @@ RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
             if (hierarchy.reflection_lo[direction] != 0
                 && point[direction] < lower[direction]) {
                point[direction] =
-                  2.0 * lower[direction] - point[direction];
+                  2.0_rt * lower[direction] - point[direction];
             }
             if (hierarchy.reflection_hi[direction] != 0
                 && point[direction] > upper[direction]) {
                point[direction] =
-                  2.0 * upper[direction] - point[direction];
+                  2.0_rt * upper[direction] - point[direction];
             }
             if (point[direction] == lower[direction]
                 && hierarchy.reflection_lo[direction] != 0) {
-               point[direction] += 0.5 * coarse_dx[direction];
+               point[direction] += 0.5_rt * coarse_dx[direction];
             } else if (point[direction] == upper[direction]
                        && hierarchy.reflection_hi[direction] != 0) {
-               point[direction] -= 0.5 * coarse_dx[direction];
+               point[direction] -= 0.5_rt * coarse_dx[direction];
             }
          }
          points.push_back(point);
@@ -976,20 +978,20 @@ RotatingStarSurfaceDiagnostic rotating_star_surface_diagnostic(
       amrex::IndexType::TheCellType()
    );
    const std::vector<amrex::Real> values = plan.interpolate(log_enthalpy, 0, 1);
-   amrex::Real polar_gradient = 0.0;
-   amrex::Real equatorial_gradient = 0.0;
+   amrex::Real polar_gradient = 0.0_rt;
+   amrex::Real equatorial_gradient = 0.0_rt;
    for (int ray = 0; ray < 6; ++ray) {
       const amrex::Real derivative = ray_surface_derivative(
          values, offsets[ray], counts[ray], spacing
       );
       if (ray < 2) {
-         polar_gradient += 0.5 * derivative;
+         polar_gradient += 0.5_rt * derivative;
       } else {
-         equatorial_gradient += 0.25 * derivative;
+         equatorial_gradient += 0.25_rt * derivative;
       }
    }
    const amrex::Real indicator = equatorial_gradient / polar_gradient;
-   if (!(polar_gradient < 0.0) || !std::isfinite(equatorial_gradient)
+   if (!(polar_gradient < 0.0_rt) || !std::isfinite(equatorial_gradient)
        || !std::isfinite(indicator)) {
       amrex::Abort(
          "rotating-star mass-shedding diagnostic requires a negative finite "
@@ -1049,9 +1051,9 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
    const amrex::Real dphi = hierarchy.geometry[0].CellSize(2);
 #else
    const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
-   const amrex::Real phi_lo = 0.0;
-   const amrex::Real phi_hi = 0.0;
-   const amrex::Real dphi = 0.0;
+   const amrex::Real phi_lo = 0.0_rt;
+   const amrex::Real phi_hi = 0.0_rt;
+   const amrex::Real dphi = 0.0_rt;
 #endif
    for (amrex::MFIter mfi(*log_enthalpy, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
@@ -1064,7 +1066,7 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
          PatchCoordinate mesh{
             radial_center[i - domain_lo.x],
             angular_center[j - domain_lo.y],
-            phi_lo + (k - domain_lo.z + 0.5) * dphi,
+            phi_lo + (k - domain_lo.z + 0.5_rt) * dphi,
          };
          const InitialDataSamplePoint sample{
             mesh,
@@ -1096,9 +1098,9 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
    }
    int uniform_source_cells = radial_cells;
    const amrex::Real inner_width = radial_coordinates.widths.front();
-   const amrex::Real width_tolerance = 64.0
+   const amrex::Real width_tolerance = 64.0_rt
       * std::numeric_limits<amrex::Real>::epsilon()
-      * std::max(amrex::Real(1.0), inner_width);
+      * std::max(amrex::Real(1.0_rt), inner_width);
    while (uniform_source_cells > 1
           && std::abs(
                 radial_coordinates.widths[uniform_source_cells - 1]
@@ -1107,10 +1109,10 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
       --uniform_source_cells;
    }
    const int radial_samples = uniform_source_cells - 1;
-   const amrex::Real polar_theta = problo[1] + 0.5001 * spacing[1];
+   const amrex::Real polar_theta = problo[1] + 0.5001_rt * spacing[1];
    const amrex::Real equatorial_theta =
-      hierarchy.geometry[0].ProbHi(1) - 0.5001 * spacing[1];
-   const amrex::Real sample_phi = 0.5 * (
+      hierarchy.geometry[0].ProbHi(1) - 0.5001_rt * spacing[1];
+   const amrex::Real sample_phi = 0.5_rt * (
       phi_lo + phi_hi
    );
    std::vector<amrex::GpuArray<amrex::Real, 3>> points;
@@ -1120,7 +1122,7 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
          // Sample strictly between the first and last cell centers.  This
          // avoids grid-edge ambiguity after Cartesian-to-spherical mapping;
          // the stellar surface is well inside this radial interval.
-         const amrex::Real radius = (index + 1.0) * spacing[0];
+         const amrex::Real radius = (index + 1.0_rt) * spacing[0];
          const PatchCoordinate physical = mesh_coordinate_to_physical_point(
             MeshSpherical, axes, {radius, theta, sample_phi}
          );
@@ -1148,7 +1150,7 @@ axisymmetric_spherical_rotating_star_surface_diagnostic(
       values, radial_samples, radial_samples, inner_width
    );
    const amrex::Real indicator = equatorial_gradient / polar_gradient;
-   if (!(polar_gradient < 0.0) || !std::isfinite(equatorial_gradient)
+   if (!(polar_gradient < 0.0_rt) || !std::isfinite(equatorial_gradient)
        || !std::isfinite(indicator)) {
       amrex::Abort("invalid axisymmetric rotating-star surface diagnostic");
    }
@@ -1205,7 +1207,7 @@ RotatingStarParameters rotating_star_parameters(
    parameters.continuation_targets =
       cfg.initial_data_rotation_continuation_targets;
    parameters.atmosphere = initial_atmosphere_parameters(cfg, provider);
-   if (!provider.tov.active() || !(parameters.injection_energy > 0.0)) {
+   if (!provider.tov.active() || !(parameters.injection_energy > 0.0_rt)) {
       amrex::Abort("rotating-star continuation requires an active TOV seed");
    }
    return parameters;

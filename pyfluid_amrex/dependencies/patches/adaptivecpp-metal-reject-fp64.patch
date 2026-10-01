@@ -1,0 +1,13 @@
+--- a/src/compiler/llvm-to-backend/metal/Emitter.cpp
++++ b/src/compiler/llvm-to-backend/metal/Emitter.cpp
+@@ -1604,8 +1604,8 @@
+   } else if (T->isFloatTy()) {
+     return typeCache[T] = "float";
+   } else if (T->isDoubleTy()) {
+-    // Metal GPUs do not have native FP64 support; demote parser-side doubles.
+-    return typeCache[T] = "float";
++    errorMsg = "Metal does not support device FP64; refusing implicit narrowing";
++    return "";
+   } else if (T->isHalfTy()) {
+     return typeCache[T] = "half";
+   } else {

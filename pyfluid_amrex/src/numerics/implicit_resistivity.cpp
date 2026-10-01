@@ -12,6 +12,8 @@
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 using ImplicitEdgeField = amrex::Array<amrex::MultiFab, 3>;
@@ -60,14 +62,14 @@ DiffusionStats solve_implicit_resistive_edge_emf(
    curl_curl.setLevelBC(0, nullptr);
    // E = eta curl(B*) - eta dt curl(curl(E)). The right-hand side is
    // the same generated resistive EMF used by the explicit CT update.
-   curl_curl.setScalars(cfg.resistivity * dt, 1.0);
+   curl_curl.setScalars(cfg.resistivity * dt, 1.0_rt);
    curl_curl.prepareRHS({&rhs});
 
    amrex::MLMGT<ImplicitEdgeField> mlmg(curl_curl);
    mlmg.setMaxIter(cfg.diffusion_max_iterations);
    mlmg.setVerbose(0);
    mlmg.setBottomVerbose(0);
-   const amrex::Real residual = mlmg.solve({&solution}, {&rhs}, cfg.diffusion_tolerance, 0.0);
+   const amrex::Real residual = mlmg.solve({&solution}, {&rhs}, cfg.diffusion_tolerance, 0.0_rt);
 
    for (int component = 0; component < 3; ++component) {
       amrex::MultiFab::Copy(*edge_e.e[component], solution[component], 0, 0, 1, 0);
@@ -93,7 +95,7 @@ DiffusionStats solve_implicit_inactive_magnetic_component(
    solution.FillBoundary(geom.periodicity());
 
    amrex::MultiFab a_coefficient(boxes, distribution, 1, 0);
-   a_coefficient.setVal(1.0);
+   a_coefficient.setVal(1.0_rt);
    amrex::Array<amrex::MultiFab, AMREX_SPACEDIM> b_coefficient;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       b_coefficient[dir].define(
@@ -102,7 +104,7 @@ DiffusionStats solve_implicit_inactive_magnetic_component(
          1,
          0
       );
-      b_coefficient[dir].setVal(1.0);
+      b_coefficient[dir].setVal(1.0_rt);
    }
 
    amrex::LPInfo info;
@@ -110,7 +112,7 @@ DiffusionStats solve_implicit_inactive_magnetic_component(
    const auto bc = periodic_linear_operator_bc();
    operator_abec.setDomainBC(bc, bc);
    operator_abec.setLevelBC(0, nullptr);
-   operator_abec.setScalars(1.0, dt * cfg.resistivity);
+   operator_abec.setScalars(1.0_rt, dt * cfg.resistivity);
    operator_abec.setACoeffs(0, a_coefficient);
    operator_abec.setBCoeffs(0, amrex::GetArrOfConstPtrs(b_coefficient));
 
@@ -119,7 +121,7 @@ DiffusionStats solve_implicit_inactive_magnetic_component(
    mlmg.setMaxFmgIter(0);
    mlmg.setVerbose(0);
    mlmg.setBottomVerbose(0);
-   const amrex::Real residual = mlmg.solve({&solution}, {&rhs}, cfg.diffusion_tolerance, 0.0);
+   const amrex::Real residual = mlmg.solve({&solution}, {&rhs}, cfg.diffusion_tolerance, 0.0_rt);
    amrex::MultiFab::Copy(state, solution, 0, B3, 1, 0);
    return {residual, mlmg.getNumIters()};
 }

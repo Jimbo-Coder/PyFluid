@@ -61,37 +61,43 @@ inline char const* patch_coordinate_map_name(int coordinate_map)
    }
 }
 
-inline bool patch_coordinate_map_supported(int coordinate_map)
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool patch_coordinate_map_supported(int coordinate_map)
 {
    return coordinate_map >= PatchMapCartesianIdentity
       && coordinate_map <= PatchMapCylindricalShellMinusY;
 }
 
-inline bool patch_coordinate_map_is_cartesian(int coordinate_map)
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool patch_coordinate_map_is_cartesian(int coordinate_map)
 {
    return coordinate_map == PatchMapCartesianIdentity
       || coordinate_map == PatchMapThornburgCentralCartesian;
 }
 
-inline bool patch_coordinate_map_is_thornburg(int coordinate_map)
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool patch_coordinate_map_is_thornburg(int coordinate_map)
 {
    return coordinate_map >= PatchMapThornburgCentralCartesian
       && coordinate_map <= PatchMapThornburgShellMinusZ;
 }
 
-inline bool patch_coordinate_map_is_thornburg_shell(int coordinate_map)
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool patch_coordinate_map_is_thornburg_shell(int coordinate_map)
 {
    return coordinate_map >= PatchMapThornburgShellPlusX
       && coordinate_map <= PatchMapThornburgShellMinusZ;
 }
 
-inline bool patch_coordinate_map_is_cylindrical_shell(int coordinate_map)
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool patch_coordinate_map_is_cylindrical_shell(int coordinate_map)
 {
    return coordinate_map >= PatchMapCylindricalShellPlusX
       && coordinate_map <= PatchMapCylindricalShellMinusY;
 }
 
-inline bool patch_coordinate_map_is_shell(int coordinate_map)
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool patch_coordinate_map_is_shell(int coordinate_map)
 {
    return patch_coordinate_map_is_thornburg_shell(coordinate_map)
       || patch_coordinate_map_is_cylindrical_shell(coordinate_map);

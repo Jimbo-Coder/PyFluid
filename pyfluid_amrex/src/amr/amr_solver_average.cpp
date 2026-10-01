@@ -4,6 +4,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 void AmrSolverBase::project_metric_conservative_prolongation(
    int fine_lev,
    amrex::MultiFab const& coarse_state,
@@ -36,7 +38,7 @@ void AmrSolverBase::project_metric_conservative_prolongation(
    amrex::BoxArray coarse_boxes = fine_state.boxArray();
    coarse_boxes.coarsen(ratio);
    amrex::MultiFab correction(coarse_boxes, fine_state.DistributionMap(), ncomp + 1, 0);
-   correction.setVal(0.0);
+   correction.setVal(0.0_rt);
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -64,7 +66,7 @@ void AmrSolverBase::project_metric_conservative_prolongation(
       const int rz = 1;
 #endif
       amrex::ParallelFor(coarse_box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         amrex::Real weight_sum = 0.0;
+         amrex::Real weight_sum = 0.0_rt;
          amrex::Real weighted_sum[MaxStateComponents]{};
          for (int kk = 0; kk < rz; ++kk) {
             const int fk = k * rz + kk;
@@ -72,7 +74,7 @@ void AmrSolverBase::project_metric_conservative_prolongation(
                const int fj = j * ry + jj;
                for (int ii = 0; ii < rx; ++ii) {
                   const int fi = i * rx + ii;
-                  amrex::Real weight = 1.0;
+                  amrex::Real weight = 1.0_rt;
                   if (use_mapped_patches) {
                      const PatchCoordinate local =
                         patch_layout_cell_center_coordinate(grid_patch, layout_patch, fi, fj, fk);
@@ -279,7 +281,7 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
       ncomp + 1,
       0
    );
-   crse_from_fine.setVal(0.0);
+   crse_from_fine.setVal(0.0_rt);
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -311,7 +313,7 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
       const int rz = 1;
 #endif
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         amrex::Real weight_sum = 0.0;
+         amrex::Real weight_sum = 0.0_rt;
          amrex::Real sum[MaxStateComponents]{};
          for (int kk = 0; kk < rz; ++kk) {
             const int fk = k * rz + kk;
@@ -322,7 +324,7 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
                   if (use_solid_mask && solid(fi, fj, fk, 0) != 0) {
                      continue;
                   }
-                  amrex::Real weight = 1.0;
+                  amrex::Real weight = 1.0_rt;
                   if (use_mapped_patches) {
                      const PatchCoordinate local =
                         patch_layout_cell_center_coordinate(grid_patch, layout_patch, fi, fj, fk);
@@ -333,7 +335,7 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
                   if (use_volume_fraction) {
                      weight *= vf(fi, fj, fk, 0);
                   }
-                  if (weight <= 0.0 || !amrex::Math::isfinite(weight)) {
+                  if (weight <= 0.0_rt || !amrex::Math::isfinite(weight)) {
                      continue;
                   }
                   for (int n = 0; n < ncomp; ++n) {
@@ -371,7 +373,7 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
       ncomp + 1,
       0
    );
-   overlay.setVal(0.0);
+   overlay.setVal(0.0_rt);
    overlay.ParallelCopy(
       crse_from_fine,
       0,
@@ -392,10 +394,10 @@ void AmrSolverBase::average_down_state_level_weighted_hydro(int fine_lev)
       const auto coarse = fluid_state_.state()[fine_lev - 1]->array(mfi);
       const auto avg = overlay.const_array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         if (avg(i, j, k, ncomp) <= 0.0) {
+         if (avg(i, j, k, ncomp) <= 0.0_rt) {
             return;
          }
-         const amrex::Real inv_weight = 1.0 / avg(i, j, k, ncomp);
+         const amrex::Real inv_weight = 1.0_rt / avg(i, j, k, ncomp);
          for (int n = 0; n < ncomp; ++n) {
             coarse(i, j, k, n) = avg(i, j, k, n) * inv_weight;
          }
@@ -470,7 +472,7 @@ void AmrSolverBase::average_down_face_b_level_metric(int fine_lev)
       amrex::BoxArray crse_fine_ba = fine_face.boxArray();
       crse_fine_ba.coarsen(ratio);
       amrex::MultiFab crse_from_fine(crse_fine_ba, fine_face.DistributionMap(), 2, 0);
-      crse_from_fine.setVal(0.0);
+      crse_from_fine.setVal(0.0_rt);
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -493,7 +495,7 @@ void AmrSolverBase::average_down_face_b_level_metric(int fine_lev)
          const int rz = 1;
 #endif
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            amrex::Real flux_sum = 0.0;
+            amrex::Real flux_sum = 0.0_rt;
             int fine_faces = 0;
             const int ni = d == 0 ? 1 : rx;
 #if (AMREX_SPACEDIM >= 2)
@@ -521,16 +523,16 @@ void AmrSolverBase::average_down_face_b_level_metric(int fine_lev)
             }
             const amrex::Real coarse_area =
                mesh_face_area_scale(d, coordinate, axes, coarse_problo, coarse_dx, i, j, k);
-            if (fine_faces > 0 && coarse_area > 0.0) {
+            if (fine_faces > 0 && coarse_area > 0.0_rt) {
                avg(i, j, k, 0) = generated::magnetic_face_component(flux_sum, coarse_area);
-               avg(i, j, k, 1) = 1.0;
+               avg(i, j, k, 1) = 1.0_rt;
             }
          });
       }
       }
 
       amrex::MultiFab overlay(coarse_face.boxArray(), coarse_face.DistributionMap(), 2, 0);
-      overlay.setVal(0.0);
+      overlay.setVal(0.0_rt);
       overlay.ParallelCopy(crse_from_fine, 0, 0, 2, 0, 0);
 
 #ifdef AMREX_USE_OMP
@@ -542,7 +544,7 @@ void AmrSolverBase::average_down_face_b_level_metric(int fine_lev)
          const auto coarse = coarse_face.array(mfi);
          const auto avg = overlay.const_array(mfi);
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            if (avg(i, j, k, 1) > 0.0) {
+            if (avg(i, j, k, 1) > 0.0_rt) {
                coarse(i, j, k, 0) = avg(i, j, k, 0);
             }
          });

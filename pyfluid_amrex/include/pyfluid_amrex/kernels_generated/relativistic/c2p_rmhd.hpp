@@ -33,14 +33,14 @@ amrex::Real srmhd_palenzuela_residual(const RMHDRecoveryState& recovery, amrex::
    const amrex::Real tmp16 = ((recovery.magnetic_squared)*(recovery.magnetic_squared));
    const amrex::Real tmp17 = tmp16*tmp2;
    const amrex::Real tmp18 = tmp17*tmp3;
-   const amrex::Real tmp19 = sqrt(-tmp10*tmp6 - tmp11 + tmp12*tmp15 + tmp18 - tmp8 + tmp9*amrex::Math::powi<4>(x));
+   const amrex::Real tmp19 = std::sqrt(-tmp10*tmp6 - tmp11 + tmp12*tmp15 + tmp18 - tmp8 + tmp9*amrex::Math::powi<4>(x));
    const amrex::Real tmp20 = gamma*recovery.magnetic_squared;
    const amrex::Real tmp21 = 2*gamma;
    const amrex::Real tmp22 = gamma*tmp1;
    const amrex::Real tmp23 = 4*tmp20*tmp3;
    const amrex::Real tmp24 = recovery.dens*tmp12*tmp19;
    const amrex::Real tmp25 = tmp19*tmp2*tmp7;
-   return (1.0_rt/2.0_rt)*tmp0*(-gamma*recovery.tau*tmp10*tmp16 - gamma*tmp17*tmp7 + gamma*tmp24 + gamma*tmp25 + ((recovery.magnetic_squared)*(recovery.magnetic_squared)*(recovery.magnetic_squared))*tmp22 + recovery.momentum_squared*tmp1*tmp20 - recovery.tau*tmp15*tmp21 - recovery.tau*tmp2*tmp23 + tmp11*tmp21 - tmp13*tmp23 - tmp14*tmp21*tmp9 + tmp15*tmp20 + tmp18*tmp21 + tmp21*tmp8 + 3*tmp22*tmp6 - tmp24 - tmp25)/(tmp19*sqrt(1 - (tmp0*tmp6*(tmp4 + tmp7) + tmp5)/(tmp2*tmp3*((tmp4 + x)*(tmp4 + x))))*(recovery.magnetic_squared + tmp1)) + x;
+   return (1.0_rt/2.0_rt)*tmp0*(-gamma*recovery.tau*tmp10*tmp16 - gamma*tmp17*tmp7 + gamma*tmp24 + gamma*tmp25 + ((recovery.magnetic_squared)*(recovery.magnetic_squared)*(recovery.magnetic_squared))*tmp22 + recovery.momentum_squared*tmp1*tmp20 - recovery.tau*tmp15*tmp21 - recovery.tau*tmp2*tmp23 + tmp11*tmp21 - tmp13*tmp23 - tmp14*tmp21*tmp9 + tmp15*tmp20 + tmp18*tmp21 + tmp21*tmp8 + 3*tmp22*tmp6 - tmp24 - tmp25)/(tmp19*std::sqrt(1 - (tmp0*tmp6*(tmp4 + tmp7) + tmp5)/(tmp2*tmp3*((tmp4 + x)*(tmp4 + x))))*(recovery.magnetic_squared + tmp1)) + x;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -77,7 +77,7 @@ amrex::Real srmhd_palenzuela_residual_derivative(const RMHDRecoveryState& recove
    const amrex::Real tmp28 = recovery.tau*tmp27;
    const amrex::Real tmp29 = tmp16*tmp27;
    const amrex::Real tmp30 = recovery.magnetic_squared*tmp26 + tmp10*amrex::Math::powi<4>(x) - tmp15*tmp4 - tmp23 + tmp29 - tmp5;
-   const amrex::Real tmp31 = sqrt(tmp30);
+   const amrex::Real tmp31 = std::sqrt(tmp30);
    const amrex::Real tmp32 = 2*recovery.dens;
    const amrex::Real tmp33 = tmp31*tmp32;
    const amrex::Real tmp34 = tmp20*tmp31;
@@ -90,7 +90,7 @@ amrex::Real srmhd_palenzuela_residual_derivative(const RMHDRecoveryState& recove
    const amrex::Real tmp41 = tmp38 + x;
    const amrex::Real tmp42 = 1/(tmp21*((tmp41)*(tmp41)));
    const amrex::Real tmp43 = 1 - tmp40*tmp42/tmp19;
-   const amrex::Real tmp44 = pow(tmp43, -1.0_rt/2.0_rt);
+   const amrex::Real tmp44 = std::pow(tmp43, -1.0_rt/2.0_rt);
    const amrex::Real tmp45 = (1.0_rt/2.0_rt)*tmp36*tmp44;
    const amrex::Real tmp46 = recovery.momentum_squared*tmp0;
    const amrex::Real tmp47 = tmp0*tmp16;
@@ -104,7 +104,7 @@ amrex::Real srmhd_palenzuela_residual_derivative(const RMHDRecoveryState& recove
    const amrex::Real tmp55 = tmp36*tmp49;
    const amrex::Real tmp56 = tmp32*tmp55;
    const amrex::Real tmp57 = tmp20*tmp55;
-   return -tmp45*tmp50*(-gamma*tmp33 - gamma*tmp57 + recovery.magnetic_squared*tmp56 + recovery.tau*tmp0*tmp53 + tmp17*tmp32 + 2*tmp18 + tmp19*tmp53*x - tmp2*tmp56 + tmp24*tmp54 + tmp28*tmp54 - tmp3 + tmp33 - tmp46*tmp52 - tmp47*tmp52 - tmp48*tmp8 + tmp57 - tmp7 - tmp9) + 1 - tmp44*tmp49*tmp51/pow(tmp30, 3.0_rt/2.0_rt) - tmp36*tmp42*tmp51*(-recovery.momentum_squared*x - tmp39 + tmp40/x + tmp40/tmp41)/(tmp13*pow(tmp43, 3.0_rt/2.0_rt)) - tmp35*tmp45/((tmp1)*(tmp1));
+   return -tmp45*tmp50*(-gamma*tmp33 - gamma*tmp57 + recovery.magnetic_squared*tmp56 + recovery.tau*tmp0*tmp53 + tmp17*tmp32 + 2*tmp18 + tmp19*tmp53*x - tmp2*tmp56 + tmp24*tmp54 + tmp28*tmp54 - tmp3 + tmp33 - tmp46*tmp52 - tmp47*tmp52 - tmp48*tmp8 + tmp57 - tmp7 - tmp9) + 1 - tmp44*tmp49*tmp51/std::pow(tmp30, 3.0_rt/2.0_rt) - tmp36*tmp42*tmp51*(-recovery.momentum_squared*x - tmp39 + tmp40/x + tmp40/tmp41)/(tmp13*std::pow(tmp43, 3.0_rt/2.0_rt)) - tmp35*tmp45/((tmp1)*(tmp1));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -119,7 +119,7 @@ RMHDPrimitive srmhd_primitive_from_palenzuela(const RMHDRecoveryState& recovery,
    const amrex::Real tmp6 = ((recovery.dens)*(recovery.dens));
    const amrex::Real tmp7 = 1/(tmp2*tmp6);
    const amrex::Real tmp8 = -tmp7*(tmp0*tmp4*(tmp1 + tmp5) + tmp3)/((tmp1 + x)*(tmp1 + x)) + 1;
-   const amrex::Real tmp9 = sqrt(tmp8);
+   const amrex::Real tmp9 = std::sqrt(tmp8);
    const amrex::Real tmp10 = 1.0_rt/(tmp9);
    const amrex::Real tmp11 = (1.0_rt/2.0_rt)*tmp0;
    const amrex::Real tmp12 = recovery.dens*x + recovery.magnetic_squared;
@@ -129,7 +129,7 @@ RMHDPrimitive srmhd_primitive_from_palenzuela(const RMHDRecoveryState& recovery,
    const amrex::Real tmp16 = recovery.dens*tmp5;
    const amrex::Real tmp17 = tmp3*tmp6 + tmp4*(recovery.magnetic_squared + tmp16);
    const amrex::Real tmp18 = -tmp15*tmp2*tmp6 + tmp17;
-   const amrex::Real tmp19 = pow(-tmp18, 3.0_rt/2.0_rt);
+   const amrex::Real tmp19 = std::pow(-tmp18, 3.0_rt/2.0_rt);
    const amrex::Real tmp20 = tmp15*tmp2;
    const amrex::Real tmp21 = recovery.magnetic_momentum*tmp0*tmp14;
    return {
@@ -154,7 +154,7 @@ RMHDRecoveryKinematics srmhd_palenzuela_kinematics(const RMHDRecoveryState& reco
    const amrex::Real tmp3 = ((recovery.magnetic_momentum)*(recovery.magnetic_momentum));
    const amrex::Real tmp4 = 1/(((recovery.dens)*(recovery.dens))*tmp2);
    const amrex::Real tmp5 = -tmp4*(recovery.momentum_squared*tmp2 + tmp0*tmp3*(tmp1 + 2*x))/((tmp1 + x)*(tmp1 + x)) + 1;
-   const amrex::Real tmp6 = sqrt(tmp5);
+   const amrex::Real tmp6 = std::sqrt(tmp5);
    const amrex::Real tmp7 = 1.0_rt/(tmp6);
    const amrex::Real tmp8 = 1.0_rt/(recovery.dens*x + recovery.magnetic_squared);
    const amrex::Real tmp9 = recovery.magnetic_momentum*tmp0/x;
@@ -177,9 +177,9 @@ amrex::Real srmhd_palenzuela_entropy_residual(const RMHDRecoveryState& recovery,
    const amrex::Real tmp0 = ((x)*(x));
    const amrex::Real tmp1 = 1.0_rt/(recovery.dens);
    const amrex::Real tmp2 = recovery.magnetic_squared*tmp1;
-   const amrex::Real tmp3 = sqrt(1 - (((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp1*(tmp2 + 2*x) + recovery.momentum_squared*tmp0)/(((recovery.dens)*(recovery.dens))*tmp0*((tmp2 + x)*(tmp2 + x))));
+   const amrex::Real tmp3 = std::sqrt(1 - (((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp1*(tmp2 + 2*x) + recovery.momentum_squared*tmp0)/(((recovery.dens)*(recovery.dens))*tmp0*((tmp2 + x)*(tmp2 + x))));
    const amrex::Real tmp4 = gamma - 1;
-   return x - (conserved_entropy*gamma*tmp1*pow(recovery.dens*tmp3, tmp4)/tmp4 + 1)/tmp3;
+   return x - (conserved_entropy*gamma*tmp1*std::pow(recovery.dens*tmp3, tmp4)/tmp4 + 1)/tmp3;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -195,8 +195,8 @@ amrex::Real srmhd_palenzuela_entropy_residual_derivative(const RMHDRecoveryState
    const amrex::Real tmp7 = tmp4/((recovery.dens)*(recovery.dens));
    const amrex::Real tmp8 = -tmp6*tmp7 + 1;
    const amrex::Real tmp9 = gamma - 1;
-   const amrex::Real tmp10 = conserved_entropy*gamma*pow(recovery.dens*sqrt(tmp8), tmp9);
-   const amrex::Real tmp11 = (-recovery.momentum_squared*x - tmp5 + tmp6/x + tmp6/tmp3)/pow(tmp8, 3.0_rt/2.0_rt);
+   const amrex::Real tmp10 = conserved_entropy*gamma*std::pow(recovery.dens*std::sqrt(tmp8), tmp9);
+   const amrex::Real tmp11 = (-recovery.momentum_squared*x - tmp5 + tmp6/x + tmp6/tmp3)/std::pow(tmp8, 3.0_rt/2.0_rt);
    return tmp11*tmp7*(tmp1*tmp10/tmp9 + 1) + 1 - tmp10*tmp11*tmp4/((recovery.dens)*(recovery.dens)*(recovery.dens));
 }
 
@@ -206,10 +206,10 @@ RMHDPrimitive srmhd_primitive_from_palenzuela_entropy(const RMHDRecoveryState& r
    const amrex::Real tmp0 = ((x)*(x));
    const amrex::Real tmp1 = 1.0_rt/(recovery.dens);
    const amrex::Real tmp2 = recovery.magnetic_squared*tmp1;
-   const amrex::Real tmp3 = sqrt(1 - (((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp1*(tmp2 + 2*x) + recovery.momentum_squared*tmp0)/(((recovery.dens)*(recovery.dens))*tmp0*((tmp2 + x)*(tmp2 + x))));
+   const amrex::Real tmp3 = std::sqrt(1 - (((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp1*(tmp2 + 2*x) + recovery.momentum_squared*tmp0)/(((recovery.dens)*(recovery.dens))*tmp0*((tmp2 + x)*(tmp2 + x))));
    const amrex::Real tmp4 = recovery.dens*tmp3;
    const amrex::Real tmp5 = gamma - 1;
-   const amrex::Real tmp6 = conserved_entropy*pow(tmp4, tmp5);
+   const amrex::Real tmp6 = conserved_entropy*std::pow(tmp4, tmp5);
    const amrex::Real tmp7 = 1.0_rt/(recovery.dens*x + recovery.magnetic_squared);
    const amrex::Real tmp8 = recovery.magnetic_momentum*tmp1/x;
    return {
@@ -231,7 +231,7 @@ amrex::Real srmhd_noble_entropy_residual(const RMHDRecoveryState& recovery, amre
    const amrex::Real tmp0 = ((density)*(density));
    const amrex::Real tmp1 = ((recovery.dens)*(recovery.dens));
    const amrex::Real tmp2 = gamma - 1;
-   const amrex::Real tmp3 = conserved_entropy*pow(density, tmp2)*gamma/(recovery.dens*tmp2) + 1;
+   const amrex::Real tmp3 = conserved_entropy*std::pow(density, tmp2)*gamma/(recovery.dens*tmp2) + 1;
    const amrex::Real tmp4 = tmp1*tmp3/density;
    return recovery.momentum_squared + ((recovery.magnetic_squared + tmp4)*(recovery.magnetic_squared + tmp4))*(tmp0/tmp1 - 1) + ((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp0*(recovery.magnetic_squared + 2*tmp4)/(amrex::Math::powi<4>(recovery.dens)*((tmp3)*(tmp3)));
 }
@@ -242,7 +242,7 @@ amrex::Real srmhd_noble_entropy_residual_derivative(const RMHDRecoveryState& rec
    const amrex::Real tmp0 = ((recovery.dens)*(recovery.dens));
    const amrex::Real tmp1 = 1.0_rt/(tmp0);
    const amrex::Real tmp2 = gamma - 1;
-   const amrex::Real tmp3 = conserved_entropy*pow(density, tmp2)*gamma;
+   const amrex::Real tmp3 = conserved_entropy*std::pow(density, tmp2)*gamma;
    const amrex::Real tmp4 = 1 + tmp3/(recovery.dens*tmp2);
    const amrex::Real tmp5 = tmp0*tmp4/density;
    const amrex::Real tmp6 = recovery.magnetic_squared + tmp5;
@@ -258,7 +258,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDPrimitive srmhd_primitive_from_noble_entropy(const RMHDRecoveryState& recovery, amrex::Real conserved_entropy, amrex::Real density, amrex::Real gamma) noexcept
 {
    const amrex::Real tmp0 = gamma - 1;
-   const amrex::Real tmp1 = conserved_entropy*pow(density, tmp0)/recovery.dens;
+   const amrex::Real tmp1 = conserved_entropy*std::pow(density, tmp0)/recovery.dens;
    const amrex::Real tmp2 = tmp1/tmp0;
    const amrex::Real tmp3 = ((recovery.dens)*(recovery.dens));
    const amrex::Real tmp4 = gamma*tmp2 + 1;
@@ -283,7 +283,7 @@ amrex::Real srmhd_font_cold_residual(const RMHDRecoveryState& recovery, amrex::R
    const amrex::Real tmp0 = ((density)*(density));
    const amrex::Real tmp1 = ((recovery.dens)*(recovery.dens));
    const amrex::Real tmp2 = 1.0_rt/(density);
-   const amrex::Real tmp3 = pow(density, polytropic_gamma)*polytropic_k*tmp2;
+   const amrex::Real tmp3 = std::pow(density, polytropic_gamma)*polytropic_k*tmp2;
    const amrex::Real tmp4 = tmp3 + tmp3/(polytropic_gamma - 1) + 1;
    const amrex::Real tmp5 = tmp1*tmp2*tmp4;
    return recovery.momentum_squared + ((recovery.magnetic_squared + tmp5)*(recovery.magnetic_squared + tmp5))*(tmp0/tmp1 - 1) + ((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp0*(recovery.magnetic_squared + 2*tmp5)/(amrex::Math::powi<4>(recovery.dens)*((tmp4)*(tmp4)));
@@ -295,7 +295,7 @@ amrex::Real srmhd_font_cold_residual_derivative(const RMHDRecoveryState& recover
    const amrex::Real tmp0 = ((recovery.dens)*(recovery.dens));
    const amrex::Real tmp1 = 1.0_rt/(tmp0);
    const amrex::Real tmp2 = 1.0_rt/(density);
-   const amrex::Real tmp3 = pow(density, polytropic_gamma);
+   const amrex::Real tmp3 = std::pow(density, polytropic_gamma);
    const amrex::Real tmp4 = polytropic_k*tmp3;
    const amrex::Real tmp5 = tmp2*tmp4;
    const amrex::Real tmp6 = polytropic_gamma - 1;
@@ -316,7 +316,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDPrimitive srmhd_primitive_from_font_cold(const RMHDRecoveryState& recovery, amrex::Real density, amrex::Real polytropic_k, amrex::Real polytropic_gamma) noexcept
 {
    const amrex::Real tmp0 = 1.0_rt/(density);
-   const amrex::Real tmp1 = pow(density, polytropic_gamma)*polytropic_k;
+   const amrex::Real tmp1 = std::pow(density, polytropic_gamma)*polytropic_k;
    const amrex::Real tmp2 = tmp0*tmp1;
    const amrex::Real tmp3 = tmp2/(polytropic_gamma - 1);
    const amrex::Real tmp4 = ((recovery.dens)*(recovery.dens));
@@ -347,7 +347,7 @@ RootSystem2 srmhd_noble_2d_system(const RMHDRecoveryState& recovery, amrex::Real
    const amrex::Real tmp5 = 1.0_rt/((z)*(z));
    const amrex::Real tmp6 = tmp4*tmp5;
    const amrex::Real tmp7 = velocity_squared - 1;
-   const amrex::Real tmp8 = sqrt(-tmp7);
+   const amrex::Real tmp8 = std::sqrt(-tmp7);
    const amrex::Real tmp9 = 1.0_rt/(gamma);
    const amrex::Real tmp10 = gamma - 1;
    const amrex::Real tmp11 = tmp10*tmp9;
@@ -366,7 +366,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDPrimitive srmhd_primitive_from_noble_2d(const RMHDRecoveryState& recovery, amrex::Real z, amrex::Real velocity_squared, amrex::Real gamma) noexcept
 {
    const amrex::Real tmp0 = velocity_squared - 1;
-   const amrex::Real tmp1 = sqrt(-tmp0);
+   const amrex::Real tmp1 = std::sqrt(-tmp0);
    const amrex::Real tmp2 = recovery.dens*tmp1;
    const amrex::Real tmp3 = 1.0_rt/(gamma);
    const amrex::Real tmp4 = 1.0_rt/(recovery.magnetic_squared + z);
@@ -398,7 +398,7 @@ amrex::Real srmhd_reprimand_residual(const RMHDRecoveryState& recovery, amrex::R
    const amrex::Real tmp8 = tmp0*tmp7;
    const amrex::Real tmp9 = recovery.momentum_squared*tmp0;
    const amrex::Real tmp10 = ((mu)*(mu));
-   const amrex::Real tmp11 = sqrt(1 - fmin(tmp10*tmp8, tmp9/(tmp9 + 1)));
+   const amrex::Real tmp11 = std::sqrt(1 - std::min(tmp10*tmp8, tmp9/(tmp9 + 1)));
    const amrex::Real tmp12 = 2*recovery.tau;
    const amrex::Real tmp13 = -recovery.magnetic_squared*recovery.momentum_squared + tmp4;
    const amrex::Real tmp14 = tmp10/((tmp2)*(tmp2));
@@ -416,7 +416,7 @@ amrex::Real srmhd_reprimand_upper_residual(const RMHDRecoveryState& recovery, am
 {
    const amrex::Real tmp0 = mu/recovery.dens;
    const amrex::Real tmp1 = 1.0_rt/(recovery.magnetic_squared*tmp0 + 1);
-   return mu*sqrt(1 + tmp1*(((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp0*(tmp1 + 1) + recovery.momentum_squared*tmp1)/((recovery.dens)*(recovery.dens))) - 1;
+   return mu*std::sqrt(1 + tmp1*(((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp0*(tmp1 + 1) + recovery.momentum_squared*tmp1)/((recovery.dens)*(recovery.dens))) - 1;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -429,7 +429,7 @@ amrex::Real srmhd_reprimand_upper_residual_derivative(const RMHDRecoveryState& r
    const amrex::Real tmp4 = ((recovery.magnetic_momentum)*(recovery.magnetic_momentum));
    const amrex::Real tmp5 = tmp4*(tmp3 + 1);
    const amrex::Real tmp6 = tmp3*(recovery.momentum_squared*tmp3 + tmp0*tmp5);
-   const amrex::Real tmp7 = sqrt(1 + tmp6/((recovery.dens)*(recovery.dens)));
+   const amrex::Real tmp7 = std::sqrt(1 + tmp6/((recovery.dens)*(recovery.dens)));
    const amrex::Real tmp8 = 1.0_rt/((tmp2)*(tmp2));
    return -1.0_rt/2.0_rt*mu*tmp3*(recovery.magnetic_squared*recovery.momentum_squared*tmp8 + recovery.magnetic_squared*tmp6 + tmp1*tmp4*tmp8 - tmp5)/(((recovery.dens)*(recovery.dens)*(recovery.dens))*tmp7) + tmp7;
 }
@@ -441,7 +441,7 @@ amrex::Real srmhd_reprimand_lorentz_factor(const RMHDRecoveryState& recovery, am
    const amrex::Real tmp1 = recovery.momentum_squared*tmp0;
    const amrex::Real tmp2 = mu/recovery.dens;
    const amrex::Real tmp3 = 1.0_rt/(recovery.magnetic_squared*tmp2 + 1);
-   return pow(1 - fmin(tmp1/(tmp1 + 1), ((mu)*(mu))*tmp0*tmp3*(((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp2*(tmp3 + 1) + recovery.momentum_squared*tmp3)), -1.0_rt/2.0_rt);
+   return std::pow(1 - std::min(tmp1/(tmp1 + 1), ((mu)*(mu))*tmp0*tmp3*(((recovery.magnetic_momentum)*(recovery.magnetic_momentum))*tmp2*(tmp3 + 1) + recovery.momentum_squared*tmp3)), -1.0_rt/2.0_rt);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -456,7 +456,7 @@ RMHDPrimitive srmhd_primitive_from_reprimand(const RMHDRecoveryState& recovery, 
    const amrex::Real tmp6 = 1.0_rt/(tmp5);
    const amrex::Real tmp7 = ((recovery.magnetic_momentum)*(recovery.magnetic_momentum));
    const amrex::Real tmp8 = tmp6*(recovery.momentum_squared*tmp6 + tmp4*tmp7*(tmp6 + 1));
-   const amrex::Real tmp9 = sqrt(1 - fmin(tmp2*tmp8, tmp1/(tmp1 + 1)));
+   const amrex::Real tmp9 = std::sqrt(1 - std::min(tmp2*tmp8, tmp1/(tmp1 + 1)));
    const amrex::Real tmp10 = 1.0_rt/(tmp9);
    const amrex::Real tmp11 = (1.0_rt/2.0_rt)*recovery.magnetic_squared - recovery.tau - 1.0_rt/2.0_rt*tmp2*(-recovery.magnetic_squared*recovery.momentum_squared + tmp7)/((tmp5)*(tmp5)) - tmp4*tmp8*(mu*tmp10/(tmp10 + 1) - 1);
    const amrex::Real tmp12 = recovery.magnetic_momentum*tmp4;
@@ -487,7 +487,7 @@ RMHDRePrimAndKinematics srmhd_reprimand_kinematics(const RMHDRecoveryState& reco
    const amrex::Real tmp7 = ((recovery.magnetic_momentum)*(recovery.magnetic_momentum));
    const amrex::Real tmp8 = tmp6*(recovery.momentum_squared*tmp6 + tmp4*tmp7*(tmp6 + 1));
    const amrex::Real tmp9 = tmp0*tmp8;
-   const amrex::Real tmp10 = sqrt(1 - fmin(tmp2*tmp9, tmp1/(tmp1 + 1)));
+   const amrex::Real tmp10 = std::sqrt(1 - std::min(tmp2*tmp9, tmp1/(tmp1 + 1)));
    const amrex::Real tmp11 = 1.0_rt/(tmp10);
    const amrex::Real tmp12 = -1.0_rt/2.0_rt*recovery.magnetic_squared + recovery.tau + (1.0_rt/2.0_rt)*tmp0*tmp2*(-recovery.magnetic_squared*recovery.momentum_squared + tmp7)/((tmp5)*(tmp5));
    const amrex::Real tmp13 = recovery.magnetic_momentum*tmp4;

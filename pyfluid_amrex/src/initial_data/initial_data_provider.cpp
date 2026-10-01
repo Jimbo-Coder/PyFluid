@@ -5,6 +5,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 InitialAtmosphereParameters initial_atmosphere_parameters(
    RunConfig const& cfg,
    RelativisticInitialDataView const& provider
@@ -12,22 +14,31 @@ InitialAtmosphereParameters initial_atmosphere_parameters(
 {
    InitialAtmosphereParameters atmosphere;
    atmosphere.eos = eos_params(cfg);
+   atmosphere.treatment = cfg.relativistic_exterior == "vacuum"
+      ? RelativisticExteriorTreatment::Vacuum
+      : RelativisticExteriorTreatment::Atmosphere;
+   if (atmosphere.treatment == RelativisticExteriorTreatment::Vacuum) {
+      atmosphere.profile = InitialAtmosphereProfile::Flat;
+      atmosphere.density = 0.0_rt;
+      atmosphere.pressure = 0.0_rt;
+      return atmosphere;
+   }
    atmosphere.profile = cfg.initial_data_atmosphere == "power_law"
       ? InitialAtmosphereProfile::PowerLaw
       : InitialAtmosphereProfile::Flat;
-   atmosphere.density = cfg.initial_data_atmosphere_density > 0.0
+   atmosphere.density = cfg.initial_data_atmosphere_density > 0.0_rt
       ? cfg.initial_data_atmosphere_density
       : atmosphere.eos.rho_floor;
-   atmosphere.pressure = cfg.initial_data_atmosphere_pressure > 0.0
+   atmosphere.pressure = cfg.initial_data_atmosphere_pressure > 0.0_rt
       ? cfg.initial_data_atmosphere_pressure
       : atmosphere.eos.pressure_floor;
    atmosphere.transition_radius =
-      cfg.initial_data_atmosphere_transition_radius > 0.0
+      cfg.initial_data_atmosphere_transition_radius > 0.0_rt
       ? cfg.initial_data_atmosphere_transition_radius
-      : 4.0 * provider.tov.surface_radius;
+      : 4.0_rt * provider.tov.surface_radius;
    atmosphere.power = cfg.initial_data_atmosphere_power;
    if (atmosphere.profile == InitialAtmosphereProfile::PowerLaw
-       && !(atmosphere.transition_radius > 0.0)) {
+       && !(atmosphere.transition_radius > 0.0_rt)) {
       amrex::Abort(
          "power-law initial atmosphere requires an explicit transition radius "
          "unless a TOV provider supplies its surface radius"

@@ -4,62 +4,73 @@
 #include "pyfluid_amrex/constants.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 #include <cmath>
-#include <AMReX_Math.H>
 
 namespace pyfluid_amrex::generated {
 
 using namespace amrex::literals;
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+amrex::Real rhd_specific_internal_energy_from_palenzuela(const RHDRecoveryState& recovery, amrex::Real x) noexcept
+{
+   const amrex::Real energy_ratio = recovery.tau/recovery.dens;
+   const amrex::Real momentum_ratio_squared = recovery.momentum_squared/((recovery.dens)*(recovery.dens));
+   const amrex::Real velocity_squared = momentum_ratio_squared/((x)*(x));
+   const amrex::Real inverse_lorentz = std::sqrt(1 - velocity_squared);
+   const amrex::Real lorentz_factor = 1.0_rt/(inverse_lorentz);
+   const amrex::Real lorentz_minus_one = velocity_squared/(inverse_lorentz*(inverse_lorentz + 1));
+   return lorentz_factor*(energy_ratio - momentum_ratio_squared/x) + lorentz_minus_one;
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real srhd_palenzuela_residual(const RHDRecoveryState& recovery, amrex::Real x, amrex::Real gamma) noexcept
 {
-   const amrex::Real tmp0 = ((recovery.dens)*(recovery.dens));
-   const amrex::Real tmp1 = ((x)*(x));
-   const amrex::Real tmp2 = -recovery.momentum_squared + tmp0*tmp1;
-   const amrex::Real tmp3 = recovery.dens*recovery.momentum_squared;
-   const amrex::Real tmp4 = ((recovery.dens)*(recovery.dens)*(recovery.dens))*tmp1;
-   const amrex::Real tmp5 = gamma*sqrt(tmp2);
-   const amrex::Real tmp6 = tmp5*x;
-   return x - (gamma*tmp3 - gamma*tmp4 + recovery.dens*recovery.tau*tmp6 - recovery.momentum_squared*tmp5 + tmp0*tmp6 - tmp3 + tmp4)/(recovery.dens*tmp2*sqrt(-recovery.momentum_squared/(tmp0*tmp1) + 1));
+   const amrex::Real energy_ratio = recovery.tau/recovery.dens;
+   const amrex::Real momentum_ratio_squared = recovery.momentum_squared/((recovery.dens)*(recovery.dens));
+   const amrex::Real velocity_squared = momentum_ratio_squared/((x)*(x));
+   const amrex::Real inverse_lorentz = std::sqrt(1 - velocity_squared);
+   const amrex::Real lorentz_factor = 1.0_rt/(inverse_lorentz);
+   const amrex::Real lorentz_minus_one = velocity_squared/(inverse_lorentz*(inverse_lorentz + 1));
+   const amrex::Real tmp0 = gamma*lorentz_factor;
+   return -lorentz_factor*(energy_ratio*tmp0 + gamma*lorentz_minus_one - momentum_ratio_squared*tmp0/x + 1) + x;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real srhd_palenzuela_residual_derivative(const RHDRecoveryState& recovery, amrex::Real x, amrex::Real gamma) noexcept
 {
-   const amrex::Real tmp0 = ((recovery.dens)*(recovery.dens));
-   const amrex::Real tmp1 = ((x)*(x));
-   const amrex::Real tmp2 = tmp0*tmp1;
-   const amrex::Real tmp3 = sqrt(-recovery.momentum_squared + tmp2);
-   const amrex::Real tmp4 = ((recovery.momentum_squared)*(recovery.momentum_squared));
-   const amrex::Real tmp5 = amrex::Math::powi<4>(recovery.dens)*amrex::Math::powi<4>(x);
-   const amrex::Real tmp6 = recovery.momentum_squared*tmp2;
-   const amrex::Real tmp7 = 2*tmp6;
-   const amrex::Real tmp8 = recovery.dens*tmp4;
-   const amrex::Real tmp9 = ((recovery.dens)*(recovery.dens)*(recovery.dens))*recovery.momentum_squared*tmp1;
-   const amrex::Real tmp10 = tmp3*tmp4;
-   const amrex::Real tmp11 = gamma*tmp3;
-   const amrex::Real tmp12 = 2*recovery.momentum_squared*tmp11*x;
-   return (-gamma*tmp10 + gamma*tmp8 - gamma*tmp9 + recovery.dens*recovery.tau*tmp12 + tmp0*tmp12 + tmp10 - tmp11*tmp6 + tmp3*tmp5 - tmp3*tmp7 - tmp8 + tmp9)/(tmp3*(tmp4 + tmp5 - tmp7));
+   const amrex::Real energy_ratio = recovery.tau/recovery.dens;
+   const amrex::Real momentum_ratio_squared = recovery.momentum_squared/((recovery.dens)*(recovery.dens));
+   const amrex::Real velocity_squared = momentum_ratio_squared/((x)*(x));
+   const amrex::Real inverse_lorentz = std::sqrt(1 - velocity_squared);
+   const amrex::Real lorentz_factor = 1.0_rt/(inverse_lorentz);
+   const amrex::Real lorentz_minus_one = velocity_squared/(inverse_lorentz*(inverse_lorentz + 1));
+   const amrex::Real tmp0 = 1.0_rt/(inverse_lorentz);
+   const amrex::Real tmp1 = 1.0_rt/(inverse_lorentz + 1);
+   const amrex::Real tmp2 = std::pow(1 - velocity_squared, -1.0_rt/2.0_rt);
+   const amrex::Real tmp3 = gamma*lorentz_factor;
+   const amrex::Real tmp4 = momentum_ratio_squared/((x)*(x)*(x));
+   const amrex::Real tmp5 = momentum_ratio_squared/x;
+   return -gamma*((lorentz_factor)*(lorentz_factor))*momentum_ratio_squared/((x)*(x)) + tmp0*tmp1*tmp3*tmp4*(tmp2*velocity_squared*(tmp0 + tmp1) + 2) + 1 + tmp2*tmp4*(energy_ratio*tmp3 + gamma*lorentz_minus_one - tmp3*tmp5 + tmp3*(energy_ratio - tmp5) + 1)/((inverse_lorentz)*(inverse_lorentz));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RHDPrimitive srhd_primitive_from_palenzuela(const RHDRecoveryState& recovery, amrex::Real x, amrex::Real gamma) noexcept
 {
-   const amrex::Real tmp0 = ((recovery.dens)*(recovery.dens));
-   const amrex::Real tmp1 = ((x)*(x));
-   const amrex::Real tmp2 = sqrt(-recovery.momentum_squared/(tmp0*tmp1) + 1);
-   const amrex::Real tmp3 = 1.0_rt/(recovery.dens);
-   const amrex::Real tmp4 = -recovery.momentum_squared + tmp0*tmp1;
-   const amrex::Real tmp5 = sqrt(tmp4);
-   const amrex::Real tmp6 = (recovery.dens*tmp4 - recovery.dens*tmp5*x*(recovery.dens + recovery.tau) + recovery.momentum_squared*tmp5)/tmp4;
-   const amrex::Real tmp7 = tmp3/x;
+   const amrex::Real energy_ratio = recovery.tau/recovery.dens;
+   const amrex::Real momentum_ratio_squared = recovery.momentum_squared/((recovery.dens)*(recovery.dens));
+   const amrex::Real velocity_squared = momentum_ratio_squared/((x)*(x));
+   const amrex::Real inverse_lorentz = std::sqrt(1 - velocity_squared);
+   const amrex::Real lorentz_factor = 1.0_rt/(inverse_lorentz);
+   const amrex::Real lorentz_minus_one = velocity_squared/(inverse_lorentz*(inverse_lorentz + 1));
+   const amrex::Real tmp0 = inverse_lorentz*recovery.dens;
+   const amrex::Real tmp1 = 1.0_rt/(x);
+   const amrex::Real tmp2 = tmp1/recovery.dens;
    return {
-      recovery.dens*tmp2,
-      -tmp3*tmp6,
-      -tmp2*tmp6*(gamma - 1),
-      recovery.mom1*tmp7,
-      recovery.mom2*tmp7,
-      recovery.mom3*tmp7
+      tmp0,
+      lorentz_factor*(energy_ratio - momentum_ratio_squared*tmp1) + lorentz_minus_one,
+      tmp0*tmp1*(gamma - 1)*(lorentz_factor*(energy_ratio*x - momentum_ratio_squared) + lorentz_minus_one*x),
+      recovery.mom1*tmp2,
+      recovery.mom2*tmp2,
+      recovery.mom3*tmp2
    };
 }
 

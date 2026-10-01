@@ -13,6 +13,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct PatchLogicalLayoutOptions {
    int pack_direction = 0;
    int gap_cells = 0;
@@ -86,7 +88,7 @@ inline void validate_patch_grid_system(PatchGridSystem const& grid_system)
          if (patch.cells[dir] <= 0) {
             amrex::Abort("patch-grid cells must be positive in every active direction");
          }
-         if (patch_grid_cell_size(patch, dir) <= 0.0) {
+         if (patch_grid_cell_size(patch, dir) <= 0.0_rt) {
             amrex::Abort("patch-grid local spacing must be positive in every active direction");
          }
       }
@@ -102,7 +104,7 @@ inline int patch_grid_system_owner_patch_id(
    PatchGridDescriptor const& central_patch = grid_system.patches.front();
    if (
       patch_coordinate_map_is_cartesian(central_patch.map.coordinate_map)
-      && patch_grid_contains_global_point(central_patch, global, 1.0e-12)
+      && patch_grid_contains_global_point(central_patch, global, 1.0e-12_rt)
    ) {
       return central_patch.patch_id;
    }
@@ -205,9 +207,9 @@ PatchCoordinate patch_grid_local_coordinate(
 ) noexcept
 {
    PatchCoordinate local = make_patch_coordinate(
-      0.5 * (patch.local_lo.q1 + patch.local_hi.q1),
-      0.5 * (patch.local_lo.q2 + patch.local_hi.q2),
-      0.5 * (patch.local_lo.q3 + patch.local_hi.q3)
+      0.5_rt * (patch.local_lo.q1 + patch.local_hi.q1),
+      0.5_rt * (patch.local_lo.q2 + patch.local_hi.q2),
+      0.5_rt * (patch.local_lo.q3 + patch.local_hi.q3)
    );
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       const int component = patch_local_component_for_dir(patch.local_axes, dir);
@@ -241,7 +243,7 @@ inline PatchCoordinate patch_layout_cell_center(
 {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> offsets{};
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      offsets[dir] = 0.5;
+      offsets[dir] = 0.5_rt;
    }
    return patch_layout_local_coordinate(grid_patch, layout_patch, layout_cell, offsets);
 }

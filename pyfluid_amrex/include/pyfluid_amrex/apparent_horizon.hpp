@@ -9,6 +9,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 // Outgoing-null expansion of a level surface F(x^i) = 0.  The caller owns
 // the surface representation and supplies m_i = partial_i F and
 // partial_i partial_j F in Cartesian components.  This pointwise geometry is
@@ -49,7 +51,7 @@ amrex::Real apparent_horizon_expansion(
       {derivatives.extrinsic13, derivatives.extrinsic23, derivatives.extrinsic33},
    };
 
-   amrex::Real normal_squared = 0.0;
+   amrex::Real normal_squared = 0.0_rt;
    for (int first = 0; first < 3; ++first) {
       for (int second = 0; second < 3; ++second) {
          normal_squared += inverse_metric[first][second]
@@ -57,10 +59,10 @@ amrex::Real apparent_horizon_expansion(
       }
    }
    // This also rejects NaN because its ordered comparison is false.
-   if (!(normal_squared > 0.0)) {
+   if (!(normal_squared > 0.0_rt)) {
       return std::numeric_limits<amrex::Real>::quiet_NaN();
    }
-   const amrex::Real inverse_normal = 1.0 / std::sqrt(normal_squared);
+   const amrex::Real inverse_normal = 1.0_rt / std::sqrt(normal_squared);
    amrex::Real unit_normal[3]{};
    for (int upper = 0; upper < 3; ++upper) {
       for (int lower = 0; lower < 3; ++lower) {
@@ -69,14 +71,14 @@ amrex::Real apparent_horizon_expansion(
       }
    }
 
-   amrex::Real divergence = 0.0;
+   amrex::Real divergence = 0.0_rt;
    for (int first = 0; first < 3; ++first) {
       for (int second = 0; second < 3; ++second) {
          amrex::Real covariant_hessian = level_set_hessian[first][second];
          for (int upper = 0; upper < 3; ++upper) {
-            amrex::Real connection = 0.0;
+            amrex::Real connection = 0.0_rt;
             for (int contracted = 0; contracted < 3; ++contracted) {
-               connection += 0.5 * inverse_metric[upper][contracted] * (
+               connection += 0.5_rt * inverse_metric[upper][contracted] * (
                   metric_derivative[first][contracted][second]
                   + metric_derivative[second][contracted][first]
                   - metric_derivative[contracted][first][second]
@@ -91,8 +93,8 @@ amrex::Real apparent_horizon_expansion(
       }
    }
 
-   amrex::Real trace_extrinsic = 0.0;
-   amrex::Real normal_extrinsic = 0.0;
+   amrex::Real trace_extrinsic = 0.0_rt;
+   amrex::Real normal_extrinsic = 0.0_rt;
    for (int first = 0; first < 3; ++first) {
       for (int second = 0; second < 3; ++second) {
          trace_extrinsic += inverse_metric[first][second]

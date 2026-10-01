@@ -77,7 +77,11 @@ field identity, components, labels, centering, or ownership.
 ## Diagnostics And Methods
 
 `diagnostics.toml` owns diagnostic identity, labels, kinds, component structure,
-groups, selection names, and references to integrand/reducer implementations.
+groups, selection names, surface targets, and references to
+integrand/reducer implementations. Every `surface_integral` declares exactly
+one `surface` target; nonsurface operations reject that key. Current runtime
+targets are the configured `diagnostic_surface` and the found
+`apparent_horizon`.
 The actual symbolic integrands and runtime reduction algorithms stay in Python
 or C++; the text catalog names them and validation requires every reference to
 resolve exactly once. Contiguous vector declarations expand into ordinary
@@ -93,8 +97,12 @@ C++ enums and descriptors consumed by configuration and the corresponding
 matter factories. Stellar entries are uniform, relativistic j-constant, and
 relativistic q-power rotation; the disk entries are constant
 `ell=-u_phi/u_t`, uniform, j-constant, and q-power. Native-owner entries declare
-the natural coordinate/axis layout, dimension, broad central-object and disk
-capabilities, grid kinds, relative-tilt support, and reflection class. Coupled
+the natural physical coordinate/axis layout, dimension, broad central-object
+and disk capabilities, grid kinds, relative-tilt support, and reflection
+class. `solver_axis_layouts` independently declares valid coordinate
+projections of the shared numerical operator. It does not turn a planar or
+translation-invariant projection into a spherical/axisymmetric physical
+equilibrium owner. Coupled
 restrictions that are not a simple capability—such as stationarity, matter
 overlap, or Kerr spin/disk alignment—remain explicit C++ validation. These
 identities and required parameters live in TOML. Initial-data enums are emitted
@@ -125,8 +133,10 @@ compatibility rules into an opaque schema language.
    `schema/methods.toml`; extend either only with a matching implementation and
    focused configuration/equation test.
 6. Native single-object ID owner capabilities now live beside those laws and
-   generate host-only layout/grid/symmetry policy. They do not generate solver
-   variants or authorize every Cartesian product of their broad capabilities.
+   generate host-only physical-layout/grid/symmetry policy plus explicit
+   numerical solver projections. They do not generate per-dimension solver
+   variants, redefine the physical owner, or authorize every Cartesian product
+   of their broad capabilities.
 7. Diagnostic identity, ordering, groups, value shapes, requirements, and
    postprocess dependencies now live in `schema/diagnostics.toml`; the staged
    conversion preserves the generated C++/JSON contract.

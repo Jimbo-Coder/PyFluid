@@ -8,6 +8,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 void EvolutionSectorStorage::configure(
    GridFieldSetInfo const& field_set,
    int num_levels,
@@ -65,9 +67,9 @@ void EvolutionSectorStorage::configure(
       stage.resize(num_levels);
    }
    rk4_cache_stage_.resize(num_levels, -1);
-   rk4_cache_fine_start_.resize(num_levels, 0.0);
-   rk4_cache_time_.resize(num_levels, 0.0);
-   rk4_cache_dt_.resize(num_levels, 0.0);
+   rk4_cache_fine_start_.resize(num_levels, 0.0_rt);
+   rk4_cache_time_.resize(num_levels, 0.0_rt);
+   rk4_cache_dt_.resize(num_levels, 0.0_rt);
 }
 
 bool EvolutionSectorStorage::active() const noexcept
@@ -306,7 +308,7 @@ bool EvolutionSectorStorage::rk4_stage_data_ready(
    amrex::Real coarse_dt
 ) const
 {
-   if (coarse_dt <= 0.0 || !rk4_coarse_stage_state_.at(level)
+   if (coarse_dt <= 0.0_rt || !rk4_coarse_stage_state_.at(level)
        || !old_state_.at(level)) {
       return false;
    }
@@ -354,29 +356,29 @@ void EvolutionSectorStorage::fill_rk4_dense_state(
    }
 
    amrex::Real xsi = (fine_step_start - coarse_old_time) / coarse_dt;
-   xsi = amrex::min(amrex::max(xsi, 0.0), 1.0);
+   xsi = amrex::min(amrex::max(xsi, 0.0_rt), 1.0_rt);
    const amrex::Real r = fine_dt / coarse_dt;
    const amrex::Real xsi2 = xsi * xsi;
    const amrex::Real xsi3 = xsi2 * xsi;
    const amrex::GpuArray<amrex::Real, 4> b{{
-      xsi - 1.5 * xsi2 + (2.0 / 3.0) * xsi3,
-      xsi2 - (2.0 / 3.0) * xsi3,
-      xsi2 - (2.0 / 3.0) * xsi3,
-      -0.5 * xsi2 + (2.0 / 3.0) * xsi3,
+      xsi - 1.5_rt * xsi2 + (2.0_rt / 3.0_rt) * xsi3,
+      xsi2 - (2.0_rt / 3.0_rt) * xsi3,
+      xsi2 - (2.0_rt / 3.0_rt) * xsi3,
+      -0.5_rt * xsi2 + (2.0_rt / 3.0_rt) * xsi3,
    }};
    const amrex::GpuArray<amrex::Real, 4> c{{
-      1.0 - 3.0 * xsi + 2.0 * xsi2,
-      2.0 * xsi - 2.0 * xsi2,
-      2.0 * xsi - 2.0 * xsi2,
-      -xsi + 2.0 * xsi2,
+      1.0_rt - 3.0_rt * xsi + 2.0_rt * xsi2,
+      2.0_rt * xsi - 2.0_rt * xsi2,
+      2.0_rt * xsi - 2.0_rt * xsi2,
+      -xsi + 2.0_rt * xsi2,
    }};
    const amrex::GpuArray<amrex::Real, 4> d{{
-      -3.0 + 4.0 * xsi,
-      2.0 - 4.0 * xsi,
-      2.0 - 4.0 * xsi,
-      -1.0 + 4.0 * xsi,
+      -3.0_rt + 4.0_rt * xsi,
+      2.0_rt - 4.0_rt * xsi,
+      2.0_rt - 4.0_rt * xsi,
+      -1.0_rt + 4.0_rt * xsi,
    }};
-   constexpr amrex::GpuArray<amrex::Real, 4> e{{4.0, -4.0, -4.0, 4.0}};
+   constexpr amrex::GpuArray<amrex::Real, 4> e{{4.0_rt, -4.0_rt, -4.0_rt, 4.0_rt}};
    amrex::MultiFab& dense_state = *rk4_coarse_stage_state_[coarse_level];
 
 #ifdef AMREX_USE_OMP
@@ -400,10 +402,10 @@ void EvolutionSectorStorage::fill_rk4_dense_state(
                k3(i, j, k, component),
                k4(i, j, k, component),
             };
-            amrex::Real state_sum = 0.0;
-            amrex::Real first_time_derivative = 0.0;
-            amrex::Real second_time_derivative = 0.0;
-            amrex::Real third_time_derivative = 0.0;
+            amrex::Real state_sum = 0.0_rt;
+            amrex::Real first_time_derivative = 0.0_rt;
+            amrex::Real second_time_derivative = 0.0_rt;
+            amrex::Real third_time_derivative = 0.0_rt;
             for (int stage = 0; stage < 4; ++stage) {
                state_sum += b[stage] * stages[stage];
                first_time_derivative += c[stage] * stages[stage];
@@ -412,15 +414,15 @@ void EvolutionSectorStorage::fill_rk4_dense_state(
             }
             amrex::Real value = initial(i, j, k, component) + coarse_dt * state_sum;
             if (rk_stage == 2) {
-               value += coarse_dt * 0.5 * r * first_time_derivative;
+               value += coarse_dt * 0.5_rt * r * first_time_derivative;
             } else if (rk_stage == 3 || rk_stage == 4) {
                const amrex::Real r2 = r * r;
                const amrex::Real r3 = r2 * r;
-               const amrex::Real at = rk_stage == 3 ? 0.5 * r : r;
-               const amrex::Real att = rk_stage == 3 ? 0.25 * r2 : 0.5 * r2;
-               const amrex::Real attt = rk_stage == 3 ? 0.0625 * r3 : 0.125 * r3;
+               const amrex::Real at = rk_stage == 3 ? 0.5_rt * r : r;
+               const amrex::Real att = rk_stage == 3 ? 0.25_rt * r2 : 0.5_rt * r2;
+               const amrex::Real attt = rk_stage == 3 ? 0.0625_rt * r3 : 0.125_rt * r3;
                const amrex::Real stage_correction =
-                  (rk_stage == 3 ? -4.0 : 4.0) * (stages[2] - stages[1]);
+                  (rk_stage == 3 ? -4.0_rt : 4.0_rt) * (stages[2] - stages[1]);
                value += coarse_dt * (
                   at * first_time_derivative
                   + att * second_time_derivative
@@ -466,9 +468,9 @@ void EvolutionSectorStorage::invalidate_rk4_stage_cache(int level)
       return;
    }
    rk4_cache_stage_[level] = -1;
-   rk4_cache_fine_start_[level] = 0.0;
-   rk4_cache_time_[level] = 0.0;
-   rk4_cache_dt_[level] = 0.0;
+   rk4_cache_fine_start_[level] = 0.0_rt;
+   rk4_cache_time_[level] = 0.0_rt;
+   rk4_cache_dt_[level] = 0.0_rt;
 }
 
 bool EvolutionSectorStorage::rk4_stage_cache_matches(
@@ -484,10 +486,10 @@ bool EvolutionSectorStorage::rk4_stage_cache_matches(
    }
    const auto close = [](amrex::Real left, amrex::Real right) {
       const amrex::Real scale = amrex::max(
-         1.0, amrex::max(amrex::Math::abs(left), amrex::Math::abs(right))
+         1.0_rt, amrex::max(amrex::Math::abs(left), amrex::Math::abs(right))
       );
       return amrex::Math::abs(left - right)
-         <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+         <= 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale;
    };
    return rk4_cache_stage_[level] == stage
       && close(rk4_cache_fine_start_[level], fine_start)

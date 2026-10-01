@@ -24,6 +24,7 @@ spacetime.dimensionless_spin1 = 0.0
 spacetime.dimensionless_spin2 = 0.0
 spacetime.dimensionless_spin3 = 0.0
 spacetime.black_hole_interior = puncture
+spacetime.black_hole_matter = bounded
 spacetime.lapse_gauge = one_plus_log
 spacetime.shift_gauge = gamma_driver
 spacetime.ko_dissipation = 0.32

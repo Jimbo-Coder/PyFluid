@@ -18,6 +18,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct AmrSpacetimeMetricView {
    amrex::Array4<amrex::Real const> state{};
    bool stored = false;
@@ -71,13 +73,13 @@ amrex::Real mesh_vector_component_for_axis(
 ) noexcept
 {
    const amrex::Real inv_rho =
-      divide_by_rho ? 1.0 / amrex::max(state(i, j, k, RHO), 1.0e-300) : 1.0;
+      divide_by_rho ? 1.0_rt / amrex::max(state(i, j, k, RHO), 1.0e-300_rt) : 1.0_rt;
    for (int component = 0; component < 3; ++component) {
       if (mesh_vector_axis_for_component(coordinate, axes, component) == target_axis) {
          return state(i, j, k, component_begin + component) * inv_rho;
       }
    }
-   return 0.0;
+   return 0.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -118,9 +120,9 @@ amrex::GpuArray<amrex::Real, 3> mesh_vector_to_cartesian(
       };
    }
 
-   amrex::Real vx = 0.0;
-   amrex::Real vy = 0.0;
-   amrex::Real vz = 0.0;
+   amrex::Real vx = 0.0_rt;
+   amrex::Real vy = 0.0_rt;
+   amrex::Real vz = 0.0_rt;
    for (int component = 0; component < 3; ++component) {
       const amrex::Real value = component == 0 ? v1 : (component == 1 ? v2 : v3);
       const int axis = mesh_vector_axis_for_component(coordinate, axes, component);
@@ -153,7 +155,7 @@ amrex::Real state_vector_cartesian_component(
    const amrex::GpuArray<int, 3> canonical_axes = mesh_canonical_vector_axes(coordinate);
    const auto axis_component = [&](int axis) noexcept -> amrex::Real {
       if (!mesh_has_axis(axes, axis)) {
-         return 0.0;
+         return 0.0_rt;
       }
       return mesh_vector_component_for_axis(
          state,
@@ -186,7 +188,7 @@ bool amr_cell_allows_radial_refinement(
    amrex::Real min_refine_radius
 ) noexcept
 {
-   if (min_refine_radius <= 0.0 || coordinate == MeshCartesian) {
+   if (min_refine_radius <= 0.0_rt || coordinate == MeshCartesian) {
       return true;
    }
    const int radial_dir = mesh_direction_for_axis(axes, MeshAxisR);
@@ -206,18 +208,18 @@ amrex::Real lohner_from_values(
    amrex::Real reference_scale
 ) noexcept
 {
-   constexpr amrex::Real smooth_floor = 1.0e-2;
-   const amrex::Real numerator = amrex::Math::abs(qp - 2.0 * q0 + qm);
+   constexpr amrex::Real smooth_floor = 1.0e-2_rt;
+   const amrex::Real numerator = amrex::Math::abs(qp - 2.0_rt * q0 + qm);
    const amrex::Real denominator =
       amrex::Math::abs(qp - q0)
       + amrex::Math::abs(q0 - qm)
       + smooth_floor * (
          amrex::Math::abs(qp)
-         + 2.0 * amrex::Math::abs(q0)
+         + 2.0_rt * amrex::Math::abs(q0)
          + amrex::Math::abs(qm)
          + reference_scale
       )
-      + 1.0e-50;
+      + 1.0e-50_rt;
    return numerator / denominator;
 }
 
@@ -235,7 +237,7 @@ bool amr_direction_is_unresolved(
 ) noexcept
 {
    const amrex::Real min_feature_length = min_feature_lengths[dir];
-   if (min_feature_length <= 0.0) {
+   if (min_feature_length <= 0.0_rt) {
       return true;
    }
    return mesh_face_gradient_spacing(coordinate, axes, problo, dx, dir, i, j, k) > min_feature_length;
@@ -360,23 +362,23 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fluid_amr_directional_indicators(
       );
    };
 
-   const amrex::Real rho0 = amrex::max(amrex::Math::abs(rho_at(i, j, k)), 1.0e-50);
+   const amrex::Real rho0 = amrex::max(amrex::Math::abs(rho_at(i, j, k)), 1.0e-50_rt);
    const amrex::Real p0 = (policy.pressure || policy.velocity || policy.magnetic)
-      ? amrex::max(amrex::Math::abs(pressure_at(i, j, k)), 1.0e-50)
-      : 1.0e-50;
-   amrex::Real vmag = 0.0;
+      ? amrex::max(amrex::Math::abs(pressure_at(i, j, k)), 1.0e-50_rt)
+      : 1.0e-50_rt;
+   amrex::Real vmag = 0.0_rt;
    if (policy.velocity) {
       const amrex::Real v1_0 = vx_at(i, j, k);
       const amrex::Real v2_0 = vy_at(i, j, k);
       const amrex::Real v3_0 = vz_at(i, j, k);
       vmag = std::sqrt(squared_norm(StateVector3{v1_0, v2_0, v3_0}));
    }
-   amrex::Real b2 = 0.0;
+   amrex::Real b2 = 0.0_rt;
    if (policy.magnetic && newtonian_mhd) {
       const amrex::Real b1_0 = b1_at(i, j, k);
       const amrex::Real b2_0 = b2_at(i, j, k);
       const amrex::Real b3_0 = b3_at(i, j, k);
-      b2 = 2.0 * magnetic_energy_density(StateVector3{b1_0, b2_0, b3_0});
+      b2 = 2.0_rt * magnetic_energy_density(StateVector3{b1_0, b2_0, b3_0});
    }
    if (policy.pressure) {
       accumulate_metric_aware_directional_indicator(
@@ -396,7 +398,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fluid_amr_directional_indicators(
          system, eos_method, rho0, p0, eos
       );
       const amrex::Real signal_scale = amrex::max(
-         vmag + std::sqrt(cs0 * cs0 + b2 / rho0), 1.0e-50
+         vmag + std::sqrt(cs0 * cs0 + b2 / rho0), 1.0e-50_rt
       );
       accumulate_metric_aware_directional_indicator(
          indicators, vx_at, i, j, k, signal_scale, coordinate, axes, problo, dx, min_feature_lengths
@@ -439,7 +441,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fluid_amr_directional_indicators(
          const RMHDPrimitive local = rmhd_primitive_from_amr_cache(
             primitive, ia, ja, ka, eos
          );
-         return 0.5 * generated::rmhd_comoving_magnetic_squared(
+         return 0.5_rt * generated::rmhd_comoving_magnetic_squared(
             local, spacetime.at(ia, ja, ka)
          );
       };
@@ -454,15 +456,15 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> fluid_amr_directional_indicators(
                local, spacetime.at(ia, ja, ka)
             );
          const amrex::Real specific_enthalpy =
-            1.0 + local.eps + local.pressure / local.rho;
+            1.0_rt + local.eps + local.pressure / local.rho;
          return magnetic_squared
-            / amrex::max(local.rho * specific_enthalpy, 1.0e-300);
+            / amrex::max(local.rho * specific_enthalpy, 1.0e-300_rt);
       };
       const amrex::Real magnetic_pressure_scale = amrex::max(
          magnetic_pressure_at(i, j, k), p0
       );
       const amrex::Real magnetization_scale = amrex::max(
-         magnetization_at(i, j, k), 1.0
+         magnetization_at(i, j, k), 1.0_rt
       );
       accumulate_metric_aware_directional_indicator(
          indicators,
@@ -516,7 +518,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacetime_amr_directional_indicator
    const auto conformal_perturbation_at = [=] AMREX_GPU_HOST_DEVICE(
       int ia, int ja, int ka
    ) noexcept {
-      return spacetime.state(ia, ja, ka, Z4C_CHI) - 1.0;
+      return spacetime.state(ia, ja, ka, Z4C_CHI) - 1.0_rt;
    };
    if (!track_curvature) {
       const amrex::Real strong_field_support = amrex::Math::abs(
@@ -544,7 +546,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacetime_amr_directional_indicator
    // asymptotic tail is not promoted merely because its local amplitude is
    // small.  The numerator still follows curvature in chi - 1 near the
    // compact object.
-   constexpr amrex::Real reference_scale = 1.0;
+   constexpr amrex::Real reference_scale = 1.0_rt;
    accumulate_metric_aware_directional_indicator(
       indicators,
       conformal_perturbation_at,

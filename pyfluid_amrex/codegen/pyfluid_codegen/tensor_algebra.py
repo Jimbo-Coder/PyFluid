@@ -606,7 +606,8 @@ class OrthogonalOperators:
 
    ``coordinate_derivatives[i, j]`` means ``d(field_i)/d(q_j)``. The
    discretization that supplies those derivatives remains outside this
-   symbolic algebra layer.
+   symbolic algebra layer. The returned vector gradient has derivative
+   direction in its first index and physical component in its second.
    """
 
    scale_factors: tuple[sp.Expr, ...]
@@ -658,11 +659,12 @@ class OrthogonalOperators:
                      / (h[derivative_direction] * h[basis])
                   )
             else:
-               value = h[component_direction] / h[derivative_direction] * (
-                  coordinate_derivatives.component(component_direction, derivative_direction) / h[component_direction]
-                  - vector.component(component_direction)
-                  * sp.diff(h[component_direction], self.coordinates[derivative_direction])
-                  / (h[component_direction] ** 2)
+               value = (
+                  coordinate_derivatives.component(component_direction, derivative_direction)
+                  / h[derivative_direction]
+                  - vector.component(derivative_direction)
+                  * sp.diff(h[derivative_direction], self.coordinates[component_direction])
+                  / (h[derivative_direction] * h[component_direction])
                )
             gradient[derivative_direction][component_direction] = sp.simplify(value)
       return Tensor.from_rows(tuple(tuple(row) for row in gradient))
@@ -720,7 +722,11 @@ class OrthogonalOperators:
       return gradient.symmetric()
 
    def tensor_divergence_connection(self, tensor: Tensor) -> Vector:
-      """Connection terms complementing the finite-volume tensor divergence."""
+      """Connection terms for FV divergence along the tensor's first index.
+
+      The flux tensor need not be symmetric. Basis differentiation contracts
+      its component/normal entry, not its normal/component entry.
+      """
       sources: list[sp.Expr] = []
       for component in range(self.dimension):
          source = sp.Integer(0)
@@ -729,7 +735,7 @@ class OrthogonalOperators:
          for normal in range(self.dimension):
             h_normal = self.scale_factors[normal]
             q_normal = self.coordinates[normal]
-            source += tensor.component(normal, component) * sp.diff(h_component, q_normal) / (h_component * h_normal)
+            source += tensor.component(component, normal) * sp.diff(h_component, q_normal) / (h_component * h_normal)
             source -= tensor.component(normal, normal) * sp.diff(h_normal, q_component) / (h_component * h_normal)
          sources.append(sp.trigsimp(sp.simplify(source)))
       return Vector(*sources)

@@ -31,8 +31,8 @@ amrex::Real z4c_trumpet_lapse_rhs(const Z4cState& state, const Z4cSpatialDerivat
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real z4c_slow_start_lapse_rhs(const Z4cState& state, const Z4cSpatialDerivatives& derivatives, amrex::Real time, amrex::Real strength, amrex::Real width) noexcept
 {
-   const amrex::Real tmp0 = sqrt(state.chi);
-   return derivatives.advection_lapse[0]*state.shift1 + derivatives.advection_lapse[1]*state.shift2 + derivatives.advection_lapse[2]*state.shift3 - 2*state.k_hat*state.lapse + strength*tmp0*(-state.lapse + tmp0)*exp(-1.0_rt/2.0_rt*((time)*(time))/((width)*(width)));
+   const amrex::Real tmp0 = std::sqrt(state.chi);
+   return derivatives.advection_lapse[0]*state.shift1 + derivatives.advection_lapse[1]*state.shift2 + derivatives.advection_lapse[2]*state.shift3 - 2*state.k_hat*state.lapse + strength*tmp0*(-state.lapse + tmp0)*std::exp(-1.0_rt/2.0_rt*((time)*(time))/((width)*(width)));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

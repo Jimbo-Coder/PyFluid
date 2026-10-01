@@ -1,0 +1,44 @@
+pyfluid.run_name = rhd_spherical_schwarzschild_hse_1d
+pyfluid.output_dir = runs/current/rhd_reference_metric/rhd_spherical_schwarzschild_hse_1d
+
+mesh.coordinate = spherical
+mesh.axes = r
+mesh.patch_system = single
+
+geometry.prob_lo = 1.0
+geometry.prob_hi = 3.0
+geometry.is_periodic = 0
+geometry.coord_sys = 2
+
+amr.n_cell = 64
+amr.max_level = 0
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+
+spacetime.evolution = fixed
+spacetime.fixed_metric = schwarzschild_isotropic
+spacetime.mass = 0.5
+spacetime.origin1 = 0.0
+spacetime.origin2 = 0.0
+spacetime.origin3 = 0.0
+
+pyfluid.physics = rhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = fixed_metric_hse
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 0.1
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.final_time = 0.005
+pyfluid.max_step = 4
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.bc = reflecting
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 10000
+pyfluid.checkpoint_int = -1

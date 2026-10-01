@@ -14,17 +14,19 @@
 
 namespace {
 
+using namespace amrex::literals;
+
 bool close_relative(amrex::Real left, amrex::Real right, amrex::Real tolerance)
 {
    return std::abs(left - right) <= tolerance * std::max({
-      amrex::Real{1.0e-300}, std::abs(left), std::abs(right)
+      amrex::Real{1.0e-300_rt}, std::abs(left), std::abs(right)
    });
 }
 
 amrex::Real relative_error(amrex::Real left, amrex::Real right)
 {
    return std::abs(left - right) / std::max({
-      amrex::Real{1.0e-300}, std::abs(left), std::abs(right)
+      amrex::Real{1.0e-300_rt}, std::abs(left), std::abs(right)
    });
 }
 
@@ -33,7 +35,7 @@ bool check_table(std::string const& directory)
    const auto storage = pyfluid_amrex::eos::load_compose_cold_table(directory);
    const pyfluid_amrex::TabulatedEOSView table = storage->view();
    if (table.size < 2 || storage->source_points() < table.size
-       || !(storage->baryon_mass_mev() > 0.0)
+       || !(storage->baryon_mass_mev() > 0.0_rt)
        || storage->backend() != "compose_cold_barotrope_v1"
        || storage->fingerprint().size() != 16) {
       std::cerr << "invalid table metadata for " << directory << '\n';
@@ -42,9 +44,9 @@ bool check_table(std::string const& directory)
 
    pyfluid_amrex::EOSParams eos{};
    eos.method = pyfluid_amrex::EOSCompose;
-   eos.thermal_gamma = 1.8;
-   eos.rho_floor = 1.0e-18;
-   eos.pressure_floor = 1.0e-24;
+   eos.thermal_gamma = 1.8_rt;
+   eos.rho_floor = 1.0e-18_rt;
+   eos.pressure_floor = 1.0e-24_rt;
    eos.table = table;
 
    const amrex::Real minimum_density = std::exp(table.log_density[0]);
@@ -52,19 +54,19 @@ bool check_table(std::string const& directory)
    for (int sample = -1; sample <= 18; ++sample) {
       const amrex::Real fraction = static_cast<amrex::Real>(
          std::max(sample, 0)
-      ) / 16.0;
+      ) / 16.0_rt;
       const amrex::Real log_density = table.log_density[0]
          + fraction * (table.log_density[table.size - 1] - table.log_density[0]);
       const amrex::Real density = sample < 0
-         ? 0.5 * minimum_density
+         ? 0.5_rt * minimum_density
          : std::exp(log_density);
       const pyfluid_amrex::TabulatedColdState cold =
          pyfluid_amrex::tabulated_cold_from_density(density, table);
-      if (!(cold.density > 0.0) || !(cold.pressure > 0.0)
+      if (!(cold.density > 0.0_rt) || !(cold.pressure > 0.0_rt)
           || !(cold.energy_density >= cold.density)
-          || !(cold.specific_enthalpy > 1.0)
-          || !(cold.sound_speed_squared >= 0.0)
-          || !(cold.sound_speed_squared < 1.0)) {
+          || !(cold.specific_enthalpy > 1.0_rt)
+          || !(cold.sound_speed_squared >= 0.0_rt)
+          || !(cold.sound_speed_squared < 1.0_rt)) {
          std::cerr << "invalid cold state for " << directory
                    << " sample=" << sample << '\n';
          return false;
@@ -77,12 +79,12 @@ bool check_table(std::string const& directory)
       if (!close_relative(
              inverse.density,
              density,
-             sample <= 0 ? 2.0e-8 : 2.0e-12
+             sample <= 0 ? 2.0e-8_rt : 2.0e-12_rt
           )
           || !close_relative(
              inverse.pressure,
              cold.pressure,
-             sample <= 0 ? 2.0e-8 : 5.0e-12
+             sample <= 0 ? 2.0e-8_rt : 5.0e-12_rt
           )) {
          std::cerr << "enthalpy inversion mismatch for " << directory
                    << " sample=" << sample
@@ -94,7 +96,7 @@ bool check_table(std::string const& directory)
       }
 
       const amrex::Real cold_internal = cold.energy_density - density;
-      const amrex::Real thermal_internal = 0.03 * density;
+      const amrex::Real thermal_internal = 0.03_rt * density;
       const amrex::Real pressure =
          pyfluid_amrex::eos_pressure_from_density_energy<
             pyfluid_amrex::EOSRuntime
@@ -104,7 +106,7 @@ bool check_table(std::string const& directory)
             pyfluid_amrex::EOSRuntime
          >(density, pressure, eos);
       if (!close_relative(
-             recovered_internal, cold_internal + thermal_internal, 2.0e-12
+             recovered_internal, cold_internal + thermal_internal, 2.0e-12_rt
           )) {
          std::cerr << "cold-plus-thermal inversion mismatch for "
                    << directory << " sample=" << sample << '\n';
@@ -115,7 +117,7 @@ bool check_table(std::string const& directory)
    const amrex::Real density = std::sqrt(minimum_density * maximum_density);
    const pyfluid_amrex::TabulatedColdState cold =
       pyfluid_amrex::tabulated_cold_from_density(density, table);
-   const amrex::Real eps = cold.energy_density / density - 1.0 + 0.02;
+   const amrex::Real eps = cold.energy_density / density - 1.0_rt + 0.02_rt;
    const amrex::Real pressure = pyfluid_amrex::relativistic_pressure<
       pyfluid_amrex::EOSRuntime
    >(density, eps, eos);
@@ -128,21 +130,21 @@ bool check_table(std::string const& directory)
           pyfluid_amrex::relativistic_specific_enthalpy<
              pyfluid_amrex::EOSRuntime
           >(density, eps, eos),
-          5.0e-14
+          5.0e-14_rt
        )
        || !close_relative(
           characteristic.sound_speed_squared,
           pyfluid_amrex::relativistic_sound_speed_squared<
              pyfluid_amrex::EOSRuntime
           >(density, eps, eos),
-          5.0e-14
+          5.0e-14_rt
        )) {
       std::cerr << "CompOSE characteristic closure mismatch for "
                 << directory << '\n';
       return false;
    }
    const pyfluid_amrex::RHDPrimitive primitive{
-      density, eps, pressure, 0.23, -0.07, 0.03
+      density, eps, pressure, 0.23_rt, -0.07_rt, 0.03_rt
    };
    const pyfluid_amrex::SpacetimeMetric metric =
       pyfluid_amrex::minkowski_spacetime_metric();
@@ -153,8 +155,8 @@ bool check_table(std::string const& directory)
          pyfluid_amrex::EOSCompose, conserved, metric, eos
       );
    if (!recovered.attempt.succeeded()
-       || !close_relative(recovered.primitive.rho, primitive.rho, 5.0e-9)
-       || !close_relative(recovered.primitive.pressure, primitive.pressure, 5.0e-9)) {
+       || !close_relative(recovered.primitive.rho, primitive.rho, 5.0e-9_rt)
+       || !close_relative(recovered.primitive.pressure, primitive.pressure, 5.0e-9_rt)) {
       std::cerr << "RHD CompOSE C2P round trip failed for " << directory
                 << " status=" << static_cast<int>(recovered.attempt.status)
                 << " residual=" << recovered.attempt.residual << '\n';
@@ -165,12 +167,12 @@ bool check_table(std::string const& directory)
       density,
       eps,
       pressure,
-      0.17,
-      -0.05,
-      0.02,
-      0.3,
-      -0.2,
-      0.1,
+      0.17_rt,
+      -0.05_rt,
+      0.02_rt,
+      0.3_rt,
+      -0.2_rt,
+      0.1_rt,
    };
    const pyfluid_amrex::RMHDConserved magnetic_conserved =
       pyfluid_amrex::generated::rmhd_primitive_to_conserved(
@@ -214,8 +216,8 @@ bool check_table(std::string const& directory)
       relative_error(magnetic_round_trip.b2, magnetic_conserved.b2),
       relative_error(magnetic_round_trip.b3, magnetic_conserved.b3),
    });
-   if (magnetic_primitive_error > 1.0e-5
-       || magnetic_conserved_error > 5.0e-9) {
+   if (magnetic_primitive_error > 1.0e-5_rt
+       || magnetic_conserved_error > 5.0e-9_rt) {
       std::cerr << "RMHD CompOSE C2P round trip failed for " << directory
                 << " status="
                 << static_cast<int>(magnetic_recovered.attempt.status)

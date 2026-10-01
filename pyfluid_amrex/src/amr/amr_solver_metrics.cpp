@@ -4,6 +4,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 amrex::Long AmrSolverBase::cell_count() const
 {
    amrex::Long cells = 0;
@@ -20,7 +22,7 @@ amrex::Long AmrSolverBase::active_cell_count_level(int lev) const
    if (!fluid_state_.state()[lev] || !solid_active(lev)) {
       return fluid_state_.state()[lev] ? boxArray(lev).numPts() : 0;
    }
-   amrex::Real local_active = 0.0;
+   amrex::Real local_active = 0.0_rt;
    for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
       const amrex::Box& bx = mfi.validbox();
       const int kind = cached_mask_kind(&solid_valid_kind_[lev], mfi, *solid_mask_[lev], bx);
@@ -54,7 +56,7 @@ amrex::Long AmrSolverBase::active_cell_count_level(int lev) const
          for (int j = jlo; j <= jhi; ++j) {
             for (int i = lo[0]; i <= hi[0]; ++i) {
                if (solid(i, j, k, 0) == 0) {
-                  local_active += 1.0;
+                  local_active += 1.0_rt;
                }
             }
          }
@@ -128,7 +130,7 @@ std::array<amrex::Real, AMREX_SPACEDIM> AmrSolverBase::level_cell_widths(int lev
 amrex::Real AmrSolverBase::level_cell_width(int lev) const
 {
    const auto widths = level_cell_widths(lev);
-   amrex::Real width = 0.0;
+   amrex::Real width = 0.0_rt;
    for (amrex::Real directional_width : widths) {
       width = amrex::max(width, directional_width);
    }
@@ -154,7 +156,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> AmrSolverBase::min_feature_lengths(
          (dir == 0 && cfg_.min_feature_length_1_set) ||
          (dir == 1 && cfg_.min_feature_length_2_set) ||
          (dir == 2 && cfg_.min_feature_length_3_set);
-      if (!user_set_length && !user_set_direction && lengths[dir] <= 0.0) {
+      if (!user_set_length && !user_set_direction && lengths[dir] <= 0.0_rt) {
          lengths[dir] = nyquist_length_scale * base_widths[dir];
       }
    }
@@ -164,7 +166,7 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> AmrSolverBase::min_feature_lengths(
 amrex::Real AmrSolverBase::min_feature_length() const
 {
    const auto lengths = min_feature_lengths();
-   amrex::Real summary = -1.0;
+   amrex::Real summary = -1.0_rt;
    for (amrex::Real length : lengths) {
       summary = amrex::max(summary, length);
    }
@@ -177,7 +179,7 @@ bool AmrSolverBase::auto_refinement_resolved_at_level(int lev) const
    const auto lengths = min_feature_lengths();
    bool any_cutoff_enabled = false;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      if (lengths[dir] <= 0.0) {
+      if (lengths[dir] <= 0.0_rt) {
          continue;
       }
       any_cutoff_enabled = true;
@@ -200,7 +202,7 @@ AmrLevelDiagnostics AmrSolverBase::current_amr_level_diagnostics() const
 
 void AmrSolverBase::validate_timestep(amrex::Real dt, int step, amrex::Real time) const
 {
-   if (std::isfinite(dt) && dt > 0.0) {
+   if (std::isfinite(dt) && dt > 0.0_rt) {
       return;
    }
    std::ostringstream message;
@@ -214,6 +216,13 @@ void AmrSolverBase::validate_timestep(amrex::Real dt, int step, amrex::Real time
 
 void AmrSolverBase::validate_scalar_health(ScalarDiagnostics const& d) const
 {
+   const bool vacuum_exterior = recovery_exterior_state_.is_vacuum();
+   const bool density_is_physical = vacuum_exterior
+      ? d.min_rho >= 0.0_rt
+      : d.min_rho > 0.0_rt;
+   const bool pressure_is_physical = vacuum_exterior
+      ? d.min_pressure >= 0.0_rt
+      : d.min_pressure > 0.0_rt;
    if (
       std::isfinite(d.mass)
       && std::isfinite(d.energy)
@@ -221,9 +230,9 @@ void AmrSolverBase::validate_scalar_health(ScalarDiagnostics const& d) const
       && std::isfinite(d.max_rho)
       && std::isfinite(d.max_rho_rel_change)
       && std::isfinite(d.min_pressure)
-      && d.min_rho > 0.0
+      && density_is_physical
       && d.max_rho >= d.min_rho
-      && d.min_pressure > 0.0
+      && pressure_is_physical
    ) {
       return;
    }
@@ -304,19 +313,19 @@ void AmrSolverBase::append_current_amr_level_row(std::ofstream& out, int step, a
 {
    const auto finest_dx_by_dir = level_cell_widths(finestLevel());
    const auto min_feature_lengths_by_dir = min_feature_lengths();
-   amrex::Real finest_dx = 0.0;
+   amrex::Real finest_dx = 0.0_rt;
    for (amrex::Real directional_width : finest_dx_by_dir) {
       finest_dx = amrex::max(finest_dx, directional_width);
    }
    const SolidGeometryEvaluator solid_params = solid_geometry_evaluator(cfg_, time);
    const amrex::Real solid_curvature_error = solid_geometry_enabled(cfg_)
       ? solid_params.curved_boundary_error(time, finest_dx)
-      : 0.0;
+      : 0.0_rt;
    const amrex::Real solid_curvature_tolerance = solid_geometry_enabled(cfg_)
       ? cfg_.solid_curvature_error
-      : -1.0;
+      : -1.0_rt;
    std::vector<int> level_box_counts(maxLevel() + 1, 0);
-   std::vector<amrex::Real> level_max_box_aspects(maxLevel() + 1, 0.0);
+   std::vector<amrex::Real> level_max_box_aspects(maxLevel() + 1, 0.0_rt);
    std::array<std::vector<int>, AMREX_SPACEDIM> level_ref_ratios;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       level_ref_ratios[dir].assign(maxLevel() + 1, 1);
@@ -333,7 +342,7 @@ void AmrSolverBase::append_current_amr_level_row(std::ofstream& out, int step, a
       }
       const amrex::BoxArray& boxes = boxArray(lev);
       level_box_counts[lev] = static_cast<int>(boxes.size());
-      amrex::Real max_aspect = 0.0;
+      amrex::Real max_aspect = 0.0_rt;
       for (int ibox = 0; ibox < static_cast<int>(boxes.size()); ++ibox) {
          const amrex::Box& box = boxes[ibox];
          int min_len = box.length(0);
@@ -357,7 +366,7 @@ void AmrSolverBase::append_current_amr_level_row(std::ofstream& out, int step, a
    std::array<std::vector<amrex::Real>, AMREX_SPACEDIM> auto_direction_strength;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       auto_direction_tagged_cells[dir].assign(maxLevel() + 1, 0);
-      auto_direction_strength[dir].assign(maxLevel() + 1, 0.0);
+      auto_direction_strength[dir].assign(maxLevel() + 1, 0.0_rt);
    }
    std::vector<std::string> refinement_decisions(maxLevel() + 1, "inactive");
    for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -432,7 +441,7 @@ void AmrSolverBase::ErrorEst(
       }
       for (auto& dir_strength : latest_auto_direction_strength_) {
          if (lev < static_cast<int>(dir_strength.size())) {
-            dir_strength[lev] = 0.0;
+            dir_strength[lev] = 0.0_rt;
          }
       }
    }
@@ -443,7 +452,7 @@ void AmrSolverBase::ErrorEst(
 
    const bool initial_refine_time = cfg_.initial_refine != "none"
       && cfg_.initial_refine_levels > 0
-      && time <= 64.0 * std::numeric_limits<amrex::Real>::epsilon();
+      && time <= 64.0_rt * std::numeric_limits<amrex::Real>::epsilon();
    const bool fixed_initial_refine = cfg_.initial_refine == "box"
       && cfg_.initial_refine_fixed_levels > 0;
    const int coordinate = mesh_coordinate_kind();
@@ -451,7 +460,7 @@ void AmrSolverBase::ErrorEst(
    const bool auto_refinement_resolved = auto_refinement_resolved_at_level(lev);
    const bool solid_phi_tagging_enabled = solid_geometry_enabled(cfg_)
       && !auto_refinement_resolved
-      && cfg_.solid_refine_band_cells > 0.0;
+      && cfg_.solid_refine_band_cells > 0.0_rt;
    const auto problo = Geom(lev).ProbLoArray();
    const auto dx = Geom(lev).CellSizeArray();
    const SolidGeometryEvaluator solid_params = solid_geometry_evaluator(cfg_, time);
@@ -465,7 +474,7 @@ void AmrSolverBase::ErrorEst(
    const amrex::Real solid_refine_band = cfg_.solid_refine_band_cells * solid_refine_dx;
    const amrex::Real solid_curvature_error = solid_params.curved_boundary_error(time, solid_refine_dx);
    const bool tag_solid_phi_band = solid_phi_tagging_enabled
-      && (cfg_.solid_curvature_error <= 0.0 || solid_curvature_error > cfg_.solid_curvature_error);
+      && (cfg_.solid_curvature_error <= 0.0_rt || solid_curvature_error > cfg_.solid_curvature_error);
    const bool solid_tagging = solid_active(lev) && tag_solid_phi_band;
    const bool horizon_tagging =
       apparent_horizon_tracker_->refinement_tracking_active();
@@ -496,7 +505,7 @@ void AmrSolverBase::ErrorEst(
       fill_level_primitive_cache(lev, time);
    } else if (spacetime_state_.active()) {
       prepare_spacetime_coupling_range(
-         spacetime_state_.state(), lev, lev + 1, time, -1.0, 0
+         spacetime_state_.state(), lev, lev + 1, time, -1.0_rt, 0
       );
    }
    const char tagval = amrex::TagBox::SET;
@@ -542,16 +551,19 @@ void AmrSolverBase::ErrorEst(
             : amrex::Array4<amrex::Real const>{},
          stored_spacetime,
       };
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         if (initial_box_refine) {
-            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+      // Each independent policy only adds tags. Select optional launches on
+      // the host so geometric tagging and fluid indicators do not share one
+      // optimizer region or capture each other's configuration.
+      if (initial_box_refine) {
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #endif
 #if (AMREX_SPACEDIM == 3)
-            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             for (int box = 0; box < initial_box_count; ++box) {
                bool inside = x >= initial_box_lo[box * AMREX_SPACEDIM]
@@ -572,26 +584,30 @@ void AmrSolverBase::ErrorEst(
                   break;
                }
             }
-         }
-         if (tag_solid_phi_band) {
-            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         });
+      }
+      if (tag_solid_phi_band) {
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-            const amrex::Real y = 0.0;
+            const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             if (amrex::Math::abs(solid_params.phi(time, x, y, z)) <= solid_refine_band) {
                tag(i, j, k) = tagval;
             }
-         }
-         if (initial_refine_only || fixed_initial_hierarchy_only || auto_refinement_resolved) {
-            return;
-         }
+         });
+      }
+      if (initial_refine_only || fixed_initial_hierarchy_only || auto_refinement_resolved) {
+         continue;
+      }
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const amrex::Real indicator = auto_amr_indicator_from_primitive(
             primitive,
             i,
@@ -615,6 +631,35 @@ void AmrSolverBase::ErrorEst(
          }
       });
    }
+   }
+
+   if (cfg_.spacetime_black_hole_matter == "excision") {
+      amrex::iMultiFab const* excision = excision_mask_ptr(lev);
+      // InitFromScratch requests the initial refinement hierarchy before the
+      // step-zero apparent-horizon search.  At that point there is no surface
+      // from which to build an excision mask, so retain the ordinary initial
+      // tags.  The startup owner finds the horizon before physical projection
+      // and preflight; every runtime regrid thereafter has a tracked surface.
+      if (excision == nullptr) {
+         return;
+      }
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      for (amrex::MFIter mfi(tags, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box& box = mfi.tilebox();
+         const auto tag = tags.array(mfi);
+         const auto inactive = excision->const_array(mfi);
+         amrex::ParallelFor(
+            box,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               if (inactive(i, j, k, 0) != 0) {
+                  tag(i, j, k) = amrex::TagBox::CLEAR;
+               }
+            }
+         );
+      }
    }
 
    if (

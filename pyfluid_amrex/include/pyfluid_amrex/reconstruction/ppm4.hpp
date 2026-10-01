@@ -4,6 +4,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 namespace reconstruction_detail {
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -35,11 +37,11 @@ amrex::Real ppm4_left(
 
    const amrex::Real right_delta = right - v0;
    const amrex::Real left_delta = left - v0;
-   if (right_delta * left_delta >= 0.0) {
+   if (right_delta * left_delta >= 0.0_rt) {
       return v0;
    }
-   if (amrex::Math::abs(right_delta) >= 2.0 * amrex::Math::abs(left_delta)) {
-      right = v0 - 2.0 * left_delta;
+   if (amrex::Math::abs(right_delta) >= 2.0_rt * amrex::Math::abs(left_delta)) {
+      right = v0 - 2.0_rt * left_delta;
    }
    return right;
 }

@@ -25,10 +25,12 @@ from validation_common import (
     ROOT,
     append_validation_history,
     build_cached_target,
+    check_external_conservation,
     materialize_run_input,
     read_tsv,
     repo_relative,
     run_amrex,
+    run_mpi,
     scalar_validation_row,
     write_tsv,
 )
@@ -37,6 +39,12 @@ from validation_common import (
 BASE_INPUT = ROOT / "pyfluid_amrex/inputs/kerr_schild_filled_evolution_3d.in"
 STATIC_TRUMPET_INPUT = (
     ROOT / "pyfluid_amrex/inputs/static_trumpet_evolution_3d.in"
+)
+EXCISION_INPUT = (
+    ROOT / "pyfluid_amrex/inputs/kerr_schild_excision_evolution_3d.in"
+)
+COUPLED_EXCISION_INPUT = (
+    ROOT / "pyfluid_amrex/inputs/kerr_schild_coupled_excision_3d.in"
 )
 SPHERICAL_XCTS_INPUT = (
     ROOT / "pyfluid_amrex/inputs/black_hole_xcts_spherical_id_2d.in"
@@ -60,6 +68,10 @@ HISTORY = ROOT / "runs/current/validation_history.tsv"
 FIELD_CATALOG = ROOT / "pyfluid_amrex/generated/field_catalog.json"
 RECOVERY = re.compile(
     r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)"
+)
+INTERIOR_RECOVERY = re.compile(
+    r"Relativistic recovery .*?interior_bounds=(\d+) "
+    r"interior_resets=(\d+)"
 )
 XCTS_SOLVE = re.compile(
     r"xcts initial data: matter_iterations=(\d+) .*?"
@@ -969,6 +981,139 @@ def validate_apparent_horizon_core() -> None:
         raise RuntimeError(f"{target} did not report its PASS marker")
 
 
+def validate_excision_stencils(*, ranks: int) -> None:
+    binary = build_cached_target("pyfluid_amrex_excision_stencil_check")
+    completed = run_mpi(binary, [], ranks=ranks)
+    (RUN_ROOT / "excision_stencils.log").write_text(completed.stdout)
+    if completed.returncode or "PASS excision stencils" not in completed.stdout:
+        raise RuntimeError("excision operator/transfer tests failed")
+
+
+def validate_armed_apparent_horizon_absence(
+    *, ranks: int, timeout: int | None
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Keep a pre-formation finder armed without inventing a horizon."""
+    name = "horizon_armed_minkowski_retry"
+    run_dir = RUN_ROOT / name
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    run_dir.mkdir(parents=True)
+    input_path = materialize_run_input(
+        ROOT / "pyfluid_amrex/inputs/z4c_minkowski_radiation_3d.in",
+        run_dir / "input.in",
+        {
+            "pyfluid.run_name": name,
+            "pyfluid.output_dir": repo_relative(run_dir),
+            "pyfluid.validation_policy": "open",
+            "geometry.prob_lo": "-8.0 -8.0 -8.0",
+            "geometry.prob_hi": "8.0 8.0 8.0",
+            "pyfluid.max_step": "2",
+            "pyfluid.aux_gf_int": "2",
+            "pyfluid.aux_gfs": "apparent_horizon_mask,excision_mask",
+            "horizon.enabled": "1",
+            "horizon.abort_on_failure": "0",
+            "horizon.find_int": "2",
+            "horizon.radial_points": "24",
+            "horizon.polar_points": "8",
+            "horizon.coarsest_polar_points": "8",
+            "horizon.minimum_search_radius": "0.5",
+            "horizon.maximum_search_radius": "3.0",
+            "horizon.initial_radius": "2.4",
+            "pyfluid.scalar_diagnostics": "standard,horizon",
+        },
+    )
+    completed = run_amrex(
+        dim=3,
+        input_path=input_path,
+        ranks=ranks,
+        timeout=timeout,
+    )
+    (run_dir / "run.log").write_text(completed.stdout)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"{name} failed; see {repo_relative(run_dir / 'run.log')}"
+        )
+    expected_failures = (
+        "apparent-horizon find failed at step 0",
+        "apparent-horizon find failed at step 2",
+    )
+    if any(marker not in completed.stdout for marker in expected_failures) \
+            or "apparent-horizon find failed at step 1" in completed.stdout:
+        raise RuntimeError(
+            f"{name} did not retry only on its configured cadence"
+        )
+    if (run_dir / "apparent_horizon.tsv").exists() \
+            or (run_dir / "apparent_horizon").exists():
+        raise RuntimeError(f"{name} fabricated an apparent-horizon surface")
+    rows = read_tsv(run_dir / "scalars.tsv", require_complete=True)
+    if len(rows) != 3 or any(
+        float(row["black_hole_horizon_found"]) != 0.0 for row in rows
+    ):
+        raise RuntimeError(f"{name} did not report an absent horizon")
+    for field in (
+        "black_hole_horizon_area",
+        "black_hole_horizon_irreducible_mass",
+    ):
+        if any(float(row[field]) != 0.0 for row in rows):
+            raise RuntimeError(f"{name} fabricated nonzero {field}")
+    for field in ("apparent_horizon_mask", "excision_mask"):
+        mask, _ = read_aux_field(run_dir / "auxGF", field, step=2)
+        if np.any(mask != 0.0):
+            raise RuntimeError(f"{name} fabricated a nonzero {field}")
+
+    scalar = scalar_validation_row(
+        run_dir,
+        case=name,
+        input_file=run_dir / "run.in",
+        checks=OPEN_POLICY,
+        mhd=None,
+        dim=3,
+        ranks=ranks,
+        kind="black_hole",
+    )
+    if scalar["status"] != "PASS":
+        raise RuntimeError(f"{name} scalar validation failed: {scalar['reason']}")
+
+    strict_name = "horizon_known_black_hole_failure_is_strict"
+    strict_dir = RUN_ROOT / strict_name
+    if strict_dir.exists():
+        shutil.rmtree(strict_dir)
+    strict_dir.mkdir(parents=True)
+    strict_input = materialize_run_input(
+        input_path,
+        strict_dir / "input.in",
+        {
+            "pyfluid.run_name": strict_name,
+            "pyfluid.output_dir": repo_relative(strict_dir),
+            "pyfluid.max_step": "0",
+            "horizon.abort_on_failure": "1",
+        },
+    )
+    strict = run_amrex(
+        dim=3,
+        input_path=strict_input,
+        ranks=ranks,
+        timeout=timeout,
+    )
+    (strict_dir / "run.log").write_text(strict.stdout)
+    if strict.returncode == 0 \
+            or "apparent-horizon find failed" not in strict.stdout:
+        raise RuntimeError(
+            "the default apparent-horizon failure policy is not strict"
+        )
+
+    return {
+        "case": name,
+        "status": "PASS",
+        "steps": 2,
+        "horizon_search_failures": 2,
+        "horizon_found": 0,
+        "c2p_fallbacks": 0,
+        "atmosphere_resets": 0,
+        "run_dir": repo_relative(run_dir),
+    }, scalar
+
+
 def validate_apparent_horizon_run(
     *, ranks: int, timeout: int | None
 ) -> tuple[dict[str, object], dict[str, object]]:
@@ -1122,10 +1267,22 @@ def validate_apparent_horizon_run(
             f"{restarted_fallbacks}/{restarted_resets}"
         )
     restarted_horizon_rows = read_tsv(run_dir / "apparent_horizon.tsv")
-    if len(restarted_horizon_rows) != 4 or int(
-        restarted_horizon_rows[-1]["step"]
-    ) != 3:
+    # A restored surface is a seed, not a current diagnostic result. Startup
+    # refreshes it off cadence at step 2, then evolution searches at step 3.
+    expected_steps = [int(item["step"]) for item in horizon_rows] + [2, 3]
+    if (
+        restarted_horizon_rows[:len(horizon_rows)] != horizon_rows
+        or [int(item["step"]) for item in restarted_horizon_rows] != expected_steps
+    ):
         raise RuntimeError(f"{name} restart did not continue its horizon history")
+    for horizon_row in restarted_horizon_rows[len(horizon_rows):]:
+        if (
+            not all(math.isfinite(float(value)) for value in horizon_row.values())
+            or float(horizon_row["area"]) <= 0.0
+            or float(horizon_row["theta_linf_times_mass"]) > 5.0e-4
+            or float(horizon_row["theta_l2_times_mass"]) > 1.0e-2
+        ):
+            raise RuntimeError(f"{name} restart has invalid horizon diagnostics")
 
     aux_dir = run_dir / "auxGF"
     horizon_mask, _ = read_aux_field(
@@ -1252,9 +1409,11 @@ def run_case(
     timeout: int | None,
     base_input: Path = BASE_INPUT,
     require_bh_exterior_constraints: bool = True,
+    keep_existing: bool = False,
+    expected_final_time: float | None = None,
 ) -> tuple[dict[str, object], dict[str, object]]:
     run_dir = RUN_ROOT / name
-    if run_dir.exists():
+    if run_dir.exists() and not keep_existing:
         shutil.rmtree(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     input_path = materialize_run_input(
@@ -1280,7 +1439,7 @@ def run_case(
         case=name,
         input_file=run_dir / "run.in",
         checks=OPEN_POLICY,
-        mhd=False,
+        mhd=None,
         dim=3,
         ranks=ranks,
         kind="black_hole",
@@ -1288,7 +1447,15 @@ def run_case(
     if scalar["status"] != "PASS":
         raise RuntimeError(f"{name} scalar validation failed: {scalar['reason']}")
     rows = read_tsv(run_dir / "scalars.tsv", require_complete=True)
-    if not rows or int(rows[-1]["step"]) != int(overrides.get("pyfluid.max_step", "3")):
+    complete = bool(rows)
+    if complete and expected_final_time is not None:
+        complete = math.isclose(
+            float(rows[-1]["time"]), expected_final_time,
+            rel_tol=1e-12, abs_tol=1e-14,
+        )
+    elif complete:
+        complete = int(rows[-1]["step"]) == int(overrides.get("pyfluid.max_step", "3"))
+    if not complete:
         raise RuntimeError(f"{name} has an incomplete scalar history")
     constraint_fields = CONSTRAINT_FIELDS \
         if require_bh_exterior_constraints else CONSTRAINT_FIELDS[:-3]
@@ -1300,6 +1467,11 @@ def run_case(
     c2p_fallbacks, atmosphere_resets = (
         tuple(int(value) for value in recovery[-1]) if recovery else (-1, -1)
     )
+    interior_recovery = INTERIOR_RECOVERY.findall(completed.stdout)
+    interior_bounds, interior_resets = (
+        tuple(int(value) for value in interior_recovery[-1])
+        if interior_recovery else (-1, -1)
+    )
     if c2p_fallbacks != 0 or atmosphere_resets != 0:
         raise RuntimeError(
             f"{name} used C2P fallback/reset: {c2p_fallbacks}/{atmosphere_resets}"
@@ -1309,6 +1481,7 @@ def run_case(
         "case": name,
         "status": "PASS",
         "steps": int(final["step"]),
+        "time": float(final["time"]),
         "hamiltonian_l2": float(final["z4c_hamiltonian_l2"]),
         "hamiltonian_linf": float(final["z4c_hamiltonian_linf"]),
         "momentum_linf": float(final["z4c_momentum_linf"]),
@@ -1328,8 +1501,213 @@ def run_case(
         "symmetry_gap_ratio": math.nan,
         "c2p_fallbacks": c2p_fallbacks,
         "atmosphere_resets": atmosphere_resets,
+        "interior_bounds": interior_bounds,
+        "interior_resets": interior_resets,
         "run_dir": repo_relative(run_dir),
     }, scalar
+
+
+def validate_filled_evolution(
+    *, ranks: int, timeout: int | None,
+    outer_boundary: str = "sommerfeld",
+    name_prefix: str = "kerr_schild_filled_moving",
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Exercise the live gauge past the frozen-gauge metric failure time.
+
+    This is a short robustness check, not a long-time accuracy claim. The
+    intentionally constraint-violating fill and exact Kerr exterior are the
+    same for both integrators; fluid reconstruction must not hide bad geometry.
+    """
+    results, scalars = [], []
+    for timestep in ("ssprk3", "rk4"):
+        name = f"{name_prefix}_{timestep}"
+        row, scalar = run_case(
+            name,
+            {
+                "spacetime.lapse_gauge": "one_plus_log",
+                "spacetime.shift_gauge": "gamma_driver",
+                "spacetime.ko_dissipation": "0.1",
+                "spacetime.outer_boundary": outer_boundary,
+                "pyfluid.bc": "diode",
+                "pyfluid.cfl": "0.9",
+                "pyfluid.recon": "mp5",
+                "pyfluid.riemann": "llf",
+                "pyfluid.timestep": timestep,
+                "pyfluid.max_step": "100",
+                "pyfluid.final_time": "1.2",
+                "pyfluid.plot_int": "-1",
+                "pyfluid.scalar_diagnostics": "standard,constraints",
+                "pyfluid.debug_poison": "1",
+                "pyfluid.debug_check_finite": "1",
+            },
+            ranks=ranks, timeout=timeout, expected_final_time=1.2,
+        )
+        if row["interior_bounds"] != 0 or row["interior_resets"] != 0:
+            raise RuntimeError(f"{name}: unexpected interior intervention")
+        history = read_tsv(RUN_ROOT / name / "scalars.tsv", require_complete=True)
+        # Baryon mass has a valid discrete ledger in evolving geometry; the
+        # fluid-only energy does not. Open boundaries do not waive mass closure.
+        if any(float(state["external_mass_budget_valid"]) != 1.0 for state in history):
+            raise RuntimeError(f"{name}: missing baryon mass ledger")
+        failures = check_external_conservation(history, energy=False)
+        if failures:
+            raise RuntimeError(f"{name}: {'; '.join(failures)}")
+        row["external_mass_rel_error"] = max(
+            abs(float(state["external_mass_rel_error"])) for state in history
+        )
+        results.append(row)
+        scalars.append(scalar)
+    return results, scalars
+
+
+def validate_excision_amr_subcycling(
+    *, ranks: int, timeout: int | None,
+    base_input: Path = EXCISION_INPUT,
+    name: str = "kerr_schild_fixed_excision_amr_remake_subcycling",
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Exercise excision across hierarchy remaking, reflux, and subcycling."""
+    row, scalar = run_case(
+        name,
+        {
+            "amr.max_level": "1",
+            "amr.ref_ratio": "2",
+            "amr.initial_refine": "box",
+            "amr.initial_refine_levels": "1",
+            "amr.initial_refine_fixed_levels": "0",
+            "amr.initial_refine_box_lo": "-5.0 -5.0 -5.0",
+            "amr.initial_refine_box_hi": "5.0 5.0 5.0",
+            "amr.regrid_mode": "synchronized",
+            "amr.regrid_int": "1",
+            "amr.n_error_buf": "1",
+            "amr.total_cell_budget": "220000",
+            "amr.level_cell_budget": "180000",
+            "horizon.find_int": "1",
+            "horizon.refine_band_cells": "2.0",
+            "pyfluid.subcycling": "on",
+            "pyfluid.subcycling_steps": "spatial",
+            "pyfluid.max_step": "3",
+            "pyfluid.plot_int": "-1",
+        },
+        ranks=ranks,
+        timeout=timeout,
+        base_input=base_input,
+    )
+    run_dir = RUN_ROOT / name
+    scalar_rows = read_tsv(run_dir / "scalars.tsv", require_complete=True)
+    amr_rows = read_tsv(run_dir / "amr_levels.tsv", require_complete=True)
+    final_scalar = scalar_rows[-1]
+    if int(float(final_scalar["amr_active_finest_level"])) != 1:
+        raise RuntimeError(f"{name} did not retain its subcycled fine level")
+    if len(amr_rows) != 4 \
+            or int(float(amr_rows[0]["cells_L1"])) <= int(
+                float(amr_rows[-1]["cells_L1"])
+            ):
+        raise RuntimeError(f"{name} did not exercise a fine-level remake")
+    mass_error = abs(float(final_scalar["external_mass_rel_error"]))
+    energy_error = abs(float(final_scalar["external_energy_rel_error"]))
+    energy_valid = int(final_scalar["external_budget_valid"]) != 0
+    if mass_error > 1.0e-12 or (energy_valid and energy_error > 1.0e-3):
+        raise RuntimeError(
+            f"{name} exterior budget failed: mass={mass_error:.3e}, "
+            f"energy={energy_error:.3e}"
+        )
+    if row["interior_bounds"] != 0 or row["interior_resets"] != 0:
+        raise RuntimeError(
+            f"{name} modified inactive matter: "
+            f"bounds={row['interior_bounds']}, resets={row['interior_resets']}"
+        )
+    row["external_mass_rel_error"] = mass_error
+    row["external_energy_rel_error"] = energy_error
+    row["initial_fine_cells"] = int(float(amr_rows[0]["cells_L1"]))
+    row["final_fine_cells"] = int(float(amr_rows[-1]["cells_L1"]))
+    return row, scalar
+
+
+def validate_excision_off_cadence_restart(
+    *, ranks: int, timeout: int | None,
+    base_input: Path = EXCISION_INPUT,
+    name: str = "kerr_schild_fixed_excision_off_cadence_restart",
+) -> tuple[dict[str, object], dict[str, object]]:
+    """A checkpoint between horizon-search steps still needs startup scalars."""
+    common = {
+        "horizon.find_int": "4",
+        "pyfluid.plot_int": "-1",
+        "pyfluid.checkpoint_int": "1",
+    }
+    run_case(
+        name,
+        {**common, "pyfluid.max_step": "1"},
+        ranks=ranks,
+        timeout=timeout,
+        base_input=base_input,
+    )
+    run_dir = RUN_ROOT / name
+    checkpoint = run_dir / "checkpoints/chk00001"
+    if not (checkpoint / "Header").is_file():
+        raise RuntimeError(f"{name} did not write its off-cadence checkpoint")
+    row, scalar = run_case(
+        name,
+        {
+            **common,
+            "pyfluid.restart_file": repo_relative(checkpoint),
+            "pyfluid.max_step": "2",
+        },
+        ranks=ranks,
+        timeout=timeout,
+        base_input=base_input,
+        keep_existing=True,
+    )
+    horizons = read_tsv(run_dir / "apparent_horizon.tsv", require_complete=True)
+    if not any(int(record["step"]) == 1 for record in horizons):
+        raise RuntimeError(f"{name} did not refresh its horizon on restart")
+    scalars = read_tsv(run_dir / "scalars.tsv", require_complete=True)
+    if [int(record["step"]) for record in scalars] != [0, 1, 2]:
+        raise RuntimeError(f"{name} duplicated or lost its scalar history")
+    rejected_input = materialize_run_input(
+        run_dir / "run.in", run_dir / "changed_cut.in",
+        {"spacetime.black_hole_fill_radius": "0.7",
+         "pyfluid.output_dir": repo_relative(run_dir / "changed_cut_rejected")},
+    )
+    rejected = run_amrex(dim=3, input_path=rejected_input, ranks=ranks, timeout=timeout)
+    (run_dir / "changed_cut.log").write_text(rejected.stdout)
+    if rejected.returncode == 0 or (
+        "checkpoint metadata mismatch for 'spacetime_black_hole_fill_radius'"
+        not in rejected.stdout
+    ):
+        raise RuntimeError(f"{name} accepted a changed excision worldtube on restart")
+    return row, scalar
+
+
+def validate_coupled_excision(
+    *, ranks: int, timeout: int | None, magnetic: bool = False,
+) -> tuple[dict[str, object], dict[str, object]]:
+    name = "kerr_schild_coupled_excision_rmhd" if magnetic else "kerr_schild_coupled_excision_rhd"
+    overrides = {"pyfluid.max_step": "4"}
+    if magnetic:
+        overrides.update({
+            "pyfluid.physics": "rmhd", "pyfluid.ct": "on",
+            # The analytic face-field initializer supplies constant
+            # densitized B, unlike constant physical B on a curved slice.
+            "pyfluid.ic": "sod_plane",
+            "pyfluid.shock_nx": "0", "pyfluid.shock_ny": "0", "pyfluid.shock_nz": "1",
+            "pyfluid.rho_left": "1e-4", "pyfluid.rho_right": "1e-4",
+            "pyfluid.pressure_left": "1e-6", "pyfluid.pressure_right": "1e-6",
+            "pyfluid.b3_left": "1e-6", "pyfluid.b3_right": "1e-6",
+            "pyfluid.b1_0": "0", "pyfluid.b2_0": "0", "pyfluid.b3_0": "1e-6",
+        })
+    row, scalar = run_case(name, overrides, ranks=ranks, timeout=timeout,
+        base_input=COUPLED_EXCISION_INPUT)
+    if scalar["external_mass_budget_valid"] != 1 or scalar["external_budget_valid"] != 0:
+        raise RuntimeError(f"{name} did not distinguish baryon and geometric-energy budgets")
+    if float(scalar["external_mass_rel_error"]) > 1e-12:
+        raise RuntimeError(f"{name} failed its exterior baryon balance")
+    rows = read_tsv(RUN_ROOT / name / "scalars.tsv", require_complete=True)
+    if magnetic:
+        for key in ("divb_l1", "divb_linf"):
+            initial = float(rows[0][key])
+            if max(abs(float(record[key]) - initial) for record in rows) > 1e-16:
+                raise RuntimeError(f"{name} did not preserve its initial {key}")
+    return row, scalar
 
 
 def horizon_endpoint_metrics(name: str) -> tuple[float, float, float]:
@@ -1404,6 +1782,7 @@ def validate_static_trumpet(
         {
             "initial_data.output_file": repo_relative(physical_id),
             "horizon.enabled": "0",
+            "spacetime.black_hole_matter": "evolve",
             "pyfluid.max_step": "1",
             "pyfluid.plot_int": "-1",
         },
@@ -1421,6 +1800,7 @@ def validate_static_trumpet(
             "amr.max_grid_size": "12",
             "amr.blocking_factor": "4",
             "horizon.enabled": "0",
+            "spacetime.black_hole_matter": "evolve",
             "pyfluid.max_step": "1",
             "pyfluid.plot_int": "-1",
         },
@@ -1438,6 +1818,7 @@ def validate_static_trumpet(
             "pyfluid.bc_ylo": "symmetry",
             "pyfluid.bc_zlo": "symmetry",
             "horizon.enabled": "0",
+            "spacetime.black_hole_matter": "evolve",
             "pyfluid.max_step": "1",
             "pyfluid.plot_int": "-1",
         },
@@ -1469,6 +1850,7 @@ def validate_static_trumpet_rejection(
             "pyfluid.run_name": name,
             "pyfluid.output_dir": repo_relative(run_dir),
             "horizon.enabled": "0",
+            "spacetime.black_hole_matter": "evolve",
             "pyfluid.max_step": "1",
             "pyfluid.plot_int": "-1",
             **overrides,
@@ -1564,10 +1946,10 @@ def validate_negative_reflection(*, ranks: int, timeout: int | None) -> dict[str
     }
 
 
-def validate_unimplemented_excision(
+def validate_evolved_excision_inflow_rejection(
     *, ranks: int, timeout: int | None
 ) -> dict[str, object]:
-    name = "kerr_schild_excision_unimplemented"
+    name = "kerr_schild_evolved_excision_incoming_gauge_rejected"
     run_dir = RUN_ROOT / name
     run_dir.mkdir(parents=True, exist_ok=True)
     input_path = materialize_run_input(
@@ -1577,7 +1959,8 @@ def validate_unimplemented_excision(
             "pyfluid.run_name": name,
             "pyfluid.output_dir": repo_relative(run_dir),
             "spacetime.black_hole_interior": "excision",
-            "spacetime.black_hole_fill_radius": "-1.0",
+            "spacetime.black_hole_fill_radius": "1.0",
+            "spacetime.black_hole_matter": "excision",
             "pyfluid.max_step": "1",
             "pyfluid.plot_int": "-1",
         },
@@ -1589,9 +1972,9 @@ def validate_unimplemented_excision(
         timeout=timeout,
     )
     (run_dir / "run.log").write_text(completed.stdout)
-    expected = "Kerr-Schild excision is a reserved"
+    expected = "spacetime excision has an incoming physical or gauge mode"
     if completed.returncode == 0 or expected not in completed.stdout:
-        raise RuntimeError("unimplemented Kerr excision did not fail honestly")
+        raise RuntimeError("evolved-Z4c excision accepted an incoming boundary mode")
     return {
         "case": name,
         "status": "PASS",
@@ -1719,6 +2102,14 @@ def main() -> int:
         )
     )
     validate_apparent_horizon_core()
+    validate_excision_stencils(ranks=args.ranks)
+    absent_horizon, absent_horizon_scalar = (
+        validate_armed_apparent_horizon_absence(
+            ranks=args.ranks, timeout=args.timeout
+        )
+    )
+    results.append(absent_horizon)
+    scalar_rows.append(absent_horizon_scalar)
     horizon, horizon_scalar = validate_apparent_horizon_run(
         ranks=args.ranks, timeout=args.timeout
     )
@@ -1806,6 +2197,52 @@ def main() -> int:
     )
     results.append(fixed)
     scalar_rows.append(fixed_scalar)
+
+    excision, excision_scalar = run_case(
+        "kerr_schild_fixed_excision",
+        {
+            "pyfluid.max_step": "3",
+            "pyfluid.plot_int": "-1",
+        },
+        ranks=args.ranks,
+        timeout=args.timeout,
+        base_input=EXCISION_INPUT,
+    )
+    results.append(excision)
+    scalar_rows.append(excision_scalar)
+
+    excision_amr, excision_amr_scalar = (
+        validate_excision_amr_subcycling(
+            ranks=args.ranks, timeout=args.timeout
+        )
+    )
+    results.append(excision_amr)
+    scalar_rows.append(excision_amr_scalar)
+
+    excision_restart, excision_restart_scalar = (
+        validate_excision_off_cadence_restart(
+            ranks=args.ranks, timeout=args.timeout
+        )
+    )
+    results.append(excision_restart)
+    scalar_rows.append(excision_restart_scalar)
+
+    for magnetic in (False, True):
+        coupled, coupled_scalar = validate_coupled_excision(
+            ranks=args.ranks, timeout=args.timeout, magnetic=magnetic,
+        )
+        results.append(coupled)
+        scalar_rows.append(coupled_scalar)
+    for validator, name in (
+        (validate_excision_amr_subcycling, "kerr_schild_coupled_excision_amr"),
+        (validate_excision_off_cadence_restart, "kerr_schild_coupled_excision_restart"),
+    ):
+        coupled, coupled_scalar = validator(
+            ranks=args.ranks, timeout=args.timeout,
+            base_input=COUPLED_EXCISION_INPUT, name=name,
+        )
+        results.append(coupled)
+        scalar_rows.append(coupled_scalar)
 
     moving_puncture, moving_puncture_scalar = run_case(
         "kerr_schild_moving_puncture_step16",
@@ -1971,7 +2408,9 @@ def main() -> int:
         validate_negative_reflection(ranks=args.ranks, timeout=args.timeout)
     )
     results.append(
-        validate_unimplemented_excision(ranks=args.ranks, timeout=args.timeout)
+        validate_evolved_excision_inflow_rejection(
+            ranks=args.ranks, timeout=args.timeout
+        )
     )
     results.append(
         validate_incompatible_physical_id(
@@ -1985,6 +2424,7 @@ def main() -> int:
         "case",
         "status",
         "steps",
+        "time",
         "hamiltonian_l2",
         "hamiltonian_linf",
         "momentum_linf",

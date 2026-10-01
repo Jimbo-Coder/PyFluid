@@ -12,6 +12,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 inline amrex::Real count_mask_transition(
    amrex::iMultiFab const& old_mask,
    amrex::iMultiFab const& new_mask,
@@ -20,7 +22,7 @@ inline amrex::Real count_mask_transition(
 )
 {
    amrex::MultiFab flags(old_mask.boxArray(), old_mask.DistributionMap(), 1, 0);
-   flags.setVal(0.0);
+   flags.setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -33,7 +35,7 @@ inline amrex::Real count_mask_transition(
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const bool old_matches = old_value == 0 ? old_solid(i, j, k, 0) == 0 : old_solid(i, j, k, 0) != 0;
          const bool new_matches = new_value == 0 ? new_solid(i, j, k, 0) == 0 : new_solid(i, j, k, 0) != 0;
-         out(i, j, k, 0) = old_matches && new_matches ? 1.0 : 0.0;
+         out(i, j, k, 0) = old_matches && new_matches ? 1.0_rt : 0.0_rt;
       });
    }
    }
@@ -49,10 +51,10 @@ inline amrex::Real count_translated_box_receivers(
    const int axis = solid_translation_axis(cfg);
    const int sign = solid_translation_sign(cfg);
    if (axis < 0 || sign == 0) {
-      return 0.0;
+      return 0.0_rt;
    }
    amrex::MultiFab flags(old_mask.boxArray(), old_mask.DistributionMap(), 1, 0);
-   flags.setVal(0.0);
+   flags.setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -100,7 +102,7 @@ inline amrex::Real count_translated_box_receivers(
 #endif
          const bool source_was_fluid = old_solid(si, sj, sk, 0) == 0;
          const bool source_is_solid = new_solid(si, sj, sk, 0) != 0;
-         out(i, j, k, 0) = source_was_fluid && source_is_solid ? 1.0 : 0.0;
+         out(i, j, k, 0) = source_was_fluid && source_is_solid ? 1.0_rt : 0.0_rt;
       });
    }
    }
@@ -124,18 +126,18 @@ inline void conservative_translate_box_mask_update(
    }
 
    const amrex::Real newly_uncovered = count_mask_transition(old_mask, new_mask, 1, 0);
-   if (newly_uncovered > 0.0) {
+   if (newly_uncovered > 0.0_rt) {
       amrex::Abort(
          "translated box uncovered fluid cells. Internal translating solids need swept-volume/cut-cell support "
          "before they can conserve mass, momentum, and energy."
       );
    }
    const amrex::Real newly_covered = count_mask_transition(old_mask, new_mask, 0, 1);
-   if (newly_covered <= 0.0) {
+   if (newly_covered <= 0.0_rt) {
       return;
    }
    const amrex::Real receivers = count_translated_box_receivers(old_mask, new_mask, cfg);
-   if (receivers + 0.5 < newly_covered) {
+   if (receivers + 0.5_rt < newly_covered) {
       amrex::Abort(
          "translated box swept fluid cells without a receiving fluid cell in the direction of motion. "
          "Use a smaller timestep or keep the piston away from the outflow boundary."
@@ -223,7 +225,7 @@ inline amrex::Real outward_fluid_shell_weight_sum(
    const auto fhi = amrex::ubound(fabbox);
    const auto dlo = amrex::lbound(domain);
    const auto dhi = amrex::ubound(domain);
-   amrex::Real sum = 0.0;
+   amrex::Real sum = 0.0_rt;
    for (int ox = -radius; ox <= radius; ++ox) {
 #if (AMREX_SPACEDIM >= 2)
    for (int oy = -radius; oy <= radius; ++oy) {
@@ -275,15 +277,15 @@ inline amrex::Real outward_fluid_shell_weight_sum(
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real vy = static_cast<amrex::Real>(oy) * dx[1];
 #else
-         const amrex::Real vy = 0.0;
+         const amrex::Real vy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real vz = static_cast<amrex::Real>(oz) * dx[2];
 #else
-         const amrex::Real vz = 0.0;
+         const amrex::Real vz = 0.0_rt;
 #endif
          const amrex::Real projection = vx * nx + vy * ny + vz * nz;
-         if (projection > 0.0) {
+         if (projection > 0.0_rt) {
             const amrex::Real dist2 = squared_norm(StateVector3{vx, vy, vz});
             sum += projection / amrex::max(dist2, dx[0] * dx[0]);
          }
@@ -374,15 +376,15 @@ inline void distribute_to_outward_fluid_shell(
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real vy = static_cast<amrex::Real>(oy) * dx[1];
 #else
-         const amrex::Real vy = 0.0;
+         const amrex::Real vy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real vz = static_cast<amrex::Real>(oz) * dx[2];
 #else
-         const amrex::Real vz = 0.0;
+         const amrex::Real vz = 0.0_rt;
 #endif
          const amrex::Real projection = vx * nx + vy * ny + vz * nz;
-         if (projection > 0.0) {
+         if (projection > 0.0_rt) {
             const amrex::Real dist2 = squared_norm(StateVector3{vx, vy, vz});
             const amrex::Real weight = projection / amrex::max(dist2, dx[0] * dx[0]) * inv_weight_sum;
             for (int n = 0; n < ncomp; ++n) {
@@ -475,15 +477,15 @@ inline void fill_from_outward_fluid_shell(
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real vy = static_cast<amrex::Real>(oy) * dx[1];
 #else
-         const amrex::Real vy = 0.0;
+         const amrex::Real vy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real vz = static_cast<amrex::Real>(oz) * dx[2];
 #else
-         const amrex::Real vz = 0.0;
+         const amrex::Real vz = 0.0_rt;
 #endif
 	         const amrex::Real projection = vx * nx + vy * ny + vz * nz;
-	         if (projection > 0.0) {
+	         if (projection > 0.0_rt) {
 	            const amrex::Real dist2 = squared_norm(StateVector3{vx, vy, vz});
 	            const amrex::Real weight = projection / amrex::max(dist2, dx[0] * dx[0]) * inv_weight_sum;
 	            for (int n = 0; n < ncomp; ++n) {
@@ -522,13 +524,13 @@ inline void conservative_pulse_solid_mask_update(
    const amrex::Real changed =
       count_mask_transition(old_mask, new_mask, 0, 1)
       + count_mask_transition(old_mask, new_mask, 1, 0);
-   if (changed <= 0.0) {
+   if (changed <= 0.0_rt) {
       return;
    }
 
    const int ncomp = state.nComp();
    amrex::MultiFab delta(state.boxArray(), state.DistributionMap(), ncomp, SolidMotionSearchRadius);
-   delta.setVal(0.0);
+   delta.setVal(0.0_rt);
 
    const amrex::Box domain = geom.Domain();
    const auto problo = geom.ProbLoArray();
@@ -550,25 +552,25 @@ inline void conservative_pulse_solid_mask_update(
                if (old_solid(i, j, k, 0) == new_solid(i, j, k, 0)) {
                   continue;
                }
-               const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+               const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-               const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+               const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-               const amrex::Real y = 0.0;
+               const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-               const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+               const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-               const amrex::Real z = 0.0;
+               const amrex::Real z = 0.0_rt;
 #endif
-	               amrex::Real nx = 0.0;
-	               amrex::Real ny = 0.0;
-	               amrex::Real nz = 0.0;
+	               amrex::Real nx = 0.0_rt;
+	               amrex::Real ny = 0.0_rt;
+	               amrex::Real nz = 0.0_rt;
 	               params.normal_at(new_time, x, y, z, dx, nx, ny, nz);
 
                if (old_solid(i, j, k, 0) == 0 && new_solid(i, j, k, 0) != 0) {
                   int receiver_radius = 0;
-                  amrex::Real weight_sum = 0.0;
+                  amrex::Real weight_sum = 0.0_rt;
                   for (int radius = 1; radius <= SolidMotionSearchRadius; ++radius) {
                      weight_sum = outward_fluid_shell_weight_sum(
                         old_solid,
@@ -585,7 +587,7 @@ inline void conservative_pulse_solid_mask_update(
                         nz,
                         dx
                      );
-                     if (weight_sum > 0.0) {
+                     if (weight_sum > 0.0_rt) {
                         receiver_radius = radius;
                         break;
                      }
@@ -612,12 +614,12 @@ inline void conservative_pulse_solid_mask_update(
                      ny,
                      nz,
                      dx,
-                     1.0 / weight_sum,
+                     1.0_rt / weight_sum,
                      ncomp
                   );
                } else {
                   int donor_radius = 0;
-                  amrex::Real weight_sum = 0.0;
+                  amrex::Real weight_sum = 0.0_rt;
                   for (int radius = 1; radius <= SolidMotionSearchRadius; ++radius) {
                      weight_sum = outward_fluid_shell_weight_sum(
                         old_solid,
@@ -634,7 +636,7 @@ inline void conservative_pulse_solid_mask_update(
                         nz,
                         dx
                      );
-                     if (weight_sum > 0.0) {
+                     if (weight_sum > 0.0_rt) {
                         donor_radius = radius;
                         break;
                      }
@@ -661,7 +663,7 @@ inline void conservative_pulse_solid_mask_update(
                      ny,
                      nz,
                      dx,
-                     1.0 / weight_sum,
+                     1.0_rt / weight_sum,
                      ncomp
                   );
                }
@@ -686,7 +688,7 @@ inline void conservative_pulse_solid_mask_update(
                const bool became_solid = old_solid(i, j, k, 0) == 0 && new_solid(i, j, k, 0) != 0;
                for (int n = 0; n < ncomp; ++n) {
                   if (became_fluid || became_solid) {
-                     s(i, j, k, n) = 0.0;
+                     s(i, j, k, n) = 0.0_rt;
                   }
                   s(i, j, k, n) += d(i, j, k, n);
                }
@@ -715,12 +717,12 @@ inline amrex::Real outward_fluid_fraction_shell_weight_sum(
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx
 )
 {
-   constexpr amrex::Real eps = 1.0e-14;
+   constexpr amrex::Real eps = 1.0e-14_rt;
    const auto flo = amrex::lbound(fabbox);
    const auto fhi = amrex::ubound(fabbox);
    const auto dlo = amrex::lbound(domain);
    const auto dhi = amrex::ubound(domain);
-   amrex::Real sum = 0.0;
+   amrex::Real sum = 0.0_rt;
    for (int ox = -radius; ox <= radius; ++ox) {
 #if (AMREX_SPACEDIM >= 2)
    for (int oy = -radius; oy <= radius; ++oy) {
@@ -768,15 +770,15 @@ inline amrex::Real outward_fluid_fraction_shell_weight_sum(
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real vy = static_cast<amrex::Real>(oy) * dx[1];
 #else
-         const amrex::Real vy = 0.0;
+         const amrex::Real vy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real vz = static_cast<amrex::Real>(oz) * dx[2];
 #else
-         const amrex::Real vz = 0.0;
+         const amrex::Real vz = 0.0_rt;
 #endif
          const amrex::Real projection = vx * nx + vy * ny + vz * nz;
-         if (projection > 0.0) {
+         if (projection > 0.0_rt) {
             const amrex::Real dist2 = squared_norm(StateVector3{vx, vy, vz});
             sum += projection / amrex::max(dist2, dx[0] * dx[0]);
          }
@@ -817,7 +819,7 @@ inline void distribute_fraction_to_outward_fluid_shell(
    int ncomp
 )
 {
-   constexpr amrex::Real eps = 1.0e-14;
+   constexpr amrex::Real eps = 1.0e-14_rt;
    const auto flo = amrex::lbound(fabbox);
    const auto fhi = amrex::ubound(fabbox);
    const auto dlo = amrex::lbound(domain);
@@ -869,15 +871,15 @@ inline void distribute_fraction_to_outward_fluid_shell(
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real vy = static_cast<amrex::Real>(oy) * dx[1];
 #else
-         const amrex::Real vy = 0.0;
+         const amrex::Real vy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real vz = static_cast<amrex::Real>(oz) * dx[2];
 #else
-         const amrex::Real vz = 0.0;
+         const amrex::Real vz = 0.0_rt;
 #endif
          const amrex::Real projection = vx * nx + vy * ny + vz * nz;
-         if (projection > 0.0) {
+         if (projection > 0.0_rt) {
             const amrex::Real dist2 = squared_norm(StateVector3{vx, vy, vz});
             const amrex::Real weight = projection / amrex::max(dist2, dx[0] * dx[0]) * inv_weight_sum;
             for (int n = 0; n < ncomp; ++n) {
@@ -922,7 +924,7 @@ inline void fill_fraction_from_outward_fluid_shell(
    int ncomp
 )
 {
-   constexpr amrex::Real eps = 1.0e-14;
+   constexpr amrex::Real eps = 1.0e-14_rt;
    const auto flo = amrex::lbound(fabbox);
    const auto fhi = amrex::ubound(fabbox);
    const auto dlo = amrex::lbound(domain);
@@ -974,15 +976,15 @@ inline void fill_fraction_from_outward_fluid_shell(
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real vy = static_cast<amrex::Real>(oy) * dx[1];
 #else
-         const amrex::Real vy = 0.0;
+         const amrex::Real vy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real vz = static_cast<amrex::Real>(oz) * dx[2];
 #else
-         const amrex::Real vz = 0.0;
+         const amrex::Real vz = 0.0_rt;
 #endif
          const amrex::Real projection = vx * nx + vy * ny + vz * nz;
-         if (projection > 0.0) {
+         if (projection > 0.0_rt) {
             const amrex::Real dist2 = squared_norm(StateVector3{vx, vy, vz});
             const amrex::Real weight = projection / amrex::max(dist2, dx[0] * dx[0]) * inv_weight_sum;
             for (int n = 0; n < ncomp; ++n) {
@@ -1019,10 +1021,10 @@ inline void conservative_pulse_solid_volume_fraction_update(
       return;
    }
 
-   constexpr amrex::Real eps = 1.0e-14;
+   constexpr amrex::Real eps = 1.0e-14_rt;
    const int ncomp = state.nComp();
    amrex::MultiFab delta(state.boxArray(), state.DistributionMap(), ncomp, SolidMotionSearchRadius);
-   delta.setVal(0.0);
+   delta.setVal(0.0_rt);
 
    const amrex::Box domain = geom.Domain();
    const auto problo = geom.ProbLoArray();
@@ -1047,25 +1049,25 @@ inline void conservative_pulse_solid_volume_fraction_update(
                if (std::abs(change) <= eps) {
                   continue;
                }
-               const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+               const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-               const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+               const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-               const amrex::Real y = 0.0;
+               const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-               const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+               const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-               const amrex::Real z = 0.0;
+               const amrex::Real z = 0.0_rt;
 #endif
-               amrex::Real nx = 0.0;
-               amrex::Real ny = 0.0;
-               amrex::Real nz = 0.0;
+               amrex::Real nx = 0.0_rt;
+               amrex::Real ny = 0.0_rt;
+               amrex::Real nz = 0.0_rt;
                params.normal_at(new_time, x, y, z, dx, nx, ny, nz);
-               if (change < 0.0) {
+               if (change < 0.0_rt) {
                   const amrex::Real lost = -change;
                   int receiver_radius = 0;
-                  amrex::Real weight_sum = 0.0;
+                  amrex::Real weight_sum = 0.0_rt;
                   for (int radius = 1; radius <= SolidMotionSearchRadius; ++radius) {
                      weight_sum = outward_fluid_fraction_shell_weight_sum(
                         old_fraction,
@@ -1082,7 +1084,7 @@ inline void conservative_pulse_solid_volume_fraction_update(
                         nz,
                         dx
                      );
-                     if (weight_sum > 0.0) {
+                     if (weight_sum > 0.0_rt) {
                         receiver_radius = radius;
                         break;
                      }
@@ -1109,13 +1111,13 @@ inline void conservative_pulse_solid_volume_fraction_update(
                      ny,
                      nz,
                      dx,
-                     1.0 / weight_sum,
+                     1.0_rt / weight_sum,
                      lost,
                      ncomp
                   );
                } else {
                   int donor_radius = 0;
-                  amrex::Real weight_sum = 0.0;
+                  amrex::Real weight_sum = 0.0_rt;
                   for (int radius = 1; radius <= SolidMotionSearchRadius; ++radius) {
                      weight_sum = outward_fluid_fraction_shell_weight_sum(
                         old_fraction,
@@ -1132,7 +1134,7 @@ inline void conservative_pulse_solid_volume_fraction_update(
                         nz,
                         dx
                      );
-                     if (weight_sum > 0.0) {
+                     if (weight_sum > 0.0_rt) {
                         donor_radius = radius;
                         break;
                      }
@@ -1159,7 +1161,7 @@ inline void conservative_pulse_solid_volume_fraction_update(
                      ny,
                      nz,
                      dx,
-                     1.0 / weight_sum,
+                     1.0_rt / weight_sum,
                      change,
                      ncomp
                   );
@@ -1185,7 +1187,7 @@ inline void conservative_pulse_solid_volume_fraction_update(
                const amrex::Real new_alpha = new_fraction(i, j, k, 0);
                for (int n = 0; n < ncomp; ++n) {
                   const amrex::Real extensive = old_alpha * s(i, j, k, n) + d(i, j, k, n);
-                  s(i, j, k, n) = new_alpha > eps ? extensive / new_alpha : 0.0;
+                  s(i, j, k, n) = new_alpha > eps ? extensive / new_alpha : 0.0_rt;
                }
             }
          }

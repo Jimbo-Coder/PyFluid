@@ -9,10 +9,12 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct MeshAxisCellBounds {
-   amrex::Real lo = 0.0;
-   amrex::Real hi = 0.0;
-   amrex::Real width = 0.0;
+   amrex::Real lo = 0.0_rt;
+   amrex::Real hi = 0.0_rt;
+   amrex::Real width = 0.0_rt;
    int dir = -1;
    bool active = false;
 };
@@ -33,19 +35,19 @@ amrex::Real active_or_unit_width(amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> co
       return dx[2];
    }
 #endif
-   return 1.0;
+   return 1.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real mesh_default_coordinate_for_axis(int axis) noexcept
 {
    if (axis == MeshAxisR) {
-      return 1.0;
+      return 1.0_rt;
    }
    if (axis == MeshAxisTheta) {
       return constants::half_pi;
    }
-   return 0.0;
+   return 0.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -63,12 +65,12 @@ amrex::Real runtime_coordinate_for_axis(
 ) noexcept
 {
    if (mesh_axis(axes, 0) == target_axis) {
-      const amrex::Real offset = nodal0 ? 0.0 : 0.5;
+      const amrex::Real offset = nodal0 ? 0.0_rt : 0.5_rt;
       return problo[0] + (static_cast<amrex::Real>(i) + offset) * dx[0];
    }
 #if (AMREX_SPACEDIM >= 2)
    if (mesh_axis(axes, 1) == target_axis) {
-      const amrex::Real offset = nodal1 ? 0.0 : 0.5;
+      const amrex::Real offset = nodal1 ? 0.0_rt : 0.5_rt;
       return problo[1] + (static_cast<amrex::Real>(j) + offset) * dx[1];
    }
 #else
@@ -76,7 +78,7 @@ amrex::Real runtime_coordinate_for_axis(
 #endif
 #if (AMREX_SPACEDIM == 3)
    if (mesh_axis(axes, 2) == target_axis) {
-      const amrex::Real offset = nodal2 ? 0.0 : 0.5;
+      const amrex::Real offset = nodal2 ? 0.0_rt : 0.5_rt;
       return problo[2] + (static_cast<amrex::Real>(k) + offset) * dx[2];
    }
 #else
@@ -125,7 +127,7 @@ MeshAxisCellBounds runtime_axis_cell_bounds(
    const int dir = mesh_direction_for_axis(axes, target_axis);
    if (dir < 0) {
       const amrex::Real coordinate_value = mesh_default_coordinate_for_axis(target_axis);
-      return {coordinate_value, coordinate_value, 0.0, -1, false};
+      return {coordinate_value, coordinate_value, 0.0_rt, -1, false};
    }
    const amrex::Real lo = runtime_coordinate_for_axis(
       axes,
@@ -205,7 +207,7 @@ amrex::GpuArray<amrex::Real, 3> cartesian_to_mesh_coordinate_triplet(
 {
    if (coordinate == MeshCylindrical) {
       amrex::Real phi = std::atan2(x[1], x[0]);
-      if (phi < 0.0) {
+      if (phi < 0.0_rt) {
          phi += constants::two_pi;
       }
       return {cartesian_cylindrical_radius(x[0], x[1]), phi, x[2]};
@@ -213,12 +215,12 @@ amrex::GpuArray<amrex::Real, 3> cartesian_to_mesh_coordinate_triplet(
    if (coordinate == MeshSpherical) {
       const amrex::Real radius = cartesian_radius(x[0], x[1], x[2]);
       amrex::Real phi = std::atan2(x[1], x[0]);
-      if (phi < 0.0) {
+      if (phi < 0.0_rt) {
          phi += constants::two_pi;
       }
-      const amrex::Real theta = radius > 0.0
-         ? std::acos(amrex::max(-1.0, amrex::min(1.0, x[2] / radius)))
-         : 0.0;
+      const amrex::Real theta = radius > 0.0_rt
+         ? std::acos(amrex::max(-1.0_rt, amrex::min(1.0_rt, x[2] / radius)))
+         : 0.0_rt;
       return {radius, theta, phi};
    }
    return x;
@@ -265,7 +267,7 @@ amrex::Real mesh_width_for_axis(
       return dx[2];
    }
 #endif
-   return 1.0;
+   return 1.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -278,16 +280,16 @@ amrex::GpuArray<amrex::Real, 3> cartesian_cell_center(
 ) noexcept
 {
    return {
-      problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0],
+      problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0],
 #if (AMREX_SPACEDIM >= 2)
-      problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1],
+      problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1],
 #else
-      0.0,
+      0.0_rt,
 #endif
 #if (AMREX_SPACEDIM == 3)
-      problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2],
+      problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2],
 #else
-      0.0,
+      0.0_rt,
 #endif
    };
 }

@@ -26,12 +26,11 @@ from pyfluid.exact_solutions import (  # noqa: E402
 from exact_reference import cell_average_newtonian_hydro  # noqa: E402
 from plotfile_reader import latest_plotfile as discover_latest_plotfile
 from plot_amrex_1d_profile import parse_plot_header, read_level0_state_1d  # noqa: E402
-from validation_common import append_validation_history, next_numbered_path, read_scalar_rows, run_mpi, write_tsv  # noqa: E402
+from validation_common import append_validation_history, next_numbered_path, read_scalar_rows, run_amrex, write_tsv  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
 INPUT = ROOT / "pyfluid_amrex" / "inputs" / "sod_x_1d.in"
-EXECUTABLE = ROOT / "build" / "pyfluid_amrex" / "pyfluid_amrex_1d"
 RUN_ROOT = ROOT / "runs" / "current" / "sod_exact_validation"
 PLOT_DIR = ROOT / "plots" / "current" / "IC" / "sod_x"
 HISTORY = ROOT / "runs" / "current" / "validation_history.tsv"
@@ -147,6 +146,7 @@ def write_case_input(case: SodCase, args: argparse.Namespace) -> tuple[Path, Pat
       "pyfluid.scalar_int": "8",
       "pyfluid.plot_int": "100000",
       "pyfluid.checkpoint_int": "-1",
+      "pyfluid.physical_check_int": "1",
       "pyfluid.aux_gfs": "none",
       "pyfluid.aux_gf_int": "-1",
       "pyfluid.aux_gf_compute_int": "-1",
@@ -163,12 +163,13 @@ def write_case_input(case: SodCase, args: argparse.Namespace) -> tuple[Path, Pat
 
 def run_solver(case: SodCase, args: argparse.Namespace) -> tuple[int, str, Path]:
    input_path, run_dir = write_case_input(case, args)
-   completed = run_mpi(
-      EXECUTABLE,
-      [input_path],
+   completed = run_amrex(
+      dim=1,
+      input_path=input_path,
       ranks=args.ranks,
       timeout=args.timeout,
    )
+   (run_dir / "run.log").write_text(completed.stdout)
    return completed.returncode, completed.stdout, run_dir
 
 

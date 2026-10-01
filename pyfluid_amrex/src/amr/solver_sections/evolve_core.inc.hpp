@@ -145,10 +145,10 @@
       if (spacetime_state_.active()) {
          prepare_spacetime_coupling_range(
             spacetime_state_.state(), effective_lbase, finestLevel() + 1,
-            time, -1.0, 0
+            time, -1.0_rt, 0
          );
       }
-      project_relativistic_atmosphere_range<EOSMethod>(
+      project_relativistic_exterior_range<EOSMethod>(
          fluid_state_.state(), effective_lbase, finestLevel() + 1
       );
       // The base regrid owner seeded every new/remade fine old-time state
@@ -212,11 +212,11 @@
 #endif
    void evolve_impl(EvolutionOperations const& operations)
    {
-      amrex::Real time = 0.0;
-      amrex::Real dt = 0.0;
+      amrex::Real time = 0.0_rt;
+      amrex::Real dt = 0.0_rt;
       if (cfg_.restart_file.empty()) {
-         InitFromScratch(0.0);
-         clip_multipatch_initial_hierarchy(0.0);
+         InitFromScratch(0.0_rt);
+         clip_multipatch_initial_hierarchy(0.0_rt);
          materialize_configured_initial_data();
          if (!cfg_.initial_data_solve_only
              && !cfg_.initial_data_input_file.empty()
@@ -272,8 +272,47 @@
       (this->*operations.fill_boundaries)(fluid_state_.state(), time);
       fill_all_spacetime_boundaries(spacetime_state_.state(), time);
       const int start_step = level_steps_[0];
+      if (cfg_.spacetime_black_hole_matter != "evolve") {
+         // Initial scalar diagnostics may consume the horizon even when a
+         // restart step is off the normal search cadence.  The persisted
+         // surface is a seed, not a current-state diagnostic, so refresh it.
+         update_apparent_horizon(start_step, time, true);
+      }
+      if (physical_system_is_relativistic(physics_system_)) {
+         AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
+            spacetime_state_.active(),
+            "relativistic startup acceptance requires canonical spacetime fields"
+         );
+         prepare_spacetime_coupling_range(
+            spacetime_state_.state(), 0, finestLevel() + 1,
+            time, -1.0_rt, 0
+         );
+         // Average-down on restart or a prebuilt AMR hierarchy can change a
+         // covered coarse conserved state after the last accepted fine state
+         // was written. Reapply the same final relativistic acceptance used
+         // after runtime synchronization before CFL recovery sees that parent.
+         project_relativistic_exterior_range<EOSMethod>(
+            fluid_state_.state(), 0, finestLevel() + 1
+         );
+      }
       run_evolution_preflight(time);
       debug_check_state_all_levels("initial accepted state", start_step, time, true);
+      if (cfg_.initial_data_solve_only
+          && cfg_.restart_file.empty()
+          && cfg_.initial_data_perturbation != "none") {
+         // A solve-only perturbation intentionally produces a reusable,
+         // constraint-polished nonequilibrium ID artifact.  Normal evolution
+         // keeps its optional output artifact as the unperturbed equilibrium
+         // and applies the perturbation only to the live starting state.
+         apply_configured_initial_data_perturbation();
+         average_down_state();
+         reset_barotropic_energy_all_levels<NComp, EOSMethod>();
+         (this->*operations.fill_boundaries)(fluid_state_.state(), time);
+         run_evolution_preflight(time);
+         debug_check_state_all_levels(
+            "perturbed initial accepted state", start_step, time, true
+         );
+      }
       if (cfg_.initial_data_solve_only) {
          if (amrex::ParallelDescriptor::IOProcessor()) {
             std::filesystem::create_directories(cfg_.output_dir);
@@ -290,7 +329,8 @@
       if (!cfg_.initial_data_output_file.empty()) {
          write_physical_initial_data_artifact();
       }
-      if (cfg_.restart_file.empty()
+      if (!cfg_.initial_data_solve_only
+          && cfg_.restart_file.empty()
           && cfg_.initial_data_perturbation != "none") {
          // Reusable physical-ID artifacts contain the equilibrium.  The
          // perturbation is an evolution-start modifier, so apply it only
@@ -409,22 +449,21 @@
       if (cfg_.max_step < start_step) {
          amrex::Abort("pyfluid.max_step must be at least the checkpoint step when restarting");
       }
-      amrex::Real last_scalar_wall = amrex::second();
-      amrex::Real total_active_cell_updates = 0.0;
-      amrex::Real total_layout_cell_updates = 0.0;
-      amrex::Real last_scalar_active_cell_updates = 0.0;
-      amrex::Real last_scalar_layout_cell_updates = 0.0;
+      WallTime last_scalar_wall = amrex::second();
+      amrex::Real total_active_cell_updates = 0.0_rt;
+      amrex::Real total_layout_cell_updates = 0.0_rt;
+      amrex::Real last_scalar_active_cell_updates = 0.0_rt;
+      amrex::Real last_scalar_layout_cell_updates = 0.0_rt;
       amrex::Real last_scalar_sim_time = time;
       const bool stream_scalars = cfg_.scalar_output_mode == "stream";
       bool wrote_scalars = false;
-      cumulative_wall_work_ = 0.0;
-      latest_wall_power_ = 0.0;
+      cumulative_wall_work_ = 0.0_rt;
+      latest_wall_power_ = 0.0_rt;
       conservation_ledger_ = {};
       if (cfg_.restart_file.empty()) {
-         aligned_regrid_ticks_ = 0;
-         aligned_base_regrid_tick_ = 0;
+         regrid_lifecycle_.restore_clock({}, cfg_.regrid_int);
       }
-      aligned_regrid_due_ = false;
+      regrid_lifecycle_.clear_descendant_request();
       const TemporalCadence scalar_cadence{TemporalCadenceUnit::Steps, cfg_.scalar_int};
       const TemporalCadence plot_cadence{TemporalCadenceUnit::Steps, cfg_.plot_int};
       const TemporalCadence aux_cadence{TemporalCadenceUnit::Steps, cfg_.aux_gf_int};
@@ -485,10 +524,12 @@
          }
       };
 
-      update_apparent_horizon(start_step, time);
+      if (cfg_.spacetime_black_hole_matter == "evolve") {
+         update_apparent_horizon(start_step, time, true);
+      }
       auto initial = compute_current_scalars(
-         start_step, time, dt, 1.0, 1.0, 1.0, 1.0,
-         std::numeric_limits<amrex::Real>::quiet_NaN(), 0.0, 0.0, 0.0, {},
+         start_step, time, dt, 1.0_rt, 1.0_rt, 1.0_rt, 1.0_rt,
+         std::numeric_limits<amrex::Real>::quiet_NaN(), 0.0_rt, 0.0_rt, 0.0_rt, {},
          EOSMethod, scalar_selection
       );
       const bool emit_initial_history = stream_scalars
@@ -501,12 +542,12 @@
       validate_scalar_health(initial);
       wall_work_reference_energy_ = initial.energy;
       conservation_ledger_.reference = {initial.mass, initial.energy};
-      initial.energy_minus_wall_work = 0.0;
-      initial.wall_work_rel_error = 0.0;
-      initial.external_mass_residual = 0.0;
-      initial.external_energy_residual = 0.0;
-      initial.external_mass_rel_error = 0.0;
-      initial.external_energy_rel_error = 0.0;
+      initial.energy_minus_wall_work = 0.0_rt;
+      initial.wall_work_rel_error = 0.0_rt;
+      initial.external_mass_residual = 0.0_rt;
+      initial.external_energy_residual = 0.0_rt;
+      initial.external_mass_rel_error = 0.0_rt;
+      initial.external_energy_rel_error = 0.0_rt;
       RunConfig checkpoint_cfg = cfg_;
       if (!cfg_.checkpoint_dir.empty()) {
          checkpoint_cfg.output_dir = cfg_.checkpoint_dir;
@@ -527,10 +568,10 @@
          ? checkpoint_reference_max_rho_
          : initial.max_rho;
       initial.max_rho_rel_change = (initial.max_rho - max_rho0) / max_rho0;
-      initial.mass_rel_drift = amrex::Math::abs(initial.mass - mass0) / amrex::max(amrex::Math::abs(mass0), 1.0);
-      initial.energy_rel_drift = amrex::Math::abs(initial.energy - energy0) / amrex::max(amrex::Math::abs(energy0), 1.0);
-      initial.gravity_total_energy_rel_drift = 0.0;
-      initial.passive_mass_rel_drift = 0.0;
+      initial.mass_rel_drift = amrex::Math::abs(initial.mass - mass0) / amrex::max(amrex::Math::abs(mass0), 1.0_rt);
+      initial.energy_rel_drift = amrex::Math::abs(initial.energy - energy0) / amrex::max(amrex::Math::abs(energy0), 1.0_rt);
+      initial.gravity_total_energy_rel_drift = 0.0_rt;
+      initial.passive_mass_rel_drift = 0.0_rt;
       if (amrex::ParallelDescriptor::IOProcessor()) {
          if (emit_initial_history) {
             append_scalar_row(scalar_file, initial, scalar_selection);
@@ -565,23 +606,23 @@
             mass0,
             energy0,
             max_rho0,
-            aligned_regrid_ticks_,
-            aligned_base_regrid_tick_,
+            regrid_lifecycle_.clock().finest_steps,
+            regrid_lifecycle_.clock().last_base_regrid,
             cfg_.checkpoint_compression
          );
       }
 
-      const amrex::Real start_wall = amrex::second();
+      const WallTime start_wall = amrex::second();
       const amrex::Real start_sim_time = time;
       int current_step = start_step;
-      const bool has_final_time = cfg_.final_time > 0.0;
+      const bool has_final_time = cfg_.final_time > 0.0_rt;
       for (int step = start_step + 1; step <= cfg_.max_step; ++step) {
          if (has_final_time && time >= cfg_.final_time) {
             break;
          }
          refresh_solid_geometry_all_levels(time, true);
          reset_relativistic_recovery_events();
-         amrex::Real stage_start = profile_.begin();
+         WallTime stage_start = profile_.begin();
          dt = (this->*operations.compute_timestep)();
          profile_.end(ProfileStage::Timestep, stage_start);
          if (has_final_time) {
@@ -589,8 +630,8 @@
          }
          validate_timestep(dt, step, time);
          DiffusionStats diffusion;
-         amrex::Real active_cell_updates_this_step = 0.0;
-         amrex::Real layout_cell_updates_this_step = 0.0;
+         amrex::Real active_cell_updates_this_step = 0.0_rt;
+         amrex::Real layout_cell_updates_this_step = 0.0_rt;
          if (operations.subcycling) {
             diffusion = (this->*operations.advance_subcycled)(
                dt,
@@ -668,14 +709,19 @@
                if (spacetime_state_.evolves()) {
                   prepare_spacetime_coupling_range(
                      spacetime_state_.state(), 0, finestLevel() + 1,
-                     time + dt, -1.0, 0
+                     time + dt, -1.0_rt, 0
                   );
                }
                // CT owns the accepted magnetic field. Revalidate the final
                // conserved state only after its face field has been synced
                // back to cell centers; atmosphere projection preserves B and
                // records any last-resort reset.
-               project_relativistic_atmosphere_range<EOSMethod>(
+               debug_check_relativistic_stage_range(
+                  fluid_state_.state(), 0, finestLevel() + 1,
+                  "relativistic pre-projection synchronized hierarchy",
+                  time + dt
+               );
+               project_relativistic_exterior_range<EOSMethod>(
                   fluid_state_.state(), 0, finestLevel() + 1
                );
             }
@@ -707,12 +753,12 @@
          const bool will_regrid = should_regrid(step, reached_final_time);
 
          if (will_regrid) {
-            const amrex::Real regrid_start = profile_.begin();
+            const WallTime regrid_start = profile_.begin();
             const bool hierarchy_changed = operations.subcycling
                ? regrid_hierarchy_and_project<true, EOSMethod>(time, step, 0)
                : regrid_hierarchy_and_project<false, EOSMethod>(time, step, 0);
             if (cfg_.regrid_mode == "aligned" && cfg_.subcycling == "on") {
-               aligned_base_regrid_tick_ = aligned_regrid_ticks_;
+               regrid_lifecycle_.complete_base_regrid();
             }
             if (hierarchy_changed) {
                reset_barotropic_energy_all_levels<NComp, EOSMethod>();
@@ -734,28 +780,28 @@
          }
          report_relativistic_recovery_events(current_step, time);
          if (cfg_.debug_check_finite || accepted_physical_check_due(current_step, false)) {
-            const amrex::Real check_start = profile_.begin();
+            const WallTime check_start = profile_.begin();
             debug_check_state_all_levels("post-step accepted state", current_step, time);
             profile_.end(ProfileStage::Diagnostics, check_start);
          }
          if (should_refresh_mhd_aux_fields(step, write_aux_gfs)) {
-            const amrex::Real aux_start = profile_.begin();
+            const WallTime aux_start = profile_.begin();
             refresh_all_mhd_aux_fields_for_output();
             profile_.end(ProfileStage::Diagnostics, aux_start);
          }
          if (emit_scalars) {
-            const amrex::Real now = amrex::second();
-            const amrex::Real elapsed = now - last_scalar_wall;
-            const amrex::Real mcells_per_s = elapsed > 0.0
-               ? (total_active_cell_updates - last_scalar_active_cell_updates) / elapsed / 1.0e6
-               : 0.0;
-            const amrex::Real layout_mcells_per_s = elapsed > 0.0
-               ? (total_layout_cell_updates - last_scalar_layout_cell_updates) / elapsed / 1.0e6
-               : 0.0;
-            const amrex::Real sim_time_per_s = elapsed > 0.0
+            const WallTime now = amrex::second();
+            const amrex::Real elapsed = static_cast<amrex::Real>(now - last_scalar_wall);
+            const amrex::Real mcells_per_s = elapsed > 0.0_rt
+               ? (total_active_cell_updates - last_scalar_active_cell_updates) / elapsed / 1.0e6_rt
+               : 0.0_rt;
+            const amrex::Real layout_mcells_per_s = elapsed > 0.0_rt
+               ? (total_layout_cell_updates - last_scalar_layout_cell_updates) / elapsed / 1.0e6_rt
+               : 0.0_rt;
+            const amrex::Real sim_time_per_s = elapsed > 0.0_rt
                ? (time - last_scalar_sim_time) / elapsed
-               : 0.0;
-            const amrex::Real diagnostics_start = profile_.begin();
+               : 0.0_rt;
+            const WallTime diagnostics_start = profile_.begin();
             auto scalars = compute_current_scalars(
                step,
                time,
@@ -789,17 +835,17 @@
          }
 
          if (plot_cadence.should_record(step, reached_run_end)) {
-            const amrex::Real output_start = profile_.begin();
+            const WallTime output_start = profile_.begin();
             write_current_state_plotfile(step, time);
             profile_.end(ProfileStage::Output, output_start);
          }
          if (write_aux_gfs) {
-            const amrex::Real output_start = profile_.begin();
+            const WallTime output_start = profile_.begin();
             write_current_aux_gfs(step, time);
             profile_.end(ProfileStage::Output, output_start);
          }
          if (checkpoint_cadence.should_record(step, reached_run_end)) {
-            const amrex::Real output_start = profile_.begin();
+            const WallTime output_start = profile_.begin();
             write_checkpoint(
                fluid_state_.state(),
                level_steps_,
@@ -816,16 +862,16 @@
                mass0,
                energy0,
                max_rho0,
-               aligned_regrid_ticks_,
-               aligned_base_regrid_tick_,
+               regrid_lifecycle_.clock().finest_steps,
+               regrid_lifecycle_.clock().last_base_regrid,
                cfg_.checkpoint_compression
             );
             profile_.end(ProfileStage::Output, output_start);
          }
       }
 
-      const amrex::Real elapsed_wall = amrex::second() - start_wall;
-      amrex::Real max_elapsed_wall = elapsed_wall;
+      const WallTime elapsed_wall = amrex::second() - start_wall;
+      WallTime max_elapsed_wall = elapsed_wall;
       amrex::ParallelDescriptor::ReduceRealMax(max_elapsed_wall, amrex::ParallelDescriptor::IOProcessorNumber());
       const std::filesystem::path output_dir(cfg_.output_dir);
       profile_.write(output_dir, max_elapsed_wall);
@@ -840,9 +886,9 @@
             gravity_total_energy0,
             passive_mass0,
             max_rho0,
-            0.0,
-            0.0,
-            0.0,
+            0.0_rt,
+            0.0_rt,
+            0.0_rt,
             {},
             EOSMethod,
             scalar_selection
@@ -862,15 +908,16 @@
          amr_level_file.close();
          multipole_file.close();
          const int advanced_steps = current_step - start_step;
-         const amrex::Real average_mcells_s = max_elapsed_wall > 0.0
-            ? total_active_cell_updates / max_elapsed_wall / 1.0e6
-            : 0.0;
-         const amrex::Real average_layout_mcells_s = max_elapsed_wall > 0.0
-            ? total_layout_cell_updates / max_elapsed_wall / 1.0e6
-            : 0.0;
-         const amrex::Real average_sim_time_s = max_elapsed_wall > 0.0
-            ? (time - start_sim_time) / max_elapsed_wall
-            : 0.0;
+         const amrex::Real reported_elapsed = static_cast<amrex::Real>(max_elapsed_wall);
+         const amrex::Real average_mcells_s = reported_elapsed > 0.0_rt
+            ? total_active_cell_updates / reported_elapsed / 1.0e6_rt
+            : 0.0_rt;
+         const amrex::Real average_layout_mcells_s = reported_elapsed > 0.0_rt
+            ? total_layout_cell_updates / reported_elapsed / 1.0e6_rt
+            : 0.0_rt;
+         const amrex::Real average_sim_time_s = reported_elapsed > 0.0_rt
+            ? (time - start_sim_time) / reported_elapsed
+            : 0.0_rt;
          amrex::Print() << "PyFluid AMReX " << cfg_.physics << " complete: dim=" << AMREX_SPACEDIM
                         << " eos=" << cfg_.eos
                         << " recon=" << cfg_.recon
@@ -889,8 +936,8 @@
                         << " gravity=" << cfg_.gravity
                         << (gravity_enabled(cfg_) ? " gravity_coupling=" : "")
                         << (gravity_enabled(cfg_) ? cfg_.gravity_coupling : "")
-                        << (cfg_.min_feature_length > 0.0 ? " amr_min_feature_length=" : "")
-                        << (cfg_.min_feature_length > 0.0 ? std::to_string(cfg_.min_feature_length) : "")
+                        << (cfg_.min_feature_length > 0.0_rt ? " amr_min_feature_length=" : "")
+                        << (cfg_.min_feature_length > 0.0_rt ? std::to_string(cfg_.min_feature_length) : "")
                         << (is_mhd(cfg_) ? " ct=" : "")
                         << (is_mhd(cfg_) ? cfg_.ct : "")
                         << " cells=" << cell_count()
@@ -900,9 +947,9 @@
                         << " average=" << average_mcells_s << " Mcells/s"
                         << " layout_average=" << average_layout_mcells_s << " layout_Mcells/s"
                         << " sim_time_per_s=" << average_sim_time_s << "\n";
-         amrex::Print() << "AMR regrid attempts=" << regrid_attempt_count_
-                        << " noops=" << regrid_noop_count_
-                        << " modified_levels=" << regrid_modified_level_count_ << "\n";
+         amrex::Print() << "AMR regrid attempts=" << regrid_lifecycle_.statistics().attempts
+                        << " noops=" << regrid_lifecycle_.statistics().noops
+                        << " modified_levels=" << regrid_lifecycle_.statistics().modified_levels << "\n";
          print_relativistic_recovery_summary();
       }
    }
@@ -910,6 +957,6 @@
    RunConfig viscosity_diffusion_config() const
    {
       RunConfig diffusion_cfg = cfg_;
-      diffusion_cfg.resistivity = 0.0;
+      diffusion_cfg.resistivity = 0.0_rt;
       return diffusion_cfg;
    }

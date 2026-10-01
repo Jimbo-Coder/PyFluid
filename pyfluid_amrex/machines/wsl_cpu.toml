@@ -1,0 +1,28 @@
+name = "wsl_cpu"
+mpi_launcher = ["mpirun", "-np", "{ranks}"]
+# Avoid the observed Open MPI singleton startup delay on this WSL host.
+direct_one_rank = false
+default_ranks = 3
+environment = { OMP_NUM_THREADS = "2" }
+
+[run]
+work_dir = "{root}"
+
+[build]
+source_dir = "{root}/pyfluid_amrex"
+build_dir = "{root}/build/pyfluid_amrex-wsl-cpu"
+jobs = 6
+cmake_args = [
+  "-G", "Ninja",
+  "-DCMAKE_BUILD_TYPE=Release",
+  "-DCMAKE_CXX_COMPILER=g++",
+  "-DCMAKE_CXX_COMPILER_LAUNCHER=cmake;-E;env;CCACHE_DIR={root}/.ccache/pyfluid_amrex;ccache",
+  "-DAMReX_DIR={root}/.deps/amrex-mpi-lsolvers-hdf5/lib/cmake/AMReX",
+  "-DHDF5_PREFER_PARALLEL=ON",
+  "-DPYFLUID_AMREX_NATIVE=OFF",
+  "-DPYFLUID_AMREX_PRECISION=DOUBLE",
+]
+
+[submit]
+command = []
+header = ["#!/bin/sh"]

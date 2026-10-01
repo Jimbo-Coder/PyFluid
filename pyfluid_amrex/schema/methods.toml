@@ -68,7 +68,7 @@ pressure = false
 velocity = false
 magnetic = false
 spacetime = true
-density_floor_multiple = 10.0
+density_floor_multiple = 10000.0
 
 # Reconstruction methods are ordered by their stable generated C++ code.  The
 # catalog declares identity and stencil/dispatch metadata; formulas remain in
@@ -259,8 +259,15 @@ parameters = ["perturbation_pressure_scale"]
 name = "density_azimuthal_espino2019"
 cpp_id = "DensityAzimuthalEspino2019"
 label = "Espino 2019 density mode"
-description = "Apply rho -> rho [1+B (varpi/r_e) sin(m phi + phase)] and rebuild the cold EoS state."
+description = "Apply rho -> rho [1+B (varpi/R) sin(m phi + phase)] to a stellar or disk equilibrium and rebuild the cold EoS state."
 parameters = ["perturbation_amplitude", "perturbation_mode", "perturbation_phase", "perturbation_radius"]
+
+[[initial_data_perturbation]]
+name = "density_radial_font2002"
+cpp_id = "DensityRadialFont2002"
+label = "Font 2002 radial density mode"
+description = "Apply rho -> rho [1+A cos(pi r/(2 R))] inside the star, retain the equilibrium pressure, and recompute the specific internal energy with the evolution EoS."
+parameters = ["perturbation_amplitude", "perturbation_radius"]
 
 # Magnetic seeds own a divergence-preserving initial field representation.
 # A seed is not, by itself, a magnetohydrostatic equilibrium law; the coupled
@@ -329,7 +336,10 @@ description = "Circular flow with one constant angular velocity; a finite detach
 parameters = ["angular_velocity", "inner_radius"]
 
 # Native single-object initial-data owners. These entries declare broad host
-# capabilities and natural solver layouts. Coupled physical restrictions such
+# capabilities and natural physical layouts. `solver_axis_layouts` separately
+# lists valid numerical projections of that owner's shared elliptic operator;
+# a projection does not create or authorize a new physical object model.
+# Coupled physical restrictions such
 # as nonzero rotating CTT stationarity, central-object/disk overlap, and Kerr
 # spin/disk alignment remain explicit C++ validation rather than TOML logic.
 [[initial_data_owner]]
@@ -340,6 +350,7 @@ description = "One-dimensional spherical TOV construction with an optional mappe
 dimension = 1
 coordinate = "spherical"
 axes = ["r"]
+solver_axis_layouts = ["r"]
 central_objects = ["tov"]
 spacetime_methods = ["tov"]
 disk_kinds = ["none"]
@@ -356,6 +367,7 @@ description = "Reduced r-theta XCTS construction for circular stars and aligned 
 dimension = 2
 coordinate = "spherical"
 axes = ["r", "theta"]
+solver_axis_layouts = ["r theta"]
 central_objects = ["tov", "rotating_star"]
 spacetime_methods = ["xcts"]
 disk_kinds = ["none", "equilibrium_torus"]
@@ -372,6 +384,7 @@ description = "Full r-theta-phi storage of the axisymmetric circular-star XCTS s
 dimension = 3
 coordinate = "spherical"
 axes = ["r", "theta", "phi"]
+solver_axis_layouts = ["r theta phi"]
 central_objects = ["tov", "rotating_star"]
 spacetime_methods = ["xcts"]
 disk_kinds = ["none", "equilibrium_torus"]
@@ -388,6 +401,7 @@ description = "Full three-dimensional Cartesian CTT, CTTK, or XCTS hierarchy wit
 dimension = 3
 coordinate = "cartesian"
 axes = ["x", "y", "z"]
+solver_axis_layouts = ["x", "y", "z", "x y", "x z", "y z", "x y z"]
 central_objects = ["tov", "rotating_star"]
 spacetime_methods = ["ctt", "cttk", "xcts"]
 disk_kinds = ["none", "equilibrium_torus", "tilted_torus"]
@@ -404,6 +418,7 @@ description = "Reduced r-theta XCTS construction on a finite apparent-horizon sh
 dimension = 2
 coordinate = "spherical"
 axes = ["r", "theta"]
+solver_axis_layouts = ["r theta"]
 central_objects = ["black_hole"]
 spacetime_methods = ["xcts"]
 disk_kinds = ["none", "equilibrium_torus"]
@@ -420,6 +435,7 @@ description = "Full r-theta-phi storage of the axisymmetric apparent-horizon-she
 dimension = 3
 coordinate = "spherical"
 axes = ["r", "theta", "phi"]
+solver_axis_layouts = ["r theta phi"]
 central_objects = ["black_hole"]
 spacetime_methods = ["xcts"]
 disk_kinds = ["none", "equilibrium_torus"]
@@ -436,6 +452,7 @@ description = "Exact Kerr-Schild exterior or filled complete-grid black hole wit
 dimension = 3
 coordinate = "cartesian"
 axes = ["x", "y", "z"]
+solver_axis_layouts = ["x y z"]
 central_objects = ["black_hole"]
 spacetime_methods = ["kerr_schild"]
 disk_kinds = ["none", "equilibrium_torus"]
@@ -452,6 +469,7 @@ description = "Exact stationary spinless Schwarzschild trumpet puncture with an 
 dimension = 3
 coordinate = "cartesian"
 axes = ["x", "y", "z"]
+solver_axis_layouts = ["x y z"]
 central_objects = ["black_hole"]
 spacetime_methods = ["static_trumpet"]
 disk_kinds = ["none", "equilibrium_torus"]

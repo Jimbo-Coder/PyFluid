@@ -10,115 +10,128 @@
 #include <string>
 #include <vector>
 
-#include "pyfluid_amrex/generated/diagnostic_catalog.hpp"
+#include "pyfluid_amrex/generated/diagnostic_types.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 struct RunConfig;
 
 struct ConservedDiagnosticIntegrands {
-   amrex::Real mass = 0.0;
-   amrex::Real momentum1 = 0.0;
-   amrex::Real momentum2 = 0.0;
-   amrex::Real momentum3 = 0.0;
-   amrex::Real energy = 0.0;
-   amrex::Real angular_momentum1 = 0.0;
-   amrex::Real angular_momentum2 = 0.0;
-   amrex::Real angular_momentum3 = 0.0;
-   amrex::Real magnetic_energy = 0.0;
-   amrex::Real gravity_potential_energy = 0.0;
-   amrex::Real passive_mass = 0.0;
-   amrex::Real divb = 0.0;
+   amrex::Real mass = 0.0_rt;
+   amrex::Real momentum1 = 0.0_rt;
+   amrex::Real momentum2 = 0.0_rt;
+   amrex::Real momentum3 = 0.0_rt;
+   amrex::Real energy = 0.0_rt;
+   amrex::Real angular_momentum1 = 0.0_rt;
+   amrex::Real angular_momentum2 = 0.0_rt;
+   amrex::Real angular_momentum3 = 0.0_rt;
+   amrex::Real magnetic_energy = 0.0_rt;
+   amrex::Real gravity_potential_energy = 0.0_rt;
+   amrex::Real passive_mass = 0.0_rt;
+   amrex::Real divb = 0.0_rt;
+};
+
+struct BaryonFluxIntegrands {
+   amrex::Real flux1 = 0.0_rt;
+   amrex::Real flux2 = 0.0_rt;
+   amrex::Real flux3 = 0.0_rt;
 };
 
 struct AdmFluxIntegrands {
-   amrex::Real mass1 = 0.0;
-   amrex::Real mass2 = 0.0;
-   amrex::Real mass3 = 0.0;
-   amrex::Real komar_mass1 = 0.0;
-   amrex::Real komar_mass2 = 0.0;
-   amrex::Real komar_mass3 = 0.0;
-   amrex::Real linear_momentum11 = 0.0;
-   amrex::Real linear_momentum12 = 0.0;
-   amrex::Real linear_momentum13 = 0.0;
-   amrex::Real linear_momentum21 = 0.0;
-   amrex::Real linear_momentum22 = 0.0;
-   amrex::Real linear_momentum23 = 0.0;
-   amrex::Real linear_momentum31 = 0.0;
-   amrex::Real linear_momentum32 = 0.0;
-   amrex::Real linear_momentum33 = 0.0;
-   amrex::Real angular_momentum11 = 0.0;
-   amrex::Real angular_momentum12 = 0.0;
-   amrex::Real angular_momentum13 = 0.0;
-   amrex::Real angular_momentum21 = 0.0;
-   amrex::Real angular_momentum22 = 0.0;
-   amrex::Real angular_momentum23 = 0.0;
-   amrex::Real angular_momentum31 = 0.0;
-   amrex::Real angular_momentum32 = 0.0;
-   amrex::Real angular_momentum33 = 0.0;
+   amrex::Real mass1 = 0.0_rt;
+   amrex::Real mass2 = 0.0_rt;
+   amrex::Real mass3 = 0.0_rt;
+   amrex::Real komar_mass1 = 0.0_rt;
+   amrex::Real komar_mass2 = 0.0_rt;
+   amrex::Real komar_mass3 = 0.0_rt;
+   amrex::Real linear_momentum11 = 0.0_rt;
+   amrex::Real linear_momentum12 = 0.0_rt;
+   amrex::Real linear_momentum13 = 0.0_rt;
+   amrex::Real linear_momentum21 = 0.0_rt;
+   amrex::Real linear_momentum22 = 0.0_rt;
+   amrex::Real linear_momentum23 = 0.0_rt;
+   amrex::Real linear_momentum31 = 0.0_rt;
+   amrex::Real linear_momentum32 = 0.0_rt;
+   amrex::Real linear_momentum33 = 0.0_rt;
+   amrex::Real angular_momentum11 = 0.0_rt;
+   amrex::Real angular_momentum12 = 0.0_rt;
+   amrex::Real angular_momentum13 = 0.0_rt;
+   amrex::Real angular_momentum21 = 0.0_rt;
+   amrex::Real angular_momentum22 = 0.0_rt;
+   amrex::Real angular_momentum23 = 0.0_rt;
+   amrex::Real angular_momentum31 = 0.0_rt;
+   amrex::Real angular_momentum32 = 0.0_rt;
+   amrex::Real angular_momentum33 = 0.0_rt;
 };
 
 struct AdmVolumeIntegrands {
-   amrex::Real mass = 0.0;
-   amrex::Real proper_mass = 0.0;
-   amrex::Real komar_mass = 0.0;
-   amrex::Real linear_momentum1 = 0.0;
-   amrex::Real linear_momentum2 = 0.0;
-   amrex::Real linear_momentum3 = 0.0;
-   amrex::Real angular_momentum1 = 0.0;
-   amrex::Real angular_momentum2 = 0.0;
-   amrex::Real angular_momentum3 = 0.0;
+   amrex::Real mass = 0.0_rt;
+   amrex::Real proper_mass = 0.0_rt;
+   amrex::Real komar_mass = 0.0_rt;
+   amrex::Real linear_momentum1 = 0.0_rt;
+   amrex::Real linear_momentum2 = 0.0_rt;
+   amrex::Real linear_momentum3 = 0.0_rt;
+   amrex::Real angular_momentum1 = 0.0_rt;
+   amrex::Real angular_momentum2 = 0.0_rt;
+   amrex::Real angular_momentum3 = 0.0_rt;
 };
 
 struct WeylRadiationIntegrands {
-   amrex::Real electric11 = 0.0;
-   amrex::Real electric12 = 0.0;
-   amrex::Real electric13 = 0.0;
-   amrex::Real electric22 = 0.0;
-   amrex::Real electric23 = 0.0;
-   amrex::Real electric33 = 0.0;
-   amrex::Real magnetic11 = 0.0;
-   amrex::Real magnetic12 = 0.0;
-   amrex::Real magnetic13 = 0.0;
-   amrex::Real magnetic22 = 0.0;
-   amrex::Real magnetic23 = 0.0;
-   amrex::Real magnetic33 = 0.0;
+   amrex::Real electric11 = 0.0_rt;
+   amrex::Real electric12 = 0.0_rt;
+   amrex::Real electric13 = 0.0_rt;
+   amrex::Real electric22 = 0.0_rt;
+   amrex::Real electric23 = 0.0_rt;
+   amrex::Real electric33 = 0.0_rt;
+   amrex::Real magnetic11 = 0.0_rt;
+   amrex::Real magnetic12 = 0.0_rt;
+   amrex::Real magnetic13 = 0.0_rt;
+   amrex::Real magnetic22 = 0.0_rt;
+   amrex::Real magnetic23 = 0.0_rt;
+   amrex::Real magnetic33 = 0.0_rt;
 };
 
 struct Psi4Integrands {
-   amrex::Real psi4_real = 0.0;
-   amrex::Real psi4_imaginary = 0.0;
+   amrex::Real psi4_real = 0.0_rt;
+   amrex::Real psi4_imaginary = 0.0_rt;
 };
 
 struct MatterEnergyFluxIntegrands {
-   amrex::Real flux1 = 0.0;
-   amrex::Real flux2 = 0.0;
-   amrex::Real flux3 = 0.0;
+   amrex::Real flux1 = 0.0_rt;
+   amrex::Real flux2 = 0.0_rt;
+   amrex::Real flux3 = 0.0_rt;
 };
 
 struct SpacetimeConstraintDiagnostics {
-   amrex::Real hamiltonian_linf = 0.0;
-   amrex::Real hamiltonian_l2 = 0.0;
-   amrex::Real hamiltonian_interior_linf = 0.0;
-   amrex::Real hamiltonian_interior_l2 = 0.0;
-   amrex::Real hamiltonian_cf_linf = 0.0;
-   amrex::Real hamiltonian_cf_l2 = 0.0;
-   amrex::Real hamiltonian_bh_exterior_linf = 0.0;
-   amrex::Real hamiltonian_bh_exterior_l2 = 0.0;
-   amrex::Real momentum_bh_exterior_linf = 0.0;
-   amrex::Real momentum_linf = 0.0;
-   amrex::Real z_linf = 0.0;
-   amrex::Real theta_linf = 0.0;
-   amrex::Real log_conformal_determinant_linf = 0.0;
-   amrex::Real trace_a_tilde_linf = 0.0;
+   amrex::Real hamiltonian_linf = 0.0_rt;
+   amrex::Real hamiltonian_l2 = 0.0_rt;
+   amrex::Real hamiltonian_interior_linf = 0.0_rt;
+   amrex::Real hamiltonian_interior_l2 = 0.0_rt;
+   amrex::Real hamiltonian_cf_linf = 0.0_rt;
+   amrex::Real hamiltonian_cf_l2 = 0.0_rt;
+   amrex::Real hamiltonian_bh_exterior_linf = 0.0_rt;
+   amrex::Real hamiltonian_bh_exterior_l2 = 0.0_rt;
+   amrex::Real momentum_bh_exterior_linf = 0.0_rt;
+   amrex::Real momentum_linf = 0.0_rt;
+   amrex::Real z_linf = 0.0_rt;
+   amrex::Real theta_linf = 0.0_rt;
+   amrex::Real log_conformal_determinant_linf = 0.0_rt;
+   amrex::Real trace_a_tilde_linf = 0.0_rt;
+   // Entries are the complete fixed region, its near sphere, and far shell.
+   amrex::GpuArray<amrex::Real, 3> regional_hamiltonian_linf{};
+   amrex::GpuArray<amrex::Real, 3> regional_hamiltonian_l2{};
+   amrex::GpuArray<amrex::Real, 3> regional_momentum_linf{};
+   amrex::GpuArray<amrex::Real, 3> regional_volume{};
 };
 
 struct SpacetimeGlobalDiagnostics {
-   amrex::Real adm_mass_surface = 0.0;
-   amrex::Real adm_mass_volume = 0.0;
-   amrex::Real proper_mass_volume = 0.0;
-   amrex::Real komar_mass_surface = 0.0;
-   amrex::Real komar_mass_volume = 0.0;
+   amrex::Real adm_mass_surface = 0.0_rt;
+   amrex::Real adm_mass_volume = 0.0_rt;
+   amrex::Real proper_mass_volume = 0.0_rt;
+   amrex::Real komar_mass_surface = 0.0_rt;
+   amrex::Real komar_mass_volume = 0.0_rt;
    amrex::GpuArray<amrex::Real, 3> adm_momentum_surface{};
    amrex::GpuArray<amrex::Real, 3> adm_momentum_volume{};
    amrex::GpuArray<amrex::Real, 3> adm_angular_momentum_surface{};
@@ -131,19 +144,19 @@ struct AmrLevelDiagnostics {
    int max_level = 0;
    int finest_headroom = 0;
    int touches_max_level = 0;
-   amrex::Real total_budget_fraction = -1.0;
-   amrex::Real peak_level_budget_fraction = -1.0;
+   amrex::Real total_budget_fraction = -1.0_rt;
+   amrex::Real peak_level_budget_fraction = -1.0_rt;
 };
 
 struct CflLimiterLocation {
-   amrex::Real frequency = 0.0;
+   amrex::Real frequency = 0.0_rt;
    int level = -1;
    int i = 0;
    int j = 0;
    int k = 0;
-   amrex::Real q1 = 0.0;
-   amrex::Real q2 = 0.0;
-   amrex::Real q3 = 0.0;
+   amrex::Real q1 = 0.0_rt;
+   amrex::Real q2 = 0.0_rt;
+   amrex::Real q3 = 0.0_rt;
 };
 
 struct ScalarDiagnosticSelection {
@@ -154,25 +167,8 @@ struct ScalarDiagnosticSelection {
       return enabled[static_cast<std::size_t>(id)];
    }
 
-   bool contains_any(ScalarDiagnosticGroup group) const noexcept
-   {
-      auto const& members = ScalarDiagnosticGroups[static_cast<std::size_t>(group)].members;
-      for (std::size_t index = 0; index < enabled.size(); ++index) {
-         if (enabled[index] && members[index]) {
-            return true;
-         }
-      }
-      return false;
-   }
-
-   void enable_group(ScalarDiagnosticGroup group) noexcept
-   {
-      auto const& members = ScalarDiagnosticGroups[static_cast<std::size_t>(group)].members;
-      for (std::size_t index = 0; index < enabled.size(); ++index) {
-         enabled[index] = enabled[index] || members[index];
-      }
-   }
-
+   bool contains_any(ScalarDiagnosticGroup group) const noexcept;
+   void enable_group(ScalarDiagnosticGroup group) noexcept;
    std::size_t size() const noexcept;
 };
 

@@ -20,7 +20,7 @@
 
    void begin_ct_step_level(int lev)
    {
-      set_edge_field_value(edge_e_[lev], 0.0);
+      set_edge_field_value(edge_e_[lev], 0.0_rt);
       if (ct_enabled(cfg_)) {
          // Portable ID/checkpoint face fields own valid data; refresh their
          // periodic and physical ghosts before any RK-stage primitive cache
@@ -66,13 +66,14 @@
       );
       // edge_e_ stores the time-integrated RK combination used by the cell
       // update and flux registers, rather than only the final stage EMF.
-      if (stage_weight != 0.0) {
+      if (stage_weight != 0.0_rt) {
          add_scaled_edge_field(
             edge_e_[lev], ct_stage_edge_e_[lev], stage_weight
          );
       }
    }
 
+public:
    template <int EOSMethod>
    void install_ct_stage_face_field(
       LevelData& stage_state,
@@ -94,16 +95,16 @@
          }
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
             amrex::MultiFab& current = *face_b_[lev].b[dir];
-            current.mult(current_weight, 0, 1, current.nGrow());
-            amrex::MultiFab::Saxpy(
-               current,
-               start_weight,
-               *ct_step_start_face_b_[lev].b[dir],
-               0,
-               0,
-               1,
-               current.nGrow()
-            );
+            AMREX_ALWAYS_ASSERT(start_weight + current_weight == 1.0_rt);
+            for (amrex::MFIter mfi(current, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+               const auto values = current.array(mfi);
+               const auto start = ct_step_start_face_b_[lev].b[dir]->const_array(mfi);
+               amrex::ParallelFor(mfi.growntilebox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+                  values(i, j, k, 0) = affine_state_update(
+                     start(i, j, k, 0), values(i, j, k, 0), current_weight, 0.0_rt
+                  );
+               });
+            }
          }
          apply_edge_electric_curl(
             face_b_[lev], ct_stage_edge_e_[lev], Geom(lev), emf_weight, cfg_
@@ -118,6 +119,8 @@
       (void)EOSMethod;
    }
 
+private:
+
    DiffusionStats advance_ct_ideal_level(int lev, amrex::Real dt)
    {
       const auto fluxes = flux_ptrs(lev);
@@ -128,11 +131,11 @@
       ) {
          copy_face_magnetic_field(face_b_[lev], ct_step_start_face_b_[lev]);
          apply_edge_electric_curl(
-            face_b_[lev], edge_e_[lev], Geom(lev), 1.0, cfg_
+            face_b_[lev], edge_e_[lev], Geom(lev), 1.0_rt, cfg_
          );
-         register_weight = 1.0;
+         register_weight = 1.0_rt;
       } else {
-         advance_ct_magnetic_field(face_b_[lev], edge_e_[lev], *fluid_state_.state()[lev], Geom(lev), dt, 0.0, cfg_);
+         advance_ct_magnetic_field(face_b_[lev], edge_e_[lev], *fluid_state_.state()[lev], Geom(lev), dt, 0.0_rt, cfg_);
       }
       add_edge_electric_to_registers(lev, register_weight);
       apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);

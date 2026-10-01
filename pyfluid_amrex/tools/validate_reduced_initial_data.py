@@ -43,11 +43,17 @@ RNS_FULL_STORAGE_INPUT = (
 RUN_ROOT = ROOT / "runs/current/reduced_initial_data_validation"
 RESULTS = RUN_ROOT / "reduced_initial_data.tsv"
 FULL_RESULTS = RUN_ROOT / "reduced_initial_data_full.tsv"
+CARTESIAN_RESULTS = RUN_ROOT / "cartesian_elliptic_projections.tsv"
+CARTESIAN_MATTER_RESULTS = RUN_ROOT / "cartesian_matter_convergence.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
 INTERPOLATION_CHECK = "pyfluid_amrex_physical_id_interpolation_check"
 AXISYMMETRIC_ELLIPTIC_CHECK = (
    "pyfluid_amrex_initial_data_elliptic_check_2d"
 )
+CARTESIAN_ELLIPTIC_CHECKS = {
+   dimension: f"pyfluid_amrex_initial_data_elliptic_check_{dimension}d"
+   for dimension in (1, 2, 3)
+}
 RECOVERY_PATTERN = re.compile(
    r"Relativistic recovery c2p_fallbacks=(\d+) atmosphere_resets=(\d+)"
 )
@@ -793,101 +799,63 @@ def validate_reduced_differential_rns(
       "angular_momentum",
       "dimensionless_spin",
    )
-   q1_identity_error = max(
-      abs(
-         float(metadata["q_power_q1"][field])
-         - float(metadata["j_constant"][field])
-      ) / max(abs(float(metadata["j_constant"][field])), 1.0e-14)
-      for field in identity_fields
-   )
-   if q1_identity_error > 1.0e-11:
-      raise RuntimeError(
-         "q-power q=1 does not reproduce j-constant RNS: "
-         f"maximum relative diagnostic error={q1_identity_error:.6e}"
+   identity_errors = {}
+   for name, tolerance, label in (
+      ("q_power_q1", 1.0e-11, "q-power q=1"),
+      ("uryu_j_limit", 1.0e-7, "Uryu j-envelope large-B limit"),
+   ):
+      error = max(
+         abs(float(metadata[name][field]) - float(metadata["j_constant"][field]))
+         / max(abs(float(metadata["j_constant"][field])), 1.0e-14)
+         for field in identity_fields
       )
+      if error > tolerance:
+         raise RuntimeError(
+            f"{label} does not reproduce j-constant RNS: "
+            f"maximum relative diagnostic error={error:.6e}"
+         )
+      identity_errors[name] = error
 
-   uryu_j_limit_error = max(
-      abs(
-         float(metadata["uryu_j_limit"][field])
-         - float(metadata["j_constant"][field])
-      ) / max(abs(float(metadata["j_constant"][field])), 1.0e-14)
-      for field in identity_fields
-   )
-   if uryu_j_limit_error > 1.0e-7:
-      raise RuntimeError(
-         "Uryu j-envelope did not approach j-constant as B increased: "
-         f"maximum relative diagnostic error={uryu_j_limit_error:.6e}"
-      )
+   regime_values = {}
+   for name, label in (
+      ("q_power_q2", "q-power q=2"),
+      ("uryu_plus_13", "Uryu plus p=1 q=3"),
+   ):
+      values = {
+         key: float(metadata[name][key])
+         for key in (
+            "maximum_velocity", "injection_energy", "mass_shedding_indicator",
+            "adm_mass", "baryonic_mass", "angular_momentum", "dimensionless_spin",
+         )
+      }
+      j_difference = abs(
+         values["angular_momentum"]
+         - float(metadata["j_constant"]["angular_momentum"])
+      ) / abs(float(metadata["j_constant"]["angular_momentum"]))
+      if not all(np.isfinite(value) for value in values.values()) \
+            or values["maximum_velocity"] <= 0.0 \
+            or values["injection_energy"] <= 0.0 \
+            or not 0.0 < values["mass_shedding_indicator"] < 2.0 \
+            or values["adm_mass"] <= 0.0 \
+            or values["baryonic_mass"] <= 0.0 \
+            or values["angular_momentum"] <= 0.0 \
+            or not 0.0 < values["dimensionless_spin"] < 1.0 \
+            or j_difference < 1.0e-3:
+         raise RuntimeError(
+            f"{label} did not produce a distinct physical RNS: "
+            f"values={values}, J difference={j_difference:.6e}"
+         )
+      regime_values[name] = values
 
-   q2 = metadata["q_power_q2"]
-   q2_values = {
-      key: float(q2[key])
-      for key in (
-         "maximum_velocity",
-         "injection_energy",
-         "mass_shedding_indicator",
-         "adm_mass",
-         "baryonic_mass",
-         "angular_momentum",
-         "dimensionless_spin",
-      )
-   }
-   q2_j_difference = abs(
-      q2_values["angular_momentum"]
-      - float(metadata["j_constant"]["angular_momentum"])
-   ) / abs(float(metadata["j_constant"]["angular_momentum"]))
-   if not all(np.isfinite(value) for value in q2_values.values()) \
-         or q2_values["maximum_velocity"] <= 0.0 \
-         or q2_values["injection_energy"] <= 0.0 \
-         or not 0.0 < q2_values["mass_shedding_indicator"] < 2.0 \
-         or q2_values["adm_mass"] <= 0.0 \
-         or q2_values["baryonic_mass"] <= 0.0 \
-         or q2_values["angular_momentum"] <= 0.0 \
-         or not 0.0 < q2_values["dimensionless_spin"] < 1.0 \
-         or q2_j_difference < 1.0e-3:
-      raise RuntimeError(
-         "q-power q=2 did not produce a distinct physical RNS: "
-         f"values={q2_values}, J difference={q2_j_difference:.6e}"
-      )
-
-   uryu_plus = metadata["uryu_plus_13"]
-   uryu_plus_values = {
-      key: float(uryu_plus[key])
-      for key in (
-         "maximum_velocity",
-         "injection_energy",
-         "mass_shedding_indicator",
-         "adm_mass",
-         "baryonic_mass",
-         "angular_momentum",
-         "dimensionless_spin",
-      )
-   }
-   uryu_plus_j_difference = abs(
-      uryu_plus_values["angular_momentum"]
-      - float(metadata["j_constant"]["angular_momentum"])
-   ) / abs(float(metadata["j_constant"]["angular_momentum"]))
-   if not all(np.isfinite(value) for value in uryu_plus_values.values()) \
-         or uryu_plus_values["maximum_velocity"] <= 0.0 \
-         or uryu_plus_values["injection_energy"] <= 0.0 \
-         or not 0.0 < uryu_plus_values["mass_shedding_indicator"] < 2.0 \
-         or uryu_plus_values["adm_mass"] <= 0.0 \
-         or uryu_plus_values["baryonic_mass"] <= 0.0 \
-         or uryu_plus_values["angular_momentum"] <= 0.0 \
-         or not 0.0 < uryu_plus_values["dimensionless_spin"] < 1.0 \
-         or uryu_plus_j_difference < 1.0e-3:
-      raise RuntimeError(
-         "Uryu plus p=1 q=3 did not produce a distinct physical RNS: "
-         f"values={uryu_plus_values}, "
-         f"J difference={uryu_plus_j_difference:.6e}"
-      )
+   q2_values = regime_values["q_power_q2"]
+   uryu_plus_values = regime_values["uryu_plus_13"]
 
    return [{
       "kind": "initial_data",
       "case": "rns_j_constant_q_power_q1_identity_96x24",
       "status": "PASS",
       "metric": "maximum_relative_diagnostic_error",
-      "value": q1_identity_error,
+      "value": identity_errors["q_power_q1"],
       "source_seconds": seconds["j_constant"] + seconds["q_power_q1"],
       "run_dir": repo_relative(artifacts["q_power_q1"].parent),
    }, {
@@ -905,7 +873,7 @@ def validate_reduced_differential_rns(
       "case": "rns_uryu_j_envelope_j_constant_limit_96x24",
       "status": "PASS",
       "metric": "maximum_relative_diagnostic_error",
-      "value": uryu_j_limit_error,
+      "value": identity_errors["uryu_j_limit"],
       "source_seconds": seconds["uryu_j_limit"],
       "run_dir": repo_relative(artifacts["uryu_j_limit"].parent),
    }, {
@@ -1286,14 +1254,108 @@ def validate_errors(errors: dict[int, dict[str, float]], level: str) -> None:
             )
 
 
+def validate_cartesian_elliptic_checks(
+   args: argparse.Namespace,
+   *,
+   matter_convergence: bool = False,
+) -> list[dict[str, object]]:
+   rows: list[dict[str, object]] = []
+   check_name = "cartesian_matter_convergence" if matter_convergence \
+      else "cartesian_projection_only"
+   for dimension, target in CARTESIAN_ELLIPTIC_CHECKS.items():
+      executable = build_cached_target(target)
+      result = run_mpi(
+         executable,
+         (f"test.{check_name}=1",),
+         ranks=args.ranks,
+         timeout=args.timeout,
+      )
+      log_stem = "cartesian_matter_convergence" if matter_convergence \
+         else "cartesian_elliptic_check"
+      log_path = RUN_ROOT / f"{log_stem}_{dimension}d.log"
+      log_path.write_text(result.stdout)
+      required_markers = (
+         f"cartesian_matter_convergence dimension={dimension}",
+      ) if matter_convergence else (
+         f"cartesian_conformal_vector dimension={dimension}",
+         f"cartesian_constraint_smoke dimension={dimension}",
+      )
+      if result.returncode != 0 or not all(
+         marker in result.stdout for marker in required_markers
+      ):
+         raise RuntimeError(
+            f"{dimension}D Cartesian elliptic projection check failed; "
+            f"see {repo_relative(log_path)}"
+         )
+      if matter_convergence:
+         matches = re.findall(
+            rf"cartesian_matter_convergence dimension={dimension} "
+            r"method=(\w+) centering=(\w+) minimum_order=([0-9.eE+-]+) "
+            r"axis_error=([0-9.eE+-]+) valid=1",
+            result.stdout,
+         )
+         expected = {(method, centering) for method in ("ctt", "xcts")
+                     for centering in ("cell", "vertex")}
+         if {(method, centering) for method, centering, _, _ in matches} \
+               != expected or len(matches) != len(expected):
+            raise RuntimeError(f"incomplete Cartesian matter gate: {log_path}")
+         for method, centering, order, axis_error in matches:
+            rows.append({
+               "kind": "initial_data",
+               "case": f"cartesian_{method}_{centering}_{dimension}d",
+               "status": "PASS",
+               "metric": "minimum_linf_convergence_order",
+               "value": float(order),
+               "maximum_diagnostic_difference": float(axis_error),
+               "run_dir": repo_relative(RUN_ROOT),
+            })
+         print(f"PASS {dimension}D Cartesian matter convergence "
+               f"({result.seconds:.3f} s)", flush=True)
+         continue
+      rows.append({
+         "kind": "initial_data",
+         "case": f"cartesian_elliptic_projection_{dimension}d",
+         "status": "PASS",
+         "metric": "focused_cpp_check",
+         "value": 0.0,
+         "run_dir": repo_relative(RUN_ROOT),
+      })
+   return rows
+
+
 def main() -> int:
    parser = argparse.ArgumentParser(description=__doc__)
    parser.add_argument("--level", choices=("standard", "full"), default="standard")
    parser.add_argument("--ranks", type=int, default=3)
    parser.add_argument("--timeout", type=int, default=180)
    parser.add_argument("--force", action="store_true")
+   cartesian_slice = parser.add_mutually_exclusive_group()
+   cartesian_slice.add_argument(
+      "--cartesian-projections-only",
+      action="store_true",
+      help="run only the maintained 1D/2D/3D Cartesian elliptic checks",
+   )
+   cartesian_slice.add_argument(
+      "--cartesian-matter-convergence-only",
+      action="store_true",
+      help="run only the 1D/2D/3D nonzero-matter CTT/XCTS convergence checks",
+   )
    args = parser.parse_args()
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
+
+   if args.cartesian_projections_only or args.cartesian_matter_convergence_only:
+      cartesian_projection_rows = validate_cartesian_elliptic_checks(
+         args, matter_convergence=args.cartesian_matter_convergence_only
+      )
+      fields = ("kind", "case", "status", "metric", "value",
+                "maximum_diagnostic_difference", "run_dir")
+      results_path = CARTESIAN_MATTER_RESULTS \
+         if args.cartesian_matter_convergence_only else CARTESIAN_RESULTS
+      write_tsv(results_path, cartesian_projection_rows, fields)
+      append_validation_history(HISTORY, cartesian_projection_rows)
+      print(f"wrote {repo_relative(results_path)}")
+      print("PASS Cartesian elliptic checks in 1D/2D/3D")
+      return 0
 
    interpolation_check = build_cached_target(INTERPOLATION_CHECK)
    interpolation_result = run_mpi(
@@ -1306,6 +1368,12 @@ def main() -> int:
    )
    if interpolation_result.returncode != 0:
       raise RuntimeError("portable physical-ID basis/reflection check failed")
+
+   cartesian_projection_rows = validate_cartesian_elliptic_checks(args)
+   if args.level == "full":
+      cartesian_projection_rows.extend(validate_cartesian_elliptic_checks(
+         args, matter_convergence=True
+      ))
 
    elliptic_check = build_cached_target(AXISYMMETRIC_ELLIPTIC_CHECK)
    elliptic_result = run_mpi(
@@ -1368,6 +1436,7 @@ def main() -> int:
          "value": 0.0,
          "run_dir": repo_relative(RUN_ROOT),
       },
+      *cartesian_projection_rows,
    ]
    for resolution in resolutions:
       _, materialized_artifact, seconds = run_id_case(

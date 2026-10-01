@@ -45,7 +45,7 @@ Z4cConformalMetric z4c_conformal_metric(const Z4cState& state) noexcept
       state.chi*tmp8,
       -state.chi*tmp9,
       state.chi*tmp10,
-      sqrt(tmp3)/pow(state.chi, 3.0_rt/2.0_rt)
+      std::sqrt(tmp3)/std::pow(state.chi, 3.0_rt/2.0_rt)
    };
 }
 
@@ -75,7 +75,7 @@ SpacetimeMetric z4c_spacetime_metric(const Z4cState& state) noexcept
       tmp5*(state.gamma_tilde11*state.gamma_tilde33 - ((state.gamma_tilde13)*(state.gamma_tilde13))),
       -tmp5*(state.gamma_tilde11*state.gamma_tilde23 - state.gamma_tilde12*state.gamma_tilde13),
       tmp5*(state.gamma_tilde11*state.gamma_tilde22 - ((state.gamma_tilde12)*(state.gamma_tilde12))),
-      sqrt(tmp4)/pow(state.chi, 3.0_rt/2.0_rt)
+      std::sqrt(tmp4)/std::pow(state.chi, 3.0_rt/2.0_rt)
    };
 }
 
@@ -134,7 +134,7 @@ Z4cState z4c_project_algebraic_constraints(const Z4cState& state) noexcept
    const amrex::Real tmp1 = state.gamma_tilde22*state.gamma_tilde33 - ((state.gamma_tilde23)*(state.gamma_tilde23));
    const amrex::Real tmp2 = state.gamma_tilde12*state.gamma_tilde33 - state.gamma_tilde13*state.gamma_tilde23;
    const amrex::Real tmp3 = state.gamma_tilde11*tmp1 - state.gamma_tilde12*tmp2 + state.gamma_tilde13*tmp0;
-   const amrex::Real tmp4 = pow(tmp3, -1.0_rt/3.0_rt);
+   const amrex::Real tmp4 = std::pow(tmp3, -1.0_rt/3.0_rt);
    const amrex::Real tmp5 = (1.0_rt/3.0_rt)*(state.a_tilde11*tmp1 - 2*state.a_tilde12*tmp2 + 2*state.a_tilde13*tmp0 + state.a_tilde22*(state.gamma_tilde11*state.gamma_tilde33 - ((state.gamma_tilde13)*(state.gamma_tilde13))) - 2*state.a_tilde23*(state.gamma_tilde11*state.gamma_tilde23 - state.gamma_tilde12*state.gamma_tilde13) + state.a_tilde33*(state.gamma_tilde11*state.gamma_tilde22 - ((state.gamma_tilde12)*(state.gamma_tilde12))))/tmp3;
    return {
       state.chi*tmp4,

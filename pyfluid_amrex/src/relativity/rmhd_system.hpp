@@ -15,6 +15,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct RMHDPrimitiveFaceStates {
    RMHDPrimitive left;
    RMHDPrimitive right;
@@ -63,7 +65,7 @@ RMHDWaveSpeeds rmhd_wave_speeds(
       primitive,
       metric,
       amrex::max(
-         amrex::Real{0.0}, thermodynamics.sound_speed_squared
+         amrex::Real{0.0_rt}, thermodynamics.sound_speed_squared
       ),
       thermodynamics.specific_enthalpy
    );
@@ -116,7 +118,13 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
    center_r.v1 = center_v_r.v1;
    center_r.v2 = center_v_r.v2;
    center_r.v3 = center_v_r.v3;
-   if (center_l.rho <= atmosphere_l.rho
+   if (apply_relativistic_diode_face<Direction>(
+          center_l, center_r, face_metric, metric.diode, ir, jr, kr)) {
+      return {center_l, center_r};
+   }
+   if (!relativistic_reconstruction_stencil_is_active<ReconMethod, Direction>(
+          metric, il, jl, kl, ir, jr, kr)
+       || center_l.rho <= atmosphere_l.rho
        || center_l.pressure <= atmosphere_l.pressure
        || center_r.rho <= atmosphere_r.rho
        || center_r.pressure <= atmosphere_r.pressure) {
@@ -151,7 +159,7 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
    RMHDPrimitiveFaceStates face{
       {
          rho.left,
-         0.0,
+         0.0_rt,
          pressure.left,
          velocity_l.v1,
          velocity_l.v2,
@@ -162,7 +170,7 @@ RMHDPrimitiveFaceStates rmhd_primitive_face_states(
       },
       {
          rho.right,
-         0.0,
+         0.0_rt,
          pressure.right,
          velocity_r.v1,
          velocity_r.v2,
@@ -215,15 +223,15 @@ RMHDConserved rmhd_hll_flux(
       primitive_r, metric, eos
    );
    const amrex::Real speed_minus = amrex::min(
-      0.0, amrex::min(speed_l.minus, speed_r.minus)
+      0.0_rt, amrex::min(speed_l.minus, speed_r.minus)
    );
    const amrex::Real speed_plus = amrex::max(
-      0.0, amrex::max(speed_l.plus, speed_r.plus)
+      0.0_rt, amrex::max(speed_l.plus, speed_r.plus)
    );
-   if (speed_minus >= 0.0) {
+   if (speed_minus >= 0.0_rt) {
       return flux_l;
    }
-   if (speed_plus <= 0.0) {
+   if (speed_plus <= 0.0_rt) {
       return flux_r;
    }
    return generated::rmhd_hll_flux(
@@ -309,7 +317,8 @@ inline void fill_rmhd_flux_direction(
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
    EOSThermodynamicState const& atmosphere,
-   amrex::Real time
+   amrex::Real time,
+   RelativisticDiodeBoundary const& diode = {}
 )
 {
    amrex::MultiFab& flux = *fluxes[Direction];
@@ -340,7 +349,14 @@ inline void fill_rmhd_flux_direction(
          }
 #endif
          const RHDFixedMetricAccessor metric{
-            spacetime, lower, spacing, time
+            spacetime,
+            lower,
+            spacing,
+            MeshCartesian,
+            mesh_default_axes_layout(MeshCartesian),
+            time,
+            {},
+            diode
          };
          const RMHDConserved value =
             rmhd_riemann_flux<ReconMethod, RiemannMethod, Direction>(
@@ -367,7 +383,9 @@ inline void fill_rmhd_flux_direction(
    const amrex::MultiFab& primitive,
    const EOSParams& eos,
    const amrex::MultiFab& cell_spacetime,
-   EOSThermodynamicState const& atmosphere
+   EOSThermodynamicState const& atmosphere,
+   ExcisionGridView const& excision = {},
+   RelativisticDiodeBoundary const& diode = {}
 )
 {
    amrex::MultiFab& flux = *fluxes[Direction];
@@ -396,7 +414,7 @@ inline void fill_rmhd_flux_direction(
             --kl;
          }
 #endif
-         const RHDStoredMetricAccessor metric{spacetime};
+         const RHDStoredMetricAccessor metric{spacetime, excision, diode};
          const RMHDConserved value = rmhd_riemann_flux<
             ReconMethod,
             RiemannMethod,
@@ -428,26 +446,27 @@ inline void fill_rmhd_flux_direction_runtime(
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
    EOSThermodynamicState const& atmosphere,
-   amrex::Real time
+   amrex::Real time,
+   RelativisticDiodeBoundary const& diode = {}
 )
 {
    switch (riemann_method) {
    case RiemannLLF:
       fill_rmhd_flux_direction<ReconMethod, RiemannLLF, Direction>(
          fluxes, primitive, eos, geometry, spacetime,
-         atmosphere, time
+         atmosphere, time, diode
       );
       return;
    case RiemannHLL:
       fill_rmhd_flux_direction<ReconMethod, RiemannHLL, Direction>(
          fluxes, primitive, eos, geometry, spacetime,
-         atmosphere, time
+         atmosphere, time, diode
       );
       return;
    case RiemannHLLE:
       fill_rmhd_flux_direction<ReconMethod, RiemannHLLE, Direction>(
          fluxes, primitive, eos, geometry, spacetime,
-         atmosphere, time
+         atmosphere, time, diode
       );
       return;
    default:
@@ -462,26 +481,28 @@ inline void fill_rmhd_flux_direction_runtime(
    const EOSParams& eos,
    int riemann_method,
    const amrex::MultiFab& cell_spacetime,
-   EOSThermodynamicState const& atmosphere
+   EOSThermodynamicState const& atmosphere,
+   ExcisionGridView const& excision = {},
+   RelativisticDiodeBoundary const& diode = {}
 )
 {
    switch (riemann_method) {
    case RiemannLLF:
       fill_rmhd_flux_direction<ReconMethod, RiemannLLF, Direction>(
          fluxes, primitive, eos, cell_spacetime,
-         atmosphere
+         atmosphere, excision, diode
       );
       return;
    case RiemannHLL:
       fill_rmhd_flux_direction<ReconMethod, RiemannHLL, Direction>(
          fluxes, primitive, eos, cell_spacetime,
-         atmosphere
+         atmosphere, excision, diode
       );
       return;
    case RiemannHLLE:
       fill_rmhd_flux_direction<ReconMethod, RiemannHLLE, Direction>(
          fluxes, primitive, eos, cell_spacetime,
-         atmosphere
+         atmosphere, excision, diode
       );
       return;
    default:

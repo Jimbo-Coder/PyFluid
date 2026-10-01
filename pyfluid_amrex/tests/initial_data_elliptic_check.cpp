@@ -28,8 +28,11 @@
 #include "pyfluid_amrex/initial_data/tov.hpp"
 #include "pyfluid_amrex/generated/initial_data_method_catalog.hpp"
 #include "pyfluid_amrex/kernels_generated/initial_data.hpp"
+#include "cartesian_id_convergence.hpp"
 
 namespace {
+
+using namespace amrex::literals;
 
 bool validate_initial_data_owner_catalog()
 {
@@ -37,6 +40,7 @@ bool validate_initial_data_owner_catalog()
    using pyfluid_amrex::initial_data_owner_info;
    using pyfluid_amrex::initial_data_owner_layout_matches;
    using pyfluid_amrex::initial_data_owner_list_contains;
+   using pyfluid_amrex::initial_data_owner_solver_layout_matches;
 
    const auto& radial = initial_data_owner_info(InitialDataOwner::SphericalTov);
    const auto& axisymmetric = initial_data_owner_info(
@@ -66,6 +70,21 @@ bool validate_initial_data_owner_catalog()
       )
       && initial_data_owner_layout_matches(
          cartesian, 3, "cartesian", "x y z"
+      )
+      && !initial_data_owner_layout_matches(
+         cartesian, 2, "cartesian", "x z"
+      )
+      && initial_data_owner_solver_layout_matches(
+         cartesian, 1, "cartesian", "y"
+      )
+      && initial_data_owner_solver_layout_matches(
+         cartesian, 2, "cartesian", "x z"
+      )
+      && initial_data_owner_solver_layout_matches(
+         cartesian, 3, "cartesian", "x y z"
+      )
+      && !initial_data_owner_solver_layout_matches(
+         cartesian, 2, "cartesian", "z x"
       )
       && cartesian.relative_tilt
       && initial_data_owner_list_contains(
@@ -111,11 +130,11 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real manufactured_solution(amrex::Real x, amrex::Real y, amrex::Real z) noexcept
 {
 #if (AMREX_SPACEDIM == 1)
-   return 1.0 + pyfluid_amrex::generated::initial_data_poisson_solution_1d(x, y, z);
+   return 1.0_rt + pyfluid_amrex::generated::initial_data_poisson_solution_1d(x, y, z);
 #elif (AMREX_SPACEDIM == 2)
-   return 1.0 + pyfluid_amrex::generated::initial_data_poisson_solution_2d(x, y, z);
+   return 1.0_rt + pyfluid_amrex::generated::initial_data_poisson_solution_2d(x, y, z);
 #else
-   return 1.0 + pyfluid_amrex::generated::initial_data_poisson_solution_3d(x, y, z);
+   return 1.0_rt + pyfluid_amrex::generated::initial_data_poisson_solution_3d(x, y, z);
 #endif
 }
 
@@ -146,17 +165,17 @@ amrex::Real manufactured_robin_c(
    const amrex::Real sine_y = std::sin(pyfluid_amrex::constants::pi * y);
    const amrex::Real cosine_y = std::cos(pyfluid_amrex::constants::pi * y);
 #else
-   const amrex::Real sine_y = 1.0;
-   const amrex::Real cosine_y = 0.0;
+   const amrex::Real sine_y = 1.0_rt;
+   const amrex::Real cosine_y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
    const amrex::Real sine_z = std::sin(pyfluid_amrex::constants::pi * z);
    const amrex::Real cosine_z = std::cos(pyfluid_amrex::constants::pi * z);
 #else
-   const amrex::Real sine_z = 1.0;
-   const amrex::Real cosine_z = 0.0;
+   const amrex::Real sine_z = 1.0_rt;
+   const amrex::Real cosine_z = 0.0_rt;
 #endif
-   const amrex::Real solution = 1.0 + sine_x * sine_y * sine_z;
+   const amrex::Real solution = 1.0_rt + sine_x * sine_y * sine_z;
    amrex::Real coordinate_derivative =
       pyfluid_amrex::constants::pi * cosine_x * sine_y * sine_z;
 #if (AMREX_SPACEDIM >= 2)
@@ -225,17 +244,17 @@ amrex::Real validate_centered_power_law_robin(
    pyfluid_amrex::InitialDataEllipticCentering centering
 )
 {
-   constexpr amrex::Real asymptotic_value = 1.25;
-   constexpr amrex::Real amplitude = 0.2;
-   constexpr amrex::Real falloff_power = 1.0;
+   constexpr amrex::Real asymptotic_value = 1.25_rt;
+   constexpr amrex::Real amplitude = 0.2_rt;
+   constexpr amrex::Real falloff_power = 1.0_rt;
    auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
-      hierarchy, 1, 0.0, 0.0, 0.0, centering
+      hierarchy, 1, 0.0_rt, 0.0_rt, 0.0_rt, centering
    );
    pyfluid_amrex::set_centered_power_law_robin_boundary(
       hierarchy, boundary, {asymptotic_value}, falloff_power
    );
 
-   amrex::Real max_identity_error = 0.0;
+   amrex::Real max_identity_error = 0.0_rt;
    for (int level = 0; level < boundary.num_levels(); ++level) {
       amrex::MultiFab error(
          boundary.coefficient_a(level).boxArray(),
@@ -243,14 +262,14 @@ amrex::Real validate_centered_power_law_robin(
          1,
          1
       );
-      error.setVal(0.0);
+      error.setVal(0.0_rt);
       const auto problo = hierarchy.geometry[level].ProbLoArray();
       const auto probhi = hierarchy.geometry[level].ProbHiArray();
       const auto dx = hierarchy.geometry[level].CellSizeArray();
       amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> center;
       amrex::GpuArray<int, AMREX_SPACEDIM> periodic;
       for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-         center[direction] = 0.5 * (problo[direction] + probhi[direction]);
+         center[direction] = 0.5_rt * (problo[direction] + probhi[direction]);
          periodic[direction] = hierarchy.geometry[level].isPeriodic(direction);
       }
       const bool vertex_centered =
@@ -260,7 +279,7 @@ amrex::Real validate_centered_power_law_robin(
          : hierarchy.geometry[level].Domain();
       const amrex::Dim3 domain_lo = amrex::lbound(coefficient_domain);
       const amrex::Dim3 domain_hi = amrex::ubound(coefficient_domain);
-      const amrex::Real coordinate_offset = vertex_centered ? 0.0 : 0.5;
+      const amrex::Real coordinate_offset = vertex_centered ? 0.0_rt : 0.5_rt;
       for (amrex::MFIter mfi(error); mfi.isValid(); ++mfi) {
          const amrex::Box box = mfi.fabbox();
          const auto coefficient_a = boundary.coefficient_a(level).const_array(mfi);
@@ -275,13 +294,13 @@ amrex::Real validate_centered_power_law_robin(
             amrex::Real position_2 = problo[1]
                + (j + coordinate_offset) * dx[1] - center[1];
 #else
-            amrex::Real position_2 = 0.0;
+            amrex::Real position_2 = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
             amrex::Real position_3 = problo[2]
                + (k + coordinate_offset) * dx[2] - center[2];
 #else
-            amrex::Real position_3 = 0.0;
+            amrex::Real position_3 = 0.0_rt;
 #endif
             if (!periodic[0] && i < domain_lo.x) {
                face_direction = 0;
@@ -329,7 +348,7 @@ amrex::Real validate_centered_power_law_robin(
                   + amplitude / std::pow(radius, falloff_power);
                const amrex::Real coordinate_derivative =
                   -falloff_power * amplitude * face_position
-                  / std::pow(radius, falloff_power + 2.0);
+                  / std::pow(radius, falloff_power + 2.0_rt);
                identity_error(i, j, k, 0) = amrex::Math::abs(
                   coefficient_a(i, j, k, 0) * field
                   + coefficient_b(i, j, k, 0) * coordinate_derivative
@@ -365,7 +384,7 @@ bool validate_nodal_poisson(
       rhs_storage[level] = std::make_unique<amrex::MultiFab>(
          nodal_grids, hierarchy.distribution[level], 1, 0
       );
-      solution_storage[level]->setVal(0.0);
+      solution_storage[level]->setVal(0.0_rt);
       const auto problo = hierarchy.geometry[level].ProbLoArray();
       const auto dx = hierarchy.geometry[level].CellSizeArray();
       for (amrex::MFIter mfi(*rhs_storage[level]); mfi.isValid(); ++mfi) {
@@ -376,12 +395,12 @@ bool validate_nodal_poisson(
 #if (AMREX_SPACEDIM >= 2)
             const amrex::Real y = problo[1] + j * dx[1];
 #else
-            const amrex::Real y = 0.0;
+            const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
             const amrex::Real z = problo[2] + k * dx[2];
 #else
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             values(i, j, k, 0) = manufactured_rhs(x, y, z);
          });
@@ -393,13 +412,13 @@ bool validate_nodal_poisson(
    auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
       hierarchy,
       1,
-      1.0,
-      0.0,
-      use_robin ? 0.0 : 1.0,
+      1.0_rt,
+      0.0_rt,
+      use_robin ? 0.0_rt : 1.0_rt,
       pyfluid_amrex::InitialDataEllipticCentering::vertex
    );
    if (use_robin) {
-      constexpr amrex::Real robin_b_magnitude = 0.25;
+      constexpr amrex::Real robin_b_magnitude = 0.25_rt;
       for (int level = 0; level < num_levels; ++level) {
          const amrex::Box nodal_domain = amrex::surroundingNodes(
             hierarchy.geometry[level].Domain()
@@ -413,17 +432,17 @@ bool validate_nodal_poisson(
             const auto coefficient_c = boundary.coefficient_c(level).array(mfi);
             amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                int direction = -1;
-               amrex::Real coordinate_b = 0.0;
+               amrex::Real coordinate_b = 0.0_rt;
                amrex::Real x = problo[0] + i * dx[0];
 #if (AMREX_SPACEDIM >= 2)
                amrex::Real y = problo[1] + j * dx[1];
 #else
-               amrex::Real y = 0.0;
+               amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
                amrex::Real z = problo[2] + k * dx[2];
 #else
-               amrex::Real z = 0.0;
+               amrex::Real z = 0.0_rt;
 #endif
                if (i < nodal_domain.smallEnd(0)) {
                   direction = 0;
@@ -458,7 +477,7 @@ bool validate_nodal_poisson(
 #endif
                coefficient_b(i, j, k, 0) = coordinate_b;
                coefficient_c(i, j, k, 0) = direction < 0
-                  ? 0.0
+                  ? 0.0_rt
                   : manufactured_robin_c(
                        x, y, z, direction, coordinate_b
                     );
@@ -471,7 +490,7 @@ bool validate_nodal_poisson(
          hierarchy, solution, rhs, boundary
       );
 
-   amrex::Real max_error = 0.0;
+   amrex::Real max_error = 0.0_rt;
    for (int level = 0; level < num_levels; ++level) {
       amrex::MultiFab error(
          solution_storage[level]->boxArray(),
@@ -490,12 +509,12 @@ bool validate_nodal_poisson(
 #if (AMREX_SPACEDIM >= 2)
             const amrex::Real y = problo[1] + j * dx[1];
 #else
-            const amrex::Real y = 0.0;
+            const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
             const amrex::Real z = problo[2] + k * dx[2];
 #else
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             difference(i, j, k, 0) = amrex::Math::abs(
                numerical(i, j, k, 0) - manufactured_solution(x, y, z)
@@ -513,7 +532,7 @@ bool validate_nodal_poisson(
                 << " boundary_iterations=" << result.boundary_iterations
                 << " linf_error=" << max_error << '\n';
    }
-   return max_error < 5.0e-3;
+   return max_error < 5.0e-3_rt;
 }
 
 bool validate_nodal_reflection_poisson(bool use_robin)
@@ -523,8 +542,8 @@ bool validate_nodal_reflection_poisson(bool use_robin)
    const amrex::IntVect hi(AMREX_D_DECL(cells - 1, cells - 1, cells - 1));
    const amrex::Box domain(lo, hi);
    const amrex::RealBox physical_domain(
-      AMREX_D_DECL(0.0, 0.0, 0.0),
-      AMREX_D_DECL(1.0, 1.0, 1.0)
+      AMREX_D_DECL(0.0_rt, 0.0_rt, 0.0_rt),
+      AMREX_D_DECL(1.0_rt, 1.0_rt, 1.0_rt)
    );
    const amrex::Array<int, AMREX_SPACEDIM> periodic{AMREX_D_DECL(0, 0, 0)};
 
@@ -542,7 +561,7 @@ bool validate_nodal_reflection_poisson(bool use_robin)
    );
    amrex::MultiFab solution(nodal_grids, hierarchy.distribution[0], 1, 1);
    amrex::MultiFab rhs(nodal_grids, hierarchy.distribution[0], 1, 0);
-   solution.setVal(0.0);
+   solution.setVal(0.0_rt);
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto dx = hierarchy.geometry[0].CellSizeArray();
    for (amrex::MFIter mfi(rhs); mfi.isValid(); ++mfi) {
@@ -551,18 +570,18 @@ bool validate_nodal_reflection_poisson(bool use_robin)
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const amrex::Real x = problo[0] + i * dx[0];
          amrex::Real exact = std::cos(
-            0.5 * pyfluid_amrex::constants::pi * x
+            0.5_rt * pyfluid_amrex::constants::pi * x
          );
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real y = problo[1] + j * dx[1];
-         exact *= std::cos(0.5 * pyfluid_amrex::constants::pi * y);
+         exact *= std::cos(0.5_rt * pyfluid_amrex::constants::pi * y);
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real z = problo[2] + k * dx[2];
-         exact *= std::cos(0.5 * pyfluid_amrex::constants::pi * z);
+         exact *= std::cos(0.5_rt * pyfluid_amrex::constants::pi * z);
 #endif
          values(i, j, k, 0) = -AMREX_SPACEDIM
-            * 0.25 * pyfluid_amrex::constants::pi
+            * 0.25_rt * pyfluid_amrex::constants::pi
             * pyfluid_amrex::constants::pi * exact;
       });
    }
@@ -570,9 +589,9 @@ bool validate_nodal_reflection_poisson(bool use_robin)
    auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
       hierarchy,
       1,
-      1.0,
-      0.0,
-      0.0,
+      1.0_rt,
+      0.0_rt,
+      0.0_rt,
       pyfluid_amrex::InitialDataEllipticCentering::vertex
    );
    pyfluid_amrex::set_initial_data_reflection_boundaries(
@@ -582,7 +601,7 @@ bool validate_nodal_reflection_poisson(bool use_robin)
    );
    if (use_robin) {
       pyfluid_amrex::set_centered_power_law_robin_boundary(
-         hierarchy, boundary, {0.0}, 1.0
+         hierarchy, boundary, {0.0_rt}, 1.0_rt
       );
       const amrex::Box nodal_domain = amrex::surroundingNodes(domain);
       for (amrex::MFIter mfi(boundary.coefficient_a(0)); mfi.isValid(); ++mfi) {
@@ -609,40 +628,40 @@ bool validate_nodal_reflection_poisson(bool use_robin)
 #endif
             if (direction >= 0) {
                const amrex::Real x = direction == 0
-                  ? 1.0 : problo[0] + i * dx[0];
+                  ? 1.0_rt : problo[0] + i * dx[0];
                amrex::Real exact = std::cos(
-                  0.5 * pyfluid_amrex::constants::pi * x
+                  0.5_rt * pyfluid_amrex::constants::pi * x
                );
                amrex::Real derivative = direction == 0
-                  ? -0.5 * pyfluid_amrex::constants::pi
-                     * std::sin(0.5 * pyfluid_amrex::constants::pi * x)
+                  ? -0.5_rt * pyfluid_amrex::constants::pi
+                     * std::sin(0.5_rt * pyfluid_amrex::constants::pi * x)
                   : exact;
 #if (AMREX_SPACEDIM >= 2)
                const amrex::Real y = direction == 1
-                  ? 1.0 : problo[1] + j * dx[1];
+                  ? 1.0_rt : problo[1] + j * dx[1];
                const amrex::Real cosine_y = std::cos(
-                  0.5 * pyfluid_amrex::constants::pi * y
+                  0.5_rt * pyfluid_amrex::constants::pi * y
                );
                exact *= cosine_y;
                derivative *= direction == 1
-                  ? -0.5 * pyfluid_amrex::constants::pi
-                     * std::sin(0.5 * pyfluid_amrex::constants::pi * y)
+                  ? -0.5_rt * pyfluid_amrex::constants::pi
+                     * std::sin(0.5_rt * pyfluid_amrex::constants::pi * y)
                   : cosine_y;
 #endif
 #if (AMREX_SPACEDIM == 3)
                const amrex::Real z = direction == 2
-                  ? 1.0 : problo[2] + k * dx[2];
+                  ? 1.0_rt : problo[2] + k * dx[2];
                const amrex::Real cosine_z = std::cos(
-                  0.5 * pyfluid_amrex::constants::pi * z
+                  0.5_rt * pyfluid_amrex::constants::pi * z
                );
                exact *= cosine_z;
                derivative *= direction == 2
-                  ? -0.5 * pyfluid_amrex::constants::pi
-                     * std::sin(0.5 * pyfluid_amrex::constants::pi * z)
+                  ? -0.5_rt * pyfluid_amrex::constants::pi
+                     * std::sin(0.5_rt * pyfluid_amrex::constants::pi * z)
                   : cosine_z;
 #endif
-               constexpr amrex::Real coefficient = 0.25;
-               coefficient_a(i, j, k, 0) = 1.0;
+               constexpr amrex::Real coefficient = 0.25_rt;
+               coefficient_a(i, j, k, 0) = 1.0_rt;
                coefficient_b(i, j, k, 0) = coefficient;
                coefficient_c(i, j, k, 0) =
                   exact + coefficient * derivative;
@@ -665,15 +684,15 @@ bool validate_nodal_reflection_poisson(bool use_robin)
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const amrex::Real x = problo[0] + i * dx[0];
          amrex::Real exact = std::cos(
-            0.5 * pyfluid_amrex::constants::pi * x
+            0.5_rt * pyfluid_amrex::constants::pi * x
          );
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real y = problo[1] + j * dx[1];
-         exact *= std::cos(0.5 * pyfluid_amrex::constants::pi * y);
+         exact *= std::cos(0.5_rt * pyfluid_amrex::constants::pi * y);
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real z = problo[2] + k * dx[2];
-         exact *= std::cos(0.5 * pyfluid_amrex::constants::pi * z);
+         exact *= std::cos(0.5_rt * pyfluid_amrex::constants::pi * z);
 #endif
          difference(i, j, k, 0) = amrex::Math::abs(
             numerical(i, j, k, 0) - exact
@@ -689,19 +708,19 @@ bool validate_nodal_reflection_poisson(bool use_robin)
                 << " boundary_residual=" << result.boundary_residual
                 << " linf_error=" << max_error << '\n';
    }
-   return max_error < 5.0e-3;
+   return max_error < 5.0e-3_rt;
 }
 
 #if (AMREX_SPACEDIM == 2)
 struct AxisymmetricSphericalPoissonError {
-   amrex::Real error = 0.0;
-   amrex::Real source_region_error = 0.0;
-   amrex::Real interior_error = 0.0;
-   amrex::Real origin_error = 0.0;
-   amrex::Real angular_boundary_error = 0.0;
-   amrex::Real outer_error = 0.0;
-   amrex::Real residual = 0.0;
-   amrex::Real boundary_residual = 0.0;
+   amrex::Real error = 0.0_rt;
+   amrex::Real source_region_error = 0.0_rt;
+   amrex::Real interior_error = 0.0_rt;
+   amrex::Real origin_error = 0.0_rt;
+   amrex::Real angular_boundary_error = 0.0_rt;
+   amrex::Real outer_error = 0.0_rt;
+   amrex::Real residual = 0.0_rt;
+   amrex::Real boundary_residual = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -711,24 +730,24 @@ amrex::Real axisymmetric_spherical_exact(
    bool toroidal
 ) noexcept
 {
-   constexpr amrex::Real quadrupole_amplitude = 0.05;
-   constexpr amrex::Real hexadecapole_amplitude = 0.01;
-   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+   constexpr amrex::Real quadrupole_amplitude = 0.05_rt;
+   constexpr amrex::Real hexadecapole_amplitude = 0.01_rt;
+   const amrex::Real legendre_p2 = 0.5_rt * (3.0_rt * mu * mu - 1.0_rt);
    const amrex::Real mu_squared = mu * mu;
-   const amrex::Real legendre_p4 = 0.125 * (
-      35.0 * mu_squared * mu_squared - 30.0 * mu_squared + 3.0
+   const amrex::Real legendre_p4 = 0.125_rt * (
+      35.0_rt * mu_squared * mu_squared - 30.0_rt * mu_squared + 3.0_rt
    );
    if (toroidal) {
       const amrex::Real sine_theta = std::sqrt(
-         amrex::max(amrex::Real(0.0), 1.0 - mu_squared)
+         amrex::max(amrex::Real(0.0_rt), 1.0_rt - mu_squared)
       );
       const amrex::Real toroidal_l1 = sine_theta;
       const amrex::Real toroidal_l3 =
-         1.5 * (5.0 * mu_squared - 1.0) * sine_theta;
+         1.5_rt * (5.0_rt * mu_squared - 1.0_rt) * sine_theta;
       return quadrupole_amplitude * std::pow(radius, 3) * toroidal_l1
          + hexadecapole_amplitude * std::pow(radius, 5) * toroidal_l3;
    }
-   return 1.0
+   return 1.0_rt
       + quadrupole_amplitude * std::pow(radius, 4) * legendre_p2
       + hexadecapole_amplitude * std::pow(radius, 6) * legendre_p4;
 }
@@ -740,26 +759,26 @@ amrex::Real axisymmetric_spherical_rhs(
    bool toroidal
 ) noexcept
 {
-   constexpr amrex::Real quadrupole_amplitude = 0.05;
-   constexpr amrex::Real hexadecapole_amplitude = 0.01;
-   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+   constexpr amrex::Real quadrupole_amplitude = 0.05_rt;
+   constexpr amrex::Real hexadecapole_amplitude = 0.01_rt;
+   const amrex::Real legendre_p2 = 0.5_rt * (3.0_rt * mu * mu - 1.0_rt);
    const amrex::Real mu_squared = mu * mu;
-   const amrex::Real legendre_p4 = 0.125 * (
-      35.0 * mu_squared * mu_squared - 30.0 * mu_squared + 3.0
+   const amrex::Real legendre_p4 = 0.125_rt * (
+      35.0_rt * mu_squared * mu_squared - 30.0_rt * mu_squared + 3.0_rt
    );
    if (toroidal) {
       const amrex::Real sine_theta = std::sqrt(
-         amrex::max(amrex::Real(0.0), 1.0 - mu_squared)
+         amrex::max(amrex::Real(0.0_rt), 1.0_rt - mu_squared)
       );
       const amrex::Real toroidal_l1 = sine_theta;
       const amrex::Real toroidal_l3 =
-         1.5 * (5.0 * mu_squared - 1.0) * sine_theta;
-      return 10.0 * quadrupole_amplitude * radius * toroidal_l1
-         + 18.0 * hexadecapole_amplitude * std::pow(radius, 3)
+         1.5_rt * (5.0_rt * mu_squared - 1.0_rt) * sine_theta;
+      return 10.0_rt * quadrupole_amplitude * radius * toroidal_l1
+         + 18.0_rt * hexadecapole_amplitude * std::pow(radius, 3)
             * toroidal_l3;
    }
-   return 14.0 * quadrupole_amplitude * radius * radius * legendre_p2
-      + 22.0 * hexadecapole_amplitude * std::pow(radius, 4)
+   return 14.0_rt * quadrupole_amplitude * radius * radius * legendre_p2
+      + 22.0_rt * hexadecapole_amplitude * std::pow(radius, 4)
          * legendre_p4;
 }
 
@@ -770,26 +789,26 @@ amrex::Real axisymmetric_spherical_radial_derivative(
    bool toroidal
 ) noexcept
 {
-   constexpr amrex::Real quadrupole_amplitude = 0.05;
-   constexpr amrex::Real hexadecapole_amplitude = 0.01;
-   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+   constexpr amrex::Real quadrupole_amplitude = 0.05_rt;
+   constexpr amrex::Real hexadecapole_amplitude = 0.01_rt;
+   const amrex::Real legendre_p2 = 0.5_rt * (3.0_rt * mu * mu - 1.0_rt);
    const amrex::Real mu_squared = mu * mu;
-   const amrex::Real legendre_p4 = 0.125 * (
-      35.0 * mu_squared * mu_squared - 30.0 * mu_squared + 3.0
+   const amrex::Real legendre_p4 = 0.125_rt * (
+      35.0_rt * mu_squared * mu_squared - 30.0_rt * mu_squared + 3.0_rt
    );
    if (toroidal) {
       const amrex::Real sine_theta = std::sqrt(
-         amrex::max(amrex::Real(0.0), 1.0 - mu_squared)
+         amrex::max(amrex::Real(0.0_rt), 1.0_rt - mu_squared)
       );
       const amrex::Real toroidal_l1 = sine_theta;
       const amrex::Real toroidal_l3 =
-         1.5 * (5.0 * mu_squared - 1.0) * sine_theta;
-      return 3.0 * quadrupole_amplitude * radius * radius * toroidal_l1
-         + 5.0 * hexadecapole_amplitude * std::pow(radius, 4)
+         1.5_rt * (5.0_rt * mu_squared - 1.0_rt) * sine_theta;
+      return 3.0_rt * quadrupole_amplitude * radius * radius * toroidal_l1
+         + 5.0_rt * hexadecapole_amplitude * std::pow(radius, 4)
             * toroidal_l3;
    }
-   return 4.0 * quadrupole_amplitude * std::pow(radius, 3) * legendre_p2
-      + 6.0 * hexadecapole_amplitude * std::pow(radius, 5)
+   return 4.0_rt * quadrupole_amplitude * std::pow(radius, 3) * legendre_p2
+      + 6.0_rt * hexadecapole_amplitude * std::pow(radius, 5)
          * legendre_p4;
 }
 
@@ -805,7 +824,7 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
    const amrex::IntVect hi(radial_cells - 1, angular_cells - 1);
    const amrex::Box domain(lo, hi);
    const amrex::RealBox physical_domain(
-      {0.0, 0.0}, {1.0, 0.5 * pyfluid_amrex::constants::pi}
+      {0.0_rt, 0.0_rt}, {1.0_rt, 0.5_rt * pyfluid_amrex::constants::pi}
    );
    const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0};
 
@@ -825,7 +844,7 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
       hierarchy.physical_coordinate_faces.resize(1);
       hierarchy.physical_coordinate_faces[0][0] =
          pyfluid_amrex::surface_focused_radial_faces(
-            0.25, 1.0, 2 * radial_cells / 3, radial_cells / 3
+            0.25_rt, 1.0_rt, 2 * radial_cells / 3, radial_cells / 3
          );
    }
 
@@ -835,7 +854,7 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
    amrex::MultiFab rhs(
       hierarchy.grids[0], hierarchy.distribution[0], 1, 0
    );
-   solution.setVal(0.0);
+   solution.setVal(0.0_rt);
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto dx = hierarchy.geometry[0].CellSizeArray();
    const amrex::Vector<amrex::Real> radial_faces =
@@ -844,7 +863,7 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
    for (int radial_index = 0;
         radial_index < radial_cells;
         ++radial_index) {
-      radial_centers[radial_index] = 0.5 * (
+      radial_centers[radial_index] = 0.5_rt * (
          radial_faces[radial_index] + radial_faces[radial_index + 1]
       );
    }
@@ -863,7 +882,7 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
          int i, int j, int k
       ) noexcept {
          const amrex::Real radius = radial_center[i];
-         const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+         const amrex::Real theta = problo[1] + (j + 0.5_rt) * dx[1];
          const amrex::Real mu = -std::cos(theta);
          values(i, j, k, 0) = axisymmetric_spherical_rhs(
             radius, mu, toroidal
@@ -871,13 +890,13 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
       });
    }
 
-   constexpr amrex::Real robin_b = 0.2;
+   constexpr amrex::Real robin_b = 0.2_rt;
    auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
       hierarchy,
       1,
-      1.0,
-      use_robin ? robin_b : 0.0,
-      0.0,
+      1.0_rt,
+      use_robin ? robin_b : 0.0_rt,
+      0.0_rt,
       pyfluid_amrex::InitialDataEllipticCentering::cell
    );
    if (toroidal) {
@@ -900,17 +919,17 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
          int i, int j, int k
       ) noexcept {
          if (i > domain.bigEnd(0)) {
-            const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+            const amrex::Real theta = problo[1] + (j + 0.5_rt) * dx[1];
             const amrex::Real mu = -std::cos(theta);
             const amrex::Real exact = axisymmetric_spherical_exact(
-               1.0, mu, toroidal
+               1.0_rt, mu, toroidal
             );
-            coefficient_a(i, j, k, 0) = 1.0;
-            coefficient_b(i, j, k, 0) = use_robin ? robin_b : 0.0;
+            coefficient_a(i, j, k, 0) = 1.0_rt;
+            coefficient_b(i, j, k, 0) = use_robin ? robin_b : 0.0_rt;
             coefficient_c(i, j, k, 0) = use_robin
                ? exact + robin_b
                   * axisymmetric_spherical_radial_derivative(
-                     1.0, mu, toroidal
+                     1.0_rt, mu, toroidal
                   )
                : exact;
          }
@@ -920,7 +939,7 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
    amrex::Vector<amrex::MultiFab*> solution_levels{&solution};
    amrex::Vector<amrex::MultiFab const*> rhs_levels{&rhs};
    pyfluid_amrex::InitialDataEllipticOptions options;
-   options.relative_tolerance = 1.0e-12;
+   options.relative_tolerance = 1.0e-12_rt;
    options.verbose = 0;
    const pyfluid_amrex::InitialDataEllipticResult result = toroidal
       ? pyfluid_amrex::
@@ -934,7 +953,7 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
    amrex::MultiFab error(
       hierarchy.grids[0], hierarchy.distribution[0], 6, 0
    );
-   error.setVal(0.0);
+   error.setVal(0.0_rt);
    for (amrex::MFIter mfi(error); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.validbox();
       const auto numerical = solution.const_array(mfi);
@@ -943,14 +962,14 @@ AxisymmetricSphericalPoissonError solve_axisymmetric_spherical_manufactured(
          int i, int j, int k
       ) noexcept {
          const amrex::Real radius = radial_center[i];
-         const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+         const amrex::Real theta = problo[1] + (j + 0.5_rt) * dx[1];
          const amrex::Real mu = -std::cos(theta);
          const amrex::Real point_error = amrex::Math::abs(
             numerical(i, j, k, 0)
             - axisymmetric_spherical_exact(radius, mu, toroidal)
          );
          difference(i, j, k, 0) = point_error;
-         if (radius <= 0.25) {
+         if (radius <= 0.25_rt) {
             difference(i, j, k, 1) = point_error;
          }
          if (i > domain.smallEnd(0)
@@ -1003,14 +1022,14 @@ bool validate_axisymmetric_spherical_poisson()
    const AxisymmetricSphericalPoissonError focused_fine =
       solve_axisymmetric_spherical_manufactured(192, 128, false, false, true);
    const amrex::Real order = std::log(coarse.error / fine.error)
-      / std::log(2.0);
+      / std::log(2.0_rt);
    const amrex::Real toroidal_order = std::log(
       toroidal_coarse.error / toroidal_fine.error
-   ) / std::log(2.0);
+   ) / std::log(2.0_rt);
    const amrex::Real focused_source_order = std::log(
       focused_coarse.source_region_error
       / focused_fine.source_region_error
-   ) / std::log(2.0);
+   ) / std::log(2.0_rt);
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::cout << std::setprecision(16)
                 << "axisymmetric_spherical_poisson coarse_error="
@@ -1058,34 +1077,34 @@ bool validate_axisymmetric_spherical_poisson()
                 << '\n';
    }
    return std::isfinite(order)
-      && order > 1.7
-      && fine.error < 1.0e-5
-      && robin.error < 1.0e-5
+      && order > 1.7_rt
+      && fine.error < 1.0e-5_rt
+      && robin.error < 1.0e-5_rt
       && std::isfinite(fine.residual)
       && std::isfinite(robin.residual)
-      && fine.residual < 1.0e-7
-      && robin.residual < 1.0e-7
-      && robin.boundary_residual < 1.0e-10
+      && fine.residual < 1.0e-7_rt
+      && robin.residual < 1.0e-7_rt
+      && robin.boundary_residual < 1.0e-10_rt
       && std::isfinite(focused_source_order)
-      && focused_source_order > 1.7
-      && focused_fine.source_region_error < 1.0e-5
+      && focused_source_order > 1.7_rt
+      && focused_fine.source_region_error < 1.0e-5_rt
       && std::isfinite(focused_fine.residual)
-      && focused_fine.residual < 1.0e-7
+      && focused_fine.residual < 1.0e-7_rt
       && std::isfinite(toroidal_order)
-      && toroidal_order > 1.7
-      && toroidal_fine.error < 1.0e-5
-      && toroidal_robin.error < 1.0e-5
+      && toroidal_order > 1.7_rt
+      && toroidal_fine.error < 1.0e-5_rt
+      && toroidal_robin.error < 1.0e-5_rt
       && std::isfinite(toroidal_fine.residual)
       && std::isfinite(toroidal_robin.residual)
-      && toroidal_fine.residual < 1.0e-7
-      && toroidal_robin.residual < 1.0e-7;
+      && toroidal_fine.residual < 1.0e-7_rt
+      && toroidal_robin.residual < 1.0e-7_rt;
 }
 
 struct AxisymmetricTovXctsError {
-   amrex::Real conformal = 0.0;
-   amrex::Real lapse_conformal = 0.0;
-   amrex::Real shift = 0.0;
-   amrex::Real extrinsic = 0.0;
+   amrex::Real conformal = 0.0_rt;
+   amrex::Real lapse_conformal = 0.0_rt;
+   amrex::Real shift = 0.0_rt;
+   amrex::Real extrinsic = 0.0_rt;
    pyfluid_amrex::XctsResult result{};
 };
 
@@ -1097,14 +1116,14 @@ AxisymmetricTovXctsError solve_axisymmetric_tov_xcts(
    pyfluid_amrex::RunConfig config;
    config.ic = "tov";
    config.eos = "hybrid_polytrope";
-   config.polytropic_k = 100.0;
-   config.polytropic_gamma = 2.0;
-   config.thermal_gamma = 2.0;
-   config.rho_floor = 1.0e-10;
-   config.pressure_floor = 1.0e-14;
-   config.tov_central_density = 1.28e-3;
-   config.tov_absolute_tolerance = 1.0e-12;
-   config.tov_relative_tolerance = 1.0e-10;
+   config.polytropic_k = 100.0_rt;
+   config.polytropic_gamma = 2.0_rt;
+   config.thermal_gamma = 2.0_rt;
+   config.rho_floor = 1.0e-10_rt;
+   config.pressure_floor = 1.0e-14_rt;
+   config.tov_central_density = 1.28e-3_rt;
+   config.tov_absolute_tolerance = 1.0e-12_rt;
+   config.tov_relative_tolerance = 1.0e-10_rt;
    config.tov_max_steps = 100000;
    const pyfluid_amrex::TovInitialData tov(config);
    const pyfluid_amrex::TovInitialDataView tov_view = tov.view();
@@ -1114,8 +1133,8 @@ AxisymmetricTovXctsError solve_axisymmetric_tov_xcts(
       amrex::IntVect(radial_cells - 1, angular_cells - 1)
    );
    const amrex::RealBox physical_domain(
-      {0.0, 0.0},
-      {32.0, 0.5 * pyfluid_amrex::constants::pi}
+      {0.0_rt, 0.0_rt},
+      {32.0_rt, 0.5_rt * pyfluid_amrex::constants::pi}
    );
    const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0};
    pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
@@ -1145,11 +1164,11 @@ AxisymmetricTovXctsError solve_axisymmetric_tov_xcts(
    auto energy = make_field(1, 0);
    auto momentum = make_field(1, 0);
    auto stress = make_field(1, 0);
-   conformal->setVal(1.0);
-   lapse_conformal->setVal(1.0);
-   shift->setVal(0.0);
-   extrinsic->setVal(0.0);
-   momentum->setVal(0.0);
+   conformal->setVal(1.0_rt);
+   lapse_conformal->setVal(1.0_rt);
+   shift->setVal(0.0_rt);
+   extrinsic->setVal(0.0_rt);
+   momentum->setVal(0.0_rt);
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto spacing = hierarchy.geometry[0].CellSizeArray();
    for (amrex::MFIter mfi(*energy); mfi.isValid(); ++mfi) {
@@ -1159,12 +1178,12 @@ AxisymmetricTovXctsError solve_axisymmetric_tov_xcts(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const amrex::Real radius = problo[0] + (i + 0.5) * spacing[0];
+         const amrex::Real radius = problo[0] + (i + 0.5_rt) * spacing[0];
          const pyfluid_amrex::TovSample point = tov_view.sample(radius);
          energy_values(i, j, k, 0) = point.rho * (
-            1.0 + point.specific_internal_energy
+            1.0_rt + point.specific_internal_energy
          );
-         stress_values(i, j, k, 0) = 3.0 * point.pressure;
+         stress_values(i, j, k, 0) = 3.0_rt * point.pressure;
       });
    }
 
@@ -1172,9 +1191,9 @@ AxisymmetricTovXctsError solve_axisymmetric_tov_xcts(
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0,
-         0.0,
-         0.0,
+         1.0_rt,
+         0.0_rt,
+         0.0_rt,
          pyfluid_amrex::InitialDataEllipticCentering::cell
       );
    pyfluid_amrex::set_initial_data_reflection_boundaries(
@@ -1183,23 +1202,23 @@ AxisymmetricTovXctsError solve_axisymmetric_tov_xcts(
       {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
    );
    pyfluid_amrex::set_axisymmetric_spherical_radial_robin_boundary(
-      hierarchy, conformal_boundary, {0.0}, 1.0
+      hierarchy, conformal_boundary, {0.0_rt}, 1.0_rt
    );
    auto lapse_boundary = conformal_boundary.component(0);
    auto shift_boundary =
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0,
-         0.0,
-         0.0,
+         1.0_rt,
+         0.0_rt,
+         0.0_rt,
          pyfluid_amrex::InitialDataEllipticCentering::cell
       );
    pyfluid_amrex::set_axisymmetric_spherical_toroidal_regularity(
       hierarchy, shift_boundary
    );
    pyfluid_amrex::set_axisymmetric_spherical_radial_robin_boundary(
-      hierarchy, shift_boundary, {0.0}, 2.0
+      hierarchy, shift_boundary, {0.0_rt}, 2.0_rt
    );
 
    amrex::Vector<amrex::MultiFab*> conformal_fields{conformal.get()};
@@ -1211,9 +1230,9 @@ AxisymmetricTovXctsError solve_axisymmetric_tov_xcts(
    amrex::Vector<amrex::MultiFab const*> stress_fields{stress.get()};
    pyfluid_amrex::XctsOptions options;
    options.max_coupled_iterations = 80;
-   options.relative_update_tolerance = 1.0e-10;
-   options.relaxation = 0.7;
-   options.linear.relative_tolerance = 1.0e-12;
+   options.relative_update_tolerance = 1.0e-10_rt;
+   options.relaxation = 0.7_rt;
+   options.linear.relative_tolerance = 1.0e-12_rt;
    const pyfluid_amrex::XctsResult result =
       pyfluid_amrex::solve_axisymmetric_spherical_xcts_constraints(
          hierarchy,
@@ -1233,7 +1252,7 @@ AxisymmetricTovXctsError solve_axisymmetric_tov_xcts(
    amrex::MultiFab error(
       hierarchy.grids[0], hierarchy.distribution[0], 4, 0
    );
-   error.setVal(0.0);
+   error.setVal(0.0_rt);
    for (amrex::MFIter mfi(error); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.validbox();
       const auto psi = conformal->const_array(mfi);
@@ -1244,7 +1263,7 @@ AxisymmetricTovXctsError solve_axisymmetric_tov_xcts(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const amrex::Real radius = problo[0] + (i + 0.5) * spacing[0];
+         const amrex::Real radius = problo[0] + (i + 0.5_rt) * spacing[0];
          const pyfluid_amrex::TovSample point = tov_view.sample(radius);
          difference(i, j, k, 0) = amrex::Math::abs(
             psi(i, j, k, 0) - point.conformal_factor
@@ -1277,10 +1296,10 @@ bool validate_axisymmetric_tov_xcts()
       solve_axisymmetric_tov_xcts(256, 64);
    const amrex::Real conformal_order = std::log(
       coarse.conformal / fine.conformal
-   ) / std::log(2.0);
+   ) / std::log(2.0_rt);
    const amrex::Real lapse_order = std::log(
       coarse.lapse_conformal / fine.lapse_conformal
-   ) / std::log(2.0);
+   ) / std::log(2.0_rt);
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::cout << std::setprecision(16)
                 << "axisymmetric_tov_xcts coarse_conformal_error="
@@ -1303,19 +1322,19 @@ bool validate_axisymmetric_tov_xcts()
       && fine.result.converged
       && std::isfinite(conformal_order)
       && std::isfinite(lapse_order)
-      && conformal_order > 1.5
-      && lapse_order > 1.5
-      && fine.conformal < 2.0e-3
-      && fine.lapse_conformal < 2.0e-3
-      && fine.shift < 1.0e-12
-      && fine.extrinsic < 1.0e-12;
+      && conformal_order > 1.5_rt
+      && lapse_order > 1.5_rt
+      && fine.conformal < 2.0e-3_rt
+      && fine.lapse_conformal < 2.0e-3_rt
+      && fine.shift < 1.0e-12_rt
+      && fine.extrinsic < 1.0e-12_rt;
 }
 
 struct AxisymmetricSchwarzschildXctsError {
-   amrex::Real conformal = 0.0;
-   amrex::Real lapse_conformal = 0.0;
-   amrex::Real shift = 0.0;
-   amrex::Real extrinsic = 0.0;
+   amrex::Real conformal = 0.0_rt;
+   amrex::Real lapse_conformal = 0.0_rt;
+   amrex::Real shift = 0.0_rt;
+   amrex::Real extrinsic = 0.0_rt;
    pyfluid_amrex::XctsResult result{};
 };
 
@@ -1324,16 +1343,16 @@ AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
    int angular_cells
 )
 {
-   constexpr amrex::Real mass = 1.0;
-   constexpr amrex::Real horizon_radius = 0.5 * mass;
-   constexpr amrex::Real outer_radius = 32.0;
+   constexpr amrex::Real mass = 1.0_rt;
+   constexpr amrex::Real horizon_radius = 0.5_rt * mass;
+   constexpr amrex::Real outer_radius = 32.0_rt;
    const amrex::Box domain(
       amrex::IntVect(0, 0),
       amrex::IntVect(radial_cells - 1, angular_cells - 1)
    );
    const amrex::RealBox physical_domain(
-      {horizon_radius, 0.0},
-      {outer_radius, 0.5 * pyfluid_amrex::constants::pi}
+      {horizon_radius, 0.0_rt},
+      {outer_radius, 0.5_rt * pyfluid_amrex::constants::pi}
    );
    const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0};
    pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
@@ -1348,7 +1367,7 @@ AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
    hierarchy.physical_coordinate_faces.resize(1);
    hierarchy.physical_coordinate_faces[0][0] =
       pyfluid_amrex::stretched_radial_shell_faces(
-         horizon_radius, outer_radius, radial_cells, 16.0
+         horizon_radius, outer_radius, radial_cells, 16.0_rt
       );
 
    auto make_field = [&](int components, int ghosts) {
@@ -1368,13 +1387,13 @@ AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
    auto energy = make_field(1, 0);
    auto momentum = make_field(1, 0);
    auto stress = make_field(1, 0);
-   conformal->setVal(1.0);
-   lapse_conformal->setVal(1.0);
-   shift->setVal(0.0);
-   extrinsic->setVal(0.0);
-   energy->setVal(0.0);
-   momentum->setVal(0.0);
-   stress->setVal(0.0);
+   conformal->setVal(1.0_rt);
+   lapse_conformal->setVal(1.0_rt);
+   shift->setVal(0.0_rt);
+   extrinsic->setVal(0.0_rt);
+   energy->setVal(0.0_rt);
+   momentum->setVal(0.0_rt);
+   stress->setVal(0.0_rt);
 
    // In isotropic coordinates, psi=1+a/r and alpha*psi=1-a/r with
    // a=M/2. The Cook--Pfeiffer apparent-horizon condition becomes
@@ -1383,9 +1402,9 @@ AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0 / (2.0 * horizon_radius),
-         1.0,
-         -1.0 / (2.0 * horizon_radius),
+         1.0_rt / (2.0_rt * horizon_radius),
+         1.0_rt,
+         -1.0_rt / (2.0_rt * horizon_radius),
          pyfluid_amrex::InitialDataEllipticCentering::cell
       );
    pyfluid_amrex::set_initial_data_reflection_boundaries(
@@ -1394,15 +1413,15 @@ AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
       {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
    );
    pyfluid_amrex::set_axisymmetric_spherical_radial_robin_boundary(
-      hierarchy, conformal_boundary, {0.0}, 1.0
+      hierarchy, conformal_boundary, {0.0_rt}, 1.0_rt
    );
    auto lapse_boundary =
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0,
-         0.0,
-         -1.0,
+         1.0_rt,
+         0.0_rt,
+         -1.0_rt,
          pyfluid_amrex::InitialDataEllipticCentering::cell
       );
    pyfluid_amrex::set_initial_data_reflection_boundaries(
@@ -1411,22 +1430,22 @@ AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
       {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
    );
    pyfluid_amrex::set_axisymmetric_spherical_radial_robin_boundary(
-      hierarchy, lapse_boundary, {0.0}, 1.0
+      hierarchy, lapse_boundary, {0.0_rt}, 1.0_rt
    );
    auto shift_boundary =
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0,
-         0.0,
-         0.0,
+         1.0_rt,
+         0.0_rt,
+         0.0_rt,
          pyfluid_amrex::InitialDataEllipticCentering::cell
       );
    pyfluid_amrex::set_axisymmetric_spherical_toroidal_regularity(
       hierarchy, shift_boundary
    );
    pyfluid_amrex::set_axisymmetric_spherical_radial_robin_boundary(
-      hierarchy, shift_boundary, {0.0}, 2.0
+      hierarchy, shift_boundary, {0.0_rt}, 2.0_rt
    );
 
    amrex::Vector<amrex::MultiFab*> conformal_fields{conformal.get()};
@@ -1438,9 +1457,9 @@ AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
    amrex::Vector<amrex::MultiFab const*> stress_fields{stress.get()};
    pyfluid_amrex::XctsOptions options;
    options.max_coupled_iterations = 20;
-   options.relative_update_tolerance = 1.0e-11;
-   options.relaxation = 1.0;
-   options.linear.relative_tolerance = 1.0e-13;
+   options.relative_update_tolerance = 1.0e-11_rt;
+   options.relaxation = 1.0_rt;
+   options.linear.relative_tolerance = 1.0e-13_rt;
    const pyfluid_amrex::XctsResult result =
       pyfluid_amrex::solve_axisymmetric_spherical_xcts_constraints(
          hierarchy,
@@ -1460,7 +1479,7 @@ AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
    amrex::MultiFab error(
       hierarchy.grids[0], hierarchy.distribution[0], 4, 0
    );
-   error.setVal(0.0);
+   error.setVal(0.0_rt);
    const pyfluid_amrex::InitialDataCoordinateLine radial_coordinates =
       hierarchy.coordinate_line(0, 0);
    amrex::Gpu::AsyncArray<amrex::Real> radial_center_storage(
@@ -1481,13 +1500,13 @@ AxisymmetricSchwarzschildXctsError solve_axisymmetric_schwarzschild_xcts(
          const amrex::Real radius = radial_center[i - domain_lo.x];
          const amrex::Real inverse_radius_mass = horizon_radius / radius;
          difference(i, j, k, 0) = amrex::Math::abs(
-            psi(i, j, k, 0) - (1.0 + inverse_radius_mass)
+            psi(i, j, k, 0) - (1.0_rt + inverse_radius_mass)
          );
          difference(i, j, k, 1) = amrex::Math::abs(
-            lapse_psi(i, j, k, 0) - (1.0 - inverse_radius_mass)
+            lapse_psi(i, j, k, 0) - (1.0_rt - inverse_radius_mass)
          );
          difference(i, j, k, 2) = amrex::Math::abs(beta(i, j, k, 0));
-         amrex::Real extrinsic_error = 0.0;
+         amrex::Real extrinsic_error = 0.0_rt;
          for (int component = 0;
               component < pyfluid_amrex::CONFORMAL_A_NUM_COMPONENTS;
               ++component) {
@@ -1515,10 +1534,10 @@ bool validate_axisymmetric_schwarzschild_xcts()
       solve_axisymmetric_schwarzschild_xcts(256, 32);
    const amrex::Real conformal_order = std::log(
       coarse.conformal / fine.conformal
-   ) / std::log(2.0);
+   ) / std::log(2.0_rt);
    const amrex::Real lapse_order = std::log(
       coarse.lapse_conformal / fine.lapse_conformal
-   ) / std::log(2.0);
+   ) / std::log(2.0_rt);
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::cout << std::setprecision(16)
                 << "axisymmetric_schwarzschild_xcts coarse_conformal_error="
@@ -1541,12 +1560,12 @@ bool validate_axisymmetric_schwarzschild_xcts()
       && fine.result.converged
       && std::isfinite(conformal_order)
       && std::isfinite(lapse_order)
-      && conformal_order > 1.7
-      && lapse_order > 1.7
-      && fine.conformal < 1.0e-3
-      && fine.lapse_conformal < 1.0e-3
-      && fine.shift < 1.0e-13
-      && fine.extrinsic < 1.0e-13;
+      && conformal_order > 1.7_rt
+      && lapse_order > 1.7_rt
+      && fine.conformal < 1.0e-3_rt
+      && fine.lapse_conformal < 1.0e-3_rt
+      && fine.shift < 1.0e-13_rt
+      && fine.extrinsic < 1.0e-13_rt;
 }
 #endif
 
@@ -1554,23 +1573,23 @@ bool validate_tov_solution()
 {
    pyfluid_amrex::EOSParams eos;
    eos.polytrope_segments = 1;
-   eos.segment_k[0] = 100.0;
-   eos.segment_gamma[0] = 2.0;
+   eos.segment_k[0] = 100.0_rt;
+   eos.segment_gamma[0] = 2.0_rt;
    const pyfluid_amrex::TovSolution reference(
       eos,
       {
-         1.28e-3,
-         1.0e-13,
-         1.0e-11,
+         1.28e-3_rt,
+         1.0e-13_rt,
+         1.0e-11_rt,
          100000,
       }
    );
    const pyfluid_amrex::TovSolution relaxed(
       eos,
       {
-         1.28e-3,
-         1.0e-10,
-         1.0e-8,
+         1.28e-3_rt,
+         1.0e-10_rt,
+         1.0e-8_rt,
          100000,
       }
    );
@@ -1597,21 +1616,21 @@ bool validate_tov_solution()
    }
    pyfluid_amrex::TovProfilePoint const& surface = reference.profile().back();
    const bool physical =
-      values.gravitational_mass > 0.0
+      values.gravitational_mass > 0.0_rt
       && values.proper_mass > values.baryonic_mass
       && values.baryonic_mass > values.gravitational_mass
-      && values.binding_energy > 0.0
-      && values.compactness > 0.0
-      && values.compactness < 0.5
-      && values.surface_redshift > 0.0
+      && values.binding_energy > 0.0_rt
+      && values.compactness > 0.0_rt
+      && values.compactness < 0.5_rt
+      && values.surface_redshift > 0.0_rt
       && values.tidal_observables_available
-      && values.love_number_k2 > 0.0
-      && values.tidal_deformability > 0.0
-      && surface.log_specific_enthalpy == 0.0
-      && surface.rho == 0.0
-      && surface.pressure == 0.0;
+      && values.love_number_k2 > 0.0_rt
+      && values.tidal_deformability > 0.0_rt
+      && surface.log_specific_enthalpy == 0.0_rt
+      && surface.rho == 0.0_rt
+      && surface.pressure == 0.0_rt;
    const std::vector<pyfluid_amrex::TovSolution> sequence =
-      pyfluid_amrex::solve_tov_sequence(eos, {8.0e-4, 1.0e-3, 1.28e-3});
+      pyfluid_amrex::solve_tov_sequence(eos, {8.0e-4_rt, 1.0e-3_rt, 1.28e-3_rt});
    const bool sequence_increases = sequence.size() == 3
       && sequence[0].observables().gravitational_mass
          < sequence[1].observables().gravitational_mass
@@ -1622,13 +1641,13 @@ bool validate_tov_solution()
       const pyfluid_amrex::EOSParams preset_eos =
          pyfluid_amrex::eos::make_read_piecewise_polytrope(
             pyfluid_amrex::eos::piecewise_polytrope_preset(preset_name),
-            2.0,
-            1.0e-10,
-            1.0e-14
+            2.0_rt,
+            1.0e-10_rt,
+            1.0e-14_rt
          );
       const std::vector<pyfluid_amrex::TovSolution> preset_sequence =
          pyfluid_amrex::solve_tov_sequence(
-            preset_eos, {8.0e-4, 1.5e-3, 3.0e-3}
+            preset_eos, {8.0e-4_rt, 1.5e-3_rt, 3.0e-3_rt}
          );
       for (pyfluid_amrex::TovSolution const& solution : preset_sequence) {
          pyfluid_amrex::TovObservables const& observable =
@@ -1637,13 +1656,28 @@ bool validate_tov_solution()
             && std::isfinite(observable.gravitational_mass)
             && std::isfinite(observable.areal_radius)
             && std::isfinite(observable.tidal_deformability)
-            && observable.gravitational_mass > 0.0
-            && observable.areal_radius > 2.0 * observable.gravitational_mass
+            && observable.gravitational_mass > 0.0_rt
+            && observable.areal_radius > 2.0_rt * observable.gravitational_mass
             && observable.baryonic_mass > observable.gravitational_mass
-            && observable.tidal_deformability > 0.0
+            && observable.tidal_deformability > 0.0_rt
             && std::abs(observable.komar_mass - observable.gravitational_mass)
-               < 1.0e-7 * observable.gravitational_mass;
+               < 1.0e-7_rt * observable.gravitational_mass;
       }
+   }
+   // The sampled metric must satisfy a second-derivative constraint, not
+   // merely reproduce table values. Linear interpolation fails this control.
+   amrex::Real sampled_hamiltonian_error = 0.0_rt;
+   const amrex::Real delta_radius = 0.002_rt;
+   for (amrex::Real radius : {1.0_rt, 2.0_rt, 4.0_rt}) {
+      const auto center = reference.sample_isotropic(radius);
+      const amrex::Real lower = reference.sample_isotropic(radius - delta_radius).conformal_factor;
+      const amrex::Real upper = reference.sample_isotropic(radius + delta_radius).conformal_factor;
+      const amrex::Real derivative = (upper - lower) / (2.0_rt * delta_radius);
+      const amrex::Real laplacian = (upper - 2.0_rt * center.conformal_factor + lower)
+         / (delta_radius * delta_radius) + 2.0_rt * derivative / radius;
+      const amrex::Real hamiltonian = -8.0_rt * laplacian / std::pow(center.conformal_factor, 5)
+         - 16.0_rt * pyfluid_amrex::constants::pi * center.rho * (1.0_rt + center.specific_internal_energy);
+      sampled_hamiltonian_error = std::max(sampled_hamiltonian_error, std::abs(hamiltonian));
    }
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::cout << std::setprecision(16)
@@ -1656,41 +1690,43 @@ bool validate_tov_solution()
                 << " Lambda=" << values.tidal_deformability
                 << " tolerance_errors=(" << mass_tolerance_error
                 << ", " << radius_tolerance_error << ")"
+                << " sampled_hamiltonian=" << sampled_hamiltonian_error
                 << " komar_error=" << komar_error << '\n';
    }
    return physical
+      && sampled_hamiltonian_error < 1.0e-5_rt
       && monotone_profile
       && sequence_increases
       && named_eos_sequences_are_physical
-      && mass_tolerance_error < 1.0e-7
-      && radius_tolerance_error < 1.0e-7
-      && komar_error < 1.0e-8;
+      && mass_tolerance_error < 1.0e-7_rt
+      && radius_tolerance_error < 1.0e-7_rt
+      && komar_error < 1.0e-8_rt;
 }
 
 bool validate_uniform_rotation_first_integral()
 {
    pyfluid_amrex::RotatingStarParameters parameters;
    parameters.active = true;
-   parameters.angular_velocity = 0.02;
-   parameters.rotation_axis = {0.0, 0.0, 1.0};
-   parameters.rotation_center = {0.5, -0.5, 0.25};
-   parameters.injection_energy = 0.84;
+   parameters.angular_velocity = 0.02_rt;
+   parameters.rotation_axis = {0.0_rt, 0.0_rt, 1.0_rt};
+   parameters.rotation_center = {0.5_rt, -0.5_rt, 0.25_rt};
+   parameters.injection_energy = 0.84_rt;
    pyfluid_amrex::SpacetimeMetric metric;
-   metric.lapse = 0.8;
-   metric.shift1 = 0.01;
-   metric.shift2 = -0.02;
-   metric.shift3 = 0.005;
-   metric.gamma11 = 1.2;
-   metric.gamma12 = 0.03;
-   metric.gamma13 = -0.01;
-   metric.gamma22 = 1.1;
-   metric.gamma23 = 0.02;
-   metric.gamma33 = 0.9;
-   const pyfluid_amrex::PatchCoordinate physical{2.5, 0.5, -0.75};
+   metric.lapse = 0.8_rt;
+   metric.shift1 = 0.01_rt;
+   metric.shift2 = -0.02_rt;
+   metric.shift3 = 0.005_rt;
+   metric.gamma11 = 1.2_rt;
+   metric.gamma12 = 0.03_rt;
+   metric.gamma13 = -0.01_rt;
+   metric.gamma22 = 1.1_rt;
+   metric.gamma23 = 0.02_rt;
+   metric.gamma33 = 0.9_rt;
+   const pyfluid_amrex::PatchCoordinate physical{2.5_rt, 0.5_rt, -0.75_rt};
    const pyfluid_amrex::RotatingStarPoint point =
       pyfluid_amrex::rotating_star_point(parameters, physical, metric);
-   const amrex::Real expected_v1 = (-0.02 + metric.shift1) / metric.lapse;
-   const amrex::Real expected_v2 = (0.04 + metric.shift2) / metric.lapse;
+   const amrex::Real expected_v1 = (-0.02_rt + metric.shift1) / metric.lapse;
+   const amrex::Real expected_v2 = (0.04_rt + metric.shift2) / metric.lapse;
    const amrex::Real expected_v3 = metric.shift3 / metric.lapse;
    const amrex::Real expected_velocity_squared =
       pyfluid_amrex::spatial_vector_norm_squared(
@@ -1698,7 +1734,7 @@ bool validate_uniform_rotation_first_integral()
       );
    const amrex::Real expected_log_enthalpy = std::log(
       parameters.injection_energy / metric.lapse
-   ) - 0.5 * std::log(1.0 - expected_velocity_squared);
+   ) - 0.5_rt * std::log(1.0_rt - expected_velocity_squared);
    const amrex::Real error = std::max({
       std::abs(point.v1 - expected_v1),
       std::abs(point.v2 - expected_v2),
@@ -1719,7 +1755,7 @@ bool validate_uniform_rotation_first_integral()
                 << " timelike=" << point.timelike
                 << " catalog_valid=" << catalog_valid << '\n';
    }
-   return point.timelike && catalog_valid && error < 1.0e-14;
+   return point.timelike && catalog_valid && error < 1.0e-14_rt;
 }
 
 bool validate_differential_rotation_first_integrals()
@@ -1727,27 +1763,27 @@ bool validate_differential_rotation_first_integrals()
    pyfluid_amrex::RotatingStarParameters j_parameters;
    j_parameters.active = true;
    j_parameters.rotation_law = pyfluid_amrex::RotationLaw::JConstant;
-   j_parameters.angular_velocity = 0.04;
-   j_parameters.differential_rotation_length = 3.0;
-   j_parameters.rotation_axis = {0.0, 0.0, 1.0};
-   j_parameters.injection_energy = 0.9;
+   j_parameters.angular_velocity = 0.04_rt;
+   j_parameters.differential_rotation_length = 3.0_rt;
+   j_parameters.rotation_axis = {0.0_rt, 0.0_rt, 1.0_rt};
+   j_parameters.injection_energy = 0.9_rt;
    pyfluid_amrex::RotatingStarParameters q_parameters = j_parameters;
    q_parameters.rotation_law = pyfluid_amrex::RotationLaw::QPower;
-   q_parameters.rotation_power_q = 1.0;
+   q_parameters.rotation_power_q = 1.0_rt;
 
    pyfluid_amrex::SpacetimeMetric metric;
-   metric.lapse = 1.0;
-   metric.gamma11 = 1.0;
-   metric.gamma22 = 1.0;
-   metric.gamma33 = 1.0;
-   const pyfluid_amrex::PatchCoordinate physical{1.0, 0.0, 0.0};
+   metric.lapse = 1.0_rt;
+   metric.gamma11 = 1.0_rt;
+   metric.gamma22 = 1.0_rt;
+   metric.gamma33 = 1.0_rt;
+   const pyfluid_amrex::PatchCoordinate physical{1.0_rt, 0.0_rt, 0.0_rt};
    const pyfluid_amrex::RotatingStarPoint j_point =
       pyfluid_amrex::rotating_star_point(j_parameters, physical, metric);
    const pyfluid_amrex::RotatingStarPoint q_point =
       pyfluid_amrex::rotating_star_point(q_parameters, physical, metric);
 
    const amrex::Real omega = j_point.v2;
-   const amrex::Real metric_j = omega / (1.0 - omega * omega);
+   const amrex::Real metric_j = omega / (1.0_rt - omega * omega);
    const amrex::Real law_j =
       pyfluid_amrex::generated::j_constant_specific_angular_momentum(
          omega,
@@ -1769,10 +1805,10 @@ bool validate_differential_rotation_first_integrals()
       );
    const amrex::Real expected_log_enthalpy =
       std::log(j_parameters.injection_energy)
-      - 0.5 * std::log(1.0 - omega * omega) - j_integral;
+      - 0.5_rt * std::log(1.0_rt - omega * omega) - j_integral;
    const amrex::Real q_two_integral =
       pyfluid_amrex::generated::q_power_two_rotation_integral(
-         0.8 * q_parameters.angular_velocity,
+         0.8_rt * q_parameters.angular_velocity,
          q_parameters.angular_velocity,
          q_parameters.differential_rotation_length
       );
@@ -1790,14 +1826,14 @@ bool validate_differential_rotation_first_integrals()
       );
    pyfluid_amrex::RotatingStarParameters fractional_q_parameters =
       negative_q_parameters;
-   fractional_q_parameters.rotation_power_q = 1.5;
+   fractional_q_parameters.rotation_power_q = 1.5_rt;
    const pyfluid_amrex::RotatingStarPoint fractional_q_point =
       pyfluid_amrex::rotating_star_point(
          fractional_q_parameters, physical, metric
       );
    const amrex::Real fractional_omega = fractional_q_point.v2;
    const amrex::Real fractional_metric_j = fractional_omega
-      / (1.0 - fractional_omega * fractional_omega);
+      / (1.0_rt - fractional_omega * fractional_omega);
    const amrex::Real fractional_law_j =
       pyfluid_amrex::generated::q_power_specific_angular_momentum(
          fractional_omega,
@@ -1827,14 +1863,14 @@ bool validate_differential_rotation_first_integrals()
    pyfluid_amrex::RotatingStarParameters uryu_plus_parameters = j_parameters;
    uryu_plus_parameters.rotation_law =
       pyfluid_amrex::RotationLaw::UryuPlus13;
-   uryu_plus_parameters.differential_rotation_length_b = 1.5;
+   uryu_plus_parameters.differential_rotation_length_b = 1.5_rt;
    const pyfluid_amrex::RotatingStarPoint uryu_plus_point =
       pyfluid_amrex::rotating_star_point(
          uryu_plus_parameters, physical, metric
       );
    const amrex::Real uryu_plus_omega = uryu_plus_point.v2;
    const amrex::Real uryu_plus_momentum = uryu_plus_omega
-      / (1.0 - uryu_plus_omega * uryu_plus_omega);
+      / (1.0_rt - uryu_plus_omega * uryu_plus_omega);
    const amrex::Real uryu_plus_law_omega =
       pyfluid_amrex::generated::uryu_plus_13_angular_velocity(
          uryu_plus_momentum,
@@ -1845,11 +1881,11 @@ bool validate_differential_rotation_first_integrals()
    const amrex::Real uryu_plus_residual = std::abs(
       uryu_plus_omega - uryu_plus_law_omega
    );
-   const amrex::Real derivative_momentum = 0.4
+   const amrex::Real derivative_momentum = 0.4_rt
       * uryu_plus_parameters.differential_rotation_length
       * uryu_plus_parameters.differential_rotation_length
       * uryu_plus_parameters.angular_velocity;
-   const amrex::Real derivative_step = 1.0e-6 * derivative_momentum;
+   const amrex::Real derivative_step = 1.0e-6_rt * derivative_momentum;
    const auto uryu_plus_integral = [&](amrex::Real momentum) {
       return pyfluid_amrex::generated::uryu_plus_13_rotation_integral(
          momentum,
@@ -1861,7 +1897,7 @@ bool validate_differential_rotation_first_integrals()
    const amrex::Real finite_difference_integral_derivative = (
       uryu_plus_integral(derivative_momentum + derivative_step)
       - uryu_plus_integral(derivative_momentum - derivative_step)
-   ) / (2.0 * derivative_step);
+   ) / (2.0_rt * derivative_step);
    const amrex::Real exact_integral_derivative = derivative_momentum
       * pyfluid_amrex::generated::uryu_plus_13_angular_velocity_derivative(
          derivative_momentum,
@@ -1876,7 +1912,7 @@ bool validate_differential_rotation_first_integrals()
       j_parameters;
    uryu_envelope_parameters.rotation_law =
       pyfluid_amrex::RotationLaw::UryuJEnvelopeP1;
-   uryu_envelope_parameters.differential_rotation_length_b = 1.0e7;
+   uryu_envelope_parameters.differential_rotation_length_b = 1.0e7_rt;
    const pyfluid_amrex::RotatingStarPoint uryu_envelope_point =
       pyfluid_amrex::rotating_star_point(
          uryu_envelope_parameters, physical, metric
@@ -1946,14 +1982,14 @@ bool validate_differential_rotation_first_integrals()
       && has_uniform && has_j_constant && has_q_power
       && has_uryu_plus && has_uryu_envelope
       && std::isfinite(q_two_integral)
-      && identity_error < 1.0e-13
-      && residual < 1.0e-13
-      && fractional_residual < 1.0e-13
-      && enthalpy_error < 1.0e-14
-      && uryu_plus_residual < 1.0e-13
-      && uryu_integral_identity_error < 1.0e-9
-      && uryu_limit_error < 1.0e-12
-      && uryu_sign_error < 1.0e-13;
+      && identity_error < 1.0e-13_rt
+      && residual < 1.0e-13_rt
+      && fractional_residual < 1.0e-13_rt
+      && enthalpy_error < 1.0e-14_rt
+      && uryu_plus_residual < 1.0e-13_rt
+      && uryu_integral_identity_error < 1.0e-9_rt
+      && uryu_limit_error < 1.0e-12_rt
+      && uryu_sign_error < 1.0e-13_rt;
 }
 
 bool validate_equilibrium_perturbations()
@@ -1961,19 +1997,19 @@ bool validate_equilibrium_perturbations()
    pyfluid_amrex::EOSParams eos;
    eos.method = pyfluid_amrex::EOSPolytrope;
    eos.polytrope_segments = 1;
-   eos.segment_k[0] = 100.0;
-   eos.segment_gamma[0] = 2.0;
-   const amrex::Real rho = 1.0e-2;
+   eos.segment_k[0] = 100.0_rt;
+   eos.segment_gamma[0] = 2.0_rt;
+   const amrex::Real rho = 1.0e-2_rt;
    pyfluid_amrex::InitialDataPerturbationParameters pressure_parameters;
    pressure_parameters.kind =
       pyfluid_amrex::InitialDataPerturbation::ColdPressureScale;
-   pressure_parameters.pressure_scale = 0.995;
+   pressure_parameters.pressure_scale = 0.995_rt;
    pressure_parameters.eos = eos;
    const pyfluid_amrex::InitialDataPerturbationPoint pressure_point =
       pyfluid_amrex::initial_data_perturbation_point(
-         pressure_parameters, {0.0, 0.0, 0.0}, rho
+         pressure_parameters, {0.0_rt, 0.0_rt, 0.0_rt}, rho
       );
-   const amrex::Real expected_pressure_density = rho * std::sqrt(0.995);
+   const amrex::Real expected_pressure_density = rho * std::sqrt(0.995_rt);
    const pyfluid_amrex::ColdBarotropeState expected_pressure_state =
       pyfluid_amrex::cold_barotrope_from_density(
          expected_pressure_density, eos
@@ -1996,21 +2032,21 @@ bool validate_equilibrium_perturbations()
    pyfluid_amrex::InitialDataPerturbationParameters mode_parameters;
    mode_parameters.kind =
       pyfluid_amrex::InitialDataPerturbation::DensityAzimuthalEspino2019;
-   mode_parameters.amplitude = 0.005;
+   mode_parameters.amplitude = 0.005_rt;
    mode_parameters.mode = 1;
-   mode_parameters.reference_radius = 2.0;
+   mode_parameters.reference_radius = 2.0_rt;
    mode_parameters.frame = pyfluid_amrex::make_azimuthal_frame(
-      {{0.0, 0.0, 0.0}}, {{0.0, 0.0, 1.0}}
+      {{0.0_rt, 0.0_rt, 0.0_rt}}, {{0.0_rt, 0.0_rt, 1.0_rt}}
    );
    mode_parameters.eos = eos;
    const pyfluid_amrex::InitialDataPerturbationPoint mode_point =
       pyfluid_amrex::initial_data_perturbation_point(
-         mode_parameters, {0.0, 1.0, 0.0}, rho
+         mode_parameters, {0.0_rt, 1.0_rt, 0.0_rt}, rho
       );
-   const amrex::Real expected_fractional_change = 0.0025;
+   const amrex::Real expected_fractional_change = 0.0025_rt;
    const pyfluid_amrex::ColdBarotropeState expected_mode_state =
       pyfluid_amrex::cold_barotrope_from_density(
-         rho * (1.0 + expected_fractional_change), eos
+         rho * (1.0_rt + expected_fractional_change), eos
       );
    const amrex::Real mode_error = std::max({
       std::abs(
@@ -2023,8 +2059,43 @@ bool validate_equilibrium_perturbations()
          - expected_mode_state.specific_internal_energy
       ),
    });
+
+   pyfluid_amrex::EOSParams font_eos = eos;
+   font_eos.method = pyfluid_amrex::EOSHybridPolytrope;
+   font_eos.thermal_gamma = 2.0_rt;
+   pyfluid_amrex::InitialDataPerturbationParameters font_parameters;
+   font_parameters.kind = pyfluid_amrex::InitialDataPerturbation::
+      DensityRadialFont2002;
+   font_parameters.amplitude = 0.01_rt;
+   font_parameters.reference_radius = 2.0_rt;
+   font_parameters.eos = font_eos;
+   const pyfluid_amrex::InitialDataPerturbationPoint font_point =
+      pyfluid_amrex::initial_data_perturbation_point(
+         font_parameters, {0.0_rt, 0.0_rt, 0.0_rt}, rho
+      );
+   const pyfluid_amrex::ColdBarotropeState equilibrium_state =
+      pyfluid_amrex::cold_barotrope_from_density(rho, font_eos);
+   const amrex::Real expected_font_density = 1.01_rt * rho;
+   const amrex::Real expected_font_specific_energy =
+      pyfluid_amrex::eos_internal_energy_density_from_pressure<
+         pyfluid_amrex::EOSRuntime
+      >(
+         expected_font_density, equilibrium_state.pressure, font_eos
+      ) / expected_font_density;
+   const amrex::Real font_error = std::max({
+      std::abs(font_point.fractional_density_change - 0.01_rt),
+      std::abs(font_point.matter.rho - expected_font_density),
+      std::abs(
+         font_point.matter.pressure - equilibrium_state.pressure
+      ),
+      std::abs(
+         font_point.matter.specific_internal_energy
+         - expected_font_specific_energy
+      ),
+   });
    bool has_pressure = false;
    bool has_density_mode = false;
+   bool has_font_mode = false;
    for (pyfluid_amrex::InitialDataPerturbationInfo const& perturbation
         : pyfluid_amrex::InitialDataPerturbationCatalog) {
       has_pressure = has_pressure
@@ -2033,17 +2104,23 @@ bool validate_equilibrium_perturbations()
       has_density_mode = has_density_mode
          || perturbation.id == pyfluid_amrex::InitialDataPerturbation::
             DensityAzimuthalEspino2019;
+      has_font_mode = has_font_mode
+         || perturbation.id == pyfluid_amrex::InitialDataPerturbation::
+            DensityRadialFont2002;
    }
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::cout << std::setprecision(16)
                 << "equilibrium_perturbations pressure_error="
                 << pressure_error << " mode_error=" << mode_error
-                << " catalog_valid=" << (has_pressure && has_density_mode)
+                << " font_error=" << font_error
+                << " catalog_valid="
+                << (has_pressure && has_density_mode && has_font_mode)
                 << '\n';
    }
-   return pressure_point.valid && mode_point.valid
-      && has_pressure && has_density_mode
-      && pressure_error < 2.0e-15 && mode_error < 2.0e-15;
+   return pressure_point.valid && mode_point.valid && font_point.valid
+      && has_pressure && has_density_mode && has_font_mode
+      && pressure_error < 2.0e-15_rt && mode_error < 2.0e-15_rt
+      && font_error < 2.0e-15_rt;
 }
 
 bool validate_constant_l_torus_first_integral()
@@ -2052,15 +2129,15 @@ bool validate_constant_l_torus_first_integral()
    parameters.active = true;
    parameters.rotation_law =
       pyfluid_amrex::DiskRotationLaw::ConstantL;
-   parameters.specific_angular_momentum = 2.4;
+   parameters.specific_angular_momentum = 2.4_rt;
    pyfluid_amrex::SpacetimeMetric metric;
-   metric.lapse = 0.82;
-   metric.shift3 = -0.015;
-   metric.gamma11 = 1.1;
-   metric.gamma22 = 1.05;
-   metric.gamma33 = 0.95;
-   const amrex::Real radius = 6.0;
-   const amrex::Real theta = 0.5 * pyfluid_amrex::constants::pi;
+   metric.lapse = 0.82_rt;
+   metric.shift3 = -0.015_rt;
+   metric.gamma11 = 1.1_rt;
+   metric.gamma22 = 1.05_rt;
+   metric.gamma33 = 0.95_rt;
+   const amrex::Real radius = 6.0_rt;
+   const amrex::Real theta = 0.5_rt * pyfluid_amrex::constants::pi;
    const amrex::Real tangent = radius * std::sin(theta);
    const amrex::Real shift_squared = metric.gamma33
       * metric.shift3 * metric.shift3;
@@ -2076,19 +2153,19 @@ bool validate_constant_l_torus_first_integral()
       + parameters.specific_angular_momentum * metric_t_phi
    );
    const amrex::Real normalization_squared = -(
-      metric_tt + 2.0 * expected_omega * metric_t_phi
+      metric_tt + 2.0_rt * expected_omega * metric_t_phi
       + expected_omega * expected_omega * metric_phi_phi
    );
    const amrex::Real local_minus_u_t = -(
       metric_tt + expected_omega * metric_t_phi
    ) / std::sqrt(normalization_squared);
-   const amrex::Real inner_minus_u_t = local_minus_u_t * std::exp(0.125);
+   const amrex::Real inner_minus_u_t = local_minus_u_t * std::exp(0.125_rt);
    const pyfluid_amrex::EquilibriumTorusPoint point =
       pyfluid_amrex::equilibrium_torus_axisymmetric_spherical_point(
          parameters, inner_minus_u_t, radius, theta, metric
       );
    const amrex::Real contravariant_time_velocity =
-      1.0 / std::sqrt(normalization_squared);
+      1.0_rt / std::sqrt(normalization_squared);
    const amrex::Real covariant_time_velocity = (
       metric_tt + expected_omega * metric_t_phi
    ) * contravariant_time_velocity;
@@ -2100,7 +2177,7 @@ bool validate_constant_l_torus_first_integral()
    const amrex::Real error = std::max({
       std::abs(point.angular_velocity - expected_omega),
       std::abs(point.minus_covariant_time_velocity - local_minus_u_t),
-      std::abs(point.log_specific_enthalpy - 0.125),
+      std::abs(point.log_specific_enthalpy - 0.125_rt),
       std::abs(recovered_l - parameters.specific_angular_momentum),
    });
    bool catalog_valid = false;
@@ -2117,14 +2194,14 @@ bool validate_constant_l_torus_first_integral()
                 << " timelike=" << point.timelike
                 << " catalog_valid=" << catalog_valid << '\n';
    }
-   return point.timelike && point.log_specific_enthalpy > 0.0
-      && catalog_valid && error < 1.0e-13;
+   return point.timelike && point.log_specific_enthalpy > 0.0_rt
+      && catalog_valid && error < 1.0e-13_rt;
 }
 
 #if (AMREX_SPACEDIM == 3)
 struct FullSphericalPoissonError {
-   amrex::Real error = 0.0;
-   amrex::Real residual = 0.0;
+   amrex::Real error = 0.0_rt;
+   amrex::Real residual = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -2135,13 +2212,13 @@ amrex::Real full_spherical_exact(
    amrex::Real mode_amplitude
 ) noexcept
 {
-   constexpr amrex::Real quadrupole_amplitude = 0.05;
+   constexpr amrex::Real quadrupole_amplitude = 0.05_rt;
    const amrex::Real sine_theta = std::sin(theta);
    const amrex::Real mu = std::cos(theta);
-   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
-   return 1.0 + radius * radius * (
-      1.0 + mode_amplitude * sine_theta * sine_theta
-         * std::cos(2.0 * phi)
+   const amrex::Real legendre_p2 = 0.5_rt * (3.0_rt * mu * mu - 1.0_rt);
+   return 1.0_rt + radius * radius * (
+      1.0_rt + mode_amplitude * sine_theta * sine_theta
+         * std::cos(2.0_rt * phi)
    ) + quadrupole_amplitude * std::pow(radius, 4) * legendre_p2;
 }
 
@@ -2153,14 +2230,14 @@ amrex::Real full_spherical_radial_derivative(
    amrex::Real mode_amplitude
 ) noexcept
 {
-   constexpr amrex::Real quadrupole_amplitude = 0.05;
+   constexpr amrex::Real quadrupole_amplitude = 0.05_rt;
    const amrex::Real sine_theta = std::sin(theta);
    const amrex::Real mu = std::cos(theta);
-   const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
-   return 2.0 * radius * (
-      1.0 + mode_amplitude * sine_theta * sine_theta
-         * std::cos(2.0 * phi)
-   ) + 4.0 * quadrupole_amplitude * std::pow(radius, 3)
+   const amrex::Real legendre_p2 = 0.5_rt * (3.0_rt * mu * mu - 1.0_rt);
+   return 2.0_rt * radius * (
+      1.0_rt + mode_amplitude * sine_theta * sine_theta
+         * std::cos(2.0_rt * phi)
+   ) + 4.0_rt * quadrupole_amplitude * std::pow(radius, 3)
       * legendre_p2;
 }
 
@@ -2170,7 +2247,7 @@ amrex::Real full_spherical_toroidal_exact(
    amrex::Real theta
 ) noexcept
 {
-   return radius * std::sin(theta) * (1.0 + 0.1 * radius * radius);
+   return radius * std::sin(theta) * (1.0_rt + 0.1_rt * radius * radius);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -2179,7 +2256,7 @@ amrex::Real full_spherical_toroidal_radial_derivative(
    amrex::Real theta
 ) noexcept
 {
-   return std::sin(theta) * (1.0 + 0.3 * radius * radius);
+   return std::sin(theta) * (1.0_rt + 0.3_rt * radius * radius);
 }
 
 FullSphericalPoissonError solve_full_spherical_manufactured(
@@ -2198,11 +2275,11 @@ FullSphericalPoissonError solve_full_spherical_manufactured(
    );
    const amrex::Box domain(lo, hi);
    const amrex::RealBox physical_domain(
-      {0.0, 0.0, 0.0},
+      {0.0_rt, 0.0_rt, 0.0_rt},
       {
-         1.0,
+         1.0_rt,
          pyfluid_amrex::constants::pi,
-         2.0 * pyfluid_amrex::constants::pi,
+         2.0_rt * pyfluid_amrex::constants::pi,
       }
    );
    const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0, 1};
@@ -2222,7 +2299,7 @@ FullSphericalPoissonError solve_full_spherical_manufactured(
       hierarchy.physical_coordinate_faces.resize(1);
       hierarchy.physical_coordinate_faces[0][0] =
          pyfluid_amrex::surface_focused_radial_faces(
-            0.5, 1.0, 2 * radial_cells / 3, radial_cells / 3
+            0.5_rt, 1.0_rt, 2 * radial_cells / 3, radial_cells / 3
          );
    }
 
@@ -2232,8 +2309,8 @@ FullSphericalPoissonError solve_full_spherical_manufactured(
    amrex::MultiFab rhs(
       hierarchy.grids[0], hierarchy.distribution[0], 1, 0
    );
-   solution.setVal(0.0);
-   rhs.setVal(0.0);
+   solution.setVal(0.0_rt);
+   rhs.setVal(0.0_rt);
    const auto problo = hierarchy.geometry[0].ProbLoArray();
    const auto dx = hierarchy.geometry[0].CellSizeArray();
    const auto radial_line = hierarchy.coordinate_line(0, 0);
@@ -2246,32 +2323,32 @@ FullSphericalPoissonError solve_full_spherical_manufactured(
       device_radial_centers.begin()
    );
    const amrex::Real* radial_center = device_radial_centers.data();
-   const amrex::Real mode_amplitude = nonaxisymmetric ? 0.125 : 0.0;
+   const amrex::Real mode_amplitude = nonaxisymmetric ? 0.125_rt : 0.0_rt;
    for (amrex::MFIter mfi(rhs); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.validbox();
       const auto values = rhs.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         constexpr amrex::Real quadrupole_amplitude = 0.05;
+         constexpr amrex::Real quadrupole_amplitude = 0.05_rt;
          const amrex::Real radius = radial_center[i];
-         const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
+         const amrex::Real theta = problo[1] + (j + 0.5_rt) * dx[1];
          const amrex::Real mu = std::cos(theta);
-         const amrex::Real legendre_p2 = 0.5 * (3.0 * mu * mu - 1.0);
+         const amrex::Real legendre_p2 = 0.5_rt * (3.0_rt * mu * mu - 1.0_rt);
          values(i, j, k, 0) = toroidal
             ? radius * std::sin(theta)
-            : 6.0 + 14.0 * quadrupole_amplitude * radius * radius
+            : 6.0_rt + 14.0_rt * quadrupole_amplitude * radius * radius
                * legendre_p2;
       });
    }
 
-   constexpr amrex::Real robin_b = 0.2;
+   constexpr amrex::Real robin_b = 0.2_rt;
    auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
       hierarchy,
       1,
-      1.0,
-      use_robin ? robin_b : 0.0,
-      0.0,
+      1.0_rt,
+      use_robin ? robin_b : 0.0_rt,
+      0.0_rt,
       pyfluid_amrex::InitialDataEllipticCentering::cell
    );
    pyfluid_amrex::set_initial_data_reflection_boundaries(
@@ -2294,19 +2371,19 @@ FullSphericalPoissonError solve_full_spherical_manufactured(
          int i, int j, int k
       ) noexcept {
          if (i > domain.bigEnd(0)) {
-            const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
-            const amrex::Real phi = problo[2] + (k + 0.5) * dx[2];
+            const amrex::Real theta = problo[1] + (j + 0.5_rt) * dx[1];
+            const amrex::Real phi = problo[2] + (k + 0.5_rt) * dx[2];
             const amrex::Real exact = toroidal
-               ? full_spherical_toroidal_exact(1.0, theta)
-               : full_spherical_exact(1.0, theta, phi, mode_amplitude);
-            coefficient_a(i, j, k, 0) = 1.0;
-            coefficient_b(i, j, k, 0) = use_robin ? robin_b : 0.0;
+               ? full_spherical_toroidal_exact(1.0_rt, theta)
+               : full_spherical_exact(1.0_rt, theta, phi, mode_amplitude);
+            coefficient_a(i, j, k, 0) = 1.0_rt;
+            coefficient_b(i, j, k, 0) = use_robin ? robin_b : 0.0_rt;
             coefficient_c(i, j, k, 0) = use_robin
                  ? exact + robin_b * (
                     toroidal
-                       ? full_spherical_toroidal_radial_derivative(1.0, theta)
+                       ? full_spherical_toroidal_radial_derivative(1.0_rt, theta)
                        : full_spherical_radial_derivative(
-                          1.0, theta, phi, mode_amplitude
+                          1.0_rt, theta, phi, mode_amplitude
                        )
                  )
                : exact;
@@ -2317,7 +2394,7 @@ FullSphericalPoissonError solve_full_spherical_manufactured(
    amrex::Vector<amrex::MultiFab*> solution_levels{&solution};
    amrex::Vector<amrex::MultiFab const*> rhs_levels{&rhs};
    pyfluid_amrex::InitialDataEllipticOptions options;
-   options.relative_tolerance = 1.0e-12;
+   options.relative_tolerance = 1.0e-12_rt;
    options.max_iterations = 500;
    options.verbose = 0;
    const pyfluid_amrex::InitialDataEllipticResult result = toroidal
@@ -2338,8 +2415,8 @@ FullSphericalPoissonError solve_full_spherical_manufactured(
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const amrex::Real theta = problo[1] + (j + 0.5) * dx[1];
-         const amrex::Real phi = problo[2] + (k + 0.5) * dx[2];
+         const amrex::Real theta = problo[1] + (j + 0.5_rt) * dx[1];
+         const amrex::Real phi = problo[2] + (k + 0.5_rt) * dx[2];
          const amrex::Real exact = toroidal
             ? full_spherical_toroidal_exact(radial_center[i], theta)
             : full_spherical_exact(
@@ -2386,16 +2463,16 @@ bool validate_full_spherical_poisson()
          24, 24, 1, false, false, false, true
       );
    const amrex::Real order = std::log(coarse.error / fine.error)
-      / std::log(2.0);
+      / std::log(2.0_rt);
    const amrex::Real mapped_order = std::log(
       mapped_coarse.error / mapped_fine.error
-   ) / std::log(2.0);
+   ) / std::log(2.0_rt);
    const amrex::Real axisymmetric_order = std::log(
       axisymmetric_coarse.error / axisymmetric_fine.error
-   ) / std::log(2.0);
+   ) / std::log(2.0_rt);
    const amrex::Real toroidal_order = std::log(
       toroidal_coarse.error / toroidal_fine.error
-   ) / std::log(2.0);
+   ) / std::log(2.0_rt);
    if (amrex::ParallelDescriptor::IOProcessor()) {
       std::cout << std::setprecision(16)
                 << "full_spherical_poisson coarse_error=" << coarse.error
@@ -2422,27 +2499,27 @@ bool validate_full_spherical_poisson()
    }
    return fine.error < coarse.error
       && mapped_fine.error < mapped_coarse.error
-      && order > 1.7
-      && mapped_order > 1.6
-      && axisymmetric_order > 1.7
-      && toroidal_order > 1.7
-      && std::abs(toroidal_nphi1_fine.error - toroidal_fine.error) < 5.0e-10
-      && fine.residual < 1.0e-8
-      && mapped_fine.residual < 1.0e-8
-      && axisymmetric_fine.residual < 1.0e-8
-      && toroidal_fine.residual < 1.0e-8
-      && toroidal_nphi1_fine.residual < 1.0e-8;
+      && order > 1.7_rt
+      && mapped_order > 1.6_rt
+      && axisymmetric_order > 1.7_rt
+      && toroidal_order > 1.7_rt
+      && std::abs(toroidal_nphi1_fine.error - toroidal_fine.error) < 5.0e-10_rt
+      && fine.residual < 1.0e-8_rt
+      && mapped_fine.residual < 1.0e-8_rt
+      && axisymmetric_fine.residual < 1.0e-8_rt
+      && toroidal_fine.residual < 1.0e-8_rt
+      && toroidal_nphi1_fine.residual < 1.0e-8_rt;
 }
 
 struct AxisymmetricSphericalXcts3dError {
-   amrex::Real conformal = 0.0;
-   amrex::Real lapse_conformal = 0.0;
-   amrex::Real shift = 0.0;
-   amrex::Real extrinsic = 0.0;
-   amrex::Real conformal_minimum = 0.0;
-   amrex::Real conformal_maximum = 0.0;
-   amrex::Real lapse_minimum = 0.0;
-   amrex::Real lapse_maximum = 0.0;
+   amrex::Real conformal = 0.0_rt;
+   amrex::Real lapse_conformal = 0.0_rt;
+   amrex::Real shift = 0.0_rt;
+   amrex::Real extrinsic = 0.0_rt;
+   amrex::Real conformal_minimum = 0.0_rt;
+   amrex::Real conformal_maximum = 0.0_rt;
+   amrex::Real lapse_minimum = 0.0_rt;
+   amrex::Real lapse_maximum = 0.0_rt;
    pyfluid_amrex::XctsResult result{};
 };
 
@@ -2452,9 +2529,9 @@ AxisymmetricSphericalXcts3dError solve_axisymmetric_spherical_xcts_3d(
 {
    constexpr int radial_cells = 48;
    constexpr int angular_cells = 12;
-   constexpr amrex::Real mass = 1.0;
-   constexpr amrex::Real horizon_radius = 0.5 * mass;
-   constexpr amrex::Real outer_radius = 24.0;
+   constexpr amrex::Real mass = 1.0_rt;
+   constexpr amrex::Real horizon_radius = 0.5_rt * mass;
+   constexpr amrex::Real outer_radius = 24.0_rt;
    const amrex::Box domain(
       amrex::IntVect(0, 0, 0),
       amrex::IntVect(
@@ -2462,11 +2539,11 @@ AxisymmetricSphericalXcts3dError solve_axisymmetric_spherical_xcts_3d(
       )
    );
    const amrex::RealBox physical_domain(
-      {horizon_radius, 0.0, 0.0},
+      {horizon_radius, 0.0_rt, 0.0_rt},
       {
          outer_radius,
-         0.5 * pyfluid_amrex::constants::pi,
-         2.0 * pyfluid_amrex::constants::pi,
+         0.5_rt * pyfluid_amrex::constants::pi,
+         2.0_rt * pyfluid_amrex::constants::pi,
       }
    );
    const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0, 1};
@@ -2482,7 +2559,7 @@ AxisymmetricSphericalXcts3dError solve_axisymmetric_spherical_xcts_3d(
    hierarchy.physical_coordinate_faces.resize(1);
    hierarchy.physical_coordinate_faces[0][0] =
       pyfluid_amrex::stretched_radial_shell_faces(
-         horizon_radius, outer_radius, radial_cells, 8.0
+         horizon_radius, outer_radius, radial_cells, 8.0_rt
       );
 
    auto make_field = [&](int components, int ghosts) {
@@ -2499,21 +2576,21 @@ AxisymmetricSphericalXcts3dError solve_axisymmetric_spherical_xcts_3d(
    auto energy = make_field(1, 0);
    auto momentum = make_field(1, 0);
    auto stress = make_field(1, 0);
-   conformal->setVal(1.0);
-   lapse_conformal->setVal(1.0);
-   shift->setVal(0.0);
-   extrinsic->setVal(0.0);
-   energy->setVal(0.0);
-   momentum->setVal(0.0);
-   stress->setVal(0.0);
+   conformal->setVal(1.0_rt);
+   lapse_conformal->setVal(1.0_rt);
+   shift->setVal(0.0_rt);
+   extrinsic->setVal(0.0_rt);
+   energy->setVal(0.0_rt);
+   momentum->setVal(0.0_rt);
+   stress->setVal(0.0_rt);
 
    auto conformal_boundary =
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0 / (2.0 * horizon_radius),
-         1.0,
-         -1.0 / (2.0 * horizon_radius),
+         1.0_rt / (2.0_rt * horizon_radius),
+         1.0_rt,
+         -1.0_rt / (2.0_rt * horizon_radius),
          pyfluid_amrex::InitialDataEllipticCentering::cell
       );
    pyfluid_amrex::set_initial_data_reflection_boundaries(
@@ -2522,15 +2599,15 @@ AxisymmetricSphericalXcts3dError solve_axisymmetric_spherical_xcts_3d(
       {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
    );
    pyfluid_amrex::set_spherical_radial_robin_boundary(
-      hierarchy, conformal_boundary, {0.0}, 1.0
+      hierarchy, conformal_boundary, {0.0_rt}, 1.0_rt
    );
    auto lapse_boundary =
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0,
-         0.0,
-         -1.0,
+         1.0_rt,
+         0.0_rt,
+         -1.0_rt,
          pyfluid_amrex::InitialDataEllipticCentering::cell
       );
    pyfluid_amrex::set_initial_data_reflection_boundaries(
@@ -2539,22 +2616,22 @@ AxisymmetricSphericalXcts3dError solve_axisymmetric_spherical_xcts_3d(
       {pyfluid_amrex::GridFieldSymmetryKind::Scalar}
    );
    pyfluid_amrex::set_spherical_radial_robin_boundary(
-      hierarchy, lapse_boundary, {0.0}, 1.0
+      hierarchy, lapse_boundary, {0.0_rt}, 1.0_rt
    );
    auto shift_boundary =
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0,
-         0.0,
-         0.0,
+         1.0_rt,
+         0.0_rt,
+         0.0_rt,
          pyfluid_amrex::InitialDataEllipticCentering::cell
       );
    pyfluid_amrex::set_axisymmetric_spherical_toroidal_regularity(
       hierarchy, shift_boundary
    );
    pyfluid_amrex::set_spherical_radial_robin_boundary(
-      hierarchy, shift_boundary, {0.0}, 2.0
+      hierarchy, shift_boundary, {0.0_rt}, 2.0_rt
    );
 
    amrex::Vector<amrex::MultiFab*> conformal_fields{conformal.get()};
@@ -2566,10 +2643,10 @@ AxisymmetricSphericalXcts3dError solve_axisymmetric_spherical_xcts_3d(
    amrex::Vector<amrex::MultiFab const*> stress_fields{stress.get()};
    pyfluid_amrex::XctsOptions options;
    options.max_coupled_iterations = 20;
-   options.relative_update_tolerance = 1.0e-10;
-   options.relaxation = 1.0;
-   options.linear.relative_tolerance = 1.0e-11;
-   options.linear.absolute_tolerance = 1.0e-13;
+   options.relative_update_tolerance = 1.0e-10_rt;
+   options.relaxation = 1.0_rt;
+   options.linear.relative_tolerance = 1.0e-11_rt;
+   options.linear.absolute_tolerance = 1.0e-13_rt;
    options.linear.max_iterations = 500;
    options.linear.verbose = 0;
    const pyfluid_amrex::XctsResult result =
@@ -2611,13 +2688,13 @@ AxisymmetricSphericalXcts3dError solve_axisymmetric_spherical_xcts_3d(
          const amrex::Real inverse_radius_mass = horizon_radius
             / radial_center[i - domain_lo.x];
          difference(i, j, k, 0) = amrex::Math::abs(
-            psi(i, j, k, 0) - (1.0 + inverse_radius_mass)
+            psi(i, j, k, 0) - (1.0_rt + inverse_radius_mass)
          );
          difference(i, j, k, 1) = amrex::Math::abs(
-            lapse_psi(i, j, k, 0) - (1.0 - inverse_radius_mass)
+            lapse_psi(i, j, k, 0) - (1.0_rt - inverse_radius_mass)
          );
          difference(i, j, k, 2) = amrex::Math::abs(beta(i, j, k, 0));
-         amrex::Real extrinsic_error = 0.0;
+         amrex::Real extrinsic_error = 0.0_rt;
          for (int component = 0;
               component < pyfluid_amrex::CONFORMAL_A_NUM_COMPONENTS;
               ++component) {
@@ -2675,11 +2752,11 @@ bool validate_axisymmetric_spherical_xcts_3d()
       // The scalar operator has a separate two-resolution convergence gate;
       // this coarse shell test owns the coupled XCTS and Nphi-degeneracy
       // contract rather than imposing a tighter pointwise truncation target.
-      && nphi4.conformal < 2.0e-2
-      && nphi4.lapse_conformal < 2.0e-2
-      && nphi4.shift < 1.0e-12
-      && nphi4.extrinsic < 1.0e-12
-      && degeneracy_error < 5.0e-10;
+      && nphi4.conformal < 2.0e-2_rt
+      && nphi4.lapse_conformal < 2.0e-2_rt
+      && nphi4.shift < 1.0e-12_rt
+      && nphi4.extrinsic < 1.0e-12_rt
+      && degeneracy_error < 5.0e-10_rt;
 }
 
 bool validate_tov_ctt()
@@ -2701,8 +2778,8 @@ bool validate_tov_ctt()
       )
    );
    const amrex::RealBox physical_domain(
-      {-16.0, -16.0, -16.0},
-      {16.0, 16.0, 16.0}
+      {-16.0_rt, -16.0_rt, -16.0_rt},
+      {16.0_rt, 16.0_rt, 16.0_rt}
    );
    const amrex::Array<int, AMREX_SPACEDIM> periodic{0, 0, 0};
 
@@ -2723,13 +2800,13 @@ bool validate_tov_ctt()
 
    pyfluid_amrex::RunConfig config;
    config.ic = "tov";
-   config.polytropic_k = 100.0;
-   config.polytropic_gamma = 2.0;
-   config.thermal_gamma = 2.0;
-   config.rho_floor = 1.0e-10;
-   config.tov_central_density = 1.28e-3;
-   config.tov_absolute_tolerance = 1.0e-12;
-   config.tov_relative_tolerance = 1.0e-10;
+   config.polytropic_k = 100.0_rt;
+   config.polytropic_gamma = 2.0_rt;
+   config.thermal_gamma = 2.0_rt;
+   config.rho_floor = 1.0e-10_rt;
+   config.tov_central_density = 1.28e-3_rt;
+   config.tov_absolute_tolerance = 1.0e-12_rt;
+   config.tov_relative_tolerance = 1.0e-10_rt;
    config.tov_max_steps = 100000;
    const pyfluid_amrex::TovInitialData tov(config);
    const pyfluid_amrex::TovInitialDataView tov_view = tov.view();
@@ -2745,21 +2822,21 @@ bool validate_tov_ctt()
       energy_storage[level] = std::make_unique<amrex::MultiFab>(
          hierarchy.grids[level], hierarchy.distribution[level], 1, 0
       );
-      conformal_storage[level]->setVal(1.0);
+      conformal_storage[level]->setVal(1.0_rt);
       const auto problo = hierarchy.geometry[level].ProbLoArray();
       const auto dx = hierarchy.geometry[level].CellSizeArray();
       for (amrex::MFIter mfi(*energy_storage[level]); mfi.isValid(); ++mfi) {
          const amrex::Box box = mfi.validbox();
          const auto energy = energy_storage[level]->array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const amrex::Real x = problo[0] + (i + 0.5) * dx[0];
-            const amrex::Real y = problo[1] + (j + 0.5) * dx[1];
-            const amrex::Real z = problo[2] + (k + 0.5) * dx[2];
+            const amrex::Real x = problo[0] + (i + 0.5_rt) * dx[0];
+            const amrex::Real y = problo[1] + (j + 0.5_rt) * dx[1];
+            const amrex::Real z = problo[2] + (k + 0.5_rt) * dx[2];
             const pyfluid_amrex::TovSample point = tov_view.sample(
                std::sqrt(x * x + y * y + z * z)
             );
             energy(i, j, k, 0) = point.rho * (
-               1.0 + point.specific_internal_energy
+               1.0_rt + point.specific_internal_energy
             );
          });
       }
@@ -2768,21 +2845,21 @@ bool validate_tov_ctt()
    }
 
    auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
-      hierarchy, 1, 0.0, 0.0, 0.0
+      hierarchy, 1, 0.0_rt, 0.0_rt, 0.0_rt
    );
    pyfluid_amrex::set_centered_power_law_robin_boundary(
-      hierarchy, boundary, {0.0}, 1.0
+      hierarchy, boundary, {0.0_rt}, 1.0_rt
    );
 
    pyfluid_amrex::CttHamiltonianOptions options;
-   options.relative_update_tolerance = 1.0e-10;
-   options.relaxation = 0.5;
+   options.relative_update_tolerance = 1.0e-10_rt;
+   options.relaxation = 0.5_rt;
    const pyfluid_amrex::CttHamiltonianResult result =
       pyfluid_amrex::solve_ctt_time_symmetric_hamiltonian(
          hierarchy, conformal_factor, energy_density, boundary, options
       );
 
-   amrex::Real max_error = 0.0;
+   amrex::Real max_error = 0.0_rt;
    for (int level = 0; level < 2; ++level) {
       amrex::MultiFab error(
          hierarchy.grids[level], hierarchy.distribution[level], 1, 0
@@ -2794,9 +2871,9 @@ bool validate_tov_ctt()
          const auto numerical = conformal_storage[level]->const_array(mfi);
          const auto difference = error.array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const amrex::Real x = level_problo[0] + (i + 0.5) * level_dx[0];
-            const amrex::Real y = level_problo[1] + (j + 0.5) * level_dx[1];
-            const amrex::Real z = level_problo[2] + (k + 0.5) * level_dx[2];
+            const amrex::Real x = level_problo[0] + (i + 0.5_rt) * level_dx[0];
+            const amrex::Real y = level_problo[1] + (j + 0.5_rt) * level_dx[1];
+            const amrex::Real z = level_problo[2] + (k + 0.5_rt) * level_dx[2];
             const pyfluid_amrex::TovSample point = tov_view.sample(
                std::sqrt(x * x + y * y + z * z)
             );
@@ -2850,11 +2927,11 @@ bool validate_tov_ctt()
       xcts_stress_storage[level] = std::make_unique<amrex::MultiFab>(
          vertex_grids, hierarchy.distribution[level], 1, 0
       );
-      xcts_conformal_storage[level]->setVal(1.0);
-      xcts_lapse_storage[level]->setVal(1.0);
-      xcts_shift_storage[level]->setVal(0.0);
-      xcts_extrinsic_storage[level]->setVal(0.0);
-      xcts_momentum_storage[level]->setVal(0.0);
+      xcts_conformal_storage[level]->setVal(1.0_rt);
+      xcts_lapse_storage[level]->setVal(1.0_rt);
+      xcts_shift_storage[level]->setVal(0.0_rt);
+      xcts_extrinsic_storage[level]->setVal(0.0_rt);
+      xcts_momentum_storage[level]->setVal(0.0_rt);
       const auto level_problo = hierarchy.geometry[level].ProbLoArray();
       const auto level_dx = hierarchy.geometry[level].CellSizeArray();
       for (amrex::MFIter mfi(*xcts_energy_storage[level]); mfi.isValid(); ++mfi) {
@@ -2871,9 +2948,9 @@ bool validate_tov_ctt()
                std::sqrt(x * x + y * y + z * z)
             );
             energy(i, j, k, 0) = point.rho * (
-               1.0 + point.specific_internal_energy
+               1.0_rt + point.specific_internal_energy
             );
-            stress(i, j, k, 0) = 3.0 * point.pressure;
+            stress(i, j, k, 0) = 3.0_rt * point.pressure;
          });
       }
       xcts_conformal[level] = xcts_conformal_storage[level].get();
@@ -2888,39 +2965,39 @@ bool validate_tov_ctt()
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0,
-         0.0,
-         0.0,
+         1.0_rt,
+         0.0_rt,
+         0.0_rt,
          pyfluid_amrex::InitialDataEllipticCentering::vertex
       );
    pyfluid_amrex::set_centered_power_law_robin_boundary(
-      hierarchy, xcts_conformal_boundary, {0.0}, 1.0
+      hierarchy, xcts_conformal_boundary, {0.0_rt}, 1.0_rt
    );
    auto xcts_lapse_boundary =
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          1,
-         1.0,
-         0.0,
-         0.0,
+         1.0_rt,
+         0.0_rt,
+         0.0_rt,
          pyfluid_amrex::InitialDataEllipticCentering::vertex
       );
    pyfluid_amrex::set_centered_power_law_robin_boundary(
-      hierarchy, xcts_lapse_boundary, {0.0}, 1.0
+      hierarchy, xcts_lapse_boundary, {0.0_rt}, 1.0_rt
    );
    auto xcts_shift_boundary =
       pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
          hierarchy,
          3,
-         1.0,
-         0.0,
-         0.0,
+         1.0_rt,
+         0.0_rt,
+         0.0_rt,
          pyfluid_amrex::InitialDataEllipticCentering::vertex
       );
    pyfluid_amrex::XctsOptions xcts_options;
    xcts_options.max_coupled_iterations = 100;
-   xcts_options.relative_update_tolerance = 1.0e-10;
-   xcts_options.relaxation = 0.5;
+   xcts_options.relative_update_tolerance = 1.0e-10_rt;
+   xcts_options.relaxation = 0.5_rt;
    const pyfluid_amrex::XctsResult xcts_result =
       pyfluid_amrex::solve_xcts_constraints(
          hierarchy,
@@ -2936,9 +3013,9 @@ bool validate_tov_ctt()
          xcts_shift_boundary,
          xcts_options
       );
-   amrex::Real xcts_conformal_error = 0.0;
-   amrex::Real xcts_lapse_error = 0.0;
-   amrex::Real xcts_shift_error = 0.0;
+   amrex::Real xcts_conformal_error = 0.0_rt;
+   amrex::Real xcts_lapse_error = 0.0_rt;
+   amrex::Real xcts_shift_error = 0.0_rt;
    for (int level = 0; level < 2; ++level) {
       amrex::MultiFab conformal_error(
          xcts_conformal_storage[level]->boxArray(),
@@ -3008,11 +3085,11 @@ bool validate_tov_ctt()
                 << " shift_linf_error=" << xcts_shift_error << '\n';
    }
    return result.converged
-      && max_error < 5.0e-2
+      && max_error < 5.0e-2_rt
       && xcts_result.converged
-      && xcts_conformal_error < 5.0e-2
-      && xcts_lapse_error < 5.0e-2
-      && xcts_shift_error < 1.0e-10;
+      && xcts_conformal_error < 5.0e-2_rt
+      && xcts_lapse_error < 5.0e-2_rt
+      && xcts_shift_error < 1.0e-10_rt;
 }
 #endif
 
@@ -3024,8 +3101,8 @@ bool validate_reflected_cell_to_vertex_transfer()
       amrex::IntVect(AMREX_D_DECL(cells - 1, cells - 1, cells - 1))
    );
    const amrex::RealBox physical_domain(
-      AMREX_D_DECL(0.0, -1.0, -1.0),
-      AMREX_D_DECL(1.0, 1.0, 1.0)
+      AMREX_D_DECL(0.0_rt, -1.0_rt, -1.0_rt),
+      AMREX_D_DECL(1.0_rt, 1.0_rt, 1.0_rt)
    );
    const amrex::Array<int, AMREX_SPACEDIM> periodic{
       AMREX_D_DECL(0, 0, 0)
@@ -3056,8 +3133,8 @@ bool validate_reflected_cell_to_vertex_transfer()
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
          int i, int j, int k
       ) noexcept {
-         const amrex::Real x = problo[0] + (i + 0.5) * dx[0];
-         values(i, j, k, 0) = 1.0 + x * x;
+         const amrex::Real x = problo[0] + (i + 0.5_rt) * dx[0];
+         values(i, j, k, 0) = 1.0_rt + x * x;
       });
    }
    amrex::Vector<amrex::MultiFab*> cell_view{&cell};
@@ -3074,9 +3151,9 @@ bool validate_reflected_cell_to_vertex_transfer()
    );
 
    amrex::MultiFab error(vertex_grids, hierarchy.distribution[0], 1, 0);
-   error.setVal(0.0);
+   error.setVal(0.0_rt);
    const amrex::Dim3 domain_lo = amrex::lbound(domain);
-   const amrex::Real expected = 1.0 + 0.25 * dx[0] * dx[0];
+   const amrex::Real expected = 1.0_rt + 0.25_rt * dx[0] * dx[0];
    for (amrex::MFIter mfi(error, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.tilebox();
       const auto transferred = vertex.const_array(mfi);
@@ -3097,7 +3174,404 @@ bool validate_reflected_cell_to_vertex_transfer()
                 << "reflected_cell_to_vertex linf_error=" << max_error
                 << '\n';
    }
-   return max_error < 1.0e-13;
+   return max_error < 1.0e-13_rt;
+}
+
+bool validate_reduced_cartesian_conformal_vector(
+   pyfluid_amrex::InitialDataEllipticCentering centering
+)
+{
+   constexpr int cells = 32;
+   const amrex::Box domain(
+      amrex::IntVect(AMREX_D_DECL(0, 0, 0)),
+      amrex::IntVect(AMREX_D_DECL(cells - 1, cells - 1, cells - 1))
+   );
+   const amrex::RealBox physical_domain(
+      AMREX_D_DECL(0.0_rt, 0.0_rt, 0.0_rt),
+      AMREX_D_DECL(1.0_rt, 1.0_rt, 1.0_rt)
+   );
+   const amrex::Array<int, AMREX_SPACEDIM> periodic{
+      AMREX_D_DECL(0, 0, 0)
+   };
+   pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
+   hierarchy.geometry.emplace_back(
+      domain, physical_domain, amrex::CoordSys::cartesian, periodic
+   );
+   hierarchy.grids.emplace_back(domain);
+   hierarchy.grids[0].maxSize(16);
+   hierarchy.distribution.emplace_back(hierarchy.grids[0]);
+#if (AMREX_SPACEDIM == 1)
+   hierarchy.cartesian_physical_axes[0] = 1;
+#elif (AMREX_SPACEDIM == 2)
+   hierarchy.cartesian_physical_axes[0] = 0;
+   hierarchy.cartesian_physical_axes[1] = 2;
+#endif
+
+   const amrex::BoxArray field_grids =
+      centering == pyfluid_amrex::InitialDataEllipticCentering::vertex
+      ? amrex::convert(hierarchy.grids[0], amrex::IntVect::TheNodeVector())
+      : hierarchy.grids[0];
+   amrex::MultiFab solution(field_grids, hierarchy.distribution[0], 3, 1);
+   amrex::MultiFab source(field_grids, hierarchy.distribution[0], 3, 0);
+   solution.setVal(0.0_rt);
+   const auto problo = hierarchy.geometry[0].ProbLoArray();
+   const auto spacing = hierarchy.geometry[0].CellSizeArray();
+   const auto physical_axes = hierarchy.cartesian_physical_axes;
+   const amrex::Real offset =
+      centering == pyfluid_amrex::InitialDataEllipticCentering::vertex
+      ? 0.0_rt : 0.5_rt;
+   for (amrex::MFIter mfi(source, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto values = source.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real coordinates[3]{
+            problo[0] + (i + offset) * spacing[0],
+#if (AMREX_SPACEDIM >= 2)
+            problo[1] + (j + offset) * spacing[1],
+#else
+            0.0_rt,
+#endif
+#if (AMREX_SPACEDIM == 3)
+            problo[2] + (k + offset) * spacing[2],
+#else
+            0.0_rt,
+#endif
+         };
+         amrex::Real profile = 1.0_rt;
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            profile *= std::sin(
+               pyfluid_amrex::constants::pi * coordinates[direction]
+            );
+         }
+         for (int component = 0; component < 3; ++component) {
+            int active_direction = -1;
+            for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+               if (physical_axes[direction] == component) {
+                  active_direction = direction;
+               }
+            }
+            const amrex::Real exact = 0.01_rt * (component + 1) * profile;
+            const amrex::Real pi_squared = pyfluid_amrex::constants::pi
+               * pyfluid_amrex::constants::pi;
+            amrex::Real grad_div = 0.0_rt;
+            if (active_direction >= 0) {
+               grad_div = -pi_squared * exact;
+               for (int source_direction = 0;
+                    source_direction < AMREX_SPACEDIM;
+                    ++source_direction) {
+                  if (source_direction == active_direction) {
+                     continue;
+                  }
+                  amrex::Real cross_profile = 1.0_rt;
+                  for (int direction = 0;
+                       direction < AMREX_SPACEDIM;
+                       ++direction) {
+                     if (direction == active_direction
+                         || direction == source_direction) {
+                        cross_profile *= std::cos(
+                           pyfluid_amrex::constants::pi
+                           * coordinates[direction]
+                        );
+                     } else {
+                        cross_profile *= std::sin(
+                           pyfluid_amrex::constants::pi
+                           * coordinates[direction]
+                        );
+                     }
+                  }
+                  grad_div += 0.01_rt
+                     * (physical_axes[source_direction] + 1)
+                     * pi_squared * cross_profile;
+               }
+            }
+            values(i, j, k, component) =
+               -AMREX_SPACEDIM * pi_squared * exact + grad_div / 3.0_rt;
+         }
+      });
+   }
+   auto boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         hierarchy, 3, 1.0_rt, 0.0_rt, 0.0_rt, centering
+      );
+   amrex::Vector<amrex::MultiFab*> solution_view{&solution};
+   amrex::Vector<amrex::MultiFab const*> source_view{&source};
+   pyfluid_amrex::InitialDataEllipticOptions options;
+   options.max_iterations = 300;
+   const pyfluid_amrex::InitialDataEllipticResult result =
+      pyfluid_amrex::solve_initial_data_conformal_vector_laplacian(
+         hierarchy, solution_view, source_view, boundary, options
+      );
+
+   amrex::MultiFab error(field_grids, hierarchy.distribution[0], 3, 0);
+   for (amrex::MFIter mfi(error, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box box = mfi.tilebox();
+      const auto numerical = solution.const_array(mfi);
+      const auto difference = error.array(mfi);
+      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(
+         int i, int j, int k
+      ) noexcept {
+         const amrex::Real coordinates[3]{
+            problo[0] + (i + offset) * spacing[0],
+#if (AMREX_SPACEDIM >= 2)
+            problo[1] + (j + offset) * spacing[1],
+#else
+            0.0_rt,
+#endif
+#if (AMREX_SPACEDIM == 3)
+            problo[2] + (k + offset) * spacing[2],
+#else
+            0.0_rt,
+#endif
+         };
+         amrex::Real profile = 1.0_rt;
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            profile *= std::sin(
+               pyfluid_amrex::constants::pi * coordinates[direction]
+            );
+         }
+         for (int component = 0; component < 3; ++component) {
+            const amrex::Real exact = 0.01_rt * (component + 1) * profile;
+            difference(i, j, k, component) = amrex::Math::abs(
+               numerical(i, j, k, component) - exact
+            );
+         }
+      });
+   }
+   amrex::Real max_error = 0.0_rt;
+   amrex::GpuArray<amrex::Real, 3> component_error{{0.0_rt, 0.0_rt, 0.0_rt}};
+   for (int component = 0; component < 3; ++component) {
+      component_error[component] = error.norm0(component);
+      max_error = std::max(max_error, component_error[component]);
+   }
+
+   pyfluid_amrex::InitialDataEllipticHierarchy reflected = hierarchy;
+   reflected.reflection_lo[AMREX_SPACEDIM - 1] = 1;
+   auto reflection_boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         reflected, 3, 1.0_rt, 0.0_rt, 0.0_rt, centering
+      );
+   pyfluid_amrex::set_initial_data_reflection_boundaries(
+      reflected,
+      reflection_boundary,
+      {
+         pyfluid_amrex::GridFieldSymmetryKind::Vector1,
+         pyfluid_amrex::GridFieldSymmetryKind::Vector2,
+         pyfluid_amrex::GridFieldSymmetryKind::Vector3,
+      }
+   );
+   const int reflected_axis = physical_axes[AMREX_SPACEDIM - 1];
+   bool reflection_valid = true;
+   for (int component = 0; component < 3; ++component) {
+      const auto expected = component == reflected_axis
+         ? pyfluid_amrex::InitialDataEllipticBoundaryType::dirichlet
+         : pyfluid_amrex::InitialDataEllipticBoundaryType::neumann;
+      reflection_valid = reflection_valid
+         && reflection_boundary.lower_type(
+               component, AMREX_SPACEDIM - 1
+            ) == expected;
+   }
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << std::setprecision(16)
+                << "cartesian_conformal_vector dimension=" << AMREX_SPACEDIM
+                << " centering="
+                << (centering == pyfluid_amrex::InitialDataEllipticCentering::vertex
+                    ? "vertex" : "cell")
+                << " residual=" << result.residual
+                << " linf_error=" << max_error
+                << " component_errors=(" << component_error[0] << ','
+                << component_error[1] << ',' << component_error[2] << ')'
+                << " reflection_valid=" << reflection_valid << '\n';
+   }
+   return max_error < 1.2e-4_rt && reflection_valid;
+}
+
+bool validate_reduced_cartesian_constraint_smoke()
+{
+   constexpr int cells = 12;
+   const amrex::Box domain(
+      amrex::IntVect(AMREX_D_DECL(0, 0, 0)),
+      amrex::IntVect(AMREX_D_DECL(cells - 1, cells - 1, cells - 1))
+   );
+   const amrex::RealBox physical_domain(
+      AMREX_D_DECL(0.0_rt, 0.0_rt, 0.0_rt),
+      AMREX_D_DECL(1.0_rt, 1.0_rt, 1.0_rt)
+   );
+   const amrex::Array<int, AMREX_SPACEDIM> periodic{
+      AMREX_D_DECL(0, 0, 0)
+   };
+   pyfluid_amrex::InitialDataEllipticHierarchy hierarchy;
+   hierarchy.geometry.emplace_back(
+      domain, physical_domain, amrex::CoordSys::cartesian, periodic
+   );
+   hierarchy.grids.emplace_back(domain);
+   hierarchy.grids[0].maxSize(6);
+   hierarchy.distribution.emplace_back(hierarchy.grids[0]);
+#if (AMREX_SPACEDIM == 1)
+   hierarchy.cartesian_physical_axes[0] = 2;
+#elif (AMREX_SPACEDIM == 2)
+   hierarchy.cartesian_physical_axes[0] = 1;
+   hierarchy.cartesian_physical_axes[1] = 2;
+#endif
+
+   amrex::MultiFab conformal(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 1
+   );
+   amrex::MultiFab lapse_conformal(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 1
+   );
+   amrex::MultiFab vector(
+      hierarchy.grids[0], hierarchy.distribution[0], 3, 1
+   );
+   amrex::MultiFab extrinsic(
+      hierarchy.grids[0],
+      hierarchy.distribution[0],
+      pyfluid_amrex::CONFORMAL_A_NUM_COMPONENTS,
+      0
+   );
+   amrex::MultiFab mean_curvature(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 1
+   );
+   amrex::MultiFab energy(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 0
+   );
+   amrex::MultiFab momentum(
+      hierarchy.grids[0], hierarchy.distribution[0], 3, 0
+   );
+   amrex::MultiFab stress_trace(
+      hierarchy.grids[0], hierarchy.distribution[0], 1, 0
+   );
+   conformal.setVal(1.0_rt);
+   lapse_conformal.setVal(1.0_rt);
+   vector.setVal(0.0_rt);
+   extrinsic.setVal(0.0_rt);
+   mean_curvature.setVal(0.0_rt);
+   energy.setVal(0.0_rt);
+   momentum.setVal(0.0_rt);
+   stress_trace.setVal(0.0_rt);
+
+   amrex::Vector<amrex::MultiFab*> conformal_view{&conformal};
+   amrex::Vector<amrex::MultiFab const*> conformal_const_view{&conformal};
+   amrex::Vector<amrex::MultiFab*> lapse_view{&lapse_conformal};
+   amrex::Vector<amrex::MultiFab*> vector_view{&vector};
+   amrex::Vector<amrex::MultiFab*> extrinsic_view{&extrinsic};
+   amrex::Vector<amrex::MultiFab*> curvature_view{&mean_curvature};
+   amrex::Vector<amrex::MultiFab const*> energy_view{&energy};
+   amrex::Vector<amrex::MultiFab const*> momentum_view{&momentum};
+   amrex::Vector<amrex::MultiFab const*> stress_view{&stress_trace};
+   auto scalar_boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         hierarchy, 1, 1.0_rt, 0.0_rt, 0.0_rt
+      );
+   auto vector_boundary =
+      pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
+         hierarchy, 3, 1.0_rt, 0.0_rt, 0.0_rt
+      );
+   pyfluid_amrex::CttOptions ctt_options;
+   ctt_options.max_coupled_iterations = 4;
+   ctt_options.relative_update_tolerance = 1.0e-11_rt;
+   const pyfluid_amrex::CttResult ctt = pyfluid_amrex::solve_ctt_constraints(
+      hierarchy,
+      conformal_view,
+      vector_view,
+      extrinsic_view,
+      energy_view,
+      momentum_view,
+      scalar_boundary,
+      vector_boundary,
+      ctt_options
+   );
+
+   conformal.setVal(1.0_rt);
+   vector.setVal(0.0_rt);
+   extrinsic.setVal(0.0_rt);
+   mean_curvature.setVal(0.0_rt);
+   pyfluid_amrex::CttkOptions cttk_options;
+   cttk_options.max_coupled_iterations = 4;
+   cttk_options.relative_update_tolerance = 1.0e-11_rt;
+   cttk_options.mean_curvature_branch =
+      pyfluid_amrex::CttkMeanCurvatureBranch::positive;
+   const pyfluid_amrex::CttkResult cttk =
+      pyfluid_amrex::solve_cttk_constraints(
+         hierarchy,
+         conformal_const_view,
+         curvature_view,
+         vector_view,
+         extrinsic_view,
+         energy_view,
+         momentum_view,
+         vector_boundary,
+         cttk_options
+      );
+
+   conformal.setVal(1.0_rt);
+   vector.setVal(0.0_rt);
+   extrinsic.setVal(0.0_rt);
+   mean_curvature.setVal(0.0_rt);
+   const pyfluid_amrex::CttkResult hybrid =
+      pyfluid_amrex::solve_cttk_hybrid_constraints(
+         hierarchy,
+         conformal_view,
+         curvature_view,
+         vector_view,
+         extrinsic_view,
+         energy_view,
+         momentum_view,
+         scalar_boundary,
+         vector_boundary,
+         cttk_options
+      );
+
+   conformal.setVal(1.0_rt);
+   lapse_conformal.setVal(1.0_rt);
+   vector.setVal(0.0_rt);
+   extrinsic.setVal(0.0_rt);
+   pyfluid_amrex::XctsOptions xcts_options;
+   xcts_options.max_coupled_iterations = 4;
+   xcts_options.relative_update_tolerance = 1.0e-11_rt;
+   const pyfluid_amrex::XctsResult xcts =
+      pyfluid_amrex::solve_xcts_constraints(
+         hierarchy,
+         conformal_view,
+         lapse_view,
+         vector_view,
+         extrinsic_view,
+         energy_view,
+         momentum_view,
+         stress_view,
+         scalar_boundary,
+         scalar_boundary,
+         vector_boundary,
+         xcts_options
+      );
+
+   conformal.plus(-1.0_rt, 0, 1, 0);
+   lapse_conformal.plus(-1.0_rt, 0, 1, 0);
+   amrex::Real error = std::max(
+      conformal.norm0(0, 0, false),
+      lapse_conformal.norm0(0, 0, false)
+   );
+   error = std::max(error, mean_curvature.norm0(0, 0, false));
+   for (int component = 0; component < 3; ++component) {
+      error = std::max(error, vector.norm0(component, 0, false));
+   }
+   for (int component = 0;
+        component < pyfluid_amrex::CONFORMAL_A_NUM_COMPONENTS;
+        ++component) {
+      error = std::max(error, extrinsic.norm0(component, 0, false));
+   }
+   const bool valid = ctt.converged && cttk.converged && hybrid.converged
+      && xcts.converged && error < 1.0e-12_rt;
+   if (amrex::ParallelDescriptor::IOProcessor()) {
+      std::cout << "cartesian_constraint_smoke dimension=" << AMREX_SPACEDIM
+                << " ctt=" << ctt.converged
+                << " cttk=" << cttk.converged
+                << " hybrid=" << hybrid.converged
+                << " xcts=" << xcts.converged
+                << " linf_error=" << error << '\n';
+   }
+   return valid;
 }
 
 } // namespace
@@ -3107,8 +3581,30 @@ int main(int argc, char* argv[])
    amrex::Initialize(argc, argv);
    int return_code = 0;
    bool full_spherical_only = false;
+   bool cartesian_projection_only = false;
+   bool cartesian_matter_convergence = false;
    amrex::ParmParse test_pp("test");
    test_pp.query("full_spherical_only", full_spherical_only);
+   test_pp.query("cartesian_projection_only", cartesian_projection_only);
+   test_pp.query("cartesian_matter_convergence", cartesian_matter_convergence);
+   if (cartesian_matter_convergence) {
+      return_code = validate_cartesian_id_matter_convergence() ? 0 : 1;
+      amrex::Finalize();
+      return return_code;
+   }
+   if (cartesian_projection_only) {
+      return_code = validate_initial_data_owner_catalog()
+            && validate_reduced_cartesian_conformal_vector(
+               pyfluid_amrex::InitialDataEllipticCentering::cell
+            )
+            && validate_reduced_cartesian_conformal_vector(
+               pyfluid_amrex::InitialDataEllipticCentering::vertex
+            )
+            && validate_reduced_cartesian_constraint_smoke()
+         ? 0 : 1;
+      amrex::Finalize();
+      return return_code;
+   }
    if (full_spherical_only) {
 #if (AMREX_SPACEDIM == 3)
       return_code = validate_full_spherical_poisson()
@@ -3142,6 +3638,17 @@ int main(int argc, char* argv[])
       if (!validate_reflected_cell_to_vertex_transfer()) {
          return_code = 1;
       }
+      if (!validate_reduced_cartesian_conformal_vector(
+             pyfluid_amrex::InitialDataEllipticCentering::cell
+          )
+          || !validate_reduced_cartesian_conformal_vector(
+             pyfluid_amrex::InitialDataEllipticCentering::vertex
+          )) {
+         return_code = 1;
+      }
+      if (!validate_reduced_cartesian_constraint_smoke()) {
+         return_code = 1;
+      }
       constexpr int coarse_cells = 32;
       const amrex::IntVect coarse_lo(AMREX_D_DECL(0, 0, 0));
       const amrex::IntVect coarse_hi(AMREX_D_DECL(
@@ -3164,8 +3671,8 @@ int main(int argc, char* argv[])
       ));
       const amrex::Box fine_patch(fine_lo, fine_hi);
       const amrex::RealBox physical_domain(
-         AMREX_D_DECL(0.0, 0.0, 0.0),
-         AMREX_D_DECL(1.0, 1.0, 1.0)
+         AMREX_D_DECL(0.0_rt, 0.0_rt, 0.0_rt),
+         AMREX_D_DECL(1.0_rt, 1.0_rt, 1.0_rt)
       );
       const amrex::Array<int, AMREX_SPACEDIM> periodic{AMREX_D_DECL(0, 0, 0)};
 
@@ -3199,13 +3706,13 @@ int main(int argc, char* argv[])
                    << " vertex_identity_error="
                    << power_law_robin_vertex_error << '\n';
       }
-      if (!(power_law_robin_cell_error < 1.0e-13)
-          || !(power_law_robin_vertex_error < 1.0e-13)) {
+      if (!(power_law_robin_cell_error < 1.0e-13_rt)
+          || !(power_law_robin_vertex_error < 1.0e-13_rt)) {
          return_code = 1;
       }
       pyfluid_amrex::InitialDataEllipticHierarchy nodal_hierarchy = hierarchy;
 #if (AMREX_SPACEDIM == 1)
-      // AMReX 26.08 does not implement multilevel reflux for MLNodeLaplacian
+      // AMReX 26.09 does not implement multilevel reflux for MLNodeLaplacian
       // in 1D. The physical TOV provider remains a native 1D ODE solve.
       nodal_hierarchy.geometry.resize(1);
       nodal_hierarchy.grids.resize(1);
@@ -3251,23 +3758,23 @@ int main(int argc, char* argv[])
          rhs_storage[level] = std::make_unique<amrex::MultiFab>(
             hierarchy.grids[level], hierarchy.distribution[level], 1, 0
          );
-         solution_storage[level]->setVal(0.0);
+         solution_storage[level]->setVal(0.0_rt);
          const auto problo = hierarchy.geometry[level].ProbLoArray();
          const auto dx = hierarchy.geometry[level].CellSizeArray();
          for (amrex::MFIter mfi(*rhs_storage[level]); mfi.isValid(); ++mfi) {
             const amrex::Box box = mfi.validbox();
             const auto values = rhs_storage[level]->array(mfi);
             amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               const amrex::Real x = problo[0] + (i + 0.5) * dx[0];
+               const amrex::Real x = problo[0] + (i + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-               const amrex::Real y = problo[1] + (j + 0.5) * dx[1];
+               const amrex::Real y = problo[1] + (j + 0.5_rt) * dx[1];
 #else
-               const amrex::Real y = 0.0;
+               const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-               const amrex::Real z = problo[2] + (k + 0.5) * dx[2];
+               const amrex::Real z = problo[2] + (k + 0.5_rt) * dx[2];
 #else
-               const amrex::Real z = 0.0;
+               const amrex::Real z = 0.0_rt;
 #endif
                values(i, j, k, 0) = manufactured_rhs(x, y, z);
             });
@@ -3276,9 +3783,9 @@ int main(int argc, char* argv[])
          rhs[level] = rhs_storage[level].get();
       }
 
-      constexpr amrex::Real robin_b_magnitude = 0.25;
+      constexpr amrex::Real robin_b_magnitude = 0.25_rt;
       auto boundary = pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
-         hierarchy, 1, 1.0, 0.0, 0.0
+         hierarchy, 1, 1.0_rt, 0.0_rt, 0.0_rt
       );
       for (int level = 0; level < 2; ++level) {
          const amrex::Box domain = hierarchy.geometry[level].Domain();
@@ -3293,17 +3800,17 @@ int main(int argc, char* argv[])
             const auto coefficient_c = boundary.coefficient_c(level).array(mfi);
             amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                int direction = -1;
-               amrex::Real coordinate_b = 0.0;
-               amrex::Real x = problo[0] + (i + 0.5) * dx[0];
+               amrex::Real coordinate_b = 0.0_rt;
+               amrex::Real x = problo[0] + (i + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-               amrex::Real y = problo[1] + (j + 0.5) * dx[1];
+               amrex::Real y = problo[1] + (j + 0.5_rt) * dx[1];
 #else
-               amrex::Real y = 0.0;
+               amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-               amrex::Real z = problo[2] + (k + 0.5) * dx[2];
+               amrex::Real z = problo[2] + (k + 0.5_rt) * dx[2];
 #else
-               amrex::Real z = 0.0;
+               amrex::Real z = 0.0_rt;
 #endif
                if (i < domain_lo.x) {
                   direction = 0;
@@ -3338,7 +3845,7 @@ int main(int argc, char* argv[])
 #endif
                coefficient_b(i, j, k, 0) = coordinate_b;
                coefficient_c(i, j, k, 0) = direction < 0
-                  ? 0.0
+                  ? 0.0_rt
                   : manufactured_robin_c(x, y, z, direction, coordinate_b);
             });
          }
@@ -3348,7 +3855,7 @@ int main(int argc, char* argv[])
             hierarchy, solution, rhs, boundary
          );
 
-      amrex::Real max_error = 0.0;
+      amrex::Real max_error = 0.0_rt;
       for (int level = 0; level < 2; ++level) {
          amrex::MultiFab error(
             hierarchy.grids[level], hierarchy.distribution[level], 1, 0
@@ -3360,16 +3867,16 @@ int main(int argc, char* argv[])
             const auto numerical = solution_storage[level]->const_array(mfi);
             const auto difference = error.array(mfi);
             amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               const amrex::Real x = problo[0] + (i + 0.5) * dx[0];
+               const amrex::Real x = problo[0] + (i + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-               const amrex::Real y = problo[1] + (j + 0.5) * dx[1];
+               const amrex::Real y = problo[1] + (j + 0.5_rt) * dx[1];
 #else
-               const amrex::Real y = 0.0;
+               const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-               const amrex::Real z = problo[2] + (k + 0.5) * dx[2];
+               const amrex::Real z = problo[2] + (k + 0.5_rt) * dx[2];
 #else
-               const amrex::Real z = 0.0;
+               const amrex::Real z = 0.0_rt;
 #endif
                difference(i, j, k, 0) = amrex::Math::abs(
                   numerical(i, j, k, 0) - manufactured_solution(x, y, z)
@@ -3384,18 +3891,18 @@ int main(int argc, char* argv[])
                    << "initial_data_poisson residual=" << result.residual
                    << " linf_error=" << max_error << '\n';
       }
-      if (!(max_error < 5.0e-3)) {
+      if (!(max_error < 5.0e-3_rt)) {
          return_code = 1;
       }
 
-      constexpr amrex::Real ctt_amplitude = 0.01;
+      constexpr amrex::Real ctt_amplitude = 0.01_rt;
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> conformal_storage(2);
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> energy_storage(2);
       amrex::Vector<amrex::MultiFab*> conformal_factor(2);
       amrex::Vector<amrex::MultiFab const*> energy_density(2);
       auto ctt_boundary =
          pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
-            hierarchy, 1, 1.0, 0.0, 0.0
+            hierarchy, 1, 1.0_rt, 0.0_rt, 0.0_rt
          );
       for (int level = 0; level < 2; ++level) {
          conformal_storage[level] = std::make_unique<amrex::MultiFab>(
@@ -3404,23 +3911,23 @@ int main(int argc, char* argv[])
          energy_storage[level] = std::make_unique<amrex::MultiFab>(
             hierarchy.grids[level], hierarchy.distribution[level], 1, 0
          );
-         conformal_storage[level]->setVal(1.0);
+         conformal_storage[level]->setVal(1.0_rt);
          const auto problo = hierarchy.geometry[level].ProbLoArray();
          const auto dx = hierarchy.geometry[level].CellSizeArray();
          for (amrex::MFIter mfi(*energy_storage[level]); mfi.isValid(); ++mfi) {
             const amrex::Box valid_box = mfi.validbox();
             const auto energy = energy_storage[level]->array(mfi);
             amrex::ParallelFor(valid_box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               const amrex::Real x = problo[0] + (i + 0.5) * dx[0];
+               const amrex::Real x = problo[0] + (i + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-               const amrex::Real y = problo[1] + (j + 0.5) * dx[1];
+               const amrex::Real y = problo[1] + (j + 0.5_rt) * dx[1];
 #else
-               const amrex::Real y = 0.0;
+               const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-               const amrex::Real z = problo[2] + (k + 0.5) * dx[2];
+               const amrex::Real z = problo[2] + (k + 0.5_rt) * dx[2];
 #else
-               const amrex::Real z = 0.0;
+               const amrex::Real z = 0.0_rt;
 #endif
                energy(i, j, k, 0) = manufactured_ctt_energy_density(
                   x, y, z, ctt_amplitude
@@ -3431,8 +3938,8 @@ int main(int argc, char* argv[])
          energy_density[level] = energy_storage[level].get();
       }
       pyfluid_amrex::CttHamiltonianOptions ctt_options;
-      ctt_options.relative_update_tolerance = 1.0e-11;
-      ctt_options.relaxation = 0.25;
+      ctt_options.relative_update_tolerance = 1.0e-11_rt;
+      ctt_options.relaxation = 0.25_rt;
       const pyfluid_amrex::CttHamiltonianResult ctt_result =
          pyfluid_amrex::solve_ctt_time_symmetric_hamiltonian(
             hierarchy,
@@ -3442,7 +3949,7 @@ int main(int argc, char* argv[])
             ctt_options
          );
 
-      amrex::Real ctt_max_error = 0.0;
+      amrex::Real ctt_max_error = 0.0_rt;
       for (int level = 0; level < 2; ++level) {
          amrex::MultiFab error(
             hierarchy.grids[level], hierarchy.distribution[level], 1, 0
@@ -3454,16 +3961,16 @@ int main(int argc, char* argv[])
             const auto numerical = conformal_storage[level]->const_array(mfi);
             const auto difference = error.array(mfi);
             amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               const amrex::Real x = problo[0] + (i + 0.5) * dx[0];
+               const amrex::Real x = problo[0] + (i + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-               const amrex::Real y = problo[1] + (j + 0.5) * dx[1];
+               const amrex::Real y = problo[1] + (j + 0.5_rt) * dx[1];
 #else
-               const amrex::Real y = 0.0;
+               const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-               const amrex::Real z = problo[2] + (k + 0.5) * dx[2];
+               const amrex::Real z = problo[2] + (k + 0.5_rt) * dx[2];
 #else
-               const amrex::Real z = 0.0;
+               const amrex::Real z = 0.0_rt;
 #endif
                difference(i, j, k, 0) = amrex::Math::abs(
                   numerical(i, j, k, 0)
@@ -3485,11 +3992,11 @@ int main(int argc, char* argv[])
                    << " solution_max=" << ctt_solution_max
                    << " linf_error=" << ctt_max_error << '\n';
       }
-      if (!ctt_result.converged || !(ctt_max_error < 5.0e-3)) {
+      if (!ctt_result.converged || !(ctt_max_error < 5.0e-3_rt)) {
          return_code = 1;
       }
 #if (AMREX_SPACEDIM == 3)
-      constexpr amrex::Real momentum_amplitude = 0.01;
+      constexpr amrex::Real momentum_amplitude = 0.01_rt;
       pyfluid_amrex::InitialDataEllipticHierarchy momentum_hierarchy =
          hierarchy;
       momentum_hierarchy.reflection_lo[0] = 1;
@@ -3515,10 +4022,10 @@ int main(int argc, char* argv[])
             momentum_source_storage[level] = std::make_unique<amrex::MultiFab>(
                field_grids, hierarchy.distribution[level], 3, 0
             );
-            vector_storage[level]->setVal(0.0);
+            vector_storage[level]->setVal(0.0_rt);
             const auto problo = hierarchy.geometry[level].ProbLoArray();
             const auto dx = hierarchy.geometry[level].CellSizeArray();
-            const amrex::Real offset = vertex_centered ? 0.0 : 0.5;
+            const amrex::Real offset = vertex_centered ? 0.0_rt : 0.5_rt;
             for (amrex::MFIter mfi(*momentum_source_storage[level]); mfi.isValid(); ++mfi) {
                const amrex::Box box = mfi.validbox();
                const auto source_values = momentum_source_storage[level]->array(mfi);
@@ -3545,7 +4052,7 @@ int main(int argc, char* argv[])
          }
          auto momentum_boundary =
             pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
-               momentum_hierarchy, 3, 1.0, 0.0, 0.0, centering
+               momentum_hierarchy, 3, 1.0_rt, 0.0_rt, 0.0_rt, centering
             );
          pyfluid_amrex::set_initial_data_reflection_boundaries(
             momentum_hierarchy,
@@ -3563,7 +4070,7 @@ int main(int argc, char* argv[])
                momentum_source,
                momentum_boundary
             );
-         amrex::Real momentum_max_error = 0.0;
+         amrex::Real momentum_max_error = 0.0_rt;
          for (int level = 0; level < 2; ++level) {
             amrex::MultiFab error(
                vector_storage[level]->boxArray(),
@@ -3573,7 +4080,7 @@ int main(int argc, char* argv[])
             );
             const auto problo = hierarchy.geometry[level].ProbLoArray();
             const auto dx = hierarchy.geometry[level].CellSizeArray();
-            const amrex::Real offset = vertex_centered ? 0.0 : 0.5;
+            const amrex::Real offset = vertex_centered ? 0.0_rt : 0.5_rt;
             for (amrex::MFIter mfi(error); mfi.isValid(); ++mfi) {
                const amrex::Box box = mfi.validbox();
                const auto numerical = vector_storage[level]->const_array(mfi);
@@ -3615,13 +4122,13 @@ int main(int argc, char* argv[])
                       << " residual=" << momentum_result.residual
                       << " linf_error=" << momentum_max_error << '\n';
          }
-         if (!(momentum_max_error < 5.0e-3)) {
+         if (!(momentum_max_error < 5.0e-3_rt)) {
             return_code = 1;
          }
       }
 
-      constexpr amrex::Real coupled_conformal_amplitude = 0.01;
-      constexpr amrex::Real coupled_vector_amplitude = 0.005;
+      constexpr amrex::Real coupled_conformal_amplitude = 0.01_rt;
+      constexpr amrex::Real coupled_vector_amplitude = 0.005_rt;
       for (const auto coupled_centering : {
               pyfluid_amrex::InitialDataEllipticCentering::cell,
               pyfluid_amrex::InitialDataEllipticCentering::vertex
@@ -3665,12 +4172,12 @@ int main(int argc, char* argv[])
             coupled_momentum_storage[level] = std::make_unique<amrex::MultiFab>(
                coupled_grids[level], hierarchy.distribution[level], 3, 0
             );
-            coupled_conformal_storage[level]->setVal(1.0);
-            coupled_vector_storage[level]->setVal(0.0);
-            coupled_extrinsic_storage[level]->setVal(0.0);
+            coupled_conformal_storage[level]->setVal(1.0_rt);
+            coupled_vector_storage[level]->setVal(0.0_rt);
+            coupled_extrinsic_storage[level]->setVal(0.0_rt);
             const auto problo = hierarchy.geometry[level].ProbLoArray();
             const auto dx = hierarchy.geometry[level].CellSizeArray();
-            const amrex::Real coordinate_offset = coupled_vertex_centered ? 0.0 : 0.5;
+            const amrex::Real coordinate_offset = coupled_vertex_centered ? 0.0_rt : 0.5_rt;
             for (amrex::MFIter mfi(*coupled_energy_storage[level]); mfi.isValid(); ++mfi) {
                const amrex::Box box = mfi.validbox();
                const auto energy = coupled_energy_storage[level]->array(mfi);
@@ -3721,15 +4228,15 @@ int main(int argc, char* argv[])
          }
          pyfluid_amrex::CttOptions coupled_options;
          coupled_options.max_coupled_iterations = 80;
-         coupled_options.relative_update_tolerance = 1.0e-10;
-         coupled_options.relaxation = 0.5;
+         coupled_options.relative_update_tolerance = 1.0e-10_rt;
+         coupled_options.relaxation = 0.5_rt;
          auto coupled_momentum_boundary =
             pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
-               hierarchy, 3, 1.0, 0.0, 0.0, coupled_centering
+               hierarchy, 3, 1.0_rt, 0.0_rt, 0.0_rt, coupled_centering
             );
          auto coupled_conformal_boundary =
             pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
-               hierarchy, 1, 1.0, 0.0, 0.0, coupled_centering
+               hierarchy, 1, 1.0_rt, 0.0_rt, 0.0_rt, coupled_centering
             );
          const pyfluid_amrex::CttResult coupled_result =
             pyfluid_amrex::solve_ctt_constraints(
@@ -3743,8 +4250,8 @@ int main(int argc, char* argv[])
                coupled_momentum_boundary,
                coupled_options
             );
-         amrex::Real coupled_conformal_error = 0.0;
-         amrex::Real coupled_vector_error = 0.0;
+         amrex::Real coupled_conformal_error = 0.0_rt;
+         amrex::Real coupled_vector_error = 0.0_rt;
          for (int level = 0; level < 2; ++level) {
             amrex::MultiFab conformal_error(
                coupled_grids[level], hierarchy.distribution[level], 1, 0
@@ -3754,7 +4261,7 @@ int main(int argc, char* argv[])
             );
             const auto problo = hierarchy.geometry[level].ProbLoArray();
             const auto dx = hierarchy.geometry[level].CellSizeArray();
-            const amrex::Real coordinate_offset = coupled_vertex_centered ? 0.0 : 0.5;
+            const amrex::Real coordinate_offset = coupled_vertex_centered ? 0.0_rt : 0.5_rt;
             for (amrex::MFIter mfi(conformal_error); mfi.isValid(); ++mfi) {
                const amrex::Box box = mfi.validbox();
                const auto psi = coupled_conformal_storage[level]->const_array(mfi);
@@ -3804,15 +4311,15 @@ int main(int argc, char* argv[])
                       << " vector_linf_error=" << coupled_vector_error << '\n';
          }
          if (!coupled_result.converged
-             || !(coupled_conformal_error < 5.0e-3)
-             || !(coupled_vector_error < 5.0e-3)) {
+             || !(coupled_conformal_error < 5.0e-3_rt)
+             || !(coupled_vector_error < 5.0e-3_rt)) {
             return_code = 1;
          }
       }
 
-      constexpr amrex::Real cttk_curvature_background = 1.0;
-      constexpr amrex::Real cttk_curvature_amplitude = 0.01;
-      constexpr amrex::Real cttk_vector_amplitude = 0.002;
+      constexpr amrex::Real cttk_curvature_background = 1.0_rt;
+      constexpr amrex::Real cttk_curvature_amplitude = 0.01_rt;
+      constexpr amrex::Real cttk_vector_amplitude = 0.002_rt;
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> cttk_conformal_storage(2);
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> cttk_curvature_storage(2);
       amrex::Vector<std::unique_ptr<amrex::MultiFab>> cttk_vector_storage(2);
@@ -3850,10 +4357,10 @@ int main(int argc, char* argv[])
          cttk_momentum_storage[level] = std::make_unique<amrex::MultiFab>(
             vertex_grids, hierarchy.distribution[level], 3, 0
          );
-         cttk_conformal_storage[level]->setVal(1.0);
-         cttk_curvature_storage[level]->setVal(0.0);
-         cttk_vector_storage[level]->setVal(0.0);
-         cttk_extrinsic_storage[level]->setVal(0.0);
+         cttk_conformal_storage[level]->setVal(1.0_rt);
+         cttk_curvature_storage[level]->setVal(0.0_rt);
+         cttk_vector_storage[level]->setVal(0.0_rt);
+         cttk_extrinsic_storage[level]->setVal(0.0_rt);
          const auto problo = hierarchy.geometry[level].ProbLoArray();
          const auto dx = hierarchy.geometry[level].CellSizeArray();
          for (amrex::MFIter mfi(*cttk_energy_storage[level]); mfi.isValid(); ++mfi) {
@@ -3913,15 +4420,15 @@ int main(int argc, char* argv[])
          pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
             hierarchy,
             3,
-            1.0,
-            0.0,
-            0.0,
+            1.0_rt,
+            0.0_rt,
+            0.0_rt,
             pyfluid_amrex::InitialDataEllipticCentering::vertex
          );
       pyfluid_amrex::CttkOptions cttk_options;
       cttk_options.max_coupled_iterations = 80;
-      cttk_options.relative_update_tolerance = 1.0e-9;
-      cttk_options.relaxation = 0.5;
+      cttk_options.relative_update_tolerance = 1.0e-9_rt;
+      cttk_options.relaxation = 0.5_rt;
       cttk_options.mean_curvature_branch =
          pyfluid_amrex::CttkMeanCurvatureBranch::positive;
       const pyfluid_amrex::CttkResult cttk_result =
@@ -3936,8 +4443,8 @@ int main(int argc, char* argv[])
             cttk_vector_boundary,
             cttk_options
          );
-      amrex::Real cttk_curvature_error = 0.0;
-      amrex::Real cttk_vector_error = 0.0;
+      amrex::Real cttk_curvature_error = 0.0_rt;
+      amrex::Real cttk_vector_error = 0.0_rt;
       for (int level = 0; level < 2; ++level) {
          const amrex::BoxArray vertex_grids = amrex::convert(
             hierarchy.grids[level], amrex::IntVect::TheNodeVector()
@@ -4011,16 +4518,16 @@ int main(int argc, char* argv[])
                    << " vector_linf_error=" << cttk_vector_error << '\n';
       }
       if (!cttk_result.converged
-          || !(cttk_curvature_error < 5.0e-3)
-          || !(cttk_vector_error < 5.0e-3)) {
+          || !(cttk_curvature_error < 5.0e-3_rt)
+          || !(cttk_vector_error < 5.0e-3_rt)) {
          return_code = 1;
       }
 
       for (int level = 0; level < 2; ++level) {
-         cttk_conformal_storage[level]->setVal(1.0);
-         cttk_curvature_storage[level]->setVal(0.0);
-         cttk_vector_storage[level]->setVal(0.0);
-         cttk_extrinsic_storage[level]->setVal(0.0);
+         cttk_conformal_storage[level]->setVal(1.0_rt);
+         cttk_curvature_storage[level]->setVal(0.0_rt);
+         cttk_vector_storage[level]->setVal(0.0_rt);
+         cttk_extrinsic_storage[level]->setVal(0.0_rt);
          const auto problo = hierarchy.geometry[level].ProbLoArray();
          const auto dx = hierarchy.geometry[level].CellSizeArray();
          for (amrex::MFIter mfi(*cttk_energy_storage[level]); mfi.isValid(); ++mfi) {
@@ -4038,7 +4545,7 @@ int main(int argc, char* argv[])
                      z,
                      cttk_curvature_background,
                      cttk_curvature_amplitude,
-                     0.0
+                     0.0_rt
                   );
                momentum(i, j, k, 0) =
                   pyfluid_amrex::generated::cttk_manufactured_momentum_density_1(
@@ -4047,7 +4554,7 @@ int main(int argc, char* argv[])
                      z,
                      cttk_curvature_background,
                      cttk_curvature_amplitude,
-                     0.0
+                     0.0_rt
                   );
                momentum(i, j, k, 1) =
                   pyfluid_amrex::generated::cttk_manufactured_momentum_density_2(
@@ -4056,7 +4563,7 @@ int main(int argc, char* argv[])
                      z,
                      cttk_curvature_background,
                      cttk_curvature_amplitude,
-                     0.0
+                     0.0_rt
                   );
                momentum(i, j, k, 2) =
                   pyfluid_amrex::generated::cttk_manufactured_momentum_density_3(
@@ -4065,7 +4572,7 @@ int main(int argc, char* argv[])
                      z,
                      cttk_curvature_background,
                      cttk_curvature_amplitude,
-                     0.0
+                     0.0_rt
                   );
             });
          }
@@ -4074,9 +4581,9 @@ int main(int argc, char* argv[])
          pyfluid_amrex::InitialDataEllipticBoundaryConditions::constant(
             hierarchy,
             1,
-            1.0,
-            0.0,
-            0.0,
+            1.0_rt,
+            0.0_rt,
+            0.0_rt,
             pyfluid_amrex::InitialDataEllipticCentering::vertex
          );
       const pyfluid_amrex::CttkResult cttk_hybrid_result =
@@ -4092,7 +4599,7 @@ int main(int argc, char* argv[])
             cttk_vector_boundary,
             cttk_options
          );
-      amrex::Real cttk_hybrid_error = 0.0;
+      amrex::Real cttk_hybrid_error = 0.0_rt;
       for (int level = 0; level < 2; ++level) {
          amrex::MultiFab conformal_error(
             cttk_conformal_storage[level]->boxArray(),
@@ -4103,7 +4610,7 @@ int main(int argc, char* argv[])
          amrex::MultiFab::Copy(
             conformal_error, *cttk_conformal_storage[level], 0, 0, 1, 0
          );
-         conformal_error.plus(-1.0, 0, 1, 0);
+         conformal_error.plus(-1.0_rt, 0, 1, 0);
          cttk_hybrid_error = std::max(
             cttk_hybrid_error, conformal_error.norm0(0)
          );
@@ -4125,7 +4632,7 @@ int main(int argc, char* argv[])
                    << cttk_hybrid_result.momentum_residual
                    << " linf_error=" << cttk_hybrid_error << '\n';
       }
-      if (!cttk_hybrid_result.converged || !(cttk_hybrid_error < 5.0e-3)) {
+      if (!cttk_hybrid_result.converged || !(cttk_hybrid_error < 5.0e-3_rt)) {
          return_code = 1;
       }
       if (!validate_tov_ctt()) {

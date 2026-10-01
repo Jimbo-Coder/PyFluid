@@ -26,12 +26,18 @@ It intentionally links rather than restating the detailed contracts.
 | Runtime configuration | `include/pyfluid_amrex/config.hpp`, `src/framework/config*.{cpp,hpp}` | `README.md`, configuration rules |
 | Grid fields, components, centerings | `schema/fields.toml`, loaded by `codegen/pyfluid_codegen/field_catalog.py` | `docs/catalog_schema.md`, generated field sections in `docs/equations.md` |
 | Reconstruction, rotation-law, and AMR-policy identity | `schema/methods.toml`, loaded by `codegen/pyfluid_codegen/method_catalog.py`; formulas under `include/pyfluid_amrex/reconstruction/`, AMR evaluation in `include/pyfluid_amrex/amr_indicator.hpp`, and shared circular ID policy under `include/pyfluid_amrex/initial_data/circular_rotation.hpp` | `docs/catalog_schema.md`, `docs/design.md`, `docs/tov.md` |
-| Diagnostics and reductions | `schema/diagnostics.toml`, strict loader `codegen/pyfluid_codegen/diagnostic_catalog.py`, and runtime executor `src/amr/amr_solver_diagnostics.cpp` | `docs/diagnostics.md` |
+| Diagnostics and reductions | `schema/diagnostics.toml`, strict loader `codegen/pyfluid_codegen/diagnostic_catalog.py`, runtime executor `src/amr/amr_solver_diagnostics.cpp`, and shared `src/numerics/diagnostic_reductions.cpp` | `docs/diagnostics.md` |
+| Precision acceptance and integrated divB normalization | `tools/validation_common.py` (`precision_scalar_policy`, `cartesian_divb_scale`); `src/amr/amr_solver_diagnostics.cpp` (volume-weighted L1); `src/numerics/ct_diagnostics.hpp` (face-flux divergence) | `docs/precision_and_metal.md`; Cycle 433 |
 | Generated equations | labeled symbolic sources under `codegen/pyfluid_codegen/` | `docs/equations.md`, `docs/equations.tex` |
+| Shared coordinate/operator verification | `tests/test_coordinate_contracts.py`, `codegen/pyfluid_codegen/{coordinates,tensor_algebra}.py`, `tools/validate_amrex_suite.py` | `docs/infrastructure_conventions.md#shared-validation-contracts`; Cycle 386 |
 | Relativistic HD/MHD and Z4c | generated kernels, `src/relativity/{rhd_system,rmhd_system,relativistic_atmosphere}.hpp`, `include/pyfluid_amrex/relativistic_boundary.hpp`, and `src/amr/amr_solver_spacetime*.cpp` | `docs/grmhd_development.md` |
 | Runtime EoS and relativistic C2P | `include/pyfluid_amrex/eos/equation_of_state.hpp`, `include/pyfluid_amrex/{rhd_c2p,rmhd_c2p}.hpp`, generated `relativistic/c2p_*.hpp`, `tests/{generated_flux_compile_check,tabulated_eos_check}.cpp` | RePrimAnd, Spritz, and recovery-comparison references below; `docs/grmhd_development.md` |
 | RMHD HLLC/HLLD fan and closure | `include/pyfluid_amrex/{rmhd_riemann,rmhd_advanced_flux}.hpp`, `src/relativity/rmhd_advanced_flux.cpp`, `tests/rmhd_riemann_check.cpp`, and `tools/validate_rmhd_advanced_riemann.py` | Mignone--Bodo and Mignone--Ugliano--Bodo references below; Cycles 262 and 284 |
 | CT stage and AMR ownership | `src/amr/solver_sections/{ct_evolution,time_integrators,evolve_core,subcycling}.inc.hpp`, `src/numerics/ct_edge_flux_register.cpp`, and `tools/validate_ct_divb.py` | `docs/design.md`, current CT boundary in `knowledge.md` |
+| Stellar surface thermal diagnostic | `tools/report_stellar_thermal.py`, `schema/fields.toml` thermal entropy proxy, `eos/equation_of_state.hpp` | `docs/grmhd_development.md`, Cycle 406; hybrid thermal excess is not physical temperature |
+| Time integration and budget coefficients | `schema/time_integrators.toml`, `codegen/pyfluid_codegen/time_integrator_catalog.py`, generated time-integrator descriptors, `src/amr/solver_sections/time_integrators.inc.hpp` | `codegen/README.md`; [Butcher, Practical Runge-Kutta methods (2009)](https://doi.org/10.1017/S1446181109000030); Cycle 407 |
+| Nonlinear relativistic CP Alfven wave | `tools/validate_rmhd_alfven.py`, `tools/relativistic_validation.py`; RMHD branch of `initialize_circular_alfven_x` | [ECHO section 4.1, Eq. 85](https://arxiv.org/html/0704.3206#S4.SS1); unit-amplitude 1D and axis-aligned 2D CT, Cycle 409 |
+| Exact SRHD shock heating | `tools/relativistic_validation.py`, `tools/validate_rhd_shock_heating.py` | [Meliani et al. (2007), Section 3.1.2](https://arxiv.org/abs/astro-ph/0701434); finite-pressure conservation jumps, symmetric-stream variant; Cycles 405--408. Shared-face candidate closure: `src/relativity/relativistic_flux_limiter.cpp` |
 | Exact SRMHD Riemann profiles | tracked `../exact_balsara/solution_b{1..5}.dat`, read by `tools/validate_rmhd.py` | Giacomazzo--Rezzolla exact solver and paper below |
 | TOV/EoS/stellar initial data | `include/pyfluid_amrex/eos/`, `src/eos/`, `src/initial_data/`, `schema/methods.toml` | `docs/tov.md` |
 | Magnetized stellar initial data | `include/pyfluid_amrex/initial_data/magnetic.hpp`, `src/initial_data/initial_data_magnetic.cpp`, `src/initial_data/rotating_star_initial_data.cpp`, `schema/methods.toml`, `tools/validate_magnetized_initial_data.py`, `tools/validate_magnetohydrostatic_initial_data.py` | Pili--Bucciantini--Del Zanna below; `docs/infrastructure_conventions.md`; Cycles 308--309 |
@@ -41,9 +47,18 @@ It intentionally links rather than restating the detailed contracts.
 | Apparent-horizon geometry, finder, tracking, and masks | `include/pyfluid_amrex/apparent_horizon.hpp`, `include/pyfluid_amrex/apparent_horizon_finder.hpp`, `src/relativity/apparent_horizon_finder.cpp`, `src/relativity/apparent_horizon_tracker.cpp`, `src/amr/amr_solver_horizon.cpp` | `docs/black_holes.md`, Cycles 300--301 |
 | Portable physical-ID solve/save/materialization, including explicit radial faces | `src/initial_data/physical_id.cpp`, `src/initial_data/physical_id_interpolation.cpp`, `src/initial_data/initial_data_elliptic.cpp`, `src/framework/checkpoint.cpp`, `tests/physical_id_interpolation_check.cpp`, `tools/validate_reduced_initial_data.py` | `docs/infrastructure_conventions.md`, Cycles 287 and 291 |
 | Axisymmetric spherical ID scalar/toroidal elliptic operators | `src/initial_data/initial_data_elliptic.cpp`, `include/pyfluid_amrex/initial_data/elliptic.hpp`, `tests/initial_data_elliptic_check.cpp` | `docs/infrastructure_conventions.md`, Cycles 288--289 |
+| Conformal ID iteration, Cartesian operator and dimensional projections | `src/initial_data/{initial_data_elliptic,initial_data_ctt}.cpp`, `include/pyfluid_amrex/initial_data/{elliptic,ctt}.hpp`, `schema/methods.toml`, `tests/{initial_data_elliptic_check,cartesian_id_convergence}.cpp`, `tools/validate_reduced_initial_data.py` | `docs/infrastructure_conventions.md`, Cycles 384–385 and 390 |
 | Infrastructure and artifact ownership | current implementation and field schema | `docs/infrastructure_conventions.md` |
+| Regrid bookkeeping and aligned clocks | `src/amr/regrid_lifecycle.{hpp,cpp}`; AMReX callback integration in `src/amr/amr_solver_levels.cpp` | `docs/infrastructure_conventions.md`; Cycle 403 |
+| Gravity field lifetime and Poisson setup | `include/pyfluid_amrex/gravity_fields.hpp`, `src/amr/{gravity_fields,amr_solver_gravity}.cpp` | `docs/infrastructure_conventions.md`; Cycle 404 |
 | Adaptive Richardson status | AMR estimator and validation tools | `docs/adaptive_richardson.md` |
 | Machines, MPI, build | `machines/*.toml`, `tools/validation_common.py` | `docs/install.md`, `docs/machines.md` |
+| Compile ownership and cost evidence | `tools/build_dependencies.py`, `tools/profile_compile.py`, `tools/benchmark_compile.py`, configured `compile_commands.json` | `docs/install.md#keeping-edit-cost-local`; Clang `-ftime-trace` and [NVCC device traces](https://developer.nvidia.com/blog/optimizing-compile-times-for-cuda-c/); Cycles 380 and 452 |
+| CUDA device linkage and template launch ownership | `tools/manage_amrex.py`, `CMakeLists.txt` (`setup_target_for_cuda_compilation`) | [NVCC compilation modes](https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#using-separate-compilation-in-cuda), [NVIDIA template stub linkage](https://developer.nvidia.com/blog/cuda-c-compiler-updates-impacting-elf-visibility-and-linkage/); `docs/machines.md`, Cycle 452 |
+| CUDA runtime and compile profiling | `tools/profile_compile.py`, `machines/wsl_cuda.toml`, Cycle452 artifacts | [Nsight Systems](https://docs.nvidia.com/nsight-systems/UserGuide/), [CUDA Compile Time Advisor](https://docs.nvidia.com/cuda/archive/13.4.1/cuda-compile-time-advisor/index.html); `docs/machines.md` records the tested WSL counter-access boundary |
+| Cottonmouth generation and kernel boundaries | [EinsteinEngine Z4c recipe](https://github.com/max-morris/EinsteinEngine/blob/939a208c2e87a7d14445c0ab816d6f24637d1701/recipes/Cottonmouth/Z4c.py), [CarpetX emitter](https://github.com/max-morris/EinsteinEngine/blob/939a208c2e87a7d14445c0ab816d6f24637d1701/EinsteinEngine/generators/cpp_carpetx_generator.py) | `codegen/README.md`; Cycle 438 compares CSE, ordering, temporary reuse and explicit loop splits without importing a second physics implementation |
+| Generated vector compile isolation | `codegen/pyfluid_codegen/vector_equations.py`, `include/pyfluid_amrex/kernels_generated/vector/`, `include/pyfluid_amrex/diffusion_timestep.hpp`, `tests/test_build_infrastructure.py` | `docs/infrastructure_conventions.md`; Cycle 387 |
+| Fused face-solver compile/runtime tradeoff | `include/pyfluid_amrex/riemann.hpp`, `tests/test_build_infrastructure.py`, `tools/{profile_compile,benchmark_pyfluid}.py` | `docs/infrastructure_conventions.md`; Cycle 388 |
 | External review triage | current source | `review_backlog.md` |
 | Independent AthenaK comparison | `/Users/mrizzo/phys_research/athenak/athenak` | local `README.md`, test suite, and inputs |
 
@@ -56,6 +71,11 @@ verify consistency rather than hand-editing generated artifacts.
 Use the smallest gate that can falsify the change, then widen according to
 risk. Normal commands use `UV_CACHE_DIR=.uv-cache` when the global uv cache is
 not writable.
+
+For the distinction between code verification, calculation accuracy, and
+physical validation, see [NASA's verification assessment guide](https://www.grc.nasa.gov/www/wind/valid/tutorial/verassess.html).
+It discusses exact/manufactured references, grid/time/iterative convergence,
+and why agreement between two codes is insufficient by itself.
 
 ```bash
 # Discover exact current names rather than guessing a stale case.
@@ -90,13 +110,13 @@ run, use `tools/report_run.py`; for an ad-hoc raw run, use
 nonconservative. Runtime `scalars.tsv` reductions remain the source of truth
 for core totals and ledgers.
 
-For AMR interpolation call-path comparisons, the installed AMReX 26.08 headers
+For AMR interpolation call-path comparisons, the installed AMReX 26.10 headers
 are under `.deps/amrex-mpi-lsolvers-hdf5/include/`; route first to
 `AMReX_FillPatchUtil{,_I}.H`, `AMReX_Interpolater.H`,
 `AMReX_InterpFaceRegister.H`, and the dimension-specific interpolation
 kernels. The matching source contract for face-divergence-preserving ratios 2
-and 4 is in `.deps/amrex-26.08/CHANGES.md` and
-`.deps/amrex-26.08/Src/AmrCore/AMReX_Interpolater.cpp`. The exact official
+and 4 is in `.deps/amrex-26.10/CHANGES.md` and
+`.deps/amrex-26.10/Src/AmrCore/AMReX_Interpolater.cpp`. The exact official
 release pin is in `dependencies/amrex.toml`, and
 `tools/manage_amrex.py` checks or updates the local versioned install. AthenaK's
 corresponding componentwise prolongation is
@@ -120,15 +140,48 @@ These are behavior/provenance references, not sources to import.
 Do not use this router as evidence that a gate passed. Use the continuity cycle,
 the generated TSV/log, and the current source revision/dirty state.
 
+## Apple Silicon Platform Reference
+
+- Apple,
+  [M6 announcement](https://www.apple.com/newsroom/2026/08/apple-introduces-m6-and-m5-ultra-for-a-big-leap-in-performance-and-ai-compute/):
+  official 12-core CPU topology of 2 super, 4 performance, and 6 efficiency
+  cores. This establishes hardware identity, not PyFluid scaling efficiency.
+
 ## AMReX Framework Release
 
+- AMReX 26.10, [official release](https://github.com/AMReX-Codes/amrex/releases/tag/26.10),
+  [26.09..26.10 source delta](https://github.com/AMReX-Codes/amrex/compare/26.09...26.10):
+  current framework pin in `dependencies/amrex.toml`. Local `.deps/amrex-26.10/CHANGES.md`
+  routes FillPatch/component-offset and periodic flux-register fixes, GPU/SYCL
+  launch/reduction fixes, HDF5 conversion, finite-aware MLMG and FP32 thresholds,
+  sparse AMG and optional gridding/synchronization features. Scoped source review
+  and actual build/validation status are in Cycle456 and its report.
+- CMake,
+  [package symlink resolution](https://cmake.org/cmake/help/latest/variable/CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS.html):
+  built-in real-path resolution for imported package locations (since 3.14).
+  Also available locally with `cmake --help-variable CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS`.
+  Cycle 375 tests this through compiled upgrade/downgrade behavior, rather than
+  assuming the cached package-hint spelling proves executable provenance.
+- AMReX 26.09,
+  [official release](https://github.com/AMReX-Codes/amrex/releases/tag/26.09),
+  [complete 26.08..26.09 delta](https://github.com/AMReX-Codes/amrex/compare/26.08...26.09):
+  prior framework pin (Cycle373). The 26.09 changelog routes
+  tensor-operator state fixes, hook/MPI edge cases, scalar Kahan accumulation,
+  FFT callbacks, EB/STL changes, and GPU/CMake modernization. CMake 3.25 is
+  required; see `Tools/CMake/AMReXConfig.cmake.in` and `CMakeLists.txt` in that
+  source checkout. The exact resolved commit is tracked in
+  `dependencies/amrex.toml`.
 - AMReX 26.08,
   [official release](https://github.com/AMReX-Codes/amrex/releases/tag/26.08):
-  current PyFluid framework pin. Relevant upstream changes include general
-  divergence-preserving interpolation for face-centered fields, linear-solver
+  previously adopted linear-solver
   fixes, flux-register lifecycle fixes, HDF5/tooling fixes, and safer repeated
-  layout/boundary definitions. The exact resolved commit is tracked in
-  `dependencies/amrex.toml`.
+  layout/boundary definitions.
+- AMReX 26.07,
+  [official release](https://github.com/AMReX-Codes/amrex/releases/tag/26.07):
+  PR #5252 introduced general divergence-preserving face interpolation with
+  per-direction refinement ratios 2 or 4, already present in the prior 26.08
+  pin. See the 26.07 section of the local `CHANGES.md` and
+  `Src/AmrCore/AMReX_Interpolater.cpp`.
 - AMReX 26.03--26.06 release notes:
   [26.03](https://github.com/AMReX-Codes/amrex/releases/tag/26.03) introduces
   the heterogeneous `Reducer`,
@@ -142,9 +195,91 @@ the generated TSV/log, and the current source revision/dirty state.
   [official download/version documentation](https://amrex-codes.github.io/amrex/docs_html/GettingStarted.html):
   stable releases use monthly `YY.MM` tags. PyFluid follows stable tags, not
   the mutable development branch.
+- AMReX,
+  [official GPU documentation](https://amrex-codes.github.io/amrex/docs_html/GPU.html):
+  the maintained upstream GPU backends are CUDA, HIP, and SYCL. Metal is not a
+  native AMReX backend.
+- AMReX issue
+  [#5151, Apple Silicon GPU support](https://github.com/AMReX-Codes/amrex/issues/5151):
+  public discussion of Metal and the AdaptiveCpp route. The issue is open but
+  labeled `wontfix`, with no upstream implementation milestone.
+- Lulzx,
+  [WarpX Metal proof of concept](https://github.com/Lulzx/warpx-metal):
+  patch-based `WarpX -> AMReX SYCL -> AdaptiveCpp SSCP -> Metal` implementation,
+  validation notes, known limitations, and CPU/GPU benchmarks. The snapshot
+  audited in Cycle349 pinned AMReX 26.06 and used single precision with MPI
+  disabled. The README revisited in Cycle422 reports additional field-level
+  PIC validation and runtime fixes; those author-reported results are routing
+  evidence, not a validated PyFluid dependency or GRMHD result.
+  The current `dependencies/metal.toml` retains the reference's AdaptiveCpp
+  base and six patches adopted in Cycle424, plus eight local compiler/runtime
+  patches. The adapted AMReX26.10 patch and redistribution license are in
+  `dependencies/patches/`. Setup and evidence boundaries are
+  documented in `docs/precision_and_metal.md` and the continuity cycle.
+  Its pinned [benchmark results](https://github.com/Lulzx/warpx-metal/blob/7cade298257e9ffac9540549065120ab2d462c7e/benchmarks/RESULTS.md)
+  report March 2026 M4 Pro PIC timings, with smaller cases slower on GPU and
+  1.39x speedup for the 128-cubed case. These are historical author-reported
+  results for different physics and hardware, not a current PyFluid target.
+  The neighboring `scripts/09-profile-metal.sh` provides a warmed Metal System
+  Trace workflow; timing and tracing runs are separate. Cycle427 source-checks
+  these practices against our current implementation.
+- AdaptiveCpp,
+  [Metal backend documentation](https://github.com/AdaptiveCpp/AdaptiveCpp/blob/develop/doc/install-metal.md):
+  the development branch documents experimental SYCL-to-Metal support in the
+  SSCP compilation flow. Device `double` is unsupported; planned software
+  emulation is not native FP64 hardware. This matters when designing mixed
+  precision: CPU FP64 recovery/reductions cannot simply become Metal kernels.
+- Local `dependencies/patches/adaptivecpp-metal-builtin-identity.patch`:
+  specializes inline builtin operation names before LLVM CFG optimization and
+  carries the operation as a callee attribute. `LLVMToMetal.cpp` owns lowering;
+  `Emitter.cpp` consumes the identity. Cycle432 preserves minimal distinct-name,
+  duplicate-string and dynamic-name controls plus the full 2D/3D Alfvén results.
+  `adaptivecpp-metal-scalarize-vectors.patch` subsequently lowers vectorized
+  tag-byte fills with LLVM's ScalarizerPass before emission; the paired
+  four-byte splat reproducer isolates this separate AMR compiler failure.
+- Local `dependencies/patches/amrex-26.10-adaptivecpp.patch` and AdaptiveCpp's
+  `sycl/libkernel/sscp/sscp_backend.hpp`: source owners for unified-pass target
+  selection. AMReX's `GpuRange` must partition box-loop work by the SYCL work
+  item; Cycle432's exact cell-visit reproducer exposes host range semantics
+  accidentally running on every GPU thread.
+- AMReX `Src/Base/AMReX_GpuReduce.H` and the same local AMReX patch:
+  Cycle456 isolates a Metal zero-sum regression in the 26.10 multi-round
+  subgroup fold. Ordinary block sizes use the equivalent direct subgroup
+  reduction; larger counts retain the upstream multi-round path. Minimal
+  native/compensated controls and maintained precision checks own acceptance;
+  the exact compiler-lowering cause remains unproven.
+- Apple, [indirect resource residency](https://developer.apple.com/documentation/metal/tracking-the-resource-residency-of-argument-buffers)
+  and [compute useResource](https://developer.apple.com/documentation/Metal/MTLComputeCommandEncoder/useResource(_:usage:)):
+  resources reached through nested pointers require explicit residency and
+  hazard declarations. The pinned local indirect-residency patch consumes the
+  same allocation inventory as pointer translation; Cycle428 retains the
+  separated-allocation failure and repaired controls.
+- Apple, [Metal math mode](https://developer.apple.com/documentation/metal/mtlcompileoptions/mathmode)
+  and [fast-math option](https://developer.apple.com/documentation/metal/mtlcompileoptions/fastmathenabled):
+  the default fast-math behavior permits transformations inappropriate for
+  assuming strict IEEE semantics. The pinned local runtime explicitly selects
+  safe math and precise floating-point functions; benchmark that actual mode.
+- Apple, [binary archives](https://developer.apple.com/documentation/metal/metal-binary-archives)
+  and [recommended GPU working-set size](https://developer.apple.com/documentation/metal/mtldevice/recommendedmaxworkingsetsize):
+  routes for compiled-pipeline reuse and memory-capacity assessment. Cycle429
+  isolates the pinned runtime's deliberate JIT postcheck sleeps independently
+  of these mechanisms; it does not enable the optional binary archive.
+- LLVM, [floating-point classification intrinsic](https://llvm.org/docs/LangRef.html#llvm-is-fpclass-intrinsic):
+  reference for the ten IEEE class bits translated by the local Metal patch.
+  Cycle425 exercises all ten classes on the M4 and inspects the compiled IR.
 
 ## Relativistic AMR Policy References
 
+- B. Daszuta et al., *Numerical relativity simulations of compact binaries:
+  comparison of cell- and vertex-centered adaptive meshes*,
+  [arXiv:2406.09139](https://arxiv.org/html/2406.09139v1): direct same-code
+  Z4c comparison. Section II.1 distinguishes point samples at cell centers
+  from FV averages, and explains why 2:1 vertex AMR permits injection while
+  centered point fields require interpolation at every coarse/fine target.
+  Their Cartesian BBH timing favors vertices by about 20%; their non-magnetic
+  BNS timing favors cell centers by about 17%, because fewer fluid/spacetime
+  transfers offset more expensive AMR operators. These are external workload
+  measurements, not a PyFluid performance prediction or spherical-origin test.
 - M. Daszuta et al., *GR-Athena++: puncture evolutions on vertex-centered
   oct-tree adaptive mesh refinement*,
   [GRMHD methods and BNS application](https://arxiv.org/abs/2311.04989): the
@@ -268,6 +403,16 @@ the generated TSV/log, and the current source revision/dirty state.
   check. The tabulated models use full quasi-isotropic GR, so agreement with
   conformally flat XCTS is a physical sanity check rather than a same-equation
   code comparison.
+- J. A. Font et al., *Three-dimensional general relativistic hydrodynamics II:
+  long-term dynamics of single relativistic stars*,
+  [arXiv:gr-qc/0110047](https://arxiv.org/abs/gr-qc/0110047): unstable TOV
+  migration and controlled collapse reference. Section IV.D uses a roughly
+  one-percent radial density seed proportional to `cos(pi r / (2 R))`, retains
+  the equilibrium pressure while recomputing specific internal energy, and
+  follows apparent-horizon formation in a 3D octant. Local implementation
+  cross-checks are `ETK_Carpet/Cactus/repos/einsteininitialdata/TOVSolver/src/tov.c`
+  and `ETK_CarpetX/AsterX_dev/TOVSolverX/src/tov.cxx` under the shared
+  `phys_research` root.
 - T. Nozawa, N. Stergioulas, E. Gourgoulhon, and Y. Eriguchi,
   *Construction of highly accurate models of rotating neutron stars*,
   [arXiv:gr-qc/9804048](https://arxiv.org/abs/gr-qc/9804048): classic
@@ -332,6 +477,37 @@ the generated TSV/log, and the current source revision/dirty state.
 
 ## Black-Hole Initial-Data And Interior References
 
+- J. D. Brown et al., *Turduckening black holes: an analytical and
+  computational study*,
+  [arXiv:0809.3533](https://arxiv.org/abs/0809.3533): constraint-propagation
+  and three-dimensional numerical evidence for smoothing otherwise singular
+  black-hole interiors before complete-grid BSSN-type evolution. It also
+  records the important limitation that gauge modes can carry fill-dependent
+  differences outward. Use it to validate a named turduckening option, not to
+  relabel stuffing as exact data or excision.
+- Z. B. Etienne et al., *Filling the holes: Evolving excised binary black
+  hole initial data with puncture techniques*,
+  [arXiv:0707.2083](https://arxiv.org/abs/0707.2083): fills the excised
+  interiors of CTS data with smooth constraint-violating fields and compares
+  complete-grid moving-puncture evolutions. This is direct evidence that a
+  carefully validated fill can leave exterior results nearly unchanged; it is
+  not a method for making the filled interior constraint satisfying.
+- J. Corvino and R. M. Schoen, *On the Asymptotics for the Vacuum Einstein
+  Constraint Equations*,
+  [arXiv:gr-qc/0301071](https://arxiv.org/abs/gr-qc/0301071): proves a genuine
+  constraint-gluing construction that can preserve interior data while making
+  the far exterior exactly Kerr. Localized constraint gluing is conceptually
+  distinct from smoothing followed by an ordinary global XCTS projection and
+  is not currently implemented in PyFluid.
+- M. Hannam et al., *Geometry and Regularity of Moving Punctures*,
+  [arXiv:gr-qc/0606099](https://arxiv.org/abs/gr-qc/0606099), and
+  *Wormholes and trumpets: the Schwarzschild spacetime for the moving-puncture
+  generation*, [arXiv:0804.0628](https://arxiv.org/abs/0804.0628): standard
+  wormhole puncture data evolve toward a cylindrical/trumpet end under the
+  moving-puncture gauge, while direct stationary trumpet data avoid much of
+  that initial gauge transition. A trumpet is therefore a puncture slicing/
+  initial-data choice, not a third active-domain treatment alongside puncture
+  and excision.
 - K. A. Dennison and T. W. Baumgarte, *A Simple Family of Analytical
   Trumpet Slices of the Schwarzschild Spacetime*,
   [arXiv:1403.5484](https://arxiv.org/abs/1403.5484): the (R_0=M)
@@ -379,6 +555,84 @@ the generated TSV/log, and the current source revision/dirty state.
 - D. Hilditch et al., *Compact binary evolutions with the Z4c formulation*,
   [arXiv:1212.2901](https://arxiv.org/abs/1212.2901): standard Z4c,
   moving-puncture gauge, constraint-damping, and black-hole evolution control.
+  Eqs. (26)--(30) give approximate Sommerfeld conditions; Eqs. (17)--(25)
+  describe the distinct constraint-preserving treatment. Boundary-generated
+  nonconverging constraint error is discussed explicitly. Consult the gauge
+  and boundary-geometry assumptions before adapting the latter to Kerr.
+  Sec. III also specifies sixth-order Lagrange ghost extrapolation before
+  evaluating the bulk finite-difference and dissipation operators. Its
+  "Spherical patches for the wave zone" subsection explicitly notes that
+  the spherical outer boundary avoids corners; this matters when adapting
+  the surface-normal CP equations to Cartesian boundaries.
+- M. Alcubierre et al., *Gauge conditions for long term numerical black hole
+  evolutions without excision*,
+  [arXiv:gr-qc/0206072](https://arxiv.org/abs/gr-qc/0206072), Sec. VI,
+  and [ETK NewRad](https://einsteintoolkit.org/thornguide/EinsteinEvolve/NewRad/documentation.html):
+  radiative boundaries with a non-wave `h(t)/r^n` contribution inferred from
+  the interior method-of-lines RHS; `n=3` is the published empirical choice.
+  Source-check the differential signs against the outgoing-wave ansatz and
+  implementation, not the inconsistent signs in some documentation equations.
+  Local implementation: `/Users/mrizzo/phys_research/ETK_Hypatia/Hypatia/Cactus/repos/einsteinevolve/NewRad/src/newrad.cc`.
+  This corrects non-wave boundary transients; it is not constraint-preserving.
+- Z. Cao and D. Hilditch, *Numerical stability of the Z4c formulation of
+  general relativity*, [arXiv:1111.2177](https://arxiv.org/abs/1111.2177):
+  gauge conventions and principal physical/lapse/shift characteristic
+  speeds, including the conformal-factor dependence of the shift modes.
+  AthenaK's local `src/utils/finite_diff.hpp::Lx` is the source-check route
+  for the sign of the one-sided stencil in RHS `+beta*d_i u` advection.
+- AthenaK's local `src/bvals/physics/z4c_bcs.cpp` and
+  `src/z4c/z4c_Sbc.cpp` separate polynomial ghost extrapolation from a
+  Sommerfeld RHS outer boundary. They provide the polynomial ghost and
+  second-order boundary-derivative reference; the Khat speed there is tied
+  to AthenaK's lapse gauge, not a universal constant for PyFluid gauges.
+  The hydro diode is a separate matter-flux condition. Local source root:
+  `/Users/mrizzo/phys_research/athenak/athenak`.
+- M. Alcubierre and B. Bruegmann, *Simple excision of a black hole in 3+1
+  numerical relativity*,
+  [arXiv:gr-qc/0008067](https://arxiv.org/abs/gr-qc/0008067): early long-lived
+  finite-difference Schwarzschild evolution with an excised interior.
+- M. D. Duez, S. L. Shapiro, and H.-J. Yo, *Relativistic Hydrodynamic
+  Evolutions with Black Hole Excision*,
+  [arXiv:gr-qc/0401076](https://arxiv.org/abs/gr-qc/0401076): hydrodynamic
+  excision tests including relativistic Bondi accretion and collapse. This is
+  the most direct validation route for PyFluid's future fixed-Kerr fluid
+  excision owner.
+- Z. B. Etienne et al., *IllinoisGRMHD: An Open-Source, User-Friendly GRMHD
+  Code for Dynamical Spacetimes*,
+  [arXiv:1501.07276](https://arxiv.org/abs/1501.07276): complete-grid
+  black-hole GRMHD provenance. Section 3.4 documents conservative-state
+  admissibility repair, a Lorentz-factor ceiling, a cold-pressure floor, and
+  a pressure ceiling in low-density or deep-horizon cells. Use these as
+  bounded-interior comparison policy, not as conservative excision.
+- A. Chael, *Hybrid GRMHD and force-free simulations of black hole accretion*,
+  [MNRAS 532, 3198 (2024)](https://doi.org/10.1093/mnras/stae1692): explains
+  why ordinary GRMHD primitive recovery becomes ill-conditioned at high
+  magnetization, records the conventional density-floor/magnetization-ceiling
+  treatment, and develops a GRMHD-to-GRFFE alternative. This is a future
+  high-magnetization comparison route, not justification for altering CT
+  face fields during a fluid reset.
+- A. Ashtekar and B. Krishnan, *Dynamical Horizons: Energy, Angular Momentum,
+  Fluxes and Balance Laws*,
+  [arXiv:gr-qc/0207080](https://arxiv.org/abs/gr-qc/0207080): nonlinear local
+  matter and gravitational-radiation flux laws relating dynamical-horizon
+  area, energy, and angular momentum changes. This is the physical reference
+  for checking a dynamically coupled accreting horizon; baryon-number flux is
+  a separate conservation law and is not numerically identical to horizon-mass
+  growth.
+- D. A. Hemberger et al., *Dynamical Excision Boundaries in Spectral
+  Evolutions of Binary Black Hole Spacetimes*,
+  [arXiv:1211.6079](https://arxiv.org/abs/1211.6079): demonstrates why a
+  dynamical spacetime excision surface must be controlled to remain a pure-
+  outflow characteristic boundary. It is implementation guidance, not
+  evidence that an AMReX/Z4c active mask alone supplies that boundary.
+- Local COCAL/ETK BHT fill comparison:
+  `/Users/mrizzo/phys_research/ETK_Hypatia/COCAL/COCAL_ID/src/Cocal/cocal_id_bht_fill.f90`
+  on the local `wip/cocal-id-bht` branch provides `smooth` and legacy `IDpar`
+  completions. It extrapolates the trace-free part of `K_ij`, projects that
+  part trace-free with respect to the filled metric, damps `tr(K)` inward, and
+  zeroes hydro inside. This is useful independent implementation provenance,
+  but the local branch is WIP and the fill neither solves the constraints nor
+  derives `K_ij` from a complete stationary four-metric.
 - J. Thornburg, *A Fast Apparent-Horizon Finder for 3-Dimensional Cartesian
   Grids in Numerical Relativity*,
   [arXiv:gr-qc/0306056](https://arxiv.org/abs/gr-qc/0306056): star-shaped
@@ -396,6 +650,23 @@ the generated TSV/log, and the current source revision/dirty state.
   is the local source reference for parallel-loop ownership, pseudo-time-stage
   metric reuse, and tracking optimizations. PyFluid independently implements
   the method against its ADM geometry contract; no source is imported.
+- BlackHoles@Home,
+  [binary-grid technical description](https://blackholesathome.org/blackholesathome_homepage-en_US.html):
+  the historical April2021 demonstration combines small SinhCartesian AMR
+  patches around each hole, overlapping SinhSpherical near-zone patches, and
+  one SinhSpherical wave-zone patch. The later update describes changing the
+  grid arrangement for merger. This is the binary evolution-grid reference;
+  BHaHAHA is the related horizon-finder library, not that grid infrastructure.
+  The published memory comparison uses different resolutions and domains;
+  it is not a matched PyFluid performance prediction.
+- Einstein Toolkit `Outflow`,
+  [thorn documentation](https://einsteintoolkit.org/thornguide/EinsteinAnalysis/Outflow/documentation.html):
+  derives the Valencia rest-mass current
+  `sqrt(gamma) D [alpha v^i - beta^i]`, its oriented surface integral, and the
+  accumulated flux convention for coordinate spheres or apparent horizons.
+  This is the sign/formulation reference for PyFluid's instantaneous found-AH
+  baryon accretion rate; PyFluid's generic radial-graph quadrature and AMR
+  interpolation are independent implementations.
 - P. Diener, *A new general purpose event horizon finder for 3D numerical
   spacetimes*,
   [arXiv:gr-qc/0305039](https://arxiv.org/abs/gr-qc/0305039): evolves a complete
@@ -584,6 +855,21 @@ High-value source/test routes include:
 
 ## Relativistic Primitive-Recovery References
 
+- A. Poudel, W. Tichy, B. Bruegmann, and T. Dietrich, *Increasing the
+  Accuracy of Binary Neutron Star Simulations with an improved Vacuum
+  Treatment*, [arXiv:2009.06617](https://arxiv.org/abs/2009.06617):
+  atmosphere-free GRHD in BAM, including TOV, migration, collapse, and BNS
+  tests. Section II.C describes vacuum-aware recovery and interface states;
+  it still uses numerical safeguards and resets. Its CFL 0.25 tests do not
+  establish our CFL 0.9 stability or justify simply setting a density floor
+  to zero.
+- J. V. Kalinani et al., *Jet-environment interaction after delayed collapse
+  in binary neutron star mergers*,
+  [arXiv:2505.09426v3](https://arxiv.org/abs/2505.09426v3): published
+  dynamical GRMHD with a very low radially decreasing density floor. The
+  earlier title mentioned no artificial atmosphere limitations; this remains
+  an atmosphere method, not true matter vacuum. Useful for magnetized
+  atmosphere comparisons, not a blanket prescription for our floor profile.
 - W. Kastaun, J. V. Kalinani, and R. Ciolfi, *Robust recovery of primitive
   variables in relativistic ideal magnetohydrodynamics*,
   [arXiv:2005.01821](https://arxiv.org/abs/2005.01821), derives the seed-free
@@ -602,6 +888,96 @@ High-value source/test routes include:
   and one-dimensional recovery methods over broad magnetization and EoS
   regimes. It is the independent robustness/performance comparison route for
   the maintained RePrimAnd then Palenzuela ordering.
+
+## Curvilinear Evolution And Mixed-Regime References
+
+- Generated spacetime geometry: `codegen/pyfluid_codegen/spacetime_geometry.py`
+  owns the rescaled tensor chain rule, reference-covariant tensor derivatives,
+  and connection difference; `metric_differential.py` owns shared metric
+  Christoffel/Ricci algebra. SphericalNR Eqs. (14)--(21) are the continuum
+  reference. `fccz4_equations.py` owns the complete reference-metric fCCZ4
+  equations and physical ADM constraints from Section II.1, Eqs. (14)--(37);
+  `fccz4_kernels.py` emits the compiled point kernels and
+  `src/relativity/fccz4_runtime.cpp` is the AMReX runtime adapter.
+  `reference_metric_evolution.py` implements the conformal metric/factor
+  kinematics from Section II.1 and Eq. (33), with `chi=exp(-4 phi)`. Its basis-covariance
+  contract is independent of patch selection and communication.
+
+- P. J. Montero, T. W. Baumgarte, and E. Müller, *General relativistic
+  hydrodynamics in curvilinear coordinates*,
+  [arXiv:1309.7808](https://arxiv.org/abs/1309.7808): derives the
+  reference-metric Valencia variables, vector and mixed-tensor covariant
+  divergences, and the pressure-balance advantage over the original
+  determinant-densitized spherical equations. This is the primary continuum
+  GRHD reference for the generated matter geometry.
+- V. Mewes et al., *Numerical relativity in spherical coordinates: A new
+  dynamical spacetime and general relativistic MHD evolution framework for
+  the Einstein Toolkit*,
+  [arXiv:2002.06225](https://arxiv.org/abs/2002.06225): SphericalNR's
+  reference-metric BSSN/fCCZ4 and Valencia GRMHD equations, rescaled tensor
+  components, regularity, and coupled tests. fCCZ4 is not an alias for Z4c.
+  Its orthonormal finite-volume implementation moves reference geometry into
+  cell-centered sources and explicitly notes that this loses roundoff baryon
+  conservation. PyFluid instead retains the equivalent generalized-Stokes
+  physical-volume form for scalar conserved fluxes and uses generated basis
+  connection terms for momentum.
+  The [RIT SphericalNR software page](https://ccrg.rit.edu/content/software/sphericalnr)
+  describes the implementation and its boundary treatment but does not expose
+  a source download. Current public-code audits should therefore treat the
+  SphericalNR implementation itself as unavailable, not as an Einstein Toolkit
+  thorn that can be imported or inspected.
+- SphericalNR origin/layout implementation: Mewes et al. (2018),
+  [arXiv:1802.09625](https://arxiv.org/pdf/1802.09625), Section II.B,
+  Eqs. (15)--(20): spacetime sampling is half-cell shifted in r and theta,
+  vertex sampled in periodic phi. The 2020 paper above supplies the corrected
+  south-pole mapping and rescaled tensor parities in Section III/Table I;
+  its magnetic vector potential and derived magnetic field are cell-centered.
+  This is not PyFluid's current vertex-spacetime/face-CT arrangement.
+- Olivares et al. (2019), [arXiv:1906.10795](https://arxiv.org/pdf/1906.10795),
+  Sections 3.1 and 4.5/Fig. 6: BHAC face-flux/edge-circulation CT, polar
+  connectivity including refinement interfaces, and vanishing contributions
+  on collapsed faces/edges. These establish staggered polar-axis techniques,
+  not a full dynamical-spacetime spherical-origin implementation.
+- [NRPy public source](https://github.com/nrpy/nrpy): inspectable SymPy-based
+  reference-metric equation and code-generation infrastructure descended from
+  the generator family used for SphericalNR's spacetime kernels. Relevant
+  routes are `nrpy/equations`, `nrpy/infrastructures`, and `nrpy/tests`; use it
+  for independent algebra/regularization comparisons, not as a substitute for
+  the unavailable SphericalNR GRHydro modifications.
+- L. Ji et al., *Ameliorating the Courant-Friedrichs-Lewy condition in
+  spherical coordinates: A double FFT filter method for general relativistic
+  MHD in dynamical spacetimes*,
+  [arXiv:2305.01537](https://arxiv.org/abs/2305.01537): replaces the older
+  filter's phi-decomposition restriction. Section II.2 describes ring-local
+  communicator redistribution and scaling through 4096 cores. Filtering has
+  conservation and mode-damping tradeoffs, not just execution cost.
+- V. Paschalidis and S. L. Shapiro, *A new scheme for matching general
+  relativistic ideal magnetohydrodynamics to its force-free limit*,
+  [arXiv:1310.3274](https://arxiv.org/abs/1310.3274): matched ideal-MHD
+  interior and force-free exterior, including a rotating-star magnetosphere
+  application. For evolving magnetization-selected transitions in accretion,
+  see the Chael reference under black-hole interior references above.
+- H. Cho et al., *Multi-Zone Modeling of Black Hole Accretion and Feedback
+  in 3D GRMHD: Bridging Vast Spatial and Temporal Scales*,
+  [arXiv:2405.13887](https://arxiv.org/abs/2405.13887): scale-separated
+  multi-zone GRMHD toward dynamical steady state. This retains GRMHD; it does
+  not validate a dynamical-Einstein interior matched to Newtonian or frozen
+  outer evolution.
+- F. G. Lopez Armengol et al., *Handing off the outcome of binary neutron
+  star mergers for accurate and long-term post-merger simulations*,
+  [arXiv:2112.09817](https://arxiv.org/abs/2112.09817): HandOff transfers
+  dynamical-spacetime IllinoisGRMHD data to spherical-like HARM3D grids with
+  a fixed numerical metric after the remnant becomes nearly stationary.
+  Both stages retain GRMHD; the paper validates remapping and continued disk
+  evolution, not a Newtonian limit or arbitrary early metric freezing.
+- A. Pavan et al., *Jet-environment interplay in magnetized binary neutron
+  star mergers*, [arXiv:2211.10135](https://arxiv.org/abs/2211.10135):
+  imports magnetized GRMHD merger environments into PLUTO's special-
+  relativistic MHD solver outside an excised central region, with boundary
+  data informed by the merger and a separately prescribed jet. Section 2
+  and appendices discuss mapping, magnetic divergence, and EoS mismatch.
+  This is a GR-to-SR exterior handoff reference, not full engine transfer
+  or nonrelativistic MHD evidence.
 
 ## Modern Shock-Capturing Research Routes
 
@@ -787,6 +1163,13 @@ implementations:
   five-point discontinuity detector and local order-reduction strategy audited
   in Cycle 264. Detection of a nonsmooth stencil does not by itself distinguish
   a physical compound fan from a numerical oscillation.
+- L. Del Zanna, O. Zanotti, N. Bucciantini, and P. Londrillo, *ECHO: an
+  Eulerian Conservative High Order scheme for general relativistic
+  magnetohydrodynamics and magnetodynamics*,
+  [arXiv:0704.3206](https://arxiv.org/abs/0704.3206): primary GRMHD precedent
+  for high-order reconstruction with UCT in a generic spacetime. ECHO is a
+  conservative finite-difference formulation, so it establishes feasibility
+  but is not a drop-in finite-volume order switch for PyFluid.
 - K. Wu and H. Tang, *On physical-constraints-preserving schemes for special
   relativistic magnetohydrodynamics with a general equation of state*,
   [arXiv:1709.05838](https://arxiv.org/abs/1709.05838): rigorous
@@ -981,3 +1364,17 @@ reconstruction question, use:
 - `ReconX/param.ccl`: independent primary and low-order method parameters;
 - `AsterX/src/con2prim.cxx` and `Con2PrimFactory/src/`: atmosphere, velocity
   ceiling, and ordered recovery behavior.
+
+### Multipatch follow-up (Cycle 410)
+
+- [ET 2026_05 release notes](https://www.einsteintoolkit.org/about/releases/ET_2026_05_announcement.html): NewRadX gained CapyrX multipatch support.
+- [CarpetX developer notes, January 2026](https://lists.einsteintoolkit.org/pipermail/carpetx-developers/2026-January/000538.html): split-phase interpolation work for CapyrX and its possible CCE use. This is infrastructure provenance, not evidence of conservative GRMHD interface coupling.
+- [Thornburg (2004), Black Hole Excision with Multiple Grid Patches](https://arxiv.org/abs/gr-qc/0404059): angular patches, tensor bases and interpatch boundary design for black-hole evolution.
+- [Pollney et al. (2011), High accuracy binary black hole simulations with an extended wave zone](https://arxiv.org/abs/0910.3803): Cartesian near zone with nonsingular adapted outer patches; a binary-grid design reference, not a conservative GRMHD seam implementation.
+
+### Particle scope references (Cycle 431)
+
+- [AMReX particle documentation](https://amrex-codes.github.io/amrex/docs_html/Particle.html): containers, AMR/MPI redistribution, mesh interpolation/deposition and output. The pinned local documentation is `.deps/amrex-26.10/Docs/sphinx_documentation/source/Particle.rst`; current CPU and Metal builders select `AMReX_PARTICLES=OFF`. CMake has a separate `AMReX_PARTICLES_PRECISION` policy, defaulting to mesh precision in this release, which must remain explicit in any future Metal particle audit.
+- [Price, Smoothed Particle Hydrodynamics and Magnetohydrodynamics](https://arxiv.org/abs/1012.1885): particle discretization of fluid/MHD equations, with its own stability, dissipation and magnetic-divergence issues. SPH does not remove the fluid closure assumption.
+- [Ryan, Dolence and Gammie, bhlight](https://arxiv.org/abs/1505.05119): GR radiation MHD using Monte Carlo photon transport; a reference for a physical radiation-packet method beyond particle storage.
+- [Parfrey, Philippov and Cerutti, First-Principles Plasma Simulations of Black-Hole Jet Launching](https://arxiv.org/abs/1810.03613): collisionless GR plasma and pair supply in Kerr magnetospheres. This illustrates the different physics of kinetic particles, not an automatic fallback for a troubled fluid cell.

@@ -177,7 +177,7 @@ def main() -> None:
    parser.add_argument(
       "--family",
       action="append",
-      choices=("catalog", "characteristic", "diagnostic", "differential", "eos", "flux", "initial_data", "operator", "relativistic", "riemann", "vector", "metric", "patch_map", "z4c"),
+      choices=("catalog", "characteristic", "diagnostic", "differential", "eos", "flux", "initial_data", "operator", "relativistic", "riemann", "vector", "metric", "patch_map", "z4c", "spacetime", "fccz4"),
       help="generate only this kernel family; repeat as needed (default: all)",
    )
    parser.add_argument("--flux-header", type=Path, default=DEFAULT_FLUX_HEADER)
@@ -192,6 +192,9 @@ def main() -> None:
    parser.add_argument("--patch-map-header", type=Path, default=DEFAULT_PATCH_MAP_HEADER)
    parser.add_argument("--relativistic-header", type=Path, default=DEFAULT_RELATIVISTIC_HEADER)
    parser.add_argument("--z4c-header", type=Path, default=DEFAULT_Z4C_HEADER)
+   parser.add_argument("--fccz4-header", type=Path, default=DEFAULT_Z4C_HEADER.with_name("fccz4.hpp"))
+   parser.add_argument("--spacetime-header", type=Path,
+                       default=DEFAULT_Z4C_HEADER.with_name("spacetime_geometry.hpp"))
    parser.add_argument("--initial-data-header", type=Path, default=DEFAULT_INITIAL_DATA_HEADER)
    parser.add_argument("--field-ids-header", type=Path, default=DEFAULT_FIELD_IDS_HEADER)
    parser.add_argument("--field-catalog-header", type=Path, default=DEFAULT_FIELD_CATALOG_HEADER)
@@ -237,6 +240,8 @@ def main() -> None:
       "patch_map",
       "relativistic",
       "z4c",
+      "spacetime",
+      "fccz4",
    )
    families = (
       tuple(args.family)
@@ -290,6 +295,8 @@ def main() -> None:
             write_riemann_header,
             write_vector_header,
             write_z4c_header,
+            write_spacetime_header,
+            write_fccz4_header,
          )
 
          policy = CsePolicy(
@@ -328,6 +335,8 @@ def main() -> None:
                write_relativistic_header,
             ),
             "z4c": (args.z4c_header, write_z4c_header),
+            "spacetime": (args.spacetime_header, write_spacetime_header),
+            "fccz4": (args.fccz4_header, write_fccz4_header),
          }
       output_path, writer = generators[family]
       writer(output_path, policy)

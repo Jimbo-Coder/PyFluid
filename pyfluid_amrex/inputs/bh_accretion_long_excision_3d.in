@@ -1,0 +1,124 @@
+# Long, high-resolution fixed-Kerr accretion control.  The full azimuth is
+# retained for m=1/m=2 matter modes; only the equatorial plane is reflected.
+# For this saved ID, the initial density-maximum orbital period is
+# P_c=527.3409577286847 M; final_time=550 covers 1.043 characteristic orbits.
+pyfluid.run_name = bh_accretion_long_excision
+pyfluid.output_dir = runs/current/black_hole_disk/bh_accretion_long_excision
+pyfluid.validation_policy = open
+
+mesh.coordinate = cartesian
+mesh.axes = x y z
+mesh.patch_system = single
+
+geometry.prob_lo = -64.0 -64.0 0.0
+geometry.prob_hi = 64.0 64.0 64.0
+geometry.is_periodic = 0 0 0
+
+# Base dx=4 M, disk dx=0.5 M, and horizon-seed dx=0.25 M.  The level-3
+# horizon box is a seed; automatic compact-object tags independently follow
+# the evolving disk through level 2.
+amr.n_cell = 32 32 16
+amr.max_level = 3
+amr.ref_ratio = 4 2 2
+amr.max_grid_size = 16
+amr.blocking_factor = 8
+amr.regrid_mode = synchronized
+amr.regrid_int = 4
+amr.n_error_buf = 1
+amr.tag_metric = compact_object
+amr.tag_threshold = 0.15
+amr.min_feature_length = 0.5
+amr.total_cell_budget = 4500000
+amr.level_cell_budget = 3500000
+amr.state_interp = coupled-conservative
+amr.initial_refine = box
+amr.initial_refine_levels = 3
+amr.initial_refine_fixed_levels = 0
+amr.initial_refine_box_lo = -4.0 -4.0 0.0
+amr.initial_refine_box_hi = 4.0 4.0 4.0
+
+spacetime.evolution = fixed
+spacetime.matter_coupling = coupled
+spacetime.initial_data = kerr_schild
+spacetime.fixed_metric = kerr_schild
+spacetime.mass = 1.0
+spacetime.dimensionless_spin1 = 0.0
+spacetime.dimensionless_spin2 = 0.0
+spacetime.dimensionless_spin3 = 0.5
+spacetime.black_hole_interior = excision
+spacetime.black_hole_matter = excision
+spacetime.black_hole_fill_radius = 1.0
+
+horizon.enabled = 1
+horizon.find_int = 4
+horizon.radial_points = 64
+horizon.polar_points = 24
+horizon.coarsest_polar_points = 8
+horizon.theta_linf_times_mass_tolerance = 5.0e-5
+horizon.theta_l2_times_mass_tolerance = 1.0e-3
+horizon.refine_band_cells = 2.0
+horizon.minimum_search_radius = 0.8
+horizon.maximum_search_radius = 2.8
+horizon.initial_radius = 1.92
+
+initial_data.input_file = runs/current/black_hole_disk/kerr_schild_q_power_torus_id_3d/physical_id
+initial_data.disk = equilibrium_torus
+initial_data.disk_gravity = test_fluid
+initial_data.disk_rotation_law = q_power
+initial_data.disk_angular_velocity = 0.1355
+initial_data.disk_differential_rotation_length = 6.0
+initial_data.disk_rotation_power_q = 1.05
+initial_data.disk_inner_radius = 10.0
+initial_data.disk_axis1 = 0.0
+initial_data.disk_axis2 = 0.0
+initial_data.disk_axis3 = 1.0
+initial_data.atmosphere = flat
+initial_data.atmosphere_density = 1.0e-10
+initial_data.atmosphere_pressure = 1.0e-14
+initial_data.perturbation = density_azimuthal_espino2019
+initial_data.perturbation_amplitude = 0.02
+initial_data.perturbation_mode = 1
+initial_data.perturbation_phase = 0.0
+initial_data.perturbation_radius = 26.0
+initial_data.rotation_axis1 = 0.0
+initial_data.rotation_axis2 = 0.0
+initial_data.rotation_axis3 = 1.0
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.eos_preset = custom
+pyfluid.polytropic_k = 100.0
+pyfluid.polytropic_gamma = 2.0
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = equilibrium_torus
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.max_step = 320
+pyfluid.final_time = 550.0
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+pyfluid.bc = outflow
+pyfluid.bc_zlo = symmetry
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.scalar_diagnostics = standard,horizon_flux,modes
+diagnostics.matter_mode_m_max = 4
+diagnostics.matter_mode_origin1 = 0.0
+diagnostics.matter_mode_origin2 = 0.0
+diagnostics.matter_mode_origin3 = 0.0
+diagnostics.matter_mode_axis1 = 0.0
+diagnostics.matter_mode_axis2 = 0.0
+diagnostics.matter_mode_axis3 = 1.0
+
+pyfluid.plot_int = 8
+pyfluid.plotfile_format = hdf5
+pyfluid.plotfile_compression = best
+pyfluid.aux_gf_int = -1
+pyfluid.checkpoint_int = 32

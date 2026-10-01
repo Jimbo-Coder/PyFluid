@@ -13,7 +13,7 @@ class SpacetimeCouplingStorage {
 public:
    using LevelData = std::vector<std::unique_ptr<amrex::MultiFab>>;
 
-   void configure(int num_levels, int cell_ghost_width);
+   void configure(int num_levels, int cell_ghost_width, int matter_ghost_width = 2);
    void allocate_level(
       int level,
       amrex::BoxArray const& cell_boxes,
@@ -36,6 +36,7 @@ public:
 private:
    bool active_ = false;
    int cell_ghost_width_ = 0;
+   int matter_ghost_width_ = 2;
    LevelData cell_spacetime_;
    LevelData cell_matter_;
    LevelData vertex_matter_;

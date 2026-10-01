@@ -21,6 +21,8 @@
 #include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 DiskRotationLaw disk_rotation_law_from_name(std::string const& name)
@@ -48,8 +50,8 @@ std::array<amrex::Real, 3> torus_equatorial_direction(
          reference_direction = direction;
       }
    }
-   std::array<amrex::Real, 3> reference{0.0, 0.0, 0.0};
-   reference[reference_direction] = 1.0;
+   std::array<amrex::Real, 3> reference{0.0_rt, 0.0_rt, 0.0_rt};
+   reference[reference_direction] = 1.0_rt;
    std::array<amrex::Real, 3> radial{
       axis[1] * reference[2] - axis[2] * reference[1],
       axis[2] * reference[0] - axis[0] * reference[2],
@@ -78,7 +80,7 @@ amrex::Real inner_edge_normalization_3d(
       normalization[level] = std::make_unique<amrex::MultiFab>(
          hierarchy.grids[level], hierarchy.distribution[level], 2, 1
       );
-      normalization[level]->setVal(0.0);
+      normalization[level]->setVal(0.0_rt);
       normalization_view[level] = normalization[level].get();
       const auto problo = hierarchy.geometry[level].ProbLoArray();
       const auto dx = hierarchy.geometry[level].CellSizeArray();
@@ -94,24 +96,24 @@ amrex::Real inner_edge_normalization_3d(
             int i, int j, int k
          ) noexcept {
             const PatchCoordinate physical{
-               problo[0] + (static_cast<amrex::Real>(i - domain_lo.x) + 0.5)
+               problo[0] + (static_cast<amrex::Real>(i - domain_lo.x) + 0.5_rt)
                   * dx[0],
-               problo[1] + (static_cast<amrex::Real>(j - domain_lo.y) + 0.5)
+               problo[1] + (static_cast<amrex::Real>(j - domain_lo.y) + 0.5_rt)
                   * dx[1],
-               problo[2] + (static_cast<amrex::Real>(k - domain_lo.z) + 0.5)
+               problo[2] + (static_cast<amrex::Real>(k - domain_lo.z) + 0.5_rt)
                   * dx[2],
             };
             const SpacetimeMetric metric = generated::z4c_spacetime_metric(
                load_z4c_state(geometry, i, j, k)
             );
             const EquilibriumTorusPoint point = equilibrium_torus_point(
-               parameters, 1.0, physical, metric
+               parameters, 1.0_rt, physical, metric
             );
             output(i, j, k, 0) = parameters.rotation_law
                   == DiskRotationLaw::ConstantL
                ? point.minus_covariant_time_velocity
                : std::exp(-point.log_specific_enthalpy);
-            output(i, j, k, 1) = point.timelike ? 0.0 : 1.0;
+            output(i, j, k, 1) = point.timelike ? 0.0_rt : 1.0_rt;
          });
       }
    }
@@ -141,9 +143,9 @@ amrex::Real inner_edge_normalization_3d(
       }
       const amrex::Real plane = lower_reflection
          ? coarse_problo[direction] : coarse_probhi[direction];
-      const amrex::Real tolerance = 64.0
+      const amrex::Real tolerance = 64.0_rt
          * std::numeric_limits<amrex::Real>::epsilon()
-         * std::max(amrex::Real(1.0), std::abs(plane));
+         * std::max(amrex::Real(1.0_rt), std::abs(plane));
       if (std::abs(inner_point[direction] - plane) > tolerance) {
          continue;
       }
@@ -151,9 +153,9 @@ amrex::Real inner_edge_normalization_3d(
       // interpolation at an even reflection plane averages the two adjacent
       // centers.  Their values are identical by parity, so sampling the first
       // retained center reproduces the full-domain discrete normalization.
-      const amrex::Real inward_sign = lower_reflection ? 1.0 : -1.0;
+      const amrex::Real inward_sign = lower_reflection ? 1.0_rt : -1.0_rt;
       inner_point[direction] = plane
-         + inward_sign * 0.5 * coarse_dx[direction];
+         + inward_sign * 0.5_rt * coarse_dx[direction];
    }
    std::vector<amrex::GpuArray<amrex::Real, 3>> inner_points{inner_point};
    const HierarchyInterpolationPlan plan(
@@ -169,7 +171,7 @@ amrex::Real inner_edge_normalization_3d(
       normalization, 0, 2
    );
    const amrex::Real result = values[0];
-   if (!(result > 0.0) || !std::isfinite(result) || values[1] > 1.0e-12) {
+   if (!(result > 0.0_rt) || !std::isfinite(result) || values[1] > 1.0e-12_rt) {
       amrex::Abort(
          "equilibrium-torus inner edge does not admit a resolved timelike "
          "circular orbit"
@@ -207,7 +209,7 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
       diagnostics[level] = std::make_unique<amrex::MultiFab>(
          hierarchy.grids[level], hierarchy.distribution[level], 9, 0
       );
-      diagnostics[level]->setVal(0.0);
+      diagnostics[level]->setVal(0.0_rt);
       diagnostics[level]->setVal(
          std::numeric_limits<amrex::Real>::max(), 3, 1, 0
       );
@@ -218,7 +220,7 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
       const amrex::Dim3 domain_hi = amrex::ubound(domain);
       const auto reflection_lo = hierarchy.reflection_lo;
       const auto reflection_hi = hierarchy.reflection_hi;
-      const amrex::Real half_diagonal = 0.5 * std::sqrt(
+      const amrex::Real half_diagonal = 0.5_rt * std::sqrt(
          dx[0] * dx[0] + dx[1] * dx[1] + dx[2] * dx[2]
       );
       for (amrex::MFIter mfi(
@@ -232,11 +234,11 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
             int i, int j, int k
          ) noexcept {
             const PatchCoordinate physical{
-               problo[0] + (static_cast<amrex::Real>(i - domain_lo.x) + 0.5)
+               problo[0] + (static_cast<amrex::Real>(i - domain_lo.x) + 0.5_rt)
                   * dx[0],
-               problo[1] + (static_cast<amrex::Real>(j - domain_lo.y) + 0.5)
+               problo[1] + (static_cast<amrex::Real>(j - domain_lo.y) + 0.5_rt)
                   * dx[1],
-               problo[2] + (static_cast<amrex::Real>(k - domain_lo.z) + 0.5)
+               problo[2] + (static_cast<amrex::Real>(k - domain_lo.z) + 0.5_rt)
                   * dx[2],
             };
             const amrex::Real displacement1 = physical.q1 - parameters.center1;
@@ -254,7 +256,7 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
                + displacement3 * parameters.axis3;
             const amrex::Real cylindrical_radius = std::sqrt(amrex::max(
                spherical_radius * spherical_radius - parallel * parallel,
-               amrex::Real(0.0)
+               amrex::Real(0.0_rt)
             ));
             const InitialDataSamplePoint sample{physical, physical};
             const EOSThermodynamicState atmosphere =
@@ -271,32 +273,32 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
                parameters, inner_normalization, physical, metric
             );
             diagnostic(i, j, k, 2) = target.timelike
-               ? amrex::max(target.log_specific_enthalpy, amrex::Real(0.0))
-               : 0.0;
+               ? amrex::max(target.log_specific_enthalpy, amrex::Real(0.0_rt))
+               : 0.0_rt;
             ColdBarotropeState matter;
-            amrex::Real v1 = 0.0;
-            amrex::Real v2 = 0.0;
-            amrex::Real v3 = 0.0;
-            if (target.timelike && target.log_specific_enthalpy > 0.0) {
+            amrex::Real v1 = 0.0_rt;
+            amrex::Real v2 = 0.0_rt;
+            amrex::Real v3 = 0.0_rt;
+            if (target.timelike && target.log_specific_enthalpy > 0.0_rt) {
                const amrex::Real old_log_enthalpy = contained_old_torus
                   ? cold_log_specific_enthalpy(
                        primitive(i, j, k, RHO), eos
                     )
-                  : 0.0;
+                  : 0.0_rt;
                const amrex::Real relaxed_log_enthalpy =
-                  (1.0 - parameters.matter_relaxation) * old_log_enthalpy
+                  (1.0_rt - parameters.matter_relaxation) * old_log_enthalpy
                   + parameters.matter_relaxation
                      * target.log_specific_enthalpy;
                matter = cold_barotrope_from_log_enthalpy(
                   relaxed_log_enthalpy, eos
                );
-               v1 = (1.0 - parameters.matter_relaxation)
+               v1 = (1.0_rt - parameters.matter_relaxation)
                      * primitive(i, j, k, MOM1)
                   + parameters.matter_relaxation * target.v1;
-               v2 = (1.0 - parameters.matter_relaxation)
+               v2 = (1.0_rt - parameters.matter_relaxation)
                      * primitive(i, j, k, MOM2)
                   + parameters.matter_relaxation * target.v2;
-               v3 = (1.0 - parameters.matter_relaxation)
+               v3 = (1.0_rt - parameters.matter_relaxation)
                      * primitive(i, j, k, MOM3)
                   + parameters.matter_relaxation * target.v3;
             }
@@ -307,9 +309,9 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
                matter.pressure = atmosphere.pressure;
                matter.specific_internal_energy =
                   atmosphere.specific_internal_energy;
-               v1 = 0.0;
-               v2 = 0.0;
-               v3 = 0.0;
+               v1 = 0.0_rt;
+               v2 = 0.0_rt;
+               v3 = 0.0_rt;
             }
             primitive(i, j, k, RHO) = matter.rho;
             primitive(i, j, k, MOM1) = v1;
@@ -334,9 +336,9 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
                || (k == domain_lo.z && reflection_lo[2] == 0)
                || (k == domain_hi.z && reflection_hi[2] == 0);
             diagnostic(i, j, k, 6) = boundary && contains_torus
-               ? matter.rho - atmosphere.rho : 0.0;
+               ? matter.rho - atmosphere.rho : 0.0_rt;
             diagnostic(i, j, k, 7) = contained_old_torus && !target.timelike
-               ? 1.0 : 0.0;
+               ? 1.0_rt : 0.0_rt;
          });
       }
       summary.maximum_density = std::max(
@@ -345,14 +347,14 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
       summary.maximum_velocity = std::max(
          summary.maximum_velocity,
          std::sqrt(std::max(
-            diagnostics[level]->max(1, 0, false), amrex::Real(0.0)
+            diagnostics[level]->max(1, 0, false), amrex::Real(0.0_rt)
          ))
       );
       summary.maximum_log_specific_enthalpy = std::max(
          summary.maximum_log_specific_enthalpy,
          diagnostics[level]->max(2, 0, false)
       );
-      summary.inner_radius = summary.inner_radius == 0.0
+      summary.inner_radius = summary.inner_radius == 0.0_rt
          ? diagnostics[level]->min(3, 0, false)
          : std::min(summary.inner_radius, diagnostics[level]->min(3, 0, false));
       summary.outer_radius = std::max(
@@ -362,7 +364,7 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
          summary.boundary_density_excess,
          diagnostics[level]->max(6, 0, false)
       );
-      if (diagnostics[level]->max(7, 0, false) > 0.0) {
+      if (diagnostics[level]->max(7, 0, false) > 0.0_rt) {
          amrex::Abort(
             "equilibrium-torus continuation lost a timelike orbit inside its "
             "previous matter support"
@@ -372,7 +374,7 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
          amrex::Abort("3D equilibrium-torus update is nonfinite");
       }
    }
-   const bool resolved_support = summary.maximum_density > 0.0
+   const bool resolved_support = summary.maximum_density > 0.0_rt
       && summary.outer_radius > summary.inner_radius
       && std::isfinite(summary.inner_radius);
    if (!resolved_support) {
@@ -391,13 +393,13 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
          "equilibrium-torus parameters do not produce resolved finite support"
       );
    }
-   if (summary.boundary_density_excess > 0.0) {
+   if (summary.boundary_density_excess > 0.0_rt) {
       amrex::Abort(
          "equilibrium-torus matter reaches the physical boundary; enlarge "
          "the ID domain"
       );
    }
-   const amrex::Real density_tolerance = 128.0
+   const amrex::Real density_tolerance = 128.0_rt
       * std::numeric_limits<amrex::Real>::epsilon();
    for (int level = 0; level < num_levels; ++level) {
       const amrex::Real maximum_density = summary.maximum_density;
@@ -410,8 +412,8 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
             int i, int j, int k
          ) noexcept {
             diagnostic(i, j, k, 8) = diagnostic(i, j, k, 0)
-                  >= maximum_density * (1.0 - density_tolerance)
-               ? diagnostic(i, j, k, 5) : 0.0;
+                  >= maximum_density * (1.0_rt - density_tolerance)
+               ? diagnostic(i, j, k, 5) : 0.0_rt;
          });
       }
       summary.density_maximum_radius = std::max(
@@ -427,9 +429,9 @@ EquilibriumTorusUpdateSummary update_equilibrium_torus_primitives_method(
 struct ReferenceWeight {
    int radial_index = 0;
    int angular_index = 0;
-   amrex::Real weight = 0.0;
-   amrex::Real radius = 0.0;
-   amrex::Real theta = 0.0;
+   amrex::Real weight = 0.0_rt;
+   amrex::Real radius = 0.0_rt;
+   amrex::Real theta = 0.0_rt;
 };
 
 std::vector<std::pair<int, amrex::Real>> linear_reference_weights(
@@ -449,22 +451,22 @@ std::vector<std::pair<int, amrex::Real>> linear_reference_weights(
       centers.begin(), centers.end(), coordinate
    );
    if (upper == centers.end()) {
-      return {{static_cast<int>(centers.size()) - 1, 1.0}};
+      return {{static_cast<int>(centers.size()) - 1, 1.0_rt}};
    }
    const int upper_index = static_cast<int>(upper - centers.begin());
-   const amrex::Real scale = std::max(amrex::Real(1.0), std::abs(coordinate));
+   const amrex::Real scale = std::max(amrex::Real(1.0_rt), std::abs(coordinate));
    if (std::abs(*upper - coordinate)
-       <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale) {
-      return {{upper_index, 1.0}};
+       <= 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale) {
+      return {{upper_index, 1.0_rt}};
    }
    if (upper_index == 0) {
-      return {{0, 1.0}};
+      return {{0, 1.0_rt}};
    }
    const int lower_index = upper_index - 1;
    const amrex::Real fraction = (
       coordinate - centers[lower_index]
    ) / (centers[upper_index] - centers[lower_index]);
-   return {{lower_index, 1.0 - fraction}, {upper_index, fraction}};
+   return {{lower_index, 1.0_rt - fraction}, {upper_index, fraction}};
 }
 
 std::vector<std::pair<int, amrex::Real>> equatorial_reference_weights(
@@ -472,8 +474,8 @@ std::vector<std::pair<int, amrex::Real>> equatorial_reference_weights(
 )
 {
    const std::vector<amrex::Real>& centers = angular_coordinates.centers;
-   const amrex::Real equator = 0.5 * constants::pi;
-   const amrex::Real tolerance = 64.0
+   const amrex::Real equator = 0.5_rt * constants::pi;
+   const amrex::Real tolerance = 64.0_rt
       * std::numeric_limits<amrex::Real>::epsilon();
    if (std::abs(angular_coordinates.faces.back() - equator) <= tolerance) {
       if (centers.size() < 2) {
@@ -485,7 +487,7 @@ std::vector<std::pair<int, amrex::Real>> equatorial_reference_weights(
       // Axisymmetry and equatorial reflection make the scalar potential even
       // about pi/2.  These weights extrapolate a quadratic in distance^2 from
       // the last two cell centers to the boundary.
-      return {{last, 9.0 / 8.0}, {last - 1, -1.0 / 8.0}};
+      return {{last, 9.0_rt / 8.0_rt}, {last - 1, -1.0_rt / 8.0_rt}};
    }
    if (std::abs(angular_coordinates.faces.front() - equator) <= tolerance) {
       if (centers.size() < 2) {
@@ -493,7 +495,7 @@ std::vector<std::pair<int, amrex::Real>> equatorial_reference_weights(
             "equilibrium-torus equatorial extrapolation needs two theta cells"
          );
       }
-      return {{0, 9.0 / 8.0}, {1, -1.0 / 8.0}};
+      return {{0, 9.0_rt / 8.0_rt}, {1, -1.0_rt / 8.0_rt}};
    }
    return linear_reference_weights(centers, equator, "equator");
 }
@@ -537,7 +539,7 @@ amrex::Real inner_edge_normalization(
    amrex::MultiFab reduction(
       hierarchy.grids[0], hierarchy.distribution[0], 2, 0
    );
-   reduction.setVal(0.0);
+   reduction.setVal(0.0_rt);
    for (amrex::MFIter mfi(reduction, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.tilebox();
@@ -566,7 +568,7 @@ amrex::Real inner_edge_normalization(
             const EquilibriumTorusPoint point =
                equilibrium_torus_axisymmetric_spherical_point(
                   parameters,
-                  1.0,
+                  1.0_rt,
                   selected.radius,
                   selected.theta,
                   metric
@@ -576,18 +578,18 @@ amrex::Real inner_edge_normalization(
                ? point.minus_covariant_time_velocity
                : std::exp(-point.log_specific_enthalpy);
             output(i, j, k, 0) = point.timelike
-               ? selected.weight * normalization : 0.0;
-            output(i, j, k, 1) = point.timelike ? 0.0 : 1.0;
+               ? selected.weight * normalization : 0.0_rt;
+            output(i, j, k, 1) = point.timelike ? 0.0_rt : 1.0_rt;
          }
       });
    }
-   if (reduction.max(1, 0, false) > 0.0) {
+   if (reduction.max(1, 0, false) > 0.0_rt) {
       amrex::Abort(
          "equilibrium-torus inner edge does not admit a timelike circular orbit"
       );
    }
    const amrex::Real result = reduction.sum(0, false);
-   if (!(result > 0.0) || !std::isfinite(result)) {
+   if (!(result > 0.0_rt) || !std::isfinite(result)) {
       amrex::Abort(
          "equilibrium-torus inner-edge normalization is invalid"
       );
@@ -641,13 +643,13 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
    const amrex::Real dphi = hierarchy.geometry[0].CellSize(2);
 #else
    const MeshAxes axes = mesh_axes_layout(MeshSpherical, "r theta");
-   const amrex::Real phi_lo = 0.0;
-   const amrex::Real dphi = 0.0;
+   const amrex::Real phi_lo = 0.0_rt;
+   const amrex::Real dphi = 0.0_rt;
 #endif
    amrex::MultiFab diagnostics(
       hierarchy.grids[0], hierarchy.distribution[0], 9, 0
    );
-   diagnostics.setVal(0.0);
+   diagnostics.setVal(0.0_rt);
    diagnostics.setVal(
       std::numeric_limits<amrex::Real>::max(), 3, 1, 0
    );
@@ -670,7 +672,7 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
          const PatchCoordinate mesh{
             radius,
             theta,
-            phi_lo + (k - domain_lo.z + 0.5) * dphi,
+            phi_lo + (k - domain_lo.z + 0.5_rt) * dphi,
          };
          const InitialDataSamplePoint sample{
             mesh,
@@ -689,29 +691,29 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
                parameters, inner_normalization, radius, theta, metric
             );
          ColdBarotropeState matter;
-         amrex::Real vr = 0.0;
-         amrex::Real vtheta = 0.0;
-         amrex::Real vphi = 0.0;
-         if (target.timelike && target.log_specific_enthalpy > 0.0) {
+         amrex::Real vr = 0.0_rt;
+         amrex::Real vtheta = 0.0_rt;
+         amrex::Real vphi = 0.0_rt;
+         if (target.timelike && target.log_specific_enthalpy > 0.0_rt) {
             const amrex::Real old_log_enthalpy = contained_old_torus
                ? cold_log_specific_enthalpy(
                     primitive(i, j, k, RHO), eos
                  )
-               : 0.0;
+               : 0.0_rt;
             const amrex::Real relaxed_log_enthalpy =
-               (1.0 - parameters.matter_relaxation) * old_log_enthalpy
+               (1.0_rt - parameters.matter_relaxation) * old_log_enthalpy
                + parameters.matter_relaxation
                   * target.log_specific_enthalpy;
             matter = cold_barotrope_from_log_enthalpy(
                relaxed_log_enthalpy, eos
             );
-            vr = (1.0 - parameters.matter_relaxation)
+            vr = (1.0_rt - parameters.matter_relaxation)
                   * primitive(i, j, k, MOM1)
                + parameters.matter_relaxation * target.v1;
-            vtheta = (1.0 - parameters.matter_relaxation)
+            vtheta = (1.0_rt - parameters.matter_relaxation)
                   * primitive(i, j, k, MOM2)
                + parameters.matter_relaxation * target.v2;
-            vphi = (1.0 - parameters.matter_relaxation)
+            vphi = (1.0_rt - parameters.matter_relaxation)
                   * primitive(i, j, k, MOM3)
                + parameters.matter_relaxation * target.v3;
          }
@@ -720,9 +722,9 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
             matter.pressure = atmosphere.pressure;
             matter.specific_internal_energy =
                atmosphere.specific_internal_energy;
-            vr = 0.0;
-            vtheta = 0.0;
-            vphi = 0.0;
+            vr = 0.0_rt;
+            vtheta = 0.0_rt;
+            vphi = 0.0_rt;
          }
          primitive(i, j, k, RHO) = matter.rho;
          primitive(i, j, k, MOM1) = vr;
@@ -741,40 +743,40 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
             diagnostic(i, j, k, 5) = radius * std::sin(theta);
          }
          diagnostic(i, j, k, 6) = i == domain_hi.x && contains_torus
-            ? matter.rho - atmosphere.rho : 0.0;
+            ? matter.rho - atmosphere.rho : 0.0_rt;
          diagnostic(i, j, k, 7) = contained_old_torus && !target.timelike
-            ? 1.0 : 0.0;
+            ? 1.0_rt : 0.0_rt;
       });
    }
    EquilibriumTorusUpdateSummary summary;
    summary.maximum_density = diagnostics.max(0, 0, false);
    summary.maximum_velocity = std::sqrt(std::max(
-      diagnostics.max(1, 0, false), amrex::Real(0.0)
+      diagnostics.max(1, 0, false), amrex::Real(0.0_rt)
    ));
    summary.maximum_log_specific_enthalpy = diagnostics.max(2, 0, false);
    summary.inner_radius = diagnostics.min(3, 0, false);
    summary.outer_radius = diagnostics.max(4, 0, false);
    summary.boundary_density_excess = diagnostics.max(6, 0, false);
-   if (diagnostics.max(7, 0, false) > 0.0) {
+   if (diagnostics.max(7, 0, false) > 0.0_rt) {
       amrex::Abort(
          "equilibrium-torus continuation lost a timelike orbit inside its "
          "previous matter support"
       );
    }
-   if (!(summary.maximum_density > 0.0)
+   if (!(summary.maximum_density > 0.0_rt)
        || !(summary.outer_radius > summary.inner_radius)
        || !std::isfinite(summary.inner_radius)) {
       amrex::Abort(
          "equilibrium-torus parameters do not produce resolved finite support"
       );
    }
-   if (summary.boundary_density_excess > 0.0) {
+   if (summary.boundary_density_excess > 0.0_rt) {
       amrex::Abort(
          "equilibrium-torus matter reaches the radial boundary; enlarge the "
          "ID domain"
       );
    }
-   const amrex::Real density_tolerance = 128.0
+   const amrex::Real density_tolerance = 128.0_rt
       * std::numeric_limits<amrex::Real>::epsilon();
    for (amrex::MFIter mfi(diagnostics, amrex::TilingIfNotGPU());
         mfi.isValid(); ++mfi) {
@@ -786,8 +788,8 @@ update_axisymmetric_spherical_equilibrium_torus_primitives_method(
       ) noexcept {
          diagnostic(i, j, k, 8) =
             diagnostic(i, j, k, 0)
-               >= maximum_density * (1.0 - density_tolerance)
-            ? diagnostic(i, j, k, 5) : 0.0;
+               >= maximum_density * (1.0_rt - density_tolerance)
+            ? diagnostic(i, j, k, 5) : 0.0_rt;
       });
    }
    summary.density_maximum_radius = diagnostics.max(8, 0, false);

@@ -1,0 +1,21 @@
+--- a/src/runtime/metal/metal_code_object.cpp
++++ b/src/runtime/metal/metal_code_object.cpp
+@@ -74,7 +74,7 @@
+                            const std::string& air_path,
+                            const std::string& metallib_path) {
+   std::string command =
+-      "xcrun -sdk macosx metal -std=metal4.0 -Osize -c " +
++      "xcrun -sdk macosx metal -std=metal4.0 -Osize -fno-fast-math -c " +
+       shell_quote(source_path) + " -o " + shell_quote(air_path) +
+       " && xcrun -sdk macosx metallib " + shell_quote(air_path) +
+       " -o " + shell_quote(metallib_path);
+@@ -172,6 +172,9 @@
+   options->setLanguageVersion(MTL::LanguageVersion3_2);
+ #endif
+   options->setOptimizationLevel(MTL::LibraryOptimizationLevel::LibraryOptimizationLevelSize);
++  // Match ordinary C++ floating-point semantics; Metal defaults to fast math.
++  options->setMathMode(MTL::MathModeSafe);
++  options->setMathFloatingPointFunctions(MTL::MathFloatingPointFunctionsPrecise);
+ 
+   NS::String* sourceString = NS::String::string(source.c_str(),
+                                                 NS::UTF8StringEncoding);

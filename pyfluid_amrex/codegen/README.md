@@ -45,6 +45,21 @@ are either reused or cost more than three operations. More aggressive settings
 remove most temporaries but can duplicate work and can enlarge some kernels, so
 they are opt-in generation experiments rather than production defaults.
 
+Expression optimization and GPU launch organization are separate concerns.
+CSE sees a pointwise equation group; it cannot remove an opaque full-state
+derivative gather or choose where AMReX launches should split. Callers must
+gather only the derivative families consumed by their equation group. Connection
+initialization, for example, shares metric first-derivative assembly with the
+full evolution gather but never evaluates its second, mixed, or advection
+derivatives. Select its stencil order on the host before launching.
+
+Cottonmouth's EinsteinEngine recipe also uses expression ordering, temporary
+reuse, and explicit loop splits (see `../references.md`). These are distinct
+from our CSE/drop policy. A future scheduling change should measure temporary
+liveness and actual backend compile/runtime cost; fewer named temporaries or
+fewer source lines alone do not establish an improvement. Keep shared symbolic
+equations and verify numerical equivalence before adopting backend tuning.
+
 ## Rules
 
 - Generated kernels must be side-effect free pointwise functions.
@@ -80,6 +95,32 @@ must not reproduce tensor geometry, constraints, gauges, sources, or RHS
 expressions. A generated Z4c change should rebuild the spacetime module, not
 reinstantiate the fluid evolution driver.
 
+Reference-metric spacetime has two generation families. `spacetime` emits the
+orthonormal tensor-jet geometry and conformal kinematics; `fccz4` emits separate
+geometry, RHS, constraints and auxiliary-driver gauge leaves. Their readable
+owners are `spacetime_geometry.py`, `reference_metric_evolution.py`, and
+`fccz4_equations.py`. The equation inputs are full three-dimensional tensors
+and reference-covariant derivative jets even for reduced dependence. Runtime
+axis permutation and the `K_hat`/physical-K storage adapter live in C++, outside
+the symbolic physics. The auxiliary-B gauge leaf is a pointwise mathematical
+kernel; current evolution uses the existing integrated Gamma-driver.
+
+Independent equation controls live in `tests/test_fccz4_equations.py`; compiled
+checks extend the existing generated-kernel checker. Regular spherical
+propagation and coupled dimensional symmetry are maintained in
+`tools/reference_metric_spacetime_validation.py`, selected through the existing
+spacetime validator and full-suite entries. Point identities and evolution
+convergence are separate evidence.
+
+Kernel models can declare ordered numerical `bindings` when evaluation order
+is part of stability. For ideal RHD recovery, normalize energy and momentum by
+density before CSE and rationalize `W-1`; expanding density powers can lose
+the cold state or underflow at a vacuum edge. Binding expressions remain
+symbolic, and `differentiate_with_bindings` applies the chain rule through
+them. CSE optimizes expressions within that evaluation structure instead of
+substituting the normalization away. Use this for a demonstrated numerical
+conditioning issue, not as a second handwritten implementation of a kernel.
+
 ## Current Boundary
 
 The generator owns pointwise algebra that benefits from symbolic tensor and
@@ -91,7 +132,10 @@ coordinate manipulation:
 - LLF and HLL state-combination formulas;
 - HD and MHD characteristic projection/recovery transforms;
 - orthogonal-coordinate metric factors and geometric momentum sources;
-- Newtonian viscous stress and tensor-divergence connection terms;
+- Newtonian viscous stress;
+- reference-metric metrics, coordinate/orthonormal transformations, and the
+  mixed-index basis correction needed after row-wise physical-volume finite-
+  volume divergence;
 - curl, divergence, ideal/resistive EMF, and CT face-flux updates;
 - local/global patch maps and their Jacobians;
 - densitized Valencia RHD/RMHD primitive-to-conserved variables, directional
@@ -116,6 +160,22 @@ kernels should be emitted as separate coordinate-specialized functions that
 take metric/scale-factor terms as explicit arguments, so the eventual mapped
 coordinate solver can select the specialization at compile/config setup time
 instead of branching inside each cell update.
+
+`reference_metric.py` owns the coordinate metric, its Levi-Civita connection,
+and explicit coordinate/orthonormal transformations. Valencia momentum fluxes
+use the convention `flux[component, normal]`; the older viscous tensor storage
+is `tensor[normal, component]` and is transposed once at symbolic lowering.
+Keep that distinction explicit because nonsymmetric relativistic fluxes cannot
+hide a transposition error. The generated reference-metric connection leaf is
+shared by diffusion and future relativistic matter owners rather than living
+under a viscosity-only include.
+
+The production fixed-Minkowski spherical GRHD lowering is owned by the
+non-template `src/relativity/reference_metric_valencia.cpp` boundary. Keep the
+MultiFab loop there: changing reference-metric evolution must not reinstantiate
+every reconstruction bundle. The public header contains only its launch
+declaration; the small pointwise basis algebra remains separately compilable
+for generated-kernel checks.
 
 ## Physics Extension Contract
 
@@ -257,3 +317,24 @@ algebra checks are separate:
 uv run python pyfluid_amrex/tools/validate_codegen_flux.py
 cmake --build build/pyfluid_amrex --target pyfluid_amrex_codegen_check_2d
 ```
+
+### Time integrators
+
+`schema/time_integrators.toml` owns time-method identities and exact rational
+stage updates. For stage i, `state` weights `[Y_0, ..., Y_i]` and `rhs` weights
+`[dt F(Y_0), ..., dt F(Y_i)]` to form `Y_(i+1)`. The final stage is the accepted
+step. `time_integrator_catalog.py` expands those updates to a Butcher tableau,
+derives stage times, integrated flux weights and direct projection weights,
+and checks constant-state preservation and all order conditions through the
+method's declared order (currently at most four). No floating tolerance is used.
+
+The catalog family emits `time_integrator_ids.hpp` separately from
+`time_integrator_catalog.hpp`, preserving write-if-changed behavior. Method-code
+consumers need only IDs; configuration and the private AMR integrator include
+the descriptors. Runtime orchestration remains explicit C++ for stage storage,
+CT, gravity, subcycling and debugging. Adding a method still requires a matching
+storage/dispatch implementation and numerical validation; algebraic order does
+not establish CFL stability, positivity, AMR coupling or PDE accuracy. Generated
+time scales retain numerator and denominator separately and apply
+`numerator * dt / denominator`, preserving the existing arithmetic order (for
+example `dt / 6`, rather than a pre-rounded sixth multiplied by `dt`).

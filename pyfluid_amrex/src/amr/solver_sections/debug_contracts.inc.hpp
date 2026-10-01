@@ -1,4 +1,4 @@
-// Included inside pyfluid_amrex::AmrSolver private section.
+// Included inside pyfluid_amrex::AmrSolverBase protected section.
 // Development contracts: poison outputs before writes, fail early on invalid
 // active fluid states, and optionally enforce accepted-state physical sanity.
 
@@ -15,13 +15,7 @@
       amrex::Real time,
       char const* context
    ) const;
-   void debug_check_valid_cell_finite(
-      amrex::MultiFab const& mf,
-      amrex::iMultiFab const& valid_mask,
-      int ncomp,
-      char const* context,
-      int lev
-   ) const;
+
    void abort_bad_physical_state(
       char const* context,
       int step,
@@ -40,13 +34,6 @@
    void debug_check_rhs_level(int lev, char const* context) const;
    void debug_check_fluxes(int lev, bool solid_masked, char const* context) const;
 
-   template <bool MHD, int EOSMethod>
-   void check_active_cell_physical_state_method(
-      int lev,
-      char const* context,
-      int step,
-      amrex::Real time
-   );
    void check_active_cell_physical_state(
       int lev,
       char const* context,
@@ -72,5 +59,13 @@
       int lev_end,
       char const* context,
       amrex::Real time
+   );
+   void check_relativistic_state_range(
+      LevelData const& state,
+      int lev_begin,
+      int lev_end,
+      char const* context,
+      amrex::Real time,
+      bool require_round_trip = false
    );
    void run_evolution_preflight(amrex::Real time);

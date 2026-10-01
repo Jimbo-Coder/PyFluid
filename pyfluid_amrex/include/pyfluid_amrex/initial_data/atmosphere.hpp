@@ -7,8 +7,11 @@
 
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/initial_data/sampling.hpp"
+#include "pyfluid_amrex/relativistic_exterior.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 struct RelativisticInitialDataView;
 struct RunConfig;
@@ -20,11 +23,13 @@ enum class InitialAtmosphereProfile : int {
 
 struct InitialAtmosphereParameters {
    InitialAtmosphereProfile profile = InitialAtmosphereProfile::Flat;
-   amrex::Real density = 1.0e-12;
-   amrex::Real pressure = 1.0e-12;
-   amrex::Real transition_radius = 1.0;
-   amrex::Real power = 4.0;
+   amrex::Real density = 1.0e-12_rt;
+   amrex::Real pressure = 1.0e-12_rt;
+   amrex::Real transition_radius = 1.0_rt;
+   amrex::Real power = 4.0_rt;
    EOSParams eos{};
+   RelativisticExteriorTreatment treatment =
+      RelativisticExteriorTreatment::Atmosphere;
 };
 
 InitialAtmosphereParameters initial_atmosphere_parameters(
@@ -39,19 +44,8 @@ bool initial_matter_exceeds_atmosphere(
 ) noexcept
 {
    constexpr amrex::Real tolerance =
-      1024.0 * std::numeric_limits<amrex::Real>::epsilon();
-   return density > atmosphere_density * (1.0 + tolerance);
-}
-
-inline EOSThermodynamicState recovery_atmosphere_state(
-   int eos_method,
-   EOSParams const& eos
-)
-{
-   static_cast<void>(eos_method);
-   return eos_project_to_floors<EOSRuntime>(
-      eos.rho_floor, eos.pressure_floor, eos
-   );
+      1024.0_rt * std::numeric_limits<amrex::Real>::epsilon();
+   return density > atmosphere_density * (1.0_rt + tolerance);
 }
 
 template <int EOSMethod>
@@ -61,6 +55,9 @@ EOSThermodynamicState initial_atmosphere_state(
    InitialDataSamplePoint const& sample
 ) noexcept
 {
+   if (atmosphere.treatment == RelativisticExteriorTreatment::Vacuum) {
+      return {0.0_rt, 0.0_rt, 0.0_rt};
+   }
    amrex::Real density = atmosphere.density;
    if (atmosphere.profile == InitialAtmosphereProfile::PowerLaw) {
       const amrex::Real radius = cartesian_radius(sample.physical);

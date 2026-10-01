@@ -7,13 +7,14 @@
 
 namespace pyfluid_amrex {
 
-void SpacetimeCouplingStorage::configure(int num_levels, int cell_ghost_width)
+void SpacetimeCouplingStorage::configure(int num_levels, int cell_ghost_width, int matter_ghost_width)
 {
-   if (num_levels <= 0 || cell_ghost_width < 2) {
+   if (num_levels <= 0 || cell_ghost_width < 2 || matter_ghost_width < 2) {
       amrex::Abort("invalid spacetime-coupling storage configuration");
    }
    active_ = true;
    cell_ghost_width_ = cell_ghost_width;
+   matter_ghost_width_ = matter_ghost_width;
    cell_spacetime_.resize(num_levels);
    cell_matter_.resize(num_levels);
    vertex_matter_.resize(num_levels);
@@ -33,7 +34,7 @@ void SpacetimeCouplingStorage::allocate_level(
       cell_boxes, distribution, Z4C_NUM_COMPONENTS, cell_ghost_width_
    );
    cell_matter_[level] = std::make_unique<amrex::MultiFab>(
-      cell_boxes, distribution, EULERIAN_MATTER_NUM_COMPONENTS, 2
+      cell_boxes, distribution, EULERIAN_MATTER_NUM_COMPONENTS, matter_ghost_width_
    );
    vertex_matter_[level] = std::make_unique<amrex::MultiFab>(
       amrex::convert(cell_boxes, amrex::IntVect::TheNodeVector()),

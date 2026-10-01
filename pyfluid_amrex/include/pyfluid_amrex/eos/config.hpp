@@ -6,13 +6,15 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct RunConfig;
 
 struct EOSIdentity {
    std::string backend;
    std::string fingerprint;
    std::string source_directory;
-   amrex::Real baryon_mass_mev = 0.0;
+   amrex::Real baryon_mass_mev = 0.0_rt;
    int source_points = 0;
    int retained_points = 0;
    bool table_truncated_for_causality = false;

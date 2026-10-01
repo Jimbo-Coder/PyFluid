@@ -93,7 +93,7 @@ initial data.
 
 Constraint and equilibrium solvers produce one canonical solution on their
 natural layout. The field schema determines the evolution centering of every
-component, and one generated order-2/4/6/8 topology operator converts between
+component, and one generated catalogued-order topology operator converts between
 cell, vertex, face, and edge layouts. The hierarchy adapter then performs the
 topology-appropriate coarse-fine synchronization. This keeps staggering at the
 initial-data/evolution boundary instead of coupling CTT, XCTS, TOV, or future
@@ -147,7 +147,10 @@ component:
 - `matter` follows density-supported matter only and ignores cells within ten
   configured density floors;
 - `spacetime` follows stored `chi - 1` only and skips fluid primitive recovery;
-- `compact_object` combines the guarded matter and spacetime indicators.
+- `compact_object` combines the spacetime indicator with density structure
+  above ten thousand configured floors. The stricter support threshold keeps
+  low-density numerical-atmosphere halos from owning compact-object AMR;
+  select `matter` explicitly when the low-density flow itself is the target.
 
 The directional maximum of the selected indicators feeds the unchanged AMReX
 hierarchy. `compact_object` is the normal stellar GRHD/GRMHD choice. `spacetime`
@@ -167,18 +170,170 @@ full-GRMHD default.
 
 ## Curvilinear Relativity Boundary
 
-Fixed-spacetime RHD/RMHD can share the existing generated Valencia equations,
-coordinate metric provider, mapped face measures, and geometric source
-generation. This is the first curvilinear relativistic target.
+Fixed-spacetime RHD/RMHD can reuse the coordinate-independent generated
+Valencia stress/flux algebra, coordinate metric provider, and mapped face
+measures. They cannot reuse the Newtonian curvilinear momentum source or the
+Cartesian determinant/partial-metric source unchanged. The first curvilinear
+relativistic target therefore lowers Valencia through an explicit
+reference-metric owner: scalar conserved fluxes use physical cell/face
+measures, mixed momentum fluxes add the generated covariant-basis connection,
+and spacetime sources use reference-covariant metric derivatives. Isotropic
+pressure is separated before the basis correction so constant pressure is
+balanced by construction. The current runtime slice is single-level spherical
+RHD with active axes `r` or `r theta` and analytic fixed Minkowski or centered
+isotropic-Schwarzschild spacetime. Schwarzschild cells must remain outside
+r=M/2. `validate_reference_metric_rhd.py` covers static balance, radial
+expansion, Schwarzschild hydrostatic convergence and dimensional consistency.
+AMR, RMHD, stored fixed spacetime and full spherical 3D remain unsupported
+in this analytic fixed-metric slice. The separate evolved fCCZ4 path below
+now supplies stored reference-metric GRHD geometry. These are
+evolution restrictions, not restrictions on all curvilinear initial-data solves.
+
+Curvilinear AMR needs an explicit coarse-fine contract for reference-basis
+momentum, geometric source balance, volume/face measures and stage-time metric
+data. The existing Cartesian FillPatch/reflux/average-down structure should
+remain the driver; removing configuration rejections alone cannot supply the
+missing numerical contract. Magnetic evolution additionally needs compatible
+edge EMFs and face transfer. Keep these limitations visible until the intended
+operators and conservation/convergence checks exist.
 
 Evolved Z4c in cylindrical or spherical coordinates is not obtained by adding
 Jacobian factors to the Cartesian kernels. The current formulation uses
 Cartesian partial derivatives and the Cartesian conformal-determinant
-condition. A robust extension requires one reference-metric Z4c formulation,
-generated tensor-basis terms, parity/origin regularization, and matching nodal
-AMR transfer and boundary contracts. The coordinate-independent symbolic Z4c
-source remains the proper starting point, but a Cartesian-kernel substitution
-is not a valid implementation.
+condition. A robust extension requires an explicitly derived reference-metric
+formulation, generated tensor-basis terms, parity/origin regularization, and
+matching nodal AMR transfer and boundary contracts. SphericalNR's published
+BSSN/fCCZ4 equations provide a reference, not a drop-in relabeling of our
+Z4c system. A separately generated reference-metric spacetime system is a
+valid extension; it need not rewrite the working Cartesian Z4c system.
+Formulation-specific catalog entries may declare state-field dependencies,
+basis conventions, equation groups, and supported gauges. They reference the
+shared GF catalog rather than declaring fields again. The actual tensor
+equations remain readable symbolic sources, not opaque TOML expressions.
+
+For this implementation, keep the tensor equations and coordinate geometry
+as high-level symbolic owners. Derive basis-rescaled expressions and genuine
+symmetry reductions there, retaining all physical vector/tensor components;
+do not write separate component equations for each executable dimension.
+Emit geometry, constraints, gauge, and RHS groups with shared subexpressions
+and private compiled owners under the existing compile-cost conventions.
+Coordinate selection must not multiply the reconstruction/EoS/gauge template
+product. Review symbolic identities and independent physical tests rather
+than repeatedly expanding generated C++ into agent context. Reuse tensor
+algebra, physical metric/stress-energy interfaces, and diagnostics where the
+mathematics is shared; do not force different formulation states to have
+identical component semantics.
+
+Parallel ownership belongs in AMReX orchestration, not generated equations.
+Ordinary local stencils can use distributed boxes; origin/pole exchange and
+any angular filter need explicit communication contracts. Do not require
+complete angular shells on every rank. Before choosing filtering, coarsening,
+or a multipatch alternative, compare physical-time throughput at matched
+error, conservation, and retained angular modes. Start with spherical 1D and
+axisymmetric 2D physical controls; these do not establish full-3D polar
+scaling. See the curvilinear-evolution references in `../references.md`.
+
+The generated implementation now starts in
+`codegen/pyfluid_codegen/spacetime_geometry.py`. Its input is a symmetric
+tensor in the orthonormal reference basis and coordinate partial derivatives
+of those components. It emits coordinate-basis metric derivatives and
+orthonormal reference-covariant first/second derivatives. The second derivative
+includes the connection acting on the derivative index. The same source emits
+Cartesian, cylindrical and spherical kernels; all three tensor directions
+remain present in reduced-dimensional inputs. These are temporary pointwise
+arrays (`metric_jet.hpp`), not new evolved grid functions.
+
+The generated connection difference implements SphericalNR Eq. (21) using
+reference-covariant metric derivatives. Shared Christoffel/Ricci algebra lives
+in `metric_differential.py`; Cartesian Z4c consumes the same expressions as
+before that extraction. The new `spacetime` generation family is separate
+from reconstruction and equation-of-state kernels.
+
+`reference_metric_evolution.py` now owns the first evolution group: the
+conformal metric and `chi=exp(-4 phi)` coordinate-time RHS, including shift
+Lie derivatives and the conformal divergence. Inputs use reference-covariant
+derivatives in a local orthonormal basis. Physical `K` is explicit; it must
+not be confused with Cartesian Z4c's `K_hat`. The kernel retains the
+conformal-determinant gradient in the shift divergence rather than silently
+assuming its constraint is satisfied. Checks recover the ADM physical-metric
+equation and frame covariance with a non-diagonal metric and nonzero shift.
+The formulation kernel has no coordinate-family selection. Chart derivatives,
+patch maps, and exchange stay outside it; the infrastructure conventions record
+the future mixed-chart contract.
+
+The complete fCCZ4 equation owner is now `fccz4_equations.py`, with separate
+geometry, RHS, gauge and constraint generated leaves. Select it explicitly
+with `spacetime.evolution=evolved` and `spacetime.formulation=fccz4`; Cartesian
+Z4c remains the default. `fccz4_runtime.cpp` connects these equations to the
+shared conformal field catalog. Its adapters decode physical `K=K_hat+2Theta`
+and interpret the connection slots as reference Lambda. Restart metadata
+rejects a change of formulation. Runtime uses the existing integrated
+Gamma-driver; the separate auxiliary-B point kernel does not add a B field
+to evolution storage.
+
+The stored-metric GRHD bridge uses reference-covariant metric derivatives,
+physical angular CFL factors, and the same FV face/volume measures in both
+high-order divergence and admissibility fallback. Diagnostic symmetry factors
+belong to `metric_reductions.hpp`, where cell totals and boundary-face budgets
+share one normalization. TOV metric sampling uses a shared C2 quintic Hermite
+interpolant with radial derivatives obtained from the TOV equations; matter
+sampling remains linear on the radial table.
+
+Current evidence is deliberately bounded. Cartesian gauge-wave propagation
+retains fourth order for both formulations, and the existing fixed-hierarchy
+Cartesian fCCZ4 AMR/subcycling/restart control passes. The opt-in command
+`validate_z4c.py --only spherical_gauge_wave --evolution-formulation fccz4
+--ranks 3 --force` checks all conformal fields in a regular 3D spherical shell
+against an independent Cartesian plane-wave solution, transformed into the
+local frame. All nonzero-error fields converge at orders 3.84--3.94 on the
+finest pair. This compares a fixed physical interior away from open radial
+and polar boundaries, with a full periodic azimuth; it does not test polar
+regularity. A short spherical Minkowski evolution is stationary to roundoff.
+The coupled TOV-shell mass ledger closes to roundoff, but its global evolved
+constraint errors do not yet show clean convergence.
+
+Origin/pole regularity and curvilinear radiative boundaries remain missing.
+Current fCCZ4 domains therefore use regular charts away from these coordinate
+singularities and extrapolation boundaries. Curved RMHD/CT and mixed-chart
+multipatch evolution remain unsupported. Evolved fCCZ4 can enter the common
+AMR driver. A fixed partial 3D spherical hierarchy now conserves mass to
+roundoff with subcycling after aligning register and RHS flux representations.
+This isolated control does not certify adaptive evolution: an unbuffered
+vacuum interface still develops inadmissible energy after reflux. A four-cell
+buffer passes a bounded placement control but does not resolve that defect.
+A reduced `r phi` field jet keeps
+theta derivatives of basis factors; it is not a general closed equatorial
+physical model. Full-star and star-plus-disk production readiness needs those
+boundary, magnetic, AMR and long-duration physical validations.
+
+`spacetime.derivative_order` selects 2/4/6/8/10 for Cartesian Z4c and
+regular-chart fCCZ4 (default 4). The same selection controls bulk derivatives,
+connection completion, constraints, KO dissipation and stencil/ghost reach.
+Physical extrapolation uses order+2 nodes when the domain has sufficient
+extent. Spacetime AMR prolongation remains a separate `prolongation_order`
+selection. Both use the numerical catalog rather than independent lists.
+This is spatial stencil support, not tenth-order full GRMHD accuracy: RK time
+order, matter centering/transfer, finite-volume reconstruction and the chosen
+boundary algorithm can set lower limits. The existing approximate Sommerfeld
+operator retains its independent second-order boundary gradients. The common
+elliptic ID operators retain second-order interiors; their boundary
+interpolation and provider materialization orders are separate settings.
+Specialized horizon, radiation and surface-observable geometry gathers still
+use fourth-order derivatives. The evolution apparent-horizon tracker requires
+3D Cartesian geometry; shared field metadata does not imply every diagnostic
+supports every chart or follows the bulk derivative-order selection.
+
+The current readiness boundary is:
+
+| Capability | Evidence | Still required |
+| --- | --- | --- |
+| Generated regular-chart fCCZ4 | Independent exact equations and frame covariance; regular-shell gauge propagation at orders 2/4/6/8/10 | Broader gauge and long-time nonlinear evolutions |
+| Spherical `r`, `r theta`, `r phi`, `r theta phi` projections | Coupled TOV-shell one-step differences below 5e-12 | Long-time symmetry preservation and physically justified reductions |
+| Regular-shell GRHD | Fixed-metric balance/convergence and evolved-metric mass budgets | Full stellar surface and temperature evolution |
+| Spherical AMR | Partial 3D shell reflux conserves mass; buffered radial controls pass | Admissibility at unbuffered vacuum interfaces; adaptive convergence and restart |
+| Origin and polar axis | Explicitly rejected by the regular-chart runtime | Tensor parity, regularity and matching ghost/transfer operators |
+| Curved RMHD/CT | Pointwise geometry and Cartesian magnetic controls only | Curved face/edge evolution, divergence control and AMR synchronization |
+| Mixed-chart multipatch evolution | Equation/geometry/transfer ownership defined | Tensor exchange and conservative fluid/CT interfaces |
 
 ### Local coupled-evolution reference snapshot
 
@@ -236,7 +391,8 @@ policy, reconstruction, Riemann fan selection, AMR, and scheduling.
 C2P is one ordered policy, not independent evolution branches. Candidate
 solvers consume the same conserved state, metric, EOS, tolerances, and result
 type. Each candidate returns primitives plus a reasoned status. Shared
-admissibility checks enforce finiteness, EOS bounds, positive density/pressure,
+admissibility checks enforce finiteness, EOS bounds, positive density,
+nonnegative pressure,
 and subluminal velocity. The validation corpus additionally recomputes P2C and
 checks the full conserved residual; production does not pay for that redundant
 P2C evaluation on every recovery.
@@ -272,12 +428,21 @@ repair are separate contracts:
   recovered primitive state;
 - the ordered C2P policy tries numerical recovery methods without silently
   changing the conserved state;
-- before each relativistic RK-stage RHS, a successfully recovered primitive
-  below the configured density floor is projected to the explicit recovery
-  state. The pressure floor closes that state through the EoS but does not
-  reset conserved density or momentum on its own. Magnetic fields are retained
-  by RMHD atmosphere projection. C2P exhaustion and nonfinite states remain
-  fatal rather than being silently replaced.
+- the runtime atmosphere owner projects under-density states and can attempt
+  atmosphere replacement after C2P exhaustion. Failed-recovery replacements
+  increment reset counters and produce runtime warnings; bounded black-hole
+  interior replacements have their own counter. RMHD replacement retains
+  finite magnetic fields rather than repairing them. Recovery still reports
+  failure if the replacement cannot be recovered. These are changes to the
+  conserved state, not additional root-solving candidates.
+
+The RHD candidate flux limiter must close its correction mask before installing
+fluxes: changing a shared face can invalidate the neighboring candidate. It
+rechecks mixed-flux candidates using a double-buffered, monotonically growing
+binary mask and a global changed-cell reduction. The low-order candidate is
+terminal; if that candidate is itself inadmissible, the existing projection
+policy still applies. This prevents one-pass mask propagation errors without
+turning a local energy projection into an unreported conservation claim.
 
 Initial-data flooring and runtime atmosphere projection use the same EoS
 thermodynamic closure, but they are distinct numerical policies. Initial data
@@ -287,9 +452,66 @@ superposition. A healthy stellar evolution should apply runtime repair rarely
 after initialization. Radially graded initial atmospheres therefore require a
 separate initial profile and a compatible, lower recovery floor; an ID-only
 profile that the next C2P pass overwrites is not supported. A true zero-density
-vacuum is a separate formulation because the Valencia C2P map is singular at
-zero rest-mass density; setting the configured floors to zero does not create a
-supported vacuum evolution.
+vacuum needs an explicit zero-state extension of the fluid numerics because
+the positive-density Valencia C2P map is singular there; setting configured
+floors to zero does not create a supported vacuum evolution.
+
+### Vacuum/Atmosphere Exterior Policy
+
+Keep one exterior-state policy selecting vacuum or atmosphere, with the same
+fluid recovery and conservative flux-correction owners. Start with GRHD;
+nonzero magnetic fields require a separate physical exterior closure. This
+policy is not `spacetime.matter_coupling=vacuum`, which only disables fluid
+backreaction on evolved geometry.
+
+Recognize canonical zero matter before density-dividing EoS/C2P expressions.
+It is a valid state, not a failed recovery or a reason to freeze the metric.
+Partially occupied finite-volume cells still carry matter, and face fluxes
+must allow fluid to expand into empty cells. For nonzero matter, retain the
+ordered recovery policy. A last-resort state replacement, when permitted,
+uses the selected exterior construction but remains a counted/warned reset;
+do not label failed nonzero matter as ordinary vacuum. Share that final
+construction rather than adding parallel fallback ladders or a template axis.
+
+The production GRHD implementation follows these independently testable
+stages:
+
+1. make P2C, flux, stress-energy, and geometric-source algebra finite and
+   exactly zero for canonical zero matter without changing positive-density
+   equations;
+2. give canonical zero conserved matter an explicit successful recovery
+   result before EoS or density-dividing C2P work, while keeping invalid
+   nonzero states and counted resets distinct;
+3. carry one exterior policy through initial data, constraint sources,
+   materialization, boundaries, AMR transfer, output, and restart metadata;
+4. validate one-sided fluid-vacuum interfaces, expansion into vacuum,
+   stationary stellar surfaces, and AMR conservation before enabling the
+   runtime option.
+
+All four stages are implemented for RHD behind
+`pyfluid.relativistic_exterior = vacuum`; atmosphere remains the default. The
+policy is a compact runtime value, not a template product. It is immutable
+restart/physical-ID identity, and legacy physical-ID artifacts without the key
+mean atmosphere. Exact zero conserved matter recovers successfully to one
+canonical zero primitive, zero--zero faces have exactly zero flux, and ordinary
+Riemann fluxes transport matter across one-sided matter--vacuum faces.
+
+The maintained validation boundary covers uniform expansion, dynamically
+regridded subcycled AMR expansion at CFL 0.9, bitwise restart, policy-mismatch
+rejection, physical-ID save/load and changed-grid materialization, and a
+buffered two-level 3D octant TOV surface through two CFL-0.9 steps. These cases
+preserve exact vacuum without C2P fallback or reset and conserve baryon mass to
+roundoff. A longer deliberately coarse TOV stress can still create tiny
+low-density tail states after more steps; long atmosphere-free stellar
+evolution therefore remains a convergence/stress target rather than a claim
+of this gate.
+
+Atmosphere behavior remains unchanged. The initial-data constraint sources,
+saved state, materializer, and evolution must agree on the exterior policy;
+removing an atmosphere only after solving constraints is not that contract.
+Nonzero magnetic fields remain an atmosphere or explicit electromagnetic-
+exterior problem rather than GRHD matter vacuum, so configuration rejects
+vacuum for RMHD.
 
 For composition-dependent EOSs, `Y_e` is an evolved conserved composition
 field. Temperature is recovered primitive/cache data rather than an independent
@@ -533,3 +755,94 @@ uv run python pyfluid_amrex/tools/validate_fixed_spacetime.py \
 uv run python pyfluid_amrex/tools/validate_z4c.py \
   --level standard --force --ranks 3
 ```
+
+## Stellar surface thermal accuracy
+
+A cold equilibrium star should be assessed using its thermal excess relative to
+its initialized state, separating stellar interior, surface, and atmosphere.
+The current hybrid/Compose cold-plus-gamma-law closure does not define a unique
+physical temperature. `thermal_entropy_proxy` is solver-authored output:
+`K_th = (p - p_cold(rho))/rho^gamma_th`; it is not evolved entropy. For the
+single hybrid polytrope with equal cold and thermal gammas,
+`K_th/K_cold = p_th/p_cold` without a second primitive recovery.
+`tools/report_stellar_thermal.py` reports signed values and changes for fixed
+coordinate shells of a single-level Cartesian TOV run. It requires t=0 output,
+optionally from a matching initial-only run, and rejects other EOS/mesh cases.
+Its volume means are not proper-mass averages or tracked fluid elements.
+
+Dual-energy methods evolve an additional internal-energy or entropy quantity
+and choose/synchronize thermodynamics where total-energy recovery loses thermal
+accuracy; shocks must still produce physical entropy. See
+[Cosmos++ (Anninos et al. 2005)](https://arxiv.org/abs/astro-ph/0509254).
+Entropy-based flux limiting is a separate discretization strategy; a recent
+[hybrid-EOS BAM study (Doulis 2026)](https://arxiv.org/abs/2608.16945)
+addresses artificial surface heating with that approach. Neither method is
+implemented here by the diagnostic addition, and neither should substitute for
+correct conservative-stage accounting.
+
+Cycle 406's two short 3D Cowling probes already show initial surface thermal
+excess and mixed subsequent heating/cooling. They do not establish thermal
+convergence or long-term stability. The atmosphere pressure is not the cold
+pressure at its prescribed density, so large exterior ratios are not evidence
+of stellar heating. Before selecting a new method, compare initialization-only
+thermal error, several dynamical times of TOV evolution, spatial resolution,
+atmosphere sensitivity, and EOS-consistent thermal excess, then extend to RNS.
+Retain shock-heating validation to ensure any thermal switch preserves genuine
+shock heating. A future finite-temperature EOS test should additionally record
+EOS-consistent temperature and composition, not an inferred gamma-law value.
+
+## Single-object readiness before multipatch and binaries
+
+Use a supported-combination matrix, not an exhaustive Cartesian product of
+all input options. Distinguish initial-data construction, handoff, fixed-metric
+evolution, coupled evolution, AMR/restart and long-duration physical accuracy.
+A spherical XCTS solve does not establish spherical Z4c evolution. A successful
+single-object spacetime test does not establish matter or magnetic coupling.
+
+The current priority is a reliable full-GR single-patch backbone: establish
+long-duration TOV and isolated-BH convergence, validate star-plus-disk handoff
+and evolution, and close the scoped precision/backend gates in
+`precision_and_metal.md`. Known Newtonian self-gravity AMR/restart failures
+remain tracked separately under the user's full-GR priority. Extend the
+reference-metric evolution/AMR operators with their own physical gates. Work on
+unsupported coordinate formulations should not silently expand the support
+matrix, and support for every optional algorithm is not a necessary prerequisite
+for a well-defined Cartesian binary calculation.
+
+NS-plus-disk initial data already supports test-fluid and coupled disk gravity
+and XCTS materialization into Cartesian evolution. The standard torus gate
+includes only two steps for the coupled stellar case. This establishes a
+construction/handoff control, not a stable magnetized NS-plus-disk production
+configuration. A Cycle 410 64^3, CFL 0.2 extension fails at t=3.71 with
+extrapolated spacetime boundaries; changing only to Sommerfeld reaches t=5
+without recovery repairs. The example now selects that radiative condition
+explicitly. EOS choices, rotation, atmosphere, magnetization and long-term
+metric response each require relevant evidence.
+
+Thornburg-style angular patches are a useful later geometry target. They avoid
+angular coordinate poles, but do not by themselves supply conservative fluid
+interface fluxes, CT synchronization, tensor-basis transfer, interpolation at
+stage times, or unique ownership of overlapping cells. Those contracts must be
+solved before interpreting successful patch communication as physical accuracy.
+
+For binary-oriented grid work, Cycle431 recommends a Cartesian near zone with
+regular angular outer patches as the first geometry target. It can retain
+nodal Cartesian spacetime and avoids a spherical coordinate origin. Begin
+with vacuum wave transmission across stationary patch interfaces, then add
+the conservative matter and magnetic interface contracts. BlackHoles@Home's
+overlapping vacuum-grid layout is a design reference, not those contracts.
+
+A cell-centered spacetime option is a separate route for full-sphere and
+reduced-symmetry evolution. It changes discrete sampling, derivatives,
+boundaries, centering transfers and AMR/checkpoint semantics, not the continuum
+Einstein equations. Moving radial/polar samples off singular points still
+requires regular ghost connectivity, tensor parity and angular CFL treatment.
+Hydro stays cell-centered and face/edge CT need not change centering. Neither
+this option nor completed origin treatment is a prerequisite for a supported
+Cartesian binary calculation.
+
+Particle work should start from a physical purpose. Passive tracers could
+record surface heating and ejecta histories without backreaction. Radiation
+packets need transport and matter coupling; SPH is another fluid discretization;
+kinetic particles need a kinetic model and conservative coupling to any fluid
+region. AMReX's storage/redistribution machinery does not supply those models.

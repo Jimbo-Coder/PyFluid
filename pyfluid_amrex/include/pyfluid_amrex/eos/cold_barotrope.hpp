@@ -9,13 +9,15 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct ColdBarotropeState {
-   amrex::Real rho = 0.0;
-   amrex::Real pressure = 0.0;
-   amrex::Real specific_internal_energy = 0.0;
-   amrex::Real energy_density = 0.0;
-   amrex::Real specific_enthalpy = 1.0;
-   amrex::Real sound_speed_squared = 0.0;
+   amrex::Real rho = 0.0_rt;
+   amrex::Real pressure = 0.0_rt;
+   amrex::Real specific_internal_energy = 0.0_rt;
+   amrex::Real energy_density = 0.0_rt;
+   amrex::Real specific_enthalpy = 1.0_rt;
+   amrex::Real sound_speed_squared = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -32,7 +34,7 @@ ColdBarotropeState cold_barotrope_from_density(
    EOSParams const& eos
 ) noexcept
 {
-   if (!(rho > 0.0)) {
+   if (!(rho > 0.0_rt)) {
       return {};
    }
    if (eos.method == EOSCompose) {
@@ -42,7 +44,7 @@ ColdBarotropeState cold_barotrope_from_density(
       return {
          cold.density,
          cold.pressure,
-         cold.energy_density / cold.density - 1.0,
+         cold.energy_density / cold.density - 1.0_rt,
          cold.energy_density,
          cold.specific_enthalpy,
          cold.sound_speed_squared,
@@ -72,8 +74,8 @@ amrex::Real cold_log_specific_enthalpy(
    EOSParams const& eos
 ) noexcept
 {
-   if (!(rho > 0.0)) {
-      return 0.0;
+   if (!(rho > 0.0_rt)) {
+      return 0.0_rt;
    }
    if (eos.method == EOSCompose) {
       return tabulated_log_enthalpy_from_density(rho, eos.table);
@@ -105,7 +107,7 @@ ColdBarotropeState cold_barotrope_from_log_enthalpy(
    EOSParams const& eos
 ) noexcept
 {
-   if (!(log_specific_enthalpy > 0.0)) {
+   if (!(log_specific_enthalpy > 0.0_rt)) {
       return {};
    }
    if (eos.method == EOSCompose) {
@@ -115,7 +117,7 @@ ColdBarotropeState cold_barotrope_from_log_enthalpy(
       return {
          cold.density,
          cold.pressure,
-         cold.energy_density / cold.density - 1.0,
+         cold.energy_density / cold.density - 1.0_rt,
          cold.energy_density,
          cold.specific_enthalpy,
          cold.sound_speed_squared,
@@ -129,12 +131,12 @@ ColdBarotropeState cold_barotrope_from_log_enthalpy(
    const amrex::Real energy_offset = eos.segment_energy_offset[segment_index];
    const amrex::Real specific_enthalpy = std::exp(log_specific_enthalpy);
    const amrex::Real density_power =
-      (specific_enthalpy - 1.0 - energy_offset)
-      * (gamma - 1.0) / (gamma * k);
-   const amrex::Real rho = density_power > 0.0
-      ? std::pow(density_power, 1.0 / (gamma - 1.0))
-      : 0.0;
-   if (!(rho > 0.0)) {
+      (specific_enthalpy - 1.0_rt - energy_offset)
+      * (gamma - 1.0_rt) / (gamma * k);
+   const amrex::Real rho = density_power > 0.0_rt
+      ? std::pow(density_power, 1.0_rt / (gamma - 1.0_rt))
+      : 0.0_rt;
+   if (!(rho > 0.0_rt)) {
       return {};
    }
    ColdBarotropeState state = cold_barotrope_from_density(rho, eos);

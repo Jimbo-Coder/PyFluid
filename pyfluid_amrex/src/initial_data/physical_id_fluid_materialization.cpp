@@ -13,6 +13,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 namespace {
 
 template <int EOSMethod>
@@ -88,14 +90,14 @@ void materialize_physical_initial_data_fluid_method(
                        load_z4c_state(stored_metric, i, j, k)
                     )
                   : fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
-                       fixed, lower, spacing, i, j, k, 0.0
+                       fixed, lower, spacing, i, j, k, 0.0_rt
                     ).metric;
                const amrex::Real density = physical(i, j, k, RHO);
                const amrex::Real pressure = physical(i, j, k, ENERGY);
                const amrex::Real specific_internal_energy =
-                  eos_internal_energy_density_from_pressure<EOSMethod>(
-                     density, pressure, eos
-                  ) / density;
+                  relativistic_specific_internal_energy_from_pressure<
+                     EOSMethod
+                  >(density, pressure, eos);
                if (magnetized) {
                   const RMHDPrimitive value{
                      density,

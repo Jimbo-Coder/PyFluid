@@ -16,12 +16,14 @@
 
 namespace {
 
+using namespace amrex::literals;
+
 using pyfluid_amrex::RMHDConserved;
 using pyfluid_amrex::RMHDPrimitive;
 using pyfluid_amrex::RMHDRecoveryResult;
 
-constexpr amrex::Real gamma = 1.4;
-constexpr pyfluid_amrex::ColdPolytropeEquationOfState cold_eos{0.2, 1.8};
+constexpr amrex::Real gamma = 1.4_rt;
+constexpr pyfluid_amrex::ColdPolytropeEquationOfState cold_eos{0.2_rt, 1.8_rt};
 constexpr std::size_t corpus_size = 4096;
 constexpr int timed_repetitions = 32;
 
@@ -37,37 +39,37 @@ Corpus make_corpus(bool stress, bool cold = false)
    const auto metric = pyfluid_amrex::minkowski_spacetime_metric();
    for (std::size_t index = 0; index < corpus.conserved.size(); ++index) {
       const amrex::Real phase = static_cast<amrex::Real>(index);
-      const amrex::Real maximum_speed = stress ? 0.9995 : 0.93;
-      const amrex::Real speed = 0.02 + (maximum_speed - 0.02) * (
-         0.5 + 0.5 * std::sin(0.017 * phase)
+      const amrex::Real maximum_speed = stress ? 0.9995_rt : 0.93_rt;
+      const amrex::Real speed = 0.02_rt + (maximum_speed - 0.02_rt) * (
+         0.5_rt + 0.5_rt * std::sin(0.017_rt * phase)
       );
-      const amrex::Real direction1 = std::sin(0.031 * phase);
-      const amrex::Real direction2 = std::cos(0.047 * phase);
-      const amrex::Real direction3 = std::sin(0.071 * phase + 0.3);
+      const amrex::Real direction1 = std::sin(0.031_rt * phase);
+      const amrex::Real direction2 = std::cos(0.047_rt * phase);
+      const amrex::Real direction3 = std::sin(0.071_rt * phase + 0.3_rt);
       const amrex::Real direction_norm = std::sqrt(
          direction1 * direction1 + direction2 * direction2
          + direction3 * direction3
       );
       RMHDPrimitive primitive{};
-      const amrex::Real density_log_min = stress ? -9.0 : -4.0;
-      const amrex::Real density_log_span = stress ? 15.0 : 7.0;
-      const amrex::Real energy_log_min = stress ? -11.0 : -7.0;
-      const amrex::Real energy_log_span = stress ? 18.0 : 10.0;
+      const amrex::Real density_log_min = stress ? -9.0_rt : -4.0_rt;
+      const amrex::Real density_log_span = stress ? 15.0_rt : 7.0_rt;
+      const amrex::Real energy_log_min = stress ? -11.0_rt : -7.0_rt;
+      const amrex::Real energy_log_span = stress ? 18.0_rt : 10.0_rt;
       primitive.rho = std::exp(
          density_log_min
-         + density_log_span * (0.5 + 0.5 * std::sin(0.013 * phase))
+         + density_log_span * (0.5_rt + 0.5_rt * std::sin(0.013_rt * phase))
       );
       if (cold) {
          primitive.pressure = cold_eos.polytropic_k * std::pow(
             primitive.rho, cold_eos.polytropic_gamma
          );
          primitive.eps = primitive.pressure / (
-            primitive.rho * (cold_eos.polytropic_gamma - 1.0)
+            primitive.rho * (cold_eos.polytropic_gamma - 1.0_rt)
          );
       } else {
          primitive.eps = std::exp(
             energy_log_min
-            + energy_log_span * (0.5 + 0.5 * std::cos(0.019 * phase))
+            + energy_log_span * (0.5_rt + 0.5_rt * std::cos(0.019_rt * phase))
          );
          primitive.pressure =
             pyfluid_amrex::generated::relativistic_ideal_gas_pressure(
@@ -78,35 +80,35 @@ Corpus make_corpus(bool stress, bool cold = false)
       primitive.v2 = speed * direction2 / direction_norm;
       primitive.v3 = speed * direction3 / direction_norm;
       const amrex::Real magnetic_scale = std::exp(
-         (stress ? -8.0 : -5.0)
-         + (stress ? 16.0 : 8.0)
-            * (0.5 + 0.5 * std::sin(0.023 * phase + 0.7))
+         (stress ? -8.0_rt : -5.0_rt)
+         + (stress ? 16.0_rt : 8.0_rt)
+            * (0.5_rt + 0.5_rt * std::sin(0.023_rt * phase + 0.7_rt))
       );
-      primitive.b1 = magnetic_scale * std::cos(0.029 * phase);
-      primitive.b2 = magnetic_scale * std::sin(0.037 * phase);
-      primitive.b3 = magnetic_scale * std::cos(0.053 * phase + 0.2);
+      primitive.b1 = magnetic_scale * std::cos(0.029_rt * phase);
+      primitive.b2 = magnetic_scale * std::sin(0.037_rt * phase);
+      primitive.b3 = magnetic_scale * std::cos(0.053_rt * phase + 0.2_rt);
       corpus.conserved[index] = pyfluid_amrex::generated::rmhd_primitive_to_conserved(
          primitive, metric
       );
       const amrex::Real velocity_squared = primitive.v1 * primitive.v1
          + primitive.v2 * primitive.v2 + primitive.v3 * primitive.v3;
-      const amrex::Real lorentz_factor = 1.0 / std::sqrt(
-         1.0 - velocity_squared
+      const amrex::Real lorentz_factor = 1.0_rt / std::sqrt(
+         1.0_rt - velocity_squared
       );
       corpus.entropy[index].conserved_entropy = lorentz_factor
-         * primitive.pressure / std::pow(primitive.rho, gamma - 1.0);
+         * primitive.pressure / std::pow(primitive.rho, gamma - 1.0_rt);
       RMHDPrimitive seed = primitive;
-      seed.rho *= 1.01;
-      seed.eps *= 1.02;
+      seed.rho *= 1.01_rt;
+      seed.eps *= 1.02_rt;
       seed.pressure = cold
          ? cold_eos.polytropic_k
             * std::pow(seed.rho, cold_eos.polytropic_gamma)
          : pyfluid_amrex::generated::relativistic_ideal_gas_pressure(
               seed.rho, seed.eps, gamma
            );
-      seed.v1 *= 0.99;
-      seed.v2 *= 0.99;
-      seed.v3 *= 0.99;
+      seed.v1 *= 0.99_rt;
+      seed.v2 *= 0.99_rt;
+      seed.v3 *= 0.99_rt;
       corpus.seeds[index] = seed;
    }
    return corpus;
@@ -122,9 +124,9 @@ void benchmark_candidate(
    std::size_t successes = 0;
    std::size_t iterations = 0;
    std::array<std::size_t, 8> status_counts{};
-   amrex::Real max_residual = 0.0;
-   amrex::Real max_conserved_residual = 0.0;
-   amrex::Real checksum = 0.0;
+   amrex::Real max_residual = 0.0_rt;
+   amrex::Real max_conserved_residual = 0.0_rt;
+   amrex::Real checksum = 0.0_rt;
    std::size_t failure_reports = 0;
    for (std::size_t index = 0; index < corpus.conserved.size(); ++index) {
       const auto& conserved = corpus.conserved[index];
@@ -167,7 +169,7 @@ void benchmark_candidate(
    const double seconds = std::chrono::duration<double>(stop - start).count();
    const double recoveries = static_cast<double>(corpus.conserved.size()) * timed_repetitions;
    const double million_recoveries_per_second = recoveries / seconds / 1.0e6;
-   const double mean_iterations = static_cast<double>(iterations) / corpus.conserved.size();
+   const double mean_iterations = static_cast<double>(iterations) / static_cast<double>(corpus.conserved.size());
 
    std::cout << name << '\t' << successes << '\t' << corpus.conserved.size() << '\t'
              << std::setprecision(10) << mean_iterations << '\t' << max_residual

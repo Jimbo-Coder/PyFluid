@@ -13,20 +13,22 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 // The Mignone--Bodo HLLC and Mignone--Ugliano--Bodo HLLD algorithms are
 // special-relativistic, face-normal solvers.  This header owns that pointwise
 // mathematics plus the tetrad transformation needed by GRMHD.  Host dispatch,
 // reconstruction, AMReX iteration, and candidate correction remain outside.
 
 struct SRMHDState {
-   amrex::Real dens = 0.0;
-   amrex::Real momn = 0.0;
-   amrex::Real momt1 = 0.0;
-   amrex::Real momt2 = 0.0;
-   amrex::Real energy = 0.0;
-   amrex::Real bn = 0.0;
-   amrex::Real bt1 = 0.0;
-   amrex::Real bt2 = 0.0;
+   amrex::Real dens = 0.0_rt;
+   amrex::Real momn = 0.0_rt;
+   amrex::Real momt1 = 0.0_rt;
+   amrex::Real momt2 = 0.0_rt;
+   amrex::Real energy = 0.0_rt;
+   amrex::Real bn = 0.0_rt;
+   amrex::Real bt1 = 0.0_rt;
+   amrex::Real bt2 = 0.0_rt;
 };
 
 template <int Direction>
@@ -44,7 +46,7 @@ RMHDWaveSpeeds srmhd_wave_speeds(
       primitive,
       minkowski_spacetime_metric(),
       amrex::max(
-         amrex::Real{0.0}, thermodynamics.sound_speed_squared
+         amrex::Real{0.0_rt}, thermodynamics.sound_speed_squared
       ),
       thermodynamics.specific_enthalpy
    );
@@ -53,15 +55,15 @@ RMHDWaveSpeeds srmhd_wave_speeds(
 struct SRMHDRiemannSample {
    SRMHDState state{};
    SRMHDState flux{};
-   amrex::Real contact_speed = 0.0;
-   amrex::Real total_pressure = 0.0;
+   amrex::Real contact_speed = 0.0_rt;
+   amrex::Real total_pressure = 0.0_rt;
    bool used_hll = false;
 };
 
 struct RMHDFrameVector {
-   amrex::Real x = 0.0;
-   amrex::Real y = 0.0;
-   amrex::Real z = 0.0;
+   amrex::Real x = 0.0_rt;
+   amrex::Real y = 0.0_rt;
+   amrex::Real z = 0.0_rt;
 };
 
 struct RMHDFaceFrame {
@@ -71,8 +73,8 @@ struct RMHDFaceFrame {
    RMHDFrameVector coframe_n{};
    RMHDFrameVector coframe_t1{};
    RMHDFrameVector coframe_t2{};
-   amrex::Real normal_coordinate_scale = 1.0;
-   amrex::Real interface_speed = 0.0;
+   amrex::Real normal_coordinate_scale = 1.0_rt;
+   amrex::Real interface_speed = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -91,12 +93,12 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDFrameVector rmhd_frame_axis(int component) noexcept
 {
    if (component == 0) {
-      return {1.0, 0.0, 0.0};
+      return {1.0_rt, 0.0_rt, 0.0_rt};
    }
    if (component == 1) {
-      return {0.0, 1.0, 0.0};
+      return {0.0_rt, 1.0_rt, 0.0_rt};
    }
-   return {0.0, 0.0, 1.0};
+   return {0.0_rt, 0.0_rt, 1.0_rt};
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -205,7 +207,7 @@ RMHDFaceFrame rmhd_face_frame(const SpacetimeMetric& metric) noexcept
    );
    const RMHDFrameVector normal = rmhd_frame_add_scaled(
       {},
-      1.0 / inverse_normal_norm,
+      1.0_rt / inverse_normal_norm,
       rmhd_inverse_metric_row(metric, Direction)
    );
    const RMHDFrameVector tangent1_axis = rmhd_frame_axis(tangent1_direction);
@@ -213,7 +215,7 @@ RMHDFaceFrame rmhd_face_frame(const SpacetimeMetric& metric) noexcept
       rmhd_spatial_dot(tangent1_axis, tangent1_axis, metric)
    );
    const RMHDFrameVector tangent1 = rmhd_frame_add_scaled(
-      {}, 1.0 / tangent1_norm, tangent1_axis
+      {}, 1.0_rt / tangent1_norm, tangent1_axis
    );
    const RMHDFrameVector tangent2_axis = rmhd_frame_axis(tangent2_direction);
    const amrex::Real tangent_projection = rmhd_spatial_dot(
@@ -226,7 +228,7 @@ RMHDFaceFrame rmhd_face_frame(const SpacetimeMetric& metric) noexcept
       rmhd_spatial_dot(tangent2_unnormalized, tangent2_unnormalized, metric)
    );
    const RMHDFrameVector tangent2 = rmhd_frame_add_scaled(
-      {}, 1.0 / tangent2_norm, tangent2_unnormalized
+      {}, 1.0_rt / tangent2_norm, tangent2_unnormalized
    );
    return {
       normal,
@@ -368,7 +370,7 @@ SRMHDState srmhd_hll_state(
    amrex::Real speed_r
 ) noexcept
 {
-   const amrex::Real inverse_width = 1.0 / (speed_r - speed_l);
+   const amrex::Real inverse_width = 1.0_rt / (speed_r - speed_l);
    SRMHDState result = srmhd_state_add_scaled(
       state_l, speed_r * inverse_width,
       srmhd_state_difference(state_r, state_l)
@@ -389,7 +391,7 @@ SRMHDState srmhd_hll_flux(
    amrex::Real speed_r
 ) noexcept
 {
-   const amrex::Real inverse_width = 1.0 / (speed_r - speed_l);
+   const amrex::Real inverse_width = 1.0_rt / (speed_r - speed_l);
    SRMHDState result = srmhd_state_add_scaled(
       flux_l, -speed_l / (speed_r - speed_l),
       srmhd_state_difference(flux_r, flux_l)
@@ -414,16 +416,16 @@ SRMHDRiemannSample srmhd_hll_sample(
 ) noexcept
 {
    if (sample_speed <= speed_l) {
-      return {state_l, flux_l, 0.0, 0.0, true};
+      return {state_l, flux_l, 0.0_rt, 0.0_rt, true};
    }
    if (sample_speed >= speed_r) {
-      return {state_r, flux_r, 0.0, 0.0, true};
+      return {state_r, flux_r, 0.0_rt, 0.0_rt, true};
    }
    return {
       srmhd_hll_state(state_l, state_r, flux_l, flux_r, speed_l, speed_r),
       srmhd_hll_flux(state_l, state_r, flux_l, flux_r, speed_l, speed_r),
-      0.0,
-      0.0,
+      0.0_rt,
+      0.0_rt,
       true,
    };
 }
@@ -431,7 +433,7 @@ SRMHDRiemannSample srmhd_hll_sample(
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real srmhd_total_pressure(const RMHDPrimitive& primitive) noexcept
 {
-   return primitive.pressure + 0.5
+   return primitive.pressure + 0.5_rt
       * generated::rmhd_comoving_magnetic_squared(
          primitive, minkowski_spacetime_metric()
       );
@@ -445,23 +447,23 @@ amrex::Real srmhd_minus_quadratic_root(
 ) noexcept
 {
    const amrex::Real scale = amrex::max(
-      1.0,
+      1.0_rt,
       amrex::max(
          amrex::Math::abs(quadratic),
          amrex::max(amrex::Math::abs(linear), amrex::Math::abs(constant))
       )
    );
-   if (amrex::Math::abs(quadratic) <= 1.0e-14 * scale) {
-      return amrex::Math::abs(linear) > 1.0e-14 * scale
+   if (amrex::Math::abs(quadratic) <= 1.0e-14_rt * scale) {
+      return amrex::Math::abs(linear) > 1.0e-14_rt * scale
          ? -constant / linear
-         : 0.0;
+         : 0.0_rt;
    }
    const amrex::Real discriminant = linear * linear
-      - 4.0 * quadratic * constant;
-   if (!(discriminant >= 0.0) || !amrex::Math::isfinite(discriminant)) {
-      return 2.0;
+      - 4.0_rt * quadratic * constant;
+   if (!(discriminant >= 0.0_rt) || !amrex::Math::isfinite(discriminant)) {
+      return 2.0_rt;
    }
-   return (-linear - std::sqrt(discriminant)) / (2.0 * quadratic);
+   return (-linear - std::sqrt(discriminant)) / (2.0_rt * quadratic);
 }
 
 struct SRMHDHLLCStates {
@@ -469,8 +471,8 @@ struct SRMHDHLLCStates {
    SRMHDState state_r{};
    SRMHDState flux_l{};
    SRMHDState flux_r{};
-   amrex::Real contact_speed = 0.0;
-   amrex::Real total_pressure = 0.0;
+   amrex::Real contact_speed = 0.0_rt;
+   amrex::Real total_pressure = 0.0_rt;
    bool valid = false;
 };
 
@@ -494,14 +496,14 @@ SRMHDHLLCStates srmhd_hllc_intermediate_states(
       state_l, state_r, flux_l, flux_r, speed_l, speed_r
    );
    const amrex::Real magnetic_scale = amrex::max(
-      1.0,
+      1.0_rt,
       amrex::max(
          amrex::Math::abs(hll_state.bn),
          amrex::max(amrex::Math::abs(hll_state.bt1), amrex::Math::abs(hll_state.bt2))
       )
    );
    const bool zero_normal_field = amrex::Math::abs(hll_state.bn)
-      <= 1.0e-12 * magnetic_scale;
+      <= 1.0e-12_rt * magnetic_scale;
    amrex::Real quadratic = hll_flux.energy;
    amrex::Real linear = -hll_flux.momn - hll_state.energy;
    amrex::Real constant = hll_state.momn;
@@ -520,18 +522,18 @@ SRMHDHLLCStates srmhd_hllc_intermediate_states(
    );
    if (!amrex::Math::isfinite(contact_speed)
        || !(contact_speed > speed_l && contact_speed < speed_r)
-       || !(amrex::Math::abs(contact_speed) < 1.0)) {
+       || !(amrex::Math::abs(contact_speed) < 1.0_rt)) {
       return result;
    }
 
-   amrex::Real velocity_t1 = 0.0;
-   amrex::Real velocity_t2 = 0.0;
+   amrex::Real velocity_t1 = 0.0_rt;
+   amrex::Real velocity_t2 = 0.0_rt;
    amrex::Real total_pressure = hll_flux.momn
       - hll_flux.energy * contact_speed;
-   amrex::Real magnetic_t1_l = 0.0;
-   amrex::Real magnetic_t2_l = 0.0;
-   amrex::Real magnetic_t1_r = 0.0;
-   amrex::Real magnetic_t2_r = 0.0;
+   amrex::Real magnetic_t1_l = 0.0_rt;
+   amrex::Real magnetic_t2_l = 0.0_rt;
+   amrex::Real magnetic_t1_r = 0.0_rt;
+   amrex::Real magnetic_t2_r = 0.0_rt;
    if (!zero_normal_field) {
       velocity_t1 = (
          hll_state.bt1 * contact_speed - hll_flux.bt1
@@ -541,7 +543,7 @@ SRMHDHLLCStates srmhd_hllc_intermediate_states(
       ) / hll_state.bn;
       const amrex::Real velocity_squared = contact_speed * contact_speed
          + velocity_t1 * velocity_t1 + velocity_t2 * velocity_t2;
-      if (!(velocity_squared < 1.0) || !amrex::Math::isfinite(velocity_squared)) {
+      if (!(velocity_squared < 1.0_rt) || !amrex::Math::isfinite(velocity_squared)) {
          return result;
       }
       const amrex::Real velocity_dot_magnetic = contact_speed * hll_state.bn
@@ -549,7 +551,7 @@ SRMHDHLLCStates srmhd_hllc_intermediate_states(
       total_pressure = hll_flux.momn
          - (hll_flux.energy - hll_state.bn * velocity_dot_magnetic)
             * contact_speed
-         + hll_state.bn * hll_state.bn * (1.0 - velocity_squared);
+         + hll_state.bn * hll_state.bn * (1.0_rt - velocity_squared);
       magnetic_t1_l = hll_state.bt1;
       magnetic_t2_l = hll_state.bt2;
       magnetic_t1_r = hll_state.bt1;
@@ -562,7 +564,7 @@ SRMHDHLLCStates srmhd_hllc_intermediate_states(
       magnetic_t1_r = (speed_r - primitive_r.v1) * primitive_r.b2 / denom_r;
       magnetic_t2_r = (speed_r - primitive_r.v1) * primitive_r.b3 / denom_r;
    }
-   if (!amrex::Math::isfinite(total_pressure) || !(total_pressure > 0.0)) {
+   if (!amrex::Math::isfinite(total_pressure) || !(total_pressure > 0.0_rt)) {
       return result;
    }
 
@@ -595,14 +597,14 @@ SRMHDHLLCStates srmhd_hllc_intermediate_states(
             + velocity_t1 * star.bt1 + velocity_t2 * star.bt2;
          star.momt1 = (
             -star.bn * (
-               star.bt1 * (1.0 - velocity_squared)
+               star.bt1 * (1.0_rt - velocity_squared)
                + velocity_dot_magnetic * velocity_t1
             )
             + wave_speed * state.momt1 - flux.momt1
          ) / denominator;
          star.momt2 = (
             -star.bn * (
-               star.bt2 * (1.0 - velocity_squared)
+               star.bt2 * (1.0_rt - velocity_squared)
                + velocity_dot_magnetic * velocity_t2
             )
             + wave_speed * state.momt2 - flux.momt2
@@ -635,10 +637,10 @@ SRMHDHLLCStates srmhd_hllc_intermediate_states(
       && finite_srmhd_state(result.state_r)
       && finite_srmhd_state(result.flux_l)
       && finite_srmhd_state(result.flux_r)
-      && result.state_l.dens > 0.0
-      && result.state_r.dens > 0.0
-      && result.state_l.energy > 0.0
-      && result.state_r.energy > 0.0;
+      && result.state_l.dens > 0.0_rt
+      && result.state_r.dens > 0.0_rt
+      && result.state_l.energy > 0.0_rt
+      && result.state_r.energy > 0.0_rt;
    return result;
 }
 
@@ -651,7 +653,7 @@ SRMHDRiemannSample srmhd_hllc_sample(
    bool shock_stabilize = false
 ) noexcept
 {
-   const amrex::Real shared_bn = 0.5 * (primitive_l.b1 + primitive_r.b1);
+   const amrex::Real shared_bn = 0.5_rt * (primitive_l.b1 + primitive_r.b1);
    primitive_l.b1 = shared_bn;
    primitive_r.b1 = shared_bn;
    const SRMHDState state_l = srmhd_state_from_primitive(primitive_l);
@@ -671,7 +673,7 @@ SRMHDRiemannSample srmhd_hllc_sample(
          state_l,
          flux_l,
          primitive_l.v1,
-         primitive_l.pressure + 0.5
+         primitive_l.pressure + 0.5_rt
             * generated::rmhd_comoving_magnetic_squared(
                primitive_l, minkowski_spacetime_metric()
             ),
@@ -683,10 +685,10 @@ SRMHDRiemannSample srmhd_hllc_sample(
    const amrex::Real speed_l = amrex::min(waves_l.minus, waves_r.minus);
    const amrex::Real speed_r = amrex::max(waves_l.plus, waves_r.plus);
    if (sample_speed <= speed_l) {
-      return {state_l, flux_l, 0.0, 0.0, false};
+      return {state_l, flux_l, 0.0_rt, 0.0_rt, false};
    }
    if (sample_speed >= speed_r) {
-      return {state_r, flux_r, 0.0, 0.0, false};
+      return {state_r, flux_r, 0.0_rt, 0.0_rt, false};
    }
    if (shock_stabilize) {
       return srmhd_hll_sample(
@@ -738,9 +740,9 @@ SRMHDRiemannSample srmhd_hllc_sample(
 }
 
 struct SRMHDHLLDVector {
-   amrex::Real n = 0.0;
-   amrex::Real t1 = 0.0;
-   amrex::Real t2 = 0.0;
+   amrex::Real n = 0.0_rt;
+   amrex::Real t1 = 0.0_rt;
+   amrex::Real t2 = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -767,10 +769,10 @@ struct SRMHDHLLDFastState {
    SRMHDHLLDVector velocity{};
    SRMHDHLLDVector magnetic{};
    SRMHDHLLDVector k{};
-   amrex::Real total_enthalpy = 0.0;
-   amrex::Real eta = 0.0;
-   amrex::Real alfven_speed = 0.0;
-   amrex::Real outer_speed = 0.0;
+   amrex::Real total_enthalpy = 0.0_rt;
+   amrex::Real eta = 0.0_rt;
+   amrex::Real alfven_speed = 0.0_rt;
+   amrex::Real outer_speed = 0.0_rt;
    bool valid = false;
 };
 
@@ -780,13 +782,13 @@ struct SRMHDHLLDEvaluation {
    SRMHDHLLDVector contact_magnetic{};
    SRMHDHLLDVector contact_velocity_l{};
    SRMHDHLLDVector contact_velocity_r{};
-   amrex::Real residual = 0.0;
+   amrex::Real residual = 0.0_rt;
    bool valid = false;
 };
 
 struct SRMHDHLLDSolution {
    SRMHDHLLDEvaluation evaluation{};
-   amrex::Real total_pressure = 0.0;
+   amrex::Real total_pressure = 0.0_rt;
    bool valid = false;
 };
 
@@ -798,7 +800,7 @@ SRMHDState srmhd_hlld_jump(
 ) noexcept
 {
    return srmhd_state_add_scaled(
-      srmhd_state_add_scaled({}, wave_speed, state), -1.0, flux
+      srmhd_state_add_scaled({}, wave_speed, state), -1.0_rt, flux
    );
 }
 
@@ -815,32 +817,32 @@ SRMHDHLLDFastState srmhd_hlld_fast_state(
    SRMHDHLLDFastState result{};
    result.outer_speed = outer_speed;
    result.jump = srmhd_hlld_jump(input_state, input_flux, outer_speed);
-   if (!(total_pressure > 0.0) || !amrex::Math::isfinite(total_pressure)) {
+   if (!(total_pressure > 0.0_rt) || !amrex::Math::isfinite(total_pressure)) {
       return result;
    }
 
    const amrex::Real a = result.jump.momn
       - outer_speed * result.jump.energy
-      + total_pressure * (1.0 - outer_speed * outer_speed);
+      + total_pressure * (1.0_rt - outer_speed * outer_speed);
    const amrex::Real g = result.jump.bt1 * result.jump.bt1
       + result.jump.bt2 * result.jump.bt2;
    const amrex::Real c = result.jump.momt1 * result.jump.bt1
       + result.jump.momt2 * result.jump.bt2;
    const amrex::Real q = -a - g
       + normal_magnetic * normal_magnetic
-         * (1.0 - outer_speed * outer_speed);
+         * (1.0_rt - outer_speed * outer_speed);
    const amrex::Real x = normal_magnetic
          * (a * outer_speed * normal_magnetic + c)
       - (a + g) * (outer_speed * total_pressure + result.jump.energy);
    const amrex::Real algebra_scale = amrex::max(
-      1.0,
+      1.0_rt,
       amrex::max(
          amrex::Math::abs(a) + g,
          amrex::Math::abs(outer_speed * total_pressure + result.jump.energy)
       )
    );
    if (!amrex::Math::isfinite(x)
-       || amrex::Math::abs(x) <= 1.0e-14 * algebra_scale * algebra_scale) {
+       || amrex::Math::abs(x) <= 1.0e-14_rt * algebra_scale * algebra_scale) {
       return result;
    }
 
@@ -861,8 +863,8 @@ SRMHDHLLDFastState srmhd_hlld_fast_state(
    );
    const amrex::Real fast_denominator = outer_speed - result.velocity.n;
    if (!finite_srmhd_hlld_vector(result.velocity)
-       || !(velocity_squared < 1.0)
-       || amrex::Math::abs(fast_denominator) <= 1.0e-14) {
+       || !(velocity_squared < 1.0_rt)
+       || amrex::Math::abs(fast_denominator) <= 1.0e-14_rt) {
       return result;
    }
 
@@ -909,12 +911,12 @@ SRMHDHLLDFastState srmhd_hlld_fast_state(
       input_flux, outer_speed, result.state, input_state
    );
 
-   const amrex::Real normal_sign = normal_magnetic < 0.0 ? -1.0 : 1.0;
+   const amrex::Real normal_sign = normal_magnetic < 0.0_rt ? -1.0_rt : 1.0_rt;
    result.eta = eta_side * normal_sign * std::sqrt(result.total_enthalpy);
    const amrex::Real k_denominator = outer_speed * total_pressure
       + result.jump.energy + normal_magnetic * result.eta;
    if (!amrex::Math::isfinite(k_denominator)
-       || amrex::Math::abs(k_denominator) <= 1.0e-14 * algebra_scale) {
+       || amrex::Math::abs(k_denominator) <= 1.0e-14_rt * algebra_scale) {
       return result;
    }
    result.k = {
@@ -927,9 +929,9 @@ SRMHDHLLDFastState srmhd_hlld_fast_state(
    result.valid = finite_srmhd_state(result.state)
       && finite_srmhd_state(result.flux)
       && finite_srmhd_hlld_vector(result.k)
-      && result.state.dens > 0.0
-      && result.state.energy > 0.0
-      && amrex::Math::abs(result.alfven_speed) < 1.0;
+      && result.state.dens > 0.0_rt
+      && result.state.energy > 0.0_rt
+      && amrex::Math::abs(result.alfven_speed) < 1.0_rt;
    return result;
 }
 
@@ -941,7 +943,7 @@ SRMHDHLLDVector srmhd_hlld_contact_velocity(
 ) noexcept
 {
    const amrex::Real denominator = eta - srmhd_hlld_dot(k, magnetic);
-   const amrex::Real factor = (1.0 - srmhd_hlld_dot(k, k)) / denominator;
+   const amrex::Real factor = (1.0_rt - srmhd_hlld_dot(k, k)) / denominator;
    return {
       k.n - magnetic.n * factor,
       k.t1 - magnetic.t1 * factor,
@@ -963,17 +965,17 @@ SRMHDHLLDEvaluation srmhd_hlld_evaluate(
 {
    SRMHDHLLDEvaluation result{};
    result.fast_l = srmhd_hlld_fast_state(
-      state_l, flux_l, speed_l, normal_magnetic, total_pressure, -1.0
+      state_l, flux_l, speed_l, normal_magnetic, total_pressure, -1.0_rt
    );
    result.fast_r = srmhd_hlld_fast_state(
-      state_r, flux_r, speed_r, normal_magnetic, total_pressure, 1.0
+      state_r, flux_r, speed_r, normal_magnetic, total_pressure, 1.0_rt
    );
    if (!result.fast_l.valid || !result.fast_r.valid) {
       return result;
    }
    const amrex::Real delta_k = result.fast_r.k.n - result.fast_l.k.n;
    if (!amrex::Math::isfinite(delta_k)
-       || amrex::Math::abs(delta_k) <= 1.0e-14) {
+       || amrex::Math::abs(delta_k) <= 1.0e-14_rt) {
       return result;
    }
    result.contact_magnetic = {
@@ -1000,13 +1002,13 @@ SRMHDHLLDEvaluation srmhd_hlld_evaluate(
    const amrex::Real denominator_r = result.fast_r.eta
       - srmhd_hlld_dot(result.fast_r.k, result.contact_magnetic);
    const amrex::Real denominator_scale = amrex::max(
-      1.0,
+      1.0_rt,
       amrex::max(amrex::Math::abs(result.fast_l.eta),
                  amrex::Math::abs(result.fast_r.eta))
    );
    if (!finite_srmhd_hlld_vector(result.contact_magnetic)
-       || amrex::Math::abs(denominator_l) <= 1.0e-14 * denominator_scale
-       || amrex::Math::abs(denominator_r) <= 1.0e-14 * denominator_scale) {
+       || amrex::Math::abs(denominator_l) <= 1.0e-14_rt * denominator_scale
+       || amrex::Math::abs(denominator_r) <= 1.0e-14_rt * denominator_scale) {
       return result;
    }
    result.contact_velocity_l = srmhd_hlld_contact_velocity(
@@ -1026,8 +1028,8 @@ SRMHDHLLDEvaluation srmhd_hlld_evaluate(
    result.valid = finite_srmhd_hlld_vector(result.contact_velocity_l)
       && finite_srmhd_hlld_vector(result.contact_velocity_r)
       && amrex::Math::isfinite(result.residual)
-      && velocity_squared_l < 1.0
-      && velocity_squared_r < 1.0;
+      && velocity_squared_l < 1.0_rt
+      && velocity_squared_r < 1.0_rt;
    return result;
 }
 
@@ -1039,11 +1041,11 @@ bool srmhd_hlld_physical_solution(
    amrex::Real total_pressure
 ) noexcept
 {
-   if (!evaluation.valid || !(total_pressure > 0.0)
-       || amrex::Math::abs(evaluation.residual) > 1.0e-7) {
+   if (!evaluation.valid || !(total_pressure > 0.0_rt)
+       || amrex::Math::abs(evaluation.residual) > 1.0e-7_rt) {
       return false;
    }
-   const amrex::Real contact_speed = 0.5 * (
+   const amrex::Real contact_speed = 0.5_rt * (
       evaluation.contact_velocity_l.n + evaluation.contact_velocity_r.n
    );
    return evaluation.fast_l.total_enthalpy > total_pressure
@@ -1069,11 +1071,11 @@ amrex::Real srmhd_hlld_zero_normal_pressure(
    const amrex::Real linear = hll_state.energy - hll_flux.momn;
    const amrex::Real constant = hll_state.momn * hll_flux.energy
       - hll_flux.momn * hll_state.energy;
-   const amrex::Real discriminant = linear * linear - 4.0 * constant;
-   if (!(discriminant >= 0.0) || !amrex::Math::isfinite(discriminant)) {
-      return -1.0;
+   const amrex::Real discriminant = linear * linear - 4.0_rt * constant;
+   if (!(discriminant >= 0.0_rt) || !amrex::Math::isfinite(discriminant)) {
+      return -1.0_rt;
    }
-   return 0.5 * (-linear + std::sqrt(discriminant));
+   return 0.5_rt * (-linear + std::sqrt(discriminant));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_NO_INLINE inline
@@ -1105,21 +1107,21 @@ SRMHDHLLDSolution srmhd_hlld_pressure_solution(
    );
    amrex::Real pressure_guess = hllc.valid
       ? hllc.total_pressure
-      : 0.5 * (
+      : 0.5_rt * (
          srmhd_total_pressure(primitive_l) + srmhd_total_pressure(primitive_r)
       );
    const amrex::Real zero_normal_pressure = srmhd_hlld_zero_normal_pressure(
       hll_state, hll_flux
    );
-   if (zero_normal_pressure > 0.0
+   if (zero_normal_pressure > 0.0_rt
        && normal_magnetic * normal_magnetic
-          < 0.1 * amrex::max(pressure_guess, 1.0e-30)) {
+          < 0.1_rt * amrex::max(pressure_guess, 1.0e-30_rt)) {
       pressure_guess = zero_normal_pressure;
    }
    const amrex::Real pressure_scale = amrex::max(
-      1.0e-30, amrex::max(side_pressure_scale, pressure_guess)
+      1.0e-30_rt, amrex::max(side_pressure_scale, pressure_guess)
    );
-   const amrex::Real pressure_floor = 1.0e-12 * pressure_scale;
+   const amrex::Real pressure_floor = 1.0e-12_rt * pressure_scale;
    pressure_guess = amrex::max(pressure_floor, pressure_guess);
 
    SRMHDHLLDEvaluation current = srmhd_hlld_evaluate(
@@ -1132,7 +1134,7 @@ SRMHDHLLDSolution srmhd_hlld_pressure_solution(
       return {current, pressure_guess, true};
    }
    amrex::Real previous_pressure = amrex::max(
-      pressure_floor, pressure_guess * (1.0 - 1.0e-4)
+      pressure_floor, pressure_guess * (1.0_rt - 1.0e-4_rt)
    );
    SRMHDHLLDEvaluation previous = srmhd_hlld_evaluate(
       state_l, state_r, flux_l, flux_r, speed_l, speed_r,
@@ -1145,20 +1147,20 @@ SRMHDHLLDSolution srmhd_hlld_pressure_solution(
       const amrex::Real residual_difference = current.residual
          - previous.residual;
       const amrex::Real residual_scale = amrex::max(
-         1.0, amrex::max(amrex::Math::abs(current.residual),
+         1.0_rt, amrex::max(amrex::Math::abs(current.residual),
                          amrex::Math::abs(previous.residual))
       );
       if (amrex::Math::abs(residual_difference)
-          <= 1.0e-14 * residual_scale) {
+          <= 1.0e-14_rt * residual_scale) {
          break;
       }
       amrex::Real next_pressure = pressure_guess
          - current.residual * (pressure_guess - previous_pressure)
             / residual_difference;
       const amrex::Real lower_step = amrex::max(
-         pressure_floor, 0.2 * pressure_guess
+         pressure_floor, 0.2_rt * pressure_guess
       );
-      const amrex::Real upper_step = 5.0 * pressure_guess;
+      const amrex::Real upper_step = 5.0_rt * pressure_guess;
       next_pressure = amrex::max(
          lower_step, amrex::min(upper_step, next_pressure)
       );
@@ -1180,7 +1182,7 @@ SRMHDHLLDSolution srmhd_hlld_pressure_solution(
    // logarithmic bracket is attempted first so that a poor secant seed does
    // not turn an otherwise valid HLLD fan into that robust limit.
    amrex::Real scan_pressure = amrex::max(
-      pressure_floor, pressure_guess / 256.0
+      pressure_floor, pressure_guess / 256.0_rt
    );
    SRMHDHLLDEvaluation scan_previous{};
    amrex::Real scan_previous_pressure = scan_pressure;
@@ -1196,13 +1198,13 @@ SRMHDHLLDSolution srmhd_hlld_pressure_solution(
          return {scan_current, scan_pressure, true};
       }
       if (scan_current.valid && have_previous
-          && scan_current.residual * scan_previous.residual <= 0.0) {
+          && scan_current.residual * scan_previous.residual <= 0.0_rt) {
          amrex::Real bracket_l = scan_previous_pressure;
          amrex::Real bracket_r = scan_pressure;
          SRMHDHLLDEvaluation evaluation_l = scan_previous;
          SRMHDHLLDEvaluation evaluation_r = scan_current;
          for (int iteration = 0; iteration < 40; ++iteration) {
-            const amrex::Real midpoint = 0.5 * (bracket_l + bracket_r);
+            const amrex::Real midpoint = 0.5_rt * (bracket_l + bracket_r);
             const SRMHDHLLDEvaluation evaluation_mid = srmhd_hlld_evaluate(
                state_l, state_r, flux_l, flux_r, speed_l, speed_r,
                normal_magnetic, midpoint
@@ -1215,7 +1217,7 @@ SRMHDHLLDSolution srmhd_hlld_pressure_solution(
                 )) {
                return {evaluation_mid, midpoint, true};
             }
-            if (evaluation_l.residual * evaluation_mid.residual <= 0.0) {
+            if (evaluation_l.residual * evaluation_mid.residual <= 0.0_rt) {
                bracket_r = midpoint;
                evaluation_r = evaluation_mid;
             } else {
@@ -1223,7 +1225,7 @@ SRMHDHLLDSolution srmhd_hlld_pressure_solution(
                evaluation_l = evaluation_mid;
             }
             if (amrex::Math::abs(bracket_r - bracket_l)
-                <= 1.0e-10 * amrex::max(pressure_scale, midpoint)) {
+                <= 1.0e-10_rt * amrex::max(pressure_scale, midpoint)) {
                const SRMHDHLLDEvaluation& candidate =
                   amrex::Math::abs(evaluation_l.residual)
                      < amrex::Math::abs(evaluation_r.residual)
@@ -1246,7 +1248,7 @@ SRMHDHLLDSolution srmhd_hlld_pressure_solution(
          scan_previous_pressure = scan_pressure;
          have_previous = true;
       }
-      scan_pressure *= 2.0;
+      scan_pressure *= 2.0_rt;
    }
    return solution;
 }
@@ -1268,7 +1270,7 @@ SRMHDHLLDContactState srmhd_hlld_contact_state(
    SRMHDHLLDContactState result{};
    const amrex::Real denominator = fast.alfven_speed
       - contact_velocity.n;
-   if (amrex::Math::abs(denominator) <= 1.0e-14) {
+   if (amrex::Math::abs(denominator) <= 1.0e-14_rt) {
       return result;
    }
    result.state.dens = fast.state.dens
@@ -1298,8 +1300,8 @@ SRMHDHLLDContactState srmhd_hlld_contact_state(
    );
    result.valid = finite_srmhd_state(result.state)
       && finite_srmhd_state(result.flux)
-      && result.state.dens > 0.0
-      && result.state.energy > 0.0;
+      && result.state.dens > 0.0_rt
+      && result.state.energy > 0.0_rt;
    return result;
 }
 
@@ -1328,7 +1330,7 @@ SRMHDRiemannSample srmhd_hlld_sample(
    amrex::Real sample_speed
 ) noexcept
 {
-   const amrex::Real shared_bn = 0.5 * (primitive_l.b1 + primitive_r.b1);
+   const amrex::Real shared_bn = 0.5_rt * (primitive_l.b1 + primitive_r.b1);
    primitive_l.b1 = shared_bn;
    primitive_r.b1 = shared_bn;
    const SRMHDState state_l = srmhd_state_from_primitive(primitive_l);
@@ -1344,13 +1346,13 @@ SRMHDRiemannSample srmhd_hlld_sample(
    const amrex::Real speed_l = amrex::min(waves_l.minus, waves_r.minus);
    const amrex::Real speed_r = amrex::max(waves_l.plus, waves_r.plus);
    if (sample_speed <= speed_l) {
-      return {state_l, flux_l, 0.0, 0.0, false};
+      return {state_l, flux_l, 0.0_rt, 0.0_rt, false};
    }
    if (sample_speed >= speed_r) {
-      return {state_r, flux_r, 0.0, 0.0, false};
+      return {state_r, flux_r, 0.0_rt, 0.0_rt, false};
    }
    const amrex::Real magnetic_scale = amrex::max(
-      1.0,
+      1.0_rt,
       amrex::max(
          amrex::Math::abs(shared_bn),
          amrex::max(
@@ -1361,7 +1363,7 @@ SRMHDRiemannSample srmhd_hlld_sample(
          )
       )
    );
-   if (amrex::Math::abs(shared_bn) <= 1.0e-12 * magnetic_scale) {
+   if (amrex::Math::abs(shared_bn) <= 1.0e-12_rt * magnetic_scale) {
       return srmhd_hllc_sample(
          primitive_l, primitive_r, eos, sample_speed
       );
@@ -1390,7 +1392,7 @@ SRMHDRiemannSample srmhd_hlld_sample(
          state_l, state_r, flux_l, flux_r, speed_l, speed_r, sample_speed
       );
    }
-   const amrex::Real contact_speed = 0.5 * (
+   const amrex::Real contact_speed = 0.5_rt * (
       fan.contact_velocity_l.n + fan.contact_velocity_r.n
    );
    if (sample_speed <= fan.fast_l.alfven_speed) {
@@ -1472,7 +1474,7 @@ amrex::Real rmhd_face_magnetic_flux_component(
 ) noexcept
 {
    if (component == Direction) {
-      return 0.0;
+      return 0.0_rt;
    }
    const amrex::Real normal_scale = frame.normal_coordinate_scale;
    const amrex::Real normal_shift = rmhd_shift_component(metric, Direction);
@@ -1587,7 +1589,7 @@ RMHDRiemannFluxResult rmhd_hllc_flux(
       total_pressure_l, total_pressure_r
    );
    shock_stabilize = shock_stabilize
-      || (pressure_max > 0.0 && pressure_min < 0.5 * pressure_max);
+      || (pressure_max > 0.0_rt && pressure_min < 0.5_rt * pressure_max);
 #endif
    const SRMHDRiemannSample sample = srmhd_hllc_sample(
       local_l, local_r, eos, frame.interface_speed, shock_stabilize

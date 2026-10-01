@@ -16,6 +16,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct MappedPatchSourceTable {
    amrex::Vector<amrex::Long> offsets;
    amrex::Vector<amrex::Long> strides;
@@ -99,7 +101,7 @@ inline MappedPatchSourceTable make_mapped_patch_source_table(
    if (total_values > static_cast<amrex::Long>(std::numeric_limits<int>::max())) {
       amrex::Abort("mapped patch source table is too large for the current all-reduce prototype");
    }
-   table.values.assign(static_cast<std::size_t>(total_values), 0.0);
+   table.values.assign(static_cast<std::size_t>(total_values), 0.0_rt);
    table.valid.assign(static_cast<std::size_t>(total_cells), 0);
 
    for (amrex::MFIter mfi(state); mfi.isValid(); ++mfi) {
@@ -228,7 +230,7 @@ inline void fill_mapped_patch_state_ghosts(
             grid_patch,
             layout_patch,
             cell,
-            amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>{AMREX_D_DECL(0.5, 0.5, 0.5)}
+            amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>{AMREX_D_DECL(0.5_rt, 0.5_rt, 0.5_rt)}
          );
          const PatchCoordinate global = patch_local_to_global(grid_patch.map, local);
          const bool is_owned_valid_cell =

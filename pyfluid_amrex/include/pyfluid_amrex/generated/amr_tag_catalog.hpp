@@ -2,11 +2,14 @@
 #pragma once
 
 #include <AMReX_GpuQualifiers.H>
+#include <AMReX_REAL.H>
 
 #include <array>
 #include <string_view>
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 enum AmrTagPolicyCode : int {
    AmrTagNone = 0,
@@ -21,21 +24,21 @@ struct AmrTagPolicyInfo {
    std::string_view name;
    std::string_view label;
    std::string_view description;
-   double default_threshold;
+   amrex::Real default_threshold;
    bool density;
    bool pressure;
    bool velocity;
    bool magnetic;
    bool spacetime;
-   double density_floor_multiple;
+   amrex::Real density_floor_multiple;
 };
 
 inline constexpr std::array<AmrTagPolicyInfo, 5> AmrTagPolicyCatalog = {{
-   {AmrTagNone, "none", "No automatic tagging", "Disable state-based automatic AMR tagging.", 0.35, false, false, false, false, false, 0.0},
-   {AmrTagLohner, "lohner", "Broad flow Lohner", "Apply the legacy system-aware Lohner maximum to density, pressure, velocity, magnetic diagnostics, and stored conformal geometry.", 0.08, true, true, true, true, true, 0.0},
-   {AmrTagMatter, "matter", "Matter support", "Track density-supported matter without allowing atmosphere velocity or magnetization to drive refinement.", 0.08, true, false, false, false, false, 10.0},
-   {AmrTagSpacetime, "spacetime", "Spacetime geometry", "Track strong-field support through the magnitude of chi-1; intended for vacuum compact-object geometry without following outgoing gauge tails.", 0.15, false, false, false, false, true, 0.0},
-   {AmrTagCompactObject, "compact_object", "Compact object", "Track density-supported matter and strong-field chi-1 support for GRHD/GRMHD compact objects without following outgoing gauge tails.", 0.15, true, false, false, false, true, 10.0}
+   {AmrTagNone, "none", "No automatic tagging", "Disable state-based automatic AMR tagging.", 0.35_rt, false, false, false, false, false, 0.0_rt},
+   {AmrTagLohner, "lohner", "Broad flow Lohner", "Apply the legacy system-aware Lohner maximum to density, pressure, velocity, magnetic diagnostics, and stored conformal geometry.", 0.08_rt, true, true, true, true, true, 0.0_rt},
+   {AmrTagMatter, "matter", "Matter support", "Track density-supported matter without allowing atmosphere velocity or magnetization to drive refinement.", 0.08_rt, true, false, false, false, false, 10.0_rt},
+   {AmrTagSpacetime, "spacetime", "Spacetime geometry", "Track strong-field support through the magnitude of chi-1; intended for vacuum compact-object geometry without following outgoing gauge tails.", 0.15_rt, false, false, false, false, true, 0.0_rt},
+   {AmrTagCompactObject, "compact_object", "Compact object", "Track density-supported matter and strong-field chi-1 support for GRHD/GRMHD compact objects without following outgoing gauge tails.", 0.15_rt, true, false, false, false, true, 10000.0_rt}
 }};
 
 struct AmrTagPolicyFlags {
@@ -44,20 +47,20 @@ struct AmrTagPolicyFlags {
    bool velocity;
    bool magnetic;
    bool spacetime;
-   double default_threshold;
-   double density_floor_multiple;
+   amrex::Real default_threshold;
+   amrex::Real density_floor_multiple;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 constexpr AmrTagPolicyFlags amr_tag_policy_flags(int policy) noexcept
 {
    switch (policy) {
-   case AmrTagNone: return {false, false, false, false, false, 0.35, 0.0};
-   case AmrTagLohner: return {true, true, true, true, true, 0.08, 0.0};
-   case AmrTagMatter: return {true, false, false, false, false, 0.08, 10.0};
-   case AmrTagSpacetime: return {false, false, false, false, true, 0.15, 0.0};
-   case AmrTagCompactObject: return {true, false, false, false, true, 0.15, 10.0};
-   default: return {false, false, false, false, false, 0.35, 0.0};
+   case AmrTagNone: return {false, false, false, false, false, 0.35_rt, 0.0_rt};
+   case AmrTagLohner: return {true, true, true, true, true, 0.08_rt, 0.0_rt};
+   case AmrTagMatter: return {true, false, false, false, false, 0.08_rt, 10.0_rt};
+   case AmrTagSpacetime: return {false, false, false, false, true, 0.15_rt, 0.0_rt};
+   case AmrTagCompactObject: return {true, false, false, false, true, 0.15_rt, 10000.0_rt};
+   default: return {false, false, false, false, false, 0.35_rt, 0.0_rt};
    }
 }
 

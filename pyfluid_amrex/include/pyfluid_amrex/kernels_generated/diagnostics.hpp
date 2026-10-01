@@ -31,6 +31,16 @@ ConservedDiagnosticIntegrands conserved_diagnostic_integrands(amrex::Real rho, a
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+BaryonFluxIntegrands baryon_flux_integrands(amrex::Real densitized_density, amrex::Real velocity1, amrex::Real velocity2, amrex::Real velocity3, const SpacetimeMetric& metric) noexcept
+{
+   return {
+      densitized_density*(metric.lapse*velocity1 - metric.shift1),
+      densitized_density*(metric.lapse*velocity2 - metric.shift2),
+      densitized_density*(metric.lapse*velocity3 - metric.shift3)
+   };
+}
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 AdmFluxIntegrands adm_flux_integrands(const Z4cState& state, const Z4cSpatialDerivatives& derivatives, const Vector3& position) noexcept
 {
    const amrex::Real tmp0 = state.gamma_tilde12*state.gamma_tilde23 - state.gamma_tilde13*state.gamma_tilde22;
@@ -66,8 +76,8 @@ AdmFluxIntegrands adm_flux_integrands(const Z4cState& state, const Z4cSpatialDer
    const amrex::Real tmp30 = tmp12*tmp5;
    const amrex::Real tmp31 = tmp22*tmp27;
    const amrex::Real tmp32 = state.gamma_tilde11*tmp22 - state.gamma_tilde12*tmp6 + state.gamma_tilde13*tmp0;
-   const amrex::Real tmp33 = sqrt(state.gamma_tilde11*state.gamma_tilde22*state.gamma_tilde33 - state.gamma_tilde11*tmp21 + 2*state.gamma_tilde12*state.gamma_tilde13*state.gamma_tilde23 - state.gamma_tilde22*tmp26 - state.gamma_tilde33*tmp11)/pyfluid_amrex::constants::pi;
-   const amrex::Real tmp34 = (1.0_rt/16.0_rt)*tmp33/(sqrt(state.chi)*((tmp32)*(tmp32)));
+   const amrex::Real tmp33 = std::sqrt(state.gamma_tilde11*state.gamma_tilde22*state.gamma_tilde33 - state.gamma_tilde11*tmp21 + 2*state.gamma_tilde12*state.gamma_tilde13*state.gamma_tilde23 - state.gamma_tilde22*tmp26 - state.gamma_tilde33*tmp11)/pyfluid_amrex::constants::pi;
+   const amrex::Real tmp34 = (1.0_rt/16.0_rt)*tmp33/(std::sqrt(state.chi)*((tmp32)*(tmp32)));
    const amrex::Real tmp35 = -derivatives.d_gamma_tilde[0][1] + derivatives.d_gamma_tilde[1][0] - state.gamma_tilde11*tmp8 + state.gamma_tilde12*tmp3;
    const amrex::Real tmp36 = ((tmp14)*(tmp14));
    const amrex::Real tmp37 = -derivatives.d_gamma_tilde[1][2] + tmp18 + tmp24;
@@ -95,7 +105,7 @@ AdmFluxIntegrands adm_flux_integrands(const Z4cState& state, const Z4cSpatialDer
    const amrex::Real tmp59 = tmp22*tmp43;
    const amrex::Real tmp60 = tmp22*tmp46;
    const amrex::Real tmp61 = 1.0_rt/(tmp32);
-   const amrex::Real tmp62 = tmp33/pow(state.chi, 3.0_rt/2.0_rt);
+   const amrex::Real tmp62 = tmp33/std::pow(state.chi, 3.0_rt/2.0_rt);
    const amrex::Real tmp63 = (1.0_rt/4.0_rt)*tmp61*tmp62;
    const amrex::Real tmp64 = derivatives.d_lapse[1]*state.chi;
    const amrex::Real tmp65 = tmp57*tmp6;
@@ -332,7 +342,7 @@ AdmVolumeIntegrands adm_constraint_volume_integrands(const Z4cState& state, cons
    const amrex::Real tmp162 = tmp8*tmp92;
    const amrex::Real tmp163 = tmp152*tmp155;
    const amrex::Real tmp164 = tmp146*tmp8;
-   const amrex::Real tmp165 = sqrt(state.gamma_tilde11*state.gamma_tilde22*state.gamma_tilde33 - state.gamma_tilde11*tmp5 + 2*state.gamma_tilde12*state.gamma_tilde13*state.gamma_tilde23 - state.gamma_tilde22*tmp33 - state.gamma_tilde33*tmp20)/pow(state.chi, 3.0_rt/2.0_rt);
+   const amrex::Real tmp165 = std::sqrt(state.gamma_tilde11*state.gamma_tilde22*state.gamma_tilde33 - state.gamma_tilde11*tmp5 + 2*state.gamma_tilde12*state.gamma_tilde13*state.gamma_tilde23 - state.gamma_tilde22*tmp33 - state.gamma_tilde33*tmp20)/std::pow(state.chi, 3.0_rt/2.0_rt);
    const amrex::Real tmp166 = 1.0_rt/(tmp18);
    const amrex::Real tmp167 = state.chi*tmp166;
    const amrex::Real tmp168 = 2*tmp167;
@@ -598,8 +608,8 @@ Psi4Integrands psi4_from_weyl(const Z4cConformalMetric& metric, const WeylRadiat
    const amrex::Real tmp53 = metric.gamma11*tmp48 - metric.gamma13*tmp47*tmp51 + metric.gamma22*tmp50 + metric.gamma23*tmp49*tmp51 + metric.gamma33*tmp42 - tmp2*tmp52;
    const amrex::Real tmp54 = 1.0_rt/(tmp53);
    const amrex::Real tmp55 = (1.0_rt/2.0_rt)*tmp54;
-   const amrex::Real tmp56 = pow(tmp3, -1.0_rt/2.0_rt);
-   const amrex::Real tmp57 = tmp56/sqrt(tmp53);
+   const amrex::Real tmp56 = std::pow(tmp3, -1.0_rt/2.0_rt);
+   const amrex::Real tmp57 = tmp56/std::sqrt(tmp53);
    const amrex::Real tmp58 = tmp41*tmp57;
    const amrex::Real tmp59 = tmp57*weyl.magnetic12;
    const amrex::Real tmp60 = tmp41*tmp54;
@@ -615,7 +625,7 @@ Psi4Integrands psi4_from_weyl(const Z4cConformalMetric& metric, const WeylRadiat
    const amrex::Real tmp70 = metric.gamma11*tmp68 + metric.gamma13*tmp67*tmp69 + metric.gamma22*tmp66 - metric.gamma23*tmp65*tmp69 + metric.gamma33*tmp62 - tmp2*tmp65*tmp67;
    const amrex::Real tmp71 = 1.0_rt/(tmp70);
    const amrex::Real tmp72 = (1.0_rt/2.0_rt)*tmp71;
-   const amrex::Real tmp73 = pow(tmp70, -1.0_rt/2.0_rt);
+   const amrex::Real tmp73 = std::pow(tmp70, -1.0_rt/2.0_rt);
    const amrex::Real tmp74 = tmp56*tmp73;
    const amrex::Real tmp75 = position.x*tmp74;
    return {

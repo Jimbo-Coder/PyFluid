@@ -7766,3 +7766,3415 @@ I will always continue from the last cycle marked as `in_progress`.
   and after the atomic directory swap. Removing only the named pre-prune
   backup deleted 18,071 regenerable current files and recovered 15,374,096,545
   net bytes (14.32 GiB). [DONE]
+
+## Cycle 346 — Massive BH-disk dynamics and collapse-to-horizon staging (WIP)
+
+- Reassess the retained self-gravitating `q_Omega=1.85`,
+  `M_0/M_BH=1.010375` BH-disk endpoint after the 3D tile-ownership speedup.
+  Design a staged, full-3D evolution gate that resolves the filled-hole
+  interior, disk support, and causal outer-boundary margin independently;
+  retains arbitrary azimuthal `m` while optionally using only equatorial
+  reflection; and records matter modes, accretion proxies, constraints,
+  recovery/reset counts, AMR headroom, and live horizon quantities. Do not
+  call a fixed-XCTS run, a pre-boundary short run, or a filled-interior
+  high-spin failure a PPI result. The retained `768x160` aligned source has
+  `M_0/M_BH=1.010375`, disk support approximately `8.84--25.95 M`, and a valid
+  short Cartesian handoff, but it is effectively nonspinning and has only an
+  eight-step fixed-spacetime evolution. The clean aggressive target is a
+  source-radius-extended continuation through measured
+  `chi_H=0.3,0.45,0.6`, followed by an equatorial-half-domain evolved-Z4c
+  pilot. Neither a near-horizon baryon-flux diagnostic nor successful live
+  horizon tracking is required for the evolution operator to run; they gate a
+  quantitative accretion/horizon claim, not a robustness stress test. Proceed
+  through short bounded evolved-Z4c pilots and require finite accepted states,
+  zero atmosphere resets, controlled recovery counts, and exterior constraint
+  behavior. The loaded-XCTS finder incompatibility remains important because
+  it prevents direct horizon-conditioned diagnostics, while a catalog-owned
+  near-horizon baryon flux is needed only to close disk mass plus
+  accreted/outflow mass. Existing `C_m` diagnostics retain odd azimuthal modes
+  under equatorial reflection, but the maintained postprocessor still needs
+  normalized amplitude, unwrapped phase, growth rate, and pattern speed.
+  [WIP]
+- In parallel, audit relativistic stellar collapse as a short route to black-
+  hole formation. Start from an EoS-consistent unstable/perturbed TOV or RNS,
+  preserve coupled Z4c stage ownership and production atmosphere/C2P policy,
+  and make the apparent-horizon search capable of remaining armed before a
+  surface exists. Require formation-time, lapse/central-density, constraints,
+  baryon budget, AMR, and post-formation horizon evidence before calling the
+  path functional. Keep the existing Newtonian periodic density-cloud
+  collapse explicitly separate. Source-check the Font seed against the paper
+  and the local ETK/AsterX implementations: increase density by the radial
+  cosine profile, retain equilibrium pressure, and recompute specific internal
+  energy. Reject a strict polytrope for this off-cold state. Preserve both
+  `psi^6 rho` and specific internal energy through the static spherical XCTS
+  polish; the focused unit, corrected 128x32 source solve, and two-step stable
+  control pass with roundoff handoff errors and no fabricated horizon. The
+  automatic-AMR unstable pilot reaches `t=75` in 428 CFL-0.9 SSPRK3 steps.
+  It first finds an apparent horizon at `t=69.5024`, then re-finds it at
+  `t=72.6872`; final coordinate Christodoulou mass is `1.47136764`, maximum
+  density is `1.67522e-2`, minimum lapse is `1.29636e-2`, Hamiltonian L2 is
+  `1.26275e-3`, baryon drift is `5.59192e-4`, and recovery/reset counts remain
+  zero. The final checkpoint localizes lapse collapse: `alpha=0.01296` at the
+  origin, about `0.32` at the last measured mean horizon radius `1.8404`, and
+  `0.45--0.64` over coordinate radii `2.5--4.5`. This is singularity-avoiding
+  central freezing, but not proof that gauge/constraint error is confined;
+  horizon masks are output/AMR data and do not alter the evolution RHS.
+  Synchronized `regrid_int=4` produces exactly 107 scheduled attempts:
+  105 no-ops and two hierarchy changes. The spare level is activated only
+  after horizon formation, at step 404, so the pilot carries level 2 before
+  collapse and level 3 afterward. This establishes a functional bounded
+  formation path, not resolution convergence or long post-formation accuracy.
+  [WIP]
+- Generalize the surface-diagnostic boundary without coupling diagnostics to
+  the apparent-horizon solver. The shared sampled-S2 topology now serves both
+  the finder and `ParametricSurface::radial_graph`; the latter constructs the
+  oriented area vector of a star-shaped surface and passes sphere/deformed-
+  surface divergence-theorem checks. Runtime surface-integral catalog rows now
+  declare `diagnostic_surface` or `apparent_horizon`, and generated C++/JSON
+  preserve that target. Add the generated Valencia baryon current
+  `D(alpha v^i-beta^i)` and the opt-in `horizon_flux` scalar, positive inward.
+  A matched current-source full/octant static-trumpet four-step pair reproduces
+  AH area and irreducible mass to roundoff, while the flux differs by 0.83
+  percent at initialization and 0.24 percent at step 4. The one-step
+  post-collapse `t=75 -> 75.2` restart finds the horizon and reports finite
+  inward rate `2.33354e-3`, with zero runtime fallback/reset. [DONE]
+- The first collapse restart exposed a separate synchronization bug before any
+  flux evaluation: checkpoint load averaged fine conserved data onto a covered
+  coarse parent, but did not reapply final relativistic acceptance before CFL
+  recovery. The active-cell preflight correctly passed while the covered
+  level-0 cell `(1,1,1)` returned a nonfinite fluid signal frequency. Reapply
+  the same accepted-state projection used after runtime reflux/average-down;
+  retain explicit nonfinite fluid-versus-spacetime CFL error messages. The
+  corrected three-rank restart advances from step 428 to 431 and `t=75.6`
+  with zero runtime C2P fallback or atmosphere reset. This is bounded
+  post-formation continuation evidence, not long-term convergence. [DONE]
+- Complete focused and integration validation on the corrected tree. The
+  sampled/deformed-surface unit check, Python catalog validation, architecture
+  check, quick suite, focused 29-case black-hole validator, and all 49 standard
+  AMReX gates pass. The standard torus gate initially failed because it used
+  `matter_iterations > 100` as a proxy for entering the disk fixed-point
+  phase; the current coupled solve explicitly enters `phase=star_torus` and
+  converges in 57 matter iterations. Replace that performance-sensitive proxy
+  with the phase marker and retain the numerical torus checks. Remove only the
+  four failed collapse-restart probe directories; preserve the successful
+  `t=75.6` continuation and horizon-flux probes. [DONE]
+
+## Cycle 347 — Simulation-derived BH accretion movie and reflected-disk hardening (DONE)
+
+- Build a real AMReX black-hole accretion movie rather than an illustrative
+  animation. Preserve full x/y azimuthal extent and only use z-equatorial
+  reflection so the seeded `m=1` mode remains physical; render the positive
+  coordinate octant as a cutaway. Add a reusable renderer for hierarchy-aware
+  HDF5 `D` slices, AMR boxes, scalar/mode annotations, an exact Kerr horizon or
+  live AH surface when available, a horizon close-up, and compressed MP4/poster
+  output. The renderer ignores incomplete trailing TSV rows so it may inspect
+  an active run safely. Add one canonical input and document its scope. [DONE]
+- The first direct half-domain torus smoke exposed a real support-check bug:
+  the Cartesian physical-ID summarizer classified a configured reflection
+  plane as an outer physical boundary. Make only active, non-reflecting sides
+  participate in the boundary-matter rejection. Extend the generated
+  azimuthal density perturbation to disk equilibria using the configured disk
+  axis and an explicit positive reference radius; keep the Font radial collapse
+  seed stellar-only. The focused perturbation gate now includes a reflected
+  disk, resolves support, excites nonzero `C1`, and finishes with zero
+  recovery/reset. [DONE]
+- Stress the visually attractive `80x80x40` hierarchy with disk `dx=0.4 M`,
+  horizon `dx=0.2 M`, MP5/HLLE, live AH tracking, and CFL 0.9. The exact fixed
+  Kerr horizon stays invariant at coordinate Christodoulou mass `1.0004637`
+  and spin `0.4995022`, but near-horizon filled-hole atmosphere resets begin
+  at step 20 and total 5,482 by step 96 (`t=24.1928 M`). Preserve this as
+  interior/excision stress evidence, not the accepted movie source. The
+  promoted coarse-AMR branch instead reaches `t=62.3269 M` in 32 steps and
+  87.26 s with 221,184 cells, one level of headroom, zero fallback/reset, and
+  external mass residual `9.23e-13`. Its 32-frame movie overlays the exact
+  analytic `a/M=0.5` Kerr horizon because the live finder is under-resolved on
+  that coarse hierarchy. [DONE]
+- Regenerate the method catalog, compile all 1D/2D/3D production targets, pass
+  architecture and diff hygiene, pass the three-rank focused perturbation
+  regression, and pass all three quick AMReX gates. Preserve the broader dirty
+  Cycle-346 tree and make no commit. [DONE]
+
+## Cycle 348 — Official AMReX release check (DONE)
+
+- Run the repository-owned dependency manager in its read-only default mode
+  before considering an update. The manifest, clean managed source, active MPI
+  install, and latest official stable tag all resolve to AMReX 26.08 commit
+  `21cb5b49b49c7beeca22002535d79b3d8a609e95`; status is `current`. Do not run
+  the explicit `--update` path because no newer official stable release exists.
+  The check changed no dependency, build, install, or manifest state. [DONE]
+
+## Cycle 349 — Apple Metal backend scope audit (DONE)
+
+- Source-check the public WarpX Metal proof of concept and compare its actual
+  dependency patches with the pinned AMReX 26.08 source and PyFluid ownership.
+  The external tree contains 256,136 bytes across its retained AdaptiveCpp,
+  AMReX, and WarpX patch/replacement files. Its principal AMReX post-patch has
+  376 additions and 108 deletions; against 26.08 only two parser-file hunks
+  fail an otherwise read-only `git apply --check`. The proof pins AMReX 26.06,
+  builds AdaptiveCpp SYCL/Metal in single precision with MPI disabled, and
+  reports only a 1.39x warm-cache GPU speedup over 12 CPU threads for its
+  largest published M4 Pro `128^3` PIC case. [DONE]
+- Audit the local portability boundary without changing production code.
+  PyFluid has 358 `ParallelFor` call sites across 67 files and about 1,500
+  host/device annotations; generated physics, EoS, C2P, reconstruction, state
+  update, and much of initial-data materialization are already device-shaped.
+  It does not use AMReX particles, RNG, DenseBins, ParticleLocator, or Parser,
+  removing most WarpX-specific AMReX accommodations. The current CMake and
+  dependency manager intentionally require double-precision MPI, parallel
+  HDF5, and linear solvers and expose no GPU profile. A clean experiment should
+  therefore add a separate patched SYCL/Metal dependency and build profile,
+  preserve the existing CPU/HPC source path, and first validate a narrow
+  single-precision HD/MHD executable. Production GRMHD/Z4c remains gated by
+  single-precision recovery, constraints, AMR/CT, restart, and long-run
+  validation rather than by a broad physics rewrite. The current architecture
+  guard still passes; no backend, dependency, or executable was changed. [DONE]
+
+## Cycle 350 — M6 three-class CPU scheduling assessment (DONE)
+
+- Map the corrected M4 tile-ownership and power-attribution evidence onto the
+  official M6 topology without claiming unmeasured M6 scaling. M6 provides 2
+  super, 4 performance, and 6 efficiency cores. The current AMReX/OpenMP path
+  supplies enough coarse tile work for macOS to schedule all three classes,
+  just as corrected M4 runs use both P and E cores, but static equal work can
+  leave fast workers waiting on slower ones. Treat `1x12`, `2x6`, `3x4`, and
+  `2x5` as an M6 machine-profile sweep; retain static scheduling unless direct
+  power/throughput evidence reverses the measured M4 dynamic-scheduling loss.
+  No scheduler, machine profile, or production source was changed. [DONE]
+
+## Cycle 351 — Fine BH-accretion termination audit (DONE)
+
+- Recheck the retained `80x80x40`, ratio-2/2 fixed-Kerr accretion stress before
+  resuming black-hole work. It did not process-crash: AMReX finalized normally
+  after all 96 requested steps at `t=24.19275286 M`. The branch is nevertheless
+  unsuitable for production because its first filled-hole atmosphere reset
+  occurs at step 20 and the cumulative count reaches 5,482. C2P, reconstruction,
+  and Riemann fallback counters remain zero, while the exact fixed Kerr horizon
+  diagnostic remains invariant. Keep the failure classified as unresolved
+  complete-grid black-hole interior treatment exposed by fine resolution, not
+  an AH-finder, MPI, AMR, or process crash. [DONE]
+
+## Cycle 352 — Fine BH-accretion atmosphere-reset cause (DONE)
+
+- Trace the fine fixed-Kerr accretion reset through the production RHD recovery
+  path and retained scalar history. The reset is terminal C2P repair, not the
+  ordinary density floor: after the conservative state is floored and its
+  energy admissibility margin is repaired, an unsuccessful primitive recovery
+  replaces the cell with zero-velocity floor atmosphere. The run's maximum
+  Lorentz factor grows from `1.055` initially through `2.639`, `6.589`, and
+  `17.004` at steps 8/12/16 to `234.279` at step 20, exactly when the first
+  reset occurs; it later reaches O(10^3). The fixed horizon and outer disk stay
+  bounded. The active full-grid atmosphere is therefore being accelerated in
+  the deliberately nonphysical filled interior/transition (`r=0.5--1 M`,
+  inside the `r_+=1.866 M` Kerr horizon) until its conservative state leaves
+  the recoverable set. Fine resolution exposes this instead of diffusing it.
+  The retained log does not distinguish the final per-cell C2P status (for
+  example no bracket versus unphysical primitive), so do not claim that finer
+  subcategory without a focused instrumented rerun. [DONE]
+
+## Cycle 353 — Kerr interior-policy source audit (DONE)
+
+- Source-check the user's objection to the Minkowski Kerr fill. The code does
+  not make a discontinuous flat ball: over `r=0.5--1 M` for the retained
+  `a/M=0.5` case it uses a quintic C2 weight for lapse, shift, and `gamma_ij`,
+  then recomputes the inverse metric and determinant. It nevertheless assigns
+  `K_ij` by multiplying exact Kerr `K_ij` by the same weight; it neither derives
+  `K_ij` from the blended stationary geometry nor solves the constraints. Thus
+  the fill is a named turduckened finite-state control, but it is not a
+  production stationary interior for accretion. Retain exact Kerr exterior,
+  moving-puncture/trumpet, carefully geometry-consistent stuffing, and true
+  pure-outflow excision as distinct contracts. For the immediate fixed-Kerr
+  accretion target, prefer excision; a stationary-identity-consistent fill is a
+  useful bounded intermediate control, not a substitute for it. [DONE]
+
+## Cycle 354 — Black-hole interior taxonomy and COCAL BHT fill audit (DONE)
+
+- Source-check the local Hypatia COCAL `wip/cocal-id-bht` implementation and
+  the primary turduckening, moving-puncture/trumpet, and excision literature.
+  The local `smooth` and legacy `IDpar` paths do more than scalar smoothing:
+  they split `K_ij` into trace and trace-free parts, extrapolate/reproject the
+  trace-free part against the completed metric, damp `tr(K)` inward, and zero
+  interior hydro. The branch remains WIP and supplies comparison provenance,
+  not a constraint-solved or stationary-identity-complete interior. [DONE]
+- Record the durable design boundary as two evolution-domain families—true
+  pure-outflow excision and complete-grid moving punctures—with orthogonal
+  initial-slice/completion choices. Wormhole puncture and direct trumpet are
+  two slices of the puncture family; stuffing/turduckening completes exterior
+  fields on active cells and is neither puncture topology nor excision. Do not
+  create four template/product axes. No production source, generated catalog,
+  build, or runtime result changed in this cycle. [DONE]
+
+## Cycle 355 — Constraint projection versus black-hole filling (DONE)
+
+- Source-check whether a smooth BHT/Kerr fill can simply be made constraint
+  satisfying. It can seed a global CTT/CTTK/XCTS projection, but the elliptic
+  correction is nonlocal and generally changes the exterior solution and its
+  horizon, mass, and spin. Preserving a frozen exterior while correcting only
+  the interior is a genuine localized constraint-gluing problem, not the
+  existing target-grid polish. Record exterior-solve plus evolution excision
+  and complete-grid puncture/trumpet solve as the two ordinary
+  constraint-resolved production contracts. Retain trace-split turduckening as
+  an explicitly constraint-violating compatibility option; any future global
+  projection must produce and diagnose a new physical-ID solution. No
+  production source, build, or runtime result changed. [DONE]
+
+## Cycle 356 — Black-hole handoff-policy correction (DONE)
+
+- Correct the earlier mixed taxonomy against the current source. The XCTS
+  black-hole materializer first interpolates the saved exterior ADM solution
+  and only then applies the requested complete-grid fill before ADM-to-Z4c
+  conversion; the fill is not part of the exterior elliptic solve. Record the
+  three user-visible ID-to-evolution policies as excision,
+  puncture/direct-trumpet, and smooth fill. Keep `turduckening` only as a
+  literature synonym, not a fourth method or user-facing configuration. [DONE]
+- Keep fixed versus evolved spacetime orthogonal to interior handling. The
+  production goal is dynamically evolved, matter-coupled Z4c for every
+  applicable policy; fixed Kerr/Schwarzschild is a test-fluid/reference limit
+  whose agreement should be recovered as matter backreaction tends to zero.
+  No production source, build, or runtime result changed. [DONE]
+
+## Cycle 357 — Smooth-fill settling and interior-matter reference audit (DONE)
+
+- Clarify the operation after smooth ID handoff. Convert the completed ADM
+  fields to regular Z4c variables and evolve with the selected moving-puncture
+  gauge and Z4c constraint damping; do not insert an implicit global elliptic
+  re-solve or separate undocumented relaxation method. Require fill-radius/
+  fill-method and resolution independence in exterior constraints, horizon
+  area/mass/spin, lapse, and exterior matter. Constraint leakage outside the
+  horizon is a measured failure; coordinate horizon shrink/growth alone is a
+  gauge effect and cannot establish physical stability. [DONE]
+- Source-check local production-code matter handling. AsterX
+  `Con2PrimFactory` exposes disabled-by-default lapse-threshold caps for
+  density, specific internal energy, and `Wv` after black-hole-interior C2P
+  trouble. ETK GRHydro separately reduces reconstruction and marks trivial
+  Riemann problems against a hydro-excision mask. Retain this only as
+  provenance for a future optional, horizon-contained matter stabilizer whose
+  interventions are counted and whose exterior independence is tested. No
+  production source, build, or runtime result changed. [DONE]
+
+## Cycle 358 — Hydro-excision baryon-budget boundary (DONE)
+
+- Confirm that hydro excision intentionally removes accreted baryons from the
+  active numerical volume. Conservation is an exterior-domain balance: active
+  rest mass plus time-integrated inner-boundary accretion plus outer-boundary
+  outflow, with signs fixed consistently. A fixed excision surface can use its
+  ordinary Valencia current flux. The existing apparent-horizon diagnostic is
+  only the instantaneous current through one coordinate two-surface; an exact
+  budget for a moving horizon requires the already-documented surface-velocity
+  world-tube term. Arbitrary lapse-triggered caps/resets are not conservative
+  excision and must remain counted interior interventions. No production
+  source, build, or runtime result changed. [DONE]
+
+## Cycle 359 — Coupled accretion conservation contract (DONE)
+
+- Separate the physical budgets for dynamic black-hole accretion. Baryon
+  current conservation accounts for rest mass leaving the exterior domain,
+  while dynamical-horizon area, Christodoulou mass, and spin respond to the
+  total matter, electromagnetic, angular-momentum, and gravitational fluxes;
+  accreted baryon mass is not numerically equal to black-hole mass growth.
+  Require a conservative inner/outer exterior baryon balance, pure-outflow
+  excision characteristics, convergent horizon response, and exterior
+  constraint independence. Fixed-background accretion is a test-fluid limit
+  and cannot close the coupled geometric energy budget. No production source,
+  build, or runtime result changed. [DONE]
+
+## Cycle 360 — Horizon-aware C2P accounting audit (DONE)
+
+- Trace the current production recovery path. A successful RMHD alternate C2P
+  attempt is a fallback recovery of the same evolved conserved state. A
+  terminal RHD/RMHD failure instead replaces that cell with atmosphere
+  conserved variables. Counts are reduced globally, but neither the recovery
+  kernel nor its counters consume the apparent-horizon/excision mask. Thus the
+  retained fine accretion resets are known after analysis to lie inside the
+  filled hole, yet they remain nonconservative resets rather than flux-owned
+  hydro excision. [DONE]
+- Record the proper ownership boundary: true excision makes interior cells
+  inactive so C2P cannot fail there and an inner conservative flux closes the
+  exterior baryon budget. A future complete-grid puncture/smooth-fill matter
+  stabilizer may classify strictly nested interior interventions separately,
+  but production acceptance still requires zero exterior resets and exterior
+  independence. No production source, build, or runtime result changed. [DONE]
+
+## Cycle 361 — Black-hole interior hydro stabilization policy (DONE)
+
+- Source-check complete-grid and excised production-code behavior. Literal
+  time-freezing of a stale interior hydro state is not the clean shared
+  contract. GRHydro-style true hydro excision omits interior C2P/Riemann work
+  and lowers or extrapolates reconstruction at the mask boundary;
+  IllinoisGRMHD and AsterX-style complete-grid evolution instead use
+  deep-interior primitive bounds such as density/internal-energy or pressure
+  ceilings and a Lorentz-factor ceiling, followed by consistent primitive-to-
+  conserved recomputation. Magnetized complete-grid runs also need an explicit
+  magnetization policy because PyFluid's present terminal RMHD reset preserves
+  `B` while replacing the fluid with atmosphere, which can make `b^2/(rho h)`
+  worse. Retain two runtime owners rather than template products: bounded
+  complete-grid matter for puncture/smooth-fill evolution, and inactive-cell
+  pure-outflow hydro excision. No production source, build, or runtime result
+  changed. [DONE]
+
+## Cycle 362 — Production black-hole interior evolution policies (DONE)
+
+- Implement a single runtime-selected matter-interior contract, orthogonal to
+  ID geometry and fixed/evolved spacetime: ordinary full-grid evolution,
+  bounded complete-grid matter for smooth fill or puncture/trumpet, and true
+  inactive-cell pure-outflow hydro excision. Keep all choices on the existing
+  RHD/RMHD kernels without a new template product axis. Count strictly interior
+  bounds/resets separately from exterior C2P failures and retain canonical CT
+  face fields. `spacetime.black_hole_matter` now selects `evolve`, `bounded`,
+  or `excision`; smooth/puncture bounded matter recomputes EoS-consistent
+  conserved variables, and fixed-Kerr excision owns one-sided diode fluxes,
+  zero interior RHS/C2P, active diagnostics/AMR/CFL masks, and the inner
+  conservation ledger. [DONE]
+- Validate supported combinations explicitly. Compare matched short black-hole
+  and accretion runs by throughput, exterior recovery failures, exterior
+  constraints, and horizon mass/spin/area rather than coordinate radius alone.
+  Do not enable evolved-spacetime excision until its Z4c one-sided boundary and
+  stencil ownership are complete. The matched `32^3`, `a/M=0.5`, CFL-0.9
+  fixed controls give three-repeat medians `0.309/0.305` Mcells/s for
+  bounded/excised RHD and `3.20/3.37 M/s`; the masked CFL removed the
+  inactive-atmosphere restriction.
+  RHD/RMHD excision close baryon mass to `2.6e-16/6.9e-17` relative, RMHD+CT
+  has `divB_L1=8.45e-19`, and all recovery/reset counters are zero. A forced
+  one-step density ceiling records 560 interior bounds and zero resets. With
+  per-step finding, fixed-excision area/mass change `2.53e-5/1.13e-5`
+  relative; smooth evolved Kerr changes `2.68/1.18` percent by `t=0.237`, and
+  the 16-step trumpet ends with `0.13` percent area error at `t=1.390`.
+  Evolved-Z4c excision fails configuration honestly. [DONE]
+- Harden the integration boundary. The full `pyfluid_amrex_production` target
+  links in 1D/2D/3D and its unchanged rebuild is `0.81 s`; the AMReX quick
+  suite passes 3/3. The standard performance probe remains within its accepted
+  baselines: hydro 2D/3D ratios `0.90/0.97`, 3D WENO-Z/HLLC/RK4 `0.99`, and
+  RMHD 1D `0.98`. The focused evolved-excision configuration rejection passes,
+  `validate_black_hole.py` no longer expects the obsolete reserved-excision
+  message, and horizon-disabled trumpet artifact controls explicitly select
+  ordinary full-grid matter. [DONE]
+
+## Cycle 363 — AMR/subcycling black-hole excision ownership (DONE)
+
+- Exercise fixed-Kerr true matter excision on a seeded two-level hierarchy
+  with ratio-2 refinement, reflux, average-down, and spatial subcycling. The
+  first run exposed an initial-order assertion: `InitFromScratch` requests
+  refinement tags before the step-zero apparent-horizon surface and mask
+  exist. Preserve ordinary initial hierarchy seeding in that pre-surface
+  phase; the startup owner still finds the horizon before matter projection,
+  preflight, CFL evaluation, or evolution, and all runtime regrids consume the
+  tracked mask. [DONE]
+- Add a permanent focused regression that forces a runtime fine-level remake
+  from 110,592 to 32,768 cells while ratio-2 spatial subcycling is active. It
+  passes three coarse steps at CFL 0.9 with two regrid attempts, one modified
+  level, fine/coarse step counts 6/3, exterior baryon residual `4.86e-17`,
+  coordinate-energy/source residual `3.14e-4`, and zero C2P fallback,
+  atmosphere reset, interior bound, or interior reset. The all-dimension
+  production target links after the ownership fix; the validation tool
+  compiles, diff hygiene passes, and the final quick AMReX suite passes 3/3.
+  [DONE]
+
+## Cycle 364 — Black-hole accretion production-readiness pass (DONE)
+
+- Audit the completed interior-policy matrix, remove or consolidate any
+  duplicated runtime ownership, and distinguish fixed-background true matter
+  excision from complete-grid evolved-Z4c puncture/trumpet or smooth-fill
+  evolution. Exercise actual accretion through the strongest applicable fixed
+  and dynamical controls before promoting a longer run. Preserve the broader
+  dirty development tree and do not claim evolved-spacetime excision. [DONE]
+- The first solve-only q-power excision artifact exposed the matching
+  pre-horizon ordering in valid-cell reductions: direct equilibrium-ID
+  summaries run before the mandatory step-zero surface exists. Retain complete
+  hierarchy ownership only for that pre-surface bookkeeping phase; startup
+  must still find the surface before projection/preflight/evolution, and a
+  failed excision search remains fatal. [DONE]
+- The first subcycled changed-grid disk probe exposed `7.21e-5` of unowned
+  baryon mass on the first coarse step, while a matched non-subcycled step
+  closed to `8.36e-18`. A diagnostic pass showed 16 density-floor projections
+  rather than a reflux defect. The setup had
+  `initial_refine_fixed_levels=2`, which deliberately suppressed automatic
+  tags and left the torus surface at `dx=4`. Treat the near-hole box as a seed
+  (`fixed_levels=0`) so it is unioned with compact-object matter tagging: the
+  same CFL-0.9 subcycled step grows from 98,304 to 196,608 layout cells, uses
+  zero recovery/reset, and closes the baryon ledger to `5.94e-18`. Add the
+  seed-versus-complete-hierarchy convention to infrastructure documentation
+  and document it alongside the loaded-artifact AMR contract. [DONE]
+- Preserve the established diagnostic semantics: ordinary density-floor
+  enforcement is visible through the external conservation ledger, while an
+  atmosphere reset means failed primitive recovery was replaced by atmosphere.
+  A temporary broader counter correctly exposed the under-resolved run but
+  also relabeled valid power-law-atmosphere ID and a complete-grid XCTS control;
+  remove that overreach rather than weakening their clean-recovery gates. The
+  existing failed-C2P and unique-valid-cell reset controls still pass. [DONE]
+- Promote the maintained q-power artifact/evolution and equatorial movie input
+  to fixed-Kerr matter excision with live horizons. The regenerated compressed
+  artifact is 99,089,783 bytes. The full 24-step ratio-4/2 run reaches
+  `t=52.489 M`, adapts from 196,608 to 409,600 cells, measures horizon baryon
+  flux `3.10e-9 -> 4.92e-8`, changes horizon area/Kerr mass by
+  `2.53e-5/1.13e-5` relative, and closes exterior baryon mass to `1.86e-13`.
+  It has no C2P fallback, atmosphere reset, or interior intervention; its small
+  final ledger residual bounds ordinary floor enforcement. It is a functional
+  dynamics control rather than a long self-gravitating endpoint. A one-step equatorial
+  reflection/excision smoke halves the initial layout to 98,304 cells, has
+  zero recovery/reset, and closes mass to `6.97e-18`. [DONE]
+- Final integration checks pass: all-dimension production target, relativistic
+  interpolation/reset unit control, Python syntax and diff hygiene, the
+  standard equilibrium-torus/ID suite, and the AMReX quick suite (3/3).
+  Standard performance remains within baselines:
+  hydro 2D/3D ratios `0.90/0.98`, 3D WENO-Z/HLLC/RK4 `0.99`, and RMHD 1D
+  `0.99`. Preserve the broader dirty tree and leave evolved-Z4c excision and a
+  long self-gravitating accretion run as explicit open work. [DONE]
+
+## Cycle 365 — Long high-resolution excised BH accretion control (DONE)
+
+- Build a restartable, full-azimuth/equatorially reflected fixed-Kerr
+  accretion run that retains true matter excision, live horizon diagnostics,
+  CFL 0.9, spatial AMR subcycling, and atmosphere-excluded global matter modes.
+  Resolve the disk at `dx=0.5 M` and the horizon seed at `dx=0.25 M` without
+  returning to the old uniformly expensive `80x80x40` hierarchy; keep the
+  outer boundary at `64 M` and require zero exterior C2P repair. [DONE]
+  The first launch failed before state initialization because the proposed
+  equatorial-half `40x40x20` base was not divisible by blocking factor 8. A
+  blocking-factor-4 retry was then rejected by the intended proper-nesting
+  guard for three ghost cells on the deep coupled-conservative hierarchy.
+  Use an isotropic `48x48x24` base with blocking factor 8; both failures were
+  pre-evolution input/topology rejections, not solver failures or fallbacks.
+  [DONE]
+  The first five-step MP5/HLLE probe reached 1,801,728 cells after regridding
+  with no C2P fallback/reset, but carried a one-time unowned mass residual
+  `1.24e-7`; its step-zero AH area was 3.0 percent low. An otherwise identical
+  one-step PWL/HLL ablation reduced the mass residual to `8.59e-10`, proving
+  that MP5 surface flooring dominates that discrepancy, while reproducing the
+  same finder bias. Use PWL/HLL for this sharp disk-atmosphere interface.
+  Tightening the expansion tolerance by ten did not remove the AH bias. [DONE]
+  Re-evaluate analytic non-Minkowski fixed spacetime on the target hierarchy
+  after portable-artifact load, before reconstructing conserved fluid state.
+  This makes the stored geometry used by AH/output agree with the exact fixed
+  metric used by Valencia evolution: the strict-finder Kerr mass changes from
+  `0.98666` to `0.99981`. The `1/3 M` disk, `1/6 M` horizon probe expands to
+  1.80 million cells and is too costly for the requested local long run.
+  Select a still-twofold-improved `0.5/0.25 M` disk/horizon work-precision
+  point with the same `64 M` outer boundary. [DONE]
+- Extend the simulation-derived renderer to annotate both `|C1|/C0` and
+  `|C2|/C0` and emit a compact mode/accretion diagnostic history alongside the
+  density/horizon/AMR movie. Validate the plot against raw `multipoles.tsv`
+  rather than recomputing the runtime volume integrals from output fields.
+  [DONE]
+- Run through a meaningful fraction of the disk orbital time, inspect the
+  conservation ledger, horizon flux, mode amplitudes, AMR headroom, recovery
+  counters, throughput, and output footprint, then render and retain the
+  resulting movie/poster/diagnostic plot. Do not describe fixed-Kerr matter
+  dynamics as evolved-spacetime black-hole growth. [DONE]
+- Account ordinary floor projections at their actual ownership points:
+  accepted-state projection, RK-weighted stage-input projection, and
+  post-reflux projection. The L3 spatial-subcycling baryon residual improves
+  from `4.16e-9` to `9.33e-11`; checkpoint-continuation segments close at
+  roundoff (`~1e-17`) without changing the evolved solution. Fixed-spacetime
+  GF output is now written once per process segment instead of repeating the
+  unchanged 22-component geometry at every fluid frame. [DONE]
+- The original `compact_object` density support cutoff of `10 rho_floor`
+  followed a numerical atmosphere halo around `rho~1e-11`, driving requests
+  up to 3.94 million L2 cells. Change only the compact-object preset to
+  `10^4 rho_floor` (about 0.4 percent of this disk's peak); retain the broader
+  `matter` preset at ten. An exact checkpoint A/B confirms the runaway is
+  removed. The production hierarchy derefines to 299,008 cells with disk
+  `dx=0.5 M`, horizon seed `dx=0.25 M`, and 6.64 percent of its cell budget.
+  The `t=100 M` control passes scalar validation with zero C2P fallback,
+  atmosphere reset, interior bound, or interior reset. [DONE]
+- Normalize time by the fixed initial orbital period at the unperturbed
+  physical-ID density maximum. Read the actual saved sample
+  `(-13.5,13.5,-0.5)`, `rho=2.6612619564225783e-6`, and transform its saved
+  Valencia velocity using the exact Kerr lapse/shift:
+  `Omega=(alpha*v-beta).(axis cross position)/|axis cross position|^2`.
+  This gives `Omega_c=0.011914844115734827`, `P_c=527.3409577286847 M`, with
+  noncircular transport residual below `3e-17`. Preserve this provenance in
+  run-local `orbital_normalization.tsv`; the movie reader consumes it and
+  plots `t/P_c`, while retaining `t/M` on frames. Thus `t=100 M` was only
+  0.18963 orbits; extend to `t=550 M=1.04297 P_c`. [DONE]
+- The off-cadence step-46 restart exposed two startup edges. Successful C2P
+  inversions agreed in conserved variables to `2.16e-12` but differed by
+  `1.23e-7` in primitive relative error; split the conserved `1e-7` and
+  primitive `1e-6` preflight thresholds rather than weakening conserved
+  acceptance. A restored horizon file is only a search seed, so force one
+  enabled-horizon refresh at startup even if the checkpoint step is off the
+  search cadence. Runtime cadence and the disabled-horizon path are unchanged.
+  The continuation passes both startup gates. The permanent focused regression
+  restarts step 1 with `find_int=4`, refreshes the surface, preserves scalar
+  steps `[0,1,2]`, and has zero recovery/reset with a baryon-ledger residual
+  `2.56e-16`. The conserved threshold remains `1e-7`; both RHD and RMHD use
+  the separate primitive threshold. [DONE]
+- The original 2400-second launcher cap was too short. Stop the exact MPI
+  launcher after the complete step-192 checkpoint (`t=363.235101 M`), retain
+  the segment logs/raw histories under `restart_segments/through_step00192`,
+  and align canonical histories to their last fully flushed common step 188.
+  Restart from step 192 without an artificial wall cap; the solver re-emits
+  the initial checkpoint diagnostics. A few uncheckpointed steps are replayed,
+  and no saved checkpoint is removed. The continuation completes at step 300,
+  `t=550 M`; the maintained source input is restored to a clean start from
+  physical ID, while run-local `run.in` records the actual final restart.
+  [DONE]
+- Final scalar validation passes the explicit open-boundary policy. Across
+  retained history, the maximum normalized baryon/coordinate-energy ledger
+  residuals are `9.33e-11/3.07e-4`; the final restart segment's signed baryon
+  residual is `-2.97e-16`. Final recorded hierarchy size is 501,760 cells,
+  11.15 percent of the total budget, with active level 3. This is a deliberate
+  resolution-limited run (disk `min_feature_length=0.5 M` and a level-3 horizon
+  seed), not an AMR error-convergence gate with unused level headroom. There
+  are zero C2P fallback, atmosphere reset, interior bound/reset, or
+  reconstruction-correction events. Final-segment throughput is
+  `0.2075 Mcells/s`, `0.1128 M/s`; total output footprint is about 2.7 GB.
+  [DONE]
+- The atmosphere-excluded modes give `|C1|/C0: 0.007488 -> 0.005299` and
+  final `|C2|/C0=1.73454e-4`; `C0` ends 1.21483 percent below its initial
+  value. Its late upturn is accompanied by measured net boundary influx, with
+  zero final-segment mass source; do not attribute it to hidden atmosphere
+  resets or claim isolated-disk/PPI convergence. The fixed horizon stays
+  invariant to finder precision. Full evolved-spacetime/self-gravitating
+  accretion, especially evolved-Z4c excision, remains open rather than silently
+  substituted by this fixed-Kerr control. [DONE]
+- Rendered and visually checked the retained movie, poster, and mode/accretion
+  plot in `runs/current/black_hole_disk/bh_accretion_long_excision/`.
+  `bh_accretion_long_excision.mp4` is H.264, 2040x1350, 56 frames, 9.33 seconds,
+  and 1,082,020 bytes. Frames carry both `t/M` and `t/P_c`; the history plot
+  uses `t/P_c` and the fixed reference period. Output cadence differs across
+  continuation segments, so playback is by saved frame, not uniform physical
+  time. Temporary render frames were removed by the renderer after encoding;
+  snapshots/checkpoints and the earlier raw-history backup are retained.
+  [DONE]
+- Integration checks pass: all-dimension production target, architecture
+  check, focused off-cadence restart, Python syntax/diff hygiene, and the
+  AMReX quick suite (3/3). The unchanged integration target takes `0.61 s`
+  with zero compiler calls; this is a no-op rebuild, not a cold compile or a
+  compiler-cache throughput measurement. [DONE]
+- The standard three-rank performance probe passes all four cases without
+  `--allow-warn`: hydro 2D/3D baseline ratios `0.938/1.003`, 3D
+  WENO-Z/HLLC/RK4 `0.997`, and RMHD 1D `0.991`. Results are retained in
+  `runs/current/pyfluid_amrex_performance/results.tsv` and the rolling
+  performance history. [DONE]
+
+## Cycle 366 — Evolved-spacetime excision and outer-boundary diagnosis (short-run fixes DONE; long-run validation PENDING)
+
+- User requests completing evolved-spacetime excision and asks what the
+  outer-boundary issue actually is. Audit the Z4c stencil, dissipation,
+  centering-transfer, AMR, and characteristic ownership before removing the
+  current fixed-background restriction. Preserve existing full-grid and
+  fixed-background paths. Do not label a mask-only change complete. [WIP]
+- The completed disk run used extrapolating `outflow`, not a no-inflow
+  boundary. Separately, the shared relativistic `diode` implementation clips
+  the sign of Eulerian velocity `v` rather than coordinate transport
+  `alpha*v-beta`; it can therefore admit mass even when Eulerian normal
+  velocity is zero. This is source-checked in `relativistic_boundary.hpp`,
+  but did not cause the earlier run because that run selected `outflow`.
+  Asked whether the user also wants this separate bug fixed; continue the
+  requested spacetime-excision implementation meanwhile. [WIP]
+- Added independently generated one-sided first/second/mixed stencils and
+  factored `-D^T W D` KO dissipation for an inactive domain, keeping the
+  ordinary generated differential header byte-identical. Polynomial checks
+  and poisoned-interior/nonpositive-dissipation checks pass before the
+  shift-advection test. The first test build exposed missing AMReX include
+  prerequisites in the new standalone consumer; include them explicitly.
+  [WIP]
+- Found a pre-existing Z4c shift-advection sign error: the generated equations
+  use `+beta*d_i u`, but the derivative selector treated `beta` as the
+  transport velocity rather than `-beta`. The isolated three-rank test gives
+  positive energy production `+102.4` for an order-2 Nyquist mode at
+  `beta=-0.4`; higher orders share the same selector. AthenaK's generated
+  `src/utils/finite_diff.hpp::Lx` instead uses backward derivatives for
+  negative beta and forward for positive beta. Correct the shared Z4c
+  derivative owner, not the generic advection stencil. Revalidate old
+  strong-shift/gauge conclusions after this fix; do not assume it explains
+  every earlier failure. [WIP]
+- The corrected shift-advection test damps Nyquist modes for orders 2/4/6/8
+  and both shift signs. A 16-step CFL-0.9 filled-Kerr evolution passes with
+  no C2P fallback/reset. The initial production rebuild was incremental
+  (8.81 s, 18 misses), not a cold compile. [DONE]
+- Added generated boundary stencils, per-direction/pair exterior stencil
+  selection, and masked negative-semidefinite KO. Complete RK4 shifted-wave
+  tests give peak errors 1.928e-3 -> 1.313e-4 on 64/128 points; a circular
+  cut with manufactured forcing gives 1.130e-4 -> 7.060e-6 on 32/64 points.
+  Poisoned-interior centering transfers and nodal ratio-2/4 refinement retain
+  cubic exactness on all exterior points. These are operator/transfer tests,
+  not long nonlinear Z4c validation. [DONE]
+- Evolved excision now routes the existing fill radius into one fixed
+  coordinate spherical worldtube shared by matter and geometry. Active
+  derivative/KO/centering/nodal-interpolation stencils avoid inactive data;
+  inactive Z4c RHS is zero. Initialization recomputes contracted connections
+  with the same closure. Live horizon containment and incoming physical/gauge
+  characteristic checks abort invalid configurations. This is not a moving
+  excision-boundary controller. [WIP]
+- A coarse dx=0.5 fully coupled a=0.5 harmonic-lapse/frozen-shift run reaches
+  four steps (t=0.6) without C2P/reset. The original all-orthant closure then
+  hits its outflow guard; preserving safe centered tangential stencils delays
+  failure to the horizon search at step 16 (t=2.4), and restores symmetry much
+  better. Do not call this long-run stable. A dx=0.125 equatorially reflected
+  domain [-4,4]x[-4,4]x[0,4] reaches 16 steps, t=0.6, with zero recovery/reset;
+  AH area changes 46.94165 -> 46.74775 (~0.41 percent). Its outer-domain
+  constraint norm is not comparable to the wider coarse box and is not a
+  convergence claim. The first reflected launch used wrong ad-hoc bc_lo/hi
+  names; corrected to the existing bc_zlo=symmetry parameter. [DONE]
+- Retain the baryon flux ledger for evolving geometry, with a catalog-owned
+  external_mass_budget_valid flag separate from the existing joint-energy
+  validity flag. Evolving geometry invalidates the fluid-only energy closure,
+  not densitized baryon conservation. Shared reporting/validation honor both
+  flags with backward compatibility. Excision checkpoint loads now require
+  matching interior/matter/radius metadata. Integration and AMR/restart tests
+  are still in progress. All-dimension incremental build: 69.43 s, 103
+  misses, zero cache hits. [WIP]
+- Coupled hydro baryon control, off-cadence restart, and AMR/subcycling now
+  pass. The latter remakes 131,072 fine cells to 55,296 and has maximum
+  relative mass-ledger error 2.02e-17; restart reaches steps [0,1,2] with
+  maximum error 3.43e-17. All recovery/reset/interior intervention counts are
+  zero. Incoming-gauge rejection passes. These results precede the final
+  fluid-face stencil tightening and will be rerun. [DONE]
+- The first nonzero-B coupled test failed at step one. Debug-poison tracing
+  located the first NaNs in primitive-cache cell (16,18,0), strictly inside
+  the cut. Projection C2P was masked but cache C2P was not. Zero-B CT passed.
+  Cache ownership now supplies finite inactive scratch without C2P or
+  conserved-state edits, retaining canonical magnetic storage. Four magnetic
+  steps then pass with zero recovery/reset and baryon error below 4.1e-17.
+  Uniform physical B initially has nonzero densitized divergence on this
+  curved slice; CT preserves it to roundoff. Label this a preservation
+  control, not divergence-free magnetic equilibrium validation. [DONE]
+- Audit also found fluid reconstruction and cell-to-face metric interpolation
+  could still sample inactive storage. Both now use the shared cut: wider
+  fluid traces reduce to PWC near it, metric interpolation is one-sided, and
+  candidate/advanced Riemann paths receive the same geometry. Poisoned
+  interior face-metric cubic-exactness tests pass in all three directions.
+  The first 44-object 3D rebuild took 305.99 s, dominated by heavily inlined
+  advanced RMHD flux code. Factor the excision-only closure into a shared
+  no-inline routine (same device-compatible header owner, no CUDA RDC or
+  new template axis), and remeasure before accepting that compile cost. [WIP]
+- Fresh final-path controls pass: coupled RHD and divergence-free CT-RMHD
+  four-step CFL-0.9 runs have maximum baryon errors 5.64e-17 and 2.34e-17;
+  RMHD divB_L1 is 2.03e-19. MP5 RHD and MP5/HLLD RMHD also pass with
+  debug-poison/finite checks, zero C2P/reset/interior interventions. Fresh
+  AMR/subcycling/remake and restart errors are 1.52e-17 and 3.51e-17.
+  The restart test now also verifies rejection of a changed cut radius.
+  These are short controls, not orbital-time validation. [DONE]
+- A constant-l=3.7, rin=6 trial was correctly rejected because its torus
+  reached the [-16,16] domain edge (reflection planes are already excluded
+  from this check). The compact l=3.4, rin=5 disk fits, with resolved outer
+  radius 11.952, baryonic mass 0.031927 on the equatorial half-domain, and
+  reaches four coupled SSPRK3/CFL-0.9 steps to t=0.6 M. Baryon closure is
+  2.73e-17, zero recovery/reset, and AH area 47.5522 -> 47.8841. This begins
+  with test-fluid Kerr ID, not constraint-consistent massive-disk ID; it is
+  only a coupled routing/robustness control. [DONE]
+- The shared no-inline boundary closure reduces a similar 3D header rebuild
+  from 305.99 s (44 misses) to 230.48 s (45 misses). This is an incremental
+  dependency rebuild, not a clean build or a cache-hit result. Final
+  all-dimension integration passes in 270.09 s (88 misses, zero cache hits;
+  3D was already current). Normal-path performance remains to be checked.
+  The quick gate passes 3/3 while heavier validation/builds are running;
+  its contended timing is not a new quick-suite speed baseline. [DONE]
+- The resolved 64x64x32 coupled excision control reaches 32 steps with zero
+  recovery/reset or interior interventions. The small [-4,4]x[-4,4]x[0,4]
+  domain has growing exterior constraints (final H_L2=0.1084), so this is
+  finite evolution and horizon-tracking validation, not long-time accuracy.
+  Keep the long-accretion boundary explicit. [DONE]
+- Final focused standard gate passes RHD, RMHD, advanced RMHD Riemann,
+  fixed-spacetime, and codegen-contract checks (5/5); the quick gate passed
+  3/3. Architecture, Python syntax, and diff hygiene pass. This is not a
+  complete standard/full black-hole/ID sweep. The three-rank performance gate
+  passes all four cases without --allow-warn: baseline ratios
+  0.870/1.001/1.005/0.994. A separate five-repeat idle 2D recheck gives
+  102.50 Mcells/s, ratio 0.933; preserve both measurements rather than
+  overwriting the four-case summary. An isolated no-op integration build is
+  0.34 s with zero compiler calls, not a cold-build/cache-hit measurement.
+  [DONE]
+- Handoff: the evolved excision owner is implemented and short-run tested,
+  including a 32-step, t=1.2 M resolved control (AH area 46.94165 -> 46.49994;
+  baryon error 3.12e-17). Long-time exterior convergence, coupled massive-disk
+  production evolution, and any moving-worldtube controller are not done.
+  The separate outer-boundary diode transport-velocity bug remains unmodified
+  pending the requested scope confirmation. All tests/builds have completed;
+  no long job was launched. [PENDING]
+
+## Cycle 367 — Relativistic diode and spinning-BH convergence (diode DONE; spacetime boundary repair PENDING)
+
+- User approved the diode fix and controlled boundary-distance/resolution
+  checks before another long coupled-disk run. Preserve existing WIP. [WIP]
+- Verify the shared RHD/RMHD ghost boundary against coordinate transport
+  `alpha*v-beta`, including both face signs, shifted metrics, and the flat
+  limit. Measure numerical boundary flux separately: a ghost-state condition
+  is not automatically a sign constraint on a two-state Riemann flux. [WIP]
+- Compare the existing harmonic-lapse/frozen-shift, fixed-worldtube spinning
+  BH at matched physical times, changing domain extent and resolution
+  independently. Growing exterior constraints are not yet attributed to
+  either finite domain or excision. [PENDING]
+- Initial ghost-only diode controls pass in 2D/3D for RHD/RMHD, both shift
+  signs and corners. A constant-shift point probe nevertheless gives HLL
+  baryon flux -0.0687638 when the ghost physical flux is zero: strict
+  no-inflow needs a face contract too. Added a shared diode trace owner that
+  extrapolates the interior primitive to the face, clips coordinate inflow,
+  and supplies that same state to both Riemann traces. Pressure/magnetic
+  stresses remain physical. Wire the same owner through all normal and
+  candidate-correction flux paths; no new template product. [WIP]
+- The ghost-only executable completed four vacuum-spacetime, a/M=0.5,
+  harmonic-lapse/frozen-shift controls at CFL 0.9 and t=1.2 M. On extent 4,
+  dx=0.25/0.125/0.0833333, exterior H_Linf grows to
+  0.285764/0.477520/0.703037 despite initial errors converging
+  (0.00181756/0.000204520/0.0000601496). At dx=0.125, moving the outer
+  boundary from 4 to 6 reduces H_Linf to 0.229534 and barely changes the
+  horizon area drift (-0.0515% vs -0.0532%). Global L2 values are not compared
+  across domains. The fixed-resolution AH search/angular tolerance limits
+  the finer-grid area comparison; do not claim monotone horizon convergence.
+  All runs have zero recovery/reset/interior events and closed baryon ledgers.
+  Summary: runs/current/black_hole_excision_convergence/summary_extent4_n32_extent4_n64_extent6_n96_extent4_n96.tsv.
+  [DONE: negative exterior convergence result]
+- Source inspection: Z4c non-reflection ghosts currently use constant
+  extrapolation and the ordinary centered RHS right through the outer valid
+  nodes; there is no Sommerfeld/RHS outer-boundary owner. AthenaK separates
+  polynomial ghost extrapolation (bvals/physics/z4c_bcs.cpp) from its
+  Sommerfeld RHS (z4c/z4c_Sbc.cpp). The measured radius dependence and this
+  source gap strongly implicate the outer boundary; a region-local error
+  profile/control is still needed before assigning all growth to it. [WIP]
+- A deliberately broadened boundary probe found another failure: coarse
+  filled-interior, evolved-vacuum Kerr with MP5/LLF fails at step 3 with both
+  diode and outflow, for both SSPRK3 and RK4. The two SSPRK3 runs have identical
+  failure counts/locations (1944 resets, 1608 bad active cells), excluding the
+  diode as its cause. Keep diode_rhd_evolved,
+  diode_evolved_ssprk3_outflow_control, and diode_evolved_rk4_control logs.
+  This filled-interior/high-order failure is not repaired here. The maintained
+  boundary gate instead isolates the already short-validated coupled-excision
+  interior, retaining CFL 0.9, plus fixed-background SSPRK3 and RK4 controls.
+  Do not count that test separation as a fix for the filled branch. [PENDING]
+- Filled fixed-Kerr nonzero-B probes also require 24--32 strictly interior
+  resets; retained under diode_rmhd_hlld and diode_rmhd_fixed. They do not
+  qualify as no-intervention boundary gates. A flat CT-MHD full-grid case and
+  a Kerr excision MP5/HLLD case independently test those boundary/correction
+  contracts without the unvalidated filled magnetic interior. Flat-fixture
+  setup initially retained incompatible Kerr spin/fill parameters; both were
+  cleared explicitly. Those rejected setups are not solver failures. [DONE]
+- Final diode matrix passes 6/6 at CFL 0.9 with zero C2P, atmosphere reset,
+  interior bound, or interior reset counts. Full-grid fixed-Kerr RHD admits
+  +0.0238218498 mass with outflow, versus +1.97e-20 with diode (RK4 and
+  SSPRK3). Flat CT-RMHD has exactly zero boundary mass change/divB. Excised
+  MP5/HLLD exercises 2928 PWL and 35960 PWC face corrections plus 4160 HLL
+  Riemann fallbacks, with divB_Linf=1.27e-21 and no recovery interventions;
+  its negative total boundary ledger includes physical inner accretion.
+  Baryon ledger errors across the matrix are below 2.8e-16. The standard suite
+  now includes this bounded regression as relativistic_diode. [DONE]
+- The final-code coarse vacuum control reproduces every recorded horizon and
+  constraint diagnostic of the ghost-only scan exactly while changing the
+  baryon boundary ledger, confirming that the spacetime failure is independent
+  of the fluid diode in this decoupled control. Output is under
+  black_hole_excision_convergence/face_closure/extent4_n32. [DONE]
+- All-dimension production integration passes (428.28 s, 86 cache misses;
+  dependency rebuild with some validation contention, not a cold-build
+  baseline). The first 3D face-wiring build was 328.54 s/26 misses with four
+  compile workers and concurrent BH controls; these timings do not establish
+  a compile regression ratio. Focused standard RHD, RMHD, advanced RMHD
+  Riemann, fixed-spacetime, and boundary-tiling gates pass 5/5. [DONE]
+- Idle standard three-rank performance gate passes without --allow-warn:
+  101.94 Mcells/s hydro2D (ratio 0.927), 62.18 hydro3D (1.013),
+  2.60 WENO-Z/HLLC/RK4 hydro3D (1.003), and 2.00 RMHD1D (0.984).
+  This is no detected regression against the existing warning thresholds,
+  not a claim that the boundary fix accelerates the solver. Quick 3/3 and
+  architecture/Python syntax/diff hygiene also pass. [DONE]
+- Final integrated focused standard pass is 6/6: RHD, RMHD, advanced RMHD
+  Riemann, fixed spacetime, relativistic diode, and 2D/3D boundary tiling.
+  Summary: runs/current/amrex_standard_gate/summary.tsv. This is targeted
+  coverage, not the full standard or long-evolution suite. [DONE]
+- Handoff: fluid diode repair and matched short BH controls are complete.
+  Next isolate the spatial distribution of the evolving constraint error,
+  implement a gauge-consistent spacetime outer-boundary closure, and repeat
+  matched resolution/domain controls before a long coupled BH-disk run.
+  Filled-interior high-order/magnetic failures remain separate open work;
+  neither they nor long-time excision stability are certified by these gates.
+  No long disk evolution or movie run was started in this cycle. [PENDING]
+
+## Cycle 368 — Spacetime boundary hardening and shared ownership (DONE; accuracy follow-up open)
+
+- User requests continued bug fixing, hardening, and consolidation through
+  shared infrastructure. Prioritize Cycle 367's nonconverging BH exterior
+  constraints; preserve unrelated dirty-tree work and failed controls. [DONE]
+- Inspect the spatial constraint error and establish a matched old-boundary
+  control, then separate ghost extrapolation from a gauge-consistent outgoing
+  RHS condition. Keep one geometry/field owner across stages and levels; no
+  new reconstruction/EoS template product. [DONE]
+- Validate small nodal boundary controls, matched BH resolution/domain runs,
+  targeted suite coverage, and performance before any long disk evolution.
+  Record remaining filled-interior failures independently. [DONE]
+- Shared cubic ghost extrapolation removes the constant-copy derivative
+  discontinuity while retaining nodal reflection parity and deterministic
+  tensor-product corners. The weights now share the nodal AMR Lagrange owner.
+  The 3D polynomial/corner gate passes; the focused 3-file production rebuild
+  takes 4.51 s (3 misses), not a clean compile. At t=1.2 M, extent-4 N32/N64
+  H_exterior_Linf falls from 0.285764/0.477520 to 0.0284597/0.0298071,
+  zero recovery/reset, but still no maximum-norm convergence. [DONE]
+- Add an explicitly selected Sommerfeld RHS owner, separate from ghosts and
+  independent of fluid diode/excision. Reference Hilditch et al. 1212.2901,
+  Eqs. (26)--(30), plus AthenaK's second-order boundary derivatives. This is
+  NOT a constraint-preserving boundary; frozen gauge fields retain their bulk
+  equations. Gauge principal-speed formulas now have a shared small owner
+  with the excision guard and CFL calculation. [DONE]
+- Pointwise outgoing-wave, harmonic/one-plus-log/slow-start/trumpet/frozen
+  policy, and second-order derivative checks pass. The first degenerate-grid
+  test build used GpuArray where Geometry requires std::array; corrected the
+  fixture type and rebuilt. No numerical result is attributed to that compile
+  failure. [DONE]
+- Integration controls pass 8/8 (flat RK4/SSPRK3, reflection, gauge noise,
+  coupled excision, invalid-origin setup rejection, coupled AMR/remake,
+  and off-cadence restart). The initial octant fixture retained unrelated
+  full-sphere diagnostics; disabling those in this boundary-only fixture
+  isolates a real open diagnostic reflection gap, not an evolution fix.
+  Generic surface interpolation does not fold points across reflection
+  planes; baryon-flux extraction already does. Keep tensor/pseudotensor
+  reflection consolidation as separate follow-up. [DONE/PENDING]
+- The new Sommerfeld filled-Kerr MP5 recheck reproduces the original step-3
+  failure: 1944 active atmosphere resets, 384 interior resets, 1608 bad active
+  cells. Preserve black_hole_validation/cycle368_filled_mp5_recheck. [PENDING]
+- The 13-check Z4c quick analytic/stability/AMR-restart suite passes before
+  the final CFL consolidation. Two-dimensional and three-dimensional tiled
+  boundary tests pass, including repeated reflection on a one-cell line;
+  the final fixture retains a separate short-line open-extrapolation control.
+  [DONE: pre-final integration]
+- Source review found CFL's fixed gauge multipliers duplicated and inconsistent
+  with the state-dependent speeds used by the new boundary/excision owner.
+  Route the existing cell-spacetime frequency kernel through the same helper,
+  remove the gauge-name constants, and add strong-field point tests plus
+  flat live-gauge end-to-end timestep checks. No new template axis. This is
+  independent of the harmonic/frozen-shift BH scan. [DONE]
+- Matched Sommerfeld extent-4 N32/N64/N96 at t=1.2 M give exterior H_Linf
+  0.0116024/0.0154231/0.0177740 and L2
+  0.00297215/0.00340934/0.00356653. Thus the 25--31x N32/N64 reduction
+  relative to Cycle 367 does not establish convergence. At dx=0.125,
+  extent 4 -> 6 lowers H_Linf from 0.0154231 to 0.00715692, while area drift
+  changes only from -0.000532449 to -0.000532028. The fine extent-4 drift is
+  -0.000489788; fixed AH angular/search tolerances still limit interpretation.
+  All four controls reach matched time with zero recovery/reset/interior
+  counters and absolute baryon-ledger error below 8e-21. Summaries live under
+  black_hole_excision_convergence/cycle368_sommerfeld{,_fine}. [DONE]
+- A temporary maximum-location probe places the extent-6 maximum at
+  (i,j,k)=(94,59,0), x=5.75, and the extent-4 N96 maximum at (27,94,0),
+  y=3.83333: both are two nodes inside an open outer face. This strongly
+  localizes the residual boundary error; it is not a proof of a complete
+  constraint-preserving treatment. The extra reduction/print was removed
+  after the controls; only its run-log evidence remains. [DONE]
+- Final boundary matrix passes 10/10 including AMR/remake and restart; flat
+  live-lapse/live-shift dt values match 0.02651650429449553 and
+  0.03247595264191645. All boundary controls have zero recovery/interior
+  interventions. The final Z4c quick pass is 13/13, with gauge-wave order
+  3.990 and linear-wave order 3.971. Focused standard passes 7/7: RHD, RMHD,
+  advanced RMHD Riemann, fixed spacetime, diode, Z4c outer boundary, and
+  tiled 2D/3D boundary tests. Quick smoke 3/3, architecture, Python syntax,
+  and diff hygiene pass. This is targeted coverage, not the full suite.
+  [DONE]
+- All-dimension boundary integration was 358.11 s/141 cache misses during
+  validation contention; final shared-CFL integration was 53.39 s/27 misses.
+  These are dependency rebuilds, not cold or cache-hit baselines. Final idle
+  standard three-rank performance passes without --allow-warn:
+  hydro2D 102.99 Mcells/s (baseline ratio 0.937), hydro3D 62.20 (1.013),
+  WENO-Z/HLLC/RK4 hydro3D 2.61 (1.005), RMHD1D 2.02 (0.994).
+  No standard-gate regression detected; these numbers do not establish a
+  coupled-GR speedup. Logs/history label: cycle368_boundary_cfl. [DONE]
+- Durable docs now distinguish ghost fill, approximate Sommerfeld, and the
+  still-missing constraint-aware outer treatment; shared weights, gauge speeds,
+  and compiled boundary ownership are documented. No long disk/movie run,
+  destructive cleanup, commit, or unrelated WIP rewrite was performed.
+  All launched jobs completed. [DONE]
+- Next: resolve the remaining outer constraint-boundary error using the
+  Hilditch/AthenaK references and matched controls; separately consolidate
+  generic surface reflection mapping/parity and investigate the reproducible
+  filled-interior high-order failure. Long dynamic BH-disk accuracy remains
+  unvalidated. Sommerfeld stays explicit/opt-in rather than being described
+  as a production-accuracy cure. [PENDING]
+
+## Cycle 369 — Boundary nonconvergence and smooth-fill autopsy (DONE)
+
+- User asks why the exterior error does not converge, why smooth fill fails,
+  and to continue. Isolate the first failure before changing the fill or
+  numerical policy; keep outer-boundary and interior causes separate. [DONE]
+- Reproduce the filled-Kerr failure with stage-level finite checking and
+  matched reconstruction/gauge controls. Check whether spacetime or matter
+  becomes invalid first, not merely the final atmosphere-reset count. [DONE]
+- Test the approximate outer condition against the stationary Kerr falloff
+  and constraint subsystem. Do not mistake finite-radius boundary-model
+  error for truncation error or add exact analytic evolution as a fix. [DONE]
+- Stationary-Kerr boundary characterization is now in the existing tiled
+  boundary unit. For radius 4 M and derivative dx 0.125/0.0625/0.03125 M,
+  the Sommerfeld A11 RHS is 0.006796819/0.006839313/0.006849922 despite
+  exact stationary RHS=0. At radius 6 it tends to -0.00152109; radius 12
+  to -0.000758691. Thus derivative refinement resolves a nonzero continuum
+  boundary-model error. Hilditch 1212.2901 Eqs. (26)--(30) are explicitly
+  approximate, not CPBC. Its fuller CPBC/gauge assumptions cannot be copied
+  blindly onto the current Kerr/Cartesian/frozen-shift chart. No background
+  subtraction or analytic evolution substitution was added. [DONE]
+- Reproductions under black_hole_fill_autopsy distinguish PWC versus MP5,
+  CFL 0.45 versus 0.9, N32 versus N64, fill radius 1 versus 1.5, and separate
+  lapse/shift changes. The former MP5 failure omitted gauge settings and used
+  frozen lapse/shift: PWC and halved CFL fail too. Debugging first localized
+  the nodal spatial metric losing positive definiteness near the core,
+  followed by determinant projection NaNs and downstream fluid failures.
+  The N64 frozen control has determinant -11.196 and leading 2x2 minor
+  -6.14813 near (30,31,32). This is not primarily a recon/C2P failure. [DONE]
+- The wider frozen-gauge control first fails after vertex-to-cell transfer,
+  with chi=-0.00621913 and positive metric determinant. Live lapse alone
+  later produces cell lapse=-0.00149138 despite nodal lapse flooring. Signed
+  high-order interpolation need not preserve positive scalars. Live shift
+  alone and harmonic lapse alone still lose nodal metric signature. No
+  transfer floor, interpolation downgrade, or silent gauge change was made.
+  An initial pre-projection checker wrongly rejected a pending lapse floor;
+  gauge_components_final reruns correct that diagnostic mistake. [DONE]
+- Both live gauges with MP5/LLF, CFL 0.9, KO 0.1 reach matched t=1.2 M at
+  N32/N64 in 11/23 SSPRK3 steps, without recovery, atmosphere resets, or
+  interior interventions. Exterior H_Linf=0.0121128154/0.00457695164, an
+  improvement of 2.65x, not a high-order convergence claim. A wider N32 live
+  fill and N32 RK4 also complete; the wider fill has worse H_Linf=0.02084893,
+  so widening alone is not an accuracy fix. The fill still weights Kerr K_ij
+  independently instead of deriving it from completed stationary geometry;
+  the fill algorithm was deliberately not replaced in this autopsy. [DONE]
+- Shared stage owner now checks finiteness around projection, ghosts,
+  centering transfer and completed RHS, with a debug-only metric-signature
+  check before projection and through the consumed fluid metric halo. No
+  extra template axis or default grid scan. The first integration check
+  overreached into extra excision derivative-only corner scratch at ghost 5;
+  those samples require finiteness, not pointwise metric admissibility.
+  Corrected the positive-metric check to the fluid ghost halo (cfg.ng), while
+  keeping the full scratch finite check. Active and consumed ghost geometry
+  is not exempted. Production all-dimension incremental builds: 4.54 s then
+  4.55 s, each 3 misses; these are not clean compile benchmarks. [DONE]
+- New opt-in --include-filled-evolution in validate_z4c_boundary reuses
+  validate_black_hole.run_case, adds matched-time completion and both RK4 /
+  SSPRK3 fill controls, and checks the evolving-geometry baryon ledger.
+  Final-geometry N64 rerun, final ledger-enabled regression, focused suite,
+  and idle performance measurement are recorded below. [DONE]
+- Final boundary/AMR/remake/off-cadence-restart matrix plus two filled-gauge
+  controls passed 12/12 before the extra explicit baryon assertion. Tiled
+  boundary units pass in 2D/3D. Z4c quick was first read from cached artifacts;
+  a subsequent --force run freshly passes all 13 checks (gauge-wave order
+  3.9900, linear-wave order 3.9710). Architecture, Python syntax and diff
+  hygiene pass. [DONE]
+- Final N64 rerun with the complete metric checks passes at t=1.2 M, 23
+  steps, zero recovery/interior counters and maximum baryon ledger error
+  2.22045e-16. New RK4/SSPRK3 regression ledger assertions also pass;
+  maximum coarse errors are 2.22e-16/2.78e-16. Fluid energy changes about
+  6.03e-4 under evolving geometry (no fluid-only energy conservation claim),
+  momentum drift is below 8.1e-18. Compact per-run scalar/AMR/performance
+  evidence: black_hole_fill_autopsy/final_scalars.tsv and final_n64.tsv.
+  H_L2=0.000810300/0.000964960 does not improve; stencil-excluded exterior
+  regions also change with dx. Do not promote Linf's 2.65x reduction into a
+  fixed-region convergence statement. [DONE]
+- Fresh focused standard coverage passes 6/6: RHD, RMHD, advanced RMHD
+  Riemann, fixed spacetime, diode, and boundary tiling. Quick smoke passes
+  3/3. Final ledger-enabled boundary+filled matrix passes 10/10; the separate
+  AMR/restart matrix above remains passed with the same C++ binary. [DONE]
+- Idle three-rank standard performance gate passes without --allow-warn:
+  hydro2D 95.70 Mcells/s (baseline ratio 0.87), hydro3D 59.64 (0.97),
+  WENO-Z/HLLC/RK4 hydro3D 2.58 (0.99), RMHD1D 2.00 (0.98). Label
+  cycle369_metric_contract. These are gate measurements, not a coupled-GR
+  speedup claim. All launched jobs completed; no commit, destructive cleanup,
+  new template product, or unrelated WIP rewrite was performed. [DONE]
+- Next numerical work remains explicit: a constraint-aware outer closure
+  compatible with the actual gauge/background, plus a geometry-admissible
+  transfer treatment for steep fills. Continue using common physical regions
+  for convergence and distinguish fill/gauge, outer boundary, and finder
+  error. Current arbitrary smooth K_ij completion and long dynamic BH-disk
+  accuracy are not resolved by this diagnostic hardening. [PENDING]
+
+## Cycle 370 — Non-wave outer boundary correction (bounded changes DONE; convergence unresolved)
+
+- User requests fixing the outer nonconvergence and asks whether failed
+  smooth fill is simply an invalid configuration requiring dynamic coupling.
+  Keep evolved gauge separate from matter backreaction: successful Cycle 369
+  fills used vacuum Z4c and live lapse/shift, not coupled stress-energy. A
+  frozen gauge is not intrinsically invalid; this fill is nonstationary and
+  constraint violating. Do not add a blanket configuration prohibition. [DONE]
+- Source-check the constraint-preserving Z4c and ETK radiative-boundary
+  treatments; implement one shared correction and test stationary and wave
+  consistency before matched BH refinement/extent controls. Preserve the
+  explicit approximate-versus-constraint-preserving distinction. [DONE:
+  approximate correction; full constraint-preserving closure remains open]
+- Local ETK NewRad source and gr-qc/0206072 Sec. VI provide the missing
+  non-wave correction: R_b = S_b + (r_i/r_b)^n (R_i - S_i), where R_i is
+  the actual interior MOL RHS and S is the outgoing-wave model. Added the
+  runtime `spacetime.sommerfeld_power` (3 default, -1 pure-wave control) to
+  the existing compiled boundary owner; no analytic provider, frozen initial
+  background, new evolution field, or reconstruction template axis. The
+  donor moves inward off all incident open faces, so no corner dependency,
+  in-place RHS race, extra halo exchange or full-grid snapshot is introduced.
+  Non-wave sampling requires the origin more than one cell inside open faces.
+  Reflections and periodic reduced directions are unaffected. [DONE]
+- The stationary Kerr point residual now halves with dx: at radius 4,
+  dx .0625/.03125 gives 5.11548e-4/2.54399e-4 rather than the pure-wave
+  plateau 6.83931e-3/6.84992e-3. The radius-6/12 probes also converge at
+  first order. A separate exact outgoing wave plus static 1/r^2 background
+  retains at least second-order consistency, and unowned/frozen components
+  remain untouched. Point tests pass; this does not yet establish evolved
+  constraint convergence. [DONE]
+- Adding one RunConfig member invalidates the broad current configuration
+  include graph. All-dimension integration rebuild: 597.10 s / 210 misses;
+  individual boundary unit rebuild was 3.69 s / 1 miss. This is a dependency
+  rebuild, not a new template-product expansion or a cold-build benchmark.
+  [DONE]
+- Non-wave correction passes fresh Z4c quick 13/13 and boundary, split-box,
+  AMR/restart, filled-evolution matrix 14/14. Matched t=1.2 extent-4 N32/N64
+  controls complete with zero recovery/interior interventions and baryon
+  ledger below 8e-21, but exterior H_Linf=0.0106121/0.0125269 and
+  H_L2=0.00206853/0.00210614 STILL DO NOT CONVERGE. These are improvements
+  over pure-wave errors, not a completed accuracy fix. Artifacts:
+  black_hole_excision_convergence/cycle370_nonwave. [DONE: negative result]
+- Source-checking the full Z4c boundary prescription also identifies the
+  required sixth-order ghost extrapolation for fourth-order second
+  derivatives (1212.2901 Sec. III); current cubic ghosts provide only
+  second-order consistency there. Testing the six-point shared Lagrange
+  closure before undertaking new nonlinear constraint-preserving equations.
+  This is not itself a constraint-preserving boundary condition. [DONE]
+- Six-point extrapolation now shares the existing Lagrange owner and nodal
+  halo, without a config/template axis or decomposition-dependent downgrade.
+  Tensor weights are evaluated one direction at a time. An initial
+  non-dyadic product-polynomial test amplified input roundoff to ~1e-9 at
+  three-face corners; dyadic mixed quintics isolate exactness without
+  relaxing the 1e-10 check. Both 2D/3D poisoned-ghost and repeated-reflection
+  units pass. Incremental all-dimension builds: 5.51 s / 3 misses, then
+  7.40 s (overlapping unit rebuild, 4 observed cache misses). [DONE]
+- Final matched ghost6 runs in cycle370_ghost6 reach t=1.2 M with zero
+  recovery/reset/interior counters, baryon error <=5.62e-21. N32/N64
+  H_exterior_Linf=0.0105856679/0.0115653464 and
+  H_exterior_L2=0.00201718558/0.00201892325: still no decrease. The latter
+  is ~41 percent below the earlier pure-wave N64 L2, but not convergence.
+  N64 elapsed 128.67 s versus 111.73 s for cubic/non-wave, approximately
+  15 percent higher in this single-run comparison; not an idle repeated
+  benchmark or a speedup claim. Horizon area drift decreases from
+  -0.164154 percent to -0.0531962 percent, independently of the unresolved
+  outer error. Fresh Z4c quick remains 13/13. [DONE]
+- Do not graft the paper's nonlinear CPBC formulas blindly onto this
+  background/gauge: its simplified longitudinal shift equation assumes
+  special shift/gauge/background conditions. Constraint, tensor-radiation,
+  and gauge sectors need consistent projection and verification together.
+  No partial constraint-only projection, analytic-Kerr exception, transfer
+  clamping, reconstruction change, or forced matter coupling was added.
+  Full boundary convergence and steep-fill admissible transfer remain open.
+  [PENDING: numerical follow-up]
+- Final-source boundary/AMR/restart/live-fill matrix passes 14/14; both
+  live-fill integrators reach t=1.2 M without interventions and with baryon
+  error <=2.23e-16. Fresh Z4c quick 13/13, 2D/3D boundary units, architecture,
+  Python syntax, and diff hygiene pass. Standard performance gate: hydro3D
+  59.86, WENO-Z/HLLC/RK4 2.57, RMHD1D 2.00 Mcells/s pass. Hydro2D median
+  93.31 Mcells/s narrowly misses the unchanged 0.85 baseline fraction
+  (actual 0.848970); retain this warning, not an overall performance PASS.
+  The five-repeat narrow recheck passes at 96.35 Mcells/s (0.8764 of the
+  baseline), without changing thresholds or using --allow-warn. No other
+  solver jobs were active; macOS/Codex background work still exists. Retain
+  both measurements rather than hiding the first borderline warning. [DONE]
+- Updated knowledge, references, boundary ownership, and BH documentation;
+  removed the stale claim that all dynamic spacetime excision is rejected.
+  Fixed-worldtube short validation and unvalidated moving cuts/long evolution
+  remain clearly distinct. All launched jobs completed. No commit, output
+  pruning, unrelated WIP rewrite, or claim of complete convergence repair.
+  [DONE]
+
+## Cycle 371 — Boundary/fill fixes and consolidation (DONE)
+
+- User asks to fix the remaining BH boundary and smooth-fill issues and do
+  the usual clean/consolidation pass. Preserve unrelated WIP, generated/GF
+  ownership, shared operators, selected methods and low template cost.
+  Recheck the equations before extending the approximate boundary model.
+  Independent agents audit constraint-preserving boundary physics and
+  stationary-metric fill consistency while the main agent owns integration.
+  No output pruning or commit is assumed. [DONE]
+- Require matched-time constraints, recovery and baryon checks, plus
+  regression/performance evidence. Current runtime masks vary with dx;
+  a common fixed-region comparison remains future work. Short completion
+  and point consistency must not be promoted to convergence. [DONE: scoped evidence]
+- Found/fixed the analytic fill's inconsistent derivative/K completion:
+  differentiate the C2 metric/lapse/shift blend and derive K from the stationary
+  ADM identity. Exact and filled paths share K construction and one geometry
+  packing helper. Independent Lie-derivative, finite-difference, exterior/core,
+  rotation, and existing generated physics checks pass in 3D. The interior
+  remains deliberately constraint violating. [DONE]
+- Candidate-state metric transfer omitted the excision region that accepted
+  state transfer already used. Both now use the same order-4 exterior stencil
+  policy. Shared runtime signature checks now also run immediately after
+  candidate transfer when debugging is enabled; no clamping/downgrade added.
+  Full regression passes on the final source below. [DONE]
+- Generated incoming scalar/vector/TT boundary corrections source-checked
+  against 1212.2901; derivative/projection/trace/TT-sign/matter unit tests pass.
+  Initial face-normal/bisector integration passes eight flat/noise controls
+  but fails the curved coupled BH test at outer-corner ghost metrics. Do NOT
+  promote this experimental closure as a working accuracy fix. Investigating
+  corner compatibility; established Sommerfeld remains unchanged. The trial
+  is subsequently rejected from production below. [DONE: negative result]
+- Compile records so far: initial codegen check 98.80 s including full physics
+  generation (1 C++ miss); boundary3D check 4.06 s/1 miss; main3D dependency
+  rebuild 38.48 s/38 misses; final filled point check 3.64 s/1 miss. These are
+  incremental/dependency rebuilds, not clean-compilation timings. [DONE]
+- Quarantined the failed boundary prototype (source snapshots plus notes)
+  under runs/current/z4c_boundary_prototype_cycle371 and removed its runtime
+  option, generator/production registration, and added prototype tests. The
+  source paper explicitly avoids corners using spherical outer patches.
+  Normal/bisector Cartesian compatibility is not a small validated fix;
+  Sommerfeld remains approximate and evolved constraint convergence open.
+  No prior boundary work was removed. [DONE: rejected integration]
+- Established Sommerfeld regression passes 12 boundary/AMR/restart cases
+  after the candidate-excision fix. The corrected fill then reaches step 4
+  but transfers a positive nodal lapse to cell lapse -0.0121152 at the core;
+  conformal metric remains SPD there. Testing explicit logarithmic transfer
+  of the two positive Z4c scalars, on the SAME order-4 stencil, in both
+  nodal-to-cell and cell-to-face paths. This is not a floor/fallback and does
+  not repair invalid source data or promise SPD tensor interpolation. Final
+  physical-target scope is recorded below. [DONE]
+- Both corrected-fill controls reach t=1.2 M at CFL0.9 with SSPRK3/RK4,
+  zero recovery/reset/interior interventions, and baryon error <=3.34e-16.
+  Physical-node log interpolation passes independent positivity, invalid-source,
+  one-sided/cubic-log, rotated fourth-order convergence, and signed-field
+  tests. An AMR run then exposed log encoding of negative *outer FD samples*
+  at (-5 ghost layers), not negative physical source nodes. Extending the
+  log policy to all six-point physical ghosts instead overflowed in the
+  nine-layer AMR/excision corner storage after step1. Do not ship that change.
+  Restored raw ghost extrapolation; centering representations now apply to
+  physical targets (including MPI/periodic ghosts), while outside-domain
+  targets preserve raw FD extensions. Actual metric consumers retain signature
+  checks. Final regression passes below. [DONE]
+- Full positive-transfer dependency rebuild took 601.37 s with6 cachehits/
+  178 misses (one overlapping point build); this is not a cold-build timing
+  and not a compile-speed improvement. Physical-ghost-only incremental rebuild
+  took5.91s/3misses. The corrected-scope rebuild is recorded below. [DONE]
+- Boundary validation previously left its last successful TSV untouched if
+  a fresh invocation aborted. It now writes an INCOMPLETE marker before any
+  runs and replaces it only when all requested checks complete. An isolated
+  injected-failure test confirms that an old PASS is not retained. Python
+  syntax and architecture checks pass. [DONE]
+- Final physical-target scope rebuild passes all dimensions:481.99s,
+  0 cachehits/138 misses, dependency rebuild rather than cold compile.
+  Forced-tile2D/3D units pass (3.75/4.54s including their incremental builds),
+  now including the actual MultiFab transfer: split-box physical target,
+  negative raw exterior derivative sample, and periodic ghost representation.
+  The physical-only scope is not a promise of arbitrary outer-ghost metric
+  admissibility; actual fluid-halo metric checks remain enabled. [DONE]
+- Final source boundary/fill/AMR/restart matrix passes14/14. Corrected fill
+  SSPRK3/RK4:11steps to1.2M atCFL0.9, all recovery/interior counters zero,
+  baryon error3.330662e-16/3.885789e-16, minimum lapse1e-10 (selected nodal
+  floor). ExteriorH_L2=0.00059228120/0.00059222235 and
+  H_Linf=0.02140543/0.02166094. These are short robustness checks, not a
+  constraint-satisfying interior or accuracy-promotion claim. AMR3step
+  baryon error1.3010e-17; off-cadence restart passes. Fresh Z4c quick13/13.
+  Results: black_hole_validation/z4c_boundary_amr_restart_filled.tsv and
+  z4c_validation/z4c_validation.tsv. [DONE]
+- Matched final-source Kerr excision N32/N64 controls both reach1.2M,
+  no recovery/interior interventions, baryon error<=3.71e-21. Exterior
+  H_Linf=0.0105856679/0.0115653464 and H_L2=0.00201718558/0.00201892325:
+  unchanged from Cycle370 and STILL NOT CONVERGING in the reported runtime
+  exterior masks. The masks are dx-dependent, not a common fixed physical
+  region. Horizon area drift decreases from-0.164154% to-0.0531962%.
+  N64 elapsed155.94s versus Cycle370's128.67s in a single-run comparison;
+  not an idle repeated GR benchmark or a speedup claim. Positive log
+  reconstruction adds work and this cost remains to be isolated/optimized.
+  Artifacts: black_hole_excision_convergence/cycle371_final. [DONE]
+- Final generated physics/positive-transfer/fill point check passes after a
+  3.32s/1miss rebuild. Standard three-repeat performance gate passes4/4,
+  without --allow-warn: hydro2D97.79, hydro3D59.79, WENO-Z/HLLC/RK4
+  2.58, RMHD1D1.99 Mcells/s. This gate does not quantify the stored-metric
+  GR cost noted above. Final architecture, Python syntax and diff checks pass.
+  All launched builds and solver jobs completed. No commit or unrelated WIP
+  cleanup performed. [DONE]
+- Consolidated positive representation and lightweight matter access owners;
+  corrected fill geometry shares ADM completion/packing; accepted/candidate
+  paths share excision policy and debug signature validation. Updated
+  knowledge, references, infrastructure and BH validation boundaries. Failed
+  CP-boundary source remains an ignored research snapshot, not a runtime
+  feature. [DONE]
+- Remaining work: corner-compatible constraint/radiation/gauge boundary
+  treatment; common fixed-region evolved convergence; isolated stored-GR
+  transfer profiling/optimization (broad shared-header rebuilds also remain
+  expensive). Frozen-gauge filled-vacuum evolution and long massive-disk
+  evolution are not newly validated by this pass. [PENDING: next numerical work]
+
+## Cycle 372 — Fixed-region BH constraint localization (DONE)
+
+- User asks to continue sensibly. First remove the measurement ambiguity:
+  compare the same fixed coordinate regions at matched time/resolution and
+  distinguish near-BH error from outer-boundary error before changing PDEs.
+  Preserve existing tests, unrelated WIP and generated physics ownership. [DONE]
+- Independent audit finds no missing collective or duplicate-node counting
+  in the uniform N32/N64 controls. Existing BH-exterior norms deliberately
+  exclude dx-dependent outer and horizon stencil layers; they are not fixed-
+  region convergence measurements. No constraint auxGF or arbitrary region
+  knob currently exists. Add opt-in geometric reductions to the same runtime
+  constraint pass, not a second Python/C++ constraint formula. [DONE: audit]
+- Planned fixed geometry: concentric coordinate box of half-extent3.5M,
+  exclude Euclidean radius<2.5M, split at radius3.0M. The inner shell is
+  genuinely near the BH; the outer region includes the box's faces/corners.
+  Intersect with the physical half-domain z>=0. These constants do not change
+  with grid spacing. Use existing coordinate-volume norms and report volume.
+  N32/N64 first; a same-dx wider-domain control if boundary attribution needs
+  further evidence. No constraint-preserving boundary prototype enabled. [DONE]
+- Catalog/runtime implementation reuses the existing generated pointwise
+  constraint calculation and owned-node mask. Optional region/near/far H_RMS,
+  H_Linf, M_Linf and coordinate volumes share one pass; no new GF storage or
+  template axis. Defaults exclude the group and extra scratch. Geometry tests
+  (coincident coarse/fine nodes, reflection, shifted center, partition) and
+  generated physics point tests pass; point rebuild3.96s/1miss. [DONE]
+- Production1D/2D/3D dependency rebuild passes516.52s/213cache misses, not a
+  cold-build or speedup measurement. The heavy reconstruction TUs depend on
+  full RunConfig through flux_factory_internal/rhs.hpp; diagnostic-only
+  config additions therefore invalidate them. No compile-boundary refactor
+  attempted during this numerical experiment. [DONE]
+- Five two-step runtime controls pass: rank1/rank3, max_grid_size16/32,
+  regional diagnostics disabled, and regional group without legacy constraint
+  group. Region norms/volumes and checked ordinary scalars agree within
+  5.421e-19 absolute; enabled geometry does not change these evolution results.
+  Test-fixture mistake disabling AH was correctly rejected because matter
+  excision requires it; fixture corrected before comparisons. Source/setup
+  geometry audit finds no blocking issue. The existing full-nodal-volume
+  quadrature is retained and is not cut-cell/proper-volume integration.
+  Artifacts: black_hole_excision_convergence/cycle372/diagnostic_checks. [DONE]
+- Python region checks reject nonfinite/negative/empty norms, broken
+  near/far volume/integral/max partitions, and time-varying sampled volumes in
+  these uniform controls. Injected scan interruption leaves per-case
+  INCOMPLETE markers rather than a partial all-PASS-looking summary.
+  Architecture, syntax and diff checks pass. [DONE]
+- Matched fixed-region R4 N32/N64 both reach1.2M,17/32steps, zero recovery/
+  interior interventions and roundoff baryon closure (normalized ledger
+  errors<=3.71e-21). Initial H_RMS order is4.00 whole/4.05near/4.01far.
+  At t0.6, near H_RMS is2.44995412e-4/1.52506165e-5 (order4.01);
+  at t1.2 it is2.49009801e-4/1.45879623e-4 (order0.77). Final far
+  H_RMS is2.22820104e-3/1.71825787e-3 (order0.38). Fixed measurement
+  therefore removes the spurious exact plateau but does not recover the
+  intended evolved order: the late rising error is outer-region dominated.
+  N64 total157.66s is a single-run timing, not a speed regression claim.
+  Summary: cycle372/fixed_regions/summary_extent4_n32_extent4_n64.tsv. [DONE]
+- Same-dx R6/N96 control is running to1.2M. Its initial regional norms and
+  sampled volumes match R4/N64 to roundoff, so no volume dilution is involved.
+  Gauge/time/geometry/reconstruction/spacing remain matched. [DONE: results below]
+- Completed R6/N96 and added the cheaper R6/N48 matched-resolution control;
+  both reach1.2M with zero recovery/interior events and roundoff baryon
+  closure. R6 coarse/fine H_RMS is7.63996203e-5/4.60174936e-6 whole,
+  1.80488869e-4/1.04305869e-5 near, and3.34899878e-5/2.05846302e-6 far:
+  observed orders4.05/4.11/4.02. Near/far M_Linf orders3.97/3.98;
+  H_Linf orders4.21/3.95. At identical dx0.125 and measurement nodes/volumes,
+  R4->R6 lowers final near/far H_RMS by13.986x/834.729x. AH area drift
+  barely changes (-0.0531962%/-0.0532028%). This pins down boundary
+  contamination in this control; it is not dilution, a failed elliptic ID
+  solve, or evidence that CFL must be lowered. No evolution PDE changed.
+  R6 walltimes40.06s/346.96s are single-run costs, not scaling benchmarks.
+  All four results: cycle372/fixed_regions/summary_all.tsv. [DONE]
+- Added optional fixed-region history plotting to the existing validator.
+  Final near/far plot uses color for dx and solid/dashed lines for R4/R6;
+  image inspected. Path: plots/current/scans/black_hole_excision/cycle372/
+  fixed_constraints.png. Region naming explicitly uses Euclidean radius.
+  Updated diagnostics contract, BH validation docs and compact knowledge;
+  no new external source was needed and references remains a source router.
+  [DONE]
+- Final Z4c quick gate passes13/13 on3MPI ranks. Standard three-repeat
+  performance gate passes4/4 without --allow-warn: hydro2D96.66,
+  hydro3D59.88, WENO-Z/HLLC/RK4 2.56, RMHD1D2.00 Mcells/s. Architecture,
+  Python syntax and diff checks pass. All builds/runs launched in this pass
+  completed. Unrelated WIP preserved; no commit or broad cleanup. [DONE]
+- Next numerical step: carry the fixed-region diagnostics into a larger-domain
+  AMR short evolution, retaining near-BH/disk resolution while moving the outer
+  boundary away. The recovered order applies to this uniform-grid spin0.5
+  vacuum Kerr control through1.2M, not long coupled massive-disk evolution.
+  Corner-compatible constraint-preserving outer boundaries and isolated
+  stored-GR transfer profiling remain open; do not rework interior treatment
+  or reconstruction based on the old undifferentiated norm plateau. [PENDING]
+
+## Cycle 373 — AMReX 26.09 dependency update and adoption review (DONE)
+
+- User requests the managed AMReX update and a review of all intervening
+  changes for useful PyFluid adoption. Preserve the extensive unrelated WIP;
+  update only the managed dependency, compatibility fixes if needed, and
+  bounded continuity documentation. No commit or pruning is assumed. [DONE]
+- Official release query confirms 26.08 at
+  `21cb5b49b49c7beeca22002535d79b3d8a609e95` is clean and active, with
+  26.09 at `a52ca73324ac2c7b65ec04f131e6df99eec9c576` available. The
+  sandbox network query fails; the approved network-capable query succeeds.
+  Review the exact release delta, preserve old versioned installs, rebuild
+  MPI and the maintained OpenMP companion, and run focused/full-production
+  integration and performance gates before declaring the update usable.
+  [DONE: update and bounded validation; retained failure documented below]
+- Before-update three-repeat performance passes 4/4: hydro2D 97.78,
+  hydro3D 59.69, WENO-Z/HLLC/RK4 2.56, RMHD1D 2.00 Mcells/s. No competing
+  solver/build jobs were found; normal desktop processes remain. Results:
+  `runs/current/amrex_update/cycle373/performance_before.tsv`. [DONE]
+- Reviewed all 37 commits / 115 changed files in the exact 26.08..26.09
+  release range, using local upstream source and independent numerical/API
+  audits. The complete commit inventory is retained in
+  `runs/current/amrex_update/cycle373/upstream_commits.log`. [DONE]
+  - Inherited runtime correctness: initialization/finalization hooks are
+    removed before invocation; empty MPI_Testall calls are skipped. PyFluid
+    needs no second hook/communication implementation. [DONE]
+  - Tensor elliptic fixes clear the prepared operator's stale update flag
+    and make scalar zero bulk viscosity overwrite previous coefficients.
+    PyFluid's cell-vector wrapper constructs/solves once, never sets bulk
+    viscosity, and production Cartesian XCTS uses the separate nodal owner.
+    These fixes therefore do not establish an XCTS speedup. Coefficient
+    updates after prepare and Robin tensor cross terms remain unsupported;
+    operator caching is deferred absent a measured repeated-call workload.
+    [DONE: inherited, no numerical adoption]
+  - Kahan `compensatedAdd` is a caller-owned scalar accumulation helper,
+    not a replacement for MultiFab/MPI reductions. Persistent compensators
+    would need checkpoint ownership; changing evolution accumulation would
+    be a numerical-method change. No measured summation error warrants
+    either in this update. [DONE: defer]
+  - FFT spectral Green-function access and batched post-forward callbacks
+    serve future spectral operators; PyFluid has no FFT callers and FFT is
+    off. They do not supply nonlinear XCTS or a general GR outer boundary.
+    [DONE: defer]
+  - Face-centered EB factories, redistribution, EB gradient/setter fixes,
+    and STL traversal/classification optimizations are inactive: AMReX EB
+    is off and PyFluid's obstacle geometry has a different owner. Particle
+    mask changes are likewise inactive with particles off. [DONE]
+  - CUDA build modernization, SYCL context/flags, non-CUDA GPU prefetch,
+    and GPU random-endpoint/RandomPositive fixes do not add an Apple Metal
+    backend or validate a PyFluid GPU build. No backend is enabled here.
+    [DONE]
+  - TinyProfiler stdout/stderr destinations are optional upstream controls;
+    TinyProfiler is off in the maintained builds. fcompare's NaN label,
+    indexFromValue's missing-value sentinel, Fortran, documentation, header
+    self-containment/nodiscard, Tuple and CI changes require no PyFluid
+    call-site migration. AmrCore/Boundary and the existing non-EB scalar/nodal/
+    CurlCurl solver implementations are unchanged. [DONE]
+- The actual build-contract change is CMake >=3.25 for AMReX and its installed
+  consumers. Aligned PyFluid's project/preset minimum and installation guidance;
+  no new template/configuration axis or solver change is needed. [DONE]
+- Updater audit found no blocker for this fresh release. A pre-existing
+  same-version install is verified by version/features rather than an
+  installed commit marker; provenance hardening for that reuse case is a
+  separate possible improvement, not a reason to alter this fresh update.
+  [DONE: bounded tooling limitation]
+- Managed MPI update completed: AMReX and all 1D/2D/3D PyFluid production
+  executables built successfully, active link and tracked pin now select
+  26.09, exact source checkout remains clean. Whole update took 905.54 s,
+  including dependency build/install and the header-invalidated production
+  rebuild; this is not an isolated cold-compile benchmark. Log:
+  `runs/current/amrex_update/cycle373/update_mpi.log`. [DONE]
+- Aligned project/preset minimum to CMake 3.25, refreshed current dependency
+  documentation/references, and source-checked the unchanged CurlCurl/1D
+  nodal limitations. No numerical code or method product changed. [DONE]
+- The first post-update compile probe reconfigured inside the sandbox and
+  removed explicit `-arch arm64`, invalidating objects again. Direct checks
+  pinpointed the environment, not CMake's new policy minimum: sandboxed
+  `sysctl -q hw.optional.arm64` fails with operation-not-permitted, whereas
+  the approved path returns 1; Darwin-Initialize.cmake uses this probe to
+  set the default architecture. Stopped only that redundant process group
+  before completing the rebuild. Its log is `compile_incremental.log`;
+  no completed compile-history row was emitted. Reconfigure/build outside
+  the sandbox to retain flags and reuse the completed objects. Correct-context
+  recovery passed in 4.71 s with 262 cache hits / zero misses, confirming this
+  was flag/context churn rather than a numerical or template regression.
+  `compile_recovery.log` and compile history record the cache-hit rebuild.
+  Documented the failure mode in installation guidance. [DONE]
+- Fresh MPI quick passes 3/3. Standard initially passes its first ten gates
+  then fails the BH face-metric cubic-exactness assertion. An isolated build
+  against retained 26.08 reproduces exactly the same failure with unchanged
+  current PyFluid sources: `excision_2608_before.log`. Source review identifies
+  a stale pre-log-transfer fixture: production face readers interpolate
+  log-lapse, while the fixture demanded polynomial-lapse exactness. Changed
+  only the fixture and expected analytic lapse to `exp(0.01 * polynomial)`;
+  unchanged tolerance, all directions, poison mask, raw transfer checks, and
+  actual production operator. Corrected tests pass at 3 MPI ranks under both
+  26.08 and 26.09 with identical reported wave errors; retained in
+  `excision_both_after.log`. This is a fixture repair, not a dependency
+  regression or production numerical change. Standard results follow below.
+  [DONE]
+- Broader standard testing exposed two further setup/expectation mismatches
+  with previously documented BH startup behavior, not upstream API changes.
+  Horizon restart correctly retained steps 0/1/2 then refreshed step 2 before
+  advancing to 3; the old test expected only four rows. It now checks exact
+  original-prefix preservation and steps 0/1/2/2/3, plus finite/converged
+  refreshed diagnostics. Corrected checks pass; no tracker/evolution behavior
+  changed. [DONE]
+- The t=0 reflected-disk m=1 perturbation fixture inherited live excision/AH
+  controls from an evolution input while deliberately disabling AMR at
+  32x32x16. The unrelated unresolved horizon search left its interpolation
+  volume. The fixture now explicitly selects filled/evolve with AH disabled,
+  retaining fill radius 1 well inside disk support 14.8..26.8. This isolates
+  mode materialization; it does not weaken live-excision startup validation or
+  ignore finder failure. The corrected fixture passes; dedicated horizon/
+  excision gates remain. [DONE]
+- End-to-end rerun gets beyond corrected BH fixtures but retains a numerical
+  failure: static-trumpet moving-puncture final AH area error 0.0789273
+  exceeds the unchanged 0.02 short-run bound. Do not relax this gate. The
+  matched old-release attribution follows below. [DONE: retained failure]
+- That attribution exposed an actual updater flaw: selecting an older cached
+  install behind the stable symlink can leave existing objects/executables
+  newer than every dependency. CMake then reports up-to-date and the binary
+  still runs 26.09 despite a 26.08 link/manifest. The first attempted control
+  (`trumpet_version_control.log`, `trumpet2608/`) is INVALID for release
+  comparison, as its run banner proves. The wrapper restored 26.09 afterward.
+  Added `--clean-first` to the shared activation/rollback production rebuild;
+  ordinary incremental builds are unchanged. A two-test mocked regression
+  covers both maintained variants and failed-activation rollback, without
+  mutating any install; registered in standard/full. Repeating the actual
+  old/new control and checking banners before attributing the physics result;
+  the verified result follows below. [DONE]
+- Verified control now actually initializes AMReX 26.08 after clean-first.
+  Its full horizon TSV is byte-identical to the 26.09 control: initial/final
+  area relative errors 0.0361815077470 / 0.0789273127095, mean-radius change
+  0.233460758867. Baryon closure 2.96464e-15, zero recovery/interior events;
+  16 steps to t=1.88040380413. Thus the unchanged 2% final-area gate is a
+  pre-existing numerical failure, not an AMReX-update regression. Preserve
+  the failing bound for the next physics investigation. Valid evidence:
+  `trumpet2608_verified/` and `trumpet_version_control_verified.log`.
+  Fixed-updater restoration of 26.09 completed successfully for all three
+  production dimensions and the pin/source/install contract is current.
+  [DONE: attribution and live rebuild invalidation]
+- Corrected perturbation fixture and dependency-manager gates pass. Combined
+  scoped standard reruns cover 52 gates: 51 PASS, one retained FAIL at the
+  pre-existing static-trumpet accuracy bound. This is not a passing complete
+  standard suite. Each row links its source summary in
+  `standard_combined_summary.tsv`. Fresh extra MPI elliptic checks pass in
+  1D and 3D; standard already freshly exercised 2D. The 3D cell-tensor CTT
+  momentum residual is 8.72e-14 and coupled cell CTT converges in 26 iterations;
+  nodal, spherical, CTTK and XCTS/TOV checks also pass. Unit residual checks
+  are distinct from the suite's evolution scalar conservation checks. [DONE]
+- Managed OpenMP companion update and all three production dimensions completed
+  in 734.09 s, including AMReX build/install, generated outputs and PyFluid
+  rebuild. This is whole-update timing, not an isolated cold compile. Both
+  maintained active links now select the exact clean 26.09 pin. Focused
+  two-rank/five-thread AMR tests pass: CT+SSPRK3 subcycling has mass/energy
+  drift 5.33e-15/3.33e-16 and divB L1 5.74e-15; implicit-diffusion subcycling
+  has mass/energy drift 7.77e-16/1.42e-15 and residual 9.77e-13. Logs:
+  `update_openmp.log`, `openmp_features.log`. These are focused thread-path
+  checks, not a complete threaded-suite or scaling claim. [DONE]
+- Independent final tooling audit finds no must-fix issue in the portable
+  clean-first activation/rollback, mock tests, suite registration or CMake
+  minimum. Rejected generator-specific target-clean scripts: they duplicate
+  the CMake target graph and would miss future native targets. Ordinary
+  incremental development remains unchanged. [DONE]
+- OpenMP 3D elliptic check passes at 2 ranks x 5 threads, including the tensor,
+  nodal, spherical, CTT/CTTK and XCTS/TOV paths (`elliptic_openmp.log`). Both
+  dependency variants pass final offline pin/source/install checks. Final
+  three-dimensional-target production integration rebuild passes in 4.52 s,
+  242 ccache hits / zero misses (`compile_final.log`); this is a cache-hit
+  rebuild following shared generated-output refresh, not cold compilation.
+  Fresh final MPI quick passes 3/3 (`quick_final_summary.tsv`). [DONE]
+- Matched three-repeat/three-rank throughput medians pass all four controls
+  with no competing solver/build workers. Before -> after, in Mcells/s:
+  hydro2D 97.7778 -> 98.7248 (+0.969%); hydro3D 59.6898 -> 59.0029 (-1.151%);
+  WENO-Z/HLLC/RK4 2.56207 -> 2.57450 (+0.485%); RMHD1D 1.99573 -> 1.99743
+  (+0.085%). These establish no clear speedup or regression. Final retained
+  scalar samples for all eight before/after runs pass explicit closed-policy
+  checks: max mass/energy drift 3.00e-15/1.28e-14, max momentum absolute drift
+  3.32e-16, divB zero. The benchmark's retained scalar files represent the
+  final repeat, while throughput is the three-repeat median. Evidence:
+  `performance_before.tsv`, `performance_after.tsv`,
+  `performance_scalars_closed.tsv`. [DONE]
+- Final scalar audit also identifies an unrelated existing tooling issue:
+  `read_key_values` preserves quotes from solver-authored canonical `run.in`,
+  so `infer_scalar_policy` treats quoted `"none"` as enabled diffusion. The
+  inferred diffusive policy has the same checks as closed for these runs;
+  explicit closed-policy revalidation additionally passes all eight retained
+  outputs. Other quote-sensitive BC/EOS/spacetime branches warrant a separate
+  semantic-decoding fix with round-trip tests; do not blindly change the raw
+  reader, which is also used for input reserialization. No production or
+  parser change is made in this dependency update. [PENDING: separate tooling]
+- Outcome: both maintained variants are current, all production dimensions
+  build, quick and focused MPI/OpenMP checks pass, throughput is unchanged
+  within about 1.2%, and old installs remain recoverable. Standard is still
+  51/52 across scoped reruns because of the independently reproduced trumpet
+  accuracy failure. No solver method/backend was added. Final architecture,
+  dependency-manager unit tests and `git diff --check` pass; no owned build or
+  simulation jobs remain. Existing WIP is preserved; nothing committed or
+  pruned. [DONE]
+
+## Cycle 374 — Dependency-update cost and retention review (DONE: assessment)
+
+- User does not want old dependency versions retained and flags the roughly
+  hour-long update as an infrastructure concern. This supersedes Cycle 373's
+  assumption that long-term rollback copies are desirable. The current tool
+  still retains them; no deletion or refactor is claimed in this assessment.
+  [PENDING: retention implementation]
+- Read-only attribution: the fresh MPI and OpenMP dependency-plus-production
+  builds took 905.54 s and 734.09 s respectively, totaling 27.33 minutes. The
+  remaining work included review, broad validation, stale-fixture diagnosis,
+  the old/new trumpet control and repeated production rebuilds, plus build
+  context recovery. The elapsed hour is not one cold compile or evidence by
+  itself that the numerical implementation needs a rewrite. [DONE]
+- Concrete build-graph issue: presets feed stable AMReX symlink paths to
+  `find_package`; the updater now uses clean-first to guard against older
+  timestamps, which also removes generated catalogs/kernels. The appropriate
+  next refactor is explicit resolved dependency identity in CMake, normal
+  dependency-driven rebuilding, and preservation of unchanged generated
+  outputs. Verify that change with a tiny synthetic dependency-switch test,
+  not repeated full physics builds. [PENDING: implementation]
+- Routine updates should have a bounded quick/changed-area gate and report
+  unrelated physics failures separately. Full old/new attribution or broader
+  suites are additional investigations, not an automatic expansion of every
+  update. Retention cleanup should remove obsolete managed source/build/install
+  directories after validating the replacement; do not indiscriminately
+  remove distinct experimental variants or unknown locally changed sources.
+  No build, simulation, deletion, or dependency switch was performed here.
+  [DONE: assessment and scope]
+
+## Cycle 375 — Independent AMReX builds and obsolete-tree retirement (DONE)
+
+- User explicitly authorizes retiring obsolete versions, sets development
+  latency targets, and clarifies that AMReX must build independently of PyFluid.
+  The dependency updater now configures/builds/installs AMReX only. Removed
+  application rebuild helpers and their clean-first/rollback-build coupling.
+  Failed pin recording restores the previous link without building PyFluid;
+  successful activation retires obsolete recognized managed trees. Each
+  dependency command now prints its own elapsed time. [DONE]
+- Use CMake's existing `CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS`, not a custom
+  dependency fingerprint/target-clean implementation. Presets retain stable
+  input hints, imported include/library paths are real versioned paths, and
+  the pin is a configure dependency. A tiny compiled fixture verifies
+  automatic 1 -> 2 -> 1 dependency switching with deliberately old headers,
+  unchanged generated-artifact mtimes and a true no-op rebuild. Its first
+  assertion incorrectly expected the input cache hint itself to be rewritten;
+  the relevant contract is the imported target and executable. A subsequent
+  rapid-switch test exposed Make 3.81's whole-second timestamp granularity;
+  separating fixture writes by 1.05 s fixes that test artifact. No production
+  sleep or timestamp workaround was introduced. [DONE]
+- Retirement tests cover dry-run, current pin, a still-active old OpenMP
+  companion, dirty source, unrecognized directories and source symlinks.
+  Check mode stays read-only; `--prune --dry-run` previews explicit cleanup.
+  Unknown/modified sources are not auto-deleted. [DONE]
+- Removed 18 verified obsolete AMReX/source/install/build and duplicate
+  PyFluid-control build directories, totaling 1.148 GiB allocated by `du`.
+  Exact targets/sizes: `runs/current/amrex_update/cycle375/retirement_inventory.tsv`.
+  AMReX 26.08 was a clean managed checkout; the non-Git 25.11 snapshot was
+  recursively identical to the official 25.11 archive before deletion. Retired
+  legacy serial/MPI/fp32/GCD installs and unused `pyfluid_amrex-gcd`,
+  `pyfluid_amrex-omp` and `amrex2608_update_control` builds after checking no
+  live processes or current machine profiles consumed them. No backups kept;
+  upstream source and derived builds can be downloaded/recreated. The temporary
+  comparison download was removed too. Both active 26.09 variants, current
+  build trees, compilation cache, runs and unrelated physics WIP remain. [DONE]
+- Both real production configurations resolve AMReX include paths to 26.09
+  versioned installs; both offline dependency checks pass. Four dependency
+  tests pass in about four seconds. Architecture and whitespace checks pass.
+  The existing small excision-stencil target builds in 1.755 s with two cache
+  misses, followed by a 0.091 s no-op build; its three-rank test passes in
+  2.422 s. Logs and compile history use `cycle375_*`. These timings are not
+  full clean-build evidence. No full solver or AMReX rebuild was repeated;
+  real include-path migration may invalidate application objects once on the
+  next selected-target build. [DONE]
+- Documented latency targets for one selected PyFluid executable/backend with
+  AMReX already installed: clean <5 minutes, small edit roughly 15--20 s,
+  larger edit about 1 minute. These are goals, not verified universal bounds.
+  AMReX itself, the full dimension/backend matrix, cold builds, cache-hit
+  rebuilds and no-ops must be timed separately. Full clean-target timing and
+  high-fan-out compile-cost analysis remain future measurements, not grounds
+  for claiming the complete latency target is already met. [DONE: convention]
+
+## Cycle 376 — Compile-target readiness status (DONE: assessment)
+
+- Recorded evidence supports fast no-op and small test-target builds, not yet
+  the full requested development budgets. Cycle 375 measured 0.091 s no-op
+  and 1.755 s for two uncached test-target objects; Cycle 373's 4.52 s full
+  production result was entirely cache-hit compilation. Earlier broad
+  all-dimension integration rebuilds took roughly 8--10 minutes. Decoupling
+  fixes unnecessary work, not the intrinsic cost of compiling each C++ owner.
+  A clean selected 3D target plus representative implementation/shared-header
+  incremental edits remain the appropriate isolated measurements. No build
+  was launched for this status question. [DONE]
+
+## Cycle 377 — Remove avoidable application build work (DONE)
+
+- Improve first, then measure the selected application target; keep the already
+  installed AMReX dependency untouched. Unrelated physics WIP is preserved. [DONE]
+- Reuse identical implementation objects between each dimension's solver,
+  utilities and checks; split diagnostic value types from catalog metadata;
+  narrow generated-kernel invalidation where ownership permits. No numerical
+  algorithms, feature defaults or template products changed. The configured
+  matrix has 45 shared object owners and removes 78 duplicate compile rules
+  (29/21/28 in 1D/2D/3D), leaving 285 compile commands. Utility presets no
+  longer build checkpoint comparison incidentally. [DONE]
+- Diagnostic IDs/value storage remain schema-generated in a 10,904-byte
+  interface; the 63,026-byte metadata/visitor header is included explicitly by
+  its three consumers instead of entering 28 production 3D translation units.
+  Group-selection host methods moved out of the common header. Generator
+  stamps separate diagnostic, Z4c and relativistic families, preserving the
+  real diagnostic -> Z4c equation dependency. [DONE]
+- Three new build tests cover dimension-local object reuse, unused-target
+  exclusion, matching/custom compile definitions, private-option isolation,
+  no-op binaries, metadata-only edits and unchanged output timestamps. The
+  first option-isolation test caught CMake's unquoted empty-property comparison;
+  quoting it and copying matching compile properties fixes that fixture. A
+  duplicate AMReX link from the first 3D configuration was also removed. [DONE]
+- First 3D migration build: 395.493 s, 87 cache misses / one hit, including
+  roughly 75.65 s until the new codegen stamps became ready. This is not a
+  cache-only result or proof of the <5-minute target. AMReX was not rebuilt.
+  Remaining 1D/2D integration took 283.249 s with six workers and 174 misses,
+  reusing completed 3D objects. Both backend configurations contain the same
+  285-command/45-shared-owner graph with no duplicate source/dimension pairs;
+  OpenMP was configured only, not rebuilt or runtime-revalidated. [DONE]
+- Representative single-owner test: removed only the derived 3D diagnostics
+  object and used `CCACHE_RECACHE=1`; recompilation plus link took 3.582 s.
+  This is a forced recompile, not a changed-physics benchmark. Ccache records
+  forced work under `recache` (one), not its hit/miss counters (both zero);
+  the compile helper now prints that counter separately. No source timestamp
+  manipulation or clean-first generation was used. Selected 3D no-op: 0.516 s;
+  final all-dimension no-op: 0.845 s, zero compilation. Checkpoint comparison
+  built in 1.595 s with one miss for its own driver and all seven implementation
+  objects reused. Exact timings: `runs/current/compile_history.tsv`, labels
+  `cycle377_*`. [DONE]
+- Seven dependency/build tests pass (5.755 s), quick smoke 3/3, architecture and
+  whitespace checks pass. The real surface/multipole and Minkowski radiation
+  restart gate passes via the shared-object path; evidence remains under
+  `runs/current/radiation_validation/`. Full standard/physics gates were not
+  repeated and the previously documented trumpet accuracy limitation is not
+  addressed by this build-only pass. [DONE]
+- All four three-repeat, three-rank performance controls pass. Relative to
+  Cycle 373's post-update measurements: hydro2D -1.41%, hydro3D PWC +1.33%,
+  hydro3D WENO-Z/RK4 +1.12%, RMHD1D -0.04%. Explicit closed scalar checks pass;
+  maximum mass/energy/momentum drift is 3.00e-15 / 1.28e-14 / 3.32e-16 and the
+  RMHD control has zero magnetic divergence. Results, scalar rows and the
+  comparison are under `runs/current/build_infrastructure/cycle377/`; scalar
+  checks also append to validation history. The single-file and no-op targets
+  are comfortably met; a general <5-minute cold 3D bound is still unproven.
+  No runtime speedup or broader physical-correctness claim follows from this
+  infrastructure cleanup. No owned jobs remain and nothing was committed. [DONE]
+
+## Cycle 378 — Cold application-build estimate (DONE: assessment)
+
+- AMReX remains an independently installed dependency consumed through
+  `find_package`, not an application sub-build. For one full-featured 3D MPI
+  executable, budget about 6--7 minutes including fresh generation, or about
+  5--6 minutes with generated kernels current, assuming no useful compilation
+  cache. For all three production dimensions on one backend, estimate roughly
+  9--12 minutes; the latest mixed four-/six-worker rebuild stages totaled
+  678.742 s. That sum is not a measured single fresh all-target invocation.
+  No new build was run for this estimate. [DONE]
+
+## Cycle 379 — Durable development-build contract (DONE: assessment)
+
+- User asks whether further work is worthwhile to prevent recurring build
+  slowdowns during physics development. Source inspection confirms the present
+  architecture checks enforce specific known ownership mistakes, while the
+  compile benchmark records target wall time/cache counters but neither
+  attributes per-owner cost nor enforces a development budget. Existing rules
+  already require additive method cost, declaration-only factories and local
+  generated-header ownership; another prose-only rule is insufficient. [DONE]
+- Recommend a bounded follow-up: inspect expensive compile owners and header
+  dependency reach, keep ordinary method edits local, add a cheap rebuild-impact
+  regression check, and exercise representative uncached/incremental timing at
+  integration points under fixed worker/backend settings. Time limits should
+  distinguish changed-file classes and machine load, not reject valid physics
+  growth by a blanket file/target-count cap. Preserve runtime performance and
+  all methods; choose structural changes from measured costs. This request was
+  assessed without another rebuild or production-code change. [DONE: proposal]
+
+## Cycle 380 — Enforce and measure development-build cost (DONE)
+
+- Implement the agreed focused pass: cheap ownership/dependency-impact checks,
+  reusable per-owner cold compile profiling, and explicit timing budgets at
+  integration points. Use measured costs to choose any structural change;
+  preserve every method, numerical behavior and unrelated WIP. [DONE]
+- Verify small regressions, real compile measurements and relevant runtime
+  controls. Keep profiling separate from normal cached builds, do not rebuild
+  AMReX, and do not interpret a warm cache as cold compile performance. [DONE]
+- `tools/build_dependencies.py` follows transitive literal project includes,
+  reports source-owner reach and a concrete include chain on boundary failure.
+  The quick architecture gate now uses it for declaration-only factories/config,
+  diagnostic metadata and reconstruction ownership. It replaces the narrower
+  direct-include checks rather than duplicating them. Shared parabolic/PPM
+  helpers and the single advanced-RMHD owner are explicit exceptions. This is
+  a conservative all-preprocessor-branch check, not a second CMake dependency
+  executor or a configured object-count predictor. [DONE]
+- Primitive-cache and relativistic-source public factories now include the
+  existing EoS/fixed-spacetime value headers instead of implementations. The
+  unused mesh include is removed. No formulas, dispatch choices, state layouts
+  or compiler optimization flags changed. Fixed-spacetime implementation reach
+  drops from 46 to 44 source owners; EoS reach remains 62 because other genuine
+  implementation consumers still require it. This is boundary hardening, not
+  a claim of a large whole-build speedup. [DONE]
+- `tools/profile_compile.py` replays exact configured production compile
+  commands sequentially without ccache; it retargets objects/dependency outputs
+  outside the working build, optionally collects Clang traces, records commands,
+  revision/dirty state, object bytes and phase totals, and discards scratch
+  objects. Unsupported response/hidden-output commands are rejected. Tests
+  cover output isolation, dimension selection, ambiguous owners and overlapping
+  trace totals. `benchmark_compile.py` adds explicit no-op/local/shared/cold
+  budgets (1/20/60/300 s), a separate `slow` result, `--max-seconds` and
+  `--allow-slow` (which never suppresses compiler errors). Its existing rolling
+  TSV schema is retained; `.latest.json` records budget/build/recache context.
+  Usage and durable rules are in install/infrastructure docs. [DONE]
+- Measured 3D owners with the real `-O3 -mcpu=native` flags, no cache:
+  diagnostics 1.870 s, relativistic sources 1.425 s, MP5 49.541 s, MHD-CT
+  evolution bundle 7.911 s, advanced RMHD flux 19.397 s. The initial independent
+  MP5 probe was 49.730 s and both MP5 objects were 8,667,616 bytes. Its frontend
+  is only 1.013 s versus 48.486 s backend (28.358 s optimizer and 20.127 s code
+  generation). Phase totals are inclusive, not additive measurements. The
+  longest individual machine-code events include solid-wall flux kernels.
+  Profiles/logs remain under `runs/current/build_infrastructure/cycle380/` in
+  `profiles/`, `heavy_profiles/` and the initial `before/` trace. [DONE]
+- All three MPI production executables integrate the header change in
+  41.181836 s with six workers, 33 cache misses and no hits; the explicit 60 s
+  shared-edit budget passes. Subsequent all-dimension no-op is 0.790034 s,
+  zero hits/misses/forced recompiles, passing the 1 s budget. AMReX and generated
+  equations were not rebuilt. These are incremental measurements, not a fresh
+  full-build claim. Timing labels: `cycle380_factory_interface_integration`
+  and `cycle380_noop` in `runs/current/compile_history.tsv`. [DONE]
+- Thirteen dependency/build unit tests pass (5.609 s), quick gates pass 3/3,
+  transitive architecture and whitespace checks pass. One initial unit fixture
+  incorrectly included `-MD` in its expected isolated command; correcting the
+  expectation verified that dependency output is actually removed. Sandbox
+  denial of uv's global cache was handled with `UV_CACHE_DIR=.uv-cache`; MPI
+  and CMake continued through the approved execution context. No full standard
+  suite or OpenMP rebuild was run, and the pre-existing trumpet accuracy
+  limitation remains outside this build-only change. [DONE]
+- Four three-repeat/three-rank performance controls pass. Relative to Cycle
+  377: hydro2D +0.792%, hydro3D PWC +0.035%, hydro3D WENO-Z/RK4 -0.119%, RMHD1D
+  +0.037% (consistent with no material runtime change). Explicit closed scalar
+  checks on the four retained runs pass: maximum mass/energy/momentum drift
+  3.00e-15 / 1.28e-14 / 3.32e-16; RMHD divergence zero. Compact comparison and
+  scalar TSVs are alongside the profiles; normal histories are appended. [DONE]
+- Remaining cost is measured, not solved: the heavy MP5 owner exceeds the
+  20 s local-edit goal. Future work should reduce repeated optimization of
+  genuinely shared flux bodies only with wall/mapped-patch and fluid runtime
+  controls. Another header-only reshuffle, weaker optimization or reduced
+  method set is not justified by these traces. No universal <5-minute clean
+  selected-executable bound is established. No jobs remain; nothing committed.
+  [DONE: bounded infrastructure pass; heavy-kernel optimization remains open]
+
+## Cycle 381 — Single-object ID readiness assessment (DONE: assessment)
+
+- Reviewed current ownership catalog, configuration restrictions, stellar/BH
+  documentation and recorded validation history; no new solve or evolution was
+  run. Core TOV/cold-CompOSE, axisymmetric rotating-star XCTS, aligned spinning
+  BH/self-gravitating disk, physical-ID persistence/continuation and ordinary
+  cross-grid materialization are substantially implemented. September 1 records
+  include passing TOV adaptive-to-Cartesian, cold-CompOSE mass-radius/RNS
+  handoff/restart and physical-ID coarse/fine/larger-domain checks. [DONE]
+- A useful single-object v1 is close, but the entire requested combination
+  matrix is not complete. RNS endpoint/physical-reference and nonzero Uryu
+  sequence validation remain; CTT/CTTK rotating equilibrium lacks a stationarity
+  closure. Constraint-solved BH spin is demonstrated to 0.675 with a numerical
+  failure at target 0.7. True nonaxisymmetric spherical XCTS and relatively
+  tilted coupled BH-disk construction are absent. Constructed magnetic
+  equilibrium remains a restricted Cartesian, exact-layout stellar path;
+  cross-grid CT transfer and magnetic disk composition are not available.
+  [DONE: explicit limits]
+- Recommend reusing a compact representative ID -> save/reload -> same/changed
+  grid -> very short evolved-spacetime gate, with refinement, charges and
+  recovery counts, to define the core completion boundary. Separate that from
+  optional new method families and long BH interior/gauge/outer-boundary
+  evolution work. The latter still has documented accuracy failures, including
+  the short static-trumpet gate, and cannot be called finished. The last build
+  pass improved development safeguards, not measured solver runtime. [DONE]
+
+## Cycle 382 — ID and evolution accuracy-order audit (DONE: assessment)
+
+- Source-checked the distinction between generated options and production
+  operators. `differential_equations.py` generates centered, one-sided,
+  upwind and KO families for 2/4/6/8; `centering_transfer.hpp` also exposes
+  those transfer orders. The live Z4c RHS, constraints, KO and key matter
+  centering calls explicitly use order 4, and nodal AMR prolongation uses
+  four-point Lagrange interpolation. No global 2/4/6/8 evolution knob exists.
+  Fourth-order smooth Z4c convergence gates exist; higher-order building
+  blocks do not establish higher-order full evolution. [DONE]
+- General Cartesian CTT/CTTK/XCTS and the reduced spherical scalar/toroidal
+  elliptic owners are second-order. `boundary_interpolation_order=4` changes
+  AMReX coarse-fine interpolation, not the interior Laplacian. Direct TOV is
+  a separate adaptive Dormand--Prince 5(4) ODE integration in log enthalpy;
+  analytic BH data are not a finite-difference elliptic solve. [DONE]
+- Fluid methods range from PWC/PWL-MC to PPM and formal fifth-order
+  MP5/WENO-Z/TENO5 reconstruction. Existing 1D smooth-contact reconstruction
+  checks and the PWL second-order RMHD entropy-wave gate are different
+  evidence; neither certifies a universal high-order multidimensional GRMHD
+  operator. Shared timesteppers provide orders 1/2/3/4, not 6/8 in time.
+  [DONE]
+- Recommend establishing a consistent fourth-order smooth accuracy path
+  before promoting sixth/eighth order: all scalar/vector elliptic terms,
+  stretched-grid/boundary closures, AMR/centering transfers and magnetic
+  coupling need matching verification. The existing generator makes stencil
+  construction tractable; it does not supply whole-scheme stability or
+  convergence automatically. No solver changes or new numerical runs were
+  performed for this question. [DONE: assessment]
+
+## Cycle 383 — Shared spatial-order foundation (DONE: bounded foundation; broader solvers pending)
+
+- Added strict `schema/numerics.toml` ownership for the supported 2/4/6/8
+  spatial families. Every generated centered, one-sided, shifted-upwind, KO,
+  and staggered-centering stencil consumes that one list. The former handwritten
+  centering tables are derived from exact SymPy interpolation moments. The
+  catalog emitter owns the small generated C++ order contract separately from
+  the heavier physics-kernel stamp. [DONE]
+- Added exact smooth uniform-Cartesian point-to-cell-average and inverse
+  cell-average-to-point operators for all four orders. Python checks prove the
+  defining polynomial functional identities through each nominal order; the
+  generated C++ compile check instantiates all orders and passes. These are
+  required finite-volume building blocks, not yet a multidimensional fluid/CT
+  order selector and not a positivity method. [DONE]
+- Generalized the single nodal AMR interpolater to orders 2/4/6/8 without four
+  algorithm implementations. `spacetime.prolongation_order` selects the shared
+  owner (default 4); it shortens cleanly on invariant/thin coarse lines and
+  scales ordinary/excision stencil support with the selected order. The
+  complete 1D/2D/3D production target builds. [DONE]
+- Focused evidence: three exact Python order-family tests pass; generated C++
+  codegen executable passes; the changed nodal owner and complete 1D/2D/3D
+  production target compile; quick AMReX gates pass 3/3. Integration after the
+  hot 3D build compiled 144 remaining objects in 278.224 s; the following true
+  all-dimension no-op was 0.89 s with zero hits, misses or forced recompiles.
+  No prolongation convergence scan, standard suite, runtime performance benchmark,
+  or higher-order Z4c/XCTS/fluid evolution was run. [DONE: explicit boundary]
+- Next numerical work is not another catalog entry: route live Z4c derivatives,
+  KO, centering and boundary closure through one runtime order plan without
+  multiplying the generated RHS; then add a genuinely fourth-order XCTS
+  interior/physical-boundary owner and a fourth-order finite-volume/UCT path
+  using the new point-average operators. Sixth/eighth orders follow those
+  convergence gates. Pure-poloidal Grad--Shafranov remains the only validated
+  magnetohydrostatic ID route; toroidal/mixed equilibria and a genuinely
+  nonaxisymmetric 3D XCTS owner remain physical-method work, not aliases of
+  existing tilted materialization. [PENDING]
+
+## Cycle 384 — Dimension-projected Cartesian conformal ID foundation (DONE: bounded foundation)
+
+- Harden the Cartesian initial-data elliptic layer for ordered 1D/2D/3D axis
+  projections without cloning physics by dimension, while keeping a full 3D
+  physical stellar owner distinct from numerical projection capability.
+  Preserve all unrelated dirty-tree work and the existing direct 3D path.
+  [DONE]
+- `InitialDataEllipticHierarchy::cartesian_physical_axes` now maps active
+  runtime directions to canonical physical `x/y/z`. CTT, pure CTTK, hybrid
+  CTTK and XCTS retain all three vector and six symmetric-tensor components;
+  derivatives along omitted axes are zero. Reflection parity uses the same
+  mapping, including deliberately non-leading `y`, `z`, `x z` and `y z`
+  layouts. There are no per-dimension conformal-equation implementations.
+  [DONE]
+- The cell-centered conformal-vector owner uses the direct three-component
+  AMReX MLTensor path in 3D, packs only the two active physical components in
+  2D, and solves the analytic 1D reduction: the active component has source
+  scale `3/4` for `(4/3) d2 W = S`; inactive physical components use scalar
+  Poisson. The nodal owner applies the same physical-axis projection in its
+  shared three-component operator. This avoids regressing the full 3D path
+  with projection-only copies. [DONE]
+- `schema/methods.toml` remains the owner source of truth and now requires
+  `solver_axis_layouts`. The Cartesian conformal owner physically remains
+  `dimension=3`, `axes=x y z`, while separately declaring every canonical
+  Cartesian 1D/2D/3D projection. The strict loader rejects foreign,
+  reordered, duplicate, or missing-physical layouts; generated C++ exposes a
+  separate solver-layout predicate. This intentionally does not authorize a
+  planar solve as a TOV/RNS physical equilibrium. [DONE]
+- Added one manufactured conformal-vector check per executable dimension for
+  both cell and vertex centering, all three physical components and mapped
+  reflection parity. A first 2D/3D version incorrectly used a solution that
+  did not vanish on transverse Dirichlet faces; replacing it with a product of
+  sines made the manufactured boundary value exact and retained nonzero mixed
+  `grad(div W)` terms. Added exact vacuum smoke solves through CTT, CTTK,
+  hybrid CTTK and XCTS. [DONE]
+- The maintained `validate_reduced_initial_data.py` now runs these focused
+  targets in 1D/2D/3D through the canonical MPI launcher, includes them in its
+  normal result/history rows, and has a fast `--cartesian-projections-only`
+  slice. Three-rank results pass: cell `Linf` errors are
+  `2.40698e-5/2.37134e-5/2.35786e-5`; vertex errors are
+  `2.41073e-5/6.53265e-5/1.11124e-4`; residuals are at most `7.53e-13`, every
+  reflection check is valid, and every coupled vacuum error is zero. Logs and
+  the compact TSV are under
+  `runs/current/reduced_initial_data_validation/`. [DONE]
+- All three focused C++ targets and the complete 1D/2D/3D production target
+  compile. `validate_codegen_flux.py`, `check_architecture.py`, nine build
+  ownership unit tests, whitespace checking and the quick AMReX suite pass;
+  quick gates are 3/3. The attempted `uv run pytest` route was unavailable in
+  this environment, so the repository's unittest executable was used for the
+  applicable build tests. No standard/full suite, nontrivial reduced matter
+  solve, Cartesian-vs-curvilinear work-precision comparison, convergence scan,
+  runtime benchmark, or fourth-order elliptic operator was run. [DONE:
+  explicit evidence boundary]
+- Next useful numerical step is a nontrivial manufactured coupled matter
+  source with refinement, followed by one physically valid invariant problem
+  compared against the corresponding curvilinear owner after materialization.
+  A new reduced physical object owner should be cataloged only after that
+  physics and boundary contract exists. [PENDING]
+
+## Cycle 385 — Nonzero-matter Cartesian constraint convergence (DONE)
+
+- Added a test-only continuum manufactured CTT/XCTS fixture in
+  `tests/cartesian_id_convergence.cpp`: prescribed smooth psi, alpha*psi,
+  and all three physical vector components independently determine the matter
+  source, stress, and trace-free tensor. The 16/32-cell scans cover 1D/2D/3D,
+  cell/vertex centering, and the reduced x/y/z and xy/xz/yz axis permutations.
+  This matter need not obey an EoS or energy condition; it tests the operator,
+  not a physical stellar equilibrium. Preserved unrelated WIP. [DONE]
+- The scan exposed nonconvergent nodal boundary extrinsic curvature. Generic
+  nodal outer FillPatch constant-extrapolates; using its ghosts for a centered
+  boundary derivative halves the slope. Pre-fix 1D CTT vertex tensor errors at
+  16/32 cells were `0.0031508701/0.0031439111` (order `0.00319`). The shared
+  Cartesian first-derivative helper now uses existing generated
+  `domain_first<2, Direction>` one-sided stencils at physical outer vertices.
+  Cell face-BC ghosts and genuine periodic/reflection ghosts retain centered
+  differences. A two-point nodal line uses its linear secant. Scalar gradients
+  and vector-to-tensor assembly share this closure; no evolution BC, source
+  equation, boundary-value repair, or new method-template axis was added.
+  The fine CTT/XCTS vertex tensor errors become `2.55942e-5/1.22416e-5`. [DONE]
+- `validate_reduced_initial_data.py --cartesian-matter-convergence-only
+  --ranks 3 --timeout 240` passes all 12 method/centering/dimension cases.
+  The minimum Linf orders lie in `1.98406–2.00494`, including boundary
+  vertices. Reduced-axis error-norm differences are at most `1.73e-18`, and
+  tensor traces remain at roundoff. The first isolated scan took
+  `3.05/5.74/24.43 s` by dimension; a final rebuild/retest under competing
+  validation load also passes (`4.20/7.70/40.60 s`, not performance evidence).
+  Logs and `cartesian_matter_convergence.tsv` live under
+  `runs/current/reduced_initial_data_validation/`. The full suite owns a
+  `cartesian_initial_data_convergence` step; standard keeps its cheaper
+  projection slice. [DONE]
+- Tightened the existing catalog layout loader to reject repeated axes and
+  noncanonical whitespace, in addition to invalid/out-of-order axes and a
+  missing physical layout. Regression tests cover all these cases. [DONE]
+- Found an independent build invalidation trap: sandboxed CMake cannot query
+  `sysctl hw.optional.arm64`, so its implicit Darwin architecture detection
+  removed `-arch arm64` from every compile command. Stopped only this turn's
+  unnecessary production rebuild after roughly six minutes, before completion.
+  The existing Mac-specific CMake presets and both local machine profiles now
+  explicitly pin `CMAKE_OSX_ARCHITECTURES=arm64`; portable CMake is unchanged.
+  Restoring the original commands rebuilt production in `8.48 s` with
+  `259 cache hits / 3 misses`, no forced recaches. This is cache-assisted
+  integration, not a cold-build measurement. Sandbox and non-sandbox
+  reconfigures preserve identical `flags.make` SHA256
+  `d99e9a2a54b4d1a8d5c8089f6f94922c2983dc329ac7780d668a0662d191678c`.
+  The first no-op under competing tests was `1.40 s`, correctly recorded slow
+  against the explicit one-second goal, with zero compile activity. A repeat
+  was `1.10 s`, also slow against that strict goal; later load inspection found
+  two unrelated Cactus evolution workers throughout this period. The label
+  `cycle385_pinned_arch_noop_idle` therefore does not establish an idle-host
+  measurement. Once those jobs ended independently, an uncontended no-op
+  passed in `0.68 s`, with no cache/compile activity. [DONE]
+- Eleven build-contract tests, generated-physics validation, architecture,
+  Python syntax checks, and the quick suite (3/3) pass. Existing full elliptic
+  checks pass in 1D/2D. The first combined 3D check hit a deliberately bounded
+  240-second timeout during its final TOV section while another physical TOV
+  regression was running; its prior manufactured CTT/CTTK/hybrid checks all
+  converged. The unchanged 3D regression then passed in `119.58 s` with no
+  other PyFluid workers and a 600-second cap, including TOV-CTT/XCTS (97/17
+  iterations, conformal Linf errors `4.62552e-4/5.78958e-4`). No tolerance was
+  loosened. Final process inspection found no leftover PyFluid workers. [DONE]
+- Physical TOV full/octant, saved-octant expansion, and finer-target expansion
+  controls pass with zero recovery/reset events. Maximum full/octant scalar
+  difference is `3.74809e-5`; same-grid expansion is `3.74794e-5`; finer-target
+  maximum density/minimum lapse agree to `1.71701e-16`. Corrected the validator's
+  misleading "profile difference" label to "extrema difference": those two
+  numbers are not a full profile comparison. The known interpolated-coarse-ID
+  constraint limitation remains: expanded Hamiltonian Linf is `3.00586e-4`,
+  versus `9.69103e-2` on the finer target. These are t=0 field-transfer/preflight
+  checks, not a new evolution or constraint-preserving upsample claim. [DONE]
+- Three-repeat runtime controls completed but warn at baseline ratios
+  `0.524/0.618/0.833/0.810` (hydro2D, hydro3D PWC, hydro3D WENO-Z/RK4, RMHD1D).
+  Read-only process inspection found two unrelated
+  `ETK_Hypatia/.../cactus_COCAL_BNS_EVOL evolution.par` processes each using
+  approximately 100% CPU for the preceding 13 minutes; neither was changed.
+  These contended measurements do not establish a code regression or a new
+  baseline. `pmset -g therm` reported no recorded warning (not proof of no
+  throttling). Results remain in `runs/current/pyfluid_amrex_performance/` and
+  the rolling history. All four retained final-repeat scalar files pass
+  explicit closed-policy checks, with mass drift at most `3.00e-15` and zero
+  divB. Explicit policy avoids the already recorded Cycle 373 canonical-quote
+  inference issue; this pass does not alter the raw input reader. [DONE]
+- After the unrelated workers ended independently, repeated all four controls
+  with three ranks and three-repeat medians: `98.16/59.76/2.58/1.99 Mcells/s`,
+  baseline ratios `0.89/0.97/0.99/0.98`, all PASS. The new label is
+  `cycle385_cartesian_id_uncontended`; ordinary result/run files overwrite,
+  while the earlier contended measurements remain in the rolling history.
+  Final-repeat explicit closed-policy scalar checks pass again. This restores
+  normal throughput; no evolution speedup from this ID boundary fix is claimed.
+  [DONE]
+- Nonzero reduced CTTK convergence and physical Cartesian-versus-curvilinear
+  work-precision comparisons remain
+  separate follow-up work. No new physical reduced Cartesian stellar owner,
+  fourth-order elliptic claim, complete standard/full suite, or long evolution
+  is implied by this pass. [PENDING]
+
+## Cycle 386 — Shared coordinate/operator validation contracts (DONE)
+
+- Continue hardening while replacing repetitive per-object coordinate testing
+  with shared algebra, discrete-operator, handoff, and physics-owner contracts.
+  Inventory existing checks first; add independently referenced cross-chart
+  operator tests and explicit coverage boundaries without a new framework or
+  compiled method-product axis. Retain targeted boundary/nonlinear/physical
+  controls and preserve unrelated WIP. [DONE]
+- Added `tests/test_coordinate_contracts.py`: elementary Cartesian embeddings
+  independently define Jacobians/bases and transform arbitrary local scalar,
+  vector, and general nonsymmetric tensor derivatives. Nine contracts per
+  Cartesian/cylindrical/spherical frame cover metric, orientation/volume,
+  orthonormal basis, scalar/vector gradients, curl, divergence, Laplacian, and
+  tensor divergence. A rigid-rotation control explicitly requires zero strain
+  and nonzero vorticity. The arbitrary-derivative identities include zero
+  inactive derivatives mathematically; they are not counted as additional
+  executable-layout tests. Existing dimensional-consistency gates retain that
+  responsibility. No origin/pole, discretization, or nonlinear proof is
+  implied. The new standard/full gate passes (`15.22 s` while compiling);
+  quick-suite membership is unchanged. [DONE]
+- Before the fix, independent curvilinear vector-gradient checks failed with
+  a `-v1/r` residual, and rigid rotation incorrectly had a zero vector gradient
+  despite the separately computed nonzero curl. Corrected the off-diagonal
+  connection from `-v_j d_i(h_j)/(h_i h_j)` to
+  `-v_i d_j(h_i)/(h_i h_j)` for gradient index order `(derivative, component)`.
+  General tensor divergence also failed with `(t01-t10)/r`; corrected the
+  connection contraction for divergence on its first index. Trace/symmetric
+  strain and symmetric stress divergence hid both defects. The current
+  production symmetric stresses are algebraically unchanged; regenerated
+  viscous expressions have some equivalent spelling changes. An explicit
+  symbolic comparison against committed `tensor_algebra.py` confirms identical
+  strain and symmetric-tensor connection for arbitrary fields in all three
+  charts. [DONE]
+- Updated the old numerical tensor-connection reference, which had duplicated
+  the same index error. Full generated-kernel freshness/numerical validation
+  passes, as do architecture and Python syntax checks. Documented the layered
+  contract in infrastructure conventions, the antisymmetric-error lesson in
+  knowledge, and source/test/NASA verification routes in references. [DONE]
+- Production integration passes but its shared-header rebuild took `828.16 s`
+  with `0 cache hits / 187 misses` at three jobs, correctly recorded SLOW
+  against the 60-second shared-edit target. This is an incremental rebuild
+  after changing a widely included generated header, not a fresh dependency or
+  clean-build measurement. Read-only dependency inspection found
+  `eos/equation_of_state.hpp` includes
+  all of `kernels_generated/vector_ops.hpp` for just magnetic energy density,
+  unnecessarily coupling this vector edit to reconstruction/flux compilation.
+  Other legitimate vector consumers include diffusion, CT, and flux divergence.
+  `build_dependencies.py` reports 63 source owners as a conservative
+  source-level upper bound (not a configured object count).
+  Adding the Python contract itself creates no C++ compilation axis. A final
+  no-op took `1.02 s` with zero compile/cache activity, marginally SLOW against
+  the explicit one-second target; it is not reported as a clean build. [DONE]
+- Rebuilt 1D cylindrical/spherical phi-shear implicit-viscosity controls pass
+  with three ranks, CFL 0.9, four complete timesteps, mass drift at most
+  `2.83e-16`, and energy drift at most `3.77e-16`. The angular-diffusive policy
+  intentionally does not require Cartesian linear-momentum conservation.
+  Evidence is under `runs/current/curvilinear_methods_coordinate_contracts_shear/`.
+  Timing was collected during compilation, so it is not a performance baseline;
+  these short controls are not a new diffusion convergence study. [DONE]
+- Three rebuilt 3D cylindrical/spherical static-viscosity controls pass with
+  explicit/implicit diffusion, three ranks, CFL 0.9, and four complete steps;
+  mass/energy drift is zero. Results are under
+  `runs/current/curvilinear_methods_coordinate_contracts_static/`.
+  Quick suite passes 3/3; a repeat without concurrent tests takes `2.36 s`
+  summed over its steps (the first pass overlapped the static controls and
+  took `3.09 s`). No full standard/full suite was run. [DONE]
+- Runtime controls, three ranks and three-repeat medians, all pass at
+  `98.16/59.99/2.58/2.00 Mcells/s` for hydro2D, hydro3D PWC, hydro3D WENO-Z/RK4,
+  and RMHD1D, respectively. These are consistent with Cycle 385's uncontended
+  controls; no runtime speedup is claimed. Final-repeat explicit closed-policy
+  scalar checks pass: maximum mass/energy/momentum drifts are
+  `3.00e-15/1.28e-14/3.32e-16`, with zero divB. Results and histories use the
+  label `cycle386_coordinate_contracts`. The explicit policy avoids the
+  previously recorded canonical-quote inference issue without changing it.
+  [DONE]
+- Next bounded infrastructure task: split generated vector headers along
+  actual consumer boundaries so EoS/reconstruction need not parse or rebuild
+  curvilinear viscous operators. Discrete curvilinear regularity/boundaries,
+  nonlinear CTTK, and physical cross-chart ID anchors remain separately
+  required; this shared continuum contract does not certify them. [PENDING]
+
+## Cycle 387 — Bound generated-vector compile dependencies (DONE)
+
+- Split generated vector kernels by actual equation responsibility and move
+  consumers to precise leaves. Isolate vector-only generation dependencies,
+  protect ownership with the existing architecture/build checks, and measure
+  integration versus local-edit costs separately. Preserve numerical formulas,
+  optimization, all methods, and unrelated WIP. [DONE]
+- The six generated leaves (calculus, viscous, EMF, magnetic scalars, CT,
+  finite-volume divergence) use one grouping declaration next to their
+  equations. The aggregate header is validation-only. Comparing all 63 emitted
+  function definitions against the pre-split working header is byte-for-byte
+  identical, with no missing or added functions. `diffusion_timestep.hpp`
+  extracts the existing three timestep helpers unchanged, removing the viscous
+  RHS dependency from `signal_speed_factory.cpp`. [DONE]
+- Conservative include-graph reach for the viscous leaf drops from the old
+  umbrella's 63 source owners to 7: the six kernel bundles plus driver context,
+  across all dimensions/preprocessor branches (not the actual object count).
+  Architecture checks now reject a production vector umbrella, EoS reach into
+  unrelated vector leaves, and a timestep-to-viscous-RHS leak. Fourteen build
+  tests pass, including injected leaks, one-formula/one-leaf emission changes,
+  and unchanged-leaf timestamps. Full generated freshness/numerical validation
+  passes. [DONE]
+- CMake uses a vector-only generation stamp. Configured `build.make` lists
+  `vector_equations.py` only under that stamp, not the general physics stamp.
+  A source-timestamp regeneration probe takes `1.52 s`, reruns only vector
+  generation, and triggers zero C++ compilation/cache activity. The existing
+  emitter preserves unchanged leaf timestamps. This is regeneration plumbing,
+  not a cold formula-compile measurement. [DONE]
+- First integration caught a missing direct `method_codes.hpp` include in
+  the newly extracted timestep header (`DiffusionExplicit` had previously
+  arrived through the RHS includes). Added its actual declaration owner;
+  numerical code is unchanged. The initial migration build failed after
+  `834.05 s` (`1 hit / 185 misses`) despite completing the other dimensions;
+  the corrected resume passes in `56.95 s` (`0 hits / 23 misses`). All three
+  production executables now build. These are one-time migration costs, not
+  improved local-edit timings. The aggregate compile check includes the
+  timestep header first to enforce self-containment; separate syntax checks
+  pass for it in 1D/2D/3D and for all six vector leaves in 3D. [DONE]
+- Compiler depfiles confirm exactly 21 affected production objects for the
+  viscous leaf (7 source owners times 3 dimensions), excluding reconstruction
+  owners. Touching that leaf and building with command-local
+  `CCACHE_RECACHE=1` takes `52.10 s` at three jobs, including all three links:
+  `0 hits / 0 ordinary misses / 21 forced recompiles`. This passes the
+  60-second shared-edit budget and is about 15.9 times faster than Cycle 386's
+  `828.16 s` broad incremental rebuild. The measurements differ in generation
+  work; neither is a whole clean build. No optimization flags, equations,
+  reconstruction options, or template axes changed. [DONE]
+- Build/coordinate-contract suite slice passes (14 build tests; independent
+  coordinate contracts), as does full generated freshness/numerical validation.
+  The quick suite passes 3/3, taking `3.14 s` summed over its steps, slightly
+  above the under-3-second smoke goal. Five focused cylindrical/spherical
+  explicit/implicit viscosity controls pass with three ranks, CFL 0.9, and
+  four complete steps. Static mass/energy drift is zero; shear mass/energy
+  drift is at most `2.83e-16/3.77e-16`. The angular-diffusive policy intentionally
+  excludes Cartesian linear-momentum conservation. Evidence is under
+  `runs/current/curvilinear_methods_vector_split/`; these short controls are
+  not a new convergence study. [DONE]
+- Runtime performance controls pass at `98.55/59.84/2.58/2.00 Mcells/s`
+  (three-rank, three-repeat medians), consistent with Cycle 386; no evolution
+  speedup is claimed. Explicit closed-policy checks of all four final repeats
+  pass, with maximum mass/energy/momentum drift
+  `3.00e-15/1.28e-14/3.32e-16` and zero divB. Evidence uses
+  `cycle387_vector_split` in the performance history. The final no-op build
+  takes `0.96 s`, with zero compile/cache activity, passing its one-second
+  budget. Final architecture/whitespace checks pass; no build or solver
+  processes remain. [DONE]
+- Cycle 386's vector dependency split is complete. This does not establish a
+  new whole-clean-build bound or fix the known expensive cold compilation of
+  a genuinely edited heavy reconstruction owner. Those costs remain distinct
+  from the now-bounded viscous-header edit. Existing physical validation
+  boundaries and unrelated dirty work are unchanged; no full standard/full
+  suite or new convergence scan was run in this cycle. [DONE]
+
+## Cycle 388 — Reduce repeated flux-kernel compilation (DONE)
+
+- Continue the measured build-cost work before returning to remaining ID
+  operator/physical validation. Inspect the heavy reconstruction owner's
+  optimizer/code-generation profile; test the smallest shared-body ownership
+  change justified by that evidence. Preserve fused face reconstruction and
+  Riemann solving, production optimization, runtime methods, and unrelated WIP.
+  Measure cold compile cost separately from integration/cache behavior. [DONE]
+- Require focused wall/mapped-patch and fluid controls plus the maintained
+  performance benchmark before retaining a hot-path change. [DONE]
+- Fresh isolated MP5 3D compilation with unchanged production flags and no
+  cache takes `48.323 s`, producing `8,667,648 bytes`: frontend `0.978 s`,
+  backend `47.300 s`. Letting the compiler choose inlining for the three fused
+  Newtonian face solvers (ordinary hydro, mapped-normal hydro, MHD) reduces
+  this to `26.259 s` and `4,749,336 bytes` (frontend `1.004 s`, backend
+  `25.220 s`). The three `AMREX_FORCE_INLINE` qualifiers become ordinary
+  `inline`; equations, fusion, host/device annotations, compile flags and
+  method dispatch are unchanged. The profile shows substantially less
+  optimizer work in solid-wall/ordinary hydro bodies; relativistic work is
+  effectively unchanged. Traces are in
+  `runs/current/build_infrastructure/cycle388/{before,inline_trial}/`. [DONE]
+- Fifteen build-contract tests pass, including a narrow check for this measured
+  face-solver expansion boundary; architecture and whitespace checks pass.
+  The all-dimension integration results are recorded below. [DONE]
+- Pre-integration runtime controls use the still-unchanged executables:
+  standard four three-rank/three-repeat medians are
+  `98.38/59.76/2.57/2.00 Mcells/s`. Additional paired MP5 hydro3D/HLLC/RK4,
+  MHD2D/HLLD/RK4, and moving-wall2D/HLLC/SSPRK3 medians are
+  `3.24969/3.00769/6.42326 Mcells/s`, with scalar checks passing. The custom
+  controls use the shared benchmark/validation helpers; their retained
+  canonical inputs and results are under `cycle388/focused_before/`, not a
+  new benchmark implementation. Their post-integration speed comparison will
+  use these measured baselines, not the provisional measurement scale. [DONE]
+- Broad inlining trial integrates in `281.88 s` at three jobs (`48 misses`,
+  zero hits); correctly SLOW against the shared-edit budget. Its runtime
+  controls expose a real PWC hydro regression: 2D `98.38 -> 90.61 Mcells/s`,
+  3D `59.76 -> 54.70`. WENO-Z/RK4 and RMHD are essentially unchanged;
+  paired MP5 hydro/MHD/wall medians are `3.20066/3.12778/6.33390 Mcells/s`
+  with passing scalar checks. Do not promote that broad trial. [DONE]
+- Narrowed ordinary hydro to retain the original direct inlining for PWC.
+  The existing reconstruction/positivity owner and one factored Riemann
+  selection helper serve both PWC and shared higher-order callers; no
+  equations are duplicated and the selection is `if constexpr` on the
+  existing reconstruction parameter, not a new template axis or runtime
+  branch. The narrowed isolated MP5 compile takes `28.547 s`, object
+  `5,041,600 bytes`, retaining about 41% time and 42% size reduction versus
+  the fresh baseline. The second integration/runtime verification passes as
+  recorded below. [DONE]
+- Corrected integration passes in `307.14 s` (`48 misses`, no hits, three
+  jobs), still SLOW against the global shared-edit budget. Final standard
+  medians are `97.71/59.39/2.59/2.00 Mcells/s`; ratios to the matched before
+  controls are `0.9931/0.9937/1.0054/0.9994`. The PWC regression is removed.
+  Final MP5 hydro/MHD/wall medians are `3.20826/3.11285/6.41604`, ratios
+  `0.9873/1.0350/0.9989`, all within the paired 5% regression gate. These are
+  three-rank, three-repeat controls, not a universal runtime improvement.
+  All seven final-repeat scalar checks pass; selected time/mass/energy,
+  momentum, extrema, divB and wall-work histories are numerically identical
+  to their before counterparts. Comparison is in `cycle388/comparison.tsv`.
+  Closed mass/energy drift is at most `3.00e-15/8.97e-14`; MHD divB is at
+  most `1.15e-14`. The driven piston intentionally gains energy, with relative
+  wall-work closure error `3.41e-15`. [DONE]
+- A forced MP5-only source edit probe, using command-local
+  `CCACHE_RECACHE=1`, rebuilds its three dimension owners and links all three
+  executables in `32.74 s` (`3 forced recompiles`, no ordinary cache hits or
+  misses). The shared-edit budget passes. The isolated single-owner result
+  still misses the 20-second local-edit goal; broad Riemann-header edits still
+  rebuild all 48 reconstruction objects. Neither probe establishes a fresh
+  whole-clean-build bound. Final no-op takes `0.95 s`, zero compile activity.
+  [DONE]
+- Quick suite passes 3/3 (`2.79 s` summed step time). The maintained analytic
+  smooth-contact scan for MP5 and WENO-Z passes at 32/64/128/256 cells, orders
+  `4.99/5.00/5.00`, finest normalized L1 `5.937e-11`. Its intentional CFL
+  `0.05` isolates spatial convergence; runtime controls remain at CFL `0.9`.
+  `validate_brio_wu_reference.py --include-amr-ct --force --skip-plot` passes
+  all eight comparison checks, including ratio-2/4 CT, rotated equivalence,
+  and refinement improvement against the finer numerical reference (not an
+  exact solution). `validate_mixed_patch_crawl.py --ranks 3 --force --skip-plot`
+  passes all eight checks, including PWL/WENO-Z/characteristic WENO-Z seams,
+  core agreement, isotropy, and outer quietness. [DONE]
+- Normal-frame hydro and MHD fused function bodies are unchanged; the ordinary
+  hydro Riemann selection is extracted verbatim into its shared helper. The
+  production change has no new runtime option, catalog identity, template
+  axis, or evolution face-state buffer. Updated the compact knowledge lesson,
+  durable ownership rule and source router. Final architecture/whitespace
+  checks pass, and no build or MPI workers remain. Nothing committed. [DONE]
+- Return to the remaining numerical ID work: nonzero reduced CTTK convergence,
+  then a physical Cartesian-versus-curvilinear comparison after the shared
+  materialization interface. General fourth-order elliptic accuracy, physical
+  cross-chart validation, GPU/OpenMP runtime equivalence and a complete
+  standard/full suite are not established by this compile-cost pass. [PENDING:
+  separate follow-up, not unfinished compile integration]
+
+## Cycle 389 — Module boundaries versus further ID work (DONE: assessment)
+
+- Inspected the current CMake source groups, standalone elliptic/TOV targets,
+  shared-object ownership helper, compile conventions, and current numerical
+  validation boundaries. AMReX is already an external package; matching
+  implementation files are compiled once per dimension for solver/check
+  consumers; small ID checks do not compile the evolution flux matrix. The
+  apparent-horizon finder already has a separate static-library owner. [DONE]
+- Recommend retaining these boundaries rather than introducing a new thorn or
+  plugin framework. Further static/object libraries are useful only when they
+  establish an actual dependency/interface boundary or remove duplicate work;
+  regrouping sources alone does not reduce repeated template optimization.
+  Keep host dispatch outside cell loops and preserve measured hot-kernel
+  inlining. Cycle 388's timings remain the evidence, not new measurements:
+  local MP5 changes improved, while broad Riemann-header edits remain costly.
+  [DONE: recommendation, no architecture change]
+- Next numerical work remains nonzero reduced CTTK convergence followed by a
+  physical Cartesian/curvilinear anchor through the common ID materializer.
+  Then use representative TOV/RNS/BH save/reload and short-evolution cases to
+  close the single-object core, keeping missing stationarity closures, true
+  nonaxisymmetric solves and magnetic-transfer restrictions explicit. Do not
+  substitute a full coordinate/object cross-product for shared operator tests
+  plus a few physical anchors. [PENDING: proposed implementation order]
+- No production code changed, no builds or simulations launched, and no new
+  runtime/accuracy claim made in this assessment. [DONE]
+
+## Cycle 390 — Consolidate conformal ID updates and checks (DONE)
+
+- Scope: remove duplicated scalar/Cartesian-vector/spherical-toroidal relaxed
+  update paths and their redundant scratch copies in `initial_data_ctt.cpp`.
+  Preserve the arithmetic order, ghost extent and convergence metric; reuse
+  the consumed candidate buffer and one compiled private helper. No new
+  public option, generated equation, template axis or solver family. [DONE]
+- Establish before/after manufactured and full elliptic checks, then measure
+  compile reach and runtime. Keep unrelated WIP intact. Nonzero reduced CTTK
+  convergence and physical cross-chart completion are separate from this
+  behavior-preserving consolidation. [DONE]
+- The scalar, Cartesian-vector and spherical-toroidal updates now consume
+  their candidate buffer through one private non-template helper. The duplicate
+  axisymmetric momentum-result type is removed. Component/level norms use one
+  packed MAX on AMReX's current subcommunicator, preserving `norm0` semantics.
+  Scalar subtraction/offset/scaling and one-ghost-layer updates are unchanged.
+  Newton/backtracking remains distinct because its acceptance contract differs.
+  `initial_data_ctt.cpp` shrank from 2,462 to 2,444 lines. [DONE]
+- `benchmark_compile.py --target pyfluid_amrex_production --jobs 3 --label
+  cycle390_conformal_update_consolidation --budget shared-edit` passed in
+  `2.88 s`: three actual ID object cache misses, zero cache hits, no evolution
+  flux recompiles. This is an incremental integration build, not a clean-build
+  measurement. [DONE]
+- Reused `validate_cartesian_elliptic_checks(..., matter_convergence=True)` and
+  each dimension's full elliptic executable through `validation_common.run_mpi`,
+  three ranks, 300-second timeout. All six before/after logs are byte-identical:
+  reported solutions/errors, residuals and iteration counts, not a whole-grid
+  byte comparison. Twelve CTT/XCTS cell/vertex convergence cases retain orders
+  `1.984--2.005`; full checks include CTTK/hybrid, TOV and spherical XCTS.
+  Broad 3D wall times `119.30/121.59 s` do not demonstrate a runtime speedup.
+  Compact evidence is under `runs/current/id_solver_consolidation/cycle390/`;
+  `comparison.tsv` and convergence rows were appended to validation history.
+  [DONE]
+- Standard `benchmark_pyfluid.py --label
+  cycle390_conformal_update_consolidation --force` passes all four three-repeat
+  median controls: hydro2D PWC `96.84`, hydro3D PWC `59.57`, hydro3D WENO-Z
+  `2.58`, RMHD1D PWC `2.00 Mcells/s`. No general speedup or GPU claim. [DONE]
+- The 19-row standard reduced-ID/handoff gate passes, including adaptive TOV,
+  nonzero differential/Uryu ID controls, saved RNS continuation, 2D/full-storage
+  materialization and one-step evolution, and three-step loaded TOV. TOV mass
+  drift is `3.51e-12`; native/full-storage one-step difference `5.24e-16`;
+  recovery fallbacks/resets are zero. This is not a high-spin stability test.
+  [DONE: production consolidation]
+- Consolidated repeated j-constant identity and q-power/Uryu regime checks
+  into two ordinary case loops, preserving output identities and thresholds.
+  Corrected the stale pointwise-only Uryu wording in `knowledge.md`: isolated
+  nonzero ID checks exist, while a physical-reference/sequence/evolution
+  validation remains distinct. Removed an incomplete duplicate manifest bullet
+  from the infrastructure document and made implementation retirement explicit
+  in code conventions. [DONE]
+- Replayed the standard handoff gate after its consolidation: all 19 rows
+  match the pre-consolidation table exactly except elapsed-time columns.
+  Ten in-memory altered-metadata probes still reject both identity violations
+  and invalid/non-distinct q-power/Uryu regimes; saved artifacts were not
+  modified. Evidence is `handoff_before.tsv` and
+  `negative_validation_probes.tsv` beside the before/after solver logs. [DONE]
+- Fifteen build-infrastructure unit tests, architecture, Python syntax, and
+  whitespace checks pass. The quick AMReX suite passes 3/3 (summed `2.30 s`).
+  All validation/build workers have exited. Changes remain uncommitted and
+  unrelated work is preserved. No generated-equation, production feature,
+  full-grid field-layout or tolerance change; no new test framework. [DONE]
+- Next numerical work is still nonzero reduced CTTK convergence, then the
+  independent physical Cartesian-versus-curvilinear comparison. This cleanup
+  does not certify the full single-object combination matrix. [PENDING:
+  separate next milestone]
+
+## Cycle 391 — Vacuum and curvilinear/mixed-regime evolution (DONE: assessment)
+
+- Source-checked the user's proposed atmosphere-free GRHD, spherical coupled
+  evolution, GRMHD/FFE magnetosphere, and cheaper outer-region directions.
+  Current `rhd_c2p.hpp`, `relativistic_atmosphere.hpp`, and `rhd_system.hpp`
+  assume positive-density fluid; `config.cpp` still restricts relativistic
+  runtime evolution to Cartesian. Existing generated Z4c geometry uses the
+  Cartesian conformal-determinant contract. None of the proposed extensions
+  can be enabled by a floor or coordinate-name change. [DONE]
+- Routed primary vacuum, SphericalNR, parallel angular-filter, matched
+  GRMHD/FFE, and multi-zone references in `references.md`; retained the
+  existing Chael entry instead of duplicating it. The later SphericalNR work
+  addresses the historical parallel restriction discussed by the user.
+  Published safeguards, filter tradeoffs, and fixed-background examples are
+  not proof of PyFluid conservation, CFL 0.9 stability, or coupled accuracy.
+  [DONE]
+- Clarified the proposed high-level symbolic/reference-metric ownership in
+  `docs/grmhd_development.md`: generated tensor expressions and symmetry
+  reductions, bounded compiled groups, AMReX-owned communication, no new
+  cross-product of coordinate/physics options. Updated only compact learned
+  boundaries in `knowledge.md`. [DONE]
+- Recommended order: close Cycle 390's focused ID verification gaps, then
+  atmosphere-free GRHD; reference-metric spherical 1D/axisymmetric 2D
+  evolution; GRMHD/FFE matching; regional Newtonian/frozen approximations
+  only after a specific physics/error and performance case. This is a
+  proposal, not authorization to implement all new families. [PENDING:
+  next implementation scope]
+- Documentation/source assessment only: no production edits, builds, MPI
+  runs, or new numerical/performance claims. Existing unrelated WIP remains
+  intact. [DONE]
+
+## Cycle 392 — Shared exterior policy and staged handoff (DONE: assessment)
+
+- Refined the user's preferred vacuum/optional-atmosphere direction into one
+  exterior construction with shared recovery and conservative correction.
+  Legitimate zero matter bypasses singular positive-density operations;
+  ordinary matter recovery and last-resort counted/warned replacement remain
+  distinct. No duplicate recovery ladder, new template product, or runtime
+  parameter was added. Full GRMHD/FFE matching remains separate physics.
+  [DONE: documented proposal]
+- Source inspection found stale prose claiming every C2P exhaustion/nonfinite
+  state was fatal. `relativistic_atmosphere.hpp` already attempts failed-state
+  atmosphere replacement; `rhs_assembly.inc.hpp` counts and warns about it.
+  Corrected the document to match current code, and distinguished physical
+  matter vacuum from the existing no-backreaction `matter_coupling=vacuum`
+  option. Numerical behavior is unchanged. [DONE]
+- Added primary HandOff and Pavan references supporting the user's staged
+  workflow: dynamical-to-fixed-metric GRMHD and GRMHD-environment-to-SRMHD,
+  respectively. Pavan prescribes the jet separately; neither is evidence for
+  generic Newtonian MHD handoff. Recorded snapshot versus boundary-history
+  and one-way versus coupled-feedback distinctions without creating another
+  artifact format. Added the published Kalinani atmosphere reference with
+  its current title to avoid mistaking a low-floor method for true vacuum.
+  [DONE]
+- Vacuum implementation should preserve optional atmosphere behavior and
+  start with expansion, stellar-surface, and AMR checks using shared owners.
+  Reference-metric generation remains the next larger formulation project;
+  FFE matching and staged outer-domain evolution are later consumers, not
+  prerequisites for vacuum GRHD. [PENDING: implementation]
+- Documentation only; whitespace checks pass. No C++ edits, simulations,
+  builds, or new correctness/performance claims. [DONE]
+
+## Cycle 393 — Independent formulation and coupling boundaries (DONE: scope)
+
+- Accepted the user's standalone generated spacetime-system option: preserve
+  Cartesian Z4c, allow a distinct reference-metric formulation with scoped
+  catalog entries and symbolic equations, and reference the shared GF catalog
+  and physical interfaces. Reuse common mathematics without equating different
+  state/basis conventions or multiplying fluid templates. [DONE: documented]
+- Clarified that regional GRMHD/FFE stitching is valid in principle. A common
+  magnetic-field owner was an implementation preference, not a requirement
+  to reject coupled regional solvers. Interface consistency and independent
+  validation decide the implementation; no coupling method selected yet.
+  [DONE]
+- User may consider Anvil or Windows for larger science runs. No remote
+  machine accessed, no job launched, and no hardware/scaling capability
+  inferred. Start locally with physically valid symmetry reductions and
+  measure memory and throughput before selecting a larger execution target.
+  Vacuum remains the first proposed implementation; these are architecture
+  clarifications, not new production capabilities. [PENDING: implementation]
+- Documentation only; whitespace check passes and unrelated WIP is preserved.
+  [DONE]
+
+## Cycle 394 — Vacuum-regular shared Valencia algebra (DONE: stage 1)
+
+- First bounded implementation: remove the removable density division in
+  the shared fluid enthalpy factor used by generated Valencia conserved
+  variables, fluxes, and stress-energy. Preserve positive-density physics and
+  atmosphere behavior. No runtime vacuum option or recovery reset added.
+  `ValenciaMHDPrimitive` now extends the same primitive definition, so GRHD
+  and GRMHD cannot acquire separate fluid enthalpy-density formulas. [DONE]
+- Establish a failing compiled zero-matter regression, then regenerate from
+  one symbolic fluid enthalpy-density definition. Check GRHD and zero-field
+  RMHD algebra in flat, accelerated, and spinning-BH metrics; retain existing
+  positive-density/EoS and evolution controls. Measure compile and runtime
+  effects separately. The pre-fix executable failed its first P2C sample.
+  After regeneration, 12 representatives exercise 14 kernels each and return
+  exact zero. The existing RHD EoS/C2P and RMHD runtime-EoS round trips pass,
+  as does byte-for-byte code generation. [DONE]
+- Consolidate the implementation stages in the existing GRMHD development
+  document. Full atmosphere-free recovery, interfaces, AMR, ID/materialization,
+  and saved-state semantics remain required before exposing a vacuum mode.
+  `knowledge.md` records only the removable-singularity fact and current
+  validation boundary. [DONE]
+- The all-dimension production integration rebuild passes but takes 476.33 s
+  with 120 compiler-cache misses; its dependency files show that all 120
+  rebuilt production objects transitively include generated relativistic
+  `core` or `flux` headers. This is an incremental shared-header rebuild in
+  the current WIP tree, not a cold compile. The subsequent no-op rebuild takes
+  1.12 s. Separating the solver declaration/template implementation remains a
+  compile-architecture task; do not disguise it as a numerical optimization
+  or multiply physics/reconstruction products. [PENDING: compile isolation]
+- Runtime validation passes: AMReX quick 3/3; standard RHD uniform 1D/2D/3D,
+  entropy convergence at 32--256 cells (orders 2.01, 2.17, 2.07), Sod
+  reference, AMR improvement 2.39, and bitwise restart. Performance ratios are
+  0.90 for 3D PWC, 0.99 for 3D WENO-Z/HLLC/RK4, and 0.99 for RMHD 1D. The
+  first 2D result was an anomalous 0.71 immediately after the heavy rebuild;
+  a three-repeat retry passes at 0.91. Syntax and diff hygiene pass. These
+  results validate unchanged positive-density evolution, not vacuum recovery,
+  a matter-vacuum face, or atmosphere-free AMR. [DONE]
+
+## Cycle 395 — Production include and compile isolation (DONE)
+
+- Traced Cycle 394's 120-object relativistic-header invalidation to a public
+  black-hole excision header that mixed its interface, host orchestration and
+  generated Valencia flux kernels. The public header now contains request
+  types and declarations only; one compiled source owns host/metric dispatch,
+  and one private header shares the pointwise GPU kernels with the limiter.
+  The runtime `PhysicalSystem` selection and existing component-count/CT
+  bundles are unchanged; no physics/reconstruction template product was
+  introduced. [DONE]
+- The split exposed two hidden transitive dependencies during the first 3D
+  builds: AMR RHS assembly needs the lightweight Z4c centering representation,
+  and the limiter is a legitimate second owner of the excision pointwise
+  kernels. Both are now explicit. `build_dependencies.py` enforces the public
+  header as declaration-only and limits the private implementation header to
+  those two source owners. Architecture and all 16 build-infrastructure unit
+  tests pass. [DONE]
+- Generated relativistic-kernel dependency files fell from `40` to `34`
+  production objects per dimension, or `120` to `102` across the 1D/2D/3D
+  integration target (15% less invalidation). The final all-dimension
+  integration build took `69.48 s` for the 18 newly isolated objects; this is
+  an incremental shared edit, not a cold build. The settled no-op target takes
+  `0.95 s`. The remaining 34 objects per dimension are direct Valencia/C2P,
+  flux/reconstruction, ID materialization or relativistic owners; splitting
+  them further needs a separately measured generated-kernel ownership change,
+  not another broad include shuffle. [DONE]
+- The three-rank quick AMReX gate passes 3/3 and focused RHD uniform/entropy
+  checks pass with order `2.012` from 32 to 64 cells. Fixed-metric RHD,
+  evolved-Z4c RHD and fixed-metric CT/RMHD excision controls all pass; every
+  control reports zero C2P fallbacks, atmosphere resets and interior resets,
+  while RMHD gives `divB_l1=8.46e-19`. Their external mass ledgers close at
+  `2.32e-16`, `2.50e-17` and `1.80e-16`, respectively. [DONE]
+- All four three-repeat runtime performance controls pass their established
+  gates: hydro2D PWC `101.32`, hydro3D PWC `61.04`, hydro3D WENO-Z/HLLC/RK4
+  `2.61`, and RMHD1D PWC `2.02 Mcells/s`, ratios `0.92--1.00`. Python syntax,
+  architecture and diff-hygiene checks pass. No numerical algorithm, option,
+  field layout, generated equation or tolerance was changed by this boundary
+  refactor. [DONE]
+- The broad black-hole gate still stops at the static-trumpet moving-puncture
+  control: final horizon-area error is `7.89%` against its `2%` bound. The same
+  failure is present in validation history from 2026-09-01, predating this
+  refactor, and that full-grid path does not call the excision flux owner.
+  Keep the bound and investigate the trumpet/gauge evolution separately; this
+  cycle neither fixes nor weakens that regression. [PENDING: separate
+  numerical issue]
+
+## Cycle 396 — Production GRHD vacuum exterior (DONE: bounded production path)
+
+- Implement one runtime relativistic exterior-state policy, defaulting to the
+  existing atmosphere and initially admitting true vacuum only for RHD. Keep
+  EoS floors as positive recovery safeguards rather than overloading them as
+  the physical exterior identity. Route initial data, primitive recovery,
+  reconstruction/fluxes, conservative candidate limiting, AMR transfer,
+  physical-ID materialization, output, and restart through that shared policy.
+  `RelativisticExteriorState` is a compact runtime value, so this adds no
+  reconstruction/EoS template product. Configuration rejects vacuum for RMHD
+  and rejects a simultaneous nondefault initial atmosphere. Checkpoint schema
+  8 and physical-ID metadata preserve the immutable policy; legacy physical-ID
+  artifacts imply atmosphere and a source/target mismatch is rejected. [DONE]
+- Canonical zero conserved matter must recover to one canonical zero primitive
+  before any EoS or density-dividing algebra. A matter-vacuum face must use the
+  existing one-sided piecewise-constant trace pair and an ordinary causal
+  Riemann flux so matter can expand into empty cells. Invalid nonzero states
+  remain explicit counted recovery failures and are reset according to the
+  selected exterior policy. Shared EoS limits now give `eps=0`, `h=1`, and
+  sound speed zero at canonical vacuum. A compiled pointwise gate covers ideal
+  and runtime EoS recovery, invalid nonzero rejection, exact zero--zero flux,
+  and finite outward LLF/HLL matter--vacuum flux. [DONE]
+- Validate the exact-zero recovery algebra, one-sided expansion, a stellar
+  surface, conservative AMR transfer/average preservation, physical-ID
+  save/load/materialization, restart identity, and unchanged atmosphere
+  controls before describing atmosphere-free evolution as production-ready.
+  Keep RMHD vacuum/force-free closure and reference-metric curvilinear
+  evolution as separate later systems. The focused vacuum suite passes uniform
+  and dynamically regridded subcycled expansion at CFL 0.9, bitwise restart
+  with mismatch rejection, a TOV physical-ID save/load and changed-grid
+  materialization step, and a two-level 3D octant TOV surface through two
+  CFL-0.9 steps with exact-zero minima, no fallback/reset, and baryon-mass
+  drift `1.62e-15`. The full standard RHD suite, all-dimension production
+  build, architecture gate, quick AMReX gate, and pointwise generated checks
+  pass. [DONE]
+- Vacuum integration exposed three shared numerical defects rather than
+  motivating local exceptions. The low-order RHD safety LLF flux used an
+  inconsistent unit minimum wave speed and could violate its own positivity
+  CFL in subsonic flow; it now uses the physical spectral radius. `local_cfl`
+  AMR subcycling reused the initial fine timestep while wave speeds changed;
+  it now recomputes the allowed fine timestep after every accepted substep.
+  Physical-ID materialization recomputed `energy_density / rho` instead of
+  using the shared EoS zero limit; the duplicated division is removed. The
+  corrected AMR expansion regrids, conserves mass/energy to roundoff, and has
+  zero recovery intervention at CFL 0.9. [DONE]
+- Native TOV/rotating-star providers can supply stored curved Z4c fields even
+  when a legacy target configuration labels its analytic fixed metric
+  `minkowski`. Analytic flat kernels are now selected only when both source
+  metadata and target select Minkowski and the provider does not own curved
+  stellar spacetime. This prevents evolution from reading a different metric
+  than diagnostics and materialization. [DONE]
+- The first 3D octant surface stress localized tiny negative states to reflux
+  when the coarse--fine boundary cut the moving stellar surface; every fine RK
+  stage was admissible. `amr.n_error_buf=4` keeps the surface inside the fine
+  patch and the maintained two-step gate clean without changing conservative
+  transfer. A deliberately coarse four-step stress later produces a handful
+  of tiny low-density tail states, which the explicit policy would count and
+  reset. Long atmosphere-free stellar evolution remains a separate
+  convergence/stress target; this cycle does not hide that limit or claim
+  RMHD vacuum/FFE. Debug-only pre-projection stage checks remain to identify
+  whether future repaired states originate in RK evolution, reflux/regrid, or
+  final acceptance. [DONE: bounded limitation]
+
+## Cycle 397 — Reference-metric Valencia geometry and bounded runtime (DONE)
+
+- Add one symbolic reference-metric geometry owner derived from the existing
+  orthogonal coordinate frames. Verify vector and mixed-tensor covariant
+  divergence, coordinate/orthonormal component transforms, exact Cartesian
+  reduction, and cylindrical/spherical analytic identities before emitting or
+  selecting a runtime relativistic operator. The isotropic-pressure identity
+  must balance analytically, including constant pressure producing zero
+  momentum RHS without cancellation between separately discretized geometric
+  flux and source terms. Independent Cartesian embeddings verify all three
+  coordinate families; eight coordinate-contract tests pass. [DONE]
+- Keep the existing Cartesian Valencia and Cartesian Z4c paths unchanged. The
+  handwritten Newtonian curvilinear finite-volume source is not a relativistic
+  reference-metric implementation and must not be selected for RHD. Do not
+  lift the current runtime coordinate rejection until generated pointwise
+  kernels, Cartesian equivalence, spherical 1D, and axisymmetric 2D controls
+  pass. A reference-metric spacetime formulation remains a separate later
+  system rather than a coordinate branch inside Cartesian Z4c. [DONE]
+- Add the first production lowering only for fixed-Minkowski RHD on an
+  unrefined single spherical patch with active axes `r` or `r theta`. Scalar
+  conserved fluxes use exact physical face/cell measures. Momentum subtracts
+  the cell pressure from its matching diagonal face integrals and adds the
+  generated nonpressure mixed-basis connection, so constant pressure balances
+  term-by-term. RMHD, AMR, curved/stored spacetime, and full spherical 3D stay
+  explicit configuration rejections. [DONE: bounded runtime]
+- Put the MultiFab loop behind the compiled non-template
+  `src/relativity/reference_metric_valencia.cpp` owner. The first header-based
+  version invalidated every reconstruction bundle; the settled production
+  target is a `0.79 s` no-op build, while pointwise geometry remains available
+  to the generated compile check. The analytic fixed-spacetime selection is
+  now one shared config/runtime decision; fixed storage allocation is not used
+  as a proxy for numerical metric ownership. [DONE]
+- Runtime validation passes on three MPI ranks at CFL 0.9. Static spherical 1D
+  and 2D controls have exact zero mass, energy, and momentum drift. After one
+  complete SSPRK3 step, a nonlinear radial flow agrees between `r` and every
+  theta line of `r theta` to `4.663e-15`, remains theta-independent to
+  `5.329e-15`, and conserves mass/energy at roundoff. The focused standard
+  gate, 1D/2D/3D production and generated-check builds, 1D/3D compiled checks,
+  eight coordinate tests, sixteen build-infrastructure tests, and generated
+  flux validation pass. The surrounding quick AMReX gate passes 3/3, and the
+  unchanged Cartesian RHD quick control retains entropy order `2.012` from
+  32 to 64 cells. [DONE]
+
+## Cycle 398 — Curved reference-metric Valencia geometry (DONE: pointwise layer)
+
+- Source audit: retain the Mewes et al. SphericalNR paper as the coupled-system
+  reference, add the RIT software page, and record that no public SphericalNR
+  source route is exposed. Route public NRPy as the inspectable related
+  reference-metric generator without presenting it as SphericalNR's GRHydro
+  implementation. [DONE]
+- Derive the curved fixed-spacetime Valencia lowering in the reference
+  orthonormal basis. Separate Cartesian analytic metric evaluation, basis
+  transformation, determinant ratio, and reference-covariant derivatives.
+  Establish independent symbolic and compiled equivalence controls before
+  enabling any curved spherical runtime. Cartesian Z4c and stored/evolved
+  spacetime remain out of scope. `reference_metric_spacetime.hpp` now evaluates
+  the existing Cartesian provider at the physical point and performs only the
+  tensor transformations into runtime component order; it does not duplicate
+  a metric formula or add a template axis. [DONE]
+- Compiled 1D, 2D, and 3D controls verify metric-inverse identity and covariance
+  of generated RHD conserved variables and geometric sources for Rindler,
+  displaced isotropic Schwarzschild, and displaced stationary-trumpet metrics
+  in Cartesian, cylindrical, and spherical orthonormal frames. The coordinate
+  and build-infrastructure unit suites, generated-flux validation, architecture
+  check, and all-dimension production build pass. Curved runtime remains an
+  explicit rejection because primitive recovery, face metrics, candidate
+  limiting, and boundary behavior must be changed as one metric contract, not
+  enabled from this pointwise result alone. [DONE: bounded validation]
+- Runtime inspection found that the already enabled fixed-Minkowski spherical
+  RHD CFL calculation combined physical orthonormal characteristic speeds with
+  raw coordinate widths. It now uses the existing physical mesh-spacing owner
+  in every active direction. This rebuilt only the three dimension-specific
+  signal-speed objects. The focused three-rank CFL-0.9 suite passes all four
+  runs and four intended rejection controls; nonlinear `r`/`r theta`
+  projection remains `4.663e-15` with theta spread `5.329e-15`. [DONE]
+
+## Cycle 399 — Curved fixed-spacetime RHD metric contract (DONE: bounded runtime)
+
+- Route analytic fixed-spacetime RHD initialization, primitive recovery, face
+  fluxes, signal speed, geometric sources, boundary state, and candidate
+  admissibility through one coordinate-aware orthonormal metric contract. Do
+  not enable a curved spherical configuration from a partial consumer update.
+  Keep RMHD, AMR, stored/evolved spacetime, and full spherical 3D outside this
+  bounded runtime slice. Centered isotropic Schwarzschild is now enabled for
+  single-level spherical `r` and `r theta` GRHD shells lying strictly outside
+  `r=M/2`; Rindler, displaced/trumpet metrics, RMHD, AMR, stored/evolved
+  spacetime, and full spherical 3D remain explicit rejections. [DONE]
+- Establish static and dynamical controls against independent Cartesian or
+  analytic expectations before removing the curved-metric rejection. Preserve
+  the existing fixed-Minkowski `r`/`r theta` projection and CFL-0.9 behavior.
+  The forced three-rank gate passes all six runs, three resolution-scalar rows
+  plus the convergence summary, two projections, the scalar metric-ownership
+  check, and six rejection controls.
+  Fixed-Minkowski projection remains `4.663e-15` with theta spread
+  `5.329e-15`; Schwarzschild HSE projection is `1.599e-14` with theta spread
+  `2.309e-14`. On the same physical interior shell, HSE errors are
+  `8.216e-6`, `2.059e-6`, and `5.223e-7` at 32/64/128 radial cells, giving
+  orders `1.997` and `1.979`. Mass is roundoff-conserved at CFL 0.9. [DONE]
+- Make downstream diagnostics obey the same metric ownership. Relativistic
+  Lorentz/lapse reductions and Mach/entropy/AMR-tag output now use the analytic
+  reference metric when selected; spherical runs no longer emit meaningless
+  Cartesian Z4c constraints. A zero-step auxiliary smoke gives finite Mach,
+  constant thermal entropy proxy `0.1`, and finite AMR metric. [DONE]
+- A first implementation routed Cartesian RMHD through the general basis
+  transform and regressed its canonical benchmark from `2.03` to
+  `1.31 Mcells/s`. An explicit Cartesian accessor fast path restored
+  `1.99 Mcells/s` (`0.98x` baseline) without adding a template product. Final
+  standard performance ratios are `0.89/0.95/1.00/0.98` for the maintained
+  2D hydro, 3D PWC hydro, 3D WENOZ hydro, and 1D RMHD cases. The all-dimension
+  production no-op build is `0.71 s`; the necessary shared face-header edit
+  did invalidate every reconstruction object and took roughly 1.5/3.5/4.5
+  minutes for the cached 1D/2D/3D rebuilds. [DONE]
+- Final validation: 1D/2D/3D production and generated-check builds pass; all
+  three generated-check executables pass; generated algebra/catalog
+  validation, architecture, and 24 coordinate/build/catalog unit tests pass.
+  The Cartesian RHD standard gate and surrounding three-step quick gate pass.
+  [DONE]
+
+
+## Cycle 400 — Whole AMReX infrastructure and maintainability audit (DONE: audit only)
+
+- Scope: all AMReX source, public interfaces, generated/schema ownership, build/dependencies, Python tools, tests, artifacts, and documentation; compare concrete ETK/CarpetX, AthenaK, AMReX, and Parthenon patterns. [DONE]
+- Audit production code read-only; preserve pre-existing dirty work. Produce a coverage inventory, source-backed findings, test-retention rationale, and staged restructuring proposal. No solver edits or new regression tests were made. [DONE]
+- Report: `docs/infrastructure_audit_2026-09-07.md`. Fifteen findings distinguish reproduced defects, observed ownership problems, and unproven design risks. All 704 non-cache files present before the report were inventoried; semantic review followed subsystem contracts and selected consumers, not every line of generated algebra. [DONE]
+- Evidence: `runs/current/infrastructure_audit/cycle400/` contains hashed inventory, include impact, Python symbols/imports, suite commands, external source hashes and probe results. Source snapshot HEAD is `547c93a7d5b2cf0fcb54d76e1c0af22e848bd43b` plus pre-existing dirty content. Hash comparison before this final note found no inventoried-file changes. [DONE]
+- Reproduced Python canonical-input quote misinterpretation and default runner deletion of a restart source nested inside its output directory. The cleanup probe used only disposable temporary data and a mocked solver launch. Fixes remain proposed. [DONE: reproduction]
+- Fresh checks: `.venv/bin/python pyfluid_amrex/tools/check_architecture.py` passes; `.venv/bin/python pyfluid_amrex/tests/test_build_infrastructure.py` passes 16 tests in 5.377 seconds, with `PYTHONDONTWRITEBYTECODE=1`. The latter compiles its temporary CMake fixtures only. No production build, MPI simulation, full numerical validation or performance run was performed. Suite inventory is 3 quick / 55 standard / 66 full / 4 stability entries; these are registrations, not passing results. [DONE: bounded verification]
+- Next implementation order: canonical input and cleanup/provenance contracts; concise ownership/lifecycle documentation; one real compiled module boundary; incremental solver-service extraction; Python support-package/test consolidation; attributable numerical baseline. Do not turn the audit into another mandatory context document or apply a blanket test purge. [PENDING: implementation]
+
+
+## Cycle 401 — Broader NR architecture comparison (DONE: research only)
+
+- Extended the existing Cycle 400 report with SpECTRE, GRChombo, GRTeclyn, NRPy and upstream AthenaK; retained ETK/CarpetX, AMReX and Parthenon comparisons. GRTeclyn is especially relevant as an AMReX NR implementation. [DONE]
+- Compared lifecycle hooks, physics ownership, library dependencies, computed-data validity, and symbolic/backend separation. Recommendations preserve PyFluid's field schema, runtime configuration, numerical contracts and AMReX backend; no framework migration or blanket library split is proposed. [DONE]
+- Evidence: `runs/current/infrastructure_audit/cycle401/sources.tsv` records six source files from five pinned public repositories with URLs and hashes. Official project documentation supplies complementary design rationale. Resolved GRTeclyn documentation/source filename drift against pinned source; distinguished local from upstream AthenaK ordering. [DONE]
+- Updated only the existing audit report and this continuity cycle, plus ignored research evidence. No production code or tests changed; no builds, simulations or numerical/performance checks were run for this documentation-only comparison. Implementation remains pending in Cycle 400. [DONE: validation boundary]
+
+## Cycle 402 — Run infrastructure hardening (DONE: first implementation seam)
+
+- Added `tools/input_parameters.py` as the shared owner for decoded/serialized assignment values; `validation_common` retains its existing import interface and input materialization explicitly requests serialized values. Quoted comments, empty strings, literal backslashes, continuations and triple-quoted values are preserved. Expression evaluation remains AMReX-owned; unresolved include/unset/conditional directives now fail explicitly rather than yielding misleading Python decisions. Compared quote behavior with the pinned AMReX ParmParse source. [DONE]
+- Runner checks input/executable and restart/physical-ID/EoS read dependencies before cleanup. Cleanup rejects overlap, including symlinks in either direction; an input stored inside output is retained for rerun. No C++ sources, equations, compiler settings or dependencies changed. [DONE]
+- Retired the exact qualifier/newline assertion in the build tests: it checked source spelling rather than the measured runtime/compile contract. Existing benchmark controls remain authoritative. Added one three-test run-workflow group to standard/full; 3 tests pass in 0.004 seconds. Remaining 15 build tests pass in 4.645 seconds; architecture check passes. [DONE]
+- Corpus probe: read/materialize/read round trips pass for all 860 checked files from `pyfluid_amrex/inputs/` and existing `runs/current/**/run.in`. These are compatibility probes, not 860 new tests. [DONE]
+- `UV_CACHE_DIR=.uv-cache PYTHONDONTWRITEBYTECODE=1 uv run python pyfluid_amrex/tools/validate_amrex_suite.py --level quick`: all three gates pass (architecture 0.504 s, exact-reference sampling 0.362 s, two-case feature matrix 1.642 s). Normal socket-capable 3-rank execution; no production rebuild. [DONE]
+- End-to-end `run_case.py` validation used `runs/current/infrastructure_audit/cycle402/runner.in`, a two-step periodic 2D SSPRK3 case with quoted run name/output/diffusion/policy, CFL 0.9 and physical checks enabled. First launch and rerun from its output-local canonical `run.in` both pass using 3 ranks and `--skip-plots --physics-hooks off`. Final relative mass/energy drift is 3.33e-16/1.46e-15; absolute momentum drift 1.25e-15. Logs, canonical input and report remain under `cycle402/runner case/`. These are bounded integration checks, not numerical-order or performance evidence. [DONE]
+- Startup/reporting-only changes add no C++ timestep work. Compile/runtime improvements from future C++ module extraction remain unmeasured; broader solver ownership restructuring and binary provenance from Cycle 400 remain pending. [PENDING: later infrastructure seams]
+
+## Cycle 403 — Compiled regrid lifecycle owner (DONE)
+
+- Extracted nine shared solver fields and their mutation logic into `src/amr/regrid_lifecycle.{hpp,cpp}`. The owner returns an optional first changed level at attempt completion, keeps cadence/checkpoint clocks private, and exposes read-only statistics. AMReX callbacks, transfer ordering, synchronization eligibility, checkpoint format and older-checkpoint clock fallback remain unchanged. [DONE]
+- `pyfluid_amrex_regrid` is a standard-library-only static target compiled once for all dimensions, without AMReX/generated/configuration include dependencies. No heap allocation, virtual dispatch or per-cell operation was introduced; there are small host calls at accepted-finest-step/regrid boundaries. No new tests were added. [DONE]
+- Before edit: production target was current (0.53-second no-op, zero cache activity). Existing synchronized/aligned moving-AMR gate passed with the normal 200-step cap (actual base-step counts 157/40). Baseline scalar/log/summary artifacts and source snapshots are under `runs/current/infrastructure_audit/cycle403/`. [DONE: baseline]
+- Build: 1D/2D/3D production integration passes. One-time header extraction rebuild: 67.58 s, 82 cache misses, no hits. An implementation-only timestamp change with `CCACHE_RECACHE=1` forces one cold owner compile: 0.34 s, one forced recache; subsequent production relink: 0.98 s, zero other compiles; no-op: 0.50 s. Commands use `benchmark_compile.py --target pyfluid_amrex_production` or `--target pyfluid_amrex_regrid`; exact labels/results are in `compile_history.tsv` and cycle403 build logs. The 0.53/0.50 s no-op difference is noise, not an optimization result. [DONE]
+- Existing dynamic-AMR gate passes after extraction. All 27 scalar rows (6 aligned, 21 synchronized), across 51 non-timing columns, match the saved baseline exactly. Regrid counts also match: aligned 69 attempts / 39 noops / 38 modified-level span total; synchronized 39 / 13 / 34. The analytic density L2 errors remain 3.245276e-4 / 3.235801e-4. Cycle 404 corrected the original ad-hoc CSV probe, which counted metadata rows, and reverified actual data through the shared `read_tsv` reader. Corrected evidence is in `comparison.tsv`; no claim of broad AMR certification. [DONE]
+- Existing `validate_amr.run_restart_check` for `pressure_aligned_subcycling` passes with 3 ranks: max field, time, timestep and reference-total differences are all zero against uninterrupted evolution. Both runs pass `check_scalars`, including momentum. The ad-hoc wrapper initially omitted the history-path argument after successfully running/checking/writing the result; corrected only history recording, without rerunning simulations. Evidence: `restart.tsv` and the existing pressure restart run folders. [DONE]
+- Existing four-case `benchmark_pyfluid.py --label cycle403_regrid_owner` passes without `--allow-warn`: 2D PWC hydro 94.36, 3D PWC hydro 56.37, 3D WENOZ/RK4 hydro 2.58, 1D RMHD 1.98 Mcells/s. These satisfy the existing dated baseline thresholds; there was no matched before/after full performance sweep and no runtime speedup is claimed. [DONE]
+- Final quick suite passes all three gates: architecture 0.498 s, exact-reference sampling 0.347 s, two-case feature matrix 1.594 s. This includes hydro and MHD AMR/CT/subcycling. Numerical runs used the normal socket-capable path and 3 ranks. No GPU, distributed-host or full-suite validation was performed. [DONE: validation boundary]
+- Broader gravity/CT/cache/diagnostic ownership restructuring remains pending in the audit; this cycle establishes one concrete compiled boundary rather than scaffolding every proposed library. [PENDING: later infrastructure seams]
+
+## Cycle 404 — Gravity field and Poisson ownership (DONE: extraction; validation limits retained)
+
+- Extracted potential/gradient storage, fixed-field cache validity and Poisson setup into `GravityFields`. The API exposes only const field pointers. Density reduction/RHS preparation now lives in compiled `amr_solver_gravity.cpp`; source-stage/energy-register operations remain in the driver. Three storage/cache containers leave the shared solver, roughly 150 lines leave the templated section, and MLMG/MLPoisson includes leave the general gravity header. No field arrays, numerical equations, parameter changes or new tests were added. [DONE]
+- Baseline production build is current (0.50-second no-op). Before editing, `validate_feature_matrix.py --only hydro_self_gravity_amr_subcycling --force` passes its no-subcycling reference but fails the subcycling energy drift: 2.244e-6 exceeds 2.0e-6. Preserve tolerance and compare after extraction; this is a pre-existing numerical issue. Baseline logs/scalars/source snapshots are in `runs/current/infrastructure_audit/cycle404/`. [DONE: baseline boundary]
+- All 1D/2D/3D production builds pass. First extraction rebuild: 77.32 s / 84 misses; refined const interface and compiled orchestration: 79.84 s / 87 misses; final local readability cleanup: 6.17 s / 6 misses. Forced-cold `benchmark_compile.py --target src/amr/gravity_fields.cpp.o` takes 7.99 s / 3 forced recaches, one object per dimension; production relink takes 2.62 s with no driver/physics recompilation. These are observed local timings, not controlled performance improvements; host contention was subsequently confirmed. [DONE]
+- `validate_gravity.py --force --ranks 3`: all 12 existing analytic/fixed/HSE/boundary checks pass before and after. Poisson phi/gradient relative L2 remains 2.008e-4, uniform fixed fields have zero sampled error, HSE max Mach remains 2.391e-4. Shared-reader comparison verifies 50 actual scalar rows across 54 non-timing columns match exactly, including both feature-matrix branches and their unchanged failing energy result. [DONE]
+- Existing `validate_amr.run_restart_check` for `self_gravity_deep_amr_subcycling` fails at max field difference 1.232791647e-12 versus 1e-12; max dt difference 2.775557562e-17, time/reference differences zero. Restored only the snapshotted pre-refactor sources, explicitly refreshed timestamps, rebuilt 2D (27 cache hits), and reran in separate cycle404 directories: every per-level comparison value is identical. Initial restoration with old mtimes caused a no-op; that binary was not used as baseline until timestamp refresh/rebuild. Final sources were then restored, all 13 saved hashes verified, and production rebuilt (3.18 s / 87 hits). No temporary baseline source remains active. [DONE: regression attribution]
+- Restart scalar checks using existing `SELF_GRAVITY_AMR_POLICY` fail identically before/after: full-run gravity-energy drift 0.006799577918186537, resumed-history drift 0.005368834650180996, momentum drift about 2.434e-5. All 8 scalar rows across these two branches match before/after, bringing the verified comparison to 58 rows / 54 non-timing columns. No tolerance was changed. Added audit Finding 16 because restart comparison alone omitted physical-budget checks. [DONE: known failures documented]
+- Corrected Cycle 403's ad-hoc CSV comparison, which treated metadata lines as data. Shared `read_tsv` now verifies its actual 27 rows across 51 non-timing columns still match exactly; corrected counts and evidence replace the earlier invalid 189-row claim. Cycle 404 comparisons likewise use the shared reader. [DONE]
+- Performance gate `benchmark_pyfluid.py --label cycle404_gravity_owner` returns warnings in all four cases: 56.17 / 38.51 / 2.16 / 1.64 Mcells/s. Read-only process inspection found two concurrent Cactus evolution ranks near 100% CPU each; left them untouched. Matched 2D controls under that workload also warn: pre-refactor 60.16, final 55.79 Mcells/s. No uncontended performance pass or runtime speedup is claimed; fresh performance validation remains pending when resources are available. Raw results remain in `performance_first.tsv` and `performance_{before,after}_busy.tsv`. [PENDING: uncontended performance]
+- Final restored-binary quick suite passes architecture, exact-reference sampling, and hydro/MHD AMR/CT feature controls. All numerical launches use 3 ranks on the socket-capable path. No full-suite, GPU, fixed-gravity regrid-specific, or distributed-host validation was performed. Broader scalar-budget/reporting repairs and self-gravity numerical failures remain open. [DONE: bounded integration]
+
+## Cycle 405 — Meaningful test contracts and relativistic shock heating (DONE: gate added; numerical failure retained)
+
+- Remove filename/line-count architecture proxies while retaining dependency and ownership checks. Add a rigorous planar SRHD shock-heating comparison using exact conservation jumps, finite-volume sampling, resolution refinement, runtime scalar budgets, and recovery diagnostics. Preserve all existing numerical tolerances and unrelated dirty work. [DONE]
+- Existing RHD Sod gate is completion/physical-state coverage, not an exact shock comparison. RMHD already has exact Balsara references; do not duplicate those. Broader GRHD/GRMHD coverage gaps are recorded with primary-source pointers. [DONE]
+
+- Removed only the arbitrary `*_impl.hpp` filename ban and <=20-line C++ source ban. Ownership/dependency checks remain. Existing architecture passes, 15 build-infrastructure tests pass (4.260 s), and 3 run-infrastructure workflow tests pass (0.004 s). No new unit-test file, C++ edit, rebuild, or hot-path benchmark was necessary. [DONE]
+- Added shared finite-pressure shock-heating jump solution and finite-volume cell-average sampler in `tools/relativistic_validation.py`. Independent cold-limit, energy-jump and integrated-mass checks run before numerical validation. New `tools/validate_rhd_shock_heating.py` uses the existing Sod IC provider, shared MPI/scalar/history tools, zero recovery/reset requirement, full conserved profiles, and analytic inflow budgets. Six cases: W=10/100, N=128/256/512, gamma=4/3, rho=1, p=1e-6, t=0.2, PWL/HLL/SSPRK3, CFL 0.9. [DONE]
+- Comparison design correction during exploration: initial per-coarse-mesh 3% and per-adjacent-pair order checks mixed under-resolution/shock alignment with asymptotic accuracy. Final gate retains 3% and 0.6 thresholds, applies error to the finest mesh and order to the full factor-four sequence, and reports every adjacent order. The 1e-9 analytic-budget requirement applies at every mesh and was not relaxed. Evidence and rationale are in the existing audit appendix. [DONE]
+- W=100 passes the final sequence; finest normalized L1 dens/mom1/tau = 0.0116939/0.0147470/0.00681743, mass error <=2.141e-13 and energy <=1.057e-12. W=10 fails energy budgets: max errors 3.4568790e-5 / 3.1284671e-5 / 3.2900515e-5 at N=128/256/512. All six runs reach final time and report zero recovery fallbacks/atmosphere resets. [DONE: numerical outcome, failing W=10 retained]
+- Independent finer probes N=1024/2048 retain W=10 energy errors 2.6289789e-5 / 2.1899091e-5. W=100 finer budgets pass; adjacent error orders still vary, so no universal asymptotic-order claim follows. One-rank W=10 N=256 reproduces 3.1284671e-5 energy error and identical profile errors; ordinary cases use three ranks. Evidence: `runs/current/rhd_shock_heating/fine_probe.tsv` and `runs/current/infrastructure_audit/cycle405/single_rank/summary.tsv`. [DONE]
+- At W=10 N=256, final runtime source-energy change is 0.0046104898463514843; residual after recorded boundary/source changes is -0.00067424921858361131 (reported relative error 1.8820992752203936e-5). The analytic comparison deliberately requires the source-free physical problem, so projection-created energy also counts as error. Source review confirms projection can alter conserved energy without fallback/reset events, but exact stage attribution remains unproved. Do not suppress floors, change tolerances, or call zero recovery events conservation evidence. [PENDING: stage/projection and source-budget repair]
+- Registered only in full, selectable with `UV_CACHE_DIR=.uv-cache PYTHONDONTWRITEBYTECODE=1 uv run python pyfluid_amrex/tools/validate_amrex_suite.py --level full --only rhd_shock_heating`. Fresh six-case gate takes 1.876 s and correctly exits 1; failure/success rows survive in summary/history. Copied suite result to `cycle405/shock_gate.tsv` before the quick gate overwrote its rolling summary. Final reporting-column edits were rechecked by postprocessing those same outputs; this is not another fresh evolution. [DONE]
+- Existing quick suite passes architecture (0.497 s), exact-reference sampling (0.355 s), and hydro/MHD AMR/CT feature controls (1.637 s). Python syntax checks pass. No full-suite pass, GPU validation, or general GRHD/GRMHD certification is claimed. [DONE]
+- Extended the existing audit with source-checked gaps: exact transverse-velocity SRHD fan, nonlinear relativistic circularly polarized Alfvén wave, Michel/Bondi accretion, and long-duration TOV mode/conservation convergence. Existing exact Balsara tests are retained; four-step TOV evolution and coupled RMHD smoke are not long-term physical validation. Curved reference-metric RMHD currently remains an explicit unsupported slice. Primary pointers are Meliani (2007), Pons (2000), ECHO (2007), and White (2016). [DONE: scoped coverage review]
+
+## Cycle 406 — Relativistic projection accounting and stellar surface heating (DONE: accounting fixed; physical thermal limits retained)
+
+- Continue Cycle 405's energy investigation. Inspect dual-energy/entropy methods as possible future thermal-accuracy work; distinguish them from entropy-based flux limiting. Use the existing hybrid-EOS thermal entropy output for a bounded TOV surface probe rather than claiming an EOS temperature. [DONE]
+- Source inspection finds SSPRK3 scratch-input projection counted with its immediate candidate coefficient 1/4, although only 2/3 of that candidate reaches the accepted state: the final budget coefficient must be 1/6. Preserve evolved fields and floor policy; correct only accounting and check whether the runtime residual closes. [DONE]
+
+- Corrected SSPRK3 projection accounting using the final/candidate RHS coefficient ratio (base-state mutations retain unit weight). Production build passes all dimensions: 31.02 s, 21 cache misses. All six shock profiles have unchanged L1 errors; runtime external-energy residuals now <=3.4e-15, including the previously failing N=256/512 W=10 cases. Physical W=10 energy error remains ~3e-5 and the analytic gate remains FAIL. Added an independently reported accounting status to that existing gate. [DONE]
+- Euler/corrector/midpoint/RK4 W=10 N=256 controls all complete and close runtime energy budgets to 2.0e-15--2.9e-15. Existing quick suite passes (architecture 0.498 s, sampling 0.361 s, feature 2.185 s). No new unit-test file; this is accounting validation, not a new numerical method or performance claim. [DONE]
+- Two 3D octant Cowling TOV probes, uniform 32^3/64^3, t=1, deliberately conservative CFL=0.2, complete in 7/13 steps with 3 ranks and zero recovery/reset events. Shared smoke scalar checks pass; no closed total-energy claim in curved spacetime. Initially inherited `amr.ref_ratio` caused strict unused-parameter failure after evolution; removed that irrelevant parameter and reran successfully. Failure logs retained under cycle406. [DONE]
+- Added `tools/report_stellar_thermal.py`, a narrow postprocessor for solver-authored K_th with equal cold/thermal polytropic gammas. Reports signed p_th/p_cold and changes in fixed coordinate core (r<0.8R), surface (0.8R<=r<R), exterior (R<=r<1.2R) shells. Requires matching initial output and rejects unsupported EOS/AMR/coordinate cases; these are coordinate-volume means, not proper-mass means or a temperature. Cadence >0 skips t=0, so matching initial-only runs supply baselines; R_isotropic=8.12514390164 comes from the solver's TOV log. [DONE]
+- Final surface mean thermal/cold pressure is 0.02302246/0.02448162 at 32^3/64^3; change from initialization is +0.0110000/-0.0119911. Core means are 2.37145e-4/5.31220e-5. Significant initial excess and mixed later heating/cooling preclude a surface-heating convergence claim. Atmosphere pressure 1e-14 at rho=1e-10 is much larger than K*rho^2=1e-18 by construction, so exterior ratios are not stellar heating evidence. No RNS or long-duration run was made. [DONE: bounded diagnostic probe]
+- Evidence: `runs/current/infrastructure_audit/cycle406/` includes source snapshot, before/after shock accounting, other integrator controls, TOV inputs/logs/scalar checks/initial references, per-run `stellar_thermal.tsv`, and visually checked `tov_surface_thermal.png` plus its plotting script. Matplotlib used a temporary writable cache after default-cache warnings; PNG was produced and inspected. [DONE]
+- Documented distinct dual-energy/entropy evolution and entropy-based flux limiting, with Cosmos++ (2005) and Doulis/BAM (2026) references. No dual-energy variable, thermal switch, floor change, or EFL method was added. Initial-state accuracy, longer TOV/RNS evolution and atmosphere sensitivity remain required before choosing one. [DONE]
+
+## Cycle 407 — Single time-integrator coefficient owner (DONE: catalog migration validated; existing physical failures retained)
+
+- User requested a timestep catalog with cheap coefficient constraints and generation into integrators. Current spatial-order/reconstruction catalogs do not own time methods; five method identities and RK stage coefficients are handwritten. Catalog exact rational stage updates, derive Butcher/final/projection weights, check consistency and order algebraically, generate C++ descriptors, and migrate runtime coefficient consumers without introducing a new dynamic dispatch framework. [DONE]
+
+- Added exact-rational stage-update schema for Euler, corrector, midpoint, SSPRK3 and RK4. Loader derives Butcher A/b/c, candidate times and direct accepted-state projection sensitivities; validates constant-state consistency, explicit data dependencies and all nonlinear order conditions through order four. Five-method loading/checking averages about 1 ms in a 100-load local probe. [DONE]
+- Generated IDs and descriptor tables from the catalog. Moved configuration names/IDs to generated views. Main direct-flux and RHS paths, candidate combinations, CT updates, stage boundary times, projection budgets and SSPRK3 gravity carry/time helpers consume descriptors. The AMReX stage/lifecycle/storage operations remain handwritten and explicit. [DONE: implementation and selected runtime validation]
+- Added two mathematical regressions to existing `test_numerical_catalog.py`: an RK4 perturbation preserving stage times/quadrature moments but breaking a nonlinear order-four condition, and the accepted-state projection weights. All five functions in that file pass via a direct function runner in 0.195 s. `pytest` is absent from this environment; did not install it or add a dependency. Codegen contract gate also passes. [DONE]
+- A one-off migration audit checks 172 exact numeric arguments in 84 retained update/CT/boundary/flux calls against the saved pre-migration source, using rational arithmetic; all match. This audit script is ignored evidence, not a permanent source-spelling regression. Generated artifact freshness and architecture checks pass. [DONE]
+- Initial integration exposed overly broad header dependencies. Interrupted only this task's identified CMake build (PID 37230); verified no make/compiler children remained. Split generated stable IDs from coefficient tables before restarting. Read-only include graph now finds 9 production C++ consumers of coefficient tables versus 71 for IDs, with no flux-kernel consumers of the tables. This is a dependency bound, not a clean-build timing claim. [DONE]
+- All three production executables built with the header split in 508.07 s (212 misses, no hits); final gravity integration rebuild 30.85 s (21 misses), final rational-scaling rebuild 34.48 s (27 misses). These are incremental invalidations, not cold-build or cache-hit benchmarks. The aborted first build was not used for numerical validation. [DONE]
+- Initial generated doubles changed `dt / 6` into `(1/6) * dt`, introducing small field differences. Generated `RungeKuttaScale` now retains numerator/denominator and applies `numerator * dt / denominator`. Fresh six-case SSPRK3 shock outputs and four other method controls are bitwise identical to the saved Cycle 406 fields. All runtime energy-budget residuals are <=3.4e-15. Final rational migration audit still matches 172 numeric arguments in 84 calls. [DONE]
+- Fresh quick suite, codegen contract, generated-header freshness and all five existing numerical-catalog functions pass. Two added functions cover nonlinear order loss and accepted-state projection sensitivities; no new test file or source-format regression. Existing 15 build-infrastructure tests passed during migration. [DONE]
+- Physical gates remain intentionally red: all W=10 shock cases retain ~3e-5 source-free energy excess; W=100 passes. Self-gravity AMR without subcycling passes; with subcycling retains 2.244e-6 energy drift against 2e-6 tolerance. Catalog correctness and runtime source accounting do not repair those numerical errors. [DONE: failure boundaries retained]
+- Final benchmark: 2D hydro 92.49 Mcells/s, ratio 0.84 to its older baseline (WARN); 3D PWC 56.02, ratio 0.91 (PASS); 3D WENOZ/RK4 2.57, ratio 0.99 (PASS); RMHD 1D 1.99, ratio 0.98 (PASS). No overall performance pass or speedup claimed. [DONE]
+- Final evidence: `cycle407/*_final.log`, `shock_comparison_final.tsv`, `other_integrator_accounting_final.tsv`, final copied quick/shock/gravity/performance TSVs, build logs and source snapshots. Algebraic checks cover declared RK order through four; arbitrary new method storage/dispatch, CFL/positivity and specialized AMR/gravity interpolation still require their own implementation review and numerical validation. [DONE]
+
+## Cycle 408 — RHD shock energy excess (DONE: conservation defect repaired; coarse profile-order and self-gravity limits retained)
+
+- Continue debugging W=10 physical energy excess without relaxing budgets or suppressing projection. Inspect stage admissibility and shared-face limiter closure; self-gravity subcycling remains a separate open numerical issue. [DONE: this cycle addresses shock conservation]
+- Source finds RHD applies a single troubled-cell mask, unlike RMHD conservative closure. Existing stage output for W=10 N=256 reaches q=-1.031066 at stage 1, step 52, cells 113/142 before projection. Diagnostic launch accidentally used unrecognized top-level max_step; it ran to t=0.2 and then failed strict unused-parameter validation. Those files are diagnostic evidence only, not a passing run. [DONE: reproduction]
+- Implement monotone binary-mask closure using double buffering and global changed-cell reduction; evaluate mixed shared-face candidates against the existing admissibility target before mutating RHS/flux. Retain the low-order terminal candidate and atmosphere policy. All three production executables build in 171.56 s, three cache misses and zero hits. [DONE]
+- All six standard shock cases now pass independent analytic mass/momentum/energy budgets with zero projection-added energy. W=10 energy errors <=1.044e-14 at 128/256/512; W=100 remains <=1.057e-12. The original W=10 profile-order gate still exits 1: 128--512 density/tau orders 0.576/0.288 against 0.6, with finest L1 0.003511/0.004806. No threshold, mesh sequence or floor changed to turn that failure green. [DONE: conservation repaired, profile-order failure retained]
+- Additional W=10 1024/2048 probes pass scalar/analytic budgets, energy errors <=1.322e-14, no projection energy. The 512--2048 density/momentum/tau orders are 0.660/0.693/0.688; finest normalized L1 0.001407/0.005375/0.001852. Adjacent orders remain uneven, so this is evidence of finer-grid improvement, not universal asymptotic convergence. One-rank N=256 final conserved arrays are bitwise identical to the three-rank result. [DONE]
+- Fresh full-length stage-output diagnostic exits 0. Across 171 candidate snapshots, negative-q cell samples fall from 8 to 0 and minimum q changes from -1.031066 to +2.51494e-6. Before-run late configuration error is retained as noted above; the after-run has no unused override. [DONE]
+- Existing quick gate, RHD standard suite (15 rows, including smooth convergence, 1D/2D/3D uniformity, AMR/restart and vacuum TOV), reference-metric gate (19 checks, including supported curved evolution and explicit unsupported contracts), and both RHD KH AMR subcycling controls pass. No redundant new test file: the existing exact shock budget catches the repaired defect. [DONE]
+- Required benchmark retains one warning: 2D hydro 92.34 Mcells/s ratio 0.84 to older baseline. 3D PWC 54.42 ratio 0.89, 3D WENOZ/RK4 2.59 ratio 1.00, RMHD 1D 1.99 ratio 0.98 pass. This benchmark does not quantify RHD limiter overhead; closure adds neighbor rechecks and a global convergence reduction. No speedup or GPU validation claimed. [DONE]
+- Evidence in `runs/current/infrastructure_audit/cycle408/`: pre-edit source, request-specific patch, build/test logs, shock/fine/rank/scalar summaries, before/after stage snapshots and admissibility TSV. Updated knowledge and relativistic-method documentation. Separate self-gravity subcycling/restart failures were not modified or retested by this RHD-only repair. [DONE]
+
+## Cycle 409 — Established magnetic validation gaps (DONE: nonlinear wave added and validated; broader GRMHD gaps retained)
+
+- Source/literature audit identifies missing nonlinear relativistic CP Alfven wave, magnetized Bondi accretion, rotor/blast reference controls and long-lived magnetized-star validation. Start with exact finite-amplitude CP propagation on supported flat RMHD; existing initializer uses Newtonian velocity even for RMHD. Use ECHO Section 4.1, Eq. 85; no new evolution physics. [DONE]
+- Corrected the existing circular-wave initializer only for RMHD: finite-amplitude wave speed includes fluid enthalpy and electromagnetic inertia. Newtonian arithmetic is retained. All three production executables rebuild; initial compile 5.89 s with three misses, final preservation edit rebuilt successfully (see build_final.log). No hot-path evolution kernel changed; no runtime speedup claimed. [DONE]
+- Added shared exact flat-Valencia CP solution and exact sinusoidal FV averages in `relativistic_validation.py`, plus thin `validate_rmhd_alfven.py`. Fixed physical parameters rho=p=B_normal=B_transverse=1, gamma=4/3, one unit wavelength, one period, PWL/HLL/SSPRK3, CFL 0.9, three ranks. Six cases: N=32/64/128 in 1D and axis-aligned 2D CT with eight transverse cells. Shared scalar checks, finite output, correct time/shape and zero recovery/reset requirements apply to each run. Gate checks each transverse momentum/magnetic convergence order >=1.7 and finest maximum normalized L1 <=0.01. [DONE]
+- Fresh full-suite selected gate passes in 4.28008 s. Maximum-error orders are 2.2124 (1D) and 2.1999 (2D CT); finest errors 7.82919e-4 / 6.74249e-4. All transverse component order checks pass. Mass/energy drifts <=1.43e-14; divB Linf <=6.67e-14. Registered in full only, so standard/quick scope remains compact. Final finite-output guard checked by postprocessing the same fresh runs. [DONE]
+- Independent N=128 point-state initialization agrees to 3.67e-16; quarter-period normalized Linf 0.001110 with scalar checks passing. Initial-only probe first produced no GF because positive cadence skips t=0; reran successfully with plot_int=0. This was an output-selection mistake, not solver failure. [DONE]
+- Fresh existing RMHD standard gate passes all 28 rows, including nine reconstruction controls, entropy convergence, exact Balsara 1--5, CT reference refinement, AMR/subcycling/restart and physical-ID transfer. Quick gate also passes. No claim that these flat-space gates certify curved GRMHD or long-term stellar physics. [DONE]
+- Updated existing audit gap table, knowledge and reference router. Oblique nonlinear wave, magnetic blast/rotor reference controls, magnetized accretion and long-lived magnetized stars remain distinct missing coverage. Source-checked ECHO and GRHydro/Einstein Toolkit references support this ladder. [DONE]
+- Evidence under `cycle409/`: source snapshot/patch, build and suite logs, copied summaries, scalar bounds and phase controls. Convergence figure `plots/current/scans/rmhd_cp_alfven.png` is visually checked; plotting script retained in cycle409. Initial interactive Matplotlib backend aborted in sandbox; Agg with writable temporary caches succeeded. No numerical run was affected. Existing self-gravity and coarse shock-order failures are unchanged and remain open. [DONE]
+
+## Cycle 410 — Single-object and coordinate readiness (DONE: outer-boundary setup repaired; broader readiness remains open)
+
+- User prioritizes single-object/single-patch reliability before multipatch/binaries and asks about NS+disk and CapyrX. Audit current composition/evolution support, refresh the existing torus gate, and repair concrete findings. Do not equate all selectable options with validated combinations. [DONE]
+- Fresh equilibrium-torus standard gate passes, including NS+disk test-fluid/coupled XCTS construction, transfer and two-step stellar evolution. Fixed misleading evolution_mass output label to evolution_mass_rel_drift and verified by rechecking the fresh artifacts. No test added for this text-only change. [DONE]
+- Corrected stale curvilinear documentation: supported single-level spherical r/r-theta analytic fixed metrics include centered isotropic Schwarzschild as well as Minkowski. AMR, RMHD, stored metrics, full spherical 3D and cylindrical relativistic evolution remain limited; reference-metric Z4c is separate work. Added readiness ordering and source-checked CapyrX/NewRadX/interpolation/Thornburg references. [DONE]
+- Bounded NS+disk probe on 64^3 over [-48,48]^3, PWL/HLL/SSPRK3, CFL 0.2: fixed spacetime reaches t=5 in 14 steps with zero recovery/reset events, mass drift 7.64e-10, max-density change -1.30%. Evolved-spacetime control completed with the failure and A/B results below. No long-duration equilibrium or resolution-convergence claim. [DONE]
+- The evolved 64^3 extrapolation-boundary probe fails accepted-state checks at step 36, t=3.70961, with nonfinite states first reported near outer corners and 1512 atmosphere-reset events. This is a real failure beyond the two-step gate, not a timeout. The otherwise identical Sommerfeld A/B completes as recorded below. [DONE: failure reproduced and isolated]
+- Existing focused Z4c Sommerfeld boundary gate passes. Torus summaries now write INCOMPLETE before execution and include tested time/steps for the key NS/BH evolution rows, preventing stale PASS and hidden two-step coverage. Cached-artifact recheck passes after the reporting edit. [DONE]
+- Controlled A/B changes only spacetime.outer_boundary from extrapolate to sommerfeld. Same 64^3 grid, source artifact, frozen gauges, KO=0, CFL=0.2, physical end time t=5. Sommerfeld completes 49 steps, zero fallback/reset events, baryon drift 7.640e-10 and external mass residual 4.30e-15. Peak density changes -1.224%; H L2 rises from 8.585e-5 to 1.460e-4. Raw fluid-energy drift is 2.488e-4; the dynamic-spacetime policy does not claim it is a conserved total gravitational energy. Fixed-background H L2 ends at 1.716e-4 as matter evolves on the frozen geometry. [DONE: bounded physical evidence]
+- Updated only `inputs/equilibrium_torus_evolution_3d.in` to select Sommerfeld explicitly; did not alter global defaults, gauges, dissipation, floors, tolerances or forbid extrapolation. This is a demonstrated boundary/setup sensitivity, not proof of a repaired tensor kernel or a universal stability guarantee. Fresh standard torus gate passes after this input edit; its two-step mass drift is 1.138e-10. The longer boundary A/B remains separate evidence at CFL 0.2. [DONE]
+- Evidence in `runs/current/infrastructure_audit/cycle410/`: complete failing extrapolation log, fixed/radiative run directories, scalar and physics summaries, boundary-suite and torus logs. History includes both failure and successful probes. No new broad test suite, kernel rebuild, or performance claim. Curvilinear AMR/Z4c, long-term stellar/disk stability, and known self-gravity AMR/restart failures remain work ahead. [DONE]
+
+## Cycle 411 — Self-gravity AMR isolation and evidence retention (DONE: investigation/reporting; conservation remains open)
+
+- Reproduced the existing subcycling energy failure without changing tolerance or applying a global energy correction. Baseline remains 2.243662e-6 versus 2e-6, while the non-subcycled control passes. [DONE]
+
+- Six three-rank controls at t=0.02: no regrid 2.243662e-6; CFL 0.45 1.167478e-6; CFL 0.225 5.271385e-7; no regrid/CFL 0.45 1.167478e-6; 32^2 base 4.770138e-7; Poisson tolerance 1e-11 2.243662e-6. Baseline takes one coarse step; fine substep schedules change with CFL. These are isolation probes, not a formal convergence-order claim. Regridding and elliptic accuracy do not explain this short-case failure. [DONE]
+- Source audit confirms an existing coarse-fine gravity energy-source register in amr_solver_gravity_sync.cpp, applied with flux reflux. Non-active source levels use bracketed linear time interpolation or their latest state; composite stage-time coupling remains a candidate for further investigation. No evidence-based solver correction was established in this cycle. [DONE: unresolved numerical cause]
+- Existing deep restart control reproduces max_field_abs=1.232791647e-12 > 1e-12. Otherwise identical Poisson tolerance 1e-11 control gives 7.318590178e-13 < 1e-12. Potential storage is retained as the elliptic initial guess during evolution. Tolerance sensitivity supports an elliptic contribution to restart differences; warm-start causality is not independently proven. Neither production Poisson tolerance nor checkpoint threshold changed. [DONE]
+- Physical budgets remain failed in both four-step full runs: t~0.24609, gravity total-energy drift 0.00679958, absolute momentum drift 2.434e-5; mass drift <=3e-15. Restart equivalence does not certify this evolution. Restart-segment budgets also fail. [DONE: failure retained]
+- Hardened the existing validate_amr.py only: retain run.log for solver success/failure, retain checkpoint_compare.log, return failed comparisons as FAIL rows so summary/exit handling preserves metrics, and mark summary INCOMPLETE before a new invocation. Verified against the existing failed and passed checkpoint pairs and the fresh tight-tolerance evolution logs. No redundant tests or C++ changes; no build/performance claim. [DONE]
+- Evidence: runs/current/infrastructure_audit/cycle411/{baseline.log,baseline.tsv,isolation.tsv,restart_comparison.tsv,restart_scalars.tsv}, canonical input/run directories and comparison logs. Next work is coarse-fine stage-time gravity/source consistency and the longer-run momentum/energy failure; preserve the current gates. [PENDING]
+
+## Cycle 412 — Generated reference-metric spacetime foundation (WIP: geometry complete; evolution remains pending)
+
+- User redirects work to the previously planned spherical NR formulation. Implement rescaled tensor derivative geometry from one symbolic source, preserving all tensor components in symmetry reductions. SphericalNR fCCZ4 is distinct from Cartesian Z4c; do not enable an incomplete evolution path. [WIP]
+
+- Recovered prior source/plan in grmhd_development.md and references.md; refreshed Mewes et al. arXiv:2002.06225v2 Section II.1, Eqs. (14)--(21). SphericalNR paper is the formulation reference; its private GRHydro implementation is not being imported. Newtonian self-gravity investigation is deferred per user direction. [DONE]
+- Added spacetime_geometry.py: one full-3D symmetric tensor jet owner for orthonormal-to-coordinate first/second derivatives, reference-covariant first/second derivatives including the derivative-index connection, and connection difference/contracted connection. Generates Cartesian/cylindrical/spherical geometry with no executable-dimension physics branches. Reduced field dependence never suppresses basis derivatives. [DONE]
+- Extracted existing pure metric Christoffel, inverse derivative and Ricci algebra into metric_differential.py; Cartesian Z4c imports it. All four generated Z4c groups and diagnostics.hpp remain byte-identical after regeneration (cartesian_generated_equivalence.txt). [DONE]
+- New independent spacetime code-generation family, tracked CMake dependencies and pointwise temporary metric_jet.hpp types. No new evolved GF aliases, runtime option, formulation switch or hot-path call introduced. Conformal/physical metric semantics remain caller-explicit; these arrays do not bypass the GF catalog. [DONE]
+- Extended existing coordinate contracts with nonzero-curvature R=6 and flat Ricci controls in all three coordinates; direct chain-rule checks for r, r-theta, r-phi and full 3D; nontrivial rotated constant Cartesian tensor; independent radial scalar Hessian and connection-difference identity. All 11 tests pass in 25.65 s. Initial symbolic equality failures were uncancelled zero trig identities, resolved with Fu simplification and exact-point rotated-tensor evaluation; no tolerance relaxation. [DONE]
+- Existing generated C++ checker now exercises spherical metric-jet/connection formulas; 3D target builds and runs successfully. Final build 80.42 s (one cache miss; includes symbolic regeneration), not a cold-production timing. All three production targets integrate successfully, final no-op 1.11 s (zero compilations); quick MPI gate PASS in 1.70 s. No runtime speedup or spherical evolution claim. Logs under runs/current/infrastructure_audit/cycle412/. [DONE]
+- Remaining implementation: reference-metric fCCZ4 field identities/state constraints, gauges and full RHS; physical metric/matter bridge; origin/pole regularity and ghost exchange; coordinate-aware nodal/face/edge AMR transfer and CT synchronization. Verify stationary and perturbed single-object evolutions using existing baselines as these owners connect. r-phi remains an algebraic field-dependence reduction, not a claim of arbitrary closed equatorial GR evolution. [PENDING]
+
+## Cycle 413 — Reference-metric evolution and patch boundaries (WIP: conformal kinematics complete)
+
+- Continue generated spacetime implementation with coordinate-independent conformal kinematics; keep patch maps/frames/communication outside equation kernels. Verify tensor covariance before any mixed-chart runtime claim. [WIP]
+
+- Added reference_metric_evolution.py with coordinate-time conformal metric/chi RHS from SphericalNR Section II.1 and Eq. (33), independently taking chi=exp(-4 phi). Includes tensor Lie shift terms and conformal divergence, including its determinant-gradient term off the constraint. Physical K is explicit rather than reusing Z4c K_hat semantics. [DONE]
+- Equation owner has no coordinate-family or patch dispatch: it consumes local reference-covariant derivatives. Generated evolution header is a separate leaf in the spacetime generation family with tracked CMake dependencies; input/output structs are pointwise temporary arrays, not evolved GF declarations. Public symbolic tensor-jet construction is shared with geometry. [DONE]
+- Added one combined independent contract to the existing coordinate tests: exact ADM physical-metric equation reconstruction, determinant RHS cancellation for trace-free A, and tensor covariance under a proper rotation mixing all three axes with non-diagonal metric and nonzero shift/derivatives. All 12 coordinate tests pass in 24.03 s; focused final adapter check also passes. Existing C++ checker exercises generated conformal RHS numerically and passes. [DONE]
+- Documented future mixed-chart boundaries in infrastructure_conventions.md: common geometric reference metric, all derivative indices participate in frame changes, raw partial jets require differentiated bases, static-frame assumption, and separate conservative FV/face-flux/edge-EMF interface ownership. This does not implement multipatch evolution or a closed r-phi physical symmetry. [DONE]
+- Build evidence in runs/current/infrastructure_audit/cycle413/: generated-check target 83.52 s with one cache miss including regeneration; all-dimensional production integration 18.89 s with zero compilation (generation/dependency work). Existing Cartesian generated Z4c and diagnostics remain byte-identical. No new runtime physics path is active, no performance improvement or full NR evolution validation claimed. [DONE]
+- Remaining fCCZ4 groups: curvature/constraint RHS and gauge, field-catalog/state and physical matter bridge, then boundaries/AMR and evolution controls. Mixed-coordinate patch infrastructure remains a subsequent owner, not branches inside those equation sources. [PENDING]
+
+## Cycle 414 — Complete reference-metric formulation and runtime integration (DONE: regular-chart milestone; singularity, magnetic and vacuum-AMR work remains open)
+
+- User explicitly requests sustained implementation, not stopping at isolated easy components. Complete remaining fCCZ4 equations and independent checks, then connect runtime/storage/boundaries as supported. Preserve Cartesian paths and distinguish algebra from evolution. [WIP]
+
+- Complete coordinate-independent fCCZ4 curvature, K/Theta/Lambda, matter and damping equations plus physical ADM constraints are implemented in the symbolic owner. Independent exact controls cover isotropic Schwarzschild, FLRW dust/radiation, finite gauge wave, damping and full tensor frame covariance with anisotropic metric/stress and nonzero Z fields. Latest three combined equation tests pass in 47.30 s. [DONE: point equations only]
+- Runtime integration uses explicit K=K_hat+2Theta decoding and stores reference Lambda in the existing connection slots; checkpoint formulation metadata rejects incompatible restarts. Initial tensor/shift rotation, connection completion, matching constraint diagnostics, physical angular CFL factors and the stored reference-metric RHD source/divergence bridge are being connected. Runtime retains the existing integrated Gamma-driver convention; the auxiliary-B mathematical kernel is not a new evolved field. [WIP]
+- Initial all-dimensional build exposed a missing z4c_state_access include in the stored-metric divergence bridge; corrected. That failed 446.84 s build (207 misses) is not validation. Current focused 1D build includes subsequent integration changes; generation/build and numerical runs remain pending. Regular-chart origin/pole and radiative-boundary limitations are explicit; curved RMHD remains disabled by the existing fluid contract. [WIP]
+
+- Fresh three-rank Cartesian gauge waves at N=32/64/128: Z4c lapse orders 3.9900/3.9959, fCCZ4 3.9899/3.9959; finest lapse errors ~1.505e-10, constraint maxima ~6.856e-9, scalar checks pass. Existing four-level fCCZ4 AMR control passes: subcycling difference 3.431e-9, finest analytic errors ~1.18e-10, restart comparison within 1e-12. This is a fixed-hierarchy control, not adaptive spherical validation. [DONE]
+- Spherical Minkowski evolution reaches t=0.1 with state error 3.28e-14, constraints 7.46e-14, no recovery/reset events. Exposed and enabled the preexisting Cartesian-only diagnostic selection for fCCZ4; constraint kernels were already implemented. [DONE]
+- Coupled spherical TOV-shell probe exposed a 4pi mismatch between full-sphere cell totals and per-solid-angle boundary flux accounting. Unified diagnostic cell/face normalization in metric_reductions.hpp, separating that policy from the FV metric header. Open shell mass budgets now close within 8.2e-17. The open policy is required; zero mass drift is not a closed-domain requirement here. [DONE: 1D evidence; all-dimensional integration pending]
+- TOV point metric interpolation was C0 linear on the adaptive radial table, causing initial finite-difference Hamiltonian errors to increase strongly with mesh resolution. Shared CPU/device sampling now uses quintic Hermite metric segments with first/second radial derivatives from the TOV ODE, including regular center limits. Matter interpolation is unchanged. N=32/64/128 shell initial H Linf now ~1e-6 instead of the previous growing errors. At t=0.1, global H maxima remain nonmonotone (3.05e-5/1.62e-5/4.69e-5); fixed interior |Khat|<=2.01e-8. No stationary-star convergence claim. Further sampled-constraint and EOS gates are pending. [WIP]
+- The first shell profile probe selected plot_int=0 and read only initial output; corrected to plot_int=1 and assert final snapshot time. Earlier zero-K profile figures are invalid as evolution evidence. Scalar histories and the 4pi failure were independently runtime-authored. [DONE: validation setup corrected]
+- General SymPy simplify entered expensive multivariate factorization while reducing a linear metric jet; interrupted this task's identified generator (PID77014) and captured traceback. Targeted expansion/Fu reduction replaces that step; existing 12 coordinate tests pass in 20.09 s, subsequent 1D integration builds pass. Full current builds, 3D spherical gauge propagation, reduced-dimension equivalence and final regressions remain active. [WIP]
+
+- Full regular 3D spherical gauge wave now has a maintained opt-in selector: validate_z4c.py --only spherical_gauge_wave --evolution-formulation fccz4 --ranks 3 --force. Independent postprocessing in spacetime_validation.py compares all 22 conformal variables against the Cartesian plane-wave metric transformed into the local orthonormal frame. All 66 field/resolution rows pass; nonzero-error finest-pair orders are 3.8377--3.9396, frozen shift exactly zero. Fixed physical interior, open radial/polar boundaries, full periodic phi, t=0.01, N=16/32/64. Earlier nonperiodic-phi wedge probe was rejected by the existing active-phi periodicity contract; no domain restriction was changed to hide a numerical failure. [DONE: regular-chart propagation]
+- Found a second geometric inconsistency: the RHD admissibility fallback used Cartesian dt/dx even when primary flux divergence used physical face areas and cell volumes. Both low-candidate construction and final shared-face correction now use distinct lower/upper face-area-to-volume weights. Cartesian equal-weight arithmetic remains grouped as before. The limiter returns its already reduced rejected-cell count; debug_check_physical reports positive counts without a new reduction or production output column. [DONE]
+- New focused controls extend validate_reference_metric_rhd.py, rather than introducing another suite: spherical expansion into vacuum at CFL=0.9 triggers 6903 fixed-metric and 7308 evolved-metric cell-stage rejections. Fixed mass/energy ledgers close within 1.74e-15/4.24e-16; evolved vacuum-coupling Minkowski mass ledger within 4.93e-15. The evolved metric has finite truncation error, so its fluid energy is not treated as a generally conserved gravitational energy. All 21 reference-metric GRHD checks pass. [DONE]
+- Coupled radial TOV-shell r/r-theta/r-phi/r-theta-phi comparison at t=0.02, radial N=32 and active angular N=16: maximum spacetime difference 3.008e-12 and fluid difference 4.486e-12; r-phi vs r differences <=4.73e-16/1.74e-18. This one-step projection control retains all tensor components and permutes the r-phi runtime order; it does not establish arbitrary equatorial symmetry or long-time stability. Initial probe inputs used incompatible AMReX coord_sys values; corrected to the existing layout contract before evolution. A separate limiter postprocessing probe initially passed a file instead of a directory to read_scalar_rows; corrected, with no solver change. [DONE: bounded equivalence]
+- Current generated C++ checker passes including exact quintic-polynomial reproduction and fCCZ4 physical-constraint controls. Existing 3-rank elliptic/initial-data checker passes; TOV sampled Hamiltonian residual 2.881e-7, masses/Komar/tidal and CTT/XCTS controls remain passing. The initial MPI checker launch mistakenly supplied a Python list instead of an executable Path; corrected launch succeeds. [DONE]
+- Adapter readability review expands compressed branches, tensor-index mapping, gauge selection and initial-state rotation. No handwritten coordinate-specific evolution equations were introduced. Reviewed all-dimensional build passes in 10.77 s with 15 cache misses; this is an incremental build, not a clean compile. Earlier integrated sampler build was 406.92 s/135 misses; limiter geometry 165.70 s/3 misses; debug-count API integration 187.82 s/24 misses. Architecture and diff-whitespace checks pass. [DONE]
+- Fresh fCCZ4 quick control passes all 13 checks including perturbations, gauge waves and four-level AMR/subcycling/restart. A Z4c restart from an fCCZ4 checkpoint is rejected before evolution (formulation_restart_guard.log). Production performance gate passes all four cases at baseline ratios 0.87, 0.95, 1.01, 0.98; no --allow-warn and no speedup claim. [DONE]
+- Standard suite stops at the same previously documented Newtonian self-gravity AMR/subcycling energy failure: 2.243662e-6 versus 2e-6; other 17 feature-matrix rows pass. This matches Cycle411 and is outside the user's current full-GR priority. The Cartesian shock-heating gate retains its known W=10 profile-order failure (dens 0.576, tau 0.288) while all six physical budgets and the W=100 convergence sequence pass. No threshold was weakened. Relevant remaining standard regressions are running separately so this old failure does not conceal new evidence. [WIP]
+
+- Final validation organization now has shared spacetime_validation.py (run setup and independent analytic oracle) and reference_metric_spacetime_validation.py (regular-chart propagation and physical symmetry). validate_z4c.py reuses those owners. Full-suite selectors fccz4_equations, fccz4_spherical_gauge_wave and fccz4_spherical_symmetry pass, with 3 symbolic methods, 66 propagation rows and 8 projection rows. The six separately selected standard regressions (RHD, RMHD, fixed spacetime, equilibrium torus, Sod, Brio-Wu) all pass. [DONE]
+- Continued into spherical AMR instead of inferring it from single-level results. The existing radial vacuum-expansion setup with evolved fCCZ4, max_level=1 and CFL=0.9 fails at t=0.0140625: positive density 1.694e-21 with p=0 is rejected by the final checker. Disabling regridding moves the report to the uncovered coarse cell but reproduces the same state. Preserved original logs as spherical_amr_initial_failure.log and spherical_amr_noregrid_initial_failure.log. No AMR correctness claim. [WIP]
+- Source audit found two distinct issues. The final physical checker duplicated Newtonian strict-pressure semantics, while relativistic recovery and stage validation allow finite cold p=0 matter. Accepted relativistic states now use the existing non-mutating C2P/P2C preflight contract, including round-trip tolerances, rather than a second rho/p-only rule. Negative energies remain rejected. This exposes a later stage recovery failure (status UnphysicalPrimitiveState) instead of hiding it. [WIP: current build/negative controls pending]
+- Generated ideal RHD recovery expanded normalized variables into density powers and cancellation-prone cold internal energy. The symbolic source now keeps named dimensionless ratios and rationalizes W-1. Ordered numerical bindings in the common scalar/struct kernel model prevent CSE from expanding those normalizations; derivatives follow the same bindings by symbolic chain rule. Existing compiled derivative/C2P controls and added cold/negative-energy cases at D=1,1e-21,1e-90 will verify the change. Initial normalized-generation build exposed a duplicate PatchMapKernel model without the common metadata; replaced it with StructKernel, with byte-identical generated patch_maps.hpp. Final normalized build is running. [WIP]
+
+- Final normalized ideal-RHD recovery and shared accepted-state checks pass the compiled recovery matrix, derivative controls, cold states at D=1/1e-21/1e-90 and explicit negative-energy rejection. Production integration completes in 248.02 s/96 misses; generated checker log final_recovery_contract.log. No tolerances changed. [DONE]
+- Spherical vacuum AMR still fails with negative internal energy at an uncovered coarse cell after reflux (D=1.69407e-21, E=8.47033e-22, q=-8.47033e-22, failure_reason=13). This is distinct from the repaired cold-state checker/cancellation issues. Four-cell buffering passes to t=0.1 both without/with subcycling, mass ledger residual <=3.50e-15; those are placement controls with no level headroom, not adaptive accuracy or a positivity repair. Unbuffered failure remains open. [PENDING]
+- Source audit found 3D reference-metric RHD registers selected Newtonian physical-face-vector areas and Cartesian momentum rotation while the RHS used local Valencia fluxes. One shared uses_cartesian_momentum_fluxes predicate now owns the decision in divergence, weighting and reflux. Partial fixed radial-shell hierarchy (8192/32768 possible fine cells, three ranks, t=0.02) closes mass to 1.519e-15; exact A/B with the previous two register predicates loses 6.239e-6 and fails its ledger at 1.167e-4. Temporary A/B source replacement was restored in finally; final production build restores the corrected executables. [DONE]
+- Two earlier 3D probes refined the entire domain, so their passing budgets did not exercise reflux. Replaced setup with explicit fixed-box refinement and require partial fine coverage plus final-time output. This one targeted control extends validate_reference_metric_rhd.py; no separate suite. A/B artifacts reflux3d_partial and reflux3d_previous_partial, build logs retained. Final corrected build 1.10 s/two cache hits is a cache-hit rebuild, not a clean compile measurement. Current affected regression gates are running. [WIP]
+
+- Fresh integration catches an accepted-state checker issue in 2D Schwarzschild HSE: the previously preflight-only componentwise relative momentum error divides by nearly zero transverse momentum. A bounded diagnostic run shows |mom2|<=4.01e-17 while |mom1| reaches 2.60e-2; raising/lowering with roundoff off-diagonal metric terms makes the former componentwise relative error reach 1.16 despite a primitive round trip of 3.11e-15. Momentum error now uses a shared vector infinity-norm scale; density and energy retain independent scales, and the 1e-7/1e-6 thresholds remain unchanged. This is an error-measure correction, not a state repair. Original failure retained in final_integration.log and diagnostic state in round_trip_probe/. Final rerun pending. [WIP]
+
+- Momentum-norm correction passes the previously failing 2D Schwarzschild HSE and the fresh RHD/66-field spherical propagation/8-row symmetry gates. The first restored A/B build skipped the 3D register object: source restoration and object creation had the same whole-second timestamp, leaving the previous implementation linked while the source was correct. Its repeated 6.239e-6 failure is stale-control-binary evidence, not a new defect. Touched the exact restored source and confirmed all three register objects and executables rebuilt/relinked (0.66 s, three cache hits). Final remaining gates rerun against this verified rebuild. [WIP]
+
+- Corrected-object reference-metric gate passes all 22 controls (including the maintained partial 3D reflux control); RMHD and fixed-spacetime gates pass. The torus gate exposes another preflight/evolution distinction: four nearly cold hybrid-EOS cells have accurate conserved round trips (worst 4.345e-12) but repeated primitives differ by 1.953e-6 near q=1e-16. Added internal explicit Recovery/ConservedRoundTrip/InitialDataRoundTrip modes. Accepted evolution requires recovery and conserved agreement; initial-data preflight keeps both existing conserved and primitive thresholds. This intentionally limits primitive-repeatability rejection to preflight, rather than loosening its tolerance or altering the physical state. Final all-dimensional build passes in 2.83 s/three misses; affected gates rerunning. [WIP]
+
+- Final physical-contract integration passes all five affected gates: rhd_standard (11.05 s), reference_metric_rhd (22 controls, 11.33 s), rmhd_standard (11.40 s), fixed_spacetime_standard (1.73 s), and equilibrium_torus_standard (20.92 s). Current spherical gauge/symmetry passes were recorded after the momentum-norm correction; the subsequent check-mode change retains their conserved-state requirement. Compiled negative-energy controls remain valid because recovery algebra did not change afterward. [DONE]
+- Final shock-heating rerun after normalized recovery retains the established W=10 profile-order failure (dens 0.576, tau 0.288); all six individual scalar budgets and the W=100 convergence sequence pass. No tolerance changes and no all-tests-green claim. Architecture and diff-whitespace checks pass. Final performance gate running. [WIP]
+
+- Final production performance gate passes all four normal three-rank cases without --allow-warn; baseline ratios 0.90/0.92/1.01/0.99. These are within the existing regression limits, not a speedup claim. Exact logs and bounded A/B artifacts live in runs/current/infrastructure_audit/cycle414/. [DONE]
+- Regular-chart generated fCCZ4/GRHD integration is complete for this milestone. Outstanding numerical work is explicit: conservative admissibility at unbuffered coarse-fine vacuum interfaces; origin/pole regularity and matching ghost/AMR transfer; curved RMHD/CT; long-time stellar/surface thermal and constraint convergence; then conservative mixed-chart exchange. No post-transfer clipping, weakened physical tolerance, or global conservation correction was added. Existing self-gravity and W=10 shock-heating failures remain recorded. [PENDING: subsequent implementation/validation]
+
+## Cycle 415 — Stencil, origin and coordinate-coverage audit (DONE: source audit)
+
+- User asks whether 2/4/6/8/(10) orders apply to evolution and ID, whether origin-crossing is supported, and whether diagnostics/AH/AMR are coordinate-independent. Current source contradicts blanket readiness. schema/numerics.toml declares 2/4/6/8 only; Cartesian Z4c and regular-chart fCCZ4 runtime gathers explicitly select order 4. Spacetime prolongation separately accepts 2/4/6/8. InitialDataEllipticOptions explicitly documents second-order interior operators; boundary_interpolation_order=4 is not fourth-order elliptic accuracy. [DONE]
+- validate_fccz4_domain explicitly requires r>0 and active theta strictly inside (0,pi). This is an excluded-origin regular-chart limitation, not a requirement of the underlying continuum formulation. A translated Cartesian packet through the origin with a convergent outgoing profile, small reflected signal and no persistent origin imprint is an appropriate future acceptance control; current shell tests cannot perform it. Refreshed SphericalNR arXiv:2002.06225v2 Section III origin/pole ghost mapping and parity reference. [DONE]
+- Evolution ApparentHorizonTracker explicitly requires a 3D Cartesian mesh. Shared field metadata and reference-metric constraint/scalar infrastructure do not certify all observable evaluators. Curved AMR still needs physical-direction measures, frame-consistent transfer, origin/pole topology and conservative admissibility; Cycle414 only establishes bounded partial-shell controls. Added explicit stencil/AH boundaries to the readiness document. No new simulation or numerical validation claimed in this audit. [DONE]
+
+## Cycle 416 — Selectable spacetime accuracy and origin-contract preparation (DONE: selectable-order milestone; origin/pole implementation remains pending)
+
+- User authorizes selectable Cartesian/curvilinear orders, optional tenth order, and continued geometric infrastructure. Connect stencil selection consistently to evolution, connection initialization, constraints, dissipation and halo/boundary support; preserve fourth-order default. Origin regularity remains a separate nodal topology contract. [WIP]
+
+- Added spacetime.derivative_order with fourth-order default, generated dispatch, shared Cartesian/fCCZ4 derivative gathering and order-matched KO. Ghost allocation includes biased/one-sided reach; connection completion and constraint masks follow the selected order; physical ghost extrapolation uses order+2 nodes. Catalog includes tenth order. Initial 1D integration builds in 121.02 s/78 misses. [WIP]
+- First Cartesian gauge sweep confirms second/fourth-order sequences for orders 2/4 and RK4-limited convergence for 6/8. Tenth-order fails with O(1e-3) lapse error: numerical catalog regeneration was missing from the differential generation dependency list, leaving old derivative leaves whose fallback returned zero for the newly admitted order. Added exact CMake dependencies and generated per-leaf supported-order assertions, so stale numerical leaves reject unsupported instantiations at compile time. Preserved failed order_gauges.log; corrected regeneration/rebuild pending completion of the initial all-dimensional build. [WIP]
+- Extended existing numerical catalog tests with exact derivative moments and KO sign checks for all generated orders. All six combined checks pass. Extended the existing compiled checker to exercise actual generated derivative dispatch for every catalogued order, specifically covering the stale-leaf failure mechanism. [WIP: compiled check pending]
+
+- Initial all-dimensional integration completes in 444.86 s/157 misses. A single 3D compiler consumed ~3 GB while optimizing the inlined multi-order gather inside the generated RHS; placed the gather behind the established AMREX_NO_INLINE boundary. Host orchestration and point-kernel dispatch now have separate generated call qualifiers with the same catalog. An intermediate build saw a helper rename before its generated declaration was refreshed and failed compilation; no numerical claim from that build. Final regeneration/integration is running. [WIP]
+- Removed hand-enumerated 2/4/6/8 dispatch from common centering transfer, ID reflection transfer and nodal-interpolater selection. The existing compiled centering matrix now iterates the catalog instead of repeating per-order calls. Nodal ghost storage also covers order+2 boundary donors when a boundary block is narrower than the stencil. The independent approximate Sommerfeld boundary gradient and second-order elliptic interiors remain explicit accuracy limits. [WIP]
+
+- Corrected generated 1D executable passes the existing three-resolution Cartesian gauge-wave control for both Z4c and fCCZ4 at every order 2/4/6/8/10 (30 runs). Second-order finest rates ~1.996; fourth-order ~3.996; higher spatial orders become RK4-limited with finest lapse errors ~8.36e-13 (10th) and ~8.78e-13 (6th). Exact tenth-order stencil moment checks establish spatial consistency separately; these evolution rates are not tenth-order temporal convergence. All individual scalar checks pass. Added an opt-in derivative_orders selector to validate_z4c rather than a separate suite. [DONE: Cartesian periodic controls]
+- Source review confirms old origin helpers select fluid scalar/vector parity; they do not implement the conformal tensor regularity equations at nodal r=0. Keep the regular-domain guard until tensor-aware mapping and singular-node operators have independent through-origin controls. Do not reinterpret r_min=dr/2 as a complete nodal-origin implementation. [PENDING: origin work]
+
+- Final all-dimensional order integration builds in 526.41 s/206 misses; the subsequent narrow-boundary halo/config rebuild takes 5.43 s/6 misses. These are incremental integration measurements, not cold-build speedup evidence. Both formulations pass nonperiodic, two-cell-wide boundary blocks at every order with KO and poison/finite/physical checks enabled. Tenth-order lapse error is 2.73e-13. [DONE]
+- Both formulations pass the existing four-level AMR/subcycling/restart control with derivative_order=10 and prolongation_order=10. Subcycling difference 3.54e-6, analytic lapse errors 1.04e-8/2.19e-8 and restart agreement within 1e-12; scalar budgets pass. These errors exceed the earlier default-fourth-order control and do not certify higher AMR convergence. [DONE]
+- Full 3D regular-shell spherical gauge matrix passes every spatial order: 330 field/resolution comparisons and 15 scalar checks. Finest measured nonzero rates range roughly 1.86--1.99 (order2), 3.84--3.94 (4), 5.75--5.85 (6), 7.58--7.73 (8), and 9.34--9.46 (10, excluding lapse at floating-point noise). RK4 still limits asymptotic temporal accuracy; the small-time shell control is spatial-error dominated. [DONE]
+- Extending the compiled topology-transfer matrix to order10 exposes one bounded 3D polynomial error 1.19e-11, exceeding its unchanged roundoff tolerance. Replacing flat tensor-product accumulation with separable line/plane sums in the generated transfer owner; compiled and final regression checks pending. Original generated_check.log retained. [WIP]
+
+- Separable generated centering accumulation passes the entire existing compiled matrix, including tenth-order bounded topology changes, without tolerance changes. The checker also passes catalogued derivative dispatch and existing relativistic recovery/zero-matter controls. Final production build and affected default-order evolution gates are running. [DONE: compiled control; WIP: integration]
+
+- Final transfer integration rebuild passes in 516.91 s/200 misses. Removing one unused adapter local then rebuilds all three executables in 8.80 s/3 misses. The existing seven affected gates pass against this rebuild: spherical symmetry, rhd_standard, reference_metric_rhd, rmhd_standard, fixed_spacetime_standard, z4c_outer_boundary, and equilibrium_torus_standard. Symbolic catalog checks (6), compiled numerical checks, architecture and whitespace checks pass. Numerical evidence and failures remain under runs/current/infrastructure_audit/cycle416/. Performance gate pending. [DONE: integration; WIP: performance]
+
+- Final uncontended three-rank performance gate passes all four cases without --allow-warn: baseline ratios 0.86/0.89/1.00/0.98. These meet the existing regression limits; no speedup claim and no high-order spacetime cost comparison. Final results/logs copied into the cycle artifact folder. [DONE]
+- Selectable 2/4/6/8/10 derivative infrastructure is complete for this milestone, with fourth-order default and independent prolongation. Origin/pole regular operators and tensor-aware ghost/AMR mapping remain the next implementation boundary; existing scalar/vector origin helpers do not satisfy it. No claim of full-grid spherical evolution, curved RMHD/CT readiness, general AH chart support, or resolution of the older vacuum-AMR and W=10 shock-heating failures. [PENDING: subsequent work]
+
+## Cycle 417 — SphericalNR origin and staggering comparison (DONE: literature/source audit)
+
+- User asks whether spherical-origin evolution with staggering is novel. Verified Mewes2018 Section II.B: spacetime grid is shifted by dr/2 and dtheta/2, with vertex sampling only in periodic phi. Mewes2020 Section III/Table I uses origin antipodal mapping and tensor parity; its vector-potential and magnetic fields are cell-centered. Thus its origin solution does not retain PyFluid's current vertex spacetime plus face/edge CT layout. [DONE]
+- Verified Olivares2019 Sections3.1/4.5: face magnetic fluxes, edge electric circulations, polar ghost connectivity with AMR, and zero contributions for collapsed faces/edges. This is a precedent for staggered polar topology; it must not be advertised as a full dynamical spherical-origin result. Mewes2020 off-center shock tests themselves show reconstruction/magnetization-dependent origin/pole artifacts. [DONE]
+- Clarify Cycle416 wording: special singular-node spacetime equations are required only if retaining vertex nodes on the origin/axis. A coherently cell-centered spacetime layout is an established alternative and should be assessed before committing to that extra nodal complexity. It must cover catalog, evolution/coupling, boundaries, transfer and checkpoint semantics; shifting a coordinate offset alone is insufficient. This is a design recommendation, not a layout change or validated new capability. References router updated; solver unchanged. [DONE]
+
+## Cycle 418 — Non-magnetized nodal origin feasibility (DONE: design clarification)
+
+- User explicitly prioritizes non-magnetized evolution and asks whether nodal spacetime can retain the polar axis and r=0. These are removable coordinate degeneracies for smooth spacetime, not a mathematical prohibition on nodal storage. Current validate_fccz4_domain still rejects them; no runtime readiness claim. [DONE]
+- A concrete candidate is a singular-node closure using common Cartesian-frame tensor values and smooth Cartesian Taylor derivatives from surrounding spherical samples, followed by the same reference-metric equations in a regular frame. Angular aliases of a physical node must agree geometrically after basis conversion, not component-by-component in the spherical frame. Polar-axis aliases collapse phi at each axis location; r=0 collapses both angles. The reconstruction/operator stability and convergence remain unimplemented and unvalidated. [PENDING]
+- Radial symmetry gives useful independent analytic limits, e.g. (u_rr+2u_r/r)(0)=3u_rr(0) for a smooth radial scalar. This identity cannot replace the general 3D origin operator: a smooth translated wave can have a nonzero Cartesian gradient at the origin. Do not impose spherical symmetry or erase vector/tensor information through raw component averaging. [DONE]
+- Refreshed Ruiz/Alcubierre/Nunez2007 (arXiv:0706.0923), regularity conditions and formulation regularization in spherical/axial symmetry; their scope is not proof of a ready general3D nodal fCCZ4 method. Cartoon (gr-qc/9908012) provides a regular Cartesian-frame axis treatment under axisymmetry, likewise not a drop-in general3D spherical-grid algorithm. Proposed validation order is vacuum smooth-field/through-origin and polar passage, then coupled GRHD, with magnetism deferred. Solver unchanged. [DONE]
+
+## Cycle 419 — Uniform centered layout and Riemann ownership clarification (DONE: design clarification)
+
+- User asks whether avoiding the nodal origin would require irregular first-point spacing, arbitrary dr(r), or origin branches in every Riemann solver. Clarified proposed coherent uniform layout: hydro faces at n*dr; hydro centers and spacetime point samples at (n+1/2)*dr; no hybrid first-cell insertion and no independent spacetime finite-volume partitions. Spacetime samples retain point-value semantics. A node removed from an otherwise vertex grid is a different boundary-closure proposal, not this centering change. [DONE]
+- Source checked rhd_system.hpp: metric access is already factored into cell()/face() accessors and the Riemann wrappers consume a supplied face metric. The proposed origin work belongs in common chart/boundary/metric-transfer and geometric flux assembly, with collapsed zero-area faces handled before singular metric evaluation. No per-Riemann origin physics or nonuniform radial grid is required by centering itself. Actual point-field AMR transfers, tensor parity, coupling, metadata and diagnostics still need coherent implementation/validation. Solver unchanged. [DONE]
+
+## Cycle 420 — Why the spacetime/fluid staggering was selected (DONE: design provenance and comparative reference)
+
+- User asks whether the original staggering had a reason. Cycle132 deliberately chose cell-fluid/vertex-spacetime on one hierarchy, following ETK-style reference infrastructure; Cycle158 then aligned native CTT/CTTK/XCTS solves with those evolution vertices. Current nodal_interpolater.cpp directly copies coincident coarse/fine nodes and interpolates other targets. These are real architecture/AMR advantages; the records examined do not establish a measured universal stability/accuracy advantage over cell-centered spacetime. [DONE]
+- Located and read Daszuta et al.2024 arXiv:2406.09139: direct GR-Athena++ Z4c comparison. Vertex sampling permits nested-point injection at2:1; centered point samples need interpolatory AMR restriction/prolongation. BBH vacuum timing favors vertices by~20%; non-magnetic BNS timing favors centering by~17% because inter-sector transfers disappear. Both tested layouts are functional; evidence is Cartesian and workload-specific, not spherical-origin readiness or a performance promise for PyFluid. References router updated. [DONE]
+- Co-location does not erase the distinction between FV averages and finite-difference point samples. Any centered-spacetime implementation must retain appropriate point-field AMR transfer and consistent coupling. Keep the validated vertex path as baseline and require a bounded comparison of existing gauge/star/AMR controls before selecting a migration; no solver/layout change made here. [DONE]
+
+## Cycle 421 — Scope of a selectable spacetime-centering policy (DONE: source assessment; implementation not started)
+
+- User asks implementation cost and whether a flag would move everything to vertices or cells. Proposed startup-only spacetime.centering=vertex|cell changes the spacetime sector on the existing hierarchy; finite-volume fluid remains cell-centered. Field identities, physical equations, RK stages and Riemann solvers stay shared. Derived matter/metric views follow the selected target layout. Magnetic centering is a separate future concern. [DONE]
+- Source inventory: EvolutionSectorStorage already allocates from schema centering and generic topology transfer exists. However fields.toml fixes spacetime components to Vertex; amr_solver_spacetime.cpp embeds nodal domains, parity-plane logic, FillPatch, validity masks and dual-volume diagnostics; coupling storage explicitly allocates vertex_matter. Initial-data materialization and checkpoint/output consumers also need the resolved layout. This is a substantive bounded infrastructure refactor, not a parameter-only change. [DONE]
+- Critical semantic boundary: EvolutionSectorStorage::average_down_level currently routes nonvertex storage to finite-volume average_down. Centered spacetime remains pointwise sampled and requires its own point-field AMR transfer policy. Do not infer transfer semantics from centering alone or silently use hydro restriction. GR-Athena++2406.09139 SectionII.1 independently makes the same point-sample/FV distinction. [DONE]
+- Recommend one resolved layout/transfer policy at setup with vertex default; retain one generated physics path and one declaration source. First compare existing Cartesian vacuum/coupled/AMR/restart controls, then implement and validate spherical origin/pole topology. Centering support alone does not enable those boundaries. No solver or parameter changes made. [PENDING: implementation if pursued]
+
+## Cycle 422 — Precision, Apple GPU, and centering scope (DONE: source assessment)
+
+- User asks about a lower-precision option, the previously reviewed Mac GPU route, and whether cell-centered spacetime would require a new formulation. Separate three policies: scalar precision at build time, spacetime sample centering at startup, and backend in dependency/build profiles. Centering reuses the existing continuum equations and requires new discrete transfers/boundary handling; it does not itself require another GR formulation. [DONE]
+- Recovered Cycle70: a single-precision AMReX build succeeded, but full PyFluid conversion was unfinished. Its approximate 2700 handwritten literals/66 files inventory is historical, not a fresh count. Current installed AMReXConfig selects DOUBLE; maintained presets have no FP32/GPU profile. PyFluidCxxPrinter already emits typed `_rt` floating/rational constants. Current RHD recovery still has mixed `amrex::max(1.0, Real)` arguments, and TOV/elliptic defaults include tolerances below FP32 relative resolution. No fresh FP32 compile or timing was run. [DONE]
+- Refreshed Lulzx/warpx-metal README and upstream AMReX GPU documentation. The route is AMReX SYCL -> AdaptiveCpp SSCP -> Metal with application/dependency patches, not a native AMReX Metal backend. The public README has advanced beyond Cycle349 and reports additional PIC field validation/runtime fixes; these are author-reported WarpX results, not PyFluid evidence. AdaptiveCpp's development-branch install-metal.md now explicitly documents its experimental Metal backend and unsupported device double; planned soft-double does not provide native FP64 speed. References updated to avoid presenting the older snapshot as current. [DONE]
+- Recommended first precision target is FP32, retaining FP64 as reference. FP32 halves each converted floating array's storage; end-to-end speedup is unmeasured. Pressure/thermal recovery, small metric perturbations, derivative cancellation, reductions, elliptic solves and long-time constraints need precision-specific assessment. A local standard-library representation probe confirms float32(1+1e-8)=float32(1), so FP64 arithmetic after loading cannot recover already discarded information. FP16/FP8 are not proposed for general evolved state. [DONE]
+- Suggested sequence: independent CPU FP32 build/portability and existing numerical controls, centered-spacetime implementation with FP64 baseline, then an isolated Metal profile using the same numerical owners. Mixed precision may be justified by measured error, but CPU FP64 kernels cannot be assumed to execute on Metal. Reuse gauge/star/surface-temperature/AMR/restart and conservation controls with explicit physical accuracy targets rather than duplicating the suite or uniformly loosening tolerances. Only continuity/reference/knowledge documentation changed; implementation and numerical validation remain pending. [PENDING: implementation if pursued]
+
+
+## Cycle 423 — Proposed sequence toward binary evolution (DONE: roadmap clarification)
+
+- User proposes FP32 -> Metal like WarpX -> optional centered spacetime -> binaries. Retain CPU FP64 as the independent numerical reference; first establish CPU FP32 accuracy, then require Metal/CPU agreement and measured end-to-end benefit. This changes the suggested ordering from Cycle422 to match the user's acceleration priority without combining precision and backend debugging. No implementation launched in this clarification. [DONE]
+- Centered spacetime remains an independent layout extension using the existing equations. Its origin/pole and point-field AMR work must be validated if that geometry is used, but centered/spherical/multipatch support is not a prerequisite for a Cartesian binary route. Do not let optional geometry completion become an indefinite dependency for binary physics. [DONE]
+- Insert a bounded moving-single-object validation stage before binary evolution: motion across refinement boundaries, physical regridding/reflux/restart, relevant matter/constraint budgets and stellar thermal behavior. Existing single-star runs are a baseline, not proof of this moving/long-duration regime. The current knowledge snapshot still records long stellar runs and curvilinear vacuum-interface AMR admissibility as open; apply each limitation to its actual geometry/physics scope. [DONE]
+- Binary work then needs appropriate joint initial data and consistent orbital/gauge setup, followed by a simple nonmagnetic binary control and inspiral convergence/diagnostics. BBH, BNS and NSBH are separate validation milestones; optional magnetic/mixed-chart capabilities must not be inferred from one of them. Extend existing validation owners only for these distinct physical contracts. [PENDING: implementation and runs]
+
+
+## Cycle 424 — FP32 portability and Metal backend (DONE: initial milestone; broader GPU readiness pending)
+
+- User authorizes implementing FP32 first and then the Metal backend, preserving clean ownership, the FP64 baseline, and compile efficiency. Keep distinct dependency/build profiles and one physics source; do not duplicate solver implementations or change centering in this work. [WIP]
+- Build the pinned AMReX FP32 companion; repair scalar type portability through the existing numerical owners, then validate accuracy and performance with existing controls. Numerical tolerances require explicit scale/precision justification, not blanket relaxation. Preserve failing evidence. [PENDING]
+- Connect an isolated AdaptiveCpp/SYCL/Metal profile after FP32 behavior is understood; source-check the current WarpX patch route and keep application-specific patches out of shared physics. [PENDING]
+- Source-check the user's BHaHAHA grid reference, distinguishing its horizon-finder mesh from BlackHoles@Home binary evolution grids, and record the useful methods in knowledge/references. [WIP]
+
+- CPU FP32 AMReX 26.09 companion and all-dimensional production solver build successfully in separate dependency/build profiles. Typed literals preserve AMReX Real across handwritten kernels; generated kernels already use this convention. All-dimensional integration took 642.41 s/187 misses after the separate 1D build; this is not an isolated cold-build comparison. Dependency contract tests (5) and architecture checks pass. [DONE: compile portability; WIP: numerical validation]
+- Initial FP32 uniform RHD preflight exposed a 4.13e-7 conversion roundoff against the fixed 1e-7 threshold. Internal round-trip checks now retain the FP64 bounds with a 64-epsilon arithmetic floor; uniform evolution passes. Entropy evolution completes but the existing FP64 scalar budgets fail at roughly 2.4e-7. Keep those failures recorded and assess explicit precision budgets independently of physical profile accuracy. [WIP]
+- Pinned AdaptiveCpp plus reviewed WarpX Metal runtime patches builds and detects Apple M4 outside the sandbox. LLVM20 fails SDK27 math headers even without SYCL; an explicit SDK26.5 passes the minimal SYCL compile. The isolated Metal AMReX build is being retried with that compatible SDK, without the failed preinclude workaround. No solver GPU execution yet. [WIP]
+- BHaHAHA and BlackHoles@Home binary-grid references have been source-checked and added to knowledge/references, with horizon-finder and evolution-grid responsibilities distinguished. [DONE]
+- The GPU-only AdaptiveCpp probe runs on Apple M4 and checks all 1024 results exactly. A GPU selector makes CPU fallback impossible in this control. This establishes compiler/runtime execution, not PyFluid solver correctness. The first AMReX MPI compile encountered Intel-only UUID introspection; its optional branch now excludes AdaptiveCpp, matching the existing no-UUID behavior. The experimental local profile uses one GPU rank pending multi-rank device-identity/performance work. [DONE: runtime probe; WIP: AMReX build]
+- Added pinned Metal manifest, exact patched-source identity checks (including added files), isolated setup tool, and experimental preset/profile. No upstream reset/clean scripts are executed; CPU dependency/source installs remain independent. Native FP32 output exposed a reader assuming eight-byte FAB data. One shared descriptor decoder now handles IEEE FP32/FP64 and serialized byte order; the old duplicated 1D reader delegates to it. Four run-infrastructure tests pass, including one format/truncation contract test; native and HDF5 FP32 entropy errors agree exactly at 0.002434919. [DONE]
+- Initial unit-domain RHD/RMHD FP32 entropy probes pass scalar/recovery checks with explicit arithmetic budgets. The first resolved gauge probe has lapse L2 1.450e-6, above its declared 1e-6 physical target; this failure remains visible. Added one opt-in cross-precision gate reusing existing entropy and gauge oracles, with independent physical accuracy, convergence, scalar accounting, and runtime precision metadata. Fresh FP64 comparison is running. [WIP]
+- The initial precision comparison passes 16/18 rows; both FP32 resolved gauge cases fail, with error growing from 1.450e-6 (N32) to 5.671e-6 (N64). A compiled constant-field probe identifies nonzero fourth-order derivatives in FP32: first -1.431e-6, second 1.526e-4, mixed -1.335e-5 at inverse spacing64. The symbolic emitter now evaluates antisymmetric differences and zero-moment rebased sums before coefficient multiplication, including one-sided derivatives. Coefficients and supported orders are unchanged. [DONE: diagnosed/corrected arithmetic]
+- The compiled stencil slice passes all catalogued orders and exact constant cancellation; six symbolic catalog checks pass. FP32 gauge errors fall to 3.339e-7/3.970e-7, both below the unchanged 1e-6 target. Constraints remain more sensitive: maxima 6.17e-4/3.12e-3 versus much smaller FP64 errors. This is a roundoff-limited precision result, not long-time GR accuracy certification. Final fresh cross-precision integration remains pending. [WIP]
+- The managed Metal route builds/installs AdaptiveCpp and all-dimensional AMReX with the compatible SDK, and the experimental PyFluid profile configures. The first solver compilation fails on unqualified per-FAB mask min/max: GPU AMReX requires an explicit execution choice. Both now request RunOn::Device, which uses the existing CPU implementation in CPU builds. Solver compilation is continuing; no PyFluid Metal simulation yet. [WIP]
+- Fresh patch replay initially exposed a dependency between consecutive upstream compiler patches. The installer now composes the ordered chain in a temporary Git index and applies one checked combined diff; the real index and unexpected local edits are preserved. Clean replay of both complete compiler and AMReX patches passes. Six dependency tests pass, including this distinct replay/preservation contract. [DONE]
+- CPU FP32 HDF5 restart checks pass for the entropy wave and evolved gauge wave: final fluid and spacetime arrays are bitwise identical to uninterrupted runs, and runtime scalar/recovery checks pass. The restart reader now explicitly copies host data to AMReX storage and retains the unpacking buffer with Elixir through the device copy. [DONE]
+- Metal compilation then found an AMReX SYCL macro with unqualified namespace references and a deliberately aborting host branch. Replaced that use in state interpolation with one parent-level numerical callable returning a failure code, a device launch with atomic aggregation, and an ordinary host loop. This preserves the same admissibility method and keeps host/device failure reporting out of its algebra. Final CPU rebuild/AMR checks must include this last source edit. [WIP]
+- The full Metal 1D executable builds and passes initial RHD conversion checks on Apple M4, then segfaults when the conservation ledger's host loop dereferences device memory. Backtrace and failed run retained in cycle424/metal_uniform/. Replaced state and boundary/excision ledger loops with standard AMReX fused reductions and delegated the duplicate RHS integral to the state integral. The same point formulas, masks, physical measures, boundary signs and local-rank contract serve CPU/GPU. CPU all-dimensional and Metal 1D incremental builds pass; corrected device execution and affected FP64 gates are running. [WIP]
+- Final CPU FP32/FP64 comparison after state-interpolation and conservation-owner integration passes all 18 wave rows. FP32 entropy convergence remains about second order; resolved/weak gauge waves meet the explicit 1e-6 absolute lapse target. This does not resolve the separately recorded constraint roundoff or certify long-time stellar accuracy. [DONE: short precision gate]
+- All seven selected FP64 gates pass after final integration: RHD, RMHD, reference-metric RHD (22 controls), fixed spacetime, Z4c outer boundary, causal open boundary, and boundary tiling. The Z4c quick slice also passes 13 controls, including AMR/subcycling/restart. [DONE]
+- The full FP64 compiled checker finds a one-sided polynomial result 1.9999999999999716 versus exact2: a 2.84e-14 error from cancellation of samples up to612, exceeding its derivative-only relative tolerance. The boundary control now retains its arithmetic coefficient but scales it by donor magnitudes, while constant cancellation and analytic/convergence controls stay independent. This changes one test's conditioning model, not solver coefficients or global tolerances. Full rerun pending. [WIP]
+- Corrected Metal conservation launch advances to a shader compiler failure: an LLVM literal aggregate becomes anon_struct_0 in a function body after the emitter has already emitted named types. Added one local AdaptiveCpp patch using LLVM TypeFinder with unnamed types included before declarations; preserved exact patched-source hashing and ordered replay. The isolated translator rebuild succeeds; fresh-JIT full-solver retry is running. Original shader failure retained in metal_uniform_corrected/. [WIP]
+- Fresh-JIT Metal uniform RHD evolution now completes two steps on Apple M4, including runtime scalars, HDF5 output and zero recovery/atmosphere corrections. The separate scalar check passes. This establishes full solver execution for this control; cold shader compilation dominates and is not a speedup result. Full existing wave comparison is now running with the Metal candidate and one rank. [DONE: first complete device evolution; WIP: numerical/performance gates]
+- Full FP64 compiled numerical matrix and final FP32 stencil slice pass. The existing three-step black-hole excision case passes; its runtime external baryon-ledger residual is 1.18e-16. All six dependency tests and fresh complete compiler-patch replay pass. [DONE]
+- Compile accounting: the broad stencil integration rebuilt FP64/FP32 production in 1058.26/1194.71 s while those builds overlapped each other and Metal work. Shared ccache counters also include other simultaneous jobs, so their miss counts are not per-build attribution. These are contended integration costs, not isolated cold-build benchmarks. The later two-source conservation/interpolation refresh took 5.50/7.24 s; no-op measurements are recorded separately. [DONE: provenance]
+
+## Cycle 425 — Verify arithmetic precision end to end (DONE: audit and bounded validation)
+
+- User asks to verify that FP32 arithmetic remains FP32 and accidental wider values do not re-enter the algorithm. Audit actual compiler promotions and device IR as well as AMReX Real, output metadata and stored HDF5/FAB types. Distinguish deliberate host-only wider calculations from device/evolution arithmetic; do not claim complete purity from sizeof alone. [WIP]
+- Already found an inherited WarpX translator accommodation that silently maps device double to float. A local patch now rejects this explicitly; installation and a negative device-FP64 control are pending the active Metal wave pass, which still uses the previous installed translator. [WIP]
+- The arithmetic audit found real implicit promotions beyond storage: generated RK stage/timestep coefficients and AMR tag thresholds were declared double; integer std::pow overloads widened TOV observables and harmonic factors; two provider/helper files and benchmark/tool inputs still had untyped literals. Corrected the generator/source owners. First all-dimensional warning scan covers 286 production/tool/benchmark compile commands (excluding tests); corrected scan adds both promotion and narrowing diagnostics. [WIP]
+- Device printf also promotes float arguments to double. The spacetime metric checker now atomically records one failed point and transfers it for host formatting before aborting, preserving detailed failure diagnostics without device FP64. Host wall-clock measurements deliberately use an explicit WallTime=double type, with differences computed before the scalar-output conversion; these timestamps never enter the evolved physics. [WIP: compile/runtime checks pending]
+
+- The first Metal wave sweep passes14/18 rows. RMHD N128 fails an accepted-state conserved round-trip at1.524e-5; gauge cases reach an unsupported llvm.is.fpclass.f32 shader instruction. The runtime also inherited Metal's default fast math. Added separate dependency patches for IEEE binary32 classification and explicit safe/precise math; rerun the same old executable with fresh JIT cache to isolate runtime effects before integrating the final application edits. No recovery threshold or physical-error budget changed. [WIP]
+- Strict translator installation succeeds. The positive1024-value FP32 GPU control passes; a deliberate FP64 device kernel now fails with the expected refusal to narrow. A second control passes all ten IEEE classes, with actual llvm.is.fpclass.f32 calls present in captured device IR. These are compiler controls, not GRMHD accuracy claims. [DONE]
+
+- All286 production/tool/benchmark compile commands pass the final conversion audit with zero diagnostics. All-dimensional CPU FP32 and FP64 integration, and full Metal1D guard integration, pass. The CPU precision comparison remains18/18. The positive/negative three-rank metric diagnostic control preserves detailed failure reporting. Focused Python infrastructure/catalog checks and architecture pass; full updated compiler-patch replay matches the pinned source hash. [DONE]
+- Captured stage-two device IR contains37 RMHD and46 gauge kernel modules, with no double/wider floating types or widening/narrowing instructions in executable IR. The corresponding FP32/FP64 HDF5 spacetime datasets have float32/float64 storage. Device IR describes exercised kernels, including the failing runs; it does not turn those runs into numerical passes. Artifact: cycle425/precision_types.json. [DONE]
+- Precise Metal math changes RMHD failure timing but does not resolve it. A32768-state direct recovery control reproduces17 conserved-round-trip failures with the existing512-epsilon root bracket, max1.543e-5; using8 epsilons gives zero failures/max5.294e-7 and essentially unchanged mean iterations4.838/4.838. FP32 recovery defaults now use the tighter bracket while retaining the existing FP64 tolerance; accepted-state and validation thresholds are unchanged. Final builds/reruns pending. [WIP]
+- The classification fix lets Metal gauge evolution reach its first step, which produces atmosphere resets and then an invalid timestep. Initial/first-step field comparisons are isolating this separate backend failure. An initial180-second probe expired during shader compilation; rerun allows600seconds and preserves that timeout separately from numerical failures. [WIP]
+
+- Final CPU precision comparison passes18/18 rows after the root-tolerance fix; FP64 RHD/RMHD standard gates and13 Z4c controls pass. FP32 entropy/gauge HDF5 restart remains bitwise identical. The fine Metal RMHD N128 wave now passes analytic error1.350e-4, conservation/ledger and clean recovery. [DONE]
+- GPU debug checks exposed host dereferences of device FABs. Active finite/physical checks now use AMReX reductions; detailed failure reporting transfers data explicitly. All-dimensional CPU FP32/FP64 and Metal1D builds pass. The rerun now reports a primitive-cache NaN with context instead of crashing in the debug checker. [DONE: port/build; WIP: runtime controls]
+- A standalone HCF translation of the captured spacetime RHS reproduces omitted LLVM blocks. Repeated structuring of a shared region mistakes generated If nodes for child regions and drops entry instructions/PHI incoming copies; frozen-shift RHS is then uninitialized. Structuring each shared node once restores seven omitted blocks, including the frozen-shift zero assignment. An initial child-index filtering attempt segfaulted and was replaced; its evidence remains local. Pinned shared-regions compiler patch installed; full GPU validation pending. [WIP]
+- Required CPU performance gate passes3/4 cases; the simplest2D hydro case is0.75 of its historical baseline (below0.85 limit), while other ratios are0.86/1.00/0.99. No speedup claim; isolated repeat of the failed case pending. [WIP]
+
+- Shared-region patch clean replay passes all11 ordered compiler patches and leaves the source index unchanged. Standalone translation now emits every one of861 labeled RHS blocks; the old result omitted7. Final translator float control succeeds and double control fails explicitly with the FP64 rejection. Six dependency tests, architecture and whitespace checks pass. [DONE]
+- The isolated5-repeat2D hydro performance recheck passes at98.99 Mcells/s (0.90 baseline); the initial0.75 median was not reproduced. Retain both results, without attributing the difference to an unmeasured cause. CPU FP64/FP32 debug-poison/finite/physical8-step controls pass scalar checks. Final no-op production builds take1.78/1.79s (CPU FP64/FP32) and0.02s (Metal1D), with no compilation/cache misses; these are not cold builds. [DONE]
+
+- Full repaired-Metal precision comparison passes18/18 rows against fresh one-rank FP64 runs: six entropy-wave pairs and three gauge pairs, with independent lapse/fluid analytic budgets, convergence where resolved, conservation and clean recovery. GPU gauge poisoning/finite/physical checks and the Newtonian debug control now pass. HDF5 GPU restart comparisons remain running. [DONE: selected accuracy/debug controls; WIP: restart]
+- Constraint accuracy is a separate open limit, not an untested implied pass: the N64 resolved gauge Hamiltonian maximum is0.0125043 on Metal versus0.00312019 on CPU FP32 and1.09384e-7 on FP64. CPU FP32 evaluation of identical saved Metal fields gives0.01250434; FP64 evaluation after promoting those same stored values gives0.01250435. The diagnostic backend difference is only~7.1e-8. Metric differences between separately evolved CPU/GPU states are up to2.62e-6 and derivative-sector differences up to8.51e-5. This is consistent with evolving FP32 rounding noise amplified by derivatives, rather than a large diagnostic-kernel discrepancy; the evolution difference has not been exhaustively attributed. Record constraints explicitly without inventing a permissive production budget. [DONE: isolated diagnostic assessment; PENDING: FP32 NR representation/convergence work]
+
+- Final Metal HDF5 restarts pass for entropy and gauge evolution: final fluid and spacetime arrays are bitwise identical to uninterrupted runs, scalar budgets pass, and recovery remains clean. Gauge debug controls on CPU FP64/FP32 and Metal also pass explicit scalar/baryon checks. The configured CPU compiler command accepts a typed-literal probe and rejects the otherwise identical double-promoting probe. Final architecture and whitespace checks pass. [DONE]
+- Cycles424–425 close the initial implementation and arithmetic-audit milestone: independent CPU FP32 production builds, preserved CPU FP64 baseline, pinned experimental Metal1D profile, enforced arithmetic types, and bounded numerical/restart/debug controls. No claim of production FP32 GR accuracy, GPU multidimensional/AMR/stellar readiness, or GPU speedup. The next numerical boundary is constraint/weak-field representation and convergence, with broader GPU feature coverage still pending. All work remains local and uncommitted; earlier failed attempts and exact evidence are retained under their cycle folders. [DONE: requested initial milestone; PENDING: subsequent readiness work]
+
+## Cycle 426 — Matched precision and Metal cost/accuracy measurements (DONE: measurements; correctness limits remain)
+
+- User requests evidence that precision/backend options reuse the solver, matched FP32/FP64 speed and accuracy, and measured Metal usefulness, crossover, tradeoffs and limitations. Reuse canonical CPU cases and existing analytic oracles; measure runs sequentially without concurrent builds. Separate process startup/first-use compilation from later scalar-window evolution throughput, and keep rank/grid-layout choices explicit. No blanket FP32 GR or multidimensional GPU readiness claim. [WIP]
+
+- CPU canonical measurements reuse the existing four declarations, alternating FP64/FP32 order over three repeats with three MPI ranks and no concurrent builds/runs. All24 scalar controls pass. FP32/FP64 median speed ratios: 2D PWC hydro1.076, 3D PWC1.115, 3D WENO/RK4 1.037, uniform RMHD1.856. All three compile-command source sets contain the same98 unique production/tool files. [DONE]
+- Extending the existing RHD/RMHD entropy oracle through N256/512/1024 finds an FP32 refinement plateau, then worsening error. At N1024, FP64 errors are1.76e-6/1.77e-6 while FP32 errors are4.41e-5/4.54e-5. Both FP32 cases exceed the existing physical budget; RMHD external energy error1.049e-5 also exceeds its declared64-epsilon allowance7.629e-6. Keep these failures; do not weaken budgets or characterize short coarse-grid passes as general FP32 readiness. [DONE: characterization]
+- The first N32768 uniform RMHD Metal benchmark (four8192-cell boxes, transverse velocity/magnetic components) aborts at initial scalar validation: preflight reports8190 active cells and spurious round-trip maxima, while scalar extrema remain neutral. No valid throughput result. A standalone mixed-type ReduceOps sum/min/max probe passes through32768 entries, so a blanket reduction failure is not established. Box-size/physics controls are pending. [WIP]
+- Standalone standard MultiFab sum/min/max also passes with four boxes through32768 total cells. The failed full-solver case therefore does not establish a generic reduction or multibox limitation; keep physics and box layout as separate controls. Two256-cell RMHD entropy runs (four64-cell boxes) pass scalars/recovery on Metal but cost125.91/126.08s process wall even with copied populated shader cache. Later16-step window medians are0.001648/0.001575Mcells/s versus CPU FP32~0.406 and FP64~0.206 on matched boxes/steps, with CPU3ranks/GPU1rank. Device stage counters are host timers, not GPU-event kernel profiles. [DONE: small case; WIP: scale controls]
+
+- The larger entropy wave fails exactly like the uniform case:32768 cells/four8192-cell boxes report8190 preflight cells and neutral scalar extrema, then abort at step0 after121.64s (not a timeout). Thus this is not specific to transverse fields. CPU controls pass. Standard ReduceOps, MultiFab component reductions and simple per-box Array4 writes all pass at the same tested sizes, leaving the full-kernel failure unresolved. No larger-grid GPU throughput or crossover is established. [DONE: failure characterization; PENDING: full-kernel/backend correction]
+- Final report/TSVs, exact inputs, executable hashes and local diagnostic probes are in runs/current/infrastructure_audit/cycle426/. The CPU performance/accuracy figure and PDF are in plots/current/scans/precision_and_metal/ and were visually checked. All three source sets are identical; CPUFP32 array storage is half, but observed speedup is workload-dependent and the Metal executable is491MiB versus29--30MiB CPU. No fresh cold compile comparison was performed. Benchmark measurements were sequential; standalone diagnostic-probe timing is not a performance result. [DONE]
+- Reproduction: UV_CACHE_DIR=.uv-cache PYTHONDONTWRITEBYTECODE=1 uv run python runs/current/infrastructure_audit/cycle426/measure.py cpu; accuracy.py extends existing oracles. Backend commands use measure.py backend --cells 256 --box 64 --steps 64 --repeats 2 --label n256_wave --wave --cache runs/current/infrastructure_audit/cycle426/warm_appdb, and the corresponding --cells 32768 --box 8192 --steps 64 --repeats 1 --label n32768_wave control. Exact concrete configurations are retained as input.in/run.in, and run logs/measurement.json retain each outcome. Copied populated cache timings are not a clean cold/warm pair; the fresh-cache attempt failed. [DONE: provenance]
+- Compact histories include successful measurements and failed precision/backend controls. Updated precision documentation and knowledge retain both the FP32 refinement/energy-ledger limit and the larger Metal initialization failure. No solver/dependency code or permanent tests changed in this measurement cycle. Keep CPU FP64 default; next implementation work is roundoff-sensitive evolution and a reproducible full-kernel Metal fix before optimization or broader physics validation. [DONE: requested benchmark assessment; PENDING: subsequent numerical/backend hardening]
+
+## Cycle 427 — WarpX practices and FP32 optimization status (DONE: source assessment)
+
+- User asks whether WarpX provides good Mac GPU practices and whether PyFluid already fully exploits FP32. Source-checked the pinned WarpX Metal README, benchmark results/runner, profiling script, readback report, and our dependency manifest, preflight and Metal runtime. This is an assessment; no new simulation or optimization benchmark was run. [DONE]
+- Our dependency manifest already selects six WarpX Metal patches. The March 2026 M4 Pro benchmark table reports GPU/CPU speed ratios 0.16, 0.83, 0.45 and 1.39 for its four PIC workloads, using a 12-thread CPU reference. These historical results are not transferable PyFluid measurements or a guarantee for the current patch set. The maintained WarpX Metal README also documents serialized queue/JIT handling and bounded readback; these correctness accommodations can constrain scheduling. [DONE]
+- FP32 arithmetic/type enforcement and shared source ownership do not establish optimal performance or numerical conditioning. The present preflight in src/amr/amr_solver_debug.cpp allocates a 12-component temporary MultiFab and separately reduces all 12 quantities. Batching is a concrete candidate, with possible register-pressure tradeoffs; this startup path alone cannot explain later timestep slowdown. The pinned runtime still constructs Metal libraries/pipelines per process. No GPU timeline, occupancy/register-pressure, bandwidth ceiling or vectorization attribution has been established for the benchmark. [DONE: source findings; PENDING: measured optimization]
+- Next work should retain the failing large-grid control while isolating its full-kernel error, then use warmed GPU traces to identify launches, waits, allocations/readbacks and useful work per launch. Independently examine FP32 update/cancellation/accumulation behavior against the existing refinement failure. Candidate rewrites must reuse shared numerical owners and preserve physical budgets. Source/binary precision is verified over the recorded scope; maximum FP32 speed or accuracy is not. Added the pinned benchmark/profiling router to references.md. [DONE: requested clarification]
+
+## Cycle 428 — Harden shared precision arithmetic and the Metal backend (DONE: arithmetic/runtime fixes and bounded validation)
+
+- User requests implementation work to harden both FP32 and FP64, clean up the GPU path and assess usefulness after correctness/optimization work. More RAM has not been identified as the current bottleneck. Preserve the Cycle426 failing controls, shared numerical owners and acceptance budgets; isolate large-grid Metal corruption and FP32 refinement/accumulation independently before rebenchmarking. [WIP]
+
+- Isolated mixed-type reductions, per-box field/mask writes and fused MultiArray4 extrema all pass through32768 cells. Instrumented full Metal initialization shows actual stale/corrupted mask/result storage, not merely a formatted reduction error: masks contain fluid float bit patterns instead of integer1; first preflight sees8190/8188/6/0 active cells per8192-cell box. Metadata and allocation reuse are being isolated. Diagnostic variants live only under cycle428; production debug code is unchanged. [WIP]
+- Reproduced zero-RHS SSPRK3 loss of constant-state fixed points in both precisions. Added a shared affine_state_update that adds the stage difference and RHS before the base. Fluid, spacetime, limiter candidates and CT stage blends consume the same arithmetic; general linear algebra remains general. Existing catalog checks exact weight normalization. First N1024 FP32 reruns pass unchanged budgets: RHD error3.46013e-6 (formerly4.40884e-5), RMHD4.55619e-6 (formerly4.53678e-5); ledger errors<=3.58e-7. Full refinement, FP64, compile and performance gates remain pending. [WIP]
+
+- Identified Metal's missing indirect-resource residency/hazard declaration. Runtime only marked directly bound kernel buffers; a separate CArena for fields while metadata stays in The_Arena reproduces failure even at256 cells (also4096/32768): all initialized values/masks remain zero and extrema are neutral. Same executable passes every size after allocator/queue prepare_kernel_resources marks every live USM buffer read/write while constructing the translation map. Apple useResource documentation confirms this requirement. Fresh-cache full run reproduces pre-fix corruption, excluding stale shader artifacts. [DONE: root cause and isolated correction]
+- Added pinned adaptivecpp-metal-indirect-residency.patch; compiler/runtime source identity783c3a41595ac6a81111d40e9bc4c2e0a15ba1e578e7c4a541e4e0f090f8829d. All12 ordered patches replay to exactly22 affected source files with the real index unchanged. Read-only dependency contract passes. Existing full Metal executable now evolves32768-cell entropy64steps with32768 preflight cells, conserved error5.31e-7, zero recovery/floor events; process then aborts on my erroneous unused top-level max_step=4 parameter (actual pyfluid.max_step stayed64). Keep that log and rerun corrected input; do not label the abort a clean pass. [WIP: corrected full run and rebuilt application]
+- CPU refinement12/12 and existing precision18/18 controls pass after shared affine arithmetic. FP64 N1024 errors retain1.762882e-6/1.770861e-6; FP32 N512 errors7.57e-6/7.99e-6 and N1024 3.46e-6/4.56e-6 now approach a roundoff plateau. Six exact numerical-catalog checks pass. FP32/FP64 production integration builds pass (initial shared-edit builds include concurrent diagnostic work and are not isolated cold compile benchmarks). Metal1D rebuild is running. [WIP]
+- Consolidated the two new low-level regressions into one opt-in compiled state_update_check: separated field/metadata allocations plus constant-state RK invariance over every catalogued method in the selected Real type. Removed the redundant added fixed-point check from the large generated-flux test. CMake owns one 1D check target; verification pending. [WIP]
+
+- Selected CPU standard gates pass for GRHD, GRMHD, Z4c outer boundaries, Sod exact profiles and Brio-Wu AMR/CT references. The standard feature matrix passes17/18 and reproduces the identical pre-existing Newtonian self-gravity/subcycling energy drift2.243662155255994e-6 versus2e-6 (recorded repeatedly since September7, outside this request's GR priority). No tolerance changed. [DONE]
+- Rebuilt Metal analytic controls pass: RHD N128 error1.34189e-4, RMHD N1024 error4.45899e-6 with mass drift1.14e-7 and energy drift3.44e-7, and gauge N64 lapse error3.87637e-7. The gauge constraint limitation is unchanged. CPU state-storage/RK checks pass in both precisions; final Metal check runs with a fresh cache. Both CPU production builds and Metal1D build pass; final FP64 no-op rebuild1.06s, zero compilations. Fifteen build-contract checks, architecture, six exact numerical-catalog checks and patch replay pass. [WIP: final backend check and uncontended benchmarks]
+- Removed only the six temporary full-linked diagnostic executables and their objects created in this cycle (3,099,062,664 bytes), after recording hashes in removed_probe_binaries.json. All probe sources, exact inputs, scalar tables, logs, shader sources, before/after results and permanent check source remain. The new accuracy figure/PDF is plots/current/scans/precision_and_metal/affine_precision.* and was visually inspected. [DONE]
+
+- Fresh-cache Metal state-storage/RK check passes. Initial uncontended canonical CPU performance gates pass4/4 in both precisions (three repeats): FP32/FP64 ratios1.064/1.100/1.043/1.856. Final benchmark-runner review found only the last repeat's scalar file was retained and no per-repeat sanity check ran; now every repeat uses shared scalar checks before overwrite and retains a compact validation.tsv. Rerunning the canonical gate after this Python-only hardening is pending. [WIP]
+- First corrected 32768-cell RMHD wave benchmark completes cleanly: GPU preflight/count/recovery/scalars pass, process154.71s, whole-evolution0.06192 Mcells/s and later16-step-window median0.19848 Mcells/s. Matched three-rank CPU FP32 is0.41593 and FP64 is0.21656 in later windows. Second repeat and larger-size comparison remain running/pending. The previous unused-parameter diagnostic abort is superseded by this clean run. [WIP]
+- Second 32768-cell wave repeat passes with later Metal0.19816 Mcells/s. The 262144-cell/eight32768-cell-box wave comparison also passes all three profiles: later Metal1.31410, CPU FP320.55048, FP640.28514 Mcells/s. This is a2.39x GPU/CPU-FP32 later-window gain on the existing16GiB M4, with unchanged budgets and clean recovery. The64-step process still costs168.78s GPU versus30.96s CPU FP32; startup/first-use work prevents an end-to-end win in this short control. Uniform RMHD's original transverse-field control and the final canonical runner verification remain in progress. [WIP]
+- Corrected uniform RMHD with transverse velocity/magnetic fields completes all 64 steps on all three profiles, with exact zero mass/energy/momentum drift and clean recovery. Metal preflight counts all 32768 cells with max conserved error 7.50e-8. All 12 matched backend runs now pass; compact scalar and explicitly labeled later-window performance rows were appended once. Final tables, inputs, logs and executable/dependency identities are under cycle428/. [DONE]
+- The final canonical CPU rerun passes all eight performance gates and all 24 repeat-specific scalar controls. FP32/FP64 throughput ratios are 1.063, 1.100, 1.044 and 1.824 for 2D PWC hydro, 3D PWC hydro, 3D WENO/RK4 hydro and uniform RMHD. Every repeat retains a compact scalar row before overwrite. `--allow-warn` now accepts only slow timings, never solver/scalar failure; four isolated exit-policy controls pass. The local extended-accuracy driver also now propagates failed result rows to its exit status; two isolated controls pass without rerunning or altering the numerical outputs. [DONE]
+- Final architecture, whitespace and pinned dependency checks pass. Six dependency tests, fifteen build-contract tests and six exact catalog checks passed earlier in this cycle. The single opt-in compiled storage/RK control passes CPU FP64/FP32 and fresh-cache Metal. CPU production integration and Metal1D integration pass; final CPU no-op builds take 1.06/1.16 seconds with zero compilations. These no-op costs are not cold-build performance. [DONE]
+- Report: runs/current/infrastructure_audit/cycle428/report.md; updated numerical figure/PDF: plots/current/scans/precision_and_metal/affine_precision.*. Knowledge, precision documentation, infrastructure conventions and source references reflect the shared arithmetic and indirect-resource contracts. No physics duplication, acceptance-budget relaxation or small-box workaround was introduced. All changes remain local and uncommitted; unrelated dirty work and failure evidence are preserved. [DONE]
+- This closes the requested precision/runtime hardening milestone and establishes useful later-window GPU throughput on the existing 16 GiB M4. It does not establish an end-to-end GPU speedup, optimal utilization, long-time FP32 GR accuracy, or multidimensional/AMR/stellar Metal readiness. Further work is warmed GPU profiling/startup reduction and FP32 constraint/representation accuracy. The identical pre-existing Newtonian self-gravity feature-matrix failure remains recorded separately. [DONE: current milestone; PENDING: subsequent readiness work]
+
+## Cycle 429 — Clarify RAM capacity and isolate Metal startup delays (DONE: controlled assessment)
+
+- User clarifies that limited RAM can constrain grids to sizes with poor GPU utilization, and asks why startup is so slow. That capacity concern is valid; Cycle428 establishes a useful throughput case within 16 GiB but does not measure the memory limit for realistic GR/AMR workloads. [DONE: scope clarification]
+- Source review finds `metal_jit_guard.hpp` defaults to a 1000 ms sleep after every `after ...` compilation check, plus a 20 ms destructor yield. A new source library incurs one postcheck and its first pipeline incurs two, including an archive attempt even when the optional binary archive is disabled. The profile does not configure these settings. Existing generated-source caching therefore does not remove the deliberate waits. Isolate `ACPP_METAL_JIT_POSTCHECK_MS=0` on the unchanged 262144-cell wave before attributing all startup to compilation. No defaults or numerical settings changed. [WIP]
+- Two populated-cache repeats with only `ACPP_METAL_JIT_POSTCHECK_MS=0` pass in 16.579/17.035 seconds, versus 168.776 seconds for the identical default-wait GPU control and 30.957 seconds for the recorded CPU FP32 control. A fresh application-cache run also passes in 42.972 seconds. All three preserve the earlier GPU mass/energy drifts exactly (5.68591929e-7 / 1.14672822e-7), with clean recovery; later throughput is 1.307--1.350 Mcells/s. This is an approximately 1.84x end-to-end GPU gain with source-cache reuse, on the existing 16 GiB M4. It is not an estimate extrapolated from later windows. [DONE]
+- Verified unchanged executable SHA-256 2ce14806120bae51ac4cadc30e13389050048f575a89de8d620d83489d566f5d. Compilation serialization, the 20 ms yield, actual API/error checks, queue deadlines and precise math remain unchanged. The pinned runtime contains an opt-in binary archive path, disabled by the profile; no archive setting changed. Fresh application-cache testing does not clear opaque OS/driver caches. [DONE]
+- Corrected the previous broad attribution of startup to shader compilation: most of the recorded delay was explicit sleeping, while real first-use compilation/setup remains. RAM capacity can constrain useful 3D/AMR grid sizes, but these runs do not measure that limit or peak memory. Profile defaults and dependency sources are unchanged; wider no-postcheck backend reliability remains future work. Report/control metadata/scalar table: runs/current/infrastructure_audit/cycle429/; exact run inputs/scalars stay under Cycle428's reused driver output paths and are referenced from the new table. Appended all three validation and later-window performance rows once. [DONE]
+
+## Cycle 430 — Trace the inherited one-second JIT delay (DONE: source/provenance explanation)
+
+- User asks why the delay exists. It is part of the experimental Lulzx/warpx-metal patch `0008-metal-source-identity.patch`, not a PyFluid numerical operation or a cache-format requirement. Public patch history routes to the June16 consolidated-source publication, commit 2c1e2f5b7b41fa073c039bd699f3ce4825fad89d. The available commit messages do not justify a one-second duration; compact public history responses are retained under runs/current/infrastructure_audit/cycle430/. [DONE]
+- Upstream reliability notes describe serialization to bound compiler-service pressure, and source comments describe sensitivity to large MSL translation units. A defensive compiler/driver cooldown is therefore a plausible interpretation, not a documented proof that this exact delay is necessary. The currently imported `check` function sleeps based only on the phase-name prefix and then unconditionally returns success; it does not inspect compiler completion, memory pressure, or an error condition. Actual API error handling and completion/deadline checks are elsewhere. [DONE]
+- On the current archive-disabled first-use path, one library postcheck plus two pipeline postchecks can add three one-second sleeps per new library/kernel initialization, including an archive lookup that immediately does nothing. A process-local pipeline-cache hit returns before this guard, so the waits do not recur at every ordinary timestep; a generated-source disk-cache hit still needs process-local library/pipeline creation. No new execution, solver change, dependency change or profile-default change in this explanatory turn. [DONE]
+
+## Cycle 431 — Assess precision/backend closure, grids and particle scope (DONE: recommendation)
+
+- User asks what remains before calling FP32/FP64 and Metal solid for now, and whether particles, binary-oriented grids, or cell-centered spacetime/origin work should follow. Reviewed current source, validation boundaries and primary AMReX/NR/particle references. This turn records a recommendation; it does not launch or claim completion of the proposed implementation work. [DONE]
+- Proposed closure: validate no-postcheck operation over repeated/fresh-cache starts and the existing I/O/restart controls before default adoption; extend existing Cartesian analytic/rotated/CT/AMR oracles to GPU 2D/3D; assess longer single-object GR constraints and thermal/conservation observables against FP64; measure representative multidimensional peak memory and total cost, then preserve a scoped baseline. Reuse existing oracles rather than create an exhaustive duplicate matrix. FP32 type plumbing and backend execution do not certify FP32 GR constraint accuracy. [DONE: proposed boundary]
+- Source still rejects vertex-centered fCCZ4 at radial origins and polar endpoints (`src/relativity/fccz4_runtime.cpp`). For binary-oriented geometry, recommend a Cartesian near zone plus nonsingular angular outer patches, preserving current nodal Cartesian spacetime. Pure spherical/reduced-symmetry evolution can instead justify a cell-centered spacetime option with its own discrete transfer/regularity validation. These are alternative geometry priorities, not both mandatory prerequisites for Cartesian binaries. Vacuum patch exchange must precede, but cannot substitute for, conservative matter and CT interfaces. [DONE]
+- Both dependency builders explicitly disable particles. AMReX supplies containers/redistribution/interpolation infrastructure, with separately selectable particle precision; it does not supply a GR SPH, radiation or fluid/kinetic hybrid model. Passive tracers have an immediate potential use for stellar surface/ejecta histories. SPH remains a fluid method; photon packets and collisionless particles solve distinct transport/kinetic problems. Recommend deferring a new particle evolution model until a specific physics objective justifies it. [DONE]
+- Updated the existing precision readiness and single-object development sections, preserving the full-GR priority over the separately tracked Newtonian self-gravity failure. Added primary-source routes for the Cartesian-near-zone grid pattern and particle-method distinctions. No solver, dependency, test, profile or numerical result changed. [DONE]
+
+## Cycle 432 — Complete the accepted precision and Metal readiness work (DONE: scoped assessment; open limits retained)
+
+- User accepts all four Cycle431 readiness items. Validate no-postcheck startup and I/O/restart before selecting it in the Metal profile; exercise existing multidimensional analytic/AMR/CT/restart oracles; compare longer single-object GR evolution and precision-sensitive observables; measure representative multidimensional memory and end-to-end cost and retain a scoped baseline. Existing physics oracles and acceptance criteria remain authoritative. [WIP]
+- Use Cartesian near-zone plus regular angular outer patches as the subsequent geometry direction, retaining nodal Cartesian spacetime. Cell-centered pure-spherical spacetime and particles are deferred; neither is part of this backend closure. Preserve unrelated dirty work and earlier failure evidence. Artifacts: runs/current/infrastructure_audit/cycle432/. [DONE: scope]
+
+- No-postcheck Metal runs pass four uninterrupted/restart pairs (hydro and evolved gauge, fresh then reused application cache), with bitwise final fluid/spacetime equality and poison/finite/physical checks enabled. The local Metal profile now selects ACPP_METAL_JIT_POSTCHECK_MS=0, retaining serialization, the 20 ms yield, actual API error checks and deadlines. The cache-fresh control does not clear opaque driver caches. [DONE: bounded startup/restart adoption]
+- Extending the existing Alfvén oracle to machine-selected 3D exposes CPU FP32 scalar drift up to1.3e-5, exceeding the explicit64-epsilon budget. Diagnostic FP64 post-sums of stored fields give mass/energy differences about1e-7 from the exact solution: runtime linear summation is the dominant error. Added a shared Neumaier FP32 residual accumulator for diagnostic and conservation-ledger reductions; it uses only the selected Real arithmetic, leaves FP64 un-compensated, and must pass the original physical/scalar bounds. Post-sums are diagnosis, not a substitute for runtime totals. [WIP: rebuilt validation]
+- Original FP64 TOV input integration tolerances cause FP32 adaptive-step underflow. Preserve that failure in tov_fp32_preflight/ and isolate an explicitly precision-appropriate ID tolerance before longer evolution; no integration/physics tolerance is silently clamped. [WIP]
+
+- Corrected runtime sums pass all six CPU FP32 Alfvén 2D/3D cases with unchanged64-epsilon accounting and1.7 convergence bounds. The consolidated storage/update checker now includes a non-binary constant-sum control; it passes CPU FP32 with3ranks and fresh-cache Metal with1rank. AMReX's standard reduction tree merges the two-FP32 accumulator; no custom launch/backend or FP64 device path was added. [DONE: focused arithmetic checks]
+- Detailed TOV diagnostics locate underflow near the center even with1e-6 tolerances: the original relative enthalpy offset1e-8 is smaller than FP32 spacing and rounds to the center while retaining a nonzero initial radius. The center expansion now uses a representable offset with64-epsilon spacing and the actual coordinate difference. Its FP32 integration succeeds (M=1.40016198158, R_isotropic=8.12514686584), exposing the next failure: cold-fluid C2P/P2C errors~6.9e-4 at startup. [DONE: center diagnosis; WIP: final validation]
+- Cold conversion source review finds rest-mass cancellation in generated tau and in the handwritten general-EOS internal-energy recovery. The symbolic Valencia energy now rationalizes W-1/W^2-1, with RMHD reusing the hydro energy plus magnetic terms. General-EOS recovery consumes a generated stable internal-energy expression shared with the ideal-gas Palenzuela source and evaluates its EOS pressure from that state. Exact symbolic energy identity and existing full symbolic/codegen numerical controls pass; CPU/GPU integration and physical validation remain pending. No check or atmosphere threshold changed. [WIP]
+- The initial Metal all-dimensional build was deliberately interrupted after1018.75s to reload the new source list/arithmetic changes. Its nonzero exit is an interrupted build, not a compiler failure or a clean compile measurement. New integrated builds are sequential within each build directory; concurrent numerical/build work makes their elapsed times contended integration measurements. [DONE: provenance]
+
+- Rebuilt cold conversion passes the FP32 TOV startup round trip (max conserved1.642e-7, primitive1.669e-7), versus~6.9e-4 before. The evolved TOV and filled-hole FP32 controls then reject nonphysical outer-corner ghost metrics; matched FP64 controls are running. A diagnostic FP64 sum over saved FP32 physical donors still produces chi3.56/lapse1.71 in one corner, whose combined extrapolation/centering L1 weight is2.075e8. This is an ill-conditioned boundary extension, not recoverable by merely widening diagnostic arithmetic; no closure downgrade, ghost repair or skipped check was added. [DONE: isolation; PENDING: boundary-method conditioning work]
+- Metal2D Alfvén failed before evolution because LLVM sank distinct sin/cos calls into a generic builtin with a PHI of operation-name strings. A minimal two-branch HCF reproduces the compiler failure. Specializing the generic declaration by its constant operation before optimization preserves distinct callees and makes the reproducer pass. Added pinned adaptivecpp-metal-builtin-identity.patch; all13 ordered patches replay exactly, source identity debe933835b885f2c6fd4c02f01820bca212a02b34097a5769a0cacc413b9f28. Full2D/3D GPU analytic reruns are running with a fresh application cache. [WIP: runtime coverage]
+- CPU FP32 three-dimensional CT/AMR/subcycling passes conservation, divB and level/budget headroom. Extended the shared composite reader and entropy oracle to the existing multidimensional diagonal phase x+y(+z), retaining the strict1D wrapper. An initially inappropriate x-only comparison gave0.81 error; correcting the postprocessing phase gives1.269e-5, while the stored2D FP64 control gives1.490e-6. This was an oracle assumption, not a solver failure. The existing CT-AMR gate now also compares with the same coarse uniform control using the established1.5 improvement requirement. [WIP: final reruns]
+
+- Final CPU precision matrix passes18/18; final CPU32 Alfvén2D/3D passes6/6. Compiled FP64 general-EOS/generated-physics checks pass, as do289 production/tool conversion audits with zero diagnostics,15 build-contract tests,6 dependency tests, architecture and whitespace checks. The scoped FP64 RHD/RMHD/Z4c-boundary baseline is runs/baselines/20260912_235626_cycle432_fp64_relativistic/; these are contended correctness timings, not benchmarks. [DONE]
+- All6 Metal Alfvén2D/3D controls pass with the operation-identity correction. A duplicate-string control then exposed the same-name case: the final lowering records a callee attribute and removes the dead runtime string argument; distinct/duplicate operations pass and dynamic names still fail explicitly. This completes that compiler correction. [DONE]
+- Actual moving CT cloud refinement passes in FP64 and FP32: fine-level centroids follow the advected density cloud, with positive headroom, scalar conservation and divB checks. The smooth RMHD entropy hierarchy performs regrid attempts but all are no-ops; do not claim its6/3-level existence alone exercises moving interfaces. [DONE: CPU moving-interface controls]
+- GPU AMR reaches a separate compiler gap: O3 vectorizes TagBox byte fills, but MetalEmitter does not lower insertelement/shufflevector/vector stores. A minimal4-byte splat fails before and passes after LLVM's standard ScalarizerPass (including vector loads/stores) is added after optimization and before pointer lowering. Ordered patch14 is adaptivecpp-metal-scalarize-vectors.patch, source identity642c1682f90ff47da88d0220fad08a6667a1c25e679088e81ee13db8455fced6; clean replay passes. Runtime reruns pending. [WIP]
+- The3D6-step PWL AMR restart setup exhausts its1,000,000-cell guard in both precisions (FP32 requests4,169,216; FP64 requests1,160,192). This is not established as a precision or checkpoint defect. Preserve both failures, isolate with a CFL0.45 fixed-time control, and test checkpoint mechanics with explicitly selected MP5 using --restart-recon; default PWL and all resource/physical limits remain unchanged. [WIP]
+
+- CPU FP32 3D MP5 CT-AMR restart passes with zero field/metadata/reference differences. Lowering the original PWL control to CFL0.45 at fixed t=0.2 still exceeds its cell budget; this does not establish a simple CFL-only cause. Keep this configuration limitation open. [DONE: restart isolation; PENDING: PWL AMR refinement behavior]
+- Stopped the obsolete GPU queue and its single active moving-cloud solver after identifying their exact PIDs; the first four AMR/restart attempts had already hit the vector-emission failure. The cloud was still in startup under the superseded compiler. Its interrupted result is not a numerical failure. Install patch14 and rerun affected controls with a new application cache; no performance timing uses these interrupted runs. [DONE: execution provenance]
+
+- The apparent post-Scalarizer AMR stall is a host segfault: measure_directional_tag_statistics directly dereferenced device primitive/spacetime arrays in CPU loops. Ported its existing indicator/count/strength calculation to one AMReX reduction, using the shared Real-only compensated sum in FP32 and batched host MPI totals. All-dimensional FP64/FP32/Metal integration builds pass (6.94/7.31/23.31s; incremental rebuilds). GPU runtime verification pending. [WIP]
+- The shared launcher missed AMReX's exact `Segfault` line while its native backtrace handler stalled. Added that fatal marker and one real child-process regression to the existing infrastructure tests; it proves termination from fatal output rather than timeout. All5 infrastructure tests pass. Native Metal library/pipeline/argument-encoder probes had succeeded, so compiler-service stalls were not the cause; the obsolete queue and its exact faulted child were terminated. [DONE: failure detection and provenance]
+- Rebuilt CPU moving-cloud controls pass in both precisions after the tag-statistics port, with the same final scalar/refinement/error results as before the port (FP64 rho L2=7.29273e-4; FP32=7.73232e-4). Three new hierarchy compile-command promotion audits report zero diagnostics. The final translator accepts float and explicitly rejects double; architecture passes. [DONE]
+- A narrow follow-up source scan finds further host Array4 loops in optional current_cfl_limiter_location and solid-mask counting/repair paths. These are outside the selected relativistic/no-solid controls and are not validated GPU capabilities. Retain as explicit device-access audit work; plain geometric box loops and CPU branches behind proper device dispatch are not the same finding. [PENDING: optional-path device audit]
+- Fresh-cache Metal2D MP5 CT-AMR passes the repaired tagging/preflight stage, then fails compiling the candidate-limiter shader: Metal reports XPC_ERROR_CONNECTION_INTERRUPTED after retries and the shared launcher terminates the ensuing abort. The emitted apply_rmhd_limiter shader is20,134,727bytes; observed compiler-service RSS exceeded5.3GiB before the service disappeared. This is a compilation/resource failure, not successful evolution or proof of numerical instability. Exact source-cache file is8616758029201767488.13946629169593686583.jit; runtime log is metal_2d_ct_amr_device_tags/entropy_2d_amr_ct_subcycling/run.log. [DONE: failure isolation; PENDING: limiter shader compilation]
+- The corresponding3D MP5 CT-AMR/restart controls depend on the same unclosed limiter compilation path and remain unvalidated; do not spend repeated runs on that known blocker or silently disable the selected guard. Continue independent2D PWL restart, moving Newtonian CT refinement, existing precision controls and uniform multidimensional PWL measurements. [WIP]
+- Existing Metal precision comparisons pass18/18 on the final compiler/arithmetic, including new FP64 references. The captured AMR device IR contains81 modules and zero non-FP32 floating instructions/types, although that full run still fails its large limiter compilation. [DONE: bounded precision evidence]
+- The initial2D PWL restart retry used an invalid runner option `rmhd_candidate_guard=none`; corrected it to the registered `off` value. This was a validation-input bug, not a solver failure. The native-mesh entropy comparison also removes coarse-to-fine piecewise projection error from the improvement ratio: retained CPU32 3D fields still pass, with coarse2.48739e-3 versus AMR1.26931e-5 (195.96 improvement, previously13432.2 including projection error). The1.5 requirement remains. [DONE: oracle corrections]
+- Moving Newtonian CT refinement exposed explicit RunOn::Host in add_fluxes_to_registers on the GPU. Select the actual launch region and retain temporary area-weighted flux FABs with Elixir until asynchronous register kernels finish. No flux/EMF weights or selected interpolater changed. All-dimensional CPU64/CPU32/Metal incremental integration builds pass8.12/8.57/22.76s; moving CT, restart and scoped FP64 AMR-reference reruns are in progress. [WIP]
+- The corrected2D PWL Metal CT-AMR restart passes bitwise. Moving refinement now reaches the post-subcycle update but produces a nonphysical coarse-interface state. The new box-loop ownership control isolates the cause: every cell is visited256times instead of once. AMReX's preprocessor-only target macros select host range semantics under AdaptiveCpp SSCP's unified frontend. This is a deterministic compatibility-layer defect, independent of fluid physics. [DONE: minimal reproducer]
+- Update the pinned AMReX compatibility patch to use AdaptiveCpp target-selection intrinsics for AMREX_IF_ON_DEVICE/HOST and select the SYCL work-item iterator in GpuRange. The existing storage/update check now includes exact box-visit ownership over multiple/partial boxes. Initial source identity2109d3e8e42fbaa1d99d8d75702476f1fdf1c39817b218aa2c772dd20d22253b; dependency/application rebuild and fresh-cache verification pending. [WIP]
+- The scoped FP64 suite archive20260913_004425_cycle432_device_reflux_fp64 passes RHD/RMHD/Z4c-boundary/Brio-Wu-reference checks. Its default baseline tool also launched performance while GPU correctness work was active; those timings are contended and excluded from the final performance comparison. Rerun canonical benchmarks explicitly without --allow-warn once all builds/controls finish. [DONE: correctness; PENDING: uncontended measurements]
+- Both CPU precisions pass the extended storage/sum/box-ownership check with three ranks. The sum control now deliberately uses identical binary32 donor data in either Real build: FP64 can sum it exactly, while FP32 still exercises residual accumulation. The earlier FP64 check's native-double input was not exactly summable by its intentionally un-compensated reduction; preserve that harness failure in local_box_ownership.log. No solver tolerance changed. [DONE]
+- AdaptiveCpp target flags are exhaustive only after SSCP specialization. The patched AMReX host/device-return helpers explicitly mark the impossible continuation unreachable, retaining selected branch semantics without fallback returns or suppressing warnings. Updated AMReX patch identity8417f25cabad3cb5891206b23062d2bc10ea59db825ec7caafe4be06b7b74562; a final dependency rebuild is required after these compile-hygiene edits. [WIP]
+- The first all-dimensional AMReX rebuild completed. A second incremental pass (150 objects) makes the installed libraries consistent with the final exhaustive-target return declarations, followed by the opt-in checker and production GPU builds via rebuild_target_selection.py. Earlier return-type warnings are from the first intermediate build, not ignored final diagnostics. [WIP]
+- Annotated exactly four accidental contended benchmark rows (timestamp2026-09-13T00:45:45.448) in the full/recent performance histories as contended_performance_observation, labelcycle432-contended-excluded; retained their numeric values/statuses and saved before copies. The scoped baseline archive carries README_SCOPE.md explaining that only its correctness gates qualify. [DONE: provenance]
+- Fresh-cache Metal isolation now passes exact box ownership (min=max=1, formerly256), host whole-box iteration, separated storage, all catalogued RK fixed points and compensated sums. This checker used final headers and the first rebuilt libraries; the coherent final dependency/application pass remains running. The final8417f25c... AMReX patch replays exactly with the real index unchanged. [DONE: root-cause correction and isolated GPU proof; WIP: full solver]
+- The consistent AMReX dependency rebuild passes with zero compiler warnings/errors. Its final checker relink also passes the build. The all-dimensional production GPU rebuild is active (282 compile/link jobs) under rebuild_target_selection.py; no solver/dependency source edits are planned during it. Next: validate_target_selection.py (fresh-cache moving CT,2D PWL restart,2D/3D Alfvén,18-row precision), final CPU checker rebuild/run after the added host-range assertion, then canonical CPU benchmarks and measure_all.py sequentially with no competing jobs. All multidimensional measurements remain unrun. [WIP]
+- Final CPU FP64/FP32 storage checks include the host whole-box assertion and pass. The updated flux-register owner passes three dimensional FP32 compile-command promotion audits with zero diagnostics. Reused the existing ratio-four 3D CT/reflux feature control: both CPU precisions pass conservation/divB; this deliberately capped one-level hierarchy is a topology control, not successful error-driven AMR. GPU counterpart is queued after the full rebuild. [DONE: CPU controls; WIP: GPU]
+- Refreshed amr_cpu32_3d_final/rmhd_validation.tsv from the saved fields with the corrected native-mesh oracle: coarse error0.00248739, fine1.26931e-5, improvement195.96. Preserved the previous projection-contaminated summary under before/. No new evolution or acceptance change. [DONE]
+- Final source review identifies another temporary-lifetime gap in fill_edge_line_integral_fab: CT register kernels consume its ordinary-arena temporary asynchronously, while BaseFab::clear delegates to ordinary immediate free. Select The_Async_Arena at the temporary's allocation site so the existing stream-ordered destruction contract covers both2D/3D consumers. This narrow source correction occurred after that owner had compiled; finish_register_lifetime.py will rebuild all three profiles after the active broad build, before final controls/benchmarks. The existing CT controls cover this change; no new test target. [WIP]
+- The final isolated Metal checker passes all storage/sum/host-range/device-ownership assertions with the coherent installed dependency. The broad production build has zero Clang precision/return diagnostics but retains AdaptiveCpp KernelOutliningPass warnings about referenced exception destructors in gravity/initial-data owners; the same warnings are present in the earlier metal_build.log/metal_3d_build.log. Do not call the full application build warning-free. The coherent AMReX dependency pass itself remains warning-free. [DONE: verification boundary]
+- Full all-dimensional Metal integration completes in2219.75s (282 compile/link jobs, broad dependency-triggered rebuild, contended correctness work during portions; not an isolated cold-build benchmark). The subsequent final register-lifetime integration passes for CPU64/CPU32/Metal, with the Metal incremental update19.95s. Final validation_target_selection.py is active with a fresh application cache; the final FP64 Brio-Wu AMR/CT archive runs independently with performance explicitly disabled. [DONE: builds; WIP: runtime closure]
+- Final ratio-four 3D Newtonian CT/reflux topology control passes all three profiles, including Metal with a fresh application cache. Final FP64 Brio-Wu AMR/CT reference archive20260913_014422_cycle432_final_fp64_ct passes against the async edge-integral source; performance was explicitly disabled. Moving CT refinement is now running on the final GPU application. [DONE: 3D CT/reflux and final CPU reference; WIP: remaining GPU controls]
+- Final moving Newtonian CT refinement passes on Metal through41steps/t=0.12 with physical checks: mass drift1.18981e-7, energy6.29888e-8, momentum2.38419e-7, divB L1=3.76521e-6, two levels of headroom and peak budget fraction0.011712. Fine centroids follow the cloud; density L2=7.41756e-4 versus retained CPU64/CPU32 controls7.29273e-4/7.73232e-4. This closes the observed repeated-work/reflux failure; it is a small correctness run, not a useful GPU performance case. Captured219 device-IR modules contain zero non-FP32 floating types/conversions. [DONE]
+- Final2D PWL Metal CT-AMR/subcycling checkpoint restart passes with exact zero differences in fields, time metadata and reference totals. The final2D/3D Alfvén and18-row precision reruns are active/pending; no builds or benchmarks run concurrently with the eventual performance phase. [DONE: restart; WIP: analytic/precision reruns]
+- Final Metal2D/3D circular-Alfvén sequence passes6/6, including every scalar/recovery and component convergence requirement. The last18-row precision run has started with fresh FP64 references. The successful final analytic/restart/AMR controls all use the final AMReX target-selection patch and async CT temporary source. [DONE: analytic controls; WIP: final precision and performance]
+- Final precision rerun passes18/18 against fresh FP64 references. All final target-selection validation commands succeed: CPU/Metal3D CT/reflux, GPU moving refinement,2D PWL CT-AMR restart,6Alfvén cases,18precision rows. The process inventory confirms no solver/compiler/build activity before benchmark_final.py starts its sequential canonical FP64/FP32 gates and12 matched multidimensional measurements. Hardware and pre-benchmark memory/process snapshots are retained. [DONE: final correctness controls; WIP: uncontended measurements]
+- Final canonical CPU benchmarks pass8/8 with24/24 repeat-specific scalar rows. FP32/FP64 throughput ratios1.0768/1.1206/1.0424/1.9162. The larger2D512² CT CPU64 repeats pass in71.90/71.69s with summed rank peak RSS0.448GiB. The first CPU32 repeat completes with clean recovery/conservation but fails the declared absolute divB bound:1.52036e-5 versus7.62939e-6. Retain FAIL. Its mean dimensionless flux-imbalance scale divB*dx/B0 is3.96e-8 (below one FP32 epsilon), consistent with resolution-amplified roundoff but not proof of the cause. No bound changed. [DONE: canonical gates; WIP: fine-grid divB assessment and remaining measurements]
+- Measurement driver now resumes only missing repeats and continues independent cases while keeping each original status; completed runs are not overwritten, and aggregate exit status remains failure if any row fails. The remaining CPU32 repeat, Metal2D and all3D controls run sequentially. No solver, method, grid, precision or scalar-policy change accompanies this continuation. [WIP]
+- All12 matched measurements completed sequentially. Eight pass their declared scalar gate; all four512² FP32 repeats fail only the original absolute divB criterion (CPU1.52036e-5, Metal1.68644e-5 versus7.62939e-6). All retain physical states, clean recovery and conservation budgets. Dimensionless divB*dx/B0 is0.30--0.37FP32 epsilons across both dimensions/backends, comparable to0.30--0.31FP64 epsilons. This supports roundoff amplified by differentiation and shows why a future precision-aware divergence policy needs explicit normalization; raw FAIL statuses and aggregate exit1 remain. [DONE: measured assessment; PENDING: normalized diagnostic policy]
+- Accepted64³ CPU64/CPU32 process medians91.12/48.59s; Metal fresh/reused application caches250.88/48.48s. Later throughput Metal0.41464 versusCPU320.34782Mcells/s (1.19x), with effectively no reused-cache end-to-end advantage in64steps. CPU summed rank peak RSS0.762/0.396GiB; Metal4.031/3.540GiB fresh/reused, excluding compiler/driver services. Metal main arena260MiB used/266MiB reserved. All tested grids fit16GiB; no capacity ceiling or larger-grid crossover measured. [DONE]
+- The512² observations are CPU64 median71.79s, CPU32 median36.73s, Metal126.89/34.91s fresh/reused. The two FP32 rows' absolute divB failures qualify these timings. Metal main arena186MiB used/194MiB reserved, versus solver RSS2.759/2.458GiB. These multidimensional results do not generalize the earlier1D GPU gain to every workload. [DONE]
+- Appended22 compact validation observations and24 explicitly labeled performance observations exactly once; final_history_appended.json lists their source tables. Maintained precision/Alfvén/restart/baseline tools appended their own existing rows. Report and comparison table: runs/current/infrastructure_audit/cycle432/report.md and multidimensional_comparison.tsv. Final source/configuration/executable identities are recorded for754 files. All failed attempts, exact inputs/scalars and compiler/IR evidence remain local. [DONE]
+- The accepted request is complete as a scoped readiness assessment with substantive arithmetic, compiler and AMR device-ownership fixes. Full-GR FP32 outer-boundary conditioning, coarse TOV surface heating/convergence, the MP5 limiter compilation path,3D PWL refinement-resource behavior and optional host Array4 device paths remain open. CPU FP64 stays default. Future geometry is a Cartesian near zone with regular angular outer patches and nodal spacetime; particles and a cell-centered spacetime option remain deferred. All changes are local and uncommitted. [DONE: current cycle; PENDING: explicitly listed subsequent work]
+
+## Cycle 433 — Make FP32 arithmetic acceptance dimensionally consistent (DONE)
+
+- User explicitly agrees that acceptance criteria must change with FP32. Consolidate the selected precision validators around one shared arithmetic policy, with divB scaled by a declared magnetic field and physical cell width. Preserve independent analytic/convergence, positivity/recovery, and stability requirements. [WIP]
+- Reassess the saved Cycle432 measurements without rerunning or changing solver trajectories/timings. Preserve original absolute-policy outcomes and record a separate versioned reassessment. Artifacts: runs/current/infrastructure_audit/cycle433/. No solver, compiler, boundary, or shader changes are in scope. [WIP]
+
+- Shared `precision_scalar_policy` now owns the selected short-run arithmetic acceptance (`short_run_roundoff_v1`). Existing accounting bounds and the64-epsilon allowance are retained; integrated divB uses64*epsilon*V*B_ref/h in both precisions. Source inspection confirms runtime `divb_l1` is a volume integral. The periodic Cartesian scale uses domain volume once and the smallest solver-reported active directional width over saved times. On AMR this is a conservative global bound, not a local normalized constraint diagnostic. [DONE]
+- Precision, Alfvén, canonical benchmark and selected CT-AMR/restart validators consume the shared policy, with per-run raw/scaled divergence and effective budget fields. Unknown/mismatched precision and invalid scales fail. Disabled and explicitly exact-zero checks stay unchanged; fixed an existing `or default` path that replaced zero tolerances. No physical accuracy, convergence, positivity/recovery, timestep-stability or headroom requirement was relaxed. [DONE]
+- Saved Cycle432 data reassessed:12/12 multidimensional,36/36 precision,12/12 Alfvén,8/8 canonical final repeats,6/6 CT-AMR/restart scalar records PASS. All four previously rejected FP32 512² repeats pass the corrected arithmetic criterion. Multidimensional normalized divB is0.300–0.368 epsilons, comparable across FP64/CPU FP32/Metal; Alfvén and CT-AMR/restart records stay below0.481 epsilons. Original analytic/convergence and exact restart outcomes are retained, not freshly rerun. No solver run or new timing sample was needed. [DONE]
+- Added two focused checks to the existing run-infrastructure module: precision/field/grid-scaled representable face perturbations versus a resolvable256-increment divergence defect, and anisotropic/non-unit-volume scaling plus output-precision provenance. Existing module7/7 PASS, architecture PASS, all five edited Python tool imports/syntax PASS, whitespace PASS. An initial test fixture failed because its temporary output was outside the repository root (including the macOS /var versus /private/var alias); the fixture now supplies its resolved temporary root. No solver failure occurred in this turn. [DONE]
+- Retained the original measurement/input/log data and original FAIL outcomes; SHA-256 verifies375 evidence files unchanged. Appended13 explicitly retrospective history records, preserving all4235 prior rows and the history schema. Added a correction link to the Cycle432 report and documented the new policy in current precision/infrastructure knowledge. Full evidence and the turn-local patch are under runs/current/infrastructure_audit/cycle433/. FP32 stellar boundary conditioning, GR constraint accuracy/thermal convergence, and the large Metal MP5 shader remain separate open limits. All changes local and uncommitted. [DONE]
+
+## Cycle 434 — Clarify attainable precision and executable selection (DONE: explanation)
+
+- User asks whether FP64/FP32 can target1e-13/1e-6 with a90-percent safety margin, and whether precision is runtime-selected or separately compiled. Verified current CMake precision matching, separate CPU64/CPU32/Metal build profiles, shared C2P options, and Cycle433 saved scalar records. No solver/default/acceptance change or numerical rerun in this turn. [DONE]
+- Epsilon (spacing above one) is2.220446049250313e-16 for FP64 and1.1920928955078125e-7 for FP32. Proposed1e-13/1e-6 correspond to450.36/8.39 epsilons, not equivalent percentage margins. Current C2P absolute/relative root-tolerance coefficients are512eps64=1.13687e-13 and8eps32=9.53674e-7. A local root criterion, whole-run conservation, differentiated constraints and analytic solution error need distinct budgets; tightening a validation cutoff does not improve arithmetic. Floating-point spacing/rounding and cancellation reviewed against Goldberg's Numerical Computation Guide reprint: https://docs.oracle.com/cd/E19957-01/806-3568/ncg_goldberg.html . [DONE]
+- Re-reading enabled scalar quantities in the74 saved Cycle433 records gives FP64 maxima mass2.459e-13, energy3.720e-13, absolute momentum4.790e-13; FP32 maxima4.768e-7,1.147e-7,1.229e-7 respectively. These short-run samples support the proposed FP32 accounting scale but do not establish a universal limit; a blanket FP64 1e-13 gate would reject several existing controls. Evolved-gauge nonconserved energy/momentum are excluded from that comparison. [DONE]
+- There is one source implementation using amrex::Real, compiled against matching precision-specific AMReX installations into separate executables. CPU64 is build/pyfluid_amrex, CPU32 build/pyfluid_amrex-fp32, and Metal FP32 build/pyfluid_amrex-metal. Existing profiles select an installed build at launch; there is no input-file precision switch or precision change inside an already-running executable. The abstraction is in place; remaining FP32 GR boundary/accuracy and Metal MP5 coverage limitations do not imply duplicated physics implementations. [DONE]
+
+## Cycle 435 — Clarify type-derived policy and backend closure (DONE: source review)
+
+- User clarifies the intent is to derive precision-dependent numerical settings from the scalar type, asks about three compiled variants, and whether backend work can be parked. Verified shared epsilon-based checks, C2P defaults, type-selected reductions, metadata, and current build presets/readiness limitations. No code/default change, new test, rebuild or numerical run. [DONE]
+- Type-derived arithmetic limits are already the main pattern: numeric_limits<amrex::Real>::epsilon() in C++, output mantissa bits in shared Python validation. Method-specific multipliers remain numerical policy, so further consolidation should keep them with the method owner rather than impose one multiplier or add a generic framework. [DONE]
+- Keeping CPU FP64, CPU FP32 and Metal FP32 available entails three separately compiled build/dependency configurations from shared source; compile/storage costs differ and Metal adds device JIT work. It does not entail three handwritten physics implementations or loading three solver states at runtime. [DONE]
+- Core precision abstraction can be considered consolidated within its validated scope. Metal is usable for the documented controls and remains experimental. The large MP5 candidate-limiter shader and optional CFL-location/solid host-array paths are the next focused backend items; FP32 stellar boundary conditioning and GR-constraint accuracy remain separate full-GR numerical blockers. Recommend bounded work on those concrete limits rather than another broad precision refactor. [DONE]
+
+## Cycle 436 — Close MP5 Metal and CFL-location device gaps (DONE: continued in Cycle437)
+
+- User accepts the MP5 shader and CFL-location backend work, explicitly defers solid-mask work, and asks what stellar boundary conditioning means. The stellar issue is outer-domain ghost extrapolation plus nodal-to-cell transfer, separate from the stellar surface: saved FP32 donors amplified by corner L1 weight207474688 produce distorted metrics even under FP64 reevaluation. Explained the distinction; no stellar-boundary change in this cycle. [DONE: clarification/scope]
+- Reproduce MP5 on the final current backend before changing its implementation, then retain numerical semantics while fixing compiler/kernel organization as needed. Make CFL-location diagnostics device-safe using existing diagnostic ownership and focused validation. Artifacts: runs/current/infrastructure_audit/cycle436/. Solid-mask changes remain deferred. [WIP]
+
+- Fresh application-cache reproduction on the unchanged final Cycle432 Metal executable reaches startup C2P/P2C, then reproduces `XPC_ERROR_CONNECTION_INTERRUPTED` during shader compilation; the shared launcher terminates the fatal rank. Largest emitted initial candidate-limiter shader is20,130,067bytes. This is a compiler-service failure, not completed evolution or proof of OOM. Evidence: `mp5_initial.log`, `mp5_initial/entropy_2d_amr_ct_subcycling/run.log`, and `mp5_initial_cache/`. [DONE: current-backend reproduction; PENDING: fix]
+- Replaced optional CFL-location host Array4 loops with the shared masked maximum reduction and deterministic exact maximum selection by level/domain index. Ghosts and covered cells are excluded. The timestep calculation is unchanged. One focused case extends the existing state-update checker to cover masking, ghosts, exact ties, nonzero domain origin and empty masks; no new test target. CPU FP64/FP32 incremental target builds pass in2.91/2.11s, followed by three-rank checks in both precisions. FP64 hierarchy diagnostic syntax checks pass in1D/2D/3D; architecture and scoped whitespace checks pass. These are focused CPU checks, not GPU or full evolution validation. [DONE: bounded CPU checks; PENDING: Metal and hierarchy runtime validation]
+- On 2026-09-14 the user requests a prompt waiting point after interruption. Saved the uncompiled MP5 split-kernel proposal as `mp5_unvalidated_prototype.patch`, then restored only this cycle's limiter edits from its immediate before-copy, preserving all earlier dirty work. The four CFL diagnostic/check files remain as local work in progress. No production executable was rebuilt in this cycle; the three recorded2D production binaries retain their starting hashes. No further GPU run, broad build or performance sweep started. [DONE: requested pause]
+- Resume from `runs/current/infrastructure_audit/cycle436/report.md`: validate the CFL path on Metal and in a small hierarchy run, then assess the saved MP5 prototype against the other large limiter kernels before applying/building it. Preserve numerical method selection and require matched CPU/GPU physics evidence before claiming MP5 closure. Stellar outer-boundary conditioning is separate; solid masks remain deferred. [WIP: paused awaiting user]
+
+## Cycle 437 — Consolidate backend work and reduce measured complexity (DONE: scoped pass; 3D Metal initialization remains open)
+
+- User requests continued debugging, cleanup and hardening, with concern about compile and review bloat. Resume the concrete CFL/MP5 gaps, inspect their ownership and compile footprint, and reuse existing validation. Avoid new features, generic frameworks and redundant tests. Preserve all unrelated dirty work; solid-mask and stellar-boundary changes remain outside this pass. Artifacts: runs/current/infrastructure_audit/cycle437/. [WIP]
+- The existing masked-maximum/storage checker passes on Metal with a fresh application cache. The rebuilt CPU64 hierarchy control preserves physical scalar histories exactly with CFL-location diagnostics enabled/disabled and reports the fine-level limiting location with correct cell-center coordinates. Step zero legitimately reports no frequency/location before timestep evaluation. [DONE: focused CFL runtime checks; PENDING: Metal hierarchy]
+- Reworked the RMHD limiter within its existing owner: optional PWL trial, mask propagation and final RHS corrections launch by direction, with recovery separate from flux reconstruction. Tile-local candidate storage uses AMReX's async arena; numerical helpers, correction tiers, shared-face closure and diagnostic counts are unchanged. The public declaration now includes fixed-spacetime types instead of its implementation; the existing ownership checker protects this boundary. The limiter source shrinks by44lines before subsequent adjustments. [WIP: integrated validation]
+- CPU64 two-dimensional CT shock controls exercise both PWC and PWL/PWC guards: final fields match the pre-change controls bitwise; correction totals stay0/80 and16/64 respectively, with no recovery fallback/reset and passing scalar/boundary budgets. The2D incremental integration build passes in143.36s (10 cache misses, not a clean build). Turn-local harness mistakes (transverse BC omission, TSV writer/import call, and step-zero diagnostic expectation) were corrected separately from solver behavior; retained logs distinguish them. [DONE: CPU64 equivalence]
+- Metal CFL hierarchy on/off passes with identical physical scalar histories, zero conservation/divB error and the same fine-level cell(0,0) as CPU. The first directional limiter split builds on Metal in256.48s but its shock run reaches a300s startup timeout without evolution or a compiler-service crash. Remaining selected-flux shaders are15.45MB. Preserved this intermediate source as `limiter_direction_split.cpp` and its cache/logs; it is not a completed MP5 validation. [DONE: CFL closure; WIP: limiter compilation cost]
+- The remaining duplication evaluates one selected face independently inside each adjacent cell. The next refinement materializes tile-local face fluxes, reuses the existing arithmetic on those cached values, and shares one face-selection launch between propagation/RHS/final replacement. Optional PWL trial reads only its own classified tile while other tiles may be in flight. Scratch lifetimes use the async arena. This reduces the source to1583lines without a new module, numerical method, runtime option or test target. [WIP: rebuilt verification]
+- Final cached-face CPU64 and CPU32 shock controls match their own pre-change fields bitwise. Metal passes both guard modes with unchanged correction counts(0/80 and16/64), zero C2P fallback/reset, and maximum component-scaled differences2.17e-7/2.98e-7 against CPU32, below the declared64-epsilon comparison. Its largest limiter shader is7,282,808bytes versus20,130,067bytes in Cycle436; source count falls1701to1583lines. The first directional-only timeout remains preserved. [DONE: focused limiter equivalence and Metal execution]
+- Existing2D CT/AMR/subcycling entropy gates pass CPU64, CPU32 and Metal, including scalar/divB and level/budget headroom. Native-mesh density errors are1.49010e-6/7.25397e-6/7.10455e-6, with coarse-to-AMR improvements851.74/174.99/178.65. Normalized integrated divB is0.218/0.186/0.254 epsilons. All three profiles' CFL hierarchy on/off controls preserve physical scalar histories exactly. [DONE:2D hierarchy validation]
+- Existing canonical2D CPU performance gate passes three repeats at96.84Mcells/s (0.881 of its recorded baseline; no limiter speedup claim). The15 existing build-infrastructure tests, ownership, architecture, whitespace and final1D/2D/3D CPU syntax checks pass. Final production integration builds run in all three separate build directories with bounded total jobs; timings/cache deltas are explicitly contended integration observations, not comparative compile benchmarks. [WIP: final integration]
+- All three full production builds pass: CPU64/CPU32/Metal elapsed124.01/125.02/497.70s under the documented contended integration setup. Existing3D CT-AMR analytic controls pass CPU64/CPU32 with errors2.86161e-6/1.26931e-5 and improvements869.17/195.96. All five existing exact SRMHD Balsara controls pass on CPU64 (component-normalized L1 errors0.00300--0.00724), with zero recovery fallback/reset and passing scalar/boundary budgets. [DONE]
+- The final Metal3D CT-AMR attempt fails before fluid preflight with `get_or_create_metal_pipeline_state(): Internal compiler error`. The18,188,912byte emitted source `13248888483554752896.4213044970788665858.jit` names `complete_z4c_contracted_connections`, not the modified limiter. `z4c_runtime.cpp` SHA-256 remains71159db7c63c259252fa01e9689e892da3640a3d8334133dc15a685f525a83e3, identical to Cycle432's final manifest. Retained log: `ct_amr_3d_metal/entropy_3d_amr_ct_subcycling/run.log`. [DONE: isolation; PENDING:3D connection initialization compiler fix]
+- Source review of that separate initialization kernel finds a runtime-order full spacetime-derivative gather feeding a connection expression whose derivative inputs are conformal-metric and chi first derivatives (the caller stores only the contracted conformal connection). A follow-up should narrow the shared derivative operation while preserving its centered/excision stencil policy. The existing `gather_z4c_geometry_derivatives` uses domain-sided stencils and is not a behavior-preserving drop-in replacement. No connection computation was skipped, no fallback guard disabled, and no new unsupported-configuration ban added. [PENDING: source-backed next boundary]
+- This pass retains three implementation/ownership-file changes,118 fewer limiter lines, no new test target, validated CFL diagnostics, and validated2D Metal limiter/AMR behavior. Full-GR FP32 outer-boundary conditioning, Metal3D initialization, advanced runtime combinations and fresh MP5 checkpoint coverage remain separate limitations. Final report and implementation patch are under `runs/current/infrastructure_audit/cycle437/`. All work remains local and uncommitted. [DONE: scoped consolidation]
+
+## Cycle 438 — Bound spacetime kernel dependencies and compare Cottonmouth (DONE: scoped implementation and validation)
+
+- User authorizes necessary structural changes and asks about Cottonmouth-style generator optimization for Metal. Trace the reproduced 3D connection-initialization compiler failure, compare authoritative generator/launch structure, preserve selected stencils and shared equations, and validate a bounded structural fix before broader optimization. Artifacts: runs/current/infrastructure_audit/cycle438/. Preserve unrelated dirty work; no new physics or backend-specific equation implementation. [WIP]
+- Cottonmouth source comparison uses EinsteinEngine commit939a208c2e87a7d14445c0ab816d6f24637d1701 and local Cottonmouth commit7b3a6b19bb6278d7ae9205bce817042c253a9591. Its Z4c recipe selects CSE, temporary recycling, expression ordering, hard loop splits and soft retention splits. Our emitter already owns CSE plus hard/soft temporary drops; it does not implement the same scheduling/recycling machinery. The user clarifies whether existing capabilities mainly need better use; explained the distinction. No wholesale generator replacement or global algebra heuristic change is warranted by the reproduced failure. [DONE: source comparison]
+- Factored metric first-derivative assembly out of the full Z4c gather, shared it with both Cartesian and fCCZ4 connection completion, and moved their order selection to host launch scope. Centered and excision stencils, side-selection reach, equations, precision, centering and supported orders are unchanged. One focused extension of the existing excision checker compares narrowed/full derivatives exactly in1D/2D/3D, every catalogued order and centered/one-sided policies, rejecting non-metric reads. CPU MPI3 checker passes. No new target or generated equation. [DONE]
+- The Cartesian connection shader falls from18,188,912bytes to195,968bytes. The first3D Metal retry advances past connection initialization, then fails in ErrorEst. A bounded ACPP_DEBUG_LEVEL=3 retry confirms the exact tagging kernel at the pipeline error. Split independent optional initial-box/solid-geometry tagging launches from the fluid indicator; all still add the same tags and the automatic-tag early exit moves to the host. Solid-mask backend work remains deferred. The automatic shader falls from~3.81MB to~3.41MB and the next run proceeds through hierarchy construction into limiter compilation. Source size alone is not a compiler-resource limit: a~21.6MB constraint kernel also compiles during this run. [WIP: full3D Metal run]
+- Final integration builds pass forCPU64/CPU32/Metal in all dimensions. Initial shared-gather builds take46.38/51.86/106.15s; final launch-boundary builds17.28/17.57/37.58s, all contended incremental observations. Isolated affected CPU runtime objects in1D/2D/3D took4.87s (3misses); Metal3D object4.88s with ccache disabled. Do not describe these as clean-build speedups. Existing15 build-infrastructure tests and architecture checks pass. [DONE]
+- Existing Cartesian gauge-wave convergence passes all five orders (two resolutions each), and the maintained three-resolution spherical fCCZ4 gauge-wave evolution control passes. Existing CPU64/CPU32 3D CT-AMR controls pass with unchanged analytic errors2.861609218e-6/1.269313007e-5 and improvement869.174/195.964. All three levels' final fields match Cycle437 bitwise in each precision. Matched CPU64/CPU32 nonflat gauge-wave precision controls also pass. [DONE]
+- Turn-local harness failures are distinct from solver results: corrected a run_mpi logging argument and a history-append signature; the ten completed gauge runs were recorded without rerunning them. Zero-step spherical controls complete but produce no GF snapshots, so their attempted bitwise comparison is invalid and not claimed; the maintained spherical analytic evolution gate supplies the actual curved-coordinate validation. [DONE: evidence boundary]
+- The first complete launch-boundary Metal attempt reaches successful preflight, then times out at300seconds while compiling remaining variants. A single retry with that populated cache and a600second per-run limit completes both AMR and coarse-reference runs. Existing3D CT-AMR analytic gate PASS: densityL1=1.277191234e-5, improvement194.752, three levels, level headroom6 and budget fraction0.074752. Mass/energy drift0, momentum drift5.57e-17, integrateddivB1.77411e-6 (0.310 epsilon units), no recovery fallback/reset. CPU32/Metal final component-scaled differences are3.02e-7/5.02e-7/9.04e-7 across the three levels, below64eps32. This fixes the reproduced compiler failures; startup cost remains large and no GPU speedup is claimed. [DONE]
+- Existing Metal nonflat gauge precision control passes26steps to t=0.2 with lapseL2=2.99440e-7 under the unchanged1e-6 physical budget. Its constraint norm6.17e-4 remains a reported limitation, not certified GR accuracy. Existing fixed-box/no-op hierarchy control passes onCPU MPI3. Uncontended canonical CPU performance gate passes three repeats at97.2497Mcells/s,0.22617sim-time/s, baseline fraction0.8848 versus required0.85. [DONE]
+- Final evidence: report.md, changes.patch, final_identity.json, kernel_sizes.json, analytic/scalar tables, exact input/log/output files under runs/current/infrastructure_audit/cycle438/. Six contended production compile records and three failed compiler/timeout attempts were appended once; maintained validators recorded successes. No new test target, runtime option, generated equation or backend dependency change. Full-GR FP32 outer-boundary conditioning, singular chart origins, solid masks and comprehensive GPU scheduling/liveness optimization remain separate work. All edits local and uncommitted. [DONE: scoped pass]
+
+## Cycle 439 — Bound diagnostic derivative work at the shared spacetime interface (DONE: scoped implementation and validation)
+
+- User requests continued lightweight infrastructure consolidation with stable low-level contracts. Follow the measured large constraint shader from Cycle438: separate constraint derivative requirements from evolution in the existing shared gather, retain generated equations/stencils and all excision/accuracy semantics, and validate symbolic dependency closure plus matched numerical diagnostics. Avoid new runtime options, test targets, backend policies or physics. Artifacts: runs/current/infrastructure_audit/cycle439/. Preserve unrelated dirty work. [WIP]
+- Shared directional/mixed assembly now selects evolution or constraints at compile time. Constraint consumers omit gauge and upwind transport derivatives while retaining identical metric/curvature arithmetic, generated stencils, runtime order dispatch and excision side plans. No new equation implementation, runtime option or test target. The existing stencil checker covers all orders and dimensions, forbids excluded component reads and cannot compile a constraint gather that requests advection. Symbolic source checks cover Cartesian and fCCZ4 constraint dependencies, including geometry. [DONE: implementation and focused checks]
+- CPU64/CPU32/Metal full production builds pass in all dimensions (47.69/48.86/111.02s; overlapping incremental builds, not clean or comparable compile benchmarks). Existing excision checker passes with MPI3; four symbolic equation tests and15 build-infrastructure tests pass, as does architecture. Existing CPU64 Cartesian order-family and three-resolution spherical evolution controls pass; CPU64/CPU32 nonflat precision controls pass. All15 matched CPU runs preserve every constraint scalar and final spacetime field exactly against Cycle438. Metal numerical checks remain in progress. [WIP: backend verification]
+- Fresh-cache3D Metal CT-AMR reaches successful preflight then fails pipeline compilation of the narrowed constraint shader (11,795,100bytes versus~21.6MB before). Preserve ct_amr_3d_metal/ and the emitted source; this is a compiler failure, not a numerical pass. The smaller1D shader (2,321,527 versus3,292,773bytes) passes nonflat evolution with exact Cycle438 fields/constraint histories. Source review identifies both formulation equation systems inside the same runtime-conditional diagnostic launch. Move that uniform selection to the host, keeping order dispatch confined to derivatives; rebuild and rerun affected checks. [WIP: formulation launch boundary]
+- Final diagnostic launch dispatches the existing formulation once per level on the host, with one shared masks/reduction body and distinct Cartesian/reference equation instantiations. Order selection remains inside the derivative operation. All15 CPU baseline comparisons pass again. Final affected production rebuilds pass in11.44/14.10/37.18s under the same contended setup. Executable changes are+0.13--0.36% onCPU and-0.09--0.20% onMetal; no runtime-memory or throughput inference. The3D Cartesian constraint shader (10,842,351bytes) compiles and the validation proceeds through remaining fluid kernels; analytic completion pending. [WIP]
+- Final3D Metal CT-AMR and coarse-reference runs complete and pass existing scalar/analytic criteria: densityL1=1.277191234e-5, improvement194.752, three levels, integrateddivB=1.774113116e-6 (0.310epsilon units). Final fluid fields including coverage masks on every level and all constraint histories match Cycle438 exactly. A small zero-step spherical branch probe initially used the normal open-run throughput requirement and was rejected for zero rates; the solver itself finalized cleanly. Correct its harness to the existing startup/smoke policy. A field-comparison harness initially used system Python without NumPy; it passes under the project uv environment. These are harness failures, not numerical failures. [DONE:3D Cartesian backend; WIP:alternate launch probe]
+- Final reference-metric startup probe passes onCPU32 andMetal, with successful preflight and finite initial diagnostics on the regular spherical16^3 chart. This is zero-step/compilation evidence, not sphericalGPU evolution or convergence. FinalMetal1D gauge rerun also preserves all fields and27constraint rows exactly after formulation dispatch. Final shader sizes are1,371,747bytes(1D Cartesian),~10,842,351--10,842,662(3D Cartesian), and11,548,901(3D reference); relative to Cycle438 Cartesian sources shrink~58%/~50%. Exact Apple compiler internals remain undiagnosed; source bytes are not a universal limit. [DONE]
+- Uncontended canonicalCPU performance gate passes three repeats at94.01Mcells/s and0.2186simulation-time/s, baseline fraction~0.855 versus0.85 required. This is not aGPU or constraint speedup measurement. Final architecture and scoped whitespace checks pass. Nine compile records were appended once; numerical histories retain successes and the intermediate compiler/harness failures. No new test target, runtime option, generated equation, backend patch or tolerance relaxation. Report, patches, kernel hashes, executable size deltas and exact comparisons are under cycle439/. Startup cost, stellarFP32 boundary conditioning, singular origins and broadGPU/GR accuracy remain open. [DONE: scoped pass]
+
+## Cycle 440 — Confirm optional GPU and shared precision ownership (DONE: source review and convention)
+
+- User requires optional GPU support without duplicating the physics source and asks whether precision consolidation is settled. Source-check the three machine profiles, CMake precision compatibility checks and current validation boundaries. CPU64 remains the default; CPU32 andMetal32 are separate builds of the same production source. Added the explicit shared CPU/GPU/precision ownership rule to code_conventions.md; backend specialization belongs in execution/storage/launch adapters and requires evidence. [DONE]
+- Core precision abstraction is established; new features still require appropriate device/precision validation. Existing limitations remain Metal startup/compiler sensitivity, FP32 stellar/BH outer-ghost conditioning and incomplete GR/backend coverage. No solver, dependency, generated artifact or acceptance threshold changed; no numerical rerun is claimed for this clarification. [DONE]
+
+## Cycle 441 — Clarify remaining Metal compiler uncertainty (DONE: status and source identity check)
+
+- User challenges whether Metal compiler behavior is concretely settled. Read-only manage_metal.py passes the pinned source/patch/install contract. Current controls pass, but the Apple internal pipeline error from Cycle439 has an observed structural resolution without a reduced compiler reproducer or established internal cause. Dependency provenance, validated application behavior and compiler robustness are distinct claims. [DONE]
+- Corrected the stale Cycle437 blocker paragraph in precision_and_metal.md to the Cycle438/439 results, preserving current GPU-evolution/restart coverage limits and the explicit compiler uncertainty. Precision abstraction readiness does not certify general Metal reliability. No runtime code, dependency, test or tolerance changed; no new numerical or repeatability run is claimed. [DONE]
+
+## Cycle 442 — Compare the adopted route with the WarpX Metal reference (DONE: source comparison)
+
+- User asks whether the backend route changed. Read the pinned reference README, AdaptiveCpp/AMReX build scripts, local manifest and dependency builder: both use AMReX SYCL -> AdaptiveCpp SSCP -> Metal, with the same AdaptiveCpp3733a565 base. Local differences are six retained reference patches plus eight local patches, an AMReX26.09 adaptation of the reference26.06 integration, and omitted particle/device-parser extensions. Recent kernel restructuring did not change this route or dependency stack. [DONE]
+- Clarified this distinction in precision_and_metal.md. An internal pipeline error does not alone assign fault to Apple rather than the emitted source or our patched translator; the unresolved large-shader case has no controlled reference-patch-set-only comparison. No dependency/build/runtime change or new execution was performed for this source comparison. [DONE]
+
+## Cycle 443 — Reconcile Metal route, current behavior and compiler uncertainty (DONE: documentation and dependency verification)
+
+- User asks to clear up the conflicting Metal status account. Check the pinned reference, local dependency manifest and latest completed validation report; make the existing precision document distinguish the adopted route, local adaptations, final passing controls and retained intermediate failure. Preserve source, dependency and numerical evidence. [WIP]
+- The current route remains PyFluid -> AMReX SYCL -> AdaptiveCpp SSCP -> Metal, adapted from the third-party Lulzx reference: same AdaptiveCpp base, six reference patches, eight local patches and the AMReX26.09 adaptation. Read-only manage_metal.py passes the pinned dependency contract again. This check does not execute GPU kernels. [DONE]
+- Moved final Cycle438/439 evidence ahead of historical results in precision_and_metal.md and removed wording suggesting the retained intermediate shader failure still describes the final tested configuration. Knowledge and reference routers now agree. Final selected controls pass; the intermediate compiler cause, reference-only comparison and final fresh-cache repeatability remain unproven. No attribution to Apple or shader-size threshold is justified. [DONE]
+- Reviewed the request-scoped documentation diff and whitespace. Backups are under runs/current/infrastructure_audit/cycle443/before/. No runtime source, dependency, generated artifact, test or tolerance changed; no new numerical validation is claimed. [DONE]
+
+## Cycle 444 — Assess value of further compiler diagnosis (DONE: evidence review and recommendation)
+
+- User asks whether further diagnosis is worthwhile. Re-read the retained Cycle439 pipeline failure, final passing log, shader identities and report. The structural change has matched numerical evidence, but the final 3D run reused its task cache and the intermediate failure has no isolated cause. [DONE]
+- Recommend one bounded follow-up: repeat the current control with independent fresh application caches, then replay retained failing/passing shaders under matched compiler options to distinguish a deterministic source trigger from runtime/service/cache behavior. Reduce a reproducible trigger if useful; reserve a full reference-only dependency comparison for evidence implicating local translation. This is a recommendation, not newly executed validation or proof of compiler correctness. No solver or test changes. [DONE]
+
+## Cycle 445 — Bounded diagnosis of the retained Metal compiler failure (DONE: trigger isolated and current controls repeated)
+
+- User authorizes the proposed diagnosis. Repeat the maintained 3D CT-AMR control with two independent fresh application caches, verify scalar/analytic results and fields against Cycle439, then replay retained failing/passing shaders with matched Metal options. Keep dependency and production source unchanged while isolating the trigger. Artifacts: runs/current/infrastructure_audit/cycle445/. [WIP]
+- First independent fresh application-cache repeat passes the maintained 3D CT-AMR/coarse-reference scalar and analytic checks in475.99s, with byte-identical final fields on all levels and exact constraint histories against Cycle439. Second repeat is running. OS-managed Metal caches are unchanged. Source and Metal3D executable hashes match Cycle439; read-only dependency contract passes. [WIP]
+- Second independent fresh application-cache repeat also passes in485.77s. Both repeats preserve byte-identical fields and exact constraint histories against Cycle439; densityL1=1.277191234e-5, AMR improvement194.752, mass/energy drift0 and divB0.310epsilon units. Direct source/pipeline replay now running serially with MSL3.2, size optimization, safe math and precise functions. [WIP]
+- Standalone replay reproduces the retained bad shader failure twice: library creation succeeds, then AppleM4 AGXMetalG16G_B0 pipeline creation returns code3/Internal compiler error. Final Cartesian shader passes twice and final reference shader passes under identical compile options. No solver, GPU dispatch, AMR transfers or active translator is required to reproduce the failure. This localizes the compile failure to the retained emitted source/pipeline interaction; validity and exact compiler cause are not yet isolated. [WIP]
+- Renaming the failing shader retains the failure. With the same entry-point name, changing exactly one line (`targ62` from the runtime formulation argument to constant0 or1) makes both variants compile; restoring the dynamic argument fails again. The approximately11.8MB source remains intact otherwise. This is a controlled formulation-combination trigger in the retained large kernel; exact internal compiler cause remains unidentified. All diagnostic variants are compile-only. [DONE]
+- Existing host formulation selection is supported by both controlled replay and two successful fresh application-cache numerical repeats. No new production/dependency patch or permanent test target is warranted by this pass. Updated precision_and_metal.md and knowledge.md; report.md, shader identities, scripts, immutable retained sources and all logs are routed under cycle445/. Relevant source/executable hashes remain identical to Cycle439. Final whitespace and dependency checks pass. No general backend, spherical GPU evolution, GPU restart or full-GR accuracy certification is added. [DONE: bounded investigation]
+
+## Cycle 446 — Inspect and update Windows/WSL, provision shared-source CUDA work (WIP)
+
+- User authorizes Windows/WSL inspection, updating WSL before further work, and copying the relevant PyFluid checkout into their phys_research workspace with E-drive capacity in mind. Inspect actual hardware/storage/distro and preserve existing remote work; assess native AMReX CUDA integration and matched Mac/Windows comparisons. Local current work is substantially uncommitted, so an upstream-only clone would omit required development. Artifacts: runs/current/infrastructure_audit/cycle446/. [WIP]
+- Live Windows inspection: Ryzen7 5800X,48GiB DDR4-3200,RTX3070Ti8GiB (compute8.6),driver616.92; E:1.62TiB free,C:87.27GiB free. WSL2.7.13/kernel6.18.33.2; Ubuntu22.04.5LTS is registered on C: with a100.17GiB ext4.vhdx file and about90GiB Linux filesystem use. Ubuntu sees about23GiB RAM and the NVIDIA GPU. Expected /home/max/phys_research is absent; bounded /home and E:/home search found no phys_research directory. [DONE: inspection]
+- Proposed backing up and moving the entire Ubuntu distribution to E:/WSL/Ubuntu to retain native Linux paths/filesystem on the larger drive. User asks whether Ubuntu is currently on C:; exact registry and VHD path confirm yes. Relocation remains unapproved. No WSL/package update, move, clone, installation or CUDA source change has been performed. Preserve this waiting point while the storage choice is clarified. [PENDING: storage decision]
+
+## Cycle 447 — Back up, relocate and update Ubuntu/WSL before CUDA provisioning (DONE: supported OS upgrade and migration)
+
+- User explicitly authorizes safely moving WSL Ubuntu to E:, upgrading the underlying Ubuntu OS and all packages, with preservation preferred. Back up the existing distro before relocation/release upgrades, preserve the named Ubuntu/default user, use the supported migration and successive stable LTS upgrade path, and verify package health, filesystem location and GPU access afterward. Windows host OS/driver changes are outside this Ubuntu/WSL request. CUDA checkout/build work follows this prerequisite. Artifacts: runs/current/infrastructure_audit/cycle447/. [WIP]
+- Official WSL VHD export completed to E:/WSL/Backups/Ubuntu-pre-upgrade-20260921.vhdx (107554537472 bytes), with SHA256 8CB4D5B014C0F6F1BAE60A004A45A94B5A79D63E90B62EBA1484D1588FF0A513 and adjacent JSON recovery manifest. The first attempt encountered a transient disk sharing violation immediately after termination; after confirming disk release, export and checksum succeeded. Original research directories were found directly under /home/max, including an older PyFluid checkout. Native WSL relocation is now running; no release/package upgrades yet. [DONE: backup; WIP: move]
+- Native WSL move completed to E:/WSL/Ubuntu with Ubuntu name/default UID1000 intact. Default-user boot, seven existing research directories, passwd/group/fstab hashes, systemd health and RTX3070Ti visibility pass; C: free space is now185939718144 bytes (~173.2GiB). WSL update check reports latest installed2.7.14.0/kernel6.18.33.2-2 (the live version changed from the initial2.7.13 reading). Jammy's99 available packages upgraded with0 removals; dpkg audit/apt check clean and0 remaining upgrades. Stable24.04.5LTS is offered. Release upgrade started under isolated tmux socket pyfluid-os447/session noble, with persistent logs under /var/log/pyfluid-wsl-upgrade-20260921 and an attached WSL keepalive process. [DONE: move/current-release packages; WIP: LTS upgrade]
+- Supported22.04->24.04.5LTS upgrade completed with exit0 and Ubuntu-only restart. Retained optional obsolete-package cleanup to preserve oldPython3.10/research environments; no bulk pip/Conda updates. Snap core22/snapd refreshed; all snaps current. Final dpkg audit, apt check, refreshed full-upgrade simulation, systemd failed-unit check, default user/research-directory checks and direct CUDA driver initialization pass. Driver API13.4 enumerates RTX3070Ti8GiB. No reboot pending. Final C: free171.2GiB, E: free1.42TiB. [DONE]
+- Fresh Canonical LTS feed (HTTP September22; modifiedSeptember11) lists26.04.1 with Supported:0; normal Prompt=lts checker does not offer it. Stopped at fully updated24.04.5 rather than forcing a disabled/development path. Backup and recovery instructions remain under E:/WSL/Backups; compact upgrade logs also archived there. Backup export/hash were verified but no recovery boot was tested. Full report and logs are in cycle447/. Cycle446 source synchronization/CUDA compilation/numerical benchmarks remain pending; OS health and CUDA driver enumeration are not solver-validation claims. [DONE: requested OS/storage phase]
+
+## Cycle 448 — Remove completed migration artifacts and clarify Ubuntu upgrade limit (DONE)
+
+- User explicitly requests cleanup of the completed backup/migration artifacts and asks whether Ubuntu can be upgraded. Delete the exact task-created recovery VHD, manifest, obsolete recovery instructions and duplicate log archive after checking the active Ubuntu disk is the separate E:/WSL/Ubuntu/ext4.vhdx. Remove task-specific remote scratch and downloaded package cache, retain normal OS logs and compact local continuity. Recheck current Ubuntu/WSL state and official upgrade eligibility; do not silently force a disabled release path. [WIP]
+- Deleted the four inspected backup/recovery files and empty E:/WSL/Backups directory; recovered107555125349 bytes (~100.17GiB), E: now1670705733632 bytes free. Removed /var/log/pyfluid-wsl-upgrade-20260921 task scratch and cleaned APT downloads (306MiB->112KiB). Active E:/WSL/Ubuntu/ext4.vhdx, max account, package health and RTX3070Ti visibility verified afterward. Normal OS logs retained. Cycle447 report now explicitly records that the backup no longer exists. [DONE: cleanup]
+- Fresh normal upgrade check still excludes26.04.1 (Supported:0), but the release team's August27 announcement documents an explicit opt-in (`do-release-upgrade -d`) while automatic24.04 upgrades await rust-coreutils regression backports. Verified `do-release-upgrade -c -d` offers26.04.1LTS on this installation. Earlier wording overstated the restriction: this is a conservative automatic-upgrade hold, not a WSL or access limitation. No new release installed; system remains24.04.5. [DONE: clarification]
+
+## Cycle 449 — Assess and perform the Ubuntu26.04.1 opt-in upgrade (DONE: OS upgrade and scoped verification)
+
+- User prefers current software and authorizes the further upgrade conditional on it being safe and functional. Check actual rust-coreutils regression/fix publication and WSL/CUDA compatibility before deciding whether the opt-in meets that condition. Preserve their explicit completed-task cleanup preference; no permanent duplicate distro or retained rollback backup after success. Current Ubuntu24.04.5 on E: is healthy. Artifacts: runs/current/infrastructure_audit/cycle449/. [WIP]
+- Live Launchpad checks show rust-coreutils0.10.0-1ubuntu2~26.04.1 published to Resolute Updates: source September21, amd64 binary September22 02:08UTC. Backport bug2166202's Resolute task is Fix Released (verification-needed tag remains); reviewed changelog includes file ownership, symlink-permission and build-compatibility fixes. Reported install/ecryptfs corruption bug2158615 is Fix Released; current WSL uses ext4 and cgroup2. NVIDIA CUDA13.4 documentation supports Ubuntu26.04.1/GCC15. Proceed with the documented opt-in, requiring the fixed candidate before installation. Temporary rollback export will be removed immediately after successful reboot/package/file-operation/build/GPU checks. [WIP]
+- Fixed rust-coreutils candidate selected from ordinary resolute-updates. Release upgrade (848 upgraded,146 new,7 removed) exited0 and Ubuntu-only restart preserved max/UID1000, E:/WSL/Ubuntu and existing research directories. Final dpkg/apt checks are clean, zero updates remain, snaps are current and no reboot is pending. Normal LTS prompt/repositories remain; no proposed repository, custom pin, compiler downgrade or system-library patch. Optional148 obsolete-package removals declined to preserve existing older research environments. [DONE]
+- Temporary coreutils probes and stock GCC15.2/CMake4.2.3 C++20 build pass; three MPI ranks collectively write/read parallel HDF51.14.6 correctly. NVIDIA driver initialization and RTX3070Ti8GiB enumeration pass. Old desktop-installer edge snap service failed from bundled libsystemd/host-tool incompatibility; disabled its unneeded automatic startup, leaving the snap/data installed. Final service check has zero failures. OpenMPI5.0.10 still exhibits known packaging bug #13886 / Debian1132222 for help/version text; actual MPI execution and CMake discovery pass, no hand-copied help-file workaround applied. These are machine/toolchain checks, not PyFluid/CUDA-kernel/numerical validation. [DONE: scoped checks; OPEN: upstream MPI help packaging]
+- Deleted the temporary24.04 rollback VHD after verification, recovering107554537472bytes; both task backup directories are absent. Removed remote task scratch, test build and local one-off scripts/progress snapshots; normal OS logs and compact report/evidence remain. APT cache112KiB; E:1670705729536bytes free (~1.52TiB). Cycle447 report now points to cycle449/report.md for current state. Cycle446 source sync/CUDA toolkit/build/solver benchmarks remain pending. [DONE: cleanup and waiting point]
+
+## Cycle 450 — Sync the WSL workspace and start native CUDA integration (DONE: workspace/CPU; OPEN: CUDA solver compile)
+
+- User authorizes syncing the stale Windows PyFluid workspace and starting CUDA work, retaining CPU use and asking how WSL/48GiB host RAM fit. Inspect the old checkout and preserve any unique changes; transfer current tracked and untracked source rather than relying on an upstream clone that omits the dirty Mac development. Use Linux ext4 on E:, stock tools and native AMReX CUDA with shared physics. Validate a CPU baseline and actual CUDA compilation/execution before performance claims. Artifacts: runs/current/infrastructure_audit/cycle450/. [WIP]
+- Synced Git history and 826 tracked/untracked source files to `/home/max/phys_research/PyFluid` on E-backed Linux ext4; every source SHA256 and HEAD matched the Mac snapshot. Preserved the old `/home/max/PyFluid` symlink and its Windows notebook edits. Installed the locked Python environment using Ubuntu Python 3.14.4. Later scoped edits are synchronized separately. [DONE]
+- Installed official Ubuntu 26.04 CUDA 13.4 toolkit components, cuRAND/cuSPARSE development libraries and Compute Sanitizer, without a Linux NVIDIA driver. NVCC 13.4.92 compiles and executes FP32/FP64 allocation/copy/kernel/readback probes on RTX 3070 Ti (compute 8.6); sanitizer reports zero errors. This proves the toolchain/device path, not solver accuracy or performance. Temporary probe files removed. [DONE]
+- Added CPU/CUDA machine profiles and native CUDA target configuration using AMReX's target helper, retaining shared physics. Extended the existing dependency owner with CUDA precision variants and portable compiler discovery; CUDA fast math is explicitly off. Local dependency/build tests pass 21/21 and architecture checks pass. [WIP: solver integration]
+- Full-feature CPU 1D cold build passes in 409.50 s, with 95 cache misses and zero hits. The initial compile-timing invocation omitted `--build-dir`; corrected the task command, retaining the failed harness record. CUDA configuration initially searched inherited Windows PATH directories slowly; a Linux-only build-shell PATH resolves it without global WSL changes. MPI wrappers then hid include paths from NVCC; native host compilers let FindMPI expose the explicit flags. Retrying the pinned dependency build. [WIP]
+- Latest user asks why the obsolete installer remains and why WSL sees half of host RAM. Removed the inspected, unused `ubuntu-desktop-installer` snap with `--purge`; no snapshot retained. After the CPU build ended, created `C:/Users/maxri/.wslconfig` with a 36 GiB ceiling and restarted WSL. Linux now reports about 35 GiB usable, 16 logical CPUs, GPU access and zero failed units; Windows has headroom and memory remains demand allocated. [DONE]
+- First Sod invocation exposed a hardcoded default executable path in the validator. Switched it to shared `run_amrex` machine selection, retained its actual run log, and enabled accepted-state physical checks. OpenMPI's missing help text obscured the missing executable; no system-library or help-file workaround was applied. Three-rank WSL and rebuilt Mac Sod now pass; WSL exact-integral mass/energy errors are 1.97e-16/3.23e-16, momentum error 2.78e-17. Actual WSL no-work rebuild is 0.02 s; the preceding 1.54 s configure/relink is a distinct measurement. [DONE]
+- Current 828-file source snapshot and Git HEAD matched before transfer staging removal. Deleted E:/WSL/source450 (87,510,869 bytes) and the two local transfer archives; restored the new checkout's GitHub origin to match the Mac. Existing Windows notebook work remains untouched. Mac all-dimensional CPU production build passes (424.60 s, 283 cache misses); review caught and removed duplicate 3D AMReX linkage, and final relink passes in 2.03 s with no duplicate-library warning. [DONE]
+- Windows slept during compilation. User flagged it; sent Wake-on-LAN to the recorded Ethernet adapter, then verified connectivity and resumed build progress. A bounded, process-lifetime Windows system-awake request is verified through `powercfg /requests` while CUDA builds; normal power settings are unchanged. One source-sync attempt failed during sleep and succeeded after reconnection. [WIP: release awake request at build completion]
+- All-dimensional AMReX CUDA FP32 dependency build/install and read-only contract pass at the existing 26.09 pin; architecture 86 and CUDA fast math OFF verified. First PyFluid CUDA compile fails after 162.50 s on documented NVCC extended-lambda restrictions: first implicit captures inside `if constexpr`, and private/protected enclosing methods. Initial diagnostic details are in cycle450/cuda_first_errors.log; protected base methods also own device launches, so a deliberate module-owned launch refactor is needed across the shared solver. No access-control bypass or partial numerical refactor was applied. CPU baseline remains usable; CUDA evolution, accuracy and performance remain unvalidated. [OPEN: solver portability]
+- User suggests PowerToys Awake CLI. Verified installed version 0.100.2 and official timed/PID options. Trial standalone SSH launch logged tray-initialization failures and registered no power request; its process exited. Kept the verified temporary Windows request for the build; it released automatically at compile failure. Normal sleep settings unchanged. Completed administrative scratch and transfer archives removed; compact outcome logs, report and build/validation commands remain. [DONE: cleanup and waiting point]
+
+
+## Cycle 451 — Complete CUDA portability and compare shared CPU/GPU execution (DONE: scoped backend baseline; PWL AMR resource study open)
+
+- User requests CPU/GPU comparisons on Windows and stronger shared backend infrastructure, clarifying that Metal and CUDA portability is the immediate multi-GPU interest. Finish CUDA compilation without duplicate physics or access-control bypasses, verify precision/analytic/scalar behavior, then collect matched timing and MPI evidence. Only one RTX device is available; do not claim multi-device scaling or HPC readiness from these controls. Preserve unrelated dirty work and use existing validators. Artifacts: runs/current/infrastructure_audit/cycle451/. [WIP]
+- Source review narrowed the launch fix: the solver classes already live in private src/amr implementation headers. Made only their existing device-launch methods publicly addressable, retaining protected storage and private non-launch policy; no compiler access bypass, exported API, per-backend equation fork or new kernel wrapper. Explicit captures resolve constexpr-branch restrictions. The first declaration-relocation script also matched two call sites; restored them immediately and corrected the edit matcher before continuing. CPU compilation and CUDA device code generation now advance. [WIP: integration]
+- CUDA also found missing host/device annotations on pure patch-map classification, coordinate conversion and boundary-containment helpers. Corrected the shared call chain. Existing infrastructure tests pass 21/21, and architecture checks pass. Added a matching WSL CPU FP32 profile for performance comparisons. [WIP: numerical evidence]
+- Full CUDA compilation exposed additional language boundaries: named metric-accessor factories replace local host-lambda template arguments; pure inner host/device lambdas inherit their enclosing execution space; constraint and connection launches now have named namespace owners outside generic host dispatch. Formulation/order choices and kernel equations remain unchanged. CUDA compilation of the host-executed horizon library now uses the CUDA compiler for AMReX-qualified value types while forwarding only its private OpenMP flags. [WIP: full build]
+- GCC FP32 reported a genuine promotion in generated math: the C99 emitter wrote unqualified log/sqrt/pow calls. Changed the common printer base to CXX17, removed redundant handwritten printer methods, and regenerated 13 derived headers. The existing architecture gate now rejects unqualified generated math calls. A 22-expression compile-time type probe passes GCC FP64, GCC FP32 and NVCC FP32; an expected-failure GCC control confirms the old log(float) returned double. These are type/compile checks, not numerical accuracy claims. [DONE: precision defect and focused guard; WIP: evolution]
+- Paused only task-owned compilation before replacing the staged generated headers, then resumed CPU/CUDA/Metal builds. Prior Mac CPU integration compiled in 543.06 s and 261.51 s (contended incremental work, not comparative cold benchmarks). Metal configure initially found a removed Homebrew MPI 5.0.10 path; clearing its MPI discovery cache selected installed 5.0.11 normally. Current builds include the emitter fix; performance measurements wait for uncontended execution. [WIP]
+- CUDA device compilation rejected runtime indexing of namespace constexpr component arrays. The schema emitter now returns the same component tables by value through host/device constexpr functions; shared consumers use those accessors. Moved three existing limiter launch bodies out of generic host lambdas and supplied named metric factories for limiter/excision templates. No separate backend equations or state layouts. [WIP: integration]
+- Mac CPU64 all-dimensional production build passes after the shared fixes (636.05 s, contended incremental). The maintained three-rank 512-cell Sod analytic gate passes with roundoff exact-integral errors. Static CUDA PTX inspection finds a small number of FP64 operations inside float sin/cos library implementations; input/output types stay float. Do not claim zero FP64 instructions from FP32 solver types. Native disassembly lacks nvdisasm in the minimal toolkit, so retained evidence uses installed cuobjdump PTX output. [DONE: CPU/Sod and precision attribution; WIP: GPU evolution]
+- Fresh-cache Metal FP32 versus Mac CPU64 precision gate passes 18/18: RHD/RMHD entropy convergence and nonflat/weak gauge waves, using existing analytic and precision-scaled scalar budgets. Later CUDA-only language diagnostics required explicit captures in conformal ID/source/exterior kernels and a named private-source horizon-mask launcher; rerun final integration after these scoped ownership edits. [DONE: matched precision gate; WIP: final source integration]
+- Final CUDA compile sweep exposed the same restrictions in exterior/source captures, Sommerfeld's scratch accessor, and the private interpolater launch methods. Corrected explicit captures, reused the named stored-metric factory, let nested pointwise lambdas inherit execution space, and moved interpolation launch bodies into source-local functions while retaining the private class interface. Mac CPU32 all-dimensional integration passes before this final scoped source batch (905.28 s, contended). [WIP: final build and CUDA execution]
+- Native CUDA rejected EOS CGS constants whose intermediate c^4 exceeds FP32 range. Consolidated importer units in private eos/units.hpp, used staged pressure conversion, and constructed Read polytropes directly in code units to avoid powers of large CGS density. All four presets/28 segments remain finite and pressure-continuous in a direct FP32/FP64 probe; maximum parameter differences against pre-change FP64 are 8.86e-6/5.70e-15. Added physical pressure anchors to the existing preset check and a selector to exercise that check independently in FP32, with precision-derived continuity/anchor budgets. [WIP: existing check execution and final integration]
+- Native CUDA FP32 1D solver now links successfully with the complete production configuration. The final boundary-only rebuild took 34.95 s; first-pass failures and expensive initial device compilation remain separate evidence. Existing preset checks pass in FP32/FP64, and the complete CPU64 generated-kernel checker passes. Started matched CUDA precision evolution and full 2D/3D CUDA compilation; numerical CUDA success and performance remain pending. [DONE: native CUDA 1D build; WIP: evolution/AMR/performance]
+- Tiny CUDA runs exposed substantial total-launch overhead despite subsecond stepping. Zero-step controls separate launch policy: CPU direct singleton 13.73 s versus MPI1 0.31 s; matched CUDA direct 23.53 s versus MPI1 5.06 s (both successful, contended startup controls). WSL CPU/CUDA profiles now use the existing MPI launcher even for one rank. This addresses observed singleton overhead, not a claim that all remaining CUDA startup cost is solved. [DONE: measured machine-profile correction]
+- CUDA FP32 versus WSL CPU64 precision gate passes all 18 comparisons with unchanged scalar, recovery, analytic and convergence criteria. Final Mac CPU32/CPU64/Metal production rebuilds pass. CUDA 2D/3D compilation continues. Actual RMHD under Compute Sanitizer completes evolution but reports 17 duplicate-entry CUDA API diagnostics; retained as a failed instrumentation gate pending a two-translation-unit reduction. No memory-access report was observed, but that is not a clean sanitizer pass. [WIP: linkage diagnosis, multidimensional validation and performance]
+- CUDA MPI wave checks pass at one and two ranks on the same RTX, with identical RMHD/gauge analytic errors. A CUDA-only two-file template-kernel probe reproduces duplicate-registration diagnostics under relocatable device code and weak stubs; whole-program/default static stubs pass. Keep the default solver sanitizer result open, and separately check memory access with explicit API reporting plus a deliberate out-of-bounds positive control. No production compiler/linkage or sanitizer suppression patch. [DONE: MPI correctness/reduction; WIP: memory-access evidence]
+- Final Metal 3D CT-AMR fails at a stored-metric RMHD signal-frequency shader; standalone replay reproduces it, while another specialization of the same kernel passes. This is distinct from the previous constraint-formulation failure. Source review finds the factory already selects ideal/runtime EOS on the host, but RMHD signal frequency discarded that selection and embedded both recovery branches. Preserve the existing EOS template through RMHD recovery and characteristics, as RHD already does, using the existing ideal/runtime recovery implementations. Rebuild all backends and rerun the failed control. [WIP: shared launch specialization]
+- Final signal-EOS production rebuilds pass on Mac CPU64/CPU32/Metal in9.04/9.58/25.13s (contended incremental). CPU32/CPU64 precision passes18/18. CPU32 3D CT-AMR passes: densityL1=1.269313007e-5, improvement195.964, divB0.287epsilon units. FinalMetal3D CT-AMR passes with densityL1=1.277191234e-5, improvement194.752, divB0.310epsilon units and3levels, matching earlierMetal aggregate metrics. Ideal signal shader shrinks1.49MB->279KB. Final1DMetal precision rerun and sequential benchmarks follow. [DONE: final shared launch fix and magnetic AMR; WIP: CUDA multidimensional and performance]
+- Maintained CompOSE SLy4/APR/DD2 table+recovery check passes in FP64 after unit conversion changes. CUDA memcheck with explicit API reporting passes zero errors and scalar sanity; intentional out-of-bounds control fails as required. Default extended API duplicate-registration reports remain distinct and unresolved beyond the CUDA-only reduction. [DONE: scoped evidence]
+- Exact finalMetal comparison against Cycle439 passes: every decoded field on all three AMR levels and the coarse control is byte-identical; all11constraint columns in both histories match exactly. Kept failed shader/replay evidence and final specialization separately. Renewed the bounded Windows awake request while full nativeCUDA compilation continues; both requests will release on cycle451/work_finished or their two-hour deadlines. [DONE: exact numerical preservation; WIP: benchmarks/fullCUDA]
+- FinalMetal precision rerun passes18/18 after the signal-speed specialization. Canonical Mac CPU performance gate passes all four three-repeat medians with no competing task builds: hydro2D97.99Mcells/s (0.89baseline), hydro3D PWC57.74 (0.94), hydro3D WENOZ2.58 (0.99), RMHD1D1.89 (0.93). Existing scalar gates pass every repeat. Background desktop activity remains; matched CPU32/Metal and WSL timing follows. [DONE: finalMetal precision and CPU regression gate]
+- Matched Mac larger RMHD entropy-wave benchmark (262144cells,32768-cell boxes,PWL/HLL/SSPRK3,64steps,physical checks each step) passes all repeats. CPU32 MPI3 median0.42780Mcells/s,39.72s process; Metal32 MPI1 median1.03626Mcells/s,19.89s process:2.42x throughput and2.00x end-to-end. Cheap hydro remains CPU-favored even after larger GPU boxes; preserve both results. Earlier canonical and grid-size measurements are separate from these matched wave controls. WSLCPU32 first all-dimensional build now passes; final small source refresh and fullCUDA2D/3D remain. [DONE: Mac backend timing; WIP: WSL completion]
+- CUDA2D compilation exposed a remaining Kelvin--Helmholtz initializer capture used first inside if constexpr. Replaced its implicit capture with the actual value dependencies, including guarded3D values; equations unchanged. All-dimensional Mac CPU64/CPU32/Metal rebuilds pass14.40/14.17/24.06s (contended incremental). Synced the fix while CUDA continues its full-dimensional sweep; final rebuild is required. [DONE: shared capture fix; WIP: CUDA integration]
+- Final WSLCPU32 production refresh passes25.73s (three cache misses, contended); CPU641D is a0.03s no-op. GCCCPU32 vsGCCCPU64 passes18/18 maintained precision controls. Full830-file source snapshot and GitHEAD match the Mac. No CPU timing is inferred from these runs during compilation. [DONE: GCCprecision/source identity]
+- At2026-09-22 09:54UTC the full CUDA sweep has completed171/203 steps. Its only recorded failure is the already-fixed2D KH capture; it still needs the final rebuild before3D AMR/restart and WSL timing. Existing WSLCPU32 precision passed18/18. Kept compact WSL mirrors under cycle451/wsl/; removed153MB of superseded initialMetal fields and one-off editing/staging scripts, retaining final fields, patch and failure reproducers. Active Windows awake request releases on cycle451/work_finished or10:52UTC; finish/verify release after remaining work. [WIP: CUDA completion]
+- Full CUDA sweep finished201/203 scheduled steps and linked1D/3D in6522.10s; status2 reflects the one already-fixed2D KH capture and skipped2D linkage. This mixed/contended integration build is not a clean compile benchmark. Started final production rebuild plus18-run precision,3D CT-AMR and3D restart chain. [WIP: finalCUDA runtime gate]
+- Final nativeCUDA production rebuild passes all1D/2D/3D targets in87.39s with four cache misses; all normal production methods remain enabled. The final precision chain is running against refreshed GCCCPU64. [DONE: CUDAfullproductioncompile; WIP: numerical gates]
+- FinalCUDA precision passes18/18;3D MP5 CT-AMR passes with normalizeddensityL1=1.279346088e-5,194.420 improvement,3levels,divB0.287epsilon units. The PWL3D restart full run exceeds the1M-cell budget atstep6; identical GCCCPU32 control also fails(4.29MvsCUDA4.19M attempted cells). MP5 evolution/restart completes; its comparator crashed before AMReX startup because positional checkpoint directories were parsed as an input file. Resolved stack reachesParmParse/ReadAndBcastFile. Disable input parsing for this positional-argument utility; correctedCUDA comparison passes. FP64PWLcontrol and matched WSLtiming now running. [DONE: CUDAprecision/MP5AMR/restart; WIP: refinement triage and performance]
+- The same PWL3D six-step control also reaches the1M-cell limit on MacCPU64(attempted1,160,192 cells). This is not a CUDA/FP32-only regression; budget exhaustion alone does not establish a numerical instability or tagging bug. Preserve all failed controls for a separate AMR error/resource study; do not relax budgets or claim this PWL case passes. CUDA MP5 restart now compares exactly: every field,dt/time and scalar reference difference zero. Existing comparator receives only the positional-argument parsing fix, without a new test target. [DONE: bounded failure triage and exact CUDA restart; WIP: timing]
+- Matched WSL FP32 wave medians: CPU3 0.45035 Mcells/s and 38.00 s; CPU8 1.05944 Mcells/s and 16.34 s; CUDA1 7.30268 Mcells/s and 6.62 s. CUDA gives 6.89x throughput/2.47x end-to-end over CPU8, and 3.00x end-to-end over Metal. All repeats pass scalar checks. At 1024 squared, CUDA hydro boxes256 improve throughput 59.32->339.53 Mcells/s over boxes64, but 7.52 s process still exceeds CPU8 1.31 s. Final CUDA MPI1/2 waves pass4/4 with identical analytic errors; they still share one device. Final WSL executable hashes and compact artifacts retained. Removed 151 MB of superseded WSL fields. [DONE: timings/finalMPI; WIP: final sync and awake release]
+- Final source synchronization verifies all 830 files and the common Git base; architecture, scoped inverse-patch check and whitespace pass. The WSL CUDA profile now defaults to the six compile jobs exercised with ample memory headroom. Temporary Windows awake request explicitly released and its process completed. Final report, 25 three-repeat benchmark medians, executable/source hashes, failed PWL controls and compiler reproducers are retained under cycle451/. No new test target or second GPU physics implementation. Default sanitizer API diagnostics, PWL refinement/resource behavior, FP32 stellar conditioning, cold compile/startup cost and actual multi-device/HPC scaling remain explicit limits. [DONE: scoped pass]
+
+
+## Cycle 452 — Resolve CUDA registration diagnostics and harden shared backend ownership (PAUSED: incomplete acceptance)
+
+- User asks for clean CUDA infrastructure ready for further development, with Metal and CUDA as the two backend portability targets. Trace the retained duplicate-registration failure through a minimal CUDA-only probe and actual build/link ownership; prefer a correct supported fix over suppression. Preserve shared equations, existing method coverage and unrelated dirty work. Use existing numerical/performance gates after any production change. Artifacts: runs/current/infrastructure_audit/cycle452/. [WIP]
+- CUDA13.4.92/ComputeSanitizer2026.3 reproduce duplicate registration in a CUDA-only two-TU template program. Static/shared CUDART, device LTO, hidden visibility and the static-stub flag under RDC all report the same error. cuobjdump shows one linked weak device entry, and host output is correct. Installed toolkit is already the latest available patch. Testing the supported AMReX_GPU_RDC=OFF policy in an isolated all-dimensional dependency candidate; no suppression, legacy-launch macro or dependency patch applied. [WIP: candidate]
+- Non-RDC separately compiled CUDA objects pass default memcheck with zero errors; intentional out-of-bounds control fails with exit99/four errors. Uninstrumented CUDA_LOG_FILE also reports the duplicate for the RDC binary and is empty for non-RDC. The candidate therefore removes an actual runtime diagnostic, not just sanitizer output. Managed install contract now rejects RDC-enabled CUDA caches; the existing six dependency tests and architecture gate pass. [WIP: full solver evidence]
+- All-dimensional pinned AMReX non-RDC build/install passes: configure3.53s, cold build774.28s, install0.46s, six jobs. Moved the candidate into the normal versioned install path before application compilation to avoid recompiling for a later path move. Prior RDC install and three executable hashes/binaries are retained only for rollback and matched comparison until acceptance. CUDA application configure passes; 1D then all-dimensional integration are running. [WIP: solver]
+- Native CUDA 1D non-RDC rebuild passes in1166.86s with94 cache misses and no hits (six jobs). Full2D/3D integration and default memory/init/synchronization/race instrumentation are running. Existing compile profiler now supports NVCC device-tool traces; the15 existing build-infrastructure tests pass, as does an isolated Clang production-command replay. No additional test target or physics implementation. [WIP: numerical acceptance]
+- Actual CUDA RMHD evolution now passes all four default Compute Sanitizer tools: memcheck/initcheck/synccheck zero errors, racecheck zero hazards/errors/warnings. Maintained CUDA32 versus GCCCPU64 precision gate passes18/18 with unchanged scalar, recovery, analytic and convergence criteria. The1D executable grows513,713,216->611,808,376bytes; runtime/remaining-dimension tradeoffs are still being measured. [DONE: 1D instrumentation/precision; WIP: full integration]
+- Additional maintained RMHD quick sweep stops at the strongly magnetized hybrid-SLy uniform preflight: conserved error1.82e-7, primitive idempotence error3.48e-5 versus7.63e-6 allowance. Identical input also fails the retained pre-change CUDA binary and GCCCPU32; GCCCPU64 passes. This is a pre-existing FP32 recovery/conditioning boundary, not introduced by non-RDC. No tolerance relaxation or state repair. Kept matched inputs/logs under hybrid_triage/; the separate existing reconstruction/convergence controls continue independently. CUDA MPI1/2 RMHD and gauge controls pass4/4 with identical analytic errors across ranks. [DONE: bounded triage/MPI; OPEN: hybrid FP32 conditioning]
+- Briefly paused only the identified task compiler descendants and resumed them in finally after28.44s; this pause is recorded separately from remaining production-build wall time. Matched three-repeat1D RMHD timings pass all scalar gates: oldRDC7.56293Mcells/s,6.16567s process; nonRDC8.05200Mcells/s,2.91347s process. Device inspection shows1 linked image versus176 local images, with executable size+19.1%; the larger on-disk binary does not imply a slower launch. All9existing reconstruction controls pass without repairs, and entropy convergence order1.99776 passes. [DONE: initial measured tradeoff; WIP: multidimensional build]
+- Sampled device-wide GPU memory at100ms during matched separate RMHD runs: baseline/after377MiB both, oldRDC peak860MiB and nonRDC766MiB; both scalar gates pass. These sampled global peaks are not allocator-exact/per-process accounting. User emphasizes compile efficiency and asks about Nsight: Windows has NsightSystems2026.3.2 and Compute2026.3.0; WSL has no nsys/ncu executable but does have official ctadvisor13.4. Inspect existing Linux target collectors before adding any package. [WIP: profiling preparation]
+- Existing Windows NsightSystems/Compute Linux collectors execute directly from their installed directories in WSL; no new package or system permission change. Matched NsightSystems RMHD captures pass scalar checks with the task compiler tree paused17.45s and automatically resumed. Both execute17,478kernel launches; cuLibraryLoadData takes2.56089s in one oldRDC load versus0.28734s over19nonRDC loads. Recovery/exterior preparation dominates kernel time; capture overhead is excluded from uninstrumented performance claims. Native traces remain onWSL, compact API/kernel/transfer summaries are mirrored locally. [DONE: actual NsightSystems capture]
+- NsightCompute reaches actual solver launch after temporarily staging its145MB Linux collector at a space-free path; the original Windows path and a symlink both fail its installation-path restriction. GPU counters are denied by Windows driver policy (`ERR_NVGPUCTRPERM`), so no occupancy/counter result is claimed and no driver permission was changed. Removed the task copy after recording the failure; the installed collector remains intact. Systems profiling is independently successful. [DONE: tooling boundary]
+- Installed CUDA Compile Time Advisor successfully reads the retained minimal NVCC trace. Production replay remains queued after integration so owner timings are uncontended. Exact application command confirms-O3, architecture86, precise math and maxrregcount255; offline resource inspection finds several RMHD recovery/preparation specializations using128registers and roughly1KiB stack, but this is not measured occupancy. Current MP5 include graph remains confined to three source owners. [WIP: actual production compile profile]
+- Full non-RDC production build passes1D/2D/3D. The2D/3D integration takes5647.21s with189cache misses and0hits, following the1166.86s/94miss1D build. Integration wall time includes45.89s of explicitly recorded compiler pauses and short diagnostic interference; it is not a controlled old/new cold-build comparison. The3D limiter dominates the tail and reaches about6GiB assembler RSS. Queued isolated NVCC replay and3D numerical gates have started. [DONE: full compile; WIP: final runtime/profiling]
+- Before interruption, isolated NVCC replay completed: diagnostics13.682s;1D PWC135.790s, including63.617s cicc and56.446s ptxas. Compile Time Advisor completed; split-compile comparison was not run. No-op production rebuild0.03s. Fresh3D CT-AMR passes: densityL1=1.279346087741119e-5,194.420 improvement,3levels,divB0.287epsilon units. Restart was interrupted and is not verified this cycle. Reverse-order timing,3D memcheck and remaining cleanup are deferred. These results do not make the cold-build cost acceptable. [PAUSED]
+
+## Cycle 453 — Stop excessive compile follow-up and leave a bounded waiting point (DONE)
+
+- User rejects the roughly90-minute compile and repeated waiting/polling. The full build had already finished; stopped this task's active restart and enclosing follow-up chain, which exited143. No further builds or numerical runs authorized by this continuation were started. Failure of judgment: a full integration build was allowed to dominate a compile-efficiency investigation instead of imposing an early cutoff and isolating one expensive source owner. [DONE]
+- Cycle452 source changes and completed evidence remain available, with acceptance explicitly incomplete. Any resumed compile investigation should use one source owner and a short hard time limit before considering another full-dimensional rebuild. No promise that parallel optimization alone resolves the cost. Temporary rollback artifacts remain pending acceptance; temporary Windows awake request is being released. [DONE: waiting point; PENDING: resumed investigation]
+
+## Cycle 454 — Bound compile investigations and improve CUDA development cost (PAUSED: bounded tooling complete; CUDA tuning incomplete)
+
+- User resumes development hardening after rejecting unbounded compile cost. Inspect the actual dependency graph and one isolated CUDA owner; limit each exploratory compile to300s, stop its process tree at expiry, and do not start a full production rebuild without measured justification. Preserve shared physics, optimization and all enabled methods. Cycle453 temporary awake request was verified released. Artifacts: runs/current/infrastructure_audit/cycle454/. [WIP]
+
+- Added a default 300-second hard deadline to compile profiling and target benchmarking, reusing the existing process-group cleanup owner. Exit 124 and timeout metadata distinguish expiry from compiler failure; profiling stops the scan and removes its object, and `--allow-slow` cannot bypass the deadline. One new regression exercises a worker ignoring TERM after its launcher exits. Run infrastructure passes 8/8 on both Mac and WSL; build infrastructure passes 15/15 on Mac. Actual Clang/CMake timeout controls, a 0.831-second Clang replay, architecture and whitespace checks pass. [DONE]
+- MP5 dependency ownership is three production source owners per dimension in both source and compiler graphs (nine CUDA objects; Mac additionally has one codegen-check object). CUDA no-op production build passes in 0.110 seconds with zero cache hits/misses; Mac no-op takes 1.003 seconds, correctly classified just over its explicit one-second timing goal. Neither is cold-build evidence. [DONE]
+- One isolated PWC CUDA replay with two optimizer/assembler threads completes in 96.860 seconds versus the retained 135.790-second baseline, 28.7% faster. Both use production optimization and precision flags. All 107 device functions remain, but 57 resource records change (39 register increases, 12 stack increases); runtime equivalence/performance is not established. No production compiler flag, C++ physics, working object or executable changed. Candidate object removed. A final assembler-only comparison was launched with the same 300-second deadline; no completion result was recovered. [DONE: first probe; PENDING: assembler-only result]
+- Updated stale CUDA knowledge/machine notes to distinguish Cycle452 non-RDC checks from the earlier RDC restart result and the open FP32 hybrid-SLy preflight failure. Scoped source changes were synchronized and checked on WSL before the final interruption; final local continuity/report updates are not synchronized. [DONE]
+
+## Cycle 455 — Usage-limit stopping point (DONE: local handoff; remote status unverified)
+
+- User requests prompt wrap-up before continuing. No further build or test started. Windows SSH hostname no longer resolves; attempted final collection/stop/awake-release did not execute remotely. Do not claim the assembler-only probe passed or that remote cleanup was confirmed. The launched probe has a 300-second process-group deadline and the awake request a twenty-minute expiry. On resumption, inspect their final state and collect existing results before launching anything. Local summary: runs/current/infrastructure_audit/cycle454/report.md. [DONE: summary point]
+
+
+## Cycle 456 — Review and update AMReX 26.10 across Mac and WSL (DONE: scoped Mac acceptance; WSL solver deferred)
+
+- User requests the normal AMReX dependency update cycle, upstream changelog/source review, necessary consumer changes, rebuilds and relevant validation before resuming CUDA compile tuning. Use the existing manager and a single persistent Windows SSH connection; preserve unrelated dirty work and inspect remote source identity before syncing. Current shared pin26.09/a52ca733; helper resolves stable26.10/015c14b65715b277fbc54706ebe7455b196d2254. Artifacts: runs/current/infrastructure_audit/cycle456/. [WIP]
+- Mac MPI dependency26.10 configure1.600s/build71.906s/install0.187s passes contract. WSL reachable at configured winPC address with no retained compiler/profiler process; all substantive pyfluid_amrex source hashes match before changes (only continuity and local uv cache differ). Keep same pin/source on both hosts, separate compiler/dependency/build/run artifacts. Rebased Metal patch: preserve26.10 oneMKL stream-window fix and restore upstream RNG guards, clamping/overflow protection, and C++20 feature requirement previously reverted by unrelated26.09 patch hunks. All other compatibility hunks apply cleanly. Existing dependency-manager6/6 and architecture pass. [DONE: initial review/CPU dependency; WIP: companion builds]
+- User narrows acceptance to proper changes plus Mac compilation/testing; CUDA solver rebuild deferred. A one-time10--20minute dependency build is acceptable, but recurring development compiles should ideally be30--60s. WSL CPU dependency companions already updated; CUDA AMReX library build was already underway and can finish, without scheduling solver work. Mac all-dimensional production build reaches300s cap without compiler errors (214cache misses, zero hits); required integration resumes remaining objects under explicit900s limit. These are contended dependency-update measurements, not normal edit-cost evidence. Existing build-infrastructure15/15 pass. [WIP: Mac acceptance; DEFERRED: CUDA solver/tuning]
+- Mac CPU production completes after300s initial cap +208.45s completion; zero cache hits,214+70misses, with contending Metal dependency compilation. No-op1.25s. Quick gate, Sod exact, Brio-Wu AMR+CT/rotations/ratio4, gravity, implicit hydro/resistivity and RMHD ratio4 gates pass. Existing test had two stale exterior-state API calls, corrected without tolerance changes; its intentionally single-rank fixture passes, as do three-rank state/reduction and2D cell/nodal conformal-vector/constraint checks. Pressure aligned-subcycling restart is exactly identical in every field/time/dt/reference; runtime mass/energy drifts about1.4e-15 and shared scalar checks pass. [DONE: CPU scoped acceptance]
+- First Metal26.10 dependency build passes in835.858s with2jobs, but maintained device component check fails diagnostic sum=0. Minimal same-source/configured-command control:26.09 native sum8864.107422/compensated8864.108398;26.10 both0. Isolated header overlay restores compensated sum8864.108398 (native sum remains0 in unchanged library). The regression is localized to new SYCL blockReduce multi-round path. Add the mathematically equivalent direct subgroup reduction for numwarps<=warpSize, retaining new multi-round support for larger counts. Preserve new scratch allocation and overflow fixes. No repair, tolerance relaxation or sum recomputation. Rebuild library with4jobs and rerun native/compensated controls before acceptance; exact compiler lowering root cause not yet established. [WIP: Metal correction]
+- Corrected Metal library rebuild completes298.551s/4jobs, retaining upstream large-count/scratch/overflow fixes. Both final minimal sums match26.09 exactly (native8864.107422, compensated8864.108398), and maintained state/indirect-storage/launch/masked-max/reduction check passes. Canonical Mac CPU performance gate passes4/4 without --allow-warn:97.27/58.67/2.68/1.85Mcells/s, baseline ratios0.89/0.96/1.03/0.91; all repeats pass scalar checks with no competing task compilation. Started bounded900s selected1DMetal production refresh and maintained18-case precision gate. [DONE: reduction/performance; WIP: Metal evolution]
+- Already-running WSL dependencies finish: CPU64 build228.938s, CPU32 build212.309s, CUDA32 build949.316s. All are26.10 with matching source/install contracts; CUDA retains precise math/non-RDC/architecture86. No WSL application rebuild or numerical test started under the narrowed scope. Final source pre-sync snapshot changes only owned files, with no removals. Native Mac dependency contracts, patch applicability/reversal/hash, Metal source connectivity, architecture and whitespace pass. [DONE: dependency/source checks; DEFERRED: WSL solver/CUDA development-cost tuning]
+- Selected1DMetal production rebuild passes94steps in460.56s/2jobs; compile history records zero cache activity, not a cache-hit refresh. Maintained CPU64/Metal32 precision gate passes18/18 in180.93s, retaining scalar/physical recovery/analytic/reference/convergence criteria. All production methods remain enabled. Mac CPU all dimensions and selectedMetal1D accept26.10; Metal2D/3D applications remain at their prior dependency until separately rebuilt. Final report/review/failed controls/compile and validation logs are under cycle456/. Scoped change set is exactly8files; shared solver equations/generated kernels and unrelated dirty work are preserved. Keep WSL source/pin synchronized but application binaries explicitly stale relative to the new pin. CUDA recurring30--60s development goal remains unmet; no compiler-flag tradeoff adopted. [DONE: scoped update; DEFERRED: WSL solver, Metal multidimensional refresh and CUDA tuning]
+
+## Cycle 457 — Explain inherited AMReX benefits and optional adoption candidates (DONE: source review only)
+
+- User asks what26.10 adds for PyFluid robustness/accuracy/performance, which infrastructure routes changed, and what is worth adopting. Rechecked exact tagged CHANGES, Cycle456 source deltas and current callers. FillPatch/reflux, finite-aware MLMG/precision thresholds and GPU launch/reduction fixes feed existing consumers; no new production solver-policy/API route required. Plot output and checkpoint-field writing both call AMReX HDF5 writers, so converted-byte/type fixes are inherited there; custom checkpoint metadata/read semantics remain ours, and VisMF fixes do not validate that reader. [DONE]
+- Optional priorities: measured on/off single-stream MLMG setNoGpuSync for small GPU solves (end-of-solve synchronization remains; many-box nodal solves may slow); AMReX whole-direction refinement/unsplit-box options for thin/slab domains after existing AMR/resource/conservation checks; new CPU/GPU/MPI sparse AMG/Krylov only if an actual irregular matrix operator justifies a new integration. None was enabled. Cycle456 performance is a pass against retained baselines, not a matched26.09/26.10 speedup, numerical accuracy improvement or CUDA compile-cost result. Web cache still cannot fetch the new tag; exact local official tagged source is the authority. No build/test/source change beyond this local continuity entry. [DONE]
+
+## Cycle 458 — Compare AMReX performance/accuracy, assess optional features, capture and publish baseline (DONE: scoped source baseline; full-suite limitation retained)
+
+- User requests baseline performance/accuracy comparison, a refreshed performance baseline, baseline commit and push; explicitly selects the full current AMReX state, including accumulated WSL/CUDA work. Follow-up requests fixing avoidable slowness. Preserve sources/precision/methods and existing acceptance criteria; use bounded isolated work. Artifacts: runs/current/infrastructure_audit/cycle458/. [WIP]
+- Clarified optional features: MLMG no-sync API is included but not enabled at current solve sites; sparse AMG requires actual matrix assembly/integration; whole-direction refinement/unsplit boxes concern directional grid topology rather than unrestricted anisotropic state/CT refinement. Plan matched current-source26.09/26.10 CPU comparisons, an isolated small Metal MLMG on/off probe, maintained standard acceptance and a frozen baseline before committing/pushing the accepted source state. No CUDA application rebuild. [WIP]
+
+- Same production source against pristine26.09/a52ca733 and26.10/015c14b6: old library71.815s; isolated all-dimensional old CPU application487.49s/6jobs,284objects (4hits/280misses). This is a one-time comparison build, not recurring edit latency. All265 matched Sod/Brio-Wu AMR+CT/rotation/ratio4/diffusion metrics agree exactly. Thirteen selected standard gates pass54.728s; the full standard capture fails at the known self-gravity AMR subcycling total-energy drift2.2436621760790182e-6 vs2e-6. Previous-release control fails identically; the other17 feature cases pass. No tolerance or source physics changed. [DONE: comparison/scoped acceptance; OPEN: existing full-suite failure]
+- Uncontended paired old/new/new/old performance passes, three repeats each (six/version/case), with every repeat's shared scalar checks passing. Old/new medians Mcells/s: hydro2D97.85009/97.30187(-0.56%); hydro3D PWC58.52756/58.85937(+0.57%); WENOZ2.58754/2.67952(+3.55%); RMHD1D1.89703/1.85174(-2.39%). All passed prior retained thresholds. New canonical values use the six new samples, with warning fraction0.85 unchanged; machine is live AppleM4/10cores/16GiB, not historical M6 notes. Existing recovery corpus has15 rows with identical non-timing fields/failure details. New Clang finite-predicate machinery is a possible RMHD cost, not a proven sole cause; retain robustness. [DONE]
+- Small standalone Metal FP32 cell-centered Helmholtz on/off controls (32/64 cells,1/16boxes,3warmups/6timedsolves,off/on/on/off order) retain exactly equal error/mean/residual and measure7.71x/9.32x/8.01x median speedups with no-sync. This is a candidate for actual production-operator evaluation, not production adoption; sparse AMG and directional gridding remain optional. No CUDA application rebuild or full Metal2D/3D application rebuild scheduled. [DONE: probe; DEFERRED: production policy/CUDA edit-cost tuning]
+- Fixed avoidable capture work/evidence hazards: stream logs to disk, skip benchmark after failed suite, clear only owned suite/performance scratch before launching, record full Git SHA plus dependency/source/executable identities, retain compact per-repeat scalar evidence, and require explicit opt-in for benchmark warnings. Invalid-step failure control exits2, archives no stale summary/performance, and records identity. The accepted scoped archive and detailed comparisons are separate from the failed full-standard archive. [DONE]
+- Full current AMReX tree is approved for the baseline commit/push. Tracked provenance: benchmarks/baseline_2026_10_01.md; ignored detailed report/comparison/control evidence: runs/current/infrastructure_audit/cycle458/. Final clean-commit scoped capture and strict performance gate identify the published baseline by full SHA; publication/readback proof is retained in that report. The standard self-gravity failure and CUDA recurring30--60s goal remain open. [DONE: prepared source baseline; scoped publication evidence recorded after commit]

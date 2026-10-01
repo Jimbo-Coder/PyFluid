@@ -1,0 +1,43 @@
+pyfluid.run_name = rhd_spherical_radial_expansion_2d
+pyfluid.output_dir = runs/current/rhd_reference_metric/rhd_spherical_radial_expansion_2d
+
+mesh.coordinate = spherical
+mesh.axes = r theta
+mesh.patch_system = single
+
+geometry.prob_lo = 1.0 0.4
+geometry.prob_hi = 2.0 2.741592653589793
+geometry.is_periodic = 0 0
+geometry.coord_sys = 2
+
+amr.n_cell = 64 8
+amr.max_level = 0
+amr.max_grid_size = 32
+amr.blocking_factor = 8
+
+spacetime.evolution = fixed
+spacetime.fixed_metric = minkowski
+
+pyfluid.physics = rhd
+pyfluid.eos = ideal_gas
+pyfluid.ic = uniform
+pyfluid.rho0 = 1.0
+pyfluid.pressure0 = 1.0
+pyfluid.v1_0 = 0.1
+pyfluid.v2_0 = 0.0
+pyfluid.v3_0 = 0.0
+pyfluid.gamma = 1.6666666666666667
+
+pyfluid.final_time = 0.01
+pyfluid.max_step = 10
+pyfluid.ng = 2
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.bc = reflecting
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 1
+pyfluid.plot_int = 1
+pyfluid.checkpoint_int = -1

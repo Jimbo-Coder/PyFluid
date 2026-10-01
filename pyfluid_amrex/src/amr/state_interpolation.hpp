@@ -22,6 +22,7 @@ public:
       PhysicalSystem physical_system,
       int eos_method,
       EOSParams const& eos,
+      EOSThermodynamicState const& relativistic_exterior,
       FixedSpacetimeParameters const& fixed_spacetime,
       bool preserve_relativistic_admissibility
    );
@@ -87,6 +88,7 @@ private:
    PhysicalSystem physical_system_ = PhysicalSystem::HD;
    int eos_method_ = 0;
    EOSParams eos_{};
+   EOSThermodynamicState relativistic_exterior_{};
    FixedSpacetimeParameters fixed_spacetime_{};
    bool preserve_relativistic_admissibility_ = false;
 };

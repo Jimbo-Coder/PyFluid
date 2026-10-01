@@ -14,11 +14,13 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct CartesianUniformMetric {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx{};
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> inv_dx{};
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> face_area{};
-   amrex::Real cell_volume = 1.0;
+   amrex::Real cell_volume = 1.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -29,7 +31,7 @@ CartesianUniformMetric make_cartesian_uniform_metric(
    CartesianUniformMetric metric;
    metric.dx = dx;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      metric.inv_dx[dir] = 1.0 / dx[dir];
+      metric.inv_dx[dir] = 1.0_rt / dx[dir];
    }
    const amrex::Real dx0 = active_or_unit_width(dx, 0);
    const amrex::Real dx1 = active_or_unit_width(dx, 1);
@@ -133,15 +135,6 @@ amrex::Real radial_face_area_scale(int coordinate, amrex::Real r) noexcept
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real radial_shell_volume_for_reduction(int coordinate, amrex::Real rlo, amrex::Real rhi) noexcept
-{
-   if (coordinate == MeshSpherical) {
-      return spherical_radial_shell_volume(rlo, rhi);
-   }
-   return cylindrical_radial_shell_volume(rlo, rhi);
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real spherical_polar_weight(amrex::Real theta_lo, amrex::Real theta_hi) noexcept
 {
    return generated::spherical_polar_weight(theta_lo, theta_hi);
@@ -209,7 +202,7 @@ amrex::Real curvilinear_cell_volume_scale(
       return generated::spherical_rtheta_cell_volume_scale(radius.lo, radius.hi, theta.lo, theta.hi);
    }
    if (mesh_axis(axes, 1) == MeshAxisPhi) {
-      return generated::cylindrical_rphiz_cell_volume_scale(radius.lo, radius.hi, 1.0, dx[1]);
+      return generated::cylindrical_rphiz_cell_volume_scale(radius.lo, radius.hi, 1.0_rt, dx[1]);
    }
    return generated::cylindrical_rz_cell_volume_scale(radius.lo, radius.hi, dx[1]);
 #else
@@ -251,7 +244,7 @@ amrex::Real curvilinear_face_area_scale(
    static_assert(Dir >= 0 && Dir < AMREX_SPACEDIM);
 #if (AMREX_SPACEDIM == 1)
    if (!mesh_has_axis(axes, MeshAxisR)) {
-      return 1.0;
+      return 1.0_rt;
    }
 #endif
 #if (AMREX_SPACEDIM == 2)
@@ -306,7 +299,7 @@ amrex::Real curvilinear_face_area_scale(
          return generated::spherical_rtheta_radial_face_area_scale(r, theta.lo, theta.hi);
       }
       if (mesh_axis(axes, 1) == MeshAxisPhi) {
-         return generated::cylindrical_rphiz_radial_face_area_scale(r, 1.0, dx[1]);
+         return generated::cylindrical_rphiz_radial_face_area_scale(r, 1.0_rt, dx[1]);
       }
       return generated::cylindrical_rz_radial_face_area_scale(r, dx[1]);
 #else
@@ -337,7 +330,7 @@ amrex::Real curvilinear_face_area_scale(
          }
 #if (AMREX_SPACEDIM == 2)
          if (axis == MeshAxisPhi) {
-            return generated::cylindrical_rphiz_azimuthal_face_area_scale(radius.lo, radius.hi, 1.0);
+            return generated::cylindrical_rphiz_azimuthal_face_area_scale(radius.lo, radius.hi, 1.0_rt);
          }
          return generated::cylindrical_rz_axial_face_area_scale(radius.lo, radius.hi);
 #else
@@ -364,10 +357,10 @@ amrex::Real curvilinear_face_area_scale(
          return generated::cylindrical_rphiz_axial_face_area_scale(radius.lo, radius.hi, phi_width);
       }
 #endif
-      return 1.0;
+      return 1.0_rt;
 #else
       amrex::ignore_unused(coordinate, problo, dx, i, j, k);
-      return 1.0;
+      return 1.0_rt;
 #endif
    }
 }
@@ -411,7 +404,7 @@ amrex::Real curvilinear_face_area_scale(
       return curvilinear_face_area_scale<2>(coordinate, axes, problo, dx, i, j, k);
    }
 #endif
-   return 1.0;
+   return 1.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -454,7 +447,7 @@ amrex::Real curvilinear_edge_length_scale(
          return generated::cartesian_edge_length_z(dx[2]);
       }
 #endif
-      return 1.0;
+      return 1.0_rt;
    }
 #if (AMREX_SPACEDIM == 2)
    const int axis = mesh_vector_axis_for_component(coordinate, axes, edge_dir);
@@ -463,7 +456,7 @@ amrex::Real curvilinear_edge_length_scale(
    if (coordinate == MeshCylindrical) {
       if (axis == MeshAxisR) {
          if (!radius.active) {
-            return 1.0;
+            return 1.0_rt;
          }
          return generated::cylindrical_rphiz_radial_edge_length_scale(radius.lo, radius.hi);
       }
@@ -480,7 +473,7 @@ amrex::Real curvilinear_edge_length_scale(
    if (coordinate == MeshSpherical) {
       if (axis == MeshAxisR) {
          if (!radius.active) {
-            return 1.0;
+            return 1.0_rt;
          }
          return generated::spherical_rthetaphi_radial_edge_length_scale(radius.lo, radius.hi);
       }
@@ -488,7 +481,7 @@ amrex::Real curvilinear_edge_length_scale(
       if (axis == MeshAxisTheta) {
          return generated::spherical_rthetaphi_theta_edge_length_scale(
             r,
-            0.0,
+            0.0_rt,
             mesh_width_for_axis(axes, MeshAxisTheta, dx)
          );
       }
@@ -532,7 +525,7 @@ amrex::Real curvilinear_edge_length_scale(
 #else
    amrex::ignore_unused(edge_dir, coordinate, axes, problo, dx, i, j, k);
 #endif
-   return 1.0;
+   return 1.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -571,7 +564,7 @@ amrex::Real cartesian_face_area_scale(
       return generated::cartesian_face_area_z(dx0, dx1);
    }
 #endif
-   return 1.0;
+   return 1.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -639,7 +632,7 @@ amrex::Real mesh_cell_metric_density_factor(
 {
    const amrex::Real coordinate_volume = cartesian_cell_volume(dx);
    const amrex::Real physical_volume = mesh_cell_volume_scale(coordinate, axes, problo, dx, i, j, k);
-   return amrex::Math::abs(physical_volume) / amrex::max(coordinate_volume, 1.0e-300);
+   return amrex::Math::abs(physical_volume) / amrex::max(coordinate_volume, 1.0e-300_rt);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -661,7 +654,7 @@ amrex::Real vector_component_for_axis(
    if (mesh_vector_axis_for_component(coordinate, axes, 2) == target_axis) {
       return v3;
    }
-   return 0.0;
+   return 0.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -736,7 +729,7 @@ StateVector3 cartesian_vector_to_mesh_basis(
    StateVector3 mesh{};
    for (int component = 0; component < 3; ++component) {
       const int axis = mesh_vector_axis_for_component(coordinate, axes, component);
-      amrex::Real value = 0.0;
+      amrex::Real value = 0.0_rt;
       for (int canonical_component = 0; canonical_component < 3; ++canonical_component) {
          if (canonical_axes[canonical_component] == axis) {
             value = canonical_component == 0
@@ -758,7 +751,7 @@ StateVector3 cartesian_vector_to_mesh_basis(
 
 struct MeshFaceMetric {
    StateVector3 unit_normal{};
-   amrex::Real area = 0.0;
+   amrex::Real area = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -771,13 +764,13 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 StateVector3 normalized_vector(StateVector3 const& vector) noexcept
 {
    const amrex::Real magnitude = vector_norm(vector);
-   return magnitude > 0.0 ? vector / magnitude : StateVector3{};
+   return magnitude > 0.0_rt ? vector / magnitude : StateVector3{};
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 StateVector3 aligned_vector(StateVector3 vector, StateVector3 const& direction) noexcept
 {
-   return vector.dot(direction) < 0.0 ? -vector : vector;
+   return vector.dot(direction) < 0.0_rt ? -vector : vector;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -790,16 +783,16 @@ StateVector3 mesh_coordinate_basis_vector(
 {
    StateVector3 mesh{};
    if (dir == 0) {
-      mesh.x = 1.0;
+      mesh.x = 1.0_rt;
    }
 #if (AMREX_SPACEDIM >= 2)
    else if (dir == 1) {
-      mesh.y = 1.0;
+      mesh.y = 1.0_rt;
    }
 #endif
 #if (AMREX_SPACEDIM == 3)
    else {
-      mesh.z = 1.0;
+      mesh.z = 1.0_rt;
    }
 #endif
    return mesh_basis_vector_to_cartesian(coordinate, axes, q, mesh);
@@ -852,8 +845,8 @@ MeshFaceMetric mesh_physical_face_metric(
    const int tangent_dir = dir == 0 ? 1 : 0;
    auto lo_q = face_q;
    auto hi_q = face_q;
-   shift_mesh_coordinate(lo_q, coordinate, axes, tangent_dir, -0.5 * dx[tangent_dir]);
-   shift_mesh_coordinate(hi_q, coordinate, axes, tangent_dir, 0.5 * dx[tangent_dir]);
+   shift_mesh_coordinate(lo_q, coordinate, axes, tangent_dir, -0.5_rt * dx[tangent_dir]);
+   shift_mesh_coordinate(hi_q, coordinate, axes, tangent_dir, 0.5_rt * dx[tangent_dir]);
    const auto lo = mesh_coordinate_triplet_to_cartesian(coordinate, lo_q);
    const auto hi = mesh_coordinate_triplet_to_cartesian(coordinate, hi_q);
    const StateVector3 edge{hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]};
@@ -874,14 +867,14 @@ MeshFaceMetric mesh_physical_face_metric(
    auto q10 = face_q;
    auto q11 = face_q;
    auto q01 = face_q;
-   shift_mesh_coordinate(q00, coordinate, axes, tangent0, -0.5 * dx[tangent0]);
-   shift_mesh_coordinate(q00, coordinate, axes, tangent1, -0.5 * dx[tangent1]);
-   shift_mesh_coordinate(q10, coordinate, axes, tangent0, 0.5 * dx[tangent0]);
-   shift_mesh_coordinate(q10, coordinate, axes, tangent1, -0.5 * dx[tangent1]);
-   shift_mesh_coordinate(q11, coordinate, axes, tangent0, 0.5 * dx[tangent0]);
-   shift_mesh_coordinate(q11, coordinate, axes, tangent1, 0.5 * dx[tangent1]);
-   shift_mesh_coordinate(q01, coordinate, axes, tangent0, -0.5 * dx[tangent0]);
-   shift_mesh_coordinate(q01, coordinate, axes, tangent1, 0.5 * dx[tangent1]);
+   shift_mesh_coordinate(q00, coordinate, axes, tangent0, -0.5_rt * dx[tangent0]);
+   shift_mesh_coordinate(q00, coordinate, axes, tangent1, -0.5_rt * dx[tangent1]);
+   shift_mesh_coordinate(q10, coordinate, axes, tangent0, 0.5_rt * dx[tangent0]);
+   shift_mesh_coordinate(q10, coordinate, axes, tangent1, -0.5_rt * dx[tangent1]);
+   shift_mesh_coordinate(q11, coordinate, axes, tangent0, 0.5_rt * dx[tangent0]);
+   shift_mesh_coordinate(q11, coordinate, axes, tangent1, 0.5_rt * dx[tangent1]);
+   shift_mesh_coordinate(q01, coordinate, axes, tangent0, -0.5_rt * dx[tangent0]);
+   shift_mesh_coordinate(q01, coordinate, axes, tangent1, 0.5_rt * dx[tangent1]);
    const auto p00 = mesh_coordinate_triplet_to_cartesian(coordinate, q00);
    const auto p10 = mesh_coordinate_triplet_to_cartesian(coordinate, q10);
    const auto p11 = mesh_coordinate_triplet_to_cartesian(coordinate, q11);
@@ -890,7 +883,7 @@ MeshFaceMetric mesh_physical_face_metric(
    const StateVector3 edge11{p11[0] - p00[0], p11[1] - p00[1], p11[2] - p00[2]};
    const StateVector3 edge01{p01[0] - p00[0], p01[1] - p00[1], p01[2] - p00[2]};
    const StateVector3 area_vector = aligned_vector(
-      (edge10.cross(edge11) + edge11.cross(edge01)) * 0.5, desired_normal
+      (edge10.cross(edge11) + edge11.cross(edge01)) * 0.5_rt, desired_normal
    );
    return {normalized_vector(area_vector), vector_norm(area_vector)};
 #endif
@@ -909,7 +902,7 @@ amrex::Real curvilinear_momentum_curvature_source(
    amrex::Real theta
 ) noexcept
 {
-   const amrex::Real inv_radius = 1.0 / amrex::max(radius, 1.0e-300);
+   const amrex::Real inv_radius = 1.0_rt / amrex::max(radius, 1.0e-300_rt);
    const int component_axis = mesh_vector_axis_for_component(coordinate, axes, component - MOM1);
    if (coordinate == MeshCylindrical) {
       const amrex::Real vr = vector_component_for_axis(coordinate, axes, MeshAxisR, v1, v2, v3);
@@ -924,14 +917,14 @@ amrex::Real curvilinear_momentum_curvature_source(
       if (component_axis == MeshAxisZ) {
          return generated::cylindrical_momentum_curvature_source_mom3(rho, vr, vphi, vz, inv_radius);
       }
-      return 0.0;
+      return 0.0_rt;
    }
    if (coordinate == MeshSpherical) {
       const amrex::Real vr = vector_component_for_axis(coordinate, axes, MeshAxisR, v1, v2, v3);
       const amrex::Real vtheta = vector_component_for_axis(coordinate, axes, MeshAxisTheta, v1, v2, v3);
       const amrex::Real vphi = vector_component_for_axis(coordinate, axes, MeshAxisPhi, v1, v2, v3);
       const amrex::Real sin_theta = std::sin(theta);
-      const amrex::Real cot_theta = std::cos(theta) / amrex::max(std::abs(sin_theta), 1.0e-300);
+      const amrex::Real cot_theta = std::cos(theta) / amrex::max(std::abs(sin_theta), 1.0e-300_rt);
       if (component_axis == MeshAxisR) {
          return generated::spherical_momentum_curvature_source_mom1(rho, vr, vtheta, vphi, inv_radius, cot_theta);
       }
@@ -942,7 +935,7 @@ amrex::Real curvilinear_momentum_curvature_source(
          return generated::spherical_momentum_curvature_source_mom3(rho, vr, vtheta, vphi, inv_radius, cot_theta);
       }
    }
-   return 0.0;
+   return 0.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -961,7 +954,7 @@ amrex::Real curvilinear_mhd_stress_curvature_source(
    amrex::Real theta
 ) noexcept
 {
-   const amrex::Real inv_radius = 1.0 / amrex::max(radius, 1.0e-300);
+   const amrex::Real inv_radius = 1.0_rt / amrex::max(radius, 1.0e-300_rt);
    const int component_axis = mesh_vector_axis_for_component(coordinate, axes, component - MOM1);
    if (coordinate == MeshCylindrical) {
       const amrex::Real vr = vector_component_for_axis(coordinate, axes, MeshAxisR, v1, v2, v3);
@@ -981,7 +974,7 @@ amrex::Real curvilinear_mhd_stress_curvature_source(
       if (component_axis == MeshAxisZ) {
          return generated::cylindrical_mhd_stress_curvature_source_mom3(rho, vr, vphi, vz, br, bphi, bz, inv_radius);
       }
-      return 0.0;
+      return 0.0_rt;
    }
    if (coordinate == MeshSpherical) {
       const amrex::Real vr = vector_component_for_axis(coordinate, axes, MeshAxisR, v1, v2, v3);
@@ -991,7 +984,7 @@ amrex::Real curvilinear_mhd_stress_curvature_source(
       const amrex::Real btheta = vector_component_for_axis(coordinate, axes, MeshAxisTheta, b1, b2, b3);
       const amrex::Real bphi = vector_component_for_axis(coordinate, axes, MeshAxisPhi, b1, b2, b3);
       const amrex::Real sin_theta = std::sin(theta);
-      const amrex::Real cot_theta = std::cos(theta) / amrex::max(std::abs(sin_theta), 1.0e-300);
+      const amrex::Real cot_theta = std::cos(theta) / amrex::max(std::abs(sin_theta), 1.0e-300_rt);
       if (component_axis == MeshAxisR) {
          return generated::spherical_mhd_stress_curvature_source_mom1(
             rho, vr, vtheta, vphi, br, btheta, bphi, inv_radius, cot_theta
@@ -1008,7 +1001,7 @@ amrex::Real curvilinear_mhd_stress_curvature_source(
          );
       }
    }
-   return 0.0;
+   return 0.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -1026,71 +1019,6 @@ amrex::Real curvilinear_momentum_curvature_source(
    return curvilinear_momentum_curvature_source(
       coordinate, mesh_default_axes_layout(coordinate), component, rho, vr, v2, v3, radius, theta
    );
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real mesh_cell_volume_for_reduction(
-   int coordinate,
-   MeshAxes const& axes,
-   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
-   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
-   int i,
-   int j,
-   int k
-) noexcept
-{
-#if (AMREX_SPACEDIM == 1)
-   amrex::ignore_unused(j, k);
-   if (coordinate == MeshCylindrical || coordinate == MeshSpherical) {
-      if (!mesh_has_axis(axes, MeshAxisR)) {
-         return curvilinear_cell_volume_scale(coordinate, axes, problo, dx, i, j, k);
-      }
-      const MeshAxisCellBounds radius = runtime_axis_cell_bounds(axes, MeshAxisR, problo, dx, i, j, k);
-      return radial_shell_volume_for_reduction(coordinate, radius.lo, radius.hi);
-   }
-#elif (AMREX_SPACEDIM == 2)
-   amrex::ignore_unused(k);
-   if (coordinate == MeshCylindrical) {
-      if (!mesh_has_axis(axes, MeshAxisR)) {
-         return curvilinear_cell_volume_scale(coordinate, axes, problo, dx, i, j, k);
-      }
-      const MeshAxisCellBounds radius = runtime_axis_cell_bounds(axes, MeshAxisR, problo, dx, i, j, k);
-      if (mesh_axis(axes, 1) == MeshAxisPhi) {
-         return generated::cylindrical_rphiz_cell_volume_scale(radius.lo, radius.hi, 1.0, dx[1]);
-      }
-      return constants::two_pi * cylindrical_radial_shell_volume_scale(radius.lo, radius.hi) * dx[1];
-   }
-   if (coordinate == MeshSpherical) {
-      if (!mesh_has_axis(axes, MeshAxisR)) {
-         return curvilinear_cell_volume_scale(coordinate, axes, problo, dx, i, j, k);
-      }
-      const MeshAxisCellBounds radius = runtime_axis_cell_bounds(axes, MeshAxisR, problo, dx, i, j, k);
-      if (mesh_axis(axes, 1) == MeshAxisPhi) {
-         return generated::spherical_rphi_cell_volume_scale(radius.lo, radius.hi, constants::half_pi, dx[1]);
-      }
-      const MeshAxisCellBounds theta = runtime_axis_cell_bounds(axes, MeshAxisTheta, problo, dx, i, j, k);
-      return constants::two_pi * spherical_radial_shell_volume_scale(radius.lo, radius.hi)
-         * spherical_polar_weight(theta.lo, theta.hi);
-   }
-#else
-   if (coordinate == MeshCylindrical || coordinate == MeshSpherical) {
-      return curvilinear_cell_volume_scale(coordinate, axes, problo, dx, i, j, k);
-   }
-#endif
-   return cartesian_cell_volume(dx);
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real mesh_cell_volume_for_reduction(
-   int coordinate,
-   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
-   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
-   int i,
-   int j,
-   int k
-) noexcept
-{
-   return mesh_cell_volume_for_reduction(coordinate, mesh_default_axes_layout(coordinate), problo, dx, i, j, k);
 }
 
 template <int Coordinate>
@@ -1176,7 +1104,7 @@ amrex::Real runtime_direction_scale_factor(
       if (axis == MeshAxisZ) {
          return scale[2];
       }
-      return 1.0;
+      return 1.0_rt;
    }
    if (axis == MeshAxisX || axis == MeshAxisR) {
       return scale[0];
@@ -1187,7 +1115,7 @@ amrex::Real runtime_direction_scale_factor(
    if (axis == MeshAxisZ || axis == MeshAxisPhi) {
       return scale[2];
    }
-   return 1.0;
+   return 1.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -1227,7 +1155,7 @@ amrex::Real curvilinear_face_gradient_spacing(
       q3 = runtime_coordinate_for_axis(axes, MeshAxisPhi, dir, problo, dx, i, j, k);
    }
    const amrex::Real scale = runtime_direction_scale_factor(coordinate, axes, dir, q1, q2, q3);
-   return amrex::max(scale, 1.0e-300) * dx[dir];
+   return amrex::max(scale, 1.0e-300_rt) * dx[dir];
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

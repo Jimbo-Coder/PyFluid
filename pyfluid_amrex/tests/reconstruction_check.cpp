@@ -9,15 +9,17 @@
 
 namespace {
 
+using namespace amrex::literals;
+
 using namespace pyfluid_amrex;
 
 bool close_enough(amrex::Real actual, amrex::Real expected)
 {
    const amrex::Real scale = amrex::max(
-      1.0,
+      1.0_rt,
       amrex::max(amrex::Math::abs(actual), amrex::Math::abs(expected))
    );
-   return amrex::Math::abs(actual - expected) <= 2.0e-14 * scale;
+   return amrex::Math::abs(actual - expected) <= 2.0e-14_rt * scale;
 }
 
 bool require_close(
@@ -39,13 +41,13 @@ bool validate_constant_and_linear(std::string_view label)
    bool passed = true;
    passed = require_close(
       std::string(label) + " constant",
-      reconstruct_left<Method>(3.25, 3.25, 3.25, 3.25, 3.25),
-      3.25
+      reconstruct_left<Method>(3.25_rt, 3.25_rt, 3.25_rt, 3.25_rt, 3.25_rt),
+      3.25_rt
    ) && passed;
    passed = require_close(
       std::string(label) + " linear",
-      reconstruct_left<Method>(-2.0, -1.0, 0.0, 1.0, 2.0),
-      0.5
+      reconstruct_left<Method>(-2.0_rt, -1.0_rt, 0.0_rt, 1.0_rt, 2.0_rt),
+      0.5_rt
    ) && passed;
    return passed;
 }
@@ -67,39 +69,39 @@ bool validate_parabolic_family()
    passed = validate_constant_and_linear<ReconPPMX>("ppmx") && passed;
    passed = validate_constant_and_linear<ReconPPM3>("ppm3") && passed;
 
-   constexpr amrex::Real cell_average_offset = 1.0 / 12.0;
+   constexpr amrex::Real cell_average_offset = 1.0_rt / 12.0_rt;
    const amrex::Real quadratic_parabolic = reconstruct_left<ReconParabolic>(
-      4.0 + cell_average_offset,
-      1.0 + cell_average_offset,
+      4.0_rt + cell_average_offset,
+      1.0_rt + cell_average_offset,
       cell_average_offset,
-      1.0 + cell_average_offset,
-      4.0 + cell_average_offset
+      1.0_rt + cell_average_offset,
+      4.0_rt + cell_average_offset
    );
    const amrex::Real quadratic_ppm4 = reconstruct_left<ReconPPM4>(
-      4.0 + cell_average_offset,
-      1.0 + cell_average_offset,
+      4.0_rt + cell_average_offset,
+      1.0_rt + cell_average_offset,
       cell_average_offset,
-      1.0 + cell_average_offset,
-      4.0 + cell_average_offset
+      1.0_rt + cell_average_offset,
+      4.0_rt + cell_average_offset
    );
    const amrex::Real quadratic_ppmx = reconstruct_left<ReconPPMX>(
-      4.0 + cell_average_offset,
-      1.0 + cell_average_offset,
+      4.0_rt + cell_average_offset,
+      1.0_rt + cell_average_offset,
       cell_average_offset,
-      1.0 + cell_average_offset,
-      4.0 + cell_average_offset
+      1.0_rt + cell_average_offset,
+      4.0_rt + cell_average_offset
    );
    const amrex::Real quadratic_ppm3 = reconstruct_left<ReconPPM3>(
-      4.0 + cell_average_offset,
-      1.0 + cell_average_offset,
+      4.0_rt + cell_average_offset,
+      1.0_rt + cell_average_offset,
       cell_average_offset,
-      1.0 + cell_average_offset,
-      4.0 + cell_average_offset
+      1.0_rt + cell_average_offset,
+      4.0_rt + cell_average_offset
    );
    passed = require_close(
       "parabolic quadratic interface",
       quadratic_parabolic,
-      0.25
+      0.25_rt
    ) && passed;
    passed = require_close(
       "ppm4 clips quadratic extremum",
@@ -109,7 +111,7 @@ bool validate_parabolic_family()
    passed = require_close(
       "ppmx preserves quadratic extremum",
       quadratic_ppmx,
-      0.25
+      0.25_rt
    ) && passed;
    passed = require_close(
       "ppm3 clips quadratic extremum",
@@ -118,58 +120,58 @@ bool validate_parabolic_family()
    ) && passed;
 
    const amrex::Real discontinuity_parabolic =
-      reconstruct_left<ReconParabolic>(0.0, 1.0, 1.0, 1.0, 0.0);
+      reconstruct_left<ReconParabolic>(0.0_rt, 1.0_rt, 1.0_rt, 1.0_rt, 0.0_rt);
    const amrex::Real discontinuity_ppm4 =
-      reconstruct_left<ReconPPM4>(0.0, 1.0, 1.0, 1.0, 0.0);
+      reconstruct_left<ReconPPM4>(0.0_rt, 1.0_rt, 1.0_rt, 1.0_rt, 0.0_rt);
    const amrex::Real discontinuity_ppmx =
-      reconstruct_left<ReconPPMX>(0.0, 1.0, 1.0, 1.0, 0.0);
+      reconstruct_left<ReconPPMX>(0.0_rt, 1.0_rt, 1.0_rt, 1.0_rt, 0.0_rt);
    const amrex::Real discontinuity_ppm3 =
-      reconstruct_left<ReconPPM3>(0.0, 1.0, 1.0, 1.0, 0.0);
+      reconstruct_left<ReconPPM3>(0.0_rt, 1.0_rt, 1.0_rt, 1.0_rt, 0.0_rt);
    passed = require_close(
       "unlimited parabolic discontinuity overshoot",
       discontinuity_parabolic,
-      13.0 / 12.0
+      13.0_rt / 12.0_rt
    ) && passed;
    passed = require_close(
       "ppm4 bounds discontinuity",
       discontinuity_ppm4,
-      1.0
+      1.0_rt
    ) && passed;
    passed = require_close(
       "ppmx bounds discontinuity",
       discontinuity_ppmx,
-      1.0
+      1.0_rt
    ) && passed;
    passed = require_close(
       "ppm3 bounds discontinuity",
       discontinuity_ppm3,
-      1.0
+      1.0_rt
    ) && passed;
    passed = require_close(
       "ppm3 limited-slope interface",
-      reconstruct_left<ReconPPM3>(0.0, 1.0, 2.0, 4.0, 7.0),
-      17.0 / 6.0
+      reconstruct_left<ReconPPM3>(0.0_rt, 1.0_rt, 2.0_rt, 4.0_rt, 7.0_rt),
+      17.0_rt / 6.0_rt
    ) && passed;
 
    passed = require_close(
       "parabolic characteristic formula",
-      reconstruct_left<ReconParabolicChar>(-2.0, -1.0, 0.0, 1.0, 2.0),
-      0.5
+      reconstruct_left<ReconParabolicChar>(-2.0_rt, -1.0_rt, 0.0_rt, 1.0_rt, 2.0_rt),
+      0.5_rt
    ) && passed;
    passed = require_close(
       "ppm4 characteristic formula",
-      reconstruct_left<ReconPPM4Char>(-2.0, -1.0, 0.0, 1.0, 2.0),
-      0.5
+      reconstruct_left<ReconPPM4Char>(-2.0_rt, -1.0_rt, 0.0_rt, 1.0_rt, 2.0_rt),
+      0.5_rt
    ) && passed;
    passed = require_close(
       "ppmx characteristic formula",
-      reconstruct_left<ReconPPMXChar>(-2.0, -1.0, 0.0, 1.0, 2.0),
-      0.5
+      reconstruct_left<ReconPPMXChar>(-2.0_rt, -1.0_rt, 0.0_rt, 1.0_rt, 2.0_rt),
+      0.5_rt
    ) && passed;
    passed = require_close(
       "ppm3 characteristic formula",
-      reconstruct_left<ReconPPM3Char>(-2.0, -1.0, 0.0, 1.0, 2.0),
-      0.5
+      reconstruct_left<ReconPPM3Char>(-2.0_rt, -1.0_rt, 0.0_rt, 1.0_rt, 2.0_rt),
+      0.5_rt
    ) && passed;
    return passed;
 }

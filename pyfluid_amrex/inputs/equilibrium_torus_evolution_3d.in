@@ -21,6 +21,8 @@ spacetime.initial_data = xcts
 spacetime.lapse_gauge = frozen
 spacetime.shift_gauge = frozen
 spacetime.ko_dissipation = 0.0
+# Radiative outer spacetime boundary for the isolated star-plus-disk system.
+spacetime.outer_boundary = sommerfeld
 
 initial_data.input_file = runs/current/equilibrium_torus/equilibrium_torus_from_spherical_id_3d/physical_id
 initial_data.spacetime = id

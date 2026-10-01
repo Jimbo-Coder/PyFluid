@@ -5,7 +5,9 @@
 #include <AMReX_GpuLaunch.H>
 #include <AMReX_MultiFab.H>
 
+#include "pyfluid_amrex/centering_representation.hpp"
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
+#include "pyfluid_amrex/spacetime_excision.hpp"
 
 namespace pyfluid_amrex {
 
@@ -18,15 +20,20 @@ inline int centering_mask(amrex::IndexType const& index_type) noexcept
    return mask;
 }
 
-template <int Order, int Dim>
+template <
+   int Order,
+   int Dim,
+   typename Representation = IdentityCenteringTransferRepresentation
+>
 inline void transfer_grid_field_centering(
    amrex::MultiFab& destination,
    amrex::MultiFab const& source,
    amrex::Geometry const& geometry,
-   bool include_destination_ghosts = false
+   bool include_destination_ghosts = false,
+   SphericalExcisionRegion const& excision_region = {}
 )
 {
-   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);
+   static_assert(is_supported_spatial_order(Order));
    static_assert(Dim == AMREX_SPACEDIM);
    if (destination.nComp() != source.nComp()) {
       amrex::Abort("centering transfer requires matching component counts");
@@ -39,6 +46,8 @@ inline void transfer_grid_field_centering(
 
    const int source_mask = centering_mask(source.ixType());
    const int destination_mask = centering_mask(destination.ixType());
+   const auto source_grid = excision_grid_view(excision_region, geometry, source.ixType());
+   const auto destination_grid = excision_grid_view(excision_region, geometry, destination.ixType());
    amrex::Box source_domain = amrex::convert(
       geometry.Domain(), source.ixType()
    );
@@ -49,7 +58,7 @@ inline void transfer_grid_field_centering(
       const int required_ghosts =
          (include_destination_ghosts ? destination.nGrowVect()[direction] : 0)
          + ((((source_mask ^ destination_mask) & (1 << direction)) != 0)
-               ? Order / 2
+               ? (excision_region.enabled() ? Order : Order / 2)
                : 0);
       if (source.nGrowVect()[direction] < required_ghosts) {
          amrex::Abort("centering transfer source has insufficient ghost cells");
@@ -68,11 +77,13 @@ inline void transfer_grid_field_centering(
    amrex::GpuArray<int, 3> source_hi{{0, 0, 0}};
    amrex::GpuArray<int, 3> destination_lo{{0, 0, 0}};
    amrex::GpuArray<int, 3> destination_hi{{0, 0, 0}};
+   amrex::GpuArray<int, 3> periodic{{0, 0, 0}};
    for (int direction = 0; direction < Dim; ++direction) {
       source_lo[direction] = source_domain.smallEnd(direction);
       source_hi[direction] = source_domain.bigEnd(direction);
       destination_lo[direction] = destination_domain.smallEnd(direction);
       destination_hi[direction] = destination_domain.bigEnd(direction);
+      periodic[direction] = geometry.isPeriodic(direction);
    }
 
 #ifdef AMREX_USE_OMP
@@ -94,8 +105,53 @@ inline void transfer_grid_field_centering(
             bool inside_physical_domain = true;
             for (int direction = 0; direction < Dim; ++direction) {
                inside_physical_domain = inside_physical_domain
-                  && index[direction] >= destination_lo[direction]
-                  && index[direction] <= destination_hi[direction];
+                  && (periodic[direction]
+                      || (index[direction] >= destination_lo[direction]
+                          && index[direction] <= destination_hi[direction]));
+            }
+            // The representation applies to physical point values, including
+            // exchanged/periodic ghosts. Outside-domain values are the raw
+            // polynomial extension owned by the physical boundary operator.
+            // Wide derivative halos need not be admissible pointwise metrics;
+            // taking logarithms there would reinterpret signed FD samples.
+            const CenteringTransferSource<Representation, decltype(input)>
+               represented_input{input, inside_physical_domain};
+            if (excision_region.enabled()) {
+               if (!destination_grid(i, j, k, component)) {
+                  // Inactive storage is only a finite placeholder. Exterior
+                  // stencils and transfers exclude it; no physical interior
+                  // is reconstructed or evolved by this assignment.
+                  output(i, j, k, component) = input(i, j, k, component);
+                  return;
+               }
+               amrex::GpuArray<int, 3> first{{i, j, k}};
+               amrex::GpuArray<int, 3> count{{1, 1, 1}};
+               for (int direction = 0; direction < Dim; ++direction) {
+                  if (((source_mask ^ destination_mask) & (1 << direction)) == 0) continue;
+                  count[direction] = Order;
+                  first[direction] += generated::centering_transfer_offset<Order>(
+                     source_mask, destination_mask, direction, 0);
+               }
+               auto exterior_first = first;
+               source_grid.restrict_stencil(destination_grid.position(i, j, k), exterior_first, count);
+               bool changed = false;
+               auto exterior_lo = source_lo;
+               auto exterior_hi = source_hi;
+               for (int direction = 0; direction < Dim; ++direction) {
+                  changed = changed || first[direction] != exterior_first[direction];
+                  exterior_lo[direction] = exterior_first[direction];
+                  exterior_hi[direction] = exterior_first[direction] + count[direction] - 1;
+               }
+               if (changed) {
+                  output(i, j, k, component) = represented_input.decode(
+                     component,
+                     generated::bounded_topology_centering_transfer<Order, Dim>(
+                        represented_input, i, j, k, component, source_mask,
+                        destination_mask, exterior_lo, exterior_hi
+                     )
+                  );
+                  return;
+               }
             }
             bool needs_bounded_closure = false;
             for (int direction = 0; direction < Dim; ++direction) {
@@ -111,10 +167,10 @@ inline void transfer_grid_field_centering(
                   || index[direction] + first_offset + Order - 1
                      > source_hi[direction];
             }
-            output(i, j, k, component) =
+            const amrex::Real value =
                inside_physical_domain && needs_bounded_closure
                ? generated::bounded_topology_centering_transfer<Order, Dim>(
-                  input,
+                  represented_input,
                   i,
                   j,
                   k,
@@ -125,7 +181,7 @@ inline void transfer_grid_field_centering(
                   source_hi
                )
                : generated::topology_centering_transfer<Order, Dim>(
-                  input,
+                  represented_input,
                   i,
                   j,
                   k,
@@ -133,6 +189,7 @@ inline void transfer_grid_field_centering(
                   source_mask,
                   destination_mask
                );
+            output(i, j, k, component) = represented_input.decode(component, value);
          }
       );
    }
@@ -146,30 +203,11 @@ inline void transfer_grid_field_centering(
    bool include_destination_ghosts = false
 )
 {
-   switch (order) {
-   case 2:
-      transfer_grid_field_centering<2, AMREX_SPACEDIM>(
-         destination, source, geometry, include_destination_ghosts
-      );
-      return;
-   case 4:
-      transfer_grid_field_centering<4, AMREX_SPACEDIM>(
-         destination, source, geometry, include_destination_ghosts
-      );
-      return;
-   case 6:
-      transfer_grid_field_centering<6, AMREX_SPACEDIM>(
-         destination, source, geometry, include_destination_ghosts
-      );
-      return;
-   case 8:
-      transfer_grid_field_centering<8, AMREX_SPACEDIM>(
-         destination, source, geometry, include_destination_ghosts
-      );
-      return;
-   default:
-      amrex::Abort("centering transfer order must be 2, 4, 6, or 8");
-   }
+   dispatch_spatial_order(order, [&](auto order_tag) {
+      constexpr int spatial_order = decltype(order_tag)::value;
+      transfer_grid_field_centering<spatial_order, AMREX_SPACEDIM>(
+         destination, source, geometry, include_destination_ghosts);
+   });
 }
 
 } // namespace pyfluid_amrex

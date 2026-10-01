@@ -4,6 +4,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 enum class FixedSpacetimeMetric : int {
    Minkowski = 0,
    Rindler = 1,
@@ -21,18 +23,18 @@ enum class BlackHoleInterior : int {
 
 struct FixedSpacetimeParameters {
    FixedSpacetimeMetric metric = FixedSpacetimeMetric::Minkowski;
-   amrex::Real acceleration1 = 0.0;
-   amrex::Real acceleration2 = 0.0;
-   amrex::Real acceleration3 = 0.0;
-   amrex::Real origin1 = 0.0;
-   amrex::Real origin2 = 0.0;
-   amrex::Real origin3 = 0.0;
-   amrex::Real mass = 1.0;
-   amrex::Real dimensionless_spin1 = 0.0;
-   amrex::Real dimensionless_spin2 = 0.0;
-   amrex::Real dimensionless_spin3 = 0.0;
+   amrex::Real acceleration1 = 0.0_rt;
+   amrex::Real acceleration2 = 0.0_rt;
+   amrex::Real acceleration3 = 0.0_rt;
+   amrex::Real origin1 = 0.0_rt;
+   amrex::Real origin2 = 0.0_rt;
+   amrex::Real origin3 = 0.0_rt;
+   amrex::Real mass = 1.0_rt;
+   amrex::Real dimensionless_spin1 = 0.0_rt;
+   amrex::Real dimensionless_spin2 = 0.0_rt;
+   amrex::Real dimensionless_spin3 = 0.0_rt;
    BlackHoleInterior black_hole_interior = BlackHoleInterior::Exterior;
-   amrex::Real black_hole_fill_radius = -1.0;
+   amrex::Real black_hole_fill_radius = -1.0_rt;
 };
 
 } // namespace pyfluid_amrex

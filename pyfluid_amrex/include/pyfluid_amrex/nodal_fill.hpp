@@ -24,7 +24,8 @@ void fill_nodal_two_levels(
    PhysicalBoundary& fine_bc,
    amrex::IntVect const& refinement_ratio,
    amrex::Vector<amrex::BCRec> const& boundary_conditions,
-   int num_components
+   int num_components,
+   amrex::MFInterpolater* interpolater = nodal_interpolater()
 )
 {
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> aliased_fine_storage(
@@ -86,7 +87,7 @@ void fill_nodal_two_levels(
       fine_bc,
       0,
       refinement_ratio,
-      nodal_interpolater(),
+      interpolater,
       boundary_conditions,
       0
    );

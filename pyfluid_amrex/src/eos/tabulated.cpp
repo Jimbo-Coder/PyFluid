@@ -1,5 +1,7 @@
 #include "pyfluid_amrex/eos/tabulated.hpp"
 
+#include "eos/units.hpp"
+
 #include <AMReX_Gpu.H>
 
 #include <algorithm>
@@ -17,23 +19,13 @@
 #include <utility>
 
 namespace pyfluid_amrex::eos {
+
+using namespace amrex::literals;
 namespace {
 
-constexpr amrex::Real gravitational_constant_cgs = 6.67430e-8;
-constexpr amrex::Real speed_of_light_cgs = 2.99792458e10;
-constexpr amrex::Real solar_mass_parameter_cgs = 1.3271244e26;
-constexpr amrex::Real solar_mass_length_cgs =
-   solar_mass_parameter_cgs / (speed_of_light_cgs * speed_of_light_cgs);
-constexpr amrex::Real pressure_cgs_to_code =
-   gravitational_constant_cgs * solar_mass_length_cgs * solar_mass_length_cgs
-   / (
-      speed_of_light_cgs * speed_of_light_cgs
-      * speed_of_light_cgs * speed_of_light_cgs
-   );
-constexpr amrex::Real mev_per_fm3_to_cgs = 1.602176634e33;
-constexpr amrex::Real mev_per_fm3_to_code =
-   mev_per_fm3_to_cgs * pressure_cgs_to_code;
-constexpr amrex::Real causal_margin = 1.0e-8;
+constexpr amrex::Real causal_margin = std::max(
+   1.0e-8_rt, std::numeric_limits<amrex::Real>::epsilon()
+);
 constexpr std::string_view compose_backend = "compose_cold_barotrope_v1";
 
 struct IndexedGrid {
@@ -43,8 +35,8 @@ struct IndexedGrid {
 };
 
 struct ComposeThermodynamicRow {
-   amrex::Real pressure_per_baryon = 0.0;
-   amrex::Real total_energy_offset = 0.0;
+   amrex::Real pressure_per_baryon = 0.0_rt;
+   amrex::Real total_energy_offset = 0.0_rt;
    bool present = false;
 };
 
@@ -154,7 +146,7 @@ IndexedGrid read_indexed_grid(std::filesystem::path const& path)
          throw std::runtime_error("invalid CompOSE grid value in " + path.string());
       }
    }
-   amrex::Real extra = 0.0;
+   amrex::Real extra = 0.0_rt;
    if (input >> extra) {
       throw std::runtime_error("unexpected extra CompOSE grid value in " + path.string());
    }
@@ -171,7 +163,7 @@ amrex::Real interval_sound_speed_squared(
    amrex::Real fraction
 )
 {
-   const amrex::Real inverse_width = 1.0
+   const amrex::Real inverse_width = 1.0_rt
       / (log_density_right - log_density_left);
    const amrex::Real pressure_slope =
       (log_pressure_right - log_pressure_left) * inverse_width;
@@ -188,7 +180,7 @@ amrex::Real interval_sound_speed_squared(
    const amrex::Real enthalpy = std::exp(log_enthalpy);
    const amrex::Real numerator = pressure_slope * pressure;
    const amrex::Real denominator =
-      density * enthalpy * (1.0 + enthalpy_slope) - numerator;
+      density * enthalpy * (1.0_rt + enthalpy_slope) - numerator;
    return numerator / denominator;
 }
 
@@ -213,8 +205,8 @@ int causal_prefix_size(
             static_cast<amrex::Real>(sample)
          );
          if (!std::isfinite(sound_speed_squared)
-             || sound_speed_squared < 0.0
-             || sound_speed_squared >= 1.0) {
+             || sound_speed_squared < 0.0_rt
+             || sound_speed_squared >= 1.0_rt) {
             return right;
          }
       }
@@ -339,8 +331,8 @@ std::shared_ptr<TabulatedEOSStorage const> load_compose_cold_table(
    const IndexedGrid charge_grid = read_indexed_grid(directory / "eos.yq");
    if (temperature_grid.values.size() != 1
        || charge_grid.values.size() != 1
-       || std::abs(temperature_grid.values.front()) > 1.0e-14
-       || std::abs(charge_grid.values.front()) > 1.0e-14) {
+       || std::abs(temperature_grid.values.front()) > 1.0e-14_rt
+       || std::abs(charge_grid.values.front()) > 1.0e-14_rt) {
       throw std::runtime_error(
          "the cold beta-equilibrium reader requires singleton zero T/Yq axes"
       );
@@ -350,7 +342,7 @@ std::shared_ptr<TabulatedEOSStorage const> load_compose_cold_table(
       throw std::runtime_error("a cold CompOSE table requires at least two density points");
    }
    for (std::size_t index = 0; index < density_grid.values.size(); ++index) {
-      if (!(density_grid.values[index] > 0.0)
+      if (!(density_grid.values[index] > 0.0_rt)
           || (index > 0
               && !(density_grid.values[index] > density_grid.values[index - 1]))) {
          throw std::runtime_error("CompOSE baryon densities must be positive and increasing");
@@ -364,11 +356,11 @@ std::shared_ptr<TabulatedEOSStorage const> load_compose_cold_table(
          + (directory / "eos.thermo").string()
       );
    }
-   amrex::Real neutron_mass_mev = 0.0;
-   amrex::Real proton_mass_mev = 0.0;
+   amrex::Real neutron_mass_mev = 0.0_rt;
+   amrex::Real proton_mass_mev = 0.0_rt;
    int lepton_flag = 0;
    if (!(thermo_input >> neutron_mass_mev >> proton_mass_mev >> lepton_flag)
-       || !(neutron_mass_mev > 0.0) || !(proton_mass_mev > 0.0)) {
+       || !(neutron_mass_mev > 0.0_rt) || !(proton_mass_mev > 0.0_rt)) {
       throw std::runtime_error("invalid CompOSE eos.thermo header");
    }
    std::string ignored_header_remainder;
@@ -400,7 +392,7 @@ std::shared_ptr<TabulatedEOSStorage const> load_compose_cold_table(
          );
       }
       for (int additional = 0; additional < additional_pairs; ++additional) {
-         amrex::Real ignored_quantity = 0.0;
+         amrex::Real ignored_quantity = 0.0_rt;
          if (!(row_input >> ignored_quantity)
              || !std::isfinite(ignored_quantity)) {
             throw std::runtime_error(
@@ -440,8 +432,8 @@ std::shared_ptr<TabulatedEOSStorage const> load_compose_cold_table(
       const amrex::Real baryon_density = density_grid.values[index];
       pressure_mev_fm3[index] = baryon_density * rows[index].pressure_per_baryon;
       energy_mev_fm3[index] = baryon_density * neutron_mass_mev
-         * (1.0 + rows[index].total_energy_offset);
-      if (!(pressure_mev_fm3[index] > 0.0)
+         * (1.0_rt + rows[index].total_energy_offset);
+      if (!(pressure_mev_fm3[index] > 0.0_rt)
           || !(energy_mev_fm3[index] > pressure_mev_fm3[index])) {
          throw std::runtime_error(
             "CompOSE cold pressure and total energy must be positive with e > p"
@@ -452,16 +444,16 @@ std::shared_ptr<TabulatedEOSStorage const> load_compose_cold_table(
    const amrex::Real low_density_gamma = std::log(
       pressure_mev_fm3[1] / pressure_mev_fm3[0]
    ) / std::log(density_grid.values[1] / density_grid.values[0]);
-   if (!(low_density_gamma > 1.0) || !std::isfinite(low_density_gamma)) {
+   if (!(low_density_gamma > 1.0_rt) || !std::isfinite(low_density_gamma)) {
       throw std::runtime_error(
          "CompOSE low-density pressure does not admit a vacuum polytropic extension"
       );
    }
    const amrex::Real baryon_mass_mev = (
       energy_mev_fm3[0]
-      - pressure_mev_fm3[0] / (low_density_gamma - 1.0)
+      - pressure_mev_fm3[0] / (low_density_gamma - 1.0_rt)
    ) / density_grid.values[0];
-   if (!(baryon_mass_mev > 0.0) || !std::isfinite(baryon_mass_mev)) {
+   if (!(baryon_mass_mev > 0.0_rt) || !std::isfinite(baryon_mass_mev)) {
       throw std::runtime_error("invalid CompOSE baryon-mass normalization");
    }
 
@@ -470,11 +462,11 @@ std::shared_ptr<TabulatedEOSStorage const> load_compose_cold_table(
    std::vector<amrex::Real> log_specific_enthalpy(rows.size());
    for (std::size_t index = 0; index < rows.size(); ++index) {
       const amrex::Real density = density_grid.values[index]
-         * baryon_mass_mev * mev_per_fm3_to_code;
-      const amrex::Real pressure = pressure_mev_fm3[index] * mev_per_fm3_to_code;
-      const amrex::Real energy = energy_mev_fm3[index] * mev_per_fm3_to_code;
+         * baryon_mass_mev * units::mev_per_fm3_to_code;
+      const amrex::Real pressure = pressure_mev_fm3[index] * units::mev_per_fm3_to_code;
+      const amrex::Real energy = energy_mev_fm3[index] * units::mev_per_fm3_to_code;
       const amrex::Real specific_enthalpy = (energy + pressure) / density;
-      if (!(specific_enthalpy > 1.0) || !std::isfinite(specific_enthalpy)) {
+      if (!(specific_enthalpy > 1.0_rt) || !std::isfinite(specific_enthalpy)) {
          throw std::runtime_error(
             "CompOSE normalization must give specific enthalpy greater than one"
          );
@@ -507,12 +499,12 @@ std::shared_ptr<TabulatedEOSStorage const> load_compose_cold_table(
       log_pressure[retained_points - 1],
       log_specific_enthalpy[retained_points - 2],
       log_specific_enthalpy[retained_points - 1],
-      1.0
+      1.0_rt
    );
    high_density_sound_speed_squared = std::clamp(
       high_density_sound_speed_squared,
       std::numeric_limits<amrex::Real>::epsilon(),
-      1.0 - causal_margin
+      1.0_rt - causal_margin
    );
 
    return std::make_shared<TabulatedEOSStorage>(

@@ -14,7 +14,10 @@ void launch_sources(RelativisticSourceLaunch const& launch)
          launch.primitive,
          *launch.cell_spacetime,
          launch.geometry,
-         launch.eos
+         launch.eos,
+         launch.excision_region,
+         launch.mesh_coordinate,
+         launch.mesh_axes
       );
       return;
    }
@@ -24,7 +27,9 @@ void launch_sources(RelativisticSourceLaunch const& launch)
       launch.geometry,
       launch.fixed_spacetime,
       launch.eos,
-      launch.time
+      launch.time,
+      launch.mesh_coordinate,
+      launch.mesh_axes
    );
 }
 

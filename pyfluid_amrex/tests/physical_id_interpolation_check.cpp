@@ -14,6 +14,8 @@
 
 namespace {
 
+using namespace amrex::literals;
+
 using pyfluid_amrex::PhysicalIdChart;
 using pyfluid_amrex::PhysicalIdRigidTransform;
 using pyfluid_amrex::PortablePhysicalIdInterpolator;
@@ -49,8 +51,8 @@ RuntimeDimensionHdf5Field constant_spherical_field(
    RuntimeDimensionHdf5Level& level = field.levels.front();
    level.domain_lower = {0, 0, 0};
    level.domain_upper = {1, 1, 0};
-   level.prob_lo = {1.0, 0.0, 0.0};
-   level.prob_hi = {3.0, 0.5 * std::acos(-1.0), 0.0};
+   level.prob_lo = {1.0_rt, 0.0_rt, 0.0_rt};
+   level.prob_hi = {3.0_rt, 0.5_rt * std::acos(-1.0_rt), 0.0_rt};
    level.boxes.resize(1);
    RuntimeDimensionHdf5Box& box = level.boxes.front();
    box.lower = level.domain_lower;
@@ -81,18 +83,18 @@ RuntimeDimensionHdf5Field constant_full_spherical_field(
    RuntimeDimensionHdf5Level& level = field.levels.front();
    level.domain_lower = {0, 0, 0};
    level.domain_upper = {1, 1, 3};
-   level.prob_lo = {1.0, 0.0, 0.0};
-   level.prob_hi = {3.0, 0.5 * std::acos(-1.0), 2.0 * std::acos(-1.0)};
-   level.coordinate_faces[0] = {1.0, 2.0, 3.0};
+   level.prob_lo = {1.0_rt, 0.0_rt, 0.0_rt};
+   level.prob_hi = {3.0_rt, 0.5_rt * std::acos(-1.0_rt), 2.0_rt * std::acos(-1.0_rt)};
+   level.coordinate_faces[0] = {1.0_rt, 2.0_rt, 3.0_rt};
    level.coordinate_faces[1] = {
-      0.0, 0.25 * std::acos(-1.0), 0.5 * std::acos(-1.0)
+      0.0_rt, 0.25_rt * std::acos(-1.0_rt), 0.5_rt * std::acos(-1.0_rt)
    };
    level.coordinate_faces[2] = {
-      0.0,
-      0.5 * std::acos(-1.0),
-      std::acos(-1.0),
-      1.5 * std::acos(-1.0),
-      2.0 * std::acos(-1.0),
+      0.0_rt,
+      0.5_rt * std::acos(-1.0_rt),
+      std::acos(-1.0_rt),
+      1.5_rt * std::acos(-1.0_rt),
+      2.0_rt * std::acos(-1.0_rt),
    };
    level.boxes.resize(1);
    RuntimeDimensionHdf5Box& box = level.boxes.front();
@@ -114,7 +116,7 @@ void check_equatorial_reflection_and_basis_rotation()
       pyfluid_amrex::PhysicalSystem::RHD, 0
    );
    PortablePhysicalIdInterpolator interpolator(
-      constant_spherical_field(5, {5.0, 2.0, 0.0, 0.0, 7.0}, false),
+      constant_spherical_field(5, {5.0_rt, 2.0_rt, 0.0_rt, 0.0_rt, 7.0_rt}, false),
       pyfluid_amrex::make_physical_id_chart(
          2,
          "spherical",
@@ -129,30 +131,30 @@ void check_equatorial_reflection_and_basis_rotation()
    const PhysicalIdChart target_chart = pyfluid_amrex::make_physical_id_chart(
       3, "cartesian", "x y z"
    );
-   const amrex::Real root_two = std::sqrt(2.0);
+   const amrex::Real root_two = std::sqrt(2.0_rt);
    const auto sample = interpolator.sample(
-      {root_two, 0.0, -root_two}, target_chart
+      {root_two, 0.0_rt, -root_two}, target_chart
    );
    if (sample.exterior) {
       throw std::runtime_error("reflected spherical point was marked exterior");
    }
-   require_close(sample.values[0], 5.0, 1.0e-14, "reflected scalar");
-   require_close(sample.values[1], root_two, 2.0e-14, "reflected velocity x");
-   require_close(sample.values[2], 0.0, 2.0e-14, "reflected velocity y");
-   require_close(sample.values[3], -root_two, 2.0e-14, "reflected velocity z");
-   require_close(sample.values[4], 7.0, 1.0e-14, "reflected pressure");
-   require_close(sample.source_cartesian[0], root_two, 2.0e-14, "source x");
-   require_close(sample.source_cartesian[2], root_two, 2.0e-14, "source z");
+   require_close(sample.values[0], 5.0_rt, 1.0e-14_rt, "reflected scalar");
+   require_close(sample.values[1], root_two, 2.0e-14_rt, "reflected velocity x");
+   require_close(sample.values[2], 0.0_rt, 2.0e-14_rt, "reflected velocity y");
+   require_close(sample.values[3], -root_two, 2.0e-14_rt, "reflected velocity z");
+   require_close(sample.values[4], 7.0_rt, 1.0e-14_rt, "reflected pressure");
+   require_close(sample.source_cartesian[0], root_two, 2.0e-14_rt, "source x");
+   require_close(sample.source_cartesian[2], root_two, 2.0e-14_rt, "source z");
 }
 
 void check_symmetric_tensor_rotation()
 {
    const auto& field_set = pyfluid_amrex::adm_initial_data_grid_fields();
-   std::vector<amrex::Real> values(16, 0.0);
-   values[0] = 4.0;
-   values[3] = 2.0;
-   values[5] = 3.0;
-   values[12] = 0.8;
+   std::vector<amrex::Real> values(16, 0.0_rt);
+   values[0] = 4.0_rt;
+   values[3] = 2.0_rt;
+   values[5] = 3.0_rt;
+   values[12] = 0.8_rt;
    PortablePhysicalIdInterpolator interpolator(
       constant_spherical_field(16, values, true),
       pyfluid_amrex::make_physical_id_chart(
@@ -166,19 +168,19 @@ void check_symmetric_tensor_rotation()
       field_set,
       true
    );
-   const amrex::Real root_two = std::sqrt(2.0);
+   const amrex::Real root_two = std::sqrt(2.0_rt);
    const auto sample = interpolator.sample(
-      {root_two, 0.0, -root_two},
+      {root_two, 0.0_rt, -root_two},
       pyfluid_amrex::make_physical_id_chart(3, "cartesian", "x y z")
    );
    for (int component : {0, 3, 5}) {
-      require_close(sample.values[component], 3.0, 2.0e-14, "metric diagonal");
+      require_close(sample.values[component], 3.0_rt, 2.0e-14_rt, "metric diagonal");
    }
    for (int component : {1, 4}) {
-      require_close(sample.values[component], 0.0, 2.0e-14, "metric off diagonal");
+      require_close(sample.values[component], 0.0_rt, 2.0e-14_rt, "metric off diagonal");
    }
-   require_close(sample.values[2], -1.0, 2.0e-14, "reflected metric xz");
-   require_close(sample.values[12], 0.8, 1.0e-14, "lapse");
+   require_close(sample.values[2], -1.0_rt, 2.0e-14_rt, "reflected metric xz");
+   require_close(sample.values[12], 0.8_rt, 1.0e-14_rt, "lapse");
 }
 
 void check_axial_vector_reflection()
@@ -188,7 +190,7 @@ void check_axial_vector_reflection()
    );
    PortablePhysicalIdInterpolator interpolator(
       constant_spherical_field(
-         8, {5.0, 0.0, 0.0, 0.0, 7.0, 0.0, 0.0, 2.0}, false
+         8, {5.0_rt, 0.0_rt, 0.0_rt, 0.0_rt, 7.0_rt, 0.0_rt, 0.0_rt, 2.0_rt}, false
       ),
       pyfluid_amrex::make_physical_id_chart(
          2,
@@ -201,27 +203,27 @@ void check_axial_vector_reflection()
       field_set,
       false
    );
-   const amrex::Real root_two = std::sqrt(2.0);
+   const amrex::Real root_two = std::sqrt(2.0_rt);
    const auto sample = interpolator.sample(
-      {root_two, 0.0, -root_two},
+      {root_two, 0.0_rt, -root_two},
       pyfluid_amrex::make_physical_id_chart(3, "cartesian", "x y z")
    );
-   require_close(sample.values[5], 0.0, 2.0e-14, "reflected magnetic x");
-   require_close(sample.values[6], -2.0, 2.0e-14, "reflected magnetic y");
-   require_close(sample.values[7], 0.0, 2.0e-14, "reflected magnetic z");
+   require_close(sample.values[5], 0.0_rt, 2.0e-14_rt, "reflected magnetic x");
+   require_close(sample.values[6], -2.0_rt, 2.0e-14_rt, "reflected magnetic y");
+   require_close(sample.values[7], 0.0_rt, 2.0e-14_rt, "reflected magnetic z");
 }
 
 void check_mapped_radial_origin_is_not_exterior()
 {
    auto field = constant_spherical_field(
-      5, {5.0, 0.0, 0.0, 0.0, 7.0}, false
+      5, {5.0_rt, 0.0_rt, 0.0_rt, 0.0_rt, 7.0_rt}, false
    );
-   field.levels.front().prob_lo[0] = 0.0;
-   field.levels.front().prob_hi[0] = 4.0;
+   field.levels.front().prob_lo[0] = 0.0_rt;
+   field.levels.front().prob_hi[0] = 4.0_rt;
    pyfluid_amrex::RuntimePhysicalIdCoordinateFaces coordinates(1);
-   coordinates.front()[0] = {0.0, 1.0, 4.0};
-   coordinates.front()[1] = {0.0, 0.25 * std::acos(-1.0),
-                             0.5 * std::acos(-1.0)};
+   coordinates.front()[0] = {0.0_rt, 1.0_rt, 4.0_rt};
+   coordinates.front()[1] = {0.0_rt, 0.25_rt * std::acos(-1.0_rt),
+                             0.5_rt * std::acos(-1.0_rt)};
    PortablePhysicalIdInterpolator interpolator(
       std::move(field),
       pyfluid_amrex::make_physical_id_chart(
@@ -239,7 +241,7 @@ void check_mapped_radial_origin_is_not_exterior()
       std::move(coordinates)
    );
    const auto sample = interpolator.sample(
-      {0.1, 0.0, 0.0},
+      {0.1_rt, 0.0_rt, 0.0_rt},
       pyfluid_amrex::make_physical_id_chart(3, "cartesian", "x y z")
    );
    if (sample.exterior) {
@@ -247,13 +249,13 @@ void check_mapped_radial_origin_is_not_exterior()
          "regular mapped radial origin was marked exterior"
       );
    }
-   require_close(sample.values[0], 5.0, 1.0e-14, "mapped-origin scalar");
+   require_close(sample.values[0], 5.0_rt, 1.0e-14_rt, "mapped-origin scalar");
 }
 
 void check_periodic_cell_centred_seam()
 {
    PortablePhysicalIdInterpolator interpolator(
-      constant_full_spherical_field(5, {5.0, 0.0, 0.0, 0.0, 7.0}),
+      constant_full_spherical_field(5, {5.0_rt, 0.0_rt, 0.0_rt, 0.0_rt, 7.0_rt}),
       pyfluid_amrex::make_physical_id_chart(
          3,
          "spherical",
@@ -268,13 +270,13 @@ void check_periodic_cell_centred_seam()
    const PhysicalIdChart target_chart = pyfluid_amrex::make_physical_id_chart(
       3, "cartesian", "x y z"
    );
-   for (amrex::Real y : {-0.1, 0.1}) {
-      const auto sample = interpolator.sample({1.4, y, 1.4}, target_chart);
+   for (amrex::Real y : {-0.1_rt, 0.1_rt}) {
+      const auto sample = interpolator.sample({1.4_rt, y, 1.4_rt}, target_chart);
       if (sample.exterior) {
          throw std::runtime_error("periodic phi seam was marked exterior");
       }
-      require_close(sample.values[0], 5.0, 1.0e-14, "periodic-seam scalar");
-      require_close(sample.values[4], 7.0, 1.0e-14, "periodic-seam pressure");
+      require_close(sample.values[0], 5.0_rt, 1.0e-14_rt, "periodic-seam scalar");
+      require_close(sample.values[4], 7.0_rt, 1.0e-14_rt, "periodic-seam pressure");
    }
 }
 
@@ -282,16 +284,16 @@ void check_rigid_axis_and_center_materialization()
 {
    const PhysicalIdRigidTransform transform =
       pyfluid_amrex::make_physical_id_rigid_transform(
-         {0.0, 0.0, 0.0},
-         {3.0, -2.0, 1.0},
-         {0.0, 0.0, 1.0},
-         {1.0, 0.0, 0.0}
+         {0.0_rt, 0.0_rt, 0.0_rt},
+         {3.0_rt, -2.0_rt, 1.0_rt},
+         {0.0_rt, 0.0_rt, 1.0_rt},
+         {1.0_rt, 0.0_rt, 0.0_rt}
       );
    if (pyfluid_amrex::physical_id_rigid_transform_is_identity(transform)) {
       throw std::runtime_error("nontrivial physical-ID transform is identity");
    }
    PortablePhysicalIdInterpolator fluid_interpolator(
-      constant_spherical_field(5, {5.0, 2.0, 0.0, 0.0, 7.0}, true),
+      constant_spherical_field(5, {5.0_rt, 2.0_rt, 0.0_rt, 0.0_rt, 7.0_rt}, true),
       pyfluid_amrex::make_physical_id_chart(2, "spherical", "r theta"),
       pyfluid_amrex::physical_fluid_grid_fields(
          pyfluid_amrex::PhysicalSystem::RHD, 0
@@ -304,22 +306,22 @@ void check_rigid_axis_and_center_materialization()
       3, "cartesian", "x y z"
    );
    const auto fluid_sample = fluid_interpolator.sample(
-      {5.0, -2.0, 1.0}, target_chart
+      {5.0_rt, -2.0_rt, 1.0_rt}, target_chart
    );
-   require_close(fluid_sample.values[0], 5.0, 1.0e-14, "rotated density");
-   require_close(fluid_sample.values[1], 2.0, 2.0e-14, "rotated velocity x");
-   require_close(fluid_sample.values[2], 0.0, 2.0e-14, "rotated velocity y");
-   require_close(fluid_sample.values[3], 0.0, 2.0e-14, "rotated velocity z");
-   require_close(fluid_sample.source_cartesian[0], 5.0, 2.0e-14, "mapped x");
-   require_close(fluid_sample.source_cartesian[1], -2.0, 2.0e-14, "mapped y");
-   require_close(fluid_sample.source_cartesian[2], 1.0, 2.0e-14, "mapped z");
+   require_close(fluid_sample.values[0], 5.0_rt, 1.0e-14_rt, "rotated density");
+   require_close(fluid_sample.values[1], 2.0_rt, 2.0e-14_rt, "rotated velocity x");
+   require_close(fluid_sample.values[2], 0.0_rt, 2.0e-14_rt, "rotated velocity y");
+   require_close(fluid_sample.values[3], 0.0_rt, 2.0e-14_rt, "rotated velocity z");
+   require_close(fluid_sample.source_cartesian[0], 5.0_rt, 2.0e-14_rt, "mapped x");
+   require_close(fluid_sample.source_cartesian[1], -2.0_rt, 2.0e-14_rt, "mapped y");
+   require_close(fluid_sample.source_cartesian[2], 1.0_rt, 2.0e-14_rt, "mapped z");
 
-   std::vector<amrex::Real> adm_values(16, 0.0);
-   adm_values[0] = 4.0;
-   adm_values[3] = 2.0;
-   adm_values[5] = 3.0;
-   adm_values[12] = 0.8;
-   adm_values[13] = 2.0;
+   std::vector<amrex::Real> adm_values(16, 0.0_rt);
+   adm_values[0] = 4.0_rt;
+   adm_values[3] = 2.0_rt;
+   adm_values[5] = 3.0_rt;
+   adm_values[12] = 0.8_rt;
+   adm_values[13] = 2.0_rt;
    PortablePhysicalIdInterpolator adm_interpolator(
       constant_spherical_field(16, adm_values, true),
       pyfluid_amrex::make_physical_id_chart(2, "spherical", "r theta"),
@@ -329,21 +331,21 @@ void check_rigid_axis_and_center_materialization()
       transform
    );
    const auto adm_sample = adm_interpolator.sample(
-      {5.0, -2.0, 1.0}, target_chart
+      {5.0_rt, -2.0_rt, 1.0_rt}, target_chart
    );
-   require_close(adm_sample.values[0], 4.0, 2.0e-14, "rotated metric xx");
-   require_close(adm_sample.values[3], 3.0, 2.0e-14, "rotated metric yy");
-   require_close(adm_sample.values[5], 2.0, 2.0e-14, "rotated metric zz");
-   require_close(adm_sample.values[13], 2.0, 2.0e-14, "rotated shift x");
-   require_close(adm_sample.values[14], 0.0, 2.0e-14, "rotated shift y");
-   require_close(adm_sample.values[15], 0.0, 2.0e-14, "rotated shift z");
+   require_close(adm_sample.values[0], 4.0_rt, 2.0e-14_rt, "rotated metric xx");
+   require_close(adm_sample.values[3], 3.0_rt, 2.0e-14_rt, "rotated metric yy");
+   require_close(adm_sample.values[5], 2.0_rt, 2.0e-14_rt, "rotated metric zz");
+   require_close(adm_sample.values[13], 2.0_rt, 2.0e-14_rt, "rotated shift x");
+   require_close(adm_sample.values[14], 0.0_rt, 2.0e-14_rt, "rotated shift y");
+   require_close(adm_sample.values[15], 0.0_rt, 2.0e-14_rt, "rotated shift z");
 
    const PhysicalIdRigidTransform half_turn =
       pyfluid_amrex::make_physical_id_rigid_transform(
-         {}, {}, {0.0, 0.0, 1.0}, {0.0, 0.0, -1.0}
+         {}, {}, {0.0_rt, 0.0_rt, 1.0_rt}, {0.0_rt, 0.0_rt, -1.0_rt}
       );
    const auto& rotation = half_turn.source_to_target;
-   require_close(rotation[2][2], -1.0, 2.0e-14, "half-turn axis map");
+   require_close(rotation[2][2], -1.0_rt, 2.0e-14_rt, "half-turn axis map");
 }
 
 } // namespace

@@ -11,29 +11,31 @@
 #include "pyfluid_amrex/generated/diagnostic_catalog.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 amrex::Real factorial_ratio_log(int numerator, int denominator)
 {
-   return std::lgamma(static_cast<amrex::Real>(numerator) + 1.0)
-      - std::lgamma(static_cast<amrex::Real>(denominator) + 1.0);
+   return std::lgamma(static_cast<amrex::Real>(numerator) + 1.0_rt)
+      - std::lgamma(static_cast<amrex::Real>(denominator) + 1.0_rt);
 }
 
 amrex::Real binomial(int n, int k)
 {
    if (k < 0 || k > n) {
-      return 0.0;
+      return 0.0_rt;
    }
    return std::exp(
-      std::lgamma(static_cast<amrex::Real>(n) + 1.0)
-      - std::lgamma(static_cast<amrex::Real>(k) + 1.0)
-      - std::lgamma(static_cast<amrex::Real>(n - k) + 1.0)
+      std::lgamma(static_cast<amrex::Real>(n) + 1.0_rt)
+      - std::lgamma(static_cast<amrex::Real>(k) + 1.0_rt)
+      - std::lgamma(static_cast<amrex::Real>(n - k) + 1.0_rt)
    );
 }
 
 amrex::Real parity_sign(int exponent)
 {
-   return exponent % 2 == 0 ? 1.0 : -1.0;
+   return exponent % 2 == 0 ? 1.0_rt : -1.0_rt;
 }
 
 void validate_complex_samples(
@@ -63,23 +65,23 @@ std::complex<amrex::Real> spin_weighted_spherical_harmonic(
    if (ell < 0 || std::abs(spin_weight) > ell || std::abs(m) > ell) {
       throw std::invalid_argument("spin-weighted harmonic requires ell >= |s| and ell >= |m|");
    }
-   const amrex::Real log_normalization = 0.5 * (
+   const amrex::Real log_normalization = 0.5_rt * (
       factorial_ratio_log(ell + m, ell + spin_weight)
       + factorial_ratio_log(ell - m, ell - spin_weight)
-      + std::log((2.0 * ell + 1.0) / (4.0 * constants::pi))
+      + std::log((2.0_rt * ell + 1.0_rt) / (4.0_rt * constants::pi))
    );
    const amrex::Real normalization = parity_sign(m) * std::exp(log_normalization);
-   const amrex::Real cosine = std::cos(0.5 * theta);
-   const amrex::Real sine = std::sin(0.5 * theta);
-   amrex::Real sum = 0.0;
+   const amrex::Real cosine = std::cos(0.5_rt * theta);
+   const amrex::Real sine = std::sin(0.5_rt * theta);
+   amrex::Real sum = 0.0_rt;
    const int first = std::max(m - spin_weight, 0);
    const int last = std::min(ell + m, ell - spin_weight);
    for (int index = first; index <= last; ++index) {
       sum += parity_sign(ell - index - spin_weight)
          * binomial(ell - spin_weight, index)
          * binomial(ell + spin_weight, index + spin_weight - m)
-         * std::pow(cosine, 2 * index + spin_weight - m)
-         * std::pow(sine, 2 * (ell - index) + m - spin_weight);
+         * std::pow(cosine, static_cast<amrex::Real>(2 * index + spin_weight - m))
+         * std::pow(sine, static_cast<amrex::Real>(2 * (ell - index) + m - spin_weight));
    }
    return normalization * sum * std::complex<amrex::Real>(
       std::cos(m * phi), std::sin(m * phi)
@@ -183,7 +185,7 @@ amrex::Real surface_complex_l2(
 )
 {
    validate_complex_samples(surface, real_values, imaginary_values);
-   amrex::Real norm_squared = 0.0;
+   amrex::Real norm_squared = 0.0_rt;
    for (std::size_t point = 0; point < surface.points().size(); ++point) {
       norm_squared += surface.points()[point].solid_angle_weight
          * (real_values[point] * real_values[point]

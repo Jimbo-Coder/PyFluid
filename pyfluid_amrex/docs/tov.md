@@ -40,11 +40,26 @@ pyfluid.tov_max_steps
 The maximum step count is a safety bound. Accuracy is controlled by the two
 adaptive tolerances.
 
+CPU sampling and the device initial-data view consume the same cached radial
+interpolation points. Lapse and conformal factor use quintic Hermite segments
+with first and second isotropic-radius derivatives obtained from the TOV
+equations, including regular center limits. This keeps metric second
+derivatives meaningful between ODE samples; linear metric interpolation does
+not. Matter variables still use linear interpolation on the radial table.
+The sampled Hamiltonian check supplements the radial ODE and mass-observable
+checks. It does not establish evolved stellar-surface accuracy or long-term
+thermal equilibrium.
+
 ## Evolution Atmosphere
 
-Relativistic initial data use one explicit ambient-atmosphere policy before
-primitive-to-conserved conversion and before CTT/CTTK/XCTS matter sources are
-formed:
+Relativistic initial data use one explicit exterior policy before primitive-
+to-conserved conversion and before CTT/CTTK/XCTS matter sources are formed:
+
+```text
+pyfluid.relativistic_exterior = atmosphere | vacuum
+```
+
+Atmosphere is the default and may use the following initial profile:
 
 ```text
 initial_data.atmosphere = flat | power_law
@@ -64,17 +79,20 @@ law and is then projected through the selected EoS, including its cold floor.
 
 The initial atmosphere and runtime C2P recovery are separate policies. The
 graded tail terminates at the exact runtime EoS floor state, so recovery does
-not immediately rewrite it. Because the current Valencia evolution still has
-a nonzero density floor, the asymptotic domain eventually contains a uniform
-floor; strict infinite-domain mass convergence requires future vacuum-capable
-C2P. Lowering the recovery floor moves that negligible plateau outward.
+not immediately rewrite it. Atmosphere therefore has a uniform asymptotic
+floor. RHD may instead select exact vacuum; this rejects a nondefault initial
+atmosphere profile and routes canonical zero matter through the same exterior
+contract used by recovery, AMR transfer, physical-ID materialization, and
+restart. RMHD vacuum remains unsupported until an electromagnetic exterior
+closure is implemented.
 
-Evolution precomputes one constant thermodynamic recovery state from the EoS
-floors. Reconstruction, C2P recovery, and the RHD admissibility limiter consume
-that state directly; they do not reevaluate the spatial initial-atmosphere
-profile. Runtime atmosphere replacement is density-triggered. A pressure floor
-is enforced through the EoS closure and does not reset an otherwise valid cell's
-conserved density or momentum.
+Evolution precomputes one constant relativistic exterior state. Reconstruction,
+C2P recovery, and the RHD admissibility limiter consume that state directly;
+they do not reevaluate the spatial initial-atmosphere profile. Runtime
+atmosphere replacement is density-triggered. A pressure floor is enforced
+through the EoS closure and does not reset an otherwise valid cell's conserved
+density or momentum. Under vacuum, canonical zero is accepted rather than
+counted as a recovery failure; only failed nonzero states are counted resets.
 
 ## Direct EoS Sequences
 
@@ -220,7 +238,8 @@ applied after an equilibrium has been materialized onto the evolution grid:
 
 ```text
 initial_data.perturbation = none | cold_pressure_scale |
-                            density_azimuthal_espino2019
+                            density_azimuthal_espino2019 |
+                            density_radial_font2002
 ```
 
 `cold_pressure_scale` remains on the selected cold barotrope. Given an
@@ -243,20 +262,63 @@ rho_new = rho [1 + B (varpi / r_e) sin(m phi + phase)]
 ```
 
 about the configured stellar center and rotation axis, then rebuilds the same
-complete cold-EoS state. These are deliberately small evolution seeds. The
-metric is not re-solved after either perturbation, so the runtime reports
-`constraint_polish=none` and the initial constraints should be monitored.
+complete cold-EoS state. The same cold-consistent azimuthal operator supports
+a disk-only `equilibrium_torus`, using the configured disk axis and an explicit
+positive `perturbation_radius`; the Font radial collapse operator remains
+stellar-only. These are deliberately small evolution seeds. The
+`density_radial_font2002` collapse seed applies
 
-A reusable physical-ID artifact is written before the evolution-start
-perturbation. Loading that artifact later therefore recovers the unperturbed
-equilibrium; checkpoint/restart remains the mechanism for preserving an
-already perturbed evolved state. Focused cold-closure, mode, three-rank, and
-artifact-ordering coverage is provided by
+```text
+rho_new = rho [1 + A cos(pi r / (2 R))]
+```
+
+inside the stellar surface, with the profile smoothly reaching zero change at
+`R`. This is the radial profile used by Font et al. for controlled collapse of
+an unstable TOV model; `A=0.01` is the literature-scale starting point. This
+seed intentionally differs from the cold perturbations above: it retains the
+equilibrium pressure while increasing density, then recomputes specific
+internal energy, enthalpy, sound speed, and conserved variables with the
+selected hybrid-polytrope or Compose EoS. A strict one-parameter polytrope is
+rejected because it cannot represent that off-cold state.
+
+When `spacetime.initial_data` selects `ctt`, `cttk`, or `xcts`, the perturbation
+is followed by the same conformal constraint materializer used for initial
+data, and the runtime reports the selected `constraint_polish`. The collapse
+input selects XCTS so the changed density is not paired with the unperturbed
+TOV metric. The static spherical conformal solve preserves both the densitized
+baryon density `psi^6 rho` and specific internal energy; after each metric
+correction it restores `rho` and closes pressure through the runtime EoS rather
+than projecting the seed back onto the cold curve. Direct/provider initial
+data without a conformal solve retains the explicit
+`constraint_polish=none` behavior.
+
+For an evolution run, a requested reusable physical-ID artifact is written
+before the evolution-start perturbation, so loading it later recovers the
+unperturbed equilibrium. In solve-only mode the requested perturbation is
+instead applied and constraint-polished before the artifact write; this is the
+portable route for preparing a perturbed state on its natural reduced ID chart
+and materializing it onto a different evolution grid. Checkpoint/restart remains
+the mechanism for preserving an already evolved state. Focused cold-closure,
+mode, three-rank, and artifact-ordering coverage is provided by
 
 ```bash
 uv run python pyfluid_amrex/tools/validate_initial_data_perturbations.py \
   --force --ranks 3
 ```
+
+The end-to-end stable-control/collapse gate is
+
+```bash
+uv run python pyfluid_amrex/tools/validate_tov_collapse.py \
+  --level pilot --ranks 2 --machine local_openmp
+```
+
+The 3D collapse input uses automatic state-based AMR with one fixed protective
+central level. `amr.min_feature_length` selects the physical finest spacing
+while `amr.max_level` retains one unused emergency level. Regridding is checked
+every four accepted coarse steps with `amr.regrid_mode=synchronized`; this
+schedules when AMReX may rebuild the hierarchy without replacing its automatic
+decision about where refinement belongs.
 
 ### Initial-data grid policy
 

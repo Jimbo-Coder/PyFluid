@@ -16,6 +16,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 enum class InitialDataEllipticCentering {
    cell,
    vertex,
@@ -36,6 +38,15 @@ struct InitialDataEllipticHierarchy {
    amrex::Interpolater* cell_interpolater = &amrex::cell_cons_interp;
    amrex::GpuArray<int, AMREX_SPACEDIM> reflection_lo{};
    amrex::GpuArray<int, AMREX_SPACEDIM> reflection_hi{};
+
+   // Runtime grid directions map to these canonical Cartesian physical axes
+   // (x=0, y=1, z=2).  The default is x, x-y, or x-y-z according to the
+   // executable dimension.  Reduced conformal-constraint operators retain
+   // all three physical vector/tensor components while setting derivatives
+   // along omitted axes to zero.
+   amrex::GpuArray<int, AMREX_SPACEDIM> cartesian_physical_axes{
+      AMREX_D_DECL(0, 1, 2)
+   };
 
    // Optional physical face coordinates for a solver-private mapped grid.
    // Empty directions use the uniform AMReX Geometry coordinates.  These
@@ -102,13 +113,13 @@ struct InitialDataEllipticOptions {
    int max_iterations = 200;
    int max_fmg_iterations = 0;
    int verbose = 0;
-   amrex::Real relative_tolerance = 1.0e-12;
-   amrex::Real absolute_tolerance = 0.0;
+   amrex::Real relative_tolerance = 1.0e-12_rt;
+   amrex::Real absolute_tolerance = 0.0_rt;
 };
 
 struct InitialDataEllipticResult {
-   amrex::Real residual = 0.0;
-   amrex::Real boundary_residual = 0.0;
+   amrex::Real residual = 0.0_rt;
+   amrex::Real boundary_residual = 0.0_rt;
    int boundary_iterations = 0;
 };
 
@@ -134,6 +145,9 @@ struct InitialDataEllipticBoundaryConditions {
    int num_levels() const noexcept;
    InitialDataEllipticCentering centering() const noexcept;
    InitialDataEllipticBoundaryConditions component(int component) const;
+   InitialDataEllipticBoundaryConditions components(
+      amrex::Vector<int> const& components
+   ) const;
    InitialDataEllipticBoundaryType lower_type(
       int component, int direction
    ) const noexcept;
@@ -250,7 +264,7 @@ void set_centered_power_law_robin_boundary(
    InitialDataEllipticHierarchy const& hierarchy,
    InitialDataEllipticBoundaryConditions& boundary,
    amrex::Vector<amrex::Real> const& asymptotic_values,
-   amrex::Real falloff_power = 1.0,
+   amrex::Real falloff_power = 1.0_rt,
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const* physical_center = nullptr
 );
 
@@ -307,6 +321,23 @@ InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& solution,
    amrex::Vector<amrex::MultiFab const*> const& rhs,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options = {}
+);
+
+// Solve
+//
+//   Laplacian(u) + reaction(r) u = rhs
+//
+// with the same mapped-radial, axisymmetric spherical operator.  The reaction
+// coefficient must be spherically symmetric.  Keeping it in the existing
+// separable operator permits robust Newton steps for static spherical XCTS
+// without introducing a second elliptic discretization.
+InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_helmholtz(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   amrex::Vector<amrex::MultiFab const*> const& rhs,
+   amrex::Vector<amrex::MultiFab const*> const& reaction,
    InitialDataEllipticBoundaryConditions const& boundary,
    InitialDataEllipticOptions const& options = {}
 );

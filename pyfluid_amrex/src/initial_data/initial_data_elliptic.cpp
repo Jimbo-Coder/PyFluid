@@ -31,6 +31,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 amrex::Vector<amrex::Real> InitialDataEllipticHierarchy::coordinate_faces(
    int level,
    int direction
@@ -90,11 +92,11 @@ InitialDataCoordinateLine InitialDataEllipticHierarchy::coordinate_line(
    line.centers.resize(cells);
    line.widths.resize(cells);
    const amrex::Real reference_width = line.faces[1] - line.faces[0];
-   const amrex::Real tolerance = 64.0
+   const amrex::Real tolerance = 64.0_rt
       * std::numeric_limits<amrex::Real>::epsilon()
-      * std::max(amrex::Real(1.0), std::abs(reference_width));
+      * std::max(amrex::Real(1.0_rt), std::abs(reference_width));
    for (int cell = 0; cell < cells; ++cell) {
-      line.centers[cell] = 0.5 * (line.faces[cell] + line.faces[cell + 1]);
+      line.centers[cell] = 0.5_rt * (line.faces[cell] + line.faces[cell + 1]);
       line.widths[cell] = line.faces[cell + 1] - line.faces[cell];
       line.uniform = line.uniform
          && std::abs(line.widths[cell] - reference_width) <= tolerance;
@@ -109,15 +111,15 @@ amrex::Vector<amrex::Real> surface_focused_radial_faces(
    int exterior_cells
 )
 {
-   if (!(surface_radius > 0.0) || !(outer_radius > surface_radius)
+   if (!(surface_radius > 0.0_rt) || !(outer_radius > surface_radius)
        || surface_cells <= 0 || exterior_cells <= 0) {
       amrex::Abort("invalid surface-focused radial-grid parameters");
    }
    const amrex::Real inner_spacing = surface_radius / surface_cells;
    const amrex::Real exterior_extent = outer_radius - surface_radius;
    const amrex::Real uniform_extent = exterior_cells * inner_spacing;
-   const amrex::Real scale = std::max(outer_radius, amrex::Real(1.0));
-   if (exterior_extent + 64.0 * std::numeric_limits<amrex::Real>::epsilon()
+   const amrex::Real scale = std::max(outer_radius, amrex::Real(1.0_rt));
+   if (exterior_extent + 64.0_rt * std::numeric_limits<amrex::Real>::epsilon()
           * scale < uniform_extent) {
       amrex::Abort(
          "surface-focused exterior cannot become finer than the source region"
@@ -126,37 +128,37 @@ amrex::Vector<amrex::Real> surface_focused_radial_faces(
 
    const auto geometric_extent = [&](amrex::Real ratio) {
       amrex::Real interval = inner_spacing;
-      amrex::Real extent = 0.0;
+      amrex::Real extent = 0.0_rt;
       for (int cell = 0; cell < exterior_cells; ++cell) {
          interval *= ratio;
          extent += interval;
       }
       return extent;
    };
-   amrex::Real ratio = 1.0;
+   amrex::Real ratio = 1.0_rt;
    if (exterior_extent > uniform_extent
-       + 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale) {
-      amrex::Real lower = 1.0;
-      amrex::Real upper = 2.0;
+       + 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale) {
+      amrex::Real lower = 1.0_rt;
+      amrex::Real upper = 2.0_rt;
       while (geometric_extent(upper) < exterior_extent) {
-         upper *= 2.0;
+         upper *= 2.0_rt;
          if (!std::isfinite(upper)) {
             amrex::Abort("surface-focused radial ratio did not bracket");
          }
       }
       for (int iteration = 0; iteration < 100; ++iteration) {
-         const amrex::Real midpoint = 0.5 * (lower + upper);
+         const amrex::Real midpoint = 0.5_rt * (lower + upper);
          if (geometric_extent(midpoint) < exterior_extent) {
             lower = midpoint;
          } else {
             upper = midpoint;
          }
       }
-      ratio = 0.5 * (lower + upper);
+      ratio = 0.5_rt * (lower + upper);
    }
 
    amrex::Vector<amrex::Real> faces(
-      surface_cells + exterior_cells + 1, 0.0
+      surface_cells + exterior_cells + 1, 0.0_rt
    );
    for (int face = 1; face <= surface_cells; ++face) {
       faces[face] = face * inner_spacing;
@@ -179,18 +181,18 @@ amrex::Vector<amrex::Real> stellar_adaptive_radial_faces(
    amrex::Real exterior_fraction
 )
 {
-   if (!(seed_surface_radius > 0.0)
-       || !(outer_radius > 1.05 * seed_surface_radius)
+   if (!(seed_surface_radius > 0.0_rt)
+       || !(outer_radius > 1.05_rt * seed_surface_radius)
        || radial_cells < 16
-       || !(source_radius_factor > 1.0)
-       || !(exterior_fraction > 0.0 && exterior_fraction < 1.0)) {
+       || !(source_radius_factor > 1.0_rt)
+       || !(exterior_fraction > 0.0_rt && exterior_fraction < 1.0_rt)) {
       amrex::Abort("invalid stellar adaptive radial-grid parameters");
    }
    // Uniform rotation expands the equator and contracts the pole.  Resolve a
    // conservative enclosing source ball rather than fitting only the TOV
    // surface, so the mapping stays fixed throughout a continuation sequence.
    const amrex::Real source_radius = std::min(
-      source_radius_factor * seed_surface_radius, 0.8 * outer_radius
+      source_radius_factor * seed_surface_radius, 0.8_rt * outer_radius
    );
    if (!(source_radius > seed_surface_radius)) {
       amrex::Abort("stellar adaptive radial grid cannot enclose the seed star");
@@ -222,14 +224,14 @@ amrex::Vector<amrex::Real> stretched_radial_shell_faces(
    amrex::Real outer_to_inner_cell_width_ratio
 )
 {
-   if (!(inner_radius > 0.0) || !(outer_radius > inner_radius)
+   if (!(inner_radius > 0.0_rt) || !(outer_radius > inner_radius)
        || radial_cells < 3
-       || !(outer_to_inner_cell_width_ratio >= 1.0)
+       || !(outer_to_inner_cell_width_ratio >= 1.0_rt)
        || !std::isfinite(outer_to_inner_cell_width_ratio)) {
       amrex::Abort("invalid stretched radial-shell parameters");
    }
-   amrex::Vector<amrex::Real> weights(radial_cells, 1.0);
-   amrex::Real weight_sum = 0.0;
+   amrex::Vector<amrex::Real> weights(radial_cells, 1.0_rt);
+   amrex::Real weight_sum = 0.0_rt;
    for (int cell = 0; cell < radial_cells; ++cell) {
       const amrex::Real fraction = static_cast<amrex::Real>(cell) /
          static_cast<amrex::Real>(radial_cells - 1);
@@ -238,7 +240,7 @@ amrex::Vector<amrex::Real> stretched_radial_shell_faces(
       );
       weight_sum += weights[cell];
    }
-   if (!(weight_sum > 0.0) || !std::isfinite(weight_sum)) {
+   if (!(weight_sum > 0.0_rt) || !std::isfinite(weight_sum)) {
       amrex::Abort("stretched radial-shell weights are not finite");
    }
    const amrex::Real shell_extent = outer_radius - inner_radius;
@@ -255,6 +257,92 @@ namespace detail {
 
 using InitialDataBoundaryFunction = amrex::GpuBndryFuncFab<amrex::FabFillNoOp>;
 using InitialDataPhysicalBoundary = amrex::PhysBCFunct<InitialDataBoundaryFunction>;
+
+amrex::Vector<int> cartesian_physical_axes(
+   InitialDataEllipticHierarchy const& hierarchy
+)
+{
+   amrex::Vector<int> axes(AMREX_SPACEDIM);
+   std::array<bool, 3> seen{{false, false, false}};
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      const int axis = hierarchy.cartesian_physical_axes[direction];
+      if (axis < 0 || axis >= 3 || seen[axis]) {
+         amrex::Abort(
+            "Cartesian ID runtime directions must map to distinct x/y/z axes"
+         );
+      }
+      axes[direction] = axis;
+      seen[axis] = true;
+   }
+   return axes;
+}
+
+AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+amrex::Real reduced_cartesian_grad_div_component(
+   amrex::Array4<amrex::Real const> const& vector,
+   int i,
+   int j,
+   int k,
+   int physical_component,
+   amrex::GpuArray<int, AMREX_SPACEDIM> const& physical_axes,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& inverse_spacing
+) noexcept
+{
+   amrex::Real result = 0.0_rt;
+   if (physical_axes[0] == physical_component) {
+      result += generated::centered_second<2, 0>(
+         vector, i, j, k, physical_axes[0],
+         inverse_spacing[0] * inverse_spacing[0]
+      );
+#if (AMREX_SPACEDIM >= 2)
+      result += generated::centered_mixed<2, 0, 1>(
+         vector, i, j, k, physical_axes[1],
+         inverse_spacing[0] * inverse_spacing[1]
+      );
+#endif
+#if (AMREX_SPACEDIM == 3)
+      result += generated::centered_mixed<2, 0, 2>(
+         vector, i, j, k, physical_axes[2],
+         inverse_spacing[0] * inverse_spacing[2]
+      );
+#endif
+   }
+#if (AMREX_SPACEDIM >= 2)
+   if (physical_axes[1] == physical_component) {
+      result += generated::centered_mixed<2, 0, 1>(
+         vector, i, j, k, physical_axes[0],
+         inverse_spacing[0] * inverse_spacing[1]
+      );
+      result += generated::centered_second<2, 1>(
+         vector, i, j, k, physical_axes[1],
+         inverse_spacing[1] * inverse_spacing[1]
+      );
+#if (AMREX_SPACEDIM == 3)
+      result += generated::centered_mixed<2, 1, 2>(
+         vector, i, j, k, physical_axes[2],
+         inverse_spacing[1] * inverse_spacing[2]
+      );
+#endif
+   }
+#endif
+#if (AMREX_SPACEDIM == 3)
+   if (physical_axes[2] == physical_component) {
+      result += generated::centered_mixed<2, 0, 2>(
+         vector, i, j, k, physical_axes[0],
+         inverse_spacing[0] * inverse_spacing[2]
+      );
+      result += generated::centered_mixed<2, 1, 2>(
+         vector, i, j, k, physical_axes[1],
+         inverse_spacing[1] * inverse_spacing[2]
+      );
+      result += generated::centered_second<2, 2>(
+         vector, i, j, k, physical_axes[2],
+         inverse_spacing[2] * inverse_spacing[2]
+      );
+   }
+#endif
+   return result;
+}
 
 amrex::BoxArray elliptic_box_array(
    InitialDataEllipticHierarchy const& hierarchy,
@@ -318,8 +406,8 @@ int validate_elliptic_solve(
    if (
       options.boundary_interpolation_order < 2
       || options.max_iterations <= 0
-      || !(options.relative_tolerance > 0.0)
-      || options.absolute_tolerance < 0.0
+      || !(options.relative_tolerance > 0.0_rt)
+      || options.absolute_tolerance < 0.0_rt
    ) {
       amrex::Abort("invalid initial-data elliptic solver options");
    }
@@ -413,7 +501,7 @@ amrex::Vector<std::unique_ptr<amrex::MultiFab>> coordinate_to_normal_b(
                }
 #endif
                if (has_physical_face && outside_low) {
-                  coefficient(i, j, k, component) *= -1.0;
+                  coefficient(i, j, k, component) *= -1.0_rt;
                }
             }
          );
@@ -456,7 +544,7 @@ bool has_legacy_coefficient_robin_boundary(
    }
    for (int level = 0; level < boundary.num_levels(); ++level) {
       for (int component = 0; component < boundary.num_components; ++component) {
-         if (boundary.coefficient_b(level).norm0(component, 1, false) != 0.0) {
+         if (boundary.coefficient_b(level).norm0(component, 1, false) != 0.0_rt) {
             return true;
          }
       }
@@ -507,7 +595,7 @@ amrex::Vector<std::unique_ptr<amrex::MultiFab>> dirichlet_values(
          boundary.num_components,
          1
       );
-      values[level]->setVal(0.0);
+      values[level]->setVal(0.0_rt);
       const amrex::Dim3 domain_lo = amrex::lbound(hierarchy.geometry[level].Domain());
       const amrex::Dim3 domain_hi = amrex::ubound(hierarchy.geometry[level].Domain());
       const auto periodic = hierarchy.geometry[level].isPeriodicArray();
@@ -568,7 +656,7 @@ amrex::Vector<std::unique_ptr<amrex::MultiFab>> dirichlet_values(
                      const amrex::Real a = coefficient_a(
                         i, j, k, component
                      );
-                     value(i, j, k, component) = a != 0.0
+                     value(i, j, k, component) = a != 0.0_rt
                         ? coefficient_c(i, j, k, component) / a
                         : std::numeric_limits<amrex::Real>::quiet_NaN();
                   }
@@ -629,7 +717,7 @@ amrex::Vector<std::unique_ptr<amrex::MultiFab>> negative_fields(
       amrex::MultiFab::Copy(
          *result[level], *fields[level], 0, 0, num_components, 0
       );
-      result[level]->mult(-1.0, 0, num_components, 0);
+      result[level]->mult(-1.0_rt, 0, num_components, 0);
    }
    return result;
 }
@@ -642,12 +730,65 @@ void configure_mlmg(amrex::MLMG& mlmg, InitialDataEllipticOptions const& options
    mlmg.setBottomVerbose(options.verbose);
 }
 
+InitialDataEllipticResult elliptic_result(amrex::Real residual);
+
+#if (AMREX_SPACEDIM >= 2)
+InitialDataEllipticResult solve_active_conformal_vector_laplacian(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& vector_potential,
+   amrex::Vector<amrex::MultiFab const*> const& source,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options
+)
+{
+   const int num_levels = static_cast<int>(vector_potential.size());
+   auto negative_source_storage = negative_fields(
+      hierarchy, source, AMREX_SPACEDIM
+   );
+   amrex::Vector<amrex::MultiFab const*> negative_source(num_levels);
+   for (int level = 0; level < num_levels; ++level) {
+      negative_source[level] = negative_source_storage[level].get();
+   }
+
+   amrex::LPInfo info;
+   amrex::MLTensorOp vector_laplacian(
+      hierarchy.geometry,
+      hierarchy.grids,
+      hierarchy.distribution,
+      info
+   );
+   vector_laplacian.setMaxOrder(options.boundary_interpolation_order);
+   vector_laplacian.setScalars(0.0_rt, 1.0_rt);
+   const LoweredBoundaryConditions lowered = lower_boundary_conditions(
+      hierarchy, boundary
+   );
+   if (lowered.has_robin) {
+      amrex::Abort(
+         "AMReX MLTensorOp does not consistently support Robin tensor cross terms"
+      );
+   }
+   for (int level = 0; level < num_levels; ++level) {
+      vector_laplacian.setShearViscosity(level, 1.0_rt);
+   }
+   set_boundary_conditions(vector_laplacian, boundary, lowered);
+
+   amrex::MLMG mlmg(vector_laplacian);
+   configure_mlmg(mlmg, options);
+   return elliptic_result(mlmg.solve(
+      vector_potential,
+      negative_source,
+      options.relative_tolerance,
+      options.absolute_tolerance
+   ));
+}
+#endif
+
 InitialDataEllipticResult elliptic_result(amrex::Real residual)
 {
    if (!std::isfinite(residual)) {
       amrex::Abort("initial-data elliptic solve produced a nonfinite residual");
    }
-   return {residual, 0.0, 0};
+   return {residual, 0.0_rt, 0};
 }
 
 amrex::Vector<amrex::BCRec> nodal_solution_boundary_records(
@@ -797,7 +938,7 @@ void set_nodal_dirichlet_values(
                   const amrex::Real a = coefficient_a(
                      boundary_i, boundary_j, boundary_k, component
                   );
-                  values(i, j, k, component) = a != 0.0
+                  values(i, j, k, component) = a != 0.0_rt
                      ? coefficient_c(
                           boundary_i, boundary_j, boundary_k, component
                        ) / a
@@ -822,9 +963,9 @@ amrex::Real compute_nodal_robin_residual(
 )
 {
    const int num_levels = boundary.num_levels();
-   amrex::Real max_residual = 0.0;
+   amrex::Real max_residual = 0.0_rt;
    for (int level = 0; level < num_levels; ++level) {
-      residual[level]->setVal(0.0);
+      residual[level]->setVal(0.0_rt);
 
       const amrex::Box nodal_domain = amrex::surroundingNodes(
          hierarchy.geometry[level].Domain()
@@ -852,7 +993,7 @@ amrex::Real compute_nodal_robin_residual(
          const auto current_solution = solution[level]->const_array(mfi);
          const auto boundary_residual = residual[level]->array(mfi);
          amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            amrex::Real candidate_sum = 0.0;
+            amrex::Real candidate_sum = 0.0_rt;
             int candidate_count = 0;
             auto add_face = [=, &candidate_sum, &candidate_count] AMREX_GPU_DEVICE(
                int boundary_i,
@@ -869,7 +1010,7 @@ amrex::Real compute_nodal_robin_residual(
                );
                const amrex::Real c = include_inhomogeneous_term
                   ? coefficient_c(boundary_i, boundary_j, boundary_k, 0)
-                  : 0.0;
+                  : 0.0_rt;
                int near_i = i;
                int near_j = j;
                int near_k = k;
@@ -894,14 +1035,14 @@ amrex::Real compute_nodal_robin_residual(
 #endif
                const amrex::Real derivative_sign = -interior_sign;
                const amrex::Real derivative_scale = derivative_sign * b
-                  / (2.0 * dx[direction]);
-               const amrex::Real denominator = a + 3.0 * derivative_scale;
+                  / (2.0_rt * dx[direction]);
+               const amrex::Real denominator = a + 3.0_rt * derivative_scale;
                const amrex::Real numerator = c
-                  + 4.0 * derivative_scale
+                  + 4.0_rt * derivative_scale
                      * current_solution(near_i, near_j, near_k, 0)
                   - derivative_scale
                      * current_solution(far_i, far_j, far_k, 0);
-               candidate_sum += denominator != 0.0
+               candidate_sum += denominator != 0.0_rt
                   ? numerator / denominator
                   : std::numeric_limits<amrex::Real>::quiet_NaN();
                ++candidate_count;
@@ -993,7 +1134,7 @@ public:
    void apply(NodalBoundaryVector& lhs, NodalBoundaryVector const& rhs)
    {
       assign(homogeneous_solution_, base_solution_);
-      increment(homogeneous_solution_, rhs, 1.0);
+      increment(homogeneous_solution_, rhs, 1.0_rt);
       const int num_levels = static_cast<int>(layout_.size());
       amrex::Vector<amrex::MultiFab*> solve_fields(num_levels);
       amrex::Vector<amrex::MultiFab const*> solve_rhs(num_levels);
@@ -1007,7 +1148,7 @@ public:
          options_.relative_tolerance,
          options_.absolute_tolerance
       );
-      increment(homogeneous_solution_, base_solution_, -1.0);
+      increment(homogeneous_solution_, base_solution_, -1.0_rt);
 
       amrex::Vector<amrex::MultiFab const*> const_solution(num_levels);
       amrex::Vector<amrex::MultiFab*> residual(num_levels);
@@ -1018,7 +1159,7 @@ public:
       compute_nodal_robin_residual(
          hierarchy_, const_solution, residual, boundary_, false
       );
-      scale(lhs, -1.0);
+      scale(lhs, -1.0_rt);
    }
 
    void add_last_homogeneous_response(
@@ -1048,7 +1189,7 @@ public:
       NodalBoundaryVector const& second
    ) const
    {
-      RT result = 0.0;
+      RT result = 0.0_rt;
       for (int level = 0; level < static_cast<int>(first.levels.size()); ++level) {
          result += amrex::MultiFab::Dot(
             first.levels[level], 0, second.levels[level], 0, 1, 0, false
@@ -1096,7 +1237,7 @@ public:
 
    RT norm2(NodalBoundaryVector const& vector) const
    {
-      return std::sqrt(std::max(RT(0.0), dotProduct(vector, vector)));
+      return std::sqrt(std::max(RT(0.0_rt), dotProduct(vector, vector)));
    }
 
    void precond(
@@ -1117,7 +1258,7 @@ public:
    void setToZero(NodalBoundaryVector& vector) const
    {
       for (amrex::MultiFab& level : vector.levels) {
-         level.setVal(0.0);
+         level.setVal(0.0_rt);
       }
    }
 
@@ -1130,7 +1271,7 @@ private:
          result.levels.emplace_back(
             level_layout->boxArray(), level_layout->DistributionMap(), 1, 0
          );
-         result.levels.back().setVal(0.0);
+         result.levels.back().setVal(0.0_rt);
       }
       return result;
    }
@@ -1143,7 +1284,7 @@ private:
    amrex::MLMG& mlmg_;
    NodalBoundaryVector homogeneous_solution_;
    NodalBoundaryVector base_solution_;
-   RT last_residual_ = 0.0;
+   RT last_residual_ = 0.0_rt;
 };
 
 InitialDataEllipticResult solve_initial_data_nodal_poisson(
@@ -1173,7 +1314,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
          hierarchy.distribution,
          info,
          {},
-         1.0
+         1.0_rt
       );
       poisson.setDomainBC(base_lower, base_upper);
 
@@ -1195,7 +1336,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
       hierarchy.distribution,
       info,
       {},
-      1.0
+      1.0_rt
    );
    poisson.setDomainBC(base_lower, base_upper);
 
@@ -1211,7 +1352,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
    NodalBoundaryVector boundary_rhs = boundary_operator.makeVecRHS();
    amrex::Vector<amrex::MultiFab const*> const_solution(num_levels);
    amrex::Vector<amrex::MultiFab*> boundary_residual_fields(num_levels);
-   amrex::Real solution_scale = 1.0;
+   amrex::Real solution_scale = 1.0_rt;
    for (int level = 0; level < num_levels; ++level) {
       const_solution[level] = solution[level];
       boundary_residual_fields[level] = &boundary_rhs.levels[level];
@@ -1240,7 +1381,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
    gmres.solve(
       boundary_solution,
       boundary_rhs,
-      0.0,
+      0.0_rt,
       boundary_tolerance,
       options.max_iterations
    );
@@ -1253,7 +1394,7 @@ InitialDataEllipticResult solve_initial_data_nodal_poisson(
 
    NodalBoundaryVector schur_check = boundary_operator.makeVecRHS();
    boundary_operator.apply(schur_check, boundary_solution);
-   boundary_operator.increment(schur_check, boundary_rhs, -1.0);
+   boundary_operator.increment(schur_check, boundary_rhs, -1.0_rt);
    const amrex::Real schur_residual = boundary_operator.norm2(schur_check);
    if (schur_residual > boundary_tolerance) {
       amrex::Print() << "nodal Robin Schur residual=" << schur_residual
@@ -1287,13 +1428,7 @@ InitialDataEllipticResult solve_initial_data_nodal_conformal_vector_laplacian(
    InitialDataEllipticOptions const& options
 )
 {
-#if (AMREX_SPACEDIM != 3)
-   amrex::ignore_unused(
-      hierarchy, vector_potential, source, boundary, options
-   );
-   amrex::Abort("the CTT conformal-vector operator requires three dimensions");
-   return {};
-#else
+   cartesian_physical_axes(hierarchy);
    const int num_levels = boundary.num_levels();
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> corrected_storage(num_levels);
    amrex::Vector<std::unique_ptr<amrex::MultiFab>> candidate_storage(num_levels);
@@ -1336,7 +1471,7 @@ InitialDataEllipticResult solve_initial_data_nodal_conformal_vector_laplacian(
       nodal_solution_boundary_records(hierarchy, boundary);
 
    InitialDataEllipticResult result;
-   constexpr amrex::Real conformal_vector_relaxation = 0.5;
+   constexpr amrex::Real conformal_vector_relaxation = 0.5_rt;
    for (int iteration = 0; iteration < options.max_iterations; ++iteration) {
       detail::fill_initial_data_vertex_ghosts(
          hierarchy, vector_potential, boundary_records
@@ -1346,9 +1481,14 @@ InitialDataEllipticResult solve_initial_data_nodal_conformal_vector_laplacian(
             *corrected_storage[level], *source[level], 0, 0, 3, 0
          );
          const auto spacing = hierarchy.geometry[level].CellSizeArray();
-         const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
-            1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
-         }};
+         const amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> inv_spacing{
+            AMREX_D_DECL(
+               1.0_rt / spacing[0],
+               1.0_rt / spacing[1],
+               1.0_rt / spacing[2]
+            )
+         };
+         const auto physical_axes = hierarchy.cartesian_physical_axes;
          const amrex::Box derivative_domain = amrex::grow(
             amrex::surroundingNodes(hierarchy.geometry[level].Domain()), -1
          );
@@ -1362,45 +1502,24 @@ InitialDataEllipticResult solve_initial_data_nodal_conformal_vector_laplacian(
             const auto vector = vector_potential[level]->const_array(mfi);
             const auto corrected = corrected_storage[level]->array(mfi);
             amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               const amrex::Real grad_div_1 =
-                  generated::centered_second<2, 0>(
-                     vector, i, j, k, 0, inv_spacing[0] * inv_spacing[0]
-                  )
-                  + generated::centered_mixed<2, 0, 1>(
-                     vector, i, j, k, 1, inv_spacing[0] * inv_spacing[1]
-                  )
-                  + generated::centered_mixed<2, 0, 2>(
-                     vector, i, j, k, 2, inv_spacing[0] * inv_spacing[2]
-                  );
-               const amrex::Real grad_div_2 =
-                  generated::centered_mixed<2, 0, 1>(
-                     vector, i, j, k, 0, inv_spacing[0] * inv_spacing[1]
-                  )
-                  + generated::centered_second<2, 1>(
-                     vector, i, j, k, 1, inv_spacing[1] * inv_spacing[1]
-                  )
-                  + generated::centered_mixed<2, 1, 2>(
-                     vector, i, j, k, 2, inv_spacing[1] * inv_spacing[2]
-                  );
-               const amrex::Real grad_div_3 =
-                  generated::centered_mixed<2, 0, 2>(
-                     vector, i, j, k, 0, inv_spacing[0] * inv_spacing[2]
-                  )
-                  + generated::centered_mixed<2, 1, 2>(
-                     vector, i, j, k, 1, inv_spacing[1] * inv_spacing[2]
-                  )
-                  + generated::centered_second<2, 2>(
-                     vector, i, j, k, 2, inv_spacing[2] * inv_spacing[2]
-                  );
-               corrected(i, j, k, 0) -= grad_div_1 / 3.0;
-               corrected(i, j, k, 1) -= grad_div_2 / 3.0;
-               corrected(i, j, k, 2) -= grad_div_3 / 3.0;
+               for (int component = 0; component < 3; ++component) {
+                  corrected(i, j, k, component) -=
+                     reduced_cartesian_grad_div_component(
+                        vector,
+                        i,
+                        j,
+                        k,
+                        component,
+                        physical_axes,
+                        inv_spacing
+                     ) / 3.0_rt;
+               }
             });
          }
       }
 
-      result.residual = 0.0;
-      result.boundary_residual = 0.0;
+      result.residual = 0.0_rt;
+      result.boundary_residual = 0.0_rt;
       result.boundary_iterations = 0;
       for (int component = 0; component < 3; ++component) {
          for (int level = 0; level < num_levels; ++level) {
@@ -1460,8 +1579,8 @@ InitialDataEllipticResult solve_initial_data_nodal_conformal_vector_laplacian(
          hierarchy, candidate, boundary_records
       );
 
-      amrex::Real update_norm = 0.0;
-      amrex::Real solution_norm = 1.0;
+      amrex::Real update_norm = 0.0_rt;
+      amrex::Real solution_norm = 1.0_rt;
       for (int level = 0; level < num_levels; ++level) {
          amrex::MultiFab update(
             vector_potential[level]->boxArray(),
@@ -1502,7 +1621,6 @@ InitialDataEllipticResult solve_initial_data_nodal_conformal_vector_laplacian(
    }
    amrex::Abort("nodal CTT conformal-vector iteration did not converge");
    return {};
-#endif
 }
 
 } // namespace detail
@@ -1536,7 +1654,8 @@ amrex::Vector<amrex::BCRec> initial_data_boundary_records(
         ++component) {
       for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
          const int parity = grid_field_reflection_parity(
-            component_symmetries[component], direction
+            component_symmetries[component],
+            hierarchy.cartesian_physical_axes[direction]
          );
          const int reflection_type = parity < 0
             ? amrex::BCType::reflect_odd
@@ -1664,12 +1783,12 @@ void fill_initial_data_ghosts(
          hierarchy.geometry[level], boundary_conditions, boundary_function
       );
       amrex::Vector<amrex::MultiFab*> fine_data{fields[level]};
-      amrex::Vector<amrex::Real> fine_time{0.0};
+      amrex::Vector<amrex::Real> fine_time{0.0_rt};
       if (level == 0) {
          amrex::FillPatchSingleLevel(
             *fields[level],
             fields[level]->nGrowVect(),
-            0.0,
+            0.0_rt,
             fine_data,
             fine_time,
             0,
@@ -1691,11 +1810,11 @@ void fill_initial_data_ghosts(
          hierarchy.geometry[level - 1], boundary_conditions, boundary_function
       );
       amrex::Vector<amrex::MultiFab*> coarse_data{fields[level - 1]};
-      amrex::Vector<amrex::Real> coarse_time{0.0};
+      amrex::Vector<amrex::Real> coarse_time{0.0_rt};
       amrex::FillPatchTwoLevels(
          *fields[level],
          fields[level]->nGrowVect(),
-         0.0,
+         0.0_rt,
          coarse_data,
          coarse_time,
          fine_data,
@@ -1755,7 +1874,7 @@ InitialDataEllipticBoundaryConditions InitialDataEllipticBoundaryConditions::con
       for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
          const auto type = hierarchy.geometry[0].isPeriodic(direction)
             ? InitialDataEllipticBoundaryType::periodic
-            : coefficient_b == 0.0
+            : coefficient_b == 0.0_rt
                ? InitialDataEllipticBoundaryType::dirichlet
                : InitialDataEllipticBoundaryType::robin;
          const int side = component * AMREX_SPACEDIM + direction;
@@ -1913,6 +2032,77 @@ InitialDataEllipticBoundaryConditions::component(int component) const
    return result;
 }
 
+InitialDataEllipticBoundaryConditions
+InitialDataEllipticBoundaryConditions::components(
+   amrex::Vector<int> const& components
+) const
+{
+   if (components.empty()) {
+      amrex::Abort("initial-data elliptic boundary subset is empty");
+   }
+   for (const int component : components) {
+      if (component < 0 || component >= num_components) {
+         amrex::Abort("invalid initial-data elliptic boundary component subset");
+      }
+   }
+   InitialDataEllipticBoundaryConditions result;
+   result.num_components = static_cast<int>(components.size());
+   result.centering_ = centering_;
+   const int num_levels = this->num_levels();
+   result.coefficient_a_.resize(num_levels);
+   result.coefficient_b_.resize(num_levels);
+   result.coefficient_c_.resize(num_levels);
+   result.lower_types_.reserve(result.num_components * AMREX_SPACEDIM);
+   result.upper_types_.reserve(result.num_components * AMREX_SPACEDIM);
+   result.lower_reflection_parity_.reserve(
+      result.num_components * AMREX_SPACEDIM
+   );
+   result.upper_reflection_parity_.reserve(
+      result.num_components * AMREX_SPACEDIM
+   );
+   for (const int component : components) {
+      const int source_offset = component * AMREX_SPACEDIM;
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         const int source = source_offset + direction;
+         result.lower_types_.push_back(lower_types_[source]);
+         result.upper_types_.push_back(upper_types_[source]);
+         result.lower_reflection_parity_.push_back(
+            lower_reflection_parity_[source]
+         );
+         result.upper_reflection_parity_.push_back(
+            upper_reflection_parity_[source]
+         );
+      }
+   }
+   for (int level = 0; level < num_levels; ++level) {
+      auto make_subset = [&](amrex::MultiFab const& source) {
+         auto destination = std::make_unique<amrex::MultiFab>(
+            source.boxArray(),
+            source.DistributionMap(),
+            result.num_components,
+            source.nGrow()
+         );
+         for (int destination_component = 0;
+              destination_component < result.num_components;
+              ++destination_component) {
+            amrex::MultiFab::Copy(
+               *destination,
+               source,
+               components[destination_component],
+               destination_component,
+               1,
+               source.nGrow()
+            );
+         }
+         return destination;
+      };
+      result.coefficient_a_[level] = make_subset(coefficient_a(level));
+      result.coefficient_b_[level] = make_subset(coefficient_b(level));
+      result.coefficient_c_[level] = make_subset(coefficient_c(level));
+   }
+   return result;
+}
+
 void set_initial_data_reflection_boundaries(
    InitialDataEllipticHierarchy const& hierarchy,
    InitialDataEllipticBoundaryConditions& boundary,
@@ -1928,7 +2118,8 @@ void set_initial_data_reflection_boundaries(
       for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
          const int side = component * AMREX_SPACEDIM + direction;
          const int parity = grid_field_reflection_parity(
-            component_symmetries[component], direction
+            component_symmetries[component],
+            hierarchy.cartesian_physical_axes[direction]
          );
          if (hierarchy.reflection_lo[direction] != 0) {
             boundary.lower_types_[side] = parity < 0
@@ -1958,7 +2149,8 @@ void set_initial_data_reflection_boundaries(
          amrex::GpuArray<int, AMREX_SPACEDIM> parity{};
          for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
             parity[direction] = grid_field_reflection_parity(
-               component_symmetries[component], direction
+               component_symmetries[component],
+               hierarchy.cartesian_physical_axes[direction]
             );
          }
          for (amrex::MFIter mfi(boundary.coefficient_a(level));
@@ -1992,9 +2184,9 @@ void set_initial_data_reflection_boundaries(
 #endif
                   if (direction >= 0) {
                      const bool odd = parity[direction] < 0;
-                     coefficient_a(i, j, k, component) = odd ? 1.0 : 0.0;
-                     coefficient_b(i, j, k, component) = odd ? 0.0 : 1.0;
-                     coefficient_c(i, j, k, component) = 0.0;
+                     coefficient_a(i, j, k, component) = odd ? 1.0_rt : 0.0_rt;
+                     coefficient_b(i, j, k, component) = odd ? 0.0_rt : 1.0_rt;
+                     coefficient_c(i, j, k, component) = 0.0_rt;
                   }
                }
             );
@@ -2022,20 +2214,20 @@ void set_axisymmetric_spherical_toroidal_regularity(
    }
    auto near = [](amrex::Real first, amrex::Real second) {
       const amrex::Real scale = std::max({
-         amrex::Real(1.0), std::abs(first), std::abs(second)
+         amrex::Real(1.0_rt), std::abs(first), std::abs(second)
       });
       return std::abs(first - second)
-         <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+         <= 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale;
    };
    const auto first_problo = hierarchy.geometry.front().ProbLoArray();
    const auto first_probhi = hierarchy.geometry.front().ProbHiArray();
-   const bool radial_origin = near(first_problo[0], 0.0);
-   const amrex::Real half_pi = 0.5 * constants::pi;
-   const bool lower_axis = near(first_problo[1], 0.0);
+   const bool radial_origin = near(first_problo[0], 0.0_rt);
+   const amrex::Real half_pi = 0.5_rt * constants::pi;
+   const bool lower_axis = near(first_problo[1], 0.0_rt);
    const bool lower_equator = near(first_problo[1], half_pi);
    const bool upper_axis = near(first_probhi[1], constants::pi);
    const bool upper_equator = near(first_probhi[1], half_pi);
-   if (!(first_problo[0] >= 0.0 && first_probhi[0] > first_problo[0])
+   if (!(first_problo[0] >= 0.0_rt && first_probhi[0] > first_problo[0])
        || !(lower_axis || lower_equator)
        || !(upper_axis || upper_equator)
        || (radial_origin && hierarchy.reflection_lo[0] == 0)
@@ -2073,7 +2265,7 @@ void set_axisymmetric_spherical_toroidal_regularity(
           || !near(probhi[1], first_probhi[1])
 #if (AMREX_SPACEDIM == 3)
           || !hierarchy.geometry[level].isPeriodic(2)
-          || !near(probhi[2] - problo[2], 2.0 * constants::pi)
+          || !near(probhi[2] - problo[2], 2.0_rt * constants::pi)
 #endif
       ) {
          amrex::Abort("inconsistent spherical axisymmetric hierarchy geometry");
@@ -2102,9 +2294,9 @@ void set_axisymmetric_spherical_toroidal_regularity(
                odd = upper_angular_is_axis;
             }
             if (odd >= 0) {
-               a(i, j, k, selected_component) = odd != 0 ? 1.0 : 0.0;
-               b(i, j, k, selected_component) = odd != 0 ? 0.0 : 1.0;
-               c(i, j, k, selected_component) = 0.0;
+               a(i, j, k, selected_component) = odd != 0 ? 1.0_rt : 0.0_rt;
+               b(i, j, k, selected_component) = odd != 0 ? 0.0_rt : 1.0_rt;
+               c(i, j, k, selected_component) = 0.0_rt;
             }
          });
       }
@@ -2129,7 +2321,7 @@ void set_axisymmetric_spherical_radial_robin_boundary(
        || boundary.num_levels() != static_cast<int>(hierarchy.geometry.size())
        || static_cast<int>(asymptotic_values.size())
           != boundary.num_components
-       || !(falloff_power > 0.0)) {
+       || !(falloff_power > 0.0_rt)) {
       amrex::Abort("invalid spherical radial Robin boundary configuration");
    }
    for (int component = 0; component < boundary.num_components; ++component) {
@@ -2141,7 +2333,7 @@ void set_axisymmetric_spherical_radial_robin_boundary(
       const auto radial_faces = hierarchy.coordinate_faces(level, 0);
       const amrex::Real outer_radius = radial_faces.back();
       if (hierarchy.geometry[level].isPeriodic(0)
-          || !(radial_faces.front() >= 0.0)
+          || !(radial_faces.front() >= 0.0_rt)
           || !(outer_radius > radial_faces.front())) {
          amrex::Abort(
             "spherical radial Robin data require a nonnegative radial interval"
@@ -2166,7 +2358,7 @@ void set_axisymmetric_spherical_radial_robin_boundary(
             ) noexcept {
                if (i > domain_hi.x) {
                   a(i, j, k, component) = coefficient;
-                  b(i, j, k, component) = 1.0;
+                  b(i, j, k, component) = 1.0_rt;
                   c(i, j, k, component) = coefficient * asymptotic;
                }
             });
@@ -2197,7 +2389,7 @@ void set_axisymmetric_spherical_rotating_horizon_boundary(
    if (boundary.centering() != InitialDataEllipticCentering::cell
        || boundary.num_levels() != static_cast<int>(hierarchy.geometry.size())
        || component < 0 || component >= boundary.num_components
-       || !(horizon_radius > 0.0)
+       || !(horizon_radius > 0.0_rt)
        || !std::isfinite(horizon_rotation_parameter)) {
       amrex::Abort("invalid rotating-horizon boundary configuration");
    }
@@ -2208,11 +2400,11 @@ void set_axisymmetric_spherical_rotating_horizon_boundary(
    for (int level = 0; level < boundary.num_levels(); ++level) {
       const auto radial_faces = hierarchy.coordinate_faces(level, 0);
       const amrex::Real scale = std::max(
-         amrex::Real(1.0), horizon_radius
+         amrex::Real(1.0_rt), horizon_radius
       );
       if (hierarchy.geometry[level].isPeriodic(0)
           || std::abs(radial_faces.front() - horizon_radius)
-             > 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale) {
+             > 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale) {
          amrex::Abort(
             "rotating-horizon boundary requires the radial lower face at r_H"
          );
@@ -2241,8 +2433,8 @@ void set_axisymmetric_spherical_rotating_horizon_boundary(
          ) noexcept {
             if (i < domain_lo.x && j >= domain_lo.y && j <= domain_hi.y) {
                const amrex::Real theta = theta_centers[j - domain_lo.y];
-               a(i, j, k, selected_component) = 1.0;
-               b(i, j, k, selected_component) = 0.0;
+               a(i, j, k, selected_component) = 1.0_rt;
+               b(i, j, k, selected_component) = 0.0_rt;
                c(i, j, k, selected_component) =
                   horizon_rotation_parameter * horizon_radius
                   * std::sin(theta);
@@ -2281,7 +2473,7 @@ void set_centered_power_law_robin_boundary(
 )
 {
    if (
-      !(falloff_power > 0.0)
+      !(falloff_power > 0.0_rt)
       || boundary.num_levels() != static_cast<int>(hierarchy.geometry.size())
       || static_cast<int>(asymptotic_values.size()) != boundary.num_components
    ) {
@@ -2300,7 +2492,7 @@ void set_centered_power_law_robin_boundary(
       for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
          center[direction] = physical_center != nullptr
             ? (*physical_center)[direction]
-            : 0.5 * (problo[direction] + probhi[direction]);
+            : 0.5_rt * (problo[direction] + probhi[direction]);
          periodic[direction] = hierarchy.geometry[level].isPeriodic(direction);
       }
       const amrex::Box coefficient_domain = vertex_centered
@@ -2308,7 +2500,7 @@ void set_centered_power_law_robin_boundary(
          : hierarchy.geometry[level].Domain();
       const amrex::Dim3 domain_lo = amrex::lbound(coefficient_domain);
       const amrex::Dim3 domain_hi = amrex::ubound(coefficient_domain);
-      const amrex::Real coordinate_offset = vertex_centered ? 0.0 : 0.5;
+      const amrex::Real coordinate_offset = vertex_centered ? 0.0_rt : 0.5_rt;
       for (int component = 0; component < boundary.num_components; ++component) {
          for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
             const int side = component * AMREX_SPACEDIM + direction;
@@ -2339,13 +2531,13 @@ void set_centered_power_law_robin_boundary(
                amrex::Real position_2 = problo[1]
                   + (j + coordinate_offset) * dx[1] - center[1];
 #else
-               amrex::Real position_2 = 0.0;
+               amrex::Real position_2 = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
                amrex::Real position_3 = problo[2]
                   + (k + coordinate_offset) * dx[2] - center[2];
 #else
-               amrex::Real position_3 = 0.0;
+               amrex::Real position_3 = 0.0_rt;
 #endif
                if (robin_lo[0] != 0 && i < domain_lo.x) {
                   face_direction = 0;
@@ -2389,7 +2581,7 @@ void set_centered_power_law_robin_boundary(
                   }
 #endif
                   coefficient_a(i, j, k, component) = falloff_power;
-                  coefficient_b(i, j, k, component) = face_position != 0.0
+                  coefficient_b(i, j, k, component) = face_position != 0.0_rt
                      ? radius_squared / face_position
                      : std::numeric_limits<amrex::Real>::quiet_NaN();
                   coefficient_c(i, j, k, component) =
@@ -2433,12 +2625,12 @@ InitialDataEllipticResult solve_initial_data_poisson(
       info
    );
    poisson.setMaxOrder(options.boundary_interpolation_order);
-   poisson.setScalars(0.0, -1.0);
+   poisson.setScalars(0.0_rt, -1.0_rt);
    const LoweredBoundaryConditions lowered = lower_boundary_conditions(
       hierarchy, boundary
    );
    for (int level = 0; level < num_levels; ++level) {
-      poisson.setBCoeffs(level, 1.0);
+      poisson.setBCoeffs(level, 1.0_rt);
    }
    set_boundary_conditions(poisson, boundary, lowered);
 
@@ -2466,51 +2658,174 @@ InitialDataEllipticResult solve_initial_data_conformal_vector_laplacian(
       source,
       boundary,
       options,
-      AMREX_SPACEDIM
+      3
    );
+   const amrex::Vector<int> physical_axes =
+      detail::cartesian_physical_axes(hierarchy);
    if (boundary.centering() == InitialDataEllipticCentering::vertex) {
       return solve_initial_data_nodal_conformal_vector_laplacian(
          hierarchy, vector_potential, source, boundary, options
       );
    }
-   auto negative_source_storage = negative_fields(
-      hierarchy, source, AMREX_SPACEDIM
-   );
-   amrex::Vector<amrex::MultiFab const*> negative_source(num_levels);
-   for (int level = 0; level < num_levels; ++level) {
-      negative_source[level] = negative_source_storage[level].get();
-   }
 
-   amrex::LPInfo info;
-   amrex::MLTensorOp vector_laplacian(
-      hierarchy.geometry,
-      hierarchy.grids,
-      hierarchy.distribution,
-      info
-   );
-   vector_laplacian.setMaxOrder(options.boundary_interpolation_order);
-   vector_laplacian.setScalars(0.0, 1.0);
-   const LoweredBoundaryConditions lowered = lower_boundary_conditions(
-      hierarchy, boundary
-   );
-   if (lowered.has_robin) {
+   InitialDataEllipticResult result;
+#if (AMREX_SPACEDIM == 3)
+   if (physical_axes != amrex::Vector<int>{0, 1, 2}) {
       amrex::Abort(
-         "AMReX MLTensorOp does not consistently support Robin tensor cross terms"
+         "three-dimensional Cartesian ID axes must use canonical x y z order"
       );
    }
+   result = detail::solve_active_conformal_vector_laplacian(
+      hierarchy, vector_potential, source, boundary, options
+   );
+#elif (AMREX_SPACEDIM == 2)
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> active_solution_storage(
+      num_levels
+   );
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> active_source_storage(
+      num_levels
+   );
+   amrex::Vector<amrex::MultiFab*> active_solution(num_levels);
+   amrex::Vector<amrex::MultiFab const*> active_source(num_levels);
    for (int level = 0; level < num_levels; ++level) {
-      vector_laplacian.setShearViscosity(level, 1.0);
+      active_solution_storage[level] = std::make_unique<amrex::MultiFab>(
+         vector_potential[level]->boxArray(),
+         vector_potential[level]->DistributionMap(),
+         AMREX_SPACEDIM,
+         vector_potential[level]->nGrow()
+      );
+      active_source_storage[level] = std::make_unique<amrex::MultiFab>(
+         source[level]->boxArray(),
+         source[level]->DistributionMap(),
+         AMREX_SPACEDIM,
+         source[level]->nGrow()
+      );
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         amrex::MultiFab::Copy(
+            *active_solution_storage[level],
+            *vector_potential[level],
+            physical_axes[direction],
+            direction,
+            1,
+            vector_potential[level]->nGrow()
+         );
+         amrex::MultiFab::Copy(
+            *active_source_storage[level],
+            *source[level],
+            physical_axes[direction],
+            direction,
+            1,
+            source[level]->nGrow()
+         );
+      }
+      active_solution[level] = active_solution_storage[level].get();
+      active_source[level] = active_source_storage[level].get();
    }
-   set_boundary_conditions(vector_laplacian, boundary, lowered);
+   const InitialDataEllipticBoundaryConditions active_boundary =
+      boundary.components(physical_axes);
+   result = detail::solve_active_conformal_vector_laplacian(
+      hierarchy, active_solution, active_source, active_boundary, options
+   );
+   for (int level = 0; level < num_levels; ++level) {
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         amrex::MultiFab::Copy(
+            *vector_potential[level],
+            *active_solution_storage[level],
+            direction,
+            physical_axes[direction],
+            1,
+            0
+         );
+      }
+   }
+#endif
 
-   amrex::MLMG mlmg(vector_laplacian);
-   configure_mlmg(mlmg, options);
-   return elliptic_result(mlmg.solve(
-      vector_potential,
-      negative_source,
-      options.relative_tolerance,
-      options.absolute_tolerance
-   ));
+   std::array<bool, 3> active{{false, false, false}};
+   for (const int physical_axis : physical_axes) {
+      active[physical_axis] = true;
+   }
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> scalar_solution_storage(
+      num_levels
+   );
+   amrex::Vector<std::unique_ptr<amrex::MultiFab>> scalar_source_storage(
+      num_levels
+   );
+   amrex::Vector<amrex::MultiFab*> scalar_solution(num_levels);
+   amrex::Vector<amrex::MultiFab const*> scalar_source(num_levels);
+   auto solve_scalar_component = [&](int component, amrex::Real source_scale) {
+      for (int level = 0; level < num_levels; ++level) {
+         scalar_solution_storage[level] = std::make_unique<amrex::MultiFab>(
+            vector_potential[level]->boxArray(),
+            vector_potential[level]->DistributionMap(),
+            1,
+            vector_potential[level]->nGrow()
+         );
+         scalar_source_storage[level] = std::make_unique<amrex::MultiFab>(
+            source[level]->boxArray(),
+            source[level]->DistributionMap(),
+            1,
+            source[level]->nGrow()
+         );
+         amrex::MultiFab::Copy(
+            *scalar_solution_storage[level],
+            *vector_potential[level],
+            component,
+            0,
+            1,
+            vector_potential[level]->nGrow()
+         );
+         amrex::MultiFab::Copy(
+            *scalar_source_storage[level],
+            *source[level],
+            component,
+            0,
+            1,
+            source[level]->nGrow()
+         );
+         scalar_source_storage[level]->mult(
+            source_scale, 0, 1, source[level]->nGrow()
+         );
+         scalar_solution[level] = scalar_solution_storage[level].get();
+         scalar_source[level] = scalar_source_storage[level].get();
+      }
+      const InitialDataEllipticResult component_result =
+         solve_initial_data_poisson(
+            hierarchy,
+            scalar_solution,
+            scalar_source,
+            boundary.component(component),
+            options
+         );
+      result.residual = std::max(result.residual, component_result.residual);
+      result.boundary_residual = std::max(
+         result.boundary_residual, component_result.boundary_residual
+      );
+      result.boundary_iterations = std::max(
+         result.boundary_iterations, component_result.boundary_iterations
+      );
+      for (int level = 0; level < num_levels; ++level) {
+         amrex::MultiFab::Copy(
+            *vector_potential[level],
+            *scalar_solution_storage[level],
+            0,
+            component,
+            1,
+            0
+         );
+      }
+   };
+
+   for (int component = 0; component < 3; ++component) {
+#if (AMREX_SPACEDIM == 1)
+      const amrex::Real source_scale = active[component] ? 0.75_rt : 1.0_rt;
+      solve_scalar_component(component, source_scale);
+#else
+      if (!active[component]) {
+         solve_scalar_component(component, 1.0_rt);
+      }
+#endif
+   }
+   return result;
 }
 
 } // namespace pyfluid_amrex

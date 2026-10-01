@@ -2,14 +2,19 @@
 
 #include "pyfluid_amrex/amr_indicator.hpp"
 #include "pyfluid_amrex/primitive_cache_factory.hpp"
+#include "pyfluid_amrex/reduction_sum.hpp"
+#include "pyfluid_amrex/spacetime_excision.hpp"
 
 #include <AMReX_FillPatchUtil.H>
+#include <AMReX_Reduce.H>
 
 #include <algorithm>
 #include <cmath>
 #include <sstream>
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 namespace {
 
@@ -28,26 +33,34 @@ bool refinement_ratio_is_anisotropic(amrex::IntVect const& ratio)
 
 void AmrSolverBase::fill_level_primitive_cache(int lev, amrex::Real time)
 {
-   if (spacetime_state_.active()) {
+   const bool relativistic = physical_system_is_relativistic(physics_system_);
+   const bool analytic_fixed_spacetime =
+      relativistic && uses_analytic_fixed_spacetime_kernels();
+   if (spacetime_state_.active() && !analytic_fixed_spacetime) {
       prepare_spacetime_coupling_range(
-         spacetime_state_.state(), lev, lev + 1, time, -1.0, 0
+         spacetime_state_.state(), lev, lev + 1, time, -1.0_rt, 0
       );
    }
-   const bool relativistic = physical_system_is_relativistic(physics_system_);
    fill_primitive_cache(PrimitiveCacheLaunch{
       *primitive_[lev],
       *fluid_state_.state()[lev],
       eos_params(cfg_),
       physics_system_,
       fluid_state_.state()[lev]->nComp(),
-      relativistic && spacetime_state_.active()
+      relativistic && spacetime_state_.active() && !analytic_fixed_spacetime
          ? spacetime_coupling_.cell_spacetime()[lev].get()
          : nullptr,
       nullptr,
       nullptr,
       &Geom(lev),
+      mesh_coordinate_code(cfg_.mesh_coordinate),
+      mesh_axes_layout(cfg_),
       fixed_spacetime_parameters(cfg_),
       time,
+      nullptr,
+      nullptr,
+      excision_grid_view(spacetime_excision_region(cfg_), Geom(lev), primitive_[lev]->ixType()),
+      recovery_exterior_state_,
    });
 }
 
@@ -81,15 +94,22 @@ AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_s
       fill_level_primitive_cache(lev, time);
    } else if (spacetime_state_.active()) {
       prepare_spacetime_coupling_range(
-         spacetime_state_.state(), lev, lev + 1, time, -1.0, 0
+         spacetime_state_.state(), lev, lev + 1, time, -1.0_rt, 0
       );
    }
 
-   amrex::Long local_tagged_cells = 0;
-   std::array<amrex::Long, AMREX_SPACEDIM> local_direction_tags{};
-   std::array<amrex::Real, AMREX_SPACEDIM> local_direction_strength{};
+   const PhysicalSystem physics_system = physics_system_;
+   amrex::ReduceOps<
+      amrex::ReduceOpSum, amrex::ReduceOpSum, amrex::ReduceOpSum,
+      amrex::ReduceOpSum, amrex::ReduceOpSum, amrex::ReduceOpSum,
+      amrex::ReduceOpSum
+   > reduce_ops;
+   amrex::ReduceData<
+      amrex::Long, amrex::Long, amrex::Long, amrex::Long,
+      ReductionSum, ReductionSum, ReductionSum
+   > reduce_data(reduce_ops);
+   using ReduceTuple = decltype(reduce_data)::Type;
    for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
       const auto primitive = primitive_[lev]->const_array(mfi);
       const bool stored_spacetime = spacetime_state_.active();
       const AmrSpacetimeMetricView spacetime{
@@ -98,71 +118,47 @@ AmrSolverBase::DirectionalTagStatistics AmrSolverBase::measure_directional_tag_s
             : amrex::Array4<amrex::Real const>{},
          stored_spacetime,
       };
-      const auto lo = bx.smallEnd();
-      const auto hi = bx.bigEnd();
-#if (AMREX_SPACEDIM == 1)
-      constexpr int jlo = 0;
-      constexpr int jhi = 0;
-      constexpr int klo = 0;
-      constexpr int khi = 0;
-#elif (AMREX_SPACEDIM == 2)
-      const int jlo = lo[1];
-      const int jhi = hi[1];
-      constexpr int klo = 0;
-      constexpr int khi = 0;
-#else
-      const int jlo = lo[1];
-      const int jhi = hi[1];
-      const int klo = lo[2];
-      const int khi = hi[2];
-#endif
-      for (int k = klo; k <= khi; ++k) {
-         for (int j = jlo; j <= jhi; ++j) {
-            for (int i = lo[0]; i <= hi[0]; ++i) {
-               const auto directional_indicators =
-                  auto_amr_directional_indicators_from_primitive(
-                     primitive,
-                     i,
-                     j,
-                     k,
-                     eos,
-                     eos_method,
-                     physics_system_,
-                     tag_policy,
-                     density_floor,
-                     coordinate,
-                     axes,
-                     problo,
-                     dx,
-                     amr_min_feature_lengths,
-                     min_refine_radius,
-                     spacetime
-                  );
-               bool tagged = false;
-               for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-                  if (directional_indicators[dir] > threshold) {
-                     local_direction_tags[dir] += 1;
-                     local_direction_strength[dir] += directional_indicators[dir] / threshold;
-                     tagged = true;
-                  }
-               }
-               if (tagged) {
-                  local_tagged_cells += 1;
+      reduce_ops.eval(mfi.validbox(), reduce_data,
+         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept -> ReduceTuple {
+            const auto indicators = auto_amr_directional_indicators_from_primitive(
+               primitive, i, j, k, eos, eos_method, physics_system,
+               tag_policy, density_floor, coordinate, axes, problo, dx,
+               amr_min_feature_lengths, min_refine_radius, spacetime
+            );
+            amrex::Long tagged = 0;
+            amrex::GpuArray<amrex::Long, 3> direction_tags{};
+            amrex::GpuArray<amrex::Real, 3> direction_strength{};
+            for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+               if (indicators[dir] > threshold) {
+                  direction_tags[dir] = 1;
+                  direction_strength[dir] = indicators[dir] / threshold;
+                  tagged = 1;
                }
             }
-         }
-      }
+            return {
+               tagged, direction_tags[0], direction_tags[1], direction_tags[2],
+               direction_strength[0], direction_strength[1], direction_strength[2]
+            };
+         });
    }
 
-   amrex::ParallelDescriptor::ReduceLongSum(local_tagged_cells);
+   const auto totals = reduce_data.value();
+   amrex::Long counts[4]{
+      amrex::get<0>(totals), amrex::get<1>(totals),
+      amrex::get<2>(totals), amrex::get<3>(totals)
+   };
+   amrex::Real strength[3]{
+      static_cast<amrex::Real>(amrex::get<4>(totals)),
+      static_cast<amrex::Real>(amrex::get<5>(totals)),
+      static_cast<amrex::Real>(amrex::get<6>(totals))
+   };
+   amrex::ParallelDescriptor::ReduceLongSum(counts, AMREX_SPACEDIM + 1);
+   amrex::ParallelDescriptor::ReduceRealSum(strength, AMREX_SPACEDIM);
+   statistics.tagged_cells = counts[0];
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      amrex::ParallelDescriptor::ReduceLongSum(local_direction_tags[dir]);
-      amrex::ParallelDescriptor::ReduceRealSum(local_direction_strength[dir]);
+      statistics.direction_tags[dir] = counts[dir + 1];
+      statistics.direction_strength[dir] = strength[dir];
    }
-
-   statistics.tagged_cells = local_tagged_cells;
-   statistics.direction_tags = local_direction_tags;
-   statistics.direction_strength = local_direction_strength;
    return statistics;
 }
 
@@ -355,8 +351,8 @@ void AmrSolverBase::interpolate_source_state_level(int lev, amrex::Real alpha)
    if (!fluid_state_.source_state()[lev] || !fluid_state_.old_state()[lev] || !fluid_state_.state()[lev]) {
       amrex::Abort("subcycled self-gravity source-state interpolation is missing level storage");
    }
-   alpha = amrex::min(amrex::max(alpha, 0.0), 1.0);
-   const amrex::Real old_weight = 1.0 - alpha;
+   alpha = amrex::min(amrex::max(alpha, 0.0_rt), 1.0_rt);
+   const amrex::Real old_weight = 1.0_rt - alpha;
    const int ncomp = num_state_components();
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -378,10 +374,10 @@ void AmrSolverBase::fill_source_state_level_from_level_time(int lev, amrex::Real
 {
    if (fluid_state_.old_state()[lev] && fluid_state_.state()[lev] && level_times_[lev] > level_old_times_[lev]) {
       const amrex::Real scale = amrex::max(
-         1.0,
+         1.0_rt,
          amrex::max(amrex::Math::abs(level_old_times_[lev]), amrex::Math::abs(level_times_[lev]))
       );
-      const amrex::Real eps = 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+      const amrex::Real eps = 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale;
       if (time >= level_old_times_[lev] - eps && time <= level_times_[lev] + eps) {
          const amrex::Real alpha = (time - level_old_times_[lev]) / (level_times_[lev] - level_old_times_[lev]);
          interpolate_source_state_level(lev, alpha);
@@ -408,8 +404,8 @@ void AmrSolverBase::fill_source_state_for_rhs(AmrSolverBase::LevelData& input, i
 
 bool AmrSolverBase::nearly_equal_time(amrex::Real a, amrex::Real b)
 {
-   const amrex::Real scale = amrex::max(1.0, amrex::max(amrex::Math::abs(a), amrex::Math::abs(b)));
-   const amrex::Real eps = 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+   const amrex::Real scale = amrex::max(1.0_rt, amrex::max(amrex::Math::abs(a), amrex::Math::abs(b)));
+   const amrex::Real eps = 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale;
    return amrex::Math::abs(a - b) <= eps;
 }
 

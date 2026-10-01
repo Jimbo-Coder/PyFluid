@@ -1,12 +1,17 @@
+#include "pyfluid_amrex/spacetime_derivatives.hpp"
 #include "amr/amr_solver_base.hpp"
+#include "pyfluid_amrex/fccz4_runtime.hpp"
+#include "pyfluid_amrex/fccz4_constraint_access.hpp"
+#include "pyfluid_amrex/spacetime_excision.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
 
 #include <AMReX_Math.H>
 #include <AMReX_MultiFabUtil.H>
 
 #include <cmath>
+#include <type_traits>
 
-#include "pyfluid_amrex/spacetime_coupling.hpp"
+#include "pyfluid_amrex/eulerian_matter_access.hpp"
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
 #include "pyfluid_amrex/initial_data/materialization.hpp"
 #include "pyfluid_amrex/initial_data/magnetic.hpp"
@@ -18,9 +23,13 @@
 #include "pyfluid_amrex/nodal_interpolater.hpp"
 #include "pyfluid_amrex/surface_geometry.hpp"
 #include "pyfluid_amrex/z4c_constraint_pointwise.hpp"
+#include "pyfluid_amrex/spacetime_constraint_region.hpp"
+#include "pyfluid_amrex/z4c_excision_derivatives.hpp"
 #include "relativity/z4c_boundary.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 bool spacetime_boundary_reflects(
@@ -203,7 +212,7 @@ void enforce_reflection_odd_nodal_plane_values(
                        component < Z4C_NUM_COMPONENTS;
                        ++component) {
                      if (odd_component[component] != 0) {
-                        values(i, j, k, component) = 0.0;
+                        values(i, j, k, component) = 0.0_rt;
                      }
                   }
                }
@@ -211,6 +220,139 @@ void enforce_reflection_odd_nodal_plane_values(
          }
       }
    }
+}
+
+// Keep formulation selection on the host and accuracy dispatch inside the
+// shared derivative gather. A named launch owner also avoids CUDA's ban on
+// extended device lambdas nested in generic host lambdas.
+template <bool reference_metric_formulation>
+void fill_constraint_norms(
+   amrex::Box const& box,
+   amrex::Array4<amrex::Real const> input,
+   amrex::Array4<amrex::Real const> matter,
+   amrex::Array4<amrex::Real> output,
+   amrex::Array4<int const> valid_points,
+   amrex::Array4<int const> same_level_points,
+   amrex::Array4<int const> owned_points,
+   ExcisionGridView const& excision,
+   bool matter_coupled,
+   int stencil_radius,
+   int derivative_order,
+   amrex::GpuArray<amrex::Real, 3> const& inv_spacing,
+   ReferenceChartGeometry const& reference_chart,
+   bool include_regions,
+   SpacetimeConstraintRegion const& region,
+   bool has_black_hole,
+   FixedSpacetimeParameters const& black_hole,
+   amrex::Real horizon_radius_squared
+)
+{
+   amrex::ParallelFor(box, [input, matter, output, valid_points, same_level_points, owned_points,
+       excision, matter_coupled, stencil_radius, derivative_order, inv_spacing,
+       reference_chart, include_regions, region, has_black_hole, black_hole,
+       horizon_radius_squared] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      if (valid_points(i, j, k, 0) == 0
+          || owned_points(i, j, k, 0) == 0
+          || (excision.region.enabled() && !excision(i, j, k, 0))) {
+         return;
+      }
+      const Z4cMatter point_matter = matter_coupled
+         ? load_eulerian_matter(matter, i, j, k)
+         : vacuum_z4c_matter();
+      bool same_level_stencil = true;
+      for (int offset = 1; offset <= stencil_radius; ++offset) {
+         same_level_stencil = same_level_stencil
+            && same_level_points(i - offset, j, k, 0) != 0
+            && same_level_points(i + offset, j, k, 0) != 0;
+#if (AMREX_SPACEDIM >= 2)
+         same_level_stencil = same_level_stencil
+            && same_level_points(i, j - offset, k, 0) != 0
+            && same_level_points(i, j + offset, k, 0) != 0;
+#endif
+#if (AMREX_SPACEDIM == 3)
+         same_level_stencil = same_level_stencil
+            && same_level_points(i, j, k - offset, 0) != 0
+            && same_level_points(i, j, k + offset, 0) != 0;
+#endif
+      }
+      const Z4cState local_state = load_z4c_state(input, i, j, k);
+      const auto derivatives = gather_spacetime_derivatives<Z4cDerivativePurpose::Constraints>(
+         derivative_order, input, i, j, k, inv_spacing, local_state, excision);
+      Z4cConstraints c;
+      if constexpr (reference_metric_formulation) {
+         c = evaluate_fccz4_constraint_layout(input, i, j, k, derivatives,
+            reference_chart.at(i, j, k), point_matter);
+      } else {
+         c = generated::evaluate_z4c_constraints(local_state, derivatives, point_matter);
+      }
+      output(i, j, k, 0) = amrex::Math::abs(c.hamiltonian);
+      output(i, j, k, 1) = c.momentum1 * c.momentum1
+         + c.momentum2 * c.momentum2 + c.momentum3 * c.momentum3;
+      output(i, j, k, 2) = c.z_tilde1 * c.z_tilde1
+         + c.z_tilde2 * c.z_tilde2 + c.z_tilde3 * c.z_tilde3;
+      output(i, j, k, 3) = amrex::Math::abs(c.theta);
+      output(i, j, k, 4) = amrex::Math::abs(
+         c.log_conformal_determinant
+      );
+      output(i, j, k, 5) = amrex::Math::abs(c.trace_a_tilde);
+      output(i, j, k, 6) = 1.0_rt;
+      const int value_component = same_level_stencil ? 7 : 9;
+      const int weight_component = same_level_stencil ? 8 : 10;
+      output(i, j, k, value_component) = amrex::Math::abs(c.hamiltonian);
+      output(i, j, k, weight_component) = 1.0_rt;
+      if (include_regions) {
+         const auto chart = reference_chart.at(i, j, k);
+         const auto position = mesh_coordinate_triplet_to_cartesian(chart.coordinate, chart.position);
+         const int partition = region.classify(position);
+         if (partition >= 0) {
+            // Reuse c before the legacy, dx-dependent horizon mask.
+            // Each sample belongs to the complete region and exactly
+            // one near/far partition. Reference-volume weighting is
+            // applied after the unweighted maximum reduction.
+            for (int entry = 0; entry < 2; ++entry) {
+               const int region_index = entry == 0 ? 0 : partition + 1;
+               const int first_component = 14 + 3 * region_index;
+               output(i, j, k, first_component) = output(i, j, k, 0);
+               output(i, j, k, first_component + 1) = output(i, j, k, 1);
+               output(i, j, k, first_component + 2) = 1.0_rt;
+            }
+         }
+      }
+      if (has_black_hole) {
+         bool exterior_stencil = true;
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            for (int offset = -stencil_radius; offset <= stencil_radius; ++offset) {
+               int point_i = i;
+               int point_j = j;
+               int point_k = k;
+               if (direction == 0) {
+                  point_i += offset;
+               }
+#if (AMREX_SPACEDIM >= 2)
+               if (direction == 1) {
+                  point_j += offset;
+               }
+#endif
+#if (AMREX_SPACEDIM == 3)
+               if (direction == 2) {
+                  point_k += offset;
+               }
+#endif
+               const auto chart = reference_chart.at(point_i, point_j, point_k);
+               const auto physical = mesh_coordinate_triplet_to_cartesian(chart.coordinate, chart.position);
+               exterior_stencil = exterior_stencil
+                  && black_hole_radial_coordinate_squared(
+                       black_hole, physical[0], physical[1], physical[2]
+                     ) > horizon_radius_squared;
+            }
+         }
+         if (exterior_stencil) {
+            output(i, j, k, 11) = amrex::Math::abs(c.hamiltonian);
+            output(i, j, k, 12) = 1.0_rt;
+            output(i, j, k, 13) = output(i, j, k, 1);
+         }
+      }
+   });
 }
 
 } // namespace
@@ -306,7 +448,8 @@ void AmrSolverBase::fill_spacetime_level_boundaries(
       fine_bc,
       refRatio(lev - 1),
       spacetime_fillpatch_bcs_,
-      spacetime_state_.num_components()
+      spacetime_state_.num_components(),
+      &spacetime_interpolater_
    );
    enforce_reflection_odd_nodal_plane_values(
       *data[lev], Geom(lev), spacetime_fillpatch_bcs_
@@ -325,30 +468,38 @@ void AmrSolverBase::initialize_spacetime_level(int lev, amrex::Real time)
    if (!spacetime_state_.active()) {
       return;
    }
+   if (cfg_.spacetime_formulation == "fccz4") {
+      validate_fccz4_domain(Geom(lev), cfg_);
+   }
    initialize_z4c_state(
       *spacetime_state_.state()[lev], Geom(lev), cfg_, time,
       initial_data_provider_->view()
    );
+   if (cfg_.spacetime_formulation == "fccz4") {
+      rotate_fccz4_initial_state(*spacetime_state_.state()[lev], Geom(lev), cfg_);
+   }
    spacetime_coupling_.invalidate_cell_spacetime(lev);
    fill_spacetime_level_boundaries(spacetime_state_.state(), lev, time);
-   complete_z4c_contracted_connections(*spacetime_state_.state()[lev], Geom(lev));
+   complete_spacetime_connections(*spacetime_state_.state()[lev], Geom(lev), cfg_);
    fill_spacetime_level_boundaries(spacetime_state_.state(), lev, time);
 }
 
 bool AmrSolverBase::materialize_constraint_solved_initial_data(
-   bool seed_from_loaded_id
+   bool seed_from_loaded_id,
+   bool reseed_static_tov_spacetime,
+   bool preserve_conformal_baryon_density
 )
 {
    initial_data_rotating_star_summary_.reset();
-   initial_data_black_hole_throat_area_ = -1.0;
-   initial_data_black_hole_irreducible_mass_ = -1.0;
-   initial_data_black_hole_throat_equatorial_circumference_ = -1.0;
-   initial_data_black_hole_throat_polar_circumference_ = -1.0;
-   initial_data_black_hole_throat_kerr_mass_ = -1.0;
-   initial_data_black_hole_throat_kerr_spin_ = -1.0;
-   initial_data_black_hole_throat_angular_momentum_ = 0.0;
-   initial_data_black_hole_throat_christodoulou_mass_ = -1.0;
-   initial_data_black_hole_throat_christodoulou_spin_ = 0.0;
+   initial_data_black_hole_throat_area_ = -1.0_rt;
+   initial_data_black_hole_irreducible_mass_ = -1.0_rt;
+   initial_data_black_hole_throat_equatorial_circumference_ = -1.0_rt;
+   initial_data_black_hole_throat_polar_circumference_ = -1.0_rt;
+   initial_data_black_hole_throat_kerr_mass_ = -1.0_rt;
+   initial_data_black_hole_throat_kerr_spin_ = -1.0_rt;
+   initial_data_black_hole_throat_angular_momentum_ = 0.0_rt;
+   initial_data_black_hole_throat_christodoulou_mass_ = -1.0_rt;
+   initial_data_black_hole_throat_christodoulou_spin_ = 0.0_rt;
    initial_data_equilibrium_torus_summary_.reset();
    const bool uses_constraint_solve = cfg_.spacetime_initial_data == "ctt"
       || cfg_.spacetime_initial_data == "cttk"
@@ -385,7 +536,7 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          mapped_hierarchy,
          0,
          cfg_,
-         0.0,
+         0.0_rt,
          provider
       );
       const InitialDataCoordinateLine radial = mapped_hierarchy.coordinate_line(
@@ -411,6 +562,15 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
    }
 
    InitialDataEllipticHierarchy hierarchy;
+   if (cfg_.mesh_coordinate == "cartesian") {
+      const MeshAxes axes = mesh_axes_layout(MeshCartesian, cfg_.mesh_axes);
+      for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+         hierarchy.cartesian_physical_axes[direction] =
+            mesh_canonical_axis_index(
+               MeshCartesian, mesh_axis(axes, direction)
+            );
+      }
+   }
    amrex::Vector<amrex::MultiFab*> primitive;
    amrex::Vector<amrex::MultiFab*> spacetime;
    amrex::Vector<amrex::MultiFab*> cell_spacetime;
@@ -419,14 +579,14 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       hierarchy.grids.push_back(boxArray(lev));
       hierarchy.distribution.push_back(DistributionMap(lev));
       if (seed_from_loaded_id) {
-         fill_level_primitive_cache(lev, 0.0);
+         fill_level_primitive_cache(lev, 0.0_rt);
       } else if (initial_data_provider_->view().has_fluid()
                  || cfg_.ic == "black_hole") {
          initialize_relativistic_primitive_cache_from_initial_data(
             *primitive_[lev], Geom(lev), cfg_, initial_data_provider_->view()
          );
       } else {
-         fill_level_primitive_cache(lev, 0.0);
+         fill_level_primitive_cache(lev, 0.0_rt);
       }
       primitive.push_back(primitive_[lev].get());
       spacetime.push_back(spacetime_state_.state()[lev].get());
@@ -468,11 +628,35 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
             );
          }
          hierarchy.physical_coordinate_faces = initial_data_coordinate_faces_;
+         if (reseed_static_tov_spacetime) {
+            if (cfg_.ic != "rotating_star"
+                || cfg_.initial_data_angular_velocity != 0.0_rt
+                || cfg_.initial_data_disk != "none"
+                || !provider.tov.active()) {
+               amrex::Abort(
+                  "analytic static-TOV spacetime reseeding requires a "
+                  "zero-rotation disk-free native TOV source"
+               );
+            }
+            // A perturbation changes the live primitive, not the equilibrium
+            // metric.  Start its constraint polish from the analytic mapped
+            // TOV branch.  Reconstructing cell scalars through the generic
+            // nodal handoff introduces a large axis-closure defect on this
+            // reduced chart and can select a different nonlinear branch.
+            initialize_mapped_z4c_state_from_provider(
+               *spacetime_state_.state()[0],
+               hierarchy,
+               0,
+               cfg_,
+               0.0_rt,
+               provider
+            );
+         }
       } else {
          hierarchy.physical_coordinate_faces.resize(1);
          hierarchy.physical_coordinate_faces[0][0] = black_hole_xcts
             ? stretched_radial_shell_faces(
-                 0.5 * cfg_.spacetime_mass,
+                 0.5_rt * cfg_.spacetime_mass,
                  hierarchy.geometry[0].ProbHi(0),
                  hierarchy.geometry[0].Domain().length(0),
                  cfg_.initial_data_adaptive_shell_width_ratio
@@ -488,6 +672,21 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          initialize_relativistic_primitive_cache_from_initial_data(
             *primitive_[0], hierarchy, 0, cfg_, provider
          );
+         if (provider.tov.active()) {
+            // The mapped fluid and metric seed must represent the same
+            // physical radii.  Sampling only the fluid on the adaptive map
+            // leaves the analytic TOV spacetime on the uniform logical grid
+            // and can converge to a low-mass nonlinear branch despite a tiny
+            // algebraic residual.
+            initialize_mapped_z4c_state_from_provider(
+               *spacetime_state_.state()[0],
+               hierarchy,
+               0,
+               cfg_,
+               0.0_rt,
+               provider
+            );
+         }
       }
       if (amrex::ParallelDescriptor::IOProcessor()) {
          const InitialDataCoordinateLine radial = hierarchy.coordinate_line(
@@ -509,13 +708,17 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
    } else if (cfg_.spacetime_initial_data == "xcts") {
       formulation = ConformalConstraintFormulation::xcts;
    }
+   const bool seed_conformal_from_spacetime = seed_from_loaded_id
+      || (formulation == ConformalConstraintFormulation::xcts
+          && initial_data_provider_->view().tov.active()
+          && initial_data_provider_->view().fields.spacetime_from_id);
    ConformalContinuationObserver continuation_observer;
    const auto with_global_rotating_diagnostics = [this](
       RotatingStarUpdateSummary summary
    ) {
 #if (AMREX_SPACEDIM == 3)
       if (cfg_.ic == "rotating_star"
-          && cfg_.initial_data_angular_velocity != 0.0
+          && cfg_.initial_data_angular_velocity != 0.0_rt
           && mesh_coordinate_kind() == MeshCartesian) {
          ScalarDiagnosticSelection selection = scalar_diagnostic_selection(
             "mass,adm_mass_volume,adm_angular_momentum3_volume"
@@ -523,16 +726,16 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          apply_scalar_diagnostic_requirements(selection, cfg_);
          const ScalarDiagnostics diagnostics = compute_current_scalars(
             0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
+            0.0_rt,
+            0.0_rt,
+            0.0_rt,
+            0.0_rt,
+            0.0_rt,
+            0.0_rt,
+            0.0_rt,
+            0.0_rt,
+            0.0_rt,
+            0.0_rt,
             DiffusionStats{},
             eos_method_,
             selection
@@ -544,8 +747,8 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          summary.dimensionless_spin = summary.angular_momentum / (
             summary.adm_mass * summary.adm_mass
          );
-         if (!(summary.adm_mass > 0.0)
-             || !(summary.baryonic_mass > 0.0)
+         if (!(summary.adm_mass > 0.0_rt)
+             || !(summary.baryonic_mass > 0.0_rt)
              || !std::isfinite(summary.angular_momentum)
              || !std::isfinite(summary.dimensionless_spin)) {
             amrex::Abort("Cartesian rotating-star global diagnostic is invalid");
@@ -566,7 +769,7 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          EquilibriumTorusUpdateSummary const& equilibrium_torus
       ) {
          finalize_constraint_solved_initial_data_state();
-         run_evolution_preflight(0.0);
+         run_evolution_preflight(0.0_rt);
          const RotatingStarUpdateSummary persisted =
             with_global_rotating_diagnostics(rotating_star);
          write_physical_initial_data_sequence_model(
@@ -589,7 +792,7 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          loaded_physical_id_metadata_->angular_velocity;
       equilibrium_torus.continuation_source_angular_velocity =
          loaded_physical_id_metadata_->disk_angular_velocity;
-      if (loaded_physical_id_metadata_->injection_energy > 0.0) {
+      if (loaded_physical_id_metadata_->injection_energy > 0.0_rt) {
          rotating_parameters.injection_energy =
             loaded_physical_id_metadata_->injection_energy;
       }
@@ -645,7 +848,7 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
    if (cfg_.initial_data_magnetic_equilibrium
           == "poloidal_grad_shafranov"
        && cfg_.initial_data_magnetic_equilibrium_poloidal_magnetization
-          != 0.0) {
+          != 0.0_rt) {
 #if (AMREX_SPACEDIM != 3)
       amrex::Abort("poloidal Grad-Shafranov equilibrium requires 3D");
 #else
@@ -733,10 +936,11 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       },
       rotating_parameters,
       equilibrium_torus,
-      seed_from_loaded_id,
+      seed_conformal_from_spacetime,
       continuation_observer,
       matter_observer,
-      stellar_matter_updater
+      stellar_matter_updater,
+      preserve_conformal_baryon_density
    );
    if (magnetic_seed_updates > 0) {
       amrex::Print()
@@ -783,7 +987,7 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
       initial_data_rotating_star_summary_ =
          std::make_unique<RotatingStarUpdateSummary>(result.rotating_star);
    }
-   if (result.black_hole.throat_area > 0.0) {
+   if (result.black_hole.throat_area > 0.0_rt) {
       initial_data_black_hole_throat_area_ = result.black_hole.throat_area;
       initial_data_black_hole_irreducible_mass_ =
          result.black_hole.irreducible_mass;
@@ -818,9 +1022,9 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
          << " lapse_residual=" << result.constraints.lapse_residual
          << " momentum_residual=" << result.constraints.momentum_residual << '\n';
       if (cfg_.ic == "rotating_star"
-          && cfg_.initial_data_angular_velocity != 0.0) {
-         if (!(result.rotating_star.equatorial_radius > 0.0)
-             || !(result.rotating_star.polar_radius > 0.0)) {
+          && cfg_.initial_data_angular_velocity != 0.0_rt) {
+         if (!(result.rotating_star.equatorial_radius > 0.0_rt)
+             || !(result.rotating_star.polar_radius > 0.0_rt)) {
             amrex::Abort("rotating-star matter support has no resolved surface extent");
          }
          amrex::Print()
@@ -850,7 +1054,7 @@ bool AmrSolverBase::materialize_constraint_solved_initial_data(
             << result.rotating_star.polar_log_enthalpy_gradient
             << '\n';
       }
-      if (result.black_hole.throat_area > 0.0) {
+      if (result.black_hole.throat_area > 0.0_rt) {
          amrex::Print()
             << "black-hole throat: area=" << result.black_hole.throat_area
             << " irreducible_mass="
@@ -909,17 +1113,17 @@ void AmrSolverBase::finalize_constraint_solved_initial_data_state()
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       spacetime_coupling_.invalidate_cell_spacetime(lev);
    }
-   fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0);
+   fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0_rt);
    if (initial_data_coordinate_faces_.empty()) {
       for (int lev = 0; lev <= finestLevel(); ++lev) {
-         complete_z4c_contracted_connections(
-            *spacetime_state_.state()[lev], Geom(lev)
+         complete_spacetime_connections(
+            *spacetime_state_.state()[lev], Geom(lev), cfg_
          );
       }
    }
-   fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0);
+   fill_all_spacetime_boundaries(spacetime_state_.state(), 0.0_rt);
    prepare_spacetime_coupling_range(
-      spacetime_state_.state(), 0, finestLevel() + 1, 0.0, -1.0, 0
+      spacetime_state_.state(), 0, finestLevel() + 1, 0.0_rt, -1.0_rt, 0
    );
    amrex::Vector<amrex::Geometry> geometry;
    ConstPhysicalIdField primitive;
@@ -941,7 +1145,7 @@ void AmrSolverBase::finalize_constraint_solved_initial_data_state()
       cfg_, physics_system_, geometry, primitive, cell_spacetime, fluid
    );
    apply_stored_spacetime_fluid_boundaries_range(
-      fluid_state_.state(), 0, finestLevel() + 1
+      fluid_state_.state(), 0, finestLevel() + 1, 0.0_rt
    );
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       copy_level_state_to_old(lev);
@@ -953,7 +1157,7 @@ void AmrSolverBase::fill_new_spacetime_level_from_coarse(int lev, amrex::Real ti
    if (!spacetime_state_.active()) {
       return;
    }
-   if (!spacetime_state_.evolves() || lev == 0 || time == 0.0) {
+   if (!spacetime_state_.evolves() || lev == 0 || time == 0.0_rt) {
       initialize_spacetime_level(lev, time);
       return;
    }
@@ -979,7 +1183,7 @@ void AmrSolverBase::fill_new_spacetime_level_from_coarse(int lev, amrex::Real ti
       fine_bc,
       0,
       refRatio(lev - 1),
-      nodal_interpolater(),
+      static_cast<amrex::MFInterpolater*>(&spacetime_interpolater_),
       spacetime_fillpatch_bcs_,
       0
    );
@@ -1041,7 +1245,8 @@ void AmrSolverBase::fill_remade_spacetime_level(
       fine_bc,
       refRatio(lev - 1),
       spacetime_fillpatch_bcs_,
-      spacetime_state_.num_components()
+      spacetime_state_.num_components(),
+      &spacetime_interpolater_
    );
    enforce_reflection_odd_nodal_plane_values(
       *spacetime_state_.state()[lev], Geom(lev), spacetime_fillpatch_bcs_
@@ -1064,7 +1269,7 @@ void AmrSolverBase::average_down_spacetime()
 }
 
 SpacetimeConstraintDiagnostics
-AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
+AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time, bool include_regions)
 {
    SpacetimeConstraintDiagnostics diagnostics;
    if (!spacetime_state_.active()) {
@@ -1072,21 +1277,27 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
    }
 
    fill_all_spacetime_boundaries(spacetime_state_.state(), time);
-   amrex::Real hamiltonian_squared_integral = 0.0;
-   amrex::Real composite_volume = 0.0;
-   amrex::Real interior_hamiltonian_squared_integral = 0.0;
-   amrex::Real interior_volume = 0.0;
-   amrex::Real cf_hamiltonian_squared_integral = 0.0;
-   amrex::Real cf_volume = 0.0;
-   amrex::Real bh_exterior_hamiltonian_squared_integral = 0.0;
-   amrex::Real bh_exterior_volume = 0.0;
+   amrex::Real hamiltonian_squared_integral = 0.0_rt;
+   amrex::Real composite_volume = 0.0_rt;
+   amrex::Real interior_hamiltonian_squared_integral = 0.0_rt;
+   amrex::Real interior_volume = 0.0_rt;
+   amrex::Real cf_hamiltonian_squared_integral = 0.0_rt;
+   amrex::Real cf_volume = 0.0_rt;
+   amrex::Real bh_exterior_hamiltonian_squared_integral = 0.0_rt;
+   amrex::Real bh_exterior_volume = 0.0_rt;
+   const SpacetimeConstraintRegion region{
+      {{cfg_.spacetime_origin1, cfg_.spacetime_origin2, cfg_.spacetime_origin3}},
+      cfg_.diagnostic_constraint_region_extent,
+      cfg_.diagnostic_constraint_exclusion_radius,
+      cfg_.diagnostic_constraint_split_radius};
+   std::array<amrex::Real, 3> regional_hamiltonian_squared_integral{};
    const FixedSpacetimeParameters black_hole =
       fixed_spacetime_parameters(cfg_);
    const bool has_black_hole =
       black_hole.metric == FixedSpacetimeMetric::KerrSchild
       || black_hole.metric == FixedSpacetimeMetric::StaticTrumpet;
    const amrex::Real horizon_radius = has_black_hole
-      ? black_hole_coordinate_horizon_radius(black_hole) : 0.0;
+      ? black_hole_coordinate_horizon_radius(black_hole) : 0.0_rt;
    const amrex::Real horizon_radius_squared =
       horizon_radius * horizon_radius;
    for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -1110,19 +1321,22 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
       const std::unique_ptr<amrex::iMultiFab> owner = state.OwnerMask(
          Geom(lev).periodicity()
       );
+      const int derivative_order = cfg_.spacetime_derivative_order;
+      const int stencil_radius = centered_stencil_radius(derivative_order);
       amrex::iMultiFab stencil_valid(
-         state.boxArray(), state.DistributionMap(), 1, 2
+         state.boxArray(), state.DistributionMap(), 1, stencil_radius
       );
       stencil_valid.setVal(0);
       stencil_valid.ParallelCopy(valid, 0, 0, 1, 0, 0);
       stencil_valid.FillBoundary(Geom(lev).periodicity());
       fill_reflected_nodal_validity_ghosts(
-         stencil_valid, Geom(lev), cfg_, 2
+         stencil_valid, Geom(lev), cfg_, stencil_radius
       );
       amrex::MultiFab norms(
-         state.boxArray(), state.DistributionMap(), 14, 0
+         state.boxArray(), state.DistributionMap(), include_regions ? 23 : 14, 0
       );
-      norms.setVal(0.0);
+      norms.setVal(0.0_rt);
+      const auto excision = excision_grid_view(spacetime_excision_region(cfg_), Geom(lev), state.ixType());
       const amrex::Box nodal_domain = amrex::convert(
          Geom(lev).Domain(), amrex::IntVect::TheNodeVector()
       );
@@ -1141,139 +1355,71 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
          0,
 #endif
       }};
+      const bool use_fccz4 = cfg_.spacetime_formulation == "fccz4";
+      const ReferenceChartGeometry reference_chart(Geom(lev), cfg_);
       const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
-         1.0 / spacing[0],
+         1.0_rt / spacing[0],
 #if (AMREX_SPACEDIM >= 2)
-         1.0 / spacing[1],
+         1.0_rt / spacing[1],
 #else
-         1.0,
+         1.0_rt,
 #endif
 #if (AMREX_SPACEDIM == 3)
-         1.0 / spacing[2],
+         1.0_rt / spacing[2],
 #else
-         1.0,
+         1.0_rt,
 #endif
       }};
+      // Each launch owns one formulation's equations. Keep accuracy-order
+      // dispatch in the derivative operator, not around the equation kernel.
+      const auto compute_norms = [&](auto formulation_tag) {
+         constexpr bool reference_metric_formulation = decltype(formulation_tag)::value;
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
-      for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-         amrex::Box box = mfi.tilebox();
-         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-            if (!Geom(lev).isPeriodic(direction)
-                && !spacetime_boundary_reflects(cfg_, direction, false)
-                && box.smallEnd(direction) == nodal_domain.smallEnd(direction)) {
-               box.setSmall(direction, box.smallEnd(direction) + 2);
+         for (amrex::MFIter mfi(state, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            amrex::Box box = mfi.tilebox();
+            for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+               if (!Geom(lev).isPeriodic(direction)
+                   && !spacetime_boundary_reflects(cfg_, direction, false)
+                   && box.smallEnd(direction) == nodal_domain.smallEnd(direction)) {
+                  box.setSmall(direction, box.smallEnd(direction) + stencil_radius);
+               }
+               if (!Geom(lev).isPeriodic(direction)
+                   && !spacetime_boundary_reflects(cfg_, direction, true)
+                   && box.bigEnd(direction) == nodal_domain.bigEnd(direction)) {
+                  box.setBig(direction, box.bigEnd(direction) - stencil_radius);
+               }
             }
-            if (!Geom(lev).isPeriodic(direction)
-                && !spacetime_boundary_reflects(cfg_, direction, true)
-                && box.bigEnd(direction) == nodal_domain.bigEnd(direction)) {
-               box.setBig(direction, box.bigEnd(direction) - 2);
-            }
-         }
-         const auto input = state.const_array(mfi);
-         const auto output = norms.array(mfi);
-         const auto valid_points = valid.const_array(mfi);
-         const auto same_level_points = stencil_valid.const_array(mfi);
-         const auto owned_points = owner->const_array(mfi);
-         const bool matter_coupled = spacetime_includes_matter(cfg_);
-         const auto matter = spacetime_coupling_.vertex_matter()[lev]->const_array(mfi);
-         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            if (valid_points(i, j, k, 0) == 0
-                || owned_points(i, j, k, 0) == 0) {
-               return;
-            }
-            const Z4cMatter point_matter = matter_coupled
-               ? load_eulerian_matter(matter, i, j, k)
-               : vacuum_z4c_matter();
-            bool same_level_stencil = true;
-            for (int offset = 1; offset <= 2; ++offset) {
-               same_level_stencil = same_level_stencil
-                  && same_level_points(i - offset, j, k, 0) != 0
-                  && same_level_points(i + offset, j, k, 0) != 0;
-#if (AMREX_SPACEDIM >= 2)
-               same_level_stencil = same_level_stencil
-                  && same_level_points(i, j - offset, k, 0) != 0
-                  && same_level_points(i, j + offset, k, 0) != 0;
-#endif
-#if (AMREX_SPACEDIM == 3)
-               same_level_stencil = same_level_stencil
-                  && same_level_points(i, j, k - offset, 0) != 0
-                  && same_level_points(i, j, k + offset, 0) != 0;
-#endif
-            }
-            const Z4cConstraints c = evaluate_z4c_constraints_at<
-               4, AMREX_SPACEDIM
-            >(input, i, j, k, inv_spacing, point_matter);
-            output(i, j, k, 0) = amrex::Math::abs(c.hamiltonian);
-            output(i, j, k, 1) = c.momentum1 * c.momentum1
-               + c.momentum2 * c.momentum2 + c.momentum3 * c.momentum3;
-            output(i, j, k, 2) = c.z_tilde1 * c.z_tilde1
-               + c.z_tilde2 * c.z_tilde2 + c.z_tilde3 * c.z_tilde3;
-            output(i, j, k, 3) = amrex::Math::abs(c.theta);
-            output(i, j, k, 4) = amrex::Math::abs(
-               c.log_conformal_determinant
+            const auto input = state.const_array(mfi);
+            const auto output = norms.array(mfi);
+            const auto valid_points = valid.const_array(mfi);
+            const auto same_level_points = stencil_valid.const_array(mfi);
+            const auto owned_points = owner->const_array(mfi);
+            const bool matter_coupled = spacetime_includes_matter(cfg_);
+            const auto matter = spacetime_coupling_.vertex_matter()[lev]->const_array(mfi);
+            fill_constraint_norms<reference_metric_formulation>(
+               box, input, matter, output, valid_points, same_level_points,
+               owned_points, excision, matter_coupled, stencil_radius,
+               derivative_order, inv_spacing, reference_chart, include_regions,
+               region, has_black_hole, black_hole, horizon_radius_squared
             );
-            output(i, j, k, 5) = amrex::Math::abs(c.trace_a_tilde);
-            output(i, j, k, 6) = 1.0;
-            const int value_component = same_level_stencil ? 7 : 9;
-            const int weight_component = same_level_stencil ? 8 : 10;
-            output(i, j, k, value_component) = amrex::Math::abs(c.hamiltonian);
-            output(i, j, k, weight_component) = 1.0;
-            if (has_black_hole) {
-               bool exterior_stencil = true;
-               for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-                  for (int offset = -2; offset <= 2; ++offset) {
-                     int point_i = i;
-                     int point_j = j;
-                     int point_k = k;
-                     if (direction == 0) {
-                        point_i += offset;
-                     }
-#if (AMREX_SPACEDIM >= 2)
-                     if (direction == 1) {
-                        point_j += offset;
-                     }
-#endif
-#if (AMREX_SPACEDIM == 3)
-                     if (direction == 2) {
-                        point_k += offset;
-                     }
-#endif
-                     const amrex::Real position1 = lower[0]
-                        + static_cast<amrex::Real>(point_i - domain_lower[0])
-                           * spacing[0];
-#if (AMREX_SPACEDIM >= 2)
-                     const amrex::Real position2 = lower[1]
-                        + static_cast<amrex::Real>(point_j - domain_lower[1])
-                           * spacing[1];
-#else
-                     const amrex::Real position2 = 0.0;
-#endif
-#if (AMREX_SPACEDIM == 3)
-                     const amrex::Real position3 = lower[2]
-                        + static_cast<amrex::Real>(point_k - domain_lower[2])
-                           * spacing[2];
-#else
-                     const amrex::Real position3 = 0.0;
-#endif
-                     exterior_stencil = exterior_stencil
-                        && black_hole_radial_coordinate_squared(
-                             black_hole, position1, position2, position3
-                           ) > horizon_radius_squared;
-                  }
-               }
-               if (exterior_stencil) {
-                  output(i, j, k, 11) = amrex::Math::abs(c.hamiltonian);
-                  output(i, j, k, 12) = 1.0;
-                  output(i, j, k, 13) = output(i, j, k, 1);
-               }
-            }
-         });
+         }
+      };
+      if (use_fccz4) {
+         compute_norms(std::true_type{});
+      } else {
+         compute_norms(std::false_type{});
       }
-      const amrex::Vector<int> maximum_components{
+      amrex::Vector<int> maximum_components{
          0, 7, 9, 11, 13, 1, 2, 3, 4, 5,
       };
+      if (include_regions) {
+         for (int region_index = 0; region_index < 3; ++region_index) {
+            maximum_components.push_back(14 + 3 * region_index);
+            maximum_components.push_back(15 + 3 * region_index);
+         }
+      }
       const amrex::Vector<amrex::Real> level_maxima = norms.norm0(
          maximum_components, 0, false
       );
@@ -1281,6 +1427,26 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
          diagnostics.hamiltonian_linf, level_maxima[0]
       );
       const amrex::Real level_volume = cartesian_cell_volume(Geom(lev));
+      if (reference_chart.coordinate != MeshCartesian) {
+         // Maxima above use unweighted point values. L2 norms below use
+         // the same reference-volume measure as the cell/face budgets,
+         // with dual nodal cells clipped at the physical domain boundary.
+         for (amrex::MFIter mfi(norms, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+            const auto values = norms.array(mfi);
+            amrex::ParallelFor(mfi.tilebox(), [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               const amrex::Real volume_ratio = reference_chart.nodal_volume(i, j, k) / level_volume;
+               const amrex::Real norm_weight = std::sqrt(volume_ratio);
+               for (int component : {0, 7, 9, 11}) values(i, j, k, component) *= norm_weight;
+               for (int component : {6, 8, 10, 12}) values(i, j, k, component) *= volume_ratio;
+               if (include_regions) {
+                  for (int region_index = 0; region_index < 3; ++region_index) {
+                     values(i, j, k, 14 + 3 * region_index) *= norm_weight;
+                     values(i, j, k, 16 + 3 * region_index) *= volume_ratio;
+                  }
+               }
+            });
+         }
+      }
       const amrex::Real level_hamiltonian_norm = norms.norm2(0);
       hamiltonian_squared_integral += level_volume
          * level_hamiltonian_norm * level_hamiltonian_norm;
@@ -1327,6 +1493,20 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
       diagnostics.trace_a_tilde_linf = amrex::max(
          diagnostics.trace_a_tilde_linf, level_maxima[9]
       );
+      if (include_regions) {
+         for (int region_index = 0; region_index < 3; ++region_index) {
+            const int first_component = 14 + 3 * region_index;
+            diagnostics.regional_hamiltonian_linf[region_index] = amrex::max(
+               diagnostics.regional_hamiltonian_linf[region_index],
+               level_maxima[10 + 2 * region_index]);
+            diagnostics.regional_momentum_linf[region_index] = amrex::max(
+               diagnostics.regional_momentum_linf[region_index],
+               std::sqrt(level_maxima[11 + 2 * region_index]));
+            const amrex::Real level_norm = norms.norm2(first_component);
+            regional_hamiltonian_squared_integral[region_index] += level_volume * level_norm * level_norm;
+            diagnostics.regional_volume[region_index] += level_volume * norms.sum(first_component + 2, true);
+         }
+      }
    }
    std::array<amrex::Real, 4> diagnostic_volumes{
       composite_volume,
@@ -1341,25 +1521,36 @@ AmrSolverBase::compute_spacetime_constraint_diagnostics(amrex::Real time)
    interior_volume = diagnostic_volumes[1];
    cf_volume = diagnostic_volumes[2];
    bh_exterior_volume = diagnostic_volumes[3];
-   if (composite_volume > 0.0) {
+   if (composite_volume > 0.0_rt) {
       diagnostics.hamiltonian_l2 = std::sqrt(
          hamiltonian_squared_integral / composite_volume
       );
    }
-   if (interior_volume > 0.0) {
+   if (interior_volume > 0.0_rt) {
       diagnostics.hamiltonian_interior_l2 = std::sqrt(
          interior_hamiltonian_squared_integral / interior_volume
       );
    }
-   if (cf_volume > 0.0) {
+   if (cf_volume > 0.0_rt) {
       diagnostics.hamiltonian_cf_l2 = std::sqrt(
          cf_hamiltonian_squared_integral / cf_volume
       );
    }
-   if (bh_exterior_volume > 0.0) {
+   if (bh_exterior_volume > 0.0_rt) {
       diagnostics.hamiltonian_bh_exterior_l2 = std::sqrt(
          bh_exterior_hamiltonian_squared_integral / bh_exterior_volume
       );
+   }
+   if (include_regions) {
+      amrex::ParallelDescriptor::ReduceRealSum(diagnostics.regional_volume.data(), 3);
+      for (int region_index = 0; region_index < 3; ++region_index) {
+         if (!(diagnostics.regional_volume[region_index] > 0.0_rt)) {
+            amrex::Abort("fixed constraint region or near/far partition contains no owned samples; "
+               "adjust the physical region or resolution");
+         }
+         diagnostics.regional_hamiltonian_l2[region_index] = std::sqrt(
+            regional_hamiltonian_squared_integral[region_index] / diagnostics.regional_volume[region_index]);
+      }
    }
    return diagnostics;
 }
@@ -1423,14 +1614,14 @@ AmrSolverBase::compute_spacetime_global_diagnostics(
       amrex::MultiFab integrals(
          state.boxArray(), state.DistributionMap(), IntegralComponent::Count, 0
       );
-      integrals.setVal(0.0);
+      integrals.setVal(0.0_rt);
       const amrex::Box nodal_domain = amrex::convert(
          Geom(lev).Domain(), amrex::IntVect::TheNodeVector()
       );
       const auto spacing = Geom(lev).CellSizeArray();
       const auto lower = Geom(lev).ProbLoArray();
       const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
-         1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
+         1.0_rt / spacing[0], 1.0_rt / spacing[1], 1.0_rt / spacing[2]
       }};
       const amrex::GpuArray<int, 3> domain_lower{{
          nodal_domain.smallEnd(0),
@@ -1487,7 +1678,7 @@ AmrSolverBase::compute_spacetime_global_diagnostics(
             for (int direction = 0; direction < 3; ++direction) {
                if (indices[direction] == nodal_domain.smallEnd(direction)
                    || indices[direction] == nodal_domain.bigEnd(direction)) {
-                  volume_weight *= 0.5;
+                  volume_weight *= 0.5_rt;
                }
             }
             output(i, j, k, IntegralComponent::AdmMassVolume) =
@@ -1544,7 +1735,7 @@ AmrSolverBase::compute_spacetime_global_diagnostics(
       }
    }
    if (surface_requested) {
-      if (symmetry_volume_factor() != 1.0) {
+      if (symmetry_volume_factor() != 1.0_rt) {
          amrex::Abort(
             "spherical GR surface diagnostics do not yet reconstruct omitted symmetry sectors"
          );
@@ -1582,14 +1773,14 @@ AmrSolverBase::compute_spacetime_global_diagnostics(
          auto flux = std::make_unique<amrex::MultiFab>(
             state.boxArray(), state.DistributionMap(), SurfaceFluxCount, 1
          );
-         flux->setVal(0.0);
+         flux->setVal(0.0_rt);
          const amrex::Box nodal_domain = amrex::convert(
             Geom(lev).Domain(), amrex::IntVect::TheNodeVector()
          );
          const auto spacing = Geom(lev).CellSizeArray();
          const auto lower = Geom(lev).ProbLoArray();
          const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
-            1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
+            1.0_rt / spacing[0], 1.0_rt / spacing[1], 1.0_rt / spacing[2]
          }};
          const amrex::GpuArray<int, 3> domain_lower{{
             nodal_domain.smallEnd(0),

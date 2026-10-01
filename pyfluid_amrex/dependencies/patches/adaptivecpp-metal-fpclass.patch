@@ -1,0 +1,43 @@
+--- a/src/compiler/llvm-to-backend/metal/Emitter.cpp
++++ b/src/compiler/llvm-to-backend/metal/Emitter.cpp
+@@ -260,6 +260,25 @@
+     miss_flag.table_capacity = __acpp_sscp_metal_pointer_translation.capacity;
+     miss_flag.raw_addr = raw_addr;
+   }
++}
++
++// IEEE-754 binary32 classification masks used by llvm.is.fpclass.
++inline bool __acpp_metal_is_fpclass(float value, uint mask) {
++  uint bits = as_type<uint>(value);
++  uint exponent = bits & 0x7f800000u;
++  uint fraction = bits & 0x007fffffu;
++  bool negative = (bits & 0x80000000u) != 0u;
++  uint category;
++  if (exponent == 0x7f800000u) {
++    category = fraction != 0u ? ((fraction & 0x00400000u) != 0u ? 2u : 1u)
++                              : (negative ? 4u : 512u);
++  } else if (exponent == 0u) {
++    category = fraction != 0u ? (negative ? 16u : 128u)
++                              : (negative ? 32u : 64u);
++  } else {
++    category = negative ? 8u : 256u;
++  }
++  return (mask & category) != 0u;
+ }
+ 
+ inline long __acpp_metal_translate_host_addr_to_gpu(
+@@ -1357,6 +1376,14 @@
+ }
+ 
+ bool MetalEmitter::emitCallInstruction(const CallInst* CI, const std::string& name, int level) {
++  if (const Function* callee = CI->getCalledFunction();
++      callee && callee->getName() == "llvm.is.fpclass.f32") {
++    os << indent(level) << name << " = __acpp_metal_is_fpclass("
++       << emitExpr(CI->getArgOperand(0)) << ", "
++       << emitExpr(CI->getArgOperand(1)) << ");\n";
++    return true;
++  }
++
+   Function *callee = CI->getCalledFunction();
+   if (!callee) {
+     if (Value *calledOp = CI->getCalledOperand()) {

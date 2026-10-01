@@ -13,6 +13,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 // gamma_ij, gamma^ij, d_k gamma_ij, and K_ij.  Lapse and shift do not enter
 // the MOTS expansion, so they are deliberately absent from this interpolation
 // contract.
@@ -180,18 +182,18 @@ private:
 };
 
 struct ApparentHorizonFinderParameters {
-   amrex::Real mass_scale = 1.0;
-   amrex::Real cfl = 0.98;
-   amrex::Real eta_times_mass = 7.0;
-   amrex::Real theta_linf_times_mass_tolerance = 1.0e-5;
-   amrex::Real theta_l2_times_mass_tolerance = 1.0e-2;
+   amrex::Real mass_scale = 1.0_rt;
+   amrex::Real cfl = 0.98_rt;
+   amrex::Real eta_times_mass = 7.0_rt;
+   amrex::Real theta_linf_times_mass_tolerance = 1.0e-5_rt;
+   amrex::Real theta_l2_times_mass_tolerance = 1.0e-2_rt;
    int max_iterations_per_level = 10000;
    int coarsest_num_theta = 8;
    int target_num_theta = 32;
    bool over_relaxation = true;
    int over_relaxation_interval = 64;
-   amrex::Real over_relaxation_growth = 1.2;
-   amrex::Real over_relaxation_minimum_improvement = 0.01;
+   amrex::Real over_relaxation_growth = 1.2_rt;
+   amrex::Real over_relaxation_minimum_improvement = 0.01_rt;
 };
 
 struct ApparentHorizonResult {
@@ -199,28 +201,28 @@ struct ApparentHorizonResult {
    std::string failure_reason;
    ApparentHorizonSurface surface;
    int iterations = 0;
-   amrex::Real pseudo_time = 0.0;
-   amrex::Real theta_linf_times_mass = 0.0;
-   amrex::Real theta_l2_times_mass = 0.0;
-   amrex::Real area = 0.0;
-   amrex::Real irreducible_mass = 0.0;
-   amrex::Real equatorial_circumference = 0.0;
-   amrex::Real polar_circumference = 0.0;
-   amrex::Real kerr_horizon_mass = 0.0;
-   amrex::Real kerr_dimensionless_spin = 0.0;
+   amrex::Real pseudo_time = 0.0_rt;
+   amrex::Real theta_linf_times_mass = 0.0_rt;
+   amrex::Real theta_l2_times_mass = 0.0_rt;
+   amrex::Real area = 0.0_rt;
+   amrex::Real irreducible_mass = 0.0_rt;
+   amrex::Real equatorial_circumference = 0.0_rt;
+   amrex::Real polar_circumference = 0.0_rt;
+   amrex::Real kerr_horizon_mass = 0.0_rt;
+   amrex::Real kerr_dimensionless_spin = 0.0_rt;
    // Quasi-local integrals using the three flat-coordinate rotation
    // generators about the measured centroid. These are exact when the
    // corresponding generator is the horizon's axial Killing vector; they are
    // explicitly coordinate diagnostics for a generic distorted surface.
    std::array<amrex::Real, 3> angular_momentum{};
-   amrex::Real angular_momentum_magnitude = 0.0;
-   amrex::Real christodoulou_mass = 0.0;
+   amrex::Real angular_momentum_magnitude = 0.0_rt;
+   amrex::Real christodoulou_mass = 0.0_rt;
    std::array<amrex::Real, 3> christodoulou_dimensionless_spin{};
-   amrex::Real christodoulou_dimensionless_spin_magnitude = 0.0;
+   amrex::Real christodoulou_dimensionless_spin_magnitude = 0.0_rt;
    std::array<amrex::Real, 3> centroid{};
-   amrex::Real minimum_radius = 0.0;
-   amrex::Real maximum_radius = 0.0;
-   amrex::Real mean_radius = 0.0;
+   amrex::Real minimum_radius = 0.0_rt;
+   amrex::Real maximum_radius = 0.0_rt;
+   amrex::Real mean_radius = 0.0_rt;
 };
 
 // BHaHAHA-style nonlinear hyperbolic relaxation.  The implementation uses

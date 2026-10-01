@@ -4,6 +4,7 @@
 #include <AMReX_MultiFab.H>
 
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
+#include "pyfluid_amrex/eulerian_matter_access.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/sources.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
@@ -11,51 +12,6 @@
 #include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
-
-template <typename Array>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void store_eulerian_matter(
-   Array const& output,
-   int i,
-   int j,
-   int k,
-   EulerianMatter const& matter
-) noexcept
-{
-   output(i, j, k, EULERIAN_MATTER_RHO) = matter.rho;
-   output(i, j, k, EULERIAN_MATTER_MOMENTUM1) = matter.momentum1;
-   output(i, j, k, EULERIAN_MATTER_MOMENTUM2) = matter.momentum2;
-   output(i, j, k, EULERIAN_MATTER_MOMENTUM3) = matter.momentum3;
-   output(i, j, k, EULERIAN_MATTER_STRESS11) = matter.stress11;
-   output(i, j, k, EULERIAN_MATTER_STRESS12) = matter.stress12;
-   output(i, j, k, EULERIAN_MATTER_STRESS13) = matter.stress13;
-   output(i, j, k, EULERIAN_MATTER_STRESS22) = matter.stress22;
-   output(i, j, k, EULERIAN_MATTER_STRESS23) = matter.stress23;
-   output(i, j, k, EULERIAN_MATTER_STRESS33) = matter.stress33;
-}
-
-template <typename Array>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-EulerianMatter load_eulerian_matter(
-   Array const& input,
-   int i,
-   int j,
-   int k
-) noexcept
-{
-   return {
-      input(i, j, k, EULERIAN_MATTER_RHO),
-      input(i, j, k, EULERIAN_MATTER_MOMENTUM1),
-      input(i, j, k, EULERIAN_MATTER_MOMENTUM2),
-      input(i, j, k, EULERIAN_MATTER_MOMENTUM3),
-      input(i, j, k, EULERIAN_MATTER_STRESS11),
-      input(i, j, k, EULERIAN_MATTER_STRESS12),
-      input(i, j, k, EULERIAN_MATTER_STRESS13),
-      input(i, j, k, EULERIAN_MATTER_STRESS22),
-      input(i, j, k, EULERIAN_MATTER_STRESS23),
-      input(i, j, k, EULERIAN_MATTER_STRESS33),
-   };
-}
 
 template <PhysicalSystem System, int EOSMethod>
 inline void fill_eulerian_matter_cells(
@@ -74,7 +30,7 @@ inline void fill_eulerian_matter_cells(
       const auto primitive_array = primitive.const_array(mfi);
       const auto spacetime_array = cell_spacetime.const_array(mfi);
       const auto matter_array = cell_matter.array(mfi);
-      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::ParallelFor(box, [spacetime_array, matter_array, primitive_array, eos] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const SpacetimeMetric metric = generated::z4c_spacetime_metric(
             load_z4c_state(spacetime_array, i, j, k)
          );

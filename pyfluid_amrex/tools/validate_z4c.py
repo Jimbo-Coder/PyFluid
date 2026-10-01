@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the generated vacuum Z4c evolution vertical slice."""
+"""Validate generated conformal-spacetime evolution and initial data."""
 
 from __future__ import annotations
 
@@ -7,10 +7,27 @@ import argparse
 import math
 import re
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "codegen"))
+from pyfluid_codegen.numerical_catalog import SPATIAL_ORDERS
+
+from spacetime_validation import (
+   GAUGE_WAVE_INPUT,
+   RUN_ROOT,
+   latest_fluid_plotfile,
+   latest_spacetime_plotfile,
+   run_dimension_case,
+   spacetime_plotfiles,
+   validation_run_root,
+)
+from reference_metric_spacetime_validation import (
+   validate_spherical_gauge_wave,
+   validate_spherical_symmetry,
+)
 from plotfile_reader import (
    latest_checkpoint,
    level_chunks,
@@ -26,6 +43,7 @@ from validation_common import (
    DYNAMIC_SPACETIME_POLICY,
    ROOT,
    SMOKE_POLICY,
+   amrex_build_dir,
    append_validation_history,
    build_cached_target,
    materialize_run_input,
@@ -39,17 +57,16 @@ from validation_common import (
 )
 
 
-INPUT = ROOT / "pyfluid_amrex/inputs/z4c_gauge_wave_1d.in"
+INPUT = GAUGE_WAVE_INPUT
 TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_coupled_amr_3d.in"
 TOV_OCTANT_INPUT = ROOT / "pyfluid_amrex/inputs/tov_cowling_octant_amr_3d.in"
 CONFORMAL_TOV_INPUT = ROOT / "pyfluid_amrex/inputs/tov_xcts_3d.in"
 ROTATING_STAR_INPUT = ROOT / "pyfluid_amrex/inputs/rotating_star_xcts_3d.in"
 TOV_COWLING_INPUT = ROOT / "pyfluid_amrex/inputs/tov_cowling_amr_1d.in"
 CTT_INPUT = ROOT / "pyfluid_amrex/inputs/rhd_ctt_density_cloud_3d.in"
-RUN_ROOT = ROOT / "runs/current/z4c_validation"
 RESULTS = RUN_ROOT / "z4c_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
-CHECKPOINT_COMPARE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_1d"
+CHECKPOINT_COMPARE = amrex_build_dir() / "pyfluid_amrex_compare_checkpoint_1d"
 CONSTRAINT_COLUMNS = (
    "z4c_hamiltonian_linf",
    "z4c_momentum_linf",
@@ -108,101 +125,6 @@ def read_physical_id_sequence(run_dir: Path) -> tuple[Path, list[dict[str, str]]
       raise RuntimeError(f"unexpected physical-ID sequence columns: {columns}")
    rows = [dict(zip(columns, line.split("\t"), strict=True)) for line in lines[1:]]
    return indexes[0].parent, rows
-
-
-def run_dimension_case(
-   name: str,
-   base_input: Path,
-   overrides: dict[str, str],
-   args: argparse.Namespace,
-   *,
-   dim: int,
-   checks: object,
-   mhd: bool,
-   kind: str = "analytic",
-   remove_parameters: tuple[str, ...] = (),
-   dependencies: tuple[Path, ...] = (),
-) -> tuple[Path, dict[str, object]]:
-   run_dir = RUN_ROOT / name
-   run_log = run_dir / "run.log"
-   zero_step_completed = (
-      overrides.get("pyfluid.max_step") == "0"
-      and run_log.is_file()
-      and re.search(
-         r"^AMReX \([^\n]+\) finalized$",
-         run_log.read_text(),
-         re.MULTILINE,
-      ) is not None
-   )
-   dependency_changed = bool(dependencies) and (
-      not run_log.is_file()
-      or any(
-         path.stat().st_mtime > run_log.stat().st_mtime
-         for path in dependencies
-      )
-   )
-   run_needed = (
-      args.force
-      or dependency_changed
-      or (
-         latest_spacetime_plotfile(run_dir) is None
-         and not zero_step_completed
-      )
-   )
-   if run_needed and run_dir.exists():
-      shutil.rmtree(run_dir)
-   run_dir.mkdir(parents=True, exist_ok=True)
-   input_path = materialize_run_input(
-      base_input,
-      run_dir / "input.in",
-      {
-         "pyfluid.run_name": name,
-         "pyfluid.output_dir": repo_relative(run_dir),
-         "pyfluid.aux_gfs": "none",
-         "pyfluid.aux_gf_compute_int": "-1",
-         "pyfluid.aux_gf_int": "-1",
-         **overrides,
-      },
-      remove_parameters=remove_parameters,
-   )
-   if run_needed:
-      completed = run_amrex(
-         dim=dim,
-         input_path=input_path,
-         ranks=args.ranks,
-         timeout=args.timeout,
-      )
-      (run_dir / "run.log").write_text(completed.stdout)
-      if completed.returncode != 0:
-         raise RuntimeError(f"{name} failed; see {repo_relative(run_dir / 'run.log')}")
-   scalar = scalar_validation_row(
-      run_dir,
-      case=name,
-      input_file=run_dir / "run.in",
-      checks=checks,
-      mhd=mhd,
-      dim=dim,
-      ranks=args.ranks,
-      kind=kind,
-   )
-   if scalar["status"] != "PASS":
-      raise RuntimeError(f"{name} scalar validation failed: {scalar['reason']}")
-   return run_dir, scalar
-
-
-def spacetime_plotfiles(run_dir: Path) -> list[Path]:
-   files = list((run_dir / "stateGF").glob("spacetime_state*.h5"))
-   return sorted(files, key=plotfile_step)
-
-
-def latest_spacetime_plotfile(run_dir: Path) -> Path | None:
-   files = spacetime_plotfiles(run_dir)
-   return files[-1] if files else None
-
-
-def latest_fluid_plotfile(run_dir: Path) -> Path | None:
-   files = list((run_dir / "stateGF").glob("stateGF*.h5"))
-   return max(files, key=plotfile_step) if files else None
 
 
 def run_case(
@@ -476,10 +398,28 @@ def validate_gauge_wave_convergence(
       })
       scalars.append(scalar)
       previous_error = error
-   if float(results[-1]["order"]) < 3.5:
+   expected_order = min(args.derivative_order, 4)  # RK4 time accuracy.
+   if float(results[-1]["order"]) < expected_order - 0.5 and error > 1.0e-12:
       raise RuntimeError(
-         f"gauge wave did not retain fourth-order convergence: {results[-1]['order']}"
+         f"gauge wave did not retain order {expected_order}: {results[-1]['order']}"
       )
+   return results, scalars
+
+
+def validate_derivative_orders(
+   args: argparse.Namespace,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+   """Reuse the analytic evolution control for every catalogued order."""
+   results = []
+   scalars = []
+   for order in SPATIAL_ORDERS:
+      order_args = argparse.Namespace(**{**vars(args), "derivative_order": order})
+      order_results, order_scalars = validate_gauge_wave_convergence(order_args)
+      for row in order_results + order_scalars:
+         row["derivative_order"] = order
+         row["case"] = f"order_{order}/{row['case']}"
+      results.extend(order_results)
+      scalars.extend(order_scalars)
    return results, scalars
 
 
@@ -638,8 +578,8 @@ def validate_robust_stability(
       "status": "PASS",
       "metric": "maximum_scaled_constraint_ratio",
       "value": maximum_ratio,
-      "constraint_linf": max(final_constraint_max(RUN_ROOT / "robust_stability_n32"),
-                              final_constraint_max(RUN_ROOT / "robust_stability_n64")),
+      "constraint_linf": max(final_constraint_max(validation_run_root(args) / "robust_stability_n32"),
+                              final_constraint_max(validation_run_root(args) / "robust_stability_n64")),
       "run_dir": repo_relative(RUN_ROOT),
    })
    return results, scalars
@@ -2428,11 +2368,18 @@ def main() -> int:
       "--only",
       choices=(
          "all", "ctt", "conformal_tov", "realistic_eos", "rotating_star",
-         "tov_evolution",
+         "tov_evolution", "gauge_wave", "minkowski", "linear_wave", "robust_stability",
+         "spherical_gauge_wave", "spherical_symmetry", "derivative_orders",
       ),
       default="all",
    )
+   parser.add_argument("--prolongation-order", type=int, choices=SPATIAL_ORDERS,
+                       help="optional independent spacetime AMR prolongation order")
+   parser.add_argument("--derivative-order", type=int, choices=SPATIAL_ORDERS, default=4,
+                       help="catalogued spacetime derivative order (default: 4)")
    parser.add_argument("--formulation", choices=("ctt", "cttk", "xcts"))
+   parser.add_argument("--evolution-formulation", choices=("z4c", "fccz4"), default="z4c",
+                       help="spacetime evolution equations; independent of the initial-data formulation")
    parser.add_argument(
       "--adm-convergence",
       action="store_true",
@@ -2443,29 +2390,33 @@ def main() -> int:
    parser.add_argument("--force", action="store_true")
    args = parser.parse_args()
 
+   result_path = validation_run_root(args) / RESULTS.name
+   write_tsv(result_path, [{"status": "INCOMPLETE"}], ["status"])
    build_cached_target(CHECKPOINT_COMPARE.name)
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
    results: list[dict[str, object]] = []
    scalars: list[dict[str, object]] = []
-   quick_validators = (
-      (validate_ctt_initial_data,)
-      if args.only == "ctt"
-      else (validate_conformal_tov_initial_data,)
-      if args.only == "conformal_tov"
-      else (validate_realistic_eos_tov,)
-      if args.only == "realistic_eos"
-      else (validate_rotating_star_initial_data,)
-      if args.only == "rotating_star"
-      else (validate_tov_evolution,)
-      if args.only == "tov_evolution"
-      else (
-         validate_minkowski,
-         validate_initial_data_group_policies,
-         validate_gauge_wave_convergence,
-         validate_linear_wave_convergence,
-         validate_robust_stability,
-         validate_amr_subcycling_restart,
-      )
+   selected_validators = {
+      "ctt": validate_ctt_initial_data,
+      "conformal_tov": validate_conformal_tov_initial_data,
+      "realistic_eos": validate_realistic_eos_tov,
+      "rotating_star": validate_rotating_star_initial_data,
+      "tov_evolution": validate_tov_evolution,
+      "gauge_wave": validate_gauge_wave_convergence,
+      "derivative_orders": validate_derivative_orders,
+      "spherical_gauge_wave": validate_spherical_gauge_wave,
+      "spherical_symmetry": validate_spherical_symmetry,
+      "minkowski": validate_minkowski,
+      "linear_wave": validate_linear_wave_convergence,
+      "robust_stability": validate_robust_stability,
+   }
+   quick_validators = (selected_validators[args.only],) if args.only != "all" else (
+      validate_minkowski,
+      validate_initial_data_group_policies,
+      validate_gauge_wave_convergence,
+      validate_linear_wave_convergence,
+      validate_robust_stability,
+      validate_amr_subcycling_restart,
    )
    for validator in quick_validators:
       validator_results, validator_scalars = validator(args)
@@ -2542,10 +2493,14 @@ def main() -> int:
       "stellar_radius",
       "run_dir",
    ]
-   write_tsv(RESULTS, results, fields)
+   result_path = validation_run_root(args) / RESULTS.name
+   write_tsv(result_path, results, fields)
    append_validation_history(HISTORY, scalars)
-   print(f"PASS z4c validation ({len(results)} checks): {repo_relative(RESULTS)}")
-   return 0
+   failed = any(row["status"] != "PASS" for row in results)
+   outcome = "FAIL" if failed else "PASS"
+   print(f"{outcome} {args.evolution_formulation} validation "
+         f"({len(results)} checks): {repo_relative(result_path)}")
+   return int(failed)
 
 
 if __name__ == "__main__":

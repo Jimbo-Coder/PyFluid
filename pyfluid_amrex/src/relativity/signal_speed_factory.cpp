@@ -1,3 +1,4 @@
+#include "pyfluid_amrex/reference_chart.hpp"
 #include "pyfluid_amrex/signal_speed_factory.hpp"
 
 #include <AMReX_Geometry.H>
@@ -7,10 +8,12 @@
 #include <AMReX_ParallelDescriptor.H>
 
 #include <array>
+#include <cmath>
 #include <limits>
+#include <sstream>
 
 #include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/diffusion.hpp"
+#include "pyfluid_amrex/diffusion_timestep.hpp"
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
@@ -21,12 +24,17 @@
 #include "pyfluid_amrex/patch_metrics.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
+#include "pyfluid_amrex/reference_metric_spacetime.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/flux.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/state.hpp"
+#include "pyfluid_amrex/z4c_characteristics.hpp"
+#include "pyfluid_amrex/z4c_runtime.hpp"
 #include "pyfluid_amrex/z4c_state_access.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -35,7 +43,7 @@ amrex::Real rhd_signal_frequency_cell(
    int i,
    int j,
    int k,
-   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& dx,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& inverse_spacing,
    EOSParams const& eos,
    const SpacetimeMetric& metric
 ) noexcept
@@ -62,14 +70,14 @@ amrex::Real rhd_signal_frequency_cell(
    );
    amrex::Real frequency = amrex::max(
       amrex::Math::abs(speed1.minus), amrex::Math::abs(speed1.plus)
-   ) / dx[0];
+   ) * inverse_spacing[0];
 #if (AMREX_SPACEDIM >= 2)
    const RHDWaveSpeeds speed2 = generated::rhd_wave_speeds<1>(
       primitive, metric, sound_speed_squared
    );
    frequency += amrex::max(
       amrex::Math::abs(speed2.minus), amrex::Math::abs(speed2.plus)
-   ) / dx[1];
+   ) * inverse_spacing[1];
 #endif
 #if (AMREX_SPACEDIM == 3)
    const RHDWaveSpeeds speed3 = generated::rhd_wave_speeds<2>(
@@ -77,7 +85,7 @@ amrex::Real rhd_signal_frequency_cell(
    );
    frequency += amrex::max(
       amrex::Math::abs(speed3.minus), amrex::Math::abs(speed3.plus)
-   ) / dx[2];
+   ) * inverse_spacing[2];
 #endif
    return frequency;
 }
@@ -89,7 +97,9 @@ inline void fill_rhd_signal_frequency(
    amrex::Geometry const& geom,
    EOSParams const& eos,
    const FixedSpacetimeParameters& spacetime,
-   amrex::Real time
+   amrex::Real time,
+   int coordinate,
+   MeshAxes const& axes
 )
 {
    const auto dx = geom.CellSizeArray();
@@ -102,12 +112,18 @@ inline void fill_rhd_signal_frequency(
       const auto conserved = state.const_array(mfi);
       const auto cell_frequency = frequency.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const FixedSpacetimeGeometry local_geometry =
-            fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
-               spacetime, lower, dx, i, j, k, time
+         amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> inverse_spacing{};
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            inverse_spacing[direction] = 1.0_rt / mesh_face_gradient_spacing(
+               coordinate, axes, lower, dx, direction, i, j, k
+            );
+         }
+         const ReferenceMetricSpacetimeGeometry local_geometry =
+            reference_metric_fixed_spacetime_geometry_at_cell(
+               spacetime, coordinate, axes, lower, dx, i, j, k, time
             );
          cell_frequency(i, j, k, 0) = rhd_signal_frequency_cell<EOSMethod>(
-            conserved, i, j, k, dx, eos, local_geometry.metric
+            conserved, i, j, k, inverse_spacing, eos, local_geometry.metric
          );
       });
    }
@@ -119,10 +135,13 @@ inline void fill_rhd_signal_frequency(
    amrex::MultiFab const& state,
    amrex::Geometry const& geom,
    EOSParams const& eos,
-   amrex::MultiFab const& cell_spacetime
+   amrex::MultiFab const& cell_spacetime,
+   int coordinate,
+   MeshAxes const& axes
 )
 {
    const auto dx = geom.CellSizeArray();
+   const auto lower = geom.ProbLoArray();
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -132,12 +151,17 @@ inline void fill_rhd_signal_frequency(
       const auto spacetime = cell_spacetime.const_array(mfi);
       const auto cell_frequency = frequency.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> inverse_spacing{};
+         for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+            inverse_spacing[direction] = 1.0_rt / mesh_face_gradient_spacing(
+               coordinate, axes, lower, dx, direction, i, j, k);
+         }
          cell_frequency(i, j, k, 0) = rhd_signal_frequency_cell<EOSMethod>(
             conserved,
             i,
             j,
             k,
-            dx,
+            inverse_spacing,
             eos,
             generated::z4c_spacetime_metric(load_z4c_state(spacetime, i, j, k))
          );
@@ -145,6 +169,7 @@ inline void fill_rhd_signal_frequency(
    }
 }
 
+template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real rmhd_signal_frequency_cell(
    amrex::Array4<amrex::Real const> const& state,
@@ -156,15 +181,21 @@ amrex::Real rmhd_signal_frequency_cell(
    const SpacetimeMetric& metric
 ) noexcept
 {
-   const RMHDRecoveryResult recovered = recover_srmhd(
-      load_rmhd_conserved(state, i, j, k), metric, eos
-   );
+   // Preserve the factory's host EOS selection through recovery and speeds.
+   // Ideal-gas kernels should not carry the unused tabulated EOS machinery.
+   const RMHDConserved conserved = load_rmhd_conserved(state, i, j, k);
+   RMHDRecoveryResult recovered;
+   if constexpr (EOSMethod == EOSIdealGas) {
+      recovered = recover_srmhd(conserved, metric, eos.gamma);
+   } else {
+      recovered = recover_srmhd(conserved, metric, eos);
+   }
    if (!recovered.succeeded()) {
       return std::numeric_limits<amrex::Real>::infinity();
    }
    const RMHDPrimitive& primitive = recovered.primitive;
    const RelativisticCharacteristicState thermodynamics =
-      relativistic_characteristic_state<EOSRuntime>(
+      relativistic_characteristic_state<EOSMethod>(
          primitive.rho, primitive.eps, eos
       );
    const RMHDWaveSpeeds speed1 = generated::srmhd_wave_speeds<0>(
@@ -201,6 +232,7 @@ amrex::Real rmhd_signal_frequency_cell(
    return frequency;
 }
 
+template <int EOSMethod>
 inline void fill_rmhd_signal_frequency(
    amrex::MultiFab& frequency,
    const amrex::MultiFab& state,
@@ -224,13 +256,14 @@ inline void fill_rmhd_signal_frequency(
             fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
                spacetime, lower, dx, i, j, k, time
             );
-         cell_frequency(i, j, k, 0) = rmhd_signal_frequency_cell(
+         cell_frequency(i, j, k, 0) = rmhd_signal_frequency_cell<EOSMethod>(
             conserved, i, j, k, dx, eos, local_geometry.metric
          );
       });
    }
 }
 
+template <int EOSMethod>
 inline void fill_rmhd_signal_frequency(
    amrex::MultiFab& frequency,
    amrex::MultiFab const& state,
@@ -249,7 +282,7 @@ inline void fill_rmhd_signal_frequency(
       const auto spacetime = cell_spacetime.const_array(mfi);
       const auto cell_frequency = frequency.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         cell_frequency(i, j, k, 0) = rmhd_signal_frequency_cell(
+         cell_frequency(i, j, k, 0) = rmhd_signal_frequency_cell<EOSMethod>(
             conserved,
             i,
             j,
@@ -454,11 +487,11 @@ inline void fill_signal_frequency_mapped_hydro(
          const PatchCoordinate center =
             patch_layout_cell_center_coordinate(grid_patch, layout_patch, i, j, k);
          const amrex::Real volume = patch_cell_volume(grid_patch, center);
-         if (volume <= 0.0 || !amrex::Math::isfinite(volume)) {
-            f(i, j, k, 0) = 0.0;
+         if (volume <= 0.0_rt || !amrex::Math::isfinite(volume)) {
+            f(i, j, k, 0) = 0.0_rt;
             return;
          }
-         amrex::Real frequency_value = 0.0;
+         amrex::Real frequency_value = 0.0_rt;
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
             const PatchCoordinate face_lo =
                patch_layout_face_coordinate(grid_patch, layout_patch, dir, i, j, k);
@@ -481,7 +514,7 @@ inline void fill_signal_frequency_mapped_hydro(
                const PatchFaceMetric metric_hi = patch_face_metric(grid_patch, face_hi, dir);
             const amrex::Real signal_lo = amrex::Math::abs(dot(physical_velocity, metric_lo.unit_normal)) + cs;
             const amrex::Real signal_hi = amrex::Math::abs(dot(physical_velocity, metric_hi.unit_normal)) + cs;
-            frequency_value += 0.5 * (
+            frequency_value += 0.5_rt * (
                metric_lo.area * signal_lo
                + metric_hi.area * signal_hi
             ) / volume;
@@ -515,7 +548,7 @@ inline void fill_signal_frequency_masked(
       const int kind = cached_or_region_mask_kind(solid_valid_kind, mfi, solid_mask, bx);
       if (kind == MaskKindNonzero) {
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            f(i, j, k, 0) = 0.0;
+            f(i, j, k, 0) = 0.0_rt;
          });
          continue;
       }
@@ -527,7 +560,7 @@ inline void fill_signal_frequency_masked(
       }
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          if (solid(i, j, k, 0) != 0) {
-            f(i, j, k, 0) = 0.0;
+            f(i, j, k, 0) = 0.0_rt;
             return;
          }
          store_hydro_signal_frequency_cell<EOSMethod>(s, f, i, j, k, dx, eos);
@@ -593,7 +626,7 @@ inline void fill_mhd_signal_frequency_masked(
       const int kind = cached_or_region_mask_kind(solid_valid_kind, mfi, solid_mask, bx);
       if (kind == MaskKindNonzero) {
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            f(i, j, k, 0) = 0.0;
+            f(i, j, k, 0) = 0.0_rt;
          });
          continue;
       }
@@ -605,7 +638,7 @@ inline void fill_mhd_signal_frequency_masked(
       }
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          if (solid(i, j, k, 0) != 0) {
-            f(i, j, k, 0) = 0.0;
+            f(i, j, k, 0) = 0.0_rt;
             return;
          }
          f(i, j, k, 0) = mhd_signal_frequency_cell<EOSMethod>(s, i, j, k, dx, eos);
@@ -629,7 +662,7 @@ inline amrex::Real max_hydro_signal_frequency_masked(
    const int coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes axes = mesh_axes_layout(cfg);
    const bool curvilinear = curvilinear_mesh_coordinate(coordinate);
-   amrex::Real max_frequency = 0.0;
+   amrex::Real max_frequency = 0.0_rt;
 #ifdef AMREX_USE_OMP
 #pragma omp parallel reduction(max:max_frequency) if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -694,7 +727,7 @@ inline amrex::Real max_mhd_signal_frequency_masked(
    const int coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes axes = mesh_axes_layout(cfg);
    const bool curvilinear = curvilinear_mesh_coordinate(coordinate);
-   amrex::Real max_frequency = 0.0;
+   amrex::Real max_frequency = 0.0_rt;
 #ifdef AMREX_USE_OMP
 #pragma omp parallel reduction(max:max_frequency) if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -755,12 +788,12 @@ inline amrex::Real max_hydro_cutcell_signal_frequency_masked(
    amrex::Vector<int> const* solid_valid_kind = nullptr
 )
 {
-   constexpr amrex::Real alpha_floor = 1.0e-12;
+   constexpr amrex::Real alpha_floor = 1.0e-12_rt;
    const auto dx = geom.CellSizeArray();
    const amrex::Box& domain = geom.Domain();
    const auto dlo = domain.smallEnd();
    const auto dhi = domain.bigEnd();
-   amrex::Real max_frequency = 0.0;
+   amrex::Real max_frequency = 0.0_rt;
 #ifdef AMREX_USE_OMP
 #pragma omp parallel reduction(max:max_frequency) if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -823,37 +856,37 @@ inline amrex::Real max_hydro_cutcell_signal_frequency_masked(
 
                amrex::Real ax_l = ax(i, j, k, 0);
                if (i > dlo[0] && alpha(i - 1, j, k, 0) <= alpha_floor) {
-                  ax_l = 0.0;
+                  ax_l = 0.0_rt;
                }
                amrex::Real ax_r = ax(i + 1, j, k, 0);
                if (i < dhi[0] && alpha(i + 1, j, k, 0) <= alpha_floor) {
-                  ax_r = 0.0;
+                  ax_r = 0.0_rt;
                }
                amrex::Real frequency =
-                  0.5 * (ax_l + ax_r) * (amrex::Math::abs(velocity.x) + cs) / dx[0];
+                  0.5_rt * (ax_l + ax_r) * (amrex::Math::abs(velocity.x) + cs) / dx[0];
 #if (AMREX_SPACEDIM >= 2)
                amrex::Real ay_l = ay(i, j, k, 0);
                if (j > dlo[1] && alpha(i, j - 1, k, 0) <= alpha_floor) {
-                  ay_l = 0.0;
+                  ay_l = 0.0_rt;
                }
                amrex::Real ay_r = ay(i, j + 1, k, 0);
                if (j < dhi[1] && alpha(i, j + 1, k, 0) <= alpha_floor) {
-                  ay_r = 0.0;
+                  ay_r = 0.0_rt;
                }
                frequency +=
-                  0.5 * (ay_l + ay_r) * (amrex::Math::abs(velocity.y) + cs) / dx[1];
+                  0.5_rt * (ay_l + ay_r) * (amrex::Math::abs(velocity.y) + cs) / dx[1];
 #endif
 #if (AMREX_SPACEDIM == 3)
                amrex::Real az_l = az(i, j, k, 0);
                if (k > dlo[2] && alpha(i, j, k - 1, 0) <= alpha_floor) {
-                  az_l = 0.0;
+                  az_l = 0.0_rt;
                }
                amrex::Real az_r = az(i, j, k + 1, 0);
                if (k < dhi[2] && alpha(i, j, k + 1, 0) <= alpha_floor) {
-                  az_r = 0.0;
+                  az_r = 0.0_rt;
                }
                frequency +=
-                  0.5 * (az_l + az_r) * (amrex::Math::abs(velocity.z) + cs) / dx[2];
+                  0.5_rt * (az_l + az_r) * (amrex::Math::abs(velocity.z) + cs) / dx[2];
 #endif
                max_frequency = amrex::max(max_frequency, frequency / fluid_fraction);
             }
@@ -872,23 +905,32 @@ inline amrex::Real adaptive_dt(
    amrex::Geometry const& geom,
    RunConfig const& cfg,
    amrex::Real time,
-   amrex::MultiFab const* stored_spacetime = nullptr
+   amrex::MultiFab const* stored_spacetime = nullptr,
+   amrex::iMultiFab const* inactive_mask = nullptr
 )
 {
    const EOSParams eos = eos_params(cfg);
    if (physical_system(cfg) == PhysicalSystem::RHD) {
       if (stored_spacetime != nullptr) {
-         fill_rhd_signal_frequency<EOSMethod>(frequency, state, geom, eos, *stored_spacetime);
+         fill_rhd_signal_frequency<EOSMethod>(frequency, state, geom, eos, *stored_spacetime,
+            mesh_coordinate_code(cfg.mesh_coordinate), mesh_axes_layout(cfg));
       } else {
          fill_rhd_signal_frequency<EOSMethod>(
-            frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
+            frequency,
+            state,
+            geom,
+            eos,
+            fixed_spacetime_parameters(cfg),
+            time,
+            mesh_coordinate_code(cfg.mesh_coordinate),
+            mesh_axes_layout(cfg)
          );
       }
    } else if (physical_system(cfg) == PhysicalSystem::RMHD) {
       if (stored_spacetime != nullptr) {
-         fill_rmhd_signal_frequency(frequency, state, geom, eos, *stored_spacetime);
+         fill_rmhd_signal_frequency<EOSMethod>(frequency, state, geom, eos, *stored_spacetime);
       } else {
-         fill_rmhd_signal_frequency(
+         fill_rmhd_signal_frequency<EOSMethod>(
             frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
          );
       }
@@ -897,7 +939,37 @@ inline amrex::Real adaptive_dt(
    } else {
       fill_signal_frequency<EOSMethod>(frequency, state, geom, cfg, eos);
    }
+   if (inactive_mask != nullptr) {
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      for (amrex::MFIter mfi(frequency, amrex::TilingIfNotGPU());
+           mfi.isValid(); ++mfi) {
+         const amrex::Box& box = mfi.tilebox();
+         const auto values = frequency.array(mfi);
+         const auto inactive = inactive_mask->const_array(mfi);
+         amrex::ParallelFor(
+            box,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               if (inactive(i, j, k, 0) != 0) {
+                  values(i, j, k, 0) = 0.0_rt;
+               }
+            }
+         );
+      }
+   }
    const amrex::Real max_frequency = frequency.max(0);
+   if (!std::isfinite(max_frequency)) {
+      const amrex::IntVect location = frequency.maxIndex(0);
+      std::ostringstream message;
+      const auto spacing = geom.CellSizeArray();
+      message
+         << "fluid CFL evaluation produced a nonfinite signal frequency at "
+         << location << " with first-axis cell spacing " << spacing[0]
+         << "; relativistic runs usually indicate a local primitive-recovery "
+            "or metric failure";
+      amrex::Abort(message.str().c_str());
+   }
    const amrex::Real advective_dt = cfg.cfl / max_frequency;
    return amrex::min(advective_dt, diffusion_dt_limit<DiffusionMethod>(geom, cfg));
 }
@@ -920,7 +992,7 @@ inline amrex::Real adaptive_dt_mapped_hydro(
       const EOSParams eos = eos_params(cfg);
       fill_signal_frequency_mapped_hydro<EOSMethod>(frequency, state, grid_system, layout, eos);
       const amrex::Real max_frequency = frequency.max(0);
-      if (max_frequency <= 0.0) {
+      if (max_frequency <= 0.0_rt) {
          return std::numeric_limits<amrex::Real>::max();
       }
       return cfg.cfl / max_frequency;
@@ -939,13 +1011,13 @@ inline amrex::Real adaptive_dt_masked(
 {
    const EOSParams eos = eos_params(cfg);
    (void)frequency;
-   amrex::Real max_frequency = 0.0;
+   amrex::Real max_frequency = 0.0_rt;
    if constexpr (has_mhd_components<NComp>()) {
       max_frequency = max_mhd_signal_frequency_masked<EOSMethod>(state, solid_mask, geom, cfg, eos, solid_valid_kind);
    } else {
       max_frequency = max_hydro_signal_frequency_masked<EOSMethod>(state, solid_mask, geom, cfg, eos, solid_valid_kind);
    }
-   if (max_frequency <= 0.0) {
+   if (max_frequency <= 0.0_rt) {
       return std::numeric_limits<amrex::Real>::max();
    }
    const amrex::Real advective_dt = cfg.cfl / max_frequency;
@@ -966,7 +1038,7 @@ inline amrex::Real adaptive_dt_cutcell_masked(
 {
    const EOSParams eos = eos_params(cfg);
    (void)frequency;
-   amrex::Real max_frequency = 0.0;
+   amrex::Real max_frequency = 0.0_rt;
    if constexpr (!has_mhd_components<NComp>()) {
       max_frequency = max_hydro_cutcell_signal_frequency_masked<EOSMethod>(
          state,
@@ -980,7 +1052,7 @@ inline amrex::Real adaptive_dt_cutcell_masked(
    } else {
       max_frequency = max_mhd_signal_frequency_masked<EOSMethod>(state, solid_mask, geom, cfg, eos, solid_valid_kind);
    }
-   if (max_frequency <= 0.0) {
+   if (max_frequency <= 0.0_rt) {
       return std::numeric_limits<amrex::Real>::max();
    }
    const amrex::Real advective_dt = cfg.cfl / max_frequency;
@@ -1007,7 +1079,8 @@ amrex::Real launch_standard(
       geometry,
       launch.config,
       time,
-      cell_spacetime
+      cell_spacetime,
+      launch.inactive_mask
    );
 }
 
@@ -1061,7 +1134,7 @@ amrex::Real dispatch_diffusion(int diffusion_method, Operation&& operation)
       return operation.template operator()<NumComponents, EosMethod, DiffusionImplicit>();
    default:
       amrex::Abort("invalid diffusion method in signal-speed factory");
-      return 0.0;
+      return 0.0_rt;
    }
 }
 
@@ -1095,7 +1168,7 @@ amrex::Real dispatch_layout(SignalSpeedLaunch const& launch, Operation&& operati
       return dispatch_runtime_eos<NVAR_MHD + 1>(launch, operation);
    default:
       amrex::Abort("unsupported state layout in signal-speed factory");
-      return 0.0;
+      return 0.0_rt;
    }
 }
 
@@ -1120,11 +1193,15 @@ amrex::Real compute_spacetime_dt(
    amrex::MultiFab& frequency,
    amrex::MultiFab const& cell_spacetime,
    amrex::Geometry const& geometry,
-   amrex::Real cfl,
-   amrex::Real gauge_speed
+   RunConfig const& config
 )
 {
    const auto spacing = geometry.CellSizeArray();
+   const ReferenceChartGeometry reference_chart(geometry, config);
+   const bool use_reference_metric = config.spacetime_formulation == "fccz4";
+   const auto parameters = z4c_evolution_parameters(config);
+   const auto lapse_gauge = z4c_lapse_gauge(config);
+   const auto shift_gauge = z4c_shift_gauge(config);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -1133,29 +1210,42 @@ amrex::Real compute_spacetime_dt(
       const auto spacetime = cell_spacetime.const_array(mfi);
       const auto output = frequency.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const SpacetimeMetric metric = generated::z4c_spacetime_metric(
-            load_z4c_state(spacetime, i, j, k)
-         );
+         const Z4cState local = load_z4c_state(spacetime, i, j, k);
+         const SpacetimeMetric metric = generated::z4c_spacetime_metric(local);
+         const amrex::Real gauge_speed = std::sqrt(z4c_maximum_speed_squared(
+            local, parameters, lapse_gauge, shift_gauge));
+         const auto chart = reference_chart.at(i, j, k, false);
          amrex::Real value = (
             amrex::Math::abs(metric.shift1)
             + gauge_speed * metric.lapse * std::sqrt(metric.inv_gamma11)
-         ) / spacing[0];
+         ) / spacing[0] * (use_reference_metric ? reference_inverse_scale(chart, 0) : 1.0_rt);
 #if (AMREX_SPACEDIM >= 2)
          value += (
             amrex::Math::abs(metric.shift2)
             + gauge_speed * metric.lapse * std::sqrt(metric.inv_gamma22)
-         ) / spacing[1];
+         ) / spacing[1] * (use_reference_metric ? reference_inverse_scale(chart, 1) : 1.0_rt);
 #endif
 #if (AMREX_SPACEDIM == 3)
          value += (
             amrex::Math::abs(metric.shift3)
             + gauge_speed * metric.lapse * std::sqrt(metric.inv_gamma33)
-         ) / spacing[2];
+         ) / spacing[2] * (use_reference_metric ? reference_inverse_scale(chart, 2) : 1.0_rt);
 #endif
          output(i, j, k, 0) = value;
       });
    }
-   return cfl / frequency.max(0);
+   const amrex::Real max_frequency = frequency.max(0);
+   if (!std::isfinite(max_frequency)) {
+      const amrex::IntVect location = frequency.maxIndex(0);
+      std::ostringstream message;
+      const auto spacing = geometry.CellSizeArray();
+      message
+         << "spacetime CFL evaluation produced a nonfinite characteristic "
+            "frequency at " << location << " with cell spacing "
+         << spacing[0];
+      amrex::Abort(message.str().c_str());
+   }
+   return config.cfl / max_frequency;
 }
 
 amrex::Real compute_mapped_hydro_adaptive_dt(
@@ -1176,7 +1266,7 @@ amrex::Real compute_mapped_hydro_adaptive_dt(
       return dispatch_runtime_eos<NVAR_HYDRO + 1>(launch, operation);
    default:
       amrex::Abort("mapped-patch signal-speed launch requires a hydro state layout");
-      return 0.0;
+      return 0.0_rt;
    }
 }
 

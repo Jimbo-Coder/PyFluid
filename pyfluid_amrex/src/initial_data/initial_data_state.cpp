@@ -27,6 +27,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 inline void initialize_uniform(amrex::MultiFab& state, RunConfig const& cfg)
 {
 #ifdef AMREX_USE_OMP
@@ -79,7 +81,7 @@ PatchCoordinate cartesian_velocity_to_mesh_basis(
    if (mesh_coordinate == MeshCartesian) {
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
          const int axis = mesh_axis(axes, dir);
-         amrex::Real value = 0.0;
+         amrex::Real value = 0.0_rt;
          if (axis == MeshAxisX) {
             value = vx;
          } else if (axis == MeshAxisY) {
@@ -93,14 +95,14 @@ PatchCoordinate cartesian_velocity_to_mesh_basis(
    }
 
    if (mesh_coordinate == MeshCylindrical) {
-      const amrex::Real phi = initial_data_coordinate_for_axis(axes, mesh, MeshAxisPhi, 0.0);
+      const amrex::Real phi = initial_data_coordinate_for_axis(axes, mesh, MeshAxisPhi, 0.0_rt);
       const amrex::Real cphi = std::cos(phi);
       const amrex::Real sphi = std::sin(phi);
       const amrex::Real vr = vx * cphi + vy * sphi;
       const amrex::Real vphi = -vx * sphi + vy * cphi;
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
          const int axis = mesh_axis(axes, dir);
-         amrex::Real value = 0.0;
+         amrex::Real value = 0.0_rt;
          if (axis == MeshAxisR) {
             value = vr;
          } else if (axis == MeshAxisPhi) {
@@ -120,7 +122,7 @@ PatchCoordinate cartesian_velocity_to_mesh_basis(
          MeshAxisTheta,
          constants::half_pi
       );
-      const amrex::Real phi = initial_data_coordinate_for_axis(axes, mesh, MeshAxisPhi, 0.0);
+      const amrex::Real phi = initial_data_coordinate_for_axis(axes, mesh, MeshAxisPhi, 0.0_rt);
       const amrex::Real ctheta = std::cos(theta);
       const amrex::Real stheta = std::sin(theta);
       const amrex::Real cphi = std::cos(phi);
@@ -130,7 +132,7 @@ PatchCoordinate cartesian_velocity_to_mesh_basis(
       const amrex::Real vphi = -vx * sphi + vy * cphi;
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
          const int axis = mesh_axis(axes, dir);
-         amrex::Real value = 0.0;
+         amrex::Real value = 0.0_rt;
          if (axis == MeshAxisR) {
             value = vr;
          } else if (axis == MeshAxisTheta) {
@@ -206,40 +208,40 @@ inline void initialize_cartesian_advection(amrex::MultiFab& state, amrex::Geomet
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real magnetic_blast_noise_ax(amrex::Real, amrex::Real y, amrex::Real z, amrex::Real a0, amrex::Real k1) noexcept
 {
-   return a0 * std::sin(k1 * y) * std::sin(2.0 * k1 * z);
+   return a0 * std::sin(k1 * y) * std::sin(2.0_rt * k1 * z);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real magnetic_blast_noise_ay(amrex::Real x, amrex::Real, amrex::Real z, amrex::Real a0, amrex::Real k1) noexcept
 {
-   return 0.7 * a0 * std::sin(2.0 * k1 * z) * std::sin(k1 * x);
+   return 0.7_rt * a0 * std::sin(2.0_rt * k1 * z) * std::sin(k1 * x);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real magnetic_blast_noise_az(amrex::Real x, amrex::Real y, amrex::Real, amrex::Real a0, amrex::Real k1) noexcept
 {
-   return 0.5 * a0 * std::sin(k1 * x) * std::sin(2.0 * k1 * y);
+   return 0.5_rt * a0 * std::sin(k1 * x) * std::sin(2.0_rt * k1 * y);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real magnetic_blast_noise_bx(amrex::Real x, amrex::Real y, amrex::Real z, amrex::Real a0, amrex::Real k1) noexcept
 {
-   return a0 * k1 * std::sin(k1 * x) * std::cos(2.0 * k1 * y)
-      - 1.4 * a0 * k1 * std::cos(2.0 * k1 * z) * std::sin(k1 * x);
+   return a0 * k1 * std::sin(k1 * x) * std::cos(2.0_rt * k1 * y)
+      - 1.4_rt * a0 * k1 * std::cos(2.0_rt * k1 * z) * std::sin(k1 * x);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real magnetic_blast_noise_by(amrex::Real x, amrex::Real y, amrex::Real z, amrex::Real a0, amrex::Real k1) noexcept
 {
-   return 2.0 * a0 * k1 * std::sin(k1 * y) * std::cos(2.0 * k1 * z)
-      - 0.5 * a0 * k1 * std::cos(k1 * x) * std::sin(2.0 * k1 * y);
+   return 2.0_rt * a0 * k1 * std::sin(k1 * y) * std::cos(2.0_rt * k1 * z)
+      - 0.5_rt * a0 * k1 * std::cos(k1 * x) * std::sin(2.0_rt * k1 * y);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real magnetic_blast_noise_bz(amrex::Real x, amrex::Real y, amrex::Real z, amrex::Real a0, amrex::Real k1) noexcept
 {
-   return 0.7 * a0 * k1 * std::sin(2.0 * k1 * z) * std::cos(k1 * x)
-      - a0 * k1 * std::cos(k1 * y) * std::sin(2.0 * k1 * z);
+   return 0.7_rt * a0 * k1 * std::sin(2.0_rt * k1 * z) * std::cos(k1 * x)
+      - a0 * k1 * std::cos(k1 * y) * std::sin(2.0_rt * k1 * z);
 }
 
 inline void initialize_sine_wave(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
@@ -309,23 +311,23 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real reconstruction_medley_profile(amrex::Real phase) noexcept
 {
    phase -= std::floor(phase);
-   const int segment = amrex::min(static_cast<int>(4.0 * phase), 3);
-   const amrex::Real local = 4.0 * phase - static_cast<amrex::Real>(segment);
+   const int segment = amrex::min(static_cast<int>(4.0_rt * phase), 3);
+   const amrex::Real local = 4.0_rt * phase - static_cast<amrex::Real>(segment);
    if (segment == 0) {
       const amrex::Real sine = std::sin(constants::pi * local);
       return sine * sine;
    }
    if (segment == 1) {
-      return local >= 0.2 && local <= 0.8 ? 1.0 : 0.0;
+      return local >= 0.2_rt && local <= 0.8_rt ? 1.0_rt : 0.0_rt;
    }
    if (segment == 2) {
-      return 1.0 - std::abs(2.0 * local - 1.0);
+      return 1.0_rt - std::abs(2.0_rt * local - 1.0_rt);
    }
 
-   constexpr amrex::Real sigma = 0.12;
-   const amrex::Real z = (local - 0.5) / sigma;
-   const amrex::Real edge = std::exp(-0.5 * (0.5 / sigma) * (0.5 / sigma));
-   return amrex::max((std::exp(-0.5 * z * z) - edge) / (1.0 - edge), 0.0);
+   constexpr amrex::Real sigma = 0.12_rt;
+   const amrex::Real z = (local - 0.5_rt) / sigma;
+   const amrex::Real edge = std::exp(-0.5_rt * (0.5_rt / sigma) * (0.5_rt / sigma));
+   return amrex::max((std::exp(-0.5_rt * z * z) - edge) / (1.0_rt - edge), 0.0_rt);
 }
 
 inline void initialize_advection_medley(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
@@ -350,18 +352,18 @@ inline void initialize_advection_medley(amrex::MultiFab& state, amrex::Geometry 
       const auto arr = state.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          amrex::ignore_unused(j, k);
-         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
          const amrex::Real rho = rho0 + amplitude * reconstruction_medley_profile((x - problo[0]) / domain_length);
          arr(i, j, k, RHO) = rho;
          arr(i, j, k, MOM1) = rho * velocity;
-         arr(i, j, k, MOM2) = 0.0;
-         arr(i, j, k, MOM3) = 0.0;
+         arr(i, j, k, MOM2) = 0.0_rt;
+         arr(i, j, k, MOM3) = 0.0_rt;
          arr(i, j, k, ENERGY) = total_hydro_energy_runtime(
             eos_method,
             rho,
             velocity,
-            0.0,
-            0.0,
+            0.0_rt,
+            0.0_rt,
             pressure0,
             eos
          );
@@ -393,24 +395,24 @@ inline void initialize_characteristic_medley(amrex::MultiFab& state, amrex::Geom
       const auto arr = state.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          amrex::ignore_unused(j, k);
-         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
          const amrex::Real phase = (x - problo[0]) / domain_length;
          const amrex::Real sound_minus = amplitude * reconstruction_medley_profile(phase);
-         const amrex::Real entropy = amplitude * reconstruction_medley_profile(phase + 1.0 / 3.0);
-         const amrex::Real sound_plus = amplitude * reconstruction_medley_profile(phase + 2.0 / 3.0);
+         const amrex::Real entropy = amplitude * reconstruction_medley_profile(phase + 1.0_rt / 3.0_rt);
+         const amrex::Real sound_plus = amplitude * reconstruction_medley_profile(phase + 2.0_rt / 3.0_rt);
          const amrex::Real rho = rho0 + sound_minus + entropy + sound_plus;
          const amrex::Real velocity = sound_speed * (sound_plus - sound_minus) / rho0;
          const amrex::Real pressure = pressure0 + sound2 * (sound_minus + sound_plus);
          arr(i, j, k, RHO) = rho;
          arr(i, j, k, MOM1) = rho * velocity;
-         arr(i, j, k, MOM2) = 0.0;
-         arr(i, j, k, MOM3) = 0.0;
+         arr(i, j, k, MOM2) = 0.0_rt;
+         arr(i, j, k, MOM3) = 0.0_rt;
          arr(i, j, k, ENERGY) = total_hydro_energy_runtime(
             eos_method,
             rho,
             velocity,
-            0.0,
-            0.0,
+            0.0_rt,
+            0.0_rt,
             pressure,
             eos
          );
@@ -454,17 +456,17 @@ inline void initialize_mhd_characteristic_medley(
       const auto arr = state.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          amrex::ignore_unused(j, k);
-         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
          const amrex::Real phase = (x - problo[0]) / domain_length;
-         const amrex::Real phase_step = 1.0 / 7.0;
+         const amrex::Real phase_step = 1.0_rt / 7.0_rt;
          const MHDCharacteristics waves{
             amplitude * reconstruction_medley_profile(phase),
             amplitude * reconstruction_medley_profile(phase + phase_step),
-            amplitude * reconstruction_medley_profile(phase + 2.0 * phase_step),
-            amplitude * reconstruction_medley_profile(phase + 3.0 * phase_step),
-            amplitude * reconstruction_medley_profile(phase + 4.0 * phase_step),
-            amplitude * reconstruction_medley_profile(phase + 5.0 * phase_step),
-            amplitude * reconstruction_medley_profile(phase + 6.0 * phase_step),
+            amplitude * reconstruction_medley_profile(phase + 2.0_rt * phase_step),
+            amplitude * reconstruction_medley_profile(phase + 3.0_rt * phase_step),
+            amplitude * reconstruction_medley_profile(phase + 4.0_rt * phase_step),
+            amplitude * reconstruction_medley_profile(phase + 5.0_rt * phase_step),
+            amplitude * reconstruction_medley_profile(phase + 6.0_rt * phase_step),
          };
          const MHDReducedPrimitive perturbation =
             generated::mhd_reduced_from_characteristics(waves, basis);
@@ -532,21 +534,21 @@ inline void initialize_linear_wave_x(amrex::MultiFab& state, amrex::Geometry con
    const bool family_slow_plus = cfg.wave_family == "slow_plus";
    const bool family_slow_minus = cfg.wave_family == "slow_minus";
 
-   amrex::Real mhd_fast = 0.0;
-   amrex::Real mhd_slow = 0.0;
-   amrex::Real mhd_alfven = 0.0;
-   amrex::Real mhd_denominator = 1.0;
-   amrex::Real alfven_ey = 1.0;
-   amrex::Real alfven_ez = 0.0;
+   amrex::Real mhd_fast = 0.0_rt;
+   amrex::Real mhd_slow = 0.0_rt;
+   amrex::Real mhd_alfven = 0.0_rt;
+   amrex::Real mhd_denominator = 1.0_rt;
+   amrex::Real alfven_ey = 1.0_rt;
+   amrex::Real alfven_ez = 0.0_rt;
    if (mhd) {
       const amrex::Real va2 = (b1_0 * b1_0 + b2_0 * b2_0 + b3_0 * b3_0) / rho0;
       const amrex::Real can2 = b1_0 * b1_0 / rho0;
-      const amrex::Real disc = amrex::max((sound2 + va2) * (sound2 + va2) - 4.0 * sound2 * can2, 0.0);
-      mhd_fast = std::sqrt(0.5 * (sound2 + va2 + std::sqrt(disc)));
-      mhd_slow = std::sqrt(amrex::max(0.5 * (sound2 + va2 - std::sqrt(disc)), 0.0));
+      const amrex::Real disc = amrex::max((sound2 + va2) * (sound2 + va2) - 4.0_rt * sound2 * can2, 0.0_rt);
+      mhd_fast = std::sqrt(0.5_rt * (sound2 + va2 + std::sqrt(disc)));
+      mhd_slow = std::sqrt(amrex::max(0.5_rt * (sound2 + va2 - std::sqrt(disc)), 0.0_rt));
       mhd_alfven = amrex::Math::abs(b1_0) / std::sqrt(rho0);
       const amrex::Real bt = std::sqrt(b2_0 * b2_0 + b3_0 * b3_0);
-      if (bt > 0.0) {
+      if (bt > 0.0_rt) {
          alfven_ey = -b3_0 / bt;
          alfven_ez = b2_0 / bt;
       }
@@ -554,11 +556,11 @@ inline void initialize_linear_wave_x(amrex::MultiFab& state, amrex::Geometry con
       if (magnetosonic) {
          const amrex::Real cabs = (family_fast_plus || family_fast_minus) ? mhd_fast : mhd_slow;
          mhd_denominator = cabs * cabs - can2;
-         if (amrex::Math::abs(mhd_denominator) < 1.0e-14) {
+         if (amrex::Math::abs(mhd_denominator) < 1.0e-14_rt) {
             amrex::Abort("linear_wave_x magnetosonic family is degenerate for this background field");
          }
       }
-      if ((family_alfven_plus || family_alfven_minus) && mhd_alfven <= 0.0) {
+      if ((family_alfven_plus || family_alfven_minus) && mhd_alfven <= 0.0_rt) {
          amrex::Abort("linear_wave_x Alfven family requires nonzero b1");
       }
    }
@@ -583,14 +585,14 @@ inline void initialize_linear_wave_x(amrex::MultiFab& state, amrex::Geometry con
          );
          const amrex::Real q1 = patch_coordinate_component(sample.mesh, 0);
          const amrex::Real profile = std::sin(two_pi * wave_number * q1);
-         amrex::Real drho = 0.0;
-         amrex::Real dvx = 0.0;
-         amrex::Real dvy = 0.0;
-         amrex::Real dvz = 0.0;
-         amrex::Real dpressure = 0.0;
-         amrex::Real dbx = 0.0;
-         amrex::Real dby = 0.0;
-         amrex::Real dbz = 0.0;
+         amrex::Real drho = 0.0_rt;
+         amrex::Real dvx = 0.0_rt;
+         amrex::Real dvy = 0.0_rt;
+         amrex::Real dvz = 0.0_rt;
+         amrex::Real dpressure = 0.0_rt;
+         amrex::Real dbx = 0.0_rt;
+         amrex::Real dby = 0.0_rt;
+         amrex::Real dbz = 0.0_rt;
 
          if (!mhd) {
             if (family_acoustic_plus || family_acoustic_minus) {
@@ -721,10 +723,10 @@ inline void initialize_acoustic_packet_x(amrex::MultiFab& state, amrex::Geometry
    const amrex::Real center_x = cfg.bump_x0;
    const amrex::Real center_y = cfg.bump_y0;
    const amrex::Real center_z = cfg.bump_z0;
-   const amrex::Real inv_sigma2 = 1.0 / (cfg.bump_sigma * cfg.bump_sigma);
-   const amrex::Real inv_transverse_sigma2 = cfg.acoustic_transverse_sigma > 0.0
-      ? 1.0 / (cfg.acoustic_transverse_sigma * cfg.acoustic_transverse_sigma)
-      : 0.0;
+   const amrex::Real inv_sigma2 = 1.0_rt / (cfg.bump_sigma * cfg.bump_sigma);
+   const amrex::Real inv_transverse_sigma2 = cfg.acoustic_transverse_sigma > 0.0_rt
+      ? 1.0_rt / (cfg.acoustic_transverse_sigma * cfg.acoustic_transverse_sigma)
+      : 0.0_rt;
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -744,7 +746,7 @@ inline void initialize_acoustic_packet_x(amrex::MultiFab& state, amrex::Geometry
             k
          );
          const amrex::Real delta_x = sample.physical.q1 - center_x;
-         amrex::Real transverse_distance2 = 0.0;
+         amrex::Real transverse_distance2 = 0.0_rt;
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real delta_y = sample.physical.q2 - center_y;
          transverse_distance2 += delta_y * delta_y;
@@ -754,7 +756,7 @@ inline void initialize_acoustic_packet_x(amrex::MultiFab& state, amrex::Geometry
          transverse_distance2 += delta_z * delta_z;
 #endif
          const amrex::Real density_perturbation = amplitude * std::exp(
-            -0.5 * (delta_x * delta_x * inv_sigma2 + transverse_distance2 * inv_transverse_sigma2)
+            -0.5_rt * (delta_x * delta_x * inv_sigma2 + transverse_distance2 * inv_transverse_sigma2)
          );
          const amrex::Real rho = rho0 + density_perturbation;
          const amrex::Real pressure = pressure0 + sound_speed2 * density_perturbation;
@@ -764,8 +766,8 @@ inline void initialize_acoustic_packet_x(amrex::MultiFab& state, amrex::Geometry
             mesh_axes,
             sample.mesh,
             velocity_x,
-            0.0,
-            0.0
+            0.0_rt,
+            0.0_rt
          );
          const amrex::Real v1 = velocity.q1;
          const amrex::Real v2 = velocity.q2;
@@ -805,8 +807,8 @@ inline void initialize_jeans_wave_x(amrex::MultiFab& state, amrex::Geometry cons
       const amrex::Real cs0 = sound_speed_from_primitive_runtime(eos_method, rho0, pressure0, eos);
       const amrex::Real kx = two_pi * wave_number;
       const amrex::Real omega2 =
-         cs0 * cs0 * kx * kx - 4.0 * constants::pi * cfg.gravity_constant * rho0;
-      const bool stable = omega2 >= 0.0;
+         cs0 * cs0 * kx * kx - 4.0_rt * constants::pi * cfg.gravity_constant * rho0;
+      const bool stable = omega2 >= 0.0_rt;
       const amrex::Real rate = stable ? std::sqrt(omega2) : std::sqrt(-omega2);
 
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
@@ -829,9 +831,9 @@ inline void initialize_jeans_wave_x(amrex::MultiFab& state, amrex::Geometry cons
             : rate * amplitude * std::cos(phase) / (rho0 * kx);
          arr(i, j, k, RHO) = rho;
          arr(i, j, k, MOM1) = rho * vx;
-         arr(i, j, k, MOM2) = 0.0;
-         arr(i, j, k, MOM3) = 0.0;
-         arr(i, j, k, ENERGY) = total_hydro_energy_runtime(eos_method, rho, vx, 0.0, 0.0, pressure, eos);
+         arr(i, j, k, MOM2) = 0.0_rt;
+         arr(i, j, k, MOM3) = 0.0_rt;
+         arr(i, j, k, ENERGY) = total_hydro_energy_runtime(eos_method, rho, vx, 0.0_rt, 0.0_rt, pressure, eos);
       });
    }
    }
@@ -873,10 +875,10 @@ inline void initialize_shear_wave_x(amrex::MultiFab& state, amrex::Geometry cons
          const amrex::Real phase = two_pi * wave_number * q1;
          const amrex::Real vy = amplitude * std::sin(phase);
          arr(i, j, k, RHO) = rho0;
-         arr(i, j, k, MOM1) = 0.0;
+         arr(i, j, k, MOM1) = 0.0_rt;
          arr(i, j, k, MOM2) = rho0 * vy;
-         arr(i, j, k, MOM3) = 0.0;
-         arr(i, j, k, ENERGY) = total_hydro_energy_runtime(eos_method, rho0, 0.0, vy, 0.0, pressure0, eos);
+         arr(i, j, k, MOM3) = 0.0_rt;
+         arr(i, j, k, ENERGY) = total_hydro_energy_runtime(eos_method, rho0, 0.0_rt, vy, 0.0_rt, pressure0, eos);
       });
    }
    }
@@ -920,7 +922,7 @@ inline void initialize_pressure_bump(amrex::MultiFab& state, amrex::Geometry con
             const amrex::Real dy_physical = physical.q2 - center.q2;
             const amrex::Real dz_physical = physical.q3 - center.q3;
             const amrex::Real r2 = dx_physical * dx_physical + dy_physical * dy_physical + dz_physical * dz_physical;
-            const amrex::Real pressure = pressure0 + amplitude * std::exp(-0.5 * r2 / sigma2);
+            const amrex::Real pressure = pressure0 + amplitude * std::exp(-0.5_rt * r2 / sigma2);
             arr(i, j, k, RHO) = rho0;
             arr(i, j, k, MOM1) = rho0 * v1_0;
             arr(i, j, k, MOM2) = rho0 * v2_0;
@@ -994,7 +996,7 @@ inline void initialize_pressure_bump(amrex::MultiFab& state, amrex::Geometry con
             probhi,
             periodic
          );
-         const amrex::Real pressure = pressure0 + amplitude * std::exp(-0.5 * r2 / sigma2);
+         const amrex::Real pressure = pressure0 + amplitude * std::exp(-0.5_rt * r2 / sigma2);
          arr(i, j, k, RHO) = rho0;
          arr(i, j, k, MOM1) = rho0 * v1_0;
          arr(i, j, k, MOM2) = rho0 * v2_0;
@@ -1091,24 +1093,24 @@ inline void initialize_vortex_blast(amrex::MultiFab& state, amrex::Geometry cons
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real dz_phys = coordinate_delta(q3, z0, problo[2], probhi[2], periodic[2] != 0);
 #else
-         const amrex::Real dz_phys = 0.0;
+         const amrex::Real dz_phys = 0.0_rt;
 #endif
          const amrex::Real r2 = cartesian_radius_squared(dx_phys, dy_phys, dz_phys);
          const amrex::Real radius = std::sqrt(
-            cartesian_cylindrical_radius_squared(dx_phys, dy_phys) + 1.0e-300
+            cartesian_cylindrical_radius_squared(dx_phys, dy_phys) + 1.0e-300_rt
          );
          const amrex::Real angle = std::atan2(dy_phys, dx_phys);
-         const amrex::Real shape = std::exp(-0.5 * r2 / sigma2);
-         const amrex::Real center_regularity = 1.0 - std::exp(-0.5 * r2 / sigma2);
+         const amrex::Real shape = std::exp(-0.5_rt * r2 / sigma2);
+         const amrex::Real center_regularity = 1.0_rt - std::exp(-0.5_rt * r2 / sigma2);
          const amrex::Real angular_shape = amrex::max(
-            0.2,
-            1.0
+            0.2_rt,
+            1.0_rt
                + center_regularity * asymmetry * std::cos(mode * angle + phase)
-               + 0.45 * center_regularity * asymmetry * std::sin((mode + 2.0) * angle - 0.7 * phase)
+               + 0.45_rt * center_regularity * asymmetry * std::sin((mode + 2.0_rt) * angle - 0.7_rt * phase)
          );
          const amrex::Real pressure = pressure0 + blast_amplitude * shape * angular_shape;
 
-         const amrex::Real swirl_shape = std::exp(-0.5 * r2 / (4.0 * sigma2));
+         const amrex::Real swirl_shape = std::exp(-0.5_rt * r2 / (4.0_rt * sigma2));
          const amrex::Real regular_swirl = swirl_speed * swirl_shape * center_regularity;
          const amrex::Real vx_swirl = -regular_swirl * dy_phys / radius;
          const amrex::Real vy_swirl = regular_swirl * dx_phys / radius;
@@ -1196,7 +1198,7 @@ inline void initialize_density_cloud(amrex::MultiFab& state, amrex::Geometry con
             probhi,
             periodic
          );
-         const amrex::Real rho = rho0 + amplitude * std::exp(-0.5 * r2 / sigma2);
+         const amrex::Real rho = rho0 + amplitude * std::exp(-0.5_rt * r2 / sigma2);
          const PatchCoordinate velocity =
             cartesian_velocity_to_mesh_basis(mesh_coordinate, mesh_axes, sample.mesh, v1_0, v2_0, v3_0);
          const amrex::Real v1 = velocity.q1;
@@ -1235,15 +1237,15 @@ inline void initialize_hse_polytrope_x(amrex::MultiFab& state, amrex::Geometry c
    const amrex::Real hse_k = eos_method == EOSIdealGas
       ? cfg.pressure0 / std::pow(cfg.rho0, hse_gamma)
       : eos.segment_k[0];
-   const amrex::Real rho_power0 = std::pow(cfg.rho0, hse_gamma - 1.0);
-   const amrex::Real slope = (hse_gamma - 1.0) * cfg.gravity_a1 / (hse_gamma * hse_k);
+   const amrex::Real rho_power0 = std::pow(cfg.rho0, hse_gamma - 1.0_rt);
+   const amrex::Real slope = (hse_gamma - 1.0_rt) * cfg.gravity_a1 / (hse_gamma * hse_k);
    const amrex::Real x0 = cfg.bump_x0;
-   const amrex::Real x_left = problo[0] + 0.5 * dx[0];
-   const amrex::Real x_right = probhi[0] - 0.5 * dx[0];
+   const amrex::Real x_left = problo[0] + 0.5_rt * dx[0];
+   const amrex::Real x_right = probhi[0] - 0.5_rt * dx[0];
    const amrex::Real power_left = rho_power0 + slope * (x_left - x0);
    const amrex::Real power_right = rho_power0 + slope * (x_right - x0);
    const amrex::Real min_power = power_left < power_right ? power_left : power_right;
-   if (hse_k <= 0.0 || hse_gamma <= 1.0 || min_power <= 0.0) {
+   if (hse_k <= 0.0_rt || hse_gamma <= 1.0_rt || min_power <= 0.0_rt) {
       amrex::Abort("hse_polytrope_x parameters produce a non-positive density profile");
    }
 
@@ -1274,7 +1276,7 @@ inline void initialize_hse_polytrope_x(amrex::MultiFab& state, amrex::Geometry c
          );
          const amrex::Real q1 = patch_coordinate_component(sample.mesh, 0);
          const amrex::Real rho_power = rho_power0 + slope * (q1 - x0);
-         const amrex::Real rho = std::pow(rho_power, 1.0 / (hse_gamma - 1.0));
+         const amrex::Real rho = std::pow(rho_power, 1.0_rt / (hse_gamma - 1.0_rt));
          const amrex::Real pressure = hse_k * std::pow(rho, hse_gamma);
          arr(i, j, k, RHO) = rho;
          arr(i, j, k, MOM1) = rho * v1_0;
@@ -1326,8 +1328,8 @@ inline void initialize_hydro_beam(amrex::MultiFab& state, amrex::Geometry const&
       const amrex::Real x0 = cfg.bump_x0;
       const amrex::Real y0 = cfg.bump_y0;
       const amrex::Real z0 = cfg.bump_z0;
-      const amrex::Real inv_length2 = 1.0 / (cfg.beam_length * cfg.beam_length);
-      const amrex::Real inv_radius2 = 1.0 / (cfg.beam_radius * cfg.beam_radius);
+      const amrex::Real inv_length2 = 1.0_rt / (cfg.beam_length * cfg.beam_length);
+      const amrex::Real inv_radius2 = 1.0_rt / (cfg.beam_radius * cfg.beam_radius);
       const EOSParams eos = eos_params(cfg);
       const int eos_method = eos_method_code(cfg);
 
@@ -1351,7 +1353,7 @@ inline void initialize_hydro_beam(amrex::MultiFab& state, amrex::Geometry const&
          const amrex::Real rx = x - x0;
          const amrex::Real ry = y - y0;
          const amrex::Real rz = z - z0;
-         const amrex::Real envelope = std::exp(-0.5 * (rx * rx * inv_length2 + (ry * ry + rz * rz) * inv_radius2));
+         const amrex::Real envelope = std::exp(-0.5_rt * (rx * rx * inv_length2 + (ry * ry + rz * rz) * inv_radius2));
          const amrex::Real rho = rho_ambient + envelope * (rho_beam - rho_ambient);
          const amrex::Real pressure = pressure_ambient + envelope * (pressure_beam - pressure_ambient);
          const amrex::Real vx = vx_ambient + envelope * (vx_beam - vx_ambient);
@@ -1438,8 +1440,8 @@ inline void initialize_sod_plane(amrex::MultiFab& state, amrex::Geometry const& 
             + shock_ny * (y - shock_y0)
             + shock_nz * (z - shock_z0);
          const bool left = periodic_plane
-            ? std::sin(two_pi * signed_distance) < 0.0
-            : signed_distance < 0.0;
+            ? std::sin(two_pi * signed_distance) < 0.0_rt
+            : signed_distance < 0.0_rt;
          const amrex::Real rho = left ? rho_left : rho_right;
          const amrex::Real pressure = left ? pressure_left : pressure_right;
          const amrex::Real vx = left ? v1_left : v1_right;
@@ -1539,8 +1541,8 @@ inline void initialize_sod_plane_face_b_impl(FaceMagneticField& face_b, amrex::G
                + shock_ny * (y - shock_y0)
                + shock_nz * (z - shock_z0);
             const bool left = periodic_plane
-               ? std::sin(two_pi * signed_distance) < 0.0
-               : signed_distance < 0.0;
+               ? std::sin(two_pi * signed_distance) < 0.0_rt
+               : signed_distance < 0.0_rt;
             if (face_dir == 0) {
                arr(i, j, k, 0) = left ? b1_left : b1_right;
             }
@@ -1582,8 +1584,22 @@ inline void initialize_circular_alfven_x(amrex::MultiFab& state, amrex::Geometry
       const amrex::Real wave_number = cfg.wave_number;
       const EOSParams eos = eos_params(cfg);
       const int eos_method = eos_method_code(cfg);
-      const amrex::Real ca = amrex::Math::abs(b1_0) / std::sqrt(rho0);
-      const amrex::Real velocity_factor = ca > 0.0 ? -b1_0 / (rho0 * ca) : 0.0;
+      const amrex::Real classical_speed = amrex::Math::abs(b1_0) / std::sqrt(rho0);
+      amrex::Real velocity_factor = classical_speed > 0.0_rt
+         ? -b1_0 / (rho0 * classical_speed) : 0.0_rt;
+      if (physical_system(cfg) == PhysicalSystem::RMHD) {
+         // Finite-amplitude relativistic CP wave, Del Zanna et al. (2007),
+         // Eq. 85. Use the smaller root without subtractive cancellation.
+         const amrex::Real enthalpy_density = rho0 + pressure0
+            + total_hydro_energy_runtime(eos_method, rho0, 0.0_rt, 0.0_rt, 0.0_rt, pressure0, eos);
+         const amrex::Real normal_squared = b1_0 * b1_0;
+         const amrex::Real transverse_squared = amplitude * amplitude;
+         const amrex::Real inertia = enthalpy_density + normal_squared + transverse_squared;
+         const amrex::Real wave_speed = std::sqrt(2.0_rt * normal_squared / (
+            inertia + std::sqrt(inertia * inertia - 4.0_rt * normal_squared * transverse_squared)
+         ));
+         velocity_factor = b1_0 != 0.0_rt ? -wave_speed / b1_0 : 0.0_rt;
+      }
 
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
@@ -1602,10 +1618,10 @@ inline void initialize_circular_alfven_x(amrex::MultiFab& state, amrex::Geometry
          const amrex::Real vy = velocity_factor * by;
          const amrex::Real vz = velocity_factor * bz;
          arr(i, j, k, RHO) = rho0;
-         arr(i, j, k, MOM1) = 0.0;
+         arr(i, j, k, MOM1) = 0.0_rt;
          arr(i, j, k, MOM2) = rho0 * vy;
          arr(i, j, k, MOM3) = rho0 * vz;
-         arr(i, j, k, ENERGY) = total_mhd_energy_runtime(eos_method, rho0, 0.0, vy, vz, pressure0, b1_0, by, bz, eos);
+         arr(i, j, k, ENERGY) = total_mhd_energy_runtime(eos_method, rho0, 0.0_rt, vy, vz, pressure0, b1_0, by, bz, eos);
          arr(i, j, k, B1) = b1_0;
          arr(i, j, k, B2) = by;
          arr(i, j, k, B3) = bz;
@@ -1635,7 +1651,7 @@ inline void initialize_resistive_wave_x(amrex::MultiFab& state, amrex::Geometry 
       const amrex::Real wave_number = cfg.wave_number;
       const EOSParams eos = eos_params(cfg);
       const int eos_method = eos_method_code(cfg);
-      const amrex::Real total_energy = total_mhd_energy_runtime(eos_method, rho0, 0.0, 0.0, 0.0, pressure0, 0.0, amplitude, 0.0, eos);
+      const amrex::Real total_energy = total_mhd_energy_runtime(eos_method, rho0, 0.0_rt, 0.0_rt, 0.0_rt, pressure0, 0.0_rt, amplitude, 0.0_rt, eos);
 
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
@@ -1650,11 +1666,11 @@ inline void initialize_resistive_wave_x(amrex::MultiFab& state, amrex::Geometry 
          const amrex::Real q1 = patch_coordinate_component(sample.mesh, 0);
          const amrex::Real phase = two_pi * wave_number * q1;
          arr(i, j, k, RHO) = rho0;
-         arr(i, j, k, MOM1) = 0.0;
-         arr(i, j, k, MOM2) = 0.0;
-         arr(i, j, k, MOM3) = 0.0;
+         arr(i, j, k, MOM1) = 0.0_rt;
+         arr(i, j, k, MOM2) = 0.0_rt;
+         arr(i, j, k, MOM3) = 0.0_rt;
          arr(i, j, k, ENERGY) = total_energy;
-         arr(i, j, k, B1) = 0.0;
+         arr(i, j, k, B1) = 0.0_rt;
          arr(i, j, k, B2) = amplitude * std::sin(phase);
          arr(i, j, k, B3) = amplitude * std::cos(phase);
       });
@@ -1713,9 +1729,9 @@ inline void initialize_magnetic_tube_z(amrex::MultiFab& state, amrex::Geometry c
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real ry = coordinate_delta(y, y0, problo[1], probhi[1], periodic[1] != 0);
 #else
-         const amrex::Real ry = 0.0;
+         const amrex::Real ry = 0.0_rt;
 #endif
-         const amrex::Real profile = std::exp(-0.5 * (rx * rx + ry * ry) / sigma2);
+         const amrex::Real profile = std::exp(-0.5_rt * (rx * rx + ry * ry) / sigma2);
          const amrex::Real bz = b3_0 + amplitude * profile;
          arr(i, j, k, RHO) = rho0;
          arr(i, j, k, MOM1) = rho0 * v1_0;
@@ -1778,16 +1794,16 @@ inline void initialize_mhd_rotor(amrex::MultiFab& state, amrex::Geometry const& 
          const amrex::Real rx = x - x0;
          const amrex::Real ry = y - y0;
          const amrex::Real radius = cartesian_cylindrical_radius(rx, ry);
-         amrex::Real rotor_fraction = 0.0;
+         amrex::Real rotor_fraction = 0.0_rt;
          if (radius <= r0) {
-            rotor_fraction = 1.0;
+            rotor_fraction = 1.0_rt;
          } else if (radius < r1) {
             rotor_fraction = (r1 - radius) / (r1 - r0);
          }
          const amrex::Real rho = rho0 + rotor_fraction * (rotor_density - rho0);
          const amrex::Real vx = -rotor_fraction * omega * ry;
          const amrex::Real vy = rotor_fraction * omega * rx;
-         constexpr amrex::Real vz = 0.0;
+         constexpr amrex::Real vz = 0.0_rt;
          arr(i, j, k, RHO) = rho;
          arr(i, j, k, MOM1) = rho * vx;
          arr(i, j, k, MOM2) = rho * vy;
@@ -1851,7 +1867,7 @@ inline void initialize_kelvin_helmholtz_impl(
       const amrex::Real shear_speed = cfg.v1_0;
       const amrex::Real perturbation = cfg.amplitude;
       const amrex::Real secondary = cfg.kh_secondary_amplitude;
-      const amrex::Real layer_width = amrex::max(cfg.bump_sigma, 1.0e-6);
+      const amrex::Real layer_width = amrex::max(cfg.bump_sigma, 1.0e-6_rt);
       const amrex::Real wave_number = cfg.wave_number;
       const amrex::Real secondary_mode = cfg.kh_secondary_mode;
       const amrex::Real z_mode = cfg.kh_z_mode;
@@ -1860,7 +1876,7 @@ inline void initialize_kelvin_helmholtz_impl(
       const amrex::Real density_amplitude = cfg.kh_density_amplitude;
       const bool stream_perturbation = cfg.kh_perturbation == "stream";
       const bool vortex_perturbation = cfg.kh_perturbation == "vortex";
-      const amrex::Real gaussian_derivative_normalization = std::exp(0.5);
+      const amrex::Real gaussian_derivative_normalization = std::exp(0.5_rt);
       const amrex::Real envelope_x0 = cfg.bump_x0;
       const amrex::Real sheet_y0 = cfg.bump_y0;
       const amrex::Real envelope_z0 = cfg.bump_z0;
@@ -1870,7 +1886,16 @@ inline void initialize_kelvin_helmholtz_impl(
       const EOSParams eos = eos_params(cfg);
       const int eos_method = eos_method_code(cfg);
 
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::ParallelFor(bx, [arr, mesh_coordinate, mesh_axes, problo, dx,
+          x_periodic, y_periodic, two_pi, rho0, pressure0, shear_speed,
+          perturbation, secondary, layer_width, wave_number, secondary_mode,
+          phase_shift, envelope_sigma, density_amplitude, stream_perturbation,
+          vortex_perturbation, gaussian_derivative_normalization, envelope_x0,
+          sheet_y0, b1_0, b2_0, b3_0, eos, eos_method
+#if (AMREX_SPACEDIM == 3)
+          , z_periodic, z_mode, envelope_z0
+#endif
+          ] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
             mesh_coordinate,
             mesh_axes,
@@ -1885,50 +1910,50 @@ inline void initialize_kelvin_helmholtz_impl(
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real z = patch_coordinate_component(sample.mesh, 2);
 #else
-         const amrex::Real z = 0.0;
+         const amrex::Real z = 0.0_rt;
 #endif
          const amrex::Real ymid = y - sheet_y0;
-         const amrex::Real ylo = y - 0.25;
-         const amrex::Real yhi = y - 0.75;
-         const amrex::Real g_mid = std::exp(-0.5 * ymid * ymid / (layer_width * layer_width));
-         const amrex::Real g_lo = std::exp(-0.5 * ylo * ylo / (layer_width * layer_width));
-         const amrex::Real g_hi = std::exp(-0.5 * yhi * yhi / (layer_width * layer_width));
+         const amrex::Real ylo = y - 0.25_rt;
+         const amrex::Real yhi = y - 0.75_rt;
+         const amrex::Real g_mid = std::exp(-0.5_rt * ymid * ymid / (layer_width * layer_width));
+         const amrex::Real g_lo = std::exp(-0.5_rt * ylo * ylo / (layer_width * layer_width));
+         const amrex::Real g_hi = std::exp(-0.5_rt * yhi * yhi / (layer_width * layer_width));
          const amrex::Real layer = y_periodic ? (g_lo + g_hi) : g_mid;
          const amrex::Real phase_x = two_pi * wave_number * x;
          const amrex::Real phase_x2 = two_pi * secondary_mode * x + phase_shift;
          const amrex::Real sin_x = std::sin(phase_x);
          const amrex::Real sin_x2 = std::sin(phase_x2);
-         amrex::Real envelope = 1.0;
-         amrex::Real denvelope_dx = 0.0;
+         amrex::Real envelope = 1.0_rt;
+         amrex::Real denvelope_dx = 0.0_rt;
          amrex::Real xdist = x - envelope_x0;
          if (x_periodic) {
-            xdist -= std::floor(xdist + 0.5);
+            xdist -= std::floor(xdist + 0.5_rt);
          }
-         if (envelope_sigma > 0.0) {
+         if (envelope_sigma > 0.0_rt) {
 #if (AMREX_SPACEDIM == 3)
             amrex::Real zdist = z - envelope_z0;
             if (z_periodic) {
-               zdist -= std::floor(zdist + 0.5);
+               zdist -= std::floor(zdist + 0.5_rt);
             }
-            envelope = std::exp(-0.5 * (xdist * xdist + zdist * zdist) / (envelope_sigma * envelope_sigma));
+            envelope = std::exp(-0.5_rt * (xdist * xdist + zdist * zdist) / (envelope_sigma * envelope_sigma));
 #else
-            envelope = std::exp(-0.5 * xdist * xdist / (envelope_sigma * envelope_sigma));
+            envelope = std::exp(-0.5_rt * xdist * xdist / (envelope_sigma * envelope_sigma));
 #endif
             denvelope_dx = -xdist * envelope / (envelope_sigma * envelope_sigma);
          }
          const amrex::Real base_vx = y_periodic
-            ? shear_speed * (std::tanh(ylo / layer_width) - std::tanh(yhi / layer_width) - 1.0)
+            ? shear_speed * (std::tanh(ylo / layer_width) - std::tanh(yhi / layer_width) - 1.0_rt)
             : shear_speed * std::tanh(ymid / layer_width);
          amrex::Real vx = base_vx;
-         const amrex::Real shear_profile = shear_speed != 0.0 ? base_vx / shear_speed : 0.0;
-         const amrex::Real rho = rho0 * (1.0 + density_amplitude * shear_profile);
+         const amrex::Real shear_profile = shear_speed != 0.0_rt ? base_vx / shear_speed : 0.0_rt;
+         const amrex::Real rho = rho0 * (1.0_rt + density_amplitude * shear_profile);
          const amrex::Real perturb_sum = perturbation * sin_x + secondary * sin_x2;
          amrex::Real vy = envelope * perturb_sum * layer;
          if (vortex_perturbation) {
-            const amrex::Real sx = envelope_sigma > 0.0 ? envelope_sigma : 0.12;
-            const amrex::Real sy = amrex::max(2.0 * layer_width, 2.0 * dx[1]);
+            const amrex::Real sx = envelope_sigma > 0.0_rt ? envelope_sigma : 0.12_rt;
+            const amrex::Real sy = amrex::max(2.0_rt * layer_width, 2.0_rt * dx[1]);
             const amrex::Real ydist = ymid;
-            const amrex::Real vortex = std::exp(-0.5 * (
+            const amrex::Real vortex = std::exp(-0.5_rt * (
                (xdist * xdist) / (sx * sx) + (ydist * ydist) / (sy * sy)
             ));
             const amrex::Real stream =
@@ -1939,9 +1964,9 @@ inline void initialize_kelvin_helmholtz_impl(
             const amrex::Real k1 = two_pi * wave_number;
             const amrex::Real k2 = two_pi * secondary_mode;
             const amrex::Real primary_mode = perturbation * std::cos(phase_x) / k1;
-            const amrex::Real secondary_mode_term = (secondary > 0.0 && secondary_mode > 0.0)
+            const amrex::Real secondary_mode_term = (secondary > 0.0_rt && secondary_mode > 0.0_rt)
                ? secondary * std::cos(phase_x2) / k2
-               : 0.0;
+               : 0.0_rt;
             const amrex::Real stream_mode = primary_mode + secondary_mode_term;
             const amrex::Real stream_mode_dx = -perturb_sum;
             const amrex::Real dlayer_dy = y_periodic
@@ -1950,16 +1975,16 @@ inline void initialize_kelvin_helmholtz_impl(
             vx += envelope * stream_mode * dlayer_dy;
             vy = -(denvelope_dx * stream_mode + envelope * stream_mode_dx) * layer;
          }
-         amrex::Real vz = 0.0;
+         amrex::Real vz = 0.0_rt;
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real phase_z = two_pi * z_mode * z;
-         const amrex::Real z_modulation = 1.0
-            + 0.35 * std::sin(phase_z + 0.4)
-            + 0.18 * std::sin(2.0 * phase_z + 1.1);
+         const amrex::Real z_modulation = 1.0_rt
+            + 0.35_rt * std::sin(phase_z + 0.4_rt)
+            + 0.18_rt * std::sin(2.0_rt * phase_z + 1.1_rt);
          vy *= z_modulation;
-         vz = 0.5 * envelope * (
+         vz = 0.5_rt * envelope * (
             perturbation * std::cos(phase_x) * std::sin(phase_z)
-            + secondary * std::cos(phase_x2) * std::sin(2.0 * phase_z + 0.7)
+            + secondary * std::cos(phase_x2) * std::sin(2.0_rt * phase_z + 0.7_rt)
          ) * (y_periodic ? (g_lo - g_hi) : g_mid);
 #endif
          arr(i, j, k, RHO) = rho;
@@ -2003,7 +2028,7 @@ amrex::Real orszag_tang_vector_potential(
 {
    return magnetic_amplitude * (
       std::cos(ky * (y - y_lo)) / ky
-      + std::cos(2.0 * kx * (x - x_lo)) / (2.0 * kx)
+      + std::cos(2.0_rt * kx * (x - x_lo)) / (2.0_rt * kx)
    );
 }
 
@@ -2041,19 +2066,19 @@ inline void initialize_orszag_tang(
       const amrex::Box& bx = mfi.tilebox();
       const auto arr = state.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
-         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
+         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
          const amrex::Real phase_x = kx * (x - problo[0]);
          const amrex::Real phase_y = ky * (y - problo[1]);
          const amrex::Real v1 = -velocity_amplitude * std::sin(phase_y);
          const amrex::Real v2 = velocity_amplitude * std::sin(phase_x);
-         const amrex::Real v3 = 0.0;
+         const amrex::Real v3 = 0.0_rt;
          const amrex::Real b1 = -magnetic_amplitude * std::sin(phase_y);
-         const amrex::Real b2 = magnetic_amplitude * std::sin(2.0 * phase_x);
+         const amrex::Real b2 = magnetic_amplitude * std::sin(2.0_rt * phase_x);
          arr(i, j, k, RHO) = rho0;
          arr(i, j, k, MOM1) = rho0 * v1;
          arr(i, j, k, MOM2) = rho0 * v2;
-         arr(i, j, k, MOM3) = 0.0;
+         arr(i, j, k, MOM3) = 0.0_rt;
          arr(i, j, k, ENERGY) =
             total_mhd_energy_runtime(eos_method, rho0, v1, v2, v3, pressure0, b1, b2, guide_field, eos);
          arr(i, j, k, B1) = b1;
@@ -2137,7 +2162,7 @@ amrex::Real current_sheet_base_b1(
 ) noexcept
 {
    return field_strength
-      * (std::tanh((y - sheet_y1) / thickness) - std::tanh((y - sheet_y2) / thickness) - 1.0);
+      * (std::tanh((y - sheet_y1) / thickness) - std::tanh((y - sheet_y2) / thickness) - 1.0_rt);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -2181,8 +2206,8 @@ inline void initialize_resistive_current_sheet(
    const amrex::Real two_pi = constants::two_pi;
    const amrex::Real length1 = probhi[0] - problo[0];
    const amrex::Real length2 = probhi[1] - problo[1];
-   const amrex::Real sheet_y1 = problo[1] + 0.25 * length2;
-   const amrex::Real sheet_y2 = problo[1] + 0.75 * length2;
+   const amrex::Real sheet_y1 = problo[1] + 0.25_rt * length2;
+   const amrex::Real sheet_y2 = problo[1] + 0.75_rt * length2;
    const amrex::Real thickness = cfg.bump_sigma;
    const amrex::Real field_strength = cfg.b1_0;
    const amrex::Real guide_field = cfg.b3_0;
@@ -2205,14 +2230,14 @@ inline void initialize_resistive_current_sheet(
       const amrex::Box& bx = mfi.tilebox();
       const auto arr = state.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
-         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
+         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
          const amrex::Real base_b1 = current_sheet_base_b1(y, sheet_y1, sheet_y2, thickness, field_strength);
          const amrex::Real b1 = base_b1
             + perturbation_potential * k2 * std::cos(k1 * (x - problo[0])) * std::cos(k2 * (y - problo[1]));
          const amrex::Real b2 = perturbation_potential * k1 * std::sin(k1 * (x - problo[0]))
             * std::sin(k2 * (y - problo[1]));
-         const amrex::Real pressure = pressure0 + 0.5 * (field_strength * field_strength - base_b1 * base_b1);
+         const amrex::Real pressure = pressure0 + 0.5_rt * (field_strength * field_strength - base_b1 * base_b1);
          arr(i, j, k, RHO) = rho0;
          arr(i, j, k, MOM1) = rho0 * v1;
          arr(i, j, k, MOM2) = rho0 * v2;
@@ -2246,8 +2271,8 @@ inline void initialize_resistive_current_sheet_face_b_impl(
    const amrex::Real two_pi = constants::two_pi;
    const amrex::Real length1 = probhi[0] - problo[0];
    const amrex::Real length2 = probhi[1] - problo[1];
-   const amrex::Real sheet_y1 = problo[1] + 0.25 * length2;
-   const amrex::Real sheet_y2 = problo[1] + 0.75 * length2;
+   const amrex::Real sheet_y1 = problo[1] + 0.25_rt * length2;
+   const amrex::Real sheet_y2 = problo[1] + 0.75_rt * length2;
    const amrex::Real thickness = cfg.bump_sigma;
    const amrex::Real field_strength = cfg.b1_0;
    const amrex::Real k1 = two_pi * cfg.wave_number / length1;
@@ -2322,13 +2347,13 @@ amrex::Real reconnecting_shear_vector_potential(
 {
    const amrex::Real y_offset = y - sheet_y;
    const amrex::Real envelope = std::exp(
-      -0.5 * y_offset * y_offset / (perturbation_width * perturbation_width)
+      -0.5_rt * y_offset * y_offset / (perturbation_width * perturbation_width)
    );
    const amrex::Real primary_phase = primary_wave_number * (x - x_lo);
    const amrex::Real secondary_phase_value = secondary_wave_number * (x - x_lo) + secondary_phase;
    const amrex::Real perturbation = magnetic_perturbation * envelope * (
       std::cos(primary_phase) / primary_wave_number
-      + 0.5 * std::cos(secondary_phase_value) / secondary_wave_number
+      + 0.5_rt * std::cos(secondary_phase_value) / secondary_wave_number
    );
    return field_strength * sheet_thickness * std::log(std::cosh(y_offset / sheet_thickness))
       + perturbation;
@@ -2353,7 +2378,7 @@ inline void initialize_reconnecting_shear_layer(
    const amrex::Real length1 = probhi[0] - problo[0];
    const amrex::Real sheet_y = cfg.bump_y0;
    const amrex::Real sheet_thickness = cfg.bump_sigma;
-   const amrex::Real perturbation_width = amrex::max(cfg.kh_envelope_sigma, 2.0 * sheet_thickness);
+   const amrex::Real perturbation_width = amrex::max(cfg.kh_envelope_sigma, 2.0_rt * sheet_thickness);
    const amrex::Real field_strength = cfg.b1_0;
    const amrex::Real guide_field = cfg.b3_0;
    const amrex::Real shear_speed = cfg.v1_0;
@@ -2376,11 +2401,11 @@ inline void initialize_reconnecting_shear_layer(
       const amrex::Box& bx = mfi.tilebox();
       const auto arr = state.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
-         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
+         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
          const amrex::Real y_offset = y - sheet_y;
          const amrex::Real envelope = std::exp(
-            -0.5 * y_offset * y_offset / (perturbation_width * perturbation_width)
+            -0.5_rt * y_offset * y_offset / (perturbation_width * perturbation_width)
          );
          const amrex::Real envelope_derivative = -y_offset * envelope
             / (perturbation_width * perturbation_width);
@@ -2399,20 +2424,20 @@ inline void initialize_reconnecting_shear_layer(
          const amrex::Real base_b1 = field_strength * std::tanh(y_offset / sheet_thickness);
          const amrex::Real magnetic_stream = magnetic_perturbation * (
             std::cos(primary_phase) / primary_wave_number
-            + 0.5 * std::cos(secondary_phase_value) / secondary_wave_number
+            + 0.5_rt * std::cos(secondary_phase_value) / secondary_wave_number
          );
          const amrex::Real b1 = base_b1 + envelope_derivative * magnetic_stream;
          const amrex::Real b2 = magnetic_perturbation * envelope * (
-            std::sin(primary_phase) + 0.5 * std::sin(secondary_phase_value)
+            std::sin(primary_phase) + 0.5_rt * std::sin(secondary_phase_value)
          );
          const amrex::Real pressure = pressure0
-            + 0.5 * (field_strength * field_strength - base_b1 * base_b1);
+            + 0.5_rt * (field_strength * field_strength - base_b1 * base_b1);
          arr(i, j, k, RHO) = rho0;
          arr(i, j, k, MOM1) = rho0 * v1;
          arr(i, j, k, MOM2) = rho0 * v2;
-         arr(i, j, k, MOM3) = 0.0;
+         arr(i, j, k, MOM3) = 0.0_rt;
          arr(i, j, k, ENERGY) = total_mhd_energy_runtime(
-            eos_method, rho0, v1, v2, 0.0, pressure, b1, b2, guide_field, eos
+            eos_method, rho0, v1, v2, 0.0_rt, pressure, b1, b2, guide_field, eos
          );
          arr(i, j, k, B1) = b1;
          arr(i, j, k, B2) = b2;
@@ -2442,7 +2467,7 @@ inline void initialize_reconnecting_shear_layer_face_b_impl(
    const amrex::Real length1 = probhi[0] - problo[0];
    const amrex::Real sheet_y = cfg.bump_y0;
    const amrex::Real sheet_thickness = cfg.bump_sigma;
-   const amrex::Real perturbation_width = amrex::max(cfg.kh_envelope_sigma, 2.0 * sheet_thickness);
+   const amrex::Real perturbation_width = amrex::max(cfg.kh_envelope_sigma, 2.0_rt * sheet_thickness);
    const amrex::Real field_strength = cfg.b1_0;
    const amrex::Real guide_field = cfg.b3_0;
    const amrex::Real magnetic_perturbation = cfg.alfven_amplitude;
@@ -2538,7 +2563,7 @@ inline void initialize_magnetic_blast_noise(amrex::MultiFab& state, amrex::Geome
       const amrex::Real b2_0 = cfg.b2_0;
       const amrex::Real b3_0 = cfg.b3_0;
       const amrex::Real k1 = two_pi * cfg.wave_number;
-      const amrex::Real a0 = k1 != 0.0 ? cfg.alfven_amplitude / k1 : 0.0;
+      const amrex::Real a0 = k1 != 0.0_rt ? cfg.alfven_amplitude / k1 : 0.0_rt;
       const EOSParams eos = eos_params(cfg);
       const int eos_method = eos_method_code(cfg);
 
@@ -2559,15 +2584,15 @@ inline void initialize_magnetic_blast_noise(amrex::MultiFab& state, amrex::Geome
          const amrex::Real ry = coordinate_delta(y, y0, problo[1], probhi[1], periodic[1] != 0);
          const amrex::Real rz = coordinate_delta(z, z0, problo[2], probhi[2], periodic[2] != 0);
          const amrex::Real r2 = cartesian_radius_squared(rx, ry, rz);
-         const amrex::Real pressure = pressure0 + blast_amplitude * std::exp(-0.5 * r2 / sigma2);
+         const amrex::Real pressure = pressure0 + blast_amplitude * std::exp(-0.5_rt * r2 / sigma2);
          const amrex::Real bx_cell = b1_0 + magnetic_blast_noise_bx(x, y, z, a0, k1);
          const amrex::Real by_cell = b2_0 + magnetic_blast_noise_by(x, y, z, a0, k1);
          const amrex::Real bz_cell = b3_0 + magnetic_blast_noise_bz(x, y, z, a0, k1);
          arr(i, j, k, RHO) = rho0;
-         arr(i, j, k, MOM1) = 0.0;
-         arr(i, j, k, MOM2) = 0.0;
-         arr(i, j, k, MOM3) = 0.0;
-         arr(i, j, k, ENERGY) = total_mhd_energy_runtime(eos_method, rho0, 0.0, 0.0, 0.0, pressure, bx_cell, by_cell, bz_cell, eos);
+         arr(i, j, k, MOM1) = 0.0_rt;
+         arr(i, j, k, MOM2) = 0.0_rt;
+         arr(i, j, k, MOM3) = 0.0_rt;
+         arr(i, j, k, ENERGY) = total_mhd_energy_runtime(eos_method, rho0, 0.0_rt, 0.0_rt, 0.0_rt, pressure, bx_cell, by_cell, bz_cell, eos);
          arr(i, j, k, B1) = bx_cell;
          arr(i, j, k, B2) = by_cell;
          arr(i, j, k, B3) = bz_cell;
@@ -2592,7 +2617,7 @@ inline void initialize_magnetic_blast_noise_face_b_impl(FaceMagneticField& face_
    const amrex::Real b2_0 = cfg.b2_0;
    const amrex::Real b3_0 = cfg.b3_0;
    const amrex::Real k1 = two_pi * cfg.wave_number;
-   const amrex::Real a0 = k1 != 0.0 ? cfg.alfven_amplitude / k1 : 0.0;
+   const amrex::Real a0 = k1 != 0.0_rt ? cfg.alfven_amplitude / k1 : 0.0_rt;
 
    for (int dir = 0; dir < 3; ++dir) {
       amrex::MultiFab& face = *face_b.b[dir];
@@ -2608,9 +2633,9 @@ inline void initialize_magnetic_blast_noise_face_b_impl(FaceMagneticField& face_
             if (d == 0) {
                const amrex::Real x = problo[0] + static_cast<amrex::Real>(i) * dx[0];
                const amrex::Real y0_edge = problo[1] + static_cast<amrex::Real>(j) * dx[1];
-               const amrex::Real yc = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+               const amrex::Real yc = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
                const amrex::Real z0_edge = problo[2] + static_cast<amrex::Real>(k) * dx[2];
-               const amrex::Real zc = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+               const amrex::Real zc = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
                const amrex::Real az_hi = magnetic_blast_noise_az(x, y0_edge + dx[1], zc, a0, k1);
                const amrex::Real az_lo = magnetic_blast_noise_az(x, y0_edge, zc, a0, k1);
                const amrex::Real ay_hi = magnetic_blast_noise_ay(x, yc, z0_edge + dx[2], a0, k1);
@@ -2618,10 +2643,10 @@ inline void initialize_magnetic_blast_noise_face_b_impl(FaceMagneticField& face_
                f(i, j, k, 0) = b1_0 + (az_hi - az_lo) / dx[1] - (ay_hi - ay_lo) / dx[2];
             } else if (d == 1) {
                const amrex::Real x0_edge = problo[0] + static_cast<amrex::Real>(i) * dx[0];
-               const amrex::Real xc = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+               const amrex::Real xc = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
                const amrex::Real y = problo[1] + static_cast<amrex::Real>(j) * dx[1];
                const amrex::Real z0_edge = problo[2] + static_cast<amrex::Real>(k) * dx[2];
-               const amrex::Real zc = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+               const amrex::Real zc = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
                const amrex::Real ax_hi = magnetic_blast_noise_ax(xc, y, z0_edge + dx[2], a0, k1);
                const amrex::Real ax_lo = magnetic_blast_noise_ax(xc, y, z0_edge, a0, k1);
                const amrex::Real az_hi = magnetic_blast_noise_az(x0_edge + dx[0], y, zc, a0, k1);
@@ -2629,9 +2654,9 @@ inline void initialize_magnetic_blast_noise_face_b_impl(FaceMagneticField& face_
                f(i, j, k, 0) = b2_0 + (ax_hi - ax_lo) / dx[2] - (az_hi - az_lo) / dx[0];
             } else {
                const amrex::Real x0_edge = problo[0] + static_cast<amrex::Real>(i) * dx[0];
-               const amrex::Real xc = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+               const amrex::Real xc = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
                const amrex::Real y0_edge = problo[1] + static_cast<amrex::Real>(j) * dx[1];
-               const amrex::Real yc = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+               const amrex::Real yc = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
                const amrex::Real z = problo[2] + static_cast<amrex::Real>(k) * dx[2];
                const amrex::Real ay_hi = magnetic_blast_noise_ay(x0_edge + dx[0], yc, z, a0, k1);
                const amrex::Real ay_lo = magnetic_blast_noise_ay(x0_edge, yc, z, a0, k1);
@@ -2662,15 +2687,15 @@ inline void apply_newtonian_magnetic_initial_data_policy(
       const amrex::Box box = mfi.tilebox();
       const auto values = state.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real magnetic_energy = 0.5 * (
+         const amrex::Real magnetic_energy = 0.5_rt * (
             values(i, j, k, B1) * values(i, j, k, B1)
             + values(i, j, k, B2) * values(i, j, k, B2)
             + values(i, j, k, B3) * values(i, j, k, B3)
          );
          values(i, j, k, ENERGY) -= magnetic_energy;
-         values(i, j, k, B1) = 0.0;
-         values(i, j, k, B2) = 0.0;
-         values(i, j, k, B3) = 0.0;
+         values(i, j, k, B1) = 0.0_rt;
+         values(i, j, k, B2) = 0.0_rt;
+         values(i, j, k, B3) = 0.0_rt;
       });
    }
 }

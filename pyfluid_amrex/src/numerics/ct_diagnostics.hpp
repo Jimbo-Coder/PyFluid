@@ -6,11 +6,15 @@
 
 #include "pyfluid_amrex/ct_fields.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
-#include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/calculus.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/ct.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/finite_volume.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 inline void fill_cell_divergence(
    amrex::MultiFab& divb,
@@ -29,14 +33,14 @@ inline void fill_cell_divergence(
       const auto s = state.const_array(mfi);
       const auto d = divb.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real dbx_dx = (s(i + 1, j, k, B1) - s(i - 1, j, k, B1)) / (2.0 * dx[0]);
-         amrex::Real dby_dy = 0.0;
+         const amrex::Real dbx_dx = (s(i + 1, j, k, B1) - s(i - 1, j, k, B1)) / (2.0_rt * dx[0]);
+         amrex::Real dby_dy = 0.0_rt;
 #if (AMREX_SPACEDIM >= 2)
-         dby_dy = (s(i, j + 1, k, B2) - s(i, j - 1, k, B2)) / (2.0 * dx[1]);
+         dby_dy = (s(i, j + 1, k, B2) - s(i, j - 1, k, B2)) / (2.0_rt * dx[1]);
 #endif
-         amrex::Real dbz_dz = 0.0;
+         amrex::Real dbz_dz = 0.0_rt;
 #if (AMREX_SPACEDIM == 3)
-         dbz_dz = (s(i, j, k + 1, B3) - s(i, j, k - 1, B3)) / (2.0 * dx[2]);
+         dbz_dz = (s(i, j, k + 1, B3) - s(i, j, k - 1, B3)) / (2.0_rt * dx[2]);
 #endif
          const amrex::Real divergence = generated::divergence_cartesian(dbx_dx, dby_dy, dbz_dz);
          d(i, j, k, 0) = absolute_value ? amrex::Math::abs(divergence) : divergence;

@@ -6,21 +6,11 @@
       if (!spacetime_state_.evolves()) {
          return std::numeric_limits<amrex::Real>::max();
       }
-      amrex::Real gauge_speed = 1.0;
-      const Z4cLapseGauge lapse_gauge = z4c_lapse_gauge(cfg_);
-      if (lapse_gauge == Z4cLapseGauge::OnePlusLog
-          || lapse_gauge == Z4cLapseGauge::Trumpet
-          || lapse_gauge == Z4cLapseGauge::SlowStart) {
-         gauge_speed = std::sqrt(2.0);
-      }
-      if (z4c_shift_gauge(cfg_) == Z4cShiftGauge::GammaDriver) {
-         gauge_speed = amrex::max(gauge_speed, 2.0);
-      }
       amrex::MultiFab const& cell_spacetime =
          *spacetime_coupling_.cell_spacetime()[lev];
       amrex::MultiFab& frequency = *frequency_[lev];
       return compute_spacetime_dt(
-         frequency, cell_spacetime, Geom(lev), cfg_.cfl, gauge_speed
+         frequency, cell_spacetime, Geom(lev), cfg_
       );
    }
 
@@ -40,12 +30,20 @@
    template <int NComp, int EOSMethod, int DiffusionMethod>
    amrex::Real adaptive_dt_for_level(int lev)
    {
+      amrex::iMultiFab const* inactive_mask = nullptr;
+      if (cfg_.spacetime_black_hole_matter == "excision") {
+         inactive_mask = apparent_horizon_tracker_->excision_mask(
+            lev, *fluid_state_.state()[lev], Geom(lev)
+         );
+         AMREX_ALWAYS_ASSERT(inactive_mask != nullptr);
+      }
       const SignalSpeedLaunch signal_launch{
          *frequency_[lev],
          *fluid_state_.state()[lev],
          cfg_,
          NComp,
          DiffusionMethod,
+         inactive_mask,
       };
       amrex::MultiFab const* stored_spacetime = nullptr;
       if (spacetime_state_.active()) {
@@ -54,7 +52,7 @@
             lev,
             lev + 1,
             level_times_[lev],
-            -1.0,
+            -1.0_rt,
             0
          );
          stored_spacetime = spacetime_coupling_.cell_spacetime()[lev].get();
@@ -132,7 +130,7 @@
       }
       const amrex::Real fine_dt_allowed =
          adaptive_dt_for_level<NComp, EOSMethod, DiffusionMethod>(coarse_lev + 1);
-      if (!std::isfinite(fine_dt_allowed) || fine_dt_allowed <= 0.0) {
+      if (!std::isfinite(fine_dt_allowed) || fine_dt_allowed <= 0.0_rt) {
          amrex::Abort(
             "local-CFL subcycling found an invalid timestep for fine level "
             + std::to_string(coarse_lev + 1)
@@ -142,11 +140,11 @@
       }
       const amrex::Real raw_count = coarse_dt / fine_dt_allowed;
       const amrex::Real eps =
-         64.0 * std::numeric_limits<amrex::Real>::epsilon() * amrex::max(1.0, amrex::Math::abs(raw_count));
+         64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * amrex::max(1.0_rt, amrex::Math::abs(raw_count));
       int count = std::max(1, static_cast<int>(std::ceil(raw_count - eps)));
       amrex::Real fine_dt = coarse_dt / static_cast<amrex::Real>(count);
       const amrex::Real safety =
-         64.0 * std::numeric_limits<amrex::Real>::epsilon() * amrex::max(1.0, amrex::Math::abs(fine_dt_allowed));
+         64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * amrex::max(1.0_rt, amrex::Math::abs(fine_dt_allowed));
       if (fine_dt > fine_dt_allowed + safety) {
          ++count;
       }

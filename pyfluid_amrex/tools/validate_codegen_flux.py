@@ -43,6 +43,7 @@ FIELD_CATALOG_HEADER = (
 DIAGNOSTIC_CATALOG_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated" / "diagnostic_catalog.hpp"
 )
+DIAGNOSTIC_TYPES_HEADER = DIAGNOSTIC_CATALOG_HEADER.with_name("diagnostic_types.hpp")
 METHOD_CATALOG_HEADER = (
    ROOT / "pyfluid_amrex" / "include" / "pyfluid_amrex" / "generated" / "method_catalog.hpp"
 )
@@ -70,12 +71,15 @@ from pyfluid_codegen.emit_catalog import (  # noqa: E402
    render_equation_latex,
    render_equation_markdown,
    render_diagnostic_catalog_header,
+   render_diagnostic_types_header,
    render_field_catalog_header,
    render_field_catalog_json,
    render_field_ids_header,
    render_initial_data_method_catalog_header,
    render_amr_tag_catalog_header,
    render_method_catalog_header,
+   render_time_integrator_header,
+   render_time_integrator_ids_header,
    render_physical_id_catalog_header,
    render_physical_id_catalog_json,
 )
@@ -91,6 +95,7 @@ from pyfluid_codegen.emit_cpp import (  # noqa: E402
    render_relativistic_headers,
    render_riemann_header,
    render_vector_header,
+   render_vector_headers,
    render_z4c_header,
    render_z4c_headers,
 )
@@ -1417,7 +1422,7 @@ def tensor_connection_reference(coordinate: str, component: int, values: dict[st
    ]
    source = 0.0
    for normal in range(3):
-      source += tensor[normal][component] * dh[component][normal] / (h[component] * h[normal])
+      source += tensor[component][normal] * dh[component][normal] / (h[component] * h[normal])
       source -= tensor[normal][normal] * dh[normal][component] / (h[component] * h[normal])
    return source
 
@@ -1734,7 +1739,10 @@ def main() -> None:
          FIELD_IDS_HEADER: render_field_ids_header(),
          FIELD_CATALOG_HEADER: render_field_catalog_header(),
          DIAGNOSTIC_CATALOG_HEADER: render_diagnostic_catalog_header(),
+         DIAGNOSTIC_TYPES_HEADER: render_diagnostic_types_header(),
          METHOD_CATALOG_HEADER: render_method_catalog_header(),
+         METHOD_CATALOG_HEADER.with_name("time_integrator_catalog.hpp"): render_time_integrator_header(),
+         METHOD_CATALOG_HEADER.with_name("time_integrator_ids.hpp"): render_time_integrator_ids_header(),
          AMR_TAG_CATALOG_HEADER: render_amr_tag_catalog_header(),
          INITIAL_DATA_METHOD_CATALOG_HEADER: (
             render_initial_data_method_catalog_header()
@@ -1766,6 +1774,10 @@ def main() -> None:
       stored_vector = VECTOR_HEADER.read_text(encoding="utf-8")
       if rendered_vector != stored_vector:
          raise SystemExit(f"generated vector header is stale: rerun {CODEGEN / 'generate_kernels.py'}")
+      for name, rendered in render_vector_headers().items():
+         path = VECTOR_HEADER.parent / "vector" / f"{name}.hpp"
+         if not path.exists() or rendered != path.read_text(encoding="utf-8"):
+            raise SystemExit(f"generated vector group is stale: {path}")
       rendered_metric = render_metric_header()
       stored_metric = METRIC_HEADER.read_text(encoding="utf-8")
       if rendered_metric != stored_metric:

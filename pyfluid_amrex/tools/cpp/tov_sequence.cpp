@@ -18,13 +18,15 @@
 
 namespace {
 
+using namespace amrex::literals;
+
 std::vector<amrex::Real> logarithmic_densities(
    amrex::Real minimum,
    amrex::Real maximum,
    int count
 )
 {
-   if (!(minimum > 0.0) || !(maximum > minimum) || count < 2) {
+   if (!(minimum > 0.0_rt) || !(maximum > minimum) || count < 2) {
       amrex::Abort(
          "tov_sequence requires 0 < central_density_min < central_density_max and points >= 2"
       );
@@ -96,8 +98,8 @@ int main(int argc, char* argv[])
    {
       const pyfluid_amrex::RunConfig config = pyfluid_amrex::read_config();
       amrex::ParmParse sequence_parameters("tov_sequence");
-      amrex::Real minimum_density = 7.0e-4;
-      amrex::Real maximum_density = 5.0e-3;
+      amrex::Real minimum_density = 7.0e-4_rt;
+      amrex::Real maximum_density = 5.0e-3_rt;
       int point_count = 80;
       std::string output_directory = "runs/current/tov/sequences";
       amrex::Vector<std::string> presets;

@@ -16,6 +16,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct FixedSpacetimeGeometry {
    SpacetimeMetric metric;
    SpacetimeMetricDerivatives derivatives;
@@ -32,7 +34,7 @@ FixedSpacetimeGeometry fixed_spacetime_geometry(
 {
    FixedSpacetimeGeometry geometry{};
    if (parameters.metric == FixedSpacetimeMetric::Rindler) {
-      geometry.metric.lapse = 1.0
+      geometry.metric.lapse = 1.0_rt
          + parameters.acceleration1 * (position1 - parameters.origin1)
          + parameters.acceleration2 * (position2 - parameters.origin2)
          + parameters.acceleration3 * (position3 - parameters.origin3);
@@ -49,27 +51,27 @@ FixedSpacetimeGeometry fixed_spacetime_geometry(
       const amrex::Real radius = cartesian_radius(
          displacement1, displacement2, displacement3
       );
-      const amrex::Real inverse_radius = 1.0 / radius;
+      const amrex::Real inverse_radius = 1.0_rt / radius;
       const amrex::Real inverse_radius_cubed = inverse_radius / radius_squared;
-      const amrex::Real compactness = 0.5 * parameters.mass * inverse_radius;
-      const amrex::Real conformal_factor = 1.0 + compactness;
+      const amrex::Real compactness = 0.5_rt * parameters.mass * inverse_radius;
+      const amrex::Real conformal_factor = 1.0_rt + compactness;
       const amrex::Real conformal_squared = conformal_factor * conformal_factor;
       const amrex::Real conformal_cubed = conformal_squared * conformal_factor;
       const amrex::Real conformal_fourth = conformal_squared * conformal_squared;
-      geometry.metric.lapse = (1.0 - compactness) / conformal_factor;
+      geometry.metric.lapse = (1.0_rt - compactness) / conformal_factor;
       geometry.metric.gamma11 = conformal_fourth;
       geometry.metric.gamma22 = conformal_fourth;
       geometry.metric.gamma33 = conformal_fourth;
-      geometry.metric.inv_gamma11 = 1.0 / conformal_fourth;
-      geometry.metric.inv_gamma22 = 1.0 / conformal_fourth;
-      geometry.metric.inv_gamma33 = 1.0 / conformal_fourth;
+      geometry.metric.inv_gamma11 = 1.0_rt / conformal_fourth;
+      geometry.metric.inv_gamma22 = 1.0_rt / conformal_fourth;
+      geometry.metric.inv_gamma33 = 1.0_rt / conformal_fourth;
       geometry.metric.sqrt_det_gamma = conformal_fourth * conformal_squared;
       const amrex::Real lapse_derivative_scale = parameters.mass
          * inverse_radius_cubed / conformal_squared;
       geometry.derivatives.d1_lapse = lapse_derivative_scale * displacement1;
       geometry.derivatives.d2_lapse = lapse_derivative_scale * displacement2;
       geometry.derivatives.d3_lapse = lapse_derivative_scale * displacement3;
-      const amrex::Real metric_derivative_scale = -2.0 * parameters.mass
+      const amrex::Real metric_derivative_scale = -2.0_rt * parameters.mass
          * conformal_cubed * inverse_radius_cubed;
       geometry.derivatives.d1_gamma11 = metric_derivative_scale * displacement1;
       geometry.derivatives.d1_gamma22 = metric_derivative_scale * displacement1;
@@ -94,14 +96,14 @@ FixedSpacetimeGeometry fixed_spacetime_geometry(
          + displacement[1] * displacement[1]
          + displacement[2] * displacement[2];
       const amrex::Real radius = std::sqrt(radius_squared);
-      const amrex::Real inverse_radius = 1.0 / radius;
-      const amrex::Real inverse_radius_squared = 1.0 / radius_squared;
+      const amrex::Real inverse_radius = 1.0_rt / radius;
+      const amrex::Real inverse_radius_squared = 1.0_rt / radius_squared;
       const amrex::Real radius_plus_mass = radius + parameters.mass;
-      const amrex::Real inverse_radius_plus_mass = 1.0 / radius_plus_mass;
+      const amrex::Real inverse_radius_plus_mass = 1.0_rt / radius_plus_mass;
       const amrex::Real conformal_squared = radius_plus_mass * inverse_radius;
       const amrex::Real conformal_fourth =
          conformal_squared * conformal_squared;
-      const amrex::Real inverse_conformal_fourth = 1.0 / conformal_fourth;
+      const amrex::Real inverse_conformal_fourth = 1.0_rt / conformal_fourth;
 
       geometry.metric.lapse = radius * inverse_radius_plus_mass;
       geometry.metric.gamma11 = conformal_fourth;
@@ -130,7 +132,7 @@ FixedSpacetimeGeometry fixed_spacetime_geometry(
          lapse_derivative_scale * displacement[2];
 
       amrex::Real shift_derivative[3][3]{};
-      const amrex::Real shift_radial_scale = -2.0 * parameters.mass
+      const amrex::Real shift_radial_scale = -2.0_rt * parameters.mass
          * inverse_radius * inverse_radius_plus_mass
          * inverse_radius_plus_mass * inverse_radius_plus_mass;
       for (int derivative = 0; derivative < 3; ++derivative) {
@@ -138,7 +140,7 @@ FixedSpacetimeGeometry fixed_spacetime_geometry(
             shift_derivative[derivative][component] =
                shift_radial_scale * displacement[derivative]
                   * displacement[component]
-               + (derivative == component ? shift_scale : 0.0);
+               + (derivative == component ? shift_scale : 0.0_rt);
          }
       }
       geometry.derivatives.d1_shift1 = shift_derivative[0][0];
@@ -151,7 +153,7 @@ FixedSpacetimeGeometry fixed_spacetime_geometry(
       geometry.derivatives.d2_shift3 = shift_derivative[1][2];
       geometry.derivatives.d3_shift3 = shift_derivative[2][2];
 
-      const amrex::Real metric_derivative_scale = -2.0 * parameters.mass
+      const amrex::Real metric_derivative_scale = -2.0_rt * parameters.mass
          * radius_plus_mass * inverse_radius_squared * inverse_radius_squared;
       geometry.derivatives.d1_gamma11 =
          metric_derivative_scale * displacement[0];
@@ -180,17 +182,17 @@ FixedSpacetimeGeometry fixed_spacetime_geometry(
          displacement[2] * inverse_radius,
       };
       geometry.derivatives.extrinsic11 = extrinsic_scale
-         * (1.0 - 2.0 * unit[0] * unit[0]);
+         * (1.0_rt - 2.0_rt * unit[0] * unit[0]);
       geometry.derivatives.extrinsic12 = extrinsic_scale
-         * (-2.0 * unit[0] * unit[1]);
+         * (-2.0_rt * unit[0] * unit[1]);
       geometry.derivatives.extrinsic13 = extrinsic_scale
-         * (-2.0 * unit[0] * unit[2]);
+         * (-2.0_rt * unit[0] * unit[2]);
       geometry.derivatives.extrinsic22 = extrinsic_scale
-         * (1.0 - 2.0 * unit[1] * unit[1]);
+         * (1.0_rt - 2.0_rt * unit[1] * unit[1]);
       geometry.derivatives.extrinsic23 = extrinsic_scale
-         * (-2.0 * unit[1] * unit[2]);
+         * (-2.0_rt * unit[1] * unit[2]);
       geometry.derivatives.extrinsic33 = extrinsic_scale
-         * (1.0 - 2.0 * unit[2] * unit[2]);
+         * (1.0_rt - 2.0_rt * unit[2] * unit[2]);
    }
    return geometry;
 }
@@ -214,22 +216,22 @@ inline void validate_fixed_spacetime_domain(
    const auto upper = geometry.ProbHiArray();
    if (parameters.metric == FixedSpacetimeMetric::SchwarzschildIsotropic) {
       const auto interval_distance = [](amrex::Real point, amrex::Real lo, amrex::Real hi) {
-         return point < lo ? lo - point : (point > hi ? point - hi : 0.0);
+         return point < lo ? lo - point : (point > hi ? point - hi : 0.0_rt);
       };
       const amrex::Real distance1 = interval_distance(parameters.origin1, lower[0], upper[0]);
 #if (AMREX_SPACEDIM >= 2)
       const amrex::Real distance2 = interval_distance(parameters.origin2, lower[1], upper[1]);
 #else
-      const amrex::Real distance2 = 0.0;
+      const amrex::Real distance2 = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
       const amrex::Real distance3 = interval_distance(parameters.origin3, lower[2], upper[2]);
 #else
-      const amrex::Real distance3 = 0.0;
+      const amrex::Real distance3 = 0.0_rt;
 #endif
-      if (!(parameters.mass > 0.0)
+      if (!(parameters.mass > 0.0_rt)
           || !(cartesian_radius(distance1, distance2, distance3)
-               > 0.5 * parameters.mass)) {
+               > 0.5_rt * parameters.mass)) {
          amrex::Abort(
             "the isotropic-Schwarzschild domain must remain outside r = M/2"
          );
@@ -241,19 +243,20 @@ inline void validate_fixed_spacetime_domain(
          parameters.dimensionless_spin1 * parameters.dimensionless_spin1
          + parameters.dimensionless_spin2 * parameters.dimensionless_spin2
          + parameters.dimensionless_spin3 * parameters.dimensionless_spin3;
-      if (!(parameters.mass > 0.0) || !(spin_squared < 1.0)) {
+      if (!(parameters.mass > 0.0_rt) || !(spin_squared < 1.0_rt)) {
          amrex::Abort(
             "Kerr-Schild fixed spacetime requires positive mass and "
             "dimensionless spin magnitude below one"
          );
       }
-      if (parameters.black_hole_interior == BlackHoleInterior::Filled) {
+      if (parameters.black_hole_interior == BlackHoleInterior::Filled
+          || parameters.black_hole_interior == BlackHoleInterior::Excision) {
          return;
       }
       const auto interval_distance = [](
          amrex::Real point, amrex::Real lo, amrex::Real hi
       ) {
-         return point < lo ? lo - point : (point > hi ? point - hi : 0.0);
+         return point < lo ? lo - point : (point > hi ? point - hi : 0.0_rt);
       };
       const amrex::Real distance1 = interval_distance(
          parameters.origin1, lower[0], upper[0]
@@ -263,14 +266,14 @@ inline void validate_fixed_spacetime_domain(
          parameters.origin2, lower[1], upper[1]
       );
 #else
-      const amrex::Real distance2 = 0.0;
+      const amrex::Real distance2 = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
       const amrex::Real distance3 = interval_distance(
          parameters.origin3, lower[2], upper[2]
       );
 #else
-      const amrex::Real distance3 = 0.0;
+      const amrex::Real distance3 = 0.0_rt;
 #endif
       const amrex::Real minimum_euclidean_radius_squared =
          distance1 * distance1 + distance2 * distance2
@@ -278,7 +281,7 @@ inline void validate_fixed_spacetime_domain(
       const amrex::Real spin_length_squared =
          parameters.mass * parameters.mass * spin_squared;
       const amrex::Real horizon_radius = parameters.mass * (
-         1.0 + std::sqrt(1.0 - spin_squared)
+         1.0_rt + std::sqrt(1.0_rt - spin_squared)
       );
       if (!(minimum_euclidean_radius_squared - spin_length_squared
             > horizon_radius * horizon_radius)) {
@@ -290,7 +293,7 @@ inline void validate_fixed_spacetime_domain(
       return;
    }
    if (parameters.metric == FixedSpacetimeMetric::StaticTrumpet) {
-      if (!(parameters.mass > 0.0)
+      if (!(parameters.mass > 0.0_rt)
           || parameters.black_hole_interior != BlackHoleInterior::Puncture) {
          amrex::Abort(
             "static-trumpet spacetime requires positive mass and the "
@@ -305,9 +308,9 @@ inline void validate_fixed_spacetime_domain(
          const amrex::Real face_coordinate =
             (origin[direction] - lower[direction]) / spacing[direction];
          const amrex::Real nearest_face = std::round(face_coordinate);
-         const amrex::Real tolerance = 128.0
+         const amrex::Real tolerance = 128.0_rt
             * std::numeric_limits<amrex::Real>::epsilon()
-            * std::max<amrex::Real>(1.0, std::abs(face_coordinate));
+            * std::max<amrex::Real>(1.0_rt, std::abs(face_coordinate));
          const amrex::Real coordinate_tolerance = tolerance
             * std::abs(spacing[direction]);
          if (origin[direction] < lower[direction] - coordinate_tolerance
@@ -321,18 +324,18 @@ inline void validate_fixed_spacetime_domain(
       }
       return;
    }
-   amrex::Real minimum_lapse = 1.0;
+   amrex::Real minimum_lapse = 1.0_rt;
    minimum_lapse += parameters.acceleration1
-      * ((parameters.acceleration1 >= 0.0 ? lower[0] : upper[0]) - parameters.origin1);
+      * ((parameters.acceleration1 >= 0.0_rt ? lower[0] : upper[0]) - parameters.origin1);
 #if (AMREX_SPACEDIM >= 2)
    minimum_lapse += parameters.acceleration2
-      * ((parameters.acceleration2 >= 0.0 ? lower[1] : upper[1]) - parameters.origin2);
+      * ((parameters.acceleration2 >= 0.0_rt ? lower[1] : upper[1]) - parameters.origin2);
 #endif
 #if (AMREX_SPACEDIM == 3)
    minimum_lapse += parameters.acceleration3
-      * ((parameters.acceleration3 >= 0.0 ? lower[2] : upper[2]) - parameters.origin3);
+      * ((parameters.acceleration3 >= 0.0_rt ? lower[2] : upper[2]) - parameters.origin3);
 #endif
-   if (!(minimum_lapse > 0.0)) {
+   if (!(minimum_lapse > 0.0_rt)) {
       amrex::Abort("the fixed Rindler lapse must remain positive over the domain");
    }
 }
@@ -349,14 +352,14 @@ FixedSpacetimeGeometry fixed_spacetime_geometry_at_cell(
    amrex::Real time
 ) noexcept
 {
-   const amrex::Real position1 = lower[0] + (static_cast<amrex::Real>(i) + 0.5) * spacing[0];
-   amrex::Real position2 = 0.0;
-   amrex::Real position3 = 0.0;
+   const amrex::Real position1 = lower[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * spacing[0];
+   amrex::Real position2 = 0.0_rt;
+   amrex::Real position3 = 0.0_rt;
    if constexpr (Dimension >= 2) {
-      position2 = lower[1] + (static_cast<amrex::Real>(j) + 0.5) * spacing[1];
+      position2 = lower[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * spacing[1];
    }
    if constexpr (Dimension >= 3) {
-      position3 = lower[2] + (static_cast<amrex::Real>(k) + 0.5) * spacing[2];
+      position3 = lower[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * spacing[2];
    }
    return fixed_spacetime_geometry(
       parameters, position1, position2, position3, time
@@ -377,16 +380,16 @@ FixedSpacetimeGeometry fixed_spacetime_geometry_at_face(
 {
    static_assert(Direction >= 0 && Direction < Dimension);
    const amrex::Real position1 = lower[0]
-      + (static_cast<amrex::Real>(i) + (Direction == 0 ? 0.0 : 0.5)) * spacing[0];
-   amrex::Real position2 = 0.0;
-   amrex::Real position3 = 0.0;
+      + (static_cast<amrex::Real>(i) + (Direction == 0 ? 0.0_rt : 0.5_rt)) * spacing[0];
+   amrex::Real position2 = 0.0_rt;
+   amrex::Real position3 = 0.0_rt;
    if constexpr (Dimension >= 2) {
       position2 = lower[1]
-         + (static_cast<amrex::Real>(j) + (Direction == 1 ? 0.0 : 0.5)) * spacing[1];
+         + (static_cast<amrex::Real>(j) + (Direction == 1 ? 0.0_rt : 0.5_rt)) * spacing[1];
    }
    if constexpr (Dimension >= 3) {
       position3 = lower[2]
-         + (static_cast<amrex::Real>(k) + (Direction == 2 ? 0.0 : 0.5)) * spacing[2];
+         + (static_cast<amrex::Real>(k) + (Direction == 2 ? 0.0_rt : 0.5_rt)) * spacing[2];
    }
    return fixed_spacetime_geometry(
       parameters, position1, position2, position3, time

@@ -12,13 +12,13 @@
       refresh_solid_geometry_level(lev, time, true);
 
       if constexpr (CTEnabled) {
-         const amrex::Real stage_start = profile_.begin();
+         const WallTime stage_start = profile_.begin();
          apply_face_b_boundary(face_b_[lev], Geom(lev), boundary_data_);
          sync_cell_b_from_faces(*fluid_state_.state()[lev], face_b_[lev], Geom(lev), false);
          profile_.end(ProfileStage::CT, stage_start);
       }
 
-      amrex::Real stage_start = profile_.begin();
+      WallTime stage_start = profile_.begin();
       if constexpr (TimeMethod == TimeRK4) {
          fill_level_boundaries<true>(fluid_state_.state(), lev, time, time, 1);
       } else {
@@ -51,8 +51,7 @@
       level_times_[lev] = time + dt;
       level_steps_[lev] += 1;
       if (cfg_.regrid_mode == "aligned" && cfg_.regrid_int > 0 && lev == finestLevel()) {
-         ++aligned_regrid_ticks_;
-         aligned_regrid_due_ = aligned_regrid_ticks_ % cfg_.regrid_int == 0;
+         regrid_lifecycle_.advance_finest_step(cfg_.regrid_int);
       }
       refresh_solid_geometry_level(lev, level_times_[lev], true);
 
@@ -83,7 +82,7 @@
          // integrator's accepted-state recovery and may also be changed by
          // resistivity, so validate the state that can seed fine-level time
          // interpolation. The RMHD atmosphere backstop retains B exactly.
-         project_relativistic_atmosphere_range<EOSMethod>(
+         project_relativistic_exterior_range<EOSMethod>(
             fluid_state_.state(), lev, lev + 1
          );
       }
@@ -115,25 +114,83 @@
          advance_one_level_subcycle_step<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod>(lev, dt);
 
       if (lev < finestLevel()) {
-         const amrex::Real boundary_start = profile_.begin();
+         const WallTime boundary_start = profile_.begin();
          fill_level_boundaries<true>(fluid_state_.state(), lev, level_times_[lev]);
          profile_.end(ProfileStage::BoundaryFill, boundary_start);
 
-         const int substeps = subcycle_step_count<NComp, EOSMethod, DiffusionMethod>(lev, dt);
-         const amrex::Real fine_dt = dt / static_cast<amrex::Real>(substeps);
-         for (int substep = 0; substep < substeps; ++substep) {
-            diffusion = combine_diffusion_stats(
-               diffusion,
-               advance_subcycled_level<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod>(
-                  lev + 1,
-                  fine_dt,
-                  active_cell_updates,
-                  layout_cell_updates
-               )
+         if (local_cfl_subcycling()) {
+            // Re-evaluate the fine-level CFL limit after every accepted
+            // substep. A rapidly accelerating wave can invalidate a count
+            // chosen from the beginning of the coarse interval even though
+            // every individual CFL estimate was correct when computed.
+            const amrex::Real target_time = level_times_[lev];
+            const amrex::Real time_scale = amrex::max(
+               1.0_rt, amrex::Math::abs(target_time)
             );
+            const amrex::Real time_tolerance =
+               64.0_rt * std::numeric_limits<amrex::Real>::epsilon()
+               * time_scale;
+            int substep = 0;
+            while (target_time - level_times_[lev + 1] > time_tolerance) {
+               const amrex::Real remaining =
+                  target_time - level_times_[lev + 1];
+               const amrex::Real fine_dt_allowed = adaptive_dt_for_level<
+                  NComp, EOSMethod, DiffusionMethod
+               >(lev + 1);
+               if (!std::isfinite(fine_dt_allowed)
+                   || fine_dt_allowed <= 0.0_rt) {
+                  amrex::Abort(
+                     "local-CFL subcycling found an invalid timestep for "
+                     "fine level " + std::to_string(lev + 1)
+                     + ": allowed_dt=" + std::to_string(fine_dt_allowed)
+                     + " remaining_dt=" + std::to_string(remaining)
+                  );
+               }
+               const amrex::Real fine_dt = amrex::min(
+                  remaining, fine_dt_allowed
+               );
+               diffusion = combine_diffusion_stats(
+                  diffusion,
+                  advance_subcycled_level<
+                     NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod
+                  >(
+                     lev + 1,
+                     fine_dt,
+                     active_cell_updates,
+                     layout_cell_updates
+                  )
+               );
+               ++substep;
+               if (substep > 1000000) {
+                  amrex::Abort(
+                     "local-CFL subcycling exceeded one million fine steps "
+                     "inside one coarse interval"
+                  );
+               }
+            }
+            level_times_[lev + 1] = target_time;
+         } else {
+            const int substeps = subcycle_step_count<
+               NComp, EOSMethod, DiffusionMethod
+            >(lev, dt);
+            const amrex::Real fine_dt =
+               dt / static_cast<amrex::Real>(substeps);
+            for (int substep = 0; substep < substeps; ++substep) {
+               diffusion = combine_diffusion_stats(
+                  diffusion,
+                  advance_subcycled_level<
+                     NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod
+                  >(
+                     lev + 1,
+                     fine_dt,
+                     active_cell_updates,
+                     layout_cell_updates
+                  )
+               );
+            }
          }
 
-         const amrex::Real stage_start = profile_.begin();
+         const WallTime stage_start = profile_.begin();
          reflux_level_to_state(lev + 1);
          average_down_state_level(lev + 1);
          average_down_spacetime_level(lev + 1);
@@ -147,26 +204,46 @@
          if (spacetime_state_.evolves()) {
             prepare_spacetime_coupling_range(
                spacetime_state_.state(), lev, lev + 1,
-               level_times_[lev], -1.0, 0
+               level_times_[lev], -1.0_rt, 0
             );
          }
          // Reflux, average-down, and optional face-B synchronization are the
-         // final coarse-state owners for this parent interval.
-         project_relativistic_atmosphere_range<EOSMethod>(
+         // final coarse-state owners for this parent interval. Reflux can
+         // place an uncovered coarse atmosphere cell just below its physical
+         // floor. The ensuing conservative-state projection is an external
+         // source, so include its valid-cell change in the same ledger used
+         // for explicit source terms.
+         const MassEnergy projection_before =
+            local_state_mass_energy_integral(
+               lev, *fluid_state_.state()[lev]
+            );
+         debug_check_relativistic_stage_range(
+            fluid_state_.state(), lev, lev + 1,
+            "relativistic pre-projection refluxed parent",
+            level_times_[lev]
+         );
+         project_relativistic_exterior_range<EOSMethod>(
             fluid_state_.state(), lev, lev + 1
+         );
+         accumulate_source_change(
+            projection_before,
+            local_state_mass_energy_integral(
+               lev, *fluid_state_.state()[lev]
+            ),
+            1.0_rt
          );
          profile_.end(ProfileStage::AverageDown, stage_start);
       }
 
       if (should_regrid_aligned_descendants(lev)) {
-         const amrex::Real stage_start = profile_.begin();
+         const WallTime stage_start = profile_.begin();
          const bool hierarchy_changed = regrid_hierarchy_and_project<
             true, EOSMethod
          >(
             level_times_[lev], level_steps_[lev], lev
          );
          static_cast<void>(hierarchy_changed);
-         aligned_regrid_due_ = false;
+         regrid_lifecycle_.clear_descendant_request();
          profile_.end(ProfileStage::Regrid, stage_start);
       }
 

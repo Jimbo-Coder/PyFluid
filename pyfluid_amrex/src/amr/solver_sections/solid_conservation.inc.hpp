@@ -1,6 +1,7 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // Valid-cell conservation corrections for hydro runs with solid AMR geometry.
 
+public:
    bool hydro_additive_total_correction_safe(std::array<amrex::Real, NVAR_HYDRO> const& density_delta) const
    {
       for (int n = 0; n < NVAR_HYDRO; ++n) {
@@ -13,7 +14,7 @@
       for (int lev = 0; lev <= finestLevel(); ++lev) {
          amrex::iMultiFab mask = valid_cell_mask(lev);
          amrex::MultiFab bad(fluid_state_.state()[lev]->boxArray(), fluid_state_.state()[lev]->DistributionMap(), 1, 0);
-         bad.setVal(0.0);
+         bad.setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -33,32 +34,35 @@
                const amrex::Real momy = s(i, j, k, MOM2) + correction[MOM2];
                const amrex::Real momz = s(i, j, k, MOM3) + correction[MOM3];
                const amrex::Real energy = s(i, j, k, ENERGY) + correction[ENERGY];
-               bool ok = rho > 0.0
+               bool ok = rho > 0.0_rt
                   && amrex::Math::isfinite(rho)
                   && amrex::Math::isfinite(momx)
                   && amrex::Math::isfinite(momy)
                   && amrex::Math::isfinite(momz)
                   && amrex::Math::isfinite(energy);
                if (ok) {
-                  const amrex::Real kinetic = 0.5 * (momx * momx + momy * momy + momz * momz) / rho;
+                  const amrex::Real kinetic = 0.5_rt * (momx * momx + momy * momy + momz * momz) / rho;
                   const amrex::Real pressure =
                      eos_pressure_from_density_energy_runtime(eos_method, rho, energy - kinetic, eos);
-                  ok = pressure > 0.0 && amrex::Math::isfinite(pressure);
+                  ok = pressure > 0.0_rt && amrex::Math::isfinite(pressure);
                }
-               out(i, j, k, 0) = ok ? 0.0 : 1.0;
+               out(i, j, k, 0) = ok ? 0.0_rt : 1.0_rt;
             });
          }
          }
-         if (bad.sum(0) > 0.0) {
+         if (bad.sum(0) > 0.0_rt) {
             return false;
          }
       }
       return true;
    }
 
+private:
+
+public:
    void apply_hydro_valid_conserved_scale(amrex::Real scale)
    {
-      if (!(scale > 0.0) || !std::isfinite(scale)) {
+      if (!(scale > 0.0_rt) || !std::isfinite(scale)) {
          return;
       }
       for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -84,6 +88,9 @@
       }
    }
 
+private:
+
+public:
    void apply_hydro_valid_conserved_delta(std::array<amrex::Real, NVAR_HYDRO> const& density_delta)
    {
       for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -110,6 +117,9 @@
       }
    }
 
+private:
+
+public:
    bool hydro_mass_delta_safe(amrex::Real density_delta) const
    {
       if (!std::isfinite(density_delta)) {
@@ -118,7 +128,7 @@
       for (int lev = 0; lev <= finestLevel(); ++lev) {
          amrex::iMultiFab mask = valid_cell_mask(lev);
          amrex::MultiFab bad(fluid_state_.state()[lev]->boxArray(), fluid_state_.state()[lev]->DistributionMap(), 1, 0);
-         bad.setVal(0.0);
+         bad.setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -134,17 +144,20 @@
                   return;
                }
                const amrex::Real rho = s(i, j, k, RHO) + delta;
-               out(i, j, k, 0) = rho > 0.0 && amrex::Math::isfinite(rho) ? 0.0 : 1.0;
+               out(i, j, k, 0) = rho > 0.0_rt && amrex::Math::isfinite(rho) ? 0.0_rt : 1.0_rt;
             });
          }
          }
-         if (bad.sum(0) > 0.0) {
+         if (bad.sum(0) > 0.0_rt) {
             return false;
          }
       }
       return true;
    }
 
+private:
+
+public:
    void apply_hydro_valid_mass_delta(amrex::Real density_delta)
    {
       for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -168,6 +181,8 @@
          }
       }
    }
+
+private:
 
    bool mass_conserving_boundary(BoundaryKind kind) const
    {
@@ -201,12 +216,12 @@
          return false;
       }
       HydroConservedTotals current = hydro_valid_conserved_totals();
-      if (current.volume <= 0.0) {
+      if (current.volume <= 0.0_rt) {
          return false;
       }
       const amrex::Real delta_mass = target_mass - current.value[RHO];
-      const amrex::Real scale = amrex::max(amrex::Math::abs(target_mass), 1.0);
-      if (amrex::Math::abs(delta_mass) <= 32.0 * std::numeric_limits<amrex::Real>::epsilon() * scale) {
+      const amrex::Real scale = amrex::max(amrex::Math::abs(target_mass), 1.0_rt);
+      if (amrex::Math::abs(delta_mass) <= 32.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale) {
          return false;
       }
       const amrex::Real density_delta = delta_mass / current.volume;
@@ -220,7 +235,7 @@
    void apply_hydro_valid_conserved_total_correction(HydroConservedTotals const& target)
    {
       HydroConservedTotals current = hydro_valid_conserved_totals();
-      if (current.volume <= 0.0) {
+      if (current.volume <= 0.0_rt) {
          amrex::Abort("cannot apply AMR solid regrid conservation correction without valid fluid volume");
       }
       std::array<amrex::Real, NVAR_HYDRO> density_delta{};
@@ -231,7 +246,7 @@
          const amrex::Real mass_scale = target.value[RHO] / current.value[RHO];
          apply_hydro_valid_conserved_scale(mass_scale);
          HydroConservedTotals scaled = hydro_valid_conserved_totals();
-         if (scaled.volume > 0.0) {
+         if (scaled.volume > 0.0_rt) {
             std::array<amrex::Real, NVAR_HYDRO> energy_delta{};
             energy_delta[ENERGY] = (target.value[ENERGY] - scaled.value[ENERGY]) / scaled.volume;
             if (hydro_additive_total_correction_safe(energy_delta)) {

@@ -694,6 +694,7 @@ def run_solver(input_file: Path, output_dir: Path, overrides: dict[str, str]) ->
         [run_input],
         ranks=3,
     )
+    (output_dir / "run.log").write_text(completed.stdout)
     if completed.returncode != 0:
         raise RuntimeError(completed.stdout)
 
@@ -876,13 +877,12 @@ def run_restart_check(check: RestartCheck, force: bool) -> dict[str, str]:
         [full_checkpoint, restart_checkpoint, check.tolerance],
         ranks=3,
     )
-    if completed.returncode != 0:
-        raise RuntimeError(completed.stdout)
     text = completed.stdout.strip()
+    (check.restart_output_dir / "checkpoint_compare.log").write_text(completed.stdout)
     row = {
         "kind": "restart",
-        "status": "PASS",
-        "reason": "",
+        "status": "PASS" if completed.returncode == 0 else "FAIL",
+        "reason": "" if completed.returncode == 0 else "checkpoint comparison failed; see checkpoint_compare.log",
         "name": check.name,
         "suite": check.suite,
         "candidate": check.restart_output_dir.name,
@@ -925,6 +925,7 @@ def main() -> None:
         help="run only the selected checkpoint/restart comparison (implies --restart-checks)",
     )
     args = parser.parse_args()
+    write_summary([{"status": "INCOMPLETE", "reason": "validation in progress"}])
 
     if args.restart_checks or args.restart_case:
         build_cached_target(CHECKPOINT_COMPARE_2D.name)
@@ -1023,6 +1024,7 @@ def main() -> None:
                else:
                    print(
                        row["name"],
+                       row.get("status", ""),
                        "checkpoint_max=" + row.get("max_field_abs", "nan"),
                        "total_l1=" + row.get("total_l1", "nan"),
                        "tol=" + row.get("tolerance", "nan"),

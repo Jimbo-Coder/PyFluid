@@ -10,12 +10,14 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct TabulatedColdState {
-   amrex::Real density = 0.0;
-   amrex::Real pressure = 0.0;
-   amrex::Real energy_density = 0.0;
-   amrex::Real specific_enthalpy = 1.0;
-   amrex::Real sound_speed_squared = 0.0;
+   amrex::Real density = 0.0_rt;
+   amrex::Real pressure = 0.0_rt;
+   amrex::Real energy_density = 0.0_rt;
+   amrex::Real specific_enthalpy = 1.0_rt;
+   amrex::Real sound_speed_squared = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -44,7 +46,7 @@ TabulatedColdState tabulated_cold_from_density(
    TabulatedEOSView const& table
 ) noexcept
 {
-   if (!(density > 0.0) || table.size < 2) {
+   if (!(density > 0.0_rt) || table.size < 2) {
       return {};
    }
    const amrex::Real log_density = std::log(density);
@@ -56,7 +58,7 @@ TabulatedColdState tabulated_cold_from_density(
          density / minimum_density, gamma
       );
       const amrex::Real energy_density = density
-         + pressure / (gamma - 1.0);
+         + pressure / (gamma - 1.0_rt);
       return {
          density,
          pressure,
@@ -80,11 +82,11 @@ TabulatedColdState tabulated_cold_from_density(
       const amrex::Real affine_constant = reference_pressure
          - sound_speed_squared * reference_energy;
       const amrex::Real energy_offset = affine_constant
-         / (1.0 + sound_speed_squared);
+         / (1.0_rt + sound_speed_squared);
       const amrex::Real energy_density = (
          reference_energy + energy_offset
       ) * std::pow(
-         density / reference_density, 1.0 + sound_speed_squared
+         density / reference_density, 1.0_rt + sound_speed_squared
       ) - energy_offset;
       const amrex::Real pressure = reference_pressure
          + sound_speed_squared * (energy_density - reference_energy);
@@ -101,7 +103,7 @@ TabulatedColdState tabulated_cold_from_density(
       log_density, table.log_density, table.size
    );
    const int right = left + 1;
-   const amrex::Real inverse_width = 1.0
+   const amrex::Real inverse_width = 1.0_rt
       / (table.log_density[right] - table.log_density[left]);
    const amrex::Real fraction = (
       log_density - table.log_density[left]
@@ -127,7 +129,7 @@ TabulatedColdState tabulated_cold_from_density(
    const amrex::Real energy_density = density * specific_enthalpy - pressure;
    const amrex::Real pressure_derivative = pressure_slope * pressure;
    const amrex::Real energy_derivative =
-      density * specific_enthalpy * (1.0 + enthalpy_slope)
+      density * specific_enthalpy * (1.0_rt + enthalpy_slope)
       - pressure_derivative;
    return {
       density,
@@ -144,8 +146,8 @@ amrex::Real tabulated_log_enthalpy_from_density(
    TabulatedEOSView const& table
 ) noexcept
 {
-   if (!(density > 0.0) || table.size < 2) {
-      return 0.0;
+   if (!(density > 0.0_rt) || table.size < 2) {
+      return 0.0_rt;
    }
    const amrex::Real log_density = std::log(density);
    if (log_density <= table.log_density[0]) {
@@ -155,7 +157,7 @@ amrex::Real tabulated_log_enthalpy_from_density(
          density / minimum_density, table.low_density_gamma
       );
       return std::log1p(
-         table.low_density_gamma / (table.low_density_gamma - 1.0)
+         table.low_density_gamma / (table.low_density_gamma - 1.0_rt)
          * pressure / density
       );
    }
@@ -185,7 +187,7 @@ TabulatedColdState tabulated_cold_from_log_enthalpy(
    TabulatedEOSView const& table
 ) noexcept
 {
-   if (!(log_specific_enthalpy > 0.0) || table.size < 2) {
+   if (!(log_specific_enthalpy > 0.0_rt) || table.size < 2) {
       return {};
    }
    const amrex::Real minimum_log_enthalpy = table.log_specific_enthalpy[0];
@@ -194,7 +196,7 @@ TabulatedColdState tabulated_cold_from_log_enthalpy(
       const amrex::Real density = minimum_density * std::pow(
          std::expm1(log_specific_enthalpy)
             / std::expm1(minimum_log_enthalpy),
-         1.0 / (table.low_density_gamma - 1.0)
+         1.0_rt / (table.low_density_gamma - 1.0_rt)
       );
       return tabulated_cold_from_density(density, table);
    }
@@ -208,7 +210,7 @@ TabulatedColdState tabulated_cold_from_log_enthalpy(
       const amrex::Real specific_enthalpy = std::exp(log_specific_enthalpy);
       const amrex::Real density = reference_density * std::pow(
          specific_enthalpy / reference_enthalpy,
-         1.0 / table.high_density_sound_speed_squared
+         1.0_rt / table.high_density_sound_speed_squared
       );
       return tabulated_cold_from_density(density, table);
    }

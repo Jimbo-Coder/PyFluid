@@ -2,6 +2,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 bool AmrSolverBase::gravity_energy_source_register_needed(int fine_lev) const
 {
    return fine_lev > 0 && fine_lev <= finestLevel() && uses_athena_ssprk3_gravity_energy_correction() &&
@@ -22,7 +24,7 @@ amrex::iMultiFab AmrSolverBase::coarse_fine_cell_mask(int lev) const
 
 void AmrSolverBase::fill_athena_ssprk3_gravity_face_energy_source(int lev, int dir, amrex::MultiFab& out) const
 {
-   const amrex::Real accel_offset = 0.5 * (gravity_start_acceleration_offset_[dir] + gravity_acceleration_offset_[dir]);
+   const amrex::Real accel_offset = 0.5_rt * (gravity_start_acceleration_offset_[dir] + gravity_acceleration_offset_[dir]);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -34,11 +36,11 @@ void AmrSolverBase::fill_athena_ssprk3_gravity_face_energy_source(int lev, int d
          const auto f1 = gravity_stage_mass_flux_[1][lev][dir]->const_array(mfi);
          const auto f2 = gravity_stage_mass_flux_[2][lev][dir]->const_array(mfi);
          const auto g0 = gravity_start_gradient_[lev][dir]->const_array(mfi);
-         const auto g = gravity_gradient_[lev][dir]->const_array(mfi);
+         const auto g = gravity_fields_.gradient(lev, dir)->const_array(mfi);
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const amrex::Real mass_flux = (f0(i, j, k, 0) + f1(i, j, k, 0) + 4.0 * f2(i, j, k, 0)) / 6.0;
-            const amrex::Real acceleration = -0.5 * (g0(i, j, k, 0) + g(i, j, k, 0)) - accel_offset;
-            q(i, j, k, 0) = 0.5 * mass_flux * acceleration;
+            const amrex::Real mass_flux = (f0(i, j, k, 0) + f1(i, j, k, 0) + 4.0_rt * f2(i, j, k, 0)) / 6.0_rt;
+            const amrex::Real acceleration = -0.5_rt * (g0(i, j, k, 0) + g(i, j, k, 0)) - accel_offset;
+            q(i, j, k, 0) = 0.5_rt * mass_flux * acceleration;
          });
       }
    }
@@ -57,7 +59,7 @@ void AmrSolverBase::accumulate_athena_ssprk3_gravity_energy_source_register_dir(
    const amrex::Box domain = Geom(coarse_lev).Domain();
    const auto lo = domain.smallEnd();
    const auto hi = domain.bigEnd();
-   const amrex::Real accel_offset = 0.5 * (gravity_start_acceleration_offset_[dir] + gravity_acceleration_offset_[dir]);
+   const amrex::Real accel_offset = 0.5_rt * (gravity_start_acceleration_offset_[dir] + gravity_acceleration_offset_[dir]);
    amrex::MultiFab& reg_mf = *gravity_energy_source_register_[fine_lev];
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -72,19 +74,19 @@ void AmrSolverBase::accumulate_athena_ssprk3_gravity_energy_source_register_dir(
          const auto f1 = gravity_stage_mass_flux_[1][coarse_lev][dir]->const_array(mfi);
          const auto f2 = gravity_stage_mass_flux_[2][coarse_lev][dir]->const_array(mfi);
          const auto g0 = gravity_start_gradient_[coarse_lev][dir]->const_array(mfi);
-         const auto g = gravity_gradient_[coarse_lev][dir]->const_array(mfi);
+         const auto g = gravity_fields_.gradient(coarse_lev, dir)->const_array(mfi);
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             if (covered(i, j, k, 0) == 0) {
                return;
             }
             auto face_correction = [=] AMREX_GPU_DEVICE(int ii, int jj, int kk) noexcept -> amrex::Real {
-               const amrex::Real mass_flux = (f0(ii, jj, kk, 0) + f1(ii, jj, kk, 0) + 4.0 * f2(ii, jj, kk, 0)) / 6.0;
-               const amrex::Real acceleration = -0.5 * (g0(ii, jj, kk, 0) + g(ii, jj, kk, 0)) - accel_offset;
-               const amrex::Real coarse_source = 0.5 * mass_flux * acceleration;
-               const amrex::Real fine_source = include_fine ? avg(ii, jj, kk, 0) : 0.0;
-               return fine_source - (include_coarse ? coarse_source : 0.0);
+               const amrex::Real mass_flux = (f0(ii, jj, kk, 0) + f1(ii, jj, kk, 0) + 4.0_rt * f2(ii, jj, kk, 0)) / 6.0_rt;
+               const amrex::Real acceleration = -0.5_rt * (g0(ii, jj, kk, 0) + g(ii, jj, kk, 0)) - accel_offset;
+               const amrex::Real coarse_source = 0.5_rt * mass_flux * acceleration;
+               const amrex::Real fine_source = include_fine ? avg(ii, jj, kk, 0) : 0.0_rt;
+               return fine_source - (include_coarse ? coarse_source : 0.0_rt);
             };
-            amrex::Real correction = 0.0;
+            amrex::Real correction = 0.0_rt;
             if (dir == 0) {
                if (i > lo[0] && covered(i - 1, j, k, 0) == 0) {
                   correction += face_correction(i, j, k);
@@ -121,7 +123,7 @@ void AmrSolverBase::accumulate_athena_ssprk3_gravity_energy_source_register_dir(
 
 void AmrSolverBase::add_athena_ssprk3_gravity_energy_source_register(amrex::Real dt, int lev_begin, int lev_end)
 {
-   if (!uses_athena_ssprk3_gravity_energy_correction() || finestLevel() == 0 || dt == 0.0) {
+   if (!uses_athena_ssprk3_gravity_energy_correction() || finestLevel() == 0 || dt == 0.0_rt) {
       return;
    }
    for (int fine_lev = 1; fine_lev <= finestLevel(); ++fine_lev) {
@@ -147,7 +149,7 @@ void AmrSolverBase::add_athena_ssprk3_gravity_energy_source_register(amrex::Real
                std::make_unique<amrex::MultiFab>(gravity_stage_mass_flux_[2][coarse_lev][dir]->boxArray(),
                                                  gravity_stage_mass_flux_[2][coarse_lev][dir]->DistributionMap(), 1, 0);
             fill_athena_ssprk3_gravity_face_energy_source(fine_lev, dir, *fine_source[dir]);
-            fine_average_source[dir]->setVal(0.0);
+            fine_average_source[dir]->setVal(0.0_rt);
             fine_ptrs[dir] = fine_source[dir].get();
             average_ptrs[dir] = fine_average_source[dir].get();
          }
@@ -162,13 +164,13 @@ void AmrSolverBase::add_athena_ssprk3_gravity_energy_source_register(amrex::Real
 
 void AmrSolverBase::apply_gravity_energy_source_register(int fine_lev, amrex::MultiFab& coarse_state)
 {
-   apply_gravity_energy_source_register_scaled(fine_lev, coarse_state, 1.0);
+   apply_gravity_energy_source_register_scaled(fine_lev, coarse_state, 1.0_rt);
 }
 
 void AmrSolverBase::apply_gravity_energy_source_register_scaled(int fine_lev, amrex::MultiFab& coarse_state,
                                                                 amrex::Real scale)
 {
-   if (fine_lev <= 0 || fine_lev > finestLevel() || !gravity_energy_source_register_[fine_lev] || scale == 0.0) {
+   if (fine_lev <= 0 || fine_lev > finestLevel() || !gravity_energy_source_register_[fine_lev] || scale == 0.0_rt) {
       return;
    }
    amrex::MultiFab& reg_mf = *gravity_energy_source_register_[fine_lev];

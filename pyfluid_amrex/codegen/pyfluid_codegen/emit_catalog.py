@@ -14,6 +14,8 @@ from .diagnostic_catalog import (
 )
 from .diagnostic_equations import DIAGNOSTIC_EQUATION_RECORDS
 from .equation_catalog import equation_of_state_records, fluid_equation_systems
+from .emit_spatial_order import render_spatial_order_header
+from .emit_time_integrators import render_time_integrator_header, render_time_integrator_ids_header
 from .field_catalog import (
     AUXILIARY_FIELDS,
     CT_MAGNETIC_FIELD,
@@ -147,13 +149,13 @@ def render_amr_tag_catalog_header() -> str:
                 _cpp_string(policy.name),
                 _cpp_string(policy.label),
                 _cpp_string(policy.description),
-                repr(policy.default_threshold),
+                f"{policy.default_threshold!r}_rt",
                 str(policy.density).lower(),
                 str(policy.pressure).lower(),
                 str(policy.velocity).lower(),
                 str(policy.magnetic).lower(),
                 str(policy.spacetime).lower(),
-                repr(policy.density_floor_multiple),
+                f"{policy.density_floor_multiple!r}_rt",
             )
         )
         + "}"
@@ -163,7 +165,7 @@ def render_amr_tag_catalog_header() -> str:
         "   case "
         + f"AmrTag{policy.cpp_id}: return {{"
         + ", ".join(
-            str(value).lower()
+            (str(value).lower() if isinstance(value, bool) else f"{value!r}_rt")
             for value in (
                 policy.density,
                 policy.pressure,
@@ -181,11 +183,14 @@ def render_amr_tag_catalog_header() -> str:
 #pragma once
 
 #include <AMReX_GpuQualifiers.H>
+#include <AMReX_REAL.H>
 
 #include <array>
 #include <string_view>
 
 namespace pyfluid_amrex {{
+
+using namespace amrex::literals;
 
 enum AmrTagPolicyCode : int {{
 {enum_values}
@@ -196,13 +201,13 @@ struct AmrTagPolicyInfo {{
    std::string_view name;
    std::string_view label;
    std::string_view description;
-   double default_threshold;
+   amrex::Real default_threshold;
    bool density;
    bool pressure;
    bool velocity;
    bool magnetic;
    bool spacetime;
-   double density_floor_multiple;
+   amrex::Real density_floor_multiple;
 }};
 
 inline constexpr std::array<AmrTagPolicyInfo, {len(AMR_TAG_POLICIES)}> AmrTagPolicyCatalog = {{{{
@@ -215,8 +220,8 @@ struct AmrTagPolicyFlags {{
    bool velocity;
    bool magnetic;
    bool spacetime;
-   double default_threshold;
-   double density_floor_multiple;
+   amrex::Real default_threshold;
+   amrex::Real density_floor_multiple;
 }};
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -224,7 +229,7 @@ constexpr AmrTagPolicyFlags amr_tag_policy_flags(int policy) noexcept
 {{
    switch (policy) {{
 {flag_cases}
-   default: return {{false, false, false, false, false, 0.35, 0.0}};
+   default: return {{false, false, false, false, false, 0.35_rt, 0.0_rt}};
    }}
 }}
 
@@ -345,6 +350,7 @@ def render_initial_data_method_catalog_header() -> str:
                 str(owner.dimension),
                 _cpp_string(owner.coordinate),
                 _cpp_string(" ".join(owner.axes)),
+                _cpp_string(",".join(owner.solver_axis_layouts)),
                 _cpp_string(",".join(owner.central_objects)),
                 _cpp_string(",".join(owner.spacetime_methods)),
                 _cpp_string(",".join(owner.disk_kinds)),
@@ -457,6 +463,7 @@ struct InitialDataOwnerInfo {{
    int dimension;
    std::string_view coordinate;
    std::string_view axes;
+   std::string_view solver_axis_layouts;
    std::string_view central_objects;
    std::string_view spacetime_methods;
    std::string_view disk_kinds;
@@ -509,6 +516,21 @@ constexpr bool initial_data_owner_list_contains(
    return false;
 }}
 
+constexpr bool initial_data_owner_solver_layout_matches(
+   InitialDataOwnerInfo const& owner,
+   int dimension,
+   std::string_view coordinate,
+   std::string_view axes
+) noexcept
+{{
+   int axes_dimension = axes.empty() ? 0 : 1;
+   for (const char character : axes) {{
+      axes_dimension += character == ' ' ? 1 : 0;
+   }}
+   return dimension == axes_dimension && owner.coordinate == coordinate
+      && initial_data_owner_list_contains(owner.solver_axis_layouts, axes);
+}}
+
 }} // namespace pyfluid_amrex
 """
 
@@ -542,20 +564,25 @@ def render_field_ids_header() -> str:
     aux_lines = [f"   {field.aux_id}," for field in AUXILIARY_FIELDS]
     aux_lines.append("   Unknown,")
 
-    def component_array(name: str, fields: tuple[GridField, ...]) -> str:
+    def component_array_function(name: str, fields: tuple[GridField, ...]) -> str:
         ids = ",\n".join(
-            f"   {component.cpp_id}" for component in _flatten(fields)
+            f"      {component.cpp_id}" for component in _flatten(fields)
         )
         return (
-            f"inline constexpr int {name}[{len(_flatten(fields))}] = {{\n"
-            f"{ids},\n"
-            "};"
+            "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE\n"
+            f"constexpr amrex::GpuArray<int, {len(_flatten(fields))}> {name}() noexcept\n"
+            "{\n"
+            f"   return {{{{\n{ids},\n   }}}};\n"
+            "}"
         )
 
     return "\n".join(
         (
             "// Generated by pyfluid_codegen.field_catalog. Do not edit.",
             "#pragma once",
+            "",
+            "#include <AMReX_Array.H>",
+            "#include <AMReX_GpuQualifiers.H>",
             "",
             "namespace pyfluid_amrex {",
             "",
@@ -567,13 +594,14 @@ def render_field_ids_header() -> str:
             *z4c_lines,
             "};",
             "",
-            component_array("Z4C_GAMMA_TILDE_COMPONENTS", (Z4C_FIELDS[1],)),
+            "// Return component tables by value so runtime indexing is valid on host and device.",
+            component_array_function("z4c_gamma_tilde_components", (Z4C_FIELDS[1],)),
             "",
-            component_array("Z4C_A_TILDE_COMPONENTS", (Z4C_FIELDS[3],)),
+            component_array_function("z4c_a_tilde_components", (Z4C_FIELDS[3],)),
             "",
-            component_array("Z4C_GAMMA_TILDE_VECTOR_COMPONENTS", (Z4C_FIELDS[4],)),
+            component_array_function("z4c_gamma_tilde_vector_components", (Z4C_FIELDS[4],)),
             "",
-            component_array("Z4C_SHIFT_COMPONENTS", (Z4C_FIELDS[7],)),
+            component_array_function("z4c_shift_components", (Z4C_FIELDS[7],)),
             "",
             "enum class AuxGridField {",
             *aux_lines,
@@ -960,6 +988,7 @@ def render_field_catalog_json() -> str:
             "value_kind": diagnostic.value_kind.value,
             "component_index": diagnostic.component_index,
             "component_count": diagnostic.component_count,
+            "surface": diagnostic.surface.value,
         }
         for diagnostic in (*RUNTIME_SCALAR_DIAGNOSTICS, *POSTPROCESS_DIAGNOSTICS)
     ]
@@ -1168,7 +1197,8 @@ def render_physical_id_catalog_json() -> str:
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
 
-def render_diagnostic_catalog_header() -> str:
+def render_diagnostic_types_header() -> str:
+    """Small value/ID interface; descriptor tables stay with their consumers."""
     storage_types = {
         DiagnosticStorage.REAL: "amrex::Real",
         DiagnosticStorage.INTEGER: "int",
@@ -1182,6 +1212,46 @@ def render_diagnostic_catalog_header() -> str:
         f"   {''.join(part.title() for part in diagnostic.name.split('_'))} = {index},"
         for index, diagnostic in enumerate(RUNTIME_SCALAR_DIAGNOSTICS)
     )
+    group_enum_values = "\n".join(
+        f"   {''.join(part.title() for part in group.split('_'))} = {index},"
+        for index, group in enumerate(DIAGNOSTIC_GROUPS)
+    )
+    mode_enum_values = "\n".join(
+        f"   {''.join(part.title() for part in diagnostic.name.split('_'))} = {index},"
+        for index, diagnostic in enumerate(COMPLEX_MODE_DIAGNOSTICS)
+    )
+    return f"""// Generated by pyfluid_codegen.diagnostic_catalog. Do not edit.
+#pragma once
+
+#include <AMReX_REAL.H>
+#include <cstddef>
+
+namespace pyfluid_amrex {{
+
+enum class ScalarDiagnosticId : std::size_t {{
+{enum_values}
+   Count = {len(RUNTIME_SCALAR_DIAGNOSTICS)},
+}};
+
+enum class ScalarDiagnosticGroup : std::size_t {{
+{group_enum_values}
+   Count = {len(DIAGNOSTIC_GROUPS)},
+}};
+
+enum class ComplexModeDiagnosticId : std::size_t {{
+{mode_enum_values}
+   Count = {len(COMPLEX_MODE_DIAGNOSTICS)},
+}};
+
+struct ScalarDiagnostics {{
+{members}
+}};
+
+}} // namespace pyfluid_amrex
+"""
+
+
+def render_diagnostic_catalog_header() -> str:
     descriptor_values = ",\n".join(
         "   {"
         + ", ".join(
@@ -1195,6 +1265,7 @@ def render_diagnostic_catalog_header() -> str:
                 _cpp_string(diagnostic.value_kind.value),
                 str(diagnostic.component_index),
                 str(diagnostic.component_count),
+                _cpp_string(diagnostic.surface.value),
             )
         )
         + "}"
@@ -1206,10 +1277,6 @@ def render_diagnostic_catalog_header() -> str:
         for diagnostic in RUNTIME_SCALAR_DIAGNOSTICS
     )
     group_names = tuple(DIAGNOSTIC_GROUPS)
-    group_enum_values = "\n".join(
-        f"   {''.join(part.title() for part in group.split('_'))} = {index},"
-        for index, group in enumerate(group_names)
-    )
     group_entries = []
     for group in group_names:
         members_for_group = set(DIAGNOSTIC_GROUPS[group])
@@ -1224,10 +1291,6 @@ def render_diagnostic_catalog_header() -> str:
             "}"
         )
     group_descriptor_values = ",\n".join(group_entries)
-    mode_enum_values = "\n".join(
-        f"   {''.join(part.title() for part in diagnostic.name.split('_'))} = {index},"
-        for index, diagnostic in enumerate(COMPLEX_MODE_DIAGNOSTICS)
-    )
     mode_descriptor_values = ",\n".join(
         "   {"
         + ", ".join(
@@ -1247,28 +1310,13 @@ def render_diagnostic_catalog_header() -> str:
     return f"""// Generated by pyfluid_codegen.diagnostic_catalog. Do not edit.
 #pragma once
 
-#include <AMReX_REAL.H>
+#include "diagnostic_types.hpp"
 
 #include <array>
 #include <cstddef>
 #include <string_view>
 
 namespace pyfluid_amrex {{
-
-enum class ScalarDiagnosticId : std::size_t {{
-{enum_values}
-   Count = {len(RUNTIME_SCALAR_DIAGNOSTICS)},
-}};
-
-enum class ScalarDiagnosticGroup : std::size_t {{
-{group_enum_values}
-   Count = {len(group_names)},
-}};
-
-enum class ComplexModeDiagnosticId : std::size_t {{
-{mode_enum_values}
-   Count = {len(COMPLEX_MODE_DIAGNOSTICS)},
-}};
 
 struct ScalarDiagnosticInfo {{
    ScalarDiagnosticId id;
@@ -1280,16 +1328,13 @@ struct ScalarDiagnosticInfo {{
    std::string_view value_kind;
    std::size_t component_index;
    std::size_t component_count;
+   std::string_view surface;
 }};
 
 struct ScalarDiagnosticGroupInfo {{
    ScalarDiagnosticGroup id;
    std::string_view name;
    std::array<bool, {len(RUNTIME_SCALAR_DIAGNOSTICS)}> members;
-}};
-
-struct ScalarDiagnostics {{
-{members}
 }};
 
 struct ComplexModeDiagnosticInfo {{
@@ -1339,8 +1384,18 @@ def write_catalog(
 ) -> None:
     _write_if_changed(ids_header, render_field_ids_header())
     _write_if_changed(catalog_header, render_field_catalog_header())
+    _write_if_changed(
+        diagnostic_header.with_name("diagnostic_types.hpp"),
+        render_diagnostic_types_header(),
+    )
     _write_if_changed(diagnostic_header, render_diagnostic_catalog_header())
     _write_if_changed(method_header, render_method_catalog_header())
+    _write_if_changed(method_header.with_name("time_integrator_catalog.hpp"), render_time_integrator_header())
+    _write_if_changed(method_header.with_name("time_integrator_ids.hpp"), render_time_integrator_ids_header())
+    _write_if_changed(
+        method_header.with_name("spatial_order_catalog.hpp"),
+        render_spatial_order_header(),
+    )
     _write_if_changed(amr_tag_header, render_amr_tag_catalog_header())
     _write_if_changed(
         initial_data_method_header,

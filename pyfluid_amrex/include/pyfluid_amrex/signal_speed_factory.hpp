@@ -18,6 +18,7 @@ struct SignalSpeedLaunch {
    RunConfig const& config;
    int num_components = 0;
    int diffusion_method = 0;
+   amrex::iMultiFab const* inactive_mask = nullptr;
 };
 
 amrex::Real compute_adaptive_dt(
@@ -31,8 +32,7 @@ amrex::Real compute_spacetime_dt(
    amrex::MultiFab& frequency,
    amrex::MultiFab const& cell_spacetime,
    amrex::Geometry const& geometry,
-   amrex::Real cfl,
-   amrex::Real gauge_speed
+   RunConfig const& config
 );
 
 amrex::Real compute_mapped_hydro_adaptive_dt(

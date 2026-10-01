@@ -1,10 +1,13 @@
 #pragma once
 
+#include "pyfluid_amrex/generated/time_integrator_catalog.hpp"
+
 #include <utility>
 
 #include "amr/amr_solver_base.hpp"
 #include "pyfluid_amrex/apparent_horizon_tracker.hpp"
 #include "pyfluid_amrex/checkpoint.hpp"
+#include "pyfluid_amrex/black_hole_excision.hpp"
 #include "pyfluid_amrex/centering_transfer.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/diffusion.hpp"
@@ -23,6 +26,7 @@
 #include "pyfluid_amrex/solid_wall_power.hpp"
 #include "numerics/sources.hpp"
 #include "pyfluid_amrex/state_update.hpp"
+#include "pyfluid_amrex/z4c_centering_representation.hpp"
 
 namespace pyfluid_amrex {
 
@@ -52,6 +56,9 @@ private:
       return a;
    }
 
+   // CUDA requires public enclosing methods for extended device lambdas.
+   // Topic sections expose only those launch entry points, then restore private
+   // access. The class and its definitions are internal implementation details.
    // Physical-system evolution templates. Kernel-bundle translation units own
    // their unique instantiations; AMR infrastructure sources include the base.
 #include "amr/solver_sections/evolve_core.inc.hpp"

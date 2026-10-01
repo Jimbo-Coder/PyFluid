@@ -9,11 +9,13 @@
 #include "pyfluid_amrex/eos/tabulated_barotrope.hpp"
 #include "pyfluid_amrex/eos/types.hpp"
 #include "pyfluid_amrex/kernels_generated/eos.hpp"
-#include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/magnetic.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 struct PolytropeSegment {
    amrex::Real k;
@@ -40,7 +42,7 @@ PolytropeSegment polytrope_segment(amrex::Real rho, EOSParams const& eos) noexce
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real kinetic_energy_density(amrex::Real rho, StateVector3 const& velocity) noexcept
 {
-   return 0.5 * rho * dot(velocity, velocity);
+   return 0.5_rt * rho * dot(velocity, velocity);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -63,6 +65,9 @@ template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real eos_cold_pressure(amrex::Real rho, EOSParams const& eos) noexcept
 {
+   if (rho == 0.0_rt) {
+      return 0.0_rt;
+   }
    if constexpr (EOSMethod == EOSRuntime) {
       if (eos.method == EOSCompose) {
          return tabulated_cold_from_density(rho, eos.table).pressure;
@@ -70,13 +75,13 @@ amrex::Real eos_cold_pressure(amrex::Real rho, EOSParams const& eos) noexcept
       if (eos.method == EOSPolytrope || eos.method == EOSHybridPolytrope) {
          return eos_cold_pressure<EOSPolytrope>(rho, eos);
       }
-      return 0.0;
+      return 0.0_rt;
    } else if constexpr (EOSMethod == EOSCompose) {
       return tabulated_cold_from_density(rho, eos.table).pressure;
    } else if constexpr (EOSMethod == EOSIdealGas) {
       static_cast<void>(rho);
       static_cast<void>(eos);
-      return 0.0;
+      return 0.0_rt;
    } else {
       const PolytropeSegment segment = polytrope_segment(rho, eos);
       return generated::polytrope_cold_pressure(
@@ -97,31 +102,31 @@ amrex::Real eos_thermal_entropy_proxy(
 {
    if constexpr (EOSMethod == EOSRuntime) {
       if (eos.method == EOSPolytrope) {
-         return 0.0;
+         return 0.0_rt;
       }
       const amrex::Real adiabatic_index = eos.method == EOSIdealGas
          ? eos.gamma
          : eos.thermal_gamma;
       const amrex::Real base_pressure = eos.method == EOSIdealGas
-         ? 0.0
+         ? 0.0_rt
          : eos_cold_pressure<EOSRuntime>(rho, eos);
       return (pressure - base_pressure) / std::pow(
-         amrex::max(rho, amrex::Real{1.0e-300}), adiabatic_index
+         amrex::max(rho, amrex::Real{1.0e-300_rt}), adiabatic_index
       );
    } else if constexpr (EOSMethod == EOSPolytrope) {
       static_cast<void>(rho);
       static_cast<void>(pressure);
       static_cast<void>(eos);
-      return 0.0;
+      return 0.0_rt;
    } else if constexpr (
       EOSMethod == EOSHybridPolytrope || EOSMethod == EOSCompose
    ) {
       return (pressure - eos_cold_pressure<EOSMethod>(rho, eos)) / std::pow(
-         amrex::max(rho, amrex::Real{1.0e-300}), eos.thermal_gamma
+         amrex::max(rho, amrex::Real{1.0e-300_rt}), eos.thermal_gamma
       );
    } else {
       return pressure / std::pow(
-         amrex::max(rho, amrex::Real{1.0e-300}), eos.gamma
+         amrex::max(rho, amrex::Real{1.0e-300_rt}), eos.gamma
       );
    }
 }
@@ -130,6 +135,9 @@ template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real eos_cold_energy_density(amrex::Real rho, EOSParams const& eos) noexcept
 {
+   if (rho == 0.0_rt) {
+      return 0.0_rt;
+   }
    if constexpr (EOSMethod == EOSRuntime) {
       if (eos.method == EOSCompose) {
          const TabulatedColdState cold = tabulated_cold_from_density(
@@ -140,14 +148,14 @@ amrex::Real eos_cold_energy_density(amrex::Real rho, EOSParams const& eos) noexc
       if (eos.method == EOSPolytrope || eos.method == EOSHybridPolytrope) {
          return eos_cold_energy_density<EOSPolytrope>(rho, eos);
       }
-      return 0.0;
+      return 0.0_rt;
    } else if constexpr (EOSMethod == EOSCompose) {
       const TabulatedColdState cold = tabulated_cold_from_density(rho, eos.table);
       return cold.energy_density - cold.density;
    } else if constexpr (EOSMethod == EOSIdealGas) {
       static_cast<void>(rho);
       static_cast<void>(eos);
-      return 0.0;
+      return 0.0_rt;
    } else {
       const PolytropeSegment segment = polytrope_segment(rho, eos);
       return generated::polytrope_cold_energy_density(
@@ -167,6 +175,9 @@ amrex::Real eos_internal_energy_density_from_pressure(
    EOSParams const& eos
 ) noexcept
 {
+   if (rho == 0.0_rt && pressure == 0.0_rt) {
+      return 0.0_rt;
+   }
    if constexpr (EOSMethod == EOSRuntime) {
       if (eos.method == EOSPolytrope) {
          return eos_cold_energy_density<EOSRuntime>(rho, eos);
@@ -177,7 +188,7 @@ amrex::Real eos_internal_energy_density_from_pressure(
          );
          const amrex::Real cold_pressure = eos_cold_pressure<EOSRuntime>(rho, eos);
          return cold_energy
-            + (pressure - cold_pressure) / (eos.thermal_gamma - 1.0);
+            + (pressure - cold_pressure) / (eos.thermal_gamma - 1.0_rt);
       }
       return generated::ideal_gas_internal_energy_density_from_pressure(
          pressure, eos.gamma
@@ -186,7 +197,7 @@ amrex::Real eos_internal_energy_density_from_pressure(
       const amrex::Real cold_energy = eos_cold_energy_density<EOSCompose>(rho, eos);
       const amrex::Real cold_pressure = eos_cold_pressure<EOSCompose>(rho, eos);
       return cold_energy
-         + (pressure - cold_pressure) / (eos.thermal_gamma - 1.0);
+         + (pressure - cold_pressure) / (eos.thermal_gamma - 1.0_rt);
    } else if constexpr (EOSMethod == EOSPolytrope) {
       static_cast<void>(pressure);
       return eos_cold_energy_density<EOSMethod>(rho, eos);
@@ -217,6 +228,9 @@ amrex::Real eos_pressure_from_density_energy(
    EOSParams const& eos
 ) noexcept
 {
+   if (rho == 0.0_rt && internal_energy_density == 0.0_rt) {
+      return 0.0_rt;
+   }
    if constexpr (EOSMethod == EOSRuntime) {
       if (eos.method == EOSPolytrope) {
          return eos_cold_pressure<EOSRuntime>(rho, eos);
@@ -226,7 +240,7 @@ amrex::Real eos_pressure_from_density_energy(
             rho, eos
          );
          const amrex::Real cold_pressure = eos_cold_pressure<EOSRuntime>(rho, eos);
-         return cold_pressure + (eos.thermal_gamma - 1.0)
+         return cold_pressure + (eos.thermal_gamma - 1.0_rt)
             * (internal_energy_density - cold_energy);
       }
       return generated::ideal_gas_pressure_from_density_energy(
@@ -235,7 +249,7 @@ amrex::Real eos_pressure_from_density_energy(
    } else if constexpr (EOSMethod == EOSCompose) {
       const amrex::Real cold_energy = eos_cold_energy_density<EOSCompose>(rho, eos);
       const amrex::Real cold_pressure = eos_cold_pressure<EOSCompose>(rho, eos);
-      return cold_pressure + (eos.thermal_gamma - 1.0)
+      return cold_pressure + (eos.thermal_gamma - 1.0_rt)
          * (internal_energy_density - cold_energy);
    } else if constexpr (EOSMethod == EOSPolytrope) {
       static_cast<void>(internal_energy_density);
@@ -302,13 +316,16 @@ template <int EOSMethod>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real eos_sound_speed_from_primitive(amrex::Real rho, amrex::Real pressure, EOSParams const& eos) noexcept
 {
+   if (rho == 0.0_rt && pressure == 0.0_rt) {
+      return 0.0_rt;
+   }
    if constexpr (EOSMethod == EOSRuntime) {
       if (eos.method == EOSCompose) {
          const TabulatedColdState cold = tabulated_cold_from_density(rho, eos.table);
          const amrex::Real sound_speed_squared =
             cold.specific_enthalpy * cold.sound_speed_squared
             + eos.thermal_gamma * (pressure - cold.pressure) / rho;
-         return std::sqrt(amrex::max(amrex::Real{0.0}, sound_speed_squared));
+         return std::sqrt(amrex::max(amrex::Real{0.0_rt}, sound_speed_squared));
       }
       if (eos.method == EOSPolytrope) {
          return eos_sound_speed_from_primitive<EOSPolytrope>(rho, pressure, eos);
@@ -322,7 +339,7 @@ amrex::Real eos_sound_speed_from_primitive(amrex::Real rho, amrex::Real pressure
       const amrex::Real sound_speed_squared =
          cold.specific_enthalpy * cold.sound_speed_squared
          + eos.thermal_gamma * (pressure - cold.pressure) / rho;
-      return std::sqrt(amrex::max(amrex::Real{0.0}, sound_speed_squared));
+      return std::sqrt(amrex::max(amrex::Real{0.0_rt}, sound_speed_squared));
    } else if constexpr (EOSMethod == EOSPolytrope) {
       const PolytropeSegment segment = polytrope_segment(rho, eos);
       return std::sqrt(generated::polytrope_sound_speed_squared(
@@ -356,6 +373,9 @@ amrex::Real relativistic_specific_internal_energy_from_pressure(
    EOSParams const& eos
 ) noexcept
 {
+   if (rho == 0.0_rt && pressure == 0.0_rt) {
+      return 0.0_rt;
+   }
    return eos_internal_energy_density_from_pressure<EOSMethod>(rho, pressure, eos) / rho;
 }
 
@@ -369,7 +389,7 @@ amrex::Real relativistic_compose_pressure(
 {
    const amrex::Real cold_internal_energy_density =
       cold.energy_density - rho;
-   return cold.pressure + (eos.thermal_gamma - 1.0) * (
+   return cold.pressure + (eos.thermal_gamma - 1.0_rt) * (
       rho * specific_internal_energy - cold_internal_energy_density
    );
 }
@@ -382,6 +402,9 @@ amrex::Real relativistic_pressure(
    EOSParams const& eos
 ) noexcept
 {
+   if (rho == 0.0_rt) {
+      return 0.0_rt;
+   }
    if constexpr (EOSMethod == EOSRuntime) {
       return eos_pressure_from_density_energy<EOSRuntime>(
          rho, rho * specific_internal_energy, eos
@@ -425,7 +448,10 @@ amrex::Real relativistic_specific_enthalpy(
    EOSParams const& eos
 ) noexcept
 {
-   return 1.0 + specific_internal_energy
+   if (rho == 0.0_rt) {
+      return 1.0_rt;
+   }
+   return 1.0_rt + specific_internal_energy
       + relativistic_pressure<EOSMethod>(rho, specific_internal_energy, eos) / rho;
 }
 
@@ -437,6 +463,9 @@ amrex::Real relativistic_sound_speed_squared(
    EOSParams const& eos
 ) noexcept
 {
+   if (rho == 0.0_rt) {
+      return 0.0_rt;
+   }
    if constexpr (EOSMethod == EOSRuntime) {
       if (eos.method == EOSCompose) {
          return relativistic_sound_speed_squared<EOSCompose>(
@@ -462,13 +491,13 @@ amrex::Real relativistic_sound_speed_squared(
          rho, specific_internal_energy, cold, eos
       );
       const amrex::Real thermal_energy = specific_internal_energy
-         - (cold.energy_density / rho - 1.0);
+         - (cold.energy_density / rho - 1.0_rt);
       const amrex::Real chi = cold.specific_enthalpy
          * cold.sound_speed_squared
-         + (eos.thermal_gamma - 1.0)
+         + (eos.thermal_gamma - 1.0_rt)
             * (thermal_energy - cold.pressure / rho);
-      const amrex::Real kappa = (eos.thermal_gamma - 1.0) * rho;
-      const amrex::Real enthalpy = 1.0 + specific_internal_energy
+      const amrex::Real kappa = (eos.thermal_gamma - 1.0_rt) * rho;
+      const amrex::Real enthalpy = 1.0_rt + specific_internal_energy
          + pressure / rho;
       return (chi + pressure * kappa / (rho * rho)) / enthalpy;
    } else if constexpr (EOSMethod == EOSPolytrope) {
@@ -504,6 +533,9 @@ RelativisticCharacteristicState relativistic_characteristic_state(
    EOSParams const& eos
 ) noexcept
 {
+   if (rho == 0.0_rt) {
+      return {1.0_rt, 0.0_rt};
+   }
    if constexpr (EOSMethod == EOSRuntime) {
       if (eos.method == EOSCompose) {
          return relativistic_characteristic_state<EOSCompose>(
@@ -529,14 +561,14 @@ RelativisticCharacteristicState relativistic_characteristic_state(
          rho, specific_internal_energy, cold, eos
       );
       const amrex::Real thermal_energy = specific_internal_energy
-         - (cold.energy_density / rho - 1.0);
+         - (cold.energy_density / rho - 1.0_rt);
       const amrex::Real chi = cold.specific_enthalpy
          * cold.sound_speed_squared
-         + (eos.thermal_gamma - 1.0)
+         + (eos.thermal_gamma - 1.0_rt)
             * (thermal_energy - cold.pressure / rho);
-      const amrex::Real kappa = (eos.thermal_gamma - 1.0) * rho;
+      const amrex::Real kappa = (eos.thermal_gamma - 1.0_rt) * rho;
       const amrex::Real specific_enthalpy =
-         1.0 + specific_internal_energy + pressure / rho;
+         1.0_rt + specific_internal_energy + pressure / rho;
       return {
          specific_enthalpy,
          (chi + pressure * kappa / (rho * rho)) / specific_enthalpy,
@@ -620,7 +652,7 @@ amrex::Real magnetic_energy_density(amrex::Real bx, amrex::Real by, amrex::Real 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real magnetic_energy_density(StateVector3 const& magnetic) noexcept
 {
-   return 0.5 * squared_norm(magnetic);
+   return 0.5_rt * squared_norm(magnetic);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -812,13 +844,13 @@ amrex::Real mhd_fast_speed_from_components(
 {
    const amrex::Real a = sound_speed_from_primitive<EOSMethod>(rho, pressure, eos);
    const amrex::Real a2 = a * a;
-   const amrex::Real inv_rho = 1.0 / rho;
+   const amrex::Real inv_rho = 1.0_rt / rho;
    const amrex::Real b2 = (bn * bn + bt1 * bt1 + bt2 * bt2) * inv_rho;
    const amrex::Real bn2 = bn * bn * inv_rho;
    const amrex::Real discriminant =
-      amrex::max((a2 + b2) * (a2 + b2) - amrex::Real(4.0) * a2 * bn2, amrex::Real(0.0));
-   const amrex::Real cf2 = amrex::Real(0.5) * (a2 + b2 + std::sqrt(discriminant));
-   return std::sqrt(amrex::max(cf2, amrex::Real(0.0)));
+      amrex::max((a2 + b2) * (a2 + b2) - amrex::Real(4.0_rt) * a2 * bn2, amrex::Real(0.0_rt));
+   const amrex::Real cf2 = amrex::Real(0.5_rt) * (a2 + b2 + std::sqrt(discriminant));
+   return std::sqrt(amrex::max(cf2, amrex::Real(0.0_rt)));
 }
 
 template <int EOSMethod>

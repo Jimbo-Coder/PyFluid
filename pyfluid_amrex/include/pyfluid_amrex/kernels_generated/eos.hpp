@@ -34,27 +34,27 @@ amrex::Real ideal_gas_sound_speed_squared(amrex::Real rho, amrex::Real pressure,
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real polytrope_cold_pressure(amrex::Real rho, amrex::Real polytropic_k, amrex::Real polytropic_gamma) noexcept
 {
-   return polytropic_k*pow(rho, polytropic_gamma);
+   return polytropic_k*std::pow(rho, polytropic_gamma);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real polytrope_cold_energy_density(amrex::Real rho, amrex::Real polytropic_k, amrex::Real polytropic_gamma, amrex::Real cold_specific_energy_offset) noexcept
 {
    const amrex::Real tmp0 = polytropic_gamma - 1;
-   return (cold_specific_energy_offset*rho*tmp0 + polytropic_k*pow(rho, polytropic_gamma))/tmp0;
+   return (cold_specific_energy_offset*rho*tmp0 + polytropic_k*std::pow(rho, polytropic_gamma))/tmp0;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real polytrope_sound_speed_squared(amrex::Real rho, amrex::Real polytropic_k, amrex::Real polytropic_gamma) noexcept
 {
-   return polytropic_gamma*polytropic_k*pow(rho, polytropic_gamma - 1);
+   return polytropic_gamma*polytropic_k*std::pow(rho, polytropic_gamma - 1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real hybrid_polytrope_pressure_from_density_energy(amrex::Real rho, amrex::Real internal_energy_density, amrex::Real polytropic_k, amrex::Real polytropic_gamma, amrex::Real thermal_gamma, amrex::Real cold_specific_energy_offset) noexcept
 {
    const amrex::Real tmp0 = polytropic_gamma - 1;
-   const amrex::Real tmp1 = polytropic_k*pow(rho, polytropic_gamma);
+   const amrex::Real tmp1 = polytropic_k*std::pow(rho, polytropic_gamma);
    return (tmp0*tmp1 - (thermal_gamma - 1)*(tmp0*(cold_specific_energy_offset*rho - internal_energy_density) + tmp1))/tmp0;
 }
 
@@ -63,14 +63,14 @@ amrex::Real hybrid_polytrope_internal_energy_density_from_pressure(amrex::Real r
 {
    const amrex::Real tmp0 = polytropic_gamma*thermal_gamma;
    const amrex::Real tmp1 = cold_specific_energy_offset*rho;
-   const amrex::Real tmp2 = polytropic_k*pow(rho, polytropic_gamma);
+   const amrex::Real tmp2 = polytropic_k*std::pow(rho, polytropic_gamma);
    return (polytropic_gamma*pressure - polytropic_gamma*tmp1 - polytropic_gamma*tmp2 - pressure - thermal_gamma*tmp1 + thermal_gamma*tmp2 + tmp0*tmp1 + tmp1)/(-polytropic_gamma - thermal_gamma + tmp0 + 1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real hybrid_polytrope_sound_speed_squared(amrex::Real rho, amrex::Real pressure, amrex::Real polytropic_k, amrex::Real polytropic_gamma, amrex::Real thermal_gamma) noexcept
 {
-   const amrex::Real tmp0 = polytropic_k*pow(rho, polytropic_gamma);
+   const amrex::Real tmp0 = polytropic_k*std::pow(rho, polytropic_gamma);
    return (polytropic_gamma*tmp0 + pressure*thermal_gamma - thermal_gamma*tmp0)/rho;
 }
 
@@ -96,19 +96,19 @@ amrex::Real relativistic_ideal_gas_sound_speed_squared(amrex::Real specific_inte
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real relativistic_polytrope_pressure(amrex::Real rho, amrex::Real polytropic_k, amrex::Real polytropic_gamma) noexcept
 {
-   return polytropic_k*pow(rho, polytropic_gamma);
+   return polytropic_k*std::pow(rho, polytropic_gamma);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real relativistic_polytrope_specific_enthalpy(amrex::Real rho, amrex::Real specific_internal_energy, amrex::Real polytropic_k, amrex::Real polytropic_gamma) noexcept
 {
-   return polytropic_k*pow(rho, polytropic_gamma)/rho + specific_internal_energy + 1;
+   return polytropic_k*std::pow(rho, polytropic_gamma)/rho + specific_internal_energy + 1;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real relativistic_polytrope_sound_speed_squared(amrex::Real rho, amrex::Real specific_internal_energy, amrex::Real polytropic_k, amrex::Real polytropic_gamma) noexcept
 {
-   const amrex::Real tmp0 = polytropic_k*pow(rho, polytropic_gamma);
+   const amrex::Real tmp0 = polytropic_k*std::pow(rho, polytropic_gamma);
    return polytropic_gamma*tmp0/(rho*(specific_internal_energy + 1) + tmp0);
 }
 
@@ -116,7 +116,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real relativistic_hybrid_polytrope_pressure(amrex::Real rho, amrex::Real specific_internal_energy, amrex::Real polytropic_k, amrex::Real polytropic_gamma, amrex::Real thermal_gamma, amrex::Real cold_specific_energy_offset) noexcept
 {
    const amrex::Real tmp0 = polytropic_gamma - 1;
-   const amrex::Real tmp1 = polytropic_k*pow(rho, polytropic_gamma);
+   const amrex::Real tmp1 = polytropic_k*std::pow(rho, polytropic_gamma);
    return (tmp0*tmp1 - (thermal_gamma - 1)*(rho*tmp0*(cold_specific_energy_offset - specific_internal_energy) + tmp1))/tmp0;
 }
 
@@ -124,7 +124,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real relativistic_hybrid_polytrope_specific_enthalpy(amrex::Real rho, amrex::Real specific_internal_energy, amrex::Real polytropic_k, amrex::Real polytropic_gamma, amrex::Real thermal_gamma, amrex::Real cold_specific_energy_offset) noexcept
 {
    const amrex::Real tmp0 = polytropic_gamma - 1;
-   const amrex::Real tmp1 = polytropic_k*pow(rho, polytropic_gamma);
+   const amrex::Real tmp1 = polytropic_k*std::pow(rho, polytropic_gamma);
    const amrex::Real tmp2 = rho*tmp0;
    return (tmp0*tmp1 + tmp2*(specific_internal_energy + 1) - (thermal_gamma - 1)*(tmp1 + tmp2*(cold_specific_energy_offset - specific_internal_energy)))/(rho*tmp0);
 }
@@ -134,7 +134,7 @@ amrex::Real relativistic_hybrid_polytrope_sound_speed_squared(amrex::Real rho, a
 {
    const amrex::Real tmp0 = polytropic_gamma - 1;
    const amrex::Real tmp1 = rho*tmp0;
-   const amrex::Real tmp2 = polytropic_k*pow(rho, polytropic_gamma);
+   const amrex::Real tmp2 = polytropic_k*std::pow(rho, polytropic_gamma);
    const amrex::Real tmp3 = tmp0*tmp2;
    const amrex::Real tmp4 = thermal_gamma - 1;
    const amrex::Real tmp5 = tmp1*(cold_specific_energy_offset - specific_internal_energy);

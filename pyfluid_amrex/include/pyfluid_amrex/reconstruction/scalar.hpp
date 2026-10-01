@@ -9,23 +9,25 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct ScalarFaceValues {
-   amrex::Real left = 0.0;
-   amrex::Real right = 0.0;
+   amrex::Real left = 0.0_rt;
+   amrex::Real right = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real minmod(amrex::Real a, amrex::Real b) noexcept
 {
-   if (a * b <= 0.0) {
-      return 0.0;
+   if (a * b <= 0.0_rt) {
+      return 0.0_rt;
    }
-   return a > 0.0 ? amrex::min(a, b) : amrex::max(a, b);
+   return a > 0.0_rt ? amrex::min(a, b) : amrex::max(a, b);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real mc_slope(amrex::Real qm, amrex::Real q0, amrex::Real qp) noexcept
 {
-   const amrex::Real centered = 0.5 * (qp - qm);
-   const amrex::Real limited = minmod(2.0 * (q0 - qm), 2.0 * (qp - q0));
+   const amrex::Real centered = 0.5_rt * (qp - qm);
+   const amrex::Real limited = minmod(2.0_rt * (q0 - qm), 2.0_rt * (qp - q0));
    return minmod(centered, limited);
 }
 
@@ -33,16 +35,16 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE amrex::Real positivity_limiter_theta(am
                                                                               amrex::Real floor) noexcept
 {
    if (face >= floor) {
-      return 1.0;
+      return 1.0_rt;
    }
    if (!amrex::Math::isfinite(face) || !amrex::Math::isfinite(center) || center <= floor) {
-      return 0.0;
+      return 0.0_rt;
    }
    const amrex::Real denominator = center - face;
-   if (denominator <= 0.0) {
-      return 0.0;
+   if (denominator <= 0.0_rt) {
+      return 0.0_rt;
    }
-   return amrex::max(0.0, amrex::min(1.0, (center - floor) / denominator));
+   return amrex::max(0.0_rt, amrex::min(1.0_rt, (center - floor) / denominator));
 }
 
 template <int Direction, int Component>
@@ -102,8 +104,8 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE ScalarFaceValues pwl_primitive_componen
    const amrex::Real qr = state(ir, jr, kr, Component);
    const amrex::Real qrp = primitive_component_neighbor<Direction, Component>(state, ir, jr, kr, 1);
    return {
-      ql + 0.5 * mc_slope(qlm, ql, qr),
-      qr - 0.5 * mc_slope(ql, qr, qrp),
+      ql + 0.5_rt * mc_slope(qlm, ql, qr),
+      qr - 0.5_rt * mc_slope(ql, qr, qrp),
    };
 }
 

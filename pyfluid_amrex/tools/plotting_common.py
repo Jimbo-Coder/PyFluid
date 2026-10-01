@@ -132,7 +132,9 @@ def plot_scalar_report(
          "external_energy_rel_error",
       )
    )
-   if has_external_budget and any(row["external_budget_valid"] > 0.5 for row in rows):
+   if has_external_budget and any(
+      row.get("external_mass_budget_valid", row["external_budget_valid"]) > 0.5 for row in rows
+   ):
       ax.semilogy(
          t,
          positive([row["external_mass_rel_error"] for row in rows]),
@@ -140,6 +142,7 @@ def plot_scalar_report(
          linewidth=2.0,
          **markers,
       )
+   if has_external_budget and any(row["external_budget_valid"] > 0.5 for row in rows):
       ax.semilogy(
          t,
          positive([row["external_energy_rel_error"] for row in rows]),

@@ -10,9 +10,68 @@
 #include "pyfluid_amrex/initial_data/kerr_schild.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
+#include "pyfluid_amrex/reference_metric_spacetime.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
+
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+ReferenceMetricSpacetimeGeometry initial_data_reference_spacetime_geometry_at_cell(
+   FixedSpacetimeParameters const& spacetime,
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& lower,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& spacing,
+   int i,
+   int j,
+   int k,
+   amrex::Real time
+) noexcept
+{
+   const auto q = mesh_coordinate_triplet_at_location(
+      coordinate, axes, lower, spacing, i, j, k, false, false, false
+   );
+   const auto position = mesh_coordinate_triplet_to_cartesian(coordinate, q);
+   const FixedSpacetimeGeometry cartesian = initial_data_spacetime_geometry(
+      spacetime, position[0], position[1], position[2], time
+   );
+   return reference_metric_spacetime_geometry_from_cartesian(
+      cartesian, coordinate, axes, q
+   );
+}
+
+inline amrex::Real initial_data_reference_lapse_at_mesh_center(
+   FixedSpacetimeParameters const& spacetime,
+   int coordinate,
+   MeshAxes const& axes,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& problo,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& probhi
+)
+{
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> center{};
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> zero_spacing{};
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      center[direction] = 0.5_rt * (problo[direction] + probhi[direction]);
+   }
+   const auto q = mesh_coordinate_triplet_at_location(
+      coordinate,
+      axes,
+      center,
+      zero_spacing,
+      0,
+      0,
+      0,
+      false,
+      false,
+      false
+   );
+   const auto position = mesh_coordinate_triplet_to_cartesian(coordinate, q);
+   return initial_data_spacetime_geometry(
+      spacetime, position[0], position[1], position[2], 0.0_rt
+   ).metric.lapse;
+}
 
 template <int EOSMethod>
 inline void initialize_relativistic_state_method(
@@ -28,26 +87,23 @@ inline void initialize_relativistic_state_method(
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes axes = mesh_axes_layout(cfg);
    const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
-   validate_fixed_spacetime_domain(spacetime, geometry);
+   validate_reference_metric_fixed_spacetime_domain(
+      spacetime, geometry, mesh_coordinate, axes
+   );
    const PhysicalSystem system = physical_system(cfg);
    const bool magnetized = physical_system_has_magnetic_field(system);
    const bool initialize_magnetic_from_id = initial_data.fields.magnetic_from_id;
    const FluidInitialDataParameters parameters = fluid_initial_data_parameters(
       cfg, initial_data
    );
-   const FixedSpacetimeGeometry reference_geometry = initial_data_spacetime_geometry(
-      spacetime,
-      0.5 * (problo[0] + probhi[0]),
-      AMREX_SPACEDIM >= 2 ? 0.5 * (problo[1] + probhi[1]) : 0.0,
-      AMREX_SPACEDIM == 3 ? 0.5 * (problo[2] + probhi[2]) : 0.0,
-      0.0
-   );
    const FluidInitialDataContext context{
       problo,
       probhi,
       dx,
       AMREX_SPACEDIM >= 2 && geometry.isPeriodic(1),
-      reference_geometry.metric.lapse,
+      initial_data_reference_lapse_at_mesh_center(
+         spacetime, mesh_coordinate, axes, problo, probhi
+      ),
    };
 
 #ifdef AMREX_USE_OMP
@@ -60,20 +116,36 @@ inline void initialize_relativistic_state_method(
          const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
             mesh_coordinate, axes, problo, dx, i, j, k
          );
-         const FixedSpacetimeGeometry local_geometry = initial_data_spacetime_geometry(
-            spacetime,
-            sample.physical.q1,
-            AMREX_SPACEDIM >= 2 ? sample.physical.q2 : 0.0,
-            AMREX_SPACEDIM == 3 ? sample.physical.q3 : 0.0,
-            0.0
-         );
+         const ReferenceMetricSpacetimeGeometry local_geometry =
+            initial_data_reference_spacetime_geometry_at_cell(
+               spacetime,
+               mesh_coordinate,
+               axes,
+               problo,
+               dx,
+               i,
+               j,
+               k,
+               0.0_rt
+            );
+         const FixedSpacetimeGeometry cartesian_geometry =
+            initial_data_spacetime_geometry(
+               spacetime,
+               sample.physical.q1,
+               sample.physical.q2,
+               sample.physical.q3,
+               0.0_rt
+            );
+         const SpacetimeMetric local_metric = magnetized
+            ? cartesian_geometry.metric
+            : local_geometry.metric;
          FluidPrimitiveSample point = sample_fluid_initial_data<EOSMethod>(
-            parameters, context, sample, local_geometry, initial_data
+            parameters, context, sample, local_metric, initial_data
          );
          if (!initialize_magnetic_from_id) {
-            point.b1 = 0.0;
-            point.b2 = 0.0;
-            point.b3 = 0.0;
+            point.b1 = 0.0_rt;
+            point.b2 = 0.0_rt;
+            point.b3 = 0.0_rt;
          }
          if (magnetized) {
             const RMHDPrimitive primitive{
@@ -136,10 +208,13 @@ inline void convert_newtonian_initial_state_to_relativistic_method(
 {
    const auto lower = geometry.ProbLoArray();
    const auto spacing = geometry.CellSizeArray();
+   const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
+   const MeshAxes axes = mesh_axes_layout(cfg);
    const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
    const EOSParams eos = eos_params(cfg);
    const bool magnetized = physical_system(cfg) == PhysicalSystem::RMHD;
    const bool magnetic_from_id = initial_data.fields.magnetic_from_id;
+   const bool exact_vacuum = relativistic_exterior_state(cfg).is_vacuum();
 
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -151,17 +226,17 @@ inline void convert_newtonian_initial_state_to_relativistic_method(
       const auto source = newtonian_state.const_array(mfi);
       const auto destination = relativistic_state.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const FixedSpacetimeGeometry geometry_at_cell =
-            initial_data_spacetime_geometry(
+         const ReferenceMetricSpacetimeGeometry geometry_at_cell =
+            initial_data_reference_spacetime_geometry_at_cell(
                spacetime,
-               lower[0] + (static_cast<amrex::Real>(i) + 0.5) * spacing[0],
-               AMREX_SPACEDIM >= 2
-                  ? lower[1] + (static_cast<amrex::Real>(j) + 0.5) * spacing[1]
-                  : 0.0,
-               AMREX_SPACEDIM == 3
-                  ? lower[2] + (static_cast<amrex::Real>(k) + 0.5) * spacing[2]
-                  : 0.0,
-               0.0
+               mesh_coordinate,
+               axes,
+               lower,
+               spacing,
+               i,
+               j,
+               k,
+               0.0_rt
             );
          if (magnetized) {
             const MHDPrimitive primitive = primitive_from_conserved<EOSMethod>(
@@ -176,9 +251,9 @@ inline void convert_newtonian_initial_state_to_relativistic_method(
                primitive.v1,
                primitive.v2,
                primitive.v3,
-               magnetic_from_id ? primitive.b1 : 0.0,
-               magnetic_from_id ? primitive.b2 : 0.0,
-               magnetic_from_id ? primitive.b3 : 0.0,
+               magnetic_from_id ? primitive.b1 : 0.0_rt,
+               magnetic_from_id ? primitive.b2 : 0.0_rt,
+               magnetic_from_id ? primitive.b3 : 0.0_rt,
             };
             store_rmhd_conserved(
                destination,
@@ -190,8 +265,21 @@ inline void convert_newtonian_initial_state_to_relativistic_method(
                )
             );
          } else {
+            const HydroState source_conserved = load_hydro_state(
+               source, i, j, k
+            );
+            if (exact_vacuum && source_conserved.rho == 0.0_rt
+                && source_conserved.mom1 == 0.0_rt
+                && source_conserved.mom2 == 0.0_rt
+                && source_conserved.mom3 == 0.0_rt
+                && source_conserved.energy == 0.0_rt) {
+               store_rhd_conserved(
+                  destination, i, j, k, RHDConserved{}
+               );
+               return;
+            }
             const HydroPrimitive primitive = primitive_from_conserved<EOSMethod>(
-               load_hydro_state(source, i, j, k), eos
+               source_conserved, eos
             );
             const RHDPrimitive relativistic_primitive{
                primitive.rho,

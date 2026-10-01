@@ -1,0 +1,21 @@
+--- a/src/compiler/llvm-to-backend/metal/HLExtractionPass.cpp
++++ b/src/compiler/llvm-to-backend/metal/HLExtractionPass.cpp
+@@ -113,6 +113,10 @@
+   }
+ 
+   void extractConditions(NodePtr n) {
++    // Shared regions can occur in both branches of a sliced CFG. Once their
++    // tree has been structured, reuse it: rebuilding would index generated
++    // If nodes as child regions and discard the region entry's payload.
++    if (!n || !structuredNodes_.insert(n).second) return;
+     switch (n->kind) {
+       case NodeKind::List: {
+         auto ln = std::static_pointer_cast<ListNode>(n);
+@@ -671,6 +675,7 @@
+   }
+ 
+ private:
++  std::unordered_set<NodePtr> structuredNodes_;
+   const llvm::Function& F_;
+   const llvm::LoopInfo& LI_;
+   const llvm::PostDominatorTree& PDT_;

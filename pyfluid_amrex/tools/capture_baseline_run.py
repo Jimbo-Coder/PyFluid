@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
+import json
 import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from validation_common import ROOT
+from validation_common import ROOT, amrex_executable
 
 
 DEFAULT_ARCHIVE_ROOT = ROOT / "runs" / "baselines"
@@ -58,12 +60,35 @@ def run_logged(command: list[str], log_path: Path) -> int:
          command,
          cwd=ROOT,
          text=True,
-         stdout=subprocess.PIPE,
+         stdout=log,
          stderr=subprocess.STDOUT,
          check=False,
       )
-      log.write(completed.stdout)
    return completed.returncode
+
+
+def file_sha256(path: Path) -> str:
+   digest = hashlib.sha256()
+   with path.open("rb") as handle:
+      for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+         digest.update(chunk)
+   return digest.hexdigest()
+
+
+def write_identity(archive: Path) -> None:
+   source_hashes = {
+      str(path.relative_to(ROOT)): file_sha256(path)
+      for path in sorted((ROOT / "pyfluid_amrex").rglob("*"))
+      if path.is_file() and not {"__pycache__", ".uv-cache"}.intersection(path.parts)
+   }
+   executables = {}
+   for dim in (1, 2, 3):
+      path = amrex_executable(dim)
+      if path.is_file():
+         key = str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
+         executables[key] = file_sha256(path)
+   identity = {"source_sha256": source_hashes, "executable_sha256": executables}
+   (archive / "identity.json").write_text(json.dumps(identity, indent=2) + "\n")
 
 
 def copy_if_exists(source: Path, target: Path, copied: list[tuple[Path, Path]]) -> None:
@@ -113,7 +138,7 @@ def write_manifest(
 ) -> None:
    created = datetime.now().isoformat(timespec="seconds")
    branch = git_value(["branch", "--show-current"])
-   head = git_value(["rev-parse", "--short", "HEAD"])
+   head = git_value(["rev-parse", "HEAD"])
    status = git_value(["status", "--short"])
 
    lines = [
@@ -131,6 +156,7 @@ def write_manifest(
       "",
       "This directory is one deliberately frozen baseline run.",
       "It contains that suite run's summary/logs and optional benchmark result only.",
+      "Dependency manifests and source/executable hashes record this snapshot.",
       "It does not copy accumulated validation_history.tsv/performance_history.tsv.",
    ]
    (archive / "manifest.txt").write_text("\n".join(lines) + "\n")
@@ -170,7 +196,7 @@ def main() -> int:
       default=None,
       help="Also run benchmark_pyfluid.py once and save that run's result. Defaults to on except for --level full, whose suite already includes performance steps.",
    )
-   parser.add_argument("--allow-benchmark-warn", action=argparse.BooleanOptionalAction, default=True)
+   parser.add_argument("--allow-benchmark-warn", action=argparse.BooleanOptionalAction, default=False)
    args = parser.parse_args()
 
    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -193,9 +219,19 @@ def main() -> int:
 
    print(f"baseline={archive.relative_to(ROOT)}")
    print(f"running suite: {' '.join(suite_command)}", flush=True)
+   # Invalid arguments can fail before the suite resets its working output.
+   # Never attach an earlier run's summary or logs to a fresh baseline.
+   if SUITE_RUN_ROOT.exists():
+      shutil.rmtree(SUITE_RUN_ROOT)
    suite_returncode = run_logged(suite_command, archive / "suite.stdout.log")
 
    copied: list[tuple[Path, Path]] = []
+   for name in ("amrex.toml", "metal.toml"):
+      copy_if_exists(
+         ROOT / "pyfluid_amrex" / "dependencies" / name,
+         archive / "dependencies" / name,
+         copied,
+      )
    suite_summary = SUITE_RUN_ROOT / "summary.tsv"
    copy_if_exists(suite_summary, archive / "validation_summary.tsv", copied)
    copy_if_exists(SUITE_RUN_ROOT / "logs", archive / "validation_logs", copied)
@@ -212,7 +248,7 @@ def main() -> int:
    performance_command: list[str] | None = None
    performance_returncode: int | None = None
    with_performance = args.with_performance if args.with_performance is not None else args.level != "full"
-   if with_performance:
+   if with_performance and suite_returncode == 0:
       performance_command = [
          "uv",
          "run",
@@ -223,8 +259,24 @@ def main() -> int:
       if args.allow_benchmark_warn:
          performance_command.append("--allow-warn")
       print(f"running performance: {' '.join(performance_command)}", flush=True)
+      if PERF_RUN_ROOT.exists():
+         shutil.rmtree(PERF_RUN_ROOT)
       performance_returncode = run_logged(performance_command, archive / "performance.stdout.log")
       copy_if_exists(PERF_RUN_ROOT / "results.tsv", archive / "performance_results.tsv", copied)
+   elif with_performance:
+      print("skipping performance: validation suite failed", flush=True)
+
+   if (archive / "performance_results.tsv").exists():
+      for validation in sorted(PERF_RUN_ROOT.glob("*/validation.tsv")):
+         case_dir = validation.parent
+         for name in ("validation.tsv", "run.in", "run.log", "scalars.tsv"):
+            copy_if_exists(
+               case_dir / name,
+               archive / "performance_cases" / case_dir.name / name,
+               copied,
+            )
+
+   write_identity(archive)
 
    write_manifest(
       archive,

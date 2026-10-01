@@ -28,6 +28,12 @@ DIAGNOSTIC_EQUATION_RECORDS = (
       r"M_0 = \int_\Omega D\,d^3x",
    ),
    DiagnosticEquationRecord(
+      "baryon-flux",
+      "Valencia baryon flux through a spatial surface",
+      r"\mathcal F_0^i=D(\alpha v^i-\beta^i),\qquad"
+      r"\dot M_{0,\rm in}=-\oint_S\mathcal F_0^i\,dS_i",
+   ),
+   DiagnosticEquationRecord(
       "adm-mass-surface",
       "ADM mass surface integral",
       r"M_{\rm ADM}^{S}=\frac{1}{16\pi}\oint_{\partial\Omega}"
@@ -156,6 +162,33 @@ def conserved_diagnostic_integrands_kernel() -> StructKernel:
          passive_density,
          sp.Abs(divb),
       ),
+   )
+
+
+def baryon_flux_integrands_kernel() -> StructKernel:
+   densitized_density = sp.Symbol("densitized_density")
+   velocity = Vector(*(
+      sp.Symbol(f"velocity{component + 1}")
+      for component in range(DIMENSION)
+   ))
+   shift = Vector(*(
+      sp.Symbol(f"metric.shift{component + 1}")
+      for component in range(DIMENSION)
+   ))
+   lapse = sp.Symbol("metric.lapse", positive=True)
+   flux = densitized_density * (lapse * velocity - shift)
+   return StructKernel(
+      name="baryon_flux_integrands",
+      return_type="BaryonFluxIntegrands",
+      arguments=(
+         ("amrex::Real", "densitized_density"),
+         ("amrex::Real", "velocity1"),
+         ("amrex::Real", "velocity2"),
+         ("amrex::Real", "velocity3"),
+         ("const SpacetimeMetric&", "metric"),
+      ),
+      outputs=("flux1", "flux2", "flux3"),
+      expressions=tuple(flux),
    )
 
 
@@ -656,6 +689,7 @@ def matter_energy_flux_integrands_kernel() -> StructKernel:
 def diagnostic_kernels() -> tuple[StructKernel, ...]:
    return (
       conserved_diagnostic_integrands_kernel(),
+      baryon_flux_integrands_kernel(),
       adm_flux_integrands_kernel(),
       adm_constraint_volume_integrands_kernel(),
       weyl_radiation_integrands_kernel(),

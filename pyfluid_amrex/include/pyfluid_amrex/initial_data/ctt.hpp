@@ -3,18 +3,21 @@
 #include <AMReX_MultiFab.H>
 #include <AMReX_Vector.H>
 
+#include "pyfluid_amrex/eos/types.hpp"
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct ConformalTraceFreeTensor {
-   amrex::Real a11 = 0.0;
-   amrex::Real a12 = 0.0;
-   amrex::Real a13 = 0.0;
-   amrex::Real a22 = 0.0;
-   amrex::Real a23 = 0.0;
-   amrex::Real a33 = 0.0;
-   amrex::Real squared = 0.0;
+   amrex::Real a11 = 0.0_rt;
+   amrex::Real a12 = 0.0_rt;
+   amrex::Real a13 = 0.0_rt;
+   amrex::Real a22 = 0.0_rt;
+   amrex::Real a23 = 0.0_rt;
+   amrex::Real a33 = 0.0_rt;
+   amrex::Real squared = 0.0_rt;
 };
 
 enum ConformalTraceFreeComponent : int {
@@ -30,30 +33,30 @@ enum ConformalTraceFreeComponent : int {
 
 struct CttHamiltonianOptions {
    int max_nonlinear_iterations = 100;
-   amrex::Real relative_update_tolerance = 1.0e-10;
-   amrex::Real relaxation = 0.5;
+   amrex::Real relative_update_tolerance = 1.0e-10_rt;
+   amrex::Real relaxation = 0.5_rt;
    InitialDataEllipticOptions linear;
 };
 
 struct CttHamiltonianResult {
    int nonlinear_iterations = 0;
-   amrex::Real relative_update = 0.0;
-   amrex::Real linear_residual = 0.0;
+   amrex::Real relative_update = 0.0_rt;
+   amrex::Real linear_residual = 0.0_rt;
    bool converged = false;
 };
 
 struct CttOptions {
    int max_coupled_iterations = 100;
-   amrex::Real relative_update_tolerance = 1.0e-10;
-   amrex::Real relaxation = 0.5;
+   amrex::Real relative_update_tolerance = 1.0e-10_rt;
+   amrex::Real relaxation = 0.5_rt;
    InitialDataEllipticOptions linear;
 };
 
 struct CttResult {
    int coupled_iterations = 0;
-   amrex::Real relative_update = 0.0;
-   amrex::Real hamiltonian_residual = 0.0;
-   amrex::Real momentum_residual = 0.0;
+   amrex::Real relative_update = 0.0_rt;
+   amrex::Real hamiltonian_residual = 0.0_rt;
+   amrex::Real momentum_residual = 0.0_rt;
    bool converged = false;
 };
 
@@ -64,8 +67,8 @@ enum class CttkMeanCurvatureBranch : int {
 
 struct CttkOptions {
    int max_coupled_iterations = 100;
-   amrex::Real relative_update_tolerance = 1.0e-10;
-   amrex::Real relaxation = 0.5;
+   amrex::Real relative_update_tolerance = 1.0e-10_rt;
+   amrex::Real relaxation = 0.5_rt;
    CttkMeanCurvatureBranch mean_curvature_branch =
       CttkMeanCurvatureBranch::negative;
    InitialDataEllipticOptions linear;
@@ -73,26 +76,26 @@ struct CttkOptions {
 
 struct CttkResult {
    int coupled_iterations = 0;
-   amrex::Real relative_update = 0.0;
-   amrex::Real hamiltonian_residual = 0.0;
-   amrex::Real momentum_residual = 0.0;
-   amrex::Real minimum_mean_curvature_squared = 0.0;
+   amrex::Real relative_update = 0.0_rt;
+   amrex::Real hamiltonian_residual = 0.0_rt;
+   amrex::Real momentum_residual = 0.0_rt;
+   amrex::Real minimum_mean_curvature_squared = 0.0_rt;
    bool converged = false;
 };
 
 struct XctsOptions {
    int max_coupled_iterations = 100;
-   amrex::Real relative_update_tolerance = 1.0e-10;
-   amrex::Real relaxation = 0.5;
+   amrex::Real relative_update_tolerance = 1.0e-10_rt;
+   amrex::Real relaxation = 0.5_rt;
    InitialDataEllipticOptions linear;
 };
 
 struct XctsResult {
    int coupled_iterations = 0;
-   amrex::Real relative_update = 0.0;
-   amrex::Real hamiltonian_residual = 0.0;
-   amrex::Real lapse_residual = 0.0;
-   amrex::Real momentum_residual = 0.0;
+   amrex::Real relative_update = 0.0_rt;
+   amrex::Real hamiltonian_residual = 0.0_rt;
+   amrex::Real lapse_residual = 0.0_rt;
+   amrex::Real momentum_residual = 0.0_rt;
    bool converged = false;
 };
 
@@ -104,7 +107,9 @@ CttHamiltonianResult solve_ctt_time_symmetric_hamiltonian(
    CttHamiltonianOptions const& options = {}
 );
 
-// Solve conformally flat, maximal CTT data in three spatial dimensions:
+// Solve the three-dimensional physical conformal CTT system. A reduced
+// Cartesian executable may omit coordinate dependence along inactive axes,
+// but it retains all three physical vector/tensor components:
 // Delta_L W^i = 8 pi psi^10 S^i and
 // Delta psi = -2 pi E psi^5 - (L W)^2/(8 psi^7).
 CttResult solve_ctt_constraints(
@@ -119,9 +124,10 @@ CttResult solve_ctt_constraints(
    CttOptions const& options = {}
 );
 
-// Solve pure conformally flat CTTK data in three spatial dimensions. The
-// conformal factor is prescribed; its valid and ghost values must represent
-// that fixed profile on the complete hierarchy.
+// Solve the three-dimensional physical conformal CTTK system. Reduced
+// Cartesian executables retain all physical components and set derivatives
+// along inactive axes to zero. The conformal factor is prescribed; its valid
+// and ghost values must represent that fixed profile on the complete hierarchy.
 CttkResult solve_cttk_constraints(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab const*> const& conformal_factor,
@@ -149,9 +155,11 @@ CttkResult solve_cttk_hybrid_constraints(
    CttkOptions const& options = {}
 );
 
-// Solve conformally flat, maximal, quasiequilibrium XCTS data in three
-// spatial dimensions. The unknowns are psi, alpha*psi, and beta^i; the free
-// data use dt gamma_tilde_ij = 0, K = 0, and dt K = 0.
+// Solve the three-dimensional physical conformally flat, maximal,
+// quasiequilibrium XCTS system. Reduced Cartesian executables retain all
+// physical components and set derivatives along inactive axes to zero. The
+// unknowns are psi, alpha*psi, and beta^i; the free data use
+// dt gamma_tilde_ij = 0, K = 0, and dt K = 0.
 XctsResult solve_xcts_constraints(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& conformal_factor,
@@ -184,6 +192,29 @@ XctsResult solve_axisymmetric_spherical_xcts_constraints(
    InitialDataEllipticBoundaryConditions const& conformal_correction_boundary,
    InitialDataEllipticBoundaryConditions const& lapse_correction_boundary,
    InitialDataEllipticBoundaryConditions const& azimuthal_shift_boundary,
+   XctsOptions const& options = {}
+);
+
+// Static, spherically symmetric XCTS specialization.  The nonlinear
+// Hamiltonian equation is advanced with Newton steps through the common
+// mapped spherical elliptic operator; the lapse equation is then solved as a
+// linear Helmholtz problem.  This preserves the compact physical branch that
+// can be unstable under the general Picard iteration.  Shift, momentum, and
+// conformal extrinsic curvature must vanish.
+XctsResult solve_static_spherical_xcts_constraints(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& conformal_factor,
+   amrex::Vector<amrex::MultiFab*> const& lapse_times_conformal_factor,
+   amrex::Vector<amrex::MultiFab*> const& azimuthal_shift,
+   amrex::Vector<amrex::MultiFab*> const& conformal_extrinsic_curvature,
+   amrex::Vector<amrex::MultiFab const*> const& energy_density,
+   amrex::Vector<amrex::MultiFab const*> const& azimuthal_momentum_density,
+   amrex::Vector<amrex::MultiFab const*> const& stress_trace,
+   InitialDataEllipticBoundaryConditions const& conformal_correction_boundary,
+   InitialDataEllipticBoundaryConditions const& lapse_correction_boundary,
+   amrex::MultiFab const* conformal_baryon_density = nullptr,
+   amrex::MultiFab const* specific_internal_energy = nullptr,
+   EOSParams const* eos = nullptr,
    XctsOptions const& options = {}
 );
 

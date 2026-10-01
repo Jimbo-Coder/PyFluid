@@ -1,6 +1,9 @@
 #include "amr/amr_solver_base.hpp"
 
 #include <AMReX_BoxIterator.H>
+#include <AMReX_GpuAtomic.H>
+#include <AMReX_GpuContainers.H>
+#include <AMReX_Reduce.H>
 
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/relativistic_boundary.hpp"
@@ -10,14 +13,50 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 namespace {
 
-constexpr amrex::Real preflight_round_trip_tolerance = 1.0e-7;
+// Detailed host formatting runs only after a failed bulk check. Copy that
+// FAB explicitly instead of dereferencing device storage in BoxIterator.
+amrex::FArrayBox copy_fab_for_debug(amrex::FArrayBox const& source, int num_components)
+{
+   amrex::FArrayBox host(source.box(), num_components, amrex::The_Pinned_Arena());
+   amrex::Gpu::dtoh_memcpy(host.dataPtr(), source.dataPtr(), host.nBytes());
+   return host;
+}
+
+// Recovery and reconversion include metric contractions and normalization.
+// Allow their accumulated roundoff independently of the physical error
+// budgets. The FP64 acceptance bounds remain unchanged.
+constexpr amrex::Real conversion_roundoff =
+   64.0_rt * std::numeric_limits<amrex::Real>::epsilon();
+constexpr amrex::Real preflight_conserved_round_trip_tolerance =
+   amrex::max(1.0e-7_rt, conversion_roundoff);
+// Near a cold, low-density atmosphere the primitive variables are more
+// ill-conditioned than the conserved state.  Require a tight conserved
+// round trip, while allowing the two successful C2P inversions to differ at
+// their repeatability bound or the arithmetic resolution, whichever is larger.
+constexpr amrex::Real preflight_primitive_round_trip_tolerance =
+   amrex::max(1.0e-6_rt, conversion_roundoff);
+
+// Accepted states must be physical and reproduce the conserved state.
+// Repeated primitive inversions near a cold admissibility boundary are
+// ill-conditioned; their stricter repeatability check belongs to IC preflight.
+enum class RelativisticCheck {
+   Recovery,
+   ConservedRoundTrip,
+   InitialDataRoundTrip,
+};
 
 struct RelativisticRoundTripResult {
    int failure_reason = 0;
-   amrex::Real conserved_error = 0.0;
-   amrex::Real primitive_error = 0.0;
+   amrex::Real conserved_error = 0.0_rt;
+   amrex::Real primitive_error = 0.0_rt;
+   int nonfinite_conserved = 0;
+   int nonfinite_metric_volume = 0;
+   int nonpositive_density = 0;
+   int nonpositive_energy = 0;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -47,14 +86,26 @@ amrex::Real rhd_conserved_round_trip_error(
    amrex::Real error = preflight_scaled_error(
       actual.dens, expected.dens, scale_floor
    );
+   // Momentum is one covector. Lowering a recovered velocity mixes its
+   // components, so cancellation in a nearly zero transverse component must
+   // be measured against the whole vector, not that component's tiny value.
+   // Keep density and energy independently scaled to retain cold-state checks.
+   const amrex::GpuArray<amrex::Real, 6> momentum_components{
+      actual.mom1, actual.mom2, actual.mom3,
+      expected.mom1, expected.mom2, expected.mom3,
+   };
+   amrex::Real momentum_scale = scale_floor;
+   for (amrex::Real component : momentum_components) {
+      momentum_scale = amrex::max(momentum_scale, amrex::Math::abs(component));
+   }
    error = amrex::max(error, preflight_scaled_error(
-      actual.mom1, expected.mom1, scale_floor
+      actual.mom1, expected.mom1, momentum_scale
    ));
    error = amrex::max(error, preflight_scaled_error(
-      actual.mom2, expected.mom2, scale_floor
+      actual.mom2, expected.mom2, momentum_scale
    ));
    error = amrex::max(error, preflight_scaled_error(
-      actual.mom3, expected.mom3, scale_floor
+      actual.mom3, expected.mom3, momentum_scale
    ));
    return amrex::max(error, preflight_scaled_error(
       actual.tau, expected.tau, scale_floor
@@ -72,19 +123,19 @@ amrex::Real rhd_primitive_round_trip_error(
       actual.rho, expected.rho, eos.rho_floor
    );
    error = amrex::max(error, preflight_scaled_error(
-      actual.eps, expected.eps, 1.0e-14
+      actual.eps, expected.eps, 1.0e-14_rt
    ));
    error = amrex::max(error, preflight_scaled_error(
       actual.pressure, expected.pressure, eos.pressure_floor
    ));
    error = amrex::max(error, preflight_scaled_error(
-      actual.v1, expected.v1, 1.0
+      actual.v1, expected.v1, 1.0_rt
    ));
    error = amrex::max(error, preflight_scaled_error(
-      actual.v2, expected.v2, 1.0
+      actual.v2, expected.v2, 1.0_rt
    ));
    return amrex::max(error, preflight_scaled_error(
-      actual.v3, expected.v3, 1.0
+      actual.v3, expected.v3, 1.0_rt
    ));
 }
 
@@ -154,7 +205,7 @@ RelativisticRoundTripResult evaluate_rhd_round_trip(
    RHDConserved const& initial_conserved,
    SpacetimeMetric const& metric,
    EOSParams const& eos,
-   bool require_round_trip
+   RelativisticCheck check
 ) noexcept
 {
    RelativisticRoundTripResult result;
@@ -164,6 +215,15 @@ RelativisticRoundTripResult evaluate_rhd_round_trip(
    if (!initial_recovery.attempt.succeeded()) {
       result.failure_reason = 10
          + static_cast<int>(initial_recovery.attempt.status);
+      const RHDRecoveryState recovery = generated::rhd_recovery_state(
+         initial_conserved, metric
+      );
+      result.nonfinite_conserved = finite_rhd_conserved(initial_conserved)
+         ? 0 : 1;
+      result.nonfinite_metric_volume =
+         amrex::Math::isfinite(metric.sqrt_det_gamma) ? 0 : 1;
+      result.nonpositive_density = recovery.dens > 0.0_rt ? 0 : 1;
+      result.nonpositive_energy = recovery.dens + recovery.tau > 0.0_rt ? 0 : 1;
       return result;
    }
 
@@ -179,7 +239,7 @@ RelativisticRoundTripResult evaluate_rhd_round_trip(
    }
 
    const amrex::Real conserved_scale_floor = amrex::max(
-      1.0e-30, eos.rho_floor * 1.0e-6
+      1.0e-30_rt, eos.rho_floor * 1.0e-6_rt
    );
    result.conserved_error = rhd_conserved_round_trip_error(
       regenerated_conserved, initial_conserved, conserved_scale_floor
@@ -187,10 +247,13 @@ RelativisticRoundTripResult evaluate_rhd_round_trip(
    result.primitive_error = rhd_primitive_round_trip_error(
       regenerated_recovery.primitive, initial_recovery.primitive, eos
    );
-   if (require_round_trip
-       && (result.conserved_error > preflight_round_trip_tolerance
-           || result.primitive_error > preflight_round_trip_tolerance)) {
+   if (check != RelativisticCheck::Recovery
+       && result.conserved_error > preflight_conserved_round_trip_tolerance) {
       result.failure_reason = 30;
+   }
+   if (check == RelativisticCheck::InitialDataRoundTrip
+       && result.primitive_error > preflight_primitive_round_trip_tolerance) {
+      result.failure_reason = 31;
    }
    return result;
 }
@@ -200,7 +263,7 @@ RelativisticRoundTripResult evaluate_rmhd_round_trip(
    RMHDConserved const& initial_conserved,
    SpacetimeMetric const& metric,
    EOSParams const& eos,
-   bool require_round_trip
+   RelativisticCheck check
 ) noexcept
 {
    RelativisticRoundTripResult result;
@@ -210,6 +273,15 @@ RelativisticRoundTripResult evaluate_rmhd_round_trip(
    if (!initial_recovery.succeeded()) {
       result.failure_reason = 10
          + static_cast<int>(initial_recovery.attempt.status);
+      const RMHDRecoveryState recovery = generated::rmhd_recovery_state(
+         initial_conserved, metric
+      );
+      result.nonfinite_conserved = finite_rmhd_conserved(initial_conserved)
+         ? 0 : 1;
+      result.nonfinite_metric_volume =
+         amrex::Math::isfinite(metric.sqrt_det_gamma) ? 0 : 1;
+      result.nonpositive_density = recovery.dens > 0.0_rt ? 0 : 1;
+      result.nonpositive_energy = recovery.dens + recovery.tau > 0.0_rt ? 0 : 1;
       return result;
    }
 
@@ -225,7 +297,7 @@ RelativisticRoundTripResult evaluate_rmhd_round_trip(
    }
 
    const amrex::Real conserved_scale_floor = amrex::max(
-      1.0e-30, eos.rho_floor * 1.0e-6
+      1.0e-30_rt, eos.rho_floor * 1.0e-6_rt
    );
    result.conserved_error = rmhd_conserved_round_trip_error(
       regenerated_conserved, initial_conserved, conserved_scale_floor
@@ -233,24 +305,41 @@ RelativisticRoundTripResult evaluate_rmhd_round_trip(
    result.primitive_error = rmhd_primitive_round_trip_error(
       regenerated_recovery.primitive, initial_recovery.primitive, eos
    );
-   if (require_round_trip
-       && (result.conserved_error > preflight_round_trip_tolerance
-           || result.primitive_error > preflight_round_trip_tolerance)) {
+   if (check != RelativisticCheck::Recovery
+       && result.conserved_error > preflight_conserved_round_trip_tolerance) {
       result.failure_reason = 30;
+   }
+   if (check == RelativisticCheck::InitialDataRoundTrip
+       && result.primitive_error > preflight_primitive_round_trip_tolerance) {
+      result.failure_reason = 31;
    }
    return result;
 }
+
+struct PhysicalFailure {
+   int found = 0;
+   int i = std::numeric_limits<int>::min();
+   int j = std::numeric_limits<int>::min();
+   int k = std::numeric_limits<int>::min();
+   amrex::Real rho = std::numeric_limits<amrex::Real>::quiet_NaN();
+   amrex::Real pressure = std::numeric_limits<amrex::Real>::quiet_NaN();
+   amrex::GpuArray<amrex::Real, NVAR_HYDRO> conserved{};
+};
 
 struct RelativisticPreflightSummary {
    amrex::Long cells = 0;
    amrex::Long failures = 0;
    int failure_reason = 0;
-   amrex::Real conserved_error = 0.0;
-   amrex::Real primitive_error = 0.0;
+   amrex::Real conserved_error = 0.0_rt;
+   amrex::Real primitive_error = 0.0_rt;
    amrex::Real minimum_density = std::numeric_limits<amrex::Real>::max();
    amrex::Real minimum_energy = std::numeric_limits<amrex::Real>::max();
    amrex::Real minimum_admissibility_margin =
       std::numeric_limits<amrex::Real>::max();
+   amrex::Long nonfinite_conserved = 0;
+   amrex::Long nonfinite_metric_volume = 0;
+   amrex::Long nonpositive_density = 0;
+   amrex::Long nonpositive_energy = 0;
 };
 
 template <PhysicalSystem System, int EOSMethod, typename MetricAccessorFactory>
@@ -258,14 +347,14 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level(
    amrex::MultiFab const& state,
    amrex::iMultiFab const& valid_mask,
    EOSParams const& eos,
-   bool require_round_trip,
+   RelativisticCheck check,
    MetricAccessorFactory&& metric_accessor_factory
 )
 {
    amrex::MultiFab result(
-      state.boxArray(), state.DistributionMap(), 8, 0
+      state.boxArray(), state.DistributionMap(), 12, 0
    );
-   result.setVal(0.0);
+   result.setVal(0.0_rt);
    result.setVal(std::numeric_limits<amrex::Real>::max(), 5, 3);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -276,7 +365,7 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level(
       const auto valid = valid_mask.const_array(mfi);
       const auto values = result.array(mfi);
       const auto metric_at = metric_accessor_factory(mfi);
-      amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::ParallelFor(box, [valid, conserved, metric_at, eos, check, values] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          if (valid(i, j, k, 0) == 0) {
             return;
          }
@@ -287,7 +376,7 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level(
             );
             const SpacetimeMetric cell_metric = metric_at(i, j, k);
             cell_result = evaluate_rhd_round_trip<EOSMethod>(
-               cell_conserved, cell_metric, eos, require_round_trip
+               cell_conserved, cell_metric, eos, check
             );
             if (cell_result.failure_reason != 0) {
                const RHDRecoveryState recovery = generated::rhd_recovery_state(
@@ -302,14 +391,18 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level(
          } else {
             cell_result = evaluate_rmhd_round_trip(
                load_rmhd_conserved(conserved, i, j, k), metric_at(i, j, k), eos,
-               require_round_trip
+               check
             );
          }
-         values(i, j, k, 0) = cell_result.failure_reason == 0 ? 0.0 : 1.0;
+         values(i, j, k, 0) = cell_result.failure_reason == 0 ? 0.0_rt : 1.0_rt;
          values(i, j, k, 1) = cell_result.failure_reason;
          values(i, j, k, 2) = cell_result.conserved_error;
          values(i, j, k, 3) = cell_result.primitive_error;
-         values(i, j, k, 4) = 1.0;
+         values(i, j, k, 4) = 1.0_rt;
+         values(i, j, k, 8) = cell_result.nonfinite_conserved;
+         values(i, j, k, 9) = cell_result.nonfinite_metric_volume;
+         values(i, j, k, 10) = cell_result.nonpositive_density;
+         values(i, j, k, 11) = cell_result.nonpositive_energy;
       });
    }
 
@@ -322,6 +415,10 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level(
    summary.minimum_density = result.min(5);
    summary.minimum_energy = result.min(6);
    summary.minimum_admissibility_margin = result.min(7);
+   summary.nonfinite_conserved = static_cast<amrex::Long>(result.sum(8));
+   summary.nonfinite_metric_volume = static_cast<amrex::Long>(result.sum(9));
+   summary.nonpositive_density = static_cast<amrex::Long>(result.sum(10));
+   summary.nonpositive_energy = static_cast<amrex::Long>(result.sum(11));
    return summary;
 }
 
@@ -334,7 +431,9 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level(
    FixedSpacetimeParameters const& fixed_spacetime,
    EOSParams const& eos,
    amrex::Real time,
-   bool require_round_trip
+   int coordinate,
+   MeshAxes const& axes,
+   RelativisticCheck check
 )
 {
    if (cell_spacetime != nullptr) {
@@ -342,12 +441,8 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level(
          state,
          valid_mask,
          eos,
-         require_round_trip,
-         [&](amrex::MFIter const& mfi) {
-            return StoredSpacetimeCellMetricAccessor{
-               cell_spacetime->const_array(mfi)
-            };
-         }
+         check,
+         StoredSpacetimeCellMetricFactory{*cell_spacetime}
       );
    }
    const auto lower = geometry.ProbLoArray();
@@ -356,11 +451,9 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level(
       state,
       valid_mask,
       eos,
-      require_round_trip,
-      [=](amrex::MFIter const&) {
-         return FixedSpacetimeCellMetricAccessor{
-            fixed_spacetime, lower, spacing, time
-         };
+      check,
+      FixedSpacetimeCellMetricFactory{
+         {fixed_spacetime, lower, spacing, coordinate, axes, time}
       }
    );
 }
@@ -375,20 +468,22 @@ RelativisticPreflightSummary evaluate_relativistic_preflight_level_runtime(
    FixedSpacetimeParameters const& fixed_spacetime,
    EOSParams const& eos,
    amrex::Real time,
-   bool require_round_trip
+   int coordinate,
+   MeshAxes const& axes,
+   RelativisticCheck check
 )
 {
    if (system == PhysicalSystem::RMHD) {
       return evaluate_relativistic_preflight_level<
          PhysicalSystem::RMHD, EOSRuntime
       >(state, valid_mask, cell_spacetime, geometry, fixed_spacetime, eos, time,
-        require_round_trip);
+        coordinate, axes, check);
    }
    static_cast<void>(eos_method);
    return evaluate_relativistic_preflight_level<
       PhysicalSystem::RHD, EOSRuntime
    >(state, valid_mask, cell_spacetime, geometry, fixed_spacetime, eos, time,
-     require_round_trip);
+     coordinate, axes, check);
 }
 
 } // namespace
@@ -458,7 +553,8 @@ void AmrSolverBase::debug_check_mfab_finite(amrex::MultiFab const& mf, int ncomp
    for (amrex::MFIter mfi(mf); mfi.isValid() && first_n < 0; ++mfi) {
       amrex::Box bx = amrex::grow(mfi.validbox(), ngrow);
       bx &= mfi.fabbox();
-      const auto values = mf.const_array(mfi);
+      const auto host = copy_fab_for_debug(mf[mfi], ncomp);
+      const auto values = host.const_array();
       for (amrex::BoxIterator bit(bx); bit.ok() && first_n < 0; ++bit) {
          const amrex::IntVect cell = bit();
          const int i = cell[0];
@@ -499,9 +595,11 @@ void AmrSolverBase::debug_check_reconstruction_input(amrex::MultiFab const& stat
    }
    debug_check_mfab_finite(state, num_state_components(), state.nGrowVect(), context);
    const amrex::Real min_rho = state.min(RHO, state.nGrow());
-   if (min_rho > 0.0) {
+   if (min_rho > 0.0_rt) {
       return;
    }
+   const bool allows_vacuum = physics_system_ == PhysicalSystem::RHD
+      && recovery_exterior_state_.is_vacuum();
    int first_i = std::numeric_limits<int>::min();
    int first_j = std::numeric_limits<int>::min();
    int first_k = std::numeric_limits<int>::min();
@@ -511,7 +609,8 @@ void AmrSolverBase::debug_check_reconstruction_input(amrex::MultiFab const& stat
    for (amrex::MFIter mfi(state); mfi.isValid() && !std::isfinite(first_rho); ++mfi) {
       amrex::Box bx = amrex::grow(mfi.validbox(), state.nGrowVect());
       bx &= mfi.fabbox();
-      const auto values = state.const_array(mfi);
+      const auto host = copy_fab_for_debug(state[mfi], num_state_components());
+      const auto values = host.const_array();
       for (amrex::BoxIterator bit(bx); bit.ok(); ++bit) {
          const amrex::IntVect cell = bit();
          const int i = cell[0];
@@ -526,7 +625,9 @@ void AmrSolverBase::debug_check_reconstruction_input(amrex::MultiFab const& stat
          const int k = 0;
 #endif
          const amrex::Real rho = values(i, j, k, RHO);
-         if (rho <= 0.0) {
+         const bool canonical_vacuum = allows_vacuum
+            && canonical_rhd_vacuum(load_rhd_conserved(values, i, j, k));
+         if (rho <= 0.0_rt && !canonical_vacuum) {
             first_i = i;
             first_j = j;
             first_k = k;
@@ -537,6 +638,9 @@ void AmrSolverBase::debug_check_reconstruction_input(amrex::MultiFab const& stat
             break;
          }
       }
+   }
+   if (!std::isfinite(first_rho)) {
+      return;
    }
    std::ostringstream message;
    message << "Reconstruction input contract failed in " << context << " at time " << time << " on level " << lev
@@ -559,33 +663,29 @@ void AmrSolverBase::debug_check_valid_cell_finite(amrex::MultiFab const& mf, amr
    if (!cfg_.debug_check_finite) {
       return;
    }
-   amrex::Long bad_count = 0;
+   amrex::ReduceOps<amrex::ReduceOpSum> reduce_ops;
+   amrex::ReduceData<amrex::Long> reduce_data(reduce_ops);
+   using ReduceTuple = decltype(reduce_data)::Type;
 #ifdef AMREX_USE_OMP
-#pragma omp parallel reduction(+ : bad_count) if (amrex::Gpu::notInLaunchRegion())
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    {
       for (amrex::MFIter mfi(mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-         const amrex::Box& bx = mfi.tilebox();
-         const auto lo = amrex::lbound(bx);
-         const auto hi = amrex::ubound(bx);
          const auto values = mf.const_array(mfi);
          const auto mask = valid_mask.const_array(mfi);
-         for (int k = lo.z; k <= hi.z; ++k) {
-            for (int j = lo.y; j <= hi.y; ++j) {
-               for (int i = lo.x; i <= hi.x; ++i) {
-                  if (mask(i, j, k, 0) == 0) {
-                     continue;
-                  }
-                  for (int n = 0; n < ncomp; ++n) {
-                     if (!std::isfinite(values(i, j, k, n))) {
-                        ++bad_count;
-                     }
+         reduce_ops.eval(mfi.tilebox(), reduce_data,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) -> ReduceTuple {
+               amrex::Long invalid_values = 0;
+               if (mask(i, j, k, 0) != 0) {
+                  for (int component = 0; component < ncomp; ++component) {
+                     invalid_values += !amrex::Math::isfinite(values(i, j, k, component));
                   }
                }
-            }
-         }
+               return {invalid_values};
+            });
       }
    }
+   amrex::Long bad_count = amrex::get<0>(reduce_data.value());
    amrex::ParallelDescriptor::ReduceLongSum(bad_count);
    if (bad_count == 0) {
       return;
@@ -646,55 +746,57 @@ void AmrSolverBase::debug_check_fluxes(int lev, bool solid_masked, char const* c
 template <bool MHD, int EOSMethod>
 void AmrSolverBase::check_active_cell_physical_state_method(int lev, char const* context, int step, amrex::Real time)
 {
-   amrex::iMultiFab mask = valid_cell_mask(lev);
-   amrex::Long active_count = 0;
-   amrex::Long bad_count = 0;
-   amrex::Real min_rho = std::numeric_limits<amrex::Real>::max();
-   amrex::Real min_pressure = std::numeric_limits<amrex::Real>::max();
-   const EOSParams eos = eos_params(cfg_);
    if (physical_system_is_relativistic(physics_system_)) {
-      fill_level_primitive_cache(lev, time);
+      if (spacetime_state_.active()) {
+         prepare_spacetime_coupling_range(
+            spacetime_state_.state(), lev, lev + 1, time, -1.0_rt, 0
+         );
+      }
+      // Use the same non-mutating C2P/P2C contract as stage validation.
+      // In particular, a finite cold ideal-gas state is not canonical vacuum
+      // and is admissible at p=0; negative pressure remains inadmissible.
+      check_relativistic_state_range(
+         fluid_state_.state(), lev, lev + 1, context, time, true
+      );
+      return;
    }
+   amrex::iMultiFab mask = valid_cell_mask(lev);
+   const EOSParams eos = eos_params(cfg_);
+   const auto maximum = std::numeric_limits<amrex::Real>::max();
+   amrex::ReduceOps<amrex::ReduceOpSum, amrex::ReduceOpSum,
+                    amrex::ReduceOpMin, amrex::ReduceOpMin> reduce_ops;
+   amrex::ReduceData<amrex::Long, amrex::Long, amrex::Real, amrex::Real> reduce_data(reduce_ops);
+   using ReduceTuple = decltype(reduce_data)::Type;
 #ifdef AMREX_USE_OMP
-#pragma omp parallel reduction(+ : active_count, bad_count)                                                            \
-   reduction(min : min_rho, min_pressure) if (amrex::Gpu::notInLaunchRegion())
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    {
       for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-         const amrex::Box& bx = mfi.tilebox();
-         const auto lo = amrex::lbound(bx);
-         const auto hi = amrex::ubound(bx);
          const auto state = fluid_state_.state()[lev]->const_array(mfi);
-         const auto primitive = primitive_[lev]->const_array(mfi);
          const auto valid = mask.const_array(mfi);
-         for (int k = lo.z; k <= hi.z; ++k) {
-            for (int j = lo.y; j <= hi.y; ++j) {
-               for (int i = lo.x; i <= hi.x; ++i) {
-                  if (valid(i, j, k, 0) == 0) {
-                     continue;
-                  }
-                  ++active_count;
-                  amrex::Real rho = state(i, j, k, RHO);
-                  amrex::Real pressure = 0.0;
-                  if (physical_system_is_relativistic(physics_system_)) {
-                     rho = primitive(i, j, k, RHO);
-                     pressure = primitive(i, j, k, ENERGY);
-                  } else if constexpr (MHD) {
-                     pressure = pressure_from_conserved<EOSMethod>(load_mhd_state(state, i, j, k), eos);
-                  } else {
-                     pressure = pressure_from_state<EOSMethod>(state, i, j, k, eos);
-                  }
-                  if (!std::isfinite(rho) || !std::isfinite(pressure) || rho <= 0.0 || pressure <= 0.0) {
-                     ++bad_count;
-                     continue;
-                  }
-                  min_rho = std::min(min_rho, rho);
-                  min_pressure = std::min(min_pressure, pressure);
+         reduce_ops.eval(mfi.tilebox(), reduce_data,
+            [valid, maximum, state, eos] AMREX_GPU_DEVICE(int i, int j, int k) -> ReduceTuple {
+               if (valid(i, j, k, 0) == 0) return {0, 0, maximum, maximum};
+               const amrex::Real rho = state(i, j, k, RHO);
+               amrex::Real pressure;
+               if constexpr (MHD) {
+                  pressure = pressure_from_conserved<EOSMethod>(load_mhd_state(state, i, j, k), eos);
+               } else {
+                  pressure = pressure_from_state<EOSMethod>(state, i, j, k, eos);
                }
-            }
-         }
+               if (!amrex::Math::isfinite(rho) || !amrex::Math::isfinite(pressure)
+                   || rho <= 0.0_rt || pressure <= 0.0_rt) {
+                  return {1, 1, maximum, maximum};
+               }
+               return {1, 0, rho, pressure};
+            });
       }
    }
+   const auto totals = reduce_data.value();
+   amrex::Long active_count = amrex::get<0>(totals);
+   amrex::Long bad_count = amrex::get<1>(totals);
+   amrex::Real min_rho = amrex::get<2>(totals);
+   amrex::Real min_pressure = amrex::get<3>(totals);
    amrex::ParallelDescriptor::ReduceLongSum(active_count);
    amrex::ParallelDescriptor::ReduceLongSum(bad_count);
    amrex::ParallelDescriptor::ReduceRealMin(min_rho);
@@ -703,54 +805,41 @@ void AmrSolverBase::check_active_cell_physical_state_method(int lev, char const*
       return;
    }
 
-   int first_bad_i = std::numeric_limits<int>::min();
-   int first_bad_j = std::numeric_limits<int>::min();
-   int first_bad_k = std::numeric_limits<int>::min();
-   amrex::Real first_bad_rho = std::numeric_limits<amrex::Real>::quiet_NaN();
-   amrex::Real first_bad_pressure = std::numeric_limits<amrex::Real>::quiet_NaN();
-   std::array<amrex::Real, NVAR_HYDRO> first_bad_conserved{};
-   first_bad_conserved.fill(std::numeric_limits<amrex::Real>::quiet_NaN());
-   for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid() && first_bad_i == std::numeric_limits<int>::min();
-        ++mfi) {
-      const amrex::Box& bx = mfi.validbox();
-      const auto lo = amrex::lbound(bx);
-      const auto hi = amrex::ubound(bx);
+
+   PhysicalFailure first;
+   for (amrex::MFIter mfi(*fluid_state_.state()[lev]); mfi.isValid() && !first.found; ++mfi) {
       const auto state = fluid_state_.state()[lev]->const_array(mfi);
-      const auto primitive = primitive_[lev]->const_array(mfi);
       const auto valid = mask.const_array(mfi);
-      for (int k = lo.z; k <= hi.z && first_bad_i == std::numeric_limits<int>::min(); ++k) {
-         for (int j = lo.y; j <= hi.y && first_bad_i == std::numeric_limits<int>::min(); ++j) {
-            for (int i = lo.x; i <= hi.x; ++i) {
-               if (valid(i, j, k, 0) == 0) {
-                  continue;
-               }
-               amrex::Real rho = state(i, j, k, RHO);
-               amrex::Real pressure = 0.0;
-               if (physical_system_is_relativistic(physics_system_)) {
-                  rho = primitive(i, j, k, RHO);
-                  pressure = primitive(i, j, k, ENERGY);
-               } else if constexpr (MHD) {
-                  pressure = pressure_from_conserved<EOSMethod>(load_mhd_state(state, i, j, k), eos);
-               } else {
-                  pressure = pressure_from_state<EOSMethod>(state, i, j, k, eos);
-               }
-               if (!std::isfinite(rho) || !std::isfinite(pressure) || rho <= 0.0 || pressure <= 0.0) {
-                  first_bad_i = i;
-                  first_bad_j = j;
-                  first_bad_k = k;
-                  first_bad_rho = rho;
-                  first_bad_pressure = pressure;
-                  for (int component = 0; component < NVAR_HYDRO; ++component) {
-                     first_bad_conserved[component] = state(i, j, k, component);
-                  }
-                  break;
-               }
+      amrex::Gpu::DeviceScalar<PhysicalFailure> failure(PhysicalFailure{});
+      auto* output = failure.dataPtr();
+      amrex::ParallelFor(mfi.validbox(), [valid, state, eos, output] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         if (valid(i, j, k, 0) == 0) return;
+         const amrex::Real rho = state(i, j, k, RHO);
+         amrex::Real pressure;
+         if constexpr (MHD) {
+            pressure = pressure_from_conserved<EOSMethod>(load_mhd_state(state, i, j, k), eos);
+         } else {
+            pressure = pressure_from_state<EOSMethod>(state, i, j, k, eos);
+         }
+         if ((!amrex::Math::isfinite(rho) || !amrex::Math::isfinite(pressure)
+              || rho <= 0.0_rt || pressure <= 0.0_rt)
+             && amrex::Gpu::Atomic::CAS(&output->found, 0, 1) == 0) {
+            output->i = i;
+            output->j = j;
+            output->k = k;
+            output->rho = rho;
+            output->pressure = pressure;
+            for (int component = 0; component < NVAR_HYDRO; ++component) {
+               output->conserved[component] = state(i, j, k, component);
             }
          }
-      }
+      });
+      first = failure.dataValue();
    }
-   abort_bad_physical_state(context, step, time, lev, bad_count, min_rho, min_pressure, first_bad_i, first_bad_j,
-                            first_bad_k, first_bad_rho, first_bad_pressure, first_bad_conserved);
+   std::array<amrex::Real, NVAR_HYDRO> first_conserved;
+   std::copy(first.conserved.begin(), first.conserved.end(), first_conserved.begin());
+   abort_bad_physical_state(context, step, time, lev, bad_count, min_rho, min_pressure,
+      first.i, first.j, first.k, first.rho, first.pressure, first_conserved);
 }
 
 void AmrSolverBase::check_active_cell_physical_state(int lev, char const* context, int step, amrex::Real time)
@@ -808,20 +897,36 @@ void AmrSolverBase::debug_check_relativistic_stage_range(
    amrex::Real time
 )
 {
-   if (!cfg_.debug_check_physical || !physical_system_is_relativistic(physics_system_)) {
-      return;
+   if (cfg_.debug_check_physical && physical_system_is_relativistic(physics_system_)) {
+      check_relativistic_state_range(state, lev_begin, lev_end, context, time);
    }
+}
+
+void AmrSolverBase::check_relativistic_state_range(
+   LevelData const& state,
+   int lev_begin,
+   int lev_end,
+   char const* context,
+   amrex::Real time,
+   bool require_round_trip
+)
+{
+   AMREX_ALWAYS_ASSERT(physical_system_is_relativistic(physics_system_));
    const EOSParams eos = eos_params(cfg_);
    const FixedSpacetimeParameters fixed_spacetime = fixed_spacetime_parameters(cfg_);
    for (int lev = lev_begin; lev < lev_end; ++lev) {
       const amrex::iMultiFab valid_mask = valid_cell_mask(lev);
-      amrex::MultiFab const* cell_spacetime = spacetime_state_.active()
+      amrex::MultiFab const* cell_spacetime =
+         spacetime_state_.active() && !uses_analytic_fixed_spacetime_kernels()
          ? spacetime_coupling_.cell_spacetime()[lev].get()
          : nullptr;
       const RelativisticPreflightSummary summary =
          evaluate_relativistic_preflight_level_runtime(
             physics_system_, eos_method_, *state[lev], valid_mask, cell_spacetime,
-            Geom(lev), fixed_spacetime, eos, time, false
+            Geom(lev), fixed_spacetime, eos, time,
+            mesh_coordinate_code(cfg_.mesh_coordinate), mesh_axes_layout(cfg_),
+            require_round_trip ? RelativisticCheck::ConservedRoundTrip
+                               : RelativisticCheck::Recovery
          );
       if (summary.failures == 0) {
          continue;
@@ -849,7 +954,7 @@ void AmrSolverBase::run_evolution_preflight(amrex::Real time)
 
    if (spacetime_state_.active()) {
       prepare_spacetime_coupling_range(
-         spacetime_state_.state(), 0, finestLevel() + 1, time, -1.0, 0
+         spacetime_state_.state(), 0, finestLevel() + 1, time, -1.0_rt, 0
       );
    }
 
@@ -860,13 +965,16 @@ void AmrSolverBase::run_evolution_preflight(amrex::Real time)
    int first_failing_level = -1;
    for (int lev = 0; lev <= finestLevel(); ++lev) {
       const amrex::iMultiFab valid_mask = valid_cell_mask(lev);
-      amrex::MultiFab const* cell_spacetime = spacetime_state_.active()
+      amrex::MultiFab const* cell_spacetime =
+         spacetime_state_.active() && !uses_analytic_fixed_spacetime_kernels()
          ? spacetime_coupling_.cell_spacetime()[lev].get()
          : nullptr;
       const RelativisticPreflightSummary level =
          evaluate_relativistic_preflight_level_runtime(
             physics_system_, eos_method_, *fluid_state_.state()[lev], valid_mask,
-            cell_spacetime, Geom(lev), fixed_spacetime, eos, time, true
+            cell_spacetime, Geom(lev), fixed_spacetime, eos, time,
+            mesh_coordinate_code(cfg_.mesh_coordinate), mesh_axes_layout(cfg_),
+            RelativisticCheck::InitialDataRoundTrip
          );
 
       total.cells += level.cells;
@@ -890,6 +998,10 @@ void AmrSolverBase::run_evolution_preflight(amrex::Real time)
          total.minimum_admissibility_margin,
          level.minimum_admissibility_margin
       );
+      total.nonfinite_conserved += level.nonfinite_conserved;
+      total.nonfinite_metric_volume += level.nonfinite_metric_volume;
+      total.nonpositive_density += level.nonpositive_density;
+      total.nonpositive_energy += level.nonpositive_energy;
       if (first_failing_level < 0 && level.failures > 0) {
          first_failing_level = lev;
       }
@@ -907,7 +1019,14 @@ void AmrSolverBase::run_evolution_preflight(amrex::Real time)
          << " min_D=" << total.minimum_density
          << " min_E=" << total.minimum_energy
          << " min_q=" << total.minimum_admissibility_margin
-         << " tolerance=" << preflight_round_trip_tolerance
+         << " nonfinite_conserved=" << total.nonfinite_conserved
+         << " nonfinite_metric_volume=" << total.nonfinite_metric_volume
+         << " nonpositive_density=" << total.nonpositive_density
+         << " nonpositive_energy=" << total.nonpositive_energy
+         << " conserved_tolerance="
+         << preflight_conserved_round_trip_tolerance
+         << " primitive_tolerance="
+         << preflight_primitive_round_trip_tolerance
          << ". Failure reasons 10+status and 20+status identify the first and "
             "second C2P attempts; 30 identifies a round-trip mismatch.";
       const std::string text = message.str();

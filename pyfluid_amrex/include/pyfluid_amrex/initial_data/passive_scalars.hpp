@@ -14,11 +14,13 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real passive_phase_coordinate(amrex::Real q, amrex::Real lo, amrex::Real hi, int is_periodic) noexcept
 {
    const amrex::Real width = hi - lo;
-   return is_periodic != 0 && width > 0.0 ? (q - lo) / width : q;
+   return is_periodic != 0 && width > 0.0_rt ? (q - lo) / width : q;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -59,11 +61,11 @@ amrex::Real passive_profile_value(
          probhi,
          periodic
       );
-      return background + amplitude * std::exp(-0.5 * r2 / (sigma * sigma));
+      return background + amplitude * std::exp(-0.5_rt * r2 / (sigma * sigma));
    }
    if (profile == ProfileSinWave) {
       const amrex::Real two_pi = constants::two_pi;
-      amrex::Real phase = 0.0;
+      amrex::Real phase = 0.0_rt;
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
          phase += passive_phase_coordinate(
             patch_coordinate_component(sample.mesh, dir),
@@ -77,7 +79,7 @@ amrex::Real passive_profile_value(
    if (profile == ProfileStepX) {
       return patch_coordinate_component(sample.mesh, 0) < shock_x0 ? left : right;
    }
-   return 0.0;
+   return 0.0_rt;
 }
 
 inline int passive_profile_code(std::string const& name)
@@ -118,7 +120,7 @@ inline void initialize_passive_scalars(amrex::MultiFab& state, amrex::Geometry c
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes mesh_axes = mesh_axes_layout(cfg);
    const int profile = passive_profile_code(cfg.passive_profile);
-   const amrex::Real sigma = cfg.passive_sigma > 0.0 ? cfg.passive_sigma : cfg.bump_sigma;
+   const amrex::Real sigma = cfg.passive_sigma > 0.0_rt ? cfg.passive_sigma : cfg.bump_sigma;
    const amrex::Real x0 = passive_coordinate_or_default(cfg.passive_x0, cfg.bump_x0);
    const amrex::Real y0 = passive_coordinate_or_default(cfg.passive_y0, cfg.bump_y0);
    const amrex::Real z0 = passive_coordinate_or_default(cfg.passive_z0, cfg.bump_z0);

@@ -92,6 +92,8 @@ def print_row(row: dict[str, object], plot_paths: Sequence[Path]) -> None:
          f" ledger(m={parse_float(row.get('external_mass_rel_error')):.3e},"
          f"E={parse_float(row.get('external_energy_rel_error')):.3e})"
       )
+   elif parse_float(row.get("external_mass_budget_valid"), 0.0) > 0.5:
+      ledger_note = f" baryon_ledger={parse_float(row.get('external_mass_rel_error')):.3e}"
    print(
       f"{row['status']} {row['case']}: policy={row['policy']} "
       f"mass={parse_float(row.get('mass_rel_drift')):.3e} "

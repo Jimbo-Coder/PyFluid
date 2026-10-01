@@ -2,7 +2,7 @@
   "version": 3,
   "cmakeMinimumRequired": {
     "major": 3,
-    "minor": 20,
+    "minor": 25,
     "patch": 0
   },
   "configurePresets": [
@@ -14,6 +14,7 @@
       "binaryDir": "${sourceDir}/../build/pyfluid_amrex",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
         "CMAKE_CXX_COMPILER": "/opt/homebrew/bin/mpicxx",
         "CMAKE_CXX_COMPILER_LAUNCHER": "/opt/homebrew/bin/cmake;-E;env;CCACHE_DIR=${sourceDir}/../.ccache/pyfluid_amrex;CCACHE_BASEDIR=${sourceDir}/..;CCACHE_COMPILERTYPE=clang;/opt/homebrew/bin/ccache",
         "CMAKE_PREFIX_PATH": "${sourceDir}/../.deps/amrex-mpi-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi",
@@ -35,6 +36,35 @@
         "OpenMP_CXX_LIB_NAMES": "omp",
         "OpenMP_omp_LIBRARY": "/opt/homebrew/opt/libomp/lib/libomp.dylib"
       }
+    },
+    {
+      "name": "full-release-fp32",
+      "displayName": "Full release with FP32",
+      "description": "Compile the same PyFluid methods against the isolated single-precision MPI AMReX companion.",
+      "inherits": "full-release",
+      "binaryDir": "${sourceDir}/../build/pyfluid_amrex-fp32",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../.deps/amrex-mpi-fp32-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi",
+        "AMReX_DIR": "${sourceDir}/../.deps/amrex-mpi-fp32-lsolvers-hdf5/lib/cmake/AMReX",
+        "PYFLUID_AMREX_PRECISION": "SINGLE"
+      }
+    },
+    {
+      "name": "experimental-metal",
+      "displayName": "Experimental Metal FP32",
+      "description": "AdaptiveCpp SYCL-to-Metal with the isolated patched AMReX dependency.",
+      "inherits": "full-release-fp32",
+      "binaryDir": "${sourceDir}/../build/pyfluid_amrex-metal",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "${sourceDir}/../.deps/adaptivecpp-metal/bin/acpp",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "",
+        "CMAKE_OSX_SYSROOT": "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../.deps/amrex-metal;/opt/homebrew/opt/hdf5-mpi",
+        "AMReX_DIR": "${sourceDir}/../.deps/amrex-metal/lib/cmake/AMReX",
+        "PYFLUID_AMREX_NATIVE": "OFF",
+        "PYFLUID_AMREX_HORIZON_OPENMP": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -47,7 +77,7 @@
     {
       "name": "full-2d",
       "configurePreset": "full-release",
-      "targets": ["pyfluid_amrex_2d", "pyfluid_amrex_compare_checkpoint_2d"],
+      "targets": ["pyfluid_amrex_2d"],
       "jobs": 3
     },
     {
@@ -65,7 +95,7 @@
     {
       "name": "full-openmp-2d",
       "configurePreset": "full-release-openmp",
-      "targets": ["pyfluid_amrex_2d", "pyfluid_amrex_compare_checkpoint_2d"],
+      "targets": ["pyfluid_amrex_2d"],
       "jobs": 3
     },
     {
@@ -73,6 +103,30 @@
       "configurePreset": "full-release-openmp",
       "targets": ["pyfluid_amrex_3d"],
       "jobs": 3
+    },
+    {
+      "name": "full-fp32-1d",
+      "configurePreset": "full-release-fp32",
+      "targets": ["pyfluid_amrex_1d"],
+      "jobs": 3
+    },
+    {
+      "name": "full-fp32-2d",
+      "configurePreset": "full-release-fp32",
+      "targets": ["pyfluid_amrex_2d"],
+      "jobs": 3
+    },
+    {
+      "name": "full-fp32-3d",
+      "configurePreset": "full-release-fp32",
+      "targets": ["pyfluid_amrex_3d"],
+      "jobs": 3
+    },
+    {
+      "name": "experimental-metal-1d",
+      "configurePreset": "experimental-metal",
+      "targets": ["pyfluid_amrex_1d"],
+      "jobs": 2
     }
   ]
 }

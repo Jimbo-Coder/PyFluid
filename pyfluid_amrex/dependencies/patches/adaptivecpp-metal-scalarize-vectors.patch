@@ -1,0 +1,23 @@
+--- a/src/compiler/llvm-to-backend/metal/LLVMToMetal.cpp
++++ b/src/compiler/llvm-to-backend/metal/LLVMToMetal.cpp
+@@ -45,6 +45,7 @@
+ #include <llvm/Transforms/Scalar/LoopRotation.h>
+ #include <llvm/Transforms/Scalar/LoopSimplifyCFG.h>
+ #include <llvm/Transforms/Scalar/SROA.h>
++#include <llvm/Transforms/Scalar/Scalarizer.h>
+ #include <llvm/Transforms/Scalar/SimplifyCFG.h>
+ #include <llvm/Transforms/Scalar/StructurizeCFG.h>
+ 
+@@ -576,6 +577,12 @@
+     llvm::AlwaysInlinerPass{}.run(FlavoredModule, MAM);
+ 
+     llvm::FunctionPassManager FPM;
++    // O3 can vectorize even byte-valued AMReX tag fills. The emitter owns
++    // scalar work-item operations, so lower vector memory and lane operations
++    // with LLVM's standard pass after optimization and before pointer lowering.
++    llvm::ScalarizerPass Scalarize;
++    Scalarize.setScalarizeLoadStore(true);
++    FPM.addPass(std::move(Scalarize));
+     FPM.addPass(llvm::PromotePass());
+     FPM.addPass(ExpandIntrinsics());
+     FPM.addPass(llvm::LowerSwitchPass());

@@ -17,8 +17,11 @@
 #include <stdexcept>
 
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/spacetime_excision.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 constexpr amrex::Real pi = std::numbers::pi_v<amrex::Real>;
@@ -61,34 +64,87 @@ amrex::Real device_surface_radius(
 ) noexcept
 {
    phi = std::atan2(std::sin(phi), std::cos(phi));
-   if (phi < 0.0) {
-      phi += 2.0 * pi;
+   if (phi < 0.0_rt) {
+      phi += 2.0_rt * pi;
    }
-   const amrex::Real theta_grid = theta * num_theta / pi - 0.5;
-   const amrex::Real phi_grid = phi * num_phi / (2.0 * pi) - 0.5;
+   const amrex::Real theta_grid = theta * num_theta / pi - 0.5_rt;
+   const amrex::Real phi_grid = phi * num_phi / (2.0_rt * pi) - 0.5_rt;
    const int theta_lower = static_cast<int>(amrex::Math::floor(theta_grid));
    const int phi_lower = static_cast<int>(amrex::Math::floor(phi_grid));
    const amrex::Real theta_fraction = theta_grid - theta_lower;
    const amrex::Real phi_fraction = phi_grid - phi_lower;
-   amrex::Real result = 0.0;
+   amrex::Real result = 0.0_rt;
    for (int theta_offset = 0; theta_offset < 2; ++theta_offset) {
       int mapped_theta = theta_lower + theta_offset;
       const int phi_shift = map_device_theta_index(
          mapped_theta, num_theta, num_phi
       );
       const amrex::Real theta_weight = theta_offset == 0
-         ? 1.0 - theta_fraction : theta_fraction;
+         ? 1.0_rt - theta_fraction : theta_fraction;
       for (int phi_offset = 0; phi_offset < 2; ++phi_offset) {
          const int mapped_phi = wrap_device_index(
             phi_lower + phi_offset + phi_shift, num_phi
          );
          const amrex::Real phi_weight = phi_offset == 0
-            ? 1.0 - phi_fraction : phi_fraction;
+            ? 1.0_rt - phi_fraction : phi_fraction;
          result += theta_weight * phi_weight
             * radius[mapped_theta * num_phi + mapped_phi];
       }
    }
    return result;
+}
+
+void fill_horizon_masks(
+   amrex::Box const& box,
+   amrex::Array4<amrex::Real> const& distance,
+   amrex::Array4<int> const& horizon_mask,
+   amrex::Array4<int> const& excision,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& lower,
+   amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> const& spacing,
+   std::array<amrex::Real, 3> const& center,
+   int num_theta,
+   int num_phi,
+   amrex::Real excision_fraction,
+   SphericalExcisionRegion const& spacetime_excision,
+   amrex::Real const* radius
+)
+{
+   amrex::ParallelFor(
+      box,
+      [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         const amrex::Real x = lower[0]
+            + (static_cast<amrex::Real>(i) + 0.5_rt) * spacing[0];
+         const amrex::Real y = lower[1]
+            + (static_cast<amrex::Real>(j) + 0.5_rt) * spacing[1];
+         const amrex::Real z = lower[2]
+            + (static_cast<amrex::Real>(k) + 0.5_rt) * spacing[2];
+         const amrex::Real relative_x = x - center[0];
+         const amrex::Real relative_y = y - center[1];
+         const amrex::Real relative_z = z - center[2];
+         const amrex::Real coordinate_radius = std::sqrt(
+            relative_x * relative_x + relative_y * relative_y
+            + relative_z * relative_z
+         );
+         amrex::Real theta = 0.0_rt;
+         amrex::Real phi = 0.0_rt;
+         if (coordinate_radius > 0.0_rt) {
+            theta = std::acos(amrex::max(
+               -1.0_rt,
+               amrex::min(1.0_rt, relative_z / coordinate_radius)
+            ));
+            phi = std::atan2(relative_y, relative_x);
+         }
+         const amrex::Real surface_radius = device_surface_radius(
+            radius, num_theta, num_phi, theta, phi
+         );
+         distance(i, j, k) = coordinate_radius - surface_radius;
+         horizon_mask(i, j, k) = coordinate_radius <= surface_radius
+            ? 1 : 0;
+         excision(i, j, k) = spacetime_excision.enabled()
+            ? (spacetime_excision.contains({{x, y, z}}) ? 1 : 0)
+            : (coordinate_radius <= excision_fraction * surface_radius ? 1 : 0);
+      }
+   );
 }
 
 } // namespace
@@ -98,15 +154,18 @@ ApparentHorizonTracker::ApparentHorizonTracker(
    int num_levels
 )
 {
+   mask_ghost_cells_ = config.ng;
+   spacetime_excision_ = spacetime_excision_region(config);
    const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(config);
    center_ = {spacetime.origin1, spacetime.origin2, spacetime.origin3};
    finder_parameters_.mass_scale = spacetime.mass;
-   minimum_search_radius_ = 0.5 * spacetime.mass;
-   maximum_search_radius_ = 3.0 * spacetime.mass;
-   initial_radius_ = 0.8 * maximum_search_radius_;
+   minimum_search_radius_ = 0.5_rt * spacetime.mass;
+   maximum_search_radius_ = 3.0_rt * spacetime.mass;
+   initial_radius_ = 0.8_rt * maximum_search_radius_;
 
    amrex::ParmParse parameters("horizon");
    parameters.queryAdd("enabled", enabled_);
+   parameters.queryAdd("abort_on_failure", abort_on_failure_);
    parameters.queryAdd("find_int", find_interval_);
    parameters.queryAdd("radial_points", radial_points_);
    parameters.queryAdd("polar_points", polar_points_);
@@ -148,12 +207,12 @@ ApparentHorizonTracker::ApparentHorizonTracker(
        || finder_parameters_.coarsest_num_theta < 8
        || finder_parameters_.coarsest_num_theta % 2 != 0
        || finder_parameters_.coarsest_num_theta > polar_points_
-       || !(minimum_search_radius_ > 0.0)
+       || !(minimum_search_radius_ > 0.0_rt)
        || !(maximum_search_radius_ > minimum_search_radius_)
        || !(initial_radius_ >= minimum_search_radius_)
        || !(initial_radius_ <= maximum_search_radius_)
-       || refine_band_cells_ < 0.0
-       || !(excision_fraction_ > 0.0 && excision_fraction_ < 1.0)) {
+       || refine_band_cells_ < 0.0_rt
+       || !(excision_fraction_ > 0.0_rt && excision_fraction_ < 1.0_rt)) {
       amrex::Abort("invalid horizon.* apparent-horizon configuration");
    }
    if (enabled_) {
@@ -192,15 +251,25 @@ bool ApparentHorizonTracker::enabled() const noexcept
    return enabled_;
 }
 
+bool ApparentHorizonTracker::abort_on_failure() const noexcept
+{
+   return abort_on_failure_;
+}
+
+bool ApparentHorizonTracker::failed_search_is_fatal() const noexcept
+{
+   return abort_on_failure_ || result_.has_value()
+      || restored_surface_.has_value();
+}
+
 bool ApparentHorizonTracker::refinement_tracking_active() const noexcept
 {
-   return result_.has_value() && refine_band_cells_ > 0.0;
+   return result_.has_value() && refine_band_cells_ > 0.0_rt;
 }
 
 bool ApparentHorizonTracker::search_due(int step) const noexcept
 {
-   return enabled_ && step >= 0
-      && (!result_.has_value() || step % find_interval_ == 0);
+   return enabled_ && step >= 0 && step % find_interval_ == 0;
 }
 
 int ApparentHorizonTracker::radial_points() const noexcept
@@ -292,14 +361,14 @@ void ApparentHorizonTracker::restore_latest_surface(
             std::size_t count = 0;
             while (std::getline(input, line) && count < radius.size()) {
                std::istringstream row(line);
-               amrex::Real theta = 0.0;
-               amrex::Real phi = 0.0;
-               amrex::Real x = 0.0;
-               amrex::Real y = 0.0;
-               amrex::Real z = 0.0;
+               amrex::Real theta = 0.0_rt;
+               amrex::Real phi = 0.0_rt;
+               amrex::Real x = 0.0_rt;
+               amrex::Real y = 0.0_rt;
+               amrex::Real z = 0.0_rt;
                row >> theta >> phi >> radius[count] >> x >> y >> z;
                if (!row || !std::isfinite(radius[count])
-                   || !(radius[count] > 0.0)) {
+                   || !(radius[count] > 0.0_rt)) {
                   status = -1;
                   break;
                }
@@ -345,7 +414,7 @@ void ApparentHorizonTracker::restore_latest_surface(
    restored.maximum_radius = *std::max_element(
       restored.surface.radius().begin(), restored.surface.radius().end()
    );
-   restored.mean_radius = 0.0;
+   restored.mean_radius = 0.0_rt;
    for (amrex::Real value : restored.surface.radius()) {
       restored.mean_radius += value;
    }
@@ -376,6 +445,17 @@ void ApparentHorizonTracker::accept_result(
       throw std::invalid_argument(
          "cannot track a non-converged apparent-horizon result"
       );
+   }
+   if (spacetime_excision_.enabled()) {
+      amrex::Real center_distance_squared = 0.0_rt;
+      for (int direction = 0; direction < 3; ++direction) {
+         const amrex::Real delta = center_[direction] - spacetime_excision_.center[direction];
+         center_distance_squared += delta * delta;
+      }
+      const amrex::Real enclosing_radius = spacetime_excision_.radius + std::sqrt(center_distance_squared);
+      if (*std::min_element(result.surface.radius().begin(), result.surface.radius().end()) <= enclosing_radius) {
+         amrex::Abort("the apparent horizon no longer encloses the fixed spacetime excision region");
+      }
    }
    result_ = std::move(result);
    restored_surface_.reset();
@@ -413,20 +493,24 @@ void ApparentHorizonTracker::refresh_level(
       return;
    }
    signed_distance_[level] = std::make_unique<amrex::MultiFab>(
-      state.boxArray(), state.DistributionMap(), 1, 1
+      state.boxArray(), state.DistributionMap(), 1, mask_ghost_cells_
    );
    apparent_horizon_mask_[level] = std::make_unique<amrex::iMultiFab>(
-      state.boxArray(), state.DistributionMap(), 1, 1
+      state.boxArray(), state.DistributionMap(), 1, mask_ghost_cells_
    );
    excision_mask_[level] = std::make_unique<amrex::iMultiFab>(
-      state.boxArray(), state.DistributionMap(), 1, 1
+      state.boxArray(), state.DistributionMap(), 1, mask_ghost_cells_
    );
+   signed_distance_[level]->setVal(0.0_rt);
+   apparent_horizon_mask_[level]->setVal(0);
+   excision_mask_[level]->setVal(0);
    const auto lower = geometry.ProbLoArray();
    const auto spacing = geometry.CellSizeArray();
    const auto center = center_;
    const int num_theta = result_->surface.num_theta();
    const int num_phi = result_->surface.num_phi();
    const amrex::Real excision_fraction = excision_fraction_;
+   const auto spacetime_excision = spacetime_excision_;
    const amrex::Real* radius = device_radius_.data();
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -434,46 +518,14 @@ void ApparentHorizonTracker::refresh_level(
    for (amrex::MFIter mfi(
            *signed_distance_[level], amrex::TilingIfNotGPU()
         ); mfi.isValid(); ++mfi) {
-      const amrex::Box box = mfi.growntilebox(1)
+      const amrex::Box box = mfi.growntilebox(mask_ghost_cells_)
          & (*signed_distance_[level])[mfi].box();
       const auto distance = signed_distance_[level]->array(mfi);
       const auto horizon_mask = apparent_horizon_mask_[level]->array(mfi);
       const auto excision = excision_mask_[level]->array(mfi);
-      amrex::ParallelFor(
-         box,
-         [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            const amrex::Real x = lower[0]
-               + (static_cast<amrex::Real>(i) + 0.5) * spacing[0];
-            const amrex::Real y = lower[1]
-               + (static_cast<amrex::Real>(j) + 0.5) * spacing[1];
-            const amrex::Real z = lower[2]
-               + (static_cast<amrex::Real>(k) + 0.5) * spacing[2];
-            const amrex::Real relative_x = x - center[0];
-            const amrex::Real relative_y = y - center[1];
-            const amrex::Real relative_z = z - center[2];
-            const amrex::Real coordinate_radius = std::sqrt(
-               relative_x * relative_x + relative_y * relative_y
-               + relative_z * relative_z
-            );
-            amrex::Real theta = 0.0;
-            amrex::Real phi = 0.0;
-            if (coordinate_radius > 0.0) {
-               theta = std::acos(amrex::max(
-                  -1.0,
-                  amrex::min(1.0, relative_z / coordinate_radius)
-               ));
-               phi = std::atan2(relative_y, relative_x);
-            }
-            const amrex::Real surface_radius = device_surface_radius(
-               radius, num_theta, num_phi, theta, phi
-            );
-            distance(i, j, k) = coordinate_radius - surface_radius;
-            horizon_mask(i, j, k) = coordinate_radius <= surface_radius
-               ? 1 : 0;
-            excision(i, j, k) =
-               coordinate_radius <= excision_fraction * surface_radius
-               ? 1 : 0;
-         }
+      fill_horizon_masks(
+         box, distance, horizon_mask, excision, lower, spacing, center,
+         num_theta, num_phi, excision_fraction, spacetime_excision, radius
       );
    }
    signed_distance_[level]->FillBoundary(geometry.periodicity());
@@ -511,7 +563,7 @@ void ApparentHorizonTracker::tag_refinement_band(
    amrex::Geometry const& geometry
 )
 {
-   if (!result_.has_value() || refine_band_cells_ <= 0.0) {
+   if (!result_.has_value() || refine_band_cells_ <= 0.0_rt) {
       return;
    }
    refresh_level(level, state, geometry);
@@ -618,11 +670,11 @@ void ApparentHorizonTracker::write_result(
    const int num_theta = result.surface.num_theta();
    const int num_phi = result.surface.num_phi();
    const amrex::Real dtheta = pi / num_theta;
-   const amrex::Real dphi = 2.0 * pi / num_phi;
+   const amrex::Real dphi = 2.0_rt * pi / num_phi;
    for (int theta_index = 0; theta_index < num_theta; ++theta_index) {
-      const amrex::Real theta = (theta_index + 0.5) * dtheta;
+      const amrex::Real theta = (theta_index + 0.5_rt) * dtheta;
       for (int phi_index = 0; phi_index < num_phi; ++phi_index) {
-         const amrex::Real phi = (phi_index + 0.5) * dphi;
+         const amrex::Real phi = (phi_index + 0.5_rt) * dphi;
          const amrex::Real radius = result.surface.radius()[
             theta_index * num_phi + phi_index
          ];

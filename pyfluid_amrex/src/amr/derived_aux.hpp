@@ -9,11 +9,16 @@
 #include "pyfluid_amrex/amr_indicator.hpp"
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
-#include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/calculus.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/magnetic.hpp"
 #include "pyfluid_amrex/primitive_cache_factory.hpp"
+#include "pyfluid_amrex/spacetime_excision.hpp"
+#include "pyfluid_amrex/initial_data/atmosphere.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 inline void fill_aux_primitive_cache(
    amrex::MultiFab& primitive,
@@ -34,8 +39,14 @@ inline void fill_aux_primitive_cache(
       nullptr,
       nullptr,
       &geometry,
+      mesh_coordinate_code(cfg.mesh_coordinate),
+      mesh_axes_layout(cfg),
       fixed_spacetime_parameters(cfg),
       time,
+      nullptr,
+      nullptr,
+      excision_grid_view(spacetime_excision_region(cfg), geometry, state.ixType()),
+      relativistic_exterior_state(cfg),
    });
 }
 
@@ -48,7 +59,8 @@ amrex::Real velocity_component(
    int component
 ) noexcept
 {
-   return state(i, j, k, MOM1 + component) / state(i, j, k, RHO);
+   const amrex::Real rho = state(i, j, k, RHO);
+   return rho == 0.0_rt ? 0.0_rt : state(i, j, k, MOM1 + component) / rho;
 }
 
 inline void fill_vorticity_output(
@@ -68,24 +80,24 @@ inline void fill_vorticity_output(
       const auto w = vorticity.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          const amrex::Real dvz_dx =
-            (velocity_component(s, i + 1, j, k, 2) - velocity_component(s, i - 1, j, k, 2)) / (2.0 * dx[0]);
+            (velocity_component(s, i + 1, j, k, 2) - velocity_component(s, i - 1, j, k, 2)) / (2.0_rt * dx[0]);
          const amrex::Real dvy_dx =
-            (velocity_component(s, i + 1, j, k, 1) - velocity_component(s, i - 1, j, k, 1)) / (2.0 * dx[0]);
-         amrex::Real dvz_dy = 0.0;
-         amrex::Real dvx_dy = 0.0;
-         amrex::Real dvy_dz = 0.0;
-         amrex::Real dvx_dz = 0.0;
+            (velocity_component(s, i + 1, j, k, 1) - velocity_component(s, i - 1, j, k, 1)) / (2.0_rt * dx[0]);
+         amrex::Real dvz_dy = 0.0_rt;
+         amrex::Real dvx_dy = 0.0_rt;
+         amrex::Real dvy_dz = 0.0_rt;
+         amrex::Real dvx_dz = 0.0_rt;
 #if (AMREX_SPACEDIM >= 2)
          dvz_dy =
-            (velocity_component(s, i, j + 1, k, 2) - velocity_component(s, i, j - 1, k, 2)) / (2.0 * dx[1]);
+            (velocity_component(s, i, j + 1, k, 2) - velocity_component(s, i, j - 1, k, 2)) / (2.0_rt * dx[1]);
          dvx_dy =
-            (velocity_component(s, i, j + 1, k, 0) - velocity_component(s, i, j - 1, k, 0)) / (2.0 * dx[1]);
+            (velocity_component(s, i, j + 1, k, 0) - velocity_component(s, i, j - 1, k, 0)) / (2.0_rt * dx[1]);
 #endif
 #if (AMREX_SPACEDIM == 3)
          dvy_dz =
-            (velocity_component(s, i, j, k + 1, 1) - velocity_component(s, i, j, k - 1, 1)) / (2.0 * dx[2]);
+            (velocity_component(s, i, j, k + 1, 1) - velocity_component(s, i, j, k - 1, 1)) / (2.0_rt * dx[2]);
          dvx_dz =
-            (velocity_component(s, i, j, k + 1, 0) - velocity_component(s, i, j, k - 1, 0)) / (2.0 * dx[2]);
+            (velocity_component(s, i, j, k + 1, 0) - velocity_component(s, i, j, k - 1, 0)) / (2.0_rt * dx[2]);
 #endif
          w(i, j, k, 0) = generated::curl_x_cartesian(dvz_dy, dvy_dz);
          w(i, j, k, 1) = generated::curl_y_cartesian(dvx_dz, dvz_dx);
@@ -98,6 +110,7 @@ inline void fill_vorticity_output(
 inline void fill_mach_number_output(
    amrex::MultiFab& mach,
    amrex::MultiFab const& state,
+   amrex::MultiFab const* cell_spacetime,
    amrex::Geometry const& geometry,
    amrex::Real time,
    RunConfig const& cfg
@@ -109,7 +122,9 @@ inline void fill_mach_number_output(
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
    );
-   fill_aux_primitive_cache(primitive, state, geometry, time, cfg);
+   fill_aux_primitive_cache(
+      primitive, state, geometry, time, cfg, cell_spacetime
+   );
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -129,7 +144,7 @@ inline void fill_mach_number_output(
          const amrex::Real cs = fluid_sound_speed_from_primitive_runtime(
             system, eos_method, rho, p, eos
          );
-         out(i, j, k, 0) = std::sqrt(squared_norm(velocity)) / amrex::max(cs, 1.0e-300);
+         out(i, j, k, 0) = std::sqrt(squared_norm(velocity)) / amrex::max(cs, 1.0e-300_rt);
       });
    }
    }
@@ -138,6 +153,7 @@ inline void fill_mach_number_output(
 inline void fill_plasma_beta_output(
    amrex::MultiFab& plasma_beta,
    amrex::MultiFab const& state,
+   amrex::MultiFab const* cell_spacetime,
    amrex::Geometry const& geometry,
    amrex::Real time,
    RunConfig const& cfg
@@ -146,7 +162,9 @@ inline void fill_plasma_beta_output(
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
    );
-   fill_aux_primitive_cache(primitive, state, geometry, time, cfg);
+   fill_aux_primitive_cache(
+      primitive, state, geometry, time, cfg, cell_spacetime
+   );
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -158,7 +176,7 @@ inline void fill_plasma_beta_output(
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          out(i, j, k, 0) = generated::plasma_beta_from_pressure(
             values(i, j, k, ENERGY),
-            1.0e-300,
+            1.0e-300_rt,
             values(i, j, k, B1),
             values(i, j, k, B2),
             values(i, j, k, B3)
@@ -172,6 +190,7 @@ template <int EOSMethod>
 void fill_thermal_entropy_proxy_output_method(
    amrex::MultiFab& thermal_entropy_proxy,
    amrex::MultiFab const& state,
+   amrex::MultiFab const* cell_spacetime,
    amrex::Geometry const& geometry,
    amrex::Real time,
    RunConfig const& cfg
@@ -181,7 +200,9 @@ void fill_thermal_entropy_proxy_output_method(
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
    );
-   fill_aux_primitive_cache(primitive, state, geometry, time, cfg);
+   fill_aux_primitive_cache(
+      primitive, state, geometry, time, cfg, cell_spacetime
+   );
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -202,13 +223,14 @@ void fill_thermal_entropy_proxy_output_method(
 inline void fill_thermal_entropy_proxy_output(
    amrex::MultiFab& thermal_entropy_proxy,
    amrex::MultiFab const& state,
+   amrex::MultiFab const* cell_spacetime,
    amrex::Geometry const& geometry,
    amrex::Real time,
    RunConfig const& cfg
 )
 {
    fill_thermal_entropy_proxy_output_method<EOSRuntime>(
-      thermal_entropy_proxy, state, geometry, time, cfg
+      thermal_entropy_proxy, state, cell_spacetime, geometry, time, cfg
    );
 }
 
@@ -218,7 +240,8 @@ inline void fill_amr_tag_metric_output(
    amrex::MultiFab const* spacetime_state,
    amrex::Geometry const& geom,
    amrex::Real time,
-   RunConfig const& cfg
+   RunConfig const& cfg,
+   bool analytic_fixed_spacetime
 )
 {
    const EOSParams eos = eos_params(cfg);
@@ -229,7 +252,9 @@ inline void fill_amr_tag_metric_output(
    amrex::MultiFab primitive(
       state.boxArray(), state.DistributionMap(), state.nComp(), state.nGrowVect()
    );
-   if (physical_system_is_relativistic(system) && spacetime_state == nullptr) {
+   if (physical_system_is_relativistic(system)
+       && spacetime_state == nullptr
+       && !analytic_fixed_spacetime) {
       amrex::Abort("relativistic AMR-metric output requires canonical spacetime state");
    }
    if (amr_tag_policy_uses_fluid(tag_policy)) {

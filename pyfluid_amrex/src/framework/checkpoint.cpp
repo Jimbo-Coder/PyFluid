@@ -27,12 +27,14 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 namespace {
 
 constexpr const char* CheckpointLevelPrefix = "Level_";
 constexpr const char* CheckpointHeaderName = "Header";
 constexpr const char* CheckpointHeaderLabel = "PyFluid AMReX checkpoint v4";
-constexpr int CheckpointSchemaVersion = 7;
+constexpr int CheckpointSchemaVersion = 8;
 
 using CheckpointMetadata = std::map<std::string, std::string>;
 
@@ -195,6 +197,7 @@ bool checkpoint_metadata_is_complete(CheckpointMetadata const& metadata)
       "checkpoint_periodicity",
       "checkpoint_refinement_ratios",
       "physics",
+      "relativistic_exterior",
       "spacetime_evolution",
       "spacetime_matter_coupling",
       "spacetime_fixed_metric",
@@ -449,8 +452,11 @@ void read_checkpoint_field_hdf5(amrex::MultiFab& field, std::string const& path,
       H5Sclose(memory_space);
 
       amrex::FArrayBox unpacked(target_box, field.nComp());
-      std::copy(buffer.begin(), buffer.end(), unpacked.dataPtr());
-      field[mfi].copy(unpacked, target_box, 0, target_box, 0, field.nComp());
+      const auto unpacked_elixir = unpacked.elixir();
+      amrex::Gpu::copy(amrex::Gpu::hostToDevice,
+         buffer.begin(), buffer.end(), unpacked.dataPtr());
+      field[mfi].copy<amrex::RunOn::Device>(
+         unpacked, target_box, 0, target_box, 0, field.nComp());
    }
 
    H5Pclose(transfer);
@@ -939,7 +945,7 @@ void write_checkpoint(
 
    const amrex::Real base_time = level_times[0];
    const amrex::Real sync_tol =
-      64.0 * std::numeric_limits<amrex::Real>::epsilon() * std::max<amrex::Real>(1.0, std::abs(base_time));
+      64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * std::max<amrex::Real>(1.0_rt, std::abs(base_time));
    for (int lev = 1; lev <= finest_level; ++lev) {
       if (std::abs(level_times[lev] - base_time) > sync_tol) {
          amrex::Abort("checkpoint requires synchronized AMR level times");
@@ -1196,6 +1202,18 @@ void validate_checkpoint_compatibility(
       refinement_ratios_string(refinement_ratios, finest_level)
    );
    require_metadata(checkpoint_name, metadata, "physics", cfg.physics);
+   const auto formulation = metadata.find("spacetime_formulation");
+   if (formulation != metadata.end()) {
+      require_metadata(checkpoint_name, metadata, "spacetime_formulation", cfg.spacetime_formulation);
+   } else if (cfg.spacetime_formulation != "z4c") {
+      amrex::Abort("legacy spacetime checkpoints use the Cartesian Z4c formulation");
+   }
+   require_metadata(
+      checkpoint_name,
+      metadata,
+      "relativistic_exterior",
+      cfg.relativistic_exterior
+   );
    require_metadata(
       checkpoint_name,
       metadata,
@@ -1239,6 +1257,14 @@ void validate_checkpoint_compatibility(
       checkpoint_name, metadata, "spacetime_mass",
       output_metadata_real_string(cfg.spacetime_mass)
    );
+   const auto stored_interior = metadata.find("spacetime_black_hole_interior");
+   if (cfg.spacetime_black_hole_interior == "excision"
+       || (stored_interior != metadata.end() && stored_interior->second == "excision")) {
+      require_metadata(checkpoint_name, metadata, "spacetime_black_hole_interior", cfg.spacetime_black_hole_interior);
+      require_metadata(checkpoint_name, metadata, "spacetime_black_hole_matter", cfg.spacetime_black_hole_matter);
+      require_metadata(checkpoint_name, metadata, "spacetime_black_hole_fill_radius",
+         output_metadata_real_string(cfg.spacetime_black_hole_fill_radius));
+   }
    require_metadata(checkpoint_name, metadata, "eos", cfg.eos);
    const EOSIdentity eos_metadata = eos_identity(cfg);
    if (cfg.eos == "compose"

@@ -1,0 +1,37 @@
+schema_version = 1
+# Experimental dependency route; CPU AMReX retains its independent pin/install.
+amrex_patch_base = "015c14b65715b277fbc54706ebe7455b196d2254"
+amrex_patch = "patches/amrex-26.10-adaptivecpp.patch"
+amrex_diff_sha256 = "e391300e95b1b5edf4bf738d4c236800c765f1890f996992d8dcab9436844d76"
+sdk = "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+
+[adaptivecpp]
+repository = "https://github.com/AdaptiveCpp/AdaptiveCpp.git"
+commit = "3733a5655103a75c09d81e2ba6b519d15896551f"
+diff_sha256 = "642c1682f90ff47da88d0220fad08a6667a1c25e679088e81ee13db8455fced6"
+patches = [
+  "patches/adaptivecpp-metal-aggregate-types.patch",
+  "patches/adaptivecpp-metal-reject-fp64.patch",
+  "patches/adaptivecpp-metal-fpclass.patch",
+  "patches/adaptivecpp-metal-precise-math.patch",
+  "patches/adaptivecpp-metal-shared-regions.patch",
+  "patches/adaptivecpp-metal-indirect-residency.patch",
+  "patches/adaptivecpp-metal-builtin-identity.patch",
+  "patches/adaptivecpp-metal-scalarize-vectors.patch",
+]
+
+[warpx_metal]
+repository = "https://github.com/Lulzx/warpx-metal.git"
+commit = "7cade298257e9ffac9540549065120ab2d462c7e"
+patches = [
+  "0008-metal-source-identity.patch",
+  "0018-metal-d2h-shared-event-completion.patch",
+  "0019-metal-inorder-d2h-timeout.patch",
+  "0020-metal-async-error-failclosed.patch",
+  "0021-metal-sync-trace.patch",
+  "0022-metal-timeout-failclosed.patch",
+]
+
+[metal_cpp]
+url = "https://developer.apple.com/metal/cpp/files/metal-cpp_macOS15_iOS18.zip"
+sha256 = "0433df1e0ab13c2b0becbd78665071e3fa28381e9714a3fce28a497892b8a184"

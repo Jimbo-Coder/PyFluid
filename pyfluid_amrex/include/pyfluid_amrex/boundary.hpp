@@ -20,6 +20,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 int clamp_index(int value, int lo, int hi) noexcept
 {
@@ -58,47 +60,47 @@ struct BoundaryData {
    amrex::GpuArray<int, AMREX_SPACEDIM * MaxStateComponents> origin_state_parity{};
    EOSParams eos;
    int eos_method = EOSIdealGas;
-   amrex::Real inflow_rho = 1.0;
-   amrex::Real inflow_pressure = 1.0;
-   amrex::Real inflow_v1 = 0.0;
-   amrex::Real inflow_v2 = 0.0;
-   amrex::Real inflow_v3 = 0.0;
-   amrex::Real inflow_b1 = 0.0;
-   amrex::Real inflow_b2 = 0.0;
-   amrex::Real inflow_b3 = 0.0;
+   amrex::Real inflow_rho = 1.0_rt;
+   amrex::Real inflow_pressure = 1.0_rt;
+   amrex::Real inflow_v1 = 0.0_rt;
+   amrex::Real inflow_v2 = 0.0_rt;
+   amrex::Real inflow_v3 = 0.0_rt;
+   amrex::Real inflow_b1 = 0.0_rt;
+   amrex::Real inflow_b2 = 0.0_rt;
+   amrex::Real inflow_b3 = 0.0_rt;
    int inflow_profile = 0;
-   amrex::Real inflow_background_rho = 1.0;
-   amrex::Real inflow_background_pressure = 1.0;
-   amrex::Real inflow_background_v1 = 0.0;
-   amrex::Real inflow_background_v2 = 0.0;
-   amrex::Real inflow_background_v3 = 0.0;
-   amrex::Real inflow_background_b1 = 0.0;
-   amrex::Real inflow_background_b2 = 0.0;
-   amrex::Real inflow_background_b3 = 0.0;
+   amrex::Real inflow_background_rho = 1.0_rt;
+   amrex::Real inflow_background_pressure = 1.0_rt;
+   amrex::Real inflow_background_v1 = 0.0_rt;
+   amrex::Real inflow_background_v2 = 0.0_rt;
+   amrex::Real inflow_background_v3 = 0.0_rt;
+   amrex::Real inflow_background_b1 = 0.0_rt;
+   amrex::Real inflow_background_b2 = 0.0_rt;
+   amrex::Real inflow_background_b3 = 0.0_rt;
    int passive_scalars = 0;
-   amrex::Real inflow_passive_value = 1.0;
-   amrex::Real inflow_background_passive_value = 0.0;
-   amrex::Real inflow_center_y = 0.5;
-   amrex::Real inflow_center_z = 0.5;
-   amrex::Real inflow_radius = 0.08;
+   amrex::Real inflow_passive_value = 1.0_rt;
+   amrex::Real inflow_background_passive_value = 0.0_rt;
+   amrex::Real inflow_center_y = 0.5_rt;
+   amrex::Real inflow_center_z = 0.5_rt;
+   amrex::Real inflow_radius = 0.08_rt;
    int analytic_profile = 0;
-   amrex::Real shock_x0 = 0.5;
-   amrex::Real shock_y0 = 0.5;
-   amrex::Real shock_z0 = 0.5;
-   amrex::Real shock_n1 = 1.0;
-   amrex::Real shock_n2 = 0.0;
-   amrex::Real shock_n3 = 0.0;
-   amrex::Real shock_speed = 0.0;
-   amrex::Real rho_left = 1.0;
-   amrex::Real pressure_left = 1.0;
-   amrex::Real v1_left = 0.0;
-   amrex::Real v2_left = 0.0;
-   amrex::Real v3_left = 0.0;
-   amrex::Real rho_right = 1.0;
-   amrex::Real pressure_right = 1.0;
-   amrex::Real v1_right = 0.0;
-   amrex::Real v2_right = 0.0;
-   amrex::Real v3_right = 0.0;
+   amrex::Real shock_x0 = 0.5_rt;
+   amrex::Real shock_y0 = 0.5_rt;
+   amrex::Real shock_z0 = 0.5_rt;
+   amrex::Real shock_n1 = 1.0_rt;
+   amrex::Real shock_n2 = 0.0_rt;
+   amrex::Real shock_n3 = 0.0_rt;
+   amrex::Real shock_speed = 0.0_rt;
+   amrex::Real rho_left = 1.0_rt;
+   amrex::Real pressure_left = 1.0_rt;
+   amrex::Real v1_left = 0.0_rt;
+   amrex::Real v2_left = 0.0_rt;
+   amrex::Real v3_left = 0.0_rt;
+   amrex::Real rho_right = 1.0_rt;
+   amrex::Real pressure_right = 1.0_rt;
+   amrex::Real v1_right = 0.0_rt;
+   amrex::Real v2_right = 0.0_rt;
+   amrex::Real v3_right = 0.0_rt;
    int mhd = 0;
 };
 
@@ -197,7 +199,7 @@ inline void validate_origin_boundary_geometry(BoundaryData const& bc, amrex::Geo
    const auto periodic = geom.isPeriodicArray();
    const amrex::Box domain = geom.Domain();
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      if (bc.origin_lo[dir] != 0 && problo[dir] != 0.0) {
+      if (bc.origin_lo[dir] != 0 && problo[dir] != 0.0_rt) {
          amrex::Abort("pyfluid.bc_* = origin requires the lower radial coordinate bound to be 0");
       }
    }
@@ -216,7 +218,7 @@ inline void validate_origin_boundary_geometry(BoundaryData const& bc, amrex::Geo
       }
       const amrex::Real width = probhi[phi_dir] - problo[phi_dir];
       if (std::abs(width - constants::two_pi)
-          > static_cast<amrex::Real>(1.0e-12) * constants::two_pi) {
+          > static_cast<amrex::Real>(1.0e-12_rt) * constants::two_pi) {
          amrex::Abort("radial origin boundary with active phi requires a full 2*pi phi domain");
       }
    }
@@ -396,7 +398,7 @@ bool planar_shock_left_state(
       + bc.shock_n2 * (y - bc.shock_y0)
       + bc.shock_n3 * (z - bc.shock_z0)
       - bc.shock_speed * time;
-   return signed_distance < 0.0;
+   return signed_distance < 0.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -414,10 +416,10 @@ amrex::Real analytic_shock_state_component(
       left_state ? bc.v1_left : bc.v1_right,
       left_state ? bc.v2_left : bc.v2_right,
       left_state ? bc.v3_left : bc.v3_right,
-      0.0,
-      0.0,
-      0.0,
-      0.0
+      0.0_rt,
+      0.0_rt,
+      0.0_rt,
+      0.0_rt
    );
 }
 
@@ -495,9 +497,9 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real inflow_profile_weight(BoundaryData const& bc, int boundary_dir, amrex::Real x, amrex::Real y, amrex::Real z) noexcept
 {
    if (bc.inflow_profile == 0) {
-      return 1.0;
+      return 1.0_rt;
    }
-   amrex::Real r2 = 0.0;
+   amrex::Real r2 = 0.0_rt;
    if (boundary_dir == 0) {
 #if (AMREX_SPACEDIM >= 2)
       const amrex::Real dy = y - bc.inflow_center_y;
@@ -520,15 +522,15 @@ amrex::Real inflow_profile_weight(BoundaryData const& bc, int boundary_dir, amre
       r2 += dy * dy + dz * dz;
    }
    if (bc.inflow_profile == 2) {
-      return r2 <= bc.inflow_radius * bc.inflow_radius ? 1.0 : 0.0;
+      return r2 <= bc.inflow_radius * bc.inflow_radius ? 1.0_rt : 0.0_rt;
    }
-   return std::exp(-0.5 * r2 / (bc.inflow_radius * bc.inflow_radius));
+   return std::exp(-0.5_rt * r2 / (bc.inflow_radius * bc.inflow_radius));
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool inflow_profile_is_fixed(BoundaryData const& bc, int boundary_dir, amrex::Real x, amrex::Real y, amrex::Real z) noexcept
 {
-   return bc.inflow_profile != 2 || inflow_profile_weight(bc, boundary_dir, x, y, z) > 0.5;
+   return bc.inflow_profile != 2 || inflow_profile_weight(bc, boundary_dir, x, y, z) > 0.5_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -769,16 +771,16 @@ struct StateFillPatchBoundary {
       if (boundary_dir < 0 && analytic_side < 0) {
          return;
       }
-      const amrex::Real x = geom.ProbLo(0) + (static_cast<amrex::Real>(i) + 0.5) * geom.CellSize(0);
+      const amrex::Real x = geom.ProbLo(0) + (static_cast<amrex::Real>(i) + 0.5_rt) * geom.CellSize(0);
 #if (AMREX_SPACEDIM >= 2)
-      const amrex::Real y = geom.ProbLo(1) + (static_cast<amrex::Real>(j) + 0.5) * geom.CellSize(1);
+      const amrex::Real y = geom.ProbLo(1) + (static_cast<amrex::Real>(j) + 0.5_rt) * geom.CellSize(1);
 #else
-      const amrex::Real y = 0.0;
+      const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-      const amrex::Real z = geom.ProbLo(2) + (static_cast<amrex::Real>(k) + 0.5) * geom.CellSize(2);
+      const amrex::Real z = geom.ProbLo(2) + (static_cast<amrex::Real>(k) + 0.5_rt) * geom.CellSize(2);
 #else
-      const amrex::Real z = 0.0;
+      const amrex::Real z = 0.0_rt;
 #endif
       if (analytic_side >= 0) {
          const int action = analytic_boundary_action(bc, analytic_side, x, y, z, time);
@@ -876,7 +878,7 @@ inline void apply_state_boundary(
    amrex::MultiFab& state,
    amrex::Geometry const& geom,
    BoundaryData const& bc,
-   amrex::Real time = 0.0
+   amrex::Real time = 0.0_rt
 )
 {
    state.FillBoundary(geom.periodicity());
@@ -1027,16 +1029,16 @@ inline void apply_state_boundary(
                boundary_dir = 2;
             }
 #endif
-            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-            const amrex::Real y = 0.0;
+            const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             fixed_inflow = inflow_profile_is_fixed(bc, boundary_dir, x, y, z);
             if (fixed_inflow) {
@@ -1049,16 +1051,16 @@ inline void apply_state_boundary(
          int analytic_action = AnalyticBoundaryCopy;
          int analytic_normal_dir = -1;
          if (analytic_side >= 0) {
-            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-            const amrex::Real y = 0.0;
+            const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             analytic_action = analytic_boundary_action(bc, analytic_side, x, y, z, time);
             analytic_normal_dir = analytic_side / 2;
@@ -1136,20 +1138,20 @@ inline void apply_state_boundary(
             }
 #endif
          }
-         if ((xlo && xlo_bc == diode_bc && s(i, j, k, MOM1) > 0.0)
-            || (xhi && xhi_bc == diode_bc && s(i, j, k, MOM1) < 0.0)) {
-            s(i, j, k, MOM1) = 0.0;
+         if ((xlo && xlo_bc == diode_bc && s(i, j, k, MOM1) > 0.0_rt)
+            || (xhi && xhi_bc == diode_bc && s(i, j, k, MOM1) < 0.0_rt)) {
+            s(i, j, k, MOM1) = 0.0_rt;
          }
 #if (AMREX_SPACEDIM >= 2)
-         if ((ylo && ylo_bc == diode_bc && s(i, j, k, MOM2) > 0.0)
-            || (yhi && yhi_bc == diode_bc && s(i, j, k, MOM2) < 0.0)) {
-            s(i, j, k, MOM2) = 0.0;
+         if ((ylo && ylo_bc == diode_bc && s(i, j, k, MOM2) > 0.0_rt)
+            || (yhi && yhi_bc == diode_bc && s(i, j, k, MOM2) < 0.0_rt)) {
+            s(i, j, k, MOM2) = 0.0_rt;
          }
 #endif
 #if (AMREX_SPACEDIM == 3)
-         if ((zlo && zlo_bc == diode_bc && s(i, j, k, MOM3) > 0.0)
-            || (zhi && zhi_bc == diode_bc && s(i, j, k, MOM3) < 0.0)) {
-            s(i, j, k, MOM3) = 0.0;
+         if ((zlo && zlo_bc == diode_bc && s(i, j, k, MOM3) > 0.0_rt)
+            || (zhi && zhi_bc == diode_bc && s(i, j, k, MOM3) < 0.0_rt)) {
+            s(i, j, k, MOM3) = 0.0_rt;
          }
 #endif
 	      });
@@ -1262,7 +1264,8 @@ inline void apply_mhd_boundary(amrex::MultiFab& state, amrex::Geometry const& ge
    apply_state_boundary<NVAR_MHD>(state, geom, cfg);
 }
 
-inline bool patch_union_fab_contains(
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool patch_union_fab_contains(
    amrex::Dim3 const& lo,
    amrex::Dim3 const& hi,
    int i,
@@ -1475,7 +1478,7 @@ inline void apply_configured_state_boundary(
    amrex::MultiFab& state,
    amrex::Geometry const& geom,
    BoundaryData const& bc,
-   amrex::Real time = 0.0
+   amrex::Real time = 0.0_rt
 )
 {
    const int ncomp = state.nComp();
@@ -1503,7 +1506,7 @@ inline void apply_configured_state_boundary(
    amrex::MultiFab& state,
    amrex::Geometry const& geom,
    RunConfig const& cfg,
-   amrex::Real time = 0.0
+   amrex::Real time = 0.0_rt
 )
 {
    apply_configured_state_boundary(state, geom, make_boundary_data(cfg), time);

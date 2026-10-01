@@ -3,7 +3,7 @@
 
    void fill_hydro_repair_seed_from_coarse_level(int lev, amrex::MultiFab& seed)
    {
-      seed.setVal(0.0);
+      seed.setVal(0.0_rt);
       if (lev <= 0 || lev > finestLevel()) {
          return;
       }
@@ -75,7 +75,7 @@
             amrex::IntVect(repair_grow),
             Geom(lev).periodicity()
          );
-         repair_counts.setVal(0.0);
+         repair_counts.setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -99,9 +99,9 @@
                      const amrex::Real current_pressure =
                         pressure_from_array_runtime(eos_method, src, i, j, k, eos, false);
                      bool current_valid = solid(i, j, k, 0) == 0
-                        && src(i, j, k, RHO) > 0.0
-                        && src(i, j, k, ENERGY) > 0.0
-                        && current_pressure > 0.0
+                        && src(i, j, k, RHO) > 0.0_rt
+                        && src(i, j, k, ENERGY) > 0.0_rt
+                        && current_pressure > 0.0_rt
                         && amrex::Math::isfinite(current_pressure);
                      for (int n = 0; n < ncomp; ++n) {
                         current_valid = current_valid && amrex::Math::isfinite(src(i, j, k, n));
@@ -109,7 +109,7 @@
                      if (solid(i, j, k, 0) != 0 || current_valid) {
                         continue;
                      }
-                     counts(i, j, k, 0) = 1.0;
+                     counts(i, j, k, 0) = 1.0_rt;
                      bool found = false;
                      int donor_i = i;
                      int donor_j = j;
@@ -159,12 +159,12 @@
                               }
 #endif
                               bool donor_valid = solid(ci, cj, ck, 0) == 0
-                                 && src(ci, cj, ck, RHO) > 0.0
-                                 && src(ci, cj, ck, ENERGY) > 0.0;
+                                 && src(ci, cj, ck, RHO) > 0.0_rt
+                                 && src(ci, cj, ck, ENERGY) > 0.0_rt;
                               const amrex::Real donor_pressure =
                                  pressure_from_array_runtime(eos_method, src, ci, cj, ck, eos, false);
                               donor_valid = donor_valid
-                                 && donor_pressure > 0.0
+                                 && donor_pressure > 0.0_rt
                                  && amrex::Math::isfinite(donor_pressure);
                               for (int n = 0; n < ncomp; ++n) {
                                  donor_valid = donor_valid && amrex::Math::isfinite(src(ci, cj, ck, n));
@@ -189,13 +189,13 @@
                      }
                      if (!found) {
                         bool seed_valid = use_coarse_seed
-                           && seed(i, j, k, RHO) > 0.0
-                           && seed(i, j, k, ENERGY) > 0.0;
+                           && seed(i, j, k, RHO) > 0.0_rt
+                           && seed(i, j, k, ENERGY) > 0.0_rt;
                         const amrex::Real seed_pressure = use_coarse_seed
                            ? pressure_from_array_runtime(eos_method, seed, i, j, k, eos, false)
-                           : -1.0;
+                           : -1.0_rt;
                         seed_valid = seed_valid
-                           && seed_pressure > 0.0
+                           && seed_pressure > 0.0_rt
                            && amrex::Math::isfinite(seed_pressure);
                         for (int n = 0; n < ncomp; ++n) {
                            seed_valid = seed_valid && amrex::Math::isfinite(seed(i, j, k, n));
@@ -206,13 +206,13 @@
                         for (int n = 0; n < ncomp; ++n) {
                            dst(i, j, k, n) = seed(i, j, k, n);
                         }
-                        counts(i, j, k, 1) = 1.0;
+                        counts(i, j, k, 1) = 1.0_rt;
                         continue;
                      }
                      for (int n = 0; n < ncomp; ++n) {
                         dst(i, j, k, n) = src(donor_i, donor_j, donor_k, n);
                      }
-                     counts(i, j, k, 1) = 1.0;
+                     counts(i, j, k, 1) = 1.0_rt;
                   }
                }
             }
@@ -220,12 +220,12 @@
          }
 
          const amrex::Real bad = repair_counts.sum(0);
-         if (bad <= 0.0) {
+         if (bad <= 0.0_rt) {
             fluid_state_.state()[lev]->FillBoundary(Geom(lev).periodicity());
             return;
          }
          const amrex::Real repaired = repair_counts.sum(1);
-         if (repaired <= 0.0) {
+         if (repaired <= 0.0_rt) {
             std::ostringstream message;
             message << "AMR solid regrid produced " << bad
                     << " nonpositive fluid cells on level " << lev
@@ -289,7 +289,7 @@
             amrex::IntVect(repair_grow),
             Geom(lev).periodicity()
          );
-         counts.setVal(0.0);
+         counts.setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -363,12 +363,12 @@
                               }
 #endif
                               bool donor_valid = solid(ci, cj, ck, 0) == 0
-                                 && src(ci, cj, ck, RHO) > 0.0
-                                 && src(ci, cj, ck, ENERGY) > 0.0;
+                                 && src(ci, cj, ck, RHO) > 0.0_rt
+                                 && src(ci, cj, ck, ENERGY) > 0.0_rt;
                               const amrex::Real donor_pressure =
                                  pressure_from_array_runtime(eos_method, src, ci, cj, ck, eos, false);
                               donor_valid = donor_valid
-                                 && donor_pressure > 0.0
+                                 && donor_pressure > 0.0_rt
                                  && amrex::Math::isfinite(donor_pressure);
                               for (int n = 0; n < ncomp; ++n) {
                                  donor_valid = donor_valid && amrex::Math::isfinite(src(ci, cj, ck, n));
@@ -395,17 +395,17 @@
                         for (int n = 0; n < ncomp; ++n) {
                            dst(i, j, k, n) = src(donor_i, donor_j, donor_k, n);
                         }
-                        out(i, j, k, 1) = 1.0;
+                        out(i, j, k, 1) = 1.0_rt;
                         continue;
                      }
                      bool seed_valid = use_coarse_seed
-                        && seed(i, j, k, RHO) > 0.0
-                        && seed(i, j, k, ENERGY) > 0.0;
+                        && seed(i, j, k, RHO) > 0.0_rt
+                        && seed(i, j, k, ENERGY) > 0.0_rt;
                      const amrex::Real seed_pressure = use_coarse_seed
                         ? pressure_from_array_runtime(eos_method, seed, i, j, k, eos, false)
-                        : -1.0;
+                        : -1.0_rt;
                      seed_valid = seed_valid
-                        && seed_pressure > 0.0
+                        && seed_pressure > 0.0_rt
                         && amrex::Math::isfinite(seed_pressure);
                      for (int n = 0; n < ncomp; ++n) {
                         seed_valid = seed_valid && amrex::Math::isfinite(seed(i, j, k, n));
@@ -414,20 +414,20 @@
                         for (int n = 0; n < ncomp; ++n) {
                            dst(i, j, k, n) = seed(i, j, k, n);
                         }
-                        out(i, j, k, 1) = 1.0;
+                        out(i, j, k, 1) = 1.0_rt;
                         continue;
                      }
                      const amrex::Real current_pressure =
                         pressure_from_array_runtime(eos_method, src, i, j, k, eos, false);
-                     bool current_valid = src(i, j, k, RHO) > 0.0
-                        && src(i, j, k, ENERGY) > 0.0
-                        && current_pressure > 0.0
+                     bool current_valid = src(i, j, k, RHO) > 0.0_rt
+                        && src(i, j, k, ENERGY) > 0.0_rt
+                        && current_pressure > 0.0_rt
                         && amrex::Math::isfinite(current_pressure);
                      for (int n = 0; n < ncomp; ++n) {
                         current_valid = current_valid && amrex::Math::isfinite(src(i, j, k, n));
                      }
                      if (!current_valid) {
-                        out(i, j, k, 0) = 1.0;
+                        out(i, j, k, 0) = 1.0_rt;
                      }
                   }
                }
@@ -435,12 +435,12 @@
          }
          }
          const amrex::Real bad = counts.sum(0);
-         if (bad <= 0.0) {
+         if (bad <= 0.0_rt) {
             fluid_state_.state()[lev]->FillBoundary(Geom(lev).periodicity());
             return;
          }
          const amrex::Real filled = counts.sum(1);
-         if (filled <= 0.0) {
+         if (filled <= 0.0_rt) {
             std::ostringstream message;
             message << "AMR solid extension found " << bad
                     << " needed solid cells on level " << lev

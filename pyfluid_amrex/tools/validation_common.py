@@ -12,12 +12,13 @@ import subprocess
 import tempfile
 import time
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from causal_validation import infer_localized_causal_model, rows_before_boundary_contact
+from input_parameters import read_key_values
 from machine_common import MachineProfile, load_machine, mpi_prefix
 
 
@@ -48,6 +49,104 @@ class ScalarPolicy:
    divb_tol: float | None = 1.0e-10
    floors: bool = True
    require_performance: bool = True
+   external_tol: float = 2.0e-10
+   arithmetic_policy: str = ""
+   mantissa_bits: int | None = None
+   divb_scale: float | None = None
+
+
+def real_epsilon(mantissa_bits: int) -> float:
+   """Spacing above one in a supported solver Real type, from output metadata."""
+   if mantissa_bits not in (24, 53):
+      raise ValueError(f"unsupported Real precision: {mantissa_bits} mantissa bits")
+   return math.ldexp(1.0, 1 - mantissa_bits)
+
+
+def precision_scalar_policy(
+   policy: ScalarPolicy,
+   mantissa_bits: int,
+   *,
+   divb_scale: float | None = None,
+) -> ScalarPolicy:
+   """Arithmetic acceptance for short, unit-scale conservation controls.
+
+   Retain the existing 64-epsilon accounting allowance and FP64 accounting
+   bounds. Integrated L1 divergence instead uses 64*epsilon*V*B_ref/h, in
+   BOTH precisions; declare V*B_ref/h independently of the observed error.
+   This is not a truncation-error, long-time stability, or GR-constraint budget.
+   Disabled and exact-zero checks stay unchanged. No policy is applied
+   implicitly to legacy gates.
+   """
+   roundoff = 64 * real_epsilon(mantissa_bits)
+   if policy.divb_tol is None and divb_scale is not None:
+      raise ValueError("divB scale supplied for a disabled check")
+   if policy.divb_tol not in (None, 0.0) and divb_scale is None:
+      raise ValueError("precision divB checks require a V*B_ref/h scale")
+   if divb_scale is not None:
+      if not math.isfinite(divb_scale) or divb_scale <= 0:
+         raise ValueError("precision divB checks require a positive finite V*B_ref/h scale")
+      if not math.isfinite(roundoff * divb_scale) or roundoff * divb_scale == 0:
+         raise ValueError("precision divB tolerance is not representable")
+
+   return replace(
+      policy,
+      mass_tol=(policy.mass_tol if policy.mass_tol in (None, 0.0)
+                else max(policy.mass_tol, roundoff)),
+      energy_tol=(policy.energy_tol if policy.energy_tol in (None, 0.0)
+                  else max(policy.energy_tol, roundoff)),
+      momentum_tol=(policy.momentum_tol if policy.momentum_tol in (None, 0.0)
+                    else max(policy.momentum_tol, roundoff)),
+      external_tol=0.0 if policy.external_tol == 0.0 else max(policy.external_tol, roundoff),
+      divb_tol=(policy.divb_tol if policy.divb_tol in (None, 0.0)
+                else roundoff * divb_scale),
+      arithmetic_policy="short_run_roundoff_v1",
+      mantissa_bits=mantissa_bits,
+      divb_scale=divb_scale,
+   )
+
+
+def cartesian_divb_scale(run_dir: Path, *, field_scale: float) -> float:
+   """Scale integrated divB L1 by V*B_ref/h_min on periodic Cartesian boxes.
+
+   B_ref is an independently specified characteristic field, not measured
+   divergence or an arbitrary floor for a null field. On Cartesian AMR this
+   is a conservative GLOBAL bound using the smallest reported width across
+   active directions and saved times; it is not a cellwise normalized norm.
+   Curvilinear face-area/volume conditioning needs its own physical scale.
+   The box volume is used once, regardless of refined cell counts. Symmetry
+   multipliers and masked domains are outside this periodic full-box control.
+   """
+   if not math.isfinite(field_scale) or field_scale <= 0:
+      raise ValueError("magnetic field scale must be positive and finite")
+   input_file = run_dir / "run.in"
+   if not input_file.is_file():
+      raise ValueError(f"missing canonical input: {input_file}")
+   params = read_key_values(input_file)
+   if params.get("mesh.coordinate", "cartesian") != "cartesian" or int(
+      params.get("geometry.coord_sys", "0")
+   ) != 0:
+      raise ValueError("Cartesian divB scale cannot use curvilinear coordinate widths")
+   dim = len(params.get("amr.n_cell", "").split())
+   if dim not in (1, 2, 3):
+      raise ValueError("missing or invalid Cartesian mesh dimension")
+   if params.get("geometry.is_periodic", "").split() != ["1"] * dim:
+      raise ValueError("divB box-volume normalization requires a periodic full-box control")
+   lower = [float(value) for value in params.get("geometry.prob_lo", "").split()]
+   upper = [float(value) for value in params.get("geometry.prob_hi", "").split()]
+   if len(lower) != dim or len(upper) != dim:
+      raise ValueError("missing Cartesian box bounds")
+   lengths = [hi - lo for lo, hi in zip(lower, upper)]
+   if any(not math.isfinite(length) or length <= 0 for length in lengths):
+      raise ValueError("invalid Cartesian box bounds")
+   levels = read_tsv(run_dir / "amr_levels.tsv", require_complete=True)
+   widths = [float(row.get(f"finest_dx{axis + 1}", "nan"))
+             for row in levels for axis in range(dim)]
+   if not widths or any(not math.isfinite(width) or width <= 0 for width in widths):
+      raise ValueError("missing or invalid directional widths in amr_levels.tsv")
+   scale = math.prod(lengths) * field_scale / min(widths)
+   if not math.isfinite(scale) or scale <= 0:
+      raise ValueError("magnetic divergence scale is not representable")
+   return scale
 
 
 @dataclass(frozen=True)
@@ -66,6 +165,7 @@ MPI_FATAL_MARKERS = (
    "SIGABRT",
    "SIGSEGV",
    "Segmentation fault",
+   "Segfault\n",  # AMReX BLBackTrace::handler, before backtrace generation.
    "Floating point exception",
 )
 
@@ -90,7 +190,7 @@ def _signal_process_group(process: subprocess.Popen[bytes], signum: int) -> None
 
 
 def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
-   """Terminate the launcher and every rank in its dedicated process group."""
+   """Terminate the launcher and descendants in its dedicated process group."""
    _signal_process_group(process, signal.SIGTERM)
    try:
       process.wait(timeout=3)
@@ -103,6 +203,32 @@ def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
    except subprocess.TimeoutExpired:
       process.kill()
       process.wait()
+
+
+def run_bounded_command(
+   command: Sequence[str],
+   *,
+   timeout: float,
+   cwd: Path = ROOT,
+   env: Mapping[str, str] | None = None,
+   stdout: Any = None,
+) -> subprocess.CompletedProcess:
+   """Run with a hard deadline; stop descendants on timeout or interruption.
+
+   Uses the same POSIX process-group ownership as MPI runs. Output streams to
+   the caller's console or log; a timeout raises only after process cleanup.
+   """
+   if not math.isfinite(timeout) or timeout <= 0:
+      raise ValueError("timeout must be finite and positive")
+   process = subprocess.Popen(
+      command, cwd=cwd, env=env, stdout=stdout, stderr=subprocess.STDOUT,
+      start_new_session=os.name == "posix",
+   )
+   try:
+      return subprocess.CompletedProcess(command, process.wait(timeout=timeout))
+   except BaseException:
+      _terminate_process_group(process)
+      raise
 
 
 def amrex_build_dir(
@@ -330,7 +456,7 @@ def materialize_run_input(
    remove_parameters: Sequence[str] = (),
 ) -> Path:
    """Write one concrete AMReX input file for a generated validation case."""
-   values = read_key_values(base_input)
+   values = read_key_values(base_input, serialized=True)
    values.update(parameters)
    for name in remove_parameters:
       values.pop(name, None)
@@ -368,6 +494,7 @@ def scalar_checks(
    energy_tol: float = 1.0e-8,
    momentum_tol: float = 1.0e-8,
    divb_tol: float = 1.0e-10,
+   external_tol: float = 2.0e-10,
 ) -> ScalarPolicy:
    return ScalarPolicy(
       name=name,
@@ -377,6 +504,7 @@ def scalar_checks(
       divb_tol=divb_tol if divb else None,
       floors=floors,
       require_performance=performance,
+      external_tol=external_tol,
    )
 
 
@@ -493,6 +621,7 @@ VALIDATION_HISTORY_FIELDS = [
    "momentum_abs_drift",
    "divb_l1",
    "external_budget_valid",
+   "external_mass_budget_valid",
    "external_mass_rel_error",
    "external_energy_rel_error",
    "causal_boundary_contact_time",
@@ -602,19 +731,6 @@ def next_numbered_path(directory: Path, stem: str, suffix: str = ".png") -> Path
       if not path.exists():
          return path
       index += 1
-
-
-def read_key_values(path: Path | None) -> dict[str, str]:
-   values: dict[str, str] = {}
-   if path is None or not path.exists():
-      return values
-   for raw in path.read_text().splitlines():
-      line = raw.split("#", 1)[0].strip()
-      if not line or "=" not in line:
-         continue
-      key, value = line.split("=", 1)
-      values[key.strip()] = value.strip()
-   return values
 
 
 def find_input_file(run_dir: Path, explicit: Path | None = None) -> Path | None:
@@ -801,6 +917,7 @@ def check_scalars(
    divb: bool = True,
    floors: bool = True,
    performance: bool = True,
+   allow_vacuum: bool = False,
    mass_tol: float = 1.0e-8,
    energy_tol: float = 1.0e-8,
    momentum_tol: float = 1.0e-8,
@@ -813,10 +930,18 @@ def check_scalars(
    if floors:
       min_rho_values = [parse_float(row.get("min_rho")) for row in rows]
       min_pressure_values = [parse_float(row.get("min_pressure")) for row in rows]
-      if not min_rho_values or any(not finite_positive(value) for value in min_rho_values):
-         failures.append("min_rho has a non-positive or non-finite row")
-      if not min_pressure_values or any(not finite_positive(value) for value in min_pressure_values):
-         failures.append("min_pressure has a non-positive or non-finite row")
+      density_valid = (
+         lambda value: math.isfinite(value) and value >= 0.0
+      ) if allow_vacuum else finite_positive
+      pressure_valid = (
+         lambda value: math.isfinite(value) and value >= 0.0
+      ) if allow_vacuum else finite_positive
+      if not min_rho_values or any(not density_valid(value) for value in min_rho_values):
+         qualifier = "negative" if allow_vacuum else "non-positive"
+         failures.append(f"min_rho has a {qualifier} or non-finite row")
+      if not min_pressure_values or any(not pressure_valid(value) for value in min_pressure_values):
+         qualifier = "negative" if allow_vacuum else "non-positive"
+         failures.append(f"min_pressure has a {qualifier} or non-finite row")
 
    if mass:
       mass_drift = max_abs_column(rows, "mass_rel_drift")
@@ -855,7 +980,13 @@ def check_scalars(
    return failures
 
 
-def check_scalar_rows(rows: list[dict[str, str]], policy: ScalarPolicy, *, mhd: bool) -> list[str]:
+def check_scalar_rows(
+   rows: list[dict[str, str]],
+   policy: ScalarPolicy,
+   *,
+   mhd: bool,
+   allow_vacuum: bool = False,
+) -> list[str]:
    failures = check_scalars(
       rows,
       mhd=mhd,
@@ -865,16 +996,18 @@ def check_scalar_rows(rows: list[dict[str, str]], policy: ScalarPolicy, *, mhd: 
       divb=policy.divb_tol is not None,
       floors=policy.floors,
       performance=policy.require_performance,
-      mass_tol=policy.mass_tol or 1.0e-8,
-      energy_tol=policy.energy_tol or 1.0e-8,
-      momentum_tol=policy.momentum_tol or 1.0e-8,
-      divb_tol=policy.divb_tol or 1.0e-10,
+      allow_vacuum=allow_vacuum,
+      mass_tol=0.0 if policy.mass_tol is None else policy.mass_tol,
+      energy_tol=0.0 if policy.energy_tol is None else policy.energy_tol,
+      momentum_tol=0.0 if policy.momentum_tol is None else policy.momentum_tol,
+      divb_tol=0.0 if policy.divb_tol is None else policy.divb_tol,
    )
    failures.extend(
       check_external_conservation(
          rows,
          mass=policy.mass_tol is not None,
          energy=policy.energy_tol is not None,
+         tolerance=policy.external_tol,
       )
    )
    return failures
@@ -890,17 +1023,18 @@ def check_external_conservation(
    """Check the solver's discrete physical-boundary/source conservation ledger."""
    if not rows or "external_budget_valid" not in rows[0]:
       return []
-   valid_rows = [row for row in rows if parse_float(row.get("external_budget_valid"), 0.0) > 0.5]
-   if not valid_rows:
-      return []
-
    failures: list[str] = []
    columns = []
    if mass:
-      columns.append("external_mass_rel_error")
+      columns.append(("external_mass_rel_error", "external_mass_budget_valid"))
    if energy:
-      columns.append("external_energy_rel_error")
-   for column in columns:
+      columns.append(("external_energy_rel_error", "external_budget_valid"))
+   for column, validity in columns:
+      valid_rows = [row for row in rows if parse_float(
+         row.get(validity, row.get("external_budget_valid")), 0.0
+      ) > 0.5]
+      if not valid_rows:
+         continue
       error = max_abs_column(valid_rows, column)
       if not math.isfinite(error) or error > tolerance:
          failures.append(f"{column}={error:.3e} > {tolerance:.3e}")
@@ -992,12 +1126,42 @@ def scalar_validation_row(
       policy_reason = "declared validation policy"
 
    mhd_enabled = infer_mhd_run(params, summary, rows) if mhd is None else mhd
-   failures = check_scalar_rows(rows, scalar_policy, mhd=mhd_enabled)
+   allow_vacuum = (
+      params.get("pyfluid.relativistic_exterior", "atmosphere").strip().lower()
+      == "vacuum"
+   )
+   failures = check_scalar_rows(
+      rows,
+      scalar_policy,
+      mhd=mhd_enabled,
+      allow_vacuum=allow_vacuum,
+   )
+   if scalar_policy.mantissa_bits is not None:
+      # Keep ordinary launch/input helpers independent of NumPy/HDF5 imports.
+      from plotfile_reader import read_scalars_metadata
+
+      actual_bits = read_scalars_metadata(run_dir).get("real_mantissa_bits", "")
+      if actual_bits != str(scalar_policy.mantissa_bits):
+         failures.append(
+            f"precision policy expects {scalar_policy.mantissa_bits} mantissa bits; "
+            f"output reports {actual_bits!r}"
+         )
    causal_failures, causal_metrics = check_causal_precontact_scalars(rows, params, scalar_policy)
    failures.extend(causal_failures)
    if math.isfinite(parse_float(causal_metrics["causal_boundary_contact_time"])):
       policy_reason += "; closed scalar budgets enforced before causal boundary contact"
    final = rows[-1] if rows else {}
+   divb_l1 = max_abs_column(rows, "divb_l1") if mhd_enabled else 0.0
+   epsilon = (real_epsilon(scalar_policy.mantissa_bits)
+              if scalar_policy.mantissa_bits is not None else math.nan)
+   divb_scaled = (divb_l1 / scalar_policy.divb_scale
+                  if scalar_policy.divb_scale is not None else math.nan)
+   if scalar_policy.arithmetic_policy:
+      policy_reason += (f"; arithmetic={scalar_policy.arithmetic_policy}"
+                        f"; mantissa_bits={scalar_policy.mantissa_bits}")
+      if scalar_policy.divb_scale is not None:
+         policy_reason += (f"; divB_scale={scalar_policy.divb_scale:.9g}"
+                           f"; divB_tolerance={scalar_policy.divb_tol:.9g}")
    return {
       "kind": kind,
       "case": case or run_dir.name,
@@ -1007,6 +1171,17 @@ def scalar_validation_row(
       "dim": "" if dim is None else str(dim),
       "input": base_input or (repo_relative(found_input) if found_input else ""),
       "policy": scalar_policy.name,
+      "arithmetic_policy": scalar_policy.arithmetic_policy,
+      "mantissa_bits": scalar_policy.mantissa_bits,
+      "real_epsilon": epsilon,
+      "mass_tolerance": scalar_policy.mass_tol,
+      "energy_tolerance": scalar_policy.energy_tol,
+      "momentum_tolerance": scalar_policy.momentum_tol,
+      "ledger_tolerance": scalar_policy.external_tol,
+      "divb_tolerance": scalar_policy.divb_tol,
+      "divb_scale": scalar_policy.divb_scale,
+      "divb_l1_scaled": divb_scaled,
+      "divb_epsilon_units": divb_scaled / epsilon,
       "description": policy_reason,
       "run_dir": repo_relative(run_dir),
       "ranks": "" if ranks is None else str(ranks),
@@ -1019,8 +1194,11 @@ def scalar_validation_row(
       "gravity_total_energy_rel_drift": max_abs_column(rows, "gravity_total_energy_rel_drift"),
       "passive_mass_rel_drift": max_abs_column(rows, "passive_mass_rel_drift"),
       "momentum_abs_drift": momentum_abs_drift(rows),
-      "divb_l1": max_abs_column(rows, "divb_l1") if mhd_enabled else 0.0,
+      "divb_l1": divb_l1,
       "external_budget_valid": int(parse_float(final.get("external_budget_valid"), 0.0) > 0.5),
+      "external_mass_budget_valid": int(parse_float(final.get(
+         "external_mass_budget_valid", final.get("external_budget_valid")
+      ), 0.0) > 0.5),
       "external_mass_rel_error": max_abs_column(rows, "external_mass_rel_error"),
       "external_energy_rel_error": max_abs_column(rows, "external_energy_rel_error"),
       **causal_metrics,

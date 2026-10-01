@@ -60,33 +60,39 @@ void fill_rhd_cache(PrimitiveCacheLaunch const& launch)
       launch.primitive,
       launch.conserved,
       launch.eos,
-      *launch.cell_spacetime
+      *launch.cell_spacetime,
+      launch.excision,
+      launch.exterior
    );
 }
 
 template <PhysicalSystem System, int EosMethod>
-void project_atmosphere(
+void project_selected_exterior(
    amrex::MultiFab& conserved,
    amrex::MultiFab const& cell_spacetime,
    EOSParams const& eos,
-   EOSThermodynamicState const& atmosphere,
+   RelativisticExteriorState const& exterior,
    int ghost_cells,
    amrex::Long* c2p_fallback_count,
-   amrex::Long* atmosphere_reset_count
+   amrex::Long* atmosphere_reset_count,
+   amrex::iMultiFab const* black_hole_mask,
+   BlackHoleMatterParameters black_hole_matter,
+   amrex::Long* interior_bound_count,
+   amrex::Long* interior_reset_count
 )
 {
-   project_relativistic_atmosphere<System, EosMethod>(
+   project_relativistic_exterior<System, EosMethod>(
       conserved,
       eos,
-      atmosphere,
-      [&](amrex::MFIter const& mfi) {
-         return StoredSpacetimeCellMetricAccessor{
-            cell_spacetime.const_array(mfi)
-         };
-      },
+      exterior,
+      StoredSpacetimeCellMetricFactory{cell_spacetime},
       ghost_cells,
       c2p_fallback_count,
-      atmosphere_reset_count
+      atmosphere_reset_count,
+      black_hole_mask,
+      black_hole_matter,
+      interior_bound_count,
+      interior_reset_count
    );
 }
 
@@ -111,6 +117,8 @@ void fill_primitive_cache(PrimitiveCacheLaunch const& launch)
             *launch.geometry,
             launch.fixed_spacetime,
             launch.time,
+            launch.mesh_coordinate,
+            launch.mesh_axes,
             launch.canonical_face_b,
             launch.canonical_face_b_cell_mask
          );
@@ -123,6 +131,8 @@ void fill_primitive_cache(PrimitiveCacheLaunch const& launch)
             *launch.geometry,
             launch.fixed_spacetime,
             launch.time,
+            launch.mesh_coordinate,
+            launch.mesh_axes,
             launch.canonical_face_b,
             launch.canonical_face_b_cell_mask
          );
@@ -169,42 +179,53 @@ void fill_primitive_cache(PrimitiveCacheLaunch const& launch)
          *launch.cell_spacetime,
          launch.geometry,
          launch.canonical_face_b,
-         launch.canonical_face_b_cell_mask
+         launch.canonical_face_b_cell_mask,
+         launch.excision,
+         launch.exterior
       );
       return;
    }
    amrex::Abort("unsupported state layout in primitive-cache factory");
 }
 
-void apply_relativistic_atmosphere(
+void apply_relativistic_exterior(
    amrex::MultiFab& conserved,
    amrex::MultiFab const& cell_spacetime,
    PhysicalSystem physical_system,
    EOSParams const& eos,
-   EOSThermodynamicState const& atmosphere,
+   RelativisticExteriorState const& exterior,
    int ghost_cells,
    amrex::Long* c2p_fallback_count,
-   amrex::Long* atmosphere_reset_count
+   amrex::Long* atmosphere_reset_count,
+   amrex::iMultiFab const* black_hole_mask,
+   BlackHoleMatterParameters black_hole_matter,
+   amrex::Long* interior_bound_count,
+   amrex::Long* interior_reset_count
 )
 {
    if (physical_system == PhysicalSystem::RMHD) {
-      project_atmosphere<PhysicalSystem::RMHD, EOSRuntime>(
+      project_selected_exterior<PhysicalSystem::RMHD, EOSRuntime>(
          conserved,
          cell_spacetime,
          eos,
-         atmosphere,
+         exterior,
          ghost_cells,
          c2p_fallback_count,
-         atmosphere_reset_count
+         atmosphere_reset_count,
+         black_hole_mask,
+         black_hole_matter,
+         interior_bound_count,
+         interior_reset_count
       );
       return;
    }
    if (physical_system != PhysicalSystem::RHD) {
       return;
    }
-   project_atmosphere<PhysicalSystem::RHD, EOSRuntime>(
-      conserved, cell_spacetime, eos, atmosphere, ghost_cells,
-      c2p_fallback_count, atmosphere_reset_count
+   project_selected_exterior<PhysicalSystem::RHD, EOSRuntime>(
+      conserved, cell_spacetime, eos, exterior, ghost_cells,
+      c2p_fallback_count, atmosphere_reset_count, black_hole_mask,
+      black_hole_matter, interior_bound_count, interior_reset_count
    );
 }
 

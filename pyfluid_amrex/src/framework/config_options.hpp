@@ -1,5 +1,7 @@
 #pragma once
 
+#include "pyfluid_amrex/generated/time_integrator_catalog.hpp"
+
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/eos/presets.hpp"
 #include "pyfluid_amrex/generated/amr_tag_catalog.hpp"
@@ -22,13 +24,13 @@ static constexpr std::array<NamedOptionCode, 5> RiemannOptions{{
 
 inline constexpr auto const& ReconOptions = ReconstructionMethodCatalog;
 
-static constexpr std::array<NamedOptionCode, 5> TimestepOptions{{
-   {"euler", TimeEuler},
-   {"corrector", TimeCorrector},
-   {"midpoint", TimeMidpoint},
-   {"ssprk3", TimeSSPRK3},
-   {"rk4", TimeRK4},
-}};
+inline constexpr auto TimestepOptions = [] {
+   std::array<NamedOptionCode, TimeIntegratorCatalog.size()> options{};
+   for (std::size_t i = 0; i < options.size(); ++i) {
+      options[i] = {TimeIntegratorCatalog[i].name, TimeIntegratorCatalog[i].code};
+   }
+   return options;
+}();
 
 static constexpr std::array<NamedOptionCode, 3> DiffusionOptions{{
    {"none", DiffusionNone},
@@ -46,9 +48,13 @@ static constexpr std::array<NamedOptionCode, 4> EOSOptions{{
 inline constexpr auto EOSPresetOptions = eos::PiecewisePolytropePresetNames;
 
 static constexpr std::array<std::string_view, 4> PhysicsOptions{{"hydro", "mhd", "rhd", "rmhd"}};
+static constexpr std::array<std::string_view, 2> RelativisticExteriorOptions{{
+   "atmosphere", "vacuum"
+}};
 static constexpr std::array<std::string_view, 3> SpacetimeEvolutionOptions{{
    "none", "fixed", "evolved"
 }};
+static constexpr std::array<std::string_view, 2> SpacetimeFormulationOptions{{"z4c", "fccz4"}};
 static constexpr std::array<std::string_view, 2> SpacetimeMatterCouplingOptions{{"coupled", "vacuum"}};
 static constexpr std::array<std::string_view, 9> SpacetimeInitialDataOptions{{
    "minkowski", "gauge_wave", "linear_wave", "robust_stability",
@@ -56,6 +62,9 @@ static constexpr std::array<std::string_view, 9> SpacetimeInitialDataOptions{{
 }};
 static constexpr std::array<std::string_view, 4> BlackHoleInteriorOptions{{
    "exterior", "filled", "excision", "puncture"
+}};
+static constexpr std::array<std::string_view, 3> BlackHoleMatterOptions{{
+   "evolve", "bounded", "excision"
 }};
 static constexpr std::array<std::string_view, 3> MagneticInitialDataOptions{{
    "id", "zero", "none"
@@ -83,6 +92,9 @@ static constexpr std::array<std::string_view, 5> Z4cLapseGaugeOptions{{
 }};
 static constexpr std::array<std::string_view, 2> Z4cShiftGaugeOptions{{
    "frozen", "gamma_driver"
+}};
+static constexpr std::array<std::string_view, 2> Z4cOuterBoundaryOptions{{
+   "extrapolate", "sommerfeld"
 }};
 static constexpr std::array<std::string_view, 5> FixedSpacetimeMetricOptions{{
    "minkowski", "rindler", "schwarzschild_isotropic", "kerr_schild",

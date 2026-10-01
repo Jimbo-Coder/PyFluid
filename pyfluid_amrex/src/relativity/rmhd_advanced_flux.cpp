@@ -4,6 +4,7 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/flux_factory.hpp"
+#include "pyfluid_amrex/spacetime_excision.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
 #include "pyfluid_amrex/reconstruction/mp5.hpp"
 #include "pyfluid_amrex/reconstruction/parabolic.hpp"
@@ -22,6 +23,8 @@
 #include <limits>
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -34,7 +37,7 @@ RMHDPrimitive cached_rmhd_primitive(
 {
    return {
       primitive(i, j, k, RHO),
-      0.0,
+      0.0_rt,
       primitive(i, j, k, ENERGY),
       primitive(i, j, k, MOM1),
       primitive(i, j, k, MOM2),
@@ -93,7 +96,7 @@ bool rmhd_hllc_shock_stabilization_needed(
    static_assert(sensor_radius >= 0 && sensor_radius <= 2);
    const RMHDFaceFrame frame = rmhd_face_frame<Direction>(face_metric);
    amrex::Real pressure_min = std::numeric_limits<amrex::Real>::infinity();
-   amrex::Real pressure_max = 0.0;
+   amrex::Real pressure_max = 0.0_rt;
    for (int offset = 0; offset <= sensor_radius; ++offset) {
       const RMHDPrimitive local_l = rmhd_primitive_to_face_frame(
          cached_rmhd_primitive_at_offset<Direction>(
@@ -116,7 +119,7 @@ bool rmhd_hllc_shock_stabilization_needed(
          pressure_max, amrex::max(total_pressure_l, total_pressure_r)
       );
    }
-   return pressure_max > 0.0 && pressure_min < 0.5 * pressure_max;
+   return pressure_max > 0.0_rt && pressure_min < 0.5_rt * pressure_max;
 #endif
 }
 
@@ -154,7 +157,9 @@ RMHDRiemannFluxResult rmhd_advanced_riemann_flux(
    );
    if constexpr (RiemannMethod == RiemannHLLC) {
       const bool shock_stabilize =
-         rmhd_hllc_shock_stabilization_needed<ReconMethod, Direction>(
+         !relativistic_reconstruction_stencil_is_active<ReconMethod, Direction>(
+            metric, il, jl, kl, ir, jr, kr)
+         || rmhd_hllc_shock_stabilization_needed<ReconMethod, Direction>(
             primitive, il, jl, kl, ir, jr, kr, face_metric
          );
       return rmhd_hllc_flux<Direction>(
@@ -206,11 +211,14 @@ void fill_rmhd_advanced_direction(FluxLaunch const& launch)
       launch.topology == FluxTopology::Standard,
       "RMHD advanced fluxes support the standard topology"
    );
+   const auto diode = make_relativistic_diode_boundary(launch.config, *launch.geometry);
    const EOSParams eos = eos_params(launch.config);
    const EOSThermodynamicState atmosphere = *launch.atmosphere;
    amrex::Long* const hll_fallback_count =
       launch.rmhd_riemann_hll_fallback_count;
    amrex::MultiFab& flux = *launch.fluxes[Direction];
+   const auto excision = excision_grid_view(spacetime_excision_region(launch.config),
+      *launch.geometry, launch.primitive.ixType());
 
    if (launch.cell_spacetime != nullptr) {
 #ifdef AMREX_USE_OMP
@@ -228,7 +236,7 @@ void fill_rmhd_advanced_direction(FluxLaunch const& launch)
                int jl;
                int kl;
                rmhd_left_cell<Direction>(i, j, k, il, jl, kl);
-               const RHDStoredMetricAccessor metric{spacetime};
+               const RHDStoredMetricAccessor metric{spacetime, excision, diode};
                const RMHDRiemannFluxResult result = rmhd_advanced_riemann_flux<
                   ReconMethod,
                   RiemannMethod,
@@ -278,7 +286,14 @@ void fill_rmhd_advanced_direction(FluxLaunch const& launch)
             int kl;
             rmhd_left_cell<Direction>(i, j, k, il, jl, kl);
             const RHDFixedMetricAccessor metric{
-               spacetime, lower, spacing, time
+               spacetime,
+               lower,
+               spacing,
+               MeshCartesian,
+               mesh_default_axes_layout(MeshCartesian),
+               time,
+               {},
+               diode
             };
             const RMHDRiemannFluxResult result = rmhd_advanced_riemann_flux<
                ReconMethod,

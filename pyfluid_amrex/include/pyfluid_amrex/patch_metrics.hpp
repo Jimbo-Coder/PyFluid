@@ -13,18 +13,20 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 using PhysicalVector = Vector3;
 
 struct PatchFaceMetric {
    PhysicalVector unit_normal{};
-   amrex::Real area = 1.0;
+   amrex::Real area = 1.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 PhysicalVector physical_vector(
    amrex::Real x,
-   amrex::Real y = 0.0,
-   amrex::Real z = 0.0
+   amrex::Real y = 0.0_rt,
+   amrex::Real z = 0.0_rt
 ) noexcept
 {
    return {x, y, z};
@@ -58,16 +60,16 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 PhysicalVector normalized(PhysicalVector a) noexcept
 {
    const amrex::Real magnitude = norm(a);
-   if (magnitude <= 0.0 || !amrex::Math::isfinite(magnitude)) {
-      return {1.0, 0.0, 0.0};
+   if (magnitude <= 0.0_rt || !amrex::Math::isfinite(magnitude)) {
+      return {1.0_rt, 0.0_rt, 0.0_rt};
    }
-   return scale(a, 1.0 / magnitude);
+   return scale(a, 1.0_rt / magnitude);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 PhysicalVector align_with(PhysicalVector vector, PhysicalVector direction) noexcept
 {
-   return dot(vector, direction) < 0.0 ? scale(vector, -1.0) : vector;
+   return dot(vector, direction) < 0.0_rt ? scale(vector, -1.0_rt) : vector;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -133,14 +135,14 @@ PatchFaceMetric patch_face_metric(
 {
 #if (AMREX_SPACEDIM == 1)
    amrex::ignore_unused(patch, local);
-   return {physical_vector(1.0, 0.0, 0.0), 1.0};
+   return {physical_vector(1.0_rt, 0.0_rt, 0.0_rt), 1.0_rt};
 #elif (AMREX_SPACEDIM == 2)
    const PhysicalVector e0 = patch_basis_vector(patch, local, 0);
    const PhysicalVector e1 = patch_basis_vector(patch, local, 1);
    const PhysicalVector surface_normal = normalized(cross(e0, e1));
    const int tangent_dir = dir == 0 ? 1 : 0;
-   const PatchCoordinate lo = patch_shifted_coordinate(patch, local, tangent_dir, -0.5);
-   const PatchCoordinate hi = patch_shifted_coordinate(patch, local, tangent_dir, 0.5);
+   const PatchCoordinate lo = patch_shifted_coordinate(patch, local, tangent_dir, -0.5_rt);
+   const PatchCoordinate hi = patch_shifted_coordinate(patch, local, tangent_dir, 0.5_rt);
    const PatchCoordinate global_lo = patch_local_to_global(patch.map, lo);
    const PatchCoordinate global_hi = patch_local_to_global(patch.map, hi);
    const PhysicalVector edge = physical_vector(
@@ -170,14 +172,14 @@ PatchFaceMetric patch_face_metric(
       tangent0 = 0;
       tangent1 = 1;
    }
-   PatchCoordinate c00 = patch_shifted_coordinate(patch, local, tangent0, -0.5);
-   c00 = patch_shifted_coordinate(patch, c00, tangent1, -0.5);
-   PatchCoordinate c10 = patch_shifted_coordinate(patch, local, tangent0, 0.5);
-   c10 = patch_shifted_coordinate(patch, c10, tangent1, -0.5);
-   PatchCoordinate c11 = patch_shifted_coordinate(patch, local, tangent0, 0.5);
-   c11 = patch_shifted_coordinate(patch, c11, tangent1, 0.5);
-   PatchCoordinate c01 = patch_shifted_coordinate(patch, local, tangent0, -0.5);
-   c01 = patch_shifted_coordinate(patch, c01, tangent1, 0.5);
+   PatchCoordinate c00 = patch_shifted_coordinate(patch, local, tangent0, -0.5_rt);
+   c00 = patch_shifted_coordinate(patch, c00, tangent1, -0.5_rt);
+   PatchCoordinate c10 = patch_shifted_coordinate(patch, local, tangent0, 0.5_rt);
+   c10 = patch_shifted_coordinate(patch, c10, tangent1, -0.5_rt);
+   PatchCoordinate c11 = patch_shifted_coordinate(patch, local, tangent0, 0.5_rt);
+   c11 = patch_shifted_coordinate(patch, c11, tangent1, 0.5_rt);
+   PatchCoordinate c01 = patch_shifted_coordinate(patch, local, tangent0, -0.5_rt);
+   c01 = patch_shifted_coordinate(patch, c01, tangent1, 0.5_rt);
    const PatchCoordinate g00 = patch_local_to_global(patch.map, c00);
    const PatchCoordinate g10 = patch_local_to_global(patch.map, c10);
    const PatchCoordinate g11 = patch_local_to_global(patch.map, c11);
@@ -200,7 +202,7 @@ PatchFaceMetric patch_face_metric(
          triangle0.y + triangle1.y,
          triangle0.z + triangle1.z
       ),
-      0.5
+      0.5_rt
    );
    area_vector = align_with(area_vector, patch_basis_vector(patch, local, dir));
    return {normalized(area_vector), norm(area_vector)};
@@ -218,7 +220,7 @@ PatchCoordinate patch_layout_cell_center_coordinate(
 {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> offsets{};
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      offsets[dir] = 0.5;
+      offsets[dir] = 0.5_rt;
    }
    return patch_layout_local_coordinate(
       grid_patch,
@@ -240,7 +242,7 @@ PatchCoordinate patch_layout_face_coordinate(
 {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> offsets{};
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      offsets[dir] = dir == face_dir ? 0.0 : 0.5;
+      offsets[dir] = dir == face_dir ? 0.0_rt : 0.5_rt;
    }
    return patch_layout_local_coordinate(
       grid_patch,

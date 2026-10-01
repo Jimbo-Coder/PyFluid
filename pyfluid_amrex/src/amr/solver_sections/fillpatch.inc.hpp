@@ -1,4 +1,4 @@
-// Included inside pyfluid_amrex::AmrSolverBase private section.
+// Included inside pyfluid_amrex::AmrSolverBase protected section.
 // State and face-centered magnetic-field FillPatch contracts. Only the
 // subcycling-dependent orchestration remains templated here.
 
@@ -21,11 +21,7 @@
    amrex::Interpolater* selected_state_interpolater() const;
    amrex::Interpolater* state_interpolater() const;
    bool level_refinement_ratio_is_anisotropic(int coarse_lev) const;
-   void complete_radial_origin_boundary(LevelData& data, int lev, amrex::Real time,
-                                        amrex::Vector<amrex::MultiFab*> const& coarse_data,
-                                        amrex::Vector<amrex::Real> const& coarse_time,
-                                        amrex::Vector<amrex::MultiFab*> const& fine_data,
-                                        amrex::Vector<amrex::Real> const& fine_time) const;
+
    void fill_new_level_from_coarse_state(int lev, amrex::Real time);
    void fill_remade_level_state(int lev, amrex::Real time, amrex::MultiFab& old_state);
    bool coarse_time_interval_contains(int coarse_lev, amrex::Real time) const;
@@ -54,13 +50,14 @@
       if (preserve_hydro_solid_totals) {
          pre_regrid_totals = hydro_valid_conserved_totals();
       }
-      begin_regrid_change_tracking();
+      regrid_lifecycle_.begin_attempt();
       regrid(lbase, time, false);
-      if (!finish_regrid_change_tracking()) {
+      const auto first_modified = regrid_lifecycle_.finish_attempt();
+      if (!first_modified) {
          return false;
       }
       enforce_cell_budget("regridding AMR hierarchy");
-      const int first_modified_level = regrid_first_modified_level_;
+      const int first_modified_level = *first_modified;
       define_flux_registers(first_modified_level);
       for (int lev = std::max(lbase + 1, first_modified_level); lev <= finestLevel(); ++lev) {
          const int relative_time_factor = level_time_factor(lev) / level_time_factor(lbase);
@@ -100,7 +97,7 @@
    }
 
    template <bool SubcyclingEnabled = false>
-   void fill_level_boundaries(LevelData& data, int lev, amrex::Real time, amrex::Real fine_step_start = -1.0,
+   void fill_level_boundaries(LevelData& data, int lev, amrex::Real time, amrex::Real fine_step_start = -1.0_rt,
                               int rk_stage = 0)
    {
       if (lev == 0) {
@@ -146,7 +143,7 @@
 
    template <bool SubcyclingEnabled = false>
    void fill_level_boundaries_range(LevelData& data, int lev_begin, int lev_end, amrex::Real time,
-                                    amrex::Real fine_step_start = -1.0, int rk_stage = 0)
+                                    amrex::Real fine_step_start = -1.0_rt, int rk_stage = 0)
    {
       for (int lev = lev_begin; lev < lev_end; ++lev) {
          fill_level_boundaries<SubcyclingEnabled>(data, lev, time, fine_step_start, rk_stage);

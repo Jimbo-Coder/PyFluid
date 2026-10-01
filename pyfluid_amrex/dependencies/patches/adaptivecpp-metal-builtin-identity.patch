@@ -1,0 +1,94 @@
+--- a/src/compiler/llvm-to-backend/metal/LLVMToMetal.cpp
++++ b/src/compiler/llvm-to-backend/metal/LLVMToMetal.cpp
+@@ -20,6 +20,7 @@
+ #include "hipSYCL/glue/llvm-sscp/jit-reflection/queries.hpp"
+ #include "hipSYCL/common/filesystem.hpp"
+ #include "hipSYCL/common/debug.hpp"
++#include <llvm/Analysis/ValueTracking.h>
+ #include <llvm/IR/Instructions.h>
+ #include <llvm/IR/Constants.h>
+ #include <llvm/IR/GlobalVariable.h>
+@@ -69,6 +70,46 @@
+ namespace compiler {
+ 
+ namespace {
++
++// The first argument of a Metal inline builtin is an operation name, not a
++// runtime pointer. Preserve that identity in the callee before optimization:
++// otherwise SimplifyCFG can sink, for example, sin/cos into one generic call
++// with a PHI of string pointers that the emitter cannot represent.
++void specializeMetalInlineBuiltins(llvm::Module &M) {
++  llvm::SmallVector<llvm::CallInst *, 32> Calls;
++  for (auto &F : M)
++    for (auto &BB : F)
++      for (auto &I : BB)
++        if (auto *CI = llvm::dyn_cast<llvm::CallInst>(&I))
++          if (auto *Callee = CI->getCalledFunction())
++            if (Callee->getName().starts_with("__acpp_sscp_metal") &&
++                !Callee->hasFnAttribute("acpp.metal.operation") &&
++                CI->arg_size() > 0)
++              Calls.push_back(CI);
++
++  for (auto *CI : Calls) {
++    llvm::StringRef Operation;
++    if (!llvm::getConstantStringInfo(CI->getArgOperand(0), Operation))
++      continue; // Truly dynamic names remain an explicit emitter error.
++
++    auto *Callee = CI->getCalledFunction();
++    std::string Name = Callee->getName().str() + ".operation.";
++    constexpr char Hex[] = "0123456789abcdef";
++    for (unsigned char C : Operation) {
++      Name += Hex[C >> 4];
++      Name += Hex[C & 15];
++    }
++    auto Specialized = M.getOrInsertFunction(Name, Callee->getFunctionType());
++    auto *Function = llvm::cast<llvm::Function>(Specialized.getCallee());
++    Function->setAttributes(Callee->getAttributes());
++    Function->addFnAttr("acpp.metal.operation", Operation);
++    Function->setCallingConv(Callee->getCallingConv());
++    CI->setCalledFunction(Function);
++    // The emitter consumes the attribute. Remove the runtime string pointer
++    // so equal strings with distinct globals cannot leave an unnecessary PHI.
++    CI->setArgOperand(0, llvm::Constant::getNullValue(CI->getArgOperand(0)->getType()));
++  }
++}
+ 
+ // these are remapped for f32 and f64
+ static constexpr std::array remapped_llvm_math_builtins = {
+@@ -501,6 +542,8 @@
+   if (!this->linkBitcodeFile(M, BuiltinBitcodeFile))
+     return false;
+ 
++  specializeMetalInlineBuiltins(M);
++
+   AddressSpaceInferencePass ASIPass{ASMap};
+   ASIPass.run(M, *PH.ModuleAnalysisManager);
+ 
+@@ -529,6 +572,7 @@
+     if (!linkBitcodeFile(FlavoredModule, BuiltinBitcodeFile))
+       return false;
+ 
++    specializeMetalInlineBuiltins(FlavoredModule);
+     llvm::AlwaysInlinerPass{}.run(FlavoredModule, MAM);
+ 
+     llvm::FunctionPassManager FPM;
+--- a/src/compiler/llvm-to-backend/metal/Emitter.cpp
++++ b/src/compiler/llvm-to-backend/metal/Emitter.cpp
+@@ -2077,8 +2077,15 @@
+     return false;
+   }
+ 
+-  // Extract first argument as string constant (function name)
+-  auto funcName = extractStringConstant(CI->getArgOperand(0), errorStr);
++  // Flavoring specializes constant operations before CFG optimization. The
++  // attribute survives sinking even when equal strings came from distinct
++  // globals. Unspecialized calls must still supply a literal operation.
++  std::optional<std::string> funcName;
++  const auto operation = CI->getCalledFunction()->getFnAttribute("acpp.metal.operation");
++  if (operation.isStringAttribute())
++    funcName = operation.getValueAsString().str();
++  else
++    funcName = extractStringConstant(CI->getArgOperand(0), errorStr);
+   if (!funcName) {
+     errorMsg = "__acpp_sscp_metal: " + errorStr;
+     return false;

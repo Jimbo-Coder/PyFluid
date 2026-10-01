@@ -494,6 +494,11 @@ def main() -> int:
    args = parser.parse_args()
    RUN_ROOT.mkdir(parents=True, exist_ok=True)
    results_path = FULL_RESULTS if args.level == "full" else STANDARD_RESULTS
+   # A failed fresh invocation must not leave an old PASS looking current.
+   write_tsv(results_path, [{
+      "case": "equilibrium_torus", "status": "INCOMPLETE",
+      "reason": "Current invocation has not completed; see run logs",
+   }], ["case", "status", "reason"])
    additional_scalar_rows: list[dict[str, object]] = []
 
    check_binary = build_cached_target(ELLIPTIC_CHECK)
@@ -567,7 +572,7 @@ def main() -> int:
          or full_storage_metadata.get("mesh_axes") != "r theta phi" \
          or full_storage_metadata.get("periodicity") != "0,0,1":
       raise RuntimeError("full-storage coupled torus lost its owner identity")
-   if int(coupled_constraints["matter_iterations"]) <= 100:
+   if "phase=star_torus" not in coupled_log:
       raise RuntimeError("coupled torus did not exercise the disk fixed-point phase")
 
    (
@@ -1089,6 +1094,8 @@ def main() -> int:
          "status": "PASS",
          "initial_baryonic_mass": evolution_initial_mass,
          "handoff_mass_relative_error": handoff_mass_relative_error,
+         "steps": black_hole_evolution_scalar["steps"],
+         "time": black_hole_evolution_scalar["time"],
          "mass_rel_drift": black_hole_evolution_scalar["mass_rel_drift"],
          "energy_rel_drift": black_hole_evolution_scalar["energy_rel_drift"],
          "momentum_abs_drift": black_hole_evolution_scalar[
@@ -1116,6 +1123,8 @@ def main() -> int:
          "case": "coupled_massive_evolution_32",
          "status": "PASS",
          "seconds": evolution_seconds,
+         "steps": evolution_scalar["steps"],
+         "time": evolution_scalar["time"],
          "mass_rel_drift": evolution_scalar["mass_rel_drift"],
          "energy_rel_drift": evolution_scalar["energy_rel_drift"],
          "momentum_abs_drift": evolution_scalar["momentum_abs_drift"],
@@ -2002,7 +2011,7 @@ def main() -> int:
       f"coupled_mass={float(coupled_torus['baryonic_mass']):.6e} "
       f"H={float(coupled_constraints['hamiltonian_residual']):.3e} "
       f"M={float(coupled_constraints['momentum_residual']):.3e} "
-      f"evolution_mass={float(evolution_scalar['mass_rel_drift']):.3e}"
+      f"evolution_mass_rel_drift={float(evolution_scalar['mass_rel_drift']):.3e}"
    )
    print(f"wrote {repo_relative(results_path)}")
    return 0

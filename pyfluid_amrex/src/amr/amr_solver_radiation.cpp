@@ -1,5 +1,7 @@
+#include "pyfluid_amrex/metric_reductions.hpp"
 #include "amr/amr_solver_base.hpp"
 
+#include <AMReX_BCUtil.H>
 #include <AMReX_MultiFab.H>
 
 #include <algorithm>
@@ -13,6 +15,7 @@
 #include <vector>
 
 #include "pyfluid_amrex/fields.hpp"
+#include "pyfluid_amrex/apparent_horizon_tracker.hpp"
 #include "pyfluid_amrex/azimuthal_geometry.hpp"
 #include "pyfluid_amrex/generated/diagnostic_catalog.hpp"
 #include "pyfluid_amrex/hierarchy_interpolation.hpp"
@@ -21,11 +24,13 @@
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/radiation.hpp"
 #include "pyfluid_amrex/relativistic_primitive.hpp"
-#include "pyfluid_amrex/spacetime_coupling.hpp"
+#include "pyfluid_amrex/eulerian_matter_access.hpp"
 #include "pyfluid_amrex/surface_geometry.hpp"
 #include "pyfluid_amrex/z4c_derivatives.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 std::string supported_azimuthal_mode_fields(
@@ -62,10 +67,10 @@ ParametricSurface AmrSolverBase::diagnostic_extraction_surface() const
       cfg_.diagnostic_surface_center3,
    }};
    amrex::Real radius = cfg_.diagnostic_surface_radius;
-   if (radius < 0.0) {
+   if (radius < 0.0_rt) {
       const auto lower = Geom(0).ProbLoArray();
       const auto upper = Geom(0).ProbHiArray();
-      radius = 0.8 * amrex::min(
+      radius = 0.8_rt * amrex::min(
          amrex::min(center[0] - lower[0], upper[0] - center[0]),
          amrex::min(
             amrex::min(center[1] - lower[1], upper[1] - center[1]),
@@ -78,16 +83,31 @@ ParametricSurface AmrSolverBase::diagnostic_extraction_surface() const
    );
 }
 
-HierarchyInterpolationPlan AmrSolverBase::diagnostic_surface_interpolation_plan(
-   ParametricSurface const& surface,
-   amrex::IndexType centering
+ParametricSurface AmrSolverBase::diagnostic_apparent_horizon_surface() const
+{
+   ApparentHorizonResult const* horizon = apparent_horizon_tracker_->result();
+   if (horizon == nullptr) {
+      amrex::Abort(
+         "apparent-horizon surface diagnostics require a successful horizon search"
+      );
+   }
+   ApparentHorizonSurface const& source = horizon->surface;
+   const auto& source_center = source.center();
+   return ParametricSurface::radial_graph(
+      {{source_center[0], source_center[1], source_center[2]}},
+      source.num_theta(),
+      source.num_phi(),
+      source.radius()
+   );
+}
+
+HierarchyInterpolationPlan AmrSolverBase::diagnostic_point_interpolation_plan(
+   std::vector<amrex::GpuArray<amrex::Real, 3>> positions,
+   amrex::IndexType centering,
+   std::array<int, 3> const& reflection_lo,
+   std::array<int, 3> const& reflection_hi
 ) const
 {
-   std::vector<amrex::GpuArray<amrex::Real, 3>> positions;
-   positions.reserve(surface.points().size());
-   for (SurfaceQuadraturePoint const& point : surface.points()) {
-      positions.push_back(point.position);
-   }
    std::vector<amrex::Geometry> geometry;
    std::vector<amrex::BoxArray> grids;
    std::vector<amrex::DistributionMapping> distribution;
@@ -106,8 +126,184 @@ HierarchyInterpolationPlan AmrSolverBase::diagnostic_surface_interpolation_plan(
       geometry,
       grids,
       distribution,
-      centering
+      centering,
+      reflection_lo,
+      reflection_hi
    );
+}
+
+HierarchyInterpolationPlan AmrSolverBase::diagnostic_surface_interpolation_plan(
+   ParametricSurface const& surface,
+   amrex::IndexType centering
+) const
+{
+   std::vector<amrex::GpuArray<amrex::Real, 3>> positions;
+   positions.reserve(surface.points().size());
+   for (SurfaceQuadraturePoint const& point : surface.points()) {
+      positions.push_back(point.position);
+   }
+   return diagnostic_point_interpolation_plan(
+      std::move(positions), centering
+   );
+}
+
+amrex::Real AmrSolverBase::compute_baryon_surface_accretion_rate(
+   ParametricSurface const& surface,
+   amrex::Real time
+)
+{
+#if (AMREX_SPACEDIM != 3)
+   amrex::Abort("baryon surface flux currently requires the 3D executable");
+   return 0.0_rt;
+#else
+   if (!physical_system_is_relativistic(physics_system_)
+       || !spacetime_state_.active()) {
+      amrex::Abort(
+         "baryon surface flux requires relativistic matter and stored spacetime"
+      );
+   }
+   if (mesh_coordinate_kind() != MeshCartesian
+       || mixed_patch_system_enabled()) {
+      amrex::Abort(
+         "baryon surface flux currently requires a single Cartesian patch"
+      );
+   }
+
+   prepare_spacetime_coupling_range(
+      spacetime_state_.state(), 0, finestLevel() + 1, time, -1.0_rt, 0
+   );
+   LevelData flux_hierarchy(finestLevel() + 1);
+   std::array<int, 3> reflection_lo{};
+   std::array<int, 3> reflection_hi{};
+   for (int direction = 0; direction < 3; ++direction) {
+      reflection_lo[direction] = reflective_boundary(
+         side_boundary_kind(cfg_, direction, false)
+      ) ? 1 : 0;
+      reflection_hi[direction] = reflective_boundary(
+         side_boundary_kind(cfg_, direction, true)
+      ) ? 1 : 0;
+   }
+   amrex::Vector<amrex::BCRec> flux_boundaries(3);
+   for (int component = 0; component < 3; ++component) {
+      for (int direction = 0; direction < 3; ++direction) {
+         const int lower_kind = Geom(0).isPeriodic(direction)
+            ? amrex::BCType::int_dir
+            : (reflection_lo[direction] != 0
+                  ? (component == direction
+                        ? amrex::BCType::reflect_odd
+                        : amrex::BCType::reflect_even)
+                  : amrex::BCType::foextrap);
+         const int upper_kind = Geom(0).isPeriodic(direction)
+            ? amrex::BCType::int_dir
+            : (reflection_hi[direction] != 0
+                  ? (component == direction
+                        ? amrex::BCType::reflect_odd
+                        : amrex::BCType::reflect_even)
+                  : amrex::BCType::foextrap);
+         flux_boundaries[component].setLo(direction, lower_kind);
+         flux_boundaries[component].setHi(direction, upper_kind);
+      }
+   }
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      fill_level_primitive_cache(lev, time);
+      amrex::MultiFab const& conserved = *fluid_state_.state()[lev];
+      auto flux = std::make_unique<amrex::MultiFab>(
+         conserved.boxArray(), conserved.DistributionMap(), 3, 1
+      );
+      flux->setVal(0.0_rt);
+#ifdef AMREX_USE_OMP
+#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
+#endif
+      for (amrex::MFIter mfi(
+              conserved, amrex::TilingIfNotGPU()
+           ); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.tilebox();
+         const auto state = conserved.const_array(mfi);
+         const auto primitive = primitive_[lev]->const_array(mfi);
+         const auto spacetime =
+            spacetime_coupling_.cell_spacetime()[lev]->const_array(mfi);
+         const auto output = flux->array(mfi);
+         amrex::ParallelFor(
+            box,
+            [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               const SpacetimeMetric metric = generated::z4c_spacetime_metric(
+                  load_z4c_state(spacetime, i, j, k)
+               );
+               const BaryonFluxIntegrands point_flux =
+                  generated::baryon_flux_integrands(
+                     state(i, j, k, RHO),
+                     primitive(i, j, k, MOM1),
+                     primitive(i, j, k, MOM2),
+                     primitive(i, j, k, MOM3),
+                     metric
+                  );
+               output(i, j, k, 0) = point_flux.flux1;
+               output(i, j, k, 1) = point_flux.flux2;
+               output(i, j, k, 2) = point_flux.flux3;
+            }
+         );
+      }
+      flux_hierarchy[lev] = std::move(flux);
+   }
+   amrex::Vector<amrex::MultiFab*> flux_fields;
+   flux_fields.reserve(flux_hierarchy.size());
+   for (auto const& flux : flux_hierarchy) {
+      flux_fields.push_back(flux.get());
+   }
+   amrex::FillBoundary(flux_fields, Geom(0).periodicity());
+   for (int lev = 0; lev <= finestLevel(); ++lev) {
+      amrex::FillDomainBoundary(
+         *flux_hierarchy[lev], Geom(lev), flux_boundaries
+      );
+   }
+
+   std::vector<amrex::GpuArray<amrex::Real, 3>> positions;
+   std::vector<int> point_reflections;
+   positions.reserve(surface.points().size());
+   point_reflections.reserve(surface.points().size());
+   const auto hierarchy_lower = Geom(0).ProbLoArray();
+   const auto hierarchy_upper = Geom(0).ProbHiArray();
+   for (SurfaceQuadraturePoint const& point : surface.points()) {
+      auto position = point.position;
+      int reflection_mask = 0;
+      for (int direction = 0; direction < 3; ++direction) {
+         if (position[direction] < hierarchy_lower[direction]
+             && reflection_lo[direction] != 0) {
+            position[direction] = 2.0_rt * hierarchy_lower[direction]
+               - position[direction];
+            reflection_mask ^= 1 << direction;
+         } else if (
+            position[direction] > hierarchy_upper[direction]
+            && reflection_hi[direction] != 0
+         ) {
+            position[direction] = 2.0_rt * hierarchy_upper[direction]
+               - position[direction];
+            reflection_mask ^= 1 << direction;
+         }
+      }
+      positions.push_back(position);
+      point_reflections.push_back(reflection_mask);
+   }
+   const HierarchyInterpolationPlan plan = diagnostic_point_interpolation_plan(
+      std::move(positions),
+      amrex::IndexType::TheCellType(),
+      reflection_lo,
+      reflection_hi
+   );
+   std::vector<amrex::Real> sampled_flux = plan.interpolate(
+      flux_hierarchy, 0, 3
+   );
+   for (std::size_t point = 0; point < point_reflections.size(); ++point) {
+      for (int direction = 0; direction < 3; ++direction) {
+         if ((point_reflections[point] & (1 << direction)) != 0) {
+            sampled_flux[3 * point + direction] *= -1.0_rt;
+         }
+      }
+   }
+   // ParametricSurface owns the outward coordinate directed area. The
+   // conventional accretion rate is positive for inward baryon flow.
+   return -surface.integrate_normal_fluxes(sampled_flux, 1)[0];
+#endif
 }
 
 RadiationDiagnostics AmrSolverBase::compute_spacetime_radiation_diagnostics(
@@ -136,7 +332,7 @@ RadiationDiagnostics AmrSolverBase::compute_spacetime_radiation_diagnostics(
 
    fill_all_spacetime_boundaries(spacetime_state_.state(), time);
    prepare_spacetime_coupling_range(
-      spacetime_state_.state(), 0, finestLevel() + 1, time, -1.0, 0
+      spacetime_state_.state(), 0, finestLevel() + 1, time, -1.0_rt, 0
    );
    if (spacetime_includes_matter(cfg_)) {
       for (int lev = 0; lev <= finestLevel(); ++lev) {
@@ -183,13 +379,13 @@ RadiationDiagnostics AmrSolverBase::compute_spacetime_radiation_diagnostics(
       auto field = std::make_unique<amrex::MultiFab>(
          state.boxArray(), state.DistributionMap(), RadiationComponent::Count, 1
       );
-      field->setVal(0.0);
+      field->setVal(0.0_rt);
       const amrex::Box nodal_domain = amrex::convert(
          Geom(lev).Domain(), amrex::IntVect::TheNodeVector()
       );
       const auto spacing = Geom(lev).CellSizeArray();
       const amrex::GpuArray<amrex::Real, 3> inv_spacing{{
-         1.0 / spacing[0], 1.0 / spacing[1], 1.0 / spacing[2]
+         1.0_rt / spacing[0], 1.0_rt / spacing[1], 1.0_rt / spacing[2]
       }};
       const amrex::GpuArray<int, 3> domain_lower{{
          nodal_domain.smallEnd(0), nodal_domain.smallEnd(1), nodal_domain.smallEnd(2)
@@ -486,8 +682,8 @@ MatterModeDiagnostics AmrSolverBase::compute_matter_volume_modes(
       }
       symmetry_direction = direction;
    }
-   amrex::Real symmetry_plane = 0.0;
-   amrex::Real symmetry_factor = 1.0;
+   amrex::Real symmetry_plane = 0.0_rt;
+   amrex::Real symmetry_factor = 1.0_rt;
    if (symmetry_direction >= 0) {
       const bool low_symmetry = side_boundary_kind(
          cfg_, symmetry_direction, false
@@ -504,11 +700,11 @@ MatterModeDiagnostics AmrSolverBase::compute_matter_volume_modes(
       symmetry_plane = low_symmetry
          ? Geom(0).ProbLo(symmetry_direction)
          : Geom(0).ProbHi(symmetry_direction);
-      const amrex::Real tolerance = 256.0
+      const amrex::Real tolerance = 256.0_rt
          * std::numeric_limits<amrex::Real>::epsilon()
-         * std::max<amrex::Real>(1.0, std::abs(symmetry_plane));
+         * std::max<amrex::Real>(1.0_rt, std::abs(symmetry_plane));
       if (std::abs(
-             std::abs(azimuthal_frame.axis[symmetry_direction]) - 1.0
+             std::abs(azimuthal_frame.axis[symmetry_direction]) - 1.0_rt
           ) > tolerance
           || std::abs(origin[symmetry_direction] - symmetry_plane)
              > tolerance) {
@@ -518,7 +714,7 @@ MatterModeDiagnostics AmrSolverBase::compute_matter_volume_modes(
             "the configured origin"
          );
       }
-      symmetry_factor = 2.0;
+      symmetry_factor = 2.0_rt;
    }
 
    const int mode_count = cfg_.diagnostic_matter_mode_m_max + 1;
@@ -530,7 +726,7 @@ MatterModeDiagnostics AmrSolverBase::compute_matter_volume_modes(
    const int barycenter_begin = 2 * mode_count;
    const int reduction_components = barycenter_begin + 3;
    std::vector<amrex::Real> reduction_totals(
-      static_cast<std::size_t>(reduction_components), 0.0
+      static_cast<std::size_t>(reduction_components), 0.0_rt
    );
    const int coordinate = mesh_coordinate_kind();
    const MeshAxes axes = active_mesh_axes();
@@ -543,7 +739,7 @@ MatterModeDiagnostics AmrSolverBase::compute_matter_volume_modes(
          reduction_components,
          0
       );
-      reduction.setVal(0.0);
+      reduction.setVal(0.0_rt);
       const auto problo = Geom(lev).ProbLoArray();
       const auto dx = Geom(lev).CellSizeArray();
       const EOSParams eos = eos_params(cfg_);
@@ -636,7 +832,7 @@ MatterModeDiagnostics AmrSolverBase::compute_matter_volume_modes(
          * reduction_totals[static_cast<std::size_t>(barycenter_begin + direction)];
    }
    diagnostics.mass = diagnostics.modes.front().value.real();
-   if (diagnostics.mass > 0.0) {
+   if (diagnostics.mass > 0.0_rt) {
       for (int direction = 0; direction < 3; ++direction) {
          diagnostics.barycenter[direction] /= diagnostics.mass;
       }

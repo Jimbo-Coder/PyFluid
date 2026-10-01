@@ -8,17 +8,19 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct AzimuthalFrame {
    amrex::GpuArray<amrex::Real, 3> origin{};
-   amrex::GpuArray<amrex::Real, 3> axis{{0.0, 0.0, 1.0}};
-   amrex::GpuArray<amrex::Real, 3> radial_basis{{1.0, 0.0, 0.0}};
-   amrex::GpuArray<amrex::Real, 3> azimuthal_basis{{0.0, 1.0, 0.0}};
+   amrex::GpuArray<amrex::Real, 3> axis{{0.0_rt, 0.0_rt, 1.0_rt}};
+   amrex::GpuArray<amrex::Real, 3> radial_basis{{1.0_rt, 0.0_rt, 0.0_rt}};
+   amrex::GpuArray<amrex::Real, 3> azimuthal_basis{{0.0_rt, 1.0_rt, 0.0_rt}};
 };
 
 struct AzimuthalCoordinate {
-   amrex::Real cylindrical_radius = 0.0;
-   amrex::Real phi = 0.0;
-   amrex::Real axial_coordinate = 0.0;
+   amrex::Real cylindrical_radius = 0.0_rt;
+   amrex::Real phi = 0.0_rt;
+   amrex::Real axial_coordinate = 0.0_rt;
 };
 
 inline AzimuthalFrame make_azimuthal_frame(
@@ -33,9 +35,9 @@ inline AzimuthalFrame make_azimuthal_frame(
       component /= axis_norm;
    }
    const amrex::GpuArray<amrex::Real, 3> seed =
-      std::abs(axis[2]) < 0.9
-      ? amrex::GpuArray<amrex::Real, 3>{{0.0, 0.0, 1.0}}
-      : amrex::GpuArray<amrex::Real, 3>{{1.0, 0.0, 0.0}};
+      std::abs(axis[2]) < 0.9_rt
+      ? amrex::GpuArray<amrex::Real, 3>{{0.0_rt, 0.0_rt, 1.0_rt}}
+      : amrex::GpuArray<amrex::Real, 3>{{1.0_rt, 0.0_rt, 0.0_rt}};
    const amrex::Real seed_axis =
       seed[0] * axis[0] + seed[1] * axis[1] + seed[2] * axis[2];
    amrex::GpuArray<amrex::Real, 3> radial_basis{{

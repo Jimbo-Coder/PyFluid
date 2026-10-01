@@ -8,6 +8,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 enum class C2PMethod : std::uint8_t {
    Noble2D,
    Palenzuela1D,
@@ -32,8 +34,8 @@ struct C2PAttemptResult {
    C2PMethod method = C2PMethod::Noble2D;
    C2PStatus status = C2PStatus::DidNotConverge;
    int iterations = 0;
-   amrex::Real residual = 0.0;
-   amrex::Real conserved_residual = 0.0;
+   amrex::Real residual = 0.0_rt;
+   amrex::Real conserved_residual = 0.0_rt;
 
    [[nodiscard]] constexpr bool succeeded() const noexcept
    {
@@ -42,23 +44,30 @@ struct C2PAttemptResult {
 };
 
 struct C2PRecoveryOptions {
+   // A 512-epsilon bracket is already ~6e-5 in FP32, too loose for the
+   // conserved round trip even for smooth, mildly relativistic matter.
+   // Keep the established FP64 accuracy and resolve FP32 roots more tightly.
+   static constexpr amrex::Real default_root_tolerance =
+#ifdef AMREX_USE_FLOAT
+      8.0_rt * std::numeric_limits<amrex::Real>::epsilon();
+#else
+      512.0_rt * std::numeric_limits<amrex::Real>::epsilon();
+#endif
    int max_iterations = 80;
-   amrex::Real relative_tolerance =
-      512.0 * std::numeric_limits<amrex::Real>::epsilon();
-   amrex::Real absolute_tolerance =
-      512.0 * std::numeric_limits<amrex::Real>::epsilon();
-   amrex::Real conserved_tolerance = 5.0e-10;
+   amrex::Real relative_tolerance = default_root_tolerance;
+   amrex::Real absolute_tolerance = default_root_tolerance;
+   amrex::Real conserved_tolerance = 5.0e-10_rt;
 };
 
 struct RMHDEntropyInput {
    // sqrt(gamma) W P / rho^(Gamma - 1), matching the Valencia entropy
    // conservation law used by GRHayL/AsterX.
-   amrex::Real conserved_entropy = 0.0;
+   amrex::Real conserved_entropy = 0.0_rt;
 };
 
 struct ColdPolytropeEquationOfState {
-   amrex::Real polytropic_k = 1.0;
-   amrex::Real polytropic_gamma = 2.0;
+   amrex::Real polytropic_k = 1.0_rt;
+   amrex::Real polytropic_gamma = 2.0_rt;
 };
 
 struct C2PMethodCapabilities {

@@ -12,10 +12,12 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct PatchCoordinate {
-   amrex::Real q1 = 0.0;
-   amrex::Real q2 = 0.0;
-   amrex::Real q3 = 0.0;
+   amrex::Real q1 = 0.0_rt;
+   amrex::Real q2 = 0.0_rt;
+   amrex::Real q3 = 0.0_rt;
 };
 
 struct PatchMapJacobian {
@@ -25,8 +27,8 @@ struct PatchMapJacobian {
 struct PatchMap {
    int coordinate_map = PatchMapCartesianIdentity;
    PatchCoordinate origin{};
-   amrex::Real radial_inner = 0.0;
-   amrex::Real radial_outer = 0.0;
+   amrex::Real radial_inner = 0.0_rt;
+   amrex::Real radial_outer = 0.0_rt;
 };
 
 struct PatchCartesianAxes {
@@ -44,9 +46,9 @@ enum PatchMapSystemKind {
 struct PatchMapSystem {
    int system_kind = PatchMapSystemCartesianSingle;
    PatchCoordinate origin{};
-   amrex::Real inner_radius = 0.0;
-   amrex::Real medium_radius = 0.0;
-   amrex::Real outer_radius = 0.0;
+   amrex::Real inner_radius = 0.0_rt;
+   amrex::Real medium_radius = 0.0_rt;
+   amrex::Real outer_radius = 0.0_rt;
    PatchCartesianAxes active_axes{};
    amrex::Vector<PatchMap> maps;
 };
@@ -82,7 +84,7 @@ void set_patch_coordinate_component(PatchCoordinate& coordinate, int component, 
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-PatchCoordinate make_patch_coordinate(amrex::Real q1, amrex::Real q2, amrex::Real q3 = 0.0) noexcept
+PatchCoordinate make_patch_coordinate(amrex::Real q1, amrex::Real q2, amrex::Real q3 = 0.0_rt) noexcept
 {
    return {q1, q2, q3};
 }
@@ -228,9 +230,9 @@ amrex::Real patch_shell_primary_sign(int coordinate_map) noexcept
        || coordinate_map == PatchMapThornburgShellMinusZ
        || coordinate_map == PatchMapCylindricalShellMinusX
        || coordinate_map == PatchMapCylindricalShellMinusY) {
-      return -1.0;
+      return -1.0_rt;
    }
-   return 1.0;
+   return 1.0_rt;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -476,7 +478,8 @@ PatchMapJacobian patch_local_to_global_jacobian(PatchMap const& map, PatchCoordi
    return PatchMapJacobian{};
 }
 
-inline PatchCoordinate patch_local_to_global(PatchMap const& map, PatchCoordinate const& local)
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+PatchCoordinate patch_local_to_global(PatchMap const& map, PatchCoordinate const& local)
 {
    if (patch_coordinate_map_is_cartesian(map.coordinate_map)) {
       return patch_identity_local_to_global(map, local);
@@ -488,10 +491,11 @@ inline PatchCoordinate patch_local_to_global(PatchMap const& map, PatchCoordinat
       return patch_cylindrical_shell_local_to_global(map, local);
    }
    amrex::Abort("patch_local_to_global is not implemented for this coordinate map");
-   return make_patch_coordinate(0.0, 0.0, 0.0);
+   return make_patch_coordinate(0.0_rt, 0.0_rt, 0.0_rt);
 }
 
-inline PatchCoordinate patch_global_to_local(PatchMap const& map, PatchCoordinate const& global)
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+PatchCoordinate patch_global_to_local(PatchMap const& map, PatchCoordinate const& global)
 {
    if (patch_coordinate_map_is_cartesian(map.coordinate_map)) {
       return patch_identity_global_to_local(map, global);
@@ -503,7 +507,7 @@ inline PatchCoordinate patch_global_to_local(PatchMap const& map, PatchCoordinat
       return patch_cylindrical_shell_global_to_local(map, global);
    }
    amrex::Abort("patch_global_to_local is not implemented for this coordinate map");
-   return make_patch_coordinate(0.0, 0.0, 0.0);
+   return make_patch_coordinate(0.0_rt, 0.0_rt, 0.0_rt);
 }
 
 inline PatchCoordinate patch_local_to_global_checked(PatchMap const& map, PatchCoordinate const& local)
@@ -518,7 +522,7 @@ inline PatchCoordinate patch_global_to_local_checked(PatchMap const& map, PatchC
 
 inline amrex::Real patch_coordinate_max_abs_difference(PatchCoordinate const& a, PatchCoordinate const& b)
 {
-   amrex::Real error = 0.0;
+   amrex::Real error = 0.0_rt;
    for (int component = 0; component < 3; ++component) {
       error = amrex::max(
          error,
@@ -543,7 +547,7 @@ inline PatchMap make_patch_map(
 
 inline void validate_patch_map_radii(amrex::Real inner_radius, amrex::Real outer_radius)
 {
-   if (!(inner_radius > 0.0) || !(outer_radius > inner_radius)) {
+   if (!(inner_radius > 0.0_rt) || !(outer_radius > inner_radius)) {
       amrex::Abort("patch map radii must satisfy 0 < inner_radius < outer_radius");
    }
 }
@@ -560,11 +564,11 @@ inline PatchMapSystem make_thornburg04_patch_map_system(
    system.system_kind = PatchMapSystemThornburg04;
    system.origin = origin;
    system.inner_radius = inner_radius;
-   system.medium_radius = 0.0;
+   system.medium_radius = 0.0_rt;
    system.outer_radius = outer_radius;
    system.active_axes = active_axes;
    system.maps.reserve(1 + 2 * AMREX_SPACEDIM);
-   system.maps.push_back(make_patch_map(PatchMapThornburgCentralCartesian, origin, 0.0, inner_radius));
+   system.maps.push_back(make_patch_map(PatchMapThornburgCentralCartesian, origin, 0.0_rt, inner_radius));
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       const int axis = patch_cartesian_axis(active_axes, dir);
       system.maps.push_back(make_patch_map(
@@ -630,11 +634,11 @@ inline PatchMapSystem make_cylindrical5_patch_map_system(
    system.system_kind = PatchMapSystemCylindrical5;
    system.origin = origin;
    system.inner_radius = inner_radius;
-   system.medium_radius = 0.0;
+   system.medium_radius = 0.0_rt;
    system.outer_radius = outer_radius;
    system.active_axes = active_axes;
    system.maps.reserve(5);
-   system.maps.push_back(make_patch_map(PatchMapThornburgCentralCartesian, origin, 0.0, inner_radius));
+   system.maps.push_back(make_patch_map(PatchMapThornburgCentralCartesian, origin, 0.0_rt, inner_radius));
    for (int axis = 0; axis < 2; ++axis) {
       system.maps.push_back(make_patch_map(
          patch_shell_map_kind_for_face(true, axis, 1),
@@ -747,7 +751,7 @@ inline int patch_system_owner_patch_id(PatchMapSystem const& system, PatchCoordi
       if (radial_coordinate > system.outer_radius) {
          return -1;
       }
-      const int sign = patch_coordinate_component(centered, axis) >= 0.0 ? 1 : -1;
+      const int sign = patch_coordinate_component(centered, axis) >= 0.0_rt ? 1 : -1;
       const bool outer_shell = system.system_kind == PatchMapSystemThornburg13
          && radial_coordinate >= system.medium_radius;
       return patch_system_shell_patch_id(
@@ -765,7 +769,7 @@ inline int patch_system_owner_patch_id(PatchMapSystem const& system, PatchCoordi
          return -1;
       }
       const int axis = patch_dominant_axis_xy(centered);
-      const int sign = patch_coordinate_component(centered, axis) >= 0.0 ? 1 : -1;
+      const int sign = patch_coordinate_component(centered, axis) >= 0.0_rt ? 1 : -1;
       const bool outer_shell = system.system_kind == PatchMapSystemCylindrical9
          && radial_coordinate >= system.medium_radius;
       return patch_system_shell_patch_id(

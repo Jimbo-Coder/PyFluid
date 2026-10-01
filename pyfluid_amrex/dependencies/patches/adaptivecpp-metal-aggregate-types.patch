@@ -1,0 +1,23 @@
+--- a/src/compiler/llvm-to-backend/metal/Emitter.cpp
++++ b/src/compiler/llvm-to-backend/metal/Emitter.cpp
+@@ -23,6 +23,7 @@
+ #include <llvm/IR/LLVMContext.h>
+ #include <llvm/IR/Module.h>
+ #include <llvm/IR/Type.h>
++#include <llvm/IR/TypeFinder.h>
+ 
+ #include <llvm/IRReader/IRReader.h>
+ #include <llvm/Support/CommandLine.h>
+@@ -431,7 +432,11 @@
+ 
+ void MetalEmitter::emitTypes() {
+   std::vector<const StructType*> structs;
+-  for (const StructType *ST : M.getIdentifiedStructTypes()) {
++  // Literal aggregate results (for example cmpxchg) are unnamed and may
++  // first appear inside a function. Discover them before emitting bodies.
++  TypeFinder usedTypes;
++  usedTypes.run(M, /*onlyNamed=*/false);
++  for (const StructType *ST : usedTypes) {
+     structs.push_back(ST);
+   }
+   for (auto& [T, _] : anonStructs) {

@@ -119,6 +119,20 @@
       "mass_rel_drift",
       "energy_rel_drift"
     ],
+    "constraint_regions": [
+      "z4c_hamiltonian_region_l2",
+      "z4c_hamiltonian_region_linf",
+      "z4c_momentum_region_linf",
+      "z4c_region_volume",
+      "z4c_hamiltonian_near_l2",
+      "z4c_hamiltonian_near_linf",
+      "z4c_momentum_near_linf",
+      "z4c_near_volume",
+      "z4c_hamiltonian_far_l2",
+      "z4c_hamiltonian_far_linf",
+      "z4c_momentum_far_linf",
+      "z4c_far_volume"
+    ],
     "constraints": [
       "z4c_hamiltonian_linf",
       "z4c_hamiltonian_l2",
@@ -170,6 +184,7 @@
       "gravity_total_energy_rel_drift"
     ],
     "horizon": [
+      "black_hole_horizon_found",
       "black_hole_horizon_area",
       "black_hole_horizon_irreducible_mass",
       "black_hole_horizon_equatorial_circumference",
@@ -186,11 +201,15 @@
       "black_hole_horizon_coordinate_christodoulou_spin3",
       "black_hole_horizon_coordinate_christodoulou_spin_magnitude"
     ],
+    "horizon_flux": [
+      "black_hole_horizon_baryon_accretion_rate"
+    ],
     "ledger": [
       "wall_work",
       "wall_power",
       "energy_minus_wall_work",
       "wall_work_rel_error",
+      "external_mass_budget_valid",
       "external_budget_valid",
       "boundary_mass_change",
       "boundary_energy_change",
@@ -260,6 +279,7 @@
       "wall_power",
       "energy_minus_wall_work",
       "wall_work_rel_error",
+      "external_mass_budget_valid",
       "external_budget_valid",
       "boundary_mass_change",
       "boundary_energy_change",
@@ -350,6 +370,7 @@
       "operation": "coordinate",
       "requirements": [],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -366,6 +387,7 @@
       "operation": "coordinate",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -382,6 +404,7 @@
       "operation": "coordinate",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -400,6 +423,7 @@
       "operation": "volume_integral",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -418,6 +442,7 @@
       "operation": "volume_integral",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -436,6 +461,7 @@
       "operation": "volume_integral",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -454,6 +480,7 @@
       "operation": "volume_integral",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -472,6 +499,7 @@
       "operation": "volume_integral",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -490,6 +518,7 @@
       "operation": "volume_integral",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -508,6 +537,7 @@
       "operation": "volume_integral",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -526,6 +556,7 @@
       "operation": "volume_integral",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -544,6 +575,7 @@
         "gravity"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -562,6 +594,7 @@
         "gravity"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -580,6 +613,7 @@
         "gravity"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -598,6 +632,7 @@
         "passive"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -616,6 +651,7 @@
         "passive"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -632,6 +668,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -648,6 +685,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -664,6 +702,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -680,6 +719,24 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "external_mass_budget_valid",
+      "groups": [
+        "ledger"
+      ],
+      "label": "b_{\\rm ext,M}",
+      "name": "external_mass_budget_valid",
+      "operation": "counter",
+      "requirements": [],
+      "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -696,6 +753,7 @@
       "operation": "counter",
       "requirements": [],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -712,6 +770,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -728,6 +787,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -744,6 +804,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -760,6 +821,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -776,6 +838,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -792,6 +855,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -808,6 +872,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -824,6 +889,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -840,6 +906,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -856,6 +923,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -872,6 +940,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -888,6 +957,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -906,6 +976,7 @@
       "operation": "minimum",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -924,6 +995,7 @@
       "operation": "maximum",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -940,6 +1012,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -958,6 +1031,7 @@
       "operation": "minimum",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -976,6 +1050,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -994,6 +1069,7 @@
         "newtonian_mhd"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1012,6 +1088,7 @@
         "rmhd"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1030,6 +1107,7 @@
         "rmhd"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1048,6 +1126,7 @@
         "rmhd"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1066,6 +1145,7 @@
         "rmhd"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1084,6 +1164,7 @@
         "relativistic"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1102,6 +1183,7 @@
         "relativistic"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1120,6 +1202,7 @@
         "mhd"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1138,6 +1221,7 @@
         "mhd"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1156,6 +1240,7 @@
         "mhd"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1174,6 +1259,7 @@
         "diffusion"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1192,6 +1278,7 @@
         "diffusion"
       ],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1208,6 +1295,7 @@
       "operation": "counter",
       "requirements": [],
       "storage": "long",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1224,6 +1312,7 @@
       "operation": "counter",
       "requirements": [],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1240,6 +1329,7 @@
       "operation": "counter",
       "requirements": [],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1256,6 +1346,7 @@
       "operation": "counter",
       "requirements": [],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1272,6 +1363,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1288,6 +1380,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1304,6 +1397,7 @@
       "operation": "performance",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1320,6 +1414,7 @@
       "operation": "performance",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1336,6 +1431,7 @@
       "operation": "performance",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1352,6 +1448,7 @@
       "operation": "maximum",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1368,6 +1465,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1384,6 +1482,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1400,6 +1499,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1416,6 +1516,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "integer",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1432,6 +1533,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1448,6 +1550,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1464,6 +1567,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1481,9 +1585,10 @@
       "name": "z4c_hamiltonian_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1501,9 +1606,10 @@
       "name": "z4c_hamiltonian_l2",
       "operation": "l2_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1521,9 +1627,10 @@
       "name": "z4c_hamiltonian_interior_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1541,9 +1648,10 @@
       "name": "z4c_hamiltonian_interior_l2",
       "operation": "l2_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1561,9 +1669,10 @@
       "name": "z4c_hamiltonian_cf_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1581,9 +1690,10 @@
       "name": "z4c_hamiltonian_cf_l2",
       "operation": "l2_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1602,10 +1712,11 @@
       "name": "z4c_hamiltonian_bh_exterior_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime",
+        "z4c_constraints",
         "black_hole"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1624,10 +1735,11 @@
       "name": "z4c_hamiltonian_bh_exterior_l2",
       "operation": "l2_norm",
       "requirements": [
-        "spacetime",
+        "z4c_constraints",
         "black_hole"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1646,10 +1758,11 @@
       "name": "z4c_momentum_bh_exterior_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime",
+        "z4c_constraints",
         "black_hole"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1667,9 +1780,10 @@
       "name": "z4c_momentum_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1687,9 +1801,10 @@
       "name": "z4c_z_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1707,9 +1822,10 @@
       "name": "z4c_theta_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1727,9 +1843,10 @@
       "name": "z4c_log_conformal_determinant_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1747,9 +1864,274 @@
       "name": "z4c_trace_a_tilde_linf",
       "operation": "linf_norm",
       "requirements": [
-        "spacetime"
+        "z4c_constraints"
       ],
       "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_region_l2",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "\\|\\mathcal H\\|_{2,\\mathrm{region}}",
+      "name": "z4c_hamiltonian_region_l2",
+      "operation": "l2_norm",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_region_linf",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "\\|\\mathcal H\\|_{\\infty,\\mathrm{region}}",
+      "name": "z4c_hamiltonian_region_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_momentum_region_linf",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "\\|\\mathcal M_i\\|_{\\infty,\\mathrm{region}}",
+      "name": "z4c_momentum_region_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_region_volume",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "V_{\\mathrm{region}}",
+      "name": "z4c_region_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_near_l2",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "\\|\\mathcal H\\|_{2,\\mathrm{near}}",
+      "name": "z4c_hamiltonian_near_l2",
+      "operation": "l2_norm",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_near_linf",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "\\|\\mathcal H\\|_{\\infty,\\mathrm{near}}",
+      "name": "z4c_hamiltonian_near_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_momentum_near_linf",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "\\|\\mathcal M_i\\|_{\\infty,\\mathrm{near}}",
+      "name": "z4c_momentum_near_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_near_volume",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "V_{\\mathrm{near}}",
+      "name": "z4c_near_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_far_l2",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "\\|\\mathcal H\\|_{2,\\mathrm{far}}",
+      "name": "z4c_hamiltonian_far_l2",
+      "operation": "l2_norm",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_hamiltonian_far_linf",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "\\|\\mathcal H\\|_{\\infty,\\mathrm{far}}",
+      "name": "z4c_hamiltonian_far_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_momentum_far_linf",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "\\|\\mathcal M_i\\|_{\\infty,\\mathrm{far}}",
+      "name": "z4c_momentum_far_linf",
+      "operation": "linf_norm",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [
+        "z4c_constraints"
+      ],
+      "evaluation": "runtime_reduction",
+      "family": "z4c_far_volume",
+      "groups": [
+        "constraint_regions"
+      ],
+      "label": "V_{\\mathrm{far}}",
+      "name": "z4c_far_volume",
+      "operation": "volume_integral",
+      "requirements": [
+        "z4c_constraints",
+        "constraint_regions"
+      ],
+      "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1768,6 +2150,26 @@
         "black_hole"
       ],
       "storage": "real",
+      "surface": "none",
+      "value_kind": "scalar"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_found",
+      "groups": [
+        "horizon"
+      ],
+      "label": "I_{\\rm AH}",
+      "name": "black_hole_horizon_found",
+      "operation": "counter",
+      "requirements": [
+        "spacetime"
+      ],
+      "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1786,6 +2188,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "apparent_horizon",
       "value_kind": "scalar"
     },
     {
@@ -1806,6 +2209,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1824,6 +2228,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "apparent_horizon",
       "value_kind": "scalar"
     },
     {
@@ -1842,6 +2247,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "apparent_horizon",
       "value_kind": "scalar"
     },
     {
@@ -1863,6 +2269,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1884,6 +2291,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1904,6 +2312,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "apparent_horizon",
       "value_kind": "vector"
     },
     {
@@ -1924,6 +2333,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "apparent_horizon",
       "value_kind": "vector"
     },
     {
@@ -1944,7 +2354,28 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "apparent_horizon",
       "value_kind": "vector"
+    },
+    {
+      "component_count": 1,
+      "component_index": 0,
+      "dependencies": [],
+      "evaluation": "runtime_reduction",
+      "family": "black_hole_horizon_baryon_accretion_rate",
+      "groups": [
+        "horizon_flux"
+      ],
+      "label": "\\dot M_{0,\\rm H}",
+      "name": "black_hole_horizon_baryon_accretion_rate",
+      "operation": "surface_integral",
+      "requirements": [
+        "relativistic",
+        "spacetime"
+      ],
+      "storage": "real",
+      "surface": "apparent_horizon",
+      "value_kind": "scalar"
     },
     {
       "component_count": 1,
@@ -1964,6 +2395,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -1985,6 +2417,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2006,6 +2439,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2027,6 +2461,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2048,6 +2483,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2068,6 +2504,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2088,6 +2525,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "diagnostic_surface",
       "value_kind": "scalar"
     },
     {
@@ -2108,6 +2546,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2128,6 +2567,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2148,6 +2588,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "diagnostic_surface",
       "value_kind": "scalar"
     },
     {
@@ -2168,6 +2609,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2189,6 +2631,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2209,6 +2652,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "diagnostic_surface",
       "value_kind": "vector"
     },
     {
@@ -2229,6 +2673,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "diagnostic_surface",
       "value_kind": "vector"
     },
     {
@@ -2249,6 +2694,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "diagnostic_surface",
       "value_kind": "vector"
     },
     {
@@ -2269,6 +2715,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2289,6 +2736,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2309,6 +2757,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2329,6 +2778,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "diagnostic_surface",
       "value_kind": "vector"
     },
     {
@@ -2349,6 +2799,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "diagnostic_surface",
       "value_kind": "vector"
     },
     {
@@ -2369,6 +2820,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "diagnostic_surface",
       "value_kind": "vector"
     },
     {
@@ -2389,6 +2841,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2409,6 +2862,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2429,6 +2883,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2447,6 +2902,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2465,6 +2921,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "diagnostic_surface",
       "value_kind": "scalar"
     },
     {
@@ -2483,6 +2940,7 @@
         "spacetime"
       ],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2499,6 +2957,7 @@
       "operation": "volume_integral",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2515,6 +2974,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2531,6 +2991,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2547,6 +3008,7 @@
       "operation": "derived",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "vector"
     },
     {
@@ -2565,6 +3027,7 @@
       "operation": "field",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2582,6 +3045,7 @@
       "operation": "field",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2598,6 +3062,7 @@
       "operation": "field",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2616,6 +3081,7 @@
       "operation": "field",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2634,6 +3100,7 @@
       "operation": "field",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     },
     {
@@ -2652,6 +3119,7 @@
       "operation": "field",
       "requirements": [],
       "storage": "real",
+      "surface": "none",
       "value_kind": "scalar"
     }
   ],

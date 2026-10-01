@@ -9,6 +9,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 ApparentHorizonSurface::ApparentHorizonSurface(
    std::array<amrex::Real, 3> center,
    int num_theta,
@@ -22,7 +24,7 @@ ApparentHorizonSurface::ApparentHorizonSurface(
 {
    const bool finite_positive_radius = std::all_of(
       radius_.begin(), radius_.end(), [](amrex::Real value) {
-         return std::isfinite(value) && value > 0.0;
+         return std::isfinite(value) && value > 0.0_rt;
       }
    );
    if (num_theta_ < 2 || num_phi_ < 2 || num_phi_ % 2 != 0
@@ -58,11 +60,11 @@ amrex::Real ApparentHorizonSurface::signed_radial_distance(
       relative_x * relative_x + relative_y * relative_y
       + relative_z * relative_z
    );
-   if (coordinate_radius == 0.0) {
-      return -radius_at(0.0, 0.0);
+   if (coordinate_radius == 0.0_rt) {
+      return -radius_at(0.0_rt, 0.0_rt);
    }
    const amrex::Real theta = std::acos(std::clamp(
-      relative_z / coordinate_radius, amrex::Real(-1.0), amrex::Real(1.0)
+      relative_z / coordinate_radius, amrex::Real(-1.0_rt), amrex::Real(1.0_rt)
    ));
    const amrex::Real phi = std::atan2(relative_y, relative_x);
    return coordinate_radius - radius_at(theta, phi);

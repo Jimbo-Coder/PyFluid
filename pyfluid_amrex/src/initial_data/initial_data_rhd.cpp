@@ -5,6 +5,8 @@
 #include "pyfluid_amrex/initial_data/elliptic.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 template <int EOSMethod>
@@ -21,19 +23,14 @@ void initialize_relativistic_primitive_cache_from_initial_data_method(
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
    const MeshAxes axes = mesh_axes_layout(cfg);
    const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
-   const FixedSpacetimeGeometry reference_geometry = initial_data_spacetime_geometry(
-      spacetime,
-      0.5 * (problo[0] + probhi[0]),
-      AMREX_SPACEDIM >= 2 ? 0.5 * (problo[1] + probhi[1]) : 0.0,
-      AMREX_SPACEDIM == 3 ? 0.5 * (problo[2] + probhi[2]) : 0.0,
-      0.0
-   );
    const FluidInitialDataContext context{
       problo,
       probhi,
       dx,
       AMREX_SPACEDIM >= 2 && geometry.isPeriodic(1),
-      reference_geometry.metric.lapse,
+      initial_data_reference_lapse_at_mesh_center(
+         spacetime, mesh_coordinate, axes, problo, probhi
+      ),
    };
    const FluidInitialDataParameters parameters = fluid_initial_data_parameters(
       cfg, initial_data
@@ -42,7 +39,7 @@ void initialize_relativistic_primitive_cache_from_initial_data_method(
    const bool magnetic_from_id = initial_data.fields.magnetic_from_id;
    const int base_components = magnetized ? NVAR_MHD : NVAR_HYDRO;
    primitive.setVal(
-      0.0, 0, base_components, primitive.nGrowVect()
+      0.0_rt, 0, base_components, primitive.nGrowVect()
    );
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -54,15 +51,20 @@ void initialize_relativistic_primitive_cache_from_initial_data_method(
          const InitialDataSamplePoint sample = cell_center_initial_data_sample_point(
             mesh_coordinate, axes, problo, dx, i, j, k
          );
-         const FixedSpacetimeGeometry local_geometry = initial_data_spacetime_geometry(
-            spacetime,
-            sample.physical.q1,
-            AMREX_SPACEDIM >= 2 ? sample.physical.q2 : 0.0,
-            AMREX_SPACEDIM == 3 ? sample.physical.q3 : 0.0,
-            0.0
-         );
+         const ReferenceMetricSpacetimeGeometry local_geometry =
+            initial_data_reference_spacetime_geometry_at_cell(
+               spacetime,
+               mesh_coordinate,
+               axes,
+               problo,
+               dx,
+               i,
+               j,
+               k,
+               0.0_rt
+            );
          const FluidPrimitiveSample point = sample_fluid_initial_data<EOSMethod>(
-            parameters, context, sample, local_geometry, initial_data
+            parameters, context, sample, local_geometry.metric, initial_data
          );
          cached(i, j, k, RHO) = point.fluid.rho;
          cached(i, j, k, MOM1) = point.fluid.v1;
@@ -70,9 +72,9 @@ void initialize_relativistic_primitive_cache_from_initial_data_method(
          cached(i, j, k, MOM3) = point.fluid.v3;
          cached(i, j, k, ENERGY) = point.fluid.pressure;
          if (magnetized) {
-            cached(i, j, k, B1) = magnetic_from_id ? point.b1 : 0.0;
-            cached(i, j, k, B2) = magnetic_from_id ? point.b2 : 0.0;
-            cached(i, j, k, B3) = magnetic_from_id ? point.b3 : 0.0;
+            cached(i, j, k, B1) = magnetic_from_id ? point.b1 : 0.0_rt;
+            cached(i, j, k, B2) = magnetic_from_id ? point.b2 : 0.0_rt;
+            cached(i, j, k, B3) = magnetic_from_id ? point.b3 : 0.0_rt;
          }
       });
    }
@@ -121,19 +123,14 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
    const amrex::Real* coordinate3_values = coordinate3_storage.data();
 #endif
    const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
-   const FixedSpacetimeGeometry reference_geometry = initial_data_spacetime_geometry(
-      spacetime,
-      0.5 * (problo[0] + probhi[0]),
-      AMREX_SPACEDIM >= 2 ? 0.5 * (problo[1] + probhi[1]) : 0.0,
-      AMREX_SPACEDIM == 3 ? 0.5 * (problo[2] + probhi[2]) : 0.0,
-      0.0
-   );
    const FluidInitialDataContext context{
       problo,
       probhi,
       dx,
       AMREX_SPACEDIM >= 2 && geometry.isPeriodic(1),
-      reference_geometry.metric.lapse,
+      initial_data_reference_lapse_at_mesh_center(
+         spacetime, mesh_coordinate, axes, problo, probhi
+      ),
    };
    const FluidInitialDataParameters parameters = fluid_initial_data_parameters(
       cfg, initial_data
@@ -142,7 +139,7 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
       physical_system(cfg)
    );
    const bool magnetic_from_id = initial_data.fields.magnetic_from_id;
-   primitive.setVal(0.0);
+   primitive.setVal(0.0_rt);
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
@@ -178,12 +175,12 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
          const FixedSpacetimeGeometry local_geometry = initial_data_spacetime_geometry(
             spacetime,
             sample.physical.q1,
-            AMREX_SPACEDIM >= 2 ? sample.physical.q2 : 0.0,
-            AMREX_SPACEDIM == 3 ? sample.physical.q3 : 0.0,
-            0.0
+            sample.physical.q2,
+            sample.physical.q3,
+            0.0_rt
          );
          const FluidPrimitiveSample point = sample_fluid_initial_data<EOSMethod>(
-            parameters, context, sample, local_geometry, initial_data
+            parameters, context, sample, local_geometry.metric, initial_data
          );
          cached(i, j, k, RHO) = point.fluid.rho;
          cached(i, j, k, MOM1) = point.fluid.v1;
@@ -191,9 +188,9 @@ void initialize_relativistic_primitive_cache_from_mapped_provider_method(
          cached(i, j, k, MOM3) = point.fluid.v3;
          cached(i, j, k, ENERGY) = point.fluid.pressure;
          if (magnetized) {
-            cached(i, j, k, B1) = magnetic_from_id ? point.b1 : 0.0;
-            cached(i, j, k, B2) = magnetic_from_id ? point.b2 : 0.0;
-            cached(i, j, k, B3) = magnetic_from_id ? point.b3 : 0.0;
+            cached(i, j, k, B1) = magnetic_from_id ? point.b1 : 0.0_rt;
+            cached(i, j, k, B2) = magnetic_from_id ? point.b2 : 0.0_rt;
+            cached(i, j, k, B3) = magnetic_from_id ? point.b3 : 0.0_rt;
          }
       });
    }

@@ -7,6 +7,7 @@
 #include "pyfluid_amrex/initial_data/physical_id.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"
 #include "pyfluid_amrex/initial_data/rotating_star.hpp"
+#include "pyfluid_amrex/spacetime_excision.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -14,7 +15,46 @@
 #include <utility>
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
+
+void validate_constraint_region_diagnostics(RunConfig const& cfg,
+   amrex::Geometry const& geometry)
+{
+   auto selection = scalar_diagnostic_selection(cfg.scalar_diagnostics);
+   apply_scalar_diagnostic_requirements(selection, cfg);
+   if (!selection.contains_any(ScalarDiagnosticGroup::ConstraintRegions)) return;
+   if (cfg.mesh_coordinate != "cartesian") {
+      amrex::Abort("fixed constraint-region diagnostics require Cartesian coordinates");
+   }
+   const amrex::Real center[3]{cfg.spacetime_origin1, cfg.spacetime_origin2, cfg.spacetime_origin3};
+   const amrex::Real extent = cfg.diagnostic_constraint_region_extent;
+   for (amrex::Real coordinate : center) {
+      if (!std::isfinite(coordinate)) {
+         amrex::Abort("fixed constraint-region diagnostics require a finite spacetime origin");
+      }
+   }
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      if (geometry.isPeriodic(direction)) continue;
+      const amrex::Real margin = 2.0_rt * geometry.CellSize(direction);
+      const amrex::Real tolerance = 64.0_rt * std::numeric_limits<amrex::Real>::epsilon()
+         * std::max({amrex::Real(1.0_rt), std::abs(center[direction]), extent,
+            std::abs(geometry.ProbLo(direction)), std::abs(geometry.ProbHi(direction))});
+      for (bool high : {false, true}) {
+         const BoundaryKind kind = side_boundary_kind(cfg, direction, high);
+         if (kind == BoundaryKind::Reflecting || kind == BoundaryKind::Symmetry) continue;
+         const bool fits = high
+            ? center[direction] + extent <= geometry.ProbHi(direction) - margin + tolerance
+            : center[direction] - extent >= geometry.ProbLo(direction) + margin - tolerance;
+         if (!fits) {
+            amrex::Abort("diagnostics.constraint_region_extent must fit inside every open "
+               "physical face with at least two coarse-cell spacings of buffer; "
+               "the fixed region cannot be silently clipped by a resolution-dependent mask");
+         }
+      }
+   }
+}
 
 void validate_black_hole_reflection_symmetry(
    RunConfig const& cfg,
@@ -37,7 +77,7 @@ void validate_black_hole_reflection_symmetry(
    const auto lower = geometry.ProbLoArray();
    const auto upper = geometry.ProbHiArray();
    const amrex::Real coordinate_scale = std::max<amrex::Real>(
-      1.0,
+      1.0_rt,
       std::max(
          std::abs(parameters.origin1),
          std::max(
@@ -45,9 +85,9 @@ void validate_black_hole_reflection_symmetry(
          )
       )
    );
-   const amrex::Real tolerance = 64.0
+   const amrex::Real tolerance = 64.0_rt
       * std::numeric_limits<amrex::Real>::epsilon() * coordinate_scale;
-   const amrex::Real spin_tolerance = 64.0
+   const amrex::Real spin_tolerance = 64.0_rt
       * std::numeric_limits<amrex::Real>::epsilon();
    for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
       for (int high_side = 0; high_side < 2; ++high_side) {
@@ -91,7 +131,7 @@ void validate_rotating_object_reflection_symmetry(
    }
 
    const bool rotating_star = cfg.ic == "rotating_star"
-      && cfg.initial_data_angular_velocity != 0.0;
+      && cfg.initial_data_angular_velocity != 0.0_rt;
    const bool rotating_disk = cfg.initial_data_disk == "equilibrium_torus"
       || cfg.initial_data_disk == "tilted_torus";
    if (!rotating_star && !rotating_disk) {
@@ -124,14 +164,14 @@ void validate_rotating_object_reflection_symmetry(
    };
    const auto lower = geometry.ProbLoArray();
    const auto upper = geometry.ProbHiArray();
-   const amrex::Real axis_tolerance = 64.0
+   const amrex::Real axis_tolerance = 64.0_rt
       * std::numeric_limits<amrex::Real>::epsilon();
    const auto axis_is_normal = [axis_tolerance](
       int direction,
       amrex::Real const axis[3]
    ) {
-      amrex::Real norm_squared = 0.0;
-      amrex::Real tangent_squared = 0.0;
+      amrex::Real norm_squared = 0.0_rt;
+      amrex::Real tangent_squared = 0.0_rt;
       for (int component = 0; component < 3; ++component) {
          norm_squared += axis[component] * axis[component];
          if (component != direction) {
@@ -142,9 +182,9 @@ void validate_rotating_object_reflection_symmetry(
          <= axis_tolerance * axis_tolerance * norm_squared;
    };
    const auto plane_passes_through = [](amrex::Real plane, amrex::Real center) {
-      const amrex::Real tolerance = 64.0
+      const amrex::Real tolerance = 64.0_rt
          * std::numeric_limits<amrex::Real>::epsilon()
-         * std::max({amrex::Real(1.0), std::abs(plane), std::abs(center)});
+         * std::max({amrex::Real(1.0_rt), std::abs(plane), std::abs(center)});
       return std::abs(plane - center) <= tolerance;
    };
 
@@ -203,14 +243,16 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
      apparent_horizon_tracker_(
         std::make_unique<ApparentHorizonTracker>(cfg_, maxLevel() + 1)
      ),
-     recovery_atmosphere_(recovery_atmosphere_state(
-        eos_method_code(cfg_), eos_params(cfg_)
-     )),
-     state_interpolater_(std::make_unique<MeshBasisStateInterpolater>())
+     recovery_exterior_state_(relativistic_exterior_state(cfg_)),
+     state_interpolater_(std::make_unique<MeshBasisStateInterpolater>()),
+     spacetime_interpolater_(
+        spacetime_excision_region(cfg_), cfg_.spacetime_prolongation_order
+     )
 {
    validate_config(cfg_);
    validate_black_hole_reflection_symmetry(cfg_, Geom(0));
    validate_rotating_object_reflection_symmetry(cfg_, Geom(0));
+   validate_constraint_region_diagnostics(cfg_, Geom(0));
    validate_amr_refinement_ratios();
    physics_system_ = physical_system(cfg_);
    mesh_layout_ = mesh_runtime_layout(cfg_);
@@ -222,27 +264,33 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
    );
    if (spacetime_stores_state(cfg_)) {
       GridFieldSetInfo const& spacetime_fields = z4c_state_grid_fields();
-      const int spacetime_stencil_width = grid_field_ghost_width(spacetime_fields);
+      const int spacetime_stencil_width = std::max(
+         grid_field_ghost_width(spacetime_fields),
+         upwind_dissipation_radius(cfg_.spacetime_derivative_order));
+      const bool spacetime_excision = spacetime_excision_region(cfg_).enabled();
       const int cell_spacetime_ghost_width = std::max(
-         spacetime_stencil_width, cfg_.ng
-      );
+         std::max(spacetime_stencil_width, cfg_.ng),
+         spacetime_excision ? cfg_.spacetime_derivative_order + 1 : 0);
       spacetime_state_.configure(
          spacetime_fields,
          num_levels,
-         cell_spacetime_ghost_width + 2,
+         // A physical boundary block can be shorter than the extrapolation
+         // stencil. Its exchanged halo must still contain order+2 donors.
+         std::max(cell_spacetime_ghost_width + (spacetime_excision ? 4 : 2),
+                  cfg_.spacetime_derivative_order + 1),
          spacetime_evolves(cfg_)
       );
       spacetime_coupling_.configure(
          num_levels,
-         cell_spacetime_ghost_width
+         cell_spacetime_ghost_width,
+         spacetime_excision ? 4 : 2
       );
       spacetime_fillpatch_bcs_ = z4c_boundary_records(cfg_, Geom(0));
-      spacetime_fillpatch_func_ = SpacetimeFillPatchFunc(Z4cFillPatchBoundary{});
+      spacetime_fillpatch_func_ = SpacetimeFillPatchFunc(Z4cFillPatchBoundary{cfg_.spacetime_derivative_order});
    }
-   analytic_fixed_spacetime_kernels_ =
-      !spacetime_state_.evolves()
-      && cfg_.spacetime_initial_data == "minkowski"
-      && cfg_.initial_data_input_file.empty();
+   select_analytic_fixed_spacetime_kernels(
+      cfg_.ic, cfg_.spacetime_initial_data
+   );
    validate_state_interpolation_nesting();
    recon_method_ = recon_method_code(cfg_);
    recon_fine_method_ = cfg_.recon_fine.empty()
@@ -290,14 +338,12 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
       num_levels,
       std::numeric_limits<amrex::Real>::quiet_NaN()
    );
-   gravity_phi_.resize(num_levels);
-   gravity_gradient_.resize(num_levels);
+   gravity_fields_.resize(num_levels);
    gravity_start_gradient_.resize(num_levels);
    gravity_stage_energy_release_.resize(num_levels);
    for (auto& stage_flux : gravity_stage_mass_flux_) {
       stage_flux.resize(num_levels);
    }
-   gravity_fixed_cache_valid_.resize(num_levels, false);
    face_b_.resize(num_levels);
    ct_step_start_face_b_.resize(num_levels);
    edge_e_.resize(num_levels);
@@ -307,15 +353,15 @@ AmrSolverBase::AmrSolverBase(RunConfig cfg)
    edge_flux_registers_.resize(num_levels);
 #endif
    level_steps_.resize(num_levels, 0);
-   level_times_.resize(num_levels, 0.0);
-   level_old_times_.resize(num_levels, 0.0);
-   level_dts_.resize(num_levels, 0.0);
+   level_times_.resize(num_levels, 0.0_rt);
+   level_old_times_.resize(num_levels, 0.0_rt);
+   level_dts_.resize(num_levels, 0.0_rt);
    latest_auto_tagged_cells_.resize(num_levels, 0);
    for (auto& direction_counts : latest_auto_direction_tagged_cells_) {
       direction_counts.resize(num_levels, 0);
    }
    for (auto& direction_strength : latest_auto_direction_strength_) {
-      direction_strength.resize(num_levels, 0.0);
+      direction_strength.resize(num_levels, 0.0_rt);
    }
 }
 
@@ -352,7 +398,7 @@ void AmrSolverBase::define_flux_registers(int first_fine_level)
             1,
             0
          );
-         gravity_energy_source_register_[lev]->setVal(0.0);
+         gravity_energy_source_register_[lev]->setVal(0.0_rt);
       }
 #if (AMREX_SPACEDIM >= 2)
       if (ct_enabled(cfg_)) {
@@ -387,7 +433,7 @@ void AmrSolverBase::reset_flux_register(int fine_lev)
       && fine_lev <= finestLevel()
       && gravity_energy_source_register_[fine_lev]
    ) {
-      gravity_energy_source_register_[fine_lev]->setVal(0.0);
+      gravity_energy_source_register_[fine_lev]->setVal(0.0_rt);
    }
 #if (AMREX_SPACEDIM >= 2)
    if (fine_lev > 0 && fine_lev <= finestLevel() && edge_flux_registers_[fine_lev]) {
@@ -432,7 +478,7 @@ void AmrSolverBase::allocate_level(
    }
 #endif
    frequency_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, 1, 0);
-   frequency_[lev]->setVal(0.0);
+   frequency_[lev]->setVal(0.0_rt);
    pressure_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, 1, 0);
    if (solid_geometry_enabled(cfg_)) {
       solid_volume_fraction_[lev].reset();
@@ -461,22 +507,19 @@ void AmrSolverBase::allocate_level(
       allocate_edge_electric_field(edge_current_[lev], ba, dm);
    }
    if (gravity_enabled(cfg_)) {
-      gravity_phi_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, 1, 1);
-      gravity_phi_[lev]->setVal(0.0);
-      allocate_gravity_gradient(gravity_gradient_[lev], ba, dm);
+      gravity_fields_.allocate_level(lev, ba, dm);
       if (uses_athena_gravity_energy_correction()) {
          allocate_gravity_gradient(gravity_start_gradient_[lev], ba, dm);
          gravity_stage_energy_release_[lev] = std::make_unique<amrex::MultiFab>(ba, dm, 1, 0);
-         gravity_stage_energy_release_[lev]->setVal(0.0);
+         gravity_stage_energy_release_[lev]->setVal(0.0_rt);
          for (auto& stage_flux : gravity_stage_mass_flux_) {
             for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
                const amrex::BoxArray flux_ba = amrex::convert(ba, amrex::IntVect::TheDimensionVector(dir));
                stage_flux[lev][dir] = std::make_unique<amrex::MultiFab>(flux_ba, dm, 1, 0);
-               stage_flux[lev][dir]->setVal(0.0);
+               stage_flux[lev][dir]->setVal(0.0_rt);
             }
          }
       }
-      gravity_fixed_cache_valid_[lev] = false;
    }
    if (ct_enabled(cfg_)) {
       ct_face_primitive_mask_[lev] = std::make_unique<amrex::iMultiFab>(
@@ -526,19 +569,19 @@ amrex::Long AmrSolverBase::active_cell_count_in_box(int lev, amrex::Box const& b
    for (int k = klo; k <= khi; ++k) {
       const amrex::Real z =
 #if (AMREX_SPACEDIM == 3)
-         problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+         problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-         0.0;
+         0.0_rt;
 #endif
       for (int j = jlo; j <= jhi; ++j) {
          const amrex::Real y =
 #if (AMREX_SPACEDIM >= 2)
-            problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+            problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-            0.0;
+            0.0_rt;
 #endif
          for (int i = lo[0]; i <= hi[0]; ++i) {
-            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
             if (!params.contains(time, x, y, z)) {
                ++active;
             }
@@ -604,13 +647,13 @@ void AmrSolverBase::MakeNewLevelFromScratch(
    SetBoxArray(lev, level_ba);
    SetDistributionMap(lev, work_dm);
    allocate_level(lev, level_ba, work_dm, time);
-   set_level_time_state(lev, time, 0.0);
+   set_level_time_state(lev, time, 0.0_rt);
    initialize_state(
       *fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_->view()
    );
    initialize_spacetime_level(lev, time);
    refresh_stored_spacetime_fluid_boundary(lev, time);
-   if (time == 0.0) {
+   if (time == 0.0_rt) {
       initialize_ct_fields(lev, time);
    } else {
       initialize_ct_fields_from_coarse(lev, time);
@@ -625,15 +668,15 @@ void AmrSolverBase::MakeNewLevelFromCoarse(
    amrex::DistributionMapping const& dm
 )
 {
-   mark_regrid_level_modified(lev);
+   regrid_lifecycle_.mark_level_modified(lev);
    const amrex::BoxArray level_ba = owned_level_box_array(lev, ba);
    const amrex::DistributionMapping work_dm =
       owned_level_distribution_mapping(lev, ba, level_ba, dm, time);
    SetBoxArray(lev, level_ba);
    SetDistributionMap(lev, work_dm);
    allocate_level(lev, level_ba, work_dm, time);
-   set_level_time_state(lev, time, 0.0);
-   if (time == 0.0) {
+   set_level_time_state(lev, time, 0.0_rt);
+   if (time == 0.0_rt) {
       initialize_state(
          *fluid_state_.state()[lev], Geom(lev), cfg_, initial_data_provider_->view()
       );
@@ -642,7 +685,7 @@ void AmrSolverBase::MakeNewLevelFromCoarse(
    }
    fill_new_spacetime_level_from_coarse(lev, time);
    refresh_stored_spacetime_fluid_boundary(lev, time);
-   if (time == 0.0) {
+   if (time == 0.0_rt) {
       initialize_ct_fields(lev, time);
    } else {
       initialize_ct_fields_from_coarse(lev, time);
@@ -657,7 +700,7 @@ void AmrSolverBase::RemakeLevel(
    amrex::DistributionMapping const& dm
 )
 {
-   mark_regrid_level_modified(lev);
+   regrid_lifecycle_.mark_level_modified(lev);
    std::unique_ptr<amrex::MultiFab> old_state = std::move(fluid_state_.state()[lev]);
    std::unique_ptr<amrex::MultiFab> old_spacetime;
    if (spacetime_state_.active()) {
@@ -673,7 +716,7 @@ void AmrSolverBase::RemakeLevel(
    SetBoxArray(lev, level_ba);
    SetDistributionMap(lev, work_dm);
    allocate_level(lev, level_ba, work_dm, time);
-   set_level_time_state(lev, time, 0.0);
+   set_level_time_state(lev, time, 0.0_rt);
    fill_remade_level_state(lev, time, *old_state);
    if (old_spacetime) {
       fill_remade_spacetime_level(lev, time, *old_spacetime);
@@ -685,7 +728,7 @@ void AmrSolverBase::RemakeLevel(
 
 void AmrSolverBase::ClearLevel(int lev)
 {
-   mark_regrid_level_modified(lev);
+   regrid_lifecycle_.mark_level_modified(lev);
    fluid_state_.clear_level(lev);
    spacetime_state_.clear_level(lev);
    spacetime_coupling_.clear_level(lev);
@@ -713,10 +756,7 @@ void AmrSolverBase::ClearLevel(int lev)
    ct_face_primitive_mask_[lev].reset();
    clear_solid_mask_kind_tables(lev);
    solid_active_[lev] = false;
-   gravity_phi_[lev].reset();
-   for (auto& component : gravity_gradient_[lev]) {
-      component.reset();
-   }
+   gravity_fields_.clear_level(lev);
    for (auto& component : gravity_start_gradient_[lev]) {
       component.reset();
    }
@@ -726,7 +766,6 @@ void AmrSolverBase::ClearLevel(int lev)
          component.reset();
       }
    }
-   gravity_fixed_cache_valid_[lev] = false;
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       face_b_[lev].b[dir].reset();
       ct_step_start_face_b_[lev].b[dir].reset();
@@ -741,41 +780,11 @@ void AmrSolverBase::ClearLevel(int lev)
       component.reset();
    }
    level_steps_[lev] = 0;
-   level_times_[lev] = 0.0;
-   level_old_times_[lev] = 0.0;
-   level_dts_[lev] = 0.0;
+   level_times_[lev] = 0.0_rt;
+   level_old_times_[lev] = 0.0_rt;
+   level_dts_[lev] = 0.0_rt;
    apparent_horizon_tracker_->invalidate_level(lev);
    invalidate_rk4_stage_cache(lev);
-}
-
-void AmrSolverBase::begin_regrid_change_tracking()
-{
-   tracking_regrid_changes_ = true;
-   regrid_first_modified_level_ = std::numeric_limits<int>::max();
-   regrid_last_modified_level_ = -1;
-   ++regrid_attempt_count_;
-}
-
-void AmrSolverBase::mark_regrid_level_modified(int lev)
-{
-   if (!tracking_regrid_changes_) {
-      return;
-   }
-   regrid_first_modified_level_ = std::min(regrid_first_modified_level_, lev);
-   regrid_last_modified_level_ = std::max(regrid_last_modified_level_, lev);
-}
-
-bool AmrSolverBase::finish_regrid_change_tracking()
-{
-   tracking_regrid_changes_ = false;
-   const bool modified = regrid_last_modified_level_ >= regrid_first_modified_level_;
-   if (modified) {
-      regrid_modified_level_count_ +=
-         static_cast<amrex::Long>(regrid_last_modified_level_ - regrid_first_modified_level_ + 1);
-   } else {
-      ++regrid_noop_count_;
-   }
-   return modified;
 }
 
 } // namespace pyfluid_amrex

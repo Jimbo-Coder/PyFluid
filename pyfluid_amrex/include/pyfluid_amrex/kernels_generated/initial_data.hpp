@@ -81,7 +81,7 @@ amrex::Real xcts_lapse_from_conformal_unknowns(amrex::Real conformal_factor, amr
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real uniform_rotation_log_specific_enthalpy(amrex::Real injection_energy, amrex::Real lapse, amrex::Real velocity_squared) noexcept
 {
-   return log(injection_energy) - log(lapse) - 1.0_rt/2.0_rt*log(1 - velocity_squared);
+   return std::log(injection_energy) - std::log(lapse) - 1.0_rt/2.0_rt*std::log(1 - velocity_squared);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -93,7 +93,7 @@ amrex::Real j_constant_specific_angular_momentum(amrex::Real omega, amrex::Real 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real q_power_specific_angular_momentum(amrex::Real omega, amrex::Real omega_center, amrex::Real differential_length, amrex::Real rotation_power) noexcept
 {
-   return ((differential_length)*(differential_length))*omega*(pow(omega_center/omega, rotation_power) - 1);
+   return ((differential_length)*(differential_length))*omega*(std::pow(omega_center/omega, rotation_power) - 1);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -106,14 +106,14 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real q_power_rotation_integral(amrex::Real omega, amrex::Real omega_center, amrex::Real differential_length, amrex::Real rotation_power) noexcept
 {
    const amrex::Real tmp0 = rotation_power - 2;
-   return -((differential_length)*(differential_length))*((1.0_rt/2.0_rt)*((omega)*(omega)) - 1.0_rt/2.0_rt*((omega_center)*(omega_center)) + pow(omega_center, rotation_power)*(-pow(omega_center, -tmp0) + pow(omega, -tmp0))/tmp0);
+   return -((differential_length)*(differential_length))*((1.0_rt/2.0_rt)*((omega)*(omega)) - 1.0_rt/2.0_rt*((omega_center)*(omega_center)) + std::pow(omega_center, rotation_power)*(-std::pow(omega_center, -tmp0) + std::pow(omega, -tmp0))/tmp0);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real q_power_two_rotation_integral(amrex::Real omega, amrex::Real omega_center, amrex::Real differential_length) noexcept
 {
    const amrex::Real tmp0 = ((omega_center)*(omega_center));
-   return ((differential_length)*(differential_length))*(-1.0_rt/2.0_rt*((omega)*(omega)) + tmp0*log(omega/omega_center) + (1.0_rt/2.0_rt)*tmp0);
+   return ((differential_length)*(differential_length))*(-1.0_rt/2.0_rt*((omega)*(omega)) + tmp0*std::log(omega/omega_center) + (1.0_rt/2.0_rt)*tmp0);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -182,13 +182,13 @@ amrex::Real constant_l_torus_normalization_squared(amrex::Real metric_tt, amrex:
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real constant_l_torus_minus_covariant_time_velocity(amrex::Real metric_tt, amrex::Real metric_t_phi, amrex::Real angular_velocity, amrex::Real normalization_squared) noexcept
 {
-   return -(angular_velocity*metric_t_phi + metric_tt)/sqrt(normalization_squared);
+   return -(angular_velocity*metric_t_phi + metric_tt)/std::sqrt(normalization_squared);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real constant_l_torus_log_specific_enthalpy(amrex::Real inner_minus_covariant_time_velocity, amrex::Real local_minus_covariant_time_velocity) noexcept
 {
-   return log(inner_minus_covariant_time_velocity) - log(local_minus_covariant_time_velocity);
+   return std::log(inner_minus_covariant_time_velocity) - std::log(local_minus_covariant_time_velocity);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

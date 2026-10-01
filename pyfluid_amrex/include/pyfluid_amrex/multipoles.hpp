@@ -13,6 +13,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct MultipoleMode {
    std::string field{};
    std::string basis{};
@@ -24,12 +26,12 @@ struct MultipoleMode {
 };
 
 struct MultipoleDiagnostics {
-   amrex::Real radius = 0.0;
+   amrex::Real radius = 0.0_rt;
    std::vector<MultipoleMode> modes{};
 };
 
 struct MatterModeDiagnostics {
-   amrex::Real mass = 0.0;
+   amrex::Real mass = 0.0_rt;
    std::array<amrex::Real, 3> barycenter{};
    std::vector<MultipoleMode> modes{};
 };

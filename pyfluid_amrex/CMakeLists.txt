@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 
 project(pyfluid_amrex LANGUAGES C CXX)
 
@@ -9,7 +9,28 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(CheckCXXCompilerFlag)
 option(PYFLUID_AMREX_ENABLE_IMPLICIT_GRAVITY "Compile implicit-gravity paths that use AMReX linear solvers." ON)
 
+# Track the real installation in include/link commands even when a preset
+# selects it through the stable managed link. Version switches then invalidate
+# dependent objects normally, including switches to older file timestamps.
+set(CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS TRUE)
 find_package(AMReX REQUIRED)
+if(AMReX_CUDA_FOUND)
+   enable_language(CUDA)
+   include(AMReXTargetHelpers)
+   set(CMAKE_CUDA_STANDARD 20)
+   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+endif()
+set(PYFLUID_AMREX_PRECISION "${AMReX_PRECISION}" CACHE STRING
+   "Floating-point precision; must match the selected AMReX install.")
+set_property(CACHE PYFLUID_AMREX_PRECISION PROPERTY STRINGS SINGLE DOUBLE)
+if(NOT PYFLUID_AMREX_PRECISION STREQUAL AMReX_PRECISION)
+   message(FATAL_ERROR
+      "PyFluid precision ${PYFLUID_AMREX_PRECISION} does not match "
+      "AMReX precision ${AMReX_PRECISION}. Select the matching AMReX install "
+      "and a separate build directory for each precision.")
+endif()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+   "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/amrex.toml")
 if(NOT AMReX_MPI_FOUND OR NOT AMReX_MPI)
    message(FATAL_ERROR
       "PyFluid AMReX requires an MPI-enabled AMReX install. "
@@ -102,6 +123,7 @@ if(PYFLUID_AMREX_ENABLE_MHD)
 endif()
 
 set(PYFLUID_AMREX_AMR_SOURCES
+   src/amr/gravity_fields.cpp
    src/amr/amr_solver_average.cpp
    src/amr/amr_solver_auxiliary.cpp
    src/amr/amr_solver_conservation.cpp
@@ -110,6 +132,7 @@ set(PYFLUID_AMREX_AMR_SOURCES
    src/amr/amr_solver_fillpatch.cpp
    src/amr/amr_solver_flux_registers.cpp
    src/amr/amr_solver_gravity_sync.cpp
+   src/amr/amr_solver_gravity.cpp
    src/amr/amr_solver_horizon.cpp
    src/amr/amr_solver_solid.cpp
    src/amr/amr_solver_hierarchy.cpp
@@ -146,6 +169,7 @@ set(PYFLUID_AMREX_NUMERICS_SOURCES
    src/numerics/ct_edge_flux_register.cpp
    src/numerics/flux_factory.cpp
    src/numerics/implicit_resistivity.cpp
+   src/numerics/diagnostic_reductions.cpp
    src/numerics/nodal_interpolater.cpp
    src/numerics/hierarchy_interpolation.cpp
 )
@@ -221,12 +245,17 @@ set(PYFLUID_AMREX_INITIAL_DATA_SOURCES
 set(PYFLUID_AMREX_RELATIVITY_SOURCES
    src/relativity/apparent_horizon_surface.cpp
    src/relativity/apparent_horizon_tracker.cpp
+   src/relativity/black_hole_excision.cpp
    src/relativity/primitive_cache_factory.cpp
+   src/relativity/reference_metric_valencia.cpp
+   src/relativity/relativistic_exterior.cpp
    src/relativity/relativistic_flux_limiter.cpp
    src/relativity/relativistic_source_factory.cpp
    src/relativity/signal_speed_factory.cpp
    src/relativity/spacetime_coupling_storage.cpp
    src/relativity/z4c_runtime.cpp
+   src/relativity/fccz4_runtime.cpp
+   src/relativity/z4c_outer_boundary.cpp
 )
 
 if(PYFLUID_AMREX_ENABLE_MHD AND
@@ -249,6 +278,21 @@ set(PYFLUID_AMREX_SOURCES
    ${PYFLUID_AMREX_RELATIVITY_SOURCES}
 )
 
+# Guard the compiled production owners, including shared object-library uses.
+# Integer indices/signs converting to Real are a separate range contract; this
+# check prevents accidental floating-point widening or narrowing in FP32.
+if(PYFLUID_AMREX_PRECISION STREQUAL "SINGLE" AND
+   CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+   set_property(SOURCE
+      ${PYFLUID_AMREX_SOURCES}
+      src/relativity/apparent_horizon_finder.cpp
+      APPEND PROPERTY COMPILE_OPTIONS
+      -Werror=double-promotion
+      -Werror=implicit-float-conversion
+      -Wno-implicit-int-float-conversion
+   )
+endif()
+
 set(PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES
    src/framework/checkpoint.cpp
    tools/cpp/compare_checkpoint.cpp
@@ -263,6 +307,7 @@ set(PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES
 set(PYFLUID_AMREX_CODEGEN_CHECK_SOURCES
    src/eos/presets.cpp
    tests/generated_flux_compile_check.cpp
+   tests/relativistic_vacuum_check.cpp
 )
 
 set(PYFLUID_AMREX_C2P_BENCHMARK_SOURCES
@@ -276,6 +321,11 @@ set(PYFLUID_AMREX_TABULATED_EOS_CHECK_SOURCES
 
 set(PYFLUID_AMREX_RECONSTRUCTION_CHECK_SOURCES
    tests/reconstruction_check.cpp
+)
+
+set(PYFLUID_AMREX_STATE_UPDATE_CHECK_SOURCES
+   tests/state_update_check.cpp
+   src/numerics/diagnostic_reductions.cpp
 )
 
 set(PYFLUID_AMREX_RMHD_RIEMANN_CHECK_SOURCES
@@ -315,6 +365,7 @@ set(PYFLUID_AMREX_APPARENT_HORIZON_CHECK_SOURCES
 )
 
 set(PYFLUID_AMREX_INITIAL_DATA_ELLIPTIC_CHECK_SOURCES
+   tests/cartesian_id_convergence.cpp
    src/framework/config.cpp
    src/framework/config_runtime.cpp
    src/framework/fields.cpp
@@ -445,7 +496,11 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
          ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
          ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/diagnostic_types.hpp
          ${PYFLUID_AMREX_GENERATED_METHOD_CATALOG_HEADER}
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/spatial_order_catalog.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/time_integrator_catalog.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/generated/time_integrator_ids.hpp
          ${PYFLUID_AMREX_GENERATED_AMR_TAG_CATALOG_HEADER}
          ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_METHOD_CATALOG_HEADER}
          ${PYFLUID_AMREX_GENERATED_PHYSICAL_ID_CATALOG_HEADER}
@@ -476,12 +531,18 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/diagnostic_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/equation_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_spatial_order.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_time_integrators.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/time_integrator_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/time_integrators.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/method_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/numerical_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/physical_id_catalog.py
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/diagnostics.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/methods.toml
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/numerics.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/physical_id.toml
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
       COMMENT "Generating PyFluid AMReX catalogs"
@@ -494,15 +555,10 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_DIFFERENTIAL_HEADER}
-         ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_HEADER}
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/boundary_differential_ops.hpp
          ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
-         ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
-         ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
-         ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADERS}
-         ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
-         ${PYFLUID_AMREX_GENERATED_Z4C_HEADERS}
       COMMAND ${CMAKE_COMMAND} -E env
          UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
          ${PYFLUID_UV_EXECUTABLE} run python
@@ -511,33 +567,28 @@ if(PYFLUID_UV_EXECUTABLE)
          --family flux
          --family operator
          --family differential
-         --family diagnostic
          --family riemann
          --family characteristic
-         --family vector
          --family metric
-         --family relativistic
-         --family z4c
          --flux-header ${PYFLUID_AMREX_GENERATED_FLUX_HEADER}
          --eos-header ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          --operator-header ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
          --differential-header ${PYFLUID_AMREX_GENERATED_DIFFERENTIAL_HEADER}
-         --diagnostic-header ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_HEADER}
          --riemann-header ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          --characteristic-header ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
-         --vector-header ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
          --metric-header ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
-         --relativistic-header ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
-         --z4c-header ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
       COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/characteristic_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/differential_equations.py
-         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/diagnostic_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/numerical_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_spatial_order.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/numerics.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/discretization.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_boundary_differential.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/flux_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
@@ -547,14 +598,108 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/operator_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/physical_system.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/riemann_equations.py
-         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/relativistic_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_algebra.py
-         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/vector_equations.py
-         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/z4c_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/coordinates.py
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
       COMMENT "Generating PyFluid AMReX physics kernels"
       VERBATIM
+   )
+   # These expensive symbolic families have separate ownership. A diagnostic
+   # formula edit must not regenerate evolution/C2P kernels, and vice versa.
+   function(pyfluid_amrex_add_kernel_family family)
+      cmake_parse_arguments(KERNEL "" "HEADER" "BYPRODUCTS;DEPENDS" ${ARGN})
+      set(stamp "${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_${family}_codegen.stamp")
+      add_custom_command(
+         OUTPUT ${stamp}
+         BYPRODUCTS ${KERNEL_HEADER} ${KERNEL_BYPRODUCTS}
+         COMMAND ${CMAKE_COMMAND} -E env
+            UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
+            ${PYFLUID_UV_EXECUTABLE} run python ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+            --family ${family} --${family}-header ${KERNEL_HEADER}
+         COMMAND ${CMAKE_COMMAND} -E touch ${stamp}
+         DEPENDS
+            ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+            ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/kernel_equations.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_algebra.py
+            ${KERNEL_DEPENDS}
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
+         COMMENT "Generating PyFluid AMReX ${family} kernels"
+         VERBATIM
+      )
+      set(PYFLUID_AMREX_FAMILY_CODEGEN_STAMPS
+         ${PYFLUID_AMREX_FAMILY_CODEGEN_STAMPS} ${stamp} PARENT_SCOPE)
+   endfunction()
+   pyfluid_amrex_add_kernel_family(vector
+      HEADER ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
+      BYPRODUCTS
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/vector/calculus.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/vector/reference_metric.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/vector/viscous.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/vector/emf.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/vector/magnetic.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/vector/ct.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/vector/finite_volume.hpp
+      DEPENDS
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/vector_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/physical_system.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/discretization.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/coordinates.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/reference_metric.py
+   )
+   pyfluid_amrex_add_kernel_family(diagnostic
+      HEADER ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_HEADER}
+      DEPENDS
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/diagnostic_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/z4c_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/metric_differential.py
+   )
+   pyfluid_amrex_add_kernel_family(z4c
+      HEADER ${PYFLUID_AMREX_GENERATED_Z4C_HEADER}
+      BYPRODUCTS ${PYFLUID_AMREX_GENERATED_Z4C_HEADERS}
+      DEPENDS
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/z4c_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/metric_differential.py
+   )
+   pyfluid_amrex_add_kernel_family(spacetime
+      HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/spacetime_geometry.hpp
+      BYPRODUCTS ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/reference_metric_evolution.hpp
+      DEPENDS
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/reference_metric_evolution.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_jets.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/spacetime_geometry.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/metric_differential.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/coordinates.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/reference_metric.py
+   )
+   pyfluid_amrex_add_kernel_family(fccz4
+      HEADER ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/fccz4.hpp
+      BYPRODUCTS
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/fccz4/geometry.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/fccz4/rhs.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/fccz4/gauge.hpp
+         ${CMAKE_CURRENT_SOURCE_DIR}/include/pyfluid_amrex/kernels_generated/fccz4/constraints.hpp
+      DEPENDS
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/fccz4_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/fccz4_kernels.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/reference_metric_evolution.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/spacetime_geometry.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_jets.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/metric_differential.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/coordinates.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/reference_metric.py
+   )
+   pyfluid_amrex_add_kernel_family(relativistic
+      HEADER ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADER}
+      BYPRODUCTS ${PYFLUID_AMREX_GENERATED_RELATIVISTIC_HEADERS}
+      DEPENDS
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/relativistic_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/field_catalog.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/physical_system.py
+         ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml
    )
    add_custom_command(
       OUTPUT ${PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP}
@@ -604,6 +749,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_CODEGEN_STAMP}
          ${PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP}
          ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
+         ${PYFLUID_AMREX_FAMILY_CODEGEN_STAMPS}
    )
    add_dependencies(pyfluid_amrex_generate_kernels pyfluid_amrex_generate_catalog)
 else()
@@ -665,6 +811,10 @@ endfunction()
 function(pyfluid_amrex_configure_target target dim)
    pyfluid_amrex_configure_compile_target(${target})
    target_link_libraries(${target} PRIVATE AMReX::amrex_${dim}d)
+   set_property(TARGET ${target} PROPERTY PYFLUID_AMREX_DIM ${dim})
+   if(AMReX_CUDA_FOUND)
+      setup_target_for_cuda_compilation(${target})
+   endif()
 endfunction()
 
 # Keep the host-only horizon solver out of the fluid template products and out
@@ -682,6 +832,11 @@ target_link_libraries(
    PUBLIC
    AMReX::amrex_3d
 )
+if(AMReX_CUDA_FOUND)
+   # The finder still executes on the host, but its shared AMReX value types
+   # carry CUDA qualifiers and require the CUDA compiler.
+   setup_target_for_cuda_compilation(pyfluid_amrex_apparent_horizon)
+endif()
 if(PYFLUID_AMREX_HORIZON_OPENMP)
    find_package(OpenMP QUIET COMPONENTS CXX)
    if(OpenMP_CXX_FOUND)
@@ -690,6 +845,14 @@ if(PYFLUID_AMREX_HORIZON_OPENMP)
          PRIVATE
          OpenMP::OpenMP_CXX
       )
+      if(AMReX_CUDA_FOUND)
+         separate_arguments(horizon_openmp_flags NATIVE_COMMAND "${OpenMP_CXX_FLAGS}")
+         foreach(flag IN LISTS horizon_openmp_flags)
+            target_compile_options(pyfluid_amrex_apparent_horizon PRIVATE
+               "$<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=${flag}>"
+            )
+         endforeach()
+      endif()
    elseif(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
       # Homebrew's keg-only libomp is not discovered by FindOpenMP when the
       # MPI wrapper selects AppleClang.  Keep this fallback target-local.
@@ -740,12 +903,22 @@ if(PYFLUID_AMREX_HORIZON_OPENMP)
    endif()
 endif()
 
+# This host bookkeeping owner has no AMReX, generated-kernel or dimension
+# dependencies. Compile it once; implementation edits do not rebuild drivers.
+add_library(pyfluid_amrex_regrid STATIC src/amr/regrid_lifecycle.cpp)
+
 foreach(dim 1 2 3)
    if(TARGET AMReX::amrex_${dim}d)
       add_executable(pyfluid_amrex_${dim}d ${PYFLUID_AMREX_SOURCES})
+      target_link_libraries(pyfluid_amrex_${dim}d PRIVATE pyfluid_amrex_regrid)
       list(APPEND PYFLUID_AMREX_PRODUCTION_TARGETS pyfluid_amrex_${dim}d)
       if(dim EQUAL 3)
+         # The horizon library already supplies the 3D AMReX dependency.
          pyfluid_amrex_configure_compile_target(pyfluid_amrex_${dim}d)
+         set_property(TARGET pyfluid_amrex_${dim}d PROPERTY PYFLUID_AMREX_DIM ${dim})
+         if(AMReX_CUDA_FOUND)
+            setup_target_for_cuda_compilation(pyfluid_amrex_${dim}d)
+         endif()
          target_link_libraries(
             pyfluid_amrex_${dim}d
             PRIVATE
@@ -758,7 +931,7 @@ foreach(dim 1 2 3)
          add_dependencies(pyfluid_amrex_${dim}d pyfluid_amrex_generate_kernels)
       endif()
 
-      add_executable(pyfluid_amrex_compare_checkpoint_${dim}d ${PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES})
+      add_executable(pyfluid_amrex_compare_checkpoint_${dim}d EXCLUDE_FROM_ALL ${PYFLUID_AMREX_CHECKPOINT_COMPARE_SOURCES})
       pyfluid_amrex_configure_target(pyfluid_amrex_compare_checkpoint_${dim}d ${dim})
       if(TARGET pyfluid_amrex_generate_kernels)
          add_dependencies(pyfluid_amrex_compare_checkpoint_${dim}d pyfluid_amrex_generate_kernels)
@@ -784,6 +957,12 @@ foreach(dim 1 2 3)
       endif()
 
       if(dim EQUAL 1)
+         add_executable(
+            pyfluid_amrex_state_update_check
+            EXCLUDE_FROM_ALL
+            ${PYFLUID_AMREX_STATE_UPDATE_CHECK_SOURCES}
+         )
+         pyfluid_amrex_configure_target(pyfluid_amrex_state_update_check ${dim})
          add_executable(
             pyfluid_amrex_reconstruction_check
             EXCLUDE_FROM_ALL
@@ -854,6 +1033,17 @@ foreach(dim 1 2 3)
 
       if(dim EQUAL 3)
          add_executable(
+            pyfluid_amrex_excision_stencil_check
+            EXCLUDE_FROM_ALL
+            tests/excision_stencil_check.cpp
+            src/numerics/nodal_interpolater.cpp
+         )
+         pyfluid_amrex_configure_target(pyfluid_amrex_excision_stencil_check ${dim})
+         if(TARGET pyfluid_amrex_generate_kernels)
+            add_dependencies(pyfluid_amrex_excision_stencil_check pyfluid_amrex_generate_kernels)
+         endif()
+
+         add_executable(
             pyfluid_amrex_apparent_horizon_check
             EXCLUDE_FROM_ALL
             ${PYFLUID_AMREX_APPARENT_HORIZON_CHECK_SOURCES}
@@ -861,6 +1051,7 @@ foreach(dim 1 2 3)
          pyfluid_amrex_configure_compile_target(
             pyfluid_amrex_apparent_horizon_check
          )
+         set_property(TARGET pyfluid_amrex_apparent_horizon_check PROPERTY PYFLUID_AMREX_DIM ${dim})
          target_link_libraries(
             pyfluid_amrex_apparent_horizon_check
             PRIVATE
@@ -913,6 +1104,9 @@ foreach(dim 1 2 3)
       endif()
    endif()
 endforeach()
+
+include(cmake/PyFluidSharedObjects.cmake)
+pyfluid_amrex_share_implementation_objects()
 
 if(PYFLUID_AMREX_PRODUCTION_TARGETS)
    add_custom_target(pyfluid_amrex_production)

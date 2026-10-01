@@ -11,6 +11,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real coordinate_delta(
    amrex::Real x,
@@ -23,10 +25,10 @@ amrex::Real coordinate_delta(
    amrex::Real dx = x - x0;
    if (periodic) {
       const amrex::Real width = hi - lo;
-      if (dx > 0.5 * width) {
+      if (dx > 0.5_rt * width) {
          dx -= width;
       }
-      if (dx < -0.5 * width) {
+      if (dx < -0.5_rt * width) {
          dx += width;
       }
    }
@@ -44,7 +46,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 amrex::Real normalized_domain_coordinate(amrex::Real q, amrex::Real lo, amrex::Real hi) noexcept
 {
    const amrex::Real width = hi - lo;
-   return width > 0.0 ? (q - lo) / width : q;
+   return width > 0.0_rt ? (q - lo) / width : q;
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -64,14 +66,14 @@ amrex::Real wave_phase_coordinate(
 ) noexcept
 {
    if (!directional_wave_modes_enabled(mode1, mode2, mode3)) {
-      amrex::Real coordinate_sum = 0.0;
+      amrex::Real coordinate_sum = 0.0_rt;
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
          coordinate_sum += patch_coordinate_component(mesh, dir);
       }
       return coordinate_sum;
    }
 
-   amrex::Real phase = 0.0;
+   amrex::Real phase = 0.0_rt;
    if (finite_wave_mode(mode1)) {
       phase += mode1 * normalized_domain_coordinate(patch_coordinate_component(mesh, 0), problo[0], probhi[0]);
    }

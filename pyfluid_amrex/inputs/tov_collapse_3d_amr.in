@@ -1,0 +1,105 @@
+pyfluid.run_name = tov_collapse_3d_amr
+pyfluid.output_dir = runs/current/tov_collapse/tov_collapse_3d_amr
+pyfluid.validation_policy = open
+
+# Spherical collapse uses an octant but retains the production 3D Cartesian
+# operator.  The outer boundary remains causally separated through the first
+# expected horizon and a short post-formation interval.
+geometry.prob_lo = 0.0 0.0 0.0
+geometry.prob_hi = 48.0 48.0 48.0
+geometry.is_periodic = 0 0 0
+
+amr.n_cell = 48 48 48
+amr.max_level = 4
+amr.ref_ratio = 2 2 2 2
+amr.max_grid_size = 16
+amr.blocking_factor = 8
+# Full-GR subcycling only regrids at synchronized hierarchy times.  Count the
+# cadence in accepted coarse steps rather than finest-level substeps.
+amr.regrid_mode = synchronized
+amr.regrid_int = 4
+amr.n_error_buf = 4
+amr.tag_metric = compact_object
+amr.min_feature_length = 0.125
+amr.initial_refine = box
+amr.initial_refine_levels = 3
+# Keep one central protection level; levels 2--4 remain fully state-following.
+amr.initial_refine_fixed_levels = 1
+amr.initial_refine_box_lo = 0.0 0.0 0.0
+amr.initial_refine_box_hi = 12.0 12.0 12.0
+amr.level_cell_budget = 2000000
+amr.total_cell_budget = 5000000
+
+spacetime.evolution = evolved
+spacetime.matter_coupling = coupled
+# The compact, perturbed XCTS state is solved on its natural adaptive reduced
+# chart and materialized here.  Evolution does not repeat that nonlinear solve
+# on the Cartesian AMR hierarchy.
+spacetime.initial_data = xcts
+spacetime.lapse_gauge = one_plus_log
+spacetime.shift_gauge = gamma_driver
+spacetime.shift_eta = 2.0
+spacetime.ko_dissipation = 0.08
+spacetime.chi_floor = 1.0e-10
+spacetime.lapse_floor = 1.0e-10
+
+pyfluid.physics = rhd
+pyfluid.eos = hybrid_polytrope
+pyfluid.polytropic_k = 100.0
+pyfluid.polytropic_gamma = 2.0
+pyfluid.thermal_gamma = 2.0
+pyfluid.ic = rotating_star
+# Published controlled-collapse model, well beyond this EoS family's measured
+# maximum-mass density (3.1946030248452073e-3).
+pyfluid.tov_central_density = 8.0e-3
+pyfluid.tov_absolute_tolerance = 1.0e-12
+pyfluid.tov_relative_tolerance = 1.0e-10
+pyfluid.tov_max_steps = 100000
+initial_data.input_file = runs/current/tov_collapse/tov_collapse_xcts_spherical_id_2d/physical_id
+initial_data.rotation_law = uniform
+initial_data.angular_velocity = 0.0
+initial_data.rotation_axis1 = 0.0
+initial_data.rotation_axis2 = 0.0
+initial_data.rotation_axis3 = 1.0
+initial_data.perturbation = none
+initial_data.atmosphere = power_law
+initial_data.atmosphere_density = 1.0e-10
+initial_data.atmosphere_pressure = 1.0e-14
+initial_data.atmosphere_power = 4.0
+pyfluid.rho_floor = 1.0e-12
+pyfluid.pressure_floor = 1.0e-16
+
+pyfluid.final_time = 75.0
+pyfluid.max_step = 2000
+pyfluid.ng = 3
+pyfluid.cfl = 0.9
+pyfluid.recon = pwl
+pyfluid.riemann = hll
+pyfluid.timestep = ssprk3
+pyfluid.subcycling = on
+pyfluid.subcycling_steps = spatial
+pyfluid.bc = outflow
+pyfluid.bc_xlo = symmetry
+pyfluid.bc_ylo = symmetry
+pyfluid.bc_zlo = symmetry
+
+# Discovery mode tolerates only pre-formation misses.  Losing a surface after
+# its first successful find remains fatal.
+horizon.enabled = 1
+horizon.abort_on_failure = 0
+horizon.find_int = 16
+horizon.radial_points = 64
+horizon.polar_points = 16
+horizon.coarsest_polar_points = 8
+horizon.minimum_search_radius = 0.25
+horizon.maximum_search_radius = 6.0
+horizon.initial_radius = 2.5
+horizon.refine_band_cells = 6.0
+
+pyfluid.physical_check_int = 1
+pyfluid.scalar_int = 4
+pyfluid.scalar_diagnostics = standard,horizon,adm_mass_volume,proper_mass_volume,komar_mass_volume,adm_momentum_volume,adm_angular_momentum_volume
+pyfluid.plot_int = 20
+pyfluid.aux_gf_int = 20
+pyfluid.aux_gfs = apparent_horizon_mask,excision_mask,z4c_hamiltonian_constraint
+pyfluid.checkpoint_int = 100

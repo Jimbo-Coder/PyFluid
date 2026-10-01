@@ -8,13 +8,15 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct SurfaceQuadraturePoint {
    amrex::GpuArray<amrex::Real, 3> position{};
    amrex::GpuArray<amrex::Real, 3> radial_unit{};
    amrex::GpuArray<amrex::Real, 3> area_vector{};
-   amrex::Real theta = 0.0;
-   amrex::Real phi = 0.0;
-   amrex::Real solid_angle_weight = 0.0;
+   amrex::Real theta = 0.0_rt;
+   amrex::Real phi = 0.0_rt;
+   amrex::Real solid_angle_weight = 0.0_rt;
 };
 
 class ParametricSurface {
@@ -23,6 +25,15 @@ public:
       amrex::GpuArray<amrex::Real, 3> center,
       amrex::Real radius,
       int polar_points
+   );
+
+   // Construct a star-shaped S2 surface from cell-centered samples
+   // r(theta_i, phi_j). The ordering matches ApparentHorizonSurface.
+   static ParametricSurface radial_graph(
+      amrex::GpuArray<amrex::Real, 3> center,
+      int num_theta,
+      int num_phi,
+      std::vector<amrex::Real> radius
    );
 
    std::vector<SurfaceQuadraturePoint> const& points() const noexcept
@@ -58,7 +69,7 @@ private:
    }
 
    amrex::GpuArray<amrex::Real, 3> center_{};
-   amrex::Real radius_ = 0.0;
+   amrex::Real radius_ = 0.0_rt;
    std::vector<SurfaceQuadraturePoint> points_;
 };
 

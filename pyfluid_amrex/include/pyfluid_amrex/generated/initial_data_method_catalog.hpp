@@ -56,6 +56,7 @@ enum class InitialDataPerturbation : int {
    None = 0,
    ColdPressureScale = 1,
    DensityAzimuthalEspino2019 = 2,
+   DensityRadialFont2002 = 3,
 };
 
 struct InitialDataPerturbationInfo {
@@ -66,10 +67,11 @@ struct InitialDataPerturbationInfo {
    std::string_view parameters;
 };
 
-inline constexpr std::array<InitialDataPerturbationInfo, 3> InitialDataPerturbationCatalog = {{
+inline constexpr std::array<InitialDataPerturbationInfo, 4> InitialDataPerturbationCatalog = {{
    {InitialDataPerturbation::None, "none", "No perturbation", "Leave the materialized equilibrium unchanged.", ""},
    {InitialDataPerturbation::ColdPressureScale, "cold_pressure_scale", "Cold pressure scale", "Use scaled cold pressure as a target, invert the same cold EoS for density, and rebuild the complete on-EoS state; density is not held fixed.", "perturbation_pressure_scale"},
-   {InitialDataPerturbation::DensityAzimuthalEspino2019, "density_azimuthal_espino2019", "Espino 2019 density mode", "Apply rho -> rho [1+B (varpi/r_e) sin(m phi + phase)] and rebuild the cold EoS state.", "perturbation_amplitude,perturbation_mode,perturbation_phase,perturbation_radius"}
+   {InitialDataPerturbation::DensityAzimuthalEspino2019, "density_azimuthal_espino2019", "Espino 2019 density mode", "Apply rho -> rho [1+B (varpi/R) sin(m phi + phase)] to a stellar or disk equilibrium and rebuild the cold EoS state.", "perturbation_amplitude,perturbation_mode,perturbation_phase,perturbation_radius"},
+   {InitialDataPerturbation::DensityRadialFont2002, "density_radial_font2002", "Font 2002 radial density mode", "Apply rho -> rho [1+A cos(pi r/(2 R))] inside the star, retain the equilibrium pressure, and recompute the specific internal energy with the evolution EoS.", "perturbation_amplitude,perturbation_radius"}
 }};
 
 enum class InitialDataMagneticSeed : int {
@@ -127,6 +129,7 @@ struct InitialDataOwnerInfo {
    int dimension;
    std::string_view coordinate;
    std::string_view axes;
+   std::string_view solver_axis_layouts;
    std::string_view central_objects;
    std::string_view spacetime_methods;
    std::string_view disk_kinds;
@@ -137,14 +140,14 @@ struct InitialDataOwnerInfo {
 };
 
 inline constexpr std::array<InitialDataOwnerInfo, 8> InitialDataOwnerCatalog = {{
-   {InitialDataOwner::SphericalTov, "spherical_tov", "Spherical radial TOV", "One-dimensional spherical TOV construction with an optional mapped radial exterior.", 1, "spherical", "r", "tov", "tov", "none", "none", "uniform,mapped_radial", false, "spherical"},
-   {InitialDataOwner::SphericalAxisymmetricXcts, "spherical_axisymmetric_xcts", "Spherical axisymmetric XCTS", "Reduced r-theta XCTS construction for circular stars and aligned optional tori.", 2, "spherical", "r theta", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
-   {InitialDataOwner::SphericalAxisymmetricXcts3d, "spherical_axisymmetric_xcts_3d", "Spherical 3D axisymmetric XCTS", "Full r-theta-phi storage of the axisymmetric circular-star XCTS system with an optional aligned torus.", 3, "spherical", "r theta phi", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
-   {InitialDataOwner::CartesianConformalConstraints, "cartesian_conformal_constraints", "Cartesian conformal constraints", "Full three-dimensional Cartesian CTT, CTTK, or XCTS hierarchy with optional coupled stellar torus.", 3, "cartesian", "x y z", "tov,rotating_star", "ctt,cttk,xcts", "none,equilibrium_torus,tilted_torus", "none,test_fluid,coupled", "uniform,block_amr", true, "object_dependent"},
-   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts, "spherical_axisymmetric_black_hole_xcts", "Spherical axisymmetric black-hole XCTS", "Reduced r-theta XCTS construction on a finite apparent-horizon shell with an optional aligned torus.", 2, "spherical", "r theta", "black_hole", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
-   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts3d, "spherical_axisymmetric_black_hole_xcts_3d", "Spherical 3D axisymmetric black-hole XCTS", "Full r-theta-phi storage of the axisymmetric apparent-horizon-shell XCTS system with an optional aligned torus, including the Nphi=1 degeneracy.", 3, "spherical", "r theta phi", "black_hole", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
-   {InitialDataOwner::CartesianKerrSchild, "cartesian_kerr_schild", "Cartesian analytic Kerr-Schild", "Exact Kerr-Schild exterior or filled complete-grid black hole with an optional aligned test-fluid torus.", 3, "cartesian", "x y z", "black_hole", "kerr_schild", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"},
-   {InitialDataOwner::CartesianStaticTrumpet, "cartesian_static_trumpet", "Cartesian analytic static trumpet", "Exact stationary spinless Schwarzschild trumpet puncture with an optional arbitrarily oriented test-fluid torus.", 3, "cartesian", "x y z", "black_hole", "static_trumpet", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"}
+   {InitialDataOwner::SphericalTov, "spherical_tov", "Spherical radial TOV", "One-dimensional spherical TOV construction with an optional mapped radial exterior.", 1, "spherical", "r", "r", "tov", "tov", "none", "none", "uniform,mapped_radial", false, "spherical"},
+   {InitialDataOwner::SphericalAxisymmetricXcts, "spherical_axisymmetric_xcts", "Spherical axisymmetric XCTS", "Reduced r-theta XCTS construction for circular stars and aligned optional tori.", 2, "spherical", "r theta", "r theta", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
+   {InitialDataOwner::SphericalAxisymmetricXcts3d, "spherical_axisymmetric_xcts_3d", "Spherical 3D axisymmetric XCTS", "Full r-theta-phi storage of the axisymmetric circular-star XCTS system with an optional aligned torus.", 3, "spherical", "r theta phi", "r theta phi", "tov,rotating_star", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform,mapped_radial", false, "axis_equatorial"},
+   {InitialDataOwner::CartesianConformalConstraints, "cartesian_conformal_constraints", "Cartesian conformal constraints", "Full three-dimensional Cartesian CTT, CTTK, or XCTS hierarchy with optional coupled stellar torus.", 3, "cartesian", "x y z", "x,y,z,x y,x z,y z,x y z", "tov,rotating_star", "ctt,cttk,xcts", "none,equilibrium_torus,tilted_torus", "none,test_fluid,coupled", "uniform,block_amr", true, "object_dependent"},
+   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts, "spherical_axisymmetric_black_hole_xcts", "Spherical axisymmetric black-hole XCTS", "Reduced r-theta XCTS construction on a finite apparent-horizon shell with an optional aligned torus.", 2, "spherical", "r theta", "r theta", "black_hole", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
+   {InitialDataOwner::SphericalAxisymmetricBlackHoleXcts3d, "spherical_axisymmetric_black_hole_xcts_3d", "Spherical 3D axisymmetric black-hole XCTS", "Full r-theta-phi storage of the axisymmetric apparent-horizon-shell XCTS system with an optional aligned torus, including the Nphi=1 degeneracy.", 3, "spherical", "r theta phi", "r theta phi", "black_hole", "xcts", "none,equilibrium_torus", "none,test_fluid,coupled", "uniform_shell,mapped_radial_shell", false, "axis_equatorial"},
+   {InitialDataOwner::CartesianKerrSchild, "cartesian_kerr_schild", "Cartesian analytic Kerr-Schild", "Exact Kerr-Schild exterior or filled complete-grid black hole with an optional aligned test-fluid torus.", 3, "cartesian", "x y z", "x y z", "black_hole", "kerr_schild", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"},
+   {InitialDataOwner::CartesianStaticTrumpet, "cartesian_static_trumpet", "Cartesian analytic static trumpet", "Exact stationary spinless Schwarzschild trumpet puncture with an optional arbitrarily oriented test-fluid torus.", 3, "cartesian", "x y z", "x y z", "black_hole", "static_trumpet", "none,equilibrium_torus", "none,test_fluid", "uniform,block_amr", false, "object_dependent"}
 }};
 
 constexpr InitialDataOwnerInfo const& initial_data_owner_info(
@@ -184,6 +187,21 @@ constexpr bool initial_data_owner_list_contains(
       begin = end + 1;
    }
    return false;
+}
+
+constexpr bool initial_data_owner_solver_layout_matches(
+   InitialDataOwnerInfo const& owner,
+   int dimension,
+   std::string_view coordinate,
+   std::string_view axes
+) noexcept
+{
+   int axes_dimension = axes.empty() ? 0 : 1;
+   for (const char character : axes) {
+      axes_dimension += character == ' ' ? 1 : 0;
+   }
+   return dimension == axes_dimension && owner.coordinate == coordinate
+      && initial_data_owner_list_contains(owner.solver_axis_layouts, axes);
 }
 
 } // namespace pyfluid_amrex

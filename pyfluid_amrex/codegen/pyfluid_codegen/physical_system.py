@@ -174,6 +174,11 @@ class ValenciaPrimitive:
    pressure: sp.Expr
    velocity: Vector
 
+   @property
+   def enthalpy_density(self) -> sp.Expr:
+      """Fluid rho*h without a removable density division at matter vacuum."""
+      return self.density * (1 + self.specific_internal_energy) + self.pressure
+
 
 @dataclass(frozen=True)
 class ValenciaMetric:
@@ -386,11 +391,7 @@ def valencia_geometric_source(
 
 
 @dataclass(frozen=True)
-class ValenciaMHDPrimitive:
-   density: sp.Expr
-   specific_internal_energy: sp.Expr
-   pressure: sp.Expr
-   velocity: Vector
+class ValenciaMHDPrimitive(ValenciaPrimitive):
    magnetic: Vector
 
 
@@ -413,11 +414,6 @@ class ValenciaHydrodynamics:
    ) -> ValenciaConserved:
       velocity_squared = metric.spatial_metric.norm_squared(primitive.velocity)
       lorentz_factor = 1 / sp.sqrt(1 - velocity_squared)
-      specific_enthalpy = (
-         1
-         + primitive.specific_internal_energy
-         + primitive.pressure / primitive.density
-      )
       density = (
          metric.sqrt_spatial_determinant
          * primitive.density
@@ -425,15 +421,18 @@ class ValenciaHydrodynamics:
       )
       momentum = (
          metric.sqrt_spatial_determinant
-         * primitive.density
-         * specific_enthalpy
+         * primitive.enthalpy_density
          * lorentz_factor**2
          * metric.spatial_metric.lower(primitive.velocity)
       )
-      energy = metric.sqrt_spatial_determinant * (
-         primitive.density * specific_enthalpy * lorentz_factor**2
-         - primitive.pressure
-         - primitive.density * lorentz_factor
+      # Rationalize W-1 and W^2-1 before subtracting the rest mass. This
+      # preserves cold internal energy at small velocity, including exact rest.
+      energy = metric.sqrt_spatial_determinant * lorentz_factor**2 * (
+         primitive.density * primitive.specific_internal_energy
+         + velocity_squared * (
+            primitive.pressure
+            + primitive.density / (1 + sp.sqrt(1 - velocity_squared))
+         )
       )
       return ValenciaConserved(density=density, momentum=momentum, energy=energy)
 
@@ -442,15 +441,10 @@ class ValenciaHydrodynamics:
       primitive: ValenciaPrimitive,
       metric: ValenciaMetric,
    ) -> Tensor4:
-      specific_enthalpy = (
-         1
-         + primitive.specific_internal_energy
-         + primitive.pressure / primitive.density
-      )
       four_velocity = metric.four_velocity(primitive.velocity)
       spacetime_metric = metric.spacetime_metric().indexed_contravariant()
       stress_energy = (
-         primitive.density * specific_enthalpy * four_velocity.outer(four_velocity)
+         primitive.enthalpy_density * four_velocity.outer(four_velocity)
          + primitive.pressure * spacetime_metric
       )
       return Tensor4(stress_energy.as_rows(), stress_energy.positions)
@@ -522,11 +516,6 @@ class ValenciaMagnetohydrodynamics:
          + alpha_b0 * velocity_covariant
       )
       comoving_magnetic_squared = self.comoving_magnetic_squared(primitive, metric)
-      specific_enthalpy = (
-         1
-         + primitive.specific_internal_energy
-         + primitive.pressure / primitive.density
-      )
       density = (
          metric.sqrt_spatial_determinant
          * primitive.density
@@ -534,8 +523,7 @@ class ValenciaMagnetohydrodynamics:
       )
       fluid_enthalpy = (
          metric.sqrt_spatial_determinant
-         * primitive.density
-         * specific_enthalpy
+         * primitive.enthalpy_density
          * lorentz_factor**2
       )
       total_enthalpy = fluid_enthalpy + metric.sqrt_spatial_determinant * (
@@ -547,12 +535,10 @@ class ValenciaMagnetohydrodynamics:
          * alpha_b0
          * comoving_magnetic_covariant
       )
-      total_pressure = primitive.pressure + comoving_magnetic_squared / 2
       energy = (
-         fluid_enthalpy
-         - density
+         ValenciaHydrodynamics().primitive_to_conserved(primitive, metric).energy
          + metric.sqrt_spatial_determinant
-         * (magnetic_squared - total_pressure)
+         * (magnetic_squared - comoving_magnetic_squared / 2)
       )
       magnetic = metric.sqrt_spatial_determinant * primitive.magnetic
       return ValenciaMHDConserved(
@@ -595,16 +581,11 @@ class ValenciaMagnetohydrodynamics:
          velocity_covariant
       )
       comoving_magnetic_squared = self.comoving_magnetic_squared(primitive, metric)
-      specific_enthalpy = (
-         1
-         + primitive.specific_internal_energy
-         + primitive.pressure / primitive.density
-      )
       four_velocity = metric.four_velocity(primitive.velocity)
       comoving_magnetic = self.comoving_magnetic_four_vector(primitive, metric)
       spacetime_metric = metric.spacetime_metric().indexed_contravariant()
       stress_energy = (
-         (primitive.density * specific_enthalpy + comoving_magnetic_squared)
+         (primitive.enthalpy_density + comoving_magnetic_squared)
          * four_velocity.outer(four_velocity)
          + (primitive.pressure + comoving_magnetic_squared / 2)
          * spacetime_metric

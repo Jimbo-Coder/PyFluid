@@ -4,11 +4,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import sympy as sp
-from sympy.printing.c import C99CodePrinter
+from sympy.printing.cxx import CXX17CodePrinter
+
+from .emit_spatial_order import spatial_order_assertion_cpp
 
 from .characteristic_equations import characteristic_kernels
 from .differential_equations import (
+   average_stencils,
    centered_stencils,
+   centering_stencils,
    ko_stencils,
    one_sided_stencils,
    upwind_stencils,
@@ -23,7 +27,7 @@ from .operator_equations import scalar_operator_kernels
 from .patch_map_equations import patch_map_kernels
 from .relativistic_equations import relativistic_kernel_groups
 from .riemann_equations import riemann_flux_kernels
-from .vector_equations import vector_operator_kernels
+from .vector_equations import VECTOR_KERNEL_GROUPS
 from .z4c_equations import z4c_kernel_groups
 
 
@@ -33,7 +37,9 @@ class CsePolicy:
    soft_drop_ops: int = 3
 
 
-class PyFluidCxxPrinter(C99CodePrinter):
+class PyFluidCxxPrinter(CXX17CodePrinter):
+   # C++ math overloads preserve amrex::Real. C's unqualified log/sqrt/pow
+   # can silently promote FP32 operands to double on host toolchains.
    def _print_Pi(self, expr: sp.NumberSymbol) -> str:
       del expr
       return "pyfluid_amrex::constants::pi"
@@ -50,11 +56,6 @@ class PyFluidCxxPrinter(C99CodePrinter):
       for arg in args[1:]:
          value = f"(({value}) > ({arg}) ? ({value}) : ({arg}))"
       return value
-
-   def _print_Function(self, expr: sp.Function) -> str:
-      function_name = expr.func.__name__
-      args = ", ".join(self._print(arg) for arg in expr.args)
-      return super()._print_Function(expr)
 
    def _print_Pow(self, expr: sp.Pow) -> str:
       if expr.base == 2 and expr.exp == sp.Rational(1, 2):
@@ -78,21 +79,6 @@ class PyFluidCxxPrinter(C99CodePrinter):
          base = self._print(expr.base)
          return f"amrex::Math::powi<{int(expr.exp)}>({base})"
       return super()._print_Pow(expr)
-
-   def _print_sin(self, expr: sp.Function) -> str:
-      return f"std::sin({self._print(expr.args[0])})"
-
-   def _print_cos(self, expr: sp.Function) -> str:
-      return f"std::cos({self._print(expr.args[0])})"
-
-   def _print_tan(self, expr: sp.Function) -> str:
-      return f"std::tan({self._print(expr.args[0])})"
-
-   def _print_atan(self, expr: sp.Function) -> str:
-      return f"std::atan({self._print(expr.args[0])})"
-
-   def _print_atanh(self, expr: sp.Function) -> str:
-      return f"std::atanh({self._print(expr.args[0])})"
 
    def _print_Abs(self, expr: sp.Abs) -> str:
       return f"amrex::Math::abs({self._print(expr.args[0])})"
@@ -159,6 +145,23 @@ def _emit_dispatch(name: str, return_type: str, callee_prefix: str) -> str:
    )
 
 
+def _emit_local_bindings(bindings: tuple[tuple[sp.Symbol, sp.Expr], ...]) -> list[str]:
+   symbols = [symbol for symbol, _ in bindings]
+   if len(set(symbols)) != len(symbols):
+      raise ValueError("kernel numerical bindings must have unique names")
+   pending = set(symbols)
+   lines = []
+   for symbol, expression in bindings:
+      name = str(symbol)
+      if not name.isidentifier() or name.startswith("tmp"):
+         raise ValueError(f"invalid or CSE-reserved numerical binding: {name}")
+      if expression.free_symbols & pending:
+         raise ValueError(f"numerical binding {name} depends on itself or a later binding")
+      lines.append(f"   const amrex::Real {name} = {_ccode(expression)};")
+      pending.remove(symbol)
+   return lines
+
+
 def _emit_scalar_kernel(kernel: ScalarKernel, policy: CsePolicy) -> str:
    replacements, outputs = _optimize((kernel.expression,), policy)
    args = ", ".join(
@@ -172,6 +175,7 @@ def _emit_scalar_kernel(kernel: ScalarKernel, policy: CsePolicy) -> str:
       f"amrex::Real {kernel.name}({args}) noexcept",
       "{",
    ]
+   lines.extend(_emit_local_bindings(kernel.bindings))
    for symbol, expr in replacements:
       lines.append(f"   const amrex::Real {symbol} = {_ccode(expr)};")
    lines.append(f"   return {_ccode(outputs[0])};")
@@ -208,6 +212,7 @@ def _emit_struct_kernel(kernel: StructKernel, policy: CsePolicy) -> str:
       f"{kernel.return_type} {kernel.name}({args}) noexcept",
       "{",
    ]
+   lines.extend(_emit_local_bindings(kernel.bindings))
    for symbol, expr in replacements:
       lines.append(f"   const amrex::Real {symbol} = {_ccode(expr)};")
    lines.append("   return {")
@@ -736,8 +741,29 @@ def _fd_weight(weight: sp.Rational) -> str:
 
 
 def _fd_expression(offsets: tuple[int, ...], weights: tuple[sp.Rational, ...]) -> str:
+   def sample(offset: int) -> str:
+      return f"sample_direction<Direction>(field, i, j, k, component, {offset})"
+
+   coefficients = dict(zip(offsets, weights, strict=True))
+   if sum(weights) == 0:
+      # Evaluate the exact zero-moment identity before multiplying by rounded
+      # coefficients. Summing weighted full metric values creates artificial
+      # derivatives of a constant background, amplified by inverse spacing.
+      antisymmetric = all(coefficients.get(-offset) == -weight
+                          for offset, weight in coefficients.items())
+      if antisymmetric:
+         terms = [
+            f"{_fd_weight(weight)} * ({sample(offset)} - {sample(-offset)})"
+            for offset, weight in coefficients.items() if offset > 0 and weight
+         ]
+      else:
+         terms = [
+            f"{_fd_weight(weight)} * ({sample(offset)} - {sample(0)})"
+            for offset, weight in coefficients.items() if offset != 0 and weight
+         ]
+      return " + ".join(terms).replace("+ -", "- ")
    terms = [
-      f"{_fd_weight(weight)} * sample_direction<Direction>(field, i, j, k, component, {offset})"
+      f"{_fd_weight(weight)} * {sample(offset)}"
       for offset, weight in zip(offsets, weights, strict=True)
       if weight != 0
    ]
@@ -748,15 +774,25 @@ def _mixed_fd_expression(
    offsets: tuple[int, ...],
    weights: tuple[sp.Rational, ...],
 ) -> str:
+   coefficients = dict(zip(offsets, weights, strict=True))
+   if any(coefficients.get(-offset) != -weight
+          for offset, weight in coefficients.items()):
+      raise ValueError("mixed centered derivatives require antisymmetric first weights")
+
+   def sample(first: int, second: int) -> str:
+      return ("sample_directions<Direction1, Direction2>("
+              f"field, i, j, k, component, {first}, {second})")
+
    terms = []
    for offset1, weight1 in zip(offsets, weights, strict=True):
       for offset2, weight2 in zip(offsets, weights, strict=True):
          weight = sp.Rational(weight1 * weight2)
-         if weight == 0:
+         if weight == 0 or offset1 <= 0 or offset2 <= 0:
             continue
          terms.append(
-            f"{_fd_weight(weight)} * sample_directions<Direction1, Direction2>("
-            f"field, i, j, k, component, {offset1}, {offset2})"
+            f"{_fd_weight(weight)} * (({sample(offset1, offset2)} - "
+            f"{sample(offset1, -offset2)}) - ({sample(-offset1, offset2)} - "
+            f"{sample(-offset1, -offset2)}))"
          )
    return " + ".join(terms).replace("+ -", "- ")
 
@@ -767,7 +803,7 @@ def _fd_dispatch(name: str, stencils: tuple, scale: str) -> str:
       "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
       f"amrex::Real {name}(Array const& field, int i, int j, int k, int component, amrex::Real {scale}) noexcept",
       "{",
-      "   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);",
+      spatial_order_assertion_cpp(),
    ]
    for index, stencil in enumerate(stencils):
       prefix = "if" if index == 0 else "else if"
@@ -783,17 +819,54 @@ def _fd_dispatch(name: str, stencils: tuple, scale: str) -> str:
    return "\n".join(lines)
 
 
+def _centering_weight_dispatch() -> list[str]:
+   lines: list[str] = []
+   for index, stencil in enumerate(centering_stencils()):
+      prefix = "if" if index == 0 else "else if"
+      weights = ", ".join(_fd_weight(weight) for weight in stencil.weights)
+      lines.extend([
+         f"   {prefix} constexpr (Order == {stencil.order}) {{",
+         f"      constexpr amrex::Real weights[]{{{weights}}};",
+         "      return weights[ordinal];",
+         "   }",
+      ])
+   lines.append("   return 0.0_rt;")
+   return lines
+
+
+def _average_dispatch(name: str, *, to_average: bool) -> str:
+   lines = [
+      "template <int Order, int Direction, typename Array>",
+      "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
+      f"amrex::Real {name}(Array const& field, int i, int j, int k, int component) noexcept",
+      "{",
+      spatial_order_assertion_cpp(),
+   ]
+   for index, stencil in enumerate(average_stencils(to_average=to_average)):
+      prefix = "if" if index == 0 else "else if"
+      expression = _fd_expression(stencil.offsets, stencil.weights)
+      lines.extend([
+         f"   {prefix} constexpr (Order == {stencil.order}) {{",
+         f"      return {expression};",
+         "   }",
+      ])
+   lines.extend(["   return 0.0_rt;", "}"])
+   return "\n".join(lines)
+
+
 def render_differential_header() -> str:
    first = _fd_dispatch("centered_first", centered_stencils(1), "inv_spacing")
    second = _fd_dispatch("centered_second", centered_stencils(2), "inv_spacing_squared")
    ko = _fd_dispatch("kreiss_oliger", ko_stencils(), "inv_spacing")
+   point_to_average = _average_dispatch("point_to_cell_average_1d", to_average=True)
+   average_to_point = _average_dispatch("cell_average_to_point_1d", to_average=False)
 
    domain_first_lines = [
       "template <int Order, int Direction, typename Array>",
       "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
       "amrex::Real domain_first(Array const& field, int i, int j, int k, int component, int coordinate_index, int domain_lower, int domain_upper, amrex::Real inv_spacing) noexcept",
       "{",
-      "   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);",
+      spatial_order_assertion_cpp(),
    ]
    for index, (backward, forward) in enumerate(one_sided_stencils()):
       prefix = "if" if index == 0 else "else if"
@@ -821,7 +894,7 @@ def render_differential_header() -> str:
       "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
       "amrex::Real centered_mixed(Array const& field, int i, int j, int k, int component, amrex::Real inv_spacing_product) noexcept",
       "{",
-      "   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);",
+      spatial_order_assertion_cpp(),
       "   static_assert(Direction1 != Direction2);",
    ]
    for index, stencil in enumerate(centered_stencils(1)):
@@ -841,7 +914,7 @@ def render_differential_header() -> str:
       "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
       "amrex::Real upwind_first(Array const& field, int i, int j, int k, int component, amrex::Real speed, amrex::Real inv_spacing) noexcept",
       "{",
-      "   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);",
+      spatial_order_assertion_cpp(),
    ]
    for index, (backward, forward) in enumerate(upwind_stencils()):
       prefix = "if" if index == 0 else "else if"
@@ -863,7 +936,10 @@ def render_differential_header() -> str:
          "",
          "// Generated by pyfluid_amrex/codegen/generate_kernels.py. Do not edit by hand.",
          '#include "pyfluid_amrex/constants.hpp"',
+         '#include "pyfluid_amrex/generated/spatial_order_catalog.hpp"',
          "",
+         "#include <AMReX_Algorithm.H>",
+         "#include <AMReX_Array.H>",
          "#include <AMReX_GpuQualifiers.H>",
          "#include <AMReX_REAL.H>",
          "",
@@ -908,6 +984,12 @@ def render_differential_header() -> str:
          "",
          ko,
          "",
+         "// Smooth uniform-Cartesian point/cell-average conversions. These are",
+         "// not staggered point interpolation, limiting, or conservative remapping.",
+         point_to_average,
+         "",
+         average_to_point,
+         "",
          "template <int Direction, typename Array>",
          "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
          "amrex::Real cell_to_face(Array const& field, int i, int j, int k, int component) noexcept",
@@ -926,18 +1008,8 @@ def render_differential_header() -> str:
          "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
          "amrex::Real centering_transfer_weight(int ordinal) noexcept",
          "{",
-         "   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);",
-         "   if constexpr (Order == 2) return 0.5_rt;",
-         "   if constexpr (Order == 4) {",
-         "      constexpr amrex::Real weights[4] = {-0.0625_rt, 0.5625_rt, 0.5625_rt, -0.0625_rt};",
-         "      return weights[ordinal];",
-         "   }",
-         "   if constexpr (Order == 6) {",
-         "      constexpr amrex::Real weights[6] = {3.0_rt / 256.0_rt, -25.0_rt / 256.0_rt, 150.0_rt / 256.0_rt, 150.0_rt / 256.0_rt, -25.0_rt / 256.0_rt, 3.0_rt / 256.0_rt};",
-         "      return weights[ordinal];",
-         "   }",
-         "   constexpr amrex::Real weights[8] = {-5.0_rt / 2048.0_rt, 49.0_rt / 2048.0_rt, -245.0_rt / 2048.0_rt, 1225.0_rt / 2048.0_rt, 1225.0_rt / 2048.0_rt, -245.0_rt / 2048.0_rt, 49.0_rt / 2048.0_rt, -5.0_rt / 2048.0_rt};",
-         "   return weights[ordinal];",
+         spatial_order_assertion_cpp(),
+         *_centering_weight_dispatch(),
          "}",
          "",
          "template <int Order>",
@@ -969,7 +1041,7 @@ def render_differential_header() -> str:
          "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
          "amrex::Real topology_centering_transfer(Array const& field, int i, int j, int k, int component, int source_mask, int destination_mask) noexcept",
          "{",
-         "   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);",
+         spatial_order_assertion_cpp(),
          "   static_assert(Dim >= 1 && Dim <= 3);",
          "   source_mask &= (1 << Dim) - 1;",
          "   destination_mask &= (1 << Dim) - 1;",
@@ -982,19 +1054,23 @@ def render_differential_header() -> str:
          "         result += weight1 * field(i + offset1, j, k, component);",
          "      } else {",
          "         const int count2 = centering_transfer_count<Order>(source_mask, destination_mask, 1);",
+         "         amrex::Real plane = 0.0_rt;",
          "         for (int ordinal2 = 0; ordinal2 < count2; ++ordinal2) {",
          "            const int offset2 = centering_transfer_offset<Order>(source_mask, destination_mask, 1, ordinal2);",
-         "            const amrex::Real weight12 = weight1 * centering_transfer_axis_weight<Order>(source_mask, destination_mask, 1, ordinal2);",
+         "            const amrex::Real weight2 = centering_transfer_axis_weight<Order>(source_mask, destination_mask, 1, ordinal2);",
          "            if constexpr (Dim == 2) {",
-         "               result += weight12 * field(i + offset1, j + offset2, k, component);",
+         "               plane += weight2 * field(i + offset1, j + offset2, k, component);",
          "            } else {",
          "               const int count3 = centering_transfer_count<Order>(source_mask, destination_mask, 2);",
+         "               amrex::Real line = 0.0_rt;",
          "               for (int ordinal3 = 0; ordinal3 < count3; ++ordinal3) {",
          "                  const int offset3 = centering_transfer_offset<Order>(source_mask, destination_mask, 2, ordinal3);",
-         "                  result += weight12 * centering_transfer_axis_weight<Order>(source_mask, destination_mask, 2, ordinal3) * field(i + offset1, j + offset2, k + offset3, component);",
+         "                  line += centering_transfer_axis_weight<Order>(source_mask, destination_mask, 2, ordinal3) * field(i + offset1, j + offset2, k + offset3, component);",
          "               }",
+         "               plane += weight2 * line;",
          "            }",
          "         }",
+         "         result += weight1 * plane;",
          "      }",
          "   }",
          "   return result;",
@@ -1032,7 +1108,7 @@ def render_differential_header() -> str:
          "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
          "amrex::Real bounded_topology_centering_transfer(Array const& field, int i, int j, int k, int component, int source_mask, int destination_mask, amrex::GpuArray<int, 3> const& source_lo, amrex::GpuArray<int, 3> const& source_hi) noexcept",
          "{",
-         "   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);",
+         spatial_order_assertion_cpp(),
          "   static_assert(Dim >= 1 && Dim <= 3);",
          "   source_mask &= (1 << Dim) - 1;",
          "   destination_mask &= (1 << Dim) - 1;",
@@ -1048,20 +1124,24 @@ def render_differential_header() -> str:
          "      } else {",
          "         const int count2 = centering_transfer_count<Order>(source_mask, destination_mask, 1);",
          "         const int first2 = bounded_centering_transfer_first_offset<Order>(source_mask, destination_mask, 1, destination_index[1], source_lo[1], source_hi[1]);",
+         "         amrex::Real plane = 0.0_rt;",
          "         for (int ordinal2 = 0; ordinal2 < count2; ++ordinal2) {",
          "            const int offset2 = first2 + ordinal2;",
-         "            const amrex::Real weight12 = weight1 * bounded_centering_transfer_axis_weight<Order>(source_mask, destination_mask, 1, first2, ordinal2);",
+         "            const amrex::Real weight2 = bounded_centering_transfer_axis_weight<Order>(source_mask, destination_mask, 1, first2, ordinal2);",
          "            if constexpr (Dim == 2) {",
-         "               result += weight12 * field(i + offset1, j + offset2, k, component);",
+         "               plane += weight2 * field(i + offset1, j + offset2, k, component);",
          "            } else {",
          "               const int count3 = centering_transfer_count<Order>(source_mask, destination_mask, 2);",
          "               const int first3 = bounded_centering_transfer_first_offset<Order>(source_mask, destination_mask, 2, destination_index[2], source_lo[2], source_hi[2]);",
+         "               amrex::Real line = 0.0_rt;",
          "               for (int ordinal3 = 0; ordinal3 < count3; ++ordinal3) {",
          "                  const int offset3 = first3 + ordinal3;",
-         "                  result += weight12 * bounded_centering_transfer_axis_weight<Order>(source_mask, destination_mask, 2, first3, ordinal3) * field(i + offset1, j + offset2, k + offset3, component);",
+         "                  line += bounded_centering_transfer_axis_weight<Order>(source_mask, destination_mask, 2, first3, ordinal3) * field(i + offset1, j + offset2, k + offset3, component);",
          "               }",
+         "               plane += weight2 * line;",
          "            }",
          "         }",
+         "         result += weight1 * plane;",
          "      }",
          "   }",
          "   return result;",
@@ -1083,7 +1163,7 @@ def render_differential_header() -> str:
          "AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE",
          "amrex::Real centering_transfer_1d(Array const& field, int i, int j, int k, int component) noexcept",
          "{",
-         "   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);",
+         spatial_order_assertion_cpp(),
          "   static_assert(Direction >= 0 && Direction < 3);",
          "   constexpr int first_offset = CellToFace ? -Order / 2 : 1 - Order / 2;",
          "   amrex::Real result = 0.0_rt;",
@@ -1127,32 +1207,30 @@ def render_differential_header() -> str:
    )
 
 
-def render_vector_header(policy: CsePolicy = CsePolicy()) -> str:
-   kernels = [_emit_scalar_kernel(kernel, policy) for kernel in vector_operator_kernels()]
-   body = "\n\n".join(kernels)
-   return "\n".join(
-      [
-         "#pragma once",
-         "",
-         "// Generated by pyfluid_amrex/codegen/generate_kernels.py. Do not edit by hand.",
-         '#include "pyfluid_amrex/constants.hpp"',
-         "",
-         "#include <AMReX_GpuQualifiers.H>",
-         "#include <AMReX_REAL.H>",
-         "#include <AMReX_Math.H>",
-         "",
-         "#include <cmath>",
-         "",
-         "namespace pyfluid_amrex::generated {",
-         "",
-         "using namespace amrex::literals;",
-         "",
-         body,
-         "",
-         "} // namespace pyfluid_amrex::generated",
-         "",
-      ]
+def render_vector_headers(policy: CsePolicy = CsePolicy()) -> dict[str, str]:
+   includes = (
+      '#include "pyfluid_amrex/constants.hpp"',
+      "#include <AMReX_GpuQualifiers.H>",
+      "#include <AMReX_REAL.H>",
+      "#include <cmath>",
    )
+   return {
+      name: _render_generated_group(
+         "\n\n".join(_emit_scalar_kernel(kernel, policy) for kernel in factory()),
+         includes,
+      )
+      for name, factory in VECTOR_KERNEL_GROUPS.items()
+   }
+
+
+def render_vector_header(policy: CsePolicy = CsePolicy()) -> str:
+   del policy
+   includes = tuple(
+      f'#include "pyfluid_amrex/kernels_generated/vector/{name}.hpp"'
+      for name in VECTOR_KERNEL_GROUPS
+   )
+   return "\n".join(("#pragma once", "", "// Aggregate validation only; production includes leaves.",
+                     *includes, ""))
 
 
 def render_metric_header(policy: CsePolicy = CsePolicy()) -> str:
@@ -1268,6 +1346,37 @@ def write_z4c_header(path: Path, policy: CsePolicy = CsePolicy()) -> None:
    _write_if_changed(path, render_z4c_header(policy))
 
 
+def write_spacetime_header(path: Path, policy: CsePolicy = CsePolicy()) -> None:
+   from .spacetime_geometry import spacetime_geometry_kernels
+   from .reference_metric_evolution import reference_metric_evolution_kernels
+
+   body = "\n\n".join(_emit_kernel_group(spacetime_geometry_kernels(), policy))
+   _write_if_changed(path, _render_generated_group(
+      body, ('#include "pyfluid_amrex/metric_jet.hpp"', "#include <cmath>"),
+   ))
+   evolution = "\n\n".join(_emit_kernel_group(reference_metric_evolution_kernels(), policy))
+   _write_if_changed(path.with_name("reference_metric_evolution.hpp"), _render_generated_group(
+      evolution, ('#include "pyfluid_amrex/metric_jet.hpp"', "#include <cmath>"),
+   ))
+
+
+def write_fccz4_header(path: Path, policy: CsePolicy = CsePolicy()) -> None:
+   from .fccz4_kernels import (fccz4_geometry_kernel, fccz4_rhs_kernel,
+                               fccz4_gauge_kernel, fccz4_constraints_kernel)
+
+   includes = ('#include "pyfluid_amrex/fccz4_point.hpp"',
+               '#include "pyfluid_amrex/constants.hpp"', "#include <cmath>")
+   for name, owner in (("geometry", fccz4_geometry_kernel), ("rhs", fccz4_rhs_kernel),
+                       ("gauge", fccz4_gauge_kernel), ("constraints", fccz4_constraints_kernel)):
+      body = "\n\n".join(_emit_kernel_group((owner(),), policy))
+      _write_if_changed(path.parent / "fccz4" / f"{name}.hpp", _render_generated_group(body, includes))
+   _write_if_changed(path, "#pragma once\n\n"
+                     '#include "pyfluid_amrex/kernels_generated/fccz4/geometry.hpp"\n'
+                     '#include "pyfluid_amrex/kernels_generated/fccz4/rhs.hpp"\n'
+                     '#include "pyfluid_amrex/kernels_generated/fccz4/gauge.hpp"\n'
+                     '#include "pyfluid_amrex/kernels_generated/fccz4/constraints.hpp"\n')
+
+
 def write_characteristic_header(path: Path, policy: CsePolicy = CsePolicy()) -> None:
    _write_if_changed(path, render_characteristic_header(policy))
 
@@ -1276,12 +1385,23 @@ def write_operator_header(path: Path, policy: CsePolicy = CsePolicy()) -> None:
    _write_if_changed(path, render_operator_header(policy))
 
 
-def write_differential_header(path: Path, policy: CsePolicy = CsePolicy()) -> None:
+def write_differential_header(
+   path: Path,
+   policy: CsePolicy = CsePolicy(),
+) -> None:
+   from .emit_boundary_differential import render_boundary_differential_header
+
    del policy
    _write_if_changed(path, render_differential_header())
+   _write_if_changed(
+      path.with_name("boundary_differential_ops.hpp"),
+      render_boundary_differential_header(),
+   )
 
 
 def write_vector_header(path: Path, policy: CsePolicy = CsePolicy()) -> None:
+   for name, content in render_vector_headers(policy).items():
+      _write_if_changed(path.parent / "vector" / f"{name}.hpp", content)
    _write_if_changed(path, render_vector_header(policy))
 
 

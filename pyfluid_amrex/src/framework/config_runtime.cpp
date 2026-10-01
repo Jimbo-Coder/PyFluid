@@ -10,6 +10,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 void require_implicit_diffusion_converged(
    DiffusionStats const& stats,
    RunConfig const& cfg,
@@ -200,15 +202,15 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> configured_min_feature_lengths(
       ? cfg.min_feature_length_3 : cfg.min_feature_length;
 #endif
    for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-      values[direction] = values[direction] > 0.0 ? values[direction] : -1.0;
+      values[direction] = values[direction] > 0.0_rt ? values[direction] : -1.0_rt;
    }
    return values;
 }
 
 amrex::Real amr_default_auto_min_feature_scale(int max_level)
 {
-   constexpr amrex::Real points_per_feature = 2.0;
-   const amrex::Real finest_ratio = std::ldexp(1.0, -max_level);
+   constexpr amrex::Real points_per_feature = 2.0_rt;
+   const amrex::Real finest_ratio = std::ldexp(1.0_rt, -max_level);
    return points_per_feature * finest_ratio;
 }
 
@@ -358,6 +360,32 @@ bool spacetime_includes_matter(RunConfig const& cfg) noexcept
       && cfg.spacetime_matter_coupling == "coupled";
 }
 
+bool analytic_fixed_spacetime_kernels_selected(
+   RunConfig const& cfg,
+   std::string const& source_ic,
+   std::string const& source_spacetime
+) noexcept
+{
+   // Native stellar providers own non-Minkowski geometry even when legacy
+   // artifact metadata labels their reference spacetime as "minkowski".
+   const bool matter_provider_supplies_spacetime =
+      source_ic == "tov" || source_ic == "rotating_star";
+   const bool minkowski =
+      cfg.spacetime_fixed_metric == "minkowski"
+      && source_spacetime == "minkowski"
+      && !matter_provider_supplies_spacetime;
+   const bool spherical_schwarzschild =
+      cfg.mesh_coordinate == "spherical"
+      && cfg.spacetime_fixed_metric == "schwarzschild_isotropic"
+      && (source_spacetime == "minkowski"
+          || source_spacetime == "schwarzschild_isotropic")
+      && (source_ic == "uniform" || source_ic == "fixed_metric_hse"
+          || source_ic == "atmosphere");
+   return !spacetime_evolves(cfg)
+      && cfg.spacetime_evolution == "fixed"
+      && (minkowski || spherical_schwarzschild);
+}
+
 FixedSpacetimeParameters fixed_spacetime_parameters(RunConfig const& cfg)
 {
    FixedSpacetimeMetric metric = FixedSpacetimeMetric::Minkowski;
@@ -397,6 +425,23 @@ FixedSpacetimeParameters fixed_spacetime_parameters(RunConfig const& cfg)
    };
 }
 
+BlackHoleMatterParameters black_hole_matter_parameters(RunConfig const& cfg)
+{
+   BlackHoleMatterTreatment treatment = BlackHoleMatterTreatment::Evolve;
+   if (cfg.spacetime_black_hole_matter == "bounded") {
+      treatment = BlackHoleMatterTreatment::Bounded;
+   } else if (cfg.spacetime_black_hole_matter == "excision") {
+      treatment = BlackHoleMatterTreatment::Excision;
+   }
+   return {
+      treatment,
+      cfg.spacetime_black_hole_max_lorentz_factor,
+      cfg.spacetime_black_hole_max_specific_internal_energy,
+      cfg.spacetime_black_hole_max_magnetization,
+      cfg.spacetime_black_hole_max_density,
+   };
+}
+
 bool is_mhd(RunConfig const& cfg)
 {
    return physical_system_has_magnetic_field(physical_system(cfg));
@@ -404,12 +449,12 @@ bool is_mhd(RunConfig const& cfg)
 
 bool viscosity_enabled(RunConfig const& cfg)
 {
-   return cfg.viscosity > 0.0;
+   return cfg.viscosity > 0.0_rt;
 }
 
 bool resistivity_enabled(RunConfig const& cfg)
 {
-   return is_mhd(cfg) && cfg.resistivity > 0.0;
+   return is_mhd(cfg) && cfg.resistivity > 0.0_rt;
 }
 
 bool gravity_enabled(RunConfig const& cfg)

@@ -157,6 +157,14 @@
       "value_type": "string"
     },
     {
+      "cpp_id": "RelativisticExterior",
+      "description": "Relativistic matter exterior policy; legacy artifacts imply atmosphere.",
+      "name": "relativistic_exterior",
+      "required": false,
+      "section": "fields",
+      "value_type": "string"
+    },
+    {
       "cpp_id": "FluidComponents",
       "description": "Evolution-fluid cache component count.",
       "name": "fluid_components",

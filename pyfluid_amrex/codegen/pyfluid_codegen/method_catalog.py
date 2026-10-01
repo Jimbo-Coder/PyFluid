@@ -89,6 +89,7 @@ class InitialDataOwner:
     dimension: int
     coordinate: str
     axes: tuple[str, ...]
+    solver_axis_layouts: tuple[str, ...]
     central_objects: tuple[str, ...]
     spacetime_methods: tuple[str, ...]
     disk_kinds: tuple[str, ...]
@@ -366,6 +367,7 @@ def _load_initial_data_owner(
             "dimension",
             "coordinate",
             "axes",
+            "solver_axis_layouts",
             "central_objects",
             "spacetime_methods",
             "disk_kinds",
@@ -401,6 +403,41 @@ def _load_initial_data_owner(
         ) from error
     if tuple(sorted(positions)) != positions:
         raise ValueError(f"{context}.axes must preserve canonical order")
+    solver_axis_layouts = _required_string_array(
+        record, "solver_axis_layouts", context
+    )
+    for solver_axes_text in solver_axis_layouts:
+        solver_axes = tuple(solver_axes_text.split())
+        if not solver_axes or len(solver_axes) > 3:
+            raise ValueError(
+                f"{context}.solver_axis_layouts entries must contain 1-3 axes"
+            )
+        if len(set(solver_axes)) != len(solver_axes):
+            raise ValueError(
+                f"{context}.solver_axis_layouts entries must not repeat an axis"
+            )
+        if solver_axes_text != " ".join(solver_axes):
+            raise ValueError(
+                f"{context}.solver_axis_layouts must use single-space axis separators"
+            )
+        try:
+            solver_positions = tuple(
+                canonical.index(axis) for axis in solver_axes
+            )
+        except ValueError as error:
+            raise ValueError(
+                f"{context}.solver_axis_layouts contains an axis outside "
+                "the coordinate family"
+            ) from error
+        if tuple(sorted(solver_positions)) != solver_positions:
+            raise ValueError(
+                f"{context}.solver_axis_layouts must preserve canonical order"
+            )
+    physical_layout = " ".join(axes)
+    if physical_layout not in solver_axis_layouts:
+        raise ValueError(
+            f"{context}.solver_axis_layouts must include the physical axes"
+        )
     relative_tilt = record.get("relative_tilt")
     if type(relative_tilt) is not bool:
         raise ValueError(f"{context}.relative_tilt must be a boolean")
@@ -459,6 +496,7 @@ def _load_initial_data_owner(
         dimension=dimension,
         coordinate=coordinate,
         axes=axes,
+        solver_axis_layouts=solver_axis_layouts,
         central_objects=central_objects,
         spacetime_methods=spacetime_methods,
         disk_kinds=disk_kinds,

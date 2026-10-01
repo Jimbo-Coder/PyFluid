@@ -10,6 +10,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct PatchGridSystem;
 struct PatchLayout;
 struct RunConfig;
@@ -29,7 +31,7 @@ struct FluxLaunch {
    int riemann_method = 0;
    FluxTopology topology = FluxTopology::Standard;
    int direction = -1;
-   amrex::Real time = 0.0;
+   amrex::Real time = 0.0_rt;
    amrex::iMultiFab const* solid_mask = nullptr;
    amrex::Geometry const* geometry = nullptr;
    amrex::Array<amrex::Vector<int>, AMREX_SPACEDIM> const* solid_flux_kinds = nullptr;
@@ -53,7 +55,7 @@ inline void launch_fluxes_runtime(
    amrex::iMultiFab const* solid_mask = nullptr,
    amrex::Geometry const* geometry = nullptr,
    amrex::Array<amrex::Vector<int>, AMREX_SPACEDIM> const* solid_flux_kinds = nullptr,
-   amrex::Real time = 0.0,
+   amrex::Real time = 0.0_rt,
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* patch_layout = nullptr,
    EOSThermodynamicState const* atmosphere = nullptr,
@@ -100,7 +102,7 @@ inline void launch_flux_direction_runtime(
    amrex::iMultiFab const* solid_mask = nullptr,
    amrex::Geometry const* geometry = nullptr,
    amrex::Vector<int> const* solid_flux_kind = nullptr,
-   amrex::Real time = 0.0,
+   amrex::Real time = 0.0_rt,
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* patch_layout = nullptr,
    amrex::MultiFab const* cell_spacetime = nullptr,

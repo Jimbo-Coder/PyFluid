@@ -13,6 +13,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 namespace {
 
 amrex::Vector<amrex::BCRec> reflection_only_records(
@@ -42,7 +44,7 @@ void transfer_initial_data_cell_to_vertices_with_reflection(
    amrex::GpuArray<int, AMREX_SPACEDIM> const& reflection_hi
 )
 {
-   static_assert(Order == 2 || Order == 4 || Order == 6 || Order == 8);
+   static_assert(is_supported_spatial_order(Order));
    constexpr int destination_mask = (1 << AMREX_SPACEDIM) - 1;
    if (source.nComp() != destination.nComp()
        || centering_mask(source.ixType()) != 0
@@ -117,30 +119,11 @@ void transfer_initial_data_cell_to_vertices_with_reflection(
    amrex::GpuArray<int, AMREX_SPACEDIM> const& reflection_hi
 )
 {
-   switch (order) {
-   case 2:
-      transfer_initial_data_cell_to_vertices_with_reflection<2>(
-         destination, source, geometry, reflection_lo, reflection_hi
-      );
-      return;
-   case 4:
-      transfer_initial_data_cell_to_vertices_with_reflection<4>(
-         destination, source, geometry, reflection_lo, reflection_hi
-      );
-      return;
-   case 6:
-      transfer_initial_data_cell_to_vertices_with_reflection<6>(
-         destination, source, geometry, reflection_lo, reflection_hi
-      );
-      return;
-   case 8:
-      transfer_initial_data_cell_to_vertices_with_reflection<8>(
-         destination, source, geometry, reflection_lo, reflection_hi
-      );
-      return;
-   default:
-      amrex::Abort("initial-data centering transfer order is unsupported");
-   }
+   dispatch_spatial_order(order, [&](auto order_tag) {
+      constexpr int spatial_order = decltype(order_tag)::value;
+      transfer_initial_data_cell_to_vertices_with_reflection<spatial_order>(
+         destination, source, geometry, reflection_lo, reflection_hi);
+   });
 }
 
 void fill_nodal_physical_boundaries(
@@ -238,7 +221,7 @@ void fill_nodal_physical_boundaries(
                );
 #endif
                if (odd_plane) {
-                  values(i, j, k, component) = 0.0;
+                  values(i, j, k, component) = 0.0_rt;
                } else if (physical) {
                   values(i, j, k, component) =
                      parity * values(source_i, source_j, source_k, component);
@@ -288,12 +271,12 @@ void detail::fill_initial_data_vertex_ghosts(
          hierarchy.geometry[level], boundary_conditions, boundary_function
       );
       amrex::Vector<amrex::MultiFab*> fine_data{fields[level]};
-      amrex::Vector<amrex::Real> fine_time{0.0};
+      amrex::Vector<amrex::Real> fine_time{0.0_rt};
       if (level == 0) {
          amrex::FillPatchSingleLevel(
             *fields[level],
             fields[level]->nGrowVect(),
-            0.0,
+            0.0_rt,
             fine_data,
             fine_time,
             0,
@@ -312,11 +295,11 @@ void detail::fill_initial_data_vertex_ghosts(
          hierarchy.geometry[level - 1], boundary_conditions, boundary_function
       );
       amrex::Vector<amrex::MultiFab*> coarse_data{fields[level - 1]};
-      amrex::Vector<amrex::Real> coarse_time{0.0};
+      amrex::Vector<amrex::Real> coarse_time{0.0_rt};
       fill_nodal_two_levels(
          *fields[level],
          fields[level]->nGrowVect(),
-         0.0,
+         0.0_rt,
          coarse_data,
          coarse_time,
          fine_data,
@@ -457,10 +440,10 @@ void materialize_initial_data_vertices(
             const int face1_index = i - cell_lo.x;
             const amrex::Real face1 = faces1[face1_index];
             const amrex::Real lower1 = i - 1 < cell_lo.x
-               ? 2.0 * faces1[0] - centers1[0]
+               ? 2.0_rt * faces1[0] - centers1[0]
                : centers1[i - 1 - cell_lo.x];
             const amrex::Real upper1 = i > cell_hi.x
-               ? 2.0 * faces1[cell_hi.x - cell_lo.x + 1]
+               ? 2.0_rt * faces1[cell_hi.x - cell_lo.x + 1]
                     - centers1[cell_hi.x - cell_lo.x]
                : centers1[i - cell_lo.x];
             const amrex::Real weight1 = (face1 - lower1) / (upper1 - lower1);
@@ -468,10 +451,10 @@ void materialize_initial_data_vertices(
             const int face2_index = j - cell_lo.y;
             const amrex::Real face2 = faces2[face2_index];
             const amrex::Real lower2 = j - 1 < cell_lo.y
-               ? 2.0 * faces2[0] - centers2[0]
+               ? 2.0_rt * faces2[0] - centers2[0]
                : centers2[j - 1 - cell_lo.y];
             const amrex::Real upper2 = j > cell_hi.y
-               ? 2.0 * faces2[cell_hi.y - cell_lo.y + 1]
+               ? 2.0_rt * faces2[cell_hi.y - cell_lo.y + 1]
                     - centers2[cell_hi.y - cell_lo.y]
                : centers2[j - cell_lo.y];
             const amrex::Real weight2 = (face2 - lower2) / (upper2 - lower2);
@@ -480,24 +463,24 @@ void materialize_initial_data_vertices(
             const int face3_index = k - cell_lo.z;
             const amrex::Real face3 = faces3[face3_index];
             const amrex::Real lower3 = k - 1 < cell_lo.z
-               ? 2.0 * faces3[0] - centers3[0]
+               ? 2.0_rt * faces3[0] - centers3[0]
                : centers3[k - 1 - cell_lo.z];
             const amrex::Real upper3 = k > cell_hi.z
-               ? 2.0 * faces3[cell_hi.z - cell_lo.z + 1]
+               ? 2.0_rt * faces3[cell_hi.z - cell_lo.z + 1]
                     - centers3[cell_hi.z - cell_lo.z]
                : centers3[k - cell_lo.z];
             const amrex::Real weight3 = (face3 - lower3) / (upper3 - lower3);
 #endif
-            amrex::Real value = 0.0;
+            amrex::Real value = 0.0_rt;
 #if (AMREX_SPACEDIM == 1)
-            value = (1.0 - weight1) * source(i - 1, j, k, component)
+            value = (1.0_rt - weight1) * source(i - 1, j, k, component)
                + weight1 * source(i, j, k, component);
 #elif (AMREX_SPACEDIM == 2)
             for (int offset2 = 0; offset2 <= 1; ++offset2) {
                const amrex::Real angular_weight = offset2 == 0
-                  ? 1.0 - weight2 : weight2;
+                  ? 1.0_rt - weight2 : weight2;
                value += angular_weight * (
-                  (1.0 - weight1)
+                  (1.0_rt - weight1)
                      * source(i - 1, j - 1 + offset2, k, component)
                   + weight1
                      * source(i, j - 1 + offset2, k, component)
@@ -506,12 +489,12 @@ void materialize_initial_data_vertices(
 #else
             for (int offset3 = 0; offset3 <= 1; ++offset3) {
                const amrex::Real third_weight = offset3 == 0
-                  ? 1.0 - weight3 : weight3;
+                  ? 1.0_rt - weight3 : weight3;
                for (int offset2 = 0; offset2 <= 1; ++offset2) {
                   const amrex::Real second_weight = offset2 == 0
-                     ? 1.0 - weight2 : weight2;
+                     ? 1.0_rt - weight2 : weight2;
                   value += third_weight * second_weight * (
-                     (1.0 - weight1) * source(
+                     (1.0_rt - weight1) * source(
                         i - 1, j - 1 + offset2, k - 1 + offset3, component
                      )
                      + weight1 * source(

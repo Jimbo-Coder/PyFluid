@@ -9,6 +9,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct PatchLocalAxes {
    amrex::GpuArray<int, AMREX_SPACEDIM> component{};
 };
@@ -33,8 +35,8 @@ struct PatchGridResolution {
    int radial_cells = 16;
    int outer_radial_cells = 16;
    int axial_cells = 16;
-   amrex::Real axial_lo = -1.0;
-   amrex::Real axial_hi = 1.0;
+   amrex::Real axial_lo = -1.0_rt;
+   amrex::Real axial_hi = 1.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -75,14 +77,14 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 PatchCoordinate patch_grid_cell_center(PatchGridDescriptor const& patch, amrex::IntVect const& cell) noexcept
 {
    PatchCoordinate local = make_patch_coordinate(
-      0.5 * (patch.local_lo.q1 + patch.local_hi.q1),
-      0.5 * (patch.local_lo.q2 + patch.local_hi.q2),
-      0.5 * (patch.local_lo.q3 + patch.local_hi.q3)
+      0.5_rt * (patch.local_lo.q1 + patch.local_hi.q1),
+      0.5_rt * (patch.local_lo.q2 + patch.local_hi.q2),
+      0.5_rt * (patch.local_lo.q3 + patch.local_hi.q3)
    );
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       const int component = patch_local_component_for_dir(patch.local_axes, dir);
       const amrex::Real coordinate = patch_coordinate_component(patch.local_lo, component)
-         + (static_cast<amrex::Real>(cell[dir]) + 0.5) * patch_grid_cell_size(patch, dir);
+         + (static_cast<amrex::Real>(cell[dir]) + 0.5_rt) * patch_grid_cell_size(patch, dir);
       set_patch_coordinate_component(local, component, coordinate);
    }
    return local;
@@ -92,7 +94,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool patch_grid_contains_global_point(
    PatchGridDescriptor const& patch,
    PatchCoordinate const& global,
-   amrex::Real tolerance = 0.0
+   amrex::Real tolerance = 0.0_rt
 ) noexcept
 {
    const PatchCoordinate local = patch_global_to_local(patch.map, global);
@@ -161,11 +163,11 @@ inline PatchLocalAxes patch_local_axes_from_cartesian(PatchCartesianAxes const& 
 inline PatchCoordinate patch_coordinate_with_active_bounds(
    PatchCartesianAxes const& axes,
    amrex::Real value0,
-   amrex::Real value1 = 0.0,
-   amrex::Real value2 = 0.0
+   amrex::Real value1 = 0.0_rt,
+   amrex::Real value2 = 0.0_rt
 )
 {
-   PatchCoordinate coordinate = make_patch_coordinate(0.0, 0.0, 0.0);
+   PatchCoordinate coordinate = make_patch_coordinate(0.0_rt, 0.0_rt, 0.0_rt);
    set_patch_coordinate_component(coordinate, patch_cartesian_axis(axes, 0), value0);
 #if (AMREX_SPACEDIM >= 2)
    set_patch_coordinate_component(coordinate, patch_cartesian_axis(axes, 1), value1);
@@ -283,8 +285,8 @@ inline PatchGridSystem make_thornburg04_patch_grid_system(
       grid_system,
       0,
       grid_system.map_system.maps[0],
-      spherical_central_local_bound(active_axes, inner_radius, -1.0),
-      spherical_central_local_bound(active_axes, inner_radius, 1.0),
+      spherical_central_local_bound(active_axes, inner_radius, -1.0_rt),
+      spherical_central_local_bound(active_axes, inner_radius, 1.0_rt),
       patch_local_axes_from_cartesian(active_axes),
       resolution.central_cells
    );
@@ -295,8 +297,8 @@ inline PatchGridSystem make_thornburg04_patch_grid_system(
          grid_system,
          patch_id,
          map,
-         make_patch_coordinate(-0.25 * constants::pi, -0.25 * constants::pi, inner_radius),
-         make_patch_coordinate(0.25 * constants::pi, 0.25 * constants::pi, outer_radius),
+         make_patch_coordinate(-0.25_rt * constants::pi, -0.25_rt * constants::pi, inner_radius),
+         make_patch_coordinate(0.25_rt * constants::pi, 0.25_rt * constants::pi, outer_radius),
          spherical_shell_local_axes(map, active_axes),
          cells
       );
@@ -319,8 +321,8 @@ inline PatchGridSystem make_thornburg13_patch_grid_system(
       grid_system,
       0,
       grid_system.map_system.maps[0],
-      spherical_central_local_bound(active_axes, inner_radius, -1.0),
-      spherical_central_local_bound(active_axes, inner_radius, 1.0),
+      spherical_central_local_bound(active_axes, inner_radius, -1.0_rt),
+      spherical_central_local_bound(active_axes, inner_radius, 1.0_rt),
       patch_local_axes_from_cartesian(active_axes),
       resolution.central_cells
    );
@@ -332,13 +334,13 @@ inline PatchGridSystem make_thornburg13_patch_grid_system(
          patch_id,
          map,
          make_patch_coordinate(
-            -0.25 * constants::pi,
-            -0.25 * constants::pi,
+            -0.25_rt * constants::pi,
+            -0.25_rt * constants::pi,
             outer_patch ? medium_radius : inner_radius
          ),
          make_patch_coordinate(
-            0.25 * constants::pi,
-            0.25 * constants::pi,
+            0.25_rt * constants::pi,
+            0.25_rt * constants::pi,
             outer_patch ? outer_radius : medium_radius
          ),
          spherical_shell_local_axes(map, active_axes),
@@ -366,8 +368,8 @@ inline PatchGridSystem make_cylindrical5_patch_grid_system(
       grid_system,
       0,
       grid_system.map_system.maps[0],
-      cylindrical_central_local_bound(active_axes, inner_radius, resolution.axial_lo, -1.0),
-      cylindrical_central_local_bound(active_axes, inner_radius, resolution.axial_hi, 1.0),
+      cylindrical_central_local_bound(active_axes, inner_radius, resolution.axial_lo, -1.0_rt),
+      cylindrical_central_local_bound(active_axes, inner_radius, resolution.axial_hi, 1.0_rt),
       patch_local_axes_from_cartesian(active_axes),
       resolution.central_cells
    );
@@ -382,8 +384,8 @@ inline PatchGridSystem make_cylindrical5_patch_grid_system(
          grid_system,
          patch_id,
          grid_system.map_system.maps[patch_id],
-         make_patch_coordinate(-0.25 * constants::pi, resolution.axial_lo, inner_radius),
-         make_patch_coordinate(0.25 * constants::pi, resolution.axial_hi, outer_radius),
+         make_patch_coordinate(-0.25_rt * constants::pi, resolution.axial_lo, inner_radius),
+         make_patch_coordinate(0.25_rt * constants::pi, resolution.axial_hi, outer_radius),
          local_axes,
          cells
       );
@@ -407,8 +409,8 @@ inline PatchGridSystem make_cylindrical9_patch_grid_system(
       grid_system,
       0,
       grid_system.map_system.maps[0],
-      cylindrical_central_local_bound(active_axes, inner_radius, resolution.axial_lo, -1.0),
-      cylindrical_central_local_bound(active_axes, inner_radius, resolution.axial_hi, 1.0),
+      cylindrical_central_local_bound(active_axes, inner_radius, resolution.axial_lo, -1.0_rt),
+      cylindrical_central_local_bound(active_axes, inner_radius, resolution.axial_hi, 1.0_rt),
       patch_local_axes_from_cartesian(active_axes),
       resolution.central_cells
    );
@@ -420,12 +422,12 @@ inline PatchGridSystem make_cylindrical9_patch_grid_system(
          patch_id,
          grid_system.map_system.maps[patch_id],
          make_patch_coordinate(
-            -0.25 * constants::pi,
+            -0.25_rt * constants::pi,
             resolution.axial_lo,
             outer_patch ? medium_radius : inner_radius
          ),
          make_patch_coordinate(
-            0.25 * constants::pi,
+            0.25_rt * constants::pi,
             resolution.axial_hi,
             outer_patch ? outer_radius : medium_radius
          ),

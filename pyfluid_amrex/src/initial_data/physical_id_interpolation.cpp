@@ -14,6 +14,8 @@
 #include "pyfluid_amrex/mesh_geometry.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 using Vector = std::array<amrex::Real, 3>;
@@ -119,7 +121,7 @@ Basis canonical_basis(
    if (coordinate_kind == MeshCylindrical) {
       const amrex::Real cosine = std::cos(q[1]);
       const amrex::Real sine = std::sin(q[1]);
-      return {{{cosine, sine, 0.0}, {-sine, cosine, 0.0}, {0.0, 0.0, 1.0}}};
+      return {{{cosine, sine, 0.0_rt}, {-sine, cosine, 0.0_rt}, {0.0_rt, 0.0_rt, 1.0_rt}}};
    }
    if (coordinate_kind == MeshSpherical) {
       const amrex::Real sin_theta = std::sin(q[1]);
@@ -129,10 +131,10 @@ Basis canonical_basis(
       return {{
          {sin_theta * cos_phi, sin_theta * sin_phi, cos_theta},
          {cos_theta * cos_phi, cos_theta * sin_phi, -sin_theta},
-         {-sin_phi, cos_phi, 0.0},
+         {-sin_phi, cos_phi, 0.0_rt},
       }};
    }
-   return {{{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}}};
+   return {{{1.0_rt, 0.0_rt, 0.0_rt}, {0.0_rt, 1.0_rt, 0.0_rt}, {0.0_rt, 0.0_rt, 1.0_rt}}};
 }
 
 Basis component_basis(
@@ -170,7 +172,7 @@ Vector cross(Vector const& left, Vector const& right)
 Vector normalized(Vector const& value, char const* label)
 {
    const amrex::Real magnitude = std::sqrt(dot(value, value));
-   if (!(magnitude > 0.0) || !std::isfinite(magnitude)) {
+   if (!(magnitude > 0.0_rt) || !std::isfinite(magnitude)) {
       amrex::Abort(
          std::string("physical-ID ") + label + " must be finite and nonzero"
       );
@@ -374,9 +376,9 @@ int physical_reflection_direction(
       const amrex::Real boundary = upper
          ? level.prob_hi[source_direction]
          : level.prob_lo[source_direction];
-      const amrex::Real tolerance = 256.0
+      const amrex::Real tolerance = 256.0_rt
          * std::numeric_limits<amrex::Real>::epsilon();
-      if (std::abs(boundary - 0.5 * constants::pi) <= tolerance) {
+      if (std::abs(boundary - 0.5_rt * constants::pi) <= tolerance) {
          return 2;
       }
    }
@@ -476,7 +478,7 @@ void coalesce_complete_level(
    }
    const std::size_t dense_points = box_point_count(dense, field.dimension);
    dense.data.assign(
-      dense_points * static_cast<std::size_t>(field.num_components), 0.0
+      dense_points * static_cast<std::size_t>(field.num_components), 0.0_rt
    );
    std::vector<unsigned char> covered(dense_points, 0);
    for (RuntimeDimensionHdf5Box const& box : level.boxes) {
@@ -548,14 +550,14 @@ MappedSourcePoint map_source_point(
       } else {
          for (int attempt = 0; attempt < 4; ++attempt) {
             if (coordinate < lower && chart.reflection_lo[direction] != 0) {
-               coordinate = 2.0 * lower - coordinate;
+               coordinate = 2.0_rt * lower - coordinate;
                mapped.reflection_mask ^= 1 << physical_reflection_direction(
                   chart, level, direction, false
                );
             } else if (
                coordinate > upper && chart.reflection_hi[direction] != 0
             ) {
-               coordinate = 2.0 * upper - coordinate;
+               coordinate = 2.0_rt * upper - coordinate;
                mapped.reflection_mask ^= 1 << physical_reflection_direction(
                   chart, level, direction, true
                );
@@ -577,19 +579,19 @@ MappedSourcePoint map_source_point(
       const auto& faces = level.coordinate_faces[direction];
       const amrex::Real spacing = (upper - lower) / cell_count;
       const amrex::Real safe_lower = faces.empty()
-         ? lower + (node_centered ? 0.0 : 0.5) * spacing
+         ? lower + (node_centered ? 0.0_rt : 0.5_rt) * spacing
          : (node_centered ? faces.front()
-                          : 0.5 * (faces[0] + faces[1]));
+                          : 0.5_rt * (faces[0] + faces[1]));
       const amrex::Real safe_upper = faces.empty()
-         ? upper - (node_centered ? 0.0 : 0.5) * spacing
+         ? upper - (node_centered ? 0.0_rt : 0.5_rt) * spacing
          : (node_centered ? faces.back()
-                          : 0.5 * (faces[faces.size() - 2] + faces.back()));
+                          : 0.5_rt * (faces[faces.size() - 2] + faces.back()));
       const amrex::Real scale = std::max(
-         amrex::Real(1.0), std::max(std::abs(lower), std::abs(upper))
+         amrex::Real(1.0_rt), std::max(std::abs(lower), std::abs(upper))
       );
       const bool regular_radial_origin =
          chart.axes[direction] == MeshAxisR
-         && std::abs(lower) <= 64.0
+         && std::abs(lower) <= 64.0_rt
             * std::numeric_limits<amrex::Real>::epsilon() * scale
          && coordinate >= lower;
       const bool regular_lower_boundary = coordinate >= lower
@@ -639,12 +641,12 @@ bool interpolate_level(
       const auto& faces = level.coordinate_faces[direction];
       const bool wrap_cell_centres =
          chart.periodic[direction] != 0 && !node_centered;
-      amrex::Real logical = 0.0;
+      amrex::Real logical = 0.0_rt;
       if (faces.empty()) {
          const amrex::Real spacing = (
             level.prob_hi[direction] - level.prob_lo[direction]
          ) / cell_count;
-         const amrex::Real offset = node_centered ? 0.0 : 0.5;
+         const amrex::Real offset = node_centered ? 0.0_rt : 0.5_rt;
          logical = level.domain_lower[direction]
             + (q[coordinate_component] - level.prob_lo[direction]) / spacing
             - offset;
@@ -652,7 +654,7 @@ bool interpolate_level(
          auto coordinate_at = [&](int local_index) {
             return node_centered
                ? faces[local_index]
-               : 0.5 * (faces[local_index] + faces[local_index + 1]);
+               : 0.5_rt * (faces[local_index] + faces[local_index + 1]);
          };
          const int coordinate_count = cell_count + (node_centered ? 1 : 0);
          if (wrap_cell_centres
@@ -701,13 +703,13 @@ bool interpolate_level(
          fraction[direction] = logical - lower_index[direction];
       } else if (valid_lower == valid_upper) {
          lower_index[direction] = valid_lower;
-         fraction[direction] = 0.0;
+         fraction[direction] = 0.0_rt;
       } else if (logical <= valid_lower) {
          lower_index[direction] = valid_lower;
-         fraction[direction] = 0.0;
+         fraction[direction] = 0.0_rt;
       } else if (logical >= valid_upper) {
          lower_index[direction] = valid_upper - 1;
-         fraction[direction] = 1.0;
+         fraction[direction] = 1.0_rt;
       } else {
          lower_index[direction] = static_cast<int>(std::floor(logical));
          fraction[direction] = logical - lower_index[direction];
@@ -716,17 +718,17 @@ bool interpolate_level(
 
    const int corners = 1 << field.dimension;
    std::vector<amrex::Real> candidate(
-      static_cast<std::size_t>(field.num_components), 0.0
+      static_cast<std::size_t>(field.num_components), 0.0_rt
    );
    for (int corner = 0; corner < corners; ++corner) {
       std::array<int, 3> index = lower_index;
-      amrex::Real weight = 1.0;
+      amrex::Real weight = 1.0_rt;
       for (int direction = 0; direction < field.dimension; ++direction) {
          if ((corner & (1 << direction)) != 0) {
             ++index[direction];
             weight *= fraction[direction];
          } else {
-            weight *= 1.0 - fraction[direction];
+            weight *= 1.0_rt - fraction[direction];
          }
          if (chart.periodic[direction] != 0 && !node_centered) {
             const int valid_lower = level.domain_lower[direction];
@@ -737,11 +739,11 @@ bool interpolate_level(
                   % cell_count;
          }
       }
-      if (weight == 0.0) {
+      if (weight == 0.0_rt) {
          continue;
       }
       for (int component = 0; component < field.num_components; ++component) {
-         amrex::Real value = 0.0;
+         amrex::Real value = 0.0_rt;
          if (!field_value(field, level_index, index, component, value)) {
             return false;
          }
@@ -851,13 +853,13 @@ PhysicalIdRigidTransform make_physical_id_rigid_transform(
    const Vector source = normalized(source_axis, "source rotation axis");
    const Vector target = normalized(target_axis, "target rotation axis");
    const amrex::Real cosine = std::max(
-      amrex::Real(-1.0), std::min(amrex::Real(1.0), dot(source, target))
+      amrex::Real(-1.0_rt), std::min(amrex::Real(1.0_rt), dot(source, target))
    );
-   constexpr amrex::Real alignment_tolerance = 1.0e-14;
-   if (cosine >= 1.0 - alignment_tolerance) {
+   constexpr amrex::Real alignment_tolerance = 1.0e-14_rt;
+   if (cosine >= 1.0_rt - alignment_tolerance) {
       return transform;
    }
-   if (cosine <= -1.0 + alignment_tolerance) {
+   if (cosine <= -1.0_rt + alignment_tolerance) {
       int least_aligned = 0;
       for (int component = 1; component < 3; ++component) {
          if (std::abs(source[component])
@@ -866,15 +868,15 @@ PhysicalIdRigidTransform make_physical_id_rigid_transform(
          }
       }
       Vector reference{};
-      reference[least_aligned] = 1.0;
+      reference[least_aligned] = 1.0_rt;
       const Vector half_turn_axis = normalized(
          cross(source, reference), "antiparallel rotation axis"
       );
       for (int i = 0; i < 3; ++i) {
          for (int j = 0; j < 3; ++j) {
             transform.source_to_target[i][j] =
-               2.0 * half_turn_axis[i] * half_turn_axis[j]
-               - (i == j ? 1.0 : 0.0);
+               2.0_rt * half_turn_axis[i] * half_turn_axis[j]
+               - (i == j ? 1.0_rt : 0.0_rt);
          }
       }
       return transform;
@@ -882,19 +884,19 @@ PhysicalIdRigidTransform make_physical_id_rigid_transform(
 
    const Vector sine_axis = cross(source, target);
    const std::array<std::array<amrex::Real, 3>, 3> cross_matrix{{
-      {{0.0, -sine_axis[2], sine_axis[1]}},
-      {{sine_axis[2], 0.0, -sine_axis[0]}},
-      {{-sine_axis[1], sine_axis[0], 0.0}},
+      {{0.0_rt, -sine_axis[2], sine_axis[1]}},
+      {{sine_axis[2], 0.0_rt, -sine_axis[0]}},
+      {{-sine_axis[1], sine_axis[0], 0.0_rt}},
    }};
    for (int i = 0; i < 3; ++i) {
       for (int j = 0; j < 3; ++j) {
-         amrex::Real cross_squared = 0.0;
+         amrex::Real cross_squared = 0.0_rt;
          for (int component = 0; component < 3; ++component) {
             cross_squared += cross_matrix[i][component]
                * cross_matrix[component][j];
          }
-         transform.source_to_target[i][j] = (i == j ? 1.0 : 0.0)
-            + cross_matrix[i][j] + cross_squared / (1.0 + cosine);
+         transform.source_to_target[i][j] = (i == j ? 1.0_rt : 0.0_rt)
+            + cross_matrix[i][j] + cross_squared / (1.0_rt + cosine);
       }
    }
    return transform;
@@ -910,7 +912,7 @@ bool physical_id_rigid_transform_is_identity(
       }
       for (int j = 0; j < 3; ++j) {
          if (transform.source_to_target[i][j]
-             != (i == j ? 1.0 : 0.0)) {
+             != (i == j ? 1.0_rt : 0.0_rt)) {
             return false;
          }
       }

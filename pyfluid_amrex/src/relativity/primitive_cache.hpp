@@ -6,9 +6,11 @@
 
 #include "pyfluid_amrex/eos/equation_of_state.hpp"
 #include "pyfluid_amrex/ct_fields.hpp"
+#include "pyfluid_amrex/excision_geometry.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
+#include "pyfluid_amrex/reference_metric_spacetime.hpp"
 #include "relativity/relativistic_atmosphere.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
@@ -18,6 +20,8 @@
 #include <type_traits>
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 template <typename MagneticState>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -31,16 +35,16 @@ void replace_cell_magnetic_from_faces(
 ) noexcept
 {
    if (active[0] != 0) {
-      value.b1 = 0.5 * (face[0](i, j, k, 0) + face[0](i + 1, j, k, 0));
+      value.b1 = 0.5_rt * (face[0](i, j, k, 0) + face[0](i + 1, j, k, 0));
    }
 #if (AMREX_SPACEDIM >= 2)
    if (active[1] != 0) {
-      value.b2 = 0.5 * (face[1](i, j, k, 0) + face[1](i, j + 1, k, 0));
+      value.b2 = 0.5_rt * (face[1](i, j, k, 0) + face[1](i, j + 1, k, 0));
    }
 #endif
 #if (AMREX_SPACEDIM == 3)
    if (active[2] != 0) {
-      value.b3 = 0.5 * (face[2](i, j, k, 0) + face[2](i, j, k + 1, 0));
+      value.b3 = 0.5_rt * (face[2](i, j, k, 0) + face[2](i, j, k + 1, 0));
    }
 #endif
 }
@@ -69,7 +73,7 @@ void store_rhd_primitive_cache_cell(
 ) noexcept
 {
    const RHDRecoveryResult recovered =
-      recover_relativistic_primitive_with_atmosphere<PhysicalSystem::RHD, EOSMethod>(
+      recover_relativistic_primitive_with_exterior<PhysicalSystem::RHD, EOSMethod>(
          state, i, j, k, eos, metric
       );
    const amrex::Real invalid = std::numeric_limits<amrex::Real>::quiet_NaN();
@@ -107,6 +111,21 @@ void store_rhd_primitive_cache_cell(
    primitive(i, j, k, ENERGY) = success ? value.pressure : invalid;
 }
 
+// Inactive storage is not a fluid state to recover. Supply finite scratch
+// primitives without changing conserved matter or the canonical CT field.
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void store_inactive_primitive_cache_cell(
+   amrex::Array4<amrex::Real> const& primitive,
+   int i, int j, int k, EOSThermodynamicState const& atmosphere
+) noexcept
+{
+   primitive(i, j, k, RHO) = atmosphere.rho;
+   primitive(i, j, k, ENERGY) = atmosphere.pressure;
+   primitive(i, j, k, MOM1) = 0.0_rt;
+   primitive(i, j, k, MOM2) = 0.0_rt;
+   primitive(i, j, k, MOM3) = 0.0_rt;
+}
+
 template <int EOSMethod, typename StateMultiFab>
 inline void fill_rhd_primitive_cache(
    amrex::MultiFab& primitive,
@@ -114,9 +133,14 @@ inline void fill_rhd_primitive_cache(
    const EOSParams& eos,
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
-   amrex::Real time
+   amrex::Real time,
+   int coordinate,
+   MeshAxes const& axes
 )
 {
+   validate_reference_metric_fixed_spacetime_domain(
+      spacetime, geometry, coordinate, axes
+   );
    const auto lower = geometry.ProbLoArray();
    const auto spacing = geometry.CellSizeArray();
 #ifdef AMREX_USE_OMP
@@ -133,9 +157,9 @@ inline void fill_rhd_primitive_cache(
       }();
       const auto cached = primitive.array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const FixedSpacetimeGeometry local_geometry =
-            fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
-               spacetime, lower, spacing, i, j, k, time
+         const ReferenceMetricSpacetimeGeometry local_geometry =
+            reference_metric_fixed_spacetime_geometry_at_cell(
+               spacetime, coordinate, axes, lower, spacing, i, j, k, time
             );
          store_rhd_primitive_cache_cell<EOSMethod>(
             conserved, cached, i, j, k, eos, local_geometry.metric
@@ -149,7 +173,9 @@ inline void fill_rhd_primitive_cache(
    amrex::MultiFab& primitive,
    StateMultiFab& state,
    const EOSParams& eos,
-   const amrex::MultiFab& cell_spacetime
+   const amrex::MultiFab& cell_spacetime,
+   ExcisionGridView const& excision = {},
+   EOSThermodynamicState const& atmosphere = {}
 )
 {
 #ifdef AMREX_USE_OMP
@@ -167,6 +193,10 @@ inline void fill_rhd_primitive_cache(
       const auto cached = primitive.array(mfi);
       const auto spacetime = cell_spacetime.const_array(mfi);
       amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         if (excision.region.enabled() && !excision(i, j, k, 0)) {
+            store_inactive_primitive_cache_cell(cached, i, j, k, atmosphere);
+            return;
+         }
          store_rhd_primitive_cache_cell<EOSMethod>(
             conserved,
             cached,
@@ -192,7 +222,7 @@ void store_rmhd_primitive_cache_cell(
 ) noexcept
 {
    const RMHDRecoveryResult recovered =
-      recover_relativistic_primitive_with_atmosphere<PhysicalSystem::RMHD, EOSRuntime>(
+      recover_relativistic_primitive_with_exterior<PhysicalSystem::RMHD, EOSRuntime>(
          state, i, j, k, eos, metric
       );
    const amrex::Real invalid = std::numeric_limits<amrex::Real>::quiet_NaN();
@@ -332,7 +362,9 @@ inline void fill_rmhd_primitive_cache(
    const amrex::MultiFab& cell_spacetime,
    amrex::Geometry const* geometry = nullptr,
    FaceMagneticField const* canonical_face_b = nullptr,
-   amrex::iMultiFab const* canonical_face_b_cell_mask = nullptr
+   amrex::iMultiFab const* canonical_face_b_cell_mask = nullptr,
+   ExcisionGridView const& excision = {},
+   EOSThermodynamicState const& atmosphere = {}
 )
 {
    AMREX_ALWAYS_ASSERT(canonical_face_b == nullptr || geometry != nullptr);
@@ -371,6 +403,17 @@ inline void fill_rmhd_primitive_cache(
          const SpacetimeMetric metric = generated::z4c_spacetime_metric(
             load_z4c_state(spacetime, i, j, k)
          );
+         if (excision.region.enabled() && !excision(i, j, k, 0)) {
+            store_inactive_primitive_cache_cell(cached, i, j, k, atmosphere);
+            RMHDConserved local_conserved = load_rmhd_conserved(conserved, i, j, k);
+            if (use_canonical_face_b && canonical_cell(i, j, k, 0) != 0) {
+               replace_cell_magnetic_from_faces(local_conserved, face, active, i, j, k);
+            }
+            cached(i, j, k, B1) = local_conserved.b1 / metric.sqrt_det_gamma;
+            cached(i, j, k, B2) = local_conserved.b2 / metric.sqrt_det_gamma;
+            cached(i, j, k, B3) = local_conserved.b3 / metric.sqrt_det_gamma;
+            return;
+         }
          if (use_canonical_face_b && canonical_cell(i, j, k, 0) != 0) {
             RMHDConserved local_conserved = load_rmhd_conserved(conserved, i, j, k);
             replace_cell_magnetic_from_faces(
@@ -506,13 +549,15 @@ inline void fill_base_primitive_cache(
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
    amrex::Real time,
+   int coordinate,
+   MeshAxes const& axes,
    FaceMagneticField const* canonical_face_b = nullptr,
    amrex::iMultiFab const* canonical_face_b_cell_mask = nullptr
 )
 {
    if (system == PhysicalSystem::RHD) {
       fill_rhd_primitive_cache<EOSMethod>(
-         primitive, state, eos, geometry, spacetime, time
+         primitive, state, eos, geometry, spacetime, time, coordinate, axes
       );
       return;
    }

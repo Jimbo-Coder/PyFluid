@@ -9,6 +9,8 @@
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
 #include "pyfluid_amrex/physical_system.hpp"
 #include "pyfluid_amrex/relativistic_primitive.hpp"
+#include "pyfluid_amrex/reference_metric_spacetime.hpp"
+#include "pyfluid_amrex/relativistic_diode.hpp"
 #include "pyfluid_amrex/rhd_c2p.hpp"
 #include "pyfluid_amrex/rmhd_c2p.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -16,12 +18,15 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 bool metric_boundary_reflects(int kind) noexcept
 {
    return kind == static_cast<int>(BoundaryKind::Reflecting)
       || kind == static_cast<int>(BoundaryKind::Symmetry);
 }
+
 
 template <typename Primitive>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -51,13 +56,15 @@ struct FixedSpacetimeCellMetricAccessor {
    FixedSpacetimeParameters spacetime;
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> lower;
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacing;
-   amrex::Real time = 0.0;
+   int coordinate = MeshCartesian;
+   MeshAxes axes{};
+   amrex::Real time = 0.0_rt;
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    SpacetimeMetric operator()(int i, int j, int k) const noexcept
    {
-      return fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
-         spacetime, lower, spacing, i, j, k, time
+      return reference_metric_fixed_spacetime_geometry_at_cell(
+         spacetime, coordinate, axes, lower, spacing, i, j, k, time
       ).metric;
    }
 };
@@ -71,6 +78,27 @@ struct StoredSpacetimeCellMetricAccessor {
       return generated::z4c_spacetime_metric(
          load_z4c_state(spacetime, i, j, k)
       );
+   }
+};
+
+// Named host factories keep the per-cell accessor shared by boundary and
+// preflight kernels. CUDA cannot instantiate an enclosing launch template on
+// the type of an ordinary host lambda.
+struct FixedSpacetimeCellMetricFactory {
+   FixedSpacetimeCellMetricAccessor accessor;
+
+   FixedSpacetimeCellMetricAccessor operator()(amrex::MFIter const&) const
+   {
+      return accessor;
+   }
+};
+
+struct StoredSpacetimeCellMetricFactory {
+   amrex::MultiFab const& cell_spacetime;
+
+   StoredSpacetimeCellMetricAccessor operator()(amrex::MFIter const& mfi) const
+   {
+      return {cell_spacetime.const_array(mfi)};
    }
 };
 
@@ -109,7 +137,8 @@ inline void apply_metric_state_boundary(
       const auto source_values = state.const_array(mfi);
       const auto metric_at = metric_accessor_factory(mfi);
       for (const amrex::Box& box : ghost_boxes) {
-         amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         amrex::ParallelFor(box, [periodic, lo, hi, boundary, metric_at, domain, lower, spacing,
+             eos, source_values, diode, values, symmetry] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             const bool xlo = !periodic[0] && i < lo.x;
             const bool xhi = !periodic[0] && i > hi.x;
 #if (AMREX_SPACEDIM >= 2)
@@ -172,22 +201,22 @@ inline void apply_metric_state_boundary(
                boundary, domain, i, j, k
             );
             const amrex::Real position1 = lower[0]
-               + (static_cast<amrex::Real>(i) + 0.5) * spacing[0];
-            amrex::Real position2 = 0.0;
-            amrex::Real position3 = 0.0;
+               + (static_cast<amrex::Real>(i) + 0.5_rt) * spacing[0];
+            amrex::Real position2 = 0.0_rt;
+            amrex::Real position3 = 0.0_rt;
 #if (AMREX_SPACEDIM >= 2)
             position2 = lower[1]
-               + (static_cast<amrex::Real>(j) + 0.5) * spacing[1];
+               + (static_cast<amrex::Real>(j) + 0.5_rt) * spacing[1];
 #endif
 #if (AMREX_SPACEDIM == 3)
             position3 = lower[2]
-               + (static_cast<amrex::Real>(k) + 0.5) * spacing[2];
+               + (static_cast<amrex::Real>(k) + 0.5_rt) * spacing[2];
 #endif
             const amrex::Real inflow_weight = inflow_direction >= 0
                ? inflow_profile_weight(
                   boundary, inflow_direction, position1, position2, position3
                )
-               : 0.0;
+               : 0.0_rt;
             const amrex::Real inflow_rho = boundary.inflow_background_rho
                + inflow_weight
                   * (boundary.inflow_rho - boundary.inflow_background_rho);
@@ -232,18 +261,12 @@ inline void apply_metric_state_boundary(
                      z_reflect
                   );
                }
-               if ((xlo && x_kind == diode && primitive.v1 > 0.0)
-                   || (xhi && x_kind == diode && primitive.v1 < 0.0)) {
-                  primitive.v1 = 0.0;
-               }
-               if ((ylo && y_kind == diode && primitive.v2 > 0.0)
-                   || (yhi && y_kind == diode && primitive.v2 < 0.0)) {
-                  primitive.v2 = 0.0;
-               }
-               if ((zlo && z_kind == diode && primitive.v3 > 0.0)
-                   || (zhi && z_kind == diode && primitive.v3 < 0.0)) {
-                  primitive.v3 = 0.0;
-               }
+               apply_relativistic_diode_velocity(
+                  primitive, ghost_metric,
+                  xlo && x_kind == diode, xhi && x_kind == diode,
+                  ylo && y_kind == diode, yhi && y_kind == diode,
+                  zlo && z_kind == diode, zhi && z_kind == diode
+               );
                store_rhd_conserved(
                   values,
                   i,
@@ -305,18 +328,12 @@ inline void apply_metric_state_boundary(
                   primitive.b1 = -primitive.b1;
                   primitive.b2 = -primitive.b2;
                }
-               if ((xlo && x_kind == diode && primitive.v1 > 0.0)
-                   || (xhi && x_kind == diode && primitive.v1 < 0.0)) {
-                  primitive.v1 = 0.0;
-               }
-               if ((ylo && y_kind == diode && primitive.v2 > 0.0)
-                   || (yhi && y_kind == diode && primitive.v2 < 0.0)) {
-                  primitive.v2 = 0.0;
-               }
-               if ((zlo && z_kind == diode && primitive.v3 > 0.0)
-                   || (zhi && z_kind == diode && primitive.v3 < 0.0)) {
-                  primitive.v3 = 0.0;
-               }
+               apply_relativistic_diode_velocity(
+                  primitive, ghost_metric,
+                  xlo && x_kind == diode, xhi && x_kind == diode,
+                  ylo && y_kind == diode, yhi && y_kind == diode,
+                  zlo && z_kind == diode, zhi && z_kind == diode
+               );
                store_rmhd_conserved(
                   values,
                   i,
@@ -339,7 +356,9 @@ inline void apply_fixed_metric_state_boundary(
    BoundaryData const& boundary,
    FixedSpacetimeParameters const& spacetime,
    EOSParams const& eos,
-   amrex::Real time
+   amrex::Real time,
+   int coordinate,
+   MeshAxes const& axes
 )
 {
    if (spacetime.metric == FixedSpacetimeMetric::Minkowski) {
@@ -352,10 +371,8 @@ inline void apply_fixed_metric_state_boundary(
       geometry,
       boundary,
       eos,
-      [=](amrex::MFIter const&) {
-         return FixedSpacetimeCellMetricAccessor{
-            spacetime, lower, spacing, time
-         };
+      FixedSpacetimeCellMetricFactory{
+         {spacetime, lower, spacing, coordinate, axes, time}
       }
    );
 }
@@ -374,11 +391,7 @@ inline void apply_stored_metric_state_boundary(
       geometry,
       boundary,
       eos,
-      [&](amrex::MFIter const& mfi) {
-         return StoredSpacetimeCellMetricAccessor{
-            cell_spacetime.const_array(mfi)
-         };
-      }
+      StoredSpacetimeCellMetricFactory{cell_spacetime}
    );
 }
 

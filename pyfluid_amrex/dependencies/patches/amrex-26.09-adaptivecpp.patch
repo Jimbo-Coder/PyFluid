@@ -1,0 +1,1513 @@
+diff --git a/Src/Base/AMReX_FBI.H b/Src/Base/AMReX_FBI.H
+index d8fd347..615c0fa 100644
+--- a/Src/Base/AMReX_FBI.H
++++ b/Src/Base/AMReX_FBI.H
+@@ -315,7 +315,6 @@ void deterministic_fab_to_fab (Vector<Array4CopyTag<T0,T1>> const& a_tags, int s
+     amrex::launch<nthreads>(nblocks, Gpu::gpuStream(),
+ #ifdef AMREX_USE_SYCL
+         [=] AMREX_GPU_DEVICE (sycl::nd_item<1> const& item) noexcept
+-        [[sycl::reqd_work_group_size(nthreads)]]
+ #else
+         [=] AMREX_GPU_DEVICE () noexcept
+ #endif
+diff --git a/Src/Base/AMReX_FabArray.H b/Src/Base/AMReX_FabArray.H
+index 44256f8..f1441d9 100644
+--- a/Src/Base/AMReX_FabArray.H
++++ b/Src/Base/AMReX_FabArray.H
+@@ -170,12 +170,14 @@ struct MultiArray4
+     Array4<T> const& operator[] (int li) const noexcept {
+         AMREX_IF_ON_DEVICE((return dp[li];))
+         AMREX_IF_ON_HOST((return hp[li];))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     explicit operator bool() const noexcept {
+         AMREX_IF_ON_DEVICE((return dp != nullptr;))
+         AMREX_IF_ON_HOST((return hp != nullptr;))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+ #ifdef AMREX_USE_GPU
+diff --git a/Src/Base/AMReX_GpuAsyncArray.H b/Src/Base/AMReX_GpuAsyncArray.H
+index 3316bf2..58eea9a 100644
+--- a/Src/Base/AMReX_GpuAsyncArray.H
++++ b/Src/Base/AMReX_GpuAsyncArray.H
+@@ -97,14 +97,11 @@ public:
+                 auto* ph = h_data;
+                 auto& q = *(Gpu::gpuStream().queue);
+                 try {
+-                    q.submit([&] (sycl::handler& h) {
+-                        h.host_task([=] () {
+-                            The_Arena()->free(pd);
+-                            The_Pinned_Arena()->free(ph);
+-                        });
+-                    });
++                    q.wait_and_throw();
++                    The_Arena()->free(pd);
++                    The_Pinned_Arena()->free(ph);
+                 } catch (sycl::exception const& ex) {
+-                    amrex::Abort(std::string("host_task: ")+ex.what()+"!!!!!");
++                    amrex::Abort(std::string("async cleanup: ")+ex.what()+"!!!!!");
+                 }
+ #endif
+             }
+diff --git a/Src/Base/AMReX_GpuAtomic.H b/Src/Base/AMReX_GpuAtomic.H
+index b155fd2..0fbbb92 100644
+--- a/Src/Base/AMReX_GpuAtomic.H
++++ b/Src/Base/AMReX_GpuAtomic.H
+@@ -7,6 +7,7 @@
+ #include <AMReX_INT.H>
+ 
+ #include <utility>
++#include <type_traits>
+ 
+ namespace amrex {
+ 
+@@ -30,7 +31,7 @@ namespace detail {
+     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+     R atomic_op (R* const address, R const val, F const f) noexcept
+     {
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
+         constexpr auto mo = sycl::memory_order::relaxed;
+         constexpr auto ms = sycl::memory_scope::device;
+         constexpr auto as = sycl::access::address_space::global_space;
+@@ -54,7 +55,7 @@ namespace detail {
+     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+     bool atomic_op_if (R* const address, R const val, Op&& op, Cond&& cond) noexcept
+     {
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
+         constexpr auto mo = sycl::memory_order::relaxed;
+         constexpr auto ms = sycl::memory_scope::device;
+         constexpr auto as = sycl::access::address_space::global_space;
+@@ -136,11 +137,19 @@ namespace detail {
+     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+     T Add_device (T* const sum, T const value) noexcept
+     {
+-#if defined(__SYCL_DEVICE_ONLY__)
+-        constexpr auto mo = sycl::memory_order::relaxed;
+-        constexpr auto ms = sycl::memory_scope::device;
+-        sycl::atomic_ref<T,mo,ms,AS> a{*sum};
+-        return a.fetch_add(value);
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
++        if constexpr (std::is_same_v<T,float>) {
++            return detail::atomic_op<float, unsigned int>(
++                sum, value, amrex::Plus<float>());
++        } else if constexpr (std::is_same_v<T,double>) {
++            return detail::atomic_op<double, unsigned long long>(
++                sum, value, amrex::Plus<double>());
++        } else {
++            constexpr auto mo = sycl::memory_order::relaxed;
++            constexpr auto ms = sycl::memory_scope::device;
++            sycl::atomic_ref<T,mo,ms,AS> a{*sum};
++            return a.fetch_add(value);
++        }
+ #else
+         AMREX_IF_ON_DEVICE(( return atomicAdd(sum, value); ))
+         AMREX_IF_ON_HOST((
+@@ -200,15 +209,24 @@ namespace detail {
+     T Add (T* sum, T value) noexcept
+     {
+ #ifdef AMREX_USE_SYCL
++#if defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
++        return Add_device<T,AS>(sum, value);
++#else
+         AMREX_IF_ON_DEVICE((return Add_device<T,AS>(sum, value);))
++        AMREX_IF_ON_HOST((
++            auto old = *sum;
++            *sum += value;
++            return old;
++        ))
++#endif
+ #else
+         AMREX_IF_ON_DEVICE((return Add_device(sum, value);))
+-#endif
+         AMREX_IF_ON_HOST((
+             auto old = *sum;
+             *sum += value;
+             return old;
+         ))
++#endif
+     }
+ 
+ ////////////////////////////////////////////////////////////////////////
+@@ -282,7 +300,7 @@ namespace detail {
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     void AddNoRet (T* sum, T value) noexcept
+     {
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
+         Add_device<T,AS>(sum, value);
+ #else
+         AMREX_IF_ON_DEVICE((Add_device(sum, value);))
+@@ -312,7 +330,7 @@ namespace detail {
+     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+     T Min_device (T* const m, T const value) noexcept
+     {
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
+         constexpr auto mo = sycl::memory_order::relaxed;
+         constexpr auto ms = sycl::memory_scope::device;
+         constexpr auto as = sycl::access::address_space::global_space;
+@@ -375,7 +393,7 @@ namespace detail {
+     AMREX_GPU_DEVICE AMREX_FORCE_INLINE
+     T Max_device (T* const m, T const value) noexcept
+     {
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
+         constexpr auto mo = sycl::memory_order::relaxed;
+         constexpr auto ms = sycl::memory_scope::device;
+         constexpr auto as = sycl::access::address_space::global_space;
+@@ -435,7 +453,7 @@ namespace detail {
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     int LogicalOr (int* const m, int const value) noexcept
+     {
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
+         constexpr auto mo = sycl::memory_order::relaxed;
+         constexpr auto ms = sycl::memory_scope::device;
+         constexpr auto as = sycl::access::address_space::global_space;
+@@ -460,7 +478,7 @@ namespace detail {
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     int LogicalAnd (int* const m, int const value) noexcept
+     {
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
+         constexpr auto mo = sycl::memory_order::relaxed;
+         constexpr auto ms = sycl::memory_scope::device;
+         constexpr auto as = sycl::access::address_space::global_space;
+@@ -486,7 +504,7 @@ namespace detail {
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     T Exch (T* address, T val) noexcept
+     {
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
+         constexpr auto mo = sycl::memory_order::relaxed;
+         constexpr auto ms = sycl::memory_scope::device;
+         constexpr auto as = sycl::access::address_space::global_space;
+@@ -512,7 +530,7 @@ namespace detail {
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     T CAS (T* const address, T compare, T const val) noexcept
+     {           // cannot be T const compare because of compare_exchange_strong
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(__SYCL_DEVICE_ONLY__) || defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
+         constexpr auto mo = sycl::memory_order::relaxed;
+         constexpr auto ms = sycl::memory_scope::device;
+         constexpr auto as = sycl::access::address_space::global_space;
+@@ -639,16 +657,24 @@ namespace HostDevice::Atomic {
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     void Add (T* const sum, T const value) noexcept
+     {
++#if defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
++        Gpu::Atomic::AddNoRet(sum,value);
++#else
+         AMREX_IF_ON_DEVICE((Gpu::Atomic::AddNoRet(sum,value);))
+         AMREX_IF_ON_HOST((Add_Host(sum,value);))
++#endif
+     }
+ 
+     template <class T>
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     T FetchAdd (T* const sum, T const value) noexcept
+     {
++#if defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__)
++        return Gpu::Atomic::Add(sum,value);
++#else
+         AMREX_IF_ON_DEVICE((return Gpu::Atomic::Add(sum,value);))
+         AMREX_IF_ON_HOST((return FetchAdd_Host(sum,value);))
++#endif
+     }
+ 
+ }
+diff --git a/Src/Base/AMReX_GpuDevice.cpp b/Src/Base/AMReX_GpuDevice.cpp
+index b2d0374..51b74ec 100644
+--- a/Src/Base/AMReX_GpuDevice.cpp
++++ b/Src/Base/AMReX_GpuDevice.cpp
+@@ -377,8 +377,9 @@ Device::Initialize (bool minimal, int a_device_id)
+         num_devices_used = uuid_counts.size();
+         num_device_partners = uuid_counts[my_uuid];
+ 
+-#elif defined(AMREX_USE_SYCL)
++#elif defined(AMREX_USE_SYCL) && !defined(SYCL_IMPLEMENTATION_ACPP)
+ 
++        // Intel UUID discovery is optional; AdaptiveCpp does not expose it.
+         auto const& d = *sycl_device;
+         if (d.has(sycl::aspect::ext_intel_device_info_uuid)) {
+             auto uuid = d.get_info<sycl::ext::intel::info::device::uuid>();
+@@ -1405,8 +1406,12 @@ bool isStreamActive (gpuStream_t s)
+ #elif defined(AMREX_USE_HIP)
+     return hipStreamQuery(s) != hipSuccess;
+ #elif defined(AMREX_USE_SYCL)
++#if defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__) || defined(__ADAPTIVECPP__)
++    return true;
++#else
+     return ! s.queue->ext_oneapi_empty();
+ #endif
++#endif
+ }
+ #endif
+ 
+diff --git a/Src/Base/AMReX_GpuElixir.cpp b/Src/Base/AMReX_GpuElixir.cpp
+index 3ec2e76..fe031b9 100644
+--- a/Src/Base/AMReX_GpuElixir.cpp
++++ b/Src/Base/AMReX_GpuElixir.cpp
+@@ -51,15 +51,12 @@ Elixir::clear ()
+         auto lpa = std::move(m_pa);
+         auto& q = *(Gpu::gpuStream().queue);
+         try {
+-            q.submit([&] (sycl::handler& h) {
+-                h.host_task([=] () {
+-                    for (auto const& pa : lpa) {
+-                        pa.second->free(pa.first);
+-                    }
+-                });
+-            });
++            q.wait_and_throw();
++            for (auto const& pa : lpa) {
++                pa.second->free(pa.first);
++            }
+         } catch (sycl::exception const& ex) {
+-            amrex::Abort(std::string("host_task: ")+ex.what()+"!!!!!");
++            amrex::Abort(std::string("async cleanup: ")+ex.what()+"!!!!!");
+         }
+ #endif
+         }
+diff --git a/Src/Base/AMReX_GpuLaunch.H b/Src/Base/AMReX_GpuLaunch.H
+index 3d501d1..9b0dbb6 100644
+--- a/Src/Base/AMReX_GpuLaunch.H
++++ b/Src/Base/AMReX_GpuLaunch.H
+@@ -113,6 +113,7 @@ namespace Gpu {
+             amrex::ignore_unused(offset);
+             return bx;
+         ))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+ // ************************************************
+diff --git a/Src/Base/AMReX_GpuLaunchFunctsG.H b/Src/Base/AMReX_GpuLaunchFunctsG.H
+index 4fe20e5..ac8c5c5 100644
+--- a/Src/Base/AMReX_GpuLaunchFunctsG.H
++++ b/Src/Base/AMReX_GpuLaunchFunctsG.H
+@@ -188,7 +188,6 @@ void launch (int nblocks, int nthreads_per_block, std::size_t shared_mem_bytes,
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 if constexpr (detail::is_big_kernel<L>()) {
+                     (*pf)(Gpu::Handler{&item,shared_data.get_multi_ptr<sycl::access::decorated::yes>().get()});
+@@ -216,7 +215,6 @@ void launch (int nblocks, int nthreads_per_block, gpuStream_t stream, L const& f
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 if constexpr (detail::is_big_kernel<L>()) {
+                     (*pf)(item);
+@@ -249,8 +247,6 @@ void launch (int nblocks, std::size_t shared_mem_bytes, gpuStream_t stream,
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(MT)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(MT)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 if constexpr (detail::is_big_kernel<L>()) {
+                     (*pf)(Gpu::Handler{&item,shared_data.get_multi_ptr<sycl::access::decorated::yes>().get()});
+@@ -278,8 +274,6 @@ void launch (int nblocks, gpuStream_t stream, L const& f)
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(MT)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(MT)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 if constexpr (detail::is_big_kernel<L>()) {
+                     (*pf)(item);
+@@ -311,8 +305,6 @@ void launch (T const& n, L const& f)
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(MT)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 for (auto const i : Gpu::Range(n,item.get_global_id(0),item.get_global_range(0))) {
+                     if constexpr (detail::is_big_kernel<L>()) {
+@@ -349,8 +341,6 @@ void ParallelFor (Gpu::KernelInfo const& info, T n, L const& f)
+                 h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                                  sycl::range<1>(nthreads_per_block)),
+                 [=] (sycl::nd_item<1> item)
+-                [[sycl::reqd_work_group_size(MT)]]
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+                 {
+                     for (std::size_t i = item.get_global_id(0), stride = item.get_global_range(0);
+                          i < std::size_t(n); i += stride) {
+@@ -373,8 +363,6 @@ void ParallelFor (Gpu::KernelInfo const& info, T n, L const& f)
+                 h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                                  sycl::range<1>(nthreads_per_block)),
+                 [=] (sycl::nd_item<1> item)
+-                [[sycl::reqd_work_group_size(MT)]]
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+                 {
+                     for (std::size_t i = item.get_global_id(0), stride = item.get_global_range(0);
+                          i < std::size_t(n); i += stride) {
+@@ -414,8 +402,6 @@ void ParallelFor (Gpu::KernelInfo const& info, BoxND<dim> const& box, L const& f
+                 h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                                  sycl::range<1>(nthreads_per_block)),
+                 [=] (sycl::nd_item<1> item)
+-                [[sycl::reqd_work_group_size(MT)]]
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+                 {
+                     for (std::uint64_t icell = item.get_global_id(0), stride = item.get_global_range(0);
+                          icell < indexer.numPts(); icell += stride) {
+@@ -441,8 +427,6 @@ void ParallelFor (Gpu::KernelInfo const& info, BoxND<dim> const& box, L const& f
+                 h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                                  sycl::range<1>(nthreads_per_block)),
+                 [=] (sycl::nd_item<1> item)
+-                [[sycl::reqd_work_group_size(MT)]]
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+                 {
+                     for (std::uint64_t icell = item.get_global_id(0), stride = item.get_global_range(0);
+                          icell < indexer.numPts(); icell += stride) {
+@@ -483,8 +467,6 @@ void ParallelFor (Gpu::KernelInfo const& info, BoxND<dim> const& box, T ncomp, L
+                 h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                                  sycl::range<1>(nthreads_per_block)),
+                 [=] (sycl::nd_item<1> item)
+-                [[sycl::reqd_work_group_size(MT)]]
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+                 {
+                     for (std::uint64_t icell = item.get_global_id(0), stride = item.get_global_range(0);
+                          icell < indexer.numPts(); icell += stride) {
+@@ -508,8 +490,6 @@ void ParallelFor (Gpu::KernelInfo const& info, BoxND<dim> const& box, T ncomp, L
+                 h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                                  sycl::range<1>(nthreads_per_block)),
+                 [=] (sycl::nd_item<1> item)
+-                [[sycl::reqd_work_group_size(MT)]]
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+                 {
+                     for (std::uint64_t icell = item.get_global_id(0), stride = item.get_global_range(0);
+                          icell < indexer.numPts(); icell += stride) {
+@@ -541,15 +521,20 @@ void ParallelForRNG (T n, L const& f)
+     const auto nthreads_per_block = ec.numThreads.x;
+     const auto nthreads_total = std::size_t(nthreads_per_block) * amrex::min(ec.numBlocks.x,Gpu::Device::maxBlocksPerLaunch());
+     auto& q = Gpu::Device::streamQueue();
+-    auto& engdescr = *(getRandEngineDescriptor());
++    auto* engdescr_ptr = getRandEngineDescriptor();
++    AMREX_ALWAYS_ASSERT_WITH_MESSAGE(engdescr_ptr != nullptr,
++                                     "ACPP RNG descriptor is not initialized before ParallelForRNG");
++    AMREX_ALWAYS_ASSERT_WITH_MESSAGE(engdescr_ptr->engines != nullptr,
++                                     "ACPP RNG engine storage is not initialized before ParallelForRNG");
++    AMREX_ALWAYS_ASSERT_WITH_MESSAGE(engdescr_ptr->size >= nthreads_total,
++                                     "ACPP RNG engine storage is smaller than the ParallelForRNG launch width");
++    auto& engdescr = *engdescr_ptr;
+     try {
+         q.submit([&] (sycl::handler& h) {
+             auto engine_acc = engdescr.get_access(h);
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(AMREX_GPU_MAX_THREADS)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 auto const tid = item.get_global_id(0);
+                 auto engine = engine_acc.load(tid);
+@@ -591,8 +576,6 @@ void ParallelForRNG (BoxND<dim> const& box, L const& f)
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(AMREX_GPU_MAX_THREADS)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 auto const tid = item.get_global_id(0);
+                 auto engine = engine_acc.load(tid);
+@@ -636,8 +619,6 @@ void ParallelForRNG (BoxND<dim> const& box, T ncomp, L const& f)
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(AMREX_GPU_MAX_THREADS)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 auto const tid = item.get_global_id(0);
+                 auto engine = engine_acc.load(tid);
+@@ -681,8 +662,6 @@ void ParallelFor (Gpu::KernelInfo const& /*info*/, BoxND<dim> const& box1, BoxND
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(MT)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 auto const ncells = std::max(indexer1.numPts(), indexer2.numPts());
+                 for (std::uint64_t icell = item.get_global_id(0), stride = item.get_global_range(0);
+@@ -736,8 +715,6 @@ void ParallelFor (Gpu::KernelInfo const& /*info*/,
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(MT)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 auto const ncells = amrex::max(indexer1.numPts(), indexer2.numPts(), indexer3.numPts());
+                 for (std::uint64_t icell = item.get_global_id(0), stride = item.get_global_range(0);
+@@ -797,8 +774,6 @@ void ParallelFor (Gpu::KernelInfo const& /*info*/,
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(MT)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 auto const ncells = std::max(indexer1.numPts(), indexer2.numPts());
+                 for (std::uint64_t icell = item.get_global_id(0), stride = item.get_global_range(0);
+@@ -853,8 +828,6 @@ void ParallelFor (Gpu::KernelInfo const& /*info*/,
+             h.parallel_for(sycl::nd_range<1>(sycl::range<1>(nthreads_total),
+                                              sycl::range<1>(nthreads_per_block)),
+             [=] (sycl::nd_item<1> item)
+-            [[sycl::reqd_work_group_size(MT)]]
+-            [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+             {
+                 auto const ncells = amrex::max(indexer1.numPts(), indexer2.numPts(), indexer3.numPts());
+                 for (std::uint64_t icell = item.get_global_id(0), stride = item.get_global_range(0);
+diff --git a/Src/Base/AMReX_GpuLaunchMacrosG.nolint.H b/Src/Base/AMReX_GpuLaunchMacrosG.nolint.H
+index f3e6207..2047042 100644
+--- a/Src/Base/AMReX_GpuLaunchMacrosG.nolint.H
++++ b/Src/Base/AMReX_GpuLaunchMacrosG.nolint.H
+@@ -16,8 +16,6 @@
+                 amrex_i_h.parallel_for(sycl::nd_range<1>(sycl::range<1>(amrex_i_nthreads_total), \
+                                                          sycl::range<1>(amrex_i_nthreads_per_block)), \
+                 [=] (sycl::nd_item<1> amrex_i_item) \
+-                [[sycl::reqd_work_group_size(AMREX_GPU_MAX_THREADS)]] \
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]] \
+                 { \
+                     for (auto const TI : amrex::Gpu::Range(amrex_i_tn,amrex_i_item.get_global_id(0),amrex_i_item.get_global_range(0))) { \
+                         block \
+@@ -81,7 +79,6 @@
+                 amrex_i_h.parallel_for(sycl::nd_range<2>(sycl::range<2>(amrex_i_nthreads_total,2), \
+                                                          sycl::range<2>(amrex_i_nthreads_per_block,1)), \
+                 [=] (sycl::nd_item<2> amrex_i_item) \
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]] \
+                 { \
+                     switch (amrex_i_item.get_group(1)) { \
+                     case 0: for (auto const TI1 : amrex::Gpu::Range(amrex_i_tn1,amrex_i_item.get_global_id(0),amrex_i_item.get_global_range(0))) { \
+@@ -169,7 +166,6 @@
+                 amrex_i_h.parallel_for(sycl::nd_range<2>(sycl::range<2>(amrex_i_nthreads_total,3), \
+                                                          sycl::range<2>(amrex_i_nthreads_per_block,1)), \
+                 [=] (sycl::nd_item<2> amrex_i_item) \
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]] \
+                 { \
+                     switch (amrex_i_item.get_group(1)) { \
+                     case 0: for (auto const TI1 : amrex::Gpu::Range(amrex_i_tn1,amrex_i_item.get_global_id(0),amrex_i_item.get_global_range(0))) { \
+@@ -266,8 +262,6 @@
+                 amrex_i_h.parallel_for(sycl::nd_range<1>(sycl::range<1>(amrex_i_nthreads_total), \
+                                                          sycl::range<1>(amrex_i_nthreads_per_block)), \
+                 [=] (sycl::nd_item<1> amrex_i_item) \
+-                [[sycl::reqd_work_group_size(AMREX_GPU_MAX_THREADS)]] \
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]] \
+                 { \
+                     for (auto const TI : amrex::Gpu::Range(amrex_i_tn,amrex_i_item.get_global_id(0),amrex_i_item.get_global_range(0))) { \
+                         block \
+@@ -321,7 +315,6 @@
+                 amrex_i_h.parallel_for(sycl::nd_range<2>(sycl::range<2>(amrex_i_nthreads_total,2), \
+                                                          sycl::range<2>(amrex_i_nthreads_per_block,1)), \
+                 [=] (sycl::nd_item<2> amrex_i_item) \
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]] \
+                 { \
+                     switch (amrex_i_item.get_group(1)) { \
+                     case 0: for (auto const TI1 : amrex::Gpu::Range(amrex_i_tn1,amrex_i_item.get_global_id(0),amrex_i_item.get_global_range(0))) { \
+@@ -393,7 +386,6 @@
+                 amrex_i_h.parallel_for(sycl::nd_range<2>(sycl::range<2>(amrex_i_nthreads_total,3), \
+                                                          sycl::range<2>(amrex_i_nthreads_per_block,1)), \
+                 [=] (sycl::nd_item<2> amrex_i_item) \
+-                [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]] \
+                 { \
+                     switch (amrex_i_item.get_group(1)) { \
+                     case 0: for (auto const TI1 : amrex::Gpu::Range(amrex_i_tn1,amrex_i_item.get_global_id(0),amrex_i_item.get_global_range(0))) { \
+diff --git a/Src/Base/AMReX_GpuQualifiers.H b/Src/Base/AMReX_GpuQualifiers.H
+index 3e10bec..c4924ff 100644
+--- a/Src/Base/AMReX_GpuQualifiers.H
++++ b/Src/Base/AMReX_GpuQualifiers.H
+@@ -44,6 +44,20 @@
+ #define AMREX_IMPL_ESC_(...) AMREX_IMPL_VAN_##__VA_ARGS__
+ #define AMREX_IMPL_VAN_AMREX_IMPL_ISH
+ 
++#ifdef AMREX_USE_SYCL
++# include <sycl/sycl.hpp>
++#endif
++
++#if defined(AMREX_USE_SYCL) && \
++    (defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL))
++// SSCP compiles host and device in one frontend pass. Preprocessor-only
++// __SYCL_DEVICE_ONLY__ tests select the host branch inside device kernels.
++#define AMREX_IF_ON_DEVICE(CODE) \
++  __acpp_if_target_device(AMREX_IMPL_STRIP_PARENS(CODE))
++#define AMREX_IF_ON_HOST(CODE) \
++  __acpp_if_target_host(AMREX_IMPL_STRIP_PARENS(CODE))
++#endif
++
+ #if !defined(AMREX_IF_ON_DEVICE) && !defined(AMREX_IF_ON_HOST)
+ #if (defined(AMREX_USE_CUDA) && defined(__CUDA_ARCH__)) ||         \
+     (defined(AMREX_USE_HIP) && defined(__HIP_DEVICE_COMPILE__)) || \
+@@ -60,10 +74,6 @@
+ #endif
+ #endif
+ 
+-#ifdef AMREX_USE_SYCL
+-# include <sycl/sycl.hpp>
+-#endif
+-
+ #define AMREX_WRONG_NUM_ARGS(...) static_assert(false,"Wrong number of arguments to macro")
+ 
+ #define AMREX_GET_DGV_MACRO(_1,_2,_3,NAME,...) NAME
+diff --git a/Src/Base/AMReX_GpuRange.H b/Src/Base/AMReX_GpuRange.H
+index 0f5cdf1..d58173b 100644
+--- a/Src/Base/AMReX_GpuRange.H
++++ b/Src/Base/AMReX_GpuRange.H
+@@ -41,6 +41,7 @@ AMREX_FORCE_INLINE Long size (BoxND<dim> const& b) noexcept
+         amrex::ignore_unused(b);
+         return 1;
+     ))
++    __builtin_unreachable(); // Host/device target branches are exhaustive.
+ }
+ 
+ template<int dim>
+@@ -55,6 +56,7 @@ AMREX_FORCE_INLINE BoxND<dim> at (BoxND<dim> const& b, Long offset) noexcept
+         amrex::ignore_unused(offset);
+         return b;
+     ))
++    __builtin_unreachable(); // Host/device target branches are exhaustive.
+ }
+ 
+ template <typename T>
+@@ -90,8 +92,9 @@ struct range_impl
+ 
+     [[nodiscard]] AMREX_GPU_HOST_DEVICE
+     iterator begin () const noexcept {
+-#if defined (__SYCL_DEVICE_ONLY__)
+-        return iterator(m_b, m_gid, m_grange);
++#if defined (AMREX_USE_SYCL)
++        AMREX_IF_ON_DEVICE((return iterator(m_b, m_gid, m_grange);))
++        AMREX_IF_ON_HOST((return iterator(m_b,0,1);))
+ #else
+         AMREX_IF_ON_DEVICE((
+             return iterator(m_b, blockDim.x*blockIdx.x+threadIdx.x, blockDim.x*gridDim.x);
+@@ -100,6 +103,7 @@ struct range_impl
+             return iterator(m_b,0,1);
+         ))
+ #endif
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     [[nodiscard]] AMREX_GPU_HOST_DEVICE
+diff --git a/Src/Base/AMReX_INT.H b/Src/Base/AMReX_INT.H
+index d9a92ea..66e7760 100644
+--- a/Src/Base/AMReX_INT.H
++++ b/Src/Base/AMReX_INT.H
+@@ -33,7 +33,7 @@ namespace amrex {
+ }
+ #endif
+ 
+-#if (defined(__x86_64) || defined (__aarch64__)) && !defined(_WIN32) && (defined(__GNUC__) || defined(__clang__)) && !defined(__NVCOMPILER)
++#if (defined(__x86_64) || defined (__aarch64__)) && !defined(_WIN32) && (defined(__GNUC__) || defined(__clang__)) && !defined(__NVCOMPILER) && !defined(AMREX_NO_INT128)
+ 
+ #define AMREX_INT128_SUPPORTED 1
+ 
+diff --git a/Src/Base/AMReX_Random.H b/Src/Base/AMReX_Random.H
+index a4ea842..283b0d0 100644
+--- a/Src/Base/AMReX_Random.H
++++ b/Src/Base/AMReX_Random.H
+@@ -77,7 +77,9 @@ namespace amrex
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     Real Random (RandomEngine const& random_engine)
+     {
+-#if defined (__SYCL_DEVICE_ONLY__)
++#if defined(AMREX_USE_SYCL) && (defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL))
++        return random_util::clamp_below_one(random_engine.engine->template uniform<Real>());
++#elif defined(__SYCL_DEVICE_ONLY__)
+         // clamped for the same reason as the host path: the documented [0,1)
+         // of the vendor generator is not a bound we want to depend on
+         mkl::rng::device::uniform<Real> distr;
+@@ -171,7 +173,9 @@ namespace amrex
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     Real RandomPositive (RandomEngine const& random_engine)
+     {
+-#if defined (__SYCL_DEVICE_ONLY__)
++#if defined(AMREX_USE_SYCL) && (defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL))
++        return random_util::zero_to_one(random_engine.engine->template uniform<Real>());
++#elif defined(__SYCL_DEVICE_ONLY__)
+         // oneMKL draws from [0,1); relocating the zero endpoint converts that
+         // to (0,1] with no arithmetic, and stays correct even if the
+         // generator reaches its own upper bound, since 1.0 is in range here
+@@ -217,7 +221,9 @@ namespace amrex
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     Real RandomNormal (Real mean, Real stddev, RandomEngine const& random_engine)
+     {
+-#if defined (__SYCL_DEVICE_ONLY__)
++#if defined(AMREX_USE_SYCL) && (defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL))
++        return stddev * random_engine.engine->template normal<Real>() + mean;
++#elif defined(__SYCL_DEVICE_ONLY__)
+         mkl::rng::device::gaussian<Real> distr(mean, stddev);
+         return mkl::rng::device::generate(distr, *random_engine.engine);
+ #else
+@@ -259,7 +265,9 @@ namespace amrex
+     AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+     unsigned int RandomPoisson (Real lambda, RandomEngine const& random_engine)
+     {
+-#if defined (__SYCL_DEVICE_ONLY__)
++#if defined(AMREX_USE_SYCL) && (defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL))
++        return random_engine.engine->poisson(lambda);
++#elif defined(__SYCL_DEVICE_ONLY__)
+         mkl::rng::device::poisson<unsigned int> distr(lambda);
+         return mkl::rng::device::generate(distr, *random_engine.engine);
+ #else
+@@ -346,6 +354,7 @@ namespace amrex
+             amrex::ignore_unused(random_engine);
+             return RandomGamma(alpha, beta);
+         ))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     /**
+@@ -364,7 +373,9 @@ namespace amrex
+     unsigned int Random_int (unsigned int n, RandomEngine const& random_engine)
+     {
+     if (n == 0) { return 0;}
+-#if defined(__SYCL_DEVICE_ONLY__)
++#if defined(AMREX_USE_SYCL) && (defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL))
++        return random_engine.engine->uniform_uint(n);
++#elif defined(__SYCL_DEVICE_ONLY__)
+         mkl::rng::device::uniform<unsigned int> distr(0,n);
+         return mkl::rng::device::generate(distr, *random_engine.engine);
+ #else
+diff --git a/Src/Base/AMReX_Random.cpp b/Src/Base/AMReX_Random.cpp
+index bd5d649..c6dab56 100644
+--- a/Src/Base/AMReX_Random.cpp
++++ b/Src/Base/AMReX_Random.cpp
+@@ -5,19 +5,9 @@
+ #include <AMReX_Gpu.H>
+ #include <AMReX_OpenMP.H>
+ 
+-#include <iterator>
+-#include <limits>
+-
+-#if defined(__GNUC__) && !defined(__clang__)
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+-#endif
+-#include <random>
+-#if defined(__GNUC__) && !defined(__clang__)
+-#pragma GCC diagnostic pop
+-#endif
+-
+ #include <set>
++#include <random>
++#include <limits>
+ 
+ namespace
+ {
+@@ -27,7 +17,9 @@ namespace
+ 
+ #ifdef AMREX_USE_GPU
+ namespace amrex {
+-#ifdef AMREX_USE_SYCL
++#if defined(AMREX_USE_SYCL) && !defined(SYCL_IMPLEMENTATION_ACPP) && !defined(SYCL_IMPLEMENTATION_HIPSYCL)
++    sycl_rng_descr* rand_engine_descr = nullptr;
++#elif defined(AMREX_USE_SYCL)
+     sycl_rng_descr* rand_engine_descr = nullptr;
+ #else
+     amrex::randState_t* gpu_rand_state = nullptr;
+@@ -35,8 +27,10 @@ namespace amrex {
+ }
+ 
+ namespace {
+-#ifdef AMREX_USE_SYCL
++#if defined(AMREX_USE_SYCL) && !defined(SYCL_IMPLEMENTATION_ACPP) && !defined(SYCL_IMPLEMENTATION_HIPSYCL)
+     oneapi::mkl::rng::philox4x32x10* gpu_rand_generator = nullptr;
++#elif defined(AMREX_USE_SYCL)
++    amrex::sycl_rng_engine* gpu_rand_state = nullptr;
+ #else
+     amrex::randGenerator_t gpu_rand_generator = nullptr;
+ #endif
+@@ -55,7 +49,7 @@ void ResizeRandomSeed (amrex::ULong gpu_seed)
+ 
+     const int N = Gpu::Device::maxBlocksPerLaunch() * AMREX_GPU_MAX_THREADS;
+ 
+-#ifdef AMREX_USE_SYCL
++#if defined(AMREX_USE_SYCL) && !defined(SYCL_IMPLEMENTATION_ACPP) && !defined(SYCL_IMPLEMENTATION_HIPSYCL)
+ 
+     rand_engine_descr = new sycl_rng_descr
+         (Gpu::Device::streamQueue(), sycl::range<1>(N), gpu_seed, 1);
+@@ -63,6 +57,15 @@ void ResizeRandomSeed (amrex::ULong gpu_seed)
+     gpu_rand_generator = new std::remove_pointer_t<decltype(gpu_rand_generator)>
+         (Gpu::Device::streamQueue(), gpu_seed+1234ULL);
+ 
++#elif defined(AMREX_USE_SYCL)
++    gpu_rand_state = static_cast<sycl_rng_engine*>(The_Arena()->alloc(N*sizeof(sycl_rng_engine)));
++    rand_engine_descr = new sycl_rng_descr(gpu_rand_state, static_cast<std::size_t>(N));
++    sycl_rng_engine* gpu_rand_state_local = gpu_rand_state;
++    amrex::ParallelFor(N, [=] AMREX_GPU_DEVICE (int idx) noexcept
++    {
++        gpu_rand_state_local[idx] = sycl_rng_engine(gpu_seed, static_cast<ULong>(idx));
++    });
++
+ #elif defined(AMREX_USE_CUDA) || defined(AMREX_USE_HIP)
+ 
+     gpu_rand_state =  static_cast<randState_t*>(The_Arena()->alloc(N*sizeof(randState_t)));
+@@ -130,15 +133,6 @@ Real RandomNormal (Real mean, Real stddev)
+     return distribution(generators[tid]);
+ }
+ 
+-// std::uniform_real_distribution is specified as [0,1), but that bound is not
+-// something to depend on: it is built on std::generate_canonical, whose C++20
+-// specification is defective -- LWG 2524 -- in that the quotient it forms can
+-// round up to exactly 1.0f in single precision. Implementations are free to clamp
+-// and the ones AMReX currently supports do, including MSVC (fixed
+-// P0952R2 in 2024 via microsoft/STL#1074).  Since this is a C++20 defect, we
+-// clamp rather than trust it: that makes the interval of
+-// Random() a property of AMReX instead of a property of whichever standard
+-// library happens to be in use.
+ Real Random ()
+ {
+     std::uniform_real_distribution<Real> distribution(0.0, 1.0);
+@@ -205,14 +199,11 @@ RestoreRandomState (std::istream& is, int nthreads_old, int nstep_old)
+         const int NProcs = ParallelDescriptor::NProcs();
+         const int MyProc = ParallelDescriptor::MyProc();
+         for (int i = nthreads_old; i < nthreads; i++) {
+-            ULong seed = static_cast<ULong>(MyProc+1)
+-                       + static_cast<ULong>(i)*static_cast<ULong>(NProcs);
++            ULong seed = MyProc+1 + i*NProcs;
+             if (std::numeric_limits<ULong>::max()/static_cast<ULong>(nstep_old+1)
+                 > static_cast<ULong>(nthreads)*static_cast<ULong>(NProcs)) // avoid overflow
+             {
+-                seed += static_cast<ULong>(nstep_old)
+-                      * static_cast<ULong>(nthreads)
+-                      * static_cast<ULong>(NProcs);
++                seed += nstep_old*nthreads*NProcs;
+             }
+ 
+             generators[i].seed(seed);
+@@ -229,9 +220,9 @@ UniqueRandomSubset (Vector<int> &uSet, int setSize, int poolSize,
+   }
+   std::set<int> copySet;
+   uSet.clear();
+-  while(std::ssize(copySet) < setSize) {
++  while(static_cast<int>(copySet.size()) < setSize) {
+     int r = static_cast<int>(Random_int(poolSize));
+-    if(!copySet.contains(r)) {
++    if(copySet.find(r) == copySet.end()) {
+       copySet.insert(r);
+       uSet.push_back(r);
+     }
+@@ -252,7 +243,7 @@ void
+ DeallocateRandomSeedDevArray ()
+ {
+ #ifdef AMREX_USE_GPU
+-#ifdef AMREX_USE_SYCL
++#if defined(AMREX_USE_SYCL) && !defined(SYCL_IMPLEMENTATION_ACPP) && !defined(SYCL_IMPLEMENTATION_HIPSYCL)
+     if (rand_engine_descr) {
+         delete rand_engine_descr;
+         Gpu::streamSynchronize();
+@@ -263,6 +254,17 @@ DeallocateRandomSeedDevArray ()
+         Gpu::streamSynchronize();
+         gpu_rand_generator = nullptr;
+     }
++#elif defined(AMREX_USE_SYCL)
++    if (rand_engine_descr) {
++        delete rand_engine_descr;
++        Gpu::streamSynchronize();
++        rand_engine_descr = nullptr;
++    }
++    if (gpu_rand_state != nullptr)
++    {
++        The_Arena()->free(gpu_rand_state);
++        gpu_rand_state = nullptr;
++    }
+ #else
+     if (gpu_rand_state != nullptr)
+     {
+@@ -284,8 +286,6 @@ DeallocateRandomSeedDevArray ()
+ 
+ void FillRandom (Real* p, Long N)
+ {
+-    if (N <= 0) { return; }
+-
+ #ifdef AMREX_USE_CUDA
+ 
+ #  ifdef BL_USE_FLOAT
+@@ -304,19 +304,25 @@ void FillRandom (Real* p, Long N)
+ #  endif
+     Gpu::synchronize();
+ 
+-#elif defined(AMREX_USE_SYCL)
++#elif defined(AMREX_USE_SYCL) && !defined(SYCL_IMPLEMENTATION_ACPP) && !defined(SYCL_IMPLEMENTATION_HIPSYCL)
+ 
+     oneapi::mkl::rng::uniform<Real> distr;
+     auto event = oneapi::mkl::rng::generate(distr, *gpu_rand_generator, N, p);
+     event.wait();
+ 
++#elif defined(AMREX_USE_SYCL)
++
++    amrex::ParallelForRNG(N, [=] AMREX_GPU_DEVICE (Long i, RandomEngine const& engine) noexcept
++    {
++        p[i] = amrex::Random(engine);
++    });
++    Gpu::synchronize();
++
+ #else
+-    // clamped for the same reason as Random(): std::uniform_real_distribution
+-    // may reach its upper bound (LWG 2524), so [0,1) is not free here either
+     std::uniform_real_distribution<Real> distribution(Real(0.0), Real(1.0));
+     auto& gen = generators[OpenMP::get_thread_num()];
+     for (Long i = 0; i < N; ++i) {
+-        p[i] = random_util::clamp_below_one(distribution(gen));
++        p[i] = distribution(gen);
+     }
+ #endif
+ }
+@@ -352,12 +358,20 @@ void FillRandomNormal (Real* p, Long N, Real mean, Real stddev)
+     AMREX_HIPRAND_SAFE_CALL(hiprandGenerateNormalDouble(gpu_rand_generator, p, Neven, mean, stddev));
+ #  endif
+ 
+-#elif defined(AMREX_USE_SYCL)
++#elif defined(AMREX_USE_SYCL) && !defined(SYCL_IMPLEMENTATION_ACPP) && !defined(SYCL_IMPLEMENTATION_HIPSYCL)
+ 
+     oneapi::mkl::rng::gaussian<Real> distr(mean, stddev);
+     auto event = oneapi::mkl::rng::generate(distr, *gpu_rand_generator, N, p);
+     event.wait();
+ 
++#elif defined(AMREX_USE_SYCL)
++
++    amrex::ParallelForRNG(N, [=] AMREX_GPU_DEVICE (Long i, RandomEngine const& engine) noexcept
++    {
++        p[i] = amrex::RandomNormal(mean, stddev, engine);
++    });
++    Gpu::synchronize();
++
+ #else
+ 
+     std::normal_distribution<Real> distribution(mean, stddev);
+diff --git a/Src/Base/AMReX_RandomEngine.H b/Src/Base/AMReX_RandomEngine.H
+index 6cf2b49..f8a19e6 100644
+--- a/Src/Base/AMReX_RandomEngine.H
++++ b/Src/Base/AMReX_RandomEngine.H
+@@ -4,6 +4,11 @@
+ 
+ #include <AMReX_GpuQualifiers.H>
+ #include <AMReX_Extension.H>
++#include <cmath>
++#include <cstddef>
++#include <cstdint>
++#include <cstdlib>
++#include <limits>
+ #ifdef AMREX_USE_OMP
+ #  include <AMReX_BLassert.H>
+ #  include <omp.h>
+@@ -19,10 +24,13 @@
+ #include <curand_kernel.h>
+ #elif defined(AMREX_USE_SYCL)
+ #include <sycl/sycl.hpp>
++#if !defined(SYCL_IMPLEMENTATION_ACPP) && !defined(SYCL_IMPLEMENTATION_HIPSYCL)
++// Intel oneAPI MKL RNG — not available with AdaptiveCpp
+ #include <oneapi/mkl/rng.hpp>
+ #include <oneapi/mkl/rng/device.hpp>
+ namespace mkl = oneapi::mkl;
+ #endif
++#endif
+ 
+ namespace amrex
+ {
+@@ -30,6 +38,8 @@ namespace amrex
+ 
+ #ifdef AMREX_USE_SYCL
+ 
++#if !defined(SYCL_IMPLEMENTATION_ACPP) && !defined(SYCL_IMPLEMENTATION_HIPSYCL)
++    // Intel oneAPI MKL RNG types
+     using sycl_rng_engine = mkl::rng::device::philox4x32x10<>;
+     using sycl_rng_descr = mkl::rng::device::engine_descriptor<sycl_rng_engine>;
+     using sycl_rng_acc = mkl::rng::device::engine_accessor<sycl_rng_engine>;
+@@ -48,6 +58,204 @@ namespace amrex
+         sycl_rng_engine* engine;
+         AMREX_GPU_HOST_DEVICE RandomEngine (sycl_rng_engine* e) : engine(e) {}
+     };
++#else
++    struct acpp_rng_engine {
++        std::uint64_t counter;
++        std::uint32_t key0;
++        std::uint32_t key1;
++
++        AMREX_GPU_HOST_DEVICE acpp_rng_engine () : counter(0), key0(0), key1(0) {}
++        AMREX_GPU_HOST_DEVICE explicit acpp_rng_engine (std::uint64_t s)
++            : counter(0),
++              key0(static_cast<std::uint32_t>(s)),
++              key1(static_cast<std::uint32_t>(s >> 32U)) {}
++        AMREX_GPU_HOST_DEVICE acpp_rng_engine (std::uint64_t seed, std::uint64_t seq)
++            : counter(seq),
++              key0(static_cast<std::uint32_t>(seed) ^
++                   static_cast<std::uint32_t>(seq * 0x9e3779b97f4a7c15ULL)),
++              key1(static_cast<std::uint32_t>(seed >> 32U) ^
++                   static_cast<std::uint32_t>((seq * 0xbf58476d1ce4e5b9ULL) >> 32U)) {}
++
++        AMREX_GPU_HOST_DEVICE static void bump_key (
++            std::uint32_t& k0, std::uint32_t& k1)
++        {
++            k0 += 0x9e3779b9U;
++            k1 += 0xbb67ae85U;
++        }
++
++        AMREX_GPU_HOST_DEVICE static void philox_round (
++            std::uint32_t& c0, std::uint32_t& c1,
++            std::uint32_t& c2, std::uint32_t& c3,
++            std::uint32_t k0, std::uint32_t k1)
++        {
++            std::uint64_t const p0 = std::uint64_t(0xd2511f53U) * c0;
++            std::uint64_t const p1 = std::uint64_t(0xcd9e8d57U) * c2;
++            std::uint32_t const hi0 = static_cast<std::uint32_t>(p0 >> 32U);
++            std::uint32_t const lo0 = static_cast<std::uint32_t>(p0);
++            std::uint32_t const hi1 = static_cast<std::uint32_t>(p1 >> 32U);
++            std::uint32_t const lo1 = static_cast<std::uint32_t>(p1);
++
++            std::uint32_t const n0 = hi1 ^ c1 ^ k0;
++            std::uint32_t const n1 = lo1;
++            std::uint32_t const n2 = hi0 ^ c3 ^ k1;
++            std::uint32_t const n3 = lo0;
++            c0 = n0;
++            c1 = n1;
++            c2 = n2;
++            c3 = n3;
++        }
++
++        AMREX_GPU_HOST_DEVICE std::uint64_t next_u64 () {
++            std::uint64_t const ctr = counter++;
++            std::uint32_t c0 = static_cast<std::uint32_t>(ctr);
++            std::uint32_t c1 = static_cast<std::uint32_t>(ctr >> 32U);
++            std::uint32_t c2 = key0 ^ 0x243f6a88U;
++            std::uint32_t c3 = key1 ^ 0x85a308d3U;
++            std::uint32_t k0 = key0;
++            std::uint32_t k1 = key1;
++
++            for (int round = 0; round < 10; ++round) {
++                philox_round(c0, c1, c2, c3, k0, k1);
++                bump_key(k0, k1);
++            }
++
++            return (std::uint64_t(c0) << 32U) | std::uint64_t(c2);
++        }
++
++        template <typename RealType>
++        AMREX_GPU_HOST_DEVICE RealType uniform () {
++            if constexpr (std::numeric_limits<RealType>::digits <= 24) {
++                return static_cast<RealType>(next_u64() >> 40U) *
++                       (RealType(1.0) / RealType(16777216.0));
++            } else {
++                return static_cast<RealType>(next_u64() >> 11U) *
++                       (RealType(1.0) / RealType(9007199254740992.0));
++            }
++        }
++
++        AMREX_GPU_HOST_DEVICE unsigned int uniform_uint (unsigned int n) {
++            if (n == 0) {
++                return 0;
++            }
++            std::uint64_t const limit =
++                std::numeric_limits<std::uint64_t>::max() -
++                (std::numeric_limits<std::uint64_t>::max() % n);
++            std::uint64_t r;
++            do {
++                r = next_u64();
++            } while (r >= limit);
++            return static_cast<unsigned int>(r % n);
++        }
++
++        template <typename RealType>
++        AMREX_GPU_HOST_DEVICE RealType normal () {
++            RealType u1 = uniform<RealType>();
++            RealType const min_u = std::numeric_limits<RealType>::min();
++            if (u1 < min_u) {
++                u1 = min_u;
++            }
++            RealType const u2 = uniform<RealType>();
++            RealType const two = RealType(2.0);
++            RealType const pi = RealType(3.141592653589793238462643383279502884);
++            return std::sqrt(-two * std::log(u1)) * std::cos(two * pi * u2);
++        }
++
++        template <typename RealType>
++        AMREX_GPU_HOST_DEVICE unsigned int poisson (RealType lambda) {
++            if (lambda <= RealType(0.0)) {
++                return 0;
++            }
++            if (lambda < RealType(64.0)) {
++                RealType const threshold = std::exp(-lambda);
++                RealType product = RealType(1.0);
++                unsigned int k = 0;
++                do {
++                    ++k;
++                    product *= uniform<RealType>();
++                } while (product > threshold);
++                return k - 1U;
++            }
++
++            // PTRS transformed-rejection sampler (Hoermann 1993), driven only by
++            // this engine's Philox uniforms. This preserves Poisson tails and
++            // discreteness where the old rounded-normal branch was biased.
++            RealType const slam = std::sqrt(lambda);
++            RealType const loglam = std::log(lambda);
++            RealType const b = RealType(0.931) + RealType(2.53) * slam;
++            RealType const a = RealType(-0.059) + RealType(0.02483) * b;
++            RealType const inv_alpha = RealType(1.1239) + RealType(1.1328) / (b - RealType(3.4));
++            RealType const v_r = RealType(0.9277) - RealType(3.6224) / (b - RealType(2.0));
++
++            while (true) {
++                RealType const u = uniform<RealType>() - RealType(0.5);
++                RealType const v = uniform<RealType>();
++                RealType const us = RealType(0.5) - std::abs(u);
++                if (us <= RealType(0.0) || v <= RealType(0.0)) {
++                    continue;
++                }
++
++                RealType const k_real = std::floor((RealType(2.0) * a / us + b) * u + lambda + RealType(0.43));
++                if (k_real < RealType(0.0)) {
++                    continue;
++                }
++                if (us >= RealType(0.07) && v <= v_r) {
++                    return static_cast<unsigned int>(k_real);
++                }
++                if (us < RealType(0.013) && v > us) {
++                    continue;
++                }
++
++                RealType const lhs = std::log(v * inv_alpha / (a / (us * us) + b));
++                RealType const rhs = -lambda + k_real * loglam - std::lgamma(k_real + RealType(1.0));
++                if (lhs <= rhs) {
++                    if (k_real > RealType(std::numeric_limits<unsigned int>::max())) {
++                        return std::numeric_limits<unsigned int>::max();
++                    }
++                    return static_cast<unsigned int>(k_real);
++                }
++            }
++        }
++    };
++
++    struct acpp_rng_acc {
++        acpp_rng_engine* engines;
++        std::size_t size;
++
++        AMREX_GPU_HOST_DEVICE acpp_rng_engine load (std::size_t i) const {
++            return engines[i];
++        }
++        AMREX_GPU_HOST_DEVICE void store (acpp_rng_engine const& engine, std::size_t i) const {
++            engines[i] = engine;
++        }
++    };
++
++    struct acpp_rng_descr {
++        acpp_rng_engine* engines = nullptr;
++        std::size_t size = 0;
++
++        acpp_rng_descr () = default;
++        acpp_rng_descr (acpp_rng_engine* p, std::size_t n) : engines(p), size(n) {}
++        acpp_rng_acc get_access (sycl::handler&) const { return acpp_rng_acc{engines, size}; }
++    };
++
++    using sycl_rng_engine = acpp_rng_engine;
++    using sycl_rng_descr = acpp_rng_descr;
++    using sycl_rng_acc = acpp_rng_acc;
++
++    extern sycl_rng_descr* rand_engine_descr;
++
++    inline sycl_rng_descr* getRandEngineDescriptor () {
++#ifdef AMREX_USE_OMP
++        AMREX_ALWAYS_ASSERT_WITH_MESSAGE(! omp_in_parallel(), "RNG on GPU is not OpenMP thread safe");
++#endif
++        return rand_engine_descr;
++    }
++
++    struct RandomEngine {
++        sycl_rng_engine* engine;
++        AMREX_GPU_HOST_DEVICE RandomEngine (sycl_rng_engine* e = nullptr) : engine(e) {}
++    };
++#endif
+ 
+ #else
+ 
+diff --git a/Src/Base/AMReX_Scan.H b/Src/Base/AMReX_Scan.H
+index 08b034e..b81268a 100644
+--- a/Src/Base/AMReX_Scan.H
++++ b/Src/Base/AMReX_Scan.H
+@@ -417,8 +417,17 @@ T PrefixSum (N n, FIN && fin, FOUT && fout, TYPE type, RetSum a_ret_sum = retSum
+     std::size_t sm = sizeof(T) * (Gpu::Device::warp_size + nwarps_per_block) + sizeof(int);
+     auto stream = Gpu::gpuStream();
+ 
++#if defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || defined(__HIPSYCL__) || defined(__ACPP__) || defined(__ADAPTIVECPP__)
++    // Metal has no 64-bit atomics: the packed single-word BlockStatus needs
++    // atomic 64-bit exchange/load. Use the two-word variant, which relies on
++    // device memory fences and <=32-bit atomic loads instead. With the
++    // multipass scan handling nblocks > 1, this path only runs single-block,
++    // so there is no cross-block lookback spin.
++    using BlockStatusT = detail::BlockStatus<T,false>;
++#else
+     using BlockStatusT = std::conditional_t<sizeof(detail::STVA<T>) <= 8,
+         detail::BlockStatus<T,true>, detail::BlockStatus<T,false> >;
++#endif
+ 
+     std::size_t nbytes_blockstatus = Arena::align(sizeof(BlockStatusT)*nblocks);
+     std::size_t nbytes_blockid = Arena::align(sizeof(unsigned int));
+diff --git a/Src/Base/AMReX_TagParallelFor.H b/Src/Base/AMReX_TagParallelFor.H
+index 7286400..eeaca6e 100644
+--- a/Src/Base/AMReX_TagParallelFor.H
++++ b/Src/Base/AMReX_TagParallelFor.H
+@@ -350,8 +350,6 @@ ParallelFor_doit (TagVector<TagType> const& tv, F const& f)
+     amrex::launch<nthreads>(tv.nblocks, Gpu::gpuStream(),
+ #ifdef AMREX_USE_SYCL
+     [=] AMREX_GPU_DEVICE (sycl::nd_item<1> const& item) noexcept
+-    [[sycl::reqd_work_group_size(nthreads)]]
+-    [[sycl::reqd_sub_group_size(Gpu::Device::warp_size)]]
+ #else
+     [=] AMREX_GPU_DEVICE () noexcept
+ #endif
+diff --git a/Src/Base/Parser/AMReX_IParser.H b/Src/Base/Parser/AMReX_IParser.H
+index 1ae2945..0ee67bb 100644
+--- a/Src/Base/Parser/AMReX_IParser.H
++++ b/Src/Base/Parser/AMReX_IParser.H
+@@ -36,6 +36,7 @@ struct IParserExecutor
+     {
+         AMREX_IF_ON_DEVICE((return iparser_exe_eval(m_device_executor, nullptr);))
+         AMREX_IF_ON_HOST((return iparser_exe_eval(m_host_executor, nullptr);))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     /**
+@@ -51,6 +52,7 @@ struct IParserExecutor
+         amrex::GpuArray<long long,N> l_var{var...};
+         AMREX_IF_ON_DEVICE((return iparser_exe_eval(m_device_executor, l_var.data());))
+         AMREX_IF_ON_HOST((return iparser_exe_eval(m_host_executor, l_var.data());))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     /**
+@@ -62,6 +64,7 @@ struct IParserExecutor
+     {
+         AMREX_IF_ON_DEVICE((return iparser_exe_eval(m_device_executor, var.data());))
+         AMREX_IF_ON_HOST((return iparser_exe_eval(m_host_executor, var.data());))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     //! True when this is a valid executor.
+@@ -69,6 +72,7 @@ struct IParserExecutor
+     explicit operator bool () const {
+         AMREX_IF_ON_DEVICE((return m_device_executor != nullptr;))
+         AMREX_IF_ON_HOST((return m_host_executor != nullptr;))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     char* m_host_executor = nullptr; ///< Pointer to host bytecode.
+diff --git a/Src/Base/Parser/AMReX_Parser.H b/Src/Base/Parser/AMReX_Parser.H
+index 4e358eb..4be75cf 100644
+--- a/Src/Base/Parser/AMReX_Parser.H
++++ b/Src/Base/Parser/AMReX_Parser.H
+@@ -47,6 +47,7 @@ struct ParserExecutor
+     {
+         AMREX_IF_ON_DEVICE((return parser_exe_eval(m_device_executor, nullptr);))
+         AMREX_IF_ON_HOST((return parser_exe_eval(m_host_executor, nullptr);))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     /**
+@@ -63,6 +64,7 @@ struct ParserExecutor
+         amrex::GpuArray<double,N> l_var{var...};
+         AMREX_IF_ON_DEVICE((return parser_exe_eval(m_device_executor, l_var.data());))
+         AMREX_IF_ON_HOST((return parser_exe_eval(m_host_executor, l_var.data());))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     /**
+@@ -80,6 +82,7 @@ struct ParserExecutor
+         amrex::GpuArray<double,N> l_var{var...};
+         AMREX_IF_ON_DEVICE((return static_cast<float>(parser_exe_eval(m_device_executor, l_var.data()));))
+         AMREX_IF_ON_HOST((return static_cast<float>(parser_exe_eval(m_host_executor, l_var.data()));))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     /**
+@@ -92,6 +95,7 @@ struct ParserExecutor
+     {
+         AMREX_IF_ON_DEVICE((return parser_exe_eval(m_device_executor, var.data());))
+         AMREX_IF_ON_HOST((return parser_exe_eval(m_host_executor, var.data());))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     /**
+@@ -101,6 +105,7 @@ struct ParserExecutor
+     explicit operator bool () const {
+         AMREX_IF_ON_DEVICE((return m_device_executor != nullptr;))
+         AMREX_IF_ON_HOST((return m_host_executor != nullptr;))
++        __builtin_unreachable(); // Host/device target branches are exhaustive.
+     }
+ 
+     char* m_host_executor = nullptr;  ///< Pointer to host-visible bytecode.
+diff --git a/Src/Base/Parser/AMReX_Parser_Y.H b/Src/Base/Parser/AMReX_Parser_Y.H
+index ea0ecf5..a95a4b3 100644
+--- a/Src/Base/Parser/AMReX_Parser_Y.H
++++ b/Src/Base/Parser/AMReX_Parser_Y.H
+@@ -540,6 +540,7 @@ T parser_math_jn (int a, T b)
+     // Note that T is always double.
+     AMREX_IF_ON_HOST(( return parser_math_jn_host(a,b); ))
+     AMREX_IF_ON_DEVICE(( return parser_math_jn_device(a,b); ))
++    __builtin_unreachable(); // Host/device target branches are exhaustive.
+ }
+ 
+ template <typename T>
+@@ -549,6 +550,7 @@ T parser_math_yn (int a, T b)
+     // Note that T is always double.
+     AMREX_IF_ON_HOST(( return parser_math_yn_host(a,b); ))
+     AMREX_IF_ON_DEVICE(( return parser_math_yn_device(a,b); ))
++    __builtin_unreachable(); // Host/device target branches are exhaustive.
+ }
+ 
+ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE double
+diff --git a/Tools/CMake/AMReXSYCL.cmake b/Tools/CMake/AMReXSYCL.cmake
+index 3da7845..fb28c81 100644
+--- a/Tools/CMake/AMReXSYCL.cmake
++++ b/Tools/CMake/AMReXSYCL.cmake
+@@ -1,109 +1,139 @@
+ #
+ # This module defines the INTERFACE target SYCL and its alias AMReX::SYCL.
+ # These targets provides build/link requirements for the SYCL language.
+-# For the time being, only oneAPI is supported
++# Supports both Intel oneAPI (icpx/dpcpp) and AdaptiveCpp (acpp/syclcc).
+ #
+ 
+-set(_cxx_sycl "$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:IntelClang>,$<CXX_COMPILER_ID:IntelDPCPP>,$<CXX_COMPILER_ID:IntelLLVM>>")
+-set(_cxx_sycl "$<AND:$<COMPILE_LANGUAGE:CXX>,${_cxx_sycl}>")
++# ------------------------------------------------------------------
++# Detect whether we are building with AdaptiveCpp (acpp / syclcc)
++# ------------------------------------------------------------------
++get_filename_component(_cxx_compiler_name "${CMAKE_CXX_COMPILER}" NAME)
++if (_cxx_compiler_name MATCHES "^(acpp|syclcc)")
++    set(_amrex_sycl_adaptivecpp ON)
++    message(STATUS "AMReX SYCL: detected AdaptiveCpp compiler (${_cxx_compiler_name})")
++else()
++    set(_amrex_sycl_adaptivecpp OFF)
++endif()
+ 
+-#
+-# SYCL and AMReX::SYCL targets
+-#
++# ------------------------------------------------------------------
++# SYCL and AMReX::SYCL interface targets
++# ------------------------------------------------------------------
+ add_library(SYCL INTERFACE)
+ add_library(AMReX::SYCL ALIAS SYCL)
+ 
+-target_compile_features(SYCL INTERFACE cxx_std_20)
+-
+-
+-#
+-# Compiler options
+-#
+-target_compile_options( SYCL
+-   INTERFACE
+-   $<${_cxx_sycl}:-fsycl>
+-   $<${_cxx_sycl}:$<$<BOOL:${AMReX_SYCL_SPLIT_KERNEL}>:-fsycl-device-code-split=per_kernel>>)
+-
+-# temporary work-around for oneAPI beta08 bug
+-#   define "long double" as 64bit for C++ user-defined literals
+-#   https://github.com/intel/llvm/issues/2187
+-target_compile_options( SYCL
+-   INTERFACE
+-     "$<${_cxx_sycl}:-mlong-double-64>"
+-     "$<${_cxx_sycl}:SHELL:-Xclang -mlong-double-64>")
+-
+-# disable warning: comparison with infinity always evaluates to false in fast floating point modes [-Wtautological-constant-compare]
+-#                  return std::isinf(m);
+-# appeared since 2021.4.0
+-target_compile_options( SYCL
+-   INTERFACE
+-   $<${_cxx_sycl}:-Wno-tautological-constant-compare>)
+-
+-if(AMReX_SYCL_ONEDPL)
+-    # TBB and PSTL are broken in oneAPI 2021.3.0
+-    # https://software.intel.com/content/www/us/en/develop/articles/intel-oneapi-dpcpp-library-release-notes.html#inpage-nav-2-3
+-    # at least since 2021.1.1 and probably won't be fixed until glibc version 10 is gone
+-    target_compile_definitions( SYCL
+-        INTERFACE
+-        $<${_cxx_sycl}:_GLIBCXX_USE_TBB_PAR_BACKEND=0 PSTL_USE_PARALLEL_POLICIES=0>)
+-endif()
+-
+-#
+-# Link options
+-#
+-target_link_options( SYCL
+-   INTERFACE
+-   $<${_cxx_sycl}:-qmkl=sequential -fsycl> )
+-
+-if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 2025.3)
++target_compile_features(SYCL INTERFACE cxx_std_17)
++
++# Suppress tautological-compare warning from AMReX isinf() usage
++# (applies to both compilers)
++target_compile_options(SYCL INTERFACE -Wno-tautological-constant-compare)
++
++if (_amrex_sycl_adaptivecpp)
++    # ==============================================================
++    # AdaptiveCpp path — acpp handles SYCL compilation automatically.
++    # No -fsycl, -qmkl, or Intel-specific flags needed.
++    # ==============================================================
++    message(STATUS "AMReX SYCL: using AdaptiveCpp — skipping Intel-specific flags")
++
++    # Disable __int128 support: the Metal emitter cannot translate i128
++    # (maps to uint4 in MSL, casts unsupported). All i128 codepaths
++    # (umulhi, FastDivmodU64) have safe non-128 fallbacks.
++    #
++    # Do NOT define AMREX_SYCL_NO_MULTIPASS_SCAN here: that forces the
++    # single-pass decoupled-lookback scan, whose BlockStatus packs
++    # {status, value} into a uint64_t and requires true 64-bit atomic
++    # exchange/load. Metal has no general 64-bit atomics, so the lookback
++    # scan cannot be made correct on this backend; the multipass scan is
++    # the only sound option.
++    target_compile_definitions(SYCL INTERFACE AMREX_NO_INT128)
++
++else()
++    # ==============================================================
++    # Intel oneAPI path — original behavior preserved
++    # ==============================================================
++    set(_cxx_sycl "$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:IntelClang>,$<CXX_COMPILER_ID:IntelDPCPP>,$<CXX_COMPILER_ID:IntelLLVM>>")
++    set(_cxx_sycl "$<AND:$<COMPILE_LANGUAGE:CXX>,${_cxx_sycl}>")
++
++    #
++    # Compiler options
++    #
++    target_compile_options( SYCL
++       INTERFACE
++       $<${_cxx_sycl}:-fsycl>
++       $<${_cxx_sycl}:$<$<BOOL:${AMReX_SYCL_SPLIT_KERNEL}>:-fsycl-device-code-split=per_kernel>>)
++
++    # temporary work-around for oneAPI beta08 bug
++    #   define "long double" as 64bit for C++ user-defined literals
++    #   https://github.com/intel/llvm/issues/2187
++    target_compile_options( SYCL
++       INTERFACE
++         "$<${_cxx_sycl}:-mlong-double-64>"
++         "$<${_cxx_sycl}:SHELL:-Xclang -mlong-double-64>")
++
++    if(AMReX_SYCL_ONEDPL)
++        # TBB and PSTL are broken in oneAPI 2021.3.0
++        target_compile_definitions( SYCL
++            INTERFACE
++            $<${_cxx_sycl}:_GLIBCXX_USE_TBB_PAR_BACKEND=0 PSTL_USE_PARALLEL_POLICIES=0>)
++    endif()
++
++    #
++    # Link options
++    #
+     target_link_options( SYCL
+-        INTERFACE
+-        $<${_cxx_sycl}:-fsycl-device-lib=libc,libm-fp32,libm-fp64> )
+-endif()
+-
+-
+-# TODO: use $<LINK_LANG_AND_ID:> genex for CMake >=3.17
+-target_link_options( SYCL
+-   INTERFACE
+-   $<${_cxx_sycl}:$<$<BOOL:${AMReX_SYCL_SPLIT_KERNEL}>:-fsycl-device-code-split=per_kernel>>)
++       INTERFACE
++       $<${_cxx_sycl}:-qmkl=sequential -fsycl> )
+ 
++    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 2025.3)
++        target_link_options( SYCL
++            INTERFACE
++            $<${_cxx_sycl}:-fsycl-device-lib=libc,libm-fp32,libm-fp64> )
++    endif()
+ 
+-if (AMReX_SYCL_AOT)
+-   target_compile_options( SYCL
+-      INTERFACE
+-      "$<${_cxx_sycl}:-fsycl-targets=spir64_gen>" )
+-
+-   set(_sycl_backend_flags "-device ${AMReX_INTEL_ARCH}")
+-   if (AMReX_SYCL_AOT_GRF_MODE STREQUAL "Large")
+-      set(_sycl_backend_flags "${_sycl_backend_flags} -internal_options -ze-opt-large-register-file")
+-   elseif (AMReX_SYCL_AOT_GRF_MODE STREQUAL "AutoLarge")
+-      set(_sycl_backend_flags "${_sycl_backend_flags} -options -ze-intel-enable-auto-large-GRF-mode")
+-   endif()
++    # TODO: use $<LINK_LANG_AND_ID:> genex for CMake >=3.17
++    target_link_options( SYCL
++       INTERFACE
++       $<${_cxx_sycl}:$<$<BOOL:${AMReX_SYCL_SPLIT_KERNEL}>:-fsycl-device-code-split=per_kernel>>)
+ 
+-   target_link_options( SYCL
+-      INTERFACE
+-      "$<${_cxx_sycl}:-fsycl-targets=spir64_gen>"
+-      "$<${_cxx_sycl}:SHELL:-Xsycl-target-backend \"${_sycl_backend_flags}\">" )
++    if (AMReX_SYCL_AOT)
++       target_compile_options( SYCL
++          INTERFACE
++          "$<${_cxx_sycl}:-fsycl-targets=spir64_gen>" )
+ 
+-   unset(_sycl_backend_flags)
+-endif ()
++       set(_sycl_backend_flags "-device ${AMReX_INTEL_ARCH}")
++       if (AMReX_SYCL_AOT_GRF_MODE STREQUAL "Large")
++          set(_sycl_backend_flags "${_sycl_backend_flags} -internal_options -ze-opt-large-register-file")
++       elseif (AMReX_SYCL_AOT_GRF_MODE STREQUAL "AutoLarge")
++          set(_sycl_backend_flags "${_sycl_backend_flags} -options -ze-intel-enable-auto-large-GRF-mode")
++       endif()
+ 
+-if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND "${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+-   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 2023.2)
+-      target_link_options( SYCL
++       target_link_options( SYCL
+           INTERFACE
+-          "$<${_cxx_sycl}:-fsycl-link-huge-device-code>" )
+-   else ()
+-      target_link_options( SYCL
++          "$<${_cxx_sycl}:-fsycl-targets=spir64_gen>"
++          "$<${_cxx_sycl}:SHELL:-Xsycl-target-backend \"${_sycl_backend_flags}\">" )
++
++       unset(_sycl_backend_flags)
++    endif ()
++
++    if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND "${CMAKE_BUILD_TYPE}" MATCHES "Debug")
++       if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 2023.2)
++          target_link_options( SYCL
++              INTERFACE
++              "$<${_cxx_sycl}:-fsycl-link-huge-device-code>" )
++       else ()
++          target_link_options( SYCL
++              INTERFACE
++              "$<${_cxx_sycl}:-flink-huge-device-code>" )
++       endif ()
++    endif ()
++
++    if (AMReX_PARALLEL_LINK_JOBS GREATER 1)
++       target_link_options( SYCL
+           INTERFACE
+-          "$<${_cxx_sycl}:-flink-huge-device-code>" )
+-   endif ()
+-endif ()
+-
+-if (AMReX_PARALLEL_LINK_JOBS GREATER 1)
+-   target_link_options( SYCL
+-      INTERFACE
+-      $<${_cxx_sycl}:-fsycl-max-parallel-link-jobs=${AMReX_PARALLEL_LINK_JOBS}>)
++          $<${_cxx_sycl}:-fsycl-max-parallel-link-jobs=${AMReX_PARALLEL_LINK_JOBS}>)
++    endif()
++
++    unset(_cxx_sycl)
+ endif()
+ 
+-unset(_cxx_sycl)
++unset(_cxx_compiler_name)
++unset(_amrex_sycl_adaptivecpp)
+diff --git a/Tools/CMake/AMReX_Config.H.in b/Tools/CMake/AMReX_Config.H.in
+index 4bb5744..b463d82 100644
+--- a/Tools/CMake/AMReX_Config.H.in
++++ b/Tools/CMake/AMReX_Config.H.in
+@@ -18,4 +18,11 @@
+ #  error "AMREX_SPACEDIM not 1, 2 or 3"
+ #endif
+ 
++#if defined(AMREX_USE_SYCL) && defined(__APPLE__) && \
++    (defined(__ADAPTIVECPP__) || defined(__ACPP__) || \
++     defined(SYCL_IMPLEMENTATION_ACPP) || defined(SYCL_IMPLEMENTATION_HIPSYCL) || \
++     defined(__HIPSYCL__))
++#  define AMREX_METAL_PORT 1
++#endif
++
+ #endif /* AMREX_CONFIG_H_ */

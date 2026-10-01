@@ -15,6 +15,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct HydroFaceStates {
    HydroState left;
    HydroState right;
@@ -128,7 +130,7 @@ HydroPrimitive positivity_limit_hydro_primitive(
    amrex::Real theta = positivity_limiter_theta(face.rho, center.rho, eos.rho_floor);
    theta = amrex::min(theta, positivity_limiter_theta(face.pressure, center.pressure, eos.pressure_floor));
    if (!amrex::Math::isfinite(face.v1) || !amrex::Math::isfinite(face.v2) || !amrex::Math::isfinite(face.v3)) {
-      theta = 0.0;
+      theta = 0.0_rt;
    }
    face.rho = center.rho + theta * (face.rho - center.rho);
    face.v1 = center.v1 + theta * (face.v1 - center.v1);
@@ -155,7 +157,7 @@ MHDPrimitive positivity_limit_mhd_primitive(
       || !amrex::Math::isfinite(face.b2)
       || !amrex::Math::isfinite(face.b3)
    ) {
-      theta = 0.0;
+      theta = 0.0_rt;
    }
    face.rho = center.rho + theta * (face.rho - center.rho);
    face.v1 = center.v1 + theta * (face.v1 - center.v1);
@@ -454,11 +456,11 @@ HydroPrimitive pwl_hydro_primitive(
 ) noexcept
 {
    return {
-      q0.rho + 0.5 * side * mc_slope(qm.rho, q0.rho, qp.rho),
-      q0.v1 + 0.5 * side * mc_slope(qm.v1, q0.v1, qp.v1),
-      q0.v2 + 0.5 * side * mc_slope(qm.v2, q0.v2, qp.v2),
-      q0.v3 + 0.5 * side * mc_slope(qm.v3, q0.v3, qp.v3),
-      q0.pressure + 0.5 * side * mc_slope(qm.pressure, q0.pressure, qp.pressure),
+      q0.rho + 0.5_rt * side * mc_slope(qm.rho, q0.rho, qp.rho),
+      q0.v1 + 0.5_rt * side * mc_slope(qm.v1, q0.v1, qp.v1),
+      q0.v2 + 0.5_rt * side * mc_slope(qm.v2, q0.v2, qp.v2),
+      q0.v3 + 0.5_rt * side * mc_slope(qm.v3, q0.v3, qp.v3),
+      q0.pressure + 0.5_rt * side * mc_slope(qm.pressure, q0.pressure, qp.pressure),
    };
 }
 
@@ -471,14 +473,14 @@ MHDPrimitive pwl_mhd_primitive(
 ) noexcept
 {
    return {
-      q0.rho + 0.5 * side * mc_slope(qm.rho, q0.rho, qp.rho),
-      q0.v1 + 0.5 * side * mc_slope(qm.v1, q0.v1, qp.v1),
-      q0.v2 + 0.5 * side * mc_slope(qm.v2, q0.v2, qp.v2),
-      q0.v3 + 0.5 * side * mc_slope(qm.v3, q0.v3, qp.v3),
-      q0.pressure + 0.5 * side * mc_slope(qm.pressure, q0.pressure, qp.pressure),
-      q0.b1 + 0.5 * side * mc_slope(qm.b1, q0.b1, qp.b1),
-      q0.b2 + 0.5 * side * mc_slope(qm.b2, q0.b2, qp.b2),
-      q0.b3 + 0.5 * side * mc_slope(qm.b3, q0.b3, qp.b3),
+      q0.rho + 0.5_rt * side * mc_slope(qm.rho, q0.rho, qp.rho),
+      q0.v1 + 0.5_rt * side * mc_slope(qm.v1, q0.v1, qp.v1),
+      q0.v2 + 0.5_rt * side * mc_slope(qm.v2, q0.v2, qp.v2),
+      q0.v3 + 0.5_rt * side * mc_slope(qm.v3, q0.v3, qp.v3),
+      q0.pressure + 0.5_rt * side * mc_slope(qm.pressure, q0.pressure, qp.pressure),
+      q0.b1 + 0.5_rt * side * mc_slope(qm.b1, q0.b1, qp.b1),
+      q0.b2 + 0.5_rt * side * mc_slope(qm.b2, q0.b2, qp.b2),
+      q0.b3 + 0.5_rt * side * mc_slope(qm.b3, q0.b3, qp.b3),
    };
 }
 
@@ -500,8 +502,8 @@ HydroPrimitiveFaceStates hydro_pwl_primitive_face_states(
    const HydroPrimitive qr = primitive_at(state, ir, jr, kr, eos);
    const HydroPrimitive qrp = primitive_neighbor<Direction>(state, ir, jr, kr, 1, eos);
    return {
-      pwl_hydro_primitive(qlm, ql, qr, 1.0),
-      pwl_hydro_primitive(ql, qr, qrp, -1.0),
+      pwl_hydro_primitive(qlm, ql, qr, 1.0_rt),
+      pwl_hydro_primitive(ql, qr, qrp, -1.0_rt),
    };
 }
 
@@ -587,11 +589,11 @@ HydroPrimitiveFaceStates hydro_five_point_char_primitive_face_states(
    const HydroPrimitive q4 = primitive_neighbor<Direction>(state, ir, jr, kr, 1, eos);
    const HydroPrimitive q5 = primitive_neighbor<Direction>(state, ir, jr, kr, 2, eos);
 
-   const amrex::Real rho_ref = 0.5 * (q2.rho + q3.rho);
-   const amrex::Real pressure_ref = 0.5 * (q2.pressure + q3.pressure);
+   const amrex::Real rho_ref = 0.5_rt * (q2.rho + q3.rho);
+   const amrex::Real pressure_ref = 0.5_rt * (q2.pressure + q3.pressure);
    const amrex::Real sound_speed = sound_speed_from_primitive<EOSMethod>(rho_ref, pressure_ref, eos);
-   const amrex::Real inv_rho = 1.0 / rho_ref;
-   const amrex::Real inv_sound_speed = 1.0 / sound_speed;
+   const amrex::Real inv_rho = 1.0_rt / rho_ref;
+   const amrex::Real inv_sound_speed = 1.0_rt / sound_speed;
    const HydroCharacteristicBasis basis{
       rho_ref,
       inv_rho,
@@ -662,8 +664,8 @@ MHDPrimitiveFaceStates mhd_pwl_primitive_face_states(
    const MHDPrimitive qr = mhd_primitive_at(state, ir, jr, kr, eos);
    const MHDPrimitive qrp = mhd_primitive_neighbor<Direction>(state, ir, jr, kr, 1, eos);
    return {
-      pwl_mhd_primitive(qlm, ql, qr, 1.0),
-      pwl_mhd_primitive(ql, qr, qrp, -1.0),
+      pwl_mhd_primitive(qlm, ql, qr, 1.0_rt),
+      pwl_mhd_primitive(ql, qr, qrp, -1.0_rt),
    };
 }
 
@@ -773,13 +775,13 @@ MHDPrimitiveFaceStates mhd_five_point_char_primitive_face_states(
       mhd_normal_b<Direction>(q4),
       mhd_normal_b<Direction>(q5)
    );
-   const amrex::Real b_normal = 0.5 * (b_normal_left + b_normal_right);
+   const amrex::Real b_normal = 0.5_rt * (b_normal_left + b_normal_right);
    const MHDCharacteristicBasis basis = mhd_characteristic_basis<EOSMethod>(
-      0.5 * (q2.rho + q3.rho),
-      0.5 * (q2.pressure + q3.pressure),
+      0.5_rt * (q2.rho + q3.rho),
+      0.5_rt * (q2.pressure + q3.pressure),
       b_normal,
-      0.5 * (r2.bt1 + r3.bt1),
-      0.5 * (r2.bt2 + r3.bt2),
+      0.5_rt * (r2.bt1 + r3.bt1),
+      0.5_rt * (r2.bt2 + r3.bt2),
       eos
    );
 

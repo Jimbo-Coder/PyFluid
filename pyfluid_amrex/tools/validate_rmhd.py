@@ -21,18 +21,23 @@ from plotfile_reader import (
    parse_plot_bounds,
    read_composite_state_1d,
    read_level_state,
+   read_scalars_metadata,
 )
 from relativistic_validation import entropy_density_error
 from validation_common import (
    ROOT,
+   amrex_build_dir,
    amrex_executable,
    append_validation_history,
    build_cached_target,
+   cartesian_divb_scale,
    materialize_run_input,
+   precision_scalar_policy,
    read_scalar_rows,
    repo_relative,
    run_amrex,
    run_mpi,
+   scalar_checks,
    scalar_validation_row,
    write_tsv,
 )
@@ -42,8 +47,7 @@ INPUTS = ROOT / "pyfluid_amrex/inputs"
 RUN_ROOT = ROOT / "runs/current/rmhd_validation"
 RESULTS = RUN_ROOT / "rmhd_validation.tsv"
 HISTORY = ROOT / "runs/current/validation_history.tsv"
-CHECKPOINT_COMPARE = ROOT / "build/pyfluid_amrex/pyfluid_amrex_compare_checkpoint_2d"
-CT_AMR_DIVB_TOLERANCE = 1.0e-12
+CHECKPOINT_COMPARE = amrex_build_dir() / "pyfluid_amrex_compare_checkpoint_2d"
 CT_TRANSVERSE_ROUNDOFF_TOLERANCE = 4096.0 * np.finfo(float).eps
 RMHD_COMPONENT_NAMES = (
    "dens",
@@ -113,8 +117,10 @@ def run_case(
    args: argparse.Namespace,
    *,
    dim: int = 1,
+   remove_parameters: tuple[str, ...] = (),
+   magnetic_field_scale: float | None = None,
 ) -> tuple[Path, dict[str, object]]:
-   run_dir = RUN_ROOT / name
+   run_dir = getattr(args, "output_dir", RUN_ROOT) / name
    if args.force and run_dir.exists():
       shutil.rmtree(run_dir)
    run_dir.mkdir(parents=True, exist_ok=True)
@@ -127,8 +133,10 @@ def run_case(
          "pyfluid.aux_gfs": "none",
          "pyfluid.aux_gf_compute_int": "-1",
          "pyfluid.aux_gf_int": "-1",
+         "amrex.the_arena_init_size": str(8 * 1024 * 1024),
          **overrides,
       },
+      remove_parameters=remove_parameters,
    )
    if args.force or latest_plotfile(run_dir) is None:
       completed = run_amrex(
@@ -140,6 +148,15 @@ def run_case(
       (run_dir / "run.log").write_text(completed.stdout)
       if completed.returncode != 0:
          raise RuntimeError(f"{name} failed; see {repo_relative(run_dir / 'run.log')}")
+   bits = int(read_scalars_metadata(run_dir).get("real_mantissa_bits", "0"))
+   if bits not in (24, 53):
+      raise RuntimeError(f"{name} has unknown arithmetic precision: {bits}")
+   checks = None
+   if magnetic_field_scale is not None:
+      checks = precision_scalar_policy(
+         scalar_checks(f"rmhd_{bits}"), bits,
+         divb_scale=cartesian_divb_scale(run_dir, field_scale=magnetic_field_scale),
+      )
    scalar = scalar_validation_row(
       run_dir,
       case=name,
@@ -148,7 +165,9 @@ def run_case(
       dim=dim,
       ranks=args.ranks,
       kind="reference",
+      checks=checks,
    )
+   scalar["mantissa_bits"] = bits
    if scalar["status"] != "PASS":
       raise RuntimeError(f"{name} scalar validation failed: {scalar['reason']}")
    return run_dir, scalar
@@ -715,7 +734,7 @@ def validate_shock_ct_reference(
    profiles: dict[int, np.ndarray] = {}
    names: list[str] | None = None
    scalars = []
-   last_run_dir = RUN_ROOT
+   last_run_dir = getattr(args, "output_dir", RUN_ROOT)
    for cells in resolutions:
       run_dir, scalar = run_case(
          f"balsara1_2d_ct_n{cells}",
@@ -828,38 +847,93 @@ def validate_amr(args: argparse.Namespace) -> tuple[dict[str, object], list[dict
    }, [base_scalar, amr_scalar]
 
 
-def validate_ct_amr(args: argparse.Namespace) -> tuple[dict[str, object], dict[str, object]]:
+def ct_amr_layout(dim: int) -> dict[str, str]:
+   return {
+      "geometry.prob_lo": " ".join(["0"] * dim),
+      "geometry.prob_hi": " ".join(["1"] * dim),
+      "geometry.is_periodic": " ".join(["1"] * dim),
+      "amr.n_cell": "16" + " 8" * (dim - 1),
+   }
+
+
+def validate_ct_amr(args: argparse.Namespace) -> tuple[dict[str, object], list[dict[str, object]]]:
+   dim = getattr(args, "dim", 2)
    run_dir, scalar = run_case(
-      "entropy_2d_amr_ct_subcycling",
+      f"entropy_{dim}d_amr_ct_subcycling",
       INPUTS / "rmhd_entropy_wave_2d_amr_ct.in",
       {
+         **ct_amr_layout(dim),
          "pyfluid.ng": "3",
          "pyfluid.recon": "mp5",
          "pyfluid.rmhd_candidate_guard": "pwc",
          "pyfluid.plot_int": "1000000",
       },
       args,
-      dim=2,
+      dim=dim,
+      magnetic_field_scale=0.75,
    )
    plotfile = latest_plotfile(run_dir, require=True)
    levels = level_count(plotfile)
-   if levels < 3 or float(scalar["divb_l1"]) > CT_AMR_DIVB_TOLERANCE:
+   if levels < 3:
       raise RuntimeError(
-         f"RMHD CT AMR control failed: levels={levels} divb={scalar['divb_l1']}"
+         f"RMHD CT AMR control failed: levels={levels}"
+      )
+   if int(scalar["amr_finest_headroom"]) < 1 \
+         or float(scalar["amr_total_budget_fraction"]) >= 0.8:
+      raise RuntimeError("RMHD CT AMR reached a resource guard before resolving the wave")
+   base_dir, base_scalar = run_case(
+      f"entropy_{dim}d_ct_uniform_coarse",
+      INPUTS / "rmhd_entropy_wave_2d_amr_ct.in",
+      {
+         **ct_amr_layout(dim),
+         "amr.max_level": "0",
+         "amr.tag_metric": "none",
+         "pyfluid.ng": "3",
+         "pyfluid.recon": "mp5",
+         "pyfluid.rmhd_candidate_guard": "pwc",
+         "pyfluid.plot_int": "1000000",
+      },
+      args,
+      dim=dim,
+      remove_parameters=("amr.ref_ratio",),
+      magnetic_field_scale=0.75,
+   )
+   # Compare each solution on its own mesh. Repeating coarse values onto the
+   # fine grid would charge the coarse run an additional plotting/projection
+   # error and inflate the apparent improvement from AMR.
+   base_error = entropy_density_error(base_dir)
+   amr_error = entropy_density_error(run_dir)
+   improvement = base_error / amr_error
+   if improvement < 1.5:
+      raise RuntimeError(
+         f"RMHD CT AMR did not improve the diagonal entropy wave: "
+         f"coarse={base_error:.6g} AMR={amr_error:.6g} improvement={improvement:.3f}"
       )
    return {
       "kind": "amr_ct",
-      "case": "entropy_2d_amr_ct_subcycling",
+      "case": f"entropy_{dim}d_amr_ct_subcycling",
       "status": "PASS",
-      "metric": "divb_l1",
-      "value": scalar["divb_l1"],
+      "metric": "error_improvement_over_coarse",
+      "value": improvement,
+      "normalized_dens_l1": amr_error,
+      "coarse_normalized_dens_l1": base_error,
+      "divb_l1": scalar["divb_l1"],
+      "divb_tolerance": scalar["divb_tolerance"],
+      "divb_scale": scalar["divb_scale"],
+      "divb_epsilon_units": scalar["divb_epsilon_units"],
       "levels": levels,
       "run_dir": repo_relative(run_dir),
-   }, scalar
+   }, [base_scalar, scalar]
 
 
 def validate_restart(args: argparse.Namespace) -> dict[str, object]:
+   dim = getattr(args, "dim", 2)
+   reconstruction = getattr(args, "restart_recon", "pwl")
    common = {
+      **ct_amr_layout(dim),
+      "pyfluid.recon": reconstruction,
+      "pyfluid.ng": "3" if reconstruction == "mp5" else "2",
+      "pyfluid.rmhd_candidate_guard": "pwc" if reconstruction == "mp5" else "off",
       "pyfluid.max_step": "6",
       "pyfluid.final_time": "-1",
       "pyfluid.plot_int": "6",
@@ -871,7 +945,8 @@ def validate_restart(args: argparse.Namespace) -> dict[str, object]:
       INPUTS / "rmhd_entropy_wave_2d_amr_ct.in",
       common,
       args,
-      dim=2,
+      dim=dim,
+      magnetic_field_scale=0.75,
    )
    checkpoint = full_dir / "checkpoints/chk00003"
    restart_dir, _ = run_case(
@@ -879,14 +954,15 @@ def validate_restart(args: argparse.Namespace) -> dict[str, object]:
       INPUTS / "rmhd_entropy_wave_2d_amr_ct.in",
       {**common, "pyfluid.restart_file": repo_relative(checkpoint)},
       args,
-      dim=2,
+      dim=dim,
+      magnetic_field_scale=0.75,
    )
    full_final = latest_checkpoint(full_dir)
    restart_final = latest_checkpoint(restart_dir)
    if full_final is None or restart_final is None:
       raise RuntimeError("RMHD restart validation did not produce final checkpoints")
    compared = run_mpi(
-      CHECKPOINT_COMPARE,
+      amrex_build_dir() / f"pyfluid_amrex_compare_checkpoint_{dim}d",
       [full_final, restart_final, "1e-12"],
       ranks=args.ranks,
       timeout=args.timeout,
@@ -909,7 +985,7 @@ def validate_restart(args: argparse.Namespace) -> dict[str, object]:
 def validate_physical_id(
    args: argparse.Namespace,
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
-   writer_dir = RUN_ROOT / "physical_id_writer"
+   writer_dir = getattr(args, "output_dir", RUN_ROOT) / "physical_id_writer"
    artifact = writer_dir / "physical_id"
    common = {
       "pyfluid.max_step": "1",
@@ -1047,9 +1123,25 @@ def main() -> int:
    parser.add_argument("--ranks", type=int, default=3)
    parser.add_argument("--timeout", type=int, default=180)
    parser.add_argument("--force", action="store_true")
+   parser.add_argument("--restart-recon", choices=("pwl", "mp5"), default="pwl",
+                       help="explicit reconstruction for the restart control")
+   parser.add_argument("--only", choices=("ct_amr", "restart"),
+                       help="run one existing multidimensional AMR control")
+   parser.add_argument("--output-dir", type=Path, default=RUN_ROOT)
+   parser.add_argument("--dim", type=int, choices=(2, 3), default=2,
+                       help="dimension of the selected CT AMR/restart control")
    args = parser.parse_args()
-   if args.level == "standard":
-      build_cached_target(CHECKPOINT_COMPARE.name)
+   if args.only == "restart" or (args.only is None and args.level == "standard"):
+      build_cached_target(f"pyfluid_amrex_compare_checkpoint_{args.dim}d")
+   if args.only is not None:
+      if args.only == "ct_amr":
+         row, scalars = validate_ct_amr(args)
+         append_validation_history(HISTORY, scalars)
+      else:
+         row = validate_restart(args)
+      write_tsv(args.output_dir / "rmhd_validation.tsv", [row], list(row))
+      print(row, flush=True)
+      return 0
    if not amrex_executable(1).exists():
       raise SystemExit("build the AMReX solvers first")
 
@@ -1077,16 +1169,16 @@ def main() -> int:
       amr, scalars = validate_amr(args)
       rows.append(amr)
       scalar_rows.extend(scalars)
-      ct_amr, scalar = validate_ct_amr(args)
+      ct_amr, scalars = validate_ct_amr(args)
       rows.append(ct_amr)
-      scalar_rows.append(scalar)
+      scalar_rows.extend(scalars)
       rows.append(validate_restart(args))
       physical_id, scalars = validate_physical_id(args)
       rows.append(physical_id)
       scalar_rows.extend(scalars)
 
    write_tsv(
-      RESULTS,
+      args.output_dir / "rmhd_validation.tsv",
       rows,
       [
          "kind",
@@ -1108,7 +1200,7 @@ def main() -> int:
    for row in rows:
       detail = f" order={row.get('order')}" if row.get("order", "") != "" else ""
       print(f"PASS {row['kind']} {row['case']}: {row['metric']}={row['value']}{detail}")
-   print(f"wrote {repo_relative(RESULTS)}")
+   print(f"wrote {repo_relative(args.output_dir / 'rmhd_validation.tsv')}")
    return 0
 
 

@@ -25,6 +25,8 @@
 
 namespace {
 
+using namespace amrex::literals;
+
 constexpr int NumComponents = 3;
 constexpr int NumGhost = 2;
 constexpr int RefRatio = 2;
@@ -43,13 +45,13 @@ pyfluid_amrex::PatchCartesianAxes xz_patch_cartesian_axes()
 
 amrex::Real analytic_value(amrex::IntVect const& cell, int component)
 {
-   amrex::Real value = 0.25 * static_cast<amrex::Real>(component + 1);
-   value += 0.013 * static_cast<amrex::Real>(cell[0] + 1);
+   amrex::Real value = 0.25_rt * static_cast<amrex::Real>(component + 1);
+   value += 0.013_rt * static_cast<amrex::Real>(cell[0] + 1);
 #if (AMREX_SPACEDIM >= 2)
-   value += 0.017 * static_cast<amrex::Real>(cell[1] + 2);
+   value += 0.017_rt * static_cast<amrex::Real>(cell[1] + 2);
 #endif
 #if (AMREX_SPACEDIM == 3)
-   value += 0.019 * static_cast<amrex::Real>(cell[2] + 3);
+   value += 0.019_rt * static_cast<amrex::Real>(cell[2] + 3);
 #endif
    return value;
 }
@@ -84,10 +86,10 @@ amrex::Real patch_jacobian_finite_difference_error(
    pyfluid_amrex::PatchCoordinate const& local
 )
 {
-   constexpr amrex::Real eps = 1.0e-6;
+   constexpr amrex::Real eps = 1.0e-6_rt;
    const pyfluid_amrex::PatchMapJacobian jacobian =
       pyfluid_amrex::patch_local_to_global_jacobian(map, local);
-   amrex::Real max_error = 0.0;
+   amrex::Real max_error = 0.0_rt;
    for (int local_component = 0; local_component < 3; ++local_component) {
       const pyfluid_amrex::PatchCoordinate plus =
          pyfluid_amrex::patch_local_to_global(map, shifted_patch_coordinate(local, local_component, eps));
@@ -97,7 +99,7 @@ amrex::Real patch_jacobian_finite_difference_error(
          const amrex::Real finite_difference = (
             pyfluid_amrex::patch_coordinate_component(plus, global_component)
             - pyfluid_amrex::patch_coordinate_component(minus, global_component)
-         ) / (2.0 * eps);
+         ) / (2.0_rt * eps);
          const amrex::Real analytic =
             pyfluid_amrex::patch_map_jacobian_component(jacobian, global_component, local_component);
          max_error = std::max(max_error, std::abs(finite_difference - analytic));
@@ -243,7 +245,7 @@ int run_patch_coordinate_round_trip_checks()
          pyfluid_amrex::patch_local_to_global(map, pyfluid_amrex::patch_global_to_local(map, global));
       const amrex::Real global_error =
          pyfluid_amrex::patch_coordinate_max_abs_difference(global, global_round_trip);
-      if (local_error > 1.0e-14 || global_error > 1.0e-14) {
+      if (local_error > 1.0e-14_rt || global_error > 1.0e-14_rt) {
          amrex::Print() << "patch coordinate round-trip check failed for "
                         << label
                         << " map=" << pyfluid_amrex::patch_coordinate_map_name(map.coordinate_map)
@@ -252,7 +254,7 @@ int run_patch_coordinate_round_trip_checks()
          return_code = 1;
       }
       const amrex::Real jacobian_error = patch_jacobian_finite_difference_error(map, local);
-      if (jacobian_error > 1.0e-7) {
+      if (jacobian_error > 1.0e-7_rt) {
          amrex::Print() << "patch coordinate Jacobian check failed for "
                         << label
                         << " map=" << pyfluid_amrex::patch_coordinate_map_name(map.coordinate_map)
@@ -268,18 +270,18 @@ int run_patch_coordinate_round_trip_checks()
          pyfluid_amrex::PatchMap const& map = system.maps[patch_id];
          pyfluid_amrex::PatchCoordinate local{};
          if (pyfluid_amrex::patch_coordinate_map_is_cartesian(map.coordinate_map)) {
-            local = pyfluid_amrex::make_patch_coordinate(0.125, -0.25, 0.375);
+            local = pyfluid_amrex::make_patch_coordinate(0.125_rt, -0.25_rt, 0.375_rt);
          } else if (pyfluid_amrex::patch_coordinate_map_is_thornburg_shell(map.coordinate_map)) {
             local = pyfluid_amrex::make_patch_coordinate(
-               0.125,
-               -0.25,
-               0.5 * (map.radial_inner + map.radial_outer)
+               0.125_rt,
+               -0.25_rt,
+               0.5_rt * (map.radial_inner + map.radial_outer)
             );
          } else {
             local = pyfluid_amrex::make_patch_coordinate(
-               0.125,
-               -0.375,
-               0.5 * (map.radial_inner + map.radial_outer)
+               0.125_rt,
+               -0.375_rt,
+               0.5_rt * (map.radial_inner + map.radial_outer)
             );
          }
          check_local_round_trip(map, local, label);
@@ -305,7 +307,7 @@ int run_patch_coordinate_round_trip_checks()
          pyfluid_amrex::patch_local_to_global(system.maps[point.patch_id], point.local);
       const amrex::Real global_error =
          pyfluid_amrex::patch_coordinate_max_abs_difference(global, global_round_trip);
-      if (point.patch_id != expected_patch || global_error > 1.0e-14) {
+      if (point.patch_id != expected_patch || global_error > 1.0e-14_rt) {
          amrex::Print() << "patch system owner/round-trip check failed for " << label
                         << " expected_patch=" << expected_patch
                         << " actual_patch=" << point.patch_id
@@ -317,22 +319,22 @@ int run_patch_coordinate_round_trip_checks()
    const pyfluid_amrex::PatchMap identity_maps[] = {
       pyfluid_amrex::make_patch_map(
          pyfluid_amrex::PatchMapCartesianIdentity,
-         pyfluid_amrex::make_patch_coordinate(0.0, 0.0, 0.0),
-         0.0,
-         0.0
+         pyfluid_amrex::make_patch_coordinate(0.0_rt, 0.0_rt, 0.0_rt),
+         0.0_rt,
+         0.0_rt
       ),
       pyfluid_amrex::make_patch_map(
          pyfluid_amrex::PatchMapCartesianIdentity,
-         pyfluid_amrex::make_patch_coordinate(1.25, -0.75, 0.5),
-         0.0,
-         0.0
+         pyfluid_amrex::make_patch_coordinate(1.25_rt, -0.75_rt, 0.5_rt),
+         0.0_rt,
+         0.0_rt
       ),
    };
    const pyfluid_amrex::PatchCoordinate identity_points[] = {
-      pyfluid_amrex::make_patch_coordinate(0.0, 0.0, 0.0),
-      pyfluid_amrex::make_patch_coordinate(0.125, -0.25, 0.375),
-      pyfluid_amrex::make_patch_coordinate(2.5, 1.75, -3.25),
-      pyfluid_amrex::make_patch_coordinate(-0.03125, 4.0, 0.0625),
+      pyfluid_amrex::make_patch_coordinate(0.0_rt, 0.0_rt, 0.0_rt),
+      pyfluid_amrex::make_patch_coordinate(0.125_rt, -0.25_rt, 0.375_rt),
+      pyfluid_amrex::make_patch_coordinate(2.5_rt, 1.75_rt, -3.25_rt),
+      pyfluid_amrex::make_patch_coordinate(-0.03125_rt, 4.0_rt, 0.0625_rt),
    };
    for (pyfluid_amrex::PatchMap const& map : identity_maps) {
       for (pyfluid_amrex::PatchCoordinate const& local : identity_points) {
@@ -341,61 +343,61 @@ int run_patch_coordinate_round_trip_checks()
    }
 
    const pyfluid_amrex::PatchCoordinate origin =
-      pyfluid_amrex::make_patch_coordinate(0.25, -0.5, 0.75);
+      pyfluid_amrex::make_patch_coordinate(0.25_rt, -0.5_rt, 0.75_rt);
    const pyfluid_amrex::PatchMapSystem thornburg04 =
-      pyfluid_amrex::make_thornburg04_patch_map_system(1.0, 4.0, origin);
+      pyfluid_amrex::make_thornburg04_patch_map_system(1.0_rt, 4.0_rt, origin);
    const pyfluid_amrex::PatchMapSystem thornburg13 =
-      pyfluid_amrex::make_thornburg13_patch_map_system(1.0, 2.5, 5.0, origin);
+      pyfluid_amrex::make_thornburg13_patch_map_system(1.0_rt, 2.5_rt, 5.0_rt, origin);
    const pyfluid_amrex::PatchMapSystem cylindrical5 =
-      pyfluid_amrex::make_cylindrical5_patch_map_system(1.0, 4.0, origin);
+      pyfluid_amrex::make_cylindrical5_patch_map_system(1.0_rt, 4.0_rt, origin);
    const pyfluid_amrex::PatchMapSystem cylindrical9 =
-      pyfluid_amrex::make_cylindrical9_patch_map_system(1.0, 2.5, 5.0, origin);
+      pyfluid_amrex::make_cylindrical9_patch_map_system(1.0_rt, 2.5_rt, 5.0_rt, origin);
    check_system_round_trips(thornburg04, "thornburg04");
    check_system_round_trips(thornburg13, "thornburg13");
    check_system_round_trips(cylindrical5, "cylindrical5");
    check_system_round_trips(cylindrical9, "cylindrical9");
 #if (AMREX_SPACEDIM == 2)
    const pyfluid_amrex::PatchMapSystem thornburg04_xz =
-      pyfluid_amrex::make_thornburg04_patch_map_system(1.0, 4.0, origin, xz_patch_cartesian_axes());
+      pyfluid_amrex::make_thornburg04_patch_map_system(1.0_rt, 4.0_rt, origin, xz_patch_cartesian_axes());
    check_system_round_trips(thornburg04_xz, "thornburg04_xz");
 #endif
 
-   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2, 0.1, 0.1}), 0, "thornburg04 central");
-   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {2.0, 0.2, 0.3}), 1, "thornburg04 plus x");
-   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {-2.0, 0.2, 0.3}), 2, "thornburg04 minus x");
+   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, 0.1_rt, 0.1_rt}), 0, "thornburg04 central");
+   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {2.0_rt, 0.2_rt, 0.3_rt}), 1, "thornburg04 plus x");
+   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {-2.0_rt, 0.2_rt, 0.3_rt}), 2, "thornburg04 minus x");
 #if (AMREX_SPACEDIM >= 2)
-   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2, 2.0, 0.3}), 3, "thornburg04 plus y");
-   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2, -2.0, 0.3}), 4, "thornburg04 minus y");
+   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, 2.0_rt, 0.3_rt}), 3, "thornburg04 plus y");
+   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, -2.0_rt, 0.3_rt}), 4, "thornburg04 minus y");
 #endif
 #if (AMREX_SPACEDIM == 3)
-   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2, 0.3, 2.0}), 5, "thornburg04 plus z");
-   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2, 0.3, -2.0}), 6, "thornburg04 minus z");
+   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, 0.3_rt, 2.0_rt}), 5, "thornburg04 plus z");
+   check_global_owner(thornburg04, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, 0.3_rt, -2.0_rt}), 6, "thornburg04 minus z");
 #endif
 #if (AMREX_SPACEDIM == 2)
-   check_global_owner(thornburg04_xz, pyfluid_amrex::patch_coordinate_add(origin, {0.2, 0.0, 2.0}), 3, "thornburg04 xz plus z");
-   check_global_owner(thornburg04_xz, pyfluid_amrex::patch_coordinate_add(origin, {0.2, 0.0, -2.0}), 4, "thornburg04 xz minus z");
+   check_global_owner(thornburg04_xz, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, 0.0_rt, 2.0_rt}), 3, "thornburg04 xz plus z");
+   check_global_owner(thornburg04_xz, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, 0.0_rt, -2.0_rt}), 4, "thornburg04 xz minus z");
 #endif
 
-   check_global_owner(thornburg13, pyfluid_amrex::patch_coordinate_add(origin, {2.0, 0.2, 0.3}), 1, "thornburg13 inner plus x");
+   check_global_owner(thornburg13, pyfluid_amrex::patch_coordinate_add(origin, {2.0_rt, 0.2_rt, 0.3_rt}), 1, "thornburg13 inner plus x");
    check_global_owner(
       thornburg13,
-      pyfluid_amrex::patch_coordinate_add(origin, {4.0, 0.2, 0.3}),
+      pyfluid_amrex::patch_coordinate_add(origin, {4.0_rt, 0.2_rt, 0.3_rt}),
       1 + 2 * AMREX_SPACEDIM,
       "thornburg13 outer plus x"
    );
 #if (AMREX_SPACEDIM == 3)
-   check_global_owner(thornburg13, pyfluid_amrex::patch_coordinate_add(origin, {0.2, 0.3, -4.0}), 12, "thornburg13 outer minus z");
+   check_global_owner(thornburg13, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, 0.3_rt, -4.0_rt}), 12, "thornburg13 outer minus z");
 #endif
 
-   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {0.2, 0.1, 1.5}), 0, "cylindrical5 central");
-   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {2.0, 0.2, 1.5}), 1, "cylindrical5 plus x");
-   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {-2.0, 0.2, 1.5}), 2, "cylindrical5 minus x");
-   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {0.2, 2.0, 1.5}), 3, "cylindrical5 plus y");
-   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {0.2, -2.0, 1.5}), 4, "cylindrical5 minus y");
+   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, 0.1_rt, 1.5_rt}), 0, "cylindrical5 central");
+   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {2.0_rt, 0.2_rt, 1.5_rt}), 1, "cylindrical5 plus x");
+   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {-2.0_rt, 0.2_rt, 1.5_rt}), 2, "cylindrical5 minus x");
+   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, 2.0_rt, 1.5_rt}), 3, "cylindrical5 plus y");
+   check_global_owner(cylindrical5, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, -2.0_rt, 1.5_rt}), 4, "cylindrical5 minus y");
 
-   check_global_owner(cylindrical9, pyfluid_amrex::patch_coordinate_add(origin, {2.0, 0.2, 1.5}), 1, "cylindrical9 inner plus x");
-   check_global_owner(cylindrical9, pyfluid_amrex::patch_coordinate_add(origin, {4.0, 0.2, 1.5}), 5, "cylindrical9 outer plus x");
-   check_global_owner(cylindrical9, pyfluid_amrex::patch_coordinate_add(origin, {0.2, -4.0, 1.5}), 8, "cylindrical9 outer minus y");
+   check_global_owner(cylindrical9, pyfluid_amrex::patch_coordinate_add(origin, {2.0_rt, 0.2_rt, 1.5_rt}), 1, "cylindrical9 inner plus x");
+   check_global_owner(cylindrical9, pyfluid_amrex::patch_coordinate_add(origin, {4.0_rt, 0.2_rt, 1.5_rt}), 5, "cylindrical9 outer plus x");
+   check_global_owner(cylindrical9, pyfluid_amrex::patch_coordinate_add(origin, {0.2_rt, -4.0_rt, 1.5_rt}), 8, "cylindrical9 outer minus y");
 
    if (return_code == 0) {
       amrex::Print() << "patch coordinate round-trip checks passed\n";
@@ -418,15 +420,15 @@ int run_patch_grid_builder_checks()
 {
    int return_code = 0;
    const pyfluid_amrex::PatchCoordinate origin =
-      pyfluid_amrex::make_patch_coordinate(0.125, -0.25, 0.375);
+      pyfluid_amrex::make_patch_coordinate(0.125_rt, -0.25_rt, 0.375_rt);
    pyfluid_amrex::PatchGridResolution resolution;
    resolution.central_cells = test_patch_central_cells();
    resolution.angular_cells = 6;
    resolution.radial_cells = 5;
    resolution.outer_radial_cells = 7;
    resolution.axial_cells = 9;
-   resolution.axial_lo = -1.25;
-   resolution.axial_hi = 1.75;
+   resolution.axial_lo = -1.25_rt;
+   resolution.axial_hi = 1.75_rt;
 
    const auto check_grid_system = [&](
       pyfluid_amrex::PatchGridSystem const& grid_system,
@@ -452,7 +454,7 @@ int run_patch_grid_builder_checks()
          amrex::IntVect cell(AMREX_D_DECL(0, 0, 0));
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
             cell[dir] = patch.cells[dir] / 2;
-            if (patch_grid_cell_size(patch, dir) <= 0.0) {
+            if (patch_grid_cell_size(patch, dir) <= 0.0_rt) {
                amrex::Print() << "patch-grid spacing check failed for " << label
                               << " patch=" << patch_id
                               << " dir=" << dir << "\n";
@@ -475,34 +477,34 @@ int run_patch_grid_builder_checks()
    };
 
    check_grid_system(
-      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0, 4.0, resolution, origin),
+      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0_rt, 4.0_rt, resolution, origin),
       Thornburg04PatchCount,
       "thornburg04"
    );
    check_grid_system(
-      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0, 2.5, 5.0, resolution, origin),
+      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0_rt, 2.5_rt, 5.0_rt, resolution, origin),
       Thornburg13PatchCount,
       "thornburg13"
    );
 #if (AMREX_SPACEDIM == 2)
    check_grid_system(
-      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0, 4.0, resolution, origin, xz_patch_cartesian_axes()),
+      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0_rt, 4.0_rt, resolution, origin, xz_patch_cartesian_axes()),
       Thornburg04PatchCount,
       "thornburg04_xz"
    );
    check_grid_system(
-      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0, 2.5, 5.0, resolution, origin, xz_patch_cartesian_axes()),
+      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0_rt, 2.5_rt, 5.0_rt, resolution, origin, xz_patch_cartesian_axes()),
       Thornburg13PatchCount,
       "thornburg13_xz"
    );
 #endif
    check_grid_system(
-      pyfluid_amrex::make_cylindrical5_patch_grid_system(1.0, 4.0, resolution, origin),
+      pyfluid_amrex::make_cylindrical5_patch_grid_system(1.0_rt, 4.0_rt, resolution, origin),
       5,
       "cylindrical5"
    );
    check_grid_system(
-      pyfluid_amrex::make_cylindrical9_patch_grid_system(1.0, 2.5, 5.0, resolution, origin),
+      pyfluid_amrex::make_cylindrical9_patch_grid_system(1.0_rt, 2.5_rt, 5.0_rt, resolution, origin),
       9,
       "cylindrical9"
    );
@@ -520,16 +522,16 @@ amrex::Real smooth_physical_sample_value(
 {
    const pyfluid_amrex::PatchCoordinate centered = pyfluid_amrex::patch_coordinate_subtract(physical, origin);
    const amrex::Real radius2 = centered.q1 * centered.q1 + centered.q2 * centered.q2 + centered.q3 * centered.q3;
-   return 1.0
-      + 0.25 * std::exp(-0.5 * radius2 / 0.37)
-      + 0.031 * std::sin(0.7 * physical.q1 - 0.2 * physical.q2 + 0.11 * physical.q3);
+   return 1.0_rt
+      + 0.25_rt * std::exp(-0.5_rt * radius2 / 0.37_rt)
+      + 0.031_rt * std::sin(0.7_rt * physical.q1 - 0.2_rt * physical.q2 + 0.11_rt * physical.q3);
 }
 
 int run_mixed_patch_initial_data_sampling_checks()
 {
    int return_code = 0;
    const pyfluid_amrex::PatchCoordinate origin =
-      pyfluid_amrex::make_patch_coordinate(0.125, -0.25, 0.375);
+      pyfluid_amrex::make_patch_coordinate(0.125_rt, -0.25_rt, 0.375_rt);
    pyfluid_amrex::PatchGridResolution resolution;
    resolution.central_cells = test_patch_central_cells();
    resolution.angular_cells = 6;
@@ -572,7 +574,7 @@ int run_mixed_patch_initial_data_sampling_checks()
             const int owner_patch =
                pyfluid_amrex::patch_system_owner_patch_id(grid_system.map_system, sample.physical);
             const amrex::Real value = smooth_physical_sample_value(sample.physical, origin);
-            if (global_error > 1.0e-14
+            if (global_error > 1.0e-14_rt
                 || !check_owned_or_context_sample(grid_system, patch, owner_patch)
                 || !std::isfinite(value)) {
                amrex::Print() << "mixed-patch IC sampling check failed for " << label
@@ -588,29 +590,29 @@ int run_mixed_patch_initial_data_sampling_checks()
    };
 
    check_grid_system(
-      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0, 4.0, resolution, origin),
+      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0_rt, 4.0_rt, resolution, origin),
       "thornburg04"
    );
    check_grid_system(
-      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0, 2.5, 5.0, resolution, origin),
+      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0_rt, 2.5_rt, 5.0_rt, resolution, origin),
       "thornburg13"
    );
 #if (AMREX_SPACEDIM == 2)
    check_grid_system(
-      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0, 4.0, resolution, origin, xz_patch_cartesian_axes()),
+      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0_rt, 4.0_rt, resolution, origin, xz_patch_cartesian_axes()),
       "thornburg04_xz"
    );
    check_grid_system(
-      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0, 2.5, 5.0, resolution, origin, xz_patch_cartesian_axes()),
+      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0_rt, 2.5_rt, 5.0_rt, resolution, origin, xz_patch_cartesian_axes()),
       "thornburg13_xz"
    );
 #endif
    check_grid_system(
-      pyfluid_amrex::make_cylindrical5_patch_grid_system(1.0, 4.0, resolution, origin),
+      pyfluid_amrex::make_cylindrical5_patch_grid_system(1.0_rt, 4.0_rt, resolution, origin),
       "cylindrical5"
    );
    check_grid_system(
-      pyfluid_amrex::make_cylindrical9_patch_grid_system(1.0, 2.5, 5.0, resolution, origin),
+      pyfluid_amrex::make_cylindrical9_patch_grid_system(1.0_rt, 2.5_rt, 5.0_rt, resolution, origin),
       "cylindrical9"
    );
 
@@ -624,15 +626,15 @@ int run_mixed_patch_logical_layout_checks()
 {
    int return_code = 0;
    const pyfluid_amrex::PatchCoordinate origin =
-      pyfluid_amrex::make_patch_coordinate(0.125, -0.25, 0.375);
+      pyfluid_amrex::make_patch_coordinate(0.125_rt, -0.25_rt, 0.375_rt);
    pyfluid_amrex::PatchGridResolution resolution;
    resolution.central_cells = test_patch_central_cells();
    resolution.angular_cells = 6;
    resolution.radial_cells = 5;
    resolution.outer_radial_cells = 7;
    resolution.axial_cells = 9;
-   resolution.axial_lo = -1.25;
-   resolution.axial_hi = 1.75;
+   resolution.axial_lo = -1.25_rt;
+   resolution.axial_hi = 1.75_rt;
 
    const auto check_owned_or_context_sample = [&](
       pyfluid_amrex::PatchGridSystem const& grid_system,
@@ -708,8 +710,8 @@ int run_mixed_patch_logical_layout_checks()
             const int owner_patch =
                pyfluid_amrex::patch_system_owner_patch_id(grid_system.map_system, layout_sample.physical);
             if (
-               mesh_error > 1.0e-14
-               || physical_error > 1.0e-14
+               mesh_error > 1.0e-14_rt
+               || physical_error > 1.0e-14_rt
                || !check_owned_or_context_sample(grid_system, grid_patch, owner_patch)
             ) {
                amrex::Print() << "mixed-patch logical-layout sampling check failed for "
@@ -733,29 +735,29 @@ int run_mixed_patch_logical_layout_checks()
    };
 
    check_grid_system(
-      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0, 4.0, resolution, origin),
+      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0_rt, 4.0_rt, resolution, origin),
       "thornburg04"
    );
    check_grid_system(
-      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0, 2.5, 5.0, resolution, origin),
+      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0_rt, 2.5_rt, 5.0_rt, resolution, origin),
       "thornburg13"
    );
 #if (AMREX_SPACEDIM == 2)
    check_grid_system(
-      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0, 4.0, resolution, origin, xz_patch_cartesian_axes()),
+      pyfluid_amrex::make_thornburg04_patch_grid_system(1.0_rt, 4.0_rt, resolution, origin, xz_patch_cartesian_axes()),
       "thornburg04_xz"
    );
    check_grid_system(
-      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0, 2.5, 5.0, resolution, origin, xz_patch_cartesian_axes()),
+      pyfluid_amrex::make_thornburg13_patch_grid_system(1.0_rt, 2.5_rt, 5.0_rt, resolution, origin, xz_patch_cartesian_axes()),
       "thornburg13_xz"
    );
 #endif
    check_grid_system(
-      pyfluid_amrex::make_cylindrical5_patch_grid_system(1.0, 4.0, resolution, origin),
+      pyfluid_amrex::make_cylindrical5_patch_grid_system(1.0_rt, 4.0_rt, resolution, origin),
       "cylindrical5"
    );
    check_grid_system(
-      pyfluid_amrex::make_cylindrical9_patch_grid_system(1.0, 2.5, 5.0, resolution, origin),
+      pyfluid_amrex::make_cylindrical9_patch_grid_system(1.0_rt, 2.5_rt, 5.0_rt, resolution, origin),
       "cylindrical9"
    );
 
@@ -767,7 +769,7 @@ int run_mixed_patch_logical_layout_checks()
 
 void fill_valid_cells(amrex::MultiFab& data)
 {
-   data.setVal(-1.0e200);
+   data.setVal(-1.0e200_rt);
    for (amrex::MFIter mfi(data); mfi.isValid(); ++mfi) {
       amrex::FArrayBox& fab = data[mfi];
       for (amrex::BoxIterator iterator(mfi.validbox()); iterator.ok(); ++iterator) {
@@ -783,7 +785,7 @@ amrex::Array<amrex::Real, AMREX_SPACEDIM> domain_center(amrex::Box const& box)
 {
    amrex::Array<amrex::Real, AMREX_SPACEDIM> center{};
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      center[dir] = 0.5 * static_cast<amrex::Real>(box.smallEnd(dir) + box.bigEnd(dir));
+      center[dir] = 0.5_rt * static_cast<amrex::Real>(box.smallEnd(dir) + box.bigEnd(dir));
    }
    return center;
 }
@@ -795,15 +797,15 @@ amrex::Real wave_packet_value_at_position(
    amrex::Real width
 )
 {
-   amrex::Real radius_squared = 0.0;
-   amrex::Real phase = 0.17 * static_cast<amrex::Real>(component + 1);
+   amrex::Real radius_squared = 0.0_rt;
+   amrex::Real phase = 0.17_rt * static_cast<amrex::Real>(component + 1);
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
       const amrex::Real distance = position[dir] - center[dir];
       radius_squared += distance * distance;
-      phase += 0.11 * static_cast<amrex::Real>(dir + 1) * (position[dir] + 1.0);
+      phase += 0.11_rt * static_cast<amrex::Real>(dir + 1) * (position[dir] + 1.0_rt);
    }
-   const amrex::Real packet = std::exp(-radius_squared / (2.0 * width * width));
-   return 1.0 + 0.08 * static_cast<amrex::Real>(component + 1) * packet * (1.0 + 0.1 * std::sin(phase));
+   const amrex::Real packet = std::exp(-radius_squared / (2.0_rt * width * width));
+   return 1.0_rt + 0.08_rt * static_cast<amrex::Real>(component + 1) * packet * (1.0_rt + 0.1_rt * std::sin(phase));
 }
 
 amrex::Real wave_packet_value(
@@ -827,15 +829,15 @@ void fill_wave_packet_scaled(
    int refinement_ratio
 )
 {
-   data.setVal(-1.0e200);
+   data.setVal(-1.0e200_rt);
    for (amrex::MFIter mfi(data); mfi.isValid(); ++mfi) {
       amrex::FArrayBox& fab = data[mfi];
       for (amrex::BoxIterator iterator(mfi.validbox()); iterator.ok(); ++iterator) {
          const amrex::IntVect& cell = iterator();
          amrex::Array<amrex::Real, AMREX_SPACEDIM> position{};
          for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-            position[dir] = (static_cast<amrex::Real>(cell[dir]) + 0.5)
-                            / static_cast<amrex::Real>(refinement_ratio) - 0.5;
+            position[dir] = (static_cast<amrex::Real>(cell[dir]) + 0.5_rt)
+                            / static_cast<amrex::Real>(refinement_ratio) - 0.5_rt;
          }
          for (int component = 0; component < NumComponents; ++component) {
             fab(cell, component) = wave_packet_value_at_position(position, component, center, width);
@@ -855,7 +857,7 @@ void fill_wave_packet(
 
 amrex::Real max_error_on_box(amrex::MultiFab const& data, amrex::Box const& box)
 {
-   amrex::Real max_error = 0.0;
+   amrex::Real max_error = 0.0_rt;
    for (amrex::MFIter mfi(data); mfi.isValid(); ++mfi) {
       amrex::FArrayBox const& fab = data[mfi];
       amrex::Box covered = box;
@@ -881,10 +883,10 @@ amrex::Real max_difference_on_box(
 )
 {
    amrex::MultiFab expected_on_actual(actual.boxArray(), actual.DistributionMap(), actual.nComp(), 0);
-   expected_on_actual.setVal(-1.0e200);
+   expected_on_actual.setVal(-1.0e200_rt);
    expected_on_actual.ParallelCopy(expected, 0, 0, actual.nComp(), 0, 0);
 
-   amrex::Real max_error = 0.0;
+   amrex::Real max_error = 0.0_rt;
    for (amrex::MFIter actual_mfi(actual); actual_mfi.isValid(); ++actual_mfi) {
       amrex::FArrayBox const& actual_fab = actual[actual_mfi];
       amrex::FArrayBox const& expected_fab = expected_on_actual[actual_mfi];
@@ -938,7 +940,7 @@ void fill_fine_boundary_from_coarse(
    coarse_footprint.grow(fine_state.nGrowVect());
    coarse_footprint.coarsen(ratio);
    amrex::MultiFab coarse_on_fine(coarse_footprint, fine_state.DistributionMap(), NumComponents, 0);
-   coarse_on_fine.setVal(-1.0e200);
+   coarse_on_fine.setVal(-1.0e200_rt);
    coarse_on_fine.ParallelCopy(coarse_state, 0, 0, NumComponents, 0, 0);
 
    for (amrex::MFIter mfi(fine_state); mfi.isValid(); ++mfi) {
@@ -968,7 +970,7 @@ amrex::MultiFab make_owned_coarse_snapshot(
    amrex::BoxArray boxes = pyfluid_amrex::cartesian_patch_box_array(coarse_layout);
    amrex::DistributionMapping distribution(boxes);
    amrex::MultiFab snapshot(boxes, distribution, NumComponents, 0);
-   snapshot.setVal(-1.0e200);
+   snapshot.setVal(-1.0e200_rt);
    for (int patch_index = 0; patch_index < static_cast<int>(coarse_layout.patches.size()); ++patch_index) {
       snapshot.ParallelCopy(patch_state[patch_index], 0, 0, NumComponents, 0, 0);
    }
@@ -1002,7 +1004,7 @@ void finite_volume_reference_update(
    amrex::Box const& update_region
 )
 {
-   updated.setVal(-1.0e200);
+   updated.setVal(-1.0e200_rt);
    for (amrex::MFIter mfi(updated); mfi.isValid(); ++mfi) {
       amrex::FArrayBox& updated_fab = updated[mfi];
       amrex::FArrayBox const& state_fab = state[mfi];
@@ -1014,15 +1016,15 @@ void finite_volume_reference_update(
       for (amrex::BoxIterator iterator(box); iterator.ok(); ++iterator) {
          const amrex::IntVect& cell = iterator();
          for (int component = 0; component < NumComponents; ++component) {
-            amrex::Real flux_difference = 0.0;
+            amrex::Real flux_difference = 0.0_rt;
             for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
                amrex::IntVect lower_cell = cell;
                amrex::IntVect upper_cell = cell;
                lower_cell[dir] -= 1;
                upper_cell[dir] += 1;
-               const amrex::Real wave_fraction = 0.05 + 0.01 * static_cast<amrex::Real>(dir + component);
-               const amrex::Real flux_lower = 0.5 * (state_fab(lower_cell, component) + state_fab(cell, component));
-               const amrex::Real flux_upper = 0.5 * (state_fab(cell, component) + state_fab(upper_cell, component));
+               const amrex::Real wave_fraction = 0.05_rt + 0.01_rt * static_cast<amrex::Real>(dir + component);
+               const amrex::Real flux_lower = 0.5_rt * (state_fab(lower_cell, component) + state_fab(cell, component));
+               const amrex::Real flux_upper = 0.5_rt * (state_fab(cell, component) + state_fab(upper_cell, component));
                flux_difference += wave_fraction * (flux_upper - flux_lower);
             }
             updated_fab(cell, component) = state_fab(cell, component) - flux_difference;
@@ -1053,11 +1055,11 @@ void upwind_advection_update(
             amrex::Real value = state_fab(cell, component);
             for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
                const amrex::Real courant_number = courant_numbers[dir];
-               if (courant_number == 0.0) {
+               if (courant_number == 0.0_rt) {
                   continue;
                }
                amrex::IntVect upwind_cell = cell;
-               if (courant_number > 0.0) {
+               if (courant_number > 0.0_rt) {
                   upwind_cell[dir] -= 1;
                   value -= courant_number * (state_fab(cell, component) - state_fab(upwind_cell, component));
                } else {
@@ -1091,7 +1093,7 @@ int run_layout_ghost_check(pyfluid_amrex::CartesianMultipatchLayout const& layou
       amrex::IntVect(NumGhost)
    );
 
-   amrex::Real local_max_error = 0.0;
+   amrex::Real local_max_error = 0.0_rt;
    for (int destination_index = 0; destination_index < static_cast<int>(layout.patches.size()); ++destination_index) {
       for (int source_index = 0; source_index < static_cast<int>(layout.patches.size()); ++source_index) {
          if (source_index == destination_index) {
@@ -1109,7 +1111,7 @@ int run_layout_ghost_check(pyfluid_amrex::CartesianMultipatchLayout const& layou
    }
 
    amrex::ParallelDescriptor::ReduceRealMax(local_max_error);
-   if (local_max_error != 0.0) {
+   if (local_max_error != 0.0_rt) {
       amrex::Print() << "multipatch " << label << " ghost check failed max_error="
                      << local_max_error << "\n";
       return 1;
@@ -1154,7 +1156,7 @@ int run_layout_update_check(pyfluid_amrex::CartesianMultipatchLayout const& layo
       finite_volume_reference_update(patch_updated[patch_index], patch_state[patch_index], patch_update_region);
    }
 
-   amrex::Real local_max_error = 0.0;
+   amrex::Real local_max_error = 0.0_rt;
    for (int patch_index = 0; patch_index < static_cast<int>(layout.patches.size()); ++patch_index) {
       amrex::Box compare_box = layout.patches[patch_index].owned_box;
       compare_box &= update_region;
@@ -1166,7 +1168,7 @@ int run_layout_update_check(pyfluid_amrex::CartesianMultipatchLayout const& layo
       }
    }
    amrex::ParallelDescriptor::ReduceRealMax(local_max_error);
-   if (local_max_error != 0.0) {
+   if (local_max_error != 0.0_rt) {
       amrex::Print() << "multipatch " << label << " update check failed max_error="
                      << local_max_error << "\n";
       return 1;
@@ -1191,7 +1193,7 @@ int run_wave_packet_crossing_check(
    int step_count
 )
 {
-   constexpr amrex::Real packet_width = 2.5;
+   constexpr amrex::Real packet_width = 2.5_rt;
 
    amrex::Box update_region = layout.global_box;
    update_region.grow(-1);
@@ -1234,7 +1236,7 @@ int run_wave_packet_crossing_check(
       }
    }
 
-   amrex::Real local_max_error = 0.0;
+   amrex::Real local_max_error = 0.0_rt;
    for (int patch_index = 0; patch_index < static_cast<int>(layout.patches.size()); ++patch_index) {
       local_max_error = std::max(
          local_max_error,
@@ -1242,7 +1244,7 @@ int run_wave_packet_crossing_check(
       );
    }
    amrex::ParallelDescriptor::ReduceRealMax(local_max_error);
-   if (local_max_error > 1.0e-13) {
+   if (local_max_error > 1.0e-13_rt) {
       amrex::Print() << "multipatch " << label << " wave-packet crossing check failed max_error="
                      << local_max_error << "\n";
       return 1;
@@ -1268,10 +1270,10 @@ int run_aligned_split_checks(int split_direction)
    int return_code = run_layout_checks(layout, "aligned two-patch split direction " + std::to_string(split_direction));
 
    amrex::Array<amrex::Real, AMREX_SPACEDIM> center = domain_center(layout.global_box);
-   center[split_direction] = static_cast<amrex::Real>(layout.patches[1].patch_box.smallEnd(split_direction)) - 3.0;
+   center[split_direction] = static_cast<amrex::Real>(layout.patches[1].patch_box.smallEnd(split_direction)) - 3.0_rt;
    amrex::Array<amrex::Real, AMREX_SPACEDIM> courant_numbers{};
-   courant_numbers.fill(0.0);
-   courant_numbers[split_direction] = 0.45;
+   courant_numbers.fill(0.0_rt);
+   courant_numbers[split_direction] = 0.45_rt;
    return_code = std::max(
       return_code,
       run_wave_packet_crossing_check(
@@ -1297,10 +1299,10 @@ int run_overlapping_split_checks(int split_direction)
    int return_code = run_layout_checks(layout, label);
 
    amrex::Array<amrex::Real, AMREX_SPACEDIM> center = domain_center(layout.global_box);
-   center[split_direction] = static_cast<amrex::Real>(layout.patches[1].owned_box.smallEnd(split_direction)) - 3.0;
+   center[split_direction] = static_cast<amrex::Real>(layout.patches[1].owned_box.smallEnd(split_direction)) - 3.0_rt;
    amrex::Array<amrex::Real, AMREX_SPACEDIM> courant_numbers{};
-   courant_numbers.fill(0.0);
-   courant_numbers[split_direction] = 0.45;
+   courant_numbers.fill(0.0_rt);
+   courant_numbers[split_direction] = 0.45_rt;
    return_code = std::max(
       return_code,
       run_wave_packet_crossing_check(layout, label, center, courant_numbers, 14)
@@ -1317,12 +1319,12 @@ int run_aligned_tiled_checks()
    int return_code = run_layout_checks(layout, "aligned four-patch tile");
 
    amrex::Array<amrex::Real, AMREX_SPACEDIM> center = domain_center(layout.global_box);
-   center[0] = static_cast<amrex::Real>(layout.global_box.smallEnd(0) + layout.global_box.length(0) / 2) - 3.0;
-   center[1] = static_cast<amrex::Real>(layout.global_box.smallEnd(1) + layout.global_box.length(1) / 2) - 3.0;
+   center[0] = static_cast<amrex::Real>(layout.global_box.smallEnd(0) + layout.global_box.length(0) / 2) - 3.0_rt;
+   center[1] = static_cast<amrex::Real>(layout.global_box.smallEnd(1) + layout.global_box.length(1) / 2) - 3.0_rt;
    amrex::Array<amrex::Real, AMREX_SPACEDIM> courant_numbers{};
-   courant_numbers.fill(0.0);
-   courant_numbers[0] = 0.30;
-   courant_numbers[1] = 0.25;
+   courant_numbers.fill(0.0_rt);
+   courant_numbers[0] = 0.30_rt;
+   courant_numbers[1] = 0.25_rt;
    return_code = std::max(
       return_code,
       run_wave_packet_crossing_check(layout, "aligned four-patch tile", center, courant_numbers, 14)
@@ -1359,12 +1361,12 @@ int run_t_junction_checks()
    int return_code = run_layout_checks(layout, "three-patch T-junction");
 
    amrex::Array<amrex::Real, AMREX_SPACEDIM> center = domain_center(layout.global_box);
-   center[0] = static_cast<amrex::Real>(layout.patches[1].patch_box.smallEnd(0)) - 3.0;
-   center[1] = static_cast<amrex::Real>(layout.patches[2].patch_box.smallEnd(1)) - 3.0;
+   center[0] = static_cast<amrex::Real>(layout.patches[1].patch_box.smallEnd(0)) - 3.0_rt;
+   center[1] = static_cast<amrex::Real>(layout.patches[2].patch_box.smallEnd(1)) - 3.0_rt;
    amrex::Array<amrex::Real, AMREX_SPACEDIM> courant_numbers{};
-   courant_numbers.fill(0.0);
-   courant_numbers[0] = 0.30;
-   courant_numbers[1] = 0.25;
+   courant_numbers.fill(0.0_rt);
+   courant_numbers[0] = 0.30_rt;
+   courant_numbers[1] = 0.25_rt;
    return_code = std::max(
       return_code,
       run_wave_packet_crossing_check(layout, "three-patch T-junction", center, courant_numbers, 14)
@@ -1374,7 +1376,7 @@ int run_t_junction_checks()
 
 amrex::Geometry make_periodic_geometry(amrex::Box const& domain)
 {
-   amrex::RealBox real_box(AMREX_D_DECL(0.0, 0.0, 0.0), AMREX_D_DECL(1.0, 1.0, 1.0));
+   amrex::RealBox real_box(AMREX_D_DECL(0.0_rt, 0.0_rt, 0.0_rt), AMREX_D_DECL(1.0_rt, 1.0_rt, 1.0_rt));
    amrex::Array<int, AMREX_SPACEDIM> periodic{AMREX_D_DECL(1, 1, 1)};
    return amrex::Geometry(domain, real_box, amrex::CoordSys::cartesian, periodic);
 }
@@ -1413,7 +1415,7 @@ int run_amr_transfer_check(
    amrex::MultiFab coarse_state = make_patch_data(coarse_boxes, 0);
    fill_valid_cells(coarse_state);
    amrex::MultiFab fine_state = make_patch_data(fine_boxes, 0);
-   fine_state.setVal(-1.0e200);
+   fine_state.setVal(-1.0e200_rt);
 
    const amrex::Box fine_global_box = amrex::refine(coarse_layout.global_box, ratio);
    const amrex::Geometry coarse_geometry = make_periodic_geometry(coarse_layout.global_box);
@@ -1426,7 +1428,7 @@ int run_amr_transfer_check(
    amrex::InterpFromCoarseLevel(
       fine_state,
       amrex::IntVect::TheZeroVector(),
-      0.0,
+      0.0_rt,
       coarse_state,
       0,
       0,
@@ -1444,10 +1446,10 @@ int run_amr_transfer_check(
    );
 
    amrex::MultiFab restricted_state = make_patch_data(selected_coarse_boxes, 0);
-   restricted_state.setVal(-1.0e200);
+   restricted_state.setVal(-1.0e200_rt);
    amrex::average_down(fine_state, restricted_state, fine_geometry, coarse_geometry, 0, NumComponents, ratio);
 
-   amrex::Real local_max_error = 0.0;
+   amrex::Real local_max_error = 0.0_rt;
    for (int patch_id : refined_patch_ids) {
       local_max_error = std::max(
          local_max_error,
@@ -1455,7 +1457,7 @@ int run_amr_transfer_check(
       );
    }
    amrex::ParallelDescriptor::ReduceRealMax(local_max_error);
-   if (local_max_error > 1.0e-13) {
+   if (local_max_error > 1.0e-13_rt) {
       amrex::Print() << "multipatch " << label << " AMR transfer check failed max_error="
                      << local_max_error << "\n";
       return 1;
@@ -1474,7 +1476,7 @@ int run_amr_packet_evolution_check(
 )
 {
    constexpr int step_count = 10;
-   constexpr amrex::Real packet_width = 3.0;
+   constexpr amrex::Real packet_width = 3.0_rt;
    const amrex::IntVect ratio(RefRatio);
    const pyfluid_amrex::CartesianPatchDescriptor& refined_patch = coarse_layout.patches[refined_patch_id];
    if (advection_direction < 0 || advection_direction >= AMREX_SPACEDIM) {
@@ -1490,11 +1492,11 @@ int run_amr_packet_evolution_check(
 
    amrex::Array<amrex::Real, AMREX_SPACEDIM> center = domain_center(coarse_layout.global_box);
    center[advection_direction] = start_inside_refined_patch
-      ? static_cast<amrex::Real>(refined_patch.owned_box.smallEnd(advection_direction)) + 4.0
-      : static_cast<amrex::Real>(refined_patch.owned_box.smallEnd(advection_direction)) - 4.0;
+      ? static_cast<amrex::Real>(refined_patch.owned_box.smallEnd(advection_direction)) + 4.0_rt
+      : static_cast<amrex::Real>(refined_patch.owned_box.smallEnd(advection_direction)) - 4.0_rt;
    amrex::Array<amrex::Real, AMREX_SPACEDIM> coarse_courant_numbers{};
-   coarse_courant_numbers.fill(0.0);
-   coarse_courant_numbers[advection_direction] = start_inside_refined_patch ? -0.35 : 0.35;
+   coarse_courant_numbers.fill(0.0_rt);
+   coarse_courant_numbers[advection_direction] = start_inside_refined_patch ? -0.35_rt : 0.35_rt;
    amrex::Array<amrex::Real, AMREX_SPACEDIM> fine_courant_numbers = coarse_courant_numbers;
 
    amrex::MultiFab reference_coarse = make_patch_data(coarse_layout.global_box);
@@ -1570,7 +1572,7 @@ int run_amr_packet_evolution_check(
       );
    }
 
-   amrex::Real local_max_error = 0.0;
+   amrex::Real local_max_error = 0.0_rt;
    for (int patch_index = 0; patch_index < static_cast<int>(coarse_layout.patches.size()); ++patch_index) {
       local_max_error = std::max(
          local_max_error,
@@ -1582,7 +1584,7 @@ int run_amr_packet_evolution_check(
       max_difference_on_box(patch_fine, reference_fine, owned_fine_box)
    );
    amrex::ParallelDescriptor::ReduceRealMax(local_max_error);
-   if (local_max_error > 1.0e-13) {
+   if (local_max_error > 1.0e-13_rt) {
       amrex::Print() << "multipatch " << label << " AMR packet evolution check failed max_error="
                      << local_max_error << "\n";
       return 1;

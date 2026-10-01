@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import re
 import shlex
+import shutil
 import subprocess
+import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,11 +19,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEPS_DIR = ROOT / ".deps"
 MANIFEST = ROOT / "pyfluid_amrex/dependencies/amrex.toml"
-PYFLUID_SOURCE = ROOT / "pyfluid_amrex"
 RELEASE_RE = re.compile(r"^[0-9]{2}\.[0-9]{2}(?:\.[0-9]+)?$")
-VARIANT_SUFFIXES = {
-    "mpi": "mpi-lsolvers-hdf5",
-    "openmp": "mpi-omp-lsolvers-hdf5",
+
+
+@dataclass(frozen=True)
+class AmrexVariant:
+    suffix: str
+    precision: str = "DOUBLE"
+    openmp: bool = False
+    gpu_backend: str = "NONE"
+
+
+VARIANTS = {
+    "mpi": AmrexVariant("mpi-lsolvers-hdf5"),
+    "openmp": AmrexVariant("mpi-omp-lsolvers-hdf5", openmp=True),
+    "mpi-fp32": AmrexVariant("mpi-fp32-lsolvers-hdf5", precision="SINGLE"),
+    "cuda": AmrexVariant("cuda-lsolvers-hdf5", gpu_backend="CUDA"),
+    "cuda-fp32": AmrexVariant(
+        "cuda-fp32-lsolvers-hdf5", precision="SINGLE", gpu_backend="CUDA"
+    ),
 }
 
 
@@ -40,7 +57,11 @@ class ActivationState:
 
 def run(command: list[str], *, cwd: Path = ROOT) -> None:
     print(f"+ {shlex.join(command)}", flush=True)
-    subprocess.run(command, cwd=cwd, check=True)
+    started = time.perf_counter()
+    try:
+        subprocess.run(command, cwd=cwd, check=True)
+    finally:
+        print(f"elapsed_s={time.perf_counter() - started:.3f}", flush=True)
 
 
 def captured(command: list[str], *, cwd: Path = ROOT) -> str:
@@ -126,16 +147,21 @@ def installed_version(prefix: Path) -> str | None:
 
 
 def install_contract_errors(prefix: Path, variant: str) -> list[str]:
+    options = VARIANTS[variant]
     config = prefix / "lib/cmake/AMReX/AMReXConfig.cmake"
     if not config.is_file():
         return [f"missing {config}"]
     text = config.read_text()
     expected = {
         "AMReX_MPI_FOUND": "ON",
-        "AMReX_OMP_FOUND": "ON" if variant == "openmp" else "OFF",
+        "AMReX_OMP_FOUND": "ON" if options.openmp else "OFF",
         "AMReX_HDF5_FOUND": "ON",
         "AMReX_LSOLVERS_FOUND": "ON",
+        "AMReX_PRECISION": options.precision,
+        "AMReX_CUDA_FOUND": "ON" if options.gpu_backend == "CUDA" else "OFF",
     }
+    if options.gpu_backend == "CUDA":
+        expected["AMReX_GPU_RDC"] = "OFF"
     errors = []
     for name, value in expected.items():
         if not re.search(rf"set\({name}\s+{value}\)", text):
@@ -220,24 +246,15 @@ def source_path(version: str) -> Path:
 
 
 def active_install_path(variant: str) -> Path:
-    return DEPS_DIR / f"amrex-{VARIANT_SUFFIXES[variant]}"
+    return DEPS_DIR / f"amrex-{VARIANTS[variant].suffix}"
 
 
 def build_path(version: str, variant: str) -> Path:
-    return DEPS_DIR / f"build-amrex-{version}-{VARIANT_SUFFIXES[variant]}"
+    return DEPS_DIR / f"build-amrex-{version}-{VARIANTS[variant].suffix}"
 
 
 def install_path(version: str, variant: str) -> Path:
-    return DEPS_DIR / f"amrex-{version}-{VARIANT_SUFFIXES[variant]}"
-
-
-def pyfluid_build_path(variant: str) -> Path:
-    suffix = "" if variant == "mpi" else "-openmp"
-    return ROOT / f"build/pyfluid_amrex{suffix}"
-
-
-def pyfluid_preset(variant: str) -> str:
-    return "full-release" if variant == "mpi" else "full-release-openmp"
+    return DEPS_DIR / f"amrex-{version}-{VARIANTS[variant].suffix}"
 
 
 def prepare_source(pin: AmrexPin, *, allow_clone: bool = True) -> Path:
@@ -273,6 +290,45 @@ def prepare_source(pin: AmrexPin, *, allow_clone: bool = True) -> Path:
     return source
 
 
+def host_cmake_arguments(options: AmrexVariant) -> list[str]:
+    """Keep platform discovery below the shared dependency configuration."""
+    arguments = ["-DHDF5_PREFER_PARALLEL=ON"]
+    # CUDA uses a separate compiler driver. MPI wrappers as C/C++ compilers
+    # can hide MPI include/link flags from FindMPI and therefore from nvcc.
+    compilers = {
+        "C": os.environ.get("CC", "cc"),
+        "CXX": os.environ.get("CXX", "c++"),
+    }
+    if platform.system() == "Darwin":
+        hdf5_root = Path("/opt/homebrew/opt/hdf5-mpi")
+        libomp_root = Path("/opt/homebrew/opt/libomp")
+        if not hdf5_root.is_dir():
+            raise RuntimeError(f"missing Homebrew parallel HDF5: {hdf5_root}")
+        for language, wrapper in (("C", "mpicc"), ("CXX", "mpicxx")):
+            compilers[language] = os.environ.get(
+                "CC" if language == "C" else "CXX", f"/opt/homebrew/bin/{wrapper}"
+            )
+        arguments += [
+            "-DCMAKE_OSX_ARCHITECTURES=arm64",
+            f"-DCMAKE_PREFIX_PATH={hdf5_root}",
+            f"-DHDF5_ROOT={hdf5_root}",
+        ]
+        if options.openmp:
+            if not libomp_root.is_dir():
+                raise RuntimeError(f"missing Homebrew LLVM OpenMP runtime: {libomp_root}")
+            arguments += [
+                f"-DOpenMP_CXX_FLAGS=-Xpreprocessor -fopenmp -I{libomp_root}/include",
+                "-DOpenMP_CXX_LIB_NAMES=omp",
+                f"-DOpenMP_omp_LIBRARY={libomp_root}/lib/libomp.dylib",
+            ]
+    for language, compiler in compilers.items():
+        resolved = shutil.which(compiler)
+        if resolved is None:
+            raise RuntimeError(f"missing {language} compiler: {compiler}")
+        arguments.append(f"-DCMAKE_{language}_COMPILER={resolved}")
+    return arguments
+
+
 def build_amrex(
     pin: AmrexPin,
     jobs: int,
@@ -281,34 +337,13 @@ def build_amrex(
     allow_clone: bool = True,
 ) -> Path:
     source = prepare_source(pin, allow_clone=allow_clone)
+    options = VARIANTS[variant]
     build = build_path(pin.version, variant)
     install = install_path(pin.version, variant)
     existing_errors = install_contract_errors(install, variant)
     if installed_version(install) == pin.version and not existing_errors:
         print(f"reusing verified AMReX install {install}")
         return install
-    hdf5_root = Path("/opt/homebrew/opt/hdf5-mpi")
-    libomp_root = Path("/opt/homebrew/opt/libomp")
-    compilers = {
-        "C": Path("/opt/homebrew/bin/mpicc"),
-        "CXX": Path("/opt/homebrew/bin/mpicxx"),
-    }
-    for name, compiler in compilers.items():
-        if not compiler.exists():
-            raise RuntimeError(f"missing {name} compiler wrapper: {compiler}")
-    if not hdf5_root.exists():
-        raise RuntimeError(f"missing Homebrew parallel HDF5: {hdf5_root}")
-    if variant == "openmp" and not libomp_root.exists():
-        raise RuntimeError(f"missing Homebrew LLVM OpenMP runtime: {libomp_root}")
-    prefix_path = str(hdf5_root)
-    openmp_arguments: list[str] = []
-    if variant == "openmp":
-        prefix_path += f";{libomp_root}"
-        openmp_arguments = [
-            f"-DOpenMP_CXX_FLAGS=-Xpreprocessor -fopenmp -I{libomp_root}/include",
-            "-DOpenMP_CXX_LIB_NAMES=omp",
-            f"-DOpenMP_omp_LIBRARY={libomp_root}/lib/libomp.dylib",
-        ]
     run(
         [
             "cmake",
@@ -318,20 +353,26 @@ def build_amrex(
             str(build),
             f"-DCMAKE_INSTALL_PREFIX={install}",
             "-DCMAKE_BUILD_TYPE=Release",
-            f"-DCMAKE_C_COMPILER={compilers['C']}",
-            f"-DCMAKE_CXX_COMPILER={compilers['CXX']}",
-            f"-DCMAKE_PREFIX_PATH={prefix_path}",
-            f"-DHDF5_ROOT={hdf5_root}",
+            *host_cmake_arguments(options),
             "-DAMReX_SPACEDIM=1;2;3",
             "-DAMReX_MPI=ON",
-            f"-DAMReX_OMP={'ON' if variant == 'openmp' else 'OFF'}",
+            f"-DAMReX_OMP={'ON' if options.openmp else 'OFF'}",
+            f"-DAMReX_PRECISION={options.precision}",
+            f"-DAMReX_GPU_BACKEND={options.gpu_backend}",
+            # Preserve precise arithmetic across CPU and GPU validation.
+            # Kernels are self-contained within their owning translation unit.
+            # Whole-program device compilation gives template launch stubs local
+            # ownership; host libraries and ordinary C++ linking stay modular.
+            *([
+                "-DAMReX_CUDA_FASTMATH=OFF",
+                "-DAMReX_GPU_RDC=OFF",
+            ] if options.gpu_backend == "CUDA" else []),
             "-DAMReX_FORTRAN=OFF",
             "-DAMReX_PARTICLES=OFF",
             "-DAMReX_LINEAR_SOLVERS=ON",
             "-DAMReX_LINEAR_SOLVERS_INCFLO=ON",
             "-DAMReX_LINEAR_SOLVERS_EM=ON",
             "-DAMReX_HDF5=ON",
-            *openmp_arguments,
         ]
     )
     run(["cmake", "--build", str(build), "-j", str(jobs)])
@@ -397,19 +438,43 @@ def restore_install(state: ActivationState, variant: str) -> None:
         state.backup.rename(active_install)
 
 
-def rebuild_pyfluid(jobs: int, variant: str) -> None:
-    run(["cmake", "--preset", pyfluid_preset(variant)], cwd=PYFLUID_SOURCE)
-    run(
-        [
-            "cmake",
-            "--build",
-            str(pyfluid_build_path(variant)),
-            "-j",
-            str(jobs),
-            "--target",
-            "pyfluid_amrex_production",
-        ]
+def retire_obsolete(pin: AmrexPin, *, dry_run: bool = False) -> None:
+    """Retire recognized managed trees not needed by an active variant."""
+    if not DEPS_DIR.exists():
+        return
+    active = {
+        active_install_path(variant).resolve()
+        for variant in VARIANTS
+        if active_install_path(variant).exists()
+    }
+    active_versions = {installed_version(path) for path in active}
+    suffixes = "|".join(re.escape(value.suffix) for value in VARIANTS.values())
+    pattern = re.compile(
+        rf"(?P<build>build-)?amrex-(?P<version>[0-9]{{2}}\.[0-9]{{2}}(?:\.[0-9]+)?)"
+        rf"(?:-(?P<suffix>{suffixes}))?"
     )
+    for path in sorted(DEPS_DIR.iterdir()):
+        match = pattern.fullmatch(path.name)
+        if match is None or path.is_symlink() or not path.is_dir():
+            continue
+        version = match.group("version")
+        if version == pin.version:
+            continue
+        suffix = match.group("suffix")
+        if suffix is None:
+            if match.group("build") or version in active_versions:
+                continue
+            if managed_source_dirty(version) is not False:
+                print(f"keeping unverified or modified source {path}")
+                continue
+        elif (DEPS_DIR / f"amrex-{version}-{suffix}").resolve() in active:
+            continue
+        # Never follow an unexpected path outside this managed dependency root.
+        if path.resolve().parent != DEPS_DIR.resolve():
+            raise RuntimeError(f"refusing to retire nonlocal dependency {path}")
+        print(f"{'would retire' if dry_run else 'retiring'} {path}")
+        if not dry_run:
+            shutil.rmtree(path)
 
 
 def install_variant(
@@ -424,25 +489,18 @@ def install_variant(
     candidate = build_amrex(target, jobs, variant, allow_clone=allow_clone)
     previous = activate_install(candidate, variant)
     try:
-        rebuild_pyfluid(jobs, variant)
+        if update_pin:
+            write_pin(target)
     except Exception:
-        print("PyFluid rebuild failed; restoring the previous AMReX install.")
+        print("Pin update failed; restoring the previous AMReX install.")
         restore_install(previous, variant)
-        try:
-            if previous.kind != "missing":
-                rebuild_pyfluid(jobs, variant)
-        except Exception as rollback_error:
-            raise RuntimeError(
-                "AMReX activation and the restored PyFluid rebuild both failed"
-            ) from rollback_error
         raise
     if update_pin:
-        write_pin(target)
         print(f"updated AMReX {pin.version} -> {target.version}")
-        print("Run validate_amrex_suite.py --level quick before committing the pin.")
     else:
         print(f"installed pinned AMReX {target.version} ({variant})")
-        print("Run validate_amrex_suite.py --level quick before using this variant.")
+    retire_obsolete(target)
+    print("AMReX only: configure/build the desired PyFluid target separately.")
 
 
 def main() -> int:
@@ -458,8 +516,15 @@ def main() -> int:
         help="build, verify, and activate the pinned release without changing the pin",
     )
     parser.add_argument(
+        "--prune", action="store_true",
+        help="remove obsolete managed releases without building or network access",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="preview --prune without deleting",
+    )
+    parser.add_argument(
         "--variant",
-        choices=tuple(VARIANT_SUFFIXES),
+        choices=tuple(VARIANTS),
         default="mpi",
         help="managed AMReX build variant (default: mpi)",
     )
@@ -474,8 +539,10 @@ def main() -> int:
     )
     parser.add_argument("--jobs", type=int, default=3)
     args = parser.parse_args()
-    if args.install and args.update:
-        parser.error("--install and --update are mutually exclusive")
+    if sum((args.install, args.update, args.prune)) > 1:
+        parser.error("--install, --update, and --prune are mutually exclusive")
+    if args.dry_run and not args.prune:
+        parser.error("--dry-run requires --prune")
     if args.version and not args.update:
         parser.error("--version requires --update")
     if args.offline and args.update:
@@ -486,10 +553,14 @@ def main() -> int:
         parser.error("--jobs must be positive")
 
     pin = load_pin()
+    if args.prune:
+        retire_obsolete(pin, dry_run=args.dry_run)
+        return 0
     releases = None if args.offline or args.install else remote_releases(pin.repository)
     if args.install:
         if print_status(pin, None, args.variant):
             print(f"AMReX {args.variant} variant is already current; no install performed.")
+            retire_obsolete(pin)
             return 0
         install_variant(
             pin,
@@ -510,6 +581,7 @@ def main() -> int:
     target = AmrexPin(pin.repository, version, releases[version])
     if target == pin and print_status(pin, releases, args.variant):
         print("AMReX is already current; no update performed.")
+        retire_obsolete(pin)
         return 0
     install_variant(
         pin,

@@ -13,22 +13,24 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct RunConfig;
 
 struct PressurePoloidalMagneticSeedParameters {
-   amrex::Real pressure_cutoff_fraction = 0.04;
-   amrex::Real exponent = 2.0;
-   amrex::Real maximum_comoving_field = 0.0;
-   std::array<amrex::Real, 3> axis{{0.0, 0.0, 1.0}};
-   std::array<amrex::Real, 3> center{{0.0, 0.0, 0.0}};
+   amrex::Real pressure_cutoff_fraction = 0.04_rt;
+   amrex::Real exponent = 2.0_rt;
+   amrex::Real maximum_comoving_field = 0.0_rt;
+   std::array<amrex::Real, 3> axis{{0.0_rt, 0.0_rt, 1.0_rt}};
+   std::array<amrex::Real, 3> center{{0.0_rt, 0.0_rt, 0.0_rt}};
 };
 
 struct PressurePoloidalMagneticSeedSummary {
-   amrex::Real maximum_pressure = 0.0;
-   amrex::Real unit_maximum_comoving_field = 0.0;
-   amrex::Real normalization = 0.0;
-   amrex::Real maximum_comoving_field = 0.0;
-   amrex::Real divergence_linf = 0.0;
+   amrex::Real maximum_pressure = 0.0_rt;
+   amrex::Real unit_maximum_comoving_field = 0.0_rt;
+   amrex::Real normalization = 0.0_rt;
+   amrex::Real maximum_comoving_field = 0.0_rt;
+   amrex::Real divergence_linf = 0.0_rt;
 };
 
 // Transient staggered work only. Persistent magnetic ownership remains the
@@ -61,21 +63,21 @@ PressurePoloidalMagneticSeedSummary apply_pressure_poloidal_magnetic_seed(
 );
 
 struct PoloidalGradShafranovParameters {
-   amrex::Real poloidal_magnetization = 0.0;
-   amrex::Real nonlinear_poloidal = 0.0;
-   amrex::Real relaxation = 0.5;
-   std::array<amrex::Real, 3> axis{{0.0, 0.0, 1.0}};
-   std::array<amrex::Real, 3> center{{0.0, 0.0, 0.0}};
+   amrex::Real poloidal_magnetization = 0.0_rt;
+   amrex::Real nonlinear_poloidal = 0.0_rt;
+   amrex::Real relaxation = 0.5_rt;
+   std::array<amrex::Real, 3> axis{{0.0_rt, 0.0_rt, 1.0_rt}};
+   std::array<amrex::Real, 3> center{{0.0_rt, 0.0_rt, 0.0_rt}};
 };
 
 struct PoloidalGradShafranovSummary {
    RotatingStarUpdateSummary rotating_star{};
-   amrex::Real relative_potential_update = 0.0;
-   amrex::Real linear_residual = 0.0;
-   amrex::Real equation_relative_residual = 0.0;
-   amrex::Real bernoulli_residual = 0.0;
-   amrex::Real maximum_comoving_field = 0.0;
-   amrex::Real divergence_linf = 0.0;
+   amrex::Real relative_potential_update = 0.0_rt;
+   amrex::Real linear_residual = 0.0_rt;
+   amrex::Real equation_relative_residual = 0.0_rt;
+   amrex::Real bernoulli_residual = 0.0_rt;
+   amrex::Real maximum_comoving_field = 0.0_rt;
+   amrex::Real divergence_linf = 0.0_rt;
 };
 
 // Solver-private Grad-Shafranov unknowns.  Atilde is the Cartesian vector

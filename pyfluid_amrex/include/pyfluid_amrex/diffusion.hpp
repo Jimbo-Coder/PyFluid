@@ -11,55 +11,17 @@
 
 #include "pyfluid_amrex/boundary.hpp"
 #include "pyfluid_amrex/config.hpp"
+#include "pyfluid_amrex/diffusion_timestep.hpp"
 #include "pyfluid_amrex/solid_geometry.hpp"
 #include "pyfluid_amrex/kernels_generated/scalar_ops.hpp"
-#include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/viscous.hpp"
+#include "pyfluid_amrex/reference_metric.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
 
-inline amrex::Real diffusion_inverse_mesh_spacing2_sum(amrex::Geometry const& geom, RunConfig const& cfg)
-{
-   const int coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
-   const MeshAxes axes = mesh_axes_layout(cfg);
-   const auto dx = geom.CellSizeArray();
-   const auto problo = geom.ProbLoArray();
-   amrex::Real value = 0.0;
-   const amrex::Real spacing0 = mesh_face_gradient_spacing(coordinate, axes, problo, dx, 0, 0, 0, 0);
-   value += 1.0 / (spacing0 * spacing0);
-#if (AMREX_SPACEDIM >= 2)
-   const amrex::Real spacing1 = mesh_face_gradient_spacing(coordinate, axes, problo, dx, 1, 0, 0, 0);
-   value += 1.0 / (spacing1 * spacing1);
-#endif
-#if (AMREX_SPACEDIM == 3)
-   const amrex::Real spacing2 = mesh_face_gradient_spacing(coordinate, axes, problo, dx, 2, 0, 0, 0);
-   value += 1.0 / (spacing2 * spacing2);
-#endif
-   return value;
-}
-
-inline amrex::Real max_diffusion_coefficient(RunConfig const& cfg)
-{
-   amrex::Real coefficient = cfg.viscosity;
-   if (resistivity_enabled(cfg)) {
-      coefficient = amrex::max(coefficient, cfg.resistivity);
-   }
-   return coefficient;
-}
-
-template <int DiffusionMethod>
-inline amrex::Real diffusion_dt_limit(amrex::Geometry const& geom, RunConfig const& cfg)
-{
-   if constexpr (DiffusionMethod != DiffusionExplicit) {
-      return std::numeric_limits<amrex::Real>::max();
-   }
-   const amrex::Real coefficient = max_diffusion_coefficient(cfg);
-   if (coefficient <= 0.0) {
-      return std::numeric_limits<amrex::Real>::max();
-   }
-   return cfg.diffusion_cfl / (2.0 * coefficient * diffusion_inverse_mesh_spacing2_sum(geom, cfg));
-}
+using namespace amrex::literals;
 
 inline void apply_diffusion_boundary(amrex::MultiFab& state, amrex::Geometry const& geom, RunConfig const& cfg)
 {
@@ -76,7 +38,7 @@ struct MomentumOverride {
    int i = 0;
    int j = 0;
    int k = 0;
-   amrex::GpuArray<amrex::Real, 3> momentum{0.0, 0.0, 0.0};
+   amrex::GpuArray<amrex::Real, 3> momentum{0.0_rt, 0.0_rt, 0.0_rt};
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    bool matches(int qi, int qj, int qk) const noexcept
@@ -110,7 +72,7 @@ amrex::Real velocity_component_at_cell(
    MomentumOverride const& momentum_override
 ) noexcept
 {
-   const amrex::Real inv_rho = 1.0 / amrex::max(state(i, j, k, RHO), 1.0e-300);
+   const amrex::Real inv_rho = 1.0_rt / amrex::max(state(i, j, k, RHO), 1.0e-300_rt);
    return momentum_component_at_cell(state, i, j, k, component, momentum_override) * inv_rho;
 }
 
@@ -189,7 +151,7 @@ amrex::Real velocity_component_at_face(
 {
    const auto left = face_left_cell(i, j, k, face_dir);
    const amrex::GpuArray<int, 3> right{i, j, k};
-   return 0.5 * (
+   return 0.5_rt * (
       velocity_component_at_cell(state, left, component, momentum_override)
       + velocity_component_at_cell(state, right, component, momentum_override)
    );
@@ -239,7 +201,7 @@ amrex::Real velocity_derivative_at_face(
       - velocity_component_at_cell(state, left_lo, component, momentum_override)
       + velocity_component_at_cell(state, right_hi, component, momentum_override)
       - velocity_component_at_cell(state, right_lo, component, momentum_override)
-   ) / (4.0 * dx[derivative_dir]);
+   ) / (4.0_rt * dx[derivative_dir]);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -276,7 +238,7 @@ amrex::Real velocity_derivative_at_cell_center(
    return (
       velocity_component_at_cell(state, hi, component, momentum_override)
       - velocity_component_at_cell(state, lo, component, momentum_override)
-   ) / (2.0 * dx[derivative_dir]);
+   ) / (2.0_rt * dx[derivative_dir]);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -391,44 +353,6 @@ amrex::Real generated_viscous_stress_component(
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-amrex::Real generated_tensor_divergence_connection_component(
-   int coordinate,
-   int component,
-   amrex::GpuArray<amrex::Real, 3> const& q,
-   amrex::GpuArray<amrex::Real, 9> const& tau
-) noexcept
-{
-#define PYFLUID_TENSOR_CONNECTION_ARGS \
-   q[0], q[1], q[2], tau[0], tau[1], tau[2], tau[3], tau[4], tau[5], tau[6], tau[7], tau[8]
-   if (coordinate == MeshCylindrical) {
-      if (component == 0) {
-         return generated::cylindrical_tensor_divergence_connection_1(PYFLUID_TENSOR_CONNECTION_ARGS);
-      }
-      if (component == 1) {
-         return generated::cylindrical_tensor_divergence_connection_2(PYFLUID_TENSOR_CONNECTION_ARGS);
-      }
-      return generated::cylindrical_tensor_divergence_connection_3(PYFLUID_TENSOR_CONNECTION_ARGS);
-   }
-   if (coordinate == MeshSpherical) {
-      if (component == 0) {
-         return generated::spherical_tensor_divergence_connection_1(PYFLUID_TENSOR_CONNECTION_ARGS);
-      }
-      if (component == 1) {
-         return generated::spherical_tensor_divergence_connection_2(PYFLUID_TENSOR_CONNECTION_ARGS);
-      }
-      return generated::spherical_tensor_divergence_connection_3(PYFLUID_TENSOR_CONNECTION_ARGS);
-   }
-   if (component == 0) {
-      return generated::cartesian_tensor_divergence_connection_1(PYFLUID_TENSOR_CONNECTION_ARGS);
-   }
-   if (component == 1) {
-      return generated::cartesian_tensor_divergence_connection_2(PYFLUID_TENSOR_CONNECTION_ARGS);
-   }
-   return generated::cartesian_tensor_divergence_connection_3(PYFLUID_TENSOR_CONNECTION_ARGS);
-#undef PYFLUID_TENSOR_CONNECTION_ARGS
-}
-
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 ViscousStressTensor viscous_stress_at_location(
    amrex::Array4<amrex::Real const> const& state,
    int i,
@@ -447,8 +371,8 @@ ViscousStressTensor viscous_stress_at_location(
 ) noexcept
 {
    const auto q = mesh_coordinate_triplet_at_location(coordinate, axes, problo, dx, i, j, k, nodal0, nodal1, nodal2);
-   amrex::GpuArray<amrex::Real, 3> velocity{0.0, 0.0, 0.0};
-   amrex::GpuArray<amrex::Real, 9> dv{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+   amrex::GpuArray<amrex::Real, 3> velocity{0.0_rt, 0.0_rt, 0.0_rt};
+   amrex::GpuArray<amrex::Real, 9> dv{0.0_rt, 0.0_rt, 0.0_rt, 0.0_rt, 0.0_rt, 0.0_rt, 0.0_rt, 0.0_rt, 0.0_rt};
    for (int component = 0; component < 3; ++component) {
       const int component_axis = mesh_vector_axis_for_component(coordinate, axes, component);
       const int component_frame = mesh_canonical_axis_index(coordinate, component_axis);
@@ -608,7 +532,7 @@ inline void add_viscous_stress_connection_sources(
             const int component_axis = mesh_vector_axis_for_component(coordinate, axes, component);
             const int component_frame = mesh_canonical_axis_index(coordinate, component_axis);
             if (component_frame >= 0) {
-               r(i, j, k, MOM1 + component) += generated_tensor_divergence_connection_component(
+               r(i, j, k, MOM1 + component) += reference_metric_tensor_divergence_connection_component(
                   coordinate, component_frame, q, stress.tau
                );
             }
@@ -632,7 +556,7 @@ amrex::GpuArray<amrex::Real, 3> viscous_momentum_operator(
    MomentumOverride const& momentum_override
 ) noexcept
 {
-   amrex::GpuArray<amrex::Real, 3> rhs{0.0, 0.0, 0.0};
+   amrex::GpuArray<amrex::Real, 3> rhs{0.0_rt, 0.0_rt, 0.0_rt};
    const amrex::Real cell_volume = mesh_cell_volume_scale(coordinate, axes, problo, dx, i, j, k);
 
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
@@ -682,7 +606,7 @@ amrex::GpuArray<amrex::Real, 3> viscous_momentum_operator(
       const int component_axis = mesh_vector_axis_for_component(coordinate, axes, component);
       const int component_frame = mesh_canonical_axis_index(coordinate, component_axis);
       if (component_frame >= 0) {
-         rhs[component] += generated_tensor_divergence_connection_component(coordinate, component_frame, q, center_stress.tau);
+         rhs[component] += reference_metric_tensor_divergence_connection_component(coordinate, component_frame, q, center_stress.tau);
       }
    }
    return rhs;
@@ -702,7 +626,7 @@ amrex::Real viscous_energy_operator(
    MomentumOverride const& momentum_override
 ) noexcept
 {
-   amrex::Real rhs = 0.0;
+   amrex::Real rhs = 0.0_rt;
    const amrex::Real cell_volume = mesh_cell_volume_scale(coordinate, axes, problo, dx, i, j, k);
 
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
@@ -731,8 +655,8 @@ amrex::Real viscous_energy_operator(
          viscous_stress_at_face(state, i, j, k, dir, coordinate, axes, problo, dx, viscosity, momentum_override);
       const ViscousStressTensor stress_hi =
          viscous_stress_at_face(state, ih, jh, kh, dir, coordinate, axes, problo, dx, viscosity, momentum_override);
-      amrex::Real flux_lo = 0.0;
-      amrex::Real flux_hi = 0.0;
+      amrex::Real flux_lo = 0.0_rt;
+      amrex::Real flux_hi = 0.0_rt;
       for (int component = 0; component < 3; ++component) {
          const int component_axis = mesh_vector_axis_for_component(coordinate, axes, component);
          const int component_frame = mesh_canonical_axis_index(coordinate, component_axis);
@@ -793,10 +717,10 @@ amrex::GpuArray<amrex::Real, 3> solve_3x3(
       a00 * (a11 * a22 - a12 * a21)
       - a01 * (a10 * a22 - a12 * a20)
       + a02 * (a10 * a21 - a11 * a20);
-   if (amrex::Math::abs(det) <= 1.0e-300) {
-      return {0.0, 0.0, 0.0};
+   if (amrex::Math::abs(det) <= 1.0e-300_rt) {
+      return {0.0_rt, 0.0_rt, 0.0_rt};
    }
-   const amrex::Real inv_det = 1.0 / det;
+   const amrex::Real inv_det = 1.0_rt / det;
    return {
       (b[0] * (a11 * a22 - a12 * a21)
        - a01 * (b[1] * a22 - a12 * b[2])
@@ -851,11 +775,11 @@ void relax_implicit_viscous_momentum_cell(
       perturbed.j = j;
       perturbed.k = k;
       perturbed.momentum = center_momentum;
-      perturbed.momentum[column] += 1.0;
+      perturbed.momentum[column] += 1.0_rt;
       const amrex::GpuArray<amrex::Real, 3> op_perturbed =
          viscous_momentum_operator(solution, i, j, k, coordinate, axes, problo, dx, viscosity, perturbed);
       for (int row = 0; row < 3; ++row) {
-         jacobian[3 * row + column] = (row == column ? 1.0 : 0.0) - dt * (op_perturbed[row] - op[row]);
+         jacobian[3 * row + column] = (row == column ? 1.0_rt : 0.0_rt) - dt * (op_perturbed[row] - op[row]);
       }
    }
    const amrex::GpuArray<amrex::Real, 3> rhs{-residual[0], -residual[1], -residual[2]};
@@ -909,8 +833,8 @@ inline amrex::Real implicit_viscous_momentum_residual(
             implicit_viscous_momentum_residual_vector(
                b, s, i, j, k, coordinate, axes, problo, dx, viscosity, dt, no_override
             );
-         amrex::Real residual_norm = 0.0;
-         amrex::Real scale = 0.0;
+         amrex::Real residual_norm = 0.0_rt;
+         amrex::Real scale = 0.0_rt;
          for (int component = 0; component < 3; ++component) {
             residual_norm += amrex::Math::abs(residual[component]);
             const int q = MOM1 + component;
@@ -928,7 +852,7 @@ inline amrex::Real implicit_viscous_momentum_residual(
    amrex::ParallelDescriptor::ReduceRealSum(
       residual_sums.data(), static_cast<int>(residual_sums.size())
    );
-   return residual_sums[0] / amrex::max(residual_sums[1], 1.0);
+   return residual_sums[0] / amrex::max(residual_sums[1], 1.0_rt);
 }
 
 template <bool DiffuseMomentum>
@@ -979,7 +903,7 @@ inline void fill_viscous_fluxes(
 )
 {
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      fluxes[dir]->setVal(0.0);
+      fluxes[dir]->setVal(0.0_rt);
    }
 
    const auto dx = geom.CellSizeArray();
@@ -1005,7 +929,7 @@ inline void fill_viscous_fluxes(
          }
          const ViscousStressTensor stress =
             viscous_stress_at_face(state_array, i, j, k, dir, mesh_coordinate, mesh_axes, problo, dx, coefficient);
-         amrex::Real energy_flux = 0.0;
+         amrex::Real energy_flux = 0.0_rt;
          for (int component = 0; component < 3; ++component) {
             const int component_axis = mesh_vector_axis_for_component(mesh_coordinate, mesh_axes, component);
             const int component_frame = mesh_canonical_axis_index(mesh_coordinate, component_axis);
@@ -1053,13 +977,13 @@ inline void fill_viscous_fluxes(
 #endif
          const bool left_solid = solid(li, lj, lk, 0) != 0;
          const bool right_solid = solid(ri, rj, rk, 0) != 0;
-         amrex::Real value = 0.0;
+         amrex::Real value = 0.0_rt;
          if (!left_solid && !right_solid) {
             value = generated::diffusive_flux(
                state_array(li, lj, lk, component),
                state_array(ri, rj, rk, component),
                coefficient,
-               1.0 / dx[dir]
+               1.0_rt / dx[dir]
             );
          } else if (left_solid != right_solid && no_slip) {
             const int fi = left_solid ? ri : li;
@@ -1069,25 +993,25 @@ inline void fill_viscous_fluxes(
                ? state_array(ri, rj, rk, component)
                : state_array(li, lj, lk, component);
             const amrex::Real x = problo[0]
-               + (static_cast<amrex::Real>(dir == 0 ? i : fi) + (dir == 0 ? 0.0 : 0.5)) * dx[0];
+               + (static_cast<amrex::Real>(dir == 0 ? i : fi) + (dir == 0 ? 0.0_rt : 0.5_rt)) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
             const amrex::Real y = problo[1]
-               + (static_cast<amrex::Real>(dir == 1 ? j : fj) + (dir == 1 ? 0.0 : 0.5)) * dx[1];
+               + (static_cast<amrex::Real>(dir == 1 ? j : fj) + (dir == 1 ? 0.0_rt : 0.5_rt)) * dx[1];
 #else
-            const amrex::Real y = 0.0;
+            const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
             const amrex::Real z = problo[2]
-               + (static_cast<amrex::Real>(dir == 2 ? k : fk) + (dir == 2 ? 0.0 : 0.5)) * dx[2];
+               + (static_cast<amrex::Real>(dir == 2 ? k : fk) + (dir == 2 ? 0.0_rt : 0.5_rt)) * dx[2];
 #else
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             const int vel_component = component == MOM1 ? 0 : (component == MOM2 ? 1 : 2);
             const amrex::Real wall_value =
                state_array(fi, fj, fk, RHO) * params.velocity_component(params.time, vel_component, x, y, z);
-            const amrex::Real left_value = left_solid ? 2.0 * wall_value - fluid_value : fluid_value;
-            const amrex::Real right_value = left_solid ? fluid_value : 2.0 * wall_value - fluid_value;
-            value = generated::diffusive_flux(left_value, right_value, coefficient, 1.0 / dx[dir]);
+            const amrex::Real left_value = left_solid ? 2.0_rt * wall_value - fluid_value : fluid_value;
+            const amrex::Real right_value = left_solid ? fluid_value : 2.0_rt * wall_value - fluid_value;
+            value = generated::diffusive_flux(left_value, right_value, coefficient, 1.0_rt / dx[dir]);
          }
          flux(i, j, k, component) = value;
       });
@@ -1104,7 +1028,7 @@ inline void fill_viscous_fluxes(
       SolidGeometryEvaluator const& params
    ) {
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         flux(i, j, k, ENERGY) = 0.0;
+         flux(i, j, k, ENERGY) = 0.0_rt;
          if (!no_slip) {
             return;
          }
@@ -1137,36 +1061,36 @@ inline void fill_viscous_fluxes(
          const int fj = left_solid ? rj : lj;
          const int fk = left_solid ? rk : lk;
          const amrex::Real x = problo[0]
-            + (static_cast<amrex::Real>(dir == 0 ? i : fi) + (dir == 0 ? 0.0 : 0.5)) * dx[0];
+            + (static_cast<amrex::Real>(dir == 0 ? i : fi) + (dir == 0 ? 0.0_rt : 0.5_rt)) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real y = problo[1]
-            + (static_cast<amrex::Real>(dir == 1 ? j : fj) + (dir == 1 ? 0.0 : 0.5)) * dx[1];
+            + (static_cast<amrex::Real>(dir == 1 ? j : fj) + (dir == 1 ? 0.0_rt : 0.5_rt)) * dx[1];
 #else
-         const amrex::Real y = 0.0;
+         const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real z = problo[2]
-            + (static_cast<amrex::Real>(dir == 2 ? k : fk) + (dir == 2 ? 0.0 : 0.5)) * dx[2];
+            + (static_cast<amrex::Real>(dir == 2 ? k : fk) + (dir == 2 ? 0.0_rt : 0.5_rt)) * dx[2];
 #else
-         const amrex::Real z = 0.0;
+         const amrex::Real z = 0.0_rt;
 #endif
-         const amrex::Real sign = left_solid ? -1.0 : 1.0;
+         const amrex::Real sign = left_solid ? -1.0_rt : 1.0_rt;
          const amrex::Real rho = state_array(fi, fj, fk, RHO);
-         amrex::Real energy_flux = 0.0;
+         amrex::Real energy_flux = 0.0_rt;
          const amrex::Real wall_vx = params.velocity_component(params.time, 0, x, y, z);
          const amrex::Real flux_x =
-            sign * 2.0 * coefficient * (state_array(fi, fj, fk, MOM1) - rho * wall_vx) / dx[dir];
+            sign * 2.0_rt * coefficient * (state_array(fi, fj, fk, MOM1) - rho * wall_vx) / dx[dir];
          energy_flux += flux_x * wall_vx;
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real wall_vy = params.velocity_component(params.time, 1, x, y, z);
          const amrex::Real flux_y =
-            sign * 2.0 * coefficient * (state_array(fi, fj, fk, MOM2) - rho * wall_vy) / dx[dir];
+            sign * 2.0_rt * coefficient * (state_array(fi, fj, fk, MOM2) - rho * wall_vy) / dx[dir];
          energy_flux += flux_y * wall_vy;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real wall_vz = params.velocity_component(params.time, 2, x, y, z);
          const amrex::Real flux_z =
-            sign * 2.0 * coefficient * (state_array(fi, fj, fk, MOM3) - rho * wall_vz) / dx[dir];
+            sign * 2.0_rt * coefficient * (state_array(fi, fj, fk, MOM3) - rho * wall_vz) / dx[dir];
          energy_flux += flux_z * wall_vz;
 #endif
          flux(i, j, k, ENERGY) = energy_flux;
@@ -1221,7 +1145,7 @@ inline void explicit_diffusion_update_kernel(
       const amrex::Box& bx = mfi.tilebox();
       const auto b = base.const_array(mfi);
       const auto o = out.array(mfi);
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::ParallelFor(bx, [b, o, mesh_coordinate, mesh_axes, problo, dx, viscosity, dt] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          for (int q = 0; q < NComp; ++q) {
             o(i, j, k, q) = b(i, j, k, q);
          }
@@ -1265,7 +1189,7 @@ inline void relax_implicit_diffusion_color_kernel(
       const auto b = base.const_array(mfi);
       const auto s = solution.const_array(mfi);
       const auto o = solution.array(mfi);
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      amrex::ParallelFor(bx, [b, s, o, color, mesh_coordinate, mesh_axes, problo, dx, viscosity, dt, omega] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          if (((i + j + k) & 1) != color) {
             return;
          }
@@ -1292,7 +1216,7 @@ inline amrex::Real implicit_diffusion_residual_impl(
 )
 {
    amrex::ignore_unused(cfg);
-   amrex::Real residual = 0.0;
+   amrex::Real residual = 0.0_rt;
    if constexpr (DiffuseMomentum) {
       residual = amrex::max(residual, implicit_viscous_momentum_residual(work, base, solution, geom, cfg, dt));
    }

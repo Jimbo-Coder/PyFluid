@@ -9,6 +9,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 static constexpr int MaxPassiveScalars = 1;
 static constexpr int MaxStateComponents = NVAR_MHD + MaxPassiveScalars;
 
@@ -85,9 +87,9 @@ void store_rmhd_conserved(
 }
 
 struct Vector3 {
-   amrex::Real x = 0.0;
-   amrex::Real y = 0.0;
-   amrex::Real z = 0.0;
+   amrex::Real x = 0.0_rt;
+   amrex::Real y = 0.0_rt;
+   amrex::Real z = 0.0_rt;
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    constexpr Vector3() = default;
@@ -299,7 +301,7 @@ StateVector3 scale_state_vector3(StateVector3 const& vector, amrex::Real scalar)
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 StateVector3 divide_state_vector3(StateVector3 const& vector, amrex::Real divisor) noexcept
 {
-   return scale_state_vector3(vector, 1.0 / divisor);
+   return scale_state_vector3(vector, 1.0_rt / divisor);
 }
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -350,41 +352,41 @@ inline int passive_component_begin(bool mhd)
 }
 
 struct HydroState {
-   amrex::Real rho = 0.0;
-   amrex::Real mom1 = 0.0;
-   amrex::Real mom2 = 0.0;
-   amrex::Real mom3 = 0.0;
-   amrex::Real energy = 0.0;
+   amrex::Real rho = 0.0_rt;
+   amrex::Real mom1 = 0.0_rt;
+   amrex::Real mom2 = 0.0_rt;
+   amrex::Real mom3 = 0.0_rt;
+   amrex::Real energy = 0.0_rt;
 };
 
 struct HydroPrimitive {
-   amrex::Real rho = 0.0;
-   amrex::Real v1 = 0.0;
-   amrex::Real v2 = 0.0;
-   amrex::Real v3 = 0.0;
-   amrex::Real pressure = 0.0;
+   amrex::Real rho = 0.0_rt;
+   amrex::Real v1 = 0.0_rt;
+   amrex::Real v2 = 0.0_rt;
+   amrex::Real v3 = 0.0_rt;
+   amrex::Real pressure = 0.0_rt;
 };
 
 struct MHDState {
-   amrex::Real rho = 0.0;
-   amrex::Real mom1 = 0.0;
-   amrex::Real mom2 = 0.0;
-   amrex::Real mom3 = 0.0;
-   amrex::Real energy = 0.0;
-   amrex::Real b1 = 0.0;
-   amrex::Real b2 = 0.0;
-   amrex::Real b3 = 0.0;
+   amrex::Real rho = 0.0_rt;
+   amrex::Real mom1 = 0.0_rt;
+   amrex::Real mom2 = 0.0_rt;
+   amrex::Real mom3 = 0.0_rt;
+   amrex::Real energy = 0.0_rt;
+   amrex::Real b1 = 0.0_rt;
+   amrex::Real b2 = 0.0_rt;
+   amrex::Real b3 = 0.0_rt;
 };
 
 struct MHDPrimitive {
-   amrex::Real rho = 0.0;
-   amrex::Real v1 = 0.0;
-   amrex::Real v2 = 0.0;
-   amrex::Real v3 = 0.0;
-   amrex::Real pressure = 0.0;
-   amrex::Real b1 = 0.0;
-   amrex::Real b2 = 0.0;
-   amrex::Real b3 = 0.0;
+   amrex::Real rho = 0.0_rt;
+   amrex::Real v1 = 0.0_rt;
+   amrex::Real v2 = 0.0_rt;
+   amrex::Real v3 = 0.0_rt;
+   amrex::Real pressure = 0.0_rt;
+   amrex::Real b1 = 0.0_rt;
+   amrex::Real b2 = 0.0_rt;
+   amrex::Real b3 = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE

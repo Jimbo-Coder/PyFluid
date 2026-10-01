@@ -1,0 +1,75 @@
+--- a/include/hipSYCL/runtime/metal/metal_allocator.hpp
++++ b/include/hipSYCL/runtime/metal/metal_allocator.hpp
+@@ -23,6 +23,7 @@
+ 
+ class Device;
+ class Buffer;
++class ComputeCommandEncoder;
+ 
+ } // namespace MTL
+ 
+@@ -76,9 +77,11 @@
+     std::uint64_t length;
+   };
+ 
+-  // Returns per-buffer host/GPU address ranges for pointer values copied
+-  // through global memory.
+-  std::vector<pointer_translation_entry> get_pointer_translation_entries() const;
++  // Snapshot the address map and declare its buffers to Metal in one locked
++  // pass. Arbitrary USM pointers may reach any live allocation indirectly;
++  // binding only the top-level pointer does not establish that residency.
++  std::vector<pointer_translation_entry> prepare_kernel_resources(
++      MTL::ComputeCommandEncoder* encoder) const;
+ private:
+   MTL::Buffer* alloc_buffer(size_t size_bytes);
+ 
+--- a/src/runtime/metal/metal_allocator.cpp
++++ b/src/runtime/metal/metal_allocator.cpp
+@@ -361,13 +361,19 @@
+ }
+ 
+ std::vector<metal_allocator::pointer_translation_entry>
+-metal_allocator::get_pointer_translation_entries() const {
++metal_allocator::prepare_kernel_resources(
++    MTL::ComputeCommandEncoder* encoder) const {
+   std::vector<pointer_translation_entry> entries;
+   std::lock_guard<std::mutex> lock{_mutex};
+   for (const auto& [host_ptr, block] : _ptr_to_block) {
+     if (!block.buffer) {
+       continue;
+     }
++    // The translation table makes this resource reachable even when it is
++    // absent from the kernel's explicit argument list. useResource supplies
++    // residency, command-buffer retention and tracked read/write hazards.
++    encoder->useResource(block.buffer,
++                         MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
+     std::uint64_t host_addr = reinterpret_cast<std::uint64_t>(host_ptr);
+     std::uint64_t gpu_addr = static_cast<std::uint64_t>(block.buffer->gpuAddress());
+     if (block.alloc_type == usm_alloc_type::device) {
+--- a/src/runtime/metal/metal_queue.cpp
++++ b/src/runtime/metal/metal_queue.cpp
+@@ -362,13 +362,14 @@
+ 
+ bool make_pointer_translation_table(
+     metal_allocator* allocator,
++    MTL::ComputeCommandEncoder* encoder,
+     metal_pointer_translation_table& table,
+     std::string& error_msg) {
+   if (!allocator) {
+     return true;
+   }
+ 
+-  auto entries = allocator->get_pointer_translation_entries();
++  auto entries = allocator->prepare_kernel_resources(encoder);
+   if (entries.size() > metal_pointer_translation_max_entries) {
+     std::ostringstream os;
+     os << "metal_queue: pointer translation table overflow: registered_buffers="
+@@ -552,7 +553,7 @@
+   std::vector<NS::SharedPtr<MTL::Buffer>> buffers_out;
+   metal_pointer_translation_table pointer_translation_table;
+   std::string pointer_translation_error;
+-  if (!make_pointer_translation_table(allocator, pointer_translation_table, pointer_translation_error)) {
++  if (!make_pointer_translation_table(allocator, encoder, pointer_translation_table, pointer_translation_error)) {
+     encoder->endEncoding();
+     return make_error(__acpp_here(), error_info{pointer_translation_error});
+   }

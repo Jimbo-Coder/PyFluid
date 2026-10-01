@@ -5,6 +5,7 @@ import sympy as sp
 from .discretization import FiniteVolumeDivergence
 from .kernel_equations import ScalarKernel
 from .physical_system import NewtonianViscosity
+from .reference_metric import ReferenceMetricGeometry
 from .tensor_algebra import (
    OrthogonalOperators,
    Tensor,
@@ -170,9 +171,8 @@ def ideal_emf_kernels() -> tuple[ScalarKernel, ...]:
    )
 
 
-def electromagnetic_scalar_kernels() -> tuple[ScalarKernel, ...]:
+def resistive_emf_kernels() -> tuple[ScalarKernel, ...]:
    s = vector_symbols()
-   magnetic = Vector(s["bx"], s["by"], s["bz"])
    return (
       ScalarKernel(
          name="resistive_emf",
@@ -189,6 +189,13 @@ def electromagnetic_scalar_kernels() -> tuple[ScalarKernel, ...]:
          arguments=("eta", "h_tangent", "d_scaled_b", "denominator"),
          expression=s["eta"] * s["h_tangent"] * s["d_scaled_b"] / s["denominator"],
       ),
+   )
+
+
+def magnetic_scalar_kernels() -> tuple[ScalarKernel, ...]:
+   s = vector_symbols()
+   magnetic = Vector(s["bx"], s["by"], s["bz"])
+   return (
       ScalarKernel(
          name="magnetic_energy_density_from_components",
          arguments=("bx", "by", "bz"),
@@ -229,9 +236,6 @@ def constrained_transport_kernels() -> tuple[ScalarKernel, ...]:
             ("ct_flux_update_3d_dir2", (("ey", -1), ("ex", 1))),
          )
       ),
-      _finite_volume_divergence_kernel(1),
-      _finite_volume_divergence_kernel(2),
-      _finite_volume_divergence_kernel(3),
    )
 
 
@@ -339,7 +343,17 @@ def _tensor_divergence_connection_sources(
    1/(h1 h2 h3) d_qj[(h1 h2 h3 / h_j) T_ji].  Physical vector components
    also need the basis-derivative terms below.
    """
-   return OrthogonalOperators(scale_factors, coordinates).tensor_divergence_connection(tensor).as_tuple()
+   frame = OrthogonalFrame(
+      name="runtime",
+      coordinates=coordinates,
+      scale_factors=scale_factors,
+   )
+   # Historical viscous storage is tensor[normal, component].  The explicit
+   # reference-metric convention is flux[component, normal].
+   mixed_flux = tensor.transpose()
+   return ReferenceMetricGeometry(frame).orthonormal_mixed_basis_divergence(
+      mixed_flux
+   ).as_tuple()
 
 
 def tensor_divergence_connection_kernels() -> tuple[ScalarKernel, ...]:
@@ -373,15 +387,27 @@ def tensor_divergence_connection_kernels() -> tuple[ScalarKernel, ...]:
    return tuple(kernels)
 
 
-def vector_operator_kernels() -> tuple[ScalarKernel, ...]:
+def calculus_kernels() -> tuple[ScalarKernel, ...]:
    return (
       *cartesian_curl_kernels(),
       cartesian_divergence_kernel(),
       *orthogonal_curl_kernels(),
       orthogonal_divergence_kernel(),
-      *viscous_stress_kernels(),
-      *tensor_divergence_connection_kernels(),
-      *ideal_emf_kernels(),
-      *electromagnetic_scalar_kernels(),
-      *constrained_transport_kernels(),
    )
+
+
+# Compilation ownership, independent of coordinate/dimension/method choices.
+# The aggregate validator and leaf emitters consume the same equation groups.
+VECTOR_KERNEL_GROUPS = {
+   "calculus": calculus_kernels,
+   "reference_metric": tensor_divergence_connection_kernels,
+   "viscous": viscous_stress_kernels,
+   "emf": lambda: (*ideal_emf_kernels(), *resistive_emf_kernels()),
+   "magnetic": magnetic_scalar_kernels,
+   "ct": constrained_transport_kernels,
+   "finite_volume": lambda: tuple(_finite_volume_divergence_kernel(dim) for dim in (1, 2, 3)),
+}
+
+
+def vector_operator_kernels() -> tuple[ScalarKernel, ...]:
+   return tuple(kernel for factory in VECTOR_KERNEL_GROUPS.values() for kernel in factory())

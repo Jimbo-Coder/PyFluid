@@ -15,6 +15,8 @@
 #include "relativity/apparent_horizon_angular.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 namespace {
 
 constexpr amrex::Real pi = std::numbers::pi_v<amrex::Real>;
@@ -44,11 +46,11 @@ using apparent_horizon_detail::surface_value;
 using apparent_horizon_detail::wrap_index;
 
 struct SurfaceDerivatives {
-   amrex::Real theta = 0.0;
-   amrex::Real phi = 0.0;
-   amrex::Real theta_theta = 0.0;
-   amrex::Real theta_phi = 0.0;
-   amrex::Real phi_phi = 0.0;
+   amrex::Real theta = 0.0_rt;
+   amrex::Real phi = 0.0_rt;
+   amrex::Real theta_theta = 0.0_rt;
+   amrex::Real theta_phi = 0.0_rt;
+   amrex::Real phi_phi = 0.0_rt;
 };
 
 SurfaceDerivatives surface_derivatives(
@@ -60,10 +62,10 @@ SurfaceDerivatives surface_derivatives(
 ) noexcept
 {
    constexpr int offsets[7]{-3, -2, -1, 0, 1, 2, 3};
-   constexpr amrex::Real first[7]{-1.0, 9.0, -45.0, 0.0, 45.0, -9.0, 1.0};
-   constexpr amrex::Real second[7]{2.0, -27.0, 270.0, -490.0, 270.0, -27.0, 2.0};
+   constexpr amrex::Real first[7]{-1.0_rt, 9.0_rt, -45.0_rt, 0.0_rt, 45.0_rt, -9.0_rt, 1.0_rt};
+   constexpr amrex::Real second[7]{2.0_rt, -27.0_rt, 270.0_rt, -490.0_rt, 270.0_rt, -27.0_rt, 2.0_rt};
    const amrex::Real dtheta = pi / num_theta;
-   const amrex::Real dphi = 2.0 * pi / num_phi;
+   const amrex::Real dphi = 2.0_rt * pi / num_phi;
    SurfaceDerivatives derivatives;
    for (int stencil = 0; stencil < 7; ++stencil) {
       derivatives.theta += first[stencil] * surface_value(
@@ -79,10 +81,10 @@ SurfaceDerivatives surface_derivatives(
          radius, theta, phi + offsets[stencil], num_theta, num_phi
       );
    }
-   derivatives.theta /= 60.0 * dtheta;
-   derivatives.phi /= 60.0 * dphi;
-   derivatives.theta_theta /= 180.0 * dtheta * dtheta;
-   derivatives.phi_phi /= 180.0 * dphi * dphi;
+   derivatives.theta /= 60.0_rt * dtheta;
+   derivatives.phi /= 60.0_rt * dphi;
+   derivatives.theta_theta /= 180.0_rt * dtheta * dtheta;
+   derivatives.phi_phi /= 180.0_rt * dphi * dphi;
    for (int theta_stencil = 0; theta_stencil < 7; ++theta_stencil) {
       for (int phi_stencil = 0; phi_stencil < 7; ++phi_stencil) {
          derivatives.theta_phi += first[theta_stencil] * first[phi_stencil]
@@ -95,7 +97,7 @@ SurfaceDerivatives surface_derivatives(
             );
       }
    }
-   derivatives.theta_phi /= 3600.0 * dtheta * dphi;
+   derivatives.theta_phi /= 3600.0_rt * dtheta * dphi;
    return derivatives;
 }
 
@@ -136,9 +138,9 @@ void radial_graph_level_set_geometry(
       cos_theta * sin_phi,
       -sin_theta,
    };
-   const amrex::Real azimuthal[3]{-sin_phi, cos_phi, 0.0};
-   const amrex::Real inverse_radius = 1.0 / radius;
-   const amrex::Real inverse_sin_theta = 1.0 / sin_theta;
+   const amrex::Real azimuthal[3]{-sin_phi, cos_phi, 0.0_rt};
+   const amrex::Real inverse_radius = 1.0_rt / radius;
+   const amrex::Real inverse_sin_theta = 1.0_rt / sin_theta;
    amrex::Real gradient_theta[3]{};
    amrex::Real gradient_phi[3]{};
    for (int direction = 0; direction < 3; ++direction) {
@@ -212,7 +214,7 @@ amrex::Real spatial_dot(
       {metric.gamma12, metric.gamma22, metric.gamma23},
       {metric.gamma13, metric.gamma23, metric.gamma33},
    };
-   amrex::Real result = 0.0;
+   amrex::Real result = 0.0_rt;
    for (int row = 0; row < 3; ++row) {
       for (int column = 0; column < 3; ++column) {
          result += gamma[row][column] * first[row] * second[column];
@@ -227,7 +229,7 @@ struct SurfaceEvaluation {
    std::vector<amrex::Real> area_weight;
    amrex::Real linf = std::numeric_limits<amrex::Real>::infinity();
    amrex::Real l2 = std::numeric_limits<amrex::Real>::infinity();
-   amrex::Real timestep = 0.0;
+   amrex::Real timestep = 0.0_rt;
 };
 
 struct SurfaceStepWorkspace {
@@ -263,7 +265,7 @@ std::vector<ApparentHorizonGeometrySample> cache_surface_geometry(
 {
    std::vector<ApparentHorizonGeometrySample> samples(radius.size());
    const amrex::Real dtheta = pi / num_theta;
-   const amrex::Real dphi = 2.0 * pi / num_phi;
+   const amrex::Real dphi = 2.0_rt * pi / num_phi;
    const std::ptrdiff_t point_count = static_cast<std::ptrdiff_t>(radius.size());
 #if defined(PYFLUID_AMREX_HORIZON_OPENMP)
 #pragma omp parallel for schedule(static) num_threads(surface_thread_count(point_count)) if(point_count >= minimum_parallel_surface_points)
@@ -271,8 +273,8 @@ std::vector<ApparentHorizonGeometrySample> cache_surface_geometry(
    for (std::ptrdiff_t point = 0; point < point_count; ++point) {
       const int theta_index = static_cast<int>(point / num_phi);
       const int phi_index = static_cast<int>(point % num_phi);
-      const amrex::Real theta = (theta_index + 0.5) * dtheta;
-      const amrex::Real phi = (phi_index + 0.5) * dphi;
+      const amrex::Real theta = (theta_index + 0.5_rt) * dtheta;
+      const amrex::Real phi = (phi_index + 0.5_rt) * dphi;
       const std::size_t index = static_cast<std::size_t>(point);
       samples[index] = geometry.interpolate(radius[index], theta, phi);
    }
@@ -291,7 +293,7 @@ void evaluate_expansion(
 {
    expansion.resize(radius.size());
    if (area_weight != nullptr) {
-      area_weight->assign(radius.size(), 0.0);
+      area_weight->assign(radius.size(), 0.0_rt);
    }
    std::vector<amrex::Real> proper_spacing;
    if (minimum_proper_spacing != nullptr) {
@@ -300,7 +302,7 @@ void evaluate_expansion(
       );
    }
    const amrex::Real dtheta = pi / num_theta;
-   const amrex::Real dphi = 2.0 * pi / num_phi;
+   const amrex::Real dphi = 2.0_rt * pi / num_phi;
    const std::ptrdiff_t point_count = static_cast<std::ptrdiff_t>(radius.size());
 #if defined(PYFLUID_AMREX_HORIZON_OPENMP)
 #pragma omp parallel for schedule(static) num_threads(surface_thread_count(point_count)) if(point_count >= minimum_parallel_surface_points)
@@ -308,10 +310,10 @@ void evaluate_expansion(
    for (std::ptrdiff_t point = 0; point < point_count; ++point) {
       const int theta_index = static_cast<int>(point / num_phi);
       const int phi_index = static_cast<int>(point % num_phi);
-      const amrex::Real theta = (theta_index + 0.5) * dtheta;
+      const amrex::Real theta = (theta_index + 0.5_rt) * dtheta;
       const amrex::Real sin_theta = std::sin(theta);
       const amrex::Real cos_theta = std::cos(theta);
-      const amrex::Real phi = (phi_index + 0.5) * dphi;
+      const amrex::Real phi = (phi_index + 0.5_rt) * dphi;
       const amrex::Real sin_phi = std::sin(phi);
       const amrex::Real cos_phi = std::cos(phi);
       const std::size_t index = static_cast<std::size_t>(point);
@@ -345,7 +347,7 @@ void evaluate_expansion(
          cos_theta * sin_phi,
          -sin_theta,
       };
-      const amrex::Real azimuthal[3]{-sin_phi, cos_phi, 0.0};
+      const amrex::Real azimuthal[3]{-sin_phi, cos_phi, 0.0_rt};
       amrex::Real tangent_theta[3]{};
       amrex::Real tangent_phi[3]{};
       for (int direction = 0; direction < 3; ++direction) {
@@ -365,21 +367,21 @@ void evaluate_expansion(
       );
       const amrex::Real determinant = induced_theta_theta
          * induced_phi_phi - induced_theta_phi * induced_theta_phi;
-      const amrex::Real local_area = determinant > 0.0
+      const amrex::Real local_area = determinant > 0.0_rt
          ? std::sqrt(determinant) * dtheta * dphi
          : std::numeric_limits<amrex::Real>::quiet_NaN();
       if (area_weight != nullptr) {
          (*area_weight)[index] = local_area;
       }
       if (minimum_proper_spacing != nullptr
-          && induced_theta_theta > 0.0 && induced_phi_phi > 0.0) {
+          && induced_theta_theta > 0.0_rt && induced_phi_phi > 0.0_rt) {
          const amrex::Real theta_spacing =
             std::sqrt(induced_theta_theta) * dtheta;
          const amrex::Real phi_spacing =
             std::sqrt(induced_phi_phi) * dphi;
-         proper_spacing[index] = 1.0 / std::sqrt(
-            1.0 / (theta_spacing * theta_spacing)
-            + 1.0 / (phi_spacing * phi_spacing)
+         proper_spacing[index] = 1.0_rt / std::sqrt(
+            1.0_rt / (theta_spacing * theta_spacing)
+            + 1.0_rt / (phi_spacing * phi_spacing)
          );
       }
    }
@@ -421,9 +423,9 @@ SurfaceEvaluation evaluate_surface(
       &evaluation.area_weight,
       calculate_timestep ? &minimum_spacing : nullptr
    );
-   amrex::Real area = 0.0;
-   amrex::Real weighted_square = 0.0;
-   evaluation.linf = 0.0;
+   amrex::Real area = 0.0_rt;
+   amrex::Real weighted_square = 0.0_rt;
+   evaluation.linf = 0.0_rt;
    for (std::size_t index = 0; index < radius.size(); ++index) {
       const amrex::Real scaled_expansion = mass_scale
          * evaluation.expansion[index];
@@ -431,7 +433,7 @@ SurfaceEvaluation evaluate_surface(
           || !std::isfinite(evaluation.area_weight[index])) {
          evaluation.linf = std::numeric_limits<amrex::Real>::infinity();
          evaluation.l2 = std::numeric_limits<amrex::Real>::infinity();
-         evaluation.timestep = 0.0;
+         evaluation.timestep = 0.0_rt;
          return evaluation;
       }
       evaluation.linf = std::max(
@@ -441,17 +443,17 @@ SurfaceEvaluation evaluate_surface(
       weighted_square += scaled_expansion * scaled_expansion
          * evaluation.area_weight[index];
    }
-   evaluation.l2 = area > 0.0
+   evaluation.l2 = area > 0.0_rt
       ? std::sqrt(weighted_square / area)
       : std::numeric_limits<amrex::Real>::infinity();
-   evaluation.timestep = calculate_timestep ? minimum_spacing : 0.0;
+   evaluation.timestep = calculate_timestep ? minimum_spacing : 0.0_rt;
    return evaluation;
 }
 
 bool finite_surface(std::vector<amrex::Real> const& radius) noexcept
 {
    return std::all_of(radius.begin(), radius.end(), [](amrex::Real value) {
-      return std::isfinite(value) && value > 0.0;
+      return std::isfinite(value) && value > 0.0_rt;
    });
 }
 
@@ -557,8 +559,8 @@ bool ssprk3_step(
       radius,
       workspace.radius_stage1,
       workspace.radius_rhs,
-      0.75,
-      0.25,
+      0.75_rt,
+      0.25_rt,
       timestep,
       workspace.radius_stage2
    );
@@ -566,8 +568,8 @@ bool ssprk3_step(
       velocity,
       workspace.velocity_stage1,
       workspace.velocity_rhs,
-      0.75,
-      0.25,
+      0.75_rt,
+      0.25_rt,
       timestep,
       workspace.velocity_stage2
    );
@@ -596,8 +598,8 @@ bool ssprk3_step(
       radius,
       workspace.radius_stage2,
       workspace.radius_rhs,
-      1.0 / 3.0,
-      2.0 / 3.0,
+      1.0_rt / 3.0_rt,
+      2.0_rt / 3.0_rt,
       timestep,
       workspace.radius_next
    );
@@ -605,8 +607,8 @@ bool ssprk3_step(
       velocity,
       workspace.velocity_stage2,
       workspace.velocity_rhs,
-      1.0 / 3.0,
-      2.0 / 3.0,
+      1.0_rt / 3.0_rt,
+      2.0_rt / 3.0_rt,
       timestep,
       workspace.velocity_next
    );
@@ -642,9 +644,9 @@ std::vector<int> angular_levels(
 }
 
 struct SurfaceCurvePoint {
-   amrex::Real radius = 0.0;
-   amrex::Real theta = 0.0;
-   amrex::Real phi = 0.0;
+   amrex::Real radius = 0.0_rt;
+   amrex::Real theta = 0.0_rt;
+   amrex::Real phi = 0.0_rt;
    amrex::Real position[3]{};
 };
 
@@ -672,7 +674,7 @@ SurfaceCurvePoint equatorial_curve_point(
    amrex::Real parameter
 )
 {
-   return surface_curve_point(surface, 0.5 * pi, parameter);
+   return surface_curve_point(surface, 0.5_rt * pi, parameter);
 }
 
 SurfaceCurvePoint polar_curve_point(
@@ -681,15 +683,15 @@ SurfaceCurvePoint polar_curve_point(
    amrex::Real plane_phi
 )
 {
-   parameter = std::fmod(parameter, 2.0 * pi);
-   if (parameter < 0.0) {
-      parameter += 2.0 * pi;
+   parameter = std::fmod(parameter, 2.0_rt * pi);
+   if (parameter < 0.0_rt) {
+      parameter += 2.0_rt * pi;
    }
    if (parameter <= pi) {
       return surface_curve_point(surface, parameter, plane_phi);
    }
    return surface_curve_point(
-      surface, 2.0 * pi - parameter, plane_phi + pi
+      surface, 2.0_rt * pi - parameter, plane_phi + pi
    );
 }
 
@@ -700,13 +702,13 @@ amrex::Real proper_curve_length(
    PointFunction&& point_at
 )
 {
-   const amrex::Real spacing = 2.0 * pi / num_segments;
-   amrex::Real length = 0.0;
+   const amrex::Real spacing = 2.0_rt * pi / num_segments;
+   amrex::Real length = 0.0_rt;
    for (int segment = 0; segment < num_segments; ++segment) {
-      const amrex::Real parameter = (segment + 0.5) * spacing;
+      const amrex::Real parameter = (segment + 0.5_rt) * spacing;
       const SurfaceCurvePoint center = point_at(parameter);
-      const SurfaceCurvePoint lower = point_at(parameter - 0.5 * spacing);
-      const SurfaceCurvePoint upper = point_at(parameter + 0.5 * spacing);
+      const SurfaceCurvePoint lower = point_at(parameter - 0.5_rt * spacing);
+      const SurfaceCurvePoint upper = point_at(parameter + 0.5_rt * spacing);
       amrex::Real tangent[3]{};
       for (int direction = 0; direction < 3; ++direction) {
          tangent[direction] = (
@@ -725,9 +727,9 @@ amrex::Real proper_curve_length(
       const amrex::Real tangent_norm_squared = spatial_dot(
          metric, tangent, tangent
       );
-      if (!(tangent_norm_squared > 0.0)
+      if (!(tangent_norm_squared > 0.0_rt)
           || !std::isfinite(tangent_norm_squared)) {
-         return -1.0;
+         return -1.0_rt;
       }
       length += spacing * std::sqrt(tangent_norm_squared);
    }
@@ -746,13 +748,13 @@ void calculate_diagnostics(
    const auto& radius = surface.radius();
    const auto center = surface.center();
    const amrex::Real dtheta = pi / num_theta;
-   const amrex::Real dphi = 2.0 * pi / num_phi;
-   result.area = 0.0;
+   const amrex::Real dphi = 2.0_rt * pi / num_phi;
+   result.area = 0.0_rt;
    result.centroid = {};
    for (int theta_index = 0; theta_index < num_theta; ++theta_index) {
-      const amrex::Real theta = (theta_index + 0.5) * dtheta;
+      const amrex::Real theta = (theta_index + 0.5_rt) * dtheta;
       for (int phi_index = 0; phi_index < num_phi; ++phi_index) {
-         const amrex::Real phi = (phi_index + 0.5) * dphi;
+         const amrex::Real phi = (phi_index + 0.5_rt) * dphi;
          const std::size_t index = surface_index(
             theta_index, phi_index, num_phi
          );
@@ -768,7 +770,7 @@ void calculate_diagnostics(
          }
       }
    }
-   if (!(result.area > 0.0) || !std::isfinite(result.area)) {
+   if (!(result.area > 0.0_rt) || !std::isfinite(result.area)) {
       result.converged = false;
       result.failure_reason = "found surface has non-positive proper area";
       return;
@@ -776,7 +778,7 @@ void calculate_diagnostics(
    for (int direction = 0; direction < 3; ++direction) {
       result.centroid[direction] /= result.area;
    }
-   result.irreducible_mass = std::sqrt(result.area / (16.0 * pi));
+   result.irreducible_mass = std::sqrt(result.area / (16.0_rt * pi));
    result.equatorial_circumference = proper_curve_length(
       geometry_grid,
       num_phi,
@@ -784,10 +786,10 @@ void calculate_diagnostics(
          return equatorial_curve_point(surface, parameter);
       }
    );
-   result.polar_circumference = 0.0;
+   result.polar_circumference = 0.0_rt;
    const int num_polar_planes = std::max(1, num_phi / 2);
    for (int plane = 0; plane < num_polar_planes; ++plane) {
-      const amrex::Real plane_phi = pi * (plane + 0.5)
+      const amrex::Real plane_phi = pi * (plane + 0.5_rt)
          / num_polar_planes;
       result.polar_circumference += proper_curve_length(
          geometry_grid,
@@ -799,12 +801,12 @@ void calculate_diagnostics(
    }
    result.polar_circumference /= num_polar_planes;
    result.kerr_horizon_mass = result.equatorial_circumference
-      / (4.0 * pi);
+      / (4.0_rt * pi);
    const amrex::Real kerr_area_factor = result.area / (
-      8.0 * pi * result.kerr_horizon_mass * result.kerr_horizon_mass
+      8.0_rt * pi * result.kerr_horizon_mass * result.kerr_horizon_mass
    );
-   if (!(result.equatorial_circumference > 0.0)
-       || !(result.polar_circumference > 0.0)
+   if (!(result.equatorial_circumference > 0.0_rt)
+       || !(result.polar_circumference > 0.0_rt)
        || !std::isfinite(result.kerr_horizon_mass)) {
       result.converged = false;
       result.failure_reason = "found surface has invalid proper circumference";
@@ -814,27 +816,27 @@ void calculate_diagnostics(
    // circumferences and mass scale usable, but mark the Kerr-inferred spin as
    // unavailable when area and circumference do not admit a Kerr relation.
    if (!std::isfinite(kerr_area_factor)
-       || kerr_area_factor < 1.0 - 5.0e-2
-       || kerr_area_factor > 2.0 + 5.0e-2) {
-      result.kerr_dimensionless_spin = -1.0;
+       || kerr_area_factor < 1.0_rt - 5.0e-2_rt
+       || kerr_area_factor > 2.0_rt + 5.0e-2_rt) {
+      result.kerr_dimensionless_spin = -1.0_rt;
    } else {
       const amrex::Real bounded_area_factor = std::clamp(
-         kerr_area_factor, amrex::Real(1.0), amrex::Real(2.0)
+         kerr_area_factor, amrex::Real(1.0_rt), amrex::Real(2.0_rt)
       );
       result.kerr_dimensionless_spin = std::sqrt(std::max(
-         amrex::Real(0.0),
-         amrex::Real(1.0)
-            - (bounded_area_factor - 1.0) * (bounded_area_factor - 1.0)
+         amrex::Real(0.0_rt),
+         amrex::Real(1.0_rt)
+            - (bounded_area_factor - 1.0_rt) * (bounded_area_factor - 1.0_rt)
       ));
    }
    result.angular_momentum = {};
    result.minimum_radius = std::numeric_limits<amrex::Real>::infinity();
-   result.maximum_radius = 0.0;
-   result.mean_radius = 0.0;
+   result.maximum_radius = 0.0_rt;
+   result.mean_radius = 0.0_rt;
    for (int theta_index = 0; theta_index < num_theta; ++theta_index) {
-      const amrex::Real theta = (theta_index + 0.5) * dtheta;
+      const amrex::Real theta = (theta_index + 0.5_rt) * dtheta;
       for (int phi_index = 0; phi_index < num_phi; ++phi_index) {
-         const amrex::Real phi = (phi_index + 0.5) * dphi;
+         const amrex::Real phi = (phi_index + 0.5_rt) * dphi;
          const std::size_t index = surface_index(
             theta_index, phi_index, num_phi
          );
@@ -872,7 +874,7 @@ void calculate_diagnostics(
             {metric.inv_gamma13, metric.inv_gamma23, metric.inv_gamma33},
          };
          amrex::Real normal[3]{};
-         amrex::Real normal_norm_squared = 0.0;
+         amrex::Real normal_norm_squared = 0.0_rt;
          for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
                normal[row] += inverse_metric[row][column]
@@ -882,14 +884,14 @@ void calculate_diagnostics(
                   * level_set_gradient[column];
             }
          }
-         if (!(normal_norm_squared > 0.0)
+         if (!(normal_norm_squared > 0.0_rt)
              || !std::isfinite(normal_norm_squared)) {
             result.converged = false;
             result.failure_reason =
                "found surface has an invalid outward unit normal";
             return;
          }
-         const amrex::Real inverse_normal_norm = 1.0
+         const amrex::Real inverse_normal_norm = 1.0_rt
             / std::sqrt(normal_norm_squared);
          for (amrex::Real& component : normal) {
             component *= inverse_normal_norm;
@@ -917,12 +919,12 @@ void calculate_diagnostics(
             x[2] - result.centroid[2],
          };
          const amrex::Real rotation_generators[3][3]{
-            {0.0, -relative_position[2], relative_position[1]},
-            {relative_position[2], 0.0, -relative_position[0]},
-            {-relative_position[1], relative_position[0], 0.0},
+            {0.0_rt, -relative_position[2], relative_position[1]},
+            {relative_position[2], 0.0_rt, -relative_position[0]},
+            {-relative_position[1], relative_position[0], 0.0_rt},
          };
          for (int axis = 0; axis < 3; ++axis) {
-            amrex::Real integrand = 0.0;
+            amrex::Real integrand = 0.0_rt;
             for (int row = 0; row < 3; ++row) {
                for (int column = 0; column < 3; ++column) {
                   integrand += rotation_generators[axis][row]
@@ -930,7 +932,7 @@ void calculate_diagnostics(
                }
             }
             result.angular_momentum[axis] += evaluation.area_weight[index]
-               * integrand / (8.0 * pi);
+               * integrand / (8.0_rt * pi);
          }
          result.minimum_radius = std::min(
             result.minimum_radius, relative_radius
@@ -950,9 +952,9 @@ void calculate_diagnostics(
    const amrex::Real irreducible_mass_squared =
       result.irreducible_mass * result.irreducible_mass;
    result.christodoulou_mass = result.irreducible_mass * std::sqrt(
-      1.0 + result.angular_momentum_magnitude
+      1.0_rt + result.angular_momentum_magnitude
          * result.angular_momentum_magnitude
-         / (4.0 * irreducible_mass_squared * irreducible_mass_squared)
+         / (4.0_rt * irreducible_mass_squared * irreducible_mass_squared)
    );
    const amrex::Real christodoulou_mass_squared =
       result.christodoulou_mass * result.christodoulou_mass;
@@ -963,9 +965,9 @@ void calculate_diagnostics(
    result.christodoulou_dimensionless_spin_magnitude =
       result.angular_momentum_magnitude / christodoulou_mass_squared;
    if (!std::isfinite(result.angular_momentum_magnitude)
-       || !(result.christodoulou_mass > 0.0)
+       || !(result.christodoulou_mass > 0.0_rt)
        || !std::isfinite(result.christodoulou_dimensionless_spin_magnitude)
-       || result.christodoulou_dimensionless_spin_magnitude > 1.0 + 5.0e-2) {
+       || result.christodoulou_dimensionless_spin_magnitude > 1.0_rt + 5.0e-2_rt) {
       result.converged = false;
       result.failure_reason =
          "found surface has invalid quasi-local spin diagnostics";
@@ -1162,9 +1164,9 @@ ApparentHorizonGeometryGrid::interpolate_angular(
 {
    canonicalize_angles(theta, phi);
    const amrex::Real dtheta = pi / num_theta_;
-   const amrex::Real dphi = 2.0 * pi / num_phi_;
-   const amrex::Real theta_grid = theta / dtheta - 0.5;
-   const amrex::Real phi_grid = phi / dphi - 0.5;
+   const amrex::Real dphi = 2.0_rt * pi / num_phi_;
+   const amrex::Real theta_grid = theta / dtheta - 0.5_rt;
+   const amrex::Real phi_grid = phi / dphi - 0.5_rt;
    const int theta_lower = static_cast<int>(std::floor(theta_grid));
    const int phi_lower = static_cast<int>(std::floor(phi_grid));
    const amrex::Real theta_fraction = theta_grid - theta_lower;
@@ -1175,13 +1177,13 @@ ApparentHorizonGeometryGrid::interpolate_angular(
          theta_lower + theta_offset, num_theta_, num_phi_
       );
       const amrex::Real theta_weight = theta_offset == 0
-         ? 1.0 - theta_fraction : theta_fraction;
+         ? 1.0_rt - theta_fraction : theta_fraction;
       for (int phi_offset = 0; phi_offset < 2; ++phi_offset) {
          const int mapped_phi = wrap_index(
             phi_lower + phi_offset + mapped.phi_shift, num_phi_
          );
          const amrex::Real phi_weight = phi_offset == 0
-            ? 1.0 - phi_fraction : phi_fraction;
+            ? 1.0_rt - phi_fraction : phi_fraction;
          const auto& sample = samples_[index(radial, mapped.theta, mapped_phi)];
          for (int component = 0;
               component < ApparentHorizonGeometryComponents;
@@ -1209,12 +1211,12 @@ ApparentHorizonGeometrySample ApparentHorizonGeometryGrid::interpolate(
       radial_coordinates_.begin(), radial_coordinates_.end(), radius
    );
    int lower_index = 0;
-   amrex::Real fraction = 0.0;
+   amrex::Real fraction = 0.0_rt;
    if (upper == radial_coordinates_.begin()) {
       lower_index = 0;
    } else if (upper == radial_coordinates_.end()) {
       lower_index = static_cast<int>(radial_coordinates_.size()) - 2;
-      fraction = 1.0;
+      fraction = 1.0_rt;
    } else {
       const int upper_index = static_cast<int>(
          upper - radial_coordinates_.begin()
@@ -1232,7 +1234,7 @@ ApparentHorizonGeometrySample ApparentHorizonGeometryGrid::interpolate(
    for (int component = 0;
         component < ApparentHorizonGeometryComponents;
         ++component) {
-      result[component] = (1.0 - fraction) * lower[component]
+      result[component] = (1.0_rt - fraction) * lower[component]
          + fraction * upper_sample[component];
    }
    return result;
@@ -1245,11 +1247,11 @@ ApparentHorizonResult find_apparent_horizon(
    std::optional<ApparentHorizonSurface> const& initial_surface
 )
 {
-   if (!(parameters.mass_scale > 0.0) || !(parameters.cfl > 0.0)
-       || !(parameters.cfl <= 1.0) || !(parameters.eta_times_mass > 0.0)
+   if (!(parameters.mass_scale > 0.0_rt) || !(parameters.cfl > 0.0_rt)
+       || !(parameters.cfl <= 1.0_rt) || !(parameters.eta_times_mass > 0.0_rt)
        || parameters.max_iterations_per_level <= 0
-       || parameters.theta_linf_times_mass_tolerance < 0.0
-       || parameters.theta_l2_times_mass_tolerance < 0.0) {
+       || parameters.theta_linf_times_mass_tolerance < 0.0_rt
+       || parameters.theta_l2_times_mass_tolerance < 0.0_rt) {
       throw std::invalid_argument("invalid apparent-horizon finder parameters");
    }
    const auto levels = angular_levels(parameters);
@@ -1259,7 +1261,7 @@ ApparentHorizonResult find_apparent_horizon(
          "apparent-horizon geometry grid is coarser than the target surface"
       );
    }
-   if (!(initial_radius > 0.0)) {
+   if (!(initial_radius > 0.0_rt)) {
       throw std::invalid_argument(
          "apparent-horizon initial radius must be positive"
       );
@@ -1275,13 +1277,13 @@ ApparentHorizonResult find_apparent_horizon(
       );
       if (previous_surface.has_value()) {
          const amrex::Real dtheta = pi / num_theta;
-         const amrex::Real dphi = 2.0 * pi / num_phi;
+         const amrex::Real dphi = 2.0_rt * pi / num_phi;
          for (int theta_index = 0; theta_index < num_theta; ++theta_index) {
-            const amrex::Real theta = (theta_index + 0.5) * dtheta;
+            const amrex::Real theta = (theta_index + 0.5_rt) * dtheta;
             for (int phi_index = 0; phi_index < num_phi; ++phi_index) {
                radius[surface_index(theta_index, phi_index, num_phi)] =
                   previous_surface->radius_at(
-                     theta, (phi_index + 0.5) * dphi
+                     theta, (phi_index + 0.5_rt) * dphi
                   );
             }
          }
@@ -1332,10 +1334,10 @@ ApparentHorizonResult find_apparent_horizon(
          // nonlinear/cached-geometry safety used by this radial-graph owner;
          // a user CFL near one therefore remains the intended setting.
          const amrex::Real sixth_order_ssprk3_wave_factor =
-            0.5 * std::sqrt(3.0 / (1088.0 / 180.0));
+            0.5_rt * std::sqrt(3.0_rt / (1088.0_rt / 180.0_rt));
          const amrex::Real timestep = parameters.cfl
             * sixth_order_ssprk3_wave_factor * evaluation.timestep;
-         if (!(timestep > 0.0) || !std::isfinite(timestep)) {
+         if (!(timestep > 0.0_rt) || !std::isfinite(timestep)) {
             result.failure_reason =
                "apparent-horizon pseudo-timestep is non-positive or nonfinite";
             return result;
@@ -1375,7 +1377,7 @@ ApparentHorizonResult find_apparent_horizon(
                );
                amrex::Real best_residual = current.linf;
                std::vector<amrex::Real> best_radius = radius;
-               amrex::Real factor = 1.0;
+               amrex::Real factor = 1.0_rt;
                for (int trial_index = 0; trial_index < 12; ++trial_index) {
                   std::vector<amrex::Real> trial(radius.size());
                   for (std::size_t index = 0; index < radius.size(); ++index) {
@@ -1401,8 +1403,8 @@ ApparentHorizonResult find_apparent_horizon(
                   best_radius = std::move(trial);
                   factor *= parameters.over_relaxation_growth;
                }
-               const amrex::Real relative_improvement = current.linf > 0.0
-                  ? (current.linf - best_residual) / current.linf : 0.0;
+               const amrex::Real relative_improvement = current.linf > 0.0_rt
+                  ? (current.linf - best_residual) / current.linf : 0.0_rt;
                if (relative_improvement
                    >= parameters.over_relaxation_minimum_improvement) {
                   radius = std::move(best_radius);

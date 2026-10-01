@@ -8,6 +8,7 @@
 #include <array>
 
 #include "pyfluid_amrex/mask_regions.hpp"
+#include "pyfluid_amrex/time_integration.hpp"
 
 namespace pyfluid_amrex {
 
@@ -247,13 +248,12 @@ inline void add_flux_divergence_and_copy_plus_flux_divergence_components(
 }
 
 template <int NComp>
-inline void linear_combination_plus_flux_divergence_components(
+inline void affine_combination_plus_flux_divergence_components(
    amrex::MultiFab& out,
    amrex::MultiFab const& base,
    amrex::MultiFab const& input,
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::Geometry const& geom,
-   amrex::Real base_weight,
    amrex::Real input_weight,
    amrex::Real flux_scale
 )
@@ -263,34 +263,32 @@ inline void linear_combination_plus_flux_divergence_components(
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    {
-   for (amrex::MFIter mfi(out, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.tilebox();
-      const auto b = base.const_array(mfi);
-      const auto in = input.const_array(mfi);
-      const auto fx = fluxes[0]->const_array(mfi);
+      for (amrex::MFIter mfi(out, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         const amrex::Box& bx = mfi.tilebox();
+         const auto b = base.const_array(mfi);
+         const auto in = input.const_array(mfi);
+         const auto fx = fluxes[0]->const_array(mfi);
 #if (AMREX_SPACEDIM >= 2)
-      const auto fy = fluxes[1]->const_array(mfi);
+         const auto fy = fluxes[1]->const_array(mfi);
 #endif
 #if (AMREX_SPACEDIM == 3)
-      const auto fz = fluxes[2]->const_array(mfi);
+         const auto fz = fluxes[2]->const_array(mfi);
 #endif
-      const auto o = out.array(mfi);
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         for (int q = 0; q < NComp; ++q) {
-            amrex::Real rhs = -(fx(i + 1, j, k, q) - fx(i, j, k, q)) / dx[0];
+         const auto o = out.array(mfi);
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            for (int q = 0; q < NComp; ++q) {
+               amrex::Real rhs = -(fx(i + 1, j, k, q) - fx(i, j, k, q)) / dx[0];
 #if (AMREX_SPACEDIM >= 2)
-            rhs -= (fy(i, j + 1, k, q) - fy(i, j, k, q)) / dx[1];
+               rhs -= (fy(i, j + 1, k, q) - fy(i, j, k, q)) / dx[1];
 #endif
 #if (AMREX_SPACEDIM == 3)
-            rhs -= (fz(i, j, k + 1, q) - fz(i, j, k, q)) / dx[2];
+               rhs -= (fz(i, j, k + 1, q) - fz(i, j, k, q)) / dx[2];
 #endif
-            o(i, j, k, q) =
-               base_weight * b(i, j, k, q)
-               + input_weight * in(i, j, k, q)
-               + flux_scale * rhs;
-         }
-      });
-   }
+               o(i, j, k, q) = affine_state_update(
+                  b(i, j, k, q), in(i, j, k, q), input_weight, flux_scale * rhs);
+            }
+         });
+      }
    }
 }
 
@@ -530,14 +528,13 @@ inline void add_flux_divergence_and_copy_plus_flux_divergence_components_masked(
 }
 
 template <int NComp>
-inline void linear_combination_plus_flux_divergence_components_masked(
+inline void affine_combination_plus_flux_divergence_components_masked(
    amrex::MultiFab& out,
    amrex::MultiFab const& base,
    amrex::MultiFab const& input,
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::iMultiFab const& solid_mask,
    amrex::Geometry const& geom,
-   amrex::Real base_weight,
    amrex::Real input_weight,
    amrex::Real flux_scale,
    amrex::Vector<int> const* solid_valid_kind = nullptr
@@ -548,66 +545,62 @@ inline void linear_combination_plus_flux_divergence_components_masked(
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    {
-   for (amrex::MFIter mfi(out, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-      const amrex::Box& bx = mfi.tilebox();
-      const auto b = base.const_array(mfi);
-      const auto in = input.const_array(mfi);
-      const auto fx = fluxes[0]->const_array(mfi);
+      for (amrex::MFIter mfi(out, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+         const amrex::Box& bx = mfi.tilebox();
+         const auto b = base.const_array(mfi);
+         const auto in = input.const_array(mfi);
+         const auto fx = fluxes[0]->const_array(mfi);
 #if (AMREX_SPACEDIM >= 2)
-      const auto fy = fluxes[1]->const_array(mfi);
+         const auto fy = fluxes[1]->const_array(mfi);
 #endif
 #if (AMREX_SPACEDIM == 3)
-      const auto fz = fluxes[2]->const_array(mfi);
+         const auto fz = fluxes[2]->const_array(mfi);
 #endif
-      const auto solid = solid_mask.const_array(mfi);
-      const auto o = out.array(mfi);
-      const int kind = cached_or_region_mask_kind(solid_valid_kind, mfi, solid_mask, bx);
-      if (kind == MaskKindNonzero) {
-         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            for (int q = 0; q < NComp; ++q) {
-               o(i, j, k, q) = b(i, j, k, q);
-            }
-         });
-         continue;
-      }
-      if (kind == MaskKindZero) {
-         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-            for (int q = 0; q < NComp; ++q) {
-               amrex::Real rhs = -(fx(i + 1, j, k, q) - fx(i, j, k, q)) / dx[0];
-#if (AMREX_SPACEDIM >= 2)
-               rhs -= (fy(i, j + 1, k, q) - fy(i, j, k, q)) / dx[1];
-#endif
-#if (AMREX_SPACEDIM == 3)
-               rhs -= (fz(i, j, k + 1, q) - fz(i, j, k, q)) / dx[2];
-#endif
-               o(i, j, k, q) =
-                  base_weight * b(i, j, k, q)
-                  + input_weight * in(i, j, k, q)
-                  + flux_scale * rhs;
-            }
-         });
-         continue;
-      }
-      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         for (int q = 0; q < NComp; ++q) {
-            if (solid(i, j, k, 0) != 0) {
-               o(i, j, k, q) = b(i, j, k, q);
-            } else {
-               amrex::Real rhs = -(fx(i + 1, j, k, q) - fx(i, j, k, q)) / dx[0];
-#if (AMREX_SPACEDIM >= 2)
-               rhs -= (fy(i, j + 1, k, q) - fy(i, j, k, q)) / dx[1];
-#endif
-#if (AMREX_SPACEDIM == 3)
-               rhs -= (fz(i, j, k + 1, q) - fz(i, j, k, q)) / dx[2];
-#endif
-               o(i, j, k, q) =
-                  base_weight * b(i, j, k, q)
-                  + input_weight * in(i, j, k, q)
-                  + flux_scale * rhs;
-            }
+         const auto solid = solid_mask.const_array(mfi);
+         const auto o = out.array(mfi);
+         const int kind = cached_or_region_mask_kind(solid_valid_kind, mfi, solid_mask, bx);
+         if (kind == MaskKindNonzero) {
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               for (int q = 0; q < NComp; ++q) {
+                  o(i, j, k, q) = b(i, j, k, q);
+               }
+            });
+            continue;
          }
-      });
-   }
+         if (kind == MaskKindZero) {
+            amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+               for (int q = 0; q < NComp; ++q) {
+                  amrex::Real rhs = -(fx(i + 1, j, k, q) - fx(i, j, k, q)) / dx[0];
+#if (AMREX_SPACEDIM >= 2)
+                  rhs -= (fy(i, j + 1, k, q) - fy(i, j, k, q)) / dx[1];
+#endif
+#if (AMREX_SPACEDIM == 3)
+                  rhs -= (fz(i, j, k + 1, q) - fz(i, j, k, q)) / dx[2];
+#endif
+                  o(i, j, k, q) = affine_state_update(
+                     b(i, j, k, q), in(i, j, k, q), input_weight, flux_scale * rhs);
+               }
+            });
+            continue;
+         }
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            for (int q = 0; q < NComp; ++q) {
+               if (solid(i, j, k, 0) != 0) {
+                  o(i, j, k, q) = b(i, j, k, q);
+               } else {
+                  amrex::Real rhs = -(fx(i + 1, j, k, q) - fx(i, j, k, q)) / dx[0];
+#if (AMREX_SPACEDIM >= 2)
+                  rhs -= (fy(i, j + 1, k, q) - fy(i, j, k, q)) / dx[1];
+#endif
+#if (AMREX_SPACEDIM == 3)
+                  rhs -= (fz(i, j, k + 1, q) - fz(i, j, k, q)) / dx[2];
+#endif
+                  o(i, j, k, q) = affine_state_update(
+                     b(i, j, k, q), in(i, j, k, q), input_weight, flux_scale * rhs);
+               }
+            }
+         });
+      }
    }
 }
 

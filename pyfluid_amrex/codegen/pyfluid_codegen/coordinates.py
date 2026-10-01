@@ -10,6 +10,7 @@ class OrthogonalFrame:
    name: str
    coordinates: tuple[sp.Symbol, sp.Symbol, sp.Symbol]
    scale_factors: tuple[sp.Expr, sp.Expr, sp.Expr]
+   cartesian_position: tuple[sp.Expr, sp.Expr, sp.Expr] | None = None
 
    @property
    def volume_scale(self) -> sp.Expr:
@@ -28,6 +29,7 @@ def cartesian_frame() -> OrthogonalFrame:
       name="cartesian",
       coordinates=(s["x"], s["y"], s["z"]),
       scale_factors=(sp.Integer(1), sp.Integer(1), sp.Integer(1)),
+      cartesian_position=(s["x"], s["y"], s["z"]),
    )
 
 
@@ -37,6 +39,7 @@ def cylindrical_frame() -> OrthogonalFrame:
       name="cylindrical",
       coordinates=(s["r"], s["phi"], s["z"]),
       scale_factors=(sp.Integer(1), s["r"], sp.Integer(1)),
+      cartesian_position=(s["r"] * sp.cos(s["phi"]), s["r"] * sp.sin(s["phi"]), s["z"]),
    )
 
 
@@ -46,6 +49,9 @@ def spherical_frame() -> OrthogonalFrame:
       name="spherical",
       coordinates=(s["r"], s["theta"], s["phi"]),
       scale_factors=(sp.Integer(1), s["r"], s["r"] * sp.sin(s["theta"])),
+      cartesian_position=(s["r"] * sp.sin(s["theta"]) * sp.cos(s["phi"]),
+                          s["r"] * sp.sin(s["theta"]) * sp.sin(s["phi"]),
+                          s["r"] * sp.cos(s["theta"])),
    )
 
 

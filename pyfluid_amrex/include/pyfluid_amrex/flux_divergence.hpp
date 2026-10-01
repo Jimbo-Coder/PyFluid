@@ -7,14 +7,17 @@
 
 #include <array>
 
-#include "pyfluid_amrex/kernels_generated/vector_ops.hpp"
+#include "pyfluid_amrex/kernels_generated/vector/finite_volume.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
+#include "pyfluid_amrex/reference_metric_valencia.hpp"
 #include "pyfluid_amrex/solid_geometry.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 template <int NComp>
 inline void compute_rhs_from_fluxes(
@@ -110,10 +113,10 @@ inline void compute_rhs_from_fluxes_mapped_patches(
 	         const PatchCoordinate global = patch_local_to_global(grid_patch.map, cell_center);
 	         const bool physical_owner =
 	            layout_patch.nominal_patch_id == central_patch.patch_id
-	            || !patch_grid_contains_global_point(central_patch, global, 1.0e-12);
+	            || !patch_grid_contains_global_point(central_patch, global, 1.0e-12_rt);
 	         if (!physical_owner) {
 	            for (int q = 0; q < NComp; ++q) {
-	               r(i, j, k, q) = 0.0;
+	               r(i, j, k, q) = 0.0_rt;
 	            }
 	            return;
 	         }
@@ -121,10 +124,10 @@ inline void compute_rhs_from_fluxes_mapped_patches(
 	         for (int q = 0; q < NComp; ++q) {
 	            const amrex::Real flux_xlo = fx(i, j, k, q);
 	            const amrex::Real flux_xhi = fx(i + 1, j, k, q);
-	            amrex::Real flux_ylo = 0.0;
-	            amrex::Real flux_yhi = 0.0;
-	            amrex::Real flux_zlo = 0.0;
-	            amrex::Real flux_zhi = 0.0;
+	            amrex::Real flux_ylo = 0.0_rt;
+	            amrex::Real flux_yhi = 0.0_rt;
+	            amrex::Real flux_zlo = 0.0_rt;
+	            amrex::Real flux_zhi = 0.0_rt;
 #if (AMREX_SPACEDIM >= 2)
 	            flux_ylo = fy(i, j, k, q);
 	            flux_yhi = fy(i, j + 1, k, q);
@@ -169,7 +172,7 @@ inline void compute_rhs_from_fluxes_metric_impl(
 #endif
 	      const auto prim = AddHydroSources ? primitive->const_array(mfi) : amrex::Array4<amrex::Real const>{};
 	      const auto r = rhs.array(mfi);
-	      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+	      amrex::ParallelFor(bx, [r, prim, coordinate, axes, problo, dx, AMREX_D_DECL(fx, fy, fz)] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
 	         const amrex::Real cell_volume = mesh_cell_volume_scale(coordinate, axes, problo, dx, i, j, k);
 	         const amrex::Real area_xlo = mesh_face_area_scale(0, coordinate, axes, problo, dx, i, j, k);
 	         const amrex::Real area_xhi = mesh_face_area_scale(0, coordinate, axes, problo, dx, i + 1, j, k);
@@ -181,13 +184,13 @@ inline void compute_rhs_from_fluxes_metric_impl(
 	         const amrex::Real area_zlo = mesh_face_area_scale(2, coordinate, axes, problo, dx, i, j, k);
 	         const amrex::Real area_zhi = mesh_face_area_scale(2, coordinate, axes, problo, dx, i, j, k + 1);
 #endif
-	         amrex::Real rho = 0.0;
-	         amrex::Real pressure = 0.0;
+	         amrex::Real rho = 0.0_rt;
+	         amrex::Real pressure = 0.0_rt;
 	         StateVector3 momentum{};
 	         StateVector3 magnetic{};
-	         amrex::Real source_pressure = 0.0;
-	         amrex::Real radius = 0.0;
-	         amrex::Real theta = 0.0;
+	         amrex::Real source_pressure = 0.0_rt;
+	         amrex::Real radius = 0.0_rt;
+	         amrex::Real theta = 0.0_rt;
 	         if constexpr (AddHydroSources) {
 	            radius = runtime_coordinate_for_axis(axes, MeshAxisR, -1, problo, dx, i, j, k);
 	            theta = runtime_coordinate_for_axis(axes, MeshAxisTheta, -1, problo, dx, i, j, k);
@@ -197,16 +200,16 @@ inline void compute_rhs_from_fluxes_metric_impl(
 	            source_pressure = pressure;
 	            if constexpr (has_mhd_components<NComp>()) {
 	               magnetic = load_magnetic_vector3(prim, i, j, k);
-	               source_pressure += 0.5 * dot(magnetic, magnetic);
+	               source_pressure += 0.5_rt * dot(magnetic, magnetic);
 	            }
 	         }
 	         for (int q = 0; q < NComp; ++q) {
 	            amrex::Real flux_xlo = area_xlo * fx(i, j, k, q);
 	            amrex::Real flux_xhi = area_xhi * fx(i + 1, j, k, q);
-	            amrex::Real flux_ylo = 0.0;
-	            amrex::Real flux_yhi = 0.0;
-	            amrex::Real flux_zlo = 0.0;
-	            amrex::Real flux_zhi = 0.0;
+	            amrex::Real flux_ylo = 0.0_rt;
+	            amrex::Real flux_yhi = 0.0_rt;
+	            amrex::Real flux_zlo = 0.0_rt;
+	            amrex::Real flux_zhi = 0.0_rt;
 #if (AMREX_SPACEDIM >= 2)
 	            flux_ylo = area_ylo * fy(i, j, k, q);
 	            flux_yhi = area_yhi * fy(i, j + 1, k, q);
@@ -429,7 +432,7 @@ inline void compute_rhs_from_fluxes_masked(
 	      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
 	         if (solid(i, j, k, 0) != 0) {
 	            for (int q = 0; q < NComp; ++q) {
-               r(i, j, k, q) = 0.0;
+               r(i, j, k, q) = 0.0_rt;
             }
             return;
          }
@@ -461,7 +464,7 @@ inline void compute_rhs_from_fluxes_cutcell(
    amrex::Vector<int> const* solid_valid_kind = nullptr
 )
 {
-   constexpr amrex::Real alpha_floor = 1.0e-12;
+   constexpr amrex::Real alpha_floor = 1.0e-12_rt;
    const auto dx = geom.CellSizeArray();
    const auto problo = geom.ProbLoArray();
    const amrex::Box& domain = geom.Domain();
@@ -514,40 +517,40 @@ inline void compute_rhs_from_fluxes_cutcell(
          const amrex::Real fluid_fraction = alpha(i, j, k, 0);
          if (solid(i, j, k, 0) != 0 || fluid_fraction <= alpha_floor) {
             for (int q = 0; q < NComp; ++q) {
-               r(i, j, k, q) = 0.0;
+               r(i, j, k, q) = 0.0_rt;
             }
             return;
          }
 
          amrex::Real ax_l = ax(i, j, k, 0);
          if (i > lo[0] && alpha(i - 1, j, k, 0) <= alpha_floor) {
-            ax_l = 0.0;
+            ax_l = 0.0_rt;
          }
          amrex::Real ax_r = ax(i + 1, j, k, 0);
          if (i < hi[0] && alpha(i + 1, j, k, 0) <= alpha_floor) {
-            ax_r = 0.0;
+            ax_r = 0.0_rt;
          }
 #if (AMREX_SPACEDIM >= 2)
          amrex::Real ay_l = ay(i, j, k, 0);
          if (j > lo[1] && alpha(i, j - 1, k, 0) <= alpha_floor) {
-            ay_l = 0.0;
+            ay_l = 0.0_rt;
          }
          amrex::Real ay_r = ay(i, j + 1, k, 0);
          if (j < hi[1] && alpha(i, j + 1, k, 0) <= alpha_floor) {
-            ay_r = 0.0;
+            ay_r = 0.0_rt;
          }
 #endif
 #if (AMREX_SPACEDIM == 3)
          amrex::Real az_l = az(i, j, k, 0);
          if (k > lo[2] && alpha(i, j, k - 1, 0) <= alpha_floor) {
-            az_l = 0.0;
+            az_l = 0.0_rt;
          }
          amrex::Real az_r = az(i, j, k + 1, 0);
          if (k < hi[2] && alpha(i, j, k + 1, 0) <= alpha_floor) {
-            az_r = 0.0;
+            az_r = 0.0_rt;
          }
 #endif
-         const amrex::Real inv_alpha = 1.0 / fluid_fraction;
+         const amrex::Real inv_alpha = 1.0_rt / fluid_fraction;
          for (int q = 0; q < NComp; ++q) {
             amrex::Real value = -(ax_r * fx(i + 1, j, k, q) - ax_l * fx(i, j, k, q)) / dx[0];
 #if (AMREX_SPACEDIM >= 2)
@@ -566,36 +569,36 @@ inline void compute_rhs_from_fluxes_cutcell(
          const amrex::Real sy = (ay_r - ay_l) / dx[1];
          r(i, j, k, MOM2) += pressure * sy * inv_alpha;
 #else
-         const amrex::Real sy = 0.0;
+         const amrex::Real sy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real sz = (az_r - az_l) / dx[2];
          r(i, j, k, MOM3) += pressure * sz * inv_alpha;
 #else
-         const amrex::Real sz = 0.0;
+         const amrex::Real sz = 0.0_rt;
 #endif
          if (solid_params.motion == SolidMotionTranslate || solid_params.motion == SolidMotionPulse) {
-            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+            const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+            const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-            const amrex::Real y = 0.0;
+            const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+            const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             const amrex::Real wall_vx = solid_params.velocity_component(solid_params.time, 0, x, y, z);
 #if (AMREX_SPACEDIM >= 2)
             const amrex::Real wall_vy = solid_params.velocity_component(solid_params.time, 1, x, y, z);
 #else
-            const amrex::Real wall_vy = 0.0;
+            const amrex::Real wall_vy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
             const amrex::Real wall_vz = solid_params.velocity_component(solid_params.time, 2, x, y, z);
 #else
-            const amrex::Real wall_vz = 0.0;
+            const amrex::Real wall_vz = 0.0_rt;
 #endif
             r(i, j, k, ENERGY) += pressure * (wall_vx * sx + wall_vy * sy + wall_vz * sz) * inv_alpha;
          }

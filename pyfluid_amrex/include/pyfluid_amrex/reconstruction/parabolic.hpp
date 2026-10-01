@@ -4,6 +4,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 namespace reconstruction_detail {
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -14,7 +16,7 @@ amrex::Real parabolic_right_interface(
    amrex::Real vpp
 ) noexcept
 {
-   return (7.0 * (v0 + vp) - (vm + vpp)) / 12.0;
+   return (7.0_rt * (v0 + vp) - (vm + vpp)) / 12.0_rt;
 }
 
 } // namespace reconstruction_detail

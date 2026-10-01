@@ -20,11 +20,14 @@
 #include "relativity/rmhd_system.hpp"
 #include "numerics/mapped_patch_interfaces.hpp"
 #include "pyfluid_amrex/solid_geometry.hpp"
+#include "pyfluid_amrex/spacetime_excision.hpp"
 #include "pyfluid_amrex/solid_wall_power.hpp"
 #include "pyfluid_amrex/state.hpp"
 #include "pyfluid_amrex/state_update.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void store_hydro_flux(amrex::Array4<amrex::Real> const& flux, int i, int j, int k, HydroState const& value) noexcept
@@ -63,7 +66,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void store_zero_flux(amrex::Array4<amrex::Real> const& flux, int i, int j, int k) noexcept
 {
    for (int n = 0; n < NComp; ++n) {
-      flux(i, j, k, n) = 0.0;
+      flux(i, j, k, n) = 0.0_rt;
    }
 }
 
@@ -89,7 +92,7 @@ void store_passive_fluxes(
       const ScalarFaceValues dye = primitive_component_face_values<ReconMethod, Direction, Component>(
          primitive, li, lj, lk, ri, rj, rk
       );
-      flux(i, j, k, Component) = mass_flux * (mass_flux >= 0.0 ? dye.left : dye.right);
+      flux(i, j, k, Component) = mass_flux * (mass_flux >= 0.0_rt ? dye.left : dye.right);
    }
 }
 
@@ -172,7 +175,7 @@ inline void fill_hydro_flux_direction(
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          if (skip_zero_area_metric_faces) {
             const amrex::Real area = mesh_face_area_scale(Direction, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-            if (area == 0.0) {
+            if (area == 0.0_rt) {
                store_zero_flux<NComp>(f, i, j, k);
                return;
             }
@@ -325,16 +328,16 @@ HydroState moving_slip_wall_flux(
    const HydroPrimitive fluid = primitive_at(p, fi, fj, fk, eos);
    HydroPrimitive ghost = fluid;
    if constexpr (Direction == 0) {
-      ghost.v1 = 2.0 * wall_vn - fluid.v1;
+      ghost.v1 = 2.0_rt * wall_vn - fluid.v1;
    }
 #if (AMREX_SPACEDIM >= 2)
    else if constexpr (Direction == 1) {
-      ghost.v2 = 2.0 * wall_vn - fluid.v2;
+      ghost.v2 = 2.0_rt * wall_vn - fluid.v2;
    }
 #endif
 #if (AMREX_SPACEDIM == 3)
    else {
-      ghost.v3 = 2.0 * wall_vn - fluid.v3;
+      ghost.v3 = 2.0_rt * wall_vn - fluid.v3;
    }
 #endif
    return fluid_on_left
@@ -373,7 +376,7 @@ inline void fill_hydro_flux_direction_with_solid_walls(
 		      if (kind == MaskKindNonzero) {
 		         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
 		            for (int q = 0; q < NComp; ++q) {
-		               f(i, j, k, q) = 0.0;
+		               f(i, j, k, q) = 0.0_rt;
 		            }
 		         });
 		         continue;
@@ -452,7 +455,7 @@ inline void fill_hydro_flux_direction_with_solid_walls(
          }
 
          for (int q = 0; q < NComp; ++q) {
-            f(i, j, k, q) = 0.0;
+            f(i, j, k, q) = 0.0_rt;
          }
          if (left_solid == right_solid) {
             return;
@@ -461,16 +464,16 @@ inline void fill_hydro_flux_direction_with_solid_walls(
          const int fi = left_solid ? ri : li;
          const int fj = left_solid ? rj : lj;
          const int fk = left_solid ? rk : lk;
-         amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-         amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+         amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-         amrex::Real y = 0.0;
+         amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-         amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+         amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-         amrex::Real z = 0.0;
+         amrex::Real z = 0.0_rt;
 #endif
          if constexpr (Direction == 0) {
             x = problo[0] + static_cast<amrex::Real>(i) * dx[0];
@@ -486,7 +489,7 @@ inline void fill_hydro_flux_direction_with_solid_walls(
          }
 #endif
          const amrex::Real wall_vn = solid_params.motion == SolidMotionRotate
-            ? 0.0
+            ? 0.0_rt
             : solid_params.velocity_component(solid_params.time, Direction, x, y, z);
          const HydroState value = moving_slip_wall_flux<RiemannMethod, Direction, EOSMethod>(
             p,
@@ -620,7 +623,7 @@ inline void fill_mhd_flux_direction(
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
          if (skip_zero_area_metric_faces) {
             const amrex::Real area = mesh_face_area_scale(Direction, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
-            if (area == 0.0) {
+            if (area == 0.0_rt) {
                store_zero_flux<NComp>(f, i, j, k);
                return;
             }
@@ -754,7 +757,7 @@ inline void fill_fluxes_for_components(
    amrex::iMultiFab const* solid_mask = nullptr,
    amrex::Geometry const* geom = nullptr,
    amrex::Array<amrex::Vector<int>, AMREX_SPACEDIM> const* solid_flux_kind = nullptr,
-   amrex::Real time = 0.0,
+   amrex::Real time = 0.0_rt,
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* layout = nullptr,
    EOSThermodynamicState const* atmosphere = nullptr
@@ -823,20 +826,22 @@ inline void fill_fluxes_for_components(
             atmosphere != nullptr, "RHD fluxes require the recovery atmosphere state"
          );
          const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
+         const int coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
+         const MeshAxes axes = mesh_axes_layout(cfg);
          fill_rhd_flux_direction<ReconMethod, RiemannMethod, 0, EOSMethod>(
             fluxes, primitive, eos_params(cfg), *geom, spacetime,
-            *atmosphere, time
+            *atmosphere, time, coordinate, axes
          );
 #if (AMREX_SPACEDIM >= 2)
          fill_rhd_flux_direction<ReconMethod, RiemannMethod, 1, EOSMethod>(
             fluxes, primitive, eos_params(cfg), *geom, spacetime,
-            *atmosphere, time
+            *atmosphere, time, coordinate, axes
          );
 #endif
 #if (AMREX_SPACEDIM == 3)
          fill_rhd_flux_direction<ReconMethod, RiemannMethod, 2, EOSMethod>(
             fluxes, primitive, eos_params(cfg), *geom, spacetime,
-            *atmosphere, time
+            *atmosphere, time, coordinate, axes
          );
 #endif
       }
@@ -941,7 +946,7 @@ inline void fill_fluxes_for_riemann(
    amrex::iMultiFab const* solid_mask = nullptr,
    amrex::Geometry const* geom = nullptr,
    amrex::Array<amrex::Vector<int>, AMREX_SPACEDIM> const* solid_flux_kind = nullptr,
-   amrex::Real time = 0.0,
+   amrex::Real time = 0.0_rt,
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* layout = nullptr,
    EOSThermodynamicState const* atmosphere = nullptr
@@ -1012,7 +1017,7 @@ inline void fill_flux_direction_for_riemann(
    amrex::iMultiFab const* solid_mask = nullptr,
    amrex::Geometry const* geom = nullptr,
    amrex::Vector<int> const* solid_flux_kind = nullptr,
-   amrex::Real time = 0.0,
+   amrex::Real time = 0.0_rt,
    PatchGridSystem const* grid_system = nullptr,
    PatchLayout const* layout = nullptr,
    amrex::MultiFab const* stored_spacetime = nullptr,
@@ -1039,13 +1044,15 @@ inline void fill_flux_direction_for_riemann(
          if (stored_spacetime != nullptr) {
             fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
                fluxes, primitive, eos, riemann_method, *stored_spacetime,
-               *atmosphere
+               *atmosphere,
+               excision_grid_view(spacetime_excision_region(cfg), *geom, primitive.ixType()),
+               make_relativistic_diode_boundary(cfg, *geom)
             );
          } else {
             fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
                fluxes, primitive, eos, riemann_method, *geom,
                fixed_spacetime_parameters(cfg), *atmosphere,
-               time
+               time, make_relativistic_diode_boundary(cfg, *geom)
             );
          }
       }
@@ -1070,13 +1077,18 @@ inline void fill_flux_direction_for_riemann(
          if (stored_spacetime != nullptr) {
             fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
                fluxes, primitive, eos, riemann_method, *stored_spacetime,
-               *atmosphere
+               *atmosphere,
+               excision_grid_view(spacetime_excision_region(cfg), *geom, primitive.ixType()),
+               make_relativistic_diode_boundary(cfg, *geom)
             );
          } else {
+            const int coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
+            const MeshAxes axes = mesh_axes_layout(cfg);
             fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
                fluxes, primitive, eos, riemann_method, *geom,
                fixed_spacetime_parameters(cfg), *atmosphere,
-               time
+               time, coordinate, axes,
+               make_relativistic_diode_boundary(cfg, *geom)
             );
          }
       }

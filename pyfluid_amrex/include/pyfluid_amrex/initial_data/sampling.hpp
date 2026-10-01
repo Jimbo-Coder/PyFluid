@@ -12,6 +12,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct InitialDataSamplePoint {
    PatchCoordinate mesh{};
    PatchCoordinate physical{};
@@ -94,7 +96,7 @@ InitialDataSamplePoint cell_center_initial_data_sample_point(
 {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> offsets{};
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      offsets[dir] = 0.5;
+      offsets[dir] = 0.5_rt;
    }
    return initial_data_sample_point(mesh_coordinate, axes, problo, dx, offsets, i, j, k);
 }
@@ -113,7 +115,7 @@ InitialDataSamplePoint face_center_initial_data_sample_point(
 {
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> offsets{};
    for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      offsets[dir] = dir == face_dir ? 0.0 : 0.5;
+      offsets[dir] = dir == face_dir ? 0.0_rt : 0.5_rt;
    }
    return initial_data_sample_point(mesh_coordinate, axes, problo, dx, offsets, i, j, k);
 }
@@ -151,7 +153,7 @@ amrex::Real initial_data_physical_distance2(
 ) noexcept
 {
    if (mesh_coordinate == MeshCartesian) {
-      amrex::Real distance2 = 0.0;
+      amrex::Real distance2 = 0.0_rt;
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
          const int axis = mesh_axis(axes, dir);
          int component = 0;

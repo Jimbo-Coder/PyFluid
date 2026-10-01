@@ -7,7 +7,9 @@
 #include "pyfluid_amrex/kernels_generated/riemann_ops.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
 #include "pyfluid_amrex/reconstruction/scalar.hpp"
+#include "pyfluid_amrex/reference_metric_spacetime.hpp"
 #include "pyfluid_amrex/relativistic_primitive.hpp"
+#include "pyfluid_amrex/relativistic_diode.hpp"
 #include "pyfluid_amrex/z4c_state_access.hpp"
 #include "pyfluid_amrex/state.hpp"
 
@@ -18,6 +20,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct RHDPrimitiveFaceStates {
    RHDPrimitive left;
    RHDPrimitive right;
@@ -25,6 +29,8 @@ struct RHDPrimitiveFaceStates {
 
 struct RHDStoredMetricAccessor {
    amrex::Array4<amrex::Real const> spacetime;
+   ExcisionGridView excision{};
+   RelativisticDiodeBoundary diode{};
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    SpacetimeMetric cell(int i, int j, int k) const noexcept
@@ -39,7 +45,7 @@ struct RHDStoredMetricAccessor {
    SpacetimeMetric face(int i, int j, int k) const noexcept
    {
       return stored_spacetime_metric_at_face<4, Direction>(
-         spacetime, i, j, k
+         spacetime, i, j, k, excision
       );
    }
 };
@@ -48,13 +54,22 @@ struct RHDFixedMetricAccessor {
    FixedSpacetimeParameters spacetime;
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> lower;
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> spacing;
+   int coordinate;
+   MeshAxes axes;
    amrex::Real time;
+   ExcisionGridView excision{};
+   RelativisticDiodeBoundary diode{};
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    SpacetimeMetric cell(int i, int j, int k) const noexcept
    {
-      return fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
-         spacetime, lower, spacing, i, j, k, time
+      if (coordinate == MeshCartesian) {
+         return fixed_spacetime_geometry_at_cell<AMREX_SPACEDIM>(
+            spacetime, lower, spacing, i, j, k, time
+         ).metric;
+      }
+      return reference_metric_fixed_spacetime_geometry_at_cell(
+         spacetime, coordinate, axes, lower, spacing, i, j, k, time
       ).metric;
    }
 
@@ -62,11 +77,31 @@ struct RHDFixedMetricAccessor {
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    SpacetimeMetric face(int i, int j, int k) const noexcept
    {
-      return fixed_spacetime_geometry_at_face<Direction, AMREX_SPACEDIM>(
-         spacetime, lower, spacing, i, j, k, time
+      if (coordinate == MeshCartesian) {
+         return fixed_spacetime_geometry_at_face<Direction, AMREX_SPACEDIM>(
+            spacetime, lower, spacing, i, j, k, time
+         ).metric;
+      }
+      return reference_metric_fixed_spacetime_geometry_at_face<Direction>(
+         spacetime, coordinate, axes, lower, spacing, i, j, k, time
       ).metric;
    }
 };
+
+template <int ReconMethod, int Direction, typename MetricAccessor>
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+bool relativistic_reconstruction_stencil_is_active(
+   MetricAccessor const& metric, int il, int jl, int kl, int ir, int jr, int kr
+) noexcept
+{
+   if (!metric.excision.region.enabled()) return true;
+   constexpr int radius = reconstruction_stencil_radius(ReconMethod);
+   auto first = metric.excision.position(il, jl, kl);
+   auto last = metric.excision.position(ir, jr, kr);
+   first[Direction] -= radius * metric.excision.spacing[Direction];
+   last[Direction] += radius * metric.excision.spacing[Direction];
+   return !metric.excision.region.intersects(first, last);
+}
 
 template <int Direction, typename MetricAccessor>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -127,12 +162,12 @@ std::array<ScalarFaceValues, 3> spatial_four_velocity_face_values(
          primitive, ir, jr, kr, 1, metric
       );
       return {{
-         {zl.z1 + 0.5 * mc_slope(zm.z1, zl.z1, zr.z1),
-          zr.z1 - 0.5 * mc_slope(zl.z1, zr.z1, zp.z1)},
-         {zl.z2 + 0.5 * mc_slope(zm.z2, zl.z2, zr.z2),
-          zr.z2 - 0.5 * mc_slope(zl.z2, zr.z2, zp.z2)},
-         {zl.z3 + 0.5 * mc_slope(zm.z3, zl.z3, zr.z3),
-          zr.z3 - 0.5 * mc_slope(zl.z3, zr.z3, zp.z3)},
+         {zl.z1 + 0.5_rt * mc_slope(zm.z1, zl.z1, zr.z1),
+          zr.z1 - 0.5_rt * mc_slope(zl.z1, zr.z1, zp.z1)},
+         {zl.z2 + 0.5_rt * mc_slope(zm.z2, zl.z2, zr.z2),
+          zr.z2 - 0.5_rt * mc_slope(zl.z2, zr.z2, zp.z2)},
+         {zl.z3 + 0.5_rt * mc_slope(zm.z3, zl.z3, zr.z3),
+          zr.z3 - 0.5_rt * mc_slope(zl.z3, zr.z3, zp.z3)},
       }};
    } else if constexpr (is_five_point_reconstruction(ReconMethod)) {
       const SpatialFourVelocity zmm = spatial_four_velocity_neighbor<Direction>(
@@ -180,13 +215,13 @@ amrex::Real causal_limiter_theta(
 ) noexcept
 {
    constexpr amrex::Real velocity_limit_squared =
-      1.0 - 128.0 * std::numeric_limits<amrex::Real>::epsilon();
+      1.0_rt - 128.0_rt * std::numeric_limits<amrex::Real>::epsilon();
    const amrex::Real face_velocity_squared = spatial_vector_norm_squared(
       face.v1, face.v2, face.v3, metric
    );
    if (amrex::Math::isfinite(face_velocity_squared)
        && face_velocity_squared < velocity_limit_squared) {
-      return 1.0;
+      return 1.0_rt;
    }
    const amrex::Real dv1 = face.v1 - center.v1;
    const amrex::Real dv2 = face.v2 - center.v2;
@@ -199,21 +234,21 @@ amrex::Real causal_limiter_theta(
    ) + center.v3 * (
       metric.gamma13 * dv1 + metric.gamma23 * dv2 + metric.gamma33 * dv3
    );
-   const amrex::Real linear = 2.0 * center_delta;
+   const amrex::Real linear = 2.0_rt * center_delta;
    const amrex::Real constant = spatial_vector_norm_squared(
       center.v1, center.v2, center.v3, metric
    ) - velocity_limit_squared;
-   if (!(quadratic > 0.0) || !amrex::Math::isfinite(quadratic)
+   if (!(quadratic > 0.0_rt) || !amrex::Math::isfinite(quadratic)
        || !amrex::Math::isfinite(linear) || !amrex::Math::isfinite(constant)) {
-      return 0.0;
+      return 0.0_rt;
    }
-   const amrex::Real discriminant = linear * linear - 4.0 * quadratic * constant;
-   if (!(discriminant >= 0.0) || !amrex::Math::isfinite(discriminant)) {
-      return 0.0;
+   const amrex::Real discriminant = linear * linear - 4.0_rt * quadratic * constant;
+   if (!(discriminant >= 0.0_rt) || !amrex::Math::isfinite(discriminant)) {
+      return 0.0_rt;
    }
    return amrex::max(
-      0.0,
-      amrex::min(1.0, (-linear + std::sqrt(discriminant)) / (2.0 * quadratic))
+      0.0_rt,
+      amrex::min(1.0_rt, (-linear + std::sqrt(discriminant)) / (2.0_rt * quadratic))
    );
 }
 
@@ -259,10 +294,10 @@ RHDPrimitive admissibility_limit_rhd_primitive(
    if (!amrex::Math::isfinite(face.eps)
        || !amrex::Math::isfinite(velocity_squared)
        || !amrex::Math::isfinite(sound_speed_squared)
-       || face.eps < 0.0
-       || !(velocity_squared < 1.0)
-       || sound_speed_squared < 0.0
-       || sound_speed_squared > 1.0) {
+       || face.eps < 0.0_rt
+       || !(velocity_squared < 1.0_rt)
+       || sound_speed_squared < 0.0_rt
+       || sound_speed_squared > 1.0_rt) {
       return center;
    }
    return face;
@@ -309,7 +344,13 @@ RHDPrimitiveFaceStates rhd_primitive_face_states(
    center_r.v1 = center_v_r.v1;
    center_r.v2 = center_v_r.v2;
    center_r.v3 = center_v_r.v3;
-   if (center_l.rho <= atmosphere_l.rho
+   if (apply_relativistic_diode_face<Direction>(
+          center_l, center_r, face_metric, metric.diode, ir, jr, kr)) {
+      return {center_l, center_r};
+   }
+   if (!relativistic_reconstruction_stencil_is_active<ReconMethod, Direction>(
+          metric, il, jl, kl, ir, jr, kr)
+       || center_l.rho <= atmosphere_l.rho
        || center_l.pressure <= atmosphere_l.pressure
        || center_r.rho <= atmosphere_r.rho
        || center_r.pressure <= atmosphere_r.pressure) {
@@ -333,8 +374,8 @@ RHDPrimitiveFaceStates rhd_primitive_face_states(
       primitive, il, jl, kl, ir, jr, kr
    );
    RHDPrimitiveFaceStates face{
-      {rho.left, 0.0, pressure.left, velocity_l.v1, velocity_l.v2, velocity_l.v3},
-      {rho.right, 0.0, pressure.right, velocity_r.v1, velocity_r.v2, velocity_r.v3},
+      {rho.left, 0.0_rt, pressure.left, velocity_l.v1, velocity_l.v2, velocity_l.v3},
+      {rho.right, 0.0_rt, pressure.right, velocity_r.v1, velocity_r.v2, velocity_r.v3},
    };
    face.left = admissibility_limit_rhd_primitive<EOSMethod>(
       face.left,
@@ -376,12 +417,12 @@ RHDConserved rhd_hll_flux(
       primitive_r, metric,
       relativistic_sound_speed_squared<EOSMethod>(primitive_r.rho, primitive_r.eps, eos)
    );
-   const amrex::Real speed_minus = amrex::min(0.0, amrex::min(speed_l.minus, speed_r.minus));
-   const amrex::Real speed_plus = amrex::max(0.0, amrex::max(speed_l.plus, speed_r.plus));
-   if (speed_minus >= 0.0) {
+   const amrex::Real speed_minus = amrex::min(0.0_rt, amrex::min(speed_l.minus, speed_r.minus));
+   const amrex::Real speed_plus = amrex::max(0.0_rt, amrex::max(speed_l.plus, speed_r.plus));
+   if (speed_minus >= 0.0_rt) {
       return flux_l;
    }
-   if (speed_plus <= 0.0) {
+   if (speed_plus <= 0.0_rt) {
       return flux_r;
    }
    return generated::rhd_hll_flux(
@@ -457,7 +498,10 @@ inline void fill_rhd_flux_direction(
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
    EOSThermodynamicState const& atmosphere,
-   amrex::Real time
+   amrex::Real time,
+   int coordinate,
+   MeshAxes const& axes,
+   RelativisticDiodeBoundary const& diode = {}
 )
 {
    amrex::MultiFab& flux = *fluxes[Direction];
@@ -488,7 +532,7 @@ inline void fill_rhd_flux_direction(
          }
 #endif
          const RHDFixedMetricAccessor metric{
-            spacetime, lower, spacing, time
+            spacetime, lower, spacing, coordinate, axes, time, {}, diode
          };
          const RHDConserved value = rhd_riemann_flux<ReconMethod, RiemannMethod, Direction, EOSMethod>(
             cached,
@@ -514,7 +558,9 @@ inline void fill_rhd_flux_direction(
    const amrex::MultiFab& primitive,
    const EOSParams& eos,
    const amrex::MultiFab& cell_spacetime,
-   EOSThermodynamicState const& atmosphere
+   EOSThermodynamicState const& atmosphere,
+   ExcisionGridView const& excision = {},
+   RelativisticDiodeBoundary const& diode = {}
 )
 {
    amrex::MultiFab& flux = *fluxes[Direction];
@@ -543,7 +589,7 @@ inline void fill_rhd_flux_direction(
             --kl;
          }
 #endif
-         const RHDStoredMetricAccessor metric{spacetime};
+         const RHDStoredMetricAccessor metric{spacetime, excision, diode};
          const RHDConserved value = rhd_riemann_flux<
             ReconMethod,
             RiemannMethod,
@@ -576,26 +622,29 @@ inline void fill_rhd_flux_direction_runtime(
    const amrex::Geometry& geometry,
    const FixedSpacetimeParameters& spacetime,
    EOSThermodynamicState const& atmosphere,
-   amrex::Real time
+   amrex::Real time,
+   int coordinate,
+   MeshAxes const& axes,
+   RelativisticDiodeBoundary const& diode = {}
 )
 {
    switch (riemann_method) {
    case RiemannLLF:
       fill_rhd_flux_direction<ReconMethod, RiemannLLF, Direction, EOSMethod>(
          fluxes, primitive, eos, geometry, spacetime,
-         atmosphere, time
+         atmosphere, time, coordinate, axes, diode
       );
       return;
    case RiemannHLL:
       fill_rhd_flux_direction<ReconMethod, RiemannHLL, Direction, EOSMethod>(
          fluxes, primitive, eos, geometry, spacetime,
-         atmosphere, time
+         atmosphere, time, coordinate, axes, diode
       );
       return;
    case RiemannHLLE:
       fill_rhd_flux_direction<ReconMethod, RiemannHLLE, Direction, EOSMethod>(
          fluxes, primitive, eos, geometry, spacetime,
-         atmosphere, time
+         atmosphere, time, coordinate, axes, diode
       );
       return;
    default:
@@ -610,26 +659,28 @@ inline void fill_rhd_flux_direction_runtime(
    const EOSParams& eos,
    int riemann_method,
    const amrex::MultiFab& cell_spacetime,
-   EOSThermodynamicState const& atmosphere
+   EOSThermodynamicState const& atmosphere,
+   ExcisionGridView const& excision = {},
+   RelativisticDiodeBoundary const& diode = {}
 )
 {
    switch (riemann_method) {
    case RiemannLLF:
       fill_rhd_flux_direction<ReconMethod, RiemannLLF, Direction, EOSMethod>(
          fluxes, primitive, eos, cell_spacetime,
-         atmosphere
+         atmosphere, excision, diode
       );
       return;
    case RiemannHLL:
       fill_rhd_flux_direction<ReconMethod, RiemannHLL, Direction, EOSMethod>(
          fluxes, primitive, eos, cell_spacetime,
-         atmosphere
+         atmosphere, excision, diode
       );
       return;
    case RiemannHLLE:
       fill_rhd_flux_direction<ReconMethod, RiemannHLLE, Direction, EOSMethod>(
          fluxes, primitive, eos, cell_spacetime,
-         atmosphere
+         atmosphere, excision, diode
       );
       return;
    default:

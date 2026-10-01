@@ -3,6 +3,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 EdgeElectricField const* AmrSolverBase::edge_current_density_ptr(int lev) const
 {
    if (!edge_current_[lev].e[0]) {
@@ -21,10 +23,7 @@ EdgeElectricField const* AmrSolverBase::edge_electric_field_ptr(int lev) const
 
 amrex::MultiFab const* AmrSolverBase::gravity_phi_ptr(int lev) const
 {
-   if (!gravity_phi_[lev]) {
-      return nullptr;
-   }
-   return gravity_phi_[lev].get();
+   return gravity_fields_.potential(lev);
 }
 
 bool AmrSolverBase::mhd_edge_aux_requested() const
@@ -42,7 +41,7 @@ bool AmrSolverBase::cached_edge_current_density_requested() const
       && cfg_.aux_gf_compute_int >= 0
       && (
          aux_gfs_contains(cfg_, AuxGridField::CurrentDensity)
-         || (cfg_.resistivity != 0.0 && aux_gfs_contains(cfg_, AuxGridField::ElectricField))
+         || (cfg_.resistivity != 0.0_rt && aux_gfs_contains(cfg_, AuxGridField::ElectricField))
       );
 }
 

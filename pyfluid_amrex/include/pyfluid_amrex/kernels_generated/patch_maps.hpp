@@ -77,7 +77,7 @@ PatchPoint thornburg_shell_local_to_global_axis0(amrex::Real q1, amrex::Real q2,
    const amrex::Real tmp4 = primary_sign*q3;
    const amrex::Real tmp5 = std::tan(q1);
    const amrex::Real tmp6 = std::tan(q2);
-   const amrex::Real tmp7 = sqrt(((tmp5)*(tmp5)) + ((tmp6)*(tmp6)) + 1);
+   const amrex::Real tmp7 = std::sqrt(((tmp5)*(tmp5)) + ((tmp6)*(tmp6)) + 1);
    const amrex::Real tmp8 = 1.0_rt/(tmp7);
    const amrex::Real tmp9 = tmp1*tmp7;
    const amrex::Real tmp10 = tmp4*(-q3 + radial_inner + tmp7*(q3 + tmp0));
@@ -98,15 +98,15 @@ PatchPoint thornburg_shell_global_to_local_axis0(amrex::Real g1, amrex::Real g2,
    const amrex::Real tmp3 = g2 - o2;
    const amrex::Real tmp4 = ((tmp1)*(tmp1));
    const amrex::Real tmp5 = ((tmp0)*(tmp0)) + ((tmp3)*(tmp3)) + tmp4;
-   const amrex::Real tmp6 = sqrt(tmp5/tmp4);
+   const amrex::Real tmp6 = std::sqrt(tmp5/tmp4);
    const amrex::Real tmp7 = tmp6 - 1;
    const amrex::Real tmp8 = radial_inner*tmp7;
    const amrex::Real tmp9 = radial_inner - radial_outer;
-   const amrex::Real tmp10 = sqrt(tmp5)*tmp9;
+   const amrex::Real tmp10 = std::sqrt(tmp5)*tmp9;
    return {
       std::atan(tmp0*tmp2),
       std::atan(tmp2*tmp3),
-      -2*tmp10/(tmp8 - tmp9*(tmp6 + sqrt((4*tmp10*tmp7 + ((-tmp6*tmp9 + tmp8)*(-tmp6*tmp9 + tmp8)))/((tmp9)*(tmp9)))))
+      -2*tmp10/(tmp8 - tmp9*(tmp6 + std::sqrt((4*tmp10*tmp7 + ((-tmp6*tmp9 + tmp8)*(-tmp6*tmp9 + tmp8)))/((tmp9)*(tmp9)))))
    };
 }
 
@@ -120,7 +120,7 @@ PatchJacobian thornburg_shell_jacobian_axis0(amrex::Real q1, amrex::Real q2, amr
    const amrex::Real tmp4 = tmp1 + tmp3 + 1;
    const amrex::Real tmp5 = -radial_outer;
    const amrex::Real tmp6 = primary_sign/(radial_inner + tmp5);
-   const amrex::Real tmp7 = q3*tmp6/pow(tmp4, 3.0_rt/2.0_rt);
+   const amrex::Real tmp7 = q3*tmp6/std::pow(tmp4, 3.0_rt/2.0_rt);
    const amrex::Real tmp8 = tmp7/((std::cos(q1))*(std::cos(q1)));
    const amrex::Real tmp9 = q3 - radial_inner;
    const amrex::Real tmp10 = tmp0*tmp9;
@@ -128,7 +128,7 @@ PatchJacobian thornburg_shell_jacobian_axis0(amrex::Real q1, amrex::Real q2, amr
    const amrex::Real tmp12 = tmp7/((std::cos(q2))*(std::cos(q2)));
    const amrex::Real tmp13 = tmp12*tmp2;
    const amrex::Real tmp14 = 2*q3;
-   const amrex::Real tmp15 = sqrt(tmp4);
+   const amrex::Real tmp15 = std::sqrt(tmp4);
    const amrex::Real tmp16 = 1.0_rt/(tmp15);
    const amrex::Real tmp17 = tmp6*(radial_inner*tmp16 - tmp14*tmp16 + tmp14 + tmp5);
    const amrex::Real tmp18 = tmp4*(-q3 + radial_inner + tmp15*(q3 + tmp5));
@@ -150,7 +150,7 @@ PatchPoint thornburg_shell_local_to_global_axis1(amrex::Real q1, amrex::Real q2,
 {
    const amrex::Real tmp0 = std::tan(q1);
    const amrex::Real tmp1 = std::tan(q2);
-   const amrex::Real tmp2 = sqrt(((tmp0)*(tmp0)) + ((tmp1)*(tmp1)) + 1);
+   const amrex::Real tmp2 = std::sqrt(((tmp0)*(tmp0)) + ((tmp1)*(tmp1)) + 1);
    const amrex::Real tmp3 = -radial_outer;
    const amrex::Real tmp4 = radial_inner + tmp3;
    const amrex::Real tmp5 = tmp2*tmp4;
@@ -176,15 +176,15 @@ PatchPoint thornburg_shell_global_to_local_axis1(amrex::Real g1, amrex::Real g2,
    const amrex::Real tmp3 = g1 - o1;
    const amrex::Real tmp4 = ((tmp1)*(tmp1));
    const amrex::Real tmp5 = ((tmp0)*(tmp0)) + ((tmp3)*(tmp3)) + tmp4;
-   const amrex::Real tmp6 = sqrt(tmp5/tmp4);
+   const amrex::Real tmp6 = std::sqrt(tmp5/tmp4);
    const amrex::Real tmp7 = tmp6 - 1;
    const amrex::Real tmp8 = radial_inner*tmp7;
    const amrex::Real tmp9 = radial_inner - radial_outer;
-   const amrex::Real tmp10 = sqrt(tmp5)*tmp9;
+   const amrex::Real tmp10 = std::sqrt(tmp5)*tmp9;
    return {
       std::atan(tmp0*tmp2),
       std::atan(tmp2*tmp3),
-      -2*tmp10/(tmp8 - tmp9*(tmp6 + sqrt((4*tmp10*tmp7 + ((-tmp6*tmp9 + tmp8)*(-tmp6*tmp9 + tmp8)))/((tmp9)*(tmp9)))))
+      -2*tmp10/(tmp8 - tmp9*(tmp6 + std::sqrt((4*tmp10*tmp7 + ((-tmp6*tmp9 + tmp8)*(-tmp6*tmp9 + tmp8)))/((tmp9)*(tmp9)))))
    };
 }
 
@@ -198,12 +198,12 @@ PatchJacobian thornburg_shell_jacobian_axis1(amrex::Real q1, amrex::Real q2, amr
    const amrex::Real tmp4 = tmp2 + tmp3 + 1;
    const amrex::Real tmp5 = -radial_outer;
    const amrex::Real tmp6 = primary_sign/(radial_inner + tmp5);
-   const amrex::Real tmp7 = q3*tmp6/pow(tmp4, 3.0_rt/2.0_rt);
+   const amrex::Real tmp7 = q3*tmp6/std::pow(tmp4, 3.0_rt/2.0_rt);
    const amrex::Real tmp8 = tmp7/((std::cos(q1))*(std::cos(q1)));
    const amrex::Real tmp9 = q3 - radial_inner;
    const amrex::Real tmp10 = tmp1*tmp9;
    const amrex::Real tmp11 = tmp10*tmp8;
-   const amrex::Real tmp12 = sqrt(tmp4);
+   const amrex::Real tmp12 = std::sqrt(tmp4);
    const amrex::Real tmp13 = tmp4*(-q3 + radial_inner + tmp12*(q3 + tmp5));
    const amrex::Real tmp14 = tmp7/((std::cos(q2))*(std::cos(q2)));
    const amrex::Real tmp15 = 2*q3;
@@ -228,7 +228,7 @@ PatchPoint thornburg_shell_local_to_global_axis2(amrex::Real q1, amrex::Real q2,
 {
    const amrex::Real tmp0 = std::tan(q1);
    const amrex::Real tmp1 = std::tan(q2);
-   const amrex::Real tmp2 = sqrt(((tmp0)*(tmp0)) + ((tmp1)*(tmp1)) + 1);
+   const amrex::Real tmp2 = std::sqrt(((tmp0)*(tmp0)) + ((tmp1)*(tmp1)) + 1);
    const amrex::Real tmp3 = -radial_outer;
    const amrex::Real tmp4 = radial_inner + tmp3;
    const amrex::Real tmp5 = tmp2*tmp4;
@@ -254,15 +254,15 @@ PatchPoint thornburg_shell_global_to_local_axis2(amrex::Real g1, amrex::Real g2,
    const amrex::Real tmp3 = g1 - o1;
    const amrex::Real tmp4 = ((tmp1)*(tmp1));
    const amrex::Real tmp5 = ((tmp0)*(tmp0)) + ((tmp3)*(tmp3)) + tmp4;
-   const amrex::Real tmp6 = sqrt(tmp5/tmp4);
+   const amrex::Real tmp6 = std::sqrt(tmp5/tmp4);
    const amrex::Real tmp7 = tmp6 - 1;
    const amrex::Real tmp8 = radial_inner*tmp7;
    const amrex::Real tmp9 = radial_inner - radial_outer;
-   const amrex::Real tmp10 = sqrt(tmp5)*tmp9;
+   const amrex::Real tmp10 = std::sqrt(tmp5)*tmp9;
    return {
       std::atan(tmp0*tmp2),
       std::atan(tmp2*tmp3),
-      -2*tmp10/(tmp8 - tmp9*(tmp6 + sqrt((4*tmp10*tmp7 + ((-tmp6*tmp9 + tmp8)*(-tmp6*tmp9 + tmp8)))/((tmp9)*(tmp9)))))
+      -2*tmp10/(tmp8 - tmp9*(tmp6 + std::sqrt((4*tmp10*tmp7 + ((-tmp6*tmp9 + tmp8)*(-tmp6*tmp9 + tmp8)))/((tmp9)*(tmp9)))))
    };
 }
 
@@ -276,12 +276,12 @@ PatchJacobian thornburg_shell_jacobian_axis2(amrex::Real q1, amrex::Real q2, amr
    const amrex::Real tmp4 = tmp2 + tmp3 + 1;
    const amrex::Real tmp5 = -radial_outer;
    const amrex::Real tmp6 = primary_sign/(radial_inner + tmp5);
-   const amrex::Real tmp7 = q3*tmp6/pow(tmp4, 3.0_rt/2.0_rt);
+   const amrex::Real tmp7 = q3*tmp6/std::pow(tmp4, 3.0_rt/2.0_rt);
    const amrex::Real tmp8 = tmp7/((std::cos(q1))*(std::cos(q1)));
    const amrex::Real tmp9 = q3 - radial_inner;
    const amrex::Real tmp10 = tmp1*tmp9;
    const amrex::Real tmp11 = tmp10*tmp8;
-   const amrex::Real tmp12 = sqrt(tmp4);
+   const amrex::Real tmp12 = std::sqrt(tmp4);
    const amrex::Real tmp13 = tmp4*(-q3 + radial_inner + tmp12*(q3 + tmp5));
    const amrex::Real tmp14 = tmp7/((std::cos(q2))*(std::cos(q2)));
    const amrex::Real tmp15 = 2*q3;
@@ -309,7 +309,7 @@ PatchPoint cylindrical_shell_local_to_global_axis0(amrex::Real q1, amrex::Real q
    const amrex::Real tmp2 = 1.0_rt/(tmp1);
    const amrex::Real tmp3 = primary_sign*((q3)*(q3));
    const amrex::Real tmp4 = primary_sign*q3;
-   const amrex::Real tmp5 = sqrt(1.0_rt/((std::cos(q1))*(std::cos(q1))));
+   const amrex::Real tmp5 = std::sqrt(1.0_rt/((std::cos(q1))*(std::cos(q1))));
    const amrex::Real tmp6 = 1.0_rt/(tmp5);
    return {
       tmp2*(o1*radial_inner - o1*radial_outer + radial_inner*tmp4*tmp6 - radial_outer*tmp4 - tmp3*tmp6 + tmp3),
@@ -325,15 +325,15 @@ PatchPoint cylindrical_shell_global_to_local_axis0(amrex::Real g1, amrex::Real g
    const amrex::Real tmp1 = g1 - o1;
    const amrex::Real tmp2 = ((tmp1)*(tmp1));
    const amrex::Real tmp3 = ((tmp0)*(tmp0)) + tmp2;
-   const amrex::Real tmp4 = sqrt(tmp3/tmp2);
+   const amrex::Real tmp4 = std::sqrt(tmp3/tmp2);
    const amrex::Real tmp5 = tmp4 - 1;
    const amrex::Real tmp6 = radial_inner*tmp5;
    const amrex::Real tmp7 = radial_inner - radial_outer;
-   const amrex::Real tmp8 = sqrt(tmp3)*tmp7;
+   const amrex::Real tmp8 = std::sqrt(tmp3)*tmp7;
    return {
       std::atan(tmp0/tmp1),
       g3 - o3,
-      -2*tmp8/(tmp6 - tmp7*(tmp4 + sqrt((4*tmp5*tmp8 + ((-tmp4*tmp7 + tmp6)*(-tmp4*tmp7 + tmp6)))/((tmp7)*(tmp7)))))
+      -2*tmp8/(tmp6 - tmp7*(tmp4 + std::sqrt((4*tmp5*tmp8 + ((-tmp4*tmp7 + tmp6)*(-tmp4*tmp7 + tmp6)))/((tmp7)*(tmp7)))))
    };
 }
 
@@ -342,7 +342,7 @@ PatchJacobian cylindrical_shell_jacobian_axis0(amrex::Real q1, amrex::Real q2, a
 {
    const amrex::Real tmp0 = std::tan(q1);
    const amrex::Real tmp1 = 1.0_rt/((std::cos(q1))*(std::cos(q1)));
-   const amrex::Real tmp2 = pow(tmp1, -1.0_rt/2.0_rt);
+   const amrex::Real tmp2 = std::pow(tmp1, -1.0_rt/2.0_rt);
    const amrex::Real tmp3 = q3*tmp2;
    const amrex::Real tmp4 = -radial_outer;
    const amrex::Real tmp5 = primary_sign/(radial_inner + tmp4);
@@ -365,7 +365,7 @@ PatchJacobian cylindrical_shell_jacobian_axis0(amrex::Real q1, amrex::Real q2, a
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 PatchPoint cylindrical_shell_local_to_global_axis1(amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real o1, amrex::Real o2, amrex::Real o3, amrex::Real primary_sign, amrex::Real radial_inner, amrex::Real radial_outer) noexcept
 {
-   const amrex::Real tmp0 = sqrt(1.0_rt/((std::cos(q1))*(std::cos(q1))));
+   const amrex::Real tmp0 = std::sqrt(1.0_rt/((std::cos(q1))*(std::cos(q1))));
    const amrex::Real tmp1 = 1.0_rt/(tmp0);
    const amrex::Real tmp2 = -radial_outer;
    const amrex::Real tmp3 = radial_inner + tmp2;
@@ -386,15 +386,15 @@ PatchPoint cylindrical_shell_global_to_local_axis1(amrex::Real g1, amrex::Real g
    const amrex::Real tmp1 = g2 - o2;
    const amrex::Real tmp2 = ((tmp1)*(tmp1));
    const amrex::Real tmp3 = ((tmp0)*(tmp0)) + tmp2;
-   const amrex::Real tmp4 = sqrt(tmp3/tmp2);
+   const amrex::Real tmp4 = std::sqrt(tmp3/tmp2);
    const amrex::Real tmp5 = tmp4 - 1;
    const amrex::Real tmp6 = radial_inner*tmp5;
    const amrex::Real tmp7 = radial_inner - radial_outer;
-   const amrex::Real tmp8 = sqrt(tmp3)*tmp7;
+   const amrex::Real tmp8 = std::sqrt(tmp3)*tmp7;
    return {
       std::atan(tmp0/tmp1),
       g3 - o3,
-      -2*tmp8/(tmp6 - tmp7*(tmp4 + sqrt((4*tmp5*tmp8 + ((-tmp4*tmp7 + tmp6)*(-tmp4*tmp7 + tmp6)))/((tmp7)*(tmp7)))))
+      -2*tmp8/(tmp6 - tmp7*(tmp4 + std::sqrt((4*tmp5*tmp8 + ((-tmp4*tmp7 + tmp6)*(-tmp4*tmp7 + tmp6)))/((tmp7)*(tmp7)))))
    };
 }
 
@@ -402,7 +402,7 @@ AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 PatchJacobian cylindrical_shell_jacobian_axis1(amrex::Real q1, amrex::Real q2, amrex::Real q3, amrex::Real primary_sign, amrex::Real radial_inner, amrex::Real radial_outer) noexcept
 {
    const amrex::Real tmp0 = 1.0_rt/((std::cos(q1))*(std::cos(q1)));
-   const amrex::Real tmp1 = pow(tmp0, -1.0_rt/2.0_rt);
+   const amrex::Real tmp1 = std::pow(tmp0, -1.0_rt/2.0_rt);
    const amrex::Real tmp2 = radial_inner*tmp1;
    const amrex::Real tmp3 = q3*tmp1;
    const amrex::Real tmp4 = -radial_outer;

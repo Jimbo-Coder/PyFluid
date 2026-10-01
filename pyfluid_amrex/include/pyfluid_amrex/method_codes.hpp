@@ -1,6 +1,7 @@
 #pragma once
 
 #include "pyfluid_amrex/generated/method_catalog.hpp"
+#include "pyfluid_amrex/generated/time_integrator_ids.hpp"
 
 namespace pyfluid_amrex {
 
@@ -21,14 +22,6 @@ constexpr bool is_characteristic_reconstruction(int method) noexcept
 {
    return reconstruction_is_characteristic(method);
 }
-
-enum TimeIntegratorCode : int {
-   TimeEuler = 0,
-   TimeCorrector = 1,
-   TimeMidpoint = 2,
-   TimeSSPRK3 = 3,
-   TimeRK4 = 4
-};
 
 enum DiffusionMethodCode : int {
    DiffusionNone = 0,

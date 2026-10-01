@@ -4,6 +4,7 @@
 
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -56,6 +57,8 @@ inline OutputMetadataEntries output_metadata_records(
 {
    OutputMetadataEntries entries;
    entries.emplace_back("source", std::string(source));
+   entries.emplace_back("real_mantissa_bits",
+      std::to_string(std::numeric_limits<amrex::Real>::digits));
    if (!kind.empty()) {
       entries.emplace_back("kind", std::string(kind));
    }
@@ -64,7 +67,14 @@ inline OutputMetadataEntries output_metadata_records(
    entries.emplace_back("output_dir", cfg.output_dir);
    entries.emplace_back("run_name", cfg.run_name);
    entries.emplace_back("physics", cfg.physics);
+   entries.emplace_back("diagnostic_constraint_region_extent",
+      output_metadata_real_string(cfg.diagnostic_constraint_region_extent));
+   entries.emplace_back("diagnostic_constraint_exclusion_radius",
+      output_metadata_real_string(cfg.diagnostic_constraint_exclusion_radius));
+   entries.emplace_back("diagnostic_constraint_split_radius",
+      output_metadata_real_string(cfg.diagnostic_constraint_split_radius));
    entries.emplace_back("spacetime_evolution", cfg.spacetime_evolution);
+   entries.emplace_back("spacetime_formulation", cfg.spacetime_formulation);
    entries.emplace_back("spacetime_matter_coupling", cfg.spacetime_matter_coupling);
    entries.emplace_back("spacetime_fixed_metric", cfg.spacetime_fixed_metric);
    entries.emplace_back("spacetime_initial_data", cfg.spacetime_initial_data);
@@ -75,7 +85,33 @@ inline OutputMetadataEntries output_metadata_records(
       "spacetime_black_hole_fill_radius",
       output_metadata_real_string(cfg.spacetime_black_hole_fill_radius)
    );
+   entries.emplace_back(
+      "spacetime_black_hole_matter", cfg.spacetime_black_hole_matter
+   );
+   entries.emplace_back(
+      "spacetime_black_hole_max_lorentz_factor",
+      output_metadata_real_string(
+         cfg.spacetime_black_hole_max_lorentz_factor
+      )
+   );
+   entries.emplace_back(
+      "spacetime_black_hole_max_specific_internal_energy",
+      output_metadata_real_string(
+         cfg.spacetime_black_hole_max_specific_internal_energy
+      )
+   );
+   entries.emplace_back(
+      "spacetime_black_hole_max_magnetization",
+      output_metadata_real_string(
+         cfg.spacetime_black_hole_max_magnetization
+      )
+   );
+   entries.emplace_back(
+      "spacetime_black_hole_max_density",
+      output_metadata_real_string(cfg.spacetime_black_hole_max_density)
+   );
    entries.emplace_back("initial_data_magnetic", cfg.initial_data_magnetic);
+   entries.emplace_back("relativistic_exterior", cfg.relativistic_exterior);
    entries.emplace_back("initial_data_spacetime", cfg.initial_data_spacetime);
    entries.emplace_back("initial_data_lapse", cfg.initial_data_lapse);
    entries.emplace_back("initial_data_shift", cfg.initial_data_shift);
@@ -110,6 +146,7 @@ inline OutputMetadataEntries output_metadata_records(
    );
    entries.emplace_back("spacetime_lapse_gauge", cfg.spacetime_lapse_gauge);
    entries.emplace_back("spacetime_shift_gauge", cfg.spacetime_shift_gauge);
+   entries.emplace_back("spacetime_outer_boundary", cfg.spacetime_outer_boundary);
    entries.emplace_back("spacetime_amplitude", output_metadata_real_string(cfg.spacetime_amplitude));
    entries.emplace_back("spacetime_wave_number", output_metadata_real_string(cfg.spacetime_wave_number));
    entries.emplace_back("spacetime_kappa1", output_metadata_real_string(cfg.spacetime_kappa1));

@@ -56,7 +56,8 @@ inline bool mask_region_all_zero(
 {
    amrex::Box clipped = region;
    clipped &= solid_mask[mfi].box();
-   return clipped.ok() && clipped.numPts() == region.numPts() && solid_mask[mfi].max(clipped, 0) == 0;
+   return clipped.ok() && clipped.numPts() == region.numPts()
+      && solid_mask[mfi].max<amrex::RunOn::Device>(clipped, 0) == 0;
 }
 
 inline bool mask_region_all_nonzero(
@@ -67,7 +68,8 @@ inline bool mask_region_all_nonzero(
 {
    amrex::Box clipped = region;
    clipped &= solid_mask[mfi].box();
-   return clipped.ok() && clipped.numPts() == region.numPts() && solid_mask[mfi].min(clipped, 0) != 0;
+   return clipped.ok() && clipped.numPts() == region.numPts()
+      && solid_mask[mfi].min<amrex::RunOn::Device>(clipped, 0) != 0;
 }
 
 inline int classify_mask_region(amrex::iMultiFab const& mask, amrex::MFIter const& mfi, amrex::Box const& region)

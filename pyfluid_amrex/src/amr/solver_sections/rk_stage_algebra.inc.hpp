@@ -98,11 +98,10 @@
    }
 
    template <int NComp>
-   void linear_combination_plus_flux_divergence_range(
+   void affine_combination_plus_flux_divergence_range(
       LevelData& out,
       LevelData const& base,
       LevelData const& input,
-      amrex::Real base_weight,
       amrex::Real input_weight,
       amrex::Real flux_scale,
       int lev_begin,
@@ -111,26 +110,24 @@
    {
       for (int lev = lev_begin; lev < lev_end; ++lev) {
          if (solid_active(lev) && !has_mhd_components<NComp>() && cfg_.solid_motion == "static") {
-            linear_combination_plus_flux_divergence_components_masked<NComp>(
+            affine_combination_plus_flux_divergence_components_masked<NComp>(
                *out[lev],
                *base[lev],
                *input[lev],
                flux_ptrs(lev),
                *solid_mask_[lev],
                Geom(lev),
-               base_weight,
                input_weight,
                flux_scale,
                &solid_valid_kind_[lev]
             );
          } else {
-            linear_combination_plus_flux_divergence_components<NComp>(
+            affine_combination_plus_flux_divergence_components<NComp>(
                *out[lev],
                *base[lev],
                *input[lev],
                flux_ptrs(lev),
                Geom(lev),
-               base_weight,
                input_weight,
                flux_scale
             );
@@ -291,12 +288,11 @@
    }
 
    template <int NComp>
-   void linear_combination_plus_scaled_range(
+   void affine_combination_plus_scaled_range(
       LevelData& out,
       LevelData const& base,
       LevelData const& input,
       LevelData const& increment,
-      amrex::Real base_weight,
       amrex::Real input_weight,
       amrex::Real increment_scale,
       int lev_begin,
@@ -305,24 +301,22 @@
    {
       for (int lev = lev_begin; lev < lev_end; ++lev) {
          if (solid_active(lev) && !has_mhd_components<NComp>()) {
-            linear_combination_plus_scaled_components_masked<NComp>(
+            affine_combination_plus_scaled_components_masked<NComp>(
                *out[lev],
                *base[lev],
                *input[lev],
                *increment[lev],
                *solid_mask_[lev],
-               base_weight,
                input_weight,
                increment_scale,
                &solid_valid_kind_[lev]
             );
          } else {
-            linear_combination_plus_scaled_components<NComp>(
+            affine_combination_plus_scaled_components<NComp>(
                *out[lev],
                *base[lev],
                *input[lev],
                *increment[lev],
-               base_weight,
                input_weight,
                increment_scale
             );
@@ -331,22 +325,20 @@
    }
 
    template <int NComp>
-   void linear_combination_plus_scaled_all(
+   void affine_combination_plus_scaled_all(
       LevelData& out,
       LevelData const& base,
       LevelData const& input,
       LevelData const& increment,
-      amrex::Real base_weight,
       amrex::Real input_weight,
       amrex::Real increment_scale
    )
    {
-      linear_combination_plus_scaled_range<NComp>(
+      affine_combination_plus_scaled_range<NComp>(
          out,
          base,
          input,
          increment,
-         base_weight,
          input_weight,
          increment_scale,
          0,
@@ -374,7 +366,7 @@
       if (spacetime_state_.evolves()) {
          spacetime_state_.linear_combination(
             spacetime_state_.stage(output_slot),
-            1.0,
+            1.0_rt,
             spacetime_state_.stage(base_slot),
             scale,
             spacetime_state_.rhs(),
@@ -385,45 +377,37 @@
    }
 
    template <int NComp>
-   void evolution_linear_combination_plus_scaled_range(
+   void evolution_affine_combination_plus_scaled_range(
       EvolutionStageSlot output_slot,
       EvolutionStageSlot base_slot,
       EvolutionStageSlot input_slot,
-      amrex::Real base_weight,
       amrex::Real input_weight,
       amrex::Real increment_scale,
       int lev_begin,
       int lev_end
    )
    {
-      linear_combination_plus_scaled_range<NComp>(
+      affine_combination_plus_scaled_range<NComp>(
          fluid_state_.stage(output_slot),
          fluid_state_.stage(base_slot),
          fluid_state_.stage(input_slot),
          fluid_state_.rhs(),
-         base_weight,
          input_weight,
          increment_scale,
          lev_begin,
          lev_end
       );
       if (spacetime_state_.evolves()) {
-         spacetime_state_.linear_combination(
-            spacetime_state_.stage(output_slot),
-            base_weight,
-            spacetime_state_.stage(base_slot),
-            input_weight,
-            spacetime_state_.stage(input_slot),
-            lev_begin,
-            lev_end
-         );
-         spacetime_state_.add_scaled(
-            spacetime_state_.stage(output_slot),
-            increment_scale,
-            spacetime_state_.rhs(),
-            lev_begin,
-            lev_end
-         );
+         for (int lev = lev_begin; lev < lev_end; ++lev) {
+            affine_combination_plus_scaled_components(
+               *spacetime_state_.stage(output_slot)[lev],
+               *spacetime_state_.stage(base_slot)[lev],
+               *spacetime_state_.stage(input_slot)[lev],
+               *spacetime_state_.rhs()[lev],
+               input_weight,
+               increment_scale
+            );
+         }
       }
    }
 
@@ -451,7 +435,7 @@
       if (spacetime_state_.evolves()) {
          spacetime_state_.linear_combination(
             spacetime_state_.stage(output_a_slot),
-            1.0,
+            1.0_rt,
             spacetime_state_.stage(base_slot),
             scale_a,
             spacetime_state_.rhs(),
@@ -460,7 +444,7 @@
          );
          spacetime_state_.linear_combination(
             spacetime_state_.stage(output_b_slot),
-            1.0,
+            1.0_rt,
             spacetime_state_.stage(base_slot),
             scale_b,
             spacetime_state_.rhs(),
@@ -501,7 +485,7 @@
          );
          spacetime_state_.linear_combination(
             spacetime_state_.stage(scratch_slot),
-            1.0,
+            1.0_rt,
             spacetime_state_.stage(base_slot),
             scratch_scale,
             spacetime_state_.rhs(),

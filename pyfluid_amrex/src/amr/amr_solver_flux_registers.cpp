@@ -2,7 +2,11 @@
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
 
+#include <AMReX_GpuElixir.H>
+
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 
 std::array<amrex::MultiFab*, AMREX_SPACEDIM> AmrSolverBase::flux_ptrs(int lev)
 {
@@ -87,7 +91,7 @@ void AmrSolverBase::fill_coarse_reflux_volume(int fine_lev)
          fluid_state_.state()[coarse_lev]->boxArray(), fluid_state_.state()[coarse_lev]->DistributionMap(), 1, 0);
       needs_fill = true;
    }
-   constexpr amrex::Real alpha_floor = 1.0e-12;
+   constexpr amrex::Real alpha_floor = 1.0e-12_rt;
    const bool use_cutcell = cutcell_flux_register_needed(fine_lev);
    const bool use_curvilinear = curvilinear_flux_register_needed(fine_lev);
    const bool use_mapped_patches = mapped_patch_flux_register_needed(fine_lev);
@@ -127,7 +131,7 @@ void AmrSolverBase::fill_coarse_reflux_volume(int fine_lev)
             }
             if (use_cutcell) {
                const amrex::Real fluid_fraction = alpha(i, j, k, 0);
-               volume *= (fluid_fraction > alpha_floor ? fluid_fraction : 1.0);
+               volume *= (fluid_fraction > alpha_floor ? fluid_fraction : 1.0_rt);
             }
             out(i, j, k, 0) = volume;
          });
@@ -152,7 +156,7 @@ bool AmrSolverBase::prepare_weighted_flux_register(int fine_lev)
 void AmrSolverBase::fill_area_weighted_flux_fabs(int lev, amrex::MFIter const& mfi,
                                                  std::array<amrex::FArrayBox, AMREX_SPACEDIM>& weighted) const
 {
-   constexpr amrex::Real alpha_floor = 1.0e-12;
+   constexpr amrex::Real alpha_floor = 1.0e-12_rt;
    const int ncomp = num_state_components();
    const bool use_cutcell = cutcell_flux_register_needed(lev);
    const bool use_curvilinear = mesh_is_curvilinear();
@@ -161,7 +165,7 @@ void AmrSolverBase::fill_area_weighted_flux_fabs(int lev, amrex::MFIter const& m
    const bool zero_ct_magnetic_fluxes = ct_enabled(cfg_);
    const int coordinate = mesh_coordinate_kind();
    const MeshAxes axes = active_mesh_axes();
-   const bool use_physical_vector_flux = !mhd_enabled() && mesh_layout_spans_physical_space(coordinate, axes);
+   const bool use_physical_vector_flux = uses_cartesian_momentum_fluxes();
    const auto problo = Geom(lev).ProbLoArray();
    const auto dx = Geom(lev).CellSizeArray();
    const auto domain = Geom(lev).Domain();
@@ -182,17 +186,17 @@ void AmrSolverBase::fill_area_weighted_flux_fabs(int lev, amrex::MFIter const& m
       const auto dst = weighted[dir].array();
       amrex::ParallelFor(bx, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int n) noexcept {
          if (zero_ct_magnetic_fluxes && n >= B1 && n <= B3) {
-            dst(i, j, k, n) = 0.0;
+            dst(i, j, k, n) = 0.0_rt;
             return;
          }
          const amrex::Real area =
             use_mapped_patches
-               ? 1.0
+               ? 1.0_rt
                : (use_curvilinear ? (use_physical_vector_flux
                                         ? mesh_physical_face_metric(dir, coordinate, axes, problo, dx, i, j, k).area
                                         : curvilinear_face_area_scale(dir, coordinate, axes, problo, dx, i, j, k))
                                   : cartesian_area);
-         amrex::Real open = use_cutcell ? aperture(i, j, k, 0) : 1.0;
+         amrex::Real open = use_cutcell ? aperture(i, j, k, 0) : 1.0_rt;
          int li = i;
          int lj = j;
          int lk = k;
@@ -223,14 +227,14 @@ void AmrSolverBase::fill_area_weighted_flux_fabs(int lev, amrex::MFIter const& m
          right_in_domain = right_in_domain && rk >= lo[2] && rk <= hi[2];
 #endif
          if (use_cutcell && left_in_domain && alpha(li, lj, lk, 0) <= alpha_floor) {
-            open = 0.0;
+            open = 0.0_rt;
          }
          if (use_cutcell && right_in_domain && alpha(ri, rj, rk, 0) <= alpha_floor) {
-            open = 0.0;
+            open = 0.0_rt;
          }
          if (use_patch_union) {
             if (!patch_domain_face_is_interior(patch_domain, domain_lo, domain_hi, dir, i, j, k)) {
-               open = 0.0;
+               open = 0.0_rt;
             }
          }
          dst(i, j, k, n) = area * open * src(i, j, k, n);
@@ -252,19 +256,28 @@ AmrSolverBase::area_weighted_flux_fabs(int lev, amrex::MFIter const& mfi,
 
 void AmrSolverBase::add_fluxes_to_registers(int lev, amrex::Real weight)
 {
-   if (weight == 0.0 || finestLevel() == 0) {
+   if (weight == 0.0_rt || finestLevel() == 0) {
       return;
    }
+   const amrex::RunOn run_on = amrex::Gpu::inLaunchRegion()
+      ? amrex::RunOn::Device : amrex::RunOn::Host;
    if (lev < finestLevel() && flux_registers_[lev + 1]) {
       const bool weighted_register = prepare_weighted_flux_register(lev + 1);
       for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
          if (weighted_register) {
             std::array<amrex::FArrayBox, AMREX_SPACEDIM> weighted;
-            flux_registers_[lev + 1]->CrseAdd(mfi, area_weighted_flux_fabs(lev, mfi, weighted), Geom(lev).CellSize(),
-                                              weight, amrex::RunOn::Host);
+            const auto fluxes = area_weighted_flux_fabs(lev, mfi, weighted);
+            // Register kernels consume these temporary face fields asynchronously.
+            std::array<amrex::Elixir, AMREX_SPACEDIM> keep_alive;
+            if (amrex::Gpu::inLaunchRegion()) {
+               for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+                  keep_alive[dir] = weighted[dir].elixir();
+               }
+            }
+            flux_registers_[lev + 1]->CrseAdd(mfi, fluxes, Geom(lev).CellSize(), weight, run_on);
          } else {
             flux_registers_[lev + 1]->CrseAdd(mfi, flux_fabs(lev, mfi), Geom(lev).CellSize(), weight,
-                                              amrex::RunOn::Host);
+                                              run_on);
          }
       }
    }
@@ -273,10 +286,16 @@ void AmrSolverBase::add_fluxes_to_registers(int lev, amrex::Real weight)
       for (amrex::MFIter mfi(*fluid_state_.state()[lev], amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
          if (weighted_register) {
             std::array<amrex::FArrayBox, AMREX_SPACEDIM> weighted;
-            flux_registers_[lev]->FineAdd(mfi, area_weighted_flux_fabs(lev, mfi, weighted), Geom(lev).CellSize(),
-                                          weight, amrex::RunOn::Host);
+            const auto fluxes = area_weighted_flux_fabs(lev, mfi, weighted);
+            std::array<amrex::Elixir, AMREX_SPACEDIM> keep_alive;
+            if (amrex::Gpu::inLaunchRegion()) {
+               for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+                  keep_alive[dir] = weighted[dir].elixir();
+               }
+            }
+            flux_registers_[lev]->FineAdd(mfi, fluxes, Geom(lev).CellSize(), weight, run_on);
          } else {
-            flux_registers_[lev]->FineAdd(mfi, flux_fabs(lev, mfi), Geom(lev).CellSize(), weight, amrex::RunOn::Host);
+            flux_registers_[lev]->FineAdd(mfi, flux_fabs(lev, mfi), Geom(lev).CellSize(), weight, run_on);
          }
       }
    }
@@ -294,7 +313,9 @@ void AmrSolverBase::fill_edge_line_integral_fab(int lev, int component, amrex::F
 {
    const int ncomp = edge_electric.nComp();
    const amrex::Box& bx = edge_electric.box();
-   edge_line_integral.resize(bx, ncomp);
+   // Register kernels consume this temporary after the submitting host scope
+   // ends. The async arena retains it until its allocation stream completes.
+   edge_line_integral.resize(bx, ncomp, amrex::The_Async_Arena());
    const int coordinate = mesh_coordinate_kind();
    const MeshAxes axes = active_mesh_axes();
    const auto problo = Geom(lev).ProbLoArray();
@@ -321,7 +342,7 @@ AmrSolverBase::edge_line_integral_fabs(int lev, amrex::MFIter const& mfi,
 
 void AmrSolverBase::add_edge_electric_to_registers(int lev, amrex::Real dt)
 {
-   if (!ct_enabled(cfg_) || dt == 0.0 || finestLevel() == 0) {
+   if (!ct_enabled(cfg_) || dt == 0.0_rt || finestLevel() == 0) {
       return;
    }
 #if (AMREX_SPACEDIM == 2)
@@ -392,7 +413,7 @@ void AmrSolverBase::reflux_level_to_destination(int fine_lev, amrex::MultiFab& d
 {
    const int coordinate = mesh_coordinate_kind();
    const MeshAxes axes = active_mesh_axes();
-   if (mhd_enabled() || !mesh_layout_spans_physical_space(coordinate, axes)) {
+   if (!uses_cartesian_momentum_fluxes()) {
       flux_registers_[fine_lev]->Reflux(destination, 0, 0, num_state_components());
       return;
    }
@@ -400,7 +421,7 @@ void AmrSolverBase::reflux_level_to_destination(int fine_lev, amrex::MultiFab& d
    const int coarse_lev = fine_lev - 1;
    const int ncomp = num_state_components();
    amrex::MultiFab correction(destination.boxArray(), destination.DistributionMap(), ncomp, 0);
-   correction.setVal(0.0);
+   correction.setVal(0.0_rt);
    flux_registers_[fine_lev]->Reflux(correction, 0, 0, ncomp);
    const auto problo = Geom(coarse_lev).ProbLoArray();
    const auto dx = Geom(coarse_lev).CellSizeArray();

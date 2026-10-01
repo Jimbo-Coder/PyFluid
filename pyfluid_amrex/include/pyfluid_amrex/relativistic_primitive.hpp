@@ -12,16 +12,18 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct SpatialFourVelocity {
-   amrex::Real z1 = 0.0;
-   amrex::Real z2 = 0.0;
-   amrex::Real z3 = 0.0;
+   amrex::Real z1 = 0.0_rt;
+   amrex::Real z2 = 0.0_rt;
+   amrex::Real z3 = 0.0_rt;
 };
 
 struct EulerianVelocity {
-   amrex::Real v1 = 0.0;
-   amrex::Real v2 = 0.0;
-   amrex::Real v3 = 0.0;
+   amrex::Real v1 = 0.0_rt;
+   amrex::Real v2 = 0.0_rt;
+   amrex::Real v3 = 0.0_rt;
 };
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -35,7 +37,7 @@ SpatialFourVelocity spatial_four_velocity_from_eulerian(
    const amrex::Real velocity_squared = spatial_vector_norm_squared(
       v1, v2, v3, metric
    );
-   const amrex::Real lorentz_factor = 1.0 / std::sqrt(1.0 - velocity_squared);
+   const amrex::Real lorentz_factor = 1.0_rt / std::sqrt(1.0_rt - velocity_squared);
    return {
       lorentz_factor * v1,
       lorentz_factor * v2,
@@ -50,7 +52,7 @@ EulerianVelocity eulerian_velocity_from_spatial_four_velocity(
 ) noexcept
 {
    const amrex::Real lorentz_factor = std::sqrt(
-      1.0 + spatial_vector_norm_squared(
+      1.0_rt + spatial_vector_norm_squared(
          spatial_four_velocity.z1,
          spatial_four_velocity.z2,
          spatial_four_velocity.z3,
@@ -72,9 +74,9 @@ bool primitive_is_atmosphere(
 ) noexcept
 {
    constexpr amrex::Real tolerance =
-      1024.0 * std::numeric_limits<amrex::Real>::epsilon();
-   return rho <= eos.rho_floor * (1.0 + tolerance)
-      || pressure <= eos.pressure_floor * (1.0 + tolerance);
+      1024.0_rt * std::numeric_limits<amrex::Real>::epsilon();
+   return rho <= eos.rho_floor * (1.0_rt + tolerance)
+      || pressure <= eos.pressure_floor * (1.0_rt + tolerance);
 }
 
 template <int EOSMethod>

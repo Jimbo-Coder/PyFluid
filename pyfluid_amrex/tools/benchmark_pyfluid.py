@@ -2,8 +2,8 @@
 """Run fixed PyFluid AMReX performance regression cases.
 
 The case list below is the single place to add or adjust canonical performance
-checks. Evolution writes only run outputs under runs/current; this script's
-postprocessing is just stdout parsing plus a compact TSV.
+checks. Each repeat validates solver-authored scalar diagnostics before the
+next run overwrites them; validation.tsv retains compact per-repeat evidence.
 """
 
 from __future__ import annotations
@@ -13,10 +13,16 @@ import csv
 import re
 import shutil
 import statistics
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from validation_common import materialize_run_input, parameters_from_assignments, run_mpi
+from plotfile_reader import read_scalars_metadata
+from validation_common import (
+   append_validation_history, cartesian_divb_scale, materialize_run_input,
+   parameters_from_assignments, precision_scalar_policy, run_mpi, scalar_checks,
+   scalar_validation_row, write_tsv,
+)
 from validation_common import append_performance_history as append_common_performance_history
 
 
@@ -30,6 +36,7 @@ class PerfCase:
    baseline_mcells_s: float
    baseline_label: str
    warn_fraction: float = 0.85
+   magnetic_field_scale: float | None = None
 
 
 HYDRO2D_FAST_OVERRIDES = (
@@ -48,11 +55,10 @@ HYDRO2D_FAST_OVERRIDES = (
 )
 
 
-# Three-repeat medians from the MPI-enabled AMReX build on 2026-07-09. Earlier
-# values came from a serial AMReX cache launched under mpirun and are not
-# comparable.
-MPI_BASELINE_LABEL = "real_mpi_2026-07-09_clean"
-TILE_OWNERSHIP_BASELINE_LABEL = "tilebox_ownership_2026-08-27"
+# Six-repeat medians from balanced 26.09/26.10 CPU runs on 2026-10-01.
+# Exact source, machine, scalar checks and prior-release comparisons are in
+# benchmarks/baseline_2026_10_01.md. This is the Mac CPU reference, not GPU data.
+PERFORMANCE_BASELINE_LABEL = "amrex2610_mac_cpu_2026-10-01"
 
 
 CASES = [
@@ -61,8 +67,8 @@ CASES = [
       executable=Path("build/pyfluid_amrex/pyfluid_amrex_2d"),
       inputs=Path("pyfluid_amrex/inputs/hydro_sine_2d.in"),
       ranks=3,
-      baseline_mcells_s=109.9095765,
-      baseline_label=MPI_BASELINE_LABEL,
+      baseline_mcells_s=97.30187409,
+      baseline_label=PERFORMANCE_BASELINE_LABEL,
       overrides=HYDRO2D_FAST_OVERRIDES,
    ),
    PerfCase(
@@ -70,8 +76,8 @@ CASES = [
       executable=Path("build/pyfluid_amrex/pyfluid_amrex_3d"),
       inputs=Path("pyfluid_amrex/inputs/hydro_sine_3d.in"),
       ranks=3,
-      baseline_mcells_s=61.3922574,
-      baseline_label=TILE_OWNERSHIP_BASELINE_LABEL,
+      baseline_mcells_s=58.8593663,
+      baseline_label=PERFORMANCE_BASELINE_LABEL,
       overrides=(
          "amr.n_cell=64 64 64",
          "amr.max_level=0",
@@ -92,8 +98,8 @@ CASES = [
       executable=Path("build/pyfluid_amrex/pyfluid_amrex_3d"),
       inputs=Path("pyfluid_amrex/inputs/hydro_sine_3d.in"),
       ranks=3,
-      baseline_mcells_s=2.59827142,
-      baseline_label=TILE_OWNERSHIP_BASELINE_LABEL,
+      baseline_mcells_s=2.6795152785,
+      baseline_label=PERFORMANCE_BASELINE_LABEL,
       overrides=(
          "amr.n_cell=64 64 64",
          "amr.max_level=0",
@@ -111,11 +117,12 @@ CASES = [
    ),
    PerfCase(
       name="rmhd1d_32768_pwc_hll_euler_3rank",
+      magnetic_field_scale=0.75,
       executable=Path("build/pyfluid_amrex/pyfluid_amrex_1d"),
       inputs=Path("pyfluid_amrex/inputs/rmhd_uniform_1d.in"),
       ranks=3,
-      baseline_mcells_s=2.030347723,
-      baseline_label="ideal_c2p_boundary_2026-08-24",
+      baseline_mcells_s=1.851735968,
+      baseline_label=PERFORMANCE_BASELINE_LABEL,
       overrides=(
          "amr.n_cell=32768",
          "amr.max_level=0",
@@ -153,16 +160,7 @@ def cases_for_build_dir(build_dir: Path, only: set[str] | None) -> list[PerfCase
       if only and case.name not in only:
          continue
       cases.append(
-         PerfCase(
-            name=case.name,
-            executable=build_dir / case.executable.name,
-            inputs=case.inputs,
-            ranks=case.ranks,
-            overrides=case.overrides,
-            baseline_mcells_s=case.baseline_mcells_s,
-            baseline_label=case.baseline_label,
-            warn_fraction=case.warn_fraction,
-         )
+         replace(case, executable=build_dir / case.executable.name)
       )
    return cases
 
@@ -219,11 +217,14 @@ def _run_case_once(case: PerfCase, root: Path, force: bool, label: str) -> dict[
       run_dir / "run.in",
       parameters_from_assignments([f"pyfluid.output_dir={run_dir}", *case.overrides]),
    )
+   launch_started = time.perf_counter()
    completed = run_mpi(
       case.executable,
       [input_path],
       ranks=case.ranks,
    )
+   launch_wall_s = time.perf_counter() - launch_started
+   (run_dir / "run.log").write_text(completed.stdout)
    match = AVERAGE_RE.search(completed.stdout)
    sim_match = SIM_TIME_RE.search(completed.stdout)
    mpi_match = MPI_PROCESSES_RE.search(completed.stdout)
@@ -234,12 +235,30 @@ def _run_case_once(case: PerfCase, root: Path, force: bool, label: str) -> dict[
    status = "pass" if completed.returncode == 0 and ratio >= case.warn_fraction else "warn"
    if completed.returncode != 0 or not match or mpi_processes != case.ranks:
       status = "fail"
+   validation = {"case": case.name, "status": "FAIL", "reason": "solver did not complete"}
+   if completed.returncode == 0:
+      bits = int(read_scalars_metadata(run_dir)["real_mantissa_bits"])
+      # These short, closed benchmark cases share the precision comparison's
+      # roundoff budget. Check every repeat before the next one overwrites it.
+      checks = precision_scalar_policy(
+         scalar_checks("benchmark_precision", divb=case.magnetic_field_scale is not None,
+                       external_tol=1e-8),
+         bits,
+         divb_scale=(cartesian_divb_scale(run_dir, field_scale=case.magnetic_field_scale)
+                     if case.magnetic_field_scale is not None else None),
+      )
+      validation = scalar_validation_row(run_dir, checks=checks, ranks=case.ranks)
+      validation["label"] = label
+      validation["mantissa_bits"] = bits
+      if validation["status"] != "PASS":
+         status = "fail"
    return {
       "case": case.name,
       "label": label,
       "status": status,
       "ranks": case.ranks,
       "mcells_s": mcells_s,
+      "launch_wall_s": launch_wall_s,
       "sim_time_per_s": sim_time_per_s,
       "baseline_mcells_s": case.baseline_mcells_s,
       "baseline_label": case.baseline_label,
@@ -249,7 +268,9 @@ def _run_case_once(case: PerfCase, root: Path, force: bool, label: str) -> dict[
       "execution_mode": "mpi" if mpi_processes == case.ranks else "invalid",
       "mpi_processes": mpi_processes,
       "run_dir": run_dir,
-      "tail": "\n".join(completed.stdout.splitlines()[-8:]),
+      "tail": "\n".join(completed.stdout.splitlines()[-8:])
+              + ("\n" + validation["reason"] if validation["status"] != "PASS" else ""),
+      "scalar_validation": validation,
       **read_profile_summary(run_dir),
    }
 
@@ -265,8 +286,17 @@ def run_case(case: PerfCase, root: Path, force: bool, label: str, repeats: int) 
    if any(row["status"] == "fail" for row in rows) or not finite_mcells_s:
       status = "fail"
    profile_row = rows[-1]
+   validations = [dict(row["scalar_validation"], repeat=index + 1,
+                       launch_wall_s=row["launch_wall_s"], mcells_s=row["mcells_s"])
+                  for index, row in enumerate(rows)]
+   fields = list(dict.fromkeys(key for row in validations for key in row))
+   write_tsv(root / case.name / "validation.tsv", validations, fields)
+   failure = next((row for row in rows if row["status"] == "fail"), profile_row)
    return {
       **profile_row,
+      "scalar_validation": validations,
+      "launch_wall_s": statistics.median(float(row["launch_wall_s"]) for row in rows),
+      "tail": failure["tail"],
       "status": status,
       "repeats": repeats,
       "mcells_s": mcells_s,
@@ -284,6 +314,7 @@ def write_results(rows: list[dict[str, object]], output: Path) -> None:
       "status",
       "ranks",
       "mcells_s",
+      "launch_wall_s",
       "sim_time_per_s",
       "baseline_mcells_s",
       "baseline_label",
@@ -325,9 +356,11 @@ def main() -> int:
       raise SystemExit("--repeats must be >= 1")
 
    rows = []
+   validations = []
    selected_cases = cases_for_build_dir(args.build_dir, set(args.only) if args.only else None)
    for case in selected_cases:
       row = run_case(case, args.run_dir, args.force, args.label, args.repeats)
+      validations.extend(row.pop("scalar_validation"))
       rows.append(row)
       print(
          f"{row['status']:>4} {case.name}: {float(row['mcells_s']):.2f} Mcells/s "
@@ -342,10 +375,12 @@ def main() -> int:
 
    write_results(rows, args.output)
    append_performance_history(rows, args.history)
+   append_validation_history(Path("runs/current/validation_history.tsv"), validations)
    print(f"wrote {args.output}")
    print(f"appended {args.history}")
-   bad = [row for row in rows if row["status"] in ("warn", "fail")]
-   return 0 if args.allow_warn or not bad else 1
+   failed = any(row["status"] == "fail" for row in rows)
+   warned = any(row["status"] == "warn" for row in rows)
+   return int(failed or (warned and not args.allow_warn))
 
 
 if __name__ == "__main__":

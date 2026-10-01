@@ -14,6 +14,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 static constexpr int SolidMotionStatic = 0;
 static constexpr int SolidMotionTranslate = 1;
 static constexpr int SolidMotionRotate = 2;
@@ -34,7 +36,7 @@ inline bool solid_geometry_changes_cell_mask(RunConfig const& cfg)
 
 inline int solid_translation_axis(RunConfig const& cfg)
 {
-   const amrex::Real eps = 0.0;
+   const amrex::Real eps = 0.0_rt;
    int axis = -1;
    int count = 0;
    if (std::abs(cfg.solid_velocity_1) > eps) {
@@ -60,16 +62,16 @@ inline int solid_translation_sign(RunConfig const& cfg)
 {
    const int axis = solid_translation_axis(cfg);
    if (axis == 0) {
-      return cfg.solid_velocity_1 > 0.0 ? 1 : -1;
+      return cfg.solid_velocity_1 > 0.0_rt ? 1 : -1;
    }
 #if (AMREX_SPACEDIM >= 2)
    if (axis == 1) {
-      return cfg.solid_velocity_2 > 0.0 ? 1 : -1;
+      return cfg.solid_velocity_2 > 0.0_rt ? 1 : -1;
    }
 #endif
 #if (AMREX_SPACEDIM == 3)
    if (axis == 2) {
-      return cfg.solid_velocity_3 > 0.0 ? 1 : -1;
+      return cfg.solid_velocity_3 > 0.0_rt ? 1 : -1;
    }
 #endif
    return 0;
@@ -80,19 +82,19 @@ struct SolidGeometryEvaluator {
    bool wedge_enabled = false;
    bool circle_enabled = false;
    int motion = SolidMotionStatic;
-   amrex::Real time = 0.0;
+   amrex::Real time = 0.0_rt;
    int box_count = 0;
    amrex::Real box_lo[MaxSolidBoxValues]{};
    amrex::Real box_hi[MaxSolidBoxValues]{};
-   amrex::Real wedge_x0 = 0.0;
-   amrex::Real wedge_y0 = 0.0;
-   amrex::Real wedge_slope = 0.0;
+   amrex::Real wedge_x0 = 0.0_rt;
+   amrex::Real wedge_y0 = 0.0_rt;
+   amrex::Real wedge_slope = 0.0_rt;
    amrex::Real circle_center[3]{};
-   amrex::Real circle_radius = 0.0;
-   amrex::Real circle_radius_amplitude = 0.0;
-   amrex::Real circle_radius_frequency = 0.0;
-   amrex::Real circle_radius_phase = 0.0;
-   amrex::Real circle_radius_ramp_time = 0.0;
+   amrex::Real circle_radius = 0.0_rt;
+   amrex::Real circle_radius_amplitude = 0.0_rt;
+   amrex::Real circle_radius_frequency = 0.0_rt;
+   amrex::Real circle_radius_phase = 0.0_rt;
+   amrex::Real circle_radius_ramp_time = 0.0_rt;
    int volume_fraction_samples_per_dim = 1;
    amrex::Real velocity[3]{};
    amrex::Real angular_velocity[3]{};
@@ -100,33 +102,33 @@ struct SolidGeometryEvaluator {
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    amrex::Real circle_radius_envelope(amrex::Real query_time) const noexcept
    {
-      if (circle_radius_ramp_time <= 0.0) {
-         return 1.0;
+      if (circle_radius_ramp_time <= 0.0_rt) {
+         return 1.0_rt;
       }
-      if (query_time <= 0.0) {
-         return 0.0;
+      if (query_time <= 0.0_rt) {
+         return 0.0_rt;
       }
       if (query_time >= circle_radius_ramp_time) {
-         return 1.0;
+         return 1.0_rt;
       }
       const amrex::Real u = query_time / circle_radius_ramp_time;
-      return u * u * u * (10.0 + u * (-15.0 + 6.0 * u));
+      return u * u * u * (10.0_rt + u * (-15.0_rt + 6.0_rt * u));
    }
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    amrex::Real circle_radius_envelope_velocity(amrex::Real query_time) const noexcept
    {
-      if (circle_radius_ramp_time <= 0.0 || query_time <= 0.0 || query_time >= circle_radius_ramp_time) {
-         return 0.0;
+      if (circle_radius_ramp_time <= 0.0_rt || query_time <= 0.0_rt || query_time >= circle_radius_ramp_time) {
+         return 0.0_rt;
       }
       const amrex::Real u = query_time / circle_radius_ramp_time;
-      return 30.0 * u * u * (1.0 - u) * (1.0 - u) / circle_radius_ramp_time;
+      return 30.0_rt * u * u * (1.0_rt - u) * (1.0_rt - u) / circle_radius_ramp_time;
    }
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    amrex::Real translation_shift(amrex::Real query_time, int dir) const noexcept
    {
-      return motion == SolidMotionTranslate ? velocity[dir] * query_time : 0.0;
+      return motion == SolidMotionTranslate ? velocity[dir] * query_time : 0.0_rt;
    }
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -146,7 +148,7 @@ struct SolidGeometryEvaluator {
    amrex::Real circle_radius_velocity_at(amrex::Real query_time) const noexcept
    {
       if (motion != SolidMotionPulse) {
-         return 0.0;
+         return 0.0_rt;
       }
       const amrex::Real omega =
          constants::two_pi
@@ -170,26 +172,26 @@ struct SolidGeometryEvaluator {
       const int base = box * AMREX_SPACEDIM;
       const amrex::Real xlo = box_lo[base] + translation_shift(query_time, 0);
       const amrex::Real xhi = box_hi[base] + translation_shift(query_time, 0);
-      const amrex::Real dx = x < xlo ? xlo - x : (x > xhi ? x - xhi : 0.0);
+      const amrex::Real dx = x < xlo ? xlo - x : (x > xhi ? x - xhi : 0.0_rt);
       amrex::Real outside2 = dx * dx;
       amrex::Real inside = amrex::min(x - xlo, xhi - x);
 #if (AMREX_SPACEDIM >= 2)
       const amrex::Real ylo = box_lo[base + 1] + translation_shift(query_time, 1);
       const amrex::Real yhi = box_hi[base + 1] + translation_shift(query_time, 1);
-      const amrex::Real dy = y < ylo ? ylo - y : (y > yhi ? y - yhi : 0.0);
+      const amrex::Real dy = y < ylo ? ylo - y : (y > yhi ? y - yhi : 0.0_rt);
       outside2 += dy * dy;
       inside = amrex::min(inside, amrex::min(y - ylo, yhi - y));
 #endif
 #if (AMREX_SPACEDIM == 3)
       const amrex::Real zlo = box_lo[base + 2] + translation_shift(query_time, 2);
       const amrex::Real zhi = box_hi[base + 2] + translation_shift(query_time, 2);
-      const amrex::Real dz = z < zlo ? zlo - z : (z > zhi ? z - zhi : 0.0);
+      const amrex::Real dz = z < zlo ? zlo - z : (z > zhi ? z - zhi : 0.0_rt);
       outside2 += dz * dz;
       inside = amrex::min(inside, amrex::min(z - zlo, zhi - z));
 #else
       (void)z;
 #endif
-      if (outside2 > 0.0) {
+      if (outside2 > 0.0_rt) {
          return std::sqrt(outside2);
       }
       return -inside;
@@ -202,13 +204,13 @@ struct SolidGeometryEvaluator {
 #if (AMREX_SPACEDIM >= 2)
       const amrex::Real dy = y - center_component_at(query_time, 1);
 #else
-      const amrex::Real dy = 0.0;
+      const amrex::Real dy = 0.0_rt;
       (void)y;
 #endif
 #if (AMREX_SPACEDIM == 3)
       const amrex::Real dz = z - center_component_at(query_time, 2);
 #else
-      const amrex::Real dz = 0.0;
+      const amrex::Real dz = 0.0_rt;
       (void)z;
 #endif
       return cartesian_radius(dx, dy, dz) - circle_radius_at(query_time);
@@ -221,17 +223,17 @@ struct SolidGeometryEvaluator {
       const amrex::Real shifted_y0 = wedge_y0 + translation_shift(query_time, 1);
       if (x < shifted_x0) {
          const amrex::Real dx = shifted_x0 - x;
-         const amrex::Real dy = y < shifted_y0 ? shifted_y0 - y : 0.0;
+         const amrex::Real dy = y < shifted_y0 ? shifted_y0 - y : 0.0_rt;
          return cartesian_cylindrical_radius(dx, dy);
       }
       const amrex::Real wall_y = shifted_y0 + wedge_slope * (x - shifted_x0);
-      return (y - wall_y) / std::sqrt(1.0 + wedge_slope * wedge_slope);
+      return (y - wall_y) / std::sqrt(1.0_rt + wedge_slope * wedge_slope);
    }
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    amrex::Real phi(amrex::Real query_time, amrex::Real x, amrex::Real y, amrex::Real z) const noexcept
    {
-      amrex::Real value = 1.0e300;
+      amrex::Real value = 1.0e300_rt;
       if (boxes_enabled) {
          for (int n = 0; n < box_count; ++n) {
             value = amrex::min(value, box_phi_at(query_time, n, x, y, z));
@@ -252,14 +254,14 @@ struct SolidGeometryEvaluator {
    amrex::Real curved_boundary_error(amrex::Real query_time, amrex::Real cell_width) const noexcept
    {
 #if (AMREX_SPACEDIM >= 2)
-      amrex::Real error = 0.0;
+      amrex::Real error = 0.0_rt;
       const amrex::Real radius = circle_radius_at(query_time);
-      if (circle_enabled && radius > 0.0) {
-         amrex::Real cell_diagonal = cell_width * std::sqrt(2.0);
+      if (circle_enabled && radius > 0.0_rt) {
+         amrex::Real cell_diagonal = cell_width * std::sqrt(2.0_rt);
 #if (AMREX_SPACEDIM == 3)
-         cell_diagonal = cell_width * std::sqrt(3.0);
+         cell_diagonal = cell_width * std::sqrt(3.0_rt);
 #endif
-         const amrex::Real half_chord = 0.5 * cell_diagonal;
+         const amrex::Real half_chord = 0.5_rt * cell_diagonal;
          const amrex::Real sagitta = half_chord >= radius
             ? radius
             : radius - std::sqrt(radius * radius - half_chord * half_chord);
@@ -269,14 +271,14 @@ struct SolidGeometryEvaluator {
 #else
       (void)query_time;
       (void)cell_width;
-      return 0.0;
+      return 0.0_rt;
 #endif
    }
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
    bool contains(amrex::Real query_time, amrex::Real x, amrex::Real y, amrex::Real z) const noexcept
    {
-      return phi(query_time, x, y, z) <= 0.0;
+      return phi(query_time, x, y, z) <= 0.0_rt;
    }
 
    AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
@@ -291,29 +293,29 @@ struct SolidGeometryEvaluator {
       amrex::Real& nz
    ) const noexcept
    {
-      const amrex::Real hx = 0.25 * dx[0];
-      amrex::Real gx = (phi(query_time, x + hx, y, z) - phi(query_time, x - hx, y, z)) / (2.0 * hx);
+      const amrex::Real hx = 0.25_rt * dx[0];
+      amrex::Real gx = (phi(query_time, x + hx, y, z) - phi(query_time, x - hx, y, z)) / (2.0_rt * hx);
 #if (AMREX_SPACEDIM >= 2)
-      const amrex::Real hy = 0.25 * dx[1];
-      amrex::Real gy = (phi(query_time, x, y + hy, z) - phi(query_time, x, y - hy, z)) / (2.0 * hy);
+      const amrex::Real hy = 0.25_rt * dx[1];
+      amrex::Real gy = (phi(query_time, x, y + hy, z) - phi(query_time, x, y - hy, z)) / (2.0_rt * hy);
 #else
-      amrex::Real gy = 0.0;
+      amrex::Real gy = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-      const amrex::Real hz = 0.25 * dx[2];
-      amrex::Real gz = (phi(query_time, x, y, z + hz) - phi(query_time, x, y, z - hz)) / (2.0 * hz);
+      const amrex::Real hz = 0.25_rt * dx[2];
+      amrex::Real gz = (phi(query_time, x, y, z + hz) - phi(query_time, x, y, z - hz)) / (2.0_rt * hz);
 #else
-      amrex::Real gz = 0.0;
+      amrex::Real gz = 0.0_rt;
 #endif
       const amrex::Real norm = std::sqrt(gx * gx + gy * gy + gz * gz);
-      if (norm > 0.0 && amrex::Math::isfinite(norm)) {
+      if (norm > 0.0_rt && amrex::Math::isfinite(norm)) {
          nx = gx / norm;
          ny = gy / norm;
          nz = gz / norm;
       } else {
-         nx = 1.0;
-         ny = 0.0;
-         nz = 0.0;
+         nx = 1.0_rt;
+         ny = 0.0_rt;
+         nz = 0.0_rt;
       }
    }
 
@@ -331,12 +333,12 @@ struct SolidGeometryEvaluator {
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real ry = y - center_component_at(query_time, 1);
 #else
-         const amrex::Real ry = 0.0;
+         const amrex::Real ry = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real rz = z - center_component_at(query_time, 2);
 #else
-         const amrex::Real rz = 0.0;
+         const amrex::Real rz = 0.0_rt;
 #endif
          const amrex::Real vx = angular_velocity[1] * rz - angular_velocity[2] * ry;
          const amrex::Real vy = angular_velocity[2] * rx - angular_velocity[0] * rz;
@@ -348,23 +350,23 @@ struct SolidGeometryEvaluator {
 #if (AMREX_SPACEDIM >= 2)
          const amrex::Real ry = y - center_component_at(query_time, 1);
 #else
-         const amrex::Real ry = 0.0;
+         const amrex::Real ry = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          const amrex::Real rz = z - center_component_at(query_time, 2);
 #else
-         const amrex::Real rz = 0.0;
+         const amrex::Real rz = 0.0_rt;
 #endif
          const amrex::Real radius = cartesian_radius(rx, ry, rz);
-         if (radius <= 0.0) {
-            return 0.0;
+         if (radius <= 0.0_rt) {
+            return 0.0_rt;
          }
          const amrex::Real nx = rx / radius;
          const amrex::Real ny = ry / radius;
          const amrex::Real nz = rz / radius;
          return circle_radius_velocity_at(query_time) * (dir == 0 ? nx : (dir == 1 ? ny : nz));
       }
-      return 0.0;
+      return 0.0_rt;
    }
 
 };
@@ -382,7 +384,7 @@ amrex::Real sampled_cell_fluid_fraction(
    int samples_per_dim
 ) noexcept
 {
-   const amrex::Real inv_samples = 1.0 / static_cast<amrex::Real>(samples_per_dim);
+   const amrex::Real inv_samples = 1.0_rt / static_cast<amrex::Real>(samples_per_dim);
    amrex::Real inv_total = inv_samples;
 #if (AMREX_SPACEDIM >= 2)
    inv_total *= inv_samples;
@@ -396,25 +398,25 @@ amrex::Real sampled_cell_fluid_fraction(
    (void)z0;
    (void)dz;
 #endif
-   amrex::Real fluid_samples = 0.0;
+   amrex::Real fluid_samples = 0.0_rt;
    for (int si = 0; si < samples_per_dim; ++si) {
-      const amrex::Real x = x0 + (static_cast<amrex::Real>(si) + 0.5) * inv_samples * dx;
+      const amrex::Real x = x0 + (static_cast<amrex::Real>(si) + 0.5_rt) * inv_samples * dx;
 #if (AMREX_SPACEDIM >= 2)
       for (int sj = 0; sj < samples_per_dim; ++sj) {
-         const amrex::Real y = y0 + (static_cast<amrex::Real>(sj) + 0.5) * inv_samples * dy;
+         const amrex::Real y = y0 + (static_cast<amrex::Real>(sj) + 0.5_rt) * inv_samples * dy;
 #else
       {
-         const amrex::Real y = 0.0;
+         const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          for (int sk = 0; sk < samples_per_dim; ++sk) {
-            const amrex::Real z = z0 + (static_cast<amrex::Real>(sk) + 0.5) * inv_samples * dz;
+            const amrex::Real z = z0 + (static_cast<amrex::Real>(sk) + 0.5_rt) * inv_samples * dz;
 #else
          {
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             if (!params.contains(query_time, x, y, z)) {
-               fluid_samples += 1.0;
+               fluid_samples += 1.0_rt;
             }
          }
       }
@@ -435,7 +437,7 @@ amrex::Real sampled_face_fluid_fraction(
    int samples_per_dim
 ) noexcept
 {
-   const amrex::Real inv_samples = 1.0 / static_cast<amrex::Real>(samples_per_dim);
+   const amrex::Real inv_samples = 1.0_rt / static_cast<amrex::Real>(samples_per_dim);
    constexpr int nx = Direction == 0 ? 1 : 0;
 #if (AMREX_SPACEDIM >= 2)
    constexpr int ny = Direction == 1 ? 1 : 0;
@@ -454,32 +456,32 @@ amrex::Real sampled_face_fluid_fraction(
 #else
    constexpr int sz_count = 1;
 #endif
-   const amrex::Real inv_total = 1.0 / static_cast<amrex::Real>(sx_count * sy_count * sz_count);
-   amrex::Real fluid_samples = 0.0;
+   const amrex::Real inv_total = 1.0_rt / static_cast<amrex::Real>(sx_count * sy_count * sz_count);
+   amrex::Real fluid_samples = 0.0_rt;
    for (int si = 0; si < sx_count; ++si) {
       const amrex::Real x = Direction == 0
          ? problo[0] + static_cast<amrex::Real>(i) * dx[0]
-         : problo[0] + (static_cast<amrex::Real>(i) + (static_cast<amrex::Real>(si) + 0.5) * inv_samples) * dx[0];
+         : problo[0] + (static_cast<amrex::Real>(i) + (static_cast<amrex::Real>(si) + 0.5_rt) * inv_samples) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
       for (int sj = 0; sj < sy_count; ++sj) {
          const amrex::Real y = Direction == 1
             ? problo[1] + static_cast<amrex::Real>(j) * dx[1]
-            : problo[1] + (static_cast<amrex::Real>(j) + (static_cast<amrex::Real>(sj) + 0.5) * inv_samples) * dx[1];
+            : problo[1] + (static_cast<amrex::Real>(j) + (static_cast<amrex::Real>(sj) + 0.5_rt) * inv_samples) * dx[1];
 #else
       {
-         const amrex::Real y = 0.0;
+         const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
          for (int sk = 0; sk < sz_count; ++sk) {
             const amrex::Real z = Direction == 2
                ? problo[2] + static_cast<amrex::Real>(k) * dx[2]
-               : problo[2] + (static_cast<amrex::Real>(k) + (static_cast<amrex::Real>(sk) + 0.5) * inv_samples) * dx[2];
+               : problo[2] + (static_cast<amrex::Real>(k) + (static_cast<amrex::Real>(sk) + 0.5_rt) * inv_samples) * dx[2];
 #else
          {
-            const amrex::Real z = 0.0;
+            const amrex::Real z = 0.0_rt;
 #endif
             if (!params.contains(query_time, x, y, z)) {
-               fluid_samples += 1.0;
+               fluid_samples += 1.0_rt;
             }
          }
       }
@@ -532,7 +534,7 @@ inline SolidGeometryEvaluator solid_geometry_evaluator(RunConfig const& cfg, amr
    return p;
 }
 
-inline void fill_solid_mask(amrex::iMultiFab& mask, amrex::Geometry const& geom, RunConfig const& cfg, amrex::Real time = 0.0)
+inline void fill_solid_mask(amrex::iMultiFab& mask, amrex::Geometry const& geom, RunConfig const& cfg, amrex::Real time = 0.0_rt)
 {
    mask.setVal(0);
    if (!solid_geometry_enabled(cfg)) {
@@ -551,16 +553,16 @@ inline void fill_solid_mask(amrex::iMultiFab& mask, amrex::Geometry const& geom,
       const amrex::Box& bx = mfi.fabbox();
       const auto m = mask.array(mfi);
       amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5) * dx[0];
+         const amrex::Real x = problo[0] + (static_cast<amrex::Real>(i) + 0.5_rt) * dx[0];
 #if (AMREX_SPACEDIM >= 2)
-         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5) * dx[1];
+         const amrex::Real y = problo[1] + (static_cast<amrex::Real>(j) + 0.5_rt) * dx[1];
 #else
-         const amrex::Real y = 0.0;
+         const amrex::Real y = 0.0_rt;
 #endif
 #if (AMREX_SPACEDIM == 3)
-         const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5) * dx[2];
+         const amrex::Real z = problo[2] + (static_cast<amrex::Real>(k) + 0.5_rt) * dx[2];
 #else
-         const amrex::Real z = 0.0;
+         const amrex::Real z = 0.0_rt;
 #endif
          m(i, j, k, 0) = params.contains(time, x, y, z) ? 1 : 0;
       });

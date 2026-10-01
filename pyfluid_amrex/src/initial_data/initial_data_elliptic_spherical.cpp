@@ -23,6 +23,8 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 using detail::configure_mlmg;
 using detail::elliptic_result;
 using detail::lower_boundary_conditions;
@@ -42,6 +44,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& solution,
    amrex::Vector<amrex::MultiFab const*> const& rhs,
+   amrex::Vector<amrex::MultiFab const*> const& reaction,
    InitialDataEllipticBoundaryConditions const& boundary,
    InitialDataEllipticOptions const& options,
    AxisymmetricSphericalMode mode
@@ -65,7 +68,7 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
    );
    return {};
 #else
-   if (!(angular_spin_squared >= 0.0)
+   if (!(angular_spin_squared >= 0.0_rt)
        || !std::isfinite(angular_spin_squared)) {
       amrex::Abort("invalid full spherical angular spin weight");
    }
@@ -79,12 +82,12 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
    }
    auto near = [](amrex::Real first, amrex::Real second) {
       const amrex::Real scale = std::max({
-         amrex::Real(1.0), std::abs(first), std::abs(second)
+         amrex::Real(1.0_rt), std::abs(first), std::abs(second)
       });
       return std::abs(first - second)
-         <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+         <= 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale;
    };
-   const amrex::Real half_pi = 0.5 * constants::pi;
+   const amrex::Real half_pi = 0.5_rt * constants::pi;
    for (int level = 0; level < num_levels; ++level) {
       const amrex::Geometry& geometry = hierarchy.geometry[level];
       const auto problo = geometry.ProbLoArray();
@@ -92,17 +95,17 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
       const amrex::Vector<amrex::Real> radial_faces =
          hierarchy.coordinate_faces(level, 0);
       const bool theta_domain =
-         (near(problo[1], 0.0)
+         (near(problo[1], 0.0_rt)
           && (near(probhi[1], half_pi) || near(probhi[1], constants::pi)))
          || (near(problo[1], half_pi) && near(probhi[1], constants::pi));
       if (geometry.isPeriodic(0) || geometry.isPeriodic(1)
           || !geometry.isPeriodic(2)
           || !near(radial_faces.front(), problo[0])
           || !near(radial_faces.back(), probhi[0])
-          || !(radial_faces.front() >= 0.0)
+          || !(radial_faces.front() >= 0.0_rt)
           || !(radial_faces.back() > radial_faces.front())
           || !theta_domain
-          || !near(probhi[2] - problo[2], 2.0 * constants::pi)) {
+          || !near(probhi[2] - problo[2], 2.0_rt * constants::pi)) {
          amrex::Abort(
             "full spherical elliptic coordinates require physical ordered "
             "(r,theta,phi), nonperiodic r/theta, a full periodic 2pi phi "
@@ -122,11 +125,11 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
    }
 
    const bool radial_origin = near(
-      hierarchy.coordinate_faces(0, 0).front(), 0.0
+      hierarchy.coordinate_faces(0, 0).front(), 0.0_rt
    );
    const auto first_problo = hierarchy.geometry.front().ProbLoArray();
    const auto first_probhi = hierarchy.geometry.front().ProbHiArray();
-   const bool toroidal = angular_spin_squared > 0.0;
+   const bool toroidal = angular_spin_squared > 0.0_rt;
    const InitialDataEllipticBoundaryType radial_inner_type =
       resolved_boundary_type(boundary, 0, 0, false);
    const InitialDataEllipticBoundaryType radial_outer_type =
@@ -141,7 +144,7 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
          || radial_inner_type == InitialDataEllipticBoundaryType::neumann
          || radial_inner_type == InitialDataEllipticBoundaryType::robin;
    const InitialDataEllipticBoundaryType lower_theta_type =
-      toroidal && near(first_problo[1], 0.0)
+      toroidal && near(first_problo[1], 0.0_rt)
       ? InitialDataEllipticBoundaryType::dirichlet
       : InitialDataEllipticBoundaryType::neumann;
    const InitialDataEllipticBoundaryType upper_theta_type =
@@ -198,12 +201,12 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
          ) / dx[0];
       }
       for (amrex::Real jacobian : radial_cell_jacobian) {
-         if (!(jacobian > 0.0) || !std::isfinite(jacobian)) {
+         if (!(jacobian > 0.0_rt) || !std::isfinite(jacobian)) {
             amrex::Abort("invalid mapped spherical radial cell Jacobian");
          }
       }
       for (amrex::Real jacobian : radial_face_jacobian) {
-         if (!(jacobian > 0.0) || !std::isfinite(jacobian)) {
+         if (!(jacobian > 0.0_rt) || !std::isfinite(jacobian)) {
             amrex::Abort("invalid mapped spherical radial face Jacobian");
          }
       }
@@ -264,7 +267,7 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
             const int radial_index = i - radial_begin;
             const amrex::Real radius = radial_center[radial_index];
             const amrex::Real theta = problo[1]
-               + (j - angular_begin + 0.5) * dx[1];
+               + (j - angular_begin + 0.5_rt) * dx[1];
             weighted(i, j, k, 0) = physical_rhs(i, j, k, 0)
                * cell_jacobian[radial_index] * radius * radius
                * std::sin(theta);
@@ -293,7 +296,7 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
          ) noexcept {
             const int radial_index = i - radial_begin;
             const amrex::Real theta = problo[1]
-               + (j - angular_begin + 0.5) * dx[1];
+               + (j - angular_begin + 0.5_rt) * dx[1];
             const amrex::Real radius = radial_face[radial_index];
             coefficient(i, j, k, 0) = radius * radius * std::sin(theta)
                / face_jacobian[radial_index];
@@ -322,7 +325,7 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
          ) noexcept {
             const int radial_index = i - radial_begin;
             const amrex::Real theta = problo[1]
-               + (j - angular_begin + 0.5) * dx[1];
+               + (j - angular_begin + 0.5_rt) * dx[1];
             coefficient(i, j, k, 0) = cell_jacobian[radial_index]
                / std::sin(theta);
          });
@@ -331,9 +334,9 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
       const amrex::Dim3 domain_lo = amrex::lbound(domain);
       const amrex::Dim3 domain_hi = amrex::ubound(domain);
       const amrex::Real inverse_inner_jacobian =
-         1.0 / radial_face_jacobian.front();
+         1.0_rt / radial_face_jacobian.front();
       const amrex::Real inverse_outer_jacobian =
-         1.0 / radial_face_jacobian.back();
+         1.0_rt / radial_face_jacobian.back();
       for (amrex::MFIter mfi(logical_boundary.coefficient_b(level));
            mfi.isValid(); ++mfi) {
          const amrex::Box box = mfi.fabbox();
@@ -365,7 +368,7 @@ InitialDataEllipticResult solve_initial_data_spherical_mode(
       info
    );
    poisson.setMaxOrder(options.boundary_interpolation_order);
-   poisson.setScalars(-angular_spin_squared, -1.0);
+   poisson.setScalars(-angular_spin_squared, -1.0_rt);
    const LoweredBoundaryConditions lowered = lower_boundary_conditions(
       hierarchy, logical_boundary
    );
@@ -399,7 +402,7 @@ InitialDataEllipticResult solve_initial_data_spherical_poisson(
 )
 {
    return solve_initial_data_spherical_mode(
-      hierarchy, solution, rhs, boundary, options, 0.0
+      hierarchy, solution, rhs, boundary, options, 0.0_rt
    );
 }
 
@@ -415,6 +418,7 @@ InitialDataEllipticResult solve_initial_data_spherical_axisymmetric_poisson(
       hierarchy,
       solution,
       rhs,
+      {},
       boundary,
       options,
       AxisymmetricSphericalMode::scalar
@@ -436,7 +440,7 @@ solve_initial_data_spherical_toroidal_vector_poisson(
       azimuthal_source,
       boundary,
       options,
-      1.0
+      1.0_rt
    );
 }
 
@@ -453,6 +457,7 @@ solve_initial_data_spherical_axisymmetric_toroidal_vector_poisson(
       hierarchy,
       azimuthal_solution,
       azimuthal_source,
+      {},
       boundary,
       options,
       AxisymmetricSphericalMode::toroidal_vector
@@ -487,15 +492,15 @@ SymmetricTridiagonalEigensystem symmetric_tridiagonal_eigensystem(
       amrex::Abort("invalid symmetric tridiagonal eigensystem");
    }
    std::vector<amrex::Real> vectors(
-      static_cast<std::size_t>(size) * size, 0.0
+      static_cast<std::size_t>(size) * size, 0.0_rt
    );
    for (int index = 0; index < size; ++index) {
-      vectors[static_cast<std::size_t>(index) * size + index] = 1.0;
+      vectors[static_cast<std::size_t>(index) * size + index] = 1.0_rt;
    }
 
-   off_diagonal[size - 1] = 0.0;
-   amrex::Real accumulated_shift = 0.0;
-   amrex::Real running_scale = 0.0;
+   off_diagonal[size - 1] = 0.0_rt;
+   amrex::Real accumulated_shift = 0.0_rt;
+   amrex::Real running_scale = 0.0_rt;
    const amrex::Real epsilon = std::numeric_limits<amrex::Real>::epsilon();
    for (int lower = 0; lower < size; ++lower) {
       running_scale = std::max(
@@ -518,9 +523,9 @@ SymmetricTridiagonalEigensystem symmetric_tridiagonal_eigensystem(
             amrex::Real pivot = diagonal[lower];
             amrex::Real ratio = (
                diagonal[lower + 1] - pivot
-            ) / (2.0 * off_diagonal[lower]);
-            amrex::Real radius = std::hypot(ratio, 1.0);
-            if (ratio < 0.0) {
+            ) / (2.0_rt * off_diagonal[lower]);
+            amrex::Real radius = std::hypot(ratio, 1.0_rt);
+            if (ratio < 0.0_rt) {
                radius = -radius;
             }
             diagonal[lower] = off_diagonal[lower] / (ratio + radius);
@@ -533,11 +538,11 @@ SymmetricTridiagonalEigensystem symmetric_tridiagonal_eigensystem(
             accumulated_shift += shift;
 
             pivot = diagonal[upper];
-            amrex::Real cosine = 1.0;
+            amrex::Real cosine = 1.0_rt;
             amrex::Real previous_cosine = cosine;
             amrex::Real previous_previous_cosine = cosine;
-            amrex::Real sine = 0.0;
-            amrex::Real previous_sine = 0.0;
+            amrex::Real sine = 0.0_rt;
+            amrex::Real previous_sine = 0.0_rt;
             const amrex::Real next_off_diagonal = off_diagonal[lower + 1];
             for (int index = upper - 1; index >= lower; --index) {
                previous_previous_cosine = previous_cosine;
@@ -573,7 +578,7 @@ SymmetricTridiagonalEigensystem symmetric_tridiagonal_eigensystem(
          );
       }
       diagonal[lower] += accumulated_shift;
-      off_diagonal[lower] = 0.0;
+      off_diagonal[lower] = 0.0_rt;
    }
 
    for (int first = 0; first < size - 1; ++first) {
@@ -613,8 +618,8 @@ axisymmetric_angular_decomposition(
 {
    struct CacheEntry {
       int angular_cells = -1;
-      amrex::Real angular_lower = 0.0;
-      amrex::Real angular_spacing = 0.0;
+      amrex::Real angular_lower = 0.0_rt;
+      amrex::Real angular_spacing = 0.0_rt;
       std::shared_ptr<AxisymmetricAngularDecomposition const> decomposition;
    };
    static std::array<CacheEntry, 2> cache;
@@ -629,21 +634,21 @@ axisymmetric_angular_decomposition(
    }
 
    auto decomposition = std::make_shared<AxisymmetricAngularDecomposition>();
-   decomposition->weights.resize(angular_cells, 0.0);
-   std::vector<amrex::Real> angular_diagonal(angular_cells, 0.0);
-   std::vector<amrex::Real> angular_off_diagonal(angular_cells, 0.0);
-   const amrex::Real angular_scale = 1.0 / (
+   decomposition->weights.resize(angular_cells, 0.0_rt);
+   std::vector<amrex::Real> angular_diagonal(angular_cells, 0.0_rt);
+   std::vector<amrex::Real> angular_off_diagonal(angular_cells, 0.0_rt);
+   const amrex::Real angular_scale = 1.0_rt / (
       angular_spacing * angular_spacing
    );
    const amrex::Real angular_spin_squared =
-      mode == AxisymmetricSphericalMode::toroidal_vector ? 1.0 : 0.0;
+      mode == AxisymmetricSphericalMode::toroidal_vector ? 1.0_rt : 0.0_rt;
    for (int angular_index = 0;
         angular_index < angular_cells;
         ++angular_index) {
       const amrex::Real theta = angular_lower
-         + (angular_index + 0.5) * angular_spacing;
+         + (angular_index + 0.5_rt) * angular_spacing;
       decomposition->weights[angular_index] = std::sqrt(std::sin(theta));
-      if (!(decomposition->weights[angular_index] > 0.0)) {
+      if (!(decomposition->weights[angular_index] > 0.0_rt)) {
          amrex::Abort("invalid spherical angular cell weight");
       }
       angular_diagonal[angular_index] -= angular_spin_squared / (
@@ -734,13 +739,16 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    InitialDataEllipticHierarchy const& hierarchy,
    amrex::Vector<amrex::MultiFab*> const& solution,
    amrex::Vector<amrex::MultiFab const*> const& rhs,
+   amrex::Vector<amrex::MultiFab const*> const& reaction,
    InitialDataEllipticBoundaryConditions const& boundary,
    InitialDataEllipticOptions const& options,
    AxisymmetricSphericalMode mode
 )
 {
 #if (AMREX_SPACEDIM < 2)
-   amrex::ignore_unused(hierarchy, solution, rhs, boundary, options, mode);
+   amrex::ignore_unused(
+      hierarchy, solution, rhs, reaction, boundary, options, mode
+   );
    amrex::Abort(
       "the axisymmetric spherical elliptic operator requires r-theta storage"
    );
@@ -749,6 +757,12 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    const int num_levels = validate_elliptic_solve(
       hierarchy, solution, rhs, boundary, options, 1
    );
+   if (!reaction.empty()
+       && (static_cast<int>(reaction.size()) != num_levels
+           || reaction[0] == nullptr || reaction[0]->nComp() != 1
+           || reaction[0]->boxArray() != solution[0]->boxArray())) {
+      amrex::Abort("invalid spherical Helmholtz reaction field");
+   }
    if (boundary.centering() != InitialDataEllipticCentering::cell) {
       amrex::Abort(
          "the axisymmetric spherical elliptic operator requires cell-centered fields"
@@ -757,10 +771,10 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
 
    auto near = [](amrex::Real first, amrex::Real second) {
       const amrex::Real scale = std::max({
-         amrex::Real(1.0), std::abs(first), std::abs(second)
+         amrex::Real(1.0_rt), std::abs(first), std::abs(second)
       });
       return std::abs(first - second)
-         <= 64.0 * std::numeric_limits<amrex::Real>::epsilon() * scale;
+         <= 64.0_rt * std::numeric_limits<amrex::Real>::epsilon() * scale;
    };
    if (num_levels != 1) {
       amrex::Abort(
@@ -776,20 +790,20 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       hierarchy.coordinate_faces(0, 0);
    const amrex::Vector<amrex::Real> angular_faces =
       hierarchy.coordinate_faces(0, 1);
-   const amrex::Real half_pi = 0.5 * constants::pi;
-   const bool lower_axis = near(problo[1], 0.0);
+   const amrex::Real half_pi = 0.5_rt * constants::pi;
+   const bool lower_axis = near(problo[1], 0.0_rt);
    const bool upper_axis = near(probhi[1], constants::pi);
    const bool standard_theta_domain =
       (lower_axis
        && (near(probhi[1], half_pi) || near(probhi[1], constants::pi)))
       || (near(problo[1], half_pi) && near(probhi[1], constants::pi));
-   const bool radial_origin = near(radial_faces.front(), 0.0);
+   const bool radial_origin = near(radial_faces.front(), 0.0_rt);
    if ((geometry.Coord() != amrex::CoordSys::cartesian
         && geometry.Coord() != amrex::CoordSys::SPHERICAL)
        || geometry.isPeriodic(0) || geometry.isPeriodic(1)
        || !near(radial_faces.front(), problo[0])
        || !near(radial_faces.back(), probhi[0])
-       || !(problo[0] >= 0.0 && probhi[0] > problo[0])
+       || !(problo[0] >= 0.0_rt && probhi[0] > problo[0])
        || !standard_theta_domain) {
       amrex::Abort(
          "axisymmetric spherical elliptic coordinates require a nonperiodic "
@@ -799,7 +813,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    }
 #if (AMREX_SPACEDIM == 3)
    if (!geometry.isPeriodic(2)
-       || !near(probhi[2] - problo[2], 2.0 * constants::pi)
+       || !near(probhi[2] - problo[2], 2.0_rt * constants::pi)
        || resolved_boundary_type(boundary, 0, 2, false)
           != InitialDataEllipticBoundaryType::periodic
        || resolved_boundary_type(boundary, 0, 2, true)
@@ -867,7 +881,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    for (int radial_index = 0;
         radial_index < radial_cells;
         ++radial_index) {
-      radial_centers[radial_index] = 0.5 * (
+      radial_centers[radial_index] = 0.5_rt * (
          radial_faces[radial_index] + radial_faces[radial_index + 1]
       );
       radial_widths[radial_index] =
@@ -883,6 +897,12 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
 
 #ifdef AMREX_USE_GPU
    amrex::MultiFab host_rhs_storage = host_copy(*rhs[0]);
+   std::unique_ptr<amrex::MultiFab> host_reaction_storage;
+   if (!reaction.empty()) {
+      host_reaction_storage = std::make_unique<amrex::MultiFab>(
+         host_copy(*reaction[0])
+      );
+   }
    amrex::MultiFab host_coefficient_a_storage = host_copy(
       boundary.coefficient_a(0)
    );
@@ -893,23 +913,28 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       boundary.coefficient_c(0)
    );
    amrex::MultiFab const& host_rhs = host_rhs_storage;
+   amrex::MultiFab const* host_reaction = host_reaction_storage.get();
    amrex::MultiFab const& host_coefficient_a = host_coefficient_a_storage;
    amrex::MultiFab const& host_coefficient_b = host_coefficient_b_storage;
    amrex::MultiFab const& host_coefficient_c = host_coefficient_c_storage;
 #else
    amrex::MultiFab const& host_rhs = *rhs[0];
+   amrex::MultiFab const* host_reaction = reaction.empty()
+      ? nullptr : reaction[0];
    amrex::MultiFab const& host_coefficient_a = boundary.coefficient_a(0);
    amrex::MultiFab const& host_coefficient_b = boundary.coefficient_b(0);
    amrex::MultiFab const& host_coefficient_c = boundary.coefficient_c(0);
 #endif
-   std::vector<amrex::Real> weighted_rhs(total_cells, 0.0);
-   std::vector<amrex::Real> inner_a(angular_cells, 0.0);
-   std::vector<amrex::Real> inner_b(angular_cells, 0.0);
-   std::vector<amrex::Real> inner_c(angular_cells, 0.0);
+   std::vector<amrex::Real> weighted_rhs(total_cells, 0.0_rt);
+   std::vector<amrex::Real> radial_reaction(radial_cells, 0.0_rt);
+   std::vector<int> radial_reaction_counts(radial_cells, 0);
+   std::vector<amrex::Real> inner_a(angular_cells, 0.0_rt);
+   std::vector<amrex::Real> inner_b(angular_cells, 0.0_rt);
+   std::vector<amrex::Real> inner_c(angular_cells, 0.0_rt);
    std::vector<int> inner_counts(angular_cells, 0);
-   std::vector<amrex::Real> outer_a(angular_cells, 0.0);
-   std::vector<amrex::Real> outer_b(angular_cells, 0.0);
-   std::vector<amrex::Real> outer_c(angular_cells, 0.0);
+   std::vector<amrex::Real> outer_a(angular_cells, 0.0_rt);
+   std::vector<amrex::Real> outer_b(angular_cells, 0.0_rt);
+   std::vector<amrex::Real> outer_c(angular_cells, 0.0_rt);
    std::vector<int> outer_counts(angular_cells, 0);
    for (amrex::MFIter mfi(host_rhs); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.validbox();
@@ -928,6 +953,30 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
                static_cast<std::size_t>(radial_index) * angular_cells
                + angular_index
             ] = radius * radius * source(i, j, plane_index, 0);
+         }
+      }
+   }
+   if (host_reaction != nullptr) {
+      for (amrex::MFIter mfi(*host_reaction); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.validbox();
+#if (AMREX_SPACEDIM == 3)
+         if (plane_index < box.smallEnd(2) || plane_index > box.bigEnd(2)) {
+            continue;
+         }
+#endif
+         const auto coefficient = host_reaction->const_array(mfi);
+         for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+            for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+               const int radial_index = i - radial_begin;
+               const amrex::Real value = coefficient(i, j, plane_index, 0);
+               if (!std::isfinite(value)) {
+                  amrex::Abort("nonfinite spherical Helmholtz reaction");
+               }
+               if (j == angular_begin) {
+                  radial_reaction[radial_index] = value;
+                  radial_reaction_counts[radial_index] = 1;
+               }
+            }
          }
       }
    }
@@ -979,9 +1028,70 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    amrex::ParallelAllReduce::Sum(
       weighted_rhs.data(), static_cast<int>(weighted_rhs.size()), communicator
    );
+   if (host_reaction != nullptr) {
+      amrex::ParallelAllReduce::Sum(
+         radial_reaction.data(), radial_cells, communicator
+      );
+      amrex::ParallelAllReduce::Sum(
+         radial_reaction_counts.data(), radial_cells, communicator
+      );
+      for (int radial_index = 0;
+           radial_index < radial_cells;
+           ++radial_index) {
+         if (radial_reaction_counts[radial_index] != 1) {
+            amrex::Abort(
+               "spherical Helmholtz reaction does not have one radial owner"
+            );
+         }
+      }
+      amrex::Real angular_reaction_difference = 0.0_rt;
+      amrex::Real angular_reaction_scale = 0.0_rt;
+      for (amrex::MFIter mfi(*host_reaction); mfi.isValid(); ++mfi) {
+         const amrex::Box box = mfi.validbox();
+         const auto coefficient = host_reaction->const_array(mfi);
 #if (AMREX_SPACEDIM == 3)
-   amrex::Real azimuthal_rhs_difference = 0.0;
-   amrex::Real azimuthal_rhs_scale = 0.0;
+         for (int k = box.smallEnd(2); k <= box.bigEnd(2); ++k) {
+#else
+         constexpr int k = plane_index;
+#endif
+            for (int j = box.smallEnd(1); j <= box.bigEnd(1); ++j) {
+               for (int i = box.smallEnd(0); i <= box.bigEnd(0); ++i) {
+                  const int radial_index = i - radial_begin;
+                  const amrex::Real value = coefficient(i, j, k, 0);
+                  angular_reaction_difference = std::max(
+                     angular_reaction_difference,
+                     std::abs(value - radial_reaction[radial_index])
+                  );
+                  angular_reaction_scale = std::max(
+                     angular_reaction_scale,
+                     std::max(
+                        std::abs(value),
+                        std::abs(radial_reaction[radial_index])
+                     )
+                  );
+               }
+            }
+#if (AMREX_SPACEDIM == 3)
+         }
+#endif
+      }
+      amrex::ParallelAllReduce::Max(
+         angular_reaction_difference, communicator
+      );
+      amrex::ParallelAllReduce::Max(angular_reaction_scale, communicator);
+      if (angular_reaction_difference
+          > 1.0e-14_rt + 1.0e-12_rt * angular_reaction_scale) {
+         amrex::Abort(
+            "the separable spherical Helmholtz operator requires a "
+            "spherically symmetric reaction coefficient; difference="
+            + std::to_string(angular_reaction_difference)
+            + " scale=" + std::to_string(angular_reaction_scale)
+         );
+      }
+   }
+#if (AMREX_SPACEDIM == 3)
+   amrex::Real azimuthal_rhs_difference = 0.0_rt;
+   amrex::Real azimuthal_rhs_scale = 0.0_rt;
    for (amrex::MFIter mfi(host_rhs); mfi.isValid(); ++mfi) {
       const amrex::Box box = mfi.validbox();
       const auto source = host_rhs.const_array(mfi);
@@ -1012,7 +1122,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    amrex::ParallelAllReduce::Max(azimuthal_rhs_difference, communicator);
    amrex::ParallelAllReduce::Max(azimuthal_rhs_scale, communicator);
    const amrex::Real azimuthal_rhs_tolerance =
-      1.0e-14 + 1.0e-12 * azimuthal_rhs_scale;
+      1.0e-14_rt + 1.0e-12_rt * azimuthal_rhs_scale;
    if (azimuthal_rhs_difference > azimuthal_rhs_tolerance) {
       amrex::Abort(
          "full-storage axisymmetric spherical solve received a "
@@ -1045,8 +1155,8 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       outer_counts.data(), angular_cells, communicator
    );
 
-   std::vector<amrex::Real> inner_gamma(angular_cells, 0.0);
-   amrex::Real inner_delta = 0.0;
+   std::vector<amrex::Real> inner_gamma(angular_cells, 0.0_rt);
+   amrex::Real inner_delta = 0.0_rt;
    if (!radial_origin) {
       for (int angular_index = 0;
            angular_index < angular_cells;
@@ -1059,15 +1169,15 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
          const amrex::Real a = inner_a[angular_index];
          const amrex::Real b = radial_inner_type
                == InitialDataEllipticBoundaryType::dirichlet
-            ? 0.0
+            ? 0.0_rt
             : inner_b[angular_index];
          const amrex::Real inner_width = radial_widths.front();
-         const amrex::Real denominator = 0.5 * a - b / inner_width;
-         if (denominator == 0.0 || !std::isfinite(denominator)) {
+         const amrex::Real denominator = 0.5_rt * a - b / inner_width;
+         if (denominator == 0.0_rt || !std::isfinite(denominator)) {
             amrex::Abort("singular inner radial elliptic boundary coefficients");
          }
          const amrex::Real delta = -(
-            0.5 * a + b / inner_width
+            0.5_rt * a + b / inner_width
          ) / denominator;
          if (angular_index == 0) {
             inner_delta = delta;
@@ -1082,7 +1192,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    }
 
    std::vector<amrex::Real> outer_gamma(angular_cells);
-   amrex::Real outer_delta = 0.0;
+   amrex::Real outer_delta = 0.0_rt;
    for (int angular_index = 0;
         angular_index < angular_cells;
         ++angular_index) {
@@ -1092,15 +1202,15 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       const amrex::Real a = outer_a[angular_index];
       const amrex::Real b = radial_outer_type
             == InitialDataEllipticBoundaryType::dirichlet
-         ? 0.0
+         ? 0.0_rt
          : outer_b[angular_index];
       const amrex::Real outer_width = radial_widths.back();
-      const amrex::Real denominator = 0.5 * a + b / outer_width;
-      if (denominator == 0.0 || !std::isfinite(denominator)) {
+      const amrex::Real denominator = 0.5_rt * a + b / outer_width;
+      if (denominator == 0.0_rt || !std::isfinite(denominator)) {
          amrex::Abort("singular radial elliptic boundary coefficients");
       }
       const amrex::Real delta =
-         (b / outer_width - 0.5 * a) / denominator;
+         (b / outer_width - 0.5_rt * a) / denominator;
       if (angular_index == 0) {
          outer_delta = delta;
       } else if (!near(delta, outer_delta)) {
@@ -1112,9 +1222,9 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       outer_gamma[angular_index] = outer_c[angular_index] / denominator;
    }
 
-   std::vector<amrex::Real> radial_lower(radial_cells, 0.0);
-   std::vector<amrex::Real> radial_diagonal(radial_cells, 0.0);
-   std::vector<amrex::Real> radial_upper(radial_cells, 0.0);
+   std::vector<amrex::Real> radial_lower(radial_cells, 0.0_rt);
+   std::vector<amrex::Real> radial_diagonal(radial_cells, 0.0_rt);
+   std::vector<amrex::Real> radial_upper(radial_cells, 0.0_rt);
    for (int radial_index = 0; radial_index < radial_cells; ++radial_index) {
       if (radial_index > 0) {
          const amrex::Real face_radius = radial_faces[radial_index];
@@ -1136,7 +1246,8 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       }
       radial_diagonal[radial_index] = -(
          radial_lower[radial_index] + radial_upper[radial_index]
-      );
+      ) + radial_centers[radial_index] * radial_centers[radial_index]
+         * radial_reaction[radial_index];
    }
    if (!radial_origin) {
       const amrex::Real inner_face_coefficient =
@@ -1144,7 +1255,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
             radial_widths.front() * radial_widths.front()
          );
       radial_diagonal.front() += inner_face_coefficient * (
-         inner_delta - 1.0
+         inner_delta - 1.0_rt
       );
       for (int angular_index = 0;
            angular_index < angular_cells;
@@ -1158,7 +1269,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
          radial_widths.back() * radial_widths.back()
       );
    radial_diagonal.back() += outer_face_coefficient * (
-      outer_delta - 1.0
+      outer_delta - 1.0_rt
    );
    for (int angular_index = 0;
         angular_index < angular_cells;
@@ -1172,24 +1283,24 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    const auto angular_decomposition = axisymmetric_angular_decomposition(
       angular_cells, problo[1], dx[1], mode
    );
-   const amrex::Real angular_scale = 1.0 / (dx[1] * dx[1]);
+   const amrex::Real angular_scale = 1.0_rt / (dx[1] * dx[1]);
    const amrex::Real angular_spin_squared =
-      mode == AxisymmetricSphericalMode::toroidal_vector ? 1.0 : 0.0;
+      mode == AxisymmetricSphericalMode::toroidal_vector ? 1.0_rt : 0.0_rt;
    const auto& angular_eigensystem = angular_decomposition->eigensystem;
    const auto& rhs_projection_vectors =
       angular_decomposition->rhs_projection_vectors;
    const auto& solution_reconstruction_vectors =
       angular_decomposition->solution_reconstruction_vectors;
-   std::vector<amrex::Real> angular_lower(angular_cells, 0.0);
-   std::vector<amrex::Real> angular_upper(angular_cells, 0.0);
+   std::vector<amrex::Real> angular_lower(angular_cells, 0.0_rt);
+   std::vector<amrex::Real> angular_upper(angular_cells, 0.0_rt);
    std::vector<amrex::Real> angular_spin_coefficient(
-      angular_cells, 0.0
+      angular_cells, 0.0_rt
    );
    for (int angular_index = 0;
         angular_index < angular_cells;
         ++angular_index) {
       const amrex::Real theta = problo[1]
-         + (angular_index + 0.5) * dx[1];
+         + (angular_index + 0.5_rt) * dx[1];
       const amrex::Real sin_theta = std::sin(theta);
       if (angular_index > 0) {
          const amrex::Real face_theta = problo[1]
@@ -1210,10 +1321,10 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
    const int rank = amrex::ParallelContext::MyProcSub();
    const int ranks = amrex::ParallelContext::NProcsSub();
    std::vector<amrex::Real> mode_solution(
-      static_cast<std::size_t>(angular_cells) * radial_cells, 0.0
+      static_cast<std::size_t>(angular_cells) * radial_cells, 0.0_rt
    );
-   std::vector<amrex::Real> forward_upper(radial_cells, 0.0);
-   std::vector<amrex::Real> forward_rhs(radial_cells, 0.0);
+   std::vector<amrex::Real> forward_upper(radial_cells, 0.0_rt);
+   std::vector<amrex::Real> forward_rhs(radial_cells, 0.0_rt);
    for (int mode = rank; mode < angular_cells; mode += ranks) {
       const amrex::Real* projection_vector =
          rhs_projection_vectors.data()
@@ -1223,7 +1334,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       for (int radial_index = 0;
            radial_index < radial_cells;
            ++radial_index) {
-         amrex::Real projected_rhs = 0.0;
+         amrex::Real projected_rhs = 0.0_rt;
          const amrex::Real* radial_rhs = weighted_rhs.data()
             + static_cast<std::size_t>(radial_index) * angular_cells;
          for (int angular_index = 0;
@@ -1237,7 +1348,12 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
 
       amrex::Real denominator = radial_diagonal[0]
          + angular_eigensystem.eigenvalues[mode];
-      if (denominator == 0.0 || !std::isfinite(denominator)) {
+      amrex::Real pivot_scale = std::abs(radial_diagonal[0])
+         + std::abs(angular_eigensystem.eigenvalues[mode]);
+      if (!std::isfinite(denominator)
+          || std::abs(denominator)
+             <= 128.0_rt * std::numeric_limits<amrex::Real>::epsilon()
+                * std::max(amrex::Real(1.0_rt), pivot_scale)) {
          amrex::Abort("singular spherical radial mode");
       }
       forward_upper[0] = radial_upper[0] / denominator;
@@ -1249,12 +1365,21 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
             + angular_eigensystem.eigenvalues[mode]
             - radial_lower[radial_index]
                * forward_upper[radial_index - 1];
-         if (denominator == 0.0 || !std::isfinite(denominator)) {
+         pivot_scale = std::abs(radial_diagonal[radial_index])
+            + std::abs(angular_eigensystem.eigenvalues[mode])
+            + std::abs(
+               radial_lower[radial_index]
+               * forward_upper[radial_index - 1]
+            );
+         if (!std::isfinite(denominator)
+             || std::abs(denominator)
+                <= 128.0_rt * std::numeric_limits<amrex::Real>::epsilon()
+                   * std::max(amrex::Real(1.0_rt), pivot_scale)) {
             amrex::Abort("singular spherical radial elimination");
          }
          forward_upper[radial_index] = radial_index + 1 < radial_cells
             ? radial_upper[radial_index] / denominator
-            : 0.0;
+            : 0.0_rt;
          forward_rhs[radial_index] = (
             radial_mode[radial_index]
             - radial_lower[radial_index] * forward_rhs[radial_index - 1]
@@ -1270,7 +1395,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       }
    }
 
-   std::vector<amrex::Real> solution_values(total_cells, 0.0);
+   std::vector<amrex::Real> solution_values(total_cells, 0.0_rt);
    for (int mode = rank; mode < angular_cells; mode += ranks) {
       const amrex::Real* reconstruction_vector =
          solution_reconstruction_vectors.data()
@@ -1296,7 +1421,7 @@ InitialDataEllipticResult solve_axisymmetric_spherical_separable(
       communicator
    );
 
-   amrex::Real residual = 0.0;
+   amrex::Real residual = 0.0_rt;
    for (int radial_index = 0;
         radial_index < radial_cells;
         ++radial_index) {
@@ -1383,6 +1508,27 @@ InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_poisson(
       hierarchy,
       solution,
       rhs,
+      {},
+      boundary,
+      options,
+      AxisymmetricSphericalMode::scalar
+   );
+}
+
+InitialDataEllipticResult solve_initial_data_axisymmetric_spherical_helmholtz(
+   InitialDataEllipticHierarchy const& hierarchy,
+   amrex::Vector<amrex::MultiFab*> const& solution,
+   amrex::Vector<amrex::MultiFab const*> const& rhs,
+   amrex::Vector<amrex::MultiFab const*> const& reaction,
+   InitialDataEllipticBoundaryConditions const& boundary,
+   InitialDataEllipticOptions const& options
+)
+{
+   return solve_axisymmetric_spherical_separable(
+      hierarchy,
+      solution,
+      rhs,
+      reaction,
       boundary,
       options,
       AxisymmetricSphericalMode::scalar
@@ -1402,6 +1548,7 @@ solve_initial_data_axisymmetric_spherical_toroidal_vector_poisson(
       hierarchy,
       azimuthal_solution,
       azimuthal_source,
+      {},
       boundary,
       options,
       AxisymmetricSphericalMode::toroidal_vector

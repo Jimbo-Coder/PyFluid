@@ -1,65 +1,39 @@
 #include "pyfluid_amrex/eos/presets.hpp"
 
+#include "eos/units.hpp"
+
 #include <cmath>
 #include <stdexcept>
 #include <string>
 
 namespace pyfluid_amrex::eos {
+
+using namespace amrex::literals;
 namespace {
 
 // Read et al. (2009), Tables II and III. Published densities and pressures
 // are converted once into code units with G = c = M_sun = 1.
-constexpr amrex::Real gravitational_constant_cgs = 6.67430e-8;
-constexpr amrex::Real speed_of_light_cgs = 2.99792458e10;
-constexpr amrex::Real solar_mass_parameter_cgs = 1.3271244e26;
-constexpr amrex::Real solar_mass_length_cgs =
-   solar_mass_parameter_cgs / (speed_of_light_cgs * speed_of_light_cgs);
-constexpr amrex::Real density_cgs_to_code =
-   gravitational_constant_cgs
-   * solar_mass_length_cgs * solar_mass_length_cgs
-   / (speed_of_light_cgs * speed_of_light_cgs);
-constexpr amrex::Real pressure_cgs_to_code =
-   gravitational_constant_cgs
-   * solar_mass_length_cgs * solar_mass_length_cgs
-   / (
-      speed_of_light_cgs * speed_of_light_cgs
-      * speed_of_light_cgs * speed_of_light_cgs
-   );
-
 constexpr std::array<ReadPiecewisePolytropeFit, 4> read_fits{{
-   {"sly", 34.384, {{3.005, 2.988, 2.851}}},
-   {"apr4", 34.269, {{2.830, 3.445, 3.348}}},
-   {"h4", 34.669, {{2.909, 2.246, 2.144}}},
-   {"ms1", 34.858, {{3.224, 3.033, 1.325}}},
+   {"sly", 34.384_rt, {{3.005_rt, 2.988_rt, 2.851_rt}}},
+   {"apr4", 34.269_rt, {{2.830_rt, 3.445_rt, 3.348_rt}}},
+   {"h4", 34.669_rt, {{2.909_rt, 2.246_rt, 2.144_rt}}},
+   {"ms1", 34.858_rt, {{3.224_rt, 3.033_rt, 1.325_rt}}},
 }};
 
-constexpr amrex::Real crust_initial_k_over_c2_cgs = 6.80110e-9;
-constexpr amrex::Real crust_initial_k_cgs =
-   crust_initial_k_over_c2_cgs
-   * speed_of_light_cgs * speed_of_light_cgs;
+constexpr amrex::Real crust_initial_k_over_c2_cgs = 6.80110e-9_rt;
 constexpr std::array<amrex::Real, 4> crust_gamma{{
-   1.58425,
-   1.28733,
-   0.62223,
-   1.35692,
+   1.58425_rt,
+   1.28733_rt,
+   0.62223_rt,
+   1.35692_rt,
 }};
 constexpr std::array<amrex::Real, 3> crust_density_break_cgs{{
-   2.44034e7,
-   3.78358e11,
-   2.62780e12,
+   2.44034e7_rt,
+   3.78358e11_rt,
+   2.62780e12_rt,
 }};
-constexpr amrex::Real core_density1_cgs = 5.0118723362727148e14;
-constexpr amrex::Real core_density2_cgs = 1.0e15;
-
-amrex::Real density_to_code(amrex::Real density_cgs)
-{
-   return density_cgs * density_cgs_to_code;
-}
-
-amrex::Real pressure_to_code(amrex::Real pressure_cgs)
-{
-   return pressure_cgs * pressure_cgs_to_code;
-}
+constexpr amrex::Real core_density1_cgs = 5.0118723362727148e14_rt;
+constexpr amrex::Real core_density2_cgs = 1.0e15_rt;
 
 } // namespace
 
@@ -95,8 +69,8 @@ EOSParams make_piecewise_polytrope(
    amrex::Real pressure_floor
 )
 {
-   if (!(initial_k > 0.0) || !(initial_gamma > 0.0)
-       || initial_gamma == 1.0) {
+   if (!(initial_k > 0.0_rt) || !(initial_gamma > 0.0_rt)
+       || initial_gamma == 1.0_rt) {
       throw std::invalid_argument(
          "piecewise polytropes require positive K and positive, non-unit gamma"
       );
@@ -120,11 +94,11 @@ EOSParams make_piecewise_polytrope(
       const amrex::Real previous_gamma = parameters.segment_gamma[segment - 1];
       const amrex::Real gamma = following_gammas[segment - 1];
       const amrex::Real previous_k = parameters.segment_k[segment - 1];
-      if (!(density_break > 0.0)
+      if (!(density_break > 0.0_rt)
           || (segment > 1
               && !(density_break > density_breaks[segment - 2]))
-          || !(gamma > 0.0)
-          || gamma == 1.0) {
+          || !(gamma > 0.0_rt)
+          || gamma == 1.0_rt) {
          throw std::invalid_argument(
             "piecewise-polytrope breaks must increase and gammas must be positive and non-unit"
          );
@@ -137,9 +111,9 @@ EOSParams make_piecewise_polytrope(
       parameters.segment_k[segment] = k;
       parameters.segment_energy_offset[segment] =
          parameters.segment_energy_offset[segment - 1]
-         + previous_k * std::pow(density_break, previous_gamma - 1.0)
-            / (previous_gamma - 1.0)
-         - k * std::pow(density_break, gamma - 1.0) / (gamma - 1.0);
+         + previous_k * std::pow(density_break, previous_gamma - 1.0_rt)
+            / (previous_gamma - 1.0_rt)
+         - k * std::pow(density_break, gamma - 1.0_rt) / (gamma - 1.0_rt);
    }
    return parameters;
 }
@@ -153,31 +127,35 @@ EOSParams make_read_piecewise_polytrope(
 {
    const ReadPiecewisePolytropeFit fit = read_piecewise_polytrope_fit(preset);
    const amrex::Real pressure1_cgs = std::pow(
-      amrex::Real(10.0), fit.log10_pressure1_cgs
+      amrex::Real(10.0_rt), fit.log10_pressure1_cgs
    );
-   const amrex::Real core_k1_cgs = pressure1_cgs
-      / std::pow(core_density1_cgs, fit.core_gamma[0]);
-
-   amrex::Real effective_crust_k_cgs = crust_initial_k_cgs;
-   for (int segment = 1; segment < 4; ++segment) {
-      effective_crust_k_cgs *= std::pow(
-         crust_density_break_cgs[segment - 1],
-         crust_gamma[segment - 1] - crust_gamma[segment]
-      );
-   }
-   const amrex::Real core_join_density_cgs = std::pow(
-      effective_crust_k_cgs / core_k1_cgs,
-      1.0 / (fit.core_gamma[0] - crust_gamma[3])
-   );
+   // Build the fit in code units. Powers of CGS density can exceed the
+   // FP32 range even when the final polytropic coefficient is representable.
+   const amrex::Real core_density1 = units::density_from_cgs(core_density1_cgs);
+   const amrex::Real core_k1 = units::pressure_from_cgs(pressure1_cgs)
+      / std::pow(core_density1, fit.core_gamma[0]);
+   const amrex::Real initial_k_code = crust_initial_k_over_c2_cgs
+      * std::pow(units::density_cgs_to_code, 1.0_rt - crust_gamma[0]);
 
    std::vector<amrex::Real> density_breaks;
    density_breaks.reserve(6);
    for (amrex::Real density_cgs : crust_density_break_cgs) {
-      density_breaks.push_back(density_to_code(density_cgs));
+      density_breaks.push_back(units::density_from_cgs(density_cgs));
    }
-   density_breaks.push_back(density_to_code(core_join_density_cgs));
-   density_breaks.push_back(density_to_code(core_density1_cgs));
-   density_breaks.push_back(density_to_code(core_density2_cgs));
+   amrex::Real effective_crust_k = initial_k_code;
+   for (int segment = 1; segment < 4; ++segment) {
+      effective_crust_k *= std::pow(
+         density_breaks[segment - 1],
+         crust_gamma[segment - 1] - crust_gamma[segment]
+      );
+   }
+   const amrex::Real core_join_density = std::pow(
+      effective_crust_k / core_k1,
+      1.0_rt / (fit.core_gamma[0] - crust_gamma[3])
+   );
+   density_breaks.push_back(core_join_density);
+   density_breaks.push_back(core_density1);
+   density_breaks.push_back(units::density_from_cgs(core_density2_cgs));
 
    std::vector<amrex::Real> following_gammas{
       crust_gamma[1],
@@ -187,9 +165,6 @@ EOSParams make_read_piecewise_polytrope(
       fit.core_gamma[1],
       fit.core_gamma[2],
    };
-   const amrex::Real initial_k_code =
-      pressure_to_code(crust_initial_k_cgs)
-      / std::pow(density_cgs_to_code, crust_gamma[0]);
    return make_piecewise_polytrope(
       initial_k_code,
       crust_gamma[0],

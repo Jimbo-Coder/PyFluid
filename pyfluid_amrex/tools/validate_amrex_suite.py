@@ -45,6 +45,53 @@ def feature_matrix_command(*cases: str) -> tuple[str, ...]:
 
 STEPS = [
    GateStep(
+      name="run_infrastructure",
+      kind="feature",
+      command=("uv", "run", "python", "pyfluid_amrex/tests/test_run_infrastructure.py"),
+   ),
+   GateStep(
+      name="dependency_manager",
+      kind="feature",
+      levels=("standard", "full"),
+      command=("uv", "run", "python", "pyfluid_amrex/tests/test_manage_amrex.py"),
+   ),
+   GateStep(
+      name="build_infrastructure",
+      kind="feature",
+      command=("uv", "run", "python", "pyfluid_amrex/tests/test_build_infrastructure.py"),
+   ),
+   GateStep(
+      name="coordinate_operator_contracts",
+      kind="analytic",
+      command=("uv", "run", "python", "pyfluid_amrex/tests/test_coordinate_contracts.py"),
+   ),
+   GateStep(
+      name="fccz4_equations",
+      kind="analytic",
+      levels=("full",),
+      command=("uv", "run", "python", "pyfluid_amrex/tests/test_fccz4_equations.py"),
+   ),
+   GateStep(
+      name="fccz4_spherical_gauge_wave",
+      kind="analytic",
+      levels=("full",),
+      command=(
+         "uv", "run", "python", "pyfluid_amrex/tools/validate_z4c.py",
+         "--only", "spherical_gauge_wave", "--evolution-formulation", "fccz4",
+         "--ranks", "3", "--timeout", "600", "--force",
+      ),
+   ),
+   GateStep(
+      name="fccz4_spherical_symmetry",
+      kind="feature",
+      levels=("full",),
+      command=(
+         "uv", "run", "python", "pyfluid_amrex/tools/validate_z4c.py",
+         "--only", "spherical_symmetry", "--evolution-formulation", "fccz4",
+         "--ranks", "3", "--force",
+      ),
+   ),
+   GateStep(
       name="architecture",
       kind="feature",
       levels=("quick", "standard", "full"),
@@ -131,6 +178,38 @@ STEPS = [
       ),
    ),
    GateStep(
+      name="rmhd_alfven",
+      kind="analytic",
+      levels=("full",),
+      command=(
+         "uv", "run", "python",
+         "pyfluid_amrex/tools/validate_rmhd_alfven.py", "--force",
+      ),
+   ),
+   GateStep(
+      name="rhd_shock_heating",
+      kind="analytic",
+      levels=("full",),
+      command=(
+         "uv", "run", "python",
+         "pyfluid_amrex/tools/validate_rhd_shock_heating.py", "--force",
+      ),
+   ),
+   GateStep(
+      name="reference_metric_rhd",
+      kind="analytic",
+      levels=("standard", "full"),
+      command=(
+         "uv",
+         "run",
+         "python",
+         "pyfluid_amrex/tools/validate_reference_metric_rhd.py",
+         "--force",
+         "--ranks",
+         "3",
+      ),
+   ),
+   GateStep(
       name="rmhd_standard",
       kind="reference",
       levels=("standard", "full"),
@@ -193,6 +272,16 @@ STEPS = [
       ),
    ),
    GateStep(
+      name="relativistic_diode",
+      kind="feature",
+      levels=("standard", "full"),
+      command=(
+         "uv", "run", "python",
+         "pyfluid_amrex/tools/validate_relativistic_diode.py",
+         "--ranks", "3",
+      ),
+   ),
+   GateStep(
       name="black_hole_foundation",
       kind="initial_data",
       levels=("standard", "full"),
@@ -204,6 +293,15 @@ STEPS = [
          "--ranks",
          "3",
          "--force",
+      ),
+   ),
+   GateStep(
+      name="z4c_outer_boundary",
+      kind="feature",
+      levels=("standard", "full"),
+      command=(
+         "uv", "run", "python",
+         "pyfluid_amrex/tools/validate_z4c_boundary.py", "--ranks", "3",
       ),
    ),
    GateStep(
@@ -234,6 +332,16 @@ STEPS = [
          "--ranks",
          "3",
          "--force",
+      ),
+   ),
+   GateStep(
+      name="cartesian_initial_data_convergence",
+      kind="initial_data",
+      levels=("full",),
+      command=(
+         "uv", "run", "python",
+         "pyfluid_amrex/tools/validate_reduced_initial_data.py",
+         "--cartesian-matter-convergence-only", "--ranks", "3",
       ),
    ),
    GateStep(

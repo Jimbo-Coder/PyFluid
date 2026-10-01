@@ -7,31 +7,33 @@
 
 namespace pyfluid_amrex {
 
+using namespace amrex::literals;
+
 struct BracketedRootResult {
-   amrex::Real root = 0.0;
-   amrex::Real residual = 0.0;
-   amrex::Real bracket_width = 0.0;
+   amrex::Real root = 0.0_rt;
+   amrex::Real residual = 0.0_rt;
+   amrex::Real bracket_width = 0.0_rt;
    int iterations = 0;
    bool converged = false;
    bool finite = true;
 };
 
 struct RootBracket {
-   amrex::Real lower = 0.0;
-   amrex::Real upper = 0.0;
-   amrex::Real lower_residual = 0.0;
-   amrex::Real upper_residual = 0.0;
+   amrex::Real lower = 0.0_rt;
+   amrex::Real upper = 0.0_rt;
+   amrex::Real lower_residual = 0.0_rt;
+   amrex::Real upper_residual = 0.0_rt;
    bool found = false;
    bool finite = true;
 };
 
 struct RootSystem2 {
-   amrex::Real residual1 = 0.0;
-   amrex::Real residual2 = 0.0;
-   amrex::Real jacobian11 = 0.0;
-   amrex::Real jacobian12 = 0.0;
-   amrex::Real jacobian21 = 0.0;
-   amrex::Real jacobian22 = 0.0;
+   amrex::Real residual1 = 0.0_rt;
+   amrex::Real residual2 = 0.0_rt;
+   amrex::Real jacobian11 = 0.0_rt;
+   amrex::Real jacobian12 = 0.0_rt;
+   amrex::Real jacobian21 = 0.0_rt;
+   amrex::Real jacobian22 = 0.0_rt;
 };
 
 template <typename Function>
@@ -45,8 +47,8 @@ RootBracket find_geometric_root_bracket(
 ) noexcept
 {
    RootBracket bracket{};
-   if (!(first > 0.0) || !(bound > 0.0) || !(multiplier > 0.0)
-       || multiplier == 1.0) {
+   if (!(first > 0.0_rt) || !(bound > 0.0_rt) || !(multiplier > 0.0_rt)
+       || multiplier == 1.0_rt) {
       bracket.finite = false;
       return bracket;
    }
@@ -54,7 +56,7 @@ RootBracket find_geometric_root_bracket(
    amrex::Real previous_residual = function(previous);
    for (int step = 0; step < max_steps; ++step) {
       amrex::Real current = previous * multiplier;
-      if (multiplier > 1.0) {
+      if (multiplier > 1.0_rt) {
          current = amrex::min(current, bound);
       } else {
          current = amrex::max(current, bound);
@@ -62,8 +64,8 @@ RootBracket find_geometric_root_bracket(
       const amrex::Real current_residual = function(current);
       if (amrex::Math::isfinite(previous_residual)
           && amrex::Math::isfinite(current_residual)
-          && (previous_residual == 0.0 || current_residual == 0.0
-              || previous_residual * current_residual < 0.0)) {
+          && (previous_residual == 0.0_rt || current_residual == 0.0_rt
+              || previous_residual * current_residual < 0.0_rt)) {
          if (previous < current) {
             bracket = {
                previous,
@@ -114,32 +116,32 @@ BracketedRootResult solve_bracketed_illinois(
       result.finite = false;
       return result;
    }
-   if (lower_residual == 0.0) {
+   if (lower_residual == 0.0_rt) {
       result.root = lower;
       result.converged = true;
       return result;
    }
-   if (upper_residual == 0.0) {
+   if (upper_residual == 0.0_rt) {
       result.root = upper;
       result.converged = true;
       return result;
    }
-   if (!(lower < upper) || lower_residual * upper_residual > 0.0) {
+   if (!(lower < upper) || lower_residual * upper_residual > 0.0_rt) {
       return result;
    }
 
    int retained_side = 0;
-   amrex::Real root = 0.5 * (lower + upper);
+   amrex::Real root = 0.5_rt * (lower + upper);
    amrex::Real residual = function(root);
    for (int iteration = 1; iteration <= max_iterations; ++iteration) {
       result.iterations = iteration;
       const amrex::Real denominator = upper_residual - lower_residual;
-      amrex::Real candidate = denominator != 0.0
+      amrex::Real candidate = denominator != 0.0_rt
          ? (lower * upper_residual - upper * lower_residual) / denominator
-         : 0.5 * (lower + upper);
+         : 0.5_rt * (lower + upper);
       if (!(candidate > lower && candidate < upper)
           || !amrex::Math::isfinite(candidate)) {
-         candidate = 0.5 * (lower + upper);
+         candidate = 0.5_rt * (lower + upper);
       }
       root = candidate;
       residual = function(root);
@@ -149,7 +151,7 @@ BracketedRootResult solve_bracketed_illinois(
       }
 
       const amrex::Real width = upper - lower;
-      if (residual == 0.0 || stop(root, width)) {
+      if (residual == 0.0_rt || stop(root, width)) {
          result.root = root;
          result.residual = residual;
          result.bracket_width = width;
@@ -157,19 +159,19 @@ BracketedRootResult solve_bracketed_illinois(
          return result;
       }
 
-      if ((lower_residual < 0.0 && residual > 0.0)
-          || (lower_residual > 0.0 && residual < 0.0)) {
+      if ((lower_residual < 0.0_rt && residual > 0.0_rt)
+          || (lower_residual > 0.0_rt && residual < 0.0_rt)) {
          upper = root;
          upper_residual = residual;
          if (retained_side == -1) {
-            lower_residual *= 0.5;
+            lower_residual *= 0.5_rt;
          }
          retained_side = -1;
       } else {
          lower = root;
          lower_residual = residual;
          if (retained_side == 1) {
-            upper_residual *= 0.5;
+            upper_residual *= 0.5_rt;
          }
          retained_side = 1;
       }

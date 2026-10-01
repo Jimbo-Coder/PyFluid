@@ -20,9 +20,12 @@
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/generated/method_catalog.hpp"
 #include "pyfluid_amrex/generated/initial_data_method_catalog.hpp"
+#include "pyfluid_amrex/generated/spatial_order_catalog.hpp"
 #include "pyfluid_amrex/spacetime_fields.hpp"
 
 namespace pyfluid_amrex {
+
+using namespace amrex::literals;
 using namespace config_options;
 namespace {
 
@@ -35,6 +38,7 @@ enum class StringOptionSet {
    EOS,
    EOSPreset,
    Physics,
+   RelativisticExterior,
    CT,
    Reconstruction,
    Riemann,
@@ -67,13 +71,16 @@ struct RegisteredScalarParameter {
    bool RunConfig::* explicit_flag = nullptr;
 };
 
-constexpr std::array<RegisteredStringParameter, 10> MethodParameters{{
+constexpr std::array<RegisteredStringParameter, 11> MethodParameters{{
    {"eos", &RunConfig::eos, "ideal_gas", StringOptionSet::EOS, RestartPolicy::Immutable,
     "Equation of state closure."},
    {"eos_preset", &RunConfig::eos_preset, "custom", StringOptionSet::EOSPreset,
     RestartPolicy::Immutable, "Named piecewise-polytrope parameters in G=c=M_sun=1 units."},
    {"physics", &RunConfig::physics, "hydro", StringOptionSet::Physics, RestartPolicy::Immutable,
     "Evolved hydrodynamic or magnetohydrodynamic state."},
+   {"relativistic_exterior", &RunConfig::relativistic_exterior, "atmosphere",
+    StringOptionSet::RelativisticExterior, RestartPolicy::Immutable,
+    "Physical exterior matter policy for relativistic hydrodynamics."},
    {"ct", &RunConfig::ct, "off", StringOptionSet::CT, RestartPolicy::Immutable,
     "Face-centered constrained transport for MHD."},
    {"recon", &RunConfig::recon, "pwc", StringOptionSet::Reconstruction, RestartPolicy::Mutable,
@@ -102,7 +109,7 @@ constexpr std::array<RegisteredStringParameter, 4> AMRStringParameters{{
 }};
 
 constexpr std::array<RegisteredScalarParameter<amrex::Real>, 8> AMRRealParameters{{
-   {"tag_threshold", &RunConfig::tag_threshold, 0.35, RestartPolicy::Mutable,
+   {"tag_threshold", &RunConfig::tag_threshold, 0.35_rt, RestartPolicy::Mutable,
     "Dimensionless selected AMR-indicator threshold.", &RunConfig::tag_threshold_set},
    {"min_feature_length", &RunConfig::min_feature_length, std::numeric_limits<amrex::Real>::quiet_NaN(),
     RestartPolicy::Mutable,
@@ -113,11 +120,11 @@ constexpr std::array<RegisteredScalarParameter<amrex::Real>, 8> AMRRealParameter
     RestartPolicy::Mutable, "Direction-2 physical resolution guard.", &RunConfig::min_feature_length_2_set},
    {"min_feature_length_3", &RunConfig::min_feature_length_3, std::numeric_limits<amrex::Real>::quiet_NaN(),
     RestartPolicy::Mutable, "Direction-3 physical resolution guard.", &RunConfig::min_feature_length_3_set},
-   {"min_refine_radius", &RunConfig::min_refine_radius, 0.0, RestartPolicy::Mutable,
+   {"min_refine_radius", &RunConfig::min_refine_radius, 0.0_rt, RestartPolicy::Mutable,
     "Curvilinear radial refinement guard."},
-   {"solid_refine_band_cells", &RunConfig::solid_refine_band_cells, 1.5, RestartPolicy::Mutable,
+   {"solid_refine_band_cells", &RunConfig::solid_refine_band_cells, 1.5_rt, RestartPolicy::Mutable,
     "Solid-interface refinement-band width in cells."},
-   {"solid_curvature_error", &RunConfig::solid_curvature_error, 0.0, RestartPolicy::Mutable,
+   {"solid_curvature_error", &RunConfig::solid_curvature_error, 0.0_rt, RestartPolicy::Mutable,
     "Solid-geometry curvature tolerance."},
 }};
 
@@ -168,6 +175,11 @@ void validate_registered_option(
       return;
    case StringOptionSet::Physics:
       require_registered_option(parameter, value, PhysicsOptions, group);
+      return;
+   case StringOptionSet::RelativisticExterior:
+      require_registered_option(
+         parameter, value, RelativisticExteriorOptions, group
+      );
       return;
    case StringOptionSet::CT:
       require_registered_option(parameter, value, CTOptions, group);
@@ -382,6 +394,9 @@ RunConfig read_config()
    pp.query("checkpoint_compression", cfg.checkpoint_compression);
    pp.query("cfl_limiter_diagnostics", cfg.cfl_limiter_diagnostics);
    amrex::ParmParse diagnostics_pp("diagnostics");
+   diagnostics_pp.queryAdd("constraint_region_extent", cfg.diagnostic_constraint_region_extent);
+   diagnostics_pp.queryAdd("constraint_exclusion_radius", cfg.diagnostic_constraint_exclusion_radius);
+   diagnostics_pp.queryAdd("constraint_split_radius", cfg.diagnostic_constraint_split_radius);
    diagnostics_pp.queryAdd("surface_radius", cfg.diagnostic_surface_radius);
    diagnostics_pp.queryAdd("surface_center1", cfg.diagnostic_surface_center1);
    diagnostics_pp.queryAdd("surface_center2", cfg.diagnostic_surface_center2);
@@ -425,6 +440,7 @@ RunConfig read_config()
    pp.query("rmhd_candidate_dmp_factor", cfg.rmhd_candidate_dmp_factor);
    amrex::ParmParse spacetime_pp("spacetime");
    spacetime_pp.queryAdd("evolution", cfg.spacetime_evolution);
+   spacetime_pp.queryAdd("formulation", cfg.spacetime_formulation);
    spacetime_pp.queryAdd("matter_coupling", cfg.spacetime_matter_coupling);
    spacetime_pp.queryAdd("fixed_metric", cfg.spacetime_fixed_metric);
    spacetime_pp.queryAdd("initial_data", cfg.spacetime_initial_data);
@@ -433,6 +449,24 @@ RunConfig read_config()
    );
    spacetime_pp.queryAdd(
       "black_hole_fill_radius", cfg.spacetime_black_hole_fill_radius
+   );
+   spacetime_pp.queryAdd(
+      "black_hole_matter", cfg.spacetime_black_hole_matter
+   );
+   spacetime_pp.queryAdd(
+      "black_hole_max_lorentz_factor",
+      cfg.spacetime_black_hole_max_lorentz_factor
+   );
+   spacetime_pp.queryAdd(
+      "black_hole_max_specific_internal_energy",
+      cfg.spacetime_black_hole_max_specific_internal_energy
+   );
+   spacetime_pp.queryAdd(
+      "black_hole_max_magnetization",
+      cfg.spacetime_black_hole_max_magnetization
+   );
+   spacetime_pp.queryAdd(
+      "black_hole_max_density", cfg.spacetime_black_hole_max_density
    );
    amrex::ParmParse initial_data_pp("initial_data");
    initial_data_pp.queryAdd("magnetic", cfg.initial_data_magnetic);
@@ -575,6 +609,8 @@ RunConfig read_config()
    );
    spacetime_pp.queryAdd("lapse_gauge", cfg.spacetime_lapse_gauge);
    spacetime_pp.queryAdd("shift_gauge", cfg.spacetime_shift_gauge);
+   spacetime_pp.queryAdd("outer_boundary", cfg.spacetime_outer_boundary);
+   spacetime_pp.queryAdd("sommerfeld_power", cfg.spacetime_sommerfeld_power);
    spacetime_pp.queryAdd("amplitude", cfg.spacetime_amplitude);
    spacetime_pp.queryAdd("wave_number", cfg.spacetime_wave_number);
    spacetime_pp.queryAdd("kappa1", cfg.spacetime_kappa1);
@@ -584,6 +620,8 @@ RunConfig read_config()
       "slow_start_strength", cfg.spacetime_slow_start_strength
    );
    spacetime_pp.queryAdd("slow_start_time", cfg.spacetime_slow_start_time);
+   spacetime_pp.queryAdd("derivative_order", cfg.spacetime_derivative_order);
+   spacetime_pp.queryAdd("prolongation_order", cfg.spacetime_prolongation_order);
    spacetime_pp.queryAdd("ko_dissipation", cfg.spacetime_ko_dissipation);
    spacetime_pp.queryAdd("chi_floor", cfg.spacetime_chi_floor);
    spacetime_pp.queryAdd("lapse_floor", cfg.spacetime_lapse_floor);
@@ -918,7 +956,11 @@ RunConfig read_config()
 
 void validate_config(RunConfig const& cfg)
 {
+   if (!is_supported_spatial_order(cfg.spacetime_derivative_order)) {
+      amrex::Abort("spacetime.derivative_order must be a catalogued spatial order");
+   }
    validate_registered_parameters(cfg);
+   require_supported_option(cfg.spacetime_formulation, SpacetimeFormulationOptions, "spacetime.formulation");
    if ((cfg.tag_metric == "spacetime" || cfg.tag_metric == "compact_object")
        && !spacetime_stores_state(cfg)) {
       amrex::Abort(
@@ -1018,6 +1060,15 @@ void validate_config(RunConfig const& cfg)
    const bool spherical_axisymmetric_xcts_layout =
       spherical_axisymmetric_xcts_2d_layout
       || spherical_axisymmetric_xcts_3d_layout;
+#if (AMREX_SPACEDIM == 1)
+   const bool spherical_reference_metric_rhd_layout =
+      initial_data_coordinate == MeshSpherical && initial_data_axes == "r";
+#elif (AMREX_SPACEDIM == 2)
+   const bool spherical_reference_metric_rhd_layout =
+      initial_data_coordinate == MeshSpherical && initial_data_axes == "r theta";
+#else
+   const bool spherical_reference_metric_rhd_layout = false;
+#endif
    const bool cartesian_conformal_layout = initial_data_owner_layout_matches(
       cartesian_conformal_owner,
       AMREX_SPACEDIM,
@@ -1073,9 +1124,9 @@ void validate_config(RunConfig const& cfg)
             "to the elliptic solve/materialization interface"
          );
       }
-      if (!(cfg.spacetime_mass > 0.0)
+      if (!(cfg.spacetime_mass > 0.0_rt)
           || !std::isfinite(cfg.spacetime_mass)
-          || !(black_hole_spin_squared < 1.0)) {
+          || !(black_hole_spin_squared < 1.0_rt)) {
          amrex::Abort(
             "Kerr-Schild spacetime requires positive finite mass and "
             "dimensionless spin magnitude below one"
@@ -1083,22 +1134,22 @@ void validate_config(RunConfig const& cfg)
       }
    } else if (static_trumpet_requested) {
       if (!cartesian_trumpet_layout
-          || !(cfg.spacetime_mass > 0.0)
+          || !(cfg.spacetime_mass > 0.0_rt)
           || !std::isfinite(cfg.spacetime_mass)
-          || black_hole_spin_squared != 0.0) {
+          || black_hole_spin_squared != 0.0_rt) {
          amrex::Abort(
             "static-trumpet spacetime requires a positive finite mass, zero "
             "spin, and the 3D Cartesian owner"
          );
       }
       if (cfg.spacetime_black_hole_interior != "puncture"
-          || cfg.spacetime_black_hole_fill_radius != -1.0) {
+          || cfg.spacetime_black_hole_fill_radius != -1.0_rt) {
          amrex::Abort(
             "static-trumpet spacetime requires black_hole_interior = "
             "puncture and no fill radius"
          );
       }
-   } else if (black_hole_spin_squared != 0.0
+   } else if (black_hole_spin_squared != 0.0_rt
               && !spherical_black_hole_xcts_request
               && !loaded_cartesian_black_hole_artifact) {
       amrex::Abort(
@@ -1107,9 +1158,9 @@ void validate_config(RunConfig const& cfg)
       );
    }
    if (spherical_black_hole_xcts_request
-       && (cfg.spacetime_dimensionless_spin1 != 0.0
-           || cfg.spacetime_dimensionless_spin2 != 0.0
-           || !(black_hole_spin_squared < 1.0))) {
+       && (cfg.spacetime_dimensionless_spin1 != 0.0_rt
+           || cfg.spacetime_dimensionless_spin2 != 0.0_rt
+           || !(black_hole_spin_squared < 1.0_rt))) {
       amrex::Abort(
          "the axisymmetric spherical black-hole XCTS owner requires spin "
          "aligned with its third axis and magnitude below one"
@@ -1118,11 +1169,11 @@ void validate_config(RunConfig const& cfg)
    if (cfg.ic == "black_hole"
        && ((!native_spherical_black_hole_solve
             && !loaded_cartesian_black_hole_artifact)
-           || !(cfg.spacetime_mass > 0.0)
+           || !(cfg.spacetime_mass > 0.0_rt)
            || !std::isfinite(cfg.spacetime_mass)
-           || cfg.spacetime_origin1 != 0.0
-           || cfg.spacetime_origin2 != 0.0
-           || cfg.spacetime_origin3 != 0.0)) {
+           || cfg.spacetime_origin1 != 0.0_rt
+           || cfg.spacetime_origin2 != 0.0_rt
+           || cfg.spacetime_origin3 != 0.0_rt)) {
       amrex::Abort(
          "black_hole initial data require a positive-mass, origin-centered "
          "native spherical XCTS shell solve or a Cartesian filled-artifact "
@@ -1130,10 +1181,10 @@ void validate_config(RunConfig const& cfg)
       );
    }
    if (loaded_cartesian_black_hole_artifact) {
-      const amrex::Real expected_fill_radius = 0.5 * cfg.spacetime_mass;
-      const amrex::Real fill_tolerance = 64.0
+      const amrex::Real expected_fill_radius = 0.5_rt * cfg.spacetime_mass;
+      const amrex::Real fill_tolerance = 64.0_rt
          * std::numeric_limits<amrex::Real>::epsilon()
-         * std::max(amrex::Real(1.0), expected_fill_radius);
+         * std::max(amrex::Real(1.0_rt), expected_fill_radius);
       if (std::abs(
              cfg.spacetime_black_hole_fill_radius - expected_fill_radius
           ) > fill_tolerance) {
@@ -1153,26 +1204,90 @@ void validate_config(RunConfig const& cfg)
       BlackHoleInteriorOptions,
       "spacetime.black_hole_interior"
    );
+   require_supported_option(
+      cfg.spacetime_black_hole_matter,
+      BlackHoleMatterOptions,
+      "spacetime.black_hole_matter"
+   );
+   const bool black_hole_matter_special =
+      cfg.spacetime_black_hole_matter != "evolve";
+   if (black_hole_matter_special
+       && !physical_system_is_relativistic(physical_system(cfg))) {
+      amrex::Abort(
+         "spacetime.black_hole_matter requires RHD or RMHD"
+      );
+   }
+   if (black_hole_matter_special) {
+      amrex::ParmParse horizon_pp("horizon");
+      bool horizon_enabled = false;
+      horizon_pp.queryAdd("enabled", horizon_enabled);
+      if (!horizon_enabled) {
+         amrex::Abort(
+            "bounded or excised black-hole matter requires horizon.enabled = 1"
+         );
+      }
+   }
+   if (cfg.spacetime_black_hole_matter == "bounded") {
+      if (cfg.spacetime_black_hole_interior != "filled"
+          && cfg.spacetime_black_hole_interior != "puncture") {
+         amrex::Abort(
+            "bounded black-hole matter requires a filled or puncture/trumpet "
+            "complete-grid interior"
+         );
+      }
+      if (!(cfg.spacetime_black_hole_max_lorentz_factor > 1.0_rt)
+          || !std::isfinite(cfg.spacetime_black_hole_max_lorentz_factor)
+          || !(cfg.spacetime_black_hole_max_specific_internal_energy > 0.0_rt)
+          || !std::isfinite(
+             cfg.spacetime_black_hole_max_specific_internal_energy
+          )
+          || !(cfg.spacetime_black_hole_max_magnetization > 0.0_rt)
+          || !std::isfinite(cfg.spacetime_black_hole_max_magnetization)
+          || (cfg.spacetime_black_hole_max_density != -1.0_rt
+              && (!(cfg.spacetime_black_hole_max_density > cfg.rho_floor)
+                  || !std::isfinite(
+                     cfg.spacetime_black_hole_max_density
+                  )))) {
+         amrex::Abort(
+            "invalid bounded black-hole matter ceilings"
+         );
+      }
+   }
+   if (cfg.spacetime_black_hole_matter == "excision"
+       && cfg.spacetime_black_hole_interior != "excision") {
+      amrex::Abort(
+         "excised black-hole matter requires black_hole_interior = excision"
+      );
+   }
+   if (cfg.spacetime_black_hole_interior == "excision"
+       && cfg.spacetime_black_hole_matter != "excision") {
+      amrex::Abort(
+         "black_hole_interior = excision requires excised matter ownership"
+      );
+   }
+   // Evolved excision uses a fixed coordinate cut at black_hole_fill_radius.
+   // Horizon containment and physical/gauge outflow are checked at runtime.
    if (!kerr_schild_requested && !static_trumpet_requested
        && !loaded_cartesian_black_hole_artifact
        && (cfg.spacetime_black_hole_interior != "exterior"
-           || cfg.spacetime_black_hole_fill_radius != -1.0)) {
+           || cfg.spacetime_black_hole_fill_radius != -1.0_rt)) {
       amrex::Abort(
          "black-hole interior options require Kerr-Schild or static-trumpet "
          "initial data"
       );
    }
    if (kerr_schild_requested
-       && cfg.spacetime_black_hole_interior == "filled") {
+       && (cfg.spacetime_black_hole_interior == "filled"
+           || cfg.spacetime_black_hole_interior == "excision")) {
       const amrex::Real outer_horizon_radius = cfg.spacetime_mass * (
-         1.0 + std::sqrt(1.0 - black_hole_spin_squared)
+         1.0_rt + std::sqrt(1.0_rt - black_hole_spin_squared)
       );
       const amrex::Real spin_length = cfg.spacetime_mass
          * std::sqrt(black_hole_spin_squared);
       const amrex::Real safe_inner_radius = spin_length
-         + 256.0 * std::numeric_limits<amrex::Real>::epsilon()
+         + 256.0_rt * std::numeric_limits<amrex::Real>::epsilon()
             * cfg.spacetime_mass;
-      if (!(cfg.spacetime_black_hole_fill_radius > 0.0)
+      if (!(cfg.spacetime_black_hole_fill_radius > 0.0_rt)
           || !std::isfinite(cfg.spacetime_black_hole_fill_radius)
           || !(cfg.spacetime_black_hole_fill_radius > safe_inner_radius)
           || !(cfg.spacetime_black_hole_fill_radius
@@ -1183,18 +1298,10 @@ void validate_config(RunConfig const& cfg)
          );
       }
    } else if (kerr_schild_requested
-              && cfg.spacetime_black_hole_fill_radius != -1.0) {
+              && cfg.spacetime_black_hole_fill_radius != -1.0_rt) {
       amrex::Abort(
-         "spacetime.black_hole_fill_radius applies only to the filled "
-         "black-hole interior"
-      );
-   }
-   if (kerr_schild_requested
-       && cfg.spacetime_black_hole_interior == "excision") {
-      amrex::Abort(
-         "Kerr-Schild excision is a reserved initial-data/evolution contract; "
-         "the active-cell mask and pure-outflow inner boundary are not yet "
-         "implemented. Use exterior or filled."
+         "spacetime.black_hole_fill_radius applies only to filled or "
+         "excised black-hole interiors"
       );
    }
    if (cfg.spacetime_evolution == "fixed"
@@ -1282,18 +1389,18 @@ void validate_config(RunConfig const& cfg)
       + cfg.initial_data_disk_axis3 * cfg.initial_data_disk_axis3
    );
    if (equilibrium_torus_enabled
-       && (!(disk_axis_norm > 0.0) || !std::isfinite(disk_axis_norm))) {
+       && (!(disk_axis_norm > 0.0_rt) || !std::isfinite(disk_axis_norm))) {
       amrex::Abort("initial_data.disk_axis must be a finite nonzero vector");
    }
    const amrex::Real inverse_disk_axis_norm = equilibrium_torus_enabled
-      ? 1.0 / disk_axis_norm : 1.0;
+      ? 1.0_rt / disk_axis_norm : 1.0_rt;
    const amrex::Real disk_axis1 = cfg.initial_data_disk_axis1
       * inverse_disk_axis_norm;
    const amrex::Real disk_axis2 = cfg.initial_data_disk_axis2
       * inverse_disk_axis_norm;
    const amrex::Real disk_axis3 = cfg.initial_data_disk_axis3
       * inverse_disk_axis_norm;
-   const amrex::Real disk_axis_tolerance = 64.0
+   const amrex::Real disk_axis_tolerance = 64.0_rt
       * std::numeric_limits<amrex::Real>::epsilon();
    const bool analytic_black_hole_disk_request =
       ((cartesian_kerr_layout && kerr_schild_requested)
@@ -1377,7 +1484,7 @@ void validate_config(RunConfig const& cfg)
            || spherical_black_hole_torus_request)
        && (std::abs(disk_axis1) > disk_axis_tolerance
            || std::abs(disk_axis2) > disk_axis_tolerance
-           || std::abs(disk_axis3 - 1.0) > disk_axis_tolerance)) {
+           || std::abs(disk_axis3 - 1.0_rt) > disk_axis_tolerance)) {
       amrex::Abort(
          "the reduced r-theta equilibrium-torus owner requires disk_axis = "
          "(0,0,1); arbitrary axes require the 3D Cartesian XCTS owner"
@@ -1395,13 +1502,13 @@ void validate_config(RunConfig const& cfg)
    if (stationary_torus_enabled
        && cartesian_stellar_torus_request
        && cfg.ic == "rotating_star"
-       && cfg.initial_data_angular_velocity != 0.0) {
+       && cfg.initial_data_angular_velocity != 0.0_rt) {
       const amrex::Real star_axis_norm = std::sqrt(
          cfg.initial_data_rotation_axis1 * cfg.initial_data_rotation_axis1
          + cfg.initial_data_rotation_axis2 * cfg.initial_data_rotation_axis2
          + cfg.initial_data_rotation_axis3 * cfg.initial_data_rotation_axis3
       );
-      if (star_axis_norm > 0.0 && std::isfinite(star_axis_norm)) {
+      if (star_axis_norm > 0.0_rt && std::isfinite(star_axis_norm)) {
          const amrex::Real star_axis1 =
             cfg.initial_data_rotation_axis1 / star_axis_norm;
          const amrex::Real star_axis2 =
@@ -1427,8 +1534,8 @@ void validate_config(RunConfig const& cfg)
    }
    if (equilibrium_torus_enabled && analytic_black_hole_disk_request
        && kerr_schild_requested
-       && black_hole_spin_squared > 0.0) {
-      const amrex::Real inverse_spin_norm = 1.0 / std::sqrt(
+       && black_hole_spin_squared > 0.0_rt) {
+      const amrex::Real inverse_spin_norm = 1.0_rt / std::sqrt(
          black_hole_spin_squared
       );
       const amrex::Real spin1 = cfg.spacetime_dimensionless_spin1
@@ -1451,7 +1558,7 @@ void validate_config(RunConfig const& cfg)
       }
    }
    if (equilibrium_torus_enabled
-       && (!(cfg.initial_data_disk_inner_radius > 0.0)
+       && (!(cfg.initial_data_disk_inner_radius > 0.0_rt)
            || !std::isfinite(cfg.initial_data_disk_inner_radius))) {
       amrex::Abort(
          "equilibrium-torus initial data require a positive finite "
@@ -1461,7 +1568,7 @@ void validate_config(RunConfig const& cfg)
    if (equilibrium_torus_enabled
        && cfg.initial_data_disk_rotation_law == "constant_l"
        && (!std::isfinite(cfg.initial_data_disk_specific_angular_momentum)
-           || cfg.initial_data_disk_specific_angular_momentum == 0.0)) {
+           || cfg.initial_data_disk_specific_angular_momentum == 0.0_rt)) {
       amrex::Abort(
          "constant-l equilibrium-torus initial data require a nonzero finite "
          "disk_specific_angular_momentum"
@@ -1470,7 +1577,7 @@ void validate_config(RunConfig const& cfg)
    if (equilibrium_torus_enabled
        && cfg.initial_data_disk_rotation_law != "constant_l"
        && (!std::isfinite(cfg.initial_data_disk_angular_velocity)
-           || cfg.initial_data_disk_angular_velocity == 0.0)) {
+           || cfg.initial_data_disk_angular_velocity == 0.0_rt)) {
       amrex::Abort(
          "uniform and differential equilibrium-torus laws require a nonzero "
          "finite disk_angular_velocity"
@@ -1479,7 +1586,7 @@ void validate_config(RunConfig const& cfg)
    if (equilibrium_torus_enabled
        && (cfg.initial_data_disk_rotation_law == "j_constant"
            || cfg.initial_data_disk_rotation_law == "q_power")
-       && (!(cfg.initial_data_disk_differential_rotation_length > 0.0)
+       && (!(cfg.initial_data_disk_differential_rotation_length > 0.0_rt)
            || !std::isfinite(
                 cfg.initial_data_disk_differential_rotation_length
               ))) {
@@ -1490,7 +1597,7 @@ void validate_config(RunConfig const& cfg)
    }
    if (equilibrium_torus_enabled
        && cfg.initial_data_disk_rotation_law == "q_power"
-       && (!(cfg.initial_data_disk_rotation_power_q >= 1.0)
+       && (!(cfg.initial_data_disk_rotation_power_q >= 1.0_rt)
            || !std::isfinite(cfg.initial_data_disk_rotation_power_q))) {
       amrex::Abort(
          "q-power equilibrium-torus initial data require finite "
@@ -1509,7 +1616,7 @@ void validate_config(RunConfig const& cfg)
    }
    if (cfg.ic == "rotating_star"
        && cfg.initial_data_rotation_law != "uniform"
-       && (!(cfg.initial_data_differential_rotation_length > 0.0)
+       && (!(cfg.initial_data_differential_rotation_length > 0.0_rt)
            || !std::isfinite(cfg.initial_data_differential_rotation_length))) {
       amrex::Abort(
          "differential rotating-star initial data requires a positive finite "
@@ -1520,7 +1627,7 @@ void validate_config(RunConfig const& cfg)
       cfg.initial_data_rotation_law == "uryu_plus_13"
       || cfg.initial_data_rotation_law == "uryu_j_envelope_p1";
    if (cfg.ic == "rotating_star" && uryu_rotation_law
-       && (!(cfg.initial_data_differential_rotation_length_b > 0.0)
+       && (!(cfg.initial_data_differential_rotation_length_b > 0.0_rt)
            || !std::isfinite(
               cfg.initial_data_differential_rotation_length_b
            ))) {
@@ -1531,7 +1638,7 @@ void validate_config(RunConfig const& cfg)
    }
    if (cfg.ic == "rotating_star"
        && cfg.initial_data_rotation_law == "q_power"
-       && (!(cfg.initial_data_rotation_power_q >= 1.0)
+       && (!(cfg.initial_data_rotation_power_q >= 1.0_rt)
            || !std::isfinite(cfg.initial_data_rotation_power_q))) {
       amrex::Abort(
          "q-power rotating-star initial data requires finite "
@@ -1550,16 +1657,20 @@ void validate_config(RunConfig const& cfg)
       );
    }
    if (cfg.initial_data_perturbation != "none") {
-      if (cfg.ic != "tov" && cfg.ic != "rotating_star") {
+      const bool stellar_equilibrium =
+         cfg.ic == "tov" || cfg.ic == "rotating_star";
+      const bool disk_equilibrium = cfg.ic == "equilibrium_torus";
+      if (!stellar_equilibrium && !disk_equilibrium) {
          amrex::Abort(
             "initial-data equilibrium perturbations require pyfluid.ic = "
-            "tov or rotating_star"
+            "tov, rotating_star, or equilibrium_torus"
          );
       }
-      if (cfg.initial_data_solve_only) {
+      if (disk_equilibrium
+          && cfg.initial_data_perturbation == "density_radial_font2002") {
          amrex::Abort(
-            "initial-data equilibrium perturbations are evolution-start "
-            "modifiers and cannot be combined with solve_only"
+            "density_radial_font2002 is a stellar-collapse perturbation and "
+            "does not support pyfluid.ic = equilibrium_torus"
          );
       }
       if (cfg.eos != "polytrope" && cfg.eos != "hybrid_polytrope"
@@ -1571,12 +1682,12 @@ void validate_config(RunConfig const& cfg)
       }
    }
    if (cfg.initial_data_perturbation == "cold_pressure_scale"
-       && (!(cfg.initial_data_perturbation_pressure_scale > 0.0)
+       && (!(cfg.initial_data_perturbation_pressure_scale > 0.0_rt)
            || !std::isfinite(
               cfg.initial_data_perturbation_pressure_scale
            )
-           || std::abs(cfg.initial_data_perturbation_pressure_scale - 1.0)
-              > 0.1)) {
+           || std::abs(cfg.initial_data_perturbation_pressure_scale - 1.0_rt)
+              > 0.1_rt)) {
       amrex::Abort(
          "cold_pressure_scale requires a finite positive pressure scale "
          "within 10 percent of unity"
@@ -1590,11 +1701,11 @@ void validate_config(RunConfig const& cfg)
       );
 #endif
       if (!std::isfinite(cfg.initial_data_perturbation_amplitude)
-          || std::abs(cfg.initial_data_perturbation_amplitude) > 0.1
+          || std::abs(cfg.initial_data_perturbation_amplitude) > 0.1_rt
           || cfg.initial_data_perturbation_mode < 1
           || cfg.initial_data_perturbation_mode > 16
           || !std::isfinite(cfg.initial_data_perturbation_phase)
-          || cfg.initial_data_perturbation_radius == 0.0
+          || cfg.initial_data_perturbation_radius == 0.0_rt
           || !std::isfinite(cfg.initial_data_perturbation_radius)) {
          amrex::Abort(
             "density_azimuthal_espino2019 requires |amplitude| <= 0.1, "
@@ -1602,6 +1713,23 @@ void validate_config(RunConfig const& cfg)
             "perturbation_radius"
          );
       }
+   }
+   if (cfg.initial_data_perturbation == "density_radial_font2002"
+       && (!std::isfinite(cfg.initial_data_perturbation_amplitude)
+           || std::abs(cfg.initial_data_perturbation_amplitude) > 0.1_rt
+           || cfg.initial_data_perturbation_radius == 0.0_rt
+           || !std::isfinite(cfg.initial_data_perturbation_radius))) {
+      amrex::Abort(
+         "density_radial_font2002 requires |amplitude| <= 0.1 and a "
+         "positive or automatic perturbation_radius"
+      );
+   }
+   if (cfg.initial_data_perturbation == "density_radial_font2002"
+       && cfg.eos != "hybrid_polytrope" && cfg.eos != "compose") {
+      amrex::Abort(
+         "density_radial_font2002 requires a hybrid-polytrope or CompOSE "
+         "EoS so pressure can remain fixed while thermodynamics are rebuilt"
+      );
    }
    bool magnetic_seed_supported = false;
    for (InitialDataMagneticSeedInfo const& seed
@@ -1635,12 +1763,12 @@ void validate_config(RunConfig const& cfg)
             "without a disk"
          );
       }
-      if (!(cfg.initial_data_magnetic_seed_pressure_cutoff >= 0.0)
-          || !(cfg.initial_data_magnetic_seed_pressure_cutoff < 1.0)
+      if (!(cfg.initial_data_magnetic_seed_pressure_cutoff >= 0.0_rt)
+          || !(cfg.initial_data_magnetic_seed_pressure_cutoff < 1.0_rt)
           || !std::isfinite(cfg.initial_data_magnetic_seed_pressure_cutoff)
-          || !(cfg.initial_data_magnetic_seed_exponent >= 1.0)
+          || !(cfg.initial_data_magnetic_seed_exponent >= 1.0_rt)
           || !std::isfinite(cfg.initial_data_magnetic_seed_exponent)
-          || !(cfg.initial_data_magnetic_seed_maximum_comoving_field > 0.0)
+          || !(cfg.initial_data_magnetic_seed_maximum_comoving_field > 0.0_rt)
           || !std::isfinite(
              cfg.initial_data_magnetic_seed_maximum_comoving_field
           )) {
@@ -1698,8 +1826,8 @@ void validate_config(RunConfig const& cfg)
           || !std::isfinite(
              cfg.initial_data_magnetic_equilibrium_nonlinear_poloidal
           )
-          || !(cfg.initial_data_magnetic_equilibrium_relaxation > 0.0)
-          || !(cfg.initial_data_magnetic_equilibrium_relaxation <= 1.0)
+          || !(cfg.initial_data_magnetic_equilibrium_relaxation > 0.0_rt)
+          || !(cfg.initial_data_magnetic_equilibrium_relaxation <= 1.0_rt)
           || !std::isfinite(
              cfg.initial_data_magnetic_equilibrium_relaxation
           )) {
@@ -1714,7 +1842,7 @@ void validate_config(RunConfig const& cfg)
       cfg.initial_data_magnetic_seed == "pressure_poloidal"
       || (cfg.initial_data_magnetic_equilibrium == "poloidal_grad_shafranov"
           && cfg.initial_data_magnetic_equilibrium_poloidal_magnetization
-             != 0.0);
+             != 0.0_rt);
    if (oriented_poloidal_field) {
       const amrex::Real axis_norm = std::sqrt(
          cfg.initial_data_rotation_axis1 * cfg.initial_data_rotation_axis1
@@ -1731,9 +1859,9 @@ void validate_config(RunConfig const& cfg)
          {{cfg.bc_ylo, cfg.bc_yhi}},
          {{cfg.bc_zlo, cfg.bc_zhi}},
       }};
-      const amrex::Real axis_tolerance = 64.0
+      const amrex::Real axis_tolerance = 64.0_rt
          * std::numeric_limits<amrex::Real>::epsilon()
-         * std::max(axis_norm, amrex::Real(1.0));
+         * std::max(axis_norm, amrex::Real(1.0_rt));
       for (int direction = 0; direction < 3; ++direction) {
          for (std::string const& side : side_boundaries[direction]) {
             const std::string selected = trim_copy(side).empty()
@@ -1750,6 +1878,23 @@ void validate_config(RunConfig const& cfg)
       }
    }
    const PhysicalSystem selected_system = physical_system(cfg);
+   if (cfg.relativistic_exterior == "vacuum"
+       && selected_system != PhysicalSystem::RHD) {
+      amrex::Abort(
+         "pyfluid.relativistic_exterior = vacuum currently requires "
+         "pyfluid.physics = rhd; magnetized vacuum needs an explicit "
+         "electromagnetic exterior closure"
+      );
+   }
+   if (cfg.relativistic_exterior == "vacuum"
+       && (cfg.initial_data_atmosphere != "flat"
+           || cfg.initial_data_atmosphere_density != -1.0_rt
+           || cfg.initial_data_atmosphere_pressure != -1.0_rt)) {
+      amrex::Abort(
+         "pyfluid.relativistic_exterior = vacuum does not accept a "
+         "nondefault initial_data atmosphere profile or state"
+      );
+   }
    const bool loaded_physical_id = !cfg.initial_data_input_file.empty();
    const bool rmhd_stellar_physical_id =
       selected_system == PhysicalSystem::RMHD
@@ -1768,13 +1913,21 @@ void validate_config(RunConfig const& cfg)
       Z4cShiftGaugeOptions,
       "spacetime.shift_gauge"
    );
-   if (cfg.gamma <= 1.0) {
+   require_supported_option(
+      cfg.spacetime_outer_boundary,
+      Z4cOuterBoundaryOptions,
+      "spacetime.outer_boundary"
+   );
+   if (cfg.spacetime_sommerfeld_power < -1) {
+      amrex::Abort("spacetime.sommerfeld_power must be -1 (pure wave) or nonnegative");
+   }
+   if (cfg.gamma <= 1.0_rt) {
       amrex::Abort("pyfluid.gamma must be greater than 1");
    }
-   if (cfg.polytropic_k <= 0.0) {
+   if (cfg.polytropic_k <= 0.0_rt) {
       amrex::Abort("pyfluid.polytropic_k must be positive");
    }
-   if (cfg.polytropic_gamma <= 1.0) {
+   if (cfg.polytropic_gamma <= 1.0_rt) {
       amrex::Abort("pyfluid.polytropic_gamma must be greater than 1");
    }
    if (cfg.polytropic_density_breaks.size()
@@ -1789,7 +1942,7 @@ void validate_config(RunConfig const& cfg)
       amrex::Abort("piecewise polytropes support at most 8 density segments");
    }
    for (std::size_t segment = 0; segment < cfg.polytropic_density_breaks.size(); ++segment) {
-      if (!(cfg.polytropic_density_breaks[segment] > 0.0)
+      if (!(cfg.polytropic_density_breaks[segment] > 0.0_rt)
           || (segment > 0
               && !(cfg.polytropic_density_breaks[segment]
                    > cfg.polytropic_density_breaks[segment - 1]))) {
@@ -1797,13 +1950,13 @@ void validate_config(RunConfig const& cfg)
             "pyfluid.polytropic_density_breaks must be positive and strictly increasing"
          );
       }
-      if (!(cfg.polytropic_segment_gammas[segment] > 1.0)) {
+      if (!(cfg.polytropic_segment_gammas[segment] > 1.0_rt)) {
          amrex::Abort(
             "pyfluid.polytropic_segment_gammas entries must be greater than 1"
          );
       }
    }
-   if (cfg.thermal_gamma <= 1.0) {
+   if (cfg.thermal_gamma <= 1.0_rt) {
       amrex::Abort("pyfluid.thermal_gamma must be greater than 1");
    }
    if (cfg.eos_preset != "custom"
@@ -1829,30 +1982,30 @@ void validate_config(RunConfig const& cfg)
    } else if (!cfg.eos_table.empty()) {
       amrex::Abort("pyfluid.eos_table requires pyfluid.eos = compose");
    }
-   if (cfg.rho_floor <= 0.0 || cfg.pressure_floor <= 0.0) {
+   if (cfg.rho_floor <= 0.0_rt || cfg.pressure_floor <= 0.0_rt) {
       amrex::Abort("pyfluid.rho_floor and pyfluid.pressure_floor must be positive");
    }
-   if (!((cfg.initial_data_atmosphere_density > 0.0)
-         || cfg.initial_data_atmosphere_density == -1.0)
-       || !((cfg.initial_data_atmosphere_pressure > 0.0)
-            || cfg.initial_data_atmosphere_pressure == -1.0)) {
+   if (!((cfg.initial_data_atmosphere_density > 0.0_rt)
+         || cfg.initial_data_atmosphere_density == -1.0_rt)
+       || !((cfg.initial_data_atmosphere_pressure > 0.0_rt)
+            || cfg.initial_data_atmosphere_pressure == -1.0_rt)) {
       amrex::Abort(
          "initial_data.atmosphere_density and atmosphere_pressure must be positive, "
          "or -1 to inherit the runtime C2P floors"
       );
    }
-   if ((cfg.initial_data_atmosphere_density > 0.0
+   if ((cfg.initial_data_atmosphere_density > 0.0_rt
         && cfg.initial_data_atmosphere_density < cfg.rho_floor)
-       || (cfg.initial_data_atmosphere_pressure > 0.0
+       || (cfg.initial_data_atmosphere_pressure > 0.0_rt
            && cfg.initial_data_atmosphere_pressure < cfg.pressure_floor)) {
       amrex::Abort(
          "the initial atmosphere state must not be below the runtime C2P floors"
       );
    }
    if (cfg.initial_data_atmosphere == "power_law"
-       && (!(cfg.initial_data_atmosphere_power > 3.0)
-           || !((cfg.initial_data_atmosphere_transition_radius > 0.0)
-                || cfg.initial_data_atmosphere_transition_radius == -1.0))) {
+       && (!(cfg.initial_data_atmosphere_power > 3.0_rt)
+           || !((cfg.initial_data_atmosphere_transition_radius > 0.0_rt)
+                || cfg.initial_data_atmosphere_transition_radius == -1.0_rt))) {
       amrex::Abort(
          "power-law initial atmosphere requires atmosphere_power > 3 for finite 3D mass "
          "and a positive atmosphere_transition_radius, or -1 for the TOV-derived radius"
@@ -1863,14 +2016,14 @@ void validate_config(RunConfig const& cfg)
       + cfg.initial_data_rotation_axis2 * cfg.initial_data_rotation_axis2
       + cfg.initial_data_rotation_axis3 * cfg.initial_data_rotation_axis3;
    if (!std::isfinite(cfg.initial_data_angular_velocity)
-       || !(rotation_axis_norm_squared > 0.0)
+       || !(rotation_axis_norm_squared > 0.0_rt)
        || !std::isfinite(rotation_axis_norm_squared)
        || !std::isfinite(cfg.initial_data_rotation_center1)
        || !std::isfinite(cfg.initial_data_rotation_center2)
        || !std::isfinite(cfg.initial_data_rotation_center3)
-       || !(cfg.initial_data_matter_relaxation > 0.0)
-       || !(cfg.initial_data_matter_relaxation <= 1.0)
-       || !(cfg.initial_data_matter_relative_tolerance > 0.0)
+       || !(cfg.initial_data_matter_relaxation > 0.0_rt)
+       || !(cfg.initial_data_matter_relaxation <= 1.0_rt)
+       || !(cfg.initial_data_matter_relative_tolerance > 0.0_rt)
        || cfg.initial_data_matter_max_iterations < 2
        || cfg.initial_data_rotation_continuation_steps < 1) {
       amrex::Abort(
@@ -1880,11 +2033,11 @@ void validate_config(RunConfig const& cfg)
          "rotation_continuation_steps >= 1"
       );
    }
-   amrex::Real previous_rotation_magnitude = 0.0;
+   amrex::Real previous_rotation_magnitude = 0.0_rt;
    for (amrex::Real target : cfg.initial_data_rotation_continuation_targets) {
       const amrex::Real magnitude = std::abs(target);
       if (!std::isfinite(target)
-          || target * cfg.initial_data_angular_velocity <= 0.0
+          || target * cfg.initial_data_angular_velocity <= 0.0_rt
           || !(magnitude > previous_rotation_magnitude)
           || !(magnitude < std::abs(cfg.initial_data_angular_velocity))) {
          amrex::Abort(
@@ -1906,7 +2059,7 @@ void validate_config(RunConfig const& cfg)
       amrex::Abort("pyfluid.passive_scalars currently supports 0 or 1");
    }
    require_supported_option(cfg.passive_profile, PassiveProfileOptions, "pyfluid.passive_profile");
-   if (cfg.passive_sigma == 0.0 || cfg.passive_sigma < -1.0) {
+   if (cfg.passive_sigma == 0.0_rt || cfg.passive_sigma < -1.0_rt) {
       amrex::Abort("pyfluid.passive_sigma must be positive, or -1 to reuse pyfluid.bump_sigma");
    }
    require_supported_option(cfg.profile, ProfileOptions, "pyfluid.profile");
@@ -1940,7 +2093,7 @@ void validate_config(RunConfig const& cfg)
          "pyfluid.rmhd_candidate_riemann supports same, llf, or hll"
       );
    }
-   if (!(cfg.rmhd_candidate_dmp_factor >= 1.0)
+   if (!(cfg.rmhd_candidate_dmp_factor >= 1.0_rt)
        || !std::isfinite(cfg.rmhd_candidate_dmp_factor)) {
       amrex::Abort(
          "pyfluid.rmhd_candidate_dmp_factor must be finite and at least 1"
@@ -2007,9 +2160,43 @@ void validate_config(RunConfig const& cfg)
             "Newtonian sources/gravity, or solid geometry"
          );
       }
-      if ((!cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian")
+      const bool reference_metric_rhd_evolution =
+         !cfg.initial_data_solve_only
+         && selected_system == PhysicalSystem::RHD
+         && spherical_reference_metric_rhd_layout
+         && cfg.spacetime_evolution == "fixed"
+         && cfg.initial_data_input_file.empty()
+         && analytic_fixed_spacetime_kernels_selected(
+               cfg, cfg.ic, cfg.spacetime_initial_data
+            );
+      const bool evolved_reference_metric_rhd =
+         selected_system == PhysicalSystem::RHD
+         && cfg.spacetime_evolution == "evolved"
+         && cfg.spacetime_formulation == "fccz4";
+      if ((!cfg.initial_data_solve_only && cfg.mesh_coordinate != "cartesian"
+           && !reference_metric_rhd_evolution && !evolved_reference_metric_rhd)
           || cfg.mesh_patch_system != "single") {
-         amrex::Abort("relativistic-fluid runtime evolution currently supports a single Cartesian patch");
+         amrex::Abort(
+            "relativistic-fluid runtime evolution supports a single Cartesian patch, "
+            "regular-chart evolved fCCZ4 RHD, or analytic fixed-spacetime RHD on the single-patch spherical "
+            "r/r-theta reference-metric layouts"
+         );
+      }
+      if (reference_metric_rhd_evolution && cfg.amr_max_level != 0) {
+         amrex::Abort(
+            "spherical reference-metric RHD currently requires amr.max_level = 0; "
+            "coarse-fine well-balanced momentum reflux is not yet validated"
+         );
+      }
+      if (reference_metric_rhd_evolution
+          && cfg.spacetime_fixed_metric == "schwarzschild_isotropic"
+          && (cfg.spacetime_origin1 != 0.0_rt
+              || cfg.spacetime_origin2 != 0.0_rt
+              || cfg.spacetime_origin3 != 0.0_rt)) {
+         amrex::Abort(
+            "spherical isotropic-Schwarzschild reference-metric evolution "
+            "requires spacetime.origin1/2/3 = 0"
+         );
       }
       const bool uses_characteristic_reconstruction =
          reconstruction_is_characteristic(recon_method_code(cfg))
@@ -2047,8 +2234,8 @@ void validate_config(RunConfig const& cfg)
             );
          }
          if (!(cfg.tov_central_density > cfg.rho_floor)
-             || !(cfg.tov_absolute_tolerance > 0.0)
-             || !(cfg.tov_relative_tolerance > 0.0)
+             || !(cfg.tov_absolute_tolerance > 0.0_rt)
+             || !(cfg.tov_relative_tolerance > 0.0_rt)
              || cfg.tov_max_steps < 16) {
             amrex::Abort(
                "TOV initial data requires central_density > rho_floor, positive solve tolerances, and max_steps >= 16"
@@ -2064,7 +2251,7 @@ void validate_config(RunConfig const& cfg)
          );
       }
       if (cfg.ic == "rotating_star"
-          && cfg.initial_data_angular_velocity != 0.0
+          && cfg.initial_data_angular_velocity != 0.0_rt
           && cfg.spacetime_initial_data != "xcts") {
          amrex::Abort(
             "nonzero-spin rotating_star currently requires "
@@ -2073,7 +2260,7 @@ void validate_config(RunConfig const& cfg)
          );
       }
       if (cfg.ic == "rotating_star"
-          && cfg.initial_data_angular_velocity != 0.0
+          && cfg.initial_data_angular_velocity != 0.0_rt
           && AMREX_SPACEDIM != 3) {
          const bool reduced_axisymmetric_xcts =
             spherical_axisymmetric_xcts_layout
@@ -2089,28 +2276,43 @@ void validate_config(RunConfig const& cfg)
          amrex::Abort("spacetime.fixed_metric applies to fixed spacetime only");
       }
       if (spacetime_evolves(cfg)) {
-         if (cfg.spacetime_amplitude < 0.0 || cfg.spacetime_wave_number <= 0.0) {
+         if (cfg.spacetime_amplitude < 0.0_rt || cfg.spacetime_wave_number <= 0.0_rt) {
             amrex::Abort("evolved spacetime amplitude must be non-negative and wave_number positive");
          }
-         if (cfg.spacetime_slow_start_strength < 0.0) {
+         if (cfg.spacetime_slow_start_strength < 0.0_rt) {
             amrex::Abort("spacetime.slow_start_strength must be nonnegative");
          }
-         if (cfg.spacetime_slow_start_time <= 0.0) {
+         if (cfg.spacetime_slow_start_time <= 0.0_rt) {
             amrex::Abort("spacetime.slow_start_time must be positive");
          }
-         if (cfg.spacetime_ko_dissipation < 0.0) {
+         if (!is_supported_spatial_order(cfg.spacetime_prolongation_order)) {
+            amrex::Abort("spacetime.prolongation_order must be a catalogued spatial order");
+         }
+         if (cfg.spacetime_ko_dissipation < 0.0_rt) {
             amrex::Abort("spacetime.ko_dissipation must be nonnegative");
          }
-         if (cfg.spacetime_chi_floor <= 0.0) {
+         if (cfg.spacetime_chi_floor <= 0.0_rt) {
             amrex::Abort("spacetime.chi_floor must be positive");
          }
-         if (cfg.spacetime_lapse_floor <= 0.0) {
+         if (cfg.spacetime_lapse_floor <= 0.0_rt) {
             amrex::Abort("spacetime.lapse_floor must be positive");
          }
       } else if (cfg.spacetime_matter_coupling != "coupled") {
          amrex::Abort(
             "spacetime.matter_coupling = vacuum is only meaningful for evolved spacetime"
          );
+      }
+   }
+   if (cfg.spacetime_formulation == "fccz4") {
+      if (!spacetime_evolves(cfg)) {
+         amrex::Abort("spacetime.formulation = fccz4 requires evolved spacetime");
+      }
+      if (cfg.spacetime_black_hole_interior == "excision") {
+         amrex::Abort("fCCZ4 excision characteristics and one-sided reference stencils are not implemented");
+      }
+      if (cfg.mesh_coordinate != "cartesian" && cfg.spacetime_outer_boundary != "extrapolate") {
+         amrex::Abort("curvilinear fCCZ4 radiative boundary transport is not implemented; "
+                      "regular-chart controls currently use extrapolate");
       }
    }
    const int mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
@@ -2217,7 +2419,7 @@ void validate_config(RunConfig const& cfg)
       if (any_patch_count || has_patch_boxes || cfg.mesh_patch_overlap_cells != 0) {
          amrex::Abort("mixed patch systems use mesh.patch_* grid parameters, not Cartesian patch_counts/patch_box_*");
       }
-      if (cfg.mesh_patch_inner_radius <= 0.0 || cfg.mesh_patch_outer_radius <= cfg.mesh_patch_inner_radius) {
+      if (cfg.mesh_patch_inner_radius <= 0.0_rt || cfg.mesh_patch_outer_radius <= cfg.mesh_patch_inner_radius) {
          amrex::Abort("mesh.patch_inner_radius and mesh.patch_outer_radius must satisfy 0 < inner < outer");
       }
       if (
@@ -2303,7 +2505,7 @@ void validate_config(RunConfig const& cfg)
           || AMREX_SPACEDIM != 1 || mesh_axis(mesh_axes, 0) != MeshAxisX) {
          amrex::Abort("advection_medley requires a 1D Cartesian x layout");
       }
-      if (cfg.rho0 <= 0.0 || cfg.pressure0 <= 0.0 || cfg.amplitude <= 0.0) {
+      if (cfg.rho0 <= 0.0_rt || cfg.pressure0 <= 0.0_rt || cfg.amplitude <= 0.0_rt) {
          amrex::Abort("advection_medley requires positive rho0, pressure0, and amplitude");
       }
    }
@@ -2312,7 +2514,7 @@ void validate_config(RunConfig const& cfg)
           || AMREX_SPACEDIM != 1 || mesh_axis(mesh_axes, 0) != MeshAxisX) {
          amrex::Abort("characteristic_medley requires a 1D Cartesian x ideal-gas layout");
       }
-      if (cfg.rho0 <= 0.0 || cfg.pressure0 <= 0.0 || cfg.amplitude <= 0.0 || cfg.v1_0 != 0.0) {
+      if (cfg.rho0 <= 0.0_rt || cfg.pressure0 <= 0.0_rt || cfg.amplitude <= 0.0_rt || cfg.v1_0 != 0.0_rt) {
          amrex::Abort("characteristic_medley requires positive rho0, pressure0, and amplitude with v1_0 = 0");
       }
    }
@@ -2322,9 +2524,9 @@ void validate_config(RunConfig const& cfg)
          amrex::Abort("mhd_characteristic_medley requires a 1D Cartesian x ideal-gas layout");
       }
       const amrex::Real transverse_b2 = cfg.b2_0 * cfg.b2_0 + cfg.b3_0 * cfg.b3_0;
-      if (cfg.rho0 <= 0.0 || cfg.pressure0 <= 0.0 || cfg.amplitude <= 0.0
-          || cfg.v1_0 != 0.0 || cfg.v2_0 != 0.0 || cfg.v3_0 != 0.0
-          || cfg.b1_0 == 0.0 || transverse_b2 == 0.0) {
+      if (cfg.rho0 <= 0.0_rt || cfg.pressure0 <= 0.0_rt || cfg.amplitude <= 0.0_rt
+          || cfg.v1_0 != 0.0_rt || cfg.v2_0 != 0.0_rt || cfg.v3_0 != 0.0_rt
+          || cfg.b1_0 == 0.0_rt || transverse_b2 == 0.0_rt) {
          amrex::Abort(
             "mhd_characteristic_medley requires positive rho0/pressure0/amplitude, zero background velocity, "
             "and nonzero normal and transverse magnetic fields"
@@ -2339,18 +2541,18 @@ void validate_config(RunConfig const& cfg)
 #if (AMREX_SPACEDIM == 3)
       shock_normal2 += cfg.shock_nz * cfg.shock_nz;
 #endif
-      if (shock_normal2 <= 0.0) {
+      if (shock_normal2 <= 0.0_rt) {
          amrex::Abort("sod_plane requires a nonzero active shock normal");
       }
    }
    if (cfg.ic == "acoustic_packet_x") {
-      if (cfg.bump_sigma <= 0.0) {
+      if (cfg.bump_sigma <= 0.0_rt) {
          amrex::Abort("acoustic_packet_x requires positive pyfluid.bump_sigma");
       }
-      if (cfg.acoustic_transverse_sigma < 0.0) {
+      if (cfg.acoustic_transverse_sigma < 0.0_rt) {
          amrex::Abort("acoustic_packet_x requires non-negative pyfluid.acoustic_transverse_sigma; zero selects a planar packet");
       }
-      if (cfg.v1_0 != 0.0 || cfg.v2_0 != 0.0 || cfg.v3_0 != 0.0) {
+      if (cfg.v1_0 != 0.0_rt || cfg.v2_0 != 0.0_rt || cfg.v3_0 != 0.0_rt) {
          amrex::Abort("acoustic_packet_x currently requires zero background velocity");
       }
    }
@@ -2368,7 +2570,7 @@ void validate_config(RunConfig const& cfg)
       amrex::Abort("jeans_wave_x requires pyfluid.gravity = poisson");
    }
    if (cfg.ic == "hse_polytrope_x"
-      && (cfg.gravity != "fixed" || cfg.gravity_fixed_potential != "uniform_acceleration" || cfg.gravity_a1 == 0.0)) {
+      && (cfg.gravity != "fixed" || cfg.gravity_fixed_potential != "uniform_acceleration" || cfg.gravity_a1 == 0.0_rt)) {
       amrex::Abort("hse_polytrope_x requires pyfluid.gravity=fixed uniform_acceleration with nonzero gravity_a1");
    }
    if (cfg.ic == "hse_polytrope_x" && cfg.eos == "compose") {
@@ -2388,12 +2590,12 @@ void validate_config(RunConfig const& cfg)
       if (mesh_axis(axes, 0) != MeshAxisX || mesh_axis(axes, 1) != MeshAxisY) {
          amrex::Abort(cfg.ic + " requires active axes x y or x y z");
       }
-      if (cfg.bump_sigma <= 0.0 || cfg.wave_number <= 0.0 || cfg.alfven_amplitude < 0.0) {
+      if (cfg.bump_sigma <= 0.0_rt || cfg.wave_number <= 0.0_rt || cfg.alfven_amplitude < 0.0_rt) {
          amrex::Abort(
             cfg.ic + " requires positive bump_sigma/wave_number and non-negative alfven_amplitude"
          );
       }
-      if (cfg.b1_0 == 0.0) {
+      if (cfg.b1_0 == 0.0_rt) {
          amrex::Abort(cfg.ic + " requires nonzero pyfluid.b1_0");
       }
       if (cfg.ic == "resistive_current_sheet") {
@@ -2403,7 +2605,7 @@ void validate_config(RunConfig const& cfg)
             }
          }
       } else {
-         if (cfg.kh_secondary_mode <= 0.0) {
+         if (cfg.kh_secondary_mode <= 0.0_rt) {
             amrex::Abort("reconnecting_shear_layer requires pyfluid.kh_secondary_mode > 0");
          }
          if (side_bc_name(cfg, 0, false) != "periodic" || side_bc_name(cfg, 0, true) != "periodic") {
@@ -2422,7 +2624,7 @@ void validate_config(RunConfig const& cfg)
       if (mesh_axis(axes, 0) != MeshAxisX || mesh_axis(axes, 1) != MeshAxisY) {
          amrex::Abort("orszag_tang requires active axes x y or x y z");
       }
-      if (cfg.wave_number <= 0.0 || cfg.amplitude <= 0.0 || cfg.b1_0 == 0.0) {
+      if (cfg.wave_number <= 0.0_rt || cfg.amplitude <= 0.0_rt || cfg.b1_0 == 0.0_rt) {
          amrex::Abort("orszag_tang requires positive wave_number/amplitude and nonzero b1_0");
       }
       for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
@@ -2503,35 +2705,35 @@ void validate_config(RunConfig const& cfg)
             "double_mach_reflection requires analytic xlo/ylo/yhi boundaries and outflow xhi"
          );
       }
-      if (cfg.shock_speed <= 0.0) {
+      if (cfg.shock_speed <= 0.0_rt) {
          amrex::Abort("double_mach_reflection requires positive pyfluid.shock_speed");
       }
    } else if (cfg.ic == "double_mach_reflection") {
       amrex::Abort("double_mach_reflection initial data requires its analytic boundary profile");
    }
-   if (cfg.inflow_rho <= 0.0 || cfg.inflow_pressure <= 0.0) {
+   if (cfg.inflow_rho <= 0.0_rt || cfg.inflow_pressure <= 0.0_rt) {
       amrex::Abort("pyfluid.inflow_rho and pyfluid.inflow_pressure must be positive");
    }
-   if (cfg.inflow_background_rho <= 0.0 || cfg.inflow_background_pressure <= 0.0) {
+   if (cfg.inflow_background_rho <= 0.0_rt || cfg.inflow_background_pressure <= 0.0_rt) {
       amrex::Abort("pyfluid.inflow_background_rho and pyfluid.inflow_background_pressure must be positive");
    }
    require_supported_option(cfg.inflow_profile, InflowProfileOptions, "pyfluid.inflow_profile");
-   if (cfg.inflow_radius <= 0.0) {
+   if (cfg.inflow_radius <= 0.0_rt) {
       amrex::Abort("pyfluid.inflow_radius must be positive");
    }
-   if (cfg.viscosity < 0.0) {
+   if (cfg.viscosity < 0.0_rt) {
       amrex::Abort("pyfluid.viscosity must be non-negative");
    }
-   if (cfg.resistivity < 0.0) {
+   if (cfg.resistivity < 0.0_rt) {
       amrex::Abort("pyfluid.resistivity must be non-negative");
    }
-   if (cfg.diffusion != "none" && cfg.physics == "hydro" && cfg.resistivity > 0.0) {
+   if (cfg.diffusion != "none" && cfg.physics == "hydro" && cfg.resistivity > 0.0_rt) {
       amrex::Abort("pyfluid.resistivity requires pyfluid.physics = mhd");
    }
-   if (cfg.diffusion != "none" && cfg.physics == "mhd" && cfg.resistivity > 0.0 && cfg.ct != "on") {
+   if (cfg.diffusion != "none" && cfg.physics == "mhd" && cfg.resistivity > 0.0_rt && cfg.ct != "on") {
       amrex::Abort("resistive MHD requires pyfluid.ct = on");
    }
-   if (cfg.diffusion == "implicit" && cfg.physics == "mhd" && cfg.resistivity > 0.0) {
+   if (cfg.diffusion == "implicit" && cfg.physics == "mhd" && cfg.resistivity > 0.0_rt) {
       if (mesh_coordinate_code(cfg.mesh_coordinate) != MeshCartesian) {
          amrex::Abort("implicit resistive MHD requires Cartesian coordinates because AMReX MLCurlCurl is Cartesian-only");
       }
@@ -2544,20 +2746,20 @@ void validate_config(RunConfig const& cfg)
          }
       }
    }
-   if (cfg.diffusion != "none" && cfg.viscosity == 0.0 && cfg.resistivity == 0.0) {
+   if (cfg.diffusion != "none" && cfg.viscosity == 0.0_rt && cfg.resistivity == 0.0_rt) {
       amrex::Abort("pyfluid.diffusion requires positive viscosity and/or resistivity");
    }
-   if (cfg.diffusion_cfl <= 0.0) {
+   if (cfg.diffusion_cfl <= 0.0_rt) {
       amrex::Abort("pyfluid.diffusion_cfl must be positive");
    }
    if (cfg.diffusion == "implicit") {
-      if (cfg.diffusion_tolerance <= 0.0) {
+      if (cfg.diffusion_tolerance <= 0.0_rt) {
          amrex::Abort("pyfluid.diffusion_tolerance must be positive");
       }
       if (cfg.diffusion_max_iterations < 1) {
          amrex::Abort("pyfluid.diffusion_max_iterations must be positive");
       }
-      if (cfg.diffusion_sor_omega <= 0.0 || cfg.diffusion_sor_omega >= 2.0) {
+      if (cfg.diffusion_sor_omega <= 0.0_rt || cfg.diffusion_sor_omega >= 2.0_rt) {
          amrex::Abort("pyfluid.diffusion_sor_omega must satisfy 0 < omega < 2");
       }
    }
@@ -2577,16 +2779,16 @@ void validate_config(RunConfig const& cfg)
       if (!cartesian_plane && !angular_plane) {
          amrex::Abort("pyfluid.source = rotating_compact_heating requires an x-y or r-phi plane");
       }
-      if (cfg.source_power <= 0.0) {
+      if (cfg.source_power <= 0.0_rt) {
          amrex::Abort("pyfluid.source = rotating_compact_heating requires positive pyfluid.source_power");
       }
-      if (cfg.source_radius <= 0.0) {
+      if (cfg.source_radius <= 0.0_rt) {
          amrex::Abort("pyfluid.source_radius must be positive");
       }
-      if (cfg.source_sigma <= 0.0) {
+      if (cfg.source_sigma <= 0.0_rt) {
          amrex::Abort("pyfluid.source_sigma must be positive");
       }
-      if (cfg.source_ramp_time < 0.0) {
+      if (cfg.source_ramp_time < 0.0_rt) {
          amrex::Abort("pyfluid.source_ramp_time must be non-negative");
       }
       if (cfg.source_azimuthal_mode < 1) {
@@ -2598,25 +2800,25 @@ void validate_config(RunConfig const& cfg)
    }
    require_supported_option(cfg.gravity, GravityOptions, "pyfluid.gravity");
    require_supported_option(cfg.gravity_coupling, GravityCouplingOptions, "pyfluid.gravity_coupling");
-   if (cfg.gravity_constant < 0.0) {
+   if (cfg.gravity_constant < 0.0_rt) {
       amrex::Abort("pyfluid.gravity_constant must be non-negative");
    }
    if (cfg.gravity == "fixed") {
       require_supported_option(cfg.gravity_fixed_potential, GravityFixedPotentialOptions, "pyfluid.gravity_fixed_potential");
       if (cfg.gravity_fixed_potential == "uniform_acceleration"
-         && cfg.gravity_a1 == 0.0
-         && cfg.gravity_a2 == 0.0
-         && cfg.gravity_a3 == 0.0) {
+         && cfg.gravity_a1 == 0.0_rt
+         && cfg.gravity_a2 == 0.0_rt
+         && cfg.gravity_a3 == 0.0_rt) {
          amrex::Abort("pyfluid.gravity=fixed uniform_acceleration requires a nonzero gravity_a* component");
       }
-      if (cfg.gravity_fixed_potential == "harmonic" && cfg.gravity_omega <= 0.0) {
+      if (cfg.gravity_fixed_potential == "harmonic" && cfg.gravity_omega <= 0.0_rt) {
          amrex::Abort("pyfluid.gravity=fixed harmonic requires positive pyfluid.gravity_omega");
       }
    } else if (cfg.gravity == "poisson") {
-      if (cfg.gravity_constant <= 0.0) {
+      if (cfg.gravity_constant <= 0.0_rt) {
          amrex::Abort("pyfluid.gravity = poisson requires positive pyfluid.gravity_constant");
       }
-      if (cfg.gravity_tolerance <= 0.0) {
+      if (cfg.gravity_tolerance <= 0.0_rt) {
          amrex::Abort("pyfluid.gravity_tolerance must be positive");
       }
       if (cfg.gravity_max_iterations < 1) {
@@ -2648,7 +2850,7 @@ void validate_config(RunConfig const& cfg)
 #if (AMREX_SPACEDIM < 2)
       amrex::Abort("pyfluid.solid_geometry = wedge requires a 2D or 3D executable");
 #endif
-      if (cfg.solid_wedge_angle_deg <= 0.0 || cfg.solid_wedge_angle_deg >= 45.0) {
+      if (cfg.solid_wedge_angle_deg <= 0.0_rt || cfg.solid_wedge_angle_deg >= 45.0_rt) {
          amrex::Abort("pyfluid.solid_wedge_angle_deg must satisfy 0 < angle < 45 degrees");
       }
    }
@@ -2656,13 +2858,13 @@ void validate_config(RunConfig const& cfg)
 #if (AMREX_SPACEDIM < 2)
       amrex::Abort("pyfluid.solid_geometry = circle requires a 2D or 3D executable");
 #endif
-      if (cfg.solid_radius <= 0.0) {
+      if (cfg.solid_radius <= 0.0_rt) {
          amrex::Abort("pyfluid.solid_radius must be positive");
       }
-      if (cfg.solid_radius_frequency < 0.0) {
+      if (cfg.solid_radius_frequency < 0.0_rt) {
          amrex::Abort("pyfluid.solid_radius_frequency must be non-negative");
       }
-      if (cfg.solid_radius_ramp_time < 0.0) {
+      if (cfg.solid_radius_ramp_time < 0.0_rt) {
          amrex::Abort("pyfluid.solid_radius_ramp_time must be non-negative");
       }
       if (cfg.solid_motion == "pulse" && cfg.solid_radius <= std::abs(cfg.solid_radius_amplitude)) {
@@ -2672,16 +2874,16 @@ void validate_config(RunConfig const& cfg)
    const bool solid_enabled = cfg.solid_geometry == "boxes" || cfg.solid_geometry == "wedge" || cfg.solid_geometry == "circle";
    if (cfg.solid_motion == "translate") {
       int nonzero_velocity_components = 0;
-      if (std::abs(cfg.solid_velocity_1) > 0.0) {
+      if (std::abs(cfg.solid_velocity_1) > 0.0_rt) {
          ++nonzero_velocity_components;
       }
 #if (AMREX_SPACEDIM >= 2)
-      if (std::abs(cfg.solid_velocity_2) > 0.0) {
+      if (std::abs(cfg.solid_velocity_2) > 0.0_rt) {
          ++nonzero_velocity_components;
       }
 #endif
 #if (AMREX_SPACEDIM == 3)
-      if (std::abs(cfg.solid_velocity_3) > 0.0) {
+      if (std::abs(cfg.solid_velocity_3) > 0.0_rt) {
          ++nonzero_velocity_components;
       }
 #endif
@@ -2705,14 +2907,14 @@ void validate_config(RunConfig const& cfg)
       if (cfg.solid_wall_condition != "no_slip") {
          amrex::Abort("pyfluid.solid_motion = rotate requires pyfluid.solid_wall_condition = no_slip");
       }
-      if (cfg.diffusion != "explicit" || cfg.viscosity <= 0.0) {
+      if (cfg.diffusion != "explicit" || cfg.viscosity <= 0.0_rt) {
          amrex::Abort("pyfluid.solid_motion = rotate requires explicit viscosity so the moving wall can transfer tangential momentum");
       }
    }
    if (cfg.solid_motion == "pulse" && cfg.solid_geometry != "circle") {
       amrex::Abort("pyfluid.solid_motion = pulse currently requires pyfluid.solid_geometry = circle");
    }
-   if (cfg.solid_wall_condition == "no_slip" && (cfg.diffusion != "explicit" || cfg.viscosity <= 0.0)) {
+   if (cfg.solid_wall_condition == "no_slip" && (cfg.diffusion != "explicit" || cfg.viscosity <= 0.0_rt)) {
       amrex::Abort("pyfluid.solid_wall_condition = no_slip requires pyfluid.diffusion = explicit and positive pyfluid.viscosity");
    }
    if (solid_enabled && cfg.physics != "hydro") {
@@ -2721,7 +2923,7 @@ void validate_config(RunConfig const& cfg)
    if (solid_enabled && cfg.diffusion == "implicit") {
       amrex::Abort("solid obstacles currently support pyfluid.diffusion = none or explicit; implicit wall diffusion is not mask-aware yet");
    }
-   if (solid_enabled && cfg.diffusion == "explicit" && cfg.resistivity > 0.0) {
+   if (solid_enabled && cfg.diffusion == "explicit" && cfg.resistivity > 0.0_rt) {
       amrex::Abort("solid obstacles currently support explicit viscosity only; resistive MHD internal walls need CT-aware magnetic wall treatment");
    }
    for (int box = 0; box < cfg.solid_box_count; ++box) {
@@ -2733,28 +2935,28 @@ void validate_config(RunConfig const& cfg)
       }
    }
    require_supported_option(cfg.mesh_metric_divergence, MetricRegridOptions, "mesh.metric_divergence");
-   if (cfg.tag_threshold <= 0.0) {
+   if (cfg.tag_threshold <= 0.0_rt) {
       amrex::Abort("amr.tag_threshold must be positive");
    }
-   if (cfg.min_feature_length < 0.0) {
+   if (cfg.min_feature_length < 0.0_rt) {
       amrex::Abort("amr.min_feature_length must be non-negative; 0 disables the physical-length cutoff");
    }
-   if (std::isfinite(cfg.min_feature_length_1) && cfg.min_feature_length_1 < 0.0) {
+   if (std::isfinite(cfg.min_feature_length_1) && cfg.min_feature_length_1 < 0.0_rt) {
       amrex::Abort("amr.min_feature_length_1 must be non-negative");
    }
-   if (std::isfinite(cfg.min_feature_length_2) && cfg.min_feature_length_2 < 0.0) {
+   if (std::isfinite(cfg.min_feature_length_2) && cfg.min_feature_length_2 < 0.0_rt) {
       amrex::Abort("amr.min_feature_length_2 must be non-negative");
    }
-   if (std::isfinite(cfg.min_feature_length_3) && cfg.min_feature_length_3 < 0.0) {
+   if (std::isfinite(cfg.min_feature_length_3) && cfg.min_feature_length_3 < 0.0_rt) {
       amrex::Abort("amr.min_feature_length_3 must be non-negative");
    }
-   if (cfg.min_refine_radius < 0.0) {
+   if (cfg.min_refine_radius < 0.0_rt) {
       amrex::Abort("amr.min_refine_radius must be non-negative; 0 disables the radial-origin AMR veto");
    }
-   if (cfg.solid_refine_band_cells < 0.0) {
+   if (cfg.solid_refine_band_cells < 0.0_rt) {
       amrex::Abort("amr.solid_refine_band_cells must be non-negative; 0 disables analytic solid-boundary tagging");
    }
-   if (cfg.solid_curvature_error < 0.0) {
+   if (cfg.solid_curvature_error < 0.0_rt) {
       amrex::Abort("amr.solid_curvature_error must be non-negative; 0 disables the curvature cutoff");
    }
    if (cfg.initial_refine_levels < 0) {
@@ -2784,27 +2986,27 @@ void validate_config(RunConfig const& cfg)
       }
    }
    if (
-      cfg.kh_secondary_amplitude < 0.0
-      || cfg.kh_secondary_mode < 0.0
-      || cfg.kh_z_mode < 0.0
-      || cfg.kh_envelope_sigma < 0.0
+      cfg.kh_secondary_amplitude < 0.0_rt
+      || cfg.kh_secondary_mode < 0.0_rt
+      || cfg.kh_z_mode < 0.0_rt
+      || cfg.kh_envelope_sigma < 0.0_rt
    ) {
       amrex::Abort("KH perturbation amplitudes, modes, and envelope width must be non-negative");
    }
-   if (std::abs(cfg.kh_density_amplitude) >= 0.95) {
+   if (std::abs(cfg.kh_density_amplitude) >= 0.95_rt) {
       amrex::Abort("pyfluid.kh_density_amplitude must satisfy |value| < 0.95");
    }
    require_supported_option(cfg.kh_perturbation, KHPerturbationOptions, "pyfluid.kh_perturbation");
-   if (cfg.kh_perturbation == "stream" && cfg.wave_number <= 0.0) {
+   if (cfg.kh_perturbation == "stream" && cfg.wave_number <= 0.0_rt) {
       amrex::Abort("pyfluid.kh_perturbation = stream requires pyfluid.wave_number > 0");
    }
-   if (cfg.rotor_radius <= 0.0 || cfg.rotor_transition_radius <= cfg.rotor_radius) {
+   if (cfg.rotor_radius <= 0.0_rt || cfg.rotor_transition_radius <= cfg.rotor_radius) {
       amrex::Abort("mhd_rotor requires 0 < pyfluid.rotor_radius < pyfluid.rotor_transition_radius");
    }
-   if (cfg.rotor_density <= 0.0) {
+   if (cfg.rotor_density <= 0.0_rt) {
       amrex::Abort("pyfluid.rotor_density must be positive");
    }
-   if (cfg.beam_length <= 0.0 || cfg.beam_radius <= 0.0) {
+   if (cfg.beam_length <= 0.0_rt || cfg.beam_radius <= 0.0_rt) {
       amrex::Abort("pyfluid.beam_length and pyfluid.beam_radius must be positive");
    }
    if (cfg.regrid_int < -1) {
@@ -2837,7 +3039,7 @@ void validate_config(RunConfig const& cfg)
    if (cfg.max_step < 0) {
       amrex::Abort("pyfluid.max_step must be non-negative");
    }
-   if (cfg.final_time == 0.0 || cfg.final_time < -1.0) {
+   if (cfg.final_time == 0.0_rt || cfg.final_time < -1.0_rt) {
       amrex::Abort("pyfluid.final_time must be positive or -1 to disable time targeting");
    }
    if (cfg.checkpoint_int < -1) {
@@ -2905,20 +3107,20 @@ void validate_config(RunConfig const& cfg)
        && cfg.initial_data_radial_grid != "adaptive") {
       amrex::Abort("initial_data.radial_grid must be uniform or adaptive");
    }
-   if (!(cfg.initial_data_adaptive_source_radius_factor > 1.0)
-       || cfg.initial_data_adaptive_source_radius_factor > 3.0) {
+   if (!(cfg.initial_data_adaptive_source_radius_factor > 1.0_rt)
+       || cfg.initial_data_adaptive_source_radius_factor > 3.0_rt) {
       amrex::Abort(
          "initial_data.adaptive_source_radius_factor must be in (1, 3]"
       );
    }
-   if (!(cfg.initial_data_adaptive_exterior_fraction >= 0.125
-         && cfg.initial_data_adaptive_exterior_fraction <= 0.5)) {
+   if (!(cfg.initial_data_adaptive_exterior_fraction >= 0.125_rt
+         && cfg.initial_data_adaptive_exterior_fraction <= 0.5_rt)) {
       amrex::Abort(
          "initial_data.adaptive_exterior_fraction must be in [0.125, 0.5]"
       );
    }
-   if (!(cfg.initial_data_adaptive_shell_width_ratio >= 1.0)
-       || cfg.initial_data_adaptive_shell_width_ratio > 128.0
+   if (!(cfg.initial_data_adaptive_shell_width_ratio >= 1.0_rt)
+       || cfg.initial_data_adaptive_shell_width_ratio > 128.0_rt
        || !std::isfinite(cfg.initial_data_adaptive_shell_width_ratio)) {
       amrex::Abort(
          "initial_data.adaptive_shell_width_ratio must be finite and in "
@@ -2982,7 +3184,7 @@ void validate_config(RunConfig const& cfg)
    if (!cfg.initial_data_sequence_output_dir.empty()
        && (cfg.ic != "rotating_star"
            || cfg.spacetime_initial_data != "xcts"
-           || cfg.initial_data_angular_velocity == 0.0)) {
+           || cfg.initial_data_angular_velocity == 0.0_rt)) {
       amrex::Abort(
          "initial_data.sequence_output_dir currently requires nonzero "
          "rotating_star XCTS initial data"
@@ -3025,7 +3227,23 @@ void validate_config(RunConfig const& cfg)
    if (cfg.scalar_int < -1) {
       amrex::Abort("pyfluid.scalar_int must be -1, 0, or a positive integer");
    }
-   if (cfg.diagnostic_surface_radius == 0.0) {
+   if (!std::isfinite(cfg.diagnostic_constraint_region_extent)
+       || !std::isfinite(cfg.diagnostic_constraint_exclusion_radius)
+       || !std::isfinite(cfg.diagnostic_constraint_split_radius)
+       || cfg.diagnostic_constraint_region_extent == 0.0_rt
+       || cfg.diagnostic_constraint_exclusion_radius < 0.0_rt
+       || cfg.diagnostic_constraint_split_radius < 0.0_rt) {
+      amrex::Abort("diagnostics.constraint_region_extent must be finite and positive "
+         "(or negative to disable); constraint_exclusion_radius and constraint_split_radius "
+         "must be finite and nonnegative");
+   }
+   if (cfg.diagnostic_constraint_region_extent > 0.0_rt
+       && !(cfg.diagnostic_constraint_exclusion_radius < cfg.diagnostic_constraint_split_radius
+            && cfg.diagnostic_constraint_split_radius < cfg.diagnostic_constraint_region_extent)) {
+      amrex::Abort("fixed constraint regions require 0 <= constraint_exclusion_radius "
+         "< constraint_split_radius < constraint_region_extent");
+   }
+   if (cfg.diagnostic_surface_radius == 0.0_rt) {
       amrex::Abort("diagnostics.surface_radius must be positive or negative for an automatic inscribed sphere");
    }
    if (cfg.diagnostic_surface_polar_points < 2) {
@@ -3051,7 +3269,7 @@ void validate_config(RunConfig const& cfg)
          cfg.diagnostic_matter_mode_axis1 * cfg.diagnostic_matter_mode_axis1
          + cfg.diagnostic_matter_mode_axis2 * cfg.diagnostic_matter_mode_axis2
          + cfg.diagnostic_matter_mode_axis3 * cfg.diagnostic_matter_mode_axis3;
-      if (!(axis_squared > 0.0) || !std::isfinite(axis_squared)
+      if (!(axis_squared > 0.0_rt) || !std::isfinite(axis_squared)
           || !std::isfinite(cfg.diagnostic_matter_mode_origin1)
           || !std::isfinite(cfg.diagnostic_matter_mode_origin2)
           || !std::isfinite(cfg.diagnostic_matter_mode_origin3)) {

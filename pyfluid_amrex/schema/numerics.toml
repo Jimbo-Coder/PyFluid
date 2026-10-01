@@ -1,0 +1,8 @@
+schema_version = 1
+
+# Accuracy families, not a declaration that every full solver supports them.
+# Coefficients, stencil extents and moment identities are derived by SymPy.
+# Keep this separate from physics/method catalogs so order work does not
+# invalidate unrelated equation generation.
+[spatial_accuracy]
+orders = [2, 4, 6, 8, 10]
