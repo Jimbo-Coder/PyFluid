@@ -98,7 +98,105 @@ class BuildContractTests(unittest.TestCase):
             self.assertEqual(len(errors), 2)  # Both PPM4 and its shared helper.
             self.assertTrue(all("src/amr/unrelated.cpp ->" in error for error in errors))
 
-    def test_excision_kernels_have_only_the_two_pointwise_owners(self):
+    def test_host_field_metadata_cannot_reach_numerical_owners(self):
+        with tempfile.TemporaryDirectory(prefix="pyfluid-field-metadata-") as temporary:
+            root = Path(temporary).resolve()
+            files = {
+                "include/pyfluid_amrex/fields.hpp": "",
+                "include/pyfluid_amrex/generated/field_ids.hpp": "",
+                "include/pyfluid_amrex/config.hpp":
+                    '#include "pyfluid_amrex/generated/field_ids.hpp"\n',
+                "include/pyfluid_amrex/z4c_state_access.hpp":
+                    '#include "pyfluid_amrex/generated/field_ids.hpp"\n',
+                "include/pyfluid_amrex/numerical_values.hpp":
+                    '#include "pyfluid_amrex/generated/field_ids.hpp"\n',
+                "include/pyfluid_amrex/bridge.hpp":
+                    '#include "pyfluid_amrex/fields.hpp"\n',
+                "src/flux_kernels/pwc.cpp":
+                    '#include "pyfluid_amrex/numerical_values.hpp"\n',
+                "src/relativity/rmhd_correction_flux_llf.cpp":
+                    '#include "pyfluid_amrex/z4c_state_access.hpp"\n',
+            }
+            for name, content in files.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            self.assertEqual(ownership_errors(IncludeGraph(root)), [])
+            for header, owner in (
+                ("config.hpp", "include/pyfluid_amrex/config.hpp"),
+                ("z4c_state_access.hpp", "src/relativity/rmhd_correction_flux_llf.cpp"),
+                ("numerical_values.hpp", "src/flux_kernels/pwc.cpp"),
+            ):
+                with self.subTest(header=header):
+                    path = root / "include/pyfluid_amrex" / header
+                    original = path.read_text()
+                    path.write_text('#include "pyfluid_amrex/bridge.hpp"\n')
+                    errors = ownership_errors(IncludeGraph(root))
+                    self.assertTrue(any(
+                        "numerical contract reaches host field metadata" in error
+                        and owner + " ->" in error and "bridge.hpp ->" in error
+                        for error in errors
+                    ))
+                    path.write_text(original)
+
+    def test_numerical_owners_cannot_import_host_config_through_diode(self):
+        with tempfile.TemporaryDirectory(prefix="pyfluid-device-config-") as temporary:
+            root = Path(temporary).resolve()
+            files = {
+                "include/pyfluid_amrex/config.hpp": "",
+                "include/pyfluid_amrex/relativistic_diode.hpp": "",
+                "include/pyfluid_amrex/relativistic_flux_limiter.hpp":
+                    '#include "pyfluid_amrex/relativistic_diode.hpp"\n',
+                "src/relativity/rmhd_correction_flux_llf.cpp":
+                    '#include "pyfluid_amrex/relativistic_flux_limiter.hpp"\n',
+                "src/flux_kernels/pwc.cpp":
+                    '#include "pyfluid_amrex/relativistic_diode.hpp"\n',
+                "src/relativity/rmhd_advanced_flux.cpp":
+                    '#include "pyfluid_amrex/relativistic_diode.hpp"\n',
+                "src/relativity/relativistic_flux_limiter.cpp":
+                    '#include "pyfluid_amrex/relativistic_diode.hpp"\n',
+            }
+            for name, content in files.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            self.assertEqual(ownership_errors(IncludeGraph(root)), [])
+            (root / "include/pyfluid_amrex/relativistic_diode.hpp").write_text(
+                '#include "pyfluid_amrex/config.hpp"\n'
+            )
+            errors = ownership_errors(IncludeGraph(root))
+            for owner in ("src/flux_kernels/pwc.cpp",
+                          "src/relativity/rmhd_advanced_flux.cpp",
+                          "src/relativity/relativistic_flux_limiter.cpp",
+                          "src/relativity/rmhd_correction_flux_llf.cpp"):
+                with self.subTest(owner=owner):
+                    self.assertTrue(any(
+                        "numerical value contract reaches host configuration" in error
+                        and owner + " ->" in error
+                        and "relativistic_diode.hpp ->" in error
+                        for error in errors
+                    ))
+
+    def test_passive_flux_does_not_import_fluid_implementation(self):
+        with tempfile.TemporaryDirectory(prefix="pyfluid-passive-flux-") as temporary:
+            root = Path(temporary).resolve()
+            helper = root / "src/numerics/passive_flux.hpp"
+            bridge = root / "src/numerics/bridge.hpp"
+            riemann = root / "include/pyfluid_amrex/riemann.hpp"
+            for path in (helper, bridge, riemann):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("")
+            helper.write_text('#include "numerics/bridge.hpp"\n')
+            self.assertEqual(ownership_errors(IncludeGraph(root)), [])
+            bridge.write_text('#include "pyfluid_amrex/riemann.hpp"\n')
+            errors = ownership_errors(IncludeGraph(root))
+            self.assertTrue(any(
+                "scalar-only flux reaches fluid implementation" in error
+                and "passive_flux.hpp -> src/numerics/bridge.hpp ->" in error
+                for error in errors
+            ))
+
+    def test_excision_kernels_stay_with_pointwise_owners(self):
         with tempfile.TemporaryDirectory(prefix="pyfluid-excision-owners-") as temporary:
             root = Path(temporary).resolve()
             files = {
@@ -120,6 +218,31 @@ class BuildContractTests(unittest.TestCase):
             errors = ownership_errors(IncludeGraph(root))
             self.assertEqual(len(errors), 1)
             self.assertIn("src/amr/unrelated.cpp ->", errors[0])
+
+    def test_rmhd_launch_interface_cannot_reimport_its_kernel(self):
+        with tempfile.TemporaryDirectory(prefix="pyfluid-rmhd-owners-") as temporary:
+            root = Path(temporary).resolve()
+            files = {
+                "src/relativity/rmhd_correction_flux.hpp": "",
+                "src/relativity/rmhd_correction_flux_impl.hpp": "",
+                "src/relativity/rmhd_correction_flux_llf.cpp":
+                    '#include "rmhd_correction_flux_impl.hpp"\n',
+                "src/relativity/relativistic_flux_limiter.cpp":
+                    '#include "rmhd_correction_flux.hpp"\n',
+            }
+            for name, content in files.items():
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content)
+            self.assertEqual(ownership_errors(IncludeGraph(root)), [])
+            (root / "src/relativity/rmhd_correction_flux.hpp").write_text(
+                '#include "rmhd_correction_flux_impl.hpp"\n'
+            )
+            errors = ownership_errors(IncludeGraph(root))
+            self.assertTrue(any("declaration-only interface" in error for error in errors))
+            self.assertTrue(any("relativistic_flux_limiter.cpp ->" in error
+                                and "rmhd_correction_flux_impl.hpp" in error
+                                for error in errors))
 
     def test_budget_failure_is_distinct_from_compile_failure(self):
         self.assertEqual(compile_status(0, 50, None), "pass")

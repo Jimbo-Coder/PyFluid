@@ -2,12 +2,13 @@
 
 #include <AMReX_Geometry.H>
 #include <cmath>
-#include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/relativistic_state.hpp"
 
 namespace pyfluid_amrex {
 
 using namespace amrex::literals;
+
+struct RunConfig;
 
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void apply_relativistic_diode_velocity(
@@ -106,23 +107,9 @@ struct RelativisticDiodeBoundary {
    }
 };
 
-inline RelativisticDiodeBoundary make_relativistic_diode_boundary(
+RelativisticDiodeBoundary make_relativistic_diode_boundary(
    RunConfig const& cfg, amrex::Geometry const& geometry
-)
-{
-   RelativisticDiodeBoundary result;
-   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
-      result.lower[direction] = geometry.Domain().smallEnd(direction);
-      result.upper[direction] = geometry.Domain().bigEnd(direction) + 1;
-      if (!geometry.isPeriodic(direction)) {
-         if (side_boundary_kind(cfg, direction, false) == BoundaryKind::Diode)
-            result.low_faces |= 1 << direction;
-         if (side_boundary_kind(cfg, direction, true) == BoundaryKind::Diode)
-            result.high_faces |= 1 << direction;
-      }
-   }
-   return result;
-}
+);
 
 // At a diode face the exterior supplies no independent state. Use the
 // interior cell's extrapolated state on both sides, with incoming coordinate

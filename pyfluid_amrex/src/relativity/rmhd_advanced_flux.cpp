@@ -1,8 +1,7 @@
 #include "pyfluid_amrex/rmhd_advanced_flux.hpp"
 
 #include "pyfluid_amrex/build_options.hpp"
-#include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/eos/config.hpp"
+#include "numerics/flux_kernel_parameters.hpp"
 #include "pyfluid_amrex/flux_factory.hpp"
 #include "pyfluid_amrex/spacetime_excision.hpp"
 #include "pyfluid_amrex/method_codes.hpp"
@@ -197,8 +196,9 @@ void rmhd_left_cell(
 }
 
 template <int ReconMethod, int RiemannMethod, int Direction>
-void fill_rmhd_advanced_direction(FluxLaunch const& launch)
+void fill_rmhd_advanced_direction(FluxKernelLaunch const& kernel_launch)
 {
+   const auto& launch = kernel_launch.launch;
    AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
       launch.geometry != nullptr,
       "RMHD advanced fluxes require level geometry"
@@ -211,14 +211,13 @@ void fill_rmhd_advanced_direction(FluxLaunch const& launch)
       launch.topology == FluxTopology::Standard,
       "RMHD advanced fluxes support the standard topology"
    );
-   const auto diode = make_relativistic_diode_boundary(launch.config, *launch.geometry);
-   const EOSParams eos = eos_params(launch.config);
+   const auto diode = kernel_launch.parameters.diode;
+   const EOSParams eos = kernel_launch.parameters.eos;
    const EOSThermodynamicState atmosphere = *launch.atmosphere;
    amrex::Long* const hll_fallback_count =
       launch.rmhd_riemann_hll_fallback_count;
    amrex::MultiFab& flux = *launch.fluxes[Direction];
-   const auto excision = excision_grid_view(spacetime_excision_region(launch.config),
-      *launch.geometry, launch.primitive.ixType());
+   const auto excision = kernel_launch.parameters.excision;
 
    if (launch.cell_spacetime != nullptr) {
 #ifdef AMREX_USE_OMP
@@ -267,9 +266,7 @@ void fill_rmhd_advanced_direction(FluxLaunch const& launch)
 
    const auto lower = launch.geometry->ProbLoArray();
    const auto spacing = launch.geometry->CellSizeArray();
-   const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(
-      launch.config
-   );
+   const FixedSpacetimeParameters spacetime = kernel_launch.parameters.spacetime;
    const amrex::Real time = launch.time;
 #ifdef AMREX_USE_OMP
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
@@ -323,30 +320,31 @@ void fill_rmhd_advanced_direction(FluxLaunch const& launch)
 }
 
 template <int ReconMethod, int RiemannMethod>
-void fill_rmhd_advanced_layout(FluxLaunch const& launch)
+void fill_rmhd_advanced_layout(FluxKernelLaunch const& kernel_launch)
 {
+   const auto& launch = kernel_launch.launch;
    if (launch.direction < 0) {
-      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 0>(launch);
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 0>(kernel_launch);
 #if (AMREX_SPACEDIM >= 2)
-      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 1>(launch);
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 1>(kernel_launch);
 #endif
 #if (AMREX_SPACEDIM == 3)
-      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 2>(launch);
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 2>(kernel_launch);
 #endif
       return;
    }
    switch (launch.direction) {
    case 0:
-      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 0>(launch);
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 0>(kernel_launch);
       return;
 #if (AMREX_SPACEDIM >= 2)
    case 1:
-      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 1>(launch);
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 1>(kernel_launch);
       return;
 #endif
 #if (AMREX_SPACEDIM == 3)
    case 2:
-      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 2>(launch);
+      fill_rmhd_advanced_direction<ReconMethod, RiemannMethod, 2>(kernel_launch);
       return;
 #endif
    default:
@@ -355,60 +353,61 @@ void fill_rmhd_advanced_layout(FluxLaunch const& launch)
 }
 
 template <int RiemannMethod>
-void dispatch_rmhd_advanced_reconstruction(FluxLaunch const& launch)
+void dispatch_rmhd_advanced_reconstruction(FluxKernelLaunch const& kernel_launch)
 {
+   const auto& launch = kernel_launch.launch;
    switch (launch.reconstruction_method) {
    case ReconPWC:
 #if PYFLUID_AMREX_ENABLE_RECON_PWC
-      fill_rmhd_advanced_layout<ReconPWC, RiemannMethod>(launch);
+      fill_rmhd_advanced_layout<ReconPWC, RiemannMethod>(kernel_launch);
       return;
 #endif
       break;
    case ReconPWL:
 #if PYFLUID_AMREX_ENABLE_RECON_PWL
-      fill_rmhd_advanced_layout<ReconPWL, RiemannMethod>(launch);
+      fill_rmhd_advanced_layout<ReconPWL, RiemannMethod>(kernel_launch);
       return;
 #endif
       break;
    case ReconWENOZ:
 #if PYFLUID_AMREX_ENABLE_RECON_WENOZ
-      fill_rmhd_advanced_layout<ReconWENOZ, RiemannMethod>(launch);
+      fill_rmhd_advanced_layout<ReconWENOZ, RiemannMethod>(kernel_launch);
       return;
 #endif
       break;
    case ReconMP5:
 #if PYFLUID_AMREX_ENABLE_RECON_MP5
-      fill_rmhd_advanced_layout<ReconMP5, RiemannMethod>(launch);
+      fill_rmhd_advanced_layout<ReconMP5, RiemannMethod>(kernel_launch);
       return;
 #endif
       break;
    case ReconTENO5:
 #if PYFLUID_AMREX_ENABLE_RECON_TENO5
-      fill_rmhd_advanced_layout<ReconTENO5, RiemannMethod>(launch);
+      fill_rmhd_advanced_layout<ReconTENO5, RiemannMethod>(kernel_launch);
       return;
 #endif
       break;
    case ReconParabolic:
 #if PYFLUID_AMREX_ENABLE_RECON_PARABOLIC
-      fill_rmhd_advanced_layout<ReconParabolic, RiemannMethod>(launch);
+      fill_rmhd_advanced_layout<ReconParabolic, RiemannMethod>(kernel_launch);
       return;
 #endif
       break;
    case ReconPPM4:
 #if PYFLUID_AMREX_ENABLE_RECON_PPM4
-      fill_rmhd_advanced_layout<ReconPPM4, RiemannMethod>(launch);
+      fill_rmhd_advanced_layout<ReconPPM4, RiemannMethod>(kernel_launch);
       return;
 #endif
       break;
    case ReconPPMX:
 #if PYFLUID_AMREX_ENABLE_RECON_PPMX
-      fill_rmhd_advanced_layout<ReconPPMX, RiemannMethod>(launch);
+      fill_rmhd_advanced_layout<ReconPPMX, RiemannMethod>(kernel_launch);
       return;
 #endif
       break;
    case ReconPPM3:
 #if PYFLUID_AMREX_ENABLE_RECON_PPM3
-      fill_rmhd_advanced_layout<ReconPPM3, RiemannMethod>(launch);
+      fill_rmhd_advanced_layout<ReconPPM3, RiemannMethod>(kernel_launch);
       return;
 #endif
       break;
@@ -421,23 +420,24 @@ void dispatch_rmhd_advanced_reconstruction(FluxLaunch const& launch)
 
 } // namespace
 
-void fill_rmhd_advanced_fluxes(FluxLaunch const& launch)
+void fill_rmhd_advanced_fluxes(FluxKernelLaunch const& kernel_launch)
 {
+   const auto& launch = kernel_launch.launch;
    AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
-      physical_system(launch.config) == PhysicalSystem::RMHD,
+      kernel_launch.parameters.system == PhysicalSystem::RMHD,
       "advanced RMHD flux entry requires the RMHD physical system"
    );
    switch (launch.riemann_method) {
    case RiemannHLLC:
 #if PYFLUID_AMREX_ENABLE_RIEMANN_HLLC
-      dispatch_rmhd_advanced_reconstruction<RiemannHLLC>(launch);
+      dispatch_rmhd_advanced_reconstruction<RiemannHLLC>(kernel_launch);
       return;
 #else
       amrex::Abort("RMHD HLLC was disabled at compile time");
 #endif
    case RiemannHLLD:
 #if PYFLUID_AMREX_ENABLE_RIEMANN_HLLD
-      dispatch_rmhd_advanced_reconstruction<RiemannHLLD>(launch);
+      dispatch_rmhd_advanced_reconstruction<RiemannHLLD>(kernel_launch);
       return;
 #else
       amrex::Abort("RMHD HLLD was disabled at compile time");

@@ -8,8 +8,6 @@
 #include <array>
 #include <string>
 
-#include "pyfluid_amrex/config.hpp"
-#include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/flux_divergence.hpp"
 #include "pyfluid_amrex/flux_update.hpp"
 #include "pyfluid_amrex/mask_regions.hpp"
@@ -19,7 +17,9 @@
 #include "relativity/rhd_system.hpp"
 #include "relativity/rmhd_system.hpp"
 #include "numerics/mapped_patch_interfaces.hpp"
-#include "pyfluid_amrex/solid_geometry.hpp"
+#include "numerics/passive_flux.hpp"
+#include "pyfluid_amrex/solid_geometry_point.hpp"
+#include "numerics/flux_kernel_parameters.hpp"
 #include "pyfluid_amrex/spacetime_excision.hpp"
 #include "pyfluid_amrex/solid_wall_power.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -52,15 +52,6 @@ void store_mhd_flux(amrex::Array4<amrex::Real> const& flux, int i, int j, int k,
    flux(i, j, k, B3) = value.b3;
 }
 
-template <int ReconMethod, int Direction>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-bool solid_reconstruction_stencil_is_fluid(
-   amrex::Array4<int const> const& solid,
-   int i,
-   int j,
-   int k
-) noexcept;
-
 template <int NComp>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void store_zero_flux(amrex::Array4<amrex::Real> const& flux, int i, int j, int k) noexcept
@@ -70,88 +61,7 @@ void store_zero_flux(amrex::Array4<amrex::Real> const& flux, int i, int j, int k
    }
 }
 
-template <int NComp, int ReconMethod, int Direction>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void store_passive_fluxes(
-   amrex::Array4<amrex::Real> const& flux,
-   amrex::Array4<amrex::Real const> const& primitive,
-   int i,
-   int j,
-   int k,
-   int li,
-   int lj,
-   int lk,
-   int ri,
-   int rj,
-   int rk,
-   amrex::Real mass_flux
-) noexcept
-{
-   if constexpr (passive_component_count<NComp>() > 0) {
-      constexpr int Component = base_component_count<NComp>();
-      const ScalarFaceValues dye = primitive_component_face_values<ReconMethod, Direction, Component>(
-         primitive, li, lj, lk, ri, rj, rk
-      );
-      flux(i, j, k, Component) = mass_flux * (mass_flux >= 0.0_rt ? dye.left : dye.right);
-   }
-}
-
-template <int NComp>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void store_wall_passive_fluxes(
-   amrex::Array4<amrex::Real> const& flux,
-   amrex::Array4<amrex::Real const> const& primitive,
-   int i,
-   int j,
-   int k,
-   int fi,
-   int fj,
-   int fk,
-   amrex::Real mass_flux
-) noexcept
-{
-   if constexpr (passive_component_count<NComp>() > 0) {
-      constexpr int Component = base_component_count<NComp>();
-      flux(i, j, k, Component) = mass_flux * primitive(fi, fj, fk, Component);
-   }
-}
-
-template <int NComp, int ReconMethod, int Direction>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-void store_passive_fluxes_limited_by_solid_stencil(
-   amrex::Array4<amrex::Real> const& flux,
-   amrex::Array4<amrex::Real const> const& primitive,
-   amrex::Array4<int const> const& solid,
-   int i,
-   int j,
-   int k,
-   int li,
-   int lj,
-   int lk,
-   int ri,
-   int rj,
-   int rk,
-   amrex::Real mass_flux
-) noexcept
-{
-   if constexpr (passive_component_count<NComp>() > 0) {
-      if constexpr (ReconMethod == ReconPWC) {
-         store_passive_fluxes<NComp, ReconPWC, Direction>(flux, primitive, i, j, k, li, lj, lk, ri, rj, rk, mass_flux);
-      } else {
-         if (solid_reconstruction_stencil_is_fluid<ReconMethod, Direction>(solid, li, lj, lk)) {
-            store_passive_fluxes<NComp, ReconMethod, Direction>(
-               flux, primitive, i, j, k, li, lj, lk, ri, rj, rk, mass_flux
-            );
-         } else {
-            store_passive_fluxes<NComp, ReconPWC, Direction>(
-               flux, primitive, i, j, k, li, lj, lk, ri, rj, rk, mass_flux
-            );
-         }
-      }
-   }
-}
-
-template <int NComp, int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
+template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
 inline void fill_hydro_flux_direction(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab const& primitive,
@@ -160,7 +70,8 @@ inline void fill_hydro_flux_direction(
    MeshAxes mesh_axes = mesh_default_axes_layout(MeshCartesian),
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> problo = {},
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = {},
-   bool skip_zero_area_metric_faces = false
+   bool skip_zero_area_metric_faces = false,
+   int passive_component = -1
 )
 {
    amrex::MultiFab& flux = *fluxes[Direction];
@@ -176,7 +87,7 @@ inline void fill_hydro_flux_direction(
          if (skip_zero_area_metric_faces) {
             const amrex::Real area = mesh_face_area_scale(Direction, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
             if (area == 0.0_rt) {
-               store_zero_flux<NComp>(f, i, j, k);
+               store_zero_flux<NVAR_HYDRO>(f, i, j, k);
                return;
             }
          }
@@ -213,19 +124,25 @@ inline void fill_hydro_flux_direction(
             );
          }
          store_hydro_flux(f, i, j, k, value);
-         store_passive_fluxes<NComp, ReconMethod, Direction>(f, p, i, j, k, li, lj, lk, ri, rj, rk, value.rho);
       });
+      if (passive_component >= 0) {
+         fill_passive_flux_tile<ReconMethod, Direction>(
+            bx, f, p, passive_component, mesh_coordinate, mesh_axes, problo, dx,
+            skip_zero_area_metric_faces
+         );
+      }
    }
    }
 }
 
-template <int NComp, int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
+template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
 inline void fill_hydro_flux_direction_mapped(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab const& primitive,
    EOSParams const& eos,
    PatchGridSystem const& grid_system,
-   PatchLayout const& layout
+   PatchLayout const& layout,
+   int passive_component = -1
 )
 {
    amrex::MultiFab& flux = *fluxes[Direction];
@@ -273,8 +190,10 @@ inline void fill_hydro_flux_direction_mapped(
          value.mom3 *= metric.area;
          value.energy *= metric.area;
          store_hydro_flux(f, i, j, k, value);
-         store_passive_fluxes<NComp, ReconMethod, Direction>(f, p, i, j, k, li, lj, lk, ri, rj, rk, value.rho);
       });
+      if (passive_component >= 0) {
+         fill_passive_flux_tile<ReconMethod, Direction>(bx, f, p, passive_component);
+      }
    }
    }
 }
@@ -345,7 +264,7 @@ HydroState moving_slip_wall_flux(
    return hydro_flux_from_primitive_riemann<RiemannMethod, EOSMethod>(left, right, eos, Direction);
 }
 
-template <int NComp, int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
+template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
 inline void fill_hydro_flux_direction_with_solid_walls(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab const& primitive,
@@ -353,7 +272,8 @@ inline void fill_hydro_flux_direction_with_solid_walls(
    amrex::Geometry const& geom,
    EOSParams const& eos,
    SolidGeometryEvaluator const& solid_params,
-   amrex::Vector<int> const* solid_flux_kind = nullptr
+   amrex::Vector<int> const* solid_flux_kind = nullptr,
+   int passive_component = -1
 )
 {
    amrex::MultiFab& flux = *fluxes[Direction];
@@ -366,51 +286,56 @@ inline void fill_hydro_flux_direction_with_solid_walls(
 #pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
 #endif
    {
-	   for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-	      const amrex::Box& bx = mfi.tilebox();
-	      const auto p = primitive.const_array(mfi);
-	      const auto f = flux.array(mfi);
-	      const auto solid = solid_mask.const_array(mfi);
-	      const amrex::Box cell_region = solid_flux_stencil_region(bx, Direction, ReconMethod, domain);
-		      const int kind = cached_or_region_mask_kind(solid_flux_kind, mfi, solid_mask, cell_region);
-		      if (kind == MaskKindNonzero) {
-		         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-		            for (int q = 0; q < NComp; ++q) {
-		               f(i, j, k, q) = 0.0_rt;
-		            }
-		         });
-		         continue;
-		      }
-	      if (kind == MaskKindZero) {
-	         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-	            int li = i;
-	            int lj = j;
-	            int lk = k;
-	            int ri = i;
-	            int rj = j;
-	            int rk = k;
-	            if constexpr (Direction == 0) {
-	               li = i - 1;
-	            }
+   for (amrex::MFIter mfi(flux, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+      const amrex::Box& bx = mfi.tilebox();
+      const auto p = primitive.const_array(mfi);
+      const auto f = flux.array(mfi);
+      const auto solid = solid_mask.const_array(mfi);
+      const amrex::Box cell_region = solid_flux_stencil_region(bx, Direction, ReconMethod, domain);
+      const int kind = cached_or_region_mask_kind(solid_flux_kind, mfi, solid_mask, cell_region);
+      if (kind == MaskKindNonzero) {
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            for (int q = 0; q < NVAR_HYDRO; ++q) {
+               f(i, j, k, q) = 0.0_rt;
+            }
+         });
+         if (passive_component >= 0) {
+            fill_zero_passive_flux_tile(bx, f, passive_component);
+         }
+         continue;
+      }
+      if (kind == MaskKindZero) {
+         amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+            int li = i;
+            int lj = j;
+            int lk = k;
+            int ri = i;
+            int rj = j;
+            int rk = k;
+            if constexpr (Direction == 0) {
+               li = i - 1;
+            }
 #if (AMREX_SPACEDIM >= 2)
-	            else if constexpr (Direction == 1) {
-	               lj = j - 1;
-	            }
+            else if constexpr (Direction == 1) {
+               lj = j - 1;
+            }
 #endif
 #if (AMREX_SPACEDIM == 3)
-	            else {
-	               lk = k - 1;
-	            }
+            else {
+               lk = k - 1;
+            }
 #endif
-	            const HydroState value =
-	               hydro_riemann_flux<ReconMethod, RiemannMethod, Direction, EOSMethod>(p, li, lj, lk, ri, rj, rk, eos);
-	            store_hydro_flux(f, i, j, k, value);
-	            store_passive_fluxes<NComp, ReconMethod, Direction>(f, p, i, j, k, li, lj, lk, ri, rj, rk, value.rho);
-	         });
-	         continue;
-	      }
-	      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-	         int li = i;
+            const HydroState value =
+               hydro_riemann_flux<ReconMethod, RiemannMethod, Direction, EOSMethod>(p, li, lj, lk, ri, rj, rk, eos);
+            store_hydro_flux(f, i, j, k, value);
+         });
+         if (passive_component >= 0) {
+            fill_passive_flux_tile<ReconMethod, Direction>(bx, f, p, passive_component);
+         }
+         continue;
+      }
+      amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+         int li = i;
          int lj = j;
          int lk = k;
          int ri = i;
@@ -448,13 +373,10 @@ inline void fill_hydro_flux_direction_with_solid_walls(
                ReconMethod, RiemannMethod, Direction, EOSMethod
             >(p, solid, li, lj, lk, ri, rj, rk, eos);
             store_hydro_flux(f, i, j, k, value);
-            store_passive_fluxes_limited_by_solid_stencil<NComp, ReconMethod, Direction>(
-               f, p, solid, i, j, k, li, lj, lk, ri, rj, rk, value.rho
-            );
             return;
          }
 
-         for (int q = 0; q < NComp; ++q) {
+         for (int q = 0; q < NVAR_HYDRO; ++q) {
             f(i, j, k, q) = 0.0_rt;
          }
          if (left_solid == right_solid) {
@@ -501,79 +423,14 @@ inline void fill_hydro_flux_direction_with_solid_walls(
             eos
          );
          store_hydro_flux(f, i, j, k, value);
-         store_wall_passive_fluxes<NComp>(f, p, i, j, k, fi, fj, fk, value.rho);
-	      });
-	   }
-	   }
-}
-
-template <int ReconMethod>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-int solid_reconstruction_offset_lo() noexcept
-{
-   if constexpr (is_five_point_reconstruction(ReconMethod)) {
-      return -2;
-   } else if constexpr (ReconMethod == ReconPWL) {
-      return -1;
-   } else {
-      return 0;
-   }
-}
-
-template <int ReconMethod>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-int solid_reconstruction_offset_hi() noexcept
-{
-   if constexpr (is_five_point_reconstruction(ReconMethod)) {
-      return 3;
-   } else if constexpr (ReconMethod == ReconPWL) {
-      return 2;
-   } else {
-      return 1;
-   }
-}
-
-template <int Direction>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-bool solid_mask_at_offset(
-   amrex::Array4<int const> const& solid,
-   int i,
-   int j,
-   int k,
-   int offset
-) noexcept
-{
-   if constexpr (Direction == 0) {
-      return solid(i + offset, j, k, 0) != 0;
-   }
-#if (AMREX_SPACEDIM >= 2)
-   else if constexpr (Direction == 1) {
-      return solid(i, j + offset, k, 0) != 0;
-   }
-#endif
-   return solid(i, j, k + offset, 0) != 0;
-}
-
-template <int ReconMethod, int Direction>
-AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
-bool solid_reconstruction_stencil_is_fluid(
-   amrex::Array4<int const> const& solid,
-   int i,
-   int j,
-   int k
-) noexcept
-{
-   if constexpr (ReconMethod == ReconPWC) {
-      return true;
-   }
-   for (int offset = solid_reconstruction_offset_lo<ReconMethod>();
-        offset <= solid_reconstruction_offset_hi<ReconMethod>();
-        ++offset) {
-      if (solid_mask_at_offset<Direction>(solid, i, j, k, offset)) {
-         return false;
+      });
+      if (passive_component >= 0) {
+         fill_solid_passive_flux_tile<ReconMethod, Direction>(
+            bx, f, p, solid, domain, passive_component
+         );
       }
    }
-   return true;
+   }
 }
 
 template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
@@ -599,7 +456,7 @@ HydroState hydro_flux_limited_by_solid_stencil(
    return hydro_riemann_flux<ReconPWC, RiemannMethod, Direction, EOSMethod>(p, li, lj, lk, ri, rj, rk, eos);
 }
 
-template <int NComp, int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
+template <int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
 inline void fill_mhd_flux_direction(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab const& primitive,
@@ -608,7 +465,8 @@ inline void fill_mhd_flux_direction(
    MeshAxes mesh_axes = mesh_default_axes_layout(MeshCartesian),
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> problo = {},
    amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> dx = {},
-   bool skip_zero_area_metric_faces = false
+   bool skip_zero_area_metric_faces = false,
+   int passive_component = -1
 )
 {
    amrex::MultiFab& flux = *fluxes[Direction];
@@ -624,7 +482,7 @@ inline void fill_mhd_flux_direction(
          if (skip_zero_area_metric_faces) {
             const amrex::Real area = mesh_face_area_scale(Direction, mesh_coordinate, mesh_axes, problo, dx, i, j, k);
             if (area == 0.0_rt) {
-               store_zero_flux<NComp>(f, i, j, k);
+               store_zero_flux<NVAR_MHD>(f, i, j, k);
                return;
             }
          }
@@ -650,8 +508,13 @@ inline void fill_mhd_flux_direction(
 #endif
          value = mhd_riemann_flux<ReconMethod, RiemannMethod, Direction, EOSMethod>(p, li, lj, lk, ri, rj, rk, eos);
          store_mhd_flux(f, i, j, k, value);
-         store_passive_fluxes<NComp, ReconMethod, Direction>(f, p, i, j, k, li, lj, lk, ri, rj, rk, value.rho);
       });
+      if (passive_component >= 0) {
+         fill_passive_flux_tile<ReconMethod, Direction>(
+            bx, f, p, passive_component, mesh_coordinate, mesh_axes, problo, dx,
+            skip_zero_area_metric_faces
+         );
+      }
    }
    }
 }
@@ -682,6 +545,8 @@ inline void fill_flux_direction_for_components(
    PatchLayout const* layout = nullptr
 )
 {
+   constexpr int PassiveComponent = passive_component_count<NComp>() > 0
+      ? base_component_count<NComp>() : -1;
    if constexpr (has_mhd_components<NComp>()) {
       if constexpr (MappedPatches) {
          amrex::Abort("mapped patch fluxes are currently implemented for hydro only");
@@ -689,7 +554,7 @@ inline void fill_flux_direction_for_components(
       if constexpr (SolidWalls) {
          amrex::Abort("solid wall flux skipping is only implemented for hydro");
       }
-      fill_mhd_flux_direction<NComp, ReconMethod, RiemannMethod, Direction, EOSMethod>(
+      fill_mhd_flux_direction<ReconMethod, RiemannMethod, Direction, EOSMethod>(
          fluxes,
          primitive,
          eos,
@@ -697,7 +562,8 @@ inline void fill_flux_direction_for_components(
          mesh_axes,
          problo,
          dx,
-         skip_zero_area_metric_faces
+         skip_zero_area_metric_faces,
+         PassiveComponent
       );
    } else {
       if constexpr (MappedPatches) {
@@ -707,28 +573,30 @@ inline void fill_flux_direction_for_components(
          if (grid_system == nullptr || layout == nullptr) {
             amrex::Abort("mapped patch fluxes require a patch grid system and patch layout");
          }
-         fill_hydro_flux_direction_mapped<NComp, ReconMethod, RiemannMethod, Direction, EOSMethod>(
+         fill_hydro_flux_direction_mapped<ReconMethod, RiemannMethod, Direction, EOSMethod>(
             fluxes,
             primitive,
             eos,
             *grid_system,
-            *layout
+            *layout,
+            PassiveComponent
          );
       } else if constexpr (SolidWalls) {
          if (solid_mask == nullptr || geom == nullptr) {
             amrex::Abort("solid wall flux skipping requires solid mask and geometry");
          }
-	         fill_hydro_flux_direction_with_solid_walls<NComp, ReconMethod, RiemannMethod, Direction, EOSMethod>(
+	         fill_hydro_flux_direction_with_solid_walls<ReconMethod, RiemannMethod, Direction, EOSMethod>(
 	            fluxes,
 	            primitive,
 	            *solid_mask,
 	            *geom,
 	            eos,
 	            solid_params,
-	            solid_flux_kind
+	            solid_flux_kind,
+	            PassiveComponent
 	         );
       } else {
-         fill_hydro_flux_direction<NComp, ReconMethod, RiemannMethod, Direction, EOSMethod>(
+         fill_hydro_flux_direction<ReconMethod, RiemannMethod, Direction, EOSMethod>(
             fluxes,
             primitive,
             eos,
@@ -736,7 +604,8 @@ inline void fill_flux_direction_for_components(
             mesh_axes,
             problo,
             dx,
-            skip_zero_area_metric_faces
+            skip_zero_area_metric_faces,
+            PassiveComponent
          );
       }
    }
@@ -753,7 +622,7 @@ template <
 inline void fill_fluxes_for_components(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab const& primitive,
-   RunConfig const& cfg,
+   FluxKernelParameters const& parameters,
    amrex::iMultiFab const* solid_mask = nullptr,
    amrex::Geometry const* geom = nullptr,
    amrex::Array<amrex::Vector<int>, AMREX_SPACEDIM> const* solid_flux_kind = nullptr,
@@ -763,7 +632,7 @@ inline void fill_fluxes_for_components(
    EOSThermodynamicState const* atmosphere = nullptr
 )
 {
-   if (physical_system(cfg) == PhysicalSystem::RMHD) {
+   if (parameters.system == PhysicalSystem::RMHD) {
 #if PYFLUID_AMREX_ENABLE_MHD
       if constexpr (NComp != NVAR_MHD
                     || is_characteristic_reconstruction(ReconMethod)
@@ -784,20 +653,20 @@ inline void fill_fluxes_for_components(
          AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
             atmosphere != nullptr, "RMHD fluxes require the recovery atmosphere state"
          );
-         const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
+         const FixedSpacetimeParameters spacetime = parameters.spacetime;
          fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 0>(
-            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            fluxes, primitive, parameters.eos, *geom, spacetime,
             *atmosphere, time
          );
 #if (AMREX_SPACEDIM >= 2)
          fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 1>(
-            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            fluxes, primitive, parameters.eos, *geom, spacetime,
             *atmosphere, time
          );
 #endif
 #if (AMREX_SPACEDIM == 3)
          fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 2>(
-            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            fluxes, primitive, parameters.eos, *geom, spacetime,
             *atmosphere, time
          );
 #endif
@@ -807,7 +676,7 @@ inline void fill_fluxes_for_components(
 #endif
       return;
    }
-   if (physical_system(cfg) == PhysicalSystem::RHD) {
+   if (parameters.system == PhysicalSystem::RHD) {
       if constexpr (NComp != NVAR_HYDRO
                     || is_characteristic_reconstruction(ReconMethod)
                     || SolidWalls || MappedPatches) {
@@ -825,22 +694,22 @@ inline void fill_fluxes_for_components(
          AMREX_ALWAYS_ASSERT_WITH_MESSAGE(
             atmosphere != nullptr, "RHD fluxes require the recovery atmosphere state"
          );
-         const FixedSpacetimeParameters spacetime = fixed_spacetime_parameters(cfg);
-         const int coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
-         const MeshAxes axes = mesh_axes_layout(cfg);
+         const FixedSpacetimeParameters spacetime = parameters.spacetime;
+         const int coordinate = parameters.mesh_coordinate;
+         const MeshAxes axes = parameters.mesh_axes;
          fill_rhd_flux_direction<ReconMethod, RiemannMethod, 0, EOSMethod>(
-            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            fluxes, primitive, parameters.eos, *geom, spacetime,
             *atmosphere, time, coordinate, axes
          );
 #if (AMREX_SPACEDIM >= 2)
          fill_rhd_flux_direction<ReconMethod, RiemannMethod, 1, EOSMethod>(
-            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            fluxes, primitive, parameters.eos, *geom, spacetime,
             *atmosphere, time, coordinate, axes
          );
 #endif
 #if (AMREX_SPACEDIM == 3)
          fill_rhd_flux_direction<ReconMethod, RiemannMethod, 2, EOSMethod>(
-            fluxes, primitive, eos_params(cfg), *geom, spacetime,
+            fluxes, primitive, parameters.eos, *geom, spacetime,
             *atmosphere, time, coordinate, axes
          );
 #endif
@@ -850,10 +719,10 @@ inline void fill_fluxes_for_components(
    if constexpr (EOSMethod == EOSCompose) {
       amrex::Abort("native cold CompOSE fluxes require RHD");
    } else {
-   const EOSParams eos = eos_params(cfg);
-   const SolidGeometryEvaluator solid_params = solid_geometry_evaluator(cfg, time);
-   const int mesh_coordinate = geom == nullptr ? MeshCartesian : mesh_coordinate_code(cfg.mesh_coordinate);
-   const MeshAxes mesh_axes = mesh_axes_layout(mesh_coordinate, cfg.mesh_axes);
+   const EOSParams eos = parameters.eos;
+   const SolidGeometryEvaluator solid_params = parameters.solid;
+   const int mesh_coordinate = geom == nullptr ? MeshCartesian : parameters.mesh_coordinate;
+   const MeshAxes mesh_axes = parameters.mesh_axes;
    const auto problo = geom == nullptr
       ? amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>{}
       : geom->ProbLoArray();
@@ -941,7 +810,7 @@ template <int NComp, int ReconMethod, int EOSMethod, bool SolidWalls = false, bo
 inline void fill_fluxes_for_riemann(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab const& primitive,
-   RunConfig const& cfg,
+   FluxKernelParameters const& parameters,
    int riemann_method,
    amrex::iMultiFab const* solid_mask = nullptr,
    amrex::Geometry const* geom = nullptr,
@@ -956,7 +825,7 @@ inline void fill_fluxes_for_riemann(
    case RiemannHLLD:
 #if PYFLUID_AMREX_ENABLE_RIEMANN_HLLD
 	      fill_fluxes_for_components<NComp, ReconMethod, RiemannHLLD, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
+	         fluxes, primitive, parameters, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
 	      );
       return;
 #else
@@ -966,7 +835,7 @@ inline void fill_fluxes_for_riemann(
    case RiemannHLLC:
 #if PYFLUID_AMREX_ENABLE_RIEMANN_HLLC
 	      fill_fluxes_for_components<NComp, ReconMethod, RiemannHLLC, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
+	         fluxes, primitive, parameters, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
 	      );
       return;
 #else
@@ -976,7 +845,7 @@ inline void fill_fluxes_for_riemann(
    case RiemannHLLE:
 #if PYFLUID_AMREX_ENABLE_RIEMANN_HLLE
 	      fill_fluxes_for_components<NComp, ReconMethod, RiemannHLLE, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
+	         fluxes, primitive, parameters, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
 	      );
       return;
 #else
@@ -986,7 +855,7 @@ inline void fill_fluxes_for_riemann(
    case RiemannHLL:
 #if PYFLUID_AMREX_ENABLE_RIEMANN_HLL
 	      fill_fluxes_for_components<NComp, ReconMethod, RiemannHLL, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
+	         fluxes, primitive, parameters, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
 	      );
       return;
 #else
@@ -996,7 +865,7 @@ inline void fill_fluxes_for_riemann(
    case RiemannLLF:
 #if PYFLUID_AMREX_ENABLE_RIEMANN_LLF
 	      fill_fluxes_for_components<NComp, ReconMethod, RiemannLLF, EOSMethod, SolidWalls, MappedPatches>(
-	         fluxes, primitive, cfg, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
+	         fluxes, primitive, parameters, solid_mask, geom, solid_flux_kind, time, grid_system, layout, atmosphere
 	      );
       return;
 #else
@@ -1012,7 +881,7 @@ template <int NComp, int ReconMethod, int Direction, int EOSMethod, bool SolidWa
 inline void fill_flux_direction_for_riemann(
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab const& primitive,
-   RunConfig const& cfg,
+   FluxKernelParameters const& parameters,
    int riemann_method,
    amrex::iMultiFab const* solid_mask = nullptr,
    amrex::Geometry const* geom = nullptr,
@@ -1024,8 +893,8 @@ inline void fill_flux_direction_for_riemann(
    EOSThermodynamicState const* atmosphere = nullptr
 )
 {
-   const EOSParams eos = eos_params(cfg);
-   if (physical_system(cfg) == PhysicalSystem::RMHD) {
+   const EOSParams eos = parameters.eos;
+   if (parameters.system == PhysicalSystem::RMHD) {
 #if PYFLUID_AMREX_ENABLE_MHD
       if constexpr (NComp != NVAR_MHD
                     || is_characteristic_reconstruction(ReconMethod)
@@ -1045,14 +914,14 @@ inline void fill_flux_direction_for_riemann(
             fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
                fluxes, primitive, eos, riemann_method, *stored_spacetime,
                *atmosphere,
-               excision_grid_view(spacetime_excision_region(cfg), *geom, primitive.ixType()),
-               make_relativistic_diode_boundary(cfg, *geom)
+               parameters.excision,
+               parameters.diode
             );
          } else {
             fill_rmhd_flux_direction_runtime<ReconMethod, Direction>(
                fluxes, primitive, eos, riemann_method, *geom,
-               fixed_spacetime_parameters(cfg), *atmosphere,
-               time, make_relativistic_diode_boundary(cfg, *geom)
+               parameters.spacetime, *atmosphere,
+               time, parameters.diode
             );
          }
       }
@@ -1061,7 +930,7 @@ inline void fill_flux_direction_for_riemann(
 #endif
       return;
    }
-   if (physical_system(cfg) == PhysicalSystem::RHD) {
+   if (parameters.system == PhysicalSystem::RHD) {
       if constexpr (NComp != NVAR_HYDRO
                     || is_characteristic_reconstruction(ReconMethod)
                     || SolidWalls || MappedPatches) {
@@ -1078,17 +947,17 @@ inline void fill_flux_direction_for_riemann(
             fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
                fluxes, primitive, eos, riemann_method, *stored_spacetime,
                *atmosphere,
-               excision_grid_view(spacetime_excision_region(cfg), *geom, primitive.ixType()),
-               make_relativistic_diode_boundary(cfg, *geom)
+               parameters.excision,
+               parameters.diode
             );
          } else {
-            const int coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
-            const MeshAxes axes = mesh_axes_layout(cfg);
+            const int coordinate = parameters.mesh_coordinate;
+            const MeshAxes axes = parameters.mesh_axes;
             fill_rhd_flux_direction_runtime<ReconMethod, Direction, EOSMethod>(
                fluxes, primitive, eos, riemann_method, *geom,
-               fixed_spacetime_parameters(cfg), *atmosphere,
+               parameters.spacetime, *atmosphere,
                time, coordinate, axes,
-               make_relativistic_diode_boundary(cfg, *geom)
+               parameters.diode
             );
          }
       }
@@ -1097,9 +966,9 @@ inline void fill_flux_direction_for_riemann(
    if constexpr (EOSMethod == EOSCompose) {
       amrex::Abort("native cold CompOSE fluxes require RHD");
    } else {
-   const SolidGeometryEvaluator solid_params = solid_geometry_evaluator(cfg, time);
-   const int mesh_coordinate = geom == nullptr ? MeshCartesian : mesh_coordinate_code(cfg.mesh_coordinate);
-   const MeshAxes mesh_axes = mesh_axes_layout(mesh_coordinate, cfg.mesh_axes);
+   const SolidGeometryEvaluator solid_params = parameters.solid;
+   const int mesh_coordinate = geom == nullptr ? MeshCartesian : parameters.mesh_coordinate;
+   const MeshAxes mesh_axes = parameters.mesh_axes;
    const auto problo = geom == nullptr
       ? amrex::GpuArray<amrex::Real, AMREX_SPACEDIM>{}
       : geom->ProbLoArray();

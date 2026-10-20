@@ -161,9 +161,10 @@ decisions.
   Add an abstraction when it improves ownership or extension, not solely to
   respell selection; retain direct, optimizable pointwise calls unless a
   measured alternative justifies their replacement.
-- Keep fused operations fused at their numerical boundary. Reconstruction and
-  the Riemann solve share reconstructed face states, so their production
-  ownership is one flux-kernel registry rather than two materialized stages.
+- Reconstruction and Riemann solving currently share one fused flux registry.
+  Fusion is an execution choice, not a permanent architecture requirement.
+  A staged alternative must measure total compiler work, scratch traffic and
+  runtime together, while preserving reconstruction/limiter/metric ordering.
   Formula headers remain method-local so changing MP5, TENO-5, or WENO-Z does
   not invalidate unrelated methods.
 - Kernel inputs must match the operation's actual dependencies. Reuse narrow
@@ -177,6 +178,34 @@ decisions.
   headers and template dispatch live in private implementation owners. Do not
   restore umbrella solver headers to broadly included class interfaces merely
   to make a transitive include available.
+
+## Compilation And Development
+
+- Backend and language boundaries may change when measured development cost,
+  readability and extension cost justify it. Preserve one mathematical source
+  and the numerical contracts; do not preserve an interface solely for backward
+  compatibility. Compare equivalent methods, precision and validation coverage.
+- Compilation ownership follows the numerical operation. Keep host dispatch
+  declaration-only and compile substantial launches independently. Changing
+  candidate assembly, recovery, output or configuration must not instantiate
+  unrelated Riemann/reconstruction kernels. Extend the transitive ownership
+  checks in `tools/build_dependencies.py` when introducing a new boundary.
+- Share launch variants that evaluate the same expensive mathematics when a
+  measured uniform launch mode preserves arithmetic, runtime and resources.
+  Keep materially different algorithms in independent kernels. Source-file
+  splitting alone can shorten the longest compile while increasing total work;
+  measure both before claiming a compilation improvement.
+- Explicit focused profiles select maintained numerical methods using the
+  existing build switches. Their source lists must prune disabled owners and
+  preserve required internal fallbacks. Report actual compiled capabilities;
+  reject unavailable requested choices before evolution and before the runner
+  removes previous output. Never silently substitute or start an implicit build.
+- Keep a complete executable for integration. Use the selected dimensional
+  target for routine iteration and all-dimensional production at milestones.
+  Record isolated uncached owners, affected rebuilds, complete cold builds,
+  cache hits and no-ops as distinct measurements. Existing compile budgets are
+  development goals; missed goals remain visible and do not justify weaker
+  arithmetic, reduced validation or an unbounded exploratory compiler run.
 
 ## Evolution Sectors And Grid Fields
 
@@ -316,6 +345,10 @@ decisions.
 
 ## Changes
 
+- Development speed and clean ownership take priority over preserving source,
+  configuration or API compatibility. Breaking changes are allowed; remove
+  obsolete paths and update their maintained callers and validation together.
+  Checkpoints must still reject incompatible semantics explicitly.
 - Prefer deleting an obsolete path over preserving compatibility aliases.
 - Consolidation includes removing the superseded implementation and redundant
   scratch/storage, not just adding a shared wrapper. Preserve the numerical

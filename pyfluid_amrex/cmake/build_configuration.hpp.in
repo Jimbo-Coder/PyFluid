@@ -1,0 +1,22 @@
+#pragma once
+
+#include <array>
+#include <string_view>
+
+namespace pyfluid_amrex {
+
+struct CompiledBuildFeature {
+   std::string_view name;
+   bool enabled;
+};
+
+inline constexpr std::array<CompiledBuildFeature, @PYFLUID_AMREX_BUILD_FEATURE_COUNT@>
+CompiledBuildFeatures{{
+@PYFLUID_AMREX_BUILD_FEATURE_ROWS@}};
+
+inline constexpr std::string_view BuildDirectory = R"pyfluid(@CMAKE_CURRENT_BINARY_DIR@)pyfluid";
+inline constexpr std::string_view BuildBackend = R"pyfluid(@AMReX_GPU_BACKEND@)pyfluid";
+inline constexpr std::string_view BuildPrecision = R"pyfluid(@PYFLUID_AMREX_PRECISION@)pyfluid";
+inline constexpr std::string_view BuildCompiler = R"pyfluid(@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@)pyfluid";
+
+} // namespace pyfluid_amrex

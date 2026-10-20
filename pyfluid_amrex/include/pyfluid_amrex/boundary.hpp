@@ -1,5 +1,7 @@
 #pragma once
 
+#include "pyfluid_amrex/fields.hpp"
+
 #include <AMReX_BC_TYPES.H>
 #include <AMReX_BCRec.H>
 #include <AMReX_BoxList.H>

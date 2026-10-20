@@ -104,11 +104,12 @@ def _optimize(expressions: tuple[sp.Expr, ...], policy: CsePolicy) -> tuple[list
       changed = False
       kept: list[tuple[sp.Symbol, sp.Expr]] = []
       for index, (symbol, expr) in enumerate(replacements):
-         later_exprs = [rhs for _, rhs in replacements[index + 1 :]] + reduced
-         use_count = _symbol_count(later_exprs, symbol)
          op_count = int(sp.count_ops(expr))
          hard_drop = op_count <= policy.hard_drop_ops
-         soft_drop = use_count <= 1 and op_count <= policy.soft_drop_ops
+         soft_drop = False
+         if not hard_drop and op_count <= policy.soft_drop_ops:
+            later_exprs = [rhs for _, rhs in replacements[index + 1 :]] + reduced
+            soft_drop = _symbol_count(later_exprs, symbol) <= 1
          if hard_drop or soft_drop:
             replacement = {symbol: expr}
             replacements = kept + [

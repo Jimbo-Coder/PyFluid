@@ -21,6 +21,14 @@ uv run python pyfluid_amrex/tools/pyfluid_machine.py build --dim 2
 uv run python pyfluid_amrex/tools/pyfluid_machine.py run pyfluid_amrex/inputs/hydro_sine_2d.in --ranks 3
 ```
 
+`local_dev_rmhd` selects the maintained `focused-rmhd-pwl` CMake preset in a
+separate directory and builds only 1D unless `build --dim` selects another
+dimension. It retains PWL, LLF/HLL/HLLD, SSPRK3, cell-centered MHD and internal
+correction fallbacks. CT, diffusion and subcycling require the complete profile
+or an explicitly configured additional method set. The complete `local` build
+remains available for integration. The runner checks exact compiled choices
+before overwriting output and saves executable identity in `build.json`.
+
 `machines/local_openmp.toml` explicitly selects the separately managed
 MPI+OpenMP AMReX companion. On this 4P+6E Mac, two ranks by five threads is the
 measured cross-dimensional evolution compromise: it is within about one
@@ -60,13 +68,15 @@ the operating system will not request the account password.
 
 For another machine, copy the profile outside the repository or add a maintained
 profile under `pyfluid_amrex/machines/`. Set `mpi_launcher` with a `{ranks}`
-placeholder, provide CMake arguments under `[build]`, and set the scheduler
+placeholder, provide CMake arguments or `configure_preset` under `[build]`,
+and set the scheduler
 command/header under `[submit]`. `submit --dry-run` writes and prints the exact
 batch script without launching it. `PYFLUID_MACHINE` selects a profile for all
 validation tools without changing their command lines.
 
 The profile does not choose solver physics, AMR, output cadence, or numerical
-methods. Those remain in the checked-in input so a local run and a submitted run
+methods for a run. A deliberately focused build compiles a subset and rejects
+unavailable choices. Run choices remain in the checked-in input so a local run and a submitted run
 have the same canonical `run.in`. Run `report_run.py` after a batch job when
 Python postprocessing is available.
 

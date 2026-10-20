@@ -4,7 +4,7 @@
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/fccz4_point.hpp"
 #include "pyfluid_amrex/kernels_generated/spacetime_geometry.hpp"
-#include "pyfluid_amrex/spacetime_fields.hpp"
+#include "pyfluid_amrex/generated/field_ids.hpp"
 #include "pyfluid_amrex/z4c_state.hpp"
 
 namespace pyfluid_amrex {

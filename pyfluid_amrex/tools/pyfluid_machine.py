@@ -25,7 +25,12 @@ def configure(profile) -> int:
    source_dir = profile.expand(str(require_build_value(profile, "source_dir")))
    build_dir = profile.expand(str(require_build_value(profile, "build_dir")))
    cmake_args = expanded_strings(profile, profile.build.get("cmake_args", ()))
-   return subprocess.run(["cmake", "-S", source_dir, "-B", build_dir, *cmake_args], cwd=ROOT).returncode
+   preset = profile.build.get("configure_preset")
+   preset_args = ["--preset", str(preset)] if preset else []
+   return subprocess.run(
+      ["cmake", "-S", source_dir, "-B", build_dir, *preset_args, *cmake_args],
+      cwd=ROOT,
+   ).returncode
 
 
 def build(profile, dimensions: list[int]) -> int:
@@ -106,7 +111,7 @@ def main() -> int:
    subparsers.add_parser("show")
    subparsers.add_parser("configure")
    build_parser = subparsers.add_parser("build")
-   build_parser.add_argument("--dim", choices=("1", "2", "3", "all"), default="all")
+   build_parser.add_argument("--dim", choices=("1", "2", "3", "all"))
    run_parser = subparsers.add_parser("run")
    run_parser.add_argument("input", type=Path)
    run_parser.add_argument("--ranks", type=int)
@@ -127,7 +132,12 @@ def main() -> int:
    if args.action == "configure":
       return configure(profile)
    if args.action == "build":
-      dimensions = [1, 2, 3] if args.dim == "all" else [int(args.dim)]
+      if args.dim is None:
+         dimensions = [int(dim) for dim in profile.build.get("dimensions", [1, 2, 3])]
+      else:
+         dimensions = [1, 2, 3] if args.dim == "all" else [int(args.dim)]
+      if not dimensions or any(dim not in (1, 2, 3) for dim in dimensions):
+         raise ValueError(f"{profile.path}: build.dimensions must select 1, 2, or 3")
       return build(profile, dimensions)
 
    input_path = args.input if args.input.is_absolute() else ROOT / args.input

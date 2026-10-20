@@ -353,6 +353,12 @@ normalized recovery algebra into powers of density during code generation.
   across correction Riemann solvers. Dispatch only the face-flux launches by
   solver; select PWL/PWC face states before one common Riemann call. Keep the
   shared-face closure, correction counters and conservative update order intact.
+  `src/relativity/rmhd_correction_flux.hpp` is the declaration-only host launch
+  contract; private per-method owners include the shared pointwise launch
+  implementation. Keep each device kernel and its callees together for non-RDC
+  CUDA. A hydro-only configuration owns no RMHD correction launches; LLF/HLL
+  remain internal fallback dependencies of an enabled MHD correction path even
+  when those primary methods are disabled.
 - Identical implementation sources used by the executable and its utilities or
   tests share CMake object owners within one dimension/backend. Entry points
   stay private; a small check must not pull in unrelated implementation files.
@@ -386,8 +392,10 @@ normalized recovery algebra into powers of density during code generation.
   can share large bodies across passive and wall callers. Ordinary hydro PWC
   retains direct forced inlining because the added call cost measurably slows
   its cheap loop. Both call the same reconstruction/positivity and Riemann
-  implementations; keep reconstruction and solving fused, with no persistent
-  face-state buffer or new runtime policy. This is a measured exception, not
+  implementations. The current path fuses reconstruction and solving without
+  persistent face states. Replacing that boundary needs matched compiler,
+  memory and runtime evidence; fusion is not a permanent backend constraint.
+  This is a measured exception, not
   permission to force-inline every pointwise routine or to outline every
   cheap one. Validate runtime as well as compile time when moving the boundary.
 - Shared diagnostic interfaces include generated IDs and value storage, not
@@ -401,7 +409,7 @@ normalized recovery algebra into powers of density during code generation.
   `vector_ops.hpp` is an aggregate validation include, never a production
   dependency. EoS includes only the magnetic-scalar leaf; CFL selection uses
   `diffusion_timestep.hpp`, not the viscous RHS. Vector-only source edits use
-  their own CMake generation stamp. Keep write-if-changed semantics for every
+  their own CMake generation owner. Keep write-if-changed semantics for every
   leaf so an unchanged group does not invalidate its consumers.
 - Reference-metric Valencia MultiFab orchestration belongs to the compiled,
   non-template `src/relativity/reference_metric_valencia.cpp` owner. Its public
@@ -460,14 +468,31 @@ normalized recovery algebra into powers of density during code generation.
   check.
 - Catalog emission and symbolic physics-kernel emission are separate CMake
   dependency owners. Catalog emitters and catalog-only schemas must not
-  invalidate the expensive physics-kernel stamp; symbolic kernels retain only
+  invalidate the expensive physics-kernel provenance; symbolic kernels retain only
   the catalog inputs they actually consume, such as the field schema used to
   define conserved components.
   Diagnostic, Z4c and relativistic-fluid symbolic kernels also have separate
-  stamps. Their actual shared equation dependencies still propagate changes
+  freshness records. Their actual shared equation dependencies still propagate changes
   (for example, diagnostics consume Z4c equations); unchanged generated text
   keeps its timestamp. Do not rejoin these into an unconditional all-family
   generation step during ordinary builds.
+- CMake declares each generation family's inputs and complete outputs once.
+  All build profiles share its ignored source-owned provenance under
+  `pyfluid_amrex/.cache/codegen/`; dimension, precision and backend do not own
+  separate symbolic outputs. Cheap content checks run before importing SymPy.
+  Changed inputs, missing outputs, changed output contents, or changed CSE
+  options require genuine generation. Provenance also records the running
+  Python implementation/version and installed SymPy/mpmath versions, read
+  through package metadata before symbolic imports. Whole-project dependency
+  files do not invalidate symbolic output for unrelated package changes;
+  CMake invokes `uv run --locked` to reject stale resolution without rewriting
+  the lock. A missing or older provenance record requires genuine generation,
+  never a bootstrap from timestamps. A per-family OS lock has a 300-second wait limit and
+  rechecks freshness after acquisition. Writers stage the complete family,
+  verify its declared outputs and unchanged inputs, atomically replace changed
+  files, and publish provenance last. Unchanged text retains its timestamp.
+  Preserve independent family dependencies and this publication contract when
+  extending the generator; do not add a profile-local freshness registry.
 - Orthogonal coordinate geometry is declared once in
   `codegen/pyfluid_codegen/coordinates.py` as coordinates and scale factors.
   The symbolic tensor/finite-volume owners derive metric measures, differential

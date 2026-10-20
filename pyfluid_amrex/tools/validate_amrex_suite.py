@@ -58,7 +58,8 @@ STEPS = [
    GateStep(
       name="build_infrastructure",
       kind="feature",
-      command=("uv", "run", "python", "pyfluid_amrex/tests/test_build_infrastructure.py"),
+      command=("uv", "run", "python", "-m", "unittest", "discover",
+               "-s", "pyfluid_amrex/tests", "-p", "test_build*.py"),
    ),
    GateStep(
       name="coordinate_operator_contracts",

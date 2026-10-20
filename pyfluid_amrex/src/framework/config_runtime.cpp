@@ -6,11 +6,44 @@
 #include <sstream>
 
 #include "framework/config_options.hpp"
+#include "pyfluid_amrex/fields.hpp"
+#include "pyfluid_amrex/relativistic_diode.hpp"
+#include "pyfluid_amrex/spacetime_excision.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {
 
 using namespace amrex::literals;
+
+SphericalExcisionRegion spacetime_excision_region(RunConfig const& config)
+{
+   SphericalExcisionRegion region;
+   if (config.spacetime_black_hole_matter == "excision"
+       && config.spacetime_evolution != "fixed") {
+      region.center = {{config.spacetime_origin1, config.spacetime_origin2,
+         config.spacetime_origin3}};
+      region.radius = config.spacetime_black_hole_fill_radius;
+   }
+   return region;
+}
+
+RelativisticDiodeBoundary make_relativistic_diode_boundary(
+   RunConfig const& cfg, amrex::Geometry const& geometry
+)
+{
+   RelativisticDiodeBoundary result;
+   for (int direction = 0; direction < AMREX_SPACEDIM; ++direction) {
+      result.lower[direction] = geometry.Domain().smallEnd(direction);
+      result.upper[direction] = geometry.Domain().bigEnd(direction) + 1;
+      if (!geometry.isPeriodic(direction)) {
+         if (side_boundary_kind(cfg, direction, false) == BoundaryKind::Diode)
+            result.low_faces |= 1 << direction;
+         if (side_boundary_kind(cfg, direction, true) == BoundaryKind::Diode)
+            result.high_faces |= 1 << direction;
+      }
+   }
+   return result;
+}
 
 void require_implicit_diffusion_converged(
    DiffusionStats const& stats,

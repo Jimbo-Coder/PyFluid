@@ -113,14 +113,39 @@ you are developing; `pyfluid_amrex_production` explicitly builds all three.
 Checkpoint-comparison tools are separate explicit targets; their implementation
 objects are reused from the matching dimension's solver build. Validation
 scripts build those tools when needed.
-Do not use feature-stripped binaries for ordinary development or validation.
+For a deliberate focused iteration, preserve that complete build and select
+the separate maintained RMHD profile:
+
+    uv run python pyfluid_amrex/tools/pyfluid_machine.py --machine local_dev_rmhd configure
+    uv run python pyfluid_amrex/tools/pyfluid_machine.py --machine local_dev_rmhd build
+
+Run these machine commands from the repository root. The profile builds 1D by
+default; `build --dim 3` explicitly selects 3D. It compiles primary PWL,
+LLF/HLL/HLLD, SSPRK3, cell-centered MHD, no diffusion and no subcycling.
+The correction method's internal PWC/PWL and LLF/HLL dependencies remain.
+Other primary reconstruction sources, HLLC correction and CT bundles are omitted.
+Focused runs validate their enabled methods; use the complete configuration
+for integration milestones and gates requiring the broader method catalog.
+
+Each executable reports its own configuration without initializing MPI:
+
+    build/pyfluid_amrex-dev-rmhd/pyfluid_amrex_1d --build-capabilities
+
+`run_case.py` checks the selected executable's compiled choices before removing
+any prior output. A mismatch reports the missing CMake switch and explicit
+machine configure/build commands. It never substitutes a method or starts a
+build. Successful runs retain the executable's capabilities and SHA-256 in
+`build.json` alongside the solver-authored `run.in`. A direct executable run
+also rejects unavailable choices before constructing the solver.
+
 Presets select the stable active AMReX link, while CMake's native
 `CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS` resolves imported include/library paths to
 the real versioned install. Changed paths invalidate dependent objects even
 when the replacement files have older timestamps. The tracked dependency pin
 is also a CMake configure dependency. No clean-first or catalog regeneration
 is required just to change AMReX. After an update, configure the appropriate
-preset and build its selected target; runners do this through the machine profile.
+preset and build its selected target through the machine profile. Runners only
+execute the explicitly selected existing build.
 
 Development latency targets on this host are for one selected executable and
 backend with AMReX already installed: under five minutes for a clean PyFluid

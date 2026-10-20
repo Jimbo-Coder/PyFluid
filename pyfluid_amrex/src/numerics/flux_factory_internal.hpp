@@ -2,15 +2,16 @@
 
 #include "pyfluid_amrex/flux_factory.hpp"
 
-#include "pyfluid_amrex/config.hpp"
+#include "numerics/flux_kernel_parameters.hpp"
 #include "numerics/rhs.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex::flux_factory_detail {
 
 template <int NumComponents, int ReconstructionMethod, int EosMethod, int Direction>
-void fill_direction(FluxLaunch const& launch)
+void fill_direction(FluxKernelLaunch const& kernel_launch)
 {
+   const auto& launch = kernel_launch.launch;
    switch (launch.topology) {
    case FluxTopology::Standard:
       fill_flux_direction_for_riemann<
@@ -18,7 +19,7 @@ void fill_direction(FluxLaunch const& launch)
       >(
          launch.fluxes,
          launch.primitive,
-         launch.config,
+         kernel_launch.parameters,
          launch.riemann_method,
          nullptr,
          launch.geometry,
@@ -39,7 +40,7 @@ void fill_direction(FluxLaunch const& launch)
          >(
             launch.fluxes,
             launch.primitive,
-            launch.config,
+            kernel_launch.parameters,
             launch.riemann_method,
             launch.solid_mask,
             launch.geometry,
@@ -55,14 +56,15 @@ void fill_direction(FluxLaunch const& launch)
 }
 
 template <int NumComponents, int ReconstructionMethod, int EosMethod>
-void fill_all_directions(FluxLaunch const& launch)
+void fill_all_directions(FluxKernelLaunch const& kernel_launch)
 {
+   const auto& launch = kernel_launch.launch;
    switch (launch.topology) {
    case FluxTopology::Standard:
       fill_fluxes_for_riemann<NumComponents, ReconstructionMethod, EosMethod>(
          launch.fluxes,
          launch.primitive,
-         launch.config,
+         kernel_launch.parameters,
          launch.riemann_method,
          nullptr,
          launch.geometry,
@@ -82,7 +84,7 @@ void fill_all_directions(FluxLaunch const& launch)
          >(
             launch.fluxes,
             launch.primitive,
-            launch.config,
+            kernel_launch.parameters,
             launch.riemann_method,
             launch.solid_mask,
             launch.geometry,
@@ -103,7 +105,7 @@ void fill_all_directions(FluxLaunch const& launch)
          >(
             launch.fluxes,
             launch.primitive,
-            launch.config,
+            kernel_launch.parameters,
             launch.riemann_method,
             nullptr,
             nullptr,
@@ -118,24 +120,25 @@ void fill_all_directions(FluxLaunch const& launch)
 }
 
 template <int NumComponents, int ReconstructionMethod, int EosMethod>
-void fill_layout(FluxLaunch const& launch)
+void fill_layout(FluxKernelLaunch const& kernel_launch)
 {
+   const auto& launch = kernel_launch.launch;
    if (launch.direction < 0) {
-      fill_all_directions<NumComponents, ReconstructionMethod, EosMethod>(launch);
+      fill_all_directions<NumComponents, ReconstructionMethod, EosMethod>(kernel_launch);
       return;
    }
    switch (launch.direction) {
    case 0:
-      fill_direction<NumComponents, ReconstructionMethod, EosMethod, 0>(launch);
+      fill_direction<NumComponents, ReconstructionMethod, EosMethod, 0>(kernel_launch);
       return;
 #if (AMREX_SPACEDIM >= 2)
    case 1:
-      fill_direction<NumComponents, ReconstructionMethod, EosMethod, 1>(launch);
+      fill_direction<NumComponents, ReconstructionMethod, EosMethod, 1>(kernel_launch);
       return;
 #endif
 #if (AMREX_SPACEDIM == 3)
    case 2:
-      fill_direction<NumComponents, ReconstructionMethod, EosMethod, 2>(launch);
+      fill_direction<NumComponents, ReconstructionMethod, EosMethod, 2>(kernel_launch);
       return;
 #endif
    default:
@@ -144,29 +147,30 @@ void fill_layout(FluxLaunch const& launch)
 }
 
 template <int NumComponents, int ReconstructionMethod>
-void fill_runtime_eos_layout(FluxLaunch const& launch)
+void fill_runtime_eos_layout(FluxKernelLaunch const& kernel_launch)
 {
-   fill_layout<NumComponents, ReconstructionMethod, EOSRuntime>(launch);
+   fill_layout<NumComponents, ReconstructionMethod, EOSRuntime>(kernel_launch);
 }
 
 template <int ReconstructionMethod>
-void dispatch_layout(FluxLaunch const& launch)
+void dispatch_layout(FluxKernelLaunch const& kernel_launch)
 {
+   const auto& launch = kernel_launch.launch;
    switch (launch.num_components) {
    case NVAR_HYDRO:
-      fill_runtime_eos_layout<NVAR_HYDRO, ReconstructionMethod>(launch);
+      fill_runtime_eos_layout<NVAR_HYDRO, ReconstructionMethod>(kernel_launch);
       return;
 #if PYFLUID_AMREX_ENABLE_HYDRO
    case NVAR_HYDRO + 1:
-      fill_runtime_eos_layout<NVAR_HYDRO + 1, ReconstructionMethod>(launch);
+      fill_runtime_eos_layout<NVAR_HYDRO + 1, ReconstructionMethod>(kernel_launch);
       return;
 #endif
 #if PYFLUID_AMREX_ENABLE_MHD
    case NVAR_MHD:
-      fill_runtime_eos_layout<NVAR_MHD, ReconstructionMethod>(launch);
+      fill_runtime_eos_layout<NVAR_MHD, ReconstructionMethod>(kernel_launch);
       return;
    case NVAR_MHD + 1:
-      fill_runtime_eos_layout<NVAR_MHD + 1, ReconstructionMethod>(launch);
+      fill_runtime_eos_layout<NVAR_MHD + 1, ReconstructionMethod>(kernel_launch);
       return;
 #endif
    default:

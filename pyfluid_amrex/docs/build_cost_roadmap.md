@@ -1,6 +1,8 @@
 # Complete feature support with practical build cost
 
-Status: Cycles461--463 established the plan; Cycle467 tested isolated wall-kernel
+Status: Cycles474--478 implement narrower ownership, exact capabilities,
+focused builds, shared generation and separate optional tracer launches.
+Cycles461--463 established the plan; Cycle467 tested isolated wall-kernel
 variants on Mac and CUDA. Cycle468 adopts the ordered wall call and runtime
 source/CFL ownership described below. Cycle469 extends sharing to subcycling
 and limiter orchestration. Compiler flags and supported methods remain unchanged.
@@ -21,13 +23,34 @@ The internal flux dispatch shares runtime EOS identity and specializes the
 necessary component layouts/directions/topologies. Do not introduce an EOS
 variant for every model name: this would reverse existing sharing.
 
-Current code conventions already require additive method ownership rather than
-a Cartesian template product of independent runtime parameters. They also keep
-reconstruction and the Riemann operation fused at the numerical boundary.
+Current code conventions require additive method ownership rather than
+a Cartesian template product of independent runtime parameters. Production
+reconstruction and Riemann solving remain fused; that boundary may change after
+a matched compiler, memory and runtime comparison.
 Libraries alone do not reduce template instantiations or device optimization;
 a monolithic kernel renamed as a library is still an expensive kernel.
 
-## Proposed workflow
+## Architecture decisions and enforcement
+
+Keep one mathematical source and ordinary runtime configuration. Select
+operations on the host with the existing immutable operation plans. Specialize
+storage/topology and measured hot-path differences; do not multiply independent
+ordinary parameters through every numerical kernel. Share identical mathematics
+before partitioning the remaining expensive owners. Separate genuinely different
+Riemann algorithms so cheap kernels retain their own resource requirements.
+
+The transitive include checks in `tools/build_dependencies.py` enforce narrow
+configuration/factory interfaces, reconstruction ownership, and the RMHD
+correction launch boundary. CMake owns the configured source set. Generated
+binary capabilities derive from its existing feature list; runtime checking
+uses the existing option declarations. These are enforcement points, not a
+second physics registry or a new dispatch framework.
+
+Treat longest-owner latency, total compiler work and measured parallel target
+wall time separately. A split may improve the first while worsening the second.
+Retain the existing 300 s exploratory deadline and actual production flags.
+The measured development budgets remain explicit in `benchmark_compile.py`;
+they are goals with recorded failures, not permission to hide expensive owners.
 
 1. Keep a full build with every maintained feature for baseline/integration
    validation. Preserve an existing complete executable while developing a
@@ -40,8 +63,8 @@ a monolithic kernel renamed as a library is still an expensive kernel.
    runtime. Compiling only one method is useful only when explicitly selected;
    changing a normal input should not unexpectedly launch a long compiler job.
 3. Expose the exact compiled capabilities in a generated build manifest and
-   startup report. The runner should identify a compatible existing executable
-   or report the missing capability and the explicit build command. Reject
+   startup report. The runner uses the explicitly selected existing executable
+   or reports the missing capability and the explicit build command. Reject
    unavailable input choices before evolution, never substitute a different
    method. Reuse the existing option declarations/build switches instead of
    creating a second physics registry. Record build identity alongside run.in.
@@ -67,8 +90,8 @@ Choose static/object modules before proposing dynamically loaded GPU plugins.
 Dynamic modules introduce device linkage, registration, ABI and deployment
 requirements, particularly with the validated non-RDC CUDA contract. Host
 polymorphism at an operation boundary can be acceptable; per-cell device virtual
-calls are not the proposed solution. Preserve fused fluxes rather than staging
-reconstructed states solely to simplify compilation.
+calls are not the proposed solution. A staged flux experiment is allowed;
+measure its scratch traffic and complete runtime alongside compiler savings.
 
 ## Measurements before implementation
 
@@ -218,6 +241,47 @@ All 187 hydro-bundle CUDA device resource records are unchanged. See
 `runs/current/infrastructure_audit/cycle469/` and the continuity cycle for
 raw targeted timings, CUDA evidence and remaining acceptance boundaries.
 
+## Cycle474 shared symbolic generation
+
+Generated sources are independent of dimension and backend, but the former
+build-local stamps made each new configuration repeat symbolic generation.
+CMake now retains one dependency/output declaration per family and checks
+shared source-owned content provenance before importing SymPy. A bounded
+family lock serializes concurrent profiles; complete staged outputs publish
+atomically per file before the provenance record. Missing/modified outputs and
+changed generator inputs invalidate that family. Unchanged generated text keeps
+its timestamp, preserving ordinary compiler-cache and dependency reuse.
+
+The first genuine provenance pass takes **85.637 s** and is recorded separately.
+Afterward, three generation-only no-op runs take **0.3238/0.3227/0.3249 s** for
+all ten families. Reconfiguring the existing focused profile takes **0.7391 s**;
+its generation target then reuses all ten families in **0.3309 s**, with zero
+symbolic families regenerated. All 52 preexisting generated artifacts retain
+identical contents and timestamps. These timings measure the generation stage,
+not a complete executable build; deleting the ignored provenance requires a
+new genuine generation pass.
+
+The final v2 record fingerprints the actual Python interpreter and installed
+SymPy/mpmath versions instead of hashing the whole project dependency lock.
+CMake uses `uv run --locked`; unrelated lock updates do not force symbolic
+work, and generation cannot silently rewrite the lock. Establishing genuine
+v2 provenance takes **79.724 s**, separately from the initial v1 measurement.
+All 52 artifacts again retain identical bytes and timestamps, and the lock
+retains its hash. Subsequent generation-only checks take
+**0.4199/0.4012/0.4159 s**; focused reconfiguration takes **0.7663 s**, followed
+by all-family reuse in **0.3740 s**. The diagnostic family spans **77.804 s**
+in the concurrent generation log. The small temporary-pruning guard preserves
+generated bytes; these measurements do not establish its isolated speedup.
+
+Dedicated tests use two concurrent temporary CMake profiles and the real cheap
+EOS generator to establish single generation, reuse without importing SymPy,
+dependency-content invalidation with preserved mtimes, output repair, bounded
+locking and failed-generation publication. The final eleven freshness tests
+also cover actual environment changes, locked resolution and pruning-guard
+decision/output identity; they pass in **4.247 s**. The earlier eighteen
+build-infrastructure tests pass. Commands, logs and file identities
+are under `runs/current/infrastructure_audit/cycle474/shared_codegen/`.
+
 ## Comparative source review
 
 Cycle463 source review is recorded in `review_backlog.md`, with exact paths,
@@ -234,8 +298,8 @@ library ownership, not proven cheap complete CUDA compilation.
 Compatible implementation-object sharing already exists in
 `cmake/PyFluidSharedObjects.cmake`. Extend measured reuse where missing rather
 than creating another generic layer. First isolate actual expensive numerical
-variants and dependency boundaries. Preserve fused production fluxes; a runtime
-choice at a uniform coarse boundary is a candidate to benchmark. Fixed-choice
+variants and dependency boundaries. Fused, staged and uniform coarse-boundary
+dispatch are candidates to compare. Fixed-choice
 focused builds remain useful but must retain separate full-feature coverage.
 No matched external compile timing has been collected; historical local
 AthenaK build metadata is CPU-only and refers to obsolete source paths.
@@ -255,3 +319,32 @@ The target is one shared solver and complete maintained feature catalog,
 with a convenient full executable and reusable focused configurations. One-time
 complete compilation still has a cost; the goal is to avoid paying it repeatedly
 and to reduce the measured cost of the affected source owners themselves.
+
+## Next structural comparison
+
+The remaining reconstruction-by-Riemann product is a larger opportunity than
+renaming owners or swapping launch APIs. An isolated staged experiment can use
+existing post-limiter primitive face pairs: one reconstruction owner, then one
+method-specialized Riemann owner. Neither interface may be templated on both
+choices. This remains unimplemented and unbenchmarked; current production is
+fused. C++/AMReX is the current implementation, not a permanent commitment.
+Compare another backend with equivalent point physics and AMR obligations before
+claiming it solves the measured compiler cost.
+
+The exact intermediate is ten hydro or sixteen MHD Reals per face. Preserve
+both normal magnetic values: only HLLD currently averages them, and sharing one
+normal field would alter other methods or post-limiter characteristic states.
+FP64 scratch costs 80/128 bytes per face plus 160/256 bytes of store/load traffic.
+One direction of a 64-cubed box needs about 20.3/32.5 MiB; all directions of a
+128-cubed box need about 484/774 MiB. Begin with bounded per-box/direction scratch
+and stream-safe lifetime rather than permanent hierarchy-wide face storage.
+
+A discriminating first probe is ordinary Newtonian hydro/MHD with PWC/MP5 and
+cheap LLF versus HLLC/HLLD. Compare summed uncached work and longest owner,
+actual peak scratch, and small/many-box versus large-array runtime. Keep the
+existing final flux consumers, CT input, reflux and scalar budgets. Zero-area
+faces skip reconstruction reads; wall states preserve the current mirror,
+stencil and limiter ordering; mapped seams require states per overlap, not one
+pair per final face. Optional tracers remain independent of EOS/Riemann choice.
+Reject the experiment if it merely moves the product, changes those semantics,
+or trades compiler savings for unacceptable memory/runtime cost.

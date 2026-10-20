@@ -92,6 +92,22 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
 - Passive scalars are optional conserved tracers for evolution/output only. They must not drive AMR tagging; the AMR metric should follow hydro/MHD state structure using physical gradients and physical cell sizes.
 - Auxiliary GFs use one descriptor/output path with two separate classifications: diagnostic/output kind and evolution ownership. Diagnostic kinds are stored state, pure aux computed only at output cadence, and mixed aux that may use live storage or compute temporarily. Evolution kinds are main state, aux state needed/cached by the solver, and non-backreacting extra fields such as passive dye. Do not store pure diagnostic aux fields as solver state.
 
+## Read-only collaborator reference
+
+- `https://github.com/yuheng-guo/Baumgarte_Spherical_Code.git` is a strictly
+  read-only reference, on every branch. This restriction persists across tasks
+  and agents until the human user explicitly removes it.
+- Reading, fetching, comparing branches and writing independent PyFluid review
+  notes or independently implemented adaptations are authorized. Do not edit
+  collaborator source, create/update/delete remote branches or files, push,
+  open/update issues or PRs, comment, review, react, change settings, or perform
+  any other write to that repository through Git, GitHub tools, APIs or UI.
+- Its local bare reference and source views must remain read-only. Do not
+  remove the disabled push URL, rejecting pre-push hook, file permissions or
+  this policy without that explicit human instruction. A review request or
+  permission to modify PyFluid does not lift the restriction. Do not execute
+  collaborator scripts or builds as part of ordinary source inspection.
+
 ## Continuity
 
 - The always-on Mac mini is the primary development checkout and should retain

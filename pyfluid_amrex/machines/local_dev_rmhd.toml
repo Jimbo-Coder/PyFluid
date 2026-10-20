@@ -1,0 +1,19 @@
+name = "local_dev_rmhd"
+mpi_launcher = ["mpirun", "-np", "{ranks}", "--bind-to", "none"]
+direct_one_rank = true
+default_ranks = 3
+environment = { OMP_NUM_THREADS = "2", OMPI_MCA_sharedfp = "individual" }
+
+[run]
+work_dir = "{root}"
+
+[build]
+source_dir = "{root}/pyfluid_amrex"
+build_dir = "{root}/build/pyfluid_amrex-dev-rmhd"
+configure_preset = "focused-rmhd-pwl"
+dimensions = [1]
+jobs = 3
+
+[submit]
+command = []
+header = ["#!/bin/sh"]

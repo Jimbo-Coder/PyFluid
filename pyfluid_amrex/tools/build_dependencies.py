@@ -83,21 +83,73 @@ def ownership_errors(graph: IncludeGraph) -> list[str]:
         public / "diagnostics_types.hpp",
         public / "method_codes.hpp",
         public / "relativistic_flux_limiter.hpp",
+        public / "spacetime_excision.hpp",
+        sources / "relativity" / "rmhd_correction_flux.hpp",
     ]
     heavy = {public / "eos" / "equation_of_state.hpp", public / "fixed_spacetime.hpp",
              public / "generated" / "diagnostic_catalog.hpp",
              public / "generated" / "time_integrator_catalog.hpp"}
     for interface in interfaces:
         for dependency in sorted(graph.paths_from(interface)):
-            if dependency in heavy or sources in dependency.parents \
+            if dependency in heavy or (sources in dependency.parents and dependency != interface) \
                     or "kernels_generated" in dependency.parts:
                 errors.append("declaration-only interface reaches implementation: "
                               + graph.chain(interface, dependency))
+
+    # Field identity belongs in generated/field_ids.hpp. Host strings,
+    # descriptors and output metadata must not invalidate numerical kernels.
+    field_metadata = public / "fields.hpp"
+    metadata_free = {
+        public / "config.hpp",
+        public / "z4c_state_access.hpp",
+        public / "fccz4_state_access.hpp",
+        sources / "relativity" / "relativistic_flux_limiter.cpp",
+        sources / "relativity" / "rmhd_advanced_flux.cpp",
+        *(sources / "flux_kernels").glob("*.cpp"),
+        *(sources / "relativity").glob("rmhd_correction_flux*.cpp"),
+    }
+    for owner in sorted(metadata_free):
+        if field_metadata in graph.paths_from(owner):
+            errors.append("numerical contract reaches host field metadata: "
+                          + graph.chain(owner, field_metadata))
+
+    config = public / "config.hpp"
+    config_free = {
+        public / "relativistic_diode.hpp",
+        public / "relativistic_flux_limiter.hpp",
+        public / "spacetime_excision.hpp",
+        sources / "relativity" / "relativistic_flux_limiter.cpp",
+        sources / "relativity" / "rmhd_advanced_flux.cpp",
+        *(sources / "flux_kernels").glob("*.cpp"),
+        *(sources / "relativity").glob("rmhd_correction_flux*.cpp"),
+    }
+    for owner in sorted(config_free):
+        if config in graph.paths_from(owner):
+            errors.append("numerical value contract reaches host configuration: "
+                          + graph.chain(owner, config))
+
+    # Optional tracer work must not regain the fluid Riemann/EOS product.
+    passive_flux = sources / "numerics" / "passive_flux.hpp"
+    for dependency in (
+        config, field_metadata, public / "riemann.hpp",
+        public / "eos" / "equation_of_state.hpp",
+        public / "eos" / "config.hpp",
+        sources / "numerics" / "rhs.hpp",
+    ):
+        if dependency in graph.paths_from(passive_flux):
+            errors.append("scalar-only flux reaches fluid implementation: "
+                          + graph.chain(passive_flux, dependency))
 
     isolated = {
         sources / "relativity" / "black_hole_excision_kernels.hpp": {
             sources / "relativity" / "black_hole_excision.cpp",
             sources / "relativity" / "relativistic_flux_limiter.cpp",
+            *(sources / "relativity" / f"rmhd_correction_flux_{method}.cpp"
+              for method in ("llf", "hll", "hllc", "hlld")),
+        },
+        sources / "relativity" / "rmhd_correction_flux_impl.hpp": {
+            sources / "relativity" / f"rmhd_correction_flux_{method}.cpp"
+            for method in ("llf", "hll", "hllc", "hlld")
         },
         public / "kernels_generated" / "vector_ops.hpp": set(),
         public / "generated" / "diagnostic_catalog.hpp": {

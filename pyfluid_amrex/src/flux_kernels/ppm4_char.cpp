@@ -4,7 +4,7 @@
 
 namespace pyfluid_amrex::flux_factory_entries {
 
-void ppm4_char(FluxLaunch const& launch)
+void ppm4_char(FluxKernelLaunch const& launch)
 {
    flux_factory_detail::dispatch_layout<ReconPPM4Char>(launch);
 }

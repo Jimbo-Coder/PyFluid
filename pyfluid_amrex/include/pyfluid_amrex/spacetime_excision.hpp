@@ -2,22 +2,13 @@
 
 #include <AMReX_Geometry.H>
 
-#include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/excision_geometry.hpp"
 
 namespace pyfluid_amrex {
 
-inline SphericalExcisionRegion spacetime_excision_region(RunConfig const& config)
-{
-   SphericalExcisionRegion region;
-   if (config.spacetime_black_hole_matter == "excision"
-       && config.spacetime_evolution != "fixed") {
-      region.center = {{config.spacetime_origin1, config.spacetime_origin2,
-         config.spacetime_origin3}};
-      region.radius = config.spacetime_black_hole_fill_radius;
-   }
-   return region;
-}
+struct RunConfig;
+
+SphericalExcisionRegion spacetime_excision_region(RunConfig const& config);
 
 inline ExcisionGridView excision_grid_view(SphericalExcisionRegion const& region,
    amrex::Geometry const& geometry, amrex::IndexType const& centering)

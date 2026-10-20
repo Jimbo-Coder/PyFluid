@@ -12,7 +12,7 @@
 #include "pyfluid_amrex/metric_provider.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
 #include "pyfluid_amrex/reference_metric_valencia.hpp"
-#include "pyfluid_amrex/solid_geometry.hpp"
+#include "pyfluid_amrex/solid_geometry_point.hpp"
 #include "pyfluid_amrex/state.hpp"
 
 namespace pyfluid_amrex {

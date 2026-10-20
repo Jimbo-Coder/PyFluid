@@ -2,12 +2,16 @@
 
 #include <AMReX_ParmParse.H>
 #include "framework/config_options.hpp"
+#include "framework/build_capabilities.hpp"
 
 #include <AMReX.H>
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <limits>
 #include <map>
 #include <sstream>
@@ -16,6 +20,7 @@
 #include <vector>
 
 #include "pyfluid_amrex/state.hpp"
+#include PYFLUID_AMREX_BUILD_CONFIGURATION_HEADER
 #include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/generated/method_catalog.hpp"
@@ -332,6 +337,120 @@ static void validate_registered_parameters(RunConfig const& cfg)
    }
 }
 
+namespace {
+
+std::string method_build_feature(
+   StringOptionSet option_set,
+   std::string value,
+   RunConfig const& cfg
+)
+{
+   std::string_view prefix;
+   switch (option_set) {
+   case StringOptionSet::Physics:
+      // The untraced hydro bundle also owns RHD. Its traced variant uses the
+      // HYDRO switch; all magnetic layouts use MHD.
+      if (value == "rhd" && cfg.passive_scalars == 0) return {};
+      value = (value == "hydro" || value == "rhd") ? "hydro" : "mhd";
+      prefix = "";
+      break;
+   case StringOptionSet::CT:
+      if (value == "off") return {};
+      return "PYFLUID_AMREX_ENABLE_CT";
+   case StringOptionSet::Reconstruction: prefix = "RECON_"; break;
+   case StringOptionSet::Riemann: prefix = "RIEMANN_"; break;
+   case StringOptionSet::Timestep: prefix = "TIME_"; break;
+   case StringOptionSet::Diffusion: prefix = "DIFFUSION_"; break;
+   case StringOptionSet::Subcycling:
+      // max_level=0 takes the non-subcycled operation even when the normal
+      // runtime default is subcycling=on.
+      if (cfg.amr_max_level == 0) value = "off";
+      prefix = "SUBCYCLING_";
+      break;
+   default: return {};
+   }
+   for (char& character : value) {
+      character = character == '-' ? '_'
+         : static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+   }
+   return "PYFLUID_AMREX_ENABLE_" + std::string(prefix) + value;
+}
+
+void require_compiled_method(
+   StringOptionSet option_set,
+   std::string const& value,
+   std::string_view key,
+   RunConfig const& cfg
+)
+{
+   const std::string feature_name = method_build_feature(option_set, value, cfg);
+   if (feature_name.empty()) return;
+   const auto feature = std::find_if(
+      CompiledBuildFeatures.begin(), CompiledBuildFeatures.end(),
+      [&](CompiledBuildFeature const& entry) { return entry.name == feature_name; }
+   );
+   if (feature == CompiledBuildFeatures.end()) {
+      amrex::Abort("unregistered compiled build feature: " + feature_name);
+   }
+   if (!feature->enabled) {
+      amrex::Abort(
+         "pyfluid." + std::string(key) + "=" + value
+         + " requires " + feature_name + "=ON in the selected executable ("
+         + std::string(BuildDirectory) + ")"
+      );
+   }
+}
+
+void validate_rmhd_candidate_riemann(RunConfig const& cfg)
+{
+   if (cfg.rmhd_candidate_riemann != "same"
+       && cfg.rmhd_candidate_riemann != "llf"
+       && cfg.rmhd_candidate_riemann != "hll") {
+      amrex::Abort(
+         "pyfluid.rmhd_candidate_riemann supports same, llf, or hll"
+      );
+   }
+}
+
+} // namespace
+
+void validate_build_config(RunConfig const& cfg)
+{
+   validate_registered_parameters(cfg);
+   for (RegisteredStringParameter const& parameter : MethodParameters) {
+      require_compiled_method(
+         parameter.option_set, cfg.*(parameter.member), parameter.key, cfg
+      );
+   }
+   if (!cfg.recon_fine.empty()) {
+      require_supported_option(cfg.recon_fine, ReconOptions, "pyfluid.recon_fine");
+      require_compiled_method(
+         StringOptionSet::Reconstruction, cfg.recon_fine, "recon_fine", cfg
+      );
+   }
+   validate_rmhd_candidate_riemann(cfg);
+   // Correction PWC/PWL and LLF/HLL are retained internal fallback operations,
+   // independent of the switches advertising the primary flux method.
+}
+
+void write_build_capabilities(std::ostream& output)
+{
+   output << "{\"schema_version\":1,\"dimension\":" << AMREX_SPACEDIM
+          << ",\"backend\":" << std::quoted(std::string(BuildBackend))
+          << ",\"precision\":" << std::quoted(std::string(BuildPrecision))
+          << ",\"compiler\":" << std::quoted(std::string(BuildCompiler))
+          << ",\"build_directory\":" << std::quoted(std::string(BuildDirectory))
+          << ",\"features\":{";
+   bool first = true;
+   for (CompiledBuildFeature const& feature : CompiledBuildFeatures) {
+      if (!first) output << ',';
+      first = false;
+      output << std::quoted(std::string(feature.name)) << ':'
+             << (feature.enabled ? "true" : "false");
+   }
+   output << "}}\n";
+}
+
 void write_run_parameter_file(std::string const& path)
 {
    std::ostringstream raw_table;
@@ -364,7 +483,7 @@ void write_run_parameter_file(std::string const& path)
    }
 }
 
-RunConfig read_config()
+static RunConfig read_config_impl(bool initialize_eos)
 {
    RunConfig cfg;
    amrex::ParmParse pp("pyfluid");
@@ -950,8 +1069,18 @@ RunConfig read_config()
       cfg.level_cell_budget = derived_cells;
    }
    sync_registered_amr_parameters(amr_pp, cfg);
-   prepare_eos(cfg);
+   if (initialize_eos) prepare_eos(cfg);
    return cfg;
+}
+
+RunConfig read_config()
+{
+   return read_config_impl(true);
+}
+
+RunConfig read_build_config()
+{
+   return read_config_impl(false);
 }
 
 void validate_config(RunConfig const& cfg)
@@ -2086,13 +2215,7 @@ void validate_config(RunConfig const& cfg)
          "pyfluid.rmhd_candidate_guard supports off, pwc, or pwl-pwc"
       );
    }
-   if (cfg.rmhd_candidate_riemann != "same"
-       && cfg.rmhd_candidate_riemann != "llf"
-       && cfg.rmhd_candidate_riemann != "hll") {
-      amrex::Abort(
-         "pyfluid.rmhd_candidate_riemann supports same, llf, or hll"
-      );
-   }
+   validate_rmhd_candidate_riemann(cfg);
    if (!(cfg.rmhd_candidate_dmp_factor >= 1.0_rt)
        || !std::isfinite(cfg.rmhd_candidate_dmp_factor)) {
       amrex::Abort(

@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -12,8 +15,9 @@ from pathlib import Path
 
 from postprocess_common import physics_validation_rows, write_physics_validation
 from input_parameters import read_key_values
+from machine_common import load_machine
 from validation_common import (
-   ROOT, SCALAR_POLICIES, amrex_executable, repo_relative, run_amrex,
+   ROOT, SCALAR_POLICIES, amrex_executable, repo_relative, run_amrex, run_mpi,
 )
 
 
@@ -40,7 +44,7 @@ def path_uses_directory(path: Path, directory: Path) -> bool:
    )
 
 
-def safe_clean_run_dir(path: Path, *, dependencies: tuple[Path, ...] = ()) -> None:
+def validate_run_dir_cleanup(path: Path, *, dependencies: tuple[Path, ...] = ()) -> Path:
    resolved = path.resolve()
    runs_root = (ROOT / "runs").resolve()
    if not resolved.is_relative_to(runs_root) or resolved == runs_root:
@@ -51,6 +55,11 @@ def safe_clean_run_dir(path: Path, *, dependencies: tuple[Path, ...] = ()) -> No
             f"refusing to clean {resolved}: overlaps run dependency {dependency}; "
             "select a separate output directory or use --keep-existing"
          )
+   return resolved
+
+
+def safe_clean_run_dir(path: Path, *, dependencies: tuple[Path, ...] = ()) -> None:
+   resolved = validate_run_dir_cleanup(path, dependencies=dependencies)
    if resolved.exists():
       shutil.rmtree(resolved)
 
@@ -63,6 +72,65 @@ def write_run_log(run_dir: Path, command: list[str], stdout: str, seconds: float
       f.write(stdout)
       if stdout and not stdout.endswith("\n"):
          f.write("\n")
+
+
+def check_executable_build(
+   executable: Path, input_path: Path, machine, timeout, *, expected_dimension=None,
+) -> dict:
+   """Check exact C++ defaults and choices before replacing any prior output."""
+   profile = load_machine(machine)
+   selection = [
+      "uv", "run", "python", "pyfluid_amrex/tools/pyfluid_machine.py",
+      "--machine", str(profile.path),
+   ]
+
+   def build_error(detail, dimension):
+      return ValueError(
+         f"selected executable build preflight failed:\n{detail}\n"
+         f"Configure the intended method switches, then run:\n"
+         f"{shlex.join([*selection, 'configure'])}\n"
+         f"{shlex.join([*selection, 'build', '--dim', str(dimension or 'all')])}"
+      )
+
+   environment = dict(os.environ)
+   for name, value in profile.environment.items():
+      environment.setdefault(name, value)
+   capabilities_result = subprocess.run(
+      [str(executable), "--build-capabilities"], cwd=ROOT, text=True,
+      capture_output=True, check=False, timeout=30, env=environment,
+   )
+   if capabilities_result.returncode != 0:
+      raise build_error(
+         f"{executable} does not support --build-capabilities; rebuild it first",
+         expected_dimension,
+      )
+   try:
+      capabilities = json.loads(capabilities_result.stdout)
+   except json.JSONDecodeError as error:
+      raise build_error(f"invalid capability report from {executable}", expected_dimension) from error
+   if not isinstance(capabilities, dict) or capabilities.get("schema_version") != 1:
+      raise build_error(f"unsupported capability report from {executable}", expected_dimension)
+   dimension = capabilities.get("dimension")
+   if dimension not in (1, 2, 3) or (
+      expected_dimension is not None and dimension != expected_dimension
+   ):
+      raise build_error(
+         f"input dimension={expected_dimension} differs from executable dimension={dimension}",
+         expected_dimension,
+      )
+   result = run_mpi(
+      executable, ["--check-build", input_path], ranks=1,
+      timeout=min(timeout or 30, 30), machine=machine,
+   )
+   if result.returncode != 0:
+      raise build_error(result.stdout, dimension)
+   with executable.open("rb") as binary:
+      executable_sha256 = hashlib.file_digest(binary, "sha256").hexdigest()
+   return {
+      "executable": str(executable.resolve()),
+      "executable_sha256": executable_sha256,
+      "capabilities": capabilities,
+   }
 
 
 def call_report(args: argparse.Namespace, run_dir: Path, input_file: Path) -> int:
@@ -165,6 +233,11 @@ def main() -> int:
          if not dependency.exists():
             raise FileNotFoundError(f"{key} does not exist: {dependency}")
          dependencies.append(dependency)
+   if not args.keep_existing:
+      validate_run_dir_cleanup(run_dir, dependencies=tuple(dependencies))
+   build_identity = check_executable_build(
+      executable, input_path, args.machine, args.timeout, expected_dimension=dim,
+   )
    saved_input: bytes | None = None
    if (
       not args.keep_existing
@@ -178,6 +251,8 @@ def main() -> int:
       input_path = run_dir / "run.in"
       input_path.write_bytes(saved_input)
 
+   run_dir.mkdir(parents=True, exist_ok=True)
+   (run_dir / "build.json").write_text(json.dumps(build_identity, indent=2) + "\n")
    result = run_amrex(
       dim=dim,
       input_path=input_path,

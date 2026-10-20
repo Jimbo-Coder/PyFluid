@@ -2,6 +2,7 @@
 
 #include <AMReX_Array.H>
 #include <AMReX_REAL.H>
+#include <AMReX_Vector.H>
 
 #include <array>
 #include <limits>
@@ -11,7 +12,7 @@
 
 #include "pyfluid_amrex/build_options.hpp"
 #include "pyfluid_amrex/black_hole_matter.hpp"
-#include "pyfluid_amrex/fields.hpp"
+#include "pyfluid_amrex/generated/field_ids.hpp"
 #include "pyfluid_amrex/fixed_spacetime_types.hpp"
 #include "pyfluid_amrex/mesh_limits.hpp"
 #include "pyfluid_amrex/mesh_geometry.hpp"

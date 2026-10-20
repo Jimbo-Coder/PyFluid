@@ -18,17 +18,14 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
 
 ## Scope And Evidence
 
-- Cycle469 removes timestep/diffusion specialization from recursive AMR
-  orchestration and shares Riemann-independent RMHD limiter work. PWL/PWC face
-  states feed one Riemann call. All-dimensional Mac production, maintained
-  analytic/reference gates, paired scalar histories and active-path performance
-  controls pass, with the existing self-gravity AMR failure unchanged. The full
-  1D CUDA limiter compiles in 231 s versus an old-owner timeout at 300 s;
-  both full 3D owners still exceed that bound. All 32 scoped CUDA limiter cases
-  match bitwise. HLL microbenchmark timings show sporadic slow executions in
-  both old/new binaries and remain inconclusive. Detailed resources and timing
-  evidence live in the cycle report; full current CUDA application acceptance
-  remains open.
+- Cycles469 and474 share timestep/diffusion orchestration and Riemann-independent
+  RMHD limiter work. Correction face launches now have independent method owners;
+  preliminary PWL and selected-face work share the same method kernel. The
+  32-case 3D CPU correction fixture is bitwise equal with matching active counters.
+  Bounded CUDA owner compilation is established, but the new full device fixture
+  and current complete CUDA application remain unaccepted. Earlier CUDA HLL
+  timing variability was inconclusive. Consult the current cycle for exact
+  source/timing boundaries; the existing self-gravity AMR energy failure is open.
 
 - Cycle 414 connects the complete generated fCCZ4 equations, reference-frame
   adapters, diagnostics and stored-metric GRHD bridge on regular charts.
@@ -148,12 +145,24 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   Ordering wall states before one solver call reduces repeated optimization
   while retaining specialized Riemann kernels. A tested uniform runtime wall
   solver switch retained the expensive register/stack footprint and strongly
-  regressed cheap CUDA solvers. Tracer sharing remains experimental because
-  its CPU wall cost is measurable. Production source terms now share one
+  regressed cheap CUDA solvers. The original uniform-tracer experiment is
+  superseded by Cycle478's separate scalar-only launches. Production source terms now share one
   compiled owner; CFL layout/diffusion selection is runtime outside the
   unchanged pointwise kernels. Mac all-dimensional build, scoped numerical
   and four performance gates pass; CUDA source-owner link/pointwise equality
   passes, but the current full WSL application refresh remains deferred.
+- Optional Newtonian tracers reuse the base five/eight-component physics kernel
+  and reconstruct scalar flux independently from its stored mass flux. Component
+  views remove the tracer-layout template axis. Reuse wall tile classification,
+  skip dye reads on zero-area/solid faces, and retain per-overlap mapped upwinding;
+  net seam mass flux cannot recover tracer counterflow. Keeping scalar host
+  traversal out of the fluid launcher avoids a measured CPU optimizer regression.
+  Some traced wall cases remain slower; scoped CPU equality is not GPU acceptance.
+- Flux owners consume resolved value parameters rather than `RunConfig` or field
+  descriptor metadata. This limits invalidation without reducing most optimizer
+  work by itself. Shared code generation checks content plus the actual symbolic
+  runtime environment, independently of build profile. Warm reuse is cheap;
+  genuine diagnostic generation and complete feature builds remain expensive.
 - A generated header's size is not its rebuild cost: one broadly imported
   helper can connect unrelated formula edits to expensive flux instantiations.
   The old vector umbrella reached reconstruction via magnetic energy in EoS;
@@ -2061,6 +2070,46 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   zero C2P fallback or atmosphere reset. It is a functional
   dynamics/accretion control; evolved-Z4c interior ownership and a longer
   self-gravitating run remain open before a production claim.
+
+## Spherical reference and centering boundary (Cycle 475--476)
+
+- The read-only collaborator repository `yuheng-guo/Baumgarte_Spherical_Code`
+  has 18 pinned branch tips in the Cycle475 review. The principal reviewed
+  source is `2ee5550396be2c56fc1c54f9c2ac859edeb9f096`, rather than the much
+  older default `main`. Detailed findings, branch differences, exact source
+  locations and reading coverage are in `docs/baumgarte_spherical_review.md`
+  and `docs/baumgarte_spherical_branches.md`. Source is guidance, not independent
+  numerical validation; its code/tests were not run. `AGENTS.md` owns the
+  persistent prohibition on modifying the collaborator repository.
+- Its reference-rescaled spacetime point samples are half-cell shifted in r
+  and theta. Tensor parity plus origin/pole coordinate identifications allow
+  bulk equations to avoid singular valid nodes. This supports revisiting
+  cell-centered spacetime, not removing the present vertex-fCCZ4 regular-chart
+  guard. One generated equation path and a startup-resolved layout/sampling
+  contract can avoid another template axis. Co-location removes some coupling
+  transfers but does not equate spacetime point samples with FV fluid averages
+  or eliminate face metrics and point-field AMR interpolation.
+- Its `Regrid` remaps/shrinks one radial grid at fixed point count; it supplies
+  no AMReX coarse-fine conservation/CT method. The latest GPU port is documented
+  for an axisymmetric, equator-symmetric, magnetized-dust model. Thermal
+  magnetized TOV lies on a distinct branch with unresolved historical
+  stability evidence. Do not import recovery resets, surface smoothing,
+  characteristic substitutions, numerical tolerances or formula-name aliases.
+- Other convention traps: current HWM EM rescaling differs from stale header
+  comments and standalone Maxwell; magnetic normalization includes 4*pi;
+  stored K/Theta and full versus reference-subtracted conformal tensors need
+  explicit conversion. Current qK waveform columns copy ordinary Psi4, whose
+  projection is real, even-l, m=0 and directly time integrated. They are not
+  independent tetrad or general waveform validation.
+- Source review identifies an existing fluid-origin topology defect with
+  active spherical theta: the fill mirrors r and optionally shifts phi, but
+  misses theta -> pi-theta. A smooth equator-asymmetric scalar distinguishes
+  this from existing radially symmetric origin tests. Runtime reproduction
+  and repair are pending; this is separate from vertex-spacetime regularity.
+- Current `EvolutionSectorStorage::average_down_level` selects nodal injection
+  versus FV averaging from centering alone. A centered spacetime extension
+  must first make point-sample transfer semantics explicit. No selectable
+  centered-spacetime evolution capability is implemented by this review.
 
 ## Next Milestones
 

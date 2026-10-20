@@ -12,6 +12,7 @@
 #include "pyfluid_amrex/mesh_geometry.hpp"
 #include "pyfluid_amrex/multilevel_field_io.hpp"
 #include "pyfluid_amrex/output_metadata.hpp"
+#include "pyfluid_amrex/spacetime_fields.hpp"
 #include "pyfluid_amrex/z4c_state_access.hpp"
 #include "pyfluid_amrex/state.hpp"
 

@@ -259,6 +259,26 @@ set(PYFLUID_AMREX_RELATIVITY_SOURCES
    src/relativity/z4c_outer_boundary.cpp
 )
 
+# LLF/HLL are required correction fallbacks even when not advertised as
+# primary methods. A hydro-only configuration owns no RMHD flux kernels.
+if(PYFLUID_AMREX_ENABLE_MHD)
+   list(APPEND PYFLUID_AMREX_RELATIVITY_SOURCES
+      src/relativity/rmhd_correction_flux.cpp
+      src/relativity/rmhd_correction_flux_llf.cpp
+      src/relativity/rmhd_correction_flux_hll.cpp
+   )
+endif()
+if(PYFLUID_AMREX_ENABLE_MHD AND PYFLUID_AMREX_ENABLE_RIEMANN_HLLC)
+   list(APPEND PYFLUID_AMREX_RELATIVITY_SOURCES
+      src/relativity/rmhd_correction_flux_hllc.cpp
+   )
+endif()
+if(PYFLUID_AMREX_ENABLE_MHD AND PYFLUID_AMREX_ENABLE_RIEMANN_HLLD)
+   list(APPEND PYFLUID_AMREX_RELATIVITY_SOURCES
+      src/relativity/rmhd_correction_flux_hlld.cpp
+   )
+endif()
+
 if(PYFLUID_AMREX_ENABLE_MHD AND
    (PYFLUID_AMREX_ENABLE_RIEMANN_HLLC OR
     PYFLUID_AMREX_ENABLE_RIEMANN_HLLD))
@@ -481,19 +501,37 @@ if(PYFLUID_UV_EXECUTABLE)
       ${CMAKE_CURRENT_SOURCE_DIR}/docs/equations.tex
    )
    set(PYFLUID_AMREX_CODEGEN_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_kernels.py)
-   set(PYFLUID_AMREX_CATALOG_CODEGEN_STAMP
-      ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_catalog_codegen.stamp
-   )
-   set(PYFLUID_AMREX_CODEGEN_STAMP ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_codegen.stamp)
-   set(PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP
-      ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_initial_data_codegen.stamp
-   )
-   set(PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP
-      ${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_patch_map_codegen.stamp
-   )
-   add_custom_command(
-      OUTPUT ${PYFLUID_AMREX_CATALOG_CODEGEN_STAMP}
-      BYPRODUCTS
+   # Generated files belong to the source tree, not a build configuration.
+   # Check their shared provenance cheaply on every build before importing SymPy.
+   function(pyfluid_amrex_add_codegen_check family)
+      cmake_parse_arguments(CODEGEN "" "" "OUTPUTS;DEPENDS;ARGUMENTS" ${ARGN})
+      set(freshness_file "${CMAKE_CURRENT_SOURCE_DIR}/.cache/codegen/${family}.json")
+      set(dependency_arguments)
+      foreach(dependency IN ITEMS
+            ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+            ${CMAKE_CURRENT_SOURCE_DIR}/codegen/generation_cache.py
+            ${CODEGEN_DEPENDS})
+         list(APPEND dependency_arguments --dependency ${dependency})
+      endforeach()
+      set(output_arguments)
+      foreach(output IN LISTS CODEGEN_OUTPUTS)
+         list(APPEND output_arguments --expected-output ${output})
+      endforeach()
+      add_custom_target(pyfluid_amrex_codegen_${family}
+         BYPRODUCTS ${CODEGEN_OUTPUTS}
+         COMMAND ${CMAKE_COMMAND} -E env
+            UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
+            ${PYFLUID_UV_EXECUTABLE} run --locked python ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+            ${CODEGEN_ARGUMENTS}
+            --freshness-file ${freshness_file}
+            ${dependency_arguments} ${output_arguments}
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
+         COMMENT "Checking shared PyFluid AMReX ${family} generation"
+         VERBATIM
+      )
+   endfunction()
+   pyfluid_amrex_add_codegen_check(catalog
+      OUTPUTS
          ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
          ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
          ${PYFLUID_AMREX_GENERATED_DIAGNOSTIC_CATALOG_HEADER}
@@ -509,10 +547,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_PHYSICAL_ID_CATALOG_JSON}
          ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
          ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
-      COMMAND ${CMAKE_COMMAND} -E env
-         UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
-         ${PYFLUID_UV_EXECUTABLE} run python
-         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+      ARGUMENTS
          --family catalog
          --field-ids-header ${PYFLUID_AMREX_GENERATED_FIELD_IDS_HEADER}
          --field-catalog-header ${PYFLUID_AMREX_GENERATED_FIELD_CATALOG_HEADER}
@@ -525,7 +560,6 @@ if(PYFLUID_UV_EXECUTABLE)
          --physical-id-catalog-json ${PYFLUID_AMREX_GENERATED_PHYSICAL_ID_CATALOG_JSON}
          --equation-markdown ${PYFLUID_AMREX_GENERATED_EQUATION_MARKDOWN}
          --equation-latex ${PYFLUID_AMREX_GENERATED_EQUATION_LATEX}
-      COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CATALOG_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
@@ -545,13 +579,9 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/methods.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/numerics.toml
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/physical_id.toml
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
-      COMMENT "Generating PyFluid AMReX catalogs"
-      VERBATIM
    )
-   add_custom_command(
-      OUTPUT ${PYFLUID_AMREX_CODEGEN_STAMP}
-      BYPRODUCTS
+   pyfluid_amrex_add_codegen_check(physics
+      OUTPUTS
          ${PYFLUID_AMREX_GENERATED_FLUX_HEADER}
          ${PYFLUID_AMREX_GENERATED_EOS_HEADER}
          ${PYFLUID_AMREX_GENERATED_OPERATOR_HEADER}
@@ -560,10 +590,7 @@ if(PYFLUID_UV_EXECUTABLE)
          ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
-      COMMAND ${CMAKE_COMMAND} -E env
-         UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
-         ${PYFLUID_UV_EXECUTABLE} run python
-         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+      ARGUMENTS
          --family eos
          --family flux
          --family operator
@@ -578,7 +605,6 @@ if(PYFLUID_UV_EXECUTABLE)
          --riemann-header ${PYFLUID_AMREX_GENERATED_RIEMANN_HEADER}
          --characteristic-header ${PYFLUID_AMREX_GENERATED_CHARACTERISTIC_HEADER}
          --metric-header ${PYFLUID_AMREX_GENERATED_METRIC_HEADER}
-      COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
@@ -601,23 +627,14 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/riemann_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_algebra.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/coordinates.py
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
-      COMMENT "Generating PyFluid AMReX physics kernels"
-      VERBATIM
    )
    # These expensive symbolic families have separate ownership. A diagnostic
    # formula edit must not regenerate evolution/C2P kernels, and vice versa.
    function(pyfluid_amrex_add_kernel_family family)
       cmake_parse_arguments(KERNEL "" "HEADER" "BYPRODUCTS;DEPENDS" ${ARGN})
-      set(stamp "${CMAKE_CURRENT_BINARY_DIR}/pyfluid_amrex_${family}_codegen.stamp")
-      add_custom_command(
-         OUTPUT ${stamp}
-         BYPRODUCTS ${KERNEL_HEADER} ${KERNEL_BYPRODUCTS}
-         COMMAND ${CMAKE_COMMAND} -E env
-            UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
-            ${PYFLUID_UV_EXECUTABLE} run python ${PYFLUID_AMREX_CODEGEN_SCRIPT}
-            --family ${family} --${family}-header ${KERNEL_HEADER}
-         COMMAND ${CMAKE_COMMAND} -E touch ${stamp}
+      pyfluid_amrex_add_codegen_check(${family}
+         OUTPUTS ${KERNEL_HEADER} ${KERNEL_BYPRODUCTS}
+         ARGUMENTS --family ${family} --${family}-header ${KERNEL_HEADER}
          DEPENDS
             ${PYFLUID_AMREX_CODEGEN_SCRIPT}
             ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/__init__.py
@@ -625,12 +642,9 @@ if(PYFLUID_UV_EXECUTABLE)
             ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/kernel_equations.py
             ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_algebra.py
             ${KERNEL_DEPENDS}
-         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
-         COMMENT "Generating PyFluid AMReX ${family} kernels"
-         VERBATIM
       )
-      set(PYFLUID_AMREX_FAMILY_CODEGEN_STAMPS
-         ${PYFLUID_AMREX_FAMILY_CODEGEN_STAMPS} ${stamp} PARENT_SCOPE)
+      set(PYFLUID_AMREX_FAMILY_CODEGEN_TARGETS
+         ${PYFLUID_AMREX_FAMILY_CODEGEN_TARGETS} pyfluid_amrex_codegen_${family} PARENT_SCOPE)
    endfunction()
    pyfluid_amrex_add_kernel_family(vector
       HEADER ${PYFLUID_AMREX_GENERATED_VECTOR_HEADER}
@@ -702,55 +716,39 @@ if(PYFLUID_UV_EXECUTABLE)
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/physical_system.py
          ${CMAKE_CURRENT_SOURCE_DIR}/schema/fields.toml
    )
-   add_custom_command(
-      OUTPUT ${PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP}
-      BYPRODUCTS ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_HEADER}
-      COMMAND ${CMAKE_COMMAND} -E env
-         UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
-         ${PYFLUID_UV_EXECUTABLE} run python
-         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+   pyfluid_amrex_add_codegen_check(initial_data
+      OUTPUTS ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_HEADER}
+      ARGUMENTS
          --family initial_data
          --initial-data-header ${PYFLUID_AMREX_GENERATED_INITIAL_DATA_HEADER}
-      COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/initial_data_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/kernel_equations.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/tensor_algebra.py
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
-      COMMENT "Generating PyFluid AMReX initial-data kernels"
-      VERBATIM
    )
-   add_custom_command(
-      OUTPUT ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
-      BYPRODUCTS ${PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER}
-      COMMAND ${CMAKE_COMMAND} -E env
-         UV_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/uv-cache
-         ${PYFLUID_UV_EXECUTABLE} run python
-         ${PYFLUID_AMREX_CODEGEN_SCRIPT}
+   pyfluid_amrex_add_codegen_check(patch_map
+      OUTPUTS ${PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER}
+      ARGUMENTS
          --family patch_map
          --patch-map-header ${PYFLUID_AMREX_GENERATED_PATCH_MAP_HEADER}
-      COMMAND ${CMAKE_COMMAND} -E touch ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
       DEPENDS
          ${PYFLUID_AMREX_CODEGEN_SCRIPT}
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/emit_cpp.py
          ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/patch_map_equations.py
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..
-      COMMENT "Generating PyFluid AMReX patch-map kernels"
-      VERBATIM
    )
    add_custom_target(
       pyfluid_amrex_generate_catalog
-      DEPENDS ${PYFLUID_AMREX_CATALOG_CODEGEN_STAMP}
+      DEPENDS pyfluid_amrex_codegen_catalog
    )
    add_custom_target(
       pyfluid_amrex_generate_kernels
       DEPENDS
-         ${PYFLUID_AMREX_CODEGEN_STAMP}
-         ${PYFLUID_AMREX_INITIAL_DATA_CODEGEN_STAMP}
-         ${PYFLUID_AMREX_PATCH_MAP_CODEGEN_STAMP}
-         ${PYFLUID_AMREX_FAMILY_CODEGEN_STAMPS}
+         pyfluid_amrex_codegen_physics
+         pyfluid_amrex_codegen_initial_data
+         pyfluid_amrex_codegen_patch_map
+         ${PYFLUID_AMREX_FAMILY_CODEGEN_TARGETS}
    )
    add_dependencies(pyfluid_amrex_generate_kernels pyfluid_amrex_generate_catalog)
 else()
@@ -793,6 +791,24 @@ set(PYFLUID_AMREX_BUILD_FEATURES
    PYFLUID_AMREX_ENABLE_SUBCYCLING_OFF
    PYFLUID_AMREX_ENABLE_SUBCYCLING_ON
 )
+
+# Derive executable capabilities from the same switches that configure owners.
+# This header is local to this build directory, never shared across profiles.
+list(LENGTH PYFLUID_AMREX_BUILD_FEATURES PYFLUID_AMREX_BUILD_FEATURE_COUNT)
+set(PYFLUID_AMREX_BUILD_FEATURE_ROWS "")
+foreach(feature IN LISTS PYFLUID_AMREX_BUILD_FEATURES)
+   if(${feature})
+      set(enabled true)
+   else()
+      set(enabled false)
+   endif()
+   string(APPEND PYFLUID_AMREX_BUILD_FEATURE_ROWS
+      "   {\"${feature}\", ${enabled}},\n")
+endforeach()
+configure_file(cmake/build_configuration.hpp.in
+   generated/pyfluid_amrex/build_configuration.hpp @ONLY)
+set_property(SOURCE src/framework/config.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+   "PYFLUID_AMREX_BUILD_CONFIGURATION_HEADER=\"${CMAKE_CURRENT_BINARY_DIR}/generated/pyfluid_amrex/build_configuration.hpp\"")
 
 function(pyfluid_amrex_configure_compile_target target)
    target_include_directories(${target} PRIVATE include src)

@@ -4,7 +4,7 @@
 
 namespace pyfluid_amrex::flux_factory_entries {
 
-void parabolic_char(FluxLaunch const& launch)
+void parabolic_char(FluxKernelLaunch const& launch)
 {
    flux_factory_detail::dispatch_layout<ReconParabolicChar>(launch);
 }

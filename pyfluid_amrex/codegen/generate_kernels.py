@@ -225,6 +225,11 @@ def main() -> None:
    parser.add_argument("--equation-latex", type=Path, default=DEFAULT_EQUATION_LATEX)
    parser.add_argument("--hard-drop-ops", type=int, default=0)
    parser.add_argument("--soft-drop-ops", type=int, default=3)
+   parser.add_argument("--freshness-file", type=Path,
+                       help="shared CMake family provenance; skip current outputs before symbolic imports")
+   parser.add_argument("--dependency", type=Path, action="append", default=[])
+   parser.add_argument("--expected-output", type=Path, action="append", default=[])
+   parser.add_argument("--lock-timeout", type=float, default=300.0)
    args = parser.parse_args()
    kernel_family_names = (
       "characteristic",
@@ -248,6 +253,31 @@ def main() -> None:
       if args.family
       else ("catalog", *kernel_family_names)
    )
+   if args.freshness_file is None:
+      generate_families(args, families)
+      return
+   from generation_cache import generate_if_needed
+
+   def generate_staged(replacements):
+      staged = argparse.Namespace(**vars(args))
+      for name, value in vars(args).items():
+         if isinstance(value, Path) and value.resolve() in replacements:
+            setattr(staged, name, replacements[value.resolve()])
+      generate_families(staged, families)
+
+   changed = generate_if_needed(
+      args.freshness_file,
+      args.dependency,
+      args.expected_output,
+      {"families": list(families), "hard_drop_ops": args.hard_drop_ops,
+       "soft_drop_ops": args.soft_drop_ops},
+      generate_staged,
+      lock_timeout=args.lock_timeout,
+   )
+   print(f"Codegen {'generated' if changed else 'current'}: {','.join(families)}")
+
+
+def generate_families(args, families) -> None:
    generators = None
    policy = None
    for family in families:

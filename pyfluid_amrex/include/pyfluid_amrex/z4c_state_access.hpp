@@ -5,7 +5,7 @@
 
 #include "pyfluid_amrex/kernels_generated/differential_ops.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"
-#include "pyfluid_amrex/spacetime_fields.hpp"
+#include "pyfluid_amrex/generated/field_ids.hpp"
 #include "pyfluid_amrex/z4c_state.hpp"
 #include "pyfluid_amrex/z4c_centering_representation.hpp"
 #include "pyfluid_amrex/excision_geometry.hpp"
