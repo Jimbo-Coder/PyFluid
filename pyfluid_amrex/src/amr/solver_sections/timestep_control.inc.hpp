@@ -14,20 +14,18 @@
       );
    }
 
-   template <int NComp, int EOSMethod, int DiffusionMethod>
    amrex::Real adaptive_dt_all_levels()
    {
       amrex::Real dt = std::numeric_limits<amrex::Real>::max();
       for (int lev = 0; lev <= finestLevel(); ++lev) {
          dt = amrex::min(
             dt,
-            adaptive_dt_for_level<NComp, EOSMethod, DiffusionMethod>(lev)
+            adaptive_dt_for_level(lev)
          );
       }
       return dt;
    }
 
-   template <int NComp, int EOSMethod, int DiffusionMethod>
    amrex::Real adaptive_dt_for_level(int lev)
    {
       amrex::iMultiFab const* inactive_mask = nullptr;
@@ -41,8 +39,8 @@
          *frequency_[lev],
          *fluid_state_.state()[lev],
          cfg_,
-         NComp,
-         DiffusionMethod,
+         num_state_components(),
+         diffusion_method_,
          inactive_mask,
       };
       amrex::MultiFab const* stored_spacetime = nullptr;
@@ -58,7 +56,7 @@
          stored_spacetime = spacetime_coupling_.cell_spacetime()[lev].get();
       }
       const amrex::Real spacetime_dt = spacetime_dt_for_level(lev);
-      if (solid_active(lev) && !has_mhd_components<NComp>()) {
+      if (solid_active(lev) && num_state_components() < NVAR_MHD) {
          const auto solid_apertures = solid_aperture_ptrs(lev);
          return amrex::min(
             spacetime_dt,
@@ -75,7 +73,7 @@
             )
          );
       }
-      if constexpr (!has_mhd_components<NComp>()) {
+      if (num_state_components() < NVAR_MHD) {
          if (mixed_patch_system_enabled()) {
             const PatchGridSystem patch_grid_system = production_patch_grid_system_for_level(lev);
             const PatchLayout patch_layout = production_patch_layout_for_level(lev);
@@ -103,33 +101,30 @@
       );
    }
 
-   template <int NComp, int EOSMethod, int DiffusionMethod>
    amrex::Real adaptive_base_dt_all_levels()
    {
       amrex::Real base_dt = std::numeric_limits<amrex::Real>::max();
       for (int lev = 0; lev <= finestLevel(); ++lev) {
-         base_dt = amrex::min(base_dt, adaptive_dt_for_level<NComp, EOSMethod, DiffusionMethod>(lev) * level_time_factor(lev));
+         base_dt = amrex::min(base_dt, adaptive_dt_for_level(lev) * level_time_factor(lev));
       }
       return base_dt;
    }
 
-   template <int NComp, int EOSMethod, int DiffusionMethod>
    amrex::Real adaptive_base_dt_for_subcycling()
    {
       if (local_cfl_subcycling()) {
-         return adaptive_dt_for_level<NComp, EOSMethod, DiffusionMethod>(0);
+         return adaptive_dt_for_level(0);
       }
-      return adaptive_base_dt_all_levels<NComp, EOSMethod, DiffusionMethod>();
+      return adaptive_base_dt_all_levels();
    }
 
-   template <int NComp, int EOSMethod, int DiffusionMethod>
    int subcycle_step_count(int coarse_lev, amrex::Real coarse_dt)
    {
       if (!local_cfl_subcycling()) {
          return temporal_ref_ratio(coarse_lev);
       }
       const amrex::Real fine_dt_allowed =
-         adaptive_dt_for_level<NComp, EOSMethod, DiffusionMethod>(coarse_lev + 1);
+         adaptive_dt_for_level(coarse_lev + 1);
       if (!std::isfinite(fine_dt_allowed) || fine_dt_allowed <= 0.0_rt) {
          amrex::Abort(
             "local-CFL subcycling found an invalid timestep for fine level "

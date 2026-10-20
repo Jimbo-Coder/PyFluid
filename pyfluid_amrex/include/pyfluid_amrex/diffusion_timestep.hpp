@@ -42,10 +42,11 @@ inline amrex::Real max_diffusion_coefficient(RunConfig const& cfg)
    return coefficient;
 }
 
-template <int DiffusionMethod>
-inline amrex::Real diffusion_dt_limit(amrex::Geometry const& geom, RunConfig const& cfg)
+inline amrex::Real diffusion_dt_limit(
+   amrex::Geometry const& geom, RunConfig const& cfg, int diffusion_method
+)
 {
-   if constexpr (DiffusionMethod != DiffusionExplicit) {
+   if (diffusion_method != DiffusionExplicit) {
       return std::numeric_limits<amrex::Real>::max();
    }
    const amrex::Real coefficient = max_diffusion_coefficient(cfg);

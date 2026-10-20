@@ -7,8 +7,23 @@
    using DiffusionAdvanceFunction = DiffusionStats (
       AmrSolver::*)(amrex::Real, amrex::Real, RunConfig const&
    );
+   using LevelRangeAdvanceFunction = bool (
+      AmrSolver::*)(amrex::Real, amrex::Real, int, int
+   );
+   using CtLevelAdvanceFunction = DiffusionStats (AmrSolver::*)(int, amrex::Real);
+   using DiffusionLevelAdvanceFunction = DiffusionStats (
+      AmrSolver::*)(int, amrex::Real, amrex::Real, RunConfig const&
+   );
+
+   struct SubcycleOperations {
+      LevelRangeAdvanceFunction advance_fluid = nullptr;
+      CtLevelAdvanceFunction advance_ct = nullptr;
+      DiffusionLevelAdvanceFunction advance_diffusion = nullptr;
+      CtLevelAdvanceFunction advance_inactive_ct_resistivity = nullptr;
+   };
+
    using SubcycledAdvanceFunction = DiffusionStats (
-      AmrSolver::*)(amrex::Real, amrex::Real&, amrex::Real&
+      AmrSolver::*)(SubcycleOperations const&, amrex::Real, amrex::Real&, amrex::Real&
    );
    using EvolutionBoundaryFillFunction = void (
       AmrSolver::*)(LevelData&, amrex::Real
@@ -16,6 +31,7 @@
 
    struct EvolutionOperations {
       bool subcycling = false;
+      SubcycleOperations subcycle;
       EvolutionTimestepFunction compute_timestep = nullptr;
       SingleRateAdvanceFunction advance_single_rate = nullptr;
       CtAdvanceFunction advance_ct = nullptr;
@@ -113,13 +129,13 @@
       }
    }
 
-   template <int NComp, int EOSMethod, int DiffusionMethod, bool SubcyclingEnabled>
+   template <bool SubcyclingEnabled>
    amrex::Real compute_evolution_timestep()
    {
       if constexpr (SubcyclingEnabled) {
-         return adaptive_base_dt_for_subcycling<NComp, EOSMethod, DiffusionMethod>();
+         return adaptive_base_dt_for_subcycling();
       }
-      return adaptive_dt_all_levels<NComp, EOSMethod, DiffusionMethod>();
+      return adaptive_dt_all_levels();
    }
 
    template <bool SubcyclingEnabled, int EOSMethod>
@@ -173,12 +189,26 @@
       EvolutionOperations operations;
       operations.subcycling = SubcyclingEnabled;
       operations.compute_timestep =
-         &AmrSolver::compute_evolution_timestep<NComp, EOSMethod, DiffusionMethod, SubcyclingEnabled>;
+         &AmrSolver::compute_evolution_timestep<SubcyclingEnabled>;
       operations.fill_boundaries = &AmrSolver::fill_all_level_boundaries<SubcyclingEnabled>;
       if constexpr (SubcyclingEnabled) {
          operations.advance_subcycled = &AmrSolver::advance_subcycled_hierarchy<
-            NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod
+            NComp, CTEnabled, EOSMethod
          >;
+         operations.subcycle.advance_fluid = &AmrSolver::advance_level_range<
+            NComp, TimeMethod, EOSMethod, true, true, !CTEnabled
+         >;
+         if constexpr (CTEnabled) {
+            operations.subcycle.advance_ct = &AmrSolver::advance_ct_level<DiffusionMethod>;
+         }
+         if constexpr (DiffusionMethod != DiffusionNone) {
+            operations.subcycle.advance_diffusion =
+               &AmrSolver::apply_diffusion_level<DiffusionMethod, NComp>;
+            if constexpr (CTEnabled) {
+               operations.subcycle.advance_inactive_ct_resistivity =
+                  &AmrSolver::advance_ct_inactive_magnetic_resistivity_level<DiffusionMethod>;
+            }
+         }
       } else {
          operations.advance_single_rate = &AmrSolver::advance_all_levels<
             NComp, TimeMethod, EOSMethod, !CTEnabled
@@ -634,6 +664,7 @@
          amrex::Real layout_cell_updates_this_step = 0.0_rt;
          if (operations.subcycling) {
             diffusion = (this->*operations.advance_subcycled)(
+               operations.subcycle,
                dt,
                active_cell_updates_this_step,
                layout_cell_updates_this_step

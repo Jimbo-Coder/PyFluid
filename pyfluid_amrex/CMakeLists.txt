@@ -168,6 +168,7 @@ set(PYFLUID_AMREX_EOS_SOURCES
 set(PYFLUID_AMREX_NUMERICS_SOURCES
    src/numerics/ct_edge_flux_register.cpp
    src/numerics/flux_factory.cpp
+   src/numerics/sources.cpp
    src/numerics/implicit_resistivity.cpp
    src/numerics/diagnostic_reductions.cpp
    src/numerics/nodal_interpolater.cpp

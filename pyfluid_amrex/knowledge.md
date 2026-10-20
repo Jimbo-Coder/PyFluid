@@ -18,6 +18,18 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
 
 ## Scope And Evidence
 
+- Cycle469 removes timestep/diffusion specialization from recursive AMR
+  orchestration and shares Riemann-independent RMHD limiter work. PWL/PWC face
+  states feed one Riemann call. All-dimensional Mac production, maintained
+  analytic/reference gates, paired scalar histories and active-path performance
+  controls pass, with the existing self-gravity AMR failure unchanged. The full
+  1D CUDA limiter compiles in 231 s versus an old-owner timeout at 300 s;
+  both full 3D owners still exceed that bound. All 32 scoped CUDA limiter cases
+  match bitwise. HLL microbenchmark timings show sporadic slow executions in
+  both old/new binaries and remain inconclusive. Detailed resources and timing
+  evidence live in the cycle report; full current CUDA application acceptance
+  remains open.
+
 - Cycle 414 connects the complete generated fCCZ4 equations, reference-frame
   adapters, diagnostics and stored-metric GRHD bridge on regular charts.
   Cartesian and spherical gauge propagation, bounded spherical symmetry
@@ -132,6 +144,16 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   Riemann owners. The heavy MP5 local-edit target remains unmet; outlining
   needs matched runtime controls, including walls and mapped patches, not just
   smaller objects. These measurements are CPU MPI, not GPU evidence.
+- Cycles467--468 distinguish useful sharing from merging heavy algorithms.
+  Ordering wall states before one solver call reduces repeated optimization
+  while retaining specialized Riemann kernels. A tested uniform runtime wall
+  solver switch retained the expensive register/stack footprint and strongly
+  regressed cheap CUDA solvers. Tracer sharing remains experimental because
+  its CPU wall cost is measurable. Production source terms now share one
+  compiled owner; CFL layout/diffusion selection is runtime outside the
+  unchanged pointwise kernels. Mac all-dimensional build, scoped numerical
+  and four performance gates pass; CUDA source-owner link/pointwise equality
+  passes, but the current full WSL application refresh remains deferred.
 - A generated header's size is not its rebuild cost: one broadly imported
   helper can connect unrelated formula edits to expensive flux instantiations.
   The old vector umbrella reached reconstruction via magnetic energy in EoS;

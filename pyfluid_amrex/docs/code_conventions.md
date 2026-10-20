@@ -149,6 +149,18 @@ decisions.
   establishes a material hot-path benefit. Uniform runtime choices belong at
   the coarsest practical launch, tile, or row boundary; do not add divergent or
   repeated policy discovery inside a cell loop.
+- Default configuration choices to ordinary runtime data. Frequent execution
+  alone does not justify a template parameter: it must change required types,
+  storage or generated work, or have a measured performance benefit. Remove
+  unused specialization parameters and select arguments before a shared heavy
+  call when the equations are identical. Measure ambiguous changes on the
+  affected backend, including register/stack use for combined GPU kernels.
+- Reuse the existing host operation/function tables for coarse runtime
+  polymorphism. Changing a switch into virtual calls, `std::function` or a
+  variant visitor does not itself remove the instantiated kernels it selects.
+  Add an abstraction when it improves ownership or extension, not solely to
+  respell selection; retain direct, optimizable pointwise calls unless a
+  measured alternative justifies their replacement.
 - Keep fused operations fused at their numerical boundary. Reconstruction and
   the Riemann solve share reconstructed face states, so their production
   ownership is one flux-kernel registry rather than two materialized stages.

@@ -898,12 +898,14 @@ inline amrex::Real max_hydro_cutcell_signal_frequency_masked(
    return max_frequency;
 }
 
-template <int NComp, int EOSMethod, int DiffusionMethod>
+template <int EOSMethod>
 inline amrex::Real adaptive_dt(
    amrex::MultiFab& frequency,
    amrex::MultiFab const& state,
    amrex::Geometry const& geom,
    RunConfig const& cfg,
+   bool magnetic,
+   int diffusion_method,
    amrex::Real time,
    amrex::MultiFab const* stored_spacetime = nullptr,
    amrex::iMultiFab const* inactive_mask = nullptr
@@ -934,7 +936,7 @@ inline amrex::Real adaptive_dt(
             frequency, state, geom, eos, fixed_spacetime_parameters(cfg), time
          );
       }
-   } else if constexpr (has_mhd_components<NComp>()) {
+   } else if (magnetic) {
       fill_mhd_signal_frequency<EOSMethod>(frequency, state, geom, cfg, eos);
    } else {
       fill_signal_frequency<EOSMethod>(frequency, state, geom, cfg, eos);
@@ -971,20 +973,20 @@ inline amrex::Real adaptive_dt(
       amrex::Abort(message.str().c_str());
    }
    const amrex::Real advective_dt = cfg.cfl / max_frequency;
-   return amrex::min(advective_dt, diffusion_dt_limit<DiffusionMethod>(geom, cfg));
+   return amrex::min(advective_dt, diffusion_dt_limit(geom, cfg, diffusion_method));
 }
 
-template <int NComp, int EOSMethod, int DiffusionMethod>
+template <int EOSMethod>
 inline amrex::Real adaptive_dt_mapped_hydro(
    amrex::MultiFab& frequency,
    amrex::MultiFab const& state,
    RunConfig const& cfg,
+   int diffusion_method,
    PatchGridSystem const& grid_system,
    PatchLayout const& layout
 )
 {
-   static_assert(!has_mhd_components<NComp>(), "mapped patch timestep helper is hydro-only");
-   if constexpr (DiffusionMethod != DiffusionNone) {
+   if (diffusion_method != DiffusionNone) {
       amrex::ignore_unused(frequency, state, cfg, grid_system, layout);
       amrex::Abort("mapped patch hydro diffusion timestep support is not implemented");
       return std::numeric_limits<amrex::Real>::max();
@@ -999,32 +1001,7 @@ inline amrex::Real adaptive_dt_mapped_hydro(
    }
 }
 
-template <int NComp, int EOSMethod, int DiffusionMethod>
-inline amrex::Real adaptive_dt_masked(
-   amrex::MultiFab& frequency,
-   amrex::MultiFab const& state,
-   amrex::iMultiFab const& solid_mask,
-   amrex::Geometry const& geom,
-   RunConfig const& cfg,
-   amrex::Vector<int> const* solid_valid_kind = nullptr
-)
-{
-   const EOSParams eos = eos_params(cfg);
-   (void)frequency;
-   amrex::Real max_frequency = 0.0_rt;
-   if constexpr (has_mhd_components<NComp>()) {
-      max_frequency = max_mhd_signal_frequency_masked<EOSMethod>(state, solid_mask, geom, cfg, eos, solid_valid_kind);
-   } else {
-      max_frequency = max_hydro_signal_frequency_masked<EOSMethod>(state, solid_mask, geom, cfg, eos, solid_valid_kind);
-   }
-   if (max_frequency <= 0.0_rt) {
-      return std::numeric_limits<amrex::Real>::max();
-   }
-   const amrex::Real advective_dt = cfg.cfl / max_frequency;
-   return amrex::min(advective_dt, diffusion_dt_limit<DiffusionMethod>(geom, cfg));
-}
-
-template <int NComp, int EOSMethod, int DiffusionMethod>
+template <int EOSMethod>
 inline amrex::Real adaptive_dt_cutcell_masked(
    amrex::MultiFab& frequency,
    amrex::MultiFab const& state,
@@ -1033,13 +1010,15 @@ inline amrex::Real adaptive_dt_cutcell_masked(
    std::array<amrex::MultiFab const*, AMREX_SPACEDIM> const& apertures,
    amrex::Geometry const& geom,
    RunConfig const& cfg,
+   bool magnetic,
+   int diffusion_method,
    amrex::Vector<int> const* solid_valid_kind = nullptr
 )
 {
    const EOSParams eos = eos_params(cfg);
    (void)frequency;
    amrex::Real max_frequency = 0.0_rt;
-   if constexpr (!has_mhd_components<NComp>()) {
+   if (!magnetic) {
       max_frequency = max_hydro_cutcell_signal_frequency_masked<EOSMethod>(
          state,
          solid_mask,
@@ -1056,120 +1035,45 @@ inline amrex::Real adaptive_dt_cutcell_masked(
       return std::numeric_limits<amrex::Real>::max();
    }
    const amrex::Real advective_dt = cfg.cfl / max_frequency;
-   return amrex::min(advective_dt, diffusion_dt_limit<DiffusionMethod>(geom, cfg));
+   return amrex::min(advective_dt, diffusion_dt_limit(geom, cfg, diffusion_method));
 }
 
-} // namespace pyfluid_amrex
-#include "pyfluid_amrex/state.hpp"
-
-namespace pyfluid_amrex {
 namespace {
 
-template <int NumComponents, int EosMethod, int DiffusionMethod>
-amrex::Real launch_standard(
-   SignalSpeedLaunch const& launch,
-   amrex::Geometry const& geometry,
-   amrex::Real time,
-   amrex::MultiFab const* cell_spacetime
-)
+bool signal_speed_uses_mhd(SignalSpeedLaunch const& launch)
 {
-   return adaptive_dt<NumComponents, EosMethod, DiffusionMethod>(
-      launch.frequency,
-      launch.state,
-      geometry,
-      launch.config,
-      time,
-      cell_spacetime,
-      launch.inactive_mask
-   );
-}
-
-template <int NumComponents, int EosMethod, int DiffusionMethod>
-amrex::Real launch_mapped(
-   SignalSpeedLaunch const& launch,
-   PatchGridSystem const& grid_system,
-   PatchLayout const& layout
-)
-{
-   return adaptive_dt_mapped_hydro<NumComponents, EosMethod, DiffusionMethod>(
-      launch.frequency,
-      launch.state,
-      launch.config,
-      grid_system,
-      layout
-   );
-}
-
-template <int NumComponents, int EosMethod, int DiffusionMethod>
-amrex::Real launch_cutcell(
-   SignalSpeedLaunch const& launch,
-   amrex::iMultiFab const& solid_mask,
-   amrex::MultiFab const& volume_fraction,
-   std::array<amrex::MultiFab const*, AMREX_SPACEDIM> const& apertures,
-   amrex::Geometry const& geometry,
-   amrex::Vector<int> const* solid_valid_kind
-)
-{
-   return adaptive_dt_cutcell_masked<NumComponents, EosMethod, DiffusionMethod>(
-      launch.frequency,
-      launch.state,
-      solid_mask,
-      volume_fraction,
-      apertures,
-      geometry,
-      launch.config,
-      solid_valid_kind
-   );
-}
-
-template <int NumComponents, int EosMethod, typename Operation>
-amrex::Real dispatch_diffusion(int diffusion_method, Operation&& operation)
-{
-   switch (diffusion_method) {
+   switch (launch.diffusion_method) {
    case DiffusionNone:
-      return operation.template operator()<NumComponents, EosMethod, DiffusionNone>();
    case DiffusionExplicit:
-      return operation.template operator()<NumComponents, EosMethod, DiffusionExplicit>();
    case DiffusionImplicit:
-      return operation.template operator()<NumComponents, EosMethod, DiffusionImplicit>();
+      break;
    default:
       amrex::Abort("invalid diffusion method in signal-speed factory");
-      return 0.0_rt;
    }
-}
-
-template <int NumComponents, typename Operation>
-amrex::Real dispatch_runtime_eos(
-   SignalSpeedLaunch const& launch,
-   Operation&& operation
-)
-{
-   if (eos_method_code(launch.config) == EOSIdealGas) {
-      return dispatch_diffusion<NumComponents, EOSIdealGas>(
-         launch.diffusion_method, operation
-      );
+   switch (launch.num_components) {
+   case NVAR_HYDRO:
+   case NVAR_HYDRO + 1:
+      return false;
+   case NVAR_MHD:
+   case NVAR_MHD + 1:
+      return true;
+   default:
+      amrex::Abort("unsupported state layout in signal-speed factory");
+      return false;
    }
-   return dispatch_diffusion<NumComponents, EOSRuntime>(
-      launch.diffusion_method, operation
-   );
 }
 
 template <typename Operation>
-amrex::Real dispatch_layout(SignalSpeedLaunch const& launch, Operation&& operation)
+amrex::Real dispatch_runtime_eos(
+   SignalSpeedLaunch const& launch, Operation&& operation
+)
 {
-   switch (launch.num_components) {
-   case NVAR_HYDRO:
-      return dispatch_runtime_eos<NVAR_HYDRO>(launch, operation);
-   case NVAR_HYDRO + 1:
-      return dispatch_runtime_eos<NVAR_HYDRO + 1>(launch, operation);
-   case NVAR_MHD:
-      return dispatch_runtime_eos<NVAR_MHD>(launch, operation);
-   case NVAR_MHD + 1:
-      return dispatch_runtime_eos<NVAR_MHD + 1>(launch, operation);
-   default:
-      amrex::Abort("unsupported state layout in signal-speed factory");
-      return 0.0_rt;
+   // Keep the measured ideal-gas fast path; layout and diffusion only select
+   // host operations and do not need to multiply the compiled launch bodies.
+   if (eos_method_code(launch.config) == EOSIdealGas) {
+      return operation.template operator()<EOSIdealGas>();
    }
+   return operation.template operator()<EOSRuntime>();
 }
 
 } // namespace
@@ -1181,12 +1085,15 @@ amrex::Real compute_adaptive_dt(
    amrex::MultiFab const* cell_spacetime
 )
 {
-   const auto operation = [&]<int NumComponents, int EosMethod, int DiffusionMethod>() {
-      return launch_standard<NumComponents, EosMethod, DiffusionMethod>(
-         launch, geometry, time, cell_spacetime
+   const bool magnetic = signal_speed_uses_mhd(launch);
+   const auto operation = [&]<int EosMethod>() {
+      return adaptive_dt<EosMethod>(
+         launch.frequency, launch.state, geometry, launch.config,
+         magnetic, launch.diffusion_method, time, cell_spacetime,
+         launch.inactive_mask
       );
    };
-   return dispatch_layout(launch, operation);
+   return dispatch_runtime_eos(launch, operation);
 }
 
 amrex::Real compute_spacetime_dt(
@@ -1254,20 +1161,16 @@ amrex::Real compute_mapped_hydro_adaptive_dt(
    PatchLayout const& layout
 )
 {
-   const auto operation = [&]<int NumComponents, int EosMethod, int DiffusionMethod>() {
-      return launch_mapped<NumComponents, EosMethod, DiffusionMethod>(
-         launch, grid_system, layout
+   if (signal_speed_uses_mhd(launch)) {
+      amrex::Abort("mapped-patch signal-speed launch requires a hydro state layout");
+   }
+   const auto operation = [&]<int EosMethod>() {
+      return adaptive_dt_mapped_hydro<EosMethod>(
+         launch.frequency, launch.state, launch.config,
+         launch.diffusion_method, grid_system, layout
       );
    };
-   switch (launch.num_components) {
-   case NVAR_HYDRO:
-      return dispatch_runtime_eos<NVAR_HYDRO>(launch, operation);
-   case NVAR_HYDRO + 1:
-      return dispatch_runtime_eos<NVAR_HYDRO + 1>(launch, operation);
-   default:
-      amrex::Abort("mapped-patch signal-speed launch requires a hydro state layout");
-      return 0.0_rt;
-   }
+   return dispatch_runtime_eos(launch, operation);
 }
 
 amrex::Real compute_cutcell_adaptive_dt(
@@ -1279,17 +1182,15 @@ amrex::Real compute_cutcell_adaptive_dt(
    amrex::Vector<int> const* solid_valid_kind
 )
 {
-   const auto operation = [&]<int NumComponents, int EosMethod, int DiffusionMethod>() {
-      return launch_cutcell<NumComponents, EosMethod, DiffusionMethod>(
-         launch,
-         solid_mask,
-         volume_fraction,
-         apertures,
-         geometry,
-         solid_valid_kind
+   const bool magnetic = signal_speed_uses_mhd(launch);
+   const auto operation = [&]<int EosMethod>() {
+      return adaptive_dt_cutcell_masked<EosMethod>(
+         launch.frequency, launch.state, solid_mask, volume_fraction,
+         apertures, geometry, launch.config, magnetic,
+         launch.diffusion_method, solid_valid_kind
       );
    };
-   return dispatch_layout(launch, operation);
+   return dispatch_runtime_eos(launch, operation);
 }
 
 } // namespace pyfluid_amrex

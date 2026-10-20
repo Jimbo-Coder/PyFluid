@@ -242,7 +242,7 @@ inline void fill_gravity_poisson_rhs(
    }
 }
 
-template <int NComp, bool AddEnergySource = true>
+template <bool AddEnergySource = true>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void add_gravity_source_cell(
    amrex::Array4<amrex::Real> const& rhs,
@@ -284,10 +284,8 @@ void add_gravity_source_cell(
    if constexpr (AddEnergySource) {
       rhs(i, j, k, ENERGY) += dot(momentum, acceleration);
    }
-   (void)NComp;
 }
 
-template <int NComp>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void add_athena_gravity_energy_source_cell(
    amrex::Array4<amrex::Real> const& rhs,
@@ -319,10 +317,8 @@ void add_athena_gravity_energy_source_cell(
       + flux[2](i, j, k, RHO) * (-grad_z(i, j, k, 0) - acceleration_offset[2]);
 #endif
    rhs(i, j, k, ENERGY) += 0.5_rt * source;
-   (void)NComp;
 }
 
-template <int NComp>
 inline void apply_athena_gravity_energy_source(
    amrex::MultiFab& rhs,
    std::array<amrex::MultiFab const*, AMREX_SPACEDIM> const& fluxes,
@@ -360,7 +356,7 @@ inline void apply_athena_gravity_energy_source(
 
          if (solid_mask == nullptr) {
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               add_athena_gravity_energy_source_cell<NComp>(
+               add_athena_gravity_energy_source_cell(
                   r,
                   flux,
                   grad_x,
@@ -385,7 +381,7 @@ inline void apply_athena_gravity_energy_source(
          }
          if (kind == MaskKindZero) {
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-               add_athena_gravity_energy_source_cell<NComp>(
+               add_athena_gravity_energy_source_cell(
                   r,
                   flux,
                   grad_x,
@@ -407,7 +403,7 @@ inline void apply_athena_gravity_energy_source(
          const auto solid = solid_mask->const_array(mfi);
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             if (solid(i, j, k, 0) == 0) {
-               add_athena_gravity_energy_source_cell<NComp>(
+               add_athena_gravity_energy_source_cell(
                   r,
                   flux,
                   grad_x,
@@ -428,7 +424,6 @@ inline void apply_athena_gravity_energy_source(
    }
 }
 
-template <int NComp>
 inline void apply_gravity_source(
    amrex::MultiFab& rhs,
    amrex::MultiFab const& state,
@@ -466,7 +461,7 @@ inline void apply_gravity_source(
          if (solid_mask == nullptr) {
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                if (use_athena_energy_source || suppress_energy_source) {
-                  add_gravity_source_cell<NComp, false>(
+                  add_gravity_source_cell<false>(
                      r,
                      s,
                      grad_x,
@@ -482,7 +477,7 @@ inline void apply_gravity_source(
                      k
                   );
                } else {
-                  add_gravity_source_cell<NComp>(
+                  add_gravity_source_cell<>(
                      r,
                      s,
                      grad_x,
@@ -509,7 +504,7 @@ inline void apply_gravity_source(
          if (kind == MaskKindZero) {
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
                if (use_athena_energy_source || suppress_energy_source) {
-                  add_gravity_source_cell<NComp, false>(
+                  add_gravity_source_cell<false>(
                      r,
                      s,
                      grad_x,
@@ -525,7 +520,7 @@ inline void apply_gravity_source(
                      k
                   );
                } else {
-                  add_gravity_source_cell<NComp>(
+                  add_gravity_source_cell<>(
                      r,
                      s,
                      grad_x,
@@ -549,7 +544,7 @@ inline void apply_gravity_source(
          amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
             if (solid(i, j, k, 0) == 0) {
                if (use_athena_energy_source || suppress_energy_source) {
-                  add_gravity_source_cell<NComp, false>(
+                  add_gravity_source_cell<false>(
                      r,
                      s,
                      grad_x,
@@ -565,7 +560,7 @@ inline void apply_gravity_source(
                      k
                   );
                } else {
-                  add_gravity_source_cell<NComp>(
+                  add_gravity_source_cell<>(
                      r,
                      s,
                      grad_x,
@@ -589,7 +584,7 @@ inline void apply_gravity_source(
       if (fluxes == nullptr) {
          amrex::Abort("Athena gravity coupling requested without mass fluxes");
       }
-      apply_athena_gravity_energy_source<NComp>(
+      apply_athena_gravity_energy_source(
          rhs,
          *fluxes,
          gravity_gradient,

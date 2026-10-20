@@ -868,7 +868,7 @@ RMHDConserved difference(
    };
 }
 
-template <int ReconMethod, int RiemannMethod, int Direction, typename MetricAccessor>
+template <int RiemannMethod, int Direction, typename MetricAccessor>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 RMHDRiemannFluxResult rmhd_correction_flux(
    amrex::Array4<amrex::Real const> const& primitive,
@@ -879,7 +879,8 @@ RMHDRiemannFluxResult rmhd_correction_flux(
    MetricAccessor const& metric,
    EOSThermodynamicState const& atmosphere,
    amrex::Array4<int const> const& excision_mask,
-   bool use_excision_mask
+   bool use_excision_mask,
+   bool use_pwl
 ) noexcept
 {
    if (use_excision_mask) {
@@ -896,33 +897,24 @@ RMHDRiemannFluxResult rmhd_correction_flux(
    int jl;
    int kl;
    left_cell<Direction>(i, j, k, il, jl, kl);
-   if constexpr (RiemannMethod == RiemannHLLC
-                 || RiemannMethod == RiemannHLLD) {
-      const RMHDPrimitiveFaceStates face =
-         rmhd_primitive_face_states<ReconMethod, Direction>(
-            primitive, il, jl, kl, i, j, k, eos, metric,
-            atmosphere, atmosphere
-         );
-      const SpacetimeMetric face_metric = metric.template face<Direction>(
-         i, j, k
-      );
-      if constexpr (RiemannMethod == RiemannHLLC) {
-         return rmhd_hllc_flux<Direction>(
-            face.left, face.right, eos, face_metric
-         );
-      } else {
-         return rmhd_hlld_flux<Direction>(
-            face.left, face.right, eos, face_metric
-         );
-      }
+   // Both correction orders solve the same Riemann problem after their
+   // face states are selected. Keep the expensive fan as one call site.
+   const RMHDPrimitiveFaceStates face = use_pwl
+      ? rmhd_primitive_face_states<ReconPWL, Direction>(
+           primitive, il, jl, kl, i, j, k, eos, metric, atmosphere, atmosphere
+        )
+      : rmhd_primitive_face_states<ReconPWC, Direction>(
+           primitive, il, jl, kl, i, j, k, eos, metric, atmosphere, atmosphere
+        );
+   const SpacetimeMetric face_metric = metric.template face<Direction>(i, j, k);
+   if constexpr (RiemannMethod == RiemannHLLC) {
+      return rmhd_hllc_flux<Direction>(face.left, face.right, eos, face_metric);
+   } else if constexpr (RiemannMethod == RiemannHLLD) {
+      return rmhd_hlld_flux<Direction>(face.left, face.right, eos, face_metric);
+   } else if constexpr (RiemannMethod == RiemannLLF) {
+      return {rmhd_llf_flux<Direction>(face.left, face.right, eos, face_metric), false};
    } else {
-      return {
-         rmhd_riemann_flux<ReconMethod, RiemannMethod, Direction>(
-            primitive, il, jl, kl, i, j, k, eos, metric,
-            atmosphere, atmosphere
-         ),
-         false,
-      };
+      return {rmhd_hll_flux<Direction>(face.left, face.right, eos, face_metric), false};
    }
 }
 
@@ -1034,29 +1026,9 @@ RMHDConserved selected_rmhd_flux(
    if (correction_kind == 0) {
       return high;
    }
-   if (correction_kind == 1) {
-      const RMHDRiemannFluxResult result = rmhd_correction_flux<
-         ReconPWL,
-         RiemannMethod,
-         Direction
-      >(
-         primitive, i, j, k, eos, metric, atmosphere,
-         excision_mask, use_excision_mask
-      );
-      if (hll_fallback_count != nullptr && result.used_hll) {
-         amrex::HostDevice::Atomic::Add(
-            hll_fallback_count, static_cast<amrex::Long>(1)
-         );
-      }
-      return result.flux;
-   }
-   const RMHDRiemannFluxResult result = rmhd_correction_flux<
-      ReconPWC,
-      RiemannMethod,
-      Direction
-   >(
+   const RMHDRiemannFluxResult result = rmhd_correction_flux<RiemannMethod, Direction>(
       primitive, i, j, k, eos, metric, atmosphere,
-      excision_mask, use_excision_mask
+      excision_mask, use_excision_mask, correction_kind == 1
    );
    if (hll_fallback_count != nullptr && result.used_hll) {
       amrex::HostDevice::Atomic::Add(
@@ -1064,6 +1036,38 @@ RMHDConserved selected_rmhd_flux(
       );
    }
    return result.flux;
+}
+
+// Select only the face-flux kernel. Candidate assembly, recovery and mask
+// closure do not depend on the correction Riemann solver.
+template <typename Operation>
+void dispatch_rmhd_correction_flux(int riemann_method, Operation const& operation)
+{
+   switch (riemann_method) {
+   case RiemannLLF:
+      operation.template operator()<RiemannLLF>();
+      return;
+   case RiemannHLL:
+   case RiemannHLLE:
+      operation.template operator()<RiemannHLL>();
+      return;
+   case RiemannHLLC:
+#if PYFLUID_AMREX_ENABLE_RIEMANN_HLLC
+      operation.template operator()<RiemannHLLC>();
+#else
+      amrex::Abort("RMHD HLLC candidate correction is disabled in this build");
+#endif
+      return;
+   case RiemannHLLD:
+#if PYFLUID_AMREX_ENABLE_RIEMANN_HLLD
+      operation.template operator()<RiemannHLLD>();
+#else
+      amrex::Abort("RMHD HLLD candidate correction is disabled in this build");
+#endif
+      return;
+   default:
+      amrex::Abort("invalid RMHD candidate-correction Riemann solver");
+   }
 }
 
 // Materialize one selected flux per face before taking its divergence. Keeping
@@ -1097,6 +1101,31 @@ void fill_selected_rmhd_fluxes(
    });
 }
 
+template <int Direction, typename MetricAccessor>
+void fill_selected_rmhd_fluxes_runtime(
+   int riemann_method,
+   amrex::Box const& face_box,
+   amrex::Array4<amrex::Real> const& selected_flux,
+   amrex::Array4<amrex::Real const> const& high_flux,
+   amrex::Array4<amrex::Real const> const& primitive,
+   amrex::Array4<int const> const& correction,
+   EOSParams const& eos,
+   MetricAccessor const& metric,
+   EOSThermodynamicState const& atmosphere,
+   amrex::Array4<int const> const& excision_mask,
+   bool use_excision_mask,
+   amrex::Long* hll_fallback_count = nullptr
+)
+{
+   dispatch_rmhd_correction_flux(riemann_method, [&]<int RiemannMethod>() {
+      fill_selected_rmhd_fluxes<RiemannMethod, Direction>(
+         face_box, selected_flux, high_flux, primitive, correction, eos,
+         metric, atmosphere, excision_mask, use_excision_mask,
+         hll_fallback_count
+      );
+   });
+}
+
 template <int Direction>
 AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
 void add_selected_rmhd_rhs_correction(
@@ -1119,7 +1148,40 @@ void add_selected_rmhd_rhs_correction(
 }
 
 template <int RiemannMethod, int Direction, typename MetricAccessor>
+void fill_pwl_rmhd_correction_fluxes(
+   amrex::Box const& box,
+   amrex::Box const& face_box,
+   amrex::Array4<amrex::Real> const& corrected_flux,
+   amrex::Array4<amrex::Real const> const& primitive_values,
+   amrex::Array4<int const> const& correction_values,
+   EOSParams const& eos,
+   MetricAccessor const& metric,
+   EOSThermodynamicState const& atmosphere,
+   amrex::Array4<int const> const& excision_mask,
+   bool use_excision_mask
+)
+{
+   amrex::ParallelFor(face_box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
+      int il, jl, kl;
+      left_cell<Direction>(i, j, k, il, jl, kl);
+      // Initial classification belongs to this tile. Do not read another
+      // tile's mask while its CPU/GPU work may still be in flight.
+      const bool left_troubled = box.contains(amrex::IntVect(AMREX_D_DECL(il, jl, kl)))
+         && correction_values(il, jl, kl, 0) == 2;
+      const bool right_troubled = box.contains(amrex::IntVect(AMREX_D_DECL(i, j, k)))
+         && correction_values(i, j, k, 0) == 2;
+      if (!left_troubled && !right_troubled) return;
+      store_rmhd_conserved(corrected_flux, i, j, k,
+         rmhd_correction_flux<RiemannMethod, Direction>(
+            primitive_values, i, j, k, eos, metric, atmosphere,
+            excision_mask, use_excision_mask, true
+         ).flux);
+   });
+}
+
+template <int Direction, typename MetricAccessor>
 void add_pwl_rmhd_candidate_direction(
+   int riemann_method,
    amrex::Box const& box,
    amrex::Array4<amrex::Real const> const& high_flux,
    amrex::Array4<amrex::Real const> const& primitive_values,
@@ -1136,21 +1198,11 @@ void add_pwl_rmhd_candidate_direction(
    const amrex::Box face_box = amrex::surroundingNodes(box, Direction);
    amrex::FArrayBox face_storage(face_box, NVAR_MHD, amrex::The_Async_Arena());
    const auto corrected_flux = face_storage.array();
-   amrex::ParallelFor(face_box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
-      int il, jl, kl;
-      left_cell<Direction>(i, j, k, il, jl, kl);
-      // Initial classification belongs to this tile. Do not read another
-      // tile's mask while its CPU/GPU work may still be in flight.
-      const bool left_troubled = box.contains(amrex::IntVect(AMREX_D_DECL(il, jl, kl)))
-         && correction_values(il, jl, kl, 0) == 2;
-      const bool right_troubled = box.contains(amrex::IntVect(AMREX_D_DECL(i, j, k)))
-         && correction_values(i, j, k, 0) == 2;
-      if (!left_troubled && !right_troubled) return;
-      store_rmhd_conserved(corrected_flux, i, j, k,
-         rmhd_correction_flux<ReconPWL, RiemannMethod, Direction>(
-            primitive_values, i, j, k, eos, metric, atmosphere,
-            excision_mask, use_excision_mask
-         ).flux);
+   dispatch_rmhd_correction_flux(riemann_method, [&]<int RiemannMethod>() {
+      fill_pwl_rmhd_correction_fluxes<RiemannMethod, Direction>(
+         box, face_box, corrected_flux, primitive_values, correction_values,
+         eos, metric, atmosphere, excision_mask, use_excision_mask
+      );
    });
    amrex::ParallelFor(box, [=] AMREX_GPU_DEVICE(int i, int j, int k) noexcept {
       if (correction_values(i, j, k, 0) != 2) return;
@@ -1163,8 +1215,9 @@ void add_pwl_rmhd_candidate_direction(
    });
 }
 
-template <int RiemannMethod, int Direction, typename MetricAccessor>
+template <int Direction, typename MetricAccessor>
 void add_selected_rmhd_candidate_direction(
+   int riemann_method,
    amrex::Box const& box,
    amrex::Array4<amrex::Real const> const& high_flux,
    amrex::Array4<amrex::Real const> const& primitive_values,
@@ -1181,7 +1234,8 @@ void add_selected_rmhd_candidate_direction(
    const amrex::Box face_box = amrex::surroundingNodes(box, Direction);
    amrex::FArrayBox face_storage(face_box, NVAR_MHD, amrex::The_Async_Arena());
    const auto selected_flux = face_storage.array();
-   fill_selected_rmhd_fluxes<RiemannMethod, Direction>(
+   fill_selected_rmhd_fluxes_runtime<Direction>(
+      riemann_method,
       face_box, selected_flux, high_flux, primitive_values, current_values,
       eos, metric, atmosphere, excision_mask, use_excision_mask
    );
@@ -1197,8 +1251,9 @@ void add_selected_rmhd_candidate_direction(
    });
 }
 
-template <int RiemannMethod, int Direction, typename MetricAccessor>
+template <int Direction, typename MetricAccessor>
 void correct_selected_rmhd_rhs_direction(
+   int riemann_method,
    amrex::Box const& box,
    amrex::Array4<amrex::Real const> const& high_flux,
    amrex::Array4<amrex::Real const> const& primitive_values,
@@ -1215,7 +1270,8 @@ void correct_selected_rmhd_rhs_direction(
    const amrex::Box face_box = amrex::surroundingNodes(box, Direction);
    amrex::FArrayBox face_storage(face_box, NVAR_MHD, amrex::The_Async_Arena());
    const auto selected_flux = face_storage.array();
-   fill_selected_rmhd_fluxes<RiemannMethod, Direction>(
+   fill_selected_rmhd_fluxes_runtime<Direction>(
+      riemann_method,
       face_box, selected_flux, high_flux, primitive_values, correction_values,
       eos, metric, atmosphere, excision_mask, use_excision_mask
    );
@@ -1232,8 +1288,9 @@ void correct_selected_rmhd_rhs_direction(
    });
 }
 
-template <int RiemannMethod, typename MetricAccessorFactory>
+template <typename MetricAccessorFactory>
 void apply_rmhd_limiter_impl(
+   int riemann_method,
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab& rhs,
    amrex::MultiFab const& base_conserved,
@@ -1302,7 +1359,8 @@ void apply_rmhd_limiter_impl(
       // Build the optional PWL candidate one direction at a time. Recovery
       // stays in its own launch; neither kernel contains the other's physics.
       auto add_pwl_direction = [&]<int Direction>() {
-         add_pwl_rmhd_candidate_direction<RiemannMethod, Direction>(
+         add_pwl_rmhd_candidate_direction<Direction>(
+            riemann_method,
             box, fluxes[Direction]->const_array(mfi), primitive_values,
             correction_values, candidate_values, eos, metric, atmosphere,
             excision_mask, use_excision_mask, increment_scale / spacing[Direction]
@@ -1386,7 +1444,8 @@ void apply_rmhd_limiter_impl(
             ));
          });
          auto add_candidate_direction = [&]<int Direction>() {
-            add_selected_rmhd_candidate_direction<RiemannMethod, Direction>(
+            add_selected_rmhd_candidate_direction<Direction>(
+               riemann_method,
                box, fluxes[Direction]->const_array(mfi), primitive_values,
                current_values, candidate_values, eos, metric, atmosphere,
                excision_mask, use_excision_mask, increment_scale / spacing[Direction]
@@ -1476,7 +1535,8 @@ void apply_rmhd_limiter_impl(
       }
       const bool use_excision_mask = black_hole_excision_mask != nullptr;
       auto correct_rhs_direction = [&]<int Direction>() {
-         correct_selected_rmhd_rhs_direction<RiemannMethod, Direction>(
+         correct_selected_rmhd_rhs_direction<Direction>(
+            riemann_method,
             box, fluxes[Direction]->const_array(mfi), primitive_values,
             correction_values, rhs_values, eos, metric, atmosphere,
             excision_mask, use_excision_mask, 1.0_rt / spacing[Direction]
@@ -1504,7 +1564,8 @@ void apply_rmhd_limiter_impl(
          if (black_hole_excision_mask != nullptr) {
             excision_mask = black_hole_excision_mask->const_array(mfi);
          }
-         fill_selected_rmhd_fluxes<RiemannMethod, Direction>(
+         fill_selected_rmhd_fluxes_runtime<Direction>(
+            riemann_method,
             mfi.tilebox(), flux_values, flux_values, primitive_values, correction_values,
             eos, metric, atmosphere, excision_mask, black_hole_excision_mask != nullptr,
             hll_fallback_count
@@ -1520,8 +1581,8 @@ void apply_rmhd_limiter_impl(
 #endif
 }
 
-template <int RiemannMethod>
 void apply_rmhd_limiter(
+   int riemann_method,
    std::array<amrex::MultiFab*, AMREX_SPACEDIM> const& fluxes,
    amrex::MultiFab& rhs,
    amrex::MultiFab const& base_conserved,
@@ -1548,7 +1609,8 @@ void apply_rmhd_limiter(
 )
 {
    auto apply = [&](auto&& metric_factory) {
-      apply_rmhd_limiter_impl<RiemannMethod>(
+      apply_rmhd_limiter_impl(
+         riemann_method,
          fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
          atmosphere, conserved_weight, increment_scale,
          try_pwl_first, enforce_dmp, dmp_factor, pwl_correction_count,
@@ -1602,50 +1664,14 @@ void apply_rmhd_candidate_flux_limiter(
    if (!(increment_scale > 0.0_rt)) {
       return;
    }
-   if (riemann_method == RiemannLLF) {
-      apply_rmhd_limiter<RiemannLLF>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
-         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
-         time, conserved_weight, increment_scale, try_pwl_first,
-         enforce_dmp, dmp_factor, pwl_correction_count, pwc_correction_count,
-         hll_fallback_count, black_hole_excision_mask, excision_region, diode
-      );
-   } else if (riemann_method == RiemannHLL
-              || riemann_method == RiemannHLLE) {
-      apply_rmhd_limiter<RiemannHLL>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
-         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
-         time, conserved_weight, increment_scale, try_pwl_first,
-         enforce_dmp, dmp_factor, pwl_correction_count, pwc_correction_count,
-         hll_fallback_count, black_hole_excision_mask, excision_region, diode
-      );
-   } else if (riemann_method == RiemannHLLC) {
-#if PYFLUID_AMREX_ENABLE_RIEMANN_HLLC
-      apply_rmhd_limiter<RiemannHLLC>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
-         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
-         time, conserved_weight, increment_scale, try_pwl_first,
-         enforce_dmp, dmp_factor, pwl_correction_count, pwc_correction_count,
-         hll_fallback_count, black_hole_excision_mask, excision_region, diode
-      );
-#else
-      amrex::Abort("RMHD HLLC candidate correction is disabled in this build");
-#endif
-   } else if (riemann_method == RiemannHLLD) {
-#if PYFLUID_AMREX_ENABLE_RIEMANN_HLLD
-      apply_rmhd_limiter<RiemannHLLD>(
-         fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
-         fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
-         time, conserved_weight, increment_scale, try_pwl_first,
-         enforce_dmp, dmp_factor, pwl_correction_count, pwc_correction_count,
-         hll_fallback_count, black_hole_excision_mask, excision_region, diode
-      );
-#else
-      amrex::Abort("RMHD HLLD candidate correction is disabled in this build");
-#endif
-   } else {
-      amrex::Abort("invalid RMHD candidate-correction Riemann solver");
-   }
+   apply_rmhd_limiter(
+      riemann_method,
+      fluxes, rhs, base_conserved, conserved, primitive, eos, geometry,
+      fixed_spacetime, cell_spacetime, candidate_cell_spacetime, atmosphere,
+      time, conserved_weight, increment_scale, try_pwl_first,
+      enforce_dmp, dmp_factor, pwl_correction_count, pwc_correction_count,
+      hll_fallback_count, black_hole_excision_mask, excision_region, diode
+   );
 }
 
 } // namespace pyfluid_amrex

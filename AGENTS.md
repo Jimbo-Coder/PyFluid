@@ -94,6 +94,18 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
 
 ## Continuity
 
+- The always-on Mac mini is the primary development checkout and should retain
+  the complete shared source/history. Use ordinary Git commits and GitHub
+  push/pull for cross-machine development; do not build custom sync tools or
+  schedule periodic file syncing. The active Windows build checkout is
+  `/home/max/phys_research/PyFluid` in WSL, not the older Windows notebook copies.
+- At the start of a session, inspect and preserve dirty work before pulling with
+  `git pull --ff-only`. At useful Windows development checkpoints and the end of
+  a session, commit/push the shared work and fast-forward the Mac checkout to
+  the same branch/commit. Check both Git status and HEAD; report any work left
+  only on Windows. Copy useful ignored run reports/results to the Mac separately;
+  keep machine-specific builds and caches local.
+
 - After a context reset, read `pyfluid_amrex/knowledge.md`,
   `pyfluid_amrex/references.md`,
   `pyfluid_amrex/docs/infrastructure_conventions.md`, and the tail of

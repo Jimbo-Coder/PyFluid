@@ -335,6 +335,24 @@ normalized recovery algebra into powers of density during code generation.
 - Large host orchestration belongs in compiled `.cpp` owners. Header-only code
   is for small value types and pointwise CPU/GPU kernels where inlining is part
   of the implementation. Runtime method choice occurs outside cell loops.
+- Newtonian acceleration, heating and gravity source application share the
+  compiled `src/numerics/sources.cpp` owner. Its declaration-only private header
+  carries `SourceStageContext`; hydro/MHD/passive layouts use the same conserved
+  density, momentum and energy roles here and do not need separate source
+  instantiations. Keep gravity-field construction and the gravity source's
+  energy-coupling contract in their existing shared owners.
+- The signal-speed factory selects layout and diffusion timestep policy on the
+  host at runtime. Keep separate hydro/MHD/relativistic pointwise kernels and
+  the measured ideal-gas EoS fast path. Tracer presence and diffusion policy
+  must not multiply these launch bodies; neither changes their cell equations.
+- Subcycling uses the same immutable host operation-plan pattern as single-rate
+  evolution. Select the specialized time integrator and diffusion operations
+  once, then pass them through the shared recursive level advance. Timestep
+  and diffusion choices must not multiply the recursive AMR orchestration.
+- RMHD candidate limiting shares candidate assembly, recovery and mask closure
+  across correction Riemann solvers. Dispatch only the face-flux launches by
+  solver; select PWL/PWC face states before one common Riemann call. Keep the
+  shared-face closure, correction counters and conservative update order intact.
 - Identical implementation sources used by the executable and its utilities or
   tests share CMake object owners within one dimension/backend. Entry points
   stay private; a small check must not pull in unrelated implementation files.

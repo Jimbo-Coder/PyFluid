@@ -328,5 +328,5 @@ private:
          source_context.mass_fluxes = &mass_fluxes;
          source_context.suppress_athena_gravity_energy_source = suppress_athena_gravity_energy_source_;
       }
-      apply_sources<NComp>(*fluid_state_.rhs()[lev], *input[lev], source_context);
+      apply_sources(*fluid_state_.rhs()[lev], *input[lev], source_context);
    }

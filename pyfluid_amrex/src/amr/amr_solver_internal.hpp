@@ -25,6 +25,7 @@
 #include "pyfluid_amrex/signal_speed_factory.hpp"
 #include "pyfluid_amrex/solid_wall_power.hpp"
 #include "numerics/sources.hpp"
+#include "pyfluid_amrex/gravity.hpp"
 #include "pyfluid_amrex/state_update.hpp"
 #include "pyfluid_amrex/z4c_centering_representation.hpp"
 

@@ -268,6 +268,40 @@ were checked separately:
   the finite-volume transfer contract and do not establish new CT/refinement
   support; evaluate with the existing physical-error and resource gates.
 
+## Comparative compilation source review (Cycle463)
+
+- `SOURCE-CHECKED / DEFER measurement`: local AthenaK builds broad hydro/MHD,
+  radiation and NR sources in one executable. Its hydro flux owner specializes
+  Riemann selection but keeps reconstruction, passive count and dimensional
+  activation runtime. Our `rhs.hpp` retains reconstruction-by-Riemann and
+  layout/topology specializations. Investigate one uniform-choice factorization
+  under the300s owner deadline; retain fused states and require numerical and
+  runtime acceptance. Fewer template axes is a hypothesis for smaller expanded
+  code, not a measured build-speed improvement.
+- `SOURCE-CHECKED / DEFER`: public AthenaK main stages reconstruction and
+  Riemann work through global face-state buffers, unlike the older local fused
+  team-scratch snapshot. This illustrates a compile/memory/launch tradeoff;
+  changing our fused ownership solely to ease compilation is not accepted.
+  Source: https://github.com/IAS-Astrophysics/athenak/blob/main/src/hydro/hydro_fluxes.cpp
+- `ALREADY PRESENT`: `cmake/PyFluidSharedObjects.cmake` shares compatible
+  multiply-used implementation objects per dimension. A generic suggestion to
+  introduce shared libraries first is stale. Investigate actual duplicate work,
+  transitive includes and broad initial-data/spacetime dependencies instead;
+  retain full-feature integration and dimension-compatible AMReX objects.
+- `SOURCE-CHECKED / DEFER`: local SpacetimeX_mfrk Z4c fixes derivative order4
+  and separates derivative buffers from pointwise RHS algebra. SpECTRE's own
+  build guide uses compiled libraries and system-specific executables, and
+  documents compile/memory costs of forced inlining. These are bounded source
+  examples, not evidence of cheap complete NR/CUDA builds. Preserve the user's
+  fixed-choice option and measure ownership/inlining costs before changing them.
+  Source: https://spectre-code.org/spectre_build_system.html
+
+Exact local paths, source hashes, comparison limits and proposed probes:
+`runs/current/infrastructure_audit/cycle463/report.md`. The local AthenaK
+snapshot has no Git identity and its historical build metadata is optimized
+CPU-only, with obsolete source paths. No compile was run for this comparison;
+SpEC source was not reviewed. See `docs/build_cost_roadmap.md` for the plan.
+
 ## Raw Review Provenance
 
 - `../spark_amrex_review/2026-07-20_final_refinement.txt`: concrete final

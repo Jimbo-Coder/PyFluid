@@ -1,8 +1,10 @@
 // Included inside pyfluid_amrex::AmrSolver private section.
 // Recursive AMR time-subcycling orchestration.
 
-   template <int NComp, bool CTEnabled, int TimeMethod, int DiffusionMethod, int EOSMethod>
-   DiffusionStats advance_one_level_subcycle_step(int lev, amrex::Real dt)
+   template <int NComp, bool CTEnabled, int EOSMethod>
+   DiffusionStats advance_one_level_subcycle_step(
+      SubcycleOperations const& operations, int lev, amrex::Real dt
+   )
    {
       DiffusionStats diffusion;
       const amrex::Real time = level_times_[lev];
@@ -19,7 +21,7 @@
       }
 
       WallTime stage_start = profile_.begin();
-      if constexpr (TimeMethod == TimeRK4) {
+      if (timestep_method_ == TimeRK4) {
          fill_level_boundaries<true>(fluid_state_.state(), lev, time, time, 1);
       } else {
          fill_level_boundaries<true>(fluid_state_.state(), lev, time);
@@ -31,11 +33,11 @@
          begin_ct_step_level(lev);
       }
       const bool next_state_needs_copy =
-         advance_level_range<NComp, TimeMethod, EOSMethod, true, true, !CTEnabled>(time, dt, lev, lev + 1);
+         (this->*operations.advance_fluid)(time, dt, lev, lev + 1);
 
       if constexpr (CTEnabled) {
          stage_start = profile_.begin();
-         diffusion = combine_diffusion_stats(diffusion, advance_ct_level<DiffusionMethod>(lev, dt));
+         diffusion = combine_diffusion_stats(diffusion, (this->*operations.advance_ct)(lev, dt));
          profile_.end(ProfileStage::CT, stage_start);
       }
 
@@ -55,13 +57,13 @@
       }
       refresh_solid_geometry_level(lev, level_times_[lev], true);
 
-      if constexpr (DiffusionMethod != DiffusionNone) {
+      if (operations.advance_diffusion != nullptr) {
          RunConfig viscosity_cfg = viscosity_diffusion_config();
          if (viscosity_enabled(viscosity_cfg)) {
             stage_start = profile_.begin();
             diffusion = combine_diffusion_stats(
                diffusion,
-               apply_diffusion_level<DiffusionMethod, NComp>(lev, level_times_[lev], dt, viscosity_cfg)
+               (this->*operations.advance_diffusion)(lev, level_times_[lev], dt, viscosity_cfg)
             );
             reset_barotropic_energy_level<NComp, EOSMethod>(lev);
             profile_.end(ProfileStage::Diffusion, stage_start);
@@ -70,7 +72,7 @@
             stage_start = profile_.begin();
             diffusion = combine_diffusion_stats(
                diffusion,
-               advance_ct_inactive_magnetic_resistivity_level<DiffusionMethod>(lev, dt)
+               (this->*operations.advance_inactive_ct_resistivity)(lev, dt)
             );
             reset_barotropic_energy_level<NComp, EOSMethod>(lev);
             profile_.end(ProfileStage::Diffusion, stage_start);
@@ -96,8 +98,9 @@
       return diffusion;
    }
 
-   template <int NComp, bool CTEnabled, int TimeMethod, int DiffusionMethod, int EOSMethod>
+   template <int NComp, bool CTEnabled, int EOSMethod>
    DiffusionStats advance_subcycled_level(
+      SubcycleOperations const& operations,
       int lev,
       amrex::Real dt,
       amrex::Real& active_cell_updates,
@@ -111,7 +114,7 @@
       active_cell_updates += static_cast<amrex::Real>(active_cell_count_level(lev));
       layout_cell_updates += static_cast<amrex::Real>(boxArray(lev).numPts());
       DiffusionStats diffusion =
-         advance_one_level_subcycle_step<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod>(lev, dt);
+         advance_one_level_subcycle_step<NComp, CTEnabled, EOSMethod>(operations, lev, dt);
 
       if (lev < finestLevel()) {
          const WallTime boundary_start = profile_.begin();
@@ -134,9 +137,7 @@
             while (target_time - level_times_[lev + 1] > time_tolerance) {
                const amrex::Real remaining =
                   target_time - level_times_[lev + 1];
-               const amrex::Real fine_dt_allowed = adaptive_dt_for_level<
-                  NComp, EOSMethod, DiffusionMethod
-               >(lev + 1);
+               const amrex::Real fine_dt_allowed = adaptive_dt_for_level(lev + 1);
                if (!std::isfinite(fine_dt_allowed)
                    || fine_dt_allowed <= 0.0_rt) {
                   amrex::Abort(
@@ -152,8 +153,9 @@
                diffusion = combine_diffusion_stats(
                   diffusion,
                   advance_subcycled_level<
-                     NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod
+                     NComp, CTEnabled, EOSMethod
                   >(
+                     operations,
                      lev + 1,
                      fine_dt,
                      active_cell_updates,
@@ -170,17 +172,16 @@
             }
             level_times_[lev + 1] = target_time;
          } else {
-            const int substeps = subcycle_step_count<
-               NComp, EOSMethod, DiffusionMethod
-            >(lev, dt);
+            const int substeps = subcycle_step_count(lev, dt);
             const amrex::Real fine_dt =
                dt / static_cast<amrex::Real>(substeps);
             for (int substep = 0; substep < substeps; ++substep) {
                diffusion = combine_diffusion_stats(
                   diffusion,
                   advance_subcycled_level<
-                     NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod
+                     NComp, CTEnabled, EOSMethod
                   >(
+                     operations,
                      lev + 1,
                      fine_dt,
                      active_cell_updates,
@@ -250,14 +251,16 @@
       return diffusion;
    }
 
-   template <int NComp, bool CTEnabled, int TimeMethod, int DiffusionMethod, int EOSMethod>
+   template <int NComp, bool CTEnabled, int EOSMethod>
    DiffusionStats advance_subcycled_hierarchy(
+      SubcycleOperations const& operations,
       amrex::Real dt,
       amrex::Real& active_cell_updates,
       amrex::Real& layout_cell_updates
    )
    {
-      DiffusionStats diffusion = advance_subcycled_level<NComp, CTEnabled, TimeMethod, DiffusionMethod, EOSMethod>(
+      DiffusionStats diffusion = advance_subcycled_level<NComp, CTEnabled, EOSMethod>(
+         operations,
          0,
          dt,
          active_cell_updates,

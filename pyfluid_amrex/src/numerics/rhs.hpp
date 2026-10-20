@@ -340,9 +340,9 @@ HydroState moving_slip_wall_flux(
       ghost.v3 = 2.0_rt * wall_vn - fluid.v3;
    }
 #endif
-   return fluid_on_left
-      ? hydro_flux_from_primitive_riemann<RiemannMethod, EOSMethod>(fluid, ghost, eos, Direction)
-      : hydro_flux_from_primitive_riemann<RiemannMethod, EOSMethod>(ghost, fluid, eos, Direction);
+   const HydroPrimitive left = fluid_on_left ? fluid : ghost;
+   const HydroPrimitive right = fluid_on_left ? ghost : fluid;
+   return hydro_flux_from_primitive_riemann<RiemannMethod, EOSMethod>(left, right, eos, Direction);
 }
 
 template <int NComp, int ReconMethod, int RiemannMethod, int Direction, int EOSMethod>
