@@ -326,8 +326,8 @@ The remaining reconstruction-by-Riemann product is a larger opportunity than
 renaming owners or swapping launch APIs. An isolated staged experiment can use
 existing post-limiter primitive face pairs: one reconstruction owner, then one
 method-specialized Riemann owner. Neither interface may be templated on both
-choices. This remains unimplemented and unbenchmarked; current production is
-fused. C++/AMReX is the current implementation, not a permanent commitment.
+choices. The first ignored Newtonian probe is now measured below; current production
+remains fused. C++/AMReX is the current implementation, not a permanent commitment.
 Compare another backend with equivalent point physics and AMR obligations before
 claiming it solves the measured compiler cost.
 
@@ -371,3 +371,29 @@ and timestamps. This is not a matched isolated speedup measurement; diagnostic
 generation remains expensive. All 42 build tests and transitive ownership pass,
 and the post-generation full no-op remains below one second with no compiler
 activity. Evidence: `cycle478/codegen_emission/`.
+
+## Rejected first CPU staging probe
+
+The isolated 1D Newtonian probe covers PWC/MP5 crossed with LLF versus
+HLLC (hydro) or HLLD (MHD), precise FP64 and the runtime EoS owner. Direction is
+fixed to zero. Four fused owners take **4.238 s / 247,024 B**; four reconstruction
+plus four Riemann owners take **5.453 s / 129,344 B**, excluding the common driver
+and dispatch. The longest owner falls 1.229 to 1.099 s, but summed work increases
+about 29%. Reduced object size alone does not meet the development goal.
+
+All 40 correctness cases / 60,684 flux values match bitwise, including active
+post-limiting, unequal normal fields and poisoned zero-area inputs. Three ABBA
+blocks use 131,072 cells per rank, three ranks and maximum-rank elapsed time.
+Large-array staged/fused throughput medians range **0.351--0.908** across the
+eight physics/reconstruction/method combinations. With 256-cell boxes they
+range **0.814--1.023**, with the final apparent gain noisy. All compared outputs
+remain finite and bitwise equal. Requested pair scratch per rank is 10,485,840 B
+(hydro) or 16,777,344 B (MHD) for the large box, bounded to 20,560/32,896 B for
+small boxes; this is not a measured process-memory peak.
+
+Reject this ordinary CPU candidate: more total compiler work and substantial
+runtime penalties outweigh smaller objects and a slightly shorter owner.
+This is not a full 3D/relativistic or GPU comparison, nor a permanent requirement
+to fuse every future backend. The experiment preserves a reusable, pinned
+mathematical boundary if a broader measured design warrants revisiting it.
+Evidence: `runs/current/infrastructure_audit/cycle478/staged_flux_probe/`.

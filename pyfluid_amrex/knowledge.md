@@ -151,6 +151,11 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   unchanged pointwise kernels. Mac all-dimensional build, scoped numerical
   and four performance gates pass; CUDA source-owner link/pointwise equality
   passes, but the current full WSL application refresh remains deferred.
+- The first staged reconstruction/Riemann CPU probe is rejected. Its small 1D
+  Newtonian matrix cuts object bytes while increasing summed compiler work and
+  slowing large-array fluxes. Shorter longest-owner latency alone is insufficient.
+  The current fused path remains; no full 3D/relativistic or GPU comparison was
+  established by that probe, and fusion is not a permanent backend requirement.
 - Optional Newtonian tracers reuse the base five/eight-component physics kernel
   and reconstruct scalar flux independently from its stored mass flux. Component
   views remove the tracer-layout template axis. Reuse wall tile classification,
