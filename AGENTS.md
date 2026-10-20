@@ -99,6 +99,9 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
   push/pull for cross-machine development; do not build custom sync tools or
   schedule periodic file syncing. The active Windows build checkout is
   `/home/max/phys_research/PyFluid` in WSL, not the older Windows notebook copies.
+- Keep storage lean. Do not make blanket archives of superseded work already
+  preserved in Git or an existing machine copy. Retain unique useful evidence;
+  inventory rebuildable products separately from source/results before pruning.
 - At the start of a session, inspect and preserve dirty work before pulling with
   `git pull --ff-only`. At useful Windows development checkpoints and the end of
   a session, commit/push the shared work and fast-forward the Mac checkout to
