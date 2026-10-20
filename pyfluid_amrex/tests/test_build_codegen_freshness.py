@@ -104,6 +104,13 @@ class GenerationCacheTests(unittest.TestCase):
 @unittest.skipUnless(shutil.which("cmake"), "CMake is required for profile integration")
 class CMakeGenerationTests(unittest.TestCase):
     def test_two_profiles_share_real_generation_and_repair_outputs(self):
+        self.check_two_profiles("Unix Makefiles")
+
+    @unittest.skipUnless(shutil.which("ninja"), "Ninja is required for profile integration")
+    def test_ninja_profiles_repair_outputs_without_rebuilding_current_consumers(self):
+        self.check_two_profiles("Ninja")
+
+    def check_two_profiles(self, generator):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             source = root / "project/pyfluid_amrex"
@@ -126,27 +133,35 @@ class CMakeGenerationTests(unittest.TestCase):
             end = cmake.index("   endfunction()", start) + len("   endfunction()")
             helper = cmake[start:end]
             (source / "CMakeLists.txt").write_text(
-                "cmake_minimum_required(VERSION 3.20)\nproject(CodegenFreshness NONE)\n"
+                "cmake_minimum_required(VERSION 3.20)\nproject(CodegenFreshness LANGUAGES CXX)\n"
+                "set(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n"
                 f'set(PYFLUID_UV_EXECUTABLE "{uv_shim}")\n'
                 'set(PYFLUID_AMREX_CODEGEN_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/codegen/generate_kernels.py")\n'
                 + helper + "\n"
                 "pyfluid_amrex_add_codegen_check(eos\n"
                 " OUTPUTS ${CMAKE_CURRENT_SOURCE_DIR}/generated_eos.hpp\n"
                 " ARGUMENTS --family eos --eos-header ${CMAKE_CURRENT_SOURCE_DIR}/generated_eos.hpp\n"
-                " DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py)\n")
+                " DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/codegen/pyfluid_codegen/eos_equations.py)\n"
+                # A real compiled consumer tests CMake/Ninja BYPRODUCT restat
+                # without requiring AMReX to compile the generated EoS header.
+                "add_executable(consumer main.cpp)\n"
+                "add_dependencies(consumer pyfluid_amrex_codegen_eos)\n"
+                "set_source_files_properties(main.cpp PROPERTIES\n"
+                " OBJECT_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/generated_eos.hpp)\n")
+            (source / "main.cpp").write_text("int main() { return 0; }\n")
             profiles = [root / "profile-a", root / "profile-b"]
             for profile in profiles:
                 subprocess.run(["cmake", "-S", str(source), "-B", str(profile),
-                                "-G", "Unix Makefiles"], capture_output=True, text=True,
+                                "-G", generator], capture_output=True, text=True,
                                timeout=30, check=True)
 
             def build(profile):
                 return subprocess.run(
-                    ["cmake", "--build", str(profile), "--target", "pyfluid_amrex_codegen_eos"],
+                    ["cmake", "--build", str(profile), "--target", "consumer"],
                     capture_output=True, text=True, timeout=30, check=True).stdout
 
             # Cold concurrent profiles must serialize and publish only once.
-            commands = [["cmake", "--build", str(profile), "--target", "pyfluid_amrex_codegen_eos"]
+            commands = [["cmake", "--build", str(profile), "--target", "consumer"]
                         for profile in profiles]
             processes = [subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                           text=True) for command in commands]
@@ -160,6 +175,11 @@ class CMakeGenerationTests(unittest.TestCase):
             self.assertEqual([process.returncode for process in processes], [0, 0], outputs)
             self.assertEqual(sum("Codegen generated: eos" in output for output in outputs), 1)
             self.assertEqual(sum("Codegen current: eos" in output for output in outputs), 1)
+            consumer_artifacts = []
+            for profile in profiles:
+                entry, = json.loads((profile / "compile_commands.json").read_text())
+                consumer_artifacts.extend((profile / entry["output"], profile / "consumer"))
+            consumer_times = [path.stat().st_mtime_ns for path in consumer_artifacts]
             header = source / "generated_eos.hpp"
             content = header.read_bytes()
             timestamp = header.stat().st_mtime_ns
@@ -171,11 +191,15 @@ class CMakeGenerationTests(unittest.TestCase):
             symbolic_import_trap.unlink()
             self.assertEqual(manifest.read_bytes(), first_manifest)
             self.assertEqual(header.stat().st_mtime_ns, timestamp)
+            self.assertEqual([path.stat().st_mtime_ns for path in consumer_artifacts],
+                             consumer_times)
             for filename in ("pyproject.toml", "uv.lock"):
                 path = source.parent / filename
                 path.write_text(path.read_text() + "\n# unrelated project dependency edit\n")
             self.assertIn("Codegen current: eos", build(profiles[0]))
             self.assertEqual(manifest.read_bytes(), first_manifest)
+            self.assertEqual([path.stat().st_mtime_ns for path in consumer_artifacts],
+                             consumer_times)
 
             # Edit a real symbolic dependency without relying on mtime changes.
             dependency = source / "codegen/pyfluid_codegen/eos_equations.py"
@@ -185,6 +209,8 @@ class CMakeGenerationTests(unittest.TestCase):
             self.assertIn("Codegen generated: eos", build(profiles[0]))
             self.assertNotEqual(manifest.read_bytes(), first_manifest)
             self.assertEqual(header.stat().st_mtime_ns, timestamp)
+            self.assertEqual([path.stat().st_mtime_ns for path in consumer_artifacts],
+                             consumer_times)
 
             previous = header.stat()
             header.write_bytes(content + b"\n// corrupt output\n")

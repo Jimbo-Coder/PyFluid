@@ -79,6 +79,9 @@ interpolation and elliptic solvers are normal focused checks for AMReX updates.
 
 CMake 3.25 or newer is required by both AMReX 26.10 and its installed CMake
 package. PyFluid's project and presets declare the same minimum.
+The full and focused Mac CPU application builds use Ninja and ccache:
+
+    brew install ninja ccache
 
 Homebrew `hdf5-mpi` supplies parallel HDF5. Install and activate the MPI variant
 before updating AMReX:
@@ -102,6 +105,21 @@ Use the repository presets:
     cd pyfluid_amrex
     cmake --preset full-release
     cmake --build --preset full-2d
+
+`full-release` and its focused RMHD preset use Ninja. The optional OpenMP and
+FP32 CPU presets retain Unix Makefiles; the experimental Metal preset already
+uses Ninja. This selects the build executor, without changing the AMReX backend,
+physics or executable paths.
+
+An existing Make build directory needs an explicit one-time migration before
+configuring it with Ninja. Preserve its accepted executables, objects and compile
+cache; do not use `cmake --fresh` or delete `CMakeFiles`, which removes the
+objects. Set aside only the old cache and top-level Makefile, then configure the
+same directory with its selected preset and compare the compiler flags and
+dependencies before building. Ninja must establish its own command/dependency
+records through a normal cache-enabled build. Record that as a cached migration
+rebuild, then measure the next no-op separately. Migrate only the selected CPU
+directory; dependency and GPU builds keep their existing products and generators.
 
 For the explicit OpenMP companion:
 

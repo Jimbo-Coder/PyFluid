@@ -71,13 +71,25 @@ class BuildCapabilityTests(unittest.TestCase):
             self.assertEqual(identity["executable_sha256"], hashlib.sha256(binary.read_bytes()).hexdigest())
 
     def test_machine_configuration_uses_the_explicit_preset_and_directory(self):
-        profile = load_machine("local_dev_rmhd")
-        with patch.object(pyfluid_machine.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
-            self.assertEqual(pyfluid_machine.configure(profile), 0)
-        command = run.call_args.args[0]
-        self.assertEqual(command[command.index("--preset") + 1], "focused-rmhd-pwl")
-        self.assertEqual(command[command.index("-B") + 1], profile.expand(str(profile.build["build_dir"])))
-        self.assertEqual(profile.build["dimensions"], [1])
+        profiles = (
+            ("local", "full-release", "pyfluid_amrex"),
+            ("local_dev_rmhd", "focused-rmhd-pwl", "pyfluid_amrex-dev-rmhd"),
+        )
+        for name, preset, build_name in profiles:
+            with self.subTest(machine=name):
+                profile = load_machine(name)
+                with patch.object(
+                    pyfluid_machine.subprocess, "run",
+                    return_value=SimpleNamespace(returncode=0),
+                ) as run:
+                    self.assertEqual(pyfluid_machine.configure(profile), 0)
+                command = run.call_args.args[0]
+                self.assertEqual(command[command.index("--preset") + 1], preset)
+                self.assertEqual(command[command.index("-B") + 1],
+                                 str(ROOT.parent / "build" / build_name))
+                self.assertNotIn("-G", command)  # The preset owns the generator.
+                self.assertEqual(profile.build.get("dimensions", [1, 2, 3]),
+                                 [1] if name == "local_dev_rmhd" else [1, 2, 3])
 
     def test_old_or_renamed_executable_is_rejected_before_mpi(self):
         for returncode, report in ((2, ""), (0, '{"schema_version":1,"dimension":3}')):
@@ -94,7 +106,7 @@ class BuildCapabilityTests(unittest.TestCase):
                     )
                 preflight.assert_not_called()
 
-    @unittest.skipUnless(shutil.which("cmake"), "CMake is unavailable")
+    @unittest.skipUnless(shutil.which("cmake") and shutil.which("ninja"), "CMake and Ninja are required")
     def test_focused_configuration_prunes_actual_production_source_owners(self):
         presets = json.loads((ROOT / "CMakePresets.json").read_text())
         focused = next(preset for preset in presets["configurePresets"]
@@ -116,7 +128,7 @@ class BuildCapabilityTests(unittest.TestCase):
             def configure(name, features):
                 build = temporary / name
                 command = [
-                    "cmake", "-S", str(ROOT), "-B", str(build),
+                    "cmake", "-S", str(ROOT), "-B", str(build), "-G", "Ninja",
                     f"-DAMReX_DIR={package}", "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                     "-DPYFLUID_AMREX_NATIVE=OFF", "-DPYFLUID_AMREX_HORIZON_OPENMP=OFF",
                     *(f"-D{key}={value}" for key, value in features.items()),

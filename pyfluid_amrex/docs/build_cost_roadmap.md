@@ -348,3 +348,26 @@ stencil and limiter ordering; mapped seams require states per overlap, not one
 pair per final face. Optional tracers remain independent of EOS/Riemann choice.
 Reject the experiment if it merely moves the product, changes those semantics,
 or trades compiler savings for unacceptable memory/runtime cost.
+
+## CPU graph execution
+
+Full and focused Mac CPU profiles now select Ninja through CMake presets. The
+local machine profile consumes the same full preset, including ccache and the
+compile database. Optional OpenMP/FP32 companions retain Make; Metal is unchanged.
+The same-directory metadata migration preserved existing objects and identical
+normalized compiler commands. First trusted full/focused replays take
+**19.96 s (265 hits/37 misses)** and **1.51 s (82 hits/zero misses)**; neither is
+a cold compile or a no-op. Subsequent full/focused no-ops take **0.311/0.317 s**
+with no compiler activity, versus the previous full Make **1.33 s** sample.
+This meets the one-second graph goal, while the heavy uncached kernel and
+complete feature-build goals remain open. Evidence is under
+`runs/current/infrastructure_audit/cycle478/ninja_migration/`.
+
+The subsequent emission cleanup renders relativistic/Z4c groups once, retaining
+the same wrapper/include order, and stops temporary-use counting after the
+second occurrence because pruning only distinguishes zero/one from multiple.
+A genuine all-family pass takes **76.455 s** and preserves all 52 output bytes
+and timestamps. This is not a matched isolated speedup measurement; diagnostic
+generation remains expensive. All 42 build tests and transitive ownership pass,
+and the post-generation full no-op remains below one second with no compiler
+activity. Evidence: `cycle478/codegen_emission/`.

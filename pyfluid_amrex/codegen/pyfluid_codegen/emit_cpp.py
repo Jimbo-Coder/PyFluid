@@ -85,9 +85,14 @@ class PyFluidCxxPrinter(CXX17CodePrinter):
 
 
 def _symbol_count(exprs: list[sp.Expr], symbol: sp.Symbol) -> int:
+   """Count zero, one, or at least two uses for the pruning predicate."""
    count = 0
    for expr in exprs:
-      count += sum(1 for node in sp.preorder_traversal(expr) if node == symbol)
+      for node in sp.preorder_traversal(expr):
+         if node == symbol:
+            count += 1
+            if count == 2:
+               return count
    return count
 
 
@@ -433,19 +438,16 @@ def render_relativistic_headers(policy: CsePolicy = CsePolicy()) -> dict[str, st
       '#include "pyfluid_amrex/relativistic_state.hpp"',
       "#include <cmath>",
    )
-   rendered = {
-      name: _render_generated_group(
-         "\n\n".join(_emit_kernel_group(kernels, policy)),
+   rendered = {}
+   for name, kernels in groups.items():
+      emitted = _emit_kernel_group(kernels, policy)
+      if name == "flux":
+         emitted.extend(_relativistic_flux_wrappers())
+      rendered[name] = _render_generated_group(
+         "\n\n".join(emitted),
          common_includes
          + (('#include "pyfluid_amrex/c2p_root.hpp"',) if name == "c2p_rmhd" else ()),
       )
-      for name, kernels in groups.items()
-   }
-   flux_kernels = _emit_kernel_group(groups["flux"], policy)
-   flux_kernels.extend(_relativistic_flux_wrappers())
-   rendered["flux"] = _render_generated_group(
-      "\n\n".join(flux_kernels), common_includes
-   )
    return rendered
 
 
@@ -619,35 +621,20 @@ def render_z4c_headers(policy: CsePolicy = CsePolicy()) -> dict[str, str]:
       "#include <AMReX_Math.H>",
       "#include <cmath>",
    )
-   rendered = {
-      name: _render_generated_group(
-         "\n\n".join(_emit_kernel_group(kernels, policy)), common_includes
-      )
-      for name, kernels in groups.items()
-   }
-   rendered["constraints"] = _render_generated_group(
-      "\n\n".join(
-         (
-            *_emit_kernel_group(groups["constraints"], policy),
-            _z4c_constraint_wrappers(),
+   rendered = {}
+   for name, kernels in groups.items():
+      emitted = _emit_kernel_group(kernels, policy)
+      includes = common_includes
+      if name == "constraints":
+         emitted.append(_z4c_constraint_wrappers())
+         includes += ('#include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"',)
+      elif name == "evolution":
+         emitted.append(_z4c_evolution_wrappers())
+         includes += (
+            '#include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"',
+            '#include "pyfluid_amrex/kernels_generated/z4c/gauge.hpp"',
          )
-      ),
-      common_includes
-      + ('#include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"',),
-   )
-   rendered["evolution"] = _render_generated_group(
-      "\n\n".join(
-         (
-            *_emit_kernel_group(groups["evolution"], policy),
-            _z4c_evolution_wrappers(),
-         )
-      ),
-      common_includes
-      + (
-         '#include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"',
-         '#include "pyfluid_amrex/kernels_generated/z4c/gauge.hpp"',
-      ),
-   )
+      rendered[name] = _render_generated_group("\n\n".join(emitted), includes)
    return rendered
 
 

@@ -163,6 +163,11 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   work by itself. Shared code generation checks content plus the actual symbolic
   runtime environment, independently of build profile. Warm reuse is cheap;
   genuine diagnostic generation and complete feature builds remain expensive.
+- The full/focused Mac CPU Ninja graphs meet the one-second no-op goal with
+  shared content checks and no compiler activity. A cache-backed migration is
+  separate from cold or local-edit performance. Changing generator can reorder
+  object groups at link time even when all compile/link inputs agree, so binary
+  hashes can change without changed point physics; retain numerical controls.
 - A generated header's size is not its rebuild cost: one broadly imported
   helper can connect unrelated formula edits to expensive flux instantiations.
   The old vector umbrella reached reconstruction via magnetic energy in EoS;

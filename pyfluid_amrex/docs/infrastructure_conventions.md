@@ -364,6 +364,14 @@ normalized recovery algebra into powers of density during code generation.
   stay private; a small check must not pull in unrelated implementation files.
   The isolated horizon-finder OpenMP owner remains separate. Normal dimension
   build presets build that solver only; comparison tools are explicit targets.
+- Full and focused Mac CPU builds use the Ninja executor through their CMake
+  presets; the local machine profile selects the same preset, including ccache
+  and compile-database ownership. Generator choice does not change physics or
+  dependency features. Existing Make caches require an explicit metadata
+  migration: retain objects/cache, compare compiler commands, and measure the
+  first trusted replay separately from a steady no-op. Do not use `--fresh` or
+  a clean-first build to change executors. Optional companion/GPU trees retain
+  their explicitly selected executors until independently migrated.
 - Architecture checks protect dependencies and ownership, not file length,
   suffix preferences, whitespace, or exact qualifier spelling. Retain behavioral
   fixtures for real failure modes; an independent numerical oracle earns its

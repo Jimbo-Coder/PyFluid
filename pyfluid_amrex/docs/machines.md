@@ -9,7 +9,8 @@ Submitted jobs use the shared `machines/run.sh.in` template and execute the AMRe
 binary directly. Compute nodes therefore need only the compiled executable, MPI,
 the input file, and its runtime libraries; they do not need Python or `uv`.
 
-The checked-in `machines/local.toml` reproduces the Mac mini build. Its launcher
+The checked-in `machines/local.toml` selects the `full-release` CMake preset,
+including Ninja, the compiler flags and the repository-local ccache. Its launcher
 disables Open MPI rank binding so macOS can place ranks on Apple performance
 cores; Open MPI 5's default logical-core binding substantially reduces
 throughput on this machine. Select it by name or rely on the default:
@@ -22,12 +23,20 @@ uv run python pyfluid_amrex/tools/pyfluid_machine.py run pyfluid_amrex/inputs/hy
 ```
 
 `local_dev_rmhd` selects the maintained `focused-rmhd-pwl` CMake preset in a
-separate directory and builds only 1D unless `build --dim` selects another
-dimension. It retains PWL, LLF/HLL/HLLD, SSPRK3, cell-centered MHD and internal
-correction fallbacks. CT, diffusion and subcycling require the complete profile
+separate directory, inherits Ninja and the compile cache, and builds only 1D
+unless `build --dim` selects another dimension. It retains PWL, LLF/HLL/HLLD,
+SSPRK3, cell-centered MHD and internal correction fallbacks. CT, diffusion and
+subcycling require the complete profile
 or an explicitly configured additional method set. The complete `local` build
 remains available for integration. The runner checks exact compiled choices
 before overwriting output and saves executable identity in `build.json`.
+
+Both profiles retain their existing build directories and executable names.
+Existing Make directories require the explicit migration described in
+[PyFluid builds](install.md#pyfluid-builds); configuring does not migrate or clean
+them automatically. OpenMP and FP32 CPU profiles retain Make, while Metal keeps
+its existing Ninja configuration. No dependency or GPU rebuild is needed just to
+change the full/focused CPU executor.
 
 `machines/local_openmp.toml` explicitly selects the separately managed
 MPI+OpenMP AMReX companion. On this 4P+6E Mac, two ranks by five threads is the

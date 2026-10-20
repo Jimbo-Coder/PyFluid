@@ -10,10 +10,11 @@
       "name": "full-release",
       "displayName": "Full release",
       "description": "Compile every PyFluid AMReX method branch.",
-      "generator": "Unix Makefiles",
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/../build/pyfluid_amrex",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_OSX_ARCHITECTURES": "arm64",
         "CMAKE_CXX_COMPILER": "/opt/homebrew/bin/mpicxx",
         "CMAKE_CXX_COMPILER_LAUNCHER": "/opt/homebrew/bin/cmake;-E;env;CCACHE_DIR=${sourceDir}/../.ccache/pyfluid_amrex;CCACHE_BASEDIR=${sourceDir}/..;CCACHE_COMPILERTYPE=clang;/opt/homebrew/bin/ccache",
@@ -28,6 +29,7 @@
       "displayName": "Full release with AMReX OpenMP",
       "description": "Compile the same PyFluid methods against the optional MPI+OpenMP AMReX companion.",
       "inherits": "full-release",
+      "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/../build/pyfluid_amrex-openmp",
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "${sourceDir}/../.deps/amrex-mpi-omp-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi;/opt/homebrew/opt/libomp",
@@ -42,6 +44,7 @@
       "displayName": "Full release with FP32",
       "description": "Compile the same PyFluid methods against the isolated single-precision MPI AMReX companion.",
       "inherits": "full-release",
+      "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/../build/pyfluid_amrex-fp32",
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "${sourceDir}/../.deps/amrex-mpi-fp32-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi",
@@ -73,7 +76,6 @@
       "inherits": "full-release",
       "binaryDir": "${sourceDir}/../build/pyfluid_amrex-dev-rmhd",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "PYFLUID_AMREX_ENABLE_HYDRO": "OFF",
         "PYFLUID_AMREX_ENABLE_MHD": "ON",
         "PYFLUID_AMREX_ENABLE_CT": "OFF",

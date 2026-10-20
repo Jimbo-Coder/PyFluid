@@ -19,16 +19,8 @@ work_dir = "{root}"
 [build]
 source_dir = "{root}/pyfluid_amrex"
 build_dir = "{root}/build/pyfluid_amrex"
+configure_preset = "full-release"
 jobs = 3
-cmake_args = [
-  "-DCMAKE_BUILD_TYPE=Release",
-  "-DCMAKE_OSX_ARCHITECTURES=arm64",
-  "-DCMAKE_CXX_COMPILER=/opt/homebrew/bin/mpicxx",
-  "-DCMAKE_PREFIX_PATH={root}/.deps/amrex-mpi-lsolvers-hdf5;/opt/homebrew/opt/hdf5-mpi",
-  "-DAMReX_DIR={root}/.deps/amrex-mpi-lsolvers-hdf5/lib/cmake/AMReX",
-  "-DHDF5_ROOT=/opt/homebrew/opt/hdf5-mpi",
-  "-DPYFLUID_AMREX_NATIVE=ON",
-]
 
 [submit]
 command = []

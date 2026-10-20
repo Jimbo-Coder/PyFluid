@@ -26,14 +26,28 @@ class BuildContractTests(unittest.TestCase):
     def test_local_presets_pin_architecture_across_sandboxed_configures(self):
         presets = json.loads((ROOT / "CMakePresets.json").read_text())
         by_name = {item["name"]: item for item in presets["configurePresets"]}
-        self.assertEqual(by_name["full-release"]["cacheVariables"]
-                         ["CMAKE_OSX_ARCHITECTURES"], "arm64")
-        self.assertEqual(by_name["full-release-openmp"]["inherits"], "full-release")
-        for name in ("local", "local_openmp"):
-            with (ROOT / "machines" / f"{name}.toml").open("rb") as stream:
-                profile = tomllib.load(stream)
-            self.assertIn("-DCMAKE_OSX_ARCHITECTURES=arm64",
-                          profile["build"]["cmake_args"])
+        full = by_name["full-release"]
+        self.assertEqual(full["generator"], "Ninja")
+        self.assertEqual(full["cacheVariables"]["CMAKE_EXPORT_COMPILE_COMMANDS"], "ON")
+        self.assertEqual(full["cacheVariables"]["CMAKE_OSX_ARCHITECTURES"], "arm64")
+        self.assertIn("/ccache", full["cacheVariables"]["CMAKE_CXX_COMPILER_LAUNCHER"])
+        for name, preset_name in (("local", "full-release"),
+                                  ("local_dev_rmhd", "focused-rmhd-pwl")):
+            with self.subTest(machine=name):
+                with (ROOT / "machines" / f"{name}.toml").open("rb") as stream:
+                    profile = tomllib.load(stream)
+                self.assertEqual(profile["build"]["configure_preset"], preset_name)
+                self.assertNotIn("cmake_args", profile["build"])
+        focused = by_name["focused-rmhd-pwl"]
+        self.assertEqual(focused["inherits"], "full-release")
+        self.assertNotIn("generator", focused)  # Inherits the full build context.
+        for name in ("full-release-openmp", "full-release-fp32"):
+            self.assertEqual(by_name[name]["inherits"], "full-release")
+            self.assertEqual(by_name[name]["generator"], "Unix Makefiles")
+        self.assertEqual(by_name["experimental-metal"]["generator"], "Ninja")
+        with (ROOT / "machines/local_openmp.toml").open("rb") as stream:
+            openmp = tomllib.load(stream)
+        self.assertIn("-DCMAKE_OSX_ARCHITECTURES=arm64", openmp["build"]["cmake_args"])
 
     def test_solver_projection_layouts_are_canonical_and_unambiguous(self):
         with SCHEMA_PATH.open("rb") as stream:
@@ -392,6 +406,13 @@ class DiagnosticHeaderTests(unittest.TestCase):
 @unittest.skipUnless(shutil.which("cmake"), "CMake is required")
 class SharedObjectTests(unittest.TestCase):
     def test_reuse_is_dimension_local_and_does_not_build_unrelated_code(self):
+        self.check_shared_objects("Unix Makefiles")
+
+    @unittest.skipUnless(shutil.which("ninja"), "Ninja is required")
+    def test_ninja_reuses_objects_without_relinking_an_unchanged_build(self):
+        self.check_shared_objects("Ninja")
+
+    def check_shared_objects(self, generator):
         with tempfile.TemporaryDirectory(prefix="pyfluid-shared-objects-") as temporary:
             source = Path(temporary)
             build = source / "build"
@@ -431,7 +452,7 @@ pyfluid_amrex_share_implementation_objects()
                     command, check=True, capture_output=True, text=True,
                 ).stdout
 
-            run("cmake", "-S", str(source), "-B", str(build), "-G", "Unix Makefiles")
+            run("cmake", "-S", str(source), "-B", str(build), "-G", generator)
             run("cmake", "--build", str(build), "--parallel", "2")
             commands = json.loads((build / "compile_commands.json").read_text())
             shared = [entry for entry in commands if entry["file"].endswith("/shared.cpp")]
