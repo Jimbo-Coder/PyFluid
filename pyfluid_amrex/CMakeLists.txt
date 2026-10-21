@@ -166,6 +166,7 @@ set(PYFLUID_AMREX_EOS_SOURCES
 )
 
 set(PYFLUID_AMREX_NUMERICS_SOURCES
+   src/numerics/boundary.cpp
    src/numerics/origin_boundary.cpp
    src/numerics/ct_edge_flux_register.cpp
    src/numerics/flux_factory.cpp
@@ -371,6 +372,7 @@ set(PYFLUID_AMREX_MULTIPATCH_CHECK_SOURCES
 )
 
 set(PYFLUID_AMREX_ORIGIN_BOUNDARY_CHECK_SOURCES
+   src/numerics/boundary.cpp
    src/framework/fields.cpp
    src/numerics/origin_boundary.cpp
    src/amr/state_interpolation.cpp
@@ -378,6 +380,7 @@ set(PYFLUID_AMREX_ORIGIN_BOUNDARY_CHECK_SOURCES
 )
 
 set(PYFLUID_AMREX_BOUNDARY_TILING_CHECK_SOURCES
+   src/numerics/boundary.cpp
    src/numerics/origin_boundary.cpp
    src/framework/fields.cpp
    tests/boundary_tiling_check.cpp

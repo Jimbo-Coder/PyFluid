@@ -78,6 +78,8 @@ def ownership_errors(graph: IncludeGraph) -> list[str]:
     errors = []
     interfaces = [
         *public.glob("*factory.hpp"),
+        public / "boundary.hpp",
+        public / "boundary_data.hpp",
         public / "black_hole_excision.hpp",
         public / "config.hpp",
         public / "diagnostics_types.hpp",
@@ -100,6 +102,10 @@ def ownership_errors(graph: IncludeGraph) -> list[str]:
     # descriptors and output metadata must not invalidate numerical kernels.
     field_metadata = public / "fields.hpp"
     metadata_free = {
+        public / "boundary.hpp",
+        public / "boundary_data.hpp",
+        public / "boundary_point.hpp",
+        sources / "numerics" / "boundary.cpp",
         public / "config.hpp",
         public / "z4c_state_access.hpp",
         public / "fccz4_state_access.hpp",
@@ -115,6 +121,10 @@ def ownership_errors(graph: IncludeGraph) -> list[str]:
 
     config = public / "config.hpp"
     config_free = {
+        public / "boundary.hpp",
+        public / "boundary_data.hpp",
+        public / "boundary_point.hpp",
+        sources / "numerics" / "boundary.cpp",
         public / "relativistic_diode.hpp",
         public / "relativistic_flux_limiter.hpp",
         public / "spacetime_excision.hpp",

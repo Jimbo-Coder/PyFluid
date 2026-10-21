@@ -30,6 +30,7 @@
 
 #include "amr/regrid_lifecycle.hpp"
 #include "pyfluid_amrex/boundary.hpp"
+#include "pyfluid_amrex/boundary_point.hpp"
 #include "pyfluid_amrex/build_options.hpp"
 #include "pyfluid_amrex/config.hpp"
 #include "pyfluid_amrex/ct_fields.hpp"

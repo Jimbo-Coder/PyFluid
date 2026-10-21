@@ -9,6 +9,7 @@
 #include <AMReX_Reduce.H>
 
 #include "pyfluid_amrex/boundary.hpp"
+#include "pyfluid_amrex/boundary_point.hpp"
 #include "pyfluid_amrex/constants.hpp"
 #include "amr/state_interpolation.hpp"
 #include "pyfluid_amrex/fields.hpp"

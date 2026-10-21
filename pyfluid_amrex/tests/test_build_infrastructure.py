@@ -124,6 +124,11 @@ class BuildContractTests(unittest.TestCase):
                     '#include "pyfluid_amrex/generated/field_ids.hpp"\n',
                 "include/pyfluid_amrex/numerical_values.hpp":
                     '#include "pyfluid_amrex/generated/field_ids.hpp"\n',
+                "include/pyfluid_amrex/boundary_data.hpp": "",
+                "include/pyfluid_amrex/boundary_point.hpp":
+                    '#include "pyfluid_amrex/boundary_data.hpp"\n',
+                "src/numerics/boundary.cpp":
+                    '#include "pyfluid_amrex/boundary_point.hpp"\n',
                 "include/pyfluid_amrex/bridge.hpp":
                     '#include "pyfluid_amrex/fields.hpp"\n',
                 "src/flux_kernels/pwc.cpp":
@@ -140,6 +145,7 @@ class BuildContractTests(unittest.TestCase):
                 ("config.hpp", "include/pyfluid_amrex/config.hpp"),
                 ("z4c_state_access.hpp", "src/relativity/rmhd_correction_flux_llf.cpp"),
                 ("numerical_values.hpp", "src/flux_kernels/pwc.cpp"),
+                ("boundary_data.hpp", "src/numerics/boundary.cpp"),
             ):
                 with self.subTest(header=header):
                     path = root / "include/pyfluid_amrex" / header
@@ -159,6 +165,10 @@ class BuildContractTests(unittest.TestCase):
             files = {
                 "include/pyfluid_amrex/config.hpp": "",
                 "include/pyfluid_amrex/relativistic_diode.hpp": "",
+                "include/pyfluid_amrex/boundary_point.hpp":
+                    '#include "pyfluid_amrex/relativistic_diode.hpp"\n',
+                "src/numerics/boundary.cpp":
+                    '#include "pyfluid_amrex/boundary_point.hpp"\n',
                 "include/pyfluid_amrex/relativistic_flux_limiter.hpp":
                     '#include "pyfluid_amrex/relativistic_diode.hpp"\n',
                 "src/relativity/rmhd_correction_flux_llf.cpp":
@@ -180,6 +190,7 @@ class BuildContractTests(unittest.TestCase):
             )
             errors = ownership_errors(IncludeGraph(root))
             for owner in ("src/flux_kernels/pwc.cpp",
+                          "src/numerics/boundary.cpp",
                           "src/relativity/rmhd_advanced_flux.cpp",
                           "src/relativity/relativistic_flux_limiter.cpp",
                           "src/relativity/rmhd_correction_flux_llf.cpp"):

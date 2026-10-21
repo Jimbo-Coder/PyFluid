@@ -4,6 +4,7 @@
 #include <AMReX_MultiFab.H>
 
 #include "pyfluid_amrex/boundary.hpp"
+#include "pyfluid_amrex/boundary_point.hpp"
 #include "pyfluid_amrex/fixed_spacetime.hpp"
 #include "pyfluid_amrex/kernels_generated/relativistic/core.hpp"
 #include "pyfluid_amrex/kernels_generated/z4c/geometry.hpp"

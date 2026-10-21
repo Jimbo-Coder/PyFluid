@@ -192,6 +192,14 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   analytic controls, a varied SPD/Weyl comparison and radiation/restart checks.
   Other diagnostic kernels retain identical generated text. This is CPU evidence,
   not current GPU acceptance.
+- Ordinary boundary bulk launches have one compiled owner in
+  `src/numerics/boundary.cpp`, including the four registered hydro/MHD component
+  layouts. `boundary.hpp` exposes declarations and tiny forwarders; kind/value
+  types and the GPU point/FillPatch helpers have separate headers. Configuration
+  and schema parity resolve in `config_runtime.cpp`; the nonlocal origin mapper
+  stays separate. Whole-array implementation edits no longer require putting
+  those launch bodies back in a shared header. Point-helper changes still reach
+  their typed AMR/CT consumers; broader invalidation remains a separate problem.
 - The full/focused Mac CPU Ninja graphs meet the one-second no-op goal with
   shared content checks and no compiler activity. A cache-backed migration is
   separate from cold or local-edit performance. Changing generator can reorder

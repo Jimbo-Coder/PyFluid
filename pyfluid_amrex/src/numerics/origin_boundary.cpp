@@ -1,4 +1,6 @@
 #include "pyfluid_amrex/boundary.hpp"
+#include "pyfluid_amrex/constants.hpp"
+#include "pyfluid_amrex/fields.hpp"
 
 namespace pyfluid_amrex {
 namespace {

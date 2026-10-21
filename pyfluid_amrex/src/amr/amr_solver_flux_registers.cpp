@@ -1,4 +1,5 @@
 #include "amr/amr_solver_base.hpp"
+#include "pyfluid_amrex/patch_domain.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/patch_metrics.hpp"
 

@@ -7,6 +7,8 @@
 
 #include "framework/config_options.hpp"
 #include "pyfluid_amrex/fields.hpp"
+#include "pyfluid_amrex/boundary.hpp"
+#include "pyfluid_amrex/eos/config.hpp"
 #include "pyfluid_amrex/relativistic_diode.hpp"
 #include "pyfluid_amrex/spacetime_excision.hpp"
 #include "pyfluid_amrex/state.hpp"
@@ -14,6 +16,95 @@
 namespace pyfluid_amrex {
 
 using namespace amrex::literals;
+
+BoundaryData make_boundary_data(RunConfig const& cfg)
+{
+   BoundaryData data;
+   data.mesh_coordinate = mesh_coordinate_code(cfg.mesh_coordinate);
+   data.mesh_axes = mesh_axes_layout(data.mesh_coordinate, cfg.mesh_axes);
+   data.lo_kind[0] = static_cast<int>(side_boundary_kind(cfg, 0, false));
+   data.hi_kind[0] = static_cast<int>(side_boundary_kind(cfg, 0, true));
+#if (AMREX_SPACEDIM >= 2)
+   data.lo_kind[1] = static_cast<int>(side_boundary_kind(cfg, 1, false));
+   data.hi_kind[1] = static_cast<int>(side_boundary_kind(cfg, 1, true));
+#endif
+#if (AMREX_SPACEDIM == 3)
+   data.lo_kind[2] = static_cast<int>(side_boundary_kind(cfg, 2, false));
+   data.hi_kind[2] = static_cast<int>(side_boundary_kind(cfg, 2, true));
+#endif
+   data.eos = eos_params(cfg);
+   data.eos_method = eos_method_code(cfg);
+   data.inflow_rho = cfg.inflow_rho;
+   data.inflow_pressure = cfg.inflow_pressure;
+   data.inflow_v1 = cfg.inflow_v1;
+   data.inflow_v2 = cfg.inflow_v2;
+   data.inflow_v3 = cfg.inflow_v3;
+   data.inflow_b1 = cfg.inflow_b1;
+   data.inflow_b2 = cfg.inflow_b2;
+   data.inflow_b3 = cfg.inflow_b3;
+   data.inflow_profile = cfg.inflow_profile == "gaussian_beam" ? 1 : (cfg.inflow_profile == "uniform_beam" ? 2 : 0);
+   data.inflow_background_rho = cfg.inflow_background_rho;
+   data.inflow_background_pressure = cfg.inflow_background_pressure;
+   data.inflow_background_v1 = cfg.inflow_background_v1;
+   data.inflow_background_v2 = cfg.inflow_background_v2;
+   data.inflow_background_v3 = cfg.inflow_background_v3;
+   data.inflow_background_b1 = cfg.inflow_background_b1;
+   data.inflow_background_b2 = cfg.inflow_background_b2;
+   data.inflow_background_b3 = cfg.inflow_background_b3;
+   data.passive_scalars = cfg.passive_scalars;
+   const PhysicalSystem system = physical_system(cfg);
+   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
+      data.origin_lo[dir] = data.lo_kind[dir] == static_cast<int>(BoundaryKind::Origin) ? 1 : 0;
+      for (int component = 0; component < MaxStateComponents; ++component) {
+         const int offset = dir * MaxStateComponents + component;
+         data.origin_state_parity[offset] =
+            data.origin_lo[dir] != 0
+            ? state_grid_field_origin_parity(
+                 data.mesh_coordinate,
+                 data.mesh_axes,
+                 system,
+                 data.passive_scalars,
+                 component
+              )
+            : 1;
+      }
+   }
+   data.inflow_passive_value = cfg.inflow_passive_value;
+   data.inflow_background_passive_value = cfg.inflow_background_passive_value;
+   data.inflow_center_y = cfg.inflow_center_y;
+   data.inflow_center_z = cfg.inflow_center_z;
+   data.inflow_radius = cfg.inflow_radius;
+   data.analytic_profile = cfg.boundary_profile == "double_mach_reflection" ? 1 : 0;
+   data.shock_x0 = cfg.shock_x0;
+   data.shock_y0 = cfg.shock_y0;
+   data.shock_z0 = cfg.shock_z0;
+   data.shock_n1 = cfg.shock_nx;
+   data.shock_n2 = cfg.shock_ny;
+   data.shock_n3 = cfg.shock_nz;
+   data.shock_speed = cfg.shock_speed;
+   data.rho_left = cfg.rho_left;
+   data.pressure_left = cfg.pressure_left;
+   data.v1_left = cfg.v1_left;
+   data.v2_left = cfg.v2_left;
+   data.v3_left = cfg.v3_left;
+   data.rho_right = cfg.rho_right;
+   data.pressure_right = cfg.pressure_right;
+   data.v1_right = cfg.v1_right;
+   data.v2_right = cfg.v2_right;
+   data.v3_right = cfg.v3_right;
+   data.mhd = physical_system_has_magnetic_field(system) ? 1 : 0;
+   return data;
+}
+
+void apply_configured_state_boundary(
+   amrex::MultiFab& state,
+   amrex::Geometry const& geom,
+   RunConfig const& cfg,
+   amrex::Real time
+)
+{
+   apply_configured_state_boundary(state, geom, make_boundary_data(cfg), time);
+}
 
 SphericalExcisionRegion spacetime_excision_region(RunConfig const& config)
 {

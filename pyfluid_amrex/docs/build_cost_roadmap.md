@@ -407,6 +407,45 @@ CapyrX source lessons for later geometry interfaces are recorded separately in
 [the focused review](capyrx_architecture_review.md), not enabled as a new feature.
 Evidence: `runs/current/infrastructure_audit/cycle482/`.
 
+## Compiled boundary launches (Cycle483)
+
+`boundary.hpp` now has 83 lines of declarations and small forwarders, rather
+than roughly 1,450 lines mixing setup, point formulas and whole-array launches.
+Stable kinds and boundary value data have separate headers. Point formulas and
+typed FillPatch callbacks remain explicitly available to their GPU consumers;
+configuration/schema resolution lives in the existing compiled runtime owner.
+The four registered hydro/MHD component layouts instantiate in one boundary
+launch source per AMReX dimension. The numerical function bodies are unchanged.
+
+This narrows implementation ownership, not every dependency: point-helper
+changes still reach typed AMR/CT consumers. The all-feature source graph's
+configuration fanout only falls from 56 to 54 owners, while field-metadata fanout
+remains 51. Do not claim that moving a header alone eliminated broad rebuilds.
+The final integration invocation takes 119.12 s with 143 misses and zero hits,
+after earlier partial attempts; this is neither a clean build nor a passing
+60-second shared-edit result. Its initial failures exposed missing direct
+constant/patch-domain includes and a configuration bridge in the wrong compiled
+owner; those dependencies were corrected explicitly.
+
+Touching only the new boundary implementation and explicitly forcing compiler
+recaches rebuilds its three dimensional objects and relinks production in
+**2.65 s** (three forced recompiles, zero hits/misses). This is an owner-only
+rebuild measurement, not a cache hit or a clean application build. Subsequent
+unchanged builds remain below one second. Source/body identity records distinguish
+this dependency experiment from a numerical edit.
+
+Two three-rank traced 3D controls use reflecting and inflow boundaries with
+poison/finite/physical checking. Each matches all 24,576 final field values and
+all physical scalar samples from the frozen pre-refactor executable bitwise.
+Nine scoped numerical gates and the four-case performance gate pass. The
+18-case feature slice passes 17 cases and retains its known self-gravity AMR
+energy failure. The earlier Cycle479 control reproduces its complete physical
+scalar history and exact final error, 2.2436621760790182e-6 against 2e-6; no gate
+or tolerance is changed. Current device acceptance remains separate.
+
+Exact build/cache measurements and source/body identities are retained under
+`runs/current/infrastructure_audit/cycle483/`.
+
 ## Rejected first CPU staging probe
 
 The isolated 1D Newtonian probe covers PWC/MP5 crossed with LLF versus

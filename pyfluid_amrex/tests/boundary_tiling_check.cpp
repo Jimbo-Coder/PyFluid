@@ -7,6 +7,7 @@
 #include <AMReX_RealBox.H>
 
 #include "pyfluid_amrex/boundary.hpp"
+#include "pyfluid_amrex/patch_domain.hpp"
 #include "pyfluid_amrex/centering_transfer.hpp"
 #include "pyfluid_amrex/ct.hpp"
 #include "pyfluid_amrex/initial_data/provider.hpp"

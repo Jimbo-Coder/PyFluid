@@ -482,6 +482,17 @@ normalized recovery algebra into powers of density during code generation.
   or characteristic products. The table manifest states provenance and
   continuation policy, while runtime compatibility uses a fingerprint of the
   normalized physics data rather than a file path.
+- Boundary value data and stable kind identity live in `boundary_data.hpp` and
+  `boundary_kind.hpp`. The public `boundary.hpp` provides launch declarations
+  and small forwarding wrappers; it must not import configuration, field
+  descriptors, EoS formulas or generated numerical kernels. Configuration and
+  schema parity resolve in `src/framework/config_runtime.cpp`. Pointwise
+  inflow/analytic helpers and typed FillPatch callbacks live in
+  `boundary_point.hpp`, included explicitly by device consumers. Whole-array
+  state/patch-union fills and registered component-layout instantiations have
+  one per-dimension compiled owner in `src/numerics/boundary.cpp`. Keep kernel
+  device callees visible there for the non-RDC GPU contract. The separate
+  `origin_boundary.cpp` retains hierarchy/nonlocal origin topology ownership.
 - The standard suite runs the generated-equation numerical contracts after
   the CMake code-generation dependency has established freshness. Exact
   byte-for-byte regeneration of every expensive SymPy artifact belongs in the

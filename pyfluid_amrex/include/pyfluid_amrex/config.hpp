@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "pyfluid_amrex/build_options.hpp"
+#include "pyfluid_amrex/boundary_kind.hpp"
 #include "pyfluid_amrex/black_hole_matter.hpp"
 #include "pyfluid_amrex/generated/field_ids.hpp"
 #include "pyfluid_amrex/fixed_spacetime_types.hpp"
@@ -456,16 +457,6 @@ amrex::GpuArray<amrex::Real, AMREX_SPACEDIM> configured_min_feature_lengths(
 );
 amrex::Real amr_default_auto_min_feature_scale(int max_level);
 
-enum class BoundaryKind {
-   Periodic,
-   Outflow,
-   Reflecting,
-   Symmetry,
-   Inflow,
-   Diode,
-   Origin,
-   Analytic
-};
 
 std::string side_bc_name(RunConfig const& cfg, int direction, bool high_side);
 BoundaryKind boundary_kind_from_name(std::string const& value);

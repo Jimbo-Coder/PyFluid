@@ -1,4 +1,5 @@
 #include "amr/amr_solver_base.hpp"
+#include "pyfluid_amrex/patch_domain.hpp"
 #include "pyfluid_amrex/checkpoint.hpp"
 #include "pyfluid_amrex/fields.hpp"
 #include "pyfluid_amrex/initial_data.hpp"
