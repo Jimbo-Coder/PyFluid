@@ -94,19 +94,18 @@ Implementation conventions are defined in `pyfluid_amrex/docs/code_conventions.m
 
 ## Read-only collaborator reference
 
-- `https://github.com/yuheng-guo/Baumgarte_Spherical_Code.git` is a strictly
-  read-only reference, on every branch. This restriction persists across tasks
-  and agents until the human user explicitly removes it.
-- Reading, fetching, comparing branches and writing independent PyFluid review
-  notes or independently implemented adaptations are authorized. Do not edit
-  collaborator source, create/update/delete remote branches or files, push,
-  open/update issues or PRs, comment, review, react, change settings, or perform
-  any other write to that repository through Git, GitHub tools, APIs or UI.
-- Its local bare reference and source views must remain read-only. Do not
-  remove the disabled push URL, rejecting pre-push hook, file permissions or
-  this policy without that explicit human instruction. A review request or
-  permission to modify PyFluid does not lift the restriction. Do not execute
-  collaborator scripts or builds as part of ordinary source inspection.
+- `https://github.com/yuheng-guo/Baumgarte_Spherical_Code.git`, on every
+  branch, allows only upstream pull/fetch and local read-only inspection.
+  This restriction persists across tasks and agents until the human explicitly
+  changes it. Independent PyFluid notes and adaptations remain allowed.
+- Never push, edit collaborator source, create/change issues or PRs, post
+  comments/reviews/reactions, change settings, or perform any other repository
+  write through Git, GitHub tools, APIs or UI. Do not execute its scripts/builds.
+- Keep its disabled push URL, rejecting pre-push hook and read-only source
+  permissions. Only the cache metadata writes needed for an authorized
+  pull/fetch are allowed; restore its read-only metadata permissions afterward.
+  Permission to modify PyFluid does not relax this rule.
+- Do not repeat this policy in routine progress updates or completion messages.
 
 ## Continuity
 
