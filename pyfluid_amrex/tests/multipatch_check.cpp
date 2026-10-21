@@ -23,6 +23,10 @@
 #include <iostream>
 #include <string>
 
+namespace pyfluid_amrex {
+int check_mapped_patch_flux_corrections();
+}
+
 namespace {
 
 using namespace amrex::literals;
@@ -1730,6 +1734,7 @@ int main(int argc, char* argv[])
       amrex::Abort("multipatch_check is intended for 2D and 3D executables");
 #else
       return_code = std::max(return_code, run_patch_domain_face_checks());
+      return_code = std::max(return_code, pyfluid_amrex::check_mapped_patch_flux_corrections());
       return_code = std::max(return_code, run_patch_coordinate_map_checks());
       return_code = std::max(return_code, run_patch_coordinate_round_trip_checks());
       return_code = std::max(return_code, run_patch_grid_builder_checks());

@@ -459,8 +459,17 @@ case. Full `0..pi` theta domains require a nonlocal polar reflection across
 box/MPI ownership; half-theta equatorial domains require explicitly composed
 equatorial symmetry. A local FAB index reversal is not sufficient generally.
 
-The parent owns the planned narrow runtime regression and repair after the
-active compilation milestone. This defect is independent of unsupported
+Cycle479 subsequently compiles the real boundary owner and reproduces all eight
+2D/3D full/half-theta HD/MHD failures over multiple boxes and three ranks. Values
+remain finite, but full-sphere scalar error reaches 0.0373194 and vector parity
+also fails. This is direct boundary evidence, not evolution, CT or partial-AMR
+acceptance. Evidence is under `runs/current/infrastructure_audit/cycle479/origin/`.
+
+The existing `AmrSolverBase::complete_radial_origin_boundary` already materializes
+a positive-radius donor shell through `FillPatchNLevels` with the selected state
+interpolater and time slices. Retain that owner for missing fine-level donors;
+correct its shared angular map together with the uniform boundary owner. The
+complete repair remains pending. This defect is independent of unsupported
 vertex-centered spacetime singular nodes.
 
 ## Focused architecture comparison: centered spacetime

@@ -341,6 +341,10 @@ normalized recovery algebra into powers of density during code generation.
   density, momentum and energy roles here and do not need separate source
   instantiations. Keep gravity-field construction and the gravity source's
   energy-coupling contract in their existing shared owners.
+- Profiling observes the selected operation plan; it must not alter physical
+  constraints passed to a launch. Keep resolved diode/excision policy identical
+  between all-direction and directional flux interfaces and protect that contract
+  with numerical comparisons rather than relying on caller-default arguments.
 - The signal-speed factory selects layout and diffusion timestep policy on the
   host at runtime. Keep separate hydro/MHD/relativistic pointwise kernels and
   the measured ideal-gas EoS fast path. Tracer presence and diffusion policy

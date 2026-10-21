@@ -304,12 +304,14 @@ SpEC source was not reviewed. See `docs/build_cost_roadmap.md` for the plan.
 
 ## Spherical collaborator source review (Cycle 475)
 
-- `SOURCE-CHECKED / IMPLEMENTATION PENDING`: spherical fluid origin ghosts
+- `RUNTIME-REPRODUCED / IMPLEMENTATION PENDING`: spherical fluid origin ghosts
   with active theta omit the antipodal theta reflection. Current
   `boundary.hpp` only enables its nonlocal origin phase with active phi and
   leaves theta unchanged. `rho=1+0.1*z` gives a direct source-index
-  counterexample without a vector convention assumption. Follow the current
-  cycle for runtime evidence, compiled-owner repair and MPI/AMR limits.
+  counterexample without a vector convention assumption. Cycle479 reproduces
+  all eight 2D/3D full/half-theta HD/MHD failures on three ranks. The existing
+  FillPatchNLevels donor-shell owner must share the corrected angular mapping;
+  no new coarse-fine transfer path is needed. Origin repair remains pending.
 - `SOURCE-CHECKED / DESIGN`: collaborator cell-shifted point samples support
   the previously proposed startup spacetime-centering policy. Preserve one
   generated physics path and explicitly distinguish point-field AMR transfers
@@ -321,39 +323,25 @@ SpEC source was not reviewed. See `docs/build_cost_roadmap.md` for the plan.
   not certify every historical formula or reproduce collaborator runs. The
   collaborator repository is strictly read-only under `../AGENTS.md`.
 
-## Separate pre-existing flux findings (Cycle 478)
+## Repaired flux findings (Cycles 478--479)
 
-- `SOURCE-DEMONSTRATED MECHANISM / RUNTIME REPRODUCTION PENDING`: traced 2D
-  mapped-hydro external walls pass an empty passive vector to
-  `add_mapped_patch_flux_correction<NComp>`
-  (`src/numerics/mapped_patch_interfaces.hpp:611-619,775-783`). For
-  `NComp>NVAR_HYDRO`, both insertion and accumulation index that vector
-  unconditionally (`:390-392,409-411`). This is an out-of-bounds mechanism,
-  retained in the frozen Cycle478 control, separate from the optional-tracer
-  factoring. The direct boundary writer explicitly sets passive flux to zero
-  (`:579-582`). Reproduce with a tiny traced mapped layout containing an
-  external reflective face under bounds checking/ASan; require finite zero
-  wall dye flux, unchanged physical fluxes, and equal/opposite internal-seam
-  corrections before using this branch as an equivalence oracle. No runtime
-  failure, repair or complete mapped-tracer acceptance is claimed. Provenance:
-  `runs/current/infrastructure_audit/cycle477/tracer_assessment.json`.
-- `SOURCE-CHECKED DIVERGENCE / RUNTIME REPRODUCTION PENDING`: the all-direction
-  analytic-metric RHD/RMHD calls in `src/numerics/rhs.hpp:656-671,697-714`
-  omit the resolved diode argument, selecting the empty default in
-  `src/relativity/{rhd_system.hpp:504,rmhd_system.hpp:321}`. The directional
-  calls pass it (`rhs.hpp:914-924,947-960`). With profiling enabled,
-  `profile_detail=flux` selects directional dispatch while basic profiling
-  selects all-direction dispatch for fixed metrics
-  (`src/amr/solver_sections/rhs_assembly.inc.hpp:301-402`;
-  `src/framework/profiling.cpp:55-57`). Thus the source permits a profiling
-  choice to change a diode face's reconstruction/transport treatment; the
-  numerical impact depends on the boundary state. This omission predates
-  Cycle478's tracer changes. Reproduce fixed-Minkowski RHD and cheap-solver
-  RMHD with a nonperiodic diode and incoming face transport; compare basic
-  versus flux profiling, requiring identical face fluxes, state/scalar
-  histories and the intended diode baryon-flux sign. Stored-metric dispatch
-  and separately routed advanced RMHD are outside this exact mechanism.
-  No reproducer, fix, numerical magnitude or broad acceptance exists yet.
+- `FIXED / BASELINE REPRODUCED`: traced mapped external reflecting walls passed
+  an empty passive payload to the correction accumulator. The original helper
+  fails under AddressSanitizer. Its payload now has the compile-time passive
+  component count; value-initialized wall payloads carry the required zero dye
+  transport. The maintained multipatch check covers creation, accumulation,
+  opposite seam contributions and nonzero dye transport at zero net mass flux.
+  Real three-rank mixed-patch runs with dye on/off have identical physical
+  histories and all 5,120 physical output values. See Cycle479 for acceptance
+  and `runs/current/infrastructure_audit/cycle479/mapped_wall/` for controls.
+- `FIXED / BASELINE REPRODUCED`: the analytic-metric all-direction RHD/RMHD
+  launches omitted the resolved diode constraints. Basic versus flux profiling
+  therefore changed evolution; pinned baseline 1D final-state differences reach
+  0.551839 (RHD) and 0.338930 (RMHD). All six calls now pass the resolved diode.
+  The maintained diode gate compares both dispatch modes, requiring identical
+  runtime scalar histories and finite final fields in fixed Minkowski RHD/RMHD.
+  Stored-metric and advanced-solver routes already passed the constraints.
+  Evidence: `runs/current/infrastructure_audit/cycle479/diode/`.
 
 ## Raw Review Provenance
 

@@ -27,6 +27,12 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   timing variability was inconclusive. Consult the current cycle for exact
   source/timing boundaries; the existing self-gravity AMR energy failure is open.
 
+- Fluid origin continuation with active spherical theta remains defective:
+  uniform 2D/3D full/half-theta boundary fixtures fail scalar/vector parity on
+  three ranks. The existing hierarchy donor-shell FillPatch owner should be
+  reused when repairing the angular map. This is separate from vertex-centered
+  spacetime singular equations and does not expose cell-centered spacetime.
+
 - Cycle 414 connects the complete generated fCCZ4 equations, reference-frame
   adapters, diagnostics and stored-metric GRHD bridge on regular charts.
   Cartesian and spherical gauge propagation, bounded spherical symmetry
@@ -156,6 +162,14 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   slowing large-array fluxes. Shorter longest-owner latency alone is insufficient.
   The current fused path remains; no full 3D/relativistic or GPU comparison was
   established by that probe, and fusion is not a permanent backend requirement.
+- Profiling must not change physical dispatch. Analytic RHD/RMHD now pass the
+  same resolved diode constraints through all-direction and directional flux
+  launches; the previous omission produced measurable evolution differences.
+  The maintained diode gate checks profile-invariant scalar histories and fields.
+- Mapped reflecting walls have zero passive transport. Their correction payload
+  has the compile-time passive count; overlap contributions retain independent
+  dye upwinding even when net mass flux cancels. The baseline empty-payload
+  failure is repaired, with focused contracts and a real traced/untraced control.
 - Optional Newtonian tracers reuse the base five/eight-component physics kernel
   and reconstruct scalar flux independently from its stored mass flux. Component
   views remove the tracer-layout template axis. Reuse wall tile classification,

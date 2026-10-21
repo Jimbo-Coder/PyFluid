@@ -656,18 +656,18 @@ inline void fill_fluxes_for_components(
          const FixedSpacetimeParameters spacetime = parameters.spacetime;
          fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 0>(
             fluxes, primitive, parameters.eos, *geom, spacetime,
-            *atmosphere, time
+            *atmosphere, time, parameters.diode
          );
 #if (AMREX_SPACEDIM >= 2)
          fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 1>(
             fluxes, primitive, parameters.eos, *geom, spacetime,
-            *atmosphere, time
+            *atmosphere, time, parameters.diode
          );
 #endif
 #if (AMREX_SPACEDIM == 3)
          fill_rmhd_flux_direction<ReconMethod, RiemannMethod, 2>(
             fluxes, primitive, parameters.eos, *geom, spacetime,
-            *atmosphere, time
+            *atmosphere, time, parameters.diode
          );
 #endif
       }
@@ -699,18 +699,18 @@ inline void fill_fluxes_for_components(
          const MeshAxes axes = parameters.mesh_axes;
          fill_rhd_flux_direction<ReconMethod, RiemannMethod, 0, EOSMethod>(
             fluxes, primitive, parameters.eos, *geom, spacetime,
-            *atmosphere, time, coordinate, axes
+            *atmosphere, time, coordinate, axes, parameters.diode
          );
 #if (AMREX_SPACEDIM >= 2)
          fill_rhd_flux_direction<ReconMethod, RiemannMethod, 1, EOSMethod>(
             fluxes, primitive, parameters.eos, *geom, spacetime,
-            *atmosphere, time, coordinate, axes
+            *atmosphere, time, coordinate, axes, parameters.diode
          );
 #endif
 #if (AMREX_SPACEDIM == 3)
          fill_rhd_flux_direction<ReconMethod, RiemannMethod, 2, EOSMethod>(
             fluxes, primitive, parameters.eos, *geom, spacetime,
-            *atmosphere, time, coordinate, axes
+            *atmosphere, time, coordinate, axes, parameters.diode
          );
 #endif
       }

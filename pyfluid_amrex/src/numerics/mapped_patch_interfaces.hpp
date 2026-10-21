@@ -371,7 +371,7 @@ inline void add_mapped_patch_flux_correction(
    int face_i,
    int face_j,
    HydroState const& hydro_flux,
-   amrex::Vector<amrex::Real> const& passive_flux,
+   std::array<amrex::Real, NComp - NVAR_HYDRO> const& passive_flux,
    amrex::Real sign = 1.0_rt
 )
 {
@@ -615,7 +615,7 @@ inline void correct_mapped_patch_hydro_interface_fluxes(
             face.face_i,
             face.face_j,
             scale_flux(mapped_patch_reflecting_wall_flux(inside, face.normal), face_length),
-            amrex::Vector<amrex::Real>{}
+            {}
          );
          continue;
       }
@@ -706,9 +706,8 @@ inline void correct_mapped_patch_hydro_interface_fluxes(
          );
          const HydroState integrated_flux = scale_flux(overlap_flux, overlap_length);
 
-         amrex::Vector<amrex::Real> passive_flux;
+         std::array<amrex::Real, NComp - NVAR_HYDRO> passive_flux{};
          if constexpr (NComp > NVAR_HYDRO) {
-            passive_flux.assign(NComp - NVAR_HYDRO, 0.0_rt);
             const bool use_left_passive = overlap_flux.rho >= 0.0_rt;
             for (int n = NVAR_HYDRO; n < NComp; ++n) {
                const amrex::Real passive_l = mapped_patch_reconstructed_scalar<ReconMethod>(
@@ -779,7 +778,7 @@ inline void correct_mapped_patch_hydro_interface_fluxes(
          face.face_i,
          face.face_j,
          scale_flux(mapped_patch_reflecting_wall_flux(inside, face.normal), face_length),
-         amrex::Vector<amrex::Real>{}
+         {}
       );
    }
 
