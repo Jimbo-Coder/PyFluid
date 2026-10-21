@@ -1369,6 +1369,10 @@ reconstruction question, use:
 
 ### Multipatch follow-up (Cycle 410)
 
+- [Focused CapyrX architecture review](docs/capyrx_architecture_review.md): pinned
+  October 2026 interpolation/cache/centering source and derivative interfaces;
+  lessons for later PyFluid geometry/transfer ownership, not conservative FV/CT
+  seam acceptance.
 - [ET 2026_05 release notes](https://www.einsteintoolkit.org/about/releases/ET_2026_05_announcement.html): NewRadX gained CapyrX multipatch support.
 - [CarpetX developer notes, January 2026](https://lists.einsteintoolkit.org/pipermail/carpetx-developers/2026-January/000538.html): split-phase interpolation work for CapyrX and its possible CCE use. This is infrastructure provenance, not evidence of conservative GRMHD interface coupling.
 - [Thornburg (2004), Black Hole Excision with Multiple Grid Patches](https://arxiv.org/abs/gr-qc/0404059): angular patches, tensor bases and interpatch boundary design for black-hole evolution.

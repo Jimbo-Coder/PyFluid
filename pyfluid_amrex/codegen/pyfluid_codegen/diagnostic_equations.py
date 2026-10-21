@@ -581,18 +581,30 @@ def psi4_from_weyl_kernel() -> StructKernel:
    electric = symmetric_tensor3_symbols("weyl.electric")
    magnetic = symmetric_tensor3_symbols("weyl.magnetic")
    sqrt_det_gamma = sp.Symbol("metric.sqrt_det_gamma", positive=True)
+   bindings: list[tuple[sp.Symbol, sp.Expr]] = []
+
+   def bind(name: str, expression: sp.Expr) -> sp.Symbol:
+      symbol = sp.Symbol(name)
+      bindings.append((symbol, expression))
+      return symbol
+
+   def bind_vector(name: str, value: Vector) -> Vector:
+      return Vector(*(
+         bind(f"{name}{component + 1}", value.component(component))
+         for component in range(DIMENSION)
+      ))
 
    position = Vector(*(sp.Symbol(f"position.{axis}") for axis in ("x", "y", "z")))
    azimuthal = Vector(-position.component(1), position.component(0), 0)
    radial = position
    polar_covector = azimuthal.cross(radial)
-   polar = Vector(*(
+   polar = bind_vector("polar", Vector(*(
       sqrt_det_gamma * sum(
          inverse_metric[upper, lower] * polar_covector.component(lower)
          for lower in range(DIMENSION)
       )
       for upper in range(DIMENSION)
-   ))
+   )))
 
    def metric_dot(left: Vector, right: Vector) -> sp.Expr:
       return sum(
@@ -601,15 +613,34 @@ def psi4_from_weyl_kernel() -> StructKernel:
          for second in range(DIMENSION)
       )
 
-   azimuthal_unit = azimuthal / sp.sqrt(metric_dot(azimuthal, azimuthal))
-   radial_orthogonal = radial - azimuthal_unit * metric_dot(azimuthal_unit, radial)
-   radial_unit = radial_orthogonal / sp.sqrt(metric_dot(radial_orthogonal, radial_orthogonal))
-   polar_orthogonal = (
-      polar
-      - azimuthal_unit * metric_dot(azimuthal_unit, polar)
-      - radial_unit * metric_dot(radial_unit, polar)
+   # Keep Gram-Schmidt stages explicit. Expanding each normalization into
+   # both Weyl contractions makes algebraic CSE revisit the same large trees.
+   # Ordered bindings also preserve each normalization as a numerical step.
+   azimuthal_norm = bind("azimuthal_norm", sp.sqrt(metric_dot(azimuthal, azimuthal)))
+   azimuthal_unit = bind_vector("azimuthal_unit", azimuthal / azimuthal_norm)
+   radial_projection = bind("radial_projection", metric_dot(azimuthal_unit, radial))
+   radial_orthogonal = bind_vector(
+      "radial_orthogonal", radial - azimuthal_unit * radial_projection
    )
-   polar_unit = polar_orthogonal / sp.sqrt(metric_dot(polar_orthogonal, polar_orthogonal))
+   radial_norm = bind(
+      "radial_norm", sp.sqrt(metric_dot(radial_orthogonal, radial_orthogonal))
+   )
+   radial_unit = bind_vector("radial_unit", radial_orthogonal / radial_norm)
+   polar_azimuthal_projection = bind(
+      "polar_azimuthal_projection", metric_dot(azimuthal_unit, polar)
+   )
+   polar_radial_projection = bind(
+      "polar_radial_projection", metric_dot(radial_unit, polar)
+   )
+   polar_orthogonal = bind_vector("polar_orthogonal", (
+      polar
+      - azimuthal_unit * polar_azimuthal_projection
+      - radial_unit * polar_radial_projection
+   ))
+   polar_norm = bind(
+      "polar_norm", sp.sqrt(metric_dot(polar_orthogonal, polar_orthogonal))
+   )
+   polar_unit = bind_vector("polar_unit", polar_orthogonal / polar_norm)
 
    def contract(tensor: sp.Matrix, left: Vector, right: Vector) -> sp.Expr:
       return sum(
@@ -636,6 +667,7 @@ def psi4_from_weyl_kernel() -> StructKernel:
       ),
       outputs=("psi4_real", "psi4_imaginary"),
       expressions=(psi4_real, psi4_imaginary),
+      bindings=tuple(bindings),
    )
 
 

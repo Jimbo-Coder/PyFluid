@@ -5204,6 +5204,42 @@ int main(int argc, char** argv)
          return 1;
       }
 
+      // Along positive axis 1 the tetrad is (e_phi, e_r, e_theta) =
+      // (e_2, e_1, -e_3). Independent electric/magnetic contributions give
+      // Psi4 = (E_33-E_22)/2 + B_23 + i(E_23-(B_33-B_22)/2).
+      // Rescaling the diagonal metric and covariant Weyl components together
+      // must preserve that result after tetrad normalization.
+      for (bool stretched : {false, true}) {
+         const amrex::Real length1 = stretched ? 2.0_rt : 1.0_rt;
+         const amrex::Real length2 = stretched ? 3.0_rt : 1.0_rt;
+         const amrex::Real length3 = stretched ? 4.0_rt : 1.0_rt;
+         pyfluid_amrex::Z4cConformalMetric tetrad_metric{};
+         tetrad_metric.gamma11 = length1 * length1;
+         tetrad_metric.gamma22 = length2 * length2;
+         tetrad_metric.gamma33 = length3 * length3;
+         tetrad_metric.inv_gamma11 = 1.0_rt / tetrad_metric.gamma11;
+         tetrad_metric.inv_gamma22 = 1.0_rt / tetrad_metric.gamma22;
+         tetrad_metric.inv_gamma33 = 1.0_rt / tetrad_metric.gamma33;
+         tetrad_metric.sqrt_det_gamma = length1 * length2 * length3;
+         pyfluid_amrex::WeylRadiationIntegrands nonzero_weyl{};
+         nonzero_weyl.electric11 = -8.0_rt * length1 * length1;
+         nonzero_weyl.electric22 = 2.0_rt * length2 * length2;
+         nonzero_weyl.electric33 = 6.0_rt * length3 * length3;
+         nonzero_weyl.electric23 = 3.0_rt * length2 * length3;
+         nonzero_weyl.magnetic11 = -6.0_rt * length1 * length1;
+         nonzero_weyl.magnetic22 = 5.0_rt * length2 * length2;
+         nonzero_weyl.magnetic33 = length3 * length3;
+         nonzero_weyl.magnetic23 = 7.0_rt * length2 * length3;
+         const auto nonzero_psi4 = pyfluid_amrex::generated::psi4_from_weyl(
+            tetrad_metric, nonzero_weyl, pyfluid_amrex::Vector3{1.0_rt, 0.0_rt, 0.0_rt}
+         );
+         if (!close_enough(nonzero_psi4.psi4_real, 9.0_rt)
+             || !close_enough(nonzero_psi4.psi4_imaginary, 5.0_rt)) {
+            std::cerr << "generated nonzero Psi4 tetrad normalization mismatch\n";
+            return 1;
+         }
+      }
+
       constexpr amrex::Real trace_curvature = 0.6_rt;
       pyfluid_amrex::Z4cState homogeneous = minkowski;
       homogeneous.k_hat = trace_curvature;

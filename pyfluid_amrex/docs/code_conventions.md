@@ -136,6 +136,11 @@ decisions.
 - Keep generated pointwise physics out of the template-heavy fluid driver.
   Compiled sector orchestration may select policies and move AMReX data, but it
   must not duplicate physical equations.
+- Preserve meaningful normalization stages with the generator's existing
+  ordered bindings when expanding them duplicates large expression trees.
+  Keep the equations in the symbolic owner; measure generation and compiled
+  evaluation, and validate changed floating-point ordering against independent
+  nonzero cases. Do not rely on algebraic CSE to rediscover every numerical stage.
 - Own evolution template instantiations by their compile-time signature, not by
   nominal physical-system names. The bundle key is component count, CT
   topology; EoS identity is runtime data. Systems that share that signature

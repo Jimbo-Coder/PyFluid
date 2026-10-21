@@ -17,6 +17,22 @@ Status meanings:
 
 ## Completed Outcomes And Active Queue
 
+### Cycle 482: architecture before more geometry (`DONE` / `DEFER`)
+
+`DONE`: diagnostic-generation profiling isolates expanded Psi4 tetrad CSE as
+the dominant cost. The symbolic owner now uses existing ordered bindings;
+substitution reproduces both prior expressions exactly. Nonzero flat/stretched
+analytic controls and a varied compiled comparison protect normalization and
+orientation. See the current continuity cycle for generation/build and numerical
+acceptance; no second equation implementation is introduced.
+
+`DEFER`: the October CapyrX branch's cache identity and separate map/derivative
+interfaces are useful source-checked design references for later transfer work.
+See `docs/capyrx_architecture_review.md` for pinned paths, read depth and limits.
+This is not a demonstrated current PyFluid cache defect or an accepted
+conservative duplicated-overlap method. Do not port slaved-overlap evolution
+under the label of a generic architecture cleanup.
+
 ### 1. Give state and auxiliary GFs one ordinary output cadence (`DONE`, M)
 
 Source: `src/amr/amr_solver_auxiliary.cpp`, declaration in

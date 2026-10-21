@@ -185,7 +185,13 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   descriptor metadata. This limits invalidation without reducing most optimizer
   work by itself. Shared code generation checks content plus the actual symbolic
   runtime environment, independently of build profile. Warm reuse is cheap;
-  genuine diagnostic generation and complete feature builds remain expensive.
+  complete feature builds remain expensive. Cycle482 removes the diagnostic
+  bottleneck by keeping Psi4's Gram-Schmidt normalization in existing ordered
+  symbolic bindings. Expanding those bindings reproduces both original symbolic
+  expressions exactly; generated floating-point ordering changes, with nonzero
+  analytic controls, a varied SPD/Weyl comparison and radiation/restart checks.
+  Other diagnostic kernels retain identical generated text. This is CPU evidence,
+  not current GPU acceptance.
 - The full/focused Mac CPU Ninja graphs meet the one-second no-op goal with
   shared content checks and no compiler activity. A cache-backed migration is
   separate from cold or local-edit performance. Changing generator can reorder
@@ -2079,6 +2085,13 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   require hierarchy, FillPatch, reflux, restriction, regridding, checkpoint,
   I/O, and elliptic infrastructure. Consider Kokkos only for a measured isolated
   hotspot with a clean data boundary.
+- The October CapyrX interpolation branch distinguishes setup from execution
+  and keys cache reuse by mesh epoch, active level/patch range and coordinate
+  validity. It explicitly rejects unsupported nonvertex transfers when points
+  exist. These are useful transfer-ownership lessons, not conservative FV/CT
+  overlap coupling. Pinned source/read-depth notes are in
+  `docs/capyrx_architecture_review.md`; its optional slaved interiors do not
+  change PyFluid's unique-owned-cell contract.
 
 - A physical-ID AMR box with `initial_refine_fixed_levels > 0` is the complete
   startup hierarchy and suppresses automatic tags at the initial instant. For

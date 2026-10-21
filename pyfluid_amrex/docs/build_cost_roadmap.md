@@ -368,9 +368,44 @@ the same wrapper/include order, and stops temporary-use counting after the
 second occurrence because pruning only distinguishes zero/one from multiple.
 A genuine all-family pass takes **76.455 s** and preserves all 52 output bytes
 and timestamps. This is not a matched isolated speedup measurement; diagnostic
-generation remains expensive. All 42 build tests and transitive ownership pass,
+generation remained expensive through Cycle478. All 42 build tests and transitive ownership pass,
 and the post-generation full no-op remains below one second with no compiler
 activity. Evidence: `cycle478/codegen_emission/`.
+
+## Ordered normalization stages (Cycle482)
+
+Stage timings isolate **69.113 s** of a **73.878 s** diagnostic render in
+algebraic CSE of the expanded Psi4 tetrad. Construction, pruning and printing
+are small. The adopted change keeps Gram-Schmidt projections and normalization
+in the existing ordered symbolic bindings, then applies the unchanged CSE
+policy to the small final Weyl contractions. It adds no new emitter or equations.
+Inlining all 24 bindings reproduces both original symbolic expressions exactly.
+
+The direct diagnostic render takes **4.812 s** after the change; the first
+CMake diagnostic refresh takes **5.21 s**. A separate forced regeneration of
+all ten families takes **22.62 s**, with no reused family manifests or compiler
+cache activity. This misses the explicit **20 s** target; full cold compilation
+is not measured by that result. Only `diagnostics.hpp` changes among 52 output
+files; all other bytes and timestamps remain unchanged. Within that header,
+only Psi4 changes. Its source grows from 6,138 to 6,636 bytes, so smaller printed
+code is not the mechanism.
+
+The all-dimensional production refresh takes **12.90 s**, nine cache misses and
+zero hits; the final no-op is **0.32 s** with no compiler activity. These are
+affected rebuild/no-op samples, not clean-build measurements. A 4,096-point
+compiled SPD-metric/trace-free-Weyl corpus compares old/new kernels with a
+long-double Gram-Schmidt reference: maximum scaled pair difference **1.45e-15**.
+An isolated short CPU ABBA traversal also favors the new point kernel, but it
+does not establish whole-simulation or GPU acceleration. Maintained radiation
+and restart checks and the canonical four-case performance gate pass.
+
+Use ordered intermediates for meaningful numerical stages when measurement
+shows that unrestricted expression expansion is expensive. Do not insert them
+indiscriminately or weaken exact algebra/precision contracts. Broad public-header
+invalidation, complete feature compilation and device acceptance remain open.
+CapyrX source lessons for later geometry interfaces are recorded separately in
+[the focused review](capyrx_architecture_review.md), not enabled as a new feature.
+Evidence: `runs/current/infrastructure_audit/cycle482/`.
 
 ## Rejected first CPU staging probe
 
