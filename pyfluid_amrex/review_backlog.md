@@ -304,14 +304,21 @@ SpEC source was not reviewed. See `docs/build_cost_roadmap.md` for the plan.
 
 ## Spherical collaborator source review (Cycle 475)
 
-- `RUNTIME-REPRODUCED / IMPLEMENTATION PENDING`: spherical fluid origin ghosts
-  with active theta omit the antipodal theta reflection. Current
-  `boundary.hpp` only enables its nonlocal origin phase with active phi and
-  leaves theta unchanged. `rho=1+0.1*z` gives a direct source-index
-  counterexample without a vector convention assumption. Cycle479 reproduces
-  all eight 2D/3D full/half-theta HD/MHD failures on three ranks. The existing
-  FillPatchNLevels donor-shell owner must share the corrected angular mapping;
-  no new coarse-fine transfer path is needed. Origin repair remains pending.
+- `FIXED / BASELINE REPRODUCED`: cell-state spherical origin continuation
+  omitted theta reversal and equatorial composition. Cycle479 reproduces eight
+  analytic 2D/3D full/half-domain failures; Cycle480 shares the corrected map
+  between uniform filling and the existing FillPatchNLevels donor band. It
+  also fixes collapsed AMR radial-layer indices and preserves nonlocal ghosts
+  during local refreshes. Focused checks cover corners, both hemispheres,
+  small angular extents, polar/axial fields, dye and partial time-interpolated
+  hierarchy donors. See Cycle480 for exact numerical/build acceptance.
+- `SOURCE-CHECKED / OPEN`: `ct.hpp::apply_face_b_boundary` still applies local
+  radial reflection without the angular donor map. Its collapsed radial face
+  is assigned zero normal field. Cell-state origin tests do not validate
+  staggered face/edge origin connectivity, angular aliases or partial-hierarchy
+  CT donor completion. Repair and independently validate that operation before
+  claiming general spherical-origin MHD+CT evolution; do not restrict intended
+  configurations as a substitute for a repair.
 - `SOURCE-CHECKED / DESIGN`: collaborator cell-shifted point samples support
   the previously proposed startup spacetime-centering policy. Preserve one
   generated physics path and explicitly distinguish point-field AMR transfers

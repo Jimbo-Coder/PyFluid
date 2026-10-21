@@ -88,6 +88,15 @@ positions. Checkpoint metadata must preserve the formulation and chart/basis
 semantics. The generated auxiliary-B gauge kernel is separate from the current
 integrated Gamma-driver runtime and does not imply an extra evolved field.
 
+Cell-state radial origin continuation has one independently compiled owner in
+`src/numerics/origin_boundary.cpp`. Uniform levels gather a bounded radial
+band; partial levels supply that same band through the existing
+`FillPatchNLevels` owner, using its selected state interpolater and time slices.
+Ordinary local physical-BC refreshes preserve these nonlocal origin ghosts.
+Do not add another angular map or a separate coarse-fine donor algorithm in a
+physics/reconstruction owner. Staggered CT fields and spacetime point fields
+need their own centering-aware transfer and collapsed-topology validation.
+
 Divergence, flux-register weighting and reflux share
 `uses_cartesian_momentum_fluxes()` for the momentum representation. Newtonian
 full-chart HD may integrate Cartesian momentum through physical face vectors;

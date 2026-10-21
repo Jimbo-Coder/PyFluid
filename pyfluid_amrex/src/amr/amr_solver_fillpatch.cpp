@@ -231,21 +231,14 @@ void AmrSolverBase::complete_radial_origin_boundary(LevelData& data, int lev, am
    amrex::MultiFab& fine = *data[lev];
    const amrex::IntVect ng = fine.nGrowVect();
    const int radial_dir = mesh_direction_for_axis(boundary_data_.mesh_axes, MeshAxisR);
-   const int phi_dir = mesh_direction_for_axis(boundary_data_.mesh_axes, MeshAxisPhi);
-   if (radial_dir < 0 || phi_dir < 0 || ng[radial_dir] <= 0) {
+   if (radial_dir < 0 || ng[radial_dir] <= 0) {
       return;
    }
 
    validate_origin_boundary_geometry(boundary_data_, Geom(lev));
    const amrex::Box fine_domain = Geom(lev).Domain();
    const int radial_lo = fine_domain.smallEnd(radial_dir);
-   const int nphi = fine_domain.length(phi_dir);
-   const int phi_hi = fine_domain.bigEnd(phi_dir);
    const int ncomp = fine.nComp();
-   amrex::GpuArray<int, MaxStateComponents> origin_parity{};
-   for (int q = 0; q < MaxStateComponents; ++q) {
-      origin_parity[q] = origin_state_parity(boundary_data_, radial_dir, q);
-   }
 
    bool needs_origin_shell = false;
    for (int box_index = 0; box_index < static_cast<int>(fine.boxArray().size()); ++box_index) {
@@ -259,16 +252,10 @@ void AmrSolverBase::complete_radial_origin_boundary(LevelData& data, int lev, am
       return;
    }
 
-   amrex::Box destination_shell = fine_domain;
-   destination_shell.setSmall(radial_dir, radial_lo - ng[radial_dir]);
-   destination_shell.setBig(radial_dir, radial_lo - 1);
-   amrex::Box source_shell = fine_domain;
-   source_shell.setSmall(radial_dir, radial_lo);
-   source_shell.setBig(radial_dir, radial_lo + ng[radial_dir] - 1);
-   const amrex::BoxArray destination_box_array(destination_shell);
+   const amrex::Box source_shell = radial_origin_source_box(Geom(lev), boundary_data_, ng);
    const amrex::BoxArray source_box_array(source_shell);
-   const amrex::DistributionMapping destination_distribution(destination_box_array);
-   amrex::MultiFab source_values(source_box_array, destination_distribution, ncomp, 0);
+   const amrex::DistributionMapping source_distribution(source_box_array);
+   amrex::MultiFab source_values(source_box_array, source_distribution, ncomp, 0);
    if (cfg_.debug_check_finite) {
       source_values.setVal(std::numeric_limits<amrex::Real>::quiet_NaN());
    }
@@ -315,71 +302,7 @@ void AmrSolverBase::complete_radial_origin_boundary(LevelData& data, int lev, am
       amrex::Abort("radial-origin hierarchy sampling produced nonfinite antipodal source values");
    }
    debug_check_reconstruction_input(source_values, lev, time, "radial-origin hierarchy sampling");
-   amrex::MultiFab origin_values(destination_box_array, destination_distribution, ncomp, 0);
-   if (cfg_.debug_check_finite) {
-      origin_values.setVal(std::numeric_limits<amrex::Real>::quiet_NaN());
-   }
-
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-   {
-      for (amrex::MFIter mfi(origin_values, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-         const amrex::Box& radial_ghosts = mfi.tilebox();
-         const auto dst = origin_values.array(mfi);
-         const auto src = source_values.const_array(mfi);
-         amrex::ParallelFor(radial_ghosts, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int q) noexcept {
-            int source_i = i;
-            int source_j = j;
-            int source_k = k;
-            if (radial_dir == 0) {
-               source_i = mirrored_index(i, radial_lo, radial_lo);
-            }
-#if (AMREX_SPACEDIM >= 2)
-            if (radial_dir == 1) {
-               source_j = mirrored_index(j, radial_lo, radial_lo);
-            }
-#endif
-#if (AMREX_SPACEDIM == 3)
-            if (radial_dir == 2) {
-               source_k = mirrored_index(k, radial_lo, radial_lo);
-            }
-#endif
-            if (phi_dir == 0) {
-               source_i += nphi / 2;
-            }
-#if (AMREX_SPACEDIM >= 2)
-            if (phi_dir == 1) {
-               source_j += nphi / 2;
-            }
-#endif
-#if (AMREX_SPACEDIM == 3)
-            if (phi_dir == 2) {
-               source_k += nphi / 2;
-            }
-#endif
-            if (phi_dir == 0 && source_i > phi_hi) {
-               source_i -= nphi;
-            }
-#if (AMREX_SPACEDIM >= 2)
-            if (phi_dir == 1 && source_j > phi_hi) {
-               source_j -= nphi;
-            }
-#endif
-#if (AMREX_SPACEDIM == 3)
-            if (phi_dir == 2 && source_k > phi_hi) {
-               source_k -= nphi;
-            }
-#endif
-            dst(i, j, k, q) = static_cast<amrex::Real>(origin_parity[q]) * src(source_i, source_j, source_k, q);
-         });
-      }
-   }
-   if (cfg_.debug_check_finite && origin_values.contains_nan()) {
-      amrex::Abort("radial-origin parity mapping produced nonfinite ghost values");
-   }
-   debug_check_reconstruction_input(origin_values, lev, time, "radial-origin parity mapping");
-   fine.ParallelCopy(origin_values, 0, 0, ncomp, amrex::IntVect::TheZeroVector(), ng, Geom(lev).periodicity());
+   fill_radial_origin_from_source(fine, source_values, Geom(lev), boundary_data_);
    debug_check_reconstruction_input(fine, lev, time, "radial-origin shell completion");
    if (cfg_.debug_check_finite && (fine.contains_nan(0, ncomp, ng) || fine.contains_inf(0, ncomp, ng))) {
       amrex::Abort("radial-origin copy left nonfinite fine-level state or ghost values");

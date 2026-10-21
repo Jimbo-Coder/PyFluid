@@ -194,37 +194,16 @@ int origin_state_parity(BoundaryData const& bc, int dir, int component) noexcept
    return bc.origin_state_parity[dir * MaxStateComponents + component];
 }
 
-inline void validate_origin_boundary_geometry(BoundaryData const& bc, amrex::Geometry const& geom)
+inline bool needs_radial_antipodal_origin_boundary(BoundaryData const& bc) noexcept
 {
-   const auto problo = geom.ProbLoArray();
-   const auto probhi = geom.ProbHiArray();
-   const auto periodic = geom.isPeriodicArray();
-   const amrex::Box domain = geom.Domain();
-   for (int dir = 0; dir < AMREX_SPACEDIM; ++dir) {
-      if (bc.origin_lo[dir] != 0 && problo[dir] != 0.0_rt) {
-         amrex::Abort("pyfluid.bc_* = origin requires the lower radial coordinate bound to be 0");
-      }
-   }
    const int radial_dir = mesh_direction_for_axis(bc.mesh_axes, MeshAxisR);
-   const int phi_dir = mesh_direction_for_axis(bc.mesh_axes, MeshAxisPhi);
-   if (radial_dir >= 0 && phi_dir >= 0 && bc.origin_lo[radial_dir] != 0) {
-      if (periodic[phi_dir] == 0) {
-         amrex::Abort("radial origin boundary with active phi requires geometry.is_periodic = 1 in phi");
-      }
-      const int nphi = domain.length(phi_dir);
-      if (nphi != 1 && nphi % 2 != 0) {
-         amrex::Abort(
-            "radial origin boundary with active phi requires one or an even "
-            "number of phi cells"
-         );
-      }
-      const amrex::Real width = probhi[phi_dir] - problo[phi_dir];
-      if (std::abs(width - constants::two_pi)
-          > static_cast<amrex::Real>(1.0e-12_rt) * constants::two_pi) {
-         amrex::Abort("radial origin boundary with active phi requires a full 2*pi phi domain");
-      }
-   }
+   return radial_dir >= 0 && bc.origin_lo[radial_dir] != 0
+      && (mesh_has_axis(bc.mesh_axes, MeshAxisPhi)
+          || (bc.mesh_coordinate == MeshSpherical && mesh_has_axis(bc.mesh_axes, MeshAxisTheta)));
 }
+
+
+void validate_origin_boundary_geometry(BoundaryData const& bc, amrex::Geometry const& geom);
 
 inline bool boundary_data_all_periodic(BoundaryData const& bc)
 {
@@ -910,6 +889,8 @@ inline void apply_state_boundary(
    const int analytic_bc = static_cast<int>(BoundaryKind::Analytic);
    const int diode_bc = static_cast<int>(BoundaryKind::Diode);
    const int origin_bc = static_cast<int>(BoundaryKind::Origin);
+   const int nonlocal_origin_dir = needs_radial_antipodal_origin_boundary(bc)
+      ? mesh_direction_for_axis(bc.mesh_axes, MeshAxisR) : -1;
    const auto problo = geom.ProbLoArray();
    const auto dx = geom.CellSizeArray();
 
@@ -932,6 +913,20 @@ inline void apply_state_boundary(
          outside = outside || (!is_periodic[2] && (k < lo.z || k > hi.z));
 #endif
          if (!outside) {
+            return;
+         }
+
+         // The nonlocal owner completes these ghosts. On a partial AMR level,
+         // preserve the hierarchy-filled values between those completions (for
+         // example the fixed boundary data of an implicit diffusion iteration).
+         if ((nonlocal_origin_dir == 0 && i < lo.x)
+#if AMREX_SPACEDIM >= 2
+             || (nonlocal_origin_dir == 1 && j < lo.y)
+#endif
+#if AMREX_SPACEDIM == 3
+             || (nonlocal_origin_dir == 2 && k < lo.z)
+#endif
+         ) {
             return;
          }
 
@@ -1162,75 +1157,14 @@ inline void apply_state_boundary(
 	   }
 }
 
-inline bool needs_radial_antipodal_origin_boundary(BoundaryData const& bc) noexcept
-{
-   const int radial_dir = mesh_direction_for_axis(bc.mesh_axes, MeshAxisR);
-   const int phi_dir = mesh_direction_for_axis(bc.mesh_axes, MeshAxisPhi);
-   return radial_dir >= 0 && phi_dir >= 0 && bc.origin_lo[radial_dir] != 0;
-}
 
-inline void apply_radial_antipodal_origin_boundary(
-   amrex::MultiFab& state,
-   amrex::Geometry const& geom,
-   BoundaryData const& bc
-)
-{
-   if (!needs_radial_antipodal_origin_boundary(bc)) {
-      return;
-   }
-
-   validate_origin_boundary_geometry(bc, geom);
-   const amrex::Box domain = geom.Domain();
-   const auto lo = amrex::lbound(domain);
-   const auto hi = amrex::ubound(domain);
-   const int radial_dir = mesh_direction_for_axis(bc.mesh_axes, MeshAxisR);
-   const int phi_dir = mesh_direction_for_axis(bc.mesh_axes, MeshAxisPhi);
-   const int nphi = domain.length(phi_dir);
-   const int ncomp = state.nComp();
-   const amrex::IntVect ng = state.nGrowVect();
-   if (ng[radial_dir] <= 0) {
-      return;
-   }
-
-   amrex::MultiFab antipodal(state.boxArray(), state.DistributionMap(), ncomp, ng);
-   amrex::IntVect offset(AMREX_D_DECL(0, 0, 0));
-   offset.setVal(phi_dir, -nphi / 2);
-   antipodal.ParallelCopy(state, 0, 0, ncomp, ng, ng, offset, geom.periodicity());
-
-#ifdef AMREX_USE_OMP
-#pragma omp parallel if (amrex::Gpu::notInLaunchRegion())
-#endif
-   {
-   for (amrex::MFIter mfi(state); mfi.isValid(); ++mfi) {
-      amrex::Box grown = state[mfi].box();
-      grown.setBig(radial_dir, domain.smallEnd(radial_dir) - 1);
-      if (!grown.ok()) {
-         continue;
-      }
-      const auto dst = state.array(mfi);
-      const auto src = antipodal.const_array(mfi);
-      amrex::ParallelFor(grown, ncomp, [=] AMREX_GPU_DEVICE(int i, int j, int k, int q) noexcept {
-         int ii = i;
-         int jj = j;
-         int kk = k;
-         if (radial_dir == 0) {
-            ii = mirrored_index(i, lo.x, hi.x);
-         }
-#if (AMREX_SPACEDIM >= 2)
-         if (radial_dir == 1) {
-            jj = mirrored_index(j, lo.y, hi.y);
-         }
-#endif
-#if (AMREX_SPACEDIM == 3)
-         if (radial_dir == 2) {
-            kk = mirrored_index(k, lo.z, hi.z);
-         }
-#endif
-         dst(i, j, k, q) = static_cast<amrex::Real>(origin_state_parity(bc, radial_dir, q)) * src(ii, jj, kk, q);
-      });
-   }
-   }
-}
+// The hierarchy owner supplies this same bounded donor band through FillPatchNLevels.
+amrex::Box radial_origin_source_box(amrex::Geometry const& geom, BoundaryData const& bc,
+                                    amrex::IntVect const& num_ghosts);
+void fill_radial_origin_from_source(amrex::MultiFab& state, amrex::MultiFab const& source_values,
+                                   amrex::Geometry const& geom, BoundaryData const& bc);
+void apply_radial_antipodal_origin_boundary(amrex::MultiFab& state, amrex::Geometry const& geom,
+                                            BoundaryData const& bc);
 
 template <int NComp>
 inline void apply_state_boundary(

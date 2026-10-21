@@ -27,11 +27,15 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   timing variability was inconclusive. Consult the current cycle for exact
   source/timing boundaries; the existing self-gravity AMR energy failure is open.
 
-- Fluid origin continuation with active spherical theta remains defective:
-  uniform 2D/3D full/half-theta boundary fixtures fail scalar/vector parity on
-  three ranks. The existing hierarchy donor-shell FillPatch owner should be
-  reused when repairing the angular map. This is separate from vertex-centered
-  spacetime singular equations and does not expose cell-centered spacetime.
+- Cycle480 repairs cell-state origin continuation through one compiled mapping
+  owner shared by uniform fills and the existing hierarchy donor-shell
+  FillPatchNLevels path. Full spherical domains reverse theta and shift phi;
+  equatorial half-domains compose polar/axial symmetry signs. Radial layers,
+  angular corners, short/singleton angular grids, passive fields and mixed
+  fine/coarse time donors have focused three-rank controls. Local refreshes
+  preserve nonlocal hierarchy ghosts. Staggered CT face/edge origin topology,
+  singular vertex-spacetime equations and cell-point spacetime remain separate
+  unaccepted capabilities; cell-state parity tests do not validate them.
 
 - Cycle 414 connects the complete generated fCCZ4 equations, reference-frame
   adapters, diagnostics and stored-metric GRHD bridge on regular charts.
@@ -2125,11 +2129,15 @@ Scoped dependency, build and validation-boundary refresh: 2026-09-01, Cycles 373
   explicit conversion. Current qK waveform columns copy ordinary Psi4, whose
   projection is real, even-l, m=0 and directly time integrated. They are not
   independent tetrad or general waveform validation.
-- Source review identifies an existing fluid-origin topology defect with
-  active spherical theta: the fill mirrors r and optionally shifts phi, but
-  misses theta -> pi-theta. A smooth equator-asymmetric scalar distinguishes
-  this from existing radially symmetric origin tests. Runtime reproduction
-  and repair are pending; this is separate from vertex-spacetime regularity.
+- The spherical cell-state origin map is (-r,theta,phi) ->
+  (r,pi-theta,phi+pi). In the orthonormal r/theta/phi basis, both polar and axial
+  vectors have signs (-,+,-). Composing equatorial symmetry gives (-,-,-)
+  for polar vectors and (+,+,+) for axial vectors. Pole identification adds
+  phi+pi and the proper rotation (+,-,-). Cycle480 protects these maps with
+  smooth Cartesian-field controls, including origin/angular corners; the
+  schema supplies component symmetry kinds. A theta interval must contain
+  its antipodes or declare the needed equatorial symmetry. Hydro reflecting
+  equators are equivalent; MHD requires its explicit axial symmetry signs.
 - Current `EvolutionSectorStorage::average_down_level` selects nodal injection
   versus FV averaging from centering alone. A centered spacetime extension
   must first make point-sample transfer semantics explicit. No selectable

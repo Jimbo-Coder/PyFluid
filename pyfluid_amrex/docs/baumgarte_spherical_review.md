@@ -435,22 +435,22 @@ not justify a second input catalog or a parallel field registry.
 No solver formula, centering, AMR transfer, damping parameter, tolerance,
 physics capability or supported-domain check has been changed by this review.
 
-## Demonstrated PyFluid candidate: missing theta reflection at fluid origin
+## Repaired PyFluid cell-state origin map (Cycles 479--480)
 
 The parent identified and this review independently source-checked a concrete
-topology defect in the existing cell-centered fluid boundary owner. For a
+topology defect in the pre-Cycle480 cell-centered fluid boundary owner. For a
 spherical point, (-r,theta,phi) is the same physical location as
-(r,pi-theta,phi+pi). `boundary.hpp:1163–1167` triggers the nonlocal antipodal
-phase only if phi is active; `boundary.hpp:1212–1227` mirrors only the radial
-index and shifts phi, leaving theta unchanged. With active `r theta`, that
-phase does not run, and the ordinary radial reflection also keeps theta.
-`config.cpp:2589–2602` allows spherical origin boundaries without imposing
+(r,pi-theta,phi+pi). `boundary.hpp` at the reviewed Cycle479 revision triggered the nonlocal antipodal
+phase only if phi was active; its mapping mirrored only the radial
+index and shifted phi, leaving theta unchanged. With active `r theta`, that
+phase did not run, and the ordinary radial reflection also kept theta.
+The reviewed `config.cpp` allowed spherical origin boundaries without imposing
 equatorial symmetry. `fields.cpp:216–250` supplies the expected spherical
 local vector sign transformation but cannot correct source-point identity.
 
 The smooth positive axisymmetric scalar rho=1+0.1 z demonstrates the defect
 without any vector convention ambiguity: at r=-0.125 and theta=pi/6, analytic
-rho is 0.9891746824526945; the current same-theta positive-r source is
+rho is 0.9891746824526945; the former same-theta positive-r source was
 1.0108253175473054, an error of 0.02165063509461096. This source-index
 counterexample is saved in `origin_source_counterexample.json`. It is not a
 runtime solver result. Existing origin validation primarily covers cylindrical
@@ -467,10 +467,27 @@ acceptance. Evidence is under `runs/current/infrastructure_audit/cycle479/origin
 
 The existing `AmrSolverBase::complete_radial_origin_boundary` already materializes
 a positive-radius donor shell through `FillPatchNLevels` with the selected state
-interpolater and time slices. Retain that owner for missing fine-level donors;
-correct its shared angular map together with the uniform boundary owner. The
-complete repair remains pending. This defect is independent of unsupported
-vertex-centered spacetime singular nodes.
+interpolater and time slices. Cycle480 retains that owner for missing fine-level
+donors and implements the shared cell-state map in
+`src/numerics/origin_boundary.cpp`, with declarations in `boundary.hpp` and no
+new PDE/template axis. Radial donors are `2*r_lo-1-i`; the previous AMR call
+clamped every radial ghost to the first radial cell. Full-theta domains reverse
+the discrete theta index; equatorial halves retain it and compose the field
+catalog's reflection signs. Both poles and equatorial corners normalize before
+reading a donor, with periodic phi wrapping even for grids smaller than the
+ghost width. Nonlocal hierarchy ghosts survive subsequent local BC refreshes.
+
+The maintained `tests/origin_boundary_check.cpp` / `tools/validate_origin_boundary.py`
+checks 30 analytic HD/MHD+dye cases and eight partial-hierarchy cases in 2D/3D,
+on three ranks. The latter use the production mesh-basis interpolater with two
+selected FV methods and temporally interpolated coarse donors; fine donors
+remain preferred. These are boundary/transfer controls, not AMR adaptation or
+full MHD+CT evolution acceptance. Real short production AMR/subcycling runs and
+maintained numerical gates are recorded separately in Cycle480.
+
+Staggered `ct.hpp` face-origin fills still need their own angular topology and
+hierarchy donor work. Singular vertex-centered spacetime equations also remain
+separate; this change does not expose cell-centered spacetime.
 
 ## Focused architecture comparison: centered spacetime
 

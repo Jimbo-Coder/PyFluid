@@ -514,6 +514,12 @@ STEPS = [
       command=("uv", "run", "python", "pyfluid_amrex/tools/validate_causal_policy.py", "--force", "--ranks", "3"),
    ),
    GateStep(
+      name="origin_boundary",
+      kind="feature",
+      levels=("standard", "full"),
+      command=("uv", "run", "python", "pyfluid_amrex/tools/validate_origin_boundary.py", "--ranks", "3"),
+   ),
+   GateStep(
       name="boundary_tiling",
       kind="feature",
       levels=("standard", "full"),

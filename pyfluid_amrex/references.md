@@ -21,6 +21,7 @@ It intentionally links rather than restating the detailed contracts.
 | --- | --- | --- |
 | Architecture, ownership, AMR, coordinates | `src/`, `include/pyfluid_amrex/` | `docs/design.md` |
 | Relativistic coarse-fine admissibility and partial sibling regions | `src/amr/state_interpolation.{hpp,cpp}`, `tests/state_interpolation_check.cpp`, `tools/validate_rmhd_balsara3_amr_prolongation.py` | `docs/design.md`, Cycles 283--284 |
+| Cell-state spherical/cylindrical origin continuation | `src/numerics/origin_boundary.cpp`, `src/amr/amr_solver_fillpatch.cpp`, `tests/origin_boundary_check.cpp`, `tools/validate_origin_boundary.py` | `docs/baumgarte_spherical_review.md`, Cycle480; staggered CT/spacetime origin acceptance remains separate |
 | CPU tiled numerical/ghost ownership and device scratch lifetime | `src/numerics/{rhs,patch_wall_flux}.hpp`, `include/pyfluid_amrex/flux_update.hpp`, `include/pyfluid_amrex/{boundary,relativistic_boundary,ct}.hpp`, `src/relativity/relativistic_atmosphere.hpp`, `src/amr/state_interpolation.cpp`, `tests/boundary_tiling_check.cpp`, `tools/{check_architecture,validate_boundary_tiling}.py` | `docs/infrastructure_conventions.md`, Cycles 284 and 343 |
 | Coding and review policy | current source | `docs/code_conventions.md` |
 | Runtime configuration | `include/pyfluid_amrex/config.hpp`, `src/framework/config*.{cpp,hpp}` | `README.md`, configuration rules |
